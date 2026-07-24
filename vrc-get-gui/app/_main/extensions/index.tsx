@@ -24,7 +24,14 @@ import {
 	useQueryClient,
 } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { ArrowUpDown, Blocks, GripVertical, RotateCcw } from "lucide-react";
+import {
+	ArrowUpDown,
+	Blocks,
+	Eye,
+	EyeOff,
+	GripVertical,
+	RotateCcw,
+} from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { HNavBar, HNavBarText, VStack } from "@/components/layout";
 import { ScrollPageContainer } from "@/components/ScrollPageContainer";
@@ -45,7 +52,7 @@ import { commands, type SidebarExtension } from "@/lib/bindings";
 import { tc, tt } from "@/lib/i18n";
 import {
 	DEFAULT_SIDEBAR_EXTENSION_ORDER,
-	sortSidebarExtensionsByDefaultOrder,
+	restoreDefaultSidebarExtensions,
 } from "@/lib/sidebar-extensions";
 import { toastThrownError } from "@/lib/toast";
 
@@ -76,6 +83,7 @@ const SIDEBAR_EXTENSIONS_QUERY = queryOptions({
 	initialData: DEFAULT_SIDEBAR_EXTENSION_ORDER.map((id) => ({
 		id,
 		installed: true,
+		enabled: true,
 		visible: true,
 	})),
 });
@@ -91,7 +99,7 @@ function useSidebarExtensions() {
 }
 
 function isSortableSidebarExtension(extension: SidebarExtension) {
-	return extension.installed && extension.visible;
+	return extension.installed;
 }
 
 function mergeSidebarExtensionOrder(
@@ -113,6 +121,24 @@ function hasSameSidebarExtensionOrder(
 	return (
 		left.length === right.length &&
 		left.every((extension, index) => extension.id === right[index]?.id)
+	);
+}
+
+function hasSameSidebarExtensions(
+	left: SidebarExtension[],
+	right: SidebarExtension[],
+) {
+	return (
+		hasSameSidebarExtensionOrder(left, right) &&
+		left.every((extension, index) => {
+			const other = right[index];
+			return (
+				other != null &&
+				extension.installed === other.installed &&
+				extension.enabled === other.enabled &&
+				extension.visible === other.visible
+			);
+		})
 	);
 }
 
@@ -146,7 +172,7 @@ function ExtensionsSortCard() {
 
 	const sidebarExtensions = extensionsQuery.data ?? [];
 	const defaultSidebarExtensions = useMemo(
-		() => sortSidebarExtensionsByDefaultOrder(sidebarExtensions),
+		() => restoreDefaultSidebarExtensions(sidebarExtensions),
 		[sidebarExtensions],
 	);
 	const defaultOrderedExtensions = useMemo(
@@ -166,13 +192,13 @@ function ExtensionsSortCard() {
 			sidebarExtensions,
 		],
 	);
-	const hasOrderChange = !hasSameSidebarExtensionOrder(
+	const hasPendingChange = !hasSameSidebarExtensions(
 		sidebarExtensions,
 		pendingSidebarExtensions,
 	);
-	const isDefaultOrder = useMemo(
+	const isDefaultState = useMemo(
 		() =>
-			hasSameSidebarExtensionOrder(
+			hasSameSidebarExtensions(
 				pendingSidebarExtensions,
 				defaultSidebarExtensions,
 			),
@@ -262,6 +288,15 @@ function ExtensionsSortCard() {
 											key={extension.id}
 											extension={extension}
 											disabled={reorderSidebarExtensions.isPending}
+											onVisibilityChange={(visible) =>
+												setOrderedExtensions((current) =>
+													current.map((item) =>
+														item.id === extension.id
+															? { ...item, visible }
+															: item,
+													),
+												)
+											}
 										/>
 									))}
 								</div>
@@ -275,7 +310,7 @@ function ExtensionsSortCard() {
 									setOrderedExtensions(defaultOrderedExtensions);
 									setRestoreDefaultRequested(true);
 								}}
-								disabled={reorderSidebarExtensions.isPending || isDefaultOrder}
+								disabled={reorderSidebarExtensions.isPending || isDefaultState}
 							>
 								<RotateCcw className="mr-2 size-4" />
 								{tc("extensions:button:restore default order")}
@@ -287,7 +322,9 @@ function ExtensionsSortCard() {
 								onClick={() => {
 									reorderSidebarExtensions.mutate(pendingSidebarExtensions);
 								}}
-								disabled={reorderSidebarExtensions.isPending || !hasOrderChange}
+								disabled={
+									reorderSidebarExtensions.isPending || !hasPendingChange
+								}
 							>
 								{tc("extensions:button:save")}
 							</Button>
@@ -302,9 +339,11 @@ function ExtensionsSortCard() {
 function SortableExtensionItem({
 	extension,
 	disabled,
+	onVisibilityChange,
 }: {
 	extension: SidebarExtension;
 	disabled: boolean;
+	onVisibilityChange: (visible: boolean) => void;
 }) {
 	const {
 		attributes,
@@ -319,6 +358,8 @@ function SortableExtensionItem({
 		disabled,
 	});
 	const Icon = SIDEBAR_EXTENSION_DEFINITIONS[extension.id]?.icon ?? Blocks;
+	const isShown = extension.enabled && extension.visible;
+	const VisibilityIcon = isShown ? Eye : EyeOff;
 
 	return (
 		<div
@@ -329,24 +370,40 @@ function SortableExtensionItem({
 			}}
 			className={`flex items-center justify-between gap-3 rounded-md border border-border bg-secondary/30 px-3 py-2 ${
 				isDragging ? "z-10 opacity-70 shadow-lg" : ""
-			}`}
+			} ${isShown ? "" : "text-muted-foreground"}`}
 		>
 			<div className="flex min-w-0 items-center gap-3">
 				<Icon className="size-5 shrink-0 text-primary" />
 				<p className="truncate font-normal">{extensionLabel(extension.id)}</p>
 			</div>
-			<Button
-				ref={setActivatorNodeRef}
-				variant={"ghost"}
-				size={"icon"}
-				disabled={disabled}
-				aria-label={tt("extensions:button:drag to reorder")}
-				className="cursor-grab touch-none active:cursor-grabbing"
-				{...attributes}
-				{...listeners}
-			>
-				<GripVertical className="size-5" />
-			</Button>
+			<div className="flex shrink-0 items-center gap-1">
+				<Button
+					variant={isShown ? "secondary" : "ghost"}
+					size="icon"
+					disabled={disabled || !extension.enabled}
+					aria-pressed={isShown}
+					aria-label={tt(
+						isShown
+							? "extensions:button:hide from sidebar"
+							: "extensions:button:show in sidebar",
+					)}
+					onClick={() => onVisibilityChange(!extension.visible)}
+				>
+					<VisibilityIcon className="size-5" />
+				</Button>
+				<Button
+					ref={setActivatorNodeRef}
+					variant="ghost"
+					size="icon"
+					disabled={disabled}
+					aria-label={tt("extensions:button:drag to reorder")}
+					className="cursor-grab touch-none active:cursor-grabbing"
+					{...attributes}
+					{...listeners}
+				>
+					<GripVertical className="size-5" />
+				</Button>
+			</div>
 		</div>
 	);
 }
@@ -355,10 +412,10 @@ function ExtensionsManageCard() {
 	const queryClient = useQueryClient();
 	const extensionsQuery = useSidebarExtensions();
 
-	const setInstalled = useMutation({
-		mutationFn: async ({ id, installed }: { id: string; installed: boolean }) =>
-			await commands.environmentSetSidebarExtensionInstalled(id, installed),
-		onMutate: async ({ id, installed }) => {
+	const setEnabled = useMutation({
+		mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) =>
+			await commands.environmentSetSidebarExtensionEnabled(id, enabled),
+		onMutate: async ({ id, enabled }) => {
 			await queryClient.cancelQueries({
 				queryKey: SIDEBAR_EXTENSIONS_QUERY.queryKey,
 			});
@@ -368,47 +425,7 @@ function ExtensionsManageCard() {
 			queryClient.setQueryData(SIDEBAR_EXTENSIONS_QUERY.queryKey, (current) => {
 				if (!current) return current;
 				return current.map((extension) =>
-					extension.id === id
-						? {
-								...extension,
-								installed,
-								visible: installed ? extension.visible : false,
-							}
-						: extension,
-				);
-			});
-			return { previous };
-		},
-		onError: (error, _args, context) => {
-			toastThrownError(error);
-			if (context?.previous) {
-				queryClient.setQueryData(
-					SIDEBAR_EXTENSIONS_QUERY.queryKey,
-					context.previous,
-				);
-			}
-		},
-		onSettled: () => {
-			queryClient.invalidateQueries({
-				queryKey: SIDEBAR_EXTENSIONS_QUERY.queryKey,
-			});
-		},
-	});
-
-	const setVisible = useMutation({
-		mutationFn: async ({ id, visible }: { id: string; visible: boolean }) =>
-			await commands.environmentSetSidebarExtensionVisible(id, visible),
-		onMutate: async ({ id, visible }) => {
-			await queryClient.cancelQueries({
-				queryKey: SIDEBAR_EXTENSIONS_QUERY.queryKey,
-			});
-			const previous = queryClient.getQueryData<SidebarExtension[]>(
-				SIDEBAR_EXTENSIONS_QUERY.queryKey,
-			);
-			queryClient.setQueryData(SIDEBAR_EXTENSIONS_QUERY.queryKey, (current) => {
-				if (!current) return current;
-				return current.map((extension) =>
-					extension.id === id ? { ...extension, visible } : extension,
+					extension.id === id ? { ...extension, enabled } : extension,
 				);
 			});
 			return { previous };
@@ -430,7 +447,8 @@ function ExtensionsManageCard() {
 	});
 
 	const extensions = (extensionsQuery.data ?? []).filter(
-		(extension) => SIDEBAR_EXTENSION_DEFINITIONS[extension.id]?.manageable,
+		(extension) =>
+			SIDEBAR_EXTENSION_DEFINITIONS[extension.id]?.management != null,
 	);
 	const installedExtensions = extensions.filter(
 		(extension) => extension.installed,
@@ -438,7 +456,7 @@ function ExtensionsManageCard() {
 	const uninstalledExtensions = extensions.filter(
 		(extension) => !extension.installed,
 	);
-	const isBusy = setInstalled.isPending || setVisible.isPending;
+	const isBusy = setEnabled.isPending;
 
 	return (
 		<Card className="p-4 compact:p-3">
@@ -451,69 +469,49 @@ function ExtensionsManageCard() {
 					title={tc("extensions:installed")}
 					emptyText={tc("extensions:empty installed")}
 					extensions={installedExtensions}
-					renderExtension={(extension) => (
-						<ExtensionManageItem
-							key={extension.id}
-							extension={extension}
-							action={
-								<Button
-									variant={"ghost-destructive"}
-									className="border border-destructive/60"
-									disabled={isBusy}
-									onClick={() =>
-										setInstalled.mutate({
-											id: extension.id,
-											installed: false,
-										})
-									}
-								>
-									{tc("extensions:button:uninstall")}
-								</Button>
-							}
-							trailing={
-								<div className="flex items-center gap-2">
-									<span className="text-sm text-muted-foreground">
-										{tc("extensions:show in sidebar")}
-									</span>
-									<Switch
-										checked={extension.visible}
-										disabled={isBusy}
-										aria-label={tt("extensions:show in sidebar")}
-										onCheckedChange={(visible) =>
-											setVisible.mutate({
-												id: extension.id,
-												visible,
-											})
-										}
-									/>
-								</div>
-							}
-						/>
-					)}
+					renderExtension={(extension) => {
+						const management =
+							SIDEBAR_EXTENSION_DEFINITIONS[extension.id]?.management;
+						if (!management) return null;
+						return (
+							<ExtensionManageItem
+								key={extension.id}
+								extension={extension}
+								action={
+									management.builtIn ? (
+										<span className="rounded-full bg-secondary px-3 py-1 text-sm text-secondary-foreground">
+											{tc("extensions:built in")}
+										</span>
+									) : null
+								}
+								trailing={
+									<div className="flex items-center gap-2">
+										<span className="text-sm text-muted-foreground">
+											{tc("extensions:enabled")}
+										</span>
+										<Switch
+											checked={extension.enabled}
+											disabled={isBusy || !management.enableable}
+											aria-label={tt("extensions:enabled")}
+											onCheckedChange={(enabled) =>
+												setEnabled.mutate({
+													id: extension.id,
+													enabled,
+												})
+											}
+										/>
+									</div>
+								}
+							/>
+						);
+					}}
 				/>
 				<ExtensionSection
 					title={tc("extensions:not installed")}
 					emptyText={tc("extensions:empty not installed")}
 					extensions={uninstalledExtensions}
 					renderExtension={(extension) => (
-						<ExtensionManageItem
-							key={extension.id}
-							extension={extension}
-							action={
-								<Button
-									className="border border-primary bg-transparent text-primary hover:bg-primary/10"
-									disabled={isBusy}
-									onClick={() =>
-										setInstalled.mutate({
-											id: extension.id,
-											installed: true,
-										})
-									}
-								>
-									{tc("extensions:button:install")}
-								</Button>
-							}
-						/>
+						<ExtensionManageItem key={extension.id} extension={extension} />
 					)}
 				/>
 			</div>
@@ -559,7 +557,7 @@ function ExtensionManageItem({
 	trailing,
 }: {
 	extension: SidebarExtension;
-	action: ReactNode;
+	action?: ReactNode;
 	trailing?: ReactNode;
 }) {
 	const Icon = SIDEBAR_EXTENSION_DEFINITIONS[extension.id]?.icon ?? Blocks;

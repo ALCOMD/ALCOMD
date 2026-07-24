@@ -59,7 +59,7 @@ pub mod operations {
     pub const REPOSITORY_REMOVE: &str = "repository.remove";
     pub const REPOSITORY_REORDER: &str = "repository.reorder";
     pub const REPOSITORY_SHOW: &str = "repository.show";
-    pub const SIDEBAR_EXTENSION_INSTALLED: &str = "sidebar_extension.installed";
+    pub const SIDEBAR_EXTENSION_ENABLED: &str = "sidebar_extension.enabled";
     pub const SIDEBAR_EXTENSION_REORDER: &str = "sidebar_extension.reorder";
     pub const SIDEBAR_EXTENSION_VISIBLE: &str = "sidebar_extension.visible";
     pub const SETTINGS_SET: &str = "settings.set";

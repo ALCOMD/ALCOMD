@@ -158,12 +158,14 @@ Preserve these behaviors:
 
 Preserve these behaviors:
 
-- The Material Theme entry is a manageable built-in sidebar extension and
-  participates in persisted sidebar ordering.
+- The Material Theme entry is a managed built-in sidebar extension and
+  participates in persisted sidebar ordering. Built-in extensions cannot be
+  installed, uninstalled, enabled, or disabled.
 - The default sidebar order is Projects, Resources, MCP, Theme, Settings, then
   Logs.
-- The sidebar sorting dialog can restore the visible extensions to the default
-  order before the user saves.
+- The sidebar sorting dialog lists installed extensions, uses an eye button to
+  control sidebar visibility, and can restore the default order and reveal all
+  installed extensions before the user saves.
 - The side navigation can show optional BOOTH, VRChatAvatarLearn, and version
   buttons. They can be hidden with `hide_sidebar_links`.
 - The version button displays `version: v{actual_version}` and copies

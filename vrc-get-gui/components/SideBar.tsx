@@ -60,6 +60,7 @@ const DEFAULT_SIDEBAR_EXTENSIONS: SidebarExtension[] =
 	DEFAULT_SIDEBAR_EXTENSION_ORDER.map((id) => ({
 		id,
 		installed: true,
+		enabled: true,
 		visible: true,
 	}));
 
@@ -85,7 +86,10 @@ export function SideBar({ className }: { className?: string }) {
 	const visibleSidebarExtensions = useMemo(
 		() =>
 			sidebarExtensions.data
-				.filter((extension) => extension.installed && extension.visible)
+				.filter(
+					(extension) =>
+						extension.installed && extension.enabled && extension.visible,
+				)
 				.map((extension) => {
 					const definition = SIDEBAR_EXTENSION_DEFINITIONS[extension.id];
 					if (!definition) return null;

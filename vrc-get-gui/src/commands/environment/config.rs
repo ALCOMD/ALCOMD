@@ -7,7 +7,8 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::commands::prelude::*;
 use crate::config::{
-    SidebarExtension, UnityHubAccessMethod, UpdateReminderConfig, normalize_sidebar_extensions,
+    SidebarExtension, UnityHubAccessMethod, UpdateReminderConfig, is_builtin_sidebar_extension,
+    normalize_sidebar_extensions,
 };
 use crate::logging::LogLevel;
 
@@ -471,46 +472,46 @@ pub async fn environment_set_sidebar_extension_order(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn environment_set_sidebar_extension_installed(
+pub async fn environment_set_sidebar_extension_enabled(
     app: AppHandle,
     config: State<'_, GuiConfigState>,
     id: String,
-    installed: bool,
+    enabled: bool,
 ) -> Result<(), RustError> {
+    if is_builtin_sidebar_extension(&id) {
+        return Err(RustError::unrecoverable_str(
+            "Built-in extensions cannot be enabled or disabled",
+        ));
+    }
     let activity = app.state::<ActivityLogState>();
     let input = ActivityInput::new(
         ActivitySource::Gui,
         ActivityKind::Write,
         ActivityImportance::Primary,
-        operations::SIDEBAR_EXTENSION_INSTALLED,
-        "Changing sidebar extension install status",
+        operations::SIDEBAR_EXTENSION_ENABLED,
+        "Changing sidebar extension enabled status",
     )
     .target(id.clone())
-    .details(vec![ActivityDetail::new(
-        "installed",
-        installed.to_string(),
-    )]);
+    .details(vec![ActivityDetail::new("enabled", enabled.to_string())]);
 
     activity
         .track_result(
             Some(&app),
             input,
-            "Sidebar extension install status updated",
+            "Sidebar extension enabled status updated",
             Vec::new(),
             async move {
                 let mut config = config.load_mut().await?;
                 let sidebar_extensions = &mut config.sidebar_extensions;
                 if let Some(extension) = sidebar_extensions.iter_mut().find(|x| x.id == id) {
-                    extension.installed = installed;
-                    if !installed {
-                        extension.visible = false;
+                    if !extension.installed && enabled {
+                        return Err(RustError::unrecoverable_str(
+                            "Cannot enable an extension that is not installed",
+                        ));
                     }
+                    extension.enabled = enabled;
                 } else {
-                    sidebar_extensions.push(SidebarExtension {
-                        id,
-                        installed,
-                        visible: false,
-                    });
+                    return Err(RustError::unrecoverable_str("Extension not found"));
                 }
                 config.sidebar_extensions =
                     normalize_sidebar_extensions(std::mem::take(sidebar_extensions));
@@ -555,6 +556,7 @@ pub async fn environment_set_sidebar_extension_visible(
                     sidebar_extensions.push(SidebarExtension {
                         id,
                         installed: false,
+                        enabled: false,
                         visible,
                     });
                 }

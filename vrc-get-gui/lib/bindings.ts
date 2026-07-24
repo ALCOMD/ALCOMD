@@ -26,7 +26,7 @@ export const commands = {
 	environmentSetUnityHubAccessMethod: (unityHubAccessMethod: UnityHubAccessMethod) => __TAURI_INVOKE<null>("environment_set_unity_hub_access_method", { unityHubAccessMethod }),
 	environmentGetSidebarExtensions: () => __TAURI_INVOKE<SidebarExtension[]>("environment_get_sidebar_extensions"),
 	environmentSetSidebarExtensionOrder: (sidebarExtensions: SidebarExtension[]) => __TAURI_INVOKE<null>("environment_set_sidebar_extension_order", { sidebarExtensions }),
-	environmentSetSidebarExtensionInstalled: (id: string, installed: boolean) => __TAURI_INVOKE<null>("environment_set_sidebar_extension_installed", { id, installed }),
+	environmentSetSidebarExtensionEnabled: (id: string, enabled: boolean) => __TAURI_INVOKE<null>("environment_set_sidebar_extension_enabled", { id, enabled }),
 	environmentSetSidebarExtensionVisible: (id: string, visible: boolean) => __TAURI_INVOKE<null>("environment_set_sidebar_extension_visible", { id, visible }),
 	environmentSetTemplateFavorite: (templateId: string, favorite: boolean) => __TAURI_INVOKE<null>("environment_set_template_favorite", { templateId, favorite }),
 	environmentUpdateReminder: () => __TAURI_INVOKE<UpdateReminderConfig | null>("environment_update_reminder"),
@@ -289,6 +289,7 @@ export type RustError = { type: "Unrecoverable"; message: string } | { type: "Lo
 export type SidebarExtension = {
 	id: string,
 	installed: boolean,
+	enabled: boolean,
 	visible: boolean,
 };
 

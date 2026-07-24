@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
 	DEFAULT_SIDEBAR_EXTENSION_ORDER,
+	restoreDefaultSidebarExtensions,
 	sortSidebarExtensionsByDefaultOrder,
 } from "@/lib/sidebar-extensions";
 
@@ -37,5 +38,21 @@ describe("sidebar extensions", () => {
 		sortSidebarExtensionsByDefaultOrder(extensions);
 
 		expect(extensions.map(({ id }) => id)).toEqual(["log", "projects"]);
+	});
+
+	test("restores hidden installed extensions without showing uninstalled ones", () => {
+		const extensions = [
+			{ id: "log", installed: true, visible: false },
+			{ id: "theme", installed: false, visible: false },
+			{ id: "projects", installed: true, visible: true },
+		];
+
+		const restored = restoreDefaultSidebarExtensions(extensions);
+
+		expect(restored).toEqual([
+			{ id: "projects", installed: true, visible: true },
+			{ id: "theme", installed: false, visible: false },
+			{ id: "log", installed: true, visible: true },
+		]);
 	});
 });

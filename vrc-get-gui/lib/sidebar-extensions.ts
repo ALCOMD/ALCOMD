@@ -31,3 +31,13 @@ export function sortSidebarExtensionsByDefaultOrder<T extends { id: string }>(
 		})
 		.map(({ extension }) => extension);
 }
+
+export function restoreDefaultSidebarExtensions<
+	T extends { id: string; installed: boolean; visible: boolean },
+>(extensions: readonly T[]): T[] {
+	return sortSidebarExtensionsByDefaultOrder(extensions).map((extension) =>
+		extension.installed && !extension.visible
+			? { ...extension, visible: true }
+			: extension,
+	);
+}

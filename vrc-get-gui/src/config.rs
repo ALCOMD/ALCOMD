@@ -68,6 +68,8 @@ pub struct SidebarExtension {
     #[serde(default = "default_true")]
     pub installed: bool,
     #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_true")]
     pub visible: bool,
 }
 
@@ -208,9 +210,15 @@ fn default_true() -> bool {
 }
 
 const LOCKED_SIDEBAR_ITEM_IDS: &[&str] = &["extensions"];
+const BUILT_IN_SIDEBAR_EXTENSION_IDS: &[&str] =
+    &["projects", "packages", "mcp", "theme", "settings", "log"];
 
 fn is_configurable_sidebar_extension(id: &str) -> bool {
     !LOCKED_SIDEBAR_ITEM_IDS.contains(&id)
+}
+
+pub(crate) fn is_builtin_sidebar_extension(id: &str) -> bool {
+    BUILT_IN_SIDEBAR_EXTENSION_IDS.contains(&id)
 }
 
 fn default_sidebar_extensions() -> Vec<SidebarExtension> {
@@ -218,31 +226,37 @@ fn default_sidebar_extensions() -> Vec<SidebarExtension> {
         SidebarExtension {
             id: "projects".to_string(),
             installed: true,
+            enabled: true,
             visible: true,
         },
         SidebarExtension {
             id: "packages".to_string(),
             installed: true,
+            enabled: true,
             visible: true,
         },
         SidebarExtension {
             id: "mcp".to_string(),
             installed: true,
+            enabled: true,
             visible: true,
         },
         SidebarExtension {
             id: "theme".to_string(),
             installed: true,
+            enabled: true,
             visible: true,
         },
         SidebarExtension {
             id: "settings".to_string(),
             installed: true,
+            enabled: true,
             visible: true,
         },
         SidebarExtension {
             id: "log".to_string(),
             installed: true,
+            enabled: true,
             visible: true,
         },
     ]
@@ -253,9 +267,13 @@ pub(crate) fn normalize_sidebar_extensions(
 ) -> Vec<SidebarExtension> {
     let mut seen = HashSet::<String>::new();
     let mut updated = Vec::new();
-    for extension in existing {
+    for mut extension in existing {
         if extension.id.is_empty() || !is_configurable_sidebar_extension(&extension.id) {
             continue;
+        }
+        if is_builtin_sidebar_extension(&extension.id) {
+            extension.installed = true;
+            extension.enabled = true;
         }
         if seen.insert(extension.id.clone()) {
             updated.push(extension);
@@ -346,11 +364,13 @@ mod tests {
             SidebarExtension {
                 id: "log".to_string(),
                 installed: true,
+                enabled: true,
                 visible: true,
             },
             SidebarExtension {
                 id: "projects".to_string(),
                 installed: true,
+                enabled: true,
                 visible: true,
             },
         ];
@@ -370,6 +390,33 @@ mod tests {
             .find(|extension| extension.id == "theme")
             .unwrap();
         assert!(theme.installed);
+        assert!(theme.enabled);
         assert!(theme.visible);
+    }
+
+    #[test]
+    fn existing_sidebar_extensions_default_to_enabled() {
+        let extension: SidebarExtension =
+            serde_json::from_str(r#"{"id":"theme","installed":true,"visible":true}"#).unwrap();
+
+        assert!(extension.enabled);
+    }
+
+    #[test]
+    fn built_in_sidebar_extensions_are_always_installed_and_enabled() {
+        let normalized = normalize_sidebar_extensions(vec![SidebarExtension {
+            id: "theme".to_string(),
+            installed: false,
+            enabled: false,
+            visible: false,
+        }]);
+        let theme = normalized
+            .iter()
+            .find(|extension| extension.id == "theme")
+            .unwrap();
+
+        assert!(theme.installed);
+        assert!(theme.enabled);
+        assert!(!theme.visible);
     }
 }
