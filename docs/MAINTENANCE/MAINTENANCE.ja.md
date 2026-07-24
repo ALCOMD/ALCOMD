@@ -145,7 +145,10 @@ user が manual import を明示的に開始した場合のみ external-app impo
 
 保持する挙動:
 
-- Material Theme entry を side navigation に表示する。
+- Material Theme entry は管理可能な組み込み sidebar extension として扱い、
+  保存される sidebar order に含める。
+- sidebar の default order は Projects、Resources、MCP、Theme、Settings、Logs
+  とする。
 - side navigation は BOOTH、VRChatAvatarLearn、version button を任意表示できる。`hide_sidebar_links` で非表示にできる。
 - version button は `version: v{actual_version}` を表示し、`v{actual_version}` をコピーする。
 - Toast は rounded MD3 style、MD3 semantic progress color、app base background color を使う。

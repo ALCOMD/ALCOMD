@@ -72,8 +72,9 @@ const SIDEBAR_EXTENSIONS_QUERY = queryOptions({
 	initialData: [
 		{ id: "projects", installed: true, visible: true },
 		{ id: "packages", installed: true, visible: true },
-		{ id: "settings", installed: true, visible: true },
 		{ id: "mcp", installed: true, visible: true },
+		{ id: "theme", installed: true, visible: true },
+		{ id: "settings", installed: true, visible: true },
 		{ id: "log", installed: true, visible: true },
 	],
 });

@@ -158,7 +158,10 @@ Preserve these behaviors:
 
 Preserve these behaviors:
 
-- The Material Theme entry is visible in the side navigation.
+- The Material Theme entry is a manageable built-in sidebar extension and
+  participates in persisted sidebar ordering.
+- The default sidebar order is Projects, Resources, MCP, Theme, Settings, then
+  Logs.
 - The side navigation can show optional BOOTH, VRChatAvatarLearn, and version
   buttons. They can be hidden with `hide_sidebar_links`.
 - The version button displays `version: v{actual_version}` and copies

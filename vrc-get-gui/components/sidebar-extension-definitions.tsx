@@ -1,12 +1,30 @@
 import type { RegisteredRouter } from "@tanstack/react-router";
-import { AlignLeft, Folder, Package, Settings } from "lucide-react";
+import { AlignLeft, Folder, Package, Palette, Settings } from "lucide-react";
 import type { ComponentType } from "react";
+import { openMaterialThemeDialog } from "@/components/MaterialThemePanel";
 
-export interface SidebarExtensionDefinition {
-	href: keyof RegisteredRouter["routeTree"]["types"]["fileRouteTypes"]["fileRoutesByTo"];
+interface SidebarExtensionDefinitionBase {
 	labelKey: string;
 	icon: ComponentType<{ className?: string }>;
 	manageable: boolean;
+}
+
+type SidebarRouteExtensionDefinition = SidebarExtensionDefinitionBase & {
+	href: keyof RegisteredRouter["routeTree"]["types"]["fileRouteTypes"]["fileRoutesByTo"];
+	onSelect?: never;
+};
+
+type SidebarActionExtensionDefinition = SidebarExtensionDefinitionBase & {
+	href?: never;
+	onSelect: () => void;
+};
+
+export type SidebarExtensionDefinition =
+	| SidebarRouteExtensionDefinition
+	| SidebarActionExtensionDefinition;
+
+function openThemeExtension() {
+	void openMaterialThemeDialog();
 }
 
 export const SIDEBAR_EXTENSION_DEFINITIONS: Record<
@@ -30,6 +48,12 @@ export const SIDEBAR_EXTENSION_DEFINITIONS: Record<
 		labelKey: "settings",
 		icon: Settings,
 		manageable: false,
+	},
+	theme: {
+		onSelect: openThemeExtension,
+		labelKey: "settings:theme",
+		icon: Palette,
+		manageable: true,
 	},
 	mcp: {
 		href: "/mcp",

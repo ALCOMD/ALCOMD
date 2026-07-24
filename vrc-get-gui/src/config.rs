@@ -226,12 +226,17 @@ fn default_sidebar_extensions() -> Vec<SidebarExtension> {
             visible: true,
         },
         SidebarExtension {
-            id: "settings".to_string(),
+            id: "mcp".to_string(),
             installed: true,
             visible: true,
         },
         SidebarExtension {
-            id: "mcp".to_string(),
+            id: "theme".to_string(),
+            installed: true,
+            visible: true,
+        },
+        SidebarExtension {
+            id: "settings".to_string(),
             installed: true,
             visible: true,
         },
@@ -306,7 +311,7 @@ impl Default for WindowSize {
 
 #[cfg(test)]
 mod tests {
-    use super::GuiConfig;
+    use super::{GuiConfig, SidebarExtension, normalize_sidebar_extensions};
 
     #[test]
     fn automatic_updates_default_to_enabled_for_existing_configs() {
@@ -318,5 +323,53 @@ mod tests {
     fn automatic_updates_can_be_disabled() {
         let config: GuiConfig = serde_json::from_str(r#"{"automaticUpdate":false}"#).unwrap();
         assert!(!config.automatic_update);
+    }
+
+    #[test]
+    fn sidebar_extensions_use_expected_default_order() {
+        let config = GuiConfig::default();
+        let ids = config
+            .sidebar_extensions
+            .iter()
+            .map(|extension| extension.id.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            ids,
+            ["projects", "packages", "mcp", "theme", "settings", "log"]
+        );
+    }
+
+    #[test]
+    fn missing_sidebar_extensions_are_added_without_changing_existing_order() {
+        let extensions = vec![
+            SidebarExtension {
+                id: "log".to_string(),
+                installed: true,
+                visible: true,
+            },
+            SidebarExtension {
+                id: "projects".to_string(),
+                installed: true,
+                visible: true,
+            },
+        ];
+
+        let normalized = normalize_sidebar_extensions(extensions);
+        let ids = normalized
+            .iter()
+            .map(|extension| extension.id.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            ids,
+            ["log", "projects", "packages", "mcp", "theme", "settings"]
+        );
+        let theme = normalized
+            .iter()
+            .find(|extension| extension.id == "theme")
+            .unwrap();
+        assert!(theme.installed);
+        assert!(theme.visible);
     }
 }

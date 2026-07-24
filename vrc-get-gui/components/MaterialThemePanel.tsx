@@ -1,6 +1,6 @@
 "use client";
 
-import { Palette, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import type React from "react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -33,24 +33,6 @@ import { cn } from "@/lib/utils";
 
 export function openMaterialThemeDialog() {
 	return openSingleDialog(MaterialThemeDialog, {}, "theme-dialog-content");
-}
-
-export function MaterialThemeButton({ className }: { className?: string }) {
-	return (
-		<Button
-			variant="ghost"
-			className={cn(
-				"justify-start h-12 px-4 rounded-full text-[var(--md-sys-color-on-surface)] hover:bg-[var(--md-sys-color-surface-container-highest)] hover:text-[var(--md-sys-color-on-surface)]",
-				className,
-			)}
-			onClick={() => void openMaterialThemeDialog()}
-		>
-			<div className="mr-4 compact:mr-0">
-				<Palette className="h-5 w-5" />
-			</div>
-			<span className="compact:hidden">{tc("settings:theme")}</span>
-		</Button>
-	);
 }
 
 export function MaterialThemeDialog({

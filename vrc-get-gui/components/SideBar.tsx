@@ -27,7 +27,6 @@ import {
 	GuiAnimationSwitch,
 	GuiCompactSwitch,
 } from "@/components/common-setting-parts";
-import { MaterialThemeButton } from "@/components/MaterialThemePanel";
 import {
 	SIDEBAR_EXTENSION_DEFINITIONS,
 	type SidebarExtensionDefinition,
@@ -59,8 +58,9 @@ import { tc } from "@/lib/i18n";
 const DEFAULT_SIDEBAR_EXTENSIONS: SidebarExtension[] = [
 	{ id: "projects", installed: true, visible: true },
 	{ id: "packages", installed: true, visible: true },
-	{ id: "settings", installed: true, visible: true },
 	{ id: "mcp", installed: true, visible: true },
+	{ id: "theme", installed: true, visible: true },
+	{ id: "settings", installed: true, visible: true },
 	{ id: "log", installed: true, visible: true },
 ];
 
@@ -109,15 +109,24 @@ export function SideBar({ className }: { className?: string }) {
 			className={`${className} flex w-[260px] max-w-[260px] p-3 ml-0 my-3 shrink-0 overflow-auto text-[var(--md-sys-color-on-surface)] compact:w-auto compact:p-1 compact:my-2`}
 		>
 			<div className="flex flex-col gap-1 min-w-40 grow compact:min-w-0">
-				{visibleSidebarExtensions.map((extension) => (
-					<SideBarItem
-						key={extension.id}
-						href={extension.href}
-						text={tc(extension.labelKey)}
-						icon={extension.icon}
-					/>
-				))}
-				<MaterialThemeButton className="w-full compact:size-10" />
+				{visibleSidebarExtensions.map((extension) =>
+					extension.href ? (
+						<SideBarItem
+							key={extension.id}
+							href={extension.href}
+							text={tc(extension.labelKey)}
+							icon={extension.icon}
+						/>
+					) : (
+						<SideBarButton
+							key={extension.id}
+							icon={extension.icon}
+							onClick={extension.onSelect}
+						>
+							{tc(extension.labelKey)}
+						</SideBarButton>
+					),
+				)}
 				{isDev && <DevRestartSetupButton />}
 				{isDev && (
 					<SideBarItem
