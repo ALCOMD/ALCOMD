@@ -353,6 +353,7 @@
     'extensions:button:move down': 'Déplacer vers le bas',
     'extensions:button:drag to reorder': 'Faire glisser pour réorganiser',
     'extensions:button:save': 'Enregistrer l’ordre',
+    'extensions:button:restore default order': 'Rétablir l’ordre par défaut',
     'extensions:dialog:sort sidebar': 'Trier les extensions de la barre latérale',
     'extensions:dialog:sort sidebar description': 'Faites glisser les éléments installés et visibles pour définir leur ordre dans la barre latérale.',
     'extensions:extension': 'Extension',

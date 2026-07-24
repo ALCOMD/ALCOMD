@@ -442,6 +442,7 @@
     "extensions:button:move down": "Nach unten",
     "extensions:button:drag to reorder": "Zum Sortieren ziehen",
     "extensions:button:save": "Reihenfolge speichern",
+    "extensions:button:restore default order": "Standard wiederherstellen",
     "extensions:dialog:sort sidebar": "Seitenleistenerweiterungen sortieren",
     "extensions:dialog:sort sidebar description": "Installierte und sichtbare Einträge ziehen, um ihre Reihenfolge in der Seitenleiste festzulegen.",
     "extensions:extension": "Erweiterung",

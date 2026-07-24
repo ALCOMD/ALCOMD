@@ -432,6 +432,7 @@
     "extensions:button:move down": "下へ移動",
     "extensions:button:drag to reorder": "ドラッグして並べ替え",
     "extensions:button:save": "順序を保存",
+    "extensions:button:restore default order": "デフォルトに戻す",
     "extensions:dialog:sort sidebar": "サイドバー拡張機能を並べ替え",
     "extensions:dialog:sort sidebar description": "インストール済みで表示中の項目をドラッグして、サイドバーでの順序を変更します。",
     "extensions:extension": "拡張機能",

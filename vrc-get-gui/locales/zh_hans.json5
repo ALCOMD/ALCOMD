@@ -438,6 +438,7 @@
     "extensions:button:move down": "下移",
     "extensions:button:drag to reorder": "拖动排序",
     "extensions:button:save": "保存排序",
+    "extensions:button:restore default order": "恢复默认",
     "extensions:dialog:sort sidebar": "排序侧边栏扩展",
     "extensions:dialog:sort sidebar description": "拖动已安装且正在显示的项目，调整它们在侧边栏中的顺序。",
     "extensions:extension": "扩展",

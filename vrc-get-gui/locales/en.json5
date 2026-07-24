@@ -447,6 +447,7 @@
     "extensions:button:move down": "Move Down",
     "extensions:button:drag to reorder": "Drag to Reorder",
     "extensions:button:save": "Save Order",
+    "extensions:button:restore default order": "Restore Default",
     "extensions:dialog:sort sidebar": "Sort Sidebar Extensions",
     "extensions:dialog:sort sidebar description": "Drag installed and visible items to arrange their sidebar order.",
     "extensions:extension": "Extension",

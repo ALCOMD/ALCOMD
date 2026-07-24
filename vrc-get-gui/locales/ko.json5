@@ -436,6 +436,7 @@
     "extensions:button:move down": "아래로 이동",
     "extensions:button:drag to reorder": "드래그하여 순서 변경",
     "extensions:button:save": "순서 저장",
+    "extensions:button:restore default order": "기본값 복원",
     "extensions:dialog:sort sidebar": "사이드바 확장 프로그램 정렬",
     "extensions:dialog:sort sidebar description": "설치되어 있고 표시 중인 항목을 드래그하여 사이드바 순서를 변경합니다.",
     "extensions:extension": "확장 프로그램",

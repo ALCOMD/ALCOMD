@@ -135,6 +135,7 @@ ALCOMD3 默认拥有自己的运行数据。
 
 - Material Theme 入口属于可管理的内置侧边栏扩展，并参与持久化的侧边栏排序。
 - 默认侧边栏顺序为：项目、资源、MCP、主题、设置、日志。
+- 侧边栏排序对话框可在用户保存前将可见扩展恢复为默认顺序。
 - 侧边导航可显示可选 BOOTH、VRChatAvatarLearn 和版本按钮，可通过 `hide_sidebar_links` 隐藏。
 - 版本按钮显示 `version: v{actual_version}` 并复制 `v{actual_version}`。
 - Toast 使用圆角 MD3 样式、MD3 语义进度颜色和应用基础背景色。

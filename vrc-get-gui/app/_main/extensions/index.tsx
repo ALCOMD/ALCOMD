@@ -24,7 +24,7 @@ import {
 	useQueryClient,
 } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { ArrowUpDown, Blocks, GripVertical } from "lucide-react";
+import { ArrowUpDown, Blocks, GripVertical, RotateCcw } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { HNavBar, HNavBarText, VStack } from "@/components/layout";
 import { ScrollPageContainer } from "@/components/ScrollPageContainer";
@@ -43,6 +43,10 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { commands, type SidebarExtension } from "@/lib/bindings";
 import { tc, tt } from "@/lib/i18n";
+import {
+	DEFAULT_SIDEBAR_EXTENSION_ORDER,
+	sortSidebarExtensionsByDefaultOrder,
+} from "@/lib/sidebar-extensions";
 import { toastThrownError } from "@/lib/toast";
 
 export const Route = createFileRoute("/_main/extensions/")({
@@ -69,14 +73,11 @@ function ExtensionsPage() {
 const SIDEBAR_EXTENSIONS_QUERY = queryOptions({
 	queryKey: ["environmentGetSidebarExtensions"],
 	queryFn: commands.environmentGetSidebarExtensions,
-	initialData: [
-		{ id: "projects", installed: true, visible: true },
-		{ id: "packages", installed: true, visible: true },
-		{ id: "mcp", installed: true, visible: true },
-		{ id: "theme", installed: true, visible: true },
-		{ id: "settings", installed: true, visible: true },
-		{ id: "log", installed: true, visible: true },
-	],
+	initialData: DEFAULT_SIDEBAR_EXTENSION_ORDER.map((id) => ({
+		id,
+		installed: true,
+		visible: true,
+	})),
 });
 
 function extensionLabel(id: string) {
@@ -105,10 +106,21 @@ function mergeSidebarExtensionOrder(
 	);
 }
 
+function hasSameSidebarExtensionOrder(
+	left: SidebarExtension[],
+	right: SidebarExtension[],
+) {
+	return (
+		left.length === right.length &&
+		left.every((extension, index) => extension.id === right[index]?.id)
+	);
+}
+
 function ExtensionsSortCard() {
 	const queryClient = useQueryClient();
 	const extensionsQuery = useSidebarExtensions();
 	const [sortDialogOpen, setSortDialogOpen] = useState(false);
+	const [restoreDefaultRequested, setRestoreDefaultRequested] = useState(false);
 	const sensors = useSensors(
 		useSensor(PointerSensor, {
 			activationConstraint: {
@@ -129,17 +141,43 @@ function ExtensionsSortCard() {
 	useEffect(() => {
 		if (!sortDialogOpen) return;
 		setOrderedExtensions(sortableExtensions);
+		setRestoreDefaultRequested(false);
 	}, [sortDialogOpen, sortableExtensions]);
 
-	const hasOrderChange = useMemo(() => {
-		if (sortableExtensions.length !== orderedExtensions.length) return true;
-		for (let i = 0; i < orderedExtensions.length; i++) {
-			if (sortableExtensions[i]?.id !== orderedExtensions[i]?.id) {
-				return true;
-			}
-		}
-		return false;
-	}, [orderedExtensions, sortableExtensions]);
+	const sidebarExtensions = extensionsQuery.data ?? [];
+	const defaultSidebarExtensions = useMemo(
+		() => sortSidebarExtensionsByDefaultOrder(sidebarExtensions),
+		[sidebarExtensions],
+	);
+	const defaultOrderedExtensions = useMemo(
+		() => defaultSidebarExtensions.filter(isSortableSidebarExtension),
+		[defaultSidebarExtensions],
+	);
+	const pendingSidebarExtensions = useMemo(
+		() =>
+			mergeSidebarExtensionOrder(
+				restoreDefaultRequested ? defaultSidebarExtensions : sidebarExtensions,
+				orderedExtensions,
+			),
+		[
+			defaultSidebarExtensions,
+			orderedExtensions,
+			restoreDefaultRequested,
+			sidebarExtensions,
+		],
+	);
+	const hasOrderChange = !hasSameSidebarExtensionOrder(
+		sidebarExtensions,
+		pendingSidebarExtensions,
+	);
+	const isDefaultOrder = useMemo(
+		() =>
+			hasSameSidebarExtensionOrder(
+				pendingSidebarExtensions,
+				defaultSidebarExtensions,
+			),
+		[defaultSidebarExtensions, pendingSidebarExtensions],
+	);
 
 	const reorderSidebarExtensions = useMutation({
 		mutationFn: async (next: SidebarExtension[]) => {
@@ -230,17 +268,24 @@ function ExtensionsSortCard() {
 							</SortableContext>
 						</DndContext>
 						<DialogFooter>
+							<Button
+								variant="secondary"
+								className="sm:mr-auto"
+								onClick={() => {
+									setOrderedExtensions(defaultOrderedExtensions);
+									setRestoreDefaultRequested(true);
+								}}
+								disabled={reorderSidebarExtensions.isPending || isDefaultOrder}
+							>
+								<RotateCcw className="mr-2 size-4" />
+								{tc("extensions:button:restore default order")}
+							</Button>
 							<DialogClose asChild>
 								<Button>{tc("general:button:cancel")}</Button>
 							</DialogClose>
 							<Button
 								onClick={() => {
-									reorderSidebarExtensions.mutate(
-										mergeSidebarExtensionOrder(
-											extensionsQuery.data ?? [],
-											orderedExtensions,
-										),
-									);
+									reorderSidebarExtensions.mutate(pendingSidebarExtensions);
 								}}
 								disabled={reorderSidebarExtensions.isPending || !hasOrderChange}
 							>

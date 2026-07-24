@@ -162,6 +162,8 @@ Preserve these behaviors:
   participates in persisted sidebar ordering.
 - The default sidebar order is Projects, Resources, MCP, Theme, Settings, then
   Logs.
+- The sidebar sorting dialog can restore the visible extensions to the default
+  order before the user saves.
 - The side navigation can show optional BOOTH, VRChatAvatarLearn, and version
   buttons. They can be hidden with `hide_sidebar_links`.
 - The version button displays `version: v{actual_version}` and copies

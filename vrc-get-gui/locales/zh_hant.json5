@@ -442,6 +442,7 @@
     "extensions:button:move down": "下移",
     "extensions:button:drag to reorder": "拖曳排序",
     "extensions:button:save": "儲存排序",
+    "extensions:button:restore default order": "恢復預設",
     "extensions:dialog:sort sidebar": "排序側邊欄擴充功能",
     "extensions:dialog:sort sidebar description": "拖曳已安裝且正在顯示的項目，調整它們在側邊欄中的順序。",
     "extensions:extension": "擴充功能",

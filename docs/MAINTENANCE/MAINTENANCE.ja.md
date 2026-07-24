@@ -149,6 +149,8 @@ user が manual import を明示的に開始した場合のみ external-app impo
   保存される sidebar order に含める。
 - sidebar の default order は Projects、Resources、MCP、Theme、Settings、Logs
   とする。
+- sidebar sorting dialog では、保存前に表示中の extension を default order
+  に戻せるようにする。
 - side navigation は BOOTH、VRChatAvatarLearn、version button を任意表示できる。`hide_sidebar_links` で非表示にできる。
 - version button は `version: v{actual_version}` を表示し、`v{actual_version}` をコピーする。
 - Toast は rounded MD3 style、MD3 semantic progress color、app base background color を使う。

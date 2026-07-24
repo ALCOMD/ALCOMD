@@ -54,15 +54,14 @@ import type { CheckForUpdateResponse, SidebarExtension } from "@/lib/bindings";
 import { commands } from "@/lib/bindings";
 import globalInfo from "@/lib/global-info";
 import { tc } from "@/lib/i18n";
+import { DEFAULT_SIDEBAR_EXTENSION_ORDER } from "@/lib/sidebar-extensions";
 
-const DEFAULT_SIDEBAR_EXTENSIONS: SidebarExtension[] = [
-	{ id: "projects", installed: true, visible: true },
-	{ id: "packages", installed: true, visible: true },
-	{ id: "mcp", installed: true, visible: true },
-	{ id: "theme", installed: true, visible: true },
-	{ id: "settings", installed: true, visible: true },
-	{ id: "log", installed: true, visible: true },
-];
+const DEFAULT_SIDEBAR_EXTENSIONS: SidebarExtension[] =
+	DEFAULT_SIDEBAR_EXTENSION_ORDER.map((id) => ({
+		id,
+		installed: true,
+		visible: true,
+	}));
 
 export function SideBar({ className }: { className?: string }) {
 	"use client";
