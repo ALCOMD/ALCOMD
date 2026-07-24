@@ -18,8 +18,6 @@ GUI/MCP が共有する操作モデルに合わせて確認し、適用する必
 - MCP bridge コードは `alcomd3-mcp/` にある。
 - MCP IPC protocol 型は `alcomd3-mcp-protocol/` にある。
 - リリースとパッケージング補助は `xtask/` にある。
-- Website コードは独立した
-  [ALCOMD3-Website repository](https://github.com/ALCOMD3/ALCOMD3-Website) にある。
 
 一部のディレクトリ名や package 名には互換性と履歴上の理由で `vrc-get` が残っている。
 互換性移行として明示的に範囲指定されていない限り、リネームしない。
@@ -57,14 +55,6 @@ npm install
 npm run tauri dev
 ```
 
-website を起動する:
-
-```bash
-cd website
-npm install
-npm run dev
-```
-
 ### リリース方針
 
 ALCOMD3 は独自のリリース手順を持つ。ALCOMD3 の release automation、
@@ -99,7 +89,7 @@ Maintenance、release、MCP、format、historical documentation を探す場合�
 1. 元の commit、pull request、release note、issue を確認する。
 2. security、data safety、VRChat/VPM compatibility、user-visible bug に関係するか確認する。
 3. 盲目的に merge せず、ALCOMD3 の architecture に合わせて適用する。
-4. 影響を受ける Rust、GUI、MCP、website の code path を検証する。
+4. 影響を受ける Rust、GUI、MCP の code path を検証する。
 5. ユーザーに見える重要な変更は `release-notes/` に記録する。
 
 Package operation、project mutation、repository management、operation cancellation、
@@ -122,6 +112,3 @@ resource locking、MCP visibility に触れる変更は特に注意する。GUI 
 - 検証結果を含める。検証していない場合は理由を明記する。
 - 挙動、互換性、packaging、public configuration が変わる場合は docs と release notes を更新する。
 - 無関係な formatting churn を避ける。
-
-Website 関連作業は独立 Website repository で行い、その repository の contributor /
-agent rules に従う。

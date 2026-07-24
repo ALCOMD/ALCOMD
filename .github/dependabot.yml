@@ -21,9 +21,7 @@ updates:
                   - patch
 
     - package-ecosystem: npm
-      directories:
-          - /vrc-get-gui
-          - /website
+      directory: /vrc-get-gui
       schedule:
           interval: weekly
           day: tuesday

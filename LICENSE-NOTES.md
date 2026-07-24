@@ -20,9 +20,6 @@ Bundled third-party assets keep their own licenses. In particular:
   [vrc-get-gui/icon-LICENSE](./vrc-get-gui/icon-LICENSE).
 - Anton and Noto Sans fonts are licensed under the SIL Open Font License; see
   [vrc-get-gui/THIRD-PARTY.md](./vrc-get-gui/THIRD-PARTY.md).
-- Website platform glyphs are adapted from Pictogrammers Material Design Icons
-  7.4.47 under the Apache License 2.0. Windows, Apple, and Linux names and marks
-  remain the property of their respective owners.
 - Runtime and build dependencies keep the licenses declared by their authors.
 
 The built-in Unity/VRChat project templates under

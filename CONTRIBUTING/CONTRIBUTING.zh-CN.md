@@ -16,8 +16,6 @@ ALCOMD3 作为独立项目维护。当前仓库、文档、发布流程和用户
 - MCP bridge 代码位于 `alcomd3-mcp/`。
 - MCP IPC 协议类型位于 `alcomd3-mcp-protocol/`。
 - 发布和打包辅助任务位于 `xtask/`。
-- 网站代码位于独立的
-  [ALCOMD3-Website 仓库](https://github.com/ALCOMD3/ALCOMD3-Website)。
 
 部分目录和包名仍因兼容性与历史原因使用 `vrc-get`。除非明确作为兼容性迁移，否则不要重命名。
 
@@ -53,14 +51,6 @@ npm install
 npm run tauri dev
 ```
 
-运行网站：
-
-```bash
-cd website
-npm install
-npm run dev
-```
-
 ### 发布策略
 
 ALCOMD3 拥有自己的发布流程。使用 ALCOMD3 的发布自动化、签名 secret、updater metadata 和发布命名。
@@ -90,7 +80,7 @@ Agent 发布流程记录在 `docs/skills/alcomd3-release/SKILL.md`。
 1. 识别来源 commit、pull request、release note 或 issue。
 2. 判断是否影响安全、数据安全、VRChat/VPM 兼容性或用户可见 bug。
 3. 按 ALCOMD3 架构适配变更，不要盲目 merge。
-4. 验证受影响的 Rust、GUI、MCP 和网站代码路径。
+4. 验证受影响的 Rust、GUI 和 MCP 代码路径。
 5. 将重要的用户可见变化记录到 `release-notes/`。
 
 涉及包操作、项目修改、仓库管理、操作取消、资源锁或 MCP 可见性的变更需要额外谨慎。
@@ -111,5 +101,3 @@ GUI 和 MCP bridge 应继续共享同一套后端业务逻辑和安全检查。
 - 包含验证结果；未验证时清楚说明原因。
 - 行为、兼容性、打包或公开配置变化时，更新文档和 release notes。
 - 避免无关格式化 churn。
-
-网站相关工作应在独立网站仓库中进行，并遵循该仓库自身的贡献与 Agent 规则。

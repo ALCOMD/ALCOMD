@@ -10,5 +10,4 @@ Current assets:
 - `ALCOMD3-BOOTH-2.png`: BOOTH page exported image.
 
 Keep channel-specific material here when it is useful for future releases.
-Keep website runtime assets in the configured Website repository, and app runtime
-icons under `vrc-get-gui/icons/`.
+Keep app runtime icons under `vrc-get-gui/icons/`.

@@ -20,8 +20,6 @@ ALCOMD3's current architecture, especially the GUI/MCP shared operation model.
 - MCP bridge code lives in `alcomd3-mcp/`.
 - MCP IPC protocol types live in `alcomd3-mcp-protocol/`.
 - Release and packaging helpers live in `xtask/`.
-- Website code lives in the separate
-  [ALCOMD3-Website repository](https://github.com/ALCOMD3/ALCOMD3-Website).
 
 Some directory and package names still use `vrc-get` for compatibility and
 historical reasons. Do not rename them unless the change is explicitly scoped
@@ -58,14 +56,6 @@ Run the desktop GUI in development mode:
 cd vrc-get-gui
 npm install
 npm run tauri dev
-```
-
-Run the website:
-
-```bash
-cd website
-npm install
-npm run dev
 ```
 
 ### Release policy
@@ -105,7 +95,7 @@ standard:
 2. Check whether it affects security, data safety, VRChat/VPM compatibility, or
    a user-visible bug.
 3. Adapt the change to ALCOMD3's architecture instead of blindly merging.
-4. Verify affected Rust, GUI, MCP, and website code paths.
+4. Verify affected Rust, GUI, and MCP code paths.
 5. Document notable user-facing changes in `release-notes/`.
 
 Changes touching package operations, project mutations, repository management,
@@ -132,6 +122,3 @@ and safety checks.
 - Update docs and release notes when behavior, compatibility, packaging, or
   public configuration changes.
 - Avoid unrelated formatting churn.
-
-For website-specific work, use the separate Website repository and follow its
-local contributor and agent rules.
