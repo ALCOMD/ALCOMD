@@ -278,6 +278,7 @@ fn default_true() -> bool {
 }
 
 const LOCKED_SIDEBAR_ITEM_IDS: &[&str] = &["extensions"];
+const ALWAYS_VISIBLE_SIDEBAR_EXTENSION_IDS: &[&str] = &["projects", "packages", "settings"];
 const BUILT_IN_SIDEBAR_EXTENSION_IDS: &[&str] = &[
     "projects",
     "packages",
@@ -293,6 +294,10 @@ fn is_configurable_sidebar_extension(id: &str) -> bool {
 
 pub(crate) fn is_builtin_sidebar_extension(id: &str) -> bool {
     BUILT_IN_SIDEBAR_EXTENSION_IDS.contains(&id)
+}
+
+pub(crate) fn is_sidebar_extension_always_visible(id: &str) -> bool {
+    ALWAYS_VISIBLE_SIDEBAR_EXTENSION_IDS.contains(&id)
 }
 
 fn default_sidebar_extensions() -> Vec<SidebarExtension> {
@@ -362,6 +367,9 @@ pub(crate) fn normalize_sidebar_extensions(
             if !built_in_extension_can_disable(&extension.id) {
                 extension.enabled = true;
             }
+        }
+        if is_sidebar_extension_always_visible(&extension.id) {
+            extension.visible = true;
         }
         if seen.insert(extension.id.clone()) {
             updated.push(extension);
@@ -583,6 +591,24 @@ mod tests {
         assert!(mcp.installed);
         assert!(mcp.enabled);
         assert!(!mcp.visible);
+    }
+
+    #[test]
+    fn required_sidebar_extensions_remain_visible() {
+        for id in ["projects", "packages", "settings"] {
+            let normalized = normalize_sidebar_extensions(vec![SidebarExtension {
+                id: id.to_string(),
+                installed: true,
+                enabled: true,
+                visible: false,
+            }]);
+            let extension = normalized
+                .iter()
+                .find(|extension| extension.id == id)
+                .unwrap();
+
+            assert!(extension.visible);
+        }
     }
 
     #[test]

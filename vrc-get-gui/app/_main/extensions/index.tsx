@@ -380,7 +380,9 @@ function SortableExtensionItem({
 		id: extension.id,
 		disabled,
 	});
-	const Icon = SIDEBAR_EXTENSION_DEFINITIONS[extension.id]?.icon ?? Blocks;
+	const definition = SIDEBAR_EXTENSION_DEFINITIONS[extension.id];
+	const Icon = definition?.icon ?? Blocks;
+	const canHideFromSidebar = definition?.canHideFromSidebar ?? true;
 	const isShown = extension.enabled && extension.visible;
 	const VisibilityIcon = isShown ? Eye : EyeOff;
 
@@ -403,7 +405,11 @@ function SortableExtensionItem({
 				<Button
 					variant={isShown ? "secondary" : "ghost"}
 					size="icon"
-					disabled={disabled || !extension.enabled}
+					disabled={
+						disabled ||
+						!extension.enabled ||
+						(extension.visible && !canHideFromSidebar)
+					}
 					aria-pressed={isShown}
 					aria-label={tt(
 						isShown

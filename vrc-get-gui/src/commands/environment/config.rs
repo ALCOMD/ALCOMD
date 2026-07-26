@@ -8,7 +8,8 @@ use tauri::{AppHandle, Manager, State};
 use crate::commands::prelude::*;
 use crate::config::{
     SidebarExtension, UnityHubAccessMethod, UpdateReminderConfig, apply_sidebar_extension_layout,
-    is_builtin_sidebar_extension, normalize_sidebar_extensions,
+    is_builtin_sidebar_extension, is_sidebar_extension_always_visible,
+    normalize_sidebar_extensions,
 };
 use crate::extensions::{ExtensionManagementInfo, ExtensionRegistry};
 use crate::logging::LogLevel;
@@ -552,6 +553,11 @@ pub async fn environment_set_sidebar_extension_visible(
     id: String,
     visible: bool,
 ) -> Result<(), RustError> {
+    if !visible && is_sidebar_extension_always_visible(&id) {
+        return Err(RustError::unrecoverable_str(
+            "This sidebar extension must remain visible",
+        ));
+    }
     let installed = registry
         .is_installed(&id)
         .unwrap_or_else(|| is_builtin_sidebar_extension(&id));

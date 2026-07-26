@@ -6,6 +6,7 @@ import { openMaterialThemeDialog } from "@/components/MaterialThemePanel";
 interface SidebarExtensionDefinitionBase {
 	labelKey: string;
 	icon: ComponentType<{ className?: string }>;
+	canHideFromSidebar?: boolean;
 }
 
 type SidebarRouteExtensionDefinition = SidebarExtensionDefinitionBase & {
@@ -34,16 +35,19 @@ export const SIDEBAR_EXTENSION_DEFINITIONS: Record<
 		href: "/projects",
 		labelKey: "projects",
 		icon: Folder,
+		canHideFromSidebar: false,
 	},
 	packages: {
 		href: "/packages/repositories",
 		labelKey: "resources",
 		icon: Package,
+		canHideFromSidebar: false,
 	},
 	settings: {
 		href: "/settings",
 		labelKey: "settings",
 		icon: Settings,
+		canHideFromSidebar: false,
 	},
 	theme: {
 		onSelect: openThemeExtension,
