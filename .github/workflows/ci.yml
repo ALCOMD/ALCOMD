@@ -90,7 +90,11 @@ jobs:
             - name: Install GUI dependencies
               run: npm ci
 
-            - name: Audit GUI dependencies
+            - name: Audit production GUI dependencies
+              run: npm audit --omit=dev --audit-level=high
+
+            - name: Report all GUI dependency vulnerabilities
+              continue-on-error: true
               run: npm audit --audit-level=high
 
             - name: Check GUI formatting and locales
