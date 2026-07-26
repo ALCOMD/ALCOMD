@@ -446,6 +446,7 @@
     "extensions:not installed": "未安装",
     "extensions:enabled": "已启用",
     "extensions:built in": "内置",
+    "extensions:button:open": "打开",
     "extensions:button:show in sidebar": "显示在侧边栏",
     "extensions:button:hide from sidebar": "从侧边栏隐藏",
     "extensions:empty installed": "当前没有已安装的扩展。",

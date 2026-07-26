@@ -450,6 +450,7 @@
     "extensions:not installed": "未安裝",
     "extensions:enabled": "已啟用",
     "extensions:built in": "內建",
+    "extensions:button:open": "開啟",
     "extensions:button:show in sidebar": "顯示在側邊欄",
     "extensions:button:hide from sidebar": "從側邊欄隱藏",
     "extensions:empty installed": "目前沒有已安裝的擴充功能。",

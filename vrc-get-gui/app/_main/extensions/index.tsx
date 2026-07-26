@@ -23,13 +23,14 @@ import {
 	useQuery,
 	useQueryClient,
 } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
 	ArrowUpDown,
 	Blocks,
 	Eye,
 	EyeOff,
 	GripVertical,
+	PanelTopOpen,
 	RotateCcw,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
@@ -599,7 +600,18 @@ function ExtensionManageItem({
 	action?: ReactNode;
 	trailing?: ReactNode;
 }) {
-	const Icon = SIDEBAR_EXTENSION_DEFINITIONS[extension.id]?.icon ?? Blocks;
+	const navigate = useNavigate();
+	const definition = SIDEBAR_EXTENSION_DEFINITIONS[extension.id];
+	const Icon = definition?.icon ?? Blocks;
+
+	const openExtension = () => {
+		if (!definition) return;
+		if (definition.href) {
+			void navigate({ to: definition.href });
+		} else {
+			definition.onSelect();
+		}
+	};
 
 	return (
 		<Card className="flex min-h-40 flex-col gap-5 bg-secondary/25 p-4 shadow-sm">
@@ -615,6 +627,18 @@ function ExtensionManageItem({
 						{extension.id}
 					</p>
 				</div>
+				{extension.installed && (
+					<Button
+						className="ml-auto shrink-0"
+						variant="secondary"
+						size="sm"
+						disabled={!extension.enabled || !definition}
+						onClick={openExtension}
+					>
+						<PanelTopOpen className="mr-2 size-4" />
+						{tc("extensions:button:open")}
+					</Button>
+				)}
 			</div>
 			<div className="mt-auto flex flex-wrap items-center justify-between gap-3">
 				{action}

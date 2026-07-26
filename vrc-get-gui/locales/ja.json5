@@ -440,6 +440,7 @@
     "extensions:not installed": "未インストール",
     "extensions:enabled": "有効",
     "extensions:built in": "組み込み",
+    "extensions:button:open": "開く",
     "extensions:button:show in sidebar": "サイドバーに表示",
     "extensions:button:hide from sidebar": "サイドバーから非表示",
     "extensions:empty installed": "現在インストールされている拡張機能はありません。",

@@ -361,6 +361,7 @@
     'extensions:not installed': 'Non installées',
     'extensions:enabled': 'Activée',
     'extensions:built in': 'Intégrée',
+    'extensions:button:open': 'Ouvrir',
     'extensions:button:show in sidebar': 'Afficher dans la barre latérale',
     'extensions:button:hide from sidebar': 'Masquer de la barre latérale',
     'extensions:empty installed': 'Aucune extension n’est actuellement installée.',

@@ -455,6 +455,7 @@
     "extensions:not installed": "Not Installed",
     "extensions:enabled": "Enabled",
     "extensions:built in": "Built-in",
+    "extensions:button:open": "Open",
     "extensions:button:show in sidebar": "Show in Sidebar",
     "extensions:button:hide from sidebar": "Hide from Sidebar",
     "extensions:empty installed": "No extensions are currently installed.",
