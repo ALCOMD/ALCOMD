@@ -48,16 +48,17 @@ import {
 	DialogTrigger,
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
-import { commands, type SidebarExtension } from "@/lib/bindings";
+import {
+	commands,
+	type ExtensionManagementInfo,
+	type SidebarExtension,
+} from "@/lib/bindings";
 import { tc, tt } from "@/lib/i18n";
 import {
-	applyPersistedMaterialTheme,
-	setMaterialThemeExtensionEnabled,
-} from "@/lib/material-theme";
-import {
 	DEFAULT_SIDEBAR_EXTENSION_ORDER,
+	EXTENSION_MANAGEMENT_QUERY_KEY,
 	restoreDefaultSidebarExtensions,
-	THEME_SIDEBAR_EXTENSION_ID,
+	SIDEBAR_EXTENSIONS_QUERY_KEY,
 } from "@/lib/sidebar-extensions";
 import { toastThrownError } from "@/lib/toast";
 
@@ -83,7 +84,7 @@ function ExtensionsPage() {
 }
 
 const SIDEBAR_EXTENSIONS_QUERY = queryOptions({
-	queryKey: ["environmentGetSidebarExtensions"],
+	queryKey: SIDEBAR_EXTENSIONS_QUERY_KEY,
 	queryFn: commands.environmentGetSidebarExtensions,
 	initialData: DEFAULT_SIDEBAR_EXTENSION_ORDER.map((id) => ({
 		id,
@@ -93,14 +94,30 @@ const SIDEBAR_EXTENSIONS_QUERY = queryOptions({
 	})),
 });
 
+const EXTENSION_MANAGEMENT_QUERY = queryOptions({
+	queryKey: EXTENSION_MANAGEMENT_QUERY_KEY,
+	queryFn: commands.environmentGetExtensionManagement,
+	initialData: [] as ExtensionManagementInfo[],
+});
+
 function extensionLabel(id: string) {
 	const definition = SIDEBAR_EXTENSION_DEFINITIONS[id];
 	if (!definition) return id;
 	return tc(definition.labelKey);
 }
 
+function extensionManagementLabel(extension: ExtensionManagementInfo) {
+	const definition = SIDEBAR_EXTENSION_DEFINITIONS[extension.id];
+	if (!definition) return extension.displayName;
+	return tc(definition.labelKey);
+}
+
 function useSidebarExtensions() {
 	return useQuery(SIDEBAR_EXTENSIONS_QUERY);
+}
+
+function useExtensionManagement() {
+	return useQuery(EXTENSION_MANAGEMENT_QUERY);
 }
 
 function isSortableSidebarExtension(extension: SidebarExtension) {
@@ -415,53 +432,68 @@ function SortableExtensionItem({
 
 function ExtensionsManageCard() {
 	const queryClient = useQueryClient();
-	const extensionsQuery = useSidebarExtensions();
+	const extensionsQuery = useExtensionManagement();
 
 	const setEnabled = useMutation({
 		mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) =>
-			await commands.environmentSetSidebarExtensionEnabled(id, enabled),
+			await commands.environmentSetExtensionEnabled(id, enabled),
 		onMutate: async ({ id, enabled }) => {
-			await queryClient.cancelQueries({
-				queryKey: SIDEBAR_EXTENSIONS_QUERY.queryKey,
-			});
-			const previous = queryClient.getQueryData<SidebarExtension[]>(
+			await Promise.all([
+				queryClient.cancelQueries({
+					queryKey: EXTENSION_MANAGEMENT_QUERY.queryKey,
+				}),
+				queryClient.cancelQueries({
+					queryKey: SIDEBAR_EXTENSIONS_QUERY.queryKey,
+				}),
+			]);
+			const previousManagement = queryClient.getQueryData<
+				ExtensionManagementInfo[]
+			>(EXTENSION_MANAGEMENT_QUERY.queryKey);
+			const previousSidebar = queryClient.getQueryData<SidebarExtension[]>(
 				SIDEBAR_EXTENSIONS_QUERY.queryKey,
 			);
-			queryClient.setQueryData(SIDEBAR_EXTENSIONS_QUERY.queryKey, (current) => {
-				if (!current) return current;
-				return current.map((extension) =>
-					extension.id === id ? { ...extension, enabled } : extension,
-				);
-			});
-			return { previous };
+			queryClient.setQueryData<ExtensionManagementInfo[]>(
+				EXTENSION_MANAGEMENT_QUERY.queryKey,
+				(current) =>
+					current?.map((extension) =>
+						extension.id === id ? { ...extension, enabled } : extension,
+					),
+			);
+			queryClient.setQueryData<SidebarExtension[]>(
+				SIDEBAR_EXTENSIONS_QUERY.queryKey,
+				(current) =>
+					current?.map((extension) =>
+						extension.id === id ? { ...extension, enabled } : extension,
+					),
+			);
+			return { previousManagement, previousSidebar };
 		},
 		onError: (error, _args, context) => {
 			toastThrownError(error);
-			if (context?.previous) {
+			if (context?.previousManagement) {
+				queryClient.setQueryData(
+					EXTENSION_MANAGEMENT_QUERY.queryKey,
+					context.previousManagement,
+				);
+			}
+			if (context?.previousSidebar) {
 				queryClient.setQueryData(
 					SIDEBAR_EXTENSIONS_QUERY.queryKey,
-					context.previous,
+					context.previousSidebar,
 				);
 			}
 		},
-		onSuccess: (_data, { id, enabled }) => {
-			if (id !== THEME_SIDEBAR_EXTENSION_ID) return;
-			setMaterialThemeExtensionEnabled(enabled);
-			if (enabled) {
-				void applyPersistedMaterialTheme();
-			}
-		},
 		onSettled: () => {
+			queryClient.invalidateQueries({
+				queryKey: EXTENSION_MANAGEMENT_QUERY.queryKey,
+			});
 			queryClient.invalidateQueries({
 				queryKey: SIDEBAR_EXTENSIONS_QUERY.queryKey,
 			});
 		},
 	});
 
-	const extensions = (extensionsQuery.data ?? []).filter(
-		(extension) =>
-			SIDEBAR_EXTENSION_DEFINITIONS[extension.id]?.management != null,
-	);
+	const extensions = extensionsQuery.data ?? [];
 	const installedExtensions = extensions.filter(
 		(extension) => extension.installed,
 	);
@@ -481,42 +513,37 @@ function ExtensionsManageCard() {
 					title={tc("extensions:installed")}
 					emptyText={tc("extensions:empty installed")}
 					extensions={installedExtensions}
-					renderExtension={(extension) => {
-						const management =
-							SIDEBAR_EXTENSION_DEFINITIONS[extension.id]?.management;
-						if (!management) return null;
-						return (
-							<ExtensionManageItem
-								key={extension.id}
-								extension={extension}
-								action={
-									management.builtIn ? (
-										<span className="rounded-full bg-secondary px-3 py-1 text-sm text-secondary-foreground">
-											{tc("extensions:built in")}
-										</span>
-									) : null
-								}
-								trailing={
-									<div className="flex items-center gap-2">
-										<span className="text-sm text-muted-foreground">
-											{tc("extensions:enabled")}
-										</span>
-										<Switch
-											checked={extension.enabled}
-											disabled={isBusy || !management.enableable}
-											aria-label={tt("extensions:enabled")}
-											onCheckedChange={(enabled) =>
-												setEnabled.mutate({
-													id: extension.id,
-													enabled,
-												})
-											}
-										/>
-									</div>
-								}
-							/>
-						);
-					}}
+					renderExtension={(extension) => (
+						<ExtensionManageItem
+							key={extension.id}
+							extension={extension}
+							action={
+								extension.builtIn ? (
+									<span className="rounded-full bg-secondary px-3 py-1 text-sm text-secondary-foreground">
+										{tc("extensions:built in")}
+									</span>
+								) : null
+							}
+							trailing={
+								<div className="flex items-center gap-2">
+									<span className="text-sm text-muted-foreground">
+										{tc("extensions:enabled")}
+									</span>
+									<Switch
+										checked={extension.enabled}
+										disabled={isBusy || !extension.canDisable}
+										aria-label={tt("extensions:enabled")}
+										onCheckedChange={(enabled) =>
+											setEnabled.mutate({
+												id: extension.id,
+												enabled,
+											})
+										}
+									/>
+								</div>
+							}
+						/>
+					)}
 				/>
 				<ExtensionSection
 					title={tc("extensions:not installed")}
@@ -539,8 +566,8 @@ function ExtensionSection({
 }: {
 	title: ReactNode;
 	emptyText: ReactNode;
-	extensions: SidebarExtension[];
-	renderExtension: (extension: SidebarExtension) => ReactNode;
+	extensions: ExtensionManagementInfo[];
+	renderExtension: (extension: ExtensionManagementInfo) => ReactNode;
 }) {
 	return (
 		<section>
@@ -568,7 +595,7 @@ function ExtensionManageItem({
 	action,
 	trailing,
 }: {
-	extension: SidebarExtension;
+	extension: ExtensionManagementInfo;
 	action?: ReactNode;
 	trailing?: ReactNode;
 }) {
@@ -582,7 +609,7 @@ function ExtensionManageItem({
 				</div>
 				<div className="min-w-0">
 					<h4 className="truncate font-medium">
-						{extensionLabel(extension.id)}
+						{extensionManagementLabel(extension)}
 					</h4>
 					<p className="mt-1 truncate text-sm text-muted-foreground">
 						{extension.id}

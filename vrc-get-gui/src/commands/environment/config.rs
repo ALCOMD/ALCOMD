@@ -7,9 +7,10 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::commands::prelude::*;
 use crate::config::{
-    SidebarExtension, UnityHubAccessMethod, UpdateReminderConfig, is_enableable_sidebar_extension,
-    normalize_sidebar_extensions,
+    SidebarExtension, UnityHubAccessMethod, UpdateReminderConfig, apply_sidebar_extension_layout,
+    is_builtin_sidebar_extension, normalize_sidebar_extensions,
 };
+use crate::extensions::{ExtensionManagementInfo, ExtensionRegistry};
 use crate::logging::LogLevel;
 
 #[tauri::command]
@@ -428,8 +429,20 @@ pub async fn environment_set_template_favorite(
 #[specta::specta]
 pub async fn environment_get_sidebar_extensions(
     config: State<'_, GuiConfigState>,
+    registry: State<'_, ExtensionRegistry>,
 ) -> Result<Vec<SidebarExtension>, RustError> {
-    Ok(config.get().sidebar_extensions.clone())
+    let config = config.get();
+    Ok(registry.sidebar_info(&config.sidebar_extensions, &config.extensions))
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn environment_get_extension_management(
+    config: State<'_, GuiConfigState>,
+    registry: State<'_, ExtensionRegistry>,
+) -> Result<Vec<ExtensionManagementInfo>, RustError> {
+    let config = config.get();
+    Ok(registry.management_info(&config.extensions))
 }
 
 #[tauri::command]
@@ -462,7 +475,11 @@ pub async fn environment_set_sidebar_extension_order(
             Vec::new(),
             async move {
                 let mut config = config.load_mut().await?;
-                config.sidebar_extensions = normalize_sidebar_extensions(sidebar_extensions);
+                config.sidebar_extensions = apply_sidebar_extension_layout(
+                    std::mem::take(&mut config.sidebar_extensions),
+                    sidebar_extensions,
+                );
+                config.synchronize_sidebar_extension_states();
                 config.save().await?;
                 Ok(())
             },
@@ -472,15 +489,24 @@ pub async fn environment_set_sidebar_extension_order(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn environment_set_sidebar_extension_enabled(
+pub async fn environment_set_extension_enabled(
     app: AppHandle,
     config: State<'_, GuiConfigState>,
+    registry: State<'_, ExtensionRegistry>,
     id: String,
     enabled: bool,
 ) -> Result<(), RustError> {
-    if !is_enableable_sidebar_extension(&id) {
+    let Some((installed, can_disable)) = registry.enablement_capability(&id) else {
+        return Err(RustError::unrecoverable_str("Extension not found"));
+    };
+    if !installed {
         return Err(RustError::unrecoverable_str(
-            "This built-in extension cannot be enabled or disabled",
+            "Cannot enable or disable an extension that is not installed",
+        ));
+    }
+    if !can_disable {
+        return Err(RustError::unrecoverable_str(
+            "This extension cannot be enabled or disabled",
         ));
     }
     let activity = app.state::<ActivityLogState>();
@@ -488,38 +514,33 @@ pub async fn environment_set_sidebar_extension_enabled(
         ActivitySource::Gui,
         ActivityKind::Write,
         ActivityImportance::Primary,
-        operations::SIDEBAR_EXTENSION_ENABLED,
-        "Changing sidebar extension enabled status",
+        operations::EXTENSION_ENABLED,
+        "Changing extension enabled status",
     )
     .target(id.clone())
     .details(vec![ActivityDetail::new("enabled", enabled.to_string())]);
 
-    activity
+    let extension_id = id.clone();
+    let result = activity
         .track_result(
             Some(&app),
             input,
-            "Sidebar extension enabled status updated",
+            "Extension enabled status updated",
             Vec::new(),
             async move {
                 let mut config = config.load_mut().await?;
-                let sidebar_extensions = &mut config.sidebar_extensions;
-                if let Some(extension) = sidebar_extensions.iter_mut().find(|x| x.id == id) {
-                    if !extension.installed && enabled {
-                        return Err(RustError::unrecoverable_str(
-                            "Cannot enable an extension that is not installed",
-                        ));
-                    }
-                    extension.enabled = enabled;
-                } else {
-                    return Err(RustError::unrecoverable_str("Extension not found"));
-                }
-                config.sidebar_extensions =
-                    normalize_sidebar_extensions(std::mem::take(sidebar_extensions));
+                config.set_extension_enabled(&id, enabled);
                 config.save().await?;
                 Ok(())
             },
         )
-        .await
+        .await;
+
+    if result.is_ok() {
+        registry.apply_enabled_state(&app, &extension_id, enabled);
+    }
+
+    result
 }
 
 #[tauri::command]
@@ -527,9 +548,18 @@ pub async fn environment_set_sidebar_extension_enabled(
 pub async fn environment_set_sidebar_extension_visible(
     app: AppHandle,
     config: State<'_, GuiConfigState>,
+    registry: State<'_, ExtensionRegistry>,
     id: String,
     visible: bool,
 ) -> Result<(), RustError> {
+    let installed = registry
+        .is_installed(&id)
+        .unwrap_or_else(|| is_builtin_sidebar_extension(&id));
+    if !installed {
+        return Err(RustError::unrecoverable_str(
+            "Cannot show or hide an extension that is not installed",
+        ));
+    }
     let activity = app.state::<ActivityLogState>();
     let input = ActivityInput::new(
         ActivitySource::Gui,
@@ -562,6 +592,7 @@ pub async fn environment_set_sidebar_extension_visible(
                 }
                 config.sidebar_extensions =
                     normalize_sidebar_extensions(std::mem::take(sidebar_extensions));
+                config.synchronize_sidebar_extension_states();
                 config.save().await?;
                 Ok(())
             },

@@ -32,7 +32,11 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import type { LogEntry, TauriImportTemplateResult } from "@/lib/bindings";
+import type {
+	ExtensionStateChanged,
+	LogEntry,
+	TauriImportTemplateResult,
+} from "@/lib/bindings";
 import { commands } from "@/lib/bindings";
 import { type DialogContext, DialogRoot, openSingleDialog } from "@/lib/dialog";
 import { isFindKey, useDocumentEvent } from "@/lib/events";
@@ -40,11 +44,17 @@ import { tc } from "@/lib/i18n";
 import { processResult } from "@/lib/import-templates";
 import {
 	applyPersistedMaterialTheme,
-	applyStoredMaterialTheme,
 	getPersistedMaterialTheme,
+	setMaterialThemeExtensionEnabled,
 	synchronizeMaterialThemeExtensionState,
 } from "@/lib/material-theme";
 import { queryClient } from "@/lib/query-client";
+import {
+	EXTENSION_MANAGEMENT_QUERY_KEY,
+	EXTENSION_STATE_CHANGED_EVENT,
+	SIDEBAR_EXTENSIONS_QUERY_KEY,
+	THEME_SIDEBAR_EXTENSION_ID,
+} from "@/lib/sidebar-extensions";
 import {
 	toastError,
 	toastSuccess,
@@ -55,15 +65,35 @@ import { useTauriListen } from "@/lib/use-tauri-listen";
 
 function MaterialThemeInitializer() {
 	useLayoutEffect(() => {
-		applyStoredMaterialTheme();
-		commands.utilFrontendReady().catch((error) => {
-			console.error("failed to show main window", error);
+		let active = true;
+		void synchronizeMaterialThemeExtensionState().finally(() => {
+			if (!active) return;
+			commands.utilFrontendReady().catch((error) => {
+				console.error("failed to show main window", error);
+			});
 		});
+		return () => {
+			active = false;
+		};
 	}, []);
 
-	useEffect(() => {
-		void synchronizeMaterialThemeExtensionState();
-	}, []);
+	useTauriListen<ExtensionStateChanged>(
+		EXTENSION_STATE_CHANGED_EVENT,
+		({ payload }) => {
+			void queryClient.invalidateQueries({
+				queryKey: EXTENSION_MANAGEMENT_QUERY_KEY,
+			});
+			void queryClient.invalidateQueries({
+				queryKey: SIDEBAR_EXTENSIONS_QUERY_KEY,
+			});
+			if (payload.id !== THEME_SIDEBAR_EXTENSION_ID) return;
+
+			setMaterialThemeExtensionEnabled(payload.enabled);
+			if (payload.enabled) {
+				void applyPersistedMaterialTheme();
+			}
+		},
+	);
 
 	useEffect(() => {
 		const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");

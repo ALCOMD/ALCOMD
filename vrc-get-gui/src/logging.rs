@@ -1,3 +1,5 @@
+use crate::config::{ExtensionUserConfig, SidebarExtension};
+use crate::extensions::LOG_EXTENSION_ID;
 use crate::log_sanitization::sanitize_log_text;
 use arc_swap::ArcSwapOption;
 use chrono::{DateTime, Datelike, Timelike};
@@ -6,12 +8,13 @@ use log::{Log, Metadata, Record};
 use ringbuffer::{ConstGenericRingBuffer, RingBuffer};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
+use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
 use std::io::{BufRead, BufReader, Read as _, Seek, SeekFrom, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     mpsc,
 };
 use tauri::{AppHandle, Emitter};
@@ -26,19 +29,59 @@ const MCP_TECHNICAL_LOG_DEFAULT_MESSAGE_CHARS: usize = 300;
 const MCP_TECHNICAL_LOG_DETAIL_MESSAGE_CHARS: usize = 4000;
 const MCP_TECHNICAL_LOG_RECENT_FILE_MAX_BYTES: u64 = 1024 * 1024;
 static NEXT_LOG_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+static TECHNICAL_LOGGING_ENABLED: AtomicBool = AtomicBool::new(true);
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct LoggingBootstrapConfig {
+    #[serde(default)]
+    sidebar_extensions: Vec<SidebarExtension>,
+    #[serde(default)]
+    extensions: BTreeMap<String, ExtensionUserConfig>,
+}
 
 pub fn set_app_handle(handle: AppHandle) {
     APP_HANDLE.store(Some(Arc::new(handle)));
 }
 
+pub fn set_technical_logging_enabled(enabled: bool) {
+    TECHNICAL_LOGGING_ENABLED.store(enabled, Ordering::SeqCst);
+}
+
+pub fn is_technical_logging_enabled() -> bool {
+    TECHNICAL_LOGGING_ENABLED.load(Ordering::SeqCst)
+}
+
+fn configured_logging_enabled(io: &DefaultEnvironmentIo) -> bool {
+    let path = io.resolve(crate::storage::GUI_CONFIG_PATH.as_ref());
+    let Some(config) = std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<LoggingBootstrapConfig>(&bytes).ok())
+    else {
+        return true;
+    };
+
+    config.extensions.get(LOG_EXTENSION_ID).map_or_else(
+        || {
+            config
+                .sidebar_extensions
+                .iter()
+                .find(|extension| extension.id == LOG_EXTENSION_ID)
+                .is_none_or(|extension| extension.enabled)
+        },
+        |extension| extension.enabled,
+    )
+}
+
 pub fn initialize_logger() -> DefaultEnvironmentIo {
+    let io = DefaultEnvironmentIo::new_default();
+    set_technical_logging_enabled(configured_logging_enabled(&io));
+
     let (sender, receiver) = mpsc::channel::<LogChannelMessage>();
     let logger = Logger { sender };
 
     log::set_max_level(log::LevelFilter::Debug);
     log::set_boxed_logger(Box::new(logger)).expect("error while setting logger");
-
-    let io = DefaultEnvironmentIo::new_default();
 
     start_logging_thread(receiver, &io);
 
@@ -1131,9 +1174,10 @@ struct Logger {
 
 impl Log for Logger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        // TODO: configurable
-        metadata.level() <= log::Level::Info
-            || metadata.target().starts_with("vrc_get") && metadata.level() <= log::Level::Debug
+        TECHNICAL_LOGGING_ENABLED.load(Ordering::SeqCst)
+            && (metadata.level() <= log::Level::Info
+                || metadata.target().starts_with("vrc_get")
+                    && metadata.level() <= log::Level::Debug)
     }
 
     fn log(&self, record: &Record) {
@@ -1185,6 +1229,38 @@ mod tests {
                     gui_toast: None,
                 },
             });
+    }
+
+    #[test]
+    fn bootstrap_logging_state_reads_disabled_log_extension() {
+        let temp = tempfile::tempdir().unwrap();
+        let io = DefaultEnvironmentIo::new(temp.path().into());
+        let path = io.resolve(crate::storage::GUI_CONFIG_PATH.as_ref());
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            path,
+            r#"{"sidebarExtensions":[{"id":"log","enabled":false}]}"#,
+        )
+        .unwrap();
+
+        assert!(!configured_logging_enabled(&io));
+    }
+
+    #[test]
+    fn disabled_technical_logging_rejects_new_records() {
+        let _guard = TEST_LOG_LOCK.lock().unwrap();
+        let previous = TECHNICAL_LOGGING_ENABLED.load(Ordering::SeqCst);
+        let (sender, _receiver) = mpsc::channel();
+        let logger = Logger { sender };
+        let metadata = Metadata::builder()
+            .level(log::Level::Info)
+            .target("test")
+            .build();
+
+        set_technical_logging_enabled(false);
+        assert!(!logger.enabled(&metadata));
+
+        set_technical_logging_enabled(previous);
     }
 
     #[test]

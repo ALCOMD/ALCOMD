@@ -16,6 +16,7 @@ mod commands;
 mod compressor;
 mod config;
 mod deep_link_support;
+mod extensions;
 mod log_sanitization;
 mod logging;
 mod mcp;
@@ -205,6 +206,7 @@ fn main() {
     commands::export_ts();
 
     let activity_log_state = activity_log::ActivityLogState::new(&io);
+    activity_log_state.set_enabled(logging::is_technical_logging_enabled());
 
     let builder = tauri::Builder::default();
     #[cfg(feature = "desktop-e2e-webdriver")]
@@ -229,6 +231,7 @@ fn main() {
         .manage(state::ProjectCopyState::new())
         .manage(state::ProjectRestoreState::new())
         .manage(state::TemplatesState::new())
+        .manage(extensions::ExtensionRegistry::default())
         .manage(activity_log_state)
         .manage(mcp::McpState::new())
         .register_uri_scheme_protocol("vrc-get", commands::handle_vrc_get_scheme)

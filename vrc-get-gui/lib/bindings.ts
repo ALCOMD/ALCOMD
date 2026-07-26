@@ -25,8 +25,9 @@ export const commands = {
 	environmentSetProjectViewMode: (projectViewMode: string) => __TAURI_INVOKE<null>("environment_set_project_view_mode", { projectViewMode }),
 	environmentSetUnityHubAccessMethod: (unityHubAccessMethod: UnityHubAccessMethod) => __TAURI_INVOKE<null>("environment_set_unity_hub_access_method", { unityHubAccessMethod }),
 	environmentGetSidebarExtensions: () => __TAURI_INVOKE<SidebarExtension[]>("environment_get_sidebar_extensions"),
+	environmentGetExtensionManagement: () => __TAURI_INVOKE<ExtensionManagementInfo[]>("environment_get_extension_management"),
 	environmentSetSidebarExtensionOrder: (sidebarExtensions: SidebarExtension[]) => __TAURI_INVOKE<null>("environment_set_sidebar_extension_order", { sidebarExtensions }),
-	environmentSetSidebarExtensionEnabled: (id: string, enabled: boolean) => __TAURI_INVOKE<null>("environment_set_sidebar_extension_enabled", { id, enabled }),
+	environmentSetExtensionEnabled: (id: string, enabled: boolean) => __TAURI_INVOKE<null>("environment_set_extension_enabled", { id, enabled }),
 	environmentSetSidebarExtensionVisible: (id: string, visible: boolean) => __TAURI_INVOKE<null>("environment_set_sidebar_extension_visible", { id, visible }),
 	environmentSetTemplateFavorite: (templateId: string, favorite: boolean) => __TAURI_INVOKE<null>("environment_set_template_favorite", { templateId, favorite }),
 	environmentUpdateReminder: () => __TAURI_INVOKE<UpdateReminderConfig | null>("environment_update_reminder"),
@@ -281,6 +282,23 @@ export type McpToolCallEvent = {
 };
 
 export type McpToolCallPhase = "started" | "finished" | "failed";
+
+export type ExtensionManagementInfo = {
+	id: string,
+	displayName: string,
+	version: string,
+	installed: boolean,
+	enabled: boolean,
+	builtIn: boolean,
+	canDisable: boolean,
+	canInstall: boolean,
+	canUninstall: boolean,
+};
+
+export type ExtensionStateChanged = {
+	id: string,
+	enabled: boolean,
+};
 
 export type OpenOptions = "ErrorIfNotExists" | "CreateFolderIfNotExists" | "OpenParentIfNotExists";
 

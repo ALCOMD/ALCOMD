@@ -59,7 +59,7 @@ pub mod operations {
     pub const REPOSITORY_REMOVE: &str = "repository.remove";
     pub const REPOSITORY_REORDER: &str = "repository.reorder";
     pub const REPOSITORY_SHOW: &str = "repository.show";
-    pub const SIDEBAR_EXTENSION_ENABLED: &str = "sidebar_extension.enabled";
+    pub const EXTENSION_ENABLED: &str = "extension.enabled";
     pub const SIDEBAR_EXTENSION_REORDER: &str = "sidebar_extension.reorder";
     pub const SIDEBAR_EXTENSION_VISIBLE: &str = "sidebar_extension.visible";
     pub const SETTINGS_SET: &str = "settings.set";
@@ -519,6 +519,7 @@ pub struct ActivityTracker {
 pub struct ActivityLogState {
     folder: PathBuf,
     entries: Mutex<VecDeque<ActivityEntry>>,
+    enabled: AtomicBool,
 }
 
 impl ActivityLogState {
@@ -540,7 +541,16 @@ impl ActivityLogState {
         Self {
             folder,
             entries: Mutex::new(buffer),
+            enabled: AtomicBool::new(true),
         }
+    }
+
+    pub fn set_enabled(&self, enabled: bool) {
+        self.enabled.store(enabled, Ordering::SeqCst);
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.load(Ordering::SeqCst)
     }
 
     pub fn log_folder(&self) -> &Path {
@@ -908,6 +918,10 @@ impl ActivityLogState {
     }
 
     fn record_entry(&self, app: Option<&AppHandle>, entry: ActivityEntry) {
+        if !self.is_enabled() {
+            return;
+        }
+
         {
             let mut entries = self.entries.lock().unwrap();
             if let Err(e) = append_entry(&self.folder, &entry) {
@@ -1518,6 +1532,27 @@ mod tests {
     #[test]
     fn activity_log_state_keeps_cache_off_the_stack() {
         assert!(std::mem::size_of::<ActivityLogState>() < 1024);
+    }
+
+    #[test]
+    fn disabled_activity_log_does_not_record_new_entries() {
+        let temp = tempfile::tempdir().unwrap();
+        let state = ActivityLogState::new_with_folder(temp.path().to_path_buf());
+        state.set_enabled(false);
+
+        state.record_info(
+            None,
+            ActivityInput::new(
+                ActivitySource::Gui,
+                ActivityKind::Write,
+                ActivityImportance::Primary,
+                "test.disabled",
+                "This entry should not be recorded",
+            ),
+        );
+
+        assert!(state.get_entries(ActivityEntryFilter::default()).is_empty());
+        assert!(std::fs::read_dir(temp.path()).unwrap().next().is_none());
     }
 
     #[test]

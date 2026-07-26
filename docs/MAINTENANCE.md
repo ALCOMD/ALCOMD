@@ -168,6 +168,29 @@ Preserve these behaviors:
 - The sidebar sorting dialog lists installed extensions, uses an eye button to
   control sidebar visibility, and can restore the default order and reveal all
   installed extensions before the user saves.
+- `vrc-get-gui/src/extensions.rs` is the authoritative registry for extension
+  management capabilities and runtime lifecycle behavior. Frontend sidebar
+  definitions contain presentation details only and must not decide whether an
+  extension can be disabled, installed, or uninstalled.
+- The registry composes built-in definitions, validated third-party catalog
+  manifests, and installed third-party manifests. Third-party ids, canonical
+  display names, semantic versions, origins, installation capabilities, and
+  lifecycle adapters are validated by the backend before registration.
+- The registry preserves insertion order. Built-ins register as MCP, Theme,
+  then Logs; third-party entries append in registration order, and installing
+  an existing catalog entry moves it to the end at that installation point.
+  Extension management uses this registry order without sorting it again.
+- Enable/disable requests are validated, persisted, and applied by the backend.
+  The backend emits state events after successful changes; the frontend may
+  consume them only for presentation effects that require the DOM, such as
+  applying or removing theme CSS.
+- `gui-config.json` stores backend-owned enablement choices under `extensions`
+  and stores only order and visibility under `sidebarExtensions`. Legacy
+  sidebar enablement fields are migrated on load; installed state is never
+  accepted from frontend configuration.
+- Sidebar order and visibility updates must preserve backend-owned installed and
+  enabled states. Future third-party installation state must come from a real
+  extension registry and verified files, not arbitrary frontend configuration.
 - The side navigation can show optional BOOTH, VRChatAvatarLearn, and version
   buttons. They can be hidden with `hide_sidebar_links`.
 - The version button displays `version: v{actual_version}` and copies
@@ -320,9 +343,14 @@ technical logs.
 
 Preserve these rules:
 
+- The Logs entry is a managed built-in extension. It cannot be installed or
+  uninstalled, but it can be disabled. Disabling it stops new activity records
+  and technical logs without deleting existing records; re-enabling resumes
+  both log pipelines.
 - The `/log` route defaults to Activity Records. Technical logs remain available
   as a secondary tab for troubleshooting.
-- Activity records must include meaningful GUI, MCP, DeepLink, and System
+- While the Logs extension is enabled, activity records must include meaningful
+  GUI, MCP, DeepLink, and System
   operations, including failures, cancellations, write operations, MCP tool
   calls, and important passive refreshes.
 - Secondary activity records may be hidden by default, but they must stay
@@ -393,8 +421,9 @@ Preserve these rules:
 - Restore from backup writes only into the GUI configured default project
   directory.
 - MCP package search must not force repository refreshes.
-- Every MCP tool call must be recorded in the local activity log with request id,
-  tool name, client summary when available, and sanitized details.
+- While the Logs extension is enabled, every MCP tool call must be recorded in
+  the local activity log with request id, tool name, client summary when
+  available, and sanitized details.
 - Successful MCP read tools, including log query tools, should be Secondary
   activity records; failures and cancellations remain visible by default.
 - `initialize` and `tools/list` must not start the GUI.

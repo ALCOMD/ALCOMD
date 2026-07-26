@@ -31,7 +31,10 @@ bridge path を推測せず、GUI に表示される command を使用してく�
 - GUI MCP page は、既知の tool call 実行中に該当 tool を highlight し、完了または失敗後も短時間 highlight を残します。
 - GUI MCP page は tools を read-only、write、log 用途で group 表示し、正確な MCP name を保持します。tool name に hover すると localized readable name を表示します。
 - GUI MCP page に表示される client は最近 activity があった client であり、live connection list ではありません。一定時間 activity がない record は自動で隠れます。
-- MCP tool call は GUI の local activity log に記録されます。record には source、tool name、request id、client summary、started/completed/failed/cancelled state、安全処理済み target/details が含まれ、ユーザーは GUI の Activity page で Agent が何をしたか確認できます。
+- Logs extension が enabled の間、MCP tool call は GUI の local activity log に記録
+  されます。record には source、tool name、request id、client summary、
+  started/completed/failed/cancelled state、安全処理済み target/details が含まれ、
+  ユーザーは GUI の Activity page で Agent が何をしたか確認できます。
 - GUI project management page と MCP package tools は backend の GUI-visible package catalog を共有します。pre-release、yanked、hidden repository、hidden local user package、同名 package の source 間 merge、default/user repository priority、Unity compatibility は backend が統一して処理します。
 - すべての public MCP tool は GUI の既存 capability に mapping され、`vrc-get-gui/src/backend/` の shared backend service を通して business logic に入ります。MCP dispatch は enabled-state gate、argument parsing、task wrapping、error mapping、activity logging だけを担当し、GUI にない business capability を追加しません。
 - stdio stdout は MCP JSON-RPC message だけを出力します。log は stderr にのみ書きます。

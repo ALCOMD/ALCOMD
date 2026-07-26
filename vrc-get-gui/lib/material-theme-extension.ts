@@ -1,10 +1,8 @@
 export const USER_THEME_STYLE_ID = "user-theme-style";
-export const MATERIAL_THEME_EXTENSION_ENABLED_KEY =
-	"material_theme_extension_enabled";
+let materialThemeExtensionEnabled = false;
 
 export function isMaterialThemeExtensionEnabled() {
-	if (typeof window === "undefined") return true;
-	return localStorage.getItem(MATERIAL_THEME_EXTENSION_ENABLED_KEY) !== "false";
+	return materialThemeExtensionEnabled;
 }
 
 export function disableMaterialTheme() {
@@ -16,13 +14,8 @@ export function disableMaterialTheme() {
 	document.documentElement.style.removeProperty("--theme-hue");
 }
 
-export function storeMaterialThemeExtensionEnabled(enabled: boolean) {
-	if (typeof window === "undefined") return;
-
-	localStorage.setItem(
-		MATERIAL_THEME_EXTENSION_ENABLED_KEY,
-		enabled.toString(),
-	);
+export function setMaterialThemeExtensionRuntimeEnabled(enabled: boolean) {
+	materialThemeExtensionEnabled = enabled;
 	if (!enabled) {
 		disableMaterialTheme();
 	}

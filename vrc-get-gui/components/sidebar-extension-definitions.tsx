@@ -6,10 +6,6 @@ import { openMaterialThemeDialog } from "@/components/MaterialThemePanel";
 interface SidebarExtensionDefinitionBase {
 	labelKey: string;
 	icon: ComponentType<{ className?: string }>;
-	management?: {
-		builtIn: boolean;
-		enableable: boolean;
-	};
 }
 
 type SidebarRouteExtensionDefinition = SidebarExtensionDefinitionBase & {
@@ -53,28 +49,16 @@ export const SIDEBAR_EXTENSION_DEFINITIONS: Record<
 		onSelect: openThemeExtension,
 		labelKey: "settings:theme",
 		icon: Palette,
-		management: {
-			builtIn: true,
-			enableable: true,
-		},
 	},
 	mcp: {
 		href: "/mcp",
 		labelKey: "mcp:title",
 		icon: McpIcon,
-		management: {
-			builtIn: true,
-			enableable: false,
-		},
 	},
 	log: {
 		href: "/log",
 		labelKey: "logs",
 		icon: AlignLeft,
-		management: {
-			builtIn: true,
-			enableable: false,
-		},
 	},
 };
 

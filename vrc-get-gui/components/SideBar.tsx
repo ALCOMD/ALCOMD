@@ -54,7 +54,10 @@ import type { CheckForUpdateResponse, SidebarExtension } from "@/lib/bindings";
 import { commands } from "@/lib/bindings";
 import globalInfo from "@/lib/global-info";
 import { tc } from "@/lib/i18n";
-import { DEFAULT_SIDEBAR_EXTENSION_ORDER } from "@/lib/sidebar-extensions";
+import {
+	DEFAULT_SIDEBAR_EXTENSION_ORDER,
+	SIDEBAR_EXTENSIONS_QUERY_KEY,
+} from "@/lib/sidebar-extensions";
 
 const DEFAULT_SIDEBAR_EXTENSIONS: SidebarExtension[] =
 	DEFAULT_SIDEBAR_EXTENSION_ORDER.map((id) => ({
@@ -77,7 +80,7 @@ export function SideBar({ className }: { className?: string }) {
 		initialData: false,
 	});
 	const sidebarExtensions = useQuery({
-		queryKey: ["environmentGetSidebarExtensions"],
+		queryKey: SIDEBAR_EXTENSIONS_QUERY_KEY,
 		queryFn: commands.environmentGetSidebarExtensions,
 		initialData: DEFAULT_SIDEBAR_EXTENSIONS,
 	});

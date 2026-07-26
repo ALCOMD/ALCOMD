@@ -5,6 +5,7 @@ use crate::activity_log::{
     ActivitySource, operations,
 };
 use crate::commands::environment::unity_hub::update_unity_paths_from_unity_hub;
+use crate::extensions::ExtensionRegistry;
 use log::{error, info};
 use std::io;
 use tauri::async_runtime::spawn;
@@ -120,6 +121,8 @@ pub fn startup(app: &mut App, initial_args: Vec<String>) {
     async fn open_main(app: AppHandle) -> tauri::Result<()> {
         let io = app.state::<DefaultEnvironmentIo>();
         let config = GuiConfigState::new_load(io.inner()).await?;
+        app.state::<ExtensionRegistry>()
+            .restore_runtime_states(&app, &config.get().extensions);
         app.manage(config);
         let theme_config = ThemeConfigState::new_load(io.inner()).await?;
         app.manage(theme_config);

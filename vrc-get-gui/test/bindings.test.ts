@@ -37,6 +37,18 @@ describe("Tauri command bindings", () => {
 		});
 	});
 
+	test("loads extension management capabilities from the backend", async () => {
+		const ipc = vi.fn(() => []);
+		mockIPC(ipc);
+
+		await commands.environmentGetExtensionManagement();
+
+		expect(ipc).toHaveBeenCalledWith(
+			"environment_get_extension_management",
+			{},
+		);
+	});
+
 	test("passes async channel and update download options without renaming", async () => {
 		const ipc = vi.fn(() => ({ type: "Started" as const }));
 		mockIPC(ipc);

@@ -2,8 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
 	disableMaterialTheme,
 	isMaterialThemeExtensionEnabled,
-	MATERIAL_THEME_EXTENSION_ENABLED_KEY,
-	storeMaterialThemeExtensionEnabled,
+	setMaterialThemeExtensionRuntimeEnabled,
 	USER_THEME_STYLE_ID,
 } from "@/lib/material-theme-extension";
 
@@ -15,12 +14,9 @@ describe("material theme extension state", () => {
 		document.documentElement.className = "dark";
 		document.documentElement.style.setProperty("--theme-hue", "120");
 
-		storeMaterialThemeExtensionEnabled(false);
+		setMaterialThemeExtensionRuntimeEnabled(false);
 
 		expect(isMaterialThemeExtensionEnabled()).toBe(false);
-		expect(localStorage.getItem(MATERIAL_THEME_EXTENSION_ENABLED_KEY)).toBe(
-			"false",
-		);
 		expect(document.getElementById(USER_THEME_STYLE_ID)).toBeNull();
 		expect(document.documentElement.className).toBe("system");
 		expect(document.documentElement.style.getPropertyValue("--theme-hue")).toBe(
@@ -28,16 +24,13 @@ describe("material theme extension state", () => {
 		);
 	});
 
-	test("enabling persists the module state without discarding saved theme data", () => {
+	test("enabling changes runtime presentation without discarding saved theme data", () => {
 		localStorage.setItem("user_theme_source", "#ff3366");
-		storeMaterialThemeExtensionEnabled(false);
+		setMaterialThemeExtensionRuntimeEnabled(false);
 
-		storeMaterialThemeExtensionEnabled(true);
+		setMaterialThemeExtensionRuntimeEnabled(true);
 
 		expect(isMaterialThemeExtensionEnabled()).toBe(true);
-		expect(localStorage.getItem(MATERIAL_THEME_EXTENSION_ENABLED_KEY)).toBe(
-			"true",
-		);
 		expect(localStorage.getItem("user_theme_source")).toBe("#ff3366");
 	});
 

@@ -1,4 +1,11 @@
 export const THEME_SIDEBAR_EXTENSION_ID = "theme";
+export const EXTENSION_STATE_CHANGED_EVENT = "extension-state-changed";
+export const SIDEBAR_EXTENSIONS_QUERY_KEY = [
+	"environmentGetSidebarExtensions",
+] as const;
+export const EXTENSION_MANAGEMENT_QUERY_KEY = [
+	"environmentGetExtensionManagement",
+] as const;
 
 export const DEFAULT_SIDEBAR_EXTENSION_ORDER = [
 	"projects",

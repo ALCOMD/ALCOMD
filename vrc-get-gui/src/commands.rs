@@ -80,7 +80,8 @@ pub(crate) fn handlers() -> impl Fn(Invoke) -> bool + Send + Sync + 'static {
         environment::config::environment_get_project_sorting,
         environment::config::environment_set_project_sorting,
         environment::config::environment_get_sidebar_extensions,
-        environment::config::environment_set_sidebar_extension_enabled,
+        environment::config::environment_get_extension_management,
+        environment::config::environment_set_extension_enabled,
         environment::config::environment_set_sidebar_extension_order,
         environment::config::environment_set_sidebar_extension_visible,
         environment::config::environment_get_finished_setup_pages,
@@ -217,7 +218,8 @@ pub(crate) fn export_ts() {
             environment::config::environment_get_project_sorting,
             environment::config::environment_set_project_sorting,
             environment::config::environment_get_sidebar_extensions,
-            environment::config::environment_set_sidebar_extension_enabled,
+            environment::config::environment_get_extension_management,
+            environment::config::environment_set_extension_enabled,
             environment::config::environment_set_sidebar_extension_order,
             environment::config::environment_set_sidebar_extension_visible,
             environment::config::environment_get_finished_setup_pages,
@@ -334,6 +336,7 @@ pub(crate) fn export_ts() {
         ])
         .typ::<uri_custom_scheme::GlobalInfo>()
         .typ::<crate::mcp::McpToolCallEvent>()
+        .typ::<crate::extensions::ExtensionStateChanged>()
         .typ::<crate::activity_log::ActivityEntry>()
         .typ::<crate::activity_log::ActivityEntryFilter>()
         .typ::<environment::projects::TauriUpdatedRealProjectInfo>()

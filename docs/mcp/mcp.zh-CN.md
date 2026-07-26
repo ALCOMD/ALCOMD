@@ -42,8 +42,9 @@ ALCOMD3 当前实现遵循 MCP `2025-11-25` 规范的 stdio transport。MCP 客�
 - GUI MCP 页面按只读、写入和日志用途分组显示工具，并保留工具的精确 MCP 名称；鼠标悬停在工具名上会显示本地化的可读名称。
 - GUI MCP 页面显示的是最近活动过的客户端，不是实时连接列表；超过一段时间没有活动的记录
   会自动隐藏。
-- MCP tool call 会写入 GUI 的本地活动记录。记录包含来源、工具名、request id、客户端摘要、
-  开始/完成/失败/取消状态和经过安全处理的目标/详情，便于用户在 GUI 的“活动记录”页回溯 Agent 做了什么。
+- 日志扩展启用时，MCP tool call 会写入 GUI 的本地活动记录。记录包含来源、工具名、
+  request id、客户端摘要、开始/完成/失败/取消状态和经过安全处理的目标/详情，便于用户在
+  GUI 的“活动记录”页回溯 Agent 做了什么。
 - GUI 项目管理页和 MCP 包工具共用后端的 GUI-visible package catalog。预发布、yanked、
   隐藏仓库、隐藏本地用户包、同名包跨来源合并、默认/用户仓库优先级和 Unity 兼容性判断由后端统一执行。
 - 每个公开 MCP tool 都必须映射到 GUI 已有 capability，并通过 `vrc-get-gui/src/backend/`

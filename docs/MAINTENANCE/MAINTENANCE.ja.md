@@ -154,6 +154,26 @@ user が manual import を明示的に開始した場合のみ external-app impo
 - sidebar sorting dialog は installed extension を表示し、eye button で sidebar
   visibility を切り替え、保存前に default order とすべての installed extension
   の表示を復元できるようにする。
+- `vrc-get-gui/src/extensions.rs` を extension management capability と runtime
+  lifecycle behavior の authoritative registry とする。frontend sidebar definition
+  は presentation detail のみを持ち、disable、install、uninstall の可否を判断しない。
+- registry は built-in definition、検証済み third-party catalog manifest、installed
+  third-party manifest を合成する。third-party id、canonical display name、semantic
+  version、origin、installation capability、lifecycle adapter は backend で検証してから
+  register する。
+- registry は insertion order を保持する。built-in extension は MCP、Theme、Logs
+  の順に register し、third-party entry は registration order で末尾へ追加する。
+  catalog entry を install した場合は、その install 時点の末尾へ移動する。
+  extension management は再 sort せず registry order をそのまま使用する。
+- enable/disable request は backend が validate、persist、apply する。成功後に backend
+  が state event を送信し、frontend は theme CSS の適用・解除など DOM が必要な
+  presentation effect のためだけに event を利用する。
+- `gui-config.json` は backend が管理する enablement choice を `extensions` に保存し、
+  `sidebarExtensions` には order と visibility だけを保存する。旧 sidebar enablement
+  field は load 時に migrate し、installed state を frontend config から受け付けない。
+- sidebar order と visibility の更新では backend-owned installed/enabled state を
+  保持する。将来の third-party install state は frontend config ではなく、実在する
+  extension registry と検証済み file から取得する。
 - side navigation は BOOTH、VRChatAvatarLearn、version button を任意表示できる。`hide_sidebar_links` で非表示にできる。
 - version button は `version: v{actual_version}` を表示し、`v{actual_version}` をコピーする。
 - Toast は rounded MD3 style、MD3 semantic progress color、app base background color を使う。
@@ -284,8 +304,13 @@ ALCOMD3 は user-readable activity record と developer-oriented technical log
 
 保持する規則:
 
+- Logs entry は extension management の組み込み extension とし、install と uninstall
+  はできないが disable は可能とする。disable 時は既存 record を削除せず、新しい
+  activity record と technical log の両方を停止し、再 enable 時に記録を再開する。
 - `/log` route は既定で Activity Records を表示する。Technical logs は troubleshooting 用の secondary tab として残す。
-- Activity records は meaningful な GUI、MCP、DeepLink、System operation を記録する。failure、cancellation、write operation、MCP tool call、重要な passive refresh を含める。
+- Logs extension が enabled の間、Activity records は meaningful な GUI、MCP、
+  DeepLink、System operation を記録する。failure、cancellation、write operation、
+  MCP tool call、重要な passive refresh を含める。
 - Secondary activity record は既定で hidden にしてよいが、filter で queryable にする。
 - Activity details には raw MCP params、token-like value、HTTP header value、URL query string、URL userinfo credential を記録しない。Unity、VPM、non-ASCII path issue の診断に必要なため、local filesystem path は full path を記録してよい。
 - High-volume progress internals、Unity stdout line、per-file copy event、cache hit、rendering event、logger maintenance は technical logs に残すか記録しない。
@@ -326,7 +351,8 @@ ALCOMD3 には optional local MCP bridge がある。将来の変更が review �
 - MCP copy target と restore backup path は absolute path でなければならない。
 - Backup restore は GUI configured default project directory のみに書き込む。
 - MCP package search は repository refresh を強制しない。
-- すべての MCP tool call は local activity log に記録する。request id、tool name、利用可能な client summary、sanitized details を含める。
+- Logs extension が enabled の間、すべての MCP tool call は local activity log に
+  記録する。request id、tool name、利用可能な client summary、sanitized details を含める。
 - 成功した MCP read tool（log query tool を含む）は Secondary activity record として記録する。failure と cancellation は既定で visible のままにする。
 - `initialize` と `tools/list` は GUI を起動しない。
 - Actual tool call は endpoint がない場合 GUI を起動してよい。bridge は packaged/sibling ALCOMD3 GUI executable または明示的な `ALCOMD3_GUI_EXECUTABLE` override のみを起動する。

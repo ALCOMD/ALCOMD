@@ -58,10 +58,11 @@ for a configuration example and lifecycle details.
   name.
 - The GUI MCP page shows recently active clients, not a live connection list.
   Records with no recent activity are hidden automatically.
-- MCP tool calls are written to the GUI's local activity log. Records include
-  source, tool name, request id, client summary, started/completed/failed/cancelled
-  state, and safely processed target/details so users can review what an Agent
-  did from the GUI Activity page.
+- While the Logs extension is enabled, MCP tool calls are written to the GUI's
+  local activity log. Records include source, tool name, request id, client
+  summary, started/completed/failed/cancelled state, and safely processed
+  target/details so users can review what an Agent did from the GUI Activity
+  page.
 - The GUI project management page and MCP package tools share the backend
   GUI-visible package catalog. Pre-release filtering, yanked packages, hidden
   repositories, hidden local user packages, same-name package merge across

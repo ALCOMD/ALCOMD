@@ -1,7 +1,11 @@
+use crate::extensions::{
+    LOG_EXTENSION_ID, THEME_EXTENSION_ID, built_in_extension_can_disable,
+    built_in_extension_definition, built_in_extension_definitions,
+};
 use crate::logging::LogLevel;
 use indexmap::IndexSet;
-use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use serde::{Deserialize, Serialize, Serializer};
+use std::collections::{BTreeMap, HashSet};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -57,8 +61,10 @@ pub struct GuiConfig {
     pub last_used_template: Option<String>,
     #[serde(default)]
     pub update_reminder: Option<UpdateReminderConfig>,
-    #[serde(default)]
+    #[serde(default, serialize_with = "serialize_sidebar_extensions")]
     pub sidebar_extensions: Vec<SidebarExtension>,
+    #[serde(default)]
+    pub extensions: BTreeMap<String, ExtensionUserConfig>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, specta::Type)]
@@ -71,6 +77,37 @@ pub struct SidebarExtension {
     pub enabled: bool,
     #[serde(default = "default_true")]
     pub visible: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionUserConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+fn serialize_sidebar_extensions<S>(
+    extensions: &[SidebarExtension],
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct SidebarLayout<'a> {
+        id: &'a str,
+        visible: bool,
+    }
+
+    extensions
+        .iter()
+        .map(|extension| SidebarLayout {
+            id: &extension.id,
+            visible: extension.visible,
+        })
+        .collect::<Vec<_>>()
+        .serialize(serializer)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, specta::Type)]
@@ -115,6 +152,7 @@ impl Default for GuiConfig {
             last_used_template: None,
             update_reminder: None,
             sidebar_extensions: default_sidebar_extensions(),
+            extensions: default_extension_configs(),
         }
     }
 }
@@ -135,9 +173,39 @@ impl GuiConfig {
         }
         if self.sidebar_extensions.is_empty() {
             self.sidebar_extensions = default_sidebar_extensions();
-            return;
+        } else {
+            self.sidebar_extensions = normalize_sidebar_extensions(self.sidebar_extensions.clone());
         }
-        self.sidebar_extensions = normalize_sidebar_extensions(self.sidebar_extensions.clone());
+        for definition in built_in_extension_definitions() {
+            if !self.extensions.contains_key(definition.id) {
+                let enabled = self
+                    .sidebar_extensions
+                    .iter()
+                    .find(|extension| extension.id == definition.id)
+                    .is_none_or(|extension| extension.enabled);
+                self.extensions
+                    .insert(definition.id.to_string(), ExtensionUserConfig { enabled });
+            }
+        }
+        self.synchronize_sidebar_extension_states();
+    }
+
+    pub(crate) fn set_extension_enabled(&mut self, id: &str, enabled: bool) {
+        self.extensions
+            .insert(id.to_string(), ExtensionUserConfig { enabled });
+        self.synchronize_sidebar_extension_states();
+    }
+
+    pub(crate) fn synchronize_sidebar_extension_states(&mut self) {
+        for extension in &mut self.sidebar_extensions {
+            if built_in_extension_definition(&extension.id).is_some() {
+                extension.installed = true;
+                extension.enabled = self
+                    .extensions
+                    .get(&extension.id)
+                    .is_none_or(|state| state.enabled);
+            }
+        }
     }
 }
 
@@ -210,9 +278,14 @@ fn default_true() -> bool {
 }
 
 const LOCKED_SIDEBAR_ITEM_IDS: &[&str] = &["extensions"];
-const BUILT_IN_SIDEBAR_EXTENSION_IDS: &[&str] =
-    &["projects", "packages", "mcp", "theme", "settings", "log"];
-const ENABLEABLE_BUILT_IN_SIDEBAR_EXTENSION_IDS: &[&str] = &["theme"];
+const BUILT_IN_SIDEBAR_EXTENSION_IDS: &[&str] = &[
+    "projects",
+    "packages",
+    "mcp",
+    THEME_EXTENSION_ID,
+    "settings",
+    LOG_EXTENSION_ID,
+];
 
 fn is_configurable_sidebar_extension(id: &str) -> bool {
     !LOCKED_SIDEBAR_ITEM_IDS.contains(&id)
@@ -220,10 +293,6 @@ fn is_configurable_sidebar_extension(id: &str) -> bool {
 
 pub(crate) fn is_builtin_sidebar_extension(id: &str) -> bool {
     BUILT_IN_SIDEBAR_EXTENSION_IDS.contains(&id)
-}
-
-pub(crate) fn is_enableable_sidebar_extension(id: &str) -> bool {
-    !is_builtin_sidebar_extension(id) || ENABLEABLE_BUILT_IN_SIDEBAR_EXTENSION_IDS.contains(&id)
 }
 
 fn default_sidebar_extensions() -> Vec<SidebarExtension> {
@@ -247,7 +316,7 @@ fn default_sidebar_extensions() -> Vec<SidebarExtension> {
             visible: true,
         },
         SidebarExtension {
-            id: "theme".to_string(),
+            id: THEME_EXTENSION_ID.to_string(),
             installed: true,
             enabled: true,
             visible: true,
@@ -259,12 +328,24 @@ fn default_sidebar_extensions() -> Vec<SidebarExtension> {
             visible: true,
         },
         SidebarExtension {
-            id: "log".to_string(),
+            id: LOG_EXTENSION_ID.to_string(),
             installed: true,
             enabled: true,
             visible: true,
         },
     ]
+}
+
+fn default_extension_configs() -> BTreeMap<String, ExtensionUserConfig> {
+    built_in_extension_definitions()
+        .iter()
+        .map(|definition| {
+            (
+                definition.id.to_string(),
+                ExtensionUserConfig { enabled: true },
+            )
+        })
+        .collect()
 }
 
 pub(crate) fn normalize_sidebar_extensions(
@@ -278,7 +359,7 @@ pub(crate) fn normalize_sidebar_extensions(
         }
         if is_builtin_sidebar_extension(&extension.id) {
             extension.installed = true;
-            if !is_enableable_sidebar_extension(&extension.id) {
+            if !built_in_extension_can_disable(&extension.id) {
                 extension.enabled = true;
             }
         }
@@ -294,6 +375,39 @@ pub(crate) fn normalize_sidebar_extensions(
     }
 
     updated
+}
+
+pub(crate) fn apply_sidebar_extension_layout(
+    existing: Vec<SidebarExtension>,
+    requested: Vec<SidebarExtension>,
+) -> Vec<SidebarExtension> {
+    let mut seen = HashSet::<String>::new();
+    let mut updated = Vec::new();
+
+    for requested_extension in requested {
+        if !seen.insert(requested_extension.id.clone()) {
+            continue;
+        }
+        if let Some(existing_extension) = existing
+            .iter()
+            .find(|extension| extension.id == requested_extension.id)
+        {
+            updated.push(SidebarExtension {
+                id: existing_extension.id.clone(),
+                installed: existing_extension.installed,
+                enabled: existing_extension.enabled,
+                visible: requested_extension.visible,
+            });
+        }
+    }
+
+    for existing_extension in existing {
+        if seen.insert(existing_extension.id.clone()) {
+            updated.push(existing_extension);
+        }
+    }
+
+    normalize_sidebar_extensions(updated)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -336,7 +450,10 @@ impl Default for WindowSize {
 
 #[cfg(test)]
 mod tests {
-    use super::{GuiConfig, SidebarExtension, normalize_sidebar_extensions};
+    use super::{
+        GuiConfig, SidebarExtension, apply_sidebar_extension_layout, normalize_sidebar_extensions,
+    };
+    use crate::extensions::{LOG_EXTENSION_ID, THEME_EXTENSION_ID};
 
     #[test]
     fn automatic_updates_default_to_enabled_for_existing_configs() {
@@ -410,21 +527,44 @@ mod tests {
     }
 
     #[test]
-    fn theme_extension_is_always_installed_but_can_be_disabled() {
-        let normalized = normalize_sidebar_extensions(vec![SidebarExtension {
-            id: "theme".to_string(),
-            installed: false,
-            enabled: false,
-            visible: false,
-        }]);
-        let theme = normalized
-            .iter()
-            .find(|extension| extension.id == "theme")
-            .unwrap();
+    fn legacy_extension_state_migrates_to_backend_extension_config() {
+        let mut config: GuiConfig = serde_json::from_str(
+            r#"{"sidebarExtensions":[{"id":"theme","enabled":false,"visible":true}]}"#,
+        )
+        .unwrap();
 
-        assert!(theme.installed);
-        assert!(!theme.enabled);
-        assert!(!theme.visible);
+        config.fix_defaults();
+
+        assert!(!config.extensions.get(THEME_EXTENSION_ID).unwrap().enabled);
+        let serialized = serde_json::to_value(config).unwrap();
+        assert_eq!(
+            serialized["extensions"][THEME_EXTENSION_ID]["enabled"],
+            false
+        );
+        assert_eq!(
+            serialized["sidebarExtensions"][0],
+            serde_json::json!({"id": "theme", "visible": true})
+        );
+    }
+
+    #[test]
+    fn enableable_built_in_extensions_are_always_installed_but_can_be_disabled() {
+        for id in [THEME_EXTENSION_ID, LOG_EXTENSION_ID] {
+            let normalized = normalize_sidebar_extensions(vec![SidebarExtension {
+                id: id.to_string(),
+                installed: false,
+                enabled: false,
+                visible: false,
+            }]);
+            let extension = normalized
+                .iter()
+                .find(|extension| extension.id == id)
+                .unwrap();
+
+            assert!(extension.installed);
+            assert!(!extension.enabled);
+            assert!(!extension.visible);
+        }
     }
 
     #[test]
@@ -443,5 +583,48 @@ mod tests {
         assert!(mcp.installed);
         assert!(mcp.enabled);
         assert!(!mcp.visible);
+    }
+
+    #[test]
+    fn sidebar_layout_changes_cannot_change_extension_runtime_state() {
+        let existing = vec![
+            SidebarExtension {
+                id: "theme".to_string(),
+                installed: true,
+                enabled: false,
+                visible: true,
+            },
+            SidebarExtension {
+                id: "log".to_string(),
+                installed: true,
+                enabled: true,
+                visible: true,
+            },
+        ];
+        let requested = vec![
+            SidebarExtension {
+                id: "log".to_string(),
+                installed: false,
+                enabled: false,
+                visible: false,
+            },
+            SidebarExtension {
+                id: "theme".to_string(),
+                installed: false,
+                enabled: true,
+                visible: true,
+            },
+        ];
+
+        let updated = apply_sidebar_extension_layout(existing, requested);
+
+        assert_eq!(updated[0].id, "log");
+        assert!(updated[0].installed);
+        assert!(updated[0].enabled);
+        assert!(!updated[0].visible);
+        assert_eq!(updated[1].id, "theme");
+        assert!(updated[1].installed);
+        assert!(!updated[1].enabled);
+        assert!(updated[1].visible);
     }
 }

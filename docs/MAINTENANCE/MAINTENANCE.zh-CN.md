@@ -139,6 +139,18 @@ ALCOMD3 默认拥有自己的运行数据。
 - 默认侧边栏顺序为：项目、资源、MCP、主题、设置、日志。
 - 侧边栏排序对话框列出已安装扩展，通过眼睛按钮控制侧边栏显示，并可在用户保存前恢复
   默认顺序和所有已安装扩展的显示状态。
+- `vrc-get-gui/src/extensions.rs` 是扩展管理能力和运行时生命周期行为的权威注册表。
+  前端侧边栏定义只包含展示信息，不得决定扩展能否停用、安装或卸载。
+- 注册表组合内置定义、经过校验的第三方目录清单和已安装第三方清单。第三方扩展的 ID、
+  规范显示名、语义版本、来源、安装能力及生命周期适配器必须先经后端校验才能注册。
+- 注册表保留写入顺序。内置扩展依次注册为 MCP、主题、日志；第三方条目按注册顺序追加，
+  已有目录条目安装时移动到末尾以体现该次安装顺序。扩展管理直接使用注册表顺序，不再排序。
+- 启用或停用请求由后端校验、持久化并应用；变更成功后由后端发送状态事件。前端只可为
+  必须操作 DOM 的展示效果消费该事件，例如应用或撤销主题 CSS。
+- `gui-config.json` 在 `extensions` 中保存由后端管理的启用状态，在 `sidebarExtensions`
+  中只保存顺序和显示状态。加载时迁移旧版侧边栏启用字段；安装状态不得由前端配置声明。
+- 侧边栏顺序和显示状态更新必须保留后端管理的安装与启用状态。未来第三方扩展的安装状态
+  必须来自真实扩展注册表和已校验文件，不能由前端配置任意声明。
 - 侧边导航可显示可选 BOOTH、VRChatAvatarLearn 和版本按钮，可通过 `hide_sidebar_links` 隐藏。
 - 版本按钮显示 `version: v{actual_version}` 并复制 `v{actual_version}`。
 - Toast 使用圆角 MD3 样式、MD3 语义进度颜色和应用基础背景色。
@@ -265,8 +277,11 @@ ALCOMD3 将用户可读的活动记录与偏开发者排错的技术日志分开
 
 保留这些规则：
 
+- 日志入口是扩展管理中的内置扩展，不能安装或卸载，但可以停用。停用后停止新增活动记录和
+  技术日志，不删除已有记录；重新启用后恢复两类日志记录。
 - `/log` 路由默认显示活动记录；技术日志保留为次级 tab，用于排障。
-- 活动记录必须覆盖有意义的 GUI、MCP、DeepLink 和 System 操作，包括失败、取消、写操作、MCP tool call，以及重要的被动刷新。
+- 日志扩展启用时，活动记录必须覆盖有意义的 GUI、MCP、DeepLink 和 System 操作，包括
+  失败、取消、写操作、MCP tool call，以及重要的被动刷新。
 - Secondary 活动记录可以默认隐藏，但必须能通过筛选查询。
 - 活动详情不得记录 MCP 原始 params、疑似 token 的值、HTTP header 值、URL query string 或 URL userinfo 凭据。本地文件系统路径可以完整记录，因为排查 Unity、VPM 和非 ASCII 路径问题时通常需要完整路径。
 - 高频内部进度、Unity stdout 行、逐文件复制事件、cache hit、渲染事件和 logger 维护行为应保留在技术日志或不记录。
@@ -306,7 +321,8 @@ ALCOMD3 包含可选本地 MCP bridge。除非未来变更通过 review 和 UI a
 - 读取详情前，`project_path` 必须匹配 ALCOMD3 registered project。
 - 备份和复制的源项目路径必须匹配 ALCOMD3 registered project；MCP 复制目标和恢复备份路径必须是绝对路径；从备份恢复只写入 GUI 配置的默认项目目录。
 - MCP package search 不得强制 repository refresh。
-- 每次 MCP tool call 都必须写入本地活动记录，包含 request id、tool name、可用时的 client 摘要，以及脱敏后的 details。
+- 日志扩展启用时，每次 MCP tool call 都必须写入本地活动记录，包含 request id、
+  tool name、可用时的 client 摘要，以及脱敏后的 details。
 - 成功的 MCP 读取工具（包括日志查询工具）应记录为 Secondary 活动；失败和取消仍需默认可见。
 - `initialize` 和 `tools/list` 不得启动 GUI。
 - endpoint 不可用时，实际 tool call 可以启动 GUI。bridge 只能启动 packaged/sibling ALCOMD3 GUI executable 或明确的 `ALCOMD3_GUI_EXECUTABLE` override。

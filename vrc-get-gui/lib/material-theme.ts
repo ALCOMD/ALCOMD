@@ -18,7 +18,7 @@ import { commands } from "@/lib/bindings";
 import {
 	disableMaterialTheme,
 	isMaterialThemeExtensionEnabled,
-	storeMaterialThemeExtensionEnabled,
+	setMaterialThemeExtensionRuntimeEnabled,
 	USER_THEME_STYLE_ID,
 } from "@/lib/material-theme-extension";
 import { THEME_SIDEBAR_EXTENSION_ID } from "@/lib/sidebar-extensions";
@@ -26,7 +26,6 @@ import { THEME_SIDEBAR_EXTENSION_ID } from "@/lib/sidebar-extensions";
 export {
 	disableMaterialTheme,
 	isMaterialThemeExtensionEnabled,
-	MATERIAL_THEME_EXTENSION_ENABLED_KEY,
 	USER_THEME_STYLE_ID,
 } from "@/lib/material-theme-extension";
 
@@ -60,7 +59,7 @@ export type MaterialThemeSettings = {
 };
 
 export function setMaterialThemeExtensionEnabled(enabled: boolean) {
-	storeMaterialThemeExtensionEnabled(enabled);
+	setMaterialThemeExtensionRuntimeEnabled(enabled);
 	if (enabled) {
 		applyStoredMaterialTheme();
 	}
@@ -68,7 +67,7 @@ export function setMaterialThemeExtensionEnabled(enabled: boolean) {
 
 export async function synchronizeMaterialThemeExtensionState() {
 	try {
-		const extensions = await commands.environmentGetSidebarExtensions();
+		const extensions = await commands.environmentGetExtensionManagement();
 		const extension = extensions.find(
 			({ id }) => id === THEME_SIDEBAR_EXTENSION_ID,
 		);
@@ -80,12 +79,8 @@ export async function synchronizeMaterialThemeExtensionState() {
 		return enabled;
 	} catch (error) {
 		console.warn("failed to load material theme extension state", error);
-		if (isMaterialThemeExtensionEnabled()) {
-			await applyPersistedMaterialTheme();
-		} else {
-			disableMaterialTheme();
-		}
-		return isMaterialThemeExtensionEnabled();
+		setMaterialThemeExtensionEnabled(false);
+		return false;
 	}
 }
 
