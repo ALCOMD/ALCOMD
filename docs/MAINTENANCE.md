@@ -159,8 +159,10 @@ Preserve these behaviors:
 Preserve these behaviors:
 
 - The Material Theme entry is a managed built-in sidebar extension and
-  participates in persisted sidebar ordering. Built-in extensions cannot be
-  installed, uninstalled, enabled, or disabled.
+  participates in persisted sidebar ordering. It cannot be installed or
+  uninstalled, but it can be disabled. Disabling it removes the custom theme
+  effect and returns the UI to the built-in system-responsive colors while
+  preserving the saved theme settings for later re-enabling.
 - The default sidebar order is Projects, Resources, MCP, Theme, Settings, then
   Logs.
 - The sidebar sorting dialog lists installed extensions, uses an eye button to

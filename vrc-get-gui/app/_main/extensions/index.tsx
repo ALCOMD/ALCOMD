@@ -51,8 +51,13 @@ import { Switch } from "@/components/ui/switch";
 import { commands, type SidebarExtension } from "@/lib/bindings";
 import { tc, tt } from "@/lib/i18n";
 import {
+	applyPersistedMaterialTheme,
+	setMaterialThemeExtensionEnabled,
+} from "@/lib/material-theme";
+import {
 	DEFAULT_SIDEBAR_EXTENSION_ORDER,
 	restoreDefaultSidebarExtensions,
+	THEME_SIDEBAR_EXTENSION_ID,
 } from "@/lib/sidebar-extensions";
 import { toastThrownError } from "@/lib/toast";
 
@@ -437,6 +442,13 @@ function ExtensionsManageCard() {
 					SIDEBAR_EXTENSIONS_QUERY.queryKey,
 					context.previous,
 				);
+			}
+		},
+		onSuccess: (_data, { id, enabled }) => {
+			if (id !== THEME_SIDEBAR_EXTENSION_ID) return;
+			setMaterialThemeExtensionEnabled(enabled);
+			if (enabled) {
+				void applyPersistedMaterialTheme();
 			}
 		},
 		onSettled: () => {

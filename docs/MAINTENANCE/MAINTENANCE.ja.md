@@ -146,8 +146,9 @@ user が manual import を明示的に開始した場合のみ external-app impo
 保持する挙動:
 
 - Material Theme entry は extension management に表示する組み込み sidebar
-  extension として扱い、保存される sidebar order に含める。組み込み extension
-  は install、uninstall、enable、disable できない。
+  extension として扱い、保存される sidebar order に含める。install と uninstall
+  はできないが disable は可能とする。disable 時は custom theme effect を解除して
+  system に応答する組み込み配色へ戻し、保存済み theme settings は再 enable 用に保持する。
 - sidebar の default order は Projects、Resources、MCP、Theme、Settings、Logs
   とする。
 - sidebar sorting dialog は installed extension を表示し、eye button で sidebar

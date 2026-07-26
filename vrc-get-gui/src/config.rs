@@ -212,6 +212,7 @@ fn default_true() -> bool {
 const LOCKED_SIDEBAR_ITEM_IDS: &[&str] = &["extensions"];
 const BUILT_IN_SIDEBAR_EXTENSION_IDS: &[&str] =
     &["projects", "packages", "mcp", "theme", "settings", "log"];
+const ENABLEABLE_BUILT_IN_SIDEBAR_EXTENSION_IDS: &[&str] = &["theme"];
 
 fn is_configurable_sidebar_extension(id: &str) -> bool {
     !LOCKED_SIDEBAR_ITEM_IDS.contains(&id)
@@ -219,6 +220,10 @@ fn is_configurable_sidebar_extension(id: &str) -> bool {
 
 pub(crate) fn is_builtin_sidebar_extension(id: &str) -> bool {
     BUILT_IN_SIDEBAR_EXTENSION_IDS.contains(&id)
+}
+
+pub(crate) fn is_enableable_sidebar_extension(id: &str) -> bool {
+    !is_builtin_sidebar_extension(id) || ENABLEABLE_BUILT_IN_SIDEBAR_EXTENSION_IDS.contains(&id)
 }
 
 fn default_sidebar_extensions() -> Vec<SidebarExtension> {
@@ -273,7 +278,9 @@ pub(crate) fn normalize_sidebar_extensions(
         }
         if is_builtin_sidebar_extension(&extension.id) {
             extension.installed = true;
-            extension.enabled = true;
+            if !is_enableable_sidebar_extension(&extension.id) {
+                extension.enabled = true;
+            }
         }
         if seen.insert(extension.id.clone()) {
             updated.push(extension);
@@ -403,7 +410,7 @@ mod tests {
     }
 
     #[test]
-    fn built_in_sidebar_extensions_are_always_installed_and_enabled() {
+    fn theme_extension_is_always_installed_but_can_be_disabled() {
         let normalized = normalize_sidebar_extensions(vec![SidebarExtension {
             id: "theme".to_string(),
             installed: false,
@@ -416,7 +423,25 @@ mod tests {
             .unwrap();
 
         assert!(theme.installed);
-        assert!(theme.enabled);
+        assert!(!theme.enabled);
         assert!(!theme.visible);
+    }
+
+    #[test]
+    fn non_enableable_built_in_sidebar_extensions_remain_enabled() {
+        let normalized = normalize_sidebar_extensions(vec![SidebarExtension {
+            id: "mcp".to_string(),
+            installed: false,
+            enabled: false,
+            visible: false,
+        }]);
+        let mcp = normalized
+            .iter()
+            .find(|extension| extension.id == "mcp")
+            .unwrap();
+
+        assert!(mcp.installed);
+        assert!(mcp.enabled);
+        assert!(!mcp.visible);
     }
 }

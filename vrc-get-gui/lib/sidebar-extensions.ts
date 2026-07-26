@@ -1,8 +1,10 @@
+export const THEME_SIDEBAR_EXTENSION_ID = "theme";
+
 export const DEFAULT_SIDEBAR_EXTENSION_ORDER = [
 	"projects",
 	"packages",
 	"mcp",
-	"theme",
+	THEME_SIDEBAR_EXTENSION_ID,
 	"settings",
 	"log",
 ] as const;

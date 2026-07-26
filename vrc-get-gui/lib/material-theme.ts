@@ -15,6 +15,20 @@ import {
 	SchemeVibrant,
 } from "@material/material-color-utilities";
 import { commands } from "@/lib/bindings";
+import {
+	disableMaterialTheme,
+	isMaterialThemeExtensionEnabled,
+	storeMaterialThemeExtensionEnabled,
+	USER_THEME_STYLE_ID,
+} from "@/lib/material-theme-extension";
+import { THEME_SIDEBAR_EXTENSION_ID } from "@/lib/sidebar-extensions";
+
+export {
+	disableMaterialTheme,
+	isMaterialThemeExtensionEnabled,
+	MATERIAL_THEME_EXTENSION_ENABLED_KEY,
+	USER_THEME_STYLE_ID,
+} from "@/lib/material-theme-extension";
 
 export const DEFAULT_THEME_SOURCE_HEX = "#6cb6ff";
 export const DEFAULT_THEME_MODE = "auto";
@@ -23,7 +37,6 @@ export const DEFAULT_THEME_SCHEME = "vibrant";
 export const USER_THEME_SOURCE_KEY = "user_theme_source";
 export const USER_THEME_MODE_KEY = "user_theme_mode";
 export const USER_THEME_SCHEME_KEY = "user_theme_scheme";
-export const USER_THEME_STYLE_ID = "user-theme-style";
 const USER_THEME_CONFIG_PREFIX = "material:";
 
 export const THEME_SCHEME_LABELS = {
@@ -45,6 +58,36 @@ export type MaterialThemeSettings = {
 	mode: ThemeMode;
 	scheme: ThemeSchemeName;
 };
+
+export function setMaterialThemeExtensionEnabled(enabled: boolean) {
+	storeMaterialThemeExtensionEnabled(enabled);
+	if (enabled) {
+		applyStoredMaterialTheme();
+	}
+}
+
+export async function synchronizeMaterialThemeExtensionState() {
+	try {
+		const extensions = await commands.environmentGetSidebarExtensions();
+		const extension = extensions.find(
+			({ id }) => id === THEME_SIDEBAR_EXTENSION_ID,
+		);
+		const enabled = extension?.installed === true && extension.enabled;
+		setMaterialThemeExtensionEnabled(enabled);
+		if (enabled) {
+			await applyPersistedMaterialTheme();
+		}
+		return enabled;
+	} catch (error) {
+		console.warn("failed to load material theme extension state", error);
+		if (isMaterialThemeExtensionEnabled()) {
+			await applyPersistedMaterialTheme();
+		} else {
+			disableMaterialTheme();
+		}
+		return isMaterialThemeExtensionEnabled();
+	}
+}
 
 export const THEME_SCHEME_NAMES = Object.keys(
 	THEME_SCHEME_LABELS,
@@ -205,13 +248,21 @@ export async function savePersistedMaterialTheme(
 
 export function applyStoredMaterialTheme() {
 	const settings = getStoredMaterialTheme();
-	applyMaterialTheme(settings.sourceHex, settings.mode, settings.scheme);
+	if (isMaterialThemeExtensionEnabled()) {
+		applyMaterialTheme(settings.sourceHex, settings.mode, settings.scheme);
+	} else {
+		disableMaterialTheme();
+	}
 	return settings;
 }
 
 export async function applyPersistedMaterialTheme() {
 	const settings = await getPersistedMaterialTheme();
-	applyMaterialTheme(settings.sourceHex, settings.mode, settings.scheme);
+	if (isMaterialThemeExtensionEnabled()) {
+		applyMaterialTheme(settings.sourceHex, settings.mode, settings.scheme);
+	} else {
+		disableMaterialTheme();
+	}
 	return settings;
 }
 
@@ -302,6 +353,11 @@ export function applyMaterialTheme(
 	mode: ThemeMode,
 	schemeName: ThemeSchemeName,
 ) {
+	if (!isMaterialThemeExtensionEnabled()) {
+		disableMaterialTheme();
+		return false;
+	}
+
 	const normalizedHex = normalizeHexColor(sourceHex);
 	if (!normalizedHex) return false;
 

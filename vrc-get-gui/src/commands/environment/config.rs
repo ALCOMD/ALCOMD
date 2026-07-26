@@ -7,7 +7,7 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::commands::prelude::*;
 use crate::config::{
-    SidebarExtension, UnityHubAccessMethod, UpdateReminderConfig, is_builtin_sidebar_extension,
+    SidebarExtension, UnityHubAccessMethod, UpdateReminderConfig, is_enableable_sidebar_extension,
     normalize_sidebar_extensions,
 };
 use crate::logging::LogLevel;
@@ -478,9 +478,9 @@ pub async fn environment_set_sidebar_extension_enabled(
     id: String,
     enabled: bool,
 ) -> Result<(), RustError> {
-    if is_builtin_sidebar_extension(&id) {
+    if !is_enableable_sidebar_extension(&id) {
         return Err(RustError::unrecoverable_str(
-            "Built-in extensions cannot be enabled or disabled",
+            "This built-in extension cannot be enabled or disabled",
         ));
     }
     let activity = app.state::<ActivityLogState>();

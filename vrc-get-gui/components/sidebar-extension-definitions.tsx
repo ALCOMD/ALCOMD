@@ -55,7 +55,7 @@ export const SIDEBAR_EXTENSION_DEFINITIONS: Record<
 		icon: Palette,
 		management: {
 			builtIn: true,
-			enableable: false,
+			enableable: true,
 		},
 	},
 	mcp: {

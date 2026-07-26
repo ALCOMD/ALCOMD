@@ -42,6 +42,7 @@ import {
 	applyPersistedMaterialTheme,
 	applyStoredMaterialTheme,
 	getPersistedMaterialTheme,
+	synchronizeMaterialThemeExtensionState,
 } from "@/lib/material-theme";
 import { queryClient } from "@/lib/query-client";
 import {
@@ -61,7 +62,7 @@ function MaterialThemeInitializer() {
 	}, []);
 
 	useEffect(() => {
-		void applyPersistedMaterialTheme();
+		void synchronizeMaterialThemeExtensionState();
 	}, []);
 
 	useEffect(() => {
