@@ -348,9 +348,14 @@ function Page() {
 								status={status.data}
 								setEnabled={(enabled) => setEnabled.mutate(enabled)}
 								disabled={setEnabled.isPending}
+								openConfiguration={() =>
+									void openSingleDialog(
+										McpConfigurationDialog,
+										{ status: status.data },
+										"large-dialog-content",
+									)
+								}
 							/>
-							<EndpointCard status={status.data} />
-							<QuickSetupCard status={status.data} />
 							<RecentClientsCard status={status.data} />
 							<ToolsCard activeToolCalls={activeToolCalls} />
 						</>
@@ -365,10 +370,12 @@ function StatusCard({
 	status,
 	setEnabled,
 	disabled,
+	openConfiguration,
 }: {
 	status: McpStatus;
 	setEnabled: (enabled: boolean) => void;
 	disabled: boolean;
+	openConfiguration: () => void;
 }) {
 	return (
 		<Card className="shrink-0 p-4 compact:p-3">
@@ -376,6 +383,9 @@ function StatusCard({
 				<StatusPill active={status.enabled} />
 				<RunningPill running={status.running} />
 				<div className="grow" />
+				<Button onClick={openConfiguration}>
+					{tc("mcp:button:configure")}
+				</Button>
 				<Button
 					onClick={() => setEnabled(!status.enabled)}
 					disabled={disabled}
@@ -390,6 +400,29 @@ function StatusCard({
 				</Button>
 			</div>
 		</Card>
+	);
+}
+
+function McpConfigurationDialog({
+	dialog,
+	status,
+}: {
+	dialog: DialogContext<void>;
+	status: McpStatus;
+}) {
+	return (
+		<>
+			<DialogTitle>{tc("mcp:configuration")}</DialogTitle>
+			<div className="grid gap-3">
+				<EndpointCard status={status} />
+				<QuickSetupCard status={status} />
+			</div>
+			<DialogFooter>
+				<Button onClick={() => dialog.close()}>
+					{tc("general:button:close")}
+				</Button>
+			</DialogFooter>
+		</>
 	);
 }
 
@@ -452,10 +485,8 @@ function QuickSetupCard({ status }: { status: McpStatus }) {
 	return (
 		<Card className="shrink-0 p-4 compact:p-3">
 			<h2 className="mb-2">{tc("mcp:quick setup")}</h2>
-			<p className="mb-3 text-sm text-muted-foreground">
-				{tc("mcp:quick setup description", {
-					environmentVariable: status.authorizationTokenEnvironmentVariable,
-				})}
+			<p className="mb-3 whitespace-normal text-sm text-muted-foreground">
+				{tc("mcp:quick setup description")}
 			</p>
 			<div className="flex flex-wrap gap-2">
 				{QUICK_SETUP_CLIENTS.map((client) => (
