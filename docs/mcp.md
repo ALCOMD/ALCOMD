@@ -15,9 +15,11 @@ the separate private IPC endpoint exposed by the GUI.
 
 1. Start ALCOMD3 and open the MCP page from the sidebar.
 2. Enable MCP.
-3. Copy the MCP Endpoint and Authorization Token shown on the page.
-4. Add the URL as a Streamable HTTP server in your MCP-capable client and send
-   the token as `Authorization: Bearer <token>`.
+3. Configure the client manually with the MCP Endpoint and Authorization Token
+   shown on the page. On Windows, Codex users may instead choose the optional
+   **Quick setup Codex** button.
+4. For manual setup, add the URL as a Streamable HTTP server and send the token
+   as `Authorization: Bearer <token>`.
 5. Run a tool call while MCP remains enabled in ALCOMD3.
 
 Use the endpoint shown by the GUI instead of guessing its port. See
@@ -130,6 +132,31 @@ MCP client:
     }
 }
 ```
+
+Manual configuration remains the default and does not modify the operating
+system or an AI client configuration.
+
+### Optional Codex quick setup on Windows
+
+The MCP page includes a separate **Quick setup Codex** button on Windows. It
+only runs after an explicit click. The action:
+
+1. writes the current token to the current user's
+   `ALCOMD3_MCP_BEARER_TOKEN` environment variable; and
+2. adds or updates only `[mcp_servers.alcomd3]` in
+   `$CODEX_HOME/config.toml` (or `~/.codex/config.toml` when `CODEX_HOME` is
+   unset):
+
+```toml
+[mcp_servers.alcomd3]
+url = "http://127.0.0.1:51739/mcp"
+bearer_token_env_var = "ALCOMD3_MCP_BEARER_TOKEN"
+```
+
+Other Codex settings and MCP servers are preserved. If either the environment
+variable or the `alcomd3` server entry already has a different value, ALCOMD3
+asks for confirmation before replacing it. Fully exit and restart Codex after
+quick setup so it inherits the user environment and reloads `config.toml`.
 
 Exact client fields vary. Always copy the current URL and token from the GUI.
 The default port is `51739`; advanced users may change `mcpHttpPort` in
@@ -457,6 +484,9 @@ Steps:
 2. Confirm endpoint running on the MCP page.
 3. Copy the MCP Endpoint and Authorization Token again and update the client.
 4. Restart the MCP client.
+
+For Codex on Windows, choose **Quick setup Codex** again, confirm replacement
+when requested, then fully exit and restart Codex.
 
 ### HTTP `401 Unauthorized`
 

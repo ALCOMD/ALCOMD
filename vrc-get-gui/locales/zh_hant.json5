@@ -157,6 +157,21 @@
     "mcp:button:enable": "啟用",
     "mcp:button:disable": "停用",
     "mcp:toast:value copied": "已複製。",
+    "mcp:quick setup": "快速設定（選用）",
+    "mcp:quick setup description": "預設仍由使用者手動設定。只有點擊對應按鈕後，快速設定才會修改所選 AI 用戶端。",
+    "mcp:codex quick setup detail": "將 {{environmentVariable}} 寫入 Windows 使用者環境變數，並把 ALCOMD3 MCP 伺服器加入 Codex。",
+    "mcp:button:quick setup codex": "快速設定 Codex",
+    "mcp:codex quick setup unsupported": "Codex 快速設定目前僅支援 Windows。請使用上方端點與權杖手動設定。",
+    "mcp:toast:codex configured": "已更新 Codex 設定。",
+    "mcp:toast:codex already configured": "Codex 已完成設定。",
+    "mcp:codex quick setup complete": "請完全結束並重新啟動 Codex，以載入使用者環境變數與 MCP 設定。",
+    "mcp:codex config file": "Codex 設定檔",
+    "mcp:authorization token environment variable": "授權權杖環境變數",
+    "mcp:dialog:overwrite codex setup": "取代現有 Codex 設定？",
+    "mcp:dialog:overwrite codex setup description": "快速設定發現了與目前 ALCOMD3 連線不同的既有值。繼續操作只會取代 ALCOMD3 MCP 設定項目及其使用者環境變數。",
+    "mcp:dialog:codex config conflict": "Codex 設定中已存在不同的 mcp_servers.alcomd3 設定項目。",
+    "mcp:dialog:codex environment conflict": "Windows 使用者環境變數中已存在不同的授權權杖。",
+    "mcp:button:overwrite and configure": "取代並設定",
 
 
 // Projects Page

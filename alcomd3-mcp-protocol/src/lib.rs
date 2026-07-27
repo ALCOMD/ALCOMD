@@ -17,7 +17,8 @@ pub const MCP_HTTP_BIND_HOST: &str = "127.0.0.1";
 pub const MCP_HTTP_DEFAULT_PORT: u16 = 51_739;
 pub const MCP_HTTP_PATH: &str = "/mcp";
 pub const MCP_HTTP_BIND_ENV: &str = "ALCOMD3_MCP_HTTP_BIND";
-pub const MCP_HTTP_TOKEN_ENV: &str = "ALCOMD3_MCP_HTTP_TOKEN";
+pub const MCP_HTTP_TOKEN_ENV: &str = "ALCOMD3_MCP_BEARER_TOKEN";
+pub const MCP_HTTP_MIN_TOKEN_BYTES: usize = 32;
 pub use alcomd3_app_paths::{
     MCP_DATA_DIR_NAME, MCP_ENDPOINT_FILE_ENV as ENDPOINT_FILE_ENV,
     MCP_ENDPOINT_FILE_NAME as ENDPOINT_FILE_NAME,
@@ -159,6 +160,12 @@ mod tests {
     fn ipc_limits_match_current_transport_policy() {
         assert_eq!(IPC_IO_TIMEOUT, Duration::from_secs(120));
         assert_eq!(IPC_MAX_LINE_BYTES, 64 * 1024 * 1024);
+    }
+
+    #[test]
+    fn mcp_bearer_token_environment_variable_is_stable() {
+        assert_eq!(MCP_HTTP_TOKEN_ENV, "ALCOMD3_MCP_BEARER_TOKEN");
+        assert_eq!(MCP_HTTP_MIN_TOKEN_BYTES, 32);
     }
 
     #[test]

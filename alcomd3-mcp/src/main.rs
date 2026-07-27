@@ -2,8 +2,8 @@ use alcomd3_mcp_protocol::{
     ClientIdentity, EndpointMetadata, IPC_IO_TIMEOUT, IPC_MAX_LINE_BYTES,
     IPC_METHOD_PROJECT_TASK_CANCEL, IPC_METHOD_PROJECT_TASK_GET, IPC_METHOD_PROJECT_TASK_LIST,
     IPC_METHOD_PROJECT_TASK_START, IPC_PROTOCOL_VERSION, IpcRequest, IpcResponse, IpcTransport,
-    MCP_HTTP_BIND_ENV, MCP_HTTP_BIND_HOST, MCP_HTTP_DEFAULT_PORT, MCP_HTTP_PATH,
-    MCP_HTTP_TOKEN_ENV, endpoint_file_path,
+    MCP_HTTP_BIND_ENV, MCP_HTTP_BIND_HOST, MCP_HTTP_DEFAULT_PORT, MCP_HTTP_MIN_TOKEN_BYTES,
+    MCP_HTTP_PATH, MCP_HTTP_TOKEN_ENV, endpoint_file_path,
 };
 use anyhow::{Context, Result, bail};
 use axum::{
@@ -63,7 +63,6 @@ const TASK_RESULT_POLL_INTERVAL: Duration =
     Duration::from_millis(PROJECT_TASK_MIN_POLL_INTERVAL_MS);
 const TASK_PROGRESS_META_KEY: &str = "alcomd3/projectProgress";
 const TASK_RELATED_META_KEY: &str = "io.modelcontextprotocol/related-task";
-const MCP_HTTP_MIN_TOKEN_BYTES: usize = 32;
 
 type McpJsonResult = std::result::Result<Json<JsonObject>, Json<JsonObject>>;
 

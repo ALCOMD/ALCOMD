@@ -162,6 +162,21 @@
     "mcp:button:enable": "Enable",
     "mcp:button:disable": "Disable",
     "mcp:toast:value copied": "Value copied.",
+    "mcp:quick setup": "Quick setup (optional)",
+    "mcp:quick setup description": "Manual configuration remains the default. Quick setup only changes the selected AI client after you choose its button.",
+    "mcp:codex quick setup detail": "Writes {{environmentVariable}} to your Windows user environment and adds the ALCOMD3 MCP server to Codex.",
+    "mcp:button:quick setup codex": "Quick setup Codex",
+    "mcp:codex quick setup unsupported": "Codex quick setup is currently available on Windows only. Use the endpoint and token above for manual configuration.",
+    "mcp:toast:codex configured": "Codex configuration was updated.",
+    "mcp:toast:codex already configured": "Codex is already configured.",
+    "mcp:codex quick setup complete": "Fully exit and restart Codex to load the user environment variable and MCP configuration.",
+    "mcp:codex config file": "Codex configuration file",
+    "mcp:authorization token environment variable": "Authorization token environment variable",
+    "mcp:dialog:overwrite codex setup": "Replace the existing Codex setup?",
+    "mcp:dialog:overwrite codex setup description": "Quick setup found an existing value that differs from this ALCOMD3 connection. Continuing only replaces the ALCOMD3 MCP entry and its user environment variable.",
+    "mcp:dialog:codex config conflict": "The Codex configuration already contains a different mcp_servers.alcomd3 entry.",
+    "mcp:dialog:codex environment conflict": "The Windows user environment already contains a different authorization token.",
+    "mcp:button:overwrite and configure": "Replace and configure",
 
 
 // Projects Page

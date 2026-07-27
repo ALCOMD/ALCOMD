@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
+	Bot,
 	CheckCircle2,
 	CircleAlert,
 	Copy,
@@ -21,13 +22,19 @@ import { HNavBar, HNavBarText, VStack } from "@/components/layout";
 import { ScrollPageContainer } from "@/components/ScrollPageContainer";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import {
 	Tooltip,
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { McpStatus, McpToolCallEvent } from "@/lib/bindings";
+import type {
+	McpCodexSetupResult,
+	McpStatus,
+	McpToolCallEvent,
+} from "@/lib/bindings";
 import { commands } from "@/lib/bindings";
+import { type DialogContext, openSingleDialog } from "@/lib/dialog";
 import { tc } from "@/lib/i18n";
 import { toastSuccess, toastThrownError } from "@/lib/toast";
 import { useTauriListen } from "@/lib/use-tauri-listen";
@@ -343,6 +350,7 @@ function Page() {
 								disabled={setEnabled.isPending}
 							/>
 							<EndpointCard status={status.data} />
+							<CodexQuickSetupCard status={status.data} />
 							<RecentClientsCard status={status.data} />
 							<ToolsCard activeToolCalls={activeToolCalls} />
 						</>
@@ -382,6 +390,136 @@ function StatusCard({
 				</Button>
 			</div>
 		</Card>
+	);
+}
+
+function CodexQuickSetupCard({ status }: { status: McpStatus }) {
+	const [result, setResult] = useState<McpCodexSetupResult | null>(null);
+	const configure = useMutation({
+		mutationFn: (overwrite: boolean) => commands.mcpConfigureCodex(overwrite),
+		onError: (error) => {
+			console.error(error);
+			toastThrownError(error);
+		},
+	});
+
+	const quickSetup = async () => {
+		try {
+			let nextResult = await configure.mutateAsync(false);
+			if (nextResult.status === "requiresConfirmation") {
+				const confirmed = await openSingleDialog(
+					ConfirmCodexSetupOverwriteDialog,
+					{ result: nextResult },
+				);
+				if (!confirmed) return;
+				nextResult = await configure.mutateAsync(true);
+			}
+			setResult(nextResult);
+			if (nextResult.status === "configured") {
+				toastSuccess(tc("mcp:toast:codex configured"));
+			} else if (nextResult.status === "alreadyConfigured") {
+				toastSuccess(tc("mcp:toast:codex already configured"));
+			}
+		} catch {
+			// The mutation error handler already reports the failure.
+		}
+	};
+
+	return (
+		<Card className="shrink-0 p-4 compact:p-3">
+			<h2 className="mb-2">{tc("mcp:quick setup")}</h2>
+			<p className="mb-3 text-sm text-muted-foreground">
+				{tc("mcp:quick setup description")}
+			</p>
+			<div className="flex flex-wrap items-center gap-3">
+				<div className="flex min-w-0 grow items-center gap-3">
+					<div className="rounded-md bg-secondary p-2">
+						<Bot className="size-5" />
+					</div>
+					<div className="min-w-0">
+						<div className="font-medium">Codex</div>
+						<div className="text-sm text-muted-foreground">
+							{tc("mcp:codex quick setup detail", {
+								environmentVariable:
+									status.authorizationTokenEnvironmentVariable,
+							})}
+						</div>
+					</div>
+				</div>
+				<Button
+					onClick={() => void quickSetup()}
+					disabled={
+						!status.codexQuickSetupSupported ||
+						!status.running ||
+						configure.isPending
+					}
+					className="gap-2"
+				>
+					{configure.isPending ? (
+						<RefreshCw className="size-5 animate-spin" />
+					) : (
+						<Bot className="size-5" />
+					)}
+					{tc("mcp:button:quick setup codex")}
+				</Button>
+			</div>
+			{!status.codexQuickSetupSupported && (
+				<p className="mt-3 text-sm text-muted-foreground">
+					{tc("mcp:codex quick setup unsupported")}
+				</p>
+			)}
+			{result != null &&
+				(result.status === "configured" ||
+					result.status === "alreadyConfigured") && (
+					<div className="mt-3 rounded-md bg-secondary p-3 text-sm">
+						<p>{tc("mcp:codex quick setup complete")}</p>
+						<div className="mt-2 grid gap-2 md:grid-cols-[max-content_1fr]">
+							<StatusRow label={tc("mcp:codex config file")}>
+								<CodeValue>{result.configPath}</CodeValue>
+							</StatusRow>
+							<StatusRow
+								label={tc("mcp:authorization token environment variable")}
+							>
+								<CodeValue>{result.environmentVariable}</CodeValue>
+							</StatusRow>
+						</div>
+					</div>
+				)}
+		</Card>
+	);
+}
+
+function ConfirmCodexSetupOverwriteDialog({
+	dialog,
+	result,
+}: {
+	dialog: DialogContext<boolean>;
+	result: McpCodexSetupResult;
+}) {
+	return (
+		<>
+			<DialogTitle>{tc("mcp:dialog:overwrite codex setup")}</DialogTitle>
+			<div className="grid gap-3">
+				<p>{tc("mcp:dialog:overwrite codex setup description")}</p>
+				<ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+					{result.configConflict && (
+						<li>{tc("mcp:dialog:codex config conflict")}</li>
+					)}
+					{result.environmentConflict && (
+						<li>{tc("mcp:dialog:codex environment conflict")}</li>
+					)}
+				</ul>
+				<CodeValue>{result.configPath}</CodeValue>
+			</div>
+			<DialogFooter>
+				<Button onClick={() => dialog.close(false)}>
+					{tc("general:button:cancel")}
+				</Button>
+				<Button variant="destructive" onClick={() => dialog.close(true)}>
+					{tc("mcp:button:overwrite and configure")}
+				</Button>
+			</DialogFooter>
+		</>
 	);
 }
 

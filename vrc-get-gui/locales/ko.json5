@@ -151,6 +151,21 @@
     "mcp:button:enable": "Enable",
     "mcp:button:disable": "Disable",
     "mcp:toast:value copied": "Value copied.",
+    "mcp:quick setup": "빠른 설정(선택 사항)",
+    "mcp:quick setup description": "기본적으로 사용자가 직접 설정합니다. 빠른 설정은 해당 버튼을 누른 경우에만 선택한 AI 클라이언트를 변경합니다.",
+    "mcp:codex quick setup detail": "{{environmentVariable}}을 Windows 사용자 환경 변수에 기록하고 ALCOMD3 MCP 서버를 Codex에 추가합니다.",
+    "mcp:button:quick setup codex": "Codex 빠른 설정",
+    "mcp:codex quick setup unsupported": "Codex 빠른 설정은 현재 Windows에서만 사용할 수 있습니다. 위의 엔드포인트와 토큰을 사용해 직접 설정하세요.",
+    "mcp:toast:codex configured": "Codex 설정을 업데이트했습니다.",
+    "mcp:toast:codex already configured": "Codex가 이미 설정되어 있습니다.",
+    "mcp:codex quick setup complete": "사용자 환경 변수와 MCP 설정을 불러오려면 Codex를 완전히 종료한 후 다시 시작하세요.",
+    "mcp:codex config file": "Codex 설정 파일",
+    "mcp:authorization token environment variable": "인증 토큰 환경 변수",
+    "mcp:dialog:overwrite codex setup": "기존 Codex 설정을 바꾸시겠습니까?",
+    "mcp:dialog:overwrite codex setup description": "현재 ALCOMD3 연결과 다른 기존 값을 찾았습니다. 계속하면 ALCOMD3 MCP 항목과 해당 사용자 환경 변수만 바뀝니다.",
+    "mcp:dialog:codex config conflict": "Codex 설정에 다른 mcp_servers.alcomd3 항목이 있습니다.",
+    "mcp:dialog:codex environment conflict": "Windows 사용자 환경 변수에 다른 인증 토큰이 있습니다.",
+    "mcp:button:overwrite and configure": "바꾸고 설정",
 
 
 // Projects Page

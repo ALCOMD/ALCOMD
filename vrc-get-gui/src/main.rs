@@ -20,6 +20,7 @@ mod extensions;
 mod log_sanitization;
 mod logging;
 mod mcp;
+mod mcp_client_config;
 mod storage;
 mod templates;
 

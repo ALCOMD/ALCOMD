@@ -60,8 +60,10 @@ limited set of project and package operations.
 
 MCP is disabled by default. When enabled, it uses a bearer-authenticated
 loopback-only Streamable HTTP endpoint and private local IPC. It never listens
-on a LAN or public network address. See the [MCP guide](./docs/mcp.md) for
-setup, available tools, and permission boundaries.
+on a LAN or public network address. Manual client setup remains the default;
+Windows users can optionally let the MCP page configure Codex. See the
+[MCP guide](./docs/mcp.md) for setup, available tools, and permission
+boundaries.
 
 ## Project and community
 

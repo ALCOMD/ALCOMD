@@ -6388,6 +6388,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-util",
+ "toml_edit 0.25.12+spec-1.1.0",
  "trash",
  "url",
  "uuid",

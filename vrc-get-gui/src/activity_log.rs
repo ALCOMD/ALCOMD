@@ -33,6 +33,7 @@ pub mod operations {
     pub const GUI_OPEN_PATH: &str = "gui.open_path";
     pub const GUI_OPEN_URL: &str = "gui.open_url";
     pub const LEGACY_IMPORT: &str = "legacy.import";
+    pub const MCP_CONFIGURE_CODEX: &str = "mcp.configure_codex";
     pub const MCP_SET_ENABLED: &str = "mcp.set_enabled";
     pub const PACKAGES_REFRESH_CACHE: &str = "packages.refresh_cache";
     pub const PROJECTS_SYNC_REAL_INFO: &str = "projects.sync_real_info";

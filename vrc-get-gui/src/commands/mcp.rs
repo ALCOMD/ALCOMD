@@ -60,3 +60,35 @@ pub async fn mcp_set_enabled(
         )
         .await
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn mcp_configure_codex(
+    app: AppHandle,
+    mcp: State<'_, crate::mcp::McpState>,
+    overwrite: bool,
+) -> Result<crate::mcp_client_config::McpCodexSetupResult, RustError> {
+    mcp.ensure_running(app.clone()).await?;
+    let (port, token) = crate::mcp::ensure_mcp_http_config(&app).await?;
+    let endpoint = crate::mcp::mcp_http_endpoint(alcomd3_mcp_protocol::MCP_HTTP_BIND_HOST, port);
+
+    let app_for_activity = app.clone();
+    let activity = app_for_activity.state::<ActivityLogState>();
+    activity
+        .track_result(
+            Some(&app_for_activity),
+            ActivityInput::new(
+                ActivitySource::Gui,
+                ActivityKind::Write,
+                ActivityImportance::Primary,
+                operations::MCP_CONFIGURE_CODEX,
+                "Configuring Codex MCP",
+            ),
+            "Codex MCP configuration checked",
+            Vec::new(),
+            async move {
+                Ok(crate::mcp_client_config::configure_codex(&endpoint, &token, overwrite).await?)
+            },
+        )
+        .await
+}

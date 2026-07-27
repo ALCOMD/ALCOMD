@@ -94,6 +94,8 @@ pub struct McpStatus {
     endpoint_file: String,
     mcp_endpoint: Option<String>,
     authorization_token: Option<String>,
+    authorization_token_environment_variable: String,
+    codex_quick_setup_supported: bool,
     recent_clients: Vec<McpRecentClientStatus>,
 }
 
@@ -595,9 +597,10 @@ impl McpState {
             port: http.map(|http| http.port),
             pid: http.and_then(|http| http.child.id()).unwrap_or_default(),
             endpoint_file: endpoint_file_path().display().to_string(),
-            mcp_endpoint: http
-                .map(|http| format!("http://{}:{}{MCP_HTTP_PATH}", http.host, http.port)),
+            mcp_endpoint: http.map(|http| mcp_http_endpoint(&http.host, http.port)),
             authorization_token: http.map(|http| http.token.clone()),
+            authorization_token_environment_variable: MCP_HTTP_TOKEN_ENV.to_string(),
+            codex_quick_setup_supported: crate::mcp_client_config::codex_quick_setup_supported(),
             recent_clients: inner
                 .recent_clients
                 .iter()
@@ -712,7 +715,7 @@ impl McpState {
     }
 }
 
-async fn ensure_mcp_http_config(app: &AppHandle) -> io::Result<(u16, String)> {
+pub(crate) async fn ensure_mcp_http_config(app: &AppHandle) -> io::Result<(u16, String)> {
     let state = app.state::<GuiConfigState>();
     let current = state.get();
     if current.mcp_http_port != 0 && current.mcp_http_token.len() >= 32 {
@@ -727,6 +730,10 @@ async fn ensure_mcp_http_config(app: &AppHandle) -> io::Result<(u16, String)> {
         config.save().await?;
     }
     Ok(result)
+}
+
+pub(crate) fn mcp_http_endpoint(host: &str, port: u16) -> String {
+    format!("http://{host}:{port}{MCP_HTTP_PATH}")
 }
 
 async fn start_mcp_http_server(port: u16, token: String) -> io::Result<ActiveMcpHttpServer> {
