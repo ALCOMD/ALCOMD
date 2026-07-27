@@ -134,7 +134,7 @@ Current ALCOMD3 data-root structure:
 | `templates/*.alcomtemplate` | Custom and imported ALCOMD3 project templates. |
 | `activity-logs/*.jsonl` | Operation activity history shown in the Log view. |
 | `technical-logs/alcomd3-*.log` | Technical application logs. Legacy `vrc-get-` log names remain readable in this folder. |
-| `mcp/endpoint.json` | Runtime metadata for the local stdio MCP bridge endpoint; generated for the current install and never imported from legacy data roots. |
+| `mcp/endpoint.json` | Runtime metadata for the private GUI IPC endpoint used by the local MCP HTTP server; generated for the current install and never imported from legacy data roots. |
 | `Documents/ALCOMD3/Projects/` | Default project creation folder outside the local data root. |
 | `Documents/ALCOMD3/Backups/` | Default project backup folder outside the local data root. |
 
@@ -381,7 +381,7 @@ Important areas:
 
 ### MCP bridge
 
-ALCOMD3 includes an optional local MCP bridge. Preserve the minimal local
+ALCOMD3 includes an optional local MCP server. Preserve the minimal local
 boundary unless a future change explicitly expands it with review and UI
 approval flows.
 
@@ -389,9 +389,10 @@ Preserve these rules:
 
 - MCP data access is disabled by default and must be enabled from the GUI before
   tools return ALCOMD3 data.
-- The external MCP server is `alcomd3-mcp` over stdio.
-- stdout from `alcomd3-mcp` must contain only MCP JSON-RPC messages; diagnostics
-  belong on stderr.
+- The external MCP server is `alcomd3-mcp` over bearer-authenticated Streamable
+  HTTP and binds exactly to `127.0.0.1`.
+- Validate `Host` and `Origin`; never expose the server on a LAN or public
+  address.
 - The GUI exposes a private localhost TCP IPC endpoint while running and writes
   metadata under the local data directory's `mcp/endpoint.json`.
 - The GUI MCP enable/disable control only gates tool data access. It must not

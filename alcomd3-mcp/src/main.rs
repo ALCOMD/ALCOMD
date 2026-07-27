@@ -2,11 +2,19 @@ use alcomd3_mcp_protocol::{
     ClientIdentity, EndpointMetadata, IPC_IO_TIMEOUT, IPC_MAX_LINE_BYTES,
     IPC_METHOD_PROJECT_TASK_CANCEL, IPC_METHOD_PROJECT_TASK_GET, IPC_METHOD_PROJECT_TASK_LIST,
     IPC_METHOD_PROJECT_TASK_START, IPC_PROTOCOL_VERSION, IpcRequest, IpcResponse, IpcTransport,
-    endpoint_file_path,
+    MCP_HTTP_BIND_ENV, MCP_HTTP_BIND_HOST, MCP_HTTP_DEFAULT_PORT, MCP_HTTP_PATH,
+    MCP_HTTP_TOKEN_ENV, endpoint_file_path,
 };
 use anyhow::{Context, Result, bail};
+use axum::{
+    Router,
+    extract::{Request, State},
+    http::{HeaderMap, StatusCode, header::AUTHORIZATION},
+    middleware::{self, Next},
+    response::Response,
+};
 use rmcp::{
-    ErrorData as McpError, Json, Peer, RoleServer, ServerHandler, ServiceExt,
+    ErrorData as McpError, Json, Peer, RoleServer, ServerHandler,
     handler::server::tool::IntoCallToolResult,
     handler::server::wrapper::Parameters,
     model::{
@@ -18,20 +26,24 @@ use rmcp::{
     schemars,
     service::RequestContext,
     tool, tool_handler, tool_router,
-    transport::stdio,
+    transport::streamable_http_server::{
+        StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
+    },
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, VecDeque};
+use std::env;
 use std::future::Future;
 use std::io;
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::net::TcpStream;
+use tokio::net::{TcpListener, TcpStream};
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 const GUI_EXECUTABLE_ENV: &str = "ALCOMD3_GUI_EXECUTABLE";
@@ -51,6 +63,7 @@ const TASK_RESULT_POLL_INTERVAL: Duration =
     Duration::from_millis(PROJECT_TASK_MIN_POLL_INTERVAL_MS);
 const TASK_PROGRESS_META_KEY: &str = "alcomd3/projectProgress";
 const TASK_RELATED_META_KEY: &str = "io.modelcontextprotocol/related-task";
+const MCP_HTTP_MIN_TOKEN_BYTES: usize = 32;
 
 type McpJsonResult = std::result::Result<Json<JsonObject>, Json<JsonObject>>;
 
@@ -554,14 +567,21 @@ struct Alcomd3Mcp {
 }
 
 impl Alcomd3Mcp {
+    #[cfg(test)]
     fn new() -> Self {
+        Self::new_with_limiter(ToolInvocationLimiter::new(
+            ToolInvocationLimits::production(),
+        ))
+    }
+
+    fn new_with_limiter(limiter: ToolInvocationLimiter) -> Self {
         Self {
             client: Arc::new(Mutex::new(ClientIdentity {
                 session_id: Uuid::new_v4(),
                 name: "MCP client".to_string(),
                 version: None,
             })),
-            limiter: ToolInvocationLimiter::new(ToolInvocationLimits::production()),
+            limiter,
         }
     }
 
@@ -2244,11 +2264,110 @@ mod tests {
         drop(first);
         assert!(limiter.try_start(now).is_ok());
     }
+
+    #[test]
+    fn http_sessions_have_distinct_clients_and_share_global_limits() {
+        let limiter = ToolInvocationLimiter::new(ToolInvocationLimits::production());
+        let first = Alcomd3Mcp::new_with_limiter(limiter.clone());
+        let second = Alcomd3Mcp::new_with_limiter(limiter);
+
+        assert_ne!(
+            first.client.lock().unwrap().session_id,
+            second.client.lock().unwrap().session_id
+        );
+        assert!(Arc::ptr_eq(&first.limiter.inner, &second.limiter.inner));
+    }
+}
+
+fn configured_http_address() -> Result<SocketAddr> {
+    let configured = env::var(MCP_HTTP_BIND_ENV)
+        .unwrap_or_else(|_| format!("{MCP_HTTP_BIND_HOST}:{MCP_HTTP_DEFAULT_PORT}"));
+    let address = configured
+        .parse::<SocketAddr>()
+        .with_context(|| format!("invalid {MCP_HTTP_BIND_ENV} address: {configured}"))?;
+    if address.ip() != IpAddr::V4(Ipv4Addr::LOCALHOST) {
+        bail!("{MCP_HTTP_BIND_ENV} must bind exactly to {MCP_HTTP_BIND_HOST}");
+    }
+    Ok(address)
+}
+
+fn configured_http_token() -> Result<String> {
+    let token = env::var(MCP_HTTP_TOKEN_ENV)
+        .with_context(|| format!("{MCP_HTTP_TOKEN_ENV} is required"))?;
+    if token.as_bytes().len() < MCP_HTTP_MIN_TOKEN_BYTES {
+        bail!("{MCP_HTTP_TOKEN_ENV} must contain at least {MCP_HTTP_MIN_TOKEN_BYTES} bytes");
+    }
+    Ok(token)
+}
+
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    let mut difference = left.len() ^ right.len();
+    for index in 0..left.len().max(right.len()) {
+        difference |= usize::from(
+            left.get(index).copied().unwrap_or_default()
+                ^ right.get(index).copied().unwrap_or_default(),
+        );
+    }
+    difference == 0
+}
+
+fn has_valid_bearer_token(headers: &HeaderMap, expected_token: &str) -> bool {
+    headers
+        .get(AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .is_some_and(|actual_token| {
+            constant_time_eq(actual_token.as_bytes(), expected_token.as_bytes())
+        })
+}
+
+async fn require_bearer_token(
+    State(expected_token): State<Arc<str>>,
+    request: Request,
+    next: Next,
+) -> std::result::Result<Response, StatusCode> {
+    if !has_valid_bearer_token(request.headers(), &expected_token) {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    Ok(next.run(request).await)
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let service = Alcomd3Mcp::new().serve(stdio()).await?;
-    service.waiting().await?;
+    let address = configured_http_address()?;
+    let token: Arc<str> = configured_http_token()?.into();
+    let listener = TcpListener::bind(address)
+        .await
+        .with_context(|| format!("binding ALCOMD3 MCP Streamable HTTP server to {address}"))?;
+    let local_address = listener.local_addr()?;
+    let cancellation_token = CancellationToken::new();
+    let limiter = ToolInvocationLimiter::new(ToolInvocationLimits::production());
+    let service: StreamableHttpService<Alcomd3Mcp, LocalSessionManager> =
+        StreamableHttpService::new(
+            move || Ok(Alcomd3Mcp::new_with_limiter(limiter.clone())),
+            Default::default(),
+            StreamableHttpServerConfig::default()
+                .with_allowed_hosts([
+                    MCP_HTTP_BIND_HOST.to_string(),
+                    format!("{MCP_HTTP_BIND_HOST}:{}", local_address.port()),
+                    "localhost".to_string(),
+                    format!("localhost:{}", local_address.port()),
+                ])
+                .with_allowed_origins([
+                    format!("http://{MCP_HTTP_BIND_HOST}:{}", local_address.port()),
+                    format!("http://localhost:{}", local_address.port()),
+                ])
+                .with_cancellation_token(cancellation_token),
+        );
+    let router = Router::new()
+        .nest_service(MCP_HTTP_PATH, service)
+        .layer(middleware::from_fn_with_state(token, require_bearer_token));
+
+    eprintln!(
+        "ALCOMD3 MCP Streamable HTTP server listening on http://{local_address}{MCP_HTTP_PATH}"
+    );
+    axum::serve(listener, router)
+        .await
+        .context("serving ALCOMD3 MCP Streamable HTTP")?;
     Ok(())
 }

@@ -6,20 +6,21 @@ Languages: English | [日本語](mcp/mcp.ja.md) | [简体中文](mcp/mcp.zh-CN.m
 This document describes ALCOMD3 MCP setup, available tools, lifecycle behavior,
 and troubleshooting.
 
-ALCOMD3 implements stdio transport for MCP specification `2025-11-25`. An MCP
-client starts `alcomd3-mcp` as a child process and exchanges JSON-RPC messages
-through stdin/stdout. `alcomd3-mcp` then requests application data through the
-local IPC endpoint exposed by the ALCOMD3 GUI.
+ALCOMD3 implements the Streamable HTTP transport from MCP specification
+`2025-11-25`. The GUI starts one local `alcomd3-mcp` server and exposes its MCP
+endpoint only on `127.0.0.1`. `alcomd3-mcp` requests application data through
+the separate private IPC endpoint exposed by the GUI.
 
 ## Quick Start
 
 1. Start ALCOMD3 and open the MCP page from the sidebar.
 2. Enable MCP.
-3. Copy the Bridge Command shown on the page.
-4. Add it as a stdio MCP server in your MCP-capable client.
+3. Copy the MCP Endpoint and Authorization Token shown on the page.
+4. Add the URL as a Streamable HTTP server in your MCP-capable client and send
+   the token as `Authorization: Bearer <token>`.
 5. Run a tool call while MCP remains enabled in ALCOMD3.
 
-Use the command shown by the GUI instead of guessing the bridge path. See
+Use the endpoint shown by the GUI instead of guessing its port. See
 [Enabling MCP and Client Configuration](#enabling-mcp-and-client-configuration)
 for a configuration example and lifecycle details.
 
@@ -36,10 +37,8 @@ for a configuration example and lifecycle details.
   install/uninstall/reinstall one package in a registered project. Other write
   operations such as repository deletion, repository reorder, and project
   deletion are not exposed.
-- `initialize` and `tools/list` do not start the GUI.
-- When a real tool call needs the GUI and the endpoint is missing or
-  unreachable, the bridge attempts to start the GUI, waits for the endpoint,
-  and retries once.
+- The GUI starts and owns the local Streamable HTTP server. Closing the GUI also
+  stops that server.
 - If GUI startup fails or the endpoint remains unavailable, the tool call
   returns structured `alcomd3_unavailable` and marks the MCP tool result with
   `isError: true`.
@@ -73,7 +72,10 @@ for a configuration example and lifecycle details.
   MCP dispatch is responsible only for enabled-state gating, argument parsing,
   task wrapping, error mapping, and activity logging; it should not add business
   capabilities the GUI does not have.
-- stdio stdout contains only MCP JSON-RPC messages; logs must go to stderr.
+- Streamable HTTP requests require the bearer token generated for the local
+  ALCOMD3 installation.
+- The HTTP server validates `Host` and `Origin`, binds exactly to `127.0.0.1`,
+  and never listens on a LAN or public address.
 - The GUI internal IPC listens only on `127.0.0.1`; it never listens on a public
   network address.
 
@@ -87,7 +89,7 @@ issues; MCP access still requires enabling MCP in the GUI first.
 ```text
 MCP Host / Client
         |
-        | stdio JSON-RPC
+        | Streamable HTTP + bearer token
         v
 alcomd3-mcp
         |
@@ -100,18 +102,18 @@ ALCOMD3 data dir / mcp / endpoint.json
 ALCOMD3 GUI IPC server
 ```
 
-The external MCP transport is stdio. The GUI internal TCP IPC is a private
-channel between the bridge and the desktop app; it is not an HTTP or MCP
-transport exposed directly to MCP clients.
+The external MCP transport is Streamable HTTP. The GUI internal TCP IPC remains
+a separate private channel between the server process and the desktop app; it
+is not exposed directly to MCP clients.
 
 ## Enabling MCP and Client Configuration
 
 1. Start ALCOMD3.
 2. Open the MCP page from the sidebar.
 3. Enable MCP to allow tools to read ALCOMD3 data.
-4. Copy the Bridge Command from the page.
-5. In a client that supports stdio MCP servers, add an MCP server whose command
-   uses the copied `alcomd3-mcp` path.
+4. Copy the MCP Endpoint and Authorization Token from the page.
+5. In a client that supports Streamable HTTP MCP servers, add the endpoint URL
+   and configure the token as a bearer `Authorization` header.
 
 A generic configuration shape is shown below. Exact field names depend on the
 MCP client:
@@ -120,22 +122,28 @@ MCP client:
 {
     "mcpServers": {
         "alcomd3": {
-            "command": "C:\\Path\\To\\ALCOMD3\\alcomd3-mcp.exe"
+            "url": "http://127.0.0.1:51739/mcp",
+            "headers": {
+                "Authorization": "Bearer <token shown by ALCOMD3>"
+            }
         }
     }
 }
 ```
 
-On macOS and Linux, use `alcomd3-mcp` without the `.exe` suffix. Prefer the
-command shown on the GUI MCP page.
+Exact client fields vary. Always copy the current URL and token from the GUI.
+The default port is `51739`; advanced users may change `mcpHttpPort` in
+`gui-config.json` before starting ALCOMD3.
 
-After configuration, the MCP client may keep the `alcomd3-mcp` stdio connection
-while ALCOMD3 is not running. On the first real tool call, the bridge attempts
-to start the ALCOMD3 GUI. After the GUI starts and exposes the endpoint, calls
-return data if MCP is enabled in the GUI. If MCP is disabled, new tool calls
-return `mcp_disabled`; the user can enable MCP in the GUI and retry. Already
+The endpoint is available only while ALCOMD3 is running. If MCP is disabled,
+new tool calls return `mcp_disabled`; enable MCP in the GUI and retry. Already
 started project long tasks can still be queried or cancelled through task
-follow-up methods.
+follow-up methods while the server remains running.
+
+The external HTTP port and bearer token are stored as `mcpHttpPort` and
+`mcpHttpToken` in `gui-config.json`. Treat the token as a local secret and do
+not include it in logs, screenshots, or shared configuration. Replacing the
+token invalidates existing client configuration.
 
 ## Package Locations
 
@@ -180,8 +188,9 @@ Metadata format:
 }
 ```
 
-`token` is used only for local IPC authentication between the bridge and GUI.
-Do not expose the endpoint file to remote systems.
+This endpoint metadata `token` is used only for private IPC authentication
+between the HTTP server process and GUI. It is different from the external HTTP
+bearer token. Do not expose either value to remote systems.
 
 ## Internal IPC
 
@@ -397,42 +406,28 @@ return a `count` field.
 
 ## Lifecycle and Multi-Process Behavior
 
-`alcomd3-mcp` is normally started by an MCP client as a stdio server. Different
-clients or client sessions may start multiple bridge processes; that is a
-normal result of MCP client management.
+The GUI starts one `alcomd3-mcp` Streamable HTTP server after loading its local
+configuration. All MCP clients connect to that shared local endpoint and create
+independent MCP sessions.
 
 ALCOMD3 lifecycle boundaries:
 
-- When the GUI exits, it stops the IPC listener and deletes the endpoint file.
-- `alcomd3-mcp` does not exit automatically when the GUI exits. It keeps the MCP
-  stdio connection so AI agents such as Codex can recover calls after the GUI
-  restarts without restarting the client.
-- The GUI can observe internal IPC requests from the bridge, but cannot
-  reliably know whether the MCP client and bridge stdio session is still alive.
-  Therefore the GUI client area shows recent activity; tool highlight indicates
-  a currently handled call.
+- When the GUI exits, it stops the HTTP server and private IPC listener, then
+  deletes the private endpoint file.
+- The endpoint URL and bearer token are stable for the local installation. A
+  client can reconnect after the GUI restarts without changing configuration.
+- The GUI client area shows recent MCP session activity; tool highlight
+  indicates a currently handled call.
 - When the GUI is unavailable, tool calls return structured
   `alcomd3_unavailable`.
 - When the GUI is available but MCP is disabled, new tool calls return
   structured `mcp_disabled`; task follow-up methods for already started project
   long tasks can still query results or cancel tasks.
-- After the GUI restarts, new endpoint metadata is written to the same path and
-  later tool calls reconnect to the GUI. Whether data is returned depends on
-  whether MCP is enabled in the GUI.
-- If a tool call happens while the GUI is not running, the bridge attempts to
-  start the GUI. To avoid popping the GUI when an MCP client merely loads
-  configuration, `initialize` and `tools/list` do not trigger startup.
-
-If you see several `alcomd3-mcp.exe` processes briefly:
-
-1. Check whether multiple MCP clients or multiple client sessions are running.
-2. A bridge still running after the GUI closes is not necessarily stale; as long
-   as the MCP client keeps the stdio connection, it continues running so calls
-   can recover after GUI restart.
-3. If the MCP client is definitely closed but the bridge remains, it is usually
-   an old bridge version or a client that did not manage stdio lifecycle
-   correctly. Close the corresponding MCP client or end the old process before
-   testing with the new version.
+- After the GUI restarts, it binds the configured loopback port again and later
+  client requests can reconnect. Whether tools return data still depends on the
+  MCP enable switch.
+- If the configured port is already in use, the MCP page shows the server as
+  not running and the technical log records the startup error.
 
 ## Errors and Troubleshooting
 
@@ -453,26 +448,31 @@ calls are already running. Retry later.
 Common causes:
 
 - ALCOMD3 GUI is not running.
-- The endpoint file is missing, expired, or deleted.
-- The client started `alcomd3-mcp` from an old path.
+- The client URL does not match the MCP Endpoint currently shown by the GUI.
+- The configured local port is already in use.
 
 Steps:
 
 1. Start ALCOMD3.
 2. Confirm endpoint running on the MCP page.
-3. Copy the Bridge Command again and update the MCP client configuration.
+3. Copy the MCP Endpoint and Authorization Token again and update the client.
 4. Restart the MCP client.
+
+### HTTP `401 Unauthorized`
+
+The bearer token is missing or does not match the token shown by ALCOMD3.
+Update the client's `Authorization` header.
+
+### HTTP `403 Forbidden`
+
+The request carried a disallowed browser `Origin`. ALCOMD3 accepts native MCP
+clients and same-loopback origins only, preventing DNS rebinding and cross-site
+requests to the local server.
 
 ### `protocol mismatch`
 
-The bridge and GUI internal IPC versions do not match. This usually means the
-client started an old `alcomd3-mcp`. Copy the command shown on the GUI MCP page
-again and confirm it points to the current install directory.
-
-### Non-JSON Content on stdout
-
-This is a bug. A stdio MCP server stdout must contain only JSON-RPC. Debug
-output must go to stderr.
+The HTTP server and GUI internal IPC versions do not match. Restart ALCOMD3 and
+confirm that only the current installation is running.
 
 ## Development Smoke Test
 
@@ -482,18 +482,10 @@ Build the bridge from the repository root:
 cargo build -p alcomd3-mcp
 ```
 
-With the GUI stopped, a missing endpoint can verify that the bridge does not
-panic:
+Run the focused HTTP lifecycle and security smoke tests:
 
 ```powershell
-$env:ALCOMD3_MCP_ENDPOINT_FILE = Join-Path $env:TEMP "missing-alcomd3-mcp-endpoint.json"
-$payload = @'
-{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"smoke","version":"0.0.0"}}}
-{"jsonrpc":"2.0","method":"notifications/initialized"}
-{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"alcomd3_list_projects","arguments":{}}}
-'@
-$payload | .\target\debug\alcomd3-mcp.exe
+cargo test -p alcomd3-mcp
 ```
 
 Expected result:
@@ -502,7 +494,8 @@ Expected result:
 - `tools/list` returns the current MCP tools.
 - `tools/call` returns a readable `ok: false` error and marks the MCP tool
   result with `isError: true`.
-- stdout contains no non-JSON-RPC logs.
+- Missing/incorrect bearer tokens return HTTP `401`.
+- Disallowed origins return HTTP `403`.
 
 ## Related Source
 
@@ -517,7 +510,7 @@ Expected result:
 ## References
 
 - MCP Specification `2025-11-25`: <https://modelcontextprotocol.io/specification/2025-11-25>
-- MCP stdio transport: <https://modelcontextprotocol.io/specification/2025-11-25/basic/transports>
+- MCP Streamable HTTP transport: <https://modelcontextprotocol.io/specification/2025-11-25/basic/transports>
 - MCP lifecycle: <https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle>
 - MCP tools: <https://modelcontextprotocol.io/specification/2025-11-25/server/tools>
 - MCP tasks: <https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks>

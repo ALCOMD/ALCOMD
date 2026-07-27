@@ -43,6 +43,10 @@ pub struct GuiConfig {
     pub gui_compact: bool,
     #[serde(default)]
     pub mcp_enabled: bool,
+    #[serde(default = "mcp_http_port_default")]
+    pub mcp_http_port: u16,
+    #[serde(default)]
+    pub mcp_http_token: String,
     #[serde(default = "project_view_mode_default")]
     pub project_view_mode: String,
     #[serde(default)]
@@ -145,6 +149,8 @@ impl Default for GuiConfig {
             gui_animation: true,
             gui_compact: gui_compact_default(),
             mcp_enabled: false,
+            mcp_http_port: mcp_http_port_default(),
+            mcp_http_token: String::new(),
             project_view_mode: project_view_mode_default(),
             unity_hub_access_method: UnityHubAccessMethod::ReadConfig,
             recent_project_locations: Vec::new(),
@@ -188,6 +194,19 @@ impl GuiConfig {
             }
         }
         self.synchronize_sidebar_extension_states();
+    }
+
+    pub(crate) fn ensure_mcp_http_config(&mut self) -> bool {
+        let mut changed = false;
+        if self.mcp_http_port == 0 {
+            self.mcp_http_port = mcp_http_port_default();
+            changed = true;
+        }
+        if self.mcp_http_token.len() < 32 {
+            self.mcp_http_token = uuid::Uuid::new_v4().simple().to_string();
+            changed = true;
+        }
+        changed
     }
 
     pub(crate) fn set_extension_enabled(&mut self, id: &str, enabled: bool) {
@@ -250,6 +269,10 @@ fn automatic_update_default() -> bool {
 
 fn use_alcom_for_vcc_protocol_default() -> bool {
     true
+}
+
+fn mcp_http_port_default() -> u16 {
+    alcomd3_mcp_protocol::MCP_HTTP_DEFAULT_PORT
 }
 
 fn log_level_default() -> Vec<LogLevel> {
@@ -473,6 +496,22 @@ mod tests {
     fn automatic_updates_can_be_disabled() {
         let config: GuiConfig = serde_json::from_str(r#"{"automaticUpdate":false}"#).unwrap();
         assert!(!config.automatic_update);
+    }
+
+    #[test]
+    fn missing_mcp_http_config_is_generated_once() {
+        let mut config: GuiConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(
+            config.mcp_http_port,
+            alcomd3_mcp_protocol::MCP_HTTP_DEFAULT_PORT
+        );
+        assert!(config.mcp_http_token.is_empty());
+
+        assert!(config.ensure_mcp_http_config());
+        let token = config.mcp_http_token.clone();
+        assert_eq!(token.len(), 32);
+        assert!(!config.ensure_mcp_http_config());
+        assert_eq!(config.mcp_http_token, token);
     }
 
     #[test]

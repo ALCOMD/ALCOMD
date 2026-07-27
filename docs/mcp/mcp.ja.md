@@ -4,17 +4,18 @@
 
 このドキュメントは、ALCOMD3 の MCP 接続方法、利用可能な tools、ライフサイクル挙動、トラブルシューティングを説明します。
 
-ALCOMD3 の現在の実装は、MCP `2025-11-25` specification の stdio transport に従います。MCP client は `alcomd3-mcp` を子プロセスとして起動し、stdin/stdout で JSON-RPC message を交換します。`alcomd3-mcp` は ALCOMD3 GUI が公開する local IPC endpoint を通してアプリケーションデータを要求します。
+ALCOMD3 の現在の実装は、MCP `2025-11-25` specification の Streamable HTTP transport に従います。GUI は `127.0.0.1` のみで listen する local `alcomd3-mcp` server を起動し、`alcomd3-mcp` は GUI の独立した private IPC endpoint を通してアプリケーションデータを要求します。
 
 ## クイックスタート
 
 1. ALCOMD3 を起動し、sidebar の MCP page を開きます。
 2. MCP を有効化します。
-3. page に表示される Bridge Command をコピーします。
-4. MCP 対応 client で、その command を stdio MCP server として追加します。
+3. page に表示される MCP Endpoint と Authorization Token をコピーします。
+4. MCP 対応 client で URL を Streamable HTTP server として追加し、token を
+   `Authorization: Bearer <token>` で送信します。
 5. ALCOMD3 で MCP を有効にしたまま tool call を実行します。
 
-bridge path を推測せず、GUI に表示される command を使用してください。設定例と
+port を推測せず、GUI に表示される endpoint を使用してください。設定例と
 ライフサイクルの詳細は [MCP の有効化と client 設定](#mcp-の有効化と-client-設定)
 を参照してください。
 
@@ -23,8 +24,7 @@ bridge path を推測せず、GUI に表示される command を使用してく�
 - MCP は既定で無効です。新しい tool call が ALCOMD3 data を読み書きするには、GUI で手動で有効化する必要があります。
 - GUI が通常実行中の場合、local IPC endpoint が起動します。MCP の有効/無効は tool data access を制御するだけで、endpoint は停止しません。
 - 現在は project、repository、package、environment、activity log、technical log の read-only tools と、限定的な write tools を提供します。write tools は project 作成、existing project 追加、VPM repository 追加、registered project の backup、registered project の copy、zip backup からの restore、registered project への package install/uninstall/reinstall です。repository 削除、repository 並べ替え、project 削除などの他の write operation は提供しません。
-- `initialize` と `tools/list` は GUI を起動しません。
-- 実際の tool call で GUI が必要なときに endpoint が存在しない、または接続できない場合、bridge は GUI の起動を試み、endpoint を待って 1 回だけ再試行します。
+- GUI が local Streamable HTTP server を起動して管理します。GUI 終了時には server も停止します。
 - GUI 起動に失敗した場合、または endpoint が利用できないままの場合、tool call は structured `alcomd3_unavailable` error を返し、MCP tool result に `isError: true` を付けます。
 - MCP が無効な場合、新しい tool call は structured `mcp_disabled` error を返します。endpoint は停止せず、panic もしません。MCP tool result には `isError: true` が付きます。既に開始された project long task の `tasks/get`、`tasks/result`、`tasks/cancel` は cleanup 例外として、結果確認や cancel ができます。
 - bridge は tool call に緩やかな local rate limit と concurrency protection を適用します。制限を超えた場合は structured `rate_limited` error を返し、MCP tool result に `isError: true` を付けます。
@@ -37,7 +37,8 @@ bridge path を推測せず、GUI に表示される command を使用してく�
   ユーザーは GUI の Activity page で Agent が何をしたか確認できます。
 - GUI project management page と MCP package tools は backend の GUI-visible package catalog を共有します。pre-release、yanked、hidden repository、hidden local user package、同名 package の source 間 merge、default/user repository priority、Unity compatibility は backend が統一して処理します。
 - すべての public MCP tool は GUI の既存 capability に mapping され、`vrc-get-gui/src/backend/` の shared backend service を通して business logic に入ります。MCP dispatch は enabled-state gate、argument parsing、task wrapping、error mapping、activity logging だけを担当し、GUI にない business capability を追加しません。
-- stdio stdout は MCP JSON-RPC message だけを出力します。log は stderr にのみ書きます。
+- Streamable HTTP request には local ALCOMD3 installation 用の bearer token が必要です。
+- HTTP server は `Host` と `Origin` を検証し、`127.0.0.1` に厳密に bind します。LAN や public address では listen しません。
 - GUI internal IPC は `127.0.0.1` のみ listen し、public network address では listen しません。
 
 Activity record は raw MCP params、token-like field、HTTP header value、query 付き URL、URL userinfo credential を保存しません。local filesystem path は Unity、VPM、非 ASCII path の診断に必要なため完全な値を保持します。MCP access には GUI で MCP を有効化する必要があります。
@@ -47,7 +48,7 @@ Activity record は raw MCP params、token-like field、HTTP header value、quer
 ```text
 MCP Host / Client
         |
-        | stdio JSON-RPC
+        | Streamable HTTP + bearer token
         v
 alcomd3-mcp
         |
@@ -60,15 +61,16 @@ ALCOMD3 data dir / mcp / endpoint.json
 ALCOMD3 GUI IPC server
 ```
 
-外部 MCP transport は stdio です。GUI internal TCP IPC は bridge と desktop app の private channel であり、MCP client に直接公開される HTTP transport や MCP transport ではありません。
+外部 MCP transport は Streamable HTTP です。GUI internal TCP IPC は server process と desktop app の独立した private channel のままで、MCP client へ直接公開しません。
 
 ## MCP の有効化と client 設定
 
 1. ALCOMD3 を起動します。
 2. sidebar の MCP page を開きます。
 3. MCP を有効化し、MCP tools が ALCOMD3 data を読めるようにします。
-4. page の Bridge Command をコピーします。
-5. stdio MCP server に対応する client で MCP server を追加し、コピーした `alcomd3-mcp` path を command に設定します。
+4. page の MCP Endpoint と Authorization Token をコピーします。
+5. Streamable HTTP MCP server に対応する client で endpoint URL を追加し、token を
+   bearer `Authorization` header に設定します。
 
 一般的な設定形は次の通りです。正確な field name は MCP client に従ってください。
 
@@ -76,15 +78,22 @@ ALCOMD3 GUI IPC server
 {
     "mcpServers": {
         "alcomd3": {
-            "command": "C:\\Path\\To\\ALCOMD3\\alcomd3-mcp.exe"
+            "url": "http://127.0.0.1:51739/mcp",
+            "headers": {
+                "Authorization": "Bearer <ALCOMD3 に表示された token>"
+            }
         }
     }
 }
 ```
 
-macOS と Linux では `.exe` suffix のない `alcomd3-mcp` を使います。GUI MCP page に表示される command を優先してください。
+正確な field name は client ごとに異なります。現在の URL と token は GUI からコピーしてください。default port は `51739` です。advanced user は ALCOMD3 起動前に `gui-config.json` の `mcpHttpPort` を変更できます。
 
-設定後、MCP client は ALCOMD3 が未起動でも `alcomd3-mcp` stdio connection を保持できます。最初の実際の tool call 時に、bridge は ALCOMD3 GUI の起動を試みます。GUI が起動して endpoint を公開した後、GUI で MCP が有効なら後続 call は data を返します。MCP が無効なら新しい tool call は `mcp_disabled` を返し、ユーザーが GUI で MCP を有効化した後に再試行できます。既に開始された project long task は task follow-up method で結果確認または cancel できます。
+endpoint は ALCOMD3 実行中だけ利用できます。MCP が無効なら新しい tool call は `mcp_disabled` を返します。GUI で MCP を有効化して再試行してください。server が実行中なら、既に開始された project long task は task follow-up method で結果確認または cancel できます。
+
+external HTTP port と bearer token は `gui-config.json` の `mcpHttpPort`、
+`mcpHttpToken` に保存されます。token は local secret として扱い、log、screenshot、
+shared config に含めないでください。
 
 ## パッケージ内の配置
 
@@ -128,7 +137,9 @@ metadata format:
 }
 ```
 
-`token` は bridge と GUI の local IPC authentication のみに使います。endpoint file を remote system に公開しないでください。
+この endpoint metadata の `token` は HTTP server process と GUI 間の private IPC
+authentication 専用で、external HTTP bearer token とは異なります。どちらの token も
+remote system に公開しないでください。
 
 ## Internal IPC
 
@@ -258,23 +269,17 @@ Package list tools の default `offset` は `0`、`limit` は `200` です。`li
 
 ## Lifecycle and multi-process behavior
 
-`alcomd3-mcp` は通常、MCP client によって stdio server として起動されます。client や session が複数ある場合、複数の bridge processes が起動することがあります。これは MCP client management による正常な可能性です。
+GUI は local config の load 後に 1 つの `alcomd3-mcp` Streamable HTTP server を起動します。すべての MCP clients は同じ local endpoint に接続し、独立した MCP session を作成します。
 
 ALCOMD3 lifecycle boundaries:
 
-- GUI 終了時、IPC listener を停止し endpoint file を削除します。
-- `alcomd3-mcp` は GUI 終了時に自動終了しません。MCP stdio connection を保持し、Codex などの AI agents が client を再起動せずに GUI restart 後の call を回復できるようにします。
-- GUI は bridge からの internal IPC request を観測できますが、MCP client と bridge の stdio session がまだ alive かを確実には判断できません。そのため GUI client area は recent activity を表示し、tool highlight が現在処理中の call を示します。
+- GUI 終了時、HTTP server と private IPC listener を停止し、private endpoint file を削除します。
+- endpoint URL と bearer token は local installation で stable です。GUI restart 後も client config を変更せず reconnect できます。
+- GUI client area は MCP session の recent activity を表示し、tool highlight が現在処理中の call を示します。
 - GUI unavailable 中、tool call は structured `alcomd3_unavailable` を返します。
 - GUI available だが MCP disabled の場合、新しい tool call は structured `mcp_disabled` を返します。既に開始された project long task の task follow-up methods は result query や cancel ができます。
-- GUI restart 後、新しい endpoint metadata が同じ path に書き込まれ、後続 tool call は GUI に reconnect します。data を返すかどうかは GUI で MCP が enabled かに依存します。
-- GUI が未起動の時に tool call が発生すると、bridge は GUI の起動を試みます。MCP client が config を load しただけで GUI が出ないように、`initialize` と `tools/list` は startup を trigger しません。
-
-短時間に複数の `alcomd3-mcp.exe` が見える場合:
-
-1. 複数の MCP clients または複数の client sessions が実行中か確認してください。
-2. GUI を閉じた後も bridge が残ることは必ずしも stale ではありません。MCP client が stdio connection を保持している限り、GUI restart 後の call recovery のために実行を続けます。
-3. MCP client が閉じているのに bridge が残る場合、通常は古い bridge version または client が stdio lifecycle を正しく管理していないことが原因です。該当 MCP client を閉じるか古い process を終了してから新 version で確認してください。
+- GUI restart 後、configured loopback port に再度 bind し、client request は reconnect できます。data を返すかどうかは GUI で MCP が enabled かに依存します。
+- configured port が使用中の場合、MCP page は server not running を表示し、technical log に startup error を記録します。
 
 ## Errors and troubleshooting
 
@@ -291,23 +296,19 @@ bridge が短時間に多すぎる tool calls を受信した、または既に�
 よくある原因:
 
 - ALCOMD3 GUI が起動していない。
-- endpoint file が存在しない、期限切れ、または削除された。
-- client が旧 path の `alcomd3-mcp` を起動している。
+- client URL が GUI に表示される現在の MCP Endpoint と一致しない。
+- configured local port が既に使用中。
 
 対応:
 
 1. ALCOMD3 を起動します。
 2. MCP page で endpoint running を確認します。
-3. Bridge Command を再コピーし、MCP client configuration を更新します。
+3. MCP Endpoint と Authorization Token を再コピーし、MCP client configuration を更新します。
 4. MCP client を再起動します。
 
 ### `protocol mismatch`
 
-bridge と GUI の internal IPC version が一致しません。通常は client が古い `alcomd3-mcp` を起動していることを示します。GUI MCP page に表示される command を再コピーし、current install directory を指していることを確認してください。
-
-### stdout に非 JSON content が出る
-
-これは bug です。stdio MCP server の stdout は JSON-RPC のみを含む必要があります。debug output は stderr に出してください。
+HTTP server と GUI の internal IPC version が一致しません。ALCOMD3 を再起動し、current installation だけが実行中であることを確認してください。
 
 ## Development smoke test
 
@@ -317,17 +318,10 @@ repository root で bridge を build します。
 cargo build -p alcomd3-mcp
 ```
 
-GUI 未起動時、存在しない endpoint で bridge が panic しないことを確認できます。
+HTTP lifecycle と security smoke tests を実行します。
 
 ```powershell
-$env:ALCOMD3_MCP_ENDPOINT_FILE = Join-Path $env:TEMP "missing-alcomd3-mcp-endpoint.json"
-$payload = @'
-{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"smoke","version":"0.0.0"}}}
-{"jsonrpc":"2.0","method":"notifications/initialized"}
-{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"alcomd3_list_projects","arguments":{}}}
-'@
-$payload | .\target\debug\alcomd3-mcp.exe
+cargo test -p alcomd3-mcp
 ```
 
 Expected result:
@@ -335,7 +329,8 @@ Expected result:
 - `initialize` succeeds.
 - `tools/list` returns current MCP tools.
 - `tools/call` returns readable `ok: false` error and marks the MCP tool result with `isError: true`.
-- stdout contains no non-JSON-RPC logs.
+- missing/incorrect bearer token は HTTP `401` を返します。
+- disallowed Origin は HTTP `403` を返します。
 
 ## Related source
 
@@ -350,7 +345,7 @@ Expected result:
 ## References
 
 - MCP Specification `2025-11-25`: <https://modelcontextprotocol.io/specification/2025-11-25>
-- MCP stdio transport: <https://modelcontextprotocol.io/specification/2025-11-25/basic/transports>
+- MCP Streamable HTTP transport: <https://modelcontextprotocol.io/specification/2025-11-25/basic/transports>
 - MCP lifecycle: <https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle>
 - MCP tools: <https://modelcontextprotocol.io/specification/2025-11-25/server/tools>
 - MCP tasks: <https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks>

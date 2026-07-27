@@ -1,7 +1,8 @@
 use alcomd3_mcp_protocol::{
     ENDPOINT_FILE_ENV, EndpointMetadata, IPC_PROTOCOL_VERSION, IpcRequest, IpcResponse,
-    IpcTransport,
+    IpcTransport, MCP_HTTP_BIND_ENV, MCP_HTTP_TOKEN_ENV,
 };
+use reqwest::blocking::Client;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::fs;
@@ -9,8 +10,8 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::mpsc::{self, Receiver};
+use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
@@ -24,22 +25,8 @@ fn bridge_negotiates_current_mcp_protocol_version() {
     fs::create_dir_all(&test_dir).unwrap();
 
     let endpoint_file = test_dir.join("endpoint.json");
-    let mut bridge = ChildGuard::new(
-        Command::new(bridge_exe())
-            .env(ENDPOINT_FILE_ENV, &endpoint_file)
-            .env(
-                "ALCOMD3_GUI_EXECUTABLE",
-                test_dir.join(gui_executable_name()),
-            )
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap(),
-    );
-
-    let mut stdin = bridge.stdin.take().unwrap();
-    let stdout = bridge_output(bridge.stdout.take().unwrap());
+    let (mut bridge, mut stdin, stdout) =
+        start_bridge(&endpoint_file, &test_dir.join(gui_executable_name()));
 
     write_message(
         &mut stdin,
@@ -62,28 +49,58 @@ fn bridge_negotiates_current_mcp_protocol_version() {
 }
 
 #[test]
+fn bridge_requires_bearer_token_and_rejects_cross_origin_requests() {
+    let test_dir =
+        std::env::temp_dir().join(format!("alcomd3-mcp-security-{}", Uuid::new_v4().simple()));
+    fs::create_dir_all(&test_dir).unwrap();
+
+    let endpoint_file = test_dir.join("endpoint.json");
+    let (mut bridge, input, _) =
+        start_bridge(&endpoint_file, &test_dir.join(gui_executable_name()));
+    let initialize = format!(
+        r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"protocolVersion":"{CURRENT_MCP_PROTOCOL_VERSION}","capabilities":{{}},"clientInfo":{{"name":"security-test","version":"0.0.0"}}}}}}"#
+    );
+
+    let unauthorized = input
+        .client
+        .post(&input.endpoint)
+        .header("Accept", "application/json, text/event-stream")
+        .header("Content-Type", "application/json")
+        .body(initialize.clone())
+        .send()
+        .unwrap();
+    assert_eq!(unauthorized.status().as_u16(), 401);
+
+    let cross_origin = input
+        .client
+        .post(&input.endpoint)
+        .header("Authorization", format!("Bearer {}", input.token))
+        .header("Origin", "https://attacker.example")
+        .header("Accept", "application/json, text/event-stream")
+        .header("Content-Type", "application/json")
+        .body(initialize)
+        .send()
+        .unwrap();
+    assert_eq!(cross_origin.status().as_u16(), 403);
+
+    assert!(
+        bridge.try_wait().unwrap().is_none(),
+        "bridge should stay alive after rejected HTTP requests"
+    );
+    bridge.kill().ok();
+    bridge.wait().ok();
+    fs::remove_dir_all(test_dir).ok();
+}
+
+#[test]
 fn bridge_lists_project_tools() {
     let test_dir =
         std::env::temp_dir().join(format!("alcomd3-mcp-tools-{}", Uuid::new_v4().simple()));
     fs::create_dir_all(&test_dir).unwrap();
 
     let endpoint_file = test_dir.join("endpoint.json");
-    let mut bridge = ChildGuard::new(
-        Command::new(bridge_exe())
-            .env(ENDPOINT_FILE_ENV, &endpoint_file)
-            .env(
-                "ALCOMD3_GUI_EXECUTABLE",
-                test_dir.join(gui_executable_name()),
-            )
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap(),
-    );
-
-    let mut stdin = bridge.stdin.take().unwrap();
-    let stdout = bridge_output(bridge.stdout.take().unwrap());
+    let (mut bridge, mut stdin, stdout) =
+        start_bridge(&endpoint_file, &test_dir.join(gui_executable_name()));
 
     write_message(
         &mut stdin,
@@ -371,26 +388,14 @@ fn bridge_stays_connected_when_gui_endpoint_disappears() {
     };
     fs::write(&endpoint_file, serde_json::to_vec(&metadata).unwrap()).unwrap();
 
-    let mut bridge = ChildGuard::new(
-        Command::new(bridge_exe())
-            .env(ENDPOINT_FILE_ENV, &endpoint_file)
-            .env(
-                "ALCOMD3_GUI_EXECUTABLE",
-                test_dir.join(gui_executable_name()),
-            )
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap(),
-    );
-
-    let mut stdin = bridge.stdin.take().unwrap();
-    let stdout = bridge_output(bridge.stdout.take().unwrap());
+    let (mut bridge, mut stdin, stdout) =
+        start_bridge(&endpoint_file, &test_dir.join(gui_executable_name()));
 
     write_message(
         &mut stdin,
-        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"lifecycle-test","version":"0.0.0"}}}"#,
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"protocolVersion":"{CURRENT_MCP_PROTOCOL_VERSION}","capabilities":{{}},"clientInfo":{{"name":"lifecycle-test","version":"0.0.0"}}}}}}"#
+        ),
     );
     assert_eq!(read_response(&stdout)["id"], 1);
 
@@ -432,23 +437,13 @@ fn bridge_attempts_to_start_gui_when_endpoint_is_missing() {
     let endpoint_file = test_dir.join("endpoint.json");
     let missing_gui = test_dir.join(gui_executable_name());
 
-    let mut bridge = ChildGuard::new(
-        Command::new(bridge_exe())
-            .env(ENDPOINT_FILE_ENV, &endpoint_file)
-            .env("ALCOMD3_GUI_EXECUTABLE", &missing_gui)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap(),
-    );
-
-    let mut stdin = bridge.stdin.take().unwrap();
-    let stdout = bridge_output(bridge.stdout.take().unwrap());
+    let (mut bridge, mut stdin, stdout) = start_bridge(&endpoint_file, &missing_gui);
 
     write_message(
         &mut stdin,
-        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"autostart-test","version":"0.0.0"}}}"#,
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"protocolVersion":"{CURRENT_MCP_PROTOCOL_VERSION}","capabilities":{{}},"clientInfo":{{"name":"autostart-test","version":"0.0.0"}}}}}}"#
+        ),
     );
     assert_eq!(read_response(&stdout)["id"], 1);
 
@@ -499,26 +494,14 @@ fn bridge_does_not_start_gui_for_protocol_mismatch() {
     };
     fs::write(&endpoint_file, serde_json::to_vec(&metadata).unwrap()).unwrap();
 
-    let mut bridge = ChildGuard::new(
-        Command::new(bridge_exe())
-            .env(ENDPOINT_FILE_ENV, &endpoint_file)
-            .env(
-                "ALCOMD3_GUI_EXECUTABLE",
-                test_dir.join(gui_executable_name()),
-            )
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap(),
-    );
-
-    let mut stdin = bridge.stdin.take().unwrap();
-    let stdout = bridge_output(bridge.stdout.take().unwrap());
+    let (mut bridge, mut stdin, stdout) =
+        start_bridge(&endpoint_file, &test_dir.join(gui_executable_name()));
 
     write_message(
         &mut stdin,
-        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"protocol-test","version":"0.0.0"}}}"#,
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"protocolVersion":"{CURRENT_MCP_PROTOCOL_VERSION}","capabilities":{{}},"clientInfo":{{"name":"protocol-test","version":"0.0.0"}}}}}}"#
+        ),
     );
     assert_eq!(read_response(&stdout)["id"], 1);
 
@@ -557,7 +540,7 @@ fn bridge_does_not_start_gui_for_protocol_mismatch() {
 }
 
 #[test]
-fn bridge_forwards_stdio_calls_to_loopback_ipc_and_preserves_gui_errors() {
+fn bridge_forwards_http_calls_to_loopback_ipc_and_preserves_gui_errors() {
     let test_dir =
         std::env::temp_dir().join(format!("alcomd3-mcp-loopback-{}", Uuid::new_v4().simple()));
     fs::create_dir_all(&test_dir).unwrap();
@@ -626,22 +609,8 @@ fn bridge_forwards_stdio_calls_to_loopback_ipc_and_preserves_gui_errors() {
         }
     });
 
-    let mut bridge = ChildGuard::new(
-        Command::new(bridge_exe())
-            .env(ENDPOINT_FILE_ENV, &endpoint_file)
-            .env(
-                "ALCOMD3_GUI_EXECUTABLE",
-                test_dir.join(gui_executable_name()),
-            )
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap(),
-    );
-
-    let mut stdin = bridge.stdin.take().unwrap();
-    let stdout = bridge_output(bridge.stdout.take().unwrap());
+    let (mut bridge, mut stdin, stdout) =
+        start_bridge(&endpoint_file, &test_dir.join(gui_executable_name()));
 
     write_message(
         &mut stdin,
@@ -695,34 +664,124 @@ fn bridge_forwards_stdio_calls_to_loopback_ipc_and_preserves_gui_errors() {
     fs::remove_dir_all(test_dir).ok();
 }
 
-fn write_message(stdin: &mut ChildStdin, message: &str) {
-    writeln!(stdin, "{message}").unwrap();
-    stdin.flush().unwrap();
+fn write_message(input: &mut BridgeInput, message: &str) {
+    input.send(message);
 }
 
 struct BridgeOutput {
     responses: Receiver<Result<Value, String>>,
 }
 
-fn bridge_output(stdout: ChildStdout) -> BridgeOutput {
-    let (sender, responses) = mpsc::channel();
-    thread::spawn(move || {
-        let mut stdout = BufReader::new(stdout);
-        loop {
-            let mut line = String::new();
-            let response = match stdout.read_line(&mut line) {
-                Ok(0) => Err("MCP bridge stdout closed before the next response".to_string()),
-                Ok(_) => serde_json::from_str(&line)
-                    .map_err(|error| format!("invalid MCP bridge response: {error}: {line}")),
-                Err(error) => Err(format!("failed to read MCP bridge response: {error}")),
-            };
-            let terminal = response.is_err();
-            if sender.send(response).is_err() || terminal {
-                break;
-            }
+struct BridgeInput {
+    client: Client,
+    endpoint: String,
+    token: String,
+    session_id: Option<String>,
+    responses: Sender<Result<Value, String>>,
+}
+
+impl BridgeInput {
+    fn send(&mut self, message: &str) {
+        let mut request = self
+            .client
+            .post(&self.endpoint)
+            .header("Authorization", format!("Bearer {}", self.token))
+            .header("Accept", "application/json, text/event-stream")
+            .header("Content-Type", "application/json")
+            .header("MCP-Protocol-Version", CURRENT_MCP_PROTOCOL_VERSION)
+            .body(message.to_string());
+        if let Some(session_id) = &self.session_id {
+            request = request.header("Mcp-Session-Id", session_id);
         }
-    });
-    BridgeOutput { responses }
+
+        let response = match request.send() {
+            Ok(response) => response,
+            Err(error) => {
+                self.responses
+                    .send(Err(format!("failed to call MCP HTTP server: {error}")))
+                    .ok();
+                return;
+            }
+        };
+        if let Some(session_id) = response
+            .headers()
+            .get("Mcp-Session-Id")
+            .and_then(|value| value.to_str().ok())
+        {
+            self.session_id = Some(session_id.to_string());
+        }
+        if response.status().as_u16() == 202 {
+            return;
+        }
+        let status = response.status();
+        let body = match response.text() {
+            Ok(body) => body,
+            Err(error) => {
+                self.responses
+                    .send(Err(format!("failed to read MCP HTTP response: {error}")))
+                    .ok();
+                return;
+            }
+        };
+        let payload = body
+            .lines()
+            .filter_map(|line| line.strip_prefix("data: "))
+            .find(|payload| !payload.trim().is_empty())
+            .unwrap_or(body.trim());
+        let parsed = serde_json::from_str(payload)
+            .map_err(|error| format!("invalid MCP HTTP response ({status}): {error}: {body}"));
+        self.responses.send(parsed).ok();
+    }
+}
+
+fn start_bridge(
+    endpoint_file: &Path,
+    gui_executable: &Path,
+) -> (ChildGuard, BridgeInput, BridgeOutput) {
+    let reservation = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = reservation.local_addr().unwrap().port();
+    drop(reservation);
+    let token = Uuid::new_v4().simple().to_string();
+    let endpoint = format!("http://127.0.0.1:{port}/mcp");
+    let bridge = ChildGuard::new(
+        Command::new(bridge_exe())
+            .env(ENDPOINT_FILE_ENV, endpoint_file)
+            .env("ALCOMD3_GUI_EXECUTABLE", gui_executable)
+            .env(MCP_HTTP_BIND_ENV, format!("127.0.0.1:{port}"))
+            .env(MCP_HTTP_TOKEN_ENV, &token)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    wait_for_http_server(port);
+    let (sender, responses) = mpsc::channel();
+    (
+        bridge,
+        BridgeInput {
+            client: Client::new(),
+            endpoint,
+            token,
+            session_id: None,
+            responses: sender,
+        },
+        BridgeOutput { responses },
+    )
+}
+
+fn wait_for_http_server(port: u16) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for MCP Streamable HTTP server"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
 }
 
 fn read_response(stdout: &BridgeOutput) -> Value {

@@ -32,6 +32,7 @@ use alcomd3_mcp_protocol::{
     ClientIdentity, EndpointMetadata, IPC_IO_TIMEOUT, IPC_MAX_LINE_BYTES,
     IPC_METHOD_PROJECT_TASK_CANCEL, IPC_METHOD_PROJECT_TASK_GET, IPC_METHOD_PROJECT_TASK_LIST,
     IPC_METHOD_PROJECT_TASK_START, IPC_PROTOCOL_VERSION, IpcRequest, IpcResponse, IpcTransport,
+    MCP_HTTP_BIND_ENV, MCP_HTTP_BIND_HOST, MCP_HTTP_PATH, MCP_HTTP_TOKEN_ENV, MCP_PROTOCOL_VERSION,
     endpoint_file_path,
 };
 use indexmap::{IndexMap, IndexSet};
@@ -41,12 +42,14 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::future::Future;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::process::{Child, Command};
 use tokio::sync::{Mutex, oneshot};
 use tokio::task::AbortHandle;
 use uuid::Uuid;
@@ -73,19 +76,24 @@ const MCP_PACKAGE_LIST_MAX_LIMIT: usize = 1_000;
 const MCP_PROJECT_TASK_TTL_MS: u64 = 10 * 60 * 1_000;
 const MCP_PROJECT_TASK_POLL_INTERVAL_MS: u64 = 500;
 const MCP_DISABLED_MESSAGE: &str = "MCP is disabled in ALCOMD3 GUI";
+const MCP_HTTP_STARTUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+const MCP_HTTP_STARTUP_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(50);
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct McpStatus {
     enabled: bool,
     running: bool,
-    protocol_version: u32,
+    protocol_version: String,
     transport: String,
     host: Option<String>,
     port: Option<u16>,
     pid: u32,
     endpoint_file: String,
-    bridge_command: String,
+    mcp_endpoint: Option<String>,
+    authorization_token: Option<String>,
     recent_clients: Vec<McpRecentClientStatus>,
 }
 
@@ -530,8 +538,15 @@ struct McpStateInner {
 }
 
 struct ActiveMcpServer {
-    metadata: EndpointMetadata,
     task: tauri::async_runtime::JoinHandle<()>,
+    http: ActiveMcpHttpServer,
+}
+
+struct ActiveMcpHttpServer {
+    child: Child,
+    host: String,
+    port: u16,
+    token: String,
 }
 
 impl McpState {
@@ -547,20 +562,42 @@ impl McpState {
     }
 
     pub async fn status(&self, enabled: bool) -> McpStatus {
-        let inner = self.inner.lock().await;
-        let metadata = inner.active.as_ref().map(|active| &active.metadata);
+        let mut inner = self.inner.lock().await;
+        let exited = inner.active.as_mut().and_then(|active| {
+            active
+                .http
+                .child
+                .try_wait()
+                .inspect_err(|error| {
+                    log::error!("failed to query MCP Streamable HTTP server status: {error}");
+                })
+                .ok()
+                .flatten()
+        });
+        if let Some(status) = exited {
+            log::error!("MCP Streamable HTTP server exited unexpectedly with {status}");
+            if let Some(active) = inner.active.take() {
+                active.task.abort();
+            }
+            if let Err(error) = remove_endpoint_file(&endpoint_file_path()).await {
+                log::error!("failed to remove MCP IPC endpoint after server exit: {error}");
+            }
+        }
+        let http = inner.active.as_ref().map(|active| &active.http);
         let now_unix_ms = now_unix_ms();
 
         McpStatus {
             enabled,
-            running: metadata.is_some(),
-            protocol_version: IPC_PROTOCOL_VERSION,
-            transport: "tcp".to_string(),
-            host: metadata.map(|metadata| metadata.host.clone()),
-            port: metadata.map(|metadata| metadata.port),
-            pid: std::process::id(),
+            running: http.is_some(),
+            protocol_version: MCP_PROTOCOL_VERSION.to_string(),
+            transport: "streamable-http".to_string(),
+            host: http.map(|http| http.host.clone()),
+            port: http.map(|http| http.port),
+            pid: http.and_then(|http| http.child.id()).unwrap_or_default(),
             endpoint_file: endpoint_file_path().display().to_string(),
-            bridge_command: bridge_command(),
+            mcp_endpoint: http
+                .map(|http| format!("http://{}:{}{MCP_HTTP_PATH}", http.host, http.port)),
+            authorization_token: http.map(|http| http.token.clone()),
             recent_clients: inner
                 .recent_clients
                 .iter()
@@ -583,6 +620,7 @@ impl McpState {
     }
 
     async fn start(&self, app: AppHandle) -> io::Result<()> {
+        let (http_port, http_token) = ensure_mcp_http_config(&app).await?;
         let mut inner = self.inner.lock().await;
         if inner.active.is_some() {
             return Ok(());
@@ -603,19 +641,36 @@ impl McpState {
         write_endpoint_file(&endpoint_file_path(), &metadata).await?;
 
         let task = tauri::async_runtime::spawn(async move {
-            accept_loop(app, listener, token).await;
+            accept_loop(app.clone(), listener, token).await;
         });
+
+        let http = match start_mcp_http_server(http_port, http_token).await {
+            Ok(http) => http,
+            Err(error) => {
+                task.abort();
+                remove_endpoint_file(&endpoint_file_path()).await?;
+                return Err(error);
+            }
+        };
 
         inner.recent_clients.clear();
         inner.last_client_status_emit_unix_ms = 0;
-        inner.active = Some(ActiveMcpServer { metadata, task });
+        inner.active = Some(ActiveMcpServer { task, http });
         Ok(())
     }
 
     async fn stop(&self, app: Option<&AppHandle>) -> io::Result<()> {
         let mut inner = self.inner.lock().await;
-        if let Some(active) = inner.active.take() {
+        if let Some(mut active) = inner.active.take() {
             active.task.abort();
+            if let Err(error) = active.http.child.start_kill()
+                && error.kind() != io::ErrorKind::InvalidInput
+            {
+                log::error!("failed to stop MCP Streamable HTTP server: {error}");
+            }
+            if let Err(error) = active.http.child.wait().await {
+                log::error!("failed to wait for MCP Streamable HTTP server shutdown: {error}");
+            }
         }
         inner.recent_clients.clear();
         inner.last_client_status_emit_unix_ms = 0;
@@ -654,6 +709,69 @@ impl McpState {
             now_unix_ms,
             last_client_status_emit_unix_ms,
         )
+    }
+}
+
+async fn ensure_mcp_http_config(app: &AppHandle) -> io::Result<(u16, String)> {
+    let state = app.state::<GuiConfigState>();
+    let current = state.get();
+    if current.mcp_http_port != 0 && current.mcp_http_token.len() >= 32 {
+        return Ok((current.mcp_http_port, current.mcp_http_token.clone()));
+    }
+    drop(current);
+
+    let mut config = state.load_mut().await?;
+    let changed = config.ensure_mcp_http_config();
+    let result = (config.mcp_http_port, config.mcp_http_token.clone());
+    if changed {
+        config.save().await?;
+    }
+    Ok(result)
+}
+
+async fn start_mcp_http_server(port: u16, token: String) -> io::Result<ActiveMcpHttpServer> {
+    let mut command = Command::new(bridge_executable_path());
+    command
+        .env(MCP_HTTP_BIND_ENV, format!("{MCP_HTTP_BIND_HOST}:{port}"))
+        .env(MCP_HTTP_TOKEN_ENV, &token)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.as_std_mut().creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let mut child = command.spawn()?;
+    let address = (MCP_HTTP_BIND_HOST, port);
+    let deadline = tokio::time::Instant::now() + MCP_HTTP_STARTUP_TIMEOUT;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            return Err(io::Error::other(format!(
+                "MCP Streamable HTTP server exited during startup with {status}"
+            )));
+        }
+        if TcpStream::connect(address).await.is_ok() {
+            tokio::time::sleep(MCP_HTTP_STARTUP_POLL_INTERVAL).await;
+            if child.try_wait()?.is_none() {
+                return Ok(ActiveMcpHttpServer {
+                    child,
+                    host: MCP_HTTP_BIND_HOST.to_string(),
+                    port,
+                    token,
+                });
+            }
+        }
+        if tokio::time::Instant::now() >= deadline {
+            child.start_kill().ok();
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "timed out waiting for MCP Streamable HTTP server",
+            ));
+        }
+        tokio::time::sleep(MCP_HTTP_STARTUP_POLL_INTERVAL).await;
     }
 }
 
@@ -3450,10 +3568,6 @@ fn temporary_endpoint_path(path: &Path) -> PathBuf {
     path.with_file_name(file_name)
 }
 
-fn bridge_command() -> String {
-    quote_command_path(&bridge_executable_path())
-}
-
 fn bridge_executable_path() -> PathBuf {
     let current = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("ALCOMD3"));
     let directory = current.parent().unwrap_or_else(|| Path::new("."));
@@ -3464,15 +3578,6 @@ fn bridge_executable_path() -> PathBuf {
     #[cfg(not(windows))]
     {
         directory.join("alcomd3-mcp")
-    }
-}
-
-fn quote_command_path(path: &Path) -> String {
-    let value = path.display().to_string();
-    if value.contains([' ', '\t', '"']) {
-        format!("\"{}\"", value.replace('"', "\\\""))
-    } else {
-        value
     }
 }
 

@@ -58,9 +58,9 @@ ALCOMD3 は、MCP 対応 AI クライアントを、範囲を限定したプロ�
 リポジトリ、パッケージ、環境設定、アクティビティ記録、技術ログのデータに接続できます。
 また、限定的なプロジェクトおよびパッケージ操作も提供します。
 
-MCP は既定で無効です。有効化後はローカル stdio bridge と private な loopback-only IPC
-を使用します。GUI internal IPC は `127.0.0.1` のみ listen し、public network address
-では listen しません。設定、利用可能な tools、権限境界については
+MCP は既定で無効です。有効化後は認証付き loopback-only Streamable HTTP endpoint と
+private IPC だけを使用し、LAN や public network address では listen しません。
+設定、利用可能な tools、権限境界については
 [MCP ガイド](../docs/mcp/mcp.ja.md) を参照してください。
 
 ## プロジェクトとコミュニティ

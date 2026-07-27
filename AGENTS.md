@@ -20,7 +20,8 @@
 - 不要随意修改 Tauri identifier、安装目录、主程序文件名、协议名、用户数据路径或 `vrc-get` 兼容路径。
 - `vrc-get-gui/`、`vrc-get-vpm/`、`vrc-get/` 等命名目前具有历史和兼容成本，不作为普通清理项重命名。
 - ALCOMD3 updater 使用 ALCOMD3 自有 endpoint 和签名材料，不复用非 ALCOMD3 的发布配置、secret 或 updater metadata。
-- MCP 默认关闭，仅使用本地 stdio bridge 和本机 IPC，不应引入网络监听。
+- MCP 默认关闭；对外仅使用带 bearer token 的本机回环 Streamable HTTP，对内使用本机
+  私有 IPC。不得监听局域网或公网地址。
 - 面向用户时对所有已发布平台使用同一文案原则：不因某个平台的打包、签名、安装或更新
   机制增加专属披露、警告或帮助内容；只有本版本确有该平台的用户可见变化时才点名说明。
 

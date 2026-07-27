@@ -125,7 +125,7 @@ ALCOMD3 は既定で自身の runtime data を所有する。
 | `templates/*.alcomtemplate` | custom/imported ALCOMD3 project template。 |
 | `activity-logs/*.jsonl` | Log view に表示する operation activity history。 |
 | `technical-logs/alcomd3-*.log` | technical application log。legacy `vrc-get-` log name はこの folder 内で引き続き readable。 |
-| `mcp/endpoint.json` | local stdio MCP bridge endpoint の runtime metadata。current install が生成し、legacy data root から import しない。 |
+| `mcp/endpoint.json` | local MCP HTTP server が使用する private GUI IPC endpoint の runtime metadata。current install が生成し、legacy data root から import しない。 |
 | `Documents/ALCOMD3/Projects/` | local data root 外の default project creation folder。 |
 | `Documents/ALCOMD3/Backups/` | local data root 外の default project backup folder。 |
 
@@ -328,13 +328,14 @@ ALCOMD3 は user-readable activity record と developer-oriented technical log
 
 ### MCP bridge
 
-ALCOMD3 には optional local MCP bridge がある。将来の変更が review と UI approval flow により明示的に拡張しない限り、minimal local boundary を保持する。
+ALCOMD3 には optional local MCP server がある。将来の変更が review と UI approval flow により明示的に拡張しない限り、minimal local boundary を保持する。
 
 保持する規則:
 
 - MCP data access は既定で disabled。tool が ALCOMD3 data を返す前に GUI から有効化する必要がある。
-- External MCP server は stdio 上の `alcomd3-mcp`。
-- `alcomd3-mcp` の stdout は MCP JSON-RPC message のみにする。diagnostic は stderr に出す。
+- External MCP server は bearer token で認証する Streamable HTTP 上の `alcomd3-mcp` で、
+  `127.0.0.1` だけに bind する。
+- `Host` と `Origin` を検証し、LAN や public address では listen しない。
 - GUI は起動中に private localhost TCP IPC endpoint を公開し、local data directory の `mcp/endpoint.json` に metadata を書く。
 - GUI の MCP enable/disable control は tool data access のみを gate する。local endpoint を停止してはならない。disabled tool call は `mcp_disabled` を返す。
 - `ALCOMD3_MCP_ENDPOINT_FILE` は development/test 用に endpoint metadata path を override できる。

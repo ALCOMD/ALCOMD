@@ -115,8 +115,9 @@
     "mcp:running": "Endpoint Running",
     "mcp:not running": "Endpoint Stopped",
     "mcp:endpoint": "Endpoint",
-    "mcp:endpoint file": "Endpoint File",
-    "mcp:bridge command": "Bridge Command",
+    "mcp:mcp endpoint": "MCP Endpoint",
+    "mcp:authorization token": "Authorization Token",
+    "mcp:private endpoint file": "Private IPC Endpoint File",
     "mcp:protocol version": "Protocol Version",
     "mcp:transport": "Transport",
     "mcp:host": "Host",
@@ -155,7 +156,7 @@
     "mcp:tool:alcomd3_reinstall_project_package": "Reinstall project package",
     "mcp:button:enable": "Enable",
     "mcp:button:disable": "Disable",
-    "mcp:toast:command copied": "Bridge command copied.",
+    "mcp:toast:value copied": "Value copied.",
 
 
 // Projects Page

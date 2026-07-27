@@ -114,8 +114,9 @@
     "mcp:running": "端点运行中",
     "mcp:not running": "端点未运行",
     "mcp:endpoint": "端点",
-    "mcp:endpoint file": "端点文件",
-    "mcp:bridge command": "桥接命令",
+    "mcp:mcp endpoint": "MCP 端点",
+    "mcp:authorization token": "授权令牌",
+    "mcp:private endpoint file": "私有 IPC 端点文件",
     "mcp:protocol version": "协议版本",
     "mcp:transport": "传输",
     "mcp:host": "主机",
@@ -154,7 +155,7 @@
     "mcp:tool:alcomd3_reinstall_project_package": "重装项目软件包",
     "mcp:button:enable": "启用",
     "mcp:button:disable": "停用",
-    "mcp:toast:command copied": "已复制桥接命令。",
+    "mcp:toast:value copied": "已复制。",
 
 
 // Projects Page

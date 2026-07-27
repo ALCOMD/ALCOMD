@@ -7,7 +7,7 @@
 
 | 层级 | 命令或 workflow | 主要覆盖 |
 | --- | --- | --- |
-| Rust | `cargo test --workspace --exclude windows-installer-wrapper --locked` | VPM、MCP stdio/IPC、updater 与发布工具 |
+| Rust | `cargo test --workspace --exclude windows-installer-wrapper --locked` | VPM、MCP Streamable HTTP/私有 IPC、updater 与发布工具 |
 | GUI 单元测试 | 在 `vrc-get-gui` 运行 `npm test` | Tauri command 序列化、事件、取消、错误与导航状态 |
 | 桌面 E2E | `Full-chain desktop smoke` | 在 Windows x64、macOS arm64 和 Linux x64 上真实启动 Tauri，验证首次配置、隔离项目发现、重启持久化和 MCP 默认禁用边界 |
 | macOS bundles | `Full-chain desktop smoke` | `.app`、updater 压缩包和 DMG 结构、arm64 二进制、显式 ad-hoc 签名、复制安装后的启动与清理 |

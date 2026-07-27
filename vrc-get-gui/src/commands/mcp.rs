@@ -7,9 +7,13 @@ use tauri::{AppHandle, Manager, State};
 #[tauri::command]
 #[specta::specta]
 pub async fn mcp_status(
+    app: AppHandle,
     config: State<'_, GuiConfigState>,
     mcp: State<'_, crate::mcp::McpState>,
 ) -> Result<crate::mcp::McpStatus, RustError> {
+    if let Err(error) = mcp.ensure_running(app).await {
+        log::error!("failed to ensure MCP Streamable HTTP server while reading status: {error}");
+    }
     Ok(mcp.status(config.get().mcp_enabled).await)
 }
 

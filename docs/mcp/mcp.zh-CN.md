@@ -4,19 +4,20 @@
 
 本文档说明 ALCOMD3 的 MCP 接入方式、可用工具、生命周期行为和排障方法。
 
-ALCOMD3 当前实现遵循 MCP `2025-11-25` 规范的 stdio transport。MCP 客户端启动
-`alcomd3-mcp` 作为子进程，通过 stdin/stdout 交换 JSON-RPC 消息。`alcomd3-mcp`
-再通过 ALCOMD3 GUI 暴露的本机 IPC endpoint 请求应用数据。
+ALCOMD3 当前实现遵循 MCP `2025-11-25` 规范的 Streamable HTTP transport。GUI
+启动一个仅监听 `127.0.0.1` 的本地 `alcomd3-mcp` server；`alcomd3-mcp` 再通过
+GUI 暴露的独立私有 IPC endpoint 请求应用数据。
 
 ## 快速开始
 
 1. 启动 ALCOMD3，打开侧边栏中的 MCP 页面。
 2. 启用 MCP。
-3. 复制页面显示的 Bridge Command。
-4. 在支持 MCP 的客户端中，将该命令添加为 stdio MCP server。
+3. 复制页面显示的 MCP Endpoint 和授权令牌。
+4. 在支持 MCP 的客户端中，将 URL 添加为 Streamable HTTP server，并用
+   `Authorization: Bearer <令牌>` 发送授权令牌。
 5. 保持 ALCOMD3 中的 MCP 为启用状态，然后运行工具调用。
 
-请直接使用 GUI 显示的命令，不要自行猜测 bridge 路径。配置示例和生命周期详情请参阅
+请直接使用 GUI 显示的 endpoint，不要自行猜测端口。配置示例和生命周期详情请参阅
 [启用和客户端配置](#启用和客户端配置)。
 
 ## 当前边界
@@ -27,9 +28,7 @@ ALCOMD3 当前实现遵循 MCP `2025-11-25` 规范的 stdio transport。MCP 客�
 - 当前提供项目、仓库、软件包和环境设置只读工具，以及有限写工具：新建项目、
   添加已有项目、添加 VPM 仓库、备份已登记项目、复制已登记项目、从 zip 备份恢复项目、
   为已登记项目安装/卸载/重装单个软件包。不提供仓库删除、仓库重排、项目删除等其他写操作。
-- `initialize` 和 `tools/list` 不会启动 GUI。
-- 实际 tool call 需要 GUI 时，如果 endpoint 缺失或不可连接，bridge 会尝试启动 GUI、
-  等待 endpoint 出现并重试一次。
+- GUI 负责启动和管理本地 Streamable HTTP server；关闭 GUI 时也会停止该 server。
 - GUI 启动失败或 endpoint 仍不可用时，tool call 返回结构化 `alcomd3_unavailable` 错误，
   并在 MCP tool result 上标记 `isError: true`。
 - MCP 停用时，新的 tool call 返回结构化 `mcp_disabled` 错误，不关闭 endpoint、不 panic，
@@ -50,7 +49,8 @@ ALCOMD3 当前实现遵循 MCP `2025-11-25` 规范的 stdio transport。MCP 客�
 - 每个公开 MCP tool 都必须映射到 GUI 已有 capability，并通过 `vrc-get-gui/src/backend/`
   中的共享后端服务进入业务逻辑。MCP dispatch 只负责启用状态 gate、参数解析、任务封装、
   错误映射和活动记录，不应新增 GUI 不具备的业务能力。
-- stdio stdout 只输出 MCP JSON-RPC 消息；日志只能写 stderr。
+- Streamable HTTP 请求必须携带为本机 ALCOMD3 安装生成的 bearer token。
+- HTTP server 校验 `Host` 和 `Origin`，严格绑定 `127.0.0.1`，不监听局域网或公网地址。
 - GUI 内部 IPC 只监听 `127.0.0.1`，不监听公网地址。
 
 活动记录不会保存原始 MCP params、token-like 字段、HTTP header 值、带 query 的 URL 或 URL userinfo 凭据。
@@ -61,7 +61,7 @@ ALCOMD3 当前实现遵循 MCP `2025-11-25` 规范的 stdio transport。MCP 客�
 ```text
 MCP Host / Client
         |
-        | stdio JSON-RPC
+        | Streamable HTTP + bearer token
         v
 alcomd3-mcp
         |
@@ -74,17 +74,17 @@ ALCOMD3 data dir / mcp / endpoint.json
 ALCOMD3 GUI IPC server
 ```
 
-对外 MCP transport 是 stdio。GUI 内部 TCP IPC 是 bridge 与桌面应用之间的私有通道，
-不是对 MCP client 直接暴露的 HTTP 或 MCP transport。
+对外 MCP transport 是 Streamable HTTP。GUI 内部 TCP IPC 仍是 server process 与桌面应用
+之间的独立私有通道，不直接暴露给 MCP client。
 
 ## 启用和客户端配置
 
 1. 启动 ALCOMD3。
 2. 打开侧边栏中的 MCP 页面。
 3. 点击启用，允许 MCP 工具读取 ALCOMD3 数据。
-4. 复制页面中的 Bridge Command。
-5. 在支持 stdio MCP server 的客户端中添加一个 MCP server，命令使用复制到的
-   `alcomd3-mcp` 路径。
+4. 复制页面中的 MCP Endpoint 和授权令牌。
+5. 在支持 Streamable HTTP MCP server 的客户端中添加 endpoint URL，并将令牌配置为
+   bearer `Authorization` header。
 
 通用配置形态如下，具体字段名以 MCP 客户端为准：
 
@@ -92,19 +92,25 @@ ALCOMD3 GUI IPC server
 {
     "mcpServers": {
         "alcomd3": {
-            "command": "C:\\Path\\To\\ALCOMD3\\alcomd3-mcp.exe"
+            "url": "http://127.0.0.1:51739/mcp",
+            "headers": {
+                "Authorization": "Bearer <ALCOMD3 页面显示的令牌>"
+            }
         }
     }
 }
 ```
 
-macOS 和 Linux 使用无 `.exe` 后缀的 `alcomd3-mcp`。以 GUI MCP 页面显示的命令为准。
+不同客户端的字段名可能不同。请始终从 GUI 复制当前 URL 与令牌。默认端口为 `51739`；
+高级用户可在启动 ALCOMD3 前修改 `gui-config.json` 中的 `mcpHttpPort`。
 
-配置完成后，MCP 客户端可以在 ALCOMD3 未运行时保留 `alcomd3-mcp` stdio 连接。第一次
-实际调用工具时，bridge 会尝试启动 ALCOMD3 GUI。GUI 启动后会暴露 endpoint；如果 GUI
-中 MCP 已启用，后续调用会返回数据；如果 MCP 已停用，新的工具调用会返回
-`mcp_disabled`，用户可在 GUI 中启用 MCP 后重试工具调用。已启动的项目长任务仍可通过
+endpoint 仅在 ALCOMD3 运行时可用。如果 GUI 中 MCP 已停用，新的工具调用返回
+`mcp_disabled`，启用 MCP 后重试即可。server 仍运行时，已启动的项目长任务仍可通过
 task 后续方法查询结果或取消。
+
+外部 HTTP 端口和 bearer token 以 `mcpHttpPort`、`mcpHttpToken` 保存在
+`gui-config.json`。请将 token 视为本机密钥，不要放入日志、截图或共享配置。替换 token
+后，已有客户端配置会失效。
 
 ## 打包位置
 
@@ -148,7 +154,8 @@ metadata 格式：
 }
 ```
 
-`token` 只用于 bridge 与 GUI 的本机 IPC 鉴权。不要把 endpoint 文件暴露给远程系统。
+这份 endpoint metadata 中的 `token` 只用于 HTTP server process 与 GUI 之间的私有 IPC
+鉴权，与对外 HTTP bearer token 不同。不要把任一 token 暴露给远程系统。
 
 ## 内部 IPC
 
@@ -320,31 +327,20 @@ GUI 项目管理页的软件包表由后端合并同名包生成。MCP 的包列
 
 ## 生命周期和多进程行为
 
-`alcomd3-mcp` 通常由 MCP 客户端按 stdio server 方式启动。不同客户端可能为不同会话
-启动多个 bridge 进程，这是 MCP 客户端管理方式导致的正常可能性。
+GUI 加载本地配置后会启动一个 `alcomd3-mcp` Streamable HTTP server。所有 MCP 客户端
+连接同一个本机 endpoint，并建立各自独立的 MCP session。
 
 ALCOMD3 的生命周期边界：
 
-- GUI 退出时会停止 IPC listener，并删除 endpoint 文件。
-- `alcomd3-mcp` 不会因为 GUI 退出而主动退出。它继续保持 MCP stdio 连接，让 Codex
-  等 AI 代理不需要重启就能在 GUI 重新启动后恢复调用。
-- GUI 只能观察 bridge 发来的内部 IPC 请求，不能可靠判断 MCP client 与 bridge 的 stdio
-  会话是否仍然存活。因此 GUI 中的客户端区域按“最近活动”展示，工具高亮才表示当前正在处理的调用。
+- GUI 退出时会停止 HTTP server 和私有 IPC listener，并删除私有 endpoint 文件。
+- endpoint URL 与 bearer token 对当前本机安装保持稳定；GUI 重启后客户端无需修改配置即可重连。
+- GUI 中的客户端区域按 MCP session 的“最近活动”展示，工具高亮表示当前正在处理的调用。
 - GUI 不可用期间，tool call 返回结构化 `alcomd3_unavailable` 错误。
 - GUI 可用但 MCP 停用期间，新的 tool call 返回结构化 `mcp_disabled` 错误；已启动
   项目长任务的 task 后续方法仍可查询结果或取消任务。
-- GUI 重新启动后，新的 endpoint metadata 写入同一路径，后续 tool call 会重新连接到
-  GUI；是否返回数据取决于 GUI 中 MCP 是否启用。
-- 如果 tool call 发生时 GUI 未运行，bridge 会尝试启动 GUI。为避免 MCP 客户端加载配置
-  时弹出 GUI，`initialize` 和 `tools/list` 不触发启动。
-
-如果看到短时间内存在多个 `alcomd3-mcp.exe`：
-
-1. 先确认是否有多个 MCP 客户端或多个客户端会话正在运行。
-2. GUI 关闭后 bridge 仍存在并不一定是残留；只要 MCP 客户端还保持 stdio 连接，它就会
-   继续运行以便 GUI 重启后恢复。
-3. 如果确认 MCP 客户端已经关闭但 bridge 仍存在，通常是旧版本 bridge 或客户端未按
-   stdio 生命周期管理导致；关闭对应 MCP 客户端或手动结束旧进程后再使用新版本验证。
+- GUI 重新启动后会再次绑定已配置的 loopback 端口，客户端后续请求可以重连；工具是否
+  返回数据仍取决于 GUI 中的 MCP 启用开关。
+- 如果配置端口已被占用，MCP 页面会显示 server 未运行，技术日志会记录启动错误。
 
 ## 错误和排障
 
@@ -363,24 +359,28 @@ bridge 在短时间内收到过多 tool call，或已有过多 tool call 正在�
 常见原因：
 
 - ALCOMD3 GUI 未运行。
-- endpoint 文件不存在、已过期或被删除。
-- 客户端启动的是旧路径中的 `alcomd3-mcp`。
+- 客户端 URL 与 GUI 当前显示的 MCP Endpoint 不一致。
+- 配置的本机端口已被占用。
 
 处理方式：
 
 1. 启动 ALCOMD3。
 2. 在 MCP 页面确认 endpoint running。
-3. 重新复制 Bridge Command，更新 MCP 客户端配置。
+3. 重新复制 MCP Endpoint 和授权令牌，更新客户端配置。
 4. 重启 MCP 客户端。
+
+### HTTP `401 Unauthorized`
+
+bearer token 缺失或与 ALCOMD3 显示的令牌不一致。请更新客户端的 `Authorization` header。
+
+### HTTP `403 Forbidden`
+
+请求携带了不允许的浏览器 `Origin`。ALCOMD3 只接受原生 MCP 客户端和同一 loopback
+origin，防止 DNS rebinding 和跨站请求访问本机 server。
 
 ### `protocol mismatch`
 
-bridge 与 GUI 的内部 IPC 版本不一致。通常说明客户端启动了旧版本 `alcomd3-mcp`。
-重新复制 GUI MCP 页面显示的命令，并确认它指向当前安装目录。
-
-### stdout 出现非 JSON 内容
-
-这是错误行为。stdio MCP server 的 stdout 只能写 JSON-RPC。调试输出必须写 stderr。
+HTTP server 与 GUI 的内部 IPC 版本不一致。请重启 ALCOMD3，并确认只有当前安装版本在运行。
 
 ## 开发 smoke test
 
@@ -390,17 +390,10 @@ bridge 与 GUI 的内部 IPC 版本不一致。通常说明客户端启动了旧
 cargo build -p alcomd3-mcp
 ```
 
-GUI 未运行时，可以用不存在的 endpoint 验证 bridge 不 panic：
+运行 HTTP 生命周期和安全 smoke tests：
 
 ```powershell
-$env:ALCOMD3_MCP_ENDPOINT_FILE = Join-Path $env:TEMP "missing-alcomd3-mcp-endpoint.json"
-$payload = @'
-{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"smoke","version":"0.0.0"}}}
-{"jsonrpc":"2.0","method":"notifications/initialized"}
-{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"alcomd3_list_projects","arguments":{}}}
-'@
-$payload | .\target\debug\alcomd3-mcp.exe
+cargo test -p alcomd3-mcp
 ```
 
 预期结果：
@@ -409,7 +402,8 @@ $payload | .\target\debug\alcomd3-mcp.exe
 - `tools/list` 返回当前可用的 MCP 工具。
 - `tools/call` 返回 `ok: false` 的可读错误，并在 MCP tool result 上标记
   `isError: true`。
-- stdout 中没有非 JSON-RPC 日志。
+- 缺失或错误 bearer token 返回 HTTP `401`。
+- 不允许的 Origin 返回 HTTP `403`。
 
 ## 相关源码
 
@@ -424,7 +418,7 @@ $payload | .\target\debug\alcomd3-mcp.exe
 ## 参考
 
 - MCP Specification `2025-11-25`: <https://modelcontextprotocol.io/specification/2025-11-25>
-- MCP stdio transport: <https://modelcontextprotocol.io/specification/2025-11-25/basic/transports>
+- MCP Streamable HTTP transport: <https://modelcontextprotocol.io/specification/2025-11-25/basic/transports>
 - MCP lifecycle: <https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle>
 - MCP tools: <https://modelcontextprotocol.io/specification/2025-11-25/server/tools>
 - MCP tasks: <https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks>

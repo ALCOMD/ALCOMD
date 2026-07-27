@@ -12,6 +12,12 @@ pub const IPC_METHOD_PROJECT_TASK_START: &str = "project_task_start";
 pub const IPC_METHOD_PROJECT_TASK_GET: &str = "project_task_get";
 pub const IPC_METHOD_PROJECT_TASK_LIST: &str = "project_task_list";
 pub const IPC_METHOD_PROJECT_TASK_CANCEL: &str = "project_task_cancel";
+pub const MCP_PROTOCOL_VERSION: &str = "2025-11-25";
+pub const MCP_HTTP_BIND_HOST: &str = "127.0.0.1";
+pub const MCP_HTTP_DEFAULT_PORT: u16 = 51_739;
+pub const MCP_HTTP_PATH: &str = "/mcp";
+pub const MCP_HTTP_BIND_ENV: &str = "ALCOMD3_MCP_HTTP_BIND";
+pub const MCP_HTTP_TOKEN_ENV: &str = "ALCOMD3_MCP_HTTP_TOKEN";
 pub use alcomd3_app_paths::{
     MCP_DATA_DIR_NAME, MCP_ENDPOINT_FILE_ENV as ENDPOINT_FILE_ENV,
     MCP_ENDPOINT_FILE_NAME as ENDPOINT_FILE_NAME,

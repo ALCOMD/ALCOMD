@@ -113,7 +113,7 @@ ALCOMD3 默认拥有自己的运行数据。
 | `templates/*.alcomtemplate` | 自定义和导入的 ALCOMD3 项目模板。 |
 | `activity-logs/*.jsonl` | 日志页面展示的操作活动历史。 |
 | `technical-logs/alcomd3-*.log` | 技术应用日志。legacy `vrc-get-` 日志文件名在此目录内仍可读取。 |
-| `mcp/endpoint.json` | 本地 stdio MCP bridge endpoint 的运行时 metadata；由当前安装生成，绝不从 legacy 数据根导入。 |
+| `mcp/endpoint.json` | 本地 MCP HTTP server 使用的私有 GUI IPC endpoint 运行时 metadata；由当前安装生成，绝不从 legacy 数据根导入。 |
 | `Documents/ALCOMD3/Projects/` | 本地数据根之外的默认项目创建目录。 |
 | `Documents/ALCOMD3/Backups/` | 本地数据根之外的默认项目备份目录。 |
 
@@ -299,13 +299,14 @@ ALCOMD3 将用户可读的活动记录与偏开发者排错的技术日志分开
 
 ### MCP bridge
 
-ALCOMD3 包含可选本地 MCP bridge。除非未来变更通过 review 和 UI approval flow 明确扩展，否则保留最小只读边界。
+ALCOMD3 包含可选本地 MCP server。除非未来变更通过 review 和 UI approval flow 明确扩展，否则保留最小本机边界。
 
 保留这些规则：
 
 - MCP data access 默认关闭，工具返回 ALCOMD3 数据前必须从 GUI 启用。
-- 外部 MCP server 是通过 stdio 运行的 `alcomd3-mcp`。
-- `alcomd3-mcp` 的 stdout 只能包含 MCP JSON-RPC 消息；诊断输出写入 stderr。
+- 外部 MCP server 是通过带 bearer token 的 Streamable HTTP 运行的 `alcomd3-mcp`，
+  严格绑定 `127.0.0.1`。
+- 必须校验 `Host` 与 `Origin`，不得监听局域网或公网地址。
 - GUI 运行时暴露 private localhost TCP IPC endpoint，并在本地数据目录的 `mcp/endpoint.json` 写入 metadata。
 - GUI MCP enable/disable control 只 gate 新的工具数据访问和任务启动，不应停止 local endpoint；禁用时新的工具调用返回 `mcp_disabled`，已启动项目任务的 get/list/cancel 作为收尾例外保留。
 - `ALCOMD3_MCP_ENDPOINT_FILE` 可为开发和测试覆盖 endpoint metadata path。

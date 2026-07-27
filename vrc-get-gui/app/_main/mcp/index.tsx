@@ -390,10 +390,13 @@ function EndpointCard({ status }: { status: McpStatus }) {
 		<Card className="shrink-0 p-4 compact:p-3">
 			<h2 className="mb-3">{tc("mcp:endpoint")}</h2>
 			<div className="grid gap-2 md:grid-cols-[max-content_1fr]">
-				<StatusRow label={tc("mcp:bridge command")}>
-					<CommandValue value={status.bridgeCommand} />
+				<StatusRow label={tc("mcp:mcp endpoint")}>
+					<CopyableValue value={status.mcpEndpoint} />
 				</StatusRow>
-				<StatusRow label={tc("mcp:endpoint file")}>
+				<StatusRow label={tc("mcp:authorization token")}>
+					<CopyableValue value={status.authorizationToken} />
+				</StatusRow>
+				<StatusRow label={tc("mcp:private endpoint file")}>
 					<CodeValue>{status.endpointFile}</CodeValue>
 				</StatusRow>
 				<StatusRow label={tc("mcp:protocol version")}>
@@ -532,11 +535,13 @@ function StatusRow({
 	);
 }
 
-function CommandValue({ value }: { value: string }) {
+function CopyableValue({ value }: { value: string | null }) {
 	const copy = async () => {
+		if (value === null) return;
 		await navigator.clipboard.writeText(value);
-		toastSuccess(tc("mcp:toast:command copied"));
+		toastSuccess(tc("mcp:toast:value copied"));
 	};
+	if (value === null) return <CodeValue>-</CodeValue>;
 	return (
 		<div className="flex min-w-0 items-center gap-2">
 			<CodeValue>{value}</CodeValue>

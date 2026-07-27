@@ -58,10 +58,10 @@ ALCOMD3 can connect MCP-capable AI clients to selected project, repository,
 package, environment, activity, and technical log data. It also provides a
 limited set of project and package operations.
 
-MCP is disabled by default. When enabled, it uses a local stdio bridge and
-private loopback-only IPC. The GUI's internal IPC listens on `127.0.0.1`, not
-on a public network address. See the [MCP guide](./docs/mcp.md) for setup,
-available tools, and permission boundaries.
+MCP is disabled by default. When enabled, it uses a bearer-authenticated
+loopback-only Streamable HTTP endpoint and private local IPC. It never listens
+on a LAN or public network address. See the [MCP guide](./docs/mcp.md) for
+setup, available tools, and permission boundaries.
 
 ## Project and community
 

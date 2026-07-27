@@ -44,7 +44,8 @@ Draft 创建成功不等于发布完成。定时 `Full-chain desktop smoke` 的�
   `legacyWindowsAppId`；过渡期发布必须保留安装前的无条件清理，且只能在另行审查确认共用
   迁移窗口结束后与 `legacyWindowsMigrationReleaseTag` 固定测试基线一起移除，不能再次更换
   `tauriIdentifier` 或 `windowsAppId`。
-- MCP 默认关闭，只使用本地 stdio bridge 与本机 IPC；发布工作不得引入网络监听。
+- MCP 默认关闭；对外仅使用带 bearer token 的本机回环 Streamable HTTP，对内使用本机
+  私有 IPC。发布工作不得开放局域网或公网监听。
 - 已发布的 `release-notes/ALCOMD3_*.md` 与 updater notes 是历史记录，不为后续版本改写。
 - updater JSON 只能在对应 GitHub Release 已公开且全部验证通过后更新。
 - stable 只更新 stable JSON；beta 只更新 beta JSON。

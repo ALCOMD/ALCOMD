@@ -265,13 +265,14 @@ export type McpRecentClientStatus = {
 export type McpStatus = {
 	enabled: boolean,
 	running: boolean,
-	protocolVersion: number,
+	protocolVersion: string,
 	transport: string,
 	host: string | null,
 	port: number | null,
 	pid: number,
 	endpointFile: string,
-	bridgeCommand: string,
+	mcpEndpoint: string | null,
+	authorizationToken: string | null,
 	recentClients: McpRecentClientStatus[],
 };
 

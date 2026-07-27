@@ -7,7 +7,7 @@ documented separately in [RELEASE.md](./RELEASE.md).
 
 | Layer | Command or workflow | Main coverage |
 | --- | --- | --- |
-| Rust | `cargo test --workspace --exclude windows-installer-wrapper --locked` | VPM behavior, MCP stdio/IPC, updater and release tooling |
+| Rust | `cargo test --workspace --exclude windows-installer-wrapper --locked` | VPM behavior, MCP Streamable HTTP/private IPC, updater and release tooling |
 | GUI unit | `npm test` in `vrc-get-gui` | Tauri command serialization, events, cancellation, errors and navigation state |
 | Desktop E2E | `Full-chain desktop smoke` | Real Tauri startup on Windows x64, macOS arm64 and Linux x64; first-run setup, isolated project discovery, restart persistence and the disabled-by-default MCP boundary |
 | macOS bundles | `Full-chain desktop smoke` | `.app`, updater archive and DMG structure, arm64 binaries, explicit ad-hoc signatures, copied-app launch and cleanup |
