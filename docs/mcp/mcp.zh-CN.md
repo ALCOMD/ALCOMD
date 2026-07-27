@@ -12,8 +12,8 @@ GUI 暴露的独立私有 IPC endpoint 请求应用数据。
 
 1. 启动 ALCOMD3，打开侧边栏中的 MCP 页面。
 2. 启用 MCP。
-3. 默认使用页面显示的 MCP Endpoint 和授权令牌手动配置客户端。Windows 上的 Codex
-   用户也可以选择可选的“快速配置 Codex”按钮。
+3. 默认使用页面显示的 MCP Endpoint 和授权令牌手动配置客户端。Windows 上的 Codex、
+   Claude Code 和 Cursor 用户也可以选择对应的可选快速配置按钮。
 4. 手动配置时，将 URL 添加为 Streamable HTTP server，并用
    `Authorization: Bearer <令牌>` 发送授权令牌。
 5. 保持 ALCOMD3 中的 MCP 为启用状态，然后运行工具调用。
@@ -104,14 +104,15 @@ ALCOMD3 GUI IPC server
 
 手动配置仍是默认方式，不会修改操作系统或 AI 客户端配置。
 
-### Windows 上可选的 Codex 快速配置
+### Windows 上可选的 AI 客户端快速配置
 
-Windows 的 MCP 页面提供独立的“快速配置 Codex”按钮。只有用户明确点击后才会执行。
-该操作会：
+Windows 的 MCP 页面为 Codex、Claude Code 和 Cursor 提供各自独立的快速配置按钮。
+只有用户明确点击某个按钮后，才会修改对应客户端。每个按钮都会将当前令牌写入当前
+Windows 用户的 `ALCOMD3_MCP_BEARER_TOKEN` 环境变量，并仅添加或更新所选客户端的
+ALCOMD3 MCP 配置项：
 
-1. 将当前令牌写入当前 Windows 用户的 `ALCOMD3_MCP_BEARER_TOKEN` 环境变量；
-2. 仅在 `$CODEX_HOME/config.toml` 中添加或更新 `[mcp_servers.alcomd3]`；未设置
-   `CODEX_HOME` 时使用 `~/.codex/config.toml`：
+- Codex：使用 `$CODEX_HOME/config.toml`；未设置 `CODEX_HOME` 时使用
+  `~/.codex/config.toml`：
 
 ```toml
 [mcp_servers.alcomd3]
@@ -119,9 +120,42 @@ url = "http://127.0.0.1:51739/mcp"
 bearer_token_env_var = "ALCOMD3_MCP_BEARER_TOKEN"
 ```
 
-其他 Codex 设置和 MCP server 会原样保留。如果环境变量或 `alcomd3` server 配置项已经
-存在不同值，ALCOMD3 会先请求确认，不会静默覆盖。完成快速配置后请完全退出并重新启动
-Codex，使其继承新的用户环境变量并重新加载 `config.toml`。
+- Claude Code：使用 `$CLAUDE_CONFIG_DIR/.claude.json`；未设置
+  `CLAUDE_CONFIG_DIR` 时使用 `~/.claude.json`：
+
+```json
+{
+    "mcpServers": {
+        "alcomd3": {
+            "type": "http",
+            "url": "http://127.0.0.1:51739/mcp",
+            "headers": {
+                "Authorization": "Bearer ${ALCOMD3_MCP_BEARER_TOKEN}"
+            }
+        }
+    }
+}
+```
+
+- Cursor：使用 `~/.cursor/mcp.json`：
+
+```json
+{
+    "mcpServers": {
+        "alcomd3": {
+            "type": "http",
+            "url": "http://127.0.0.1:51739/mcp",
+            "headers": {
+                "Authorization": "Bearer ${env:ALCOMD3_MCP_BEARER_TOKEN}"
+            }
+        }
+    }
+}
+```
+
+所选客户端的其他设置和 MCP server 会原样保留。如果环境变量或该客户端的 `alcomd3`
+配置项已经存在不同值，ALCOMD3 会先请求确认，不会静默覆盖。完成快速配置后请完全退出
+并重新启动所选客户端，使其继承新的用户环境变量并重新加载 MCP 配置。
 
 不同客户端的字段名可能不同。请始终从 GUI 复制当前 URL 与令牌。默认端口为 `51739`；
 高级用户可在启动 ALCOMD3 前修改 `gui-config.json` 中的 `mcpHttpPort`。
@@ -391,8 +425,8 @@ bridge 在短时间内收到过多 tool call，或已有过多 tool call 正在�
 3. 重新复制 MCP Endpoint 和授权令牌，更新客户端配置。
 4. 重启 MCP 客户端。
 
-Windows 上使用 Codex 时，可以再次点击“快速配置 Codex”，按提示确认替换，然后完全退出
-并重新启动 Codex。
+Windows 上使用受支持的客户端时，可以再次点击对应的快速配置按钮，按提示确认替换，
+然后完全退出并重新启动该客户端。
 
 ### HTTP `401 Unauthorized`
 

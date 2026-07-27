@@ -11,8 +11,8 @@ ALCOMD3 の現在の実装は、MCP `2025-11-25` specification の Streamable HT
 1. ALCOMD3 を起動し、sidebar の MCP page を開きます。
 2. MCP を有効化します。
 3. 既定では page に表示される MCP Endpoint と Authorization Token を使って手動で
-   client を設定します。Windows の Codex user は、任意の「Codex をクイック設定」
-   button も選択できます。
+   client を設定します。Windows の Codex、Claude Code、Cursor user は、対応する
+   任意のクイック設定 button も選択できます。
 4. 手動設定では URL を Streamable HTTP server として追加し、token を
    `Authorization: Bearer <token>` で送信します。
 5. ALCOMD3 で MCP を有効にしたまま tool call を実行します。
@@ -91,15 +91,15 @@ ALCOMD3 GUI IPC server
 
 手動設定が既定であり、OS や AI client の設定を自動変更しません。
 
-### Windows での任意の Codex クイック設定
+### Windows での任意の AI client クイック設定
 
-Windows の MCP page には独立した「Codex をクイック設定」button があります。
-明示的にクリックした場合のみ、次の操作を実行します。
+Windows の MCP page には Codex、Claude Code、Cursor それぞれのクイック設定 button
+があります。明示的に button をクリックした client だけを変更します。各 button は
+現在の token を Windows current user の `ALCOMD3_MCP_BEARER_TOKEN` environment
+variable に書き込み、選択した client の ALCOMD3 MCP entry だけを追加または更新します。
 
-1. 現在の token を Windows current user の
-   `ALCOMD3_MCP_BEARER_TOKEN` environment variable に書き込みます。
-2. `$CODEX_HOME/config.toml` の `[mcp_servers.alcomd3]` だけを追加または更新します。
-   `CODEX_HOME` が未設定の場合は `~/.codex/config.toml` を使います。
+- Codex: `$CODEX_HOME/config.toml` を使います。`CODEX_HOME` が未設定の場合は
+  `~/.codex/config.toml` を使います。
 
 ```toml
 [mcp_servers.alcomd3]
@@ -107,10 +107,43 @@ url = "http://127.0.0.1:51739/mcp"
 bearer_token_env_var = "ALCOMD3_MCP_BEARER_TOKEN"
 ```
 
-他の Codex settings と MCP servers は保持されます。environment variable または
-`alcomd3` server entry に異なる既存値がある場合、ALCOMD3 は置換前に確認を求めます。
-設定後は Codex を完全に終了して再起動し、user environment と `config.toml` を再読込
-してください。
+- Claude Code: `$CLAUDE_CONFIG_DIR/.claude.json` を使います。
+  `CLAUDE_CONFIG_DIR` が未設定の場合は `~/.claude.json` を使います。
+
+```json
+{
+    "mcpServers": {
+        "alcomd3": {
+            "type": "http",
+            "url": "http://127.0.0.1:51739/mcp",
+            "headers": {
+                "Authorization": "Bearer ${ALCOMD3_MCP_BEARER_TOKEN}"
+            }
+        }
+    }
+}
+```
+
+- Cursor: `~/.cursor/mcp.json` を使います。
+
+```json
+{
+    "mcpServers": {
+        "alcomd3": {
+            "type": "http",
+            "url": "http://127.0.0.1:51739/mcp",
+            "headers": {
+                "Authorization": "Bearer ${env:ALCOMD3_MCP_BEARER_TOKEN}"
+            }
+        }
+    }
+}
+```
+
+選択した client の他の settings と MCP servers は保持されます。environment variable
+またはその client の `alcomd3` entry に異なる既存値がある場合、ALCOMD3 は置換前に
+確認を求めます。設定後は選択した client を完全に終了して再起動し、user environment
+と MCP configuration を再読込してください。
 
 正確な field name は client ごとに異なります。現在の URL と token は GUI からコピーしてください。default port は `51739` です。advanced user は ALCOMD3 起動前に `gui-config.json` の `mcpHttpPort` を変更できます。
 
@@ -331,8 +364,8 @@ bridge が短時間に多すぎる tool calls を受信した、または既に�
 3. MCP Endpoint と Authorization Token を再コピーし、MCP client configuration を更新します。
 4. MCP client を再起動します。
 
-Windows で Codex を使う場合は「Codex をクイック設定」を再度クリックし、必要に応じて
-置換を確認してから、Codex を完全に終了して再起動します。
+Windows で対応 client を使う場合は、そのクイック設定 button を再度クリックし、
+必要に応じて置換を確認してから、その client を完全に終了して再起動します。
 
 ### `protocol mismatch`
 

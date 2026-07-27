@@ -36,7 +36,7 @@ export const commands = {
 	environmentImportLegacyData: (source: TauriLegacyDataSourceKind, category: TauriLegacyDataImportCategory) => __TAURI_INVOKE<TauriLegacyDataImportResult>("environment_import_legacy_data", { source, category }),
 	mcpStatus: () => __TAURI_INVOKE<McpStatus>("mcp_status"),
 	mcpSetEnabled: (enabled: boolean) => __TAURI_INVOKE<McpStatus>("mcp_set_enabled", { enabled }),
-	mcpConfigureCodex: (overwrite: boolean) => __TAURI_INVOKE<McpCodexSetupResult>("mcp_configure_codex", { overwrite }),
+	mcpConfigureClient: (client: McpClient, overwrite: boolean) => __TAURI_INVOKE<McpClientSetupResult>("mcp_configure_client", { client, overwrite }),
 	environmentProjects: () => __TAURI_INVOKE<TauriProject[]>("environment_projects"),
 	environmentAddProjectWithPicker: () => __TAURI_INVOKE<TauriAddProjectWithPickerResult>("environment_add_project_with_picker"),
 	environmentPickProjectBackupForRestore: () => __TAURI_INVOKE<TauriPickProjectBackupForRestoreResult>("environment_pick_project_backup_for_restore"),
@@ -263,15 +263,17 @@ export type McpRecentClientStatus = {
 	lastSeenUnixMs: number,
 };
 
-export type McpCodexSetupResult = {
-	status: McpCodexSetupStatus,
+export type McpClient = "codex" | "claudeCode" | "cursor";
+
+export type McpClientSetupResult = {
+	status: McpClientSetupStatus,
 	configPath: string,
 	environmentVariable: string,
 	configConflict: boolean,
 	environmentConflict: boolean,
 };
 
-export type McpCodexSetupStatus = "configured" | "alreadyConfigured" | "requiresConfirmation" | "unsupportedPlatform";
+export type McpClientSetupStatus = "configured" | "alreadyConfigured" | "requiresConfirmation" | "unsupportedPlatform";
 
 export type McpStatus = {
 	enabled: boolean,
@@ -285,7 +287,7 @@ export type McpStatus = {
 	mcpEndpoint: string | null,
 	authorizationToken: string | null,
 	authorizationTokenEnvironmentVariable: string,
-	codexQuickSetupSupported: boolean,
+	quickSetupSupported: boolean,
 	recentClients: McpRecentClientStatus[],
 };
 

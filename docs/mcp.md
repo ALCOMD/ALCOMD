@@ -16,8 +16,8 @@ the separate private IPC endpoint exposed by the GUI.
 1. Start ALCOMD3 and open the MCP page from the sidebar.
 2. Enable MCP.
 3. Configure the client manually with the MCP Endpoint and Authorization Token
-   shown on the page. On Windows, Codex users may instead choose the optional
-   **Quick setup Codex** button.
+   shown on the page. On Windows, Codex, Claude Code, and Cursor users may
+   instead choose the corresponding optional quick setup button.
 4. For manual setup, add the URL as a Streamable HTTP server and send the token
    as `Authorization: Bearer <token>`.
 5. Run a tool call while MCP remains enabled in ALCOMD3.
@@ -136,16 +136,16 @@ MCP client:
 Manual configuration remains the default and does not modify the operating
 system or an AI client configuration.
 
-### Optional Codex quick setup on Windows
+### Optional AI client quick setup on Windows
 
-The MCP page includes a separate **Quick setup Codex** button on Windows. It
-only runs after an explicit click. The action:
+The MCP page includes separate quick setup buttons for Codex, Claude Code, and
+Cursor on Windows. A client is only changed after its button is explicitly
+clicked. Every button writes the current token to the current user's
+`ALCOMD3_MCP_BEARER_TOKEN` environment variable, then adds or updates only the
+selected client's ALCOMD3 MCP entry:
 
-1. writes the current token to the current user's
-   `ALCOMD3_MCP_BEARER_TOKEN` environment variable; and
-2. adds or updates only `[mcp_servers.alcomd3]` in
-   `$CODEX_HOME/config.toml` (or `~/.codex/config.toml` when `CODEX_HOME` is
-   unset):
+- Codex: `$CODEX_HOME/config.toml`, or `~/.codex/config.toml` when
+  `CODEX_HOME` is unset:
 
 ```toml
 [mcp_servers.alcomd3]
@@ -153,10 +153,44 @@ url = "http://127.0.0.1:51739/mcp"
 bearer_token_env_var = "ALCOMD3_MCP_BEARER_TOKEN"
 ```
 
-Other Codex settings and MCP servers are preserved. If either the environment
-variable or the `alcomd3` server entry already has a different value, ALCOMD3
-asks for confirmation before replacing it. Fully exit and restart Codex after
-quick setup so it inherits the user environment and reloads `config.toml`.
+- Claude Code: `$CLAUDE_CONFIG_DIR/.claude.json`, or `~/.claude.json` when
+  `CLAUDE_CONFIG_DIR` is unset:
+
+```json
+{
+    "mcpServers": {
+        "alcomd3": {
+            "type": "http",
+            "url": "http://127.0.0.1:51739/mcp",
+            "headers": {
+                "Authorization": "Bearer ${ALCOMD3_MCP_BEARER_TOKEN}"
+            }
+        }
+    }
+}
+```
+
+- Cursor: `~/.cursor/mcp.json`:
+
+```json
+{
+    "mcpServers": {
+        "alcomd3": {
+            "type": "http",
+            "url": "http://127.0.0.1:51739/mcp",
+            "headers": {
+                "Authorization": "Bearer ${env:ALCOMD3_MCP_BEARER_TOKEN}"
+            }
+        }
+    }
+}
+```
+
+Other settings and MCP servers in the selected client are preserved. If either
+the environment variable or the selected client's `alcomd3` entry already has
+a different value, ALCOMD3 asks for confirmation before replacing it. Fully
+exit and restart the selected client after quick setup so it inherits the user
+environment and reloads its MCP configuration.
 
 Exact client fields vary. Always copy the current URL and token from the GUI.
 The default port is `51739`; advanced users may change `mcpHttpPort` in
@@ -485,8 +519,8 @@ Steps:
 3. Copy the MCP Endpoint and Authorization Token again and update the client.
 4. Restart the MCP client.
 
-For Codex on Windows, choose **Quick setup Codex** again, confirm replacement
-when requested, then fully exit and restart Codex.
+For a supported client on Windows, choose its quick setup button again, confirm
+replacement when requested, then fully exit and restart that client.
 
 ### HTTP `401 Unauthorized`
 

@@ -95,7 +95,7 @@ pub struct McpStatus {
     mcp_endpoint: Option<String>,
     authorization_token: Option<String>,
     authorization_token_environment_variable: String,
-    codex_quick_setup_supported: bool,
+    quick_setup_supported: bool,
     recent_clients: Vec<McpRecentClientStatus>,
 }
 
@@ -600,7 +600,7 @@ impl McpState {
             mcp_endpoint: http.map(|http| mcp_http_endpoint(&http.host, http.port)),
             authorization_token: http.map(|http| http.token.clone()),
             authorization_token_environment_variable: MCP_HTTP_TOKEN_ENV.to_string(),
-            codex_quick_setup_supported: crate::mcp_client_config::codex_quick_setup_supported(),
+            quick_setup_supported: crate::mcp_client_config::quick_setup_supported(),
             recent_clients: inner
                 .recent_clients
                 .iter()

@@ -8,7 +8,6 @@ import {
 } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import {
-	Bot,
 	CheckCircle2,
 	CircleAlert,
 	Copy,
@@ -29,7 +28,8 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type {
-	McpCodexSetupResult,
+	McpClient,
+	McpClientSetupResult,
 	McpStatus,
 	McpToolCallEvent,
 } from "@/lib/bindings";
@@ -350,7 +350,7 @@ function Page() {
 								disabled={setEnabled.isPending}
 							/>
 							<EndpointCard status={status.data} />
-							<CodexQuickSetupCard status={status.data} />
+							<QuickSetupCard status={status.data} />
 							<RecentClientsCard status={status.data} />
 							<ToolsCard activeToolCalls={activeToolCalls} />
 						</>
@@ -393,35 +393,59 @@ function StatusCard({
 	);
 }
 
-function CodexQuickSetupCard({ status }: { status: McpStatus }) {
-	const [result, setResult] = useState<McpCodexSetupResult | null>(null);
+const QUICK_SETUP_CLIENTS: { id: McpClient; name: string }[] = [
+	{ id: "codex", name: "Codex" },
+	{ id: "claudeCode", name: "Claude Code" },
+	{ id: "cursor", name: "Cursor" },
+];
+
+function QuickSetupCard({ status }: { status: McpStatus }) {
+	const [activeClient, setActiveClient] = useState<McpClient | null>(null);
 	const configure = useMutation({
-		mutationFn: (overwrite: boolean) => commands.mcpConfigureCodex(overwrite),
+		mutationFn: ({
+			client,
+			overwrite,
+		}: {
+			client: McpClient;
+			overwrite: boolean;
+		}) => commands.mcpConfigureClient(client, overwrite),
 		onError: (error) => {
 			console.error(error);
 			toastThrownError(error);
 		},
 	});
 
-	const quickSetup = async () => {
+	const quickSetup = async (client: (typeof QUICK_SETUP_CLIENTS)[number]) => {
+		setActiveClient(client.id);
 		try {
-			let nextResult = await configure.mutateAsync(false);
-			if (nextResult.status === "requiresConfirmation") {
+			let result = await configure.mutateAsync({
+				client: client.id,
+				overwrite: false,
+			});
+			if (result.status === "requiresConfirmation") {
 				const confirmed = await openSingleDialog(
-					ConfirmCodexSetupOverwriteDialog,
-					{ result: nextResult },
+					ConfirmClientSetupOverwriteDialog,
+					{ clientName: client.name, result },
 				);
 				if (!confirmed) return;
-				nextResult = await configure.mutateAsync(true);
+				result = await configure.mutateAsync({
+					client: client.id,
+					overwrite: true,
+				});
 			}
-			setResult(nextResult);
-			if (nextResult.status === "configured") {
-				toastSuccess(tc("mcp:toast:codex configured"));
-			} else if (nextResult.status === "alreadyConfigured") {
-				toastSuccess(tc("mcp:toast:codex already configured"));
+			if (result.status === "configured") {
+				toastSuccess(
+					tc("mcp:toast:client configured", { client: client.name }),
+				);
+			} else if (result.status === "alreadyConfigured") {
+				toastSuccess(
+					tc("mcp:toast:client already configured", { client: client.name }),
+				);
 			}
 		} catch {
 			// The mutation error handler already reports the failure.
+		} finally {
+			setActiveClient(null);
 		}
 	};
 
@@ -429,84 +453,60 @@ function CodexQuickSetupCard({ status }: { status: McpStatus }) {
 		<Card className="shrink-0 p-4 compact:p-3">
 			<h2 className="mb-2">{tc("mcp:quick setup")}</h2>
 			<p className="mb-3 text-sm text-muted-foreground">
-				{tc("mcp:quick setup description")}
+				{tc("mcp:quick setup description", {
+					environmentVariable: status.authorizationTokenEnvironmentVariable,
+				})}
 			</p>
-			<div className="flex flex-wrap items-center gap-3">
-				<div className="flex min-w-0 grow items-center gap-3">
-					<div className="rounded-md bg-secondary p-2">
-						<Bot className="size-5" />
-					</div>
-					<div className="min-w-0">
-						<div className="font-medium">Codex</div>
-						<div className="text-sm text-muted-foreground">
-							{tc("mcp:codex quick setup detail", {
-								environmentVariable:
-									status.authorizationTokenEnvironmentVariable,
-							})}
-						</div>
-					</div>
-				</div>
-				<Button
-					onClick={() => void quickSetup()}
-					disabled={
-						!status.codexQuickSetupSupported ||
-						!status.running ||
-						configure.isPending
-					}
-					className="gap-2"
-				>
-					{configure.isPending ? (
-						<RefreshCw className="size-5 animate-spin" />
-					) : (
-						<Bot className="size-5" />
-					)}
-					{tc("mcp:button:quick setup codex")}
-				</Button>
+			<div className="flex flex-wrap gap-2">
+				{QUICK_SETUP_CLIENTS.map((client) => (
+					<Button
+						key={client.id}
+						onClick={() => void quickSetup(client)}
+						disabled={
+							!status.quickSetupSupported ||
+							!status.running ||
+							activeClient != null
+						}
+					>
+						{tc("mcp:button:quick setup client", { client: client.name })}
+					</Button>
+				))}
 			</div>
-			{!status.codexQuickSetupSupported && (
+			{!status.quickSetupSupported && (
 				<p className="mt-3 text-sm text-muted-foreground">
-					{tc("mcp:codex quick setup unsupported")}
+					{tc("mcp:client quick setup unsupported")}
 				</p>
 			)}
-			{result != null &&
-				(result.status === "configured" ||
-					result.status === "alreadyConfigured") && (
-					<div className="mt-3 rounded-md bg-secondary p-3 text-sm">
-						<p>{tc("mcp:codex quick setup complete")}</p>
-						<div className="mt-2 grid gap-2 md:grid-cols-[max-content_1fr]">
-							<StatusRow label={tc("mcp:codex config file")}>
-								<CodeValue>{result.configPath}</CodeValue>
-							</StatusRow>
-							<StatusRow
-								label={tc("mcp:authorization token environment variable")}
-							>
-								<CodeValue>{result.environmentVariable}</CodeValue>
-							</StatusRow>
-						</div>
-					</div>
-				)}
 		</Card>
 	);
 }
 
-function ConfirmCodexSetupOverwriteDialog({
+function ConfirmClientSetupOverwriteDialog({
 	dialog,
+	clientName,
 	result,
 }: {
 	dialog: DialogContext<boolean>;
-	result: McpCodexSetupResult;
+	clientName: string;
+	result: McpClientSetupResult;
 }) {
 	return (
 		<>
-			<DialogTitle>{tc("mcp:dialog:overwrite codex setup")}</DialogTitle>
+			<DialogTitle>
+				{tc("mcp:dialog:overwrite client setup", { client: clientName })}
+			</DialogTitle>
 			<div className="grid gap-3">
-				<p>{tc("mcp:dialog:overwrite codex setup description")}</p>
+				<p>{tc("mcp:dialog:overwrite client setup description")}</p>
 				<ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
 					{result.configConflict && (
-						<li>{tc("mcp:dialog:codex config conflict")}</li>
+						<li>
+							{tc("mcp:dialog:client config conflict", {
+								client: clientName,
+							})}
+						</li>
 					)}
 					{result.environmentConflict && (
-						<li>{tc("mcp:dialog:codex environment conflict")}</li>
+						<li>{tc("mcp:dialog:client environment conflict")}</li>
 					)}
 				</ul>
 				<CodeValue>{result.configPath}</CodeValue>
