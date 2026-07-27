@@ -34,14 +34,14 @@ dependencies = [
 
 [[package]]
 name = "alcomd3-app-paths"
-version = "3.0.1-beta.1"
+version = "3.1.0-beta.1"
 dependencies = [
  "dirs-sys",
 ]
 
 [[package]]
 name = "alcomd3-mcp"
-version = "3.0.1-beta.1"
+version = "3.1.0-beta.1"
 dependencies = [
  "alcomd3-mcp-protocol",
  "anyhow",
@@ -58,7 +58,7 @@ dependencies = [
 
 [[package]]
 name = "alcomd3-mcp-protocol"
-version = "3.0.1-beta.1"
+version = "3.1.0-beta.1"
 dependencies = [
  "alcomd3-app-paths",
  "serde",
@@ -6316,7 +6316,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vrc-get"
-version = "3.0.1-beta.1"
+version = "3.1.0-beta.1"
 dependencies = [
  "anstyle",
  "clap",
@@ -6337,7 +6337,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-get-gui"
-version = "3.0.1-beta.1"
+version = "3.1.0-beta.1"
 dependencies = [
  "alcomd3-mcp-protocol",
  "arc-swap",
@@ -6425,7 +6425,7 @@ dependencies = [
 
 [[package]]
 name = "vrc-get-vpm"
-version = "3.0.1-beta.1"
+version = "3.1.0-beta.1"
 dependencies = [
  "alcomd3-app-paths",
  "async-stream",
@@ -6948,7 +6948,7 @@ dependencies = [
 
 [[package]]
 name = "windows-installer-wrapper"
-version = "3.0.1-beta.1"
+version = "3.1.0-beta.1"
 dependencies = [
  "embed-manifest",
  "windows-sys 0.61.2",
@@ -7489,7 +7489,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "3.0.1-beta.1"
+version = "3.1.0-beta.1"
 dependencies = [
  "anyhow",
  "ar",

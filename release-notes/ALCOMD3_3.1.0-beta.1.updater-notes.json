@@ -1,0 +1,9 @@
+{
+    "en": "Moves ALCOMD3 MCP to protected local Streamable HTTP, adds optional quick setup for Codex, Claude Code, and Cursor, and groups configuration in a dedicated dialog.",
+    "de": "Stellt ALCOMD3 MCP auf geschütztes lokales Streamable HTTP um, ergänzt eine optionale Schnelleinrichtung für Codex, Claude Code und Cursor und bündelt die Konfiguration in einem eigenen Dialog.",
+    "fr": "Fait passer ALCOMD3 MCP à Streamable HTTP local protégé, ajoute une configuration rapide facultative pour Codex, Claude Code et Cursor, et regroupe la configuration dans une boîte de dialogue dédiée.",
+    "ja": "ALCOMD3 MCP を保護されたローカルの Streamable HTTP に移行し、Codex、Claude Code、Cursor の任意のクイック設定と専用の設定ダイアログを追加しました。",
+    "ko": "ALCOMD3 MCP를 보호된 로컬 Streamable HTTP로 전환하고 Codex, Claude Code, Cursor용 선택적 빠른 설정과 전용 설정 대화 상자를 추가했습니다.",
+    "zh_hans": "将 ALCOMD3 MCP 迁移到受保护的本机 Streamable HTTP，新增 Codex、Claude Code 和 Cursor 的可选快速配置，并将配置集中到专用弹窗。",
+    "zh_hant": "將 ALCOMD3 MCP 遷移到受保護的本機 Streamable HTTP，新增 Codex、Claude Code 和 Cursor 的選用快速設定，並將設定集中到專用對話框。"
+}
