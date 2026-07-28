@@ -99,6 +99,12 @@ pub struct McpStatus {
     recent_clients: Vec<McpRecentClientStatus>,
 }
 
+impl McpStatus {
+    pub(crate) fn is_running(&self) -> bool {
+        self.running
+    }
+}
+
 #[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct McpRecentClientStatus {
@@ -612,6 +618,13 @@ impl McpState {
 
     pub async fn ensure_running(&self, app: AppHandle) -> io::Result<()> {
         self.start(app).await
+    }
+
+    pub async fn ensure_running_and_emit_status(&self, app: AppHandle) -> io::Result<()> {
+        self.start(app.clone()).await?;
+        let enabled = app.state::<GuiConfigState>().get().mcp_enabled;
+        self.emit_status(app, enabled).await;
+        Ok(())
     }
 
     pub async fn set_enabled(&self, app: AppHandle, enabled: bool) -> io::Result<()> {

@@ -139,7 +139,7 @@ pub fn util_frontend_ready(app_handle: AppHandle) -> Result<(), RustError> {
 
     tauri::async_runtime::spawn(async move {
         let mcp = app_handle.state::<crate::mcp::McpState>();
-        if let Err(error) = mcp.ensure_running(app_handle.clone()).await {
+        if let Err(error) = mcp.ensure_running_and_emit_status(app_handle.clone()).await {
             log::error!("failed to start MCP endpoint after showing the main window: {error}");
         }
     });

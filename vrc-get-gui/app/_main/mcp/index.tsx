@@ -340,9 +340,7 @@ function Page() {
 			/>
 			<ScrollPageContainer viewportClassName={"rounded-xl shadow-xl h-full"}>
 				<main className="flex shrink grow flex-col gap-2">
-					{status.data == null ? (
-						<Card className="p-4">{tc("general:loading...")}</Card>
-					) : (
+					{status.data != null && (
 						<>
 							<StatusCard
 								status={status.data}
@@ -357,9 +355,9 @@ function Page() {
 								}
 							/>
 							<RecentClientsCard status={status.data} />
-							<ToolsCard activeToolCalls={activeToolCalls} />
 						</>
 					)}
+					<ToolsCard activeToolCalls={activeToolCalls} />
 				</main>
 			</ScrollPageContainer>
 		</VStack>

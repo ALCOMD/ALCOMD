@@ -11,10 +11,18 @@ pub async fn mcp_status(
     config: State<'_, GuiConfigState>,
     mcp: State<'_, crate::mcp::McpState>,
 ) -> Result<crate::mcp::McpStatus, RustError> {
-    if let Err(error) = mcp.ensure_running(app).await {
-        log::error!("failed to ensure MCP Streamable HTTP server while reading status: {error}");
+    let status = mcp.status(config.get().mcp_enabled).await;
+    if !status.is_running() {
+        tauri::async_runtime::spawn(async move {
+            let mcp = app.state::<crate::mcp::McpState>();
+            if let Err(error) = mcp.ensure_running_and_emit_status(app.clone()).await {
+                log::error!(
+                    "failed to start MCP Streamable HTTP server after reading status: {error}"
+                );
+            }
+        });
     }
-    Ok(mcp.status(config.get().mcp_enabled).await)
+    Ok(status)
 }
 
 #[tauri::command]
