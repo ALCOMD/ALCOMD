@@ -1,0 +1,9 @@
+{
+    "en": "Keeps ALCOMD3 responsive while MCP starts in the background and refreshes project types immediately after relevant changes.",
+    "de": "Hält ALCOMD3 reaktionsfähig, während MCP im Hintergrund startet, und aktualisiert Projekttypen sofort nach relevanten Änderungen.",
+    "fr": "Maintient la réactivité d’ALCOMD3 pendant le démarrage de MCP en arrière-plan et actualise immédiatement les types de projet après les changements concernés.",
+    "ja": "MCP のバックグラウンド起動中も ALCOMD3 の応答性を保ち、関連する変更後にプロジェクト種別をすぐ更新します。",
+    "ko": "MCP가 백그라운드에서 시작되는 동안 ALCOMD3의 응답성을 유지하고 관련 변경 후 프로젝트 유형을 즉시 새로 고칩니다.",
+    "zh_hans": "让 ALCOMD3 在 MCP 后台启动期间保持响应，并在相关变更后立即刷新项目类型。",
+    "zh_hant": "讓 ALCOMD3 在 MCP 背景啟動期間保持回應，並在相關變更後立即重新整理專案類型。"
+}
