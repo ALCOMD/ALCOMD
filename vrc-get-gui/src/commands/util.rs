@@ -136,6 +136,14 @@ pub fn util_frontend_ready(app_handle: AppHandle) -> Result<(), RustError> {
     };
     window.show().map_err(RustError::unrecoverable)?;
     window.set_focus().map_err(RustError::unrecoverable)?;
+
+    tauri::async_runtime::spawn(async move {
+        let mcp = app_handle.state::<crate::mcp::McpState>();
+        if let Err(error) = mcp.ensure_running(app_handle.clone()).await {
+            log::error!("failed to start MCP endpoint after showing the main window: {error}");
+        }
+    });
+
     Ok(())
 }
 
@@ -729,5 +737,16 @@ mod tests {
         assert!(source[download..install].contains("download_for_staging"));
         assert!(source[download..install].contains("downloaded.persist"));
         assert!(source[install..].contains("install_staged_update"));
+    }
+
+    #[test]
+    fn frontend_ready_shows_main_window_before_starting_mcp() {
+        let source = include_str!("util.rs");
+        let frontend_ready = source.find("pub fn util_frontend_ready").unwrap();
+        let show = source[frontend_ready..].find("window.show()").unwrap() + frontend_ready;
+        let start_mcp =
+            source[frontend_ready..].find("mcp.ensure_running").unwrap() + frontend_ready;
+
+        assert!(show < start_mcp);
     }
 }

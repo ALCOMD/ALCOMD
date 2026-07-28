@@ -154,11 +154,6 @@ pub fn startup(app: &mut App, initial_args: Vec<String>) {
             }
         }
 
-        let mcp = app.state::<crate::mcp::McpState>();
-        if let Err(e) = mcp.ensure_running(app.clone()).await {
-            error!("failed to start MCP IPC endpoint: {e}");
-        }
-
         let handle = app.clone();
         spawn(async move {
             let state = handle.state();
@@ -337,18 +332,16 @@ mod tests {
     }
 
     #[test]
-    fn staged_update_is_installed_before_services_and_main_window() {
+    fn staged_update_is_installed_before_main_window_and_startup_request_dispatch() {
         let source = include_str!("start.rs");
         let preserve_args = source
             .find("preserve_startup_request_snapshot(&app")
             .unwrap();
         let install = source.find("install_staged_update").unwrap();
-        let mcp = source.find("mcp.ensure_running").unwrap();
         let main_window = source.find("WebviewWindowBuilder::new").unwrap();
         let dispatch_args = source.find("dispatch_startup_requests(&app").unwrap();
 
         assert!(preserve_args < install);
-        assert!(install < mcp);
         assert!(install < main_window);
         assert!(install < dispatch_args);
     }
@@ -358,9 +351,9 @@ mod tests {
         let source = include_str!("start.rs");
         let open_main = source.find("async fn open_main").unwrap();
         let install = source[open_main..].find("install_staged_update").unwrap() + open_main;
-        let mcp = source[install..].find("mcp.ensure_running").unwrap() + install;
+        let main_window = source[install..].find("WebviewWindowBuilder::new").unwrap() + install;
 
-        assert!(!source[open_main..mcp].contains("automatic_update"));
-        assert!(!source[open_main..mcp].contains("discard_staged_update"));
+        assert!(!source[open_main..main_window].contains("automatic_update"));
+        assert!(!source[open_main..main_window].contains("discard_staged_update"));
     }
 }
