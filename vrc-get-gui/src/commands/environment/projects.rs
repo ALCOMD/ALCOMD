@@ -2003,6 +2003,18 @@ async fn register_created_project(
     Ok(())
 }
 
+async fn refresh_registered_project(
+    io: &DefaultEnvironmentIo,
+    unity_project: &UnityProject,
+) -> Result<(), RustError> {
+    let mut connection = VccDatabaseConnection::connect(io).await?;
+    connection
+        .update_project_from_unity_project(unity_project)
+        .await?;
+    connection.save(io).await?;
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn create_project_from_template(
     packages_state: &PackagesState,
@@ -2111,6 +2123,8 @@ async fn create_project_from_template(
         if let Some(remove_on_drop) = remove_on_drop {
             remove_on_drop.forget();
         }
+    } else {
+        refresh_registered_project(io, &unity_project).await?;
     }
 
     Ok(TauriCreateProjectResult::Successful)

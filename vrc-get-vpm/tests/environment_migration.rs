@@ -28,9 +28,9 @@ use itertools::Itertools;
 use std::path::Path;
 use vrc_get_litedb::bson::DateTime;
 use vrc_get_litedb::file_io::{BsonAutoId, LiteDBFile};
-use vrc_get_vpm::ProjectType;
 use vrc_get_vpm::environment::{Settings, VccDatabaseConnection};
-use vrc_get_vpm::io::DefaultEnvironmentIo;
+use vrc_get_vpm::io::{DefaultEnvironmentIo, DefaultProjectIo};
+use vrc_get_vpm::{ProjectType, UnityProject};
 
 mod common;
 
@@ -319,5 +319,71 @@ async fn no_settings_json() {
     assert_eq!(
         load_projects_in_settings_json(&std::fs::read(env_dir.join(SETTINGS_JSON)).unwrap()),
         defined_projects_in_litedb(env_projects_str),
+    );
+}
+
+#[tokio::test]
+async fn update_project_from_unity_project_refreshes_cached_project_type() {
+    let env_dir = get_temp_path("environment_refresh_project");
+    let project_dir = get_temp_path("project_refresh_project");
+    clean_dir(&env_dir);
+    clean_dir(&project_dir);
+    std::fs::create_dir_all(project_dir.join("Packages")).unwrap();
+    std::fs::create_dir_all(project_dir.join("ProjectSettings")).unwrap();
+    std::fs::write(
+        project_dir.join("ProjectSettings/ProjectVersion.txt"),
+        "m_EditorVersion: 2022.3.22f1\n",
+    )
+    .unwrap();
+    std::fs::write(
+        project_dir.join("Packages/vpm-manifest.json"),
+        r#"{"dependencies":{"com.vrchat.avatars":{"version":"3.x"}}}"#,
+    )
+    .unwrap();
+
+    let io = DefaultEnvironmentIo::new(env_dir.into());
+    let project_io = || DefaultProjectIo::new(project_dir.clone().into());
+    let project = UnityProject::load(project_io()).await.unwrap();
+    let mut connection = VccDatabaseConnection::connect(&io).await.unwrap();
+    connection.add_project(&project).await.unwrap();
+    assert_eq!(
+        connection
+            .find_project(project_dir.to_str().unwrap())
+            .unwrap()
+            .unwrap()
+            .project_type(),
+        ProjectType::VpmStarter,
+    );
+
+    std::fs::write(
+        project_dir.join("Packages/vpm-manifest.json"),
+        r#"{
+            "dependencies": {
+                "com.vrchat.avatars": {
+                    "version": "3.x"
+                }
+            },
+            "locked": {
+                "com.vrchat.avatars": {
+                    "version": "3.10.4",
+                    "dependencies": {}
+                }
+            }
+        }"#,
+    )
+    .unwrap();
+    let project = UnityProject::load(project_io()).await.unwrap();
+    connection
+        .update_project_from_unity_project(&project)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        connection
+            .find_project(project_dir.to_str().unwrap())
+            .unwrap()
+            .unwrap()
+            .project_type(),
+        ProjectType::Avatars,
     );
 }

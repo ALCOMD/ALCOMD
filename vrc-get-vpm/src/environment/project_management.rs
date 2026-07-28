@@ -399,6 +399,37 @@ impl VccDatabaseConnection {
 
         Ok(())
     }
+
+    pub async fn update_project_from_unity_project(
+        &mut self,
+        project: &UnityProject,
+    ) -> io::Result<()> {
+        check_absolute_path(project.project_dir())?;
+        let path = normalize_path(project.project_dir());
+        let path = path.to_str().ok_or(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "project path is not utf8",
+        ))?;
+        let Some(mut registered_project) = self.find_project(path)? else {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "project is not registered",
+            ));
+        };
+
+        let unity_version = project.unity_version();
+        registered_project.set_unity_revision(
+            unity_version,
+            project.unity_revision().map(ToOwned::to_owned),
+        );
+        registered_project
+            .bson
+            .insert(TYPE, project.detect_project_type().await as i32);
+        registered_project.set_is_valid_project(true);
+        self.update_project(&registered_project);
+
+        Ok(())
+    }
 }
 
 /// The Data Structure to store information required for updating information in the Database
