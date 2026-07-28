@@ -24,6 +24,7 @@ fn basic_remove() {
         assert_eq!(result.remove_legacy_files().len(), 0);
         assert_eq!(result.conflicts().len(), 0);
 
+        assert!(!result.affects_vrchat_project_type());
         assert_removed(&result, "com.anatawa12.gists", RemoveReason::Requested);
     })
 }
@@ -53,8 +54,29 @@ fn transitive_unused_remove() {
         assert_eq!(result.remove_legacy_files().len(), 0);
         assert_eq!(result.conflicts().len(), 0);
 
+        assert!(result.affects_vrchat_project_type());
         assert_removed(&result, "com.vrchat.avatars", RemoveReason::Requested);
         assert_removed(&result, "com.vrchat.base", RemoveReason::Unused);
+    })
+}
+
+#[test]
+fn worlds_remove_affects_project_type() {
+    block_on(async {
+        let project = VirtualProjectBuilder::new()
+            .add_dependency("com.vrchat.worlds", Version::new(1, 0, 0))
+            .add_locked("com.vrchat.worlds", Version::new(1, 0, 0), &[])
+            .build()
+            .await
+            .unwrap();
+
+        let result = project
+            .remove_request(&["com.vrchat.worlds"])
+            .await
+            .unwrap();
+
+        assert!(result.affects_vrchat_project_type());
+        assert_removed(&result, "com.vrchat.worlds", RemoveReason::Requested);
     })
 }
 

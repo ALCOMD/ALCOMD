@@ -386,4 +386,68 @@ async fn update_project_from_unity_project_refreshes_cached_project_type() {
             .project_type(),
         ProjectType::Avatars,
     );
+
+    std::fs::write(
+        project_dir.join("Packages/vpm-manifest.json"),
+        r#"{
+            "dependencies": {
+                "com.vrchat.worlds": {
+                    "version": "3.x"
+                }
+            },
+            "locked": {
+                "com.vrchat.worlds": {
+                    "version": "3.10.4",
+                    "dependencies": {}
+                }
+            }
+        }"#,
+    )
+    .unwrap();
+    let project = UnityProject::load(project_io()).await.unwrap();
+    connection
+        .update_project_from_unity_project(&project)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        connection
+            .find_project(project_dir.to_str().unwrap())
+            .unwrap()
+            .unwrap()
+            .project_type(),
+        ProjectType::Worlds,
+    );
+
+    std::fs::write(
+        project_dir.join("Packages/vpm-manifest.json"),
+        r#"{
+            "dependencies": {
+                "com.example.tool": {
+                    "version": "1.x"
+                }
+            },
+            "locked": {
+                "com.example.tool": {
+                    "version": "1.0.0",
+                    "dependencies": {}
+                }
+            }
+        }"#,
+    )
+    .unwrap();
+    let project = UnityProject::load(project_io()).await.unwrap();
+    connection
+        .update_project_from_unity_project(&project)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        connection
+            .find_project(project_dir.to_str().unwrap())
+            .unwrap()
+            .unwrap()
+            .project_type(),
+        ProjectType::VpmStarter,
+    );
 }

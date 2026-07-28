@@ -47,7 +47,8 @@ mod util;
 pub(crate) use environment::packages::{AddedRepositoryInfo, add_repository_by_url};
 pub(crate) use environment::projects::{
     CreatedProjectInfo, add_existing_project_by_path, copy_registered_project_to_path,
-    create_project_with_defaults, restore_project_from_zip_backup,
+    create_project_with_defaults, refresh_registered_project_and_emit,
+    restore_project_from_zip_backup,
 };
 pub use environment::templates::import_templates;
 pub(crate) use project::{
@@ -61,7 +62,8 @@ pub(crate) use project::{
 mod prelude {
     pub(super) use super::{
         IntoPathBuf as _, RustError, TauriBasePackageInfo, TauriPackage, TauriVersion,
-        UnityProject, load_project, safe_url, update_project_last_modified,
+        UnityProject, load_project, refresh_registered_project_and_emit, safe_url,
+        update_project_last_modified,
     };
     pub use crate::state::*;
 }

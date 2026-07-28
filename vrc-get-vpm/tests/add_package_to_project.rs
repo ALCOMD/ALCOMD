@@ -46,6 +46,7 @@ fn add_to_dependencies() {
         assert_eq!(result.remove_legacy_files().len(), 0);
         assert_eq!(result.conflicts().len(), 0);
 
+        assert!(result.affects_vrchat_project_type());
         assert_installing_to_both(&result, &avatars_package);
         assert_installing_to_locked_only(&result, &base_package);
     })

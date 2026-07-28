@@ -136,6 +136,16 @@ impl TauriUpdatedRealProjectInfo {
             unity_revision: None,
         }
     }
+
+    fn from_unity_project(project: &UnityProject, project_type: ProjectType) -> Self {
+        Self {
+            path: project.project_dir().to_string_lossy().into_owned(),
+            is_valid: true,
+            project_type: project_type.into(),
+            unity: project.unity_version().to_string(),
+            unity_revision: project.unity_revision().map(Into::into),
+        }
+    }
 }
 
 async fn migrate_sanitize_projects(
@@ -2006,12 +2016,28 @@ async fn register_created_project(
 async fn refresh_registered_project(
     io: &DefaultEnvironmentIo,
     unity_project: &UnityProject,
-) -> Result<(), RustError> {
+    update_last_modified: bool,
+) -> Result<ProjectType, RustError> {
     let mut connection = VccDatabaseConnection::connect(io).await?;
-    connection
+    let project_type = connection
         .update_project_from_unity_project(unity_project)
         .await?;
+    if update_last_modified {
+        connection.update_project_last_modified(&unity_project.project_dir().to_string_lossy())?;
+    }
     connection.save(io).await?;
+    Ok(project_type)
+}
+
+pub(crate) async fn refresh_registered_project_and_emit(
+    app: &AppHandle,
+    io: &DefaultEnvironmentIo,
+    unity_project: &UnityProject,
+    update_last_modified: bool,
+) -> Result<(), RustError> {
+    let project_type = refresh_registered_project(io, unity_project, update_last_modified).await?;
+    let project = TauriUpdatedRealProjectInfo::from_unity_project(unity_project, project_type);
+    app.emit("projects-updated", project).ok();
     Ok(())
 }
 
@@ -2124,7 +2150,7 @@ async fn create_project_from_template(
             remove_on_drop.forget();
         }
     } else {
-        refresh_registered_project(io, &unity_project).await?;
+        refresh_registered_project(io, &unity_project, false).await?;
     }
 
     Ok(TauriCreateProjectResult::Successful)

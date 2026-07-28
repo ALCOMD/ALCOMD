@@ -1118,6 +1118,30 @@ pub async fn project_remove_packages(
         .await
 }
 
+async fn refresh_project_type_after_package_changes(
+    app: &AppHandle,
+    io: &DefaultEnvironmentIo,
+    unity_project: &UnityProject,
+    apply_succeeded: bool,
+) {
+    let result = if apply_succeeded {
+        refresh_registered_project_and_emit(app, io, unity_project, true).await
+    } else {
+        let project_path = unity_project.project_dir().to_string_lossy().into_owned();
+        match load_project(project_path).await {
+            Ok(project) => refresh_registered_project_and_emit(app, io, &project, false).await,
+            Err(err) => Err(err),
+        }
+    };
+
+    if let Err(err) = result {
+        error!(
+            gui_toast = false;
+            "Error refreshing project type after package changes: {err}"
+        );
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn project_apply_pending_changes(
@@ -1197,13 +1221,27 @@ pub async fn project_apply_pending_changes(
         };
 
         let changes = changes.take_changes();
+        let refresh_project_type = changes.affects_vrchat_project_type();
         let mut unity_project = load_project(project_path).await?;
 
-        unity_project
+        let apply_result = unity_project
             .apply_pending_changes_with_abort(&installer, changes, &abort)
-            .await?;
+            .await;
 
-        update_project_last_modified(&io, unity_project.project_dir()).await;
+        if refresh_project_type {
+            refresh_project_type_after_package_changes(
+                &app,
+                &io,
+                &unity_project,
+                apply_result.is_ok(),
+            )
+            .await;
+        }
+
+        apply_result?;
+        if !refresh_project_type {
+            update_project_last_modified(&io, unity_project.project_dir()).await;
+        }
         Ok(())
     }
     .await;
@@ -1305,13 +1343,27 @@ async fn project_apply_pending_changes_from_prepared_inner(
         };
 
         let changes = changes.take_changes();
+        let refresh_project_type = changes.affects_vrchat_project_type();
         let mut unity_project = load_project(project_path).await?;
 
-        unity_project
+        let apply_result = unity_project
             .apply_pending_changes_with_abort(&installer, changes, &abort)
-            .await?;
+            .await;
 
-        update_project_last_modified(io.inner(), unity_project.project_dir()).await;
+        if refresh_project_type {
+            refresh_project_type_after_package_changes(
+                &app,
+                io.inner(),
+                &unity_project,
+                apply_result.is_ok(),
+            )
+            .await;
+        }
+
+        apply_result?;
+        if !refresh_project_type {
+            update_project_last_modified(io.inner(), unity_project.project_dir()).await;
+        }
         Ok(())
     }
     .await;

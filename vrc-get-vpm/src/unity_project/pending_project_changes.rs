@@ -518,6 +518,13 @@ impl PendingProjectChanges<'_> {
         &self.package_changes
     }
 
+    pub fn affects_vrchat_project_type(&self) -> bool {
+        use crate::unity_project::project_type::{VRCHAT_AVATARS_PACKAGE, VRCHAT_WORLDS_PACKAGE};
+
+        self.package_changes.contains_key(VRCHAT_AVATARS_PACKAGE)
+            || self.package_changes.contains_key(VRCHAT_WORLDS_PACKAGE)
+    }
+
     pub fn remove_legacy_files(&self) -> &[(Box<Path>, &str)] {
         self.remove_legacy_files.as_slice()
     }

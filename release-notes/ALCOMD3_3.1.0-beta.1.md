@@ -9,7 +9,7 @@ This beta makes ALCOMD3 MCP easier to configure while moving client connections 
 - ALCOMD3 MCP now provides a Streamable HTTP endpoint with bearer-token authentication instead of requiring clients to launch the MCP process through stdio.
 - Added optional one-click setup on Windows for Codex, Claude Code, and Cursor. Existing client settings are preserved, and ALCOMD3 asks before replacing a conflicting environment variable or MCP entry.
 - Endpoint details and quick setup are now grouped in an MCP configuration dialog opened from the Configure button beside Enable or Disable.
-- Newly created avatar and world projects now show the correct project type as soon as package installation finishes, without waiting for a background refresh.
+- Project cards now update their avatar, world, or unknown type immediately after project creation and whenever either VRChat SDK package is installed or removed, without waiting for a background refresh.
 
 ### Installation and upgrade
 
@@ -29,7 +29,7 @@ This beta makes ALCOMD3 MCP easier to configure while moving client connections 
 - ALCOMD3 MCP は、クライアントが stdio 経由で MCP プロセスを起動する方式に代わり、Bearer トークン認証付きの Streamable HTTP エンドポイントを提供するようになりました。
 - Windows 版で Codex、Claude Code、Cursor の任意のワンクリック設定を追加しました。クライアントの既存設定は保持され、環境変数または MCP エントリと競合する場合は置き換える前に確認します。
 - エンドポイントの詳細とクイック設定を、［有効化］または［無効化］の横にある［設定］ボタンから開く MCP 設定ダイアログにまとめました。
-- 新しく作成したアバターおよびワールドプロジェクトは、バックグラウンド更新を待たず、パッケージのインストール完了直後に正しいプロジェクト種別を表示するようになりました。
+- プロジェクトカードは、プロジェクト作成後、およびいずれかの VRChat SDK パッケージをインストールまたは削除した直後に、バックグラウンド更新を待たずアバター、ワールド、不明の種別を更新するようになりました。
 
 ### インストールとアップグレード
 
@@ -49,7 +49,7 @@ This beta makes ALCOMD3 MCP easier to configure while moving client connections 
 - ALCOMD3 MCP 现在提供带 bearer 令牌认证的 Streamable HTTP 端点，不再要求客户端通过 stdio 启动 MCP 进程。
 - Windows 版新增 Codex、Claude Code 和 Cursor 的可选一键配置。客户端的其他已有设置会保留；如果环境变量或 MCP 配置项存在冲突，ALCOMD3 会在替换前请求确认。
 - 端点详情与快速配置现在集中在 MCP 配置弹窗中，可通过“启用”或“停用”旁的“配置”按钮打开。
-- 新创建的虚拟形象和世界项目会在软件包安装完成后立即显示正确的项目类型，无需等待后台刷新。
+- 项目卡片现在会在项目创建完成，以及任一 VRChat SDK 软件包安装或卸载后立即更新为虚拟形象、世界或未知，无需等待后台刷新。
 
 ### 安装与升级
 

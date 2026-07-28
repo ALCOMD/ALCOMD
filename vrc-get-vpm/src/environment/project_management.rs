@@ -403,7 +403,7 @@ impl VccDatabaseConnection {
     pub async fn update_project_from_unity_project(
         &mut self,
         project: &UnityProject,
-    ) -> io::Result<()> {
+    ) -> io::Result<ProjectType> {
         check_absolute_path(project.project_dir())?;
         let path = normalize_path(project.project_dir());
         let path = path.to_str().ok_or(io::Error::new(
@@ -422,13 +422,12 @@ impl VccDatabaseConnection {
             unity_version,
             project.unity_revision().map(ToOwned::to_owned),
         );
-        registered_project
-            .bson
-            .insert(TYPE, project.detect_project_type().await as i32);
+        let project_type = project.detect_project_type().await;
+        registered_project.bson.insert(TYPE, project_type as i32);
         registered_project.set_is_valid_project(true);
         self.update_project(&registered_project);
 
-        Ok(())
+        Ok(project_type)
     }
 }
 
