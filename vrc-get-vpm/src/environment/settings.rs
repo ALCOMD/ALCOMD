@@ -309,6 +309,10 @@ impl Settings {
         self.vpm.update_id(loaded)
     }
 
+    pub fn update_repository_names(&mut self, loaded: &PackageCollection) -> bool {
+        self.vpm.update_repository_names(loaded)
+    }
+
     pub fn export_repositories(&self) -> String {
         let mut builder = String::new();
 

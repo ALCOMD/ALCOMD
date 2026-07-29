@@ -2122,6 +2122,7 @@ async fn create_project_from_template(
         let settings = settings.load(io).await?;
         packages_state.load_fully(&settings, io, http).await?
     };
+    sync_repository_names(settings, io, packages.collection()).await?;
 
     if !cleanup_before_registration {
         register_created_project(settings, io, &unity_project).await?;

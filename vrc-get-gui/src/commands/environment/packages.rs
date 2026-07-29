@@ -53,10 +53,13 @@ pub async fn environment_refetch_packages(
             "Package cache refreshed",
             Vec::new(),
             async move {
-                let settings = settings.load(io.inner()).await?;
-                packages
-                    .load_force(&settings, io.inner(), http.inner())
-                    .await?;
+                let refreshed = {
+                    let settings_snapshot = settings.load(io.inner()).await?;
+                    packages
+                        .load_force(&settings_snapshot, io.inner(), http.inner())
+                        .await?
+                };
+                sync_repository_names(&settings, io.inner(), refreshed.collection()).await?;
 
                 Ok(())
             },

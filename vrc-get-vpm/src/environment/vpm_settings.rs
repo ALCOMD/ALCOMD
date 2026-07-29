@@ -145,6 +145,24 @@ impl VpmSettings {
         changed
     }
 
+    pub(crate) fn update_repository_names(&mut self, collection: &PackageCollection) -> bool {
+        let mut changed = false;
+        for repo in &mut self.parsed.user_repos {
+            if repo.url().is_none() {
+                continue;
+            }
+
+            if let Some(cache) = collection.repositories.get_by_path(repo.local_path())
+                && cache.name() != repo.name()
+            {
+                repo.set_name(cache.name());
+                changed = true;
+            }
+        }
+
+        changed
+    }
+
     pub fn retain_user_repos(
         &mut self,
         mut f: impl FnMut(&UserRepoSetting) -> bool,

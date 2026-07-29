@@ -2,6 +2,7 @@ use crate::activity_log::{
     ActivityDetail, ActivityImportance, ActivityInput, ActivityKind, ActivityLogState,
     ActivitySource, operations,
 };
+use crate::state::SettingsState;
 use crate::utils::YokeExt;
 use arc_swap::ArcSwapOption;
 use std::future::Future;
@@ -154,6 +155,11 @@ impl PackagesState {
                         });
                     tokio::time::sleep(Duration::from_millis(500)).await;
                     collection.update_cache(&io, &http).await;
+                    if let Some(settings) = app_handle.try_state::<SettingsState>()
+                        && let Err(error) = sync_repository_names(&settings, &io, &collection).await
+                    {
+                        log::error!("saving refreshed repository names: {error}");
+                    }
                     let arc = Arc::new(PackagesStateInner::new(collect_packages(collection)));
                     if let Some(activity_tracker) = &activity_tracker
                         && let Some(activity) = app_handle.try_state::<ActivityLogState>()
@@ -219,6 +225,20 @@ impl PackagesState {
     pub fn clear_cache(&self) {
         self.inner.store(None);
     }
+}
+
+pub async fn sync_repository_names(
+    settings: &SettingsState,
+    io: &DefaultEnvironmentIo,
+    collection: &PackageCollection,
+) -> io::Result<bool> {
+    let mut settings = settings.load_mut(io).await?;
+    let changed = settings.update_repository_names(collection);
+    if changed {
+        settings.require_save();
+    }
+    settings.maybe_save().await?;
+    Ok(changed)
 }
 
 pub struct PackagesStateRef<'a> {

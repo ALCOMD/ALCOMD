@@ -4,7 +4,9 @@ use std::path::Path;
 use std::sync::Mutex;
 use url::Url;
 use vrc_get_vpm::HttpClient;
-use vrc_get_vpm::environment::{AddRepositoryErr, REPO_CACHE_FOLDER, Settings, add_remote_repo};
+use vrc_get_vpm::environment::{
+    AddRepositoryErr, PackageCollection, REPO_CACHE_FOLDER, Settings, add_remote_repo,
+};
 use vrc_get_vpm::io::DefaultEnvironmentIo;
 
 mod common;
@@ -59,10 +61,10 @@ fn clean_dir(path: &Path) {
     std::fs::create_dir_all(path).unwrap();
 }
 
-fn repository_json(id: &str, url: &str) -> String {
+fn repository_json(name: &str, id: &str, url: &str) -> String {
     format!(
         r#"{{
-  "name": "Test Repository",
+  "name": "{name}",
   "id": "{id}",
   "url": "{url}",
   "packages": {{
@@ -87,7 +89,11 @@ async fn add_remote_repo_adds_repo_and_reports_duplicate_without_panic() {
     let io = DefaultEnvironmentIo::new(root.into_boxed_path());
     let mut settings = Settings::load(&io).await.unwrap();
     let url = Url::parse("https://example.com/vpm.json").unwrap();
-    let http = StaticHttpClient::new(repository_json("com.example.repo", url.as_str()));
+    let http = StaticHttpClient::new(repository_json(
+        "Test Repository",
+        "com.example.repo",
+        url.as_str(),
+    ));
     let headers = IndexMap::from([
         (
             Box::<str>::from("Authorization"),
@@ -127,4 +133,61 @@ async fn add_remote_repo_adds_repo_and_reports_duplicate_without_panic() {
 
     assert!(matches!(duplicate, Err(AddRepositoryErr::AlreadyAdded)));
     assert_eq!(settings.get_user_repos().len(), 1);
+}
+
+#[tokio::test]
+async fn refreshed_repository_updates_saved_name() {
+    let root = common::get_temp_path("update_repository_name");
+    clean_dir(&root);
+
+    let io = DefaultEnvironmentIo::new(root.into_boxed_path());
+    let mut settings = Settings::load(&io).await.unwrap();
+    let url = Url::parse("https://example.com/vpm.json").unwrap();
+    let initial_http = StaticHttpClient::new(repository_json(
+        "Old Repository Name",
+        "com.example.repo",
+        url.as_str(),
+    ));
+
+    add_remote_repo(
+        &mut settings,
+        url.clone(),
+        None,
+        IndexMap::new(),
+        &io,
+        &initial_http,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        settings.get_user_repos()[0].name(),
+        Some("Old Repository Name")
+    );
+
+    let refreshed_http = StaticHttpClient::new(repository_json(
+        "New Repository Name",
+        "com.example.changed-id",
+        url.as_str(),
+    ));
+    let collection = PackageCollection::load(&settings, &io, Some(&refreshed_http))
+        .await
+        .unwrap();
+
+    assert!(settings.update_repository_names(&collection));
+    assert_eq!(
+        settings.get_user_repos()[0].name(),
+        Some("New Repository Name")
+    );
+    assert_eq!(
+        settings.get_user_repos()[0].id(),
+        Some("com.example.repo"),
+        "refreshing names must not change repository identity"
+    );
+
+    settings.save(&io).await.unwrap();
+    let reloaded = Settings::load(&io).await.unwrap();
+    assert_eq!(
+        reloaded.get_user_repos()[0].name(),
+        Some("New Repository Name")
+    );
 }

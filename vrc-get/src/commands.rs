@@ -98,6 +98,7 @@ async fn load_collection(
     if !no_update {
         // dedup
         settings.update_id(&collection);
+        settings.update_repository_names(&collection);
         let removed = settings.remove_id_duplication();
         collection.remove_repositories(&removed, io).await;
         settings.save(io).await.exit_context("saving settings");

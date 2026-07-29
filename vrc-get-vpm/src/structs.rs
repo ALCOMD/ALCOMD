@@ -44,6 +44,10 @@ pub mod setting {
             self.name.as_deref()
         }
 
+        pub(crate) fn set_name(&mut self, name: Option<&str>) {
+            self.name = name.map(Into::into);
+        }
+
         pub fn url(&self) -> Option<&Url> {
             self.url.as_ref()
         }

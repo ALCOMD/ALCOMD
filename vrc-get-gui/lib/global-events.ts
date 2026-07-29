@@ -39,6 +39,9 @@ void tauriListen<TauriPackage[]>("package-update-background", (e) => {
 	});
 	queryClient.setQueryData(options.queryKey, e.payload);
 	void queryClient.invalidateQueries({
+		queryKey: ["environmentRepositoriesInfo"],
+	});
+	void queryClient.invalidateQueries({
 		queryKey: ["environmentRepositoryPackageLists"],
 	});
 	void queryClient.invalidateQueries({
