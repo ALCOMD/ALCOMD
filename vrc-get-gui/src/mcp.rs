@@ -635,15 +635,33 @@ impl McpState {
         Ok(())
     }
 
-    pub async fn set_extension_enabled(&self, app: AppHandle, enabled: bool) -> io::Result<()> {
-        let result = if enabled {
-            self.start(app.clone()).await
-        } else {
-            self.stop(Some(&app)).await
-        };
-        let access_enabled = enabled && app.state::<GuiConfigState>().get().mcp_enabled;
-        self.emit_status(app, access_enabled).await;
-        result
+    pub async fn synchronize_extension_state(&self, app: AppHandle) -> io::Result<()> {
+        loop {
+            let enabled = app
+                .state::<GuiConfigState>()
+                .get()
+                .is_extension_enabled(crate::extensions::MCP_EXTENSION_ID);
+            let result = if enabled {
+                self.start(app.clone()).await
+            } else {
+                self.stop(Some(&app)).await
+            };
+            let latest_enabled = app
+                .state::<GuiConfigState>()
+                .get()
+                .is_extension_enabled(crate::extensions::MCP_EXTENSION_ID);
+
+            if latest_enabled != enabled {
+                if let Err(error) = result {
+                    log::error!("failed to apply superseded MCP extension enabled status: {error}");
+                }
+                continue;
+            }
+
+            let access_enabled = latest_enabled && app.state::<GuiConfigState>().get().mcp_enabled;
+            self.emit_status(app, access_enabled).await;
+            return result;
+        }
     }
 
     async fn start(&self, app: AppHandle) -> io::Result<()> {

@@ -538,13 +538,15 @@ pub async fn environment_set_extension_enabled(
         .await;
 
     if result.is_ok() {
-        if extension_id == MCP_EXTENSION_ID {
-            let mcp = app.state::<crate::mcp::McpState>();
-            if let Err(error) = mcp.set_extension_enabled(app.clone(), enabled).await {
-                log::error!("failed to apply MCP extension enabled status: {error}");
-            }
-        }
         registry.apply_enabled_state(&app, &extension_id, enabled);
+        if extension_id == MCP_EXTENSION_ID {
+            tauri::async_runtime::spawn(async move {
+                let mcp = app.state::<crate::mcp::McpState>();
+                if let Err(error) = mcp.synchronize_extension_state(app.clone()).await {
+                    log::error!("failed to synchronize MCP extension enabled status: {error}");
+                }
+            });
+        }
     }
 
     result
@@ -642,4 +644,24 @@ fn setting_activity(setting: &str, value: impl Into<String>) -> ActivityInput {
     )
     .target(setting)
     .details(vec![ActivityDetail::new("value", value)])
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn mcp_extension_runtime_transition_is_spawned_in_the_background() {
+        let source = include_str!("config.rs");
+        let command_start = source
+            .find("pub async fn environment_set_extension_enabled")
+            .unwrap();
+        let command_end = source[command_start..]
+            .find("pub async fn environment_set_sidebar_extension_visible")
+            .unwrap()
+            + command_start;
+        let command = &source[command_start..command_end];
+        let spawn = command.find("tauri::async_runtime::spawn").unwrap();
+        let synchronize = command.find("mcp.synchronize_extension_state").unwrap();
+
+        assert!(spawn < synchronize);
+    }
 }

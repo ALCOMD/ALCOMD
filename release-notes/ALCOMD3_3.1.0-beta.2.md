@@ -13,7 +13,8 @@ immediately.
 - The built-in MCP extension can now be disabled like the Theme and Logs
   extensions. Disabling it revokes MCP access, stops the local endpoints,
   removes MCP from the sidebar, and cancels MCP project tasks still owned by
-  the application.
+  the application. The extension switch returns immediately while endpoint
+  lifecycle work continues in the background.
 - Project cards now refresh their avatar, world, or unknown type immediately after project creation and after either VRChat SDK package is installed or removed.
 
 ### Installation and upgrade
@@ -32,7 +33,7 @@ immediately.
 
 - メインウィンドウの表示後に MCP エンドポイントをバックグラウンドで起動するようになり、アプリの起動時に生じる遅延を軽減しました。
 - MCP ページはエンドポイントの起動を待たずにツールをすぐ表示し、エンドポイントが利用可能になると状態を更新するようになりました。
-- 組み込み MCP 拡張機能をテーマとログの拡張機能と同様に無効化できるようになりました。無効化すると MCP アクセスを取り消し、ローカルエンドポイントを停止し、サイドバーから MCP を削除して、アプリが管理中の MCP プロジェクトタスクをキャンセルします。
+- 組み込み MCP 拡張機能をテーマとログの拡張機能と同様に無効化できるようになりました。無効化すると MCP アクセスを取り消し、ローカルエンドポイントを停止し、サイドバーから MCP を削除して、アプリが管理中の MCP プロジェクトタスクをキャンセルします。拡張機能の切り替えはすぐに完了し、endpoint lifecycle 処理は background で続行します。
 - プロジェクトカードは、プロジェクト作成後、およびいずれかの VRChat SDK パッケージをインストールまたは削除した後に、アバター、ワールド、不明の種別をすぐ更新するようになりました。
 
 ### インストールとアップグレード
@@ -53,7 +54,8 @@ immediately.
 - 主窗口现在会先显示，再在后台启动 MCP 端点，减少应用启动时的等待。
 - MCP 页面现在无需等待端点启动即可立即显示工具，并会在端点可用后更新状态。
 - 现在可以像主题和日志扩展一样关闭内置 MCP 扩展。关闭后会撤销 MCP 访问许可、停止
-  本机端点、从侧边栏移除 MCP，并取消仍由应用管理的 MCP 项目任务。
+  本机端点、从侧边栏移除 MCP，并取消仍由应用管理的 MCP 项目任务。扩展开关会立即完成，
+  端点生命周期操作继续在后台执行。
 - 项目卡片现在会在项目创建完成，以及任一 VRChat SDK 软件包安装或卸载后立即刷新为虚拟形象、世界或未知类型。
 
 ### 安装与升级

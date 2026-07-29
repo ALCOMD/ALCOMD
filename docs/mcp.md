@@ -37,9 +37,9 @@ for a configuration example and lifecycle details.
   access without stopping those endpoints.
 - Disabling the MCP extension from the Extensions page revokes MCP access,
   stops both endpoints, removes MCP from the sidebar, and cancels MCP project
-  tasks still owned by the GUI. Re-enabling the extension restarts the
-  endpoints but leaves MCP access disabled until the user enables it again on
-  the MCP page.
+  tasks still owned by the GUI. Re-enabling the extension returns immediately
+  and restarts the endpoints in the background, but leaves MCP access disabled
+  until the user enables it again on the MCP page.
 - Current tools include read-only project, repository, package, environment,
   activity log, and technical log tools, plus limited write tools: create a
   project, add an existing project, add a VPM repository, back up a registered
