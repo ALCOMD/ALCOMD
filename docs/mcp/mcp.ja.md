@@ -4,11 +4,11 @@
 
 このドキュメントは、ALCOMD3 の MCP 接続方法、利用可能な tools、ライフサイクル挙動、トラブルシューティングを説明します。
 
-ALCOMD3 の現在の実装は、MCP `2025-11-25` specification の Streamable HTTP transport に従います。GUI は `127.0.0.1` のみで listen する local `alcomd3-mcp` server を起動し、`alcomd3-mcp` は GUI の独立した private IPC endpoint を通してアプリケーションデータを要求します。
+ALCOMD3 の現在の実装は、MCP `2025-11-25` specification の Streamable HTTP transport に従います。built-in MCP extension が enabled の間、GUI は `127.0.0.1` のみで listen する local `alcomd3-mcp` server を起動し、`alcomd3-mcp` は GUI の独立した private IPC endpoint を通してアプリケーションデータを要求します。
 
 ## クイックスタート
 
-1. ALCOMD3 を起動し、sidebar の MCP page を開きます。
+1. ALCOMD3 を起動し、Extensions page で MCP extension が enabled であることを確認してから、sidebar の MCP page を開きます。
 2. MCP を有効化します。
 3. 既定では page に表示される MCP Endpoint と Authorization Token を使って手動で
    client を設定します。Windows の Codex、Claude Code、Cursor user は、対応する
@@ -24,9 +24,10 @@ port を推測せず、GUI に表示される endpoint を使用してくださ�
 ## 現在の境界
 
 - MCP は既定で無効です。新しい tool call が ALCOMD3 data を読み書きするには、GUI で手動で有効化する必要があります。
-- GUI が通常実行中の場合、local IPC endpoint が起動します。MCP の有効/無効は tool data access を制御するだけで、endpoint は停止しません。
+- MCP extension が enabled の間、GUI は local IPC endpoint と Streamable HTTP endpoint を起動します。MCP page での MCP の有効/無効は tool data access を制御するだけで、これらの endpoint は停止しません。
+- Extensions page で MCP extension を disabled にすると、MCP access を取り消し、両方の endpoint を停止し、MCP を sidebar から削除して、GUI が管理中の MCP project task を cancel します。extension を再度 enabled にすると endpoint は再起動しますが、MCP page で user が再度有効化するまで MCP access は無効のままです。
 - 現在は project、repository、package、environment、activity log、technical log の read-only tools と、限定的な write tools を提供します。write tools は project 作成、existing project 追加、VPM repository 追加、registered project の backup、registered project の copy、zip backup からの restore、registered project への package install/uninstall/reinstall です。repository 削除、repository 並べ替え、project 削除などの他の write operation は提供しません。
-- GUI が local Streamable HTTP server を起動して管理します。GUI 終了時には server も停止します。
+- MCP extension が enabled の間、GUI が local Streamable HTTP server を起動して管理します。GUI 終了時または extension の無効化時には server も停止します。
 - GUI 起動に失敗した場合、または endpoint が利用できないままの場合、tool call は structured `alcomd3_unavailable` error を返し、MCP tool result に `isError: true` を付けます。
 - MCP が無効な場合、新しい tool call は structured `mcp_disabled` error を返します。endpoint は停止せず、panic もしません。MCP tool result には `isError: true` が付きます。既に開始された project long task の `tasks/get`、`tasks/result`、`tasks/cancel` は cleanup 例外として、結果確認や cancel ができます。
 - bridge は tool call に緩やかな local rate limit と concurrency protection を適用します。制限を超えた場合は structured `rate_limited` error を返し、MCP tool result に `isError: true` を付けます。
@@ -68,7 +69,7 @@ ALCOMD3 GUI IPC server
 ## MCP の有効化と client 設定
 
 1. ALCOMD3 を起動します。
-2. sidebar の MCP page を開きます。
+2. Extensions page で MCP extension が enabled であることを確認してから、sidebar の MCP page を開きます。
 3. MCP を有効化し、MCP tools が ALCOMD3 data を読めるようにします。
 4. page の MCP Endpoint と Authorization Token をコピーします。
 5. Streamable HTTP MCP server に対応する client で endpoint URL を追加し、token を
@@ -147,7 +148,7 @@ bearer_token_env_var = "ALCOMD3_MCP_BEARER_TOKEN"
 
 正確な field name は client ごとに異なります。現在の URL と token は GUI からコピーしてください。default port は `51739` です。advanced user は ALCOMD3 起動前に `gui-config.json` の `mcpHttpPort` を変更できます。
 
-endpoint は ALCOMD3 実行中だけ利用できます。MCP が無効なら新しい tool call は `mcp_disabled` を返します。GUI で MCP を有効化して再試行してください。server が実行中なら、既に開始された project long task は task follow-up method で結果確認または cancel できます。
+endpoint は ALCOMD3 が実行中で MCP extension が enabled の間だけ利用できます。MCP page で access が無効なら、新しい tool call は `mcp_disabled` を返します。MCP を有効化して再試行してください。MCP extension を disabled にすると endpoint が停止し、GUI が管理中の MCP project task は cancel されます。
 
 external HTTP port と bearer token は `gui-config.json` の `mcpHttpPort`、
 `mcpHttpToken` に保存されます。token は local secret として扱い、log、screenshot、
@@ -164,7 +165,7 @@ shared config に含めないでください。
 
 ## Endpoint metadata
 
-GUI が通常実行中の場合、endpoint metadata を書き込みます。default path は ALCOMD3 local data directory 配下です。
+GUI が通常実行中で MCP extension が enabled の場合、endpoint metadata を書き込みます。default path は ALCOMD3 local data directory 配下です。
 
 ```text
 ALCOMD3/mcp/endpoint.json

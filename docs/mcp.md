@@ -7,13 +7,15 @@ This document describes ALCOMD3 MCP setup, available tools, lifecycle behavior,
 and troubleshooting.
 
 ALCOMD3 implements the Streamable HTTP transport from MCP specification
-`2025-11-25`. The GUI starts one local `alcomd3-mcp` server and exposes its MCP
-endpoint only on `127.0.0.1`. `alcomd3-mcp` requests application data through
-the separate private IPC endpoint exposed by the GUI.
+`2025-11-25`. While the built-in MCP extension is enabled, the GUI starts one
+local `alcomd3-mcp` server and exposes its MCP endpoint only on `127.0.0.1`.
+`alcomd3-mcp` requests application data through the separate private IPC
+endpoint exposed by the GUI.
 
 ## Quick Start
 
-1. Start ALCOMD3 and open the MCP page from the sidebar.
+1. Start ALCOMD3, make sure the MCP extension is enabled on the Extensions
+   page, and open the MCP page from the sidebar.
 2. Enable MCP.
 3. Configure the client manually with the MCP Endpoint and Authorization Token
    shown on the page. On Windows, Codex, Claude Code, and Cursor users may
@@ -30,8 +32,14 @@ for a configuration example and lifecycle details.
 
 - MCP is disabled by default. Users must enable it in the GUI before new tool
   calls may read or write ALCOMD3 data.
-- When the GUI is running normally, it starts the local IPC endpoint. Enabling
-  or disabling MCP gates tool data access; it does not stop the endpoint.
+- While the MCP extension is enabled, the GUI runs the local IPC and Streamable
+  HTTP endpoints. Enabling or disabling MCP on the MCP page gates tool data
+  access without stopping those endpoints.
+- Disabling the MCP extension from the Extensions page revokes MCP access,
+  stops both endpoints, removes MCP from the sidebar, and cancels MCP project
+  tasks still owned by the GUI. Re-enabling the extension restarts the
+  endpoints but leaves MCP access disabled until the user enables it again on
+  the MCP page.
 - Current tools include read-only project, repository, package, environment,
   activity log, and technical log tools, plus limited write tools: create a
   project, add an existing project, add a VPM repository, back up a registered
@@ -39,8 +47,9 @@ for a configuration example and lifecycle details.
   install/uninstall/reinstall one package in a registered project. Other write
   operations such as repository deletion, repository reorder, and project
   deletion are not exposed.
-- The GUI starts and owns the local Streamable HTTP server. Closing the GUI also
-  stops that server.
+- The GUI starts and owns the local Streamable HTTP server while the MCP
+  extension is enabled. Closing the GUI or disabling the extension stops that
+  server.
 - If GUI startup fails or the endpoint remains unavailable, the tool call
   returns structured `alcomd3_unavailable` and marks the MCP tool result with
   `isError: true`.
@@ -111,7 +120,8 @@ is not exposed directly to MCP clients.
 ## Enabling MCP and Client Configuration
 
 1. Start ALCOMD3.
-2. Open the MCP page from the sidebar.
+2. Make sure the MCP extension is enabled on the Extensions page, then open the
+   MCP page from the sidebar.
 3. Enable MCP to allow tools to read ALCOMD3 data.
 4. Copy the MCP Endpoint and Authorization Token from the page.
 5. In a client that supports Streamable HTTP MCP servers, add the endpoint URL
@@ -196,10 +206,10 @@ Exact client fields vary. Always copy the current URL and token from the GUI.
 The default port is `51739`; advanced users may change `mcpHttpPort` in
 `gui-config.json` before starting ALCOMD3.
 
-The endpoint is available only while ALCOMD3 is running. If MCP is disabled,
-new tool calls return `mcp_disabled`; enable MCP in the GUI and retry. Already
-started project long tasks can still be queried or cancelled through task
-follow-up methods while the server remains running.
+The endpoint is available only while ALCOMD3 is running and the MCP extension
+is enabled. If MCP access is disabled on the MCP page, new tool calls return
+`mcp_disabled`; enable MCP and retry. Disabling the MCP extension stops the
+endpoint and cancels MCP project tasks still owned by the GUI.
 
 The external HTTP port and bearer token are stored as `mcpHttpPort` and
 `mcpHttpToken` in `gui-config.json`. Treat the token as a local secret and do
@@ -217,8 +227,8 @@ token invalidates existing client configuration.
 
 ## Endpoint Metadata
 
-When the GUI is running normally, it writes endpoint metadata. The default path
-is under the ALCOMD3 local data directory:
+While the GUI is running normally and the MCP extension is enabled, it writes
+endpoint metadata. The default path is under the ALCOMD3 local data directory:
 
 ```text
 ALCOMD3/mcp/endpoint.json

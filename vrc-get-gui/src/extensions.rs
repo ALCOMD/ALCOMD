@@ -7,6 +7,7 @@ use std::sync::{Arc, RwLock};
 use tauri::{AppHandle, Emitter, Manager};
 
 pub const EXTENSION_STATE_CHANGED_EVENT: &str = "extension-state-changed";
+pub const MCP_EXTENSION_ID: &str = "mcp";
 pub const THEME_EXTENSION_ID: &str = "theme";
 pub const LOG_EXTENSION_ID: &str = "log";
 
@@ -28,9 +29,9 @@ enum BuiltInExtensionLifecycle {
 
 const BUILT_IN_EXTENSION_DEFINITIONS: &[BuiltInExtensionDefinition] = &[
     BuiltInExtensionDefinition {
-        id: "mcp",
+        id: MCP_EXTENSION_ID,
         display_name: "MCP",
-        can_disable: false,
+        can_disable: true,
         can_install: false,
         can_uninstall: false,
         lifecycle: BuiltInExtensionLifecycle::PresentationOnly,
@@ -444,7 +445,10 @@ mod tests {
                 THEME_EXTENSION_ID.to_string(),
                 ExtensionUserConfig { enabled: false },
             ),
-            ("mcp".to_string(), ExtensionUserConfig { enabled: true }),
+            (
+                MCP_EXTENSION_ID.to_string(),
+                ExtensionUserConfig { enabled: true },
+            ),
             (
                 LOG_EXTENSION_ID.to_string(),
                 ExtensionUserConfig { enabled: false },
@@ -462,7 +466,7 @@ mod tests {
             .unwrap();
         let mcp = extensions
             .iter()
-            .find(|extension| extension.id == "mcp")
+            .find(|extension| extension.id == MCP_EXTENSION_ID)
             .unwrap();
         let log = extensions
             .iter()
@@ -475,7 +479,7 @@ mod tests {
         assert!(theme.built_in);
         assert!(theme.can_disable);
         assert!(!theme.enabled);
-        assert!(!mcp.can_disable);
+        assert!(mcp.can_disable);
         assert!(mcp.enabled);
         assert!(log.can_disable);
         assert!(!log.enabled);
@@ -485,7 +489,7 @@ mod tests {
                 .map(|extension| extension.id.as_str())
                 .collect::<Vec<_>>(),
             vec![
-                "mcp",
+                MCP_EXTENSION_ID,
                 THEME_EXTENSION_ID,
                 LOG_EXTENSION_ID,
                 "example.available"
@@ -544,7 +548,7 @@ mod tests {
                 .map(|extension| extension.id.as_str())
                 .collect::<Vec<_>>(),
             vec![
-                "mcp",
+                MCP_EXTENSION_ID,
                 THEME_EXTENSION_ID,
                 LOG_EXTENSION_ID,
                 "example.installed"
@@ -616,7 +620,7 @@ mod tests {
                 .map(|extension| extension.id.as_str())
                 .collect::<Vec<_>>(),
             vec![
-                "mcp",
+                MCP_EXTENSION_ID,
                 THEME_EXTENSION_ID,
                 LOG_EXTENSION_ID,
                 "example.second",
@@ -638,7 +642,7 @@ mod tests {
                 .map(|extension| extension.id.as_str())
                 .collect::<Vec<_>>(),
             vec![
-                "mcp",
+                MCP_EXTENSION_ID,
                 THEME_EXTENSION_ID,
                 LOG_EXTENSION_ID,
                 "example.first",

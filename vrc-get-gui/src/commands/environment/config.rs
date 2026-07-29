@@ -11,7 +11,7 @@ use crate::config::{
     is_builtin_sidebar_extension, is_sidebar_extension_always_visible,
     normalize_sidebar_extensions,
 };
-use crate::extensions::{ExtensionManagementInfo, ExtensionRegistry};
+use crate::extensions::{ExtensionManagementInfo, ExtensionRegistry, MCP_EXTENSION_ID};
 use crate::logging::LogLevel;
 
 #[tauri::command]
@@ -538,6 +538,12 @@ pub async fn environment_set_extension_enabled(
         .await;
 
     if result.is_ok() {
+        if extension_id == MCP_EXTENSION_ID {
+            let mcp = app.state::<crate::mcp::McpState>();
+            if let Err(error) = mcp.set_extension_enabled(app.clone(), enabled).await {
+                log::error!("failed to apply MCP extension enabled status: {error}");
+            }
+        }
         registry.apply_enabled_state(&app, &extension_id, enabled);
     }
 

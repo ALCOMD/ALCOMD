@@ -4,13 +4,13 @@
 
 本文件說明 ALCOMD3 的 MCP 接入方式、可用工具、生命週期行為和疑難排解方法。
 
-ALCOMD3 目前實作遵循 MCP `2025-11-25` 規範的 Streamable HTTP transport。GUI
-啟動一個只監聽 `127.0.0.1` 的本機 `alcomd3-mcp` server；`alcomd3-mcp` 再透過
-GUI 暴露的獨立私有 IPC endpoint 請求應用資料。
+ALCOMD3 目前實作遵循 MCP `2025-11-25` 規範的 Streamable HTTP transport。內建
+MCP 擴充功能啟用時，GUI 會啟動一個只監聽 `127.0.0.1` 的本機 `alcomd3-mcp`
+server；`alcomd3-mcp` 再透過 GUI 暴露的獨立私有 IPC endpoint 請求應用資料。
 
 ## 快速開始
 
-1. 啟動 ALCOMD3，開啟側邊欄中的 MCP 頁面。
+1. 啟動 ALCOMD3，在「擴充功能」頁確認 MCP 擴充功能已啟用，再開啟側邊欄中的 MCP 頁面。
 2. 啟用 MCP。
 3. 預設使用頁面顯示的 MCP Endpoint 和授權權杖手動設定用戶端。Windows 上的 Codex、
    Claude Code 和 Cursor 使用者也可以選擇對應的快速設定按鈕。
@@ -24,12 +24,16 @@ GUI 暴露的獨立私有 IPC endpoint 請求應用資料。
 ## 目前邊界
 
 - MCP 功能預設停用，需要在 GUI 中手動啟用後才允許新的工具呼叫讀取或寫入 ALCOMD3 資料。
-- GUI 正常執行時會啟動本機 IPC endpoint；啟用/停用 MCP 只控制工具資料存取，不關閉
-  endpoint。
+- MCP 擴充功能啟用時，GUI 會執行本機 IPC 和 Streamable HTTP endpoint；在 MCP
+  頁面啟用/停用 MCP 只控制工具資料存取，不會關閉這些 endpoint。
+- 從「擴充功能」頁關閉 MCP 擴充功能會撤銷 MCP 存取權、停止兩個 endpoint、從側邊欄
+  移除 MCP，並取消仍由 GUI 管理的 MCP 專案任務。重新啟用擴充功能會恢復 endpoint，
+  但 MCP 存取仍保持停用，直到使用者再次在 MCP 頁面主動啟用。
 - 目前提供專案、倉庫、軟體包和環境設定唯讀工具，以及有限寫工具：新建專案、
   新增既有專案、新增 VPM 倉庫、備份已登錄專案、複製已登錄專案、從 zip 備份還原專案、
   為已登錄專案安裝/解除安裝/重新安裝單一軟體包。不提供倉庫刪除、倉庫重新排序、專案刪除等其他寫操作。
-- GUI 負責啟動和管理本機 Streamable HTTP server；關閉 GUI 時也會停止該 server。
+- MCP 擴充功能啟用時，GUI 負責啟動和管理本機 Streamable HTTP server；關閉 GUI 或
+  關閉 MCP 擴充功能時都會停止該 server。
 - GUI 啟動失敗或 endpoint 仍不可用時，tool call 傳回結構化 `alcomd3_unavailable` 錯誤，
   並在 MCP tool result 上標記 `isError: true`。
 - MCP 停用時，新的 tool call 傳回結構化 `mcp_disabled` 錯誤，不關閉 endpoint、不 panic，
@@ -80,7 +84,7 @@ ALCOMD3 GUI IPC server
 ## 啟用與客戶端設定
 
 1. 啟動 ALCOMD3。
-2. 打開側邊欄中的 MCP 頁面。
+2. 在「擴充功能」頁確認 MCP 擴充功能已啟用，再打開側邊欄中的 MCP 頁面。
 3. 點擊啟用，允許 MCP 工具讀取 ALCOMD3 資料。
 4. 複製頁面中的 MCP Endpoint 和授權權杖。
 5. 在支援 Streamable HTTP MCP server 的客戶端中新增 endpoint URL，並將權杖設定為
@@ -159,9 +163,9 @@ bearer_token_env_var = "ALCOMD3_MCP_BEARER_TOKEN"
 不同客戶端的欄位名稱可能不同。請一律從 GUI 複製目前 URL 與權杖。預設連接埠為
 `51739`；進階使用者可在啟動 ALCOMD3 前修改 `gui-config.json` 中的 `mcpHttpPort`。
 
-endpoint 只在 ALCOMD3 執行時可用。如果 GUI 中 MCP 已停用，新的工具呼叫會傳回
-`mcp_disabled`，啟用 MCP 後重試即可。server 仍執行時，已啟動的專案長任務仍可透過
-task 後續方法查詢結果或取消。
+endpoint 只在 ALCOMD3 執行且 MCP 擴充功能啟用時可用。如果 MCP 頁面的存取權已停用，
+新的工具呼叫會傳回 `mcp_disabled`，啟用 MCP 後重試即可。關閉 MCP 擴充功能會停止
+endpoint，並取消仍由 GUI 管理的 MCP 專案任務。
 
 外部 HTTP 連接埠和 bearer token 以 `mcpHttpPort`、`mcpHttpToken` 儲存在
 `gui-config.json`。請將 token 視為本機密鑰，不要放入日誌、截圖或共用設定。
@@ -177,7 +181,8 @@ task 後續方法查詢結果或取消。
 
 ## Endpoint metadata
 
-GUI 正常執行時會寫入 endpoint metadata。預設路徑位於 ALCOMD3 本機資料目錄：
+GUI 正常執行且 MCP 擴充功能啟用時會寫入 endpoint metadata。預設路徑位於 ALCOMD3
+本機資料目錄：
 
 ```text
 ALCOMD3/mcp/endpoint.json

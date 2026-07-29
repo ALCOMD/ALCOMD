@@ -635,6 +635,17 @@ impl McpState {
         Ok(())
     }
 
+    pub async fn set_extension_enabled(&self, app: AppHandle, enabled: bool) -> io::Result<()> {
+        let result = if enabled {
+            self.start(app.clone()).await
+        } else {
+            self.stop(Some(&app)).await
+        };
+        let access_enabled = enabled && app.state::<GuiConfigState>().get().mcp_enabled;
+        self.emit_status(app, access_enabled).await;
+        result
+    }
+
     async fn start(&self, app: AppHandle) -> io::Result<()> {
         let (http_port, http_token) = ensure_mcp_http_config(&app).await?;
         let mut inner = self.inner.lock().await;

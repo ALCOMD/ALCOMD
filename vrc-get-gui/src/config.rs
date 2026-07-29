@@ -1,5 +1,5 @@
 use crate::extensions::{
-    LOG_EXTENSION_ID, THEME_EXTENSION_ID, built_in_extension_can_disable,
+    LOG_EXTENSION_ID, MCP_EXTENSION_ID, THEME_EXTENSION_ID, built_in_extension_can_disable,
     built_in_extension_definition, built_in_extension_definitions,
 };
 use crate::logging::LogLevel;
@@ -194,6 +194,9 @@ impl GuiConfig {
             }
         }
         self.synchronize_sidebar_extension_states();
+        if !self.is_extension_enabled(MCP_EXTENSION_ID) {
+            self.mcp_enabled = false;
+        }
     }
 
     pub(crate) fn ensure_mcp_http_config(&mut self) -> bool {
@@ -212,7 +215,14 @@ impl GuiConfig {
     pub(crate) fn set_extension_enabled(&mut self, id: &str, enabled: bool) {
         self.extensions
             .insert(id.to_string(), ExtensionUserConfig { enabled });
+        if id == MCP_EXTENSION_ID && !enabled {
+            self.mcp_enabled = false;
+        }
         self.synchronize_sidebar_extension_states();
+    }
+
+    pub(crate) fn is_extension_enabled(&self, id: &str) -> bool {
+        self.extensions.get(id).is_none_or(|state| state.enabled)
     }
 
     pub(crate) fn synchronize_sidebar_extension_states(&mut self) {
@@ -305,7 +315,7 @@ const ALWAYS_VISIBLE_SIDEBAR_EXTENSION_IDS: &[&str] = &["projects", "packages", 
 const BUILT_IN_SIDEBAR_EXTENSION_IDS: &[&str] = &[
     "projects",
     "packages",
-    "mcp",
+    MCP_EXTENSION_ID,
     THEME_EXTENSION_ID,
     "settings",
     LOG_EXTENSION_ID,
@@ -338,7 +348,7 @@ fn default_sidebar_extensions() -> Vec<SidebarExtension> {
             visible: true,
         },
         SidebarExtension {
-            id: "mcp".to_string(),
+            id: MCP_EXTENSION_ID.to_string(),
             installed: true,
             enabled: true,
             visible: true,
@@ -484,7 +494,7 @@ mod tests {
     use super::{
         GuiConfig, SidebarExtension, apply_sidebar_extension_layout, normalize_sidebar_extensions,
     };
-    use crate::extensions::{LOG_EXTENSION_ID, THEME_EXTENSION_ID};
+    use crate::extensions::{LOG_EXTENSION_ID, MCP_EXTENSION_ID, THEME_EXTENSION_ID};
 
     #[test]
     fn automatic_updates_default_to_enabled_for_existing_configs() {
@@ -596,7 +606,7 @@ mod tests {
 
     #[test]
     fn enableable_built_in_extensions_are_always_installed_but_can_be_disabled() {
-        for id in [THEME_EXTENSION_ID, LOG_EXTENSION_ID] {
+        for id in [MCP_EXTENSION_ID, THEME_EXTENSION_ID, LOG_EXTENSION_ID] {
             let normalized = normalize_sidebar_extensions(vec![SidebarExtension {
                 id: id.to_string(),
                 installed: false,
@@ -615,21 +625,31 @@ mod tests {
     }
 
     #[test]
-    fn non_enableable_built_in_sidebar_extensions_remain_enabled() {
-        let normalized = normalize_sidebar_extensions(vec![SidebarExtension {
-            id: "mcp".to_string(),
-            installed: false,
-            enabled: false,
-            visible: false,
-        }]);
-        let mcp = normalized
-            .iter()
-            .find(|extension| extension.id == "mcp")
-            .unwrap();
+    fn disabled_mcp_extension_disables_mcp_access() {
+        let mut config: GuiConfig =
+            serde_json::from_str(r#"{"mcpEnabled":true,"extensions":{"mcp":{"enabled":false}}}"#)
+                .unwrap();
 
-        assert!(mcp.installed);
-        assert!(mcp.enabled);
-        assert!(!mcp.visible);
+        config.fix_defaults();
+
+        assert!(!config.is_extension_enabled(MCP_EXTENSION_ID));
+        assert!(!config.mcp_enabled);
+    }
+
+    #[test]
+    fn disabling_mcp_extension_clears_access_until_explicitly_enabled() {
+        let mut config = GuiConfig {
+            mcp_enabled: true,
+            ..GuiConfig::default()
+        };
+
+        config.set_extension_enabled(MCP_EXTENSION_ID, false);
+        assert!(!config.is_extension_enabled(MCP_EXTENSION_ID));
+        assert!(!config.mcp_enabled);
+
+        config.set_extension_enabled(MCP_EXTENSION_ID, true);
+        assert!(config.is_extension_enabled(MCP_EXTENSION_ID));
+        assert!(!config.mcp_enabled);
     }
 
     #[test]
