@@ -86,8 +86,8 @@ npm run dev
 
 ## 授權
 
-主要專案程式碼使用 GNU Affero General Public License v3.0 or later
-（`AGPL-3.0-or-later`）。請參閱 [LICENSE](../LICENSE) 和
+主要專案程式碼僅使用 GNU Affero General Public License v3.0
+（`AGPL-3.0-only`）。請參閱 [LICENSE](../LICENSE) 和
 [LICENSE-NOTES.md](../LICENSE-NOTES.md)。
 
 依賴項和第三方資源聲明可在應用程式內的 Licenses 頁面和

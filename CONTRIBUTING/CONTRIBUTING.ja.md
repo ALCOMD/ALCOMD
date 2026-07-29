@@ -80,7 +80,7 @@ Maintenance、release、MCP、format、historical documentation を探す場合�
 
 明示的に別の license が記載され、maintainer がそれを受け入れた場合を除き、
 このリポジトリに提出された contribution は project の現在の main license である
-`AGPL-3.0-or-later` で提供されます。
+`AGPL-3.0-only` で提供されます。
 
 ### 外部変更の取り込み
 

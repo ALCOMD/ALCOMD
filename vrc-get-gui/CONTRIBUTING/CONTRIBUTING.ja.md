@@ -8,7 +8,7 @@
 
 明示的に別の license が記載され、maintainer がそれを受け入れた場合を除き、
 GUI contribution は ALCOMD3 の現在の main project license である
-`AGPL-3.0-or-later` で提供されます。
+`AGPL-3.0-only` で提供されます。
 
 ### ローカライズ
 

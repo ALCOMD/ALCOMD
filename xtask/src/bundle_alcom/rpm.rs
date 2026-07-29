@@ -19,7 +19,7 @@ pub fn create_rpm(ctx: &BundleContext<'_>) -> Result<()> {
         // It's recommended to use '~' instead.
         // https://docs.fedoraproject.org/en-US/packaging-guidelines/Versioning/#_handling_non_sorting_versions_with_tilde_dot_and_caret
         &ctx.version().replace('-', "~"),
-        "AGPL-3.0-or-later",
+        "AGPL-3.0-only",
         arch,
         ctx.short_description(),
     );

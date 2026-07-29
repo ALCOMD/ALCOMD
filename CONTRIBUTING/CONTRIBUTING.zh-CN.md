@@ -71,7 +71,7 @@ Agent 发布流程记录在 `docs/skills/alcomd3-release/SKILL.md`。
 ### 贡献授权
 
 除非贡献者明确标注其他许可证且维护者接受，提交到本仓库的贡献默认按项目当前主许可证
-`AGPL-3.0-or-later` 授权。
+`AGPL-3.0-only` 授权。
 
 ### 外部变更引入
 

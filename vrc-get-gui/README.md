@@ -85,6 +85,6 @@ guidance:
 
 ## License
 
-ALCOMD3 is licensed under the GNU Affero General Public License v3.0 or later
-(`AGPL-3.0-or-later`). See [../LICENSE](../LICENSE) and
+ALCOMD3 is licensed under the GNU Affero General Public License v3.0 only
+(`AGPL-3.0-only`). See [../LICENSE](../LICENSE) and
 [../LICENSE-NOTES.md](../LICENSE-NOTES.md) for more information.

@@ -9,7 +9,7 @@ Read [../CONTRIBUTING.md](../CONTRIBUTING.md) first.
 
 Unless explicitly marked otherwise and accepted by the maintainers, GUI
 contributions are licensed under ALCOMD3's current main project license,
-`AGPL-3.0-or-later`.
+`AGPL-3.0-only`.
 
 ### Localizing
 

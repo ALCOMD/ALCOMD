@@ -1,8 +1,8 @@
 # ALCOMD3 Licensing Notes
 
 The main ALCOMD3 project code is licensed under the GNU Affero General
-Public License v3.0 or later (`AGPL-3.0-or-later`). The full AGPLv3 license
-text is in [LICENSE](./LICENSE).
+Public License v3.0 only (`AGPL-3.0-only`). The full AGPLv3 license text is in
+[LICENSE](./LICENSE).
 
 Main project copyright notices:
 

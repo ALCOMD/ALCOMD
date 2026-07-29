@@ -84,7 +84,7 @@ release, MCP, format, and historical documentation.
 
 Unless explicitly marked otherwise and accepted by the maintainers,
 contributions submitted to this repository are licensed under the project's
-current main license, `AGPL-3.0-or-later`.
+current main license, `AGPL-3.0-only`.
 
 ### External change intake
 

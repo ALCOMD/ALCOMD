@@ -514,7 +514,7 @@ async function getLicencesFromPackageLockJson(
 
 function getLicenseNames() {
 	return new Map([
-		["AGPL-3.0-or-later", "GNU Affero General Public License v3.0 or later"],
+		["AGPL-3.0-only", "GNU Affero General Public License v3.0 only"],
 		["MIT", "MIT License"],
 		["ISC", "ISC License"],
 		["Apache-2.0", "Apache License 2.0"],

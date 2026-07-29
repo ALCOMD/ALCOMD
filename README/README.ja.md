@@ -101,8 +101,8 @@ npm run dev
 
 ## ライセンス
 
-主要なプロジェクトコードは GNU Affero General Public License v3.0 or later
-（`AGPL-3.0-or-later`）でライセンスされています。[LICENSE](../LICENSE) と
+主要なプロジェクトコードは GNU Affero General Public License v3.0 only
+（`AGPL-3.0-only`）でライセンスされています。[LICENSE](../LICENSE) と
 [LICENSE-NOTES.md](../LICENSE-NOTES.md) を参照してください。
 
 依存関係と第三者リソースの通知は、アプリ内の Licenses ページと
