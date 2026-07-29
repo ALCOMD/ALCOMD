@@ -8,6 +8,7 @@
 
 - 项目概览和下载：[../../README/README.zh-CN.md](../../README/README.zh-CN.md)
 - 贡献规则：[../../CONTRIBUTING/CONTRIBUTING.zh-CN.md](../../CONTRIBUTING/CONTRIBUTING.zh-CN.md)
+- 贡献者许可协议：[../../CLA.md](../../CLA.md)
 - 许可证说明：[../../LICENSE-NOTES.md](../../LICENSE-NOTES.md)
 - Agent 规则：[../../AGENTS.md](../../AGENTS.md)
 

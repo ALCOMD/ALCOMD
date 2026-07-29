@@ -4,11 +4,12 @@
 
 最初に [project-wide contribution guide](../../CONTRIBUTING/CONTRIBUTING.ja.md) を読む。
 
-### コントリビューションのライセンス
+### Contributor License Agreement
 
-明示的に別の license が記載され、maintainer がそれを受け入れた場合を除き、
-GUI contribution は ALCOMD3 の現在の main project license である
-`AGPL-3.0-only` で提供されます。
+GUI contribution には project-wide の [ALCOMD3 Individual Contributor License
+Agreement](../../CLA.md) が適用されます。個人 contributor の pull request を merge
+する前に CLA への署名が必要です。公開 Project に取り込まれた contribution は
+ALCOMD3 の現在の main license である `AGPL-3.0-only` で配布されます。
 
 ### ローカライズ
 

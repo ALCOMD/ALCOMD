@@ -5,10 +5,12 @@ Languages: English | [日本語](CONTRIBUTING/CONTRIBUTING.ja.md) |
 
 Read [../CONTRIBUTING.md](../CONTRIBUTING.md) first.
 
-### Contribution license
+### Contributor License Agreement
 
-Unless explicitly marked otherwise and accepted by the maintainers, GUI
-contributions are licensed under ALCOMD3's current main project license,
+GUI contributions are subject to the project-wide [ALCOMD3 Individual
+Contributor License Agreement](../CLA.md). Individual contributors must sign
+the CLA before their pull requests can be merged. Contributions included in
+the public Project are distributed under ALCOMD3's current main license,
 `AGPL-3.0-only`.
 
 ### Localizing

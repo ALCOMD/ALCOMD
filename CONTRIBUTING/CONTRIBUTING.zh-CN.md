@@ -68,10 +68,19 @@ cargo xtask release-build --version 2.0.1 --channel stable
 Agent 发布流程记录在 `docs/skills/alcomd3-release/SKILL.md`。
 查找维护、发布、MCP、格式和历史文档时，以 `docs/README/README.zh-CN.md` 作为文档索引。
 
-### 贡献授权
+### 贡献者许可协议
 
-除非贡献者明确标注其他许可证且维护者接受，提交到本仓库的贡献默认按项目当前主许可证
-`AGPL-3.0-only` 授权。
+个人贡献者的 pull request 必须在合并前签署 [ALCOMD3 个人贡献者许可协议](../CLA.md)。
+
+CLA 不转让版权；你仍拥有自己贡献的版权。纳入公开项目的贡献按照 ALCOMD3 当前主许可证
+`AGPL-3.0-only` 分发，同时 CLA 授予维护者使用、修改、分发和重新许可这些贡献的广泛权利，
+包括用于可能的闭源分发。
+
+创建 pull request 后，CLA workflow 会评论签署说明。请回复 workflow 显示的准确文本进行
+签署；每个 CLA 版本只需签署一次。
+
+如果你的雇主可能拥有相关权利，或者你代表公司或组织贡献，请先联系维护者，不要直接签署
+个人 CLA。
 
 ### 外部变更引入
 

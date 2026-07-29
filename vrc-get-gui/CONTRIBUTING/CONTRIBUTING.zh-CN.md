@@ -4,10 +4,11 @@
 
 先阅读[项目级贡献指南](../../CONTRIBUTING/CONTRIBUTING.zh-CN.md)。
 
-### 贡献授权
+### 贡献者许可协议
 
-除非贡献者明确标注其他许可证且维护者接受，GUI 贡献默认按 ALCOMD3 当前主项目许可证
-`AGPL-3.0-only` 授权。
+GUI 贡献适用项目级 [ALCOMD3 个人贡献者许可协议](../../CLA.md)。个人贡献者的 pull request
+必须在合并前签署 CLA。纳入公开项目的贡献按照 ALCOMD3 当前主许可证
+`AGPL-3.0-only` 分发。
 
 ### 本地化
 

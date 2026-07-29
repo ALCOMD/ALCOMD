@@ -9,6 +9,7 @@ release steps、user-facing technical documentation を探すときはここか�
 
 - Project overview and downloads: [../../README/README.ja.md](../../README/README.ja.md)
 - Contribution rules: [../../CONTRIBUTING/CONTRIBUTING.ja.md](../../CONTRIBUTING/CONTRIBUTING.ja.md)
+- Contributor License Agreement: [../../CLA.md](../../CLA.md)
 - Licensing notes: [../../LICENSE-NOTES.md](../../LICENSE-NOTES.md)
 - Agent rules: [../../AGENTS.md](../../AGENTS.md)
 

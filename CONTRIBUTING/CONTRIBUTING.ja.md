@@ -76,11 +76,22 @@ Agent release procedure は `docs/skills/alcomd3-release/SKILL.md` に記載す�
 Maintenance、release、MCP、format、historical documentation を探す場合は
 `docs/README/README.ja.md` を documentation index として使う。
 
-### コントリビューションのライセンス
+### Contributor License Agreement
 
-明示的に別の license が記載され、maintainer がそれを受け入れた場合を除き、
-このリポジトリに提出された contribution は project の現在の main license である
-`AGPL-3.0-only` で提供されます。
+個人 contributor の pull request を merge する前に、[ALCOMD3 Individual Contributor
+License Agreement](../CLA.md) への署名が必要です。
+
+CLA は copyright ownership を譲渡するものではありません。Contributor は自身の
+contribution の copyright を保持します。公開 Project に取り込まれた contribution は
+ALCOMD3 の現在の main license である `AGPL-3.0-only` で配布されます。同時に CLA は、
+closed-source distribution の可能性を含め、contribution の使用、変更、配布、再ライセンス
+に関する広範な権利を Maintainer に付与します。
+
+Pull request を作成すると、CLA workflow が署名方法をコメントします。Workflow が示す
+正確なコメントを投稿して署名してください。CLA の各 version への署名は一度だけ必要です。
+
+雇用主が成果物の権利を持つ可能性がある場合、または会社・組織を代表して contribution
+する場合は、個人 CLA に署名する前に Maintainer へ連絡してください。
 
 ### 外部変更の取り込み
 

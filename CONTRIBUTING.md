@@ -80,11 +80,24 @@ Agent release procedures are documented in
 Use `docs/README.md` as the documentation index when looking for maintenance,
 release, MCP, format, and historical documentation.
 
-### Contribution license
+### Contributor License Agreement
 
-Unless explicitly marked otherwise and accepted by the maintainers,
-contributions submitted to this repository are licensed under the project's
-current main license, `AGPL-3.0-only`.
+Individual contributors must sign the [ALCOMD3 Individual Contributor License
+Agreement](CLA.md) before their pull requests can be merged.
+
+The CLA does not transfer copyright ownership. You keep the copyright in your
+Contributions. Contributions included in the public Project are distributed
+under ALCOMD3's current main license, `AGPL-3.0-only`, while the CLA grants the
+Maintainer broad rights to use, modify, distribute, and relicense them,
+including for possible closed-source distributions.
+
+When you open a pull request, the CLA workflow comments with instructions. Sign
+by posting the exact comment shown by the workflow. You need to sign each CLA
+version only once.
+
+If your employer may own rights to your work, or if you contribute for a
+company or organization, contact the Maintainer before signing the individual
+CLA.
 
 ### External change intake
 

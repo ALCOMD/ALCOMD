@@ -11,6 +11,7 @@ documentation.
 
 - Project overview and downloads: [../README.md](../README.md)
 - Contribution rules: [../CONTRIBUTING.md](../CONTRIBUTING.md)
+- Contributor License Agreement: [../CLA.md](../CLA.md)
 - Licensing notes: [../LICENSE-NOTES.md](../LICENSE-NOTES.md)
 - Agent rules: [../AGENTS.md](../AGENTS.md)
 

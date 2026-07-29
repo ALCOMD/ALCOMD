@@ -1,0 +1,43 @@
+name: CLA Assistant
+
+on:
+    issue_comment:
+        types: [created]
+    pull_request_target:
+        types: [opened, closed, synchronize]
+
+permissions:
+    actions: write
+    contents: write
+    pull-requests: write
+    statuses: write
+
+jobs:
+    cla-assistant:
+        runs-on: ubuntu-latest
+        steps:
+            - name: CLA Assistant
+              if: github.event_name == 'pull_request_target' || (github.event.issue.pull_request && (github.event.comment.body == 'recheck' || github.event.comment.body == 'I have read the ALCOMD3 Individual Contributor License Agreement and I hereby sign the CLA.'))
+              # contributor-assistant/github-action v2.6.1
+              uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              with:
+                  path-to-signatures: signatures/version1/cla.json
+                  path-to-document: https://github.com/ALCOMD3/ALCOMD3/blob/main/CLA.md
+                  branch: main
+                  allowlist: CQMHV,dependabot[bot],*[bot]
+                  custom-notsigned-prcomment: |
+                      Thank you for your contribution.
+
+                      Before this pull request can be merged, please read and sign the [ALCOMD3 Individual Contributor License Agreement](https://github.com/ALCOMD3/ALCOMD3/blob/main/CLA.md).
+
+                      To sign, comment exactly:
+
+                      > I have read the ALCOMD3 Individual Contributor License Agreement and I hereby sign the CLA.
+
+                      You only need to sign this CLA version once. Your signature applies to your future contributions to ALCOMD3 unless a later written agreement says otherwise.
+
+                      If your employer may own rights to your work, or if you are contributing on behalf of a company or organization, please do not sign the individual CLA yet. Contact the maintainer first.
+                  custom-pr-sign-comment: I have read the ALCOMD3 Individual Contributor License Agreement and I hereby sign the CLA.
+                  custom-allsigned-prcomment: All contributors have signed the CLA. Thank you!
