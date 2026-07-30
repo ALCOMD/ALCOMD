@@ -27,7 +27,7 @@ use windows::Win32::Storage::FileSystem::{
 use windows::Win32::System::IO::OVERLAPPED;
 use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, FLASHW_TIMERNOFG, FLASHW_TRAY, FLASHWINFO, FlashWindowEx,
+    EnumWindows, FLASHW_TIMERNOFG, FLASHW_TRAY, FLASHWINFO, FlashWindowEx, GetClassNameW, GetMenu,
     GetWindowThreadProcessId, IsIconic, IsWindowVisible, SW_RESTORE, SetForegroundWindow,
     ShowWindow,
 };
@@ -36,6 +36,7 @@ use windows::core::{BOOL, HSTRING};
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 const LOCK_RANGE_LOW: u32 = u32::MAX;
 const LOCK_RANGE_HIGH: u32 = u32::MAX;
+const UNITY_EDITOR_WINDOW_CLASS: &str = "UnityContainerWndClass";
 
 pub(crate) const CAN_BRING_UNITY_TO_FRONT: bool = true;
 
@@ -170,24 +171,7 @@ pub(crate) fn is_locked(path: &Path) -> io::Result<bool> {
 }
 
 pub(crate) fn bring_unity_to_front(project_path: &Path) -> io::Result<BringUnityToFrontResult> {
-    let Some(process_id) = crate::unity_process::find_unity_process_id_for_project(project_path)
-    else {
-        return Ok(BringUnityToFrontResult::WindowNotFound);
-    };
-
-    let mut context = FindUnityWindowContext {
-        process_id,
-        window: None,
-    };
-
-    unsafe {
-        EnumWindows(
-            Some(find_unity_window),
-            LPARAM((&mut context as *mut FindUnityWindowContext) as isize),
-        )?;
-    }
-
-    let Some(window) = context.window else {
+    let Some(window) = find_unity_editor_window(project_path)? else {
         return Ok(BringUnityToFrontResult::WindowNotFound);
     };
 
@@ -215,6 +199,37 @@ pub(crate) fn bring_unity_to_front(project_path: &Path) -> io::Result<BringUnity
     Ok(BringUnityToFrontResult::AttentionRequested)
 }
 
+pub(crate) fn is_unity_editor_ready(project_path: &Path) -> bool {
+    match find_unity_editor_window(project_path) {
+        Ok(window) => window.is_some(),
+        Err(error) => {
+            log::debug!("Checking whether the Unity editor window is ready: {error}");
+            false
+        }
+    }
+}
+
+fn find_unity_editor_window(project_path: &Path) -> io::Result<Option<HWND>> {
+    let Some(process_id) = crate::unity_process::find_unity_process_id_for_project(project_path)
+    else {
+        return Ok(None);
+    };
+
+    let mut context = FindUnityWindowContext {
+        process_id,
+        window: None,
+    };
+
+    unsafe {
+        EnumWindows(
+            Some(find_unity_window),
+            LPARAM((&mut context as *mut FindUnityWindowContext) as isize),
+        )?;
+    }
+
+    Ok(context.window)
+}
+
 struct FindUnityWindowContext {
     process_id: u32,
     window: Option<HWND>,
@@ -222,7 +237,7 @@ struct FindUnityWindowContext {
 
 unsafe extern "system" fn find_unity_window(window: HWND, parameter: LPARAM) -> BOOL {
     let context = unsafe { &mut *(parameter.0 as *mut FindUnityWindowContext) };
-    if context.window.is_some() || !unsafe { IsWindowVisible(window).as_bool() } {
+    if context.window.is_some() {
         return BOOL(1);
     }
 
@@ -230,11 +245,32 @@ unsafe extern "system" fn find_unity_window(window: HWND, parameter: LPARAM) -> 
     unsafe {
         GetWindowThreadProcessId(window, Some(&mut process_id));
     }
-    if process_id == context.process_id {
+    if process_id == context.process_id && unsafe { is_unity_editor_window(window) } {
         context.window = Some(window);
     }
 
     BOOL(1)
+}
+
+unsafe fn is_unity_editor_window(window: HWND) -> bool {
+    let visible = unsafe { IsWindowVisible(window).as_bool() };
+    let has_menu = !unsafe { GetMenu(window) }.0.is_null();
+    if !visible || !has_menu {
+        return false;
+    }
+
+    let mut class_name = [0u16; 64];
+    let class_name_length = unsafe { GetClassNameW(window, &mut class_name) };
+    if class_name_length <= 0 {
+        return false;
+    }
+
+    let class_name = String::from_utf16_lossy(&class_name[..class_name_length as usize]);
+    is_unity_editor_window_metadata(&class_name, visible, has_menu)
+}
+
+fn is_unity_editor_window_metadata(class_name: &str, visible: bool, has_menu: bool) -> bool {
+    visible && has_menu && class_name == UNITY_EDITOR_WINDOW_CLASS
 }
 
 pub fn os_info() -> &'static str {
@@ -417,5 +453,33 @@ mod tests {
         }
 
         assert!(detected);
+    }
+
+    #[test]
+    fn recognizes_a_visible_unity_editor_window_with_a_menu() {
+        assert!(is_unity_editor_window_metadata(
+            UNITY_EDITOR_WINDOW_CLASS,
+            true,
+            true
+        ));
+    }
+
+    #[test]
+    fn rejects_unity_startup_and_utility_windows() {
+        assert!(!is_unity_editor_window_metadata(
+            "UnitySplashWndClass",
+            true,
+            true
+        ));
+        assert!(!is_unity_editor_window_metadata(
+            UNITY_EDITOR_WINDOW_CLASS,
+            true,
+            false
+        ));
+        assert!(!is_unity_editor_window_metadata(
+            UNITY_EDITOR_WINDOW_CLASS,
+            false,
+            true
+        ));
     }
 }

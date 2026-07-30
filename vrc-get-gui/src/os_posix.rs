@@ -52,6 +52,10 @@ pub(crate) fn bring_unity_to_front(_project_path: &Path) -> io::Result<BringUnit
     Ok(BringUnityToFrontResult::Unsupported)
 }
 
+pub(crate) fn is_unity_editor_ready(_project_path: &Path) -> bool {
+    true
+}
+
 #[cfg(target_os = "macos")]
 #[path = "os_macos.rs"]
 mod os_more;

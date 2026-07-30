@@ -1826,7 +1826,6 @@ pub async fn project_open_unity(
         )]),
     );
     if is_unity_running(&project_path) {
-        unity_state.clear_opening(Path::new(&project_path));
         // it looks unity is running. returning false
         activity.finish_success(
             Some(&app),
@@ -1893,7 +1892,6 @@ pub async fn project_open_unity(
         return Ok(false);
     }
     if is_unity_running(&project_path_key) {
-        unity_state.clear_opening(&project_path_key);
         activity.finish_success(
             Some(&app),
             &activity_tracker,
@@ -1950,7 +1948,6 @@ pub fn project_is_unity_launching(
 ) -> bool {
     let project_path = Path::new(&project_path);
     if is_unity_running(project_path) {
-        unity_state.clear_opening(project_path);
         true
     } else {
         unity_state.is_opening(project_path)
@@ -1964,19 +1961,81 @@ pub fn project_unity_status(
     project_path: String,
 ) -> TauriUnityProjectStatus {
     let project_path = Path::new(&project_path);
-    let status = if is_unity_running(project_path) {
+    let is_running = is_unity_running(project_path);
+    let editor_ready = if !is_running {
+        unity_state.clear_editor_ready(project_path);
+        false
+    } else if unity_state.is_editor_ready(project_path) {
+        true
+    } else if crate::os::is_unity_editor_ready(project_path) {
+        unity_state.mark_editor_ready(project_path.to_owned());
         unity_state.clear_opening(project_path);
-        TauriUnityProjectStatusKind::Open
-    } else if unity_state.is_opening(project_path) {
-        TauriUnityProjectStatusKind::Opening
+        true
     } else {
-        TauriUnityProjectStatusKind::Closed
+        false
     };
+    let launch_opening = !is_running && unity_state.is_opening(project_path);
+    let status = unity_project_status_kind(is_running, editor_ready, launch_opening);
 
     TauriUnityProjectStatus {
         status,
         can_bring_to_front: status == TauriUnityProjectStatusKind::Open
             && crate::os::CAN_BRING_UNITY_TO_FRONT,
+    }
+}
+
+fn unity_project_status_kind(
+    is_running: bool,
+    editor_ready: bool,
+    launch_opening: bool,
+) -> TauriUnityProjectStatusKind {
+    if is_running {
+        if editor_ready {
+            TauriUnityProjectStatusKind::Open
+        } else {
+            TauriUnityProjectStatusKind::Opening
+        }
+    } else if launch_opening {
+        TauriUnityProjectStatusKind::Opening
+    } else {
+        TauriUnityProjectStatusKind::Closed
+    }
+}
+
+#[cfg(test)]
+mod unity_status_tests {
+    use super::*;
+
+    #[test]
+    fn running_without_an_editor_window_remains_opening() {
+        assert_eq!(
+            unity_project_status_kind(true, false, true),
+            TauriUnityProjectStatusKind::Opening
+        );
+        assert_eq!(
+            unity_project_status_kind(true, false, false),
+            TauriUnityProjectStatusKind::Opening
+        );
+    }
+
+    #[test]
+    fn running_with_an_editor_window_is_open() {
+        assert_eq!(
+            unity_project_status_kind(true, true, true),
+            TauriUnityProjectStatusKind::Open
+        );
+    }
+
+    #[test]
+    fn launch_state_only_applies_before_the_project_lock_is_acquired() {
+        assert_eq!(
+            unity_project_status_kind(false, false, true),
+            TauriUnityProjectStatusKind::Opening
+        );
+        assert_eq!(
+            unity_project_status_kind(false, false, false),
+            TauriUnityProjectStatusKind::Closed
+        );
     }
 }
 

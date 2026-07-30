@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -8,12 +8,14 @@ const UNITY_OPENING_TIMEOUT: Duration = Duration::from_secs(120);
 #[derive(Clone)]
 pub struct UnityProjectState {
     opening: Arc<Mutex<HashMap<PathBuf, Instant>>>,
+    editor_ready: Arc<Mutex<HashSet<PathBuf>>>,
 }
 
 impl UnityProjectState {
     pub fn new() -> Self {
         Self {
             opening: Arc::new(Mutex::new(HashMap::new())),
+            editor_ready: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -29,7 +31,20 @@ impl UnityProjectState {
         self.opening.lock().unwrap().remove(project_path);
     }
 
+    pub fn mark_editor_ready(&self, project_path: PathBuf) {
+        self.editor_ready.lock().unwrap().insert(project_path);
+    }
+
+    pub fn is_editor_ready(&self, project_path: &Path) -> bool {
+        self.editor_ready.lock().unwrap().contains(project_path)
+    }
+
+    pub fn clear_editor_ready(&self, project_path: &Path) {
+        self.editor_ready.lock().unwrap().remove(project_path);
+    }
+
     fn try_mark_opening_at(&self, project_path: PathBuf, now: Instant) -> bool {
+        self.clear_editor_ready(&project_path);
         let mut opening = self.opening.lock().unwrap();
         remove_expired(&mut opening, now);
 
@@ -88,5 +103,28 @@ mod tests {
             started_at + UNITY_OPENING_TIMEOUT - Duration::from_millis(1)
         ));
         assert!(!state.is_opening_at(&project, started_at + UNITY_OPENING_TIMEOUT));
+    }
+
+    #[test]
+    fn caches_and_clears_editor_ready_state() {
+        let state = UnityProjectState::new();
+        let project = PathBuf::from("project");
+
+        state.mark_editor_ready(project.clone());
+        assert!(state.is_editor_ready(&project));
+
+        state.clear_editor_ready(&project);
+        assert!(!state.is_editor_ready(&project));
+    }
+
+    #[test]
+    fn starting_a_new_launch_clears_stale_editor_ready_state() {
+        let state = UnityProjectState::new();
+        let project = PathBuf::from("project");
+
+        state.mark_editor_ready(project.clone());
+        assert!(state.try_mark_opening(project.clone()));
+
+        assert!(!state.is_editor_ready(&project));
     }
 }
