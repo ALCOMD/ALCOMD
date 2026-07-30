@@ -94,13 +94,13 @@ function Page() {
 
 	const startCreateProject = () => void createProject();
 
-	const loading = result.isFetching;
+	const refreshing = result.isFetching;
 
 	return (
 		<VStack>
 			<ProjectViewHeader
 				startCreateProject={startCreateProject}
-				isLoading={loading}
+				isLoading={refreshing}
 				search={search}
 				setSearch={setSearch}
 				viewMode={viewMode}
@@ -118,23 +118,11 @@ function Page() {
 				) : result.data.length === 0 ? (
 					<EmptyProjectsCard startCreateProject={startCreateProject} />
 				) : viewMode === "List" ? (
-					<ProjectsTableCard
-						projects={result.data}
-						search={search}
-						loading={loading}
-					/>
+					<ProjectsTableCard projects={result.data} search={search} />
 				) : viewMode === "Grid" ? (
-					<ProjectsGridCard
-						projects={result.data}
-						search={search}
-						loading={loading}
-					/>
+					<ProjectsGridCard projects={result.data} search={search} />
 				) : (
-					<ProjectsTableCard
-						projects={result.data}
-						search={search}
-						loading={loading}
-					/>
+					<ProjectsTableCard projects={result.data} search={search} />
 				)}
 			</main>
 		</VStack>
