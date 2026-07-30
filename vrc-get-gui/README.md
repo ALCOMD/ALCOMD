@@ -65,6 +65,27 @@ bridge for the current platform. Release and signing details are documented in
 Generated or local-only directories such as `gen/`, `out/`, and `node_modules/`
 are ignored by Git.
 
+## Unity Project State
+
+Project actions distinguish three Unity states:
+
+- `Closed`: Unity can be launched for the project.
+- `Opening`: a launch has started, so duplicate launches are blocked while the
+  GUI waits for Unity to acquire the project lock.
+- `Open`: Unity owns the project's `Temp/UnityLockFile`.
+
+Opening state is held in the backend, cleared when launching fails, and expires
+after a bounded interval if Unity never acquires the lock. On Windows, an open
+project can be brought to the front by matching the Unity process's
+`-projectPath` argument. If Windows rejects foreground activation, ALCOMD3
+requests attention through the taskbar instead. Platforms without a reliable
+window activation implementation still report the project as open but do not
+offer the bring-to-front action.
+
+The backend state and platform implementations live in `src/state/unity.rs`,
+`src/os_windows.rs`, and `src/unity_process.rs`. The project button polling and
+presentation live in `components/OpenUnityButton.tsx`.
+
 ## Related Documentation
 
 - [Root README](../README.md): project overview, downloads, and repository layout.

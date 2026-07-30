@@ -18,15 +18,35 @@ use std::os::windows::prelude::*;
 use std::path::Path;
 use std::sync::OnceLock;
 use tokio::process::Command;
-use windows::Win32::Foundation::{ERROR_LOCK_VIOLATION, HANDLE};
+use windows::Win32::Foundation::{
+    ERROR_LOCK_VIOLATION, ERROR_SHARING_VIOLATION, HANDLE, HWND, LPARAM,
+};
 use windows::Win32::Storage::FileSystem::{
     LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY, LockFileEx, UnlockFileEx,
 };
 use windows::Win32::System::IO::OVERLAPPED;
 use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
-use windows::core::HSTRING;
+use windows::Win32::UI::WindowsAndMessaging::{
+    EnumWindows, FLASHW_TIMERNOFG, FLASHW_TRAY, FLASHWINFO, FlashWindowEx,
+    GetWindowThreadProcessId, IsIconic, IsWindowVisible, SW_RESTORE, SetForegroundWindow,
+    ShowWindow,
+};
+use windows::core::{BOOL, HSTRING};
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
+const LOCK_RANGE_LOW: u32 = u32::MAX;
+const LOCK_RANGE_HIGH: u32 = u32::MAX;
+
+pub(crate) const CAN_BRING_UNITY_TO_FRONT: bool = true;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(dead_code)]
+pub(crate) enum BringUnityToFrontResult {
+    BroughtToFront,
+    AttentionRequested,
+    WindowNotFound,
+    Unsupported,
+}
 
 pub(crate) fn set_current_process_app_user_model_id(app_id: &str) -> windows::core::Result<()> {
     let app_id = HSTRING::from(app_id);
@@ -106,7 +126,14 @@ fn append_cmd_escaped(args: &mut Vec<u16>, arg: impl Iterator<Item = u16>) {
 }
 
 pub(crate) fn is_locked(path: &Path) -> io::Result<bool> {
-    let file = OpenOptions::new().read(true).open(path)?;
+    let file = match OpenOptions::new().read(true).open(path) {
+        Ok(file) => file,
+        Err(error) if error.raw_os_error() == Some(ERROR_SHARING_VIOLATION.0 as i32) => {
+            return Ok(true);
+        }
+        Err(error) => return Err(error),
+    };
+
     unsafe {
         let mut overlapped: OVERLAPPED = MaybeUninit::zeroed().assume_init();
         overlapped.Anonymous.Anonymous.Offset = 0;
@@ -115,25 +142,99 @@ pub(crate) fn is_locked(path: &Path) -> io::Result<bool> {
             HANDLE(file.as_raw_handle()),
             LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
             None,
-            0,
-            0,
+            LOCK_RANGE_LOW,
+            LOCK_RANGE_HIGH,
             &mut overlapped,
         ) {
             Err(ref e) if e.code() == ERROR_LOCK_VIOLATION.into() => {
                 // ERROR_LOCK_VIOLATION means it's already locked
-                return Ok(false);
+                return Ok(true);
             }
             // other error
             Err(e) => return Err(e.into()),
             Ok(()) => {}
         }
-        // lock successful; it's not locked so unlock and return true
+        // Locking succeeded, so no other process owns the range.
         let mut overlapped: OVERLAPPED = MaybeUninit::zeroed().assume_init();
         overlapped.Anonymous.Anonymous.Offset = 0;
         overlapped.Anonymous.Anonymous.OffsetHigh = 0;
-        UnlockFileEx(HANDLE(file.as_raw_handle()), None, !0, !0, &mut overlapped)?;
-        Ok(true)
+        UnlockFileEx(
+            HANDLE(file.as_raw_handle()),
+            None,
+            LOCK_RANGE_LOW,
+            LOCK_RANGE_HIGH,
+            &mut overlapped,
+        )?;
+        Ok(false)
     }
+}
+
+pub(crate) fn bring_unity_to_front(project_path: &Path) -> io::Result<BringUnityToFrontResult> {
+    let Some(process_id) = crate::unity_process::find_unity_process_id_for_project(project_path)
+    else {
+        return Ok(BringUnityToFrontResult::WindowNotFound);
+    };
+
+    let mut context = FindUnityWindowContext {
+        process_id,
+        window: None,
+    };
+
+    unsafe {
+        EnumWindows(
+            Some(find_unity_window),
+            LPARAM((&mut context as *mut FindUnityWindowContext) as isize),
+        )?;
+    }
+
+    let Some(window) = context.window else {
+        return Ok(BringUnityToFrontResult::WindowNotFound);
+    };
+
+    unsafe {
+        if IsIconic(window).as_bool() {
+            let _ = ShowWindow(window, SW_RESTORE);
+        }
+
+        if SetForegroundWindow(window).as_bool() {
+            return Ok(BringUnityToFrontResult::BroughtToFront);
+        }
+
+        let flash_info = FLASHWINFO {
+            cbSize: size_of::<FLASHWINFO>() as u32,
+            hwnd: window,
+            dwFlags: FLASHW_TRAY | FLASHW_TIMERNOFG,
+            uCount: 3,
+            dwTimeout: 0,
+        };
+        // The return value describes whether the window was active before this call,
+        // not whether the attention request succeeded.
+        let _ = FlashWindowEx(&flash_info);
+    }
+
+    Ok(BringUnityToFrontResult::AttentionRequested)
+}
+
+struct FindUnityWindowContext {
+    process_id: u32,
+    window: Option<HWND>,
+}
+
+unsafe extern "system" fn find_unity_window(window: HWND, parameter: LPARAM) -> BOOL {
+    let context = unsafe { &mut *(parameter.0 as *mut FindUnityWindowContext) };
+    if context.window.is_some() || !unsafe { IsWindowVisible(window).as_bool() } {
+        return BOOL(1);
+    }
+
+    let mut process_id = 0;
+    unsafe {
+        GetWindowThreadProcessId(window, Some(&mut process_id));
+    }
+    if process_id == context.process_id {
+        context.window = Some(window);
+    }
+
+    BOOL(1)
 }
 
 pub fn os_info() -> &'static str {
@@ -266,4 +367,55 @@ pub fn initialize(_: tauri::AppHandle) {
 
 pub fn is_noexec(_path: &Path) -> bool {
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reports_an_unlocked_file_as_unlocked() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+
+        assert!(!is_locked(file.path()).unwrap());
+    }
+
+    #[test]
+    fn reports_a_competing_byte_range_lock_as_locked() {
+        let temporary_file = tempfile::NamedTempFile::new().unwrap();
+        let locked_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(temporary_file.path())
+            .unwrap();
+
+        let mut overlapped: OVERLAPPED = unsafe { MaybeUninit::zeroed().assume_init() };
+        unsafe {
+            LockFileEx(
+                HANDLE(locked_file.as_raw_handle()),
+                LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
+                None,
+                LOCK_RANGE_LOW,
+                LOCK_RANGE_HIGH,
+                &mut overlapped,
+            )
+            .unwrap();
+        }
+
+        let detected = is_locked(temporary_file.path()).unwrap();
+
+        let mut overlapped: OVERLAPPED = unsafe { MaybeUninit::zeroed().assume_init() };
+        unsafe {
+            UnlockFileEx(
+                HANDLE(locked_file.as_raw_handle()),
+                None,
+                LOCK_RANGE_LOW,
+                LOCK_RANGE_HIGH,
+                &mut overlapped,
+            )
+            .unwrap();
+        }
+
+        assert!(detected);
+    }
 }

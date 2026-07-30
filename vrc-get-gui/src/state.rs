@@ -8,6 +8,7 @@ mod project_restore;
 mod settings;
 mod templates;
 mod theme_config;
+mod unity;
 mod updater;
 
 pub use changes::*;
@@ -20,6 +21,7 @@ pub use project_restore::*;
 pub use settings::*;
 pub use templates::*;
 pub use theme_config::*;
+pub use unity::*;
 pub use updater::*;
 
 pub fn new_http_client() -> reqwest::Client {

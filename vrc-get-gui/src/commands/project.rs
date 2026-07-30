@@ -1781,12 +1781,34 @@ fn is_unity_running(project_path: impl AsRef<Path>) -> bool {
     crate::os::is_locked(&project_path.as_ref().join("Temp/UnityLockFile")).unwrap_or(false)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, specta::Type)]
+pub enum TauriUnityProjectStatusKind {
+    Closed,
+    Opening,
+    Open,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, specta::Type)]
+pub struct TauriUnityProjectStatus {
+    status: TauriUnityProjectStatusKind,
+    can_bring_to_front: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, specta::Type)]
+pub enum TauriUnityWindowActionResult {
+    BroughtToFront,
+    AttentionRequested,
+    WindowNotFound,
+    Unsupported,
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn project_open_unity(
     app: AppHandle,
     config: State<'_, GuiConfigState>,
     io: State<'_, DefaultEnvironmentIo>,
+    unity_state: State<'_, UnityProjectState>,
     project_path: String,
     unity_path: String,
 ) -> Result<bool, RustError> {
@@ -1804,6 +1826,7 @@ pub async fn project_open_unity(
         )]),
     );
     if is_unity_running(&project_path) {
+        unity_state.clear_opening(Path::new(&project_path));
         // it looks unity is running. returning false
         activity.finish_success(
             Some(&app),
@@ -1859,9 +1882,31 @@ pub async fn project_open_unity(
         }
     };
 
+    let project_path_key = PathBuf::from(&project_path);
+    if !unity_state.try_mark_opening(project_path_key.clone()) {
+        activity.finish_success(
+            Some(&app),
+            &activity_tracker,
+            "Unity project is already opening",
+            Vec::new(),
+        );
+        return Ok(false);
+    }
+    if is_unity_running(&project_path_key) {
+        unity_state.clear_opening(&project_path_key);
+        activity.finish_success(
+            Some(&app),
+            &activity_tracker,
+            "Unity project is already running",
+            Vec::new(),
+        );
+        return Ok(false);
+    }
+
     let unity_args = custom_args.or_else(|| config.get().default_unity_arguments.clone());
     let activity_app = app.clone();
     let start_activity_tracker = activity_tracker.clone();
+    let unity_state = unity_state.inner().clone();
     tokio::spawn(async move {
         let mut args = vec!["-projectPath".as_ref(), OsStr::new(project_path.as_str())];
 
@@ -1873,6 +1918,7 @@ pub async fn project_open_unity(
 
         if let Err(e) = crate::os::start_command("Unity".as_ref(), unity_path.as_ref(), &args).await
         {
+            unity_state.clear_opening(&project_path_key);
             log::error!("Launching Unity: {e}");
             if let Some(activity) = activity_app.try_state::<ActivityLogState>() {
                 activity.finish_failed(
@@ -1898,8 +1944,69 @@ pub async fn project_open_unity(
 
 #[tauri::command]
 #[specta::specta]
-pub fn project_is_unity_launching(project_path: String) -> bool {
-    is_unity_running(project_path)
+pub fn project_is_unity_launching(
+    unity_state: State<'_, UnityProjectState>,
+    project_path: String,
+) -> bool {
+    let project_path = Path::new(&project_path);
+    if is_unity_running(project_path) {
+        unity_state.clear_opening(project_path);
+        true
+    } else {
+        unity_state.is_opening(project_path)
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn project_unity_status(
+    unity_state: State<'_, UnityProjectState>,
+    project_path: String,
+) -> TauriUnityProjectStatus {
+    let project_path = Path::new(&project_path);
+    let status = if is_unity_running(project_path) {
+        unity_state.clear_opening(project_path);
+        TauriUnityProjectStatusKind::Open
+    } else if unity_state.is_opening(project_path) {
+        TauriUnityProjectStatusKind::Opening
+    } else {
+        TauriUnityProjectStatusKind::Closed
+    };
+
+    TauriUnityProjectStatus {
+        status,
+        can_bring_to_front: status == TauriUnityProjectStatusKind::Open
+            && crate::os::CAN_BRING_UNITY_TO_FRONT,
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn project_bring_unity_to_front(
+    project_path: String,
+) -> Result<TauriUnityWindowActionResult, RustError> {
+    let result = tokio::task::spawn_blocking(move || {
+        crate::os::bring_unity_to_front(Path::new(&project_path))
+    })
+    .await
+    .map_err(|error| {
+        RustError::unrecoverable_str(format!("checking Unity windows task failed: {error}"))
+    })??;
+
+    Ok(match result {
+        crate::os::BringUnityToFrontResult::BroughtToFront => {
+            TauriUnityWindowActionResult::BroughtToFront
+        }
+        crate::os::BringUnityToFrontResult::AttentionRequested => {
+            TauriUnityWindowActionResult::AttentionRequested
+        }
+        crate::os::BringUnityToFrontResult::WindowNotFound => {
+            TauriUnityWindowActionResult::WindowNotFound
+        }
+        crate::os::BringUnityToFrontResult::Unsupported => {
+            TauriUnityWindowActionResult::Unsupported
+        }
+    })
 }
 
 pub(crate) async fn create_project_backup_with_settings(

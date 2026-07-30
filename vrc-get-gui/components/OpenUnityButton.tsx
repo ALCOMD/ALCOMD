@@ -1,10 +1,29 @@
-import { queryOptions, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
+import { LoaderCircle } from "lucide-react";
 import type React from "react";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { commands } from "@/lib/bindings";
 import { tc } from "@/lib/i18n";
 import { openUnity } from "@/lib/open-unity";
+import { toastError, toastNormal, toastThrownError } from "@/lib/toast";
+import { unityButtonView } from "@/lib/unity-project-status";
+
+const UNITY_STATUS_IDLE_POLL_INTERVAL_MS = 5000;
+const UNITY_STATUS_ACTIVE_POLL_INTERVAL_MS = 1000;
+
+function unityStatusQueryOptions(projectPath: string) {
+	return queryOptions({
+		queryKey: ["projectUnityStatus", projectPath],
+		queryFn: () => commands.projectUnityStatus(projectPath),
+		refetchInterval: (query) =>
+			query.state.data?.status === "Opening" ||
+			query.state.data?.status === "Open"
+				? UNITY_STATUS_ACTIVE_POLL_INTERVAL_MS
+				: UNITY_STATUS_IDLE_POLL_INTERVAL_MS,
+		refetchIntervalInBackground: false,
+	});
+}
 
 function PreventDoubleClick({
 	delayMs,
@@ -51,6 +70,7 @@ export function OpenUnityButton({
 	// avoid overriding following props
 	children: _1,
 	onClick: _2,
+	disabled,
 	...props
 }: {
 	projectPath: string;
@@ -61,24 +81,67 @@ export function OpenUnityButton({
 		queryKey: ["environmentProjects"],
 		queryFn: commands.environmentProjects,
 	});
+	const unityStatusOptions = unityStatusQueryOptions(projectPath);
+	const { data: unityStatus } = useQuery(unityStatusOptions);
 
 	const queryClient = useQueryClient();
+	const buttonView = unityButtonView(unityStatus);
 
 	const openUnityWithUpdateList = async () => {
 		await openUnity(projectPath, unityVersion, unityRevision);
+		await queryClient.invalidateQueries(unityStatusOptions);
 		setTimeout(() => {
 			queryClient.invalidateQueries(environmentProjects);
 		}, 3000);
 	};
 
+	const bringUnityToFront = async () => {
+		try {
+			const result = await commands.projectBringUnityToFront(projectPath);
+			switch (result) {
+				case "BroughtToFront":
+					break;
+				case "AttentionRequested":
+					toastNormal(tc("projects:toast:unity attention requested"));
+					break;
+				case "WindowNotFound":
+					toastError(tc("projects:toast:unity window not found"));
+					break;
+				case "Unsupported":
+					toastError(tc("projects:toast:bring unity to front unsupported"));
+					break;
+			}
+		} catch (error) {
+			toastThrownError(error);
+		} finally {
+			await queryClient.invalidateQueries(unityStatusOptions);
+		}
+	};
+
+	const handleClick = () => {
+		if (buttonView.action === "open") {
+			return openUnityWithUpdateList();
+		}
+		if (buttonView.action === "bring-to-front") {
+			return bringUnityToFront();
+		}
+	};
+
 	return (
 		<PreventDoubleClick
 			delayMs={1000}
-			onClick={openUnityWithUpdateList}
+			onClick={handleClick}
 			variant="emphasis"
 			{...props}
+			disabled={disabled || buttonView.disabled}
+			aria-busy={buttonView.action === "opening" || undefined}
 		>
-			{tc("projects:button:open unity")}
+			<span className="inline-flex items-center gap-2">
+				{buttonView.showSpinner && (
+					<LoaderCircle className="size-4 animate-spin" aria-hidden />
+				)}
+				{tc(buttonView.label)}
+			</span>
 		</PreventDoubleClick>
 	);
 }

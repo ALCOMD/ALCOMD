@@ -106,6 +106,8 @@ export const commands = {
 	projectMigrateProjectToVpm: (projectPath: string) => __TAURI_INVOKE<null>("project_migrate_project_to_vpm", { projectPath }),
 	projectOpenUnity: (projectPath: string, unityPath: string) => __TAURI_INVOKE<boolean>("project_open_unity", { projectPath, unityPath }),
 	projectIsUnityLaunching: (projectPath: string) => __TAURI_INVOKE<boolean>("project_is_unity_launching", { projectPath }),
+	projectUnityStatus: (projectPath: string) => __TAURI_INVOKE<TauriUnityProjectStatus>("project_unity_status", { projectPath }),
+	projectBringUnityToFront: (projectPath: string) => __TAURI_INVOKE<TauriUnityWindowActionResult>("project_bring_unity_to_front", { projectPath }),
 	projectBackupCreationInformation: (projectPath: string) => __TAURI_INVOKE<TauriProjectBackupCreationInformation>("project_backup_creation_information", { projectPath }),
 	projectCheckBackupName: (backupName: string) => __TAURI_INVOKE<TauriBackupNameCheckResult>("project_check_backup_name", { backupName }),
 	projectCreateBackup: (channel: string, projectPath: string, backupName: string | null, excludeVpm: boolean) => __TAURI_INVOKE<AsyncCallResult<TauriCreateBackupProgress, null>>("project_create_backup", { channel, projectPath, backupName, excludeVpm }),
@@ -617,11 +619,20 @@ export type TauriRestoreProjectFromBackupProgress = {
 
 export type TauriRestoreProjectFromBackupResult = "InvalidSelection" | "AlreadyExists" | "AlreadyAdded" | "Successful";
 
+export type TauriUnityProjectStatus = {
+	status: TauriUnityProjectStatusKind,
+	can_bring_to_front: boolean,
+};
+
+export type TauriUnityProjectStatusKind = "Closed" | "Opening" | "Open";
+
 export type TauriUnityVersions = {
 	unity_paths: ([string, string, boolean])[],
 	recommended_version: string,
 	install_recommended_version_link: string,
 };
+
+export type TauriUnityWindowActionResult = "BroughtToFront" | "AttentionRequested" | "WindowNotFound" | "Unsupported";
 
 export type TauriUpdatedRealProjectInfo = {
 	path: string,

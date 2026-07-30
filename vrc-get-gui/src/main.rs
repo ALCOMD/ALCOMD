@@ -23,6 +23,8 @@ mod mcp;
 mod mcp_client_config;
 mod storage;
 mod templates;
+#[cfg(windows)]
+mod unity_process;
 
 #[cfg_attr(windows, path = "os_windows.rs")]
 #[cfg_attr(not(windows), path = "os_posix.rs")]
@@ -232,6 +234,7 @@ fn main() {
         .manage(state::ProjectCopyState::new())
         .manage(state::ProjectRestoreState::new())
         .manage(state::TemplatesState::new())
+        .manage(state::UnityProjectState::new())
         .manage(extensions::ExtensionRegistry::default())
         .manage(activity_log_state)
         .manage(mcp::McpState::new())

@@ -49,6 +49,21 @@ describe("Tauri command bindings", () => {
 		);
 	});
 
+	test("passes the project path to Unity status and window commands", async () => {
+		const ipc = vi.fn(() => null);
+		mockIPC(ipc);
+
+		await commands.projectUnityStatus("C:\\Projects\\Avatar");
+		await commands.projectBringUnityToFront("C:\\Projects\\Avatar");
+
+		expect(ipc).toHaveBeenNthCalledWith(1, "project_unity_status", {
+			projectPath: "C:\\Projects\\Avatar",
+		});
+		expect(ipc).toHaveBeenNthCalledWith(2, "project_bring_unity_to_front", {
+			projectPath: "C:\\Projects\\Avatar",
+		});
+	});
+
 	test("passes async channel and update download options without renaming", async () => {
 		const ipc = vi.fn(() => ({ type: "Started" as const }));
 		mockIPC(ipc);
