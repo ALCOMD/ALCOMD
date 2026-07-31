@@ -1892,6 +1892,7 @@ pub async fn project_open_unity(
         return Ok(false);
     }
     if is_unity_running(&project_path_key) {
+        unity_state.clear_opening(&project_path_key);
         activity.finish_success(
             Some(&app),
             &activity_tracker,
@@ -1962,6 +1963,9 @@ pub fn project_unity_status(
 ) -> TauriUnityProjectStatus {
     let project_path = Path::new(&project_path);
     let is_running = is_unity_running(project_path);
+    if is_running {
+        unity_state.clear_opening(project_path);
+    }
     let editor_ready = if !is_running {
         unity_state.clear_editor_ready(project_path);
         false
