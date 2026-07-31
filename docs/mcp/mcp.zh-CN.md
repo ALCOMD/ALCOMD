@@ -29,7 +29,7 @@ MCP 扩展启用时，GUI 会启动一个仅监听 `127.0.0.1` 的本地 `alcomd
 - 从“扩展”页关闭 MCP 扩展会撤销 MCP 访问许可、停止两个 endpoint、从侧边栏移除
   MCP，并取消仍由 GUI 管理的 MCP 项目任务。重新启用扩展会立即完成开关操作，并在
   后台恢复 endpoint；MCP 访问仍保持停用，直到用户再次在 MCP 页面主动启用。
-- 当前提供项目、仓库、软件包和环境设置只读工具，以及有限写工具：新建项目、
+- 当前提供项目、项目模板、仓库、软件包和环境设置只读工具，以及有限写工具：新建项目、
   添加已有项目、添加 VPM 仓库、备份已登记项目、复制已登记项目、从 zip 备份恢复项目、
   为已登记项目安装/卸载/重装单个软件包。不提供仓库删除、仓库重排、项目删除等其他写操作。
 - MCP 扩展启用时，GUI 负责启动和管理本地 Streamable HTTP server；关闭 GUI 或关闭
@@ -250,6 +250,7 @@ GUI 会校验 `protocolVersion` 和 `token`。校验失败会返回业务错误�
 | Tool | 参数 | 说明 |
 | --- | --- | --- |
 | `alcomd3_list_projects` | `{}` | 列出 ALCOMD3 已登记项目。 |
+| `alcomd3_list_project_templates` | `{}` | 列出当前项目模板的 ID、支持的 Unity 版本、可用状态、更新时间和模板特征。可将返回的 `id` 与 `unityVersions` 值用于 `alcomd3_create_project`。不会暴露模板源文件路径。 |
 | `alcomd3_get_project_details` | `{ "project_path": string }` | 获取已登记项目详情和已安装包摘要。`project_path` 必须匹配 ALCOMD3 已登记项目。 |
 | `alcomd3_list_repositories` | `{}` | 列出 ALCOMD3 当前远程仓库和相关显示设置。`repositories` 包含官方默认、Curated 默认和用户仓库；`userRepositories` 保留为仅用户仓库的兼容字段。 |
 | `alcomd3_add_repository` | `{ "repository_url": string, "headers"?: object }` | 下载并校验指定 VPM 仓库 URL，成功后作为用户仓库加入 ALCOMD3，并清除软件包缓存以便后续重新加载。成功时返回新增的 `repository` 摘要；活动记录只保存脱敏 URL 和 header 数量，不保存 header 值。 |

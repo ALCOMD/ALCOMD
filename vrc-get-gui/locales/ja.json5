@@ -126,6 +126,7 @@
     "mcp:tools:group:write": "書き込みツール",
     "mcp:tools:group:logs": "ログツール",
     "mcp:tool:alcomd3_list_projects": "プロジェクト一覧",
+    "mcp:tool:alcomd3_list_project_templates": "プロジェクトテンプレート一覧",
     "mcp:tool:alcomd3_get_project_details": "プロジェクト詳細を取得",
     "mcp:tool:alcomd3_list_repositories": "リポジトリ一覧",
     "mcp:tool:alcomd3_get_package_details": "パッケージ詳細を取得",

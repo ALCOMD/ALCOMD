@@ -68,6 +68,10 @@ const MCP_TOOL_GROUPS: {
 				labelKey: "mcp:tool:alcomd3_list_projects",
 			},
 			{
+				name: "alcomd3_list_project_templates",
+				labelKey: "mcp:tool:alcomd3_list_project_templates",
+			},
+			{
 				name: "alcomd3_get_project_details",
 				labelKey: "mcp:tool:alcomd3_get_project_details",
 			},

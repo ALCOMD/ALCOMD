@@ -567,6 +567,7 @@
     'mcp:tools:group:write': 'Outils d’écriture',
     'mcp:tools:group:logs': 'Outils de journaux',
     'mcp:tool:alcomd3_list_projects': 'Lister les projets',
+    'mcp:tool:alcomd3_list_project_templates': 'Lister les modèles de projet',
     'mcp:tool:alcomd3_get_project_details': 'Obtenir les détails du projet',
     'mcp:tool:alcomd3_list_repositories': 'Lister les dépôts',
     'mcp:tool:alcomd3_get_package_details': 'Obtenir les détails du paquet',

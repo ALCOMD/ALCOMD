@@ -26,7 +26,7 @@ port を推測せず、GUI に表示される endpoint を使用してくださ�
 - MCP は既定で無効です。新しい tool call が ALCOMD3 data を読み書きするには、GUI で手動で有効化する必要があります。
 - MCP extension が enabled の間、GUI は local IPC endpoint と Streamable HTTP endpoint を起動します。MCP page での MCP の有効/無効は tool data access を制御するだけで、これらの endpoint は停止しません。
 - Extensions page で MCP extension を disabled にすると、MCP access を取り消し、両方の endpoint を停止し、MCP を sidebar から削除して、GUI が管理中の MCP project task を cancel します。extension を再度 enabled にする switch operation はすぐに完了し、endpoint は background で再起動しますが、MCP page で user が再度有効化するまで MCP access は無効のままです。
-- 現在は project、repository、package、environment、activity log、technical log の read-only tools と、限定的な write tools を提供します。write tools は project 作成、existing project 追加、VPM repository 追加、registered project の backup、registered project の copy、zip backup からの restore、registered project への package install/uninstall/reinstall です。repository 削除、repository 並べ替え、project 削除などの他の write operation は提供しません。
+- 現在は project、project template、repository、package、environment、activity log、technical log の read-only tools と、限定的な write tools を提供します。write tools は project 作成、existing project 追加、VPM repository 追加、registered project の backup、registered project の copy、zip backup からの restore、registered project への package install/uninstall/reinstall です。repository 削除、repository 並べ替え、project 削除などの他の write operation は提供しません。
 - MCP extension が enabled の間、GUI が local Streamable HTTP server を起動して管理します。GUI 終了時または extension の無効化時には server も停止します。
 - GUI の private IPC endpoint が利用できない場合、tool call は structured `alcomd3_unavailable` error を返し、MCP tool result に `isError: true` を付けます。
 - bridge は GUI を起動しません。MCP tool の使用中は ALCOMD3 を起動したままにする必要があります。
@@ -226,6 +226,7 @@ GUI は `protocolVersion` と `token` を検証します。検証失敗時は bu
 | Tool | Arguments | 説明 |
 | --- | --- | --- |
 | `alcomd3_list_projects` | `{}` | ALCOMD3 に登録済みの projects を列出します。 |
+| `alcomd3_list_project_templates` | `{}` | 現在の project template について、ID、対応 Unity version、利用可否、更新日時、template feature flags を列出します。返された `id` と `unityVersions` の値を `alcomd3_create_project` に渡せます。template source path は公開しません。 |
 | `alcomd3_get_project_details` | `{ "project_path": string }` | 登録済み project の詳細と installed package summary を取得します。`project_path` は ALCOMD3 に登録済みの project と一致する必要があります。 |
 | `alcomd3_list_repositories` | `{}` | 現在の remote repositories と表示設定を列出します。`repositories` には official default、Curated default、user repository が含まれます。`userRepositories` は user repository のみの互換 field です。 |
 | `alcomd3_add_repository` | `{ "repository_url": string, "headers"?: object }` | 指定した VPM repository URL を download/validate し、user repository として追加し、package cache を clear します。成功時は追加された `repository` summary を返します。activity log は redacted URL と header count だけを保存し、header value は保存しません。 |

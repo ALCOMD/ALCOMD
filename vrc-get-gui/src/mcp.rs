@@ -16,6 +16,7 @@ use crate::backend::projects::{
     ProjectDetailsSnapshot, load_project_details_snapshot, project_summary_snapshot,
 };
 use crate::backend::repository_operations;
+use crate::backend::templates::{load_project_templates, project_template_summary};
 use crate::commands::{
     DEFAULT_UNITY_ARGUMENTS, RustError, TauriPendingProjectChanges,
     build_project_package_row_accumulators, load_project, project_package_row_compatible_packages,
@@ -1037,6 +1038,7 @@ async fn dispatch_gui_request(
 ) -> Result<Value, McpIpcError> {
     match method {
         "list_projects" => list_projects(app).await,
+        "list_project_templates" => list_project_templates(app).await,
         "get_project_details" => get_project_details(app, params).await,
         "list_repositories" => list_repositories(app).await,
         "add_repository" => add_repository(app, params).await,
@@ -1495,6 +1497,21 @@ async fn list_projects(app: AppHandle) -> Result<Value, McpIpcError> {
     Ok(json!({
         "ok": true,
         "projects": projects,
+    }))
+}
+
+async fn list_project_templates(app: AppHandle) -> Result<Value, McpIpcError> {
+    let io = app.state::<DefaultEnvironmentIo>();
+    let templates = load_project_templates(io.inner())
+        .await
+        .map_err(|error| McpIpcError::from_rust_error("template_load_error", error))?
+        .iter()
+        .map(project_template_summary)
+        .collect::<Vec<_>>();
+
+    Ok(json!({
+        "ok": true,
+        "templates": templates,
     }))
 }
 
@@ -3848,6 +3865,10 @@ mod tests {
             Some("alcomd3_list_projects")
         );
         assert_eq!(
+            mcp_tool_name("list_project_templates", &Value::Null),
+            Some("alcomd3_list_project_templates")
+        );
+        assert_eq!(
             mcp_tool_name("get_project_details", &Value::Null),
             Some("alcomd3_get_project_details")
         );
@@ -3953,6 +3974,10 @@ mod tests {
             ActivityImportance::Secondary
         );
         assert_eq!(
+            mcp_activity_importance("list_project_templates", &Value::Null),
+            ActivityImportance::Secondary
+        );
+        assert_eq!(
             mcp_activity_importance("create_project", &Value::Null),
             ActivityImportance::Primary
         );
@@ -4014,8 +4039,8 @@ mod tests {
             );
         }
 
-        assert_eq!(tool_names.len(), 23);
-        assert_eq!(methods.len(), 23);
+        assert_eq!(tool_names.len(), 24);
+        assert_eq!(methods.len(), 24);
         assert!(
             crate::backend::mcp_capabilities::mcp_tool_capability_for_tool_name(
                 "alcomd3_uninstall_project_package"

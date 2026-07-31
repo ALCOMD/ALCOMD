@@ -1722,21 +1722,11 @@ pub async fn environment_project_creation_information(
     config: State<'_, GuiConfigState>,
     io: State<'_, DefaultEnvironmentIo>,
 ) -> Result<TauriProjectCreationInformation, RustError> {
-    let unity_paths = {
-        let connection = VccDatabaseConnection::connect(io.inner()).await?;
-
-        connection
-            .get_unity_installations()
-            .iter()
-            .filter_map(|unity| unity.version())
-            .collect::<Vec<_>>()
-    };
-
     let recent_project_locations = config.get().recent_project_locations.clone();
     let last_used_template = config.get().last_used_template.clone();
     let favorite_templates = config.get().favorite_templates.clone();
 
-    let templates = templates.save(templates::load_resolve_all_templates(&io, &unity_paths).await?);
+    let templates = templates.save(crate::backend::templates::load_project_templates(&io).await?);
 
     let mut settings = settings.load_mut(io.inner()).await?;
     let default_path = default_project_path(&mut settings).to_string();
@@ -1844,7 +1834,7 @@ pub(crate) async fn create_project_with_defaults(
     ensure_mcp_absolute_path("base_path", &base_path)?;
 
     check_project_create_abort(abort)?;
-    let template_infos = load_current_project_templates_for_mcp(io).await?;
+    let template_infos = crate::backend::templates::load_project_templates(io).await?;
     let template = select_project_template(&template_infos, config, template_id.as_deref())?;
     let template_id = template.id.clone();
     let unity_version = select_project_unity_version(template, unity_version.as_deref())?;
@@ -1882,21 +1872,6 @@ pub(crate) async fn create_project_with_defaults(
             "project template was not found",
         )),
     }
-}
-
-async fn load_current_project_templates_for_mcp(
-    io: &DefaultEnvironmentIo,
-) -> Result<Vec<ProjectTemplateInfo>, RustError> {
-    let unity_paths = {
-        let connection = VccDatabaseConnection::connect(io).await?;
-        connection
-            .get_unity_installations()
-            .iter()
-            .filter_map(|unity| unity.version())
-            .collect::<Vec<_>>()
-    };
-
-    Ok(templates::load_resolve_all_templates(io, &unity_paths).await?)
 }
 
 fn select_project_template<'a>(

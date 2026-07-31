@@ -6,3 +6,4 @@ pub(crate) mod project_archive;
 pub(crate) mod project_operations;
 pub(crate) mod projects;
 pub(crate) mod repository_operations;
+pub(crate) mod templates;

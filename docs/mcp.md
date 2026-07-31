@@ -40,7 +40,7 @@ for a configuration example and lifecycle details.
   tasks still owned by the GUI. Re-enabling the extension returns immediately
   and restarts the endpoints in the background, but leaves MCP access disabled
   until the user enables it again on the MCP page.
-- Current tools include read-only project, repository, package, environment,
+- Current tools include read-only project, project template, repository, package, environment,
   activity log, and technical log tools, plus limited write tools: create a
   project, add an existing project, add a VPM repository, back up a registered
   project, copy a registered project, restore a project from a zip backup, and
@@ -298,6 +298,7 @@ tool result includes `isError: true`.
 | Tool | Arguments | Description |
 | --- | --- | --- |
 | `alcomd3_list_projects` | `{}` | Lists projects registered in ALCOMD3. |
+| `alcomd3_list_project_templates` | `{}` | Lists current project templates with IDs, supported Unity versions, availability, update date, and template feature flags. Use a returned `id` and `unityVersions` value with `alcomd3_create_project`. Template source paths are not exposed. |
 | `alcomd3_get_project_details` | `{ "project_path": string }` | Gets details and installed package summary for a registered project. `project_path` must match a project registered in ALCOMD3. |
 | `alcomd3_list_repositories` | `{}` | Lists current remote repositories and display settings. `repositories` includes official defaults, Curated defaults, and user repositories; `userRepositories` remains as a user-repository-only compatibility field. |
 | `alcomd3_add_repository` | `{ "repository_url": string, "headers"?: object }` | Downloads and validates a VPM repository URL, adds it as a user repository, and clears package cache so later loads refresh. Success returns the added `repository` summary; activity logs store only a redacted URL and header count, not header values. |

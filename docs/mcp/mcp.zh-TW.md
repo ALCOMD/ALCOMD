@@ -29,7 +29,7 @@ server；`alcomd3-mcp` 再透過 GUI 暴露的獨立私有 IPC endpoint 請求�
 - 從「擴充功能」頁關閉 MCP 擴充功能會撤銷 MCP 存取權、停止兩個 endpoint、從側邊欄
   移除 MCP，並取消仍由 GUI 管理的 MCP 專案任務。重新啟用擴充功能會立即完成開關
   操作，並在背景恢復 endpoint；MCP 存取仍保持停用，直到使用者再次在 MCP 頁面主動啟用。
-- 目前提供專案、倉庫、軟體包和環境設定唯讀工具，以及有限寫工具：新建專案、
+- 目前提供專案、專案範本、倉庫、軟體包和環境設定唯讀工具，以及有限寫工具：新建專案、
   新增既有專案、新增 VPM 倉庫、備份已登錄專案、複製已登錄專案、從 zip 備份還原專案、
   為已登錄專案安裝/解除安裝/重新安裝單一軟體包。不提供倉庫刪除、倉庫重新排序、專案刪除等其他寫操作。
 - MCP 擴充功能啟用時，GUI 負責啟動和管理本機 Streamable HTTP server；關閉 GUI 或
@@ -248,6 +248,7 @@ GUI 會驗證 `protocolVersion` 和 `token`。驗證失敗會傳回業務錯誤�
 | Tool | 參數 | 說明 |
 | --- | --- | --- |
 | `alcomd3_list_projects` | `{}` | 列出 ALCOMD3 已登錄專案。 |
+| `alcomd3_list_project_templates` | `{}` | 列出目前專案範本的 ID、支援的 Unity 版本、可用狀態、更新時間和範本特徵。可將傳回的 `id` 與 `unityVersions` 值用於 `alcomd3_create_project`。不會公開範本來源檔案路徑。 |
 | `alcomd3_get_project_details` | `{ "project_path": string }` | 取得已登錄專案詳細資料和已安裝包摘要。`project_path` 必須符合 ALCOMD3 已登錄專案。 |
 | `alcomd3_list_repositories` | `{}` | 列出 ALCOMD3 目前遠端倉庫和相關顯示設定。`repositories` 包含官方預設、Curated 預設和使用者倉庫；`userRepositories` 保留為僅使用者倉庫的相容欄位。 |
 | `alcomd3_add_repository` | `{ "repository_url": string, "headers"?: object }` | 下載並驗證指定 VPM 倉庫 URL，成功後作為使用者倉庫加入 ALCOMD3，並清除軟體包快取以便後續重新載入。成功時傳回新增的 `repository` 摘要；活動記錄只儲存脫敏 URL 和 header 數量，不儲存 header 值。 |

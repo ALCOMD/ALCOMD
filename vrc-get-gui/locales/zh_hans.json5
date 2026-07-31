@@ -131,6 +131,7 @@
     "mcp:tools:group:write": "写入工具",
     "mcp:tools:group:logs": "日志工具",
     "mcp:tool:alcomd3_list_projects": "列出项目",
+    "mcp:tool:alcomd3_list_project_templates": "列出项目模板",
     "mcp:tool:alcomd3_get_project_details": "查看项目详情",
     "mcp:tool:alcomd3_list_repositories": "列出存储库",
     "mcp:tool:alcomd3_get_package_details": "查看软件包详情",

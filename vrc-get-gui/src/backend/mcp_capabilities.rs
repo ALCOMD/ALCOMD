@@ -16,6 +16,13 @@ pub(crate) const MCP_TOOL_CAPABILITIES: &[McpToolCapability] = &[
         destructive: false,
     },
     McpToolCapability {
+        tool_name: "alcomd3_list_project_templates",
+        ipc_method: "list_project_templates",
+        gui_capability: "environment.project_templates.list",
+        read_only: true,
+        destructive: false,
+    },
+    McpToolCapability {
         tool_name: "alcomd3_get_project_details",
         ipc_method: "get_project_details",
         gui_capability: "project.details.read",

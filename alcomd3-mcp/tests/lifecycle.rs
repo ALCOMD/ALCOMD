@@ -139,6 +139,7 @@ fn bridge_lists_project_tools() {
             "alcomd3_get_technical_log_entry",
             "alcomd3_install_project_package",
             "alcomd3_list_packages",
+            "alcomd3_list_project_templates",
             "alcomd3_list_projects",
             "alcomd3_list_repositories",
             "alcomd3_list_repository_packages",

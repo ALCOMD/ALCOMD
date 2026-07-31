@@ -137,6 +137,7 @@
     "mcp:tools:group:write": "Write tools",
     "mcp:tools:group:logs": "Log tools",
     "mcp:tool:alcomd3_list_projects": "List projects",
+    "mcp:tool:alcomd3_list_project_templates": "List project templates",
     "mcp:tool:alcomd3_get_project_details": "Get project details",
     "mcp:tool:alcomd3_list_repositories": "List repositories",
     "mcp:tool:alcomd3_get_package_details": "Get package details",

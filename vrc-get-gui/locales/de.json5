@@ -132,6 +132,7 @@
     "mcp:tools:group:write": "Schreibwerkzeuge",
     "mcp:tools:group:logs": "Protokollwerkzeuge",
     "mcp:tool:alcomd3_list_projects": "Projekte auflisten",
+    "mcp:tool:alcomd3_list_project_templates": "Projektvorlagen auflisten",
     "mcp:tool:alcomd3_get_project_details": "Projektdetails abrufen",
     "mcp:tool:alcomd3_list_repositories": "Paketquellen auflisten",
     "mcp:tool:alcomd3_get_package_details": "Paketdetails abrufen",

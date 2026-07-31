@@ -1014,6 +1014,19 @@ impl Alcomd3Mcp {
     }
 
     #[tool(
+        description = "List project templates currently available in ALCOMD3, including template IDs and supported Unity versions. Use a returned template ID and Unity version with alcomd3_create_project.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn alcomd3_list_project_templates(&self, peer: Peer<RoleServer>) -> McpJsonResult {
+        self.invoke("list_project_templates", json!({}), peer).await
+    }
+
+    #[tool(
         description = "Get details for a project registered in ALCOMD3. project_path must match an ALCOMD3 registered project path.",
         annotations(
             read_only_hint = true,
