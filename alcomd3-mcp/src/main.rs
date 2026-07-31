@@ -37,8 +37,6 @@ use std::env;
 use std::future::Future;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::path::{Path, PathBuf};
-use std::process::{Command as ProcessCommand, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
@@ -46,13 +44,6 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-const GUI_EXECUTABLE_ENV: &str = "ALCOMD3_GUI_EXECUTABLE";
-#[cfg(windows)]
-const GUI_EXECUTABLE_NAMES: &[&str] = &["ALCOMD3.exe"];
-#[cfg(not(windows))]
-const GUI_EXECUTABLE_NAMES: &[&str] = &["ALCOMD3", "alcomd3"];
-const GUI_STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
-const GUI_STARTUP_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const PROJECT_TOOL_RESPONSE_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 const TOOL_INVOCATION_MAX_CONCURRENT: usize = 64;
 const TOOL_INVOCATION_MAX_STARTED_PER_WINDOW: usize = 600;
@@ -1418,7 +1409,7 @@ impl ServerHandler for Alcomd3Mcp {
                 env!("CARGO_PKG_VERSION"),
             ))
             .with_instructions(
-                "Use ALCOMD3 tools through the local GUI IPC endpoint. Some tools create or add projects, add repositories, create project backups, copies, restores, or package changes. Tool calls may start the ALCOMD3 GUI if it is not running.",
+                "Use ALCOMD3 tools through the local GUI IPC endpoint. Some tools create or add projects, add repositories, create project backups, copies, restores, or package changes. ALCOMD3 must remain running while tools are used.",
             )
     }
 
@@ -1535,16 +1526,7 @@ impl ServerHandler for Alcomd3Mcp {
 }
 
 async fn invoke_gui(method: &str, params: Value, client: &ClientIdentity) -> Result<InvokeOutcome> {
-    match invoke_gui_once(method, params.clone(), client).await {
-        Ok(value) => Ok(value),
-        Err(first_error) if should_try_start_gui(&first_error) => {
-            start_alcom_gui().with_context(|| {
-                format!("starting ALCOMD3 GUI after MCP IPC became unavailable: {first_error:#}")
-            })?;
-            wait_for_gui_and_invoke(method, params, client, first_error).await
-        }
-        Err(error) => Err(error),
-    }
+    invoke_gui_once(method, params, client).await
 }
 
 async fn invoke_gui_once(
@@ -1583,30 +1565,6 @@ async fn invoke_gui_once(
     }
 
     Ok(response_to_tool_outcome(response))
-}
-
-async fn wait_for_gui_and_invoke(
-    method: &str,
-    params: Value,
-    client: &ClientIdentity,
-    first_error: anyhow::Error,
-) -> Result<InvokeOutcome> {
-    let started = Instant::now();
-    let mut last_error = first_error;
-
-    while started.elapsed() < GUI_STARTUP_TIMEOUT {
-        tokio::time::sleep(GUI_STARTUP_POLL_INTERVAL).await;
-        match invoke_gui_once(method, params.clone(), client).await {
-            Ok(value) => return Ok(value),
-            Err(error) if should_try_start_gui(&error) => last_error = error,
-            Err(error) => {
-                return Err(error)
-                    .context("waiting for ALCOMD3 GUI MCP endpoint after starting GUI");
-            }
-        }
-    }
-
-    Err(last_error).context("waiting for ALCOMD3 GUI MCP endpoint after starting GUI")
 }
 
 async fn read_endpoint() -> Result<EndpointMetadata> {
@@ -1814,59 +1772,6 @@ fn value_as_object(value: Value) -> JsonObject {
             object
         }
     }
-}
-
-fn should_try_start_gui(error: &anyhow::Error) -> bool {
-    error.chain().any(|cause| {
-        cause.downcast_ref::<io::Error>().is_some_and(|io_error| {
-            matches!(
-                io_error.kind(),
-                io::ErrorKind::NotFound
-                    | io::ErrorKind::ConnectionRefused
-                    | io::ErrorKind::ConnectionReset
-                    | io::ErrorKind::ConnectionAborted
-                    | io::ErrorKind::TimedOut
-                    | io::ErrorKind::BrokenPipe
-                    | io::ErrorKind::UnexpectedEof
-            )
-        })
-    })
-}
-
-fn start_alcom_gui() -> Result<PathBuf> {
-    let path = gui_executable_path().context("locating ALCOMD3 GUI executable")?;
-    let mut child = ProcessCommand::new(&path)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .with_context(|| format!("starting ALCOMD3 GUI at {}", path.display()))?;
-
-    std::thread::spawn(move || {
-        let _ = child.wait();
-    });
-
-    Ok(path)
-}
-
-fn gui_executable_path() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os(GUI_EXECUTABLE_ENV) {
-        return Some(PathBuf::from(path));
-    }
-
-    let current = std::env::current_exe().ok()?;
-    gui_executable_candidates(&current)
-        .into_iter()
-        .find(|path| path.is_file())
-        .or_else(|| gui_executable_candidates(&current).into_iter().next())
-}
-
-fn gui_executable_candidates(current_exe: &Path) -> Vec<PathBuf> {
-    let directory = current_exe.parent().unwrap_or_else(|| Path::new("."));
-    GUI_EXECUTABLE_NAMES
-        .iter()
-        .map(|name| directory.join(name))
-        .collect()
 }
 
 #[cfg(test)]
@@ -2209,17 +2114,6 @@ mod tests {
             PROJECT_TOOL_RESPONSE_TIMEOUT
         );
         assert_eq!(response_timeout_for_method("list_projects"), IPC_IO_TIMEOUT);
-    }
-
-    #[test]
-    fn gui_executable_candidates_match_current_alcomd3_binary_names() {
-        let candidates = gui_executable_candidates(Path::new("/install/alcomd3-mcp"));
-        let file_names = candidates
-            .iter()
-            .map(|path| path.file_name().unwrap().to_string_lossy().to_string())
-            .collect::<Vec<_>>();
-
-        assert_eq!(file_names, GUI_EXECUTABLE_NAMES);
     }
 
     #[test]

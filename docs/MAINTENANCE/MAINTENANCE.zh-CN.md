@@ -325,9 +325,8 @@ ALCOMD3 包含可选本地 MCP server。除非未来变更通过 review 和 UI a
 - 日志扩展启用时，每次 MCP tool call 都必须写入本地活动记录，包含 request id、
   tool name、可用时的 client 摘要，以及脱敏后的 details。
 - 成功的 MCP 读取工具（包括日志查询工具）应记录为 Secondary 活动；失败和取消仍需默认可见。
-- `initialize` 和 `tools/list` 不得启动 GUI。
-- endpoint 不可用时，实际 tool call 可以启动 GUI。bridge 只能启动 packaged/sibling ALCOMD3 GUI executable 或明确的 `ALCOMD3_GUI_EXECUTABLE` override。
-- `alcomd3-mcp` 不得 install、update 或 repair GUI。
+- `alcomd3-mcp` 不得启动、install、update 或 repair GUI。GUI 负责管理 bridge process，
+  并在 shutdown 时停止它。
 - GUI shutdown 应删除 endpoint file。
 
 重要区域：

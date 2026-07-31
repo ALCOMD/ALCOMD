@@ -50,9 +50,11 @@ for a configuration example and lifecycle details.
 - The GUI starts and owns the local Streamable HTTP server while the MCP
   extension is enabled. Closing the GUI or disabling the extension stops that
   server.
-- If GUI startup fails or the endpoint remains unavailable, the tool call
+- If the private GUI IPC endpoint is unavailable, the tool call
   returns structured `alcomd3_unavailable` and marks the MCP tool result with
   `isError: true`.
+- The bridge does not start the GUI. ALCOMD3 must remain running while MCP
+  tools are used.
 - When MCP is disabled, new tool calls return structured `mcp_disabled`, do not
   stop the endpoint, do not panic, and mark the MCP tool result with
   `isError: true`. Existing project long tasks are cleanup exceptions:
@@ -238,12 +240,6 @@ Tests and development can override the path with:
 
 ```text
 ALCOMD3_MCP_ENDPOINT_FILE
-```
-
-Tests and development can also override the GUI executable the bridge starts:
-
-```text
-ALCOMD3_GUI_EXECUTABLE
 ```
 
 Metadata format:

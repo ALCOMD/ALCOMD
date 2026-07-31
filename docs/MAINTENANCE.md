@@ -427,11 +427,8 @@ Preserve these rules:
   available, and sanitized details.
 - Successful MCP read tools, including log query tools, should be Secondary
   activity records; failures and cancellations remain visible by default.
-- `initialize` and `tools/list` must not start the GUI.
-- Actual tool calls may start the GUI when the endpoint is unavailable. The
-  bridge should start only the packaged/sibling ALCOMD3 GUI executable or the
-  explicit `ALCOMD3_GUI_EXECUTABLE` override.
-- `alcomd3-mcp` must not install, update, or repair the GUI.
+- `alcomd3-mcp` must not start, install, update, or repair the GUI. The GUI owns
+  the bridge process and stops it during shutdown.
 - GUI shutdown should remove the endpoint file.
 
 Important areas:

@@ -25,8 +25,7 @@ fn bridge_negotiates_current_mcp_protocol_version() {
     fs::create_dir_all(&test_dir).unwrap();
 
     let endpoint_file = test_dir.join("endpoint.json");
-    let (mut bridge, mut stdin, stdout) =
-        start_bridge(&endpoint_file, &test_dir.join(gui_executable_name()));
+    let (mut bridge, mut stdin, stdout) = start_bridge(&endpoint_file);
 
     write_message(
         &mut stdin,
@@ -55,8 +54,7 @@ fn bridge_requires_bearer_token_and_rejects_cross_origin_requests() {
     fs::create_dir_all(&test_dir).unwrap();
 
     let endpoint_file = test_dir.join("endpoint.json");
-    let (mut bridge, input, _) =
-        start_bridge(&endpoint_file, &test_dir.join(gui_executable_name()));
+    let (mut bridge, input, _) = start_bridge(&endpoint_file);
     let initialize = format!(
         r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"protocolVersion":"{CURRENT_MCP_PROTOCOL_VERSION}","capabilities":{{}},"clientInfo":{{"name":"security-test","version":"0.0.0"}}}}}}"#
     );
@@ -99,8 +97,7 @@ fn bridge_lists_project_tools() {
     fs::create_dir_all(&test_dir).unwrap();
 
     let endpoint_file = test_dir.join("endpoint.json");
-    let (mut bridge, mut stdin, stdout) =
-        start_bridge(&endpoint_file, &test_dir.join(gui_executable_name()));
+    let (mut bridge, mut stdin, stdout) = start_bridge(&endpoint_file);
 
     write_message(
         &mut stdin,
@@ -388,8 +385,7 @@ fn bridge_stays_connected_when_gui_endpoint_disappears() {
     };
     fs::write(&endpoint_file, serde_json::to_vec(&metadata).unwrap()).unwrap();
 
-    let (mut bridge, mut stdin, stdout) =
-        start_bridge(&endpoint_file, &test_dir.join(gui_executable_name()));
+    let (mut bridge, mut stdin, stdout) = start_bridge(&endpoint_file);
 
     write_message(
         &mut stdin,
@@ -429,15 +425,13 @@ fn bridge_stays_connected_when_gui_endpoint_disappears() {
 }
 
 #[test]
-fn bridge_attempts_to_start_gui_when_endpoint_is_missing() {
+fn bridge_returns_unavailable_when_endpoint_is_missing() {
     let test_dir =
         std::env::temp_dir().join(format!("alcomd3-mcp-autostart-{}", Uuid::new_v4().simple()));
     fs::create_dir_all(&test_dir).unwrap();
 
     let endpoint_file = test_dir.join("endpoint.json");
-    let missing_gui = test_dir.join(gui_executable_name());
-
-    let (mut bridge, mut stdin, stdout) = start_bridge(&endpoint_file, &missing_gui);
+    let (mut bridge, mut stdin, stdout) = start_bridge(&endpoint_file);
 
     write_message(
         &mut stdin,
@@ -459,16 +453,13 @@ fn bridge_attempts_to_start_gui_when_endpoint_is_missing() {
     let response = read_response(&stdout);
     assert_eq!(response["id"], 2);
     assert_eq!(response["result"]["isError"], true);
-    let message = response["result"]["structuredContent"]["error"]["message"]
-        .as_str()
-        .unwrap();
-    assert!(
-        message.contains("starting ALCOMD3 GUI"),
-        "expected auto-start failure context, got: {message}"
+    assert_eq!(
+        response["result"]["structuredContent"]["error"]["code"],
+        "alcomd3_unavailable"
     );
     assert!(
         bridge.try_wait().unwrap().is_none(),
-        "bridge should stay alive after GUI auto-start fails"
+        "bridge should stay alive after the GUI endpoint is unavailable"
     );
 
     drop(stdin);
@@ -478,7 +469,7 @@ fn bridge_attempts_to_start_gui_when_endpoint_is_missing() {
 }
 
 #[test]
-fn bridge_does_not_start_gui_for_protocol_mismatch() {
+fn bridge_rejects_protocol_mismatch() {
     let test_dir =
         std::env::temp_dir().join(format!("alcomd3-mcp-protocol-{}", Uuid::new_v4().simple()));
     fs::create_dir_all(&test_dir).unwrap();
@@ -494,8 +485,7 @@ fn bridge_does_not_start_gui_for_protocol_mismatch() {
     };
     fs::write(&endpoint_file, serde_json::to_vec(&metadata).unwrap()).unwrap();
 
-    let (mut bridge, mut stdin, stdout) =
-        start_bridge(&endpoint_file, &test_dir.join(gui_executable_name()));
+    let (mut bridge, mut stdin, stdout) = start_bridge(&endpoint_file);
 
     write_message(
         &mut stdin,
@@ -523,10 +513,6 @@ fn bridge_does_not_start_gui_for_protocol_mismatch() {
     assert!(
         message.contains("protocol mismatch"),
         "expected protocol mismatch context, got: {message}"
-    );
-    assert!(
-        !message.contains("starting ALCOMD3 GUI"),
-        "protocol mismatch must not trigger GUI auto-start: {message}"
     );
     assert!(
         bridge.try_wait().unwrap().is_none(),
@@ -609,8 +595,7 @@ fn bridge_forwards_http_calls_to_loopback_ipc_and_preserves_gui_errors() {
         }
     });
 
-    let (mut bridge, mut stdin, stdout) =
-        start_bridge(&endpoint_file, &test_dir.join(gui_executable_name()));
+    let (mut bridge, mut stdin, stdout) = start_bridge(&endpoint_file);
 
     write_message(
         &mut stdin,
@@ -734,10 +719,7 @@ impl BridgeInput {
     }
 }
 
-fn start_bridge(
-    endpoint_file: &Path,
-    gui_executable: &Path,
-) -> (ChildGuard, BridgeInput, BridgeOutput) {
+fn start_bridge(endpoint_file: &Path) -> (ChildGuard, BridgeInput, BridgeOutput) {
     let reservation = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = reservation.local_addr().unwrap().port();
     drop(reservation);
@@ -746,7 +728,6 @@ fn start_bridge(
     let bridge = ChildGuard::new(
         Command::new(bridge_exe())
             .env(ENDPOINT_FILE_ENV, endpoint_file)
-            .env("ALCOMD3_GUI_EXECUTABLE", gui_executable)
             .env(MCP_HTTP_BIND_ENV, format!("127.0.0.1:{port}"))
             .env(MCP_HTTP_TOKEN_ENV, &token)
             .stdin(Stdio::null())
@@ -847,15 +828,4 @@ impl Drop for ChildGuard {
 
 fn bridge_exe() -> &'static str {
     env!("CARGO_BIN_EXE_alcomd3-mcp")
-}
-
-fn gui_executable_name() -> &'static Path {
-    #[cfg(windows)]
-    {
-        Path::new("ALCOMD3.exe")
-    }
-    #[cfg(not(windows))]
-    {
-        Path::new("ALCOMD3")
-    }
 }

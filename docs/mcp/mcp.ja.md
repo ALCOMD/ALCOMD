@@ -28,7 +28,8 @@ port を推測せず、GUI に表示される endpoint を使用してくださ�
 - Extensions page で MCP extension を disabled にすると、MCP access を取り消し、両方の endpoint を停止し、MCP を sidebar から削除して、GUI が管理中の MCP project task を cancel します。extension を再度 enabled にする switch operation はすぐに完了し、endpoint は background で再起動しますが、MCP page で user が再度有効化するまで MCP access は無効のままです。
 - 現在は project、repository、package、environment、activity log、technical log の read-only tools と、限定的な write tools を提供します。write tools は project 作成、existing project 追加、VPM repository 追加、registered project の backup、registered project の copy、zip backup からの restore、registered project への package install/uninstall/reinstall です。repository 削除、repository 並べ替え、project 削除などの他の write operation は提供しません。
 - MCP extension が enabled の間、GUI が local Streamable HTTP server を起動して管理します。GUI 終了時または extension の無効化時には server も停止します。
-- GUI 起動に失敗した場合、または endpoint が利用できないままの場合、tool call は structured `alcomd3_unavailable` error を返し、MCP tool result に `isError: true` を付けます。
+- GUI の private IPC endpoint が利用できない場合、tool call は structured `alcomd3_unavailable` error を返し、MCP tool result に `isError: true` を付けます。
+- bridge は GUI を起動しません。MCP tool の使用中は ALCOMD3 を起動したままにする必要があります。
 - MCP が無効な場合、新しい tool call は structured `mcp_disabled` error を返します。endpoint は停止せず、panic もしません。MCP tool result には `isError: true` が付きます。既に開始された project long task の `tasks/get`、`tasks/result`、`tasks/cancel` は cleanup 例外として、結果確認や cancel ができます。
 - bridge は tool call に緩やかな local rate limit と concurrency protection を適用します。制限を超えた場合は structured `rate_limited` error を返し、MCP tool result に `isError: true` を付けます。
 - GUI MCP page は、既知の tool call 実行中に該当 tool を highlight し、完了または失敗後も短時間 highlight を残します。
@@ -175,12 +176,6 @@ test と development では環境変数で path を override できます。
 
 ```text
 ALCOMD3_MCP_ENDPOINT_FILE
-```
-
-bridge が起動する GUI executable path も override できます。
-
-```text
-ALCOMD3_GUI_EXECUTABLE
 ```
 
 metadata format:

@@ -34,8 +34,9 @@ server；`alcomd3-mcp` 再透過 GUI 暴露的獨立私有 IPC endpoint 請求�
   為已登錄專案安裝/解除安裝/重新安裝單一軟體包。不提供倉庫刪除、倉庫重新排序、專案刪除等其他寫操作。
 - MCP 擴充功能啟用時，GUI 負責啟動和管理本機 Streamable HTTP server；關閉 GUI 或
   關閉 MCP 擴充功能時都會停止該 server。
-- GUI 啟動失敗或 endpoint 仍不可用時，tool call 傳回結構化 `alcomd3_unavailable` 錯誤，
+- GUI 的私有 IPC endpoint 不可用時，tool call 傳回結構化 `alcomd3_unavailable` 錯誤，
   並在 MCP tool result 上標記 `isError: true`。
+- bridge 不會啟動 GUI；使用 MCP 工具期間必須保持 ALCOMD3 執行。
 - MCP 停用時，新的 tool call 傳回結構化 `mcp_disabled` 錯誤，不關閉 endpoint、不 panic，
   並在 MCP tool result 上標記 `isError: true`。已啟動專案長任務的 `tasks/get`、
   `tasks/result` 和 `tasks/cancel` 是收尾例外，可繼續查詢結果或取消該任務。
@@ -192,12 +193,6 @@ ALCOMD3/mcp/endpoint.json
 
 ```text
 ALCOMD3_MCP_ENDPOINT_FILE
-```
-
-測試和開發也可覆寫 bridge 用來啟動 GUI 的可執行檔路徑：
-
-```text
-ALCOMD3_GUI_EXECUTABLE
 ```
 
 metadata 格式：

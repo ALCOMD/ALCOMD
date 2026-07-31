@@ -34,8 +34,9 @@ MCP 扩展启用时，GUI 会启动一个仅监听 `127.0.0.1` 的本地 `alcomd
   为已登记项目安装/卸载/重装单个软件包。不提供仓库删除、仓库重排、项目删除等其他写操作。
 - MCP 扩展启用时，GUI 负责启动和管理本地 Streamable HTTP server；关闭 GUI 或关闭
   MCP 扩展时都会停止该 server。
-- GUI 启动失败或 endpoint 仍不可用时，tool call 返回结构化 `alcomd3_unavailable` 错误，
+- GUI 的私有 IPC endpoint 不可用时，tool call 返回结构化 `alcomd3_unavailable` 错误，
   并在 MCP tool result 上标记 `isError: true`。
+- bridge 不会启动 GUI；使用 MCP 工具期间必须保持 ALCOMD3 运行。
 - MCP 停用时，新的 tool call 返回结构化 `mcp_disabled` 错误，不关闭 endpoint、不 panic，
   并在 MCP tool result 上标记 `isError: true`。已启动项目长任务的 `tasks/get`、
   `tasks/result` 和 `tasks/cancel` 是收尾例外，可继续查询结果或取消该任务。
@@ -194,12 +195,6 @@ ALCOMD3/mcp/endpoint.json
 
 ```text
 ALCOMD3_MCP_ENDPOINT_FILE
-```
-
-测试和开发也可覆盖 bridge 用来启动 GUI 的可执行文件路径：
-
-```text
-ALCOMD3_GUI_EXECUTABLE
 ```
 
 metadata 格式：

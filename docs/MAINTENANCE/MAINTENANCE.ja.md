@@ -355,9 +355,8 @@ ALCOMD3 には optional local MCP server がある。将来の変更が review �
 - Logs extension が enabled の間、すべての MCP tool call は local activity log に
   記録する。request id、tool name、利用可能な client summary、sanitized details を含める。
 - 成功した MCP read tool（log query tool を含む）は Secondary activity record として記録する。failure と cancellation は既定で visible のままにする。
-- `initialize` と `tools/list` は GUI を起動しない。
-- Actual tool call は endpoint がない場合 GUI を起動してよい。bridge は packaged/sibling ALCOMD3 GUI executable または明示的な `ALCOMD3_GUI_EXECUTABLE` override のみを起動する。
-- `alcomd3-mcp` は GUI を install/update/repair してはならない。
+- `alcomd3-mcp` は GUI を起動、install、update、repair してはならない。GUI が bridge
+  process を管理し、shutdown 時に停止する。
 - GUI shutdown は endpoint file を削除する。
 
 重要領域:
