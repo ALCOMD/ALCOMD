@@ -65,16 +65,10 @@ import { useTauriListen } from "@/lib/use-tauri-listen";
 
 function MaterialThemeInitializer() {
 	useLayoutEffect(() => {
-		let active = true;
-		void synchronizeMaterialThemeExtensionState().finally(() => {
-			if (!active) return;
-			commands.utilFrontendReady().catch((error) => {
-				console.error("failed to show main window", error);
-			});
+		commands.utilFrontendReady().catch((error) => {
+			console.error("failed to show main window", error);
 		});
-		return () => {
-			active = false;
-		};
+		void synchronizeMaterialThemeExtensionState();
 	}, []);
 
 	useTauriListen<ExtensionStateChanged>(

@@ -19,7 +19,8 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 $endpointOverrideEnvironmentVariable = 'ALCOMD3_MCP_ENDPOINT_FILE'
-$endpointObservationSeconds = 10
+# The endpoint is created after the renderer reports ready; hosted runners can have cold WebView startup.
+$endpointObservationSeconds = 30
 $associationObservationSeconds = 10
 $settingsObservationSeconds = 10
 $uninstallCleanupSeconds = 20
