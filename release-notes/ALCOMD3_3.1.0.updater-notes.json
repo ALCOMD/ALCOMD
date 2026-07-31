@@ -1,0 +1,9 @@
+{
+    "en": "Adds protected local MCP with client quick setup, improves extension and Unity project handling, and keeps project and repository information current.",
+    "de": "Fügt geschütztes lokales MCP mit Schnelleinrichtung für Clients hinzu, verbessert die Verwaltung von Erweiterungen und Unity-Projekten und hält Projekt- und Repository-Informationen aktuell.",
+    "fr": "Ajoute un MCP local protégé avec configuration rapide des clients, améliore la gestion des extensions et des projets Unity, et maintient à jour les informations sur les projets et les dépôts.",
+    "ja": "クライアントのクイック設定を備えた保護されたローカル MCP を追加し、拡張機能と Unity プロジェクトの扱いを改善して、プロジェクトとリポジトリの情報を最新に保ちます。",
+    "ko": "클라이언트 빠른 설정을 갖춘 보호된 로컬 MCP를 추가하고, 확장 프로그램과 Unity 프로젝트 처리를 개선하며, 프로젝트와 리포지토리 정보를 최신으로 유지합니다.",
+    "zh_hans": "新增带客户端快速配置的受保护本机 MCP，改进扩展和 Unity 项目处理，并让项目和软件源信息保持最新。",
+    "zh_hant": "新增具備用戶端快速設定的受保護本機 MCP，改善擴充功能和 Unity 專案處理，並讓專案和軟體來源資訊保持最新。"
+}
