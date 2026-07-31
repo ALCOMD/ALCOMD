@@ -456,7 +456,7 @@
     "extensions": "Erweiterungen",
     "extensions:description": "Seitenleistenerweiterungen anordnen und ihre Sichtbarkeit steuern.",
     "extensions:manage": "Erweiterungsverwaltung",
-    "extensions:manage description": "Festlegen, ob installierte Erweiterungen aktiviert sind. Installation und Deinstallation sind nur bei Erweiterungen mit echter Installationsunterstützung verfügbar.",
+    "extensions:manage description": "Festlegen, ob installierte Erweiterungen aktiviert sind. Eingebaute Erweiterungen können nicht deinstalliert werden.",
     "extensions:button:sort sidebar": "Seitenleistenerweiterungen sortieren",
     "extensions:button:move up": "Nach oben",
     "extensions:button:move down": "Nach unten",

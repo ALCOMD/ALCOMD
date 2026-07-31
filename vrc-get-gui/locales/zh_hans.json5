@@ -452,7 +452,7 @@
     "extensions": "扩展",
     "extensions:description": "调整侧边栏扩展的排列方式并控制其显示状态。",
     "extensions:manage": "扩展管理",
-    "extensions:manage description": "管理已安装扩展是否启用。只有支持实际安装的扩展才可安装或卸载。",
+    "extensions:manage description": "管理已安装扩展是否启用。内置扩展不可卸载。",
     "extensions:button:sort sidebar": "排序侧边栏扩展",
     "extensions:button:move up": "上移",
     "extensions:button:move down": "下移",

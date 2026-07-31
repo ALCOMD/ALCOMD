@@ -450,7 +450,7 @@
     "extensions": "확장 프로그램",
     "extensions:description": "사이드바 확장 프로그램의 순서와 표시 상태를 관리합니다.",
     "extensions:manage": "확장 프로그램 관리",
-    "extensions:manage description": "설치된 확장 프로그램의 활성화 상태를 관리합니다. 실제 설치를 지원하는 확장 프로그램만 설치하거나 제거할 수 있습니다.",
+    "extensions:manage description": "설치된 확장 프로그램이 활성화되어 있는지 관리합니다. 기본 제공 확장 기능은 제거할 수 없습니다.",
     "extensions:button:sort sidebar": "사이드바 확장 프로그램 정렬",
     "extensions:button:move up": "위로 이동",
     "extensions:button:move down": "아래로 이동",

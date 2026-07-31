@@ -456,7 +456,7 @@
     "extensions": "擴充功能",
     "extensions:description": "調整側邊欄擴充功能的排列方式並控制其顯示狀態。",
     "extensions:manage": "擴充功能管理",
-    "extensions:manage description": "管理已安裝擴充功能是否啟用。只有支援實際安裝的擴充功能才能安裝或解除安裝。",
+    "extensions:manage description": "管理已安裝擴充功能是否啟用。內建擴充功能不可卸載。",
     "extensions:button:sort sidebar": "排序側邊欄擴充功能",
     "extensions:button:move up": "上移",
     "extensions:button:move down": "下移",

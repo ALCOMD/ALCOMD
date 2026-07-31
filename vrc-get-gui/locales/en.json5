@@ -461,7 +461,7 @@
     "extensions": "Extensions",
     "extensions:description": "Arrange sidebar extensions and control their visibility.",
     "extensions:manage": "Extension Management",
-    "extensions:manage description": "Manage whether installed extensions are enabled. Install and uninstall are available only for extensions with actual installation support.",
+    "extensions:manage description": "Manage whether installed extensions are enabled. Built-in extensions cannot be uninstalled.",
     "extensions:button:sort sidebar": "Sort Sidebar Extensions",
     "extensions:button:move up": "Move Up",
     "extensions:button:move down": "Move Down",
