@@ -5,7 +5,7 @@ use crate::activity_log::{
     ActivitySource, operations,
 };
 use crate::commands::environment::unity_hub::update_unity_paths_from_unity_hub;
-use crate::extensions::ExtensionRegistry;
+use crate::extensions::{ExtensionRegistry, MCP_EXTENSION_ID};
 use log::{error, info};
 use std::io;
 use tauri::async_runtime::spawn;
@@ -152,6 +152,22 @@ pub fn startup(app: &mut App, initial_args: Vec<String>) {
                     error!(gui_toast = false; "failed to install staged update before startup: {error}");
                 }
             }
+        }
+
+        let mcp_extension_enabled = app
+            .state::<GuiConfigState>()
+            .get()
+            .is_extension_enabled(MCP_EXTENSION_ID);
+        if mcp_extension_enabled {
+            let mcp_app = app.clone();
+            spawn(async move {
+                let mcp = mcp_app.state::<crate::mcp::McpState>();
+                if let Err(error) = mcp.ensure_running(mcp_app.clone()).await {
+                    error!(
+                        "failed to start MCP endpoint after loading local configuration: {error}"
+                    );
+                }
+            });
         }
 
         let handle = app.clone();
@@ -355,5 +371,16 @@ mod tests {
 
         assert!(!source[open_main..main_window].contains("automatic_update"));
         assert!(!source[open_main..main_window].contains("discard_staged_update"));
+    }
+
+    #[test]
+    fn mcp_starts_after_the_staged_update_check_and_before_creating_the_main_window() {
+        let source = include_str!("start.rs");
+        let staged_update = source.find("install_staged_update").unwrap();
+        let start_mcp = source[staged_update..].find("mcp.ensure_running").unwrap() + staged_update;
+        let main_window = source.find("WebviewWindowBuilder::new").unwrap();
+
+        assert!(staged_update < start_mcp);
+        assert!(start_mcp < main_window);
     }
 }

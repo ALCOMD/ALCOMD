@@ -137,19 +137,6 @@ pub fn util_frontend_ready(app_handle: AppHandle) -> Result<(), RustError> {
     window.show().map_err(RustError::unrecoverable)?;
     window.set_focus().map_err(RustError::unrecoverable)?;
 
-    let mcp_extension_enabled = app_handle
-        .state::<GuiConfigState>()
-        .get()
-        .is_extension_enabled(crate::extensions::MCP_EXTENSION_ID);
-    if mcp_extension_enabled {
-        tauri::async_runtime::spawn(async move {
-            let mcp = app_handle.state::<crate::mcp::McpState>();
-            if let Err(error) = mcp.ensure_running_and_emit_status(app_handle.clone()).await {
-                log::error!("failed to start MCP endpoint after showing the main window: {error}");
-            }
-        });
-    }
-
     Ok(())
 }
 
@@ -746,23 +733,12 @@ mod tests {
     }
 
     #[test]
-    fn frontend_ready_shows_main_window_and_checks_extension_before_starting_mcp() {
+    fn frontend_ready_shows_and_focuses_the_main_window() {
         let source = include_str!("util.rs");
         let frontend_ready = source.find("pub fn util_frontend_ready").unwrap();
         let show = source[frontend_ready..].find("window.show()").unwrap() + frontend_ready;
-        let extension_check = source[frontend_ready..]
-            .find("let mcp_extension_enabled")
-            .unwrap()
-            + frontend_ready;
-        let conditional = source[extension_check..]
-            .find("if mcp_extension_enabled")
-            .unwrap()
-            + extension_check;
-        let start_mcp =
-            source[frontend_ready..].find("mcp.ensure_running").unwrap() + frontend_ready;
+        let focus = source[show..].find("window.set_focus()").unwrap() + show;
 
-        assert!(show < extension_check);
-        assert!(extension_check < conditional);
-        assert!(conditional < start_mcp);
+        assert!(show < focus);
     }
 }

@@ -202,6 +202,7 @@ jobs:
                   name: release-windows-smoke-v${{ inputs.version }}-${{ github.run_attempt }}
                   path: |
                       ${{ runner.temp }}/alcomd3-installer-smoke-*.log
+                      ${{ runner.temp }}/alcomd3-installer-smoke-*-technical-logs/**
                   if-no-files-found: warn
                   retention-days: 7
 

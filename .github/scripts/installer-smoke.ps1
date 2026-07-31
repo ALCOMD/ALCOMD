@@ -961,6 +961,8 @@ if (Test-Path -LiteralPath $currentTauriDataDirectory) {
 $upgradeSentinel = $null
 $legacyExecutable = Join-Path $installDirectory $config.legacyWindowsExecutableName
 $currentInstallLog = Join-Path $env:RUNNER_TEMP "alcomd3-installer-smoke-$PID-current.log"
+$technicalLogsDirectory = Join-Path $applicationDataDirectory 'technical-logs'
+$technicalLogsDiagnosticDirectory = Join-Path $env:RUNNER_TEMP "alcomd3-installer-smoke-$PID-technical-logs"
 $userDesktop = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
 $userPrograms = [Environment]::GetFolderPath([Environment+SpecialFolder]::Programs)
 $currentDesktopShortcut = Join-Path $userDesktop "$($config.productName).lnk"
@@ -1106,6 +1108,20 @@ try {
     Write-Information "Installer smoke test passed for $($config.productName) $ExpectedVersion." -InformationAction Continue
 }
 finally {
+    if (Test-Path -LiteralPath $technicalLogsDirectory -PathType Container) {
+        try {
+            Copy-Item `
+                -LiteralPath $technicalLogsDirectory `
+                -Destination $technicalLogsDiagnosticDirectory `
+                -Recurse `
+                -Force `
+                -ErrorAction Stop
+        }
+        catch {
+            Write-Warning "Failed to collect technical logs for installer smoke diagnostics: $($_.Exception.Message)"
+        }
+    }
+
     if ($script:InstallationStarted -and (Test-Path -LiteralPath $installDirectory)) {
         try {
             Stop-InstalledProcess -Destination $installDirectory -Config $config
