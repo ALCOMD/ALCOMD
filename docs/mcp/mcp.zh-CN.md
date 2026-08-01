@@ -243,45 +243,21 @@ GUI 会校验 `protocolVersion` 和 `token`。校验失败会返回业务错误�
 
 ## 可用工具
 
-所有工具都返回 JSON。成功时包含 `ok: true`；业务失败时包含
-`ok: false` 和 `error: { code, message, data? }`，并且 MCP tool result 外层会包含
-`isError: true`。
+ALCOMD3 当前公开 29 个工具。主指南集中说明使用流程和安全边界；
+[完整工具参考](tools.zh-CN.md)逐项列出每个输入、输出字段，说明它是否必填或按条件出现、
+省略时的默认值，以及字段的实际含义。
 
-| Tool | 参数 | 说明 |
+| 领域 | 读取工具 | 写入工具 |
 | --- | --- | --- |
-| `alcomd3_list_projects` | `{}` | 列出 ALCOMD3 已登记项目。 |
-| `alcomd3_list_project_templates` | `{}` | 列出当前项目模板的 ID、支持的 Unity 版本、可用状态、更新时间、类型，以及 `editable`、`removable`、`usableAsBase` 能力标志。可将返回的 `id` 与 `unityVersions` 值用于 `alcomd3_create_project`。不会暴露模板源文件路径。 |
-| `alcomd3_get_project_template` | `{ "template_id": string }` | 使用稳定模板 ID 选择并读取一个模板。派生模板详情包含 `displayName`、`baseTemplateId`、`unityVersionRange`、`vpmDependencies` 和 `unityPackagePaths`。 |
-| `alcomd3_create_project_template` | `{ "display_name": string, "base_template_id": string, "unity_version_range": string, "vpm_dependencies": object<string, string>, "unity_package_paths": string[] }` | 创建派生模板并由后端生成持久 ID。基模板必须存在且可作为基模板，版本范围必须可解析，Unity 包路径必须是已存在的绝对 `.unitypackage` 普通文件。 |
-| `alcomd3_update_project_template` | `{ "template_id": string, "display_name": string, "base_template_id": string, "unity_version_range": string, "vpm_dependencies": object<string, string>, "unity_package_paths": string[] }` | 整体替换可编辑模板定义，同时保持模板 ID 和存储位置不变。内置模板和项目归档模板不可进行字段级编辑。 |
-| `alcomd3_remove_project_template` | `{ "template_id": string }` | 将可删除的派生模板或项目归档模板移入系统回收站，并返回其 ID、名称和类型。不会删除引用的 Unity 包文件。 |
-| `alcomd3_get_project_details` | `{ "project_path": string }` | 获取已登记项目详情和已安装包摘要。`project_path` 必须匹配 ALCOMD3 已登记项目。 |
-| `alcomd3_list_repositories` | `{}` | 使用明确的输出 Schema 列出 ALCOMD3 当前远程仓库。唯一规范数组 `repositories` 的每项包含 `id`、`url`、`displayName`、`kind`（`officialDefault`、`curatedDefault` 或 `user`）和 `hidden`；全局软件包显示设置归入 `packageVisibility`。软件包读取工具使用返回的 `id`，删除使用用户仓库的 `url`。 |
-| `alcomd3_add_repository` | `{ "repository_url": string, "headers"?: object }` | 下载并校验指定 VPM 仓库 URL，成功后作为用户仓库加入 ALCOMD3，并清除软件包缓存以便后续重新加载。重复的已存 URL 或仓库声明 ID 会被拒绝。成功时返回新增的 `repository` 摘要；后续删除应使用其中的 `url`。活动记录只保存脱敏 URL 和 header 数量，不保存 header 值。 |
-| `alcomd3_remove_repository` | `{ "repository_url": string }` | 按已存 URL 精确删除一个用户添加的仓库并清除软件包缓存。不能删除官方和 Curated 默认仓库。 |
-| `alcomd3_get_package_details` | `{ "package_name": string, "version"?: string, "repository_id"?: string }` | 获取 GUI 可见软件包的详细元数据。`package_name` 必填；`version` 和 `repository_id` 可用于缩小到某个具体包版本或来源。 |
-| `alcomd3_list_packages` | `{ "offset"?: number, "limit"?: number }` | 分页列出 GUI 默认可见的软件包轻量摘要；同一来源内同一包名只返回最新可见版本，并在 `source.kind` 中标明 `officialDefault`、`curatedDefault`、`userRepository` 或 `localUser`。MCP 不做服务端搜索，client 或 Agent 应自行筛选返回结果。 |
-| `alcomd3_list_repository_packages` | `{ "repository_id": string, "offset"?: number, "limit"?: number }` | 按指定仓库分页列出 GUI 可见的软件包轻量摘要；同一仓库内同一包名只返回最新可见版本。应先调用 `alcomd3_list_repositories` 并传入返回的 `id`。 |
-| `alcomd3_get_environment_settings` | `{}` | 读取 ALCOMD3 环境设置摘要，包括已添加的 Unity 安装、默认 Unity 启动参数、默认项目路径和备份路径。 |
-| `alcomd3_search_activity_logs` | `{ "search"?: string, "sources"?: string[], "kinds"?: string[], "statuses"?: string[], "visibility"?: "important" \| "primary" \| "secondary" \| "technical" \| "all", "operations"?: string[], "tool_names"?: string[], "request_id"?: string, "target"?: string, "since"?: string, "until"?: string, "offset"?: number, "limit"?: number, "order"?: "newest" \| "oldest" }` | 分页搜索用户可读活动记录摘要。默认只返回关键活动，`limit` 默认 50、最大 200。 |
-| `alcomd3_get_activity_log_entry` | `{ "id": string, "include_details"?: boolean }` | 按活动记录 id 读取单条完整活动记录。详情不包含 MCP 原始 params、URL query 或 URL userinfo；本地路径会保留完整值以便排障。 |
-| `alcomd3_summarize_activity_logs` | `alcomd3_search_activity_logs` 参数加 `{ "group_by"?: "source" \| "kind" \| "status" \| "operation" \| "tool_name" \| "client_name" \| "day" \| "hour" }` | 按来源、类型、状态、操作、工具、客户端或时间聚合活动记录，用于先定位需要查看的记录。 |
-| `alcomd3_get_activity_log_context` | `{ "id": string, "before"?: number, "after"?: number, "include_details"?: boolean }` | 读取某条活动记录前后的相邻活动，用于回溯操作链路；`before`/`after` 最大 50。 |
-| `alcomd3_search_technical_logs` | `{ "search"?: string, "levels"?: string[], "targets"?: string[], "scope"?: "memory" \| "recent_files", "since"?: string, "until"?: string, "offset"?: number, "limit"?: number, "max_message_chars"?: number }` | 分页搜索技术日志预览。默认只查当前进程内存中的 `error`/`warn`，`limit` 默认 50、最大 100，消息预览默认最多 300 字符。 |
-| `alcomd3_get_technical_log_entry` | `{ "id": string, "max_message_chars"?: number }` | 按技术日志 id 读取单条日志消息；消息会脱敏并最多返回 4000 字符。 |
-| `alcomd3_summarize_technical_logs` | `alcomd3_search_technical_logs` 参数加 `{ "group_by"?: "level" \| "target" \| "file" \| "hour" }` | 按级别、target、文件或小时聚合技术日志，用于定位错误热点。 |
-| `alcomd3_create_project` | `{ "project_name": string, "base_path"?: string, "template_id"?: string, "unity_version"?: string }` | 新建 Unity 项目、解析项目软件包并登记到 ALCOMD3。`project_name` 必填；`base_path` 省略时使用 GUI 默认项目路径；`template_id` 和 `unity_version` 省略时使用 GUI 当前模板选择规则。成功时返回 `projectPath`、`templateId` 和 `unityVersion`。 |
-| `alcomd3_add_existing_project` | `{ "project_path": string }` | 将已有 Unity 项目目录登记到 ALCOMD3。`project_path` 必须是绝对路径并指向有效 Unity 项目。成功时返回 `projectPath`。 |
-| `alcomd3_backup_project` | `{ "project_path": string, "backup_name"?: string, "exclude_vpm_packages"?: boolean }` | 为已登记项目创建 zip 备份，使用 GUI 当前备份目录和备份格式。`exclude_vpm_packages` 为 `true` 时排除已安装 VPM 软件包的内容，默认为 `false`。未传 `backup_name` 时生成“项目名称加时间戳”的默认名称；传入时可覆盖不含 `.zip` 的归档文件名。成功时返回 `backupPath`。 |
-| `alcomd3_copy_project` | `{ "source_project_path": string, "new_project_path": string }` | 将已登记项目复制到新的不存在目录，并把复制出的项目登记到 ALCOMD3。成功时返回 `projectPath`。 |
-| `alcomd3_restore_project_from_backup` | `{ "backup_path": string, "project_name"?: string }` | 从 zip 备份恢复项目到 GUI 配置的默认项目目录，并登记恢复出的项目。未传 `project_name` 时使用备份文件名。成功时返回 `projectPath`。 |
-| `alcomd3_install_project_package` | `{ "project_path": string, "package_name": string, "version_selector": { "type": "latest_gui_visible" } \| { "type": "exact", "version": string }, "source"?: { "repository_id"?: string, "repository_url"?: string }, "allow_conflicts"?: boolean }` | 向已登记项目安装一个 GUI 可见且与项目 Unity 版本兼容的软件包。`latest_gui_visible` 使用后端与 GUI 相同的可见包、来源优先级和预发布设置；`exact` 仍必须匹配 GUI 可见版本。冲突或 legacy 文件/文件夹删除默认阻断。 |
-| `alcomd3_uninstall_project_package` | `{ "project_path": string, "package_name": string, "allow_conflicts"?: boolean }` | 从已登记项目卸载一个已安装软件包。冲突或 legacy 文件/文件夹删除默认阻断。 |
-| `alcomd3_reinstall_project_package` | `{ "project_path": string, "package_name": string, "allow_conflicts"?: boolean }` | 在已登记项目中重装一个已安装软件包。冲突或 legacy 文件/文件夹删除默认阻断。 |
+| 项目 | 项目列表和详情 | 创建、登记、备份、复制和恢复 |
+| 模板 | 模板列表和详情 | 创建、整体更新和删除 |
+| 存储库 | 存储库列表 | 添加和删除远程用户存储库 |
+| 软件包 | 软件包列表和详情 | 安装、卸载和重装项目软件包 |
+| 环境 | Unity 安装、启动参数和默认路径 | 无 |
+| 日志 | 搜索、详情、上下文和聚合 | 无 |
 
-模板工具的参数对象拒绝未知字段。内置模板只读；项目归档模板可读取和删除，但不可字段级编辑。
-创建或更新派生模板时会拒绝自引用和基模板依赖环。MCP 不提供模板导入或导出，这两项仍是
-GUI 文件选择器工作流。模板写操作只引用 Unity 包附件，不会复制或删除附件。
+工具参考还记录分页默认值、允许的枚举、MCP Task 支持、共享返回类型、错误结构，
+以及两个按设计直接返回详情对象而不含 `ok` 的详情工具。
 
 ### 日志查询工具
 

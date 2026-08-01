@@ -291,47 +291,22 @@ finish querying or cancelling already running tasks after MCP is disabled.
 
 ## Available Tools
 
-All tools return JSON. Success responses include `ok: true`; business failures
-include `ok: false` and `error: { code, message, data? }`, and the outer MCP
-tool result includes `isError: true`.
+ALCOMD3 currently exposes 29 tools. The main guide keeps the usage model and safety
+boundaries concise; the [complete tool reference](mcp/tools.md) documents every input
+and output field, whether it is required or conditional, its default, and its meaning.
 
-| Tool | Arguments | Description |
+| Area | Read tools | Write tools |
 | --- | --- | --- |
-| `alcomd3_list_projects` | `{}` | Lists projects registered in ALCOMD3. |
-| `alcomd3_list_project_templates` | `{}` | Lists current project templates with IDs, supported Unity versions, availability, update date, kind, and the `editable`, `removable`, and `usableAsBase` capability flags. Use a returned `id` and `unityVersions` value with `alcomd3_create_project`. Template source paths are not exposed. |
-| `alcomd3_get_project_template` | `{ "template_id": string }` | Reads one template selected by its stable ID. Derived template details include `displayName`, `baseTemplateId`, `unityVersionRange`, `vpmDependencies`, and `unityPackagePaths`. |
-| `alcomd3_create_project_template` | `{ "display_name": string, "base_template_id": string, "unity_version_range": string, "vpm_dependencies": object<string, string>, "unity_package_paths": string[] }` | Creates a derived template with a backend-generated persistent ID. The base must exist and be usable as a base, version ranges must parse, and Unity package paths must be existing absolute `.unitypackage` files. |
-| `alcomd3_update_project_template` | `{ "template_id": string, "display_name": string, "base_template_id": string, "unity_version_range": string, "vpm_dependencies": object<string, string>, "unity_package_paths": string[] }` | Replaces the complete editable definition while preserving the template ID and storage location. Built-in and project archive templates are not field-editable. |
-| `alcomd3_remove_project_template` | `{ "template_id": string }` | Moves a removable derived or project archive template to the system trash and returns its ID, name, and kind. Referenced Unity package files are not deleted. |
-| `alcomd3_get_project_details` | `{ "project_path": string }` | Gets details and installed package summary for a registered project. `project_path` must match a project registered in ALCOMD3. |
-| `alcomd3_list_repositories` | `{}` | Lists current remote repositories with an explicit output schema. Each canonical `repositories` item contains `id`, `url`, `displayName`, `kind` (`officialDefault`, `curatedDefault`, or `user`), and `hidden`. Global package display settings are grouped under `packageVisibility`. Use a returned `id` for package-reading tools and a returned user-repository `url` for removal. |
-| `alcomd3_add_repository` | `{ "repository_url": string, "headers"?: object }` | Downloads and validates a VPM repository URL, adds it as a user repository, and clears package cache so later loads refresh. Duplicate stored URLs or declared repository IDs are rejected. Success returns the added `repository` summary; use its `url` for later removal. Activity logs store only a redacted URL and header count, not header values. |
-| `alcomd3_remove_repository` | `{ "repository_url": string }` | Removes exactly one user-added repository selected by its stored URL and clears package cache. Official and Curated default repositories cannot be removed. |
-| `alcomd3_get_package_details` | `{ "package_name": string, "version"?: string, "repository_id"?: string }` | Gets detailed metadata for a GUI-visible package. `package_name` is required; `version` and `repository_id` can narrow the result to one version or source. |
-| `alcomd3_list_packages` | `{ "offset"?: number, "limit"?: number }` | Paginates lightweight summaries of GUI-default-visible packages. Within one source, each package name returns only the latest visible version, with `source.kind` set to `officialDefault`, `curatedDefault`, `userRepository`, or `localUser`. MCP does not server-side search; clients or Agents should filter returned rows. |
-| `alcomd3_list_repository_packages` | `{ "repository_id": string, "offset"?: number, "limit"?: number }` | Paginates lightweight GUI-visible package summaries for one repository. Within that repository, each package name returns only the latest visible version. Call `alcomd3_list_repositories` first and pass its returned `id`. |
-| `alcomd3_get_environment_settings` | `{}` | Reads an environment settings summary, including added Unity installs, default Unity launch arguments, default project path, and backup path. |
-| `alcomd3_search_activity_logs` | `{ "search"?: string, "sources"?: string[], "kinds"?: string[], "statuses"?: string[], "visibility"?: "important" \| "primary" \| "secondary" \| "technical" \| "all", "operations"?: string[], "tool_names"?: string[], "request_id"?: string, "target"?: string, "since"?: string, "until"?: string, "offset"?: number, "limit"?: number, "order"?: "newest" \| "oldest" }` | Paginates user-readable activity log summaries. By default it returns only important activity; `limit` defaults to 50 and maxes at 200. |
-| `alcomd3_get_activity_log_entry` | `{ "id": string, "include_details"?: boolean }` | Reads one full activity log entry by id. Details do not include raw MCP params, URL query, or URL userinfo; local paths remain complete for diagnostics. |
-| `alcomd3_summarize_activity_logs` | `alcomd3_search_activity_logs` arguments plus `{ "group_by"?: "source" \| "kind" \| "status" \| "operation" \| "tool_name" \| "client_name" \| "day" \| "hour" }` | Aggregates activity records by source, kind, status, operation, tool, client, or time to locate records before reading them. |
-| `alcomd3_get_activity_log_context` | `{ "id": string, "before"?: number, "after"?: number, "include_details"?: boolean }` | Reads neighboring activity around an entry for operation-chain review; `before`/`after` max at 50. |
-| `alcomd3_search_technical_logs` | `{ "search"?: string, "levels"?: string[], "targets"?: string[], "scope"?: "memory" \| "recent_files", "since"?: string, "until"?: string, "offset"?: number, "limit"?: number, "max_message_chars"?: number }` | Paginates technical log previews. Defaults to current process memory `error`/`warn`, `limit` defaults to 50 and maxes at 100, and message previews default to 300 characters. |
-| `alcomd3_get_technical_log_entry` | `{ "id": string, "max_message_chars"?: number }` | Reads one technical log message by id; the message is redacted and capped at 4000 characters. |
-| `alcomd3_summarize_technical_logs` | `alcomd3_search_technical_logs` arguments plus `{ "group_by"?: "level" \| "target" \| "file" \| "hour" }` | Aggregates technical logs by level, target, file, or hour to locate error hotspots. |
-| `alcomd3_create_project` | `{ "project_name": string, "base_path"?: string, "template_id"?: string, "unity_version"?: string }` | Creates a Unity project, resolves project packages, and registers it in ALCOMD3. `project_name` is required; omitted `base_path` uses the GUI default project path; omitted `template_id` and `unity_version` use the current GUI template selection rules. Success returns `projectPath`, `templateId`, and `unityVersion`. |
-| `alcomd3_add_existing_project` | `{ "project_path": string }` | Registers an existing Unity project directory in ALCOMD3. `project_path` must be an absolute path and load as a valid Unity project. Success returns `projectPath`. |
-| `alcomd3_backup_project` | `{ "project_path": string, "backup_name"?: string, "exclude_vpm_packages"?: boolean }` | Creates a zip backup for a registered project using the current GUI backup directory and backup format. `exclude_vpm_packages` omits installed VPM package contents when `true` and defaults to `false`. Omitted `backup_name` generates the project-name-plus-timestamp default; a provided name overrides the archive file name without `.zip`. Success returns `backupPath`. |
-| `alcomd3_copy_project` | `{ "source_project_path": string, "new_project_path": string }` | Copies a registered project to a new non-existing directory and registers the copied project. Success returns `projectPath`. |
-| `alcomd3_restore_project_from_backup` | `{ "backup_path": string, "project_name"?: string }` | Restores a project from a zip backup into the GUI-configured default project directory and registers it. If `project_name` is omitted, the backup file name is used. Success returns `projectPath`. |
-| `alcomd3_install_project_package` | `{ "project_path": string, "package_name": string, "version_selector": { "type": "latest_gui_visible" } \| { "type": "exact", "version": string }, "source"?: { "repository_id"?: string, "repository_url"?: string }, "allow_conflicts"?: boolean }` | Installs one GUI-visible package compatible with the project's Unity version into a registered project. `latest_gui_visible` uses the same visible package, source priority, and pre-release settings as the GUI backend; `exact` must still match a GUI-visible version. Conflicts or legacy file/folder deletion block by default. |
-| `alcomd3_uninstall_project_package` | `{ "project_path": string, "package_name": string, "allow_conflicts"?: boolean }` | Uninstalls one installed package from a registered project. Conflicts or legacy file/folder deletion block by default. |
-| `alcomd3_reinstall_project_package` | `{ "project_path": string, "package_name": string, "allow_conflicts"?: boolean }` | Reinstalls one installed package in a registered project. Conflicts or legacy file/folder deletion block by default. |
+| Projects | Project list and details | Create, register, back up, copy, and restore |
+| Templates | List and details | Create, replace, and remove |
+| Repositories | Repository list | Add and remove remote user repositories |
+| Packages | Package list and details | Install, uninstall, and reinstall project packages |
+| Environment | Unity installations, launch arguments, and default paths | None |
+| Logs | Search, detail, context, and aggregation | None |
 
-Template tool argument objects reject unknown fields. Built-in templates are read-only;
-project archive templates can be read and removed but not field-edited. Creating or
-updating a derived template rejects self-reference and base-template dependency cycles.
-MCP does not expose template import or export; those remain GUI file-picker workflows.
-Template writes reference Unity package attachments without copying or deleting them.
+The reference also records pagination defaults, accepted enum values, task support,
+shared result types, error shapes, and the two detail tools that intentionally return
+an unwrapped object without `ok`.
 
 ### Log Query Tools
 

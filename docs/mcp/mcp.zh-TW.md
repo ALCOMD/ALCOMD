@@ -241,45 +241,21 @@ GUI 會驗證 `protocolVersion` 和 `token`。驗證失敗會傳回業務錯誤�
 
 ## 可用工具
 
-所有工具都傳回 JSON。成功時包含 `ok: true`；業務失敗時包含
-`ok: false` 和 `error: { code, message, data? }`，並且 MCP tool result 外層會包含
-`isError: true`。
+ALCOMD3 目前公開 29 個工具。主指南集中說明使用流程和安全邊界；
+[完整工具參考](tools.zh-TW.md)逐項列出每個輸入、輸出欄位，說明是否必填或按條件出現、
+省略時的預設值，以及欄位的實際含義。
 
-| Tool | 參數 | 說明 |
+| 領域 | 讀取工具 | 寫入工具 |
 | --- | --- | --- |
-| `alcomd3_list_projects` | `{}` | 列出 ALCOMD3 已登錄專案。 |
-| `alcomd3_list_project_templates` | `{}` | 列出目前專案範本的 ID、支援的 Unity 版本、可用狀態、更新時間、類型，以及 `editable`、`removable`、`usableAsBase` 能力標誌。可將傳回的 `id` 與 `unityVersions` 值用於 `alcomd3_create_project`。不會公開範本來源檔案路徑。 |
-| `alcomd3_get_project_template` | `{ "template_id": string }` | 使用穩定範本 ID 選取並讀取一個範本。衍生範本詳細資料包含 `displayName`、`baseTemplateId`、`unityVersionRange`、`vpmDependencies` 和 `unityPackagePaths`。 |
-| `alcomd3_create_project_template` | `{ "display_name": string, "base_template_id": string, "unity_version_range": string, "vpm_dependencies": object<string, string>, "unity_package_paths": string[] }` | 建立衍生範本並由後端產生持久 ID。基礎範本必須存在且可作為基礎範本，版本範圍必須可解析，Unity 套件路徑必須是已存在的絕對 `.unitypackage` 一般檔案。 |
-| `alcomd3_update_project_template` | `{ "template_id": string, "display_name": string, "base_template_id": string, "unity_version_range": string, "vpm_dependencies": object<string, string>, "unity_package_paths": string[] }` | 整體取代可編輯範本定義，同時保持範本 ID 和儲存位置不變。內建範本和專案封存範本不可進行欄位級編輯。 |
-| `alcomd3_remove_project_template` | `{ "template_id": string }` | 將可刪除的衍生範本或專案封存範本移入系統資源回收筒，並傳回其 ID、名稱和類型。不會刪除引用的 Unity 套件檔案。 |
-| `alcomd3_get_project_details` | `{ "project_path": string }` | 取得已登錄專案詳細資料和已安裝包摘要。`project_path` 必須符合 ALCOMD3 已登錄專案。 |
-| `alcomd3_list_repositories` | `{}` | 使用明確的輸出 Schema 列出 ALCOMD3 目前遠端倉庫。唯一規範陣列 `repositories` 的每個項目包含 `id`、`url`、`displayName`、`kind`（`officialDefault`、`curatedDefault` 或 `user`）和 `hidden`；全域軟體包顯示設定歸入 `packageVisibility`。軟體包讀取工具使用傳回的 `id`，刪除使用使用者倉庫的 `url`。 |
-| `alcomd3_add_repository` | `{ "repository_url": string, "headers"?: object }` | 下載並驗證指定 VPM 倉庫 URL，成功後作為使用者倉庫加入 ALCOMD3，並清除軟體包快取以便後續重新載入。重複的已存 URL 或倉庫宣告 ID 會被拒絕。成功時傳回新增的 `repository` 摘要；後續刪除應使用其中的 `url`。活動記錄只儲存脫敏 URL 和 header 數量，不儲存 header 值。 |
-| `alcomd3_remove_repository` | `{ "repository_url": string }` | 依已存 URL 精確刪除一個使用者新增的倉庫並清除軟體包快取。不能刪除官方和 Curated 預設倉庫。 |
-| `alcomd3_get_package_details` | `{ "package_name": string, "version"?: string, "repository_id"?: string }` | 取得 GUI 可見軟體包的詳細元資料。`package_name` 必填；`version` 和 `repository_id` 可用於縮小到某個具體包版本或來源。 |
-| `alcomd3_list_packages` | `{ "offset"?: number, "limit"?: number }` | 分頁列出 GUI 預設可見的軟體包輕量摘要；同一來源內同一包名只傳回最新可見版本，並在 `source.kind` 中標明 `officialDefault`、`curatedDefault`、`userRepository` 或 `localUser`。MCP 不做伺服器端搜尋，client 或 Agent 應自行篩選傳回結果。 |
-| `alcomd3_list_repository_packages` | `{ "repository_id": string, "offset"?: number, "limit"?: number }` | 依指定倉庫分頁列出 GUI 可見的軟體包輕量摘要；同一倉庫內同一包名只傳回最新可見版本。應先呼叫 `alcomd3_list_repositories` 並傳入傳回的 `id`。 |
-| `alcomd3_get_environment_settings` | `{}` | 讀取 ALCOMD3 環境設定摘要，包括已新增的 Unity 安裝、預設 Unity 啟動參數、預設專案路徑和備份路徑。 |
-| `alcomd3_search_activity_logs` | `{ "search"?: string, "sources"?: string[], "kinds"?: string[], "statuses"?: string[], "visibility"?: "important" \| "primary" \| "secondary" \| "technical" \| "all", "operations"?: string[], "tool_names"?: string[], "request_id"?: string, "target"?: string, "since"?: string, "until"?: string, "offset"?: number, "limit"?: number, "order"?: "newest" \| "oldest" }` | 分頁搜尋使用者可讀活動記錄摘要。預設只傳回關鍵活動，`limit` 預設 50、最大 200。 |
-| `alcomd3_get_activity_log_entry` | `{ "id": string, "include_details"?: boolean }` | 依活動記錄 id 讀取單筆完整活動記錄。詳細資料不包含 MCP 原始 params、URL query 或 URL userinfo；本機路徑會保留完整值以便排障。 |
-| `alcomd3_summarize_activity_logs` | `alcomd3_search_activity_logs` 參數加 `{ "group_by"?: "source" \| "kind" \| "status" \| "operation" \| "tool_name" \| "client_name" \| "day" \| "hour" }` | 依來源、類型、狀態、操作、工具、客戶端或時間彙總活動記錄，用於先定位需要查看的記錄。 |
-| `alcomd3_get_activity_log_context` | `{ "id": string, "before"?: number, "after"?: number, "include_details"?: boolean }` | 讀取某條活動記錄前後的相鄰活動，用於回溯操作鏈路；`before`/`after` 最大 50。 |
-| `alcomd3_search_technical_logs` | `{ "search"?: string, "levels"?: string[], "targets"?: string[], "scope"?: "memory" \| "recent_files", "since"?: string, "until"?: string, "offset"?: number, "limit"?: number, "max_message_chars"?: number }` | 分頁搜尋技術日誌預覽。預設只查目前行程記憶體中的 `error`/`warn`，`limit` 預設 50、最大 100，訊息預覽預設最多 300 字元。 |
-| `alcomd3_get_technical_log_entry` | `{ "id": string, "max_message_chars"?: number }` | 依技術日誌 id 讀取單筆日誌訊息；訊息會脫敏並最多傳回 4000 字元。 |
-| `alcomd3_summarize_technical_logs` | `alcomd3_search_technical_logs` 參數加 `{ "group_by"?: "level" \| "target" \| "file" \| "hour" }` | 依層級、target、檔案或小時彙總技術日誌，用於定位錯誤熱點。 |
-| `alcomd3_create_project` | `{ "project_name": string, "base_path"?: string, "template_id"?: string, "unity_version"?: string }` | 新建 Unity 專案、解析專案軟體包並登錄到 ALCOMD3。`project_name` 必填；`base_path` 省略時使用 GUI 預設專案路徑；`template_id` 和 `unity_version` 省略時使用 GUI 目前範本選擇規則。成功時傳回 `projectPath`、`templateId` 和 `unityVersion`。 |
-| `alcomd3_add_existing_project` | `{ "project_path": string }` | 將既有 Unity 專案目錄登錄到 ALCOMD3。`project_path` 必須是絕對路徑並指向有效 Unity 專案。成功時傳回 `projectPath`。 |
-| `alcomd3_backup_project` | `{ "project_path": string, "backup_name"?: string, "exclude_vpm_packages"?: boolean }` | 為已登錄專案建立 zip 備份，使用 GUI 目前備份目錄和備份格式。`exclude_vpm_packages` 為 `true` 時排除已安裝 VPM 軟體包的內容，預設為 `false`。未傳 `backup_name` 時產生「專案名稱加時間戳」的預設名稱；傳入時可覆寫不含 `.zip` 的封存檔名。成功時傳回 `backupPath`。 |
-| `alcomd3_copy_project` | `{ "source_project_path": string, "new_project_path": string }` | 將已登錄專案複製到新的不存在目錄，並把複製出的專案登錄到 ALCOMD3。成功時傳回 `projectPath`。 |
-| `alcomd3_restore_project_from_backup` | `{ "backup_path": string, "project_name"?: string }` | 從 zip 備份還原專案到 GUI 設定的預設專案目錄，並登錄還原出的專案。未傳 `project_name` 時使用備份檔名。成功時傳回 `projectPath`。 |
-| `alcomd3_install_project_package` | `{ "project_path": string, "package_name": string, "version_selector": { "type": "latest_gui_visible" } \| { "type": "exact", "version": string }, "source"?: { "repository_id"?: string, "repository_url"?: string }, "allow_conflicts"?: boolean }` | 向已登錄專案安裝一個 GUI 可見且與專案 Unity 版本相容的軟體包。`latest_gui_visible` 使用後端與 GUI 相同的可見包、來源優先順序和預發布設定；`exact` 仍必須符合 GUI 可見版本。衝突或 legacy 檔案/資料夾刪除預設阻擋。 |
-| `alcomd3_uninstall_project_package` | `{ "project_path": string, "package_name": string, "allow_conflicts"?: boolean }` | 從已登錄專案解除安裝一個已安裝軟體包。衝突或 legacy 檔案/資料夾刪除預設阻擋。 |
-| `alcomd3_reinstall_project_package` | `{ "project_path": string, "package_name": string, "allow_conflicts"?: boolean }` | 在已登錄專案中重新安裝一個已安裝軟體包。衝突或 legacy 檔案/資料夾刪除預設阻擋。 |
+| 專案 | 專案清單和詳細資料 | 建立、登錄、備份、複製和還原 |
+| 範本 | 範本清單和詳細資料 | 建立、整體更新和刪除 |
+| 倉庫 | 倉庫清單 | 新增和刪除遠端使用者倉庫 |
+| 軟體包 | 軟體包清單和詳細資料 | 安裝、解除安裝和重新安裝專案軟體包 |
+| 環境 | Unity 安裝、啟動參數和預設路徑 | 無 |
+| 記錄 | 搜尋、詳細資料、上下文和彙總 | 無 |
 
-範本工具的參數物件拒絕未知欄位。內建範本唯讀；專案封存範本可讀取和刪除，但不可進行欄位級編輯。
-建立或更新衍生範本時會拒絕自我參照和基礎範本相依環。MCP 不提供範本匯入或匯出，這兩項仍是
-GUI 檔案選擇器工作流程。範本寫入操作只引用 Unity 套件附件，不會複製或刪除附件。
+工具參考還記錄分頁預設值、允許的列舉、MCP Task 支援、共用傳回類型、錯誤結構，
+以及兩個按設計直接傳回詳細資料物件而不含 `ok` 的詳細資料工具。
 
 ### 日誌查詢工具
 

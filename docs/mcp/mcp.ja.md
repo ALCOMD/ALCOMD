@@ -219,49 +219,25 @@ IpcResponse {
 
 GUI は `protocolVersion` と `token` を検証します。検証失敗時は business error を返し、tool logic は実行しません。検証後、GUI で MCP が無効な場合、GUI は新しい tool data access と task startup に `mcp_disabled` を返し、project、repository、package などの data を読み取りません。既に開始された project long-task method の `project_task_get`、`project_task_list`、`project_task_cancel` は例外で、MCP 無効化後も既存 task の結果確認や cancel ができます。
 
-## 利用可能な tools
+## 利用可能なツール
 
-すべての tools は JSON を返します。成功時は `ok: true` を含みます。business failure 時は `ok: false` と `error: { code, message, data? }` を含み、外側の MCP tool result には `isError: true` が付きます。
+ALCOMD3 は現在 29 個のツールを公開しています。メインガイドは利用方法と安全境界を簡潔に
+説明し、[完全なツールリファレンス](tools.ja.md)は各入力・出力フィールドについて、必須か
+条件付きか、省略時の既定値、フィールドの意味を記載します。
 
-| Tool | Arguments | 説明 |
+| 分類 | 読み取りツール | 書き込みツール |
 | --- | --- | --- |
-| `alcomd3_list_projects` | `{}` | ALCOMD3 に登録済みの projects を列出します。 |
-| `alcomd3_list_project_templates` | `{}` | 現在の project template について、ID、対応 Unity version、利用可否、更新日時、kind、`editable`、`removable`、`usableAsBase` capability flags を列出します。返された `id` と `unityVersions` の値を `alcomd3_create_project` に渡せます。template source path は公開しません。 |
-| `alcomd3_get_project_template` | `{ "template_id": string }` | stable template ID で template を選択して読み取ります。derived template の detail は `displayName`、`baseTemplateId`、`unityVersionRange`、`vpmDependencies`、`unityPackagePaths` を含みます。 |
-| `alcomd3_create_project_template` | `{ "display_name": string, "base_template_id": string, "unity_version_range": string, "vpm_dependencies": object<string, string>, "unity_package_paths": string[] }` | backend-generated persistent ID を持つ derived template を作成します。base template は存在し base として利用可能で、version range は parse でき、Unity package path は既存の absolute `.unitypackage` regular file である必要があります。 |
-| `alcomd3_update_project_template` | `{ "template_id": string, "display_name": string, "base_template_id": string, "unity_version_range": string, "vpm_dependencies": object<string, string>, "unity_package_paths": string[] }` | template ID と storage location を維持したまま、editable definition 全体を置換します。built-in template と project archive template は field edit できません。 |
-| `alcomd3_remove_project_template` | `{ "template_id": string }` | removable な derived template または project archive template を system trash に移動し、ID、name、kind を返します。参照された Unity package file は削除しません。 |
-| `alcomd3_get_project_details` | `{ "project_path": string }` | 登録済み project の詳細と installed package summary を取得します。`project_path` は ALCOMD3 に登録済みの project と一致する必要があります。 |
-| `alcomd3_list_repositories` | `{}` | 明示的な output schema とともに現在の remote repositories を列出します。唯一の canonical array である `repositories` の各 item は `id`、`url`、`displayName`、`kind`（`officialDefault`、`curatedDefault`、`user`）、`hidden` を含み、global package display settings は `packageVisibility` にまとめられます。package read tool には返された `id`、削除には user repository の `url` を使います。 |
-| `alcomd3_add_repository` | `{ "repository_url": string, "headers"?: object }` | 指定した VPM repository URL を download/validate し、user repository として追加し、package cache を clear します。同じ stored URL または declared repository ID は拒否します。成功時は追加された `repository` summary を返し、その `url` を後続の remove operation に使用できます。activity log は redacted URL と header count だけを保存し、header value は保存しません。 |
-| `alcomd3_remove_repository` | `{ "repository_url": string }` | stored URL で user-added repository を 1 件だけ削除し、package cache を clear します。Official/Curated default repository は削除できません。 |
-| `alcomd3_get_package_details` | `{ "package_name": string, "version"?: string, "repository_id"?: string }` | GUI-visible package の詳細 metadata を取得します。`package_name` は必須です。`version` と `repository_id` で version/source を絞れます。 |
-| `alcomd3_list_packages` | `{ "offset"?: number, "limit"?: number }` | GUI default-visible packages の lightweight summary を paging します。同一 source 内の同一 package name は最新 visible version のみ返し、`source.kind` は `officialDefault`、`curatedDefault`、`userRepository`、`localUser` のいずれかです。MCP は server-side search を行わないため、client/Agent 側で filter してください。 |
-| `alcomd3_list_repository_packages` | `{ "repository_id": string, "offset"?: number, "limit"?: number }` | 指定 repository の GUI-visible package summary を paging します。同一 repository 内の同一 package name は最新 visible version のみ返します。先に `alcomd3_list_repositories` を呼び、返された `id` を渡してください。 |
-| `alcomd3_get_environment_settings` | `{}` | Unity installs、default Unity launch arguments、default project path、backup path を含む environment settings summary を読み取ります。 |
-| `alcomd3_search_activity_logs` | `{ "search"?: string, "sources"?: string[], "kinds"?: string[], "statuses"?: string[], "visibility"?: "important" \| "primary" \| "secondary" \| "technical" \| "all", "operations"?: string[], "tool_names"?: string[], "request_id"?: string, "target"?: string, "since"?: string, "until"?: string, "offset"?: number, "limit"?: number, "order"?: "newest" \| "oldest" }` | user-readable activity log summary を paging search します。default は important activity のみ、`limit` default は 50、max は 200 です。 |
-| `alcomd3_get_activity_log_entry` | `{ "id": string, "include_details"?: boolean }` | activity log entry を id で 1 件読み取ります。detail は raw MCP params、URL query、URL userinfo を含みません。local path は診断用に完全値を保持します。 |
-| `alcomd3_summarize_activity_logs` | `alcomd3_search_activity_logs` arguments plus `{ "group_by"?: "source" \| "kind" \| "status" \| "operation" \| "tool_name" \| "client_name" \| "day" \| "hour" }` | source、kind、status、operation、tool、client、time で activity records を集計し、読むべき record を先に探します。 |
-| `alcomd3_get_activity_log_context` | `{ "id": string, "before"?: number, "after"?: number, "include_details"?: boolean }` | entry の前後 activity を読み、operation chain を確認します。`before`/`after` は最大 50 です。 |
-| `alcomd3_search_technical_logs` | `{ "search"?: string, "levels"?: string[], "targets"?: string[], "scope"?: "memory" \| "recent_files", "since"?: string, "until"?: string, "offset"?: number, "limit"?: number, "max_message_chars"?: number }` | technical log preview を paging search します。default は current process memory の `error`/`warn` のみ、`limit` default は 50、max は 100、message preview default は 300 chars です。 |
-| `alcomd3_get_technical_log_entry` | `{ "id": string, "max_message_chars"?: number }` | technical log message を id で 1 件読み取ります。message は redacted され、最大 4000 chars です。 |
-| `alcomd3_summarize_technical_logs` | `alcomd3_search_technical_logs` arguments plus `{ "group_by"?: "level" \| "target" \| "file" \| "hour" }` | level、target、file、hour で technical logs を集計し、error hotspot を探します。 |
-| `alcomd3_create_project` | `{ "project_name": string, "base_path"?: string, "template_id"?: string, "unity_version"?: string }` | Unity project を作成し、project packages を解決し、ALCOMD3 に登録します。`project_name` は必須です。`base_path` 省略時は GUI default project path、`template_id` と `unity_version` 省略時は GUI の現在の template selection rule を使用します。成功時は `projectPath`、`templateId`、`unityVersion` を返します。 |
-| `alcomd3_add_existing_project` | `{ "project_path": string }` | existing Unity project directory を ALCOMD3 に登録します。`project_path` は absolute path で、有効な Unity project として load できる必要があります。成功時は `projectPath` を返します。 |
-| `alcomd3_backup_project` | `{ "project_path": string, "backup_name"?: string, "exclude_vpm_packages"?: boolean }` | registered project の zip backup を、GUI の現在の backup directory と backup format で作成します。`exclude_vpm_packages` が `true` の場合は installed VPM package contents を除外し、default は `false` です。`backup_name` 省略時は project name と timestamp から既定名を生成し、指定時は `.zip` を含まない archive file name を上書きします。成功時は `backupPath` を返します。 |
-| `alcomd3_copy_project` | `{ "source_project_path": string, "new_project_path": string }` | registered project を存在しない新 directory に copy し、copy された project を ALCOMD3 に登録します。成功時は `projectPath` を返します。 |
-| `alcomd3_restore_project_from_backup` | `{ "backup_path": string, "project_name"?: string }` | zip backup から GUI-configured default project directory に project を restore し、登録します。`project_name` 省略時は backup file name を使います。成功時は `projectPath` を返します。 |
-| `alcomd3_install_project_package` | `{ "project_path": string, "package_name": string, "version_selector": { "type": "latest_gui_visible" } \| { "type": "exact", "version": string }, "source"?: { "repository_id"?: string, "repository_url"?: string }, "allow_conflicts"?: boolean }` | registered project に、project の Unity version と互換性がある GUI-visible package を 1 つ install します。`latest_gui_visible` は GUI backend と同じ visible package、source priority、pre-release settings を使います。`exact` も GUI-visible version と一致する必要があります。conflict または legacy file/folder deletion は default で block されます。 |
-| `alcomd3_uninstall_project_package` | `{ "project_path": string, "package_name": string, "allow_conflicts"?: boolean }` | registered project から installed package を 1 つ uninstall します。conflict または legacy file/folder deletion は default で block されます。 |
-| `alcomd3_reinstall_project_package` | `{ "project_path": string, "package_name": string, "allow_conflicts"?: boolean }` | registered project で installed package を 1 つ reinstall します。conflict または legacy file/folder deletion は default で block されます。 |
+| プロジェクト | 一覧と詳細 | 作成、登録、バックアップ、コピー、復元 |
+| テンプレート | 一覧と詳細 | 作成、全体更新、削除 |
+| リポジトリ | リポジトリ一覧 | リモートユーザーリポジトリの追加と削除 |
+| パッケージ | 一覧と詳細 | プロジェクトパッケージのインストール、アンインストール、再インストール |
+| 環境 | Unity インストール、起動引数、既定パス | なし |
+| ログ | 検索、詳細、前後関係、集計 | なし |
 
-Template tool の argument object は unknown field を拒否します。built-in template は read-only、
-project archive template は read/remove 可能ですが field edit はできません。derived template の
-create/update は self-reference と base-template dependency cycle を拒否します。MCP は template
-import/export を公開せず、GUI file-picker workflow のままです。template write は Unity package
-attachment を参照するだけで、copy/delete は行いません。
+ツールリファレンスにはページングの既定値、許可される enum、MCP Task 対応、共通出力型、
+エラー形式、および設計上 `ok` なしで詳細オブジェクトを直接返す 2 ツールも記載しています。
 
-### Log query tools
+### ログ照会ツール
 
 Log tools は activity records と technical logs に分かれています。Agent が 1 つの問題を調査するためにすべての logs を context に取り込む必要を減らします。
 
@@ -271,7 +247,7 @@ Log tools は activity records と technical logs に分かれています。Age
 - Technical log tools は無制限の raw text を返しません。search は `messagePreview` を返し、detail は `max_message_chars` で truncate され、token、secret、authorization、API key、`sk-` values、URL userinfo、query、fragment を redact します。
 - Log tools 自体も MCP read activity として記録されます。成功した log read は Secondary、失敗は failed activity として表示されます。
 
-### Project long tasks
+### プロジェクト長時間タスク
 
 Tasks は MCP `2025-11-25` で導入され、現在も実験的な capability です。
 client ごとに対応状況が異なり、protocol behavior は将来の MCP version で
