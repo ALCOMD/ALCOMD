@@ -10,7 +10,6 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::env;
 use std::error::Error as StdError;
-use std::ffi::OsStr;
 use std::fmt::{Debug, Display};
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
@@ -28,8 +27,7 @@ use vrc_get_vpm::unity_project::pending_project_changes::{PackageChange, RemoveR
 use vrc_get_vpm::unity_project::{AddPackageOperation, PendingProjectChanges};
 use vrc_get_vpm::version::Version;
 use vrc_get_vpm::{
-    PackageCollection as _, PackageInfo, PackageManifest, UnityProject, UserRepoSetting,
-    VersionSelector,
+    PackageCollection as _, PackageInfo, PackageManifest, UnityProject, VersionSelector,
 };
 
 macro_rules! multi_command {
@@ -1049,14 +1047,14 @@ impl RepoList {
     }
 }
 
-/// Add remote or local repository
+/// Add a remote repository
 #[derive(Parser)]
 #[command(author, version)]
 pub struct RepoAdd {
-    /// URL of Package
+    /// URL of the remote VPM repository
     #[arg()]
-    path_or_url: String,
-    /// Name of Package
+    repository_url: Url,
+    /// Optional display name for the repository
     #[arg()]
     name: Option<String>,
 
@@ -1125,107 +1123,35 @@ impl RepoAdd {
         let io = DefaultEnvironmentIo::new_default();
         let mut settings = Settings::load(&io).await.exit_context("loading settings");
 
-        if let Ok(url) = Url::parse(&self.path_or_url) {
-            let mut headers = IndexMap::<Box<str>, Box<str>>::new();
-            for HeaderPair(name, value) in self.header {
-                headers.insert(name.as_str().into(), value.to_str().unwrap().into());
-            }
-            add_remote_repo(
-                &mut settings,
-                url,
-                self.name.as_deref(),
-                headers,
-                &io,
-                &http.unwrap_or_else(|| exit_with!("offline mode")),
-            )
-            .await
-            .exit_context("adding repository")
-        } else {
-            let normalized = absolute_path(&self.path_or_url);
-            if !normalized.exists() {
-                exit_with!("path not found: {}", normalized.display());
-            }
-            if !settings.add_local_repo(&normalized, self.name.as_deref()) {
-                exit_with!("repository already exists");
-            }
+        let mut headers = IndexMap::<Box<str>, Box<str>>::new();
+        for HeaderPair(name, value) in self.header {
+            headers.insert(name.as_str().into(), value.to_str().unwrap().into());
         }
+        add_remote_repo(
+            &mut settings,
+            self.repository_url,
+            self.name.as_deref(),
+            headers,
+            &io,
+            &http.unwrap_or_else(|| exit_with!("offline mode")),
+        )
+        .await
+        .exit_context("adding repository");
 
         settings.save(&io).await.exit_context("saving settings");
     }
 }
 
-/// Remove repository with specified url, path or name
+/// Remove a remote repository with the specified URL
 #[derive(Parser)]
 #[command(author, version)]
 pub struct RepoRemove {
-    /// id, url, name, or path of repository
+    /// URL of the remote VPM repository
     #[arg()]
-    finder: String,
-
-    #[clap(flatten)]
-    searcher: RepoSearcherArgs,
+    repository_url: Url,
 
     #[command(flatten)]
     env_args: EnvArgs,
-}
-
-#[derive(Args)]
-#[group(multiple = false)]
-struct RepoSearcherArgs {
-    /// Find repository to remove by id
-    #[arg(long)]
-    id: bool,
-    /// Find repository to remove by url
-    #[arg(long)]
-    url: bool,
-    /// Find repository to remove by name
-    #[arg(long)]
-    name: bool,
-    /// Find repository to remove by local path
-    #[arg(long)]
-    path: bool,
-}
-
-impl RepoSearcherArgs {
-    fn as_searcher(&self) -> RepoSearcher {
-        match () {
-            () if self.id => RepoSearcher::Id,
-            () if self.url => RepoSearcher::Url,
-            () if self.name => RepoSearcher::Name,
-            () if self.path => RepoSearcher::Path,
-            () => RepoSearcher::Id,
-        }
-    }
-}
-
-#[derive(Copy, Clone)]
-enum RepoSearcher {
-    Id,
-    Url,
-    Name,
-    Path,
-}
-
-impl Display for RepoSearcher {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RepoSearcher::Id => f.write_str("id"),
-            RepoSearcher::Url => f.write_str("url"),
-            RepoSearcher::Name => f.write_str("name"),
-            RepoSearcher::Path => f.write_str("path"),
-        }
-    }
-}
-
-impl RepoSearcher {
-    fn get(self, repo: &UserRepoSetting) -> Option<&OsStr> {
-        match self {
-            RepoSearcher::Id => repo.id().map(OsStr::new),
-            RepoSearcher::Url => repo.url().map(|x| OsStr::new(x.as_str())),
-            RepoSearcher::Name => repo.name().map(OsStr::new),
-            RepoSearcher::Path => Some(repo.local_path().as_os_str()),
-        }
-    }
 }
 
 impl RepoRemove {
@@ -1233,11 +1159,8 @@ impl RepoRemove {
         let io = DefaultEnvironmentIo::new_default();
         let mut settings = Settings::load(&io).await.exit_context("loading settings");
 
-        // we're using OsStr for paths.
-        let finder = OsStr::new(self.finder.as_str());
-        let searcher = self.searcher.as_searcher();
-
-        let removed = settings.remove_repo(|x| searcher.get(x) == Some(finder));
+        let removed =
+            settings.remove_repo(|repository| repository.url() == Some(&self.repository_url));
 
         join_all(
             removed
@@ -1246,7 +1169,11 @@ impl RepoRemove {
         )
         .await;
 
-        println!("removed {} repositories with {}", removed.len(), searcher);
+        println!(
+            "removed {} repositories with URL {}",
+            removed.len(),
+            self.repository_url
+        );
 
         settings.save(&io).await.exit_context("saving settings");
     }
