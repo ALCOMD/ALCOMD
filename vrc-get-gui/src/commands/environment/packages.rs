@@ -7,28 +7,24 @@ use crate::backend::packages::{
     latest_package_infos_by_source, package_is_available_for_display,
     repository_id as cached_repository_id,
 };
+use crate::backend::repository_operations;
+use crate::backend::user_packages;
 use crate::commands::async_command::{AsyncCallResult, With, async_command};
 use crate::commands::prelude::*;
 use futures::future::try_join_all;
 use indexmap::IndexMap;
-use itertools::Itertools;
 use log::info;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
-use std::path::Path;
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tauri::{AppHandle, Manager, State, Window};
 use tauri_plugin_dialog::DialogExt;
-use tokio::fs::write;
 use url::Url;
+use vrc_get_vpm::PackageInfo;
 use vrc_get_vpm::environment::{
-    AddUserPackageResult, CURATED_REPOSITORY_ID, CURATED_URL_STR, OFFICIAL_REPOSITORY_ID,
-    OFFICIAL_URL_STR, Settings, UserPackageCollection, add_remote_repo, clear_package_cache,
+    CURATED_REPOSITORY_ID, CURATED_URL_STR, OFFICIAL_REPOSITORY_ID, OFFICIAL_URL_STR,
 };
-use vrc_get_vpm::io::{DefaultEnvironmentIo, IoTrait};
-use vrc_get_vpm::repositories_file::RepositoriesFile;
-use vrc_get_vpm::repository::RemoteRepository;
-use vrc_get_vpm::{HttpClient, PackageInfo, UserRepoSetting, VersionSelector};
+use vrc_get_vpm::io::DefaultEnvironmentIo;
 
 #[tauri::command]
 #[specta::specta]
@@ -190,10 +186,19 @@ fn sort_base_package_infos(packages: &mut [TauriBasePackageInfo]) {
 
 #[derive(Serialize, specta::Type)]
 struct TauriUserRepository {
-    index: usize,
     id: String,
-    url: Option<String>,
+    url: String,
     display_name: String,
+}
+
+impl From<repository_operations::UserRepositorySummary> for TauriUserRepository {
+    fn from(value: repository_operations::UserRepositorySummary) -> Self {
+        Self {
+            id: value.id,
+            url: value.url,
+            display_name: value.display_name,
+        }
+    }
 }
 
 #[derive(Serialize, specta::Type)]
@@ -211,33 +216,22 @@ pub async fn environment_repositories_info(
     config: State<'_, GuiConfigState>,
     io: State<'_, DefaultEnvironmentIo>,
 ) -> Result<TauriRepositoriesInfo, RustError> {
-    let config = config.get();
-    let hidden_user_repositories = config.gui_hidden_repositories.iter().cloned().collect();
-    let hide_local_user_packages = config.hide_local_user_packages;
-    drop(config);
-
-    let settings = settings.load(io.inner()).await?;
-    let user_repositories = settings
-        .get_user_repos()
-        .iter()
-        .enumerate()
-        .filter_map(|(index, x)| {
-            let id = x.id().or(x.url().map(Url::as_str))?;
-            Some(TauriUserRepository {
-                index,
-                id: id.to_string(),
-                url: x.url().map(|x| x.to_string()),
-                display_name: x.name().unwrap_or(id).to_string(),
-            })
-        })
-        .collect();
-    let show_prerelease_packages = settings.show_prerelease_packages();
+    let snapshot = repository_operations::repository_settings_snapshot(
+        settings.inner(),
+        config.inner(),
+        io.inner(),
+    )
+    .await?;
 
     Ok(TauriRepositoriesInfo {
-        user_repositories,
-        hidden_user_repositories,
-        hide_local_user_packages,
-        show_prerelease_packages,
+        user_repositories: snapshot
+            .user_repositories
+            .into_iter()
+            .map(Into::into)
+            .collect(),
+        hidden_user_repositories: snapshot.hidden_user_repositories,
+        hide_local_user_packages: snapshot.hide_local_user_packages,
+        show_prerelease_packages: snapshot.show_prerelease_packages,
     })
 }
 
@@ -265,10 +259,7 @@ pub async fn environment_hide_repository(
             "Repository hidden",
             Vec::new(),
             async move {
-                let mut config = config.load_mut().await?;
-                config.gui_hidden_repositories.insert(repository);
-                config.save().await?;
-                Ok(())
+                repository_operations::set_repository_hidden(config.inner(), repository, true).await
             },
         )
         .await
@@ -298,10 +289,8 @@ pub async fn environment_show_repository(
             "Repository shown",
             Vec::new(),
             async move {
-                let mut config = config.load_mut().await?;
-                config.gui_hidden_repositories.shift_remove(&repository);
-                config.save().await?;
-                Ok(())
+                repository_operations::set_repository_hidden(config.inner(), repository, false)
+                    .await
             },
         )
         .await
@@ -330,12 +319,7 @@ pub async fn environment_set_hide_local_user_packages(
             input,
             "Local user packages visibility updated",
             Vec::new(),
-            async move {
-                let mut config = config.load_mut().await?;
-                config.hide_local_user_packages = value;
-                config.save().await?;
-                Ok(())
-            },
+            async move { user_packages::set_user_packages_hidden(config.inner(), value).await },
         )
         .await
 }
@@ -371,6 +355,44 @@ pub enum TauriDuplicatedReason {
     IDDuplicated,
 }
 
+impl From<repository_operations::DownloadRepositoryOutcome> for TauriDownloadRepository {
+    fn from(value: repository_operations::DownloadRepositoryOutcome) -> Self {
+        match value {
+            repository_operations::DownloadRepositoryOutcome::Duplicated {
+                reason,
+                duplicated_name,
+            } => Self::Duplicated {
+                reason: match reason {
+                    repository_operations::RepositoryDuplicateReason::Url => {
+                        TauriDuplicatedReason::URLDuplicated
+                    }
+                    repository_operations::RepositoryDuplicateReason::Id => {
+                        TauriDuplicatedReason::IDDuplicated
+                    }
+                },
+                duplicated_name,
+            },
+            repository_operations::DownloadRepositoryOutcome::DownloadError(message) => {
+                Self::DownloadError { message }
+            }
+            repository_operations::DownloadRepositoryOutcome::Success(repository) => {
+                Self::Success {
+                    value: TauriRemoteRepositoryInfo {
+                        id: repository.id,
+                        url: repository.url,
+                        display_name: repository.display_name,
+                        packages: repository
+                            .packages
+                            .iter()
+                            .map(TauriBasePackageInfo::new)
+                            .collect(),
+                    },
+                }
+            }
+        }
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn environment_download_repository(
@@ -389,192 +411,17 @@ pub async fn environment_download_repository(
 
     {
         let settings = settings.load(io.inner()).await?;
-        let user_repo_urls = user_repo_urls(&settings);
-        let user_repo_ids = user_repo_ids(&settings);
-
-        download_one_repository(
-            http.inner(),
-            &url,
-            &headers,
-            &user_repo_urls,
-            &user_repo_ids,
-        )
-        .await
+        let identities = repository_operations::repository_identity_snapshot(&settings);
+        repository_operations::download_repository(http.inner(), &url, &headers, &identities)
+            .await
+            .map(Into::into)
     }
-}
-
-fn user_repo_urls(settings: &Settings) -> HashMap<String, String> {
-    let mut user_repo_urls = settings
-        .get_user_repos()
-        .iter()
-        .flat_map(|x| {
-            x.url().map(|u| {
-                (
-                    u.to_string(),
-                    x.name().or(x.id()).unwrap_or(u.as_str()).to_string(),
-                )
-            })
-        })
-        .collect::<HashMap<String, String>>();
-
-    if !settings.ignore_curated_repository() {
-        // should we check more urls?
-        user_repo_urls.insert(
-            CURATED_URL_STR.to_owned(),
-            CURATED_REPOSITORY_ID.to_string(),
-        );
-    }
-
-    if !settings.ignore_official_repository() {
-        user_repo_urls.insert(
-            OFFICIAL_URL_STR.to_owned(),
-            OFFICIAL_REPOSITORY_ID.to_string(),
-        );
-    }
-
-    user_repo_urls
-}
-
-fn user_repo_ids(settings: &Settings) -> HashMap<String, String> {
-    let mut user_repo_ids = settings
-        .get_user_repos()
-        .iter()
-        .flat_map(|x| {
-            x.id()
-                .map(|i| (i.to_string(), x.name().unwrap_or(i).to_string()))
-        })
-        .collect::<HashMap<String, String>>();
-
-    if !settings.ignore_curated_repository() {
-        user_repo_ids.insert(
-            CURATED_REPOSITORY_ID.to_owned(),
-            CURATED_REPOSITORY_ID.to_string(),
-        );
-    }
-
-    if !settings.ignore_official_repository() {
-        user_repo_ids.insert(
-            OFFICIAL_REPOSITORY_ID.to_owned(),
-            OFFICIAL_REPOSITORY_ID.to_string(),
-        );
-    }
-
-    user_repo_ids
-}
-
-async fn download_one_repository(
-    client: &impl HttpClient,
-    repository_url: &Url,
-    headers: &IndexMap<Box<str>, Box<str>>,
-    user_repo_urls: &HashMap<String, String>,
-    user_repo_ids: &HashMap<String, String>,
-) -> Result<TauriDownloadRepository, RustError> {
-    if let Some(name) = user_repo_urls.get(repository_url.as_str()) {
-        return Ok(TauriDownloadRepository::Duplicated {
-            reason: TauriDuplicatedReason::URLDuplicated,
-            duplicated_name: name.to_string(),
-        });
-    }
-
-    let repo = match RemoteRepository::download(client, repository_url, headers).await {
-        Ok((repo, _)) => repo,
-        Err(e) => {
-            return Ok(TauriDownloadRepository::DownloadError {
-                message: e.to_string(),
-            });
-        }
-    };
-
-    let url = repo.url().unwrap_or(repository_url).as_str();
-    let id = repo.id().unwrap_or(url);
-
-    if let Some(name) = user_repo_ids.get(id) {
-        return Ok(TauriDownloadRepository::Duplicated {
-            reason: TauriDuplicatedReason::IDDuplicated,
-            duplicated_name: name.to_string(),
-        });
-    }
-
-    Ok(TauriDownloadRepository::Success {
-        value: TauriRemoteRepositoryInfo {
-            id: id.to_string(),
-            url: url.to_string(),
-            display_name: repo.name().unwrap_or(id).to_string(),
-            packages: repo
-                .get_packages()
-                .filter_map(|x| x.get_latest(VersionSelector::latest_for(None, true)))
-                .filter(|x| !x.is_yanked())
-                .map(TauriBasePackageInfo::new)
-                .collect(),
-        },
-    })
 }
 
 #[derive(Serialize, specta::Type)]
 pub enum TauriAddRepositoryResult {
     BadUrl,
     Success,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct AddedRepositoryInfo {
-    pub(crate) index: usize,
-    pub(crate) id: Option<String>,
-    pub(crate) url: String,
-    pub(crate) display_name: Option<String>,
-}
-
-pub(crate) async fn add_repository_by_url(
-    settings: &SettingsState,
-    packages: &PackagesState,
-    io: &DefaultEnvironmentIo,
-    http: &reqwest::Client,
-    url: Url,
-    headers: IndexMap<Box<str>, Box<str>>,
-) -> Result<AddedRepositoryInfo, RustError> {
-    let repository_url = url.to_string();
-    let mut settings = settings.load_mut(io).await?;
-    let previous_repo_count = settings.get_user_repos().len();
-    add_remote_repo(&mut settings, url, None, headers, io, http).await?;
-
-    let user_repos = settings.get_user_repos();
-    let (index, repository) = user_repos
-        .get(previous_repo_count)
-        .map(|repository| (previous_repo_count, repository))
-        .or_else(|| {
-            user_repos.iter().enumerate().find(|(_, repository)| {
-                repository
-                    .url()
-                    .is_some_and(|url| url.as_str() == repository_url)
-            })
-        })
-        .ok_or_else(|| RustError::unrecoverable_str("added repository was not found"))?;
-    let id = repository
-        .id()
-        .or(repository.url().map(Url::as_str))
-        .map(ToString::to_string);
-    let display_name = repository
-        .name()
-        .map(ToString::to_string)
-        .or_else(|| id.clone());
-    let url = repository
-        .url()
-        .map(ToString::to_string)
-        .unwrap_or(repository_url);
-    let repository = AddedRepositoryInfo {
-        index,
-        id,
-        url,
-        display_name,
-    };
-
-    settings.save().await?;
-
-    // force update repository
-    packages.clear_cache();
-
-    Ok(repository)
 }
 
 #[tauri::command]
@@ -613,7 +460,7 @@ pub async fn environment_add_repository(
             "Repository added",
             Vec::new(),
             async move {
-                add_repository_by_url(
+                repository_operations::add_repository(
                     settings.inner(),
                     packages.inner(),
                     io.inner(),
@@ -626,30 +473,6 @@ pub async fn environment_add_repository(
             },
         )
         .await
-}
-
-// Verifies that the repo at `index` in the freshly-loaded settings still has
-// the `expected_id` the frontend last saw. Guards against silent corruption
-// from external writes to settings.json between fetch and mutation.
-fn verify_repo_at_index(
-    repos: &[UserRepoSetting],
-    index: usize,
-    expected_id: &str,
-) -> Result<(), RustError> {
-    let Some(repo) = repos.get(index) else {
-        return Err(RustError::unrecoverable_str(format!(
-            "Repository index {index} out of range (expected id {expected_id}). \
-             settings.json was likely modified externally; please refresh."
-        )));
-    };
-    let actual = repo.id().or(repo.url().map(Url::as_str));
-    if actual != Some(expected_id) {
-        return Err(RustError::unrecoverable_str(format!(
-            "Repository at index {index} changed (expected id {expected_id}, found {actual:?}). \
-             settings.json was likely modified externally; please refresh."
-        )));
-    }
-    Ok(())
 }
 
 fn repository_activity_target(repository_id: &str) -> String {
@@ -666,11 +489,10 @@ pub async fn environment_remove_repository(
     settings: State<'_, SettingsState>,
     packages: State<'_, PackagesState>,
     io: State<'_, DefaultEnvironmentIo>,
-    index: usize,
-    expected_id: String,
+    repository_url: String,
 ) -> Result<(), RustError> {
     let activity = app.state::<ActivityLogState>();
-    let target = repository_activity_target(&expected_id);
+    let target = repository_activity_target(&repository_url);
     let input = ActivityInput::new(
         ActivitySource::Gui,
         ActivityKind::Write,
@@ -679,7 +501,13 @@ pub async fn environment_remove_repository(
         "Removing repository",
     )
     .target(target)
-    .details(vec![ActivityDetail::new("index", index.to_string())]);
+    .details(vec![ActivityDetail::new(
+        "repository_url",
+        summarize_url(&repository_url),
+    )]);
+    let repository_url = repository_url
+        .parse::<Url>()
+        .map_err(|_| RustError::unrecoverable_str("repository_url must be a valid URL"))?;
     activity
         .track_result(
             Some(&app),
@@ -687,21 +515,21 @@ pub async fn environment_remove_repository(
             "Repository removed",
             Vec::new(),
             async move {
-                let mut settings = settings.load_mut(io.inner()).await?;
-
-                verify_repo_at_index(settings.get_user_repos(), index, &expected_id)?;
-
-                let removed = settings.remove_repo_at_index(index);
-
-                if let Some(repo) = &removed {
-                    io.remove_file(repo.local_path()).await.ok();
+                match repository_operations::remove_repository(
+                    settings.inner(),
+                    packages.inner(),
+                    io.inner(),
+                    repository_url,
+                )
+                .await?
+                {
+                    repository_operations::RemoveRepositoryOutcome::Removed(_) => Ok(()),
+                    repository_operations::RemoveRepositoryOutcome::NotFound => {
+                        Err(RustError::unrecoverable_str(
+                            "repository_url was not found; please refresh",
+                        ))
+                    }
                 }
-
-                settings.save().await?;
-
-                packages.clear_cache();
-
-                Ok(())
             },
         )
         .await
@@ -726,12 +554,6 @@ pub struct TauriRepositoryDescriptor {
     pub headers: Headers,
 }
 
-#[derive(Deserialize, specta::Type)]
-pub struct TauriUserRepositoryRef {
-    pub index: usize,
-    pub id: String,
-}
-
 #[tauri::command]
 #[specta::specta]
 pub async fn environment_reorder_repositories(
@@ -739,10 +561,10 @@ pub async fn environment_reorder_repositories(
     settings: State<'_, SettingsState>,
     packages: State<'_, PackagesState>,
     io: State<'_, DefaultEnvironmentIo>,
-    repos: Vec<TauriUserRepositoryRef>,
+    repository_urls: Vec<String>,
 ) -> Result<(), RustError> {
     let activity = app.state::<ActivityLogState>();
-    let repo_count = repos.len();
+    let repo_count = repository_urls.len();
     let input = ActivityInput::new(
         ActivitySource::Gui,
         ActivityKind::Write,
@@ -761,19 +583,27 @@ pub async fn environment_reorder_repositories(
             "Repositories reordered",
             Vec::new(),
             async move {
-                let mut settings = settings.load_mut(io.inner()).await?;
-                log::debug!("reorder user repositories: {} entries", repos.len());
-
-                let user_repos = settings.get_user_repos();
-                for r in &repos {
-                    verify_repo_at_index(user_repos, r.index, &r.id)?;
-                }
-
-                let indices: Vec<usize> = repos.into_iter().map(|r| r.index).collect();
-                settings.reorder_user_repos_by_indices(&indices);
-                settings.save().await?;
-                packages.clear_cache();
-                Ok(())
+                let repository_urls = repository_urls
+                    .into_iter()
+                    .map(|repository_url| {
+                        repository_url.parse::<Url>().map_err(|_| {
+                            RustError::unrecoverable_str(
+                                "repository_urls must contain only valid URLs",
+                            )
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                log::debug!(
+                    "reorder remote user repositories: {} entries",
+                    repository_urls.len()
+                );
+                repository_operations::reorder_repositories(
+                    settings.inner(),
+                    packages.inner(),
+                    io.inner(),
+                    &repository_urls,
+                )
+                .await
             },
         )
         .await
@@ -796,19 +626,18 @@ pub async fn environment_import_repository_pick(
 
     let repositories_file = tokio::fs::read_to_string(repositories_path).await?;
 
-    let result = RepositoriesFile::parse(&repositories_file);
+    let result = repository_operations::parse_repositories_file(&repositories_file);
 
     Ok(TauriImportRepositoryPickResult::ParsedRepositories {
         repositories: result
-            .parsed()
-            .repositories()
-            .iter()
-            .map(|x| TauriRepositoryDescriptor {
-                url: x.url().clone(),
-                headers: x.headers().clone(),
+            .repositories
+            .into_iter()
+            .map(|repository| TauriRepositoryDescriptor {
+                url: repository.url,
+                headers: repository.headers,
             })
             .collect(),
-        unparsable_lines: result.unparseable_lines().to_vec(),
+        unparsable_lines: result.unparsable_lines,
     })
 }
 
@@ -828,8 +657,7 @@ pub async fn environment_import_download_repositories(
             let io = window.state::<DefaultEnvironmentIo>();
             let settings = settings.load(io.inner()).await?;
             {
-                let user_repo_urls = user_repo_urls(&settings);
-                let mut user_repo_ids = user_repo_ids(&settings);
+                let mut identities = repository_operations::repository_identity_snapshot(&settings);
                 drop(settings);
 
                 info!("downloading {} repositories", repositories.len());
@@ -837,20 +665,18 @@ pub async fn environment_import_download_repositories(
                 let counter = AtomicUsize::new(0);
 
                 let counter_ref = &counter;
-                let user_repo_urls_ref = &user_repo_urls;
-                let user_repo_ids_ref = &user_repo_ids;
+                let identities_ref = &identities;
 
                 let http = window.state::<reqwest::Client>();
                 let mut results = try_join_all(repositories.into_iter().map(|adding_repo| {
                     let ctx = ctx.clone();
                     let http = http.clone();
                     async move {
-                        let downloaded = download_one_repository(
+                        let downloaded = repository_operations::download_repository(
                             http.inner(),
                             &adding_repo.url,
                             &adding_repo.headers,
-                            user_repo_urls_ref,
-                            user_repo_ids_ref,
+                            identities_ref,
                         )
                         .await?;
 
@@ -867,20 +693,16 @@ pub async fn environment_import_download_repositories(
                 .await?;
 
                 for (_, downloaded) in results.as_mut_slice() {
-                    if let TauriDownloadRepository::Success { value } = &downloaded {
-                        if let Some(name) = user_repo_ids.get(&value.id) {
-                            info!("duplicated repository in list: {}", value.url);
-                            *downloaded = TauriDownloadRepository::Duplicated {
-                                reason: TauriDuplicatedReason::IDDuplicated,
-                                duplicated_name: name.to_string(),
-                            };
-                        } else {
-                            user_repo_ids.insert(value.id.to_string(), value.display_name.clone());
-                        }
-                    }
+                    repository_operations::reserve_downloaded_repository(
+                        &mut identities,
+                        downloaded,
+                    );
                 }
 
-                Ok(results)
+                Ok(results
+                    .into_iter()
+                    .map(|(repository, outcome)| (repository, outcome.into()))
+                    .collect())
             }
         })
     })
@@ -917,24 +739,20 @@ pub async fn environment_import_add_repositories(
             "Repositories imported",
             Vec::new(),
             async move {
-                let mut settings = settings.load_mut(io.inner()).await?;
-                for adding_repo in repositories {
-                    add_remote_repo(
-                        &mut settings,
-                        adding_repo.url,
-                        None,
-                        adding_repo.headers,
-                        io.inner(),
-                        http.inner(),
-                    )
-                    .await?;
-                }
-                settings.save().await?;
-
-                // force update repository
-                packages.clear_cache();
-
-                Ok(())
+                repository_operations::add_repositories(
+                    settings.inner(),
+                    packages.inner(),
+                    io.inner(),
+                    http.inner(),
+                    repositories
+                        .into_iter()
+                        .map(|repository| repository_operations::RepositoryDescriptor {
+                            url: repository.url,
+                            headers: repository.headers,
+                        })
+                        .collect(),
+                )
+                .await
             },
         )
         .await
@@ -988,11 +806,8 @@ pub async fn environment_export_repositories(
             "Repositories exported",
             Vec::new(),
             async move {
-                let repositories = settings.load(io.inner()).await?.export_repositories();
-
-                write(path, repositories).await?;
-
-                Ok(())
+                repository_operations::export_repositories(settings.inner(), io.inner(), &path)
+                    .await
             },
         )
         .await
@@ -1019,10 +834,7 @@ pub async fn environment_clear_package_cache(
             "Package cache cleared",
             Vec::new(),
             async move {
-                clear_package_cache(io.inner()).await?;
-                packages.clear_cache();
-
-                Ok(())
+                repository_operations::clear_repositories_cache(packages.inner(), io.inner()).await
             },
         )
         .await
@@ -1040,19 +852,19 @@ pub async fn environment_get_user_packages(
     settings: State<'_, SettingsState>,
     io: State<'_, DefaultEnvironmentIo>,
 ) -> Result<Vec<TauriUserPackage>, RustError> {
-    let settings = settings.load(io.inner()).await?;
-    let packages = UserPackageCollection::load(&settings, io.inner()).await;
-
-    Ok(packages
-        .packages()
-        .filter_map(|(path, json)| {
-            let path = path.as_os_str().to_str()?;
-            Some(TauriUserPackage {
-                path: path.into(),
-                package: TauriBasePackageInfo::new(json),
+    Ok(
+        user_packages::list_user_packages(settings.inner(), io.inner())
+            .await?
+            .into_iter()
+            .filter_map(|user_package| {
+                let path = user_package.path.into_os_string().into_string().ok()?;
+                Some(TauriUserPackage {
+                    path,
+                    package: TauriBasePackageInfo::new(&user_package.package),
+                })
             })
-        })
-        .collect())
+            .collect(),
+    )
 }
 
 #[derive(Serialize, specta::Type)]
@@ -1094,10 +906,8 @@ pub async fn environment_add_user_package_with_picker(
 
     let Ok(package_paths) = package_paths
         .into_iter()
-        .map(|x| x.into_path_buf().map_err(|_| ()))
-        .map_ok(|x| x.into_os_string().into_string().map_err(|_| ()))
-        .flatten_ok()
-        .collect::<Result<Vec<_>, ()>>()
+        .map(|path| path.into_path_buf())
+        .collect::<Result<Vec<_>, _>>()
     else {
         activity.record_failed(
             Some(&app),
@@ -1126,33 +936,24 @@ pub async fn environment_add_user_package_with_picker(
         package_count.to_string(),
     )]);
     let tracker = activity.start_activity(Some(&app), input);
-    let result = async move {
-        {
-            let mut settings = settings.load_mut(io.inner()).await?;
-            for package_path in package_paths {
-                match settings
-                    .add_user_package(package_path.as_ref(), io.inner())
-                    .await
-                {
-                    AddUserPackageResult::Success => {}
-                    AddUserPackageResult::NonAbsolute => unreachable!("absolute path"),
-                    AddUserPackageResult::BadPackage => {
-                        return Ok(TauriAddUserPackageWithPickerResult::InvalidSelection);
-                    }
-                    AddUserPackageResult::AlreadyAdded => {
-                        return Ok(TauriAddUserPackageWithPickerResult::AlreadyAdded);
-                    }
-                }
-            }
-
-            settings.save().await?;
+    let result = user_packages::add_user_packages(
+        settings.inner(),
+        packages.inner(),
+        io.inner(),
+        &package_paths,
+    )
+    .await
+    .map(|outcome| match outcome {
+        user_packages::AddUserPackagesOutcome::Added => {
+            TauriAddUserPackageWithPickerResult::Successful
         }
-
-        packages.clear_cache();
-
-        Ok(TauriAddUserPackageWithPickerResult::Successful)
-    }
-    .await;
+        user_packages::AddUserPackagesOutcome::InvalidSelection => {
+            TauriAddUserPackageWithPickerResult::InvalidSelection
+        }
+        user_packages::AddUserPackagesOutcome::AlreadyAdded => {
+            TauriAddUserPackageWithPickerResult::AlreadyAdded
+        }
+    });
     match &result {
         Ok(TauriAddUserPackageWithPickerResult::Successful) => {
             activity.finish_success(Some(&app), &tracker, "User packages added", Vec::new());
@@ -1222,14 +1023,18 @@ pub async fn environment_remove_user_packages(
             "User package removed",
             Vec::new(),
             async move {
+                if !user_packages::remove_user_package(
+                    settings.inner(),
+                    packages.inner(),
+                    io.inner(),
+                    path.as_ref(),
+                )
+                .await?
                 {
-                    let mut settings = settings.load_mut(io.inner()).await?;
-                    settings.remove_user_package(Path::new(&path));
-                    settings.save().await?;
+                    return Err(RustError::unrecoverable_str(
+                        "user package path was not registered; please refresh",
+                    ));
                 }
-
-                packages.clear_cache();
-
                 Ok(())
             },
         )
@@ -1241,7 +1046,7 @@ mod tests {
     use super::*;
     use serde_json::{Value, json};
     use vrc_get_vpm::PackageManifest;
-    use vrc_get_vpm::repository::LocalCachedRepository;
+    use vrc_get_vpm::repository::{LocalCachedRepository, RemoteRepository};
 
     #[test]
     fn repository_package_lists_keep_latest_visible_version_per_package() {

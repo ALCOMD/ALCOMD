@@ -366,7 +366,12 @@ pub fn process_files(app: &AppHandle, files: Vec<PathBuf>) {
     }
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        let imported = import_templates(&app.state(), &files).await;
+        let imported = import_templates(
+            app.state::<crate::state::TemplatesState>().inner(),
+            app.state::<vrc_get_vpm::io::DefaultEnvironmentIo>().inner(),
+            &files,
+        )
+        .await;
         app.emit("templates-imported", imported).ok();
         IMPORTED_NON_TOASTED_COUNT.fetch_add(1, Ordering::SeqCst);
     });

@@ -326,6 +326,7 @@ where
     try_load_json(io, path).await.map(|x| x.unwrap_or_default())
 }
 
+#[allow(dead_code)] // used by some features
 pub(crate) fn normalize_path(input: &Path) -> PathBuf {
     let mut result = PathBuf::with_capacity(input.as_os_str().len());
 

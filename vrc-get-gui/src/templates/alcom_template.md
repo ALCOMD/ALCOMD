@@ -33,10 +33,10 @@ The following json is jsonc but in real file comments are not allowed.
   // The date when the template was updated
   // This is an optional field
   "updateDate": "2025-04-17T00:00:00",
-  // Optional id of the package.
-  // If null the package won't be a base package of other package.
-  // Internally some id will be assgined in form of `com.anatawa12.vrc-get.user.<uuid>` like 
-  // `com.anatawa12.vrc-get.user.023274af4b31477d9ad6c69b5123adc6` but it won't be used as base id.
+  // Optional id of the template.
+  // If null the template won't be a base template of another template.
+  // A stable local management id in the form `com.anatawa12.vrc-get.user.<hash>` is
+  // derived from the template's storage-relative path without rewriting this file.
   // This field can only use Portable Filename Character Set in POSIX, i.e. /[a-zA-Z0-9._-]+/
   "id": null,
   // The base template. Currently you must have some base template.

@@ -131,11 +131,13 @@ fn bridge_lists_project_tools() {
             "alcomd3_backup_project",
             "alcomd3_copy_project",
             "alcomd3_create_project",
+            "alcomd3_create_project_template",
             "alcomd3_get_activity_log_context",
             "alcomd3_get_activity_log_entry",
             "alcomd3_get_environment_settings",
             "alcomd3_get_package_details",
             "alcomd3_get_project_details",
+            "alcomd3_get_project_template",
             "alcomd3_get_technical_log_entry",
             "alcomd3_install_project_package",
             "alcomd3_list_packages",
@@ -144,14 +146,59 @@ fn bridge_lists_project_tools() {
             "alcomd3_list_repositories",
             "alcomd3_list_repository_packages",
             "alcomd3_reinstall_project_package",
+            "alcomd3_remove_project_template",
+            "alcomd3_remove_repository",
             "alcomd3_restore_project_from_backup",
             "alcomd3_search_activity_logs",
             "alcomd3_search_technical_logs",
             "alcomd3_summarize_activity_logs",
             "alcomd3_summarize_technical_logs",
             "alcomd3_uninstall_project_package",
+            "alcomd3_update_project_template",
         ])
     );
+    let tool = tools
+        .iter()
+        .find(|tool| tool["name"] == "alcomd3_get_project_template")
+        .expect("alcomd3_get_project_template should be exposed");
+    assert_eq!(tool["annotations"]["readOnlyHint"], true);
+    assert_eq!(tool["annotations"]["destructiveHint"], false);
+    assert_eq!(tool["inputSchema"]["additionalProperties"], false);
+    assert!(tool["inputSchema"]["properties"]["template_id"].is_object());
+
+    let tool = tools
+        .iter()
+        .find(|tool| tool["name"] == "alcomd3_create_project_template")
+        .expect("alcomd3_create_project_template should be exposed");
+    assert_eq!(tool["annotations"]["readOnlyHint"], false);
+    assert_eq!(tool["annotations"]["destructiveHint"], false);
+    assert_eq!(tool["inputSchema"]["additionalProperties"], false);
+    for field in [
+        "display_name",
+        "base_template_id",
+        "unity_version_range",
+        "vpm_dependencies",
+        "unity_package_paths",
+    ] {
+        assert!(tool["inputSchema"]["properties"][field].is_object());
+    }
+
+    let tool = tools
+        .iter()
+        .find(|tool| tool["name"] == "alcomd3_update_project_template")
+        .expect("alcomd3_update_project_template should be exposed");
+    assert_eq!(tool["annotations"]["destructiveHint"], true);
+    assert_eq!(tool["inputSchema"]["additionalProperties"], false);
+    assert!(tool["inputSchema"]["properties"]["template_id"].is_object());
+
+    let tool = tools
+        .iter()
+        .find(|tool| tool["name"] == "alcomd3_remove_project_template")
+        .expect("alcomd3_remove_project_template should be exposed");
+    assert_eq!(tool["annotations"]["destructiveHint"], true);
+    assert_eq!(tool["inputSchema"]["additionalProperties"], false);
+    assert!(tool["inputSchema"]["properties"]["template_id"].is_object());
+
     let tool = tools
         .iter()
         .find(|tool| tool["name"] == "alcomd3_list_packages")
@@ -168,9 +215,17 @@ fn bridge_lists_project_tools() {
 
     assert_eq!(tool["annotations"]["readOnlyHint"], true);
     assert!(tool["inputSchema"]["properties"]["repository_id"].is_object());
-    assert!(tool["inputSchema"]["properties"]["repository_url"].is_object());
+    assert!(
+        tool["inputSchema"]["properties"]
+            .get("repository_url")
+            .is_none()
+    );
     assert!(tool["inputSchema"]["properties"]["offset"].is_object());
     assert!(tool["inputSchema"]["properties"]["limit"].is_object());
+    let required = tool["inputSchema"]["required"]
+        .as_array()
+        .expect("repository package list required fields should be an array");
+    assert!(required.contains(&json!("repository_id")));
 
     let tool = tools
         .iter()
@@ -183,6 +238,31 @@ fn bridge_lists_project_tools() {
     assert_eq!(tool["annotations"]["openWorldHint"], true);
     assert!(tool["inputSchema"]["properties"]["repository_url"].is_object());
     assert!(tool["inputSchema"]["properties"]["headers"].is_object());
+    assert!(
+        tool["inputSchema"]["properties"]
+            .get("repository_id")
+            .is_none()
+    );
+
+    let tool = tools
+        .iter()
+        .find(|tool| tool["name"] == "alcomd3_remove_repository")
+        .expect("alcomd3_remove_repository should be exposed");
+
+    assert_eq!(tool["annotations"]["readOnlyHint"], false);
+    assert_eq!(tool["annotations"]["destructiveHint"], true);
+    assert_eq!(tool["annotations"]["idempotentHint"], false);
+    assert_eq!(tool["annotations"]["openWorldHint"], false);
+    assert!(tool["inputSchema"]["properties"]["repository_url"].is_object());
+    assert!(
+        tool["inputSchema"]["properties"]
+            .get("repository_id")
+            .is_none()
+    );
+    let required = tool["inputSchema"]["required"]
+        .as_array()
+        .expect("remove repository required fields should be an array");
+    assert!(required.contains(&json!("repository_url")));
 
     let tool = tools
         .iter()
@@ -193,7 +273,11 @@ fn bridge_lists_project_tools() {
     assert!(tool["inputSchema"]["properties"]["package_name"].is_object());
     assert!(tool["inputSchema"]["properties"]["version"].is_object());
     assert!(tool["inputSchema"]["properties"]["repository_id"].is_object());
-    assert!(tool["inputSchema"]["properties"]["repository_url"].is_object());
+    assert!(
+        tool["inputSchema"]["properties"]
+            .get("repository_url")
+            .is_none()
+    );
 
     let tool = tools
         .iter()
@@ -644,6 +728,152 @@ fn bridge_forwards_http_calls_to_loopback_ipc_and_preserves_gui_errors() {
         bridge.try_wait().unwrap().is_none(),
         "bridge should stay alive after a GUI business error"
     );
+    drop(stdin);
+    bridge.kill().ok();
+    bridge.wait().ok();
+    fs::remove_dir_all(test_dir).ok();
+}
+
+#[test]
+fn bridge_forwards_project_template_crud_lifecycle_to_gui_ipc() {
+    let test_dir = std::env::temp_dir().join(format!(
+        "alcomd3-mcp-template-crud-{}",
+        Uuid::new_v4().simple()
+    ));
+    fs::create_dir_all(&test_dir).unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let endpoint_file = test_dir.join("endpoint.json");
+    let endpoint_token = "template-crud-test-token";
+    let metadata = EndpointMetadata {
+        protocol_version: IPC_PROTOCOL_VERSION,
+        transport: IpcTransport::Tcp,
+        host: "127.0.0.1".to_string(),
+        port,
+        token: endpoint_token.to_string(),
+        pid: std::process::id(),
+    };
+    fs::write(&endpoint_file, serde_json::to_vec(&metadata).unwrap()).unwrap();
+
+    let definition = json!({
+        "display_name": "Example Template",
+        "base_template_id": "com.vrchat.template.avatars",
+        "unity_version_range": "2022.3.x",
+        "vpm_dependencies": { "com.example.package": "^1.0.0" },
+        "unity_package_paths": [],
+    });
+    let mut update_definition = definition.clone();
+    update_definition["template_id"] = json!("com.example.template");
+    update_definition["display_name"] = json!("Updated Template");
+    let expected_requests = vec![
+        (
+            "list_project_templates",
+            json!({}),
+            json!({ "templates": [] }),
+        ),
+        (
+            "get_project_template",
+            json!({ "template_id": "com.example.template" }),
+            json!({ "template": { "id": "com.example.template", "displayName": "Example Template" } }),
+        ),
+        (
+            "create_project_template",
+            definition.clone(),
+            json!({ "template": { "id": "com.example.template", "displayName": "Example Template" } }),
+        ),
+        (
+            "update_project_template",
+            update_definition.clone(),
+            json!({ "template": { "id": "com.example.template", "displayName": "Updated Template" } }),
+        ),
+        (
+            "remove_project_template",
+            json!({ "template_id": "com.example.template" }),
+            json!({ "template": { "id": "com.example.template", "displayName": "Updated Template", "kind": "derived" } }),
+        ),
+    ];
+
+    let server = thread::spawn(move || {
+        let mut session_id = None;
+        for (method, params, result) in expected_requests {
+            let stream = accept_with_timeout(&listener);
+            stream
+                .set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
+            let mut reader = BufReader::new(stream);
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            let request: IpcRequest = serde_json::from_str(&line).unwrap();
+
+            assert_eq!(request.protocol_version, IPC_PROTOCOL_VERSION);
+            assert_eq!(request.token, endpoint_token);
+            assert_eq!(request.method, method);
+            assert_eq!(request.params, params);
+            if let Some(expected_session_id) = session_id {
+                assert_eq!(request.client.session_id, expected_session_id);
+            } else {
+                session_id = Some(request.client.session_id);
+            }
+
+            let response = IpcResponse::success(request.request_id, result);
+            let stream = reader.get_mut();
+            serde_json::to_writer(&mut *stream, &response).unwrap();
+            stream.write_all(b"\n").unwrap();
+            stream.flush().unwrap();
+        }
+    });
+
+    let (mut bridge, mut stdin, stdout) = start_bridge(&endpoint_file);
+    write_message(
+        &mut stdin,
+        &format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"initialize","params":{{"protocolVersion":"{CURRENT_MCP_PROTOCOL_VERSION}","capabilities":{{}},"clientInfo":{{"name":"template-crud-test","version":"1.0.0"}}}}}}"#
+        ),
+    );
+    assert_eq!(read_response(&stdout)["id"], 1);
+    write_message(
+        &mut stdin,
+        r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+    );
+
+    let calls = [
+        ("alcomd3_list_project_templates", json!({})),
+        (
+            "alcomd3_get_project_template",
+            json!({ "template_id": "com.example.template" }),
+        ),
+        ("alcomd3_create_project_template", definition),
+        ("alcomd3_update_project_template", update_definition),
+        (
+            "alcomd3_remove_project_template",
+            json!({ "template_id": "com.example.template" }),
+        ),
+    ];
+    for (index, (name, arguments)) in calls.into_iter().enumerate() {
+        let id = index + 2;
+        write_message(
+            &mut stdin,
+            &json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "method": "tools/call",
+                "params": { "name": name, "arguments": arguments },
+            })
+            .to_string(),
+        );
+        let response = read_response(&stdout);
+        assert_eq!(response["id"], id);
+        assert_eq!(response["result"]["isError"], false);
+        assert_eq!(response["result"]["structuredContent"]["ok"], true);
+    }
+
+    server.join().unwrap();
+    assert!(bridge.try_wait().unwrap().is_none());
     drop(stdin);
     bridge.kill().ok();
     bridge.wait().ok();

@@ -14,7 +14,7 @@ use crate::environment::{
 use crate::io::DefaultEnvironmentIo;
 use crate::package_manifest::LooseManifest;
 use crate::repository::RemoteRepository;
-use crate::utils::{normalize_path, try_load_json};
+use crate::utils::try_load_json;
 use crate::{UserRepoSetting, io};
 
 #[derive(Debug, Clone)]
@@ -26,7 +26,7 @@ pub struct Settings {
 
 impl Settings {
     pub async fn load(io: &DefaultEnvironmentIo) -> io::Result<Self> {
-        let settings = if let Some(settings) = VpmSettings::load(io).await? {
+        let mut settings = if let Some(settings) = VpmSettings::load(io).await? {
             settings
         } else if let Some(settings) = VpmSettings::load_alt(io).await? {
             log::warn!(
@@ -37,6 +37,13 @@ impl Settings {
         } else {
             VpmSettings::default()
         };
+
+        let discarded_repository_count = settings.discard_url_less_user_repositories();
+        if discarded_repository_count != 0 {
+            log::warn!(
+                "Discarded {discarded_repository_count} unsupported URL-less user repository entries"
+            );
+        }
 
         let vrc_get_settings = VrcGetSettings::load(io).await?;
 
@@ -190,7 +197,10 @@ impl Settings {
 
     pub fn can_add_remote_repo(&self, url: &Url, remote_repo: &RemoteRepository) -> bool {
         let user_repos = self.get_user_repos();
-        if user_repos.iter().any(|x| x.url() == Some(url)) {
+        if user_repos
+            .iter()
+            .any(|repository| repository.url() == Some(url))
+        {
             return false;
         }
         // should we check more urls?
@@ -203,7 +213,10 @@ impl Settings {
 
         if let Some(repo_id) = remote_repo.id() {
             // if there is id, check if there is already repo with same id
-            if user_repos.iter().any(|x| x.id() == Some(repo_id)) {
+            if user_repos
+                .iter()
+                .any(|repository| repository.id() == Some(repo_id))
+            {
                 return false;
             }
             if repo_id == OFFICIAL_REPOSITORY_ID && !self.vrc_get.ignore_official_repository() {
@@ -244,22 +257,6 @@ impl Settings {
         true
     }
 
-    pub fn add_local_repo(&mut self, path: &Path, name: Option<&str>) -> bool {
-        let path = normalize_path(path);
-
-        if self.get_user_repos().iter().any(|x| x.local_path() == path) {
-            return false;
-        }
-
-        self.vpm.add_user_repo(UserRepoSetting::new(
-            path.into(),
-            name.map(Into::into),
-            None,
-            None,
-        ));
-        true
-    }
-
     pub fn remove_repo(
         &mut self,
         condition: impl Fn(&UserRepoSetting) -> bool,
@@ -271,8 +268,8 @@ impl Settings {
         self.vpm.remove_user_repo_at_index(index)
     }
 
-    pub fn reorder_user_repos_by_indices(&mut self, indices: &[usize]) {
-        self.vpm.reorder_user_repos_by_indices(indices);
+    pub fn reorder_user_repos(&mut self, repository_urls: &[Url]) -> bool {
+        self.vpm.reorder_user_repos(repository_urls)
     }
 
     // auto configurations
@@ -317,7 +314,9 @@ impl Settings {
         let mut builder = String::new();
 
         for setting in self.get_user_repos() {
-            let Some(url) = setting.url() else { continue };
+            let url = setting
+                .url()
+                .expect("user repositories loaded by Settings must have a URL");
             if setting.headers().is_empty() {
                 writeln!(builder, "{url}").unwrap();
             } else {

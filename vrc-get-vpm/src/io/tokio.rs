@@ -5,7 +5,6 @@ use log::debug;
 #[cfg(feature = "vrc-get-litedb")]
 use std::ffi::OsStr;
 use std::ffi::OsString;
-use std::mem::forget;
 use std::path::Path;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -187,13 +186,13 @@ impl<T: TokioIoTraitImpl + Sync> IoTrait for T {
     async fn write_atomic(&self, path: &Path, content: &[u8]) -> io::Result<()> {
         let path = self.resolve(path)?;
         let (temp_path, mut temp) = make_temp(&path).await?;
-        let remove_on_drop = RemoveOnDrop { path: &temp_path };
+        let temp_path = tempfile::TempPath::try_from_path(temp_path)?;
         temp.write_all(content).await?;
         temp.flush().await?;
         temp.sync_data().await?;
         drop(temp);
-        forget(remove_on_drop);
-        fs::rename(&temp_path, path).await?;
+
+        temp_path.persist(path).map_err(|error| error.error)?;
         return Ok(());
 
         async fn make_temp(path: &Path) -> io::Result<(PathBuf, fs::File)> {
@@ -218,17 +217,6 @@ impl<T: TokioIoTraitImpl + Sync> IoTrait for T {
                 }
             }
             unreachable!("almost infinite loop")
-        }
-
-        struct RemoveOnDrop<'a> {
-            path: &'a Path,
-        }
-
-        impl<'a> Drop for RemoveOnDrop<'a> {
-            fn drop(&mut self) {
-                // ignore errors
-                std::fs::remove_file(self.path).ok();
-            }
         }
     }
 
@@ -342,6 +330,7 @@ impl super::DirEntry for DirEntry {
 mod tests {
     use super::*;
     use std::ffi::OsStr;
+    use uuid::Uuid;
 
     #[test]
     fn default_environment_io_uses_alcomd3_data_directory() {
@@ -357,5 +346,48 @@ mod tests {
         let root = io.resolve(Path::new(""));
 
         assert_eq!(root, alcomd3_app_paths::alcomd3_data_dir());
+    }
+
+    #[tokio::test]
+    async fn write_atomic_replaces_existing_file_without_temp_residue() {
+        let root = std::env::temp_dir().join(format!("vrc-get-io-{}", Uuid::new_v4().simple()));
+        fs::create_dir_all(&root).await.unwrap();
+        let io = DefaultEnvironmentIo::new(root.clone().into_boxed_path());
+        io.write(Path::new("settings.json"), b"old").await.unwrap();
+
+        io.write_atomic(Path::new("settings.json"), b"new")
+            .await
+            .unwrap();
+
+        assert_eq!(fs::read(root.join("settings.json")).await.unwrap(), b"new");
+        let entries = std::fs::read_dir(&root)
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(entries.len(), 1);
+        fs::remove_dir_all(root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn write_atomic_cleans_temp_file_when_replacement_fails() {
+        let root = std::env::temp_dir().join(format!("vrc-get-io-{}", Uuid::new_v4().simple()));
+        fs::create_dir_all(root.join("settings.json"))
+            .await
+            .unwrap();
+        let io = DefaultEnvironmentIo::new(root.clone().into_boxed_path());
+
+        assert!(
+            io.write_atomic(Path::new("settings.json"), b"new")
+                .await
+                .is_err()
+        );
+
+        let entries = std::fs::read_dir(&root)
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].file_type().unwrap().is_dir());
+        fs::remove_dir_all(root).await.unwrap();
     }
 }

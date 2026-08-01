@@ -58,8 +58,8 @@ export const commands = {
 	environmentSetHideLocalUserPackages: (value: boolean) => __TAURI_INVOKE<null>("environment_set_hide_local_user_packages", { value }),
 	environmentDownloadRepository: (url: string, headers: { [key in string]: string }) => __TAURI_INVOKE<TauriDownloadRepository>("environment_download_repository", { url, headers }),
 	environmentAddRepository: (url: string, headers: { [key in string]: string }) => __TAURI_INVOKE<TauriAddRepositoryResult>("environment_add_repository", { url, headers }),
-	environmentRemoveRepository: (index: number, expectedId: string) => __TAURI_INVOKE<null>("environment_remove_repository", { index, expectedId }),
-	environmentReorderRepositories: (repos: TauriUserRepositoryRef[]) => __TAURI_INVOKE<null>("environment_reorder_repositories", { repos }),
+	environmentRemoveRepository: (repositoryUrl: string) => __TAURI_INVOKE<null>("environment_remove_repository", { repositoryUrl }),
+	environmentReorderRepositories: (repositoryUrls: string[]) => __TAURI_INVOKE<null>("environment_reorder_repositories", { repositoryUrls }),
 	environmentImportRepositoryPick: () => __TAURI_INVOKE<TauriImportRepositoryPickResult>("environment_import_repository_pick"),
 	environmentImportDownloadRepositories: (channel: string, repositories: TauriRepositoryDescriptor[]) => __TAURI_INVOKE<AsyncCallResult<number, ([TauriRepositoryDescriptor, TauriDownloadRepository])[]>>("environment_import_download_repositories", { channel, repositories }),
 	environmentImportAddRepositories: (repositories: TauriRepositoryDescriptor[]) => __TAURI_INVOKE<null>("environment_import_add_repositories", { repositories }),
@@ -413,22 +413,20 @@ export type TauriImportDuplicated = TauriImportDuplicated_Serialize | TauriImpor
 
 export type TauriImportDuplicated_Deserialize = {
 	id: string,
-	existing_path: string,
+	source_path: string,
 	existing_name: string,
 	existing_update_date: string | null,
 	importing_name: string,
 	importing_update_date: string | null,
-	data: string,
 };
 
 export type TauriImportDuplicated_Serialize = {
 	id: string,
-	existing_path: string,
+	source_path: string,
 	existing_name: string,
 	existing_update_date: string | null,
 	importing_name: string,
 	importing_update_date: string | null,
-	data: string,
 };
 
 export type TauriImportRepositoryPickResult = { type: "NoFilePicked" } | { type: "ParsedRepositories"; repositories: TauriRepositoryDescriptor[]; unparsable_lines: string[] };
@@ -648,15 +646,9 @@ export type TauriUserPackage = {
 };
 
 export type TauriUserRepository = {
-	index: number,
 	id: string,
-	url: string | null,
+	url: string,
 	display_name: string,
-};
-
-export type TauriUserRepositoryRef = {
-	index: number,
-	id: string,
 };
 
 export type TauriVersion = {

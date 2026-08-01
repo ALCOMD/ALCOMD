@@ -6,7 +6,9 @@ use crate::io::DefaultEnvironmentIo;
 use crate::utils::{save_json, try_load_json};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use url::Url;
 
 type JsonObject = Map<String, Value>;
 
@@ -182,21 +184,39 @@ impl VpmSettings {
         }
     }
 
-    pub fn reorder_user_repos_by_indices(&mut self, indices: &[usize]) {
-        let mut pool: Vec<Option<UserRepoSetting>> = std::mem::take(&mut self.parsed.user_repos)
-            .into_iter()
-            .map(Some)
-            .collect();
-        let mut result = Vec::with_capacity(pool.len());
-        for &idx in indices {
-            if let Some(slot) = pool.get_mut(idx)
-                && let Some(repo) = slot.take()
-            {
-                result.push(repo);
-            }
+    pub(crate) fn discard_url_less_user_repositories(&mut self) -> usize {
+        let previous_count = self.parsed.user_repos.len();
+        self.parsed
+            .user_repos
+            .retain(|repository| repository.url().is_some());
+        previous_count - self.parsed.user_repos.len()
+    }
+
+    pub fn reorder_user_repos(&mut self, repository_urls: &[Url]) -> bool {
+        if self.parsed.user_repos.len() != repository_urls.len() {
+            return false;
         }
-        result.extend(pool.into_iter().flatten());
-        self.parsed.user_repos = result;
+
+        let mut seen = HashSet::with_capacity(repository_urls.len());
+        let mut reordered = Vec::with_capacity(repository_urls.len());
+        for repository_url in repository_urls {
+            if !seen.insert(repository_url) {
+                return false;
+            }
+            let Some(repository) = self
+                .parsed
+                .user_repos
+                .iter()
+                .find(|repository| repository.url() == Some(repository_url))
+                .cloned()
+            else {
+                return false;
+            };
+            reordered.push(repository);
+        }
+
+        self.parsed.user_repos = reordered;
+        true
     }
 
     pub(crate) fn add_user_repo(&mut self, repo: UserRepoSetting) {
@@ -333,5 +353,82 @@ mod tests {
         assert_eq!(settings.default_project_path(), Some("C:/current/projects"));
         assert_eq!(settings.project_backup_path(), Some("C:/current/backups"));
         remove_temp_environment(root).await;
+    }
+
+    fn repository(path: &str, url: Option<&str>) -> UserRepoSetting {
+        UserRepoSetting::new(
+            PathBuf::from(path).into_boxed_path(),
+            None,
+            url.map(|url| Url::parse(url).unwrap()),
+            None,
+        )
+    }
+
+    #[test]
+    fn url_less_user_repositories_are_discarded() {
+        let mut settings = VpmSettings::default();
+        settings.add_user_repo(repository(
+            "Repos/first.json",
+            Some("https://example.com/first.json"),
+        ));
+        settings.add_user_repo(repository("Repos/local.json", None));
+
+        assert_eq!(settings.discard_url_less_user_repositories(), 1);
+        assert_eq!(settings.user_repos().len(), 1);
+        assert_eq!(
+            settings.user_repos()[0].local_path(),
+            Path::new("Repos/first.json")
+        );
+    }
+
+    #[test]
+    fn user_repository_reorder_uses_urls() {
+        let mut settings = VpmSettings::default();
+        settings.add_user_repo(repository(
+            "Repos/first.json",
+            Some("https://example.com/first.json"),
+        ));
+        settings.add_user_repo(repository(
+            "Repos/second.json",
+            Some("https://example.com/second.json"),
+        ));
+
+        assert!(settings.reorder_user_repos(&[
+            Url::parse("https://example.com/second.json").unwrap(),
+            Url::parse("https://example.com/first.json").unwrap(),
+        ]));
+
+        let paths = settings
+            .user_repos()
+            .iter()
+            .map(|repository| repository.local_path())
+            .collect::<Vec<_>>();
+        assert_eq!(paths[0], Path::new("Repos/second.json"));
+        assert_eq!(paths[1], Path::new("Repos/first.json"));
+    }
+
+    #[test]
+    fn remote_repository_reorder_rejects_missing_and_duplicate_urls() {
+        let mut settings = VpmSettings::default();
+        settings.add_user_repo(repository(
+            "Repos/first.json",
+            Some("https://example.com/first.json"),
+        ));
+        settings.add_user_repo(repository(
+            "Repos/second.json",
+            Some("https://example.com/second.json"),
+        ));
+        let first = Url::parse("https://example.com/first.json").unwrap();
+
+        assert!(!settings.reorder_user_repos(std::slice::from_ref(&first)));
+        assert!(!settings.reorder_user_repos(&[first.clone(), first]));
+        assert_eq!(
+            settings.user_repos()[0].local_path(),
+            Path::new("Repos/first.json")
+        );
+        assert_eq!(
+            settings.user_repos()[1].local_path(),
+            Path::new("Repos/second.json")
+        );
     }
 }

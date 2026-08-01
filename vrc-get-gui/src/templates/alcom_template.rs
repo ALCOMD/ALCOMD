@@ -307,7 +307,7 @@ fn is_valid_id(id: &str) -> bool {
     }
 }
 
-fn is_valid_base_id(id: &str) -> bool {
+pub(crate) fn is_valid_base_id(id: &str) -> bool {
     !(id.starts_with(UNNAMED_TEMPLATE_PREFIX) || id.starts_with(VCC_TEMPLATE_PREFIX))
 }
 

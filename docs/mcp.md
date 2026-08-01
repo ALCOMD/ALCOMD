@@ -42,11 +42,11 @@ for a configuration example and lifecycle details.
   until the user enables it again on the MCP page.
 - Current tools include read-only project, project template, repository, package, environment,
   activity log, and technical log tools, plus limited write tools: create a
-  project, add an existing project, add a VPM repository, back up a registered
+  project, create/update/remove a project template, add an existing project,
+  add or remove a user VPM repository, back up a registered
   project, copy a registered project, restore a project from a zip backup, and
   install/uninstall/reinstall one package in a registered project. Other write
-  operations such as repository deletion, repository reorder, and project
-  deletion are not exposed.
+  operations such as repository reorder and project deletion are not exposed.
 - The GUI starts and owns the local Streamable HTTP server while the MCP
   extension is enabled. Closing the GUI or disabling the extension stops that
   server.
@@ -298,13 +298,18 @@ tool result includes `isError: true`.
 | Tool | Arguments | Description |
 | --- | --- | --- |
 | `alcomd3_list_projects` | `{}` | Lists projects registered in ALCOMD3. |
-| `alcomd3_list_project_templates` | `{}` | Lists current project templates with IDs, supported Unity versions, availability, update date, and template feature flags. Use a returned `id` and `unityVersions` value with `alcomd3_create_project`. Template source paths are not exposed. |
+| `alcomd3_list_project_templates` | `{}` | Lists current project templates with IDs, supported Unity versions, availability, update date, kind, and the `editable`, `removable`, and `usableAsBase` capability flags. Use a returned `id` and `unityVersions` value with `alcomd3_create_project`. Template source paths are not exposed. |
+| `alcomd3_get_project_template` | `{ "template_id": string }` | Reads one template selected by its stable ID. Derived template details include `displayName`, `baseTemplateId`, `unityVersionRange`, `vpmDependencies`, and `unityPackagePaths`. |
+| `alcomd3_create_project_template` | `{ "display_name": string, "base_template_id": string, "unity_version_range": string, "vpm_dependencies": object<string, string>, "unity_package_paths": string[] }` | Creates a derived template with a backend-generated persistent ID. The base must exist and be usable as a base, version ranges must parse, and Unity package paths must be existing absolute `.unitypackage` files. |
+| `alcomd3_update_project_template` | `{ "template_id": string, "display_name": string, "base_template_id": string, "unity_version_range": string, "vpm_dependencies": object<string, string>, "unity_package_paths": string[] }` | Replaces the complete editable definition while preserving the template ID and storage location. Built-in and project archive templates are not field-editable. |
+| `alcomd3_remove_project_template` | `{ "template_id": string }` | Moves a removable derived or project archive template to the system trash and returns its ID, name, and kind. Referenced Unity package files are not deleted. |
 | `alcomd3_get_project_details` | `{ "project_path": string }` | Gets details and installed package summary for a registered project. `project_path` must match a project registered in ALCOMD3. |
-| `alcomd3_list_repositories` | `{}` | Lists current remote repositories and display settings. `repositories` includes official defaults, Curated defaults, and user repositories; `userRepositories` remains as a user-repository-only compatibility field. |
-| `alcomd3_add_repository` | `{ "repository_url": string, "headers"?: object }` | Downloads and validates a VPM repository URL, adds it as a user repository, and clears package cache so later loads refresh. Success returns the added `repository` summary; activity logs store only a redacted URL and header count, not header values. |
-| `alcomd3_get_package_details` | `{ "package_name": string, "version"?: string, "repository_id"?: string, "repository_url"?: string }` | Gets detailed metadata for a GUI-visible package. `package_name` is required; `version` and repository selection fields can narrow the result to one version or source. |
+| `alcomd3_list_repositories` | `{}` | Lists current remote repositories and display settings. `repositories` includes official defaults, Curated defaults, and remote user repositories; `userRepositories` remains as a remote-user-repository-only compatibility field. Use a returned `id` for package-reading tools and a returned user-repository `url` for removal. |
+| `alcomd3_add_repository` | `{ "repository_url": string, "headers"?: object }` | Downloads and validates a VPM repository URL, adds it as a user repository, and clears package cache so later loads refresh. Duplicate stored URLs or declared repository IDs are rejected. Success returns the added `repository` summary; use its `url` for later removal. Activity logs store only a redacted URL and header count, not header values. |
+| `alcomd3_remove_repository` | `{ "repository_url": string }` | Removes exactly one user-added repository selected by its stored URL and clears package cache. Official and Curated default repositories cannot be removed. |
+| `alcomd3_get_package_details` | `{ "package_name": string, "version"?: string, "repository_id"?: string }` | Gets detailed metadata for a GUI-visible package. `package_name` is required; `version` and `repository_id` can narrow the result to one version or source. |
 | `alcomd3_list_packages` | `{ "offset"?: number, "limit"?: number }` | Paginates lightweight summaries of GUI-default-visible packages. Within one source, each package name returns only the latest visible version, with `source.kind` set to `officialDefault`, `curatedDefault`, `userRepository`, or `localUser`. MCP does not server-side search; clients or Agents should filter returned rows. |
-| `alcomd3_list_repository_packages` | `{ "repository_id"?: string, "repository_url"?: string, "offset"?: number, "limit"?: number }` | Paginates lightweight GUI-visible package summaries for one repository. Within that repository, each package name returns only the latest visible version. Call `alcomd3_list_repositories` first to get `id` or `url`, then pass one of those fields. |
+| `alcomd3_list_repository_packages` | `{ "repository_id": string, "offset"?: number, "limit"?: number }` | Paginates lightweight GUI-visible package summaries for one repository. Within that repository, each package name returns only the latest visible version. Call `alcomd3_list_repositories` first and pass its returned `id`. |
 | `alcomd3_get_environment_settings` | `{}` | Reads an environment settings summary, including added Unity installs, default Unity launch arguments, default project path, and backup path. |
 | `alcomd3_search_activity_logs` | `{ "search"?: string, "sources"?: string[], "kinds"?: string[], "statuses"?: string[], "visibility"?: "important" \| "primary" \| "secondary" \| "technical" \| "all", "operations"?: string[], "tool_names"?: string[], "request_id"?: string, "target"?: string, "since"?: string, "until"?: string, "offset"?: number, "limit"?: number, "order"?: "newest" \| "oldest" }` | Paginates user-readable activity log summaries. By default it returns only important activity; `limit` defaults to 50 and maxes at 200. |
 | `alcomd3_get_activity_log_entry` | `{ "id": string, "include_details"?: boolean }` | Reads one full activity log entry by id. Details do not include raw MCP params, URL query, or URL userinfo; local paths remain complete for diagnostics. |
@@ -321,6 +326,12 @@ tool result includes `isError: true`.
 | `alcomd3_install_project_package` | `{ "project_path": string, "package_name": string, "version_selector": { "type": "latest_gui_visible" } \| { "type": "exact", "version": string }, "source"?: { "repository_id"?: string, "repository_url"?: string }, "allow_conflicts"?: boolean }` | Installs one GUI-visible package compatible with the project's Unity version into a registered project. `latest_gui_visible` uses the same visible package, source priority, and pre-release settings as the GUI backend; `exact` must still match a GUI-visible version. Conflicts or legacy file/folder deletion block by default. |
 | `alcomd3_uninstall_project_package` | `{ "project_path": string, "package_name": string, "allow_conflicts"?: boolean }` | Uninstalls one installed package from a registered project. Conflicts or legacy file/folder deletion block by default. |
 | `alcomd3_reinstall_project_package` | `{ "project_path": string, "package_name": string, "allow_conflicts"?: boolean }` | Reinstalls one installed package in a registered project. Conflicts or legacy file/folder deletion block by default. |
+
+Template tool argument objects reject unknown fields. Built-in templates are read-only;
+project archive templates can be read and removed but not field-edited. Creating or
+updating a derived template rejects self-reference and base-template dependency cycles.
+MCP does not expose template import or export; those remain GUI file-picker workflows.
+Template writes reference Unity package attachments without copying or deleting them.
 
 ### Log Query Tools
 
@@ -431,6 +442,15 @@ Results follow GUI pre-release, hidden repository, hidden local user package,
 and yanked filters. MCP tool calls do not server-side search. Adding a
 repository requires an explicit `alcomd3_add_repository` call; list tools never
 implicitly add repositories or redesign repository refresh behavior.
+
+Repository parameters have distinct roles. Package-reading tools select a
+repository by the `id` returned from `alcomd3_list_repositories`. Adding and
+removing a user repository use its stored URL, so removal directly mirrors the
+add input and never applies to built-in default repositories. Duplicate checks
+still cover both stored URLs and publisher-declared repository IDs. The GUI uses
+the same shared URL-based backend for add, remove, and reorder. Local
+repositories are unsupported: URL-less user-repository entries are discarded
+when settings are loaded, and no local-repository creation path is provided.
 
 The GUI project-management package table is generated by the backend from
 same-name package merge logic. MCP package lists, package details, and project

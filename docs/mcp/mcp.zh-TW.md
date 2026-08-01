@@ -30,8 +30,8 @@ server；`alcomd3-mcp` 再透過 GUI 暴露的獨立私有 IPC endpoint 請求�
   移除 MCP，並取消仍由 GUI 管理的 MCP 專案任務。重新啟用擴充功能會立即完成開關
   操作，並在背景恢復 endpoint；MCP 存取仍保持停用，直到使用者再次在 MCP 頁面主動啟用。
 - 目前提供專案、專案範本、倉庫、軟體包和環境設定唯讀工具，以及有限寫工具：新建專案、
-  新增既有專案、新增 VPM 倉庫、備份已登錄專案、複製已登錄專案、從 zip 備份還原專案、
-  為已登錄專案安裝/解除安裝/重新安裝單一軟體包。不提供倉庫刪除、倉庫重新排序、專案刪除等其他寫操作。
+  建立/更新/刪除專案範本、新增既有專案、新增或刪除使用者 VPM 倉庫、備份已登錄專案、複製已登錄專案、從 zip 備份還原專案、
+  為已登錄專案安裝/解除安裝/重新安裝單一軟體包。不提供倉庫重新排序、專案刪除等其他寫操作。
 - MCP 擴充功能啟用時，GUI 負責啟動和管理本機 Streamable HTTP server；關閉 GUI 或
   關閉 MCP 擴充功能時都會停止該 server。
 - GUI 的私有 IPC endpoint 不可用時，tool call 傳回結構化 `alcomd3_unavailable` 錯誤，
@@ -248,13 +248,18 @@ GUI 會驗證 `protocolVersion` 和 `token`。驗證失敗會傳回業務錯誤�
 | Tool | 參數 | 說明 |
 | --- | --- | --- |
 | `alcomd3_list_projects` | `{}` | 列出 ALCOMD3 已登錄專案。 |
-| `alcomd3_list_project_templates` | `{}` | 列出目前專案範本的 ID、支援的 Unity 版本、可用狀態、更新時間和範本特徵。可將傳回的 `id` 與 `unityVersions` 值用於 `alcomd3_create_project`。不會公開範本來源檔案路徑。 |
+| `alcomd3_list_project_templates` | `{}` | 列出目前專案範本的 ID、支援的 Unity 版本、可用狀態、更新時間、類型，以及 `editable`、`removable`、`usableAsBase` 能力標誌。可將傳回的 `id` 與 `unityVersions` 值用於 `alcomd3_create_project`。不會公開範本來源檔案路徑。 |
+| `alcomd3_get_project_template` | `{ "template_id": string }` | 使用穩定範本 ID 選取並讀取一個範本。衍生範本詳細資料包含 `displayName`、`baseTemplateId`、`unityVersionRange`、`vpmDependencies` 和 `unityPackagePaths`。 |
+| `alcomd3_create_project_template` | `{ "display_name": string, "base_template_id": string, "unity_version_range": string, "vpm_dependencies": object<string, string>, "unity_package_paths": string[] }` | 建立衍生範本並由後端產生持久 ID。基礎範本必須存在且可作為基礎範本，版本範圍必須可解析，Unity 套件路徑必須是已存在的絕對 `.unitypackage` 一般檔案。 |
+| `alcomd3_update_project_template` | `{ "template_id": string, "display_name": string, "base_template_id": string, "unity_version_range": string, "vpm_dependencies": object<string, string>, "unity_package_paths": string[] }` | 整體取代可編輯範本定義，同時保持範本 ID 和儲存位置不變。內建範本和專案封存範本不可進行欄位級編輯。 |
+| `alcomd3_remove_project_template` | `{ "template_id": string }` | 將可刪除的衍生範本或專案封存範本移入系統資源回收筒，並傳回其 ID、名稱和類型。不會刪除引用的 Unity 套件檔案。 |
 | `alcomd3_get_project_details` | `{ "project_path": string }` | 取得已登錄專案詳細資料和已安裝包摘要。`project_path` 必須符合 ALCOMD3 已登錄專案。 |
-| `alcomd3_list_repositories` | `{}` | 列出 ALCOMD3 目前遠端倉庫和相關顯示設定。`repositories` 包含官方預設、Curated 預設和使用者倉庫；`userRepositories` 保留為僅使用者倉庫的相容欄位。 |
-| `alcomd3_add_repository` | `{ "repository_url": string, "headers"?: object }` | 下載並驗證指定 VPM 倉庫 URL，成功後作為使用者倉庫加入 ALCOMD3，並清除軟體包快取以便後續重新載入。成功時傳回新增的 `repository` 摘要；活動記錄只儲存脫敏 URL 和 header 數量，不儲存 header 值。 |
-| `alcomd3_get_package_details` | `{ "package_name": string, "version"?: string, "repository_id"?: string, "repository_url"?: string }` | 取得 GUI 可見軟體包的詳細元資料。`package_name` 必填；`version` 和倉庫選擇欄位可用於縮小到某個具體包版本或來源。 |
+| `alcomd3_list_repositories` | `{}` | 列出 ALCOMD3 目前遠端倉庫和相關顯示設定。`repositories` 包含官方預設、Curated 預設和遠端使用者倉庫；`userRepositories` 保留為僅遠端使用者倉庫的相容欄位。軟體包讀取工具使用傳回的 `id`，刪除使用使用者倉庫的 `url`。 |
+| `alcomd3_add_repository` | `{ "repository_url": string, "headers"?: object }` | 下載並驗證指定 VPM 倉庫 URL，成功後作為使用者倉庫加入 ALCOMD3，並清除軟體包快取以便後續重新載入。重複的已存 URL 或倉庫宣告 ID 會被拒絕。成功時傳回新增的 `repository` 摘要；後續刪除應使用其中的 `url`。活動記錄只儲存脫敏 URL 和 header 數量，不儲存 header 值。 |
+| `alcomd3_remove_repository` | `{ "repository_url": string }` | 依已存 URL 精確刪除一個使用者新增的倉庫並清除軟體包快取。不能刪除官方和 Curated 預設倉庫。 |
+| `alcomd3_get_package_details` | `{ "package_name": string, "version"?: string, "repository_id"?: string }` | 取得 GUI 可見軟體包的詳細元資料。`package_name` 必填；`version` 和 `repository_id` 可用於縮小到某個具體包版本或來源。 |
 | `alcomd3_list_packages` | `{ "offset"?: number, "limit"?: number }` | 分頁列出 GUI 預設可見的軟體包輕量摘要；同一來源內同一包名只傳回最新可見版本，並在 `source.kind` 中標明 `officialDefault`、`curatedDefault`、`userRepository` 或 `localUser`。MCP 不做伺服器端搜尋，client 或 Agent 應自行篩選傳回結果。 |
-| `alcomd3_list_repository_packages` | `{ "repository_id"?: string, "repository_url"?: string, "offset"?: number, "limit"?: number }` | 依指定倉庫分頁列出 GUI 可見的軟體包輕量摘要；同一倉庫內同一包名只傳回最新可見版本。先呼叫 `alcomd3_list_repositories` 取得倉庫 `id` 或 `url`，再傳入其中一個欄位。 |
+| `alcomd3_list_repository_packages` | `{ "repository_id": string, "offset"?: number, "limit"?: number }` | 依指定倉庫分頁列出 GUI 可見的軟體包輕量摘要；同一倉庫內同一包名只傳回最新可見版本。應先呼叫 `alcomd3_list_repositories` 並傳入傳回的 `id`。 |
 | `alcomd3_get_environment_settings` | `{}` | 讀取 ALCOMD3 環境設定摘要，包括已新增的 Unity 安裝、預設 Unity 啟動參數、預設專案路徑和備份路徑。 |
 | `alcomd3_search_activity_logs` | `{ "search"?: string, "sources"?: string[], "kinds"?: string[], "statuses"?: string[], "visibility"?: "important" \| "primary" \| "secondary" \| "technical" \| "all", "operations"?: string[], "tool_names"?: string[], "request_id"?: string, "target"?: string, "since"?: string, "until"?: string, "offset"?: number, "limit"?: number, "order"?: "newest" \| "oldest" }` | 分頁搜尋使用者可讀活動記錄摘要。預設只傳回關鍵活動，`limit` 預設 50、最大 200。 |
 | `alcomd3_get_activity_log_entry` | `{ "id": string, "include_details"?: boolean }` | 依活動記錄 id 讀取單筆完整活動記錄。詳細資料不包含 MCP 原始 params、URL query 或 URL userinfo；本機路徑會保留完整值以便排障。 |
@@ -271,6 +276,10 @@ GUI 會驗證 `protocolVersion` 和 `token`。驗證失敗會傳回業務錯誤�
 | `alcomd3_install_project_package` | `{ "project_path": string, "package_name": string, "version_selector": { "type": "latest_gui_visible" } \| { "type": "exact", "version": string }, "source"?: { "repository_id"?: string, "repository_url"?: string }, "allow_conflicts"?: boolean }` | 向已登錄專案安裝一個 GUI 可見且與專案 Unity 版本相容的軟體包。`latest_gui_visible` 使用後端與 GUI 相同的可見包、來源優先順序和預發布設定；`exact` 仍必須符合 GUI 可見版本。衝突或 legacy 檔案/資料夾刪除預設阻擋。 |
 | `alcomd3_uninstall_project_package` | `{ "project_path": string, "package_name": string, "allow_conflicts"?: boolean }` | 從已登錄專案解除安裝一個已安裝軟體包。衝突或 legacy 檔案/資料夾刪除預設阻擋。 |
 | `alcomd3_reinstall_project_package` | `{ "project_path": string, "package_name": string, "allow_conflicts"?: boolean }` | 在已登錄專案中重新安裝一個已安裝軟體包。衝突或 legacy 檔案/資料夾刪除預設阻擋。 |
+
+範本工具的參數物件拒絕未知欄位。內建範本唯讀；專案封存範本可讀取和刪除，但不可進行欄位級編輯。
+建立或更新衍生範本時會拒絕自我參照和基礎範本相依環。MCP 不提供範本匯入或匯出，這兩項仍是
+GUI 檔案選擇器工作流程。範本寫入操作只引用 Unity 套件附件，不會複製或刪除附件。
 
 ### 日誌查詢工具
 
@@ -354,6 +363,8 @@ GUI 設定的預設專案目錄。`project_name` 只允許是單一合法資料�
 `alcomd3_list_packages` 和 `alcomd3_list_repository_packages` 使用與 GUI 軟體包頁相同的包狀態載入路徑，不呼叫強制重新整理路徑。
 傳回結果會遵循 GUI 中的預發布、隱藏倉庫、隱藏本機使用者包和 yanked 篩選規則。MCP tool call
 不做伺服器端搜尋。新增倉庫必須明確呼叫 `alcomd3_add_repository`；列表工具不會隱式新增倉庫或重構倉庫重新整理策略。
+
+倉庫參數的用途彼此分離：軟體包讀取工具使用 `alcomd3_list_repositories` 傳回的 `id` 選擇倉庫；使用者倉庫的新增和刪除使用已存 URL，因此刪除輸入與新增輸入直接對應，並且不會作用於內建預設倉庫。重複檢查仍同時涵蓋已存 URL 和倉庫發佈者宣告的 ID。GUI 的新增、刪除和重新排序也使用同一個以 URL 為基礎的共享後端。不支援本機倉庫：載入設定時會捨棄無 URL 的使用者倉庫項目，也不提供本機倉庫建立路徑。
 
 GUI 專案管理頁的軟體包表由後端合併同名包產生。MCP 的包列表、包詳細資料和專案包安裝選擇使用同一套後端規則：
 

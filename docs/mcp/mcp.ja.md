@@ -26,7 +26,7 @@ port を推測せず、GUI に表示される endpoint を使用してくださ�
 - MCP は既定で無効です。新しい tool call が ALCOMD3 data を読み書きするには、GUI で手動で有効化する必要があります。
 - MCP extension が enabled の間、GUI は local IPC endpoint と Streamable HTTP endpoint を起動します。MCP page での MCP の有効/無効は tool data access を制御するだけで、これらの endpoint は停止しません。
 - Extensions page で MCP extension を disabled にすると、MCP access を取り消し、両方の endpoint を停止し、MCP を sidebar から削除して、GUI が管理中の MCP project task を cancel します。extension を再度 enabled にする switch operation はすぐに完了し、endpoint は background で再起動しますが、MCP page で user が再度有効化するまで MCP access は無効のままです。
-- 現在は project、project template、repository、package、environment、activity log、technical log の read-only tools と、限定的な write tools を提供します。write tools は project 作成、existing project 追加、VPM repository 追加、registered project の backup、registered project の copy、zip backup からの restore、registered project への package install/uninstall/reinstall です。repository 削除、repository 並べ替え、project 削除などの他の write operation は提供しません。
+- 現在は project、project template、repository、package、environment、activity log、technical log の read-only tools と、限定的な write tools を提供します。write tools は project 作成、project template の作成/更新/削除、existing project 追加、user VPM repository の追加/削除、registered project の backup、registered project の copy、zip backup からの restore、registered project への package install/uninstall/reinstall です。repository 並べ替え、project 削除などの他の write operation は提供しません。
 - MCP extension が enabled の間、GUI が local Streamable HTTP server を起動して管理します。GUI 終了時または extension の無効化時には server も停止します。
 - GUI の private IPC endpoint が利用できない場合、tool call は structured `alcomd3_unavailable` error を返し、MCP tool result に `isError: true` を付けます。
 - bridge は GUI を起動しません。MCP tool の使用中は ALCOMD3 を起動したままにする必要があります。
@@ -226,13 +226,18 @@ GUI は `protocolVersion` と `token` を検証します。検証失敗時は bu
 | Tool | Arguments | 説明 |
 | --- | --- | --- |
 | `alcomd3_list_projects` | `{}` | ALCOMD3 に登録済みの projects を列出します。 |
-| `alcomd3_list_project_templates` | `{}` | 現在の project template について、ID、対応 Unity version、利用可否、更新日時、template feature flags を列出します。返された `id` と `unityVersions` の値を `alcomd3_create_project` に渡せます。template source path は公開しません。 |
+| `alcomd3_list_project_templates` | `{}` | 現在の project template について、ID、対応 Unity version、利用可否、更新日時、kind、`editable`、`removable`、`usableAsBase` capability flags を列出します。返された `id` と `unityVersions` の値を `alcomd3_create_project` に渡せます。template source path は公開しません。 |
+| `alcomd3_get_project_template` | `{ "template_id": string }` | stable template ID で template を選択して読み取ります。derived template の detail は `displayName`、`baseTemplateId`、`unityVersionRange`、`vpmDependencies`、`unityPackagePaths` を含みます。 |
+| `alcomd3_create_project_template` | `{ "display_name": string, "base_template_id": string, "unity_version_range": string, "vpm_dependencies": object<string, string>, "unity_package_paths": string[] }` | backend-generated persistent ID を持つ derived template を作成します。base template は存在し base として利用可能で、version range は parse でき、Unity package path は既存の absolute `.unitypackage` regular file である必要があります。 |
+| `alcomd3_update_project_template` | `{ "template_id": string, "display_name": string, "base_template_id": string, "unity_version_range": string, "vpm_dependencies": object<string, string>, "unity_package_paths": string[] }` | template ID と storage location を維持したまま、editable definition 全体を置換します。built-in template と project archive template は field edit できません。 |
+| `alcomd3_remove_project_template` | `{ "template_id": string }` | removable な derived template または project archive template を system trash に移動し、ID、name、kind を返します。参照された Unity package file は削除しません。 |
 | `alcomd3_get_project_details` | `{ "project_path": string }` | 登録済み project の詳細と installed package summary を取得します。`project_path` は ALCOMD3 に登録済みの project と一致する必要があります。 |
-| `alcomd3_list_repositories` | `{}` | 現在の remote repositories と表示設定を列出します。`repositories` には official default、Curated default、user repository が含まれます。`userRepositories` は user repository のみの互換 field です。 |
-| `alcomd3_add_repository` | `{ "repository_url": string, "headers"?: object }` | 指定した VPM repository URL を download/validate し、user repository として追加し、package cache を clear します。成功時は追加された `repository` summary を返します。activity log は redacted URL と header count だけを保存し、header value は保存しません。 |
-| `alcomd3_get_package_details` | `{ "package_name": string, "version"?: string, "repository_id"?: string, "repository_url"?: string }` | GUI-visible package の詳細 metadata を取得します。`package_name` は必須です。`version` と repository selection field で version/source を絞れます。 |
+| `alcomd3_list_repositories` | `{}` | 現在の remote repositories と表示設定を列出します。`repositories` には official default、Curated default、remote user repository が含まれます。`userRepositories` は remote user repository のみの互換 field です。package read tool には返された `id`、削除には user repository の `url` を使います。 |
+| `alcomd3_add_repository` | `{ "repository_url": string, "headers"?: object }` | 指定した VPM repository URL を download/validate し、user repository として追加し、package cache を clear します。同じ stored URL または declared repository ID は拒否します。成功時は追加された `repository` summary を返し、その `url` を後続の remove operation に使用できます。activity log は redacted URL と header count だけを保存し、header value は保存しません。 |
+| `alcomd3_remove_repository` | `{ "repository_url": string }` | stored URL で user-added repository を 1 件だけ削除し、package cache を clear します。Official/Curated default repository は削除できません。 |
+| `alcomd3_get_package_details` | `{ "package_name": string, "version"?: string, "repository_id"?: string }` | GUI-visible package の詳細 metadata を取得します。`package_name` は必須です。`version` と `repository_id` で version/source を絞れます。 |
 | `alcomd3_list_packages` | `{ "offset"?: number, "limit"?: number }` | GUI default-visible packages の lightweight summary を paging します。同一 source 内の同一 package name は最新 visible version のみ返し、`source.kind` は `officialDefault`、`curatedDefault`、`userRepository`、`localUser` のいずれかです。MCP は server-side search を行わないため、client/Agent 側で filter してください。 |
-| `alcomd3_list_repository_packages` | `{ "repository_id"?: string, "repository_url"?: string, "offset"?: number, "limit"?: number }` | 指定 repository の GUI-visible package summary を paging します。同一 repository 内の同一 package name は最新 visible version のみ返します。先に `alcomd3_list_repositories` で `id` または `url` を取得し、どちらかを渡してください。 |
+| `alcomd3_list_repository_packages` | `{ "repository_id": string, "offset"?: number, "limit"?: number }` | 指定 repository の GUI-visible package summary を paging します。同一 repository 内の同一 package name は最新 visible version のみ返します。先に `alcomd3_list_repositories` を呼び、返された `id` を渡してください。 |
 | `alcomd3_get_environment_settings` | `{}` | Unity installs、default Unity launch arguments、default project path、backup path を含む environment settings summary を読み取ります。 |
 | `alcomd3_search_activity_logs` | `{ "search"?: string, "sources"?: string[], "kinds"?: string[], "statuses"?: string[], "visibility"?: "important" \| "primary" \| "secondary" \| "technical" \| "all", "operations"?: string[], "tool_names"?: string[], "request_id"?: string, "target"?: string, "since"?: string, "until"?: string, "offset"?: number, "limit"?: number, "order"?: "newest" \| "oldest" }` | user-readable activity log summary を paging search します。default は important activity のみ、`limit` default は 50、max は 200 です。 |
 | `alcomd3_get_activity_log_entry` | `{ "id": string, "include_details"?: boolean }` | activity log entry を id で 1 件読み取ります。detail は raw MCP params、URL query、URL userinfo を含みません。local path は診断用に完全値を保持します。 |
@@ -249,6 +254,12 @@ GUI は `protocolVersion` と `token` を検証します。検証失敗時は bu
 | `alcomd3_install_project_package` | `{ "project_path": string, "package_name": string, "version_selector": { "type": "latest_gui_visible" } \| { "type": "exact", "version": string }, "source"?: { "repository_id"?: string, "repository_url"?: string }, "allow_conflicts"?: boolean }` | registered project に、project の Unity version と互換性がある GUI-visible package を 1 つ install します。`latest_gui_visible` は GUI backend と同じ visible package、source priority、pre-release settings を使います。`exact` も GUI-visible version と一致する必要があります。conflict または legacy file/folder deletion は default で block されます。 |
 | `alcomd3_uninstall_project_package` | `{ "project_path": string, "package_name": string, "allow_conflicts"?: boolean }` | registered project から installed package を 1 つ uninstall します。conflict または legacy file/folder deletion は default で block されます。 |
 | `alcomd3_reinstall_project_package` | `{ "project_path": string, "package_name": string, "allow_conflicts"?: boolean }` | registered project で installed package を 1 つ reinstall します。conflict または legacy file/folder deletion は default で block されます。 |
+
+Template tool の argument object は unknown field を拒否します。built-in template は read-only、
+project archive template は read/remove 可能ですが field edit はできません。derived template の
+create/update は self-reference と base-template dependency cycle を拒否します。MCP は template
+import/export を公開せず、GUI file-picker workflow のままです。template write は Unity package
+attachment を参照するだけで、copy/delete は行いません。
 
 ### Log query tools
 
@@ -307,6 +318,8 @@ task-aware call を使わない場合、これらの tools は completion まで
 ### Package visibility and write limits
 
 `alcomd3_list_packages` と `alcomd3_list_repository_packages` は GUI package page と同じ package-state load path を使い、force-refresh path は呼びません。results は GUI の pre-release、hidden repository、hidden local user package、yanked filters に従います。MCP tool call は server-side search を行いません。repository 追加には明示的な `alcomd3_add_repository` call が必要です。list tools は暗黙に repository を追加したり、repository refresh strategy を作り直したりしません。
+
+Repository parameter の役割は分離されています。package read tool は `alcomd3_list_repositories` が返した `id` で repository を選択します。user repository の add/remove は stored URL を使うため、remove input は add input と直接対応し、built-in default repository は削除対象になりません。duplicate check は stored URL と publisher-declared repository ID の両方に適用されます。GUI の add/remove/reorder も同じ shared URL-based backend を使います。local repository はサポートしません。URL-less user-repository entry は settings の load 時に破棄し、local repository の作成経路も提供しません。
 
 GUI project-management package table は backend が同名 package merge logic から生成します。MCP package lists、package details、project package install selection は同じ backend rules を使います。
 

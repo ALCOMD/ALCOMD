@@ -182,7 +182,7 @@ function useDragAutoScroll(
 }
 
 function computeSlotKey(repo: TauriUserRepository, used: Set<string>): string {
-	const base = `${repo.id} ${repo.url ?? ""}`;
+	const base = repo.url;
 	let key = base;
 	let counter = 0;
 	while (used.has(key)) {
@@ -336,13 +336,13 @@ function PageBody() {
 	const queryClient = useQueryClient();
 	const reorderMutation = useMutation({
 		mutationFn: (listIds: string[]) => {
-			const repos = listIds
+			const repositoryUrls = listIds
 				.map((lid) => userRepoByListId.get(lid))
 				.filter((r): r is UserRepoWithListId => r !== undefined)
-				.map((r) => ({ index: r.index, id: r.id }));
-			return commands.environmentReorderRepositories(repos);
+				.map((r) => r.url);
+			return commands.environmentReorderRepositories(repositoryUrls);
 		},
-		// Pin listIds to the new positions so duplicate-keyed rows don't swap their listIds on refetch.
+		// Pin listIds to the new positions so rows keep their drag identity on refetch.
 		onMutate: (newListIds: string[]) => {
 			const prevMap = new Map(listIdMapRef.current);
 			const rebuilt = new Map<string, string>();
@@ -657,7 +657,6 @@ function RepositoryTableBody({
 								key={listId}
 								listId={listId}
 								repoId={repo.id}
-								repoIndex={repo.index}
 								displayName={repo.display_name}
 								url={repo.url}
 								hiddenUserRepos={hiddenUserRepos}
@@ -828,7 +827,6 @@ function RepositoryRowCells({
 function RepositoryRow({
 	listId,
 	repoId,
-	repoIndex,
 	displayName,
 	url,
 	repoPackages,
@@ -843,7 +841,6 @@ function RepositoryRow({
 }: {
 	listId?: string;
 	repoId: TauriUserRepository["id"];
-	repoIndex?: number;
 	displayName: TauriUserRepository["display_name"];
 	url: TauriUserRepository["url"];
 	repoPackages?: TauriBasePackageInfo[];
@@ -912,8 +909,7 @@ function RepositoryRow({
 				onRemove={() =>
 					void openSingleDialog(RemoveRepositoryDialog, {
 						displayName,
-						index: repoIndex ?? 0,
-						id: repoId,
+						url,
 					})
 				}
 				isSortingMode={isSortingMode}
@@ -1010,20 +1006,18 @@ function RepositoryPackagesDialog({
 function RemoveRepositoryDialog({
 	dialog,
 	displayName,
-	index,
-	id,
+	url,
 }: {
 	dialog: DialogContext<void>;
 	displayName: string;
-	index: number;
-	id: string;
+	url: string;
 }) {
 	const queryClient = useQueryClient();
 
 	const removeRepository = useMutation({
-		mutationFn: async (args: { index: number; id: string }) =>
-			await commands.environmentRemoveRepository(args.index, args.id),
-		onMutate: async ({ index }) => {
+		mutationFn: async (repositoryUrl: string) =>
+			await commands.environmentRemoveRepository(repositoryUrl),
+		onMutate: async (repositoryUrl) => {
 			await queryClient.cancelQueries(environmentRepositoriesInfo);
 			const data = queryClient.getQueryData(
 				environmentRepositoriesInfo.queryKey,
@@ -1032,7 +1026,7 @@ function RemoveRepositoryDialog({
 				queryClient.setQueryData(environmentRepositoriesInfo.queryKey, {
 					...data,
 					user_repositories: data.user_repositories.filter(
-						(x) => x.index !== index,
+						(x) => x.url !== repositoryUrl,
 					),
 				});
 			}
@@ -1062,7 +1056,7 @@ function RemoveRepositoryDialog({
 				<Button
 					onClick={() => {
 						dialog.close();
-						removeRepository.mutate({ index, id });
+						removeRepository.mutate(url);
 					}}
 					className={"ml-2"}
 				>

@@ -23,6 +23,34 @@ pub(crate) const MCP_TOOL_CAPABILITIES: &[McpToolCapability] = &[
         destructive: false,
     },
     McpToolCapability {
+        tool_name: "alcomd3_get_project_template",
+        ipc_method: "get_project_template",
+        gui_capability: "environment.project_templates.details.read",
+        read_only: true,
+        destructive: false,
+    },
+    McpToolCapability {
+        tool_name: "alcomd3_create_project_template",
+        ipc_method: "create_project_template",
+        gui_capability: "environment.project_templates.create",
+        read_only: false,
+        destructive: false,
+    },
+    McpToolCapability {
+        tool_name: "alcomd3_update_project_template",
+        ipc_method: "update_project_template",
+        gui_capability: "environment.project_templates.update",
+        read_only: false,
+        destructive: true,
+    },
+    McpToolCapability {
+        tool_name: "alcomd3_remove_project_template",
+        ipc_method: "remove_project_template",
+        gui_capability: "environment.project_templates.remove",
+        read_only: false,
+        destructive: true,
+    },
+    McpToolCapability {
         tool_name: "alcomd3_get_project_details",
         ipc_method: "get_project_details",
         gui_capability: "project.details.read",
@@ -42,6 +70,13 @@ pub(crate) const MCP_TOOL_CAPABILITIES: &[McpToolCapability] = &[
         gui_capability: "environment.repositories.add",
         read_only: false,
         destructive: false,
+    },
+    McpToolCapability {
+        tool_name: "alcomd3_remove_repository",
+        ipc_method: "remove_repository",
+        gui_capability: "environment.repositories.remove",
+        read_only: false,
+        destructive: true,
     },
     McpToolCapability {
         tool_name: "alcomd3_get_package_details",

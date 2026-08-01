@@ -409,18 +409,12 @@ pub async fn environment_set_template_favorite(
             "Template favorite setting updated",
             Vec::new(),
             async move {
-                let mut config = config.load_mut().await?;
-                if favorite {
-                    if !config.favorite_templates.contains(&template_id) {
-                        config.favorite_templates.push(template_id);
-                    }
-                } else {
-                    config
-                        .favorite_templates
-                        .retain(|name| name != &template_id);
-                }
-                config.save().await?;
-                Ok(())
+                crate::backend::templates::set_template_favorite(
+                    config.inner(),
+                    template_id,
+                    favorite,
+                )
+                .await
             },
         )
         .await

@@ -72,6 +72,10 @@ const MCP_TOOL_GROUPS: {
 				labelKey: "mcp:tool:alcomd3_list_project_templates",
 			},
 			{
+				name: "alcomd3_get_project_template",
+				labelKey: "mcp:tool:alcomd3_get_project_template",
+			},
+			{
 				name: "alcomd3_get_project_details",
 				labelKey: "mcp:tool:alcomd3_get_project_details",
 			},
@@ -105,12 +109,28 @@ const MCP_TOOL_GROUPS: {
 				labelKey: "mcp:tool:alcomd3_create_project",
 			},
 			{
+				name: "alcomd3_create_project_template",
+				labelKey: "mcp:tool:alcomd3_create_project_template",
+			},
+			{
+				name: "alcomd3_update_project_template",
+				labelKey: "mcp:tool:alcomd3_update_project_template",
+			},
+			{
+				name: "alcomd3_remove_project_template",
+				labelKey: "mcp:tool:alcomd3_remove_project_template",
+			},
+			{
 				name: "alcomd3_add_existing_project",
 				labelKey: "mcp:tool:alcomd3_add_existing_project",
 			},
 			{
 				name: "alcomd3_add_repository",
 				labelKey: "mcp:tool:alcomd3_add_repository",
+			},
+			{
+				name: "alcomd3_remove_repository",
+				labelKey: "mcp:tool:alcomd3_remove_repository",
 			},
 			{
 				name: "alcomd3_backup_project",

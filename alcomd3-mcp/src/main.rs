@@ -63,6 +63,33 @@ struct ProjectDetailsArgs {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ProjectTemplateIdArgs {
+    template_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct CreateProjectTemplateArgs {
+    display_name: String,
+    base_template_id: String,
+    unity_version_range: String,
+    vpm_dependencies: BTreeMap<String, String>,
+    unity_package_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct UpdateProjectTemplateArgs {
+    template_id: String,
+    display_name: String,
+    base_template_id: String,
+    unity_version_range: String,
+    vpm_dependencies: BTreeMap<String, String>,
+    unity_package_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 struct BackupProjectArgs {
     project_path: String,
     backup_name: Option<String>,
@@ -243,14 +270,15 @@ struct PackageListArgs {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct RepositoryPackagesArgs {
-    repository_id: Option<String>,
-    repository_url: Option<String>,
+    repository_id: String,
     offset: Option<usize>,
     limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct AddRepositoryArgs {
     repository_url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -258,11 +286,17 @@ struct AddRepositoryArgs {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RemoveRepositoryArgs {
+    repository_url: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct PackageDetailsArgs {
     package_name: String,
     version: Option<String>,
     repository_id: Option<String>,
-    repository_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
@@ -1027,6 +1061,74 @@ impl Alcomd3Mcp {
     }
 
     #[tool(
+        description = "Read one ALCOMD3 project template selected by template_id. Derived templates include their editable definition and Unity package paths; template storage paths are not returned.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn alcomd3_get_project_template(
+        &self,
+        Parameters(args): Parameters<ProjectTemplateIdArgs>,
+        peer: Peer<RoleServer>,
+    ) -> McpJsonResult {
+        self.invoke("get_project_template", args, peer).await
+    }
+
+    #[tool(
+        description = "Create a derived ALCOMD3 project template. The base template ID must come from alcomd3_list_project_templates with usableAsBase=true. Every unity_package_paths entry must be an existing absolute .unitypackage file.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn alcomd3_create_project_template(
+        &self,
+        Parameters(args): Parameters<CreateProjectTemplateArgs>,
+        peer: Peer<RoleServer>,
+    ) -> McpJsonResult {
+        self.invoke("create_project_template", args, peer).await
+    }
+
+    #[tool(
+        description = "Replace the editable definition of one derived ALCOMD3 project template. The template ID and storage location remain unchanged. Built-in and project-archive templates cannot be updated.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn alcomd3_update_project_template(
+        &self,
+        Parameters(args): Parameters<UpdateProjectTemplateArgs>,
+        peer: Peer<RoleServer>,
+    ) -> McpJsonResult {
+        self.invoke("update_project_template", args, peer).await
+    }
+
+    #[tool(
+        description = "Remove one user project template from ALCOMD3 by template_id. Built-in templates cannot be removed. Referenced Unity package files are not deleted.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn alcomd3_remove_project_template(
+        &self,
+        Parameters(args): Parameters<ProjectTemplateIdArgs>,
+        peer: Peer<RoleServer>,
+    ) -> McpJsonResult {
+        self.invoke("remove_project_template", args, peer).await
+    }
+
+    #[tool(
         description = "Get details for a project registered in ALCOMD3. project_path must match an ALCOMD3 registered project path.",
         annotations(
             read_only_hint = true,
@@ -1044,7 +1146,7 @@ impl Alcomd3Mcp {
     }
 
     #[tool(
-        description = "List VPM repositories available in ALCOMD3, including default and user repositories.",
+        description = "List VPM repositories available in ALCOMD3, including default and user repositories. Use the returned id to select a repository in package-reading tools, or the returned url to remove a user-added repository.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -1057,7 +1159,7 @@ impl Alcomd3Mcp {
     }
 
     #[tool(
-        description = "Add a VPM repository URL to ALCOMD3 and refresh package cache visibility. repository_url must be a valid repository URL. headers can provide optional HTTP headers for the repository request.",
+        description = "Add a VPM repository URL to ALCOMD3 and refresh package cache visibility. repository_url must be a valid repository URL. headers can provide optional HTTP headers for the repository request. The returned repository.url is the handle for later removal; duplicate repository URLs or declared IDs are rejected.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -1074,7 +1176,24 @@ impl Alcomd3Mcp {
     }
 
     #[tool(
-        description = "Get detailed package metadata for GUI-visible ALCOMD3 packages selected by package_name, optional version, and optional repository_id or repository_url.",
+        description = "Remove one user-added VPM repository from ALCOMD3. repository_url is required and should be copied from alcomd3_list_repositories. Default repositories cannot be removed.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn alcomd3_remove_repository(
+        &self,
+        Parameters(args): Parameters<RemoveRepositoryArgs>,
+        peer: Peer<RoleServer>,
+    ) -> McpJsonResult {
+        self.invoke("remove_repository", args, peer).await
+    }
+
+    #[tool(
+        description = "Get detailed package metadata for GUI-visible ALCOMD3 packages selected by package_name, optional version, and optional repository_id.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -1108,7 +1227,7 @@ impl Alcomd3Mcp {
     }
 
     #[tool(
-        description = "List lightweight package summaries from one ALCOMD3 remote repository selected by repository_id or repository_url. Use alcomd3_list_repositories to discover repository identifiers.",
+        description = "List lightweight package summaries from one ALCOMD3 remote repository selected by repository_id. Use alcomd3_list_repositories to discover repository IDs.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,

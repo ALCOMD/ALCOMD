@@ -105,7 +105,10 @@ pub async fn load_resolve_alcom_templates(
 
     // then ALCOM templates
     for (path, value) in templates {
-        let id = value.id.clone().unwrap_or_else(new_user_template_id);
+        let id = value
+            .id
+            .clone()
+            .unwrap_or_else(|| stable_user_template_id(&path));
         let (unity_versions, available) = match &value.archive {
             Some(archive) => (vec![archive.unity_version], true),
             None => (vec![], false),
@@ -182,6 +185,18 @@ pub fn new_user_template_id() -> String {
         "{UNNAMED_TEMPLATE_PREFIX}{}",
         uuid::Uuid::new_v4().as_simple()
     )
+}
+
+pub(crate) fn stable_user_template_id(path: &Path) -> String {
+    use sha2::{Digest, Sha256};
+
+    let normalized_path = path.to_string_lossy().replace('\\', "/");
+    let digest = Sha256::digest(normalized_path.as_bytes());
+    format!("{UNNAMED_TEMPLATE_PREFIX}{}", hex::encode(&digest[..16]))
+}
+
+pub(crate) fn template_id_can_be_base(id: &str) -> bool {
+    is_valid_base_id(id)
 }
 
 pub fn imported_vcc_template_id(name: &str) -> String {
@@ -874,6 +889,18 @@ async fn update_project_name_and_guid(path: &Path, project_name: &str) -> io::Re
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn idless_template_management_id_is_stable_and_path_scoped() {
+        let first = stable_user_template_id(Path::new("Templates/example.alcomtemplate"));
+        let repeated = stable_user_template_id(Path::new("Templates/example.alcomtemplate"));
+        let second = stable_user_template_id(Path::new("Templates/other.alcomtemplate"));
+
+        assert_eq!(first, repeated);
+        assert_ne!(first, second);
+        assert!(first.starts_with(UNNAMED_TEMPLATE_PREFIX));
+        assert_eq!(first.len(), UNNAMED_TEMPLATE_PREFIX.len() + 32);
+    }
 
     #[test]
     fn project_archive_template_round_trips_project_directory() {

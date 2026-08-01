@@ -16,7 +16,7 @@ use crate::backend::projects::{
     ProjectDetailsSnapshot, load_project_details_snapshot, project_summary_snapshot,
 };
 use crate::backend::repository_operations;
-use crate::backend::templates::{load_project_templates, project_template_summary};
+use crate::backend::templates::{self as template_operations, project_template_summary};
 use crate::commands::{
     DEFAULT_UNITY_ARGUMENTS, RustError, TauriPendingProjectChanges,
     build_project_package_row_accumulators, load_project, project_package_row_compatible_packages,
@@ -27,7 +27,7 @@ use crate::logging::{
 };
 use crate::state::{
     ChangesState, GuiConfigState, PackagesState, ProjectApplyState, ProjectBackupState,
-    ProjectCopyState, ProjectRestoreState, SettingsState,
+    ProjectCopyState, ProjectRestoreState, SettingsState, TemplatesState,
 };
 use alcomd3_mcp_protocol::{
     ClientIdentity, EndpointMetadata, IPC_IO_TIMEOUT, IPC_MAX_LINE_BYTES,
@@ -1039,9 +1039,14 @@ async fn dispatch_gui_request(
     match method {
         "list_projects" => list_projects(app).await,
         "list_project_templates" => list_project_templates(app).await,
+        "get_project_template" => get_project_template(app, params).await,
+        "create_project_template" => create_project_template(app, params).await,
+        "update_project_template" => update_project_template(app, params).await,
+        "remove_project_template" => remove_project_template(app, params).await,
         "get_project_details" => get_project_details(app, params).await,
         "list_repositories" => list_repositories(app).await,
         "add_repository" => add_repository(app, params).await,
+        "remove_repository" => remove_repository(app, params).await,
         "get_package_details" => get_package_details(app, params).await,
         "list_packages" => list_packages(app, params).await,
         "list_repository_packages" => list_repository_packages(app, params).await,
@@ -1385,6 +1390,22 @@ fn mcp_activity_target(method: &str, params: &Value) -> Option<String> {
         return Some(summarize_url_host(url));
     }
 
+    if let Some(template_id) = params
+        .get("template_id")
+        .or_else(|| params.get("templateId"))
+        .and_then(Value::as_str)
+    {
+        return Some(template_id.to_string());
+    }
+
+    if let Some(display_name) = params
+        .get("display_name")
+        .or_else(|| params.get("displayName"))
+        .and_then(Value::as_str)
+    {
+        return Some(display_name.to_string());
+    }
+
     params
         .get("package_name")
         .or_else(|| params.get("packageName"))
@@ -1400,6 +1421,10 @@ fn mcp_activity_details(method: &str, params: &Value) -> Vec<ActivityDetail> {
     } else {
         params
     };
+    let template_definition_method = matches!(
+        method,
+        "create_project_template" | "update_project_template"
+    );
     let mut details = vec![ActivityDetail::new("method", method)];
     for key in [
         "project_path",
@@ -1428,6 +1453,33 @@ fn mcp_activity_details(method: &str, params: &Value) -> Vec<ActivityDetail> {
             format!("{} headers", headers.len()),
         ));
     }
+    if template_definition_method {
+        let field_count = [
+            "display_name",
+            "base_template_id",
+            "unity_version_range",
+            "vpm_dependencies",
+        ]
+        .into_iter()
+        .filter(|key| params.get(key).is_some())
+        .count();
+        details.push(ActivityDetail::new(
+            "template_definition",
+            format!("{field_count} fields"),
+        ));
+    }
+    if let Some(dependencies) = params.get("vpm_dependencies").and_then(Value::as_object) {
+        details.push(ActivityDetail::new(
+            "vpm_dependencies",
+            format!("{} dependencies", dependencies.len()),
+        ));
+    }
+    if let Some(paths) = params.get("unity_package_paths").and_then(Value::as_array) {
+        details.push(ActivityDetail::new(
+            "unity_package_paths",
+            format!("{} paths", paths.len()),
+        ));
+    }
     for key in [
         "limit",
         "query",
@@ -1443,6 +1495,12 @@ fn mcp_activity_details(method: &str, params: &Value) -> Vec<ActivityDetail> {
         "projectName",
         "template_id",
         "templateId",
+        "display_name",
+        "displayName",
+        "base_template_id",
+        "baseTemplateId",
+        "unity_version_range",
+        "unityVersionRange",
         "unity_version",
         "unityVersion",
         "version_selector",
@@ -1451,6 +1509,19 @@ fn mcp_activity_details(method: &str, params: &Value) -> Vec<ActivityDetail> {
         "allow_conflicts",
         "allowConflicts",
     ] {
+        if template_definition_method
+            && matches!(
+                key,
+                "display_name"
+                    | "displayName"
+                    | "base_template_id"
+                    | "baseTemplateId"
+                    | "unity_version_range"
+                    | "unityVersionRange"
+            )
+        {
+            continue;
+        }
         if let Some(value) = params.get(key) {
             details.push(safe_detail_from_json(key, value));
         }
@@ -1502,9 +1573,9 @@ async fn list_projects(app: AppHandle) -> Result<Value, McpIpcError> {
 
 async fn list_project_templates(app: AppHandle) -> Result<Value, McpIpcError> {
     let io = app.state::<DefaultEnvironmentIo>();
-    let templates = load_project_templates(io.inner())
+    let templates = template_operations::load_project_templates(io.inner())
         .await
-        .map_err(|error| McpIpcError::from_rust_error("template_load_error", error))?
+        .map_err(mcp_template_error)?
         .iter()
         .map(project_template_summary)
         .collect::<Vec<_>>();
@@ -1513,6 +1584,133 @@ async fn list_project_templates(app: AppHandle) -> Result<Value, McpIpcError> {
         "ok": true,
         "templates": templates,
     }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProjectTemplateIdParams {
+    template_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CreateProjectTemplateParams {
+    display_name: String,
+    base_template_id: String,
+    unity_version_range: String,
+    vpm_dependencies: BTreeMap<String, String>,
+    unity_package_paths: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UpdateProjectTemplateParams {
+    template_id: String,
+    display_name: String,
+    base_template_id: String,
+    unity_version_range: String,
+    vpm_dependencies: BTreeMap<String, String>,
+    unity_package_paths: Vec<String>,
+}
+
+async fn get_project_template(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+    let params = serde_json::from_value::<ProjectTemplateIdParams>(params)
+        .map_err(|error| McpIpcError::from_error("invalid_params", error))?;
+    let template_id = normalize_template_id(params.template_id)?;
+    let template = template_operations::get_project_template(
+        app.state::<DefaultEnvironmentIo>().inner(),
+        &template_id,
+    )
+    .await
+    .map_err(mcp_template_error)?;
+    Ok(json!({ "ok": true, "template": template }))
+}
+
+async fn create_project_template(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+    let params = serde_json::from_value::<CreateProjectTemplateParams>(params)
+        .map_err(|error| McpIpcError::from_error("invalid_params", error))?;
+    let definition = project_template_definition(
+        params.display_name,
+        params.base_template_id,
+        params.unity_version_range,
+        params.vpm_dependencies,
+        params.unity_package_paths,
+    );
+    let template = template_operations::create_project_template(
+        app.state::<TemplatesState>().inner(),
+        app.state::<DefaultEnvironmentIo>().inner(),
+        definition,
+    )
+    .await
+    .map_err(mcp_template_error)?;
+    Ok(json!({ "ok": true, "template": template }))
+}
+
+async fn update_project_template(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+    let params = serde_json::from_value::<UpdateProjectTemplateParams>(params)
+        .map_err(|error| McpIpcError::from_error("invalid_params", error))?;
+    let template_id = normalize_template_id(params.template_id)?;
+    let definition = project_template_definition(
+        params.display_name,
+        params.base_template_id,
+        params.unity_version_range,
+        params.vpm_dependencies,
+        params.unity_package_paths,
+    );
+    let template = template_operations::update_project_template(
+        app.state::<TemplatesState>().inner(),
+        app.state::<DefaultEnvironmentIo>().inner(),
+        &template_id,
+        definition,
+    )
+    .await
+    .map_err(mcp_template_error)?;
+    Ok(json!({ "ok": true, "template": template }))
+}
+
+async fn remove_project_template(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+    let params = serde_json::from_value::<ProjectTemplateIdParams>(params)
+        .map_err(|error| McpIpcError::from_error("invalid_params", error))?;
+    let template_id = normalize_template_id(params.template_id)?;
+    let template = template_operations::remove_project_template(
+        app.state::<TemplatesState>().inner(),
+        app.state::<DefaultEnvironmentIo>().inner(),
+        &template_id,
+    )
+    .await
+    .map_err(mcp_template_error)?;
+    Ok(json!({ "ok": true, "template": template }))
+}
+
+fn project_template_definition(
+    display_name: String,
+    base_template_id: String,
+    unity_version_range: String,
+    vpm_dependencies: BTreeMap<String, String>,
+    unity_package_paths: Vec<String>,
+) -> template_operations::ProjectTemplateDefinition {
+    template_operations::ProjectTemplateDefinition {
+        display_name,
+        base_template_id,
+        unity_version_range,
+        vpm_dependencies: vpm_dependencies.into_iter().collect(),
+        unity_package_paths: unity_package_paths.into_iter().map(PathBuf::from).collect(),
+    }
+}
+
+fn normalize_template_id(template_id: String) -> Result<String, McpIpcError> {
+    let template_id = template_id.trim().to_string();
+    if template_id.is_empty() {
+        return Err(McpIpcError::new(
+            "invalid_params",
+            "template_id must be provided",
+        ));
+    }
+    Ok(template_id)
+}
+
+fn mcp_template_error(error: template_operations::TemplateOperationError) -> McpIpcError {
+    McpIpcError::new(error.code(), error.to_string())
 }
 
 #[derive(Deserialize)]
@@ -1554,10 +1752,17 @@ struct AddExistingProjectParams {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct AddRepositoryParams {
     repository_url: String,
     #[serde(default)]
     headers: BTreeMap<String, String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RemoveRepositoryParams {
+    repository_url: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -3035,8 +3240,7 @@ async fn list_repositories(app: AppHandle) -> Result<Value, McpIpcError> {
     let user_repositories = settings
         .get_user_repos()
         .iter()
-        .enumerate()
-        .map(|(index, repo)| user_repository_summary(index, repo))
+        .map(user_repository_summary)
         .collect::<Vec<_>>();
     let mut repositories = Vec::new();
     if !settings.ignore_official_repository() {
@@ -3070,6 +3274,7 @@ async fn add_repository(app: AppHandle, params: Value) -> Result<Value, McpIpcEr
         .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
     let url = params
         .repository_url
+        .trim()
         .parse::<url::Url>()
         .map_err(|_| McpIpcError::new("invalid_params", "repository_url must be a valid URL"))?;
     let headers = params
@@ -3091,7 +3296,46 @@ async fn add_repository(app: AppHandle, params: Value) -> Result<Value, McpIpcEr
     Ok(json!({
         "ok": true,
         "repository": {
-            "index": repository.index,
+            "id": repository.id,
+            "url": repository.url,
+            "displayName": repository.display_name,
+            "kind": "user",
+            "isDefaultRepository": false,
+            "isUserRepository": true,
+        },
+    }))
+}
+
+async fn remove_repository(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+    let params = serde_json::from_value::<RemoveRepositoryParams>(params)
+        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+    let repository_url = params
+        .repository_url
+        .trim()
+        .parse::<url::Url>()
+        .map_err(|_| McpIpcError::new("invalid_params", "repository_url must be a valid URL"))?;
+    let outcome = repository_operations::remove_repository(
+        app.state::<SettingsState>().inner(),
+        app.state::<PackagesState>().inner(),
+        app.state::<DefaultEnvironmentIo>().inner(),
+        repository_url,
+    )
+    .await
+    .map_err(|e| McpIpcError::from_rust_error("repository_remove_error", e))?;
+
+    let repository = match outcome {
+        repository_operations::RemoveRepositoryOutcome::Removed(repository) => repository,
+        repository_operations::RemoveRepositoryOutcome::NotFound => {
+            return Err(McpIpcError::new(
+                "repository_not_found",
+                "repository_url must match a user-added ALCOMD3 repository",
+            ));
+        }
+    };
+
+    Ok(json!({
+        "ok": true,
+        "repository": {
             "id": repository.id,
             "url": repository.url,
             "displayName": repository.display_name,
@@ -3113,16 +3357,15 @@ fn default_repository_summary(id: &str, url: &str, kind: &str) -> Value {
     })
 }
 
-fn user_repository_summary(index: usize, repo: &UserRepoSetting) -> Value {
-    let id = repo
-        .id()
-        .or(repo.url().map(url::Url::as_str))
-        .map(str::to_string);
+fn user_repository_summary(repo: &UserRepoSetting) -> Value {
+    let url = repo
+        .url()
+        .expect("user repositories loaded by Settings must have a URL");
+    let id = repo.id().unwrap_or(url.as_str());
     json!({
-        "index": index,
         "id": id,
-        "url": repo.url().map(ToString::to_string),
-        "displayName": repo.name().map(str::to_string).or_else(|| id.clone()),
+        "url": url.to_string(),
+        "displayName": repo.name().unwrap_or(id),
         "kind": "user",
         "isDefaultRepository": false,
         "isUserRepository": true,
@@ -3191,30 +3434,30 @@ impl PackageListPagination {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RepositoryPackagesParams {
-    repository_id: Option<String>,
-    repository_url: Option<String>,
+    repository_id: String,
     offset: Option<usize>,
     limit: Option<usize>,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PackageDetailsParams {
     package_name: String,
     version: Option<String>,
     repository_id: Option<String>,
-    repository_url: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 struct RepositorySelector {
     repository_id: Option<String>,
-    repository_url: Option<String>,
+    repository_url: Option<url::Url>,
 }
 
 impl RepositorySelector {
     fn from_params(params: RepositoryPackagesParams) -> Result<Self, McpIpcError> {
-        Self::from_values(params.repository_id, params.repository_url)
+        Self::from_values(Some(params.repository_id), None)
     }
 
     fn from_values(
@@ -3222,7 +3465,13 @@ impl RepositorySelector {
         repository_url: Option<String>,
     ) -> Result<Self, McpIpcError> {
         let repository_id = normalize_optional_string(repository_id);
-        let repository_url = normalize_optional_string(repository_url);
+        let repository_url = normalize_optional_string(repository_url)
+            .map(|repository_url| {
+                repository_url.parse::<url::Url>().map_err(|_| {
+                    McpIpcError::new("invalid_params", "repository_url must be a valid URL")
+                })
+            })
+            .transpose()?;
 
         if repository_id.is_none() && repository_url.is_none() {
             return Err(McpIpcError::new(
@@ -3241,13 +3490,13 @@ impl RepositorySelector {
         let id_matches = self
             .repository_id
             .as_deref()
-            .is_some_and(|expected| repository_id(repo) == Some(expected));
-        let url_matches = self.repository_url.as_deref().is_some_and(|expected| {
-            repo.url()
-                .is_some_and(|repository_url| repository_url.as_str() == expected)
-        });
+            .map(|expected| repository_id(repo) == Some(expected));
+        let url_matches = self
+            .repository_url
+            .as_ref()
+            .map(|expected| repo.url() == Some(expected));
 
-        id_matches || url_matches
+        id_matches.unwrap_or(true) && url_matches.unwrap_or(true)
     }
 }
 
@@ -3272,16 +3521,9 @@ impl PackageDetailsSelector {
         let has_repository = params
             .repository_id
             .as_ref()
-            .is_some_and(|value| !value.trim().is_empty())
-            || params
-                .repository_url
-                .as_ref()
-                .is_some_and(|value| !value.trim().is_empty());
+            .is_some_and(|value| !value.trim().is_empty());
         let repository = if has_repository {
-            Some(RepositorySelector::from_values(
-                params.repository_id,
-                params.repository_url,
-            )?)
+            Some(RepositorySelector::from_values(params.repository_id, None)?)
         } else {
             None
         };
@@ -3383,7 +3625,7 @@ async fn list_repository_packages(app: AppHandle, params: Value) -> Result<Value
     else {
         return Err(McpIpcError::new(
             "repository_not_found",
-            "repository_id or repository_url must match an ALCOMD3 remote repository",
+            "repository_id must match an ALCOMD3 remote repository",
         ));
     };
     let repository = repository_summary(repository);
@@ -3718,6 +3960,7 @@ mod tests {
     use super::*;
     use crate::backend::packages::package_manifest_is_available_for_display;
     use indexmap::{IndexMap, IndexSet};
+    use std::path::PathBuf;
     use vrc_get_vpm::repository::RemoteRepository;
 
     #[test]
@@ -3869,6 +4112,22 @@ mod tests {
             Some("alcomd3_list_project_templates")
         );
         assert_eq!(
+            mcp_tool_name("get_project_template", &Value::Null),
+            Some("alcomd3_get_project_template")
+        );
+        assert_eq!(
+            mcp_tool_name("create_project_template", &Value::Null),
+            Some("alcomd3_create_project_template")
+        );
+        assert_eq!(
+            mcp_tool_name("update_project_template", &Value::Null),
+            Some("alcomd3_update_project_template")
+        );
+        assert_eq!(
+            mcp_tool_name("remove_project_template", &Value::Null),
+            Some("alcomd3_remove_project_template")
+        );
+        assert_eq!(
             mcp_tool_name("get_project_details", &Value::Null),
             Some("alcomd3_get_project_details")
         );
@@ -3883,6 +4142,10 @@ mod tests {
         assert_eq!(
             mcp_tool_name("add_repository", &Value::Null),
             Some("alcomd3_add_repository")
+        );
+        assert_eq!(
+            mcp_tool_name("remove_repository", &Value::Null),
+            Some("alcomd3_remove_repository")
         );
         assert_eq!(
             mcp_tool_name("list_packages", &Value::Null),
@@ -3978,6 +4241,22 @@ mod tests {
             ActivityImportance::Secondary
         );
         assert_eq!(
+            mcp_activity_importance("get_project_template", &Value::Null),
+            ActivityImportance::Secondary
+        );
+        assert_eq!(
+            mcp_activity_importance("create_project_template", &Value::Null),
+            ActivityImportance::Primary
+        );
+        assert_eq!(
+            mcp_activity_importance("update_project_template", &Value::Null),
+            ActivityImportance::Primary
+        );
+        assert_eq!(
+            mcp_activity_importance("remove_project_template", &Value::Null),
+            ActivityImportance::Primary
+        );
+        assert_eq!(
             mcp_activity_importance("create_project", &Value::Null),
             ActivityImportance::Primary
         );
@@ -3987,6 +4266,10 @@ mod tests {
         );
         assert_eq!(
             mcp_activity_importance("add_repository", &Value::Null),
+            ActivityImportance::Primary
+        );
+        assert_eq!(
+            mcp_activity_importance("remove_repository", &Value::Null),
             ActivityImportance::Primary
         );
         assert_eq!(
@@ -4039,11 +4322,29 @@ mod tests {
             );
         }
 
-        assert_eq!(tool_names.len(), 24);
-        assert_eq!(methods.len(), 24);
+        assert_eq!(tool_names.len(), 29);
+        assert_eq!(methods.len(), 29);
         assert!(
             crate::backend::mcp_capabilities::mcp_tool_capability_for_tool_name(
                 "alcomd3_uninstall_project_package"
+            )
+            .is_some_and(|capability| capability.destructive)
+        );
+        assert!(
+            crate::backend::mcp_capabilities::mcp_tool_capability_for_tool_name(
+                "alcomd3_remove_repository"
+            )
+            .is_some_and(|capability| capability.destructive)
+        );
+        assert!(
+            crate::backend::mcp_capabilities::mcp_tool_capability_for_tool_name(
+                "alcomd3_update_project_template"
+            )
+            .is_some_and(|capability| capability.destructive)
+        );
+        assert!(
+            crate::backend::mcp_capabilities::mcp_tool_capability_for_tool_name(
+                "alcomd3_remove_project_template"
             )
             .is_some_and(|capability| capability.destructive)
         );
@@ -4191,6 +4492,51 @@ mod tests {
         )));
         assert!(details.contains(&ActivityDetail::new("headers", "2 headers")));
         assert!(!serde_json::to_string(&details).unwrap().contains("secret"));
+    }
+
+    #[test]
+    fn mcp_template_activity_records_identifiers_and_counts_only() {
+        let details = mcp_activity_details(
+            "update_project_template",
+            &json!({
+                "template_id": "com.example.template",
+                "display_name": "Private Template Name",
+                "base_template_id": "com.example.private-base",
+                "unity_version_range": "2022.3.x",
+                "vpm_dependencies": {
+                    "com.example.secret-package": "^1.0.0",
+                },
+                "unity_package_paths": [
+                    "C:/private/attachment.unitypackage",
+                ],
+            }),
+        );
+
+        assert!(details.contains(&ActivityDetail::new("template_id", "com.example.template",)));
+        assert!(details.contains(&ActivityDetail::new("template_definition", "4 fields",)));
+        assert!(details.contains(&ActivityDetail::new("vpm_dependencies", "1 dependencies",)));
+        assert!(details.contains(&ActivityDetail::new("unity_package_paths", "1 paths",)));
+        let serialized = serde_json::to_string(&details).unwrap();
+        assert!(!serialized.contains("Private Template Name"));
+        assert!(!serialized.contains("com.example.private-base"));
+        assert!(!serialized.contains("com.example.secret-package"));
+        assert!(!serialized.contains("C:/private/attachment.unitypackage"));
+    }
+
+    #[test]
+    fn user_repository_summary_uses_url_identity() {
+        let remote = UserRepoSetting::new(
+            PathBuf::from("Repos/remote.json").into_boxed_path(),
+            Some("Example Repository".into()),
+            Some(url::Url::parse("https://example.com/index.json").unwrap()),
+            Some("com.example.repository".into()),
+        );
+        let summary = user_repository_summary(&remote);
+
+        assert_eq!(summary["id"], "com.example.repository");
+        assert_eq!(summary["url"], "https://example.com/index.json");
+        assert_eq!(summary["displayName"], "Example Repository");
+        assert!(summary.get("index").is_none());
     }
 
     #[test]
@@ -4854,18 +5200,15 @@ mod tests {
         }));
 
         let by_id = RepositorySelector::from_params(RepositoryPackagesParams {
-            repository_id: Some("com.example.repo".to_string()),
-            repository_url: None,
+            repository_id: "com.example.repo".to_string(),
             offset: None,
             limit: None,
         })
         .unwrap();
-        let by_url = RepositorySelector::from_params(RepositoryPackagesParams {
-            repository_id: None,
-            repository_url: Some("https://example.com/index.json".to_string()),
-            offset: None,
-            limit: None,
-        })
+        let by_url = RepositorySelector::from_values(
+            None,
+            Some("https://example.com/index.json".to_string()),
+        )
         .unwrap();
 
         assert!(by_id.matches_repo(&repository));
@@ -4875,16 +5218,111 @@ mod tests {
     }
 
     #[test]
-    fn repository_selector_rejects_empty_params() {
+    fn repository_selector_requires_id_and_url_to_match_same_repository() {
+        let repository = test_cached_repository(json!({
+            "id": "com.example.repo",
+            "url": "https://example.com/index.json",
+            "packages": {}
+        }));
+        let matching = RepositorySelector::from_values(
+            Some("com.example.repo".to_string()),
+            Some("https://example.com/index.json".to_string()),
+        )
+        .unwrap();
+        let mismatched = RepositorySelector::from_values(
+            Some("com.example.other".to_string()),
+            Some("https://example.com/index.json".to_string()),
+        )
+        .unwrap();
+
+        assert!(matching.matches_repo(&repository));
+        assert!(!mismatched.matches_repo(&repository));
+    }
+
+    #[test]
+    fn repository_selector_rejects_invalid_url() {
+        let error =
+            RepositorySelector::from_values(None, Some("not a URL".to_string())).unwrap_err();
+
+        assert_eq!(error.code, "invalid_params");
+    }
+
+    #[test]
+    fn repository_selector_rejects_empty_repository_id() {
         let error = RepositorySelector::from_params(RepositoryPackagesParams {
-            repository_id: None,
-            repository_url: None,
+            repository_id: String::new(),
             offset: None,
             limit: None,
         })
         .unwrap_err();
 
         assert_eq!(error.code, "invalid_params");
+    }
+
+    #[test]
+    fn repository_tool_params_reject_unsupported_identity_fields() {
+        assert!(
+            serde_json::from_value::<AddRepositoryParams>(json!({
+                "repository_url": "https://example.com/index.json",
+                "repository_id": "com.example.repo",
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<RepositoryPackagesParams>(json!({
+                "repository_id": "com.example.repo",
+                "repository_url": "https://example.com/index.json",
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<PackageDetailsParams>(json!({
+                "package_name": "com.example.package",
+                "repository_url": "https://example.com/index.json",
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<RemoveRepositoryParams>(json!({
+                "repository_url": "https://example.com/index.json",
+                "repository_id": "com.example.repo",
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn project_template_tool_params_reject_unknown_fields() {
+        assert!(
+            serde_json::from_value::<ProjectTemplateIdParams>(json!({
+                "template_id": "com.example.template",
+                "source_path": "C:/templates/example.alcomtemplate",
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<CreateProjectTemplateParams>(json!({
+                "display_name": "Example",
+                "base_template_id": "com.example.base",
+                "unity_version_range": "2022.3.x",
+                "vpm_dependencies": {},
+                "unity_package_paths": [],
+                "id": "caller-controlled-id",
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<UpdateProjectTemplateParams>(json!({
+                "template_id": "com.example.template",
+                "display_name": "Example",
+                "base_template_id": "com.example.base",
+                "unity_version_range": "2022.3.x",
+                "vpm_dependencies": {},
+                "unity_package_paths": [],
+                "storage_path": "C:/templates/example.alcomtemplate",
+            }))
+            .is_err()
+        );
     }
 
     #[test]
@@ -4941,7 +5379,6 @@ mod tests {
             package_name: "com.example.remote".to_string(),
             version: Some("1.0.0".to_string()),
             repository_id: Some("com.example.repo".to_string()),
-            repository_url: None,
         })
         .unwrap();
         let selected_package = PackageInfo::remote(&manifest, &repository);
@@ -4970,8 +5407,7 @@ mod tests {
             "packages": {}
         }));
         let selector = RepositorySelector::from_params(RepositoryPackagesParams {
-            repository_id: Some("com.example.repo".to_string()),
-            repository_url: None,
+            repository_id: "com.example.repo".to_string(),
             offset: None,
             limit: None,
         })

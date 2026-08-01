@@ -30,8 +30,8 @@ MCP 扩展启用时，GUI 会启动一个仅监听 `127.0.0.1` 的本地 `alcomd
   MCP，并取消仍由 GUI 管理的 MCP 项目任务。重新启用扩展会立即完成开关操作，并在
   后台恢复 endpoint；MCP 访问仍保持停用，直到用户再次在 MCP 页面主动启用。
 - 当前提供项目、项目模板、仓库、软件包和环境设置只读工具，以及有限写工具：新建项目、
-  添加已有项目、添加 VPM 仓库、备份已登记项目、复制已登记项目、从 zip 备份恢复项目、
-  为已登记项目安装/卸载/重装单个软件包。不提供仓库删除、仓库重排、项目删除等其他写操作。
+  创建/更新/删除项目模板、添加已有项目、添加或删除用户 VPM 仓库、备份已登记项目、复制已登记项目、从 zip 备份恢复项目、
+  为已登记项目安装/卸载/重装单个软件包。不提供仓库重排、项目删除等其他写操作。
 - MCP 扩展启用时，GUI 负责启动和管理本地 Streamable HTTP server；关闭 GUI 或关闭
   MCP 扩展时都会停止该 server。
 - GUI 的私有 IPC endpoint 不可用时，tool call 返回结构化 `alcomd3_unavailable` 错误，
@@ -250,13 +250,18 @@ GUI 会校验 `protocolVersion` 和 `token`。校验失败会返回业务错误�
 | Tool | 参数 | 说明 |
 | --- | --- | --- |
 | `alcomd3_list_projects` | `{}` | 列出 ALCOMD3 已登记项目。 |
-| `alcomd3_list_project_templates` | `{}` | 列出当前项目模板的 ID、支持的 Unity 版本、可用状态、更新时间和模板特征。可将返回的 `id` 与 `unityVersions` 值用于 `alcomd3_create_project`。不会暴露模板源文件路径。 |
+| `alcomd3_list_project_templates` | `{}` | 列出当前项目模板的 ID、支持的 Unity 版本、可用状态、更新时间、类型，以及 `editable`、`removable`、`usableAsBase` 能力标志。可将返回的 `id` 与 `unityVersions` 值用于 `alcomd3_create_project`。不会暴露模板源文件路径。 |
+| `alcomd3_get_project_template` | `{ "template_id": string }` | 使用稳定模板 ID 选择并读取一个模板。派生模板详情包含 `displayName`、`baseTemplateId`、`unityVersionRange`、`vpmDependencies` 和 `unityPackagePaths`。 |
+| `alcomd3_create_project_template` | `{ "display_name": string, "base_template_id": string, "unity_version_range": string, "vpm_dependencies": object<string, string>, "unity_package_paths": string[] }` | 创建派生模板并由后端生成持久 ID。基模板必须存在且可作为基模板，版本范围必须可解析，Unity 包路径必须是已存在的绝对 `.unitypackage` 普通文件。 |
+| `alcomd3_update_project_template` | `{ "template_id": string, "display_name": string, "base_template_id": string, "unity_version_range": string, "vpm_dependencies": object<string, string>, "unity_package_paths": string[] }` | 整体替换可编辑模板定义，同时保持模板 ID 和存储位置不变。内置模板和项目归档模板不可进行字段级编辑。 |
+| `alcomd3_remove_project_template` | `{ "template_id": string }` | 将可删除的派生模板或项目归档模板移入系统回收站，并返回其 ID、名称和类型。不会删除引用的 Unity 包文件。 |
 | `alcomd3_get_project_details` | `{ "project_path": string }` | 获取已登记项目详情和已安装包摘要。`project_path` 必须匹配 ALCOMD3 已登记项目。 |
-| `alcomd3_list_repositories` | `{}` | 列出 ALCOMD3 当前远程仓库和相关显示设置。`repositories` 包含官方默认、Curated 默认和用户仓库；`userRepositories` 保留为仅用户仓库的兼容字段。 |
-| `alcomd3_add_repository` | `{ "repository_url": string, "headers"?: object }` | 下载并校验指定 VPM 仓库 URL，成功后作为用户仓库加入 ALCOMD3，并清除软件包缓存以便后续重新加载。成功时返回新增的 `repository` 摘要；活动记录只保存脱敏 URL 和 header 数量，不保存 header 值。 |
-| `alcomd3_get_package_details` | `{ "package_name": string, "version"?: string, "repository_id"?: string, "repository_url"?: string }` | 获取 GUI 可见软件包的详细元数据。`package_name` 必填；`version` 和仓库选择字段可用于缩小到某个具体包版本或来源。 |
+| `alcomd3_list_repositories` | `{}` | 列出 ALCOMD3 当前远程仓库和相关显示设置。`repositories` 包含官方默认、Curated 默认和远程用户仓库；`userRepositories` 保留为仅远程用户仓库的兼容字段。软件包读取工具使用返回的 `id`，删除使用用户仓库的 `url`。 |
+| `alcomd3_add_repository` | `{ "repository_url": string, "headers"?: object }` | 下载并校验指定 VPM 仓库 URL，成功后作为用户仓库加入 ALCOMD3，并清除软件包缓存以便后续重新加载。重复的已存 URL 或仓库声明 ID 会被拒绝。成功时返回新增的 `repository` 摘要；后续删除应使用其中的 `url`。活动记录只保存脱敏 URL 和 header 数量，不保存 header 值。 |
+| `alcomd3_remove_repository` | `{ "repository_url": string }` | 按已存 URL 精确删除一个用户添加的仓库并清除软件包缓存。不能删除官方和 Curated 默认仓库。 |
+| `alcomd3_get_package_details` | `{ "package_name": string, "version"?: string, "repository_id"?: string }` | 获取 GUI 可见软件包的详细元数据。`package_name` 必填；`version` 和 `repository_id` 可用于缩小到某个具体包版本或来源。 |
 | `alcomd3_list_packages` | `{ "offset"?: number, "limit"?: number }` | 分页列出 GUI 默认可见的软件包轻量摘要；同一来源内同一包名只返回最新可见版本，并在 `source.kind` 中标明 `officialDefault`、`curatedDefault`、`userRepository` 或 `localUser`。MCP 不做服务端搜索，client 或 Agent 应自行筛选返回结果。 |
-| `alcomd3_list_repository_packages` | `{ "repository_id"?: string, "repository_url"?: string, "offset"?: number, "limit"?: number }` | 按指定仓库分页列出 GUI 可见的软件包轻量摘要；同一仓库内同一包名只返回最新可见版本。先调用 `alcomd3_list_repositories` 获取仓库 `id` 或 `url`，再传入其中一个字段。 |
+| `alcomd3_list_repository_packages` | `{ "repository_id": string, "offset"?: number, "limit"?: number }` | 按指定仓库分页列出 GUI 可见的软件包轻量摘要；同一仓库内同一包名只返回最新可见版本。应先调用 `alcomd3_list_repositories` 并传入返回的 `id`。 |
 | `alcomd3_get_environment_settings` | `{}` | 读取 ALCOMD3 环境设置摘要，包括已添加的 Unity 安装、默认 Unity 启动参数、默认项目路径和备份路径。 |
 | `alcomd3_search_activity_logs` | `{ "search"?: string, "sources"?: string[], "kinds"?: string[], "statuses"?: string[], "visibility"?: "important" \| "primary" \| "secondary" \| "technical" \| "all", "operations"?: string[], "tool_names"?: string[], "request_id"?: string, "target"?: string, "since"?: string, "until"?: string, "offset"?: number, "limit"?: number, "order"?: "newest" \| "oldest" }` | 分页搜索用户可读活动记录摘要。默认只返回关键活动，`limit` 默认 50、最大 200。 |
 | `alcomd3_get_activity_log_entry` | `{ "id": string, "include_details"?: boolean }` | 按活动记录 id 读取单条完整活动记录。详情不包含 MCP 原始 params、URL query 或 URL userinfo；本地路径会保留完整值以便排障。 |
@@ -273,6 +278,10 @@ GUI 会校验 `protocolVersion` 和 `token`。校验失败会返回业务错误�
 | `alcomd3_install_project_package` | `{ "project_path": string, "package_name": string, "version_selector": { "type": "latest_gui_visible" } \| { "type": "exact", "version": string }, "source"?: { "repository_id"?: string, "repository_url"?: string }, "allow_conflicts"?: boolean }` | 向已登记项目安装一个 GUI 可见且与项目 Unity 版本兼容的软件包。`latest_gui_visible` 使用后端与 GUI 相同的可见包、来源优先级和预发布设置；`exact` 仍必须匹配 GUI 可见版本。冲突或 legacy 文件/文件夹删除默认阻断。 |
 | `alcomd3_uninstall_project_package` | `{ "project_path": string, "package_name": string, "allow_conflicts"?: boolean }` | 从已登记项目卸载一个已安装软件包。冲突或 legacy 文件/文件夹删除默认阻断。 |
 | `alcomd3_reinstall_project_package` | `{ "project_path": string, "package_name": string, "allow_conflicts"?: boolean }` | 在已登记项目中重装一个已安装软件包。冲突或 legacy 文件/文件夹删除默认阻断。 |
+
+模板工具的参数对象拒绝未知字段。内置模板只读；项目归档模板可读取和删除，但不可字段级编辑。
+创建或更新派生模板时会拒绝自引用和基模板依赖环。MCP 不提供模板导入或导出，这两项仍是
+GUI 文件选择器工作流。模板写操作只引用 Unity 包附件，不会复制或删除附件。
 
 ### 日志查询工具
 
@@ -356,6 +365,8 @@ GUI 配置的默认项目目录。`project_name` 只允许是单个合法文件�
 `alcomd3_list_packages` 和 `alcomd3_list_repository_packages` 使用与 GUI 软件包页相同的包状态加载路径，不调用强制刷新路径。
 返回结果会遵循 GUI 中的预发布、隐藏仓库、隐藏本地用户包和 yanked 过滤规则。MCP tool call
 不做服务端搜索。添加仓库必须显式调用 `alcomd3_add_repository`；列表工具不会隐式添加仓库或重构仓库刷新策略。
+
+仓库参数的用途彼此分离：软件包读取工具使用 `alcomd3_list_repositories` 返回的 `id` 选择仓库；用户仓库的添加和删除使用已存 URL，因此删除输入与添加输入直接对应，并且不会作用于内置默认仓库。重复检查仍同时覆盖已存 URL 和仓库发布者声明的 ID。GUI 的添加、删除和重排也使用同一个基于 URL 的共享后端。不支持本地仓库：加载设置时会丢弃无 URL 的用户仓库条目，也不提供本地仓库创建路径。
 
 GUI 项目管理页的软件包表由后端合并同名包生成。MCP 的包列表、包详情和项目包安装选择使用同一套后端规则：
 

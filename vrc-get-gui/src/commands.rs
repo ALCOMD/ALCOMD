@@ -44,7 +44,6 @@ mod start;
 mod uri_custom_scheme;
 mod util;
 
-pub(crate) use environment::packages::{AddedRepositoryInfo, add_repository_by_url};
 pub(crate) use environment::projects::{
     CreatedProjectInfo, add_existing_project_by_path, copy_registered_project_to_path,
     create_project_with_defaults, refresh_registered_project_and_emit,
