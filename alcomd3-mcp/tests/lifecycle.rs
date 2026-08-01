@@ -229,6 +229,51 @@ fn bridge_lists_project_tools() {
 
     let tool = tools
         .iter()
+        .find(|tool| tool["name"] == "alcomd3_list_repositories")
+        .expect("alcomd3_list_repositories should be exposed");
+    assert_eq!(tool["annotations"]["readOnlyHint"], true);
+    assert_eq!(tool["outputSchema"]["additionalProperties"], false);
+    assert!(tool["outputSchema"]["properties"]["repositories"].is_object());
+    assert!(tool["outputSchema"]["properties"]["packageVisibility"].is_object());
+    for removed in [
+        "userRepositories",
+        "hiddenUserRepositories",
+        "hideLocalUserPackages",
+        "showPrereleasePackages",
+    ] {
+        assert!(tool["outputSchema"]["properties"].get(removed).is_none());
+    }
+    let definitions = tool["outputSchema"]["$defs"]
+        .as_object()
+        .expect("repository output schema should contain definitions");
+    let repository_schema = definitions
+        .values()
+        .find(|schema| schema["properties"]["kind"].is_object())
+        .expect("repository summary schema should define kind");
+    assert!(repository_schema["properties"]["hidden"].is_object());
+    assert!(
+        repository_schema["properties"]
+            .get("isDefaultRepository")
+            .is_none()
+    );
+    assert!(
+        repository_schema["properties"]
+            .get("isUserRepository")
+            .is_none()
+    );
+    assert!(definitions.values().any(|schema| {
+        schema["enum"].as_array().is_some_and(|values| {
+            values
+                == &vec![
+                    json!("officialDefault"),
+                    json!("curatedDefault"),
+                    json!("user"),
+                ]
+        })
+    }));
+
+    let tool = tools
+        .iter()
         .find(|tool| tool["name"] == "alcomd3_add_repository")
         .expect("alcomd3_add_repository should be exposed");
 

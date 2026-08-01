@@ -55,10 +55,6 @@ pub(crate) fn package_source_kind(repo: &LocalCachedRepository) -> &'static str 
     }
 }
 
-pub(crate) fn repository_is_default(kind: &str) -> bool {
-    matches!(kind, "officialDefault" | "curatedDefault")
-}
-
 pub(crate) fn package_is_available_for_display(
     package: &PackageInfo<'_>,
     show_prerelease_packages: bool,

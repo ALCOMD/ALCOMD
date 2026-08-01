@@ -254,7 +254,7 @@ GUI 會驗證 `protocolVersion` 和 `token`。驗證失敗會傳回業務錯誤�
 | `alcomd3_update_project_template` | `{ "template_id": string, "display_name": string, "base_template_id": string, "unity_version_range": string, "vpm_dependencies": object<string, string>, "unity_package_paths": string[] }` | 整體取代可編輯範本定義，同時保持範本 ID 和儲存位置不變。內建範本和專案封存範本不可進行欄位級編輯。 |
 | `alcomd3_remove_project_template` | `{ "template_id": string }` | 將可刪除的衍生範本或專案封存範本移入系統資源回收筒，並傳回其 ID、名稱和類型。不會刪除引用的 Unity 套件檔案。 |
 | `alcomd3_get_project_details` | `{ "project_path": string }` | 取得已登錄專案詳細資料和已安裝包摘要。`project_path` 必須符合 ALCOMD3 已登錄專案。 |
-| `alcomd3_list_repositories` | `{}` | 列出 ALCOMD3 目前遠端倉庫和相關顯示設定。`repositories` 包含官方預設、Curated 預設和遠端使用者倉庫；`userRepositories` 保留為僅遠端使用者倉庫的相容欄位。軟體包讀取工具使用傳回的 `id`，刪除使用使用者倉庫的 `url`。 |
+| `alcomd3_list_repositories` | `{}` | 使用明確的輸出 Schema 列出 ALCOMD3 目前遠端倉庫。唯一規範陣列 `repositories` 的每個項目包含 `id`、`url`、`displayName`、`kind`（`officialDefault`、`curatedDefault` 或 `user`）和 `hidden`；全域軟體包顯示設定歸入 `packageVisibility`。軟體包讀取工具使用傳回的 `id`，刪除使用使用者倉庫的 `url`。 |
 | `alcomd3_add_repository` | `{ "repository_url": string, "headers"?: object }` | 下載並驗證指定 VPM 倉庫 URL，成功後作為使用者倉庫加入 ALCOMD3，並清除軟體包快取以便後續重新載入。重複的已存 URL 或倉庫宣告 ID 會被拒絕。成功時傳回新增的 `repository` 摘要；後續刪除應使用其中的 `url`。活動記錄只儲存脫敏 URL 和 header 數量，不儲存 header 值。 |
 | `alcomd3_remove_repository` | `{ "repository_url": string }` | 依已存 URL 精確刪除一個使用者新增的倉庫並清除軟體包快取。不能刪除官方和 Curated 預設倉庫。 |
 | `alcomd3_get_package_details` | `{ "package_name": string, "version"?: string, "repository_id"?: string }` | 取得 GUI 可見軟體包的詳細元資料。`package_name` 必填；`version` 和 `repository_id` 可用於縮小到某個具體包版本或來源。 |

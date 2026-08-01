@@ -2,8 +2,8 @@ use alcomd3_mcp_protocol::{
     ClientIdentity, EndpointMetadata, IPC_IO_TIMEOUT, IPC_MAX_LINE_BYTES,
     IPC_METHOD_PROJECT_TASK_CANCEL, IPC_METHOD_PROJECT_TASK_GET, IPC_METHOD_PROJECT_TASK_LIST,
     IPC_METHOD_PROJECT_TASK_START, IPC_PROTOCOL_VERSION, IpcRequest, IpcResponse, IpcTransport,
-    MCP_HTTP_BIND_ENV, MCP_HTTP_BIND_HOST, MCP_HTTP_DEFAULT_PORT, MCP_HTTP_MIN_TOKEN_BYTES,
-    MCP_HTTP_PATH, MCP_HTTP_TOKEN_ENV, endpoint_file_path,
+    ListRepositoriesOutput, MCP_HTTP_BIND_ENV, MCP_HTTP_BIND_HOST, MCP_HTTP_DEFAULT_PORT,
+    MCP_HTTP_MIN_TOKEN_BYTES, MCP_HTTP_PATH, MCP_HTTP_TOKEN_ENV, endpoint_file_path,
 };
 use anyhow::{Context, Result, bail};
 use axum::{
@@ -30,6 +30,7 @@ use rmcp::{
         StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
     },
 };
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, VecDeque};
@@ -56,6 +57,8 @@ const TASK_PROGRESS_META_KEY: &str = "alcomd3/projectProgress";
 const TASK_RELATED_META_KEY: &str = "io.modelcontextprotocol/related-task";
 
 type McpJsonResult = std::result::Result<Json<JsonObject>, Json<JsonObject>>;
+type ListRepositoriesMcpResult =
+    std::result::Result<Json<ListRepositoriesOutput>, Json<JsonObject>>;
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 struct ProjectDetailsArgs {
@@ -640,6 +643,27 @@ impl Alcomd3Mcp {
         format_invoke_result(invoke_gui(method, params, &client).await)
     }
 
+    async fn invoke_typed<TParams, TOutput>(
+        &self,
+        method: &str,
+        params: TParams,
+        peer: Peer<RoleServer>,
+    ) -> std::result::Result<Json<TOutput>, Json<JsonObject>>
+    where
+        TParams: Serialize,
+        TOutput: DeserializeOwned,
+    {
+        let _permit = match self.limiter.try_start(Instant::now()) {
+            Ok(permit) => permit,
+            Err(reason) => return Err(format_rate_limit_error(reason)),
+        };
+        self.update_client(&peer);
+        let client = self.client.lock().unwrap().clone();
+        let mut params = serde_json::to_value(params).unwrap_or(Value::Null);
+        remove_null_object_fields(&mut params);
+        format_typed_invoke_result(invoke_gui(method, params, &client).await)
+    }
+
     async fn invoke_task_ipc<T: Serialize>(
         &self,
         method: &str,
@@ -774,13 +798,17 @@ fn remove_null_object_fields(value: &mut Value) {
 }
 
 fn format_rate_limit_result(reason: ToolRateLimitReason) -> McpJsonResult {
-    Err(Json(value_as_object(json!({
+    Err(format_rate_limit_error(reason))
+}
+
+fn format_rate_limit_error(reason: ToolRateLimitReason) -> Json<JsonObject> {
+    Json(value_as_object(json!({
         "ok": false,
         "error": {
             "code": "rate_limited",
             "message": reason.message(),
         }
-    }))))
+    })))
 }
 
 fn rate_limit_mcp_error(reason: ToolRateLimitReason) -> McpError {
@@ -1147,6 +1175,7 @@ impl Alcomd3Mcp {
 
     #[tool(
         description = "List VPM repositories available in ALCOMD3, including default and user repositories. Use the returned id to select a repository in package-reading tools, or the returned url to remove a user-added repository.",
+        output_schema = rmcp::handler::server::tool::schema_for_type::<ListRepositoriesOutput>(),
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -1154,8 +1183,9 @@ impl Alcomd3Mcp {
             open_world_hint = false
         )
     )]
-    async fn alcomd3_list_repositories(&self, peer: Peer<RoleServer>) -> McpJsonResult {
-        self.invoke("list_repositories", json!({}), peer).await
+    async fn alcomd3_list_repositories(&self, peer: Peer<RoleServer>) -> ListRepositoriesMcpResult {
+        self.invoke_typed("list_repositories", json!({}), peer)
+            .await
     }
 
     #[tool(
@@ -1895,6 +1925,34 @@ fn format_invoke_result(result: Result<InvokeOutcome>) -> McpJsonResult {
     }
 }
 
+fn format_typed_invoke_result<T: DeserializeOwned>(
+    result: Result<InvokeOutcome>,
+) -> std::result::Result<Json<T>, Json<JsonObject>> {
+    match result {
+        Ok(InvokeOutcome::Success(value)) => {
+            serde_json::from_value(value).map(Json).map_err(|error| {
+                Json(value_as_object(json!({
+                    "ok": false,
+                    "error": {
+                        "code": "invalid_alcomd3_response",
+                        "message": format!("ALCOMD3 returned an invalid tool response: {error}"),
+                    }
+                })))
+            })
+        }
+        Ok(InvokeOutcome::ToolError(value)) => Err(Json(value_as_object(value))),
+        Err(error) => Err(Json(value_as_object(json!({
+            "ok": false,
+            "error": {
+                "code": "alcomd3_unavailable",
+                "message": format!(
+                    "ALCOMD3 is not running or the MCP IPC endpoint is unavailable: {error}"
+                ),
+            }
+        })))),
+    }
+}
+
 fn value_as_object(value: Value) -> JsonObject {
     match value {
         Value::Object(object) => object,
@@ -1968,6 +2026,59 @@ mod tests {
         let structured_content = call_result.structured_content.unwrap();
         assert_eq!(structured_content["ok"], true);
         assert_eq!(structured_content["value"], 1);
+    }
+
+    #[test]
+    fn typed_repository_result_preserves_the_canonical_shape() {
+        let result = format_typed_invoke_result::<ListRepositoriesOutput>(Ok(
+            InvokeOutcome::Success(json!({
+                "ok": true,
+                "repositories": [{
+                    "id": "com.example.repository",
+                    "url": "https://example.com/index.json",
+                    "displayName": "Example Repository",
+                    "kind": "user",
+                    "hidden": false,
+                }],
+                "packageVisibility": {
+                    "hideLocalUserPackages": false,
+                    "showPrereleasePackages": true,
+                },
+            })),
+        ));
+
+        let call_result = result.into_call_tool_result().unwrap();
+
+        assert_eq!(call_result.is_error, Some(false));
+        let structured_content = call_result.structured_content.unwrap();
+        assert_eq!(structured_content["repositories"][0]["kind"], "user");
+        assert_eq!(
+            structured_content["packageVisibility"]["showPrereleasePackages"],
+            true
+        );
+    }
+
+    #[test]
+    fn typed_repository_result_rejects_removed_compatibility_fields() {
+        let result = format_typed_invoke_result::<ListRepositoriesOutput>(Ok(
+            InvokeOutcome::Success(json!({
+                "ok": true,
+                "repositories": [],
+                "userRepositories": [],
+                "packageVisibility": {
+                    "hideLocalUserPackages": false,
+                    "showPrereleasePackages": false,
+                },
+            })),
+        ));
+
+        let call_result = result.into_call_tool_result().unwrap();
+
+        assert_eq!(call_result.is_error, Some(true));
+        assert_eq!(
+            call_result.structured_content.unwrap()["error"]["code"],
+            "invalid_alcomd3_response"
+        );
     }
 
     #[test]

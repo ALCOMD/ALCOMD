@@ -24,17 +24,26 @@ pub(crate) struct RepositoryFileContents {
     pub(crate) unparsable_lines: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RepositoryKind {
+    OfficialDefault,
+    CuratedDefault,
+    User,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct UserRepositorySummary {
+pub(crate) struct RepositorySummary {
     pub(crate) id: String,
     pub(crate) url: String,
     pub(crate) display_name: String,
+    pub(crate) kind: RepositoryKind,
+    pub(crate) hidden: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RepositorySettingsSnapshot {
-    pub(crate) user_repositories: Vec<UserRepositorySummary>,
-    pub(crate) hidden_user_repositories: Vec<String>,
+    pub(crate) repositories: Vec<RepositorySummary>,
+    pub(crate) hidden_repository_ids: Vec<String>,
     pub(crate) hide_local_user_packages: bool,
     pub(crate) show_prerelease_packages: bool,
 }
@@ -194,20 +203,47 @@ pub(crate) async fn repository_settings_snapshot(
     io: &DefaultEnvironmentIo,
 ) -> Result<RepositorySettingsSnapshot, RustError> {
     let config = config.get();
-    let hidden_user_repositories = config.gui_hidden_repositories.iter().cloned().collect();
+    let hidden_repository_ids = config
+        .gui_hidden_repositories
+        .iter()
+        .cloned()
+        .collect::<Vec<_>>();
     let hide_local_user_packages = config.hide_local_user_packages;
     drop(config);
 
     let settings = settings.load(io).await?;
-    let user_repositories = settings
-        .get_user_repos()
-        .iter()
-        .filter_map(user_repository_summary)
-        .collect();
+    let mut repositories = Vec::new();
+    if !settings.ignore_official_repository() {
+        repositories.push(default_repository_summary(
+            OFFICIAL_REPOSITORY_ID,
+            OFFICIAL_URL_STR,
+            RepositoryKind::OfficialDefault,
+            hidden_repository_ids
+                .iter()
+                .any(|hidden| hidden == OFFICIAL_REPOSITORY_ID),
+        ));
+    }
+    if !settings.ignore_curated_repository() {
+        repositories.push(default_repository_summary(
+            CURATED_REPOSITORY_ID,
+            CURATED_URL_STR,
+            RepositoryKind::CuratedDefault,
+            hidden_repository_ids
+                .iter()
+                .any(|hidden| hidden == CURATED_REPOSITORY_ID),
+        ));
+    }
+    repositories.extend(settings.get_user_repos().iter().filter_map(|repository| {
+        user_repository_summary(
+            repository,
+            repository_identity(repository)
+                .is_some_and(|id| hidden_repository_ids.iter().any(|hidden| hidden == id)),
+        )
+    }));
 
     Ok(RepositorySettingsSnapshot {
-        user_repositories,
-        hidden_user_repositories,
+        repositories,
+        hidden_repository_ids,
         hide_local_user_packages,
         show_prerelease_packages: settings.show_prerelease_packages(),
     })
@@ -395,13 +431,33 @@ fn repository_identity(repository: &UserRepoSetting) -> Option<&str> {
     repository.id().or(repository.url().map(Url::as_str))
 }
 
-fn user_repository_summary(repository: &UserRepoSetting) -> Option<UserRepositorySummary> {
+fn default_repository_summary(
+    id: &str,
+    url: &str,
+    kind: RepositoryKind,
+    hidden: bool,
+) -> RepositorySummary {
+    RepositorySummary {
+        id: id.to_string(),
+        url: url.to_string(),
+        display_name: id.to_string(),
+        kind,
+        hidden,
+    }
+}
+
+fn user_repository_summary(
+    repository: &UserRepoSetting,
+    hidden: bool,
+) -> Option<RepositorySummary> {
     let url = repository.url()?;
     let id = repository.id().unwrap_or(url.as_str());
-    Some(UserRepositorySummary {
+    Some(RepositorySummary {
         id: id.to_string(),
         url: url.to_string(),
         display_name: repository.name().unwrap_or(id).to_string(),
+        kind: RepositoryKind::User,
+        hidden,
     })
 }
 
@@ -460,10 +516,12 @@ mod tests {
             Some("com.example.repository".into()),
         );
 
-        let summary = user_repository_summary(&repository).unwrap();
+        let summary = user_repository_summary(&repository, true).unwrap();
 
         assert_eq!(summary.id, "com.example.repository");
         assert_eq!(summary.url, "https://example.com/index.json");
         assert_eq!(summary.display_name, "Example Repository");
+        assert_eq!(summary.kind, RepositoryKind::User);
+        assert!(summary.hidden);
     }
 }

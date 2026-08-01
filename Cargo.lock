@@ -61,6 +61,7 @@ name = "alcomd3-mcp-protocol"
 version = "3.1.0"
 dependencies = [
  "alcomd3-app-paths",
+ "schemars 1.2.1",
  "serde",
  "serde_json",
  "uuid",

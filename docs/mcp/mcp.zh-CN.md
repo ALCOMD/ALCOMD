@@ -256,7 +256,7 @@ GUI 会校验 `protocolVersion` 和 `token`。校验失败会返回业务错误�
 | `alcomd3_update_project_template` | `{ "template_id": string, "display_name": string, "base_template_id": string, "unity_version_range": string, "vpm_dependencies": object<string, string>, "unity_package_paths": string[] }` | 整体替换可编辑模板定义，同时保持模板 ID 和存储位置不变。内置模板和项目归档模板不可进行字段级编辑。 |
 | `alcomd3_remove_project_template` | `{ "template_id": string }` | 将可删除的派生模板或项目归档模板移入系统回收站，并返回其 ID、名称和类型。不会删除引用的 Unity 包文件。 |
 | `alcomd3_get_project_details` | `{ "project_path": string }` | 获取已登记项目详情和已安装包摘要。`project_path` 必须匹配 ALCOMD3 已登记项目。 |
-| `alcomd3_list_repositories` | `{}` | 列出 ALCOMD3 当前远程仓库和相关显示设置。`repositories` 包含官方默认、Curated 默认和远程用户仓库；`userRepositories` 保留为仅远程用户仓库的兼容字段。软件包读取工具使用返回的 `id`，删除使用用户仓库的 `url`。 |
+| `alcomd3_list_repositories` | `{}` | 使用明确的输出 Schema 列出 ALCOMD3 当前远程仓库。唯一规范数组 `repositories` 的每项包含 `id`、`url`、`displayName`、`kind`（`officialDefault`、`curatedDefault` 或 `user`）和 `hidden`；全局软件包显示设置归入 `packageVisibility`。软件包读取工具使用返回的 `id`，删除使用用户仓库的 `url`。 |
 | `alcomd3_add_repository` | `{ "repository_url": string, "headers"?: object }` | 下载并校验指定 VPM 仓库 URL，成功后作为用户仓库加入 ALCOMD3，并清除软件包缓存以便后续重新加载。重复的已存 URL 或仓库声明 ID 会被拒绝。成功时返回新增的 `repository` 摘要；后续删除应使用其中的 `url`。活动记录只保存脱敏 URL 和 header 数量，不保存 header 值。 |
 | `alcomd3_remove_repository` | `{ "repository_url": string }` | 按已存 URL 精确删除一个用户添加的仓库并清除软件包缓存。不能删除官方和 Curated 默认仓库。 |
 | `alcomd3_get_package_details` | `{ "package_name": string, "version"?: string, "repository_id"?: string }` | 获取 GUI 可见软件包的详细元数据。`package_name` 必填；`version` 和 `repository_id` 可用于缩小到某个具体包版本或来源。 |

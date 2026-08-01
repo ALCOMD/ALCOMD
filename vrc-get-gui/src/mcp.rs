@@ -9,7 +9,7 @@ use crate::backend::logs;
 use crate::backend::mcp_capabilities::mcp_tool_capability_for_method;
 use crate::backend::packages::{
     latest_package_infos_by_source, package_is_visible_with_gui_filters, package_source_kind,
-    repository_id, repository_is_default, repository_kind,
+    repository_id, repository_kind,
 };
 use crate::backend::project_operations;
 use crate::backend::projects::{
@@ -33,7 +33,9 @@ use alcomd3_mcp_protocol::{
     ClientIdentity, EndpointMetadata, IPC_IO_TIMEOUT, IPC_MAX_LINE_BYTES,
     IPC_METHOD_PROJECT_TASK_CANCEL, IPC_METHOD_PROJECT_TASK_GET, IPC_METHOD_PROJECT_TASK_LIST,
     IPC_METHOD_PROJECT_TASK_START, IPC_PROTOCOL_VERSION, IpcRequest, IpcResponse, IpcTransport,
-    MCP_HTTP_BIND_ENV, MCP_HTTP_BIND_HOST, MCP_HTTP_PATH, MCP_HTTP_TOKEN_ENV, MCP_PROTOCOL_VERSION,
+    ListRepositoriesOutput, MCP_HTTP_BIND_ENV, MCP_HTTP_BIND_HOST, MCP_HTTP_PATH,
+    MCP_HTTP_TOKEN_ENV, MCP_PROTOCOL_VERSION, PackageVisibility,
+    RepositoryKind as McpRepositoryKind, RepositorySummary as McpRepositorySummary,
     endpoint_file_path,
 };
 use indexmap::{IndexMap, IndexSet};
@@ -55,17 +57,14 @@ use tokio::sync::{Mutex, oneshot};
 use tokio::task::AbortHandle;
 use uuid::Uuid;
 use vrc_get_vpm::environment::{
-    CURATED_REPOSITORY_ID, CURATED_URL_STR, OFFICIAL_REPOSITORY_ID, OFFICIAL_URL_STR, UserProject,
-    VccDatabaseConnection,
+    CURATED_REPOSITORY_ID, OFFICIAL_REPOSITORY_ID, UserProject, VccDatabaseConnection,
 };
 use vrc_get_vpm::io::DefaultEnvironmentIo;
 use vrc_get_vpm::repository::LocalCachedRepository;
 use vrc_get_vpm::unity_project::AddPackageOperation;
 use vrc_get_vpm::unity_project::PendingProjectChanges;
 use vrc_get_vpm::version::{StrictEqVersion, Version};
-use vrc_get_vpm::{
-    AbortCheck, PackageInfo, PackageManifest, UserRepoSetting, is_valid_package_name,
-};
+use vrc_get_vpm::{AbortCheck, PackageInfo, PackageManifest, is_valid_package_name};
 
 pub const MCP_STATUS_CHANGED_EVENT: &str = "mcp-status-changed";
 pub const MCP_TOOL_CALL_EVENT: &str = "mcp-tool-call";
@@ -3231,42 +3230,41 @@ async fn list_repositories(app: AppHandle) -> Result<Value, McpIpcError> {
     let io = app.state::<DefaultEnvironmentIo>();
     let settings = app.state::<SettingsState>();
     let config = app.state::<GuiConfigState>();
-    let settings = settings
-        .load(io.inner())
-        .await
-        .map_err(|e| McpIpcError::from_error("settings_load_error", e))?;
-    let config = config.get();
+    let snapshot = repository_operations::repository_settings_snapshot(
+        settings.inner(),
+        config.inner(),
+        io.inner(),
+    )
+    .await
+    .map_err(|e| McpIpcError::from_rust_error("settings_load_error", e))?;
+    let output = ListRepositoriesOutput {
+        ok: true,
+        repositories: snapshot
+            .repositories
+            .into_iter()
+            .map(|repository| McpRepositorySummary {
+                id: repository.id,
+                url: repository.url,
+                display_name: repository.display_name,
+                kind: match repository.kind {
+                    repository_operations::RepositoryKind::OfficialDefault => {
+                        McpRepositoryKind::OfficialDefault
+                    }
+                    repository_operations::RepositoryKind::CuratedDefault => {
+                        McpRepositoryKind::CuratedDefault
+                    }
+                    repository_operations::RepositoryKind::User => McpRepositoryKind::User,
+                },
+                hidden: repository.hidden,
+            })
+            .collect(),
+        package_visibility: PackageVisibility {
+            hide_local_user_packages: snapshot.hide_local_user_packages,
+            show_prerelease_packages: snapshot.show_prerelease_packages,
+        },
+    };
 
-    let user_repositories = settings
-        .get_user_repos()
-        .iter()
-        .map(user_repository_summary)
-        .collect::<Vec<_>>();
-    let mut repositories = Vec::new();
-    if !settings.ignore_official_repository() {
-        repositories.push(default_repository_summary(
-            OFFICIAL_REPOSITORY_ID,
-            OFFICIAL_URL_STR,
-            "officialDefault",
-        ));
-    }
-    if !settings.ignore_curated_repository() {
-        repositories.push(default_repository_summary(
-            CURATED_REPOSITORY_ID,
-            CURATED_URL_STR,
-            "curatedDefault",
-        ));
-    }
-    repositories.extend(user_repositories.iter().cloned());
-
-    Ok(json!({
-        "ok": true,
-        "repositories": repositories,
-        "userRepositories": user_repositories,
-        "hiddenUserRepositories": config.gui_hidden_repositories.iter().collect::<Vec<_>>(),
-        "hideLocalUserPackages": config.hide_local_user_packages,
-        "showPrereleasePackages": settings.show_prerelease_packages(),
-    }))
+    serde_json::to_value(output).map_err(|e| McpIpcError::from_error("serialization_error", e))
 }
 
 async fn add_repository(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
@@ -3300,8 +3298,6 @@ async fn add_repository(app: AppHandle, params: Value) -> Result<Value, McpIpcEr
             "url": repository.url,
             "displayName": repository.display_name,
             "kind": "user",
-            "isDefaultRepository": false,
-            "isUserRepository": true,
         },
     }))
 }
@@ -3340,36 +3336,8 @@ async fn remove_repository(app: AppHandle, params: Value) -> Result<Value, McpIp
             "url": repository.url,
             "displayName": repository.display_name,
             "kind": "user",
-            "isDefaultRepository": false,
-            "isUserRepository": true,
         },
     }))
-}
-
-fn default_repository_summary(id: &str, url: &str, kind: &str) -> Value {
-    json!({
-        "id": id,
-        "url": url,
-        "displayName": id,
-        "kind": kind,
-        "isDefaultRepository": true,
-        "isUserRepository": false,
-    })
-}
-
-fn user_repository_summary(repo: &UserRepoSetting) -> Value {
-    let url = repo
-        .url()
-        .expect("user repositories loaded by Settings must have a URL");
-    let id = repo.id().unwrap_or(url.as_str());
-    json!({
-        "id": id,
-        "url": url.to_string(),
-        "displayName": repo.name().unwrap_or(id),
-        "kind": "user",
-        "isDefaultRepository": false,
-        "isUserRepository": true,
-    })
 }
 
 async fn list_packages(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
@@ -3728,14 +3696,11 @@ fn project_summary(project: &UserProject) -> Option<Value> {
 fn repository_summary(repo: &LocalCachedRepository) -> Value {
     let id = repository_id(repo).map(str::to_string);
     let kind = repository_kind(repo);
-    let is_default_repository = repository_is_default(kind);
     json!({
         "id": id,
         "url": repo.url().map(ToString::to_string),
         "displayName": repo.name().map(str::to_string).or_else(|| id.clone()),
         "kind": kind,
-        "isDefaultRepository": is_default_repository,
-        "isUserRepository": !is_default_repository,
     })
 }
 
@@ -3749,15 +3714,12 @@ fn package_source_summary(package: &PackageInfo<'_>) -> Value {
     if let Some(repo) = package.repo() {
         let id = repository_id(repo);
         let kind = package_source_kind(repo);
-        let is_default_repository = repository_is_default(kind);
         json!({
             "type": "remote",
             "kind": kind,
             "id": id,
             "displayName": repo.name().or(id),
             "url": repo.url().map(ToString::to_string),
-            "isDefaultRepository": is_default_repository,
-            "isUserRepository": !is_default_repository,
         })
     } else {
         json!({
@@ -3960,7 +3922,6 @@ mod tests {
     use super::*;
     use crate::backend::packages::package_manifest_is_available_for_display;
     use indexmap::{IndexMap, IndexSet};
-    use std::path::PathBuf;
     use vrc_get_vpm::repository::RemoteRepository;
 
     #[test]
@@ -4524,22 +4485,6 @@ mod tests {
     }
 
     #[test]
-    fn user_repository_summary_uses_url_identity() {
-        let remote = UserRepoSetting::new(
-            PathBuf::from("Repos/remote.json").into_boxed_path(),
-            Some("Example Repository".into()),
-            Some(url::Url::parse("https://example.com/index.json").unwrap()),
-            Some("com.example.repository".into()),
-        );
-        let summary = user_repository_summary(&remote);
-
-        assert_eq!(summary["id"], "com.example.repository");
-        assert_eq!(summary["url"], "https://example.com/index.json");
-        assert_eq!(summary["displayName"], "Example Repository");
-        assert!(summary.get("index").is_none());
-    }
-
-    #[test]
     fn internal_project_task_polling_is_not_tracked_as_tool_call() {
         assert!(
             mcp_tool_call_for_request(IPC_METHOD_PROJECT_TASK_GET, &Value::Null, Uuid::new_v4())
@@ -4917,7 +4862,7 @@ mod tests {
     }
 
     #[test]
-    fn repository_summary_marks_default_and_user_repositories() {
+    fn repository_summary_uses_kind_as_the_only_repository_classification() {
         let official = test_cached_repository(json!({
             "id": "com.vrchat.repos.official",
             "url": "https://packages.vrchat.com/official?download",
@@ -4937,8 +4882,14 @@ mod tests {
         assert_eq!(repository_summary(&official)["kind"], "officialDefault");
         assert_eq!(repository_summary(&curated)["kind"], "curatedDefault");
         assert_eq!(repository_summary(&user)["kind"], "user");
-        assert_eq!(repository_summary(&official)["isDefaultRepository"], true);
-        assert_eq!(repository_summary(&user)["isUserRepository"], true);
+        for summary in [
+            repository_summary(&official),
+            repository_summary(&curated),
+            repository_summary(&user),
+        ] {
+            assert!(summary.get("isDefaultRepository").is_none());
+            assert!(summary.get("isUserRepository").is_none());
+        }
     }
 
     #[test]

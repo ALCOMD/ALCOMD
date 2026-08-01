@@ -191,8 +191,8 @@ struct TauriUserRepository {
     display_name: String,
 }
 
-impl From<repository_operations::UserRepositorySummary> for TauriUserRepository {
-    fn from(value: repository_operations::UserRepositorySummary) -> Self {
+impl From<repository_operations::RepositorySummary> for TauriUserRepository {
+    fn from(value: repository_operations::RepositorySummary) -> Self {
         Self {
             id: value.id,
             url: value.url,
@@ -225,11 +225,12 @@ pub async fn environment_repositories_info(
 
     Ok(TauriRepositoriesInfo {
         user_repositories: snapshot
-            .user_repositories
+            .repositories
             .into_iter()
+            .filter(|repository| repository.kind == repository_operations::RepositoryKind::User)
             .map(Into::into)
             .collect(),
-        hidden_user_repositories: snapshot.hidden_user_repositories,
+        hidden_user_repositories: snapshot.hidden_repository_ids,
         hide_local_user_packages: snapshot.hide_local_user_packages,
         show_prerelease_packages: snapshot.show_prerelease_packages,
     })

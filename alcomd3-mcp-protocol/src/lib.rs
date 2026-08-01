@@ -1,3 +1,4 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::ffi::OsString;
@@ -79,6 +80,39 @@ pub struct IpcError {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ListRepositoriesOutput {
+    pub ok: bool,
+    pub repositories: Vec<RepositorySummary>,
+    pub package_visibility: PackageVisibility,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositorySummary {
+    pub id: String,
+    pub url: String,
+    pub display_name: String,
+    pub kind: RepositoryKind,
+    pub hidden: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum RepositoryKind {
+    OfficialDefault,
+    CuratedDefault,
+    User,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageVisibility {
+    pub hide_local_user_packages: bool,
+    pub show_prerelease_packages: bool,
 }
 
 impl IpcResponse {
@@ -179,5 +213,39 @@ mod tests {
         assert_eq!(serialized["requestId"], request_id.to_string());
         assert_eq!(serialized["ok"], true);
         assert!(serialized.get("result").is_some());
+    }
+
+    #[test]
+    fn repository_list_output_uses_canonical_fields_only() {
+        let serialized = serde_json::to_value(ListRepositoriesOutput {
+            ok: true,
+            repositories: vec![RepositorySummary {
+                id: "com.example.repository".to_string(),
+                url: "https://example.com/index.json".to_string(),
+                display_name: "Example Repository".to_string(),
+                kind: RepositoryKind::User,
+                hidden: true,
+            }],
+            package_visibility: PackageVisibility {
+                hide_local_user_packages: false,
+                show_prerelease_packages: true,
+            },
+        })
+        .unwrap();
+
+        assert_eq!(serialized["repositories"][0]["kind"], "user");
+        assert_eq!(serialized["repositories"][0]["hidden"], true);
+        assert_eq!(
+            serialized["packageVisibility"]["showPrereleasePackages"],
+            true
+        );
+        for removed in [
+            "userRepositories",
+            "hiddenUserRepositories",
+            "hideLocalUserPackages",
+            "showPrereleasePackages",
+        ] {
+            assert!(serialized.get(removed).is_none());
+        }
     }
 }
