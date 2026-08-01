@@ -71,9 +71,9 @@ if (toolNames.length !== uniqueToolNames.length) {
 	hasFailure = true;
 }
 
-if (uniqueToolNames.length !== 29) {
+if (uniqueToolNames.length !== 33) {
 	console.error(
-		`Expected 29 public MCP tools, found ${uniqueToolNames.length}. ` +
+		`Expected 33 public MCP tools, found ${uniqueToolNames.length}. ` +
 			"Update the references and this expected count together.",
 	);
 	hasFailure = true;

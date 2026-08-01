@@ -131,36 +131,40 @@ fn bridge_lists_project_tools() {
             "alcomd3_backup_project",
             "alcomd3_copy_project",
             "alcomd3_create_project",
-            "alcomd3_create_project_template",
+            "alcomd3_create_template",
+            "alcomd3_edit_template",
             "alcomd3_get_activity_log_context",
             "alcomd3_get_activity_log_entry",
             "alcomd3_get_environment_settings",
             "alcomd3_get_package_details",
             "alcomd3_get_project_details",
-            "alcomd3_get_project_template",
+            "alcomd3_get_template",
             "alcomd3_get_technical_log_entry",
             "alcomd3_install_project_package",
             "alcomd3_list_packages",
-            "alcomd3_list_project_templates",
+            "alcomd3_list_templates",
             "alcomd3_list_projects",
             "alcomd3_list_repositories",
             "alcomd3_list_repository_packages",
             "alcomd3_reinstall_project_package",
-            "alcomd3_remove_project_template",
             "alcomd3_remove_repository",
+            "alcomd3_remove_template",
+            "alcomd3_remove_template_package",
+            "alcomd3_remove_template_unitypackage",
             "alcomd3_restore_project_from_backup",
             "alcomd3_search_activity_logs",
             "alcomd3_search_technical_logs",
             "alcomd3_summarize_activity_logs",
             "alcomd3_summarize_technical_logs",
+            "alcomd3_set_template_package",
+            "alcomd3_set_template_unitypackage",
             "alcomd3_uninstall_project_package",
-            "alcomd3_update_project_template",
         ])
     );
     let tool = tools
         .iter()
-        .find(|tool| tool["name"] == "alcomd3_get_project_template")
-        .expect("alcomd3_get_project_template should be exposed");
+        .find(|tool| tool["name"] == "alcomd3_get_template")
+        .expect("alcomd3_get_template should be exposed");
     assert_eq!(tool["annotations"]["readOnlyHint"], true);
     assert_eq!(tool["annotations"]["destructiveHint"], false);
     assert_eq!(tool["inputSchema"]["additionalProperties"], false);
@@ -168,8 +172,27 @@ fn bridge_lists_project_tools() {
 
     let tool = tools
         .iter()
-        .find(|tool| tool["name"] == "alcomd3_create_project_template")
-        .expect("alcomd3_create_project_template should be exposed");
+        .find(|tool| tool["name"] == "alcomd3_set_template_package")
+        .expect("alcomd3_set_template_package should be exposed");
+    assert_eq!(tool["annotations"]["destructiveHint"], false);
+    assert_eq!(tool["annotations"]["idempotentHint"], true);
+    for field in ["template_id", "package_name", "version_range"] {
+        assert!(tool["inputSchema"]["properties"][field].is_object());
+    }
+
+    let tool = tools
+        .iter()
+        .find(|tool| tool["name"] == "alcomd3_remove_template_unitypackage")
+        .expect("alcomd3_remove_template_unitypackage should be exposed");
+    assert_eq!(tool["annotations"]["destructiveHint"], true);
+    for field in ["template_id", "unitypackage_path"] {
+        assert!(tool["inputSchema"]["properties"][field].is_object());
+    }
+
+    let tool = tools
+        .iter()
+        .find(|tool| tool["name"] == "alcomd3_create_template")
+        .expect("alcomd3_create_template should be exposed");
     assert_eq!(tool["annotations"]["readOnlyHint"], false);
     assert_eq!(tool["annotations"]["destructiveHint"], false);
     assert_eq!(tool["inputSchema"]["additionalProperties"], false);
@@ -178,23 +201,23 @@ fn bridge_lists_project_tools() {
         "base_template_id",
         "unity_version_range",
         "vpm_dependencies",
-        "unity_package_paths",
+        "unitypackage_paths",
     ] {
         assert!(tool["inputSchema"]["properties"][field].is_object());
     }
 
     let tool = tools
         .iter()
-        .find(|tool| tool["name"] == "alcomd3_update_project_template")
-        .expect("alcomd3_update_project_template should be exposed");
+        .find(|tool| tool["name"] == "alcomd3_edit_template")
+        .expect("alcomd3_edit_template should be exposed");
     assert_eq!(tool["annotations"]["destructiveHint"], true);
     assert_eq!(tool["inputSchema"]["additionalProperties"], false);
     assert!(tool["inputSchema"]["properties"]["template_id"].is_object());
 
     let tool = tools
         .iter()
-        .find(|tool| tool["name"] == "alcomd3_remove_project_template")
-        .expect("alcomd3_remove_project_template should be exposed");
+        .find(|tool| tool["name"] == "alcomd3_remove_template")
+        .expect("alcomd3_remove_template should be exposed");
     assert_eq!(tool["annotations"]["destructiveHint"], true);
     assert_eq!(tool["inputSchema"]["additionalProperties"], false);
     assert!(tool["inputSchema"]["properties"]["template_id"].is_object());
@@ -780,7 +803,7 @@ fn bridge_forwards_http_calls_to_loopback_ipc_and_preserves_gui_errors() {
 }
 
 #[test]
-fn bridge_forwards_project_template_crud_lifecycle_to_gui_ipc() {
+fn bridge_forwards_template_crud_lifecycle_to_gui_ipc() {
     let test_dir = std::env::temp_dir().join(format!(
         "alcomd3-mcp-template-crud-{}",
         Uuid::new_v4().simple()
@@ -807,36 +830,65 @@ fn bridge_forwards_project_template_crud_lifecycle_to_gui_ipc() {
         "base_template_id": "com.vrchat.template.avatars",
         "unity_version_range": "2022.3.x",
         "vpm_dependencies": { "com.example.package": "^1.0.0" },
-        "unity_package_paths": [],
+        "unitypackage_paths": [],
     });
-    let mut update_definition = definition.clone();
-    update_definition["template_id"] = json!("com.example.template");
-    update_definition["display_name"] = json!("Updated Template");
+    let mut edit_definition = definition.clone();
+    edit_definition["template_id"] = json!("com.example.template");
+    edit_definition["display_name"] = json!("Edited Template");
+    let template_package = json!({
+        "template_id": "com.example.template",
+        "package_name": "com.example.package",
+        "version_range": "^2.0.0",
+    });
+    let remove_template_package = json!({
+        "template_id": "com.example.template",
+        "package_name": "com.example.package",
+    });
+    let template_unitypackage = json!({
+        "template_id": "com.example.template",
+        "unitypackage_path": "C:/templates/example.unitypackage",
+    });
     let expected_requests = vec![
+        ("list_templates", json!({}), json!({ "templates": [] })),
         (
-            "list_project_templates",
-            json!({}),
-            json!({ "templates": [] }),
-        ),
-        (
-            "get_project_template",
+            "get_template",
             json!({ "template_id": "com.example.template" }),
             json!({ "template": { "id": "com.example.template", "displayName": "Example Template" } }),
         ),
         (
-            "create_project_template",
+            "create_template",
             definition.clone(),
             json!({ "template": { "id": "com.example.template", "displayName": "Example Template" } }),
         ),
         (
-            "update_project_template",
-            update_definition.clone(),
-            json!({ "template": { "id": "com.example.template", "displayName": "Updated Template" } }),
+            "edit_template",
+            edit_definition.clone(),
+            json!({ "template": { "id": "com.example.template", "displayName": "Edited Template" } }),
         ),
         (
-            "remove_project_template",
+            "set_template_package",
+            template_package.clone(),
+            json!({ "template": { "id": "com.example.template" } }),
+        ),
+        (
+            "remove_template_package",
+            remove_template_package.clone(),
+            json!({ "template": { "id": "com.example.template" } }),
+        ),
+        (
+            "set_template_unitypackage",
+            template_unitypackage.clone(),
+            json!({ "template": { "id": "com.example.template" } }),
+        ),
+        (
+            "remove_template_unitypackage",
+            template_unitypackage.clone(),
+            json!({ "template": { "id": "com.example.template" } }),
+        ),
+        (
+            "remove_template",
             json!({ "template_id": "com.example.template" }),
-            json!({ "template": { "id": "com.example.template", "displayName": "Updated Template", "kind": "derived" } }),
+            json!({ "template": { "id": "com.example.template", "displayName": "Edited Template", "kind": "derived" } }),
         ),
     ];
 
@@ -887,15 +939,25 @@ fn bridge_forwards_project_template_crud_lifecycle_to_gui_ipc() {
     );
 
     let calls = [
-        ("alcomd3_list_project_templates", json!({})),
+        ("alcomd3_list_templates", json!({})),
         (
-            "alcomd3_get_project_template",
+            "alcomd3_get_template",
             json!({ "template_id": "com.example.template" }),
         ),
-        ("alcomd3_create_project_template", definition),
-        ("alcomd3_update_project_template", update_definition),
+        ("alcomd3_create_template", definition),
+        ("alcomd3_edit_template", edit_definition),
+        ("alcomd3_set_template_package", template_package),
+        ("alcomd3_remove_template_package", remove_template_package),
         (
-            "alcomd3_remove_project_template",
+            "alcomd3_set_template_unitypackage",
+            template_unitypackage.clone(),
+        ),
+        (
+            "alcomd3_remove_template_unitypackage",
+            template_unitypackage,
+        ),
+        (
+            "alcomd3_remove_template",
             json!({ "template_id": "com.example.template" }),
         ),
     ];

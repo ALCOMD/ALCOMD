@@ -2,7 +2,7 @@
 
 [English](tools.md) | [繁體中文](tools.zh-TW.md) | [日本語](tools.ja.md)
 
-本文档以当前公开的 29 个 MCP 工具实现为准，适合在编写 Agent、排查调用或检查兼容性时查阅。
+本文档以当前公开的 33 个 MCP 工具实现为准，适合在编写 Agent、排查调用或检查兼容性时查阅。
 连接、鉴权、生命周期和客户端配置请参阅 [MCP 主指南](mcp.zh-CN.md)。
 
 ## 如何阅读
@@ -39,11 +39,15 @@
 | 分类 | 工具 | 行为 | 用途 |
 | --- | --- | --- | --- |
 | 项目 | `alcomd3_list_projects` | 只读 | 列出已登记项目。 |
-| 模板 | `alcomd3_list_project_templates` | 只读 | 列出可用项目模板。 |
-| 模板 | `alcomd3_get_project_template` | 只读 | 读取一个模板详情。 |
-| 模板 | `alcomd3_create_project_template` | 写入 | 创建派生模板。 |
-| 模板 | `alcomd3_update_project_template` | 破坏性写入 | 整体替换派生模板定义。 |
-| 模板 | `alcomd3_remove_project_template` | 破坏性写入 | 将可删除模板移入回收站。 |
+| 模板 | `alcomd3_list_templates` | 只读 | 列出可用的环境级模板。 |
+| 模板 | `alcomd3_get_template` | 只读 | 读取一个环境级模板。 |
+| 模板 | `alcomd3_create_template` | 写入 | 创建派生模板。 |
+| 模板 | `alcomd3_edit_template` | 破坏性写入 | 通过整体替换定义来编辑派生模板。 |
+| 模板 | `alcomd3_set_template_package` | 幂等写入 | 设置一个直接 VPM 依赖。 |
+| 模板 | `alcomd3_remove_template_package` | 破坏性写入 | 移除一个直接 VPM 依赖。 |
+| 模板 | `alcomd3_set_template_unitypackage` | 幂等写入 | 设置一个 UnityPackage 附件引用。 |
+| 模板 | `alcomd3_remove_template_unitypackage` | 破坏性写入 | 移除一个 UnityPackage 附件引用。 |
+| 模板 | `alcomd3_remove_template` | 破坏性写入 | 将可删除模板移入回收站。 |
 | 项目 | `alcomd3_get_project_details` | 只读 | 读取已登记项目详情。 |
 | 仓库 | `alcomd3_list_repositories` | 只读 | 列出远程仓库和包显示设置。 |
 | 仓库 | `alcomd3_add_repository` | 外部网络写入 | 添加远程 VPM 仓库。 |
@@ -87,9 +91,9 @@
 | `ok` | `boolean` | 必有 | 成功时为 `true`。 |
 | `projects` | [`ProjectSummary[]`](#projectsummary) | 必有 | 已登记项目摘要；无法形成有效路径摘要的记录会被跳过。 |
 
-### `alcomd3_list_project_templates`
+### `alcomd3_list_templates`
 
-列出当前可用模板。模板源文件路径不会返回。
+列出当前可用于新建项目的环境级模板。这些模板不是某个已登记项目拥有的模板数据。模板源文件路径不会返回。
 
 **输入：** 无字段，传 `{}`。
 
@@ -100,15 +104,15 @@
 | `ok` | `boolean` | 必有 | 成功时为 `true`。 |
 | `templates` | [`TemplateSummary[]`](#templatesummary) | 必有 | 模板摘要和能力标记。 |
 
-### `alcomd3_get_project_template`
+### `alcomd3_get_template`
 
-按稳定模板 ID 读取一个模板。ID 仅用于选择读取对象，不会使只读调用变成写入。
+按稳定模板 ID 读取一个环境级模板；此调用不会检查已登记项目。ID 仅用于选择读取对象，不会使只读调用变成写入。
 
 **输入：**
 
 | 字段 | 类型 | 必填 | 含义 |
 | --- | --- | --- | --- |
-| `template_id` | `string` | 是 | `alcomd3_list_project_templates` 返回的模板 `id`；去除首尾空白后不能为空。 |
+| `template_id` | `string` | 是 | `alcomd3_list_templates` 返回的模板 `id`；去除首尾空白后不能为空。 |
 
 **成功输出：**
 
@@ -117,7 +121,7 @@
 | `ok` | `boolean` | 必有 | 成功时为 `true`。 |
 | `template` | [`TemplateDetails`](#templatedetails) | 必有 | 模板摘要和可读取定义；不包含模板存储路径。 |
 
-### `alcomd3_create_project_template`
+### `alcomd3_create_template`
 
 创建一个派生模板。后端生成并持久化模板 ID。
 
@@ -129,7 +133,7 @@
 | `base_template_id` | `string` | 是 | 必须指向 `usableAsBase: true` 的现有模板。 |
 | `unity_version_range` | `string` | 是 | 可解析的 Unity 版本范围。 |
 | `vpm_dependencies` | `object<string, string>` | 是 | VPM 包名到版本范围的完整映射。 |
-| `unity_package_paths` | `string[]` | 是 | 已存在的绝对 `.unitypackage` 普通文件路径。可传空数组。 |
+| `unitypackage_paths` | `string[]` | 是 | 已存在的绝对 `.unitypackage` 普通文件路径。可传空数组。 |
 
 **成功输出：**
 
@@ -140,7 +144,7 @@
 
 附件只被引用，不会复制。自引用、基模板依赖环、无效包名、无效版本范围和无效附件路径会被拒绝。
 
-### `alcomd3_update_project_template`
+### `alcomd3_edit_template`
 
 整体替换一个派生模板的可编辑定义；模板 ID 和存储位置保持不变。
 
@@ -148,23 +152,78 @@
 
 | 字段 | 类型 | 必填 | 含义 |
 | --- | --- | --- | --- |
-| `template_id` | `string` | 是 | 要更新的派生模板 ID。 |
+| `template_id` | `string` | 是 | 要编辑的派生模板 ID。 |
 | `display_name` | `string` | 是 | 替换后的显示名称。 |
 | `base_template_id` | `string` | 是 | 替换后的基模板 ID。 |
 | `unity_version_range` | `string` | 是 | 替换后的 Unity 版本范围。 |
 | `vpm_dependencies` | `object<string, string>` | 是 | 替换后的完整 VPM 依赖映射。 |
-| `unity_package_paths` | `string[]` | 是 | 替换后的完整附件路径列表。 |
+| `unitypackage_paths` | `string[]` | 是 | 替换后的完整附件路径列表。 |
 
 **成功输出：**
 
 | 字段 | 类型 | 出现条件 | 含义 |
 | --- | --- | --- | --- |
 | `ok` | `boolean` | 必有 | 成功时为 `true`。 |
-| `template` | [`TemplateDetails`](#templatedetails) | 必有 | 更新后的完整定义。 |
+| `template` | [`TemplateDetails`](#templatedetails) | 必有 | 编辑后的完整定义。 |
 
-内置模板和项目归档模板不能字段级更新。本工具标记为 destructive，因为采用整体替换语义。
+内置模板和项目归档模板不能字段级编辑。本工具标记为 destructive，因为采用整体替换语义。
 
-### `alcomd3_remove_project_template`
+### `alcomd3_set_template_package`
+
+为派生模板设置一个直接 VPM 依赖。它只保存包名和版本范围声明，不选择仓库、不解析依赖，也不安装文件。
+
+**输入：**
+
+| 字段 | 类型 | 必填 | 含义 |
+| --- | --- | --- | --- |
+| `template_id` | `string` | 是 | 可编辑的派生模板 ID。 |
+| `package_name` | `string` | 是 | 合法的完整 VPM 包名。 |
+| `version_range` | `string` | 是 | 要新增或替换的可解析 VPM 版本范围。 |
+
+**成功输出：** `ok: true`，并在 `template` 中返回完整的最新 [`TemplateDetails`](#templatedetails)。重复设置相同包名和范围不会写入。
+
+### `alcomd3_remove_template_package`
+
+从派生模板移除一个直接 VPM 依赖声明，不会修改任何已有项目。
+
+**输入：**
+
+| 字段 | 类型 | 必填 | 含义 |
+| --- | --- | --- | --- |
+| `template_id` | `string` | 是 | 可编辑的派生模板 ID。 |
+| `package_name` | `string` | 是 | 要移除的现有直接依赖。 |
+
+**成功输出：** `ok: true`，并在 `template` 中返回完整的最新 [`TemplateDetails`](#templatedetails)。依赖不存在时返回 `template_package_not_found`。
+
+### `alcomd3_set_template_unitypackage`
+
+为派生模板设置一个 UnityPackage 附件引用。
+
+**输入：**
+
+| 字段 | 类型 | 必填 | 含义 |
+| --- | --- | --- | --- |
+| `template_id` | `string` | 是 | 可编辑的派生模板 ID。 |
+| `unitypackage_path` | `string` | 是 | 已存在的绝对 `.unitypackage` 普通文件路径。 |
+
+路径会被规范化，文件只会被引用而不会复制。重复设置同一规范路径不会写入。
+
+**成功输出：** `ok: true`，并在 `template` 中返回完整的最新 [`TemplateDetails`](#templatedetails)。
+
+### `alcomd3_remove_template_unitypackage`
+
+从派生模板移除一个 UnityPackage 附件引用。路径应复制自 `alcomd3_get_template`；引用的文件不会被删除，也不要求仍然存在。
+
+**输入：**
+
+| 字段 | 类型 | 必填 | 含义 |
+| --- | --- | --- | --- |
+| `template_id` | `string` | 是 | 可编辑的派生模板 ID。 |
+| `unitypackage_path` | `string` | 是 | 模板定义中已有的附件路径。 |
+
+**成功输出：** `ok: true`，并在 `template` 中返回完整的最新 [`TemplateDetails`](#templatedetails)。引用不存在时返回 `template_unitypackage_not_found`。
+
+### `alcomd3_remove_template`
 
 把一个可删除模板移入系统回收站。内置模板不可删除，附件文件不会被删除。
 

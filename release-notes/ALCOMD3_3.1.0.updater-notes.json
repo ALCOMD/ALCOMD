@@ -1,9 +1,9 @@
 {
-    "en": "Adds protected local MCP with client quick setup, improves startup and Unity project handling, and keeps project and repository information current.",
-    "de": "Fügt geschütztes lokales MCP mit Schnelleinrichtung für Clients hinzu, verbessert den Start und die Verwaltung von Unity-Projekten und hält Projekt- und Repository-Informationen aktuell.",
-    "fr": "Ajoute un MCP local protégé avec configuration rapide des clients, améliore le démarrage et la gestion des projets Unity, et maintient à jour les informations sur les projets et les dépôts.",
-    "ja": "クライアントのクイック設定を備えた保護されたローカル MCP を追加し、起動と Unity プロジェクトの扱いを改善して、プロジェクトとリポジトリの情報を最新に保ちます。",
-    "ko": "클라이언트 빠른 설정을 갖춘 보호된 로컬 MCP를 추가하고, 시작과 Unity 프로젝트 처리를 개선하며, 프로젝트와 리포지토리 정보를 최신으로 유지합니다.",
-    "zh_hans": "新增带客户端快速配置的受保护本机 MCP，改进启动和 Unity 项目处理，并让项目和软件源信息保持最新。",
-    "zh_hant": "新增具備用戶端快速設定的受保護本機 MCP，改善啟動和 Unity 專案處理，並讓專案和軟體來源資訊保持最新。"
+    "en": "Adds protected local MCP with client quick setup and environment template management, improves startup and Unity project handling, and keeps project and repository information current.",
+    "de": "Fügt geschütztes lokales MCP mit Schnelleinrichtung für Clients und Verwaltung von Umgebungsvorlagen hinzu, verbessert den Start und die Verwaltung von Unity-Projekten und hält Projekt- und Repository-Informationen aktuell.",
+    "fr": "Ajoute un MCP local protégé avec configuration rapide des clients et gestion des modèles d’environnement, améliore le démarrage et la gestion des projets Unity, et maintient à jour les informations sur les projets et les dépôts.",
+    "ja": "クライアントのクイック設定と環境テンプレート管理を備えた保護されたローカル MCP を追加し、起動と Unity プロジェクトの扱いを改善して、プロジェクトとリポジトリの情報を最新に保ちます。",
+    "ko": "클라이언트 빠른 설정과 환경 템플릿 관리를 갖춘 보호된 로컬 MCP를 추가하고, 시작과 Unity 프로젝트 처리를 개선하며, 프로젝트와 리포지토리 정보를 최신으로 유지합니다.",
+    "zh_hans": "新增带客户端快速配置和环境模板管理的受保护本机 MCP，改进启动和 Unity 项目处理，并让项目和软件源信息保持最新。",
+    "zh_hant": "新增具備用戶端快速設定和環境範本管理的受保護本機 MCP，改善啟動和 Unity 專案處理，並讓專案和軟體來源資訊保持最新。"
 }

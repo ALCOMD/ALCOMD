@@ -67,29 +67,51 @@ struct ProjectDetailsArgs {
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct ProjectTemplateIdArgs {
+struct TemplateIdArgs {
     template_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct CreateProjectTemplateArgs {
+struct CreateTemplateArgs {
     display_name: String,
     base_template_id: String,
     unity_version_range: String,
     vpm_dependencies: BTreeMap<String, String>,
-    unity_package_paths: Vec<String>,
+    unitypackage_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct UpdateProjectTemplateArgs {
+struct EditTemplateArgs {
     template_id: String,
     display_name: String,
     base_template_id: String,
     unity_version_range: String,
     vpm_dependencies: BTreeMap<String, String>,
-    unity_package_paths: Vec<String>,
+    unitypackage_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SetTemplatePackageArgs {
+    template_id: String,
+    package_name: String,
+    version_range: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RemoveTemplatePackageArgs {
+    template_id: String,
+    package_name: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct TemplateUnityPackageArgs {
+    template_id: String,
+    unitypackage_path: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
@@ -1076,7 +1098,7 @@ impl Alcomd3Mcp {
     }
 
     #[tool(
-        description = "List project templates currently available in ALCOMD3, including template IDs and supported Unity versions. Use a returned template ID and Unity version with alcomd3_create_project.",
+        description = "List the environment-level templates currently available in ALCOMD3. These templates are choices for alcomd3_create_project, not data owned by a registered project. Use a returned template ID and Unity version with alcomd3_create_project.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -1084,12 +1106,12 @@ impl Alcomd3Mcp {
             open_world_hint = false
         )
     )]
-    async fn alcomd3_list_project_templates(&self, peer: Peer<RoleServer>) -> McpJsonResult {
-        self.invoke("list_project_templates", json!({}), peer).await
+    async fn alcomd3_list_templates(&self, peer: Peer<RoleServer>) -> McpJsonResult {
+        self.invoke("list_templates", json!({}), peer).await
     }
 
     #[tool(
-        description = "Read one ALCOMD3 project template selected by template_id. Derived templates include their editable definition and Unity package paths; template storage paths are not returned.",
+        description = "Read one environment-level ALCOMD3 template selected by template_id. This does not read template information from a registered project. Derived templates include their editable definition and UnityPackage paths; template storage paths are not returned.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -1097,16 +1119,16 @@ impl Alcomd3Mcp {
             open_world_hint = false
         )
     )]
-    async fn alcomd3_get_project_template(
+    async fn alcomd3_get_template(
         &self,
-        Parameters(args): Parameters<ProjectTemplateIdArgs>,
+        Parameters(args): Parameters<TemplateIdArgs>,
         peer: Peer<RoleServer>,
     ) -> McpJsonResult {
-        self.invoke("get_project_template", args, peer).await
+        self.invoke("get_template", args, peer).await
     }
 
     #[tool(
-        description = "Create a derived ALCOMD3 project template. The base template ID must come from alcomd3_list_project_templates with usableAsBase=true. Every unity_package_paths entry must be an existing absolute .unitypackage file.",
+        description = "Create a derived environment-level ALCOMD3 template. The base template ID must come from alcomd3_list_templates with usableAsBase=true. Every unitypackage_paths entry must be an existing absolute .unitypackage file.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -1114,16 +1136,16 @@ impl Alcomd3Mcp {
             open_world_hint = false
         )
     )]
-    async fn alcomd3_create_project_template(
+    async fn alcomd3_create_template(
         &self,
-        Parameters(args): Parameters<CreateProjectTemplateArgs>,
+        Parameters(args): Parameters<CreateTemplateArgs>,
         peer: Peer<RoleServer>,
     ) -> McpJsonResult {
-        self.invoke("create_project_template", args, peer).await
+        self.invoke("create_template", args, peer).await
     }
 
     #[tool(
-        description = "Replace the editable definition of one derived ALCOMD3 project template. The template ID and storage location remain unchanged. Built-in and project-archive templates cannot be updated.",
+        description = "Replace the editable definition of one derived environment-level ALCOMD3 template. The template ID and storage location remain unchanged. Built-in and project-archive templates cannot be edited.",
         annotations(
             read_only_hint = false,
             destructive_hint = true,
@@ -1131,16 +1153,33 @@ impl Alcomd3Mcp {
             open_world_hint = false
         )
     )]
-    async fn alcomd3_update_project_template(
+    async fn alcomd3_edit_template(
         &self,
-        Parameters(args): Parameters<UpdateProjectTemplateArgs>,
+        Parameters(args): Parameters<EditTemplateArgs>,
         peer: Peer<RoleServer>,
     ) -> McpJsonResult {
-        self.invoke("update_project_template", args, peer).await
+        self.invoke("edit_template", args, peer).await
     }
 
     #[tool(
-        description = "Remove one user project template from ALCOMD3 by template_id. Built-in templates cannot be removed. Referenced Unity package files are not deleted.",
+        description = "Set one direct VPM package dependency on a derived ALCOMD3 template. This stores package_name and version_range in the template definition; it does not install or resolve the package. Repeating the same value is a no-op.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn alcomd3_set_template_package(
+        &self,
+        Parameters(args): Parameters<SetTemplatePackageArgs>,
+        peer: Peer<RoleServer>,
+    ) -> McpJsonResult {
+        self.invoke("set_template_package", args, peer).await
+    }
+
+    #[tool(
+        description = "Remove one direct VPM package dependency from a derived ALCOMD3 template. This only edits the template definition and does not uninstall anything from existing projects.",
         annotations(
             read_only_hint = false,
             destructive_hint = true,
@@ -1148,12 +1187,64 @@ impl Alcomd3Mcp {
             open_world_hint = false
         )
     )]
-    async fn alcomd3_remove_project_template(
+    async fn alcomd3_remove_template_package(
         &self,
-        Parameters(args): Parameters<ProjectTemplateIdArgs>,
+        Parameters(args): Parameters<RemoveTemplatePackageArgs>,
         peer: Peer<RoleServer>,
     ) -> McpJsonResult {
-        self.invoke("remove_project_template", args, peer).await
+        self.invoke("remove_template_package", args, peer).await
+    }
+
+    #[tool(
+        description = "Set one UnityPackage attachment on a derived ALCOMD3 template. unitypackage_path must identify an existing absolute .unitypackage file. The file is referenced, not copied; repeating the same canonical path is a no-op.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn alcomd3_set_template_unitypackage(
+        &self,
+        Parameters(args): Parameters<TemplateUnityPackageArgs>,
+        peer: Peer<RoleServer>,
+    ) -> McpJsonResult {
+        self.invoke("set_template_unitypackage", args, peer).await
+    }
+
+    #[tool(
+        description = "Remove one UnityPackage attachment reference from a derived ALCOMD3 template. unitypackage_path should be copied from alcomd3_get_template. The referenced .unitypackage file is not deleted.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn alcomd3_remove_template_unitypackage(
+        &self,
+        Parameters(args): Parameters<TemplateUnityPackageArgs>,
+        peer: Peer<RoleServer>,
+    ) -> McpJsonResult {
+        self.invoke("remove_template_unitypackage", args, peer)
+            .await
+    }
+
+    #[tool(
+        description = "Remove one user-defined environment-level ALCOMD3 template by template_id. Built-in templates cannot be removed. Referenced UnityPackage files are not deleted.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn alcomd3_remove_template(
+        &self,
+        Parameters(args): Parameters<TemplateIdArgs>,
+        peer: Peer<RoleServer>,
+    ) -> McpJsonResult {
+        self.invoke("remove_template", args, peer).await
     }
 
     #[tool(

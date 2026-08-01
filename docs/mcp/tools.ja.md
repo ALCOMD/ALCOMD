@@ -2,7 +2,7 @@
 
 [English](tools.md) | [简体中文](tools.zh-CN.md) | [繁體中文](tools.zh-TW.md)
 
-このリファレンスは、ALCOMD3 が現在公開している 29 個の MCP ツールを説明します。
+このリファレンスは、ALCOMD3 が現在公開している 33 個の MCP ツールを説明します。
 接続、認証、ライフサイクル、クライアント設定については
 [MCP メインガイド](mcp.ja.md)を参照してください。
 
@@ -42,11 +42,15 @@
 | 分類 | ツール | 動作 | 用途 |
 | --- | --- | --- | --- |
 | プロジェクト | `alcomd3_list_projects` | 読み取り専用 | 登録済みプロジェクトを一覧表示します。 |
-| テンプレート | `alcomd3_list_project_templates` | 読み取り専用 | 利用可能なテンプレートを一覧表示します。 |
-| テンプレート | `alcomd3_get_project_template` | 読み取り専用 | テンプレートを 1 件取得します。 |
-| テンプレート | `alcomd3_create_project_template` | 書き込み | 派生テンプレートを作成します。 |
-| テンプレート | `alcomd3_update_project_template` | 破壊的書き込み | 派生テンプレート定義を置換します。 |
-| テンプレート | `alcomd3_remove_project_template` | 破壊的書き込み | 削除可能なテンプレートをごみ箱へ移動します。 |
+| テンプレート | `alcomd3_list_templates` | 読み取り専用 | 利用可能な環境レベルのテンプレートを一覧表示します。 |
+| テンプレート | `alcomd3_get_template` | 読み取り専用 | 環境レベルのテンプレートを 1 件取得します。 |
+| テンプレート | `alcomd3_create_template` | 書き込み | 派生テンプレートを作成します。 |
+| テンプレート | `alcomd3_edit_template` | 破壊的書き込み | 定義全体を置換して派生テンプレートを編集します。 |
+| テンプレート | `alcomd3_set_template_package` | 冪等な書き込み | 直接 VPM 依存関係を 1 件設定します。 |
+| テンプレート | `alcomd3_remove_template_package` | 破壊的書き込み | 直接 VPM 依存関係を 1 件削除します。 |
+| テンプレート | `alcomd3_set_template_unitypackage` | 冪等な書き込み | UnityPackage 添付参照を 1 件設定します。 |
+| テンプレート | `alcomd3_remove_template_unitypackage` | 破壊的書き込み | UnityPackage 添付参照を 1 件削除します。 |
+| テンプレート | `alcomd3_remove_template` | 破壊的書き込み | 削除可能なテンプレートをごみ箱へ移動します。 |
 | プロジェクト | `alcomd3_get_project_details` | 読み取り専用 | 登録済みプロジェクトの詳細を取得します。 |
 | リポジトリ | `alcomd3_list_repositories` | 読み取り専用 | リモートリポジトリと表示設定を一覧表示します。 |
 | リポジトリ | `alcomd3_add_repository` | ネットワーク書き込み | リモート VPM リポジトリを追加します。 |
@@ -90,9 +94,9 @@ ALCOMD3 データベースに登録されたプロジェクトを返します。
 | `ok` | `boolean` | 常に | 成功時は `true`。 |
 | `projects` | [`ProjectSummary[]`](#projectsummary) | 常に | 登録済みプロジェクトの概要。正しいパス概要を作れないレコードは除外されます。 |
 
-### `alcomd3_list_project_templates`
+### `alcomd3_list_templates`
 
-現在利用可能なテンプレートを返します。テンプレートの保存元パスは公開しません。
+プロジェクト作成に利用できる環境レベルのテンプレートを返します。これらは登録済みプロジェクトが所有するテンプレートデータではありません。テンプレートの保存元パスは公開しません。
 
 **入力:** フィールドなし。`{}` を渡します。
 
@@ -103,15 +107,15 @@ ALCOMD3 データベースに登録されたプロジェクトを返します。
 | `ok` | `boolean` | 常に | 成功時は `true`。 |
 | `templates` | [`TemplateSummary[]`](#templatesummary) | 常に | テンプレート概要と操作可否フラグ。 |
 
-### `alcomd3_get_project_template`
+### `alcomd3_get_template`
 
-安定したテンプレート ID で 1 件を選択して取得します。ID は読み取り対象を指定するだけです。
+安定したテンプレート ID で環境レベルのテンプレートを 1 件取得します。この呼び出しは登録済みプロジェクトを調べません。ID は読み取り対象を指定するだけです。
 
 **入力:**
 
 | フィールド | 型 | 必須 | 意味 |
 | --- | --- | --- | --- |
-| `template_id` | `string` | はい | `alcomd3_list_project_templates` が返した `id`。前後の空白を除いて空にはできません。 |
+| `template_id` | `string` | はい | `alcomd3_list_templates` が返した `id`。前後の空白を除いて空にはできません。 |
 
 **成功出力:**
 
@@ -120,7 +124,7 @@ ALCOMD3 データベースに登録されたプロジェクトを返します。
 | `ok` | `boolean` | 常に | 成功時は `true`。 |
 | `template` | [`TemplateDetails`](#templatedetails) | 常に | 保存パスを除いた概要と読み取り可能な定義。 |
 
-### `alcomd3_create_project_template`
+### `alcomd3_create_template`
 
 派生テンプレートを作成します。安定 ID はバックエンドが生成して永続化します。
 
@@ -132,7 +136,7 @@ ALCOMD3 データベースに登録されたプロジェクトを返します。
 | `base_template_id` | `string` | はい | `usableAsBase: true` の既存テンプレート ID。 |
 | `unity_version_range` | `string` | はい | 解析可能な Unity バージョン範囲。 |
 | `vpm_dependencies` | `object<string, string>` | はい | VPM パッケージ名からバージョン範囲への完全なマップ。 |
-| `unity_package_paths` | `string[]` | はい | 存在する絶対 `.unitypackage` 通常ファイルパス。空配列も指定できます。 |
+| `unitypackage_paths` | `string[]` | はい | 存在する絶対 `.unitypackage` 通常ファイルパス。空配列も指定できます。 |
 
 **成功出力:**
 
@@ -144,7 +148,7 @@ ALCOMD3 データベースに登録されたプロジェクトを返します。
 添付ファイルは参照するだけでコピーしません。無効な依存関係・範囲・パス、自己参照、
 基底テンプレートの循環は拒否されます。
 
-### `alcomd3_update_project_template`
+### `alcomd3_edit_template`
 
 派生テンプレートの編集可能な定義全体を置換し、ID と保存位置は維持します。
 
@@ -152,24 +156,79 @@ ALCOMD3 データベースに登録されたプロジェクトを返します。
 
 | フィールド | 型 | 必須 | 意味 |
 | --- | --- | --- | --- |
-| `template_id` | `string` | はい | 更新する派生テンプレート ID。 |
+| `template_id` | `string` | はい | 編集する派生テンプレート ID。 |
 | `display_name` | `string` | はい | 置換後の表示名。 |
 | `base_template_id` | `string` | はい | 置換後の基底テンプレート ID。 |
 | `unity_version_range` | `string` | はい | 置換後の Unity バージョン範囲。 |
 | `vpm_dependencies` | `object<string, string>` | はい | 置換後の完全な依存関係マップ。 |
-| `unity_package_paths` | `string[]` | はい | 置換後の完全な添付パス一覧。 |
+| `unitypackage_paths` | `string[]` | はい | 置換後の完全な添付パス一覧。 |
 
 **成功出力:**
 
 | フィールド | 型 | 条件 | 意味 |
 | --- | --- | --- | --- |
 | `ok` | `boolean` | 常に | 成功時は `true`。 |
-| `template` | [`TemplateDetails`](#templatedetails) | 常に | 更新後の完全な定義。 |
+| `template` | [`TemplateDetails`](#templatedetails) | 常に | 編集後の完全な定義。 |
 
 組み込みテンプレートとプロジェクトアーカイブはフィールド編集できません。定義全体を置換するため、
 このツールは destructive としてマークされます。
 
-### `alcomd3_remove_project_template`
+### `alcomd3_set_template_package`
+
+派生テンプレートに直接 VPM 依存関係を 1 件設定します。パッケージ名とバージョン範囲の宣言だけを保存し、リポジトリの選択、依存関係の解決、ファイルのインストールは行いません。
+
+**入力:**
+
+| フィールド | 型 | 必須 | 意味 |
+| --- | --- | --- | --- |
+| `template_id` | `string` | はい | 編集可能な派生テンプレート ID。 |
+| `package_name` | `string` | はい | 有効な完全 VPM パッケージ名。 |
+| `version_range` | `string` | はい | 追加または置換する解析可能な VPM バージョン範囲。 |
+
+**成功出力:** `ok: true` と、`template` 内の最新の完全な [`TemplateDetails`](#templatedetails)。同じパッケージ名と範囲を繰り返し設定しても書き込みません。
+
+### `alcomd3_remove_template_package`
+
+派生テンプレートから直接 VPM 依存関係の宣言を 1 件削除します。既存プロジェクトは変更しません。
+
+**入力:**
+
+| フィールド | 型 | 必須 | 意味 |
+| --- | --- | --- | --- |
+| `template_id` | `string` | はい | 編集可能な派生テンプレート ID。 |
+| `package_name` | `string` | はい | 削除する既存の直接依存関係。 |
+
+**成功出力:** `ok: true` と、`template` 内の最新の完全な [`TemplateDetails`](#templatedetails)。依存関係が存在しない場合は `template_package_not_found` を返します。
+
+### `alcomd3_set_template_unitypackage`
+
+派生テンプレートに UnityPackage 添付参照を 1 件設定します。
+
+**入力:**
+
+| フィールド | 型 | 必須 | 意味 |
+| --- | --- | --- | --- |
+| `template_id` | `string` | はい | 編集可能な派生テンプレート ID。 |
+| `unitypackage_path` | `string` | はい | 存在する絶対 `.unitypackage` 通常ファイルパス。 |
+
+パスを正規化し、ファイルをコピーせず参照だけを保存します。同じ正規パスを繰り返し設定しても書き込みません。
+
+**成功出力:** `ok: true` と、`template` 内の最新の完全な [`TemplateDetails`](#templatedetails)を返します。
+
+### `alcomd3_remove_template_unitypackage`
+
+派生テンプレートから UnityPackage 添付参照を 1 件削除します。パスは `alcomd3_get_template` からコピーしてください。参照先ファイルは削除されず、既に存在しなくても構いません。
+
+**入力:**
+
+| フィールド | 型 | 必須 | 意味 |
+| --- | --- | --- | --- |
+| `template_id` | `string` | はい | 編集可能な派生テンプレート ID。 |
+| `unitypackage_path` | `string` | はい | テンプレート定義に存在する添付パス。 |
+
+**成功出力:** `ok: true` と、`template` 内の最新の完全な [`TemplateDetails`](#templatedetails)を返します。参照が存在しない場合は `template_unitypackage_not_found` を返します。
+
+### `alcomd3_remove_template`
 
 削除可能なテンプレートをシステムのごみ箱へ移動します。組み込みテンプレートは削除できず、
 参照先の添付ファイルは削除しません。

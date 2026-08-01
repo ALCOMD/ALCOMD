@@ -101,6 +101,8 @@ pub(crate) enum TemplateOperationError {
     NotFound,
     NotEditable,
     NotRemovable,
+    PackageNotFound(String),
+    UnityPackageNotFound(PathBuf),
     InvalidDefinition(String),
     InvalidUnityPackagePath { path: PathBuf, reason: String },
     Storage(io::Error),
@@ -113,8 +115,10 @@ impl TemplateOperationError {
             Self::NotFound => "template_not_found",
             Self::NotEditable => "template_not_editable",
             Self::NotRemovable => "template_not_removable",
+            Self::PackageNotFound(_) => "template_package_not_found",
+            Self::UnityPackageNotFound(_) => "template_unitypackage_not_found",
             Self::InvalidDefinition(_) => "invalid_template_definition",
-            Self::InvalidUnityPackagePath { .. } => "invalid_unity_package_path",
+            Self::InvalidUnityPackagePath { .. } => "invalid_unitypackage_path",
             Self::Storage(_) | Self::Trash(_) => "template_storage_error",
         }
     }
@@ -123,15 +127,27 @@ impl TemplateOperationError {
 impl fmt::Display for TemplateOperationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NotFound => f.write_str("project template was not found"),
-            Self::NotEditable => f.write_str("project template is not editable"),
-            Self::NotRemovable => f.write_str("project template is not removable"),
+            Self::NotFound => f.write_str("environment template was not found"),
+            Self::NotEditable => f.write_str("environment template is not editable"),
+            Self::NotRemovable => f.write_str("environment template is not removable"),
+            Self::PackageNotFound(package_name) => {
+                write!(f, "template VPM dependency was not found: {package_name}")
+            }
+            Self::UnityPackageNotFound(path) => {
+                write!(
+                    f,
+                    "template Unity package was not found: {}",
+                    path.display()
+                )
+            }
             Self::InvalidDefinition(message) => f.write_str(message),
             Self::InvalidUnityPackagePath { path, reason } => {
                 write!(f, "invalid Unity package path {}: {reason}", path.display())
             }
-            Self::Storage(error) => write!(f, "project template storage error: {error}"),
-            Self::Trash(error) => write!(f, "failed to move project template to trash: {error}"),
+            Self::Storage(error) => write!(f, "environment template storage error: {error}"),
+            Self::Trash(error) => {
+                write!(f, "failed to move environment template to trash: {error}")
+            }
         }
     }
 }
@@ -253,7 +269,7 @@ pub(crate) async fn create_project_template(
     let display_name = template.display_name.clone();
     let serialized = serialize_alcom_template(template).map_err(|error| {
         TemplateOperationError::InvalidDefinition(format!(
-            "failed to serialize project template: {error}"
+            "failed to serialize environment template: {error}"
         ))
     })?;
     save_new_template_file(io, &display_name, &serialized).await?;
@@ -283,7 +299,145 @@ pub(crate) async fn update_project_template(
     let template = validated_template(&templates, Some(template_id), definition).await?;
     let serialized = serialize_alcom_template(template).map_err(|error| {
         TemplateOperationError::InvalidDefinition(format!(
-            "failed to serialize project template: {error}"
+            "failed to serialize environment template: {error}"
+        ))
+    })?;
+    io.write_atomic(&source_path, &serialized).await?;
+    refresh_templates(state, io).await?;
+    get_project_template(io, template_id).await
+}
+
+pub(crate) async fn set_template_vpm_dependency(
+    state: &TemplatesState,
+    io: &DefaultEnvironmentIo,
+    template_id: &str,
+    package_name: &str,
+    version_range: &str,
+) -> Result<ProjectTemplateDetails, TemplateOperationError> {
+    let package_name = package_name.trim().to_string();
+    if !is_valid_package_name(&package_name) {
+        return Err(TemplateOperationError::InvalidDefinition(format!(
+            "invalid VPM package name: {package_name}"
+        )));
+    }
+    let version_range = VersionRange::from_str(version_range.trim()).map_err(|error| {
+        TemplateOperationError::InvalidDefinition(format!(
+            "invalid version range for {package_name}: {error}"
+        ))
+    })?;
+
+    mutate_derived_template(state, io, template_id, move |template| {
+        if template.vpm_dependencies.get(&package_name) == Some(&version_range) {
+            return Ok(false);
+        }
+        template
+            .vpm_dependencies
+            .insert(package_name, version_range);
+        Ok(true)
+    })
+    .await
+}
+
+pub(crate) async fn remove_template_vpm_dependency(
+    state: &TemplatesState,
+    io: &DefaultEnvironmentIo,
+    template_id: &str,
+    package_name: &str,
+) -> Result<ProjectTemplateDetails, TemplateOperationError> {
+    let package_name = package_name.trim().to_string();
+    if !is_valid_package_name(&package_name) {
+        return Err(TemplateOperationError::InvalidDefinition(format!(
+            "invalid VPM package name: {package_name}"
+        )));
+    }
+
+    mutate_derived_template(state, io, template_id, move |template| {
+        if template
+            .vpm_dependencies
+            .shift_remove(&package_name)
+            .is_none()
+        {
+            return Err(TemplateOperationError::PackageNotFound(package_name));
+        }
+        Ok(true)
+    })
+    .await
+}
+
+pub(crate) async fn set_template_unity_package(
+    state: &TemplatesState,
+    io: &DefaultEnvironmentIo,
+    template_id: &str,
+    unity_package_path: PathBuf,
+) -> Result<ProjectTemplateDetails, TemplateOperationError> {
+    let unity_package_path = canonicalize_unity_package_path(unity_package_path).await?;
+    mutate_derived_template(state, io, template_id, move |template| {
+        if template.unity_packages.contains(&unity_package_path) {
+            return Ok(false);
+        }
+        template.unity_packages.push(unity_package_path);
+        Ok(true)
+    })
+    .await
+}
+
+pub(crate) async fn remove_template_unity_package(
+    state: &TemplatesState,
+    io: &DefaultEnvironmentIo,
+    template_id: &str,
+    unity_package_path: PathBuf,
+) -> Result<ProjectTemplateDetails, TemplateOperationError> {
+    let canonical_path = if unity_package_path.is_absolute() {
+        tokio::fs::canonicalize(&unity_package_path).await.ok()
+    } else {
+        None
+    };
+    mutate_derived_template(state, io, template_id, move |template| {
+        let Some(index) = template.unity_packages.iter().position(|path| {
+            path == &unity_package_path
+                || canonical_path.as_ref().is_some_and(|value| path == value)
+        }) else {
+            return Err(TemplateOperationError::UnityPackageNotFound(
+                unity_package_path,
+            ));
+        };
+        template.unity_packages.remove(index);
+        Ok(true)
+    })
+    .await
+}
+
+async fn mutate_derived_template(
+    state: &TemplatesState,
+    io: &DefaultEnvironmentIo,
+    template_id: &str,
+    mutate: impl FnOnce(&mut AlcomTemplate) -> Result<bool, TemplateOperationError>,
+) -> Result<ProjectTemplateDetails, TemplateOperationError> {
+    let _guard = TEMPLATE_MUTATION_LOCK.lock().await;
+    let templates = load_project_templates(io).await?;
+    let existing = templates
+        .iter()
+        .find(|template| template.id == template_id)
+        .ok_or(TemplateOperationError::NotFound)?;
+    if project_template_kind(existing) != ProjectTemplateKind::Derived {
+        return Err(TemplateOperationError::NotEditable);
+    }
+    let source_path = existing
+        .source_path
+        .clone()
+        .ok_or(TemplateOperationError::NotEditable)?;
+    let mut template = existing
+        .alcom_template
+        .clone()
+        .ok_or(TemplateOperationError::NotEditable)?;
+    if !mutate(&mut template)? {
+        return Ok(project_template_details(existing));
+    }
+
+    template.update_date = Some(chrono::Utc::now());
+    let serialized = serialize_alcom_template(template).map_err(|error| {
+        TemplateOperationError::InvalidDefinition(format!(
+            "failed to serialize environment template: {error}"
         ))
     })?;
     io.write_atomic(&source_path, &serialized).await?;
@@ -363,7 +517,7 @@ pub(crate) async fn import_project_templates(
             Ok(bytes) => bytes,
             Err(error) => {
                 log::error!(
-                    "failed to read project template {}: {error}",
+                    "failed to read environment template {}: {error}",
                     source_path.display()
                 );
                 result.failed += 1;
@@ -374,7 +528,7 @@ pub(crate) async fn import_project_templates(
             Ok(template) => template,
             Err(error) => {
                 log::error!(
-                    "invalid project template {}: {error}",
+                    "invalid environment template {}: {error}",
                     source_path.display()
                 );
                 result.failed += 1;
@@ -452,7 +606,7 @@ pub(crate) async fn override_imported_project_templates(
             Ok(bytes) => bytes,
             Err(error) => {
                 log::error!(
-                    "failed to read project template {}: {error}",
+                    "failed to read environment template {}: {error}",
                     import_override.source_path.display()
                 );
                 continue;
@@ -462,7 +616,7 @@ pub(crate) async fn override_imported_project_templates(
             Ok(parsed) => parsed,
             Err(error) => {
                 log::error!(
-                    "invalid project template {}: {error}",
+                    "invalid environment template {}: {error}",
                     import_override.source_path.display()
                 );
                 continue;
@@ -479,7 +633,7 @@ pub(crate) async fn override_imported_project_templates(
         match io.write_atomic(target_path, &bytes).await {
             Ok(()) => imported += 1,
             Err(error) => log::error!(
-                "failed to override project template {}: {error}",
+                "failed to override environment template {}: {error}",
                 import_override.id
             ),
         }
@@ -540,41 +694,7 @@ async fn validated_template(
     }
     let mut unity_packages = Vec::with_capacity(definition.unity_package_paths.len());
     for path in definition.unity_package_paths {
-        if !path.is_absolute() {
-            return Err(TemplateOperationError::InvalidUnityPackagePath {
-                path,
-                reason: "path must be absolute".to_string(),
-            });
-        }
-        if !path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("unitypackage"))
-        {
-            return Err(TemplateOperationError::InvalidUnityPackagePath {
-                path,
-                reason: "file extension must be .unitypackage".to_string(),
-            });
-        }
-        let canonical = tokio::fs::canonicalize(&path).await.map_err(|error| {
-            TemplateOperationError::InvalidUnityPackagePath {
-                path: path.clone(),
-                reason: error.to_string(),
-            }
-        })?;
-        let metadata = tokio::fs::metadata(&canonical).await.map_err(|error| {
-            TemplateOperationError::InvalidUnityPackagePath {
-                path: path.clone(),
-                reason: error.to_string(),
-            }
-        })?;
-        if !metadata.is_file() {
-            return Err(TemplateOperationError::InvalidUnityPackagePath {
-                path,
-                reason: "path must identify a regular file".to_string(),
-            });
-        }
-        unity_packages.push(canonical);
+        unity_packages.push(canonicalize_unity_package_path(path).await?);
     }
 
     Ok(AlcomTemplate {
@@ -587,6 +707,44 @@ async fn validated_template(
         unity_packages,
         archive: None,
     })
+}
+
+async fn canonicalize_unity_package_path(path: PathBuf) -> Result<PathBuf, TemplateOperationError> {
+    if !path.is_absolute() {
+        return Err(TemplateOperationError::InvalidUnityPackagePath {
+            path,
+            reason: "path must be absolute".to_string(),
+        });
+    }
+    if !path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("unitypackage"))
+    {
+        return Err(TemplateOperationError::InvalidUnityPackagePath {
+            path,
+            reason: "file extension must be .unitypackage".to_string(),
+        });
+    }
+    let canonical = tokio::fs::canonicalize(&path).await.map_err(|error| {
+        TemplateOperationError::InvalidUnityPackagePath {
+            path: path.clone(),
+            reason: error.to_string(),
+        }
+    })?;
+    let metadata = tokio::fs::metadata(&canonical).await.map_err(|error| {
+        TemplateOperationError::InvalidUnityPackagePath {
+            path: path.clone(),
+            reason: error.to_string(),
+        }
+    })?;
+    if !metadata.is_file() {
+        return Err(TemplateOperationError::InvalidUnityPackagePath {
+            path,
+            reason: "path must identify a regular file".to_string(),
+        });
+    }
+    Ok(canonical)
 }
 
 fn validate_base_template(
@@ -663,7 +821,7 @@ fn ensure_imported_template_id(
         })
     } else {
         Err(TemplateOperationError::InvalidDefinition(
-            "unsupported project template kind".to_string(),
+            "unsupported environment template kind".to_string(),
         ))
     }
 }
@@ -707,7 +865,7 @@ async fn save_new_template_file(
     }
     Err(TemplateOperationError::Storage(io::Error::new(
         io::ErrorKind::AlreadyExists,
-        "failed to allocate a unique project template file name",
+        "failed to allocate a unique environment template file name",
     )))
 }
 
@@ -919,6 +1077,118 @@ mod tests {
 
                 assert_eq!(updated_path, created_path);
                 assert!(attachment.is_file());
+            });
+    }
+
+    #[test]
+    fn template_dependency_and_unity_package_mutations_are_granular() {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let temp = tempfile::tempdir().unwrap();
+                let environment = temp.path().join("environment");
+                tokio::fs::create_dir_all(&environment).await.unwrap();
+                let first_attachment = temp.path().join("first.unitypackage");
+                let second_attachment = temp.path().join("second.unitypackage");
+                tokio::fs::write(&first_attachment, b"first").await.unwrap();
+                tokio::fs::write(&second_attachment, b"second")
+                    .await
+                    .unwrap();
+                let first_attachment = tokio::fs::canonicalize(first_attachment).await.unwrap();
+                let second_attachment = tokio::fs::canonicalize(second_attachment).await.unwrap();
+                let io = DefaultEnvironmentIo::new(environment.into_boxed_path());
+                let state = TemplatesState::new();
+
+                let created = create_project_template(
+                    &state,
+                    &io,
+                    definition("Granular Template", vec![first_attachment.clone()]),
+                )
+                .await
+                .unwrap();
+                let template_id = created.summary.id;
+
+                let with_dependency = set_template_vpm_dependency(
+                    &state,
+                    &io,
+                    &template_id,
+                    "com.example.package",
+                    "^1.0.0",
+                )
+                .await
+                .unwrap();
+                assert_eq!(
+                    with_dependency
+                        .vpm_dependencies
+                        .get("com.example.package")
+                        .map(String::as_str),
+                    Some("^1.0.0")
+                );
+                assert_eq!(
+                    set_template_vpm_dependency(
+                        &state,
+                        &io,
+                        &template_id,
+                        "com.example.package",
+                        "^1.0.0",
+                    )
+                    .await
+                    .unwrap()
+                    .summary
+                    .update_date,
+                    with_dependency.summary.update_date
+                );
+
+                let with_both_attachments = set_template_unity_package(
+                    &state,
+                    &io,
+                    &template_id,
+                    second_attachment.clone(),
+                )
+                .await
+                .unwrap();
+                assert_eq!(with_both_attachments.unity_package_paths.len(), 2);
+
+                let without_dependency = remove_template_vpm_dependency(
+                    &state,
+                    &io,
+                    &template_id,
+                    "com.example.package",
+                )
+                .await
+                .unwrap();
+                assert!(without_dependency.vpm_dependencies.is_empty());
+                assert_eq!(without_dependency.unity_package_paths.len(), 2);
+
+                let without_first_attachment = remove_template_unity_package(
+                    &state,
+                    &io,
+                    &template_id,
+                    first_attachment.clone(),
+                )
+                .await
+                .unwrap();
+                assert_eq!(
+                    without_first_attachment.unity_package_paths,
+                    vec![second_attachment.to_string_lossy()]
+                );
+
+                let error = remove_template_vpm_dependency(
+                    &state,
+                    &io,
+                    &template_id,
+                    "com.example.package",
+                )
+                .await
+                .unwrap_err();
+                assert_eq!(error.code(), "template_package_not_found");
+                let error =
+                    remove_template_unity_package(&state, &io, &template_id, first_attachment)
+                        .await
+                        .unwrap_err();
+                assert_eq!(error.code(), "template_unitypackage_not_found");
             });
     }
 

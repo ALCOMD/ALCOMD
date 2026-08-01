@@ -26,7 +26,7 @@ port を推測せず、GUI に表示される endpoint を使用してくださ�
 - MCP は既定で無効です。新しい tool call が ALCOMD3 data を読み書きするには、GUI で手動で有効化する必要があります。
 - MCP extension が enabled の間、GUI は local IPC endpoint と Streamable HTTP endpoint を起動します。MCP page での MCP の有効/無効は tool data access を制御するだけで、これらの endpoint は停止しません。
 - Extensions page で MCP extension を disabled にすると、MCP access を取り消し、両方の endpoint を停止し、MCP を sidebar から削除して、GUI が管理中の MCP project task を cancel します。extension を再度 enabled にする switch operation はすぐに完了し、endpoint は background で再起動しますが、MCP page で user が再度有効化するまで MCP access は無効のままです。
-- 現在は project、project template、repository、package、environment、activity log、technical log の read-only tools と、限定的な write tools を提供します。write tools は project 作成、project template の作成/更新/削除、existing project 追加、user VPM repository の追加/削除、registered project の backup、registered project の copy、zip backup からの restore、registered project への package install/uninstall/reinstall です。repository 並べ替え、project 削除などの他の write operation は提供しません。
+- 現在は project、環境レベルの template、repository、package、environment、activity log、technical log の read-only tools と、限定的な write tools を提供します。write tools は project 作成、環境レベルの template の作成/編集/削除、existing project 追加、user VPM repository の追加/削除、registered project の backup、registered project の copy、zip backup からの restore、registered project への package install/uninstall/reinstall です。repository 並べ替え、project 削除などの他の write operation は提供しません。
 - MCP extension が enabled の間、GUI が local Streamable HTTP server を起動して管理します。GUI 終了時または extension の無効化時には server も停止します。
 - GUI の private IPC endpoint が利用できない場合、tool call は structured `alcomd3_unavailable` error を返し、MCP tool result に `isError: true` を付けます。
 - bridge は GUI を起動しません。MCP tool の使用中は ALCOMD3 を起動したままにする必要があります。
@@ -221,14 +221,14 @@ GUI は `protocolVersion` と `token` を検証します。検証失敗時は bu
 
 ## 利用可能なツール
 
-ALCOMD3 は現在 29 個のツールを公開しています。メインガイドは利用方法と安全境界を簡潔に
+ALCOMD3 は現在 33 個のツールを公開しています。メインガイドは利用方法と安全境界を簡潔に
 説明し、[完全なツールリファレンス](tools.ja.md)は各入力・出力フィールドについて、必須か
 条件付きか、省略時の既定値、フィールドの意味を記載します。
 
 | 分類 | 読み取りツール | 書き込みツール |
 | --- | --- | --- |
 | プロジェクト | 一覧と詳細 | 作成、登録、バックアップ、コピー、復元 |
-| テンプレート | 一覧と詳細 | 作成、全体更新、削除 |
+| テンプレート | 一覧と詳細 | 作成、編集、VPM 依存関係と UnityPackage 参照の設定/削除、テンプレート削除 |
 | リポジトリ | リポジトリ一覧 | リモートユーザーリポジトリの追加と削除 |
 | パッケージ | 一覧と詳細 | プロジェクトパッケージのインストール、アンインストール、再インストール |
 | 環境 | Unity インストール、起動引数、既定パス | なし |

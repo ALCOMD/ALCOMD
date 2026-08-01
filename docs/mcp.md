@@ -40,9 +40,9 @@ for a configuration example and lifecycle details.
   tasks still owned by the GUI. Re-enabling the extension returns immediately
   and restarts the endpoints in the background, but leaves MCP access disabled
   until the user enables it again on the MCP page.
-- Current tools include read-only project, project template, repository, package, environment,
+- Current tools include read-only project, environment-level template, repository, package, environment,
   activity log, and technical log tools, plus limited write tools: create a
-  project, create/update/remove a project template, add an existing project,
+  project, create/edit/remove an environment-level template, add an existing project,
   add or remove a user VPM repository, back up a registered
   project, copy a registered project, restore a project from a zip backup, and
   install/uninstall/reinstall one package in a registered project. Other write
@@ -291,14 +291,14 @@ finish querying or cancelling already running tasks after MCP is disabled.
 
 ## Available Tools
 
-ALCOMD3 currently exposes 29 tools. The main guide keeps the usage model and safety
+ALCOMD3 currently exposes 33 tools. The main guide keeps the usage model and safety
 boundaries concise; the [complete tool reference](mcp/tools.md) documents every input
 and output field, whether it is required or conditional, its default, and its meaning.
 
 | Area | Read tools | Write tools |
 | --- | --- | --- |
 | Projects | Project list and details | Create, register, back up, copy, and restore |
-| Templates | List and details | Create, replace, and remove |
+| Templates | List and details | Create, edit, set/remove VPM dependencies and UnityPackage references, and remove |
 | Repositories | Repository list | Add and remove remote user repositories |
 | Packages | Package list and details | Install, uninstall, and reinstall project packages |
 | Environment | Unity installations, launch arguments, and default paths | None |

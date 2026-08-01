@@ -2,7 +2,7 @@
 
 [简体中文](tools.zh-CN.md) | [繁體中文](tools.zh-TW.md) | [日本語](tools.ja.md)
 
-This reference documents the 29 MCP tools currently exposed by ALCOMD3. Use it when
+This reference documents the 33 MCP tools currently exposed by ALCOMD3. Use it when
 building an Agent, reviewing a call, or troubleshooting a result. For connection,
 authentication, lifecycle, and client setup, see the [MCP guide](../mcp.md).
 
@@ -42,11 +42,15 @@ for the distinction between schema, business, and protocol errors.
 | Area | Tool | Behavior | Purpose |
 | --- | --- | --- | --- |
 | Projects | `alcomd3_list_projects` | Read-only | List registered projects. |
-| Templates | `alcomd3_list_project_templates` | Read-only | List available project templates. |
-| Templates | `alcomd3_get_project_template` | Read-only | Read one template. |
-| Templates | `alcomd3_create_project_template` | Write | Create a derived template. |
-| Templates | `alcomd3_update_project_template` | Destructive write | Replace a derived template definition. |
-| Templates | `alcomd3_remove_project_template` | Destructive write | Move a removable template to trash. |
+| Templates | `alcomd3_list_templates` | Read-only | List available environment-level templates. |
+| Templates | `alcomd3_get_template` | Read-only | Read one environment-level template. |
+| Templates | `alcomd3_create_template` | Write | Create a derived template. |
+| Templates | `alcomd3_edit_template` | Destructive write | Edit a derived template by replacing its definition. |
+| Templates | `alcomd3_set_template_package` | Idempotent write | Set one direct VPM dependency. |
+| Templates | `alcomd3_remove_template_package` | Destructive write | Remove one direct VPM dependency. |
+| Templates | `alcomd3_set_template_unitypackage` | Idempotent write | Set one UnityPackage attachment reference. |
+| Templates | `alcomd3_remove_template_unitypackage` | Destructive write | Remove one UnityPackage attachment reference. |
+| Templates | `alcomd3_remove_template` | Destructive write | Move a removable template to trash. |
 | Projects | `alcomd3_get_project_details` | Read-only | Read a registered project. |
 | Repositories | `alcomd3_list_repositories` | Read-only | List remote repositories and package visibility. |
 | Repositories | `alcomd3_add_repository` | Network write | Add a remote VPM repository. |
@@ -89,9 +93,10 @@ Lists projects registered in the ALCOMD3 database. It does not scan unregistered
 | `ok` | `boolean` | Always | `true` on success. |
 | `projects` | [`ProjectSummary[]`](#projectsummary) | Always | Registered project summaries; records that cannot produce a valid path summary are skipped. |
 
-### `alcomd3_list_project_templates`
+### `alcomd3_list_templates`
 
-Lists currently available templates without exposing source-file paths.
+Lists the environment-level templates currently available for creating projects. These are not
+template data owned by a registered project. Source-file paths are not exposed.
 
 **Input:** No fields; pass `{}`.
 
@@ -102,16 +107,16 @@ Lists currently available templates without exposing source-file paths.
 | `ok` | `boolean` | Always | `true` on success. |
 | `templates` | [`TemplateSummary[]`](#templatesummary) | Always | Template summaries and capability flags. |
 
-### `alcomd3_get_project_template`
+### `alcomd3_get_template`
 
-Reads one template selected by its stable ID. The ID selects the resource; this is still a
-read-only call.
+Reads one environment-level template selected by its stable ID. This does not inspect a registered
+project. The ID selects the resource; this is still a read-only call.
 
 **Input:**
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `template_id` | `string` | Yes | A template `id` returned by `alcomd3_list_project_templates`; it must not be blank after trimming. |
+| `template_id` | `string` | Yes | A template `id` returned by `alcomd3_list_templates`; it must not be blank after trimming. |
 
 **Success output:**
 
@@ -120,7 +125,7 @@ read-only call.
 | `ok` | `boolean` | Always | `true` on success. |
 | `template` | [`TemplateDetails`](#templatedetails) | Always | Summary and readable definition, without its storage path. |
 
-### `alcomd3_create_project_template`
+### `alcomd3_create_template`
 
 Creates a derived template. The backend generates and persists its stable ID.
 
@@ -132,7 +137,7 @@ Creates a derived template. The backend generates and persists its stable ID.
 | `base_template_id` | `string` | Yes | Existing template whose `usableAsBase` flag is `true`. |
 | `unity_version_range` | `string` | Yes | Parseable Unity version range. |
 | `vpm_dependencies` | `object<string, string>` | Yes | Complete map of VPM package names to version ranges. |
-| `unity_package_paths` | `string[]` | Yes | Existing absolute regular-file paths ending in `.unitypackage`; an empty array is allowed. |
+| `unitypackage_paths` | `string[]` | Yes | Existing absolute regular-file paths ending in `.unitypackage`; an empty array is allowed. |
 
 **Success output:**
 
@@ -144,7 +149,7 @@ Creates a derived template. The backend generates and persists its stable ID.
 Attachments are referenced, not copied. Invalid dependencies, ranges, paths, self-reference,
 and base-template cycles are rejected.
 
-### `alcomd3_update_project_template`
+### `alcomd3_edit_template`
 
 Replaces the complete editable definition of a derived template while preserving its ID and
 storage location.
@@ -158,7 +163,7 @@ storage location.
 | `base_template_id` | `string` | Yes | Replacement base template ID. |
 | `unity_version_range` | `string` | Yes | Replacement Unity version range. |
 | `vpm_dependencies` | `object<string, string>` | Yes | Replacement complete dependency map. |
-| `unity_package_paths` | `string[]` | Yes | Replacement complete attachment-path list. |
+| `unitypackage_paths` | `string[]` | Yes | Replacement complete attachment-path list. |
 
 **Success output:**
 
@@ -170,7 +175,70 @@ storage location.
 Built-in and project-archive templates are not field-editable. The tool is marked destructive
 because it uses replacement semantics.
 
-### `alcomd3_remove_project_template`
+### `alcomd3_set_template_package`
+
+Sets one direct VPM dependency on a derived template. It stores a package-name/version-range
+declaration; it does not select a repository, resolve dependencies, or install files.
+
+**Input:**
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `template_id` | `string` | Yes | Editable derived template ID. |
+| `package_name` | `string` | Yes | Valid complete VPM package name. |
+| `version_range` | `string` | Yes | Parseable VPM version range to add or replace. |
+
+**Success output:** `ok: true` and the complete updated [`TemplateDetails`](#templatedetails) in
+`template`. Repeating the same package and range is a no-op.
+
+### `alcomd3_remove_template_package`
+
+Removes one direct VPM dependency declaration from a derived template. It does not modify any
+existing project.
+
+**Input:**
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `template_id` | `string` | Yes | Editable derived template ID. |
+| `package_name` | `string` | Yes | Existing direct dependency to remove. |
+
+**Success output:** `ok: true` and the complete updated [`TemplateDetails`](#templatedetails) in
+`template`. A missing dependency returns `template_package_not_found`.
+
+### `alcomd3_set_template_unitypackage`
+
+Sets one UnityPackage attachment reference on a derived template.
+
+**Input:**
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `template_id` | `string` | Yes | Editable derived template ID. |
+| `unitypackage_path` | `string` | Yes | Existing absolute regular-file path ending in `.unitypackage`. |
+
+The path is canonicalized and referenced without copying the file. Repeating the same canonical
+path is a no-op.
+
+**Success output:** `ok: true` and the complete updated [`TemplateDetails`](#templatedetails) in
+`template`.
+
+### `alcomd3_remove_template_unitypackage`
+
+Removes one UnityPackage attachment reference from a derived template. Copy the path from
+`alcomd3_get_template`; the referenced file is never deleted and need not still exist.
+
+**Input:**
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `template_id` | `string` | Yes | Editable derived template ID. |
+| `unitypackage_path` | `string` | Yes | Existing attachment path in the template definition. |
+
+**Success output:** `ok: true` and the complete updated [`TemplateDetails`](#templatedetails) in
+`template`. A missing reference returns `template_unitypackage_not_found`.
+
+### `alcomd3_remove_template`
 
 Moves a removable template to the system trash. Built-in templates cannot be removed and
 referenced attachments are not deleted.

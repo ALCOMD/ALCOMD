@@ -2,7 +2,7 @@
 
 [English](tools.md) | [簡體中文](tools.zh-CN.md) | [日本語](tools.ja.md)
 
-本檔案以目前公開的 29 個 MCP 工具實現為準，適合在編寫 Agent、排查呼叫或檢查相容性時查閱。
+本檔案以目前公開的 33 個 MCP 工具實現為準，適合在編寫 Agent、排查呼叫或檢查相容性時查閱。
 連接、驗證、生命週期和客戶端設定請參閱 [MCP 主指南](mcp.zh-TW.md)。
 
 ## 如何閱讀
@@ -39,11 +39,15 @@
 | 分類 | 工具 | 行為 | 用途 |
 | --- | --- | --- | --- |
 | 專案 | `alcomd3_list_projects` | 只讀 | 列出已登錄專案。 |
-| 範本 | `alcomd3_list_project_templates` | 只讀 | 列出可用專案範本。 |
-| 範本 | `alcomd3_get_project_template` | 只讀 | 讀取一個範本詳細資料。 |
-| 範本 | `alcomd3_create_project_template` | 寫入 | 建立衍生範本。 |
-| 範本 | `alcomd3_update_project_template` | 破壞性寫入 | 整體替換衍生範本定義。 |
-| 範本 | `alcomd3_remove_project_template` | 破壞性寫入 | 將可刪除範本移入資源回收筒。 |
+| 範本 | `alcomd3_list_templates` | 只讀 | 列出可用的環境層級範本。 |
+| 範本 | `alcomd3_get_template` | 只讀 | 讀取一個環境層級範本。 |
+| 範本 | `alcomd3_create_template` | 寫入 | 建立衍生範本。 |
+| 範本 | `alcomd3_edit_template` | 破壞性寫入 | 透過整體替換定義來編輯衍生範本。 |
+| 範本 | `alcomd3_set_template_package` | 冪等寫入 | 設定一個直接 VPM 相依。 |
+| 範本 | `alcomd3_remove_template_package` | 破壞性寫入 | 移除一個直接 VPM 相依。 |
+| 範本 | `alcomd3_set_template_unitypackage` | 冪等寫入 | 設定一個 UnityPackage 附件引用。 |
+| 範本 | `alcomd3_remove_template_unitypackage` | 破壞性寫入 | 移除一個 UnityPackage 附件引用。 |
+| 範本 | `alcomd3_remove_template` | 破壞性寫入 | 將可刪除範本移入資源回收筒。 |
 | 專案 | `alcomd3_get_project_details` | 只讀 | 讀取已登錄專案詳細資料。 |
 | 倉庫 | `alcomd3_list_repositories` | 只讀 | 列出遠端倉庫和軟體包顯示設定。 |
 | 倉庫 | `alcomd3_add_repository` | 外部網路寫入 | 新增遠端 VPM 倉庫。 |
@@ -87,9 +91,9 @@
 | `ok` | `boolean` | 必有 | 成功時為 `true`。 |
 | `projects` | [`ProjectSummary[]`](#projectsummary) | 必有 | 已登錄專案摘要；無法形成有效路徑摘要的記錄會被跳過。 |
 
-### `alcomd3_list_project_templates`
+### `alcomd3_list_templates`
 
-列出目前可用範本。範本源檔案路徑不會傳回。
+列出目前可用於建立專案的環境層級範本。這些範本不是某個已登錄專案擁有的範本資料。範本來源檔案路徑不會傳回。
 
 **輸入：** 無欄位，傳 `{}`。
 
@@ -100,15 +104,15 @@
 | `ok` | `boolean` | 必有 | 成功時為 `true`。 |
 | `templates` | [`TemplateSummary[]`](#templatesummary) | 必有 | 範本摘要和能力標記。 |
 
-### `alcomd3_get_project_template`
+### `alcomd3_get_template`
 
-按穩定範本 ID 讀取一個範本。ID 僅用於選擇讀取物件，不會使只讀呼叫變成寫入。
+按穩定範本 ID 讀取一個環境層級範本；此呼叫不會檢查已登錄專案。ID 僅用於選擇讀取物件，不會使只讀呼叫變成寫入。
 
 **輸入：**
 
 | 欄位 | 類型 | 必填 | 含義 |
 | --- | --- | --- | --- |
-| `template_id` | `string` | 是 | `alcomd3_list_project_templates` 傳回的範本 `id`；去除首尾空白後不能為空。 |
+| `template_id` | `string` | 是 | `alcomd3_list_templates` 傳回的範本 `id`；去除首尾空白後不能為空。 |
 
 **成功輸出：**
 
@@ -117,7 +121,7 @@
 | `ok` | `boolean` | 必有 | 成功時為 `true`。 |
 | `template` | [`TemplateDetails`](#templatedetails) | 必有 | 範本摘要和可讀取定義；不包含範本儲存路徑。 |
 
-### `alcomd3_create_project_template`
+### `alcomd3_create_template`
 
 建立一個衍生範本。後端產生並持久化範本 ID。
 
@@ -129,7 +133,7 @@
 | `base_template_id` | `string` | 是 | 必須指向 `usableAsBase: true` 的現有範本。 |
 | `unity_version_range` | `string` | 是 | 可解析的 Unity 版本範圍。 |
 | `vpm_dependencies` | `object<string, string>` | 是 | VPM 軟體包名稱到版本範圍的完整對應。 |
-| `unity_package_paths` | `string[]` | 是 | 已存在的絕對 `.unitypackage` 一般檔案路徑。可傳空陣列。 |
+| `unitypackage_paths` | `string[]` | 是 | 已存在的絕對 `.unitypackage` 一般檔案路徑。可傳空陣列。 |
 
 **成功輸出：**
 
@@ -140,7 +144,7 @@
 
 附件只被引用，不會複製。自引用、基礎範本相依環、無效軟體包名稱、無效版本範圍和無效附件路徑會被拒絕。
 
-### `alcomd3_update_project_template`
+### `alcomd3_edit_template`
 
 整體替換一個衍生範本的可編輯定義；範本 ID 和儲存位置保持不變。
 
@@ -148,23 +152,78 @@
 
 | 欄位 | 類型 | 必填 | 含義 |
 | --- | --- | --- | --- |
-| `template_id` | `string` | 是 | 要更新的衍生範本 ID。 |
+| `template_id` | `string` | 是 | 要編輯的衍生範本 ID。 |
 | `display_name` | `string` | 是 | 替換後的顯示名稱。 |
 | `base_template_id` | `string` | 是 | 替換後的基礎範本 ID。 |
 | `unity_version_range` | `string` | 是 | 替換後的 Unity 版本範圍。 |
 | `vpm_dependencies` | `object<string, string>` | 是 | 替換後的完整 VPM 相依對應。 |
-| `unity_package_paths` | `string[]` | 是 | 替換後的完整附件路徑列表。 |
+| `unitypackage_paths` | `string[]` | 是 | 替換後的完整附件路徑列表。 |
 
 **成功輸出：**
 
 | 欄位 | 類型 | 出現條件 | 含義 |
 | --- | --- | --- | --- |
 | `ok` | `boolean` | 必有 | 成功時為 `true`。 |
-| `template` | [`TemplateDetails`](#templatedetails) | 必有 | 更新後的完整定義。 |
+| `template` | [`TemplateDetails`](#templatedetails) | 必有 | 編輯後的完整定義。 |
 
-內建範本和專案歸檔範本不能欄位級更新。本工具標記為 destructive，因為采用整體替換語義。
+內建範本和專案歸檔範本不能欄位級編輯。本工具標記為 destructive，因為採用整體替換語義。
 
-### `alcomd3_remove_project_template`
+### `alcomd3_set_template_package`
+
+為衍生範本設定一個直接 VPM 相依。它只儲存軟體包名稱和版本範圍宣告，不選擇倉庫、不解析相依，也不安裝檔案。
+
+**輸入：**
+
+| 欄位 | 類型 | 必填 | 含義 |
+| --- | --- | --- | --- |
+| `template_id` | `string` | 是 | 可編輯的衍生範本 ID。 |
+| `package_name` | `string` | 是 | 合法的完整 VPM 軟體包名稱。 |
+| `version_range` | `string` | 是 | 要新增或替換的可解析 VPM 版本範圍。 |
+
+**成功輸出：** `ok: true`，並在 `template` 中傳回完整的最新 [`TemplateDetails`](#templatedetails)。重複設定相同軟體包名稱和範圍不會寫入。
+
+### `alcomd3_remove_template_package`
+
+從衍生範本移除一個直接 VPM 相依宣告，不會修改任何既有專案。
+
+**輸入：**
+
+| 欄位 | 類型 | 必填 | 含義 |
+| --- | --- | --- | --- |
+| `template_id` | `string` | 是 | 可編輯的衍生範本 ID。 |
+| `package_name` | `string` | 是 | 要移除的現有直接相依。 |
+
+**成功輸出：** `ok: true`，並在 `template` 中傳回完整的最新 [`TemplateDetails`](#templatedetails)。相依不存在時傳回 `template_package_not_found`。
+
+### `alcomd3_set_template_unitypackage`
+
+為衍生範本設定一個 UnityPackage 附件引用。
+
+**輸入：**
+
+| 欄位 | 類型 | 必填 | 含義 |
+| --- | --- | --- | --- |
+| `template_id` | `string` | 是 | 可編輯的衍生範本 ID。 |
+| `unitypackage_path` | `string` | 是 | 已存在的絕對 `.unitypackage` 一般檔案路徑。 |
+
+路徑會被規範化，檔案只會被引用而不會複製。重複設定同一規範路徑不會寫入。
+
+**成功輸出：** `ok: true`，並在 `template` 中傳回完整的最新 [`TemplateDetails`](#templatedetails)。
+
+### `alcomd3_remove_template_unitypackage`
+
+從衍生範本移除一個 UnityPackage 附件引用。路徑應複製自 `alcomd3_get_template`；引用的檔案不會被刪除，也不要求仍然存在。
+
+**輸入：**
+
+| 欄位 | 類型 | 必填 | 含義 |
+| --- | --- | --- | --- |
+| `template_id` | `string` | 是 | 可編輯的衍生範本 ID。 |
+| `unitypackage_path` | `string` | 是 | 範本定義中已有的附件路徑。 |
+
+**成功輸出：** `ok: true`，並在 `template` 中傳回完整的最新 [`TemplateDetails`](#templatedetails)。引用不存在時傳回 `template_unitypackage_not_found`。
+
+### `alcomd3_remove_template`
 
 把一個可刪除範本移入系統資源回收筒。內建範本不可刪除，附件檔案不會被刪除。
 

@@ -1037,11 +1037,15 @@ async fn dispatch_gui_request(
 ) -> Result<Value, McpIpcError> {
     match method {
         "list_projects" => list_projects(app).await,
-        "list_project_templates" => list_project_templates(app).await,
-        "get_project_template" => get_project_template(app, params).await,
-        "create_project_template" => create_project_template(app, params).await,
-        "update_project_template" => update_project_template(app, params).await,
-        "remove_project_template" => remove_project_template(app, params).await,
+        "list_templates" => list_templates(app).await,
+        "get_template" => get_template(app, params).await,
+        "create_template" => create_template(app, params).await,
+        "edit_template" => edit_template(app, params).await,
+        "set_template_package" => set_template_package(app, params).await,
+        "remove_template_package" => remove_template_package(app, params).await,
+        "set_template_unitypackage" => set_template_unitypackage(app, params).await,
+        "remove_template_unitypackage" => remove_template_unitypackage(app, params).await,
+        "remove_template" => remove_template(app, params).await,
         "get_project_details" => get_project_details(app, params).await,
         "list_repositories" => list_repositories(app).await,
         "add_repository" => add_repository(app, params).await,
@@ -1420,10 +1424,7 @@ fn mcp_activity_details(method: &str, params: &Value) -> Vec<ActivityDetail> {
     } else {
         params
     };
-    let template_definition_method = matches!(
-        method,
-        "create_project_template" | "update_project_template"
-    );
+    let template_definition_method = matches!(method, "create_template" | "edit_template");
     let mut details = vec![ActivityDetail::new("method", method)];
     for key in [
         "project_path",
@@ -1436,6 +1437,8 @@ fn mcp_activity_details(method: &str, params: &Value) -> Vec<ActivityDetail> {
         "basePath",
         "backup_path",
         "backupPath",
+        "unitypackage_path",
+        "unitypackagePath",
     ] {
         if let Some(path) = params.get(key).and_then(Value::as_str) {
             details.push(ActivityDetail::new(key, summarize_path(path)));
@@ -1473,9 +1476,9 @@ fn mcp_activity_details(method: &str, params: &Value) -> Vec<ActivityDetail> {
             format!("{} dependencies", dependencies.len()),
         ));
     }
-    if let Some(paths) = params.get("unity_package_paths").and_then(Value::as_array) {
+    if let Some(paths) = params.get("unitypackage_paths").and_then(Value::as_array) {
         details.push(ActivityDetail::new(
-            "unity_package_paths",
+            "unitypackage_paths",
             format!("{} paths", paths.len()),
         ));
     }
@@ -1502,6 +1505,8 @@ fn mcp_activity_details(method: &str, params: &Value) -> Vec<ActivityDetail> {
         "unityVersionRange",
         "unity_version",
         "unityVersion",
+        "version_range",
+        "versionRange",
         "version_selector",
         "versionSelector",
         "source",
@@ -1570,7 +1575,7 @@ async fn list_projects(app: AppHandle) -> Result<Value, McpIpcError> {
     }))
 }
 
-async fn list_project_templates(app: AppHandle) -> Result<Value, McpIpcError> {
+async fn list_templates(app: AppHandle) -> Result<Value, McpIpcError> {
     let io = app.state::<DefaultEnvironmentIo>();
     let templates = template_operations::load_project_templates(io.inner())
         .await
@@ -1587,33 +1592,55 @@ async fn list_project_templates(app: AppHandle) -> Result<Value, McpIpcError> {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ProjectTemplateIdParams {
+struct TemplateIdParams {
     template_id: String,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct CreateProjectTemplateParams {
+struct CreateTemplateParams {
     display_name: String,
     base_template_id: String,
     unity_version_range: String,
     vpm_dependencies: BTreeMap<String, String>,
-    unity_package_paths: Vec<String>,
+    unitypackage_paths: Vec<String>,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct UpdateProjectTemplateParams {
+struct EditTemplateParams {
     template_id: String,
     display_name: String,
     base_template_id: String,
     unity_version_range: String,
     vpm_dependencies: BTreeMap<String, String>,
-    unity_package_paths: Vec<String>,
+    unitypackage_paths: Vec<String>,
 }
 
-async fn get_project_template(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
-    let params = serde_json::from_value::<ProjectTemplateIdParams>(params)
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SetTemplatePackageParams {
+    template_id: String,
+    package_name: String,
+    version_range: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RemoveTemplatePackageParams {
+    template_id: String,
+    package_name: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TemplateUnityPackageParams {
+    template_id: String,
+    unitypackage_path: String,
+}
+
+async fn get_template(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+    let params = serde_json::from_value::<TemplateIdParams>(params)
         .map_err(|error| McpIpcError::from_error("invalid_params", error))?;
     let template_id = normalize_template_id(params.template_id)?;
     let template = template_operations::get_project_template(
@@ -1625,15 +1652,15 @@ async fn get_project_template(app: AppHandle, params: Value) -> Result<Value, Mc
     Ok(json!({ "ok": true, "template": template }))
 }
 
-async fn create_project_template(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
-    let params = serde_json::from_value::<CreateProjectTemplateParams>(params)
+async fn create_template(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+    let params = serde_json::from_value::<CreateTemplateParams>(params)
         .map_err(|error| McpIpcError::from_error("invalid_params", error))?;
     let definition = project_template_definition(
         params.display_name,
         params.base_template_id,
         params.unity_version_range,
         params.vpm_dependencies,
-        params.unity_package_paths,
+        params.unitypackage_paths,
     );
     let template = template_operations::create_project_template(
         app.state::<TemplatesState>().inner(),
@@ -1645,8 +1672,8 @@ async fn create_project_template(app: AppHandle, params: Value) -> Result<Value,
     Ok(json!({ "ok": true, "template": template }))
 }
 
-async fn update_project_template(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
-    let params = serde_json::from_value::<UpdateProjectTemplateParams>(params)
+async fn edit_template(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+    let params = serde_json::from_value::<EditTemplateParams>(params)
         .map_err(|error| McpIpcError::from_error("invalid_params", error))?;
     let template_id = normalize_template_id(params.template_id)?;
     let definition = project_template_definition(
@@ -1654,7 +1681,7 @@ async fn update_project_template(app: AppHandle, params: Value) -> Result<Value,
         params.base_template_id,
         params.unity_version_range,
         params.vpm_dependencies,
-        params.unity_package_paths,
+        params.unitypackage_paths,
     );
     let template = template_operations::update_project_template(
         app.state::<TemplatesState>().inner(),
@@ -1667,8 +1694,75 @@ async fn update_project_template(app: AppHandle, params: Value) -> Result<Value,
     Ok(json!({ "ok": true, "template": template }))
 }
 
-async fn remove_project_template(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
-    let params = serde_json::from_value::<ProjectTemplateIdParams>(params)
+async fn set_template_package(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+    let params = serde_json::from_value::<SetTemplatePackageParams>(params)
+        .map_err(|error| McpIpcError::from_error("invalid_params", error))?;
+    let template_id = normalize_template_id(params.template_id)?;
+    let template = template_operations::set_template_vpm_dependency(
+        app.state::<TemplatesState>().inner(),
+        app.state::<DefaultEnvironmentIo>().inner(),
+        &template_id,
+        &params.package_name,
+        &params.version_range,
+    )
+    .await
+    .map_err(mcp_template_error)?;
+    Ok(json!({ "ok": true, "template": template }))
+}
+
+async fn remove_template_package(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+    let params = serde_json::from_value::<RemoveTemplatePackageParams>(params)
+        .map_err(|error| McpIpcError::from_error("invalid_params", error))?;
+    let template_id = normalize_template_id(params.template_id)?;
+    let template = template_operations::remove_template_vpm_dependency(
+        app.state::<TemplatesState>().inner(),
+        app.state::<DefaultEnvironmentIo>().inner(),
+        &template_id,
+        &params.package_name,
+    )
+    .await
+    .map_err(mcp_template_error)?;
+    Ok(json!({ "ok": true, "template": template }))
+}
+
+async fn set_template_unitypackage(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+    let params = serde_json::from_value::<TemplateUnityPackageParams>(params)
+        .map_err(|error| McpIpcError::from_error("invalid_params", error))?;
+    let template_id = normalize_template_id(params.template_id)?;
+    let template = template_operations::set_template_unity_package(
+        app.state::<TemplatesState>().inner(),
+        app.state::<DefaultEnvironmentIo>().inner(),
+        &template_id,
+        PathBuf::from(params.unitypackage_path),
+    )
+    .await
+    .map_err(mcp_template_error)?;
+    Ok(json!({ "ok": true, "template": template }))
+}
+
+async fn remove_template_unitypackage(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+    let params = serde_json::from_value::<TemplateUnityPackageParams>(params)
+        .map_err(|error| McpIpcError::from_error("invalid_params", error))?;
+    let template_id = normalize_template_id(params.template_id)?;
+    if params.unitypackage_path.trim().is_empty() {
+        return Err(McpIpcError::new(
+            "invalid_params",
+            "unitypackage_path must be provided",
+        ));
+    }
+    let template = template_operations::remove_template_unity_package(
+        app.state::<TemplatesState>().inner(),
+        app.state::<DefaultEnvironmentIo>().inner(),
+        &template_id,
+        PathBuf::from(params.unitypackage_path),
+    )
+    .await
+    .map_err(mcp_template_error)?;
+    Ok(json!({ "ok": true, "template": template }))
+}
+
+async fn remove_template(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+    let params = serde_json::from_value::<TemplateIdParams>(params)
         .map_err(|error| McpIpcError::from_error("invalid_params", error))?;
     let template_id = normalize_template_id(params.template_id)?;
     let template = template_operations::remove_project_template(
@@ -4069,24 +4163,40 @@ mod tests {
             Some("alcomd3_list_projects")
         );
         assert_eq!(
-            mcp_tool_name("list_project_templates", &Value::Null),
-            Some("alcomd3_list_project_templates")
+            mcp_tool_name("list_templates", &Value::Null),
+            Some("alcomd3_list_templates")
         );
         assert_eq!(
-            mcp_tool_name("get_project_template", &Value::Null),
-            Some("alcomd3_get_project_template")
+            mcp_tool_name("get_template", &Value::Null),
+            Some("alcomd3_get_template")
         );
         assert_eq!(
-            mcp_tool_name("create_project_template", &Value::Null),
-            Some("alcomd3_create_project_template")
+            mcp_tool_name("create_template", &Value::Null),
+            Some("alcomd3_create_template")
         );
         assert_eq!(
-            mcp_tool_name("update_project_template", &Value::Null),
-            Some("alcomd3_update_project_template")
+            mcp_tool_name("edit_template", &Value::Null),
+            Some("alcomd3_edit_template")
         );
         assert_eq!(
-            mcp_tool_name("remove_project_template", &Value::Null),
-            Some("alcomd3_remove_project_template")
+            mcp_tool_name("set_template_package", &Value::Null),
+            Some("alcomd3_set_template_package")
+        );
+        assert_eq!(
+            mcp_tool_name("remove_template_package", &Value::Null),
+            Some("alcomd3_remove_template_package")
+        );
+        assert_eq!(
+            mcp_tool_name("set_template_unitypackage", &Value::Null),
+            Some("alcomd3_set_template_unitypackage")
+        );
+        assert_eq!(
+            mcp_tool_name("remove_template_unitypackage", &Value::Null),
+            Some("alcomd3_remove_template_unitypackage")
+        );
+        assert_eq!(
+            mcp_tool_name("remove_template", &Value::Null),
+            Some("alcomd3_remove_template")
         );
         assert_eq!(
             mcp_tool_name("get_project_details", &Value::Null),
@@ -4198,23 +4308,39 @@ mod tests {
             ActivityImportance::Secondary
         );
         assert_eq!(
-            mcp_activity_importance("list_project_templates", &Value::Null),
+            mcp_activity_importance("list_templates", &Value::Null),
             ActivityImportance::Secondary
         );
         assert_eq!(
-            mcp_activity_importance("get_project_template", &Value::Null),
+            mcp_activity_importance("get_template", &Value::Null),
             ActivityImportance::Secondary
         );
         assert_eq!(
-            mcp_activity_importance("create_project_template", &Value::Null),
+            mcp_activity_importance("create_template", &Value::Null),
             ActivityImportance::Primary
         );
         assert_eq!(
-            mcp_activity_importance("update_project_template", &Value::Null),
+            mcp_activity_importance("edit_template", &Value::Null),
             ActivityImportance::Primary
         );
         assert_eq!(
-            mcp_activity_importance("remove_project_template", &Value::Null),
+            mcp_activity_importance("set_template_package", &Value::Null),
+            ActivityImportance::Primary
+        );
+        assert_eq!(
+            mcp_activity_importance("remove_template_package", &Value::Null),
+            ActivityImportance::Primary
+        );
+        assert_eq!(
+            mcp_activity_importance("set_template_unitypackage", &Value::Null),
+            ActivityImportance::Primary
+        );
+        assert_eq!(
+            mcp_activity_importance("remove_template_unitypackage", &Value::Null),
+            ActivityImportance::Primary
+        );
+        assert_eq!(
+            mcp_activity_importance("remove_template", &Value::Null),
             ActivityImportance::Primary
         );
         assert_eq!(
@@ -4283,8 +4409,8 @@ mod tests {
             );
         }
 
-        assert_eq!(tool_names.len(), 29);
-        assert_eq!(methods.len(), 29);
+        assert_eq!(tool_names.len(), 33);
+        assert_eq!(methods.len(), 33);
         assert!(
             crate::backend::mcp_capabilities::mcp_tool_capability_for_tool_name(
                 "alcomd3_uninstall_project_package"
@@ -4299,13 +4425,25 @@ mod tests {
         );
         assert!(
             crate::backend::mcp_capabilities::mcp_tool_capability_for_tool_name(
-                "alcomd3_update_project_template"
+                "alcomd3_edit_template"
             )
             .is_some_and(|capability| capability.destructive)
         );
         assert!(
             crate::backend::mcp_capabilities::mcp_tool_capability_for_tool_name(
-                "alcomd3_remove_project_template"
+                "alcomd3_remove_template"
+            )
+            .is_some_and(|capability| capability.destructive)
+        );
+        assert!(
+            crate::backend::mcp_capabilities::mcp_tool_capability_for_tool_name(
+                "alcomd3_remove_template_package"
+            )
+            .is_some_and(|capability| capability.destructive)
+        );
+        assert!(
+            crate::backend::mcp_capabilities::mcp_tool_capability_for_tool_name(
+                "alcomd3_remove_template_unitypackage"
             )
             .is_some_and(|capability| capability.destructive)
         );
@@ -4458,7 +4596,7 @@ mod tests {
     #[test]
     fn mcp_template_activity_records_identifiers_and_counts_only() {
         let details = mcp_activity_details(
-            "update_project_template",
+            "edit_template",
             &json!({
                 "template_id": "com.example.template",
                 "display_name": "Private Template Name",
@@ -4467,7 +4605,7 @@ mod tests {
                 "vpm_dependencies": {
                     "com.example.secret-package": "^1.0.0",
                 },
-                "unity_package_paths": [
+                "unitypackage_paths": [
                     "C:/private/attachment.unitypackage",
                 ],
             }),
@@ -4476,7 +4614,7 @@ mod tests {
         assert!(details.contains(&ActivityDetail::new("template_id", "com.example.template",)));
         assert!(details.contains(&ActivityDetail::new("template_definition", "4 fields",)));
         assert!(details.contains(&ActivityDetail::new("vpm_dependencies", "1 dependencies",)));
-        assert!(details.contains(&ActivityDetail::new("unity_package_paths", "1 paths",)));
+        assert!(details.contains(&ActivityDetail::new("unitypackage_paths", "1 paths",)));
         let serialized = serde_json::to_string(&details).unwrap();
         assert!(!serialized.contains("Private Template Name"));
         assert!(!serialized.contains("com.example.private-base"));
@@ -5243,34 +5381,59 @@ mod tests {
     }
 
     #[test]
-    fn project_template_tool_params_reject_unknown_fields() {
+    fn template_tool_params_reject_unknown_fields() {
         assert!(
-            serde_json::from_value::<ProjectTemplateIdParams>(json!({
+            serde_json::from_value::<TemplateIdParams>(json!({
                 "template_id": "com.example.template",
                 "source_path": "C:/templates/example.alcomtemplate",
             }))
             .is_err()
         );
         assert!(
-            serde_json::from_value::<CreateProjectTemplateParams>(json!({
+            serde_json::from_value::<CreateTemplateParams>(json!({
                 "display_name": "Example",
                 "base_template_id": "com.example.base",
                 "unity_version_range": "2022.3.x",
                 "vpm_dependencies": {},
-                "unity_package_paths": [],
+                "unitypackage_paths": [],
                 "id": "caller-controlled-id",
             }))
             .is_err()
         );
         assert!(
-            serde_json::from_value::<UpdateProjectTemplateParams>(json!({
+            serde_json::from_value::<EditTemplateParams>(json!({
                 "template_id": "com.example.template",
                 "display_name": "Example",
                 "base_template_id": "com.example.base",
                 "unity_version_range": "2022.3.x",
                 "vpm_dependencies": {},
-                "unity_package_paths": [],
+                "unitypackage_paths": [],
                 "storage_path": "C:/templates/example.alcomtemplate",
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<SetTemplatePackageParams>(json!({
+                "template_id": "com.example.template",
+                "package_name": "com.example.package",
+                "version_range": "^1.0.0",
+                "source": { "repository_id": "com.example.repo" },
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<RemoveTemplatePackageParams>(json!({
+                "template_id": "com.example.template",
+                "package_name": "com.example.package",
+                "version_range": "^1.0.0",
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<TemplateUnityPackageParams>(json!({
+                "template_id": "com.example.template",
+                "unitypackage_path": "C:/templates/example.unitypackage",
+                "delete_file": true,
             }))
             .is_err()
         );

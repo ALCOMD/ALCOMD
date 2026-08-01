@@ -68,12 +68,12 @@ const MCP_TOOL_GROUPS: {
 				labelKey: "mcp:tool:alcomd3_list_projects",
 			},
 			{
-				name: "alcomd3_list_project_templates",
-				labelKey: "mcp:tool:alcomd3_list_project_templates",
+				name: "alcomd3_list_templates",
+				labelKey: "mcp:tool:alcomd3_list_templates",
 			},
 			{
-				name: "alcomd3_get_project_template",
-				labelKey: "mcp:tool:alcomd3_get_project_template",
+				name: "alcomd3_get_template",
+				labelKey: "mcp:tool:alcomd3_get_template",
 			},
 			{
 				name: "alcomd3_get_project_details",
@@ -109,16 +109,32 @@ const MCP_TOOL_GROUPS: {
 				labelKey: "mcp:tool:alcomd3_create_project",
 			},
 			{
-				name: "alcomd3_create_project_template",
-				labelKey: "mcp:tool:alcomd3_create_project_template",
+				name: "alcomd3_create_template",
+				labelKey: "mcp:tool:alcomd3_create_template",
 			},
 			{
-				name: "alcomd3_update_project_template",
-				labelKey: "mcp:tool:alcomd3_update_project_template",
+				name: "alcomd3_edit_template",
+				labelKey: "mcp:tool:alcomd3_edit_template",
 			},
 			{
-				name: "alcomd3_remove_project_template",
-				labelKey: "mcp:tool:alcomd3_remove_project_template",
+				name: "alcomd3_set_template_package",
+				labelKey: "mcp:tool:alcomd3_set_template_package",
+			},
+			{
+				name: "alcomd3_remove_template_package",
+				labelKey: "mcp:tool:alcomd3_remove_template_package",
+			},
+			{
+				name: "alcomd3_set_template_unitypackage",
+				labelKey: "mcp:tool:alcomd3_set_template_unitypackage",
+			},
+			{
+				name: "alcomd3_remove_template_unitypackage",
+				labelKey: "mcp:tool:alcomd3_remove_template_unitypackage",
+			},
+			{
+				name: "alcomd3_remove_template",
+				labelKey: "mcp:tool:alcomd3_remove_template",
 			},
 			{
 				name: "alcomd3_add_existing_project",
