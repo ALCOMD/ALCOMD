@@ -24,6 +24,7 @@ describe("Unity project button state", () => {
 			}),
 		).toMatchObject({
 			action: "opening",
+			label: "projects:button:opening",
 			disabled: true,
 			showSpinner: true,
 		});
@@ -37,6 +38,7 @@ describe("Unity project button state", () => {
 			}),
 		).toMatchObject({
 			action: "bring-to-front",
+			label: "projects:button:bring to front",
 			disabled: false,
 		});
 	});

@@ -9,13 +9,13 @@ export type UnityButtonView =
 	  }
 	| {
 			action: "opening";
-			label: "projects:button:opening unity";
+			label: "projects:button:opening";
 			disabled: true;
 			showSpinner: true;
 	  }
 	| {
 			action: "bring-to-front";
-			label: "projects:button:bring unity to front";
+			label: "projects:button:bring to front";
 			disabled: false;
 			showSpinner: false;
 	  }
@@ -33,7 +33,7 @@ export function unityButtonView(
 		case "Opening":
 			return {
 				action: "opening",
-				label: "projects:button:opening unity",
+				label: "projects:button:opening",
 				disabled: true,
 				showSpinner: true,
 			};
@@ -41,7 +41,7 @@ export function unityButtonView(
 			return status.can_bring_to_front
 				? {
 						action: "bring-to-front",
-						label: "projects:button:bring unity to front",
+						label: "projects:button:bring to front",
 						disabled: false,
 						showSpinner: false,
 					}
