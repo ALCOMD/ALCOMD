@@ -158,7 +158,7 @@ storage location.
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
-| `template_id` | `string` | Yes | Derived template to update. |
+| `template_id` | `string` | Yes | Derived template to edit. |
 | `display_name` | `string` | Yes | Replacement display name. |
 | `base_template_id` | `string` | Yes | Replacement base template ID. |
 | `unity_version_range` | `string` | Yes | Replacement Unity version range. |

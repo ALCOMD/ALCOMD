@@ -42,7 +42,8 @@ for a configuration example and lifecycle details.
   until the user enables it again on the MCP page.
 - Current tools include read-only project, environment-level template, repository, package, environment,
   activity log, and technical log tools, plus limited write tools: create a
-  project, create/edit/remove an environment-level template, add an existing project,
+  project, create/edit/remove an environment-level template, set or remove one direct VPM
+  dependency or UnityPackage attachment reference on a derived template, add an existing project,
   add or remove a user VPM repository, back up a registered
   project, copy a registered project, restore a project from a zip backup, and
   install/uninstall/reinstall one package in a registered project. Other write
