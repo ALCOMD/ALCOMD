@@ -39,7 +39,7 @@ pub(crate) async fn add_user_packages(
     io: &DefaultEnvironmentIo,
     package_paths: &[PathBuf],
 ) -> Result<AddUserPackagesOutcome, RustError> {
-    let mut normalized_paths = Vec::with_capacity(package_paths.len());
+    let mut canonical_paths = Vec::with_capacity(package_paths.len());
     for package_path in package_paths {
         if !package_path.is_absolute() {
             return Ok(AddUserPackagesOutcome::InvalidSelection);
@@ -48,15 +48,15 @@ pub(crate) async fn add_user_packages(
             Ok(path) if path.is_absolute() => path,
             _ => return Ok(AddUserPackagesOutcome::InvalidSelection),
         };
-        if normalized_paths.iter().any(|path| path == &canonical) {
+        if canonical_paths.iter().any(|path| path == &canonical) {
             return Ok(AddUserPackagesOutcome::AlreadyAdded);
         }
-        normalized_paths.push(canonical);
+        canonical_paths.push(canonical);
     }
 
     let mut settings = settings.load_mut(io).await?;
     let mut candidate = settings.clone();
-    for package_path in &normalized_paths {
+    for package_path in package_paths {
         match candidate.add_user_package(package_path, io).await {
             AddUserPackageResult::Success => {}
             AddUserPackageResult::NonAbsolute | AddUserPackageResult::BadPackage => {
@@ -126,5 +126,44 @@ mod tests {
     fn exact_user_package_paths_match_without_io() {
         let path = Path::new("C:/Packages/com.example.package");
         assert!(same_package_path(path, path));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn adding_user_package_preserves_selected_windows_path() {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(adding_user_package_preserves_selected_windows_path_inner());
+    }
+
+    #[cfg(windows)]
+    async fn adding_user_package_preserves_selected_windows_path_inner() {
+        let temp = tempfile::tempdir().unwrap();
+        let package_path = temp.path().join("com.example.user-package");
+        std::fs::create_dir(&package_path).unwrap();
+        std::fs::write(
+            package_path.join("package.json"),
+            r#"{"name":"com.example.user-package","version":"1.0.0"}"#,
+        )
+        .unwrap();
+
+        let io = DefaultEnvironmentIo::new(temp.path().join("settings").into_boxed_path());
+        let settings = SettingsState::new();
+        let packages = PackagesState::new();
+
+        let outcome = add_user_packages(
+            &settings,
+            &packages,
+            &io,
+            std::slice::from_ref(&package_path),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome, AddUserPackagesOutcome::Added);
+        let settings = settings.load(&io).await.unwrap();
+        assert_eq!(settings.user_package_folders(), [package_path]);
     }
 }
