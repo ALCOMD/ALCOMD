@@ -210,13 +210,15 @@ pub(crate) fn is_unity_editor_ready(project_path: &Path) -> bool {
 }
 
 fn find_unity_editor_window(project_path: &Path) -> io::Result<Option<HWND>> {
-    let Some(process_id) = crate::unity_process::find_unity_process_id_for_project(project_path)
-    else {
+    // Unity can run editor workers with the same executable and project path. Keep every
+    // candidate process so the unordered process snapshot cannot select a worker by chance.
+    let process_ids = crate::unity_process::find_unity_process_ids_for_project(project_path);
+    if process_ids.is_empty() {
         return Ok(None);
-    };
+    }
 
     let mut context = FindUnityWindowContext {
-        process_id,
+        process_ids,
         window: None,
     };
 
@@ -231,7 +233,7 @@ fn find_unity_editor_window(project_path: &Path) -> io::Result<Option<HWND>> {
 }
 
 struct FindUnityWindowContext {
-    process_id: u32,
+    process_ids: Vec<u32>,
     window: Option<HWND>,
 }
 
@@ -245,7 +247,7 @@ unsafe extern "system" fn find_unity_window(window: HWND, parameter: LPARAM) -> 
     unsafe {
         GetWindowThreadProcessId(window, Some(&mut process_id));
     }
-    if process_id == context.process_id && unsafe { is_unity_editor_window(window) } {
+    if context.process_ids.contains(&process_id) && unsafe { is_unity_editor_window(window) } {
         context.window = Some(window);
     }
 

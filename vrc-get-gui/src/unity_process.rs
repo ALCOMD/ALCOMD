@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use sysinfo::{Process, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
-pub(crate) fn find_unity_process_id_for_project(project_path: &Path) -> Option<u32> {
+pub(crate) fn find_unity_process_ids_for_project(project_path: &Path) -> Vec<u32> {
     let mut system = System::new();
     system.refresh_processes_specifics(
         ProcessesToUpdate::All,
@@ -14,14 +14,18 @@ pub(crate) fn find_unity_process_id_for_project(project_path: &Path) -> Option<u
             .without_tasks(),
     );
 
-    system.processes().values().find_map(|process| {
-        if !is_unity_process(process) {
-            return None;
-        }
+    system
+        .processes()
+        .values()
+        .filter_map(|process| {
+            if !is_unity_process(process) {
+                return None;
+            }
 
-        let process_project_path = project_path_from_command(process.cmd())?;
-        paths_match(&process_project_path, project_path).then(|| process.pid().as_u32())
-    })
+            let process_project_path = project_path_from_command(process.cmd())?;
+            paths_match(&process_project_path, project_path).then(|| process.pid().as_u32())
+        })
+        .collect()
 }
 
 fn is_unity_process(process: &Process) -> bool {
