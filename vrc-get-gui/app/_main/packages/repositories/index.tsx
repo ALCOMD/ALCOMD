@@ -690,6 +690,19 @@ function defaultRepositoryDisplayName(
 
 const CELL_CLASS = "p-2.5 compact:py-1 align-middle";
 
+function TruncatedRepositoryText({ value }: { value: string }) {
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<p className="truncate font-normal">{value}</p>
+			</TooltipTrigger>
+			<TooltipContent className="max-w-[calc(100vw-2rem)] break-all">
+				{value}
+			</TooltipContent>
+		</Tooltip>
+	);
+}
+
 function RepositoryRowCells({
 	labelId,
 	displayName,
@@ -757,17 +770,17 @@ function RepositoryRowCells({
 					</div>
 				)}
 			</td>
-			<td className={CELL_CLASS}>
+			<td className={`${CELL_CLASS} w-2/5 max-w-0`}>
 				{visibilityInteractive ? (
-					<label htmlFor={labelId}>
-						<p className="font-normal">{displayName}</p>
+					<label className="block min-w-0" htmlFor={labelId}>
+						<TruncatedRepositoryText value={displayName} />
 					</label>
 				) : (
-					<p className="font-normal">{displayName}</p>
+					<TruncatedRepositoryText value={displayName} />
 				)}
 			</td>
-			<td className={CELL_CLASS}>
-				<p className="font-normal">{url}</p>
+			<td className={`${CELL_CLASS} w-3/5 max-w-0`}>
+				{url && <TruncatedRepositoryText value={url} />}
 			</td>
 			<td className={`${CELL_CLASS} w-0`}>
 				<div className="flex items-center gap-1">
