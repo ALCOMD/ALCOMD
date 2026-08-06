@@ -350,6 +350,10 @@
     "projects:manage:button:clear selection": "選択を解除",
     "projects:manage:n packages selected": "{{count}}個のパッケージを選択中",
     "projects:manage:toast:no upgradable": "更新可能なパッケージはありません。",
+    "projects:manage:toast:apply changes failed": "パッケージの変更を完了できませんでした。プロジェクトのファイルを使用している可能性があるプログラムを閉じて、もう一度お試しください。",
+    "projects:manage:toast:package download failed": "パッケージをダウンロードできませんでした。ネットワーク接続またはパッケージの配布元を確認して、もう一度お試しください。",
+    "projects:manage:toast:package data invalid": "ダウンロードしたパッケージが無効または破損しています。もう一度試し、問題が続く場合はパッケージの公開元にお問い合わせください。",
+    "projects:manage:toast:project files inaccessible": "プロジェクトのファイルを変更できませんでした。プロジェクトフォルダーが書き込み可能で、Unity や他のプログラムがファイルを使用していないことを確認してください。",
     "projects:manage:toast:package installed": "{{name}} バージョン {{version}} をインストールしました。",
     // V used in single operation
     "projects:manage:toast:the package has newer latest with incompatible unity": "このパッケージには、使用中のUnityバージョンと互換性のない新しいバージョンが公開されています。",

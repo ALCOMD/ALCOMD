@@ -357,6 +357,10 @@
     "projects:manage:n packages selected_one": " 已選取 {{count}} 個套件 ",
     "projects:manage:n packages selected_other": " 已選取 {{count}} 個套件 ",    
     "projects:manage:toast:no upgradable": "無可升級的套件",
+    "projects:manage:toast:apply changes failed": "無法完成套件變更。請關閉可能正在使用專案檔案的程式，然後再試一次。",
+    "projects:manage:toast:package download failed": "無法下載套件。請檢查網路連線或套件來源，然後再試一次。",
+    "projects:manage:toast:package data invalid": "下載的套件無效或已損毀。請再試一次；如果問題持續發生，請聯絡套件發佈者。",
+    "projects:manage:toast:project files inaccessible": "無法修改專案檔案。請確認專案資料夾可寫入，且檔案未被 Unity 或其他程式使用。",
     "projects:manage:toast:package installed": "{{name}} 的 {{version}} 版本安裝成功。",
     // V used in single operation
     "projects:manage:toast:the package has newer latest with incompatible unity": "此套件有不相容於目前 Unity 版本的新版本。",

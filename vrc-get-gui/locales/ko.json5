@@ -354,6 +354,10 @@
     "projects:manage:n packages selected_one": "{{count}}개 패키지 선택됨",
     "projects:manage:n packages selected_other": "{{count}}개 패키지 선택됨",
     "projects:manage:toast:no upgradable": "업데이트 가능한 패키지가 없습니다.",
+    "projects:manage:toast:apply changes failed": "패키지 변경을 완료하지 못했습니다. 프로젝트 파일을 사용 중일 수 있는 프로그램을 닫고 다시 시도하세요.",
+    "projects:manage:toast:package download failed": "패키지를 다운로드하지 못했습니다. 네트워크 연결 또는 패키지 소스를 확인한 후 다시 시도하세요.",
+    "projects:manage:toast:package data invalid": "다운로드한 패키지가 올바르지 않거나 손상되었습니다. 다시 시도하고, 문제가 계속되면 패키지 게시자에게 문의하세요.",
+    "projects:manage:toast:project files inaccessible": "프로젝트 파일을 변경하지 못했습니다. 프로젝트 폴더에 쓰기 권한이 있고 Unity 또는 다른 프로그램에서 파일을 사용하고 있지 않은지 확인하세요.",
     "projects:manage:toast:package installed": "{{name}} 버전 {{version}} 을(를) 설치했습니다.",
     // V used in single operation
     "projects:manage:toast:the package has newer latest with incompatible unity": "이 패키지에는 현재 사용중인 Unity 버전과 호환되지 않는 최신 버전이 있습니다.",

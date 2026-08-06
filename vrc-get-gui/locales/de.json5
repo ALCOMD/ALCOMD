@@ -357,6 +357,10 @@
     "projects:manage:n packages selected_one": "{{count}} Paket ausgewählt",
     "projects:manage:n packages selected_other": "{{count}} Pakete ausgewählt",
     "projects:manage:toast:no upgradable": "Keine aktualisierbaren Pakete",
+    "projects:manage:toast:apply changes failed": "Die Paketänderungen konnten nicht abgeschlossen werden. Schließen Sie Programme, die möglicherweise Projektdateien verwenden, und versuchen Sie es erneut.",
+    "projects:manage:toast:package download failed": "Das Paket konnte nicht heruntergeladen werden. Überprüfen Sie die Netzwerkverbindung oder Paketquelle und versuchen Sie es erneut.",
+    "projects:manage:toast:package data invalid": "Das heruntergeladene Paket ist ungültig oder beschädigt. Versuchen Sie es erneut. Wenn das Problem weiterhin besteht, wenden Sie sich an den Herausgeber des Pakets.",
+    "projects:manage:toast:project files inaccessible": "Die Projektdateien konnten nicht geändert werden. Stellen Sie sicher, dass der Projektordner beschreibbar ist und die Dateien nicht von Unity oder einem anderen Programm verwendet werden.",
     "projects:manage:toast:package installed": "Installiert {{name}} Version {{version}}",
     // V used in single operation
     "projects:manage:toast:the package has newer latest with incompatible unity": "Das Paket hat eine neuere Version, welche für die genutzte Unity Version nicht verfügbar ist.",

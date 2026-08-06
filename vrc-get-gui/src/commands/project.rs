@@ -21,6 +21,7 @@ use serde::Serialize;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::str::FromStr;
@@ -1215,6 +1216,7 @@ pub async fn project_apply_pending_changes(
             window.emit(&channel, event).ok();
         });
 
+    let mut apply_activity_error = None;
     let result = async {
         let Some(mut changes) = changes.get_versioned(changes_version) else {
             return Err(RustError::unrecoverable_str("changes version mismatch"));
@@ -1238,7 +1240,11 @@ pub async fn project_apply_pending_changes(
             .await;
         }
 
-        apply_result?;
+        if let Err(error) = apply_result {
+            let error = gui_project_apply_error(error);
+            apply_activity_error = error.activity_error;
+            return Err(error.command_error);
+        }
         if !refresh_project_type {
             update_project_last_modified(&io, unity_project.project_dir()).await;
         }
@@ -1264,12 +1270,15 @@ pub async fn project_apply_pending_changes(
                     Vec::new(),
                 );
             } else {
+                let activity_error = apply_activity_error
+                    .clone()
+                    .unwrap_or_else(|| error.to_string());
                 activity.finish_failed(
                     Some(&app),
                     &activity_tracker,
                     "Project package changes failed",
                     Vec::new(),
-                    error,
+                    activity_error,
                 );
             }
         }
@@ -1411,6 +1420,43 @@ fn is_project_apply_abort(error: &RustError) -> bool {
     matches!(error, RustError::Unrecoverable { message } if message == "Aborted")
 }
 
+struct GuiProjectApplyError {
+    command_error: RustError,
+    activity_error: Option<String>,
+}
+
+fn gui_project_apply_error(error: io::Error) -> GuiProjectApplyError {
+    if error.kind() == io::ErrorKind::Interrupted {
+        GuiProjectApplyError {
+            command_error: error.into(),
+            activity_error: None,
+        }
+    } else {
+        let id = match error.kind() {
+            io::ErrorKind::NotFound
+            | io::ErrorKind::ConnectionRefused
+            | io::ErrorKind::ConnectionReset
+            | io::ErrorKind::ConnectionAborted
+            | io::ErrorKind::NotConnected
+            | io::ErrorKind::NetworkDown
+            | io::ErrorKind::NetworkUnreachable
+            | io::ErrorKind::HostUnreachable
+            | io::ErrorKind::TimedOut
+            | io::ErrorKind::BrokenPipe => "projects:manage:toast:package download failed",
+            io::ErrorKind::PermissionDenied => "projects:manage:toast:project files inaccessible",
+            io::ErrorKind::InvalidData | io::ErrorKind::UnexpectedEof => {
+                "projects:manage:toast:package data invalid"
+            }
+            _ => "projects:manage:toast:apply changes failed",
+        };
+        let (command_error, activity_error) = RustError::localizable_from_error(error, id);
+        GuiProjectApplyError {
+            command_error,
+            activity_error: Some(activity_error),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1427,6 +1473,56 @@ mod tests {
         assert!(!is_project_apply_abort(&RustError::Unrecoverable {
             message: "disk write failed".to_string(),
         }));
+    }
+
+    #[test]
+    fn gui_project_apply_error_keeps_abort_unrecoverable() {
+        let error = gui_project_apply_error(io::Error::new(io::ErrorKind::Interrupted, "Aborted"));
+
+        assert!(is_project_apply_abort(&error.command_error));
+        assert_eq!(error.activity_error, None);
+    }
+
+    #[test]
+    fn gui_project_apply_error_separates_localized_toast_from_raw_activity_error() {
+        let cases = [
+            (
+                io::ErrorKind::NotFound,
+                "raw network error",
+                "projects:manage:toast:package download failed",
+            ),
+            (
+                io::ErrorKind::PermissionDenied,
+                "raw permission error",
+                "projects:manage:toast:project files inaccessible",
+            ),
+            (
+                io::ErrorKind::InvalidData,
+                "raw archive error",
+                "projects:manage:toast:package data invalid",
+            ),
+            (
+                io::ErrorKind::Other,
+                "raw unknown error",
+                "projects:manage:toast:apply changes failed",
+            ),
+        ];
+
+        for (kind, raw_message, id) in cases {
+            let error = gui_project_apply_error(io::Error::new(kind, raw_message));
+            let serialized = serde_json::to_value(error.command_error).unwrap();
+
+            assert_eq!(
+                serialized,
+                json!({
+                    "type": "Localizable",
+                    "id": id,
+                    "args": {},
+                })
+            );
+            assert!(!serialized.to_string().contains(raw_message));
+            assert_eq!(error.activity_error.as_deref(), Some(raw_message));
+        }
     }
 
     #[test]

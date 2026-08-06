@@ -430,6 +430,21 @@ impl RustError {
         Self::Unrecoverable { message }
     }
 
+    pub(crate) fn localizable_from_error<T: std::error::Error>(
+        value: T,
+        id: &'static str,
+    ) -> (Self, String) {
+        let message = Self::display_error(&value);
+        error!(gui_toast = false; "{message}");
+        (
+            Self::Localizable(Box::new(LocalizableRustError {
+                id: id.to_string(),
+                args: indexmap::IndexMap::new(),
+            })),
+            message,
+        )
+    }
+
     pub(crate) fn unrecoverable_str<T: Into<String>>(value: T) -> Self {
         let message = value.into();
         error!("{message}");

@@ -362,6 +362,10 @@
     "projects:manage:n packages selected_one": "{{count}} package selected",
     "projects:manage:n packages selected_other": "{{count}} packages selected",
     "projects:manage:toast:no upgradable": "No upgradable package",
+    "projects:manage:toast:apply changes failed": "Package changes could not be completed. Close any programs that may be using the project files, then try again.",
+    "projects:manage:toast:package download failed": "The package could not be downloaded. Check your network connection or the package source, then try again.",
+    "projects:manage:toast:package data invalid": "The downloaded package is invalid or corrupted. Try again; if the problem continues, contact the package publisher.",
+    "projects:manage:toast:project files inaccessible": "The project files could not be changed. Make sure the project folder is writable and its files are not being used by Unity or another program.",
     "projects:manage:toast:package installed": "{{name}} version {{version}} was installed successfully.",
     // V used in single operation
     "projects:manage:toast:the package has newer latest with incompatible unity": "The package has a newer version that is incompatible with the Unity version.",
