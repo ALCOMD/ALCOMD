@@ -28,7 +28,9 @@ ALCOMD3 は internationalized されている。ユーザーに見えるテキ�
    - 例: 日本語は `ja.json5`。
 3. `lib/i18n.ts` で新しい JSON5 ファイルを import し、`languageResources` object に追加する。
 4. draft pull request を作る。
-5. 新しい言語追加を user-facing release coverage として記録する必要がある場合は、ルートの `CHANGELOG.md` または関連 documentation を更新する。
+5. 新しい言語追加を user-facing release coverage として記録する必要がある場合は、同じ
+   pull request でルート `CHANGELOG.md` の `Unreleased` の適切な category と関連
+   documentation を更新する。
 6. pull request を ready for review にする。
 7. maintainer がその言語を保守できるか確認する。
    保守しない場合、別の maintainer が現れるまでその言語は merge されない。

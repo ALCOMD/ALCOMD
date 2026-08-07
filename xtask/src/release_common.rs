@@ -497,13 +497,13 @@ pub fn update_workspace_version(ctx: &ReleaseContext, dry_run: bool) -> Result<(
 pub fn ensure_changelog_ready(ctx: &ReleaseContext) -> Result<()> {
     let changelog = fs::read_to_string(&ctx.changelog)
         .with_context(|| format!("reading changelog: {}", ctx.changelog.display()))?;
-    validate_changelog_format(&ctx.version, &ctx.repo, &changelog)
+    validate_changelog_format(&ctx.version, ctx.channel, &ctx.repo, &changelog)
 }
 
 pub fn write_release_body_from_changelog(ctx: &ReleaseContext) -> Result<PathBuf> {
     let changelog = fs::read_to_string(&ctx.changelog)
         .with_context(|| format!("reading changelog: {}", ctx.changelog.display()))?;
-    validate_changelog_format(&ctx.version, &ctx.repo, &changelog)?;
+    validate_changelog_format(&ctx.version, ctx.channel, &ctx.repo, &changelog)?;
     let body = extract_changelog_release_body(&ctx.version, &changelog)?;
     let path = ctx.release_body();
     let parent = path.parent().context("release body path has no parent")?;
@@ -532,7 +532,12 @@ fn extract_changelog_release_body(version: &str, changelog: &str) -> Result<Stri
     Ok(format!("{body}\n"))
 }
 
-fn validate_changelog_format(version: &str, repo: &str, changelog: &str) -> Result<()> {
+fn validate_changelog_format(
+    version: &str,
+    channel: ReleaseChannel,
+    repo: &str,
+    changelog: &str,
+) -> Result<()> {
     const CHANGE_TYPES: [&str; 6] = [
         "Added",
         "Changed",
@@ -542,6 +547,7 @@ fn validate_changelog_format(version: &str, repo: &str, changelog: &str) -> Resu
         "Security",
     ];
 
+    validate_version_for_channel(version, channel)?;
     let lines = changelog.lines().collect::<Vec<_>>();
     if lines.first().copied() != Some("# Changelog") {
         bail!("changelog title must be exactly: # Changelog");
@@ -578,9 +584,16 @@ fn validate_changelog_format(version: &str, repo: &str, changelog: &str) -> Resu
 
     let release_end = lines[release_start + 1..]
         .iter()
-        .position(|line| line.starts_with("## ["))
+        .position(|line| line.starts_with("## [") || line.starts_with("[Unreleased]:"))
         .map(|offset| release_start + 1 + offset)
         .unwrap_or(lines.len());
+    let release_body = &lines[release_start + 1..release_end];
+    if release_body.iter().any(|line| {
+        let trimmed = line.trim_start();
+        trimmed.starts_with("```") || trimmed.starts_with("~~~")
+    }) {
+        bail!("changelog release {version} must not contain fenced code blocks");
+    }
     let change_sections = lines[release_start + 1..release_end]
         .iter()
         .enumerate()
@@ -592,20 +605,50 @@ fn validate_changelog_format(version: &str, repo: &str, changelog: &str) -> Resu
     if change_sections.is_empty() {
         bail!("changelog release {version} must contain at least one change category");
     }
+    if lines[release_start + 1..change_sections[0].0]
+        .iter()
+        .any(|line| !line.trim().is_empty())
+    {
+        bail!("changelog release {version} must not contain content before its first category");
+    }
 
+    let mut seen_change_types = Vec::new();
     for (section_index, (section_start, heading)) in change_sections.iter().enumerate() {
         if !CHANGE_TYPES.contains(heading) {
             bail!("changelog release {version} contains unsupported change category: {heading}");
         }
+        if seen_change_types.contains(heading) {
+            bail!("changelog release {version} contains duplicate change category: {heading}");
+        }
+        seen_change_types.push(*heading);
         let section_end = change_sections
             .get(section_index + 1)
             .map(|(index, _)| *index)
             .unwrap_or(release_end);
-        let bullets = lines[*section_start + 1..section_end]
-            .iter()
-            .filter_map(|line| line.strip_prefix("- "))
-            .collect::<Vec<_>>();
-        if bullets.is_empty() || bullets.iter().any(|bullet| bullet.trim().is_empty()) {
+        let mut has_bullet = false;
+        let mut has_active_bullet = false;
+        for line in &lines[*section_start + 1..section_end] {
+            if line.trim().is_empty() {
+                continue;
+            }
+            if let Some(bullet) = line.strip_prefix("- ") {
+                if bullet.trim().is_empty() {
+                    bail!(
+                        "changelog release {version} category {heading} must contain non-empty top-level bullets"
+                    );
+                }
+                has_bullet = true;
+                has_active_bullet = true;
+                continue;
+            }
+            if has_active_bullet && line.starts_with("  ") && !line.trim_start().starts_with("- ") {
+                continue;
+            }
+            bail!(
+                "changelog release {version} category {heading} may contain only top-level bullets and their indented continuations"
+            );
+        }
+        if !has_bullet {
             bail!(
                 "changelog release {version} category {heading} must contain non-empty top-level bullets"
             );
@@ -614,13 +657,80 @@ fn validate_changelog_format(version: &str, repo: &str, changelog: &str) -> Resu
 
     let expected_unreleased_link =
         format!("[Unreleased]: https://github.com/{repo}/compare/v{version}...HEAD");
-    if !lines.contains(&expected_unreleased_link.as_str()) {
+    let unreleased_links = lines
+        .iter()
+        .filter(|line| line.starts_with("[Unreleased]: "))
+        .collect::<Vec<_>>();
+    if unreleased_links.len() != 1 || *unreleased_links[0] != expected_unreleased_link.as_str() {
         bail!("changelog must contain the current comparison link: {expected_unreleased_link}");
     }
-    let expected_release_link =
-        format!("[{version}]: https://github.com/{repo}/releases/tag/v{version}");
-    if !lines.contains(&expected_release_link.as_str()) {
-        bail!("changelog must contain the release link: {expected_release_link}");
+
+    let releases = lines
+        .iter()
+        .filter_map(|line| {
+            if *line == "## [Unreleased]" {
+                None
+            } else {
+                line.strip_prefix("## [")
+            }
+        })
+        .map(|heading| {
+            let (candidate, date) = heading
+                .split_once("] - ")
+                .with_context(|| format!("malformed changelog release heading: ## [{heading}"))?;
+            let parsed = Version::parse(candidate)
+                .with_context(|| format!("invalid changelog release version: {candidate}"))?;
+            let date = NaiveDate::parse_from_str(date, "%Y-%m-%d").with_context(|| {
+                format!("changelog release date must use YYYY-MM-DD for {candidate}: {date}")
+            })?;
+            Ok((candidate, parsed, date))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let mut seen_releases = Vec::new();
+    for (release, _, _) in &releases {
+        if seen_releases.contains(release) {
+            bail!("changelog contains duplicate release version: {release}");
+        }
+        seen_releases.push(*release);
+    }
+    for pair in releases.windows(2) {
+        if pair[0].2 < pair[1].2 {
+            bail!(
+                "changelog releases must use reverse chronological order: {} appears before {}",
+                pair[0].0,
+                pair[1].0
+            );
+        }
+    }
+
+    for (release_index, (release, parsed, _)) in releases.iter().enumerate() {
+        let release_channel = if parsed.pre.is_empty() {
+            ReleaseChannel::Stable
+        } else {
+            ReleaseChannel::Beta
+        };
+        let previous_version = match release_channel {
+            ReleaseChannel::Stable => releases[release_index + 1..]
+                .iter()
+                .find(|(_, candidate, _)| candidate.pre.is_empty()),
+            ReleaseChannel::Beta => releases.get(release_index + 1),
+        };
+        let expected_release_link = match previous_version {
+            Some((previous_version, _, _)) => format!(
+                "[{release}]: https://github.com/{repo}/compare/v{previous_version}...v{release}"
+            ),
+            None => format!("[{release}]: https://github.com/{repo}/releases/tag/v{release}"),
+        };
+        let release_link_prefix = format!("[{release}]: ");
+        let release_links = lines
+            .iter()
+            .filter(|line| line.starts_with(&release_link_prefix))
+            .collect::<Vec<_>>();
+        if release_links.len() != 1 || *release_links[0] != expected_release_link.as_str() {
+            bail!(
+                "changelog release {release} must use the correct {release_channel} comparison baseline: {expected_release_link}"
+            );
+        }
     }
     Ok(())
 }
@@ -1050,9 +1160,200 @@ All notable changes to this project will be documented in this file.
         .to_string()
     }
 
+    fn stable_comparison_changelog() -> String {
+        r#"# Changelog
+
+## [Unreleased]
+
+## [3.1.0] - 2026-08-01
+
+### Added
+
+- Published the stable release.
+
+## [3.1.0-beta.2] - 2026-07-28
+
+### Fixed
+
+- Fixed the second beta.
+
+## [3.1.0-beta.1] - 2026-07-27
+
+### Added
+
+- Published the first beta.
+
+## [3.0.0] - 2026-07-26
+
+### Added
+
+- Published the first stable release.
+
+[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.0.0...v3.1.0
+[3.1.0-beta.2]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0-beta.1...v3.1.0-beta.2
+[3.1.0-beta.1]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.0.0...v3.1.0-beta.1
+[3.0.0]: https://github.com/ALCOMD3/ALCOMD3/releases/tag/v3.0.0
+"#
+        .to_string()
+    }
+
+    fn beta_comparison_changelog() -> String {
+        r#"# Changelog
+
+## [Unreleased]
+
+## [3.1.0-beta.2] - 2026-07-28
+
+### Fixed
+
+- Fixed the second beta.
+
+## [3.1.0-beta.1] - 2026-07-27
+
+### Added
+
+- Published the first beta.
+
+## [3.0.0] - 2026-07-26
+
+### Added
+
+- Published the first stable release.
+
+[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0-beta.2...HEAD
+[3.1.0-beta.2]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0-beta.1...v3.1.0-beta.2
+[3.1.0-beta.1]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.0.0...v3.1.0-beta.1
+[3.0.0]: https://github.com/ALCOMD3/ALCOMD3/releases/tag/v3.0.0
+"#
+        .to_string()
+    }
+
     #[test]
     fn changelog_accepts_keep_a_changelog_release_entry() {
-        validate_changelog_format("3.0.0", "ALCOMD3/ALCOMD3", &valid_changelog()).unwrap();
+        validate_changelog_format(
+            "3.0.0",
+            ReleaseChannel::Stable,
+            "ALCOMD3/ALCOMD3",
+            &valid_changelog(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn repository_changelog_matches_current_workspace_release() {
+        let version = env!("CARGO_PKG_VERSION");
+        let parsed = semver::Version::parse(version).unwrap();
+        let channel = if parsed.pre.is_empty() {
+            ReleaseChannel::Stable
+        } else {
+            ReleaseChannel::Beta
+        };
+
+        validate_changelog_format(
+            version,
+            channel,
+            "ALCOMD3/ALCOMD3",
+            include_str!("../../CHANGELOG.md"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn changelog_stable_release_compares_with_previous_stable() {
+        validate_changelog_format(
+            "3.1.0",
+            ReleaseChannel::Stable,
+            "ALCOMD3/ALCOMD3",
+            &stable_comparison_changelog(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn changelog_beta_release_compares_with_immediately_previous_release() {
+        validate_changelog_format(
+            "3.1.0-beta.2",
+            ReleaseChannel::Beta,
+            "ALCOMD3/ALCOMD3",
+            &beta_comparison_changelog(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn changelog_rejects_stable_comparison_against_a_beta() {
+        let changelog =
+            stable_comparison_changelog().replace("v3.0.0...v3.1.0", "v3.1.0-beta.2...v3.1.0");
+        let error = validate_changelog_format(
+            "3.1.0",
+            ReleaseChannel::Stable,
+            "ALCOMD3/ALCOMD3",
+            &changelog,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("stable comparison baseline"));
+    }
+
+    #[test]
+    fn changelog_rejects_beta_comparison_that_skips_a_release() {
+        let changelog = beta_comparison_changelog()
+            .replace("v3.1.0-beta.1...v3.1.0-beta.2", "v3.0.0...v3.1.0-beta.2");
+        let error = validate_changelog_format(
+            "3.1.0-beta.2",
+            ReleaseChannel::Beta,
+            "ALCOMD3/ALCOMD3",
+            &changelog,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("beta comparison baseline"));
+    }
+
+    #[test]
+    fn changelog_rejects_stale_historical_comparison_link() {
+        let changelog = stable_comparison_changelog()
+            .replace("v3.1.0-beta.1...v3.1.0-beta.2", "v3.0.0...v3.1.0-beta.2");
+        let error = validate_changelog_format(
+            "3.1.0",
+            ReleaseChannel::Stable,
+            "ALCOMD3/ALCOMD3",
+            &changelog,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("beta comparison baseline"));
+    }
+
+    #[test]
+    fn changelog_rejects_duplicate_version_links() {
+        let link = "[3.0.0]: https://github.com/ALCOMD3/ALCOMD3/releases/tag/v3.0.0";
+        let changelog = valid_changelog().replace(link, &format!("{link}\n{link}"));
+        let error = validate_changelog_format(
+            "3.0.0",
+            ReleaseChannel::Stable,
+            "ALCOMD3/ALCOMD3",
+            &changelog,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("stable comparison baseline"));
+    }
+
+    #[test]
+    fn changelog_rejects_non_chronological_release_order() {
+        let changelog = stable_comparison_changelog()
+            .replace("3.1.0-beta.2] - 2026-07-28", "3.1.0-beta.2] - 2026-08-02");
+        let error = validate_changelog_format(
+            "3.1.0",
+            ReleaseChannel::Stable,
+            "ALCOMD3/ALCOMD3",
+            &changelog,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("reverse chronological order"));
     }
 
     #[test]
@@ -1068,7 +1369,13 @@ All notable changes to this project will be documented in this file.
     #[test]
     fn changelog_rejects_missing_target_release() {
         let changelog = valid_changelog().replace("## [3.0.0] - 2026-07-26", "");
-        let error = validate_changelog_format("3.0.0", "ALCOMD3/ALCOMD3", &changelog).unwrap_err();
+        let error = validate_changelog_format(
+            "3.0.0",
+            ReleaseChannel::Stable,
+            "ALCOMD3/ALCOMD3",
+            &changelog,
+        )
+        .unwrap_err();
 
         assert!(error.to_string().contains("release heading"));
     }
@@ -1076,7 +1383,13 @@ All notable changes to this project will be documented in this file.
     #[test]
     fn changelog_rejects_non_iso_release_date() {
         let changelog = valid_changelog().replace("2026-07-26", "July 26, 2026");
-        let error = validate_changelog_format("3.0.0", "ALCOMD3/ALCOMD3", &changelog).unwrap_err();
+        let error = validate_changelog_format(
+            "3.0.0",
+            ReleaseChannel::Stable,
+            "ALCOMD3/ALCOMD3",
+            &changelog,
+        )
+        .unwrap_err();
 
         assert!(error.to_string().contains("YYYY-MM-DD"));
     }
@@ -1084,7 +1397,13 @@ All notable changes to this project will be documented in this file.
     #[test]
     fn changelog_rejects_unknown_change_category() {
         let changelog = valid_changelog().replace("### Added", "### Updates");
-        let error = validate_changelog_format("3.0.0", "ALCOMD3/ALCOMD3", &changelog).unwrap_err();
+        let error = validate_changelog_format(
+            "3.0.0",
+            ReleaseChannel::Stable,
+            "ALCOMD3/ALCOMD3",
+            &changelog,
+        )
+        .unwrap_err();
 
         assert!(error.to_string().contains("unsupported change category"));
     }
@@ -1092,15 +1411,75 @@ All notable changes to this project will be documented in this file.
     #[test]
     fn changelog_rejects_empty_change_category() {
         let changelog = valid_changelog().replace("- Published the first ALCOMD3 release.", "");
-        let error = validate_changelog_format("3.0.0", "ALCOMD3/ALCOMD3", &changelog).unwrap_err();
+        let error = validate_changelog_format(
+            "3.0.0",
+            ReleaseChannel::Stable,
+            "ALCOMD3/ALCOMD3",
+            &changelog,
+        )
+        .unwrap_err();
 
         assert!(error.to_string().contains("non-empty top-level bullets"));
     }
 
     #[test]
+    fn changelog_rejects_content_before_first_change_category() {
+        let changelog = valid_changelog().replace("### Added", "Unexpected summary.\n\n### Added");
+        let error = validate_changelog_format(
+            "3.0.0",
+            ReleaseChannel::Stable,
+            "ALCOMD3/ALCOMD3",
+            &changelog,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("before its first category"));
+    }
+
+    #[test]
+    fn changelog_rejects_duplicate_change_category() {
+        let changelog = valid_changelog().replace(
+            "[Unreleased]:",
+            "### Added\n\n- Duplicated category.\n\n[Unreleased]:",
+        );
+        let error = validate_changelog_format(
+            "3.0.0",
+            ReleaseChannel::Stable,
+            "ALCOMD3/ALCOMD3",
+            &changelog,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("duplicate change category"));
+    }
+
+    #[test]
+    fn changelog_rejects_fenced_code_blocks() {
+        let changelog = valid_changelog().replace(
+            "- Published the first ALCOMD3 release.",
+            "- Published the first ALCOMD3 release.\n\n```text\ninternal detail\n```",
+        );
+        let error = validate_changelog_format(
+            "3.0.0",
+            ReleaseChannel::Stable,
+            "ALCOMD3/ALCOMD3",
+            &changelog,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("fenced code blocks"));
+    }
+
+    #[test]
     fn changelog_rejects_stale_unreleased_comparison_link() {
         let changelog = valid_changelog().replace("v3.0.0...HEAD", "v2.1.0...HEAD");
-        let error = validate_changelog_format("3.0.0", "ALCOMD3/ALCOMD3", &changelog).unwrap_err();
+        let error = validate_changelog_format(
+            "3.0.0",
+            ReleaseChannel::Stable,
+            "ALCOMD3/ALCOMD3",
+            &changelog,
+        )
+        .unwrap_err();
 
         assert!(error.to_string().contains("current comparison link"));
     }

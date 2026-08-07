@@ -37,8 +37,8 @@ release に固定する。
 ### Agent execution semantics
 
 明示的な audit request は read-only のまま扱う。明示的な release request は readiness
-report ではなく end-to-end operation とする。Changelog の `Unreleased` を target version
-へ移し、7 languages すべての updater short summary を作成し、source release files
+report ではなく end-to-end operation とする。Channel rule に従って target changelog entry
+を完成させ、7 languages すべての updater short summary を作成し、source release files
 を validate、commit、push した後、Draft workflow を dispatch して監視する。Manual Draft
 publish gate でのみ停止する。Draft publish 後は updater workflow、metadata commit、
 public endpoint の監視を続け、すべて成功した場合だけ release complete とする。
@@ -50,6 +50,8 @@ public endpoint の監視を続け、すべて成功した場合だけ release c
 - `vrc-get-gui/package.json` は `cargo xtask release-prepare` が更新する。
 - `Cargo.lock` と `package-lock.json` は generated files。
 - `CHANGELOG.md` は重要な変更の canonical record であり、GitHub Release body の source。
+- 通常の development では、重要な user-facing change を同じ change または PR で
+  `Unreleased` の適切な category に追加する。
 - `release-metadata/updater-notes/$Version.json` は in-app updater dialog 用の
   7-language short summary。
 - Updater JSON は published updater workflow が public Release assets から再生成・検証し、
@@ -74,6 +76,10 @@ $Channel = "stable"
 ```
 
 Stable version は prerelease metadata を含めない。Beta version は prerelease metadata を含める。
+
+Stable changelog entry と GitHub Release body は直前の stable release と比較する。Beta entry は
+直前に公開された release（stable または beta）と比較する。最初の public release には比較元が
+ないため、version link は自身の GitHub Release を指す。
 
 Repository prerequisites:
 
@@ -130,12 +136,19 @@ cargo xtask release-prepare --version $Version --channel $Channel
 - `release-metadata/updater-notes/$Version.json` がなければ作成する。
 - `git status --short` を表示する。
 
-該当する `CHANGELOG.md` の `Unreleased` entries を
-`## [$Version] - YYYY-MM-DD` に移し、先頭に新しい `Unreleased` section を残して compare
-links を更新する。Category は `Added`、`Changed`、`Deprecated`、`Removed`、`Fixed`、
-`Security` だけを使用し、空 category は省略する。`release-validate` は target version entry、
-ISO date、空でない top-level bullets、release link、target tag を基準にした `Unreleased`
-compare link を検証する。
+Channel rule に従って `CHANGELOG.md` の `## [$Version] - YYYY-MM-DD` を完成させる:
+
+- Beta: 該当する `Unreleased` increment を target entry に移す。
+- Stable: 期間中の beta entries と `Unreleased` から、直前の stable 以降の final net changes
+  を整理する。Beta entries との意図的な重複は許容し、後で取り消された一時的な beta
+  changes は含めない。
+
+どちらも先頭に新しい `Unreleased` section を残して compare links を更新する。Category は
+`Added`、`Changed`、`Deprecated`、`Removed`、`Fixed`、`Security` だけを使用し、空 category
+は省略する。公開 version は date の降順で並べ、version 番号を重複させない。
+`release-validate` は target version entry、
+ISO date、空でない top-level bullets、すべての公開 version が channel ごとの比較元を使う
+GitHub Compare link、target tag を基準にした `Unreleased` compare link を検証する。
 
 `release-metadata/updater-notes/$Version.json` を完成させる。`en`、`de`、`fr`、`ja`、
 `ko`、`zh_hans`、`zh_hant` の 7 keys を正確に含み、各 value は空でない localized short
@@ -325,8 +338,8 @@ JSON は commit しない。
 
 以下の場合は release を止める:
 
-- changelog に target version がない、date/category が不正、category bullet が空、または
-  target version / `Unreleased` link が古い。
+- changelog に target version がない、date/category が不正、category bullet が空、stable/beta
+  の比較元が誤っている、または target version / `Unreleased` link が古い。
 - updater summary metadata がない、JSON が不正、required language が不足、unsupported key が
   ある、または value が空。
 - validation が失敗する。

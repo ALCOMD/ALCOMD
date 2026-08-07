@@ -35,7 +35,9 @@
 
 - `docs/README.md` 是统一文档入口；需要定位维护、发布、MCP、格式说明或历史记录时优先从这里进入。
 - 处理发布、发布审计、版本准备、GitHub Release、updater metadata、stable/beta channel 或 changelog 任务时，先读取 `docs/skills/alcomd3-release/SKILL.md`，再按 `docs/RELEASE.md` 执行或审计。
-- 行为、兼容性、发布流程、MCP 边界或用户可见功能变化，应同步更新文档和 `CHANGELOG.md` 的 `Unreleased`；版本发布时补齐 `release-metadata/updater-notes/` 中对应版本的七语 updater 摘要。
+- 普通开发中，每项重要的用户可见行为、兼容性、弃用/移除、安全、已知问题、打包或公开配置变化，都应在同一变更或 PR 中写入 `CHANGELOG.md` 的 `Unreleased` 对应分类，并按需同步文档。不要把 commit/PR 清单、纯 CI/workflow、测试、内部重构或仅供维护者使用的实现记录写入 changelog，除非它们产生用户可见或发布影响。
+- 发布 beta 时，将适用的 `Unreleased` 增量移动到对应带日期版本条目；发布 stable 时，从期间 beta 条目和 `Unreleased` 整理出相对上一个 stable 的最终净变化，允许与 beta 条目有意重叠，但不包含后来撤销的中间状态。两种发布都必须在顶部保留新的 `Unreleased`，并补齐 `release-metadata/updater-notes/` 中对应版本的七语 updater 摘要。
+- Changelog 的 stable 版本链接对比上一个 stable，beta 版本链接对比紧邻的上一个已发布版本（stable 或 beta）；首个公开版本没有前序基线，链接到自身 GitHub Release。
 - `CHANGELOG.md` 使用 Keep a Changelog 分类并按时间倒序维护。已公开的 Git tag、GitHub Release、changelog 已发布版本条目和 updater metadata 均视为历史记录，不得为后续功能或 PR 改写；只有在明确执行发布审计/修复，且目标是恢复为实际已发布内容时，才可修改。当前分支不保留独立的按版本发布说明文件。
 - 发布流程以 ALCOMD3 自己的 `xtask`、文档和 updater 签名流程为准。
 - GitHub Actions 是计划内的默认发布编排入口，发布规则仍集中在 `xtask`。本地默认只生成可安装、可签名、可验证的临时测试产物；确需手动发布时，必须显式生成 release artifacts，并从 clean、已同步的 `main` 创建或更新 GitHub Release。Updater metadata 始终由 Release 发布事件触发的 Actions 流程处理。

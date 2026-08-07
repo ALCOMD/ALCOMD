@@ -563,9 +563,15 @@ channel's three-platform metadata.
 
 ### Changelog and local build commands
 
-- Notable changes are collected under `Unreleased` in the root `CHANGELOG.md`.
-- Release preparation promotes them to a dated version entry, and GitHub Release
-  bodies are generated from that exact entry.
+- Add every notable user-facing change to the appropriate `Unreleased` category
+  in the root `CHANGELOG.md` as part of the same change or pull request. Do not
+  use it as a commit/PR log or include maintainer-only work without release impact.
+- For a beta release, move the applicable `Unreleased` increment into the dated
+  version entry. For a stable release, curate the final net changes since the
+  previous stable from the intervening beta entries and `Unreleased`, omitting
+  transient beta changes that were later reverted. Leave a fresh `Unreleased`
+  section in both cases.
+- GitHub Release bodies are generated from the exact target version entry.
 - `release-prepare` creates the seven-language updater summary template under
   `release-metadata/updater-notes/`; `release-validate` enforces both inputs.
 - Standalone versioned release-description files are not kept in the current tree.

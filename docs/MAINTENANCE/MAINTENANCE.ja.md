@@ -477,9 +477,14 @@ selected channel の 3-platform metadata を atomic に生成する。
 
 ### Changelog と local build commands
 
-- 重要な変更は root `CHANGELOG.md` の `Unreleased` に集約する。
-- Release preparation で date 付き version entry に移し、GitHub Release body はその entry
-  から正確に生成する。
+- 重要な user-facing change は、同じ change または PR で root `CHANGELOG.md` の
+  `Unreleased` の適切な category に追加する。Commit/PR list として使わず、release impact
+  のない maintainer-only work は記載しない。
+- Beta release では該当する `Unreleased` increment を date 付き version entry に移す。
+  Stable release では、期間中の beta entries と `Unreleased` から直前の stable 以降の
+  final net changes を整理し、後で取り消された一時的な beta changes は省略する。どちらも
+  先頭に新しい `Unreleased` を残す。
+- GitHub Release body は target version entry から正確に生成する。
 - `release-prepare` は `release-metadata/updater-notes/` に 7-language updater summary
   template を作成し、`release-validate` が両方の input を検証する。
 - 現在の tree には version ごとの standalone release-description files を保持しない。

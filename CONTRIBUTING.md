@@ -109,7 +109,8 @@ standard:
    a user-visible bug.
 3. Adapt the change to ALCOMD3's architecture instead of blindly merging.
 4. Verify affected Rust, GUI, and MCP code paths.
-5. Document notable changes under `Unreleased` in `CHANGELOG.md`.
+5. Document each notable user-facing change under the appropriate `Unreleased`
+   category in `CHANGELOG.md` as part of the same pull request.
 
 Changes touching package operations, project mutations, repository management,
 operation cancellation, resource locking, or MCP visibility require extra care.
@@ -132,6 +133,10 @@ and safety checks.
 - Keep PRs focused.
 - Explain user-visible behavior changes.
 - Include validation results, or state clearly why validation was not run.
-- Update docs and the `Unreleased` changelog when behavior, compatibility,
-  packaging, or public configuration changes.
+- Update docs and the appropriate `CHANGELOG.md` `Unreleased` category in the
+  same PR when user-visible behavior, compatibility, deprecation or removal,
+  security, known issues, packaging, or public configuration changes.
+- Do not use the changelog as a commit/PR log. Omit CI/workflow-only changes,
+  tests, internal refactors, and maintainer-only implementation details unless
+  they have a user-visible or release impact.
 - Avoid unrelated formatting churn.

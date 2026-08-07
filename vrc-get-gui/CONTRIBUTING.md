@@ -31,7 +31,9 @@ New languages are welcome. To add one:
    - For example, Japanese uses `ja.json5`.
 3. Import the new JSON5 file in `lib/i18n.ts` and add it to the `languageResources` object.
 4. Create a draft pull request.
-5. Update the root `CHANGELOG.md` or the relevant documentation when the language addition needs user-facing release coverage.
+5. When the language addition needs user-facing release coverage, add it to the
+   appropriate `Unreleased` category in the root `CHANGELOG.md` and update any
+   relevant documentation in the same pull request.
 6. Mark the pull request as ready for review.
 7. A maintainer will ask whether you can maintain the language.
    If you do not want to maintain it, the language will not be merged until another maintainer volunteers.

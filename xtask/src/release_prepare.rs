@@ -5,7 +5,7 @@ use crate::release_common::{
 use crate::utils::command::CommandExt;
 use anyhow::Result;
 
-/// Prepare release source files: versions, lockfiles, changelog, and updater notes.
+/// Prepare release source files: versions, lockfiles, and updater-note templates.
 #[derive(clap::Parser)]
 pub struct Command {
     /// Release version, for example 3.0.0 or 3.1.0-beta.1.
@@ -74,11 +74,20 @@ impl crate::Command for Command {
             "release source prepared for {} ({})",
             ctx.version, ctx.channel
         );
-        println!(
-            "next: promote Unreleased changes in {} and complete {}",
-            ctx.changelog.display(),
-            ctx.updater_notes().display()
-        );
+        match ctx.channel {
+            ReleaseChannel::Stable => println!(
+                "next: curate the {} entry in {} as the final net changes since the previous stable release, leave a fresh Unreleased section, and complete {}",
+                ctx.version,
+                ctx.changelog.display(),
+                ctx.updater_notes().display()
+            ),
+            ReleaseChannel::Beta => println!(
+                "next: move the applicable Unreleased increment into the {} entry in {}, leave a fresh Unreleased section, and complete {}",
+                ctx.version,
+                ctx.changelog.display(),
+                ctx.updater_notes().display()
+            ),
+        };
         Ok(0)
     }
 }

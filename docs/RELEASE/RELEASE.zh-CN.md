@@ -30,8 +30,8 @@ GUI 进程、新快捷方式、模板 ProgID 和 `vcc://` 注册统一使用配�
 ### Agent 执行语义
 
 用户明确要求审计时保持只读。用户明确要求发布时，必须把它作为端到端操作，而不是只报告
-“可以发布”：准备并验证 source release files，将 changelog 的 `Unreleased` 条目归档到目标版本，
-生成全部 7 种语言的 updater 短说明，提交并推送 source release，然后触发并监控 Draft workflow。
+“可以发布”：准备并验证 source release files，按 channel 规则完成目标 changelog 条目，生成全部
+7 种语言的 updater 短说明，提交并推送 source release，然后触发并监控 Draft workflow。
 只在 Draft 人工发布门暂停。Draft 公开后继续监控 updater workflow、metadata commit 和
 公开 endpoint；这些检查全部通过后，发布才算完成。
 
@@ -42,6 +42,7 @@ GUI 进程、新快捷方式、模板 ProgID 和 `vcc://` 注册统一使用配�
 - `vrc-get-gui/package.json` 由 `cargo xtask release-prepare` 更新。
 - `Cargo.lock` 和 `package-lock.json` 是生成文件。
 - `CHANGELOG.md` 是重要变化的规范记录，也是 GitHub Release 正文来源。
+- 普通开发中，重要的用户可见变化应在同一变更或 PR 中写入其 `Unreleased` 对应分类。
 - `release-metadata/updater-notes/$Version.json` 是应用内更新弹窗使用的七语短摘要。
 - Updater JSON 由发布后的 updater workflow 从公开 Release assets 重新生成并验证，
   只能在验证通过后提交。
@@ -65,6 +66,9 @@ $Channel = "stable"
 ```
 
 Stable version 不能包含 prerelease metadata。Beta version 必须包含 prerelease metadata。
+
+Stable changelog 条目和 GitHub Release 正文对比上一个 stable。Beta 条目对比紧邻的上一个
+已发布版本（stable 或 beta）。首个公开版本没有前序比较基线，版本链接指向自身 GitHub Release。
 
 仓库前置配置：
 
@@ -118,11 +122,17 @@ cargo xtask release-prepare --version $Version --channel $Channel
 - 如果不存在则创建 `release-metadata/updater-notes/$Version.json`；
 - 输出 `git status --short`。
 
-将适用于本版本的 `CHANGELOG.md` `Unreleased` 条目移动到
-`## [$Version] - YYYY-MM-DD`，在顶部保留新的 `Unreleased`，并更新比对链接。分类只使用
-`Added`、`Changed`、`Deprecated`、`Removed`、`Fixed` 和 `Security`，空分类应省略。
-`release-validate` 会检查目标版本条目、ISO 日期、非空顶层项目符号、release 链接，以及以
-目标 tag 为基准的 `Unreleased` 比对链接。
+按 channel 规则完成 `CHANGELOG.md` 的 `## [$Version] - YYYY-MM-DD`：
+
+- Beta：将适用于本版本的 `Unreleased` 增量移动到目标条目。
+- Stable：从期间 beta 条目和 `Unreleased` 整理相对上一个 stable 的最终净变化。允许与 beta
+  条目有意重叠，但不得包含后来撤销的 beta 中间状态。
+
+两种情况都要在顶部保留新的 `Unreleased` 并更新比对链接。分类只使用 `Added`、`Changed`、
+`Deprecated`、`Removed`、`Fixed` 和 `Security`，空分类应省略；已发布版本按日期倒序排列且
+版本号不得重复。
+`release-validate` 会检查目标版本条目、ISO 日期、非空顶层项目符号、所有已发布版本是否使用
+对应 channel 比较基线的 GitHub Compare 链接，以及以目标 tag 为基准的 `Unreleased` 比对链接。
 
 填写 `release-metadata/updater-notes/$Version.json`。它必须精确包含 `en`、`de`、`fr`、
 `ja`、`ko`、`zh_hans`、`zh_hant` 七个 key，每个 value 都是非空的本地化短摘要。这个结构化
@@ -298,7 +308,7 @@ Windows 身份迁移期间，例外的本地发布也不能绕过 GitHub-hosted 
 
 以下情况必须停止发布：
 
-- changelog 缺少目标版本、日期或分类非法、分类项目为空，或者目标版本 / `Unreleased` 链接过期；
+- changelog 缺少目标版本、日期或分类非法、分类项目为空、stable/beta 比较基线错误，或者目标版本 / `Unreleased` 链接过期；
 - updater 摘要 metadata 缺失、JSON 非法、遗漏任一必需语言、包含不支持的语言 key，或值为空；
 - validation 失败；
 - source-bound Windows 正式安装器升级 smoke 失败、取消、未执行，或测试的不是 Windows

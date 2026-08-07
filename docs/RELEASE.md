@@ -45,12 +45,12 @@ without a previous installer and never consults another repository.
 
 An explicit audit request stays read-only. An explicit release request is an
 end-to-end operation, not a readiness report: prepare and validate the source
-release files, promote the changelog's `Unreleased` entries, generate all seven
-localized updater summaries, commit and push the source
- release, then dispatch and monitor the Draft workflow. Pause only at the manual
- Draft publication gate. After the Draft is published, continue monitoring the
- updater workflow, metadata commit, and public endpoint. The release is complete
- only after those checks pass.
+release files, finalize the channel-appropriate changelog entry, generate all
+seven localized updater summaries, commit and push the source release, then
+dispatch and monitor the Draft workflow. Pause only at the manual Draft
+publication gate. After the Draft is published, continue monitoring the updater
+workflow, metadata commit, and public endpoint. The release is complete only
+after those checks pass.
 
 ### Version ownership
 
@@ -60,6 +60,8 @@ localized updater summaries, commit and push the source
 - `Cargo.lock` and `package-lock.json` are generated files.
 - `CHANGELOG.md` is the canonical record of notable changes and the source for
   GitHub Release bodies.
+- During normal development, add notable user-facing changes to its appropriate
+  `Unreleased` category in the same change or pull request.
 - `release-metadata/updater-notes/$Version.json` is the seven-language short
   summary used by the in-app updater dialog.
 - Updater JSON is regenerated from public Release assets by the published
@@ -85,6 +87,11 @@ $Channel = "stable"
 
 Stable versions must not contain prerelease metadata. Beta versions must contain
 prerelease metadata.
+
+Stable changelog entries and GitHub Release bodies compare against the previous
+stable release. Beta entries compare against the immediately previous published
+release, whether stable or beta. The first public release has no comparison base
+and links to its own GitHub Release.
 
 Repository prerequisites:
 
@@ -144,13 +151,21 @@ This command:
 - creates `release-metadata/updater-notes/$Version.json` if missing;
 - prints the resulting `git status --short`.
 
-Promote the applicable `CHANGELOG.md` `Unreleased` entries into
-`## [$Version] - YYYY-MM-DD`, leave a new `Unreleased` section at the top, and
-update the comparison links. Use only `Added`, `Changed`, `Deprecated`,
-`Removed`, `Fixed`, and `Security` categories, omitting empty categories.
-`release-validate` requires the target version entry, ISO date, non-empty
-top-level bullets, release link, and an `Unreleased` comparison link based on
-the target tag.
+Finalize `## [$Version] - YYYY-MM-DD` in `CHANGELOG.md` according to the channel:
+
+- For beta, move the applicable `Unreleased` increment into the target entry.
+- For stable, curate the final net changes since the previous stable from the
+  intervening beta entries and `Unreleased`. Intentional overlap with the beta
+  entries is expected; omit transient beta changes that were later reverted.
+
+In both cases, leave a fresh `Unreleased` section at the top and update the
+comparison links. Use only `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`,
+and `Security` categories, omitting empty categories. Keep published versions in
+reverse chronological order without duplicate versions.
+`release-validate` requires the target version entry, ISO dates, non-empty
+top-level bullets, every published version's GitHub Compare link using its
+channel's required comparison base, and an `Unreleased` comparison link based
+on the target tag.
 
 Complete `release-metadata/updater-notes/$Version.json`. It must contain exactly
 the seven keys `en`, `de`, `fr`, `ja`, `ko`, `zh_hans`, and `zh_hant`, each with
@@ -368,7 +383,8 @@ the matching Release assets are public.
 Stop the release if:
 
 - the changelog lacks the target version, has an invalid date or category, has
-  empty category bullets, or has stale target/unreleased links;
+  empty category bullets, uses the wrong stable/beta comparison base, or has
+  stale target/unreleased links;
 - updater summary metadata is missing, has invalid JSON, omits any required
   language, contains unsupported language keys, or has empty values;
 - validation fails;

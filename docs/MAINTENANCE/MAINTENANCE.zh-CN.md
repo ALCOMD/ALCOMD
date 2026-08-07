@@ -431,8 +431,12 @@ assets 使用。
 
 ### Changelog 和本地构建命令
 
-- 重要变化先记录在根目录 `CHANGELOG.md` 的 `Unreleased`。
-- 准备发布时将其归档到带日期的版本条目，GitHub Release 正文从该条目精确生成。
+- 每项重要的用户可见变化都应在同一变更或 PR 中写入根目录 `CHANGELOG.md` 的 `Unreleased`
+  对应分类。不要将其用作 commit/PR 清单，也不要写入没有发布影响的纯维护者工作。
+- 发布 beta 时，将适用的 `Unreleased` 增量移动到带日期版本条目。发布 stable 时，从期间 beta
+  条目和 `Unreleased` 整理相对上一个 stable 的最终净变化，省略后来撤销的 beta 中间状态。
+  两种情况都要在顶部保留新的 `Unreleased`。
+- GitHub Release 正文从目标版本条目精确生成。
 - `release-prepare` 在 `release-metadata/updater-notes/` 下创建七语 updater 摘要模板；
   `release-validate` 会强制校验这两项输入。
 - 当前分支不保留按版本拆分的独立发布说明文件。

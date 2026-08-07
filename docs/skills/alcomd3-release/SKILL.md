@@ -110,15 +110,22 @@ $Channel = "stable"
 ```
 
 - stable 版本不能含 prerelease metadata；
-- beta 版本必须含 prerelease metadata。
+- beta 版本必须含 prerelease metadata；
+- stable changelog 与 GitHub Release 正文对比上一个 stable；
+- beta changelog 与 GitHub Release 正文对比紧邻的上一个已发布版本（stable 或 beta）；
+- 首个公开版本没有前序比较基线，版本链接指向自身 GitHub Release。
 
 ## Changelog 与 updater metadata 固定格式
 
+- 普通开发中，每项重要的用户可见行为、兼容性、弃用/移除、安全、已知问题、打包或公开配置
+  变化，都必须在同一变更或 PR 中写入 `CHANGELOG.md` 的 `Unreleased` 对应分类。不要写
+  commit/PR 清单、纯 CI/workflow、测试、内部重构或仅供维护者使用且没有发布影响的实现记录。
 - `CHANGELOG.md` 是唯一的完整发布说明来源。目标版本必须使用
   `## [$Version] - YYYY-MM-DD`，只允许 `Added`、`Changed`、`Deprecated`、`Removed`、
-  `Fixed`、`Security` 分类，并为每个保留分类提供非空顶层项目符号。
-- `Unreleased` 必须位于目标版本之前；目标版本 release 链接和以目标 tag 为基准的
-  `Unreleased` comparison 链接必须同步更新。
+  `Fixed`、`Security` 分类，并为每个保留分类提供非空顶层项目符号；已发布版本必须按日期
+  倒序排列且版本号不得重复。
+- `Unreleased` 必须位于目标版本之前；每个已发布版本链接必须使用上述 channel 比较基线的
+  GitHub Compare URL，以目标 tag 为基准的 `Unreleased` comparison 链接也必须同步更新。
 - GitHub Release 正文由 `xtask` 从目标 changelog 条目精确提取，不再维护独立的按版本
   Markdown 发布说明。
 - `release-metadata/updater-notes/$Version.json` 是独立的七语短摘要，必须精确包含 `en`、
@@ -138,10 +145,12 @@ git status --short
 cargo xtask release-prepare --version $Version --channel $Channel
 ```
 
-先将 `CHANGELOG.md` 中适用于本版本的 `Unreleased` 条目移动到
-`## [$Version] - YYYY-MM-DD`，保留新的 `Unreleased`，更新目标版本 release 链接和以目标
-tag 为基准的 comparison 链接。只使用 `Added`、`Changed`、`Deprecated`、`Removed`、
-`Fixed`、`Security` 分类并省略空分类。`release-validate` 会强制检查这些约束。
+按 channel 完成 `CHANGELOG.md` 的 `## [$Version] - YYYY-MM-DD`：beta 将适用的
+`Unreleased` 增量移动到目标条目；stable 从期间 beta 条目和 `Unreleased` 整理相对上一个
+stable 的最终净变化，允许与 beta 条目有意重叠，但不得包含后来撤销的中间状态。两种情况都
+保留新的 `Unreleased`，并更新目标版本及以目标 tag 为基准的 comparison 链接。只使用
+`Added`、`Changed`、`Deprecated`、`Removed`、`Fixed`、`Security` 分类并省略空分类。
+`release-validate` 会强制检查结构和 comparison URL 基线。
 
 填写 `release-metadata/updater-notes/$Version.json`，并保留以下 7 个非空语言键：
 
@@ -311,7 +320,7 @@ job 证明，正式 Windows 安装器升级链只能由 `release-draft.yml` 的 
 
 遇到以下任一条件停止发布并说明准确阻塞项：
 
-- changelog 缺少目标版本、日期 / 分类 / 项目符号非法，或目标版本 / `Unreleased` 链接过期；
+- changelog 缺少目标版本、日期 / 分类 / 项目符号非法，stable/beta 比较基线错误，或目标版本 / `Unreleased` 链接过期；
 - updater 摘要 metadata 缺失、JSON / language key 非法、遗漏必需语言或包含空值；
 - worktree 不干净、source commit 与 `origin/main` 不一致；
 - Windows 正式安装器 smoke 失败、取消、未执行，或测试的不是本次 source-bound shard 中的

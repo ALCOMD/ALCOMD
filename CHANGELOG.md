@@ -5,6 +5,21 @@ All notable changes to ALCOMD3 will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 GitHub Release bodies are generated from the corresponding version entry.
+Stable entries describe the final net changes since the previous stable release;
+prerelease entries describe changes since the immediately previous published
+release, whether stable or prerelease.
+
+During normal development, add each notable user-facing change to `Unreleased`
+in the same change or pull request. Use the appropriate `Added`, `Changed`,
+`Deprecated`, `Removed`, `Fixed`, or `Security` category and omit empty
+categories. This file is a curated release record, not a commit or pull-request
+log.
+
+For a beta release, move the applicable `Unreleased` changes into the new dated
+version entry. For a stable release, curate the final net changes since the
+previous stable release from the intervening prerelease entries and
+`Unreleased`; intentional overlap with those prerelease entries is expected.
+Leave a fresh `Unreleased` section after every release.
 
 ## [Unreleased]
 
@@ -50,11 +65,18 @@ GitHub Release bodies are generated from the corresponding version entry.
 ### Changed
 
 - Kept extension pages accessible when sidebar entries are hidden and made
-  Projects, Resources, and Settings permanently available in the sidebar.
+  Projects, Resources, and Settings permanently available in the sidebar,
+  repairing existing configurations that hid them.
+- Allowed the built-in MCP extension to be disabled, revoking access, stopping
+  endpoints, removing its sidebar entry, and cancelling application-owned MCP
+  project tasks.
 - Displayed the main window and MCP tools without waiting for background
   extension or endpoint startup work.
 - Kept project lists visible during refreshes and refreshed project types and
   saved repository names promptly.
+- Preserved unrelated client settings during optional MCP setup and required
+  clients configured for the former stdio transport to switch to the protected
+  endpoint and token.
 
 ### Security
 
@@ -93,13 +115,16 @@ GitHub Release bodies are generated from the corresponding version entry.
 ### Added
 
 - Added a bearer-token-protected MCP Streamable HTTP endpoint and optional
-  client setup for Codex, Claude Code, and Cursor.
+  client setup for Codex, Claude Code, and Cursor while preserving unrelated
+  client settings.
 
 ### Changed
 
 - Grouped endpoint details and client setup in the MCP configuration dialog.
 - Refreshed project types immediately after project creation or VRChat SDK
   package changes.
+- Required MCP clients configured for the former stdio transport to switch to
+  the protected endpoint and token.
 
 ### Security
 
@@ -116,7 +141,8 @@ GitHub Release bodies are generated from the corresponding version entry.
 ### Changed
 
 - Kept Projects, Resources, and Settings visible in the sidebar and made
-  sidebar visibility controls more predictable.
+  sidebar visibility controls more predictable, repairing existing
+  configurations that hid permanent entries.
 
 ## [3.0.0] - 2026-07-26
 
@@ -131,9 +157,9 @@ GitHub Release bodies are generated from the corresponding version entry.
   payloads.
 
 [Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0...HEAD
-[3.1.0]: https://github.com/ALCOMD3/ALCOMD3/releases/tag/v3.1.0
-[3.1.0-beta.3]: https://github.com/ALCOMD3/ALCOMD3/releases/tag/v3.1.0-beta.3
-[3.1.0-beta.2]: https://github.com/ALCOMD3/ALCOMD3/releases/tag/v3.1.0-beta.2
-[3.1.0-beta.1]: https://github.com/ALCOMD3/ALCOMD3/releases/tag/v3.1.0-beta.1
-[3.0.1-beta.1]: https://github.com/ALCOMD3/ALCOMD3/releases/tag/v3.0.1-beta.1
+[3.1.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.0.0...v3.1.0
+[3.1.0-beta.3]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0-beta.2...v3.1.0-beta.3
+[3.1.0-beta.2]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0-beta.1...v3.1.0-beta.2
+[3.1.0-beta.1]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.0.1-beta.1...v3.1.0-beta.1
+[3.0.1-beta.1]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.0.0...v3.0.1-beta.1
 [3.0.0]: https://github.com/ALCOMD3/ALCOMD3/releases/tag/v3.0.0
