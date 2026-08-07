@@ -1,6 +1,7 @@
 use crate::alcomd3_config::{Alcomd3Config, UpdaterManifest};
 use crate::utils::command::{CommandExt, create_command};
 use anyhow::{Context, Result, bail};
+use chrono::NaiveDate;
 use clap::ValueEnum;
 use semver::Version;
 use serde::Deserialize;
@@ -114,7 +115,7 @@ pub struct ReleaseContext {
     pub repo: String,
     pub workspace_root: PathBuf,
     pub tag: String,
-    pub release_notes: PathBuf,
+    pub changelog: PathBuf,
     pub updater_json: PathBuf,
     pub updater_endpoint: String,
     pub config: Alcomd3Config,
@@ -138,9 +139,7 @@ impl ReleaseContext {
         let repo = repo.unwrap_or_else(|| config.repository.clone());
         let site_base_url = site_base_url.unwrap_or_else(|| config.site_base_url().to_string());
         let tag = format!("v{version}");
-        let release_notes = workspace_root
-            .join("release-notes")
-            .join(format!("ALCOMD3_{version}.md"));
+        let changelog = workspace_root.join("CHANGELOG.md");
         let updater_json = config.workspace_path(
             &channel.updater_manifest(&config).output_path,
             &workspace_root,
@@ -153,7 +152,7 @@ impl ReleaseContext {
             repo,
             workspace_root,
             tag,
-            release_notes,
+            changelog,
             updater_json,
             updater_endpoint,
             config,
@@ -213,25 +212,19 @@ impl ReleaseContext {
             .join(&self.tag)
     }
 
+    pub fn release_body(&self) -> PathBuf {
+        self.release_check_dir().join("github-release.md")
+    }
+
     pub fn release_title(&self) -> String {
         format!("Version {}", self.version)
     }
 
     pub fn updater_notes(&self) -> PathBuf {
         self.workspace_root
-            .join("release-notes")
-            .join(format!("ALCOMD3_{}.updater-notes.json", self.version))
-    }
-
-    pub fn release_notes_comparison_base(&self) -> &'static str {
-        match self.channel {
-            ReleaseChannel::Stable => {
-                "compare this stable release against the previous stable release"
-            }
-            ReleaseChannel::Beta => {
-                "compare this beta release against the immediately previous release, stable or beta"
-            }
-        }
+            .join("release-metadata")
+            .join("updater-notes")
+            .join(format!("{}.json", self.version))
     }
 }
 
@@ -501,212 +494,134 @@ pub fn update_workspace_version(ctx: &ReleaseContext, dry_run: bool) -> Result<(
     Ok(())
 }
 
-pub fn create_release_notes_if_missing(ctx: &ReleaseContext, dry_run: bool) -> Result<()> {
-    if ctx.release_notes.exists() {
-        println!(
-            "release notes already exist: {}",
-            ctx.release_notes.display()
-        );
-        return Ok(());
-    }
+pub fn ensure_changelog_ready(ctx: &ReleaseContext) -> Result<()> {
+    let changelog = fs::read_to_string(&ctx.changelog)
+        .with_context(|| format!("reading changelog: {}", ctx.changelog.display()))?;
+    validate_changelog_format(&ctx.version, &ctx.repo, &changelog)
+}
 
-    println!("create release notes: {}", ctx.release_notes.display());
-    if dry_run {
-        return Ok(());
-    }
-
-    let parent = ctx
-        .release_notes
-        .parent()
-        .context("release notes path has no parent")?;
+pub fn write_release_body_from_changelog(ctx: &ReleaseContext) -> Result<PathBuf> {
+    let changelog = fs::read_to_string(&ctx.changelog)
+        .with_context(|| format!("reading changelog: {}", ctx.changelog.display()))?;
+    validate_changelog_format(&ctx.version, &ctx.repo, &changelog)?;
+    let body = extract_changelog_release_body(&ctx.version, &changelog)?;
+    let path = ctx.release_body();
+    let parent = path.parent().context("release body path has no parent")?;
     fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
-    fs::write(
-        &ctx.release_notes,
-        format!(
-            "# ALCOMD3 v{version}\n\n<!-- Release note comparison base: {comparison_base}. Remove all HTML comments before release. -->\n\n## English\n\n<!-- Summarize this release in one paragraph. -->\n\n### Application updates\n\n<!-- List user-visible application changes, or state that there are none. -->\n\n### Installation and upgrade\n\n<!-- List installation and upgrade changes, or state that there are none. -->\n\n### Compatibility and security\n\n<!-- List compatibility, security, or known-issue changes, or state that there are none. -->\n\n## 日本語\n\n<!-- このリリースの概要を 1 段落で記述してください。 -->\n\n### アプリの更新\n\n<!-- ユーザーに見えるアプリの変更、または変更がないことを記述してください。 -->\n\n### インストールとアップグレード\n\n<!-- インストールとアップグレードの変更、または変更がないことを記述してください。 -->\n\n### 互換性とセキュリティ\n\n<!-- 互換性、セキュリティ、既知の問題の変更、または変更がないことを記述してください。 -->\n\n## 中文\n\n<!-- 用一个段落概述此版本。 -->\n\n### 应用更新\n\n<!-- 列出面向用户的应用变化，或说明没有此类变化。 -->\n\n### 安装与升级\n\n<!-- 列出安装与升级变化，或说明没有此类变化。 -->\n\n### 兼容性与安全\n\n<!-- 列出兼容性、安全或已知问题变化，或说明没有此类变化。 -->\n",
-            version = ctx.version,
-            comparison_base = ctx.release_notes_comparison_base(),
-        ),
-    )
-    .with_context(|| format!("writing {}", ctx.release_notes.display()))?;
-    Ok(())
+    fs::write(&path, body).with_context(|| format!("writing {}", path.display()))?;
+    Ok(path)
 }
 
-pub fn ensure_release_notes_ready(ctx: &ReleaseContext) -> Result<()> {
-    let notes = fs::read_to_string(&ctx.release_notes)
-        .with_context(|| format!("reading release notes: {}", ctx.release_notes.display()))?;
-    if notes.contains("<!--") || notes.contains("-->") {
-        bail!("release notes still contain an HTML comment or placeholder");
+fn extract_changelog_release_body(version: &str, changelog: &str) -> Result<String> {
+    let lines = changelog.lines().collect::<Vec<_>>();
+    let release_prefix = format!("## [{version}] - ");
+    let release_start = lines
+        .iter()
+        .position(|line| line.starts_with(&release_prefix))
+        .with_context(|| format!("changelog release heading is missing for {version}"))?;
+    let release_end = lines[release_start + 1..]
+        .iter()
+        .position(|line| line.starts_with("## [") || line.starts_with("[Unreleased]:"))
+        .map(|offset| release_start + 1 + offset)
+        .unwrap_or(lines.len());
+    let body = lines[release_start + 1..release_end].join("\n");
+    let body = body.trim();
+    if body.is_empty() {
+        bail!("changelog release {version} has no GitHub Release body");
     }
-    validate_release_notes_format(&ctx.version, &notes)?;
-    Ok(())
+    Ok(format!("{body}\n"))
 }
 
-fn validate_release_notes_format(version: &str, notes: &str) -> Result<()> {
-    const LOCALES: [(&str, &[&str]); 3] = [
-        (
-            "English",
-            &[
-                "Application updates",
-                "Installation and upgrade",
-                "Compatibility and security",
-            ],
-        ),
-        (
-            "日本語",
-            &[
-                "アプリの更新",
-                "インストールとアップグレード",
-                "互換性とセキュリティ",
-            ],
-        ),
-        ("中文", &["应用更新", "安装与升级", "兼容性与安全"]),
+fn validate_changelog_format(version: &str, repo: &str, changelog: &str) -> Result<()> {
+    const CHANGE_TYPES: [&str; 6] = [
+        "Added",
+        "Changed",
+        "Deprecated",
+        "Removed",
+        "Fixed",
+        "Security",
     ];
-    let lines = notes.lines().collect::<Vec<_>>();
-    let expected_title = format!("# ALCOMD3 v{version}");
-    if lines.first().copied() != Some(expected_title.as_str()) {
-        bail!("release notes title must be exactly: {expected_title}");
+
+    let lines = changelog.lines().collect::<Vec<_>>();
+    if lines.first().copied() != Some("# Changelog") {
+        bail!("changelog title must be exactly: # Changelog");
+    }
+    if changelog.contains("<!--") || changelog.contains("-->") {
+        bail!("changelog must not contain an HTML comment or placeholder");
     }
 
-    if lines.iter().skip(1).any(|line| line.starts_with("# ")) {
-        bail!("release notes must contain exactly one level-1 heading");
-    }
-    if lines.iter().any(|line| {
-        let trimmed = line.trim_start();
-        trimmed.starts_with("```") || trimmed.starts_with("~~~")
-    }) {
-        bail!("release notes must not contain fenced code blocks");
-    }
-    if lines.iter().any(|line| {
-        let trimmed = line.trim_start();
-        trimmed.starts_with('#') && trimmed.len() != line.len()
-    }) {
-        bail!("release notes headings must not be indented");
-    }
-    if lines.iter().any(|line| line.starts_with("####")) {
-        bail!("release notes must not use level-4 or deeper headings");
-    }
-    if lines.iter().any(|line| {
-        line.starts_with('#')
-            && !line.starts_with("# ")
-            && !line.starts_with("## ")
-            && !line.starts_with("### ")
-    }) {
-        bail!("release notes headings must use one space after the heading marker");
-    }
-
-    let locale_sections = lines
+    let unreleased_sections = lines
         .iter()
         .enumerate()
-        .filter_map(|(index, line)| line.strip_prefix("## ").map(|name| (index, name)))
+        .filter(|(_, line)| **line == "## [Unreleased]")
+        .map(|(index, _)| index)
         .collect::<Vec<_>>();
-    let locale_names = locale_sections
-        .iter()
-        .map(|(_, name)| *name)
-        .collect::<Vec<_>>();
-    let expected_locale_names = LOCALES.iter().map(|(name, _)| *name).collect::<Vec<_>>();
-    if locale_names != expected_locale_names {
-        bail!(
-            "release notes locale headings must be exactly and in order: {}",
-            expected_locale_names.join(", ")
-        );
-    }
-    if lines[1..locale_sections[0].0]
-        .iter()
-        .any(|line| !line.trim().is_empty())
-    {
-        bail!("release notes must not contain content before the English locale section");
+    if unreleased_sections.len() != 1 {
+        bail!("changelog must contain exactly one ## [Unreleased] section");
     }
 
-    for (locale_index, ((locale_name, expected_topic_headings), (start, _))) in
-        LOCALES.iter().zip(locale_sections.iter()).enumerate()
-    {
-        let end = locale_sections
-            .get(locale_index + 1)
+    let release_prefix = format!("## [{version}] - ");
+    let release_sections = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(index, line)| line.strip_prefix(&release_prefix).map(|date| (index, date)))
+        .collect::<Vec<_>>();
+    if release_sections.len() != 1 {
+        bail!("changelog must contain exactly one release heading: {release_prefix}YYYY-MM-DD");
+    }
+    let (release_start, release_date) = release_sections[0];
+    NaiveDate::parse_from_str(release_date, "%Y-%m-%d")
+        .with_context(|| format!("changelog release date must use YYYY-MM-DD: {release_date}"))?;
+    if unreleased_sections[0] >= release_start {
+        bail!("changelog Unreleased section must appear before release {version}");
+    }
+
+    let release_end = lines[release_start + 1..]
+        .iter()
+        .position(|line| line.starts_with("## ["))
+        .map(|offset| release_start + 1 + offset)
+        .unwrap_or(lines.len());
+    let change_sections = lines[release_start + 1..release_end]
+        .iter()
+        .enumerate()
+        .filter_map(|(offset, line)| {
+            line.strip_prefix("### ")
+                .map(|heading| (release_start + 1 + offset, heading))
+        })
+        .collect::<Vec<_>>();
+    if change_sections.is_empty() {
+        bail!("changelog release {version} must contain at least one change category");
+    }
+
+    for (section_index, (section_start, heading)) in change_sections.iter().enumerate() {
+        if !CHANGE_TYPES.contains(heading) {
+            bail!("changelog release {version} contains unsupported change category: {heading}");
+        }
+        let section_end = change_sections
+            .get(section_index + 1)
             .map(|(index, _)| *index)
-            .unwrap_or(lines.len());
-        let topic_sections = lines[*start + 1..end]
+            .unwrap_or(release_end);
+        let bullets = lines[*section_start + 1..section_end]
             .iter()
-            .enumerate()
-            .filter_map(|(offset, line)| {
-                line.strip_prefix("### ")
-                    .map(|heading| (*start + 1 + offset, heading))
-            })
+            .filter_map(|line| line.strip_prefix("- "))
             .collect::<Vec<_>>();
-
-        if topic_sections
-            .iter()
-            .any(|(_, heading)| heading.trim().is_empty() || heading.trim() != *heading)
-        {
+        if bullets.is_empty() || bullets.iter().any(|bullet| bullet.trim().is_empty()) {
             bail!(
-                "release notes locale {locale_name} contains an empty or malformed topic heading"
+                "changelog release {version} category {heading} must contain non-empty top-level bullets"
             );
-        }
-        let topic_headings = topic_sections
-            .iter()
-            .map(|(_, heading)| *heading)
-            .collect::<Vec<_>>();
-        if topic_headings.as_slice() != *expected_topic_headings {
-            bail!(
-                "release notes locale {locale_name} level-3 headings must be exactly and in order: {}",
-                expected_topic_headings.join(", ")
-            );
-        }
-
-        let summary = &lines[*start + 1..topic_sections[0].0];
-        let first_summary_line = summary.iter().position(|line| !line.trim().is_empty());
-        let last_summary_line = summary.iter().rposition(|line| !line.trim().is_empty());
-        let (Some(first_summary_line), Some(last_summary_line)) =
-            (first_summary_line, last_summary_line)
-        else {
-            bail!("release notes locale {locale_name} must start with a summary paragraph");
-        };
-        if summary[first_summary_line..=last_summary_line]
-            .iter()
-            .any(|line| {
-                let line = line.trim();
-                line.is_empty()
-                    || line.starts_with("#")
-                    || line.starts_with("- ")
-                    || line.starts_with("* ")
-                    || line.starts_with("+ ")
-                    || line.starts_with("> ")
-                    || line.split_once(". ").is_some_and(|(prefix, _)| {
-                        !prefix.is_empty()
-                            && prefix.chars().all(|character| character.is_ascii_digit())
-                    })
-            })
-        {
-            bail!(
-                "release notes locale {locale_name} must start with exactly one summary paragraph"
-            );
-        }
-
-        for (topic_index, (topic_start, topic_heading)) in topic_sections.iter().enumerate() {
-            let topic_end = topic_sections
-                .get(topic_index + 1)
-                .map(|(index, _)| *index)
-                .unwrap_or(end);
-            let mut has_non_empty_bullet = false;
-            for line in &lines[*topic_start + 1..topic_end] {
-                let Some(bullet) = line.strip_prefix("- ") else {
-                    continue;
-                };
-                if bullet.trim().is_empty() {
-                    bail!(
-                        "release notes section {locale_name} / {topic_heading} must not contain an empty bullet"
-                    );
-                }
-                has_non_empty_bullet = true;
-            }
-            if !has_non_empty_bullet {
-                bail!(
-                    "release notes section {locale_name} / {topic_heading} must contain at least one non-empty bullet"
-                );
-            }
         }
     }
 
+    let expected_unreleased_link =
+        format!("[Unreleased]: https://github.com/{repo}/compare/v{version}...HEAD");
+    if !lines.contains(&expected_unreleased_link.as_str()) {
+        bail!("changelog must contain the current comparison link: {expected_unreleased_link}");
+    }
+    let expected_release_link =
+        format!("[{version}]: https://github.com/{repo}/releases/tag/v{version}");
+    if !lines.contains(&expected_release_link.as_str()) {
+        bail!("changelog must contain the release link: {expected_release_link}");
+    }
     Ok(())
 }
 
@@ -1100,11 +1015,11 @@ mod tests {
     use super::{
         GH_TOKEN_ENV, GITHUB_TOKEN_ENV, KeyLoaderFormat, ReleaseAsset, ReleaseAutomation,
         ReleaseChannel, ReleaseContext, ReleaseState, UPDATER_PRIVATE_KEY_ENV,
-        UPDATER_PRIVATE_KEY_PASSWORD_ENV, key_loader_format, remove_github_auth_env,
-        remove_updater_signing_env, validate_github_actions_context,
-        validate_github_release_is_replaceable, validate_github_release_state,
-        validate_public_updater_document, validate_public_updater_matches_expected,
-        validate_release_notes_format, validate_release_source_versions,
+        UPDATER_PRIVATE_KEY_PASSWORD_ENV, extract_changelog_release_body, key_loader_format,
+        remove_github_auth_env, remove_updater_signing_env, validate_changelog_format,
+        validate_github_actions_context, validate_github_release_is_replaceable,
+        validate_github_release_state, validate_public_updater_document,
+        validate_public_updater_matches_expected, validate_release_source_versions,
     };
     use serde_json::json;
     use std::process::Command as ProcessCommand;
@@ -1116,200 +1031,78 @@ mod tests {
             .collect()
     }
 
-    fn valid_release_notes() -> String {
-        r#"# ALCOMD3 v3.0.0
+    fn valid_changelog() -> String {
+        r#"# Changelog
 
-## English
+All notable changes to this project will be documented in this file.
 
-This beta fixes a user-visible compatibility issue.
+## [Unreleased]
 
-### Application updates
+## [3.0.0] - 2026-07-26
 
-- Fixed the compatibility issue.
+### Added
 
-### Installation and upgrade
+- Published the first ALCOMD3 release.
 
-- No installation or upgrade changes in this release.
-
-### Compatibility and security
-
-- No data migration is required.
-
-## 日本語
-
-この beta ではユーザーに影響する互換性の問題を修正しました。
-
-### アプリの更新
-
-- 互換性の問題を修正しました。
-
-### インストールとアップグレード
-
-- このリリースにインストールまたはアップグレードの変更はありません。
-
-### 互換性とセキュリティ
-
-- データ移行は不要です。
-
-## 中文
-
-此测试版修复了一项影响用户的兼容性问题。
-
-### 应用更新
-
-- 修复兼容性问题。
-
-### 安装与升级
-
-- 本版本没有安装或升级方面的变化。
-
-### 兼容性与安全
-
-- 无需迁移数据。
+[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/ALCOMD3/ALCOMD3/releases/tag/v3.0.0
 "#
         .to_string()
     }
 
     #[test]
-    fn release_notes_accept_canonical_fixed_categories() {
-        validate_release_notes_format("3.0.0", &valid_release_notes()).unwrap();
+    fn changelog_accepts_keep_a_changelog_release_entry() {
+        validate_changelog_format("3.0.0", "ALCOMD3/ALCOMD3", &valid_changelog()).unwrap();
     }
 
     #[test]
-    fn release_notes_reject_level_four_topics() {
-        let notes = valid_release_notes().replace(
-            "### Application updates",
-            "### Application updates\n\n#### Fixes",
-        );
-        let error = validate_release_notes_format("3.0.0", &notes).unwrap_err();
+    fn changelog_release_body_contains_only_target_version_content() {
+        let body = extract_changelog_release_body("3.0.0", &valid_changelog()).unwrap();
 
-        assert!(error.to_string().contains("level-4"));
-    }
-
-    #[test]
-    fn release_notes_reject_title_with_trailing_whitespace() {
-        let notes = valid_release_notes().replacen("# ALCOMD3 v3.0.0", "# ALCOMD3 v3.0.0 ", 1);
-        let error = validate_release_notes_format("3.0.0", &notes).unwrap_err();
-
-        assert!(error.to_string().contains("title must be exactly"));
-    }
-
-    #[test]
-    fn release_notes_reject_empty_topic_heading() {
-        let notes = valid_release_notes().replacen("### Application updates", "### ", 1);
-        let error = validate_release_notes_format("3.0.0", &notes).unwrap_err();
-
-        assert!(
-            error
-                .to_string()
-                .contains("empty or malformed topic heading")
+        assert_eq!(
+            body,
+            "### Added\n\n- Published the first ALCOMD3 release.\n"
         );
     }
 
     #[test]
-    fn release_notes_reject_multiple_summary_paragraphs() {
-        let notes = valid_release_notes().replacen(
-            "This beta fixes a user-visible compatibility issue.",
-            "This beta fixes a user-visible compatibility issue.\n\nThis is a second paragraph.",
-            1,
-        );
-        let error = validate_release_notes_format("3.0.0", &notes).unwrap_err();
+    fn changelog_rejects_missing_target_release() {
+        let changelog = valid_changelog().replace("## [3.0.0] - 2026-07-26", "");
+        let error = validate_changelog_format("3.0.0", "ALCOMD3/ALCOMD3", &changelog).unwrap_err();
 
-        assert!(error.to_string().contains("exactly one summary paragraph"));
+        assert!(error.to_string().contains("release heading"));
     }
 
     #[test]
-    fn release_notes_reject_list_instead_of_summary_paragraph() {
-        let notes = valid_release_notes().replacen(
-            "This beta fixes a user-visible compatibility issue.",
-            "- This is not a summary paragraph.",
-            1,
-        );
-        let error = validate_release_notes_format("3.0.0", &notes).unwrap_err();
+    fn changelog_rejects_non_iso_release_date() {
+        let changelog = valid_changelog().replace("2026-07-26", "July 26, 2026");
+        let error = validate_changelog_format("3.0.0", "ALCOMD3/ALCOMD3", &changelog).unwrap_err();
 
-        assert!(error.to_string().contains("exactly one summary paragraph"));
+        assert!(error.to_string().contains("YYYY-MM-DD"));
     }
 
     #[test]
-    fn release_notes_reject_empty_bullet() {
-        let notes = valid_release_notes().replacen("- Fixed the compatibility issue.", "- ", 1);
-        let error = validate_release_notes_format("3.0.0", &notes).unwrap_err();
+    fn changelog_rejects_unknown_change_category() {
+        let changelog = valid_changelog().replace("### Added", "### Updates");
+        let error = validate_changelog_format("3.0.0", "ALCOMD3/ALCOMD3", &changelog).unwrap_err();
 
-        assert!(
-            error
-                .to_string()
-                .contains("must not contain an empty bullet")
-        );
+        assert!(error.to_string().contains("unsupported change category"));
     }
 
     #[test]
-    fn release_notes_reject_indented_bullet_as_the_only_topic_content() {
-        let notes = valid_release_notes().replacen(
-            "- Fixed the compatibility issue.",
-            "   - Fixed the compatibility issue.",
-            1,
-        );
-        let error = validate_release_notes_format("3.0.0", &notes).unwrap_err();
+    fn changelog_rejects_empty_change_category() {
+        let changelog = valid_changelog().replace("- Published the first ALCOMD3 release.", "");
+        let error = validate_changelog_format("3.0.0", "ALCOMD3/ALCOMD3", &changelog).unwrap_err();
 
-        assert!(error.to_string().contains("non-empty bullet"));
+        assert!(error.to_string().contains("non-empty top-level bullets"));
     }
 
     #[test]
-    fn release_notes_reject_fenced_code_as_topic_content() {
-        let notes = valid_release_notes().replacen(
-            "- Fixed the compatibility issue.",
-            "```text\n- Fixed the compatibility issue.\n```",
-            1,
-        );
-        let error = validate_release_notes_format("3.0.0", &notes).unwrap_err();
+    fn changelog_rejects_stale_unreleased_comparison_link() {
+        let changelog = valid_changelog().replace("v3.0.0...HEAD", "v2.1.0...HEAD");
+        let error = validate_changelog_format("3.0.0", "ALCOMD3/ALCOMD3", &changelog).unwrap_err();
 
-        assert!(error.to_string().contains("fenced code"));
-    }
-
-    #[test]
-    fn release_notes_reject_indented_heading() {
-        let notes = valid_release_notes().replacen(
-            "### Application updates",
-            "   ### Application updates",
-            1,
-        );
-        let error = validate_release_notes_format("3.0.0", &notes).unwrap_err();
-
-        assert!(error.to_string().contains("headings must not be indented"));
-    }
-
-    #[test]
-    fn release_notes_reject_release_specific_topic_heading() {
-        let notes = valid_release_notes().replacen(
-            "### Application updates",
-            "### Package list reliability",
-            1,
-        );
-        let error = validate_release_notes_format("3.0.0", &notes).unwrap_err();
-
-        assert!(error.to_string().contains("exactly and in order"));
-    }
-
-    #[test]
-    fn release_notes_reject_missing_fixed_category() {
-        let notes = valid_release_notes().replace(
-            "### Compatibility and security\n\n- No data migration is required.\n\n",
-            "",
-        );
-        let error = validate_release_notes_format("3.0.0", &notes).unwrap_err();
-
-        assert!(error.to_string().contains("exactly and in order"));
-    }
-
-    #[test]
-    fn release_notes_reject_reordered_fixed_categories() {
-        let notes = valid_release_notes().replace(
-            "### Installation and upgrade\n\n- No installation or upgrade changes in this release.\n\n### Compatibility and security\n\n- No data migration is required.",
-            "### Compatibility and security\n\n- No data migration is required.\n\n### Installation and upgrade\n\n- No installation or upgrade changes in this release.",
-        );
-        let error = validate_release_notes_format("3.0.0", &notes).unwrap_err();
-
-        assert!(error.to_string().contains("exactly and in order"));
+        assert!(error.to_string().contains("current comparison link"));
     }
 
     #[test]

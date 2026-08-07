@@ -8,7 +8,7 @@ shard 构建、签名组装和 GitHub 手动发布路径。
 
 发布分为三个阶段、两个提交：
 
-1. Source release commit：版本 metadata 和 release notes。
+1. Source release commit：版本 metadata、changelog 和 updater 摘要。
 2. GitHub Release：Windows x64、macOS Apple Silicon 和 Linux x64 的 10 项平台显式资产。
 3. Updater metadata commit：公开 assets 存在后，原子生成并提交包含三个平台的 updater JSON。
 
@@ -30,8 +30,8 @@ GUI 进程、新快捷方式、模板 ProgID 和 `vcc://` 注册统一使用配�
 ### Agent 执行语义
 
 用户明确要求审计时保持只读。用户明确要求发布时，必须把它作为端到端操作，而不是只报告
-“可以发布”：准备并验证 source release files，按正确比对基准生成完整 release notes，生成
-全部 7 种语言的 updater 短说明，提交并推送 source release，然后触发并监控 Draft workflow。
+“可以发布”：准备并验证 source release files，将 changelog 的 `Unreleased` 条目归档到目标版本，
+生成全部 7 种语言的 updater 短说明，提交并推送 source release，然后触发并监控 Draft workflow。
 只在 Draft 人工发布门暂停。Draft 公开后继续监控 updater workflow、metadata commit 和
 公开 endpoint；这些检查全部通过后，发布才算完成。
 
@@ -41,9 +41,10 @@ GUI 进程、新快捷方式、模板 ProgID 和 `vcc://` 注册统一使用配�
 - Rust workspace 成员通过 `version.workspace = true` 继承。
 - `vrc-get-gui/package.json` 由 `cargo xtask release-prepare` 更新。
 - `Cargo.lock` 和 `package-lock.json` 是生成文件。
+- `CHANGELOG.md` 是重要变化的规范记录，也是 GitHub Release 正文来源。
+- `release-metadata/updater-notes/$Version.json` 是应用内更新弹窗使用的七语短摘要。
 - Updater JSON 由发布后的 updater workflow 从公开 Release assets 重新生成并验证，
   只能在验证通过后提交。
-- `release-notes/ALCOMD3_$Version.updater-notes.json` 是应用内更新弹窗使用的简短多语言更新说明。
 
 ### 1. 确定发布输入
 
@@ -71,7 +72,7 @@ Stable version 不能包含 prerelease metadata。Beta version 必须包含 prer
   `ALCOMD3_WEBSITE_DEPLOY_KEY` 存为 repository Actions Secrets。
 
 macOS 发布只支持 ad-hoc 签名，不需要 Apple 账号或 Apple Secrets。签名命令不提供证书身份或
-公证选项。平台特定的构建、签名、安装与更新机制只属于技术合约。Release notes、updater notes
+公证选项。平台特定的构建、签名、安装与更新机制只属于技术合约。Changelog 条目、updater notes
 和官网对所有已发布平台使用同一原则：不单纯因为这些机制增加平台专属披露、警告、操作说明或
 帮助链接。只有本版本确有某个平台的用户可见变化时才点名说明。
 
@@ -114,41 +115,26 @@ cargo xtask release-prepare --version $Version --channel $Channel
 - 刷新 `Cargo.lock` workspace package versions；
 - 无 tag 更新 GUI 的 npm version；
 - 刷新 npm lockfiles；
-- 如果不存在则创建 `release-notes/ALCOMD3_$Version.md`；
+- 如果不存在则创建 `release-metadata/updater-notes/$Version.json`；
 - 输出 `git status --short`。
 
-现在编辑 release notes 文件，删除所有 placeholder text。
+将适用于本版本的 `CHANGELOG.md` `Unreleased` 条目移动到
+`## [$Version] - YYYY-MM-DD`，在顶部保留新的 `Unreleased`，并更新比对链接。分类只使用
+`Added`、`Changed`、`Deprecated`、`Removed`、`Fixed` 和 `Security`，空分类应省略。
+`release-validate` 会检查目标版本条目、ISO 日期、非空顶层项目符号、release 链接，以及以
+目标 tag 为基准的 `Unreleased` 比对链接。
 
-Release notes 必须使用正确的比对基准：
-
-- Stable release 只和上一个 stable release 比对。
-- Beta release 和紧邻的上一个 release 比对，不区分 stable 或 beta。
-
-Release notes 还必须使用统一的多语言结构。标题精确为 `# ALCOMD3 v$Version`，随后按顺序
-使用 `## English`、`## 日本語`、`## 中文`。每种语言先写一段摘要，再严格保留三个固定的
-三级分类，顺序依次为应用更新、安装与升级、兼容性与安全。对应标题必须分别为
-`Application updates` / `アプリの更新` / `应用更新`、`Installation and upgrade` /
-`インストールとアップグレード` / `安装与升级`、`Compatibility and security` /
-`互換性とセキュリティ` / `兼容性与安全`。不得省略、重排、重命名或增加版本专属的三级
-标题。每个分类必须包含非空项目符号；没有用户可见变化时仍保留分类，并用对应语言写明
-本版本没有此类用户可见变化。禁止四级标题、fenced code block、缩进的 ATX 标题和缩进的
-顶层项目符号。不要用任一平台的例行披露填充固定结构。`release-validate` 会强制校验固定
-标题和结构；三种语言的项目符号语义和顺序仍由发布审查人工确认。
-首个可见发布是 `3.0.0`，从该版本起只接受三个固定分类。
-
-同时创建或更新 `release-notes/ALCOMD3_$Version.updater-notes.json`。
-这个文件是应用内更新弹窗的简短多语言摘要，不是完整 GitHub Release notes。
-它必须是 JSON object，key 只能是 `en`、`de`、`fr`、`ja`、`ko`、`zh_hans`、`zh_hant`，
-value 必须是非空字符串。正常发布必须填写全部 7 个 key。缺失语言仍可为兼容和故障恢复
-回退到生成的 `notes` 字段，但不应作为正常发布准备结果。
+填写 `release-metadata/updater-notes/$Version.json`。它必须精确包含 `en`、`de`、`fr`、
+`ja`、`ko`、`zh_hans`、`zh_hant` 七个 key，每个 value 都是非空的本地化短摘要。这个结构化
+metadata 仅供应用内 updater 使用；发布时 GitHub Release 正文直接从目标 changelog 条目生成。
 
 提交并推送 source release commit：
 
 ```powershell
 git add Cargo.toml Cargo.lock
 git add vrc-get-gui/package.json vrc-get-gui/package-lock.json
-git add "release-notes/ALCOMD3_$Version.md"
-git add "release-notes/ALCOMD3_$Version.updater-notes.json"
+git add CHANGELOG.md
+git add "release-metadata/updater-notes/$Version.json"
 git status --short
 git commit -m "release: prepare ALCOMD3 $Version"
 git push origin main
@@ -170,7 +156,7 @@ gh workflow run release-draft.yml --repo ALCOMD3/ALCOMD3 `
 
 只有同一版本已存在、且明确需要替换其资产的 Draft 才使用
 `replace_existing_draft=true`。Workflow 会拒绝覆盖已经发布的 Release 或 channel 不匹配的
-Draft。如果 Draft 创建后 prepared source commit 发生变化，例如修正 release notes，显式替换
+Draft。如果 Draft 创建后 prepared source commit 发生变化，例如修正 changelog，显式替换
 会把 Draft 重新指向本次 dispatch 的 source commit，并替换由该 commit 构建的全部 10 项资产。
 
 Workflow 会固定 checkout 触发时记录的 `github.sha`，记录该 source commit，并在正式构建前
@@ -214,7 +200,7 @@ Draft/prerelease 状态及全部资产 digest。
 - tag 是 `v$Version`，并指向 workflow 实际构建的 source release commit；
 - title 是 `Version $Version`；
 - stable 是普通 Release，beta 是 prerelease；
-- release notes 正确；
+- GitHub Release 正文与目标 changelog 条目一致；
 - 以下 10 项资产恰好齐全：
     - `ALCOMD3_$Version_windows_x86_64_setup.exe`
     - `ALCOMD3_$Version_windows_x86_64_setup.exe.sig`
@@ -312,8 +298,8 @@ Windows 身份迁移期间，例外的本地发布也不能绕过 GitHub-hosted 
 
 以下情况必须停止发布：
 
-- release notes 仍包含 placeholder text 或不符合统一的多语言结构；
-- updater notes sidecar 在需要时缺失，或包含非法 JSON、不支持的语言 key、空字符串值；
+- changelog 缺少目标版本、日期或分类非法、分类项目为空，或者目标版本 / `Unreleased` 链接过期；
+- updater 摘要 metadata 缺失、JSON 非法、遗漏任一必需语言、包含不支持的语言 key，或值为空；
 - validation 失败；
 - source-bound Windows 正式安装器升级 smoke 失败、取消、未执行，或测试的不是 Windows
   release shard 中的 setup EXE；
@@ -323,7 +309,6 @@ Windows 身份迁移期间，例外的本地发布也不能绕过 GitHub-hosted 
   `Signature=adhoc` 检查失败；
 - artifact 缺失；
 - updater JSON verification 失败；
-- release notes 使用了错误的比对基准；
 - GitHub Release title 不是 `Version $Version`；
 - GitHub Release assets 缺失或命名错误；
 - stable/beta flags 错误；

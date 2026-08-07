@@ -1,6 +1,6 @@
 ---
 name: alcomd3-release
-description: 完成或审计 ALCOMD3 的 stable/beta 三平台应用发布与 release notes，包括版本准备、发布说明格式、Windows/macOS/Linux 资产、配置驱动的 macOS 签名策略、updater 签名、GitHub Release 和自动更新 metadata。处理版本发布、发布审计、Draft、updater metadata 或新增/检查 release-notes/ALCOMD3_*.md 时使用。
+description: 完成或审计 ALCOMD3 的 stable/beta 三平台应用发布，包括版本准备、changelog、updater 摘要、Windows/macOS/Linux 资产、配置驱动的 macOS 签名策略、updater 签名、GitHub Release 和自动更新 metadata。处理版本发布、发布审计、Draft、changelog 或 updater metadata 时使用。
 ---
 
 # ALCOMD3 三平台发布
@@ -46,7 +46,9 @@ Draft 创建成功不等于发布完成。定时 `Full-chain desktop smoke` 的�
   `tauriIdentifier` 或 `windowsAppId`。
 - MCP 默认关闭；对外仅使用带 bearer token 的本机回环 Streamable HTTP，对内使用本机
   私有 IPC。发布工作不得开放局域网或公网监听。
-- 已发布的 `release-notes/ALCOMD3_*.md` 与 updater notes 是历史记录，不为后续版本改写。
+- `CHANGELOG.md` 是遵循 Keep a Changelog 的规范记录，也是 GitHub Release 正文来源。已公开
+  Git tag、GitHub Release、changelog 已发布版本条目与 updater metadata 都是历史记录，不为
+  后续版本改写；当前分支不保留独立的按版本发布说明文件。
 - updater JSON 只能在对应 GitHub Release 已公开且全部验证通过后更新。
 - stable 只更新 stable JSON；beta 只更新 beta JSON。
 - 平台固有技术差异只约束构建与验证，不派生平台专属的用户文案：
@@ -56,7 +58,7 @@ Draft 创建成功不等于发布完成。定时 `Full-chain desktop smoke` 的�
     - Linux AppImage 启用 self-updater，DEB 使用关闭 self-updater 的独立构建。
 - 三个平台的 updater payload 都必须通过 release-purpose Minisign 验证；平台原生签名或打包
   检查不能替代 updater 签名验证。
-- release notes 与 updater notes 对所有已发布平台使用同一文案原则：不因某个平台的
+- changelog 条目与 updater notes 对所有已发布平台使用同一文案原则：不因某个平台的
   打包、签名、安装或更新机制增加专属披露、警告、操作说明或帮助链接。只有本版本确有该
   平台的用户可见变化时才点名说明，并使用同一套发布说明结构。
 
@@ -108,88 +110,22 @@ $Channel = "stable"
 ```
 
 - stable 版本不能含 prerelease metadata；
-- beta 版本必须含 prerelease metadata；
-- stable release notes 对比上一个 stable；
-- beta release notes 对比紧邻的上一个版本（stable 或 beta）。
+- beta 版本必须含 prerelease metadata。
 
-## Release notes 固定格式
+## Changelog 与 updater metadata 固定格式
 
-`release-notes/ALCOMD3_$Version.md` 必须使用以下骨架；不得照抄任意历史版本的临时结构：
-
-```markdown
-# ALCOMD3 v$Version
-
-## English
-
-一段英文摘要。
-
-### Application updates
-
-- 应用变化；没有时写明本版本没有此类用户可见变化。
-
-### Installation and upgrade
-
-- 安装与升级变化；没有时写明本版本没有此类用户可见变化。
-
-### Compatibility and security
-
-- 兼容性、安全或已知问题；没有时写明本版本没有此类用户可见变化。
-
-## 日本語
-
-与英文语义一致的日文结构。
-
-### アプリの更新
-
-- 与英文对应的应用变化或无变化说明。
-
-### インストールとアップグレード
-
-- 与英文对应的安装与升级变化或无变化说明。
-
-### 互換性とセキュリティ
-
-- 与英文对应的兼容性、安全或已知问题，或无变化说明。
-
-## 中文
-
-与英文语义一致的中文结构。
-
-### 应用更新
-
-- 应用变化；没有时写明本版本没有此类用户可见变化。
-
-### 安装与升级
-
-- 安装与升级变化；没有时写明本版本没有此类用户可见变化。
-
-### 兼容性与安全
-
-- 兼容性、安全或已知问题；没有时写明本版本没有此类用户可见变化。
-```
-
-严格遵守：
-
-- H1 必须精确为 `# ALCOMD3 v$Version`；H2 只能按顺序为 `English`、`日本語`、`中文`。
-- 每种语言先写一段摘要，再严格按上述顺序保留三个 H3 固定分类；不得省略、重排、重命名
-  或增加版本专属的 H3。
-- 三种语言的固定分类分别对应应用、安装与升级、兼容性与安全。软件包、项目、仓库、备份和
-  MCP 等功能变化归入应用；安装器、平台包、更新通道和数据迁移归入安装与升级；VRChat/VPM
-  兼容性、数据安全、权限边界、已知问题和重要限制归入兼容性与安全。
-- 每个 H3 必须包含非空项目符号。某类没有用户可见变化时仍保留该 H3，并用对应语言明确写明
-  本版本没有此类用户可见变化。
-- 禁止用 `Changes`、`Fixes` 或“软件包列表可靠性”等动态标题包裹或替代固定分类，也禁止
-  使用 H4 增加子主题。
-- ATX 标题与顶层项目符号必须从行首开始，不得用缩进改变 Markdown 解析语义。
-- 禁止 fenced code block；只允许在段落或项目符号中使用 inline code。
-- 只写与本版本实际变化相关的内容；不得为了填充固定章节重复平台通用说明。
-- 不例行添加任何平台的签名、打包、安装或更新机制说明；任何平台都不比其他平台多一段。
-- 不写比较基准、commit/PR 清单、CI、workflow、权限、Secret 或仅供维护者使用的实现记录。
-- `updater-notes.json` 是独立的七语言短摘要，不复用上述 Markdown 层级。
+- `CHANGELOG.md` 是唯一的完整发布说明来源。目标版本必须使用
+  `## [$Version] - YYYY-MM-DD`，只允许 `Added`、`Changed`、`Deprecated`、`Removed`、
+  `Fixed`、`Security` 分类，并为每个保留分类提供非空顶层项目符号。
+- `Unreleased` 必须位于目标版本之前；目标版本 release 链接和以目标 tag 为基准的
+  `Unreleased` comparison 链接必须同步更新。
+- GitHub Release 正文由 `xtask` 从目标 changelog 条目精确提取，不再维护独立的按版本
+  Markdown 发布说明。
+- `release-metadata/updater-notes/$Version.json` 是独立的七语短摘要，必须精确包含 `en`、
+  `de`、`fr`、`ja`、`ko`、`zh_hans`、`zh_hant` 七个非空字符串值。
+- Changelog 与 updater 摘要只写本版本实际变化，不写 commit/PR 清单、CI、workflow、权限、
+  Secret 或仅供维护者使用的实现记录，也不因平台固有打包机制添加平台专属披露。
 - `cargo xtask release-validate` 必须通过；不得跳过或以人工检查替代格式校验。
-- `release-validate` 强制四类标题、顺序和结构一致性；三种语言的项目符号语义是否一致仍由
-  发布审查人工确认。
-- 首个可见发布是 `3.0.0`，从该版本起只接受上述三个固定分类。
 
 ## 2. 准备 source release commit
 
@@ -202,8 +138,12 @@ git status --short
 cargo xtask release-prepare --version $Version --channel $Channel
 ```
 
-编辑 `release-notes/ALCOMD3_$Version.md`，删除全部 placeholder。正常发布同时创建
-`release-notes/ALCOMD3_$Version.updater-notes.json`，并填写以下 7 个非空语言键：
+先将 `CHANGELOG.md` 中适用于本版本的 `Unreleased` 条目移动到
+`## [$Version] - YYYY-MM-DD`，保留新的 `Unreleased`，更新目标版本 release 链接和以目标
+tag 为基准的 comparison 链接。只使用 `Added`、`Changed`、`Deprecated`、`Removed`、
+`Fixed`、`Security` 分类并省略空分类。`release-validate` 会强制检查这些约束。
+
+填写 `release-metadata/updater-notes/$Version.json`，并保留以下 7 个非空语言键：
 
 - `en`
 - `de`
@@ -213,15 +153,15 @@ cargo xtask release-prepare --version $Version --channel $Channel
 - `zh_hans`
 - `zh_hant`
 
-发布说明只包含用户可见内容、兼容性和已知问题，不混入纯 CI、权限、Secret 或内部维护
-记录。运行完整验证，再提交并推送 source release commit：
+Changelog 和 updater 摘要只包含用户可见内容、兼容性和已知问题，不混入纯 CI、权限、
+Secret 或内部维护记录。运行完整验证，再提交并推送 source release commit：
 
 ```powershell
 cargo xtask release-validate --version $Version --channel $Channel
 git add Cargo.toml Cargo.lock
 git add vrc-get-gui/package.json vrc-get-gui/package-lock.json
-git add "release-notes/ALCOMD3_$Version.md"
-git add "release-notes/ALCOMD3_$Version.updater-notes.json"
+git add CHANGELOG.md
+git add "release-metadata/updater-notes/$Version.json"
 git diff --cached --check
 git commit -m "release: prepare ALCOMD3 $Version"
 git push origin main
@@ -241,7 +181,7 @@ gh workflow run release-draft.yml --repo ALCOMD3/ALCOMD3 `
 只有同版本存在兼容 Draft 且明确要替换时才设
 `replace_existing_draft=true`。workflow 必须固定使用 dispatch 时的 `github.sha`，执行：
 
-1. `preflight`：版本、notes、channel、GitHub Release 状态与 source SHA；
+1. `preflight`：版本、changelog、updater 摘要、channel、GitHub Release 状态与 source SHA；
 2. `build-windows`：生成 setup EXE 与 ZIP，验证 ZIP 内容，只从当前配置仓库解析
    `legacyWindowsMigrationReleaseTag`；存在该版本时升级到本次正式 EXE，不存在时执行纯安装，
    并完成安装、启动、AUMID/AppId/关联/快捷方式检查和卸载 smoke；
@@ -281,7 +221,7 @@ Windows job 还必须确认：
 - tag 为 `v$Version` 且目标是 source release commit；
 - title 为 `Version $Version`；
 - stable/beta flag 正确；
-- release notes 完整；
+- GitHub Release 正文与目标 changelog 条目一致；
 - 10 个资产与上表完全相等，无缺失或额外项；
 - Windows/macOS/Linux 文件名都含平台和架构；
 - Draft workflow 的 source SHA 与三个 shard manifest 一致。
@@ -371,7 +311,8 @@ job 证明，正式 Windows 安装器升级链只能由 `release-draft.yml` 的 
 
 遇到以下任一条件停止发布并说明准确阻塞项：
 
-- release notes/updater notes 缺失、含 placeholder、结构不符合固定格式或比较基准错误；
+- changelog 缺少目标版本、日期 / 分类 / 项目符号非法，或目标版本 / `Unreleased` 链接过期；
+- updater 摘要 metadata 缺失、JSON / language key 非法、遗漏必需语言或包含空值；
 - worktree 不干净、source commit 与 `origin/main` 不一致；
 - Windows 正式安装器 smoke 失败、取消、未执行，或测试的不是本次 source-bound shard 中的
   setup EXE；配置仓库存在固定迁移基线时，升级 smoke 同样不得失败、取消或省略；

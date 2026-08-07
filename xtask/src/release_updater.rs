@@ -308,7 +308,7 @@ fn release_updater_notes_command(ctx: &ReleaseContext) -> ProcessCommand {
     let mut cmd = git();
     cmd.arg("show")
         .arg(format!(
-            "{}:release-notes/ALCOMD3_{}.updater-notes.json",
+            "{}:release-metadata/updater-notes/{}.json",
             ctx.tag, ctx.version
         ))
         .current_dir(&ctx.workspace_root);
@@ -420,7 +420,7 @@ mod tests {
         let notes_command = release_updater_notes_command(&ctx);
         let notes_args = notes_command.get_args().collect::<Vec<_>>();
         assert!(notes_args.contains(&OsStr::new(
-            "v2.1.1:release-notes/ALCOMD3_2.1.1.updater-notes.json"
+            "v2.1.1:release-metadata/updater-notes/2.1.1.json"
         )));
 
         let notes_path = ctx.release_check_dir().join("updater-notes.json");

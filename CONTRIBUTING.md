@@ -109,7 +109,7 @@ standard:
    a user-visible bug.
 3. Adapt the change to ALCOMD3's architecture instead of blindly merging.
 4. Verify affected Rust, GUI, and MCP code paths.
-5. Document notable user-facing changes in `release-notes/`.
+5. Document notable changes under `Unreleased` in `CHANGELOG.md`.
 
 Changes touching package operations, project mutations, repository management,
 operation cancellation, resource locking, or MCP visibility require extra care.
@@ -132,6 +132,6 @@ and safety checks.
 - Keep PRs focused.
 - Explain user-visible behavior changes.
 - Include validation results, or state clearly why validation was not run.
-- Update docs and release notes when behavior, compatibility, packaging, or
-  public configuration changes.
+- Update docs and the `Unreleased` changelog when behavior, compatibility,
+  packaging, or public configuration changes.
 - Avoid unrelated formatting churn.

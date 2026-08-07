@@ -475,12 +475,14 @@ release installer で固定 migration baseline を upgrade し、その後にだ
 だけを許可する。Publish 後、updater workflow は 10 assets すべてを確認し、
 selected channel の 3-platform metadata を atomic に生成する。
 
-### Release notes と local build commands
+### Changelog と local build commands
 
-- Release source commit の準備時に `release-prepare` が
-  `release-notes/ALCOMD3_$Version.md` を作成する。
-- 過去の release notes は `release-notes/` に保持する。
-- 今後の release notes は user-visible ALCOMD3 changes を中心にする。
+- 重要な変更は root `CHANGELOG.md` の `Unreleased` に集約する。
+- Release preparation で date 付き version entry に移し、GitHub Release body はその entry
+  から正確に生成する。
+- `release-prepare` は `release-metadata/updater-notes/` に 7-language updater summary
+  template を作成し、`release-validate` が両方の input を検証する。
+- 現在の tree には version ごとの standalone release-description files を保持しない。
 
 Unsigned local Windows shard build:
 

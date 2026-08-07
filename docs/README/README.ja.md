@@ -36,7 +36,8 @@ release steps、user-facing technical documentation を探すときはここか�
 
 ### 履歴記録
 
-- Release notes: [../../release-notes/](../../release-notes/)
+- Changelog: [../../CHANGELOG.md](../../CHANGELOG.md)
+- Published releases: [GitHub Releases](https://github.com/ALCOMD3/ALCOMD3/releases)
 
 ### Subproject documentation
 

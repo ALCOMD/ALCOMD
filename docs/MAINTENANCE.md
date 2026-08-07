@@ -561,12 +561,14 @@ admits exactly ten public assets. After publication, the updater workflow
 checks all ten assets and atomically generates the selected
 channel's three-platform metadata.
 
-### Release notes and local build commands
+### Changelog and local build commands
 
-- `release-prepare` creates `release-notes/ALCOMD3_$Version.md` when the release
-  source commit is prepared.
-- Previous release notes are kept under `release-notes/`.
-- Future release notes should focus on user-visible ALCOMD3 changes.
+- Notable changes are collected under `Unreleased` in the root `CHANGELOG.md`.
+- Release preparation promotes them to a dated version entry, and GitHub Release
+  bodies are generated from that exact entry.
+- `release-prepare` creates the seven-language updater summary template under
+  `release-metadata/updater-notes/`; `release-validate` enforces both inputs.
+- Standalone versioned release-description files are not kept in the current tree.
 
 Unsigned local Windows shard build:
 

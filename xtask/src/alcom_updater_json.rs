@@ -6,6 +6,8 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::result::Result::Ok;
 
+const UPDATER_NOTES_LANGUAGES: [&str; 7] = ["en", "de", "fr", "ja", "ko", "zh_hans", "zh_hant"];
+
 /// Generates json for tauri updater.
 #[derive(clap::Parser)]
 pub struct Command {
@@ -149,7 +151,9 @@ fn create_alcom_updater_json_with_options(
 }
 
 fn default_updater_notes_path(version: &str) -> PathBuf {
-    PathBuf::from("release-notes").join(format!("ALCOMD3_{version}.updater-notes.json"))
+    PathBuf::from("release-metadata")
+        .join("updater-notes")
+        .join(format!("{version}.json"))
 }
 
 fn read_updater_notes_i18n(
@@ -178,7 +182,37 @@ fn read_updater_notes_i18n(
 }
 
 pub(crate) fn validate_updater_notes_file(path: &Path) -> Result<()> {
-    read_updater_notes_i18n_file(path).map(|_| ())
+    let notes = read_updater_notes_i18n_file(path)?;
+    for language in UPDATER_NOTES_LANGUAGES {
+        ensure!(
+            notes.contains_key(language),
+            "updater notes must contain language `{language}` in {}",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn create_updater_notes_if_missing(path: &Path, dry_run: bool) -> Result<()> {
+    if path.exists() {
+        println!("updater notes already exist: {}", path.display());
+        return Ok(());
+    }
+
+    println!("create updater notes template: {}", path.display());
+    if dry_run {
+        return Ok(());
+    }
+
+    let parent = path.parent().context("updater notes path has no parent")?;
+    std::fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+    let notes = UPDATER_NOTES_LANGUAGES
+        .into_iter()
+        .map(|language| (language, ""))
+        .collect::<IndexMap<_, _>>();
+    let rendered = format!("{}\n", serde_json::to_string_pretty(&notes)?);
+    std::fs::write(path, rendered).with_context(|| format!("writing {}", path.display()))?;
+    Ok(())
 }
 
 fn read_updater_notes_i18n_file(path: &Path) -> Result<IndexMap<String, String>> {
@@ -224,10 +258,7 @@ fn read_updater_notes_i18n_file(path: &Path) -> Result<IndexMap<String, String>>
 }
 
 fn is_supported_updater_notes_language(language: &str) -> bool {
-    matches!(
-        language,
-        "en" | "de" | "fr" | "ja" | "ko" | "zh_hans" | "zh_hant"
-    )
+    UPDATER_NOTES_LANGUAGES.contains(&language)
 }
 
 fn fallback_updater_notes_i18n(version: &str, config: &Alcomd3Config) -> IndexMap<String, String> {
@@ -458,6 +489,54 @@ mod tests {
         let _ = fs::remove_dir_all(root);
 
         assert!(error.to_string().contains("does not exist"));
+    }
+
+    #[test]
+    fn default_updater_notes_path_uses_release_metadata_directory() {
+        assert_eq!(
+            default_updater_notes_path("3.2.0"),
+            PathBuf::from("release-metadata/updater-notes/3.2.0.json")
+        );
+    }
+
+    #[test]
+    fn updater_notes_template_contains_all_supported_languages() {
+        let root = temp_dir("notes-template");
+        let notes_path = root.join("updater-notes/3.2.0.json");
+
+        create_updater_notes_if_missing(&notes_path, false).unwrap();
+        let value: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&notes_path).unwrap()).unwrap();
+        let _ = fs::remove_dir_all(root);
+
+        let object = value.as_object().unwrap();
+        assert_eq!(object.len(), UPDATER_NOTES_LANGUAGES.len());
+        for language in UPDATER_NOTES_LANGUAGES {
+            assert_eq!(object[language], "");
+        }
+    }
+
+    #[test]
+    fn release_validation_requires_all_updater_note_languages() {
+        let root = temp_dir("missing-language");
+        let notes_path = root.join("notes.json");
+        fs::write(
+            &notes_path,
+            r#"{
+                "en": "English.",
+                "de": "Deutsch.",
+                "fr": "Français.",
+                "ja": "日本語。",
+                "zh_hans": "简体中文。",
+                "zh_hant": "繁體中文。"
+            }"#,
+        )
+        .unwrap();
+
+        let error = validate_updater_notes_file(&notes_path).unwrap_err();
+        let _ = fs::remove_dir_all(root);
+
+        assert!(error.to_string().contains("language `ko`"));
     }
 
     #[test]

@@ -5,6 +5,7 @@ use crate::release_common::{
     remove_updater_signing_env, validate_full_git_sha, verify_github_release,
 };
 use anyhow::{Result, bail};
+use std::path::Path;
 use std::process::Command as ProcessCommand;
 
 /// Create or update a GitHub Release and optionally publish the draft.
@@ -109,12 +110,18 @@ impl crate::Command for Command {
             }
         }
 
+        let release_body = if self.dry_run {
+            ctx.release_body()
+        } else {
+            crate::release_common::write_release_body_from_changelog(&ctx)?
+        };
+
         if self.replace_assets {
             ensure_github_release_is_draft(&ctx, &runner)?;
-            update_release_metadata(&runner, &ctx, source_sha)?;
+            update_release_metadata(&runner, &ctx, source_sha, &release_body)?;
             upload_assets(&runner, &ctx)?;
         } else {
-            create_release(&runner, &ctx, source_sha)?;
+            create_release(&runner, &ctx, source_sha, &release_body)?;
         }
 
         verify_github_release(&ctx, &runner, Some(true), Some(source_sha))?;
@@ -135,9 +142,14 @@ impl crate::Command for Command {
     }
 }
 
-fn create_release(runner: &CmdRunner, ctx: &ReleaseContext, target_commit: &str) -> Result<()> {
+fn create_release(
+    runner: &CmdRunner,
+    ctx: &ReleaseContext,
+    target_commit: &str,
+    release_body: &Path,
+) -> Result<()> {
     runner.run(
-        create_release_command(ctx, target_commit),
+        create_release_command(ctx, target_commit, release_body),
         "creating GitHub Release draft",
     )
 }
@@ -202,7 +214,11 @@ fn ensure_local_manual_publish_source(
     Ok(())
 }
 
-fn create_release_command(ctx: &ReleaseContext, target_commit: &str) -> ProcessCommand {
+fn create_release_command(
+    ctx: &ReleaseContext,
+    target_commit: &str,
+    release_body: &Path,
+) -> ProcessCommand {
     let mut cmd = gh();
     cmd.arg("release").arg("create").arg(&ctx.tag);
     for asset in ctx.expected_public_asset_names() {
@@ -215,7 +231,7 @@ fn create_release_command(ctx: &ReleaseContext, target_commit: &str) -> ProcessC
         .arg("--title")
         .arg(ctx.release_title())
         .arg("--notes-file")
-        .arg(&ctx.release_notes)
+        .arg(release_body)
         .arg("--draft");
 
     if ctx.channel.is_prerelease() {
@@ -229,14 +245,19 @@ fn update_release_metadata(
     runner: &CmdRunner,
     ctx: &ReleaseContext,
     target_commit: &str,
+    release_body: &Path,
 ) -> Result<()> {
     runner.run(
-        update_release_metadata_command(ctx, target_commit),
+        update_release_metadata_command(ctx, target_commit, release_body),
         "updating GitHub Release metadata",
     )
 }
 
-fn update_release_metadata_command(ctx: &ReleaseContext, target_commit: &str) -> ProcessCommand {
+fn update_release_metadata_command(
+    ctx: &ReleaseContext,
+    target_commit: &str,
+    release_body: &Path,
+) -> ProcessCommand {
     let mut cmd = gh();
     cmd.arg("release")
         .arg("edit")
@@ -248,7 +269,7 @@ fn update_release_metadata_command(ctx: &ReleaseContext, target_commit: &str) ->
         .arg("--target")
         .arg(target_commit)
         .arg("--notes-file")
-        .arg(&ctx.release_notes);
+        .arg(release_body);
     cmd
 }
 
@@ -271,20 +292,33 @@ mod tests {
     #[test]
     fn release_draft_targets_the_built_commit() {
         let ctx = ReleaseContext::new("2.1.1", ReleaseChannel::Stable, None, None, None).unwrap();
-        let command = create_release_command(&ctx, "0123456789abcdef");
+        let command = create_release_command(
+            &ctx,
+            "0123456789abcdef",
+            std::path::Path::new("github-release.md"),
+        );
         let args = command.get_args().collect::<Vec<_>>();
         let target_position = args
             .iter()
             .position(|argument| *argument == OsStr::new("--target"))
             .unwrap();
+        let notes_position = args
+            .iter()
+            .position(|argument| *argument == OsStr::new("--notes-file"))
+            .unwrap();
 
         assert_eq!(args[target_position + 1], OsStr::new("0123456789abcdef"));
+        assert_eq!(args[notes_position + 1], OsStr::new("github-release.md"));
     }
 
     #[test]
     fn replacement_draft_retargets_the_built_commit() {
         let ctx = ReleaseContext::new("2.1.1", ReleaseChannel::Stable, None, None, None).unwrap();
-        let command = update_release_metadata_command(&ctx, "fedcba9876543210");
+        let command = update_release_metadata_command(
+            &ctx,
+            "fedcba9876543210",
+            std::path::Path::new("github-release.md"),
+        );
         let args = command.get_args().collect::<Vec<_>>();
         let target_position = args
             .iter()

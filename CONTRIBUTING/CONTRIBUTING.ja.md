@@ -101,7 +101,7 @@ Pull request を作成すると、CLA workflow が署名方法をコメントし
 2. security、data safety、VRChat/VPM compatibility、user-visible bug に関係するか確認する。
 3. 盲目的に merge せず、ALCOMD3 の architecture に合わせて適用する。
 4. 影響を受ける Rust、GUI、MCP の code path を検証する。
-5. ユーザーに見える重要な変更は `release-notes/` に記録する。
+5. 重要な変更は `CHANGELOG.md` の `Unreleased` に記録する。
 
 Package operation、project mutation、repository management、operation cancellation、
 resource locking、MCP visibility に触れる変更は特に注意する。GUI と MCP bridge は
@@ -121,5 +121,5 @@ resource locking、MCP visibility に触れる変更は特に注意する。GUI 
 - PR は focused にする。
 - ユーザーに見える挙動変更を説明する。
 - 検証結果を含める。検証していない場合は理由を明記する。
-- 挙動、互換性、packaging、public configuration が変わる場合は docs と release notes を更新する。
+- 挙動、互換性、packaging、public configuration が変わる場合は docs と `Unreleased` changelog を更新する。
 - 無関係な formatting churn を避ける。

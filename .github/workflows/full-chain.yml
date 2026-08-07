@@ -22,7 +22,8 @@ on:
             - Cargo.toml
             - LICENSE
             - alcomd3.config.json
-            - release-notes/**
+            - CHANGELOG.md
+            - release-metadata/**
     pull_request:
         types:
             - opened
@@ -47,7 +48,8 @@ on:
             - Cargo.toml
             - LICENSE
             - alcomd3.config.json
-            - release-notes/**
+            - CHANGELOG.md
+            - release-metadata/**
     schedule:
         - cron: "0 19 * * 0"
     workflow_dispatch:

@@ -5,7 +5,7 @@
 
 ## 可用 skill
 
-- [alcomd3-release](./alcomd3-release/SKILL.md)：用于发布、发布审计、版本准备、GitHub Release、updater metadata、stable/beta channel 和 release notes 相关任务。
+- [alcomd3-release](./alcomd3-release/SKILL.md)：用于发布、发布审计、版本准备、GitHub Release、updater metadata、stable/beta channel 和 changelog 相关任务。
 
 ## 使用规则
 

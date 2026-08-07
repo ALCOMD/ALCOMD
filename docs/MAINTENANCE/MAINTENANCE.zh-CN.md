@@ -429,12 +429,13 @@ assets 使用。
 资产。公开后，updater workflow 核对全部 10 项资产，并原子生成所选 channel
 的三平台 metadata。
 
-### Release notes 和本地构建命令
+### Changelog 和本地构建命令
 
-- 准备发布源提交时，`release-prepare` 创建
-  `release-notes/ALCOMD3_$Version.md`。
-- 过去 release notes 保留在 `release-notes/` 下。
-- 未来 release notes 应聚焦用户可见的 ALCOMD3 变化。
+- 重要变化先记录在根目录 `CHANGELOG.md` 的 `Unreleased`。
+- 准备发布时将其归档到带日期的版本条目，GitHub Release 正文从该条目精确生成。
+- `release-prepare` 在 `release-metadata/updater-notes/` 下创建七语 updater 摘要模板；
+  `release-validate` 会强制校验这两项输入。
+- 当前分支不保留按版本拆分的独立发布说明文件。
 
 未签名的本地 Windows shard 构建：
 

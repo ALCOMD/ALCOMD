@@ -25,7 +25,7 @@ ALCOMD3 支持国际化。新增用户可见文本时，添加或复用已有 lo
    - 例如日语使用 `ja.json5`。
 3. 在 `lib/i18n.ts` 导入新的 JSON5 文件，并加入 `languageResources` object。
 4. 创建 draft pull request。
-5. 如果新增语言需要用户可见的发布说明覆盖，更新 release notes 或相关文档。
+5. 如果新增语言需要用户可见的发布说明覆盖，更新根目录的 `CHANGELOG.md` 或相关文档。
 6. 将 pull request 标记为 ready for review。
 7. 维护者会询问你是否能维护该语言。
    如果你不想维护，在其他维护者出现前，该语言不会合并。

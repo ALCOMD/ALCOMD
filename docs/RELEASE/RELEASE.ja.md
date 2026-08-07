@@ -9,7 +9,7 @@ GitHub manual publish path も保持する。
 
 Release は 3 phases と 2 commits:
 
-1. Source release commit: version metadata と release notes。
+1. Source release commit: version metadata、changelog、updater summaries。
 2. GitHub Release: Windows x64、macOS Apple Silicon、Linux x64 向けの
    platform を明示した 10 assets。
 3. Updater metadata commit: public assets 作成後、3 platforms を含む updater JSON
@@ -37,8 +37,8 @@ release に固定する。
 ### Agent execution semantics
 
 明示的な audit request は read-only のまま扱う。明示的な release request は readiness
-report ではなく end-to-end operation とする。正しい comparison base から完全な release
-notes を生成し、7 languages すべての updater short summary を作成し、source release files
+report ではなく end-to-end operation とする。Changelog の `Unreleased` を target version
+へ移し、7 languages すべての updater short summary を作成し、source release files
 を validate、commit、push した後、Draft workflow を dispatch して監視する。Manual Draft
 publish gate でのみ停止する。Draft publish 後は updater workflow、metadata commit、
 public endpoint の監視を続け、すべて成功した場合だけ release complete とする。
@@ -49,9 +49,11 @@ public endpoint の監視を続け、すべて成功した場合だけ release c
 - Rust workspace members は `version.workspace = true` で継承する。
 - `vrc-get-gui/package.json` は `cargo xtask release-prepare` が更新する。
 - `Cargo.lock` と `package-lock.json` は generated files。
+- `CHANGELOG.md` は重要な変更の canonical record であり、GitHub Release body の source。
+- `release-metadata/updater-notes/$Version.json` は in-app updater dialog 用の
+  7-language short summary。
 - Updater JSON は published updater workflow が public Release assets から再生成・検証し、
   検証成功後だけ commit する。
-- `release-notes/ALCOMD3_$Version.updater-notes.json` は in-app updater dialog に表示する短い localized update text。
 
 ### 1. Release inputs を決める
 
@@ -80,7 +82,7 @@ Repository prerequisites:
 
 macOS release は ad-hoc signing のみを support し、Apple account や Apple Secrets は不要。
 signing command は certificate identity や notarization option を提供しない。Platform 固有の
-build、signing、installation、update mechanism は technical contract に限る。Release notes、
+build、signing、installation、update mechanism は technical contract に限る。Changelog entries、
 updater notes、Website はすべての公開 platform に同じ方針を適用し、これらの mechanism だけを
 理由に platform 専用の disclosure、warning、手順、help link を追加しない。この release に
 関係する user-visible change がある場合だけ platform 名を記載する。
@@ -125,45 +127,28 @@ cargo xtask release-prepare --version $Version --channel $Channel
 - `Cargo.lock` workspace package versions を更新する。
 - GUI の npm version を tag なしで更新する。
 - npm lockfiles を更新する。
-- `release-notes/ALCOMD3_$Version.md` がなければ作成する。
+- `release-metadata/updater-notes/$Version.json` がなければ作成する。
 - `git status --short` を表示する。
 
-ここで release notes file を編集し、placeholder text をすべて削除する。
+該当する `CHANGELOG.md` の `Unreleased` entries を
+`## [$Version] - YYYY-MM-DD` に移し、先頭に新しい `Unreleased` section を残して compare
+links を更新する。Category は `Added`、`Changed`、`Deprecated`、`Removed`、`Fixed`、
+`Security` だけを使用し、空 category は省略する。`release-validate` は target version entry、
+ISO date、空でない top-level bullets、release link、target tag を基準にした `Unreleased`
+compare link を検証する。
 
-Release notes は正しい comparison base を使う:
-
-- Stable release は前回の stable release だけと比較する。
-- Beta release は直前の release と比較する。直前が stable でも beta でも同じ。
-
-Release notes は統一された多言語構造も使用する。Title は正確に
-`# ALCOMD3 v$Version` とし、その後に `## English`、`## 日本語`、`## 中文` をこの順で
-置く。各 locale は 1 段落の概要から始め、アプリの更新、インストールとアップグレード、
-互換性とセキュリティの 3 つの level-3 category をこの順で必ず保持する。Localized title
-はそれぞれ `Application updates` / `アプリの更新` / `应用更新`、`Installation and upgrade` /
-`インストールとアップグレード` / `安装与升级`、`Compatibility and security` /
-`互換性とセキュリティ` / `兼容性与安全` とする。Release 固有の level-3 heading を追加したり、
-固定 heading を省略、並べ替え、改名したりしない。各 category には空でない bullet list を
-含め、user-visible な変更がない category も保持して、その旨を各言語で明記する。Level-4
-heading、fenced code block、indent された ATX heading と top-level bullet は使用しない。
-いずれの platform についても定型 disclosure で固定構造を埋めない。`release-validate` は
-固定 heading と構造を検証し、localized bullet の意味と順序が一致していることは release
-review で確認する。
-最初の visible release は `3.0.0` で、この release から固定 3-category contract を適用する。
-
-同時に `release-notes/ALCOMD3_$Version.updater-notes.json` を作成または更新する。
-これは in-app updater dialog 用の短い localized summary であり、完全な GitHub
-Release notes ではない。JSON object とし、key は `en`、`de`、`fr`、`ja`、`ko`、
-`zh_hans`、`zh_hant` のみ。Value は非空 string。欠けている language は generated
-`notes` field に fallback する。Normal release では 7 keys すべてを生成する。Fallback は
-compatibility / recovery 用に残すが、通常の release preparation outcome にはしない。
+`release-metadata/updater-notes/$Version.json` を完成させる。`en`、`de`、`fr`、`ja`、
+`ko`、`zh_hans`、`zh_hant` の 7 keys を正確に含み、各 value は空でない localized short
+summary とする。この structured metadata は in-app updater だけが使用し、GitHub Release
+body は publish 時に target changelog entry から直接生成する。
 
 Source release commit を commit/push する:
 
 ```powershell
 git add Cargo.toml Cargo.lock
 git add vrc-get-gui/package.json vrc-get-gui/package-lock.json
-git add "release-notes/ALCOMD3_$Version.md"
-git add "release-notes/ALCOMD3_$Version.updater-notes.json"
+git add CHANGELOG.md
+git add "release-metadata/updater-notes/$Version.json"
 git status --short
 git commit -m "release: prepare ALCOMD3 $Version"
 git push origin main
@@ -185,7 +170,7 @@ gh workflow run release-draft.yml --repo ALCOMD3/ALCOMD3 `
 
 同じ version の Draft が既にあり、その assets を明示的に置換する場合だけ
 `replace_existing_draft=true` を使う。Published Release または channel が一致しない Draft
-の上書きは拒否される。Release notes の修正などにより Draft 作成後に prepared source commit
+の上書きは拒否される。Changelog の修正などにより Draft 作成後に prepared source commit
 が変わった場合、明示的な置換は Draft を dispatch 対象の source commit に付け替え、その
 commit から build した 10 assets をすべて置換する。
 
@@ -235,7 +220,7 @@ Publish 前に確認する:
 - tag が `v$Version` で、workflow が build した source release commit を指す。
 - title が `Version $Version`。
 - stable は normal Release、beta は prerelease。
-- release notes が正しい。
+- GitHub Release body が target changelog entry と一致する。
 - 次の 10 assets が正確に揃っている:
     - `ALCOMD3_$Version_windows_x86_64_setup.exe`
     - `ALCOMD3_$Version_windows_x86_64_setup.exe.sig`
@@ -264,7 +249,7 @@ Draft の publish により **Publish updater metadata** が起動する。Fresh
 - Release target、tag commit、root/GUI version の完全一致を要求する。
 - 3 updater payloads と Minisign signatures を検証し、各 signature が exact filename と
   authenticated `release` purpose に bind されていることを確認する。
-- Release tag から localized sidecar を読み、Release `publishedAt` を固定 `pub_date` として、
+- Release tag から structured updater summary を読み、Release `publishedAt` を固定 `pub_date` として、
   Windows x64、macOS arm64、Linux x64 を含む current channel updater JSON を atomic に再生成する。
 - Metadata file を置換する前に、各 platform entry の version、exact URL、signature filename、
   signature、embedded public key を検証する。
@@ -340,8 +325,10 @@ JSON は commit しない。
 
 以下の場合は release を止める:
 
-- release notes に placeholder text が残っている、または統一された多言語構造に違反している。
-- updater notes sidecar が必要なのに不足している、または JSON、language key、空 value が不正。
+- changelog に target version がない、date/category が不正、category bullet が空、または
+  target version / `Unreleased` link が古い。
+- updater summary metadata がない、JSON が不正、required language が不足、unsupported key が
+  ある、または value が空。
 - validation が失敗する。
 - source-bound Windows release installer upgrade smoke が失敗、cancel、未実行、または
   Windows release shard 内の setup EXE 以外を test している。
@@ -351,7 +338,6 @@ JSON は commit しない。
   verification、`Signature=adhoc` check のいずれかが失敗する。
 - artifact が不足している。
 - updater JSON verification が失敗する。
-- release notes の comparison base が誤っている。
 - GitHub Release title が `Version $Version` ではない。
 - GitHub Release assets が不足または名前不一致。
 - stable/beta flags が誤っている。

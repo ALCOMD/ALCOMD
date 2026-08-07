@@ -1,6 +1,6 @@
 use crate::release_common::{
     ReleaseChannel, ReleaseContext, default_repo, default_site_base_url, default_target,
-    ensure_release_notes_ready, validate_release_source_versions,
+    ensure_changelog_ready, validate_release_source_versions,
 };
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -53,12 +53,12 @@ struct PackageJson {
 
 pub fn ensure_release_source_ready(ctx: &ReleaseContext) -> Result<()> {
     ensure_release_source_versions_ready(ctx)?;
-    ensure_release_notes_ready(ctx)?;
+    ensure_changelog_ready(ctx)?;
     crate::alcom_updater_json::validate_updater_notes_file(&ctx.updater_notes())?;
     Ok(())
 }
 
-/// Validates version-bearing source files without requiring release notes.
+/// Validates version-bearing source files without requiring release metadata.
 /// This is the boundary used by local signed test builds.
 pub fn ensure_release_source_versions_ready(ctx: &ReleaseContext) -> Result<()> {
     let metadata = crate::utils::cargo::cargo_metadata();

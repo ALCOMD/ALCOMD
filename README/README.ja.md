@@ -74,8 +74,8 @@ ALCOMD3 は ALCOM/vrc-get を起源とし、現在は独立したオープンソ
 - コントリビュートする場合は[コントリビューションガイド](../CONTRIBUTING/CONTRIBUTING.ja.md)を
   お読みください。
 - 技術情報や保守資料は[ドキュメント索引](../docs/README/README.ja.md)から確認できます。
-- バージョンごとの変更は
-  [GitHub のリリースノート](https://github.com/ALCOMD3/ALCOMD3/releases)で確認できます。
+- バージョンごとの変更は [changelog](../CHANGELOG.md) または
+  [GitHub Releases](https://github.com/ALCOMD3/ALCOMD3/releases)で確認できます。
 
 ## 開発に参加する
 

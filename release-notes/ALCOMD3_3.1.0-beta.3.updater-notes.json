@@ -1,9 +1,0 @@
-{
-    "en": "Improves Unity project launching and focusing, keeps project lists stable during refreshes, and refreshes saved repository names.",
-    "de": "Verbessert das Starten und in den Vordergrund holen von Unity-Projekten, hält Projektlisten bei Aktualisierungen stabil und aktualisiert gespeicherte Repository-Namen.",
-    "fr": "Améliore le lancement et la mise au premier plan des projets Unity, maintient les listes de projets stables pendant leur actualisation et actualise les noms de dépôts enregistrés.",
-    "ja": "Unity プロジェクトの起動と前面表示を改善し、更新中もプロジェクト一覧を安定して表示し、保存済みリポジトリ名を更新します。",
-    "ko": "Unity 프로젝트의 시작과 전면 표시를 개선하고, 새로 고치는 동안 프로젝트 목록을 안정적으로 유지하며, 저장된 리포지토리 이름을 새로 고칩니다.",
-    "zh_hans": "改进 Unity 项目的启动与定位，在刷新期间保持项目列表稳定，并更新已保存的软件源名称。",
-    "zh_hant": "改善 Unity 專案的啟動與前景顯示，在重新整理期間保持專案清單穩定，並更新已儲存的軟體來源名稱。"
-}

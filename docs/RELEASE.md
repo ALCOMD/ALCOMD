@@ -11,7 +11,7 @@ artifacts, and manually publishing them to GitHub.
 
 The release has three phases and two commits:
 
-1. Source release commit: version metadata and release notes.
+1. Source release commit: version metadata, changelog, and updater summaries.
 2. GitHub Release: ten platform-explicit assets for Windows x64, macOS Apple
    Silicon, and Linux x64.
 3. Updater metadata commit: one generated updater JSON containing all three
@@ -45,8 +45,8 @@ without a previous installer and never consults another repository.
 
 An explicit audit request stays read-only. An explicit release request is an
 end-to-end operation, not a readiness report: prepare and validate the source
-release files, write complete release notes from the correct comparison base,
-generate all seven localized updater summaries, commit and push the source
+release files, promote the changelog's `Unreleased` entries, generate all seven
+localized updater summaries, commit and push the source
  release, then dispatch and monitor the Draft workflow. Pause only at the manual
  Draft publication gate. After the Draft is published, continue monitoring the
  updater workflow, metadata commit, and public endpoint. The release is complete
@@ -58,10 +58,12 @@ generate all seven localized updater summaries, commit and push the source
 - Rust workspace members inherit it with `version.workspace = true`.
 - `vrc-get-gui/package.json` is updated by `cargo xtask release-prepare`.
 - `Cargo.lock` and `package-lock.json` are generated files.
+- `CHANGELOG.md` is the canonical record of notable changes and the source for
+  GitHub Release bodies.
+- `release-metadata/updater-notes/$Version.json` is the seven-language short
+  summary used by the in-app updater dialog.
 - Updater JSON is regenerated from public Release assets by the published
   updater workflow and committed only after those assets pass verification.
-- `release-notes/ALCOMD3_$Version.updater-notes.json` is the short localized
-  update text shown in the in-app updater dialog.
 
 ### 1. Choose release inputs
 
@@ -92,7 +94,7 @@ Repository prerequisites:
 macOS releases support ad-hoc signing only and require no Apple account or Apple
 Secrets. The signing command exposes no certificate identity or notarization
 options. Platform-specific build, signing, installation, and update mechanisms
-are technical contracts only. Release notes and updater notes use
+are technical contracts only. Changelog entries and updater notes use
 one policy for every published platform: they do not add platform-only
 disclosures, warnings, instructions, or help links solely because of those
 mechanisms. Name a platform only for a user-visible change relevant to that
@@ -139,50 +141,30 @@ This command:
 - refreshes `Cargo.lock` workspace package versions;
 - updates the GUI npm version without creating tags;
 - refreshes npm lockfiles;
-- creates `release-notes/ALCOMD3_$Version.md` if missing;
+- creates `release-metadata/updater-notes/$Version.json` if missing;
 - prints the resulting `git status --short`.
 
-Now edit the release notes file and remove all placeholder text.
+Promote the applicable `CHANGELOG.md` `Unreleased` entries into
+`## [$Version] - YYYY-MM-DD`, leave a new `Unreleased` section at the top, and
+update the comparison links. Use only `Added`, `Changed`, `Deprecated`,
+`Removed`, `Fixed`, and `Security` categories, omitting empty categories.
+`release-validate` requires the target version entry, ISO date, non-empty
+top-level bullets, release link, and an `Unreleased` comparison link based on
+the target tag.
 
-Release notes must use the correct comparison base:
-
-- Stable releases compare against the previous stable release only.
-- Beta releases compare against the immediately previous release, whether stable
-  or beta.
-
-Release notes also use one canonical localized structure. The title is exactly
-`# ALCOMD3 v$Version`, followed by `## English`, `## 日本語`, and `## 中文` in
-that order. Each locale starts with one summary paragraph and then retains exactly
-three level-3 categories in this order: application updates, installation and
-upgrade, and compatibility and security. Their localized titles must be
-`Application updates` / `アプリの更新` / `应用更新`, `Installation and upgrade` /
-`インストールとアップグレード` / `安装与升级`, and
-`Compatibility and security` / `互換性とセキュリティ` / `兼容性与安全`.
-Do not omit, reorder, rename, or add release-specific level-3 headings. Every
-category must contain a non-empty bullet list; when a category has no user-visible
-change, retain it and add a localized no-change statement. Level-4 headings,
-fenced code blocks, indented ATX headings, and indented top-level bullets are not
-permitted. Do not fill the fixed structure with routine platform disclosures.
-`release-validate` enforces the exact headings and structure; release review must
-confirm that localized bullets also have the same meaning and order.
-The first visible release is `3.0.0`, and the fixed three-category contract
-applies from that release onward.
-
-Also create or update `release-notes/ALCOMD3_$Version.updater-notes.json`.
-This file is a short localized summary for the in-app updater dialog, not the
-full GitHub Release notes. It must be a JSON object whose keys are limited to
-`en`, `de`, `fr`, `ja`, `ko`, `zh_hans`, and `zh_hant`; values must be non-empty
-strings. A normal release populates all seven keys. Missing languages still fall
-back to the generated `notes` field for compatibility and recovery, but that
-fallback is not the normal release-preparation outcome.
+Complete `release-metadata/updater-notes/$Version.json`. It must contain exactly
+the seven keys `en`, `de`, `fr`, `ja`, `ko`, `zh_hans`, and `zh_hant`, each with
+a non-empty localized short summary. This structured metadata is separate from
+the changelog and is used only by the in-app updater. The GitHub Release body is
+generated directly from the target changelog entry during publication.
 
 Commit and push the source release commit:
 
 ```powershell
 git add Cargo.toml Cargo.lock
 git add vrc-get-gui/package.json vrc-get-gui/package-lock.json
-git add "release-notes/ALCOMD3_$Version.md"
-git add "release-notes/ALCOMD3_$Version.updater-notes.json"
+git add CHANGELOG.md
+git add "release-metadata/updater-notes/$Version.json"
 git status --short
 git commit -m "release: prepare ALCOMD3 $Version"
 git push origin main
@@ -264,7 +246,7 @@ Before publishing, confirm:
   workflow;
 - the title is `Version $Version`;
 - stable is a normal Release and beta is a prerelease;
-- release notes are correct;
+- the GitHub Release body matches the target changelog entry;
 - exactly these ten assets exist:
     - `ALCOMD3_$Version_windows_x86_64_setup.exe`
     - `ALCOMD3_$Version_windows_x86_64_setup.exe.sig`
@@ -298,7 +280,7 @@ and source commit from GitHub.
 - requires the Release target, tag commit, and root/GUI versions to match exactly;
 - verifies the three updater payloads and their Minisign signatures, each bound
   to its exact filename and authenticated `release` purpose;
-- reads the localized sidecar from the Release tag, then atomically regenerates
+- reads the structured updater summary from the Release tag, then atomically regenerates
   only the selected channel's updater JSON with Windows x64, macOS arm64, and
   Linux x64 entries, using the Release `publishedAt` as its fixed `pub_date`;
 - verifies every generated platform entry, exact URL, signature filename,
@@ -385,9 +367,10 @@ the matching Release assets are public.
 
 Stop the release if:
 
-- release notes still contain placeholder text or violate the canonical localized structure;
-- updater notes sidecar is missing when expected or has invalid JSON, unsupported
-  language keys, or empty values;
+- the changelog lacks the target version, has an invalid date or category, has
+  empty category bullets, or has stale target/unreleased links;
+- updater summary metadata is missing, has invalid JSON, omits any required
+  language, contains unsupported language keys, or has empty values;
 - validation fails;
 - the source-bound Windows release installer upgrade smoke fails, is cancelled,
   does not run, or tests an installer other than the setup EXE in the Windows
@@ -398,7 +381,6 @@ Stop the release if:
   the app, nested executables, updater archive contents, or DMG;
 - any artifact is missing;
 - updater JSON verification fails;
-- release notes use the wrong comparison base;
 - GitHub Release title is not `Version $Version`;
 - GitHub Release assets are missing or misnamed;
 - stable/beta flags are wrong;

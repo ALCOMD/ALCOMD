@@ -1,12 +1,11 @@
 use crate::release_common::{
-    CmdRunner, ReleaseChannel, ReleaseContext, cargo, check_worktree_clean,
-    create_release_notes_if_missing, default_repo, default_site_base_url, default_target, git, npm,
-    update_workspace_version,
+    CmdRunner, ReleaseChannel, ReleaseContext, cargo, check_worktree_clean, default_repo,
+    default_site_base_url, default_target, git, npm, update_workspace_version,
 };
 use crate::utils::command::CommandExt;
 use anyhow::Result;
 
-/// Prepare release source files: workspace version, GUI npm version, lockfiles, and release notes.
+/// Prepare release source files: versions, lockfiles, changelog, and updater notes.
 #[derive(clap::Parser)]
 pub struct Command {
     /// Release version, for example 3.0.0 or 3.1.0-beta.1.
@@ -65,14 +64,21 @@ impl crate::Command for Command {
             refresh_npm_lockfile(&runner, &ctx, "vrc-get-gui")?;
         }
 
-        create_release_notes_if_missing(&ctx, self.dry_run)?;
+        crate::alcom_updater_json::create_updater_notes_if_missing(
+            &ctx.updater_notes(),
+            self.dry_run,
+        )?;
         print_git_status(&ctx)?;
 
         println!(
             "release source prepared for {} ({})",
             ctx.version, ctx.channel
         );
-        println!("next: edit {}", ctx.release_notes.display());
+        println!(
+            "next: promote Unreleased changes in {} and complete {}",
+            ctx.changelog.display(),
+            ctx.updater_notes().display()
+        );
         Ok(0)
     }
 }

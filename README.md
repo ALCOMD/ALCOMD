@@ -74,8 +74,8 @@ open-source project. It is not an official product of VRChat or VCC.
 - Want to contribute? Read the [contribution guide](./CONTRIBUTING.md).
 - Looking for technical or maintainer information? Start at the
   [documentation index](./docs/README.md).
-- Want to see what changed? Browse the
-  [release notes](https://github.com/ALCOMD3/ALCOMD3/releases).
+- Want to see what changed? Read the [changelog](./CHANGELOG.md) or browse
+  [GitHub Releases](https://github.com/ALCOMD3/ALCOMD3/releases).
 
 ## Development
 

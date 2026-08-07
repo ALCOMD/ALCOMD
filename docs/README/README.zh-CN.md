@@ -35,7 +35,8 @@
 
 ### 历史记录
 
-- Release notes：[../../release-notes/](../../release-notes/)
+- Changelog：[../../CHANGELOG.md](../../CHANGELOG.md)
+- 已发布版本：[GitHub Releases](https://github.com/ALCOMD3/ALCOMD3/releases)
 
 ### 子项目文档
 

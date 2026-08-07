@@ -62,7 +62,8 @@ ALCOMD3 起源于 ALCOM/vrc-get，目前作为独立的开源项目维护。
 - 遇到问题或有新想法？[提交 Issue](https://github.com/ALCOMD3/ALCOMD3/issues)。
 - 想参与贡献？请阅读[贡献指南](../CONTRIBUTING/CONTRIBUTING.zh-CN.md)。
 - 需要技术或维护资料？从[文档索引](../docs/README/README.zh-CN.md)开始。
-- 想了解版本变化？查看 [GitHub 发布说明](https://github.com/ALCOMD3/ALCOMD3/releases)。
+- 想了解版本变化？阅读 [changelog](../CHANGELOG.md)，或查看
+  [GitHub Releases](https://github.com/ALCOMD3/ALCOMD3/releases)。
 
 ## 参与开发
 
