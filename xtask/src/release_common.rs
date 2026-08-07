@@ -26,6 +26,10 @@ const GITHUB_SHA_ENV: &str = "GITHUB_SHA";
 const GITHUB_WORKFLOW_REF_ENV: &str = "GITHUB_WORKFLOW_REF";
 const RELEASE_DRAFT_WORKFLOW: &str = ".github/workflows/release-draft.yml";
 const RELEASE_UPDATER_WORKFLOW: &str = ".github/workflows/release-updater.yml";
+const GITHUB_RELEASE_ADDITIONAL_CHANGELOG_SOURCES: [(&str, &str); 2] = [
+    ("日本語", "CHANGELOG/CHANGELOG.ja.md"),
+    ("中文", "CHANGELOG/CHANGELOG.zh-CN.md"),
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum ReleaseChannel {
@@ -501,10 +505,28 @@ pub fn ensure_changelog_ready(ctx: &ReleaseContext) -> Result<()> {
 }
 
 pub fn write_release_body_from_changelog(ctx: &ReleaseContext) -> Result<PathBuf> {
-    let changelog = fs::read_to_string(&ctx.changelog)
-        .with_context(|| format!("reading changelog: {}", ctx.changelog.display()))?;
-    validate_changelog_format(&ctx.version, ctx.channel, &ctx.repo, &changelog)?;
-    let body = extract_changelog_release_body(&ctx.version, &changelog)?;
+    let mut changelog_sections =
+        Vec::with_capacity(1 + GITHUB_RELEASE_ADDITIONAL_CHANGELOG_SOURCES.len());
+    {
+        let changelog = fs::read_to_string(&ctx.changelog)
+            .with_context(|| format!("reading {}", ctx.changelog.display()))?;
+        validate_changelog_format(&ctx.version, ctx.channel, &ctx.repo, &changelog)?;
+        let body = extract_changelog_release_body(&ctx.version, &changelog)?;
+        changelog_sections.push(format!("## English\n\n{body}\n"));
+    }
+    changelog_sections.extend(
+        GITHUB_RELEASE_ADDITIONAL_CHANGELOG_SOURCES
+            .iter()
+            .map(|(language, changelog_path)| {
+                let changelog_path = ctx.workspace_root.join(changelog_path);
+                let changelog = fs::read_to_string(&changelog_path)
+                    .with_context(|| format!("reading {}", changelog_path.display()))?;
+                let body = extract_changelog_release_body(&ctx.version, &changelog)?;
+                Ok(format!("## {language}\n\n{body}\n"))
+            })
+            .collect::<Result<Vec<_>>>()?,
+    );
+    let body = changelog_sections.join("\n---\n\n");
     let path = ctx.release_body();
     let parent = path.parent().context("release body path has no parent")?;
     fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
