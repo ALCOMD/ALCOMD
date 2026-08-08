@@ -906,7 +906,7 @@ function AlcomCard() {
 
 	const reportIssue = async () => {
 		const url = newRepositoryIssueUrl();
-		url.searchParams.append("labels", "bug,vrc-get-gui");
+		url.searchParams.append("labels", "bug");
 		url.searchParams.append("template", "01_gui_bug-report.yml");
 		url.searchParams.append("os", `${globalInfo.osInfo} - ${globalInfo.arch}`);
 		url.searchParams.append("webview-version", `${globalInfo.webviewVersion}`);

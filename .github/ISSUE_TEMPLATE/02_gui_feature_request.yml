@@ -1,6 +1,6 @@
 name: "[ALCOMD3] Feature Request"
 description: Suggest an idea for ALCOMD3 / ALCOMD3に新しい機能を提案する / 提出 ALCOMD3 功能建议
-labels: [ "enhancement", "vrc-get-gui" ]
+labels: [ "enhancement" ]
 
 body:
   - type: textarea

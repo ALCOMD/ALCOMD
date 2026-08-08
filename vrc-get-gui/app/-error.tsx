@@ -24,7 +24,7 @@ export default function ErrorPage({
 	const openIssue = () => {
 		try {
 			const url = newRepositoryIssueUrl();
-			url.searchParams.append("labels", "bug,vrc-get-gui");
+			url.searchParams.append("labels", "bug");
 			url.searchParams.append("template", "01_gui_bug-report.yml");
 			url.searchParams.append(
 				"os",

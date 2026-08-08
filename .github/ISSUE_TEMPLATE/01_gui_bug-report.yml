@@ -1,6 +1,6 @@
 name: "[ALCOMD3] Bug Report"
 description: Create a bug report of ALCOMD3 / ALCOMD3のバグを報告する / 报告 ALCOMD3 的问题
-labels: [ "bug", "vrc-get-gui" ]
+labels: [ "bug" ]
 
 body:
   - type: textarea

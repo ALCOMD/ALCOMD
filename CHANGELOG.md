@@ -45,6 +45,8 @@ category order, and bullet counts must match this canonical entry.
 
 ### Fixed
 
+- Stopped issue templates and in-app report links from requesting the obsolete
+  `vrc-get-gui` label.
 - Preserved user-configured package paths when saving environment settings on
   Windows.
 - Detected and focused Unity editors when any matching Unity process is active.
