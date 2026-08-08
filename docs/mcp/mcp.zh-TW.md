@@ -415,6 +415,16 @@ bridge 在短時間內收到過多 tool call，或已有過多 tool call 正在�
 Windows 上使用支援的用戶端時，可以再次點擊對應的快速設定按鈕，按提示確認取代，
 然後完全結束並重新啟動該用戶端。
 
+### HTTP `401 Unauthorized`
+
+bearer token 缺失或與 ALCOMD3 顯示的 token 不一致。請更新用戶端的 `Authorization`
+header。
+
+### HTTP `403 Forbidden`
+
+請求帶有不允許的瀏覽器 `Origin`。ALCOMD3 只接受原生 MCP 用戶端和相同 loopback origin，
+以防止 DNS rebinding 和跨網站請求存取本機 server。
+
 ### `protocol mismatch`
 
 HTTP server 與 GUI 的內部 IPC 版本不一致。請重新啟動 ALCOMD3，並確認只有目前安裝版本在執行。

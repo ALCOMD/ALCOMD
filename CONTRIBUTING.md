@@ -30,7 +30,7 @@ as a compatibility migration.
 Recommended tools:
 
 - Rust stable toolchain.
-- Node.js and npm.
+- Node.js 24 and its bundled npm.
 - Windows build tools when building the Windows MSVC target.
 - Inno Setup for local Windows installer work, or let `xtask` download/cache it
   when supported by the task.

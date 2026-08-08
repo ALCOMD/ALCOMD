@@ -15,8 +15,8 @@ ALCOMD3 is not an official product of VRChat or VCC.
 
 Requirements:
 
-- [Node.js] >=20
-- [npm] v10, usually bundled with Node.js
+- [Node.js] 24
+- [npm] bundled with Node.js 24
 - [cargo] and a current Rust stable toolchain
 - Platform dependencies required by
   [Tauri v2](https://v2.tauri.app/start/prerequisites/#system-dependencies)

@@ -353,6 +353,17 @@ bridge が短時間に多すぎる tool calls を受信した、または既に�
 Windows で対応 client を使う場合は、そのクイック設定 button を再度クリックし、
 必要に応じて置換を確認してから、その client を完全に終了して再起動します。
 
+### HTTP `401 Unauthorized`
+
+bearer token がないか、ALCOMD3 に表示されている token と一致していません。client の
+`Authorization` header を更新してください。
+
+### HTTP `403 Forbidden`
+
+request に許可されていない browser `Origin` が含まれています。ALCOMD3 は native MCP
+client と同一 loopback origin だけを受け入れ、DNS rebinding や cross-site request による
+local server へのアクセスを防ぎます。
+
 ### `protocol mismatch`
 
 HTTP server と GUI の internal IPC version が一致しません。ALCOMD3 を再起動し、current installation だけが実行中であることを確認してください。

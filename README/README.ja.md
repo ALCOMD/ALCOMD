@@ -79,7 +79,7 @@ ALCOMD3 は ALCOM/vrc-get を起源とし、現在は独立したオープンソ
 
 ## 開発に参加する
 
-開発環境には Rust stable toolchain、Node.js、npm、および対象プラットフォームの
+開発環境には Rust stable toolchain、Node.js 24 と同梱の npm、および対象プラットフォームの
 ビルドツールが必要です。
 
 デスクトップアプリを開発モードで実行する場合：

@@ -27,7 +27,7 @@ GUI/MCP が共有する操作モデルに合わせて確認し、適用する必
 推奨ツール:
 
 - Rust stable toolchain。
-- Node.js と npm。
+- Node.js 24 と同梱の npm。
 - Windows MSVC target をビルドする場合は Windows build tools。
 - Windows installer をローカルで扱う場合は Inno Setup。タスクが対応している場合は
   `xtask` にダウンロード / キャッシュさせてもよい。

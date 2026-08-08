@@ -24,7 +24,7 @@ ALCOMD3 作为独立项目维护。当前仓库、文档、发布流程和用户
 推荐工具：
 
 - Rust stable toolchain。
-- Node.js 和 npm。
+- Node.js 24 及其附带的 npm。
 - 构建 Windows MSVC target 时需要 Windows build tools。
 - 本地处理 Windows installer 时可使用 Inno Setup；任务支持时也可让 `xtask` 下载 / 缓存。
 

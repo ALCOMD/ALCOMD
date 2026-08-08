@@ -79,8 +79,8 @@ open-source project. It is not an official product of VRChat or VCC.
 
 ## Development
 
-You will need the stable Rust toolchain, Node.js, npm, and the build tools for
-your target platform.
+You will need the stable Rust toolchain, Node.js 24 with its bundled npm, and
+the build tools for your target platform.
 
 Run the desktop app in development mode:
 

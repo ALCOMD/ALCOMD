@@ -36,6 +36,22 @@ const mainGuideLinks = [
 	["docs/mcp/mcp.ja.md", "tools.ja.md"],
 ];
 
+function troubleshootingHeadings(documentPath, content) {
+	const sectionStart = content.indexOf("\n### `mcp_disabled`");
+	if (sectionStart < 0) {
+		console.error(`${documentPath}: missing MCP troubleshooting section.`);
+		hasFailure = true;
+		return [];
+	}
+
+	const nextSection = content.indexOf("\n## ", sectionStart + 1);
+	const section = content.slice(
+		sectionStart,
+		nextSection < 0 ? content.length : nextSection,
+	);
+	return [...section.matchAll(/^### (.+)$/gm)].map((match) => match[1]);
+}
+
 function validateMarkdownTables(documentPath, content) {
 	const lines = content.split(/\r?\n/);
 	let expectedPipes = null;
@@ -143,10 +159,38 @@ for (const [guide, referenceLink] of mainGuideLinks) {
 	}
 }
 
+const guideContents = await Promise.all(
+	mainGuideLinks.map(async ([guide]) => [
+		guide,
+		await readFile(path.join(repositoryRoot, guide), "utf8"),
+	]),
+);
+const expectedTroubleshootingHeadings = troubleshootingHeadings(
+	guideContents[0][0],
+	guideContents[0][1],
+);
+
+for (const [guide, content] of guideContents.slice(1)) {
+	const actualHeadings = troubleshootingHeadings(guide, content);
+	if (
+		actualHeadings.length !== expectedTroubleshootingHeadings.length ||
+		actualHeadings.some(
+			(heading, index) => heading !== expectedTroubleshootingHeadings[index],
+		)
+	) {
+		console.error(
+			`${guide}: troubleshooting headings differ from docs/mcp.md.\n` +
+				`Expected: ${expectedTroubleshootingHeadings.join(", ")}\n` +
+				`Actual: ${actualHeadings.join(", ")}`,
+		);
+		hasFailure = true;
+	}
+}
+
 if (hasFailure) {
 	process.exitCode = 1;
 } else {
 	console.log(
-		`MCP tool documentation coverage OK (${uniqueToolNames.length} tools, ${references.length} languages).`,
+		`MCP documentation coverage OK (${uniqueToolNames.length} tools, ${references.length} languages).`,
 	);
 }
