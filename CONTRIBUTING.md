@@ -1,142 +1,83 @@
-# Contributing
+# Contributing to ALCOMD3
 
 Languages: English | [日本語](CONTRIBUTING/CONTRIBUTING.ja.md) |
 [简体中文](CONTRIBUTING/CONTRIBUTING.zh-CN.md)
 
-### Project standard
+Thank you for helping improve ALCOMD3. Bug reports, feature ideas,
+documentation improvements, translations, tests, and code changes are welcome.
 
-ALCOMD3 is maintained as an independent project. The current repository,
-documentation, release process, and user-facing behavior are the source of
-truth.
+## Before making changes
 
-External fixes can be useful, but they must be reviewed and adapted to
-ALCOMD3's current architecture, especially the GUI/MCP shared operation model.
+- Search existing [issues](https://github.com/ALCOMD3/ALCOMD3/issues) and
+  [discussions](https://github.com/ALCOMD3/ALCOMD3/discussions) first.
+- Use the [issue forms](https://github.com/ALCOMD3/ALCOMD3/issues/new/choose)
+  for bug reports and feature requests. Use Discussions for questions.
+- Small fixes may be submitted directly. Please discuss large features,
+  compatibility changes, or architectural changes before implementing them.
+- Keep discussions respectful and constructive.
+- Do not report security vulnerabilities publicly. Email
+  [github@cqmhv.com](mailto:github@cqmhv.com) instead.
 
-### Development scope
+## Development setup
 
-- GUI code lives in `vrc-get-gui/`.
-- VPM package and project management code lives in `vrc-get-vpm/`.
-- CLI compatibility code lives in `vrc-get/`.
-- MCP bridge code lives in `alcomd3-mcp/`.
-- MCP IPC protocol types live in `alcomd3-mcp-protocol/`.
-- Release and packaging helpers live in `xtask/`.
+You need the Rust toolchain declared in `alcomd3.config.json`, Node.js 24, and
+the [platform prerequisites required by Tauri
+v2](https://v2.tauri.app/start/prerequisites/).
 
-Some directory and package names still use `vrc-get` for compatibility and
-historical reasons. Do not rename them unless the change is explicitly scoped
-as a compatibility migration.
-
-### Environment
-
-Recommended tools:
-
-- Rust stable toolchain.
-- Node.js 24 and its bundled npm.
-- Windows build tools when building the Windows MSVC target.
-- Inno Setup for local Windows installer work, or let `xtask` download/cache it
-  when supported by the task.
-
-Clone this repository directly:
-
-```bash
-git clone https://github.com/ALCOMD3/ALCOMD3.git
-```
-
-### Local development
-
-Build and test Rust workspace members:
-
-```bash
-cargo check
-cargo test
-```
-
-Run the desktop GUI in development mode:
+After cloning your fork, install the GUI dependencies and start the application:
 
 ```bash
 cd vrc-get-gui
-npm install
+npm ci
 npm run tauri dev
 ```
 
-### Release policy
+## Making changes
 
-ALCOMD3 owns its release flow. Use ALCOMD3 release automation, signing secrets,
-updater metadata, and release naming.
+- Keep each change focused and follow the existing code style.
+- Add or update tests when behavior changes.
+- Add user-facing text through the localization system. See the
+  [GUI contribution guide](vrc-get-gui/CONTRIBUTING.md).
+- Update relevant documentation when behavior or public configuration changes.
+- Add important user-visible or release-related changes to the appropriate
+  `Unreleased` section in `CHANGELOG.md`. Do not add entries for internal-only
+  refactoring, tests, formatting, or CI changes.
+- Some `vrc-get` names remain for compatibility and should not be renamed as
+  ordinary cleanup. See [MAINTENANCE.md](docs/MAINTENANCE.md).
 
-Stable release versions use SemVer, for example `2.0.0`, `2.0.1`, and
-`2.1.0`. Prerelease builds may use suffixes such as `2.1.0-beta.1`.
+## Checks
 
-Windows release builds use the scripted release flow. For local artifact
-validation, use:
+Run the checks relevant to your change. The complete guidance is in
+[TESTING.md](docs/TESTING.md).
 
-```powershell
-cargo xtask release-build --version 2.0.1 --channel stable
+For Rust changes:
+
+```bash
+cargo fmt --all --check
+cargo clippy --workspace --exclude windows-installer-wrapper --all-targets --locked -- -D clippy::correctness
+cargo check --workspace --exclude windows-installer-wrapper --locked
+cargo test --workspace --exclude windows-installer-wrapper --locked
 ```
 
-The complete release workflow is documented in `docs/RELEASE.md`. Updater key
-and signature details are documented in `docs/ALCOMD3_UPDATER.md`.
-Agent release procedures are documented in
-`docs/skills/alcomd3-release/SKILL.md`.
-Use `docs/README.md` as the documentation index when looking for maintenance,
-release, MCP, format, and historical documentation.
+For GUI changes, from `vrc-get-gui/`:
 
-### Contributor License Agreement
+```bash
+npm run check
+npm run lint
+npm test
+npm run build
+```
 
-Individual contributors must sign the [ALCOMD3 Individual Contributor License
-Agreement](CLA.md) before their pull requests can be merged.
+If you cannot run a relevant check, mention that in the pull request.
 
-The CLA does not transfer copyright ownership. You keep the copyright in your
-Contributions. Contributions included in the public Project are distributed
-under ALCOMD3's current main license, `AGPL-3.0-only`, while the CLA grants the
-Maintainer broad rights to use, modify, distribute, and relicense them,
-including for possible closed-source distributions.
+## Pull requests and the CLA
 
-When you open a pull request, the CLA workflow comments with instructions. Sign
-by posting the exact comment shown by the workflow. You need to sign each CLA
-version only once.
+In your pull request, explain the problem and solution, link related issues,
+list the checks you ran, and include screenshots for visible UI changes. Keep
+unrelated changes out of the same pull request.
 
-If your employer may own rights to your work, or if you contribute for a
-company or organization, contact the Maintainer before signing the individual
-CLA.
-
-### External change intake
-
-Treat changes from other repositories as selective intake, not as a merge
-standard:
-
-1. Identify the source commit, pull request, release note, or issue.
-2. Check whether it affects security, data safety, VRChat/VPM compatibility, or
-   a user-visible bug.
-3. Adapt the change to ALCOMD3's architecture instead of blindly merging.
-4. Verify affected Rust, GUI, and MCP code paths.
-5. Document each notable user-facing change under the appropriate `Unreleased`
-   category in `CHANGELOG.md` as part of the same pull request.
-
-Changes touching package operations, project mutations, repository management,
-operation cancellation, resource locking, or MCP visibility require extra care.
-The GUI and MCP bridge should continue to share the same backend business logic
-and safety checks.
-
-### Compatibility rules
-
-- Do not casually change the Tauri identifier, installed executable name,
-  protocol names, user data paths, or `vrc-get` compatibility paths.
-- Do not hardcode URLs, versions, colors, or public paths when a project config
-  already owns that data.
-- Keep ALCOMD3 updater metadata pointed at ALCOMD3-owned endpoints.
-- Keep MCP disabled by default and local-only unless a separate design review
-  explicitly changes that boundary.
-- Preserve existing user data and migration paths.
-
-### Pull request expectations
-
-- Keep PRs focused.
-- Explain user-visible behavior changes.
-- Include validation results, or state clearly why validation was not run.
-- Update docs and the appropriate `CHANGELOG.md` `Unreleased` category in the
-  same PR when user-visible behavior, compatibility, deprecation or removal,
-  security, known issues, packaging, or public configuration changes.
-- Do not use the changelog as a commit/PR log. Omit CI/workflow-only changes,
-  tests, internal refactors, and maintainer-only implementation details unless
-  they have a user-visible or release impact.
-- Avoid unrelated formatting churn.
+Individual contributors must sign the [Contributor License Agreement](CLA.md)
+before a pull request can be merged. The CLA workflow will provide the signing
+instructions. If an employer may own your contribution, or if you contribute
+for an organization, contact [github@cqmhv.com](mailto:github@cqmhv.com) before
+signing.

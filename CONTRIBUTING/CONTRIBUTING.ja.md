@@ -1,131 +1,82 @@
-# Contributing
+# ALCOMD3 への貢献
 
 言語: [English](../CONTRIBUTING.md) | 日本語 | [简体中文](CONTRIBUTING.zh-CN.md)
 
-### プロジェクト標準
+ALCOMD3 の改善にご協力いただきありがとうございます。バグ報告、機能提案、ドキュメント改善、
+翻訳、テスト、コード変更を歓迎します。
 
-ALCOMD3 は独立したプロジェクトとして保守する。現在のリポジトリ、
-ドキュメント、リリース手順、ユーザーに見える挙動を基準にする。
+## 変更を始める前に
 
-外部の修正は有用な場合があるが、ALCOMD3 の現在のアーキテクチャ、特に
-GUI/MCP が共有する操作モデルに合わせて確認し、適用する必要がある。
+- 既存の [Issue](https://github.com/ALCOMD3/ALCOMD3/issues) と
+  [Discussion](https://github.com/ALCOMD3/ALCOMD3/discussions) を先に検索してください。
+- バグ報告と機能提案には
+  [Issue フォーム](https://github.com/ALCOMD3/ALCOMD3/issues/new/choose) を使用し、
+  質問は Discussions に投稿してください。
+- 小さな修正は直接提出できます。大きな機能、互換性変更、アーキテクチャ変更は、
+  実装前に相談してください。
+- 敬意を持って建設的に話し合ってください。
+- セキュリティ脆弱性を公開しないでください。
+  [github@cqmhv.com](mailto:github@cqmhv.com) へ報告してください。
 
-### 開発範囲
+## 開発環境
 
-- GUI コードは `vrc-get-gui/` にある。
-- VPM package と project management のコードは `vrc-get-vpm/` にある。
-- CLI 互換コードは `vrc-get/` にある。
-- MCP bridge コードは `alcomd3-mcp/` にある。
-- MCP IPC protocol 型は `alcomd3-mcp-protocol/` にある。
-- リリースとパッケージング補助は `xtask/` にある。
+`alcomd3.config.json` で指定された Rust ツールチェーン、Node.js 24、および
+[Tauri v2 が対象プラットフォームに要求する依存関係](https://v2.tauri.app/start/prerequisites/)
+が必要です。
 
-一部のディレクトリ名や package 名には互換性と履歴上の理由で `vrc-get` が残っている。
-互換性移行として明示的に範囲指定されていない限り、リネームしない。
-
-### 環境
-
-推奨ツール:
-
-- Rust stable toolchain。
-- Node.js 24 と同梱の npm。
-- Windows MSVC target をビルドする場合は Windows build tools。
-- Windows installer をローカルで扱う場合は Inno Setup。タスクが対応している場合は
-  `xtask` にダウンロード / キャッシュさせてもよい。
-
-このリポジトリを直接 clone する:
-
-```bash
-git clone https://github.com/ALCOMD3/ALCOMD3.git
-```
-
-### ローカル開発
-
-Rust workspace member をビルドしてテストする:
-
-```bash
-cargo check
-cargo test
-```
-
-デスクトップ GUI を development mode で起動する:
+Fork を clone した後、GUI の依存関係をインストールしてアプリを起動します。
 
 ```bash
 cd vrc-get-gui
-npm install
+npm ci
 npm run tauri dev
 ```
 
-### リリース方針
+## 変更時の注意
 
-ALCOMD3 は独自のリリース手順を持つ。ALCOMD3 の release automation、
-署名 secret、updater metadata、release naming を使う。
+- 一つの変更範囲を明確にし、既存のコードスタイルに従ってください。
+- 動作を変更する場合は、テストを追加または更新してください。
+- ユーザー向けテキストはローカライズ機構を通して追加してください。詳細は
+  [GUI 貢献ガイド](../vrc-get-gui/CONTRIBUTING/CONTRIBUTING.ja.md) を参照してください。
+- 動作または公開設定を変更する場合は、関連ドキュメントを更新してください。
+- 重要なユーザー向け変更またはリリースに影響する変更は、`CHANGELOG.md` の適切な
+  `Unreleased` 分類に追加してください。内部リファクタリング、テスト、書式変更、CI のみの
+  変更は追加しません。
+- 一部の `vrc-get` という名前は互換性のために残っています。通常の整理として変更しないで
+  ください。詳細は [MAINTENANCE.md](../docs/MAINTENANCE/MAINTENANCE.ja.md) を参照してください。
 
-Stable release version は `2.0.0`、`2.0.1`、`2.1.0` などの SemVer を使う。
-Prerelease build は `2.1.0-beta.1` のような suffix を使ってよい。
+## 検証
 
-Windows release build は scripted release flow を使う。Local artifact
-validation には次を使う:
+変更に関係するチェックを実行してください。完全な説明は
+[TESTING.md](../docs/TESTING.md) にあります。
 
-```powershell
-cargo xtask release-build --version 2.0.1 --channel stable
+Rust の変更:
+
+```bash
+cargo fmt --all --check
+cargo clippy --workspace --exclude windows-installer-wrapper --all-targets --locked -- -D clippy::correctness
+cargo check --workspace --exclude windows-installer-wrapper --locked
+cargo test --workspace --exclude windows-installer-wrapper --locked
 ```
 
-完全な release workflow は `docs/RELEASE/RELEASE.ja.md` に記載する。Updater key と signature
-の詳細は `docs/ALCOMD3_UPDATER/ALCOMD3_UPDATER.ja.md` に記載する。
-Agent release procedure は `docs/skills/alcomd3-release/SKILL.md` に記載する。
-Maintenance、release、MCP、format、historical documentation を探す場合は
-`docs/README/README.ja.md` を documentation index として使う。
+GUI の変更は `vrc-get-gui/` で実行します。
 
-### Contributor License Agreement
+```bash
+npm run check
+npm run lint
+npm test
+npm run build
+```
 
-個人 contributor の pull request を merge する前に、[ALCOMD3 Individual Contributor
-License Agreement](../CLA.md) への署名が必要です。
+必要なチェックを実行できない場合は、Pull Request に記載してください。
 
-CLA は copyright ownership を譲渡するものではありません。Contributor は自身の
-contribution の copyright を保持します。公開 Project に取り込まれた contribution は
-ALCOMD3 の現在の main license である `AGPL-3.0-only` で配布されます。同時に CLA は、
-closed-source distribution の可能性を含め、contribution の使用、変更、配布、再ライセンス
-に関する広範な権利を Maintainer に付与します。
+## Pull Request と CLA
 
-Pull request を作成すると、CLA workflow が署名方法をコメントします。Workflow が示す
-正確なコメントを投稿して署名してください。CLA の各 version への署名は一度だけ必要です。
+Pull Request には、問題と解決方法、関連する Issue、実行したチェックを記載し、画面に見える
+UI 変更にはスクリーンショットを添付してください。無関係な変更を同じ Pull Request に含めないで
+ください。
 
-雇用主が成果物の権利を持つ可能性がある場合、または会社・組織を代表して contribution
-する場合は、個人 CLA に署名する前に Maintainer へ連絡してください。
-
-### 外部変更の取り込み
-
-他のリポジトリからの変更は merge の標準ではなく、選択的な取り込みとして扱う:
-
-1. 元の commit、pull request、release note、issue を確認する。
-2. security、data safety、VRChat/VPM compatibility、user-visible bug に関係するか確認する。
-3. 盲目的に merge せず、ALCOMD3 の architecture に合わせて適用する。
-4. 影響を受ける Rust、GUI、MCP の code path を検証する。
-5. 重要な user-facing change は、同じ PR で `CHANGELOG.md` の `Unreleased` の適切な
-   category に記録する。
-
-Package operation、project mutation、repository management、operation cancellation、
-resource locking、MCP visibility に触れる変更は特に注意する。GUI と MCP bridge は
-同じ backend business logic と safety check を共有し続ける必要がある。
-
-### 互換性規則
-
-- Tauri identifier、インストール済み実行ファイル名、protocol name、user data path、
-  `vrc-get` compatibility path を安易に変更しない。
-- URL、version、color、public path は project config が管理している場合、ハードコードしない。
-- ALCOMD3 updater metadata は ALCOMD3 所有の endpoint を指す。
-- 別途 design review で明示的に変えない限り、MCP は既定で無効かつ local-only にする。
-- 既存の user data と migration path を保持する。
-
-### Pull request の期待値
-
-- PR は focused にする。
-- ユーザーに見える挙動変更を説明する。
-- 検証結果を含める。検証していない場合は理由を明記する。
-- User-visible behavior、互換性、deprecation/removal、security、known issue、packaging、
-  public configuration が変わる場合は、同じ PR で docs と `CHANGELOG.md` の
-  `Unreleased` の適切な category を更新する。
-- Changelog を commit/PR list として使わない。CI/workflow-only change、test、internal
-  refactor、maintainer-only implementation detail は、user-visible または release impact
-  がない限り記載しない。
-- 無関係な formatting churn を避ける。
+個人コントリビューターの Pull Request をマージする前に、[Contributor License
+Agreement](../CLA.md) への署名が必要です。署名方法は CLA ワークフローが案内します。雇用主が
+貢献物の権利を持つ可能性がある場合、または組織を代表して貢献する場合は、署名前に
+[github@cqmhv.com](mailto:github@cqmhv.com) へ連絡してください。

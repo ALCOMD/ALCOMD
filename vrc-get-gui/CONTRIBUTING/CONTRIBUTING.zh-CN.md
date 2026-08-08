@@ -4,19 +4,13 @@
 
 先阅读[项目级贡献指南](../../CONTRIBUTING/CONTRIBUTING.zh-CN.md)。
 
-### 贡献者许可协议
-
-GUI 贡献适用项目级 [ALCOMD3 个人贡献者许可协议](../../CLA.md)。个人贡献者的 pull request
-必须在合并前签署 CLA。纳入公开项目的贡献按照 ALCOMD3 当前主许可证
-`AGPL-3.0-only` 分发。
-
-### 本地化
+## 本地化
 
 ALCOMD3 支持国际化。新增用户可见文本时，添加或复用已有 localization key，并使用 i18n，不要硬编码文本。
 
 新增 localization key 时，必须在 `locales/en.json5` 添加英文值。如果你懂其他语言，可以同时添加对应值；如果不懂，留给对应语言维护者处理。
 
-### 新增语言
+## 新增语言
 
 欢迎新增语言。步骤：
 
@@ -34,7 +28,7 @@ ALCOMD3 支持国际化。新增用户可见文本时，添加或复用已有 lo
 9. 为 pull request 开启 Allow edits from maintainers。
 10. Review 后由维护者合并 pull request。
 
-### 本地化指南
+## 本地化指南
 
 - ALCOMD3 是跨平台应用，优先使用不依赖具体 OS 的表述。
   - 需要区分时，优先使用 "Directory" 而不是 "Folder"。

@@ -5,15 +5,7 @@ Languages: English | [日本語](CONTRIBUTING/CONTRIBUTING.ja.md) |
 
 Read [../CONTRIBUTING.md](../CONTRIBUTING.md) first.
 
-### Contributor License Agreement
-
-GUI contributions are subject to the project-wide [ALCOMD3 Individual
-Contributor License Agreement](../CLA.md). Individual contributors must sign
-the CLA before their pull requests can be merged. Contributions included in
-the public Project are distributed under ALCOMD3's current main license,
-`AGPL-3.0-only`.
-
-### Localizing
+## Localizing
 
 ALCOMD3 is internationalized. When adding user-facing text, add or reuse an
 existing localization key and use i18n instead of hardcoding text.
@@ -22,7 +14,7 @@ When adding a new localization key, add an English value in `locales/en.json5`.
 If you understand other languages, you may add values for them. If you do not,
 leave them for the relevant language maintainers.
 
-### Adding languages
+## Adding languages
 
 New languages are welcome. To add one:
 
@@ -41,7 +33,7 @@ New languages are welcome. To add one:
 9. Allow edits from maintainers for the pull request.
 10. A maintainer will merge the pull request after review.
 
-### Localization guidelines
+## Localization guidelines
 
 - ALCOMD3 is cross-platform, so prefer OS-independent wording.
   - For example, prefer "Directory" over "Folder" when the distinction matters.

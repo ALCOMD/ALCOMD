@@ -7,7 +7,7 @@ This is the documentation index for ALCOMD3. Start here when you need to find
 project rules, maintenance notes, release steps, or user-facing technical
 documentation.
 
-### Start here
+## Start here
 
 - Project overview and downloads: [../README.md](../README.md)
 - Contribution rules: [../CONTRIBUTING.md](../CONTRIBUTING.md)
@@ -15,7 +15,7 @@ documentation.
 - Licensing notes: [../LICENSE-NOTES.md](../LICENSE-NOTES.md)
 - Agent rules: [../AGENTS.md](../AGENTS.md)
 
-### Maintainer documentation
+## Maintainer documentation
 
 - Maintenance notes and compatibility boundaries: [MAINTENANCE.md](./MAINTENANCE.md)
 - Maintained test chain: [TESTING.md](./TESTING.md) ([简体中文](./TESTING/TESTING.zh-CN.md))
@@ -28,7 +28,7 @@ documentation.
 - Agent skill index: [skills/README.md](./skills/README.md)
 - Release skill for agents: [skills/alcomd3-release/SKILL.md](./skills/alcomd3-release/SKILL.md)
 
-### Feature and format documentation
+## Feature and format documentation
 
 - MCP bridge guide: [mcp.md](./mcp.md) ([日本語](./mcp/mcp.ja.md), [简体中文](./mcp/mcp.zh-CN.md), [繁體中文](./mcp/mcp.zh-TW.md))
 - MCP tool reference with per-field input and output semantics: [mcp/tools.md](./mcp/tools.md) ([日本語](./mcp/tools.ja.md), [简体中文](./mcp/tools.zh-CN.md), [繁體中文](./mcp/tools.zh-TW.md))
@@ -36,12 +36,12 @@ documentation.
 - Default repository list example/import data: [../repositories.txt](../repositories.txt)
   (`repositories.txt` is not runtime shared configuration.)
 
-### Historical records
+## Historical records
 
 - Changelog: [../CHANGELOG.md](../CHANGELOG.md)
 - Published releases: [GitHub Releases](https://github.com/ALCOMD3/ALCOMD3/releases)
 
-### Subproject documentation
+## Subproject documentation
 
 - GUI README: [../vrc-get-gui/README.md](../vrc-get-gui/README.md)
 - GUI contribution guide: [../vrc-get-gui/CONTRIBUTING.md](../vrc-get-gui/CONTRIBUTING.md)

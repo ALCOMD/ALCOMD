@@ -4,7 +4,7 @@
 
 这是 ALCOMD3 的文档入口。需要定位项目规则、维护笔记、发布步骤或用户可见技术文档时，从这里开始。
 
-### 首先阅读
+## 首先阅读
 
 - 项目概览和下载：[../../README/README.zh-CN.md](../../README/README.zh-CN.md)
 - 贡献规则：[../../CONTRIBUTING/CONTRIBUTING.zh-CN.md](../../CONTRIBUTING/CONTRIBUTING.zh-CN.md)
@@ -12,7 +12,7 @@
 - 许可证说明：[../../LICENSE-NOTES.md](../../LICENSE-NOTES.md)
 - Agent 规则：[../../AGENTS.md](../../AGENTS.md)
 
-### 维护者文档
+## 维护者文档
 
 - 维护笔记和兼容性边界：[MAINTENANCE.zh-CN.md](../MAINTENANCE/MAINTENANCE.zh-CN.md)
 - 持续维护的测试链路：[TESTING.zh-CN.md](../TESTING/TESTING.zh-CN.md)（[English](../TESTING.md)）
@@ -25,7 +25,7 @@
 - Agent skill 索引：[skills/README.md](../skills/README.md)
 - Agent 发布 skill：[skills/alcomd3-release/SKILL.md](../skills/alcomd3-release/SKILL.md)
 
-### 功能与格式文档
+## 功能与格式文档
 
 - MCP bridge 指南：[mcp.zh-CN.md](../mcp/mcp.zh-CN.md)（[English](../mcp.md)，[日本語](../mcp/mcp.ja.md)，[繁體中文](../mcp/mcp.zh-TW.md)）
 - MCP 工具逐字段输入输出参考：[tools.zh-CN.md](../mcp/tools.zh-CN.md)（[English](../mcp/tools.md)，[日本語](../mcp/tools.ja.md)，[繁體中文](../mcp/tools.zh-TW.md)）
@@ -33,12 +33,12 @@
 - 默认 repository list 示例/导入数据：[../../repositories.txt](../../repositories.txt)
   （`repositories.txt` 不是运行时共享配置。）
 
-### 历史记录
+## 历史记录
 
 - Changelog：[../../CHANGELOG.md](../../CHANGELOG.md)
 - 已发布版本：[GitHub Releases](https://github.com/ALCOMD3/ALCOMD3/releases)
 
-### 子项目文档
+## 子项目文档
 
 - GUI README：[../../vrc-get-gui/README.md](../../vrc-get-gui/README.md)
 - GUI 贡献指南：[../../vrc-get-gui/CONTRIBUTING/CONTRIBUTING.zh-CN.md](../../vrc-get-gui/CONTRIBUTING/CONTRIBUTING.zh-CN.md)

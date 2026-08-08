@@ -7,7 +7,7 @@ body:
     attributes:
       label: Summary / 概要 / 概要
       description: |
-        Please describe the suggestion. If it is related to the UI, some figures should help to image it.
+        Please describe the suggestion. If it is related to the UI, screenshots or mockups may help explain it.
         どんな提案ですか? UIに関するものであれば、図があると分かりやすいかもしれません。
         请描述你的建议。如果与 UI 有关，附上图片可能更容易说明。
     validations:

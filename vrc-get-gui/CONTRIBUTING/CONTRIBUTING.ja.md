@@ -4,14 +4,7 @@
 
 最初に [project-wide contribution guide](../../CONTRIBUTING/CONTRIBUTING.ja.md) を読む。
 
-### Contributor License Agreement
-
-GUI contribution には project-wide の [ALCOMD3 Individual Contributor License
-Agreement](../../CLA.md) が適用されます。個人 contributor の pull request を merge
-する前に CLA への署名が必要です。公開 Project に取り込まれた contribution は
-ALCOMD3 の現在の main license である `AGPL-3.0-only` で配布されます。
-
-### ローカライズ
+## ローカライズ
 
 ALCOMD3 は internationalized されている。ユーザーに見えるテキストを追加する場合は、
 文字列をハードコードせず、既存の localization key を使うか新しい key を追加し、i18n を使う。
@@ -19,7 +12,7 @@ ALCOMD3 は internationalized されている。ユーザーに見えるテキ�
 新しい localization key を追加する場合は、`locales/en.json5` に English の値を追加する。
 他の言語を理解している場合は値を追加してよい。理解していない場合は、その言語の maintainer に任せる。
 
-### 言語追加
+## 言語追加
 
 新しい言語の追加を歓迎する。追加手順:
 
@@ -38,7 +31,7 @@ ALCOMD3 は internationalized されている。ユーザーに見えるテキ�
 9. pull request で Allow edits from maintainers を有効にする。
 10. review 後、maintainer が pull request を merge する。
 
-### ローカライズ指針
+## ローカライズ指針
 
 - ALCOMD3 は cross-platform なので、OS に依存しない表現を優先する。
   - 必要な場合は "Folder" より "Directory" を優先する。

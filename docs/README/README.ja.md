@@ -5,7 +5,7 @@
 これは ALCOMD3 の documentation index。Project rules、maintenance notes、
 release steps、user-facing technical documentation を探すときはここから始める。
 
-### 最初に読むもの
+## 最初に読むもの
 
 - Project overview and downloads: [../../README/README.ja.md](../../README/README.ja.md)
 - Contribution rules: [../../CONTRIBUTING/CONTRIBUTING.ja.md](../../CONTRIBUTING/CONTRIBUTING.ja.md)
@@ -13,7 +13,7 @@ release steps、user-facing technical documentation を探すときはここか�
 - Licensing notes: [../../LICENSE-NOTES.md](../../LICENSE-NOTES.md)
 - Agent rules: [../../AGENTS.md](../../AGENTS.md)
 
-### Maintainer documentation
+## メンテナー向けドキュメント
 
 - Maintenance notes and compatibility boundaries: [MAINTENANCE.ja.md](../MAINTENANCE/MAINTENANCE.ja.md)
 - Maintained test chain: [TESTING.md](../TESTING.md) ([简体中文](../TESTING/TESTING.zh-CN.md))
@@ -26,7 +26,7 @@ release steps、user-facing technical documentation を探すときはここか�
 - Agent skill index: [skills/README.md](../skills/README.md)
 - Agent 向け release skill: [skills/alcomd3-release/SKILL.md](../skills/alcomd3-release/SKILL.md)
 
-### Feature and format documentation
+## 機能・形式ドキュメント
 
 - MCP bridge guide: [mcp.ja.md](../mcp/mcp.ja.md) ([English](../mcp.md), [简体中文](../mcp/mcp.zh-CN.md), [繁體中文](../mcp/mcp.zh-TW.md))
 - MCP ツールのフィールド別入出力リファレンス: [tools.ja.md](../mcp/tools.ja.md) ([English](../mcp/tools.md), [简体中文](../mcp/tools.zh-CN.md), [繁體中文](../mcp/tools.zh-TW.md))
@@ -34,12 +34,12 @@ release steps、user-facing technical documentation を探すときはここか�
 - Default repository list example/import data: [../../repositories.txt](../../repositories.txt)
   (`repositories.txt` は runtime shared configuration ではありません。)
 
-### 履歴記録
+## 履歴記録
 
 - Changelog: [../../CHANGELOG.md](../../CHANGELOG.md)
 - Published releases: [GitHub Releases](https://github.com/ALCOMD3/ALCOMD3/releases)
 
-### Subproject documentation
+## サブプロジェクトのドキュメント
 
 - GUI README: [../../vrc-get-gui/README.md](../../vrc-get-gui/README.md)
 - GUI contribution guide: [../../vrc-get-gui/CONTRIBUTING/CONTRIBUTING.ja.md](../../vrc-get-gui/CONTRIBUTING/CONTRIBUTING.ja.md)

@@ -122,9 +122,9 @@ Do not sign this Individual Contributor License Agreement without the necessary
 authority or permission if You contribute for a company, organization, or other
 legal entity, or if Your employer may own rights in Your work.
 
-Contact the Maintainer through a GitHub issue to arrange a Corporate
-Contributor License Agreement before contributing on behalf of a company or
-other legal entity.
+Contact the Maintainer at [github@cqmhv.com](mailto:github@cqmhv.com) to arrange
+a Corporate Contributor License Agreement before contributing on behalf of a
+company or other legal entity.
 
 ## 9. Signing
 

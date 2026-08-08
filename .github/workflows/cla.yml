@@ -38,6 +38,6 @@ jobs:
 
                       You only need to sign this CLA version once. Your signature applies to your future contributions to ALCOMD3 unless a later written agreement says otherwise.
 
-                      If your employer may own rights to your work, or if you are contributing on behalf of a company or organization, please do not sign the individual CLA yet. Contact the maintainer first.
+                      If your employer may own rights to your work, or if you are contributing on behalf of a company or organization, please do not sign the individual CLA yet. Contact the maintainer at github@cqmhv.com first.
                   custom-pr-sign-comment: I have read the ALCOMD3 Individual Contributor License Agreement and I hereby sign the CLA.
                   custom-allsigned-prcomment: All contributors have signed the CLA. Thank you!

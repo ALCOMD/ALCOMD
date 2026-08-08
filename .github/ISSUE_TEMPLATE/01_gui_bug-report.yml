@@ -1,5 +1,5 @@
 name: "[ALCOMD3] Bug Report"
-description: Create a bug report of ALCOMD3 / ALCOMD3のバグを報告する / 报告 ALCOMD3 的问题
+description: Report a problem with ALCOMD3 / ALCOMD3のバグを報告する / 报告 ALCOMD3 的问题
 labels: [ "bug" ]
 
 body:
@@ -49,7 +49,7 @@ body:
         What is the version of ALCOMD3?
         ALCOMD3のバージョンは何ですか?
         你使用的 ALCOMD3 版本是什么？
-      placeholder: 0.1.0-beta.20
+      placeholder: x.y.z
     validations:
       required: true
 
@@ -72,7 +72,7 @@ body:
       description: |
         What's the Webview version?
         This is not strictly related to your browser version or OS version.
-        If you're not sure, please left it blank.
+        If you're not sure, please leave it blank.
         You can find this information in the ALCOMD3 settings page.
         If you created this issue from ALCOMD3's settings page, this field will be filled automatically.
         Webviewのバージョンは何ですか?
