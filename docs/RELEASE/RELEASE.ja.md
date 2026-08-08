@@ -49,7 +49,9 @@ public endpoint の監視を続け、すべて成功した場合だけ release c
 - Rust workspace members は `version.workspace = true` で継承する。
 - `vrc-get-gui/package.json` は `cargo xtask release-prepare` が更新する。
 - `Cargo.lock` と `package-lock.json` は generated files。
-- `CHANGELOG.md` は重要な変更の canonical record であり、GitHub Release body の source。
+- `CHANGELOG.md` は version と change facts の canonical record。GitHub Release body は
+  English、日本語、中文の順で、英語 target entry と構造が一致する日本語・簡体中文 target
+  entries を組み合わせる。
 - 通常の development では、重要な user-facing change を同じ change または PR で
   `Unreleased` の適切な category に追加する。
 - `release-metadata/updater-notes/$Version.json` は in-app updater dialog 用の
@@ -146,21 +148,26 @@ Channel rule に従って `CHANGELOG.md` の `## [$Version] - YYYY-MM-DD` を完
 どちらも先頭に新しい `Unreleased` section を残して compare links を更新する。Category は
 `Added`、`Changed`、`Deprecated`、`Removed`、`Fixed`、`Security` だけを使用し、空 category
 は省略する。公開 version は date の降順で並べ、version 番号を重複させない。
-`release-validate` は target version entry、
-ISO date、空でない top-level bullets、すべての公開 version が channel ごとの比較元を使う
-GitHub Compare link、target tag を基準にした `Unreleased` compare link を検証する。
+`CHANGELOG/CHANGELOG.ja.md` と `CHANGELOG/CHANGELOG.zh-CN.md` の target entry を同期する。
+`release-validate` は 3 files を完全に検証し、localized entries の date、category order、各
+category の bullet count が canonical entry と一致することを要求する。繁体中文 changelog
+は閲覧用で、GitHub Release body input にはしない。
+
+Validation は ISO date、空でない top-level bullets、すべての公開 version が channel ごとの
+比較元を使う GitHub Compare link、target tag を基準にした `Unreleased` compare link も検証する。
 
 `release-metadata/updater-notes/$Version.json` を完成させる。`en`、`de`、`fr`、`ja`、
 `ko`、`zh_hans`、`zh_hant` の 7 keys を正確に含み、各 value は空でない localized short
 summary とする。この structured metadata は in-app updater だけが使用し、GitHub Release
-body は publish 時に target changelog entry から直接生成する。
+body は publish 時に 3 つの validated target changelog entries から `English` → `日本語` →
+`中文` の順で生成する。
 
 Source release commit を commit/push する:
 
 ```powershell
 git add Cargo.toml Cargo.lock
 git add vrc-get-gui/package.json vrc-get-gui/package-lock.json
-git add CHANGELOG.md
+git add CHANGELOG.md CHANGELOG/CHANGELOG.ja.md CHANGELOG/CHANGELOG.zh-CN.md
 git add "release-metadata/updater-notes/$Version.json"
 git status --short
 git commit -m "release: prepare ALCOMD3 $Version"
@@ -233,7 +240,7 @@ Publish 前に確認する:
 - tag が `v$Version` で、workflow が build した source release commit を指す。
 - title が `Version $Version`。
 - stable は normal Release、beta は prerelease。
-- GitHub Release body が target changelog entry と一致する。
+- GitHub Release body が生成された英語・日本語・簡体中文 target changelog entries と完全に一致する。
 - 次の 10 assets が正確に揃っている:
     - `ALCOMD3_$Version_windows_x86_64_setup.exe`
     - `ALCOMD3_$Version_windows_x86_64_setup.exe.sig`

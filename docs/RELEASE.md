@@ -58,8 +58,9 @@ after those checks pass.
 - Rust workspace members inherit it with `version.workspace = true`.
 - `vrc-get-gui/package.json` is updated by `cargo xtask release-prepare`.
 - `Cargo.lock` and `package-lock.json` are generated files.
-- `CHANGELOG.md` is the canonical record of notable changes and the source for
-  GitHub Release bodies.
+- `CHANGELOG.md` is the canonical record of version and change facts. GitHub
+  Release bodies combine its target entry with the structurally matched
+  Japanese and Simplified Chinese entries in English, Japanese, Chinese order.
 - During normal development, add notable user-facing changes to its appropriate
   `Unreleased` category in the same change or pull request.
 - `release-metadata/updater-notes/$Version.json` is the seven-language short
@@ -162,23 +163,29 @@ In both cases, leave a fresh `Unreleased` section at the top and update the
 comparison links. Use only `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`,
 and `Security` categories, omitting empty categories. Keep published versions in
 reverse chronological order without duplicate versions.
-`release-validate` requires the target version entry, ISO dates, non-empty
-top-level bullets, every published version's GitHub Compare link using its
-channel's required comparison base, and an `Unreleased` comparison link based
-on the target tag.
+Synchronize the target entry in `CHANGELOG/CHANGELOG.ja.md` and
+`CHANGELOG/CHANGELOG.zh-CN.md`. `release-validate` fully validates all three
+files and requires the localized entries to match the canonical entry's date,
+category order, and bullet count in every category. Traditional Chinese remains
+a reading translation and is not a GitHub Release body input.
+
+Validation also requires ISO dates, non-empty top-level bullets, every published
+version's GitHub Compare link using its channel's required comparison base, and
+an `Unreleased` comparison link based on the target tag.
 
 Complete `release-metadata/updater-notes/$Version.json`. It must contain exactly
 the seven keys `en`, `de`, `fr`, `ja`, `ko`, `zh_hans`, and `zh_hant`, each with
 a non-empty localized short summary. This structured metadata is separate from
-the changelog and is used only by the in-app updater. The GitHub Release body is
-generated directly from the target changelog entry during publication.
+the changelog and is used only by the in-app updater. During publication, the
+GitHub Release body is generated in `English` → `日本語` → `中文` order from the
+three validated target changelog entries.
 
 Commit and push the source release commit:
 
 ```powershell
 git add Cargo.toml Cargo.lock
 git add vrc-get-gui/package.json vrc-get-gui/package-lock.json
-git add CHANGELOG.md
+git add CHANGELOG.md CHANGELOG/CHANGELOG.ja.md CHANGELOG/CHANGELOG.zh-CN.md
 git add "release-metadata/updater-notes/$Version.json"
 git status --short
 git commit -m "release: prepare ALCOMD3 $Version"
@@ -261,7 +268,8 @@ Before publishing, confirm:
   workflow;
 - the title is `Version $Version`;
 - stable is a normal Release and beta is a prerelease;
-- the GitHub Release body matches the target changelog entry;
+- the GitHub Release body exactly matches the generated English, Japanese, and
+  Simplified Chinese target changelog entries;
 - exactly these ten assets exist:
     - `ALCOMD3_$Version_windows_x86_64_setup.exe`
     - `ALCOMD3_$Version_windows_x86_64_setup.exe.sig`

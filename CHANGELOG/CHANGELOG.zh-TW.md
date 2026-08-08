@@ -3,10 +3,12 @@
 語言: [English](../CHANGELOG.md) | [日本語](./CHANGELOG.ja.md) | [簡體中文](./CHANGELOG.zh-CN.md) | 繁體中文
 
 本檔案為英文主版 [`../CHANGELOG.md`](../CHANGELOG.md) 的繁體中文閱讀版本，提供參考。  
-涉及發佈的權威版本資訊仍以頂層 `CHANGELOG.md` 為準。
+涉及發佈的權威版本資訊仍以頂層 `CHANGELOG.md` 為準；GitHub Release 的固定三語正文使用
+English、日本語與簡體中文，本檔案不作為發佈正文輸入。
 
 本檔案依循 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 約定，並遵守 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
-GitHub Release 內容直接由對應版本條目產生；穩定版條目描述距離上一個穩定版的淨變更，預發布條目描述自上個已發佈版本（穩定或預發布）以來的變更。
+穩定版條目描述距離上一個穩定版的淨變更，預發布條目描述自上個已發佈版本（穩定或預發布）
+以來的變更。
 
 日常開發時，所有用戶可見變更請在同一 PR/提交中同步寫入主 `../CHANGELOG.md` 的 `Unreleased`。以下為簡體中文對照的繁體中文鏡像內容。
 

@@ -2,13 +2,16 @@
 
 语言: [English](../CHANGELOG.md) | [日本語](./CHANGELOG.ja.md) | 简体中文 | [繁體中文](./CHANGELOG.zh-TW.md)
 
-此文件是英文主版 [`../CHANGELOG.md`](../CHANGELOG.md) 的中文阅读版本，便于查阅。  
-与发布流程相关的权威内容仍以主 `CHANGELOG.md` 为准。
+此文件是英文主版 [`../CHANGELOG.md`](../CHANGELOG.md) 的简体中文版本。版本和变更事实仍以
+主 `CHANGELOG.md` 为权威来源；本文件的目标版本条目用于 GitHub Release 的中文部分。
 
 该文件遵循 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 约定，项目版本行为符合 [语义化版本控制](https://semver.org/spec/v2.0.0.html)。
-GitHub Release 本体来自对应版本条目。稳定版条目记录距离上一稳定版的最终净变化；预发布版记录自上一个已发布版本（稳定或预发布）以来的变化。
+GitHub Release 正文按 English、日本語、中文顺序，由结构一致的三个目标版本条目组成。稳定版
+条目记录距离上一稳定版的最终净变化；预发布版记录自上一个已发布版本（稳定或预发布）以来
+的变化。
 
-开发期间的用户可见修改，按同一 PR/变更写入主文档 `../CHANGELOG.md` 的 `Unreleased`。以下为中文镜像内容。
+开发期间的用户可见修改，按同一 PR/变更写入主文档 `../CHANGELOG.md` 的 `Unreleased`。准备
+发布时翻译目标版本条目，并与英文主版保持相同日期、分类顺序和各分类项目数。
 
 ## [Unreleased]
 

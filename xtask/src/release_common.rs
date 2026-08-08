@@ -26,10 +26,16 @@ const GITHUB_SHA_ENV: &str = "GITHUB_SHA";
 const GITHUB_WORKFLOW_REF_ENV: &str = "GITHUB_WORKFLOW_REF";
 const RELEASE_DRAFT_WORKFLOW: &str = ".github/workflows/release-draft.yml";
 const RELEASE_UPDATER_WORKFLOW: &str = ".github/workflows/release-updater.yml";
-const GITHUB_RELEASE_ADDITIONAL_CHANGELOG_SOURCES: [(&str, &str); 2] = [
-    ("日本語", "CHANGELOG/CHANGELOG.ja.md"),
-    ("中文", "CHANGELOG/CHANGELOG.zh-CN.md"),
+const GITHUB_RELEASE_LOCALIZED_CHANGELOG_SOURCES: [(&str, &str, &str); 2] = [
+    ("日本語", "CHANGELOG/CHANGELOG.ja.md", "# 変更履歴"),
+    ("中文", "CHANGELOG/CHANGELOG.zh-CN.md", "# 更新日志"),
 ];
+
+#[derive(Debug, Eq, PartialEq)]
+struct ChangelogReleaseShape {
+    date: NaiveDate,
+    categories: Vec<(String, usize)>,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum ReleaseChannel {
@@ -499,39 +505,68 @@ pub fn update_workspace_version(ctx: &ReleaseContext, dry_run: bool) -> Result<(
 }
 
 pub fn ensure_changelog_ready(ctx: &ReleaseContext) -> Result<()> {
-    let changelog = fs::read_to_string(&ctx.changelog)
-        .with_context(|| format!("reading changelog: {}", ctx.changelog.display()))?;
-    validate_changelog_format(&ctx.version, ctx.channel, &ctx.repo, &changelog)
+    read_release_changelog_sections(ctx).map(|_| ())
 }
 
 pub fn write_release_body_from_changelog(ctx: &ReleaseContext) -> Result<PathBuf> {
-    let mut changelog_sections =
-        Vec::with_capacity(1 + GITHUB_RELEASE_ADDITIONAL_CHANGELOG_SOURCES.len());
-    {
-        let changelog = fs::read_to_string(&ctx.changelog)
-            .with_context(|| format!("reading {}", ctx.changelog.display()))?;
-        validate_changelog_format(&ctx.version, ctx.channel, &ctx.repo, &changelog)?;
-        let body = extract_changelog_release_body(&ctx.version, &changelog)?;
-        changelog_sections.push(format!("## English\n\n{body}\n"));
-    }
-    changelog_sections.extend(
-        GITHUB_RELEASE_ADDITIONAL_CHANGELOG_SOURCES
-            .iter()
-            .map(|(language, changelog_path)| {
-                let changelog_path = ctx.workspace_root.join(changelog_path);
-                let changelog = fs::read_to_string(&changelog_path)
-                    .with_context(|| format!("reading {}", changelog_path.display()))?;
-                let body = extract_changelog_release_body(&ctx.version, &changelog)?;
-                Ok(format!("## {language}\n\n{body}\n"))
-            })
-            .collect::<Result<Vec<_>>>()?,
-    );
+    let changelog_sections = read_release_changelog_sections(ctx)?;
     let body = changelog_sections.join("\n---\n\n");
     let path = ctx.release_body();
     let parent = path.parent().context("release body path has no parent")?;
     fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
     fs::write(&path, body).with_context(|| format!("writing {}", path.display()))?;
     Ok(path)
+}
+
+fn read_release_changelog_sections(ctx: &ReleaseContext) -> Result<Vec<String>> {
+    let changelog = fs::read_to_string(&ctx.changelog)
+        .with_context(|| format!("reading {}", ctx.changelog.display()))?;
+    let canonical_shape = validate_changelog_format_with_title(
+        &ctx.version,
+        ctx.channel,
+        &ctx.repo,
+        &changelog,
+        "# Changelog",
+    )?;
+    let body = extract_changelog_release_body(&ctx.version, &changelog)?;
+    let mut sections = vec![format!("## English\n\n{body}\n")];
+
+    for (language, relative_path, title) in GITHUB_RELEASE_LOCALIZED_CHANGELOG_SOURCES {
+        let path = ctx.workspace_root.join(relative_path);
+        let localized =
+            fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+        let localized_shape = validate_changelog_format_with_title(
+            &ctx.version,
+            ctx.channel,
+            &ctx.repo,
+            &localized,
+            title,
+        )?;
+        ensure_localized_changelog_matches(
+            &canonical_shape,
+            &localized_shape,
+            &path.display().to_string(),
+            &ctx.version,
+        )?;
+        let body = extract_changelog_release_body(&ctx.version, &localized)?;
+        sections.push(format!("## {language}\n\n{body}\n"));
+    }
+
+    Ok(sections)
+}
+
+fn ensure_localized_changelog_matches(
+    canonical: &ChangelogReleaseShape,
+    localized: &ChangelogReleaseShape,
+    source: &str,
+    version: &str,
+) -> Result<()> {
+    if localized != canonical {
+        bail!(
+            "localized changelog {source} release {version} must match the canonical date, category order, and bullet counts"
+        );
+    }
+    Ok(())
 }
 
 fn extract_changelog_release_body(version: &str, changelog: &str) -> Result<String> {
@@ -554,12 +589,24 @@ fn extract_changelog_release_body(version: &str, changelog: &str) -> Result<Stri
     Ok(format!("{body}\n"))
 }
 
+#[cfg(test)]
 fn validate_changelog_format(
     version: &str,
     channel: ReleaseChannel,
     repo: &str,
     changelog: &str,
 ) -> Result<()> {
+    validate_changelog_format_with_title(version, channel, repo, changelog, "# Changelog")
+        .map(|_| ())
+}
+
+fn validate_changelog_format_with_title(
+    version: &str,
+    channel: ReleaseChannel,
+    repo: &str,
+    changelog: &str,
+    expected_title: &str,
+) -> Result<ChangelogReleaseShape> {
     const CHANGE_TYPES: [&str; 6] = [
         "Added",
         "Changed",
@@ -571,8 +618,8 @@ fn validate_changelog_format(
 
     validate_version_for_channel(version, channel)?;
     let lines = changelog.lines().collect::<Vec<_>>();
-    if lines.first().copied() != Some("# Changelog") {
-        bail!("changelog title must be exactly: # Changelog");
+    if lines.first().copied() != Some(expected_title) {
+        bail!("changelog title must be exactly: {expected_title}");
     }
     if changelog.contains("<!--") || changelog.contains("-->") {
         bail!("changelog must not contain an HTML comment or placeholder");
@@ -598,7 +645,7 @@ fn validate_changelog_format(
         bail!("changelog must contain exactly one release heading: {release_prefix}YYYY-MM-DD");
     }
     let (release_start, release_date) = release_sections[0];
-    NaiveDate::parse_from_str(release_date, "%Y-%m-%d")
+    let release_date = NaiveDate::parse_from_str(release_date, "%Y-%m-%d")
         .with_context(|| format!("changelog release date must use YYYY-MM-DD: {release_date}"))?;
     if unreleased_sections[0] >= release_start {
         bail!("changelog Unreleased section must appear before release {version}");
@@ -635,6 +682,7 @@ fn validate_changelog_format(
     }
 
     let mut seen_change_types = Vec::new();
+    let mut release_categories = Vec::new();
     for (section_index, (section_start, heading)) in change_sections.iter().enumerate() {
         if !CHANGE_TYPES.contains(heading) {
             bail!("changelog release {version} contains unsupported change category: {heading}");
@@ -649,6 +697,7 @@ fn validate_changelog_format(
             .unwrap_or(release_end);
         let mut has_bullet = false;
         let mut has_active_bullet = false;
+        let mut bullet_count = 0;
         for line in &lines[*section_start + 1..section_end] {
             if line.trim().is_empty() {
                 continue;
@@ -661,6 +710,7 @@ fn validate_changelog_format(
                 }
                 has_bullet = true;
                 has_active_bullet = true;
+                bullet_count += 1;
                 continue;
             }
             if has_active_bullet && line.starts_with("  ") && !line.trim_start().starts_with("- ") {
@@ -675,6 +725,7 @@ fn validate_changelog_format(
                 "changelog release {version} category {heading} must contain non-empty top-level bullets"
             );
         }
+        release_categories.push(((*heading).to_string(), bullet_count));
     }
 
     let expected_unreleased_link =
@@ -754,7 +805,10 @@ fn validate_changelog_format(
             );
         }
     }
-    Ok(())
+    Ok(ChangelogReleaseShape {
+        date: release_date,
+        categories: release_categories,
+    })
 }
 
 pub fn run_sign_updater_asset(
@@ -1147,11 +1201,13 @@ mod tests {
     use super::{
         GH_TOKEN_ENV, GITHUB_TOKEN_ENV, KeyLoaderFormat, ReleaseAsset, ReleaseAutomation,
         ReleaseChannel, ReleaseContext, ReleaseState, UPDATER_PRIVATE_KEY_ENV,
-        UPDATER_PRIVATE_KEY_PASSWORD_ENV, extract_changelog_release_body, key_loader_format,
-        remove_github_auth_env, remove_updater_signing_env, validate_changelog_format,
-        validate_github_actions_context, validate_github_release_is_replaceable,
-        validate_github_release_state, validate_public_updater_document,
-        validate_public_updater_matches_expected, validate_release_source_versions,
+        UPDATER_PRIVATE_KEY_PASSWORD_ENV, ensure_localized_changelog_matches,
+        extract_changelog_release_body, key_loader_format, remove_github_auth_env,
+        remove_updater_signing_env, validate_changelog_format,
+        validate_changelog_format_with_title, validate_github_actions_context,
+        validate_github_release_is_replaceable, validate_github_release_state,
+        validate_public_updater_document, validate_public_updater_matches_expected,
+        validate_release_source_versions,
     };
     use serde_json::json;
     use std::process::Command as ProcessCommand;
@@ -1272,13 +1328,75 @@ All notable changes to this project will be documented in this file.
             ReleaseChannel::Beta
         };
 
-        validate_changelog_format(
+        let canonical = validate_changelog_format_with_title(
             version,
             channel,
             "ALCOMD3/ALCOMD3",
             include_str!("../../CHANGELOG.md"),
+            "# Changelog",
         )
         .unwrap();
+        let japanese = validate_changelog_format_with_title(
+            version,
+            channel,
+            "ALCOMD3/ALCOMD3",
+            include_str!("../../CHANGELOG/CHANGELOG.ja.md"),
+            "# 変更履歴",
+        )
+        .unwrap();
+        let simplified_chinese = validate_changelog_format_with_title(
+            version,
+            channel,
+            "ALCOMD3/ALCOMD3",
+            include_str!("../../CHANGELOG/CHANGELOG.zh-CN.md"),
+            "# 更新日志",
+        )
+        .unwrap();
+
+        ensure_localized_changelog_matches(&canonical, &japanese, "Japanese", version).unwrap();
+        ensure_localized_changelog_matches(
+            &canonical,
+            &simplified_chinese,
+            "Simplified Chinese",
+            version,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn localized_changelog_rejects_different_bullet_count() {
+        let canonical = validate_changelog_format_with_title(
+            "3.0.0",
+            ReleaseChannel::Stable,
+            "ALCOMD3/ALCOMD3",
+            &valid_changelog(),
+            "# Changelog",
+        )
+        .unwrap();
+        let localized = valid_changelog()
+            .replace("# Changelog", "# 更新日志")
+            .replace(
+                "- Published the first ALCOMD3 release.",
+                "- 发布首个版本。\n- 第二条遗漏检查。",
+            );
+        let localized = validate_changelog_format_with_title(
+            "3.0.0",
+            ReleaseChannel::Stable,
+            "ALCOMD3/ALCOMD3",
+            &localized,
+            "# 更新日志",
+        )
+        .unwrap();
+
+        let error = ensure_localized_changelog_matches(
+            &canonical,
+            &localized,
+            "CHANGELOG.zh-CN.md",
+            "3.0.0",
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("bullet counts"));
     }
 
     #[test]

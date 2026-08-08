@@ -41,7 +41,8 @@ GUI 进程、新快捷方式、模板 ProgID 和 `vcc://` 注册统一使用配�
 - Rust workspace 成员通过 `version.workspace = true` 继承。
 - `vrc-get-gui/package.json` 由 `cargo xtask release-prepare` 更新。
 - `Cargo.lock` 和 `package-lock.json` 是生成文件。
-- `CHANGELOG.md` 是重要变化的规范记录，也是 GitHub Release 正文来源。
+- `CHANGELOG.md` 是版本与变更事实的权威记录。GitHub Release 正文按 English、日本語、中文
+  顺序组合英文目标条目及结构一致的日语、简体中文目标条目。
 - 普通开发中，重要的用户可见变化应在同一变更或 PR 中写入其 `Unreleased` 对应分类。
 - `release-metadata/updater-notes/$Version.json` 是应用内更新弹窗使用的七语短摘要。
 - Updater JSON 由发布后的 updater workflow 从公开 Release assets 重新生成并验证，
@@ -131,19 +132,24 @@ cargo xtask release-prepare --version $Version --channel $Channel
 两种情况都要在顶部保留新的 `Unreleased` 并更新比对链接。分类只使用 `Added`、`Changed`、
 `Deprecated`、`Removed`、`Fixed` 和 `Security`，空分类应省略；已发布版本按日期倒序排列且
 版本号不得重复。
-`release-validate` 会检查目标版本条目、ISO 日期、非空顶层项目符号、所有已发布版本是否使用
-对应 channel 比较基线的 GitHub Compare 链接，以及以目标 tag 为基准的 `Unreleased` 比对链接。
+同步 `CHANGELOG/CHANGELOG.ja.md` 和 `CHANGELOG/CHANGELOG.zh-CN.md` 的目标版本条目。
+`release-validate` 会完整校验三个文件，并要求本地化条目与英文权威条目的日期、分类顺序及各
+分类项目数一致。繁体中文 changelog 仅供阅读，不作为 GitHub Release 正文输入。
+
+校验还会检查 ISO 日期、非空顶层项目符号、所有已发布版本是否使用对应 channel 比较基线的
+GitHub Compare 链接，以及以目标 tag 为基准的 `Unreleased` 比对链接。
 
 填写 `release-metadata/updater-notes/$Version.json`。它必须精确包含 `en`、`de`、`fr`、
 `ja`、`ko`、`zh_hans`、`zh_hant` 七个 key，每个 value 都是非空的本地化短摘要。这个结构化
-metadata 仅供应用内 updater 使用；发布时 GitHub Release 正文直接从目标 changelog 条目生成。
+metadata 仅供应用内 updater 使用；发布时 GitHub Release 正文按 `English` → `日本語` →
+`中文` 顺序从三个已验证的目标 changelog 条目生成。
 
 提交并推送 source release commit：
 
 ```powershell
 git add Cargo.toml Cargo.lock
 git add vrc-get-gui/package.json vrc-get-gui/package-lock.json
-git add CHANGELOG.md
+git add CHANGELOG.md CHANGELOG/CHANGELOG.ja.md CHANGELOG/CHANGELOG.zh-CN.md
 git add "release-metadata/updater-notes/$Version.json"
 git status --short
 git commit -m "release: prepare ALCOMD3 $Version"
@@ -210,7 +216,7 @@ Draft/prerelease 状态及全部资产 digest。
 - tag 是 `v$Version`，并指向 workflow 实际构建的 source release commit；
 - title 是 `Version $Version`；
 - stable 是普通 Release，beta 是 prerelease；
-- GitHub Release 正文与目标 changelog 条目一致；
+- GitHub Release 正文与生成的英文、日语、简体中文目标 changelog 条目完全一致；
 - 以下 10 项资产恰好齐全：
     - `ALCOMD3_$Version_windows_x86_64_setup.exe`
     - `ALCOMD3_$Version_windows_x86_64_setup.exe.sig`

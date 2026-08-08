@@ -436,7 +436,8 @@ assets 使用。
 - 发布 beta 时，将适用的 `Unreleased` 增量移动到带日期版本条目。发布 stable 时，从期间 beta
   条目和 `Unreleased` 整理相对上一个 stable 的最终净变化，省略后来撤销的 beta 中间状态。
   两种情况都要在顶部保留新的 `Unreleased`。
-- GitHub Release 正文从目标版本条目精确生成。
+- 准备发布时同步日语和简体中文目标条目；校验要求三个条目的日期、分类顺序和各分类项目数一致。
+- GitHub Release 正文按 English、日本語、中文顺序从三个已验证条目生成，英文根文件保持权威。
 - `release-prepare` 在 `release-metadata/updater-notes/` 下创建七语 updater 摘要模板；
   `release-validate` 会强制校验这两项输入。
 - 当前分支不保留按版本拆分的独立发布说明文件。

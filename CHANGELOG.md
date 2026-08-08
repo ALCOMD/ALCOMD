@@ -4,7 +4,9 @@ All notable changes to ALCOMD3 will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-GitHub Release bodies are generated from the corresponding version entry.
+This English file is the canonical record. GitHub Release bodies combine its
+target version entry with the structurally matched Japanese and Simplified
+Chinese entries, in that order after English.
 Stable entries describe the final net changes since the previous stable release;
 prerelease entries describe changes since the immediately previous published
 release, whether stable or prerelease.
@@ -20,6 +22,9 @@ version entry. For a stable release, curate the final net changes since the
 previous stable release from the intervening prerelease entries and
 `Unreleased`; intentional overlap with those prerelease entries is expected.
 Leave a fresh `Unreleased` section after every release.
+Before release validation, synchronize the target version entry in
+`CHANGELOG/CHANGELOG.ja.md` and `CHANGELOG/CHANGELOG.zh-CN.md`; their date,
+category order, and bullet counts must match this canonical entry.
 
 ## [Unreleased]
 

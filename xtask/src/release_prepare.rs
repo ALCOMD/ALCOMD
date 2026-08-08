@@ -76,13 +76,13 @@ impl crate::Command for Command {
         );
         match ctx.channel {
             ReleaseChannel::Stable => println!(
-                "next: curate the {} entry in {} as the final net changes since the previous stable release, leave a fresh Unreleased section, and complete {}",
+                "next: curate the {} entry in {} as the final net changes since the previous stable release, synchronize its Japanese and Simplified Chinese entries, leave a fresh Unreleased section, and complete {}",
                 ctx.version,
                 ctx.changelog.display(),
                 ctx.updater_notes().display()
             ),
             ReleaseChannel::Beta => println!(
-                "next: move the applicable Unreleased increment into the {} entry in {}, leave a fresh Unreleased section, and complete {}",
+                "next: move the applicable Unreleased increment into the {} entry in {}, synchronize its Japanese and Simplified Chinese entries, leave a fresh Unreleased section, and complete {}",
                 ctx.version,
                 ctx.changelog.display(),
                 ctx.updater_notes().display()

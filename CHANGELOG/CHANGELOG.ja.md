@@ -2,14 +2,19 @@
 
 言語: [English](../CHANGELOG.md) | 日本語 | [簡体中文](./CHANGELOG.zh-CN.md) | [繁体中文](./CHANGELOG.zh-TW.md)
 
-このドキュメントは、英語版の [`../CHANGELOG.md`](../CHANGELOG.md) の日本語版参照用コピーです。  
-リリース本体としての権威ある情報は、トップレベルの `CHANGELOG.md` を参照してください。
+このドキュメントは、英語版の [`../CHANGELOG.md`](../CHANGELOG.md) の日本語版です。
+バージョンと変更内容の権威ある情報はトップレベルの `CHANGELOG.md` にあり、本ファイルの
+target version entry は GitHub Release の日本語 section に使用されます。
 
 このファイルは [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) の形式に従い、  
 本プロジェクトは [Semantic Versioning](https://semver.org/spec/v2.0.0.html) に準拠します。  
-GitHub Release 本体は対応するバージョンエントリから生成されます。安定版は直前安定版との差分、プレリリース版は直近の公開版（安定/プレ）との差分を表します。
+GitHub Release 本体は English、日本語、簡体中文の順で、構造が一致する各 target version
+entry から生成されます。安定版は直前安定版との差分、プレリリース版は直近の公開版
+（安定/プレ）との差分を表します。
 
-開発時は、ユーザー向け変更を同一 PR/変更内で `../CHANGELOG.md` の `Unreleased` に記録します。本ファイルは参照用の翻訳版です。
+開発時は、ユーザー向け変更を同一 PR/変更内で `../CHANGELOG.md` の `Unreleased` に記録します。
+Release preparation では target version entry を翻訳し、英語版と date、category order、各
+category の bullet count を一致させます。
 
 ## [Unreleased]
 

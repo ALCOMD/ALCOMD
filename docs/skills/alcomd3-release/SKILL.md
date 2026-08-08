@@ -46,9 +46,10 @@ Draft 创建成功不等于发布完成。定时 `Full-chain desktop smoke` 的�
   `tauriIdentifier` 或 `windowsAppId`。
 - MCP 默认关闭；对外仅使用带 bearer token 的本机回环 Streamable HTTP，对内使用本机
   私有 IPC。发布工作不得开放局域网或公网监听。
-- `CHANGELOG.md` 是遵循 Keep a Changelog 的规范记录，也是 GitHub Release 正文来源。已公开
-  Git tag、GitHub Release、changelog 已发布版本条目与 updater metadata 都是历史记录，不为
-  后续版本改写；当前分支不保留独立的按版本发布说明文件。
+- 根 `CHANGELOG.md` 是遵循 Keep a Changelog 的版本与变更事实权威来源。GitHub Release 正文
+  固定按 English、日本語、中文顺序组合英文目标条目和结构一致的日语、简体中文目标条目。已
+  公开 Git tag、GitHub Release、changelog 已发布版本条目与 updater metadata 都是历史记录，
+  不为后续版本改写；当前分支不保留独立的按版本发布说明文件。
 - updater JSON 只能在对应 GitHub Release 已公开且全部验证通过后更新。
 - stable 只更新 stable JSON；beta 只更新 beta JSON。
 - 平台固有技术差异只约束构建与验证，不派生平台专属的用户文案：
@@ -120,14 +121,17 @@ $Channel = "stable"
 - 普通开发中，每项重要的用户可见行为、兼容性、弃用/移除、安全、已知问题、打包或公开配置
   变化，都必须在同一变更或 PR 中写入 `CHANGELOG.md` 的 `Unreleased` 对应分类。不要写
   commit/PR 清单、纯 CI/workflow、测试、内部重构或仅供维护者使用且没有发布影响的实现记录。
-- `CHANGELOG.md` 是唯一的完整发布说明来源。目标版本必须使用
+- 根 `CHANGELOG.md` 是唯一的版本与变更事实权威来源。目标版本必须使用
   `## [$Version] - YYYY-MM-DD`，只允许 `Added`、`Changed`、`Deprecated`、`Removed`、
   `Fixed`、`Security` 分类，并为每个保留分类提供非空顶层项目符号；已发布版本必须按日期
   倒序排列且版本号不得重复。
 - `Unreleased` 必须位于目标版本之前；每个已发布版本链接必须使用上述 channel 比较基线的
   GitHub Compare URL，以目标 tag 为基准的 `Unreleased` comparison 链接也必须同步更新。
-- GitHub Release 正文由 `xtask` 从目标 changelog 条目精确提取，不再维护独立的按版本
-  Markdown 发布说明。
+- `CHANGELOG/CHANGELOG.ja.md` 和 `CHANGELOG/CHANGELOG.zh-CN.md` 提供 GitHub Release 的日语、
+  简体中文本地化条目。`release-validate` 必须完整校验三个 changelog，并要求目标条目的日期、
+  分类顺序和各分类项目数一致；繁体中文 changelog 仅供阅读，不作为 Release 正文输入。
+- GitHub Release 正文由 `xtask` 按 English、日本語、中文顺序从三个已验证目标条目精确生成，
+  不再维护独立的按版本 Markdown 发布说明。
 - `release-metadata/updater-notes/$Version.json` 是独立的七语短摘要，必须精确包含 `en`、
   `de`、`fr`、`ja`、`ko`、`zh_hans`、`zh_hant` 七个非空字符串值。
 - Changelog 与 updater 摘要只写本版本实际变化，不写 commit/PR 清单、CI、workflow、权限、
@@ -150,7 +154,8 @@ cargo xtask release-prepare --version $Version --channel $Channel
 stable 的最终净变化，允许与 beta 条目有意重叠，但不得包含后来撤销的中间状态。两种情况都
 保留新的 `Unreleased`，并更新目标版本及以目标 tag 为基准的 comparison 链接。只使用
 `Added`、`Changed`、`Deprecated`、`Removed`、`Fixed`、`Security` 分类并省略空分类。
-`release-validate` 会强制检查结构和 comparison URL 基线。
+同步日语和简体中文目标条目；它们必须与英文条目保持相同日期、分类顺序和各分类项目数。
+`release-validate` 会强制检查三份 changelog 的结构和 comparison URL 基线。
 
 填写 `release-metadata/updater-notes/$Version.json`，并保留以下 7 个非空语言键：
 
@@ -169,7 +174,7 @@ Secret 或内部维护记录。运行完整验证，再提交并推送 source re
 cargo xtask release-validate --version $Version --channel $Channel
 git add Cargo.toml Cargo.lock
 git add vrc-get-gui/package.json vrc-get-gui/package-lock.json
-git add CHANGELOG.md
+git add CHANGELOG.md CHANGELOG/CHANGELOG.ja.md CHANGELOG/CHANGELOG.zh-CN.md
 git add "release-metadata/updater-notes/$Version.json"
 git diff --cached --check
 git commit -m "release: prepare ALCOMD3 $Version"
@@ -230,7 +235,7 @@ Windows job 还必须确认：
 - tag 为 `v$Version` 且目标是 source release commit；
 - title 为 `Version $Version`；
 - stable/beta flag 正确；
-- GitHub Release 正文与目标 changelog 条目一致；
+- GitHub Release 正文与生成的英文、日语、简体中文目标 changelog 条目完全一致；
 - 10 个资产与上表完全相等，无缺失或额外项；
 - Windows/macOS/Linux 文件名都含平台和架构；
 - Draft workflow 的 source SHA 与三个 shard manifest 一致。

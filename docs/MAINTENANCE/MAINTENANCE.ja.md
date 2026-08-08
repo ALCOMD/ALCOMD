@@ -484,7 +484,10 @@ selected channel の 3-platform metadata を atomic に生成する。
   Stable release では、期間中の beta entries と `Unreleased` から直前の stable 以降の
   final net changes を整理し、後で取り消された一時的な beta changes は省略する。どちらも
   先頭に新しい `Unreleased` を残す。
-- GitHub Release body は target version entry から正確に生成する。
+- Release preparation で日本語と簡体中文の target entries を同期する。Validation は 3 entries
+  の date、category order、各 category の bullet count の一致を要求する。
+- GitHub Release body は validated entries から English、日本語、中文の順で生成し、英語 root
+  file を authoritative source とする。
 - `release-prepare` は `release-metadata/updater-notes/` に 7-language updater summary
   template を作成し、`release-validate` が両方の input を検証する。
 - 現在の tree には version ごとの standalone release-description files を保持しない。

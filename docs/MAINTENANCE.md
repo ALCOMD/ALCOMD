@@ -571,7 +571,11 @@ channel's three-platform metadata.
   previous stable from the intervening beta entries and `Unreleased`, omitting
   transient beta changes that were later reverted. Leave a fresh `Unreleased`
   section in both cases.
-- GitHub Release bodies are generated from the exact target version entry.
+- At release preparation, synchronize the Japanese and Simplified Chinese
+  target entries. Validation requires all three entries to have the same date,
+  category order, and per-category bullet counts.
+- GitHub Release bodies are generated in English, Japanese, Simplified Chinese
+  order from those validated entries; the English root remains authoritative.
 - `release-prepare` creates the seven-language updater summary template under
   `release-metadata/updater-notes/`; `release-validate` enforces both inputs.
 - Standalone versioned release-description files are not kept in the current tree.
