@@ -24,6 +24,7 @@ GitHub Release 正文按 English、日本語、中文顺序，由结构一致的
 
 - 简化了 MCP 仓库与模板的数据结构（payload），并使用仓库 URL 作为管理身份。
 - 简化了 Unity 启动状态标签文案。
+- 将 Unity 编辑器聚焦能力扩展至 macOS，并改进了进程匹配和 Windows 编辑器就绪缓存。
 - 将 GitHub Release 描述合并到该变更日志中，并将本地化 updater 摘要移入结构化发布元数据。
 
 ### Fixed

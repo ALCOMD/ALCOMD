@@ -267,7 +267,7 @@
     "projects:toast:loading unity from unity hub": "Loading Unity from Unity Hub...",
     "projects:toast:match version unity not found": "Unity {{unity}} is not found. Please install Unity in your computer or add a Unity version in the ALCOM settings.",
     "projects:toast:unity already running": "Unity is already opening or running.",
-    "projects:toast:unity attention requested": "Unity could not be brought to the foreground. Its taskbar button is flashing.",
+    "projects:toast:bring unity to front failed": "ALCOMD3 could not bring Unity to the foreground.",
     "projects:toast:unity window not found": "No Unity window was found for this project.",
     "projects:toast:bring unity to front unsupported": "Bringing Unity to the front is not supported on this platform.",
     "projects:toast:unity exits with non-zero": "Unity exited with non-zero code.",

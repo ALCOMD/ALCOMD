@@ -256,7 +256,7 @@
     "projects:toast:loading unity from unity hub": "Unity HubからUnityの情報を取得しています...",
     "projects:toast:match version unity not found": "Unity {{unity}}が見つかりませんでした。該当するUnityをインストールするか、ALCOMに登録してください。",
     "projects:toast:unity already running": "Unityは既に起動中か実行中です。",
-    "projects:toast:unity attention requested": "Unityを前面に表示できなかったため、タスクバーで通知しました。",
+    "projects:toast:bring unity to front failed": "ALCOMD3 は Unity を前面に表示できませんでした。",
     "projects:toast:unity window not found": "このプロジェクトのUnityウィンドウが見つかりませんでした。",
     "projects:toast:bring unity to front unsupported": "このプラットフォームではUnityの前面表示に対応していません。",
     "projects:toast:unity exits with non-zero": "Unityが0以外の終了コードで終了しました。",

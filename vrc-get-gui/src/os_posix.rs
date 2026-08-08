@@ -10,17 +10,27 @@ use std::sync::OnceLock;
 
 use nix::libc::{F_UNLCK, c_short, flock};
 
-pub(crate) use os_more::start_command;
+pub(crate) use os_more::{CAN_BRING_UNITY_TO_FRONT, CAN_DETECT_UNITY_EDITOR_READY, start_command};
 
-pub(crate) const CAN_BRING_UNITY_TO_FRONT: bool = false;
+pub(crate) struct UnityRuntimeCache;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[allow(dead_code)]
-pub(crate) enum BringUnityToFrontResult {
-    BroughtToFront,
-    AttentionRequested,
-    WindowNotFound,
-    Unsupported,
+impl UnityRuntimeCache {
+    pub(crate) fn new() -> Self {
+        Self
+    }
+
+    pub(crate) fn is_editor_ready(&mut self, _project_path: &Path) -> bool {
+        false
+    }
+
+    pub(crate) fn bring_unity_to_front(
+        &mut self,
+        project_path: &Path,
+    ) -> io::Result<super::BringUnityToFrontResult> {
+        os_more::bring_unity_to_front(project_path)
+    }
+
+    pub(crate) fn invalidate(&mut self) {}
 }
 
 async fn start_command_posix(_: &OsStr, path: &OsStr, args: &[&OsStr]) -> std::io::Result<()> {
@@ -46,14 +56,6 @@ pub(crate) fn is_locked(path: &Path) -> io::Result<bool> {
     nix::fcntl::fcntl(file, nix::fcntl::F_GETLK(&mut lock))?;
 
     Ok(lock.l_type != F_UNLCK as c_short)
-}
-
-pub(crate) fn bring_unity_to_front(_project_path: &Path) -> io::Result<BringUnityToFrontResult> {
-    Ok(BringUnityToFrontResult::Unsupported)
-}
-
-pub(crate) fn is_unity_editor_ready(_project_path: &Path) -> bool {
-    true
 }
 
 #[cfg(target_os = "macos")]

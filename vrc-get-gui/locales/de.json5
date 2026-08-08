@@ -262,7 +262,7 @@
     "projects:toast:loading unity from unity hub": "Lade Unity von Unity Hub...",
     "projects:toast:match version unity not found": "Unity Version {{unity}} nicht gefunden. Bitte installiere diese oder füge sie in den Einstellungen hinzu.",
     "projects:toast:unity already running": "Unity wird bereits geöffnet oder ausgeführt.",
-    "projects:toast:unity attention requested": "Unity konnte nicht in den Vordergrund gebracht werden. Das Symbol in der Taskleiste blinkt.",
+    "projects:toast:bring unity to front failed": "ALCOMD3 konnte Unity nicht in den Vordergrund bringen.",
     "projects:toast:unity window not found": "Für dieses Projekt wurde kein Unity-Fenster gefunden.",
     "projects:toast:bring unity to front unsupported": "Unity kann auf dieser Plattform nicht in den Vordergrund gebracht werden.",
     "projects:toast:unity exits with non-zero": "Unity wurde unerwartet geschlossen.",

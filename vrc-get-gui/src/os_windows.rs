@@ -15,8 +15,10 @@ use std::fs::OpenOptions;
 use std::io;
 use std::mem::MaybeUninit;
 use std::os::windows::prelude::*;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::time::{Duration, Instant};
+use sysinfo::System;
 use tokio::process::Command;
 use windows::Win32::Foundation::{
     ERROR_LOCK_VIOLATION, ERROR_SHARING_VIOLATION, HANDLE, HWND, LPARAM,
@@ -33,20 +35,35 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::{BOOL, HSTRING};
 
+use super::BringUnityToFrontResult;
+use crate::unity_process::{UnityProcess, paths_match};
+
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 const LOCK_RANGE_LOW: u32 = u32::MAX;
 const LOCK_RANGE_HIGH: u32 = u32::MAX;
 const UNITY_EDITOR_WINDOW_CLASS: &str = "UnityContainerWndClass";
+const UNITY_RUNTIME_CACHE_TTL: Duration = Duration::from_secs(1);
 
 pub(crate) const CAN_BRING_UNITY_TO_FRONT: bool = true;
+pub(crate) const CAN_DETECT_UNITY_EDITOR_READY: bool = true;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[allow(dead_code)]
-pub(crate) enum BringUnityToFrontResult {
-    BroughtToFront,
-    AttentionRequested,
-    WindowNotFound,
-    Unsupported,
+#[derive(Clone, Copy)]
+struct UnityEditorWindowHandle(HWND);
+
+// SAFETY: HWND is an opaque window identifier that Windows APIs allow using from
+// other threads. Unity owns the window, and the handle is validated before use.
+unsafe impl Send for UnityEditorWindowHandle {}
+
+struct UnityEditorWindow {
+    project_path: PathBuf,
+    process_id: u32,
+    window: UnityEditorWindowHandle,
+}
+
+pub(crate) struct UnityRuntimeCache {
+    system: System,
+    refreshed_at: Option<Instant>,
+    editor_windows: Vec<UnityEditorWindow>,
 }
 
 pub(crate) fn set_current_process_app_user_model_id(app_id: &str) -> windows::core::Result<()> {
@@ -170,11 +187,91 @@ pub(crate) fn is_locked(path: &Path) -> io::Result<bool> {
     }
 }
 
-pub(crate) fn bring_unity_to_front(project_path: &Path) -> io::Result<BringUnityToFrontResult> {
-    let Some(window) = find_unity_editor_window(project_path)? else {
-        return Ok(BringUnityToFrontResult::WindowNotFound);
-    };
+impl UnityRuntimeCache {
+    pub(crate) fn new() -> Self {
+        Self {
+            system: System::new(),
+            refreshed_at: None,
+            editor_windows: Vec::new(),
+        }
+    }
 
+    pub(crate) fn is_editor_ready(&mut self, project_path: &Path) -> bool {
+        if let Err(error) = self.refresh_if_needed(Instant::now()) {
+            log::debug!("Checking which Unity editor windows are ready: {error}");
+        }
+
+        self.find_editor_window(project_path).is_some()
+    }
+
+    pub(crate) fn bring_unity_to_front(
+        &mut self,
+        project_path: &Path,
+    ) -> io::Result<BringUnityToFrontResult> {
+        self.refresh_if_needed(Instant::now())?;
+
+        let mut editor_window = self.find_editor_window(project_path);
+        if editor_window.is_none_or(|(process_id, window)| {
+            !is_cached_unity_editor_window_valid(process_id, window)
+        }) {
+            self.refresh(Instant::now())?;
+            editor_window = self.find_editor_window(project_path);
+        }
+
+        let Some((process_id, window)) = editor_window else {
+            return Ok(BringUnityToFrontResult::WindowNotFound);
+        };
+        if !is_cached_unity_editor_window_valid(process_id, window) {
+            return Ok(BringUnityToFrontResult::WindowNotFound);
+        }
+
+        activate_unity_editor_window(window.0)
+    }
+
+    pub(crate) fn invalidate(&mut self) {
+        self.refreshed_at = None;
+        self.editor_windows.clear();
+    }
+
+    fn find_editor_window(&self, project_path: &Path) -> Option<(u32, UnityEditorWindowHandle)> {
+        self.editor_windows
+            .iter()
+            .find(|editor_window| paths_match(&editor_window.project_path, project_path))
+            .map(|editor_window| (editor_window.process_id, editor_window.window))
+    }
+
+    fn refresh_if_needed(&mut self, now: Instant) -> io::Result<()> {
+        if self.should_refresh(now) {
+            self.refresh(now)?;
+        }
+        Ok(())
+    }
+
+    fn should_refresh(&self, now: Instant) -> bool {
+        self.refreshed_at.is_none_or(|refreshed_at| {
+            now.saturating_duration_since(refreshed_at) >= UNITY_RUNTIME_CACHE_TTL
+        })
+    }
+
+    fn refresh(&mut self, now: Instant) -> io::Result<()> {
+        let processes = crate::unity_process::refresh_unity_processes(&mut self.system);
+        let editor_windows = find_unity_editor_windows(processes);
+        self.refreshed_at = Some(now);
+
+        match editor_windows {
+            Ok(editor_windows) => {
+                self.editor_windows = editor_windows;
+                Ok(())
+            }
+            Err(error) => {
+                self.editor_windows.clear();
+                Err(error)
+            }
+        }
+    }
+}
+
+fn activate_unity_editor_window(window: HWND) -> io::Result<BringUnityToFrontResult> {
     unsafe {
         if IsIconic(window).as_bool() {
             let _ = ShowWindow(window, SW_RESTORE);
@@ -196,59 +293,73 @@ pub(crate) fn bring_unity_to_front(project_path: &Path) -> io::Result<BringUnity
         let _ = FlashWindowEx(&flash_info);
     }
 
-    Ok(BringUnityToFrontResult::AttentionRequested)
+    Ok(BringUnityToFrontResult::FailedToBringToFront)
 }
 
-pub(crate) fn is_unity_editor_ready(project_path: &Path) -> bool {
-    match find_unity_editor_window(project_path) {
-        Ok(window) => window.is_some(),
-        Err(error) => {
-            log::debug!("Checking whether the Unity editor window is ready: {error}");
-            false
-        }
+fn is_cached_unity_editor_window_valid(process_id: u32, window: UnityEditorWindowHandle) -> bool {
+    let window = window.0;
+    let mut current_process_id = 0;
+    unsafe {
+        GetWindowThreadProcessId(window, Some(&mut current_process_id));
     }
+
+    current_process_id == process_id && unsafe { is_unity_editor_window(window) }
 }
 
-fn find_unity_editor_window(project_path: &Path) -> io::Result<Option<HWND>> {
-    // Unity can run editor workers with the same executable and project path. Keep every
-    // candidate process so the unordered process snapshot cannot select a worker by chance.
-    let process_ids = crate::unity_process::find_unity_process_ids_for_project(project_path);
-    if process_ids.is_empty() {
-        return Ok(None);
+fn find_unity_editor_windows(processes: Vec<UnityProcess>) -> io::Result<Vec<UnityEditorWindow>> {
+    if processes.is_empty() {
+        return Ok(Vec::new());
     }
 
-    let mut context = FindUnityWindowContext {
-        process_ids,
-        window: None,
+    let mut context = FindUnityWindowsContext {
+        processes,
+        editor_windows: Vec::new(),
     };
+    let context_pointer = &mut context as *mut FindUnityWindowsContext;
 
     unsafe {
         EnumWindows(
-            Some(find_unity_window),
-            LPARAM((&mut context as *mut FindUnityWindowContext) as isize),
+            Some(find_unity_windows),
+            LPARAM(context_pointer.expose_provenance() as isize),
         )?;
     }
 
-    Ok(context.window)
+    Ok(context.editor_windows)
 }
 
-struct FindUnityWindowContext {
-    process_ids: Vec<u32>,
-    window: Option<HWND>,
+struct FindUnityWindowsContext {
+    processes: Vec<UnityProcess>,
+    editor_windows: Vec<UnityEditorWindow>,
 }
 
-unsafe extern "system" fn find_unity_window(window: HWND, parameter: LPARAM) -> BOOL {
-    let context = unsafe { &mut *(parameter.0 as *mut FindUnityWindowContext) };
-    if context.window.is_some() {
-        return BOOL(1);
-    }
+unsafe extern "system" fn find_unity_windows(window: HWND, parameter: LPARAM) -> BOOL {
+    let context_pointer =
+        std::ptr::with_exposed_provenance_mut::<FindUnityWindowsContext>(parameter.0 as usize);
+    let context = unsafe { &mut *context_pointer };
 
     let mut process_id = 0;
     unsafe {
         GetWindowThreadProcessId(window, Some(&mut process_id));
     }
-    if context.process_ids.contains(&process_id) && unsafe { is_unity_editor_window(window) } {
-        context.window = Some(window);
+    let Some(process) = context
+        .processes
+        .iter()
+        .find(|process| process.process_id == process_id)
+    else {
+        return BOOL(1);
+    };
+
+    if unsafe { is_unity_editor_window(window) }
+        && !context
+            .editor_windows
+            .iter()
+            .any(|editor_window| paths_match(&editor_window.project_path, &process.project_path))
+    {
+        context.editor_windows.push(UnityEditorWindow {
+            project_path: process.project_path.clone(),
+            process_id,
+            window: UnityEditorWindowHandle(window),
+        });
     }
 
     BOOL(1)
@@ -419,6 +530,19 @@ mod tests {
     }
 
     #[test]
+    fn reports_a_sharing_violation_as_locked() {
+        let temporary_path = tempfile::NamedTempFile::new().unwrap().into_temp_path();
+        let _locked_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .share_mode(0)
+            .open(&temporary_path)
+            .unwrap();
+
+        assert!(is_locked(&temporary_path).unwrap());
+    }
+
+    #[test]
     fn reports_a_competing_byte_range_lock_as_locked() {
         let temporary_file = tempfile::NamedTempFile::new().unwrap();
         let locked_file = OpenOptions::new()
@@ -483,5 +607,34 @@ mod tests {
             false,
             true
         ));
+    }
+
+    #[test]
+    fn runtime_cache_expires_after_its_ttl() {
+        let mut cache = UnityRuntimeCache::new();
+        let refreshed_at = Instant::now();
+        cache.refreshed_at = Some(refreshed_at);
+
+        assert!(
+            !cache
+                .should_refresh(refreshed_at + UNITY_RUNTIME_CACHE_TTL - Duration::from_millis(1))
+        );
+        assert!(cache.should_refresh(refreshed_at + UNITY_RUNTIME_CACHE_TTL));
+    }
+
+    #[test]
+    fn invalidating_runtime_cache_clears_cached_windows() {
+        let mut cache = UnityRuntimeCache::new();
+        cache.refreshed_at = Some(Instant::now());
+        cache.editor_windows.push(UnityEditorWindow {
+            project_path: PathBuf::from("project"),
+            process_id: 1,
+            window: UnityEditorWindowHandle(HWND::default()),
+        });
+
+        cache.invalidate();
+
+        assert!(cache.refreshed_at.is_none());
+        assert!(cache.editor_windows.is_empty());
     }
 }

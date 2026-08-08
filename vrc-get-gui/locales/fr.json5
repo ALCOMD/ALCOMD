@@ -331,7 +331,7 @@
     'projects:toast:copy canceled': 'La copie du projet a été annulée.',
     'projects:toast:copy already running': 'Une copie de projet est déjà en cours. La fenêtre de progression a été restaurée.',
     'projects:toast:unity already running': "Unity est déjà en cours d'ouverture ou d'exécution.",
-    'projects:toast:unity attention requested': "Impossible d'afficher Unity au premier plan. Son bouton dans la barre des tâches clignote.",
+    'projects:toast:bring unity to front failed': "ALCOMD3 n'a pas pu afficher Unity au premier plan.",
     'projects:toast:unity window not found': "Aucune fenêtre Unity n'a été trouvée pour ce projet.",
     'projects:toast:bring unity to front unsupported': "L'affichage de Unity au premier plan n'est pas pris en charge sur cette plateforme.",
     'projects:toast:unity exits with non-zero': "Unity s'est fermé avec un code d'erreur différent de zéro.",

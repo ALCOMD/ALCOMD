@@ -1893,7 +1893,7 @@ pub struct TauriUnityProjectStatus {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, specta::Type)]
 pub enum TauriUnityWindowActionResult {
     BroughtToFront,
-    AttentionRequested,
+    FailedToBringToFront,
     WindowNotFound,
     Unsupported,
 }
@@ -2044,11 +2044,7 @@ pub fn project_is_unity_launching(
     project_path: String,
 ) -> bool {
     let project_path = Path::new(&project_path);
-    if is_unity_running(project_path) {
-        true
-    } else {
-        unity_state.is_opening(project_path)
-    }
+    is_unity_running(project_path) || unity_state.is_opening(project_path)
 }
 
 #[tauri::command]
@@ -2063,19 +2059,20 @@ pub fn project_unity_status(
         unity_state.clear_opening(project_path);
     }
     let editor_ready = if !is_running {
-        unity_state.clear_editor_ready(project_path);
         false
-    } else if unity_state.is_editor_ready(project_path) {
-        true
-    } else if crate::os::is_unity_editor_ready(project_path) {
-        unity_state.mark_editor_ready(project_path.to_owned());
-        unity_state.clear_opening(project_path);
+    } else if !crate::os::CAN_DETECT_UNITY_EDITOR_READY {
         true
     } else {
-        false
+        unity_state.is_editor_ready(project_path)
     };
     let launch_opening = !is_running && unity_state.is_opening(project_path);
-    let status = unity_project_status_kind(is_running, editor_ready, launch_opening);
+    let status = if editor_ready {
+        TauriUnityProjectStatusKind::Open
+    } else if launch_opening || is_running {
+        TauriUnityProjectStatusKind::Opening
+    } else {
+        TauriUnityProjectStatusKind::Closed
+    };
 
     TauriUnityProjectStatus {
         status,
@@ -2084,68 +2081,15 @@ pub fn project_unity_status(
     }
 }
 
-fn unity_project_status_kind(
-    is_running: bool,
-    editor_ready: bool,
-    launch_opening: bool,
-) -> TauriUnityProjectStatusKind {
-    if is_running {
-        if editor_ready {
-            TauriUnityProjectStatusKind::Open
-        } else {
-            TauriUnityProjectStatusKind::Opening
-        }
-    } else if launch_opening {
-        TauriUnityProjectStatusKind::Opening
-    } else {
-        TauriUnityProjectStatusKind::Closed
-    }
-}
-
-#[cfg(test)]
-mod unity_status_tests {
-    use super::*;
-
-    #[test]
-    fn running_without_an_editor_window_remains_opening() {
-        assert_eq!(
-            unity_project_status_kind(true, false, true),
-            TauriUnityProjectStatusKind::Opening
-        );
-        assert_eq!(
-            unity_project_status_kind(true, false, false),
-            TauriUnityProjectStatusKind::Opening
-        );
-    }
-
-    #[test]
-    fn running_with_an_editor_window_is_open() {
-        assert_eq!(
-            unity_project_status_kind(true, true, true),
-            TauriUnityProjectStatusKind::Open
-        );
-    }
-
-    #[test]
-    fn launch_state_only_applies_before_the_project_lock_is_acquired() {
-        assert_eq!(
-            unity_project_status_kind(false, false, true),
-            TauriUnityProjectStatusKind::Opening
-        );
-        assert_eq!(
-            unity_project_status_kind(false, false, false),
-            TauriUnityProjectStatusKind::Closed
-        );
-    }
-}
-
 #[tauri::command]
 #[specta::specta]
 pub async fn project_bring_unity_to_front(
+    unity_state: State<'_, UnityProjectState>,
     project_path: String,
 ) -> Result<TauriUnityWindowActionResult, RustError> {
+    let unity_state = unity_state.inner().clone();
     let result = tokio::task::spawn_blocking(move || {
-        crate::os::bring_unity_to_front(Path::new(&project_path))
+        unity_state.bring_unity_to_front(Path::new(&project_path))
     })
     .await
     .map_err(|error| {
@@ -2156,8 +2100,8 @@ pub async fn project_bring_unity_to_front(
         crate::os::BringUnityToFrontResult::BroughtToFront => {
             TauriUnityWindowActionResult::BroughtToFront
         }
-        crate::os::BringUnityToFrontResult::AttentionRequested => {
-            TauriUnityWindowActionResult::AttentionRequested
+        crate::os::BringUnityToFrontResult::FailedToBringToFront => {
+            TauriUnityWindowActionResult::FailedToBringToFront
         }
         crate::os::BringUnityToFrontResult::WindowNotFound => {
             TauriUnityWindowActionResult::WindowNotFound

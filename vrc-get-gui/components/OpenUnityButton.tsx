@@ -1,4 +1,5 @@
 import { queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LoaderCircle } from "lucide-react";
 import type React from "react";
 import { useRef, useState } from "react";
@@ -7,7 +8,6 @@ import { commands } from "@/lib/bindings";
 import { tc } from "@/lib/i18n";
 import { openUnity } from "@/lib/open-unity";
 import { toastError, toastNormal, toastThrownError } from "@/lib/toast";
-import { unityButtonView } from "@/lib/unity-project-status";
 
 const UNITY_STATUS_IDLE_POLL_INTERVAL_MS = 5000;
 const UNITY_STATUS_ACTIVE_POLL_INTERVAL_MS = 1000;
@@ -85,7 +85,6 @@ export function OpenUnityButton({
 	const { data: unityStatus } = useQuery(unityStatusOptions);
 
 	const queryClient = useQueryClient();
-	const buttonView = unityButtonView(unityStatus);
 
 	const openUnityWithUpdateList = async () => {
 		await openUnity(projectPath, unityVersion, unityRevision);
@@ -101,8 +100,13 @@ export function OpenUnityButton({
 			switch (result) {
 				case "BroughtToFront":
 					break;
-				case "AttentionRequested":
-					toastNormal(tc("projects:toast:unity attention requested"));
+				case "FailedToBringToFront":
+					try {
+						await getCurrentWindow().setFocus();
+					} catch (error) {
+						console.error(error);
+					}
+					toastNormal(tc("projects:toast:bring unity to front failed"));
 					break;
 				case "WindowNotFound":
 					toastError(tc("projects:toast:unity window not found"));
@@ -118,30 +122,58 @@ export function OpenUnityButton({
 		}
 	};
 
-	const handleClick = () => {
-		if (buttonView.action === "open") {
-			return openUnityWithUpdateList();
-		}
-		if (buttonView.action === "bring-to-front") {
-			return bringUnityToFront();
-		}
-	};
-
-	return (
-		<PreventDoubleClick
-			delayMs={1000}
-			onClick={handleClick}
-			variant="emphasis"
-			{...props}
-			disabled={disabled || buttonView.disabled}
-			aria-busy={buttonView.action === "opening" || undefined}
-		>
-			<span className="inline-flex items-center gap-2">
-				{buttonView.showSpinner && (
-					<LoaderCircle className="size-4 animate-spin" aria-hidden />
-				)}
-				{tc(buttonView.label)}
-			</span>
-		</PreventDoubleClick>
-	);
+	switch (unityStatus?.status) {
+		case "Opening":
+			return (
+				<PreventDoubleClick
+					delayMs={1000}
+					variant="emphasis"
+					{...props}
+					disabled
+					aria-busy
+				>
+					<span className="inline-flex items-center gap-2">
+						<LoaderCircle className="size-4 animate-spin" aria-hidden />
+						{tc("projects:button:opening")}
+					</span>
+				</PreventDoubleClick>
+			);
+		case "Open":
+			if (!unityStatus.can_bring_to_front) {
+				return (
+					<PreventDoubleClick
+						delayMs={1000}
+						variant="emphasis"
+						{...props}
+						disabled
+					>
+						{tc("projects:button:unity is open")}
+					</PreventDoubleClick>
+				);
+			} else {
+				return (
+					<PreventDoubleClick
+						delayMs={1000}
+						onClick={bringUnityToFront}
+						variant="emphasis"
+						{...props}
+						disabled={disabled}
+					>
+						{tc("projects:button:bring to front")}
+					</PreventDoubleClick>
+				);
+			}
+		default:
+			return (
+				<PreventDoubleClick
+					delayMs={1000}
+					onClick={openUnityWithUpdateList}
+					variant="emphasis"
+					{...props}
+					disabled={disabled}
+				>
+					{tc("projects:button:open unity")}
+				</PreventDoubleClick>
+			);
+	}
 }

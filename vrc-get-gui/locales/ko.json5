@@ -256,7 +256,7 @@
     "projects:toast:loading unity from unity hub": "Unity Hub에서 Unity 정보 불러오는 중...",
     "projects:toast:match version unity not found": "Unity {{unity}}을(를) 찾을 수 없습니다. 컴퓨터에 Unity를 설치하거나 ALCOM 설정에서 Unity 버전을 추가해주세요.",
     "projects:toast:unity already running": "Unity가 이미 열리는 중이거나 실행 중입니다.",
-    "projects:toast:unity attention requested": "Unity를 앞으로 가져오지 못해 작업 표시줄에서 알렸습니다.",
+    "projects:toast:bring unity to front failed": "ALCOMD3에서 Unity를 앞으로 가져오지 못했습니다.",
     "projects:toast:unity window not found": "이 프로젝트의 Unity 창을 찾을 수 없습니다.",
     "projects:toast:bring unity to front unsupported": "이 플랫폼에서는 Unity를 앞으로 가져올 수 없습니다.",
     "projects:toast:unity exits with non-zero": "Unity가 0이 아닌 코드로 종료되었습니다.",

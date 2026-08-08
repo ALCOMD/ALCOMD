@@ -75,17 +75,23 @@ Project actions distinguish three Unity states:
 - `Open`: Unity owns the project's `Temp/UnityLockFile` and its editor is ready.
 
 Opening state is held in the backend, cleared when launching fails, and expires
-after a bounded interval if Unity never acquires the lock. After the lock is
-acquired on Windows, the project remains `Opening` until the matching Unity
-process has a visible editor main window; startup, splash, and utility windows
-do not count. An open project can be brought to the front by matching the Unity
-process's `-projectPath` argument and selecting that editor window. If Windows
-rejects foreground activation, ALCOMD3 requests attention through the taskbar
-instead. Platforms without a reliable window activation implementation still
-report the project as open but do not offer the bring-to-front action.
+after a bounded interval if Unity never acquires the lock. Unity processes are
+matched to projects by their working directory without converting paths to
+lossy strings. After the lock is acquired on Windows, the project remains
+`Opening` until the matching Unity process has a visible editor main window;
+startup, splash, and utility windows do not count.
 
-The backend state and platform implementations live in `src/state/unity.rs`,
-`src/os_windows.rs`, and `src/unity_process.rs`. The project button polling and
+Windows caches a shared process and editor-window snapshot for a short interval,
+so readiness checks and foreground activation reuse one `EnumWindows` pass. The
+cached process and window are validated before activation. Windows restores and
+focuses the matching editor, requesting attention if foreground activation is
+rejected. macOS activates the matching Unity application through
+`NSRunningApplication`. Linux still reports a locked project as open but does
+not offer the bring-to-front action.
+
+The backend state and shared platform interface live in `src/state/unity.rs`
+and `src/os.rs`; platform behavior and process discovery live in the corresponding
+`src/os_*.rs` files and `src/unity_process.rs`. Project-button polling and
 presentation live in `components/OpenUnityButton.tsx`.
 
 ## Related Documentation

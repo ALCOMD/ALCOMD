@@ -40,6 +40,8 @@ category order, and bullet counts must match this canonical entry.
 - Simplified MCP repository and template payloads and aligned repository
   management on URL identity.
 - Simplified the Unity launch-state labels.
+- Extended Unity editor focusing to macOS and improved process matching and
+  Windows editor-readiness caching.
 - Consolidated GitHub Release descriptions into this changelog and moved localized
   updater summaries to structured release metadata.
 

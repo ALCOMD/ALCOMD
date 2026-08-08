@@ -262,7 +262,7 @@
     "projects:toast:loading unity from unity hub": "正在從 Unity Hub 獲取已安裝的 Unity...",
     "projects:toast:match version unity not found": "找不到 Unity {{unity}}。請在你的電腦安裝 Unity 或在 ALCOM 的設定頁面裡添加 Unity。",
     "projects:toast:unity already running": "Unity 正在開啟或已在執行。",
-    "projects:toast:unity attention requested": "無法直接將 Unity 移至前景，已透過工作列提示。",
+    "projects:toast:bring unity to front failed": "ALCOMD3 無法將 Unity 移至前景。",
     "projects:toast:unity window not found": "找不到此專案對應的 Unity 視窗。",
     "projects:toast:bring unity to front unsupported": "目前平台不支援將 Unity 移至前景。",
     "projects:toast:unity exits with non-zero": "Unity 以非 0 值退出。",

@@ -261,7 +261,7 @@
     "projects:toast:loading unity from unity hub": "正在从 Unity Hub 获取已安装的 Unity...",
     "projects:toast:match version unity not found": "未找到匹配的 Unity 版本。请在 ALCOM 设置中安装或添加 Unity 版本",
     "projects:toast:unity already running": "Unity 正在打开或已经在运行。",
-    "projects:toast:unity attention requested": "无法直接将 Unity 置于前台，已通过任务栏提示。",
+    "projects:toast:bring unity to front failed": "ALCOMD3 无法将 Unity 置于前台。",
     "projects:toast:unity window not found": "未找到此项目对应的 Unity 窗口。",
     "projects:toast:bring unity to front unsupported": "当前平台不支持将 Unity 置于前台。",
     "projects:toast:unity exits with non-zero": "Unity 异常退出，请检查日志以获取更多信息。",

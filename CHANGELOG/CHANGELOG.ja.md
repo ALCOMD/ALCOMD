@@ -27,6 +27,7 @@ category の bullet count を一致させます。
 
 - MCP リポジトリとテンプレートのペイロードを簡素化し、リポジトリ管理を URL ID ベースに統一しました。
 - Unity 起動状態ラベルを簡素化しました。
+- Unity エディタのフォーカス機能を macOS に拡張し、プロセス照合と Windows のエディタ準備完了キャッシュを改善しました。
 - GitHub Release の説明文をこの changelog に統合し、ローカライズ済み updater 要約は構造化された release metadata に移行しました。
 
 ### Fixed
