@@ -130,7 +130,14 @@ fn platform_install_metadata_uses_alcomd3_identity() {
     assert!(windows_setup.contains("Shortcut.TargetPath"));
     assert!(windows_setup.contains("IsLegacyExecutableTarget"));
     assert!(windows_setup.contains("procedure ApplyLegacyDesktopShortcutDefault;"));
+    assert!(windows_setup.contains(
+        r#"Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}""#
+    ));
+    assert!(!windows_setup.contains(
+        r#"GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked"#
+    ));
     assert!(windows_setup.contains("WizardSelectTasks('desktopicon')"));
+    assert!(windows_setup.contains("WizardSelectTasks('!desktopicon')"));
     assert!(windows_setup.contains("procedure CurPageChanged(CurPageID: Integer);"));
     assert!(windows_setup.contains("CurPageID = wpSelectTasks"));
     assert!(windows_setup.contains("if WizardSilent then"));

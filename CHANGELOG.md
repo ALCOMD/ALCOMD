@@ -35,6 +35,7 @@ category order, and bullet counts must match this canonical entry.
 ### Changed
 
 - Standardized MCP package repository selection on repository IDs; repository URLs remain limited to adding and removing repositories.
+- Selected desktop shortcut creation by default for new Windows installations while preserving the previous choice during upgrades.
 
 ## [3.2.0] - 2026-08-09
 

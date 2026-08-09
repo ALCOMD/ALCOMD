@@ -107,7 +107,7 @@ chinesesimplified.LegacyCleanupFailed=无法彻底移除旧版 ALCOMD3/ALCOM。�
 chinesetraditional.LegacyCleanupFailed=無法徹底移除舊版 ALCOMD3/ALCOM。請關閉相關程式，以系統管理員身分執行此安裝程式，然後重試。
 
 [Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
 Source: "{#ApplicationPath}"; DestDir: "{app}"; DestName: "{#MyAppExeName}"; Flags: ignoreversion
@@ -262,11 +262,19 @@ end;
 
 procedure ApplyLegacyDesktopShortcutDefault;
 begin
-  if RestoreLegacyDesktopShortcut and not LegacyDesktopShortcutDefaultApplied then
+  if LegacyShortcutMigrationActive and not LegacyDesktopShortcutDefaultApplied then
   begin
-    WizardSelectTasks('desktopicon');
+    if RestoreLegacyDesktopShortcut then
+    begin
+      WizardSelectTasks('desktopicon');
+      Log('Legacy desktop shortcut task selected');
+    end
+    else
+    begin
+      WizardSelectTasks('!desktopicon');
+      Log('Legacy desktop shortcut task deselected');
+    end;
     LegacyDesktopShortcutDefaultApplied := True;
-    Log('Legacy desktop shortcut task selected');
   end;
 end;
 
