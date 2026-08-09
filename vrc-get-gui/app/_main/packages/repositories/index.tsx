@@ -57,6 +57,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
 	Tooltip,
 	TooltipContent,
@@ -733,7 +734,7 @@ function RepositoryRowCells({
 	selected,
 	onCheckedChange,
 	onRemove,
-	onEditAlias,
+	onEditDisplayName,
 	repoPackages,
 	isSortingMode,
 	dragListeners,
@@ -748,7 +749,7 @@ function RepositoryRowCells({
 	selected: boolean;
 	onCheckedChange?: (shown: boolean) => void;
 	onRemove?: () => void;
-	onEditAlias?: () => void;
+	onEditDisplayName?: () => void;
 	repoPackages?: TauriBasePackageInfo[];
 	isSortingMode: boolean;
 	dragListeners?: ReturnType<typeof useSortable>["listeners"];
@@ -841,7 +842,11 @@ function RepositoryRowCells({
 					{isLiveRow && (
 						<Tooltip>
 							<TooltipTrigger asChild>
-								<Button onClick={onEditAlias} variant={"ghost"} size={"icon"}>
+								<Button
+									onClick={onEditDisplayName}
+									variant={"ghost"}
+									size={"icon"}
+								>
 									<Pencil className={"size-5"} />
 								</Button>
 							</TooltipTrigger>
@@ -973,12 +978,16 @@ function RepositoryRow({
 						url,
 					})
 				}
-				onEditAlias={() =>
-					void openSingleDialog(EditRepositoryDisplayNameDialog, {
-						repositoryUrl: url,
-						repositoryName,
-						displayName,
-					})
+				onEditDisplayName={() =>
+					void openSingleDialog(
+						EditRepositoryDisplayNameDialog,
+						{
+							repositoryUrl: url,
+							repositoryName,
+							displayName,
+						},
+						"max-w-lg",
+					)
 				}
 				isSortingMode={isSortingMode}
 				dragListeners={listeners}
@@ -1058,7 +1067,7 @@ function EditRepositoryDisplayNameDialog({
 }) {
 	const [value, setValue] = useState(displayName);
 	const queryClient = useQueryClient();
-	const setAlias = useMutation({
+	const setDisplayName = useMutation({
 		mutationFn: (nextDisplayName: string) =>
 			commands.environmentSetRepositoryDisplayName(
 				repositoryUrl,
@@ -1121,19 +1130,21 @@ function EditRepositoryDisplayNameDialog({
 
 	return (
 		<form
+			className="flex flex-col gap-4"
 			onSubmit={(event) => {
 				event.preventDefault();
-				setAlias.mutate(value);
+				setDisplayName.mutate(value);
 			}}
 		>
 			<DialogTitle>
 				{tc("vpm repositories:dialog:edit display name")}
 			</DialogTitle>
-			<div className="space-y-2">
-				<label htmlFor="repository-display-name">
+			<div className="flex flex-col gap-2">
+				<Label htmlFor="repository-display-name">
 					{tc("vpm repositories:display name")}
-				</label>
+				</Label>
 				<Input
+					className="w-full"
 					id="repository-display-name"
 					value={value}
 					onChange={(event) => setValue(event.target.value)}
@@ -1149,7 +1160,7 @@ function EditRepositoryDisplayNameDialog({
 				<Button type="button" onClick={() => dialog.close()}>
 					{tc("general:button:cancel")}
 				</Button>
-				<Button type="submit" disabled={setAlias.isPending}>
+				<Button type="submit" disabled={setDisplayName.isPending}>
 					{tc("general:button:save")}
 				</Button>
 			</DialogFooter>
