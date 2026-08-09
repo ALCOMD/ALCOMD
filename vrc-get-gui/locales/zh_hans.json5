@@ -127,6 +127,8 @@
     "mcp:client": "客户端",
     "mcp:last seen": "上次活动",
     "mcp:tools": "工具",
+    "mcp:tools:display call name first": "调用名称（悬停时显示本地化名称）",
+    "mcp:tools:display localized first": "本地化名称（悬停时显示调用名称）",
     "mcp:tools:group:read": "只读工具",
     "mcp:tools:group:write": "写入工具",
     "mcp:tools:group:logs": "日志工具",

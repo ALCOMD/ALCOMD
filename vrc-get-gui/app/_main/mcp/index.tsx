@@ -22,6 +22,7 @@ import { ScrollPageContainer } from "@/components/ScrollPageContainer";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DialogFooter, DialogTitle } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 import {
 	Tooltip,
 	TooltipContent,
@@ -50,6 +51,7 @@ const mcpStatus = queryOptions({
 
 const MCP_STATUS_REFETCH_INTERVAL_MS = 10_000;
 const MCP_TOOL_ACTIVE_MIN_VISIBLE_MS = 800;
+const MCP_LOCALIZED_TOOL_NAMES_STORAGE_KEY = "mcp_localized_tool_names";
 
 type McpTool = {
 	name: string;
@@ -261,6 +263,9 @@ function toolCallTimerKey(toolName: string, requestId: string) {
 function Page() {
 	const queryClient = useQueryClient();
 	const [activeToolCalls, setActiveToolCalls] = useState<ActiveToolCalls>({});
+	const [showLocalizedToolNames, setShowLocalizedToolNames] = useState(
+		() => localStorage.getItem(MCP_LOCALIZED_TOOL_NAMES_STORAGE_KEY) === "true",
+	);
 	const activeToolCallsRef = useRef<ActiveToolCalls>({});
 	const toolCallClearTimers = useRef(new Map<string, number>());
 	const status = useQuery({
@@ -359,6 +364,13 @@ function Page() {
 	const refresh = useMutation({
 		mutationFn: async () => await queryClient.invalidateQueries(mcpStatus),
 	});
+	const updateShowLocalizedToolNames = (showLocalized: boolean) => {
+		localStorage.setItem(
+			MCP_LOCALIZED_TOOL_NAMES_STORAGE_KEY,
+			String(showLocalized),
+		);
+		setShowLocalizedToolNames(showLocalized);
+	};
 
 	return (
 		<VStack>
@@ -397,7 +409,11 @@ function Page() {
 							<RecentClientsCard status={status.data} />
 						</>
 					)}
-					<ToolsCard activeToolCalls={activeToolCalls} />
+					<ToolsCard
+						activeToolCalls={activeToolCalls}
+						showLocalizedToolNames={showLocalizedToolNames}
+						setShowLocalizedToolNames={updateShowLocalizedToolNames}
+					/>
 				</main>
 			</ScrollPageContainer>
 		</VStack>
@@ -652,10 +668,35 @@ function RecentClientsCard({ status }: { status: McpStatus }) {
 	);
 }
 
-function ToolsCard({ activeToolCalls }: { activeToolCalls: ActiveToolCalls }) {
+function ToolsCard({
+	activeToolCalls,
+	showLocalizedToolNames,
+	setShowLocalizedToolNames,
+}: {
+	activeToolCalls: ActiveToolCalls;
+	showLocalizedToolNames: boolean;
+	setShowLocalizedToolNames: (showLocalized: boolean) => void;
+}) {
 	return (
 		<Card className="shrink-0 p-4 compact:p-3">
-			<h2 className="mb-3">{tc("mcp:tools")}</h2>
+			<div className="mb-3 flex flex-wrap items-center gap-3">
+				<h2>{tc("mcp:tools")}</h2>
+				<div className="grow" />
+				<div className="flex items-center gap-2 text-sm text-muted-foreground">
+					<span id="mcp-tool-name-display-label">
+						{tc(
+							showLocalizedToolNames
+								? "mcp:tools:display localized first"
+								: "mcp:tools:display call name first",
+						)}
+					</span>
+					<Switch
+						checked={showLocalizedToolNames}
+						onCheckedChange={setShowLocalizedToolNames}
+						aria-labelledby="mcp-tool-name-display-label"
+					/>
+				</div>
+			</div>
 			<div className="grid gap-4">
 				{MCP_TOOL_GROUPS.map((group) => (
 					<section key={group.labelKey} className="grid gap-2">
@@ -665,6 +706,13 @@ function ToolsCard({ activeToolCalls }: { activeToolCalls: ActiveToolCalls }) {
 						<ul className="grid gap-2 md:grid-cols-2">
 							{group.tools.map((tool) => {
 								const active = toolHasActiveCalls(activeToolCalls, tool.name);
+								const localizedName = tc(tool.labelKey);
+								const displayedName = showLocalizedToolNames
+									? localizedName
+									: tool.name;
+								const hoverName = showLocalizedToolNames
+									? tool.name
+									: localizedName;
 								return (
 									<li key={tool.name}>
 										<Tooltip>
@@ -673,11 +721,20 @@ function ToolsCard({ activeToolCalls }: { activeToolCalls: ActiveToolCalls }) {
 													type="button"
 													className="block w-full appearance-none rounded-md border-0 bg-transparent p-0 text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
 												>
-													<CodeValue active={active}>{tool.name}</CodeValue>
+													<CodeValue
+														active={active}
+														plainText={showLocalizedToolNames}
+													>
+														{displayedName}
+													</CodeValue>
 												</button>
 											</TooltipTrigger>
 											<TooltipContent className="max-w-[80dvw]">
-												{tc(tool.labelKey)}
+												{showLocalizedToolNames ? (
+													<code>{hoverName}</code>
+												) : (
+													hoverName
+												)}
 											</TooltipContent>
 										</Tooltip>
 									</li>
@@ -762,19 +819,28 @@ function CopyableValue({ value }: { value: string | null }) {
 function CodeValue({
 	children,
 	active = false,
+	plainText = false,
 }: {
 	children: React.ReactNode;
 	active?: boolean;
+	plainText?: boolean;
 }) {
+	const className = `block max-w-full overflow-x-auto rounded-md px-2 py-1 text-sm transition ${
+		active
+			? "bg-accent text-accent-foreground ring-2 ring-primary/70"
+			: "bg-secondary"
+	}`;
+
+	if (plainText) {
+		return (
+			<span data-active={active || undefined} className={className}>
+				{children}
+			</span>
+		);
+	}
+
 	return (
-		<code
-			data-active={active || undefined}
-			className={`block max-w-full overflow-x-auto rounded-md px-2 py-1 text-sm transition ${
-				active
-					? "bg-accent text-accent-foreground ring-2 ring-primary/70"
-					: "bg-secondary"
-			}`}
-		>
+		<code data-active={active || undefined} className={className}>
 			{children}
 		</code>
 	);

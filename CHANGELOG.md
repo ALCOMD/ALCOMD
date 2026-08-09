@@ -31,6 +31,7 @@ category order, and bullet counts must match this canonical entry.
 ### Added
 
 - Added persistent user-defined display names for repositories.
+- Added a persistent MCP tool-name display switch between call names and localized names, with the alternate name shown on hover.
 
 ### Changed
 

@@ -122,6 +122,8 @@
     "mcp:client": "Client",
     "mcp:last seen": "Last Activity",
     "mcp:tools": "Tools",
+    "mcp:tools:display call name first": "호출 이름 (마우스를 올리면 현지화된 이름 표시)",
+    "mcp:tools:display localized first": "현지화된 이름 (마우스를 올리면 호출 이름 표시)",
     "mcp:tools:group:read": "읽기 전용 도구",
     "mcp:tools:group:write": "쓰기 도구",
     "mcp:tools:group:logs": "로그 도구",

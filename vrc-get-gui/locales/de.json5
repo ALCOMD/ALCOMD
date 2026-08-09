@@ -128,6 +128,8 @@
     "mcp:client": "Client",
     "mcp:last seen": "Last Activity",
     "mcp:tools": "Tools",
+    "mcp:tools:display call name first": "Aufrufnamen (lokalisierte Namen beim Darüberfahren)",
+    "mcp:tools:display localized first": "Lokalisierte Namen (Aufrufnamen beim Darüberfahren)",
     "mcp:tools:group:read": "Nur-Lese-Werkzeuge",
     "mcp:tools:group:write": "Schreibwerkzeuge",
     "mcp:tools:group:logs": "Protokollwerkzeuge",
