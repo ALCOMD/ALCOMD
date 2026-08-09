@@ -1,0 +1,9 @@
+{
+  "en": "Adds an Open button for installed extensions with hidden sidebar entries, keeps Projects, Resources, and Settings available, and repairs configurations that hid permanent entries.",
+  "de": "Fügt eine Öffnen-Schaltfläche für installierte Erweiterungen mit ausgeblendeten Seitenleisteneinträgen hinzu, hält Projekte, Ressourcen und Einstellungen verfügbar und repariert Konfigurationen mit ausgeblendeten permanenten Einträgen.",
+  "fr": "Ajoute un bouton Ouvrir pour les extensions installées dont l’entrée latérale est masquée, maintient Projets, Ressources et Paramètres accessibles et répare les configurations ayant masqué des entrées permanentes.",
+  "ja": "サイドバー項目が非表示のインストール済み拡張に「開く」ボタンを追加し、Projects、Resources、Settings を常に利用可能にして、固定項目を隠していた設定を修復しました。",
+  "ko": "사이드바 항목이 숨겨진 설치된 확장에 열기 버튼을 추가하고 프로젝트, 리소스 및 설정을 항상 사용할 수 있게 하며 고정 항목을 숨긴 구성을 복구했습니다.",
+  "zh_hans": "为侧边栏入口被隐藏的已安装扩展新增打开按钮，保持“项目、资源、设置”始终可用，并修复隐藏永久入口的已有配置。",
+  "zh_hant": "為側邊欄入口被隱藏的已安裝擴充功能新增開啟按鈕，保持「專案、資源、設定」始終可用，並修復隱藏永久入口的既有設定。"
+}

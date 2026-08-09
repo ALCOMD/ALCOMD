@@ -1,0 +1,9 @@
+{
+  "en": "Adds a bearer-token-protected, loopback-only MCP endpoint and optional client setup, refreshes project types promptly, and requires clients using the former stdio transport to migrate.",
+  "de": "Fügt einen durch Bearer-Token geschützten, nur über Loopback erreichbaren MCP-Endpunkt und eine optionale Client-Einrichtung hinzu, aktualisiert Projekttypen schneller und verlangt die Migration von Clients mit dem früheren stdio-Transport.",
+  "fr": "Ajoute un point MCP limité à la boucle locale et protégé par jeton Bearer, ainsi qu’une configuration client facultative, actualise rapidement les types de projets et impose la migration des clients utilisant l’ancien transport stdio.",
+  "ja": "Bearer トークンで保護されたループバック限定 MCP エンドポイントと任意のクライアント設定を追加し、プロジェクト種別を迅速に更新して、旧 stdio トランスポートのクライアントに移行を要求します。",
+  "ko": "Bearer 토큰으로 보호된 루프백 전용 MCP 엔드포인트와 선택적 클라이언트 설정을 추가하고 프로젝트 유형을 빠르게 새로 고치며 기존 stdio 전송을 사용하는 클라이언트의 마이그레이션을 요구합니다.",
+  "zh_hans": "新增 Bearer Token 保护、仅回环地址的 MCP 端点及可选客户端配置，更及时地刷新项目类型，并要求使用旧 stdio 传输的客户端迁移。",
+  "zh_hant": "新增 Bearer Token 保護、僅回環位址的 MCP 端點及選用用戶端設定，更即時地重新整理專案類型，並要求使用舊 stdio 傳輸的用戶端遷移。"
+}

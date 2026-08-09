@@ -1,0 +1,9 @@
+{
+  "en": "Allows the built-in MCP extension to be disabled with access revocation and task cancellation, keeps the main window available during endpoint startup, and refreshes project types after relevant changes.",
+  "de": "Ermöglicht das Deaktivieren der integrierten MCP-Erweiterung samt Zugriffsentzug und Aufgabenabbruch, hält das Hauptfenster während des Endpunktstarts verfügbar und aktualisiert Projekttypen nach relevanten Änderungen.",
+  "fr": "Permet de désactiver l’extension MCP intégrée avec révocation de l’accès et annulation des tâches, maintient la fenêtre principale disponible pendant le démarrage du point d’accès et actualise les types de projets après les modifications concernées.",
+  "ja": "内蔵 MCP 拡張を無効化してアクセスを取り消し、タスクをキャンセルできるようにしました。エンドポイント起動中もメインウィンドウを表示し、関連する変更後にプロジェクト種別を更新します。",
+  "ko": "내장 MCP 확장을 비활성화하여 접근을 취소하고 작업을 중단할 수 있으며, 엔드포인트 시작 중에도 기본 창을 표시하고 관련 변경 후 프로젝트 유형을 새로 고칩니다.",
+  "zh_hans": "允许禁用内置 MCP 扩展并撤销访问、取消任务；在端点启动期间保持主窗口可用，并在相关变更后刷新项目类型。",
+  "zh_hant": "允許停用內建 MCP 擴充功能並撤銷存取、取消工作；在端點啟動期間保持主視窗可用，並在相關變更後重新整理專案類型。"
+}

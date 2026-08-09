@@ -1,0 +1,9 @@
+{
+  "en": "Adds the protected loopback MCP endpoint, Unity project launch tracking and editor focusing, MCP template editing, more resilient sidebar and project refresh behavior, and controls for disabling the built-in MCP extension.",
+  "de": "Fügt den geschützten Loopback-MCP-Endpunkt, Unity-Projektstartverfolgung und Editorfokussierung, MCP-Vorlagenbearbeitung, robustere Seitenleisten- und Projektaktualisierungen sowie Steuerelemente zum Deaktivieren der integrierten MCP-Erweiterung hinzu.",
+  "fr": "Ajoute le point MCP protégé sur la boucle locale, le suivi du lancement des projets Unity et la mise au premier plan de l’éditeur, l’édition des modèles MCP, un comportement plus robuste de la barre latérale et de l’actualisation des projets, ainsi que la désactivation de l’extension MCP intégrée.",
+  "ja": "保護されたループバック MCP エンドポイント、Unity プロジェクトの起動追跡とエディタフォーカス、MCP テンプレート編集を追加しました。サイドバーとプロジェクト更新を安定化し、内蔵 MCP 拡張を無効化できるようにしました。",
+  "ko": "보호된 루프백 MCP 엔드포인트, Unity 프로젝트 실행 추적 및 에디터 포커스, MCP 템플릿 편집을 추가했습니다. 사이드바와 프로젝트 새로 고침을 안정화하고 내장 MCP 확장을 비활성화할 수 있습니다.",
+  "zh_hans": "新增受保护的回环 MCP 端点、Unity 项目启动跟踪与编辑器聚焦、MCP 模板编辑；提升侧边栏和项目刷新可靠性，并支持禁用内置 MCP 扩展。",
+  "zh_hant": "新增受保護的回環 MCP 端點、Unity 專案啟動追蹤與編輯器聚焦、MCP 範本編輯；提升側邊欄和專案重新整理可靠性，並支援停用內建 MCP 擴充功能。"
+}

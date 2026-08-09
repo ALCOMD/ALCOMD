@@ -1,0 +1,9 @@
+{
+  "en": "Adds Unity project opening and ready-state tracking, prevents duplicate launches, focuses active editors, keeps project lists visible during refreshes, and updates saved repository names.",
+  "de": "Fügt das Öffnen von Unity-Projekten und die Bereitschaftsverfolgung hinzu, verhindert doppelte Starts, fokussiert aktive Editoren, hält Projektlisten bei Aktualisierungen sichtbar und aktualisiert gespeicherte Repository-Namen.",
+  "fr": "Ajoute l’ouverture des projets Unity et le suivi de leur état de disponibilité, empêche les lancements en double, met au premier plan les éditeurs actifs, conserve les listes de projets pendant l’actualisation et met à jour les noms de dépôts enregistrés.",
+  "ja": "Unity プロジェクトの起動と準備完了状態の追跡を追加し、重複起動を防止して実行中のエディタにフォーカスします。更新中もプロジェクト一覧を表示し、保存済みリポジトリ名を更新します。",
+  "ko": "Unity 프로젝트 열기와 준비 상태 추적을 추가하고 중복 실행을 방지하며 활성 에디터에 포커스합니다. 새로 고침 중에도 프로젝트 목록을 표시하고 저장된 저장소 이름을 업데이트합니다.",
+  "zh_hans": "新增 Unity 项目打开与就绪状态跟踪，防止重复启动并聚焦活动编辑器；刷新期间保持项目列表可见，并更新已保存的仓库名。",
+  "zh_hant": "新增 Unity 專案開啟與就緒狀態追蹤，防止重複啟動並聚焦作用中的編輯器；重新整理期間保持專案清單可見，並更新已儲存的儲存庫名稱。"
+}

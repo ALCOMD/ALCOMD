@@ -1,0 +1,9 @@
+{
+  "en": "The first public ALCOMD3 release for Windows x64, macOS Apple Silicon, and Linux x86_64, with ALCOMD3-owned update endpoints and signed update payloads.",
+  "de": "Die erste öffentliche ALCOMD3-Version für Windows x64, macOS Apple Silicon und Linux x86_64 mit ALCOMD3-eigenen Update-Endpunkten und signierten Update-Paketen.",
+  "fr": "Première version publique d’ALCOMD3 pour Windows x64, macOS Apple Silicon et Linux x86_64, avec des points de mise à jour propres à ALCOMD3 et des paquets de mise à jour signés.",
+  "ja": "Windows x64、macOS Apple Silicon、Linux x86_64 向けの最初の公開版です。ALCOMD3 独自の更新エンドポイントと署名付き更新ペイロードを使用します。",
+  "ko": "Windows x64, macOS Apple Silicon 및 Linux x86_64용 첫 공개 ALCOMD3 릴리스입니다. ALCOMD3 전용 업데이트 엔드포인트와 서명된 업데이트 페이로드를 사용합니다.",
+  "zh_hans": "首个面向 Windows x64、macOS Apple Silicon 和 Linux x86_64 的 ALCOMD3 公开版本，使用 ALCOMD3 自有更新端点和签名更新负载。",
+  "zh_hant": "首個面向 Windows x64、macOS Apple Silicon 和 Linux x86_64 的 ALCOMD3 公開版本，使用 ALCOMD3 自有更新端點和簽署更新承載。"
+}
