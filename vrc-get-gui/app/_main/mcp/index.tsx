@@ -699,11 +699,14 @@ function ToolsCard({
 			</div>
 			<div className="grid gap-4">
 				{MCP_TOOL_GROUPS.map((group) => (
-					<section key={group.labelKey} className="grid gap-2">
+					<section
+						key={group.labelKey}
+						className="mcp-tool-grid-container grid gap-2"
+					>
 						<h3 className="text-sm font-medium text-muted-foreground">
 							{tc(group.labelKey)}
 						</h3>
-						<ul className="grid gap-2 md:grid-cols-2">
+						<ul className="mcp-tool-grid grid gap-2">
 							{group.tools.map((tool) => {
 								const active = toolHasActiveCalls(activeToolCalls, tool.name);
 								const localizedName = tc(tool.labelKey);

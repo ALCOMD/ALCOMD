@@ -118,6 +118,54 @@
 	}
 }
 
+.mcp-tool-grid-container,
+.project-card-grid-container {
+	container-type: inline-size;
+}
+
+.mcp-tool-grid,
+.project-card-grid {
+	grid-template-columns: minmax(0, 1fr);
+}
+
+/* Keep the two-column threshold at a 20rem minimum item width. */
+@container (min-width: 40.5rem) {
+	.mcp-tool-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+@container (min-width: 40.375rem) {
+	[compact] .project-card-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+@container (min-width: 40.75rem) {
+	.project-card-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+/* Give each item 22rem before switching from two columns to three. */
+@container (min-width: 67rem) {
+	.mcp-tool-grid {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+}
+
+@container (min-width: 66.75rem) {
+	[compact] .project-card-grid {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+}
+
+@container (min-width: 67.5rem) {
+	.project-card-grid {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+}
+
 :root {
 	--md-sys-color-primary: rgb(51 97 141);
 	--md-sys-color-surface-tint: rgb(51 97 141);

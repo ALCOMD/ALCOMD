@@ -38,6 +38,7 @@ category order, and bullet counts must match this canonical entry.
 - Standardized MCP package repository selection on repository IDs; repository URLs remain limited to adding and removing repositories.
 - Selected desktop shortcut creation by default for new Windows installations while preserving the previous choice during upgrades.
 - Added an optional Windows uninstall choice to remove settings, caches, and other local application data without deleting projects or backups stored in Documents.
+- Made the MCP tool and project card lists responsive up to three columns based on their container width, with more room required before switching to three columns.
 
 ### Fixed
 
