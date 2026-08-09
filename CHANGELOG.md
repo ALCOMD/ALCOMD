@@ -32,6 +32,10 @@ category order, and bullet counts must match this canonical entry.
 
 - Added persistent user-defined display names for repositories.
 
+### Changed
+
+- Standardized MCP package repository selection on repository IDs; repository URLs remain limited to adding and removing repositories.
+
 ## [3.2.0] - 2026-08-09
 
 ### Added

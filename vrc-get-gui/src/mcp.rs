@@ -1884,9 +1884,9 @@ enum ProjectPackageVersionSelector {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ProjectPackageSourceParams {
-    repository_id: Option<String>,
-    repository_url: Option<String>,
+    repository_id: String,
 }
 
 #[derive(Deserialize)]
@@ -2406,16 +2406,7 @@ fn parse_project_package_source(
     let Some(source) = source else {
         return Ok(None);
     };
-    let repository_id = normalize_optional_string(source.repository_id);
-    let repository_url = normalize_optional_string(source.repository_url);
-    if repository_id.is_none() && repository_url.is_none() {
-        return Ok(None);
-    }
-
-    Ok(Some(RepositorySelector::from_values(
-        repository_id,
-        repository_url,
-    )?))
+    Ok(Some(RepositorySelector::new(source.repository_id)?))
 }
 
 fn ensure_project_package_installed(
@@ -3533,52 +3524,27 @@ struct PackageDetailsParams {
 
 #[derive(Debug, Clone)]
 struct RepositorySelector {
-    repository_id: Option<String>,
-    repository_url: Option<url::Url>,
+    repository_id: String,
 }
 
 impl RepositorySelector {
     fn from_params(params: RepositoryPackagesParams) -> Result<Self, McpIpcError> {
-        Self::from_values(Some(params.repository_id), None)
+        Self::new(params.repository_id)
     }
 
-    fn from_values(
-        repository_id: Option<String>,
-        repository_url: Option<String>,
-    ) -> Result<Self, McpIpcError> {
-        let repository_id = normalize_optional_string(repository_id);
-        let repository_url = normalize_optional_string(repository_url)
-            .map(|repository_url| {
-                repository_url.parse::<url::Url>().map_err(|_| {
-                    McpIpcError::new("invalid_params", "repository_url must be a valid URL")
-                })
-            })
-            .transpose()?;
-
-        if repository_id.is_none() && repository_url.is_none() {
+    fn new(repository_id: String) -> Result<Self, McpIpcError> {
+        let Some(repository_id) = normalize_optional_string(Some(repository_id)) else {
             return Err(McpIpcError::new(
                 "invalid_params",
-                "repository_id or repository_url must be provided",
+                "repository_id must not be empty",
             ));
-        }
+        };
 
-        Ok(Self {
-            repository_id,
-            repository_url,
-        })
+        Ok(Self { repository_id })
     }
 
     fn matches_repo(&self, repo: &LocalCachedRepository) -> bool {
-        let id_matches = self
-            .repository_id
-            .as_deref()
-            .map(|expected| repository_id(repo) == Some(expected));
-        let url_matches = self
-            .repository_url
-            .as_ref()
-            .map(|expected| repo.url() == Some(expected));
-
-        id_matches.unwrap_or(true) && url_matches.unwrap_or(true)
+        repository_id(repo) == Some(self.repository_id.as_str())
     }
 }
 
@@ -3600,15 +3566,9 @@ impl PackageDetailsSelector {
         }
 
         let version = normalize_optional_string(params.version);
-        let has_repository = params
-            .repository_id
-            .as_ref()
-            .is_some_and(|value| !value.trim().is_empty());
-        let repository = if has_repository {
-            Some(RepositorySelector::from_values(params.repository_id, None)?)
-        } else {
-            None
-        };
+        let repository = normalize_optional_string(params.repository_id)
+            .map(RepositorySelector::new)
+            .transpose()?;
 
         Ok(Self {
             package_name,
@@ -5370,7 +5330,7 @@ mod tests {
     }
 
     #[test]
-    fn repository_selector_matches_repository_id_or_url() {
+    fn repository_selector_matches_repository_id() {
         let repository = test_cached_repository(json!({
             "id": "com.example.repo",
             "url": "https://example.com/index.json",
@@ -5382,52 +5342,15 @@ mod tests {
             "packages": {}
         }));
 
-        let by_id = RepositorySelector::from_params(RepositoryPackagesParams {
+        let selector = RepositorySelector::from_params(RepositoryPackagesParams {
             repository_id: "com.example.repo".to_string(),
             offset: None,
             limit: None,
         })
         .unwrap();
-        let by_url = RepositorySelector::from_values(
-            None,
-            Some("https://example.com/index.json".to_string()),
-        )
-        .unwrap();
 
-        assert!(by_id.matches_repo(&repository));
-        assert!(by_url.matches_repo(&repository));
-        assert!(!by_id.matches_repo(&other_repository));
-        assert!(!by_url.matches_repo(&other_repository));
-    }
-
-    #[test]
-    fn repository_selector_requires_id_and_url_to_match_same_repository() {
-        let repository = test_cached_repository(json!({
-            "id": "com.example.repo",
-            "url": "https://example.com/index.json",
-            "packages": {}
-        }));
-        let matching = RepositorySelector::from_values(
-            Some("com.example.repo".to_string()),
-            Some("https://example.com/index.json".to_string()),
-        )
-        .unwrap();
-        let mismatched = RepositorySelector::from_values(
-            Some("com.example.other".to_string()),
-            Some("https://example.com/index.json".to_string()),
-        )
-        .unwrap();
-
-        assert!(matching.matches_repo(&repository));
-        assert!(!mismatched.matches_repo(&repository));
-    }
-
-    #[test]
-    fn repository_selector_rejects_invalid_url() {
-        let error =
-            RepositorySelector::from_values(None, Some("not a URL".to_string())).unwrap_err();
-
-        assert_eq!(error.code, "invalid_params");
+        assert!(selector.matches_repo(&repository));
+        assert!(!selector.matches_repo(&other_repository));
     }
 
     #[test]
@@ -5469,6 +5392,15 @@ mod tests {
             serde_json::from_value::<RemoveRepositoryParams>(json!({
                 "repository_url": "https://example.com/index.json",
                 "repository_id": "com.example.repo",
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<InstallProjectPackageParams>(json!({
+                "project_path": "C:/Projects/Example",
+                "package_name": "com.example.package",
+                "version_selector": { "type": "latest_gui_visible" },
+                "source": { "repository_url": "https://example.com/index.json" },
             }))
             .is_err()
         );
@@ -5534,33 +5466,21 @@ mod tests {
     }
 
     #[test]
-    fn project_package_source_parser_treats_empty_source_as_omitted() {
+    fn project_package_source_parser_uses_repository_id() {
         assert!(parse_project_package_source(None).unwrap().is_none());
-        assert!(
-            parse_project_package_source(Some(ProjectPackageSourceParams {
-                repository_id: None,
-                repository_url: None,
-            }))
-            .unwrap()
-            .is_none()
-        );
-        assert!(
-            parse_project_package_source(Some(ProjectPackageSourceParams {
-                repository_id: Some(" ".to_string()),
-                repository_url: Some(String::new()),
-            }))
-            .unwrap()
-            .is_none()
-        );
+        let error = parse_project_package_source(Some(ProjectPackageSourceParams {
+            repository_id: " ".to_string(),
+        }))
+        .unwrap_err();
+        assert_eq!(error.code, "invalid_params");
 
         let source = parse_project_package_source(Some(ProjectPackageSourceParams {
-            repository_id: Some("com.example.repo".to_string()),
-            repository_url: None,
+            repository_id: "com.example.repo".to_string(),
         }))
         .unwrap()
         .unwrap();
 
-        assert_eq!(source.repository_id.as_deref(), Some("com.example.repo"));
+        assert_eq!(source.repository_id, "com.example.repo");
     }
 
     #[test]

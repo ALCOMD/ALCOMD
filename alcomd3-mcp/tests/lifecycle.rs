@@ -492,6 +492,14 @@ fn bridge_lists_project_tools() {
     assert!(tool["inputSchema"]["properties"]["version_selector"].is_object());
     assert!(tool["inputSchema"]["properties"]["source"].is_object());
     assert!(tool["inputSchema"]["properties"]["allow_conflicts"].is_object());
+    let source_schema = &tool["inputSchema"]["$defs"]["ProjectPackageSourceArg"];
+    assert!(source_schema["properties"]["repository_id"].is_object());
+    assert!(source_schema["properties"].get("repository_url").is_none());
+    assert!(
+        source_schema["required"]
+            .as_array()
+            .is_some_and(|required| required.contains(&json!("repository_id")))
+    );
 
     let tool = tools
         .iter()

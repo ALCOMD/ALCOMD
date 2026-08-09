@@ -295,7 +295,7 @@ task-aware call を使わない場合、これらの tools は completion まで
 
 `alcomd3_list_packages` と `alcomd3_list_repository_packages` は GUI package page と同じ package-state load path を使い、force-refresh path は呼びません。results は GUI の pre-release、hidden repository、hidden local user package、yanked filters に従います。MCP tool call は server-side search を行いません。repository 追加には明示的な `alcomd3_add_repository` call が必要です。list tools は暗黙に repository を追加したり、repository refresh strategy を作り直したりしません。
 
-Repository parameter の役割は分離されています。package read tool は `alcomd3_list_repositories` が返した `id` で repository を選択します。user repository の add/remove は stored URL を使うため、remove input は add input と直接対応し、built-in default repository は削除対象になりません。duplicate check は stored URL と publisher-declared repository ID の両方に適用されます。GUI の add/remove/reorder も同じ shared URL-based backend を使います。local repository はサポートしません。URL-less user-repository entry は settings の load 時に破棄し、local repository の作成経路も提供しません。
+Repository parameter の役割は分離されています。package read tool と install tool は `alcomd3_list_repositories` が返した `id` で repository を選択します。user repository の add/remove は stored URL を使うため、remove input は add input と直接対応し、built-in default repository は削除対象になりません。duplicate check は stored URL と publisher-declared repository ID の両方に適用されます。GUI の add/remove/reorder も同じ shared URL-based backend を使います。local repository はサポートしません。URL-less user-repository entry は settings の load 時に破棄し、local repository の作成経路も提供しません。
 
 GUI project-management package table は backend が同名 package merge logic から生成します。MCP package lists、package details、project package install selection は同じ backend rules を使います。
 

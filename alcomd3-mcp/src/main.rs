@@ -177,9 +177,9 @@ enum ProjectPackageVersionSelectorArg {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 struct ProjectPackageSourceArg {
-    repository_id: Option<String>,
-    repository_url: Option<String>,
+    repository_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1591,7 +1591,7 @@ impl Alcomd3Mcp {
     }
 
     #[tool(
-        description = "Install one GUI-visible VPM package into a Unity project registered in ALCOMD3. project_path must match a registered project path. version_selector is required: use {\"type\":\"latest_gui_visible\"} to install the same latest compatible version the GUI exposes, or {\"type\":\"exact\",\"version\":\"x.y.z\"}. Optional source selects a remote repository by repository_id or repository_url. Conflicts or legacy file removals are blocked unless allow_conflicts is true.",
+        description = "Install one GUI-visible VPM package into a Unity project registered in ALCOMD3. project_path must match a registered project path. version_selector is required: use {\"type\":\"latest_gui_visible\"} to install the same latest compatible version the GUI exposes, or {\"type\":\"exact\",\"version\":\"x.y.z\"}. Optional source selects a remote repository by the repository_id returned from alcomd3_list_repositories. Conflicts or legacy file removals are blocked unless allow_conflicts is true.",
         execution(task_support = "optional"),
         annotations(
             read_only_hint = false,

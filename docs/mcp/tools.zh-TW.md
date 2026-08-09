@@ -667,9 +667,8 @@
 | `project_path` | `string` | 是 | 已登錄專案路徑。 |
 | `package_name` | `string` | 是 | 合法的完整 VPM 軟體軟體包識別碼。 |
 | `version_selector` | `object` | 是 | `{"type":"latest_gui_visible"}`，或 `{"type":"exact","version":"x.y.z"}`。精確版本仍須 GUI 可見且相容。 |
-| `source` | `object` | 否 | 可選來源選擇器；空物件等同省略。 |
-| `source.repository_id` | `string` | 否 | 遠端倉庫 ID。 |
-| `source.repository_url` | `string` | 否 | 遠端倉庫 URL。若 ID 和 URL 同時給出，必須匹配同一倉庫。 |
+| `source` | `object` | 否 | 可選遠端倉庫選擇器。 |
+| `source.repository_id` | `string` | 提供 `source` 時必填 | `alcomd3_list_repositories` 傳回的倉庫 `id`；不接受 URL。 |
 | `allow_conflicts` | `boolean` | 否 | 是否允許相依衝突或 legacy 檔案/目錄刪除；預設 `false`。 |
 
 **成功輸出：** [`ProjectPackageChangeResult`](#projectpackagechangeresult)。

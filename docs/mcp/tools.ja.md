@@ -682,9 +682,8 @@ GUI 表示対象パッケージの詳細メタデータを取得します。絞�
 | `project_path` | `string` | はい | 登録済みプロジェクトパス。 |
 | `package_name` | `string` | はい | 有効な完全 VPM パッケージ識別子。 |
 | `version_selector` | `object` | はい | `{"type":"latest_gui_visible"}` または `{"type":"exact","version":"x.y.z"}`。完全指定でも表示対象かつ互換である必要があります。 |
-| `source` | `object` | いいえ | 任意のソース指定。空オブジェクトは省略と同じ。 |
-| `source.repository_id` | `string` | いいえ | リモートリポジトリ ID。 |
-| `source.repository_url` | `string` | いいえ | リモートリポジトリ URL。ID と URL の両方を指定する場合は同じリポジトリを示す必要があります。 |
+| `source` | `object` | いいえ | 任意のリモートリポジトリ指定。 |
+| `source.repository_id` | `string` | `source` 指定時は必須 | `alcomd3_list_repositories` が返したリポジトリ `id`。URL は受け付けません。 |
 | `allow_conflicts` | `boolean` | いいえ | 依存関係の競合または legacy ファイル・ディレクトリ削除を許可。既定値 `false`。 |
 
 **成功出力:** [`ProjectPackageChangeResult`](#projectpackagechangeresult)。

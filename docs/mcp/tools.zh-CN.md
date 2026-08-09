@@ -667,9 +667,8 @@
 | `project_path` | `string` | 是 | 已登记项目路径。 |
 | `package_name` | `string` | 是 | 合法的完整 VPM 包标识。 |
 | `version_selector` | `object` | 是 | `{"type":"latest_gui_visible"}`，或 `{"type":"exact","version":"x.y.z"}`。精确版本仍须 GUI 可见且兼容。 |
-| `source` | `object` | 否 | 可选来源选择器；空对象等同省略。 |
-| `source.repository_id` | `string` | 否 | 远程仓库 ID。 |
-| `source.repository_url` | `string` | 否 | 远程仓库 URL。若 ID 和 URL 同时给出，必须匹配同一仓库。 |
+| `source` | `object` | 否 | 可选远程仓库选择器。 |
+| `source.repository_id` | `string` | 提供 `source` 时必填 | `alcomd3_list_repositories` 返回的仓库 `id`；不接受 URL。 |
 | `allow_conflicts` | `boolean` | 否 | 是否允许依赖冲突或 legacy 文件/目录删除；默认 `false`。 |
 
 **成功输出：** [`ProjectPackageChangeResult`](#projectpackagechangeresult)。

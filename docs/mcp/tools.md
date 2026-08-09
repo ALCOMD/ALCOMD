@@ -693,9 +693,8 @@ Supports an optional MCP Task.
 | `project_path` | `string` | Yes | Registered project path. |
 | `package_name` | `string` | Yes | Valid full VPM package identifier. |
 | `version_selector` | `object` | Yes | `{"type":"latest_gui_visible"}` or `{"type":"exact","version":"x.y.z"}`; exact versions must still be visible and compatible. |
-| `source` | `object` | No | Optional source selector; an empty object behaves as omission. |
-| `source.repository_id` | `string` | No | Remote repository ID. |
-| `source.repository_url` | `string` | No | Remote repository URL. When both are present, they must identify the same repository. |
+| `source` | `object` | No | Optional remote-repository selector. |
+| `source.repository_id` | `string` | Yes when `source` is present | Repository `id` returned by `alcomd3_list_repositories`; URLs are not accepted. |
 | `allow_conflicts` | `boolean` | No | Allow dependency conflicts or legacy file/directory deletion; defaults to `false`. |
 
 **Success output:** [`ProjectPackageChangeResult`](#projectpackagechangeresult).

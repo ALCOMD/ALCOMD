@@ -419,8 +419,8 @@ and yanked filters. MCP tool calls do not server-side search. Adding a
 repository requires an explicit `alcomd3_add_repository` call; list tools never
 implicitly add repositories or redesign repository refresh behavior.
 
-Repository parameters have distinct roles. Package-reading tools select a
-repository by the `id` returned from `alcomd3_list_repositories`. Adding and
+Repository parameters have distinct roles. Package-reading and installation
+tools select a repository by the `id` returned from `alcomd3_list_repositories`. Adding and
 removing a user repository use its stored URL, so removal directly mirrors the
 add input and never applies to built-in default repositories. Duplicate checks
 still cover both stored URLs and publisher-declared repository IDs. The GUI uses
