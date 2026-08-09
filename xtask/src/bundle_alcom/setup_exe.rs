@@ -173,6 +173,7 @@ fn build_inno_setup_installer(
             "-DLegacyTauriIdentifier={}",
             ctx.legacy_tauri_identifier()
         ))
+        .arg(format!("-DTauriIdentifier={}", ctx.identifier()))
         .arg(format!("-F{}", INSTALLER_NAME))
         .arg(format!(
             "-O{}/",

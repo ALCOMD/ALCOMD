@@ -1100,6 +1100,12 @@ try {
         -Destination $installDirectory `
         -Config $config `
         -RegistrationPath $currentRegistrationPath
+    if (-not (Test-Path -LiteralPath $applicationDataDirectory -PathType Container)) {
+        throw "Silent uninstall removed product data without an explicit choice: $applicationDataDirectory"
+    }
+    if (-not (Test-Path -LiteralPath $currentTauriDataDirectory -PathType Container)) {
+        throw "Silent uninstall removed Tauri data without an explicit choice: $currentTauriDataDirectory"
+    }
     foreach ($shortcut in $smokeShortcuts) {
         Assert-ShortcutRemoved -Path $shortcut
     }
@@ -1147,6 +1153,12 @@ finally {
     }
     if (Test-Path -LiteralPath $legacyTauriDataDirectory) {
         Remove-Item -LiteralPath $legacyTauriDataDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path -LiteralPath $currentTauriDataDirectory) {
+        Remove-Item -LiteralPath $currentTauriDataDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Path -LiteralPath $applicationDataDirectory) {
+        Remove-Item -LiteralPath $applicationDataDirectory -Recurse -Force -ErrorAction SilentlyContinue
     }
     foreach ($shortcut in $smokeShortcuts) {
         if (Test-Path -LiteralPath $shortcut) {

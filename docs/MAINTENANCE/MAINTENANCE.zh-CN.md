@@ -76,6 +76,9 @@ ALCOMD3 默认拥有自己的运行数据。
   `%LOCALAPPDATA%\ALCOMD3`。
 - 默认项目和备份目录位于用户 Documents 文件夹下：`ALCOMD3/Projects` 和
   `ALCOMD3/Backups`。
+- Windows 卸载默认保留本地应用数据。仅当用户明确选择删除数据时，才删除
+  `%LOCALAPPDATA%\ALCOMD3` 和当前 Tauri WebView 数据目录；Documents 下的项目和
+  备份目录始终保留。
 - ALCOMD3 普通启动时不得自动迁移、移动或导入 VCC 或 legacy ALCOM 数据。
 - 安装 ALCOMD3，或从 2.0.0 及以前更新到 2.1.0 及以后时，在用户显式从外部
   VCC 或 legacy ALCOM 安装导入数据之前，应表现为全新的 ALCOMD3 数据根安装。

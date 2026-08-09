@@ -77,7 +77,8 @@ macOS 和 Linux job 使用 `--desktop-e2e-webdriver` 构建调试版 GUI，并�
 `vcc://` 注册统一使用配置的 Windows AUMID，既有用户数据得到保留，且同名但指向无关
 程序的快捷方式不会被删除。随后验证 ZIP 内安装包、启动应用、确认 `vcc://`
 命令、确认 MCP 默认拒绝工具调用且 endpoint 端口不存在
-额外的非 loopback 监听，最后执行卸载并确认新快捷方式也被移除。迁移窗口内，旧版本由
+额外的非 loopback 监听，最后执行静默卸载，确认新快捷方式被移除且本地应用数据默认
+保留。迁移窗口内，旧版本由
 `alcomd3.config.json` 的 `legacyWindowsMigrationReleaseTag` 固定，避免新 AppId 首次发布后
 测试基线自动前移而失去旧 AppId 覆盖。
 

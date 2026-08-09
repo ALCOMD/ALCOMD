@@ -90,6 +90,10 @@ ALCOMD3 owns its runtime data by default.
   `ALCOMD3` (for example, `%LOCALAPPDATA%\ALCOMD3` on Windows).
 - Default project and backup folders are under the user's Documents folder:
   `ALCOMD3/Projects` and `ALCOMD3/Backups`.
+- Windows uninstall preserves local application data by default. When the user
+  explicitly selects data removal, it deletes `%LOCALAPPDATA%\ALCOMD3` and the
+  current Tauri WebView data directory, but never the project and backup folders
+  under Documents.
 - ALCOMD3 must not automatically migrate, move, or import VCC or legacy ALCOM
   data on ordinary startup.
 - Installing ALCOMD3 or updating from 2.0.0 or earlier to 2.1.0 or later should

@@ -82,6 +82,9 @@ ALCOMD3 は既定で自身の runtime data を所有する。
   （Windows では `%LOCALAPPDATA%\ALCOMD3`）。
 - 既定の project と backup folder は user Documents 配下の
   `ALCOMD3/Projects` と `ALCOMD3/Backups`。
+- Windows uninstall は既定で local application data を保持する。user が data 削除を
+  明示的に選択した場合は `%LOCALAPPDATA%\ALCOMD3` と現在の Tauri WebView data
+  directory を削除するが、Documents 配下の project と backup folder は削除しない。
 - ALCOMD3 は通常 startup で VCC または legacy ALCOM data を自動 migrate、move、
   import してはならない。
 - ALCOMD3 の install、または 2.0.0 以前から 2.1.0 以降への update は、user が

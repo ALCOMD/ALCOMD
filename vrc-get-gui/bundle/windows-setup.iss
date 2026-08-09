@@ -42,6 +42,10 @@
   #error LegacyTauriIdentifier is not defined. Define with -DLegacyTauriIdentifier=
 #endif
 
+#ifndef TauriIdentifier
+  #error TauriIdentifier is not defined. Define with -DTauriIdentifier=
+#endif
+
 #define MyAppName "ALCOMD3"
 #define LegacyAppName "ALCOM"
 #define MyAppPublisher "CQMHV"
@@ -105,6 +109,41 @@ japanese.LegacyCleanupFailed=以前の ALCOMD3/ALCOM を完全に削除できま
 korean.LegacyCleanupFailed=이전 ALCOMD3/ALCOM 설치를 완전히 제거하지 못했습니다. 관련 프로그램을 종료하고 이 설치 프로그램을 관리자 권한으로 실행한 후 다시 시도하십시오.
 chinesesimplified.LegacyCleanupFailed=无法彻底移除旧版 ALCOMD3/ALCOM。请关闭相关程序，以管理员身份运行此安装程序，然后重试。
 chinesetraditional.LegacyCleanupFailed=無法徹底移除舊版 ALCOMD3/ALCOM。請關閉相關程式，以系統管理員身分執行此安裝程式，然後重試。
+UninstallOptionsTitle=Uninstall options
+japanese.UninstallOptionsTitle=アンインストール オプション
+korean.UninstallOptionsTitle=제거 옵션
+chinesesimplified.UninstallOptionsTitle=卸载选项
+chinesetraditional.UninstallOptionsTitle=解除安裝選項
+UninstallOptionsDescription=Choose whether to remove {#MyAppName} local application data.
+japanese.UninstallOptionsDescription={#MyAppName} のローカルアプリデータを削除するか選択してください。
+korean.UninstallOptionsDescription={#MyAppName} 로컬 앱 데이터를 삭제할지 선택하세요.
+chinesesimplified.UninstallOptionsDescription=选择是否删除 {#MyAppName} 的本地应用数据。
+chinesetraditional.UninstallOptionsDescription=選擇是否刪除 {#MyAppName} 的本機應用程式資料。
+DeleteUserData=Delete settings, caches, and other local application data
+japanese.DeleteUserData=設定、キャッシュ、その他のローカルアプリデータを削除する
+korean.DeleteUserData=설정, 캐시 및 기타 로컬 앱 데이터 삭제
+chinesesimplified.DeleteUserData=删除配置、缓存和其他本地应用数据
+chinesetraditional.DeleteUserData=刪除設定、快取和其他本機應用程式資料
+DeleteUserDataHint=Projects and backups stored in your Documents folder will not be deleted.
+japanese.DeleteUserDataHint=ドキュメント フォルダーに保存されたプロジェクトとバックアップは削除されません。
+korean.DeleteUserDataHint=문서 폴더에 저장된 프로젝트와 백업은 삭제되지 않습니다.
+chinesesimplified.DeleteUserDataHint=不会删除“文档”文件夹中保存的项目和备份。
+chinesetraditional.DeleteUserDataHint=不會刪除「文件」資料夾中儲存的專案和備份。
+ContinueUninstall=Continue
+japanese.ContinueUninstall=続行
+korean.ContinueUninstall=계속
+chinesesimplified.ContinueUninstall=继续
+chinesetraditional.ContinueUninstall=繼續
+CancelUninstall=Cancel
+japanese.CancelUninstall=キャンセル
+korean.CancelUninstall=취소
+chinesesimplified.CancelUninstall=取消
+chinesetraditional.CancelUninstall=取消
+UserDataCleanupFailed=Some local application data could not be deleted. You can remove it manually from %%LOCALAPPDATA%%\{#MyAppName} and %%LOCALAPPDATA%%\{#TauriIdentifier}.
+japanese.UserDataCleanupFailed=一部のローカルアプリデータを削除できませんでした。%%LOCALAPPDATA%%\{#MyAppName} と %%LOCALAPPDATA%%\{#TauriIdentifier} から手動で削除できます。
+korean.UserDataCleanupFailed=일부 로컬 앱 데이터를 삭제하지 못했습니다. %%LOCALAPPDATA%%\{#MyAppName} 및 %%LOCALAPPDATA%%\{#TauriIdentifier}에서 수동으로 삭제할 수 있습니다.
+chinesesimplified.UserDataCleanupFailed=部分本地应用数据无法删除。你可以手动删除 %%LOCALAPPDATA%%\{#MyAppName} 和 %%LOCALAPPDATA%%\{#TauriIdentifier}。
+chinesetraditional.UserDataCleanupFailed=部分本機應用程式資料無法刪除。你可以手動刪除 %%LOCALAPPDATA%%\{#MyAppName} 和 %%LOCALAPPDATA%%\{#TauriIdentifier}。
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
@@ -148,6 +187,7 @@ const
   LegacyUninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#LegacyWindowsAppId}_is1';
 
 var
+  DeleteUserDataOnUninstall: Boolean;
   LegacyShortcutMigrationActive: Boolean;
   RestoreLegacyDesktopShortcut: Boolean;
   LegacyDesktopShortcutDefaultApplied: Boolean;
@@ -693,6 +733,130 @@ begin
   end;
 end;
 
+function InitializeUninstall: Boolean;
+var
+  OptionsForm: TSetupForm;
+  DescriptionLabel: TNewStaticText;
+  DeleteUserDataCheckBox: TNewCheckBox;
+  HintLabel: TNewStaticText;
+  ContinueButton: TNewButton;
+  CancelButton: TNewButton;
+  ButtonWidth: Integer;
+begin
+  Result := True;
+  DeleteUserDataOnUninstall := False;
+  if UninstallSilent then
+    exit;
+
+  OptionsForm := CreateCustomForm(
+    ScaleX(460),
+    ScaleY(190),
+    False,
+    False
+  );
+  try
+    OptionsForm.Caption := '{#MyAppName} - ' +
+      CustomMessage('UninstallOptionsTitle');
+    OptionsForm.Position := poScreenCenter;
+
+    DescriptionLabel := TNewStaticText.Create(OptionsForm);
+    DescriptionLabel.Parent := OptionsForm;
+    DescriptionLabel.Left := ScaleX(16);
+    DescriptionLabel.Top := ScaleY(16);
+    DescriptionLabel.Width := ScaleX(428);
+    DescriptionLabel.Height := ScaleY(32);
+    DescriptionLabel.AutoSize := False;
+    DescriptionLabel.WordWrap := True;
+    DescriptionLabel.Caption := CustomMessage('UninstallOptionsDescription');
+
+    DeleteUserDataCheckBox := TNewCheckBox.Create(OptionsForm);
+    DeleteUserDataCheckBox.Parent := OptionsForm;
+    DeleteUserDataCheckBox.Left := ScaleX(16);
+    DeleteUserDataCheckBox.Top := ScaleY(58);
+    DeleteUserDataCheckBox.Width := ScaleX(428);
+    DeleteUserDataCheckBox.Height := ScaleY(24);
+    DeleteUserDataCheckBox.Caption := CustomMessage('DeleteUserData');
+    DeleteUserDataCheckBox.Checked := False;
+
+    HintLabel := TNewStaticText.Create(OptionsForm);
+    HintLabel.Parent := OptionsForm;
+    HintLabel.Left := ScaleX(36);
+    HintLabel.Top := ScaleY(86);
+    HintLabel.Width := ScaleX(408);
+    HintLabel.Height := ScaleY(38);
+    HintLabel.AutoSize := False;
+    HintLabel.WordWrap := True;
+    HintLabel.Caption := CustomMessage('DeleteUserDataHint');
+
+    ButtonWidth := OptionsForm.CalculateButtonWidth([
+      CustomMessage('ContinueUninstall'),
+      CustomMessage('CancelUninstall')
+    ]);
+
+    CancelButton := TNewButton.Create(OptionsForm);
+    CancelButton.Parent := OptionsForm;
+    CancelButton.Width := ButtonWidth;
+    CancelButton.Height := ScaleY(25);
+    CancelButton.Left := OptionsForm.ClientWidth - ButtonWidth - ScaleX(16);
+    CancelButton.Top := ScaleY(149);
+    CancelButton.Caption := CustomMessage('CancelUninstall');
+    CancelButton.Cancel := True;
+    CancelButton.ModalResult := mrCancel;
+
+    ContinueButton := TNewButton.Create(OptionsForm);
+    ContinueButton.Parent := OptionsForm;
+    ContinueButton.Width := ButtonWidth;
+    ContinueButton.Height := ScaleY(25);
+    ContinueButton.Left := CancelButton.Left - ButtonWidth - ScaleX(8);
+    ContinueButton.Top := CancelButton.Top;
+    ContinueButton.Caption := CustomMessage('ContinueUninstall');
+    ContinueButton.Default := True;
+    ContinueButton.ModalResult := mrOk;
+
+    if OptionsForm.ShowModal <> mrOk then
+    begin
+      Result := False;
+      exit;
+    end;
+
+    DeleteUserDataOnUninstall := DeleteUserDataCheckBox.Checked;
+  finally
+    OptionsForm.Free;
+  end;
+end;
+
+function DeleteUserDataDirectory(const DirectoryPath: string): Boolean;
+begin
+  Result := True;
+  if not DirExists(DirectoryPath) then
+    exit;
+
+  Log('Deleting {#MyAppName} local application data: ' + DirectoryPath);
+  Result := DelTree(DirectoryPath, True, True, True);
+  if not Result then
+  begin
+    Log('Unable to completely delete local application data: ' + DirectoryPath);
+  end;
+end;
+
+procedure DeleteSelectedUserData;
+var
+  AppDataDeleted: Boolean;
+  WebViewDataDeleted: Boolean;
+begin
+  AppDataDeleted := DeleteUserDataDirectory(
+    ExpandConstant('{localappdata}\{#MyAppName}')
+  );
+  WebViewDataDeleted := DeleteUserDataDirectory(
+    ExpandConstant('{localappdata}\{#TauriIdentifier}')
+  );
+
+  if not AppDataDeleted or not WebViewDataDeleted then
+  begin
+    MsgBox(CustomMessage('UserDataCleanupFailed'), mbError, MB_OK);
+  end;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   RegisteredCommand: string;
@@ -711,5 +875,9 @@ begin
     begin
       RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Classes\vcc');
     end;
+  end;
+  if (CurUninstallStep = usPostUninstall) and DeleteUserDataOnUninstall then
+  begin
+    DeleteSelectedUserData;
   end;
 end;

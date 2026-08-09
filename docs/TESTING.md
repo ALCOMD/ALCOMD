@@ -87,7 +87,7 @@ existing user data is preserved. It then verifies the
 embedded ZIP, launches the application, confirms its `vcc://` command, confirms
 that MCP rejects tool access by default and has no extra non-loopback listener
 on the endpoint port, uninstalls it, and verifies that the new shortcuts are
-removed.
+removed while local application data remains preserved by default.
 During the migration window, `legacyWindowsMigrationReleaseTag` in
 `alcomd3.config.json` pins the old installer so the baseline cannot advance past
 the old AppId after the first new-AppId release.

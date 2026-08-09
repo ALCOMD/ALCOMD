@@ -83,6 +83,7 @@ fn platform_install_metadata_uses_alcomd3_identity() {
     let homepage_url = config_str(&config, "homepageUrl");
     let windows_app_id = config_str(&config, "windowsAppId");
     let windows_aumid = config_str(&config, "windowsAumid");
+    let tauri_identifier = config_str(&config, "tauriIdentifier");
     let legacy_windows_app_id = config_str(&config, "legacyWindowsAppId");
     let legacy_tauri_identifier = config_str(&config, "legacyTauriIdentifier");
     let legacy_windows_migration_release_tag =
@@ -114,6 +115,7 @@ fn platform_install_metadata_uses_alcomd3_identity() {
     assert!(windows_setup.contains(r#"ValueName: "AppUserModelID"; ValueData: "{#WindowsAumid}""#));
     assert!(!windows_setup.contains(windows_app_id.trim_matches(['{', '}'])));
     assert!(!windows_setup.contains(windows_aumid));
+    assert!(!windows_setup.contains(tauri_identifier));
     assert!(!windows_setup.contains(legacy_windows_app_id.trim_matches(['{', '}'])));
     assert!(!windows_setup.contains(legacy_tauri_identifier));
     assert!(windows_setup.contains(r#"LegacyUninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#LegacyWindowsAppId}_is1'"#));
@@ -133,14 +135,23 @@ fn platform_install_metadata_uses_alcomd3_identity() {
     assert!(windows_setup.contains(
         r#"Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}""#
     ));
-    assert!(!windows_setup.contains(
-        r#"GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked"#
-    ));
+    assert!(
+        !windows_setup.contains(r#"GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked"#)
+    );
     assert!(windows_setup.contains("WizardSelectTasks('desktopicon')"));
     assert!(windows_setup.contains("WizardSelectTasks('!desktopicon')"));
     assert!(windows_setup.contains("procedure CurPageChanged(CurPageID: Integer);"));
     assert!(windows_setup.contains("CurPageID = wpSelectTasks"));
     assert!(windows_setup.contains("if WizardSilent then"));
+    assert!(windows_setup.contains("function InitializeUninstall: Boolean;"));
+    assert!(windows_setup.contains("if UninstallSilent then"));
+    assert!(windows_setup.contains("DeleteUserDataCheckBox.Checked := False;"));
+    assert!(windows_setup.contains("DeleteUserDataOnUninstall := DeleteUserDataCheckBox.Checked;"));
+    assert!(windows_setup.contains("procedure DeleteSelectedUserData;"));
+    assert!(windows_setup.contains("DelTree(DirectoryPath, True, True, True)"));
+    assert!(windows_setup.contains("ExpandConstant('{localappdata}\\{#MyAppName}')"));
+    assert!(windows_setup.contains("ExpandConstant('{localappdata}\\{#TauriIdentifier}')"));
+    assert!(windows_setup.contains("CurUninstallStep = usPostUninstall"));
     assert!(windows_setup.contains("function CleanupLegacyShortcuts: string;"));
     assert!(windows_setup.contains("ExpandConstant('{userdesktop}')"));
     assert!(windows_setup.contains("ExpandConstant('{commondesktop}')"));
@@ -175,6 +186,8 @@ fn platform_install_metadata_uses_alcomd3_identity() {
     assert!(setup_builder.contains("-DWindowsAumid={}"));
     assert!(setup_builder.contains("-DLegacyWindowsAppId={}"));
     assert!(setup_builder.contains("-DLegacyTauriIdentifier={}"));
+    assert!(setup_builder.contains("-DTauriIdentifier={}"));
+    assert!(setup_builder.contains("ctx.identifier()"));
 
     let updater = read_workspace_file("vrc-get-gui/src/updater.rs");
     assert!(updater.contains("crate::alcomd3_config::windows_app_id()"));
@@ -196,6 +209,13 @@ fn platform_install_metadata_uses_alcomd3_identity() {
     assert!(installer_smoke.contains("$config.windowsAumid"));
     assert!(installer_smoke.contains("$config.legacyTauriIdentifier"));
     assert!(installer_smoke.contains("Legacy Tauri data directory was not removed"));
+    assert!(
+        installer_smoke
+            .contains("Silent uninstall removed product data without an explicit choice")
+    );
+    assert!(
+        installer_smoke.contains("Silent uninstall removed Tauri data without an explicit choice")
+    );
     assert!(installer_smoke.contains("[ValidateSet('Baseline', 'Current')]"));
     assert_eq!(installer_smoke.matches("-Phase Baseline").count(), 1);
     assert_eq!(installer_smoke.matches("-Phase Current").count(), 1);
