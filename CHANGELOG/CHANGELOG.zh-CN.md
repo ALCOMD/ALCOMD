@@ -15,6 +15,8 @@ GitHub Release 正文按 English、日本語、中文顺序，由结构一致的
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-08-09
+
 ### Added
 
 - 新增通过共享资源管理后端进行项目模板的 MCP 发现与管理能力。
@@ -29,6 +31,7 @@ GitHub Release 正文按 English、日本語、中文顺序，由结构一致的
 
 ### Fixed
 
+- 停止在 Issue 模板和应用内问题反馈链接中请求已废弃的 `vrc-get-gui` 标签。
 - 在 Windows 上保存环境设置时保留用户自定义包路径。
 - 检测到任意匹配的 Unity 进程在运行时会聚焦到对应编辑器窗口。
 - 本地化了包操作报错文本，并避免仓库长字段溢出界面。
@@ -114,7 +117,8 @@ GitHub Release 正文按 English、日本語、中文顺序，由结构一致的
 
 - 使用 ALCOMD3 自有更新端点、内嵌公钥和签名更新负载。
 
-[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.0.0...v3.1.0
 [3.1.0-beta.3]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0-beta.2...v3.1.0-beta.3
 [3.1.0-beta.2]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0-beta.1...v3.1.0-beta.2

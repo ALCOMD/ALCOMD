@@ -28,6 +28,8 @@ category order, and bullet counts must match this canonical entry.
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-08-09
+
 ### Added
 
 - Added MCP discovery and management for project templates through the shared
@@ -165,7 +167,8 @@ category order, and bullet counts must match this canonical entry.
 - Used ALCOMD3-owned update endpoints, an embedded public key, and signed update
   payloads.
 
-[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.0.0...v3.1.0
 [3.1.0-beta.3]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0-beta.2...v3.1.0-beta.3
 [3.1.0-beta.2]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0-beta.1...v3.1.0-beta.2

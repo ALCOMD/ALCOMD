@@ -1,0 +1,9 @@
+{
+  "en": "Adds MCP project-template management, improves Unity editor detection and focusing, preserves custom package paths, and localizes package-operation errors.",
+  "de": "Fügt die MCP-Verwaltung von Projektvorlagen hinzu, verbessert die Erkennung und Fokussierung des Unity-Editors, bewahrt benutzerdefinierte Paketpfade und lokalisiert Fehler bei Paketvorgängen.",
+  "fr": "Ajoute la gestion des modèles de projet via MCP, améliore la détection et la mise au premier plan de l’éditeur Unity, conserve les chemins de paquets personnalisés et localise les erreurs d’opérations sur les paquets.",
+  "ja": "MCP によるプロジェクトテンプレート管理を追加し、Unity エディタの検出とフォーカスを改善しました。カスタムパッケージパスを保持し、パッケージ操作エラーをローカライズしました。",
+  "ko": "MCP 프로젝트 템플릿 관리를 추가하고 Unity 에디터 감지 및 포커스를 개선했습니다. 사용자 지정 패키지 경로를 보존하고 패키지 작업 오류를 현지화했습니다.",
+  "zh_hans": "新增 MCP 项目模板管理，改进 Unity 编辑器检测与聚焦，保留自定义包路径，并本地化包操作错误。",
+  "zh_hant": "新增 MCP 專案範本管理，改進 Unity 編輯器偵測與聚焦，保留自訂套件路徑，並將套件操作錯誤本地化。"
+}

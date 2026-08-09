@@ -18,6 +18,8 @@ category の bullet count を一致させます。
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-08-09
+
 ### Added
 
 - 共有リソース管理バックエンド経由で、MCP によるプロジェクトテンプレートの検出と管理を追加しました。
@@ -32,6 +34,7 @@ category の bullet count を一致させます。
 
 ### Fixed
 
+- Issue テンプレートとアプリ内の報告リンクで、廃止された `vrc-get-gui` ラベルを要求しないようにしました。
 - Windows で環境設定を保存する際、ユーザー設定のパッケージ保存先を保持しました。
 - 一致する Unity プロセスが実行中の場合に、それに対応するエディタを検出してフォーカスします。
 - パッケージ操作エラーをローカライズし、長いリポジトリ文字列が UI をはみ出さないようにしました。
@@ -117,7 +120,8 @@ category の bullet count を一致させます。
 
 - ALCOMD3 独自の更新エンドポイント、埋め込み公開鍵、署名付き更新ペイロードを採用。
 
-[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.0.0...v3.1.0
 [3.1.0-beta.3]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0-beta.2...v3.1.0-beta.3
 [3.1.0-beta.2]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0-beta.1...v3.1.0-beta.2
