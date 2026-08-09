@@ -28,6 +28,10 @@ category order, and bullet counts must match this canonical entry.
 
 ## [Unreleased]
 
+### Added
+
+- Added persistent user-defined display names for repositories.
+
 ## [3.2.0] - 2026-08-09
 
 ### Added

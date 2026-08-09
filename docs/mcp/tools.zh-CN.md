@@ -771,7 +771,8 @@
 | --- | --- | --- |
 | `id` | `string` | 包读取工具使用的仓库身份；无声明 ID 时回退到 URL。 |
 | `url` | `string` | 远程仓库 URL；用户仓库删除时使用此值。 |
-| `displayName` | `string` | 显示名称。 |
+| `name` | `string` | VPM 仓库声明的原名。 |
+| `displayName` | `string` | 非空显示名称；初始值为 `name`，用户可以修改。 |
 | `kind` | `"officialDefault" \| "curatedDefault" \| "user"` | 唯一仓库分类字段。 |
 | `hidden` | `boolean` | 当前是否被 GUI 包可见性设置隐藏。 |
 
@@ -781,7 +782,8 @@
 | --- | --- | --- |
 | `id` | `string \| null` | 仓库声明 ID；缺失时可能为 `null`。 |
 | `url` | `string` | 已添加或删除的 URL。 |
-| `displayName` | `string \| null` | 仓库显示名称。 |
+| `name` | `string \| null` | VPM 仓库声明的原名。 |
+| `displayName` | `string` | 操作时的非空显示名称。 |
 | `kind` | `"user"` | 固定为用户仓库。 |
 
 ### `PackageRepositorySummary`
@@ -790,7 +792,8 @@
 | --- | --- | --- |
 | `id` | `string \| null` | 缓存仓库 ID。 |
 | `url` | `string \| null` | 缓存仓库 URL。 |
-| `displayName` | `string \| null` | 显示名称。 |
+| `name` | `string` | VPM 仓库声明的原名。 |
+| `displayName` | `string` | 仓库的非空显示名称。 |
 | `kind` | `"officialDefault" \| "curatedDefault" \| "user"` | 仓库分类。 |
 
 ### `PackageSummary`
@@ -811,7 +814,8 @@
 | `type` | `"remote"` | 表示包来自远程仓库。 |
 | `kind` | `"officialDefault" \| "curatedDefault" \| "userRepository"` | 远程仓库分类。 |
 | `id` | `string \| null` | 仓库声明 ID。 |
-| `displayName` | `string \| null` | 仓库显示名称。 |
+| `name` | `string` | VPM 仓库声明的原名。 |
+| `displayName` | `string` | 仓库的非空显示名称。 |
 | `url` | `string \| null` | 仓库 URL。 |
 
 本地用户包来源：

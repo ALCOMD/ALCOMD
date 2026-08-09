@@ -15,6 +15,10 @@ GitHub Release 正文按 English、日本語、中文顺序，由结构一致的
 
 ## [Unreleased]
 
+### Added
+
+- 新增持久化的用户自定义存储库显示名称。
+
 ## [3.2.0] - 2026-08-09
 
 ### Added

@@ -157,6 +157,7 @@ pub async fn project_package_rows(
     packages: State<'_, PackagesState>,
     settings: State<'_, SettingsState>,
     config: State<'_, GuiConfigState>,
+    repository_config: State<'_, RepositoryConfigState>,
     io: State<'_, DefaultEnvironmentIo>,
     http: State<'_, reqwest::Client>,
     project_path: String,
@@ -169,6 +170,7 @@ pub async fn project_package_rows(
     let hidden_user_repositories = config.gui_hidden_repositories.clone();
     let hide_local_user_packages = config.hide_local_user_packages;
     drop(config);
+    let repository_display_names = repository_config.get().display_names.clone();
 
     let snapshot = load_project_details_snapshot(project_path).await?;
     let project = tauri_project_details_from_snapshot(snapshot.clone());
@@ -191,6 +193,7 @@ pub async fn project_package_rows(
                 CURATED_REPOSITORY_ID.to_string(),
             ],
             &defined_repository_ids,
+            &repository_display_names,
         ),
         project,
     })
@@ -258,6 +261,7 @@ fn build_project_package_rows<'package, 'env>(
     show_prerelease_packages: bool,
     default_repository_ids: &[String],
     defined_repository_ids: &[String],
+    repository_display_names: &std::collections::BTreeMap<String, String>,
 ) -> Vec<TauriProjectPackageRow>
 where
     'env: 'package,
@@ -270,10 +274,11 @@ where
         show_prerelease_packages,
         default_repository_ids,
         defined_repository_ids,
+        repository_display_names,
     );
     let mut rows = rows
         .into_values()
-        .map(project_package_row_from_accumulator)
+        .map(|row| project_package_row_from_accumulator(row, repository_display_names))
         .collect::<Vec<_>>();
     rows.sort_by(
         |a, b| match (a.installed.is_some(), b.installed.is_some()) {
@@ -294,6 +299,7 @@ pub(crate) fn build_project_package_row_accumulators<'package, 'env>(
     show_prerelease_packages: bool,
     default_repository_ids: &[String],
     defined_repository_ids: &[String],
+    repository_display_names: &std::collections::BTreeMap<String, String>,
 ) -> IndexMap<String, ProjectPackageRowAccumulator<'env>>
 where
     'env: 'package,
@@ -351,15 +357,15 @@ where
     for repository_id in default_repository_ids {
         if let Some(packages) = packages_per_repository.get(repository_id) {
             for package in packages {
-                add_visible_package_row(&mut rows, *package, project);
+                add_visible_package_row(&mut rows, *package, project, repository_display_names);
             }
         }
     }
     for package in user_packages {
-        add_visible_package_row(&mut rows, package, project);
+        add_visible_package_row(&mut rows, package, project, repository_display_names);
     }
     for package in hidden_user_packages {
-        add_hidden_package_source(&mut rows, package);
+        add_hidden_package_source(&mut rows, package, repository_display_names);
     }
     for repository_id in default_repository_ids {
         packages_per_repository.shift_remove(repository_id);
@@ -368,20 +374,20 @@ where
     for repository_id in defined_repository_ids {
         if let Some(packages) = packages_per_repository.shift_remove(repository_id) {
             for package in packages {
-                add_visible_package_row(&mut rows, package, project);
+                add_visible_package_row(&mut rows, package, project, repository_display_names);
             }
         }
     }
 
     for packages in packages_per_repository.into_values() {
         for package in packages {
-            add_visible_package_row(&mut rows, package, project);
+            add_visible_package_row(&mut rows, package, project, repository_display_names);
         }
     }
 
     for packages in hidden_packages_per_repository.into_values() {
         for package in packages {
-            add_hidden_package_source(&mut rows, package);
+            add_hidden_package_source(&mut rows, package, repository_display_names);
         }
     }
 
@@ -511,6 +517,7 @@ fn add_visible_package_row<'env>(
     rows: &mut IndexMap<String, ProjectPackageRowAccumulator<'env>>,
     package: PackageInfo<'env>,
     project: &crate::backend::projects::ProjectDetailsSnapshot,
+    repository_display_names: &std::collections::BTreeMap<String, String>,
 ) {
     let row = get_project_package_row(rows, package.package_json());
     row.is_there_source = true;
@@ -557,7 +564,7 @@ fn add_visible_package_row<'env>(
         row.unity_incompatible.push(package);
     }
 
-    let source_name = project_package_source_name(package);
+    let source_name = project_package_source_name(package, repository_display_names);
     row.sources.insert(source_name.clone());
     row.visible_sources.insert(source_name);
 }
@@ -565,10 +572,14 @@ fn add_visible_package_row<'env>(
 fn add_hidden_package_source<'env>(
     rows: &mut IndexMap<String, ProjectPackageRowAccumulator<'env>>,
     package: PackageInfo<'env>,
+    repository_display_names: &std::collections::BTreeMap<String, String>,
 ) {
     let row = get_project_package_row(rows, package.package_json());
     row.is_there_source = true;
-    row.sources.insert(project_package_source_name(package));
+    row.sources.insert(project_package_source_name(
+        package,
+        repository_display_names,
+    ));
 }
 
 fn sort_package_versions(packages: &mut Vec<PackageInfo<'_>>) {
@@ -643,10 +654,19 @@ fn set_project_package_url_info(
     }
 }
 
-fn project_package_source_name(package: PackageInfo<'_>) -> String {
+fn project_package_source_name(
+    package: PackageInfo<'_>,
+    repository_display_names: &std::collections::BTreeMap<String, String>,
+) -> String {
     if let Some(repo) = package.repo() {
         let id = cached_repository_id(repo);
-        repo.name().or(id).unwrap_or("Unknown").to_string()
+        crate::backend::repository_operations::repository_names(
+            repo.url(),
+            repo.name(),
+            id,
+            repository_display_names,
+        )
+        .display_name
     } else {
         "User".to_string()
     }
@@ -713,6 +733,7 @@ fn project_package_latest_package<'env>(
 
 fn project_package_row_from_accumulator(
     value: ProjectPackageRowAccumulator<'_>,
+    repository_display_names: &std::collections::BTreeMap<String, String>,
 ) -> TauriProjectPackageRow {
     TauriProjectPackageRow {
         id: value.id,
@@ -723,19 +744,26 @@ fn project_package_row_from_accumulator(
         unity_compatible: value
             .unity_compatible
             .into_iter()
-            .map(|package| TauriPackage::new(&package))
+            .map(|package| {
+                TauriPackage::new_with_repository_display_names(&package, repository_display_names)
+            })
             .collect(),
         unity_incompatible: value
             .unity_incompatible
             .into_iter()
-            .map(|package| TauriPackage::new(&package))
+            .map(|package| {
+                TauriPackage::new_with_repository_display_names(&package, repository_display_names)
+            })
             .collect(),
         sources: value.sources.into_iter().collect(),
         is_there_source: value.is_there_source,
         visible_sources: value.visible_sources.into_iter().collect(),
         installed: value.installed,
-        latest: project_package_latest_from_accumulator(value.latest),
-        stable_latest: project_package_latest_from_accumulator(value.stable_latest),
+        latest: project_package_latest_from_accumulator(value.latest, repository_display_names),
+        stable_latest: project_package_latest_from_accumulator(
+            value.stable_latest,
+            repository_display_names,
+        ),
         changelog_url: value
             .changelog_url
             .map(project_package_url_from_accumulator),
@@ -747,6 +775,7 @@ fn project_package_row_from_accumulator(
 
 fn project_package_latest_from_accumulator(
     value: ProjectPackageLatestAccumulator<'_>,
+    repository_display_names: &std::collections::BTreeMap<String, String>,
 ) -> TauriProjectPackageLatestInfo {
     match value {
         ProjectPackageLatestAccumulator::None => TauriProjectPackageLatestInfo::None,
@@ -754,14 +783,20 @@ fn project_package_latest_from_accumulator(
             package,
             has_unity_incompatible_latest,
         } => TauriProjectPackageLatestInfo::Contains {
-            pkg: TauriPackage::new(&package),
+            pkg: TauriPackage::new_with_repository_display_names(
+                &package,
+                repository_display_names,
+            ),
             has_unity_incompatible_latest,
         },
         ProjectPackageLatestAccumulator::Upgradable {
             package,
             has_unity_incompatible_latest,
         } => TauriProjectPackageLatestInfo::Upgradable {
-            pkg: TauriPackage::new(&package),
+            pkg: TauriPackage::new_with_repository_display_names(
+                &package,
+                repository_display_names,
+            ),
             has_unity_incompatible_latest,
         },
     }
@@ -1550,6 +1585,10 @@ mod tests {
         let official_package = PackageInfo::remote(&official_manifest, &official_repository);
         let user_package = PackageInfo::remote(&user_manifest, &user_repository);
         let project = test_project_details_snapshot();
+        let repository_aliases = std::collections::BTreeMap::from([(
+            "https://example.com/user.json".to_string(),
+            "My Repository".to_string(),
+        )]);
         let rows = build_project_package_row_accumulators(
             [&official_package, &user_package],
             &project,
@@ -1558,6 +1597,7 @@ mod tests {
             false,
             &[OFFICIAL_REPOSITORY_ID.to_string()],
             &["com.example.user".to_string()],
+            &repository_aliases,
         );
 
         let row = rows.get("com.example.same").unwrap();
@@ -1571,6 +1611,13 @@ mod tests {
         assert_eq!(
             compatible[0].repo().and_then(cached_repository_id),
             Some("com.example.user")
+        );
+        assert_eq!(
+            row.sources,
+            IndexSet::from([
+                OFFICIAL_REPOSITORY_ID.to_string(),
+                "My Repository".to_string(),
+            ])
         );
     }
 
@@ -1613,6 +1660,7 @@ mod tests {
             false,
             &[OFFICIAL_REPOSITORY_ID.to_string()],
             &[],
+            &Default::default(),
         );
 
         assert!(
@@ -1660,6 +1708,7 @@ mod tests {
             false,
             &[OFFICIAL_REPOSITORY_ID.to_string()],
             &[],
+            &Default::default(),
         );
 
         assert!(!rows.contains_key("com.vrchat.worlds"));

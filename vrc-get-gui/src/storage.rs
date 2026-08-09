@@ -1,5 +1,6 @@
 pub(crate) const GUI_CONFIG_PATH: &str = "config/gui-config.json";
 pub(crate) const THEME_CONFIG_PATH: &str = "config/theme-config.json";
+pub(crate) const REPOSITORY_CONFIG_PATH: &str = "config/repositories.json";
 pub(crate) const TEMPLATE_DIR: &str = "templates";
 pub(crate) const ACTIVITY_LOG_DIR: &str = "activity-logs";
 pub(crate) const TECHNICAL_LOG_DIR: &str = "technical-logs";

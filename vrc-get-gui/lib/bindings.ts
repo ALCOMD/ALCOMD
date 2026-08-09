@@ -55,6 +55,7 @@ export const commands = {
 	environmentRepositoriesInfo: () => __TAURI_INVOKE<TauriRepositoriesInfo>("environment_repositories_info"),
 	environmentHideRepository: (repository: string) => __TAURI_INVOKE<null>("environment_hide_repository", { repository }),
 	environmentShowRepository: (repository: string) => __TAURI_INVOKE<null>("environment_show_repository", { repository }),
+	environmentSetRepositoryDisplayName: (repositoryUrl: string, displayName: string) => __TAURI_INVOKE<null>("environment_set_repository_display_name", { repositoryUrl, displayName }),
 	environmentSetHideLocalUserPackages: (value: boolean) => __TAURI_INVOKE<null>("environment_set_hide_local_user_packages", { value }),
 	environmentDownloadRepository: (url: string, headers: { [key in string]: string }) => __TAURI_INVOKE<TauriDownloadRepository>("environment_download_repository", { url, headers }),
 	environmentAddRepository: (url: string, headers: { [key in string]: string }) => __TAURI_INVOKE<TauriAddRepositoryResult>("environment_add_repository", { url, headers }),
@@ -387,9 +388,10 @@ export type TauriDefaultRepository = {
 	id: string,
 	url: string,
 	kind: string,
+	display_name: string,
 };
 
-export type TauriDownloadRepository = { type: "BadUrl" } | { type: "Duplicated"; reason: TauriDuplicatedReason; duplicated_name: string } | { type: "DownloadError"; message: string } | { type: "Success"; value: TauriRemoteRepositoryInfo };
+export type TauriDownloadRepository = { type: "BadUrl" } | { type: "Duplicated"; reason: TauriDuplicatedReason; duplicated_name: string; duplicated_original_name: string | null } | { type: "DownloadError"; message: string } | { type: "Success"; value: TauriRemoteRepositoryInfo };
 
 export type TauriDuplicatedReason = "URLDuplicated" | "IDDuplicated";
 
@@ -473,6 +475,7 @@ export type TauriPackageChange = ({ InstallNew: TauriBasePackageInfo }) & { Remo
 
 export type TauriPackageSource = "LocalUser" | { Remote: {
 	id: string,
+	name: string,
 	display_name: string,
 } };
 
@@ -584,7 +587,7 @@ export type TauriProjectTemplateInfo = {
 export type TauriProjectType = "Unknown" | "LegacySdk2" | "LegacyWorlds" | "LegacyAvatars" | "UpmWorlds" | "UpmAvatars" | "UpmStarter" | "Worlds" | "Avatars" | "VpmStarter";
 
 export type TauriRemoteRepositoryInfo = {
-	display_name: string,
+	name: string,
 	id: string,
 	url: string,
 	packages: TauriBasePackageInfo[],
@@ -648,6 +651,7 @@ export type TauriUserPackage = {
 export type TauriUserRepository = {
 	id: string,
 	url: string,
+	name: string,
 	display_name: string,
 };
 

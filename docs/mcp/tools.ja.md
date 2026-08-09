@@ -736,7 +736,8 @@ destructive としてマークされます。
 
 | フィールド | 型 | 意味 |
 | --- | --- | --- |
-| `displayName` | `string` | 表示名。 |
+| `name` | `string` | VPM リポジトリが宣言した元の名前。 |
+| `displayName` | `string` | 空でない表示名。初期値は `name` で、ユーザーが編集できます。 |
 | `id` | `string` | 安定した管理 ID。 |
 | `unityVersions` | `string[]` | プロジェクト作成で選択できる Unity バージョン。 |
 | `updateDate` | `string / null` | テンプレート更新日。 |
@@ -797,7 +798,8 @@ destructive としてマークされます。
 | --- | --- | --- |
 | `id` | `string / null` | リポジトリ宣言 ID。なければ `null`。 |
 | `url` | `string` | 追加または削除した URL。 |
-| `displayName` | `string / null` | リポジトリ表示名。 |
+| `name` | `string / null` | VPM リポジトリが宣言した元の名前。 |
+| `displayName` | `string` | 操作時の空でない表示名。 |
 | `kind` | `user` | 常にユーザーリポジトリ。 |
 
 ### `PackageRepositorySummary`
@@ -806,7 +808,8 @@ destructive としてマークされます。
 | --- | --- | --- |
 | `id` | `string / null` | キャッシュ済みリポジトリ ID。 |
 | `url` | `string / null` | キャッシュ済みリポジトリ URL。 |
-| `displayName` | `string / null` | 表示名。 |
+| `name` | `string` | VPM リポジトリが宣言した元の名前。 |
+| `displayName` | `string` | 空でないリポジトリ表示名。 |
 | `kind` | `officialDefault / curatedDefault / user` | リポジトリ分類。 |
 
 ### `PackageSummary`
@@ -827,7 +830,8 @@ destructive としてマークされます。
 | `type` | `remote` | リモートリポジトリのパッケージであることを示します。 |
 | `kind` | `officialDefault / curatedDefault / userRepository` | リモートリポジトリ分類。 |
 | `id` | `string / null` | リポジトリ宣言 ID。 |
-| `displayName` | `string / null` | リポジトリ表示名。 |
+| `name` | `string` | VPM リポジトリが宣言した元の名前。 |
+| `displayName` | `string` | 空でないリポジトリ表示名。 |
 | `url` | `string / null` | リポジトリ URL。 |
 
 ローカルユーザーソース:

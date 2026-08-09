@@ -95,6 +95,7 @@ pub struct ListRepositoriesOutput {
 pub struct RepositorySummary {
     pub id: String,
     pub url: String,
+    pub name: String,
     pub display_name: String,
     pub kind: RepositoryKind,
     pub hidden: bool,
@@ -222,7 +223,8 @@ mod tests {
             repositories: vec![RepositorySummary {
                 id: "com.example.repository".to_string(),
                 url: "https://example.com/index.json".to_string(),
-                display_name: "Example Repository".to_string(),
+                name: "Example Repository".to_string(),
+                display_name: "My Repository".to_string(),
                 kind: RepositoryKind::User,
                 hidden: true,
             }],
@@ -235,6 +237,12 @@ mod tests {
 
         assert_eq!(serialized["repositories"][0]["kind"], "user");
         assert_eq!(serialized["repositories"][0]["hidden"], true);
+        assert_eq!(serialized["repositories"][0]["name"], "Example Repository");
+        assert_eq!(
+            serialized["repositories"][0]["displayName"],
+            "My Repository"
+        );
+        assert!(serialized["repositories"][0].get("alias").is_none());
         assert_eq!(
             serialized["packageVisibility"]["showPrereleasePackages"],
             true

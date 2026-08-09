@@ -126,6 +126,8 @@ pub fn startup(app: &mut App, initial_args: Vec<String>) {
         app.manage(config);
         let theme_config = ThemeConfigState::new_load(io.inner()).await?;
         app.manage(theme_config);
+        let repository_config = RepositoryConfigState::new_load(io.inner()).await?;
+        app.manage(repository_config);
 
         let release_channel = {
             let config = app.state::<GuiConfigState>();

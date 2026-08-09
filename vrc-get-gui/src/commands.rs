@@ -123,6 +123,7 @@ pub(crate) fn handlers() -> impl Fn(Invoke) -> bool + Send + Sync + 'static {
         environment::packages::environment_repositories_info,
         environment::packages::environment_hide_repository,
         environment::packages::environment_show_repository,
+        environment::packages::environment_set_repository_display_name,
         environment::packages::environment_set_hide_local_user_packages,
         environment::packages::environment_download_repository,
         environment::packages::environment_add_repository,
@@ -264,6 +265,7 @@ pub(crate) fn export_ts() {
             environment::packages::environment_repositories_info,
             environment::packages::environment_hide_repository,
             environment::packages::environment_show_repository,
+            environment::packages::environment_set_repository_display_name,
             environment::packages::environment_set_hide_local_user_packages,
             environment::packages::environment_download_repository,
             environment::packages::environment_add_repository,
@@ -691,19 +693,33 @@ pub struct TauriPackage {
 #[derive(Serialize, specta::Type, Clone)]
 enum TauriPackageSource {
     LocalUser,
-    Remote { id: String, display_name: String },
+    Remote {
+        id: String,
+        name: String,
+        display_name: String,
+    },
 }
 
 impl TauriPackage {
-    pub fn new(package: &PackageInfo) -> Self {
+    pub fn new_with_repository_display_names(
+        package: &PackageInfo,
+        display_names: &std::collections::BTreeMap<String, String>,
+    ) -> Self {
         let source = if let Some((repo, id)) = package.repo().and_then(|repo| {
             repo.id()
                 .or(repo.url().map(|x| x.as_str()))
                 .map(|id| (repo, id))
         }) {
+            let names = crate::backend::repository_operations::repository_names(
+                repo.url(),
+                repo.name(),
+                Some(id),
+                display_names,
+            );
             TauriPackageSource::Remote {
                 id: id.to_string(),
-                display_name: repo.name().unwrap_or(id).to_string(),
+                name: names.name,
+                display_name: names.display_name,
             }
         } else {
             TauriPackageSource::LocalUser

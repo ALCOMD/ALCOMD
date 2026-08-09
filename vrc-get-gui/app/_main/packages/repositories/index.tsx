@@ -34,6 +34,7 @@ import {
 	CircleX,
 	GripVertical,
 	Package,
+	Pencil,
 } from "lucide-react";
 import {
 	Suspense,
@@ -55,6 +56,7 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import {
 	Tooltip,
 	TooltipContent,
@@ -629,7 +631,12 @@ function RepositoryTableBody({
 						key={repository.kind}
 						repoId={repository.id}
 						url={repository.url}
-						displayName={defaultRepositoryDisplayName(repository)}
+						displayName={
+							repository.display_name === repository.id
+								? defaultRepositoryDisplayName(repository)
+								: repository.display_name
+						}
+						repositoryName={defaultRepositoryDisplayName(repository)}
 						hiddenUserRepos={hiddenUserRepos}
 						repoPackages={packagesByRepo.get(repository.id) ?? []}
 						className={
@@ -658,6 +665,7 @@ function RepositoryTableBody({
 								listId={listId}
 								repoId={repo.id}
 								displayName={repo.display_name}
+								repositoryName={repo.name}
 								url={repo.url}
 								hiddenUserRepos={hiddenUserRepos}
 								repoPackages={packagesByRepo.get(repo.id) ?? []}
@@ -690,14 +698,27 @@ function defaultRepositoryDisplayName(
 
 const CELL_CLASS = "p-2.5 compact:py-1 align-middle";
 
-function TruncatedRepositoryText({ value }: { value: string }) {
+function TruncatedRepositoryText({
+	value,
+	secondaryValue,
+}: {
+	value: string;
+	secondaryValue?: string;
+}) {
+	const showSecondary =
+		secondaryValue !== undefined && secondaryValue !== value;
 	return (
 		<Tooltip>
 			<TooltipTrigger asChild>
 				<p className="truncate font-normal">{value}</p>
 			</TooltipTrigger>
 			<TooltipContent className="max-w-[calc(100vw-2rem)] break-all">
-				{value}
+				<p>{value}</p>
+				{showSecondary && (
+					<p className="text-xs opacity-75">
+						{tc("vpm repositories:original name", { name: secondaryValue })}
+					</p>
+				)}
 			</TooltipContent>
 		</Tooltip>
 	);
@@ -706,11 +727,13 @@ function TruncatedRepositoryText({ value }: { value: string }) {
 function RepositoryRowCells({
 	labelId,
 	displayName,
+	repositoryName,
 	url,
 	canRemove,
 	selected,
 	onCheckedChange,
 	onRemove,
+	onEditAlias,
 	repoPackages,
 	isSortingMode,
 	dragListeners,
@@ -719,11 +742,13 @@ function RepositoryRowCells({
 }: {
 	labelId?: string;
 	displayName: string;
+	repositoryName: string;
 	url: string | null | undefined;
 	canRemove: boolean;
 	selected: boolean;
 	onCheckedChange?: (shown: boolean) => void;
 	onRemove?: () => void;
+	onEditAlias?: () => void;
 	repoPackages?: TauriBasePackageInfo[];
 	isSortingMode: boolean;
 	dragListeners?: ReturnType<typeof useSortable>["listeners"];
@@ -773,10 +798,16 @@ function RepositoryRowCells({
 			<td className={`${CELL_CLASS} w-2/5 max-w-0`}>
 				{visibilityInteractive ? (
 					<label className="block min-w-0" htmlFor={labelId}>
-						<TruncatedRepositoryText value={displayName} />
+						<TruncatedRepositoryText
+							value={displayName}
+							secondaryValue={repositoryName}
+						/>
 					</label>
 				) : (
-					<TruncatedRepositoryText value={displayName} />
+					<TruncatedRepositoryText
+						value={displayName}
+						secondaryValue={repositoryName}
+					/>
 				)}
 			</td>
 			<td className={`${CELL_CLASS} w-3/5 max-w-0`}>
@@ -792,6 +823,7 @@ function RepositoryRowCells({
 									onClick={() => {
 										void openSingleDialog(RepositoryPackagesDialog, {
 											displayName,
+											repositoryName,
 											packages: repoPackages,
 										});
 									}}
@@ -803,6 +835,18 @@ function RepositoryRowCells({
 							</TooltipTrigger>
 							<TooltipContent>
 								{tc("vpm repositories:tooltip:view packages")}
+							</TooltipContent>
+						</Tooltip>
+					)}
+					{isLiveRow && (
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<Button onClick={onEditAlias} variant={"ghost"} size={"icon"}>
+									<Pencil className={"size-5"} />
+								</Button>
+							</TooltipTrigger>
+							<TooltipContent>
+								{tc("vpm repositories:tooltip:edit display name")}
 							</TooltipContent>
 						</Tooltip>
 					)}
@@ -841,6 +885,7 @@ function RepositoryRow({
 	listId,
 	repoId,
 	displayName,
+	repositoryName,
 	url,
 	repoPackages,
 	hiddenUserRepos,
@@ -854,7 +899,8 @@ function RepositoryRow({
 }: {
 	listId?: string;
 	repoId: TauriUserRepository["id"];
-	displayName: TauriUserRepository["display_name"];
+	displayName: TauriUserRepository["name"];
+	repositoryName: TauriUserRepository["name"];
 	url: TauriUserRepository["url"];
 	repoPackages?: TauriBasePackageInfo[];
 	hiddenUserRepos: Set<string>;
@@ -914,6 +960,7 @@ function RepositoryRow({
 			<RepositoryRowCells
 				labelId={labelId}
 				displayName={displayName}
+				repositoryName={repositoryName}
 				url={url}
 				canRemove={canRemove}
 				selected={selected}
@@ -922,7 +969,15 @@ function RepositoryRow({
 				onRemove={() =>
 					void openSingleDialog(RemoveRepositoryDialog, {
 						displayName,
+						repositoryName,
 						url,
+					})
+				}
+				onEditAlias={() =>
+					void openSingleDialog(EditRepositoryDisplayNameDialog, {
+						repositoryUrl: url,
+						repositoryName,
+						displayName,
 					})
 				}
 				isSortingMode={isSortingMode}
@@ -977,6 +1032,7 @@ function RepositoryDragOverlay({
 				<tr>
 					<RepositoryRowCells
 						displayName={repo.display_name}
+						repositoryName={repo.name}
 						url={repo.url}
 						canRemove={true}
 						selected={selected}
@@ -989,18 +1045,137 @@ function RepositoryDragOverlay({
 	);
 }
 
+function EditRepositoryDisplayNameDialog({
+	dialog,
+	repositoryUrl,
+	repositoryName,
+	displayName,
+}: {
+	dialog: DialogContext<void>;
+	repositoryUrl: string;
+	repositoryName: string;
+	displayName: string;
+}) {
+	const [value, setValue] = useState(displayName);
+	const queryClient = useQueryClient();
+	const setAlias = useMutation({
+		mutationFn: (nextDisplayName: string) =>
+			commands.environmentSetRepositoryDisplayName(
+				repositoryUrl,
+				nextDisplayName.trim() || repositoryName,
+			),
+		onMutate: async (nextDisplayName) => {
+			await Promise.all([
+				queryClient.cancelQueries(environmentRepositoriesInfo),
+				queryClient.cancelQueries(environmentDefaultRepositories),
+			]);
+			const previousRepositories = queryClient.getQueryData(
+				environmentRepositoriesInfo.queryKey,
+			);
+			const previousDefaults = queryClient.getQueryData(
+				environmentDefaultRepositories.queryKey,
+			);
+			const normalizedDisplayName = nextDisplayName.trim() || repositoryName;
+			if (previousRepositories !== undefined) {
+				queryClient.setQueryData(environmentRepositoriesInfo.queryKey, {
+					...previousRepositories,
+					user_repositories: previousRepositories.user_repositories.map(
+						(repository) =>
+							repository.url === repositoryUrl
+								? { ...repository, display_name: normalizedDisplayName }
+								: repository,
+					),
+				});
+			}
+			if (previousDefaults !== undefined) {
+				queryClient.setQueryData(
+					environmentDefaultRepositories.queryKey,
+					previousDefaults.map((repository) =>
+						repository.url === repositoryUrl
+							? { ...repository, display_name: normalizedDisplayName }
+							: repository,
+					),
+				);
+			}
+			return { previousRepositories, previousDefaults };
+		},
+		onError: (error, _displayName, previous) => {
+			dialog.error(error);
+			queryClient.setQueryData(
+				environmentRepositoriesInfo.queryKey,
+				previous?.previousRepositories,
+			);
+			queryClient.setQueryData(
+				environmentDefaultRepositories.queryKey,
+				previous?.previousDefaults,
+			);
+		},
+		onSuccess: () => dialog.close(),
+		onSettled: async () => {
+			await Promise.all([
+				queryClient.invalidateQueries(environmentRepositoriesInfo),
+				queryClient.invalidateQueries(environmentDefaultRepositories),
+			]);
+		},
+	});
+
+	return (
+		<form
+			onSubmit={(event) => {
+				event.preventDefault();
+				setAlias.mutate(value);
+			}}
+		>
+			<DialogTitle>
+				{tc("vpm repositories:dialog:edit display name")}
+			</DialogTitle>
+			<div className="space-y-2">
+				<label htmlFor="repository-display-name">
+					{tc("vpm repositories:display name")}
+				</label>
+				<Input
+					id="repository-display-name"
+					value={value}
+					onChange={(event) => setValue(event.target.value)}
+					placeholder={repositoryName}
+					maxLength={100}
+					autoFocus
+				/>
+				<small className="block text-muted-foreground">
+					{tc("vpm repositories:hint:empty display name")}
+				</small>
+			</div>
+			<DialogFooter>
+				<Button type="button" onClick={() => dialog.close()}>
+					{tc("general:button:cancel")}
+				</Button>
+				<Button type="submit" disabled={setAlias.isPending}>
+					{tc("general:button:save")}
+				</Button>
+			</DialogFooter>
+		</form>
+	);
+}
+
 function RepositoryPackagesDialog({
 	dialog,
 	displayName,
+	repositoryName,
 	packages,
 }: {
 	dialog: DialogContext<void>;
 	displayName: string;
+	repositoryName: string;
 	packages: TauriBasePackageInfo[];
 }) {
 	return (
 		<>
 			<DialogTitle>{displayName}</DialogTitle>
+			{displayName !== repositoryName && (
+				<p className="text-sm text-muted-foreground">
+					{tc("vpm repositories:original name", { name: repositoryName })}
+				</p>
+			)}
 			<div className={"max-h-[50vh] overflow-y-auto font-normal"}>
 				<p className={"font-normal"}>
 					{tc("vpm repositories:dialog:packages")}
@@ -1019,10 +1194,12 @@ function RepositoryPackagesDialog({
 function RemoveRepositoryDialog({
 	dialog,
 	displayName,
+	repositoryName,
 	url,
 }: {
 	dialog: DialogContext<void>;
 	displayName: string;
+	repositoryName: string;
 	url: string;
 }) {
 	const queryClient = useQueryClient();
@@ -1061,6 +1238,11 @@ function RemoveRepositoryDialog({
 						name: displayName,
 					})}
 				</p>
+				{displayName !== repositoryName && (
+					<p className="text-sm text-muted-foreground">
+						{tc("vpm repositories:original name", { name: repositoryName })}
+					</p>
+				)}
 			</div>
 			<DialogFooter>
 				<Button onClick={() => dialog.close()}>

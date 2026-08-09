@@ -746,7 +746,8 @@ All three tools first calculate pending changes. If authorization is needed whil
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `displayName` | `string` | Display name. |
+| `name` | `string` | Original VPM repository name. |
+| `displayName` | `string` | Non-empty display name; initialized from `name` and user-editable. |
 | `id` | `string` | Stable management ID. |
 | `unityVersions` | `string[]` | Unity versions available for project creation. |
 | `updateDate` | `string / null` | Template update date. |
@@ -807,7 +808,8 @@ Includes all [`TemplateSummary`](#templatesummary) fields plus:
 | --- | --- | --- |
 | `id` | `string / null` | Declared repository ID, or `null`. |
 | `url` | `string` | Added or removed URL. |
-| `displayName` | `string / null` | Repository display name. |
+| `name` | `string / null` | Original VPM repository name. |
+| `displayName` | `string` | Non-empty display name at mutation time. |
 | `kind` | `user` | Always a user repository. |
 
 ### `PackageRepositorySummary`
@@ -816,7 +818,8 @@ Includes all [`TemplateSummary`](#templatesummary) fields plus:
 | --- | --- | --- |
 | `id` | `string / null` | Cached repository ID. |
 | `url` | `string / null` | Cached repository URL. |
-| `displayName` | `string / null` | Display name. |
+| `name` | `string` | Original VPM repository name. |
+| `displayName` | `string` | Non-empty repository display name. |
 | `kind` | `officialDefault / curatedDefault / user` | Repository classification. |
 
 ### `PackageSummary`
@@ -837,7 +840,8 @@ A remote source has these fields:
 | `type` | `remote` | Indicates a package from a remote repository. |
 | `kind` | `officialDefault / curatedDefault / userRepository` | Remote repository classification. |
 | `id` | `string / null` | Declared repository ID. |
-| `displayName` | `string / null` | Repository display name. |
+| `name` | `string` | Original VPM repository name. |
+| `displayName` | `string` | Non-empty repository display name. |
 | `url` | `string / null` | Repository URL. |
 
 A local-user source has these fields:

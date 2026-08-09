@@ -240,8 +240,21 @@ function ConfirmingPackages({
 										throw new Error("BadUrl should not be here");
 									case "Duplicated":
 										toneClass = "text-warning";
-										content = tc(
-											"vpm repositories:dialog:download error:duplicated",
+										content = (
+											<>
+												<p>
+													{tc("vpm repositories:dialog:name", {
+														name: download.duplicated_name,
+													})}
+												</p>
+												{download.duplicated_original_name != null && (
+													<p className="text-muted-foreground text-sm">
+														{tc("vpm repositories:original name", {
+															name: download.duplicated_original_name,
+														})}
+													</p>
+												)}
+											</>
 										);
 										break;
 									case "DownloadError":

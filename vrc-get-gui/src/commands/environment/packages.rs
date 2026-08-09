@@ -69,6 +69,7 @@ pub async fn environment_packages(
     app_handle: AppHandle,
     packages: State<'_, PackagesState>,
     settings: State<'_, SettingsState>,
+    repository_config: State<'_, RepositoryConfigState>,
     io: State<'_, DefaultEnvironmentIo>,
     http: State<'_, reqwest::Client>,
 ) -> Result<Vec<TauriPackage>, RustError> {
@@ -77,9 +78,10 @@ pub async fn environment_packages(
         .load(&settings, io.inner(), http.inner(), app_handle)
         .await?;
 
+    let display_names = repository_config.get().display_names.clone();
     Ok(packages
         .packages()
-        .map(|value| TauriPackage::new(value))
+        .map(|value| TauriPackage::new_with_repository_display_names(value, &display_names))
         .collect::<Vec<_>>())
 }
 
@@ -94,21 +96,35 @@ pub struct TauriDefaultRepository {
     id: String,
     url: String,
     kind: String,
+    display_name: String,
 }
 
 #[tauri::command]
 #[specta::specta]
-pub async fn environment_default_repositories() -> Result<Vec<TauriDefaultRepository>, RustError> {
+pub async fn environment_default_repositories(
+    repository_config: State<'_, RepositoryConfigState>,
+) -> Result<Vec<TauriDefaultRepository>, RustError> {
+    let repository_config = repository_config.get();
     Ok(vec![
         TauriDefaultRepository {
             id: OFFICIAL_REPOSITORY_ID.to_string(),
             url: OFFICIAL_URL_STR.to_string(),
             kind: "officialDefault".to_string(),
+            display_name: repository_config
+                .display_names
+                .get(OFFICIAL_URL_STR)
+                .cloned()
+                .unwrap_or_else(|| OFFICIAL_REPOSITORY_ID.to_string()),
         },
         TauriDefaultRepository {
             id: CURATED_REPOSITORY_ID.to_string(),
             url: CURATED_URL_STR.to_string(),
             kind: "curatedDefault".to_string(),
+            display_name: repository_config
+                .display_names
+                .get(CURATED_URL_STR)
+                .cloned()
+                .unwrap_or_else(|| CURATED_REPOSITORY_ID.to_string()),
         },
     ])
 }
@@ -188,6 +204,7 @@ fn sort_base_package_infos(packages: &mut [TauriBasePackageInfo]) {
 struct TauriUserRepository {
     id: String,
     url: String,
+    name: String,
     display_name: String,
 }
 
@@ -196,6 +213,7 @@ impl From<repository_operations::RepositorySummary> for TauriUserRepository {
         Self {
             id: value.id,
             url: value.url,
+            name: value.name,
             display_name: value.display_name,
         }
     }
@@ -214,11 +232,13 @@ pub struct TauriRepositoriesInfo {
 pub async fn environment_repositories_info(
     settings: State<'_, SettingsState>,
     config: State<'_, GuiConfigState>,
+    repository_config: State<'_, RepositoryConfigState>,
     io: State<'_, DefaultEnvironmentIo>,
 ) -> Result<TauriRepositoriesInfo, RustError> {
     let snapshot = repository_operations::repository_settings_snapshot(
         settings.inner(),
         config.inner(),
+        repository_config.inner(),
         io.inner(),
     )
     .await?;
@@ -299,6 +319,41 @@ pub async fn environment_show_repository(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn environment_set_repository_display_name(
+    app: AppHandle,
+    repository_config: State<'_, RepositoryConfigState>,
+    repository_url: String,
+    display_name: String,
+) -> Result<(), RustError> {
+    let activity = app.state::<ActivityLogState>();
+    let input = ActivityInput::new(
+        ActivitySource::Gui,
+        ActivityKind::Write,
+        ActivityImportance::Primary,
+        operations::REPOSITORY_DISPLAY_NAME_SET,
+        "Updating repository display name",
+    )
+    .target(summarize_url(&repository_url));
+    activity
+        .track_result(
+            Some(&app),
+            input,
+            "Repository display name updated",
+            Vec::new(),
+            async move {
+                repository_operations::set_repository_display_name(
+                    repository_config.inner(),
+                    repository_url,
+                    display_name,
+                )
+                .await
+            },
+        )
+        .await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn environment_set_hide_local_user_packages(
     app: AppHandle,
     config: State<'_, GuiConfigState>,
@@ -327,7 +382,7 @@ pub async fn environment_set_hide_local_user_packages(
 
 #[derive(Serialize, specta::Type, Clone)]
 pub struct TauriRemoteRepositoryInfo {
-    display_name: String,
+    name: String,
     id: String,
     url: String,
     packages: Vec<TauriBasePackageInfo>,
@@ -341,6 +396,7 @@ pub enum TauriDownloadRepository {
         reason: TauriDuplicatedReason,
         // Default repository ids use vrc_get_vpm::environment constants.
         duplicated_name: String,
+        duplicated_original_name: Option<String>,
     },
     DownloadError {
         message: String,
@@ -362,6 +418,7 @@ impl From<repository_operations::DownloadRepositoryOutcome> for TauriDownloadRep
             repository_operations::DownloadRepositoryOutcome::Duplicated {
                 reason,
                 duplicated_name,
+                duplicated_original_name,
             } => Self::Duplicated {
                 reason: match reason {
                     repository_operations::RepositoryDuplicateReason::Url => {
@@ -372,6 +429,7 @@ impl From<repository_operations::DownloadRepositoryOutcome> for TauriDownloadRep
                     }
                 },
                 duplicated_name,
+                duplicated_original_name,
             },
             repository_operations::DownloadRepositoryOutcome::DownloadError(message) => {
                 Self::DownloadError { message }
@@ -381,7 +439,7 @@ impl From<repository_operations::DownloadRepositoryOutcome> for TauriDownloadRep
                     value: TauriRemoteRepositoryInfo {
                         id: repository.id,
                         url: repository.url,
-                        display_name: repository.display_name,
+                        name: repository.name,
                         packages: repository
                             .packages
                             .iter()
@@ -398,6 +456,7 @@ impl From<repository_operations::DownloadRepositoryOutcome> for TauriDownloadRep
 #[specta::specta]
 pub async fn environment_download_repository(
     settings: State<'_, SettingsState>,
+    repository_config: State<'_, RepositoryConfigState>,
     io: State<'_, DefaultEnvironmentIo>,
     http: State<'_, reqwest::Client>,
     url: String,
@@ -412,7 +471,9 @@ pub async fn environment_download_repository(
 
     {
         let settings = settings.load(io.inner()).await?;
-        let identities = repository_operations::repository_identity_snapshot(&settings);
+        let display_names = repository_config.get().display_names.clone();
+        let identities =
+            repository_operations::repository_identity_snapshot(&settings, &display_names);
         repository_operations::download_repository(http.inner(), &url, &headers, &identities)
             .await
             .map(Into::into)
@@ -431,6 +492,7 @@ pub async fn environment_add_repository(
     app: AppHandle,
     settings: State<'_, SettingsState>,
     packages: State<'_, PackagesState>,
+    repository_config: State<'_, RepositoryConfigState>,
     io: State<'_, DefaultEnvironmentIo>,
     http: State<'_, reqwest::Client>,
     url: String,
@@ -464,6 +526,7 @@ pub async fn environment_add_repository(
                 repository_operations::add_repository(
                     settings.inner(),
                     packages.inner(),
+                    repository_config.inner(),
                     io.inner(),
                     http.inner(),
                     url,
@@ -489,6 +552,7 @@ pub async fn environment_remove_repository(
     app: AppHandle,
     settings: State<'_, SettingsState>,
     packages: State<'_, PackagesState>,
+    repository_config: State<'_, RepositoryConfigState>,
     io: State<'_, DefaultEnvironmentIo>,
     repository_url: String,
 ) -> Result<(), RustError> {
@@ -519,6 +583,7 @@ pub async fn environment_remove_repository(
                 match repository_operations::remove_repository(
                     settings.inner(),
                     packages.inner(),
+                    repository_config.inner(),
                     io.inner(),
                     repository_url,
                 )
@@ -655,10 +720,13 @@ pub async fn environment_import_download_repositories(
     async_command(channel, window.clone(), async move {
         With::<usize>::continue_async(|ctx| async move {
             let settings = window.state::<SettingsState>();
+            let repository_config = window.state::<RepositoryConfigState>();
             let io = window.state::<DefaultEnvironmentIo>();
             let settings = settings.load(io.inner()).await?;
             {
-                let mut identities = repository_operations::repository_identity_snapshot(&settings);
+                let display_names = repository_config.get().display_names.clone();
+                let mut identities =
+                    repository_operations::repository_identity_snapshot(&settings, &display_names);
                 drop(settings);
 
                 info!("downloading {} repositories", repositories.len());
@@ -716,6 +784,7 @@ pub async fn environment_import_add_repositories(
     app: AppHandle,
     settings: State<'_, SettingsState>,
     packages: State<'_, PackagesState>,
+    repository_config: State<'_, RepositoryConfigState>,
     http: State<'_, reqwest::Client>,
     io: State<'_, DefaultEnvironmentIo>,
     repositories: Vec<TauriRepositoryDescriptor>,
@@ -743,6 +812,7 @@ pub async fn environment_import_add_repositories(
                 repository_operations::add_repositories(
                     settings.inner(),
                     packages.inner(),
+                    repository_config.inner(),
                     io.inner(),
                     http.inner(),
                     repositories

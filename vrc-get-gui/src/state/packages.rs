@@ -2,7 +2,7 @@ use crate::activity_log::{
     ActivityDetail, ActivityImportance, ActivityInput, ActivityKind, ActivityLogState,
     ActivitySource, operations,
 };
-use crate::state::SettingsState;
+use crate::state::{RepositoryConfigState, SettingsState};
 use crate::utils::YokeExt;
 use arc_swap::ArcSwapOption;
 use std::future::Future;
@@ -176,6 +176,10 @@ impl PackagesState {
                     }
                     inner_arc.store(Some(arc.clone()));
                     app_handle.emit("package-update-in-progress", false).ok();
+                    let repository_display_names = app_handle
+                        .try_state::<RepositoryConfigState>()
+                        .map(|state| state.get().display_names.clone())
+                        .unwrap_or_default();
                     app_handle
                         .emit(
                             "package-update-background",
@@ -183,7 +187,12 @@ impl PackagesState {
                                 .get()
                                 .packages
                                 .iter()
-                                .map(crate::commands::TauriPackage::new)
+                                .map(|package| {
+                                    crate::commands::TauriPackage::new_with_repository_display_names(
+                                        package,
+                                        &repository_display_names,
+                                    )
+                                })
                                 .collect::<Vec<_>>(),
                         )
                         .ok();

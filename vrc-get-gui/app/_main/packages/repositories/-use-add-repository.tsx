@@ -100,6 +100,7 @@ async function addRepositoryImpl(
 			await dialog.askClosing(Duplicated, {
 				reason: info.reason,
 				duplicatedName: info.duplicated_name,
+				duplicatedOriginalName: info.duplicated_original_name,
 			});
 			return;
 		case "Success":
@@ -389,10 +390,12 @@ function LoadingRepository({ cancel }: { cancel: () => void }) {
 function Duplicated({
 	reason,
 	duplicatedName,
+	duplicatedOriginalName,
 	dialog,
 }: {
 	reason: TauriDuplicatedReason;
 	duplicatedName: string;
+	duplicatedOriginalName: string | null;
 	dialog: DialogContext<void>;
 }) {
 	const defaultRepositories =
@@ -404,6 +407,15 @@ function Duplicated({
 		defaultRepository == null
 			? duplicatedName
 			: defaultRepositoryDisplayName(defaultRepository);
+	const originalDefaultRepository = defaultRepositories.find(
+		(repository) => repository.id === duplicatedOriginalName,
+	);
+	const originalDisplayName =
+		duplicatedOriginalName == null
+			? null
+			: originalDefaultRepository == null
+				? duplicatedOriginalName
+				: defaultRepositoryDisplayName(originalDefaultRepository);
 	let message: React.ReactNode;
 	switch (reason) {
 		case "URLDuplicated":
@@ -423,6 +435,14 @@ function Duplicated({
 			<div>
 				<p>{tc("vpm repositories:dialog:already added")}</p>
 				<p>{message}</p>
+				{originalDisplayName != null &&
+					originalDisplayName !== duplicatedDisplayName && (
+						<p className="text-muted-foreground text-sm">
+							{tc("vpm repositories:original name", {
+								name: originalDisplayName,
+							})}
+						</p>
+					)}
 			</div>
 			<DialogFooter>
 				<Button onClick={() => dialog.close()}>
@@ -464,7 +484,7 @@ function Confirming({
 			>
 				<div className="pr-4">
 					<p className={"font-normal"}>
-						{tc("vpm repositories:dialog:name", { name: repo.display_name })}
+						{tc("vpm repositories:dialog:name", { name: repo.name })}
 					</p>
 					<p className={"font-normal"}>
 						{tc("vpm repositories:dialog:url", { url: repo.url })}

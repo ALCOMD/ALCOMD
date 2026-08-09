@@ -2127,7 +2127,8 @@ mod tests {
                 "repositories": [{
                     "id": "com.example.repository",
                     "url": "https://example.com/index.json",
-                    "displayName": "Example Repository",
+                    "name": "Example Repository",
+                    "displayName": "My Repository",
                     "kind": "user",
                     "hidden": false,
                 }],

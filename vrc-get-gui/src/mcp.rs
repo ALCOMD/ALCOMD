@@ -27,7 +27,7 @@ use crate::logging::{
 };
 use crate::state::{
     ChangesState, GuiConfigState, PackagesState, ProjectApplyState, ProjectBackupState,
-    ProjectCopyState, ProjectRestoreState, SettingsState, TemplatesState,
+    ProjectCopyState, ProjectRestoreState, RepositoryConfigState, SettingsState, TemplatesState,
 };
 use alcomd3_mcp_protocol::{
     ClientIdentity, EndpointMetadata, IPC_IO_TIMEOUT, IPC_MAX_LINE_BYTES,
@@ -2136,6 +2136,11 @@ async fn install_project_package_with_abort(
         ));
     };
     let config = app.state::<GuiConfigState>().get();
+    let repository_display_names = app
+        .state::<RepositoryConfigState>()
+        .get()
+        .display_names
+        .clone();
     let hidden_user_repositories = config.gui_hidden_repositories.clone();
     let hide_local_user_packages = config.hide_local_user_packages;
     drop(config);
@@ -2164,6 +2169,7 @@ async fn install_project_package_with_abort(
                     show_prerelease_packages,
                     &default_repository_ids,
                     &defined_repository_ids,
+                    &repository_display_names,
                     &project,
                 )?;
 
@@ -2440,6 +2446,7 @@ fn select_project_install_package<'package, 'env>(
     show_prerelease_packages: bool,
     default_repository_ids: &[String],
     defined_repository_ids: &[String],
+    repository_display_names: &BTreeMap<String, String>,
     project: &ProjectDetailsSnapshot,
 ) -> Result<PackageInfo<'env>, McpIpcError>
 where
@@ -2461,6 +2468,7 @@ where
         show_prerelease_packages,
         default_repository_ids,
         defined_repository_ids,
+        repository_display_names,
     );
     let Some(row) = rows.get(package_name) else {
         return Err(McpIpcError::new(
@@ -3324,9 +3332,11 @@ async fn list_repositories(app: AppHandle) -> Result<Value, McpIpcError> {
     let io = app.state::<DefaultEnvironmentIo>();
     let settings = app.state::<SettingsState>();
     let config = app.state::<GuiConfigState>();
+    let repository_config = app.state::<RepositoryConfigState>();
     let snapshot = repository_operations::repository_settings_snapshot(
         settings.inner(),
         config.inner(),
+        repository_config.inner(),
         io.inner(),
     )
     .await
@@ -3339,6 +3349,7 @@ async fn list_repositories(app: AppHandle) -> Result<Value, McpIpcError> {
             .map(|repository| McpRepositorySummary {
                 id: repository.id,
                 url: repository.url,
+                name: repository.name,
                 display_name: repository.display_name,
                 kind: match repository.kind {
                     repository_operations::RepositoryKind::OfficialDefault => {
@@ -3377,6 +3388,7 @@ async fn add_repository(app: AppHandle, params: Value) -> Result<Value, McpIpcEr
     let repository = repository_operations::add_repository(
         app.state::<SettingsState>().inner(),
         app.state::<PackagesState>().inner(),
+        app.state::<RepositoryConfigState>().inner(),
         app.state::<DefaultEnvironmentIo>().inner(),
         app.state::<reqwest::Client>().inner(),
         url,
@@ -3390,6 +3402,7 @@ async fn add_repository(app: AppHandle, params: Value) -> Result<Value, McpIpcEr
         "repository": {
             "id": repository.id,
             "url": repository.url,
+            "name": repository.name,
             "displayName": repository.display_name,
             "kind": "user",
         },
@@ -3407,6 +3420,7 @@ async fn remove_repository(app: AppHandle, params: Value) -> Result<Value, McpIp
     let outcome = repository_operations::remove_repository(
         app.state::<SettingsState>().inner(),
         app.state::<PackagesState>().inner(),
+        app.state::<RepositoryConfigState>().inner(),
         app.state::<DefaultEnvironmentIo>().inner(),
         repository_url,
     )
@@ -3428,6 +3442,7 @@ async fn remove_repository(app: AppHandle, params: Value) -> Result<Value, McpIp
         "repository": {
             "id": repository.id,
             "url": repository.url,
+            "name": repository.name,
             "displayName": repository.display_name,
             "kind": "user",
         },
@@ -3452,6 +3467,11 @@ async fn list_packages(app: AppHandle, params: Value) -> Result<Value, McpIpcErr
         .await
         .map_err(|e| McpIpcError::from_error("packages_load_error", e))?;
     let config = app.state::<GuiConfigState>().get();
+    let repository_display_names = app
+        .state::<RepositoryConfigState>()
+        .get()
+        .display_names
+        .clone();
 
     let results = packages
         .packages()
@@ -3464,7 +3484,7 @@ async fn list_packages(app: AppHandle, params: Value) -> Result<Value, McpIpcErr
             )
         })
         .collect::<Vec<_>>();
-    let results = package_info_list_summaries(results);
+    let results = package_info_list_summaries(results, &repository_display_names);
 
     Ok(package_list_response(results, pagination))
 }
@@ -3680,6 +3700,11 @@ async fn list_repository_packages(app: AppHandle, params: Value) -> Result<Value
         .await
         .map_err(|e| McpIpcError::from_error("packages_load_error", e))?;
     let config = app.state::<GuiConfigState>().get();
+    let repository_display_names = app
+        .state::<RepositoryConfigState>()
+        .get()
+        .display_names
+        .clone();
     let Some(repository) = packages
         .collection()
         .get_remote()
@@ -3690,7 +3715,7 @@ async fn list_repository_packages(app: AppHandle, params: Value) -> Result<Value
             "repository_id must match an ALCOMD3 remote repository",
         ));
     };
-    let repository = repository_summary(repository);
+    let repository = repository_summary(repository, &repository_display_names);
 
     let results = packages
         .packages()
@@ -3704,7 +3729,7 @@ async fn list_repository_packages(app: AppHandle, params: Value) -> Result<Value
             )
         })
         .collect::<Vec<_>>();
-    let results = package_info_list_summaries(results);
+    let results = package_info_list_summaries(results, &repository_display_names);
     let mut response = package_list_response(results, pagination);
     if let Value::Object(ref mut object) = response {
         object.insert("repository".to_string(), repository);
@@ -3732,6 +3757,11 @@ async fn get_package_details(app: AppHandle, params: Value) -> Result<Value, Mcp
         .await
         .map_err(|e| McpIpcError::from_error("packages_load_error", e))?;
     let config = app.state::<GuiConfigState>().get();
+    let repository_display_names = app
+        .state::<RepositoryConfigState>()
+        .get()
+        .display_names
+        .clone();
 
     let mut results = packages
         .packages()
@@ -3744,7 +3774,7 @@ async fn get_package_details(app: AppHandle, params: Value) -> Result<Value, Mcp
                 show_prerelease_packages,
             )
         })
-        .map(package_info_details)
+        .map(|package| package_info_details(package, &repository_display_names))
         .collect::<Vec<_>>();
 
     sort_package_summaries(&mut results);
@@ -3787,13 +3817,23 @@ fn project_summary(project: &UserProject) -> Option<Value> {
     }))
 }
 
-fn repository_summary(repo: &LocalCachedRepository) -> Value {
+fn repository_summary(
+    repo: &LocalCachedRepository,
+    repository_display_names: &BTreeMap<String, String>,
+) -> Value {
     let id = repository_id(repo).map(str::to_string);
     let kind = repository_kind(repo);
+    let names = repository_operations::repository_names(
+        repo.url(),
+        repo.name(),
+        id.as_deref(),
+        repository_display_names,
+    );
     json!({
         "id": id,
         "url": repo.url().map(ToString::to_string),
-        "displayName": repo.name().map(str::to_string).or_else(|| id.clone()),
+        "name": names.name,
+        "displayName": names.display_name,
         "kind": kind,
     })
 }
@@ -3804,15 +3844,25 @@ fn normalize_optional_string(value: Option<String>) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-fn package_source_summary(package: &PackageInfo<'_>) -> Value {
+fn package_source_summary(
+    package: &PackageInfo<'_>,
+    repository_display_names: &BTreeMap<String, String>,
+) -> Value {
     if let Some(repo) = package.repo() {
         let id = repository_id(repo);
         let kind = package_source_kind(repo);
+        let names = repository_operations::repository_names(
+            repo.url(),
+            repo.name(),
+            id,
+            repository_display_names,
+        );
         json!({
             "type": "remote",
             "kind": kind,
             "id": id,
-            "displayName": repo.name().or(id),
+            "name": names.name,
+            "displayName": names.display_name,
             "url": repo.url().map(ToString::to_string),
         })
     } else {
@@ -3824,35 +3874,45 @@ fn package_source_summary(package: &PackageInfo<'_>) -> Value {
     }
 }
 
-fn package_info_summary(package: &PackageInfo<'_>) -> Value {
+fn package_info_summary(
+    package: &PackageInfo<'_>,
+    repository_display_names: &BTreeMap<String, String>,
+) -> Value {
     let manifest = package.package_json();
     json!({
         "name": manifest.name(),
         "displayName": manifest.display_name(),
         "version": manifest.version().to_string(),
-        "source": package_source_summary(package),
+        "source": package_source_summary(package, repository_display_names),
     })
 }
 
 fn package_info_list_summaries<'package, 'env>(
     packages: impl IntoIterator<Item = &'package PackageInfo<'env>>,
+    repository_display_names: &BTreeMap<String, String>,
 ) -> Vec<Value>
 where
     'env: 'package,
 {
     let mut results = latest_package_infos_by_source(packages)
         .into_iter()
-        .map(|package| package_info_summary(package))
+        .map(|package| package_info_summary(package, repository_display_names))
         .collect::<Vec<_>>();
     sort_package_summaries(&mut results);
     results
 }
 
-fn package_info_details(package: &PackageInfo<'_>) -> Value {
+fn package_info_details(
+    package: &PackageInfo<'_>,
+    repository_display_names: &BTreeMap<String, String>,
+) -> Value {
     let manifest = package.package_json();
     let mut value = package_manifest_summary(manifest);
     if let Value::Object(ref mut object) = value {
-        object.insert("source".to_string(), package_source_summary(package));
+        object.insert(
+            "source".to_string(),
+            package_source_summary(package, repository_display_names),
+        );
     }
     value
 }
@@ -5013,17 +5073,41 @@ mod tests {
         }));
         let user = test_cached_repository(json!({
             "id": "com.example.repo",
+            "name": "Example Repository",
             "url": "https://example.com/index.json",
             "packages": {}
         }));
 
-        assert_eq!(repository_summary(&official)["kind"], "officialDefault");
-        assert_eq!(repository_summary(&curated)["kind"], "curatedDefault");
-        assert_eq!(repository_summary(&user)["kind"], "user");
+        let display_names = BTreeMap::from([(
+            "https://example.com/index.json".to_string(),
+            "My Repository".to_string(),
+        )]);
+        assert_eq!(
+            repository_summary(&official, &display_names)["kind"],
+            "officialDefault"
+        );
+        assert_eq!(
+            repository_summary(&curated, &display_names)["kind"],
+            "curatedDefault"
+        );
+        assert_eq!(repository_summary(&user, &display_names)["kind"], "user");
+        assert_eq!(
+            repository_summary(&user, &display_names)["name"],
+            "Example Repository"
+        );
+        assert_eq!(
+            repository_summary(&user, &display_names)["displayName"],
+            "My Repository"
+        );
+        assert!(
+            repository_summary(&user, &display_names)
+                .get("alias")
+                .is_none()
+        );
         for summary in [
-            repository_summary(&official),
-            repository_summary(&curated),
-            repository_summary(&user),
+            repository_summary(&official, &display_names),
+            repository_summary(&curated, &display_names),
+            repository_summary(&user, &display_names),
         ] {
             assert!(summary.get("isDefaultRepository").is_none());
             assert!(summary.get("isUserRepository").is_none());
@@ -5043,6 +5127,7 @@ mod tests {
         }));
         let user = test_cached_repository(json!({
             "id": "com.example.repo",
+            "name": "Example Repository",
             "url": "https://example.com/index.json",
             "packages": {}
         }));
@@ -5051,15 +5136,23 @@ mod tests {
         let local_package = PackageInfo::local(&manifest, Path::new("Packages/com.example.local"));
 
         assert_eq!(
-            package_info_summary(&official_package)["source"]["kind"],
+            package_info_summary(&official_package, &BTreeMap::new())["source"]["kind"],
             "officialDefault"
         );
         assert_eq!(
-            package_info_summary(&user_package)["source"]["kind"],
+            package_info_summary(&user_package, &BTreeMap::new())["source"]["kind"],
             "userRepository"
         );
+        let display_names = BTreeMap::from([(
+            "https://example.com/index.json".to_string(),
+            "My Repository".to_string(),
+        )]);
+        let source = &package_info_summary(&user_package, &display_names)["source"];
+        assert_eq!(source["name"], "Example Repository");
+        assert_eq!(source["displayName"], "My Repository");
+        assert!(source.get("alias").is_none());
         assert_eq!(
-            package_info_summary(&local_package)["source"]["kind"],
+            package_info_summary(&local_package, &BTreeMap::new())["source"]["kind"],
             "localUser"
         );
     }
@@ -5089,7 +5182,7 @@ mod tests {
         }));
         let package = PackageInfo::remote(&manifest, &repository);
 
-        let summary = package_info_summary(&package);
+        let summary = package_info_summary(&package, &BTreeMap::new());
 
         assert_eq!(summary["name"], "com.example.package");
         assert_eq!(summary["displayName"], "Example Package");
@@ -5135,7 +5228,8 @@ mod tests {
         let newer = PackageInfo::remote(&newer, &repository);
         let other_repo_package = PackageInfo::remote(&other_repo_version, &other_repository);
 
-        let summaries = package_info_list_summaries([&older, &newer, &other_repo_package]);
+        let summaries =
+            package_info_list_summaries([&older, &newer, &other_repo_package], &BTreeMap::new());
 
         assert_eq!(summaries.len(), 2);
         assert_eq!(summaries[0]["source"]["id"], "com.example.other");
@@ -5169,7 +5263,7 @@ mod tests {
         }));
         let package = PackageInfo::remote(&manifest, &repository);
 
-        let details = package_info_details(&package);
+        let details = package_info_details(&package, &BTreeMap::new());
 
         assert_eq!(details["description"], "Long package description");
         assert_eq!(details["keywords"], json!(["avatar"]));

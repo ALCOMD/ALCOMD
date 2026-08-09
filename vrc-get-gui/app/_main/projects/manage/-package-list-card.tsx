@@ -610,7 +610,11 @@ function ManagePackagesHeading({
 							<RepositoryMenuItem
 								key={repository.kind}
 								hiddenUserRepositories={hiddenUserRepositories}
-								repositoryName={defaultRepositoryDisplayName(repository)}
+								repositoryName={
+									repository.display_name === repository.id
+										? defaultRepositoryDisplayName(repository)
+										: repository.display_name
+								}
 								repositoryId={repository.id}
 							/>
 						))}

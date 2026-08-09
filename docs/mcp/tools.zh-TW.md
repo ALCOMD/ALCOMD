@@ -771,7 +771,8 @@
 | --- | --- | --- |
 | `id` | `string` | 包讀取工具使用的倉庫身分；無宣告 ID 時回退到 URL。 |
 | `url` | `string` | 遠端倉庫 URL；使用者倉庫刪除時使用此值。 |
-| `displayName` | `string` | 顯示名稱。 |
+| `name` | `string` | VPM 倉庫宣告的原名。 |
+| `displayName` | `string` | 非空顯示名稱；初始值為 `name`，使用者可以修改。 |
 | `kind` | `"officialDefault" \| "curatedDefault" \| "user"` | 唯一倉庫分類欄位。 |
 | `hidden` | `boolean` | 目前是否被 GUI 軟體包可見性設定隱藏。 |
 
@@ -781,7 +782,8 @@
 | --- | --- | --- |
 | `id` | `string \| null` | 倉庫宣告 ID；缺失時可能為 `null`。 |
 | `url` | `string` | 已新增或刪除的 URL。 |
-| `displayName` | `string \| null` | 倉庫顯示名稱。 |
+| `name` | `string \| null` | VPM 倉庫宣告的原名。 |
+| `displayName` | `string` | 操作時的非空顯示名稱。 |
 | `kind` | `"user"` | 固定為使用者倉庫。 |
 
 ### `PackageRepositorySummary`
@@ -790,7 +792,8 @@
 | --- | --- | --- |
 | `id` | `string \| null` | 快取倉庫 ID。 |
 | `url` | `string \| null` | 快取倉庫 URL。 |
-| `displayName` | `string \| null` | 顯示名稱。 |
+| `name` | `string` | VPM 倉庫宣告的原名。 |
+| `displayName` | `string` | 倉庫的非空顯示名稱。 |
 | `kind` | `"officialDefault" \| "curatedDefault" \| "user"` | 倉庫分類。 |
 
 ### `PackageSummary`
@@ -811,7 +814,8 @@
 | `type` | `"remote"` | 表示包來自遠端倉庫。 |
 | `kind` | `"officialDefault" \| "curatedDefault" \| "userRepository"` | 遠端倉庫分類。 |
 | `id` | `string \| null` | 倉庫宣告 ID。 |
-| `displayName` | `string \| null` | 倉庫顯示名稱。 |
+| `name` | `string` | VPM 倉庫宣告的原名。 |
+| `displayName` | `string` | 倉庫的非空顯示名稱。 |
 | `url` | `string \| null` | 倉庫 URL。 |
 
 本機使用者軟體軟體包來源：

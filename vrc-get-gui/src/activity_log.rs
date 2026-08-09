@@ -53,6 +53,7 @@ pub mod operations {
     pub const PROJECT_SET_FAVORITE: &str = "project.set_favorite";
     pub const PROJECT_SET_UNITY_PATH: &str = "project.set_unity_path";
     pub const REPOSITORY_ADD: &str = "repository.add";
+    pub const REPOSITORY_DISPLAY_NAME_SET: &str = "repository.set_display_name";
     pub const REPOSITORY_CLEAR_CACHE: &str = "repository.clear_package_cache";
     pub const REPOSITORY_EXPORT: &str = "repository.export";
     pub const REPOSITORY_HIDE: &str = "repository.hide";

@@ -1,7 +1,7 @@
 use crate::commands::RustError;
-use crate::state::{GuiConfigState, PackagesState, SettingsState};
+use crate::state::{GuiConfigState, PackagesState, RepositoryConfigState, SettingsState};
 use indexmap::IndexMap;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use url::Url;
 use vrc_get_vpm::environment::{
     CURATED_REPOSITORY_ID, CURATED_URL_STR, OFFICIAL_REPOSITORY_ID, OFFICIAL_URL_STR, Settings,
@@ -35,9 +35,16 @@ pub(crate) enum RepositoryKind {
 pub(crate) struct RepositorySummary {
     pub(crate) id: String,
     pub(crate) url: String,
+    pub(crate) name: String,
     pub(crate) display_name: String,
     pub(crate) kind: RepositoryKind,
     pub(crate) hidden: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RepositoryNames {
+    pub(crate) name: String,
+    pub(crate) display_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,7 +65,7 @@ pub(crate) enum RepositoryDuplicateReason {
 pub(crate) struct DownloadedRepository {
     pub(crate) id: String,
     pub(crate) url: String,
-    pub(crate) display_name: String,
+    pub(crate) name: String,
     pub(crate) packages: Vec<PackageManifest>,
 }
 
@@ -67,6 +74,7 @@ pub(crate) enum DownloadRepositoryOutcome {
     Duplicated {
         reason: RepositoryDuplicateReason,
         duplicated_name: String,
+        duplicated_original_name: Option<String>,
     },
     DownloadError(String),
     Success(DownloadedRepository),
@@ -74,22 +82,24 @@ pub(crate) enum DownloadRepositoryOutcome {
 
 #[derive(Debug, Clone)]
 pub(crate) struct RepositoryIdentitySnapshot {
-    urls: HashMap<String, String>,
-    ids: HashMap<String, String>,
+    urls: HashMap<String, RepositoryNames>,
+    ids: HashMap<String, RepositoryNames>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AddedRepositoryInfo {
     pub(crate) id: Option<String>,
     pub(crate) url: String,
-    pub(crate) display_name: Option<String>,
+    pub(crate) name: String,
+    pub(crate) display_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RemovedRepositoryInfo {
     pub(crate) id: Option<String>,
     pub(crate) url: String,
-    pub(crate) display_name: Option<String>,
+    pub(crate) name: String,
+    pub(crate) display_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,6 +111,7 @@ pub(crate) enum RemoveRepositoryOutcome {
 pub(crate) async fn add_repository(
     settings: &SettingsState,
     packages: &PackagesState,
+    repository_config: &RepositoryConfigState,
     io: &DefaultEnvironmentIo,
     http: &reqwest::Client,
     url: Url,
@@ -123,21 +134,29 @@ pub(crate) async fn add_repository(
         })
         .ok_or_else(|| RustError::unrecoverable_str("added repository was not found"))?;
     let id = repository_identity(repository).map(str::to_string);
-    let display_name = repository.name().map(str::to_string).or_else(|| id.clone());
+    let name = repository
+        .name()
+        .or(repository.id())
+        .unwrap_or(repository_url.as_str())
+        .to_string();
 
     settings.save().await?;
+    set_repository_display_name(repository_config, repository_url.to_string(), name.clone())
+        .await?;
     packages.clear_cache();
 
     Ok(AddedRepositoryInfo {
         id,
         url: repository_url.to_string(),
-        display_name,
+        display_name: name.clone(),
+        name,
     })
 }
 
 pub(crate) async fn remove_repository(
     settings: &SettingsState,
     packages: &PackagesState,
+    repository_config: &RepositoryConfigState,
     io: &DefaultEnvironmentIo,
     repository_url: Url,
 ) -> Result<RemoveRepositoryOutcome, RustError> {
@@ -150,16 +169,28 @@ pub(crate) async fn remove_repository(
         .remove_repo_at_index(index)
         .expect("selected user repository must still exist while settings are locked");
     let id = repository_identity(&removed).map(str::to_string);
-    let display_name = removed.name().map(str::to_string).or_else(|| id.clone());
+    let name = removed
+        .name()
+        .or(removed.id())
+        .unwrap_or(repository_url.as_str())
+        .to_string();
+    let display_name = repository_config
+        .get()
+        .display_names
+        .get(repository_url.as_str())
+        .cloned()
+        .unwrap_or_else(|| name.clone());
     let local_path = removed.local_path().to_path_buf();
 
     settings.save().await?;
+    remove_repository_display_name(repository_config, repository_url.as_str()).await?;
     io.remove_file(&local_path).await.ok();
     packages.clear_cache();
 
     Ok(RemoveRepositoryOutcome::Removed(RemovedRepositoryInfo {
         id,
         url: repository_url.to_string(),
+        name,
         display_name,
     }))
 }
@@ -197,9 +228,48 @@ pub(crate) async fn set_repository_hidden(
     Ok(())
 }
 
+pub(crate) async fn set_repository_display_name(
+    repository_config: &RepositoryConfigState,
+    repository_url: String,
+    display_name: String,
+) -> Result<(), RustError> {
+    let repository_url = Url::parse(&repository_url)
+        .map_err(|_| RustError::unrecoverable_str("repository_url must be a valid URL"))?
+        .to_string();
+    let display_name = display_name.trim();
+    if display_name.is_empty() {
+        return Err(RustError::unrecoverable_str(
+            "Repository display names must not be empty.",
+        ));
+    }
+    if display_name.chars().count() > 100 {
+        return Err(RustError::unrecoverable_str(
+            "Repository display names must be 100 characters or fewer.",
+        ));
+    }
+
+    let mut config = repository_config.load_mut().await;
+    config
+        .display_names
+        .insert(repository_url, display_name.to_string());
+    config.save().await?;
+    Ok(())
+}
+
+async fn remove_repository_display_name(
+    repository_config: &RepositoryConfigState,
+    repository_url: &str,
+) -> Result<(), RustError> {
+    let mut config = repository_config.load_mut().await;
+    config.display_names.remove(repository_url);
+    config.save().await?;
+    Ok(())
+}
+
 pub(crate) async fn repository_settings_snapshot(
     settings: &SettingsState,
     config: &GuiConfigState,
+    repository_config: &RepositoryConfigState,
     io: &DefaultEnvironmentIo,
 ) -> Result<RepositorySettingsSnapshot, RustError> {
     let config = config.get();
@@ -210,6 +280,7 @@ pub(crate) async fn repository_settings_snapshot(
         .collect::<Vec<_>>();
     let hide_local_user_packages = config.hide_local_user_packages;
     drop(config);
+    let repository_display_names = repository_config.get().display_names.clone();
 
     let settings = settings.load(io).await?;
     let mut repositories = Vec::new();
@@ -217,6 +288,7 @@ pub(crate) async fn repository_settings_snapshot(
         repositories.push(default_repository_summary(
             OFFICIAL_REPOSITORY_ID,
             OFFICIAL_URL_STR,
+            repository_display_names.get(OFFICIAL_URL_STR).cloned(),
             RepositoryKind::OfficialDefault,
             hidden_repository_ids
                 .iter()
@@ -227,6 +299,7 @@ pub(crate) async fn repository_settings_snapshot(
         repositories.push(default_repository_summary(
             CURATED_REPOSITORY_ID,
             CURATED_URL_STR,
+            repository_display_names.get(CURATED_URL_STR).cloned(),
             RepositoryKind::CuratedDefault,
             hidden_repository_ids
                 .iter()
@@ -236,6 +309,9 @@ pub(crate) async fn repository_settings_snapshot(
     repositories.extend(settings.get_user_repos().iter().filter_map(|repository| {
         user_repository_summary(
             repository,
+            repository
+                .url()
+                .and_then(|url| repository_display_names.get(url.as_str()).cloned()),
             repository_identity(repository)
                 .is_some_and(|id| hidden_repository_ids.iter().any(|hidden| hidden == id)),
         )
@@ -268,12 +344,17 @@ pub(crate) fn parse_repositories_file(contents: &str) -> RepositoryFileContents 
 pub(crate) async fn add_repositories(
     settings: &SettingsState,
     packages: &PackagesState,
+    repository_config: &RepositoryConfigState,
     io: &DefaultEnvironmentIo,
     http: &reqwest::Client,
     repositories: Vec<RepositoryDescriptor>,
 ) -> Result<(), RustError> {
     let mut settings = settings.load_mut(io).await?;
     let mut candidate = settings.clone();
+    let repository_urls = repositories
+        .iter()
+        .map(|repository| repository.url.clone())
+        .collect::<Vec<_>>();
     for repository in repositories {
         add_remote_repo(
             &mut candidate,
@@ -286,7 +367,28 @@ pub(crate) async fn add_repositories(
         .await?;
     }
     *settings = candidate;
+    let repository_display_names = repository_urls
+        .into_iter()
+        .map(|repository_url| {
+            let repository = settings
+                .get_user_repos()
+                .iter()
+                .find(|repository| repository.url() == Some(&repository_url))
+                .expect("successfully added repository must exist in settings");
+            let display_name = repository
+                .name()
+                .or(repository.id())
+                .unwrap_or(repository_url.as_str())
+                .to_string();
+            (repository_url.to_string(), display_name)
+        })
+        .collect::<Vec<_>>();
     settings.save().await?;
+    let mut config = repository_config.load_mut().await;
+    for (repository_url, display_name) in repository_display_names {
+        config.display_names.insert(repository_url, display_name);
+    }
+    config.save().await?;
     packages.clear_cache();
     Ok(())
 }
@@ -310,7 +412,10 @@ pub(crate) async fn clear_repositories_cache(
     Ok(())
 }
 
-pub(crate) fn repository_identity_snapshot(settings: &Settings) -> RepositoryIdentitySnapshot {
+pub(crate) fn repository_identity_snapshot(
+    settings: &Settings,
+    display_names: &BTreeMap<String, String>,
+) -> RepositoryIdentitySnapshot {
     let mut urls = settings
         .get_user_repos()
         .iter()
@@ -318,43 +423,61 @@ pub(crate) fn repository_identity_snapshot(settings: &Settings) -> RepositoryIde
             let url = repository
                 .url()
                 .expect("user repositories loaded by Settings must have a URL");
-            (
-                url.to_string(),
-                repository
-                    .name()
-                    .or(repository.id())
-                    .unwrap_or(url.as_str())
-                    .to_string(),
-            )
+            let names =
+                repository_names(Some(url), repository.name(), repository.id(), display_names);
+            (url.to_string(), names)
         })
         .collect::<HashMap<_, _>>();
     let mut ids = settings
         .get_user_repos()
         .iter()
         .filter_map(|repository| {
-            repository
-                .id()
-                .map(|id| (id.to_string(), repository.name().unwrap_or(id).to_string()))
+            repository.id().map(|id| {
+                (
+                    id.to_string(),
+                    repository_names(repository.url(), repository.name(), Some(id), display_names),
+                )
+            })
         })
         .collect::<HashMap<_, _>>();
     if !settings.ignore_curated_repository() {
         urls.insert(
             CURATED_URL_STR.to_string(),
-            CURATED_REPOSITORY_ID.to_string(),
+            repository_names(
+                Url::parse(CURATED_URL_STR).ok().as_ref(),
+                Some(CURATED_REPOSITORY_ID),
+                Some(CURATED_REPOSITORY_ID),
+                display_names,
+            ),
         );
         ids.insert(
             CURATED_REPOSITORY_ID.to_string(),
-            CURATED_REPOSITORY_ID.to_string(),
+            repository_names(
+                Url::parse(CURATED_URL_STR).ok().as_ref(),
+                Some(CURATED_REPOSITORY_ID),
+                Some(CURATED_REPOSITORY_ID),
+                display_names,
+            ),
         );
     }
     if !settings.ignore_official_repository() {
         urls.insert(
             OFFICIAL_URL_STR.to_string(),
-            OFFICIAL_REPOSITORY_ID.to_string(),
+            repository_names(
+                Url::parse(OFFICIAL_URL_STR).ok().as_ref(),
+                Some(OFFICIAL_REPOSITORY_ID),
+                Some(OFFICIAL_REPOSITORY_ID),
+                display_names,
+            ),
         );
         ids.insert(
             OFFICIAL_REPOSITORY_ID.to_string(),
-            OFFICIAL_REPOSITORY_ID.to_string(),
+            repository_names(
+                Url::parse(OFFICIAL_URL_STR).ok().as_ref(),
+                Some(OFFICIAL_REPOSITORY_ID),
+                Some(OFFICIAL_REPOSITORY_ID),
+                display_names,
+            ),
         );
     }
     RepositoryIdentitySnapshot { urls, ids }
@@ -366,10 +489,12 @@ pub(crate) async fn download_repository(
     headers: &IndexMap<Box<str>, Box<str>>,
     identities: &RepositoryIdentitySnapshot,
 ) -> Result<DownloadRepositoryOutcome, RustError> {
-    if let Some(name) = identities.urls.get(repository_url.as_str()) {
+    if let Some(names) = identities.urls.get(repository_url.as_str()) {
         return Ok(DownloadRepositoryOutcome::Duplicated {
             reason: RepositoryDuplicateReason::Url,
-            duplicated_name: name.clone(),
+            duplicated_name: names.display_name.clone(),
+            duplicated_original_name: (names.display_name != names.name)
+                .then(|| names.name.clone()),
         });
     }
     let repository = match RemoteRepository::download(client, repository_url, headers).await {
@@ -378,16 +503,18 @@ pub(crate) async fn download_repository(
     };
     let url = repository.url().unwrap_or(repository_url).as_str();
     let id = repository.id().unwrap_or(url);
-    if let Some(name) = identities.ids.get(id) {
+    if let Some(names) = identities.ids.get(id) {
         return Ok(DownloadRepositoryOutcome::Duplicated {
             reason: RepositoryDuplicateReason::Id,
-            duplicated_name: name.clone(),
+            duplicated_name: names.display_name.clone(),
+            duplicated_original_name: (names.display_name != names.name)
+                .then(|| names.name.clone()),
         });
     }
     Ok(DownloadRepositoryOutcome::Success(DownloadedRepository {
         id: id.to_string(),
         url: url.to_string(),
-        display_name: repository.name().unwrap_or(id).to_string(),
+        name: repository.name().unwrap_or(id).to_string(),
         packages: repository
             .get_packages()
             .filter_map(|package| package.get_latest(VersionSelector::latest_for(None, true)))
@@ -404,18 +531,20 @@ pub(crate) fn reserve_downloaded_repository(
     let DownloadRepositoryOutcome::Success(repository) = outcome else {
         return;
     };
-    if let Some(name) = identities.ids.get(&repository.id) {
+    if let Some(names) = identities.ids.get(&repository.id) {
         *outcome = DownloadRepositoryOutcome::Duplicated {
             reason: RepositoryDuplicateReason::Id,
-            duplicated_name: name.clone(),
+            duplicated_name: names.display_name.clone(),
+            duplicated_original_name: (names.display_name != names.name)
+                .then(|| names.name.clone()),
         };
     } else {
-        identities
-            .ids
-            .insert(repository.id.clone(), repository.display_name.clone());
-        identities
-            .urls
-            .insert(repository.url.clone(), repository.display_name.clone());
+        let names = RepositoryNames {
+            name: repository.name.clone(),
+            display_name: repository.name.clone(),
+        };
+        identities.ids.insert(repository.id.clone(), names.clone());
+        identities.urls.insert(repository.url.clone(), names);
     }
 }
 
@@ -431,16 +560,34 @@ fn repository_identity(repository: &UserRepoSetting) -> Option<&str> {
     repository.id().or(repository.url().map(Url::as_str))
 }
 
+pub(crate) fn repository_names(
+    url: Option<&Url>,
+    name: Option<&str>,
+    id: Option<&str>,
+    display_names: &BTreeMap<String, String>,
+) -> RepositoryNames {
+    let name = name.or(id).or(url.map(Url::as_str)).unwrap_or("Unknown");
+    let display_name = url
+        .and_then(|url| display_names.get(url.as_str()).cloned())
+        .unwrap_or_else(|| name.to_string());
+    RepositoryNames {
+        name: name.to_string(),
+        display_name,
+    }
+}
+
 fn default_repository_summary(
     id: &str,
     url: &str,
+    display_name: Option<String>,
     kind: RepositoryKind,
     hidden: bool,
 ) -> RepositorySummary {
     RepositorySummary {
         id: id.to_string(),
         url: url.to_string(),
-        display_name: id.to_string(),
+        name: id.to_string(),
+        display_name: display_name.unwrap_or_else(|| id.to_string()),
         kind,
         hidden,
     }
@@ -448,6 +595,7 @@ fn default_repository_summary(
 
 fn user_repository_summary(
     repository: &UserRepoSetting,
+    display_name: Option<String>,
     hidden: bool,
 ) -> Option<RepositorySummary> {
     let url = repository.url()?;
@@ -455,7 +603,8 @@ fn user_repository_summary(
     Some(RepositorySummary {
         id: id.to_string(),
         url: url.to_string(),
-        display_name: repository.name().unwrap_or(id).to_string(),
+        name: repository.name().unwrap_or(id).to_string(),
+        display_name: display_name.unwrap_or_else(|| repository.name().unwrap_or(id).to_string()),
         kind: RepositoryKind::User,
         hidden,
     })
@@ -516,12 +665,65 @@ mod tests {
             Some("com.example.repository".into()),
         );
 
-        let summary = user_repository_summary(&repository, true).unwrap();
+        let summary =
+            user_repository_summary(&repository, Some("My Repository".to_string()), true).unwrap();
 
         assert_eq!(summary.id, "com.example.repository");
         assert_eq!(summary.url, "https://example.com/index.json");
-        assert_eq!(summary.display_name, "Example Repository");
+        assert_eq!(summary.name, "Example Repository");
+        assert_eq!(summary.display_name, "My Repository");
         assert_eq!(summary.kind, RepositoryKind::User);
         assert!(summary.hidden);
+    }
+
+    #[test]
+    fn removing_repository_clears_its_display_name() {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(removing_repository_clears_its_display_name_inner());
+    }
+
+    async fn removing_repository_clears_its_display_name_inner() {
+        let temp = tempfile::tempdir().unwrap();
+        let io = DefaultEnvironmentIo::new(temp.path().into());
+        tokio::fs::write(
+            temp.path().join("settings.json"),
+            br#"{"userRepos":[{"localPath":"Repos/example.json","url":"https://example.com/index.json","id":"com.example.repository","headers":{}}]}"#,
+        )
+        .await
+        .unwrap();
+        let settings = SettingsState::new();
+        let packages = PackagesState::new();
+        let repository_config = RepositoryConfigState::new_load(&io).await.unwrap();
+        set_repository_display_name(
+            &repository_config,
+            "https://example.com/index.json".to_string(),
+            "Example".to_string(),
+        )
+        .await
+        .unwrap();
+
+        let outcome = remove_repository(
+            &settings,
+            &packages,
+            &repository_config,
+            &io,
+            Url::parse("https://example.com/index.json").unwrap(),
+        )
+        .await
+        .unwrap();
+
+        assert!(matches!(outcome, RemoveRepositoryOutcome::Removed(_)));
+        assert!(repository_config.get().display_names.is_empty());
+        assert!(
+            settings
+                .load(&io)
+                .await
+                .unwrap()
+                .get_user_repos()
+                .is_empty()
+        );
     }
 }
