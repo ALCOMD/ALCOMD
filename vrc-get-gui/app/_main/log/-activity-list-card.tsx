@@ -1,6 +1,14 @@
 import { CircleCheck, CircleX, Clock3, Info, OctagonAlert } from "lucide-react";
 import type React from "react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	memo,
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { ScrollableCardTable } from "@/components/ScrollableCardTable";
 import type {
 	ActivityEntry,
@@ -18,26 +26,37 @@ type ActivityDetailRow = {
 
 const ACTIVITY_LOG_RENDER_BATCH_SIZE = 80;
 const ACTIVITY_LOG_SCROLL_END_THRESHOLD_PX = 160;
+const ACTIVITY_COLUMNS = [
+	{ head: "logs:time", width: "w-[17%]" },
+	{ head: "logs:activity:source", width: "w-[10%]" },
+	{ head: "logs:activity:status", width: "w-[13%]" },
+	{ head: "logs:activity:summary", width: "w-[30%]" },
+	{ head: "logs:activity:target", width: "w-[20%]" },
+	{ head: "logs:activity:duration", width: "w-[10%]" },
+] as const;
 
 export const ActivityListCard = memo(function ActivityListCard({
 	entries,
+	resetKey,
 	showDetails,
 }: {
 	entries: ActivityEntry[];
+	resetKey: string;
 	showDetails: boolean;
 }) {
 	const [visibleCount, setVisibleCount] = useState(
 		ACTIVITY_LOG_RENDER_BATCH_SIZE,
 	);
 	const scrollContainerRef = useRef<HTMLDivElement>(null);
-	const TABLE_HEAD = [
-		"logs:time",
-		"logs:activity:source",
-		"logs:activity:status",
-		"logs:activity:summary",
-		"logs:activity:target",
-		"logs:activity:duration",
-	];
+	const previousResetKeyRef = useRef(resetKey);
+	useLayoutEffect(() => {
+		if (previousResetKeyRef.current === resetKey) return;
+		previousResetKeyRef.current = resetKey;
+		setVisibleCount(ACTIVITY_LOG_RENDER_BATCH_SIZE);
+		if (scrollContainerRef.current != null) {
+			scrollContainerRef.current.scrollTop = 0;
+		}
+	}, [resetKey]);
 	const visibleEntries = useMemo(
 		() => entries.slice(0, visibleCount),
 		[entries, visibleCount],
@@ -73,18 +92,26 @@ export const ActivityListCard = memo(function ActivityListCard({
 	return (
 		<ScrollableCardTable
 			className={"h-full w-full"}
+			tableClassName="table-fixed min-w-[60rem]"
 			viewportRef={scrollContainerRef}
 		>
+			<colgroup>
+				{ACTIVITY_COLUMNS.map((column) => (
+					<col key={column.head} className={column.width} />
+				))}
+			</colgroup>
 			<thead className={"w-full"}>
 				<tr>
-					{TABLE_HEAD.map((head) => (
+					{ACTIVITY_COLUMNS.map((column) => (
 						<th
-							key={head}
+							key={column.head}
 							className={
 								"sticky top-0 z-10 border-b border-primary bg-secondary text-secondary-foreground p-2.5"
 							}
 						>
-							<small className="font-normal leading-none">{tc(head)}</small>
+							<small className="font-normal leading-none">
+								{tc(column.head)}
+							</small>
 						</th>
 					))}
 				</tr>
@@ -94,7 +121,7 @@ export const ActivityListCard = memo(function ActivityListCard({
 					<tr>
 						<td
 							className="p-4 text-muted-foreground"
-							colSpan={TABLE_HEAD.length}
+							colSpan={ACTIVITY_COLUMNS.length}
 						>
 							{tc("logs:activity:empty")}
 						</td>
@@ -123,16 +150,14 @@ const ActivityRow = memo(function ActivityRow({
 
 	return (
 		<>
-			<td className={`${cellClass} min-w-40 w-40`}>
-				{formatDate(entry.startedAt)}
-			</td>
-			<td className={`${cellClass} min-w-24 w-24`}>
+			<td className={cellClass}>{formatDate(entry.startedAt)}</td>
+			<td className={cellClass}>
 				<SourcePill source={entry.source} />
 			</td>
-			<td className={`${cellClass} min-w-32 w-32`}>
+			<td className={cellClass}>
 				<StatusPill status={entry.status} />
 			</td>
-			<td className={`${cellClass} min-w-72 w-full`}>
+			<td className={`${cellClass} break-words`}>
 				<div className="flex flex-col gap-1">
 					<div className="font-normal text-primary">{activityTitle(entry)}</div>
 					<div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -152,12 +177,10 @@ const ActivityRow = memo(function ActivityRow({
 					) : null}
 				</div>
 			</td>
-			<td className={`${cellClass} min-w-48 w-48`}>
+			<td className={`${cellClass} break-words`}>
 				{entry.target ?? <span className="text-muted-foreground">-</span>}
 			</td>
-			<td className={`${cellClass} min-w-24 w-24`}>
-				{formatDuration(entry.durationMs)}
-			</td>
+			<td className={cellClass}>{formatDuration(entry.durationMs)}</td>
 		</>
 	);
 });

@@ -38,6 +38,10 @@ category order, and bullet counts must match this canonical entry.
 - Selected desktop shortcut creation by default for new Windows installations while preserving the previous choice during upgrades.
 - Added an optional Windows uninstall choice to remove settings, caches, and other local application data without deleting projects or backups stored in Documents.
 
+### Fixed
+
+- Kept activity-log table columns stable and prevented layout shifts when auxiliary records are toggled.
+
 ## [3.2.0] - 2026-08-09
 
 ### Added

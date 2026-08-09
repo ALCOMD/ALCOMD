@@ -1,6 +1,7 @@
 "use client";
 
 import {
+	keepPreviousData,
 	queryOptions,
 	useMutation,
 	useQuery,
@@ -135,6 +136,7 @@ function Page() {
 		queryKey: ["activityGetEntries", activityFilter],
 		queryFn: async () => commands.activityGetEntries(activityFilter),
 		enabled: view === "activity",
+		placeholderData: keepPreviousData,
 	});
 
 	const handleLogLevelChange = useMutation({
@@ -213,8 +215,8 @@ function Page() {
 			<main className="shrink overflow-hidden flex w-full h-full">
 				{view === "activity" ? (
 					<ActivityListCard
-						key={activityListKey}
 						entries={activityEntriesQuery.data ?? []}
+						resetKey={activityListKey}
 						showDetails={showActivityDetails}
 					/>
 				) : (

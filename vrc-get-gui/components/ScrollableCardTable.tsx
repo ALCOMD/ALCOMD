@@ -6,10 +6,12 @@ import { cn } from "@/lib/utils";
 export const ScrollableCardTable = ({
 	children,
 	className,
+	tableClassName,
 	...props
 }: React.ComponentProps<typeof ScrollArea> & {
 	children: React.ReactNode;
 	className?: string;
+	tableClassName?: string;
 }) => {
 	return (
 		<Card className={cn("overflow-hidden", className)}>
@@ -19,7 +21,9 @@ export const ScrollableCardTable = ({
 				scrollBarClassName="bg-transparent py-2.5 vrc-get-scrollable-card-vertical-bar"
 				{...props}
 			>
-				<table className="relative table-auto text-left w-full">
+				<table
+					className={cn("relative table-auto text-left w-full", tableClassName)}
+				>
 					{children}
 				</table>
 				<div className={"pb-2.5"} />
