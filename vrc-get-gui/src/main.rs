@@ -292,7 +292,7 @@ fn main() {
             if let Some(mcp) = app.try_state::<mcp::McpState>()
                 && let Err(e) = tauri::async_runtime::block_on(mcp.shutdown(app))
             {
-                log::error!("failed to shut down MCP IPC endpoint: {e}");
+                log::error!("failed to shut down embedded MCP HTTP server: {e}");
             }
         }
         _ => {}

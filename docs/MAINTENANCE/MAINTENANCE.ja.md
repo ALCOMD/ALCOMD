@@ -48,7 +48,6 @@ ALCOMD3 は独自ブランドを使いながら、既存インストールに必
 - `vrc-get-gui/src/utils.rs`
 - `vrc-get-gui/bundle/windows-setup.iss`
 - `vrc-get-vpm/src/io/tokio.rs`
-- `alcomd3-mcp-protocol/src/lib.rs`
 - `xtask/src/bundle_alcom.rs`
 - `xtask/src/bundle_alcom/setup_exe.rs`
 - `xtask/tests/alcomd3_identity.rs`
@@ -56,7 +55,7 @@ ALCOMD3 は独自ブランドを使いながら、既存インストールに必
 ### 共有設定
 
 `alcomd3.config.json` は ALCOMD3 の product identity と release metadata の共有元。
-product、package、GUI binary、MCP binary、publisher、homepage、GitHub repository、
+product、package、GUI binary、publisher、homepage、GitHub repository、
 Windows AUMID、現在および移行期間用の旧 Windows AppId、固定 migration baseline Release tag、updater
 manifest path、3-platform release catalog（target、bundle type、
 updater payload、download asset、filename pattern）、`.alcomtemplate` association
@@ -110,7 +109,7 @@ ALCOMD3 は既定で自身の runtime data を所有する。
 - External app import は imported repository cache path を ALCOMD3 data directory に書き換え、
   legacy package zip cache を `PackageCache/` に分離し、ALCOMD3 自身の既定
   project/backup path を維持する。
-- External app import は古い MCP endpoint metadata や古い log folder をコピーしてはならない。
+- External app import は obsolete MCP runtime artifact や古い log folder をコピーしてはならない。
 
 現在の ALCOMD3 data-root structure:
 
@@ -128,7 +127,6 @@ ALCOMD3 は既定で自身の runtime data を所有する。
 | `templates/*.alcomtemplate` | custom/imported ALCOMD3 project template。 |
 | `activity-logs/*.jsonl` | Log view に表示する operation activity history。 |
 | `technical-logs/alcomd3-*.log` | technical application log。legacy `vrc-get-` log name はこの folder 内で引き続き readable。 |
-| `mcp/endpoint.json` | local MCP HTTP server が使用する private GUI IPC endpoint の runtime metadata。current install が生成し、legacy data root から import しない。 |
 | `Documents/ALCOMD3/Projects/` | local data root 外の default project creation folder。 |
 | `Documents/ALCOMD3/Backups/` | local data root 外の default project backup folder。 |
 
@@ -329,24 +327,31 @@ ALCOMD3 は user-readable activity record と developer-oriented technical log
 - `vrc-get-gui/app/_main/log/`
 - `vrc-get-gui/src/logging.rs`
 
-### MCP bridge
+### Built-in MCP integration
 
 ALCOMD3 には optional local MCP server がある。将来の変更が review と UI approval flow により明示的に拡張しない限り、minimal local boundary を保持する。
 
 保持する規則:
 
 - MCP data access は既定で disabled。tool が ALCOMD3 data を返す前に GUI から有効化する必要がある。
-- External MCP server は bearer token で認証する Streamable HTTP 上の `alcomd3-mcp` で、
-  `127.0.0.1` だけに bind する。
+- GUI process は bearer token で認証する Streamable HTTP 上の `alcomd3-mcp` server を
+  embed し、`127.0.0.1` だけに bind する。
 - `Host` と `Origin` を検証し、LAN や public address では listen しない。
-- GUI は起動中に private localhost TCP IPC endpoint を公開し、local data directory の `mcp/endpoint.json` に metadata を書く。
+- helper process、private IPC listener、endpoint metadata、2 つ目の runtime token を
+  復元しない。tool handler は GUI business logic に in-process で直接 dispatch する。
 - GUI の MCP enable/disable control は tool data access のみを gate する。local endpoint を停止してはならない。disabled tool call は `mcp_disabled` を返す。
-- `ALCOMD3_MCP_ENDPOINT_FILE` は development/test 用に endpoint metadata path を override できる。
+- MCP extension の disabled または GUI 終了時は listener を停止し、unfinished operation
+  と protocol task を cancel する。port/token change は transport だけを restart し、
+  shared task state を失わない。
+- MCP `2026-07-28` と `2025-11-25` ordinary-tool compatibility を明示的に advertise し、
+  RMCP の `ProtocolVersion::LATEST` alias に依存しない。
+- `2026-07-28` request は sessionless で標準 per-request metadata を要求する。
+  `2025-11-25` request は legacy session handling を維持する。
 - Tool は read-only access として list projects、get registered project details、list repositories、get GUI-visible package details、GUI-visible packages の一覧、selected repository 内の GUI-visible packages の一覧、environment settings の読み取り、activity/technical log の selective query を提供する。限定 write tool は registered project の backup、registered project の copy、zip backup からの restore、既存 GUI-visible project package rule による単一 package の install/uninstall/reinstall を提供する。
 - Public MCP tool は GUI capability の adapter のままにする。すべての public tool は
   `vrc-get-gui/src/backend/mcp_capabilities.rs` に mapping を持ち、GUI capability が
   ない tool は test で失敗するようにする。
-- GUI Tauri commands と MCP IPC/tool dispatch は、共有 backend logic について
+- GUI Tauri commands と MCP tool dispatch は、共有 backend logic について
   `vrc-get-gui/src/backend/` の shared service を呼ぶ。MCP-specific code は access
   gating、parameter/DTO mapping、task wrapping、error mapping、activity recording に限定する。
 - Parity gap を埋めるために MCP-only business capability を追加しない。先に equivalent
@@ -358,17 +363,19 @@ ALCOMD3 には optional local MCP server がある。将来の変更が review �
 - Logs extension が enabled の間、すべての MCP tool call は local activity log に
   記録する。request id、tool name、利用可能な client summary、sanitized details を含める。
 - 成功した MCP read tool（log query tool を含む）は Secondary activity record として記録する。failure と cancellation は既定で visible のままにする。
-- `alcomd3-mcp` は GUI を起動、install、update、repair してはならない。GUI が bridge
-  process を管理し、shutdown 時に停止する。
-- GUI shutdown は endpoint file を削除する。
+- RMCP Tasks extension は `tasks/get`、`tasks/update`、`tasks/cancel` を提供する。
+  removed core `tasks/list`、`tasks/result` compatibility layer を復元しない。extension を
+  宣言しない client は synchronous tool result を受け取る。
+- 認証済み local client は 1 つの bearer principal と task namespace を共有する。
+  client name/version を task authorization に使用しない。
 
 重要領域:
 
 - `docs/mcp.md`
-- `alcomd3-mcp/`
-- `alcomd3-mcp-protocol/`
 - `vrc-get-gui/src/backend/`
-- `vrc-get-gui/src/mcp.rs`
+- `vrc-get-gui/src/mcp/mod.rs`
+- `vrc-get-gui/src/mcp/server.rs`
+- `vrc-get-gui/src/mcp/types.rs`
 - `vrc-get-gui/src/commands/mcp.rs`
 - `vrc-get-gui/app/_main/mcp/index.tsx`
 - `xtask/src/build_alcom.rs`
@@ -440,6 +447,8 @@ ALCOMD3 は独自の update source と signing key を使う。
 - `VersionInfoProductVersion` は Windows-compatible numeric version を使う。
 - Setup icon は `vrc-get-gui/icons/icon.ico` を使う。
 - Installed main executable は `ALCOMD3.exe`。
+- current installer は separate MCP executable を含まない。historical name
+  `alcomd3-mcp.exe` は upgrade/uninstall で obsolete helper を terminate/remove するためだけに残す。
 - install 前に `legacyWindowsAppId` の Inno Setup installation と、既知の
   `ALCOM.exe`、`ALCOMD3.exe`、`alcomd3-mcp.exe` を無条件で削除する。cleanup を
   完了できない場合は、新規 install を中止する。

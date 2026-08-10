@@ -27,7 +27,7 @@
 
 ## 功能与格式文档
 
-- MCP bridge 指南：[mcp.zh-CN.md](../mcp/mcp.zh-CN.md)（[English](../mcp.md)，[日本語](../mcp/mcp.ja.md)，[繁體中文](../mcp/mcp.zh-TW.md)）
+- 内置 MCP 指南：[mcp.zh-CN.md](../mcp/mcp.zh-CN.md)（[English](../mcp.md)，[日本語](../mcp/mcp.ja.md)，[繁體中文](../mcp/mcp.zh-TW.md)）
 - MCP 工具逐字段输入输出参考：[tools.zh-CN.md](../mcp/tools.zh-CN.md)（[English](../mcp/tools.md)，[日本語](../mcp/tools.ja.md)，[繁體中文](../mcp/tools.zh-TW.md)）
 - Repository list 文件格式：[repository-list-file-format.zh-CN.md](../repository-list-file-format/repository-list-file-format.zh-CN.md)（[English](../repository-list-file-format.md)，[日本語](../repository-list-file-format/repository-list-file-format.ja.md)）
 - 默认 repository list 示例/导入数据：[../../repositories.txt](../../repositories.txt)

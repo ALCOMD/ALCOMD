@@ -99,10 +99,6 @@ fn prepare_appdir(ctx: &BundleContext<'_>, appdir: &Path) -> Result<()> {
     fs::copy(ctx.binary_path(), &bin_dst).context("copying binary to AppDir")?;
     make_executable(&bin_dst)?;
 
-    let mcp_bin_dst = bin_dir.join(ctx.mcp_binary_name());
-    fs::copy(ctx.mcp_binary_path(), &mcp_bin_dst).context("copying MCP bridge binary to AppDir")?;
-    make_executable(&mcp_bin_dst)?;
-
     // AppRun (wrapper that executes the binary)
     let apprun_path = appdir.join("AppRun");
     fs::write(
@@ -141,13 +137,12 @@ pub fn prepare_system_libraries(ctx: &BundleContext<'_>, appimage_root: &Path) -
 
     let system_packages = list_deps::collect_system_packages()?;
     let mut lib_names = Vec::new();
-    for binary_path in [ctx.binary_path(), ctx.mcp_binary_path()] {
-        for lib_name in list_deps::collect_dependency_libraries(&binary_path)
-            .with_context(|| format!("collecting dependencies from {}", binary_path.display()))?
-        {
-            if !lib_names.contains(&lib_name) {
-                lib_names.push(lib_name);
-            }
+    let binary_path = ctx.binary_path();
+    for lib_name in list_deps::collect_dependency_libraries(&binary_path)
+        .with_context(|| format!("collecting dependencies from {}", binary_path.display()))?
+    {
+        if !lib_names.contains(&lib_name) {
+            lib_names.push(lib_name);
         }
     }
 

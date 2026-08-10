@@ -7,9 +7,9 @@
 
 | 层级 | 命令或 workflow | 主要覆盖 |
 | --- | --- | --- |
-| Rust | `cargo test --workspace --exclude windows-installer-wrapper --locked` | VPM、MCP Streamable HTTP/私有 IPC、updater 与发布工具 |
+| Rust | `cargo test --workspace --exclude windows-installer-wrapper --locked` | VPM、内置 MCP Streamable HTTP/直接分发/Tasks、updater 与发布工具 |
 | GUI 单元测试 | 在 `vrc-get-gui` 运行 `npm test` | Tauri command 序列化、事件、取消、错误与导航状态 |
-| 桌面 E2E | `Full-chain desktop smoke` | 在 Windows x64、macOS arm64 和 Linux x64 上真实启动 Tauri，验证首次配置、隔离项目发现、重启持久化和 MCP 默认禁用边界 |
+| 桌面 E2E | `Full-chain desktop smoke` | 在 Windows x64、macOS arm64 和 Linux x64 上真实启动 Tauri，验证首次配置、隔离项目发现、重启持久化、MCP 2026/旧版兼容与 Tasks 行为 |
 | macOS bundles | `Full-chain desktop smoke` | `.app`、updater 压缩包和 DMG 结构、arm64 二进制、显式 ad-hoc 签名、复制安装后的启动与清理 |
 | Linux packages | `Full-chain desktop smoke` | AppImage/updater 压缩包一致性、DEB metadata、全新安装、启动与卸载 |
 | Windows 安装/升级 | `Full-chain desktop smoke` | 旧 stable 安装、旧共享 AppId/两种历史程序名/旧快捷方式清理、桌面快捷方式选择保留、新快捷方式目标与新 AppId 注册、用户数据保留、启动与卸载 |
@@ -52,9 +52,13 @@ npm.cmd run test:e2e:desktop
 Pop-Location
 ```
 
-调试版桌面 E2E 会把 `ALCOMD3_TEST_LOCAL_DATA_ROOT` 和
-`ALCOMD3_MCP_ENDPOINT_FILE` 指向临时路径。数据根目录覆盖只在启用 debug
-assertions 时编译，Release 构建会忽略它。测试会禁用调试构建的系统集成，并快照当前
+调试版桌面 E2E 会把 `ALCOMD3_TEST_LOCAL_DATA_ROOT` 指向临时路径，并预写包含预留
+MCP 端口和令牌的隔离 GUI 配置。数据根目录覆盖只在启用 debug
+assertions 时编译，Release 构建会忽略它。
+MCP 场景会检查缺失/错误令牌、无会话的 2026 discovery 与准确的 33 项工具目录、旧版
+2025 initialize 和普通工具调用，然后真实创建并轮询一个项目复制 Task；同时验证未声明
+Tasks capability 的客户端会同步降级，以及关闭数据访问后已认证客户端仍可查询或取消
+既有 Task。测试会禁用调试构建的系统集成，并快照当前
 用户完整的 `vcc://` 注册表树；如果应用改写它，即使测试失败，也会在 `finally` 中恢复。
 外部传入的
 数据根必须为空，且位于临时目录、runner temp 或工作区 `target` 下。Runner 会把暂停
@@ -72,23 +76,24 @@ macOS 和 Linux job 使用 `--desktop-e2e-webdriver` 构建调试版 GUI，并�
 安装/升级 smoke 被强制限制在 GitHub-hosted 的一次性 Windows runner，因为安装器
 使用正式 AppId 和文件关联。Workflow 构建不带 updater 签名的测试安装包，在旧 stable
 版本上升级，验证旧共享 AppId 从 HKCU、HKLM 32 位和 HKLM 64 位视图消失、历史
-`ALCOM.exe` 及旧桌面/开始菜单快捷方式被清理、旧桌面快捷方式选择得到恢复，且两个新
+`ALCOM.exe`、旧 `alcomd3-mcp.exe` 及旧桌面/开始菜单快捷方式被清理，当前安装结果只通过
+GUI 可执行程序提供 MCP；旧桌面快捷方式选择得到恢复，且两个新
 快捷方式均指向 `ALCOMD3.exe`；同时验证新 AppId 被注册，新快捷方式、模板 ProgID 和
 `vcc://` 注册统一使用配置的 Windows AUMID，既有用户数据得到保留，且同名但指向无关
 程序的快捷方式不会被删除。随后验证 ZIP 内安装包、启动应用、确认 `vcc://`
-命令、确认 MCP 默认拒绝工具调用且 endpoint 端口不存在
-额外的非 loopback 监听，最后执行静默卸载，确认新快捷方式被移除且本地应用数据默认
+命令、确认 MCP 端口由 GUI PID 监听、无令牌或错误令牌返回 401、正确令牌在默认停用时
+返回 `mcp_disabled`，且 endpoint 端口不存在非 loopback 监听，最后执行静默卸载，确认新快捷方式被移除且本地应用数据默认
 保留。迁移窗口内，旧版本由
 `alcomd3.config.json` 的 `legacyWindowsMigrationReleaseTag` 固定，避免新 AppId 首次发布后
 测试基线自动前移而失去旧 AppId 覆盖。
 
 macOS package job 使用原生 `macos-15` arm64 runner，验证 ad-hoc 签名的 `.app`、updater
-压缩包和 DMG，并对嵌套程序及解压后的 updater app 运行严格签名检查。Linux package job
+压缩包和 DMG，并对主程序、解压后的 updater app，以及未来确实存在的嵌套程序运行严格签名检查。Linux package job
 使用 Ubuntu 22.04 x64 作为 AppImage 兼容性基线，
 验证 AppImage、updater 压缩包和 DEB。它先用 `self-updater` 模式构建 AppImage，再按共享发布
-配置用 `no-self-updater` 模式重建 DEB。打包后启动测试会把 `HOME`、XDG 目录和 MCP
-endpoint metadata 隔离到 `RUNNER_TEMP`，确认 GUI 持续运行，验证 loopback MCP 的
-默认禁用与错误 token 拒绝边界，再完成清理。Package smoke 辅助程序会拒绝在非
+配置用 `no-self-updater` 模式重建 DEB。打包后启动测试会把 `HOME`、XDG 目录隔离到
+`RUNNER_TEMP`，在隔离 GUI 配置中写入 MCP 端口/令牌，断言产物不包含 MCP helper 且
+loopback listener 由 GUI 进程持有，并验证默认禁用与错误 token 拒绝边界，再完成清理。Package smoke 辅助程序会拒绝在非
 GitHub-hosted 的一次性 macOS/Linux runner 上运行。
 
 这些 macOS/Linux 包只属于 CI 测试产物：不上传 GitHub Release、不生成公开 updater 条目，

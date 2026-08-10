@@ -166,7 +166,7 @@ pub fn startup(app: &mut App, initial_args: Vec<String>) {
                 let mcp = mcp_app.state::<crate::mcp::McpState>();
                 if let Err(error) = mcp.ensure_running(mcp_app.clone()).await {
                     error!(
-                        "failed to start MCP endpoint after loading local configuration: {error}"
+                        "failed to start embedded MCP HTTP server after loading local configuration: {error}"
                     );
                 }
             });

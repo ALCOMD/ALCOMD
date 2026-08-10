@@ -3,8 +3,6 @@ resolver = "2"
 
 members = [
     "alcomd3-app-paths",
-    "alcomd3-mcp",
-    "alcomd3-mcp-protocol",
     "xtask",
     "vrc-get",
     "vrc-get-gui",
@@ -13,7 +11,7 @@ members = [
 ]
 
 # Keep the default workspace check focused on the CLI and VPM library.
-# GUI, MCP bridge, release tooling, and installer wrapper have dedicated build
+# GUI, release tooling, and installer wrapper have dedicated build
 # commands because they need frontend, packaging, or release-specific setup.
 default-members = [
     "vrc-get",

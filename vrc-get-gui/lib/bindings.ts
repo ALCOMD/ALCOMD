@@ -260,7 +260,6 @@ export type LogEntry_Serialize = {
 export type LogLevel = "Error" | "Warn" | "Info" | "Debug" | "Trace";
 
 export type McpRecentClientStatus = {
-	sessionId: string,
 	name: string,
 	version: string | null,
 	lastSeenUnixMs: number,
@@ -285,8 +284,6 @@ export type McpStatus = {
 	transport: string,
 	host: string | null,
 	port: number | null,
-	pid: number,
-	endpointFile: string,
 	mcpEndpoint: string | null,
 	authorizationToken: string | null,
 	authorizationTokenEnvironmentVariable: string,

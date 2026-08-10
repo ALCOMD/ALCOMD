@@ -36,17 +36,6 @@ pub fn create_app_bundle(ctx: &BundleContext<'_>) -> Result<()> {
     // Make binary executable (mode 755).
     make_executable(&dst_bin)?;
 
-    let src_mcp_bin = ctx.mcp_binary_path();
-    let dst_mcp_bin = macos_dir.join(ctx.mcp_binary_name());
-    fs::copy(&src_mcp_bin, &dst_mcp_bin).with_context(|| {
-        format!(
-            "copying MCP bridge binary {} -> {}",
-            src_mcp_bin.display(),
-            dst_mcp_bin.display()
-        )
-    })?;
-    make_executable(&dst_mcp_bin)?;
-
     // Copy icns icon.
     {
         let icns = ctx.icon_path("icon.icns");

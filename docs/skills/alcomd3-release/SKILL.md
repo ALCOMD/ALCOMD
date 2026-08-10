@@ -44,8 +44,8 @@ Draft 创建成功不等于发布完成。定时 `Full-chain desktop smoke` 的�
   `legacyWindowsAppId`；过渡期发布必须保留安装前的无条件清理，且只能在另行审查确认共用
   迁移窗口结束后与 `legacyWindowsMigrationReleaseTag` 固定测试基线一起移除，不能再次更换
   `tauriIdentifier` 或 `windowsAppId`。
-- MCP 默认关闭；对外仅使用带 bearer token 的本机回环 Streamable HTTP，对内使用本机
-  私有 IPC。发布工作不得开放局域网或公网监听。
+- MCP 默认关闭并内置于 GUI 进程；对外仅使用带 bearer token 的本机回环 Streamable
+  HTTP。发布工作不得重新打包独立 helper、恢复私有 IPC，或开放局域网/公网监听。
 - 根 `CHANGELOG.md` 是遵循 Keep a Changelog 的版本与变更事实权威来源。GitHub Release 正文
   固定按 English、日本語、中文顺序组合英文目标条目和结构一致的日语、简体中文目标条目。已
   公开 Git tag、GitHub Release、changelog 已发布版本条目与 updater metadata 都是历史记录，

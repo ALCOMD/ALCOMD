@@ -13,8 +13,6 @@ on:
             - .github/workflows/release-draft.yml
             - .github/workflows/release-updater.yml
             - alcomd3-app-paths/**
-            - alcomd3-mcp/**
-            - alcomd3-mcp-protocol/**
             - vrc-get-gui/**
             - vrc-get-vpm/**
             - xtask/**
@@ -39,8 +37,6 @@ on:
             - .github/workflows/release-draft.yml
             - .github/workflows/release-updater.yml
             - alcomd3-app-paths/**
-            - alcomd3-mcp/**
-            - alcomd3-mcp-protocol/**
             - vrc-get-gui/**
             - vrc-get-vpm/**
             - xtask/**
@@ -413,7 +409,6 @@ jobs:
                   version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "vrc-get-gui") | .version')"
                   product="$(jq -r '.productName' alcomd3.config.json)"
                   binary="$(jq -r '.mainBinaryName' alcomd3.config.json)"
-                  mcp_binary="$(jq -r '.mcpBinaryName' alcomd3.config.json)"
                   bundle_root="$GITHUB_WORKSPACE/target/$BUILD_TARGET/release/bundle"
                   app="$bundle_root/macos/$product.app"
                   updater="$app.tar.gz"
@@ -428,7 +423,6 @@ jobs:
                       echo "version=$version"
                       echo "product=$product"
                       echo "binary=$binary"
-                      echo "mcp_binary=$mcp_binary"
                       echo "app=$app"
                       echo "updater=$updater"
                       echo "dmg=$dmg"
@@ -447,7 +441,6 @@ jobs:
                   EXPECTED_VERSION: ${{ steps.bundles.outputs.version }}
                   PRODUCT_NAME: ${{ steps.bundles.outputs.product }}
                   BINARY_NAME: ${{ steps.bundles.outputs.binary }}
-                  MCP_BINARY_NAME: ${{ steps.bundles.outputs.mcp_binary }}
               shell: bash
               run: |
                   set -euo pipefail
@@ -458,12 +451,10 @@ jobs:
                   [[ "$(plutil -extract CFBundleIdentifier raw "$plist")" == "$identifier" ]]
                   [[ "$(plutil -extract CFBundleShortVersionString raw "$plist")" == "$EXPECTED_VERSION" ]]
                   test -x "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
-                  test -x "$APP_BUNDLE/Contents/MacOS/$MCP_BINARY_NAME"
+                  ! test -e "$APP_BUNDLE/Contents/MacOS/alcomd3-mcp"
                   file "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME" | grep -q 'arm64'
-                  file "$APP_BUNDLE/Contents/MacOS/$MCP_BINARY_NAME" | grep -q 'arm64'
                   for path in \
                       "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME" \
-                      "$APP_BUNDLE/Contents/MacOS/$MCP_BINARY_NAME" \
                       "$APP_BUNDLE"; do
                       codesign --verify --strict --verbose=4 "$path"
                       signature_details="$(codesign --display --verbose=4 "$path" 2>&1)"
@@ -473,12 +464,11 @@ jobs:
                   archive_entries="$(tar -tzf "$APP_UPDATER")"
                   [[ "$(printf '%s\n' "$archive_entries" | sed '/^$/d' | wc -l | tr -d ' ')" -gt 2 ]]
                   printf '%s\n' "$archive_entries" | grep -q "^${PRODUCT_NAME}\.app/Contents/MacOS/${BINARY_NAME}$"
-                  printf '%s\n' "$archive_entries" | grep -q "^${PRODUCT_NAME}\.app/Contents/MacOS/${MCP_BINARY_NAME}$"
+                  ! printf '%s\n' "$archive_entries" | grep -q "/Contents/MacOS/alcomd3-mcp$"
                   extracted="$RUNNER_TEMP/alcomd3-app-updater"
                   mkdir -p "$extracted"
                   tar -xzf "$APP_UPDATER" -C "$extracted"
                   cmp "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME" "$extracted/$PRODUCT_NAME.app/Contents/MacOS/$BINARY_NAME"
-                  cmp "$APP_BUNDLE/Contents/MacOS/$MCP_BINARY_NAME" "$extracted/$PRODUCT_NAME.app/Contents/MacOS/$MCP_BINARY_NAME"
                   codesign --verify --strict --verbose=4 "$extracted/$PRODUCT_NAME.app"
                   signature_details="$(codesign --display --verbose=4 "$extracted/$PRODUCT_NAME.app" 2>&1)"
                   grep -Fx 'Signature=adhoc' <<< "$signature_details"
@@ -647,7 +637,6 @@ jobs:
                   product="$(jq -r '.productName' alcomd3.config.json)"
                   package="$(jq -r '.packageName' alcomd3.config.json)"
                   binary="$(jq -r '.mainBinaryName' alcomd3.config.json)"
-                  mcp_binary="$(jq -r '.mcpBinaryName' alcomd3.config.json)"
                   bundle_root="$GITHUB_WORKSPACE/target/$BUILD_TARGET/release/bundle"
                   appimage="$bundle_root/appimage/${product}_${version}_x86_64.AppImage"
                   updater="$appimage.tar.gz"
@@ -663,7 +652,6 @@ jobs:
                       echo "product=$product"
                       echo "package=$package"
                       echo "binary=$binary"
-                      echo "mcp_binary=$mcp_binary"
                       echo "appimage=$appimage"
                       echo "updater=$updater"
                       echo "deb=$deb"
@@ -674,7 +662,6 @@ jobs:
                   APPIMAGE: ${{ steps.packages.outputs.appimage }}
                   APPIMAGE_UPDATER: ${{ steps.packages.outputs.updater }}
                   BINARY_NAME: ${{ steps.packages.outputs.binary }}
-                  MCP_BINARY_NAME: ${{ steps.packages.outputs.mcp_binary }}
                   RUNNER_ENVIRONMENT: ${{ runner.environment }}
               shell: bash
               run: |
@@ -695,7 +682,7 @@ jobs:
                   )
                   test -x "$appdir/squashfs-root/AppRun"
                   test -x "$appdir/squashfs-root/usr/bin/$BINARY_NAME"
-                  test -x "$appdir/squashfs-root/usr/bin/$MCP_BINARY_NAME"
+                  ! test -e "$appdir/squashfs-root/usr/bin/alcomd3-mcp"
 
                   xvfb-run -a node .github/scripts/posix-package-smoke.mjs \
                       --binary "$APPIMAGE" \
@@ -708,7 +695,6 @@ jobs:
                   DEB: ${{ steps.packages.outputs.deb }}
                   EXPECTED_VERSION: ${{ steps.packages.outputs.version }}
                   PACKAGE_NAME: ${{ steps.packages.outputs.package }}
-                  MCP_BINARY_NAME: ${{ steps.packages.outputs.mcp_binary }}
                   RUNNER_ENVIRONMENT: ${{ runner.environment }}
               shell: bash
               run: |
@@ -724,17 +710,17 @@ jobs:
                   mkdir -p "$extracted"
                   dpkg-deb -x "$DEB" "$extracted"
                   test -x "$extracted/usr/bin/$PACKAGE_NAME"
-                  test -x "$extracted/usr/bin/$MCP_BINARY_NAME"
+                  ! test -e "$extracted/usr/bin/alcomd3-mcp"
                   sudo dpkg -i "$DEB"
                   test -x "/usr/bin/$PACKAGE_NAME"
-                  test -x "/usr/bin/$MCP_BINARY_NAME"
+                  ! test -e "/usr/bin/alcomd3-mcp"
                   xvfb-run -a node .github/scripts/posix-package-smoke.mjs \
                       --binary "/usr/bin/$PACKAGE_NAME" \
                       --data-root "$RUNNER_TEMP/alcomd3-deb-smoke" \
                       --label "Linux DEB installation"
                   sudo dpkg --purge "$PACKAGE_NAME"
                   ! test -e "/usr/bin/$PACKAGE_NAME"
-                  ! test -e "/usr/bin/$MCP_BINARY_NAME"
+                  ! test -e "/usr/bin/alcomd3-mcp"
 
             - name: Upload Linux smoke diagnostics on failure
               if: failure()

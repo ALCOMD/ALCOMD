@@ -231,11 +231,6 @@ impl<'a> BundleContext<'a> {
         &self.config.main_binary_name
     }
 
-    /// MCP bridge binary name without extension.
-    pub fn mcp_binary_name(&self) -> &str {
-        &self.config.mcp_binary_name
-    }
-
     /// The lower-case package and Linux desktop identifier.
     pub fn package_name(&self) -> &str {
         &self.config.package_name
@@ -294,16 +289,6 @@ impl<'a> BundleContext<'a> {
             self.build_dir.join(format!("{}.exe", self.binary_name()))
         } else {
             self.build_dir.join(self.binary_name())
-        }
-    }
-
-    /// Path to the compiled MCP bridge binary in the build directory.
-    pub fn mcp_binary_path(&self) -> PathBuf {
-        if target_os(self.target_tuple) == "windows" {
-            self.build_dir
-                .join(format!("{}.exe", self.mcp_binary_name()))
-        } else {
-            self.build_dir.join(self.mcp_binary_name())
         }
     }
 

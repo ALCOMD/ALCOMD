@@ -44,7 +44,6 @@ ALCOMD3 使用自己的品牌，同时保留既有安装所需的兼容性点。
 - `vrc-get-gui/src/utils.rs`
 - `vrc-get-gui/bundle/windows-setup.iss`
 - `vrc-get-vpm/src/io/tokio.rs`
-- `alcomd3-mcp-protocol/src/lib.rs`
 - `xtask/src/bundle_alcom.rs`
 - `xtask/src/bundle_alcom/setup_exe.rs`
 - `xtask/tests/alcomd3_identity.rs`
@@ -52,7 +51,7 @@ ALCOMD3 使用自己的品牌，同时保留既有安装所需的兼容性点。
 ### 共享配置
 
 `alcomd3.config.json` 是 ALCOMD3 产品身份和发布 metadata 的共享来源。它管理产品名、
-包名、GUI 二进制名、MCP 二进制名、发布者、官网、GitHub repository、Windows AUMID、
+包名、GUI 二进制名、发布者、官网、GitHub repository、Windows AUMID、
 当前及过渡期旧 Windows AppId，以及过渡期固定迁移基线 Release tag、
 updater manifest 路径、三平台发布 catalog（target、bundle type、updater payload、下载资产
 和文件名模式）、`.alcomtemplate` 关联 metadata、描述和 copyright 文本。
@@ -98,7 +97,7 @@ ALCOMD3 默认拥有自己的运行数据。
   转换为 ALCOMD3 `.alcomtemplate` project archive 文件，并保存到 `templates/`。
 - 外部应用导入会把导入的仓库缓存路径改写到 ALCOMD3 数据目录，并保留 ALCOMD3
   自己的默认项目和备份路径；legacy package zip 缓存会拆分到 `PackageCache/`。
-- 外部应用导入不得复制旧 MCP endpoint metadata 或旧日志目录。
+- 外部应用导入不得复制废弃的 MCP 运行时产物或旧日志目录。
 
 当前 ALCOMD3 数据根结构：
 
@@ -116,7 +115,6 @@ ALCOMD3 默认拥有自己的运行数据。
 | `templates/*.alcomtemplate` | 自定义和导入的 ALCOMD3 项目模板。 |
 | `activity-logs/*.jsonl` | 日志页面展示的操作活动历史。 |
 | `technical-logs/alcomd3-*.log` | 技术应用日志。legacy `vrc-get-` 日志文件名在此目录内仍可读取。 |
-| `mcp/endpoint.json` | 本地 MCP HTTP server 使用的私有 GUI IPC endpoint 运行时 metadata；由当前安装生成，绝不从 legacy 数据根导入。 |
 | `Documents/ALCOMD3/Projects/` | 本地数据根之外的默认项目创建目录。 |
 | `Documents/ALCOMD3/Backups/` | 本地数据根之外的默认项目备份目录。 |
 
@@ -300,25 +298,32 @@ ALCOMD3 将用户可读的活动记录与偏开发者排错的技术日志分开
 - `vrc-get-gui/app/_main/log/`
 - `vrc-get-gui/src/logging.rs`
 
-### MCP bridge
+### 内置 MCP 集成
 
 ALCOMD3 包含可选本地 MCP server。除非未来变更通过 review 和 UI approval flow 明确扩展，否则保留最小本机边界。
 
 保留这些规则：
 
 - MCP data access 默认关闭，工具返回 ALCOMD3 数据前必须从 GUI 启用。
-- 外部 MCP server 是通过带 bearer token 的 Streamable HTTP 运行的 `alcomd3-mcp`，
-  严格绑定 `127.0.0.1`。
+- GUI 进程内置通过带 bearer token 的 Streamable HTTP 运行的 `alcomd3-mcp` server，
+  并严格绑定 `127.0.0.1`。
 - 必须校验 `Host` 与 `Origin`，不得监听局域网或公网地址。
-- GUI 运行时暴露 private localhost TCP IPC endpoint，并在本地数据目录的 `mcp/endpoint.json` 写入 metadata。
-- GUI MCP enable/disable control 只 gate 新的工具数据访问和任务启动，不应停止 local endpoint；禁用时新的工具调用返回 `mcp_disabled`，已启动项目任务的 get/list/cancel 作为收尾例外保留。
-- `ALCOMD3_MCP_ENDPOINT_FILE` 可为开发和测试覆盖 endpoint metadata path。
+- 不得恢复 helper 进程、私有 IPC listener、endpoint metadata 或第二套运行时认证令牌；
+  tool handler 应在进程内直接分发到 GUI 业务逻辑。
+- GUI MCP enable/disable control 只 gate 新的工具数据访问和任务启动，不应停止 local endpoint；
+  禁用时新的工具调用返回 `mcp_disabled`，已启动任务仍允许 get/cancel 收尾。
+- 关闭 MCP 扩展或退出 GUI 会停止 listener，并取消未完成操作和协议任务。端口或令牌变化
+  只重启 transport，不应丢失共享任务状态。
+- 显式公布 MCP `2026-07-28` 以及 `2025-11-25` 的普通工具兼容性，不得依赖 RMCP 的
+  `ProtocolVersion::LATEST` 别名。
+- `2026-07-28` 请求无 session，并要求每次请求携带标准协议 metadata；`2025-11-25`
+  继续使用 legacy session。
 - MCP 工具：只读工具包括 list projects、get registered project details、list repositories、get GUI-visible package details、列出 GUI 可见软件包、列出指定存储库中的 GUI 可见软件包、读取环境设置，以及选择性查询活动记录和技术日志；有限写工具包括备份已登记项目、复制已登记项目、从 zip 备份恢复项目。
 - 有限写工具还可以通过既有 GUI 可见项目包规则，为已登记项目安装、卸载或重装单个软件包。
 - 公开 MCP 工具必须继续只是 GUI capability 的适配层。每个公开 tool 都必须在
   `vrc-get-gui/src/backend/mcp_capabilities.rs` 中有映射，缺少 GUI capability 映射时
   测试应失败。
-- GUI Tauri commands 和 MCP IPC/tool dispatch 应通过 `vrc-get-gui/src/backend/`
+- GUI Tauri commands 和 MCP tool dispatch 应通过 `vrc-get-gui/src/backend/`
   下的共享服务调用共同后端逻辑。MCP-specific 代码应只保留 access gate、参数/DTO 映射、
   task 封装、错误映射和活动记录。
 - 不要为了补 parity 新增 MCP-only 业务能力。应先复用或暴露等价 GUI 后端能力，无法映射时停止并做设计 review。
@@ -328,17 +333,18 @@ ALCOMD3 包含可选本地 MCP server。除非未来变更通过 review 和 UI a
 - 日志扩展启用时，每次 MCP tool call 都必须写入本地活动记录，包含 request id、
   tool name、可用时的 client 摘要，以及脱敏后的 details。
 - 成功的 MCP 读取工具（包括日志查询工具）应记录为 Secondary 活动；失败和取消仍需默认可见。
-- `alcomd3-mcp` 不得启动、install、update 或 repair GUI。GUI 负责管理 bridge process，
-  并在 shutdown 时停止它。
-- GUI shutdown 应删除 endpoint file。
+- RMCP Tasks 扩展只提供 `tasks/get`、`tasks/update` 和 `tasks/cancel`；不得恢复已删除的
+  core `tasks/list`、`tasks/result` 兼容层。未声明扩展的客户端继续获得同步工具结果。
+- 所有已认证本机客户端共享同一个 bearer principal 和任务命名空间，不得使用客户端
+  名称或版本做任务鉴权。
 
 重要区域：
 
 - `docs/mcp.md`
-- `alcomd3-mcp/`
-- `alcomd3-mcp-protocol/`
 - `vrc-get-gui/src/backend/`
-- `vrc-get-gui/src/mcp.rs`
+- `vrc-get-gui/src/mcp/mod.rs`
+- `vrc-get-gui/src/mcp/server.rs`
+- `vrc-get-gui/src/mcp/types.rs`
 - `vrc-get-gui/src/commands/mcp.rs`
 - `vrc-get-gui/app/_main/mcp/index.tsx`
 - `xtask/src/build_alcom.rs`
@@ -400,6 +406,8 @@ ALCOMD3 使用自己的 update source 和 signing key。
 - `VersionInfoProductVersion` 使用 Windows-compatible numeric version。
 - Setup icon 使用 `vrc-get-gui/icons/icon.ico`。
 - 已安装主程序是 `ALCOMD3.exe`。
+- 当前安装器不包含独立 MCP 可执行文件。历史名称 `alcomd3-mcp.exe` 只用于升级和卸载时
+  终止并删除旧安装遗留 helper。
 - 安装前无条件移除 `legacyWindowsAppId` 下的 Inno Setup 安装及其已知
   `ALCOM.exe`、`ALCOMD3.exe` 和 `alcomd3-mcp.exe` 文件；清理失败时必须中止新安装。
 - 不依赖旧 AppId 是否存在，无条件清理原始安装用户的 `legacyTauriIdentifier` 本地

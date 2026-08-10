@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import {
 	existsSync,
 	mkdirSync,
@@ -6,6 +7,7 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,7 +27,6 @@ const testRootInitialized =
 const testDataRoot = suppliedDataRoot
 	? path.resolve(suppliedDataRoot)
 	: mkdtempSync(path.join(tmpdir(), "alcomd3-e2e-"));
-const endpointFile = path.join(testDataRoot, "mcp-endpoint.json");
 const driverProvider = process.env.ALCOMD3_E2E_DRIVER_PROVIDER ?? "external";
 const embeddedPort = Number(
 	process.env.ALCOMD3_E2E_EMBEDDED_PORT ??
@@ -90,6 +91,7 @@ if (profile === "debug" && !testRootInitialized) {
 		recursive: true,
 	});
 	mkdirSync(applicationDataRoot, { recursive: true });
+	mkdirSync(path.join(applicationDataRoot, "config"), { recursive: true });
 	writeFileSync(
 		path.join(fixtureProjectRoot, "Packages", "vpm-manifest.json"),
 		`${JSON.stringify({ dependencies: {}, locked: {} }, null, 4)}\n`,
@@ -101,6 +103,18 @@ if (profile === "debug" && !testRootInitialized) {
 	writeFileSync(
 		path.join(applicationDataRoot, "settings.json"),
 		`${JSON.stringify({ userProjects: [fixtureProjectRoot] }, null, 4)}\n`,
+	);
+	writeFileSync(
+		path.join(applicationDataRoot, "config", "gui-config.json"),
+		`${JSON.stringify(
+			{
+				mcpEnabled: false,
+				mcpHttpPort: await reserveLoopbackPort(),
+				mcpHttpToken: randomBytes(16).toString("hex"),
+			},
+			null,
+			4,
+		)}\n`,
 	);
 	process.env.ALCOMD3_E2E_PROJECT_NAME = fixtureProjectName;
 }
@@ -120,7 +134,6 @@ if (!existsSync(appBinaryPath)) {
 }
 
 process.env.ALCOMD3_TEST_LOCAL_DATA_ROOT = testDataRoot;
-process.env.ALCOMD3_MCP_ENDPOINT_FILE = endpointFile;
 process.env.ALCOMD3_TEST_DISABLE_SYSTEM_INTEGRATION = "1";
 
 export const config = {
@@ -152,7 +165,6 @@ export const config = {
 				autoDownloadEdgeDriver,
 				env: {
 					ALCOMD3_TEST_LOCAL_DATA_ROOT: testDataRoot,
-					ALCOMD3_MCP_ENDPOINT_FILE: endpointFile,
 					ALCOMD3_TEST_DISABLE_SYSTEM_INTEGRATION: "1",
 				},
 				startTimeout: 60_000,
@@ -200,3 +212,25 @@ export const config = {
 		}
 	},
 };
+
+function reserveLoopbackPort() {
+	return new Promise((resolve, reject) => {
+		const server = createServer();
+		server.once("error", reject);
+		server.listen(0, "127.0.0.1", () => {
+			const address = server.address();
+			if (!address || typeof address === "string") {
+				server.close();
+				reject(new Error("Unable to reserve a loopback TCP port for MCP E2E"));
+				return;
+			}
+			server.close((error) => {
+				if (error) {
+					reject(error);
+				} else {
+					resolve(address.port);
+				}
+			});
+		});
+	});
+}

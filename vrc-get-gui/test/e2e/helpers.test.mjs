@@ -7,11 +7,11 @@ import {
 	rmSync,
 	symlinkSync,
 } from "node:fs";
-import { createServer } from "node:net";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { callLocalIpc } from "./local-ipc.mjs";
+import { postMcpHttp } from "./mcp-http.mjs";
 import { canonicalizePath, isStrictChildPath } from "./path-safety.mjs";
 
 const temporaryDirectories = [];
@@ -22,12 +22,12 @@ afterEach(() => {
 	}
 });
 
-async function withTcpServer(connectionListener, callback) {
+async function withHttpServer(requestListener, callback) {
 	const sockets = new Set();
-	const server = createServer((socket) => {
+	const server = createServer(requestListener);
+	server.on("connection", (socket) => {
 		sockets.add(socket);
 		socket.once("close", () => sockets.delete(socket));
-		connectionListener(socket);
 	});
 	await new Promise((resolve, reject) => {
 		server.once("error", reject);
@@ -40,7 +40,7 @@ async function withTcpServer(connectionListener, callback) {
 	try {
 		const address = server.address();
 		if (!address || typeof address === "string") {
-			throw new Error("TCP test server did not expose an IP endpoint");
+			throw new Error("HTTP test server did not expose an IP endpoint");
 		}
 		return await callback(address.port);
 	} finally {
@@ -53,62 +53,98 @@ async function withTcpServer(connectionListener, callback) {
 	}
 }
 
-describe("local IPC helper", () => {
-	it("resolves a complete newline-delimited JSON response", async () => {
-		await withTcpServer(
-			(socket) => socket.end('{"ok":true}\n'),
+describe("MCP HTTP helper", () => {
+	it("sends bearer authentication and parses JSON responses", async () => {
+		await withHttpServer(
+			async (request, response) => {
+				let body = "";
+				for await (const chunk of request) {
+					body += chunk;
+				}
+				expect(request.url).toBe("/mcp");
+				expect(request.headers.authorization).toBe("Bearer test-token");
+				expect(JSON.parse(body)).toEqual({ method: "ping" });
+				response.writeHead(200, {
+					"content-type": "application/json",
+					"mcp-session-id": "session-1",
+				});
+				response.end('{"ok":true}');
+			},
 			async (port) => {
-				await expect(
-					callLocalIpc({ host: "127.0.0.1", port }, { method: "ping" }),
-				).resolves.toEqual({ ok: true });
+				const result = await postMcpHttp(
+					{ port, token: "test-token" },
+					{ method: "ping" },
+				);
+				expect(result.status).toBe(200);
+				expect(result.sessionId).toBe("session-1");
+				expect(result.body).toEqual({ ok: true });
 			},
 		);
 	});
 
-	it("rejects when the peer closes before a complete response", async () => {
-		await withTcpServer(
-			(socket) => socket.end('{"ok":'),
+	it("parses Streamable HTTP event-stream responses", async () => {
+		await withHttpServer(
+			(_request, response) => {
+				response.writeHead(200, { "content-type": "text/event-stream" });
+				response.end(
+					'event: message\ndata: {"jsonrpc":"2.0","result":{"ok":true}}\n\n',
+				);
+			},
 			async (port) => {
-				await expect(
-					callLocalIpc({ host: "127.0.0.1", port }, { method: "ping" }),
-				).rejects.toThrow("closed before a complete response");
+				const result = await postMcpHttp(
+					{ port, token: "test-token" },
+					{ method: "ping" },
+				);
+				expect(result.body.result).toEqual({ ok: true });
 			},
 		);
 	});
 
-	it("rejects malformed newline-delimited JSON", async () => {
-		await withTcpServer(
-			(socket) => socket.end("not-json\n"),
+	it("preserves HTTP authentication failures", async () => {
+		await withHttpServer(
+			(_request, response) => {
+				response.writeHead(401);
+				response.end("Unauthorized");
+			},
+			async (port) => {
+				const result = await postMcpHttp(
+					{ port, token: "test-token" },
+					{ method: "ping" },
+					{ token: null },
+				);
+				expect(result.status).toBe(401);
+				expect(result.text).toBe("Unauthorized");
+			},
+		);
+	});
+
+	it("rejects an unresponsive server at the configured timeout", async () => {
+		await withHttpServer(
+			() => {},
 			async (port) => {
 				await expect(
-					callLocalIpc({ host: "127.0.0.1", port }, { method: "ping" }),
+					postMcpHttp(
+						{ port, token: "test-token" },
+						{ method: "ping" },
+						{ timeoutMilliseconds: 25 },
+					),
 				).rejects.toThrow();
 			},
 		);
 	});
 
-	it("rejects an unresponsive peer at the configured timeout", async () => {
-		await withTcpServer(
-			() => {},
-			async (port) => {
-				await expect(
-					callLocalIpc({ host: "127.0.0.1", port }, { method: "ping" }, 25),
-				).rejects.toThrow("timed out");
-			},
-		);
-	});
-
-	it("rejects a non-serializable request before opening a socket", async () => {
+	it("rejects a non-serializable request before opening a connection", async () => {
 		let connections = 0;
-		await withTcpServer(
-			() => {
+		await withHttpServer(
+			(_request, response) => {
 				connections += 1;
+				response.end();
 			},
 			async (port) => {
 				const request = {};
 				request.circular = request;
 				await expect(
-					callLocalIpc({ host: "127.0.0.1", port }, request),
+					postMcpHttp({ port, token: "test-token" }, request),
 				).rejects.toThrow("circular");
 			},
 		);

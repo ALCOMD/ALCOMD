@@ -11,10 +11,10 @@ const AD_HOC_SIGNING_IDENTITY: &str = "-";
 /// Ad-hoc signs a macOS application bundle or final DMG.
 ///
 /// The application mode is intended to run **after** `bundle-alcom --bundles app`
-/// and **before** `bundle-alcom --bundles dmg,app-updater`. It signs every helper
-/// executable in `Contents/MacOS`, then the main executable, and finally the app
-/// bundle. This inside-out ordering ensures that the DMG and updater payload are
-/// built from an already signed application.
+/// and **before** `bundle-alcom --bundles dmg,app-updater`. It signs any nested
+/// executables found in `Contents/MacOS`, then the main executable, and finally
+/// the app bundle. This inside-out ordering ensures that the DMG and updater
+/// payload are built from an already signed application.
 ///
 /// Run the command a second time with `--dmg <path>` after creating the final DMG.
 /// DMG mode signs and verifies only that disk image. This command intentionally
@@ -229,13 +229,6 @@ impl AppSigningTargets {
             nested_executables.push(path);
         }
         nested_executables.sort();
-        if nested_executables.is_empty() {
-            anyhow::bail!(
-                "no nested helper executable was found in {}; the ALCOMD3 MCP helper must be bundled and signed separately",
-                macos_directory.display()
-            );
-        }
-
         Ok(Self {
             nested_executables,
             main_executable,
@@ -455,14 +448,16 @@ mod tests {
             .collect()
     }
 
-    fn create_test_app() -> (TestDirectory, PathBuf) {
+    fn create_test_app(include_nested_helper: bool) -> (TestDirectory, PathBuf) {
         let directory = TestDirectory::create();
         let app_path = directory.path().join("Configured Product.app");
         let contents = app_path.join("Contents");
         let macos = contents.join("MacOS");
         fs::create_dir_all(&macos).unwrap();
         fs::write(macos.join("configured-main"), b"main").unwrap();
-        fs::write(macos.join("alcomd3-mcp"), b"mcp").unwrap();
+        if include_nested_helper {
+            fs::write(macos.join("future-helper"), b"helper").unwrap();
+        }
 
         let mut dictionary = plist::Dictionary::new();
         dictionary.insert(
@@ -485,8 +480,19 @@ mod tests {
     }
 
     #[test]
-    fn discovers_nested_helper_before_configured_main_executable() {
-        let (_directory, app_path) = create_test_app();
+    fn allows_an_app_without_nested_helpers() {
+        let (_directory, app_path) = create_test_app(false);
+        let targets = AppSigningTargets::discover(&app_path).unwrap();
+        assert_eq!(
+            targets.main_executable,
+            app_path.join("Contents/MacOS/configured-main")
+        );
+        assert!(targets.nested_executables.is_empty());
+    }
+
+    #[test]
+    fn discovers_future_nested_helpers_before_configured_main_executable() {
+        let (_directory, app_path) = create_test_app(true);
         let targets = AppSigningTargets::discover(&app_path).unwrap();
         assert_eq!(
             targets.main_executable,
@@ -494,13 +500,13 @@ mod tests {
         );
         assert_eq!(
             targets.nested_executables,
-            vec![app_path.join("Contents/MacOS/alcomd3-mcp")]
+            vec![app_path.join("Contents/MacOS/future-helper")]
         );
     }
 
     #[test]
     fn rejects_unsafe_main_executable_path_from_plist() {
-        let (_directory, app_path) = create_test_app();
+        let (_directory, app_path) = create_test_app(false);
         let plist_path = app_path.join("Contents/Info.plist");
         let mut dictionary = plist::Dictionary::new();
         dictionary.insert(

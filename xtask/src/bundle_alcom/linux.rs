@@ -71,13 +71,6 @@ pub fn create_install_build_root_impl(
         &mut fs::File::open(ctx.binary_path()).context("opening executable")?,
     )?;
 
-    let mcp_bin_path = usr_bin.join(ctx.mcp_binary_name());
-    fs.create_file(
-        0o755,
-        &mcp_bin_path,
-        &mut fs::File::open(ctx.mcp_binary_path()).context("opening MCP bridge executable")?,
-    )?;
-
     let usr_share = usr.join("share");
     fs.create_dir(&usr_share)?;
 

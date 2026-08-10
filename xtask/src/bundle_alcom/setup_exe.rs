@@ -145,7 +145,6 @@ fn build_inno_setup_installer(
     let webview2 = runner.path(webview2_bootstrapper);
     let license = runner.path(&ctx.workspace_root.join("LICENSE"));
     let app_path = runner.path(&ctx.binary_path());
-    let mcp_app_path = runner.path(&ctx.mcp_binary_path());
     let version = ctx.version();
     // Inno Setup escapes a literal opening brace by doubling it in AppId.
     let windows_app_id = format!("{{{}", ctx.windows_app_id());
@@ -162,7 +161,6 @@ fn build_inno_setup_installer(
             windows_version_info_version()
         ))
         .arg(format!("-DApplicationPath={app_path}"))
-        .arg(format!("-DMcpApplicationPath={mcp_app_path}"))
         .arg(format!("-DWindowsAppId={windows_app_id}"))
         .arg(format!("-DWindowsAumid={}", ctx.windows_aumid()))
         .arg(format!(

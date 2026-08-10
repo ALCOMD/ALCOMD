@@ -28,7 +28,7 @@ release steps、user-facing technical documentation を探すときはここか�
 
 ## 機能・形式ドキュメント
 
-- MCP bridge guide: [mcp.ja.md](../mcp/mcp.ja.md) ([English](../mcp.md), [简体中文](../mcp/mcp.zh-CN.md), [繁體中文](../mcp/mcp.zh-TW.md))
+- Built-in MCP guide: [mcp.ja.md](../mcp/mcp.ja.md) ([English](../mcp.md), [简体中文](../mcp/mcp.zh-CN.md), [繁體中文](../mcp/mcp.zh-TW.md))
 - MCP ツールのフィールド別入出力リファレンス: [tools.ja.md](../mcp/tools.ja.md) ([English](../mcp/tools.md), [简体中文](../mcp/tools.zh-CN.md), [繁體中文](../mcp/tools.zh-TW.md))
 - Repository list file format: [repository-list-file-format.ja.md](../repository-list-file-format/repository-list-file-format.ja.md) ([English](../repository-list-file-format.md), [简体中文](../repository-list-file-format/repository-list-file-format.zh-CN.md))
 - Default repository list example/import data: [../../repositories.txt](../../repositories.txt)

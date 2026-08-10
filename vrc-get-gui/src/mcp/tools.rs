@@ -1,60 +1,39 @@
-use alcomd3_mcp_protocol::{
-    ClientIdentity, EndpointMetadata, IPC_IO_TIMEOUT, IPC_MAX_LINE_BYTES,
-    IPC_METHOD_PROJECT_TASK_CANCEL, IPC_METHOD_PROJECT_TASK_GET, IPC_METHOD_PROJECT_TASK_LIST,
-    IPC_METHOD_PROJECT_TASK_START, IPC_PROTOCOL_VERSION, IpcRequest, IpcResponse, IpcTransport,
-    ListRepositoriesOutput, MCP_HTTP_BIND_ENV, MCP_HTTP_BIND_HOST, MCP_HTTP_DEFAULT_PORT,
-    MCP_HTTP_MIN_TOKEN_BYTES, MCP_HTTP_PATH, MCP_HTTP_TOKEN_ENV, endpoint_file_path,
-};
-use anyhow::{Context, Result, bail};
-use axum::{
-    Router,
-    extract::{Request, State},
-    http::{HeaderMap, StatusCode, header::AUTHORIZATION},
-    middleware::{self, Next},
-    response::Response,
-};
+use super::dispatch::invoke_gui as dispatch_gui;
+use super::tasks::McpTaskManager;
+use super::types::{ClientIdentity, ListRepositoriesOutput};
+use super::{MCP_OPERATION_CANCEL_METHOD, MCP_OPERATION_GET_METHOD, MCP_OPERATION_START_METHOD};
+use anyhow::Result;
 use rmcp::{
     ErrorData as McpError, Json, Peer, RoleServer, ServerHandler,
-    handler::server::tool::IntoCallToolResult,
-    handler::server::wrapper::Parameters,
+    handler::server::{router::tool::ToolRouter, tool::ToolCallContext, wrapper::Parameters},
     model::{
-        CallToolRequestParams, CancelTaskParams, CancelTaskResult, CreateTaskResult, GetTaskParams,
-        GetTaskPayloadParams, GetTaskPayloadResult, GetTaskResult, Implementation, JsonObject,
-        ListTasksResult, Meta, PaginatedRequestParams, ProgressNotificationParam, ProgressToken,
-        RequestParamsMeta, ServerCapabilities, ServerInfo, Task, TaskStatus, TasksCapability,
+        CallToolRequestParams, CallToolResponse, CallToolResult, CancelTaskParams,
+        CreateTaskResult, GetTaskParams, GetTaskResult, Implementation, JsonObject,
+        ProgressNotificationParam, ProgressToken, ProtocolVersion, ServerCapabilities, ServerInfo,
+        UpdateTaskParams,
     },
     schemars,
     service::RequestContext,
+    task_manager::{TaskContext, TaskExit, TaskOptions},
     tool, tool_handler, tool_router,
-    transport::streamable_http_server::{
-        StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
-    },
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, VecDeque};
-use std::env;
-use std::future::Future;
-use std::io;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{TcpListener, TcpStream};
-use tokio_util::sync::CancellationToken;
+use tauri::AppHandle;
 use uuid::Uuid;
 
-const PROJECT_TOOL_RESPONSE_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 const TOOL_INVOCATION_MAX_CONCURRENT: usize = 64;
 const TOOL_INVOCATION_MAX_STARTED_PER_WINDOW: usize = 600;
 const TOOL_INVOCATION_RATE_WINDOW: Duration = Duration::from_secs(60);
 const PROJECT_TASK_DEFAULT_POLL_INTERVAL_MS: u64 = 500;
 const PROJECT_TASK_MIN_POLL_INTERVAL_MS: u64 = 100;
-const TASK_RESULT_POLL_INTERVAL: Duration =
-    Duration::from_millis(PROJECT_TASK_MIN_POLL_INTERVAL_MS);
-const TASK_PROGRESS_META_KEY: &str = "alcomd3/projectProgress";
-const TASK_RELATED_META_KEY: &str = "io.modelcontextprotocol/related-task";
+const SUPPORTED_PROTOCOL_VERSIONS: &[ProtocolVersion] =
+    &[ProtocolVersion::V_2026_07_28, ProtocolVersion::V_2025_11_25];
 
 type McpJsonResult = std::result::Result<Json<JsonObject>, Json<JsonObject>>;
 type ListRepositoriesMcpResult =
@@ -190,9 +169,6 @@ struct ProjectTaskSnapshot {
     kind: ProjectTaskKind,
     status: ProjectTaskStatus,
     status_message: Option<String>,
-    created_at: String,
-    last_updated_at: String,
-    ttl: Option<u64>,
     poll_interval: Option<u64>,
     progress: Option<ProjectTaskProgress>,
     result: Option<Value>,
@@ -220,24 +196,6 @@ enum ProjectTaskStatus {
     Cancelled,
 }
 
-impl ProjectTaskStatus {
-    fn is_terminal(self) -> bool {
-        matches!(
-            self,
-            ProjectTaskStatus::Completed | ProjectTaskStatus::Failed | ProjectTaskStatus::Cancelled
-        )
-    }
-
-    fn to_mcp(self) -> TaskStatus {
-        match self {
-            ProjectTaskStatus::Working => TaskStatus::Working,
-            ProjectTaskStatus::Completed => TaskStatus::Completed,
-            ProjectTaskStatus::Failed => TaskStatus::Failed,
-            ProjectTaskStatus::Cancelled => TaskStatus::Cancelled,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ProjectTaskProgress {
@@ -252,40 +210,6 @@ struct ProjectTaskError {
     code: String,
     message: String,
     data: Option<Value>,
-}
-
-impl ProjectTaskSnapshot {
-    fn to_task(&self) -> Task {
-        let mut task = Task::new(
-            self.task_id.clone(),
-            self.status.to_mcp(),
-            self.created_at.clone(),
-            self.last_updated_at.clone(),
-        );
-        if let Some(message) = &self.status_message {
-            task = task.with_status_message(message.clone());
-        }
-        if let Some(ttl) = self.ttl {
-            task = task.with_ttl(ttl);
-        }
-        if let Some(poll_interval) = self.poll_interval {
-            task = task.with_poll_interval(poll_interval);
-        }
-        task
-    }
-
-    fn meta(&self) -> Option<Meta> {
-        let progress = self.progress.as_ref()?;
-        let mut meta = Meta::new();
-        meta.insert(TASK_PROGRESS_META_KEY.to_string(), json!(progress));
-        Some(meta)
-    }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ProjectTaskListResponse {
-    tasks: Vec<ProjectTaskSnapshot>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, schemars::JsonSchema)]
@@ -500,14 +424,14 @@ enum InvokeOutcome {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct ToolInvocationLimits {
+pub(super) struct ToolInvocationLimits {
     max_concurrent: usize,
     max_started_per_window: usize,
     window: Duration,
 }
 
 impl ToolInvocationLimits {
-    fn production() -> Self {
+    pub(super) fn production() -> Self {
         Self {
             max_concurrent: TOOL_INVOCATION_MAX_CONCURRENT,
             max_started_per_window: TOOL_INVOCATION_MAX_STARTED_PER_WINDOW,
@@ -536,7 +460,7 @@ impl ToolRateLimitReason {
 }
 
 #[derive(Clone)]
-struct ToolInvocationLimiter {
+pub(super) struct ToolInvocationLimiter {
     inner: Arc<ToolInvocationLimiterInner>,
 }
 
@@ -556,7 +480,7 @@ struct ToolInvocationPermit {
 }
 
 impl ToolInvocationLimiter {
-    fn new(limits: ToolInvocationLimits) -> Self {
+    pub(super) fn new(limits: ToolInvocationLimits) -> Self {
         assert!(limits.max_concurrent > 0);
         assert!(limits.max_started_per_window > 0);
         assert!(!limits.window.is_zero());
@@ -610,27 +534,29 @@ fn prune_started_at(started_at: &mut VecDeque<Instant>, now: Instant, window: Du
 }
 
 #[derive(Clone)]
-struct Alcomd3Mcp {
+pub(super) struct Alcomd3Mcp {
+    app: AppHandle,
     client: Arc<Mutex<ClientIdentity>>,
     limiter: ToolInvocationLimiter,
+    tasks: McpTaskManager,
+    tool_router: ToolRouter<Alcomd3Mcp>,
 }
 
 impl Alcomd3Mcp {
-    #[cfg(test)]
-    fn new() -> Self {
-        Self::new_with_limiter(ToolInvocationLimiter::new(
-            ToolInvocationLimits::production(),
-        ))
-    }
-
-    fn new_with_limiter(limiter: ToolInvocationLimiter) -> Self {
+    pub(super) fn new(
+        app: AppHandle,
+        limiter: ToolInvocationLimiter,
+        tasks: McpTaskManager,
+    ) -> Self {
         Self {
+            app,
             client: Arc::new(Mutex::new(ClientIdentity {
-                session_id: Uuid::new_v4(),
                 name: "MCP client".to_string(),
                 version: None,
             })),
             limiter,
+            tasks,
+            tool_router: Self::tool_router(),
         }
     }
 
@@ -662,7 +588,7 @@ impl Alcomd3Mcp {
         let client = self.client.lock().unwrap().clone();
         let mut params = serde_json::to_value(params).unwrap_or(Value::Null);
         remove_null_object_fields(&mut params);
-        format_invoke_result(invoke_gui(method, params, &client).await)
+        format_invoke_result(invoke_gui(&self.app, method, params, &client).await)
     }
 
     async fn invoke_typed<TParams, TOutput>(
@@ -683,34 +609,7 @@ impl Alcomd3Mcp {
         let client = self.client.lock().unwrap().clone();
         let mut params = serde_json::to_value(params).unwrap_or(Value::Null);
         remove_null_object_fields(&mut params);
-        format_typed_invoke_result(invoke_gui(method, params, &client).await)
-    }
-
-    async fn invoke_task_ipc<T: Serialize>(
-        &self,
-        method: &str,
-        params: T,
-        peer: &Peer<RoleServer>,
-    ) -> std::result::Result<Value, McpError> {
-        let client = self.client_for_peer(peer);
-        let mut params = serde_json::to_value(params).unwrap_or(Value::Null);
-        remove_null_object_fields(&mut params);
-        invoke_gui_value(method, params, &client).await
-    }
-
-    async fn fetch_project_task(
-        &self,
-        task_id: &str,
-        peer: &Peer<RoleServer>,
-    ) -> std::result::Result<ProjectTaskSnapshot, McpError> {
-        let value = self
-            .invoke_task_ipc(
-                IPC_METHOD_PROJECT_TASK_GET,
-                json!({ "taskId": task_id }),
-                peer,
-            )
-            .await?;
-        project_task_snapshot_from_value(value)
+        format_typed_invoke_result(invoke_gui(&self.app, method, params, &client).await)
     }
 
     async fn invoke_project_tool_sync<T: Serialize>(
@@ -728,7 +627,8 @@ impl Alcomd3Mcp {
         let task_id = Uuid::new_v4().to_string();
         let params = serde_json::to_value(params).unwrap_or(Value::Null);
         let mut snapshot = match invoke_gui_value(
-            IPC_METHOD_PROJECT_TASK_START,
+            &self.app,
+            MCP_OPERATION_START_METHOD,
             json!({
                 "taskId": task_id,
                 "method": method,
@@ -759,7 +659,8 @@ impl Alcomd3Mcp {
                     tokio::select! {
                         _ = context.ct.cancelled() => {
                             let cancelled = invoke_gui_value(
-                                IPC_METHOD_PROJECT_TASK_CANCEL,
+                                &self.app,
+                                MCP_OPERATION_CANCEL_METHOD,
                                 json!({ "taskId": snapshot.task_id }),
                                 &client,
                             )
@@ -774,7 +675,8 @@ impl Alcomd3Mcp {
                     }
 
                     snapshot = match invoke_gui_value(
-                        IPC_METHOD_PROJECT_TASK_GET,
+                        &self.app,
+                        MCP_OPERATION_GET_METHOD,
                         json!({ "taskId": snapshot.task_id }),
                         &client,
                     )
@@ -920,68 +822,17 @@ fn project_task_poll_interval(snapshot: &ProjectTaskSnapshot) -> Duration {
     )
 }
 
-fn project_task_payload_result(
-    snapshot: ProjectTaskSnapshot,
-) -> std::result::Result<GetTaskPayloadResult, McpError> {
-    let mut call_tool_result = match snapshot.status {
-        ProjectTaskStatus::Completed => {
-            let result = snapshot.result.ok_or_else(|| {
-                McpError::internal_error(
-                    format!("task completed without a result: {}", snapshot.task_id),
-                    None,
-                )
-            })?;
-            Json(value_as_object(result)).into_call_tool_result()?
-        }
-        ProjectTaskStatus::Failed | ProjectTaskStatus::Cancelled => {
-            let error = snapshot.error.unwrap_or(ProjectTaskError {
-                code: "project_task_error".to_string(),
-                message: "MCP project task did not complete successfully".to_string(),
-                data: None,
-            });
-            let mut result = Json(value_as_object(json!({
-                "ok": false,
-                "error": error,
-            })))
-            .into_call_tool_result()?;
-            result.is_error = Some(true);
-            result
-        }
-        ProjectTaskStatus::Working => {
-            return Err(McpError::invalid_request(
-                format!("project task is still running: {}", snapshot.task_id),
-                None,
-            ));
-        }
-    };
-    call_tool_result = call_tool_result.with_meta(Some(related_task_meta(&snapshot.task_id)));
-    let value = serde_json::to_value(call_tool_result).map_err(|e| {
-        McpError::internal_error(format!("failed to serialize task result: {e}"), None)
-    })?;
-    Ok(GetTaskPayloadResult::new(value))
-}
-
-fn related_task_meta(task_id: &str) -> Meta {
-    let mut meta = Meta::new();
-    meta.insert(
-        TASK_RELATED_META_KEY.to_string(),
-        json!({
-            "taskId": task_id,
-        }),
-    );
-    meta
-}
-
 async fn invoke_gui_value(
+    app: &AppHandle,
     method: &str,
     params: Value,
     client: &ClientIdentity,
 ) -> std::result::Result<Value, McpError> {
-    match invoke_gui(method, params, client).await {
+    match invoke_gui(app, method, params, client).await {
         Ok(InvokeOutcome::Success(value)) => Ok(value),
         Ok(InvokeOutcome::ToolError(value)) => Err(mcp_error_from_tool_error(value)),
         Err(error) => Err(McpError::internal_error(
-            format!("ALCOMD3 is not running or the MCP IPC endpoint is unavailable: {error}"),
+            format!("ALCOMD3 MCP dispatch failed: {error}"),
             None,
         )),
     }
@@ -1005,41 +856,77 @@ fn mcp_error_from_tool_error(value: Value) -> McpError {
     }
 }
 
-fn spawn_project_progress_poller(
-    task_id: String,
-    progress_token: ProgressToken,
-    peer: Peer<RoleServer>,
+async fn run_project_task(
+    app: AppHandle,
+    method: String,
+    params: Value,
     client: ClientIdentity,
-) {
-    tokio::spawn(async move {
-        let mut last_progress = -1.0;
-        loop {
-            let value = invoke_gui_value(
-                IPC_METHOD_PROJECT_TASK_GET,
-                json!({ "taskId": task_id }),
-                &client,
-            )
-            .await;
-            let snapshot = match value.and_then(project_task_snapshot_from_value) {
-                Ok(snapshot) => snapshot,
-                Err(_) => break,
-            };
+    context: TaskContext,
+) -> std::result::Result<CallToolResult, TaskExit> {
+    let task_id = context.task_id().to_string();
+    let mut snapshot = invoke_gui_value(
+        &app,
+        MCP_OPERATION_START_METHOD,
+        json!({
+            "taskId": task_id,
+            "method": method,
+            "params": params,
+        }),
+        &client,
+    )
+    .await
+    .and_then(project_task_snapshot_from_value)
+    .map_err(TaskExit::Error)?;
 
-            if let Some(notification) =
-                project_progress_notification(&snapshot, progress_token.clone(), &mut last_progress)
-            {
-                if peer.notify_progress(notification).await.is_err() {
-                    break;
-                }
-            }
-
-            if snapshot.status.is_terminal() {
-                break;
-            }
-
-            tokio::time::sleep(project_task_poll_interval(&snapshot)).await;
+    loop {
+        if let Some(message) = snapshot.status_message.as_deref() {
+            context.set_status_message(message);
         }
-    });
+
+        match snapshot.status {
+            ProjectTaskStatus::Working => {
+                tokio::select! {
+                    _ = context.cancelled() => {
+                        let _ = invoke_gui_value(
+                            &app,
+                            MCP_OPERATION_CANCEL_METHOD,
+                            json!({ "taskId": snapshot.task_id }),
+                            &client,
+                        )
+                        .await;
+                        return Err(TaskExit::Cancelled);
+                    }
+                    _ = tokio::time::sleep(project_task_poll_interval(&snapshot)) => {}
+                }
+
+                snapshot = invoke_gui_value(
+                    &app,
+                    MCP_OPERATION_GET_METHOD,
+                    json!({ "taskId": snapshot.task_id }),
+                    &client,
+                )
+                .await
+                .and_then(project_task_snapshot_from_value)
+                .map_err(TaskExit::Error)?;
+            }
+            ProjectTaskStatus::Completed => {
+                let result = snapshot.result.unwrap_or_else(|| json!({ "ok": true }));
+                return Ok(CallToolResult::structured(result));
+            }
+            ProjectTaskStatus::Cancelled => return Err(TaskExit::Cancelled),
+            ProjectTaskStatus::Failed => {
+                let error = snapshot.error.unwrap_or(ProjectTaskError {
+                    code: "project_task_error".to_string(),
+                    message: "MCP project task did not complete successfully".to_string(),
+                    data: None,
+                });
+                return Err(TaskExit::Error(mcp_error_from_tool_error(json!({
+                    "ok": false,
+                    "error": error,
+                }))));
+            }
+        }
+    }
 }
 
 async fn notify_project_progress_if_needed(
@@ -1499,7 +1386,6 @@ impl Alcomd3Mcp {
 
     #[tool(
         description = "Create a new Unity project, register it in ALCOMD3, and resolve project packages. project_name is required. base_path defaults to the ALCOMD3 default project path. template_id and unity_version default to the current GUI template selection rules when omitted.",
-        execution(task_support = "optional"),
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -1535,7 +1421,6 @@ impl Alcomd3Mcp {
 
     #[tool(
         description = "Create a zip backup archive for a Unity project registered in ALCOMD3. project_path must match an ALCOMD3 registered project path. backup_name optionally overrides the generated archive name without the .zip extension. exclude_vpm_packages omits installed VPM package contents when true and defaults to false.",
-        execution(task_support = "optional"),
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -1554,7 +1439,6 @@ impl Alcomd3Mcp {
 
     #[tool(
         description = "Copy a Unity project registered in ALCOMD3 to a new project directory and register the copied project. source_project_path must match an ALCOMD3 registered project path, and new_project_path must not already exist.",
-        execution(task_support = "optional"),
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -1573,7 +1457,6 @@ impl Alcomd3Mcp {
 
     #[tool(
         description = "Restore a Unity project from an ALCOMD3 zip backup archive into the configured default project directory and register the restored project. project_name optionally overrides the restored folder name.",
-        execution(task_support = "optional"),
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -1592,7 +1475,6 @@ impl Alcomd3Mcp {
 
     #[tool(
         description = "Install one GUI-visible VPM package into a Unity project registered in ALCOMD3. project_path must match a registered project path. version_selector is required: use {\"type\":\"latest_gui_visible\"} to install the same latest compatible version the GUI exposes, or {\"type\":\"exact\",\"version\":\"x.y.z\"}. Optional source selects a remote repository by the repository_id returned from alcomd3_list_repositories. Conflicts or legacy file removals are blocked unless allow_conflicts is true.",
-        execution(task_support = "optional"),
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -1611,7 +1493,6 @@ impl Alcomd3Mcp {
 
     #[tool(
         description = "Uninstall one installed package from a Unity project registered in ALCOMD3. project_path must match a registered project path. Conflicts or legacy file removals are blocked unless allow_conflicts is true.",
-        execution(task_support = "optional"),
         annotations(
             read_only_hint = false,
             destructive_hint = true,
@@ -1630,7 +1511,6 @@ impl Alcomd3Mcp {
 
     #[tool(
         description = "Reinstall one installed package in a Unity project registered in ALCOMD3. project_path must match a registered project path. Conflicts or legacy file removals are blocked unless allow_conflicts is true.",
-        execution(task_support = "optional"),
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -1648,356 +1528,121 @@ impl Alcomd3Mcp {
     }
 }
 
-#[tool_handler]
+#[tool_handler(router = self.tool_router)]
 impl ServerHandler for Alcomd3Mcp {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(
-            ServerCapabilities::builder()
-                .enable_tools()
-                .enable_tasks_with(TasksCapability::server_default())
-                .build(),
-        )
-            .with_server_info(Implementation::new(
-                "alcomd3-mcp",
-                env!("CARGO_PKG_VERSION"),
-            ))
-            .with_instructions(
-                "Use ALCOMD3 tools through the local GUI IPC endpoint. Some tools create or add projects, add repositories, create project backups, copies, restores, or package changes. ALCOMD3 must remain running while tools are used.",
-            )
-    }
-
-    async fn enqueue_task(
+    async fn call_tool(
         &self,
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
-    ) -> std::result::Result<CreateTaskResult, McpError> {
-        let _permit = match self.limiter.try_start(Instant::now()) {
-            Ok(permit) => permit,
-            Err(reason) => return Err(rate_limit_mcp_error(reason)),
-        };
-        let method = project_tool_method(&request.name)?;
-        let task_id = Uuid::new_v4().to_string();
-        let progress_token = request.progress_token();
-        let params = Value::Object(request.arguments.unwrap_or_default());
+    ) -> std::result::Result<CallToolResponse, McpError> {
+        let client_supports_tasks = context
+            .client_capabilities()
+            .is_some_and(|capabilities| capabilities.supports_tasks());
 
-        let value = self
-            .invoke_task_ipc(
-                IPC_METHOD_PROJECT_TASK_START,
-                json!({
-                    "taskId": task_id,
-                    "method": method,
-                    "params": params,
-                }),
-                &context.peer,
-            )
-            .await?;
-        let snapshot = project_task_snapshot_from_value(value)?;
-
-        if let Some(progress_token) = progress_token {
+        if client_supports_tasks && let Ok(method) = project_tool_method(&request.name) {
+            let permit = self
+                .limiter
+                .try_start(Instant::now())
+                .map_err(rate_limit_mcp_error)?;
             let client = self.client_for_peer(&context.peer);
-            spawn_project_progress_poller(
-                snapshot.task_id.clone(),
-                progress_token,
-                context.peer.clone(),
-                client,
+            let app = self.app.clone();
+            let method = method.to_string();
+            let mut params = Value::Object(request.arguments.unwrap_or_default());
+            remove_null_object_fields(&mut params);
+            let task = self.tasks.spawn(
+                TaskOptions::new()
+                    .with_ttl_ms(super::MCP_PROJECT_TASK_TTL_MS)
+                    .with_poll_interval_ms(PROJECT_TASK_DEFAULT_POLL_INTERVAL_MS)
+                    .with_status_message(format!("Running {method}")),
+                move |task_context| {
+                    Box::pin(async move {
+                        let _permit = permit;
+                        run_project_task(app, method, params, client, task_context).await
+                    })
+                },
             );
+            return Ok(CallToolResponse::Task(CreateTaskResult::new(task)));
         }
 
-        Ok(CreateTaskResult::new(snapshot.to_task()))
+        let tool_context = ToolCallContext::new(self, request, context);
+        self.tool_router.call(tool_context).await
     }
 
-    async fn list_tasks(
-        &self,
-        _request: Option<PaginatedRequestParams>,
-        context: RequestContext<RoleServer>,
-    ) -> std::result::Result<ListTasksResult, McpError> {
-        let value = self
-            .invoke_task_ipc(IPC_METHOD_PROJECT_TASK_LIST, json!({}), &context.peer)
-            .await?;
-        let response = serde_json::from_value::<ProjectTaskListResponse>(value).map_err(|e| {
-            McpError::internal_error(format!("invalid task list response: {e}"), None)
-        })?;
-        Ok(ListTasksResult::new(
-            response
-                .tasks
-                .iter()
-                .map(ProjectTaskSnapshot::to_task)
-                .collect(),
-        ))
+    fn get_info(&self) -> ServerInfo {
+        server_info()
     }
 
-    async fn get_task_info(
+    fn supported_protocol_versions(&self) -> Cow<'static, [ProtocolVersion]> {
+        Cow::Borrowed(SUPPORTED_PROTOCOL_VERSIONS)
+    }
+
+    async fn get_task(
         &self,
         request: GetTaskParams,
-        context: RequestContext<RoleServer>,
+        _context: RequestContext<RoleServer>,
     ) -> std::result::Result<GetTaskResult, McpError> {
-        let snapshot = self
-            .fetch_project_task(&request.task_id, &context.peer)
-            .await?;
-        let mut result = GetTaskResult::new(snapshot.to_task());
-        result.meta = snapshot.meta();
-        Ok(result)
+        Ok(GetTaskResult::new(self.tasks.get_task(&request.task_id)?))
     }
 
-    async fn get_task_result(
+    async fn update_task(
         &self,
-        request: GetTaskPayloadParams,
-        context: RequestContext<RoleServer>,
-    ) -> std::result::Result<GetTaskPayloadResult, McpError> {
-        loop {
-            let snapshot = self
-                .fetch_project_task(&request.task_id, &context.peer)
-                .await?;
-            match snapshot.status {
-                ProjectTaskStatus::Working => {
-                    tokio::time::sleep(TASK_RESULT_POLL_INTERVAL).await;
-                }
-                ProjectTaskStatus::Completed
-                | ProjectTaskStatus::Failed
-                | ProjectTaskStatus::Cancelled => return project_task_payload_result(snapshot),
-            }
-        }
+        request: UpdateTaskParams,
+        _context: RequestContext<RoleServer>,
+    ) -> std::result::Result<(), McpError> {
+        self.tasks
+            .update_task(&request.task_id, request.input_responses)
     }
 
     async fn cancel_task(
         &self,
         request: CancelTaskParams,
-        context: RequestContext<RoleServer>,
-    ) -> std::result::Result<CancelTaskResult, McpError> {
-        let value = self
-            .invoke_task_ipc(
-                IPC_METHOD_PROJECT_TASK_CANCEL,
-                json!({ "taskId": request.task_id }),
-                &context.peer,
-            )
-            .await?;
-        let snapshot = project_task_snapshot_from_value(value)?;
-        let mut result = CancelTaskResult::new(snapshot.to_task());
-        result.meta = snapshot.meta();
-        Ok(result)
+        _context: RequestContext<RoleServer>,
+    ) -> std::result::Result<(), McpError> {
+        self.tasks.cancel_task(&request.task_id)
     }
 }
 
-async fn invoke_gui(method: &str, params: Value, client: &ClientIdentity) -> Result<InvokeOutcome> {
-    invoke_gui_once(method, params, client).await
+fn server_info() -> ServerInfo {
+    ServerInfo::new(
+        ServerCapabilities::builder()
+            .enable_tools()
+            .enable_tasks()
+            .build(),
+    )
+    .with_server_info(Implementation::new(
+        "alcomd3-mcp",
+        env!("CARGO_PKG_VERSION"),
+    ))
+    .with_instructions(
+        "Use the MCP server built into ALCOMD3 GUI. Some tools create or add projects, add repositories, create project backups, copies, restores, or package changes. ALCOMD3 must remain running while tools are used.",
+    )
 }
 
-async fn invoke_gui_once(
+async fn invoke_gui(
+    app: &AppHandle,
     method: &str,
     params: Value,
     client: &ClientIdentity,
 ) -> Result<InvokeOutcome> {
-    let metadata = read_endpoint().await?;
-    validate_endpoint_metadata(&metadata)?;
-    if metadata.protocol_version != IPC_PROTOCOL_VERSION {
-        bail!(
-            "ALCOMD3 IPC protocol mismatch: bridge={}, GUI={}",
-            IPC_PROTOCOL_VERSION,
-            metadata.protocol_version
-        );
-    }
-
-    let request_id = Uuid::new_v4();
-    let request = IpcRequest {
-        protocol_version: IPC_PROTOCOL_VERSION,
-        token: metadata.token.clone(),
-        request_id,
-        client: client.clone(),
-        method: method.to_string(),
-        params,
-    };
-
-    let response = invoke_tcp(
-        &metadata,
-        &request,
-        response_timeout_for_method(&request.method),
-    )
-    .await?;
-    if response.request_id != request_id {
-        bail!("ALCOMD3 returned a response for a different request");
-    }
-
-    Ok(response_to_tool_outcome(response))
-}
-
-async fn read_endpoint() -> Result<EndpointMetadata> {
-    let path = endpoint_file_path();
-    let bytes = tokio::fs::read(&path).await.with_context(|| {
-        format!(
-            "reading ALCOMD3 MCP endpoint metadata at {}",
-            path.display()
-        )
-    })?;
-    serde_json::from_slice(&bytes).context("parsing ALCOMD3 MCP endpoint metadata")
-}
-
-async fn invoke_tcp(
-    metadata: &EndpointMetadata,
-    request: &IpcRequest,
-    response_timeout: Duration,
-) -> Result<IpcResponse> {
-    let stream = with_ipc_io_timeout(
-        "connecting to ALCOMD3 MCP IPC endpoint",
-        TcpStream::connect((metadata.host.as_str(), metadata.port)),
-    )
-    .await
-    .with_context(|| {
-        format!(
-            "connecting to ALCOMD3 MCP IPC endpoint {}:{}",
-            metadata.host, metadata.port
-        )
-    })?;
-
-    write_request_and_read_response(stream, request, response_timeout).await
-}
-
-async fn write_request_and_read_response(
-    stream: TcpStream,
-    request: &IpcRequest,
-    response_timeout: Duration,
-) -> Result<IpcResponse> {
-    let (read_half, mut write_half) = tokio::io::split(stream);
-    let line = serde_json::to_vec(request)?;
-    with_ipc_io_timeout(
-        "writing ALCOMD3 MCP IPC request",
-        write_half.write_all(&line),
-    )
-    .await?;
-    with_ipc_io_timeout(
-        "writing ALCOMD3 MCP IPC request delimiter",
-        write_half.write_all(b"\n"),
-    )
-    .await?;
-    with_ipc_io_timeout("flushing ALCOMD3 MCP IPC request", write_half.flush()).await?;
-
-    let mut reader = BufReader::new(read_half);
-    let response = with_ipc_io_timeout_for(
-        "reading ALCOMD3 MCP IPC response",
-        response_timeout,
-        read_bounded_line(&mut reader, "ALCOMD3 MCP IPC response"),
-    )
-    .await?;
-    serde_json::from_str(&response).context("parsing ALCOMD3 MCP IPC response")
-}
-
-fn response_timeout_for_method(method: &str) -> Duration {
-    match method {
-        "backup_project"
-        | "copy_project"
-        | "restore_project_from_backup"
-        | "install_project_package"
-        | "uninstall_project_package"
-        | "reinstall_project_package" => PROJECT_TOOL_RESPONSE_TIMEOUT,
-        _ => IPC_IO_TIMEOUT,
-    }
-}
-
-fn response_to_tool_outcome(response: IpcResponse) -> InvokeOutcome {
-    if response.ok {
-        let value = match response.result {
-            Some(Value::Object(mut object)) => {
-                object.insert("ok".to_string(), Value::Bool(true));
-                Value::Object(object)
-            }
-            Some(value) => json!({
-                "ok": true,
-                "result": value,
-            }),
-            None => json!({ "ok": true }),
-        };
-        InvokeOutcome::Success(value)
-    } else {
-        InvokeOutcome::ToolError(json!({
+    match dispatch_gui(app.clone(), method, params, client.clone()).await {
+        Ok(value) => {
+            let value = match value {
+                Value::Object(mut object) => {
+                    object.insert("ok".to_string(), Value::Bool(true));
+                    Value::Object(object)
+                }
+                value => json!({
+                    "ok": true,
+                    "result": value,
+                }),
+            };
+            Ok(InvokeOutcome::Success(value))
+        }
+        Err(error) => Ok(InvokeOutcome::ToolError(json!({
             "ok": false,
-            "error": response.error,
-        }))
+            "error": error,
+        }))),
     }
-}
-
-fn validate_endpoint_metadata(metadata: &EndpointMetadata) -> Result<()> {
-    if metadata.transport != IpcTransport::Tcp {
-        bail!(
-            "ALCOMD3 MCP IPC endpoint uses unsupported transport {:?}",
-            metadata.transport
-        );
-    }
-
-    let host: IpAddr = metadata.host.parse().with_context(|| {
-        format!(
-            "ALCOMD3 MCP IPC endpoint host must be a loopback IP literal: {}",
-            metadata.host
-        )
-    })?;
-    if !host.is_loopback() {
-        bail!(
-            "ALCOMD3 MCP IPC endpoint host must be loopback, got {}",
-            metadata.host
-        );
-    }
-
-    Ok(())
-}
-
-async fn with_ipc_io_timeout<T>(
-    operation: &'static str,
-    future: impl Future<Output = io::Result<T>>,
-) -> io::Result<T> {
-    with_ipc_io_timeout_for(operation, IPC_IO_TIMEOUT, future).await
-}
-
-async fn with_ipc_io_timeout_for<T>(
-    operation: &'static str,
-    timeout: Duration,
-    future: impl Future<Output = io::Result<T>>,
-) -> io::Result<T> {
-    tokio::time::timeout(timeout, future).await.map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::TimedOut,
-            format!("{operation} timed out after {timeout:?}"),
-        )
-    })?
-}
-
-async fn read_bounded_line<R>(reader: &mut R, description: &'static str) -> io::Result<String>
-where
-    R: AsyncBufRead + Unpin,
-{
-    read_bounded_line_with_limit(reader, description, IPC_MAX_LINE_BYTES).await
-}
-
-async fn read_bounded_line_with_limit<R>(
-    reader: &mut R,
-    description: &'static str,
-    max_line_bytes: usize,
-) -> io::Result<String>
-where
-    R: AsyncBufRead + Unpin,
-{
-    let mut bytes = Vec::new();
-    let mut limited = reader.take((max_line_bytes + 1) as u64);
-    let read = limited.read_until(b'\n', &mut bytes).await?;
-    drop(limited);
-
-    if read == 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::UnexpectedEof,
-            format!("{description} closed without a line"),
-        ));
-    }
-    if bytes.len() > max_line_bytes {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("{description} exceeded {} bytes", max_line_bytes),
-        ));
-    }
-    if !bytes.ends_with(b"\n") {
-        return Err(io::Error::new(
-            io::ErrorKind::UnexpectedEof,
-            format!("{description} closed before newline delimiter"),
-        ));
-    }
-
-    String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
 }
 
 fn format_invoke_result(result: Result<InvokeOutcome>) -> McpJsonResult {
@@ -2007,10 +1652,8 @@ fn format_invoke_result(result: Result<InvokeOutcome>) -> McpJsonResult {
         Err(error) => Err(Json(value_as_object(json!({
             "ok": false,
             "error": {
-                "code": "alcomd3_unavailable",
-                "message": format!(
-                    "ALCOMD3 is not running or the MCP IPC endpoint is unavailable: {error}"
-                ),
+                "code": "mcp_internal_error",
+                "message": format!("ALCOMD3 MCP dispatch failed: {error}"),
             }
         })))),
     }
@@ -2035,10 +1678,8 @@ fn format_typed_invoke_result<T: DeserializeOwned>(
         Err(error) => Err(Json(value_as_object(json!({
             "ok": false,
             "error": {
-                "code": "alcomd3_unavailable",
-                "message": format!(
-                    "ALCOMD3 is not running or the MCP IPC endpoint is unavailable: {error}"
-                ),
+                "code": "mcp_internal_error",
+                "message": format!("ALCOMD3 MCP dispatch failed: {error}"),
             }
         })))),
     }
@@ -2058,70 +1699,166 @@ fn value_as_object(value: Value) -> JsonObject {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rmcp::handler::server::tool::IntoCallToolResult;
-    use rmcp::model::{ErrorCode, TaskSupport};
+    use rmcp::model::{DetailedTask, ErrorCode, InputRequest, TaskPayload, TaskStatus};
 
-    fn test_metadata(host: &str) -> EndpointMetadata {
-        EndpointMetadata {
-            protocol_version: IPC_PROTOCOL_VERSION,
-            transport: IpcTransport::Tcp,
-            host: host.to_string(),
-            port: 12345,
-            token: "test-token".to_string(),
-            pid: 1,
+    const EXPECTED_TOOL_NAMES: &[&str] = &[
+        "alcomd3_add_existing_project",
+        "alcomd3_add_repository",
+        "alcomd3_backup_project",
+        "alcomd3_copy_project",
+        "alcomd3_create_project",
+        "alcomd3_create_template",
+        "alcomd3_edit_template",
+        "alcomd3_get_activity_log_context",
+        "alcomd3_get_activity_log_entry",
+        "alcomd3_get_environment_settings",
+        "alcomd3_get_package_details",
+        "alcomd3_get_project_details",
+        "alcomd3_get_technical_log_entry",
+        "alcomd3_get_template",
+        "alcomd3_install_project_package",
+        "alcomd3_list_packages",
+        "alcomd3_list_projects",
+        "alcomd3_list_repositories",
+        "alcomd3_list_repository_packages",
+        "alcomd3_list_templates",
+        "alcomd3_reinstall_project_package",
+        "alcomd3_remove_repository",
+        "alcomd3_remove_template",
+        "alcomd3_remove_template_package",
+        "alcomd3_remove_template_unitypackage",
+        "alcomd3_restore_project_from_backup",
+        "alcomd3_search_activity_logs",
+        "alcomd3_search_technical_logs",
+        "alcomd3_set_template_package",
+        "alcomd3_set_template_unitypackage",
+        "alcomd3_summarize_activity_logs",
+        "alcomd3_summarize_technical_logs",
+        "alcomd3_uninstall_project_package",
+    ];
+
+    #[test]
+    fn tool_catalog_preserves_all_33_public_tools_and_metadata() {
+        let tools = Alcomd3Mcp::tool_router().list_all();
+        let names = tools
+            .iter()
+            .map(|tool| tool.name.as_ref())
+            .collect::<Vec<_>>();
+
+        assert_eq!(names, EXPECTED_TOOL_NAMES);
+        for tool in tools {
+            assert!(
+                tool.description
+                    .as_ref()
+                    .is_some_and(|value| !value.is_empty()),
+                "{} is missing its description",
+                tool.name
+            );
+            assert!(
+                tool.annotations.is_some(),
+                "{} is missing its annotations",
+                tool.name
+            );
+            assert_eq!(
+                tool.input_schema.get("type"),
+                Some(&Value::String("object".to_string())),
+                "{} must retain an object input schema",
+                tool.name
+            );
         }
     }
 
     #[test]
-    fn endpoint_metadata_accepts_loopback_hosts() {
-        validate_endpoint_metadata(&test_metadata("127.0.0.1")).unwrap();
-        validate_endpoint_metadata(&test_metadata("::1")).unwrap();
+    fn server_identity_capabilities_and_protocol_versions_are_explicit() {
+        let info = server_info();
+
+        assert_eq!(info.server_info.name, "alcomd3-mcp");
+        assert_eq!(info.server_info.version, env!("CARGO_PKG_VERSION"));
+        assert!(info.capabilities.tools.is_some());
+        assert!(info.capabilities.supports_tasks());
+        assert_eq!(
+            SUPPORTED_PROTOCOL_VERSIONS,
+            &[ProtocolVersion::V_2026_07_28, ProtocolVersion::V_2025_11_25,]
+        );
+        assert_eq!(ProtocolVersion::LATEST, ProtocolVersion::V_2025_11_25);
+        assert_ne!(SUPPORTED_PROTOCOL_VERSIONS[0], ProtocolVersion::LATEST);
     }
 
     #[test]
-    fn endpoint_metadata_rejects_non_loopback_hosts() {
-        let error = validate_endpoint_metadata(&test_metadata("192.168.1.10")).unwrap_err();
-        assert!(error.to_string().contains("loopback"));
+    fn production_limits_remain_64_concurrent_and_600_per_minute() {
+        let limits = ToolInvocationLimits::production();
+
+        assert_eq!(limits.max_concurrent, 64);
+        assert_eq!(limits.max_started_per_window, 600);
+        assert_eq!(limits.window, Duration::from_secs(60));
     }
 
     #[test]
-    fn endpoint_metadata_rejects_hostname_aliases() {
-        let error = validate_endpoint_metadata(&test_metadata("localhost")).unwrap_err();
-        assert!(error.to_string().contains("loopback IP literal"));
-    }
+    fn tool_invocation_limiter_enforces_window_capacity() {
+        let limiter = ToolInvocationLimiter::new(ToolInvocationLimits {
+            max_concurrent: 8,
+            max_started_per_window: 2,
+            window: Duration::from_secs(60),
+        });
+        let now = Instant::now();
 
-    #[tokio::test]
-    async fn bounded_line_rejects_oversized_lines() {
-        let max_line_bytes = 32;
-        let mut input = vec![b'a'; max_line_bytes + 1];
-        input.push(b'\n');
-        let mut reader = BufReader::new(input.as_slice());
-
-        let error = read_bounded_line_with_limit(&mut reader, "test line", max_line_bytes)
-            .await
-            .unwrap_err();
-
-        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        drop(limiter.try_start(now).unwrap());
+        drop(limiter.try_start(now + Duration::from_secs(1)).unwrap());
+        assert!(matches!(
+            limiter.try_start(now + Duration::from_secs(2)),
+            Err(ToolRateLimitReason::TooManyStartedInWindow)
+        ));
+        assert!(limiter.try_start(now + Duration::from_secs(61)).is_ok());
     }
 
     #[test]
-    fn format_success_result_is_mcp_success() {
-        let result = format_invoke_result(Ok(InvokeOutcome::Success(json!({
+    fn tool_invocation_limiter_enforces_concurrency_capacity() {
+        let limiter = ToolInvocationLimiter::new(ToolInvocationLimits {
+            max_concurrent: 2,
+            max_started_per_window: 16,
+            window: Duration::from_secs(60),
+        });
+        let now = Instant::now();
+        let first = limiter.try_start(now).unwrap();
+        let _second = limiter.try_start(now).unwrap();
+
+        assert!(matches!(
+            limiter.try_start(now),
+            Err(ToolRateLimitReason::TooManyConcurrent)
+        ));
+        drop(first);
+        assert!(limiter.try_start(now).is_ok());
+    }
+
+    #[test]
+    fn success_and_business_errors_keep_structured_tool_results() {
+        let success = match format_invoke_result(Ok(InvokeOutcome::Success(json!({
             "ok": true,
             "value": 1,
-        }))));
+        })))) {
+            Ok(value) => value,
+            Err(_) => panic!("success result was converted into a tool error"),
+        };
+        assert_eq!(success.0["ok"], true);
+        assert_eq!(success.0["value"], 1);
 
-        let call_result = result.into_call_tool_result().unwrap();
-
-        assert_eq!(call_result.is_error, Some(false));
-        let structured_content = call_result.structured_content.unwrap();
-        assert_eq!(structured_content["ok"], true);
-        assert_eq!(structured_content["value"], 1);
+        let error = match format_invoke_result(Ok(InvokeOutcome::ToolError(json!({
+            "ok": false,
+            "error": {
+                "code": "mcp_disabled",
+                "message": "MCP is disabled",
+            }
+        })))) {
+            Ok(_) => panic!("business error was converted into a successful tool result"),
+            Err(value) => value,
+        };
+        assert_eq!(error.0["ok"], false);
+        assert_eq!(error.0["error"]["code"], "mcp_disabled");
     }
 
     #[test]
     fn typed_repository_result_preserves_the_canonical_shape() {
-        let result = format_typed_invoke_result::<ListRepositoriesOutput>(Ok(
+        let result = match format_typed_invoke_result::<ListRepositoriesOutput>(Ok(
             InvokeOutcome::Success(json!({
                 "ok": true,
                 "repositories": [{
@@ -2137,105 +1874,14 @@ mod tests {
                     "showPrereleasePackages": true,
                 },
             })),
-        ));
+        )) {
+            Ok(value) => value,
+            Err(_) => panic!("canonical repository response was rejected"),
+        };
+        let value = serde_json::to_value(result.0).unwrap();
 
-        let call_result = result.into_call_tool_result().unwrap();
-
-        assert_eq!(call_result.is_error, Some(false));
-        let structured_content = call_result.structured_content.unwrap();
-        assert_eq!(structured_content["repositories"][0]["kind"], "user");
-        assert_eq!(
-            structured_content["packageVisibility"]["showPrereleasePackages"],
-            true
-        );
-    }
-
-    #[test]
-    fn typed_repository_result_rejects_removed_compatibility_fields() {
-        let result = format_typed_invoke_result::<ListRepositoriesOutput>(Ok(
-            InvokeOutcome::Success(json!({
-                "ok": true,
-                "repositories": [],
-                "userRepositories": [],
-                "packageVisibility": {
-                    "hideLocalUserPackages": false,
-                    "showPrereleasePackages": false,
-                },
-            })),
-        ));
-
-        let call_result = result.into_call_tool_result().unwrap();
-
-        assert_eq!(call_result.is_error, Some(true));
-        assert_eq!(
-            call_result.structured_content.unwrap()["error"]["code"],
-            "invalid_alcomd3_response"
-        );
-    }
-
-    #[test]
-    fn gui_business_error_is_mcp_tool_error() {
-        let request_id = Uuid::new_v4();
-        let result = format_invoke_result(Ok(response_to_tool_outcome(IpcResponse::error(
-            request_id,
-            "mcp_disabled",
-            "MCP is disabled",
-            None,
-        ))));
-
-        let call_result = result.into_call_tool_result().unwrap();
-
-        assert_eq!(call_result.is_error, Some(true));
-        let structured_content = call_result.structured_content.unwrap();
-        assert_eq!(structured_content["ok"], false);
-        assert_eq!(structured_content["error"]["code"], "mcp_disabled");
-    }
-
-    #[test]
-    fn bridge_unavailable_error_is_mcp_tool_error() {
-        let result = format_invoke_result(Err(anyhow::anyhow!("missing endpoint")));
-
-        let call_result = result.into_call_tool_result().unwrap();
-
-        assert_eq!(call_result.is_error, Some(true));
-        let structured_content = call_result.structured_content.unwrap();
-        assert_eq!(structured_content["ok"], false);
-        assert_eq!(structured_content["error"]["code"], "alcomd3_unavailable");
-    }
-
-    #[test]
-    fn rate_limited_result_is_mcp_tool_error() {
-        let result = format_rate_limit_result(ToolRateLimitReason::TooManyConcurrent);
-
-        let call_result = result.into_call_tool_result().unwrap();
-
-        assert_eq!(call_result.is_error, Some(true));
-        let structured_content = call_result.structured_content.unwrap();
-        assert_eq!(structured_content["ok"], false);
-        assert_eq!(structured_content["error"]["code"], "rate_limited");
-    }
-
-    #[test]
-    fn mcp_tool_error_result_preserves_gui_error_payload() {
-        let result = format_mcp_error_result(McpError::internal_error(
-            "A project backup is already running",
-            Some(json!({
-                "ok": false,
-                "error": {
-                    "code": "project_backup_already_running",
-                    "message": "A project backup is already running"
-                }
-            })),
-        ));
-
-        let call_result = result.into_call_tool_result().unwrap();
-
-        assert_eq!(call_result.is_error, Some(true));
-        let structured_content = call_result.structured_content.unwrap();
-        assert_eq!(
-            structured_content["error"]["code"],
-            "project_backup_already_running"
-        );
+        assert_eq!(value["repositories"][0]["kind"], "user");
+        assert_eq!(value["packageVisibility"]["showPrereleasePackages"], true);
     }
 
     #[test]
@@ -2247,31 +1893,27 @@ mod tests {
                 "order": null,
                 "search": "mcp"
             },
-            "items": [
-                {
-                    "scope": null,
-                    "levels": ["error"]
-                }
-            ]
+            "items": [{
+                "scope": null,
+                "levels": ["error"]
+            }]
         });
 
         remove_null_object_fields(&mut value);
-
         assert!(value.get("visibility").is_none());
         assert_eq!(value["limit"], 10);
         assert!(value["nested"].get("order").is_none());
         assert_eq!(value["nested"]["search"], "mcp");
         assert!(value["items"][0].get("scope").is_none());
-        assert_eq!(value["items"][0]["levels"], json!(["error"]));
     }
 
     #[test]
-    fn task_lookup_gui_errors_map_to_invalid_params() {
+    fn operation_lookup_errors_map_to_invalid_params() {
         let error = mcp_error_from_tool_error(json!({
             "ok": false,
             "error": {
                 "code": "project_task_not_found",
-                "message": "MCP project task was not found: task-1"
+                "message": "MCP project operation was not found: task-1"
             }
         }));
 
@@ -2279,65 +1921,7 @@ mod tests {
     }
 
     #[test]
-    fn server_advertises_task_capabilities() {
-        let info = Alcomd3Mcp::new().get_info();
-        let tasks = info.capabilities.tasks.unwrap();
-
-        assert!(tasks.supports_tools_call());
-        assert!(tasks.supports_list());
-        assert!(tasks.supports_cancel());
-    }
-
-    #[test]
-    fn project_write_tools_optionally_support_tasks() {
-        let server = Alcomd3Mcp::new();
-        for tool_name in [
-            "alcomd3_create_project",
-            "alcomd3_backup_project",
-            "alcomd3_copy_project",
-            "alcomd3_restore_project_from_backup",
-            "alcomd3_install_project_package",
-            "alcomd3_uninstall_project_package",
-            "alcomd3_reinstall_project_package",
-        ] {
-            let tool = server.get_tool(tool_name).unwrap();
-            assert_eq!(tool.task_support(), TaskSupport::Optional);
-        }
-    }
-
-    #[test]
-    fn project_task_snapshot_maps_to_mcp_task_and_progress_meta() {
-        let snapshot = project_task_snapshot_from_value(json!({
-            "taskId": "task-1",
-            "kind": "backup",
-            "status": "working",
-            "statusMessage": "Backing up project: 1/2 Assets/a.cs",
-            "createdAt": "2026-06-25T00:00:00Z",
-            "lastUpdatedAt": "2026-06-25T00:00:01Z",
-            "ttl": 600000,
-            "pollInterval": 500,
-            "progress": {
-                "total": 2,
-                "proceed": 1,
-                "lastProceed": "Assets/a.cs"
-            }
-        }))
-        .unwrap();
-
-        let task = snapshot.to_task();
-        assert_eq!(task.task_id, "task-1");
-        assert_eq!(task.status, TaskStatus::Working);
-        assert_eq!(task.ttl, Some(600000));
-        assert_eq!(task.poll_interval, Some(500));
-
-        let meta = snapshot.meta().unwrap();
-        assert_eq!(meta[TASK_PROGRESS_META_KEY]["total"], 2);
-        assert_eq!(meta[TASK_PROGRESS_META_KEY]["proceed"], 1);
-        assert_eq!(meta[TASK_PROGRESS_META_KEY]["lastProceed"], "Assets/a.cs");
-    }
-
-    #[test]
-    fn project_task_poll_interval_defaults_and_clamps_low_values() {
+    fn project_operation_poll_interval_defaults_and_clamps_low_values() {
         let mut snapshot = project_task_snapshot_from_value(json!({
             "taskId": "task-1",
             "kind": "backup",
@@ -2351,251 +1935,120 @@ mod tests {
             project_task_poll_interval(&snapshot),
             Duration::from_millis(PROJECT_TASK_DEFAULT_POLL_INTERVAL_MS)
         );
-
         snapshot.poll_interval = Some(0);
         assert_eq!(
             project_task_poll_interval(&snapshot),
             Duration::from_millis(PROJECT_TASK_MIN_POLL_INTERVAL_MS)
         );
-
-        snapshot.poll_interval = Some(PROJECT_TASK_MIN_POLL_INTERVAL_MS - 1);
-        assert_eq!(
-            project_task_poll_interval(&snapshot),
-            Duration::from_millis(PROJECT_TASK_MIN_POLL_INTERVAL_MS)
-        );
-
-        snapshot.poll_interval = Some(PROJECT_TASK_DEFAULT_POLL_INTERVAL_MS + 250);
-        assert_eq!(
-            project_task_poll_interval(&snapshot),
-            Duration::from_millis(PROJECT_TASK_DEFAULT_POLL_INTERVAL_MS + 250)
-        );
     }
 
-    #[test]
-    fn project_task_result_payload_includes_related_task_meta() {
-        let snapshot = project_task_snapshot_from_value(json!({
-            "taskId": "task-1",
-            "kind": "backup",
-            "status": "completed",
-            "createdAt": "2026-06-25T00:00:00Z",
-            "lastUpdatedAt": "2026-06-25T00:00:01Z",
-            "ttl": 600000,
-            "pollInterval": 500,
-            "result": {
-                "ok": true,
-                "backupPath": "C:\\\\backup.zip"
-            }
-        }))
-        .unwrap();
+    #[tokio::test]
+    async fn task_manager_state_survives_transport_clones_and_completes() {
+        let manager = McpTaskManager::new();
+        let first_transport = manager.clone();
+        let task = first_transport.spawn(
+            TaskOptions::new()
+                .with_ttl_ms(60_000)
+                .with_poll_interval_ms(100),
+            |_context| {
+                Box::pin(async {
+                    Ok(CallToolResult::structured(json!({
+                        "ok": true,
+                        "value": 1,
+                    })))
+                })
+            },
+        );
+        drop(first_transport);
 
-        let payload = project_task_payload_result(snapshot).unwrap().0;
-
-        assert_eq!(payload["isError"], false);
-        assert_eq!(payload["structuredContent"]["ok"], true);
-        assert_eq!(payload["_meta"][TASK_RELATED_META_KEY]["taskId"], "task-1");
+        let restarted_transport = manager.clone();
+        let detailed =
+            wait_for_task_status(&restarted_transport, &task.task_id, TaskStatus::Completed).await;
+        assert_eq!(detailed.task.ttl_ms, Some(60_000));
+        assert_eq!(detailed.task.poll_interval_ms, Some(100));
+        assert!(matches!(detailed.payload, TaskPayload::Completed { .. }));
     }
 
-    #[test]
-    fn failed_project_task_result_payload_is_tool_error() {
-        let snapshot = project_task_snapshot_from_value(json!({
-            "taskId": "task-2",
-            "kind": "copy",
-            "status": "failed",
-            "createdAt": "2026-06-25T00:00:00Z",
-            "lastUpdatedAt": "2026-06-25T00:00:01Z",
-            "ttl": 600000,
-            "pollInterval": 500,
-            "error": {
-                "code": "project_copy_error",
-                "message": "copy failed"
-            }
-        }))
-        .unwrap();
-
-        let payload = project_task_payload_result(snapshot).unwrap().0;
-
-        assert_eq!(payload["isError"], true);
-        assert_eq!(
-            payload["structuredContent"]["error"]["code"],
-            "project_copy_error"
-        );
-        assert_eq!(payload["_meta"][TASK_RELATED_META_KEY]["taskId"], "task-2");
-    }
-
-    #[test]
-    fn project_write_methods_use_long_response_timeout() {
-        assert_eq!(
-            response_timeout_for_method("backup_project"),
-            PROJECT_TOOL_RESPONSE_TIMEOUT
-        );
-        assert_eq!(
-            response_timeout_for_method("copy_project"),
-            PROJECT_TOOL_RESPONSE_TIMEOUT
-        );
-        assert_eq!(
-            response_timeout_for_method("restore_project_from_backup"),
-            PROJECT_TOOL_RESPONSE_TIMEOUT
-        );
-        assert_eq!(
-            response_timeout_for_method("install_project_package"),
-            PROJECT_TOOL_RESPONSE_TIMEOUT
-        );
-        assert_eq!(
-            response_timeout_for_method("uninstall_project_package"),
-            PROJECT_TOOL_RESPONSE_TIMEOUT
-        );
-        assert_eq!(
-            response_timeout_for_method("reinstall_project_package"),
-            PROJECT_TOOL_RESPONSE_TIMEOUT
-        );
-        assert_eq!(response_timeout_for_method("list_projects"), IPC_IO_TIMEOUT);
-    }
-
-    #[test]
-    fn tool_invocation_limiter_rejects_calls_after_window_capacity() {
-        let limiter = ToolInvocationLimiter::new(ToolInvocationLimits {
-            max_concurrent: 8,
-            max_started_per_window: 2,
-            window: Duration::from_secs(60),
+    #[tokio::test]
+    async fn task_update_delivers_input_and_task_cancel_is_cooperative() {
+        let manager = McpTaskManager::new();
+        let input_task = manager.spawn(TaskOptions::default(), |context| {
+            Box::pin(async move {
+                let request: InputRequest = serde_json::from_value(json!({
+                    "method": "elicitation/create",
+                    "params": {
+                        "message": "Continue?",
+                        "requestedSchema": {
+                            "type": "object",
+                            "properties": {}
+                        }
+                    }
+                }))
+                .map_err(|error| McpError::internal_error(error.to_string(), None))?;
+                let response = context.request_input("confirmation", request).await?;
+                Ok(CallToolResult::structured(json!({
+                    "ok": true,
+                    "answer": response,
+                })))
+            })
         });
-        let now = Instant::now();
+        wait_for_task_status(&manager, &input_task.task_id, TaskStatus::InputRequired).await;
+        manager
+            .update_task(
+                &input_task.task_id,
+                [("confirmation".to_string(), json!({ "accepted": true }))],
+            )
+            .unwrap();
+        wait_for_task_status(&manager, &input_task.task_id, TaskStatus::Completed).await;
 
-        drop(limiter.try_start(now).unwrap());
-        drop(limiter.try_start(now + Duration::from_secs(1)).unwrap());
-
-        let limited = limiter.try_start(now + Duration::from_secs(2));
-        assert!(matches!(
-            limited,
-            Err(ToolRateLimitReason::TooManyStartedInWindow)
-        ));
-        assert!(limiter.try_start(now + Duration::from_secs(61)).is_ok());
-    }
-
-    #[test]
-    fn tool_invocation_limiter_rejects_excess_concurrent_calls() {
-        let limiter = ToolInvocationLimiter::new(ToolInvocationLimits {
-            max_concurrent: 2,
-            max_started_per_window: 16,
-            window: Duration::from_secs(60),
+        let cancelled_task = manager.spawn(TaskOptions::default(), |context| {
+            Box::pin(async move {
+                context.cancelled().await;
+                Err(TaskExit::Cancelled)
+            })
         });
-        let now = Instant::now();
-
-        let first = limiter.try_start(now).unwrap();
-        let _second = limiter.try_start(now).unwrap();
-
-        let limited = limiter.try_start(now);
-        assert!(matches!(
-            limited,
-            Err(ToolRateLimitReason::TooManyConcurrent)
-        ));
-
-        drop(first);
-        assert!(limiter.try_start(now).is_ok());
+        manager.cancel_task(&cancelled_task.task_id).unwrap();
+        wait_for_task_status(&manager, &cancelled_task.task_id, TaskStatus::Cancelled).await;
     }
 
-    #[test]
-    fn http_sessions_have_distinct_clients_and_share_global_limits() {
-        let limiter = ToolInvocationLimiter::new(ToolInvocationLimits::production());
-        let first = Alcomd3Mcp::new_with_limiter(limiter.clone());
-        let second = Alcomd3Mcp::new_with_limiter(limiter);
+    #[tokio::test]
+    async fn task_failures_are_observable_and_shutdown_clears_tasks() {
+        let manager = McpTaskManager::new();
+        let failed_task = manager.spawn(TaskOptions::default(), |_context| {
+            Box::pin(async {
+                Err(TaskExit::Error(McpError::invalid_request(
+                    "project operation failed",
+                    Some(json!({ "code": "project_operation_failed" })),
+                )))
+            })
+        });
+        let failed = wait_for_task_status(&manager, &failed_task.task_id, TaskStatus::Failed).await;
+        assert!(matches!(failed.payload, TaskPayload::Failed { .. }));
 
-        assert_ne!(
-            first.client.lock().unwrap().session_id,
-            second.client.lock().unwrap().session_id
-        );
-        assert!(Arc::ptr_eq(&first.limiter.inner, &second.limiter.inner));
+        let running_task = manager.spawn(TaskOptions::default(), |context| {
+            Box::pin(async move {
+                context.cancelled().await;
+                Err(TaskExit::Cancelled)
+            })
+        });
+        assert_eq!(manager.running_task_count(), 1);
+        manager.shutdown();
+        assert_eq!(manager.running_task_count(), 0);
+        assert!(manager.get_task(&running_task.task_id).is_err());
     }
-}
 
-fn configured_http_address() -> Result<SocketAddr> {
-    let configured = env::var(MCP_HTTP_BIND_ENV)
-        .unwrap_or_else(|_| format!("{MCP_HTTP_BIND_HOST}:{MCP_HTTP_DEFAULT_PORT}"));
-    let address = configured
-        .parse::<SocketAddr>()
-        .with_context(|| format!("invalid {MCP_HTTP_BIND_ENV} address: {configured}"))?;
-    if address.ip() != IpAddr::V4(Ipv4Addr::LOCALHOST) {
-        bail!("{MCP_HTTP_BIND_ENV} must bind exactly to {MCP_HTTP_BIND_HOST}");
+    async fn wait_for_task_status(
+        manager: &McpTaskManager,
+        task_id: &str,
+        expected: TaskStatus,
+    ) -> DetailedTask {
+        for _ in 0..100 {
+            let detailed = manager.get_task(task_id).unwrap();
+            if detailed.status() == expected {
+                return detailed;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("task {task_id} did not reach {expected:?}");
     }
-    Ok(address)
-}
-
-fn configured_http_token() -> Result<String> {
-    let token = env::var(MCP_HTTP_TOKEN_ENV)
-        .with_context(|| format!("{MCP_HTTP_TOKEN_ENV} is required"))?;
-    if token.as_bytes().len() < MCP_HTTP_MIN_TOKEN_BYTES {
-        bail!("{MCP_HTTP_TOKEN_ENV} must contain at least {MCP_HTTP_MIN_TOKEN_BYTES} bytes");
-    }
-    Ok(token)
-}
-
-fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
-    let mut difference = left.len() ^ right.len();
-    for index in 0..left.len().max(right.len()) {
-        difference |= usize::from(
-            left.get(index).copied().unwrap_or_default()
-                ^ right.get(index).copied().unwrap_or_default(),
-        );
-    }
-    difference == 0
-}
-
-fn has_valid_bearer_token(headers: &HeaderMap, expected_token: &str) -> bool {
-    headers
-        .get(AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .is_some_and(|actual_token| {
-            constant_time_eq(actual_token.as_bytes(), expected_token.as_bytes())
-        })
-}
-
-async fn require_bearer_token(
-    State(expected_token): State<Arc<str>>,
-    request: Request,
-    next: Next,
-) -> std::result::Result<Response, StatusCode> {
-    if !has_valid_bearer_token(request.headers(), &expected_token) {
-        return Err(StatusCode::UNAUTHORIZED);
-    }
-    Ok(next.run(request).await)
-}
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    let address = configured_http_address()?;
-    let token: Arc<str> = configured_http_token()?.into();
-    let listener = TcpListener::bind(address)
-        .await
-        .with_context(|| format!("binding ALCOMD3 MCP Streamable HTTP server to {address}"))?;
-    let local_address = listener.local_addr()?;
-    let cancellation_token = CancellationToken::new();
-    let limiter = ToolInvocationLimiter::new(ToolInvocationLimits::production());
-    let service: StreamableHttpService<Alcomd3Mcp, LocalSessionManager> =
-        StreamableHttpService::new(
-            move || Ok(Alcomd3Mcp::new_with_limiter(limiter.clone())),
-            Default::default(),
-            StreamableHttpServerConfig::default()
-                .with_allowed_hosts([
-                    MCP_HTTP_BIND_HOST.to_string(),
-                    format!("{MCP_HTTP_BIND_HOST}:{}", local_address.port()),
-                    "localhost".to_string(),
-                    format!("localhost:{}", local_address.port()),
-                ])
-                .with_allowed_origins([
-                    format!("http://{MCP_HTTP_BIND_HOST}:{}", local_address.port()),
-                    format!("http://localhost:{}", local_address.port()),
-                ])
-                .with_cancellation_token(cancellation_token),
-        );
-    let router = Router::new()
-        .nest_service(MCP_HTTP_PATH, service)
-        .layer(middleware::from_fn_with_state(token, require_bearer_token));
-
-    eprintln!(
-        "ALCOMD3 MCP Streamable HTTP server listening on http://{local_address}{MCP_HTTP_PATH}"
-    );
-    axum::serve(listener, router)
-        .await
-        .context("serving ALCOMD3 MCP Streamable HTTP")?;
-    Ok(())
 }

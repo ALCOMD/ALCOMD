@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import {
 	closeSync,
 	existsSync,
@@ -8,9 +8,15 @@ import {
 	readdirSync,
 	readFileSync,
 	statSync,
+	writeFileSync,
 } from "node:fs";
+import { createServer } from "node:net";
 import path from "node:path";
-import { callLocalIpc } from "../../vrc-get-gui/test/e2e/local-ipc.mjs";
+import {
+	callMcpTool,
+	initializeLegacyMcp,
+	postMcpHttp,
+} from "../../vrc-get-gui/test/e2e/mcp-http.mjs";
 import { isStrictChildPath } from "../../vrc-get-gui/test/e2e/path-safety.mjs";
 
 const argumentsByName = new Map();
@@ -61,11 +67,29 @@ const home = path.join(dataRoot, "home");
 const xdgDataHome = path.join(dataRoot, "xdg-data");
 const xdgConfigHome = path.join(dataRoot, "xdg-config");
 const xdgCacheHome = path.join(dataRoot, "xdg-cache");
-const endpointFile = path.join(dataRoot, "mcp-endpoint.json");
 const logFile = path.join(dataRoot, "application.log");
 for (const directory of [home, xdgDataHome, xdgConfigHome, xdgCacheHome]) {
 	mkdirSync(directory, { recursive: true });
 }
+const applicationDataDirectory = path.join(xdgDataHome, "ALCOMD3");
+const guiConfigFile = path.join(
+	applicationDataDirectory,
+	"config",
+	"gui-config.json",
+);
+mkdirSync(path.dirname(guiConfigFile), { recursive: true });
+writeFileSync(
+	guiConfigFile,
+	`${JSON.stringify(
+		{
+			mcpEnabled: false,
+			mcpHttpPort: await reserveLoopbackPort(),
+			mcpHttpToken: randomBytes(16).toString("hex"),
+		},
+		null,
+		4,
+	)}\n`,
+);
 
 const log = openSync(logFile, "w");
 const child = spawn(binary, [], {
@@ -76,7 +100,6 @@ const child = spawn(binary, [], {
 		XDG_DATA_HOME: xdgDataHome,
 		XDG_CONFIG_HOME: xdgConfigHome,
 		XDG_CACHE_HOME: xdgCacheHome,
-		ALCOMD3_MCP_ENDPOINT_FILE: endpointFile,
 		APPIMAGE_EXTRACT_AND_RUN: "1",
 		WEBKIT_DISABLE_COMPOSITING_MODE: "1",
 	},
@@ -89,76 +112,59 @@ child.once("error", (error) => {
 
 let smokeError;
 try {
-	const endpoint = await waitForEndpoint(
-		endpointFile,
+	const endpoint = await waitForMcpHttp(
+		guiConfigFile,
 		child,
 		() => spawnError,
 		60_000,
 	);
 	if (
-		endpoint.protocolVersion !== 2 ||
-		endpoint.transport !== "tcp" ||
-		endpoint.host !== "127.0.0.1" ||
 		!Number.isInteger(endpoint.port) ||
 		endpoint.port < 1 ||
 		endpoint.port > 65_535 ||
-		!/^[0-9a-f]{32}$/.test(endpoint.token) ||
-		!Number.isInteger(endpoint.pid) ||
-		endpoint.pid < 1 ||
-		!endpointPidMatchesLaunch(endpoint.pid, child.pid, pidMode)
+		!/^[0-9a-f]{32}$/.test(endpoint.token)
 	) {
+		throw new Error(`Invalid GUI MCP configuration: ${JSON.stringify(endpoint)}`);
+	}
+	assertListenerBelongsToGui(endpoint.port, child.pid, pidMode);
+
+	const unauthenticated = await postMcpHttp(
+		endpoint,
+		{ jsonrpc: "2.0", id: "no-token", method: "initialize", params: {} },
+		{ token: null },
+	);
+	if (unauthenticated.status !== 401) {
 		throw new Error(
-			`Invalid MCP endpoint metadata: ${JSON.stringify(endpoint)}`,
+			`MCP request without a token returned ${unauthenticated.status}, expected 401.`,
+		);
+	}
+	const unauthorized = await postMcpHttp(
+		endpoint,
+		{ jsonrpc: "2.0", id: "wrong-token", method: "initialize", params: {} },
+		{ token: "0".repeat(32) },
+	);
+	if (unauthorized.status !== 401) {
+		throw new Error(
+			`MCP request with the wrong token returned ${unauthorized.status}, expected 401.`,
 		);
 	}
 
-	const requestId = randomUUID();
-	const response = await callLocalIpc(endpoint, {
-		protocolVersion: endpoint.protocolVersion,
-		token: endpoint.token,
-		requestId,
-		client: {
-			sessionId: randomUUID(),
-			name: "alcomd3-package-smoke",
-			version: "1",
-		},
-		method: "list_projects",
-		params: {},
-	});
+	const sessionId = await initializeLegacyMcp(
+		endpoint,
+		"alcomd3-package-smoke",
+	);
+	const response = await callMcpTool(
+		endpoint,
+		sessionId,
+		"list_projects",
+	);
 	if (
-		response.requestId !== requestId ||
-		response.ok !== false ||
-		response.error?.code !== "mcp_disabled"
+		response.status !== 200 ||
+		!JSON.stringify(response.body).includes("mcp_disabled")
 	) {
-		throw new Error(
-			`Unexpected default MCP response: ${JSON.stringify(response)}`,
-		);
+		throw new Error(`Unexpected default MCP response: ${response.text}`);
 	}
 
-	const unauthorizedId = randomUUID();
-	const unauthorized = await callLocalIpc(endpoint, {
-		protocolVersion: endpoint.protocolVersion,
-		token: "0".repeat(32),
-		requestId: unauthorizedId,
-		client: {
-			sessionId: randomUUID(),
-			name: "alcomd3-package-smoke",
-			version: "1",
-		},
-		method: "list_projects",
-		params: {},
-	});
-	if (
-		unauthorized.requestId !== unauthorizedId ||
-		unauthorized.ok !== false ||
-		unauthorized.error?.code !== "unauthorized"
-	) {
-		throw new Error(
-			`Unexpected unauthorized MCP response: ${JSON.stringify(unauthorized)}`,
-		);
-	}
-
-	const applicationDataDirectory = path.join(xdgDataHome, "ALCOMD3");
 	if (
 		!existsSync(applicationDataDirectory) ||
 		!statSync(applicationDataDirectory).isDirectory()
@@ -194,8 +200,8 @@ function requiredArgument(name) {
 	return value;
 }
 
-async function waitForEndpoint(
-	endpointPath,
+async function waitForMcpHttp(
+	configPath,
 	application,
 	getSpawnError,
 	timeoutMilliseconds,
@@ -215,15 +221,27 @@ async function waitForEndpoint(
 				`Application exited before startup completed (exit ${application.exitCode}, signal ${application.signalCode ?? "none"}).`,
 			);
 		}
-		if (existsSync(endpointPath)) {
+		if (existsSync(configPath)) {
 			try {
-				return JSON.parse(readFileSync(endpointPath, "utf8"));
+				const config = JSON.parse(readFileSync(configPath, "utf8"));
+				const endpoint = {
+					port: config.mcpHttpPort,
+					token: config.mcpHttpToken,
+				};
+				const probe = await postMcpHttp(
+					endpoint,
+					{ jsonrpc: "2.0", id: "probe", method: "initialize", params: {} },
+					{ token: null, timeoutMilliseconds: 1_000 },
+				);
+				if (probe.status === 401) {
+					return endpoint;
+				}
 			} catch {}
 		}
 		await new Promise((resolve) => setTimeout(resolve, 250));
 	}
 	throw new Error(
-		`Application did not create ${endpointPath} within ${timeoutMilliseconds / 1000} seconds.`,
+		`Application did not start MCP HTTP from ${configPath} within ${timeoutMilliseconds / 1000} seconds.`,
 	);
 }
 
@@ -250,21 +268,67 @@ async function terminateProcessGroup(application) {
 	}
 }
 
-function endpointPidMatchesLaunch(endpointPid, launcherPid, mode) {
+function assertListenerBelongsToGui(port, launcherPid, mode) {
+	const result = spawnSync(
+		"lsof",
+		["-nP", "-a", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"],
+		{ encoding: "utf8" },
+	);
+	if (result.status !== 0) {
+		throw new Error(
+			`Unable to resolve the GUI process listening on MCP port ${port}: ${result.stderr}`,
+		);
+	}
+	const listenerPids = result.stdout
+		.split(/\s+/)
+		.filter(Boolean)
+		.map((value) => Number.parseInt(value, 10));
+	const owned = listenerPids.some((listenerPid) =>
+		listenerPidMatchesLaunch(listenerPid, launcherPid, mode),
+	);
+	if (!owned) {
+		throw new Error(
+			`MCP port ${port} is not owned by GUI PID ${launcherPid} or its process group; listeners: ${listenerPids.join(", ")}`,
+		);
+	}
+}
+
+function listenerPidMatchesLaunch(listenerPid, launcherPid, mode) {
 	if (mode === "exact") {
-		return endpointPid === launcherPid;
+		return listenerPid === launcherPid;
 	}
 	try {
-		const stat = readFileSync(`/proc/${endpointPid}/stat`, "utf8");
+		const stat = readFileSync(`/proc/${listenerPid}/stat`, "utf8");
 		const fields = stat
 			.slice(stat.lastIndexOf(")") + 1)
 			.trim()
 			.split(/\s+/);
-		const processGroup = Number.parseInt(fields[2], 10);
-		return Number.isInteger(processGroup) && processGroup === launcherPid;
+		return Number.parseInt(fields[2], 10) === launcherPid;
 	} catch {
 		return false;
 	}
+}
+
+function reserveLoopbackPort() {
+	return new Promise((resolve, reject) => {
+		const server = createServer();
+		server.once("error", reject);
+		server.listen(0, "127.0.0.1", () => {
+			const address = server.address();
+			if (!address || typeof address === "string") {
+				server.close();
+				reject(new Error("Unable to reserve a loopback TCP port for MCP smoke"));
+				return;
+			}
+			server.close((error) => {
+				if (error) {
+					reject(error);
+				} else {
+					resolve(address.port);
+				}
+			});
+		});
+	});
 }
 
 function processGroupExists(processGroupId) {

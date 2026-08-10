@@ -1,4 +1,4 @@
-use alcomd3_mcp_protocol::MCP_HTTP_TOKEN_ENV;
+use crate::mcp::MCP_HTTP_TOKEN_ENV;
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
 use std::io;

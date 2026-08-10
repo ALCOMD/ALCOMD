@@ -320,6 +320,8 @@ async function getLicensesFromCargoMetadata(
 				"ring ISC": "other-bits",
 				"dpi Apache-2.0": "",
 				"dpi MIT": "LIBM-MIT",
+				"matchit MIT": "",
+				"matchit BSD-3-Clause": "HTTPROUTER",
 			};
 			const fixSuffix = fixes[`${pkg.name} ${licenseId}`];
 			if (fixSuffix != null) {

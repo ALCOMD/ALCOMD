@@ -49,8 +49,8 @@ ALCOMD3 帮助创作者集中处理 VRChat Unity 项目的日常工作，无需�
 ALCOMD3 可将支持 MCP 的 AI 客户端连接到经过限定的项目、仓库、软件包、环境设置、
 活动记录和技术日志数据，并提供一组有限的项目与软件包操作。
 
-MCP 默认关闭。启用后，它仅使用带认证的本机回环 Streamable HTTP endpoint 和私有 IPC，
-不会监听局域网或公网地址。客户端仍默认由用户手动配置；Windows 用户可选择让 MCP 页面
+MCP 默认关闭。启用后，它由 GUI 进程内置，并仅使用带认证的本机回环 Streamable HTTP
+endpoint，不会启动独立 helper，也不会监听局域网或公网地址。客户端仍默认由用户手动配置；Windows 用户可选择让 MCP 页面
 快速配置 Codex。配置方式、可用工具和权限边界请参阅
 [MCP 指南](../docs/mcp/mcp.zh-CN.md)。
 

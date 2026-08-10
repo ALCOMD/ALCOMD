@@ -43,8 +43,8 @@ From the repository root, production-oriented GUI builds should use `xtask`:
 cargo xtask build-alcom --release
 ```
 
-This builds the frontend, the main `ALCOMD3` executable, and the `alcomd3-mcp`
-bridge for the current platform. Release and signing details are documented in
+This builds the frontend and the main `ALCOMD3` executable, which contains the
+embedded `alcomd3-mcp` service. Release and signing details are documented in
 [../docs/RELEASE.md](../docs/RELEASE.md) and
 [../docs/ALCOMD3_UPDATER.md](../docs/ALCOMD3_UPDATER.md).
 

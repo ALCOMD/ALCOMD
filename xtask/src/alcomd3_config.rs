@@ -11,7 +11,6 @@ pub struct Alcomd3Config {
     pub product_name: String,
     pub main_binary_name: String,
     pub package_name: String,
-    pub mcp_binary_name: String,
     pub publisher_name: String,
     pub homepage_url: String,
     pub repository: String,
@@ -182,7 +181,6 @@ impl Alcomd3Config {
         ensure_non_empty("productName", &self.product_name)?;
         ensure_non_empty("mainBinaryName", &self.main_binary_name)?;
         ensure_non_empty("packageName", &self.package_name)?;
-        ensure_non_empty("mcpBinaryName", &self.mcp_binary_name)?;
         ensure_non_empty("publisherName", &self.publisher_name)?;
         ensure_non_empty("homepageUrl", &self.homepage_url)?;
         ensure_non_empty("repository", &self.repository)?;

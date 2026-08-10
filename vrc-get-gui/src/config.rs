@@ -282,7 +282,7 @@ fn use_alcom_for_vcc_protocol_default() -> bool {
 }
 
 fn mcp_http_port_default() -> u16 {
-    alcomd3_mcp_protocol::MCP_HTTP_DEFAULT_PORT
+    crate::mcp::MCP_HTTP_DEFAULT_PORT
 }
 
 fn log_level_default() -> Vec<LogLevel> {
@@ -511,10 +511,7 @@ mod tests {
     #[test]
     fn missing_mcp_http_config_is_generated_once() {
         let mut config: GuiConfig = serde_json::from_str("{}").unwrap();
-        assert_eq!(
-            config.mcp_http_port,
-            alcomd3_mcp_protocol::MCP_HTTP_DEFAULT_PORT
-        );
+        assert_eq!(config.mcp_http_port, crate::mcp::MCP_HTTP_DEFAULT_PORT);
         assert!(config.mcp_http_token.is_empty());
 
         assert!(config.ensure_mcp_http_config());

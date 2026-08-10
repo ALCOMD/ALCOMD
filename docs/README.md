@@ -30,7 +30,7 @@ documentation.
 
 ## Feature and format documentation
 
-- MCP bridge guide: [mcp.md](./mcp.md) ([日本語](./mcp/mcp.ja.md), [简体中文](./mcp/mcp.zh-CN.md), [繁體中文](./mcp/mcp.zh-TW.md))
+- Built-in MCP guide: [mcp.md](./mcp.md) ([日本語](./mcp/mcp.ja.md), [简体中文](./mcp/mcp.zh-CN.md), [繁體中文](./mcp/mcp.zh-TW.md))
 - MCP tool reference with per-field input and output semantics: [mcp/tools.md](./mcp/tools.md) ([日本語](./mcp/tools.ja.md), [简体中文](./mcp/tools.zh-CN.md), [繁體中文](./mcp/tools.zh-TW.md))
 - Repository list file format: [repository-list-file-format.md](./repository-list-file-format.md) ([日本語](./repository-list-file-format/repository-list-file-format.ja.md), [简体中文](./repository-list-file-format/repository-list-file-format.zh-CN.md))
 - Default repository list example/import data: [../repositories.txt](../repositories.txt)

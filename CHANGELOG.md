@@ -35,6 +35,8 @@ category order, and bullet counts must match this canonical entry.
 
 ### Changed
 
+- Embedded the MCP HTTP server, all 33 tools, direct business dispatch, and shared task management in the GUI process while preserving the existing loopback URL and bearer-token client configuration.
+- Upgraded MCP to RMCP 3.1.2 with explicit `2026-07-28` sessionless requests and experimental extension Tasks, while retaining ordinary `2025-11-25` tool-call compatibility for legacy sessions.
 - Standardized MCP package repository selection on repository IDs; repository URLs remain limited to adding and removing repositories.
 - Selected desktop shortcut creation by default for new Windows installations while preserving the previous choice during upgrades.
 - Added an optional Windows uninstall choice to remove settings, caches, and other local application data without deleting projects or backups stored in Documents.
@@ -43,6 +45,10 @@ category order, and bullet counts must match this canonical entry.
 ### Fixed
 
 - Kept activity-log table columns stable and prevented layout shifts when auxiliary records are toggled.
+
+### Removed
+
+- Removed the standalone `alcomd3-mcp` executable, its private IPC protocol and endpoint metadata, and the obsolete core Tasks `tasks/list` and `tasks/result` compatibility paths; Windows upgrades and uninstall still clean up the historical helper file.
 
 ## [3.2.0] - 2026-08-09
 

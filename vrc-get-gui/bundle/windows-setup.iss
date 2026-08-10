@@ -18,10 +18,6 @@
   #error ApplicationPath is not defined. Define with -DApplicationPath=LicensePath
 #endif
 
-#ifndef McpApplicationPath
-  #error McpApplicationPath is not defined. Define with -DMcpApplicationPath=
-#endif
-
 #ifndef LicensePath
   #error LicensePath is not defined. Define with -DLicensePath=
 #endif
@@ -52,7 +48,7 @@
 #define MyAppURL "https://alcomd3.cqmhv.com/"
 #define MyAppExeName "ALCOMD3.exe"
 #define LegacyAlcomd3ExeName "ALCOM.exe"
-#define MyMcpExeName "alcomd3-mcp.exe"
+#define LegacyMcpExeName "alcomd3-mcp.exe"
 #define MyAppAssocName "ALCOMD3 Template"
 #define MyAppAssocExt ".alcomtemplate"
 #define MyAppAssocKey "ALCOMD3 Project Template"
@@ -78,7 +74,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 ChangesAssociations=yes
 CloseApplications=yes
-CloseApplicationsFilter={#MyAppExeName},{#LegacyAlcomd3ExeName},{#MyMcpExeName}
+CloseApplicationsFilter={#MyAppExeName},{#LegacyAlcomd3ExeName},{#LegacyMcpExeName}
 DisableProgramGroupPage=yes
 LicenseFile={#LicensePath}
 SetupIconFile={#SourcePath}\..\icons\icon.ico
@@ -150,12 +146,12 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "{#ApplicationPath}"; DestDir: "{app}"; DestName: "{#MyAppExeName}"; Flags: ignoreversion
-Source: "{#McpApplicationPath}"; DestDir: "{app}"; DestName: "{#MyMcpExeName}"; Flags: ignoreversion
 Source: "{#WebView2SetupPath}"; DestName: "MicrosoftEdgeWebView2Setup.exe"; Flags: dontcopy noencryption
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [InstallDelete]
 Type: files; Name: "{app}\{#LegacyAlcomd3ExeName}"
+Type: files; Name: "{app}\{#LegacyMcpExeName}"
 
 [Registry]
 Root: HKA; Subkey: "Software\Classes\{#MyAppAssocExt}\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppAssocKey}"; ValueData: ""; Flags: uninsdeletevalue
@@ -175,9 +171,10 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChang
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /T /IM ""{#MyAppExeName}"""; Flags: runhidden; RunOnceId: "CloseALCOMD3"
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /T /IM ""{#LegacyAlcomd3ExeName}"""; Flags: runhidden; RunOnceId: "CloseLegacyALCOMD3"
-Filename: "{sys}\taskkill.exe"; Parameters: "/F /T /IM ""{#MyMcpExeName}"""; Flags: runhidden; RunOnceId: "CloseALCOMD3Mcp"
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /T /IM ""{#LegacyMcpExeName}"""; Flags: runhidden; RunOnceId: "CloseLegacyALCOMD3Mcp"
 
 [UninstallDelete]
+Type: files; Name: "{app}\{#LegacyMcpExeName}"
 Type: dirifempty; Name: "{app}"
 
 [Code]
@@ -351,7 +348,7 @@ procedure StopLegacyProcesses;
 begin
   StopLegacyProcess('{#LegacyAlcomd3ExeName}');
   StopLegacyProcess('{#MyAppExeName}');
-  StopLegacyProcess('{#MyMcpExeName}');
+  StopLegacyProcess('{#LegacyMcpExeName}');
 end;
 
 function DeleteLegacyExecutableAsOriginalUser(const FilePath: string): Boolean;
@@ -601,13 +598,13 @@ begin
   end;
   if not EnsureLegacyExecutableRemoved(
     AppPath,
-    '{#MyMcpExeName}',
+    '{#LegacyMcpExeName}',
     RunAsOriginalUser
   ) then
   begin
     Result := LegacyCleanupError(
       RootName,
-      AddBackslash(AppPath) + '{#MyMcpExeName}'
+      AddBackslash(AppPath) + '{#LegacyMcpExeName}'
     );
     exit;
   end;

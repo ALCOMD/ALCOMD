@@ -78,7 +78,6 @@ fn platform_install_metadata_uses_alcomd3_identity() {
     let product_name = config_str(&config, "productName");
     let main_binary_name = config_str(&config, "mainBinaryName");
     let package_name = config_str(&config, "packageName");
-    let mcp_binary_name = config_str(&config, "mcpBinaryName");
     let publisher_name = config_str(&config, "publisherName");
     let homepage_url = config_str(&config, "homepageUrl");
     let windows_app_id = config_str(&config, "windowsAppId");
@@ -106,7 +105,7 @@ fn platform_install_metadata_uses_alcomd3_identity() {
     assert!(windows_setup.contains(&format!(
         r#"#define LegacyAlcomd3ExeName "{legacy_windows_executable_name}""#
     )));
-    assert!(windows_setup.contains(&format!(r#"#define MyMcpExeName "{mcp_binary_name}.exe""#)));
+    assert!(windows_setup.contains(r#"#define LegacyMcpExeName "alcomd3-mcp.exe""#));
     assert!(windows_setup.contains(&format!(r#"#define MyAppAssocName "{template_name}""#)));
     assert!(windows_setup.contains(&format!(r#"#define MyAppAssocExt "{template_extension}""#)));
     assert!(windows_setup.contains(&format!(r#"#define MyAppAssocKey "{template_key}""#)));
@@ -170,11 +169,13 @@ fn platform_install_metadata_uses_alcomd3_identity() {
     assert!(windows_setup.contains(r#"Type: files; Name: "{app}\{#LegacyAlcomd3ExeName}""#));
     assert!(windows_setup.contains(r#"CloseApplications=yes"#));
     assert!(windows_setup.contains(
-        r#"CloseApplicationsFilter={#MyAppExeName},{#LegacyAlcomd3ExeName},{#MyMcpExeName}"#
+        r#"CloseApplicationsFilter={#MyAppExeName},{#LegacyAlcomd3ExeName},{#LegacyMcpExeName}"#
     ));
     assert!(windows_setup.contains(r#"Parameters: "/F /T /IM ""{#MyAppExeName}"""#));
     assert!(windows_setup.contains(r#"Parameters: "/F /T /IM ""{#LegacyAlcomd3ExeName}"""#));
-    assert!(windows_setup.contains(r#"Parameters: "/F /T /IM ""{#MyMcpExeName}"""#));
+    assert!(windows_setup.contains(r#"Parameters: "/F /T /IM ""{#LegacyMcpExeName}"""#));
+    assert!(windows_setup.contains(r#"Type: files; Name: "{app}\{#LegacyMcpExeName}""#));
+    assert!(!windows_setup.contains("McpApplicationPath"));
     assert!(windows_setup.contains(r#"Type: dirifempty; Name: "{app}""#));
     assert!(!windows_setup.contains(r#"{autoprograms}\ALCOM.lnk"#));
     assert!(!windows_setup.contains(r#"{autodesktop}\ALCOM.lnk"#));
@@ -188,6 +189,7 @@ fn platform_install_metadata_uses_alcomd3_identity() {
     assert!(setup_builder.contains("-DLegacyTauriIdentifier={}"));
     assert!(setup_builder.contains("-DTauriIdentifier={}"));
     assert!(setup_builder.contains("ctx.identifier()"));
+    assert!(!setup_builder.contains("McpApplicationPath"));
 
     let updater = read_workspace_file("vrc-get-gui/src/updater.rs");
     assert!(updater.contains("crate::alcomd3_config::windows_app_id()"));
@@ -304,18 +306,29 @@ fn windows_setup_extracts_webview2_before_installing_it() {
 }
 
 #[test]
-fn gui_and_mcp_use_shared_application_paths() {
+fn gui_owns_the_embedded_mcp_server_without_endpoint_metadata() {
     let environment_io = read_workspace_file("vrc-get-vpm/src/io/tokio.rs");
     assert!(
         environment_io.contains("alcomd3_app_paths::alcomd3_data_dir()"),
         "DefaultEnvironmentIo must use the shared ALCOMD3 data directory resolver"
     );
 
-    let mcp_protocol = read_workspace_file("alcomd3-mcp-protocol/src/lib.rs");
+    let gui_mcp = read_workspace_file("vrc-get-gui/src/mcp/mod.rs");
+    for module in ["dispatch", "http", "lifecycle", "tasks", "tools"] {
+        assert!(
+            gui_mcp.contains(&format!("mod {module};")),
+            "the embedded MCP implementation must keep its {module} module boundary"
+        );
+    }
+    let gui_mcp_lifecycle = read_workspace_file("vrc-get-gui/src/mcp/lifecycle.rs");
     assert!(
-        mcp_protocol.contains("alcomd3_app_paths::mcp_endpoint_file_path()"),
-        "MCP endpoint lookup must use the shared ALCOMD3 data directory resolver"
+        gui_mcp_lifecycle.contains("http::start(app, http_port, http_token, self.limiter.clone())"),
+        "the GUI lifecycle must start the embedded MCP HTTP server with its shared limiter"
     );
+    assert!(!gui_mcp.contains("mcp_endpoint_file_path"));
+
+    let app_paths = read_workspace_file("alcomd3-app-paths/src/lib.rs");
+    assert!(!app_paths.contains("mcp_endpoint_file"));
 }
 
 #[test]
@@ -323,11 +336,11 @@ fn mcp_docs_reference_current_official_protocol_version() {
     let docs = read_workspace_file("docs/mcp.md");
 
     assert!(
-        docs.contains("2025-11-25"),
+        docs.contains("2026-07-28"),
         "MCP docs should reference the current official protocol version"
     );
     assert!(
-        !docs.contains("2025-06-18"),
-        "MCP docs should not keep the previous protocol version as the active target"
+        docs.contains("2025-11-25"),
+        "MCP docs should document ordinary-call compatibility with the previous protocol"
     );
 }

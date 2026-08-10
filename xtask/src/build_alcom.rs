@@ -129,8 +129,7 @@ fn build_cargo(
     config: &BuildConfig,
     verbose: bool,
 ) -> Result<()> {
-    build_gui_cargo(workspace_root, target_triple, profile, config, verbose)?;
-    build_mcp_cargo(workspace_root, target_triple, profile, verbose)
+    build_gui_cargo(workspace_root, target_triple, profile, config, verbose)
 }
 
 /// Run `cargo build -p vrc-get-gui` for a single target triple.
@@ -217,35 +216,6 @@ fn build_gui_cargo(
     ))
 }
 
-/// Run `cargo build -p alcomd3-mcp` for a single target triple.
-fn build_mcp_cargo(
-    workspace_root: &Path,
-    target_triple: Option<&str>,
-    profile: &str,
-    verbose: bool,
-) -> Result<()> {
-    let mut cmd = ProcessCommand::new("cargo");
-    cmd.current_dir(workspace_root)
-        .arg("build")
-        .arg("-p")
-        .arg("alcomd3-mcp")
-        .arg("--profile")
-        .arg(profile);
-
-    if let Some(target) = target_triple {
-        cmd.arg("--target").arg(target);
-    }
-
-    if verbose {
-        cmd.arg("--verbose");
-    }
-
-    cmd.run_checked(&format!(
-        "building alcomd3-mcp for {}",
-        target_triple.unwrap_or("native target")
-    ))
-}
-
 /// Build a universal macOS binary by compiling for both x86_64 and aarch64 and
 /// merging the results with `lipo`.
 fn build_universal_macos(
@@ -272,20 +242,15 @@ fn build_universal_macos(
     // Combine the two single-arch binaries into one fat binary.
     let x86_bin = build_dir("x86_64-apple-darwin", profile).join(GUI_BINARY_NAME);
     let arm_bin = build_dir("aarch64-apple-darwin", profile).join(GUI_BINARY_NAME);
-    let x86_mcp_bin = build_dir("x86_64-apple-darwin", profile).join("alcomd3-mcp");
-    let arm_mcp_bin = build_dir("aarch64-apple-darwin", profile).join("alcomd3-mcp");
 
     let out_dir = build_dir("universal-apple-darwin", profile);
     fs::create_dir_all(&out_dir).with_context(|| format!("creating {}", out_dir.display()))?;
 
     let out_bin = out_dir.join(GUI_BINARY_NAME);
-    let out_mcp_bin = out_dir.join("alcomd3-mcp");
 
     lipo_create(&[&x86_bin, &arm_bin], &out_bin)?;
-    lipo_create(&[&x86_mcp_bin, &arm_mcp_bin], &out_mcp_bin)?;
 
     println!("created universal binary: {}", out_bin.display());
-    println!("created universal binary: {}", out_mcp_bin.display());
     Ok(())
 }
 

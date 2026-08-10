@@ -7,9 +7,9 @@ documented separately in [RELEASE.md](./RELEASE.md).
 
 | Layer | Command or workflow | Main coverage |
 | --- | --- | --- |
-| Rust | `cargo test --workspace --exclude windows-installer-wrapper --locked` | VPM behavior, MCP Streamable HTTP/private IPC, updater and release tooling |
+| Rust | `cargo test --workspace --exclude windows-installer-wrapper --locked` | VPM behavior, embedded MCP Streamable HTTP/direct dispatch/Tasks, updater and release tooling |
 | GUI unit | `npm test` in `vrc-get-gui` | Tauri command serialization, events, cancellation, errors and navigation state |
-| Desktop E2E | `Full-chain desktop smoke` | Real Tauri startup on Windows x64, macOS arm64 and Linux x64; first-run setup, isolated project discovery, restart persistence and the disabled-by-default MCP boundary |
+| Desktop E2E | `Full-chain desktop smoke` | Real Tauri startup on Windows x64, macOS arm64 and Linux x64; first-run setup, isolated project discovery, restart persistence, MCP 2026/legacy compatibility and Tasks behavior |
 | macOS bundles | `Full-chain desktop smoke` | `.app`, updater archive and DMG structure, arm64 binaries, explicit ad-hoc signatures, copied-app launch and cleanup |
 | Linux packages | `Full-chain desktop smoke` | AppImage/updater archive parity, DEB metadata, fresh install, launch and purge |
 | Windows installer/upgrade | `Full-chain desktop smoke` | Previous stable install, old shared AppId, both historical executable names and legacy shortcuts removed, desktop-shortcut choice preserved, new shortcut targets/new AppId registration, user-data preservation, launch and uninstall |
@@ -54,9 +54,15 @@ npm.cmd run test:e2e:desktop
 Pop-Location
 ```
 
-Debug desktop E2E sets `ALCOMD3_TEST_LOCAL_DATA_ROOT` and
-`ALCOMD3_MCP_ENDPOINT_FILE` to temporary paths. The data-root override is
+Debug desktop E2E sets `ALCOMD3_TEST_LOCAL_DATA_ROOT` to a temporary path and
+prewrites an isolated GUI configuration with a reserved MCP port and token. The data-root override is
 compiled only when debug assertions are enabled; release builds ignore it.
+The MCP scenario checks missing and incorrect tokens, stateless 2026 discovery
+and the exact 33-tool catalog, legacy 2025 initialization and ordinary tool
+calls, then creates and polls a real project-copy Task. It also verifies the
+synchronous fallback for clients without the Tasks capability and that an
+authenticated client can still get or cancel an existing Task after data access
+is disabled.
 The test also disables debug-build system integration. The runner snapshots the
 complete current-user `vcc://` registry tree and restores it in `finally` if the
 application changes it, including when the test fails. Supplied roots must be empty children of a
@@ -78,15 +84,17 @@ Installer and upgrade smoke tests are deliberately restricted to an ephemeral
 GitHub-hosted Windows runner because the installer uses the production AppId
 and file associations. The workflow builds an unsigned test installer, upgrades
 it over the previous stable installer, verifies that the old shared AppId is
-absent from HKCU and both HKLM views, the historical `ALCOM.exe` is removed, the
+absent from HKCU and both HKLM views, the historical `ALCOM.exe` and
+`alcomd3-mcp.exe` are removed, the current installation contains only the GUI executable for MCP, the
 old Desktop and Start Menu shortcuts are removed, the previous desktop-shortcut
 choice is restored with both new shortcuts targeting `ALCOMD3.exe`, the new
 AppId is registered, the new shortcuts, template ProgID, and `vcc://`
 registration use the configured Windows AUMID, an unrelated same-named shortcut is preserved, and
 existing user data is preserved. It then verifies the
 embedded ZIP, launches the application, confirms its `vcc://` command, confirms
-that MCP rejects tool access by default and has no extra non-loopback listener
-on the endpoint port, uninstalls it, and verifies that the new shortcuts are
+that the MCP port is owned by the GUI PID, rejects missing or incorrect bearer
+tokens, returns `mcp_disabled` with the correct token, and has no non-loopback
+listener on the endpoint port, uninstalls it, and verifies that the new shortcuts are
 removed while local application data remains preserved by default.
 During the migration window, `legacyWindowsMigrationReleaseTag` in
 `alcomd3.config.json` pins the old installer so the baseline cannot advance past
@@ -94,13 +102,14 @@ the old AppId after the first new-AppId release.
 
 The macOS package job uses the native `macos-15` arm64 runner and validates an
 ad-hoc signed `.app`, updater archive and DMG, including strict signature checks
-for the nested executables and extracted updater application. The Linux package job uses Ubuntu 22.04
+for the main and extracted updater application and for any future nested executables that are present. The Linux package job uses Ubuntu 22.04
 x64 as the AppImage compatibility baseline and validates an AppImage, updater
 archive and DEB. It builds the AppImage in `self-updater` mode, then rebuilds the
 DEB in `no-self-updater` mode, matching the shared release configuration. Packaged
-launch tests isolate `HOME`, XDG directories and MCP
-endpoint metadata under `RUNNER_TEMP`, verify that the GUI stays running, and
-exercise the loopback MCP disabled/unauthorized boundary before cleanup. The
+launch tests isolate `HOME` and XDG directories under `RUNNER_TEMP`, write the
+MCP port/token into the isolated GUI configuration, assert that no MCP helper is
+packaged and the GUI process owns the loopback listener, and exercise the
+disabled/unauthorized boundary before cleanup. The
 package smoke helper refuses to run outside an ephemeral GitHub-hosted macOS or
 Linux runner.
 

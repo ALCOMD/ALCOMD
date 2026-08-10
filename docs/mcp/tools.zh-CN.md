@@ -32,7 +32,7 @@
 
 其中 `error.data` 仅在错误需要附带结构化上下文时出现，MCP 外层结果同时带有
 `isError: true`。参数结构错误、业务错误和协议错误的区别请参阅
-[MCP Tools 规范](https://modelcontextprotocol.io/specification/2025-11-25/server/tools#error-handling)。
+[MCP Tools 规范](https://modelcontextprotocol.io/specification/2026-07-28/server/tools#error-handling)。
 
 ## 快速索引
 
@@ -72,8 +72,8 @@
 | 项目包 | `alcomd3_uninstall_project_package` | 破坏性长任务 | 卸载一个已安装包。 |
 | 项目包 | `alcomd3_reinstall_project_package` | 长任务写入 | 重装一个已安装包。 |
 
-“长任务”表示工具声明 `execution.taskSupport: "optional"`：支持 MCP Tasks 的客户端可以异步轮询，
-不支持 Tasks 的客户端仍可用普通同步 `tools/call`。完整行为见
+“长任务”表示客户端声明实验性 `io.modelcontextprotocol/tasks` capability 时，工具会返回
+task handle；未声明 Tasks 的客户端仍使用普通同步 `tools/call`。完整行为见
 [项目长任务](mcp.zh-CN.md#项目长任务)。
 
 ## 项目和模板

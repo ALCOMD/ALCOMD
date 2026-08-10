@@ -34,7 +34,7 @@
 
 `error.data` は構造化された補足情報が必要な場合だけ現れます。Schema エラー、業務エラー、
 プロトコルエラーの違いは
-[MCP Tools 仕様](https://modelcontextprotocol.io/specification/2025-11-25/server/tools#error-handling)
+[MCP Tools 仕様](https://modelcontextprotocol.io/specification/2026-07-28/server/tools#error-handling)
 を参照してください。
 
 ## クイックインデックス
@@ -75,8 +75,8 @@
 | プロジェクトパッケージ | `alcomd3_uninstall_project_package` | 破壊的長時間処理 | パッケージをアンインストールします。 |
 | プロジェクトパッケージ | `alcomd3_reinstall_project_package` | 長時間書き込み | パッケージを再インストールします。 |
 
-「長時間」ツールは `execution.taskSupport: "optional"` を宣言します。MCP Tasks 対応クライアントは
-非同期でポーリングでき、未対応クライアントも通常の同期 `tools/call` を利用できます。詳しくは
+「長時間」ツールは client が実験的な `io.modelcontextprotocol/tasks` capability を宣言した
+場合に task handle を返します。未宣言 client は通常の同期 `tools/call` を利用できます。詳しくは
 [プロジェクト長時間タスク](mcp.ja.md#プロジェクト長時間タスク)を参照してください。
 
 ## プロジェクトとテンプレート

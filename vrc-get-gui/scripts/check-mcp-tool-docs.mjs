@@ -4,7 +4,10 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(__dirname, "../..");
-const serverSourcePath = path.join(repositoryRoot, "alcomd3-mcp/src/main.rs");
+const serverSourcePath = path.join(
+	repositoryRoot,
+	"vrc-get-gui/src/mcp/tools.rs",
+);
 
 const references = [
 	{

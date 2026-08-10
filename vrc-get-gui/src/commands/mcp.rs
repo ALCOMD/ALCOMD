@@ -103,7 +103,7 @@ pub async fn mcp_configure_client(
     }
     mcp.ensure_running(app.clone()).await?;
     let (port, token) = crate::mcp::ensure_mcp_http_config(&app).await?;
-    let endpoint = crate::mcp::mcp_http_endpoint(alcomd3_mcp_protocol::MCP_HTTP_BIND_HOST, port);
+    let endpoint = crate::mcp::mcp_http_endpoint(crate::mcp::MCP_HTTP_BIND_HOST, port);
     let client_name = client.display_name();
 
     let app_for_activity = app.clone();

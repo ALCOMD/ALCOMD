@@ -6,11 +6,12 @@ Languages: English | [日本語](mcp/mcp.ja.md) | [简体中文](mcp/mcp.zh-CN.m
 This document describes ALCOMD3 MCP setup, available tools, lifecycle behavior,
 and troubleshooting.
 
-ALCOMD3 implements the Streamable HTTP transport from MCP specification
-`2025-11-25`. While the built-in MCP extension is enabled, the GUI starts one
-local `alcomd3-mcp` server and exposes its MCP endpoint only on `127.0.0.1`.
-`alcomd3-mcp` requests application data through the separate private IPC
-endpoint exposed by the GUI.
+ALCOMD3 implements MCP `2026-07-28` with RMCP 3.1.2 and keeps ordinary tool
+calls from `2025-11-25` clients compatible. The MCP server is part of the GUI
+process: while the MCP extension is enabled, the GUI exposes one local
+Streamable HTTP endpoint on `127.0.0.1` under the implementation name
+`alcomd3-mcp`. There is no helper process, private IPC listener, or endpoint
+metadata file.
 
 ## Quick Start
 
@@ -32,13 +33,13 @@ for a configuration example and lifecycle details.
 
 - MCP is disabled by default. Users must enable it in the GUI before new tool
   calls may read or write ALCOMD3 data.
-- While the MCP extension is enabled, the GUI runs the local IPC and Streamable
-  HTTP endpoints. Enabling or disabling MCP on the MCP page gates tool data
-  access without stopping those endpoints.
+- While the MCP extension is enabled, the GUI runs the local Streamable HTTP
+  endpoint. Enabling or disabling MCP on the MCP page gates new tool data
+  access without stopping the endpoint.
 - Disabling the MCP extension from the Extensions page revokes MCP access,
-  stops both endpoints, removes MCP from the sidebar, and cancels MCP project
+  stops the endpoint, removes MCP from the sidebar, and cancels MCP project
   tasks still owned by the GUI. Re-enabling the extension returns immediately
-  and restarts the endpoints in the background, but leaves MCP access disabled
+  and restarts the endpoint in the background, but leaves MCP access disabled
   until the user enables it again on the MCP page.
 - Current tools include read-only project, environment-level template, repository, package, environment,
   activity log, and technical log tools, plus limited write tools: create a
@@ -51,17 +52,13 @@ for a configuration example and lifecycle details.
 - The GUI starts and owns the local Streamable HTTP server while the MCP
   extension is enabled. Closing the GUI or disabling the extension stops that
   server.
-- If the private GUI IPC endpoint is unavailable, the tool call
-  returns structured `alcomd3_unavailable` and marks the MCP tool result with
-  `isError: true`.
-- The bridge does not start the GUI. ALCOMD3 must remain running while MCP
-  tools are used.
+- ALCOMD3 must remain running while MCP tools are used; closing the GUI also
+  closes the public loopback endpoint.
 - When MCP is disabled, new tool calls return structured `mcp_disabled`, do not
   stop the endpoint, do not panic, and mark the MCP tool result with
   `isError: true`. Existing project long tasks are cleanup exceptions:
-  `tasks/get`, `tasks/result`, and `tasks/cancel` may still query or cancel the
-  task.
-- The bridge applies loose local rate limiting and concurrency protection to
+  `tasks/get` and `tasks/cancel` may still query or cancel the task.
+- The embedded server applies local rate limiting and concurrency protection to
   tool calls. When the limits are exceeded, it returns structured
   `rate_limited` and marks the MCP tool result with `isError: true`.
 - The GUI MCP page highlights known tool calls while they run, and briefly keeps
@@ -90,8 +87,6 @@ for a configuration example and lifecycle details.
   ALCOMD3 installation.
 - The HTTP server validates `Host` and `Origin`, binds exactly to `127.0.0.1`,
   and never listens on a LAN or public address.
-- The GUI internal IPC listens only on `127.0.0.1`; it never listens on a public
-  network address.
 
 Activity records do not save raw MCP params, token-like fields, HTTP header
 values, URLs with query strings, or URL userinfo credentials. Local filesystem
@@ -105,20 +100,18 @@ MCP Host / Client
         |
         | Streamable HTTP + bearer token
         v
-alcomd3-mcp
+ALCOMD3 GUI process
         |
-        | reads endpoint metadata
-        v
-ALCOMD3 data dir / mcp / endpoint.json
-        |
-        | localhost TCP, newline-delimited JSON
-        v
-ALCOMD3 GUI IPC server
+        +-- embedded alcomd3-mcp HTTP/RMCP service
+        +-- direct in-process GUI business dispatch
+        +-- shared Tasks, cancellation, locks, and activity state
 ```
 
-The external MCP transport is Streamable HTTP. The GUI internal TCP IPC remains
-a separate private channel between the server process and the desktop app; it
-is not exposed directly to MCP clients.
+Every authenticated request is handled in the GUI process. Tool handlers call
+the same backend services used by the GUI without TCP bridging or JSON-line
+serialization. All authenticated local clients share one bearer principal and
+one task namespace; client name and version are used only for recent-activity
+display and logs.
 
 ## Enabling MCP and Client Configuration
 
@@ -219,76 +212,22 @@ The external HTTP port and bearer token are stored as `mcpHttpPort` and
 not include it in logs, screenshots, or shared configuration. Replacing the
 token invalidates existing client configuration.
 
-## Package Locations
+## Built-in Runtime and Stored Configuration
 
-- Windows: `alcomd3-mcp.exe` is installed next to the main GUI executable.
-- macOS: `alcomd3-mcp` is under `.app/Contents/MacOS/`.
-- Linux: `alcomd3-mcp` is installed to `/usr/bin/alcomd3-mcp`.
-- AppImage: `alcomd3-mcp` is inside AppDir `usr/bin/`.
+All supported installers and archives contain only the GUI executable for MCP;
+there is no `alcomd3-mcp` helper to locate or launch. `cargo xtask build-alcom`
+builds the GUI, whose process owns the HTTP listener and all tool execution.
 
-`cargo xtask build-alcom` builds both the GUI main program and `alcomd3-mcp`.
+The public port and bearer token are stored in `gui-config.json` as
+`mcpHttpPort` and `mcpHttpToken`. No `mcp/endpoint.json` is read, written, or
+migrated. `ALCOMD3_MCP_ENDPOINT_FILE` and internal-listener overrides no longer
+exist; `ALCOMD3_MCP_BEARER_TOKEN` remains available for client configuration.
 
-## Endpoint Metadata
-
-While the GUI is running normally and the MCP extension is enabled, it writes
-endpoint metadata. The default path is under the ALCOMD3 local data directory:
-
-```text
-ALCOMD3/mcp/endpoint.json
-```
-
-Tests and development can override the path with:
-
-```text
-ALCOMD3_MCP_ENDPOINT_FILE
-```
-
-Metadata format:
-
-```json
-{
-    "protocolVersion": 2,
-    "transport": "tcp",
-    "host": "127.0.0.1",
-    "port": 49152,
-    "token": "opaque-random-token",
-    "pid": 12345
-}
-```
-
-This endpoint metadata `token` is used only for private IPC authentication
-between the HTTP server process and GUI. It is different from the external HTTP
-bearer token. Do not expose either value to remote systems.
-
-## Internal IPC
-
-Internal IPC uses newline-delimited JSON. Request and response shapes:
-
-```text
-IpcRequest {
-    protocolVersion,
-    token,
-    requestId,
-    client,
-    method,
-    params
-}
-
-IpcResponse {
-    requestId,
-    ok,
-    result?,
-    error?
-}
-```
-
-The GUI validates `protocolVersion` and `token`. Validation failures return a
-business error and do not run tool logic. After validation, if MCP is disabled
-in the GUI, the GUI returns `mcp_disabled` for new tool data access and task
-startup, and does not read or return project, repository, package, or similar
-data. Existing project long-task methods `project_task_get`,
-`project_task_list`, and `project_task_cancel` are exceptions so clients can
-finish querying or cancelling already running tasks after MCP is disabled.
+Changing the port or rotating the token performs an ordered stop and rebind of
+the embedded transport. Shared protocol task state remains in the GUI while
+the transport restarts. If the new port cannot be bound, the rest of the GUI
+continues to work, the MCP page reports the server as not running, and the
+failure is written to the technical log.
 
 ## Available Tools
 
@@ -334,54 +273,40 @@ not need to pull all logs into context to diagnose one issue.
 
 ### Project Long Tasks
 
-Tasks were introduced in MCP `2025-11-25` and are currently experimental.
-Client support varies, and their protocol behavior may evolve in future MCP
+ALCOMD3 uses the experimental `io.modelcontextprotocol/tasks` extension shipped
+with RMCP 3.1.2. Client support varies, and the extension may evolve in future
 versions.
 
 `alcomd3_create_project`, `alcomd3_backup_project`, `alcomd3_copy_project`,
 `alcomd3_restore_project_from_backup`, `alcomd3_install_project_package`,
 `alcomd3_uninstall_project_package`, and `alcomd3_reinstall_project_package`
-support MCP task-aware calls and declare `execution.taskSupport: "optional"` in
-`tools/list`.
+become task-aware when the client declares the
+`io.modelcontextprotocol/tasks` capability:
 
-Clients that support Tasks can include `task: {}` in `tools/call` params:
-
-- `tools/call` immediately returns a `CreateTaskResult` containing
-  `task.taskId`.
-- `tasks/get` queries `working`, `completed`, `failed`, `cancelled`, and similar
-  states.
-- `tasks/result` returns the original tool result shape after completion, such
-  as `backupPath`, `projectPath`, or package-change summary.
-- The tool result returned by `tasks/result` includes
-  `_meta.io.modelcontextprotocol/related-task` with the matching `taskId`.
-- `tasks/cancel` cancels the underlying GUI backend task and releases the
-  project task lock of that type.
+- `tools/call` immediately returns a task handle with `taskId`.
+- `tasks/get` returns `working`, `input_required`, `completed`, `failed`, or
+  `cancelled`, and includes the completed result or failure in the detailed
+  task state.
+- `tasks/update` supplies responses requested by a running task.
+- `tasks/cancel` cooperatively cancels the underlying GUI operation and
+  releases the corresponding resource lock.
 - If `alcomd3_create_project` is cancelled before formal registration, or if
   package resolve/apply fails, it cleans up the unregistered project directory
   created by MCP.
 - If the user disables MCP while a task is running, new tool calls and new
-  project task starts still return `mcp_disabled`; long tasks that already have
-  a `taskId` can still be finished with `tasks/get`, `tasks/result`, and
-  `tasks/cancel`.
+  project task starts still return `mcp_disabled`; existing task IDs remain
+  available to authenticated `tasks/get` and `tasks/cancel` requests.
+- Disabling the entire MCP extension or closing the GUI cancels unfinished
+  tasks and clears their protocol state.
 
-If `_meta.progressToken` exists on `tools/call`, the bridge sends standard
-`notifications/progress`. `tasks/get` `_meta` also includes
-`alcomd3/projectProgress` for polling the latest progress snapshot:
+This extension intentionally does not expose the older core Tasks
+`tasks/list` or `tasks/result` methods. Completed output is read from
+`tasks/get`. If `_meta.progressToken` exists on a synchronous `tools/call`, the
+server continues to send standard `notifications/progress`; task-aware calls
+also update their human-readable task status as backend progress changes.
 
-```json
-{
-  "_meta": {
-    "alcomd3/projectProgress": {
-      "total": 120,
-      "proceed": 42,
-      "lastProceed": "Assets/example.prefab"
-    }
-  }
-}
-```
-
-Without task-aware calls, these tools still run as normal synchronous
-`tools/call` calls until they complete.
+Clients that do not declare the Tasks capability receive the unchanged normal
+synchronous `tools/call` behavior and result shape.
 
 ### Path Restrictions
 
@@ -468,25 +393,28 @@ at `1000`. Paging responses include `totalCount`, `offset`, `limit`,
 requesting `nextOffset` while `hasMore` is `true`. Package tools no longer
 return a `count` field.
 
-## Lifecycle and Multi-Process Behavior
+## Lifecycle and Client Behavior
 
-The GUI starts one `alcomd3-mcp` Streamable HTTP server after loading its local
-configuration. All MCP clients connect to that shared local endpoint and create
-independent MCP sessions.
+The GUI binds one embedded `alcomd3-mcp` Streamable HTTP server after loading
+its local configuration. MCP `2026-07-28` requests run without sessions and
+must carry the standard protocol metadata on every request. Ordinary
+`2025-11-25` clients continue through legacy sessions. Both paths use the same
+shared GUI state, limiter, task manager, locks, and activity recorder.
 
 ALCOMD3 lifecycle boundaries:
 
-- When the GUI exits, it stops the HTTP server and private IPC listener, then
-  deletes the private endpoint file.
+- When the GUI exits or the MCP extension is disabled, it stops the HTTP
+  listener, waits for the server task to end, and cancels unfinished work.
 - The endpoint URL and bearer token are stable for the local installation. A
   client can reconnect after the GUI restarts without changing configuration.
-- The GUI client area shows recent MCP session activity; tool highlight
-  indicates a currently handled call.
-- When the GUI is unavailable, tool calls return structured
-  `alcomd3_unavailable`.
+- The GUI client area groups recent activity by client name and version; it is
+  not a live session list. Tool highlighting indicates a currently handled
+  call.
+- When the GUI is unavailable, the local endpoint is unavailable because no
+  separate MCP process remains running.
 - When the GUI is available but MCP is disabled, new tool calls return
-  structured `mcp_disabled`; task follow-up methods for already started project
-  long tasks can still query results or cancel tasks.
+  structured `mcp_disabled`; authenticated `tasks/get` and `tasks/cancel` can
+  still inspect or cancel already started long tasks.
 - After the GUI restarts, it binds the configured loopback port again and later
   client requests can reconnect. Whether tools return data still depends on the
   MCP enable switch.
@@ -499,15 +427,16 @@ ALCOMD3 lifecycle boundaries:
 
 The MCP page is disabled. The endpoint may still show as running; this is
 normal. Enable MCP and retry the tool. Already started project long tasks are
-exceptions: clients may still use `tasks/get`, `tasks/result`, and
-`tasks/cancel` to query or cancel them.
+exceptions: clients may still use `tasks/get` and `tasks/cancel` to query or
+cancel them.
 
 ### `rate_limited`
 
-The bridge received too many tool calls in a short period, or too many tool
-calls are already running. Retry later.
+The embedded server received too many tool calls in a short period, or 64 tool
+calls are already running. It accepts at most 600 tool-call starts per minute.
+Retry later.
 
-### `ALCOMD3 is not running or the MCP IPC endpoint is unavailable`
+### The MCP endpoint is unavailable
 
 Common causes:
 
@@ -536,28 +465,32 @@ The request carried a disallowed browser `Origin`. ALCOMD3 accepts native MCP
 clients and same-loopback origins only, preventing DNS rebinding and cross-site
 requests to the local server.
 
-### `protocol mismatch`
+### Protocol negotiation errors
 
-The HTTP server and GUI internal IPC versions do not match. Restart ALCOMD3 and
-confirm that only the current installation is running.
+Use MCP `2026-07-28` with its standard `MCP-Protocol-Version`, `Mcp-Method`, and
+per-request `_meta` values, or initialize a legacy `2025-11-25` session before
+ordinary tool calls. Other protocol versions are not advertised.
 
 ## Development Smoke Test
 
-Build the bridge from the repository root:
+Build the GUI with its embedded MCP service from the repository root:
 
 ```powershell
-cargo build -p alcomd3-mcp
+cargo build -p vrc-get-gui
 ```
 
 Run the focused HTTP lifecycle and security smoke tests:
 
 ```powershell
-cargo test -p alcomd3-mcp
+cargo test -p vrc-get-gui mcp::
 ```
 
 Expected result:
 
 - `initialize` succeeds.
+- `server/discover` and ordinary sessionless calls succeed for `2026-07-28`
+  when standard headers and request metadata are present.
+- A `2025-11-25` legacy session can initialize and make ordinary tool calls.
 - `tools/list` returns the current MCP tools.
 - `tools/call` returns a readable `ok: false` error and marks the MCP tool
   result with `isError: true`.
@@ -566,18 +499,21 @@ Expected result:
 
 ## Related Source
 
-- Bridge: `alcomd3-mcp/src/main.rs`
-- Shared IPC protocol: `alcomd3-mcp-protocol/src/lib.rs`
+- Embedded HTTP/RMCP service and tools: `vrc-get-gui/src/mcp/server.rs`
+- MCP lifecycle, direct dispatch, operations, and shared state:
+  `vrc-get-gui/src/mcp/mod.rs`
+- Internal MCP data types: `vrc-get-gui/src/mcp/types.rs`
 - GUI shared backend services and MCP capability matrix: `vrc-get-gui/src/backend/`
-- GUI IPC server and tool dispatch: `vrc-get-gui/src/mcp.rs`
 - GUI Tauri commands: `vrc-get-gui/src/commands/mcp.rs`
 - GUI MCP page: `vrc-get-gui/app/_main/mcp/index.tsx`
 - Packaging logic: `xtask/src/build_alcom.rs`, `xtask/src/bundle_alcom*`
 
 ## References
 
-- MCP Specification `2025-11-25`: <https://modelcontextprotocol.io/specification/2025-11-25>
-- MCP Streamable HTTP transport: <https://modelcontextprotocol.io/specification/2025-11-25/basic/transports>
+- RMCP 3.1.2: <https://github.com/modelcontextprotocol/rust-sdk/releases/tag/rmcp-v3.1.2>
+- MCP specification `2026-07-28`: <https://modelcontextprotocol.io/specification/2026-07-28>
+- MCP specification `2025-11-25`: <https://modelcontextprotocol.io/specification/2025-11-25>
+- Experimental Tasks extension: <https://github.com/modelcontextprotocol/ext-tasks>
 - MCP lifecycle: <https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle>
 - MCP tools: <https://modelcontextprotocol.io/specification/2025-11-25/server/tools>
 - MCP tasks: <https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks>

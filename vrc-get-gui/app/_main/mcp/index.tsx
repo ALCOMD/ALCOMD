@@ -619,16 +619,12 @@ function EndpointCard({ status }: { status: McpStatus }) {
 				<StatusRow label={tc("mcp:authorization token")}>
 					<CopyableValue value={status.authorizationToken} />
 				</StatusRow>
-				<StatusRow label={tc("mcp:private endpoint file")}>
-					<CodeValue>{status.endpointFile}</CodeValue>
-				</StatusRow>
 				<StatusRow label={tc("mcp:protocol version")}>
 					{status.protocolVersion}
 				</StatusRow>
 				<StatusRow label={tc("mcp:transport")}>{status.transport}</StatusRow>
 				<StatusRow label={tc("mcp:host")}>{status.host ?? "-"}</StatusRow>
 				<StatusRow label={tc("mcp:port")}>{status.port ?? "-"}</StatusRow>
-				<StatusRow label={tc("mcp:pid")}>{status.pid}</StatusRow>
 			</div>
 		</Card>
 	);
@@ -652,7 +648,10 @@ function RecentClientsCard({ status }: { status: McpStatus }) {
 						</thead>
 						<tbody>
 							{status.recentClients.map((client) => (
-								<tr key={client.sessionId} className="even:bg-secondary/30">
+								<tr
+									key={`${client.name}\u0000${client.version ?? ""}`}
+									className="even:bg-secondary/30"
+								>
 									<td className="p-2">{client.name}</td>
 									<td className="p-2">{client.version ?? "-"}</td>
 									<td className="p-2">

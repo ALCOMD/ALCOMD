@@ -4,9 +4,6 @@ use std::path::{Path, PathBuf};
 pub const ALCOMD3_DATA_DIR_NAME: &str = "ALCOMD3";
 pub const LEGACY_VCC_DATA_DIR_NAME: &str = "VRChatCreatorCompanion";
 pub const LEGACY_ALCOM_DATA_DIR_NAME: &str = "ALCOM";
-pub const MCP_DATA_DIR_NAME: &str = "mcp";
-pub const MCP_ENDPOINT_FILE_NAME: &str = "endpoint.json";
-pub const MCP_ENDPOINT_FILE_ENV: &str = "ALCOMD3_MCP_ENDPOINT_FILE";
 #[cfg(debug_assertions)]
 pub const TEST_LOCAL_DATA_ROOT_ENV: &str = "ALCOMD3_TEST_LOCAL_DATA_ROOT";
 
@@ -92,22 +89,6 @@ pub fn legacy_alcom_data_dir() -> PathBuf {
     named_data_dir(LEGACY_ALCOM_DATA_DIR_NAME)
 }
 
-pub fn mcp_endpoint_file_path() -> PathBuf {
-    mcp_endpoint_file_path_from_env(std::env::var_os(MCP_ENDPOINT_FILE_ENV))
-}
-
-pub fn mcp_endpoint_file_path_from_env(override_path: Option<OsString>) -> PathBuf {
-    override_path
-        .map(PathBuf::from)
-        .unwrap_or_else(|| mcp_endpoint_file_path_from_local_data_root(&local_data_root()))
-}
-
-pub fn mcp_endpoint_file_path_from_local_data_root(local_data_root: &Path) -> PathBuf {
-    alcomd3_data_dir_from_local_data_root(local_data_root)
-        .join(MCP_DATA_DIR_NAME)
-        .join(MCP_ENDPOINT_FILE_NAME)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,24 +99,6 @@ mod tests {
             alcomd3_data_dir_from_local_data_root(Path::new("/data")),
             Path::new("/data").join("ALCOMD3")
         );
-    }
-
-    #[test]
-    fn mcp_endpoint_file_lives_under_alcomd3_data_dir() {
-        assert_eq!(
-            mcp_endpoint_file_path_from_local_data_root(Path::new("/data")),
-            Path::new("/data")
-                .join("ALCOMD3")
-                .join("mcp")
-                .join("endpoint.json")
-        );
-    }
-
-    #[test]
-    fn mcp_endpoint_file_path_uses_explicit_override() {
-        let path =
-            mcp_endpoint_file_path_from_env(Some(OsString::from("C:/tmp/alcom-endpoint.json")));
-        assert_eq!(path, PathBuf::from("C:/tmp/alcom-endpoint.json"));
     }
 
     #[cfg(debug_assertions)]

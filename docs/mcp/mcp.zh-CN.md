@@ -4,9 +4,10 @@
 
 本文档说明 ALCOMD3 的 MCP 接入方式、可用工具、生命周期行为和排障方法。
 
-ALCOMD3 当前实现遵循 MCP `2025-11-25` 规范的 Streamable HTTP transport。内置
-MCP 扩展启用时，GUI 会启动一个仅监听 `127.0.0.1` 的本地 `alcomd3-mcp` server；
-`alcomd3-mcp` 再通过 GUI 暴露的独立私有 IPC endpoint 请求应用数据。
+ALCOMD3 使用 RMCP 3.1.2 实现 MCP `2026-07-28`，同时兼容 `2025-11-25`
+客户端的普通工具调用。MCP server 已成为 GUI 进程的一部分：MCP 扩展启用时，GUI
+以 `alcomd3-mcp` implementation 名称在 `127.0.0.1` 暴露一个本地 Streamable HTTP
+endpoint，不再存在 helper 进程、私有 IPC listener 或 endpoint metadata 文件。
 
 ## 快速开始
 
@@ -24,9 +25,9 @@ MCP 扩展启用时，GUI 会启动一个仅监听 `127.0.0.1` 的本地 `alcomd
 ## 当前边界
 
 - MCP 功能默认停用，需要在 GUI 中手动启用后才允许新的工具调用读取或写入 ALCOMD3 数据。
-- MCP 扩展启用时，GUI 会运行本机 IPC 和 Streamable HTTP endpoint；在 MCP 页面
-  启用/停用 MCP 只控制工具数据访问，不关闭这些 endpoint。
-- 从“扩展”页关闭 MCP 扩展会撤销 MCP 访问许可、停止两个 endpoint、从侧边栏移除
+- MCP 扩展启用时，GUI 会运行本机 Streamable HTTP endpoint；在 MCP 页面启用/停用
+  MCP 只控制新的工具数据访问，不关闭 endpoint。
+- 从“扩展”页关闭 MCP 扩展会撤销 MCP 访问许可、停止 endpoint、从侧边栏移除
   MCP，并取消仍由 GUI 管理的 MCP 项目任务。重新启用扩展会立即完成开关操作，并在
   后台恢复 endpoint；MCP 访问仍保持停用，直到用户再次在 MCP 页面主动启用。
 - 当前提供项目、环境级模板、仓库、软件包和环境设置只读工具，以及有限写工具：新建项目、
@@ -35,13 +36,11 @@ MCP 扩展启用时，GUI 会启动一个仅监听 `127.0.0.1` 的本地 `alcomd
   为已登记项目安装/卸载/重装单个软件包。不提供仓库重排、项目删除等其他写操作。
 - MCP 扩展启用时，GUI 负责启动和管理本地 Streamable HTTP server；关闭 GUI 或关闭
   MCP 扩展时都会停止该 server。
-- GUI 的私有 IPC endpoint 不可用时，tool call 返回结构化 `alcomd3_unavailable` 错误，
-  并在 MCP tool result 上标记 `isError: true`。
-- bridge 不会启动 GUI；使用 MCP 工具期间必须保持 ALCOMD3 运行。
+- 使用 MCP 工具期间必须保持 ALCOMD3 运行；关闭 GUI 也会关闭公开的 loopback endpoint。
 - MCP 停用时，新的 tool call 返回结构化 `mcp_disabled` 错误，不关闭 endpoint、不 panic，
   并在 MCP tool result 上标记 `isError: true`。已启动项目长任务的 `tasks/get`、
-  `tasks/result` 和 `tasks/cancel` 是收尾例外，可继续查询结果或取消该任务。
-- bridge 对 tool call 做宽松的本地限流和并发保护；超过限制时返回结构化
+  `tasks/cancel` 是收尾例外，可继续查询结果或取消该任务。
+- 内置 server 对 tool call 做本地限流和并发保护；超过限制时返回结构化
   `rate_limited` 错误，并在 MCP tool result 上标记 `isError: true`。
 - GUI MCP 页面会在已知 tool call 执行时高亮对应工具，并在完成或失败后短暂保留高亮，
   便于观察很快完成的调用。
@@ -58,7 +57,6 @@ MCP 扩展启用时，GUI 会启动一个仅监听 `127.0.0.1` 的本地 `alcomd
   错误映射和活动记录，不应新增 GUI 不具备的业务能力。
 - Streamable HTTP 请求必须携带为本机 ALCOMD3 安装生成的 bearer token。
 - HTTP server 校验 `Host` 和 `Origin`，严格绑定 `127.0.0.1`，不监听局域网或公网地址。
-- GUI 内部 IPC 只监听 `127.0.0.1`，不监听公网地址。
 
 活动记录不会保存原始 MCP params、token-like 字段、HTTP header 值、带 query 的 URL 或 URL userinfo 凭据。
 本地文件系统路径会保留完整值，用于排查 Unity、VPM 和中文路径等问题；MCP access 仍需先在 GUI 中启用。
@@ -70,19 +68,16 @@ MCP Host / Client
         |
         | Streamable HTTP + bearer token
         v
-alcomd3-mcp
+ALCOMD3 GUI process
         |
-        | reads endpoint metadata
-        v
-ALCOMD3 data dir / mcp / endpoint.json
-        |
-        | localhost TCP, newline-delimited JSON
-        v
-ALCOMD3 GUI IPC server
+        +-- embedded alcomd3-mcp HTTP/RMCP service
+        +-- direct in-process GUI business dispatch
+        +-- shared Tasks, cancellation, locks, and activity state
 ```
 
-对外 MCP transport 是 Streamable HTTP。GUI 内部 TCP IPC 仍是 server process 与桌面应用
-之间的独立私有通道，不直接暴露给 MCP client。
+所有已认证请求都在 GUI 进程内处理。工具 handler 直接调用 GUI 使用的同一套后端服务，
+不再经过 TCP bridge 或 JSON 行序列化。所有已认证本机客户端共享同一个 bearer principal
+和任务命名空间；客户端名称和版本只用于最近活动展示与日志。
 
 ## 启用和客户端配置
 
@@ -174,73 +169,20 @@ endpoint 仅在 ALCOMD3 运行且 MCP 扩展启用时可用。如果 MCP 页面�
 `gui-config.json`。请将 token 视为本机密钥，不要放入日志、截图或共享配置。替换 token
 后，已有客户端配置会失效。
 
-## 打包位置
+## 内置运行时和持久配置
 
-- Windows：`alcomd3-mcp.exe` 与主 GUI 可执行文件位于同一安装目录。
-- macOS：`alcomd3-mcp` 位于 `.app/Contents/MacOS/`。
-- Linux：`alcomd3-mcp` 安装到 `/usr/bin/alcomd3-mcp`。
-- AppImage：`alcomd3-mcp` 位于 AppDir 的 `usr/bin/` 内。
+所有受支持安装包和归档都只通过 GUI 可执行程序提供 MCP，不再包含需要定位或启动的
+`alcomd3-mcp` helper。`cargo xtask build-alcom` 只构建 GUI，由 GUI 进程持有 HTTP
+listener 并执行全部工具。
 
-`cargo xtask build-alcom` 会同时构建 GUI 主程序和 `alcomd3-mcp`。
+公开端口和 bearer token 以 `mcpHttpPort`、`mcpHttpToken` 保存在
+`gui-config.json`。运行时不再读取、写入或迁移 `mcp/endpoint.json`；
+`ALCOMD3_MCP_ENDPOINT_FILE` 和内部 listener 覆盖项已删除，客户端配置仍可使用
+`ALCOMD3_MCP_BEARER_TOKEN`。
 
-## Endpoint metadata
-
-GUI 正常运行且 MCP 扩展启用时会写入 endpoint metadata。默认路径位于 ALCOMD3
-本地数据目录：
-
-```text
-ALCOMD3/mcp/endpoint.json
-```
-
-测试和开发可通过环境变量覆盖路径：
-
-```text
-ALCOMD3_MCP_ENDPOINT_FILE
-```
-
-metadata 格式：
-
-```json
-{
-    "protocolVersion": 2,
-    "transport": "tcp",
-    "host": "127.0.0.1",
-    "port": 49152,
-    "token": "opaque-random-token",
-    "pid": 12345
-}
-```
-
-这份 endpoint metadata 中的 `token` 只用于 HTTP server process 与 GUI 之间的私有 IPC
-鉴权，与对外 HTTP bearer token 不同。不要把任一 token 暴露给远程系统。
-
-## 内部 IPC
-
-内部 IPC 使用换行分隔 JSON。请求和响应结构如下：
-
-```text
-IpcRequest {
-    protocolVersion,
-    token,
-    requestId,
-    client,
-    method,
-    params
-}
-
-IpcResponse {
-    requestId,
-    ok,
-    result?,
-    error?
-}
-```
-
-GUI 会校验 `protocolVersion` 和 `token`。校验失败会返回业务错误，不会执行工具逻辑。
-校验通过后，如果 GUI 中 MCP 处于停用状态，GUI 会对新的工具数据访问和任务启动返回
-`mcp_disabled`，不会读取或返回项目、仓库、包等数据。已启动项目长任务的
-`project_task_get`、`project_task_list` 和 `project_task_cancel` 是例外，用于让客户端在
-停用后继续查询结果或取消已运行任务。
+修改端口或轮换令牌会有序停止并重新绑定内置 transport。transport 重启期间，共享的
+协议任务状态仍保留在 GUI 中。新端口绑定失败不会影响 GUI 其他功能；MCP 页面会显示
+server 未运行，并由技术日志记录失败。
 
 ## 可用工具
 
@@ -278,43 +220,30 @@ ALCOMD3 当前公开 33 个工具。主指南集中说明使用流程和安全�
 
 ### 项目长任务
 
-Tasks 在 MCP `2025-11-25` 中引入，目前仍属于实验性能力。不同客户端的支持程度可能不同，
-其协议行为也可能在后续 MCP 版本中演进。
+ALCOMD3 使用 RMCP 3.1.2 提供的实验性 `io.modelcontextprotocol/tasks` 扩展。
+不同客户端的支持程度可能不同，该扩展也可能在后续版本中演进。
 
 `alcomd3_create_project`、`alcomd3_backup_project`、`alcomd3_copy_project`、
 `alcomd3_restore_project_from_backup`、`alcomd3_install_project_package`、
-`alcomd3_uninstall_project_package` 和 `alcomd3_reinstall_project_package` 支持 MCP task-aware 调用，并在
-`tools/list` 中声明 `execution.taskSupport: "optional"`。
+`alcomd3_uninstall_project_package` 和 `alcomd3_reinstall_project_package` 会在客户端声明
+`io.modelcontextprotocol/tasks` capability 时使用 task-aware 调用：
 
-支持 Tasks 的客户端可以在 `tools/call` 参数中加入 `task: {}`：
-
-- `tools/call` 会立即返回 `CreateTaskResult`，其中包含 `task.taskId`。
-- `tasks/get` 可查询 `working`、`completed`、`failed`、`cancelled` 等状态。
-- `tasks/result` 在任务完成后返回原工具结果形状，例如 `backupPath`、`projectPath` 或包变更摘要。
-- `tasks/result` 返回的工具结果会在 `_meta.io.modelcontextprotocol/related-task` 中标记对应 `taskId`。
-- `tasks/cancel` 会取消底层 GUI 后端任务，并释放同类项目任务锁。
+- `tools/call` 会立即返回带 `taskId` 的 task handle。
+- `tasks/get` 返回 `working`、`input_required`、`completed`、`failed` 或 `cancelled`，
+  并在详细任务状态中包含完成结果或失败信息。
+- `tasks/update` 向运行中的任务提供其请求的响应。
+- `tasks/cancel` 会协作式取消底层 GUI 操作，并释放对应资源锁。
 - `alcomd3_create_project` 在项目正式登记前收到取消或包解析/应用失败时，会清理 MCP 创建出的未登记项目目录。
 - 如果任务运行期间用户停用 MCP，新的工具调用和新的项目任务启动仍会返回
-  `mcp_disabled`；已经获得 `taskId` 的项目长任务仍可用 `tasks/get`、`tasks/result`
-  和 `tasks/cancel` 收尾。
+  `mcp_disabled`；已获得 `taskId` 的任务仍可由已认证请求使用 `tasks/get` 查询或
+  `tasks/cancel` 取消。
+- 关闭整个 MCP 扩展或退出 GUI 会取消未完成任务并清理其协议状态。
 
-如果 `tools/call` 的 `_meta.progressToken` 存在，bridge 会发送标准
-`notifications/progress`。`tasks/get` 的 `_meta` 也会包含
-`alcomd3/projectProgress`，用于轮询读取最近一次进度快照：
+该扩展有意不提供旧 core Tasks 的 `tasks/list` 和 `tasks/result`；完成输出直接从
+`tasks/get` 读取。同步 `tools/call` 带 `_meta.progressToken` 时仍会收到标准
+`notifications/progress`；task-aware 调用也会随后端进度更新可读状态信息。
 
-```json
-{
-  "_meta": {
-    "alcomd3/projectProgress": {
-      "total": 120,
-      "proceed": 42,
-      "lastProceed": "Assets/example.prefab"
-    }
-  }
-}
-```
-
-不使用 task-aware 调用时，这些工具仍按普通同步 `tools/call` 执行，直到完成后返回结果。
+未声明 Tasks capability 的客户端继续获得原有普通同步 `tools/call` 行为和结果形状。
 
 ### 路径限制
 
@@ -370,19 +299,22 @@ GUI 项目管理页的软件包表由后端合并同名包生成。MCP 的包列
 需要读取完整列表时，应在 `hasMore` 为 `true` 时使用 `nextOffset` 继续请求下一页。
 包相关工具不再返回 `count` 字段。
 
-## 生命周期和多进程行为
+## 生命周期和客户端行为
 
-GUI 加载本地配置后会启动一个 `alcomd3-mcp` Streamable HTTP server。所有 MCP 客户端
-连接同一个本机 endpoint，并建立各自独立的 MCP session。
+GUI 加载本地配置后会绑定一个内置 `alcomd3-mcp` Streamable HTTP server。
+MCP `2026-07-28` 请求无 session，并且每次请求都必须携带标准协议 metadata；普通
+`2025-11-25` 客户端继续使用 legacy session。两条路径共享 GUI 状态、限流器、任务管理器、
+资源锁和活动记录器。
 
 ALCOMD3 的生命周期边界：
 
-- GUI 退出时会停止 HTTP server 和私有 IPC listener，并删除私有 endpoint 文件。
+- GUI 退出或 MCP 扩展关闭时会停止 HTTP listener，等待服务任务结束并取消未完成操作。
 - endpoint URL 与 bearer token 对当前本机安装保持稳定；GUI 重启后客户端无需修改配置即可重连。
-- GUI 中的客户端区域按 MCP session 的“最近活动”展示，工具高亮表示当前正在处理的调用。
-- GUI 不可用期间，tool call 返回结构化 `alcomd3_unavailable` 错误。
+- GUI 中的客户端区域按客户端名称和版本归并“最近活动”，不是实时 session 列表；工具高亮
+  表示当前正在处理的调用。
+- GUI 不可用时，本机 endpoint 也不可用，因为不存在继续运行的独立 MCP 进程。
 - GUI 可用但 MCP 停用期间，新的 tool call 返回结构化 `mcp_disabled` 错误；已启动
-  项目长任务的 task 后续方法仍可查询结果或取消任务。
+  项目长任务仍可通过已认证的 `tasks/get` 查询或 `tasks/cancel` 取消。
 - GUI 重新启动后会再次绑定已配置的 loopback 端口，客户端后续请求可以重连；工具是否
   返回数据仍取决于 GUI 中的 MCP 启用开关。
 - 如果配置端口已被占用，MCP 页面会显示 server 未运行，技术日志会记录启动错误。
@@ -393,13 +325,14 @@ ALCOMD3 的生命周期边界：
 
 MCP 页面处于停用状态。endpoint 仍可能显示运行中，这是正常状态；启用 MCP 后重新调用
 工具即可返回数据。已经启动的项目长任务是例外，客户端仍可使用 `tasks/get`、
-`tasks/result` 和 `tasks/cancel` 查询结果或取消任务。
+`tasks/cancel` 查询结果或取消任务。
 
 ### `rate_limited`
 
-bridge 在短时间内收到过多 tool call，或已有过多 tool call 正在执行。稍后重试即可。
+内置 server 在短时间内收到过多 tool call，或已有 64 个 tool call 正在执行。每分钟
+最多启动 600 次 tool call，达到限制后请稍后重试。
 
-### `ALCOMD3 is not running or the MCP IPC endpoint is unavailable`
+### The MCP endpoint is unavailable
 
 常见原因：
 
@@ -426,27 +359,32 @@ bearer token 缺失或与 ALCOMD3 显示的令牌不一致。请更新客户端�
 请求携带了不允许的浏览器 `Origin`。ALCOMD3 只接受原生 MCP 客户端和同一 loopback
 origin，防止 DNS rebinding 和跨站请求访问本机 server。
 
-### `protocol mismatch`
+### Protocol negotiation errors
 
-HTTP server 与 GUI 的内部 IPC 版本不一致。请重启 ALCOMD3，并确认只有当前安装版本在运行。
+使用 MCP `2026-07-28` 时，每次请求都需携带标准 `MCP-Protocol-Version`、`Mcp-Method`
+和 `_meta`；或者先初始化 `2025-11-25` legacy session，再执行普通工具调用。server 不
+公布其他协议版本。
 
 ## 开发 smoke test
 
-在仓库根目录构建 bridge：
+在仓库根目录构建包含内置 MCP 服务的 GUI：
 
 ```powershell
-cargo build -p alcomd3-mcp
+cargo build -p vrc-get-gui
 ```
 
 运行 HTTP 生命周期和安全 smoke tests：
 
 ```powershell
-cargo test -p alcomd3-mcp
+cargo test -p vrc-get-gui mcp::
 ```
 
 预期结果：
 
 - `initialize` 成功。
+- 携带标准 header 和请求 metadata 时，`2026-07-28` 的 `server/discover` 与普通
+  无 session 请求成功。
+- `2025-11-25` legacy session 可以初始化并执行普通工具调用。
 - `tools/list` 返回当前可用的 MCP 工具。
 - `tools/call` 返回 `ok: false` 的可读错误，并在 MCP tool result 上标记
   `isError: true`。
@@ -455,20 +393,17 @@ cargo test -p alcomd3-mcp
 
 ## 相关源码
 
-- Bridge：`alcomd3-mcp/src/main.rs`
-- 共享 IPC 协议：`alcomd3-mcp-protocol/src/lib.rs`
+- 内置 HTTP/RMCP 服务与工具：`vrc-get-gui/src/mcp/server.rs`
+- MCP 生命周期、直接分发、操作与共享状态：`vrc-get-gui/src/mcp/mod.rs`
+- 内部 MCP 数据类型：`vrc-get-gui/src/mcp/types.rs`
 - GUI 共享后端服务和 MCP capability 矩阵：`vrc-get-gui/src/backend/`
-- GUI IPC server 和 tool dispatch：`vrc-get-gui/src/mcp.rs`
 - GUI Tauri commands：`vrc-get-gui/src/commands/mcp.rs`
 - GUI MCP 页面：`vrc-get-gui/app/_main/mcp/index.tsx`
 - 打包逻辑：`xtask/src/build_alcom.rs`、`xtask/src/bundle_alcom*`
 
 ## 参考
 
+- RMCP 3.1.2: <https://github.com/modelcontextprotocol/rust-sdk/releases/tag/rmcp-v3.1.2>
+- MCP Specification `2026-07-28`: <https://modelcontextprotocol.io/specification/2026-07-28>
 - MCP Specification `2025-11-25`: <https://modelcontextprotocol.io/specification/2025-11-25>
-- MCP Streamable HTTP transport: <https://modelcontextprotocol.io/specification/2025-11-25/basic/transports>
-- MCP lifecycle: <https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle>
-- MCP tools: <https://modelcontextprotocol.io/specification/2025-11-25/server/tools>
-- MCP tasks: <https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks>
-- MCP progress: <https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/progress>
-- MCP cancellation: <https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/cancellation>
+- 实验性 Tasks 扩展：<https://github.com/modelcontextprotocol/ext-tasks>

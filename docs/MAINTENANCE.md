@@ -54,7 +54,6 @@ Important files:
 - `vrc-get-gui/src/utils.rs`
 - `vrc-get-gui/bundle/windows-setup.iss`
 - `vrc-get-vpm/src/io/tokio.rs`
-- `alcomd3-mcp-protocol/src/lib.rs`
 - `xtask/src/bundle_alcom.rs`
 - `xtask/src/bundle_alcom/setup_exe.rs`
 - `xtask/tests/alcomd3_identity.rs`
@@ -62,7 +61,7 @@ Important files:
 ### Shared configuration
 
 `alcomd3.config.json` is the shared source for ALCOMD3 product identity and
-release metadata. It manages product, package, GUI binary, MCP binary,
+release metadata. It manages product, package, GUI binary,
 publisher, homepage, GitHub repository, Windows AUMID, current and transitional
 legacy Windows AppIds, the pinned migration-baseline Release tag, updater manifest paths,
 the three-platform release catalog (targets, bundle types, updater payloads,
@@ -120,7 +119,7 @@ ALCOMD3 owns its runtime data by default.
 - External app import rewrites imported repository cache paths to the ALCOMD3
   data directory, splits legacy package zip caches into `PackageCache/`, and
   keeps ALCOMD3's own default project and backup paths.
-- External app import must not copy old MCP endpoint metadata or old log folders.
+- External app import must not copy obsolete MCP runtime artifacts or old log folders.
 
 Current ALCOMD3 data-root structure:
 
@@ -138,7 +137,6 @@ Current ALCOMD3 data-root structure:
 | `templates/*.alcomtemplate` | Custom and imported ALCOMD3 project templates. |
 | `activity-logs/*.jsonl` | Operation activity history shown in the Log view. |
 | `technical-logs/alcomd3-*.log` | Technical application logs. Legacy `vrc-get-` log names remain readable in this folder. |
-| `mcp/endpoint.json` | Runtime metadata for the private GUI IPC endpoint used by the local MCP HTTP server; generated for the current install and never imported from legacy data roots. |
 | `Documents/ALCOMD3/Projects/` | Default project creation folder outside the local data root. |
 | `Documents/ALCOMD3/Backups/` | Default project backup folder outside the local data root. |
 
@@ -383,7 +381,7 @@ Important areas:
 - `vrc-get-gui/app/_main/log/`
 - `vrc-get-gui/src/logging.rs`
 
-### MCP bridge
+### Built-in MCP integration
 
 ALCOMD3 includes an optional local MCP server. Preserve the minimal local
 boundary unless a future change explicitly expands it with review and UI
@@ -393,16 +391,22 @@ Preserve these rules:
 
 - MCP data access is disabled by default and must be enabled from the GUI before
   tools return ALCOMD3 data.
-- The external MCP server is `alcomd3-mcp` over bearer-authenticated Streamable
-  HTTP and binds exactly to `127.0.0.1`.
+- The GUI process embeds the `alcomd3-mcp` server over bearer-authenticated
+  Streamable HTTP and binds exactly to `127.0.0.1`.
 - Validate `Host` and `Origin`; never expose the server on a LAN or public
   address.
-- The GUI exposes a private localhost TCP IPC endpoint while running and writes
-  metadata under the local data directory's `mcp/endpoint.json`.
+- Do not restore a helper process, private IPC listener, endpoint metadata, or
+  a second runtime authentication token. Tool handlers dispatch directly to
+  GUI business logic in process.
 - The GUI MCP enable/disable control only gates tool data access. It must not
   stop the local endpoint; disabled tool calls return `mcp_disabled`.
-- `ALCOMD3_MCP_ENDPOINT_FILE` may override the endpoint metadata path for
-  development and tests.
+- Disabling the MCP extension or exiting the GUI stops the listener and cancels
+  unfinished operations and protocol tasks. Port or token changes rebind the
+  transport without discarding shared task state.
+- Explicitly advertise MCP `2026-07-28` and ordinary-tool compatibility for
+  `2025-11-25`; do not rely on RMCP's `ProtocolVersion::LATEST` alias.
+- `2026-07-28` requests are sessionless and require standard per-request
+  protocol metadata. `2025-11-25` requests retain legacy session handling.
 - Tools include read-only access for listing projects, reading registered
   project details, listing repositories, reading GUI-visible package details,
   listing GUI-visible packages, listing GUI-visible packages in a selected
@@ -414,7 +418,7 @@ Preserve these rules:
 - Public MCP tools must remain adapters over GUI capabilities. Every public tool
   must have a mapping in `vrc-get-gui/src/backend/mcp_capabilities.rs`, and
   tests should fail if a tool lacks a GUI capability.
-- GUI Tauri commands and MCP IPC/tool dispatch should call shared services under
+- GUI Tauri commands and MCP tool dispatch should call shared services under
   `vrc-get-gui/src/backend/` for shared backend logic. MCP-specific code should
   stay limited to access gating, parameter/DTO mapping, task wrapping, error
   mapping, and activity recording.
@@ -431,17 +435,20 @@ Preserve these rules:
   available, and sanitized details.
 - Successful MCP read tools, including log query tools, should be Secondary
   activity records; failures and cancellations remain visible by default.
-- `alcomd3-mcp` must not start, install, update, or repair the GUI. The GUI owns
-  the bridge process and stops it during shutdown.
-- GUI shutdown should remove the endpoint file.
+- The RMCP Tasks extension exposes `tasks/get`, `tasks/update`, and
+  `tasks/cancel`; do not restore the removed core `tasks/list` or
+  `tasks/result` compatibility layer. Clients without the extension continue
+  to receive synchronous tool results.
+- All authenticated local clients share one bearer principal and task
+  namespace. Client name/version must not be used for task authorization.
 
 Important areas:
 
 - `docs/mcp.md`
-- `alcomd3-mcp/`
-- `alcomd3-mcp-protocol/`
 - `vrc-get-gui/src/backend/`
-- `vrc-get-gui/src/mcp.rs`
+- `vrc-get-gui/src/mcp/mod.rs`
+- `vrc-get-gui/src/mcp/server.rs`
+- `vrc-get-gui/src/mcp/types.rs`
 - `vrc-get-gui/src/commands/mcp.rs`
 - `vrc-get-gui/app/_main/mcp/index.tsx`
 - `xtask/src/build_alcom.rs`
@@ -523,6 +530,9 @@ Preserve these rules:
 - `VersionInfoProductVersion` uses a Windows-compatible numeric version.
 - Setup icon uses `vrc-get-gui/icons/icon.ico`.
 - Installed main executable is `ALCOMD3.exe`.
+- Current installers contain no separate MCP executable. The historical
+  `alcomd3-mcp.exe` name remains only so upgrades and uninstall can terminate
+  and remove an obsolete installed helper.
 - Before installation, unconditionally remove the Inno Setup installation under
   `legacyWindowsAppId` and its known `ALCOM.exe`, `ALCOMD3.exe`, and
   `alcomd3-mcp.exe` files. Abort the new installation if cleanup cannot finish.

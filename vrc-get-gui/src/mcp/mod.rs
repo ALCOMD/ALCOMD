@@ -1,3 +1,19 @@
+mod dispatch;
+mod http;
+mod lifecycle;
+mod tasks;
+mod tools;
+mod types;
+
+pub use self::dispatch::McpToolError;
+pub use self::lifecycle::McpState;
+pub(crate) use self::lifecycle::{ensure_mcp_http_config, mcp_http_endpoint};
+
+use self::types::{
+    ClientIdentity, ListRepositoriesOutput, MCP_HTTP_PATH, MCP_PROTOCOL_VERSION, PackageVisibility,
+    RepositoryKind as McpRepositoryKind, RepositorySummary as McpRepositorySummary,
+};
+pub(crate) use self::types::{MCP_HTTP_BIND_HOST, MCP_HTTP_DEFAULT_PORT, MCP_HTTP_TOKEN_ENV};
 use crate::activity_log::{
     ActivityDetail, ActivityImportance, ActivityInput, ActivityKind, ActivityLogContextParams,
     ActivityLogEntryParams, ActivityLogSearchParams, ActivityLogState, ActivityLogSummaryParams,
@@ -29,30 +45,18 @@ use crate::state::{
     ChangesState, GuiConfigState, PackagesState, ProjectApplyState, ProjectBackupState,
     ProjectCopyState, ProjectRestoreState, RepositoryConfigState, SettingsState, TemplatesState,
 };
-use alcomd3_mcp_protocol::{
-    ClientIdentity, EndpointMetadata, IPC_IO_TIMEOUT, IPC_MAX_LINE_BYTES,
-    IPC_METHOD_PROJECT_TASK_CANCEL, IPC_METHOD_PROJECT_TASK_GET, IPC_METHOD_PROJECT_TASK_LIST,
-    IPC_METHOD_PROJECT_TASK_START, IPC_PROTOCOL_VERSION, IpcRequest, IpcResponse, IpcTransport,
-    ListRepositoriesOutput, MCP_HTTP_BIND_ENV, MCP_HTTP_BIND_HOST, MCP_HTTP_PATH,
-    MCP_HTTP_TOKEN_ENV, MCP_PROTOCOL_VERSION, PackageVisibility,
-    RepositoryKind as McpRepositoryKind, RepositorySummary as McpRepositorySummary,
-    endpoint_file_path,
-};
 use indexmap::{IndexMap, IndexSet};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap, VecDeque};
-use std::future::Future;
 use std::io;
-use std::path::{Path, PathBuf};
-use std::process::Stdio;
+#[cfg(test)]
+use std::path::Path;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::process::{Child, Command};
 use tokio::sync::{Mutex, oneshot};
 use tokio::task::AbortHandle;
 use uuid::Uuid;
@@ -75,11 +79,17 @@ const MCP_PACKAGE_LIST_DEFAULT_LIMIT: usize = 200;
 const MCP_PACKAGE_LIST_MAX_LIMIT: usize = 1_000;
 const MCP_PROJECT_TASK_TTL_MS: u64 = 10 * 60 * 1_000;
 const MCP_PROJECT_TASK_POLL_INTERVAL_MS: u64 = 500;
+const MCP_OPERATION_START_METHOD: &str = "project_operation_start";
+const MCP_OPERATION_GET_METHOD: &str = "project_operation_get";
+const MCP_OPERATION_CANCEL_METHOD: &str = "project_operation_cancel";
 const MCP_DISABLED_MESSAGE: &str = "MCP is disabled in ALCOMD3 GUI";
-const MCP_HTTP_STARTUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-const MCP_HTTP_STARTUP_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(50);
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+struct McpInvocation {
+    request_id: Uuid,
+    client: ClientIdentity,
+    method: String,
+    params: Value,
+}
 
 #[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -90,8 +100,6 @@ pub struct McpStatus {
     transport: String,
     host: Option<String>,
     port: Option<u16>,
-    pid: u32,
-    endpoint_file: String,
     mcp_endpoint: Option<String>,
     authorization_token: Option<String>,
     authorization_token_environment_variable: String,
@@ -108,7 +116,6 @@ impl McpStatus {
 #[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct McpRecentClientStatus {
-    session_id: String,
     name: String,
     version: Option<String>,
     last_seen_unix_ms: u64,
@@ -190,7 +197,7 @@ struct McpProjectTaskSnapshot {
     poll_interval: Option<u64>,
     progress: Option<McpProjectProgress>,
     result: Option<Value>,
-    error: Option<McpIpcError>,
+    error: Option<McpToolError>,
 }
 
 struct McpProjectTaskRecord {
@@ -204,7 +211,7 @@ struct McpProjectTaskRecord {
     poll_interval: Option<u64>,
     progress: Option<McpProjectProgress>,
     result: Option<Value>,
-    error: Option<McpIpcError>,
+    error: Option<McpToolError>,
     cancel_handle: Option<McpProjectTaskCancelHandle>,
     cancel_requested: bool,
     tool_call: Option<McpTrackedToolCall>,
@@ -245,11 +252,11 @@ impl McpProjectTaskRecord {
 }
 
 #[derive(Default)]
-struct McpProjectTaskStore {
+struct McpProjectOperationStore {
     tasks: HashMap<String, McpProjectTaskRecord>,
 }
 
-impl McpProjectTaskStore {
+impl McpProjectOperationStore {
     fn start(
         &mut self,
         task_id: String,
@@ -287,14 +294,6 @@ impl McpProjectTaskStore {
         }
     }
 
-    fn list(&mut self) -> Vec<McpProjectTaskSnapshot> {
-        self.prune_expired();
-        self.tasks
-            .values()
-            .map(McpProjectTaskRecord::snapshot)
-            .collect()
-    }
-
     fn get(&mut self, task_id: &str) -> Option<McpProjectTaskSnapshot> {
         self.prune_expired();
         self.tasks.get(task_id).map(McpProjectTaskRecord::snapshot)
@@ -303,17 +302,17 @@ impl McpProjectTaskStore {
     fn cancel(
         &mut self,
         task_id: &str,
-    ) -> Result<(McpProjectTaskSnapshot, Option<McpTrackedToolCall>), McpIpcError> {
+    ) -> Result<(McpProjectTaskSnapshot, Option<McpTrackedToolCall>), McpToolError> {
         self.prune_expired();
         let Some(task) = self.tasks.get_mut(task_id) else {
-            return Err(McpIpcError::new(
+            return Err(McpToolError::new(
                 "project_task_not_found",
                 format!("MCP project task was not found: {task_id}"),
             ));
         };
 
         if task.status.is_terminal() {
-            return Err(McpIpcError::new(
+            return Err(McpToolError::new(
                 "project_task_already_finished",
                 format!("MCP project task already finished: {task_id}"),
             ));
@@ -340,7 +339,7 @@ impl McpProjectTaskStore {
         task.status = McpProjectTaskStatus::Cancelled;
         task.status_message = Some("Task canceled".to_string());
         task.last_updated_at = now_iso8601();
-        task.error = Some(McpIpcError::new(
+        task.error = Some(McpToolError::new(
             "project_task_cancelled",
             "MCP project task was canceled",
         ));
@@ -382,7 +381,7 @@ impl McpProjectTaskStore {
         task.tool_call.take()
     }
 
-    fn finish_error(&mut self, task_id: &str, error: McpIpcError) -> Option<McpTrackedToolCall> {
+    fn finish_error(&mut self, task_id: &str, error: McpToolError) -> Option<McpTrackedToolCall> {
         let Some(task) = self.tasks.get_mut(task_id) else {
             return None;
         };
@@ -411,7 +410,7 @@ impl McpProjectTaskStore {
         task.cancel_requested = false;
         task.status = McpProjectTaskStatus::Cancelled;
         task.status_message = Some("Task canceled".to_string());
-        task.error = Some(McpIpcError::new(
+        task.error = Some(McpToolError::new(
             "project_task_cancelled",
             "MCP project task was canceled",
         ));
@@ -437,7 +436,7 @@ impl McpProjectTaskStore {
         task.cancel_requested = false;
         task.status = McpProjectTaskStatus::Cancelled;
         task.status_message = Some("Task canceled".to_string());
-        task.error = Some(McpIpcError::new(
+        task.error = Some(McpToolError::new(
             "project_task_cancelled",
             "MCP project task was canceled",
         ));
@@ -454,7 +453,7 @@ impl McpProjectTaskStore {
             if task.status == McpProjectTaskStatus::Working {
                 task.status = McpProjectTaskStatus::Cancelled;
                 task.status_message = Some("Task canceled".to_string());
-                task.error = Some(McpIpcError::new(
+                task.error = Some(McpToolError::new(
                     "project_task_cancelled",
                     "MCP project task was canceled",
                 ));
@@ -534,629 +533,82 @@ fn project_task_completed_message(kind: McpProjectTaskKind) -> String {
     .to_string()
 }
 
-pub struct McpState {
-    inner: Mutex<McpStateInner>,
-    project_tasks: Arc<StdMutex<McpProjectTaskStore>>,
-}
-
-struct McpStateInner {
-    active: Option<ActiveMcpServer>,
-    recent_clients: VecDeque<McpRecentClientStatus>,
-    last_client_status_emit_unix_ms: u64,
-}
-
-struct ActiveMcpServer {
-    task: tauri::async_runtime::JoinHandle<()>,
-    http: ActiveMcpHttpServer,
-}
-
-struct ActiveMcpHttpServer {
-    child: Child,
-    host: String,
-    port: u16,
-    token: String,
-}
-
-impl McpState {
-    pub fn new() -> Self {
-        Self {
-            inner: Mutex::new(McpStateInner {
-                active: None,
-                recent_clients: VecDeque::new(),
-                last_client_status_emit_unix_ms: 0,
-            }),
-            project_tasks: Arc::new(StdMutex::new(McpProjectTaskStore::default())),
-        }
-    }
-
-    pub async fn status(&self, enabled: bool) -> McpStatus {
-        let mut inner = self.inner.lock().await;
-        let exited = inner.active.as_mut().and_then(|active| {
-            active
-                .http
-                .child
-                .try_wait()
-                .inspect_err(|error| {
-                    log::error!("failed to query MCP Streamable HTTP server status: {error}");
-                })
-                .ok()
-                .flatten()
-        });
-        if let Some(status) = exited {
-            log::error!("MCP Streamable HTTP server exited unexpectedly with {status}");
-            if let Some(active) = inner.active.take() {
-                active.task.abort();
-            }
-            if let Err(error) = remove_endpoint_file(&endpoint_file_path()).await {
-                log::error!("failed to remove MCP IPC endpoint after server exit: {error}");
-            }
-        }
-        let http = inner.active.as_ref().map(|active| &active.http);
-        let now_unix_ms = now_unix_ms();
-
-        McpStatus {
-            enabled,
-            running: http.is_some(),
-            protocol_version: MCP_PROTOCOL_VERSION.to_string(),
-            transport: "streamable-http".to_string(),
-            host: http.map(|http| http.host.clone()),
-            port: http.map(|http| http.port),
-            pid: http.and_then(|http| http.child.id()).unwrap_or_default(),
-            endpoint_file: endpoint_file_path().display().to_string(),
-            mcp_endpoint: http.map(|http| mcp_http_endpoint(&http.host, http.port)),
-            authorization_token: http.map(|http| http.token.clone()),
-            authorization_token_environment_variable: MCP_HTTP_TOKEN_ENV.to_string(),
-            quick_setup_supported: crate::mcp_client_config::quick_setup_supported(),
-            recent_clients: inner
-                .recent_clients
-                .iter()
-                .filter(|client| is_recent_client_activity(client.last_seen_unix_ms, now_unix_ms))
-                .cloned()
-                .collect(),
-        }
-    }
-
-    pub async fn ensure_running(&self, app: AppHandle) -> io::Result<()> {
-        self.start(app).await
-    }
-
-    pub async fn ensure_running_and_emit_status(&self, app: AppHandle) -> io::Result<()> {
-        self.start(app.clone()).await?;
-        let enabled = app.state::<GuiConfigState>().get().mcp_enabled;
-        self.emit_status(app, enabled).await;
-        Ok(())
-    }
-
-    pub async fn set_enabled(&self, app: AppHandle, enabled: bool) -> io::Result<()> {
-        if let Err(e) = self.start(app.clone()).await {
-            log::error!("failed to ensure MCP IPC endpoint while setting MCP access: {e}");
-        }
-        self.emit_status(app, enabled).await;
-        Ok(())
-    }
-
-    pub async fn synchronize_extension_state(&self, app: AppHandle) -> io::Result<()> {
-        loop {
-            let enabled = app
-                .state::<GuiConfigState>()
-                .get()
-                .is_extension_enabled(crate::extensions::MCP_EXTENSION_ID);
-            let result = if enabled {
-                self.start(app.clone()).await
-            } else {
-                self.stop(Some(&app)).await
-            };
-            let latest_enabled = app
-                .state::<GuiConfigState>()
-                .get()
-                .is_extension_enabled(crate::extensions::MCP_EXTENSION_ID);
-
-            if latest_enabled != enabled {
-                if let Err(error) = result {
-                    log::error!("failed to apply superseded MCP extension enabled status: {error}");
-                }
-                continue;
-            }
-
-            let access_enabled = latest_enabled && app.state::<GuiConfigState>().get().mcp_enabled;
-            self.emit_status(app, access_enabled).await;
-            return result;
-        }
-    }
-
-    async fn start(&self, app: AppHandle) -> io::Result<()> {
-        let (http_port, http_token) = ensure_mcp_http_config(&app).await?;
-        let mut inner = self.inner.lock().await;
-        if inner.active.is_some() {
-            return Ok(());
-        }
-
-        let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
-        let address = listener.local_addr()?;
-        let token = Uuid::new_v4().simple().to_string();
-        let metadata = EndpointMetadata {
-            protocol_version: IPC_PROTOCOL_VERSION,
-            transport: IpcTransport::Tcp,
-            host: "127.0.0.1".to_string(),
-            port: address.port(),
-            token: token.clone(),
-            pid: std::process::id(),
-        };
-
-        write_endpoint_file(&endpoint_file_path(), &metadata).await?;
-
-        let task = tauri::async_runtime::spawn(async move {
-            accept_loop(app.clone(), listener, token).await;
-        });
-
-        let http = match start_mcp_http_server(http_port, http_token).await {
-            Ok(http) => http,
-            Err(error) => {
-                task.abort();
-                remove_endpoint_file(&endpoint_file_path()).await?;
-                return Err(error);
-            }
-        };
-
-        inner.recent_clients.clear();
-        inner.last_client_status_emit_unix_ms = 0;
-        inner.active = Some(ActiveMcpServer { task, http });
-        Ok(())
-    }
-
-    async fn stop(&self, app: Option<&AppHandle>) -> io::Result<()> {
-        let mut inner = self.inner.lock().await;
-        if let Some(mut active) = inner.active.take() {
-            active.task.abort();
-            if let Err(error) = active.http.child.start_kill()
-                && error.kind() != io::ErrorKind::InvalidInput
-            {
-                log::error!("failed to stop MCP Streamable HTTP server: {error}");
-            }
-            if let Err(error) = active.http.child.wait().await {
-                log::error!("failed to wait for MCP Streamable HTTP server shutdown: {error}");
-            }
-        }
-        inner.recent_clients.clear();
-        inner.last_client_status_emit_unix_ms = 0;
-        let tool_calls = self.project_tasks.lock().unwrap().abort_all();
-        if let Some(app) = app {
-            for tool_call in tool_calls {
-                cancel_tracked_mcp_tool_call_activity(app, &tool_call);
-                emit_tracked_mcp_tool_call_event(app, &tool_call, McpToolCallPhase::Failed);
-            }
-        }
-        remove_endpoint_file(&endpoint_file_path()).await
-    }
-
-    pub async fn shutdown(&self, app: &AppHandle) -> io::Result<()> {
-        self.stop(Some(app)).await
-    }
-
-    async fn emit_status(&self, app: AppHandle, enabled: bool) {
-        let status = self.status(enabled).await;
-        if let Err(e) = app.emit(MCP_STATUS_CHANGED_EVENT, status) {
-            log::error!("failed to emit MCP status change: {e}");
-        }
-    }
-
-    async fn record_client(&self, client: &ClientIdentity) -> bool {
-        let mut inner = self.inner.lock().await;
-        let now_unix_ms = now_unix_ms();
-        let McpStateInner {
-            recent_clients,
-            last_client_status_emit_unix_ms,
-            ..
-        } = &mut *inner;
-        record_client_activity(
-            recent_clients,
-            client,
-            now_unix_ms,
-            last_client_status_emit_unix_ms,
-        )
-    }
-}
-
-pub(crate) async fn ensure_mcp_http_config(app: &AppHandle) -> io::Result<(u16, String)> {
-    let state = app.state::<GuiConfigState>();
-    let current = state.get();
-    if current.mcp_http_port != 0 && current.mcp_http_token.len() >= 32 {
-        return Ok((current.mcp_http_port, current.mcp_http_token.clone()));
-    }
-    drop(current);
-
-    let mut config = state.load_mut().await?;
-    let changed = config.ensure_mcp_http_config();
-    let result = (config.mcp_http_port, config.mcp_http_token.clone());
-    if changed {
-        config.save().await?;
-    }
-    Ok(result)
-}
-
-pub(crate) fn mcp_http_endpoint(host: &str, port: u16) -> String {
-    format!("http://{host}:{port}{MCP_HTTP_PATH}")
-}
-
-async fn start_mcp_http_server(port: u16, token: String) -> io::Result<ActiveMcpHttpServer> {
-    let mut command = Command::new(bridge_executable_path());
-    command
-        .env(MCP_HTTP_BIND_ENV, format!("{MCP_HTTP_BIND_HOST}:{port}"))
-        .env(MCP_HTTP_TOKEN_ENV, &token)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.as_std_mut().creation_flags(CREATE_NO_WINDOW);
-    }
-
-    let mut child = command.spawn()?;
-    let address = (MCP_HTTP_BIND_HOST, port);
-    let deadline = tokio::time::Instant::now() + MCP_HTTP_STARTUP_TIMEOUT;
-    loop {
-        if let Some(status) = child.try_wait()? {
-            return Err(io::Error::other(format!(
-                "MCP Streamable HTTP server exited during startup with {status}"
-            )));
-        }
-        if TcpStream::connect(address).await.is_ok() {
-            tokio::time::sleep(MCP_HTTP_STARTUP_POLL_INTERVAL).await;
-            if child.try_wait()?.is_none() {
-                return Ok(ActiveMcpHttpServer {
-                    child,
-                    host: MCP_HTTP_BIND_HOST.to_string(),
-                    port,
-                    token,
-                });
-            }
-        }
-        if tokio::time::Instant::now() >= deadline {
-            child.start_kill().ok();
-            return Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "timed out waiting for MCP Streamable HTTP server",
-            ));
-        }
-        tokio::time::sleep(MCP_HTTP_STARTUP_POLL_INTERVAL).await;
-    }
-}
-
-async fn accept_loop(app: AppHandle, listener: TcpListener, token: String) {
-    loop {
-        match listener.accept().await {
-            Ok((stream, _)) => {
-                let app = app.clone();
-                let token = token.clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Err(e) = handle_connection(app, stream, token).await {
-                        log::error!("MCP IPC connection failed: {e}");
-                    }
-                });
-            }
-            Err(e) => {
-                log::error!("MCP IPC listener failed: {e}");
-                break;
-            }
-        }
-    }
-}
-
-async fn handle_connection(app: AppHandle, stream: TcpStream, token: String) -> io::Result<()> {
-    let mut reader = BufReader::new(stream);
-    let line = with_ipc_io_timeout(
-        "reading ALCOMD3 MCP IPC request",
-        read_bounded_line(&mut reader, "ALCOMD3 MCP IPC request"),
-    )
-    .await?;
-
-    let response = match serde_json::from_str::<IpcRequest>(&line) {
-        Ok(request) => handle_request(app, request, &token).await,
-        Err(e) => IpcResponse::error(
-            Uuid::nil(),
-            "invalid_request",
-            format!("Failed to parse MCP IPC request: {e}"),
-            None,
-        ),
-    };
-
-    let stream = reader.get_mut();
-    let bytes = serde_json::to_vec(&response).map_err(io::Error::other)?;
-    with_ipc_io_timeout("writing ALCOMD3 MCP IPC response", stream.write_all(&bytes)).await?;
-    with_ipc_io_timeout(
-        "writing ALCOMD3 MCP IPC response delimiter",
-        stream.write_all(b"\n"),
-    )
-    .await?;
-    with_ipc_io_timeout("flushing ALCOMD3 MCP IPC response", stream.flush()).await
-}
-
-async fn with_ipc_io_timeout<T>(
-    operation: &'static str,
-    future: impl Future<Output = io::Result<T>>,
-) -> io::Result<T> {
-    tokio::time::timeout(IPC_IO_TIMEOUT, future)
-        .await
-        .map_err(|_| {
-            io::Error::new(
-                io::ErrorKind::TimedOut,
-                format!("{operation} timed out after {:?}", IPC_IO_TIMEOUT),
-            )
-        })?
-}
-
-async fn read_bounded_line<R>(reader: &mut R, description: &'static str) -> io::Result<String>
-where
-    R: AsyncBufRead + Unpin,
-{
-    read_bounded_line_with_limit(reader, description, IPC_MAX_LINE_BYTES).await
-}
-
-async fn read_bounded_line_with_limit<R>(
-    reader: &mut R,
-    description: &'static str,
-    max_line_bytes: usize,
-) -> io::Result<String>
-where
-    R: AsyncBufRead + Unpin,
-{
-    let mut bytes = Vec::new();
-    let mut limited = reader.take((max_line_bytes + 1) as u64);
-    let read = limited.read_until(b'\n', &mut bytes).await?;
-    drop(limited);
-
-    if read == 0 {
-        return Err(io::Error::new(
-            io::ErrorKind::UnexpectedEof,
-            format!("{description} closed without a line"),
-        ));
-    }
-    if bytes.len() > max_line_bytes {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("{description} exceeded {} bytes", max_line_bytes),
-        ));
-    }
-    if !bytes.ends_with(b"\n") {
-        return Err(io::Error::new(
-            io::ErrorKind::UnexpectedEof,
-            format!("{description} closed before newline delimiter"),
-        ));
-    }
-
-    String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
-}
-
-async fn handle_request(app: AppHandle, request: IpcRequest, token: &str) -> IpcResponse {
-    if request.protocol_version != IPC_PROTOCOL_VERSION {
-        return IpcResponse::error(
-            request.request_id,
-            "protocol_version_mismatch",
-            format!(
-                "Unsupported MCP IPC protocol version {}; expected {}",
-                request.protocol_version, IPC_PROTOCOL_VERSION
-            ),
-            None,
-        );
-    }
-
-    if request.token != token {
-        return IpcResponse::error(
-            request.request_id,
-            "unauthorized",
-            "Invalid MCP IPC token",
-            None,
-        );
-    }
-
-    let mcp = app.state::<McpState>();
-    let enabled = app.state::<GuiConfigState>().get().mcp_enabled;
-    if mcp.record_client(&request.client).await {
-        mcp.emit_status(app.clone(), enabled).await;
-    }
-
-    if !enabled && !mcp_request_allowed_when_disabled(&request.method) {
-        record_disabled_mcp_tool_call(&app, &request);
-        return mcp_disabled_response(request.request_id);
-    }
-
-    let mut tool_call =
-        mcp_tool_call_for_request(&request.method, &request.params, request.request_id);
-    if let Some(tool_call) = &tool_call {
-        emit_tracked_mcp_tool_call_event(&app, tool_call, McpToolCallPhase::Started);
-    }
-    if let Some(tool_call) = &mut tool_call {
-        tool_call.activity = start_mcp_tool_call_activity(&app, &request, tool_call);
-    }
-
-    let result = dispatch_gui_request(
-        app.clone(),
-        &request.method,
-        request.params,
-        tool_call.clone(),
-    )
-    .await;
-    if let Some(tool_call) = &tool_call
-        && mcp_tool_call_finishes_with_response(&request.method, &result)
-    {
-        finish_tracked_mcp_tool_call_activity(
-            &app,
-            tool_call,
-            mcp_tool_call_finished_phase(&result),
-            mcp_tool_call_error_message(&result),
-        );
-        emit_tracked_mcp_tool_call_event(&app, tool_call, mcp_tool_call_finished_phase(&result));
-    }
-
-    match result {
-        Ok(result) => IpcResponse::success(request.request_id, result),
-        Err(error) => IpcResponse::error(request.request_id, error.code, error.message, error.data),
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct McpIpcError {
-    pub code: String,
-    pub message: String,
-    pub data: Option<Value>,
-}
-
-impl McpIpcError {
-    pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
-        Self {
-            code: code.into(),
-            message: message.into(),
-            data: None,
-        }
-    }
-
-    pub fn with_data(code: impl Into<String>, message: impl Into<String>, data: Value) -> Self {
-        Self {
-            code: code.into(),
-            message: message.into(),
-            data: Some(data),
-        }
-    }
-
-    fn from_error(code: impl Into<String>, error: impl std::error::Error) -> Self {
-        Self::new(code, error.to_string())
-    }
-
-    fn from_rust_error(code: impl Into<String>, error: RustError) -> Self {
-        Self::new(code, error.into_message())
-    }
-}
-
-async fn dispatch_gui_request(
-    app: AppHandle,
-    method: &str,
-    params: Value,
-    tool_call: Option<McpTrackedToolCall>,
-) -> Result<Value, McpIpcError> {
-    match method {
-        "list_projects" => list_projects(app).await,
-        "list_templates" => list_templates(app).await,
-        "get_template" => get_template(app, params).await,
-        "create_template" => create_template(app, params).await,
-        "edit_template" => edit_template(app, params).await,
-        "set_template_package" => set_template_package(app, params).await,
-        "remove_template_package" => remove_template_package(app, params).await,
-        "set_template_unitypackage" => set_template_unitypackage(app, params).await,
-        "remove_template_unitypackage" => remove_template_unitypackage(app, params).await,
-        "remove_template" => remove_template(app, params).await,
-        "get_project_details" => get_project_details(app, params).await,
-        "list_repositories" => list_repositories(app).await,
-        "add_repository" => add_repository(app, params).await,
-        "remove_repository" => remove_repository(app, params).await,
-        "get_package_details" => get_package_details(app, params).await,
-        "list_packages" => list_packages(app, params).await,
-        "list_repository_packages" => list_repository_packages(app, params).await,
-        "get_environment_settings" => get_environment_settings(app).await,
-        "search_activity_logs" => search_activity_logs(app, params).await,
-        "get_activity_log_entry" => get_activity_log_entry(app, params).await,
-        "summarize_activity_logs" => summarize_activity_logs(app, params).await,
-        "get_activity_log_context" => get_activity_log_context(app, params).await,
-        "search_technical_logs" => search_technical_logs(app, params).await,
-        "get_technical_log_entry" => get_technical_log_entry(app, params).await,
-        "summarize_technical_logs" => summarize_technical_logs(app, params).await,
-        "create_project" => create_project(app, params).await,
-        "add_existing_project" => add_existing_project(app, params).await,
-        "backup_project" => backup_project(app, params).await,
-        "copy_project" => copy_project(app, params).await,
-        "restore_project_from_backup" => restore_project_from_backup(app, params).await,
-        "install_project_package" => install_project_package(app, params).await,
-        "uninstall_project_package" => uninstall_project_package(app, params).await,
-        "reinstall_project_package" => reinstall_project_package(app, params).await,
-        IPC_METHOD_PROJECT_TASK_START => project_task_start(app, params, tool_call).await,
-        IPC_METHOD_PROJECT_TASK_GET => project_task_get(app, params).await,
-        IPC_METHOD_PROJECT_TASK_LIST => project_task_list(app).await,
-        IPC_METHOD_PROJECT_TASK_CANCEL => project_task_cancel(app, params).await,
-        "search_packages" => list_packages(app, params).await,
-        _ => Err(McpIpcError::new(
-            "unknown_method",
-            format!("MCP IPC method is not implemented: {method}"),
-        )),
-    }
-}
-
-async fn search_activity_logs(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn search_activity_logs(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<ActivityLogSearchParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
     let activity = app.state::<ActivityLogState>();
     let response = logs::search_activity_logs(&activity, params).map_err(mcp_activity_log_error)?;
-    serde_json::to_value(response).map_err(|e| McpIpcError::from_error("serialization_error", e))
+    serde_json::to_value(response).map_err(|e| McpToolError::from_error("serialization_error", e))
 }
 
-async fn get_activity_log_entry(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn get_activity_log_entry(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<ActivityLogEntryParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
     let activity = app.state::<ActivityLogState>();
     let response =
         logs::get_activity_log_entry(&activity, params).map_err(mcp_activity_log_error)?;
-    serde_json::to_value(response).map_err(|e| McpIpcError::from_error("serialization_error", e))
+    serde_json::to_value(response).map_err(|e| McpToolError::from_error("serialization_error", e))
 }
 
-async fn summarize_activity_logs(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn summarize_activity_logs(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<ActivityLogSummaryParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
     let activity = app.state::<ActivityLogState>();
     let response =
         logs::summarize_activity_logs(&activity, params).map_err(mcp_activity_log_error)?;
-    serde_json::to_value(response).map_err(|e| McpIpcError::from_error("serialization_error", e))
+    serde_json::to_value(response).map_err(|e| McpToolError::from_error("serialization_error", e))
 }
 
-async fn get_activity_log_context(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn get_activity_log_context(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<ActivityLogContextParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
     let activity = app.state::<ActivityLogState>();
     let response =
         logs::get_activity_log_context(&activity, params).map_err(mcp_activity_log_error)?;
-    serde_json::to_value(response).map_err(|e| McpIpcError::from_error("serialization_error", e))
+    serde_json::to_value(response).map_err(|e| McpToolError::from_error("serialization_error", e))
 }
 
-async fn search_technical_logs(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn search_technical_logs(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<TechnicalLogSearchParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
     let io = app.state::<DefaultEnvironmentIo>();
     let folder = crate::logging::log_folder(&io);
     let response = logs::search_technical_logs(&folder, params).map_err(mcp_technical_log_error)?;
-    serde_json::to_value(response).map_err(|e| McpIpcError::from_error("serialization_error", e))
+    serde_json::to_value(response).map_err(|e| McpToolError::from_error("serialization_error", e))
 }
 
-async fn get_technical_log_entry(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn get_technical_log_entry(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<TechnicalLogEntryParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
     let io = app.state::<DefaultEnvironmentIo>();
     let folder = crate::logging::log_folder(&io);
     let response =
         logs::get_technical_log_entry(&folder, params).map_err(mcp_technical_log_error)?;
-    serde_json::to_value(response).map_err(|e| McpIpcError::from_error("serialization_error", e))
+    serde_json::to_value(response).map_err(|e| McpToolError::from_error("serialization_error", e))
 }
 
-async fn summarize_technical_logs(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn summarize_technical_logs(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<TechnicalLogSummaryParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
     let io = app.state::<DefaultEnvironmentIo>();
     let folder = crate::logging::log_folder(&io);
     let response =
         logs::summarize_technical_logs(&folder, params).map_err(mcp_technical_log_error)?;
-    serde_json::to_value(response).map_err(|e| McpIpcError::from_error("serialization_error", e))
+    serde_json::to_value(response).map_err(|e| McpToolError::from_error("serialization_error", e))
 }
 
-fn mcp_activity_log_error(error: crate::activity_log::ActivityLogQueryError) -> McpIpcError {
-    McpIpcError::new(error.code(), error.message())
+fn mcp_activity_log_error(error: crate::activity_log::ActivityLogQueryError) -> McpToolError {
+    McpToolError::new(error.code(), error.message())
 }
 
-fn mcp_technical_log_error(error: crate::logging::TechnicalLogQueryError) -> McpIpcError {
-    McpIpcError::new(error.code(), error.message())
+fn mcp_technical_log_error(error: crate::logging::TechnicalLogQueryError) -> McpToolError {
+    McpToolError::new(error.code(), error.message())
 }
 
 fn mcp_request_allowed_when_disabled(method: &str) -> bool {
     matches!(
         method,
-        IPC_METHOD_PROJECT_TASK_GET | IPC_METHOD_PROJECT_TASK_LIST | IPC_METHOD_PROJECT_TASK_CANCEL
+        MCP_OPERATION_GET_METHOD | MCP_OPERATION_CANCEL_METHOD
     )
 }
 
@@ -1165,10 +617,7 @@ fn mcp_tool_call_for_request(
     params: &Value,
     request_id: Uuid,
 ) -> Option<McpTrackedToolCall> {
-    if matches!(
-        method,
-        IPC_METHOD_PROJECT_TASK_GET | IPC_METHOD_PROJECT_TASK_LIST
-    ) {
+    if matches!(method, MCP_OPERATION_GET_METHOD) {
         return None;
     }
 
@@ -1182,16 +631,19 @@ fn mcp_tool_call_for_request(
     })
 }
 
-fn mcp_tool_call_finishes_with_response(method: &str, result: &Result<Value, McpIpcError>) -> bool {
-    method != IPC_METHOD_PROJECT_TASK_START || result.is_err()
+fn mcp_tool_call_finishes_with_response(
+    method: &str,
+    result: &Result<Value, McpToolError>,
+) -> bool {
+    method != MCP_OPERATION_START_METHOD || result.is_err()
 }
 
 fn mcp_tool_name(method: &str, params: &Value) -> Option<&'static str> {
-    if method == IPC_METHOD_PROJECT_TASK_START {
+    if method == MCP_OPERATION_START_METHOD {
         return params
             .get("method")
             .and_then(Value::as_str)
-            .and_then(mcp_project_task_tool_name);
+            .and_then(mcp_project_operation_tool_name);
     }
 
     mcp_tool_name_for_method(method)
@@ -1205,7 +657,7 @@ fn mcp_tool_name_for_method(method: &str) -> Option<&'static str> {
     mcp_tool_capability_for_method(method).map(|capability| capability.tool_name)
 }
 
-fn mcp_project_task_tool_name(method: &str) -> Option<&'static str> {
+fn mcp_project_operation_tool_name(method: &str) -> Option<&'static str> {
     mcp_tool_capability_for_method(method)
         .filter(|capability| !capability.read_only)
         .map(|capability| capability.tool_name)
@@ -1218,13 +670,13 @@ fn mcp_tool_call_finished_phase<T, E>(result: &Result<T, E>) -> McpToolCallPhase
     }
 }
 
-fn mcp_tool_call_error_message(result: &Result<Value, McpIpcError>) -> Option<String> {
+fn mcp_tool_call_error_message(result: &Result<Value, McpToolError>) -> Option<String> {
     result.as_ref().err().map(|error| error.message.clone())
 }
 
 fn start_mcp_tool_call_activity(
     app: &AppHandle,
-    request: &IpcRequest,
+    request: &McpInvocation,
     tool_call: &McpTrackedToolCall,
 ) -> Option<ActivityTracker> {
     let activity = app.try_state::<ActivityLogState>()?;
@@ -1281,7 +733,7 @@ fn finish_tracked_mcp_tool_call_activity(
     }
 }
 
-fn record_disabled_mcp_tool_call(app: &AppHandle, request: &IpcRequest) {
+fn record_disabled_mcp_tool_call(app: &AppHandle, request: &McpInvocation) {
     let Some(mut tool_call) =
         mcp_tool_call_for_request(&request.method, &request.params, request.request_id)
     else {
@@ -1318,11 +770,11 @@ fn mcp_activity_operation(tool_name: &str) -> String {
 }
 
 fn mcp_activity_kind(method: &str, params: &Value) -> ActivityKind {
-    if method == IPC_METHOD_PROJECT_TASK_CANCEL
+    if method == MCP_OPERATION_CANCEL_METHOD
         || mcp_tool_name_for_method(method)
             .and_then(crate::backend::mcp_capabilities::mcp_tool_capability_for_tool_name)
             .is_some_and(|capability| !capability.read_only)
-        || (method == IPC_METHOD_PROJECT_TASK_START
+        || (method == MCP_OPERATION_START_METHOD
             && params
                 .get("method")
                 .and_then(Value::as_str)
@@ -1352,7 +804,7 @@ fn mcp_client_name(client: &ClientIdentity) -> String {
 }
 
 fn mcp_activity_target(method: &str, params: &Value) -> Option<String> {
-    if method == IPC_METHOD_PROJECT_TASK_START {
+    if method == MCP_OPERATION_START_METHOD {
         let inner_method = params
             .get("method")
             .and_then(Value::as_str)
@@ -1419,7 +871,7 @@ fn mcp_activity_target(method: &str, params: &Value) -> Option<String> {
 }
 
 fn mcp_activity_details(method: &str, params: &Value) -> Vec<ActivityDetail> {
-    let params = if method == IPC_METHOD_PROJECT_TASK_START {
+    let params = if method == MCP_OPERATION_START_METHOD {
         params.get("params").unwrap_or(params)
     } else {
         params
@@ -1557,11 +1009,11 @@ fn emit_mcp_tool_call_event(
     }
 }
 
-async fn list_projects(app: AppHandle) -> Result<Value, McpIpcError> {
+async fn list_projects(app: AppHandle) -> Result<Value, McpToolError> {
     let io = app.state::<DefaultEnvironmentIo>();
     let connection = VccDatabaseConnection::connect(io.inner())
         .await
-        .map_err(|e| McpIpcError::from_error("project_database_error", e))?;
+        .map_err(|e| McpToolError::from_error("project_database_error", e))?;
 
     let projects = connection
         .get_projects()
@@ -1575,7 +1027,7 @@ async fn list_projects(app: AppHandle) -> Result<Value, McpIpcError> {
     }))
 }
 
-async fn list_templates(app: AppHandle) -> Result<Value, McpIpcError> {
+async fn list_templates(app: AppHandle) -> Result<Value, McpToolError> {
     let io = app.state::<DefaultEnvironmentIo>();
     let templates = template_operations::load_project_templates(io.inner())
         .await
@@ -1639,9 +1091,9 @@ struct TemplateUnityPackageParams {
     unitypackage_path: String,
 }
 
-async fn get_template(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn get_template(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<TemplateIdParams>(params)
-        .map_err(|error| McpIpcError::from_error("invalid_params", error))?;
+        .map_err(|error| McpToolError::from_error("invalid_params", error))?;
     let template_id = normalize_template_id(params.template_id)?;
     let template = template_operations::get_project_template(
         app.state::<DefaultEnvironmentIo>().inner(),
@@ -1652,9 +1104,9 @@ async fn get_template(app: AppHandle, params: Value) -> Result<Value, McpIpcErro
     Ok(json!({ "ok": true, "template": template }))
 }
 
-async fn create_template(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn create_template(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<CreateTemplateParams>(params)
-        .map_err(|error| McpIpcError::from_error("invalid_params", error))?;
+        .map_err(|error| McpToolError::from_error("invalid_params", error))?;
     let definition = project_template_definition(
         params.display_name,
         params.base_template_id,
@@ -1672,9 +1124,9 @@ async fn create_template(app: AppHandle, params: Value) -> Result<Value, McpIpcE
     Ok(json!({ "ok": true, "template": template }))
 }
 
-async fn edit_template(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn edit_template(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<EditTemplateParams>(params)
-        .map_err(|error| McpIpcError::from_error("invalid_params", error))?;
+        .map_err(|error| McpToolError::from_error("invalid_params", error))?;
     let template_id = normalize_template_id(params.template_id)?;
     let definition = project_template_definition(
         params.display_name,
@@ -1694,9 +1146,9 @@ async fn edit_template(app: AppHandle, params: Value) -> Result<Value, McpIpcErr
     Ok(json!({ "ok": true, "template": template }))
 }
 
-async fn set_template_package(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn set_template_package(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<SetTemplatePackageParams>(params)
-        .map_err(|error| McpIpcError::from_error("invalid_params", error))?;
+        .map_err(|error| McpToolError::from_error("invalid_params", error))?;
     let template_id = normalize_template_id(params.template_id)?;
     let template = template_operations::set_template_vpm_dependency(
         app.state::<TemplatesState>().inner(),
@@ -1710,9 +1162,9 @@ async fn set_template_package(app: AppHandle, params: Value) -> Result<Value, Mc
     Ok(json!({ "ok": true, "template": template }))
 }
 
-async fn remove_template_package(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn remove_template_package(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<RemoveTemplatePackageParams>(params)
-        .map_err(|error| McpIpcError::from_error("invalid_params", error))?;
+        .map_err(|error| McpToolError::from_error("invalid_params", error))?;
     let template_id = normalize_template_id(params.template_id)?;
     let template = template_operations::remove_template_vpm_dependency(
         app.state::<TemplatesState>().inner(),
@@ -1725,9 +1177,9 @@ async fn remove_template_package(app: AppHandle, params: Value) -> Result<Value,
     Ok(json!({ "ok": true, "template": template }))
 }
 
-async fn set_template_unitypackage(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn set_template_unitypackage(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<TemplateUnityPackageParams>(params)
-        .map_err(|error| McpIpcError::from_error("invalid_params", error))?;
+        .map_err(|error| McpToolError::from_error("invalid_params", error))?;
     let template_id = normalize_template_id(params.template_id)?;
     let template = template_operations::set_template_unity_package(
         app.state::<TemplatesState>().inner(),
@@ -1740,12 +1192,15 @@ async fn set_template_unitypackage(app: AppHandle, params: Value) -> Result<Valu
     Ok(json!({ "ok": true, "template": template }))
 }
 
-async fn remove_template_unitypackage(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn remove_template_unitypackage(
+    app: AppHandle,
+    params: Value,
+) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<TemplateUnityPackageParams>(params)
-        .map_err(|error| McpIpcError::from_error("invalid_params", error))?;
+        .map_err(|error| McpToolError::from_error("invalid_params", error))?;
     let template_id = normalize_template_id(params.template_id)?;
     if params.unitypackage_path.trim().is_empty() {
-        return Err(McpIpcError::new(
+        return Err(McpToolError::new(
             "invalid_params",
             "unitypackage_path must be provided",
         ));
@@ -1761,9 +1216,9 @@ async fn remove_template_unitypackage(app: AppHandle, params: Value) -> Result<V
     Ok(json!({ "ok": true, "template": template }))
 }
 
-async fn remove_template(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn remove_template(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<TemplateIdParams>(params)
-        .map_err(|error| McpIpcError::from_error("invalid_params", error))?;
+        .map_err(|error| McpToolError::from_error("invalid_params", error))?;
     let template_id = normalize_template_id(params.template_id)?;
     let template = template_operations::remove_project_template(
         app.state::<TemplatesState>().inner(),
@@ -1791,10 +1246,10 @@ fn project_template_definition(
     }
 }
 
-fn normalize_template_id(template_id: String) -> Result<String, McpIpcError> {
+fn normalize_template_id(template_id: String) -> Result<String, McpToolError> {
     let template_id = template_id.trim().to_string();
     if template_id.is_empty() {
-        return Err(McpIpcError::new(
+        return Err(McpToolError::new(
             "invalid_params",
             "template_id must be provided",
         ));
@@ -1802,8 +1257,8 @@ fn normalize_template_id(template_id: String) -> Result<String, McpIpcError> {
     Ok(template_id)
 }
 
-fn mcp_template_error(error: template_operations::TemplateOperationError) -> McpIpcError {
-    McpIpcError::new(error.code(), error.to_string())
+fn mcp_template_error(error: template_operations::TemplateOperationError) -> McpToolError {
+    McpToolError::new(error.code(), error.to_string())
 }
 
 #[derive(Deserialize)]
@@ -1904,15 +1359,15 @@ struct ProjectTaskIdParams {
     task_id: String,
 }
 
-async fn get_project_details(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn get_project_details(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<ProjectDetailsParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
     let io = app.state::<DefaultEnvironmentIo>();
     ensure_registered_project(io.inner(), &params.project_path).await?;
 
     let snapshot = load_project_details_snapshot(params.project_path.clone())
         .await
-        .map_err(|e| McpIpcError::from_rust_error("project_load_error", e))?;
+        .map_err(|e| McpToolError::from_rust_error("project_load_error", e))?;
 
     let installed_packages = snapshot
         .installed_packages
@@ -1941,9 +1396,9 @@ async fn get_project_details(app: AppHandle, params: Value) -> Result<Value, Mcp
     }))
 }
 
-async fn create_project(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn create_project(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<CreateProjectParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
 
     let packages = app.state::<PackagesState>();
     let settings = app.state::<SettingsState>();
@@ -1963,7 +1418,7 @@ async fn create_project(app: AppHandle, params: Value) -> Result<Value, McpIpcEr
         None,
     )
     .await
-    .map_err(|e| McpIpcError::from_rust_error("project_create_error", e))?;
+    .map_err(|e| McpToolError::from_rust_error("project_create_error", e))?;
 
     Ok(json!({
         "ok": true,
@@ -1973,16 +1428,16 @@ async fn create_project(app: AppHandle, params: Value) -> Result<Value, McpIpcEr
     }))
 }
 
-async fn add_existing_project(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn add_existing_project(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<AddExistingProjectParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
 
     let settings = app.state::<SettingsState>();
     let io = app.state::<DefaultEnvironmentIo>();
     let project_path =
         project_operations::add_existing_project(settings.inner(), io.inner(), params.project_path)
             .await
-            .map_err(|e| McpIpcError::from_rust_error("project_add_error", e))?;
+            .map_err(|e| McpToolError::from_rust_error("project_add_error", e))?;
 
     Ok(json!({
         "ok": true,
@@ -1990,15 +1445,15 @@ async fn add_existing_project(app: AppHandle, params: Value) -> Result<Value, Mc
     }))
 }
 
-async fn backup_project(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn backup_project(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<BackupProjectParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
     let io = app.state::<DefaultEnvironmentIo>();
     ensure_registered_project(io.inner(), &params.project_path).await?;
 
     let project_backup = app.state::<ProjectBackupState>();
     if !project_backup.try_start_uncancellable() {
-        return Err(McpIpcError::new(
+        return Err(McpToolError::new(
             "project_backup_already_running",
             "A project backup is already running",
         ));
@@ -2019,22 +1474,22 @@ async fn backup_project(app: AppHandle, params: Value) -> Result<Value, McpIpcEr
     project_backup.finish();
 
     let backup_path =
-        result.map_err(|e| McpIpcError::from_rust_error("project_backup_error", e))?;
+        result.map_err(|e| McpToolError::from_rust_error("project_backup_error", e))?;
     Ok(json!({
         "ok": true,
         "backupPath": backup_path.display().to_string(),
     }))
 }
 
-async fn copy_project(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn copy_project(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<CopyProjectParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
     let io = app.state::<DefaultEnvironmentIo>();
     ensure_registered_project(io.inner(), &params.source_project_path).await?;
 
     let project_copy = app.state::<ProjectCopyState>();
     if !project_copy.try_start_uncancellable() {
-        return Err(McpIpcError::new(
+        return Err(McpToolError::new(
             "project_copy_already_running",
             "A project copy is already running",
         ));
@@ -2051,20 +1506,21 @@ async fn copy_project(app: AppHandle, params: Value) -> Result<Value, McpIpcErro
     .await;
     project_copy.finish();
 
-    let project_path = result.map_err(|e| McpIpcError::from_rust_error("project_copy_error", e))?;
+    let project_path =
+        result.map_err(|e| McpToolError::from_rust_error("project_copy_error", e))?;
     Ok(json!({
         "ok": true,
         "projectPath": project_path,
     }))
 }
 
-async fn restore_project_from_backup(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn restore_project_from_backup(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<RestoreProjectFromBackupParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
 
     let project_restore = app.state::<ProjectRestoreState>();
     if !project_restore.try_start_uncancellable() {
-        return Err(McpIpcError::new(
+        return Err(McpToolError::new(
             "project_restore_already_running",
             "A project restore is already running",
         ));
@@ -2083,14 +1539,14 @@ async fn restore_project_from_backup(app: AppHandle, params: Value) -> Result<Va
     project_restore.finish();
 
     let project_path =
-        result.map_err(|e| McpIpcError::from_rust_error("project_restore_error", e))?;
+        result.map_err(|e| McpToolError::from_rust_error("project_restore_error", e))?;
     Ok(json!({
         "ok": true,
         "projectPath": project_path,
     }))
 }
 
-async fn install_project_package(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn install_project_package(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     install_project_package_with_abort(app, params, None).await
 }
 
@@ -2098,9 +1554,9 @@ async fn install_project_package_with_abort(
     app: AppHandle,
     params: Value,
     prestarted_abort: Option<AbortCheck>,
-) -> Result<Value, McpIpcError> {
+) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<InstallProjectPackageParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
     let package_name = normalize_project_package_name(params.package_name)?;
     let source = parse_project_package_source(params.source)?;
     let io = app.state::<DefaultEnvironmentIo>();
@@ -2113,7 +1569,7 @@ async fn install_project_package_with_abort(
     let settings = settings
         .load(io.inner())
         .await
-        .map_err(|e| McpIpcError::from_error("settings_load_error", e))?;
+        .map_err(|e| McpToolError::from_error("settings_load_error", e))?;
     let show_prerelease_packages = settings.show_prerelease_packages();
     let defined_repository_ids = settings
         .get_user_repos()
@@ -2128,9 +1584,9 @@ async fn install_project_package_with_abort(
     packages_state
         .load(&settings, io.inner(), http.inner(), app.clone())
         .await
-        .map_err(|e| McpIpcError::from_error("packages_load_error", e))?;
+        .map_err(|e| McpToolError::from_error("packages_load_error", e))?;
     let Some(packages) = packages_state.get() else {
-        return Err(McpIpcError::new(
+        return Err(McpToolError::new(
             "packages_load_error",
             "Internal Error: environment version mismatch",
         ));
@@ -2155,10 +1611,10 @@ async fn install_project_package_with_abort(
             |collection, package_infos| async move {
                 let unity_project = load_project(project_path.clone())
                     .await
-                    .map_err(|e| McpIpcError::from_rust_error("project_load_error", e))?;
+                    .map_err(|e| McpToolError::from_rust_error("project_load_error", e))?;
                 let project = load_project_details_snapshot(project_path.clone())
                     .await
-                    .map_err(|e| McpIpcError::from_rust_error("project_load_error", e))?;
+                    .map_err(|e| McpToolError::from_rust_error("project_load_error", e))?;
                 let installing_package = select_project_install_package(
                     package_infos,
                     &package_name_for_changes,
@@ -2182,7 +1638,7 @@ async fn install_project_package_with_abort(
                     )
                     .await
                     .map_err(|e| {
-                        McpIpcError::from_rust_error("project_package_change_error", e.into())
+                        McpToolError::from_rust_error("project_package_change_error", e.into())
                     })
             },
             |changes_version, changes| {
@@ -2201,7 +1657,7 @@ async fn install_project_package_with_abort(
         .await
 }
 
-async fn uninstall_project_package(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn uninstall_project_package(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     uninstall_project_package_with_abort(app, params, None).await
 }
 
@@ -2209,9 +1665,9 @@ async fn uninstall_project_package_with_abort(
     app: AppHandle,
     params: Value,
     prestarted_abort: Option<AbortCheck>,
-) -> Result<Value, McpIpcError> {
+) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<ProjectPackageParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
     let package_name = normalize_project_package_name(params.package_name)?;
     let io = app.state::<DefaultEnvironmentIo>();
     ensure_registered_project(io.inner(), &params.project_path).await?;
@@ -2219,13 +1675,13 @@ async fn uninstall_project_package_with_abort(
     let changes = app.state::<ChangesState>();
     let unity_project = load_project(params.project_path.clone())
         .await
-        .map_err(|e| McpIpcError::from_rust_error("project_load_error", e))?;
+        .map_err(|e| McpToolError::from_rust_error("project_load_error", e))?;
     ensure_project_package_installed(&unity_project, &package_name)?;
     let package_names = [package_name.as_str()];
     let project_changes = unity_project
         .remove_request(&package_names)
         .await
-        .map_err(|e| McpIpcError::from_rust_error("project_package_change_error", e.into()))?;
+        .map_err(|e| McpToolError::from_rust_error("project_package_change_error", e.into()))?;
     let prepared = changes.set(project_changes, |changes_version, changes| {
         prepared_project_package_changes(
             "uninstall",
@@ -2240,7 +1696,7 @@ async fn uninstall_project_package_with_abort(
         .await
 }
 
-async fn reinstall_project_package(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn reinstall_project_package(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     reinstall_project_package_with_abort(app, params, None).await
 }
 
@@ -2248,9 +1704,9 @@ async fn reinstall_project_package_with_abort(
     app: AppHandle,
     params: Value,
     prestarted_abort: Option<AbortCheck>,
-) -> Result<Value, McpIpcError> {
+) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<ProjectPackageParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
     let package_name = normalize_project_package_name(params.package_name)?;
     let io = app.state::<DefaultEnvironmentIo>();
     ensure_registered_project(io.inner(), &params.project_path).await?;
@@ -2262,11 +1718,11 @@ async fn reinstall_project_package_with_abort(
     let settings = settings
         .load(io.inner())
         .await
-        .map_err(|e| McpIpcError::from_error("settings_load_error", e))?;
+        .map_err(|e| McpToolError::from_error("settings_load_error", e))?;
     let packages = packages
         .load(&settings, io.inner(), http.inner(), app.clone())
         .await
-        .map_err(|e| McpIpcError::from_error("packages_load_error", e))?;
+        .map_err(|e| McpToolError::from_error("packages_load_error", e))?;
 
     let project_path = params.project_path.clone();
     let package_name_for_changes = package_name.clone();
@@ -2276,14 +1732,14 @@ async fn reinstall_project_package_with_abort(
             |collection| async move {
                 let unity_project = load_project(project_path.clone())
                     .await
-                    .map_err(|e| McpIpcError::from_rust_error("project_load_error", e))?;
+                    .map_err(|e| McpToolError::from_rust_error("project_load_error", e))?;
                 ensure_project_package_installed(&unity_project, &package_name_for_changes)?;
                 let package_names = [package_name_for_changes.as_str()];
                 unity_project
                     .reinstall_request(collection, &package_names)
                     .await
                     .map_err(|e| {
-                        McpIpcError::from_rust_error("project_package_change_error", e.into())
+                        McpToolError::from_rust_error("project_package_change_error", e.into())
                     })
             },
             |changes_version, changes| {
@@ -2333,12 +1789,12 @@ async fn apply_prepared_project_package_changes(
     prepared: PreparedProjectPackageChanges,
     allow_conflicts: bool,
     prestarted_abort: Option<AbortCheck>,
-) -> Result<Value, McpIpcError> {
+) -> Result<Value, McpToolError> {
     if prepared.requires_allow_conflicts && !allow_conflicts {
         app.state::<ChangesState>().clear_cache();
         let changes = serde_json::to_value(&prepared.changes)
-            .map_err(|e| McpIpcError::from_error("serialization_error", e))?;
-        return Err(McpIpcError::with_data(
+            .map_err(|e| McpToolError::from_error("serialization_error", e))?;
+        return Err(McpToolError::with_data(
             "project_package_conflicts",
             "Project package changes include conflicts or legacy file removals; retry with allow_conflicts=true to apply",
             json!({ "changes": changes }),
@@ -2364,9 +1820,9 @@ async fn apply_prepared_project_package_changes(
             .await
         }
     }
-    .map_err(|e| McpIpcError::from_rust_error("project_package_apply_error", e))?;
+    .map_err(|e| McpToolError::from_rust_error("project_package_apply_error", e))?;
     let changes = serde_json::to_value(&prepared.changes)
-        .map_err(|e| McpIpcError::from_error("serialization_error", e))?;
+        .map_err(|e| McpToolError::from_error("serialization_error", e))?;
 
     Ok(json!({
         "ok": true,
@@ -2383,16 +1839,16 @@ fn pending_project_changes_require_allow_conflicts(changes: &PendingProjectChang
         || !changes.remove_legacy_folders().is_empty()
 }
 
-fn normalize_project_package_name(package_name: String) -> Result<String, McpIpcError> {
+fn normalize_project_package_name(package_name: String) -> Result<String, McpToolError> {
     let package_name = package_name.trim().to_string();
     if package_name.is_empty() {
-        return Err(McpIpcError::new(
+        return Err(McpToolError::new(
             "invalid_params",
             "package_name must be provided",
         ));
     }
     if !is_valid_package_name(&package_name) {
-        return Err(McpIpcError::new(
+        return Err(McpToolError::new(
             "invalid_params",
             "package_name must be a valid VPM package identifier",
         ));
@@ -2402,7 +1858,7 @@ fn normalize_project_package_name(package_name: String) -> Result<String, McpIpc
 
 fn parse_project_package_source(
     source: Option<ProjectPackageSourceParams>,
-) -> Result<Option<RepositorySelector>, McpIpcError> {
+) -> Result<Option<RepositorySelector>, McpToolError> {
     let Some(source) = source else {
         return Ok(None);
     };
@@ -2412,14 +1868,14 @@ fn parse_project_package_source(
 fn ensure_project_package_installed(
     unity_project: &vrc_get_vpm::UnityProject,
     package_name: &str,
-) -> Result<(), McpIpcError> {
+) -> Result<(), McpToolError> {
     if unity_project
         .installed_packages()
         .any(|(id, _)| id == package_name)
     {
         Ok(())
     } else {
-        Err(McpIpcError::new(
+        Err(McpToolError::new(
             "project_package_not_installed",
             "package_name must match an installed project package",
         ))
@@ -2439,7 +1895,7 @@ fn select_project_install_package<'package, 'env>(
     defined_repository_ids: &[String],
     repository_display_names: &BTreeMap<String, String>,
     project: &ProjectDetailsSnapshot,
-) -> Result<PackageInfo<'env>, McpIpcError>
+) -> Result<PackageInfo<'env>, McpToolError>
 where
     'env: 'package,
 {
@@ -2447,7 +1903,7 @@ where
         ProjectPackageVersionSelector::LatestGuiVisible => None,
         ProjectPackageVersionSelector::Exact { version } => Some(
             Version::from_str(version.trim())
-                .map_err(|e| McpIpcError::from_error("invalid_package_version", e))?,
+                .map_err(|e| McpToolError::from_error("invalid_package_version", e))?,
         ),
     };
 
@@ -2462,7 +1918,7 @@ where
         repository_display_names,
     );
     let Some(row) = rows.get(package_name) else {
-        return Err(McpIpcError::new(
+        return Err(McpToolError::new(
             "package_not_found",
             "package_name must match a GUI-visible ALCOMD3 project package row",
         ));
@@ -2492,25 +1948,25 @@ where
         .any(|package| source_matches(package) && version_matches(package));
 
     if incompatible_visible_package_found {
-        Err(McpIpcError::new(
+        Err(McpToolError::new(
             "project_package_unity_incompatible",
             "package_name matched a GUI-visible package, but no selected version is compatible with the project Unity version",
         ))
     } else {
-        Err(McpIpcError::new(
+        Err(McpToolError::new(
             "package_not_found",
             "package_name must match a GUI-visible ALCOMD3 package",
         ))
     }
 }
 
-async fn project_task_start(
+async fn project_operation_start(
     app: AppHandle,
     params: Value,
     tool_call: Option<McpTrackedToolCall>,
-) -> Result<Value, McpIpcError> {
+) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<ProjectTaskStartParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
 
     match params.method.as_str() {
         "create_project" => {
@@ -2558,24 +2014,24 @@ async fn project_task_start(
             )
             .await
         }
-        method => Err(McpIpcError::new(
+        method => Err(McpToolError::new(
             "unsupported_project_task_method",
             format!("MCP project task method is not supported: {method}"),
         )),
     }
 }
 
-async fn project_task_get(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn project_operation_get(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<ProjectTaskIdParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
     let mcp = app.state::<McpState>();
     let snapshot = mcp
-        .project_tasks
+        .project_operations
         .lock()
         .unwrap()
         .get(&params.task_id)
         .ok_or_else(|| {
-            McpIpcError::new(
+            McpToolError::new(
                 "project_task_not_found",
                 format!("MCP project task was not found: {}", params.task_id),
             )
@@ -2584,19 +2040,17 @@ async fn project_task_get(app: AppHandle, params: Value) -> Result<Value, McpIpc
     task_snapshot_value(snapshot)
 }
 
-async fn project_task_list(app: AppHandle) -> Result<Value, McpIpcError> {
-    let mcp = app.state::<McpState>();
-    let tasks = mcp.project_tasks.lock().unwrap().list();
-    Ok(json!({ "tasks": tasks }))
-}
-
-async fn project_task_cancel(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn project_operation_cancel(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<ProjectTaskIdParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
     let mcp = app.state::<McpState>();
-    let (snapshot, tool_call) = mcp.project_tasks.lock().unwrap().cancel(&params.task_id)?;
+    let (snapshot, tool_call) = mcp
+        .project_operations
+        .lock()
+        .unwrap()
+        .cancel(&params.task_id)?;
     if snapshot.status.is_terminal() {
-        finish_project_task_kind(&app, snapshot.kind);
+        finish_project_operation_kind(&app, snapshot.kind);
     }
     if let Some(tool_call) = tool_call {
         cancel_tracked_mcp_tool_call_activity(&app, &tool_call);
@@ -2611,13 +2065,13 @@ async fn start_create_project_task(
     task_id: String,
     params: Value,
     tool_call: Option<McpTrackedToolCall>,
-) -> Result<Value, McpIpcError> {
+) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<CreateProjectParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
 
     let snapshot =
-        start_project_task_record(&app, &task_id, McpProjectTaskKind::Create, tool_call)?;
-    let tasks = app.state::<McpState>().project_tasks.clone();
+        start_project_operation_record(&app, &task_id, McpProjectTaskKind::Create, tool_call)?;
+    let tasks = app.state::<McpState>().project_operations.clone();
     let create_abort = AbortCheck::new();
     let app_for_task = app.clone();
     let task_id_for_task = task_id.clone();
@@ -2669,7 +2123,7 @@ async fn start_create_project_task(
                 }
             }
             Err(error) => {
-                let error = McpIpcError::from_rust_error("project_create_error", error);
+                let error = McpToolError::from_rust_error("project_create_error", error);
                 let error_message = error.message.clone();
                 let cancel_requested = tasks_for_task
                     .lock()
@@ -2724,23 +2178,23 @@ async fn start_backup_project_task(
     task_id: String,
     params: Value,
     tool_call: Option<McpTrackedToolCall>,
-) -> Result<Value, McpIpcError> {
+) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<BackupProjectParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
     let io = app.state::<DefaultEnvironmentIo>();
     ensure_registered_project(io.inner(), &params.project_path).await?;
 
     let project_backup = app.state::<ProjectBackupState>().inner().clone();
     if !project_backup.try_start_uncancellable() {
-        return Err(McpIpcError::new(
+        return Err(McpToolError::new(
             "project_backup_already_running",
             "A project backup is already running",
         ));
     }
 
     let snapshot =
-        start_project_task_record(&app, &task_id, McpProjectTaskKind::Backup, tool_call)?;
-    let tasks = app.state::<McpState>().project_tasks.clone();
+        start_project_operation_record(&app, &task_id, McpProjectTaskKind::Backup, tool_call)?;
+    let tasks = app.state::<McpState>().project_operations.clone();
     let (start_tx, start_rx) = oneshot::channel();
     let app_for_task = app.clone();
     let task_id_for_task = task_id.clone();
@@ -2777,7 +2231,7 @@ async fn start_backup_project_task(
             params.backup_name,
             params.exclude_vpm_packages,
             move |progress| {
-                update_project_task_progress(&progress_tasks, &progress_task_id, progress);
+                update_project_operation_progress(&progress_tasks, &progress_task_id, progress);
             },
         )
         .await;
@@ -2807,7 +2261,7 @@ async fn start_backup_project_task(
                 }
             }
             Err(error) => {
-                let error = McpIpcError::from_rust_error("project_backup_error", error);
+                let error = McpToolError::from_rust_error("project_backup_error", error);
                 let error_message = error.message.clone();
                 let tool_call = tasks_for_task
                     .lock()
@@ -2852,22 +2306,23 @@ async fn start_copy_project_task(
     task_id: String,
     params: Value,
     tool_call: Option<McpTrackedToolCall>,
-) -> Result<Value, McpIpcError> {
+) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<CopyProjectParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
     let io = app.state::<DefaultEnvironmentIo>();
     ensure_registered_project(io.inner(), &params.source_project_path).await?;
 
     let project_copy = app.state::<ProjectCopyState>().inner().clone();
     if !project_copy.try_start_uncancellable() {
-        return Err(McpIpcError::new(
+        return Err(McpToolError::new(
             "project_copy_already_running",
             "A project copy is already running",
         ));
     }
 
-    let snapshot = start_project_task_record(&app, &task_id, McpProjectTaskKind::Copy, tool_call)?;
-    let tasks = app.state::<McpState>().project_tasks.clone();
+    let snapshot =
+        start_project_operation_record(&app, &task_id, McpProjectTaskKind::Copy, tool_call)?;
+    let tasks = app.state::<McpState>().project_operations.clone();
     let (start_tx, start_rx) = oneshot::channel();
     let app_for_task = app.clone();
     let task_id_for_task = task_id.clone();
@@ -2901,7 +2356,7 @@ async fn start_copy_project_task(
             params.source_project_path,
             params.new_project_path,
             move |progress| {
-                update_project_task_progress(&progress_tasks, &progress_task_id, progress);
+                update_project_operation_progress(&progress_tasks, &progress_task_id, progress);
             },
         )
         .await;
@@ -2931,7 +2386,7 @@ async fn start_copy_project_task(
                 }
             }
             Err(error) => {
-                let error = McpIpcError::from_rust_error("project_copy_error", error);
+                let error = McpToolError::from_rust_error("project_copy_error", error);
                 let error_message = error.message.clone();
                 let tool_call = tasks_for_task
                     .lock()
@@ -2976,21 +2431,21 @@ async fn start_restore_project_task(
     task_id: String,
     params: Value,
     tool_call: Option<McpTrackedToolCall>,
-) -> Result<Value, McpIpcError> {
+) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<RestoreProjectFromBackupParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
 
     let project_restore = app.state::<ProjectRestoreState>().inner().clone();
     if !project_restore.try_start_uncancellable() {
-        return Err(McpIpcError::new(
+        return Err(McpToolError::new(
             "project_restore_already_running",
             "A project restore is already running",
         ));
     }
 
     let snapshot =
-        start_project_task_record(&app, &task_id, McpProjectTaskKind::Restore, tool_call)?;
-    let tasks = app.state::<McpState>().project_tasks.clone();
+        start_project_operation_record(&app, &task_id, McpProjectTaskKind::Restore, tool_call)?;
+    let tasks = app.state::<McpState>().project_operations.clone();
     let (start_tx, start_rx) = oneshot::channel();
     let app_for_task = app.clone();
     let task_id_for_task = task_id.clone();
@@ -3024,7 +2479,7 @@ async fn start_restore_project_task(
             params.backup_path,
             params.project_name,
             move |progress| {
-                update_project_task_progress(&progress_tasks, &progress_task_id, progress);
+                update_project_operation_progress(&progress_tasks, &progress_task_id, progress);
             },
         )
         .await;
@@ -3054,7 +2509,7 @@ async fn start_restore_project_task(
                 }
             }
             Err(error) => {
-                let error = McpIpcError::from_rust_error("project_restore_error", error);
+                let error = McpToolError::from_rust_error("project_restore_error", error);
                 let error_message = error.message.clone();
                 let tool_call = tasks_for_task
                     .lock()
@@ -3101,24 +2556,24 @@ async fn start_project_package_task(
     method: String,
     params: Value,
     tool_call: Option<McpTrackedToolCall>,
-) -> Result<Value, McpIpcError> {
+) -> Result<Value, McpToolError> {
     let package_abort = AbortCheck::new();
     let project_apply = app.state::<ProjectApplyState>();
     if !project_apply.try_start(package_abort.clone()) {
-        return Err(McpIpcError::new(
+        return Err(McpToolError::new(
             "project_package_apply_error",
             "project changes already applying",
         ));
     }
 
-    let snapshot = match start_project_task_record(&app, &task_id, kind, tool_call) {
+    let snapshot = match start_project_operation_record(&app, &task_id, kind, tool_call) {
         Ok(snapshot) => snapshot,
         Err(error) => {
             project_apply.finish();
             return Err(error);
         }
     };
-    let tasks = app.state::<McpState>().project_tasks.clone();
+    let tasks = app.state::<McpState>().project_operations.clone();
     let app_for_task = app.clone();
     let task_id_for_task = task_id.clone();
     let tasks_for_task = tasks.clone();
@@ -3149,7 +2604,7 @@ async fn start_project_package_task(
                 )
                 .await
             }
-            method => Err(McpIpcError::new(
+            method => Err(McpToolError::new(
                 "unsupported_project_task_method",
                 format!("MCP project task method is not supported: {method}"),
             )),
@@ -3226,35 +2681,35 @@ async fn start_project_package_task(
     task_snapshot_value(tasks.lock().unwrap().get(&task_id).unwrap_or(snapshot))
 }
 
-fn start_project_task_record(
+fn start_project_operation_record(
     app: &AppHandle,
     task_id: &str,
     kind: McpProjectTaskKind,
     tool_call: Option<McpTrackedToolCall>,
-) -> Result<McpProjectTaskSnapshot, McpIpcError> {
+) -> Result<McpProjectTaskSnapshot, McpToolError> {
     let mcp = app.state::<McpState>();
     Ok(mcp
-        .project_tasks
+        .project_operations
         .lock()
         .unwrap()
         .start(task_id.to_string(), kind, tool_call))
 }
 
-fn task_snapshot_value(snapshot: McpProjectTaskSnapshot) -> Result<Value, McpIpcError> {
+fn task_snapshot_value(snapshot: McpProjectTaskSnapshot) -> Result<Value, McpToolError> {
     serde_json::to_value(snapshot)
-        .map_err(|e| McpIpcError::from_error("project_task_serialization_error", e))
+        .map_err(|e| McpToolError::from_error("project_task_serialization_error", e))
 }
 
-fn is_project_package_apply_abort_error(error: &McpIpcError) -> bool {
+fn is_project_package_apply_abort_error(error: &McpToolError) -> bool {
     error.code == "project_package_apply_error" && error.message == "Aborted"
 }
 
-fn is_project_create_abort_error(error: &McpIpcError) -> bool {
+fn is_project_create_abort_error(error: &McpToolError) -> bool {
     error.code == "project_create_error" && error.message == "Aborted"
 }
 
-fn update_project_task_progress<P: Serialize>(
-    tasks: &Arc<StdMutex<McpProjectTaskStore>>,
+fn update_project_operation_progress<P: Serialize>(
+    tasks: &Arc<StdMutex<McpProjectOperationStore>>,
     task_id: &str,
     progress: P,
 ) {
@@ -3285,7 +2740,7 @@ fn project_progress_from_value(value: &Value) -> Option<McpProjectProgress> {
     })
 }
 
-fn finish_project_task_kind(app: &AppHandle, kind: McpProjectTaskKind) {
+fn finish_project_operation_kind(app: &AppHandle, kind: McpProjectTaskKind) {
     match kind {
         McpProjectTaskKind::Backup => app.state::<ProjectBackupState>().finish(),
         McpProjectTaskKind::Copy => app.state::<ProjectCopyState>().finish(),
@@ -3300,26 +2755,26 @@ fn finish_project_task_kind(app: &AppHandle, kind: McpProjectTaskKind) {
 async fn ensure_registered_project(
     io: &DefaultEnvironmentIo,
     project_path: &str,
-) -> Result<(), McpIpcError> {
+) -> Result<(), McpToolError> {
     let connection = VccDatabaseConnection::connect(io)
         .await
-        .map_err(|e| McpIpcError::from_error("project_database_error", e))?;
+        .map_err(|e| McpToolError::from_error("project_database_error", e))?;
 
     if connection
         .find_project(project_path)
-        .map_err(|e| McpIpcError::from_error("project_database_error", e))?
+        .map_err(|e| McpToolError::from_error("project_database_error", e))?
         .is_some()
     {
         Ok(())
     } else {
-        Err(McpIpcError::new(
+        Err(McpToolError::new(
             "project_not_registered",
             "project_path must match an ALCOMD3 registered project",
         ))
     }
 }
 
-async fn list_repositories(app: AppHandle) -> Result<Value, McpIpcError> {
+async fn list_repositories(app: AppHandle) -> Result<Value, McpToolError> {
     let io = app.state::<DefaultEnvironmentIo>();
     let settings = app.state::<SettingsState>();
     let config = app.state::<GuiConfigState>();
@@ -3331,7 +2786,7 @@ async fn list_repositories(app: AppHandle) -> Result<Value, McpIpcError> {
         io.inner(),
     )
     .await
-    .map_err(|e| McpIpcError::from_rust_error("settings_load_error", e))?;
+    .map_err(|e| McpToolError::from_rust_error("settings_load_error", e))?;
     let output = ListRepositoriesOutput {
         ok: true,
         repositories: snapshot
@@ -3360,17 +2815,17 @@ async fn list_repositories(app: AppHandle) -> Result<Value, McpIpcError> {
         },
     };
 
-    serde_json::to_value(output).map_err(|e| McpIpcError::from_error("serialization_error", e))
+    serde_json::to_value(output).map_err(|e| McpToolError::from_error("serialization_error", e))
 }
 
-async fn add_repository(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn add_repository(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<AddRepositoryParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
     let url = params
         .repository_url
         .trim()
         .parse::<url::Url>()
-        .map_err(|_| McpIpcError::new("invalid_params", "repository_url must be a valid URL"))?;
+        .map_err(|_| McpToolError::new("invalid_params", "repository_url must be a valid URL"))?;
     let headers = params
         .headers
         .into_iter()
@@ -3386,7 +2841,7 @@ async fn add_repository(app: AppHandle, params: Value) -> Result<Value, McpIpcEr
         headers,
     )
     .await
-    .map_err(|e| McpIpcError::from_rust_error("repository_add_error", e))?;
+    .map_err(|e| McpToolError::from_rust_error("repository_add_error", e))?;
 
     Ok(json!({
         "ok": true,
@@ -3400,14 +2855,14 @@ async fn add_repository(app: AppHandle, params: Value) -> Result<Value, McpIpcEr
     }))
 }
 
-async fn remove_repository(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn remove_repository(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<RemoveRepositoryParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
     let repository_url = params
         .repository_url
         .trim()
         .parse::<url::Url>()
-        .map_err(|_| McpIpcError::new("invalid_params", "repository_url must be a valid URL"))?;
+        .map_err(|_| McpToolError::new("invalid_params", "repository_url must be a valid URL"))?;
     let outcome = repository_operations::remove_repository(
         app.state::<SettingsState>().inner(),
         app.state::<PackagesState>().inner(),
@@ -3416,12 +2871,12 @@ async fn remove_repository(app: AppHandle, params: Value) -> Result<Value, McpIp
         repository_url,
     )
     .await
-    .map_err(|e| McpIpcError::from_rust_error("repository_remove_error", e))?;
+    .map_err(|e| McpToolError::from_rust_error("repository_remove_error", e))?;
 
     let repository = match outcome {
         repository_operations::RemoveRepositoryOutcome::Removed(repository) => repository,
         repository_operations::RemoveRepositoryOutcome::NotFound => {
-            return Err(McpIpcError::new(
+            return Err(McpToolError::new(
                 "repository_not_found",
                 "repository_url must match a user-added ALCOMD3 repository",
             ));
@@ -3440,7 +2895,7 @@ async fn remove_repository(app: AppHandle, params: Value) -> Result<Value, McpIp
     }))
 }
 
-async fn list_packages(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn list_packages(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = parse_package_list_params(params)?;
     let pagination = PackageListPagination::from_params(params);
     let io = app.state::<DefaultEnvironmentIo>();
@@ -3451,12 +2906,12 @@ async fn list_packages(app: AppHandle, params: Value) -> Result<Value, McpIpcErr
     let settings = settings
         .load(io.inner())
         .await
-        .map_err(|e| McpIpcError::from_error("settings_load_error", e))?;
+        .map_err(|e| McpToolError::from_error("settings_load_error", e))?;
     let show_prerelease_packages = settings.show_prerelease_packages();
     let packages = packages
         .load(&settings, io.inner(), http.inner(), app.clone())
         .await
-        .map_err(|e| McpIpcError::from_error("packages_load_error", e))?;
+        .map_err(|e| McpToolError::from_error("packages_load_error", e))?;
     let config = app.state::<GuiConfigState>().get();
     let repository_display_names = app
         .state::<RepositoryConfigState>()
@@ -3528,13 +2983,13 @@ struct RepositorySelector {
 }
 
 impl RepositorySelector {
-    fn from_params(params: RepositoryPackagesParams) -> Result<Self, McpIpcError> {
+    fn from_params(params: RepositoryPackagesParams) -> Result<Self, McpToolError> {
         Self::new(params.repository_id)
     }
 
-    fn new(repository_id: String) -> Result<Self, McpIpcError> {
+    fn new(repository_id: String) -> Result<Self, McpToolError> {
         let Some(repository_id) = normalize_optional_string(Some(repository_id)) else {
-            return Err(McpIpcError::new(
+            return Err(McpToolError::new(
                 "invalid_params",
                 "repository_id must not be empty",
             ));
@@ -3556,10 +3011,10 @@ struct PackageDetailsSelector {
 }
 
 impl PackageDetailsSelector {
-    fn from_params(params: PackageDetailsParams) -> Result<Self, McpIpcError> {
+    fn from_params(params: PackageDetailsParams) -> Result<Self, McpToolError> {
         let package_name = params.package_name.trim().to_string();
         if package_name.is_empty() {
-            return Err(McpIpcError::new(
+            return Err(McpToolError::new(
                 "invalid_params",
                 "package_name must be provided",
             ));
@@ -3597,13 +3052,13 @@ impl PackageDetailsSelector {
     }
 }
 
-fn parse_package_list_params(params: Value) -> Result<PackageListParams, McpIpcError> {
+fn parse_package_list_params(params: Value) -> Result<PackageListParams, McpToolError> {
     if params.is_null() {
         return Ok(PackageListParams::default());
     }
 
     serde_json::from_value::<PackageListParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))
+        .map_err(|e| McpToolError::from_error("invalid_params", e))
 }
 
 fn package_list_response(packages: Vec<Value>, pagination: PackageListPagination) -> Value {
@@ -3637,9 +3092,9 @@ fn package_details_response(packages: Vec<Value>) -> Value {
     })
 }
 
-async fn list_repository_packages(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn list_repository_packages(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<RepositoryPackagesParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
     let pagination = PackageListPagination::from_params(PackageListParams {
         offset: params.offset,
         limit: params.limit,
@@ -3653,12 +3108,12 @@ async fn list_repository_packages(app: AppHandle, params: Value) -> Result<Value
     let settings = settings
         .load(io.inner())
         .await
-        .map_err(|e| McpIpcError::from_error("settings_load_error", e))?;
+        .map_err(|e| McpToolError::from_error("settings_load_error", e))?;
     let show_prerelease_packages = settings.show_prerelease_packages();
     let packages = packages
         .load(&settings, io.inner(), http.inner(), app.clone())
         .await
-        .map_err(|e| McpIpcError::from_error("packages_load_error", e))?;
+        .map_err(|e| McpToolError::from_error("packages_load_error", e))?;
     let config = app.state::<GuiConfigState>().get();
     let repository_display_names = app
         .state::<RepositoryConfigState>()
@@ -3670,7 +3125,7 @@ async fn list_repository_packages(app: AppHandle, params: Value) -> Result<Value
         .get_remote()
         .find(|repo| selector.matches_repo(repo))
     else {
-        return Err(McpIpcError::new(
+        return Err(McpToolError::new(
             "repository_not_found",
             "repository_id must match an ALCOMD3 remote repository",
         ));
@@ -3698,9 +3153,9 @@ async fn list_repository_packages(app: AppHandle, params: Value) -> Result<Value
     Ok(response)
 }
 
-async fn get_package_details(app: AppHandle, params: Value) -> Result<Value, McpIpcError> {
+async fn get_package_details(app: AppHandle, params: Value) -> Result<Value, McpToolError> {
     let params = serde_json::from_value::<PackageDetailsParams>(params)
-        .map_err(|e| McpIpcError::from_error("invalid_params", e))?;
+        .map_err(|e| McpToolError::from_error("invalid_params", e))?;
     let selector = PackageDetailsSelector::from_params(params)?;
     let io = app.state::<DefaultEnvironmentIo>();
     let settings = app.state::<SettingsState>();
@@ -3710,12 +3165,12 @@ async fn get_package_details(app: AppHandle, params: Value) -> Result<Value, Mcp
     let settings = settings
         .load(io.inner())
         .await
-        .map_err(|e| McpIpcError::from_error("settings_load_error", e))?;
+        .map_err(|e| McpToolError::from_error("settings_load_error", e))?;
     let show_prerelease_packages = settings.show_prerelease_packages();
     let packages = packages
         .load(&settings, io.inner(), http.inner(), app.clone())
         .await
-        .map_err(|e| McpIpcError::from_error("packages_load_error", e))?;
+        .map_err(|e| McpToolError::from_error("packages_load_error", e))?;
     let config = app.state::<GuiConfigState>().get();
     let repository_display_names = app
         .state::<RepositoryConfigState>()
@@ -3739,7 +3194,7 @@ async fn get_package_details(app: AppHandle, params: Value) -> Result<Value, Mcp
 
     sort_package_summaries(&mut results);
     if results.is_empty() {
-        return Err(McpIpcError::new(
+        return Err(McpToolError::new(
             "package_not_found",
             "package_name must match a GUI-visible ALCOMD3 package",
         ));
@@ -3747,7 +3202,7 @@ async fn get_package_details(app: AppHandle, params: Value) -> Result<Value, Mcp
     Ok(package_details_response(results))
 }
 
-async fn get_environment_settings(app: AppHandle) -> Result<Value, McpIpcError> {
+async fn get_environment_settings(app: AppHandle) -> Result<Value, McpToolError> {
     let io = app.state::<DefaultEnvironmentIo>();
     let settings = app.state::<SettingsState>();
     let config = app.state::<GuiConfigState>();
@@ -3758,8 +3213,8 @@ async fn get_environment_settings(app: AppHandle) -> Result<Value, McpIpcError> 
         DEFAULT_UNITY_ARGUMENTS,
     )
     .await
-    .map_err(|e| McpIpcError::new(e.code(), e.message()))?;
-    serde_json::to_value(response).map_err(|e| McpIpcError::from_error("serialization_error", e))
+    .map_err(|e| McpToolError::new(e.code(), e.message()))?;
+    serde_json::to_value(response).map_err(|e| McpToolError::from_error("serialization_error", e))
 }
 
 fn project_summary(project: &UserProject) -> Option<Value> {
@@ -3919,52 +3374,6 @@ fn package_manifest_summary(package: &PackageManifest) -> Value {
     })
 }
 
-async fn write_endpoint_file(path: &Path, metadata: &EndpointMetadata) -> io::Result<()> {
-    let Some(parent) = path.parent() else {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "endpoint file path has no parent",
-        ));
-    };
-    tokio::fs::create_dir_all(parent).await?;
-    let bytes = serde_json::to_vec_pretty(metadata).map_err(io::Error::other)?;
-    let temp_path = temporary_endpoint_path(path);
-    remove_endpoint_file(&temp_path).await?;
-    tokio::fs::write(&temp_path, bytes).await?;
-    remove_endpoint_file(path).await?;
-    tokio::fs::rename(&temp_path, path).await
-}
-
-async fn remove_endpoint_file(path: &Path) -> io::Result<()> {
-    match tokio::fs::remove_file(path).await {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(e),
-    }
-}
-
-fn temporary_endpoint_path(path: &Path) -> PathBuf {
-    let mut file_name = path
-        .file_name()
-        .map(|name| name.to_os_string())
-        .unwrap_or_else(|| "endpoint.json".into());
-    file_name.push(format!(".tmp.{}", std::process::id()));
-    path.with_file_name(file_name)
-}
-
-fn bridge_executable_path() -> PathBuf {
-    let current = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("ALCOMD3"));
-    let directory = current.parent().unwrap_or_else(|| Path::new("."));
-    #[cfg(windows)]
-    {
-        directory.join("alcomd3-mcp.exe")
-    }
-    #[cfg(not(windows))]
-    {
-        directory.join("alcomd3-mcp")
-    }
-}
-
 fn now_unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -3979,19 +3388,17 @@ fn record_client_activity(
     last_emit_unix_ms: &mut u64,
 ) -> bool {
     let removed_stale_clients = retain_recent_client_activity(clients, now_unix_ms);
-    let session_id = client.session_id.to_string();
     let existing = clients
         .iter()
-        .find(|existing| existing.session_id == session_id);
+        .find(|existing| existing.name == client.name && existing.version == client.version);
     let should_emit = existing.is_none_or(|existing| {
         existing.name != client.name
             || existing.version != client.version
             || now_unix_ms.saturating_sub(*last_emit_unix_ms) >= MCP_CLIENT_STATUS_EMIT_THROTTLE_MS
     }) || removed_stale_clients;
 
-    clients.retain(|existing| existing.session_id != session_id);
+    clients.retain(|existing| existing.name != client.name || existing.version != client.version);
     clients.push_front(McpRecentClientStatus {
-        session_id,
         name: client.name.clone(),
         version: client.version.clone(),
         last_seen_unix_ms: now_unix_ms,
@@ -4017,10 +3424,6 @@ fn retain_recent_client_activity(
 
 fn is_recent_client_activity(last_seen_unix_ms: u64, now_unix_ms: u64) -> bool {
     now_unix_ms.saturating_sub(last_seen_unix_ms) <= MCP_CLIENT_ACTIVITY_TTL_MS
-}
-
-fn mcp_disabled_response(request_id: Uuid) -> IpcResponse {
-    IpcResponse::error(request_id, "mcp_disabled", MCP_DISABLED_MESSAGE, None)
 }
 
 #[allow(dead_code)]
@@ -4124,13 +3527,11 @@ mod tests {
         let next_client = test_client("Codex", Some("1.0.0"));
 
         clients.push_back(McpRecentClientStatus {
-            session_id: stale_client.session_id.to_string(),
             name: stale_client.name,
             version: stale_client.version,
             last_seen_unix_ms: 1_000,
         });
         clients.push_back(McpRecentClientStatus {
-            session_id: fresh_client.session_id.to_string(),
             name: fresh_client.name,
             version: fresh_client.version,
             last_seen_unix_ms: 1_000 + MCP_CLIENT_ACTIVITY_TTL_MS,
@@ -4158,22 +3559,6 @@ mod tests {
             1_000,
             1_000 + MCP_CLIENT_ACTIVITY_TTL_MS + 1
         ));
-    }
-
-    #[test]
-    fn bounded_line_rejects_oversized_lines() {
-        tauri::async_runtime::block_on(async {
-            let max_line_bytes = 32;
-            let mut input = vec![b'a'; max_line_bytes + 1];
-            input.push(b'\n');
-            let mut reader = BufReader::new(input.as_slice());
-
-            let error = read_bounded_line_with_limit(&mut reader, "test line", max_line_bytes)
-                .await
-                .unwrap_err();
-
-            assert_eq!(error.kind(), io::ErrorKind::InvalidData);
-        });
     }
 
     #[test]
@@ -4477,71 +3862,68 @@ mod tests {
     fn mcp_task_start_tool_names_map_inner_project_methods() {
         assert_eq!(
             mcp_tool_name(
-                IPC_METHOD_PROJECT_TASK_START,
+                MCP_OPERATION_START_METHOD,
                 &json!({ "method": "create_project" }),
             ),
             Some("alcomd3_create_project")
         );
         assert_eq!(
             mcp_tool_name(
-                IPC_METHOD_PROJECT_TASK_START,
+                MCP_OPERATION_START_METHOD,
                 &json!({ "method": "backup_project" }),
             ),
             Some("alcomd3_backup_project")
         );
         assert_eq!(
             mcp_tool_name(
-                IPC_METHOD_PROJECT_TASK_START,
+                MCP_OPERATION_START_METHOD,
                 &json!({ "method": "copy_project" }),
             ),
             Some("alcomd3_copy_project")
         );
         assert_eq!(
             mcp_tool_name(
-                IPC_METHOD_PROJECT_TASK_START,
+                MCP_OPERATION_START_METHOD,
                 &json!({ "method": "restore_project_from_backup" }),
             ),
             Some("alcomd3_restore_project_from_backup")
         );
         assert_eq!(
             mcp_tool_name(
-                IPC_METHOD_PROJECT_TASK_START,
+                MCP_OPERATION_START_METHOD,
                 &json!({ "method": "install_project_package" }),
             ),
             Some("alcomd3_install_project_package")
         );
         assert_eq!(
             mcp_tool_name(
-                IPC_METHOD_PROJECT_TASK_START,
+                MCP_OPERATION_START_METHOD,
                 &json!({ "method": "uninstall_project_package" }),
             ),
             Some("alcomd3_uninstall_project_package")
         );
         assert_eq!(
             mcp_tool_name(
-                IPC_METHOD_PROJECT_TASK_START,
+                MCP_OPERATION_START_METHOD,
                 &json!({ "method": "reinstall_project_package" }),
             ),
             Some("alcomd3_reinstall_project_package")
         );
         assert_eq!(
             mcp_tool_name(
-                IPC_METHOD_PROJECT_TASK_START,
+                MCP_OPERATION_START_METHOD,
                 &json!({ "method": "list_projects" }),
             ),
             None
         );
-        assert_eq!(
-            mcp_tool_name(IPC_METHOD_PROJECT_TASK_START, &json!({})),
-            None
-        );
+        assert_eq!(mcp_tool_name(MCP_OPERATION_START_METHOD, &json!({})), None);
     }
 
     #[test]
     fn mcp_task_start_activity_target_uses_inner_params() {
         assert_eq!(
             mcp_activity_target(
-                IPC_METHOD_PROJECT_TASK_START,
+                MCP_OPERATION_START_METHOD,
                 &json!({
                     "method": "create_project",
                     "params": {
@@ -4554,7 +3936,7 @@ mod tests {
         );
         assert_eq!(
             mcp_activity_target(
-                IPC_METHOD_PROJECT_TASK_START,
+                MCP_OPERATION_START_METHOD,
                 &json!({
                     "method": "backup_project",
                     "params": {
@@ -4566,7 +3948,7 @@ mod tests {
         );
         assert_eq!(
             mcp_activity_target(
-                IPC_METHOD_PROJECT_TASK_START,
+                MCP_OPERATION_START_METHOD,
                 &json!({
                     "method": "copy_project",
                     "params": {
@@ -4645,31 +4027,27 @@ mod tests {
     #[test]
     fn internal_project_task_polling_is_not_tracked_as_tool_call() {
         assert!(
-            mcp_tool_call_for_request(IPC_METHOD_PROJECT_TASK_GET, &Value::Null, Uuid::new_v4())
+            mcp_tool_call_for_request(MCP_OPERATION_GET_METHOD, &Value::Null, Uuid::new_v4())
                 .is_none()
         );
         assert!(
-            mcp_tool_call_for_request(IPC_METHOD_PROJECT_TASK_LIST, &Value::Null, Uuid::new_v4())
-                .is_none()
-        );
-        assert!(
-            mcp_tool_call_for_request(IPC_METHOD_PROJECT_TASK_CANCEL, &Value::Null, Uuid::new_v4())
+            mcp_tool_call_for_request(MCP_OPERATION_CANCEL_METHOD, &Value::Null, Uuid::new_v4())
                 .is_some()
         );
     }
 
     #[test]
-    fn project_task_start_tool_call_finishes_on_task_terminal() {
-        let ok: Result<Value, McpIpcError> = Ok(json!({ "taskId": "task-1" }));
-        let error: Result<Value, McpIpcError> =
-            Err(McpIpcError::new("invalid_params", "invalid params"));
+    fn project_operation_start_tool_call_finishes_on_task_terminal() {
+        let ok: Result<Value, McpToolError> = Ok(json!({ "taskId": "task-1" }));
+        let error: Result<Value, McpToolError> =
+            Err(McpToolError::new("invalid_params", "invalid params"));
 
         assert!(!mcp_tool_call_finishes_with_response(
-            IPC_METHOD_PROJECT_TASK_START,
+            MCP_OPERATION_START_METHOD,
             &ok
         ));
         assert!(mcp_tool_call_finishes_with_response(
-            IPC_METHOD_PROJECT_TASK_START,
+            MCP_OPERATION_START_METHOD,
             &error
         ));
         assert!(mcp_tool_call_finishes_with_response("backup_project", &ok));
@@ -4678,7 +4056,7 @@ mod tests {
     #[test]
     fn project_task_terminal_state_takes_tracked_tool_call_once() {
         let request_id = Uuid::new_v4();
-        let mut tasks = McpProjectTaskStore::default();
+        let mut tasks = McpProjectOperationStore::default();
         tasks.start(
             "task-1".to_string(),
             McpProjectTaskKind::Backup,
@@ -4697,15 +4075,15 @@ mod tests {
         assert_eq!(tool_call.tool_name, "alcomd3_backup_project");
         assert!(
             tasks
-                .finish_error("task-1", McpIpcError::new("failed", "failed"))
+                .finish_error("task-1", McpToolError::new("failed", "failed"))
                 .is_none()
         );
     }
 
     #[test]
-    fn project_task_cancel_takes_tracked_tool_call() {
+    fn project_operation_cancel_takes_tracked_tool_call() {
         let request_id = Uuid::new_v4();
-        let mut tasks = McpProjectTaskStore::default();
+        let mut tasks = McpProjectOperationStore::default();
         tasks.start(
             "task-1".to_string(),
             McpProjectTaskKind::Copy,
@@ -4728,7 +4106,7 @@ mod tests {
     fn project_package_task_cancel_requests_abort_and_waits_for_worker() {
         let abort = AbortCheck::new();
         let request_id = Uuid::new_v4();
-        let mut tasks = McpProjectTaskStore::default();
+        let mut tasks = McpProjectOperationStore::default();
         tasks.start(
             "task-1".to_string(),
             McpProjectTaskKind::InstallPackage,
@@ -4767,7 +4145,7 @@ mod tests {
     fn project_create_task_cancel_requests_abort_and_waits_for_worker() {
         let abort = AbortCheck::new();
         let request_id = Uuid::new_v4();
-        let mut tasks = McpProjectTaskStore::default();
+        let mut tasks = McpProjectOperationStore::default();
         tasks.start(
             "task-1".to_string(),
             McpProjectTaskKind::Create,
@@ -4805,7 +4183,7 @@ mod tests {
     fn project_package_task_cancel_finishes_cancelled_after_apply_abort() {
         let abort = AbortCheck::new();
         let request_id = Uuid::new_v4();
-        let mut tasks = McpProjectTaskStore::default();
+        let mut tasks = McpProjectOperationStore::default();
         tasks.start(
             "task-1".to_string(),
             McpProjectTaskKind::InstallPackage,
@@ -4832,15 +4210,15 @@ mod tests {
 
     #[test]
     fn project_create_abort_detection_matches_abort_error_only() {
-        assert!(is_project_create_abort_error(&McpIpcError::new(
+        assert!(is_project_create_abort_error(&McpToolError::new(
             "project_create_error",
             "Aborted",
         )));
-        assert!(!is_project_create_abort_error(&McpIpcError::new(
+        assert!(!is_project_create_abort_error(&McpToolError::new(
             "project_create_error",
             "disk write failed",
         )));
-        assert!(!is_project_create_abort_error(&McpIpcError::new(
+        assert!(!is_project_create_abort_error(&McpToolError::new(
             "project_package_apply_error",
             "Aborted",
         )));
@@ -4849,7 +4227,7 @@ mod tests {
     #[test]
     fn project_task_abort_all_takes_working_tracked_tool_calls() {
         let request_id = Uuid::new_v4();
-        let mut tasks = McpProjectTaskStore::default();
+        let mut tasks = McpProjectOperationStore::default();
         tasks.start(
             "task-1".to_string(),
             McpProjectTaskKind::Restore,
@@ -4870,18 +4248,13 @@ mod tests {
 
     #[test]
     fn disabled_mcp_still_allows_project_task_follow_up_methods() {
+        assert!(mcp_request_allowed_when_disabled(MCP_OPERATION_GET_METHOD));
         assert!(mcp_request_allowed_when_disabled(
-            IPC_METHOD_PROJECT_TASK_GET
-        ));
-        assert!(mcp_request_allowed_when_disabled(
-            IPC_METHOD_PROJECT_TASK_LIST
-        ));
-        assert!(mcp_request_allowed_when_disabled(
-            IPC_METHOD_PROJECT_TASK_CANCEL
+            MCP_OPERATION_CANCEL_METHOD
         ));
 
         assert!(!mcp_request_allowed_when_disabled(
-            IPC_METHOD_PROJECT_TASK_START
+            MCP_OPERATION_START_METHOD
         ));
         assert!(!mcp_request_allowed_when_disabled("list_projects"));
         assert!(!mcp_request_allowed_when_disabled("backup_project"));
@@ -4892,8 +4265,8 @@ mod tests {
 
     #[test]
     fn mcp_tool_call_finished_phase_tracks_success_and_failure() {
-        let ok: Result<(), McpIpcError> = Ok(());
-        let error: Result<(), McpIpcError> = Err(McpIpcError::new("failed", "failed"));
+        let ok: Result<(), McpToolError> = Ok(());
+        let error: Result<(), McpToolError> = Err(McpToolError::new("failed", "failed"));
 
         assert_eq!(
             mcp_tool_call_finished_phase(&ok),
@@ -4924,19 +4297,6 @@ mod tests {
                 "phase": "started",
             })
         );
-    }
-
-    #[test]
-    fn disabled_mcp_response_returns_business_error() {
-        let request_id = Uuid::new_v4();
-
-        let response = mcp_disabled_response(request_id);
-
-        assert_eq!(response.request_id, request_id);
-        assert!(!response.ok);
-        let error = response.error.unwrap();
-        assert_eq!(error.code, "mcp_disabled");
-        assert!(error.message.contains("disabled"));
     }
 
     #[test]
@@ -5550,7 +4910,7 @@ mod tests {
     }
 
     #[test]
-    fn project_task_params_accept_bridge_camel_case_task_id() {
+    fn project_task_params_accept_camel_case_task_id() {
         let start: ProjectTaskStartParams = serde_json::from_value(json!({
             "taskId": "task-1",
             "method": "backup_project",
@@ -5637,7 +4997,6 @@ mod tests {
 
     fn test_client(name: &str, version: Option<&str>) -> ClientIdentity {
         ClientIdentity {
-            session_id: Uuid::new_v4(),
             name: name.to_string(),
             version: version.map(str::to_string),
         }

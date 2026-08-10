@@ -34,7 +34,7 @@ Business failures have this shape and the outer MCP tool result has `isError: tr
 ```
 
 `error.data` appears only when structured context is useful. See the
-[MCP Tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools#error-handling)
+[MCP Tools specification](https://modelcontextprotocol.io/specification/2026-07-28/server/tools#error-handling)
 for the distinction between schema, business, and protocol errors.
 
 ## Quick index
@@ -75,8 +75,9 @@ for the distinction between schema, business, and protocol errors.
 | Project packages | `alcomd3_uninstall_project_package` | Destructive long task | Uninstall a package. |
 | Project packages | `alcomd3_reinstall_project_package` | Long-running write | Reinstall a package. |
 
-“Long-running” tools declare `execution.taskSupport: "optional"`. A client may use MCP
-Tasks or a normal synchronous `tools/call`. See [Project long tasks](../mcp.md#project-long-tasks).
+“Long-running” tools return a task handle when the client declares the experimental
+`io.modelcontextprotocol/tasks` capability; other clients receive a normal synchronous
+`tools/call`. See [Project long tasks](../mcp.md#project-long-tasks).
 
 ## Projects and templates
 
