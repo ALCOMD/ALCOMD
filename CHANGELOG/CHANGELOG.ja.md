@@ -18,6 +18,8 @@ category の bullet count を一致させます。
 
 ## [Unreleased]
 
+## [3.3.0-beta.1] - 2026-08-10
+
 ### Added
 
 - リポジトリに永続的なユーザー定義表示名を設定できるようになりました。
@@ -25,6 +27,8 @@ category の bullet count を一致させます。
 
 ### Changed
 
+- 既存の loopback URL と bearer token クライアント設定を維持したまま、MCP HTTP サーバー、33 個のツール、直接ビジネスディスパッチ、共有タスク管理を GUI プロセスに内蔵しました。
+- MCP を RMCP 3.1.2 にアップグレードし、`2026-07-28` のセッションレス要求と実験的な拡張 Tasks を明示的に採用しつつ、legacy session の通常の `2025-11-25` ツール呼び出し互換性を維持しました。
 - MCP のパッケージ用リポジトリ選択をリポジトリ ID に統一し、リポジトリ URL は追加と削除だけで使用するようにしました。
 - Windows の新規インストールではデスクトップショートカットの作成を既定で選択し、アップグレード時は以前の選択を維持するようにしました。
 - Windows のアンインストール時に、ドキュメント内のプロジェクトやバックアップを残したまま、設定、キャッシュ、その他のローカルアプリデータを削除できるオプションを追加しました。
@@ -33,6 +37,10 @@ category の bullet count を一致させます。
 ### Fixed
 
 - 補助レコードの表示を切り替えたときも、アクティビティログのテーブル列幅を安定させ、レイアウトのずれを防ぐようにしました。
+
+### Removed
+
+- 独立した `alcomd3-mcp` 実行ファイル、private IPC protocol と endpoint metadata、および廃止された core Tasks の `tasks/list` と `tasks/result` 互換パスを削除しました。Windows のアップグレードとアンインストールでは、歴史的な helper ファイルを引き続きクリーンアップします。
 
 ## [3.2.0] - 2026-08-09
 
@@ -136,7 +144,8 @@ category の bullet count を一致させます。
 
 - ALCOMD3 独自の更新エンドポイント、埋め込み公開鍵、署名付き更新ペイロードを採用。
 
-[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.2.0...HEAD
+[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0-beta.1...HEAD
+[3.3.0-beta.1]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.2.0...v3.3.0-beta.1
 [3.2.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.0.0...v3.1.0
 [3.1.0-beta.3]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0-beta.2...v3.1.0-beta.3

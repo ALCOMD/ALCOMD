@@ -1,0 +1,9 @@
+{
+  "en": "MCP now runs entirely inside the GUI with 33 tools, RMCP 3.1.2, and task support. This beta also adds repository display names and MCP tool-name preferences, plus layout and installer usability improvements.",
+  "de": "MCP läuft jetzt vollständig in der GUI mit 33 Werkzeugen, RMCP 3.1.2 und Aufgabenunterstützung. Diese Beta ergänzt außerdem Anzeigenamen für Repositorys und Einstellungen für MCP-Werkzeugnamen sowie Verbesserungen an Layout und Installation.",
+  "fr": "MCP fonctionne désormais entièrement dans l’interface graphique avec 33 outils, RMCP 3.1.2 et la prise en charge des tâches. Cette bêta ajoute aussi les noms d’affichage des dépôts et les préférences de nom des outils MCP, ainsi que des améliorations de mise en page et d’installation.",
+  "ja": "MCP を 33 個のツール、RMCP 3.1.2、Tasks 対応とともに GUI へ完全に内蔵しました。このベータでは、リポジトリ表示名と MCP ツール名設定に加え、レイアウトとインストール操作も改善しています。",
+  "ko": "MCP가 이제 33개 도구, RMCP 3.1.2 및 Tasks 지원과 함께 GUI에서 완전히 실행됩니다. 이 베타에는 저장소 표시 이름과 MCP 도구 이름 설정이 추가되었으며 레이아웃과 설치 사용성도 개선되었습니다.",
+  "zh_hans": "MCP 现已完全内置于 GUI，并提供 33 个工具、RMCP 3.1.2 与 Tasks 支持。本测试版还新增存储库显示名称和 MCP 工具名称设置，并改进布局与安装体验。",
+  "zh_hant": "MCP 現已完全內建於 GUI，並提供 33 個工具、RMCP 3.1.2 與 Tasks 支援。本測試版還新增儲存庫顯示名稱和 MCP 工具名稱設定，並改善版面配置與安裝體驗。"
+}

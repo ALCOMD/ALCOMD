@@ -15,6 +15,8 @@ GitHub Release 正文按 English、日本語、中文顺序，由结构一致的
 
 ## [Unreleased]
 
+## [3.3.0-beta.1] - 2026-08-10
+
 ### Added
 
 - 新增持久化的用户自定义存储库显示名称。
@@ -22,6 +24,8 @@ GitHub Release 正文按 English、日本語、中文顺序，由结构一致的
 
 ### Changed
 
+- 将 MCP HTTP 服务器、全部 33 个工具、直接业务分发和共享任务管理内置到 GUI 进程，同时保留既有回环 URL 和 bearer token 客户端配置。
+- MCP 升级到 RMCP 3.1.2，显式采用 `2026-07-28` 无会话请求和实验性扩展 Tasks，同时保留 legacy session 下普通 `2025-11-25` 工具调用兼容。
 - MCP 软件包工具统一使用存储库 ID 选择来源；存储库 URL 仅用于添加和删除存储库。
 - Windows 全新安装现在默认勾选创建桌面快捷方式，升级时仍保留此前的选择。
 - Windows 卸载时现在可以选择删除配置、缓存和其他本地应用数据，同时保留“文档”文件夹中的项目与备份。
@@ -30,6 +34,10 @@ GitHub Release 正文按 English、日本語、中文顺序，由结构一致的
 ### Fixed
 
 - 修复切换是否显示辅助记录时活动记录表格列宽异常和布局抖动的问题。
+
+### Removed
+
+- 删除独立的 `alcomd3-mcp` 可执行程序、私有 IPC 协议与 endpoint metadata，以及已废弃的 core Tasks `tasks/list` 和 `tasks/result` 兼容路径；Windows 升级与卸载仍会清理历史 helper 文件。
 
 ## [3.2.0] - 2026-08-09
 
@@ -133,7 +141,8 @@ GitHub Release 正文按 English、日本語、中文顺序，由结构一致的
 
 - 使用 ALCOMD3 自有更新端点、内嵌公钥和签名更新负载。
 
-[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.2.0...HEAD
+[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0-beta.1...HEAD
+[3.3.0-beta.1]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.2.0...v3.3.0-beta.1
 [3.2.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.0.0...v3.1.0
 [3.1.0-beta.3]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0-beta.2...v3.1.0-beta.3

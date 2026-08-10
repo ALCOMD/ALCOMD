@@ -28,6 +28,8 @@ category order, and bullet counts must match this canonical entry.
 
 ## [Unreleased]
 
+## [3.3.0-beta.1] - 2026-08-10
+
 ### Added
 
 - Added persistent user-defined display names for repositories.
@@ -189,7 +191,8 @@ category order, and bullet counts must match this canonical entry.
 - Used ALCOMD3-owned update endpoints, an embedded public key, and signed update
   payloads.
 
-[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.2.0...HEAD
+[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0-beta.1...HEAD
+[3.3.0-beta.1]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.2.0...v3.3.0-beta.1
 [3.2.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.0.0...v3.1.0
 [3.1.0-beta.3]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0-beta.2...v3.1.0-beta.3
