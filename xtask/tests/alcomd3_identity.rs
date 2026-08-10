@@ -332,6 +332,16 @@ fn gui_owns_the_embedded_mcp_server_without_endpoint_metadata() {
 }
 
 #[test]
+fn package_smokes_call_the_public_mcp_tool_name() {
+    let windows_smoke = read_workspace_file(".github/scripts/installer-smoke.ps1");
+    let posix_smoke = read_workspace_file(".github/scripts/posix-package-smoke.mjs");
+
+    assert!(windows_smoke.contains("name = 'alcomd3_list_projects'"));
+    assert!(!windows_smoke.contains("name = 'list_projects'"));
+    assert!(posix_smoke.contains("\"alcomd3_list_projects\""));
+}
+
+#[test]
 fn mcp_docs_reference_current_official_protocol_version() {
     let docs = read_workspace_file("docs/mcp.md");
 

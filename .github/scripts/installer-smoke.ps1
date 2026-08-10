@@ -845,7 +845,7 @@ function Assert-McpAccessDisabledByDefault {
                 jsonrpc = '2.0'
                 id = 'list-projects'
                 method = 'tools/call'
-                params = @{ name = 'list_projects'; arguments = @{} }
+                params = @{ name = 'alcomd3_list_projects'; arguments = @{} }
             }
         if ($response.StatusCode -ne 200 -or $response.Content -cnotmatch 'mcp_disabled') {
             throw "MCP access was not disabled by default: HTTP $($response.StatusCode), $($response.Content)"

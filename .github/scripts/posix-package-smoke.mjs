@@ -156,7 +156,7 @@ try {
 	const response = await callMcpTool(
 		endpoint,
 		sessionId,
-		"list_projects",
+		"alcomd3_list_projects",
 	);
 	if (
 		response.status !== 200 ||
