@@ -97,7 +97,7 @@ function Body({ environment }: BodyProps) {
 			)}
 			{isBadHostName.data && (
 				<div className={"mt-3"}>
-					<p className={"text-sm whitespace-normal text-warning"}>
+					<p className={"text-sm whitespace-normal text-destructive"}>
 						{tc("setup:system-setting:hostname-with-non-ascii")}
 					</p>
 				</div>

@@ -32,6 +32,10 @@ category order, and bullet counts must match this canonical entry.
 
 - Added a built-in Discord extension, enabled by default, with a dedicated live Unity status and preview page. A separate persisted sharing switch remains off by default and controls Discord publishing. It can publish the current project folder name, Unity version, session duration, and open-editor count with Unity artwork and an ALCOMD3 badge through the local Discord desktop client without exposing full project paths. When multiple editors are open, a newly started or foreground Unity editor becomes primary and remains primary while another app is in the foreground; platforms without foreground detection use the most recently started editor.
 
+### Fixed
+
+- Displayed the invalid computer-name notice as a high-severity red error because this condition causes VRCSDK uploads to fail.
+
 ## [3.3.0-beta.1] - 2026-08-10
 
 ### Added

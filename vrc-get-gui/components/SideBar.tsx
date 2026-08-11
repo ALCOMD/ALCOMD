@@ -236,14 +236,14 @@ function BadHostNameDialogButton() {
 			<DialogTrigger asChild>
 				<SideBarButton
 					icon={CircleAlert}
-					className="text-warning hover:bg-card hover:text-warning"
+					className="text-destructive hover:bg-card hover:text-destructive"
 				>
 					{tc("sidebar:bad hostname")}
 				</SideBarButton>
 			</DialogTrigger>
 			<DialogContent className={"max-w-[50vw]"}>
 				<DialogHeader>
-					<h1 className={"text-warning text-center"}>
+					<h1 className={"text-destructive text-center"}>
 						{tc("sidebar:dialog:bad hostname")}
 					</h1>
 				</DialogHeader>

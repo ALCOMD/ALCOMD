@@ -114,7 +114,7 @@ function StartupBadHostNameDialog({
 	return (
 		<>
 			<DialogHeader>
-				<DialogTitle className="text-warning text-center">
+				<DialogTitle className="text-destructive text-center">
 					{tc("sidebar:dialog:bad hostname")}
 				</DialogTitle>
 			</DialogHeader>
