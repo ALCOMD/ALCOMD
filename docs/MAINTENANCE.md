@@ -187,8 +187,12 @@ Preserve these behaviors:
   Discord application ID. Its worker detects local Unity editor processes and
   publishes the most recently started editor's project folder name, Unity
   version, session duration, and total open-editor count without publishing the
-  full project path. It clears the activity when Unity closes, the extension is
-  disabled, or ALCOMD3 exits.
+  full project path. Extension enablement controls the Unity detection worker;
+  a separate persisted sharing switch on its route controls Discord publishing.
+  Turning sharing off clears Discord activity immediately while detection and
+  the payload preview remain active. The route must not expose the configured
+  application ID or full project path. It also clears the activity when Unity
+  closes, the extension is disabled, or ALCOMD3 exits.
 - Enable/disable requests are validated, persisted, and applied by the backend.
   The backend emits state events after successful changes; the frontend may
   consume them only for presentation effects that require the DOM, such as

@@ -78,6 +78,7 @@ export const SIDEBAR_EXTENSION_DEFINITIONS: Record<
 		icon: AlignLeft,
 	},
 	"unity-discord-status": {
+		href: "/unity-discord-status",
 		labelKey: "extensions:unity discord status",
 		icon: RadioTower,
 	},

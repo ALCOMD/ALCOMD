@@ -37,6 +37,7 @@ macro_rules! localizable_error {
 
 mod activity;
 mod async_command;
+mod discord_presence;
 mod environment;
 mod mcp;
 mod project;
@@ -102,6 +103,8 @@ pub(crate) fn handlers() -> impl Fn(Invoke) -> bool + Send + Sync + 'static {
         environment::config::environment_set_update_reminder,
         environment::legacy_import::environment_legacy_data_sources,
         environment::legacy_import::environment_import_legacy_data,
+        discord_presence::unity_discord_status,
+        discord_presence::unity_discord_set_sharing_enabled,
         mcp::mcp_status,
         mcp::mcp_set_enabled,
         mcp::mcp_configure_client,
@@ -244,6 +247,8 @@ pub(crate) fn export_ts() {
             environment::config::environment_set_update_reminder,
             environment::legacy_import::environment_legacy_data_sources,
             environment::legacy_import::environment_import_legacy_data,
+            discord_presence::unity_discord_status,
+            discord_presence::unity_discord_set_sharing_enabled,
             mcp::mcp_status,
             mcp::mcp_set_enabled,
             mcp::mcp_configure_client,

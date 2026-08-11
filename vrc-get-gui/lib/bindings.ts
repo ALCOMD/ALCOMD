@@ -34,6 +34,8 @@ export const commands = {
 	environmentSetUpdateReminder: (updateReminder: UpdateReminderConfig | null) => __TAURI_INVOKE<null>("environment_set_update_reminder", { updateReminder }),
 	environmentLegacyDataSources: () => __TAURI_INVOKE<TauriLegacyDataSource[]>("environment_legacy_data_sources"),
 	environmentImportLegacyData: (source: TauriLegacyDataSourceKind, category: TauriLegacyDataImportCategory) => __TAURI_INVOKE<TauriLegacyDataImportResult>("environment_import_legacy_data", { source, category }),
+	unityDiscordStatus: () => __TAURI_INVOKE<UnityDiscordStatus>("unity_discord_status"),
+	unityDiscordSetSharingEnabled: (enabled: boolean) => __TAURI_INVOKE<UnityDiscordStatus>("unity_discord_set_sharing_enabled", { enabled }),
 	mcpStatus: () => __TAURI_INVOKE<McpStatus>("mcp_status"),
 	mcpSetEnabled: (enabled: boolean) => __TAURI_INVOKE<McpStatus>("mcp_set_enabled", { enabled }),
 	mcpConfigureClient: (client: McpClient, overwrite: boolean) => __TAURI_INVOKE<McpClientSetupResult>("mcp_configure_client", { client, overwrite }),
@@ -258,6 +260,22 @@ export type LogEntry_Serialize = {
 };
 
 export type LogLevel = "Error" | "Warn" | "Info" | "Debug" | "Trace";
+
+export type UnityDiscordActivity = {
+	projectName: string,
+	unityVersion: string | null,
+	editorCount: number,
+	startedAt: number,
+};
+
+export type UnityDiscordStatus = {
+	enabled: boolean,
+	sharingEnabled: boolean,
+	applicationConfigured: boolean,
+	workerRunning: boolean,
+	discordConnected: boolean,
+	activity: UnityDiscordActivity | null,
+};
 
 export type McpRecentClientStatus = {
 	name: string,

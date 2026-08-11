@@ -49,6 +49,26 @@ describe("Tauri command bindings", () => {
 		);
 	});
 
+	test("loads the Unity Discord runtime status", async () => {
+		const ipc = vi.fn(() => null);
+		mockIPC(ipc);
+
+		await commands.unityDiscordStatus();
+
+		expect(ipc).toHaveBeenCalledWith("unity_discord_status", {});
+	});
+
+	test("updates Discord sharing separately from extension enablement", async () => {
+		const ipc = vi.fn(() => null);
+		mockIPC(ipc);
+
+		await commands.unityDiscordSetSharingEnabled(true);
+
+		expect(ipc).toHaveBeenCalledWith("unity_discord_set_sharing_enabled", {
+			enabled: true,
+		});
+	});
+
 	test("passes the project path to Unity status and window commands", async () => {
 		const ipc = vi.fn(() => null);
 		mockIPC(ipc);

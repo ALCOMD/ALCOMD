@@ -121,6 +121,8 @@ pub fn startup(app: &mut App, initial_args: Vec<String>) {
     async fn open_main(app: AppHandle) -> tauri::Result<()> {
         let io = app.state::<DefaultEnvironmentIo>();
         let config = GuiConfigState::new_load(io.inner()).await?;
+        app.state::<crate::discord_presence::DiscordPresenceState>()
+            .set_sharing_enabled(config.get().unity_discord_sharing_enabled);
         app.state::<ExtensionRegistry>()
             .restore_runtime_states(&app, &config.get().extensions);
         app.manage(config);

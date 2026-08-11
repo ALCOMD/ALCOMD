@@ -169,7 +169,11 @@ user が manual import を明示的に開始した場合のみ external-app impo
 - Unity Discord Status は既定で無効とし、集中設定された public Discord Application ID を使う。
   worker は local Unity editor process を検出し、最後に起動した editor の project folder name、
   Unity version、session duration、open editor count を送信するが、full project path は送信しない。
-  Unity 終了時、extension の disable 時、または ALCOMD3 終了時に activity を clear する。
+  extension enablement は Unity detection worker を制御し、page 上の独立して永続化される sharing
+  switch は Discord への publish だけを制御する。sharing を off にすると Discord activity は即座に
+  clear されるが、detection と payload preview は継続する。page は設定済み Application ID や full
+  project path を公開してはならない。Unity 終了時、extension の disable 時、または ALCOMD3 終了時
+  にも activity を clear する。
 - enable/disable request は backend が validate、persist、apply する。成功後に backend
   が state event を送信し、frontend は theme CSS の適用・解除など DOM が必要な
   presentation effect のためだけに event を利用する。

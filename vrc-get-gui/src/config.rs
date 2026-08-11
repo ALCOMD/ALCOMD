@@ -1,6 +1,6 @@
 use crate::extensions::{
-    LOG_EXTENSION_ID, MCP_EXTENSION_ID, THEME_EXTENSION_ID, built_in_extension_can_disable,
-    built_in_extension_definition, built_in_extension_definitions,
+    LOG_EXTENSION_ID, MCP_EXTENSION_ID, THEME_EXTENSION_ID, UNITY_DISCORD_STATUS_EXTENSION_ID,
+    built_in_extension_can_disable, built_in_extension_definition, built_in_extension_definitions,
 };
 use crate::logging::LogLevel;
 use indexmap::IndexSet;
@@ -47,6 +47,8 @@ pub struct GuiConfig {
     pub mcp_http_port: u16,
     #[serde(default)]
     pub mcp_http_token: String,
+    #[serde(default)]
+    pub unity_discord_sharing_enabled: bool,
     #[serde(default = "project_view_mode_default")]
     pub project_view_mode: String,
     #[serde(default)]
@@ -151,6 +153,7 @@ impl Default for GuiConfig {
             mcp_enabled: false,
             mcp_http_port: mcp_http_port_default(),
             mcp_http_token: String::new(),
+            unity_discord_sharing_enabled: false,
             project_view_mode: project_view_mode_default(),
             unity_hub_access_method: UnityHubAccessMethod::ReadConfig,
             recent_project_locations: Vec::new(),
@@ -319,6 +322,7 @@ const BUILT_IN_SIDEBAR_EXTENSION_IDS: &[&str] = &[
     THEME_EXTENSION_ID,
     "settings",
     LOG_EXTENSION_ID,
+    UNITY_DISCORD_STATUS_EXTENSION_ID,
 ];
 
 fn is_configurable_sidebar_extension(id: &str) -> bool {
@@ -369,6 +373,12 @@ fn default_sidebar_extensions() -> Vec<SidebarExtension> {
             id: LOG_EXTENSION_ID.to_string(),
             installed: true,
             enabled: true,
+            visible: true,
+        },
+        SidebarExtension {
+            id: UNITY_DISCORD_STATUS_EXTENSION_ID.to_string(),
+            installed: true,
+            enabled: false,
             visible: true,
         },
     ]
@@ -522,6 +532,13 @@ mod tests {
     }
 
     #[test]
+    fn discord_sharing_is_separately_opt_in() {
+        let config: GuiConfig = serde_json::from_str("{}").unwrap();
+
+        assert!(!config.unity_discord_sharing_enabled);
+    }
+
+    #[test]
     fn missing_mcp_http_config_is_generated_once() {
         let mut config: GuiConfig = serde_json::from_str("{}").unwrap();
         assert_eq!(config.mcp_http_port, crate::mcp::MCP_HTTP_DEFAULT_PORT);
@@ -545,7 +562,15 @@ mod tests {
 
         assert_eq!(
             ids,
-            ["projects", "packages", "mcp", "theme", "settings", "log"]
+            [
+                "projects",
+                "packages",
+                "mcp",
+                "theme",
+                "settings",
+                "log",
+                "unity-discord-status"
+            ]
         );
     }
 
@@ -574,7 +599,15 @@ mod tests {
 
         assert_eq!(
             ids,
-            ["log", "projects", "packages", "mcp", "theme", "settings"]
+            [
+                "log",
+                "projects",
+                "packages",
+                "mcp",
+                "theme",
+                "settings",
+                "unity-discord-status"
+            ]
         );
         let theme = normalized
             .iter()
