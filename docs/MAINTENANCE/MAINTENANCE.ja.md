@@ -167,8 +167,11 @@ user が manual import を明示的に開始した場合のみ external-app impo
   catalog entry を install した場合は、その install 時点の末尾へ移動する。
   extension management は再 sort せず registry order をそのまま使用する。
 - Unity Discord Status は既定で無効とし、集中設定された public Discord Application ID を使う。
-  worker は local Unity editor process を検出し、最後に起動した editor の project folder name、
-  Unity version、session duration、open editor count を送信するが、full project path は送信しない。
+  worker は local Unity editor process の固定 priority order を保持し、新しく起動した editor または
+  foreground で検出した editor を先頭へ移動する。他の application が foreground になっても選択を
+  変更しない。foreground detection 非対応 platform では最後に起動した editor を使用する。選択した
+  editor の project folder name、Unity version、session duration、open editor count を送信するが、
+  full project path は送信しない。
   extension enablement は Unity detection worker を制御し、page 上の独立して永続化される sharing
   switch は Discord への publish だけを制御する。sharing を off にすると Discord activity は即座に
   clear されるが、detection と payload preview は継続する。page は設定済み Application ID や full

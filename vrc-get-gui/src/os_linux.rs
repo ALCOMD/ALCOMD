@@ -13,9 +13,14 @@ use nix::libc::uname;
 use tauri::Manager;
 
 use crate::os::BringUnityToFrontResult;
+use crate::unity_process::UnityProcess;
 
 pub(crate) const CAN_BRING_UNITY_TO_FRONT: bool = false;
 pub(crate) const CAN_DETECT_UNITY_EDITOR_READY: bool = false;
+
+pub(crate) fn foreground_unity_process_id(_processes: &[UnityProcess]) -> Option<u32> {
+    None
+}
 
 pub(crate) async fn start_command(name: &OsStr, path: &OsStr, args: &[&OsStr]) -> io::Result<()> {
     super::start_command_posix(name, path, args).await

@@ -493,7 +493,7 @@
     "unity discord:status:not configured": "尚未配置 Discord 集成",
     "unity discord:status:not configured description": "当前构建未设置 Discord Application ID。仍可检测 Unity，但无法发布活动状态。",
     "unity discord:status:connected": "Unity 活动已显示在 Discord",
-    "unity discord:status:connected description": "ALCOMD3 正通过本机 Discord 桌面客户端发布最近启动的 Unity 编辑器状态。",
+    "unity discord:status:connected description": "ALCOMD3 正发布最近启动或切换到前台的 Unity 编辑器状态。",
     "unity discord:status:discord unavailable": "正在等待 Discord",
     "unity discord:status:discord unavailable description": "Unity 正在运行，但 ALCOMD3 无法连接 Discord 桌面客户端。请打开 Discord 并保持运行。",
     "unity discord:status:waiting": "正在等待 Unity",

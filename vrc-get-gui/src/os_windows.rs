@@ -29,9 +29,9 @@ use windows::Win32::Storage::FileSystem::{
 use windows::Win32::System::IO::OVERLAPPED;
 use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, FLASHW_TIMERNOFG, FLASHW_TRAY, FLASHWINFO, FlashWindowEx, GetClassNameW, GetMenu,
-    GetWindowThreadProcessId, IsIconic, IsWindowVisible, SW_RESTORE, SetForegroundWindow,
-    ShowWindow,
+    EnumWindows, FLASHW_TIMERNOFG, FLASHW_TRAY, FLASHWINFO, FlashWindowEx, GetClassNameW,
+    GetForegroundWindow, GetMenu, GetWindowThreadProcessId, IsIconic, IsWindowVisible, SW_RESTORE,
+    SetForegroundWindow, ShowWindow,
 };
 use windows::core::{BOOL, HSTRING};
 
@@ -46,6 +46,23 @@ const UNITY_RUNTIME_CACHE_TTL: Duration = Duration::from_secs(1);
 
 pub(crate) const CAN_BRING_UNITY_TO_FRONT: bool = true;
 pub(crate) const CAN_DETECT_UNITY_EDITOR_READY: bool = true;
+
+pub(crate) fn foreground_unity_process_id(processes: &[UnityProcess]) -> Option<u32> {
+    // SAFETY: `GetForegroundWindow` returns an OS-owned handle that is only used
+    // to synchronously query its owning process ID.
+    let foreground_window = unsafe { GetForegroundWindow() };
+    if foreground_window.0.is_null() {
+        return None;
+    }
+
+    let mut process_id = 0;
+    // SAFETY: `process_id` remains valid for the duration of the synchronous call.
+    unsafe { GetWindowThreadProcessId(foreground_window, Some(&mut process_id)) };
+    processes
+        .iter()
+        .any(|process| process.process_id == process_id)
+        .then_some(process_id)
+}
 
 #[derive(Clone, Copy)]
 struct UnityEditorWindowHandle(HWND);

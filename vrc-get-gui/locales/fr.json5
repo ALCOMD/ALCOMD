@@ -384,7 +384,7 @@
     'unity discord:status:not configured': 'L’intégration Discord n’est pas configurée',
     'unity discord:status:not configured description': 'Cette version ne possède pas de Discord Application ID. Unity peut être détecté, mais aucune activité ne peut être publiée.',
     'unity discord:status:connected': 'L’activité Unity est visible sur Discord',
-    'unity discord:status:connected description': 'ALCOMD3 publie l’éditeur Unity le plus récemment lancé via l’application Discord locale.',
+    'unity discord:status:connected description': 'ALCOMD3 publie le dernier éditeur Unity lancé ou placé au premier plan.',
     'unity discord:status:discord unavailable': 'En attente de Discord',
     'unity discord:status:discord unavailable description': 'Unity est en cours d’exécution, mais ALCOMD3 ne peut pas joindre l’application Discord. Ouvrez Discord et laissez-le fonctionner.',
     'unity discord:status:waiting': 'En attente de Unity',

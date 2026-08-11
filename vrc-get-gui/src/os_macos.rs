@@ -18,9 +18,19 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
 use crate::os::BringUnityToFrontResult;
+use crate::unity_process::UnityProcess;
 
 pub(crate) const CAN_BRING_UNITY_TO_FRONT: bool = true;
 pub(crate) const CAN_DETECT_UNITY_EDITOR_READY: bool = false;
+
+pub(crate) fn foreground_unity_process_id(processes: &[UnityProcess]) -> Option<u32> {
+    let application = NSWorkspace::sharedWorkspace().frontmostApplication()?;
+    let process_id = u32::try_from(application.processIdentifier()).ok()?;
+    processes
+        .iter()
+        .any(|process| process.process_id == process_id)
+        .then_some(process_id)
+}
 
 pub(crate) fn bring_unity_to_front(project_path: &Path) -> io::Result<BringUnityToFrontResult> {
     let mut found_application = false;

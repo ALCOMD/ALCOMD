@@ -497,7 +497,7 @@
     "unity discord:status:not configured": "Discord-Integration ist nicht konfiguriert",
     "unity discord:status:not configured description": "Für diesen Build ist keine Discord Application ID festgelegt. Unity kann erkannt, aber keine Aktivität veröffentlicht werden.",
     "unity discord:status:connected": "Unity-Aktivität ist auf Discord sichtbar",
-    "unity discord:status:connected description": "ALCOMD3 veröffentlicht den zuletzt gestarteten Unity-Editor über die lokale Discord-Desktop-App.",
+    "unity discord:status:connected description": "ALCOMD3 veröffentlicht den Unity-Editor, der zuletzt gestartet oder in den Vordergrund gebracht wurde.",
     "unity discord:status:discord unavailable": "Warten auf Discord",
     "unity discord:status:discord unavailable description": "Unity läuft, aber ALCOMD3 kann die Discord-Desktop-App nicht erreichen. Öffne Discord und lasse es laufen.",
     "unity discord:status:waiting": "Warten auf Unity",

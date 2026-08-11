@@ -10,7 +10,10 @@ use std::sync::OnceLock;
 
 use nix::libc::{F_UNLCK, c_short, flock};
 
-pub(crate) use os_more::{CAN_BRING_UNITY_TO_FRONT, CAN_DETECT_UNITY_EDITOR_READY, start_command};
+pub(crate) use os_more::{
+    CAN_BRING_UNITY_TO_FRONT, CAN_DETECT_UNITY_EDITOR_READY, foreground_unity_process_id,
+    start_command,
+};
 
 pub(crate) struct UnityRuntimeCache;
 

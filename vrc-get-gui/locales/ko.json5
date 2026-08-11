@@ -491,7 +491,7 @@
     "unity discord:status:not configured": "Discord 연동이 구성되지 않았습니다",
     "unity discord:status:not configured description": "이 빌드에는 Discord Application ID가 설정되지 않았습니다. Unity는 감지할 수 있지만 활동을 게시할 수 없습니다.",
     "unity discord:status:connected": "Unity 활동을 Discord에 표시 중입니다",
-    "unity discord:status:connected description": "ALCOMD3가 로컬 Discord 데스크톱 앱을 통해 가장 최근에 실행한 Unity 에디터 상태를 게시하고 있습니다.",
+    "unity discord:status:connected description": "ALCOMD3가 가장 최근에 실행했거나 최상위로 가져온 Unity 에디터를 게시하고 있습니다.",
     "unity discord:status:discord unavailable": "Discord를 기다리는 중",
     "unity discord:status:discord unavailable description": "Unity가 실행 중이지만 ALCOMD3가 Discord 데스크톱 앱에 연결할 수 없습니다. Discord를 열어 둔 상태로 유지하세요.",
     "unity discord:status:waiting": "Unity를 기다리는 중",

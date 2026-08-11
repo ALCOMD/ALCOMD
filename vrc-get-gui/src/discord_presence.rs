@@ -26,6 +26,71 @@ struct PresenceWorker {
     thread: JoinHandle<()>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct UnityProcessIdentity {
+    process_id: u32,
+    started_at: u64,
+}
+
+impl From<&crate::unity_process::UnityProcess> for UnityProcessIdentity {
+    fn from(process: &crate::unity_process::UnityProcess) -> Self {
+        Self {
+            process_id: process.process_id,
+            started_at: process.started_at,
+        }
+    }
+}
+
+#[derive(Default)]
+struct UnityActivitySelector {
+    priority: Vec<UnityProcessIdentity>,
+}
+
+impl UnityActivitySelector {
+    fn select<'a>(
+        &mut self,
+        processes: &'a [crate::unity_process::UnityProcess],
+        foreground_process_id: Option<u32>,
+    ) -> Option<&'a crate::unity_process::UnityProcess> {
+        self.priority.retain(|identity| {
+            processes
+                .iter()
+                .any(|process| UnityProcessIdentity::from(process) == *identity)
+        });
+
+        let mut new_processes = processes
+            .iter()
+            .filter(|process| {
+                !self
+                    .priority
+                    .contains(&UnityProcessIdentity::from(*process))
+            })
+            .collect::<Vec<_>>();
+        new_processes.sort_by_key(|process| (process.started_at, process.process_id));
+        for process in new_processes {
+            self.promote(UnityProcessIdentity::from(process));
+        }
+
+        if let Some(foreground_process) = foreground_process_id.and_then(|process_id| {
+            processes
+                .iter()
+                .find(|process| process.process_id == process_id)
+        }) {
+            self.promote(UnityProcessIdentity::from(foreground_process));
+        }
+
+        let selected = *self.priority.first()?;
+        processes
+            .iter()
+            .find(|process| UnityProcessIdentity::from(*process) == selected)
+    }
+
+    fn promote(&mut self, identity: UnityProcessIdentity) {
+        self.priority.retain(|current| *current != identity);
+        self.priority.insert(0, identity);
+    }
+}
+
 enum PresenceWorkerCommand {
     Stop,
     Refresh,
@@ -161,6 +226,7 @@ fn run_presence_worker(
     let mut client = None;
     let mut connected_once = false;
     let mut unavailable_logged = false;
+    let mut activity_selector = UnityActivitySelector::default();
 
     loop {
         match command.try_recv() {
@@ -173,7 +239,7 @@ fn run_presence_worker(
             Err(mpsc::TryRecvError::Empty) => {}
         }
 
-        if let Some(unity_activity) = detect_unity_activity(&mut system) {
+        if let Some(unity_activity) = detect_unity_activity(&mut system, &mut activity_selector) {
             runtime.lock().unwrap().activity = Some(unity_activity.clone());
             if !sharing_enabled.load(Ordering::Relaxed) {
                 close_client(&mut client, true);
@@ -241,17 +307,31 @@ fn close_client(client: &mut Option<DiscordIpcClient>, clear_activity: bool) {
     }
 }
 
-fn detect_unity_activity(system: &mut System) -> Option<UnityDiscordActivity> {
+fn detect_unity_activity(
+    system: &mut System,
+    selector: &mut UnityActivitySelector,
+) -> Option<UnityDiscordActivity> {
     let processes = crate::unity_process::refresh_unity_processes(system);
-    unity_activity_from_processes(&processes)
+    let foreground_process_id = crate::os::foreground_unity_process_id(&processes);
+    let process = selector.select(&processes, foreground_process_id)?;
+    unity_activity_from_processes(&processes, Some(process.process_id))
 }
 
 fn unity_activity_from_processes(
     processes: &[crate::unity_process::UnityProcess],
+    foreground_process_id: Option<u32>,
 ) -> Option<UnityDiscordActivity> {
-    let process = processes
-        .iter()
-        .max_by_key(|process| (process.started_at, process.process_id))?;
+    let process = foreground_process_id
+        .and_then(|process_id| {
+            processes
+                .iter()
+                .find(|process| process.process_id == process_id)
+        })
+        .or_else(|| {
+            processes
+                .iter()
+                .max_by_key(|process| (process.started_at, process.process_id))
+        })?;
     let project_name = process
         .project_path
         .file_name()
@@ -407,7 +487,7 @@ mod tests {
             },
         ];
 
-        let activity = unity_activity_from_processes(&processes).unwrap();
+        let activity = unity_activity_from_processes(&processes, None).unwrap();
 
         assert_eq!(activity.project_name, "Newer World");
         assert_eq!(activity.unity_version.as_deref(), Some("2022.3.22f1"));
@@ -417,7 +497,124 @@ mod tests {
 
     #[test]
     fn unity_activity_is_absent_without_a_unity_editor() {
-        assert_eq!(unity_activity_from_processes(&[]), None);
+        assert_eq!(unity_activity_from_processes(&[], None), None);
+    }
+
+    #[test]
+    fn unity_activity_prefers_the_foreground_editor() {
+        let processes = vec![
+            crate::unity_process::UnityProcess {
+                project_path: PathBuf::from("Older Avatar"),
+                process_id: 100,
+                started_at: 1000,
+            },
+            crate::unity_process::UnityProcess {
+                project_path: PathBuf::from("Newer World"),
+                process_id: 200,
+                started_at: 2000,
+            },
+        ];
+
+        let activity = unity_activity_from_processes(&processes, Some(100)).unwrap();
+
+        assert_eq!(activity.project_name, "Older Avatar");
+        assert_eq!(activity.editor_count, 2);
+        assert_eq!(activity.started_at, 1000.0);
+    }
+
+    #[test]
+    fn unknown_foreground_process_falls_back_to_the_most_recent_editor() {
+        let processes = vec![
+            crate::unity_process::UnityProcess {
+                project_path: PathBuf::from("Older Avatar"),
+                process_id: 100,
+                started_at: 1000,
+            },
+            crate::unity_process::UnityProcess {
+                project_path: PathBuf::from("Newer World"),
+                process_id: 200,
+                started_at: 2000,
+            },
+        ];
+
+        let activity = unity_activity_from_processes(&processes, Some(300)).unwrap();
+
+        assert_eq!(activity.project_name, "Newer World");
+        assert_eq!(activity.started_at, 2000.0);
+    }
+
+    #[test]
+    fn selector_keeps_the_last_foreground_editor_primary() {
+        let mut selector = UnityActivitySelector::default();
+        let mut processes = vec![
+            crate::unity_process::UnityProcess {
+                project_path: PathBuf::from("Older Avatar"),
+                process_id: 100,
+                started_at: 1000,
+            },
+            crate::unity_process::UnityProcess {
+                project_path: PathBuf::from("Newer World"),
+                process_id: 200,
+                started_at: 2000,
+            },
+        ];
+
+        assert_eq!(selector.select(&processes, None).unwrap().process_id, 200);
+        assert_eq!(
+            selector.select(&processes, Some(100)).unwrap().process_id,
+            100
+        );
+        assert_eq!(selector.select(&processes, None).unwrap().process_id, 100);
+
+        processes.push(crate::unity_process::UnityProcess {
+            project_path: PathBuf::from("Newest Project"),
+            process_id: 300,
+            started_at: 3000,
+        });
+        assert_eq!(selector.select(&processes, None).unwrap().process_id, 300);
+    }
+
+    #[test]
+    fn selector_removes_closed_editors_from_the_priority_order() {
+        let mut selector = UnityActivitySelector::default();
+        let processes = vec![
+            crate::unity_process::UnityProcess {
+                project_path: PathBuf::from("Older Avatar"),
+                process_id: 100,
+                started_at: 1000,
+            },
+            crate::unity_process::UnityProcess {
+                project_path: PathBuf::from("Newer World"),
+                process_id: 200,
+                started_at: 2000,
+            },
+        ];
+
+        selector.select(&processes, Some(100)).unwrap();
+
+        assert_eq!(
+            selector.select(&processes[1..], None).unwrap().process_id,
+            200
+        );
+    }
+
+    #[test]
+    fn selector_uses_the_most_recent_editor_without_foreground_updates() {
+        let mut selector = UnityActivitySelector::default();
+        let processes = vec![
+            crate::unity_process::UnityProcess {
+                project_path: PathBuf::from("Older Avatar"),
+                process_id: 100,
+                started_at: 1000,
+            },
+            crate::unity_process::UnityProcess {
+                project_path: PathBuf::from("Newer World"),
+                process_id: 200,
+                started_at: 2000,
+            },
+        ];
+
+        assert_eq!(selector.select(&processes, None).unwrap().process_id, 200);
     }
 
     #[test]
@@ -460,7 +657,7 @@ mod tests {
             started_at: 1000,
         }];
 
-        let activity = unity_activity_from_processes(&processes).unwrap();
+        let activity = unity_activity_from_processes(&processes, None).unwrap();
 
         assert_eq!(activity.project_name, "Untitled Project");
     }

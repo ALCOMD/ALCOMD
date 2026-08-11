@@ -185,9 +185,12 @@ Preserve these behaviors:
   Extension management uses this registry order without sorting it again.
 - Unity Discord Status is opt-in and uses the centrally configured public
   Discord application ID. Its worker detects local Unity editor processes and
-  publishes the most recently started editor's project folder name, Unity
-  version, session duration, and total open-editor count without publishing the
-  full project path. Extension enablement controls the Unity detection worker;
+  keeps a stable priority order. A newly started editor or an editor detected in
+  the foreground moves to the front of that order; focusing another application
+  does not change the selected editor. Platforms without foreground detection
+  use the most recently started editor. It publishes the selected editor's project
+  folder name, Unity version, session duration, and total open-editor count without
+  publishing the full project path. Extension enablement controls the Unity detection worker;
   a separate persisted sharing switch on its route controls Discord publishing.
   Turning sharing off clears Discord activity immediately while detection and
   the payload preview remain active. The route must not expose the configured

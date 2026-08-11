@@ -487,7 +487,7 @@
     "unity discord:status:not configured": "Discord 連携が設定されていません",
     "unity discord:status:not configured description": "このビルドには Discord Application ID が設定されていません。Unity の検出はできますが、アクティビティは公開できません。",
     "unity discord:status:connected": "Unity アクティビティを Discord に公開中",
-    "unity discord:status:connected description": "ALCOMD3 は最後に起動した Unity エディターをローカルの Discord デスクトップアプリ経由で公開しています。",
+    "unity discord:status:connected description": "ALCOMD3 は最後に起動するか最前面に移動した Unity エディターを公開しています。",
     "unity discord:status:discord unavailable": "Discord を待機中",
     "unity discord:status:discord unavailable description": "Unity は実行中ですが、ALCOMD3 は Discord デスクトップアプリに接続できません。Discord を起動したままにしてください。",
     "unity discord:status:waiting": "Unity を待機中",
