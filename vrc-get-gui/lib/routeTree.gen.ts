@@ -12,12 +12,12 @@ import { Route as rootRouteImport } from './../app/__root'
 import { Route as SetupRouteRouteImport } from './../app/_setup/route'
 import { Route as MainRouteRouteImport } from './../app/_main/route'
 import { Route as IndexRouteImport } from './../app/index'
-import { Route as MainUnityDiscordStatusIndexRouteImport } from './../app/_main/unity-discord-status/index'
 import { Route as MainSettingsIndexRouteImport } from './../app/_main/settings/index'
 import { Route as MainProjectsIndexRouteImport } from './../app/_main/projects/index'
 import { Route as MainMcpIndexRouteImport } from './../app/_main/mcp/index'
 import { Route as MainLogIndexRouteImport } from './../app/_main/log/index'
 import { Route as MainExtensionsIndexRouteImport } from './../app/_main/extensions/index'
+import { Route as MainDiscordIndexRouteImport } from './../app/_main/discord/index'
 import { Route as MainDevPaletteIndexRouteImport } from './../app/_main/dev-palette/index'
 import { Route as SetupSetupUnityHubIndexRouteImport } from './../app/_setup/setup/unity-hub/index'
 import { Route as SetupSetupSystemSettingIndexRouteImport } from './../app/_setup/setup/system-setting/index'
@@ -45,12 +45,6 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const MainUnityDiscordStatusIndexRoute =
-  MainUnityDiscordStatusIndexRouteImport.update({
-    id: '/unity-discord-status/',
-    path: '/unity-discord-status/',
-    getParentRoute: () => MainRouteRoute,
-  } as any)
 const MainSettingsIndexRoute = MainSettingsIndexRouteImport.update({
   id: '/settings/',
   path: '/settings/',
@@ -74,6 +68,11 @@ const MainLogIndexRoute = MainLogIndexRouteImport.update({
 const MainExtensionsIndexRoute = MainExtensionsIndexRouteImport.update({
   id: '/extensions/',
   path: '/extensions/',
+  getParentRoute: () => MainRouteRoute,
+} as any)
+const MainDiscordIndexRoute = MainDiscordIndexRouteImport.update({
+  id: '/discord/',
+  path: '/discord/',
   getParentRoute: () => MainRouteRoute,
 } as any)
 const MainDevPaletteIndexRoute = MainDevPaletteIndexRouteImport.update({
@@ -153,12 +152,12 @@ const MainPackagesRepositoriesIndexRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dev-palette/': typeof MainDevPaletteIndexRoute
+  '/discord/': typeof MainDiscordIndexRoute
   '/extensions/': typeof MainExtensionsIndexRoute
   '/log/': typeof MainLogIndexRoute
   '/mcp/': typeof MainMcpIndexRoute
   '/projects/': typeof MainProjectsIndexRoute
   '/settings/': typeof MainSettingsIndexRoute
-  '/unity-discord-status/': typeof MainUnityDiscordStatusIndexRoute
   '/packages/repositories/': typeof MainPackagesRepositoriesIndexRoute
   '/packages/templates/': typeof MainPackagesTemplatesIndexRoute
   '/packages/user-packages/': typeof MainPackagesUserPackagesIndexRoute
@@ -175,12 +174,12 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dev-palette': typeof MainDevPaletteIndexRoute
+  '/discord': typeof MainDiscordIndexRoute
   '/extensions': typeof MainExtensionsIndexRoute
   '/log': typeof MainLogIndexRoute
   '/mcp': typeof MainMcpIndexRoute
   '/projects': typeof MainProjectsIndexRoute
   '/settings': typeof MainSettingsIndexRoute
-  '/unity-discord-status': typeof MainUnityDiscordStatusIndexRoute
   '/packages/repositories': typeof MainPackagesRepositoriesIndexRoute
   '/packages/templates': typeof MainPackagesTemplatesIndexRoute
   '/packages/user-packages': typeof MainPackagesUserPackagesIndexRoute
@@ -200,12 +199,12 @@ export interface FileRoutesById {
   '/_main': typeof MainRouteRouteWithChildren
   '/_setup': typeof SetupRouteRouteWithChildren
   '/_main/dev-palette/': typeof MainDevPaletteIndexRoute
+  '/_main/discord/': typeof MainDiscordIndexRoute
   '/_main/extensions/': typeof MainExtensionsIndexRoute
   '/_main/log/': typeof MainLogIndexRoute
   '/_main/mcp/': typeof MainMcpIndexRoute
   '/_main/projects/': typeof MainProjectsIndexRoute
   '/_main/settings/': typeof MainSettingsIndexRoute
-  '/_main/unity-discord-status/': typeof MainUnityDiscordStatusIndexRoute
   '/_main/packages/repositories/': typeof MainPackagesRepositoriesIndexRoute
   '/_main/packages/templates/': typeof MainPackagesTemplatesIndexRoute
   '/_main/packages/user-packages/': typeof MainPackagesUserPackagesIndexRoute
@@ -224,12 +223,12 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/dev-palette/'
+    | '/discord/'
     | '/extensions/'
     | '/log/'
     | '/mcp/'
     | '/projects/'
     | '/settings/'
-    | '/unity-discord-status/'
     | '/packages/repositories/'
     | '/packages/templates/'
     | '/packages/user-packages/'
@@ -246,12 +245,12 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/dev-palette'
+    | '/discord'
     | '/extensions'
     | '/log'
     | '/mcp'
     | '/projects'
     | '/settings'
-    | '/unity-discord-status'
     | '/packages/repositories'
     | '/packages/templates'
     | '/packages/user-packages'
@@ -270,12 +269,12 @@ export interface FileRouteTypes {
     | '/_main'
     | '/_setup'
     | '/_main/dev-palette/'
+    | '/_main/discord/'
     | '/_main/extensions/'
     | '/_main/log/'
     | '/_main/mcp/'
     | '/_main/projects/'
     | '/_main/settings/'
-    | '/_main/unity-discord-status/'
     | '/_main/packages/repositories/'
     | '/_main/packages/templates/'
     | '/_main/packages/user-packages/'
@@ -319,13 +318,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_main/unity-discord-status/': {
-      id: '/_main/unity-discord-status/'
-      path: '/unity-discord-status'
-      fullPath: '/unity-discord-status/'
-      preLoaderRoute: typeof MainUnityDiscordStatusIndexRouteImport
-      parentRoute: typeof MainRouteRoute
-    }
     '/_main/settings/': {
       id: '/_main/settings/'
       path: '/settings'
@@ -359,6 +351,13 @@ declare module '@tanstack/react-router' {
       path: '/extensions'
       fullPath: '/extensions/'
       preLoaderRoute: typeof MainExtensionsIndexRouteImport
+      parentRoute: typeof MainRouteRoute
+    }
+    '/_main/discord/': {
+      id: '/_main/discord/'
+      path: '/discord'
+      fullPath: '/discord/'
+      preLoaderRoute: typeof MainDiscordIndexRouteImport
       parentRoute: typeof MainRouteRoute
     }
     '/_main/dev-palette/': {
@@ -457,12 +456,12 @@ declare module '@tanstack/react-router' {
 
 interface MainRouteRouteChildren {
   MainDevPaletteIndexRoute: typeof MainDevPaletteIndexRoute
+  MainDiscordIndexRoute: typeof MainDiscordIndexRoute
   MainExtensionsIndexRoute: typeof MainExtensionsIndexRoute
   MainLogIndexRoute: typeof MainLogIndexRoute
   MainMcpIndexRoute: typeof MainMcpIndexRoute
   MainProjectsIndexRoute: typeof MainProjectsIndexRoute
   MainSettingsIndexRoute: typeof MainSettingsIndexRoute
-  MainUnityDiscordStatusIndexRoute: typeof MainUnityDiscordStatusIndexRoute
   MainPackagesRepositoriesIndexRoute: typeof MainPackagesRepositoriesIndexRoute
   MainPackagesTemplatesIndexRoute: typeof MainPackagesTemplatesIndexRoute
   MainPackagesUserPackagesIndexRoute: typeof MainPackagesUserPackagesIndexRoute
@@ -472,12 +471,12 @@ interface MainRouteRouteChildren {
 
 const MainRouteRouteChildren: MainRouteRouteChildren = {
   MainDevPaletteIndexRoute: MainDevPaletteIndexRoute,
+  MainDiscordIndexRoute: MainDiscordIndexRoute,
   MainExtensionsIndexRoute: MainExtensionsIndexRoute,
   MainLogIndexRoute: MainLogIndexRoute,
   MainMcpIndexRoute: MainMcpIndexRoute,
   MainProjectsIndexRoute: MainProjectsIndexRoute,
   MainSettingsIndexRoute: MainSettingsIndexRoute,
-  MainUnityDiscordStatusIndexRoute: MainUnityDiscordStatusIndexRoute,
   MainPackagesRepositoriesIndexRoute: MainPackagesRepositoriesIndexRoute,
   MainPackagesTemplatesIndexRoute: MainPackagesTemplatesIndexRoute,
   MainPackagesUserPackagesIndexRoute: MainPackagesUserPackagesIndexRoute,

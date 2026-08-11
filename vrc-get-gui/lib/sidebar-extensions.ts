@@ -1,5 +1,5 @@
 export const THEME_SIDEBAR_EXTENSION_ID = "theme";
-export const UNITY_DISCORD_STATUS_EXTENSION_ID = "unity-discord-status";
+export const DISCORD_EXTENSION_ID = "discord";
 export const EXTENSION_STATE_CHANGED_EVENT = "extension-state-changed";
 export const SIDEBAR_EXTENSIONS_QUERY_KEY = [
 	"environmentGetSidebarExtensions",
@@ -15,7 +15,7 @@ export const DEFAULT_SIDEBAR_EXTENSION_ORDER = [
 	THEME_SIDEBAR_EXTENSION_ID,
 	"settings",
 	"log",
-	UNITY_DISCORD_STATUS_EXTENSION_ID,
+	DISCORD_EXTENSION_ID,
 ] as const;
 
 const DEFAULT_SIDEBAR_EXTENSION_INDEX = new Map<string, number>(

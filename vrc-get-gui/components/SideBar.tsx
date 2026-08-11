@@ -57,14 +57,13 @@ import { tc } from "@/lib/i18n";
 import {
 	DEFAULT_SIDEBAR_EXTENSION_ORDER,
 	SIDEBAR_EXTENSIONS_QUERY_KEY,
-	UNITY_DISCORD_STATUS_EXTENSION_ID,
 } from "@/lib/sidebar-extensions";
 
 const DEFAULT_SIDEBAR_EXTENSIONS: SidebarExtension[] =
 	DEFAULT_SIDEBAR_EXTENSION_ORDER.map((id) => ({
 		id,
 		installed: true,
-		enabled: id !== UNITY_DISCORD_STATUS_EXTENSION_ID,
+		enabled: true,
 		visible: true,
 	}));
 

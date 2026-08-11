@@ -10,7 +10,7 @@ pub const EXTENSION_STATE_CHANGED_EVENT: &str = "extension-state-changed";
 pub const MCP_EXTENSION_ID: &str = "mcp";
 pub const THEME_EXTENSION_ID: &str = "theme";
 pub const LOG_EXTENSION_ID: &str = "log";
-pub const UNITY_DISCORD_STATUS_EXTENSION_ID: &str = "unity-discord-status";
+pub const DISCORD_EXTENSION_ID: &str = "discord";
 
 #[derive(Clone, Copy, Debug)]
 pub struct BuiltInExtensionDefinition {
@@ -59,7 +59,7 @@ const BUILT_IN_EXTENSION_DEFINITIONS: &[BuiltInExtensionDefinition] = &[
         lifecycle: BuiltInExtensionLifecycle::Logs,
     },
     BuiltInExtensionDefinition {
-        id: UNITY_DISCORD_STATUS_EXTENSION_ID,
+        id: DISCORD_EXTENSION_ID,
         display_name: "Discord",
         can_disable: true,
         can_install: false,
@@ -505,7 +505,7 @@ mod tests {
             .unwrap();
         let discord_status = extensions
             .iter()
-            .find(|extension| extension.id == UNITY_DISCORD_STATUS_EXTENSION_ID)
+            .find(|extension| extension.id == DISCORD_EXTENSION_ID)
             .unwrap();
 
         assert!(!available.built_in);
@@ -529,7 +529,7 @@ mod tests {
                 MCP_EXTENSION_ID,
                 THEME_EXTENSION_ID,
                 LOG_EXTENSION_ID,
-                UNITY_DISCORD_STATUS_EXTENSION_ID,
+                DISCORD_EXTENSION_ID,
                 "example.available"
             ]
         );
@@ -589,7 +589,7 @@ mod tests {
                 MCP_EXTENSION_ID,
                 THEME_EXTENSION_ID,
                 LOG_EXTENSION_ID,
-                UNITY_DISCORD_STATUS_EXTENSION_ID,
+                DISCORD_EXTENSION_ID,
                 "example.installed"
             ]
         );
@@ -662,7 +662,7 @@ mod tests {
                 MCP_EXTENSION_ID,
                 THEME_EXTENSION_ID,
                 LOG_EXTENSION_ID,
-                UNITY_DISCORD_STATUS_EXTENSION_ID,
+                DISCORD_EXTENSION_ID,
                 "example.second",
                 "example.first"
             ]
@@ -685,7 +685,7 @@ mod tests {
                 MCP_EXTENSION_ID,
                 THEME_EXTENSION_ID,
                 LOG_EXTENSION_ID,
-                UNITY_DISCORD_STATUS_EXTENSION_ID,
+                DISCORD_EXTENSION_ID,
                 "example.first",
                 "example.second"
             ]

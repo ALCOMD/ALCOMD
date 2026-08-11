@@ -1,11 +1,13 @@
 use crate::extensions::{
-    LOG_EXTENSION_ID, MCP_EXTENSION_ID, THEME_EXTENSION_ID, UNITY_DISCORD_STATUS_EXTENSION_ID,
+    DISCORD_EXTENSION_ID, LOG_EXTENSION_ID, MCP_EXTENSION_ID, THEME_EXTENSION_ID,
     built_in_extension_can_disable, built_in_extension_definition, built_in_extension_definitions,
 };
 use crate::logging::LogLevel;
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::{BTreeMap, HashSet};
+
+const LEGACY_DISCORD_EXTENSION_ID: &str = "unity-discord-status";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -168,6 +170,16 @@ impl Default for GuiConfig {
 
 impl GuiConfig {
     pub(crate) fn fix_defaults(&mut self) {
+        if let Some(legacy_state) = self.extensions.remove(LEGACY_DISCORD_EXTENSION_ID) {
+            self.extensions
+                .entry(DISCORD_EXTENSION_ID.to_string())
+                .or_insert(legacy_state);
+        }
+        for extension in &mut self.sidebar_extensions {
+            if extension.id == LEGACY_DISCORD_EXTENSION_ID {
+                extension.id = DISCORD_EXTENSION_ID.to_string();
+            }
+        }
         if self.language.is_empty() {
             self.language = language_default();
         }
@@ -322,7 +334,7 @@ const BUILT_IN_SIDEBAR_EXTENSION_IDS: &[&str] = &[
     THEME_EXTENSION_ID,
     "settings",
     LOG_EXTENSION_ID,
-    UNITY_DISCORD_STATUS_EXTENSION_ID,
+    DISCORD_EXTENSION_ID,
 ];
 
 fn is_configurable_sidebar_extension(id: &str) -> bool {
@@ -376,7 +388,7 @@ fn default_sidebar_extensions() -> Vec<SidebarExtension> {
             visible: true,
         },
         SidebarExtension {
-            id: UNITY_DISCORD_STATUS_EXTENSION_ID.to_string(),
+            id: DISCORD_EXTENSION_ID.to_string(),
             installed: true,
             enabled: true,
             visible: true,
@@ -504,10 +516,11 @@ impl Default for WindowSize {
 #[cfg(test)]
 mod tests {
     use super::{
-        GuiConfig, SidebarExtension, apply_sidebar_extension_layout, normalize_sidebar_extensions,
+        GuiConfig, LEGACY_DISCORD_EXTENSION_ID, SidebarExtension, apply_sidebar_extension_layout,
+        normalize_sidebar_extensions,
     };
     use crate::extensions::{
-        LOG_EXTENSION_ID, MCP_EXTENSION_ID, THEME_EXTENSION_ID, UNITY_DISCORD_STATUS_EXTENSION_ID,
+        DISCORD_EXTENSION_ID, LOG_EXTENSION_ID, MCP_EXTENSION_ID, THEME_EXTENSION_ID,
     };
 
     #[test]
@@ -528,18 +541,32 @@ mod tests {
 
         config.fix_defaults();
 
-        assert!(config.is_extension_enabled(UNITY_DISCORD_STATUS_EXTENSION_ID));
+        assert!(config.is_extension_enabled(DISCORD_EXTENSION_ID));
     }
 
     #[test]
-    fn explicitly_disabled_discord_status_extension_stays_disabled() {
-        let mut config: GuiConfig =
-            serde_json::from_str(r#"{"extensions":{"unity-discord-status":{"enabled":false}}}"#)
-                .unwrap();
+    fn legacy_discord_extension_id_is_migrated() {
+        let mut config: GuiConfig = serde_json::from_str(
+            r#"{"extensions":{"unity-discord-status":{"enabled":false}},"sidebarExtensions":[{"id":"unity-discord-status","visible":false}]}"#,
+        )
+        .unwrap();
 
         config.fix_defaults();
 
-        assert!(!config.is_extension_enabled(UNITY_DISCORD_STATUS_EXTENSION_ID));
+        assert!(!config.is_extension_enabled(DISCORD_EXTENSION_ID));
+        assert!(!config.extensions.contains_key(LEGACY_DISCORD_EXTENSION_ID));
+        assert!(
+            config
+                .sidebar_extensions
+                .iter()
+                .any(|extension| extension.id == DISCORD_EXTENSION_ID && !extension.visible)
+        );
+        assert!(
+            config
+                .sidebar_extensions
+                .iter()
+                .all(|extension| extension.id != LEGACY_DISCORD_EXTENSION_ID)
+        );
     }
 
     #[test]
@@ -574,13 +601,7 @@ mod tests {
         assert_eq!(
             ids,
             [
-                "projects",
-                "packages",
-                "mcp",
-                "theme",
-                "settings",
-                "log",
-                "unity-discord-status"
+                "projects", "packages", "mcp", "theme", "settings", "log", "discord"
             ]
         );
     }
@@ -611,13 +632,7 @@ mod tests {
         assert_eq!(
             ids,
             [
-                "log",
-                "projects",
-                "packages",
-                "mcp",
-                "theme",
-                "settings",
-                "unity-discord-status"
+                "log", "projects", "packages", "mcp", "theme", "settings", "discord"
             ]
         );
         let theme = normalized

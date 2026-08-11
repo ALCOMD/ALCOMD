@@ -32,7 +32,7 @@ import { toastThrownError } from "@/lib/toast";
 import alcomd3IconUrl from "../../../icons/discord-assets/alcomd3-512.png";
 import unityIconUrl from "../../../icons/discord-assets/unity-512.png";
 
-export const Route = createFileRoute("/_main/unity-discord-status/")({
+export const Route = createFileRoute("/_main/discord/")({
 	component: Page,
 });
 

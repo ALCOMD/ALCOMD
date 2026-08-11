@@ -14,7 +14,7 @@ describe("sidebar extensions", () => {
 			"theme",
 			"settings",
 			"log",
-			"unity-discord-status",
+			"discord",
 		]);
 	});
 
@@ -44,7 +44,7 @@ describe("sidebar extensions", () => {
 	test("restores hidden installed extensions without showing uninstalled ones", () => {
 		const extensions = [
 			{ id: "log", installed: true, visible: false },
-			{ id: "unity-discord-status", installed: true, visible: false },
+			{ id: "discord", installed: true, visible: false },
 			{ id: "theme", installed: false, visible: false },
 			{ id: "projects", installed: true, visible: true },
 		];
@@ -55,7 +55,7 @@ describe("sidebar extensions", () => {
 			{ id: "projects", installed: true, visible: true },
 			{ id: "theme", installed: false, visible: false },
 			{ id: "log", installed: true, visible: true },
-			{ id: "unity-discord-status", installed: true, visible: true },
+			{ id: "discord", installed: true, visible: true },
 		]);
 	});
 });
