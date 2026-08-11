@@ -614,10 +614,12 @@ function ExtensionManageItem({
 		if (!definition) return;
 		if (definition.href) {
 			void navigate({ to: definition.href });
-		} else {
+		} else if (definition.onSelect) {
 			definition.onSelect();
 		}
 	};
+	const canOpenExtension =
+		definition?.href != null || definition?.onSelect != null;
 
 	return (
 		<Card className="flex min-h-40 flex-col gap-5 bg-secondary/25 p-4 shadow-sm">
@@ -633,12 +635,12 @@ function ExtensionManageItem({
 						{extension.id}
 					</p>
 				</div>
-				{extension.installed && (
+				{extension.installed && canOpenExtension && (
 					<Button
 						className="ml-auto shrink-0"
 						variant="secondary"
 						size="sm"
-						disabled={!extension.enabled || !definition}
+						disabled={!extension.enabled}
 						onClick={openExtension}
 					>
 						<PanelTopOpen className="mr-2 size-4" />

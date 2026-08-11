@@ -10,6 +10,7 @@ pub const EXTENSION_STATE_CHANGED_EVENT: &str = "extension-state-changed";
 pub const MCP_EXTENSION_ID: &str = "mcp";
 pub const THEME_EXTENSION_ID: &str = "theme";
 pub const LOG_EXTENSION_ID: &str = "log";
+pub const UNITY_DISCORD_STATUS_EXTENSION_ID: &str = "unity-discord-status";
 
 #[derive(Clone, Copy, Debug)]
 pub struct BuiltInExtensionDefinition {
@@ -18,6 +19,7 @@ pub struct BuiltInExtensionDefinition {
     pub can_disable: bool,
     pub can_install: bool,
     pub can_uninstall: bool,
+    pub default_enabled: bool,
     lifecycle: BuiltInExtensionLifecycle,
 }
 
@@ -25,6 +27,7 @@ pub struct BuiltInExtensionDefinition {
 enum BuiltInExtensionLifecycle {
     PresentationOnly,
     Logs,
+    DiscordStatus,
 }
 
 const BUILT_IN_EXTENSION_DEFINITIONS: &[BuiltInExtensionDefinition] = &[
@@ -34,6 +37,7 @@ const BUILT_IN_EXTENSION_DEFINITIONS: &[BuiltInExtensionDefinition] = &[
         can_disable: true,
         can_install: false,
         can_uninstall: false,
+        default_enabled: true,
         lifecycle: BuiltInExtensionLifecycle::PresentationOnly,
     },
     BuiltInExtensionDefinition {
@@ -42,6 +46,7 @@ const BUILT_IN_EXTENSION_DEFINITIONS: &[BuiltInExtensionDefinition] = &[
         can_disable: true,
         can_install: false,
         can_uninstall: false,
+        default_enabled: true,
         lifecycle: BuiltInExtensionLifecycle::PresentationOnly,
     },
     BuiltInExtensionDefinition {
@@ -50,7 +55,17 @@ const BUILT_IN_EXTENSION_DEFINITIONS: &[BuiltInExtensionDefinition] = &[
         can_disable: true,
         can_install: false,
         can_uninstall: false,
+        default_enabled: true,
         lifecycle: BuiltInExtensionLifecycle::Logs,
+    },
+    BuiltInExtensionDefinition {
+        id: UNITY_DISCORD_STATUS_EXTENSION_ID,
+        display_name: "Unity Discord Status",
+        can_disable: true,
+        can_install: false,
+        can_uninstall: false,
+        default_enabled: false,
+        lifecycle: BuiltInExtensionLifecycle::DiscordStatus,
     },
 ];
 
@@ -92,10 +107,20 @@ impl ExtensionLifecycle for LogLifecycle {
     }
 }
 
+struct DiscordStatusLifecycle;
+
+impl ExtensionLifecycle for DiscordStatusLifecycle {
+    fn apply_enabled_state(&self, app: &AppHandle, enabled: bool) {
+        app.state::<crate::discord_presence::DiscordPresenceState>()
+            .set_enabled(enabled);
+    }
+}
+
 #[derive(Clone)]
 struct RegisteredExtension {
     manifest: ExtensionManifest,
     installed: bool,
+    default_enabled: bool,
     lifecycle: Arc<dyn ExtensionLifecycle>,
 }
 
@@ -127,6 +152,7 @@ impl ExtensionRegistry {
             let lifecycle: Arc<dyn ExtensionLifecycle> = match definition.lifecycle {
                 BuiltInExtensionLifecycle::PresentationOnly => Arc::new(PresentationOnlyLifecycle),
                 BuiltInExtensionLifecycle::Logs => Arc::new(LogLifecycle),
+                BuiltInExtensionLifecycle::DiscordStatus => Arc::new(DiscordStatusLifecycle),
             };
             registry.register(
                 ExtensionManifest {
@@ -139,6 +165,7 @@ impl ExtensionRegistry {
                     can_uninstall: definition.can_uninstall,
                 },
                 true,
+                definition.default_enabled,
                 lifecycle,
             )?;
         }
@@ -165,7 +192,7 @@ impl ExtensionRegistry {
             validate_manifest(&manifest, false)?;
             return Ok(());
         }
-        self.register(manifest, false, Arc::new(PresentationOnlyLifecycle))
+        self.register(manifest, false, true, Arc::new(PresentationOnlyLifecycle))
     }
 
     pub fn register_installed_third_party(
@@ -188,6 +215,7 @@ impl ExtensionRegistry {
             RegisteredExtension {
                 manifest: extension.manifest,
                 installed: true,
+                default_enabled: true,
                 lifecycle: extension.lifecycle,
             },
         );
@@ -198,6 +226,7 @@ impl ExtensionRegistry {
         &self,
         manifest: ExtensionManifest,
         installed: bool,
+        default_enabled: bool,
         lifecycle: Arc<dyn ExtensionLifecycle>,
     ) -> Result<(), ExtensionRegistryError> {
         validate_manifest(&manifest, installed)?;
@@ -210,6 +239,7 @@ impl ExtensionRegistry {
             RegisteredExtension {
                 manifest,
                 installed,
+                default_enabled,
                 lifecycle,
             },
         );
@@ -248,7 +278,7 @@ impl ExtensionRegistry {
                             extension.installed
                                 && extension_configs
                                     .get(&extension.manifest.id)
-                                    .is_none_or(|state| state.enabled),
+                                    .map_or(extension.default_enabled, |state| state.enabled),
                         )
                     },
                 );
@@ -277,7 +307,8 @@ impl ExtensionRegistry {
                     display_name: extension.manifest.display_name.clone(),
                     version: extension.manifest.version.clone(),
                     installed: extension.installed,
-                    enabled: extension.installed && state.is_none_or(|extension| extension.enabled),
+                    enabled: extension.installed
+                        && state.map_or(extension.default_enabled, |extension| extension.enabled),
                     built_in: extension.manifest.origin == ExtensionOrigin::BuiltIn,
                     can_disable: extension.manifest.can_disable,
                     can_install: extension.manifest.can_install,
@@ -305,7 +336,7 @@ impl ExtensionRegistry {
             }
             let enabled = extension_configs
                 .get(&extension.manifest.id)
-                .is_none_or(|extension| extension.enabled);
+                .map_or(extension.default_enabled, |extension| extension.enabled);
             extension.lifecycle.apply_enabled_state(app, enabled);
         }
     }
@@ -472,6 +503,10 @@ mod tests {
             .iter()
             .find(|extension| extension.id == LOG_EXTENSION_ID)
             .unwrap();
+        let discord_status = extensions
+            .iter()
+            .find(|extension| extension.id == UNITY_DISCORD_STATUS_EXTENSION_ID)
+            .unwrap();
 
         assert!(!available.built_in);
         assert!(!available.installed);
@@ -483,6 +518,8 @@ mod tests {
         assert!(mcp.enabled);
         assert!(log.can_disable);
         assert!(!log.enabled);
+        assert!(discord_status.can_disable);
+        assert!(!discord_status.enabled);
         assert_eq!(
             extensions
                 .iter()
@@ -492,6 +529,7 @@ mod tests {
                 MCP_EXTENSION_ID,
                 THEME_EXTENSION_ID,
                 LOG_EXTENSION_ID,
+                UNITY_DISCORD_STATUS_EXTENSION_ID,
                 "example.available"
             ]
         );
@@ -551,6 +589,7 @@ mod tests {
                 MCP_EXTENSION_ID,
                 THEME_EXTENSION_ID,
                 LOG_EXTENSION_ID,
+                UNITY_DISCORD_STATUS_EXTENSION_ID,
                 "example.installed"
             ]
         );
@@ -623,6 +662,7 @@ mod tests {
                 MCP_EXTENSION_ID,
                 THEME_EXTENSION_ID,
                 LOG_EXTENSION_ID,
+                UNITY_DISCORD_STATUS_EXTENSION_ID,
                 "example.second",
                 "example.first"
             ]
@@ -645,6 +685,7 @@ mod tests {
                 MCP_EXTENSION_ID,
                 THEME_EXTENSION_ID,
                 LOG_EXTENSION_ID,
+                UNITY_DISCORD_STATUS_EXTENSION_ID,
                 "example.first",
                 "example.second"
             ]

@@ -188,7 +188,7 @@ impl GuiConfig {
                     .sidebar_extensions
                     .iter()
                     .find(|extension| extension.id == definition.id)
-                    .is_none_or(|extension| extension.enabled);
+                    .map_or(definition.default_enabled, |extension| extension.enabled);
                 self.extensions
                     .insert(definition.id.to_string(), ExtensionUserConfig { enabled });
             }
@@ -380,7 +380,9 @@ fn default_extension_configs() -> BTreeMap<String, ExtensionUserConfig> {
         .map(|definition| {
             (
                 definition.id.to_string(),
-                ExtensionUserConfig { enabled: true },
+                ExtensionUserConfig {
+                    enabled: definition.default_enabled,
+                },
             )
         })
         .collect()
@@ -494,7 +496,9 @@ mod tests {
     use super::{
         GuiConfig, SidebarExtension, apply_sidebar_extension_layout, normalize_sidebar_extensions,
     };
-    use crate::extensions::{LOG_EXTENSION_ID, MCP_EXTENSION_ID, THEME_EXTENSION_ID};
+    use crate::extensions::{
+        LOG_EXTENSION_ID, MCP_EXTENSION_ID, THEME_EXTENSION_ID, UNITY_DISCORD_STATUS_EXTENSION_ID,
+    };
 
     #[test]
     fn automatic_updates_default_to_enabled_for_existing_configs() {
@@ -506,6 +510,15 @@ mod tests {
     fn automatic_updates_can_be_disabled() {
         let config: GuiConfig = serde_json::from_str(r#"{"automaticUpdate":false}"#).unwrap();
         assert!(!config.automatic_update);
+    }
+
+    #[test]
+    fn discord_status_extension_is_opt_in() {
+        let mut config: GuiConfig = serde_json::from_str("{}").unwrap();
+
+        config.fix_defaults();
+
+        assert!(!config.is_extension_enabled(UNITY_DISCORD_STATUS_EXTENSION_ID));
     }
 
     #[test]

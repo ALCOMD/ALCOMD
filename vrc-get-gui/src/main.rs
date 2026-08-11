@@ -16,6 +16,7 @@ mod commands;
 mod compressor;
 mod config;
 mod deep_link_support;
+mod discord_presence;
 mod extensions;
 mod log_sanitization;
 mod logging;
@@ -232,6 +233,7 @@ fn main() {
         .manage(state::ProjectRestoreState::new())
         .manage(state::TemplatesState::new())
         .manage(state::UnityProjectState::new())
+        .manage(discord_presence::DiscordPresenceState::new())
         .manage(extensions::ExtensionRegistry::default())
         .manage(activity_log_state)
         .manage(mcp::McpState::new())
@@ -289,6 +291,10 @@ fn main() {
             }
         }
         tauri::RunEvent::Exit => {
+            if let Some(discord_presence) = app.try_state::<discord_presence::DiscordPresenceState>()
+            {
+                discord_presence.shutdown();
+            }
             if let Some(mcp) = app.try_state::<mcp::McpState>()
                 && let Err(e) = tauri::async_runtime::block_on(mcp.shutdown(app))
             {

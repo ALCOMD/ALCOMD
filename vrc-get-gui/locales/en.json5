@@ -489,6 +489,7 @@
     "extensions:not installed": "Not Installed",
     "extensions:enabled": "Enabled",
     "extensions:built in": "Built-in",
+    "extensions:unity discord status": "Unity Discord Status",
     "extensions:button:open": "Open",
     "extensions:button:show in sidebar": "Show in Sidebar",
     "extensions:button:hide from sidebar": "Hide from Sidebar",

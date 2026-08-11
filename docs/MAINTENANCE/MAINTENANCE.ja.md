@@ -162,10 +162,14 @@ user が manual import を明示的に開始した場合のみ external-app impo
   third-party manifest を合成する。third-party id、canonical display name、semantic
   version、origin、installation capability、lifecycle adapter は backend で検証してから
   register する。
-- registry は insertion order を保持する。built-in extension は MCP、Theme、Logs
-  の順に register し、third-party entry は registration order で末尾へ追加する。
+- registry は insertion order を保持する。built-in extension は MCP、Theme、Logs、
+  Unity Discord Status の順に register し、third-party entry は registration order で末尾へ追加する。
   catalog entry を install した場合は、その install 時点の末尾へ移動する。
   extension management は再 sort せず registry order をそのまま使用する。
+- Unity Discord Status は既定で無効とし、集中設定された public Discord Application ID を使う。
+  worker は local Unity editor process を検出し、最後に起動した editor の project folder name、
+  Unity version、session duration、open editor count を送信するが、full project path は送信しない。
+  Unity 終了時、extension の disable 時、または ALCOMD3 終了時に activity を clear する。
 - enable/disable request は backend が validate、persist、apply する。成功後に backend
   が state event を送信し、frontend は theme CSS の適用・解除など DOM が必要な
   presentation effect のためだけに event を利用する。

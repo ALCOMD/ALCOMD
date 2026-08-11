@@ -484,6 +484,7 @@
     "extensions:not installed": "Nicht installiert",
     "extensions:enabled": "Aktiviert",
     "extensions:built in": "Integriert",
+    "extensions:unity discord status": "Unity-Discord-Status",
     "extensions:button:open": "Öffnen",
     "extensions:button:show in sidebar": "In der Seitenleiste anzeigen",
     "extensions:button:hide from sidebar": "Aus der Seitenleiste ausblenden",

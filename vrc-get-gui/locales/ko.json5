@@ -478,6 +478,7 @@
     "extensions:not installed": "설치되지 않음",
     "extensions:enabled": "활성화됨",
     "extensions:built in": "기본 제공",
+    "extensions:unity discord status": "Unity Discord 상태",
     "extensions:button:open": "열기",
     "extensions:button:show in sidebar": "사이드바에 표시",
     "extensions:button:hide from sidebar": "사이드바에서 숨기기",

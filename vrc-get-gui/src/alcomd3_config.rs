@@ -9,6 +9,7 @@ static CONFIG: OnceLock<Alcomd3Config> = OnceLock::new();
 #[serde(rename_all = "camelCase")]
 struct Alcomd3Config {
     homepage_url: String,
+    discord_application_id: Option<String>,
     repository: String,
     windows_app_id: String,
     windows_aumid: String,
@@ -44,6 +45,14 @@ struct ReleasePlatformUpdater {
 
 pub fn homepage_url() -> &'static str {
     &config().homepage_url
+}
+
+pub fn discord_application_id() -> Option<&'static str> {
+    config()
+        .discord_application_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
 }
 
 pub fn updater_endpoint(stable: bool) -> String {

@@ -13,6 +13,7 @@ pub struct Alcomd3Config {
     pub package_name: String,
     pub publisher_name: String,
     pub homepage_url: String,
+    pub discord_application_id: Option<String>,
     pub repository: String,
     pub website_repository: String,
     pub tauri_identifier: String,
@@ -183,6 +184,14 @@ impl Alcomd3Config {
         ensure_non_empty("packageName", &self.package_name)?;
         ensure_non_empty("publisherName", &self.publisher_name)?;
         ensure_non_empty("homepageUrl", &self.homepage_url)?;
+        if let Some(application_id) = &self.discord_application_id
+            && (!(17..=20).contains(&application_id.len())
+                || !application_id
+                    .bytes()
+                    .all(|character| character.is_ascii_digit()))
+        {
+            bail!("discordApplicationId must be a Discord snowflake containing 17 to 20 digits");
+        }
         ensure_non_empty("repository", &self.repository)?;
         ensure_non_empty("websiteRepository", &self.website_repository)?;
         ensure_non_empty("tauriIdentifier", &self.tauri_identifier)?;
@@ -528,6 +537,24 @@ mod tests {
         let config: Alcomd3Config = serde_json::from_value(value)?;
         config.validate()?;
         Ok(config)
+    }
+
+    #[test]
+    fn discord_application_id_must_be_a_numeric_snowflake_when_configured() {
+        let mut value = config_value();
+        value["discordApplicationId"] = serde_json::Value::String("not-an-id".into());
+
+        let error = parse_and_validate(value).unwrap_err();
+
+        assert!(error.to_string().contains("discordApplicationId"));
+    }
+
+    #[test]
+    fn numeric_discord_application_id_is_accepted() {
+        let mut value = config_value();
+        value["discordApplicationId"] = serde_json::Value::String("123456789012345678".into());
+
+        parse_and_validate(value).unwrap();
     }
 
     #[test]

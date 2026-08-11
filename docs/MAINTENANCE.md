@@ -179,9 +179,16 @@ Preserve these behaviors:
   display names, semantic versions, origins, installation capabilities, and
   lifecycle adapters are validated by the backend before registration.
 - The registry preserves insertion order. Built-ins register as MCP, Theme,
-  then Logs; third-party entries append in registration order, and installing
-  an existing catalog entry moves it to the end at that installation point.
+  Logs, then Unity Discord Status; third-party entries append in registration order,
+  and installing an existing catalog entry moves it to the end at that
+  installation point.
   Extension management uses this registry order without sorting it again.
+- Unity Discord Status is opt-in and uses the centrally configured public
+  Discord application ID. Its worker detects local Unity editor processes and
+  publishes the most recently started editor's project folder name, Unity
+  version, session duration, and total open-editor count without publishing the
+  full project path. It clears the activity when Unity closes, the extension is
+  disabled, or ALCOMD3 exits.
 - Enable/disable requests are validated, persisted, and applied by the backend.
   The backend emits state events after successful changes; the frontend may
   consume them only for presentation effects that require the DOM, such as

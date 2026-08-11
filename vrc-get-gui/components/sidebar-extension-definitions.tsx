@@ -1,5 +1,12 @@
 import type { RegisteredRouter } from "@tanstack/react-router";
-import { AlignLeft, Folder, Package, Palette, Settings } from "lucide-react";
+import {
+	AlignLeft,
+	Folder,
+	Package,
+	Palette,
+	RadioTower,
+	Settings,
+} from "lucide-react";
 import type { ComponentType } from "react";
 import { openMaterialThemeDialog } from "@/components/MaterialThemePanel";
 
@@ -19,9 +26,15 @@ type SidebarActionExtensionDefinition = SidebarExtensionDefinitionBase & {
 	onSelect: () => void;
 };
 
+type PassiveExtensionDefinition = SidebarExtensionDefinitionBase & {
+	href?: never;
+	onSelect?: never;
+};
+
 export type SidebarExtensionDefinition =
 	| SidebarRouteExtensionDefinition
-	| SidebarActionExtensionDefinition;
+	| SidebarActionExtensionDefinition
+	| PassiveExtensionDefinition;
 
 function openThemeExtension() {
 	void openMaterialThemeDialog();
@@ -63,6 +76,10 @@ export const SIDEBAR_EXTENSION_DEFINITIONS: Record<
 		href: "/log",
 		labelKey: "logs",
 		icon: AlignLeft,
+	},
+	"unity-discord-status": {
+		labelKey: "extensions:unity discord status",
+		icon: RadioTower,
 	},
 };
 

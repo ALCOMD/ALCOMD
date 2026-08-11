@@ -7,6 +7,7 @@ use sysinfo::{Process, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind
 pub(crate) struct UnityProcess {
     pub(crate) project_path: PathBuf,
     pub(crate) process_id: u32,
+    pub(crate) started_at: u64,
 }
 
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
@@ -42,6 +43,7 @@ pub(crate) fn refresh_unity_processes(system: &mut System) -> Vec<UnityProcess> 
             Some(UnityProcess {
                 project_path: process_project_path.to_owned(),
                 process_id: process.pid().as_u32(),
+                started_at: process.start_time(),
             })
         })
         .collect()

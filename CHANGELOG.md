@@ -28,6 +28,10 @@ category order, and bullet counts must match this canonical entry.
 
 ## [Unreleased]
 
+### Added
+
+- Added an opt-in built-in Unity Discord Status extension that detects local Unity editors and publishes the current project folder name, Unity version, session duration, and open-editor count through the local Discord desktop client without exposing full project paths.
+
 ## [3.3.0-beta.1] - 2026-08-10
 
 ### Added
