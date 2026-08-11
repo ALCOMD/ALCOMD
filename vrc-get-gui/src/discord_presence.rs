@@ -11,6 +11,8 @@ use vrc_get_vpm::version::UnityVersion;
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const DISCORD_TEXT_MAX_CHARS: usize = 128;
+const DISCORD_LARGE_IMAGE_KEY: &str = "unity";
+const DISCORD_SMALL_IMAGE_KEY: &str = "alcomd3";
 
 pub struct DiscordPresenceState {
     application_id: Option<&'static str>,
@@ -314,6 +316,13 @@ fn build_activity(unity_activity: &UnityDiscordActivity) -> activity::Activity<'
         .name("Unity")
         .details(details)
         .state(truncate_discord_text(&state))
+        .assets(
+            activity::Assets::new()
+                .large_image(DISCORD_LARGE_IMAGE_KEY)
+                .large_text("Unity Editor")
+                .small_image(DISCORD_SMALL_IMAGE_KEY)
+                .small_text("Shared by ALCOMD3"),
+        )
         .timestamps(activity::Timestamps::new().start(unity_activity.started_at as i64))
 }
 
@@ -425,6 +434,10 @@ mod tests {
         assert_eq!(payload["name"], "Unity");
         assert_eq!(payload["details"], "Editing Newer World");
         assert_eq!(payload["state"], "Unity 2022.3.22f1 · 2 editors open");
+        assert_eq!(payload["assets"]["large_image"], "unity");
+        assert_eq!(payload["assets"]["large_text"], "Unity Editor");
+        assert_eq!(payload["assets"]["small_image"], "alcomd3");
+        assert_eq!(payload["assets"]["small_text"], "Shared by ALCOMD3");
         assert_eq!(payload["timestamps"]["start"], 2000);
         assert!(payload.get("buttons").is_none());
     }

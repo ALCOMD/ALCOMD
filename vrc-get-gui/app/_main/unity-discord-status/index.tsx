@@ -29,6 +29,8 @@ import type { UnityDiscordActivity, UnityDiscordStatus } from "@/lib/bindings";
 import { commands } from "@/lib/bindings";
 import { tc, tt } from "@/lib/i18n";
 import { toastThrownError } from "@/lib/toast";
+import alcomd3IconUrl from "../../../icons/discord-assets/alcomd3-512.png";
+import unityIconUrl from "../../../icons/discord-assets/unity-512.png";
 
 export const Route = createFileRoute("/_main/unity-discord-status/")({
 	component: Page,
@@ -299,8 +301,19 @@ function DiscordPreviewCard({
 					{tc("unity discord:preview:activity")}
 				</p>
 				<div className="mt-3 flex min-w-0 gap-3">
-					<div className="flex size-16 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-						<RadioTower className="size-8" />
+					<div className="relative size-16 shrink-0 rounded-xl bg-white p-1.5 shadow-sm">
+						<img
+							src={unityIconUrl}
+							alt=""
+							className="size-full object-contain"
+						/>
+						<span className="absolute -right-1 -bottom-1 flex size-6 items-center justify-center rounded-full bg-inverse-surface p-0.5 ring-2 ring-inverse-surface">
+							<img
+								src={alcomd3IconUrl}
+								alt=""
+								className="size-full object-contain"
+							/>
+						</span>
 					</div>
 					<div className="min-w-0 pt-0.5 text-sm">
 						<h3 className="truncate font-semibold">Unity</h3>

@@ -30,7 +30,7 @@ category order, and bullet counts must match this canonical entry.
 
 ### Added
 
-- Added an opt-in built-in Unity Discord Status extension with a dedicated live status and preview page. Extension enablement controls Unity detection, while a separate persisted sharing switch controls Discord publishing. It can publish the current project folder name, Unity version, session duration, and open-editor count through the local Discord desktop client without exposing full project paths.
+- Added an opt-in built-in Unity Discord Status extension with a dedicated live status and preview page. Extension enablement controls Unity detection, while a separate persisted sharing switch controls Discord publishing. It can publish the current project folder name, Unity version, session duration, and open-editor count with Unity artwork and an ALCOMD3 badge through the local Discord desktop client without exposing full project paths.
 
 ## [3.3.0-beta.1] - 2026-08-10
 
