@@ -163,10 +163,11 @@ user が manual import を明示的に開始した場合のみ external-app impo
   version、origin、installation capability、lifecycle adapter は backend で検証してから
   register する。
 - registry は insertion order を保持する。built-in extension は MCP、Theme、Logs、
-  Unity Discord Status の順に register し、third-party entry は registration order で末尾へ追加する。
+  Discord の順に register し、third-party entry は registration order で末尾へ追加する。
   catalog entry を install した場合は、その install 時点の末尾へ移動する。
   extension management は再 sort せず registry order をそのまま使用する。
-- Unity Discord Status は既定で無効とし、集中設定された public Discord Application ID を使う。
+- Discord extension は既定で有効とするが、独立した sharing switch は既定で off とする。
+  集中設定された public Discord Application ID を使う。
   worker は local Unity editor process の固定 priority order を保持し、新しく起動した editor または
   foreground で検出した editor を先頭へ移動する。他の application が foreground になっても選択を
   変更しない。foreground detection 非対応 platform では最後に起動した editor を使用する。選択した

@@ -179,12 +179,13 @@ Preserve these behaviors:
   display names, semantic versions, origins, installation capabilities, and
   lifecycle adapters are validated by the backend before registration.
 - The registry preserves insertion order. Built-ins register as MCP, Theme,
-  Logs, then Unity Discord Status; third-party entries append in registration order,
+  Logs, then Discord; third-party entries append in registration order,
   and installing an existing catalog entry moves it to the end at that
   installation point.
   Extension management uses this registry order without sorting it again.
-- Unity Discord Status is opt-in and uses the centrally configured public
-  Discord application ID. Its worker detects local Unity editor processes and
+- The Discord extension is enabled by default while its separate sharing switch
+  remains off by default. It uses the centrally configured public Discord
+  application ID. Its worker detects local Unity editor processes and
   keeps a stable priority order. A newly started editor or an editor detected in
   the foreground moves to the front of that order; focusing another application
   does not change the selected editor. Platforms without foreground detection

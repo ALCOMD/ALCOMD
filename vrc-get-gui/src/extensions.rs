@@ -60,11 +60,11 @@ const BUILT_IN_EXTENSION_DEFINITIONS: &[BuiltInExtensionDefinition] = &[
     },
     BuiltInExtensionDefinition {
         id: UNITY_DISCORD_STATUS_EXTENSION_ID,
-        display_name: "Unity Discord Status",
+        display_name: "Discord",
         can_disable: true,
         can_install: false,
         can_uninstall: false,
-        default_enabled: false,
+        default_enabled: true,
         lifecycle: BuiltInExtensionLifecycle::DiscordStatus,
     },
 ];
@@ -519,7 +519,7 @@ mod tests {
         assert!(log.can_disable);
         assert!(!log.enabled);
         assert!(discord_status.can_disable);
-        assert!(!discord_status.enabled);
+        assert!(discord_status.enabled);
         assert_eq!(
             extensions
                 .iter()

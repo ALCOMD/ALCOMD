@@ -378,7 +378,7 @@ fn default_sidebar_extensions() -> Vec<SidebarExtension> {
         SidebarExtension {
             id: UNITY_DISCORD_STATUS_EXTENSION_ID.to_string(),
             installed: true,
-            enabled: false,
+            enabled: true,
             visible: true,
         },
     ]
@@ -523,8 +523,19 @@ mod tests {
     }
 
     #[test]
-    fn discord_status_extension_is_opt_in() {
+    fn discord_status_extension_defaults_to_enabled() {
         let mut config: GuiConfig = serde_json::from_str("{}").unwrap();
+
+        config.fix_defaults();
+
+        assert!(config.is_extension_enabled(UNITY_DISCORD_STATUS_EXTENSION_ID));
+    }
+
+    #[test]
+    fn explicitly_disabled_discord_status_extension_stays_disabled() {
+        let mut config: GuiConfig =
+            serde_json::from_str(r#"{"extensions":{"unity-discord-status":{"enabled":false}}}"#)
+                .unwrap();
 
         config.fix_defaults();
 
