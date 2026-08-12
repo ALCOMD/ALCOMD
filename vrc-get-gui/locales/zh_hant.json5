@@ -233,8 +233,8 @@
     "projects:template-category:builtin": "內建",
     "projects:template-category:alcom": "自訂範本",
     "projects:template-category:vcc": "VCC 範本",
-    "projects:template-name:avatars": "VRChat Avatars",
-    "projects:template-name:worlds": "VRChat Worlds",
+    "projects:template-name:avatars": "VRChat 虛擬化身",
+    "projects:template-name:worlds": "VRChat 世界",
     "projects:template-name:blank": "空白",
     "projects:template:unity version": "Unity 版本：",
     "projects:tooltip:template-unavailable": "此自訂範本基於的範本不可用",
@@ -405,11 +405,12 @@
     //   you can provide translation for them if you think it's better
     "projects:manage:dialog:unity change version header": "變更 Unity 版本",
     "projects:manage:dialog:downgrade major": "你正在降級 Unity 至另一個主要的版本。這是不受支援的操作，且可能會破壞你的專案。<br/>在繼續操作前，請先備份專案。<br/>你要繼續嗎？",
+    "projects:manage:dialog:downgrade major vrchat unsupported": "你正在將專案使用的 Unity 降級至另一個主要版本。此操作不受 Unity 支援，並會損壞你的專案。<br/>在繼續操作前，請先備份專案。<br/>此外，目標 Unity 版本不受 VRChat 支援，因此降級後你將無法向 VRChat 上傳內容。<br/>你要繼續嗎？",
     "projects:manage:dialog:downgrade minor": "你正在降級 Unity 版本。 這是不受支援的操作，且可能會破壞你的專案。<br/>在繼續操作前，請先備份專案。<br/>你要繼續嗎？",
     "projects:manage:dialog:downgrade minor vrchat unsupported": "你正在降級 Unity 版本。 這是不受支援的操作，且可能會破壞你的專案。<br/>在繼續操作前，請先備份專案。<br/>此外，你將使用 VRChat 不支援的 Unity 版本，降級後將無法上傳內容至 VRChat。<br/>你要繼續嗎？",
     "projects:manage:dialog:upgrade minor": "你正在升級 Unity 版本。這可能會改變你的腳本，並且可能需要重新建置 Library。<br/>在繼續操作前，請先備份專案。<br/>你要繼續嗎？",
     "projects:manage:dialog:upgrade minor vrchat unsupported": "你正在升級 Unity 版本。這可能會改變你的腳本，並且可能需要重新建置 Library。<br/>在繼續操作前，請先備份專案。<br/>此外，你將使用 VRChat 不支援的 Unity 版本，升級後將無法上傳內容至 VRChat。<br/>你要繼續嗎？",
-    "projects:manage:dialog:upgrade major": "You're upgrading Unity major version.這可能會改變你的腳本，並且可能需要重新建置 Library。<br/>在繼續操作前，請先備份專案。<br/>你要繼續嗎？",
+    "projects:manage:dialog:upgrade major": "你正在升級 Unity 的主要版本。這可能會改變你的腳本，並且可能需要重新建置 Library。<br/>在繼續操作前，請先備份專案。<br/>你要繼續嗎？",
     "projects:manage:dialog:upgrade major vrchat supported": "你正在遷移 Unity 版本。將會升級 VRCSDK，並且可能會更改您的腳本和需要重新建置 Library。<br/>在繼續操作前，請先備份專案。<br/>你要繼續嗎？",
     "projects:manage:dialog:upgrade major vrchat unsupported": "你正在遷移 Unity 版本。將會升級 VRCSDK，並且可能會更改您的腳本和需要重新建置 Library。<br/>在繼續操作前，請先備份專案。<br/>此外，你將使用 VRChat 不支援的 Unity 版本，升級後將無法上傳內容至 VRChat。<br/>你要繼續嗎？",
     "projects:manage:dialog:changing china releases": "你正在變更中國版與國際版之間的 Unity 版本。這可能會改變你的腳本，並且可能需要重新建置 Library。<br/>在繼續操作前，請先備份專案。<br/>你要繼續嗎？",
@@ -428,7 +429,7 @@
     "projects:manage:dialog:unity migrate finalizing...": "正在背景中啟動 Unity 2022 以完成遷移...",
     "projects:toast:unity migrate failed by unity not found": "專案遷移失敗：找不到 Unity 2022",
     "projects:toast:unity migration finalize failed by unity not found": "無法完成遷移：找不到 Unity 2022",
-    "projects:toast:unity migrated": "此專案已遷移到 Unity 20222",
+    "projects:toast:unity migrated": "此專案已遷移到 Unity 2022",
 
     "projects:manage:dialog:confirm changes description": "你正在對專案套用以下變更。",
     "projects:manage:dialog:note breaking changes": "部分套件之間存在重大變更。<br/>專案中的資產、設定與工具可能不再相容。<br/>請查閱相容性資訊並小心升級。",
@@ -647,7 +648,7 @@
     "templates:dialog:any version": "任意版本",
     "templates:dialog:any unity specified version": "任意 Unity {{version}} 版本",
     "templates:dialog:version": "版本",
-    "templates:dialog:unitypackages": "Unity 套件（.unitypackages）",
+    "templates:dialog:unitypackages": "Unity 套件（.unitypackage）",
     "templates:dialog:no unitypackages": "無 Unity 套件",
     "templates:dialog:remove template": "刪除範本",
     "templates:dialog:confirm remove template": "你確定要刪除 {{displayName}} 範本嗎？",
@@ -789,7 +790,6 @@
     "legacy import:button:resources": "匯入資源",
     "legacy import:button:theme": "匯入主題",
     "legacy import:button:settings": "匯入設定",
-    "legacy import:toast:imported": "已匯入 {{count}} 組資料。",
     "legacy import:toast:imported_one": "已匯入 {{count}} 組資料。",
     "legacy import:toast:imported_other": "已匯入 {{count}} 組資料。",
 
@@ -812,7 +812,7 @@
     "check update:dialog:new version no platform description": "{{productName}} 有新版本可用，但已不再支援你的平台。<br>如果你的系統支援其他平台版本，請下載對應版本。",
     "check update:dialog:new version not updatable description": "{{productName}} 有新版本可用。<br>但你目前使用的安裝方式無法自動更新。<br>請手動安裝新版本。",
     "check update:dialog:new version updater disabled base description": "{{productName}} 有新版本可用。",
-    "check update:dialog:new version updater how to upgrade fallback": "Automatic updates are disabled. Please upgrade using your package manager.",
+    "check update:dialog:new version updater how to upgrade fallback": "自動更新已停用。請使用你的套件管理器進行升級。",
     "check update:dialog:current version": "目前版本：",
     "check update:dialog:latest version": "最新版本：",
     "check update:dialog:changelog": "變更日誌",
@@ -839,7 +839,7 @@
     "settings:architecture": "架構",
     "settings:webview version": "Webview 版本",
     "settings:alcom version": "ALCOM 版本",
-    "settings:alcom commit hash": "ALCOM Build Commit Hash",
+    "settings:alcom commit hash": "ALCOM 建置提交雜湊",
 
 
 // Logs Page
