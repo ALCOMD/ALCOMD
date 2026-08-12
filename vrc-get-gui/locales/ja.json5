@@ -560,7 +560,7 @@
     "vpm repositories:dialog:button:continue importing repositories": "追加する",
 
     "vpm repositories:dialog:downloading repositories...": "リポジトリ情報をダウンロード中...",
-    "vpm repositories:dialog:downloaded n/m": "進捗: {{downloaded}}/{{totalCount}}",
+    "vpm repositories:dialog:processed n/m": "処理済み: {{processed}}/{{totalCount}}",
 
     "vpm repositories:dialog:confirm packages list": "以下のVPMリポジトリはパッケージと共に追加されます。<br>エラーが発生したリポジトリは追加されないことになります。よろしいですか？",
     "vpm repositories:dialog:download error:duplicated": "このVPMリポジトリは既に登録されています。",
@@ -582,7 +582,7 @@
     "vpm repositories:import progress:retry": "再試行",
     "vpm repositories:import progress:status:waiting": "待機中",
     "vpm repositories:import progress:status:downloading": "ダウンロード中",
-    "vpm repositories:import progress:status:downloaded": "保存待ち",
+    "vpm repositories:import progress:status:downloaded": "ダウンロード済み",
     "vpm repositories:import progress:status:completed": "追加済み",
     "vpm repositories:import progress:status:failed": "失敗",
     "vpm repositories:import progress:status:cancelled": "キャンセル済み",

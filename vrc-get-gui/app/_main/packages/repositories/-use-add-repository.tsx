@@ -1,4 +1,5 @@
 import { queryOptions, useQuery } from "@tanstack/react-query";
+import { RefreshCw } from "lucide-react";
 import type React from "react";
 import { useState } from "react";
 import {
@@ -109,34 +110,36 @@ async function addRepositoryImpl(
 			assertNever(info, "info");
 	}
 	if (
-		await dialog.askClosing(Confirming, {
+		await dialog.ask(Confirming, {
 			repo: info.value,
 			headers: headers,
 		})
 	) {
+		dialog.setEscapeBehavior(false);
+		dialog.replace(<SavingRepository />);
 		try {
-			const result = await commands.environmentAddRepository(url, headers);
+			const result = await commands.environmentAddRepository(info.download_id);
 			switch (result) {
-				case "BadUrl":
-					toastError(tt("vpm repositories:toast:invalid url"));
-					return;
 				case "Success":
 					break;
 				default:
 					assertNever(result, "result");
 			}
-			await commands.environmentRefetchPackages();
 		} catch (e) {
 			console.error(e);
 			toastThrownError(e);
+			await commands.environmentDiscardRepositoryDownloads([info.download_id]);
 			return;
 		}
+		dialog.close();
 		toastSuccess(tt("vpm repositories:toast:repository added"));
 		await Promise.all([
 			queryClient.invalidateQueries(environmentRepositoriesInfo),
 			queryClient.invalidateQueries(environmentPackages),
 			queryClient.invalidateQueries(environmentRepositoryPackageLists),
 		]);
+	} else {
+		await commands.environmentDiscardRepositoryDownloads([info.download_id]);
 	}
 }
 
@@ -384,6 +387,15 @@ function LoadingRepository({ cancel }: { cancel: () => void }) {
 				<Button onClick={cancel}>{tc("general:button:cancel")}</Button>
 			</DialogFooter>
 		</>
+	);
+}
+
+function SavingRepository() {
+	return (
+		<div className="flex items-center gap-2">
+			<RefreshCw className="size-5 animate-spin" />
+			<p>{tc("vpm repositories:dialog:adding repositories...")}</p>
+		</div>
 	);
 }
 

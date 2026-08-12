@@ -581,7 +581,7 @@
     "vpm repositories:dialog:button:continue importing repositories": "Paketquellen hinzufügen",
 
     "vpm repositories:dialog:downloading repositories...": "Lade Paketquellen...",
-    "vpm repositories:dialog:downloaded n/m": "Heruntergeladen {{downloaded}}/{{totalCount}}",
+    "vpm repositories:dialog:processed n/m": "Verarbeitet {{processed}}/{{totalCount}}",
 
     "vpm repositories:dialog:confirm packages list": "Folgende Paketquellen werden hinzugefügt. Fehlerhafte Paketquellen werden übersprungen.<br>Möchtest du fortfahren?",
     "vpm repositories:dialog:download error:duplicated": "Die Paketquelle ist bereits vorhanden.",
@@ -603,7 +603,7 @@
     "vpm repositories:import progress:retry": "Erneut versuchen",
     "vpm repositories:import progress:status:waiting": "Wartet",
     "vpm repositories:import progress:status:downloading": "Wird heruntergeladen",
-    "vpm repositories:import progress:status:downloaded": "Wartet auf Speichern",
+    "vpm repositories:import progress:status:downloaded": "Heruntergeladen",
     "vpm repositories:import progress:status:completed": "Hinzugefügt",
     "vpm repositories:import progress:status:failed": "Fehlgeschlagen",
     "vpm repositories:import progress:status:cancelled": "Abgebrochen",

@@ -60,12 +60,13 @@ export const commands = {
 	environmentSetRepositoryDisplayName: (repositoryUrl: string, displayName: string) => __TAURI_INVOKE<null>("environment_set_repository_display_name", { repositoryUrl, displayName }),
 	environmentSetHideLocalUserPackages: (value: boolean) => __TAURI_INVOKE<null>("environment_set_hide_local_user_packages", { value }),
 	environmentDownloadRepository: (url: string, headers: { [key in string]: string }) => __TAURI_INVOKE<TauriDownloadRepository>("environment_download_repository", { url, headers }),
-	environmentAddRepository: (url: string, headers: { [key in string]: string }) => __TAURI_INVOKE<TauriAddRepositoryResult>("environment_add_repository", { url, headers }),
+	environmentAddRepository: (downloadId: string) => __TAURI_INVOKE<TauriAddRepositoryResult>("environment_add_repository", { downloadId }),
 	environmentRemoveRepository: (repositoryUrl: string) => __TAURI_INVOKE<null>("environment_remove_repository", { repositoryUrl }),
 	environmentReorderRepositories: (repositoryUrls: string[]) => __TAURI_INVOKE<null>("environment_reorder_repositories", { repositoryUrls }),
 	environmentImportRepositoryPick: () => __TAURI_INVOKE<TauriImportRepositoryPickResult>("environment_import_repository_pick"),
-	environmentImportDownloadRepositories: (channel: string, repositories: TauriRepositoryDescriptor[]) => __TAURI_INVOKE<AsyncCallResult<number, ([TauriRepositoryDescriptor, TauriDownloadRepository])[]>>("environment_import_download_repositories", { channel, repositories }),
-	environmentImportAddRepositories: (channel: string, repositories: TauriRepositoryDescriptor[]) => __TAURI_INVOKE<AsyncCallResult<TauriImportRepositoryProgress, TauriImportRepositoriesResult>>("environment_import_add_repositories", { channel, repositories }),
+	environmentImportDownloadRepositories: (channel: string, repositories: TauriRepositoryDescriptor[]) => __TAURI_INVOKE<AsyncCallResult<TauriImportRepositoryProgress, ([TauriRepositoryDescriptor, TauriDownloadRepository])[]>>("environment_import_download_repositories", { channel, repositories }),
+	environmentImportAddRepositories: (downloadIds: string[]) => __TAURI_INVOKE<TauriImportRepositoriesResult>("environment_import_add_repositories", { downloadIds }),
+	environmentDiscardRepositoryDownloads: (downloadIds: string[]) => __TAURI_INVOKE<null>("environment_discard_repository_downloads", { downloadIds }),
 	environmentExportRepositories: () => __TAURI_INVOKE<null>("environment_export_repositories"),
 	environmentClearPackageCache: () => __TAURI_INVOKE<null>("environment_clear_package_cache"),
 	environmentGetUserPackages: () => __TAURI_INVOKE<TauriUserPackage[]>("environment_get_user_packages"),
@@ -349,7 +350,7 @@ export type SetupPages = "Appearance" | "LegacyImport" | "UnityHub" | "ProjectPa
 
 export type TauriAddProjectWithPickerResult = "NoFolderSelected" | "InvalidSelection" | "AlreadyAdded" | "Successful";
 
-export type TauriAddRepositoryResult = "BadUrl" | "Success";
+export type TauriAddRepositoryResult = "Success";
 
 export type TauriAddUserPackageWithPickerResult = "NoFolderSelected" | "InvalidSelection" | "AlreadyAdded" | "Successful";
 
@@ -406,7 +407,7 @@ export type TauriDefaultRepository = {
 	display_name: string,
 };
 
-export type TauriDownloadRepository = { type: "BadUrl" } | { type: "Duplicated"; reason: TauriDuplicatedReason; duplicated_name: string; duplicated_original_name: string | null } | { type: "DownloadError"; message: string } | { type: "Success"; value: TauriRemoteRepositoryInfo };
+export type TauriDownloadRepository = { type: "BadUrl" } | { type: "Duplicated"; reason: TauriDuplicatedReason; duplicated_name: string; duplicated_original_name: string | null } | { type: "DownloadError"; message: string } | { type: "Success"; download_id: string; value: TauriRemoteRepositoryInfo };
 
 export type TauriDuplicatedReason = "URLDuplicated" | "IDDuplicated";
 
@@ -450,10 +451,12 @@ export type TauriImportRepositoryPickResult = { type: "NoFilePicked" } | { type:
 
 export type TauriImportRepositoriesResult = {
 	succeeded: number[],
-	failed: number[],
+	failed: TauriImportRepositoryFailure[],
 };
 
-export type TauriImportRepositoryProgress = { type: "DownloadStarted"; index: number } | { type: "DownloadFinished"; index: number } | { type: "Failed"; index: number; message: string } | { type: "Finalizing" };
+export type TauriImportRepositoryFailure = { index: number; message: string };
+
+export type TauriImportRepositoryProgress = { type: "DownloadStarted"; index: number } | { type: "DownloadFinished"; index: number } | { type: "Failed"; index: number; message: string };
 
 export type TauriImportTemplateResult = TauriImportTemplateResult_Serialize | TauriImportTemplateResult_Deserialize;
 

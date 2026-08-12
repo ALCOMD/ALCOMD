@@ -231,6 +231,7 @@ fn main() {
         .manage(state::ProjectBackupState::new())
         .manage(state::ProjectCopyState::new())
         .manage(state::ProjectRestoreState::new())
+        .manage(state::RepositoryDownloadsState::new())
         .manage(state::TemplatesState::new())
         .manage(state::UnityProjectState::new())
         .manage(discord_presence::DiscordPresenceState::new())

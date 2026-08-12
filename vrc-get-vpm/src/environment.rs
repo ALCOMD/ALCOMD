@@ -58,6 +58,27 @@ const LOCAL_OFFICIAL_FILE: &str = "vrc-official.json";
 const LOCAL_CURATED_FILE: &str = "vrc-curated.json";
 const VCC_PACKAGE_CACHE_FILE: &str = "package-cache.json";
 
+#[derive(Debug, Clone)]
+pub struct DownloadedRemoteRepository {
+    repository: RemoteRepository,
+    etag: Option<Box<str>>,
+}
+
+impl DownloadedRemoteRepository {
+    pub fn repository(&self) -> &RemoteRepository {
+        &self.repository
+    }
+}
+
+pub async fn download_remote_repo(
+    url: &Url,
+    headers: &IndexMap<Box<str>, Box<str>>,
+    http: &impl HttpClient,
+) -> io::Result<DownloadedRemoteRepository> {
+    let (repository, etag) = RemoteRepository::download(http, url, headers).await?;
+    Ok(DownloadedRemoteRepository { repository, etag })
+}
+
 pub async fn add_remote_repo(
     settings: &mut Settings,
     url: Url,
@@ -66,7 +87,22 @@ pub async fn add_remote_repo(
     io: &DefaultEnvironmentIo,
     http: &impl HttpClient,
 ) -> Result<(), AddRepositoryErr> {
-    let (remote_repo, etag) = RemoteRepository::download(http, &url, &headers).await?;
+    let downloaded = download_remote_repo(&url, &headers, http).await?;
+    add_downloaded_remote_repo(settings, url, name, headers, io, downloaded).await
+}
+
+pub async fn add_downloaded_remote_repo(
+    settings: &mut Settings,
+    url: Url,
+    name: Option<&str>,
+    headers: IndexMap<Box<str>, Box<str>>,
+    io: &DefaultEnvironmentIo,
+    downloaded: DownloadedRemoteRepository,
+) -> Result<(), AddRepositoryErr> {
+    let DownloadedRemoteRepository {
+        repository: remote_repo,
+        etag,
+    } = downloaded;
 
     if !settings.can_add_remote_repo(&url, &remote_repo) {
         return Err(AddRepositoryErr::AlreadyAdded);

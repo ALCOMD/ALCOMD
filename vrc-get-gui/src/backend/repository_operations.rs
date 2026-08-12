@@ -4,12 +4,12 @@ use indexmap::IndexMap;
 use std::collections::{BTreeMap, HashMap};
 use url::Url;
 use vrc_get_vpm::environment::{
-    CURATED_REPOSITORY_ID, CURATED_URL_STR, OFFICIAL_REPOSITORY_ID, OFFICIAL_URL_STR, Settings,
-    add_remote_repo, clear_package_cache,
+    CURATED_REPOSITORY_ID, CURATED_URL_STR, DownloadedRemoteRepository, OFFICIAL_REPOSITORY_ID,
+    OFFICIAL_URL_STR, Settings, add_downloaded_remote_repo, clear_package_cache,
+    download_remote_repo,
 };
 use vrc_get_vpm::io::{DefaultEnvironmentIo, IoTrait};
 use vrc_get_vpm::repositories_file::RepositoriesFile;
-use vrc_get_vpm::repository::RemoteRepository;
 use vrc_get_vpm::{HttpClient, PackageManifest, UserRepoSetting, VersionSelector};
 
 #[derive(Debug, Clone)]
@@ -67,6 +67,7 @@ pub(crate) struct DownloadedRepository {
     pub(crate) url: String,
     pub(crate) name: String,
     pub(crate) packages: Vec<PackageManifest>,
+    pub(crate) repository: DownloadedRemoteRepository,
 }
 
 #[derive(Debug, Clone)]
@@ -80,12 +81,11 @@ pub(crate) enum DownloadRepositoryOutcome {
     Success(DownloadedRepository),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum AddRepositoriesProgress {
-    DownloadStarted { index: usize },
-    DownloadFinished { index: usize },
-    Failed { index: usize, message: String },
-    Finalizing,
+#[derive(Debug, Clone)]
+pub(crate) struct PreparedRepository {
+    pub(crate) url: Url,
+    pub(crate) headers: IndexMap<Box<str>, Box<str>>,
+    pub(crate) repository: DownloadedRemoteRepository,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -137,10 +137,40 @@ pub(crate) async fn add_repository(
     url: Url,
     headers: IndexMap<Box<str>, Box<str>>,
 ) -> Result<AddedRepositoryInfo, RustError> {
-    let repository_url = url.clone();
+    let repository = download_remote_repo(&url, &headers, http).await?;
+    add_prepared_repository(
+        settings,
+        packages,
+        repository_config,
+        io,
+        PreparedRepository {
+            url,
+            headers,
+            repository,
+        },
+    )
+    .await
+}
+
+pub(crate) async fn add_prepared_repository(
+    settings: &SettingsState,
+    packages: &PackagesState,
+    repository_config: &RepositoryConfigState,
+    io: &DefaultEnvironmentIo,
+    repository: PreparedRepository,
+) -> Result<AddedRepositoryInfo, RustError> {
+    let repository_url = repository.url.clone();
     let mut settings = settings.load_mut(io).await?;
     let previous_repo_count = settings.get_user_repos().len();
-    add_remote_repo(&mut settings, url, None, headers, io, http).await?;
+    add_downloaded_remote_repo(
+        &mut settings,
+        repository.url,
+        None,
+        repository.headers,
+        io,
+        repository.repository,
+    )
+    .await?;
 
     let repository = settings
         .get_user_repos()
@@ -160,10 +190,11 @@ pub(crate) async fn add_repository(
         .unwrap_or(repository_url.as_str())
         .to_string();
 
+    let settings_snapshot = settings.clone();
     settings.save().await?;
     set_repository_display_name(repository_config, repository_url.to_string(), name.clone())
         .await?;
-    packages.clear_cache();
+    packages.reload_from_cache(&settings_snapshot, io).await?;
 
     Ok(AddedRepositoryInfo {
         id,
@@ -366,39 +397,36 @@ pub(crate) async fn add_repositories(
     packages: &PackagesState,
     repository_config: &RepositoryConfigState,
     io: &DefaultEnvironmentIo,
-    http: &impl HttpClient,
-    repositories: Vec<RepositoryDescriptor>,
-    mut on_progress: impl FnMut(AddRepositoriesProgress) + Send,
+    repositories: Vec<PreparedRepository>,
 ) -> Result<AddRepositoriesOutcome, RustError> {
     let mut settings = settings.load_mut(io).await?;
     let mut candidate = settings.clone();
+    let repository_urls = repositories
+        .iter()
+        .map(|repository| repository.url.clone())
+        .collect::<Vec<_>>();
 
     let mut succeeded = Vec::new();
     let mut failures = Vec::new();
-    for (index, repository) in repositories.iter().enumerate() {
-        on_progress(AddRepositoriesProgress::DownloadStarted { index });
-        match add_remote_repo(
+    for (index, repository) in repositories.into_iter().enumerate() {
+        let repository_url = repository.url.clone();
+        match add_downloaded_remote_repo(
             &mut candidate,
-            repository.url.clone(),
+            repository.url,
             None,
-            repository.headers.clone(),
+            repository.headers,
             io,
-            http,
+            repository.repository,
         )
         .await
         {
             Ok(()) => {
                 succeeded.push(index);
-                on_progress(AddRepositoriesProgress::DownloadFinished { index });
             }
             Err(error) => {
                 let message = error.to_string();
-                log::warn!("failed to import repository {}: {message}", repository.url);
-                failures.push(AddRepositoryFailure {
-                    index,
-                    message: message.clone(),
-                });
-                on_progress(AddRepositoriesProgress::Failed { index, message });
+                log::warn!("failed to import repository {repository_url}: {message}");
+                failures.push(AddRepositoryFailure { index, message });
             }
         }
     }
@@ -414,7 +442,7 @@ pub(crate) async fn add_repositories(
     let repository_display_names = succeeded
         .iter()
         .map(|&index| {
-            let repository_url = &repositories[index].url;
+            let repository_url = &repository_urls[index];
             let repository = candidate
                 .get_user_repos()
                 .iter()
@@ -429,8 +457,6 @@ pub(crate) async fn add_repositories(
         })
         .collect::<Vec<_>>();
 
-    on_progress(AddRepositoriesProgress::Finalizing);
-
     let mut config = repository_config.load_mut().await;
     for (repository_url, display_name) in repository_display_names {
         config.display_names.insert(repository_url, display_name);
@@ -439,8 +465,9 @@ pub(crate) async fn add_repositories(
 
     candidate.save(io).await?;
     *settings = candidate;
+    let settings_snapshot = settings.clone();
     settings.maybe_save().await?;
-    packages.clear_cache();
+    packages.reload_from_cache(&settings_snapshot, io).await?;
 
     Ok(AddRepositoriesOutcome {
         succeeded,
@@ -552,12 +579,13 @@ pub(crate) async fn download_repository(
                 .then(|| names.name.clone()),
         });
     }
-    let repository = match RemoteRepository::download(client, repository_url, headers).await {
-        Ok((repository, _)) => repository,
+    let repository = match download_remote_repo(repository_url, headers, client).await {
+        Ok(repository) => repository,
         Err(error) => return Ok(DownloadRepositoryOutcome::DownloadError(error.to_string())),
     };
-    let url = repository.url().unwrap_or(repository_url).as_str();
-    let id = repository.id().unwrap_or(url);
+    let remote_repository = repository.repository();
+    let url = remote_repository.url().unwrap_or(repository_url).as_str();
+    let id = remote_repository.id().unwrap_or(url);
     if let Some(names) = identities.ids.get(id) {
         return Ok(DownloadRepositoryOutcome::Duplicated {
             reason: RepositoryDuplicateReason::Id,
@@ -569,13 +597,14 @@ pub(crate) async fn download_repository(
     Ok(DownloadRepositoryOutcome::Success(DownloadedRepository {
         id: id.to_string(),
         url: url.to_string(),
-        name: repository.name().unwrap_or(id).to_string(),
-        packages: repository
+        name: remote_repository.name().unwrap_or(id).to_string(),
+        packages: remote_repository
             .get_packages()
             .filter_map(|package| package.get_latest(VersionSelector::latest_for(None, true)))
             .filter(|package| !package.is_yanked())
             .cloned()
             .collect(),
+        repository,
     }))
 }
 
@@ -672,8 +701,12 @@ mod tests {
     use futures::io::Cursor;
     use std::io as std_io;
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
-    struct RepositoryImportHttp;
+    #[derive(Default)]
+    struct RepositoryImportHttp {
+        requests: AtomicUsize,
+    }
 
     impl HttpClient for RepositoryImportHttp {
         async fn get(
@@ -690,6 +723,7 @@ mod tests {
             _headers: &IndexMap<Box<str>, Box<str>>,
             _current_etag: Option<&str>,
         ) -> std_io::Result<Option<(impl AsyncRead + Send, Option<Box<str>>)>> {
+            self.requests.fetch_add(1, Ordering::Relaxed);
             if url.path().contains("timeout") {
                 return Err(std_io::Error::new(
                     std_io::ErrorKind::TimedOut,
@@ -703,9 +737,12 @@ mod tests {
                 .unwrap_or("repository")
                 .trim_end_matches(".json");
             let contents = format!(
-                r#"{{"id":"com.example.{repository_id}","name":"{repository_id}","url":"{url}","packages":{{}}}}"#
+                r#"{{"id":"com.example.{repository_id}","name":"{repository_id}","url":"{url}","customField":"preserved","packages":{{}}}}"#
             );
-            Ok(Some((Cursor::new(contents.into_bytes()), None)))
+            Ok(Some((
+                Cursor::new(contents.into_bytes()),
+                Some("test-etag".into()),
+            )))
         }
     }
 
@@ -822,60 +859,49 @@ mod tests {
     }
 
     #[test]
-    fn repository_import_commits_successes_when_one_download_fails() {
+    fn repository_import_reuses_prepared_downloads() {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap()
-            .block_on(repository_import_commits_successes_when_one_download_fails_inner());
+            .block_on(repository_import_reuses_prepared_downloads_inner());
     }
 
-    async fn repository_import_commits_successes_when_one_download_fails_inner() {
+    async fn repository_import_reuses_prepared_downloads_inner() {
         let temp = tempfile::tempdir().unwrap();
         let io = DefaultEnvironmentIo::new(temp.path().into());
         let settings = SettingsState::new();
         let packages = PackagesState::new();
         let repository_config = RepositoryConfigState::new_load(&io).await.unwrap();
-        let repositories = ["first.json", "timeout.json", "second.json"]
+        let descriptors = ["first.json", "second.json"]
             .into_iter()
             .map(|name| RepositoryDescriptor {
                 url: Url::parse(&format!("https://example.com/{name}")).unwrap(),
                 headers: IndexMap::new(),
             })
             .collect::<Vec<_>>();
-        let mut progress = Vec::new();
+        let http = RepositoryImportHttp::default();
+        let mut repositories = Vec::new();
+        for descriptor in descriptors {
+            let repository = download_remote_repo(&descriptor.url, &descriptor.headers, &http)
+                .await
+                .unwrap();
+            repositories.push(PreparedRepository {
+                url: descriptor.url,
+                headers: descriptor.headers,
+                repository,
+            });
+        }
+        assert_eq!(http.requests.load(Ordering::Relaxed), 2);
 
-        let outcome = add_repositories(
-            &settings,
-            &packages,
-            &repository_config,
-            &io,
-            &RepositoryImportHttp,
-            repositories,
-            |event| progress.push(event),
-        )
-        .await
-        .unwrap();
+        let outcome = add_repositories(&settings, &packages, &repository_config, &io, repositories)
+            .await
+            .unwrap();
 
-        assert_eq!(outcome.succeeded, vec![0, 2]);
-        assert_eq!(outcome.failures.len(), 1);
-        assert_eq!(outcome.failures[0].index, 1);
-        assert!(outcome.failures[0].message.contains("timed out"));
-        assert_eq!(
-            progress,
-            vec![
-                AddRepositoriesProgress::DownloadStarted { index: 0 },
-                AddRepositoriesProgress::DownloadFinished { index: 0 },
-                AddRepositoriesProgress::DownloadStarted { index: 1 },
-                AddRepositoriesProgress::Failed {
-                    index: 1,
-                    message: "repository request timed out".to_string(),
-                },
-                AddRepositoriesProgress::DownloadStarted { index: 2 },
-                AddRepositoriesProgress::DownloadFinished { index: 2 },
-                AddRepositoriesProgress::Finalizing,
-            ]
-        );
+        assert_eq!(outcome.succeeded, vec![0, 1]);
+        assert!(outcome.failures.is_empty());
+        assert_eq!(http.requests.load(Ordering::Relaxed), 2);
+        assert!(packages.get().is_some());
 
         let settings = settings.load(&io).await.unwrap();
         assert_eq!(settings.get_user_repos().len(), 2);
@@ -889,6 +915,41 @@ mod tests {
                 .url()
                 .is_some_and(|url| url.path() == "/second.json")
         }));
+        for repository in settings.get_user_repos() {
+            let cache = tokio::fs::read_to_string(repository.local_path())
+                .await
+                .unwrap();
+            assert!(cache.contains(r#""customField": "preserved""#));
+            assert!(cache.contains(r#""etag": "test-etag""#));
+        }
         assert_eq!(repository_config.get().display_names.len(), 2);
+    }
+
+    #[test]
+    fn repository_preview_reports_download_failure() {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let http = RepositoryImportHttp::default();
+                let outcome = download_repository(
+                    &http,
+                    &Url::parse("https://example.com/timeout.json").unwrap(),
+                    &IndexMap::new(),
+                    &RepositoryIdentitySnapshot {
+                        urls: HashMap::new(),
+                        ids: HashMap::new(),
+                    },
+                )
+                .await
+                .unwrap();
+
+                assert!(matches!(
+                    outcome,
+                    DownloadRepositoryOutcome::DownloadError(_)
+                ));
+                assert_eq!(http.requests.load(Ordering::Relaxed), 1);
+            });
     }
 }

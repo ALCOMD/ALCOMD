@@ -9,17 +9,13 @@ use crate::backend::packages::{
 };
 use crate::backend::repository_operations;
 use crate::backend::user_packages;
-use crate::commands::async_command::{
-    AsyncCallResult, With, async_command, async_command_with_cancel_state,
-};
+use crate::commands::async_command::{AsyncCallResult, With, async_command};
 use crate::commands::prelude::*;
 use futures::future::try_join_all;
 use indexmap::IndexMap;
 use log::info;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tauri::{AppHandle, Manager, State, Window};
 use tauri_plugin_dialog::DialogExt;
 use url::Url;
@@ -405,6 +401,7 @@ pub enum TauriDownloadRepository {
         message: String,
     },
     Success {
+        download_id: String,
         value: TauriRemoteRepositoryInfo,
     },
 }
@@ -415,41 +412,49 @@ pub enum TauriDuplicatedReason {
     IDDuplicated,
 }
 
-impl From<repository_operations::DownloadRepositoryOutcome> for TauriDownloadRepository {
-    fn from(value: repository_operations::DownloadRepositoryOutcome) -> Self {
-        match value {
-            repository_operations::DownloadRepositoryOutcome::Duplicated {
-                reason,
-                duplicated_name,
-                duplicated_original_name,
-            } => Self::Duplicated {
-                reason: match reason {
-                    repository_operations::RepositoryDuplicateReason::Url => {
-                        TauriDuplicatedReason::URLDuplicated
-                    }
-                    repository_operations::RepositoryDuplicateReason::Id => {
-                        TauriDuplicatedReason::IDDuplicated
-                    }
-                },
-                duplicated_name,
-                duplicated_original_name,
-            },
-            repository_operations::DownloadRepositoryOutcome::DownloadError(message) => {
-                Self::DownloadError { message }
-            }
-            repository_operations::DownloadRepositoryOutcome::Success(repository) => {
-                Self::Success {
-                    value: TauriRemoteRepositoryInfo {
-                        id: repository.id,
-                        url: repository.url,
-                        name: repository.name,
-                        packages: repository
-                            .packages
-                            .iter()
-                            .map(TauriBasePackageInfo::new)
-                            .collect(),
-                    },
+fn prepare_downloaded_repository(
+    value: repository_operations::DownloadRepositoryOutcome,
+    downloads: &RepositoryDownloadsState,
+    descriptor: TauriRepositoryDescriptor,
+) -> TauriDownloadRepository {
+    match value {
+        repository_operations::DownloadRepositoryOutcome::Duplicated {
+            reason,
+            duplicated_name,
+            duplicated_original_name,
+        } => TauriDownloadRepository::Duplicated {
+            reason: match reason {
+                repository_operations::RepositoryDuplicateReason::Url => {
+                    TauriDuplicatedReason::URLDuplicated
                 }
+                repository_operations::RepositoryDuplicateReason::Id => {
+                    TauriDuplicatedReason::IDDuplicated
+                }
+            },
+            duplicated_name,
+            duplicated_original_name,
+        },
+        repository_operations::DownloadRepositoryOutcome::DownloadError(message) => {
+            TauriDownloadRepository::DownloadError { message }
+        }
+        repository_operations::DownloadRepositoryOutcome::Success(repository) => {
+            let download_id = downloads.insert(PendingRepositoryDownload {
+                url: descriptor.url,
+                headers: descriptor.headers,
+                repository: repository.repository,
+            });
+            TauriDownloadRepository::Success {
+                download_id,
+                value: TauriRemoteRepositoryInfo {
+                    id: repository.id,
+                    url: repository.url,
+                    name: repository.name,
+                    packages: repository
+                        .packages
+                        .iter()
+                        .map(TauriBasePackageInfo::new)
+                        .collect(),
+                },
             }
         }
     }
@@ -462,6 +467,7 @@ pub async fn environment_download_repository(
     repository_config: State<'_, RepositoryConfigState>,
     io: State<'_, DefaultEnvironmentIo>,
     http: State<'_, reqwest::Client>,
+    downloads: State<'_, RepositoryDownloadsState>,
     url: String,
     headers: IndexMap<Box<str>, Box<str>>,
 ) -> Result<TauriDownloadRepository, RustError> {
@@ -477,15 +483,18 @@ pub async fn environment_download_repository(
         let display_names = repository_config.get().display_names.clone();
         let identities =
             repository_operations::repository_identity_snapshot(&settings, &display_names);
+        let descriptor = TauriRepositoryDescriptor {
+            url: url.clone(),
+            headers: headers.clone(),
+        };
         repository_operations::download_repository(http.inner(), &url, &headers, &identities)
             .await
-            .map(Into::into)
+            .map(|result| prepare_downloaded_repository(result, downloads.inner(), descriptor))
     }
 }
 
 #[derive(Serialize, specta::Type)]
 pub enum TauriAddRepositoryResult {
-    BadUrl,
     Success,
 }
 
@@ -497,10 +506,13 @@ pub async fn environment_add_repository(
     packages: State<'_, PackagesState>,
     repository_config: State<'_, RepositoryConfigState>,
     io: State<'_, DefaultEnvironmentIo>,
-    http: State<'_, reqwest::Client>,
-    url: String,
-    headers: IndexMap<Box<str>, Box<str>>,
+    downloads: State<'_, RepositoryDownloadsState>,
+    download_id: String,
 ) -> Result<TauriAddRepositoryResult, RustError> {
+    let download = downloads.get(&download_id).ok_or_else(|| {
+        RustError::unrecoverable_str("downloaded repository is no longer available")
+    })?;
+    let url = download.url.to_string();
     let activity = app.state::<ActivityLogState>();
     let input = ActivityInput::new(
         ActivitySource::Gui,
@@ -511,35 +523,34 @@ pub async fn environment_add_repository(
     )
     .target(summarize_url_host(&url))
     .details(vec![ActivityDetail::new("url", summarize_url(&url))]);
-    let url: Url = match url.parse() {
-        Err(_) => {
-            activity.record_failed(Some(&app), input, "Bad repository URL");
-            return Ok(TauriAddRepositoryResult::BadUrl);
-        }
-        Ok(url) => url,
-    };
 
-    activity
+    let result = activity
         .track_result(
             Some(&app),
             input,
             "Repository added",
             Vec::new(),
             async move {
-                repository_operations::add_repository(
+                repository_operations::add_prepared_repository(
                     settings.inner(),
                     packages.inner(),
                     repository_config.inner(),
                     io.inner(),
-                    http.inner(),
-                    url,
-                    headers,
+                    repository_operations::PreparedRepository {
+                        url: download.url,
+                        headers: download.headers,
+                        repository: download.repository,
+                    },
                 )
                 .await?;
                 Ok(TauriAddRepositoryResult::Success)
             },
         )
-        .await
+        .await;
+    if result.is_ok() {
+        downloads.remove(&download_id);
+    }
+    result
 }
 
 fn repository_activity_target(repository_id: &str) -> String {
@@ -629,30 +640,18 @@ pub enum TauriImportRepositoryProgress {
     DownloadStarted { index: usize },
     DownloadFinished { index: usize },
     Failed { index: usize, message: String },
-    Finalizing,
-}
-
-impl From<repository_operations::AddRepositoriesProgress> for TauriImportRepositoryProgress {
-    fn from(value: repository_operations::AddRepositoriesProgress) -> Self {
-        match value {
-            repository_operations::AddRepositoriesProgress::DownloadStarted { index } => {
-                Self::DownloadStarted { index }
-            }
-            repository_operations::AddRepositoriesProgress::DownloadFinished { index } => {
-                Self::DownloadFinished { index }
-            }
-            repository_operations::AddRepositoriesProgress::Failed { index, message } => {
-                Self::Failed { index, message }
-            }
-            repository_operations::AddRepositoriesProgress::Finalizing => Self::Finalizing,
-        }
-    }
 }
 
 #[derive(Serialize, specta::Type, Clone)]
 pub struct TauriImportRepositoriesResult {
     succeeded: Vec<usize>,
-    failed: Vec<usize>,
+    failed: Vec<TauriImportRepositoryFailure>,
+}
+
+#[derive(Serialize, specta::Type, Clone)]
+pub struct TauriImportRepositoryFailure {
+    index: usize,
+    message: String,
 }
 
 #[tauri::command]
@@ -749,13 +748,17 @@ pub async fn environment_import_download_repositories(
     channel: String,
     repositories: Vec<TauriRepositoryDescriptor>,
 ) -> Result<
-    AsyncCallResult<usize, Vec<(TauriRepositoryDescriptor, TauriDownloadRepository)>>,
+    AsyncCallResult<
+        TauriImportRepositoryProgress,
+        Vec<(TauriRepositoryDescriptor, TauriDownloadRepository)>,
+    >,
     RustError,
 > {
     async_command(channel, window.clone(), async move {
-        With::<usize>::continue_async(|ctx| async move {
+        With::<TauriImportRepositoryProgress>::continue_async(|ctx| async move {
             let settings = window.state::<SettingsState>();
             let repository_config = window.state::<RepositoryConfigState>();
+            let downloads = window.state::<RepositoryDownloadsState>();
             let io = window.state::<DefaultEnvironmentIo>();
             let settings = settings.load(io.inner()).await?;
             {
@@ -766,34 +769,46 @@ pub async fn environment_import_download_repositories(
 
                 info!("downloading {} repositories", repositories.len());
 
-                let counter = AtomicUsize::new(0);
-
-                let counter_ref = &counter;
                 let identities_ref = &identities;
 
                 let http = window.state::<reqwest::Client>();
-                let mut results = try_join_all(repositories.into_iter().map(|adding_repo| {
-                    let ctx = ctx.clone();
-                    let http = http.clone();
-                    async move {
-                        let downloaded = repository_operations::download_repository(
-                            http.inner(),
-                            &adding_repo.url,
-                            &adding_repo.headers,
-                            identities_ref,
-                        )
-                        .await?;
+                let mut results = try_join_all(repositories.into_iter().enumerate().map(
+                    |(index, adding_repo)| {
+                        let ctx = ctx.clone();
+                        let http = http.clone();
+                        async move {
+                            if let Err(error) =
+                                ctx.emit(TauriImportRepositoryProgress::DownloadStarted { index })
+                            {
+                                log::error!("failed to emit repository download progress: {error}");
+                            }
+                            let downloaded = repository_operations::download_repository(
+                                http.inner(),
+                                &adding_repo.url,
+                                &adding_repo.headers,
+                                identities_ref,
+                            )
+                            .await?;
 
-                        info!("downloaded repository: {:?}", adding_repo.url);
+                            info!("downloaded repository: {:?}", adding_repo.url);
 
-                        let count = counter_ref.fetch_add(1, Ordering::Relaxed) + 1;
-                        if let Err(e) = ctx.emit(count) {
-                            log::error!("failed to emit repository download progress: {e}");
+                            let progress = match &downloaded {
+                                repository_operations::DownloadRepositoryOutcome::DownloadError(
+                                    message,
+                                ) => TauriImportRepositoryProgress::Failed {
+                                    index,
+                                    message: message.clone(),
+                                },
+                                _ => TauriImportRepositoryProgress::DownloadFinished { index },
+                            };
+                            if let Err(error) = ctx.emit(progress) {
+                                log::error!("failed to emit repository download progress: {error}");
+                            }
+
+                            Ok::<_, RustError>((adding_repo, downloaded))
                         }
-
-                        Ok::<_, RustError>((adding_repo, downloaded))
-                    }
-                }))
+                    },
+                ))
                 .await?;
 
                 for (_, downloaded) in results.as_mut_slice() {
@@ -805,7 +820,14 @@ pub async fn environment_import_download_repositories(
 
                 Ok(results
                     .into_iter()
-                    .map(|(repository, outcome)| (repository, outcome.into()))
+                    .map(|(repository, outcome)| {
+                        let result = prepare_downloaded_repository(
+                            outcome,
+                            downloads.inner(),
+                            repository.clone(),
+                        );
+                        (repository, result)
+                    })
                     .collect())
             }
         })
@@ -816,14 +838,29 @@ pub async fn environment_import_download_repositories(
 #[tauri::command]
 #[specta::specta]
 pub async fn environment_import_add_repositories(
-    window: Window,
-    channel: String,
-    repositories: Vec<TauriRepositoryDescriptor>,
-) -> Result<AsyncCallResult<TauriImportRepositoryProgress, TauriImportRepositoriesResult>, RustError>
-{
-    let app = window.app_handle().clone();
+    app: AppHandle,
+    settings: State<'_, SettingsState>,
+    packages: State<'_, PackagesState>,
+    repository_config: State<'_, RepositoryConfigState>,
+    io: State<'_, DefaultEnvironmentIo>,
+    downloads: State<'_, RepositoryDownloadsState>,
+    download_ids: Vec<String>,
+) -> Result<TauriImportRepositoriesResult, RustError> {
+    let repositories = download_ids
+        .iter()
+        .map(|id| {
+            let download = downloads.get(id).ok_or_else(|| {
+                RustError::unrecoverable_str("downloaded repository is no longer available")
+            })?;
+            Ok(repository_operations::PreparedRepository {
+                url: download.url,
+                headers: download.headers,
+                repository: download.repository,
+            })
+        })
+        .collect::<Result<Vec<_>, RustError>>()?;
     let activity = app.state::<ActivityLogState>();
-    let repo_count = repositories.len();
+    let repo_count = download_ids.len();
     let input = ActivityInput::new(
         ActivitySource::Gui,
         ActivityKind::Write,
@@ -836,111 +873,73 @@ pub async fn environment_import_add_repositories(
         repo_count.to_string(),
     )]);
     let tracker = activity.start_activity(Some(&app), input);
-    let activity_finished = Arc::new(AtomicBool::new(false));
-    let activity_finished_for_async = activity_finished.clone();
-    let activity_finished_for_cancel = activity_finished.clone();
-    let tracker_for_async = tracker.clone();
-    let tracker_for_cancel = tracker.clone();
-    let app_for_async = app.clone();
-    let app_for_cancel = app.clone();
+    let result = repository_operations::add_repositories(
+        settings.inner(),
+        packages.inner(),
+        repository_config.inner(),
+        io.inner(),
+        repositories,
+    )
+    .await;
 
-    async_command_with_cancel_state(
-        channel,
-        window,
-        async move {
-            With::<TauriImportRepositoryProgress>::continue_async(move |ctx| async move {
-                let settings = ctx.state::<SettingsState>();
-                let packages = ctx.state::<PackagesState>();
-                let repository_config = ctx.state::<RepositoryConfigState>();
-                let http = ctx.state::<reqwest::Client>();
-                let io = ctx.state::<DefaultEnvironmentIo>();
-                let repositories = repositories
-                    .into_iter()
-                    .map(|repository| repository_operations::RepositoryDescriptor {
-                        url: repository.url,
-                        headers: repository.headers,
-                    })
-                    .collect();
-
-                let result = repository_operations::add_repositories(
-                    settings.inner(),
-                    packages.inner(),
-                    repository_config.inner(),
-                    io.inner(),
-                    http.inner(),
-                    repositories,
-                    |progress| {
-                        if let Err(error) = ctx.emit(progress.into()) {
-                            log::error!("failed to emit repository import progress: {error}");
-                        }
-                    },
-                )
-                .await;
-
-                activity_finished_for_async.store(true, Ordering::SeqCst);
-                let activity = app_for_async.state::<ActivityLogState>();
-                match result {
-                    Ok(outcome) => {
-                        let succeeded = outcome.succeeded;
-                        let failure_message = outcome
-                            .failures
-                            .iter()
-                            .map(|failure| format!("#{}: {}", failure.index + 1, failure.message))
-                            .collect::<Vec<_>>()
-                            .join("; ");
-                        let failed = outcome
-                            .failures
-                            .iter()
-                            .map(|failure| failure.index)
-                            .collect::<Vec<_>>();
-                        let details = vec![
-                            ActivityDetail::new("succeeded", succeeded.len().to_string()),
-                            ActivityDetail::new("failed", failed.len().to_string()),
-                        ];
-                        if failed.is_empty() {
-                            activity.finish_success(
-                                Some(&app_for_async),
-                                &tracker_for_async,
-                                "Repositories imported",
-                                details,
-                            );
-                        } else {
-                            activity.finish_failed(
-                                Some(&app_for_async),
-                                &tracker_for_async,
-                                "Repository import partially completed",
-                                details,
-                                failure_message,
-                            );
-                        }
-                        Ok(TauriImportRepositoriesResult { succeeded, failed })
-                    }
-                    Err(error) => {
-                        activity.finish_failed(
-                            Some(&app_for_async),
-                            &tracker_for_async,
-                            "Repository import failed",
-                            Vec::new(),
-                            &error,
-                        );
-                        Err(error)
-                    }
-                }
-            })
-        },
-        |_| {},
-        move || {
-            if !activity_finished_for_cancel.swap(true, Ordering::SeqCst) {
-                app_for_cancel.state::<ActivityLogState>().finish_cancelled(
-                    Some(&app_for_cancel),
-                    &tracker_for_cancel,
-                    "Repository import cancelled",
-                    Vec::new(),
+    match result {
+        Ok(outcome) => {
+            let succeeded = outcome.succeeded;
+            for &index in &succeeded {
+                downloads.remove(&download_ids[index]);
+            }
+            let failure_message = outcome
+                .failures
+                .iter()
+                .map(|failure| format!("#{}: {}", failure.index + 1, failure.message))
+                .collect::<Vec<_>>()
+                .join("; ");
+            let failed = outcome
+                .failures
+                .into_iter()
+                .map(|failure| TauriImportRepositoryFailure {
+                    index: failure.index,
+                    message: failure.message,
+                })
+                .collect::<Vec<_>>();
+            let details = vec![
+                ActivityDetail::new("succeeded", succeeded.len().to_string()),
+                ActivityDetail::new("failed", failed.len().to_string()),
+            ];
+            if failed.is_empty() {
+                activity.finish_success(Some(&app), &tracker, "Repositories imported", details);
+            } else {
+                activity.finish_failed(
+                    Some(&app),
+                    &tracker,
+                    "Repository import partially completed",
+                    details,
+                    failure_message,
                 );
             }
-        },
-    )
-    .await
+            Ok(TauriImportRepositoriesResult { succeeded, failed })
+        }
+        Err(error) => {
+            activity.finish_failed(
+                Some(&app),
+                &tracker,
+                "Repository import failed",
+                Vec::new(),
+                &error,
+            );
+            Err(error)
+        }
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn environment_discard_repository_downloads(
+    downloads: State<'_, RepositoryDownloadsState>,
+    download_ids: Vec<String>,
+) -> Result<(), RustError> {
+    downloads.remove_many(download_ids.iter().map(String::as_str));
+    Ok(())
 }
 
 #[tauri::command]

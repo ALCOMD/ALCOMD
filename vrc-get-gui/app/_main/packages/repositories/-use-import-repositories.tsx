@@ -1,5 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
-import { CheckCircle2, CircleAlert, Minimize2, RefreshCw } from "lucide-react";
+import { CircleAlert, RefreshCw } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -20,17 +20,13 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { assertNever } from "@/lib/assert-never";
 import type {
 	TauriDownloadRepository,
-	TauriImportRepositoryProgress,
 	TauriRepositoryDescriptor,
 } from "@/lib/bindings";
 import { commands } from "@/lib/bindings";
 import { callAsyncCommand } from "@/lib/call-async-command";
 import { type DialogContext, showDialog } from "@/lib/dialog";
 import { tc, tt } from "@/lib/i18n";
-import {
-	countProcessedSteps,
-	progressWithFinalStep,
-} from "@/lib/operation-progress";
+import { countProcessedSteps } from "@/lib/operation-progress";
 import { queryClient } from "@/lib/query-client";
 import { toastSuccess, toastThrownError } from "@/lib/toast";
 import { useEffectEvent } from "@/lib/use-effect-event";
@@ -94,22 +90,45 @@ async function importRepositoriesImpl() {
 	});
 	if (repositories == null) return;
 
-	const packages = await dialog.ask(LoadingRepositories, {
+	const initialPackages = await dialog.ask(LoadingRepositories, {
 		repositories,
 	});
-	if (packages == null) return;
+	if (initialPackages == null) return;
+	let packages: [TauriRepositoryDescriptor, TauriDownloadRepository][] =
+		initialPackages;
 
-	const repositoriesToAdd = await dialog.ask(ConfirmingPackages, {
-		packages,
-	});
-	if (repositoriesToAdd == null) return;
+	let repositoriesToAdd: PreparedRepositoryImport[];
+	while (true) {
+		const confirmation = await dialog.ask(ConfirmingPackages, { packages });
+		if (confirmation == null) {
+			await discardDownloadedRepositories(packages);
+			return;
+		}
+		if (confirmation.type === "retry") {
+			const retried = await dialog.ask(LoadingRepositories, {
+				repositories: confirmation.indices.map((index) => packages[index][0]),
+			});
+			if (retried == null) {
+				await discardDownloadedRepositories(packages);
+				return;
+			}
+			const nextPackages = [...packages];
+			confirmation.indices.forEach((index, retryIndex) => {
+				nextPackages[index] = retried[retryIndex];
+			});
+			packages = nextPackages;
+			continue;
+		}
+		repositoriesToAdd = confirmation.repositories;
+		break;
+	}
 	if (repositoriesToAdd.length === 0) {
 		dialog.close();
 		return;
 	}
 
-	dialog.setEscapeBehavior("minimize");
-	await dialog.askClosing(ImportingRepositories, {
+	dialog.setEscapeBehavior(false);
+	await dialog.askClosing(SavingRepositories, {
 		repositories: repositoriesToAdd,
 	});
 }
@@ -189,36 +208,90 @@ function LoadingRepositories({
 	>;
 }) {
 	const cancelRef = useRef<() => void>(() => {});
-	const totalCount = repositories.length;
-	const [downloaded, setDownloaded] = useState(0);
+	const [items, setItems] = useState<RepositoryImportItem[]>(() =>
+		repositories.map((repository) => ({
+			key: crypto.randomUUID(),
+			repository,
+			status: "waiting",
+			downloadFinished: false,
+		})),
+	);
 
 	const event = useEffectEvent(() => {
 		const [cancel, resultPromise] = callAsyncCommand(
 			commands.environmentImportDownloadRepositories,
 			[repositories],
-			(downloaded) => setDownloaded(downloaded),
+			(progress) =>
+				setItems((current) =>
+					current.map((item, index) => {
+						if (index !== progress.index) return item;
+						switch (progress.type) {
+							case "DownloadStarted":
+								return { ...item, status: "downloading" };
+							case "DownloadFinished":
+								return {
+									...item,
+									status: "downloaded",
+									downloadFinished: true,
+								};
+							case "Failed":
+								return {
+									...item,
+									status: "failed",
+									message: progress.message,
+								};
+							default:
+								return assertNever(progress);
+						}
+					}),
+				),
 		);
 		cancelRef.current = cancel;
 		resultPromise.then(
-			(x) => dialog.close(x === "cancelled" ? null : x),
-			(error) => dialog.error(error),
+			(x) => {
+				cancelRef.current = () => {};
+				dialog.close(x === "cancelled" ? null : x);
+			},
+			(error) => {
+				cancelRef.current = () => {};
+				dialog.error(error);
+			},
 		);
 	});
 
-	useEffect(() => event(), []);
+	useEffect(() => {
+		event();
+		return () => cancelRef.current();
+	}, []);
+	const processed = countProcessedSteps(
+		items,
+		1,
+		(item) => (item.downloadFinished ? 1 : 0),
+		(item) => item.status === "failed",
+	);
 
 	return (
 		<>
-			<div>
+			<DialogHeader>
+				<DialogTitle className="flex items-center gap-2">
+					<RefreshCw className="size-5 animate-spin" />
+					{tc("vpm repositories:import progress:title")}
+				</DialogTitle>
+				<DialogDescription>
+					{tc("vpm repositories:import progress:description")}
+				</DialogDescription>
+			</DialogHeader>
+			<div className="space-y-2">
 				<p>{tc("vpm repositories:dialog:downloading repositories...")}</p>
-				<Progress value={downloaded} max={totalCount} />
+				<Progress value={processed} max={items.length} />
 				<div className={"text-center"}>
-					{tc("vpm repositories:dialog:downloaded n/m", {
-						downloaded,
-						totalCount,
+					{tc("vpm repositories:dialog:processed n/m", {
+						processed,
+						totalCount: items.length,
 					})}
 				</div>
 			</div>
+			<RepositoryImportItems items={items} />
 			<DialogFooter>
 				<Button onClick={() => cancelRef.current?.()}>
 					{tc("general:button:cancel")}
@@ -233,14 +306,21 @@ function ConfirmingPackages({
 	dialog,
 }: {
 	packages: [TauriRepositoryDescriptor, TauriDownloadRepository][];
-	dialog: DialogContext<TauriRepositoryDescriptor[] | null>;
+	dialog: DialogContext<ConfirmingPackagesResult>;
 }) {
-	async function add() {
-		dialog.close(
-			packages
-				.filter(([_, download]) => download.type === "Success")
-				.map(([repo, _]) => repo),
-		);
+	const failedIndices = packages.flatMap(([_, download], index) =>
+		download.type === "DownloadError" ? [index] : [],
+	);
+
+	function add() {
+		dialog.close({
+			type: "add",
+			repositories: packages.flatMap(([repository, download]) =>
+				download.type === "Success"
+					? [{ repository, downloadId: download.download_id }]
+					: [],
+			),
+		});
 	}
 
 	return (
@@ -316,6 +396,17 @@ function ConfirmingPackages({
 				<Button onClick={() => dialog.close(null)}>
 					{tc("general:button:cancel")}
 				</Button>
+				{failedIndices.length > 0 && (
+					<Button
+						className="gap-2"
+						onClick={() =>
+							dialog.close({ type: "retry", indices: failedIndices })
+						}
+					>
+						<RefreshCw className="size-4" />
+						{tc("vpm repositories:import progress:retry")}
+					</Button>
+				)}
 				<Button onClick={add} className={"ml-2"}>
 					{tc("vpm repositories:button:add repositories")}
 				</Button>
@@ -329,48 +420,51 @@ type RepositoryImportItemStatus =
 	| "downloading"
 	| "downloaded"
 	| "completed"
-	| "failed"
-	| "cancelled";
+	| "failed";
 
-type RepositoryImportStatus =
-	| "running"
-	| "finalizing"
-	| "completed"
-	| "partial"
-	| "failed"
-	| "cancelled";
+type RepositoryImportStatus = "saving" | "partial" | "failed";
+
+type PreparedRepositoryImport = {
+	repository: TauriRepositoryDescriptor;
+	downloadId: string;
+};
+
+type ConfirmingPackagesResult =
+	| { type: "add"; repositories: PreparedRepositoryImport[] }
+	| { type: "retry"; indices: number[] }
+	| null;
 
 type RepositoryImportItem = {
 	key: string;
 	repository: TauriRepositoryDescriptor;
 	status: RepositoryImportItemStatus;
 	downloadFinished: boolean;
+	downloadId?: string;
 	message?: string;
 };
 
 type RepositoryImportTarget = {
 	itemIndex: number;
-	repository: TauriRepositoryDescriptor;
+	downloadId: string;
 };
 
-function ImportingRepositories({
+function SavingRepositories({
 	repositories,
 	dialog,
 }: {
-	repositories: TauriRepositoryDescriptor[];
+	repositories: PreparedRepositoryImport[];
 	dialog: DialogContext<void>;
 }) {
 	const [items, setItems] = useState<RepositoryImportItem[]>(() =>
-		repositories.map((repository) => ({
+		repositories.map(({ repository, downloadId }) => ({
 			key: crypto.randomUUID(),
 			repository,
-			status: "waiting",
-			downloadFinished: false,
+			downloadId,
+			status: "downloaded",
+			downloadFinished: true,
 		})),
 	);
-	const [status, setStatus] = useState<RepositoryImportStatus>("running");
-	const [cancelRequested, setCancelRequested] = useState(false);
-	const cancelRef = useRef<() => void>(() => {});
+	const [status, setStatus] = useState<RepositoryImportStatus>("saving");
 	const startedRef = useRef(false);
 
 	const runAttempt = useEffectEvent(
@@ -384,88 +478,23 @@ function ImportingRepositories({
 					targetIndices.has(index)
 						? {
 								...item,
-								status: "waiting",
-								downloadFinished: false,
+								status: "downloaded",
+								downloadFinished: true,
 								message: undefined,
 							}
 						: item,
 				),
 			);
-			setStatus("running");
-			setCancelRequested(false);
-
-			const updateItem = (
-				progressIndex: number,
-				update: (item: RepositoryImportItem) => RepositoryImportItem,
-			) => {
-				const itemIndex = targets[progressIndex]?.itemIndex;
-				if (itemIndex == null) return;
-				setItems((current) =>
-					current.map((item, index) =>
-						index === itemIndex ? update(item) : item,
-					),
-				);
-			};
-
-			const onProgress = (progress: TauriImportRepositoryProgress) => {
-				switch (progress.type) {
-					case "DownloadStarted":
-						updateItem(progress.index, (item) => ({
-							...item,
-							status: "downloading",
-						}));
-						break;
-					case "DownloadFinished":
-						updateItem(progress.index, (item) => ({
-							...item,
-							status: "downloaded",
-							downloadFinished: true,
-						}));
-						break;
-					case "Finalizing":
-						setStatus("finalizing");
-						break;
-					case "Failed":
-						updateItem(progress.index, (item) => ({
-							...item,
-							status: "failed",
-							downloadFinished: false,
-							message: progress.message,
-						}));
-						break;
-					default:
-						assertNever(progress);
-				}
-			};
-
-			const [cancel, resultPromise] = callAsyncCommand(
-				commands.environmentImportAddRepositories,
-				[targets.map((target) => target.repository)],
-				onProgress,
-			);
-			cancelRef.current = cancel;
+			setStatus("saving");
 
 			try {
-				const result = await resultPromise;
-				if (result === "cancelled") {
-					setItems((current) =>
-						current.map((item, index) =>
-							targetIndices.has(index) && item.status !== "completed"
-								? {
-										...item,
-										status: "cancelled",
-										downloadFinished: false,
-									}
-								: item,
-						),
-					);
-					setStatus("cancelled");
-					dialog.restore();
-					return;
-				}
-
+				const result = await commands.environmentImportAddRepositories(
+					targets.map((target) => target.downloadId),
+				);
 				const succeeded = new Set(result.succeeded);
-				const failed = new Set(result.failed);
+				const failed = new Map(
+					result.failed.map((failure) => [failure.index, failure.message]),
+				);
 				setItems((current) =>
 					current.map((item, index) => {
 						const progressIndex = targets.findIndex(
@@ -478,11 +507,13 @@ function ImportingRepositories({
 								downloadFinished: true,
 							};
 						}
-						if (failed.has(progressIndex)) {
+						const failureMessage = failed.get(progressIndex);
+						if (failureMessage != null) {
 							return {
 								...item,
 								status: "failed",
-								downloadFinished: false,
+								downloadFinished: true,
+								message: failureMessage,
 							};
 						}
 						return item;
@@ -490,14 +521,15 @@ function ImportingRepositories({
 				);
 
 				if (result.failed.length === 0) {
-					setStatus("completed");
 					toastSuccess(tt("vpm repositories:toast:repository added"));
+					void refreshImportedRepositories();
+					dialog.close();
+					return;
 				} else if (previouslyCompleted + result.succeeded.length > 0) {
 					setStatus("partial");
 				} else {
 					setStatus("failed");
 				}
-				dialog.restore();
 				if (result.succeeded.length > 0) {
 					void refreshImportedRepositories();
 				}
@@ -512,10 +544,6 @@ function ImportingRepositories({
 					),
 				);
 				setStatus(previouslyCompleted > 0 ? "partial" : "failed");
-				dialog.restore();
-			} finally {
-				cancelRef.current = () => {};
-				setCancelRequested(false);
 			}
 		},
 	);
@@ -524,53 +552,50 @@ function ImportingRepositories({
 		if (startedRef.current) return;
 		startedRef.current = true;
 		void runAttempt(
-			repositories.map((repository, itemIndex) => ({
+			repositories.map(({ downloadId }, itemIndex) => ({
 				itemIndex,
-				repository,
+				downloadId,
 			})),
 		);
 	}, [repositories]);
 
 	const retryTargets = items
 		.map((item, itemIndex) => ({ item, itemIndex }))
-		.filter(
-			({ item }) => item.status === "failed" || item.status === "cancelled",
-		)
+		.filter(({ item }) => item.status === "failed" && item.downloadId != null)
 		.map(({ item, itemIndex }) => ({
 			itemIndex,
-			repository: item.repository,
+			downloadId: item.downloadId as string,
 		}));
 	const completedCount = items.filter(
 		(item) => item.status === "completed",
 	).length;
 	const failedCount = items.filter((item) => item.status === "failed").length;
-	const completedSteps = countProcessedSteps(
-		items,
-		1,
-		(item) => (item.downloadFinished ? 1 : 0),
-		(item) => item.status === "failed",
-	);
-	const progress = progressWithFinalStep(
-		completedSteps,
-		items.length,
-		status === "completed" || status === "partial" || status === "failed",
-	);
-	const active = status === "running" || status === "finalizing";
-	const canCancel = status === "running" && !cancelRequested;
+	const active = status === "saving";
+
+	async function close() {
+		try {
+			await commands.environmentDiscardRepositoryDownloads(
+				retryTargets.map((target) => target.downloadId),
+			);
+		} finally {
+			dialog.close();
+		}
+	}
+
+	if (active) {
+		return (
+			<div className="flex items-center gap-2">
+				<RefreshCw className="size-5 animate-spin" />
+				<p>{tc("vpm repositories:dialog:adding repositories...")}</p>
+			</div>
+		);
+	}
 
 	return (
 		<>
 			<DialogHeader>
 				<DialogTitle className="flex items-center gap-2">
-					{status === "completed" ? (
-						<CheckCircle2 className="size-5 text-success" />
-					) : status === "partial" || status === "failed" ? (
-						<CircleAlert className="size-5 text-destructive" />
-					) : status === "cancelled" ? (
-						<CircleAlert className="size-5 text-warning" />
-					) : (
-						<RefreshCw className="size-5 animate-spin" />
-					)}
+					<CircleAlert className="size-5 text-destructive" />
 					{repositoryImportTitle(status)}
 				</DialogTitle>
 				<DialogDescription>
@@ -578,7 +603,6 @@ function ImportingRepositories({
 				</DialogDescription>
 			</DialogHeader>
 			<div className="space-y-2">
-				<Progress value={progress} max={100} />
 				<p className="text-center text-sm text-muted-foreground">
 					{tc("vpm repositories:import progress:summary", {
 						completed: completedCount,
@@ -586,48 +610,9 @@ function ImportingRepositories({
 					})}
 				</p>
 			</div>
-			<div className="overflow-hidden rounded-[1rem] bg-secondary/40">
-				<ScrollArea className="h-[min(420px,40vh)]">
-					<div className="p-2">
-						{items.map((item) => (
-							<div
-								className="flex items-center justify-between gap-3 p-2"
-								key={item.key}
-							>
-								<p className="min-w-0 truncate font-normal">
-									{shortRepositoryDescription(item.repository)}
-								</p>
-								<p
-									className={`shrink-0 text-sm ${repositoryImportStatusClass(item.status)}`}
-									title={item.message}
-								>
-									{repositoryImportStatusLabel(item.status)}
-								</p>
-							</div>
-						))}
-					</div>
-				</ScrollArea>
-			</div>
+			<RepositoryImportItems items={items} />
 			<DialogFooter>
-				{active ? (
-					<>
-						<Button
-							disabled={!canCancel}
-							onClick={() => {
-								setCancelRequested(true);
-								cancelRef.current();
-							}}
-						>
-							{cancelRequested
-								? tc("vpm repositories:import progress:cancelling")
-								: tc("general:button:cancel")}
-						</Button>
-						<Button className="gap-2" onClick={() => dialog.minimize()}>
-							<Minimize2 className="size-4" />
-							{tc("vpm repositories:import progress:minimize")}
-						</Button>
-					</>
-				) : (
+				{!active && (
 					<>
 						{retryTargets.length > 0 && (
 							<Button
@@ -638,7 +623,7 @@ function ImportingRepositories({
 								{tc("vpm repositories:import progress:retry")}
 							</Button>
 						)}
-						<Button onClick={() => dialog.close()}>
+						<Button onClick={() => void close()}>
 							{tc("general:button:close")}
 						</Button>
 					</>
@@ -650,7 +635,6 @@ function ImportingRepositories({
 
 async function refreshImportedRepositories() {
 	try {
-		await commands.environmentRefetchPackages();
 		await Promise.all([
 			queryClient.invalidateQueries(environmentRepositoriesInfo),
 			queryClient.invalidateQueries(environmentPackages),
@@ -664,18 +648,12 @@ async function refreshImportedRepositories() {
 
 function repositoryImportTitle(status: RepositoryImportStatus) {
 	switch (status) {
-		case "running":
-			return tc("vpm repositories:import progress:title");
-		case "finalizing":
+		case "saving":
 			return tc("vpm repositories:import progress:finalizing");
-		case "completed":
-			return tc("vpm repositories:import progress:completed");
 		case "partial":
 			return tc("vpm repositories:import progress:partial");
 		case "failed":
 			return tc("vpm repositories:import progress:failed");
-		case "cancelled":
-			return tc("vpm repositories:import progress:cancelled");
 		default:
 			return assertNever(status);
 	}
@@ -693,8 +671,6 @@ function repositoryImportStatusLabel(status: RepositoryImportItemStatus) {
 			return tc("vpm repositories:import progress:status:completed");
 		case "failed":
 			return tc("vpm repositories:import progress:status:failed");
-		case "cancelled":
-			return tc("vpm repositories:import progress:status:cancelled");
 		default:
 			return assertNever(status);
 	}
@@ -706,9 +682,44 @@ function repositoryImportStatusClass(status: RepositoryImportItemStatus) {
 			return "text-success";
 		case "failed":
 			return "text-destructive";
-		case "cancelled":
-			return "text-warning";
 		default:
 			return "text-muted-foreground";
 	}
+}
+
+function RepositoryImportItems({ items }: { items: RepositoryImportItem[] }) {
+	return (
+		<div className="overflow-hidden rounded-[1rem] bg-secondary/40">
+			<ScrollArea className="h-[min(420px,40vh)]">
+				<div className="p-2">
+					{items.map((item) => (
+						<div
+							className="flex items-center justify-between gap-3 p-2"
+							key={item.key}
+						>
+							<p className="min-w-0 truncate font-normal">
+								{shortRepositoryDescription(item.repository)}
+							</p>
+							<p
+								className={`shrink-0 text-sm ${repositoryImportStatusClass(item.status)}`}
+								title={item.message}
+							>
+								{repositoryImportStatusLabel(item.status)}
+							</p>
+						</div>
+					))}
+				</div>
+			</ScrollArea>
+		</div>
+	);
+}
+
+async function discardDownloadedRepositories(
+	packages: [TauriRepositoryDescriptor, TauriDownloadRepository][],
+) {
+	const downloadIds = packages.flatMap(([_, download]) =>
+		download.type === "Success" ? [download.download_id] : [],
+	);
+	if (downloadIds.length === 0) return;
+	await commands.environmentDiscardRepositoryDownloads(downloadIds);
 }

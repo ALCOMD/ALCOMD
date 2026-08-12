@@ -581,7 +581,7 @@
     "vpm repositories:dialog:button:continue importing repositories": "添加儲存庫",
 
     "vpm repositories:dialog:downloading repositories...": "下載儲存庫中...",
-    "vpm repositories:dialog:downloaded n/m": "已下載 {{downloaded}}/{{totalCount}}",
+    "vpm repositories:dialog:processed n/m": "已處理 {{processed}}/{{totalCount}}",
 
     "vpm repositories:dialog:confirm packages list": "你將添加以下包含套件的儲存庫。有錯誤的儲存庫將不被添加。你要繼續嗎？",
     "vpm repositories:dialog:download error:duplicated": "已添加過儲存庫。",
@@ -603,7 +603,7 @@
     "vpm repositories:import progress:retry": "重試",
     "vpm repositories:import progress:status:waiting": "等待中",
     "vpm repositories:import progress:status:downloading": "下載中",
-    "vpm repositories:import progress:status:downloaded": "等待儲存",
+    "vpm repositories:import progress:status:downloaded": "已下載",
     "vpm repositories:import progress:status:completed": "已添加",
     "vpm repositories:import progress:status:failed": "失敗",
     "vpm repositories:import progress:status:cancelled": "已取消",

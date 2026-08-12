@@ -107,6 +107,23 @@ impl PackagesState {
         self.load_impl(settings, io, http, None, true).await
     }
 
+    pub async fn reload_from_cache(
+        &self,
+        settings: &Settings,
+        io: &DefaultEnvironmentIo,
+    ) -> io::Result<PackagesStateRef<'_>> {
+        let guard = self.load_lock.lock().await;
+        let collection = PackageCollection::load_cache(settings, io).await?;
+        let arc = Arc::new(PackagesStateInner::new(collect_packages(collection)));
+        self.inner.store(Some(arc.clone()));
+        drop(guard);
+
+        Ok(PackagesStateRef {
+            arc,
+            _phantom_data: PhantomData,
+        })
+    }
+
     async fn load_impl(
         &self,
         settings: &Settings,
@@ -204,14 +221,6 @@ impl PackagesState {
             PackageCollection::load(settings, io, Some(http)).await?
         };
 
-        fn collect_packages(
-            collection: PackageCollection,
-        ) -> Yoke<YokeData<'static>, Arc<PackageCollection>> {
-            Yoke::<YokeData<'static>, _>::attach_to_cart(Arc::new(collection), |x| {
-                YokeData::new(x.get_all_packages().collect())
-            })
-        }
-
         let arc = Arc::new(PackagesStateInner::new(collect_packages(collection)));
         self.inner.store(Some(arc.clone()));
 
@@ -234,6 +243,14 @@ impl PackagesState {
     pub fn clear_cache(&self) {
         self.inner.store(None);
     }
+}
+
+fn collect_packages(
+    collection: PackageCollection,
+) -> Yoke<YokeData<'static>, Arc<PackageCollection>> {
+    Yoke::<YokeData<'static>, _>::attach_to_cart(Arc::new(collection), |x| {
+        YokeData::new(x.get_all_packages().collect())
+    })
 }
 
 pub async fn sync_repository_names(

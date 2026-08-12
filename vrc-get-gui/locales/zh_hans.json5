@@ -567,7 +567,7 @@
     "vpm repositories:dialog:button:continue importing repositories": "添加存储库",
 
     "vpm repositories:dialog:downloading repositories...": "正在下载存储库...",
-    "vpm repositories:dialog:downloaded n/m": "已下载 {{downloaded}}/{{totalCount}}",
+    "vpm repositories:dialog:processed n/m": "已处理 {{processed}}/{{totalCount}}",
 
     "vpm repositories:dialog:confirm packages list": "您即将添加以下存储库和软件包。错误的存储库将不会被添加。要继续吗？",
     "vpm repositories:dialog:download error:duplicated": "这个存储库已经被添加过了。",
@@ -589,7 +589,7 @@
     "vpm repositories:import progress:retry": "重试",
     "vpm repositories:import progress:status:waiting": "等待中",
     "vpm repositories:import progress:status:downloading": "下载中",
-    "vpm repositories:import progress:status:downloaded": "等待保存",
+    "vpm repositories:import progress:status:downloaded": "已下载",
     "vpm repositories:import progress:status:completed": "已添加",
     "vpm repositories:import progress:status:failed": "失败",
     "vpm repositories:import progress:status:cancelled": "已取消",

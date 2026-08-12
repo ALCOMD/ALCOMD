@@ -10,13 +10,3 @@ export function countProcessedSteps<T>(
 		0,
 	);
 }
-
-export function progressWithFinalStep(
-	processedSteps: number,
-	totalSteps: number,
-	finalStepFinished: boolean,
-): number {
-	if (finalStepFinished) return 100;
-	if (totalSteps === 0) return 0;
-	return (processedSteps / totalSteps) * 99;
-}

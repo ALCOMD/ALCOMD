@@ -565,7 +565,7 @@
     "vpm repositories:dialog:button:continue importing repositories": "추가",
 
     "vpm repositories:dialog:downloading repositories...": "저장소 정보 다운로드 중...",
-    "vpm repositories:dialog:downloaded n/m": "진행도: {{downloaded}}/{{totalCount}}",
+    "vpm repositories:dialog:processed n/m": "처리됨: {{processed}}/{{totalCount}}",
 
     "vpm repositories:dialog:confirm packages list": "다음 VPM 저장소와 패키지를 추가하려고 합니다.<br>오류가 있는 저장소는 추가되지 않습니다. 계속 진행하시겠습니까?",
     "vpm repositories:dialog:download error:duplicated": "이 VPM 저장소는 이미 등록되어 있습니다.",
@@ -587,7 +587,7 @@
     "vpm repositories:import progress:retry": "다시 시도",
     "vpm repositories:import progress:status:waiting": "대기 중",
     "vpm repositories:import progress:status:downloading": "다운로드 중",
-    "vpm repositories:import progress:status:downloaded": "저장 대기 중",
+    "vpm repositories:import progress:status:downloaded": "다운로드됨",
     "vpm repositories:import progress:status:completed": "추가됨",
     "vpm repositories:import progress:status:failed": "실패",
     "vpm repositories:import progress:status:cancelled": "취소됨",

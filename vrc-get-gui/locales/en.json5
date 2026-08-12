@@ -586,7 +586,7 @@
     "vpm repositories:dialog:button:continue importing repositories": "Add Repositories",
 
     "vpm repositories:dialog:downloading repositories...": "Downloading repositories...",
-    "vpm repositories:dialog:downloaded n/m": "Downloaded {{downloaded}}/{{totalCount}}",
+    "vpm repositories:dialog:processed n/m": "Processed {{processed}}/{{totalCount}}",
 
     "vpm repositories:dialog:confirm packages list": "You're about to add the following repositories with packages. Errored repositories will not be added. Do you want to continue?",
     "vpm repositories:dialog:download error:duplicated": "The repository is already added.",
@@ -608,7 +608,7 @@
     "vpm repositories:import progress:retry": "Retry",
     "vpm repositories:import progress:status:waiting": "Waiting",
     "vpm repositories:import progress:status:downloading": "Downloading",
-    "vpm repositories:import progress:status:downloaded": "Waiting to save",
+    "vpm repositories:import progress:status:downloaded": "Downloaded",
     "vpm repositories:import progress:status:completed": "Added",
     "vpm repositories:import progress:status:failed": "Failed",
     "vpm repositories:import progress:status:cancelled": "Cancelled",
