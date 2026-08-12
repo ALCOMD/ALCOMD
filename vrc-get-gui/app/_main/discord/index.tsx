@@ -307,33 +307,42 @@ function DiscordPreviewCard({
 	options: DiscordDisplayOptions;
 }) {
 	const elapsed = useElapsedTime(activity?.startedAt ?? null);
-	const details = activity
-		? options.projectName
-			? tc("unity discord:preview:editing", {
-					projectName: activity.projectName,
-				})
-			: tc("unity discord:preview:editing unity")
-		: tc("unity discord:preview:waiting");
-	const stateParts = [];
+	if (!activity) {
+		return (
+			<Card className="p-5 compact:p-4">
+				<div className="mb-4 flex items-center gap-2">
+					<Monitor className="size-5 text-primary" />
+					<h2 className="font-medium">{tc("unity discord:preview:title")}</h2>
+				</div>
+				<div className="flex min-h-32 flex-col items-center justify-center rounded-2xl bg-secondary/60 px-5 py-6 text-center">
+					<PowerOff className="size-7 text-muted-foreground" />
+					<p className="mt-3 text-sm font-medium">
+						{tc("unity discord:preview:inactive")}
+					</p>
+					<p className="mt-1 text-sm text-muted-foreground">
+						{tc("unity discord:preview:inactive description")}
+					</p>
+				</div>
+			</Card>
+		);
+	}
+	const details = options.projectName
+		? `Editing ${activity.projectName}`
+		: "Editing Unity";
+	const stateParts: string[] = [];
 	if (options.unityVersion) {
 		stateParts.push(
-			activity?.unityVersion
-				? tc("unity discord:preview:unity version", {
-						version: activity.unityVersion,
-					})
-				: tc("unity discord:preview:unity editor"),
+			activity.unityVersion ? `Unity ${activity.unityVersion}` : "Unity Editor",
 		);
 	}
-	if (options.editorCount && activity) {
+	if (options.editorCount) {
 		stateParts.push(
-			tc("unity discord:preview:editors", {
-				count: activity.editorCount,
-			}),
+			activity.editorCount === 1
+				? "1 editor open"
+				: `${activity.editorCount} editors open`,
 		);
 	}
-	const state = stateParts.length
-		? stateParts.join(" · ")
-		: tc("unity discord:preview:unity editor");
+	const state = stateParts.length ? stateParts.join(" · ") : "Unity Editor";
 
 	return (
 		<Card className="p-5 compact:p-4">
@@ -363,8 +372,8 @@ function DiscordPreviewCard({
 					<div className="min-w-0 pt-0.5 text-sm">
 						<h3 className="truncate font-semibold">Unity</h3>
 						<p className="truncate opacity-90">{details}</p>
-						<p className="truncate opacity-90">{activity ? state : "—"}</p>
-						{activity && options.sessionDuration && (
+						<p className="truncate opacity-90">{state}</p>
+						{options.sessionDuration && (
 							<p className="mt-1 flex items-center gap-1.5 opacity-75">
 								<Clock3 className="size-3.5" />
 								{elapsed}
@@ -439,12 +448,6 @@ function SharedDataCard({
 					</li>
 				))}
 			</ul>
-			<div className="mt-3 flex gap-2 rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm text-muted-foreground">
-				<ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />
-				<p className="min-w-0 whitespace-normal break-words">
-					{tc("unity discord:data:privacy")}
-				</p>
-			</div>
 		</Card>
 	);
 }
@@ -467,7 +470,10 @@ export function formatElapsedTime(totalSeconds: number) {
 	const hours = Math.floor(totalSeconds / 3_600);
 	const minutes = Math.floor((totalSeconds % 3_600) / 60);
 	const seconds = totalSeconds % 60;
-	return [hours, minutes, seconds]
-		.map((value) => value.toString().padStart(2, "0"))
-		.join(":");
+	if (hours > 0) {
+		return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds
+			.toString()
+			.padStart(2, "0")}`;
+	}
+	return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
