@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { CheckCircle2, CircleAlert, Minimize2, RefreshCw } from "lucide-react";
 import type React from "react";
 import { Fragment, useSyncExternalStore } from "react";
+import { packageApplyProgressPercent } from "@/app/_main/projects/manage/-package-apply-progress";
 import {
 	type PackageChangeMutationResult,
 	shouldClearBulkUpdateSelection,
@@ -657,6 +658,11 @@ export function PackageApplyProgressHost() {
 	const showCloseButton =
 		state.status === "completed" || state.status === "failed";
 	const canCancel = canCancelPackageApplyProgress(state);
+	const progressPercent = packageApplyProgressPercent(
+		state.status,
+		state.completedSteps,
+		state.totalSteps,
+	);
 
 	return (
 		<>
@@ -698,15 +704,10 @@ export function PackageApplyProgressHost() {
 						</DialogDescription>
 					</DialogHeader>
 					<div className="space-y-2">
-						<Progress value={state.completedSteps} max={state.totalSteps} />
+						<Progress value={progressPercent} max={100} />
 						<p className="text-center text-sm text-muted-foreground">
 							{tc("projects:manage:progress:percent", {
-								percent:
-									state.totalSteps === 0
-										? 100
-										: Math.round(
-												(state.completedSteps / state.totalSteps) * 100,
-											),
+								percent: progressPercent,
 							})}
 						</p>
 						<p className="text-center text-sm text-muted-foreground">
