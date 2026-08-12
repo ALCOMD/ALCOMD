@@ -80,6 +80,27 @@ pub(crate) enum DownloadRepositoryOutcome {
     Success(DownloadedRepository),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum AddRepositoriesProgress {
+    DownloadStarted { index: usize },
+    DownloadFinished { index: usize },
+    AddStarted { index: usize },
+    AddFinished { index: usize },
+    Failed { index: usize, message: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AddRepositoryFailure {
+    pub(crate) index: usize,
+    pub(crate) message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct AddRepositoriesOutcome {
+    pub(crate) succeeded: Vec<usize>,
+    pub(crate) failures: Vec<AddRepositoryFailure>,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct RepositoryIdentitySnapshot {
     urls: HashMap<String, RepositoryNames>,
@@ -346,35 +367,64 @@ pub(crate) async fn add_repositories(
     packages: &PackagesState,
     repository_config: &RepositoryConfigState,
     io: &DefaultEnvironmentIo,
-    http: &reqwest::Client,
+    http: &impl HttpClient,
     repositories: Vec<RepositoryDescriptor>,
-) -> Result<(), RustError> {
+    mut on_progress: impl FnMut(AddRepositoriesProgress) + Send,
+) -> Result<AddRepositoriesOutcome, RustError> {
     let mut settings = settings.load_mut(io).await?;
     let mut candidate = settings.clone();
-    let repository_urls = repositories
-        .iter()
-        .map(|repository| repository.url.clone())
-        .collect::<Vec<_>>();
-    for repository in repositories {
-        add_remote_repo(
+
+    let mut succeeded = Vec::new();
+    let mut failures = Vec::new();
+    for (index, repository) in repositories.iter().enumerate() {
+        on_progress(AddRepositoriesProgress::DownloadStarted { index });
+        match add_remote_repo(
             &mut candidate,
-            repository.url,
+            repository.url.clone(),
             None,
-            repository.headers,
+            repository.headers.clone(),
             io,
             http,
         )
-        .await?;
+        .await
+        {
+            Ok(()) => {
+                succeeded.push(index);
+                on_progress(AddRepositoriesProgress::DownloadFinished { index });
+            }
+            Err(error) => {
+                let message = error.to_string();
+                log::warn!("failed to import repository {}: {message}", repository.url);
+                failures.push(AddRepositoryFailure {
+                    index,
+                    message: message.clone(),
+                });
+                on_progress(AddRepositoriesProgress::Failed { index, message });
+            }
+        }
     }
-    *settings = candidate;
-    let repository_display_names = repository_urls
-        .into_iter()
-        .map(|repository_url| {
-            let repository = settings
+
+    if succeeded.is_empty() {
+        settings.maybe_save().await?;
+        return Ok(AddRepositoriesOutcome {
+            succeeded,
+            failures,
+        });
+    }
+
+    for &index in &succeeded {
+        on_progress(AddRepositoriesProgress::AddStarted { index });
+    }
+
+    let repository_display_names = succeeded
+        .iter()
+        .map(|&index| {
+            let repository_url = &repositories[index].url;
+            let repository = candidate
                 .get_user_repos()
                 .iter()
-                .find(|repository| repository.url() == Some(&repository_url))
-                .expect("successfully added repository must exist in settings");
+                .find(|repository| repository.url() == Some(repository_url))
+                .expect("successfully downloaded repository must exist in candidate settings");
             let display_name = repository
                 .name()
                 .or(repository.id())
@@ -383,14 +433,26 @@ pub(crate) async fn add_repositories(
             (repository_url.to_string(), display_name)
         })
         .collect::<Vec<_>>();
-    settings.save().await?;
+
     let mut config = repository_config.load_mut().await;
     for (repository_url, display_name) in repository_display_names {
         config.display_names.insert(repository_url, display_name);
     }
     config.save().await?;
+
+    candidate.save(io).await?;
+    *settings = candidate;
+    settings.maybe_save().await?;
     packages.clear_cache();
-    Ok(())
+
+    for &index in &succeeded {
+        on_progress(AddRepositoriesProgress::AddFinished { index });
+    }
+
+    Ok(AddRepositoriesOutcome {
+        succeeded,
+        failures,
+    })
 }
 
 pub(crate) async fn export_repositories(
@@ -613,7 +675,46 @@ fn user_repository_summary(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use futures::AsyncRead;
+    use futures::io::Cursor;
+    use std::io as std_io;
     use std::path::PathBuf;
+
+    struct RepositoryImportHttp;
+
+    impl HttpClient for RepositoryImportHttp {
+        async fn get(
+            &self,
+            _url: &Url,
+            _headers: &IndexMap<&str, &str>,
+        ) -> std_io::Result<impl AsyncRead + Send> {
+            Ok(Cursor::new(Vec::new()))
+        }
+
+        async fn get_with_etag(
+            &self,
+            url: &Url,
+            _headers: &IndexMap<Box<str>, Box<str>>,
+            _current_etag: Option<&str>,
+        ) -> std_io::Result<Option<(impl AsyncRead + Send, Option<Box<str>>)>> {
+            if url.path().contains("timeout") {
+                return Err(std_io::Error::new(
+                    std_io::ErrorKind::TimedOut,
+                    "repository request timed out",
+                ));
+            }
+
+            let repository_id = url
+                .path_segments()
+                .and_then(|mut segments| segments.next_back())
+                .unwrap_or("repository")
+                .trim_end_matches(".json");
+            let contents = format!(
+                r#"{{"id":"com.example.{repository_id}","name":"{repository_id}","url":"{url}","packages":{{}}}}"#
+            );
+            Ok(Some((Cursor::new(contents.into_bytes()), None)))
+        }
+    }
 
     fn repository(url: &str, id: Option<&str>) -> UserRepoSetting {
         UserRepoSetting::new(
@@ -725,5 +826,79 @@ mod tests {
                 .get_user_repos()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn repository_import_commits_successes_when_one_download_fails() {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(repository_import_commits_successes_when_one_download_fails_inner());
+    }
+
+    async fn repository_import_commits_successes_when_one_download_fails_inner() {
+        let temp = tempfile::tempdir().unwrap();
+        let io = DefaultEnvironmentIo::new(temp.path().into());
+        let settings = SettingsState::new();
+        let packages = PackagesState::new();
+        let repository_config = RepositoryConfigState::new_load(&io).await.unwrap();
+        let repositories = ["first.json", "timeout.json", "second.json"]
+            .into_iter()
+            .map(|name| RepositoryDescriptor {
+                url: Url::parse(&format!("https://example.com/{name}")).unwrap(),
+                headers: IndexMap::new(),
+            })
+            .collect::<Vec<_>>();
+        let mut progress = Vec::new();
+
+        let outcome = add_repositories(
+            &settings,
+            &packages,
+            &repository_config,
+            &io,
+            &RepositoryImportHttp,
+            repositories,
+            |event| progress.push(event),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(outcome.succeeded, vec![0, 2]);
+        assert_eq!(outcome.failures.len(), 1);
+        assert_eq!(outcome.failures[0].index, 1);
+        assert!(outcome.failures[0].message.contains("timed out"));
+        assert_eq!(
+            progress,
+            vec![
+                AddRepositoriesProgress::DownloadStarted { index: 0 },
+                AddRepositoriesProgress::DownloadFinished { index: 0 },
+                AddRepositoriesProgress::DownloadStarted { index: 1 },
+                AddRepositoriesProgress::Failed {
+                    index: 1,
+                    message: "repository request timed out".to_string(),
+                },
+                AddRepositoriesProgress::DownloadStarted { index: 2 },
+                AddRepositoriesProgress::DownloadFinished { index: 2 },
+                AddRepositoriesProgress::AddStarted { index: 0 },
+                AddRepositoriesProgress::AddStarted { index: 2 },
+                AddRepositoriesProgress::AddFinished { index: 0 },
+                AddRepositoriesProgress::AddFinished { index: 2 },
+            ]
+        );
+
+        let settings = settings.load(&io).await.unwrap();
+        assert_eq!(settings.get_user_repos().len(), 2);
+        assert!(settings.get_user_repos().iter().any(|repository| {
+            repository
+                .url()
+                .is_some_and(|url| url.path() == "/first.json")
+        }));
+        assert!(settings.get_user_repos().iter().any(|repository| {
+            repository
+                .url()
+                .is_some_and(|url| url.path() == "/second.json")
+        }));
+        assert_eq!(repository_config.get().display_names.len(), 2);
     }
 }

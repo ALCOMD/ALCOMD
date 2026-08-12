@@ -14,6 +14,7 @@ export interface DialogContext<in R> {
 	close: (arg: R) => void;
 	error: (arg: unknown) => void;
 	minimize: () => void;
+	restore: () => void;
 	closing: boolean;
 }
 
@@ -118,6 +119,11 @@ export function showDialog(
 			minimize() {
 				if (escBehavior === "minimize") {
 					globalState.minimizeDialog(key);
+				}
+			},
+			restore() {
+				if (escBehavior === "minimize") {
+					globalState.restoreDialog(key);
 				}
 			},
 		};

@@ -35,6 +35,7 @@ category order, and bullet counts must match this canonical entry.
 ### Fixed
 
 - Displayed the invalid computer-name notice as a high-severity red error because this condition causes VRCSDK uploads to fail.
+- Kept repository-list imports running after individual repository download failures, committed the successful repositories, and added per-repository progress with retry for unfinished entries.
 
 ## [3.3.0-beta.1] - 2026-08-10
 

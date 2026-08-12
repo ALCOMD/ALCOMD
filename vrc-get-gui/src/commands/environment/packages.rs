@@ -9,14 +9,17 @@ use crate::backend::packages::{
 };
 use crate::backend::repository_operations;
 use crate::backend::user_packages;
-use crate::commands::async_command::{AsyncCallResult, With, async_command};
+use crate::commands::async_command::{
+    AsyncCallResult, With, async_command, async_command_with_cancel_state,
+};
 use crate::commands::prelude::*;
 use futures::future::try_join_all;
 use indexmap::IndexMap;
 use log::info;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tauri::{AppHandle, Manager, State, Window};
 use tauri_plugin_dialog::DialogExt;
 use url::Url;
@@ -620,6 +623,44 @@ pub struct TauriRepositoryDescriptor {
     pub headers: Headers,
 }
 
+#[derive(Serialize, specta::Type, Clone)]
+#[serde(tag = "type")]
+pub enum TauriImportRepositoryProgress {
+    DownloadStarted { index: usize },
+    DownloadFinished { index: usize },
+    AddStarted { index: usize },
+    AddFinished { index: usize },
+    Failed { index: usize, message: String },
+}
+
+impl From<repository_operations::AddRepositoriesProgress> for TauriImportRepositoryProgress {
+    fn from(value: repository_operations::AddRepositoriesProgress) -> Self {
+        match value {
+            repository_operations::AddRepositoriesProgress::DownloadStarted { index } => {
+                Self::DownloadStarted { index }
+            }
+            repository_operations::AddRepositoriesProgress::DownloadFinished { index } => {
+                Self::DownloadFinished { index }
+            }
+            repository_operations::AddRepositoriesProgress::AddStarted { index } => {
+                Self::AddStarted { index }
+            }
+            repository_operations::AddRepositoriesProgress::AddFinished { index } => {
+                Self::AddFinished { index }
+            }
+            repository_operations::AddRepositoriesProgress::Failed { index, message } => {
+                Self::Failed { index, message }
+            }
+        }
+    }
+}
+
+#[derive(Serialize, specta::Type, Clone)]
+pub struct TauriImportRepositoriesResult {
+    succeeded: Vec<usize>,
+    failed: Vec<usize>,
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn environment_reorder_repositories(
@@ -781,14 +822,12 @@ pub async fn environment_import_download_repositories(
 #[tauri::command]
 #[specta::specta]
 pub async fn environment_import_add_repositories(
-    app: AppHandle,
-    settings: State<'_, SettingsState>,
-    packages: State<'_, PackagesState>,
-    repository_config: State<'_, RepositoryConfigState>,
-    http: State<'_, reqwest::Client>,
-    io: State<'_, DefaultEnvironmentIo>,
+    window: Window,
+    channel: String,
     repositories: Vec<TauriRepositoryDescriptor>,
-) -> Result<(), RustError> {
+) -> Result<AsyncCallResult<TauriImportRepositoryProgress, TauriImportRepositoriesResult>, RustError>
+{
+    let app = window.app_handle().clone();
     let activity = app.state::<ActivityLogState>();
     let repo_count = repositories.len();
     let input = ActivityInput::new(
@@ -802,31 +841,112 @@ pub async fn environment_import_add_repositories(
         "repositories",
         repo_count.to_string(),
     )]);
-    activity
-        .track_result(
-            Some(&app),
-            input,
-            "Repositories imported",
-            Vec::new(),
-            async move {
-                repository_operations::add_repositories(
+    let tracker = activity.start_activity(Some(&app), input);
+    let activity_finished = Arc::new(AtomicBool::new(false));
+    let activity_finished_for_async = activity_finished.clone();
+    let activity_finished_for_cancel = activity_finished.clone();
+    let tracker_for_async = tracker.clone();
+    let tracker_for_cancel = tracker.clone();
+    let app_for_async = app.clone();
+    let app_for_cancel = app.clone();
+
+    async_command_with_cancel_state(
+        channel,
+        window,
+        async move {
+            With::<TauriImportRepositoryProgress>::continue_async(move |ctx| async move {
+                let settings = ctx.state::<SettingsState>();
+                let packages = ctx.state::<PackagesState>();
+                let repository_config = ctx.state::<RepositoryConfigState>();
+                let http = ctx.state::<reqwest::Client>();
+                let io = ctx.state::<DefaultEnvironmentIo>();
+                let repositories = repositories
+                    .into_iter()
+                    .map(|repository| repository_operations::RepositoryDescriptor {
+                        url: repository.url,
+                        headers: repository.headers,
+                    })
+                    .collect();
+
+                let result = repository_operations::add_repositories(
                     settings.inner(),
                     packages.inner(),
                     repository_config.inner(),
                     io.inner(),
                     http.inner(),
-                    repositories
-                        .into_iter()
-                        .map(|repository| repository_operations::RepositoryDescriptor {
-                            url: repository.url,
-                            headers: repository.headers,
-                        })
-                        .collect(),
+                    repositories,
+                    |progress| {
+                        if let Err(error) = ctx.emit(progress.into()) {
+                            log::error!("failed to emit repository import progress: {error}");
+                        }
+                    },
                 )
-                .await
-            },
-        )
-        .await
+                .await;
+
+                activity_finished_for_async.store(true, Ordering::SeqCst);
+                let activity = app_for_async.state::<ActivityLogState>();
+                match result {
+                    Ok(outcome) => {
+                        let succeeded = outcome.succeeded;
+                        let failure_message = outcome
+                            .failures
+                            .iter()
+                            .map(|failure| format!("#{}: {}", failure.index + 1, failure.message))
+                            .collect::<Vec<_>>()
+                            .join("; ");
+                        let failed = outcome
+                            .failures
+                            .iter()
+                            .map(|failure| failure.index)
+                            .collect::<Vec<_>>();
+                        let details = vec![
+                            ActivityDetail::new("succeeded", succeeded.len().to_string()),
+                            ActivityDetail::new("failed", failed.len().to_string()),
+                        ];
+                        if failed.is_empty() {
+                            activity.finish_success(
+                                Some(&app_for_async),
+                                &tracker_for_async,
+                                "Repositories imported",
+                                details,
+                            );
+                        } else {
+                            activity.finish_failed(
+                                Some(&app_for_async),
+                                &tracker_for_async,
+                                "Repository import partially completed",
+                                details,
+                                failure_message,
+                            );
+                        }
+                        Ok(TauriImportRepositoriesResult { succeeded, failed })
+                    }
+                    Err(error) => {
+                        activity.finish_failed(
+                            Some(&app_for_async),
+                            &tracker_for_async,
+                            "Repository import failed",
+                            Vec::new(),
+                            &error,
+                        );
+                        Err(error)
+                    }
+                }
+            })
+        },
+        |_| {},
+        move || {
+            if !activity_finished_for_cancel.swap(true, Ordering::SeqCst) {
+                app_for_cancel.state::<ActivityLogState>().finish_cancelled(
+                    Some(&app_for_cancel),
+                    &tracker_for_cancel,
+                    "Repository import cancelled",
+                    Vec::new(),
+                );
+            }
+        },
+    )
+    .await
 }
 
 #[tauri::command]

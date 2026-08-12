@@ -65,7 +65,7 @@ export const commands = {
 	environmentReorderRepositories: (repositoryUrls: string[]) => __TAURI_INVOKE<null>("environment_reorder_repositories", { repositoryUrls }),
 	environmentImportRepositoryPick: () => __TAURI_INVOKE<TauriImportRepositoryPickResult>("environment_import_repository_pick"),
 	environmentImportDownloadRepositories: (channel: string, repositories: TauriRepositoryDescriptor[]) => __TAURI_INVOKE<AsyncCallResult<number, ([TauriRepositoryDescriptor, TauriDownloadRepository])[]>>("environment_import_download_repositories", { channel, repositories }),
-	environmentImportAddRepositories: (repositories: TauriRepositoryDescriptor[]) => __TAURI_INVOKE<null>("environment_import_add_repositories", { repositories }),
+	environmentImportAddRepositories: (channel: string, repositories: TauriRepositoryDescriptor[]) => __TAURI_INVOKE<AsyncCallResult<TauriImportRepositoryProgress, TauriImportRepositoriesResult>>("environment_import_add_repositories", { channel, repositories }),
 	environmentExportRepositories: () => __TAURI_INVOKE<null>("environment_export_repositories"),
 	environmentClearPackageCache: () => __TAURI_INVOKE<null>("environment_clear_package_cache"),
 	environmentGetUserPackages: () => __TAURI_INVOKE<TauriUserPackage[]>("environment_get_user_packages"),
@@ -447,6 +447,13 @@ export type TauriImportDuplicated_Serialize = {
 };
 
 export type TauriImportRepositoryPickResult = { type: "NoFilePicked" } | { type: "ParsedRepositories"; repositories: TauriRepositoryDescriptor[]; unparsable_lines: string[] };
+
+export type TauriImportRepositoriesResult = {
+	succeeded: number[],
+	failed: number[],
+};
+
+export type TauriImportRepositoryProgress = { type: "DownloadStarted"; index: number } | { type: "DownloadFinished"; index: number } | { type: "AddStarted"; index: number } | { type: "AddFinished"; index: number } | { type: "Failed"; index: number; message: string };
 
 export type TauriImportTemplateResult = TauriImportTemplateResult_Serialize | TauriImportTemplateResult_Deserialize;
 
