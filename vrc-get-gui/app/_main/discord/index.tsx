@@ -367,18 +367,18 @@ function DiscordPreviewCard({
 				<Monitor className="size-5 text-primary" />
 				<h2 className="font-medium">{tc("unity discord:preview:title")}</h2>
 			</div>
-			<div className="rounded-2xl bg-inverse-surface p-4 text-inverse-on-surface shadow-sm">
-				<p className="text-[0.68rem] font-semibold tracking-wider opacity-65">
+			<div className="rounded-2xl bg-secondary/60 p-4 text-foreground">
+				<p className="text-[0.68rem] font-semibold tracking-wider text-muted-foreground">
 					{tc("unity discord:preview:activity")}
 				</p>
 				<div className="mt-3 flex min-w-0 gap-3">
-					<div className="relative size-16 shrink-0 rounded-xl bg-white p-1.5 shadow-sm">
+					<div className="relative size-24 shrink-0">
 						<img
 							src={unityIconUrl}
 							alt=""
 							className="size-full object-contain"
 						/>
-						<span className="absolute -right-1 -bottom-1 flex size-6 items-center justify-center rounded-full bg-inverse-surface p-0.5 ring-2 ring-inverse-surface">
+						<span className="absolute right-0 bottom-0 flex size-8 items-center justify-center rounded-full bg-card p-0.5 ring-2 ring-card">
 							<img
 								src={alcomd3IconUrl}
 								alt=""
@@ -386,11 +386,11 @@ function DiscordPreviewCard({
 							/>
 						</span>
 					</div>
-					<div className="min-w-0 pt-0.5 text-sm">
+					<div className="min-w-0 self-center text-sm">
 						<h3 className="truncate font-semibold">Unity</h3>
-						<p className="truncate opacity-90">{details}</p>
-						<p className="truncate opacity-90">{state}</p>
-						<p className="mt-1 flex items-center gap-1.5 opacity-75">
+						<p className="truncate text-muted-foreground">{details}</p>
+						<p className="truncate text-muted-foreground">{state}</p>
+						<p className="mt-1 flex items-center gap-1.5 text-muted-foreground">
 							<Clock3 className="size-3.5" />
 							{elapsed}
 						</p>
