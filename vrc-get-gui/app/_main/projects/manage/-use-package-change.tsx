@@ -4,6 +4,10 @@ import { listen } from "@tauri-apps/api/event";
 import { CheckCircle2, CircleAlert, Minimize2, RefreshCw } from "lucide-react";
 import type React from "react";
 import { Fragment, useSyncExternalStore } from "react";
+import {
+	type PackageChangeMutationResult,
+	shouldClearBulkUpdateSelection,
+} from "@/app/_main/projects/manage/-package-change-selection";
 import { DelayedButton } from "@/components/DelayedButton";
 import { ExternalLink } from "@/components/ExternalLink";
 import { Button } from "@/components/ui/button";
@@ -101,8 +105,10 @@ export function applyChangesMutation(projectPath: string) {
 			console.error(e);
 			toastThrownError(e);
 		},
-		onSettled: async () => {
-			document.dispatchEvent(new Event("post-package-changes"));
+		onSettled: async (result) => {
+			if (shouldClearBulkUpdateSelection(result)) {
+				document.dispatchEvent(new Event("post-package-changes"));
+			}
 			await queryClient.invalidateQueries({
 				queryKey: ["projectDetails", projectPath],
 			});
@@ -121,8 +127,8 @@ let packageChangeRequestInProgress = false;
 export async function applyChanges(
 	projectPath: string,
 	operation: RequestedOperation,
-) {
-	if (packageChangeRequestInProgress) return;
+): Promise<PackageChangeMutationResult> {
+	if (packageChangeRequestInProgress) return "cancelled";
 	packageChangeRequestInProgress = true;
 	try {
 		const existingPackages = queryClient.getQueryData(
@@ -137,7 +143,7 @@ export async function applyChanges(
 			}))
 		) {
 			// close window
-			return;
+			return "cancelled";
 		}
 		startPackageApplyProgress(
 			projectPath,
@@ -148,12 +154,14 @@ export async function applyChanges(
 		await applyPendingChangesWithProgress(projectPath, changes.changes_version);
 		finishPackageApplyProgress();
 		showToast(operation);
+		return "settled";
 	} catch (e) {
 		failPackageApplyProgress();
 		if (isHandleable(e) && e.body.type === "MissingDependencies") {
 			await openSingleDialog(MissingDependenciesDialog, {
 				dependencies: e.body.dependencies,
 			});
+			return "settled";
 		} else {
 			throw e;
 		}
