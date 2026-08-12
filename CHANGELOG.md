@@ -30,10 +30,11 @@ category order, and bullet counts must match this canonical entry.
 
 ### Added
 
-- Added per-item controls to the Discord extension so users can choose whether to show the Unity project folder name, Unity version, and open-editor count, and can append optional custom text to the activity.
+- Added per-item controls to the Discord extension so users can choose whether to show the Unity project folder name, Unity version, and open-editor count, and can append optional custom text to the activity. When enabled, the Unity version appears in the activity title.
 
 ### Fixed
 
+- Kept selected project packages selected when the package-change confirmation dialog is cancelled.
 - Corrected the Discord preview to show no activity while Unity is not running and to mirror the text and elapsed-time format actually published to Discord; removed the redundant full-path notice and the ineffective session-duration switch, and now always publishes Unity's real start time instead of allowing Discord to substitute one.
 
 ## [3.3.0-beta.2] - 2026-08-12

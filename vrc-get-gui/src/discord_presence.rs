@@ -413,18 +413,20 @@ fn build_activity(
     unity_activity: &UnityDiscordActivity,
     display_options: &crate::config::DiscordDisplayOptions,
 ) -> activity::Activity<'static> {
+    let name = if display_options.unity_version {
+        unity_activity
+            .unity_version
+            .as_deref()
+            .map_or_else(|| "Unity".to_string(), |version| format!("Unity {version}"))
+    } else {
+        "Unity".to_string()
+    };
     let details = if display_options.project_name {
         truncate_discord_text(&format!("Editing {}", unity_activity.project_name))
     } else {
         "Editing Unity".to_string()
     };
     let mut state_parts = Vec::new();
-    if display_options.unity_version {
-        state_parts.push(unity_activity.unity_version.as_deref().map_or_else(
-            || "Unity Editor".to_string(),
-            |version| format!("Unity {version}"),
-        ));
-    }
     if display_options.editor_count {
         let editor_label = if unity_activity.editor_count == 1 {
             "1 editor open".to_string()
@@ -444,7 +446,7 @@ fn build_activity(
     };
 
     activity::Activity::new()
-        .name("Unity")
+        .name(name)
         .details(details)
         .state(truncate_discord_text(&state))
         .assets(
@@ -686,9 +688,9 @@ mod tests {
         ))
         .unwrap();
 
-        assert_eq!(payload["name"], "Unity");
+        assert_eq!(payload["name"], "Unity 2022.3.22f1");
         assert_eq!(payload["details"], "Editing Newer World");
-        assert_eq!(payload["state"], "Unity 2022.3.22f1 · 2 editors open");
+        assert_eq!(payload["state"], "2 editors open");
         assert_eq!(payload["assets"]["large_image"], "unity");
         assert_eq!(payload["assets"]["large_text"], "Unity Editor");
         assert_eq!(payload["assets"]["small_image"], "alcomd3");
@@ -714,6 +716,7 @@ mod tests {
 
         let payload = serde_json::to_value(build_activity(&unity_activity, &options)).unwrap();
 
+        assert_eq!(payload["name"], "Unity");
         assert_eq!(payload["details"], "Editing Unity");
         assert_eq!(payload["state"], "Unity Editor");
         assert_eq!(payload["timestamps"]["start"], 2000);
@@ -734,10 +737,25 @@ mod tests {
 
         let payload = serde_json::to_value(build_activity(&unity_activity, &options)).unwrap();
 
-        assert_eq!(
-            payload["state"],
-            "Unity 2022.3.22f1 · 1 editor open · Building an avatar"
-        );
+        assert_eq!(payload["state"], "1 editor open · Building an avatar");
+    }
+
+    #[test]
+    fn discord_payload_title_falls_back_when_unity_version_is_unknown() {
+        let unity_activity = UnityDiscordActivity {
+            project_name: "Newer World".to_string(),
+            unity_version: None,
+            editor_count: 1,
+            started_at: 2000.0,
+        };
+
+        let payload = serde_json::to_value(build_activity(
+            &unity_activity,
+            &crate::config::DiscordDisplayOptions::default(),
+        ))
+        .unwrap();
+
+        assert_eq!(payload["name"], "Unity");
     }
 
     #[test]

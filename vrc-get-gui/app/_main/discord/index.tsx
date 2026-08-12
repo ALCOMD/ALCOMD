@@ -340,12 +340,11 @@ function DiscordPreviewCard({
 	const details = truncateDiscordText(
 		options.projectName ? `Editing ${activity.projectName}` : "Editing Unity",
 	);
+	const name =
+		options.unityVersion && activity.unityVersion
+			? `Unity ${activity.unityVersion}`
+			: "Unity";
 	const stateParts: string[] = [];
-	if (options.unityVersion) {
-		stateParts.push(
-			activity.unityVersion ? `Unity ${activity.unityVersion}` : "Unity Editor",
-		);
-	}
 	if (options.editorCount) {
 		stateParts.push(
 			activity.editorCount === 1
@@ -387,7 +386,7 @@ function DiscordPreviewCard({
 						</span>
 					</div>
 					<div className="min-w-0 self-center text-sm">
-						<h3 className="truncate font-semibold">Unity</h3>
+						<h3 className="truncate font-semibold">{name}</h3>
 						<p className="truncate text-muted-foreground">{details}</p>
 						<p className="truncate text-muted-foreground">{state}</p>
 						<p className="mt-1 flex items-center gap-1.5 text-muted-foreground">
