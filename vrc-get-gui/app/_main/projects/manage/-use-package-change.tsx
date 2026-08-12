@@ -30,6 +30,7 @@ import { commands } from "@/lib/bindings";
 import { type DialogContext, openSingleDialog } from "@/lib/dialog";
 import { isHandleable } from "@/lib/errors";
 import { tc, tt } from "@/lib/i18n";
+import { countProcessedSteps } from "@/lib/operation-progress";
 import { queryClient } from "@/lib/query-client";
 import { toastInfo, toastSuccess, toastThrownError } from "@/lib/toast";
 import { groupBy, keyComparator } from "@/lib/utils";
@@ -460,13 +461,9 @@ function updatePackageApplyProgress(progress: TauriProjectApplyProgress) {
 				return assertNever(progress);
 		}
 	});
-	const completedSteps = items.reduce(
-		(total, item) =>
-			total +
-			(item.downloadFinished ? 1 : 0) +
-			(item.extractFinished ? 1 : 0) +
-			(item.applyFinished ? 1 : 0),
-		0,
+	const completedSteps = countPackageApplyProcessedSteps(
+		items,
+		currentState.kind,
 	);
 	const status =
 		currentState.status === "applying" &&
@@ -502,16 +499,18 @@ function finishPackageApplyProgress() {
 
 function failPackageApplyProgress() {
 	if (packageApplyProgressState == null) return;
-	const hasFailedPackage = packageApplyProgressState.items.some(
-		(item) => item.status === "failed",
-	);
-	const preserveCompleted =
-		packageApplyProgressState.cancelRequested || hasFailedPackage;
+	const state = packageApplyProgressState;
+	const hasFailedPackage = state.items.some((item) => item.status === "failed");
+	const preserveCompleted = state.cancelRequested || hasFailedPackage;
+	const completedSteps = state.cancelRequested
+		? countPackageApplyProcessedSteps(state.items, state.kind)
+		: state.totalSteps;
 	setPackageApplyProgressState({
-		...packageApplyProgressState,
+		...state,
 		status: "failed",
 		minimized: false,
-		items: packageApplyProgressState.items.map((item) => {
+		completedSteps,
+		items: state.items.map((item) => {
 			if (item.status === "failed") return item;
 			if (preserveCompleted && item.status === "completed") return item;
 			return {
@@ -865,6 +864,21 @@ function packageApplyProgressStepCount(kind: PackageApplyProgressKind) {
 		default:
 			assertNever(kind);
 	}
+}
+
+function countPackageApplyProcessedSteps(
+	items: readonly PackageApplyProgressItem[],
+	kind: PackageApplyProgressKind,
+) {
+	return countProcessedSteps(
+		items,
+		packageApplyProgressStepCount(kind),
+		(item) =>
+			(item.downloadFinished ? 1 : 0) +
+			(item.extractFinished ? 1 : 0) +
+			(item.applyFinished ? 1 : 0),
+		(item) => item.status === "failed",
+	);
 }
 
 function isPackageApplyProgressTarget(

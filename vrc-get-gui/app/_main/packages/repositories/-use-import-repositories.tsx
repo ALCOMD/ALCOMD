@@ -27,6 +27,10 @@ import { commands } from "@/lib/bindings";
 import { callAsyncCommand } from "@/lib/call-async-command";
 import { type DialogContext, showDialog } from "@/lib/dialog";
 import { tc, tt } from "@/lib/i18n";
+import {
+	countProcessedSteps,
+	progressWithFinalStep,
+} from "@/lib/operation-progress";
 import { queryClient } from "@/lib/query-client";
 import { toastSuccess, toastThrownError } from "@/lib/toast";
 import { useEffectEvent } from "@/lib/use-effect-event";
@@ -540,7 +544,17 @@ function ImportingRepositories({
 		(item) => item.status === "completed",
 	).length;
 	const failedCount = items.filter((item) => item.status === "failed").length;
-	const completedSteps = items.filter((item) => item.downloadFinished).length;
+	const completedSteps = countProcessedSteps(
+		items,
+		1,
+		(item) => (item.downloadFinished ? 1 : 0),
+		(item) => item.status === "failed",
+	);
+	const progress = progressWithFinalStep(
+		completedSteps,
+		items.length,
+		status === "completed" || status === "partial" || status === "failed",
+	);
 	const active = status === "running" || status === "finalizing";
 	const canCancel = status === "running" && !cancelRequested;
 
@@ -564,7 +578,7 @@ function ImportingRepositories({
 				</DialogDescription>
 			</DialogHeader>
 			<div className="space-y-2">
-				<Progress value={completedSteps} max={items.length} />
+				<Progress value={progress} max={100} />
 				<p className="text-center text-sm text-muted-foreground">
 					{tc("vpm repositories:import progress:summary", {
 						completed: completedCount,
