@@ -28,6 +28,8 @@ category order, and bullet counts must match this canonical entry.
 
 ## [Unreleased]
 
+## [3.3.0-beta.2] - 2026-08-12
+
 ### Added
 
 - Added a built-in Discord extension, enabled by default, with a dedicated live Unity status and preview page. A separate persisted sharing switch remains off by default and controls Discord publishing. It can publish the current project folder name, Unity version, session duration, and open-editor count with Unity artwork and an ALCOMD3 badge through the local Discord desktop client without exposing full project paths. When multiple editors are open, a newly started or foreground Unity editor becomes primary and remains primary while another app is in the foreground; platforms without foreground detection use the most recently started editor.
@@ -202,7 +204,8 @@ category order, and bullet counts must match this canonical entry.
 - Used ALCOMD3-owned update endpoints, an embedded public key, and signed update
   payloads.
 
-[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0-beta.1...HEAD
+[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0-beta.2...HEAD
+[3.3.0-beta.2]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0-beta.1...v3.3.0-beta.2
 [3.3.0-beta.1]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.2.0...v3.3.0-beta.1
 [3.2.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.0.0...v3.1.0

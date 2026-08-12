@@ -15,6 +15,19 @@ GitHub Release 正文按 English、日本語、中文顺序，由结构一致的
 
 ## [Unreleased]
 
+## [3.3.0-beta.2] - 2026-08-12
+
+### Added
+
+- 新增默认启用的内置 Discord 扩展，并提供专用的实时 Unity 状态与预览页面。单独持久化的共享开关默认保持关闭，用于控制是否发布到 Discord。它可以通过本地 Discord 桌面客户端发布当前项目文件夹名称、Unity 版本、会话时长和已打开的编辑器数量，并附带 Unity 图稿与 ALCOMD3 徽章，同时不会暴露完整项目路径。当打开多个编辑器时，新启动或被切换到前台的 Unity 编辑器会成为主编辑器，并在其他应用位于前台时继续保持；不支持前台检测的平台使用最近启动的编辑器。
+
+### Fixed
+
+- 将无效计算机名称提示显示为高严重性的红色错误，因为该情况会导致 VRCSDK 上传失败。
+- 统一全部七种 GUI 语言的键、运行时值、确认语义、兼容性警告严重性和用户可见功能覆盖，并新增自动一致性检查以防止本地化结构产生偏差。
+- 存储库列表导入现在会在单个存储库下载失败后继续运行，保存成功的存储库，并提供逐存储库进度以及对未完成项的重试。
+- 软件包操作或存储库下载失败时也会计为已处理，使已完成操作的进度达到 100%；将存储库进度移至并发预览下载，最终保存时复用下载结果以避免重复下载；存储库添加完成后独立启动标准软件包刷新，并在取消时保留实际进度。
+
 ## [3.3.0-beta.1] - 2026-08-10
 
 ### Added
@@ -141,7 +154,8 @@ GitHub Release 正文按 English、日本語、中文顺序，由结构一致的
 
 - 使用 ALCOMD3 自有更新端点、内嵌公钥和签名更新负载。
 
-[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0-beta.1...HEAD
+[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0-beta.2...HEAD
+[3.3.0-beta.2]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0-beta.1...v3.3.0-beta.2
 [3.3.0-beta.1]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.2.0...v3.3.0-beta.1
 [3.2.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.0.0...v3.1.0

@@ -1,0 +1,9 @@
+{
+  "en": "Adds built-in Discord presence with a live Unity preview, and improves repository imports with partial success, accurate progress, reused downloads, and an independent package refresh.",
+  "de": "Fügt eine integrierte Discord-Präsenz mit Unity-Livevorschau hinzu und verbessert Repository-Importe durch Teilerfolge, genaue Fortschrittsanzeigen, wiederverwendete Downloads und eine unabhängige Paketaktualisierung.",
+  "fr": "Ajoute une présence Discord intégrée avec aperçu Unity en direct et améliore l’importation des dépôts avec réussite partielle, progression précise, réutilisation des téléchargements et actualisation indépendante des paquets.",
+  "ja": "Unity のライブプレビュー付き組み込み Discord プレゼンスを追加し、部分成功、正確な進捗、ダウンロード結果の再利用、独立したパッケージ更新によってリポジトリのインポートを改善しました。",
+  "ko": "실시간 Unity 미리보기가 포함된 내장 Discord 프레즌스를 추가하고 부분 성공, 정확한 진행률, 다운로드 재사용 및 독립적인 패키지 새로 고침으로 저장소 가져오기를 개선했습니다.",
+  "zh_hans": "新增带实时 Unity 预览的内置 Discord 状态，并通过部分成功、准确进度、复用下载结果和独立软件包刷新改进存储库导入。",
+  "zh_hant": "新增具備即時 Unity 預覽的內建 Discord 狀態，並透過部分成功、準確進度、重複使用下載結果與獨立軟體套件重新整理改善儲存庫匯入。"
+}
