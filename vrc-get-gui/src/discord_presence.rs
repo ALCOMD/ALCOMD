@@ -397,6 +397,10 @@ fn truncate_discord_text(text: &str) -> String {
     truncated
 }
 
+pub(crate) fn normalize_custom_text(text: &str) -> String {
+    truncate_discord_text(text.trim())
+}
+
 fn set_activity(
     client: &mut DiscordIpcClient,
     unity_activity: &UnityDiscordActivity,
@@ -429,13 +433,17 @@ fn build_activity(
         };
         state_parts.push(editor_label);
     }
+    let custom_text = display_options.custom_text.trim();
+    if !custom_text.is_empty() {
+        state_parts.push(custom_text.to_string());
+    }
     let state = if state_parts.is_empty() {
         "Unity Editor".to_string()
     } else {
         state_parts.join(" · ")
     };
 
-    let mut activity = activity::Activity::new()
+    activity::Activity::new()
         .name("Unity")
         .details(details)
         .state(truncate_discord_text(&state))
@@ -445,12 +453,8 @@ fn build_activity(
                 .large_text("Unity Editor")
                 .small_image(DISCORD_SMALL_IMAGE_KEY)
                 .small_text("Shared by ALCOMD3"),
-        );
-    if display_options.session_duration {
-        activity = activity
-            .timestamps(activity::Timestamps::new().start(unity_activity.started_at as i64));
-    }
-    activity
+        )
+        .timestamps(activity::Timestamps::new().start(unity_activity.started_at as i64))
 }
 
 #[cfg(test)]
@@ -705,14 +709,35 @@ mod tests {
             project_name: false,
             unity_version: false,
             editor_count: false,
-            session_duration: false,
+            custom_text: String::new(),
         };
 
         let payload = serde_json::to_value(build_activity(&unity_activity, &options)).unwrap();
 
         assert_eq!(payload["details"], "Editing Unity");
         assert_eq!(payload["state"], "Unity Editor");
-        assert!(payload.get("timestamps").is_none());
+        assert_eq!(payload["timestamps"]["start"], 2000);
+    }
+
+    #[test]
+    fn discord_payload_appends_custom_text() {
+        let unity_activity = UnityDiscordActivity {
+            project_name: "Newer World".to_string(),
+            unity_version: Some("2022.3.22f1".to_string()),
+            editor_count: 1,
+            started_at: 2000.0,
+        };
+        let options = crate::config::DiscordDisplayOptions {
+            custom_text: "Building an avatar".to_string(),
+            ..crate::config::DiscordDisplayOptions::default()
+        };
+
+        let payload = serde_json::to_value(build_activity(&unity_activity, &options)).unwrap();
+
+        assert_eq!(
+            payload["state"],
+            "Unity 2022.3.22f1 · 1 editor open · Building an avatar"
+        );
     }
 
     #[test]

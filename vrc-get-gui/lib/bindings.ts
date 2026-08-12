@@ -274,7 +274,7 @@ export type DiscordDisplayOptions = {
 	projectName: boolean,
 	unityVersion: boolean,
 	editorCount: boolean,
-	sessionDuration: boolean,
+	customText: string,
 };
 
 export type UnityDiscordStatus = {

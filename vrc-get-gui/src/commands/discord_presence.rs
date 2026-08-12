@@ -36,8 +36,9 @@ pub async fn unity_discord_set_sharing_enabled(
 pub async fn unity_discord_set_display_options(
     config: State<'_, GuiConfigState>,
     presence: State<'_, crate::discord_presence::DiscordPresenceState>,
-    options: DiscordDisplayOptions,
+    mut options: DiscordDisplayOptions,
 ) -> Result<crate::discord_presence::UnityDiscordStatus, RustError> {
+    options.custom_text = crate::discord_presence::normalize_custom_text(&options.custom_text);
     let extension_enabled = {
         let mut config = config.load_mut().await?;
         config.unity_discord_display_options = options.clone();

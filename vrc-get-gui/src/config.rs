@@ -86,8 +86,8 @@ pub struct DiscordDisplayOptions {
     pub unity_version: bool,
     #[serde(default = "default_true")]
     pub editor_count: bool,
-    #[serde(default = "default_true")]
-    pub session_duration: bool,
+    #[serde(default)]
+    pub custom_text: String,
 }
 
 impl Default for DiscordDisplayOptions {
@@ -96,7 +96,7 @@ impl Default for DiscordDisplayOptions {
             project_name: true,
             unity_version: true,
             editor_count: true,
-            session_duration: true,
+            custom_text: String::new(),
         }
     }
 }

@@ -8,6 +8,7 @@ import {
 	Clock3,
 	Folder,
 	Layers3,
+	MessageSquareText,
 	Monitor,
 	PowerOff,
 	RadioTower,
@@ -19,6 +20,7 @@ import { HNavBar, HNavBarText, VStack } from "@/components/layout";
 import { ScrollPageContainer } from "@/components/ScrollPageContainer";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
 	Tooltip,
@@ -42,6 +44,9 @@ export const Route = createFileRoute("/_main/discord/")({
 
 const STATUS_QUERY_KEY = ["unityDiscordStatus"] as const;
 const STATUS_REFETCH_INTERVAL_MS = 2_000;
+const DISCORD_TEXT_MAX_CHARS = 128;
+
+type DiscordToggleOption = "projectName" | "unityVersion" | "editorCount";
 
 function Page() {
 	const queryClient = useQueryClient();
@@ -121,6 +126,12 @@ function Page() {
 										setDisplayOptions.mutate({
 											...status.data.displayOptions,
 											[key]: enabled,
+										})
+									}
+									setCustomText={(customText) =>
+										setDisplayOptions.mutate({
+											...status.data.displayOptions,
+											customText,
 										})
 									}
 								/>
@@ -326,9 +337,9 @@ function DiscordPreviewCard({
 			</Card>
 		);
 	}
-	const details = options.projectName
-		? `Editing ${activity.projectName}`
-		: "Editing Unity";
+	const details = truncateDiscordText(
+		options.projectName ? `Editing ${activity.projectName}` : "Editing Unity",
+	);
 	const stateParts: string[] = [];
 	if (options.unityVersion) {
 		stateParts.push(
@@ -342,7 +353,13 @@ function DiscordPreviewCard({
 				: `${activity.editorCount} editors open`,
 		);
 	}
-	const state = stateParts.length ? stateParts.join(" · ") : "Unity Editor";
+	const customText = options.customText.trim();
+	if (customText) {
+		stateParts.push(customText);
+	}
+	const state = truncateDiscordText(
+		stateParts.length ? stateParts.join(" · ") : "Unity Editor",
+	);
 
 	return (
 		<Card className="p-5 compact:p-4">
@@ -373,12 +390,10 @@ function DiscordPreviewCard({
 						<h3 className="truncate font-semibold">Unity</h3>
 						<p className="truncate opacity-90">{details}</p>
 						<p className="truncate opacity-90">{state}</p>
-						{options.sessionDuration && (
-							<p className="mt-1 flex items-center gap-1.5 opacity-75">
-								<Clock3 className="size-3.5" />
-								{elapsed}
-							</p>
-						)}
+						<p className="mt-1 flex items-center gap-1.5 opacity-75">
+							<Clock3 className="size-3.5" />
+							{elapsed}
+						</p>
 					</div>
 				</div>
 			</div>
@@ -393,14 +408,27 @@ function SharedDataCard({
 	options,
 	updating,
 	setOption,
+	setCustomText,
 }: {
 	options: DiscordDisplayOptions;
 	updating: boolean;
-	setOption: (key: keyof DiscordDisplayOptions, enabled: boolean) => void;
+	setOption: (key: DiscordToggleOption, enabled: boolean) => void;
+	setCustomText: (customText: string) => void;
 }) {
+	const [customTextDraft, setCustomTextDraft] = useState(options.customText);
+	useEffect(() => {
+		setCustomTextDraft(options.customText);
+	}, [options.customText]);
+	const saveCustomText = () => {
+		const normalized = customTextDraft.trim();
+		setCustomTextDraft(normalized);
+		if (normalized !== options.customText) {
+			setCustomText(normalized);
+		}
+	};
 	const items: Array<{
 		icon: typeof Folder;
-		key: keyof DiscordDisplayOptions;
+		key: DiscordToggleOption;
 		labelKey: string;
 	}> = [
 		{
@@ -417,11 +445,6 @@ function SharedDataCard({
 			icon: Layers3,
 			key: "editorCount",
 			labelKey: "unity discord:data:editor count",
-		},
-		{
-			icon: Clock3,
-			key: "sessionDuration",
-			labelKey: "unity discord:data:session duration",
 		},
 	];
 
@@ -447,7 +470,49 @@ function SharedDataCard({
 						/>
 					</li>
 				))}
+				<li className="flex items-center gap-3 rounded-xl bg-secondary/60 px-3 py-2.5 text-sm">
+					<Clock3 className="size-4 shrink-0 text-primary" />
+					<span className="min-w-0 grow">
+						{tc("unity discord:data:session duration")}
+					</span>
+					<span className="text-xs text-muted-foreground">
+						{tc("unity discord:data:always shown")}
+					</span>
+				</li>
 			</ul>
+			<div className="mt-3 rounded-xl bg-secondary/60 px-3 py-3">
+				<label
+					htmlFor="discord-custom-text"
+					className="flex items-center gap-2 text-sm font-medium"
+				>
+					<MessageSquareText className="size-4 shrink-0 text-primary" />
+					{tc("unity discord:data:custom text")}
+				</label>
+				<Input
+					id="discord-custom-text"
+					className="mt-2 w-full bg-background"
+					value={customTextDraft}
+					disabled={updating}
+					placeholder={tt("unity discord:data:custom text placeholder")}
+					onChange={(event) =>
+						setCustomTextDraft(
+							Array.from(event.currentTarget.value)
+								.slice(0, DISCORD_TEXT_MAX_CHARS)
+								.join(""),
+						)
+					}
+					onBlur={saveCustomText}
+					onKeyDown={(event) => {
+						if (event.key === "Enter") event.currentTarget.blur();
+					}}
+				/>
+				<div className="mt-1.5 flex justify-between gap-3 text-xs text-muted-foreground">
+					<span>{tc("unity discord:data:custom text description")}</span>
+					<span className="shrink-0 tabular-nums">
+						{Array.from(customTextDraft).length}/{DISCORD_TEXT_MAX_CHARS}
+					</span>
+				</div>
+			</div>
 		</Card>
 	);
 }
@@ -476,4 +541,10 @@ export function formatElapsedTime(totalSeconds: number) {
 			.padStart(2, "0")}`;
 	}
 	return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+export function truncateDiscordText(text: string) {
+	const characters = Array.from(text);
+	if (characters.length <= DISCORD_TEXT_MAX_CHARS) return text;
+	return `${characters.slice(0, DISCORD_TEXT_MAX_CHARS - 1).join("")}…`;
 }
