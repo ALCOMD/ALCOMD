@@ -86,7 +86,7 @@
     "setup:system-setting:heading": "システム設定",
     "setup:system-setting:vcc scheme description": "<code>vcc:</code>から始まるURLは、ブラウザからVCCを起動してVPMリポジトリを追加するためのリンクです。<br>ALCOMD3とVCCはリポジトリ一覧を共有していますが、ALCOMD3を <code>vcc:</code> URLと紐付けることで、ブラウザからALCOMD3を起動してVPMリポジトリを追加することができるようになります。",
     "setup:system-setting:macos bug message": "macOS向けの設定項目は特にありません。<br>(このページは表示されないはずなので、表示されている場合はバグです)",
-    "setup:system-setting:hostname-with-non-ascii": "PC名(ホスト名)に非ASCII文字(半角英数字や半角記号等ではない文字)が使用されています。<br>これはUnityで問題を引き起こす場合があります。<br>半角英数字のPC名(ホスト名)に変更することを強くお勧めします。",
+    "setup:system-setting:hostname-with-non-ascii": "PC名（ホスト名）に非ASCII文字が使用されています。<br>一部のバージョンのUnityで深刻な問題が発生します。<br>この問題を解決するには、PC名を半角英数字のみに変更する必要があります。",
 
     "setup:finish:heading": "初期設定が完了しました！",
     "setup:finish:description": "ALCOMD3を使うための準備がすべて終わりました！",
@@ -96,7 +96,7 @@
 // Side Bar
     "sidebar:bad hostname": "PC名に問題あり",
     "sidebar:dialog:bad hostname": "PC名の設定に問題があります",
-    "sidebar:dialog:bad hostname description": "PC名(ホスト名)に非ASCII文字(半角英数字や半角記号等ではない文字)が使用されています。<br>これはUnityで問題を引き起こす場合があります。<br>半角英数字のPC名(ホスト名)に変更することを強くお勧めします。",
+    "sidebar:dialog:bad hostname description": "PC名（ホスト名）に非ASCII文字が使用されています。<br>一部のバージョンのUnityで深刻な問題が発生します。<br>この問題を解決するには、PC名を半角英数字のみに変更する必要があります。",
     "sidebar:version": "バージョン: {{version}}",
 
     "sidebar:toast:version copied": "バージョン情報をコピーしました。",

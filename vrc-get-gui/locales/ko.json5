@@ -86,7 +86,7 @@
     "setup:system-setting:heading": "시스템 설정",
     "setup:system-setting:vcc scheme description": "<code>vcc:</code>로 시작하는 URL은 브라우저에서 VCC를 실행해 VPM 저장소를 추가하기 위한 링크입니다.<br>ALCOMD3과 VCC는 같은 저장소 목록을 공유하므로, <code>vcc:</code> URL을 ALCOMD3과 연결하면 브라우저에서 VCC 대신 ALCOMD3을 실행하여 VPM 저장소를 추가할 수 있습니다.",
     "setup:system-setting:macos bug message": "macOS에서는 별도로 설정할 내용이 없습니다.<br>(이 페이지는 표시되지 않아야 하며, 표시된 경우 이는 버그입니다.)",
-    "setup:system-setting:hostname-with-non-ascii": "PC 이름(호스트 이름)에 비ASCII 문자(영문, 숫자, 일부 특수문자가 아닌 문자)가 포함되어 있습니다.<br>이는 Unity에서 문제를 일으킬 수 있습니다.<br>PC 이름(호스트 이름)을 ASCII 문자로 변경할 것을 강력히 권장합니다.",
+    "setup:system-setting:hostname-with-non-ascii": "PC 이름(호스트 이름)에 비ASCII 문자가 포함되어 있습니다.<br>이로 인해 일부 Unity 버전에서 심각한 문제가 발생합니다.<br>이 문제를 해결하려면 PC 이름을 영문과 숫자로만 변경해야 합니다.",
 
     "setup:finish:heading": "초기설정이 완료되었습니다!",
     "setup:finish:description": "ALCOMD3을 사용하기 위한 설정이 완료되었습니다!",
@@ -96,7 +96,7 @@
 // Side Bar
     "sidebar:bad hostname": "PC 이름 문제",
     "sidebar:dialog:bad hostname": "PC 이름에 문제가 있습니다",
-    "sidebar:dialog:bad hostname description": "PC 이름(호스트 이름)에 비ASCII 문자(영문, 숫자, 일부 특수문자가 아닌 문자)가 포함되어 있습니다.<br>이는 Unity에서 문제를 일으킬 수 있습니다.<br>PC 이름(호스트 이름)을 ASCII 문자로 변경할 것을 강력히 권장합니다.",
+    "sidebar:dialog:bad hostname description": "PC 이름(호스트 이름)에 비ASCII 문자가 포함되어 있습니다.<br>이로 인해 일부 Unity 버전에서 심각한 문제가 발생합니다.<br>이 문제를 해결하려면 PC 이름을 영문과 숫자로만 변경해야 합니다.",
     "sidebar:version": "버전: {{version}}",
 
     "sidebar:toast:version copied": "버전 정보를 복사했습니다.",

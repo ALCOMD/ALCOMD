@@ -91,7 +91,7 @@
     "setup:system-setting:heading": "系统配置",
     "setup:system-setting:vcc scheme description": "您可以使 ALCOMD3 代替 VCC 来处理 <code>vcc://</code> 快捷方式，以将存储库安装到您的电脑上。ALCOMD3 和 VCC 将共享相同的存储库列表，但使用 ALCOMD3 可以让您在不打开 VCC 的情况下快速安装存储库。",
     "setup:system-setting:macos bug message": "在 macOS 上无需配置此功能。 (这个页面不应该被显示，显示此页面是一个错误)",
-    "setup:system-setting:hostname-with-non-ascii": "您在设备名称中使用了非 ASCII 字符。<br/>这可能会导致 Unity 2022 出现问题。<br/>强烈建议您使用 ASCII 字符来命名设备。",
+    "setup:system-setting:hostname-with-non-ascii": "您在设备名称中使用了非 ASCII 字符。<br/>这会导致部分版本的 Unity 出现严重问题。<br/>您必须使用数字与字母组合来命名设备以解决此问题。",
 
     "setup:finish:heading": "设置完成！",
     "setup:finish:description": "您已成功完成设置初始化！<br/>开始使用 ALCOMD3 吧！",
@@ -101,7 +101,7 @@
 // Side Bar
     "sidebar:bad hostname": "异常的设备名称",
     "sidebar:dialog:bad hostname": "您的设备名称存在问题",
-    "sidebar:dialog:bad hostname description": "您在设备名称中使用了非 ASCII 字符。<br/>这可能会导致版本较新的 Unity 出现问题。<br/>强烈建议您使用数字与字母组合来命名设备。",
+    "sidebar:dialog:bad hostname description": "您在设备名称中使用了非 ASCII 字符。<br/>这会导致部分版本的 Unity 出现严重问题。<br/>您必须使用数字与字母组合来命名设备以解决此问题。",
     "sidebar:version": "版本：{{version}}",
 
     "sidebar:toast:version copied": "已复制版本号。",

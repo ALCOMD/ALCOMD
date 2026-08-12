@@ -92,7 +92,7 @@
     "setup:system-setting:heading": "System Einstellungen",
     "setup:system-setting:vcc scheme description": "Du kannst ALCOMD3 statt VCC für vcc:// Links registrieren, um Paketquellen direkt hinzuzufügen. ALCOMD3 and VCC teilen die gleiche Paketquellen-Liste, diese Einstellung erlaubt schnelleres Hinzufügen von Paketlisten ohne VCC öffnen zu müssen.",
     "setup:system-setting:macos bug message": "Für MacOS muss nichts weiter eingestellt werden. (Du solltest diese Seite nicht sehen, dies ist ein Bug. Bitte melde uns dies.)",
-    "setup:system-setting:hostname-with-non-ascii": "Du verwendest nicht-ASCII Zeichen im Hostnamen (PC Name). <br/>Dies könnte zu Problemen mit neueren Unity Versionen führen.<br/>Es wird empfohlen deinen Hostname zu ASCII-Zeichen zu ändern.",
+    "setup:system-setting:hostname-with-non-ascii": "Der Hostname (PC-Name) enthält Nicht-ASCII-Zeichen.<br/>Dies führt bei einigen Unity-Versionen zu schwerwiegenden Problemen.<br/>Um das Problem zu beheben, musst du den PC-Namen so ändern, dass er nur aus Buchstaben und Zahlen besteht.",
 
     "setup:finish:heading": "Einrichtung abgeschlossen!",
     "setup:finish:description": "Du hast den Installationsprozess erfolgreich abgeschlossen!<br/>Du kannst ALCOMD3 nun verwenden!",
@@ -102,7 +102,7 @@
 // Side Bar
     "sidebar:bad hostname": "Ungültiger Hostname",
     "sidebar:dialog:bad hostname": "Es gibt Probleme mit dem Hostnamen",
-    "sidebar:dialog:bad hostname description": "Du verwendest nicht-ASCII Zeichen im Hostnamen (PC Name). <br/>Dies könnte zu Problemen mit neueren Unity Versionen führen.<br/>Es wird empfohlen deinen Hostname zu Alphanumerischen Zeichen zu ändern.",
+    "sidebar:dialog:bad hostname description": "Der Hostname (PC-Name) enthält Nicht-ASCII-Zeichen.<br/>Dies führt bei einigen Unity-Versionen zu schwerwiegenden Problemen.<br/>Um das Problem zu beheben, musst du den PC-Namen so ändern, dass er nur aus Buchstaben und Zahlen besteht.",
     "sidebar:version": "Version: {{version}}",
 
     "sidebar:toast:version copied": "Versionsnummer kopiert",

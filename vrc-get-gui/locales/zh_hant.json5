@@ -92,7 +92,7 @@
     "setup:system-setting:heading": "系統設定",
     "setup:system-setting:vcc scheme description": "你可以使用 ALCOMD3 來代替 VCC 處理 vcc:// 快捷方式，以便將儲存庫安裝到你的電腦上。ALCOMD3 和 VCC 共享相同的儲存庫列表，但使用 ALCOMD3 可以讓你在不打開 VCC 的情況下快速安裝。",
     "setup:system-setting:macos bug message": "macOS 上無需進行設定。（不應該顯示此頁面，顯示此頁面是一個錯誤）",
-    "setup:system-setting:hostname-with-non-ascii": "你的裝置名稱（電腦名稱）裡有非 ASCII 字元。這可能會引起一些 Unity 問題，強烈建議將你的電腦名稱換成 ASCII 字元。（不使用中文或全形字元）",
+    "setup:system-setting:hostname-with-non-ascii": "你的裝置名稱（電腦名稱）中含有非 ASCII 字元。<br/>這會導致部分 Unity 版本發生嚴重問題。<br/>你必須將裝置名稱改為僅使用英文字母與數字，才能解決此問題。",
 
     "setup:finish:heading": "完成設定！",
     "setup:finish:description": "你已成功完成設定！<br/>開始使用 ALCOMD3 吧！",
@@ -102,7 +102,7 @@
 // Side Bar
     "sidebar:bad hostname": "不好的裝置名稱",
     "sidebar:dialog:bad hostname": "你的裝置名稱有問題",
-    "sidebar:dialog:bad hostname description": "你使用了非 ASCII 字元於裝置名稱（電腦名稱）裡。這可能會引起一些 Unity 問題，強烈建議將你的電腦名稱換成半形的英文字母與阿拉伯數字。",
+    "sidebar:dialog:bad hostname description": "你的裝置名稱（電腦名稱）中含有非 ASCII 字元。<br/>這會導致部分 Unity 版本發生嚴重問題。<br/>你必須將裝置名稱改為僅使用英文字母與數字，才能解決此問題。",
     "sidebar:version": "版本：{{version}}",
 
     "sidebar:toast:version copied": "已複製版本號。",

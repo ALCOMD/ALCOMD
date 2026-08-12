@@ -97,7 +97,7 @@
     "setup:system-setting:heading": "System Configurations",
     "setup:system-setting:vcc scheme description": "You can use ALCOMD3 for vcc:// scheme instead of VCC to install repository to your PC. ALCOMD3 and VCC will shares the same repository list but using ALCOMD3 will give you quick installation without opening VCC.",
     "setup:system-setting:macos bug message": "There is nothing to configure on macOS. (This page should not be shown, showing this page is a bug)",
-    "setup:system-setting:hostname-with-non-ascii": "Your hostname (PC Name) contains non-ASCII characters. This may cause problems with Unity 2022.<br/>It's highly recommended to change your PC Name to ASCII characters.",
+    "setup:system-setting:hostname-with-non-ascii": "Your device name (PC Name) contains non-ASCII characters.<br/>This causes serious issues in some versions of Unity.<br/>You must rename your device using only letters and numbers to resolve this issue.",
 
     "setup:finish:heading": "Setup Completed!",
     "setup:finish:description": "You have successfully completed the setup process!<br/>Let's start using ALCOMD3!",
@@ -107,7 +107,7 @@
 // Side Bar
     "sidebar:bad hostname": "Bad hostname",
     "sidebar:dialog:bad hostname": "There are issues with your hostname",
-    "sidebar:dialog:bad hostname description": "You're using non-ASCII characters in hostname (PC Name). <br/>This may cause issues with modern Unity.<br/>It's highly recommended to change your PC Name to alphanumeric characters.",
+    "sidebar:dialog:bad hostname description": "Your device name (PC Name) contains non-ASCII characters.<br/>This causes serious issues in some versions of Unity.<br/>You must rename your device using only letters and numbers to resolve this issue.",
     "sidebar:version": "Version: {{version}}",
 
     "sidebar:toast:version copied": "Version name was copied.",
