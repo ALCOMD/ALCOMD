@@ -453,7 +453,7 @@ export type TauriImportRepositoriesResult = {
 	failed: number[],
 };
 
-export type TauriImportRepositoryProgress = { type: "DownloadStarted"; index: number } | { type: "DownloadFinished"; index: number } | { type: "AddStarted"; index: number } | { type: "AddFinished"; index: number } | { type: "Failed"; index: number; message: string };
+export type TauriImportRepositoryProgress = { type: "DownloadStarted"; index: number } | { type: "DownloadFinished"; index: number } | { type: "Failed"; index: number; message: string } | { type: "Finalizing" };
 
 export type TauriImportTemplateResult = TauriImportTemplateResult_Serialize | TauriImportTemplateResult_Deserialize;
 

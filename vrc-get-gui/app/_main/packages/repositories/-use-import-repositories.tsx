@@ -324,7 +324,6 @@ type RepositoryImportItemStatus =
 	| "waiting"
 	| "downloading"
 	| "downloaded"
-	| "adding"
 	| "completed"
 	| "failed"
 	| "cancelled";
@@ -341,6 +340,7 @@ type RepositoryImportItem = {
 	key: string;
 	repository: TauriRepositoryDescriptor;
 	status: RepositoryImportItemStatus;
+	downloadFinished: boolean;
 	message?: string;
 };
 
@@ -361,6 +361,7 @@ function ImportingRepositories({
 			key: crypto.randomUUID(),
 			repository,
 			status: "waiting",
+			downloadFinished: false,
 		})),
 	);
 	const [status, setStatus] = useState<RepositoryImportStatus>("running");
@@ -377,7 +378,12 @@ function ImportingRepositories({
 			setItems((current) =>
 				current.map((item, index) =>
 					targetIndices.has(index)
-						? { ...item, status: "waiting", message: undefined }
+						? {
+								...item,
+								status: "waiting",
+								downloadFinished: false,
+								message: undefined,
+							}
 						: item,
 				),
 			);
@@ -409,25 +415,17 @@ function ImportingRepositories({
 						updateItem(progress.index, (item) => ({
 							...item,
 							status: "downloaded",
+							downloadFinished: true,
 						}));
 						break;
-					case "AddStarted":
+					case "Finalizing":
 						setStatus("finalizing");
-						updateItem(progress.index, (item) => ({
-							...item,
-							status: "adding",
-						}));
-						break;
-					case "AddFinished":
-						updateItem(progress.index, (item) => ({
-							...item,
-							status: "completed",
-						}));
 						break;
 					case "Failed":
 						updateItem(progress.index, (item) => ({
 							...item,
 							status: "failed",
+							downloadFinished: false,
 							message: progress.message,
 						}));
 						break;
@@ -449,7 +447,11 @@ function ImportingRepositories({
 					setItems((current) =>
 						current.map((item, index) =>
 							targetIndices.has(index) && item.status !== "completed"
-								? { ...item, status: "cancelled" }
+								? {
+										...item,
+										status: "cancelled",
+										downloadFinished: false,
+									}
 								: item,
 						),
 					);
@@ -466,10 +468,18 @@ function ImportingRepositories({
 							(target) => target.itemIndex === index,
 						);
 						if (succeeded.has(progressIndex)) {
-							return { ...item, status: "completed" };
+							return {
+								...item,
+								status: "completed",
+								downloadFinished: true,
+							};
 						}
 						if (failed.has(progressIndex)) {
-							return { ...item, status: "failed" };
+							return {
+								...item,
+								status: "failed",
+								downloadFinished: false,
+							};
 						}
 						return item;
 					}),
@@ -529,7 +539,8 @@ function ImportingRepositories({
 	const completedCount = items.filter(
 		(item) => item.status === "completed",
 	).length;
-	const incompleteCount = items.length - completedCount;
+	const failedCount = items.filter((item) => item.status === "failed").length;
+	const completedSteps = items.filter((item) => item.downloadFinished).length;
 	const active = status === "running" || status === "finalizing";
 	const canCancel = status === "running" && !cancelRequested;
 
@@ -553,11 +564,11 @@ function ImportingRepositories({
 				</DialogDescription>
 			</DialogHeader>
 			<div className="space-y-2">
-				<Progress value={completedCount} max={items.length} />
+				<Progress value={completedSteps} max={items.length} />
 				<p className="text-center text-sm text-muted-foreground">
 					{tc("vpm repositories:import progress:summary", {
 						completed: completedCount,
-						incomplete: incompleteCount,
+						failed: failedCount,
 					})}
 				</p>
 			</div>
@@ -664,8 +675,6 @@ function repositoryImportStatusLabel(status: RepositoryImportItemStatus) {
 			return tc("vpm repositories:import progress:status:downloading");
 		case "downloaded":
 			return tc("vpm repositories:import progress:status:downloaded");
-		case "adding":
-			return tc("vpm repositories:import progress:status:adding");
 		case "completed":
 			return tc("vpm repositories:import progress:status:completed");
 		case "failed":

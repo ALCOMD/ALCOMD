@@ -84,9 +84,8 @@ pub(crate) enum DownloadRepositoryOutcome {
 pub(crate) enum AddRepositoriesProgress {
     DownloadStarted { index: usize },
     DownloadFinished { index: usize },
-    AddStarted { index: usize },
-    AddFinished { index: usize },
     Failed { index: usize, message: String },
+    Finalizing,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -412,10 +411,6 @@ pub(crate) async fn add_repositories(
         });
     }
 
-    for &index in &succeeded {
-        on_progress(AddRepositoriesProgress::AddStarted { index });
-    }
-
     let repository_display_names = succeeded
         .iter()
         .map(|&index| {
@@ -434,6 +429,8 @@ pub(crate) async fn add_repositories(
         })
         .collect::<Vec<_>>();
 
+    on_progress(AddRepositoriesProgress::Finalizing);
+
     let mut config = repository_config.load_mut().await;
     for (repository_url, display_name) in repository_display_names {
         config.display_names.insert(repository_url, display_name);
@@ -444,10 +441,6 @@ pub(crate) async fn add_repositories(
     *settings = candidate;
     settings.maybe_save().await?;
     packages.clear_cache();
-
-    for &index in &succeeded {
-        on_progress(AddRepositoriesProgress::AddFinished { index });
-    }
 
     Ok(AddRepositoriesOutcome {
         succeeded,
@@ -880,10 +873,7 @@ mod tests {
                 },
                 AddRepositoriesProgress::DownloadStarted { index: 2 },
                 AddRepositoriesProgress::DownloadFinished { index: 2 },
-                AddRepositoriesProgress::AddStarted { index: 0 },
-                AddRepositoriesProgress::AddStarted { index: 2 },
-                AddRepositoriesProgress::AddFinished { index: 0 },
-                AddRepositoriesProgress::AddFinished { index: 2 },
+                AddRepositoriesProgress::Finalizing,
             ]
         );
 

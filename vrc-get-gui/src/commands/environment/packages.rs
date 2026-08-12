@@ -628,9 +628,8 @@ pub struct TauriRepositoryDescriptor {
 pub enum TauriImportRepositoryProgress {
     DownloadStarted { index: usize },
     DownloadFinished { index: usize },
-    AddStarted { index: usize },
-    AddFinished { index: usize },
     Failed { index: usize, message: String },
+    Finalizing,
 }
 
 impl From<repository_operations::AddRepositoriesProgress> for TauriImportRepositoryProgress {
@@ -642,15 +641,10 @@ impl From<repository_operations::AddRepositoriesProgress> for TauriImportReposit
             repository_operations::AddRepositoriesProgress::DownloadFinished { index } => {
                 Self::DownloadFinished { index }
             }
-            repository_operations::AddRepositoriesProgress::AddStarted { index } => {
-                Self::AddStarted { index }
-            }
-            repository_operations::AddRepositoriesProgress::AddFinished { index } => {
-                Self::AddFinished { index }
-            }
             repository_operations::AddRepositoriesProgress::Failed { index, message } => {
                 Self::Failed { index, message }
             }
+            repository_operations::AddRepositoriesProgress::Finalizing => Self::Finalizing,
         }
     }
 }
