@@ -522,8 +522,8 @@ function SavingRepositories({
 
 				if (result.failed.length === 0) {
 					toastSuccess(tt("vpm repositories:toast:repository added"));
-					void refreshImportedRepositories();
 					dialog.close();
+					void refreshImportedRepositories();
 					return;
 				} else if (previouslyCompleted + result.succeeded.length > 0) {
 					setStatus("partial");
@@ -635,6 +635,12 @@ function SavingRepositories({
 
 async function refreshImportedRepositories() {
 	try {
+		await Promise.all([
+			queryClient.invalidateQueries(environmentRepositoriesInfo),
+			queryClient.invalidateQueries(environmentPackages),
+			queryClient.invalidateQueries(environmentRepositoryPackageLists),
+		]);
+		await commands.environmentRefetchPackages();
 		await Promise.all([
 			queryClient.invalidateQueries(environmentRepositoriesInfo),
 			queryClient.invalidateQueries(environmentPackages),

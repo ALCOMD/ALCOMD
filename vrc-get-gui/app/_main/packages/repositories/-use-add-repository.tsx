@@ -133,13 +133,28 @@ async function addRepositoryImpl(
 		}
 		dialog.close();
 		toastSuccess(tt("vpm repositories:toast:repository added"));
+		void refreshAddedRepository();
+	} else {
+		await commands.environmentDiscardRepositoryDownloads([info.download_id]);
+	}
+}
+
+async function refreshAddedRepository() {
+	try {
 		await Promise.all([
 			queryClient.invalidateQueries(environmentRepositoriesInfo),
 			queryClient.invalidateQueries(environmentPackages),
 			queryClient.invalidateQueries(environmentRepositoryPackageLists),
 		]);
-	} else {
-		await commands.environmentDiscardRepositoryDownloads([info.download_id]);
+		await commands.environmentRefetchPackages();
+		await Promise.all([
+			queryClient.invalidateQueries(environmentRepositoriesInfo),
+			queryClient.invalidateQueries(environmentPackages),
+			queryClient.invalidateQueries(environmentRepositoryPackageLists),
+		]);
+	} catch (error) {
+		console.error(error);
+		toastThrownError(error);
 	}
 }
 
