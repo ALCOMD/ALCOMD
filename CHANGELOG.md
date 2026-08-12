@@ -36,6 +36,7 @@ category order, and bullet counts must match this canonical entry.
 
 - Kept selected project packages selected when the package-change confirmation dialog is cancelled.
 - Corrected the Discord preview to show no activity while Unity is not running and to mirror the text and elapsed-time format actually published to Discord; removed the redundant full-path notice and the ineffective session-duration switch, and now always publishes Unity's real start time instead of allowing Discord to substitute one.
+- Fixed Unity asset import worker processes being counted as additional open editors in Discord activity.
 
 ## [3.3.0-beta.2] - 2026-08-12
 

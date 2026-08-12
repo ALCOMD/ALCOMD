@@ -1,7 +1,8 @@
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
-use sysinfo::{Process, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+use sysinfo::{Pid, Process, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 
 #[derive(Clone, Debug)]
 pub(crate) struct UnityProcess {
@@ -31,11 +32,19 @@ pub(crate) fn refresh_unity_processes(system: &mut System) -> Vec<UnityProcess> 
             .without_tasks(),
     );
 
+    let unity_process_ids = system
+        .processes()
+        .iter()
+        .filter_map(|(pid, process)| is_unity_process(process).then_some(*pid))
+        .collect::<HashSet<_>>();
+
     system
         .processes()
         .values()
         .filter_map(|process| {
-            if !is_unity_process(process) {
+            if !is_unity_process(process)
+                || !is_primary_unity_process(process.parent(), &unity_process_ids)
+            {
                 return None;
             }
 
@@ -47,6 +56,10 @@ pub(crate) fn refresh_unity_processes(system: &mut System) -> Vec<UnityProcess> 
             })
         })
         .collect()
+}
+
+fn is_primary_unity_process(parent: Option<Pid>, unity_process_ids: &HashSet<Pid>) -> bool {
+    parent.is_none_or(|parent| !unity_process_ids.contains(&parent))
 }
 
 fn is_unity_process(process: &Process) -> bool {
@@ -119,6 +132,22 @@ mod tests {
         assert!(is_unity_name(OsStr::new("Unity")));
         assert!(is_unity_name(OsStr::new("UNITY")));
         assert!(!is_unity_name(OsStr::new("UnityShaderCompiler")));
+    }
+
+    #[test]
+    fn excludes_unity_child_processes_from_editor_instances() {
+        let editor_pid = Pid::from_u32(100);
+        let unity_process_ids = HashSet::from([editor_pid, Pid::from_u32(101)]);
+
+        assert!(is_primary_unity_process(None, &unity_process_ids));
+        assert!(is_primary_unity_process(
+            Some(Pid::from_u32(999)),
+            &unity_process_ids
+        ));
+        assert!(!is_primary_unity_process(
+            Some(editor_pid),
+            &unity_process_ids
+        ));
     }
 
     #[test]
