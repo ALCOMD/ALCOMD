@@ -51,6 +51,8 @@ pub struct GuiConfig {
     pub mcp_http_token: String,
     #[serde(default)]
     pub unity_discord_sharing_enabled: bool,
+    #[serde(default)]
+    pub unity_discord_display_options: DiscordDisplayOptions,
     #[serde(default = "project_view_mode_default")]
     pub project_view_mode: String,
     #[serde(default)]
@@ -73,6 +75,30 @@ pub struct GuiConfig {
     pub sidebar_extensions: Vec<SidebarExtension>,
     #[serde(default)]
     pub extensions: BTreeMap<String, ExtensionUserConfig>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscordDisplayOptions {
+    #[serde(default = "default_true")]
+    pub project_name: bool,
+    #[serde(default = "default_true")]
+    pub unity_version: bool,
+    #[serde(default = "default_true")]
+    pub editor_count: bool,
+    #[serde(default = "default_true")]
+    pub session_duration: bool,
+}
+
+impl Default for DiscordDisplayOptions {
+    fn default() -> Self {
+        Self {
+            project_name: true,
+            unity_version: true,
+            editor_count: true,
+            session_duration: true,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, specta::Type)]
@@ -156,6 +182,7 @@ impl Default for GuiConfig {
             mcp_http_port: mcp_http_port_default(),
             mcp_http_token: String::new(),
             unity_discord_sharing_enabled: false,
+            unity_discord_display_options: DiscordDisplayOptions::default(),
             project_view_mode: project_view_mode_default(),
             unity_hub_access_method: UnityHubAccessMethod::ReadConfig,
             recent_project_locations: Vec::new(),

@@ -123,6 +123,8 @@ pub fn startup(app: &mut App, initial_args: Vec<String>) {
         let config = GuiConfigState::new_load(io.inner()).await?;
         app.state::<crate::discord_presence::DiscordPresenceState>()
             .set_sharing_enabled(config.get().unity_discord_sharing_enabled);
+        app.state::<crate::discord_presence::DiscordPresenceState>()
+            .set_display_options(config.get().unity_discord_display_options.clone());
         app.state::<ExtensionRegistry>()
             .restore_runtime_states(&app, &config.get().extensions);
         app.manage(config);

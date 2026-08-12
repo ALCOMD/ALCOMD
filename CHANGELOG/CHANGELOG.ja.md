@@ -18,6 +18,10 @@ category の bullet count を一致させます。
 
 ## [Unreleased]
 
+### Added
+
+- Discord 拡張機能に表示項目ごとの設定を追加し、Unity プロジェクトフォルダー名、Unity バージョン、起動中のエディター数、セッション時間を個別に表示するか選べるようにしました。
+
 ## [3.3.0-beta.2] - 2026-08-12
 
 ### Added

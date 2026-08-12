@@ -25,7 +25,11 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { UnityDiscordActivity, UnityDiscordStatus } from "@/lib/bindings";
+import type {
+	DiscordDisplayOptions,
+	UnityDiscordActivity,
+	UnityDiscordStatus,
+} from "@/lib/bindings";
 import { commands } from "@/lib/bindings";
 import { tc, tt } from "@/lib/i18n";
 import { toastThrownError } from "@/lib/toast";
@@ -52,6 +56,16 @@ function Page() {
 	});
 	const setSharingEnabled = useMutation({
 		mutationFn: commands.unityDiscordSetSharingEnabled,
+		onSuccess: (updatedStatus) => {
+			queryClient.setQueryData(STATUS_QUERY_KEY, updatedStatus);
+		},
+		onError: (error) => {
+			console.error(error);
+			toastThrownError(error);
+		},
+	});
+	const setDisplayOptions = useMutation({
+		mutationFn: commands.unityDiscordSetDisplayOptions,
 		onSuccess: (updatedStatus) => {
 			queryClient.setQueryData(STATUS_QUERY_KEY, updatedStatus);
 		},
@@ -96,8 +110,20 @@ function Page() {
 								}
 							/>
 							<div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)]">
-								<DiscordPreviewCard activity={status.data.activity} />
-								<SharedDataCard />
+								<DiscordPreviewCard
+									activity={status.data.activity}
+									options={status.data.displayOptions}
+								/>
+								<SharedDataCard
+									options={status.data.displayOptions}
+									updating={setDisplayOptions.isPending}
+									setOption={(key, enabled) =>
+										setDisplayOptions.mutate({
+											...status.data.displayOptions,
+											[key]: enabled,
+										})
+									}
+								/>
 							</div>
 						</>
 					) : (
@@ -275,20 +301,39 @@ function StatusMetric({
 
 function DiscordPreviewCard({
 	activity,
+	options,
 }: {
 	activity: UnityDiscordActivity | null;
+	options: DiscordDisplayOptions;
 }) {
 	const elapsed = useElapsedTime(activity?.startedAt ?? null);
 	const details = activity
-		? `Editing ${activity.projectName}`
+		? options.projectName
+			? tc("unity discord:preview:editing", {
+					projectName: activity.projectName,
+				})
+			: tc("unity discord:preview:editing unity")
 		: tc("unity discord:preview:waiting");
-	const editor = activity?.unityVersion
-		? `Unity ${activity.unityVersion}`
-		: "Unity Editor";
-	const state =
-		activity && activity.editorCount > 1
-			? `${editor} · ${activity.editorCount} editors open`
-			: editor;
+	const stateParts = [];
+	if (options.unityVersion) {
+		stateParts.push(
+			activity?.unityVersion
+				? tc("unity discord:preview:unity version", {
+						version: activity.unityVersion,
+					})
+				: tc("unity discord:preview:unity editor"),
+		);
+	}
+	if (options.editorCount && activity) {
+		stateParts.push(
+			tc("unity discord:preview:editors", {
+				count: activity.editorCount,
+			}),
+		);
+	}
+	const state = stateParts.length
+		? stateParts.join(" · ")
+		: tc("unity discord:preview:unity editor");
 
 	return (
 		<Card className="p-5 compact:p-4">
@@ -319,7 +364,7 @@ function DiscordPreviewCard({
 						<h3 className="truncate font-semibold">Unity</h3>
 						<p className="truncate opacity-90">{details}</p>
 						<p className="truncate opacity-90">{activity ? state : "—"}</p>
-						{activity && (
+						{activity && options.sessionDuration && (
 							<p className="mt-1 flex items-center gap-1.5 opacity-75">
 								<Clock3 className="size-3.5" />
 								{elapsed}
@@ -335,12 +380,40 @@ function DiscordPreviewCard({
 	);
 }
 
-function SharedDataCard() {
-	const items = [
-		{ icon: Folder, labelKey: "unity discord:data:project name" },
-		{ icon: Monitor, labelKey: "unity discord:data:unity version" },
-		{ icon: Layers3, labelKey: "unity discord:data:editor count" },
-		{ icon: Clock3, labelKey: "unity discord:data:session duration" },
+function SharedDataCard({
+	options,
+	updating,
+	setOption,
+}: {
+	options: DiscordDisplayOptions;
+	updating: boolean;
+	setOption: (key: keyof DiscordDisplayOptions, enabled: boolean) => void;
+}) {
+	const items: Array<{
+		icon: typeof Folder;
+		key: keyof DiscordDisplayOptions;
+		labelKey: string;
+	}> = [
+		{
+			icon: Folder,
+			key: "projectName",
+			labelKey: "unity discord:data:project name",
+		},
+		{
+			icon: Monitor,
+			key: "unityVersion",
+			labelKey: "unity discord:data:unity version",
+		},
+		{
+			icon: Layers3,
+			key: "editorCount",
+			labelKey: "unity discord:data:editor count",
+		},
+		{
+			icon: Clock3,
+			key: "sessionDuration",
+			labelKey: "unity discord:data:session duration",
+		},
 	];
 
 	return (
@@ -350,13 +423,19 @@ function SharedDataCard() {
 				<h2 className="font-medium">{tc("unity discord:data:title")}</h2>
 			</div>
 			<ul className="grid gap-2">
-				{items.map(({ icon: Icon, labelKey }) => (
+				{items.map(({ icon: Icon, key, labelKey }) => (
 					<li
 						key={labelKey}
 						className="flex items-center gap-3 rounded-xl bg-secondary/60 px-3 py-2.5 text-sm"
 					>
 						<Icon className="size-4 shrink-0 text-primary" />
-						{tc(labelKey)}
+						<span className="min-w-0 grow">{tc(labelKey)}</span>
+						<Switch
+							checked={options[key]}
+							disabled={updating}
+							aria-label={tt(labelKey)}
+							onCheckedChange={(enabled) => setOption(key, enabled)}
+						/>
 					</li>
 				))}
 			</ul>

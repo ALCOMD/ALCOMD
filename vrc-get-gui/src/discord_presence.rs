@@ -19,6 +19,7 @@ pub struct DiscordPresenceState {
     worker: Mutex<Option<PresenceWorker>>,
     runtime: Arc<Mutex<PresenceRuntime>>,
     sharing_enabled: Arc<AtomicBool>,
+    display_options: Arc<Mutex<crate::config::DiscordDisplayOptions>>,
 }
 
 struct PresenceWorker {
@@ -108,6 +109,7 @@ struct PresenceRuntime {
 pub struct UnityDiscordStatus {
     pub enabled: bool,
     pub sharing_enabled: bool,
+    pub display_options: crate::config::DiscordDisplayOptions,
     pub application_configured: bool,
     pub worker_running: bool,
     pub discord_connected: bool,
@@ -130,6 +132,7 @@ impl DiscordPresenceState {
             worker: Mutex::new(None),
             runtime: Arc::new(Mutex::new(PresenceRuntime::default())),
             sharing_enabled: Arc::new(AtomicBool::new(false)),
+            display_options: Arc::new(Mutex::new(crate::config::DiscordDisplayOptions::default())),
         }
     }
 
@@ -138,6 +141,7 @@ impl DiscordPresenceState {
         UnityDiscordStatus {
             enabled,
             sharing_enabled: self.sharing_enabled.load(Ordering::Relaxed),
+            display_options: self.display_options.lock().unwrap().clone(),
             application_configured: self.application_id.is_some(),
             worker_running: runtime.worker_running,
             discord_connected: runtime.discord_connected,
@@ -167,6 +171,14 @@ impl DiscordPresenceState {
         }
     }
 
+    pub fn set_display_options(&self, options: crate::config::DiscordDisplayOptions) {
+        *self.display_options.lock().unwrap() = options;
+        let worker = self.worker.lock().unwrap();
+        if let Some(worker) = worker.as_ref() {
+            let _ = worker.command.send(PresenceWorkerCommand::Refresh);
+        }
+    }
+
     pub fn shutdown(&self) {
         self.stop();
     }
@@ -187,11 +199,18 @@ impl DiscordPresenceState {
         let (command, command_receiver) = mpsc::channel();
         let runtime = Arc::clone(&self.runtime);
         let sharing_enabled = Arc::clone(&self.sharing_enabled);
+        let display_options = Arc::clone(&self.display_options);
         let application_id = self.application_id;
         match std::thread::Builder::new()
             .name("discord-presence".to_string())
             .spawn(move || {
-                run_presence_worker(application_id, command_receiver, runtime, sharing_enabled)
+                run_presence_worker(
+                    application_id,
+                    command_receiver,
+                    runtime,
+                    sharing_enabled,
+                    display_options,
+                )
             }) {
             Ok(thread) => {
                 *worker = Some(PresenceWorker { command, thread });
@@ -221,6 +240,7 @@ fn run_presence_worker(
     command: Receiver<PresenceWorkerCommand>,
     runtime: Arc<Mutex<PresenceRuntime>>,
     sharing_enabled: Arc<AtomicBool>,
+    display_options: Arc<Mutex<crate::config::DiscordDisplayOptions>>,
 ) {
     let mut system = System::new();
     let mut client = None;
@@ -270,7 +290,11 @@ fn run_presence_worker(
 
             if sharing_enabled.load(Ordering::Relaxed)
                 && let Some(connected_client) = client.as_mut()
-                && let Err(error) = set_activity(connected_client, &unity_activity)
+                && let Err(error) = set_activity(
+                    connected_client,
+                    &unity_activity,
+                    &display_options.lock().unwrap().clone(),
+                )
             {
                 if !unavailable_logged {
                     log::debug!("failed to publish Unity Discord status: {error}");
@@ -376,23 +400,42 @@ fn truncate_discord_text(text: &str) -> String {
 fn set_activity(
     client: &mut DiscordIpcClient,
     unity_activity: &UnityDiscordActivity,
+    display_options: &crate::config::DiscordDisplayOptions,
 ) -> Result<(), discord_rich_presence::error::Error> {
-    client.set_activity(build_activity(unity_activity))
+    client.set_activity(build_activity(unity_activity, display_options))
 }
 
-fn build_activity(unity_activity: &UnityDiscordActivity) -> activity::Activity<'static> {
-    let details = truncate_discord_text(&format!("Editing {}", unity_activity.project_name));
-    let editor = unity_activity.unity_version.as_deref().map_or_else(
-        || "Unity Editor".to_string(),
-        |version| format!("Unity {version}"),
-    );
-    let state = if unity_activity.editor_count > 1 {
-        format!("{editor} · {} editors open", unity_activity.editor_count)
+fn build_activity(
+    unity_activity: &UnityDiscordActivity,
+    display_options: &crate::config::DiscordDisplayOptions,
+) -> activity::Activity<'static> {
+    let details = if display_options.project_name {
+        truncate_discord_text(&format!("Editing {}", unity_activity.project_name))
     } else {
-        editor
+        "Editing Unity".to_string()
+    };
+    let mut state_parts = Vec::new();
+    if display_options.unity_version {
+        state_parts.push(unity_activity.unity_version.as_deref().map_or_else(
+            || "Unity Editor".to_string(),
+            |version| format!("Unity {version}"),
+        ));
+    }
+    if display_options.editor_count {
+        let editor_label = if unity_activity.editor_count == 1 {
+            "1 editor open".to_string()
+        } else {
+            format!("{} editors open", unity_activity.editor_count)
+        };
+        state_parts.push(editor_label);
+    }
+    let state = if state_parts.is_empty() {
+        "Unity Editor".to_string()
+    } else {
+        state_parts.join(" · ")
     };
 
-    activity::Activity::new()
+    let mut activity = activity::Activity::new()
         .name("Unity")
         .details(details)
         .state(truncate_discord_text(&state))
@@ -402,8 +445,12 @@ fn build_activity(unity_activity: &UnityDiscordActivity) -> activity::Activity<'
                 .large_text("Unity Editor")
                 .small_image(DISCORD_SMALL_IMAGE_KEY)
                 .small_text("Shared by ALCOMD3"),
-        )
-        .timestamps(activity::Timestamps::new().start(unity_activity.started_at as i64))
+        );
+    if display_options.session_duration {
+        activity = activity
+            .timestamps(activity::Timestamps::new().start(unity_activity.started_at as i64));
+    }
+    activity
 }
 
 #[cfg(test)]
@@ -418,6 +465,7 @@ mod tests {
             worker: Mutex::new(None),
             runtime: Arc::new(Mutex::new(PresenceRuntime::default())),
             sharing_enabled: Arc::new(AtomicBool::new(false)),
+            display_options: Arc::new(Mutex::new(crate::config::DiscordDisplayOptions::default())),
         };
 
         state.set_enabled(false);
@@ -432,6 +480,7 @@ mod tests {
             worker: Mutex::new(None),
             runtime: Arc::new(Mutex::new(PresenceRuntime::default())),
             sharing_enabled: Arc::new(AtomicBool::new(false)),
+            display_options: Arc::new(Mutex::new(crate::config::DiscordDisplayOptions::default())),
         };
 
         state.set_enabled(true);
@@ -450,6 +499,7 @@ mod tests {
             worker: Mutex::new(None),
             runtime: Arc::new(Mutex::new(PresenceRuntime::default())),
             sharing_enabled: Arc::new(AtomicBool::new(false)),
+            display_options: Arc::new(Mutex::new(crate::config::DiscordDisplayOptions::default())),
         };
 
         state.set_enabled(true);
@@ -626,7 +676,11 @@ mod tests {
             started_at: 2000.0,
         };
 
-        let payload = serde_json::to_value(build_activity(&unity_activity)).unwrap();
+        let payload = serde_json::to_value(build_activity(
+            &unity_activity,
+            &crate::config::DiscordDisplayOptions::default(),
+        ))
+        .unwrap();
 
         assert_eq!(payload["name"], "Unity");
         assert_eq!(payload["details"], "Editing Newer World");
@@ -637,6 +691,28 @@ mod tests {
         assert_eq!(payload["assets"]["small_text"], "Shared by ALCOMD3");
         assert_eq!(payload["timestamps"]["start"], 2000);
         assert!(payload.get("buttons").is_none());
+    }
+
+    #[test]
+    fn discord_payload_respects_hidden_display_options() {
+        let unity_activity = UnityDiscordActivity {
+            project_name: "Private Project".to_string(),
+            unity_version: Some("2022.3.22f1".to_string()),
+            editor_count: 2,
+            started_at: 2000.0,
+        };
+        let options = crate::config::DiscordDisplayOptions {
+            project_name: false,
+            unity_version: false,
+            editor_count: false,
+            session_duration: false,
+        };
+
+        let payload = serde_json::to_value(build_activity(&unity_activity, &options)).unwrap();
+
+        assert_eq!(payload["details"], "Editing Unity");
+        assert_eq!(payload["state"], "Unity Editor");
+        assert!(payload.get("timestamps").is_none());
     }
 
     #[test]

@@ -36,6 +36,7 @@ export const commands = {
 	environmentImportLegacyData: (source: TauriLegacyDataSourceKind, category: TauriLegacyDataImportCategory) => __TAURI_INVOKE<TauriLegacyDataImportResult>("environment_import_legacy_data", { source, category }),
 	unityDiscordStatus: () => __TAURI_INVOKE<UnityDiscordStatus>("unity_discord_status"),
 	unityDiscordSetSharingEnabled: (enabled: boolean) => __TAURI_INVOKE<UnityDiscordStatus>("unity_discord_set_sharing_enabled", { enabled }),
+	unityDiscordSetDisplayOptions: (options: DiscordDisplayOptions) => __TAURI_INVOKE<UnityDiscordStatus>("unity_discord_set_display_options", { options }),
 	mcpStatus: () => __TAURI_INVOKE<McpStatus>("mcp_status"),
 	mcpSetEnabled: (enabled: boolean) => __TAURI_INVOKE<McpStatus>("mcp_set_enabled", { enabled }),
 	mcpConfigureClient: (client: McpClient, overwrite: boolean) => __TAURI_INVOKE<McpClientSetupResult>("mcp_configure_client", { client, overwrite }),
@@ -269,9 +270,17 @@ export type UnityDiscordActivity = {
 	startedAt: number,
 };
 
+export type DiscordDisplayOptions = {
+	projectName: boolean,
+	unityVersion: boolean,
+	editorCount: boolean,
+	sessionDuration: boolean,
+};
+
 export type UnityDiscordStatus = {
 	enabled: boolean,
 	sharingEnabled: boolean,
+	displayOptions: DiscordDisplayOptions,
 	applicationConfigured: boolean,
 	workerRunning: boolean,
 	discordConnected: boolean,

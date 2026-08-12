@@ -15,6 +15,10 @@ GitHub Release 正文按 English、日本語、中文顺序，由结构一致的
 
 ## [Unreleased]
 
+### Added
+
+- 为 Discord 扩展新增逐项显示控制，用户可以选择是否显示 Unity 项目文件夹名称、Unity 版本、已打开编辑器数量和会话时长。
+
 ## [3.3.0-beta.2] - 2026-08-12
 
 ### Added
