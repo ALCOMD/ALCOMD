@@ -28,21 +28,39 @@ category order, and bullet counts must match this canonical entry.
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-08-13
+
 ### Added
 
-- Added per-item controls to the Discord extension so users can choose whether to show the Unity project folder name, Unity version, and open-editor count, and can append optional custom text to the activity. When enabled, the Unity version appears in the activity title.
+- Added persistent user-defined display names for repositories.
+- Added a persistent MCP tool-name display switch between call names and localized names, with the alternate name shown on hover.
+- Added a built-in Discord extension, enabled by default, with a dedicated live Unity status and preview page. A separate persisted sharing switch remains off by default and controls Discord publishing. Users can individually publish the project folder name, Unity version, and open-editor count, append optional custom text, and show Unity artwork with an ALCOMD3 badge without exposing full project paths. When enabled, the Unity version appears in the activity title. With multiple editors, a newly started or foreground Unity editor remains primary while another app is in the foreground; platforms without foreground detection use the most recently started editor.
 
 ### Changed
 
+- Embedded the MCP HTTP server, all 33 tools, direct business dispatch, and shared task management in the GUI process while preserving the existing loopback URL and bearer-token client configuration.
+- Upgraded MCP to RMCP 3.1.2 with explicit `2026-07-28` sessionless requests and experimental extension Tasks, while retaining ordinary `2025-11-25` tool-call compatibility for legacy sessions.
+- Standardized MCP package repository selection on repository IDs; repository URLs remain limited to adding and removing repositories.
+- Selected desktop shortcut creation by default for new Windows installations while preserving the previous choice during upgrades.
+- Added an optional Windows uninstall choice to remove settings, caches, and other local application data without deleting projects or backups stored in Documents.
+- Made the MCP tool and project card lists responsive up to three columns based on their container width, with more room required before switching to three columns.
 - Simplified preference changes so switches and selectors update immediately without a saving state, explicit rollback, or error notification; after each write, the interface rereads the persisted value, while failures remain visible in the logs.
 
 ### Fixed
 
+- Kept activity-log table columns stable and prevented layout shifts when auxiliary records are toggled.
+- Displayed the invalid computer-name notice as a high-severity red error because this condition causes VRCSDK uploads to fail.
+- Aligned all seven GUI locales on the same keys, runtime values, confirmation semantics, compatibility-warning severity, and user-facing feature coverage, and added automated consistency checks to prevent structural localization drift.
+- Kept repository-list imports running after individual repository download failures, committed the successful repositories, and added per-repository progress with retry for unfinished entries.
 - Persisted the MCP tool-name display and log-view preferences in `gui-config.json` and stopped relying on WebView local or session storage for user settings.
-- Reserved the final 1% of project package-operation progress for backend finalization, so the progress display reaches 100% only after the operation completes.
+- Counted failed package operations and repository downloads as processed, reused concurrent preview downloads for final repository saving, started the standard package refresh independently after repository additions, and reserved the final 1% of project package-operation progress for backend finalization so completed operations reach 100% only after all work finishes while cancellations retain their actual progress.
 - Kept selected project packages selected when the package-change confirmation dialog is cancelled.
 - Corrected the Discord preview to show no activity while Unity is not running and to mirror the text and elapsed-time format actually published to Discord; removed the redundant full-path notice and the ineffective session-duration switch, and now always publishes Unity's real start time instead of allowing Discord to substitute one.
 - Fixed Unity asset import worker processes being counted as additional open editors in Discord activity.
+
+### Removed
+
+- Removed the standalone `alcomd3-mcp` executable, its private IPC protocol and endpoint metadata, and the obsolete core Tasks `tasks/list` and `tasks/result` compatibility paths; Windows upgrades and uninstall still clean up the historical helper file.
 
 ## [3.3.0-beta.2] - 2026-08-12
 
@@ -220,7 +238,8 @@ category order, and bullet counts must match this canonical entry.
 - Used ALCOMD3-owned update endpoints, an embedded public key, and signed update
   payloads.
 
-[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0-beta.2...HEAD
+[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0...HEAD
+[3.3.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.2.0...v3.3.0
 [3.3.0-beta.2]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0-beta.1...v3.3.0-beta.2
 [3.3.0-beta.1]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.2.0...v3.3.0-beta.1
 [3.2.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0...v3.2.0

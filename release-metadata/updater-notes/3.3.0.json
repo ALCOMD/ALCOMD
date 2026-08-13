@@ -1,0 +1,9 @@
+{
+  "en": "Adds built-in customizable Discord presence, embeds all 33 MCP tools in the GUI, and improves repository imports, progress accuracy, persistent preferences, responsive layouts, and Windows installation and removal options.",
+  "de": "Fügt eine integrierte anpassbare Discord-Präsenz hinzu, bettet alle 33 MCP-Werkzeuge in die GUI ein und verbessert Repository-Importe, Fortschrittsgenauigkeit, dauerhafte Einstellungen, responsive Layouts sowie Windows-Installations- und Deinstallationsoptionen.",
+  "fr": "Ajoute une présence Discord intégrée et personnalisable, intègre les 33 outils MCP dans l’interface graphique et améliore l’importation des dépôts, la précision de la progression, les préférences persistantes, les mises en page adaptatives ainsi que les options d’installation et de désinstallation sous Windows.",
+  "ja": "カスタマイズ可能な組み込み Discord プレゼンスを追加し、33 個すべての MCP ツールを GUI に内蔵しました。リポジトリのインポート、進捗精度、設定の永続化、レスポンシブレイアウト、Windows のインストールおよびアンインストール設定も改善しています。",
+  "ko": "사용자 지정 가능한 내장 Discord 프레즌스를 추가하고 33개 MCP 도구를 모두 GUI에 통합했습니다. 저장소 가져오기, 진행률 정확도, 설정 유지, 반응형 레이아웃 및 Windows 설치·제거 옵션도 개선했습니다.",
+  "zh_hans": "新增可自定义的内置 Discord 状态，将全部 33 个 MCP 工具内置到 GUI，并改进存储库导入、进度准确性、偏好持久化、响应式布局以及 Windows 安装和卸载选项。",
+  "zh_hant": "新增可自訂的內建 Discord 狀態，將全部 33 個 MCP 工具內建至 GUI，並改善儲存庫匯入、進度準確性、偏好持久化、響應式版面配置以及 Windows 安裝與解除安裝選項。"
+}
