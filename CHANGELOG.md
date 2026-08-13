@@ -32,8 +32,13 @@ category order, and bullet counts must match this canonical entry.
 
 - Added per-item controls to the Discord extension so users can choose whether to show the Unity project folder name, Unity version, and open-editor count, and can append optional custom text to the activity. When enabled, the Unity version appears in the activity title.
 
+### Changed
+
+- Simplified preference changes so switches and selectors update immediately without a saving state, explicit rollback, or error notification; after each write, the interface rereads the persisted value, while failures remain visible in the logs.
+
 ### Fixed
 
+- Persisted the MCP tool-name display and log-view preferences in `gui-config.json` and stopped relying on WebView local or session storage for user settings.
 - Reserved the final 1% of project package-operation progress for backend finalization, so the progress display reaches 100% only after the operation completes.
 - Kept selected project packages selected when the package-change confirmation dialog is cancelled.
 - Corrected the Discord preview to show no activity while Unity is not running and to mirror the text and elapsed-time format actually published to Discord; removed the redundant full-path notice and the ineffective session-duration switch, and now always publishes Unity's real start time instead of allowing Discord to substitute one.

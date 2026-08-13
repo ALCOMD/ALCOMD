@@ -40,16 +40,16 @@ export function LanguageSelector() {
 			await commands.environmentSetLanguage(language),
 		onMutate: async (language) => {
 			await i18next.changeLanguage(language);
-			await queryClient.invalidateQueries(environmentLanguage);
-			const data = queryClient.getQueryData(environmentLanguage.queryKey);
+			await queryClient.cancelQueries(environmentLanguage);
 			queryClient.setQueryData(environmentLanguage.queryKey, language);
-			return data;
 		},
 		onError: (e) => {
-			console.error(e);
-			toastThrownError(e);
+			console.error("Failed to save language setting", e);
 		},
-		onSettled: () => queryClient.invalidateQueries(environmentLanguage),
+		onSettled: async () => {
+			const language = await queryClient.fetchQuery(environmentLanguage);
+			await i18next.changeLanguage(language);
+		},
 	});
 
 	return (
@@ -90,29 +90,21 @@ export function GuiAnimationSwitch() {
 			await commands.environmentSetGuiAnimation(guiAnimation),
 		onMutate: async (guiAnimation) => {
 			await queryClient.cancelQueries(environmentGuiAnimation);
-			const current = queryClient.getQueryData(
-				environmentGuiAnimation.queryKey,
-			);
-			if (current != null) {
-				queryClient.setQueryData(
-					environmentGuiAnimation.queryKey,
-					guiAnimation,
-				);
-			}
-			return current;
-		},
-		onError: (e, _, prev) => {
-			console.error(e);
-			toastThrownError(e);
-			queryClient.setQueryData(environmentGuiAnimation.queryKey, prev);
-		},
-		onSuccess: (_, guiAnimation) => {
+			queryClient.setQueryData(environmentGuiAnimation.queryKey, guiAnimation);
 			document.dispatchEvent(
 				new CustomEvent("gui-animation", { detail: guiAnimation }),
 			);
 		},
+		onError: (e) => {
+			console.error("Failed to save GUI animation setting", e);
+		},
 		onSettled: async () => {
-			await queryClient.invalidateQueries(environmentGuiAnimation);
+			const guiAnimation = await queryClient.fetchQuery(
+				environmentGuiAnimation,
+			);
+			document.dispatchEvent(
+				new CustomEvent("gui-animation", { detail: guiAnimation }),
+			);
 		},
 	});
 
@@ -146,26 +138,23 @@ export function GuiCompactSwitch() {
 			await commands.environmentSetGuiCompact(guiCompact),
 		onMutate: async (guiCompact) => {
 			await queryClient.cancelQueries(environmentGuiCompact);
-			const current = queryClient.getQueryData(environmentGuiCompact.queryKey);
-			if (current != null) {
-				queryClient.setQueryData(environmentGuiCompact.queryKey, guiCompact);
-			}
-			return current;
-		},
-		onError: (e, _, prev) => {
-			console.error(e);
-			toastThrownError(e);
-			queryClient.setQueryData(environmentGuiCompact.queryKey, prev);
-		},
-		onSuccess: (_, guiCompact) => {
+			queryClient.setQueryData(environmentGuiCompact.queryKey, guiCompact);
 			if (guiCompact) {
 				document.documentElement.setAttribute("compact", "");
 			} else {
 				document.documentElement.removeAttribute("compact");
 			}
 		},
+		onError: (e) => {
+			console.error("Failed to save compact GUI setting", e);
+		},
 		onSettled: async () => {
-			await queryClient.invalidateQueries(environmentGuiCompact);
+			const guiCompact = await queryClient.fetchQuery(environmentGuiCompact);
+			if (guiCompact) {
+				document.documentElement.setAttribute("compact", "");
+			} else {
+				document.documentElement.removeAttribute("compact");
+			}
 		},
 	});
 
@@ -297,12 +286,9 @@ export function BackupFormatSelect({ backupFormat }: { backupFormat: string }) {
 					backup_format: format,
 				});
 			}
-			return current;
 		},
-		onError: (e, _, prev) => {
-			console.error(e);
-			toastThrownError(e);
-			queryClient.setQueryData(environmentGetSettings.queryKey, prev);
+		onError: (e) => {
+			console.error("Failed to save backup format setting", e);
 		},
 		onSettled: async () => {
 			await queryClient.invalidateQueries(environmentGetSettings);

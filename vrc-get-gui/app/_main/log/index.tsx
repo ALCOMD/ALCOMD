@@ -42,6 +42,7 @@ import type {
 	ActivityStatus,
 	LogEntry,
 	LogLevel,
+	LogViewPreferences,
 } from "@/lib/bindings";
 import { commands } from "@/lib/bindings";
 import { ALCOMD3_DATA_PATHS } from "@/lib/constants";
@@ -50,7 +51,6 @@ import globalInfo from "@/lib/global-info";
 import { tc } from "@/lib/i18n";
 import { toastThrownError } from "@/lib/toast";
 import { useTauriListen } from "@/lib/use-tauri-listen";
-import { useSessionStorage } from "@/lib/useSessionStorage";
 import { ActivityListCard } from "./-activity-list-card";
 import { LogsListCard } from "./-logs-list-card";
 
@@ -68,14 +68,21 @@ const environmentLogsLevel = queryOptions({
 	queryFn: async () => commands.environmentLogsLevel(),
 });
 
+const environmentLogViewPreferences = queryOptions({
+	queryKey: ["environmentLogViewPreferences"],
+	queryFn: async () => commands.environmentLogViewPreferences(),
+});
+
 type LogView = "activity" | "technical";
 type ActivitySourceFilter = ActivitySource | "All";
 type ActivityKindFilter = ActivityKind | "All";
 type ActivityStatusFilter = ActivityStatus | "All";
 const ACTIVITY_SEARCH_DEBOUNCE_MS = 250;
-const LOGS_AUTO_SCROLL_STORAGE_KEY = "logs_auto_scroll";
-const LOGS_SHOW_SECONDARY_ACTIVITY_STORAGE_KEY = "logs_show_secondary_activity";
-const LOGS_SHOW_ACTIVITY_DETAILS_STORAGE_KEY = "logs_show_activity_details";
+const DEFAULT_LOG_VIEW_PREFERENCES: LogViewPreferences = {
+	autoScroll: true,
+	showSecondaryActivity: false,
+	showActivityDetails: false,
+};
 
 function Page() {
 	const [search, setSearch] = useState("");
@@ -86,15 +93,6 @@ function Page() {
 	const [activityKind, setActivityKind] = useState<ActivityKindFilter>("All");
 	const [activityStatus, setActivityStatus] =
 		useState<ActivityStatusFilter>("All");
-	const showSecondaryActivity = useSessionStorageBoolean({
-		key: LOGS_SHOW_SECONDARY_ACTIVITY_STORAGE_KEY,
-		fallbackValue: false,
-	});
-	const showActivityDetails = useSessionStorageBoolean({
-		key: LOGS_SHOW_ACTIVITY_DETAILS_STORAGE_KEY,
-		fallbackValue: false,
-	});
-
 	const queryClient = useQueryClient();
 	const logEntriesQuery = useQuery({
 		...utilGetLogEntries,
@@ -104,6 +102,10 @@ function Page() {
 		...environmentLogsLevel,
 		enabled: view === "technical",
 	});
+	const logViewPreferences = useQuery(environmentLogViewPreferences);
+	const preferences = logViewPreferences.data ?? DEFAULT_LOG_VIEW_PREFERENCES;
+	const { autoScroll, showSecondaryActivity, showActivityDetails } =
+		preferences;
 	useEffect(() => {
 		const timeout = window.setTimeout(() => {
 			setActivitySearch(search);
@@ -144,35 +146,51 @@ function Page() {
 			commands.environmentSetLogsLevel(value),
 		onMutate: async (value) => {
 			await queryClient.cancelQueries(environmentLogsLevel);
-			const data = queryClient.getQueryData(environmentLogsLevel.queryKey);
 			queryClient.setQueryData(environmentLogsLevel.queryKey, value);
-			return data;
 		},
-		onError: (e, _, data) => {
-			console.error(e);
-			toastThrownError(e);
-			queryClient.setQueryData(environmentLogsLevel.queryKey, data);
+		onError: (e) => {
+			console.error("Failed to save log level setting", e);
 		},
 		onSettled: async () => {
 			await queryClient.invalidateQueries(environmentLogsLevel);
 		},
 	});
 
-	const autoScroll = useSessionStorage({
-		key: LOGS_AUTO_SCROLL_STORAGE_KEY,
-		parse: (value) => value === "true",
-		fallbackValue: true,
+	const updateLogViewPreferences = useMutation({
+		mutationFn: async (patch: Partial<LogViewPreferences>) =>
+			commands.environmentSetLogViewPreferences({
+				autoScroll: patch.autoScroll ?? null,
+				showSecondaryActivity: patch.showSecondaryActivity ?? null,
+				showActivityDetails: patch.showActivityDetails ?? null,
+			}),
+		onMutate: async (patch) => {
+			await queryClient.cancelQueries(environmentLogViewPreferences);
+			queryClient.setQueryData<LogViewPreferences>(
+				environmentLogViewPreferences.queryKey,
+				(current) => ({
+					...(current ?? DEFAULT_LOG_VIEW_PREFERENCES),
+					...patch,
+				}),
+			);
+		},
+		onError: (error) => {
+			console.error("Failed to save log view preferences", error);
+		},
+		onSettled: async () => {
+			await queryClient.invalidateQueries(environmentLogViewPreferences);
+		},
 	});
 
 	const handleLogAutoScrollChange = (value: boolean) => {
-		setSessionStorageBoolean(LOGS_AUTO_SCROLL_STORAGE_KEY, value);
+		updateLogViewPreferences.mutate({ autoScroll: value });
 	};
 	const handleShowSecondaryActivityChange = (value: boolean) => {
-		setSessionStorageBoolean(LOGS_SHOW_SECONDARY_ACTIVITY_STORAGE_KEY, value);
+		updateLogViewPreferences.mutate({ showSecondaryActivity: value });
 	};
 	const handleShowActivityDetailsChange = (value: boolean) => {
-		setSessionStorageBoolean(LOGS_SHOW_ACTIVITY_DETAILS_STORAGE_KEY, value);
+		updateLogViewPreferences.mutate({ showActivityDetails: value });
 	};
+	const logViewPreferencesDisabled = logViewPreferences.data == null;
 
 	useTauriListen<LogEntry>("log", (event) => {
 		const entry = event.payload as LogEntry;
@@ -197,6 +215,7 @@ function Page() {
 				handleLogLevelChange={handleLogLevelChange.mutate}
 				handleLogAutoScrollChange={handleLogAutoScrollChange}
 				autoScroll={autoScroll}
+				logViewPreferencesDisabled={logViewPreferencesDisabled}
 			/>
 			{view === "activity" && (
 				<ActivityFilters
@@ -210,6 +229,7 @@ function Page() {
 					setShowSecondary={handleShowSecondaryActivityChange}
 					showDetails={showActivityDetails}
 					setShowDetails={handleShowActivityDetailsChange}
+					disabled={logViewPreferencesDisabled}
 				/>
 			)}
 			<main className="shrink overflow-hidden flex w-full h-full">
@@ -232,33 +252,6 @@ function Page() {
 	);
 }
 
-function useSessionStorageBoolean({
-	key,
-	fallbackValue,
-}: {
-	key: string;
-	fallbackValue: boolean;
-}) {
-	return useSessionStorage({
-		key,
-		parse: (value) => value === "true",
-		fallbackValue,
-	});
-}
-
-function setSessionStorageBoolean(key: string, value: boolean) {
-	sessionStorage.setItem(key, String(value));
-	// Manually dispatch storage event to force state synchronization within the same page,
-	// as native sessionStorage.setItem doesn't trigger storage event for the current origin
-	window.dispatchEvent(
-		new StorageEvent("storage", {
-			key,
-			newValue: String(value),
-			storageArea: sessionStorage,
-		}),
-	);
-}
-
 function ManageLogsHeading({
 	view,
 	setView,
@@ -268,6 +261,7 @@ function ManageLogsHeading({
 	handleLogLevelChange,
 	handleLogAutoScrollChange,
 	autoScroll,
+	logViewPreferencesDisabled,
 }: {
 	view: LogView;
 	setView: (value: LogView) => void;
@@ -277,6 +271,7 @@ function ManageLogsHeading({
 	handleLogLevelChange: (newLogLevels: LogLevel[]) => void;
 	handleLogAutoScrollChange: (newAutoScroll: boolean) => void;
 	autoScroll: boolean;
+	logViewPreferencesDisabled: boolean;
 }) {
 	const searchRef = useRef<HTMLInputElement>(null);
 
@@ -339,6 +334,7 @@ function ManageLogsHeading({
 						handleLogLevelChange={handleLogLevelChange}
 						handleLogAutoScrollChange={handleLogAutoScrollChange}
 						autoScroll={autoScroll}
+						disabled={logViewPreferencesDisabled}
 					/>
 				) : undefined
 			}
@@ -357,6 +353,7 @@ function ActivityFilters({
 	setShowSecondary,
 	showDetails,
 	setShowDetails,
+	disabled,
 }: {
 	source: ActivitySourceFilter;
 	setSource: (value: ActivitySourceFilter) => void;
@@ -368,6 +365,7 @@ function ActivityFilters({
 	setShowSecondary: (value: boolean) => void;
 	showDetails: boolean;
 	setShowDetails: (value: boolean) => void;
+	disabled: boolean;
 }) {
 	return (
 		<SecondaryToolbarCard>
@@ -393,6 +391,7 @@ function ActivityFilters({
 				<Checkbox
 					checked={showSecondary}
 					onCheckedChange={(checked) => setShowSecondary(checked === true)}
+					disabled={disabled}
 					className="hover:before:content-none"
 				/>
 				{tc("logs:activity:show secondary")}
@@ -401,6 +400,7 @@ function ActivityFilters({
 				<Checkbox
 					checked={showDetails}
 					onCheckedChange={(checked) => setShowDetails(checked === true)}
+					disabled={disabled}
 					className="hover:before:content-none"
 				/>
 				{tc("logs:activity:show details")}
@@ -443,11 +443,13 @@ function TechnicalLogFilters({
 	handleLogLevelChange,
 	handleLogAutoScrollChange,
 	autoScroll,
+	disabled,
 }: {
 	shouldShowLogLevel: LogLevel[];
 	handleLogLevelChange: (newLogLevels: LogLevel[]) => void;
 	handleLogAutoScrollChange: (newAutoScroll: boolean) => void;
 	autoScroll: boolean;
+	disabled: boolean;
 }) {
 	return (
 		<>
@@ -500,6 +502,7 @@ function TechnicalLogFilters({
 				<TooltipTrigger asChild>
 					<Button
 						variant={"ghost"}
+						disabled={disabled}
 						onClick={() => handleLogAutoScrollChange(!autoScroll)}
 						className={`compact:h-10 ${
 							autoScroll

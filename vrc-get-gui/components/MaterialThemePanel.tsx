@@ -15,8 +15,8 @@ import {
 	DEFAULT_THEME_MODE,
 	DEFAULT_THEME_SCHEME,
 	DEFAULT_THEME_SOURCE_HEX,
+	getDefaultMaterialTheme,
 	getPersistedMaterialTheme,
-	getStoredMaterialTheme,
 	hctFromHex,
 	hexFromHctInputs,
 	normalizeHexColor,
@@ -25,9 +25,6 @@ import {
 	THEME_SCHEME_NAMES,
 	type ThemeMode,
 	type ThemeSchemeName,
-	USER_THEME_MODE_KEY,
-	USER_THEME_SCHEME_KEY,
-	USER_THEME_SOURCE_KEY,
 } from "@/lib/material-theme";
 import { cn } from "@/lib/utils";
 
@@ -67,7 +64,7 @@ export function MaterialThemePanel({
 	showTitle?: boolean;
 	titleInDialog?: boolean;
 }) {
-	const initialTheme = useState(getStoredMaterialTheme)[0];
+	const initialTheme = useState(getDefaultMaterialTheme)[0];
 	const [persistedThemeLoaded, setPersistedThemeLoaded] = useState(false);
 	const [sourceHex, setSourceHex] = useState(initialTheme.sourceHex);
 	const [hexText, setHexText] = useState(initialTheme.sourceHex);
@@ -100,8 +97,22 @@ export function MaterialThemePanel({
 
 	useEffect(() => {
 		if (!persistedThemeLoaded) return;
+		let cancelled = false;
 		applyMaterialTheme(sourceHex, mode, scheme);
-		void savePersistedMaterialTheme({ sourceHex, mode, scheme });
+		void savePersistedMaterialTheme({ sourceHex, mode, scheme }).then(
+			(theme) => {
+				if (cancelled) return;
+				setSourceHex(theme.sourceHex);
+				setHexText(theme.sourceHex);
+				setMode(theme.mode);
+				setScheme(theme.scheme);
+				setHct(hctFromHex(theme.sourceHex));
+				applyMaterialTheme(theme.sourceHex, theme.mode, theme.scheme);
+			},
+		);
+		return () => {
+			cancelled = true;
+		};
 	}, [sourceHex, mode, scheme, persistedThemeLoaded]);
 
 	useEffect(() => {
@@ -131,9 +142,6 @@ export function MaterialThemePanel({
 	};
 
 	const resetTheme = () => {
-		localStorage.removeItem(USER_THEME_SOURCE_KEY);
-		localStorage.removeItem(USER_THEME_MODE_KEY);
-		localStorage.removeItem(USER_THEME_SCHEME_KEY);
 		setMode(DEFAULT_THEME_MODE);
 		setScheme(DEFAULT_THEME_SCHEME);
 		updateSourceHex(DEFAULT_THEME_SOURCE_HEX);

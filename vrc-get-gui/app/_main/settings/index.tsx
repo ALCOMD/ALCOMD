@@ -265,12 +265,9 @@ function UnityInstallationsCard({
 					unity_hub_access_method: method,
 				});
 			}
-			return current;
 		},
-		onError: (e, _, prev) => {
-			console.error(e);
-			toastThrownError(e);
-			queryClient.setQueryData(environmentGetSettings.queryKey, prev);
+		onError: (e) => {
+			console.error("Failed to save Unity Hub access method", e);
 		},
 		onSettled: async () => {
 			await queryClient.invalidateQueries(environmentGetSettings);
@@ -660,12 +657,9 @@ function PackagesCard() {
 					show_prerelease_packages: showPrerelease,
 				});
 			}
-			return current;
 		},
-		onError: (e, _, prev) => {
-			console.error(e);
-			toastThrownError(e);
-			queryClient.setQueryData(environmentGetSettings.queryKey, prev);
+		onError: (e) => {
+			console.error("Failed to save prerelease package setting", e);
 		},
 		onSettled: async () => {
 			await Promise.all([
@@ -813,12 +807,9 @@ function AlcomCard() {
 					release_channel: releaseChannel,
 				});
 			}
-			return current;
 		},
-		onError: (e, _, prev) => {
-			console.error(e);
-			toastThrownError(e);
-			queryClient.setQueryData(environmentGetSettings.queryKey, prev);
+		onError: (e) => {
+			console.error("Failed to save release channel", e);
 		},
 		onSuccess: async () => {
 			if (!globalInfo.checkForUpdates) return;
@@ -846,12 +837,9 @@ function AlcomCard() {
 					automatic_update: enabled,
 				});
 			}
-			return current;
 		},
-		onError: (e, _, prev) => {
-			console.error(e);
-			toastThrownError(e);
-			queryClient.setQueryData(environmentGetSettings.queryKey, prev);
+		onError: (e) => {
+			console.error("Failed to save automatic update setting", e);
 		},
 		onSuccess: async (_, enabled) => {
 			if (!enabled || !globalInfo.checkForUpdates) return;

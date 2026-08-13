@@ -298,19 +298,15 @@ function TemplateRow({
 					},
 				);
 			}
-
-			return previousData;
 		},
 
-		onError: (error, _, context) => {
-			console.error("Error favoriting project", error);
-			toastThrownError(error);
-			if (context) {
-				queryClient.setQueryData(
-					environmentProjectCreationInformation.queryKey,
-					context,
-				);
-			}
+		onError: (error) => {
+			console.error("Failed to save template favorite", error);
+		},
+		onSettled: async () => {
+			await queryClient.invalidateQueries(
+				environmentProjectCreationInformation,
+			);
 		},
 	});
 

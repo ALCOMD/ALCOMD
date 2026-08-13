@@ -453,12 +453,9 @@ function ManagePackagesHeading({
 					show_prerelease_packages: shown,
 				});
 			}
-			return data;
 		},
-		onError: (e, _, ctx) => {
-			reportError(e);
-			console.error(e);
-			queryClient.setQueryData(environmentRepositoriesInfo.queryKey, ctx);
+		onError: (e) => {
+			console.error("Failed to save prerelease package setting", e);
 		},
 		onSettled: async () => {
 			await Promise.all([
@@ -899,15 +896,13 @@ function RepositoryMenuItem({
 			if (data !== undefined) {
 				let hidden_user_repositories: string[];
 				if (shown) {
-					if (data.hidden_user_repositories.includes(id)) {
-						hidden_user_repositories = data.hidden_user_repositories;
-					} else {
-						hidden_user_repositories = [...data.hidden_user_repositories, id];
-					}
-				} else {
 					hidden_user_repositories = data.hidden_user_repositories.filter(
 						(x) => x !== id,
 					);
+				} else if (data.hidden_user_repositories.includes(id)) {
+					hidden_user_repositories = data.hidden_user_repositories;
+				} else {
+					hidden_user_repositories = [...data.hidden_user_repositories, id];
 				}
 
 				queryClient.setQueryData(environmentRepositoriesInfo.queryKey, {
@@ -915,12 +910,9 @@ function RepositoryMenuItem({
 					hidden_user_repositories,
 				});
 			}
-			return data;
 		},
-		onError: (e, _, ctx) => {
-			reportError(e);
-			console.error(e);
-			queryClient.setQueryData(environmentRepositoriesInfo.queryKey, ctx);
+		onError: (e) => {
+			console.error("Failed to save repository visibility", e);
 		},
 		onSettled: async () => {
 			await Promise.all([
@@ -957,7 +949,7 @@ function UserLocalRepositoryMenuItem({
 
 	const setHideLocalUserPackages = useMutation({
 		mutationFn: async (shown: boolean) => {
-			await commands.environmentSetHideLocalUserPackages(shown);
+			await commands.environmentSetHideLocalUserPackages(!shown);
 		},
 		onMutate: async (shown) => {
 			await queryClient.cancelQueries(environmentRepositoriesInfo);
@@ -967,15 +959,12 @@ function UserLocalRepositoryMenuItem({
 			if (data !== undefined) {
 				queryClient.setQueryData(environmentRepositoriesInfo.queryKey, {
 					...data,
-					hide_local_user_packages: shown,
+					hide_local_user_packages: !shown,
 				});
 			}
-			return data;
 		},
-		onError: (e, _, ctx) => {
-			reportError(e);
-			console.error(e);
-			queryClient.setQueryData(environmentRepositoriesInfo.queryKey, ctx);
+		onError: (e) => {
+			console.error("Failed to save local package visibility", e);
 		},
 		onSettled: async () => {
 			await Promise.all([

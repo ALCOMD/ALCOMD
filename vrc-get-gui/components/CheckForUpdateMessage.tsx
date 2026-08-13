@@ -42,7 +42,6 @@ type UpdateInstallProgressState =
 
 export const latestUpdateCheckQueryKey = ["latestUpdateCheck"] as const;
 
-const UPDATE_REMIND_LATER_STORAGE_KEY = "alcomd3.updateRemindLater";
 const UPDATE_REMIND_LATER_DELAY_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_ESTIMATED_UPDATE_TOTAL_SIZE = 20 * 1000 * 1000;
 const HTTPS_URL_REGEX =
@@ -78,34 +77,12 @@ function normalizeUpdateReminder(value: unknown): UpdateReminder | null {
 	return null;
 }
 
-function parseUpdateReminder(value: string): UpdateReminder | null {
-	try {
-		return normalizeUpdateReminder(JSON.parse(value));
-	} catch {
-		// Ignore invalid persisted state; update checks can still show the dialog.
-	}
-
-	return null;
-}
-
-function readUpdateReminder(): UpdateReminder | null {
-	try {
-		const value = localStorage.getItem(UPDATE_REMIND_LATER_STORAGE_KEY);
-		return value == null ? null : parseUpdateReminder(value);
-	} catch {
-		return null;
-	}
-}
-
 async function readPersistedUpdateReminder(): Promise<UpdateReminder | null> {
 	try {
-		const reminder = normalizeUpdateReminder(
-			await commands.environmentUpdateReminder(),
-		);
-		return reminder ?? readUpdateReminder();
+		return normalizeUpdateReminder(await commands.environmentUpdateReminder());
 	} catch (e) {
 		console.error("failed to read persisted update reminder", e);
-		return readUpdateReminder();
+		return null;
 	}
 }
 
@@ -118,11 +95,6 @@ export async function shouldSkipUpdateDialogFromReminder(
 
 	const shouldSkip = reminder.remindAfter > Date.now();
 	if (!shouldSkip) {
-		try {
-			localStorage.removeItem(UPDATE_REMIND_LATER_STORAGE_KEY);
-		} catch {
-			// Ignore cleanup failure; it should not block the update dialog.
-		}
 		try {
 			await commands.environmentSetUpdateReminder(null);
 		} catch (e) {
@@ -138,15 +110,6 @@ async function saveUpdateReminder(response: CheckForUpdateResponse) {
 		latestVersion: response.latest_version,
 		remindAfter: Date.now() + UPDATE_REMIND_LATER_DELAY_MS,
 	};
-
-	try {
-		localStorage.setItem(
-			UPDATE_REMIND_LATER_STORAGE_KEY,
-			JSON.stringify(reminder),
-		);
-	} catch (e) {
-		console.error("failed to save update reminder", e);
-	}
 
 	try {
 		await commands.environmentSetUpdateReminder(reminder);

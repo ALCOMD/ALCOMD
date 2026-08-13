@@ -17,7 +17,6 @@ afterEach(() => {
 		return;
 	}
 	clearMocks();
-	localStorage.clear();
 	document.head.replaceChildren();
 	document.body.replaceChildren();
 	document.documentElement.className = "";

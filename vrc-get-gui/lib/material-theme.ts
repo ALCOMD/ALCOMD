@@ -33,9 +33,6 @@ export const DEFAULT_THEME_SOURCE_HEX = "#6cb6ff";
 export const DEFAULT_THEME_MODE = "auto";
 export const DEFAULT_THEME_SCHEME = "vibrant";
 
-export const USER_THEME_SOURCE_KEY = "user_theme_source";
-export const USER_THEME_MODE_KEY = "user_theme_mode";
-export const USER_THEME_SCHEME_KEY = "user_theme_scheme";
 const USER_THEME_CONFIG_PREFIX = "material:";
 
 export const THEME_SCHEME_LABELS = {
@@ -60,9 +57,6 @@ export type MaterialThemeSettings = {
 
 export function setMaterialThemeExtensionEnabled(enabled: boolean) {
 	setMaterialThemeExtensionRuntimeEnabled(enabled);
-	if (enabled) {
-		applyStoredMaterialTheme();
-	}
 }
 
 export async function synchronizeMaterialThemeExtensionState() {
@@ -163,21 +157,11 @@ export function normalizeThemeScheme(value: unknown): ThemeSchemeName {
 		: DEFAULT_THEME_SCHEME;
 }
 
-export function getStoredMaterialTheme(): MaterialThemeSettings {
-	if (typeof window === "undefined") {
-		return {
-			sourceHex: DEFAULT_THEME_SOURCE_HEX,
-			mode: DEFAULT_THEME_MODE,
-			scheme: DEFAULT_THEME_SCHEME,
-		};
-	}
-
+export function getDefaultMaterialTheme(): MaterialThemeSettings {
 	return {
-		sourceHex:
-			normalizeHexColor(localStorage.getItem(USER_THEME_SOURCE_KEY)) ??
-			DEFAULT_THEME_SOURCE_HEX,
-		mode: normalizeThemeMode(localStorage.getItem(USER_THEME_MODE_KEY)),
-		scheme: normalizeThemeScheme(localStorage.getItem(USER_THEME_SCHEME_KEY)),
+		sourceHex: DEFAULT_THEME_SOURCE_HEX,
+		mode: DEFAULT_THEME_MODE,
+		scheme: DEFAULT_THEME_SCHEME,
 	};
 }
 
@@ -205,52 +189,37 @@ function serializeMaterialTheme(settings: MaterialThemeSettings) {
 	return `${USER_THEME_CONFIG_PREFIX}${JSON.stringify(settings)}`;
 }
 
-export function saveMaterialTheme({
-	sourceHex,
-	mode,
-	scheme,
-}: MaterialThemeSettings) {
-	localStorage.setItem(USER_THEME_SOURCE_KEY, sourceHex);
-	localStorage.setItem(USER_THEME_MODE_KEY, mode);
-	localStorage.setItem(USER_THEME_SCHEME_KEY, scheme);
-}
+let materialThemeSaveQueue = Promise.resolve();
 
 export async function getPersistedMaterialTheme() {
 	try {
 		const configTheme = await commands.environmentTheme();
 		const parsed = parseStoredMaterialTheme(configTheme);
-		if (parsed) {
-			saveMaterialTheme(parsed);
-			return parsed;
-		}
+		if (parsed) return parsed;
 	} catch (error) {
 		console.warn("failed to load material theme config", error);
 	}
 
-	return getStoredMaterialTheme();
+	return getDefaultMaterialTheme();
 }
 
 export async function savePersistedMaterialTheme(
 	settings: MaterialThemeSettings,
 ) {
-	saveMaterialTheme(settings);
-	try {
-		await commands.environmentSetTheme(serializeMaterialTheme(settings));
-	} catch (error) {
-		console.warn("failed to save material theme config", error);
-	}
+	const operation = materialThemeSaveQueue.then(async () => {
+		try {
+			await commands.environmentSetTheme(serializeMaterialTheme(settings));
+		} catch (error) {
+			console.warn("failed to save material theme config", error);
+		}
+		return getPersistedMaterialTheme();
+	});
+	materialThemeSaveQueue = operation.then(
+		() => undefined,
+		() => undefined,
+	);
+	return operation;
 }
-
-export function applyStoredMaterialTheme() {
-	const settings = getStoredMaterialTheme();
-	if (isMaterialThemeExtensionEnabled()) {
-		applyMaterialTheme(settings.sourceHex, settings.mode, settings.scheme);
-	} else {
-		disableMaterialTheme();
-	}
-	return settings;
-}
-
 export async function applyPersistedMaterialTheme() {
 	const settings = await getPersistedMaterialTheme();
 	if (isMaterialThemeExtensionEnabled()) {

@@ -382,15 +382,13 @@ function PageBody() {
 			if (data !== undefined) {
 				let hidden_user_repositories: string[];
 				if (shown) {
-					if (data.hidden_user_repositories.includes(id)) {
-						hidden_user_repositories = data.hidden_user_repositories;
-					} else {
-						hidden_user_repositories = [...data.hidden_user_repositories, id];
-					}
-				} else {
 					hidden_user_repositories = data.hidden_user_repositories.filter(
 						(x) => x !== id,
 					);
+				} else if (data.hidden_user_repositories.includes(id)) {
+					hidden_user_repositories = data.hidden_user_repositories;
+				} else {
+					hidden_user_repositories = [...data.hidden_user_repositories, id];
 				}
 
 				queryClient.setQueryData(environmentRepositoriesInfo.queryKey, {
@@ -398,12 +396,9 @@ function PageBody() {
 					hidden_user_repositories,
 				});
 			}
-			return data;
 		},
-		onError: (e, _, ctx) => {
-			reportError(e);
-			console.error(e);
-			queryClient.setQueryData(environmentRepositoriesInfo.queryKey, ctx);
+		onError: (e) => {
+			console.error("Failed to save repository visibility", e);
 		},
 		onSettled: async () => {
 			await queryClient.invalidateQueries(environmentRepositoriesInfo);

@@ -394,63 +394,115 @@ pub async fn environment_pick_project_backup_path(
 #[tauri::command]
 #[specta::specta]
 pub async fn environment_set_show_prerelease_packages(
+    app: AppHandle,
     io: State<'_, DefaultEnvironmentIo>,
     settings: State<'_, SettingsState>,
     value: bool,
 ) -> Result<(), RustError> {
-    let mut settings = settings.load_mut(io.inner()).await?;
-    settings.set_show_prerelease_packages(value);
-    settings.save().await?;
-    Ok(())
+    let activity = app.state::<ActivityLogState>();
+    let input = setting_activity("showPrereleasePackages", value.to_string());
+    activity
+        .track_result(
+            Some(&app),
+            input,
+            "Prerelease package setting updated",
+            Vec::new(),
+            async move {
+                let mut settings = settings.load_mut(io.inner()).await?;
+                settings.set_show_prerelease_packages(value);
+                settings.save().await?;
+                Ok(())
+            },
+        )
+        .await
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn environment_set_backup_format(
+    app: AppHandle,
     config: State<'_, GuiConfigState>,
     backup_format: String,
 ) -> Result<(), RustError> {
-    let mut config = config.load_mut().await?;
-    config.backup_format = backup_format;
-    config.save().await?;
-    Ok(())
+    let activity = app.state::<ActivityLogState>();
+    let input = setting_activity("backupFormat", backup_format.clone());
+    activity
+        .track_result(
+            Some(&app),
+            input,
+            "Backup format setting updated",
+            Vec::new(),
+            async move {
+                let mut config = config.load_mut().await?;
+                config.backup_format = backup_format;
+                config.save().await?;
+                Ok(())
+            },
+        )
+        .await
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn environment_set_release_channel(
+    app: AppHandle,
     config: State<'_, GuiConfigState>,
     io: State<'_, DefaultEnvironmentIo>,
     release_channel: String,
 ) -> Result<(), RustError> {
-    let mut config = config.load_mut().await?;
-    config.release_channel = release_channel;
-    config.save().await?;
-    if let Err(error) = crate::updater::discard_staged_update(io.inner()).await {
-        log::warn!(gui_toast = false; "failed to discard staged update after changing channels: {error}");
-    }
-    if let Err(error) = crate::updater::clear_failed_automatic_update(io.inner()).await {
-        log::warn!(gui_toast = false; "failed to clear automatic update failure after changing channels: {error}");
-    }
-    Ok(())
+    let activity = app.state::<ActivityLogState>();
+    let input = setting_activity("releaseChannel", release_channel.clone());
+    activity
+        .track_result(
+            Some(&app),
+            input,
+            "Release channel setting updated",
+            Vec::new(),
+            async move {
+                let mut config = config.load_mut().await?;
+                config.release_channel = release_channel;
+                config.save().await?;
+                if let Err(error) = crate::updater::discard_staged_update(io.inner()).await {
+                    log::warn!(gui_toast = false; "failed to discard staged update after changing channels: {error}");
+                }
+                if let Err(error) = crate::updater::clear_failed_automatic_update(io.inner()).await {
+                    log::warn!(gui_toast = false; "failed to clear automatic update failure after changing channels: {error}");
+                }
+                Ok(())
+            },
+        )
+        .await
 }
 
 #[tauri::command]
 #[specta::specta]
 pub async fn environment_set_automatic_update(
+    app: AppHandle,
     config: State<'_, GuiConfigState>,
     io: State<'_, DefaultEnvironmentIo>,
     automatic_update: bool,
 ) -> Result<(), RustError> {
-    let mut config = config.load_mut().await?;
-    config.automatic_update = automatic_update;
-    config.save().await?;
-    if automatic_update {
-        if let Err(error) = crate::updater::clear_failed_automatic_update(io.inner()).await {
-            log::warn!(gui_toast = false; "failed to clear automatic update failure after enabling automatic updates: {error}");
-        }
-    }
-    Ok(())
+    let activity = app.state::<ActivityLogState>();
+    let input = setting_activity("automaticUpdate", automatic_update.to_string());
+    activity
+        .track_result(
+            Some(&app),
+            input,
+            "Automatic update setting updated",
+            Vec::new(),
+            async move {
+                let mut config = config.load_mut().await?;
+                config.automatic_update = automatic_update;
+                config.save().await?;
+                if automatic_update {
+                    if let Err(error) = crate::updater::clear_failed_automatic_update(io.inner()).await {
+                        log::warn!(gui_toast = false; "failed to clear automatic update failure after enabling automatic updates: {error}");
+                    }
+                }
+                Ok(())
+            },
+        )
+        .await
 }
 
 #[tauri::command]
@@ -530,6 +582,18 @@ pub async fn environment_set_default_unity_arguments(
     config.default_unity_arguments = default_unity_arguments;
     config.save().await?;
     Ok(())
+}
+
+fn setting_activity(setting: &str, value: impl Into<String>) -> ActivityInput {
+    ActivityInput::new(
+        ActivitySource::Gui,
+        ActivityKind::Write,
+        ActivityImportance::Primary,
+        operations::SETTINGS_SET,
+        format!("Updating setting {setting}"),
+    )
+    .target(setting)
+    .details(vec![ActivityDetail::new("value", value)])
 }
 
 #[cfg(test)]

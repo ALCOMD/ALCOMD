@@ -564,16 +564,13 @@ export function useSetProjectFavoriteMutation() {
 					),
 				);
 			}
-
-			return previousData;
 		},
 
-		onError: (error, _, context) => {
-			console.error("Error migrating project", error);
-			toastThrownError(error);
-			if (context) {
-				queryClient.setQueryData(environmentProjects.queryKey, context);
-			}
+		onError: (error) => {
+			console.error("Failed to save project favorite", error);
+		},
+		onSettled: async () => {
+			await queryClient.invalidateQueries(environmentProjects);
 		},
 	});
 }

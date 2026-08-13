@@ -77,9 +77,15 @@ function Page() {
 			await commands.environmentSetProjectViewMode(value);
 		},
 		onMutate: async (value: string) => {
-			await queryClient.setQueryData(["environmentGetProjectViewMode"], value);
+			await queryClient.cancelQueries({
+				queryKey: ["environmentGetProjectViewMode"],
+			});
+			queryClient.setQueryData(["environmentGetProjectViewMode"], value);
 		},
-		onSuccess: async () => {
+		onError: (error) => {
+			console.error("Failed to save project view mode", error);
+		},
+		onSettled: async () => {
 			await queryClient.invalidateQueries({
 				queryKey: ["environmentGetProjectViewMode"],
 			});

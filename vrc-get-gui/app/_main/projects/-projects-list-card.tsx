@@ -7,7 +7,6 @@ import { assertNever } from "@/lib/assert-never";
 import type { TauriProject, TauriProjectType } from "@/lib/bindings";
 import { commands } from "@/lib/bindings";
 import { tc } from "@/lib/i18n";
-import { toastThrownError } from "@/lib/toast";
 import { compareUnityVersionString } from "@/lib/version";
 import { ProjectRow } from "./-project-row";
 
@@ -273,8 +272,12 @@ export function useSetProjectSortingMutation() {
 			queryClient.setQueryData(["environmentGetProjectSorting"], () => sorting);
 		},
 		onError: (error) => {
-			console.error("Error setting project sorting", error);
-			toastThrownError(error);
+			console.error("Failed to save project sorting", error);
+		},
+		onSettled: async () => {
+			await queryClient.invalidateQueries({
+				queryKey: ["environmentGetProjectSorting"],
+			});
 		},
 	});
 }

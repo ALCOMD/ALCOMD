@@ -24,14 +24,12 @@ describe("material theme extension state", () => {
 		);
 	});
 
-	test("enabling changes runtime presentation without discarding saved theme data", () => {
-		localStorage.setItem("user_theme_source", "#ff3366");
+	test("enabling changes runtime presentation", () => {
 		setMaterialThemeExtensionRuntimeEnabled(false);
 
 		setMaterialThemeExtensionRuntimeEnabled(true);
 
 		expect(isMaterialThemeExtensionEnabled()).toBe(true);
-		expect(localStorage.getItem("user_theme_source")).toBe("#ff3366");
 	});
 
 	test("explicit disable is idempotent", () => {

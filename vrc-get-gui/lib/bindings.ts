@@ -17,10 +17,14 @@ export const commands = {
 	environmentClearSetupProcess: () => __TAURI_INVOKE<null>("environment_clear_setup_process"),
 	environmentLogsLevel: () => __TAURI_INVOKE<LogLevel[]>("environment_logs_level"),
 	environmentSetLogsLevel: (logsLevel: LogLevel[]) => __TAURI_INVOKE<null>("environment_set_logs_level", { logsLevel }),
+	environmentLogViewPreferences: () => __TAURI_INVOKE<LogViewPreferences>("environment_log_view_preferences"),
+	environmentSetLogViewPreferences: (patch: LogViewPreferencesPatch) => __TAURI_INVOKE<null>("environment_set_log_view_preferences", { patch }),
 	environmentGuiAnimation: () => __TAURI_INVOKE<boolean>("environment_gui_animation"),
 	environmentSetGuiAnimation: (guiAnimation: boolean) => __TAURI_INVOKE<null>("environment_set_gui_animation", { guiAnimation }),
 	environmentGuiCompact: () => __TAURI_INVOKE<boolean>("environment_gui_compact"),
 	environmentSetGuiCompact: (guiCompact: boolean) => __TAURI_INVOKE<null>("environment_set_gui_compact", { guiCompact }),
+	environmentMcpLocalizedToolNames: () => __TAURI_INVOKE<boolean>("environment_mcp_localized_tool_names"),
+	environmentSetMcpLocalizedToolNames: (mcpLocalizedToolNames: boolean) => __TAURI_INVOKE<null>("environment_set_mcp_localized_tool_names", { mcpLocalizedToolNames }),
 	environmentProjectViewMode: () => __TAURI_INVOKE<string>("environment_project_view_mode"),
 	environmentSetProjectViewMode: (projectViewMode: string) => __TAURI_INVOKE<null>("environment_set_project_view_mode", { projectViewMode }),
 	environmentSetUnityHubAccessMethod: (unityHubAccessMethod: UnityHubAccessMethod) => __TAURI_INVOKE<null>("environment_set_unity_hub_access_method", { unityHubAccessMethod }),
@@ -275,6 +279,18 @@ export type DiscordDisplayOptions = {
 	unityVersion: boolean,
 	editorCount: boolean,
 	customText: string,
+};
+
+export type LogViewPreferences = {
+	autoScroll: boolean,
+	showSecondaryActivity: boolean,
+	showActivityDetails: boolean,
+};
+
+export type LogViewPreferencesPatch = {
+	autoScroll: boolean | null,
+	showSecondaryActivity: boolean | null,
+	showActivityDetails: boolean | null,
 };
 
 export type UnityDiscordStatus = {

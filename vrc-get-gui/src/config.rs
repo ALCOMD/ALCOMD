@@ -39,12 +39,16 @@ pub struct GuiConfig {
     pub default_unity_arguments: Option<Vec<String>>,
     #[serde(default = "log_level_default")]
     pub logs_level: Vec<LogLevel>,
+    #[serde(default)]
+    pub log_view_preferences: LogViewPreferences,
     #[serde(default = "gui_animation_default")]
     pub gui_animation: bool,
     #[serde(default = "gui_compact_default")]
     pub gui_compact: bool,
     #[serde(default)]
     pub mcp_enabled: bool,
+    #[serde(default)]
+    pub mcp_localized_tool_names: bool,
     #[serde(default = "mcp_http_port_default")]
     pub mcp_http_port: u16,
     #[serde(default)]
@@ -88,6 +92,49 @@ pub struct DiscordDisplayOptions {
     pub editor_count: bool,
     #[serde(default)]
     pub custom_text: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LogViewPreferences {
+    #[serde(default = "default_true")]
+    pub auto_scroll: bool,
+    #[serde(default)]
+    pub show_secondary_activity: bool,
+    #[serde(default)]
+    pub show_activity_details: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct LogViewPreferencesPatch {
+    pub auto_scroll: Option<bool>,
+    pub show_secondary_activity: Option<bool>,
+    pub show_activity_details: Option<bool>,
+}
+
+impl Default for LogViewPreferences {
+    fn default() -> Self {
+        Self {
+            auto_scroll: true,
+            show_secondary_activity: false,
+            show_activity_details: false,
+        }
+    }
+}
+
+impl LogViewPreferences {
+    pub fn apply_patch(&mut self, patch: LogViewPreferencesPatch) {
+        if let Some(value) = patch.auto_scroll {
+            self.auto_scroll = value;
+        }
+        if let Some(value) = patch.show_secondary_activity {
+            self.show_secondary_activity = value;
+        }
+        if let Some(value) = patch.show_activity_details {
+            self.show_activity_details = value;
+        }
+    }
 }
 
 impl Default for DiscordDisplayOptions {
@@ -176,9 +223,11 @@ impl Default for GuiConfig {
             setup_process_progress: 0,
             default_unity_arguments: None,
             logs_level: log_level_default(),
+            log_view_preferences: LogViewPreferences::default(),
             gui_animation: true,
             gui_compact: gui_compact_default(),
             mcp_enabled: false,
+            mcp_localized_tool_names: false,
             mcp_http_port: mcp_http_port_default(),
             mcp_http_token: String::new(),
             unity_discord_sharing_enabled: false,
@@ -543,8 +592,8 @@ impl Default for WindowSize {
 #[cfg(test)]
 mod tests {
     use super::{
-        GuiConfig, LEGACY_DISCORD_EXTENSION_ID, SidebarExtension, apply_sidebar_extension_layout,
-        normalize_sidebar_extensions,
+        GuiConfig, LEGACY_DISCORD_EXTENSION_ID, LogViewPreferences, SidebarExtension,
+        apply_sidebar_extension_layout, normalize_sidebar_extensions,
     };
     use crate::extensions::{
         DISCORD_EXTENSION_ID, LOG_EXTENSION_ID, MCP_EXTENSION_ID, THEME_EXTENSION_ID,
@@ -601,6 +650,63 @@ mod tests {
         let config: GuiConfig = serde_json::from_str("{}").unwrap();
 
         assert!(!config.unity_discord_sharing_enabled);
+    }
+
+    #[test]
+    fn mcp_localized_tool_names_default_to_false_and_round_trip() {
+        let default_config: GuiConfig = serde_json::from_str("{}").unwrap();
+        assert!(!default_config.mcp_localized_tool_names);
+
+        let localized_config: GuiConfig =
+            serde_json::from_str(r#"{"mcpLocalizedToolNames":true}"#).unwrap();
+        assert!(localized_config.mcp_localized_tool_names);
+        assert_eq!(
+            serde_json::to_value(localized_config).unwrap()["mcpLocalizedToolNames"],
+            true
+        );
+    }
+
+    #[test]
+    fn log_view_preferences_have_stable_defaults_and_round_trip() {
+        let default_config: GuiConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(
+            default_config.log_view_preferences,
+            LogViewPreferences::default()
+        );
+
+        let config: GuiConfig = serde_json::from_str(
+            r#"{"logViewPreferences":{"autoScroll":false,"showSecondaryActivity":true,"showActivityDetails":true}}"#,
+        )
+        .unwrap();
+        assert!(!config.log_view_preferences.auto_scroll);
+        assert!(config.log_view_preferences.show_secondary_activity);
+        assert!(config.log_view_preferences.show_activity_details);
+        assert_eq!(
+            serde_json::to_value(config).unwrap()["logViewPreferences"],
+            serde_json::json!({
+                "autoScroll": false,
+                "showSecondaryActivity": true,
+                "showActivityDetails": true
+            })
+        );
+    }
+
+    #[test]
+    fn log_view_preference_patch_only_changes_selected_fields() {
+        let mut preferences = LogViewPreferences {
+            auto_scroll: true,
+            show_secondary_activity: true,
+            show_activity_details: false,
+        };
+        preferences.apply_patch(super::LogViewPreferencesPatch {
+            auto_scroll: Some(false),
+            show_secondary_activity: None,
+            show_activity_details: Some(true),
+        });
+
+        assert!(!preferences.auto_scroll);
+        assert!(preferences.show_secondary_activity);
+        assert!(preferences.show_activity_details);
     }
 
     #[test]

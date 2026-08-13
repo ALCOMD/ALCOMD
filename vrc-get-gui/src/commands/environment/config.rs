@@ -7,9 +7,9 @@ use tauri::{AppHandle, Manager, State};
 
 use crate::commands::prelude::*;
 use crate::config::{
-    SidebarExtension, UnityHubAccessMethod, UpdateReminderConfig, apply_sidebar_extension_layout,
-    is_builtin_sidebar_extension, is_sidebar_extension_always_visible,
-    normalize_sidebar_extensions,
+    LogViewPreferences, LogViewPreferencesPatch, SidebarExtension, UnityHubAccessMethod,
+    UpdateReminderConfig, apply_sidebar_extension_layout, is_builtin_sidebar_extension,
+    is_sidebar_extension_always_visible, normalize_sidebar_extensions,
 };
 use crate::extensions::{ExtensionManagementInfo, ExtensionRegistry, MCP_EXTENSION_ID};
 use crate::logging::LogLevel;
@@ -268,6 +268,39 @@ pub async fn environment_set_logs_level(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn environment_log_view_preferences(
+    config: State<'_, GuiConfigState>,
+) -> Result<LogViewPreferences, RustError> {
+    Ok(config.get().log_view_preferences.clone())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn environment_set_log_view_preferences(
+    app: AppHandle,
+    config: State<'_, GuiConfigState>,
+    patch: LogViewPreferencesPatch,
+) -> Result<(), RustError> {
+    let activity = app.state::<ActivityLogState>();
+    let input = setting_activity("logViewPreferences", format!("{patch:?}"));
+    activity
+        .track_result(
+            Some(&app),
+            input,
+            "Log view preferences updated",
+            Vec::new(),
+            async move {
+                let mut config = config.load_mut().await?;
+                config.log_view_preferences.apply_patch(patch);
+                config.save().await?;
+                Ok(())
+            },
+        )
+        .await
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn environment_gui_animation(
     config: State<'_, GuiConfigState>,
 ) -> Result<bool, RustError> {
@@ -323,6 +356,42 @@ pub async fn environment_set_gui_compact(
             async move {
                 let mut config = config.load_mut().await?;
                 config.gui_compact = gui_compact;
+                config.save().await?;
+                Ok(())
+            },
+        )
+        .await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn environment_mcp_localized_tool_names(
+    config: State<'_, GuiConfigState>,
+) -> Result<bool, RustError> {
+    Ok(config.get().mcp_localized_tool_names)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn environment_set_mcp_localized_tool_names(
+    app: AppHandle,
+    config: State<'_, GuiConfigState>,
+    mcp_localized_tool_names: bool,
+) -> Result<(), RustError> {
+    let activity = app.state::<ActivityLogState>();
+    let input = setting_activity(
+        "mcpLocalizedToolNames",
+        mcp_localized_tool_names.to_string(),
+    );
+    activity
+        .track_result(
+            Some(&app),
+            input,
+            "MCP tool-name display setting updated",
+            Vec::new(),
+            async move {
+                let mut config = config.load_mut().await?;
+                config.mcp_localized_tool_names = mcp_localized_tool_names;
                 config.save().await?;
                 Ok(())
             },
@@ -619,13 +688,31 @@ pub async fn environment_update_reminder(
 #[tauri::command]
 #[specta::specta]
 pub async fn environment_set_update_reminder(
+    app: AppHandle,
     config: State<'_, GuiConfigState>,
     update_reminder: Option<UpdateReminderConfig>,
 ) -> Result<(), RustError> {
-    let mut config = config.load_mut().await?;
-    config.update_reminder = update_reminder;
-    config.save().await?;
-    Ok(())
+    let activity = app.state::<ActivityLogState>();
+    let value = if update_reminder.is_some() {
+        "scheduled"
+    } else {
+        "cleared"
+    };
+    let input = setting_activity("updateReminder", value);
+    activity
+        .track_result(
+            Some(&app),
+            input,
+            "Update reminder setting updated",
+            Vec::new(),
+            async move {
+                let mut config = config.load_mut().await?;
+                config.update_reminder = update_reminder;
+                config.save().await?;
+                Ok(())
+            },
+        )
+        .await
 }
 
 fn setting_activity(setting: &str, value: impl Into<String>) -> ActivityInput {

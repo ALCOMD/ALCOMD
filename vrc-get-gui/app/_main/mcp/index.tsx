@@ -49,9 +49,13 @@ const mcpStatus = queryOptions({
 	queryFn: commands.mcpStatus,
 });
 
+const mcpLocalizedToolNames = queryOptions({
+	queryKey: ["mcpLocalizedToolNames"],
+	queryFn: commands.environmentMcpLocalizedToolNames,
+});
+
 const MCP_STATUS_REFETCH_INTERVAL_MS = 10_000;
 const MCP_TOOL_ACTIVE_MIN_VISIBLE_MS = 800;
-const MCP_LOCALIZED_TOOL_NAMES_STORAGE_KEY = "mcp_localized_tool_names";
 
 type McpTool = {
 	name: string;
@@ -263,15 +267,13 @@ function toolCallTimerKey(toolName: string, requestId: string) {
 function Page() {
 	const queryClient = useQueryClient();
 	const [activeToolCalls, setActiveToolCalls] = useState<ActiveToolCalls>({});
-	const [showLocalizedToolNames, setShowLocalizedToolNames] = useState(
-		() => localStorage.getItem(MCP_LOCALIZED_TOOL_NAMES_STORAGE_KEY) === "true",
-	);
 	const activeToolCallsRef = useRef<ActiveToolCalls>({});
 	const toolCallClearTimers = useRef(new Map<string, number>());
 	const status = useQuery({
 		...mcpStatus,
 		refetchInterval: MCP_STATUS_REFETCH_INTERVAL_MS,
 	});
+	const localizedToolNames = useQuery(mcpLocalizedToolNames);
 
 	const updateActiveToolCalls = useCallback(
 		(update: (calls: ActiveToolCalls) => ActiveToolCalls) => {
@@ -364,13 +366,20 @@ function Page() {
 	const refresh = useMutation({
 		mutationFn: async () => await queryClient.invalidateQueries(mcpStatus),
 	});
-	const updateShowLocalizedToolNames = (showLocalized: boolean) => {
-		localStorage.setItem(
-			MCP_LOCALIZED_TOOL_NAMES_STORAGE_KEY,
-			String(showLocalized),
-		);
-		setShowLocalizedToolNames(showLocalized);
-	};
+	const updateLocalizedToolNames = useMutation({
+		mutationFn: async (showLocalized: boolean) =>
+			await commands.environmentSetMcpLocalizedToolNames(showLocalized),
+		onMutate: async (showLocalized) => {
+			await queryClient.cancelQueries(mcpLocalizedToolNames);
+			queryClient.setQueryData(mcpLocalizedToolNames.queryKey, showLocalized);
+		},
+		onError: (error) => {
+			console.error("Failed to save localized MCP tool-name setting", error);
+		},
+		onSettled: async () => {
+			await queryClient.invalidateQueries(mcpLocalizedToolNames);
+		},
+	});
 
 	return (
 		<VStack>
@@ -411,8 +420,11 @@ function Page() {
 					)}
 					<ToolsCard
 						activeToolCalls={activeToolCalls}
-						showLocalizedToolNames={showLocalizedToolNames}
-						setShowLocalizedToolNames={updateShowLocalizedToolNames}
+						showLocalizedToolNames={localizedToolNames.data ?? false}
+						setShowLocalizedToolNames={(showLocalized) =>
+							updateLocalizedToolNames.mutate(showLocalized)
+						}
+						toolNameDisplayDisabled={localizedToolNames.data == null}
 					/>
 				</main>
 			</ScrollPageContainer>
@@ -671,10 +683,12 @@ function ToolsCard({
 	activeToolCalls,
 	showLocalizedToolNames,
 	setShowLocalizedToolNames,
+	toolNameDisplayDisabled,
 }: {
 	activeToolCalls: ActiveToolCalls;
 	showLocalizedToolNames: boolean;
 	setShowLocalizedToolNames: (showLocalized: boolean) => void;
+	toolNameDisplayDisabled: boolean;
 }) {
 	return (
 		<Card className="shrink-0 p-4 compact:p-3">
@@ -692,6 +706,7 @@ function ToolsCard({
 					<Switch
 						checked={showLocalizedToolNames}
 						onCheckedChange={setShowLocalizedToolNames}
+						disabled={toolNameDisplayDisabled}
 						aria-labelledby="mcp-tool-name-display-label"
 					/>
 				</div>
