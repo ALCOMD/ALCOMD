@@ -1,0 +1,39 @@
+schema = 1
+
+[product]
+family_name = "ALCOMD"
+technical_name = "alcomd"
+display_name = "ALCOMD3"
+publisher_name = "CQMHV"
+version = "4.0.0-alpha.0"
+
+[identity]
+bundle_identifier = "com.cqmhv.alcomd"
+windows_aumid = "CQMHV.ALCOMD"
+uri_scheme = "alcomd"
+linux_desktop_id = "com.cqmhv.alcomd"
+data_directory = "ALCOMD"
+install_directory = "ALCOMD"
+
+[binaries]
+daemon = "alcomd"
+gui = "alcomd-gui"
+cli = "alcomd-cli"
+mcp = "alcomd-mcp"
+api = "alcomd-api"
+extension_host = "alcomd-extension-host"
+bootstrap = "alcomd-bootstrap"
+migration_v3 = "alcomd-migrate-v3"
+
+[formats]
+template_extension = "alcomdtemplate"
+extension_extension = "alcomdext"
+export_extension = "alcomdexport"
+
+[protocols]
+rpc_name = "ALCOMD RPC"
+rpc_major = 1
+extension_api_major = 1
+config_schema = 1
+data_schema = 1
+export_schema = 1

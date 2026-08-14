@@ -1,0 +1,38 @@
+schema = 1
+
+id = "com.cqmhv.alcomd.extension.mcp"
+name = "MCP 管理"
+version = "0.1.0"
+api = "^1"
+publisher = "CQMHV"
+license = "UNDECIDED"
+
+[entrypoints]
+ui = "ui/index.html"
+
+[activation]
+background = false
+events = []
+
+[contributions]
+sidebar = true
+settings_page = true
+command_palette = true
+
+[permissions]
+required = [
+    "ui.contribute",
+    "mcp.sessions.read",
+    "mcp.clients.read",
+    "mcp.configuration.read",
+    "operations.read",
+    "activity.read",
+]
+
+optional = [
+    "mcp.clients.manage",
+    "mcp.configuration.manage",
+    "operations.cancel",
+    "access.read",
+    "access.manage",
+]

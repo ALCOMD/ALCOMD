@@ -1,0 +1,42 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Node
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# Tauri
+apps/alcomd-gui/src-tauri/target/
+apps/alcomd-gui/src-tauri/gen/
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs and local state
+*.log
+.env
+.env.*
+!.env.example
+.local/
+/artifacts/
+coverage/
+
+# Signing and publishing secrets
+*.key
+*.pem
+*.pfx
+*.p12
+secrets/
+
+**/target/

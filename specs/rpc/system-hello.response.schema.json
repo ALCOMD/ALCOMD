@@ -1,0 +1,36 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/system-hello.response.json",
+    "title": "ALCOMD RPC system.hello response",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "rpcVersion",
+        "daemonVersion",
+        "dataSchema",
+        "configSchema",
+        "extensionApi"
+    ],
+    "properties": {
+        "rpcVersion": {
+            "type": "integer",
+            "const": 1
+        },
+        "daemonVersion": {
+            "type": "string",
+            "minLength": 1
+        },
+        "dataSchema": {
+            "type": "integer",
+            "minimum": 1
+        },
+        "configSchema": {
+            "type": "integer",
+            "minimum": 1
+        },
+        "extensionApi": {
+            "type": "integer",
+            "minimum": 1
+        }
+    }
+}

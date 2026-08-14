@@ -1,0 +1,23 @@
+schema = 1
+frozen = false
+
+[alcomd3_v3]
+repository = "https://github.com/ALCOMD3/ALCOMD3"
+commit = ""
+tag = ""
+version = ""
+local_readonly_path = "../ALCOMD3-v3-readonly"
+status = "unfrozen"
+
+[vrc_get]
+repository = "https://github.com/vrc-get/vrc-get"
+commit = ""
+tag = ""
+version = ""
+local_readonly_path = "../vrc-get-readonly"
+status = "unfrozen"
+
+[mcp]
+specification = "2026-07-28"
+status = "candidate"
+notes = "Freeze after M-1 verification against the official specification."

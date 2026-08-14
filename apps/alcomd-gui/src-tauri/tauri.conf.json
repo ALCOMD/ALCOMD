@@ -1,0 +1,45 @@
+{
+    "$schema": "https://schema.tauri.app/config/2",
+    "productName": "ALCOMD3",
+    "version": "4.0.0-alpha.0",
+    "identifier": "com.cqmhv.alcomd",
+    "mainBinaryName": "alcomd-gui",
+    "build": {
+        "beforeDevCommand": "npm run dev",
+        "beforeBuildCommand": "npm run build",
+        "devUrl": "http://localhost:1420",
+        "frontendDist": "../dist"
+    },
+    "app": {
+        "windows": [
+            {
+                "label": "main",
+                "title": "ALCOMD3",
+                "width": 1180,
+                "height": 760,
+                "minWidth": 860,
+                "minHeight": 600,
+                "center": true
+            }
+        ],
+        "security": {
+            "capabilities": [
+                "main"
+            ]
+        }
+    },
+    "bundle": {
+        "active": false,
+        "targets": "all",
+        "publisher": "CQMHV",
+        "shortDescription": "ALCOMD3",
+        "longDescription": "ALCOMD3 project and VPM package management platform.",
+        "icon": [
+            "icons/32x32.png",
+            "icons/128x128.png",
+            "icons/128x128@2x.png",
+            "icons/icon.icns",
+            "icons/icon.ico"
+        ]
+    }
+}

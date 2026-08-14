@@ -1,0 +1,24 @@
+[package]
+name = "alcomd-gui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish.workspace = true
+build = "build.rs"
+
+[lib]
+name = "alcomd_gui_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+alcomd-client.workspace = true
+alcomd-protocol.workspace = true
+tauri.workspace = true
+
+[lints]
+workspace = true

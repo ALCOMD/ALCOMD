@@ -1,0 +1,39 @@
+schema = 1
+
+id = "com.cqmhv.alcomd.extension.discord"
+name = "Discord 状态"
+version = "0.1.0"
+api = "^1"
+publisher = "CQMHV"
+license = "UNDECIDED"
+
+[entrypoints]
+ui = "ui/index.html"
+background_wasm = "backend/alcomd_extension_discord.wasm"
+
+[activation]
+background = true
+events = [
+    "unity.session.started",
+    "unity.session.updated",
+    "unity.session.ended",
+]
+
+[contributions]
+sidebar = true
+settings_page = true
+command_palette = false
+
+[permissions]
+required = [
+    "ui.contribute",
+    "background.run",
+    "unity.read",
+    "events.subscribe",
+    "integrations.discord.presence",
+]
+
+optional = [
+    "projects.read",
+    "activity.read",
+]

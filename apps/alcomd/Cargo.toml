@@ -1,0 +1,21 @@
+[package]
+name = "alcomd"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+alcomd-application.workspace = true
+alcomd-protocol.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

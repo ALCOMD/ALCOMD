@@ -1,0 +1,16 @@
+{
+    "name": "@alcomd/sdk",
+    "version": "0.1.0",
+    "private": true,
+    "description": "TypeScript client types for ALCOMD RPC.",
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "scripts": {
+        "check": "tsc --noEmit"
+    },
+    "devDependencies": {
+        "typescript": "^6.0.0"
+    }
+}

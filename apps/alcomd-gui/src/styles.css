@@ -1,0 +1,121 @@
+:root {
+    color: #1d1b20;
+    background: #fef7ff;
+    font-family:
+        Inter, "Noto Sans SC", "Microsoft YaHei UI", system-ui, sans-serif;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+}
+
+button,
+md-filled-button {
+    font: inherit;
+}
+
+.shell {
+    display: grid;
+    gap: 24px;
+    width: min(960px, calc(100% - 32px));
+    margin: 0 auto;
+    padding: 56px 0;
+}
+
+.hero,
+.notice {
+    border-radius: 28px;
+    background: #f3edf7;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+
+.hero {
+    padding: clamp(32px, 6vw, 72px);
+}
+
+.notice {
+    padding: 28px 32px;
+}
+
+.eyebrow {
+    margin: 0;
+    color: #6750a4;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+h1 {
+    margin: 12px 0 8px;
+    font-size: clamp(48px, 10vw, 88px);
+    line-height: 0.95;
+}
+
+h2 {
+    margin-top: 0;
+}
+
+.subtitle {
+    max-width: 620px;
+    color: #49454f;
+    font-size: 20px;
+    line-height: 1.6;
+}
+
+.status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-top: 32px;
+}
+
+.status-grid article {
+    display: grid;
+    gap: 8px;
+    padding: 20px;
+    border-radius: 18px;
+    background: #eaddff;
+}
+
+.status-grid span {
+    color: #49454f;
+    font-size: 14px;
+}
+
+.actions {
+    margin-top: 28px;
+}
+
+code {
+    padding: 0.1em 0.35em;
+    border-radius: 6px;
+    background: rgb(103 80 164 / 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        color: #e6e1e5;
+        background: #141218;
+    }
+
+    .hero,
+    .notice {
+        background: #211f26;
+    }
+
+    .subtitle,
+    .status-grid span {
+        color: #cac4d0;
+    }
+
+    .status-grid article {
+        background: #4f378b;
+    }
+}

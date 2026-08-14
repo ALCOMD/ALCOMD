@@ -1,0 +1,61 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/migration/v3/bundle-v1.json",
+    "title": "ALCOMD v3 migration bundle manifest",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "schema",
+        "sourceVersion",
+        "createdAt",
+        "records",
+        "files"
+    ],
+    "properties": {
+        "schema": {
+            "type": "integer",
+            "const": 1
+        },
+        "sourceVersion": {
+            "type": "string",
+            "minLength": 1
+        },
+        "createdAt": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "records": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+            }
+        },
+        "files": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "path",
+                    "sha256",
+                    "size"
+                ],
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "sha256": {
+                        "type": "string",
+                        "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "size": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,177 @@
+schema = 1
+
+[metadata]
+status_values = ["unknown", "not_started", "in_progress", "blocked", "verified"]
+baseline_frozen = false
+release_target = "4.0.0"
+
+[[feature]]
+id = "system.identity"
+title = "稳定产品身份"
+source = ["product-plan"]
+implementation = "alcomd.product.toml"
+release_class = "release_blocker"
+status = "verified"
+tests = ["cargo xtask check"]
+
+[[feature]]
+id = "daemon.single-writer"
+title = "唯一核心与唯一写入者"
+source = ["product-plan"]
+implementation = "apps/alcomd"
+release_class = "release_blocker"
+status = "not_started"
+tests = []
+
+[[feature]]
+id = "rpc.local"
+title = "本地 ALCOMD RPC"
+source = ["product-plan"]
+implementation = "crates/alcomd-protocol"
+release_class = "release_blocker"
+status = "not_started"
+tests = []
+
+[[feature]]
+id = "projects.management"
+title = "项目管理"
+source = ["alcomd3-v3-final", "vrc-get-frozen"]
+implementation = "alcomd-application"
+release_class = "release_blocker"
+status = "unknown"
+tests = []
+
+[[feature]]
+id = "packages.vpm"
+title = "VPM 包管理"
+source = ["alcomd3-v3-final", "vrc-get-frozen"]
+implementation = "alcomd-vpm"
+release_class = "release_blocker"
+status = "unknown"
+tests = []
+
+[[feature]]
+id = "repositories.management"
+title = "VPM 仓库管理"
+source = ["alcomd3-v3-final", "vrc-get-frozen"]
+implementation = "alcomd-vpm"
+release_class = "release_blocker"
+status = "unknown"
+tests = []
+
+[[feature]]
+id = "templates.management"
+title = "模板管理"
+source = ["alcomd3-v3-final"]
+implementation = "alcomd-application"
+release_class = "release_blocker"
+status = "unknown"
+tests = []
+
+[[feature]]
+id = "backups.management"
+title = "备份与恢复"
+source = ["alcomd3-v3-final"]
+implementation = "alcomd-application"
+release_class = "release_blocker"
+status = "unknown"
+tests = []
+
+[[feature]]
+id = "unity.integration"
+title = "Unity 检测与启动"
+source = ["alcomd3-v3-final", "vrc-get-frozen"]
+implementation = "alcomd-platform"
+release_class = "release_blocker"
+status = "unknown"
+tests = []
+
+[[feature]]
+id = "cli.complete"
+title = "完整 CLI"
+source = ["product-plan", "vrc-get-frozen"]
+implementation = "apps/alcomd-cli"
+release_class = "release_blocker"
+status = "not_started"
+tests = []
+
+[[feature]]
+id = "extensions.runtime"
+title = "第一方与第三方统一扩展运行时"
+source = ["product-plan"]
+implementation = "alcomd-extensions"
+release_class = "release_blocker"
+status = "not_started"
+tests = []
+
+[[feature]]
+id = "mcp.protocol"
+title = "独立 MCP 协议适配器"
+source = ["alcomd3-v3-final", "mcp-2026-07-28"]
+implementation = "apps/alcomd-mcp"
+release_class = "release_blocker"
+status = "not_started"
+tests = []
+
+[[feature]]
+id = "mcp.management-ui"
+title = "MCP 管理第一方扩展"
+source = ["alcomd3-v3-final", "product-plan"]
+implementation = "com.cqmhv.alcomd.extension.mcp"
+release_class = "release_blocker"
+status = "not_started"
+tests = []
+
+[[feature]]
+id = "discord.rich-presence"
+title = "Discord 第一方扩展"
+source = ["alcomd3-v3-final", "product-plan"]
+implementation = "com.cqmhv.alcomd.extension.discord"
+release_class = "release_blocker"
+status = "not_started"
+tests = []
+
+[[feature]]
+id = "migration.v3"
+title = "v3 到 v4 事务迁移"
+source = ["product-plan"]
+implementation = "migrations/v3"
+release_class = "release_blocker"
+status = "not_started"
+tests = []
+
+[[feature]]
+id = "migration.zero-residue"
+title = "v3 零残留"
+source = ["product-plan"]
+implementation = "alcomd-bootstrap"
+release_class = "release_blocker"
+status = "not_started"
+tests = []
+
+[[feature]]
+id = "api.loopback"
+title = "可选 Loopback API"
+source = ["product-plan"]
+implementation = "apps/alcomd-api"
+release_class = "open_decision"
+status = "not_started"
+tests = []
+
+[[feature]]
+id = "sdk.python"
+title = "Python SDK"
+source = ["product-plan"]
+implementation = "sdk/python"
+release_class = "post_v4_compatible"
+status = "not_started"
+tests = []
+
+[[feature]]
+id = "sdk.dotnet"
+title = ".NET SDK"
+source = ["product-plan"]
+implementation = "sdk/dotnet"
+release_class = "post_v4_compatible"
+status = "not_started"
+tests = []

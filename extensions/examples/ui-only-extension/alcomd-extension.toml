@@ -1,0 +1,20 @@
+schema = 1
+id = "dev.example.alcomd.ui-only"
+name = "UI-only Example"
+version = "0.1.0"
+api = "^1"
+publisher = "Example"
+
+[entrypoints]
+ui = "ui/index.html"
+
+[activation]
+background = false
+events = []
+
+[contributions]
+sidebar = true
+
+[permissions]
+required = ["ui.contribute"]
+optional = []

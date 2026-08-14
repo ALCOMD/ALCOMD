@@ -1,0 +1,22 @@
+[package]
+name = "alcomd-extension-discord-backend"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+authors = ["CQMHV"]
+repository = "https://github.com/ALCOMD3/ALCOMD3"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[workspace]
+
+[lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[lints.clippy]
+dbg_macro = "deny"
+todo = "warn"
+unwrap_used = "warn"

@@ -1,0 +1,68 @@
+schema = 1
+audit_complete = false
+
+# Every path and identity below is provisional until M-1 records proof from source,
+# installer output, registry snapshots, or real installations.
+
+[[artifact]]
+id = "v3-user-data"
+kind = "directory"
+location = "%LOCALAPPDATA%\\ALCOMD3"
+owner = "ALCOMD3"
+action = "migrate_then_delete"
+confirmed = false
+evidence = []
+
+[[artifact]]
+id = "v3-default-documents-root"
+kind = "directory"
+location = "{KnownFolder:Documents}\\ALCOMD3"
+owner = "ALCOMD3"
+action = "move_owned_children_then_delete_if_empty"
+confirmed = false
+evidence = []
+
+[[artifact]]
+id = "v3-bundle-identifier"
+kind = "identifier"
+location = "com.cqmhv.alcomd3"
+owner = "ALCOMD3"
+action = "replace_then_delete"
+confirmed = false
+evidence = []
+
+[[artifact]]
+id = "v3-windows-aumid"
+kind = "identifier"
+location = "CQMHV.ALCOMD3"
+owner = "ALCOMD3"
+action = "replace_then_delete"
+confirmed = false
+evidence = []
+
+[[artifact]]
+id = "v3-main-executable"
+kind = "file"
+location = "{V3InstallDir}\\ALCOMD3.exe"
+owner = "ALCOMD3"
+action = "delete_after_commit"
+confirmed = false
+evidence = []
+
+[[artifact]]
+id = "v3-mcp-token-environment"
+kind = "environment_variable"
+location = "ALCOMD3_MCP_BEARER_TOKEN"
+owner = "ALCOMD3"
+action = "revoke_then_delete"
+confirmed = false
+evidence = []
+
+[[artifact]]
+id = "vcc-user-data"
+kind = "directory"
+location = "%LOCALAPPDATA%\\VRChatCreatorCompanion"
+owner = "VRChat Creator Companion"
+action = "read_only_import_never_delete"
+confirmed = true
+evidence = ["Product ownership boundary"]
