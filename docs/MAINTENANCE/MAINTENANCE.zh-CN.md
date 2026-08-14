@@ -365,8 +365,9 @@ ALCOMD3 在单向更新源迁移的两段链路中始终使用自己的 signing 
 
 保留这些规则：
 
-- 3.4.0 以前的版本使用 `https://alcomd3.cqmhv.com/api/gui/tauri-updater.json`；
-  旧 Beta 路径内部重写到同一份最终 3.4.0 Bridge 清单。
+- 3.4.0 以前的版本使用 `https://alcomd3.cqmhv.com/api/gui/tauri-updater.json`；旧域名以
+  301 保留路径重定向到 `alcomd.cqmhv.com`，新官网再将旧 Beta 路径内部代理到同一份最终
+  3.4.0 Bridge 清单。
 - 3.4.0 按所选频道使用 `https://alcomd.cqmhv.com/api/v1/updates/stable.json` 或
   `https://alcomd.cqmhv.com/api/v1/updates/beta.json`。
 - update-available dialog 包含打开 `https://alcomd.cqmhv.com/` 的官网动作。

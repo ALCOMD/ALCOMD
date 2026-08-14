@@ -86,7 +86,7 @@ Stable changelog entry と GitHub Release body は直前の stable release と�
 Repository prerequisites:
 
 - `ALCOMD3_UPDATER_PRIVATE_KEY`、`ALCOMD3_UPDATER_PRIVATE_KEY_PASSWORD`、
-  `ALCOMD3_UPDATER_METADATA_DEPLOY_KEY` を repository Actions Secrets として保存する。
+  `ALCOMD3_WEBSITE_DEPLOY_KEY` を repository Actions Secrets として保存する。
 
 macOS release は ad-hoc signing のみを support し、Apple account や Apple Secrets は不要。
 signing command は certificate identity や notarization option を提供しない。Platform 固有の
@@ -274,7 +274,7 @@ Draft の publish により **Publish updater metadata** が起動する。Fresh
 - Metadata file を置換する前に、各 platform entry の version、exact URL、signature filename、
   signature、embedded public key を検証する。
 - Updater version rollback を拒否し、same-version retry は byte-identical metadata のみ許可する。
-- 設定された metadata repository を clone し、selected channel JSON を設定済み repository
+- `websiteRepository` で設定された website repository を clone し、selected channel JSON を設定済み repository
   path に直接書き込む。
 - Metadata repository ではその JSON だけを commit し、`main` を push する。
 - Public updater endpoint が同じ version、3 exact platform URLs、signatures を返すまで待つ。

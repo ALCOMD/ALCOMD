@@ -242,7 +242,7 @@ jobs:
                       New-Item -ItemType Directory -Path $downloadDirectory -ErrorAction Stop | Out-Null
                       $manifestPath = Join-Path $downloadDirectory 'manifest.json'
                       $manifestUri = '{0}/{1}' -f `
-                          $config.updaterMetadata.baseUrl.TrimEnd('/'), `
+                          $config.homepageUrl.TrimEnd('/'), `
                           $manifestConfig.publicPath.TrimStart('/')
                       Invoke-WebRequest `
                           -Uri $manifestUri `

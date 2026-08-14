@@ -476,7 +476,8 @@ ALCOMD3 uses its own signing key across a one-way update-source transition.
 Preserve these rules:
 
 - Releases before 3.4.0 use `https://alcomd3.cqmhv.com/api/gui/tauri-updater.json`;
-  the legacy beta path resolves to the same final 3.4.0 Bridge manifest.
+  the old host preserves the path in a 301 redirect to `alcomd.cqmhv.com`, and the
+  legacy beta path is proxied to the same final 3.4.0 Bridge manifest there.
 - 3.4.0 uses `https://alcomd.cqmhv.com/api/v1/updates/stable.json` or
   `https://alcomd.cqmhv.com/api/v1/updates/beta.json` according to the selected channel.
 - Update-available dialogs include an official website action that opens

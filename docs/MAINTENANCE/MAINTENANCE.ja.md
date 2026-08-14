@@ -399,8 +399,9 @@ ALCOMD3 は一方向の update source 移行の両段階で独自の signing key
 
 保持する規則:
 
-- 3.4.0 より前の release は `https://alcomd3.cqmhv.com/api/gui/tauri-updater.json` を使用し、
-  legacy Beta path は同じ最終 3.4.0 Bridge manifest に内部 rewrite される。
+- 3.4.0 より前の release は `https://alcomd3.cqmhv.com/api/gui/tauri-updater.json` を使用する。
+  旧 host は path を保持した 301 で `alcomd.cqmhv.com` に redirect し、新 website では legacy
+  Beta path が同じ最終 3.4.0 Bridge manifest に内部 proxy される。
 - 3.4.0 は選択 channel に応じて `https://alcomd.cqmhv.com/api/v1/updates/stable.json` または
   `https://alcomd.cqmhv.com/api/v1/updates/beta.json` を使用する。
 - Update-available dialog は `https://alcomd.cqmhv.com/` を開く official website action を含む。

@@ -74,7 +74,7 @@ Stable changelog 条目和 GitHub Release 正文对比上一个 stable。Beta �
 仓库前置配置：
 
 - 把 `ALCOMD3_UPDATER_PRIVATE_KEY`、`ALCOMD3_UPDATER_PRIVATE_KEY_PASSWORD` 和
-  `ALCOMD3_UPDATER_METADATA_DEPLOY_KEY` 存为 repository Actions Secrets。
+  `ALCOMD3_WEBSITE_DEPLOY_KEY` 存为 repository Actions Secrets。
 
 macOS 发布只支持 ad-hoc 签名，不需要 Apple 账号或 Apple Secrets。签名命令不提供证书身份或
 公证选项。平台特定的构建、签名、安装与更新机制只属于技术合约。Changelog 条目、updater notes
@@ -250,7 +250,7 @@ Draft/prerelease 状态及全部资产 digest。
   重建当前 channel 的 updater JSON，包含 Windows x64、macOS arm64 和 Linux x64；
 - 替换 metadata 文件前，验证每个平台 entry 的版本、精确 URL、签名文件名、签名和内嵌公钥；
 - 拒绝 updater 版本回退；同版本重跑仅允许生成逐字节相同的 metadata；
-- 克隆配置的 metadata 仓库，把当前 channel JSON 直接写入配置的仓库路径；
+- 克隆 `websiteRepository` 配置的官网仓库，把当前 channel JSON 直接写入配置的仓库路径；
 - 只提交该 JSON，并推送 metadata 仓库 `main`；
 - 等待公开 updater endpoint 返回同一版本、三个精确平台 URL 和签名。
 

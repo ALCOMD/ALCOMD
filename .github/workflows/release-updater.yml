@@ -95,16 +95,16 @@ jobs:
               id: publish_updater
               env:
                   GH_TOKEN: ${{ github.token }}
-                  UPDATER_METADATA_DEPLOY_KEY: ${{ secrets.ALCOMD3_UPDATER_METADATA_DEPLOY_KEY }}
+                  WEBSITE_DEPLOY_KEY: ${{ secrets.ALCOMD3_WEBSITE_DEPLOY_KEY }}
               shell: pwsh
               run: |
-                  if ([string]::IsNullOrWhiteSpace($env:UPDATER_METADATA_DEPLOY_KEY)) {
-                      throw "ALCOMD3_UPDATER_METADATA_DEPLOY_KEY is not configured"
+                  if ([string]::IsNullOrWhiteSpace($env:WEBSITE_DEPLOY_KEY)) {
+                      throw "ALCOMD3_WEBSITE_DEPLOY_KEY is not configured"
                   }
                   $config = Get-Content alcomd3.config.json -Raw | ConvertFrom-Json
-                  $metadataRepository = [string] $config.updaterMetadata.repository
-                  if ($metadataRepository -notmatch '^[0-9A-Za-z_.-]+/[0-9A-Za-z_.-]+$') {
-                      throw "updaterMetadata.repository must use OWNER/REPOSITORY format"
+                  $websiteRepository = [string] $config.websiteRepository
+                  if ($websiteRepository -notmatch '^[0-9A-Za-z_.-]+/[0-9A-Za-z_.-]+$') {
+                      throw "websiteRepository must use OWNER/REPOSITORY format"
                   }
                   $manifest = $config.updaterManifests.PSObject.Properties[$env:CHANNEL].Value
                   if ($null -eq $manifest) {
@@ -119,26 +119,26 @@ jobs:
                       throw "Updater repositoryPath must be a safe relative path"
                   }
 
-                  $sshDirectory = Join-Path $env:RUNNER_TEMP 'alcomd3-updater-metadata-ssh'
-                  $metadataDirectory = Join-Path $env:RUNNER_TEMP 'alcomd3-updater-metadata'
-                  if ((Test-Path -LiteralPath $sshDirectory) -or (Test-Path -LiteralPath $metadataDirectory)) {
+                  $sshDirectory = Join-Path $env:RUNNER_TEMP 'alcomd3-website-ssh'
+                  $websiteDirectory = Join-Path $env:RUNNER_TEMP 'alcomd3-website'
+                  if ((Test-Path -LiteralPath $sshDirectory) -or (Test-Path -LiteralPath $websiteDirectory)) {
                       throw "Updater metadata synchronization temporary path already exists"
                   }
                   New-Item -ItemType Directory -Path $sshDirectory | Out-Null
                   $keyPath = Join-Path $sshDirectory 'deploy-key'
-                  $privateKey = $env:UPDATER_METADATA_DEPLOY_KEY.Replace("`r`n", "`n").TrimEnd() + "`n"
+                  $privateKey = $env:WEBSITE_DEPLOY_KEY.Replace("`r`n", "`n").TrimEnd() + "`n"
                   [IO.File]::WriteAllText($keyPath, $privateKey, [Text.UTF8Encoding]::new($false))
                   icacls $keyPath /inheritance:r /grant:r "$($env:USERNAME):(R)" | Out-Null
 
                   try {
                       $env:GIT_SSH_COMMAND = "ssh -i `"$keyPath`" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
-                      $remote = "ssh://git@ssh.github.com:443/$metadataRepository.git"
-                      git clone --depth 1 $remote $metadataDirectory
+                      $remote = "ssh://git@ssh.github.com:443/$websiteRepository.git"
+                      git clone --depth 1 $remote $websiteDirectory
                       if ($LASTEXITCODE -ne 0) {
                           exit $LASTEXITCODE
                       }
 
-                      $targetManifest = Join-Path $metadataDirectory $relativeTarget.Replace('/', [IO.Path]::DirectorySeparatorChar)
+                      $targetManifest = Join-Path $websiteDirectory $relativeTarget.Replace('/', [IO.Path]::DirectorySeparatorChar)
                       New-Item -ItemType Directory -Path (Split-Path -Parent $targetManifest) -Force | Out-Null
 
                       & $env:XTASK_PATH release-updater `
@@ -150,17 +150,17 @@ jobs:
                           exit $LASTEXITCODE
                       }
 
-                      git -C $metadataDirectory config user.name "github-actions[bot]"
-                      git -C $metadataDirectory config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-                      git -C $metadataDirectory add -- $relativeTarget
-                      git -C $metadataDirectory diff --cached --quiet
+                      git -C $websiteDirectory config user.name "github-actions[bot]"
+                      git -C $websiteDirectory config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                      git -C $websiteDirectory add -- $relativeTarget
+                      git -C $websiteDirectory diff --cached --quiet
                       $diffExit = $LASTEXITCODE
                       if ($diffExit -eq 1) {
-                          git -C $metadataDirectory commit -m "release: publish ALCOMD3 $env:VERSION updater metadata"
+                          git -C $websiteDirectory commit -m "release: publish ALCOMD3 $env:VERSION updater metadata"
                           if ($LASTEXITCODE -ne 0) {
                               exit $LASTEXITCODE
                           }
-                          git -C $metadataDirectory push origin main
+                          git -C $websiteDirectory push origin main
                           if ($LASTEXITCODE -ne 0) {
                               exit $LASTEXITCODE
                           }
@@ -170,13 +170,13 @@ jobs:
                       } else {
                           $changed = "false"
                       }
-                      $metadataSha = (git -C $metadataDirectory rev-parse --verify HEAD).Trim()
+                      $websiteSha = (git -C $websiteDirectory rev-parse --verify HEAD).Trim()
                       if ($LASTEXITCODE -ne 0) {
                           exit $LASTEXITCODE
                       }
                       "manifest_path=$targetManifest" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
                       "metadata_changed=$changed" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-                      "repository_sha=$metadataSha" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+                      "repository_sha=$websiteSha" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
                   } finally {
                       Remove-Item -LiteralPath $keyPath -Force -ErrorAction SilentlyContinue
                   }
@@ -220,7 +220,7 @@ jobs:
                       throw "Updater manifest is not configured for channel $env:CHANNEL"
                   }
                   $endpoint = "{0}/{1}" -f `
-                      $config.updaterMetadata.baseUrl.TrimEnd('/'), `
+                      $config.homepageUrl.TrimEnd('/'), `
                       $manifest.publicPath.TrimStart('/')
                   $metadataStatus = if ($env:METADATA_CHANGED -eq "true") {
                       "Created and pushed"

@@ -97,7 +97,7 @@ GitHub 仓库必须配置：
 
 - `ALCOMD3_UPDATER_PRIVATE_KEY`
 - `ALCOMD3_UPDATER_PRIVATE_KEY_PASSWORD`
-- `ALCOMD3_UPDATER_METADATA_DEPLOY_KEY`
+- `ALCOMD3_WEBSITE_DEPLOY_KEY`
 
 macOS ad-hoc 签名不使用 Apple 账号、证书或 Apple Secrets，签名命令与 workflow 也不提供
 相应参数或环境变量入口。Updater 私钥仅进入统一汇总 job；macOS build job 不读取 updater
@@ -254,7 +254,7 @@ Windows job 还必须确认：
 4. 从 tag 读取 updater notes，以 Release `publishedAt` 作为确定的 `pub_date`；
 5. 一次性生成包含三个 platform key 的目标 channel JSON；
 6. 拒绝版本回退；同版本重跑必须生成字节一致的 JSON；
-7. 使用专用 deploy key 克隆 `updaterMetadata.repository` 指定的冻结迁移仓库；
+7. 使用专用 deploy key 克隆 `websiteRepository` 指定的官网仓库；
 8. 将目标 channel updater JSON 直接生成到配置路径；
 9. 只提交目标 JSON，并推送 metadata 仓库 `main`；
 10. 轮询 public endpoint，直到与生成 JSON 完全一致。
