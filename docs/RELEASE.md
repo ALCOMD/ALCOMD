@@ -97,7 +97,7 @@ and links to its own GitHub Release.
 Repository prerequisites:
 
 - store `ALCOMD3_UPDATER_PRIVATE_KEY`, `ALCOMD3_UPDATER_PRIVATE_KEY_PASSWORD`, and
-  `ALCOMD3_WEBSITE_DEPLOY_KEY` as repository Actions Secrets.
+  `ALCOMD3_UPDATER_METADATA_DEPLOY_KEY` as repository Actions Secrets.
 
 macOS releases support ad-hoc signing only and require no Apple account or Apple
 Secrets. The signing command exposes no certificate identity or notarization
@@ -310,7 +310,7 @@ and source commit from GitHub.
   signature, and embedded public key before replacing the metadata file;
 - rejects updater version rollback and permits same-version retries only when
   they regenerate byte-identical metadata;
-- clones the configured metadata repository and writes the selected channel JSON
+- clones the `updaterMetadata.repository` migration repository and writes the selected channel JSON
   directly to its configured repository path;
 - commits and pushes only that JSON to the metadata repository `main` branch;
 - waits for the public updater endpoint to expose the same version, three exact

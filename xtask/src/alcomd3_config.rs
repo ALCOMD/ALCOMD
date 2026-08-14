@@ -16,6 +16,8 @@ pub struct Alcomd3Config {
     pub discord_application_id: Option<String>,
     pub repository: String,
     pub website_repository: String,
+    pub updater_api: UpdaterApi,
+    pub updater_metadata: UpdaterMetadata,
     pub tauri_identifier: String,
     pub legacy_tauri_identifier: String,
     pub windows_app_id: String,
@@ -38,6 +40,21 @@ pub struct Alcomd3Config {
 pub struct UpdaterManifests {
     pub stable: UpdaterManifest,
     pub beta: UpdaterManifest,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdaterApi {
+    pub base_url: String,
+    pub stable_path: String,
+    pub beta_path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdaterMetadata {
+    pub base_url: String,
+    pub repository: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -135,7 +152,7 @@ impl Alcomd3Config {
     }
 
     pub fn site_base_url(&self) -> &str {
-        self.homepage_url.trim_end_matches('/')
+        self.updater_metadata.base_url.trim_end_matches('/')
     }
 
     pub fn release_download_base_url(&self, version: &str) -> String {
@@ -194,6 +211,14 @@ impl Alcomd3Config {
         }
         ensure_non_empty("repository", &self.repository)?;
         ensure_non_empty("websiteRepository", &self.website_repository)?;
+        ensure_non_empty("updaterApi.baseUrl", &self.updater_api.base_url)?;
+        ensure_non_empty("updaterApi.stablePath", &self.updater_api.stable_path)?;
+        ensure_non_empty("updaterApi.betaPath", &self.updater_api.beta_path)?;
+        ensure_non_empty("updaterMetadata.baseUrl", &self.updater_metadata.base_url)?;
+        ensure_non_empty(
+            "updaterMetadata.repository",
+            &self.updater_metadata.repository,
+        )?;
         ensure_non_empty("tauriIdentifier", &self.tauri_identifier)?;
         ensure_non_empty("legacyTauriIdentifier", &self.legacy_tauri_identifier)?;
         ensure_non_empty("windowsAppId", &self.windows_app_id)?;
@@ -264,6 +289,14 @@ impl Alcomd3Config {
         if !self.website_repository.contains('/') {
             bail!("websiteRepository must be in OWNER/REPO form");
         }
+        if !self.updater_metadata.repository.contains('/') {
+            bail!("updaterMetadata.repository must be in OWNER/REPO form");
+        }
+        validate_https_url("homepageUrl", &self.homepage_url)?;
+        validate_https_url("updaterApi.baseUrl", &self.updater_api.base_url)?;
+        validate_https_url("updaterMetadata.baseUrl", &self.updater_metadata.base_url)?;
+        validate_public_path("updaterApi.stablePath", &self.updater_api.stable_path)?;
+        validate_public_path("updaterApi.betaPath", &self.updater_api.beta_path)?;
         if !self.windows_app_id.starts_with('{') || !self.windows_app_id.ends_with('}') {
             bail!("windowsAppId must include surrounding braces");
         }
@@ -309,6 +342,20 @@ fn validate_windows_aumid(value: &str) -> Result<()> {
         bail!(
             "windowsAumid must be at most 128 characters with at least two dot-separated ASCII alphanumeric segments starting with letters"
         );
+    }
+    Ok(())
+}
+
+fn validate_https_url(name: &str, value: &str) -> Result<()> {
+    if !value.starts_with("https://") || value.contains(['?', '#']) {
+        bail!("{name} must be an HTTPS base URL without a query or fragment");
+    }
+    Ok(())
+}
+
+fn validate_public_path(name: &str, value: &str) -> Result<()> {
+    if !value.starts_with('/') || value.contains(['?', '#']) || value.contains("..") {
+        bail!("{name} must be an absolute public path without traversal, query, or fragment");
     }
     Ok(())
 }
@@ -683,6 +730,18 @@ mod tests {
             error
                 .to_string()
                 .contains("linux-deb.updateMode must be no-self-updater")
+        );
+    }
+
+    #[test]
+    fn release_metadata_is_separate_from_the_bridge_runtime_api() {
+        let config = parse_and_validate(config_value()).unwrap();
+
+        assert_eq!(config.site_base_url(), "https://alcomd3.cqmhv.com");
+        assert_eq!(config.updater_api.base_url, "https://alcomd.cqmhv.com/");
+        assert_eq!(
+            config.updater_metadata.repository,
+            "ALCOMD/ALCOMD3-Update-Bridge"
         );
     }
 

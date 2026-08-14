@@ -361,13 +361,15 @@ ALCOMD3 包含可选本地 MCP server。除非未来变更通过 review 和 UI a
 
 ### 更新器和发布
 
-ALCOMD3 使用自己的 update source 和 signing key。
+ALCOMD3 在单向更新源迁移的两段链路中始终使用自己的 signing key。
 
 保留这些规则：
 
-- Stable endpoint：`https://alcomd3.cqmhv.com/api/gui/tauri-updater.json`。
-- Beta endpoint：`https://alcomd3.cqmhv.com/api/gui/tauri-updater-beta.json`。
-- update-available dialog 包含打开 `https://alcomd3.cqmhv.com/` 的官网动作。
+- 3.4.0 以前的版本使用 `https://alcomd3.cqmhv.com/api/gui/tauri-updater.json`；
+  旧 Beta 路径内部重写到同一份最终 3.4.0 Bridge 清单。
+- 3.4.0 按所选频道使用 `https://alcomd.cqmhv.com/api/v1/updates/stable.json` 或
+  `https://alcomd.cqmhv.com/api/v1/updates/beta.json`。
+- update-available dialog 包含打开 `https://alcomd.cqmhv.com/` 的官网动作。
 - 自动检查更新失败时对用户静默。
 - 自动更新默认开启，并沿用原有的启动检查。检查到可安装版本后，自动分支不显示确认框，
   直接进入与手动更新共用的下载、进度上报和暂存流程；自动下载失败时仍不通知用户。下载时

@@ -86,7 +86,7 @@ Stable changelog entry と GitHub Release body は直前の stable release と�
 Repository prerequisites:
 
 - `ALCOMD3_UPDATER_PRIVATE_KEY`、`ALCOMD3_UPDATER_PRIVATE_KEY_PASSWORD`、
-  `ALCOMD3_WEBSITE_DEPLOY_KEY` を repository Actions Secrets として保存する。
+  `ALCOMD3_UPDATER_METADATA_DEPLOY_KEY` を repository Actions Secrets として保存する。
 
 macOS release は ad-hoc signing のみを support し、Apple account や Apple Secrets は不要。
 signing command は certificate identity や notarization option を提供しない。Platform 固有の

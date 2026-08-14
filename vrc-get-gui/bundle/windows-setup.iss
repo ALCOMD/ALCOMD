@@ -45,7 +45,7 @@
 #define MyAppName "ALCOMD3"
 #define LegacyAppName "ALCOM"
 #define MyAppPublisher "CQMHV"
-#define MyAppURL "https://alcomd3.cqmhv.com/"
+#define MyAppURL "https://alcomd.cqmhv.com/"
 #define MyAppExeName "ALCOMD3.exe"
 #define LegacyAlcomd3ExeName "ALCOM.exe"
 #define LegacyMcpExeName "alcomd3-mcp.exe"

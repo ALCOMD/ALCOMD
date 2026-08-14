@@ -1,5 +1,5 @@
 <p align="center">
-    <img src="https://alcomd3.cqmhv.com/assets/logo.png" alt="ALCOMD3 標誌" width="160">
+    <img src="https://alcomd.cqmhv.com/assets/logo.png" alt="ALCOMD3 標誌" width="160">
 </p>
 
 <h1 align="center">ALCOMD3</h1>
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-    <a href="https://alcomd3.cqmhv.com/">下載</a> ·
+    <a href="https://alcomd.cqmhv.com/">下載</a> ·
     <a href="https://github.com/ALCOMD3/ALCOMD3/releases">發行版本</a> ·
     <a href="../docs/README.md">文件</a>
 </p>
@@ -33,7 +33,7 @@ ALCOMD3 協助創作者集中處理 VRChat Unity 專案的日常工作，不必�
 
 ## 開始使用
 
-1. 前往 [ALCOMD3 官方網站](https://alcomd3.cqmhv.com/)，選擇 stable 或 beta 頻道。
+1. 前往 [ALCOMD3 官方網站](https://alcomd.cqmhv.com/)，選擇 stable 或 beta 頻道。
 2. 下載適合目前作業系統的套件，然後安裝或啟動應用程式。
 3. 新增既有 VRChat Unity 專案或建立新專案，接著即可在 ALCOMD3 中管理套件、
    儲存庫和備份。

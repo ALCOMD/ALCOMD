@@ -1,5 +1,5 @@
 <p align="center">
-    <img src="https://alcomd3.cqmhv.com/assets/logo.png" alt="ALCOMD3 ロゴ" width="160">
+    <img src="https://alcomd.cqmhv.com/assets/logo.png" alt="ALCOMD3 ロゴ" width="160">
 </p>
 
 <h1 align="center">ALCOMD3</h1>
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-    <a href="https://alcomd3.cqmhv.com/">ダウンロード</a> ·
+    <a href="https://alcomd.cqmhv.com/">ダウンロード</a> ·
     <a href="https://github.com/ALCOMD3/ALCOMD3/releases">リリース</a> ·
     <a href="../docs/README/README.ja.md">ドキュメント</a>
 </p>
@@ -38,7 +38,7 @@ VRChat Unity プロジェクトの日常作業をまとめて扱えるように�
 
 ## はじめる
 
-1. [ALCOMD3 公式サイト](https://alcomd3.cqmhv.com/)で stable または beta
+1. [ALCOMD3 公式サイト](https://alcomd.cqmhv.com/)で stable または beta
    チャンネルを選びます。
 2. 使用中の OS に合うパッケージをダウンロードし、インストールまたは起動します。
 3. 既存の VRChat Unity プロジェクトを追加するか新しく作成し、ALCOMD3 で

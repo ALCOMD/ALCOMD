@@ -13,21 +13,16 @@ struct Alcomd3Config {
     repository: String,
     windows_app_id: String,
     windows_aumid: String,
-    updater_manifests: UpdaterManifests,
+    updater_api: UpdaterApi,
     release_platforms: HashMap<String, ReleasePlatform>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct UpdaterManifests {
-    stable: UpdaterManifest,
-    beta: UpdaterManifest,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct UpdaterManifest {
-    public_path: String,
+struct UpdaterApi {
+    base_url: String,
+    stable_path: String,
+    beta_path: String,
 }
 
 #[derive(Deserialize)]
@@ -57,12 +52,12 @@ pub fn discord_application_id() -> Option<&'static str> {
 
 pub fn updater_endpoint(stable: bool) -> String {
     let config = config();
-    let manifest = if stable {
-        &config.updater_manifests.stable
+    let path = if stable {
+        &config.updater_api.stable_path
     } else {
-        &config.updater_manifests.beta
+        &config.updater_api.beta_path
     };
-    join_url_path(&config.homepage_url, &manifest.public_path)
+    join_url_path(&config.updater_api.base_url, path)
 }
 
 pub fn repository_url() -> String {
@@ -137,6 +132,18 @@ mod tests {
         if let Some(max_download_bytes) = updater_max_download_bytes() {
             assert!(max_download_bytes > 0);
         }
+    }
+
+    #[test]
+    fn bridge_release_uses_the_new_versioned_update_api() {
+        assert_eq!(
+            updater_endpoint(true),
+            "https://alcomd.cqmhv.com/api/v1/updates/stable.json"
+        );
+        assert_eq!(
+            updater_endpoint(false),
+            "https://alcomd.cqmhv.com/api/v1/updates/beta.json"
+        );
     }
 
     #[test]

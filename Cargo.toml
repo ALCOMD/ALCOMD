@@ -27,7 +27,7 @@ authors = [
     "anatawa12 <anatawa12@icloud.com>",
     "CQMHV and ALCOMD3 contributors",
 ]
-homepage = "https://alcomd3.cqmhv.com/"
+homepage = "https://alcomd.cqmhv.com/"
 repository = "https://github.com/ALCOMD3/ALCOMD3"
 readme = "README.md"
 

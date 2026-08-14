@@ -395,13 +395,15 @@ ALCOMD3 には optional local MCP server がある。将来の変更が review �
 
 ### Updater と release
 
-ALCOMD3 は独自の update source と signing key を使う。
+ALCOMD3 は一方向の update source 移行の両段階で独自の signing key を使う。
 
 保持する規則:
 
-- Stable endpoint: `https://alcomd3.cqmhv.com/api/gui/tauri-updater.json`。
-- Beta endpoint: `https://alcomd3.cqmhv.com/api/gui/tauri-updater-beta.json`。
-- Update-available dialog は `https://alcomd3.cqmhv.com/` を開く official website action を含む。
+- 3.4.0 より前の release は `https://alcomd3.cqmhv.com/api/gui/tauri-updater.json` を使用し、
+  legacy Beta path は同じ最終 3.4.0 Bridge manifest に内部 rewrite される。
+- 3.4.0 は選択 channel に応じて `https://alcomd.cqmhv.com/api/v1/updates/stable.json` または
+  `https://alcomd.cqmhv.com/api/v1/updates/beta.json` を使用する。
+- Update-available dialog は `https://alcomd.cqmhv.com/` を開く official website action を含む。
 - Automatic update check failure は user には silent にする。
 - Automatic update は既定で有効で、既存の startup check をそのまま使う。その check で
   install 可能な release が見つかった場合、automatic branch は確認 dialog を表示せず、

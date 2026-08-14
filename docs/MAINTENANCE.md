@@ -471,14 +471,16 @@ Important areas:
 
 ### Updater and release
 
-ALCOMD3 uses its own update source and signing key.
+ALCOMD3 uses its own signing key across a one-way update-source transition.
 
 Preserve these rules:
 
-- Stable endpoint: `https://alcomd3.cqmhv.com/api/gui/tauri-updater.json`.
-- Beta endpoint: `https://alcomd3.cqmhv.com/api/gui/tauri-updater-beta.json`.
+- Releases before 3.4.0 use `https://alcomd3.cqmhv.com/api/gui/tauri-updater.json`;
+  the legacy beta path resolves to the same final 3.4.0 Bridge manifest.
+- 3.4.0 uses `https://alcomd.cqmhv.com/api/v1/updates/stable.json` or
+  `https://alcomd.cqmhv.com/api/v1/updates/beta.json` according to the selected channel.
 - Update-available dialogs include an official website action that opens
-  `https://alcomd3.cqmhv.com/`.
+  `https://alcomd.cqmhv.com/`.
 - Automatic update check failures stay silent for users.
 - Automatic updates are enabled by default and reuse the existing startup
   check. When that check finds an updatable release, the automatic branch skips

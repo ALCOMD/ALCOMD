@@ -74,7 +74,7 @@ Stable changelog 条目和 GitHub Release 正文对比上一个 stable。Beta �
 仓库前置配置：
 
 - 把 `ALCOMD3_UPDATER_PRIVATE_KEY`、`ALCOMD3_UPDATER_PRIVATE_KEY_PASSWORD` 和
-  `ALCOMD3_WEBSITE_DEPLOY_KEY` 存为 repository Actions Secrets。
+  `ALCOMD3_UPDATER_METADATA_DEPLOY_KEY` 存为 repository Actions Secrets。
 
 macOS 发布只支持 ad-hoc 签名，不需要 Apple 账号或 Apple Secrets。签名命令不提供证书身份或
 公证选项。平台特定的构建、签名、安装与更新机制只属于技术合约。Changelog 条目、updater notes

@@ -28,6 +28,10 @@ category order, and bullet counts must match this canonical entry.
 
 ## [Unreleased]
 
+### Changed
+
+- Prepared ALCOMD3 3.4.0 as the final v3 Bridge release: earlier v3 versions continue to receive it from the frozen legacy update endpoint, while 3.4.0 uses the versioned `alcomd.cqmhv.com` update API for the signed v4 Bridge and opens the new official website.
+
 ## [3.3.0] - 2026-08-13
 
 ### Added

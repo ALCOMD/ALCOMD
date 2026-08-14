@@ -1,5 +1,5 @@
 <p align="center">
-    <img src="https://alcomd3.cqmhv.com/assets/logo.png" alt="ALCOMD3 logo" width="160">
+    <img src="https://alcomd.cqmhv.com/assets/logo.png" alt="ALCOMD3 logo" width="160">
 </p>
 
 <h1 align="center">ALCOMD3</h1>
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-    <a href="https://alcomd3.cqmhv.com/">Download</a> ·
+    <a href="https://alcomd.cqmhv.com/">Download</a> ·
     <a href="https://github.com/ALCOMD3/ALCOMD3/releases">Releases</a> ·
     <a href="./docs/README.md">Documentation</a>
 </p>
@@ -38,7 +38,7 @@ without juggling project folders and package files by hand.
 
 ## Get started
 
-1. Visit the [ALCOMD3 website](https://alcomd3.cqmhv.com/) and choose the stable
+1. Visit the [ALCOMD3 website](https://alcomd.cqmhv.com/) and choose the stable
    or beta channel.
 2. Download the package for your operating system and install or launch it.
 3. Add an existing VRChat Unity project or create a new one, then manage its
