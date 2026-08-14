@@ -28,6 +28,8 @@ category order, and bullet counts must match this canonical entry.
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-08-15
+
 ### Changed
 
 - Prepared ALCOMD3 3.4.0 as the final v3 Bridge release: earlier v3 versions continue to receive it from the frozen legacy update endpoint, while 3.4.0 uses the versioned `alcomd.cqmhv.com` update API for the signed v4 Bridge and opens the new official website.
@@ -242,7 +244,8 @@ category order, and bullet counts must match this canonical entry.
 - Used ALCOMD3-owned update endpoints, an embedded public key, and signed update
   payloads.
 
-[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0...HEAD
+[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.4.0...HEAD
+[3.4.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.2.0...v3.3.0
 [3.3.0-beta.2]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0-beta.1...v3.3.0-beta.2
 [3.3.0-beta.1]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.2.0...v3.3.0-beta.1

@@ -1,0 +1,9 @@
+{
+  "en": "Final v3 Bridge release. Moves update checks to alcomd.cqmhv.com so signed ALCOMD 4.x migration updates can be discovered.",
+  "de": "Letzte v3-Bridge-Version. Verschiebt die Update-Suche zu alcomd.cqmhv.com, damit signierte ALCOMD-4.x-Migrationsupdates gefunden werden können.",
+  "fr": "Dernière version Bridge v3. Déplace la recherche de mises à jour vers alcomd.cqmhv.com afin de détecter les mises à jour de migration ALCOMD 4.x signées.",
+  "ja": "最後の v3 Bridge リリースです。更新確認を alcomd.cqmhv.com に移し、署名済み ALCOMD 4.x 移行更新を検出できるようにします。",
+  "ko": "최종 v3 Bridge 릴리스입니다. 업데이트 확인을 alcomd.cqmhv.com으로 옮겨 서명된 ALCOMD 4.x 마이그레이션 업데이트를 검색할 수 있게 합니다.",
+  "zh_hans": "最终 v3 Bridge 版本。将更新检查迁移到 alcomd.cqmhv.com，以发现经过签名的 ALCOMD 4.x 迁移更新。",
+  "zh_hant": "最終 v3 Bridge 版本。將更新檢查遷移至 alcomd.cqmhv.com，以探索經過簽章的 ALCOMD 4.x 遷移更新。"
+}

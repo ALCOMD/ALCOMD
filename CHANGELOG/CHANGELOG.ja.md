@@ -18,6 +18,12 @@ category の bullet count を一致させます。
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-08-15
+
+### Changed
+
+- ALCOMD3 3.4.0 を最終 v3 Bridge release として準備しました。以前の v3 は凍結された legacy update endpoint から 3.4.0 を受け取り、3.4.0 は署名済み v4 Bridge のために versioned `alcomd.cqmhv.com` update API を使用し、新しい公式サイトを開きます。
+
 ## [3.3.0] - 2026-08-13
 
 ### Added
@@ -191,7 +197,8 @@ category の bullet count を一致させます。
 
 - ALCOMD3 独自の更新エンドポイント、埋め込み公開鍵、署名付き更新ペイロードを採用。
 
-[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0...HEAD
+[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.4.0...HEAD
+[3.4.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.2.0...v3.3.0
 [3.3.0-beta.2]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0-beta.1...v3.3.0-beta.2
 [3.3.0-beta.1]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.2.0...v3.3.0-beta.1

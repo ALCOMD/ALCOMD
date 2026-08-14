@@ -15,6 +15,12 @@ GitHub Release 正文按 English、日本語、中文顺序，由结构一致的
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-08-15
+
+### Changed
+
+- 将 ALCOMD3 3.4.0 准备为最终 v3 Bridge 版本：更早的 v3 继续从冻结的旧更新端点获取 3.4.0；3.4.0 则通过版本化的 `alcomd.cqmhv.com` 更新 API 获取已签名的 v4 Bridge，并打开新的品牌官网。
+
 ## [3.3.0] - 2026-08-13
 
 ### Added
@@ -188,7 +194,8 @@ GitHub Release 正文按 English、日本語、中文顺序，由结构一致的
 
 - 使用 ALCOMD3 自有更新端点、内嵌公钥和签名更新负载。
 
-[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0...HEAD
+[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.4.0...HEAD
+[3.4.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0...v3.4.0
 [3.3.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.2.0...v3.3.0
 [3.3.0-beta.2]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0-beta.1...v3.3.0-beta.2
 [3.3.0-beta.1]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.2.0...v3.3.0-beta.1
