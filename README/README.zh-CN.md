@@ -10,7 +10,7 @@
 
 <p align="center">
     <a href="https://alcomd.cqmhv.com/">下载</a> ·
-    <a href="https://github.com/ALCOMD3/ALCOMD3/releases">发布版本</a> ·
+    <a href="https://github.com/ALCOMD/ALCOMD/releases">发布版本</a> ·
     <a href="../docs/README/README.zh-CN.md">文档</a>
 </p>
 
@@ -39,7 +39,7 @@ ALCOMD3 帮助创作者集中处理 VRChat Unity 项目的日常工作，无需�
    仓库和备份。
 
 官方版本支持 Windows x64、搭载 Apple 芯片的 macOS，以及 Linux x64。你也可以在
-[GitHub Releases](https://github.com/ALCOMD3/ALCOMD3/releases) 中查看所有已发布版本。
+[GitHub Releases](https://github.com/ALCOMD/ALCOMD/releases) 中查看所有已发布版本。
 
 支持应用内更新时，ALCOMD3 默认在启动时检查已签名更新，发现更新后下载，
 并在下次启动前安装。可在“设置”中关闭此行为。
@@ -59,11 +59,11 @@ endpoint，不会启动独立 helper，也不会监听局域网或公网地址�
 ALCOMD3 起源于 ALCOM/vrc-get，目前作为独立的开源项目维护。
 它不是 VRChat 或 VCC 的官方产品。
 
-- 遇到问题或有新想法？[提交 Issue](https://github.com/ALCOMD3/ALCOMD3/issues)。
+- 遇到问题或有新想法？[提交 Issue](https://github.com/ALCOMD/ALCOMD/issues)。
 - 想参与贡献？请阅读[贡献指南](../CONTRIBUTING/CONTRIBUTING.zh-CN.md)。
 - 需要技术或维护资料？从[文档索引](../docs/README/README.zh-CN.md)开始。
 - 想了解版本变化？阅读 [changelog](../CHANGELOG.md)，或查看
-  [GitHub Releases](https://github.com/ALCOMD3/ALCOMD3/releases)。
+  [GitHub Releases](https://github.com/ALCOMD/ALCOMD/releases)。
 
 ## 参与开发
 

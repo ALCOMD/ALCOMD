@@ -10,7 +10,7 @@
 
 <p align="center">
     <a href="https://alcomd.cqmhv.com/">Download</a> ·
-    <a href="https://github.com/ALCOMD3/ALCOMD3/releases">Releases</a> ·
+    <a href="https://github.com/ALCOMD/ALCOMD/releases">Releases</a> ·
     <a href="./docs/README.md">Documentation</a>
 </p>
 
@@ -46,7 +46,7 @@ without juggling project folders and package files by hand.
 
 Official builds are available for Windows x64, macOS on Apple Silicon, and
 Linux x64. You can also browse every published version on
-[GitHub Releases](https://github.com/ALCOMD3/ALCOMD3/releases).
+[GitHub Releases](https://github.com/ALCOMD/ALCOMD/releases).
 
 When self-updating is available, ALCOMD3 checks for signed updates at startup
 by default, downloads an available update, and installs it before the next
@@ -70,12 +70,12 @@ boundaries.
 ALCOMD3 originated from ALCOM/vrc-get and is now maintained as an independent
 open-source project. It is not an official product of VRChat or VCC.
 
-- Found a bug or have an idea? [Open an issue](https://github.com/ALCOMD3/ALCOMD3/issues).
+- Found a bug or have an idea? [Open an issue](https://github.com/ALCOMD/ALCOMD/issues).
 - Want to contribute? Read the [contribution guide](./CONTRIBUTING.md).
 - Looking for technical or maintainer information? Start at the
   [documentation index](./docs/README.md).
 - Want to see what changed? Read the [changelog](./CHANGELOG.md) or browse
-  [GitHub Releases](https://github.com/ALCOMD3/ALCOMD3/releases).
+  [GitHub Releases](https://github.com/ALCOMD/ALCOMD/releases).
 
 ## Development
 

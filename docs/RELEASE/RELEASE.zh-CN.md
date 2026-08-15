@@ -104,7 +104,7 @@ gh auth status --hostname github.com
 预期结果：
 
 - `git status --short` 没有输出。
-- GitHub CLI 已对 `ALCOMD3/ALCOMD3` 完成认证。
+- GitHub CLI 已对 `ALCOMD/ALCOMD` 完成认证。
 
 如果 worktree 不干净，停止。
 
@@ -164,7 +164,7 @@ git push origin main
 在 GitHub Actions 中手动运行 **Build release draft**，也可以使用：
 
 ```powershell
-gh workflow run release-draft.yml --repo ALCOMD3/ALCOMD3 `
+gh workflow run release-draft.yml --repo ALCOMD/ALCOMD `
     -f version=$Version `
     -f channel=$Channel `
     -f replace_existing_draft=false

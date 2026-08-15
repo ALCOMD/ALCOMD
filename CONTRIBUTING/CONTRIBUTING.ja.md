@@ -7,10 +7,10 @@ ALCOMD3 の改善にご協力いただきありがとうございます。バグ
 
 ## 変更を始める前に
 
-- 既存の [Issue](https://github.com/ALCOMD3/ALCOMD3/issues) と
-  [Discussion](https://github.com/ALCOMD3/ALCOMD3/discussions) を先に検索してください。
+- 既存の [Issue](https://github.com/ALCOMD/ALCOMD/issues) と
+  [Discussion](https://github.com/ALCOMD/ALCOMD/discussions) を先に検索してください。
 - バグ報告と機能提案には
-  [Issue フォーム](https://github.com/ALCOMD3/ALCOMD3/issues/new/choose) を使用し、
+  [Issue フォーム](https://github.com/ALCOMD/ALCOMD/issues/new/choose) を使用し、
   質問は Discussions に投稿してください。
 - 小さな修正は直接提出できます。大きな機能、互換性変更、アーキテクチャ変更は、
   実装前に相談してください。

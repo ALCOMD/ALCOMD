@@ -2,8 +2,8 @@
 
 [![Github Release][shields-github-version]][release-alcomd3]
 
-[shields-github-version]: https://img.shields.io/github/v/release/ALCOMD3/ALCOMD3
-[release-alcomd3]: https://github.com/ALCOMD3/ALCOMD3/releases
+[shields-github-version]: https://img.shields.io/github/v/release/ALCOMD/ALCOMD
+[release-alcomd3]: https://github.com/ALCOMD/ALCOMD/releases
 
 This directory contains the ALCOMD3 desktop application. The GUI is built with
 Tauri and React/Vite, and it uses the Rust crates in this workspace for VPM

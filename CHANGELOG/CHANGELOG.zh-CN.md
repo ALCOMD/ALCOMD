@@ -194,15 +194,15 @@ GitHub Release 正文按 English、日本語、中文顺序，由结构一致的
 
 - 使用 ALCOMD3 自有更新端点、内嵌公钥和签名更新负载。
 
-[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.4.0...HEAD
-[3.4.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0...v3.4.0
-[3.3.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.2.0...v3.3.0
-[3.3.0-beta.2]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.3.0-beta.1...v3.3.0-beta.2
-[3.3.0-beta.1]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.2.0...v3.3.0-beta.1
-[3.2.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0...v3.2.0
-[3.1.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.0.0...v3.1.0
-[3.1.0-beta.3]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0-beta.2...v3.1.0-beta.3
-[3.1.0-beta.2]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0-beta.1...v3.1.0-beta.2
-[3.1.0-beta.1]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.0.1-beta.1...v3.1.0-beta.1
-[3.0.1-beta.1]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.0.0...v3.0.1-beta.1
-[3.0.0]: https://github.com/ALCOMD3/ALCOMD3/releases/tag/v3.0.0
+[Unreleased]: https://github.com/ALCOMD/ALCOMD/compare/v3.4.0...HEAD
+[3.4.0]: https://github.com/ALCOMD/ALCOMD/compare/v3.3.0...v3.4.0
+[3.3.0]: https://github.com/ALCOMD/ALCOMD/compare/v3.2.0...v3.3.0
+[3.3.0-beta.2]: https://github.com/ALCOMD/ALCOMD/compare/v3.3.0-beta.1...v3.3.0-beta.2
+[3.3.0-beta.1]: https://github.com/ALCOMD/ALCOMD/compare/v3.2.0...v3.3.0-beta.1
+[3.2.0]: https://github.com/ALCOMD/ALCOMD/compare/v3.1.0...v3.2.0
+[3.1.0]: https://github.com/ALCOMD/ALCOMD/compare/v3.0.0...v3.1.0
+[3.1.0-beta.3]: https://github.com/ALCOMD/ALCOMD/compare/v3.1.0-beta.2...v3.1.0-beta.3
+[3.1.0-beta.2]: https://github.com/ALCOMD/ALCOMD/compare/v3.1.0-beta.1...v3.1.0-beta.2
+[3.1.0-beta.1]: https://github.com/ALCOMD/ALCOMD/compare/v3.0.1-beta.1...v3.1.0-beta.1
+[3.0.1-beta.1]: https://github.com/ALCOMD/ALCOMD/compare/v3.0.0...v3.0.1-beta.1
+[3.0.0]: https://github.com/ALCOMD/ALCOMD/releases/tag/v3.0.0

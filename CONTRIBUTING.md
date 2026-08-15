@@ -8,9 +8,9 @@ documentation improvements, translations, tests, and code changes are welcome.
 
 ## Before making changes
 
-- Search existing [issues](https://github.com/ALCOMD3/ALCOMD3/issues) and
-  [discussions](https://github.com/ALCOMD3/ALCOMD3/discussions) first.
-- Use the [issue forms](https://github.com/ALCOMD3/ALCOMD3/issues/new/choose)
+- Search existing [issues](https://github.com/ALCOMD/ALCOMD/issues) and
+  [discussions](https://github.com/ALCOMD/ALCOMD/discussions) first.
+- Use the [issue forms](https://github.com/ALCOMD/ALCOMD/issues/new/choose)
   for bug reports and feature requests. Use Discussions for questions.
 - Small fixes may be submitted directly. Please discuss large features,
   compatibility changes, or architectural changes before implementing them.

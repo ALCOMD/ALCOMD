@@ -28,7 +28,7 @@ authors = [
     "CQMHV and ALCOMD3 contributors",
 ]
 homepage = "https://alcomd.cqmhv.com/"
-repository = "https://github.com/ALCOMD3/ALCOMD3"
+repository = "https://github.com/ALCOMD/ALCOMD"
 readme = "README.md"
 
 [profile.xtask]

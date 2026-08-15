@@ -38,7 +38,7 @@ describe("ALCOMD3 contributors", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		const requestUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
 		expect(requestUrl.href).toBe(
-			"https://api.github.com/repos/ALCOMD3/ALCOMD3/contributors?per_page=100",
+			"https://api.github.com/repos/ALCOMD/ALCOMD/contributors?per_page=100",
 		);
 	});
 

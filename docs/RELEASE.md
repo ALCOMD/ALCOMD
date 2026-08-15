@@ -133,7 +133,7 @@ gh auth status --hostname github.com
 Expected result:
 
 - `git status --short` prints nothing.
-- GitHub CLI is authenticated for `ALCOMD3/ALCOMD3`.
+- GitHub CLI is authenticated for `ALCOMD/ALCOMD`.
 
 Stop if the worktree is dirty.
 
@@ -201,7 +201,7 @@ not include generated installer files, files under `target/`, files under
 From GitHub Actions, manually run **Build release draft**, or use:
 
 ```powershell
-gh workflow run release-draft.yml --repo ALCOMD3/ALCOMD3 `
+gh workflow run release-draft.yml --repo ALCOMD/ALCOMD `
     -f version=$Version `
     -f channel=$Channel `
     -f replace_existing_draft=false

@@ -24,13 +24,13 @@ jobs:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               with:
                   path-to-signatures: signatures/version1/cla.json
-                  path-to-document: https://github.com/ALCOMD3/ALCOMD3/blob/main/CLA.md
+                  path-to-document: https://github.com/ALCOMD/ALCOMD/blob/main/CLA.md
                   branch: main
                   allowlist: CQMHV,dependabot[bot],*[bot]
                   custom-notsigned-prcomment: |
                       Thank you for your contribution.
 
-                      Before this pull request can be merged, please read and sign the [ALCOMD3 Individual Contributor License Agreement](https://github.com/ALCOMD3/ALCOMD3/blob/main/CLA.md).
+                      Before this pull request can be merged, please read and sign the [ALCOMD3 Individual Contributor License Agreement](https://github.com/ALCOMD/ALCOMD/blob/main/CLA.md).
 
                       To sign, comment exactly:
 

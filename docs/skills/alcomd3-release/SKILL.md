@@ -186,7 +186,7 @@ git push origin main
 ## 3. 创建三平台 Draft
 
 ```powershell
-gh workflow run release-draft.yml --repo ALCOMD3/ALCOMD3 `
+gh workflow run release-draft.yml --repo ALCOMD/ALCOMD `
     -f version=$Version `
     -f channel=$Channel `
     -f replace_existing_draft=false

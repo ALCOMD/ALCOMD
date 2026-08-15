@@ -119,7 +119,7 @@ gh auth status --hostname github.com
 Expected result:
 
 - `git status --short` は何も出力しない。
-- GitHub CLI が `ALCOMD3/ALCOMD3` に対して authenticated。
+- GitHub CLI が `ALCOMD/ALCOMD` に対して authenticated。
 
 Worktree が dirty の場合は止める。
 
@@ -182,7 +182,7 @@ git push origin main
 GitHub Actions で **Build release draft** を手動実行する。または:
 
 ```powershell
-gh workflow run release-draft.yml --repo ALCOMD3/ALCOMD3 `
+gh workflow run release-draft.yml --repo ALCOMD/ALCOMD `
     -f version=$Version `
     -f channel=$Channel `
     -f replace_existing_draft=false

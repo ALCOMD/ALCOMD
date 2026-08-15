@@ -39,7 +39,7 @@ documentation.
 ## Historical records
 
 - Changelog: [../CHANGELOG.md](../CHANGELOG.md)
-- Published releases: [GitHub Releases](https://github.com/ALCOMD3/ALCOMD3/releases)
+- Published releases: [GitHub Releases](https://github.com/ALCOMD/ALCOMD/releases)
 
 ## Subproject documentation
 

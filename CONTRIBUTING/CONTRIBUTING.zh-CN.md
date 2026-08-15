@@ -6,9 +6,9 @@
 
 ## 开始修改之前
 
-- 先搜索已有的 [Issue](https://github.com/ALCOMD3/ALCOMD3/issues) 和
-  [Discussion](https://github.com/ALCOMD3/ALCOMD3/discussions)。
-- 使用 [Issue 表单](https://github.com/ALCOMD3/ALCOMD3/issues/new/choose)报告问题或建议功能，
+- 先搜索已有的 [Issue](https://github.com/ALCOMD/ALCOMD/issues) 和
+  [Discussion](https://github.com/ALCOMD/ALCOMD/discussions)。
+- 使用 [Issue 表单](https://github.com/ALCOMD/ALCOMD/issues/new/choose)报告问题或建议功能，
   使用 Discussions 提问。
 - 小型修复可以直接提交。大型功能、兼容性变化或架构调整应先讨论，再开始实现。
 - 讨论时请保持尊重，并以解决问题为目标。

@@ -112,10 +112,10 @@ English、日本語與簡體中文，本檔案不作為發佈正文輸入。
 
 - 使用 ALCOMD3 專屬更新端點、內建公鑰與簽名更新負載。
 
-[Unreleased]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0...HEAD
-[3.1.0]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.0.0...v3.1.0
-[3.1.0-beta.3]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0-beta.2...v3.1.0-beta.3
-[3.1.0-beta.2]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.1.0-beta.1...v3.1.0-beta.2
-[3.1.0-beta.1]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.0.1-beta.1...v3.1.0-beta.1
-[3.0.1-beta.1]: https://github.com/ALCOMD3/ALCOMD3/compare/v3.0.0...v3.0.1-beta.1
-[3.0.0]: https://github.com/ALCOMD3/ALCOMD3/releases/tag/v3.0.0
+[Unreleased]: https://github.com/ALCOMD/ALCOMD/compare/v3.1.0...HEAD
+[3.1.0]: https://github.com/ALCOMD/ALCOMD/compare/v3.0.0...v3.1.0
+[3.1.0-beta.3]: https://github.com/ALCOMD/ALCOMD/compare/v3.1.0-beta.2...v3.1.0-beta.3
+[3.1.0-beta.2]: https://github.com/ALCOMD/ALCOMD/compare/v3.1.0-beta.1...v3.1.0-beta.2
+[3.1.0-beta.1]: https://github.com/ALCOMD/ALCOMD/compare/v3.0.1-beta.1...v3.1.0-beta.1
+[3.0.1-beta.1]: https://github.com/ALCOMD/ALCOMD/compare/v3.0.0...v3.0.1-beta.1
+[3.0.0]: https://github.com/ALCOMD/ALCOMD/releases/tag/v3.0.0
