@@ -1331,7 +1331,7 @@ All notable changes to this project will be documented in this file.
         let canonical = validate_changelog_format_with_title(
             version,
             channel,
-            "ALCOMD3/ALCOMD3",
+            "ALCOMD/ALCOMD",
             include_str!("../../CHANGELOG.md"),
             "# Changelog",
         )
@@ -1339,7 +1339,7 @@ All notable changes to this project will be documented in this file.
         let japanese = validate_changelog_format_with_title(
             version,
             channel,
-            "ALCOMD3/ALCOMD3",
+            "ALCOMD/ALCOMD",
             include_str!("../../CHANGELOG/CHANGELOG.ja.md"),
             "# 変更履歴",
         )
@@ -1347,7 +1347,7 @@ All notable changes to this project will be documented in this file.
         let simplified_chinese = validate_changelog_format_with_title(
             version,
             channel,
-            "ALCOMD3/ALCOMD3",
+            "ALCOMD/ALCOMD",
             include_str!("../../CHANGELOG/CHANGELOG.zh-CN.md"),
             "# 更新日志",
         )
