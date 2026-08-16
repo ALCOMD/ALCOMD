@@ -2,7 +2,10 @@ schema = 1
 
 [metadata]
 status_values = ["unknown", "not_started", "in_progress", "blocked", "verified"]
-baseline_frozen = false
+baseline_frozen = true
+audit_status = "in_progress"
+inventory_granularity = "domain_seed"
+m1_complete = false
 release_target = "4.0.0"
 
 [[feature]]
@@ -35,7 +38,7 @@ tests = []
 [[feature]]
 id = "projects.management"
 title = "项目管理"
-source = ["alcomd3-v3-final", "vrc-get-frozen"]
+source = ["alcomd3-v3-final", "vrc-get-frozen", "vpm-ecosystem"]
 implementation = "alcomd-application"
 release_class = "release_blocker"
 status = "unknown"
@@ -44,7 +47,7 @@ tests = []
 [[feature]]
 id = "packages.vpm"
 title = "VPM 包管理"
-source = ["alcomd3-v3-final", "vrc-get-frozen"]
+source = ["alcomd3-v3-final", "vrc-get-frozen", "vpm-ecosystem"]
 implementation = "alcomd-vpm"
 release_class = "release_blocker"
 status = "unknown"
@@ -53,7 +56,7 @@ tests = []
 [[feature]]
 id = "repositories.management"
 title = "VPM 仓库管理"
-source = ["alcomd3-v3-final", "vrc-get-frozen"]
+source = ["alcomd3-v3-final", "vrc-get-frozen", "vpm-ecosystem"]
 implementation = "alcomd-vpm"
 release_class = "release_blocker"
 status = "unknown"
@@ -80,7 +83,7 @@ tests = []
 [[feature]]
 id = "unity.integration"
 title = "Unity 检测与启动"
-source = ["alcomd3-v3-final", "vrc-get-frozen"]
+source = ["alcomd3-v3-final", "vrc-get-frozen", "vpm-ecosystem"]
 implementation = "alcomd-platform"
 release_class = "release_blocker"
 status = "unknown"

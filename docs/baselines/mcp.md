@@ -1,8 +1,8 @@
 # MCP 协议基线
 
-候选规范：`2026-07-28`
+冻结规范：[`2026-07-28`](https://modelcontextprotocol.io/specification/2026-07-28)
 
-冻结前必须使用官方规范复核：
+以下行为以该官方规范为准：
 
 - 无协议级 session。
 - 不使用旧 `initialize` / `notifications/initialized` 生命周期。

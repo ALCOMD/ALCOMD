@@ -5,7 +5,7 @@ name = "Discord 状态"
 version = "0.1.0"
 api = "^1"
 publisher = "CQMHV"
-license = "UNDECIDED"
+license = "AGPL-3.0-only"
 
 [entrypoints]
 ui = "ui/index.html"

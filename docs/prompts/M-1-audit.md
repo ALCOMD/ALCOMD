@@ -11,14 +11,15 @@
 5. docs/status.md
 
 旧版只读源码位于 ../ALCOMD3-v3-readonly。
-vrc-get 只读源码位于 ../vrc-get-readonly。
+vrc-get 功能与行为基线仓库位于 ../vrc-get-readonly，只能用于只读功能审计、行为观察、安全分析和差异测试。
 
 不得修改旧版源码，不得执行远端 Git 写操作，不得新增生产依赖，不得修改 apps/、crates/、extensions/ 或 packages/。
+不得复制、移植或改写 v3 源码；不得复制、Fork、包装、移植或改写 vrc-get / vrc-get-vpm 实现源码。
 
 请使用适合的只读 Subagent 分别审计：
 
 1. ALCOMD3 v3 的全部用户功能和隐性行为
-2. 固定版本 vrc-get 的功能与安全行为
+2. 固定版本 vrc-get 的全部功能、安全行为、CLI、错误处理，以及公开 VPM 格式、生态兼容行为与独立实现边界
 3. 安装器、更新器、数据路径和 v3 残留
 4. RPC、权限、扩展和第一方扩展边界
 5. Windows、Linux、macOS 构建与测试要求

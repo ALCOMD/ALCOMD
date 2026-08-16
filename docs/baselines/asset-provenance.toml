@@ -1,0 +1,45 @@
+schema = 1
+
+[[asset]]
+id = "alcomd3-app-icon"
+kind = "derived-icon-set"
+source_repository = "https://github.com/ALCOMD/ALCOMD3.git"
+source_commit = "4aa98ae4f18d42c10137278997180dbede991e88"
+source_path = "vrc-get-gui/app-icon.png"
+source_sha256 = "cf504ce66a486a47a5aee11426666f8b879ee3034c11cdc3769cad07568950a6"
+license = "CC-BY-4.0"
+license_file = "apps/alcomd-gui/icon-LICENSE"
+attribution = "Copyright (c) 2024 lilxyzw, anatawa12 and other contributors"
+notes = "The source PNG is preserved from ALCOMD3 v3.4.0; Tauri bundle icons are generated format and size variants."
+
+[[asset.files]]
+path = "apps/alcomd-gui/app-icon.png"
+sha256 = "cf504ce66a486a47a5aee11426666f8b879ee3034c11cdc3769cad07568950a6"
+
+[[asset.files]]
+path = "apps/alcomd-gui/src-tauri/icons/32x32.png"
+sha256 = "31ec6f6bcaaf1294d141ee66faa3f264be240fba468e858f43267d0f2081fbe0"
+
+[[asset.files]]
+path = "apps/alcomd-gui/src-tauri/icons/64x64.png"
+sha256 = "c2ee94632f2a01a321657b036e57c65bec843d240b5b8e70dafc7eefb01f73e7"
+
+[[asset.files]]
+path = "apps/alcomd-gui/src-tauri/icons/128x128.png"
+sha256 = "0b4f10cef3781cfce1db87643ae6f3ddf29967350f5f60a4cce323ac453917ce"
+
+[[asset.files]]
+path = "apps/alcomd-gui/src-tauri/icons/128x128@2x.png"
+sha256 = "2d9655097f89953ead3290086598b026085118337a9d699cc911a0a3770b1691"
+
+[[asset.files]]
+path = "apps/alcomd-gui/src-tauri/icons/icon.png"
+sha256 = "3f7d963f4a38e0f5cf578b773e0d10d0846feadb4e18d0bcf81e1a1b5b4233d0"
+
+[[asset.files]]
+path = "apps/alcomd-gui/src-tauri/icons/icon.icns"
+sha256 = "90b3e52c1f660cc9650f0469ce485417932c03ae5362fbf8de634bfb4108ffb2"
+
+[[asset.files]]
+path = "apps/alcomd-gui/src-tauri/icons/icon.ico"
+sha256 = "ad05a4138d584ac80d49d0e0876573ba22d122cff35b3e883ec3406ab682c511"

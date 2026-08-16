@@ -4,6 +4,7 @@ name = "UI-only Example"
 version = "0.1.0"
 api = "^1"
 publisher = "Example"
+license = "AGPL-3.0-only"
 
 [entrypoints]
 ui = "ui/index.html"

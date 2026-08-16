@@ -1,10 +1,29 @@
 # ALCOMD3 v3 功能基线
 
-状态：未审计
+状态：审计源已冻结，功能审计未完成
 
 ## 冻结信息
 
-从 `docs/baselines/source-lock.toml` 读取。未填写 commit 前，不得开始功能移植。
+从 `docs/baselines/source-lock.toml` 读取。`alcomd3_v3_audit_source` 锁定审计源，
+`alcomd3_v3_migration_entry_release` 单独锁定唯一迁移入口版本，
+`alcomd3_v3_migration_assets` 锁定实际安装与迁移测试资产。锁定输入不代表功能审计完成。
+
+## v4 迁移入口
+
+- 已于 2026-08-15 发布的 ALCOMD3 3.4.0 是 v3 迁移入口版本（v3 migration entry release），也是进入 v4 的唯一直接迁移来源。
+- 更早的公开 v3.x 版本必须先通过原有更新链升级到 3.4.0，不由 v4 迁移器直接解析。
+- 3.4.0 已将更新 JSON 源切换到 `https://alcomd.cqmhv.com/api/v1/updates/stable.json` 与 `https://alcomd.cqmhv.com/api/v1/updates/beta.json`，并从该 API 获取 v4 迁移桥接安装器（v4 bridge installer）元数据。
+- 上述已上线路径和频道映射作为 M-1 基线；v4 迁移桥接安装器的 JSON Schema、版本推进、签名与失败回退行为必须根据 3.4.0 实现冻结，不得由 v4 猜测。
+
+## v3.4.0 可执行资产快照
+
+GitHub Release 当前没有启用 immutable releases，因此仅锁 tag 和 commit 不足以唯一标识
+用户实际安装的二进制。`source-lock.toml` 额外锁定 Release ID，以及从冻结提交中的
+`alcomd3.config.json` 派生出的所有三平台 updater、签名和安装资产的 asset ID、名称、
+大小与 SHA-256；同时锁定 updater 公钥 blob、规范化指纹和 minisign key ID。
+
+该快照的状态为 `frozen`，含义是远端变化可被 `freeze-baselines.ps1 -Check` 检出，
+并不表示 GitHub 端资产本身不可编辑。迁移测试必须按锁文件摘要获取资产，不得只按文件名下载。
 
 ## 审计方法
 
@@ -32,6 +51,7 @@
 - MCP 的全部工具、任务、权限与配置。
 - Discord Rich Presence 的全部设置和生命周期。
 - 安装器、更新器、稳定/beta 频道、URI、文件关联和卸载。
+- 更早 v3.x 到 3.4.0、3.4.0 更新源切换及 3.4.0 到 v4 迁移桥接安装器的完整更新链。
 - Windows 用户安装、全局安装与多用户行为。
 
 ## 产物

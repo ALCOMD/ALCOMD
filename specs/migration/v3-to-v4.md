@@ -4,11 +4,15 @@
 
 ## 核心不变量
 
+- v4 迁移链只接受 ALCOMD3 3.4.0 v3 迁移入口版本；更早的 v3.x 必须先升级到 3.4.0。
+- 3.4.0 必须从 `https://alcomd.cqmhv.com/api/v1/updates/stable.json` 或 `https://alcomd.cqmhv.com/api/v1/updates/beta.json` 获取并验证 v4 迁移桥接安装器（v4 bridge installer）元数据。
 - Commit 前不得破坏 v3。
 - Health Check 前不得删除旧资源。
 - Cleanup 只能删除已确认由 ALCOMD3 拥有的资源。
 - 用户自定义项目、备份和其他应用配置不得猜测删除。
 - 成功后不得保留永久迁移标记或旧路径回退。
+
+不支持的源版本必须在 Inventory 阶段安全拒绝，并明确提示用户先升级到 3.4.0。拒绝不得修改 v3 状态或创建可被误认为有效的 v4 状态。
 
 ## 阶段
 

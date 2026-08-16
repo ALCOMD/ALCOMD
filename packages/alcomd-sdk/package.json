@@ -2,6 +2,7 @@
     "name": "@alcomd/sdk",
     "version": "0.1.0",
     "private": true,
+    "license": "AGPL-3.0-only",
     "description": "TypeScript client types for ALCOMD RPC.",
     "type": "module",
     "exports": {

@@ -6,6 +6,14 @@
 
 ALCOMD3 v4.0.0 是一套 Rust 本地应用平台，而不是以 GUI 为中心的单体程序。
 
+ALCOMD3 v4 在品牌和功能定位上继承 ALCOMD3 v3，但拥有独立 Git 历史与全新代码库。
+它不是 v3 的增量修改或派生代码库。v3 只作为迁移与功能审计的只读输入；vrc-get
+不是代码上游。v4 不复制、移植、Fork、包装或改写两者源码，VPM 能力依据公开格式、
+生态兼容需求和 ALCOMD 自有规范独立实现。
+
+ALCOMD v4 自有代码、SDK、规范、文档、脚本与第一方扩展统一采用
+`AGPL-3.0-only`；第三方依赖和资产继续使用各自许可证。
+
 `alcomd` 是唯一核心进程。`alcomd-gui`、`alcomd-cli`、`alcomd-mcp`、Local API、第三方 GUI、第三方应用和扩展都通过统一协议调用同一套应用用例。
 
 ```text
@@ -48,7 +56,7 @@ alcomd
 | URI Scheme | `alcomd://` | 否 |
 | 数据目录 | `ALCOMD` | 否 |
 
-未来品牌改为 ALCOMD4 或 ALCOMD5 时，只修改展示名称、图标与文案。程序名、Bundle ID、安装身份、数据路径、RPC、扩展 API、SDK 与第三方授权不得改变。
+用户品牌未来变化时，只修改展示名称、图标与文案。程序名、Bundle ID、安装身份、数据路径、RPC、扩展 API、SDK 与第三方授权不得改变。
 
 ## 3. 程序组成
 
@@ -362,7 +370,7 @@ MCP 分为：
 
 `alcomd-mcp` 必须在 GUI 未运行时工作，并支持 STDIO 与当前规范要求的 HTTP 传输。
 
-MCP 协议基线在 M-1 冻结。初始化仓库暂以 `2026-07-28` 为候选基线，实施时必须遵守其无会话、按请求携带版本与能力、`server/discover` 和订阅流设计，不得照搬旧版初始化握手或 `Mcp-Session-Id`。
+MCP 协议基线已冻结为 `2026-07-28`。实施时必须遵守其无会话、按请求携带版本与能力、`server/discover` 和订阅流设计，不得照搬旧版初始化握手或 `Mcp-Session-Id`。
 
 ALCOMD 长任务通过核心 `OperationId` 表达。是否采用 MCP Tasks 扩展必须单独 ADR 决定，不得把旧实验性 Tasks API 当成稳定核心协议。
 
@@ -466,7 +474,14 @@ v4 正常运行时不读写 VCC `settings.json`，不与 VCC 双向同步，不�
 成功：v4 完整可用，已确认属于 v3 的资源全部删除。
 ```
 
-v3 更新器下载 4.0.0 Bridge，Bridge 启动 `alcomd-bootstrap` 和临时 `alcomd-migrate-v3`。
+迁移入口固定为已于 2026-08-15 发布的 ALCOMD3 3.4.0：
+
+- 3.4.0 是 v3 迁移入口版本（v3 migration entry release），也是 v4 迁移链唯一接受的直接来源。
+- 更早的公开 v3.x 必须先通过原有更新链升级到 3.4.0，不得直接进入 v4 迁移。
+- 3.4.0 已将更新 JSON 源切换到 `https://alcomd.cqmhv.com/api/v1/updates/stable.json` 与 `https://alcomd.cqmhv.com/api/v1/updates/beta.json`。
+- 3.4.0 从新标准 API 获取并验证 v4 迁移桥接安装器（v4 bridge installer）元数据；该安装器再启动 `alcomd-bootstrap` 和临时 `alcomd-migrate-v3`。
+
+上述已上线路径和频道映射作为 M-1 基线；v4 迁移桥接安装器的 JSON Schema、版本推进、签名验证和错误行为在 M-1 冻结。
 
 阶段：
 
@@ -533,13 +548,16 @@ Residue Audit
 - 当前状态。
 - 证据。
 
-基线来源：
+功能与验收来源：
 
 1. ALCOMD3 v3 最终冻结提交。
-2. vrc-get 功能冻结提交。
-3. v3 README、维护文档、MCP 文档与 Changelog。
-4. 真实 UI 行为和安装快照。
-5. 用户明确要求保留的能力。
+2. v3 README、维护文档、MCP 文档与 Changelog。
+3. 冻结版本 vrc-get 的功能、安全行为、CLI 与错误处理。
+4. 公开 VPM 格式与生态兼容性要求。
+5. 真实 UI 行为和安装快照。
+6. 用户明确要求保留的能力和 ALCOMD v4 产品计划。
+
+这些来源仅定义预期行为，不授权复制或改写其实现源码。
 
 ## 22. 更新与发行
 
@@ -604,7 +622,7 @@ M12 功能对齐、安全、零残留和发行硬化
 
 ## 25. 最终规则
 
-1. `ALCOMD3` 是当前品牌，`ALCOMD` 是永久产品家族，`alcomd` 是永久技术根。
+1. `ALCOMD3` 是当前用户品牌，`ALCOMD` 是永久产品家族，`alcomd` 是永久技术根。
 2. 系统身份永久使用 `com.cqmhv.alcomd`。
 3. 持久目录使用 `ALCOMD`，不使用 `ALCOMD3`。
 4. 只有 `alcomd` 可以写数据库和项目。
@@ -617,3 +635,5 @@ M12 功能对齐、安全、零残留和发行硬化
 11. 迁移必须先验证 v4，再删除 v3。
 12. 功能完整性必须由清单和自动化测试证明。
 13. 未来品牌更名不得要求数据迁移或第三方重新接入。
+14. v4 自有内容统一采用 `AGPL-3.0-only`。
+15. v3 与 vrc-get 不是 v4 的代码上游，VPM 必须独立实现。

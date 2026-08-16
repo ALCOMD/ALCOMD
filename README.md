@@ -1,6 +1,8 @@
-# ALCOMD v4 初始化仓库
+# ALCOMD3 v4
 
-这是 ALCOMD3 v4.0.0 的全新、无历史仓库骨架。它不是对 ALCOMD3 v3 的增量补丁。
+ALCOMD3 v4 是 ALCOMD 产品家族中具有独立 Git 历史与代码库的全新项目。它在
+品牌和功能定位上继承 ALCOMD3 v3，但不是对 v3 的增量补丁，也不复用 v3 或
+vrc-get 的源码。
 
 当前状态：**M-1 审计与规划阶段**。仓库中只有架构、契约骨架、最小可编译程序和 Codex 工作约束。不得把这些占位实现误认为已完成功能。
 
@@ -16,7 +18,7 @@
 | URI Scheme | `alcomd://` |
 | 数据目录 | `ALCOMD` |
 
-品牌未来可改为 ALCOMD4、ALCOMD5；技术身份不得随品牌变化。
+用户品牌、产品家族与技术身份彼此独立；品牌未来变化时，技术身份不得随之变化。
 
 ## 架构一句话
 
@@ -31,8 +33,8 @@ MCP 协议由独立的 `alcomd-mcp` 提供。MCP 管理 GUI 与 Discord Rich Pre
 3. 阅读 `docs/decisions/open.md`。
 4. 完成 `docs/exec-plans/M-1-audit.md`，不要直接开始生产实现。
 5. 将旧仓库放在并列的只读目录，例如 `../ALCOMD3-v3-readonly`。
-6. 在 `docs/baselines/source-lock.toml` 中冻结 v3 与 vrc-get 的提交。
-7. 在导入任何 v3 源码前解决许可证与署名决策。
+6. 运行 `scripts/freeze-baselines.ps1` 生成 v3 审计源、v3.4.0 迁移入口版本与发行资产、vrc-get 功能行为及 MCP 规范锁，并用 `-Check` 对远端引用和 GitHub Release 摘要执行校验。
+7. 遵守洁净实现边界：不得复制、移植或改写 v3、vrc-get 或 vrc-get-vpm 源码。
 
 ## 本地初始化
 
@@ -91,9 +93,15 @@ xtask/                   仓库一致性检查
 
 打包时已完成的静态校验和仍需在目标开发机执行的构建命令见 `VALIDATION_REPORT.md`。
 
+## 许可证
+
+ALCOMD v4 自有代码、SDK、规范、文档、脚本与第一方扩展统一采用
+[`AGPL-3.0-only`](LICENSE)。v4 是独立新项目，v3 只用于迁移与功能行为审计，
+vrc-get 不是代码上游。详细边界见 `LICENSE-DECISION.md`；第三方依赖与图标仍受
+各自许可证约束，见 `THIRD_PARTY_NOTICES.md`。
+
 ## 重要限制
 
-- 本仓库尚未选择最终许可证，见 `docs/decisions/open.md`。
 - 不包含真实签名私钥、GitHub token 或发布凭据。
 - `alcomd-migrate-v3` 仅为占位程序，不包含旧格式解析器。
 - 所有二进制当前只证明命名与 workspace 边界，尚未实现 RPC、VPM 或迁移。

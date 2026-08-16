@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 const REQUIRED_PRODUCT_TOKENS: &[&str] = &[
     r#"family_name = "ALCOMD""#,
     r#"technical_name = "alcomd""#,
+    r#"display_name = "ALCOMD3""#,
     r#"bundle_identifier = "com.cqmhv.alcomd""#,
+    r#"windows_aumid = "CQMHV.ALCOMD""#,
     r#"data_directory = "ALCOMD""#,
     r#"daemon = "alcomd""#,
     r#"gui = "alcomd-gui""#,
@@ -25,6 +27,8 @@ const PRODUCTION_ROOTS: &[&str] = &["apps", "crates", "extensions", "packages", 
 
 const REQUIRED_PATHS: &[&str] = &[
     "AGENTS.md",
+    "LICENSE",
+    "LICENSE-DECISION.md",
     "PLANS.md",
     "alcomd.product.toml",
     "feature-parity.toml",

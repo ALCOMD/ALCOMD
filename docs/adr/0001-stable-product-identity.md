@@ -14,11 +14,12 @@
 
 - 用户品牌：`ALCOMD3`
 - 产品家族：`ALCOMD`
-- 技术根：`alcomd`
-- Bundle ID：`com.cqmhv.alcomd`
+- 技术名称：`alcomd`
+- 系统标识 / Bundle ID：`com.cqmhv.alcomd`
+- Windows AUMID：`CQMHV.ALCOMD`
 - 数据目录：`ALCOMD`
 
-未来品牌变化不得修改技术身份。
+用户品牌可以随产品决策变化，但不得修改产品家族或技术身份。
 
 ## 结果
 

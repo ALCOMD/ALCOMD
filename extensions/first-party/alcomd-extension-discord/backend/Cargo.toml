@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.97.1"
 authors = ["CQMHV"]
-repository = "https://github.com/ALCOMD3/ALCOMD3"
+license = "AGPL-3.0-only"
+repository = "https://github.com/ALCOMD/ALCOMD"
 publish = false
 
 [lib]
