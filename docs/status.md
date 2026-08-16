@@ -1,6 +1,6 @@
 # 项目状态
 
-最后更新：2026-08-16
+最后更新：2026-08-17
 
 ## 当前阶段
 
@@ -36,10 +36,14 @@
   冻结；M-1 不实现或发布 bridge。
 - A-024 与 ADR 0015 已关闭 O-008：ALCOMD 是多组件 Rust 本地应用平台，只有
   `alcomd-gui` 是 Tauri 子应用；Windows 使用单一 Inno Setup EXE 的两种互斥安装模式，
-  macOS 使用签名并公证的 DMG，Linux 使用 AppImage 与 DEB。三个平台、四种主要格式均为
+  macOS 使用 DMG，Linux 使用 AppImage 与 DEB。三个平台、四种主要格式均为
   4.0.0 blocker。
 - 完整产品发行、三平台 CLI 集成、updater/bootstrap 边界与未来 `cargo xtask dist` 已进入
   `docs/exec-plans/M12-full-product-distribution.md`；本阶段未实现安装器、签名或发行资产。
+- A-025 已关闭 O-003：Windows 正式测试 Win10 22H2/Win11 并采用 WebView2 Evergreen 在线/
+  离线部署；Linux 在 Ubuntu 22.04 构建且发行 ELF 最高所需符号不超过 `GLIBC_2.35`；macOS
+  arm64 deployment target 为 11.0。当前 Authenticode 与 Apple Developer ID/notarization
+  不是 blocker，但应用层更新/bridge/扩展签名和摘要验证仍为强制要求。
 - M0 ExecPlan 已细化为固定工具链、`npm ci`、Cargo lock、三平台 `--no-bundle` build 和独立
   扩展 test gate；尚未执行。
 
@@ -64,9 +68,9 @@
   GUI、模板、备份与 Unity 的差异测试仍 blocked。
 - v4 bridge 尚无版本/tag/资产、handoff、journal、恢复源、Health Check、Commit marker、DEB
   交接和 rollout 设计。M-1 已冻结输入与失败契约；实现/发布属于 M11，不能在本阶段伪造。
-- A-017 至 A-024 已批准发布平台范围、Local API/SDK 后置、第一方扩展默认状态、GUI 等价
-  边界、MCP Operation 映射、Extension ABI v1、MCP 管理权限与全产品打包模型。O-008 已被
-  A-024/ADR 0015 替代；仍开放 O-003 的平台最低技术基线。
+- A-017 至 A-025 已批准发布平台范围、Local API/SDK 后置、第一方扩展默认状态、GUI 等价
+  边界、MCP Operation 映射、Extension ABI v1、MCP 管理权限、全产品打包模型与平台技术
+  基线。O-008 已被 A-024/ADR 0015 替代，O-003 已由 A-025 关闭。
 - Tasks SEP 已 Final，但扩展 artifact 仍带 Draft/experimental 标记，且所审错误码与最终 core
   Schema 冲突；在固定兼容版本前保持阻塞。
 - `specs/extensions/permissions-v1.md` 与 `specs/mcp/toolset-v1.md` 尚未应用 A-021/A-023；M-1
@@ -77,7 +81,8 @@
 
 ## 下一停止点
 
-本轮产品与发行模型纠正完成后，因真实安装 Fixture、O-003 平台技术基线、MCP 逐工具合同和
-迁移删除实例授权仍未完成，停止并请求人工审核。`feature-parity.toml` 保持
+平台技术基线关闭后，下一项是从隔离 VM 采集 v3.4.0 真实安装快照；在首个脱敏 Fixture
+通过人工复核前，不授权任何迁移删除。MCP 逐工具合同和迁移删除实例授权仍未完成。
+`feature-parity.toml` 保持
 `m1_complete = false`，不得进入 M0；安装器与 `xtask dist` 只能在后续独立 M12 ExecPlan
 获批后实现。

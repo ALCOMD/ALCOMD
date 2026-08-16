@@ -25,12 +25,14 @@ Tauri Bundler 错误地主导产品组成、安装、更新和迁移生命周期
    构建 GUI，也可以参与适合的平台打包步骤，但必须是由 ALCOMD 流水线控制的子步骤。
 4. Windows x86_64 主格式是单文件 Inno Setup EXE。一个安装器支持当前用户与所有用户两种
    模式；当前用户为默认且不提权，只有明确选择所有用户时才请求管理员权限。
-5. macOS Apple Silicon 主格式是签名并完成 Apple Notarization 的 DMG，包含完整
-   `ALCOMD.app` 产品组件；4.0.0 普通用户主格式不采用 PKG。
+5. macOS Apple Silicon 主格式是包含完整 `ALCOMD.app` 产品组件的 DMG；4.0.0 普通用户
+   主格式不采用 PKG。当前 Apple Developer ID 签名与 notarization 不是发布 blocker，允许
+   未签名、未公证发行，但必须验证并记录真实用户启动路径和系统警告。
 6. Linux x86_64/amd64 同时发布 AppImage 与 DEB，二者都包含各自发行范围要求的完整组件；
    RPM、Flatpak、Snap 不阻塞 4.0.0。
-7. 更新由 `alcomd-updater`、`alcomd-bootstrap` 与签名完整产品包共同管理，不采用 Tauri
-   Updater 作为完整产品的权威更新系统。
+7. 更新由 `alcomd-updater`、`alcomd-bootstrap` 与经过 ALCOMD 应用层签名/摘要验证的完整
+   产品包共同管理，不采用 Tauri Updater 作为完整产品的权威更新系统。应用层更新真实性
+   不依赖 Windows Authenticode 或 Apple Developer ID。
 8. ALCOMD3 v3.4.0 只是最后受支持的 v3 迁移入口。ALCOMD v4 bridge installer 安装完整 v4
    产品并包含或调用 `alcomd-bootstrap`；数据迁移、健康检查、回滚和 v3 清理由 bootstrap
    协调，安装器脚本不得解析 v3 数据库、修改 Unity 项目或实现业务迁移。
@@ -58,6 +60,9 @@ Inno Setup 负责部署文件、卸载登记、快捷方式、`alcomd://`、文�
 
 - Tauri Bundler 仍是允许评估和使用的构建/打包工具；被否定的是它作为整个 ALCOMD 产品
   安装框架或生命周期权威的地位，而不是工具本身。
+- 当前允许 Windows 安装器没有 Authenticode、macOS DMG/app 没有 Developer ID 签名与
+  notarization；这只放宽操作系统平台签名门槛，不放宽 bridge、updater、Manifest、扩展和
+  包完整性合同。
 - `npm run gui:build` 与 `tauri build` 只证明 GUI 可构建，不是产品发行命令。
 - Windows 当前用户/所有用户是一个 EXE 的两种安装模式；签名、更新包和 manifest 是辅助
   发行产物，不增加平台类别。

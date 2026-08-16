@@ -394,27 +394,27 @@ id = "platform.release-matrix"
 title = "4.0.0 三个平台与四种主要发行格式"
 source = ["product-plan"]
 user_entry = ["Windows x86_64 Inno Setup EXE", "macOS arm64 DMG", "Linux x86_64 AppImage", "Linux amd64 DEB"]
-behavior = "三个发布平台与四种主要发行格式均为 4.0.0 blocker；Windows 当前用户/所有用户是同一 EXE 的两种模式，不是两个资产；辅助签名与 Manifest 不增加格式类别。M0 GUI no-bundle 验证与后续完整产品发行分离，O-003 仍需冻结最低技术基线。"
+behavior = "三个发布平台与四种主要发行格式均为 4.0.0 blocker；Windows 当前用户/所有用户是同一 EXE 的两种模式，不是两个资产；辅助签名与 Manifest 不增加格式类别。A-025 已冻结 Windows 10 22H2/11 测试、Ubuntu 22.04 + GLIBC_2.35 符号上限、macOS arm64 deployment target 11.0；不增加旧系统主动拒绝门槛。"
 implementation = "cargo xtask dist and distribution"
 release_class = "release_blocker"
-status = "in_progress"
+status = "verified"
 implementation_status = "not_started"
-evidence = ["docs/baselines/platforms.md", "docs/testing/release-matrix.md", "docs/decisions/accepted.md::A-017", "docs/decisions/accepted.md::A-024", "docs/adr/0015-platform-product-packaging.md", "docs/decisions/open.md::O-003"]
-coverage = ["toolchain locks", "three-platform build", "four full-product formats", "install/upgrade/uninstall", "signing"]
-tests = ["platform.build-matrix", "platform.toolchain-locks", "platform.build.windows-x86_64", "platform.build.linux-x86_64", "platform.build.macos-aarch64", "distribution.full-product-staging", "distribution.version-coherence", "installer.matrix"]
+evidence = ["docs/baselines/platforms.md", "docs/testing/release-matrix.md", "docs/decisions/accepted.md::A-017", "docs/decisions/accepted.md::A-024", "docs/decisions/accepted.md::A-025", "docs/adr/0015-platform-product-packaging.md"]
+coverage = ["toolchain locks", "three-platform build", "four full-product formats", "OS/runtime boundary", "install/upgrade/uninstall", "application integrity"]
+tests = ["platform.build-matrix", "platform.toolchain-locks", "platform.build.windows-x86_64", "platform.build.linux-x86_64", "platform.build.macos-aarch64", "platform.windows-webview2", "platform.linux-glibc-symbols", "platform.macos-deployment-unsigned", "distribution.full-product-staging", "distribution.version-coherence", "installer.matrix"]
 
 [[feature]]
 id = "distribution.full-product"
 title = "独立全产品发行流水线"
 source = ["product-plan"]
-user_entry = ["cargo xtask dist --target <target>", "staging manifest", "signed package", "update manifest"]
-behavior = "统一构建、收集、验证、签名和打包目标平台所需的 daemon、GUI、CLI、MCP、扩展宿主、bootstrap、updater 与第一方扩展；不全面禁止 Tauri Bundler，它可构建 GUI 或参与适合的平台打包，但只能作为 xtask 控制的底层工具，单一 GUI bundle 不是发行物。"
+user_entry = ["cargo xtask dist --target <target>", "staging manifest", "application-signed package", "update manifest"]
+behavior = "统一构建、收集、验证和打包目标平台所需的 daemon、GUI、CLI、MCP、扩展宿主、bootstrap、updater 与第一方扩展；生成强制应用层签名/摘要，平台代码签名按发布策略可选；不全面禁止 Tauri Bundler，它可构建 GUI 或参与适合的平台打包，但只能作为 xtask 控制的底层工具。"
 implementation = "xtask/dist"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "not_started"
 evidence = ["docs/decisions/accepted.md::A-024", "docs/adr/0015-platform-product-packaging.md", "docs/exec-plans/M12-full-product-distribution.md"]
-coverage = ["component collection", "staging validation", "version coherence", "licenses", "signing", "update manifest"]
+coverage = ["component collection", "staging validation", "version coherence", "licenses", "application signing", "optional platform signing", "update manifest"]
 tests = ["distribution.full-product-staging", "distribution.version-coherence", "updater.full-product-atomic"]
 
 [[feature]]
@@ -422,7 +422,7 @@ id = "distribution.windows-inno"
 title = "Windows 单一 Inno Setup 全产品安装器"
 source = ["product-plan"]
 user_entry = ["current-user default", "all-users explicit", "scope conversion", "uninstall"]
-behavior = "同一签名 EXE 支持当前用户与所有用户；默认不提升，显式全局模式才请求 UAC；两范围互斥并受控转换。Inno 只部署和调用 bootstrap，不解析 v3 数据或修改 Unity 项目。"
+behavior = "同一 EXE 支持当前用户与所有用户；默认不提升，显式全局模式才请求 UAC；两范围互斥并受控转换。正式测试 Win10 22H2/Win11，不主动阻止更旧系统；WebView2 Evergreen 支持在线/离线部署；当前 Authenticode 非 blocker，但应用层更新验签强制。"
 implementation = "distribution/windows"
 release_class = "release_blocker"
 status = "verified"
@@ -433,16 +433,16 @@ tests = ["installer.windows.scope-modes", "installer.windows.scope-conversion", 
 
 [[feature]]
 id = "distribution.macos-dmg"
-title = "macOS 签名并公证的全产品 DMG"
+title = "macOS arm64 全产品 DMG"
 source = ["product-plan"]
 user_entry = ["DMG", "ALCOMD.app", "user-initiated CLI integration", "first-launch bootstrap"]
-behavior = "ALCOMD.app 包含目标平台完整组件；xtask 控制收集、嵌套签名、公证和验证；拖入 Applications 不修改 shell 配置，4.0.0 不以 PKG 为主格式。"
+behavior = "ALCOMD.app 包含目标平台完整组件并固定 deployment target 11.0，不增加额外 OS 门槛；当前 Developer ID/notarization 非 blocker，允许未签名未公证发行并验证 Gatekeeper 用户路径；拖入 Applications 不修改 shell 配置。"
 implementation = "distribution/macos"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "not_started"
 evidence = ["docs/decisions/accepted.md::A-024", "docs/adr/0015-platform-product-packaging.md", "docs/testing/release-matrix.md"]
-coverage = ["bundle contents", "nested signing", "notarization", "Gatekeeper", "CLI integration"]
+coverage = ["bundle contents", "deployment target", "unsigned Gatekeeper path", "optional signing/notarization", "CLI integration"]
 tests = ["installer.macos.dmg", "installer.macos.cli-integration", "updater.full-product-atomic"]
 
 [[feature]]
@@ -450,7 +450,7 @@ id = "distribution.linux-formats"
 title = "Linux 全产品 AppImage 与 DEB"
 source = ["product-plan"]
 user_entry = ["AppImage", "DEB", "AppImage CLI integration", "/usr/bin/alcomd-cli"]
-behavior = "两种格式都包含其发行范围所需的完整组件；DEB 由包管理器拥有程序文件，AppImage 命令入口由用户主动创建且不依赖固定 AppImage 路径；RPM/Flatpak/Snap 不阻塞 4.0.0。"
+behavior = "两种格式都在 Ubuntu 22.04 x86_64 基线构建并要求最高 glibc 符号不超过 GLIBC_2.35；DEB 由包管理器拥有程序文件，AppImage 命令入口由用户主动创建且不依赖固定 AppImage 路径；RPM/Flatpak/Snap 不阻塞 4.0.0。"
 implementation = "distribution/linux"
 release_class = "release_blocker"
 status = "verified"

@@ -2,6 +2,10 @@
 
 状态：阻塞，尚无真实安装快照
 
+Windows 首个 Fixture 的分阶段操作见 `windows-collection.md`；清单格式从
+`manifest.example.toml` 复制。原始采集物必须留在仓库外，完成人工脱敏复核后才能把最小
+Fixture 复制进本目录。
+
 本目录只接收从冻结版本 ALCOMD3 `v3.4.0` 采集并脱敏的迁移输入。源码审计只能确认
 artifact 模板，不能替代 Windows 注册表、安装目录、用户数据和真实项目的实例证据。
 

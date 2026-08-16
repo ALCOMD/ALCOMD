@@ -97,10 +97,12 @@ python .\scripts\validate-metadata.py
 
 M-1 完成后必须等待项目所有者批准：
 
-- 发布平台最低系统与运行库基线（发布平台范围已由 A-017 批准）。
-- 永久 Windows AppId/GUID 与正式签名身份；安装器技术已由 A-024/ADR 0015 决定为独立
-  全产品流水线和单一 Inno Setup EXE，具体实现留在 M12 ExecPlan。
+- 发布平台最低系统与运行库基线已由 A-025 批准，不再是开放审批点；后续只需提交真实机器
+  与发行产物证据证明实现符合该基线。
+- 永久 Windows AppId/GUID；安装器技术已由 A-024/ADR 0015 决定为独立全产品流水线和
+  单一 Inno Setup EXE，具体实现留在 M12 ExecPlan。A-025 已决定当前平台代码签名身份不是
+  4.0.0 前置审批；应用层更新签名合同仍按 ADR 0010 执行。
 - v3 删除清单。
 
 Local API/SDK 范围、第一方扩展默认状态、GUI 等价边界、MCP Tasks 映射、Extension ABI v1、
-MCP 管理权限和全产品打包模型已由 A-018 至 A-024 批准。
+MCP 管理权限、全产品打包模型和平台技术基线已由 A-018 至 A-025 批准。

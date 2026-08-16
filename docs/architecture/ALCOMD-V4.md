@@ -81,7 +81,8 @@ ALCOMD 是一个 Rust Workspace 和多组件本地应用平台。`alcomd-gui` �
 `alcomd-migrate-v3` 不进入普通 v4 安装结果。
 
 安装器部署完整 ALCOMD 产品，而不是孤立的 `alcomd-gui`。正式发行由未来的
-`cargo xtask dist --target <target>` 收集、验证、签名并打包全部 release-blocker 组件。
+`cargo xtask dist --target <target>` 收集、验证并打包全部 release-blocker 组件，并按发布策略
+执行可选平台代码签名和强制的 ALCOMD 应用层签名/摘要生成。
 
 ## 4. 进程模型
 
@@ -634,14 +635,15 @@ alcomd-updater
 release-blocker 第一方扩展
 ```
 
-组件不能分别更新到不兼容版本。正式更新由 `alcomd-updater` 下载并验证签名完整产品包，
+组件不能分别更新到不兼容版本。正式更新由 `alcomd-updater` 下载并验证 ALCOMD 应用层签名
+与摘要覆盖的完整产品包，
 `alcomd-bootstrap` 协调停止、替换、健康检查和回滚；失败时恢复上一整套程序。Tauri Updater
 不是完整产品的权威更新系统。
 
 4.0.0 的三个发布平台和四种主要用户发行格式全部是 Release Blocker：
 
 1. Windows x86_64：`ALCOMD_4.0.0_windows_x86_64_setup.exe`，单文件 Inno Setup。
-2. macOS arm64：`ALCOMD_4.0.0_macos_aarch64.dmg`，签名并公证。
+2. macOS arm64：`ALCOMD_4.0.0_macos_aarch64.dmg`。
 3. Linux x86_64：`ALCOMD_4.0.0_linux_x86_64.AppImage`。
 4. Linux amd64：`ALCOMD_4.0.0_linux_amd64.deb`。
 
@@ -655,10 +657,22 @@ macOS PKG 不属于 4.0.0 普通用户发行 blocker。
 cargo xtask dist --target <target>
 ```
 
-它必须构建 Rust 组件与 GUI 前端，用 Tauri 编译 `alcomd-gui`，构建/签名第一方扩展，将所有
-release-blocker 组件收集到统一 staging，验证版本、权限和许可证，再调用 Inno Setup、DMG、
-AppImage 或 DEB 工具链，签名最终资产并生成 update manifest。单一 Tauri bundle 不得被当作
-完整产品发行物。
+它必须构建 Rust 组件与 GUI 前端，用 Tauri 编译 `alcomd-gui`，构建并按 Extension 合同签名
+第一方扩展，将所有 release-blocker 组件收集到统一 staging，验证版本、权限和许可证，再调用
+Inno Setup、DMG、AppImage 或 DEB 工具链，生成应用层签名/摘要与 update manifest，并在启用
+平台代码签名时执行对应步骤。单一 Tauri bundle 不得被当作完整产品发行物。
+
+平台技术基线由 A-025 冻结：
+
+- Windows x86_64 正式测试 Windows 10 22H2 与 Windows 11；不增加主动拒绝更旧 Windows 的
+  应用级版本判断。WebView2 使用 Evergreen Runtime，安装/更新检测缺失后支持在线
+  Bootstrapper，并为离线部署保留 Standalone Installer 路径。
+- Linux x86_64 在 Ubuntu 22.04 构建，所有发行二进制的最高所需 glibc 符号版本不得超过
+  `GLIBC_2.35`。这是 ABI 上限，不是“只允许 glibc 2.35 或更旧”的运行条件。
+- macOS arm64 使用 `MACOSX_DEPLOYMENT_TARGET=11.0`，不再增加应用级系统版本门槛。
+- 当前 Windows Authenticode 与 Apple Developer ID/notarization 不阻塞 4.0.0；未签名、未公证
+  发行必须在真实系统验证下载、安装/挂载、首次启动、警告说明和更新。应用层更新签名、
+  bridge 信任链、扩展签名和包完整性验证仍为强制要求。
 
 扩展独立版本化，通过 Extension API 范围决定兼容性。
 

@@ -1,6 +1,6 @@
 # 4.0.0 发布测试矩阵
 
-状态：产品与打包模型已由 A-024 批准；最低系统与运行库基线仍待 O-003 确认
+状态：产品、打包与平台技术基线已由 A-024/A-025 批准；实现与真实机器证据待完成
 
 ## 产品发行单元
 
@@ -15,7 +15,7 @@ ALCOMD 是一个基于 Rust 的本地应用平台，其官方 GUI 使用 Tauri �
 | 平台 | 主要用户格式 | 建议资产名称 | 4.0.0 blocker |
 |---|---|---|---:|
 | Windows x86_64 | Inno Setup EXE | `ALCOMD_4.0.0_windows_x86_64_setup.exe` | 是 |
-| macOS arm64 | 签名并公证的 DMG | `ALCOMD_4.0.0_macos_aarch64.dmg` | 是 |
+| macOS arm64 | DMG | `ALCOMD_4.0.0_macos_aarch64.dmg` | 是 |
 | Linux x86_64 | AppImage | `ALCOMD_4.0.0_linux_x86_64.AppImage` | 是 |
 | Linux amd64 | DEB | `ALCOMD_4.0.0_linux_amd64.deb` | 是 |
 
@@ -38,12 +38,19 @@ bootstrap 和 updater 不进入 PATH。更新不得重复添加 PATH，卸载只
 
 Inno Setup 只负责部署、卸载登记、快捷方式、协议/文件关联、CLI 入口和调用 bootstrap；不得
 解析 v3 数据库、修改 Unity 项目或实现业务迁移。Windows 完整产品更新由 `alcomd-updater`、
-`alcomd-bootstrap` 与签名的完整 Inno Setup 包共同完成。
+`alcomd-bootstrap` 与经过 ALCOMD 应用层签名/摘要验证的完整 Inno Setup 包共同完成；当前
+不要求 Authenticode。
+
+Windows 正式测试 Windows 10 22H2 与 Windows 11，不增加主动拒绝更旧版本的应用级检查。
+WebView2 Evergreen Runtime 必须覆盖已安装、缺失后在线 Bootstrapper、离线 Standalone
+Installer、安装取消与失败恢复。
 
 ## macOS 安装与 CLI
 
-- DMG 中的 `ALCOMD.app` 必须包含目标平台所需的完整产品组件并通过嵌套签名、notarization
-  与 Gatekeeper 验证。
+- DMG 中的 `ALCOMD.app` 必须包含目标平台所需的完整产品组件，所有 arm64 产物使用
+  `MACOSX_DEPLOYMENT_TARGET=11.0`；不增加额外应用级系统版本门槛。
+- 当前允许未做 Developer ID 签名与 notarization，必须在真实 macOS 记录挂载、复制、首次
+  启动、Gatekeeper 警告/用户操作和升级；未来启用签名时再增加嵌套签名、公证和 stapling。
 - 拖入 Applications 不得隐式修改 shell 配置。
 - GUI 提供用户主动触发的“安装命令行集成”，创建稳定的 `alcomd-cli` 入口；重复执行、升级
   与移除必须幂等且可审计。
@@ -51,6 +58,8 @@ Inno Setup 只负责部署、卸载登记、快捷方式、协议/文件关联�
 
 ## Linux 安装与 CLI
 
+- AppImage 与 DEB 在 Ubuntu 22.04 x86_64 基线构建；逐个扫描 ELF，最高所需 glibc 符号版本
+  不得超过 `GLIBC_2.35`。
 - DEB 将公开命令安装为 `/usr/bin/alcomd-cli`，内部组件位于软件包管理器控制的应用目录；
   应用不得自行覆盖 `/usr/bin` 或其他由软件包管理器拥有的文件。
 - AppImage 是便携格式；GUI 可在用户明确请求后创建 `~/.local/bin/alcomd-cli` 命令入口，
@@ -63,11 +72,12 @@ Inno Setup 只负责部署、卸载登记、快捷方式、协议/文件关联�
 
 1. 构建目标平台 Rust 组件与 GUI 前端。
 2. 使用 Tauri 编译 `alcomd-gui`，但不把其 bundle 当作最终产品。
-3. 构建并签名第一方扩展。
+3. 构建第一方扩展并执行 Extension 合同要求的应用层签名。
 4. 收集所有 release-blocker 组件到统一 staging 目录。
 5. 验证组件清单、版本一致性、权限、许可证与禁止旧身份。
 6. 调用 Inno Setup、DMG、AppImage 或 DEB 打包工具链。
-7. 签名最终资产并生成更新 Manifest。
+7. 生成应用层签名/摘要与更新 Manifest；仅在当前策略启用时执行 Authenticode 或 Apple
+   Developer ID/notarization。
 8. 执行安装、升级、卸载、范围转换、更新恢复和残留测试。
 
 `npm run gui:build` 仍可用于 GUI 构建验证，但不是完整产品发行命令。

@@ -1,0 +1,40 @@
+schema = 1
+fixture_id = "win-per-user-default"
+status = "sanitized-draft"
+platform = "windows-x86_64"
+scenario = "per-user-default"
+collector_repo_commit = "<COMMIT_CONTAINING_COLLECTION_PLAYBOOK>"
+collected_at_utc = "<RFC3339>"
+
+[source_asset]
+name = "ALCOMD3_3.4.0_windows_x86_64_setup.exe"
+size = 14514948
+sha256 = "c35346b32152dfea62b4936db737a16452fcfe64bddc02bd6d1e4b97c7ea5eb2"
+release_id = 370982635
+asset_id = 515430064
+
+[environment]
+os_family = "Windows"
+os_test_range = "<Windows 10 22H2 or Windows 11>"
+architecture = "x86_64"
+install_scope = "current-user"
+install_path = "<V3_INSTALL>"
+
+[collection]
+tool = "PowerShell"
+tool_version = "<VERSION>"
+raw_evidence_retained_outside_repository = true
+pre_install_snapshot_sha256 = "<SHA256>"
+post_install_snapshot_sha256 = "<SHA256>"
+sanitized_tree_sha256 = "<SHA256>"
+
+[redaction]
+rules_version = 1
+placeholders = ["<USER_HOME>", "<LOCAL_APP_DATA>", "<DOCUMENTS>", "<V3_INSTALL>"]
+synthetic_values_only = true
+human_reviewed = false
+
+[approval]
+artifact_instance_confirmation_allowed = false
+reviewer = ""
+reviewed_at_utc = ""

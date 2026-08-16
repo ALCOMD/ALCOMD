@@ -24,8 +24,9 @@ crate/app 边界和 CI，所有占位程序能够构建，但不实现 M1 RPC �
 - 工具链以 `docs/baselines/toolchain.md` 为准。
 - 平台构建前提和当前 CI 缺口以 `docs/baselines/platforms.md` 为准。
 - M-1 必须已经完成并获得项目所有者人工批准；不得从 M-1 自动进入本计划。
-- A-017/A-024 已批准三个发布平台、四种主要格式和独立全产品发行模型；O-003 最低系统/
-  运行库与测试证据必须在调整最终 CI 矩阵前关闭。
+- A-017/A-024/A-025 已批准三个发布平台、四种主要格式、独立全产品发行模型与平台技术
+  基线；M0 必须按 Windows 10 22H2/Windows 11、Ubuntu 22.04 + `GLIBC_2.35` 符号上限、
+  macOS arm64 deployment target 11.0 配置验证。
 
 ## 影响范围
 
@@ -79,7 +80,7 @@ M0 不新增公共 RPC、数据库 Schema、Extension API 或权限名称。唯�
    依赖；脚本不得静默跳过失败。
 6. 所有 Cargo 检查使用 `--locked` 或等价只读锁定方式，并在 CI 末尾验证 Cargo/npm 锁文件
    没有变化；独立 Discord backend 也执行 test gate。
-7. 根据 A-017/A-024 和已关闭的 O-003 技术基线配置 Windows、Ubuntu 与 macOS CI 骨架；
+7. 根据 A-017/A-024/A-025 配置 Windows、Ubuntu 与 macOS CI 骨架；
    安装 `alcomd-gui` 所需 Tauri 前提，三平台都执行显式 `tauri build --no-bundle`。该命令只
    验证 GUI 子应用，不收集其他组件，不创建完整产品、安装器、签名或 Release。
 8. 运行全部验收命令，检查 diff 不包含 M1 或后续功能，更新本计划进度日志和 `docs/status.md`，
@@ -122,6 +123,8 @@ python/python3 scripts/validate-metadata.py
 ## 验收标准
 
 - 所有已批准平台的 CI 必须通过，且任务使用固定 action commit 和最小权限。
+- Windows 正式验证覆盖 Windows 10 22H2 与 Windows 11；Linux 构建使用 Ubuntu 22.04 并检查
+  产物最高所需 glibc 符号不超过 `GLIBC_2.35`；macOS arm64 固定 deployment target 11.0。
 - `Cargo.lock` 与 `package-lock.json` 由固定工具链生成并提交；CI 前端安装仅使用 `npm ci`。
 - 所有 Cargo 任务锁定依赖，构建后 `Cargo.lock` 与 `package-lock.json` 均无 diff。
 - 所有 Workspace 成员、独立第一方扩展后台、Tauri Rust 壳和前端均通过适用检查。
@@ -145,10 +148,10 @@ python/python3 scripts/validate-metadata.py
 ## 进度日志
 
 - 2026-08-16：M-1 期间完成计划细化；当前仓库已有初始化骨架，但尚未按本计划执行或验收。
-- 待执行：在 M-1 人工批准和 O-003 技术基线关闭后开始步骤 1。
+- 待执行：O-003 已由 A-025 关闭；在 M-1 其余审计条件完成并获人工批准后开始步骤 1。
 
 ## 人工审批点
 
 - 开始 M0 前：项目所有者批准 M-1 功能基线、证据和迁移清单。
-- 调整跨平台 CI 前：项目所有者关闭 O-003，确认最低系统、运行库与平台测试证据。
+- 调整跨平台 CI 前：复核 A-025 的 runner/镜像实现不会把测试范围误写成主动 OS 拒绝逻辑。
 - M0 完成后：项目所有者审查身份、依赖图、CI 与变更范围；批准前不得进入 M1。

@@ -265,7 +265,7 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "blocked"
-description = "覆盖三个发布平台、四种完整产品格式的安装、自定义路径、多用户、签名、升级、卸载、CLI 与系统集成。"
+description = "覆盖三个发布平台、四种完整产品格式的安装、自定义路径、多用户、应用层完整性、可选平台签名、升级、卸载、CLI 与系统集成。"
 
 [[test]]
 id = "distribution.full-product-staging"
@@ -281,7 +281,7 @@ stage = "M12"
 kind = "contract"
 platforms = ["all"]
 status = "blocked"
-description = "验证 staging、二进制、扩展、安装器元数据、签名与更新 Manifest 的产品版本、目标和组件清单一致。"
+description = "验证 staging、二进制、扩展、安装器元数据、应用层签名/摘要、可选平台签名状态与更新 Manifest 的产品版本、目标和组件清单一致。"
 
 [[test]]
 id = "distribution.cli-integration"
@@ -297,7 +297,7 @@ stage = "M12"
 kind = "system"
 platforms = ["windows-x86_64"]
 status = "blocked"
-description = "同一 Inno Setup EXE 默认无提升执行当前用户安装，显式选择所有用户时才请求 UAC，并使用正确安装根、卸载登记、PATH、协议和文件关联。"
+description = "同一 Inno Setup EXE 默认无提升执行当前用户安装，显式选择所有用户时才请求 UAC；覆盖 Win10 22H2/Win11、无主动旧版阻止、WebView2 Evergreen 在线/离线部署与正确系统集成。"
 
 [[test]]
 id = "installer.windows.scope-conversion"
@@ -321,7 +321,7 @@ stage = "M12"
 kind = "system"
 platforms = ["macos-aarch64"]
 status = "blocked"
-description = "验证 DMG/ALCOMD.app 完整组件、嵌套签名、notarization、Gatekeeper、拖入安装、首次启动 bootstrap、升级与卸载。"
+description = "验证 arm64 DMG/ALCOMD.app 完整组件、deployment target 11.0、未签名未公证 Gatekeeper 用户路径、拖入安装、首次启动 bootstrap、升级与卸载；平台签名启用后再覆盖嵌套签名/notarization。"
 
 [[test]]
 id = "installer.macos.cli-integration"
@@ -337,7 +337,7 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "blocked"
-description = "验证 AppImage 完整组件、便携启动、签名/摘要、更新与用户主动 ~/.local/bin/alcomd-cli 集成；移动 AppImage 后不依赖旧固定路径。"
+description = "在 Ubuntu 22.04 构建并验证 AppImage 完整组件、最高 GLIBC_2.35 符号、应用层签名/摘要、便携更新与用户主动 ~/.local/bin/alcomd-cli 集成。"
 
 [[test]]
 id = "installer.linux.deb"
@@ -345,7 +345,7 @@ stage = "M12"
 kind = "system"
 platforms = ["linux-x86_64"]
 status = "blocked"
-description = "验证 DEB 完整组件、依赖、/usr/bin/alcomd-cli、内部受管理目录、package-manager 升级/卸载所有权，并拒绝应用自覆盖受管文件。"
+description = "在 Ubuntu 22.04 构建并验证 DEB 完整组件、最高 GLIBC_2.35 符号、依赖、/usr/bin/alcomd-cli、受管理目录与 package-manager 升级/卸载所有权。"
 
 [[test]]
 id = "updater.full-product-atomic"
@@ -353,7 +353,7 @@ stage = "M12"
 kind = "fault-injection"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "blocked"
-description = "以完整产品为更新原子单元，覆盖 alcomd-updater、bootstrap、签名包、版本一致性、响应丢失、进程终止、重启、健康检查、回滚与包管理器边界。"
+description = "以完整产品为更新原子单元，覆盖 updater/bootstrap、强制应用层验签、可选平台签名、版本一致性、响应丢失、进程终止、重启、健康检查、回滚与包管理器边界。"
 
 [[test]]
 id = "platform.toolchain-locks"
@@ -369,7 +369,7 @@ stage = "M0"
 kind = "build"
 platforms = ["windows-x86_64"]
 status = "planned"
-description = "在 Windows 2025 完成全 Workspace、独立扩展、前端与 alcomd-gui Tauri --no-bundle 构建；该命令只验证 GUI，不生成完整产品。"
+description = "覆盖 Windows 10 22H2 与 Windows 11，完成全 Workspace、独立扩展、前端与 alcomd-gui Tauri --no-bundle 构建；不主动阻止更旧系统，不生成完整产品。"
 
 [[test]]
 id = "platform.build.linux-x86_64"
@@ -377,7 +377,7 @@ stage = "M0"
 kind = "build"
 platforms = ["linux-x86_64"]
 status = "planned"
-description = "安装 GUI 所需 Tauri 原生依赖并完成全 Workspace、独立扩展、前端与 alcomd-gui Tauri --no-bundle 构建；不生成完整产品。"
+description = "在 Ubuntu 22.04 x86_64 安装 GUI 原生依赖，完成 Workspace、扩展、前端与 GUI 构建，并断言发行二进制最高所需 glibc 符号不超过 GLIBC_2.35。"
 
 [[test]]
 id = "platform.build.macos-aarch64"
@@ -385,7 +385,31 @@ stage = "M0"
 kind = "build"
 platforms = ["macos-aarch64"]
 status = "planned"
-description = "在原生 Apple Silicon runner 完成全 Workspace、独立扩展、前端与 alcomd-gui Tauri --no-bundle 构建；不生成完整产品。"
+description = "在原生 Apple Silicon runner 以 MACOSX_DEPLOYMENT_TARGET=11.0 完成 Workspace、扩展、前端与 GUI 构建；不增加应用级旧系统门槛，不生成完整产品。"
+
+[[test]]
+id = "platform.windows-webview2"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "blocked"
+description = "在 Win10 22H2/Win11 覆盖 Evergreen Runtime 已存在、在线 Bootstrapper、离线 Standalone、取消/失败恢复、无 Authenticode SmartScreen 路径，并确认没有主动旧 OS 版本拒绝。"
+
+[[test]]
+id = "platform.linux-glibc-symbols"
+stage = "M12"
+kind = "compatibility"
+platforms = ["linux-x86_64"]
+status = "blocked"
+description = "在 Ubuntu 22.04 构建后扫描每个发行 ELF 与本地动态库，拒绝任何高于 GLIBC_2.35 的所需符号版本，并在更新 Ubuntu 上做运行冒烟。"
+
+[[test]]
+id = "platform.macos-deployment-unsigned"
+stage = "M12"
+kind = "compatibility"
+platforms = ["macos-aarch64"]
+status = "blocked"
+description = "验证所有 arm64 Mach-O 的 deployment target 为 11.0、没有额外应用级 OS gate，并在真实 macOS 覆盖未签名未公证 DMG 的 Gatekeeper 提示、用户启动与升级路径。"
 
 [[test]]
 id = "cli.help-output-exit"

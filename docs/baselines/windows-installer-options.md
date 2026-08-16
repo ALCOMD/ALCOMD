@@ -79,8 +79,13 @@ Inno Setup 脚本不得解析 v3 数据库、修改 Unity 项目、成为状态�
 - Health Check、回滚、Commit 与 v3 残留清理。
 - scope 转换和更新期间的组件协调。
 
-正常 Windows 更新由 `alcomd-updater`、`alcomd-bootstrap` 和签名完整 Inno Setup 包共同完成。
-Tauri Updater 不参与完整产品权威更新。
+正常 Windows 更新由 `alcomd-updater`、`alcomd-bootstrap` 和经过 ALCOMD 应用层签名/摘要
+验证的完整 Inno Setup 包共同完成。当前 Authenticode 不是 4.0.0 blocker，但未签名安装器的
+SmartScreen 与用户确认路径必须实测；Tauri Updater 不参与完整产品权威更新。
+
+正式测试范围为 Windows 10 22H2 与 Windows 11；不增加主动拒绝更旧 Windows 的应用级版本
+门槛。WebView2 使用 Evergreen Runtime：安装/更新先检测，缺失时支持在线 Bootstrapper，
+并提供离线 Standalone Installer 路径。
 
 ## v3.4.0 与 bridge installer
 
@@ -94,18 +99,22 @@ v3 成功启动 EXE 不等于迁移成功；恢复责任直到 v4 Health Check �
 ## 正式发行流水线边界
 
 未来 `cargo xtask dist --target x86_64-pc-windows-msvc` 负责构建/收集全部组件、验证统一版本、
-权限和许可证、形成 staging、调用 Inno Setup、签名最终 EXE 与生成 update manifest。Tauri 只
-构建 `alcomd-gui.exe`，不能单独定义 Windows 产品包。
+权限和许可证、形成 staging、调用 Inno Setup、生成强制应用层签名/摘要与 update manifest，
+并在未来启用 Authenticode 时执行平台签名。Tauri 只构建 `alcomd-gui.exe`，不能单独定义
+Windows 产品包。
 
 本基线不包含 Inno 脚本、真实 AppId、签名材料或发行实现；这些进入后续全产品发行 ExecPlan。
 
 ## 必测合同
 
+- Windows 10 22H2 与 Windows 11 正式矩阵通过；更旧 Windows 不被应用主动阻止。
+- WebView2 Evergreen 已安装、在线 Bootstrapper、离线 Standalone、取消与失败恢复。
 - 当前用户安装在无管理员凭据账号中成功且不出现 UAC。
 - 只有用户明确选择所有用户安装时请求 UAC；覆盖同意、取消、凭据错误和恢复。
 - 两 scope 不可并存；双向转换、同 scope 升级、降级阻止和崩溃恢复。
 - PATH 添加、去重、转换、卸载和同名第三方条目保留。
-- 完整组件清单、版本一致性、签名、错误架构、损坏/缺少组件和许可证清单。
+- 完整组件清单、版本一致性、应用层验签、未签名 SmartScreen 路径、错误架构、损坏/缺少
+  组件和许可证清单。
 - Unicode、空格、长路径、文件占用、磁盘不足、重启和 WebView2 缺失/离线。
 - 安装、更新、卸载、repair/reinstall 和未知文件保留。
 - v3 bridge 在启动安装器、UAC、部署、bootstrap、Health Check 和旧版卸载每个故障点恢复
