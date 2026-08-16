@@ -54,7 +54,7 @@ def main() -> int:
     )
 
     parity = load_toml("feature-parity.toml")
-    require(parity["schema"] == 1, "Unsupported feature parity schema")
+    require(parity["schema"] == 2, "Unsupported feature parity schema")
     parity_metadata = parity["metadata"]
     require(parity_metadata["baseline_frozen"] is True, "Baselines are not frozen")
     require(
@@ -84,28 +84,97 @@ def main() -> int:
             "A completed feature audit must set m1_complete = true",
         )
 
+    test_plan = load_toml("docs/testing/test-plan.toml")
+    require(test_plan["schema"] == 1, "Unsupported test plan schema")
+    test_status_values = set(test_plan["metadata"]["status_values"])
+    tests_by_id = {item["id"]: item for item in test_plan["test"]}
+    require(
+        len(tests_by_id) == len(test_plan["test"]),
+        "Duplicate test plan IDs",
+    )
+    for test_id, test in tests_by_id.items():
+        require(test["stage"], f"Test plan has no stage: {test_id}")
+        require(test["kind"], f"Test plan has no kind: {test_id}")
+        require(test["platforms"], f"Test plan has no platforms: {test_id}")
+        require(test["description"], f"Test plan has no description: {test_id}")
+        require(
+            test["status"] in test_status_values,
+            f"Unsupported test plan status: {test_id}",
+        )
+
     features = parity["feature"]
+    feature_status_values = set(parity_metadata["status_values"])
+    implementation_status_values = set(
+        parity_metadata["implementation_status_values"]
+    )
     for feature in features:
         require(feature["source"], f"Feature has no source: {feature['id']}")
+        require(feature["user_entry"], f"Feature has no user entry: {feature['id']}")
+        require(feature["behavior"], f"Feature has no behavior: {feature['id']}")
+        require(feature["evidence"], f"Feature has no evidence: {feature['id']}")
+        require(feature["coverage"], f"Feature has no coverage: {feature['id']}")
+        require(
+            feature["status"] in feature_status_values,
+            f"Unsupported feature audit status: {feature['id']}",
+        )
+        require(
+            feature["implementation_status"] in implementation_status_values,
+            f"Unsupported implementation status: {feature['id']}",
+        )
         require(isinstance(feature["tests"], list), f"Invalid tests field: {feature['id']}")
+        for test_id in feature["tests"]:
+            require(
+                test_id in tests_by_id,
+                f"Unknown test plan reference on {feature['id']}: {test_id}",
+            )
         if m1_complete:
-            require(feature.get("evidence"), f"Feature has no evidence: {feature['id']}")
             if feature["release_class"] == "release_blocker":
                 require(
                     feature["status"] == "verified",
                     f"Release blocker is not verified: {feature['id']}",
                 )
                 require(feature["tests"], f"Release blocker has no test plan: {feature['id']}")
-                require(
-                    feature.get("coverage"),
-                    f"Release blocker has no surface coverage: {feature['id']}",
-                )
 
     feature_ids = [item["id"] for item in features]
     require(len(feature_ids) == len(set(feature_ids)), "Duplicate feature IDs")
 
+    migration_artifacts = load_toml("migrations/v3/artifacts.toml")
+    require(migration_artifacts["schema"] == 2, "Unsupported migration artifact schema")
+    require(
+        isinstance(migration_artifacts["instance_snapshot_available"], bool),
+        "Invalid migration instance snapshot state",
+    )
+    artifact_ids: list[str] = []
+    valid_classifications = set(migration_artifacts["classification"])
+    for artifact in migration_artifacts["artifact"]:
+        artifact_ids.append(artifact["id"])
+        require(artifact["kind"], f"Artifact has no kind: {artifact['id']}")
+        require(artifact["location"], f"Artifact has no location: {artifact['id']}")
+        require(artifact["owner"], f"Artifact has no owner: {artifact['id']}")
+        require(artifact["evidence"], f"Artifact has no evidence: {artifact['id']}")
+        require(artifact["residue_tests"], f"Artifact has no residue test: {artifact['id']}")
+        require(
+            all(test_id in tests_by_id for test_id in artifact["residue_tests"]),
+            f"Artifact references an unknown residue test: {artifact['id']}",
+        )
+        classifications = set(artifact["classification"].split(","))
+        require(
+            classifications <= valid_classifications,
+            f"Artifact has an invalid classification: {artifact['id']}",
+        )
+        require(
+            artifact["template_confirmed"] is True,
+            f"Artifact template lacks source confirmation: {artifact['id']}",
+        )
+        if artifact["confirmed"] and artifact["classification"] != "N":
+            require(
+                migration_artifacts["instance_snapshot_available"] is True,
+                f"Artifact instance is confirmed without a snapshot: {artifact['id']}",
+            )
+    require(len(artifact_ids) == len(set(artifact_ids)), "Duplicate migration artifact IDs")
+
     source_lock = load_toml("docs/baselines/source-lock.toml")
-    require(source_lock["schema"] == 3, "Unsupported source lock schema")
+    require(source_lock["schema"] == 4, "Unsupported source lock schema")
     require(source_lock["frozen"] is True, "Source/spec inputs are not frozen")
 
     for section_name in [
@@ -370,6 +439,34 @@ def main() -> int:
         mcp["url"]
         == "https://modelcontextprotocol.io/specification/2026-07-28",
         "Unexpected MCP specification URL",
+    )
+    require(
+        mcp["repository"]
+        == "https://github.com/modelcontextprotocol/modelcontextprotocol.git",
+        "Unexpected MCP specification repository",
+    )
+    for field_name in ["commit", "schema_blob_sha1", "conformance_tarball_sha1"]:
+        require(
+            COMMIT_PATTERN.fullmatch(mcp[field_name]) is not None,
+            f"Invalid MCP frozen identity: {field_name}",
+        )
+    require(
+        SHA256_PATTERN.fullmatch(mcp["schema_sha256"]) is not None,
+        "Invalid MCP schema SHA-256",
+    )
+    require(
+        mcp["schema_path"] == "schema/2026-07-28/schema.ts",
+        "Unexpected MCP schema path",
+    )
+    require(
+        mcp["conformance_package"] == "@modelcontextprotocol/conformance",
+        "Unexpected MCP conformance package",
+    )
+    require(mcp["conformance_version"], "Missing MCP conformance version")
+    require(
+        re.fullmatch(r"sha512-[A-Za-z0-9+/]+={0,2}", mcp["conformance_tarball_integrity"])
+        is not None,
+        "Invalid MCP conformance integrity",
     )
 
     for relative in [

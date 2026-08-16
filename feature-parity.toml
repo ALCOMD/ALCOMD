@@ -1,180 +1,502 @@
-schema = 1
+schema = 2
 
 [metadata]
-status_values = ["unknown", "not_started", "in_progress", "blocked", "verified"]
+status_values = ["unknown", "in_progress", "blocked", "verified"]
+implementation_status_values = ["not_started", "scaffold", "in_progress", "implemented"]
 baseline_frozen = true
 audit_status = "in_progress"
-inventory_granularity = "domain_seed"
+inventory_granularity = "user_entry"
 m1_complete = false
 release_target = "4.0.0"
+
+# status 表示基线/范围证据的审计状态；implementation_status 单独表示 v4 实现状态。
 
 [[feature]]
 id = "system.identity"
 title = "稳定产品身份"
 source = ["product-plan"]
+user_entry = ["all binaries", "bundle identity", "URI and file associations"]
+behavior = "用户品牌保持 ALCOMD3，内部身份永久使用 ALCOMD/alcomd/com.cqmhv.alcomd。"
 implementation = "alcomd.product.toml"
 release_class = "release_blocker"
 status = "verified"
-tests = ["cargo xtask check"]
+implementation_status = "implemented"
+evidence = ["alcomd.product.toml", "docs/decisions/accepted.md::A-001"]
+coverage = ["metadata", "legacy-identifier scan"]
+tests = ["identity.metadata"]
 
 [[feature]]
 id = "daemon.single-writer"
 title = "唯一核心与唯一写入者"
 source = ["product-plan"]
+user_entry = ["GUI", "CLI", "MCP", "Local API", "extensions"]
+behavior = "所有入口经同一 application 用例层，只有 alcomd 写数据库和 Unity 项目。"
 implementation = "apps/alcomd"
 release_class = "release_blocker"
-status = "not_started"
-tests = []
+status = "verified"
+implementation_status = "scaffold"
+evidence = ["docs/architecture/ALCOMD-V4.md::核心不变量"]
+coverage = ["single instance", "single writer", "entrypoint bypass"]
+tests = ["daemon.single-writer", "architecture.dependency-direction"]
 
 [[feature]]
 id = "rpc.local"
-title = "本地 ALCOMD RPC"
+title = "本地 ALCOMD RPC 与 Operation"
 source = ["product-plan"]
+user_entry = ["system.hello", "Query", "Command", "Operation observe/cancel/input", "Events"]
+behavior = "公开 RPC 承载身份、权限、revision、幂等、Plan/Apply、长任务与恢复。"
 implementation = "crates/alcomd-protocol"
 release_class = "release_blocker"
-status = "not_started"
-tests = []
+status = "verified"
+implementation_status = "scaffold"
+evidence = ["docs/architecture/ALCOMD-V4.md", "specs/rpc/alcomd-rpc-v1.md"]
+coverage = ["framing", "errors", "principal", "operation lifecycle"]
+tests = ["rpc.hello-contract", "access.principal-revocation", "operations.lifecycle"]
 
 [[feature]]
 id = "projects.management"
-title = "项目管理"
+title = "项目发现与管理"
 source = ["alcomd3-v3-final", "vrc-get-frozen", "vpm-ecosystem"]
+user_entry = ["project list", "register/add", "create", "copy", "remove", "delete directory", "favorite", "sort/filter", "open", "parent discovery"]
+behavior = "保留 v3 项目入口，并兼容 VPM/UPM/ProjectVersion 可观察格式；显式项目路径不向上漂移。"
 implementation = "alcomd-application"
 release_class = "release_blocker"
-status = "unknown"
-tests = []
+status = "verified"
+implementation_status = "not_started"
+evidence = ["docs/baselines/alcomd3-v3-audit.md::项目", "docs/baselines/vrc-get-audit.md::项目"]
+coverage = ["GUI", "CLI -p", "MCP", "invalid/missing project"]
+tests = ["projects.v3-parity", "packages.vpm-format"]
+
+[[feature]]
+id = "projects.read-only-contract"
+title = "项目只读查询无隐式写入"
+source = ["vrc-get-frozen", "product-plan"]
+user_entry = ["project info", "outdated", "search", "details refresh"]
+behavior = "只读查询不自动修复或重写 vpm-manifest；修复进入显式 migration/plan。"
+implementation = "alcomd-application"
+release_class = "release_blocker"
+status = "verified"
+implementation_status = "not_started"
+evidence = ["docs/baselines/vrc-get-audit.md::只读命令写 manifest 风险"]
+coverage = ["mtime/hash", "malformed legacy value"]
+tests = ["projects.v3-parity", "packages.plan-apply"]
 
 [[feature]]
 id = "packages.vpm"
 title = "VPM 包管理"
 source = ["alcomd3-v3-final", "vrc-get-frozen", "vpm-ecosystem"]
+user_entry = ["search", "install", "resolve", "remove", "reinstall", "outdated", "upgrade", "downgrade", "bulk plan/apply", "local user package"]
+behavior = "独立实现公开 VPM 兼容语义，统一 Plan/Apply、冲突、缺依赖、Unity 兼容和 Operation。"
 implementation = "alcomd-vpm"
 release_class = "release_blocker"
-status = "unknown"
-tests = []
+status = "verified"
+implementation_status = "not_started"
+evidence = ["docs/baselines/alcomd3-v3-audit.md::包", "docs/baselines/vrc-get-audit.md::CLI 与核心 VPM"]
+coverage = ["GUI", "CLI", "MCP", "direct/transitive dependencies", "locked/unlocked"]
+tests = ["packages.vpm-format", "packages.version-range-differential", "packages.plan-apply"]
+
+[[feature]]
+id = "packages.transaction-safety"
+title = "包事务、恢复与并发锁"
+source = ["vrc-get-frozen", "product-plan"]
+user_entry = ["all project mutations", "daemon restart recovery", "concurrent clients"]
+behavior = "项目级资源锁、持久 journal、双 manifest 原子提交与每阶段故障恢复，不继承无锁/部分提交。"
+implementation = "alcomd-vpm"
+release_class = "release_blocker"
+status = "verified"
+implementation_status = "not_started"
+evidence = ["docs/baselines/vrc-get-audit.md::事务与恢复风险"]
+coverage = ["extract", "rename", "manifest commits", "process kill", "same/different project concurrency"]
+tests = ["packages.transaction-faults", "packages.concurrency-locking"]
+
+[[feature]]
+id = "packages.security"
+title = "包完整性、归档与路径安全"
+source = ["vrc-get-frozen", "vpm-ecosystem"]
+user_entry = ["repository download", "offline cache", "ZIP extract", "local package copy", "legacy cleanup"]
+behavior = "严格校验包 ID、根内路径、声明哈希、下载配额、归档条目与链接；错误结构化且不 panic。"
+implementation = "alcomd-vpm"
+release_class = "release_blocker"
+status = "verified"
+implementation_status = "not_started"
+evidence = ["docs/baselines/vrc-get-audit.md::安全负向基线"]
+coverage = ["ZipSlip", "zip bomb", "hash/cache", "symlink/junction", "legacy partial delete"]
+tests = ["packages.archive-security", "packages.integrity-cache", "packages.path-id-adversarial"]
 
 [[feature]]
 id = "repositories.management"
 title = "VPM 仓库管理"
 source = ["alcomd3-v3-final", "vrc-get-frozen", "vpm-ecosystem"]
+user_entry = ["list", "add URL/path", "remove", "refresh", "hide/show", "reorder", "cleanup", "packages preview", "import", "export", "deep link", "cache clear"]
+behavior = "支持公开 repository JSON 与 vcc://vpm/addRepo，提供确定性来源优先级、ETag 缓存与错误隔离。"
 implementation = "alcomd-vpm"
 release_class = "release_blocker"
-status = "unknown"
-tests = []
+status = "verified"
+implementation_status = "not_started"
+evidence = ["docs/baselines/alcomd3-v3-audit.md::仓库", "docs/baselines/vrc-get-audit.md::仓库"]
+coverage = ["GUI", "CLI repo", "URI", "remote/local", "duplicate/equal-version sources"]
+tests = ["repositories.vpm-parity", "repositories.fixture-matrix"]
+
+[[feature]]
+id = "repositories.credentials"
+title = "仓库认证凭据保护"
+source = ["alcomd3-v3-final", "vrc-get-frozen", "product-plan"]
+user_entry = ["add/import authenticated repository", "export", "logs", "migration"]
+behavior = "认证 header 进入 credential store；DTO、普通配置、导出、日志和错误均脱敏。"
+implementation = "alcomd-application"
+release_class = "release_blocker"
+status = "verified"
+implementation_status = "not_started"
+evidence = ["docs/baselines/vrc-get-audit.md::明文 header 风险", "migrations/v3/artifacts.toml::v3-vpm-settings"]
+coverage = ["storage", "export", "redirect", "migration", "redaction"]
+tests = ["repositories.fixture-matrix", "activity.log-redaction", "migration.fixture-chain"]
 
 [[feature]]
 id = "templates.management"
 title = "模板管理"
 source = ["alcomd3-v3-final"]
+user_entry = ["built-in templates", "derived template", "create project", "import", "override conflict", "export", "remove", "favorite", "pick Unity package"]
+behavior = "保留 v3 模板用户入口、依赖与附加资源语义，格式由脱敏 Fixture 冻结。"
 implementation = "alcomd-application"
 release_class = "release_blocker"
-status = "unknown"
-tests = []
+status = "verified"
+implementation_status = "not_started"
+evidence = ["docs/baselines/alcomd3-v3-audit.md::模板"]
+coverage = ["GUI", "file association", "conflicts", "round trip"]
+tests = ["templates.v3-parity", "migration.fixture-chain"]
 
 [[feature]]
 id = "backups.management"
-title = "备份与恢复"
-source = ["alcomd3-v3-final"]
+title = "备份创建与恢复"
+source = ["alcomd3-v3-final", "vrc-get-frozen"]
+user_entry = ["create", "compression level", "exclude VPM packages", "progress/cancel", "restore", "failure cleanup"]
+behavior = "v3 的创建和恢复均为发布范围；vrc-get 只证明创建，不据此虚构 restore。"
 implementation = "alcomd-application"
 release_class = "release_blocker"
-status = "unknown"
-tests = []
+status = "verified"
+implementation_status = "not_started"
+evidence = ["docs/baselines/alcomd3-v3-audit.md::备份", "docs/baselines/vrc-get-audit.md::GUI backup"]
+coverage = ["GUI", "progress", "partial archive", "restore target"]
+tests = ["backups.v3-parity", "migration.fixture-chain"]
 
 [[feature]]
 id = "unity.integration"
-title = "Unity 检测与启动"
+title = "Unity 检测、管理、迁移与启动"
 source = ["alcomd3-v3-final", "vrc-get-frozen", "vpm-ecosystem"]
+user_entry = ["Hub/editor discovery", "manual add/remove", "version/architecture", "project custom path/args", "launch", "foreground/status", "Unity 2022 migration", "VPM migration"]
+behavior = "跨平台识别 Unity/Hub，保留 v3 用户入口并结构化处理进程错误与迁移计划。"
 implementation = "alcomd-platform"
 release_class = "release_blocker"
-status = "unknown"
-tests = []
+status = "verified"
+implementation_status = "not_started"
+evidence = ["docs/baselines/alcomd3-v3-audit.md::Unity", "docs/baselines/vrc-get-audit.md::Unity"]
+coverage = ["Windows", "macOS", "Linux", "Hub formats", "non-zero exit"]
+tests = ["unity.v3-vrc-parity", "platform.build-matrix"]
 
 [[feature]]
 id = "cli.complete"
-title = "完整 CLI"
+title = "完整 CLI 命令面"
 source = ["product-plan", "vrc-get-frozen"]
+user_entry = ["install/i", "resolve", "remove/rm", "reinstall", "update", "outdated", "upgrade", "downgrade", "search", "repo list/add/remove/cleanup/packages/import/export", "user-package list/add/remove", "info project/package", "migrate unity2022/vpm", "cache clear", "completion"]
+behavior = "所有入口复用 application，用稳定 JSON/NDJSON、stdout/stderr、退出码、确认和 Operation 合同。"
 implementation = "apps/alcomd-cli"
 release_class = "release_blocker"
-status = "not_started"
-tests = []
+status = "verified"
+implementation_status = "scaffold"
+evidence = ["docs/baselines/vrc-get-audit.md::CLI 功能与错误契约"]
+coverage = ["help/aliases", "human/json", "offline/no-update", "confirmation", "errors"]
+tests = ["cli.command-contract", "cli.help-output-exit", "cli.non-tty"]
+
+[[feature]]
+id = "cli.automation-safety"
+title = "CLI 非交互与只读安全"
+source = ["vrc-get-frozen", "product-plan"]
+user_entry = ["piped stdin", "closed stdin", "CI", "read commands"]
+behavior = "非 TTY 不无限等待；需要确认时明确失败或要求 --yes；查询不产生项目写入。"
+implementation = "apps/alcomd-cli"
+release_class = "release_blocker"
+status = "verified"
+implementation_status = "not_started"
+evidence = ["docs/baselines/vrc-get-audit.md::stdin EOF 死循环", "docs/baselines/vrc-get-audit.md::只读写入"]
+coverage = ["EOF timeout", "TTY detection", "exit code", "project hash"]
+tests = ["cli.non-tty", "cli.help-output-exit", "projects.v3-parity"]
+
+[[feature]]
+id = "gui.v3-surfaces"
+title = "v3 GUI 用户入口"
+source = ["alcomd3-v3-final", "vrc-get-frozen"]
+user_entry = ["first-run setup", "home/projects", "packages", "repositories", "templates", "backups", "Unity", "settings", "logs", "licenses/about", "import VCC/ALCOM/Beta", "update", "deep link"]
+behavior = "入口、用例、数据结果、错误、进度与可访问性等价，不要求像素复刻；导航或视觉重构需冻结流程对照与人工截图签收。"
+implementation = "apps/alcomd-gui"
+release_class = "release_blocker"
+status = "verified"
+implementation_status = "scaffold"
+evidence = ["docs/baselines/alcomd3-v3-audit.md::GUI", "docs/baselines/vrc-get-audit.md::GUI", "docs/decisions/accepted.md::A-020"]
+coverage = ["routes", "menus", "dialogs", "errors", "progress", "settings"]
+tests = ["gui.v3-entry-parity", "settings.authoritative-storage"]
+
+[[feature]]
+id = "activity.observability"
+title = "活动记录、技术日志与脱敏"
+source = ["alcomd3-v3-final", "product-plan"]
+user_entry = ["activity history", "technical logs", "operation progress", "diagnostics"]
+behavior = "结构化活动和日志可观察且不泄露 token、Authorization 或完整私密路径。"
+implementation = "alcomd-application"
+release_class = "release_blocker"
+status = "verified"
+implementation_status = "not_started"
+evidence = ["docs/baselines/alcomd3-v3-audit.md::日志", "AGENTS.md::代码规则"]
+coverage = ["GUI", "CLI stderr", "MCP errors", "migration"]
+tests = ["activity.log-redaction", "operations.lifecycle"]
 
 [[feature]]
 id = "extensions.runtime"
 title = "第一方与第三方统一扩展运行时"
 source = ["product-plan"]
+user_entry = ["install/enable/disable/uninstall", "UI contribution", "WASM backend", "permissions", "background lease"]
+behavior = "第一方与第三方使用相同公开 API、权限、宿主、沙箱和撤销语义。"
 implementation = "alcomd-extensions"
 release_class = "release_blocker"
-status = "not_started"
-tests = []
+status = "verified"
+implementation_status = "scaffold"
+evidence = ["docs/baselines/access-and-extensions.md", "docs/architecture/ALCOMD-V4.md"]
+coverage = ["UI", "WASM", "principal", "resource limits", "revocation"]
+tests = ["extensions.first-third-parity", "extensions.sandbox-abuse"]
+
+[[feature]]
+id = "extensions.abi-v1"
+title = "Extension ABI v1"
+source = ["product-plan"]
+user_entry = ["WASI component install", "versioned WIT imports/exports", "runtime security update", "future ABI negotiation"]
+behavior = "ABI v1 使用 WASI 0.2 Component Model 与版本化 WIT；Wasmtime 固定 LTS 主版本线并升级兼容安全/关键正确性补丁；WASI 0.3 后续经兼容层或 ABI v2 引入。"
+implementation = "alcomd-extensions"
+release_class = "release_blocker"
+status = "verified"
+implementation_status = "not_started"
+evidence = ["docs/decisions/accepted.md::A-022", "docs/baselines/access-and-extensions.md"]
+coverage = ["ABI negotiation", "WIT compatibility", "runtime major pin", "security patch policy", "WASI 0.3 non-breaking path"]
+tests = ["extensions.first-third-parity", "extensions.sandbox-abuse"]
 
 [[feature]]
 id = "mcp.protocol"
-title = "独立 MCP 协议适配器"
+title = "独立 MCP 2026-07-28 适配器"
 source = ["alcomd3-v3-final", "mcp-2026-07-28"]
+user_entry = ["STDIO", "Streamable HTTP POST", "server/discover", "tools/list/call", "subscriptions/listen", "MRTR", "cache", "request cancellation"]
+behavior = "现代无 session MCP；传输、认证和取消只适配公开 RPC，不持有业务状态。"
 implementation = "apps/alcomd-mcp"
 release_class = "release_blocker"
-status = "not_started"
-tests = []
+status = "in_progress"
+implementation_status = "scaffold"
+evidence = ["docs/baselines/mcp.md", "docs/adr/0012-mcp-protocol-ui-separation.md"]
+coverage = ["request/result meta", "HTTP", "STDIO", "cache", "subscription", "MRTR", "errors"]
+tests = ["mcp.protocol-conformance", "mcp.request-result-meta", "mcp.http-wire-security", "mcp.stdio-wire", "mcp.cache-subscription-mrtr"]
+
+[[feature]]
+id = "mcp.principal-operation"
+title = "MCP Principal、权限与 Operation 隔离"
+source = ["product-plan", "mcp-2026-07-28"]
+user_entry = ["HTTP Bearer client", "STDIO client", "Plan/Apply tool", "get/cancel/input Operation"]
+behavior = "每客户端独立可撤销 Principal；不同 Principal 后端 RPC 不串线；request cancel 不隐式取消 Operation。"
+implementation = "apps/alcomd-mcp"
+release_class = "release_blocker"
+status = "verified"
+implementation_status = "not_started"
+evidence = ["docs/baselines/mcp.md::ALCOMD 更严格合同", "docs/adr/0006-client-permissions.md", "docs/decisions/accepted.md::A-023"]
+coverage = ["two-principal concurrency", "owner scope", "idempotency", "cancel races", "waiting_for_input"]
+tests = ["mcp.principal-operation-isolation", "mcp.request-operation-cancel", "mcp.operation-input"]
+
+[[feature]]
+id = "mcp.tool-parity"
+title = "v3 MCP 工具用例等价"
+source = ["alcomd3-v3-final"]
+user_entry = ["33 frozen v3 tools for projects, packages, repositories, templates, backups, Unity, operations and management"]
+behavior = "不保留旧工具名，但每个用户用例映射到公开 RPC、最小权限、稳定 Schema/错误和 Operation。"
+implementation = "specs/mcp/toolset-v1.md"
+release_class = "release_blocker"
+status = "in_progress"
+implementation_status = "not_started"
+evidence = ["docs/baselines/alcomd3-v3-audit.md::MCP", "specs/mcp/toolset-v1.md"]
+coverage = ["tool-by-tool use case", "input/output", "permission", "error", "operation"]
+tests = ["mcp.tool-parity", "mcp.operation-input"]
+
+[[feature]]
+id = "mcp.tasks-decision"
+title = "MCP Tasks 后续兼容扩展"
+source = ["mcp-2026-07-28", "product-plan"]
+user_entry = ["tasks/get", "tasks/update", "tasks/cancel", "task notifications"]
+behavior = "4.0.0 不广告 Tasks，使用 OperationId 与显式 input/approve/reject/resume/cancel 工具；未来只兼容增加。"
+implementation = "apps/alcomd-mcp"
+release_class = "post_v4_compatible"
+status = "verified"
+implementation_status = "not_started"
+evidence = ["docs/baselines/mcp.md::Tasks 扩展阻塞", "docs/decisions/accepted.md::A-021"]
+coverage = ["negotiation", "state mapping", "input", "cancel", "principal"]
+tests = ["mcp.tasks-conditional"]
 
 [[feature]]
 id = "mcp.management-ui"
 title = "MCP 管理第一方扩展"
 source = ["alcomd3-v3-final", "product-plan"]
+user_entry = ["client setup", "credentials/revoke", "connection/request diagnostics", "tool permissions", "logs"]
+behavior = "管理 UI 仅经第三方同等公开 API；禁用/卸载不影响协议进程。"
 implementation = "com.cqmhv.alcomd.extension.mcp"
 release_class = "release_blocker"
-status = "not_started"
-tests = []
+status = "verified"
+implementation_status = "scaffold"
+evidence = ["docs/baselines/access-and-extensions.md", "docs/baselines/alcomd3-v3-audit.md::MCP management", "docs/decisions/accepted.md::A-019", "docs/decisions/accepted.md::A-023"]
+coverage = ["independence", "principal revoke", "redaction", "no bypass"]
+tests = ["mcp.management-independence", "extensions.first-third-parity", "activity.log-redaction"]
 
 [[feature]]
 id = "discord.rich-presence"
 title = "Discord 第一方扩展"
 source = ["alcomd3-v3-final", "product-plan"]
+user_entry = ["enable/disable", "presence settings", "background lifecycle", "uninstall"]
+behavior = "只使用公开 Presence 能力；撤权、禁用或卸载立即清除状态。"
 implementation = "com.cqmhv.alcomd.extension.discord"
 release_class = "release_blocker"
-status = "not_started"
-tests = []
+status = "verified"
+implementation_status = "scaffold"
+evidence = ["docs/baselines/access-and-extensions.md", "docs/baselines/alcomd3-v3-audit.md::Discord", "docs/decisions/accepted.md::A-019"]
+coverage = ["first/third parity", "lease", "revocation", "migration"]
+tests = ["discord.lifecycle", "extensions.first-third-parity"]
 
 [[feature]]
 id = "migration.v3"
-title = "v3 到 v4 事务迁移"
-source = ["product-plan"]
+title = "v3.4.0 到 v4 事务迁移"
+source = ["alcomd3-v3-final", "product-plan"]
+user_entry = ["v3.4.0 migration entry", "v4 bridge installer", "inventory", "consent", "export/snapshot", "migrate", "health check", "commit", "rollback/retry"]
+behavior = "更旧 v3 先到 3.4.0；v3.4.0 只发现、验签并启动 v4 bridge installer，不执行完整替换迁移；bridge 安装完整 v4 并调用 bootstrap，Commit 前任何故障保持数据不变且 v3.4.0 可重启。"
 implementation = "migrations/v3"
 release_class = "release_blocker"
-status = "not_started"
-tests = []
+status = "in_progress"
+implementation_status = "scaffold"
+evidence = ["docs/baselines/update-api.md", "migrations/v3/artifacts.toml", "migrations/v3/fixtures/README.md"]
+coverage = ["Windows installer", "macOS app", "Linux AppImage/DEB", "external configs", "secrets"]
+tests = ["updater.bridge-contract", "updater.bridge-recovery", "migration.fixture-chain", "migration.failure-injection", "migration.external-config-patch"]
 
 [[feature]]
 id = "migration.zero-residue"
-title = "v3 零残留"
-source = ["product-plan"]
+title = "v3 零残留且不误删"
+source = ["product-plan", "alcomd3-v3-final"]
+user_entry = ["post-migration cleanup", "uninstall", "protocol/file association handoff"]
+behavior = "只清理真实实例证据确认且通过 Health Check 的 v3-owned artifact；用户、第三方和未知内容保留。"
 implementation = "alcomd-bootstrap"
 release_class = "release_blocker"
-status = "not_started"
-tests = []
+status = "in_progress"
+implementation_status = "scaffold"
+evidence = ["migrations/v3/artifacts.toml", "migrations/v3/AGENTS.md"]
+coverage = ["data", "install files", "registry", "shortcuts", "temporary files", "external configs"]
+tests = ["migration.artifact-ownership", "migration.zero-residue", "installer.matrix"]
+
+[[feature]]
+id = "platform.release-matrix"
+title = "4.0.0 三个平台与四种主要发行格式"
+source = ["product-plan"]
+user_entry = ["Windows x86_64 Inno Setup EXE", "macOS arm64 DMG", "Linux x86_64 AppImage", "Linux amd64 DEB"]
+behavior = "三个发布平台与四种主要发行格式均为 4.0.0 blocker；Windows 当前用户/所有用户是同一 EXE 的两种模式，不是两个资产；辅助签名与 Manifest 不增加格式类别。M0 GUI no-bundle 验证与后续完整产品发行分离，O-003 仍需冻结最低技术基线。"
+implementation = "cargo xtask dist and distribution"
+release_class = "release_blocker"
+status = "in_progress"
+implementation_status = "not_started"
+evidence = ["docs/baselines/platforms.md", "docs/testing/release-matrix.md", "docs/decisions/accepted.md::A-017", "docs/decisions/accepted.md::A-024", "docs/adr/0015-platform-product-packaging.md", "docs/decisions/open.md::O-003"]
+coverage = ["toolchain locks", "three-platform build", "four full-product formats", "install/upgrade/uninstall", "signing"]
+tests = ["platform.build-matrix", "platform.toolchain-locks", "platform.build.windows-x86_64", "platform.build.linux-x86_64", "platform.build.macos-aarch64", "distribution.full-product-staging", "distribution.version-coherence", "installer.matrix"]
+
+[[feature]]
+id = "distribution.full-product"
+title = "独立全产品发行流水线"
+source = ["product-plan"]
+user_entry = ["cargo xtask dist --target <target>", "staging manifest", "signed package", "update manifest"]
+behavior = "统一构建、收集、验证、签名和打包目标平台所需的 daemon、GUI、CLI、MCP、扩展宿主、bootstrap、updater 与第一方扩展；不全面禁止 Tauri Bundler，它可构建 GUI 或参与适合的平台打包，但只能作为 xtask 控制的底层工具，单一 GUI bundle 不是发行物。"
+implementation = "xtask/dist"
+release_class = "release_blocker"
+status = "verified"
+implementation_status = "not_started"
+evidence = ["docs/decisions/accepted.md::A-024", "docs/adr/0015-platform-product-packaging.md", "docs/exec-plans/M12-full-product-distribution.md"]
+coverage = ["component collection", "staging validation", "version coherence", "licenses", "signing", "update manifest"]
+tests = ["distribution.full-product-staging", "distribution.version-coherence", "updater.full-product-atomic"]
+
+[[feature]]
+id = "distribution.windows-inno"
+title = "Windows 单一 Inno Setup 全产品安装器"
+source = ["product-plan"]
+user_entry = ["current-user default", "all-users explicit", "scope conversion", "uninstall"]
+behavior = "同一签名 EXE 支持当前用户与所有用户；默认不提升，显式全局模式才请求 UAC；两范围互斥并受控转换。Inno 只部署和调用 bootstrap，不解析 v3 数据或修改 Unity 项目。"
+implementation = "distribution/windows"
+release_class = "release_blocker"
+status = "verified"
+implementation_status = "not_started"
+evidence = ["docs/baselines/windows-installer-options.md", "docs/decisions/accepted.md::A-024", "docs/adr/0015-platform-product-packaging.md"]
+coverage = ["scope", "elevation", "conversion", "protocol/file associations", "bootstrap handoff"]
+tests = ["installer.windows.scope-modes", "installer.windows.scope-conversion", "installer.windows.path-cleanup", "updater.full-product-atomic"]
+
+[[feature]]
+id = "distribution.macos-dmg"
+title = "macOS 签名并公证的全产品 DMG"
+source = ["product-plan"]
+user_entry = ["DMG", "ALCOMD.app", "user-initiated CLI integration", "first-launch bootstrap"]
+behavior = "ALCOMD.app 包含目标平台完整组件；xtask 控制收集、嵌套签名、公证和验证；拖入 Applications 不修改 shell 配置，4.0.0 不以 PKG 为主格式。"
+implementation = "distribution/macos"
+release_class = "release_blocker"
+status = "verified"
+implementation_status = "not_started"
+evidence = ["docs/decisions/accepted.md::A-024", "docs/adr/0015-platform-product-packaging.md", "docs/testing/release-matrix.md"]
+coverage = ["bundle contents", "nested signing", "notarization", "Gatekeeper", "CLI integration"]
+tests = ["installer.macos.dmg", "installer.macos.cli-integration", "updater.full-product-atomic"]
+
+[[feature]]
+id = "distribution.linux-formats"
+title = "Linux 全产品 AppImage 与 DEB"
+source = ["product-plan"]
+user_entry = ["AppImage", "DEB", "AppImage CLI integration", "/usr/bin/alcomd-cli"]
+behavior = "两种格式都包含其发行范围所需的完整组件；DEB 由包管理器拥有程序文件，AppImage 命令入口由用户主动创建且不依赖固定 AppImage 路径；RPM/Flatpak/Snap 不阻塞 4.0.0。"
+implementation = "distribution/linux"
+release_class = "release_blocker"
+status = "verified"
+implementation_status = "not_started"
+evidence = ["docs/decisions/accepted.md::A-024", "docs/adr/0015-platform-product-packaging.md", "docs/testing/release-matrix.md"]
+coverage = ["AppImage contents", "DEB contents", "package-manager ownership", "CLI integration"]
+tests = ["installer.linux.appimage", "installer.linux.deb", "distribution.cli-integration", "updater.full-product-atomic"]
+
+[[feature]]
+id = "distribution.cli-integration"
+title = "三平台公开 CLI 入口"
+source = ["product-plan"]
+user_entry = ["Windows PATH", "macOS install CLI integration", "AppImage install CLI integration", "DEB /usr/bin/alcomd-cli"]
+behavior = "只公开 alcomd-cli；Windows 仅将 bin 目录写入对应 scope PATH 并精确清理；macOS/AppImage 由用户主动创建稳定入口；DEB 由包管理器安装 /usr/bin 入口。内部组件不得暴露为普通命令。"
+implementation = "distribution and GUI integration use case"
+release_class = "release_blocker"
+status = "verified"
+implementation_status = "not_started"
+evidence = ["docs/adr/0015-platform-product-packaging.md", "docs/testing/release-matrix.md", "docs/baselines/windows-installer-options.md"]
+coverage = ["idempotency", "scope ownership", "upgrade", "uninstall", "portable relocation"]
+tests = ["distribution.cli-integration", "installer.windows.path-cleanup", "installer.macos.cli-integration", "installer.linux.appimage", "installer.linux.deb"]
 
 [[feature]]
 id = "api.loopback"
 title = "可选 Loopback API"
 source = ["product-plan"]
+user_entry = ["local HTTP API"]
+behavior = "后置于 4.0.0；初始 RPC/SDK 合同保留兼容扩展空间，未来实现时必须满足 loopback、动态端口、独立 Principal、Host/Origin 防护与撤销审计。"
 implementation = "apps/alcomd-api"
-release_class = "open_decision"
-status = "not_started"
-tests = []
+release_class = "post_v4_compatible"
+status = "verified"
+implementation_status = "scaffold"
+evidence = ["docs/decisions/accepted.md::A-018", "specs/security/local-client-threat-model.md"]
+coverage = ["binding", "auth", "DNS rebinding", "principal"]
+tests = ["api.loopback-security"]
 
 [[feature]]
-id = "sdk.python"
-title = "Python SDK"
+id = "sdk.python-dotnet"
+title = "Python 与 .NET SDK"
 source = ["product-plan"]
-implementation = "sdk/python"
+user_entry = ["Python SDK", ".NET SDK"]
+behavior = "后置于 4.0.0，未来必须基于同一稳定公开 API 兼容增加。"
+implementation = "sdk/python and sdk/dotnet"
 release_class = "post_v4_compatible"
-status = "not_started"
-tests = []
-
-[[feature]]
-id = "sdk.dotnet"
-title = ".NET SDK"
-source = ["product-plan"]
-implementation = "sdk/dotnet"
-release_class = "post_v4_compatible"
-status = "not_started"
-tests = []
+status = "verified"
+implementation_status = "scaffold"
+evidence = ["docs/decisions/accepted.md::A-018"]
+coverage = ["versioned API", "auth", "errors"]
+tests = ["api.loopback-security"]

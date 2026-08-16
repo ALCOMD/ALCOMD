@@ -12,7 +12,15 @@
 
 已于 2026-08-15 发布的 ALCOMD3 3.4.0 是 v3 迁移入口版本（v3 migration entry release），也是进入 v4 的唯一直接迁移来源。更早的公开 v3.x 必须先通过原有更新链升级到 3.4.0。
 
-3.4.0 已将更新 JSON 源切换到 `https://alcomd.cqmhv.com/api/v1/updates/stable.json` 与 `https://alcomd.cqmhv.com/api/v1/updates/beta.json`，并通过该 API 获取与验证 v4 迁移桥接安装器（v4 bridge installer）元数据。v4 迁移桥接安装器安装新身份和新更新信任链，并启动迁移程序。
+3.4.0 已将更新 JSON 源切换到 `https://alcomd.cqmhv.com/api/v1/updates/stable.json` 与
+`https://alcomd.cqmhv.com/api/v1/updates/beta.json`，并通过该 API 获取与验证 ALCOMD v4 bridge
+installer 元数据。3.4.0 只负责作为受支持入口发现、验证并启动该安装包，不执行完整 v4
+替换迁移。
+
+bridge installer 是签名的完整 v4 产品安装包，包含或调用 `alcomd-bootstrap`。
+`alcomd-bootstrap` 负责 v3→v4 数据迁移、组件协调、健康检查、回滚与提交后清理。安装器脚本
+不得解析 v3 数据库或实现业务迁移。正常 v4 更新由 `alcomd-updater`、`alcomd-bootstrap` 与
+签名完整产品包共同完成；Tauri Updater 不是完整产品的权威更新系统。
 
 ## 结果
 

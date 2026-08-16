@@ -18,3 +18,11 @@
 | A-014 | ALCOMD v4 自有代码、SDK、规范、文档、脚本及第一方扩展统一采用 `AGPL-3.0-only`，不自动授权后续版本，也不双重许可 |
 | A-015 | ALCOMD v4 是独立新项目；v3 仅作迁移与行为参考，vrc-get 不是上游，禁止复制、移植、Fork、包装或改写二者源码；VPM 独立实现 |
 | A-016 | 冻结版本 vrc-get 是 M-1 和 v4 功能对齐所必需的只读功能、安全行为、CLI 与错误处理基线；该基线不产生代码继承、依赖或源码复用关系 |
+| A-017 | Windows x86_64、macOS Apple Silicon 与 Linux x86_64/amd64 三个平台，以及 Windows Inno Setup EXE、macOS DMG、Linux AppImage、Linux DEB 四种主要用户发行格式，全部是 4.0.0 Release Blocker；Windows 当前用户/所有用户安装是同一个 EXE 的两种模式，不是两个发行资产；最低系统版本、运行库与平台测试实现另行冻结 |
+| A-018 | 4.0.0 优先交付 native RPC 与 TypeScript/Rust SDK；Loopback API、Python SDK 和 .NET SDK 后置，但初始公共合同不得阻碍以后兼容扩展 |
+| A-019 | MCP 管理第一方扩展默认安装并启用；Discord 第一方扩展默认安装但新用户默认禁用；v3 升级用户迁移原 Discord 启用状态 |
+| A-020 | GUI 必须保持用户入口、用例、数据结果、错误、进度与可访问性等价，但不要求像素级复刻；导航或视觉重构必须有冻结流程对照与人工截图签收 |
+| A-021 | 4.0.0 不采用或广告 MCP Tasks；长任务返回 ALCOMD `OperationId`，并提供显式 query、input、approve、reject、resume 与 cancel 工具；未来只以兼容增加方式评估 Tasks |
+| A-022 | Extension ABI v1 使用 WASI 0.2 Component Model，并通过版本化 WIT 定义兼容合同；运行时采用届时合适的 Wasmtime LTS，固定主版本线，同时允许且要求升级兼容的安全与关键正确性补丁；WASI 0.3 不阻塞 4.0.0，后续通过兼容层或 Extension ABI v2 评估，不直接破坏 ABI v1 |
+| A-023 | MCP 管理权限使用 `mcp.requests.read`、`mcp.connections.read` 与 `mcp.subscription-streams.read`，不使用 `mcp.sessions.read`；HTTP Principal 按每请求 Bearer 身份隔离后端 RPC，STDIO 使用启动 Principal，自报 clientInfo 不参与安全决定 |
+| A-024 | ALCOMD 是基于 Rust 的多组件本地应用平台，只有 `alcomd-gui` 是 Tauri 应用；正式发行由独立的全产品流水线收集、验证、签名和打包全部 release-blocker 组件。Windows 主安装器为单文件 Inno Setup EXE，默认当前用户安装并仅在选择所有用户安装时提权；macOS 主格式为签名并公证的 DMG；Linux 主格式为 AppImage 与 DEB。本决策不禁止 Tauri Bundler：Tauri/Tauri Bundler 可以构建 `alcomd-gui`，也可以参与适合的平台打包步骤，但只能作为受 `cargo xtask dist` 控制的底层工具，不定义产品组成、安装、更新或迁移生命周期 |

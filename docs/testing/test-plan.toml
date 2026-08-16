@@ -1,0 +1,524 @@
+schema = 1
+
+[metadata]
+status_values = ["planned", "blocked", "implemented"]
+
+[[test]]
+id = "identity.metadata"
+stage = "M0"
+kind = "contract"
+platforms = ["all"]
+status = "implemented"
+description = "校验产品身份、二进制名、Bundle ID、AUMID、URI Scheme、许可证和禁止旧内部标识。"
+
+[[test]]
+id = "platform.build-matrix"
+stage = "M0"
+kind = "build"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "planned"
+description = "使用固定工具链和锁文件执行 Rust、前端、Tauri 壳与无正式签名 GUI build。"
+
+[[test]]
+id = "architecture.dependency-direction"
+stage = "M0"
+kind = "architecture"
+platforms = ["all"]
+status = "planned"
+description = "拒绝 Domain 对传输、存储、Tauri、MCP 与 OS API 的依赖，并拒绝入口绕过 application。"
+
+[[test]]
+id = "daemon.single-writer"
+stage = "M1"
+kind = "integration"
+platforms = ["all"]
+status = "planned"
+description = "并发启动核心与多个客户端，证明每用户单实例和所有写请求只有一个权威写入者。"
+
+[[test]]
+id = "rpc.hello-contract"
+stage = "M1"
+kind = "contract"
+platforms = ["all"]
+status = "planned"
+description = "对 system.hello、帧、版本协商、错误、DTO 和断线行为执行 Schema 快照与兼容性测试。"
+
+[[test]]
+id = "access.principal-revocation"
+stage = "M2"
+kind = "security"
+platforms = ["all"]
+status = "planned"
+description = "验证客户端与扩展独立 Principal、最小权限、审批、审计和撤销后旧句柄失效。"
+
+[[test]]
+id = "operations.lifecycle"
+stage = "M2"
+kind = "state-machine"
+platforms = ["all"]
+status = "planned"
+description = "覆盖 Operation 全部状态、取消、断线、daemon 重启、恢复和幂等重试。"
+
+[[test]]
+id = "projects.v3-parity"
+stage = "M3"
+kind = "differential"
+platforms = ["all"]
+status = "blocked"
+description = "用脱敏项目 Fixture 对照 v3 的发现、注册、排序、创建、复制、移除、类型识别和打开行为。"
+
+[[test]]
+id = "repositories.vpm-parity"
+stage = "M3"
+kind = "differential"
+platforms = ["all"]
+status = "planned"
+description = "使用公开 repository Fixture 覆盖添加、删除、导入、刷新、缓存、重复与错误隔离。"
+
+[[test]]
+id = "packages.vpm-format"
+stage = "M4"
+kind = "compatibility"
+platforms = ["all"]
+status = "planned"
+description = "验证 repository、package manifest、vpm-manifest、UPM manifest、版本范围和 Unity 兼容性。"
+
+[[test]]
+id = "packages.plan-apply"
+stage = "M4"
+kind = "integration"
+platforms = ["all"]
+status = "planned"
+description = "覆盖安装、移除、升级、降级、resolve、冲突、revision 变化及 Plan 失效后的重新验证。"
+
+[[test]]
+id = "packages.transaction-faults"
+stage = "M4"
+kind = "fault-injection"
+platforms = ["all"]
+status = "planned"
+description = "在下载、校验、解压、文件替换和 manifest 提交阶段注入失败，验证回滚与恢复日志。"
+
+[[test]]
+id = "packages.archive-security"
+stage = "M4"
+kind = "security"
+platforms = ["all"]
+status = "planned"
+description = "拒绝路径穿越、绝对路径、符号链接逃逸、哈希不匹配和恶意 manifest。"
+
+[[test]]
+id = "templates.v3-parity"
+stage = "M5"
+kind = "differential"
+platforms = ["all"]
+status = "blocked"
+description = "使用脱敏 Fixture 对照 v3 模板创建、导入、导出、复制和依赖/附加资源行为。"
+
+[[test]]
+id = "backups.v3-parity"
+stage = "M5"
+kind = "differential"
+platforms = ["all"]
+status = "blocked"
+description = "对照 v3 备份创建、排除、压缩、取消、失败恢复与恢复目标行为。"
+
+[[test]]
+id = "unity.v3-vrc-parity"
+stage = "M5"
+kind = "differential"
+platforms = ["all"]
+status = "blocked"
+description = "对照冻结行为验证 Unity Hub/Editor 发现、版本兼容、启动、进程状态与窗口激活。"
+
+[[test]]
+id = "cli.command-contract"
+stage = "M5"
+kind = "contract"
+platforms = ["all"]
+status = "planned"
+description = "逐命令验证参数、stdout、stderr、JSON/NDJSON、退出码、确认、错误和 Operation 分离。"
+
+[[test]]
+id = "cli.non-tty"
+stage = "M5"
+kind = "safety"
+platforms = ["all"]
+status = "planned"
+description = "EOF 与非 TTY 永不无限等待；需要确认的命令明确失败或要求 --yes。"
+
+[[test]]
+id = "gui.v3-entry-parity"
+stage = "M7"
+kind = "ui-contract"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "blocked"
+description = "以冻结截图和流程覆盖 v3 页面、菜单、错误、进度、主题、多语言和可访问状态。"
+
+[[test]]
+id = "settings.authoritative-storage"
+stage = "M7"
+kind = "integration"
+platforms = ["all"]
+status = "planned"
+description = "权威设置只经 RPC 持久化，localStorage 仅包含可丢失视图状态。"
+
+[[test]]
+id = "activity.log-redaction"
+stage = "M7"
+kind = "security"
+platforms = ["all"]
+status = "planned"
+description = "活动与日志不泄露 token、Authorization、完整私密路径和项目敏感信息。"
+
+[[test]]
+id = "extensions.first-third-parity"
+stage = "M6"
+kind = "contract"
+platforms = ["all"]
+status = "planned"
+description = "用测试扩展证明第一方与第三方使用相同 Manifest、权限、API、Bridge、Host 和数据隔离。"
+
+[[test]]
+id = "extensions.sandbox-abuse"
+stage = "M6"
+kind = "security"
+platforms = ["all"]
+status = "planned"
+description = "覆盖恶意 UI、WASM 崩溃、越权、撤销、资源耗尽、供应链替换和宿主隔离。"
+
+[[test]]
+id = "mcp.protocol-conformance"
+stage = "M8"
+kind = "protocol"
+platforms = ["all"]
+status = "planned"
+description = "对 STDIO/HTTP、逐请求 metadata、server/discover、MRTR、缓存、订阅、取消和禁用旧 session 执行规范测试。"
+
+[[test]]
+id = "mcp.tool-parity"
+stage = "M8"
+kind = "differential"
+platforms = ["all"]
+status = "blocked"
+description = "逐项覆盖 v3 MCP 用户工具的参数、权限、计划、错误与 ALCOMD Operation 映射。"
+
+[[test]]
+id = "mcp.management-independence"
+stage = "M8"
+kind = "integration"
+platforms = ["all"]
+status = "planned"
+description = "GUI 关闭或 MCP 管理扩展禁用/卸载后，STDIO 与 HTTP 协议服务仍可运行。"
+
+[[test]]
+id = "discord.lifecycle"
+stage = "M9"
+kind = "integration"
+platforms = ["all"]
+status = "planned"
+description = "覆盖公开 Presence 能力、设置迁移、后台租约、撤销、禁用和卸载时立即清除。"
+
+[[test]]
+id = "api.loopback-security"
+stage = "M10"
+kind = "security"
+platforms = ["all"]
+status = "planned"
+description = "覆盖 loopback 绑定、动态端口、Host/Origin、DNS Rebinding、独立凭据、撤销和审计。"
+
+[[test]]
+id = "updater.bridge-contract"
+stage = "M11"
+kind = "contract"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "planned"
+description = "验证 3.4.0 更新 API 发现、验签并启动完整 v4 bridge installer 的 JSON、频道、版本推进、资产摘要、签名和失败保持 v3 可恢复；3.4.0 不执行完整替换迁移。"
+
+[[test]]
+id = "migration.fixture-chain"
+stage = "M11"
+kind = "migration"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "blocked"
+description = "从受支持旧版升级到 3.4.0，再以脱敏 Fixture 执行完整 v4 迁移并核对记录与文件。"
+
+[[test]]
+id = "migration.failure-injection"
+stage = "M11"
+kind = "fault-injection"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "blocked"
+description = "在每个迁移阶段注入终止、重启、磁盘满、权限和签名失败，Commit 前恢复完整 v3。"
+
+[[test]]
+id = "migration.zero-residue"
+stage = "M12"
+kind = "snapshot"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "blocked"
+description = "比较迁移后状态与全新 v4 加等价用户数据，确认 artifacts 清单中已批准旧资源为空。"
+
+[[test]]
+id = "installer.matrix"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "blocked"
+description = "覆盖三个发布平台、四种完整产品格式的安装、自定义路径、多用户、签名、升级、卸载、CLI 与系统集成。"
+
+[[test]]
+id = "distribution.full-product-staging"
+stage = "M12"
+kind = "distribution"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "blocked"
+description = "cargo xtask dist 为每个目标收集完整 release-blocker 组件，拒绝缺失组件、意外文件、单一 GUI bundle 充当发行物、错误权限与许可证缺口。"
+
+[[test]]
+id = "distribution.version-coherence"
+stage = "M12"
+kind = "contract"
+platforms = ["all"]
+status = "blocked"
+description = "验证 staging、二进制、扩展、安装器元数据、签名与更新 Manifest 的产品版本、目标和组件清单一致。"
+
+[[test]]
+id = "distribution.cli-integration"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "blocked"
+description = "验证三平台只公开 alcomd-cli，安装、重复启用、升级、范围转换、便携文件移动和卸载不泄露内部命令或残留错误入口。"
+
+[[test]]
+id = "installer.windows.scope-modes"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "blocked"
+description = "同一 Inno Setup EXE 默认无提升执行当前用户安装，显式选择所有用户时才请求 UAC，并使用正确安装根、卸载登记、PATH、协议和文件关联。"
+
+[[test]]
+id = "installer.windows.scope-conversion"
+stage = "M12"
+kind = "migration"
+platforms = ["windows-x86_64"]
+status = "blocked"
+description = "覆盖当前用户与所有用户双向受控转换、提升取消、文件占用、失败回滚、多用户数据隔离，并断言两个范围不能共存。"
+
+[[test]]
+id = "installer.windows.path-cleanup"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "blocked"
+description = "PATH 仅含对应 scope 的 ALCOMD\\bin，更新不重复添加，转换移除旧范围，卸载只精确删除本安装器拥有的条目。"
+
+[[test]]
+id = "installer.macos.dmg"
+stage = "M12"
+kind = "system"
+platforms = ["macos-aarch64"]
+status = "blocked"
+description = "验证 DMG/ALCOMD.app 完整组件、嵌套签名、notarization、Gatekeeper、拖入安装、首次启动 bootstrap、升级与卸载。"
+
+[[test]]
+id = "installer.macos.cli-integration"
+stage = "M12"
+kind = "system"
+platforms = ["macos-aarch64"]
+status = "blocked"
+description = "拖入 Applications 不修改 shell；仅在用户主动操作后创建稳定 alcomd-cli 入口，并覆盖幂等升级、重定位和清理。"
+
+[[test]]
+id = "installer.linux.appimage"
+stage = "M12"
+kind = "system"
+platforms = ["linux-x86_64"]
+status = "blocked"
+description = "验证 AppImage 完整组件、便携启动、签名/摘要、更新与用户主动 ~/.local/bin/alcomd-cli 集成；移动 AppImage 后不依赖旧固定路径。"
+
+[[test]]
+id = "installer.linux.deb"
+stage = "M12"
+kind = "system"
+platforms = ["linux-x86_64"]
+status = "blocked"
+description = "验证 DEB 完整组件、依赖、/usr/bin/alcomd-cli、内部受管理目录、package-manager 升级/卸载所有权，并拒绝应用自覆盖受管文件。"
+
+[[test]]
+id = "updater.full-product-atomic"
+stage = "M12"
+kind = "fault-injection"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "blocked"
+description = "以完整产品为更新原子单元，覆盖 alcomd-updater、bootstrap、签名包、版本一致性、响应丢失、进程终止、重启、健康检查、回滚与包管理器边界。"
+
+[[test]]
+id = "platform.toolchain-locks"
+stage = "M0"
+kind = "reproducibility"
+platforms = ["all"]
+status = "planned"
+description = "强制 Rust 1.97.1、Node 24、npm ci、Cargo --locked 与构建后 lockfile 无漂移。"
+
+[[test]]
+id = "platform.build.windows-x86_64"
+stage = "M0"
+kind = "build"
+platforms = ["windows-x86_64"]
+status = "planned"
+description = "在 Windows 2025 完成全 Workspace、独立扩展、前端与 alcomd-gui Tauri --no-bundle 构建；该命令只验证 GUI，不生成完整产品。"
+
+[[test]]
+id = "platform.build.linux-x86_64"
+stage = "M0"
+kind = "build"
+platforms = ["linux-x86_64"]
+status = "planned"
+description = "安装 GUI 所需 Tauri 原生依赖并完成全 Workspace、独立扩展、前端与 alcomd-gui Tauri --no-bundle 构建；不生成完整产品。"
+
+[[test]]
+id = "platform.build.macos-aarch64"
+stage = "M0"
+kind = "build"
+platforms = ["macos-aarch64"]
+status = "planned"
+description = "在原生 Apple Silicon runner 完成全 Workspace、独立扩展、前端与 alcomd-gui Tauri --no-bundle 构建；不生成完整产品。"
+
+[[test]]
+id = "cli.help-output-exit"
+stage = "M5"
+kind = "contract"
+platforms = ["all"]
+status = "planned"
+description = "冻结所有命令 help/alias、参数错误 2、业务错误 1、stdout/stderr 与 JSON/NDJSON 无污染。"
+
+[[test]]
+id = "repositories.fixture-matrix"
+stage = "M3"
+kind = "differential"
+platforms = ["all"]
+status = "planned"
+description = "覆盖 BOM、null、坏单包、ETag 200/304、重复 ID、导入 URI/header、部分网络失败与确定性来源优先级。"
+
+[[test]]
+id = "packages.version-range-differential"
+stage = "M4"
+kind = "differential"
+platforms = ["all"]
+status = "planned"
+description = "以公开 VPM/SemVer.NET Fixture 比较 exact、bare、caret、tilde、hyphen、OR、prerelease 与 build metadata。"
+
+[[test]]
+id = "packages.integrity-cache"
+stage = "M4"
+kind = "security"
+platforms = ["all"]
+status = "planned"
+description = "覆盖 cache/sidecar 篡改、声明哈希缺失或畸形、离线、HTTP 中断、超时与下载尺寸上限。"
+
+[[test]]
+id = "packages.path-id-adversarial"
+stage = "M4"
+kind = "security"
+platforms = ["all"]
+status = "planned"
+description = "恶意包 ID、repo key/manifest 失配、绝对路径、父目录、盘符、UNC 与分隔符不得写出 project/cache root。"
+
+[[test]]
+id = "packages.concurrency-locking"
+stage = "M4"
+kind = "concurrency"
+platforms = ["all"]
+status = "planned"
+description = "覆盖同项目 install/install、install/remove、读写并发，不同项目并发以及 cache clear/download 竞态。"
+
+[[test]]
+id = "mcp.request-result-meta"
+stage = "M8"
+kind = "protocol"
+platforms = ["all"]
+status = "planned"
+description = "逐请求校验 protocolVersion、clientCapabilities、client/server info 信任边界、resultType 与能力不继承。"
+
+[[test]]
+id = "mcp.http-wire-security"
+stage = "M8"
+kind = "security"
+platforms = ["all"]
+status = "planned"
+description = "覆盖 POST/Accept/SSE、版本/方法/名称/参数 header、Base64、Origin/Host、认证、GET/DELETE 与 Last-Event-ID 拒绝。"
+
+[[test]]
+id = "mcp.stdio-wire"
+stage = "M8"
+kind = "protocol"
+platforms = ["all"]
+status = "planned"
+description = "覆盖逐行 UTF-8 framing、stdout 污染、stderr 日志、EOF、重启和并行订阅流解复用。"
+
+[[test]]
+id = "mcp.cache-subscription-mrtr"
+stage = "M8"
+kind = "protocol"
+platforms = ["all"]
+status = "planned"
+description = "覆盖 cacheScope/TTL、跨 Principal 污染、失效、listen ack/filter、MRTR capability 与 requestState 防篡改重放。"
+
+[[test]]
+id = "mcp.principal-operation-isolation"
+stage = "M8"
+kind = "security"
+platforms = ["all"]
+status = "planned"
+description = "两 token/两项目并发验证后端 RPC Principal 不串线，权限撤销、Operation owner、缓存和审计均隔离。"
+
+[[test]]
+id = "mcp.request-operation-cancel"
+stage = "M8"
+kind = "state-machine"
+platforms = ["all"]
+status = "planned"
+description = "在提交前、创建中和返回 OperationId 后断流，证明 transport cancel 不隐式取消已创建 Operation。"
+
+[[test]]
+id = "mcp.operation-input"
+stage = "M8"
+kind = "contract"
+platforms = ["all"]
+status = "planned"
+description = "覆盖 A-021 的 waiting_for_input input/approve/reject/resume 工具、重启恢复、越权与重复响应。"
+
+[[test]]
+id = "mcp.tasks-conditional"
+stage = "post-v4"
+kind = "protocol"
+platforms = ["all"]
+status = "blocked"
+description = "未来兼容增加 Tasks 时覆盖能力协商、创建、状态映射、update/cancel、poll/listen、错误码与 Principal owner；不阻塞 4.0.0。"
+
+[[test]]
+id = "migration.artifact-ownership"
+stage = "M11"
+kind = "snapshot"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "blocked"
+description = "用真实脱敏安装快照逐项证明 artifact 实例身份、owner、阶段分类和未知/第三方资源保留。"
+
+[[test]]
+id = "migration.external-config-patch"
+stage = "M11"
+kind = "fault-injection"
+platforms = ["all"]
+status = "blocked"
+description = "精确 patch Codex/Claude/Cursor 条目并在冲突或故障时 byte-equivalent 回滚，不改其他 server、字段或注释。"
+
+[[test]]
+id = "updater.bridge-recovery"
+stage = "M11"
+kind = "fault-injection"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "blocked"
+description = "v3.4.0 启动完整 v4 bridge installer 后，在各平台 bridge/bootstrap 的每个故障点证明 v3 数据不丢且 3.4.0 可重启；不得把 v3.4.0 当作迁移执行器。"

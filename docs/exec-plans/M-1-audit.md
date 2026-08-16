@@ -97,8 +97,10 @@ python .\scripts\validate-metadata.py
 
 M-1 完成后必须等待项目所有者批准：
 
-- 发布平台矩阵。
-- Local API / SDK 的 v4 范围。
-- MCP Tasks 映射。
-- 安装器技术和永久 GUID。
+- 发布平台最低系统与运行库基线（发布平台范围已由 A-017 批准）。
+- 永久 Windows AppId/GUID 与正式签名身份；安装器技术已由 A-024/ADR 0015 决定为独立
+  全产品流水线和单一 Inno Setup EXE，具体实现留在 M12 ExecPlan。
 - v3 删除清单。
+
+Local API/SDK 范围、第一方扩展默认状态、GUI 等价边界、MCP Tasks 映射、Extension ABI v1、
+MCP 管理权限和全产品打包模型已由 A-018 至 A-024 批准。

@@ -22,10 +22,33 @@
 - `docs/baselines/vrc-get.md` 已恢复为独立的功能、安全与行为基线；明确 vrc-get 是必须覆盖的验收来源，但不是代码上游。
 - ALCOMD3 v4 已明确为 ALCOMD 产品家族中的独立新项目：继承 v3 的用户品牌与功能定位，但不复制、移植或改写 v3、vrc-get 或 vrc-get-vpm 源码，VPM 独立实现。
 - v4 自有代码、SDK、规范、文档、脚本与第一方扩展统一采用 `AGPL-3.0-only`；完整许可证与第三方边界已经落盘。
+- 已完成冻结 v3.4.0 与 vrc-get commit 的静态细粒度审计，覆盖项目、包/仓库、Unity、模板、
+  备份、GUI、CLI、MCP、Discord、更新器、安装器、错误和高风险行为；结论分别记录在
+  `docs/baselines/alcomd3-v3-audit.md` 与 `docs/baselines/vrc-get-audit.md`。
+- `feature-parity.toml` 已提升到 user-entry 清单，区分“基线审计状态”和“v4 实现状态”；所有
+  release blocker 已关联机器可读测试计划，但需要真实 Fixture 的计划仍为 blocked。
+- `migrations/v3/artifacts.toml` 已按 R0/R1/R2/C1/N 阶段记录源码确认的路径/身份模板、所有权、
+  操作与 residue test；没有真实安装快照的可删除实例全部保持 `confirmed = false`。
+- MCP 核心规范已锁到官方 commit、最终 Schema blob/SHA-256 和固定 conformance npm tarball；
+  A-021 已决定 4.0.0 使用 OperationId 与显式输入/审批工具，不采用 Tasks；A-023 已冻结无
+  session 权限名与 HTTP/STDIO Principal 隔离方向。
+- 更新 API 与 v3.4.0 实际接受的 bridge 输入、Minisign 身份、文件名、下载上限和失败语义已
+  冻结；M-1 不实现或发布 bridge。
+- A-024 与 ADR 0015 已关闭 O-008：ALCOMD 是多组件 Rust 本地应用平台，只有
+  `alcomd-gui` 是 Tauri 子应用；Windows 使用单一 Inno Setup EXE 的两种互斥安装模式，
+  macOS 使用签名并公证的 DMG，Linux 使用 AppImage 与 DEB。三个平台、四种主要格式均为
+  4.0.0 blocker。
+- 完整产品发行、三平台 CLI 集成、updater/bootstrap 边界与未来 `cargo xtask dist` 已进入
+  `docs/exec-plans/M12-full-product-distribution.md`；本阶段未实现安装器、签名或发行资产。
+- M0 ExecPlan 已细化为固定工具链、`npm ci`、Cargo lock、三平台 `--no-bundle` build 和独立
+  扩展 test gate；尚未执行。
 
 ## 尚未完成
 
-- v3 与冻结版本 vrc-get 的细粒度功能审计；`feature-parity.toml` 当前仍是领域级种子清单，尚无完整用户入口与证据覆盖。
+- v3.4.0 真实安装快照、脱敏迁移 Fixture 和 GUI 冻结截图/流程。
+- MCP 33 个 v3 用例到 v4 工具 Schema、权限、错误与 Operation 输入/审批的逐项合同。
+- vrc-get 高风险静态推断的独立黑盒确认，包括包 ID 路径穿越、同版本来源 tie、ZIP 链接、
+  Windows atomic replace 与跨 origin Authorization redirect。
 - IPC 与 daemon。
 - SQLite、Operations、Events、Locks。
 - VPM、项目、模板与备份。
@@ -37,12 +60,24 @@
 
 ## 当前阻塞与缺口
 
-- v3 真实安装快照和迁移 Fixture 尚未建立。
-- `feature-parity.toml` 尚未拆分到页面、菜单、vrc-get CLI 与错误行为、MCP、URI、更新器和安装器等用户入口，不能满足 M-1 验收标准。
-- v4 迁移桥接安装器（v4 bridge installer）尚未发布；需在 M-1 中基于已上线的新标准更新 API 和 ALCOMD3 3.4.0 实现，冻结其 JSON Schema、版本推进、签名验证与错误契约。
-- 发布平台矩阵尚未确认。
-- MCP 长任务映射尚未决定。
+- 真实安装快照和迁移 Fixture 尚未建立；因此 artifact 模板不能升级成实例删除授权，迁移、
+  GUI、模板、备份与 Unity 的差异测试仍 blocked。
+- v4 bridge 尚无版本/tag/资产、handoff、journal、恢复源、Health Check、Commit marker、DEB
+  交接和 rollout 设计。M-1 已冻结输入与失败契约；实现/发布属于 M11，不能在本阶段伪造。
+- A-017 至 A-024 已批准发布平台范围、Local API/SDK 后置、第一方扩展默认状态、GUI 等价
+  边界、MCP Operation 映射、Extension ABI v1、MCP 管理权限与全产品打包模型。O-008 已被
+  A-024/ADR 0015 替代；仍开放 O-003 的平台最低技术基线。
+- Tasks SEP 已 Final，但扩展 artifact 仍带 Draft/experimental 标记，且所审错误码与最终 core
+  Schema 冲突；在固定兼容版本前保持阻塞。
+- `specs/extensions/permissions-v1.md` 与 `specs/mcp/toolset-v1.md` 尚未应用 A-021/A-023；M-1
+  允许范围不包含 `specs/`，必须在对应协议里程碑经 Schema/快照更新落地，生产实现不得继续
+  使用 `mcp.sessions.read`。
+- 现有 `alcomd-mcp`、daemon、GUI 等仍是 scaffold；本阶段的 `verified` 只表示基线证据完成，
+  不表示生产功能已经实现。
 
 ## 下一停止点
 
-完成细粒度功能审计、证据回填、迁移 Fixture 和 `docs/exec-plans/M-1-audit.md` 的其余产物，经人工审核后停止。当前结果只是 M-1 中途草案，不得进入 M0。
+本轮产品与发行模型纠正完成后，因真实安装 Fixture、O-003 平台技术基线、MCP 逐工具合同和
+迁移删除实例授权仍未完成，停止并请求人工审核。`feature-parity.toml` 保持
+`m1_complete = false`，不得进入 M0；安装器与 `xtask dist` 只能在后续独立 M12 ExecPlan
+获批后实现。

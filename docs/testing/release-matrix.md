@@ -1,95 +1,102 @@
 # 4.0.0 发布测试矩阵
 
-状态：草案，平台范围待确认。
+状态：产品与打包模型已由 A-024 批准；最低系统与运行库基线仍待 O-003 确认
 
-## 平台与安装
+## 产品发行单元
 
-| 平台 | 安装方式 | 升级来源 | 必测 |
+ALCOMD 是一个基于 Rust 的本地应用平台，其官方 GUI 使用 Tauri 构建。
+
+正式发行物必须包含目标平台所需的 `alcomd`、`alcomd-gui`、`alcomd-cli`、
+`alcomd-mcp`、`alcomd-extension-host`、`alcomd-bootstrap`、`alcomd-updater` 和第一方扩展。
+`tauri build` 生成的单一 GUI bundle 不是完整产品发行物。
+
+## 三个平台、四种主要发行格式
+
+| 平台 | 主要用户格式 | 建议资产名称 | 4.0.0 blocker |
 |---|---|---|---:|
-| Windows x64 | 用户安装 | ALCOMD3 3.4.0（v3 迁移入口版本） | 是 |
-| Windows x64 | 全局安装 | ALCOMD3 3.4.0（v3 迁移入口版本） | 是 |
-| Windows x64 | 全局安装，多用户 | ALCOMD3 3.4.0（v3 迁移入口版本） | 是 |
-| Windows x64 | 自定义路径 | ALCOMD3 3.4.0（v3 迁移入口版本） | 是 |
-| macOS arm64 | App Bundle | ALCOMD3 3.4.0（v3 迁移入口版本） | 待确认 |
-| Linux x64 | AppImage | ALCOMD3 3.4.0（v3 迁移入口版本） | 待确认 |
-| Linux x64 | DEB | ALCOMD3 3.4.0（v3 迁移入口版本） | 待确认 |
+| Windows x86_64 | Inno Setup EXE | `ALCOMD_4.0.0_windows_x86_64_setup.exe` | 是 |
+| macOS arm64 | 签名并公证的 DMG | `ALCOMD_4.0.0_macos_aarch64.dmg` | 是 |
+| Linux x86_64 | AppImage | `ALCOMD_4.0.0_linux_x86_64.AppImage` | 是 |
+| Linux amd64 | DEB | `ALCOMD_4.0.0_linux_amd64.deb` | 是 |
+
+Windows 当前用户与所有用户安装是同一 Inno Setup EXE 的两种模式，不是两个发行资产。
+签名文件、更新压缩包和更新 Manifest 是辅助发行产物，不增加平台或主要格式类别。
+
+## Windows 安装范围矩阵
+
+| 场景 | 预期行为 |
+|---|---|
+| 当前用户默认安装 | 不提升；安装至 `%LOCALAPPDATA%\Programs\ALCOMD\`；只写用户 PATH |
+| 所有用户显式安装 | 仅在用户选择后请求 UAC；安装至 `%ProgramFiles%\ALCOMD\`；只写系统 PATH |
+| 当前用户转所有用户 | 检测旧范围，受控迁移后移除旧用户 PATH 与安装登记，不允许双实例 |
+| 所有用户转当前用户 | 检测旧范围，受控迁移后移除旧系统 PATH 与安装登记，不允许双实例 |
+| 多用户 | 用户数据与全局程序文件隔离，非安装用户不得继承错误的用户级状态 |
+| 自定义路径 | 所有写入、升级、卸载和恢复均使用解析后的真实安装根，不能退回默认路径 |
+
+安装布局必须只公开 `bin/alcomd-cli.exe`；`runtime/` 中的 daemon、GUI、MCP、扩展宿主、
+bootstrap 和 updater 不进入 PATH。更新不得重复添加 PATH，卸载只移除安装器创建的精确条目。
+
+Inno Setup 只负责部署、卸载登记、快捷方式、协议/文件关联、CLI 入口和调用 bootstrap；不得
+解析 v3 数据库、修改 Unity 项目或实现业务迁移。Windows 完整产品更新由 `alcomd-updater`、
+`alcomd-bootstrap` 与签名的完整 Inno Setup 包共同完成。
+
+## macOS 安装与 CLI
+
+- DMG 中的 `ALCOMD.app` 必须包含目标平台所需的完整产品组件并通过嵌套签名、notarization
+  与 Gatekeeper 验证。
+- 拖入 Applications 不得隐式修改 shell 配置。
+- GUI 提供用户主动触发的“安装命令行集成”，创建稳定的 `alcomd-cli` 入口；重复执行、升级
+  与移除必须幂等且可审计。
+- 4.0.0 不以 PKG 作为普通用户主发行格式。
+
+## Linux 安装与 CLI
+
+- DEB 将公开命令安装为 `/usr/bin/alcomd-cli`，内部组件位于软件包管理器控制的应用目录；
+  应用不得自行覆盖 `/usr/bin` 或其他由软件包管理器拥有的文件。
+- AppImage 是便携格式；GUI 可在用户明确请求后创建 `~/.local/bin/alcomd-cli` 命令入口，
+  入口不得假定 AppImage 永久位于某个固定路径。
+- RPM、Flatpak 与 Snap 不属于 4.0.0 blocker。
+
+## 统一发行流水线
+
+未来以 `cargo xtask dist --target <target>` 为唯一全产品发行入口，依次完成：
+
+1. 构建目标平台 Rust 组件与 GUI 前端。
+2. 使用 Tauri 编译 `alcomd-gui`，但不把其 bundle 当作最终产品。
+3. 构建并签名第一方扩展。
+4. 收集所有 release-blocker 组件到统一 staging 目录。
+5. 验证组件清单、版本一致性、权限、许可证与禁止旧身份。
+6. 调用 Inno Setup、DMG、AppImage 或 DEB 打包工具链。
+7. 签名最终资产并生成更新 Manifest。
+8. 执行安装、升级、卸载、范围转换、更新恢复和残留测试。
+
+`npm run gui:build` 仍可用于 GUI 构建验证，但不是完整产品发行命令。
 
 ## 迁移入口与更新源
 
-- ALCOMD3 3.4.0 是 v3 迁移入口版本（v3 migration entry release）；v4 迁移链只接受它作为直接迁移来源。
-- 所有更早的公开 v3.x 必须先通过原有更新链升级到 3.4.0。
-- 3.4.0 已把更新 JSON 源切换到 `https://alcomd.cqmhv.com/api/v1/updates/stable.json` 与 `https://alcomd.cqmhv.com/api/v1/updates/beta.json`。
-- 上述已上线路径和频道映射作为测试基线；v4 迁移桥接安装器（v4 bridge installer）的 JSON Schema、版本推进、签名验证和错误处理必须形成冻结契约。
-- 不支持的旧 v3.x 直接启动 v4 迁移时，必须安全拒绝并明确提示先升级到 3.4.0，不得尝试猜测解析旧状态。
+- ALCOMD3 3.4.0 是最后一个受支持的 v3 迁移入口版本，不执行完整 v4 替换迁移。
+- 更早公开 v3.x 必须先通过旧更新链升级到 3.4.0。
+- 3.4.0 从标准更新 API 发现、验签并启动 v4 bridge installer；它只在启动被接受后退出。
+- v4 bridge installer 安装完整 v4 产品，并包含或调用 `alcomd-bootstrap` 完成迁移协调、健康
+  检查、清理与回滚。
+- 不支持的旧 v3.x 直接启动 bridge 时必须安全拒绝并提示先升级到 3.4.0。
 
-必须覆盖以下更新链：
+必须覆盖：旧版到 3.4.0、3.4.0 到签名 bridge、bridge 到完整 v4、任一故障点保持可恢复，
+以及 DEB 由软件包管理器接管程序文件升级的独立路径。
 
-1. 每个受支持的旧 v3 版本通过旧更新源升级到 3.4.0。
-2. 3.4.0 从新标准 API 发现并验证 v4 迁移桥接安装器。
-3. 3.4.0 启动 v4 迁移桥接安装器，该安装器再启动 `alcomd-bootstrap` 和临时 `alcomd-migrate-v3`。
-4. 新 API 不可用、返回无效 JSON、频道不匹配或签名失败时，3.4.0 保持可恢复且不得进入迁移。
+## 用户目录与功能对照
 
-## 用户目录
-
-- 默认 Documents。
-- OneDrive 重定向 Documents。
-- 非 ASCII 用户名与路径。
-- 自定义项目目录。
-- 自定义备份目录。
-- 目标 `ALCOMD` 目录预先存在。
-- 文件被占用。
-- 磁盘空间不足。
-
-## 功能对照
-
+- 默认 Documents、OneDrive 重定向、非 ASCII 用户名与路径、自定义项目/备份目录。
+- 目标目录已存在、文件被占用、权限不足与磁盘空间不足。
 - v3 与 v4 对相同项目副本的最终结果。
-- 用公开 VPM 格式、生态 Fixture 与 v4 自有预期验证依赖计划和安全错误。
-- GUI、CLI、MCP、RPC 和扩展入口调用同一用例。
-- JSON 输出和错误码契约。
+- GUI、CLI、MCP、RPC 和扩展入口调用同一用例；JSON 输出与错误码保持合同。
+- GUI 功能、状态、错误、进度和可访问性等价，不要求像素复刻。
 
-## 并发
+## 并发、扩展与故障注入
 
-同时运行：
+同时验证一个 GUI、两个 CLI、多个 MCP 客户端与多个扩展；同项目写入串行、不同项目并行，
+取消和断线可恢复。MCP 管理扩展默认启用；Discord 新用户默认禁用，升级用户迁移原状态；
+禁用或卸载 Discord 扩展立即清除 Presence。
 
-```text
-1 个 GUI
-2 个 CLI
-多个 MCP 客户端
-1 个 API 客户端
-多个扩展
-```
-
-验证同项目写入串行、不同项目并行、取消和断线恢复。
-
-## 扩展
-
-- 第一方与第三方使用同一 API。
-- UI 沙箱。
-- WASM 崩溃隔离。
-- 权限撤销立即生效。
-- 禁用 MCP 管理扩展不影响 MCP。
-- 禁用 Discord 扩展清除 Presence。
-- 扩展卸载无后台残留。
-
-## 迁移与零残留
-
-每个 Fixture：
-
-1. 安装 ALCOMD3 3.4.0，或从受支持的更早 v3 版本升级到 3.4.0。
-2. 制造完整状态。
-3. 快照文件、注册表、快捷方式、协议、凭据和进程。
-4. 通过 3.4.0 的新标准 API 更新源执行 v4 迁移桥接安装器。
-5. 验证功能和数据。
-6. 执行 residue audit。
-7. 与全新 v4 + 相同用户数据快照比较。
-
-## 故障注入
-
-- 每个迁移阶段终止进程。
-- 系统重启。
-- 数据库提交失败。
-- 网络中断。
-- 包校验失败。
-- 更新签名失败。
-- Extension Host 崩溃。
-- daemon 重启。
+每个平台和格式都要覆盖安装快照、迁移、升级、卸载与 residue audit，并在迁移、数据库提交、
+网络、包校验、签名、扩展宿主、daemon、bootstrap 和 updater 的关键阶段注入故障。

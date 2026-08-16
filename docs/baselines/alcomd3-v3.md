@@ -1,6 +1,6 @@
 # ALCOMD3 v3 功能基线
 
-状态：审计源已冻结，功能审计未完成
+状态：审计源已冻结，静态功能审计已完成，安装快照与黑盒 Fixture 未完成
 
 ## 冻结信息
 
@@ -12,7 +12,8 @@
 
 - 已于 2026-08-15 发布的 ALCOMD3 3.4.0 是 v3 迁移入口版本（v3 migration entry release），也是进入 v4 的唯一直接迁移来源。
 - 更早的公开 v3.x 版本必须先通过原有更新链升级到 3.4.0，不由 v4 迁移器直接解析。
-- 3.4.0 已将更新 JSON 源切换到 `https://alcomd.cqmhv.com/api/v1/updates/stable.json` 与 `https://alcomd.cqmhv.com/api/v1/updates/beta.json`，并从该 API 获取 v4 迁移桥接安装器（v4 bridge installer）元数据。
+- 3.4.0 已将更新 JSON 源切换到 `https://alcomd.cqmhv.com/api/v1/updates/stable.json` 与 `https://alcomd.cqmhv.com/api/v1/updates/beta.json`，并从该 API 获取、验签和启动 v4 迁移桥接安装器（v4 bridge installer）；3.4.0 本身不执行完整 v4 替换迁移。
+- v4 bridge installer 是完整 v4 产品安装包，包含或调用 `alcomd-bootstrap` 完成迁移协调、健康检查、回滚与清理。
 - 上述已上线路径和频道映射作为 M-1 基线；v4 迁移桥接安装器的 JSON Schema、版本推进、签名与失败回退行为必须根据 3.4.0 实现冻结，不得由 v4 猜测。
 
 ## v3.4.0 可执行资产快照
@@ -57,3 +58,7 @@ GitHub Release 当前没有启用 immutable releases，因此仅锁 tag 和 comm
 ## 产物
 
 审计结果必须回填 `feature-parity.toml`，不能只保留在本文。
+
+静态用户入口、持久状态、隐性行为和源码证据见 `alcomd3-v3-audit.md`。其中未经过
+真实安装、视觉截图、恶意输入或跨平台实机验证的结论保持待验证，不得据静态结构推断为
+已完成的 v4 功能。

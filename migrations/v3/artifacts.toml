@@ -1,68 +1,400 @@
-schema = 1
+schema = 2
 audit_complete = false
+instance_snapshot_available = false
 
-# Every path and identity below is provisional until M-1 records proof from source,
-# installer output, registry snapshots, or real installations.
+[classification]
+R0 = "只读发现、身份与所有权确认"
+R1 = "提交前可回滚导出或快照"
+R2 = "提交前带 journal 的可回滚迁移或精确 patch"
+C1 = "仅在 v4 Health Check 和 Commit marker 成功后清理"
+N = "不得删除；只能精确迁移或保留"
+
+# template_confirmed 只表示冻结源码证实了位置、格式或生成规则。
+# confirmed 只表示真实安装快照中的具体实例已经完成身份与所有权确认。
 
 [[artifact]]
-id = "v3-user-data"
+id = "v3-data-root-windows"
 kind = "directory"
 location = "%LOCALAPPDATA%\\ALCOMD3"
-owner = "ALCOMD3"
-action = "migrate_then_delete"
+owner = "ALCOMD3 v3"
+classification = "R0,C1"
+action = "inventory_children_then_delete_only_if_empty"
+template_confirmed = true
 confirmed = false
-evidence = []
+evidence = ["alcomd3-app-paths/src/lib.rs::root_name", "alcomd3-app-paths/src/lib.rs::local_data_dir", "vrc-get-vpm/src/io/tokio.rs::new_default"]
+residue_tests = ["migration.failure-injection", "migration.zero-residue"]
 
 [[artifact]]
-id = "v3-default-documents-root"
-kind = "directory"
+id = "v3-documents-root"
+kind = "mixed_user_content_directory"
 location = "{KnownFolder:Documents}\\ALCOMD3"
-owner = "ALCOMD3"
-action = "move_owned_children_then_delete_if_empty"
+owner = "mixed user content"
+classification = "R0,C1,N"
+action = "delete_only_if_known_children_processed_and_root_empty"
+template_confirmed = true
 confirmed = false
-evidence = []
+evidence = ["vrc-get-gui/src/utils.rs"]
+residue_tests = ["migration.failure-injection", "migration.zero-residue"]
 
 [[artifact]]
 id = "v3-bundle-identifier"
 kind = "identifier"
 location = "com.cqmhv.alcomd3"
 owner = "ALCOMD3"
-action = "replace_then_delete"
+classification = "R0,C1"
+action = "identity_reference_removed_with_exact_owned_artifacts"
+template_confirmed = true
 confirmed = false
-evidence = []
+evidence = ["alcomd3.config.json::tauriIdentifier", "vrc-get-gui/src/updater.rs"]
+residue_tests = ["installer.matrix", "migration.zero-residue"]
 
 [[artifact]]
 id = "v3-windows-aumid"
 kind = "identifier"
 location = "CQMHV.ALCOMD3"
 owner = "ALCOMD3"
-action = "replace_then_delete"
+classification = "R0,C1"
+action = "identity_reference_removed_with_shortcuts_progid_and_protocol"
+template_confirmed = true
 confirmed = false
-evidence = []
+evidence = ["alcomd3.config.json::windowsAumid", "bundle/windows-setup.iss"]
+residue_tests = ["installer.matrix", "migration.zero-residue"]
 
 [[artifact]]
-id = "v3-main-executable"
+id = "v3-win-main-executable"
 kind = "file"
 location = "{V3InstallDir}\\ALCOMD3.exe"
 owner = "ALCOMD3"
-action = "delete_after_commit"
+classification = "R0,C1"
+action = "delete_via_paired_uninstaller_after_bridge_handoff"
+template_confirmed = true
 confirmed = false
-evidence = []
+evidence = ["bundle/windows-setup.iss::Files", "alcomd3.config.json::mainBinaryName"]
+residue_tests = ["installer.matrix", "migration.failure-injection", "migration.zero-residue"]
 
 [[artifact]]
-id = "v3-mcp-token-environment"
+id = "v3-mcp-token-user-env"
 kind = "environment_variable"
-location = "ALCOMD3_MCP_BEARER_TOKEN"
-owner = "ALCOMD3"
-action = "revoke_then_delete"
+location = "HKCU\\Environment\\ALCOMD3_MCP_BEARER_TOKEN"
+owner = "v3 only when value exactly matches the v3 GUI token"
+classification = "R1,C1,N"
+action = "revoke_then_delete_only_after_exact_value_match"
+template_confirmed = true
 confirmed = false
-evidence = []
+contains_secrets = true
+evidence = ["vrc-get-gui/src/mcp_client_config.rs", "vrc-get-gui/src/mcp/types.rs"]
+residue_tests = ["migration.fixture-chain", "activity.log-redaction", "migration.zero-residue"]
 
 [[artifact]]
 id = "vcc-user-data"
 kind = "directory"
 location = "%LOCALAPPDATA%\\VRChatCreatorCompanion"
 owner = "VRChat Creator Companion"
+classification = "N"
 action = "read_only_import_never_delete"
+template_confirmed = true
 confirmed = true
-evidence = ["Product ownership boundary"]
+evidence = ["Product ownership boundary", "docs/architecture/ALCOMD-V4.md"]
+residue_tests = ["migration.zero-residue"]
+
+[[artifact]]
+id = "v3-data-root-posix"
+kind = "directory"
+location = "$XDG_DATA_HOME/ALCOMD3 or $HOME/.local/share/ALCOMD3"
+owner = "ALCOMD3 v3"
+classification = "R0,C1"
+action = "inventory_children_then_delete_only_if_empty"
+template_confirmed = true
+confirmed = false
+evidence = ["alcomd3-app-paths/src/lib.rs::local_data_dir", "vrc-get-vpm/src/io/tokio.rs::new_default"]
+residue_tests = ["migration.failure-injection", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-vpm-settings"
+kind = "state"
+location = "<V3DataRoot>/settings.json"
+owner = "ALCOMD3 v3 and user repository configuration"
+classification = "R1,R2,C1"
+action = "export_then_import_headers_to_credential_store"
+template_confirmed = true
+confirmed = false
+contains_secrets = true
+evidence = ["vrc-get-vpm/src/environment/vpm_settings.rs"]
+residue_tests = ["migration.fixture-chain", "activity.log-redaction", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-project-db"
+kind = "database"
+location = "<V3DataRoot>/vcc.liteDb"
+owner = "ALCOMD3 v3"
+classification = "R1,R2,C1"
+action = "snapshot_parse_reconcile_then_delete_after_commit"
+template_confirmed = true
+confirmed = false
+evidence = ["vrc-get-vpm/src/environment/litedb.rs"]
+residue_tests = ["migration.fixture-chain", "migration.failure-injection", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-gui-config"
+kind = "json"
+location = "<V3DataRoot>/config/gui-config.json"
+owner = "ALCOMD3 v3"
+classification = "R1,R2,C1"
+action = "migrate_preferences_without_mcp_token"
+template_confirmed = true
+confirmed = false
+contains_secrets = true
+evidence = ["vrc-get-gui/src/storage.rs", "vrc-get-gui/src/config.rs::mcpHttpToken"]
+residue_tests = ["migration.fixture-chain", "activity.log-redaction", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-config-files"
+kind = "json_set"
+location = "<V3DataRoot>/config/{theme-config,repositories,repository-settings}.json"
+owner = "ALCOMD3 v3"
+classification = "R1,R2,C1"
+action = "migrate_known_and_preserved_unknown_fields_then_delete_after_commit"
+template_confirmed = true
+confirmed = false
+evidence = ["vrc-get-gui/src/storage.rs", "vrc-get-vpm/src/environment.rs"]
+residue_tests = ["migration.fixture-chain", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-user-templates"
+kind = "user_content_directory"
+location = "<V3DataRoot>/templates and validated <V3DataRoot>/vrc-get/templates"
+owner = "user content managed by ALCOMD3 v3"
+classification = "R1,R2,C1"
+action = "copy_each_entry_verify_hash_and_journal_conflicts"
+template_confirmed = true
+confirmed = false
+evidence = ["vrc-get-gui/src/storage.rs"]
+residue_tests = ["migration.fixture-chain", "migration.failure-injection", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-logs"
+kind = "records_and_logs"
+location = "<V3DataRoot>/{activity-logs,technical-logs}"
+owner = "ALCOMD3 v3"
+classification = "R1,R2,C1"
+action = "validate_and_import_activity_records_do_not_import_technical_logs"
+template_confirmed = true
+confirmed = false
+evidence = ["vrc-get-gui/src/storage.rs"]
+residue_tests = ["migration.fixture-chain", "activity.log-redaction", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-caches"
+kind = "cache_directories"
+location = "<V3DataRoot>/{Repos,PackageCache}"
+owner = "ALCOMD3 v3"
+classification = "C1"
+action = "rebuild_in_v4_then_delete_after_commit"
+template_confirmed = true
+confirmed = false
+evidence = ["vrc-get-vpm/src/environment.rs"]
+residue_tests = ["migration.failure-injection", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-update-state"
+kind = "updater_state_and_staging"
+location = "<V3DataRoot>/updates/automatic/{packages/{uuid}.bin,pending.json,failed.json}"
+owner = "ALCOMD3 v3 updater"
+classification = "R0,R1,C1"
+action = "bridge_takes_recovery_responsibility_before_cleanup"
+template_confirmed = true
+confirmed = false
+evidence = ["vrc-get-gui/src/storage.rs", "vrc-get-gui/src/updater.rs::PendingUpdate", "vrc-get-gui/src/updater.rs::FailedUpdate"]
+residue_tests = ["updater.bridge-contract", "migration.failure-injection", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-startup-pending-args"
+kind = "startup_state"
+location = "<V3DataRoot>/startup/pending-args.json"
+owner = "ALCOMD3 v3"
+classification = "R1,R2,C1"
+action = "convert_and_consume_at_most_once"
+template_confirmed = true
+confirmed = false
+evidence = ["vrc-get-gui/src/storage.rs"]
+residue_tests = ["migration.fixture-chain", "migration.failure-injection"]
+
+[[artifact]]
+id = "v3-default-projects-dir"
+kind = "user_content_directory"
+location = "{KnownFolder:Documents}\\ALCOMD3\\Projects"
+owner = "user"
+classification = "R1,R2,N"
+action = "move_only_default_path_with_explicit_consent_and_journal"
+template_confirmed = true
+confirmed = false
+evidence = ["vrc-get-gui/src/utils.rs"]
+residue_tests = ["migration.fixture-chain", "migration.failure-injection", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-default-backups-dir"
+kind = "user_content_directory"
+location = "{KnownFolder:Documents}\\ALCOMD3\\Backups"
+owner = "user"
+classification = "R1,R2,N"
+action = "move_only_default_path_with_explicit_consent_and_journal"
+template_confirmed = true
+confirmed = false
+evidence = ["vrc-get-gui/src/utils.rs"]
+residue_tests = ["migration.fixture-chain", "migration.failure-injection", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-win-uninstall-registration"
+kind = "registry_key"
+location = "{HKCU|HKLM32|HKLM64}\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{3CA473A7-9CEA-4EB6-9949-803C3D0B8057}_is1"
+owner = "ALCOMD3 v3 installer"
+classification = "R0,C1"
+action = "use_exact_paired_uninstaller"
+template_confirmed = true
+confirmed = false
+evidence = ["alcomd3.config.json::windowsAppId", "bundle/windows-setup.iss"]
+residue_tests = ["installer.matrix", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-win-legacy-uninstall-registration"
+kind = "registry_key"
+location = "{HKCU|HKLM32|HKLM64}\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{4C3D0631-AE29-4D20-A231-678D9CF8D6DB}_is1"
+owner = "legacy ALCOM lineage after exact identity match"
+classification = "R0,C1"
+action = "delete_exact_key_only"
+template_confirmed = true
+confirmed = false
+evidence = ["alcomd3.config.json::legacyWindowsAppId", "bundle/windows-setup.iss::CleanupLegacyRegistration"]
+residue_tests = ["installer.matrix", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-win-template-progid"
+kind = "registry_association"
+location = "HKA\\Software\\Classes\\ALCOMD3 Project Template and .alcomtemplate OpenWithProgids value"
+owner = "ALCOMD3 v3 installer"
+classification = "R0,R2,C1"
+action = "use_distinct_v4_progid_then_uninstall_old_association"
+template_confirmed = true
+confirmed = false
+evidence = ["bundle/windows-setup.iss::Registry"]
+residue_tests = ["installer.matrix", "migration.failure-injection", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-win-vcc-protocol"
+kind = "shared_registry_association"
+location = "HKCU\\Software\\Classes\\vcc"
+owner = "shared; v3 owns only an exact ALCOMD3.exe link handler"
+classification = "R0,R2,C1,N"
+action = "replace_exact_v3_handler_preserve_third_party_or_v4_handler"
+template_confirmed = true
+confirmed = false
+evidence = ["vrc-get-gui/src/deep_link_support.rs::deep_link_install_vcc", "bundle/windows-setup.iss::CurUninstallStepChanged"]
+residue_tests = ["installer.matrix", "migration.failure-injection", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-win-webview-data"
+kind = "runtime_data"
+location = "%LOCALAPPDATA%\\com.cqmhv.alcomd3"
+owner = "ALCOMD3 v3 Tauri WebView"
+classification = "C1"
+action = "do_not_migrate_delete_after_commit"
+template_confirmed = true
+confirmed = false
+evidence = ["alcomd3.config.json::tauriIdentifier", "bundle/windows-setup.iss"]
+residue_tests = ["installer.matrix", "migration.failure-injection", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-win-updater-temp"
+kind = "ephemeral_executable"
+location = "%TEMP%\\alcomd3_updater*.exe and %TEMP%\\upd*.exe"
+owner = "only exact paths recorded by bridge journal"
+classification = "R0,C1,N"
+action = "never_prefix_sweep_delete_exact_recorded_instances_after_process_exit"
+template_confirmed = true
+confirmed = false
+evidence = ["vrc-get-gui/src/updater.rs"]
+residue_tests = ["updater.bridge-contract", "migration.failure-injection", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-external-mcp-configs"
+kind = "external_user_config_entries"
+location = "Codex config.toml, Claude .claude.json and Cursor mcp.json exact alcomd3 entries"
+owner = "user files; v3 owns only the exact generated entry"
+classification = "R1,R2,N"
+action = "snapshot_entire_file_patch_exact_entry_preserve_comments_unknown_fields_and_peers"
+template_confirmed = true
+confirmed = false
+evidence = ["vrc-get-gui/src/mcp_client_config.rs"]
+residue_tests = ["migration.fixture-chain", "migration.failure-injection", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-macos-app-bundle"
+kind = "application_bundle"
+location = "{ObservedV3MacAppBundle}"
+owner = "ALCOMD3 v3 only after bundle id and executable identity match"
+classification = "R0,R1,C1"
+action = "preserve_verified_recovery_copy_before_replacement"
+template_confirmed = true
+confirmed = false
+evidence = ["alcomd3.config.json::tauriIdentifier", "Info.plist", "vrc-get-gui/src/updater.rs"]
+residue_tests = ["installer.matrix", "updater.bridge-contract", "migration.failure-injection", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-macos-updater-temp"
+kind = "ephemeral_directory"
+location = "{AppParent}/.ALCOMD3-extracting* or .ALCOMD3-installing*"
+owner = "only exact paths recorded by bridge journal"
+classification = "R0,C1,N"
+action = "never_prefix_sweep_delete_exact_recorded_instances"
+template_confirmed = true
+confirmed = false
+evidence = ["vrc-get-gui/src/updater.rs"]
+residue_tests = ["updater.bridge-contract", "migration.failure-injection", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-linux-appimage"
+kind = "executable"
+location = "{ObservedV3AppImagePath}"
+owner = "ALCOMD3 v3 only after current executable and AppImage identity match"
+classification = "R0,R1,C1"
+action = "preserve_verified_recovery_copy_before_replacement"
+template_confirmed = true
+confirmed = false
+evidence = ["vrc-get-gui/src/updater.rs"]
+residue_tests = ["installer.matrix", "updater.bridge-contract", "migration.failure-injection", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-linux-deb-package"
+kind = "package_manager_record"
+location = "dpkg package alcomd3 and its managed desktop/icon/executable files"
+owner = "ALCOMD3 v3 Debian package"
+classification = "R0,C1"
+action = "uninstall_through_package_manager_never_delete_manifest_files_directly"
+template_confirmed = true
+confirmed = false
+evidence = ["xtask/src/bundle_alcom/linux.rs"]
+residue_tests = ["installer.matrix", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-linux-vcc-user-desktop"
+kind = "shared_protocol_handler"
+location = "$XDG_DATA_HOME/applications/com.anatawa12.vrc_get.desktop or $HOME/.local/share/applications/com.anatawa12.vrc_get.desktop"
+owner = "v3 only when content and Exec exactly identify v3"
+classification = "R0,R2,C1,N"
+action = "replace_exact_v3_handler_preserve_name_collisions"
+template_confirmed = true
+confirmed = false
+evidence = ["vrc-get-gui/src/deep_link_support.rs"]
+residue_tests = ["installer.matrix", "migration.failure-injection", "migration.zero-residue"]
+
+[[artifact]]
+id = "v3-linux-updater-temp"
+kind = "ephemeral_file"
+location = "temp/cache/current-parent alcomd3_update_app*"
+owner = "only exact paths recorded by bridge journal"
+classification = "R0,C1,N"
+action = "never_prefix_sweep_delete_exact_recorded_instances"
+template_confirmed = true
+confirmed = false
+evidence = ["vrc-get-gui/src/updater.rs"]
+residue_tests = ["updater.bridge-contract", "migration.failure-injection", "migration.zero-residue"]

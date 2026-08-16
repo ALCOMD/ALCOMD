@@ -4,7 +4,10 @@
 
 ## 1. 定位
 
-ALCOMD3 v4.0.0 是一套 Rust 本地应用平台，而不是以 GUI 为中心的单体程序。
+ALCOMD is a Rust-based local application platform with a Tauri-powered official GUI.
+
+ALCOMD 是一个基于 Rust 的本地应用平台，其官方 GUI 使用 Tauri 构建。它不是以 GUI 为中心的
+单体程序，也不是一个由 Tauri 定义产品边界的应用。
 
 ALCOMD3 v4 在品牌和功能定位上继承 ALCOMD3 v3，但拥有独立 Git 历史与全新代码库。
 它不是 v3 的增量修改或派生代码库。v3 只作为迁移与功能审计的只读输入；vrc-get
@@ -60,6 +63,9 @@ alcomd
 
 ## 3. 程序组成
 
+ALCOMD 是一个 Rust Workspace 和多组件本地应用平台。`alcomd-gui` 是唯一使用 Tauri 构建的
+官方 GUI 子应用；Tauri 不定义完整产品的组件、安装、更新或迁移生命周期。
+
 | 程序 | 职责 |
 |---|---|
 | `alcomd` | 每用户唯一核心、唯一状态持有者和唯一写入者 |
@@ -69,9 +75,13 @@ alcomd
 | `alcomd-api` | 可选 Loopback HTTP 网关 |
 | `alcomd-extension-host` | 第一方与第三方后台扩展沙箱宿主 |
 | `alcomd-bootstrap` | 安装、更新、迁移、替换与卸载协调器 |
+| `alcomd-updater` | 下载并验证完整产品更新，调用 bootstrap 完成原子替换 |
 | `alcomd-migrate-v3` | 只在 v3 升级期间释放的一次性迁移程序 |
 
 `alcomd-migrate-v3` 不进入普通 v4 安装结果。
+
+安装器部署完整 ALCOMD 产品，而不是孤立的 `alcomd-gui`。正式发行由未来的
+`cargo xtask dist --target <target>` 收集、验证、签名并打包全部 release-blocker 组件。
 
 ## 4. 进程模型
 
@@ -253,7 +263,9 @@ ExternalConfig(provider_id)
 
 ## 12. 第三方应用通信
 
-原生桌面应用优先使用本地 RPC 与官方 SDK。
+4.0.0 优先提供本地 RPC 与 TypeScript/Rust SDK。可选 Loopback API、Python SDK 和 .NET SDK
+后置到 4.0.0 之后；初始公共合同必须保留以后兼容增加这些入口的空间，但不得为未实现入口
+扩大当前发行或安全范围。
 
 首次配对：
 
@@ -266,7 +278,7 @@ ExternalConfig(provider_id)
 
 每个客户端独立身份，不共享万能 token。
 
-可选 `alcomd-api`：
+后续可选 `alcomd-api`：
 
 - 默认关闭。
 - 只监听 `127.0.0.1` 与 `::1`。
@@ -278,6 +290,9 @@ ExternalConfig(provider_id)
 - token 进入操作系统凭据库。
 
 ## 13. 官方 GUI
+
+`alcomd-gui` 是 ALCOMD 中唯一使用 Tauri 构建的官方 GUI 子应用。Tauri 负责窗口、WebView 和
+GUI 可执行文件；`tauri build` 或 `npm run gui:build` 只验证/生成 GUI，不是完整产品发行命令。
 
 技术栈：
 
@@ -307,7 +322,14 @@ Unity
 技术日志
 ```
 
+GUI 迁移要求用户入口、用例、数据结果、错误、进度和可访问性等价，不要求像素级复刻。
+导航或视觉重构必须有冻结流程对照与人工截图签收，不能用外观变化掩盖功能或状态缺失。
+
 Tauri command 只能用于窗口、文件选择器、系统通知、RPC 桥接和扩展容器。不得实现包、项目、MCP、Discord 或迁移业务。
+
+Tauri Bundler 可在某个平台作为 `cargo xtask dist` 的受控底层工具，但不得决定产品组成、
+安装布局、更新事务、迁移流程或最终发行资产集合。这不是禁用 Tauri Bundler；它可以参与
+适合的平台打包步骤，只是不能成为整个 ALCOMD 产品的安装框架或生命周期权威。
 
 权威设置通过 RPC 存储；localStorage 仅保存可丢失的临时视图状态。
 
@@ -345,7 +367,11 @@ stdout 只输出结果，stderr 输出日志和进度。非 TTY 环境不得突�
 
 区别只允许是发行者、签名、默认安装策略与官方支持等级。
 
-扩展 UI 运行在 sandboxed iframe 或隔离 WebView。后台运行在 `alcomd-extension-host` 的 WASM/WASI 环境。禁止原生 DLL、`.so` 与 `.dylib` 扩展。
+扩展 UI 运行在 sandboxed iframe 或隔离 WebView。Extension ABI v1 使用 WASI 0.2 Component
+Model 和版本化 WIT；后台运行在 `alcomd-extension-host`。运行时采用实现时合适的 Wasmtime
+LTS 并固定其主版本线，兼容的安全与关键正确性补丁必须升级。WASI 0.3 不阻塞 4.0.0，后续
+只通过兼容层或 Extension ABI v2 评估，不直接破坏 ABI v1。禁止原生 DLL、`.so` 与 `.dylib`
+扩展。
 
 系统能力必须是窄接口，例如：
 
@@ -372,7 +398,9 @@ MCP 分为：
 
 MCP 协议基线已冻结为 `2026-07-28`。实施时必须遵守其无会话、按请求携带版本与能力、`server/discover` 和订阅流设计，不得照搬旧版初始化握手或 `Mcp-Session-Id`。
 
-ALCOMD 长任务通过核心 `OperationId` 表达。是否采用 MCP Tasks 扩展必须单独 ADR 决定，不得把旧实验性 Tasks API 当成稳定核心协议。
+ALCOMD 长任务通过核心 `OperationId` 表达。4.0.0 不采用或广告 MCP Tasks；公开工具提供
+query、input、approve、reject、resume 与 cancel。未来只能以兼容增加方式评估 Tasks，不得把
+旧实验性 Tasks API 当成稳定核心协议。
 
 MCP 管理扩展 ID：
 
@@ -380,7 +408,12 @@ MCP 管理扩展 ID：
 com.cqmhv.alcomd.extension.mcp
 ```
 
-它负责客户端、会话/请求、权限、审批、配置计划、操作进度与诊断可视化。禁用它不得影响 MCP 协议服务。
+它负责客户端、请求、连接、订阅流、权限、审批、配置计划、操作进度与诊断可视化。禁用它
+不得影响 MCP 协议服务。HTTP Principal 按每请求 Bearer 身份隔离；STDIO 使用启动 Principal；
+自报 clientInfo 不参与安全决定。管理权限使用 `mcp.requests.read`、`mcp.connections.read` 与
+`mcp.subscription-streams.read`，不得重新引入协议级 `mcp.sessions.read`。
+
+MCP 管理扩展默认安装并启用。
 
 ## 17. Discord
 
@@ -401,6 +434,7 @@ com.cqmhv.alcomd.extension.discord
 - 任意访问本地命名管道。
 
 禁用或卸载扩展必须立即清除 Presence 并停止 Discord 通信。GUI 关闭后，扩展可在受控后台租约下继续运行。
+Discord 扩展默认安装但新用户默认禁用；v3 升级用户迁移原有启用状态。
 
 ## 18. 数据规范
 
@@ -421,9 +455,25 @@ Windows 用户数据：
 安装目录：
 
 ```text
-%LOCALAPPDATA%\Programs\ALCOMD
-%ProgramFiles%\ALCOMD
+当前用户  %LOCALAPPDATA%\Programs\ALCOMD\
+所有用户  %ProgramFiles%\ALCOMD\
+
+ALCOMD\
+├─ bin\
+│  └─ alcomd-cli.exe
+└─ runtime\
+   ├─ alcomd.exe
+   ├─ alcomd-gui.exe
+   ├─ alcomd-mcp.exe
+   ├─ alcomd-extension-host.exe
+   ├─ alcomd-bootstrap.exe
+   ├─ alcomd-updater.exe
+   └─ 其他内部组件
 ```
+
+Windows 仅将 `ALCOMD\bin` 写入对应 scope 的 PATH。不得把完整安装目录加入 PATH，也不得把
+核心、GUI、MCP、扩展宿主、bootstrap 或 updater 暴露为普通终端命令。更新不得重复添加 PATH；
+scope 转换和卸载只移除安装器创建的精确条目。
 
 默认用户目录：
 
@@ -432,7 +482,11 @@ Documents\ALCOMD\Projects
 Documents\ALCOMD\Backups
 ```
 
-macOS 与 Linux 分别遵循 Application Support 和 XDG 规范，但稳定目录名仍为 `ALCOMD` / `alcomd`。
+macOS 与 Linux 分别遵循 Application Support 和 XDG 规范，但稳定目录名仍为 `ALCOMD` /
+`alcomd`。macOS DMG 中的 `ALCOMD.app` 包含完整产品，CLI 集成只能由用户在 GUI 中主动安装，
+不得在拖入 Applications 时修改 shell 配置。Linux DEB 把公开 CLI 安装到
+`/usr/bin/alcomd-cli`，其他程序进入包管理器目录；AppImage 的可选 CLI 集成可创建
+`~/.local/bin/alcomd-cli`，但不能假设 AppImage 本体路径固定。
 
 `settings.toml` 保存可理解的公开设置。`state.db` 是内部权威状态，不是第三方 API。凭据进入 OS Credential Store / Keychain / Secret Service。
 
@@ -477,11 +531,17 @@ v4 正常运行时不读写 VCC `settings.json`，不与 VCC 双向同步，不�
 迁移入口固定为已于 2026-08-15 发布的 ALCOMD3 3.4.0：
 
 - 3.4.0 是 v3 迁移入口版本（v3 migration entry release），也是 v4 迁移链唯一接受的直接来源。
+- 3.4.0 不负责执行完整 v4 替换迁移；它只发现、验证并启动签名的 ALCOMD v4 bridge
+  installer。
 - 更早的公开 v3.x 必须先通过原有更新链升级到 3.4.0，不得直接进入 v4 迁移。
 - 3.4.0 已将更新 JSON 源切换到 `https://alcomd.cqmhv.com/api/v1/updates/stable.json` 与 `https://alcomd.cqmhv.com/api/v1/updates/beta.json`。
-- 3.4.0 从新标准 API 获取并验证 v4 迁移桥接安装器（v4 bridge installer）元数据；该安装器再启动 `alcomd-bootstrap` 和临时 `alcomd-migrate-v3`。
+- ALCOMD v4 bridge installer 安装完整 v4 产品，包含或调用 `alcomd-bootstrap`；bootstrap 再
+  协调临时 `alcomd-migrate-v3`、健康检查、回滚、v3 清理与 Commit。
 
 上述已上线路径和频道映射作为 M-1 基线；v4 迁移桥接安装器的 JSON Schema、版本推进、签名验证和错误行为在 M-1 冻结。
+
+Windows Inno Setup 脚本只负责产品部署、系统集成和调用 bootstrap，不解析 v3 数据库、不修改
+Unity 项目，也不实现业务迁移。
 
 阶段：
 
@@ -561,23 +621,48 @@ Residue Audit
 
 ## 22. 更新与发行
 
-核心组件是原子发行单元：
+完整 ALCOMD 产品是原子发行单元：
 
 ```text
 alcomd
 alcomd-gui
 alcomd-cli
 alcomd-mcp
-alcomd-api
 alcomd-extension-host
 alcomd-bootstrap
+alcomd-updater
+release-blocker 第一方扩展
 ```
 
-不能分别更新到不兼容版本。更新由外部 bootstrap 进行，失败时恢复上一整套程序。
+组件不能分别更新到不兼容版本。正式更新由 `alcomd-updater` 下载并验证签名完整产品包，
+`alcomd-bootstrap` 协调停止、替换、健康检查和回滚；失败时恢复上一整套程序。Tauri Updater
+不是完整产品的权威更新系统。
+
+4.0.0 的三个发布平台和四种主要用户发行格式全部是 Release Blocker：
+
+1. Windows x86_64：`ALCOMD_4.0.0_windows_x86_64_setup.exe`，单文件 Inno Setup。
+2. macOS arm64：`ALCOMD_4.0.0_macos_aarch64.dmg`，签名并公证。
+3. Linux x86_64：`ALCOMD_4.0.0_linux_x86_64.AppImage`。
+4. Linux amd64：`ALCOMD_4.0.0_linux_amd64.deb`。
+
+Windows 当前用户与所有用户安装是同一 EXE 的两种模式，不是两个发行资产。签名文件、更新
+压缩包与 update manifest 是辅助发行产物，不增加平台/主格式类别。RPM、Flatpak、Snap 和
+macOS PKG 不属于 4.0.0 普通用户发行 blocker。
+
+正式流水线目标入口：
+
+```text
+cargo xtask dist --target <target>
+```
+
+它必须构建 Rust 组件与 GUI 前端，用 Tauri 编译 `alcomd-gui`，构建/签名第一方扩展，将所有
+release-blocker 组件收集到统一 staging，验证版本、权限和许可证，再调用 Inno Setup、DMG、
+AppImage 或 DEB 工具链，签名最终资产并生成 update manifest。单一 Tauri bundle 不得被当作
+完整产品发行物。
 
 扩展独立版本化，通过 Extension API 范围决定兼容性。
 
-Windows 新 AppId / UpgradeCode 在 v4 初始化后固定，不能复用 v3 身份，也不能随未来品牌变化。
+Windows Inno Setup 的新 AppId 在发行实现前单独冻结，不能复用 v3 身份，也不能随未来品牌变化。
 
 ## 23. 安全与测试门槛
 
@@ -613,9 +698,10 @@ M6  扩展运行时与公开 API
 M7  官方 GUI 与扩展 UI 容器
 M8  MCP 协议与 MCP 管理扩展
 M9  Discord 第一方扩展
-M10 Local API 与 SDK
-M11 v3 迁移、Bootstrap 与更新桥
-M12 功能对齐、安全、零残留和发行硬化
+M10 TypeScript/Rust SDK 与公共合同硬化
+M11 v3 迁移、Bootstrap、Updater 与 bridge installer 协调
+M12 `cargo xtask dist`、全产品安装器、功能对齐、安全、零残留和发行硬化
+Post-v4 可选 Loopback API、Python SDK 与 .NET SDK
 ```
 
 每个里程碑必须独立验收并在完成后停止。
@@ -637,3 +723,5 @@ M12 功能对齐、安全、零残留和发行硬化
 13. 未来品牌更名不得要求数据迁移或第三方重新接入。
 14. v4 自有内容统一采用 `AGPL-3.0-only`。
 15. v3 与 vrc-get 不是 v4 的代码上游，VPM 必须独立实现。
+16. ALCOMD 是多组件 Rust 本地应用平台，只有 `alcomd-gui` 是 Tauri 应用。
+17. 正式发行必须打包完整产品；Tauri/Tauri Bundler 只能是受控子工具。
