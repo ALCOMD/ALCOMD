@@ -4,7 +4,7 @@ ALCOMD3 v4 是 ALCOMD 产品家族中具有独立 Git 历史与代码库的全�
 品牌和功能定位上继承 ALCOMD3 v3，但不是对 v3 的增量补丁，也不复用 v3 或
 vrc-get 的源码。
 
-当前状态：**M-1 审计与规划阶段**。仓库中只有架构、契约骨架、最小可编译程序和 Codex 工作约束。不得把这些占位实现误认为已完成功能。
+当前状态：**M0 仓库骨架、身份与 CI（执行中）**。M-1 审计与合同基线已经完成；仓库中的程序仍是可编译占位，正式 Schema、业务实现、迁移和发行测试属于后续里程碑。
 
 ## 永久身份
 
@@ -31,7 +31,7 @@ MCP 协议由独立的 `alcomd-mcp` 提供。MCP 管理 GUI 与 Discord Rich Pre
 1. 阅读 `AGENTS.md`。
 2. 阅读 `docs/architecture/ALCOMD-V4.md`。
 3. 阅读 `docs/decisions/open.md`。
-4. 完成 `docs/exec-plans/M-1-audit.md`，不要直接开始生产实现。
+4. 阅读 `docs/exec-plans/M0-bootstrap.md` 与 `docs/status.md`，一次只执行当前里程碑。
 5. 将旧仓库放在并列的只读目录，例如 `../ALCOMD3-v3-readonly`。
 6. 运行 `scripts/freeze-baselines.ps1` 生成 v3 审计源、v3.4.0 迁移入口版本与发行资产、vrc-get 功能行为及 MCP 规范锁，并用 `-Check` 对远端引用和 GitHub Release 摘要执行校验。
 7. 遵守洁净实现边界：不得复制、移植或改写 v3、vrc-get 或 vrc-get-vpm 源码。
@@ -53,7 +53,9 @@ Expand-Archive .\ALCOMD-v4-initial-r1.zip -DestinationPath .\ALCOMD
 Get-ChildItem -Recurse -File | Unblock-File
 .\scripts\init-repo.ps1
 .\scripts\setup.ps1
-.\scripts\check.ps1 -SkipGuiRust
+.\scripts\check.ps1
+.\scripts\test.ps1
+npm run gui:build -- --no-bundle
 ```
 
 Linux / WSL：
@@ -61,19 +63,17 @@ Linux / WSL：
 ```bash
 ./scripts/init-repo.sh
 ./scripts/setup.sh
-./scripts/check.sh --skip-gui-rust
+./scripts/check.sh
+./scripts/test.sh
+npm run gui:build -- --no-bundle
 ```
 
 Tauri GUI：
 
 ```powershell
-npm install
+npm ci
 npm run gui:dev
 ```
-
-## Codex 第一项任务
-
-将 `docs/prompts/M-1-audit.md` 的内容交给 Codex，并使用 Plan mode。M-1 完成并经人工审核前，不应进入 M0 实现。
 
 ## 目录概要
 
@@ -105,4 +105,4 @@ vrc-get 不是代码上游。详细边界见 `LICENSE-DECISION.md`；第三方�
 - 不包含真实签名私钥、GitHub token 或发布凭据。
 - `alcomd-migrate-v3` 仅为占位程序，不包含旧格式解析器。
 - 所有二进制当前只证明命名与 workspace 边界，尚未实现 RPC、VPM 或迁移。
-- 首次完成 M0 本地验证时应生成并提交 `Cargo.lock` 与 `package-lock.json`，随后将 CI 的 npm 安装切换为 `npm ci`。
+- M0 固定并校验根 `Cargo.lock`、根 `package-lock.json` 与 Discord 扩展后台 `Cargo.lock`；本地脚本和 CI 的 npm 安装都使用 `npm ci`。

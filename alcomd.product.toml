@@ -23,6 +23,7 @@ mcp = "alcomd-mcp"
 api = "alcomd-api"
 extension_host = "alcomd-extension-host"
 bootstrap = "alcomd-bootstrap"
+updater = "alcomd-updater"
 migration_v3 = "alcomd-migrate-v3"
 
 [formats]

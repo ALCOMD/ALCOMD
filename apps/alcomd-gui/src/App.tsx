@@ -16,7 +16,7 @@ export function App() {
     return (
         <main className="shell">
             <section className="hero">
-                <p className="eyebrow">{productFamily} · v4 初始化仓库</p>
+                <p className="eyebrow">{productFamily} · v4 仓库骨架</p>
                 <h1>ALCOMD3</h1>
                 <p className="subtitle">
                     用户品牌是 ALCOMD3，产品家族是 {productFamily}，稳定技术平台是
@@ -33,17 +33,17 @@ export function App() {
                     </article>
                     <article>
                         <span>阶段</span>
-                        <strong>M-1 审计</strong>
+                        <strong>M0 骨架收敛</strong>
                     </article>
                 </div>
                 <div className="actions">{materialButton}</div>
             </section>
 
             <section className="notice">
-                <h2>先审计，再施工</h2>
+                <h2>业务实现尚未开始</h2>
                 <p>
-                    请先完成 <code>docs/exec-plans/M-1-audit.md</code>，冻结 v3 迁移输入与
-                    VPM 生态兼容边界，然后才进入 RPC 和核心实现。
+                    M-1 审计与合同基线已经冻结。当前仅验证身份、工具链、锁文件与空 Workspace；
+                    RPC 和核心业务从后续里程碑开始。
                 </p>
             </section>
         </main>

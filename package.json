@@ -14,6 +14,6 @@
         "check": "npm run check --workspaces --if-present",
         "build": "npm run build --workspaces --if-present",
         "gui:dev": "npm run tauri dev --workspace @alcomd/gui",
-        "gui:build": "npm run tauri build --workspace @alcomd/gui"
+        "gui:build": "npm run tauri --workspace @alcomd/gui -- build"
     }
 }

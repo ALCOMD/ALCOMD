@@ -55,27 +55,26 @@ Manifest、第一方扩展与包下载的 ALCOMD 应用层签名/摘要校验。
 
 ## 当前 CI 事实
 
-`.github/workflows/ci.yml` 当前覆盖：
+`.github/workflows/ci.yml` 已配置 `windows-2025`、`ubuntu-22.04` 与 Apple Silicon
+`macos-15` hosted job。三者固定 Rust 1.97.1（rustfmt、Clippy）、Node.js 24、Python 3.11 和
+action commit，执行 setup/check/test、release executable build 与 Tauri `build --no-bundle`。
+Linux 安装含 `libgtk-3-dev` 的 Tauri 前提并扫描预期 M0 ELF 的 GLIBC 符号；macOS 固定
+`MACOSX_DEPLOYMENT_TARGET=11.0` 并使用 file/lipo/otool 检查实际产物。`windows-2025` 只是
+Windows Server 编译证据，不代表 Windows 10/11 客户端兼容性。
 
-- Ubuntu 24.04：元数据、非 GUI Rust、独立 Discord 后台、TypeScript 与 Vite。
-- Windows 2025：`cargo check -p alcomd-gui`。
-- macOS：无任务。
-- Linux GUI：未安装 Tauri 系统依赖，未检查 GUI Rust 壳或 bundle。
-- Windows 完整 GUI：未执行 `npm run gui:build`。
-- 前端安装仍使用 `npm install`，尚未满足 M0 的锁文件复现要求。
-- Cargo 命令未统一使用 `--locked`，也没有构建后 lockfile diff gate。
-- 根 Workspace 的 Clippy/test 仍排除 GUI test target；独立 Discord backend 没有 test gate。
-- setup/check/test 的 PowerShell 与 Bash 检查面不完全对称，且 setup 未诊断 Python、PowerShell
-  7 和 Tauri 平台原生依赖。
-
-因此当前 CI 只能证明初始化骨架的部分可构建性，不能证明三平台发行就绪。
+`.github/workflows/windows-client.yml` 仅允许 `main` 的 `workflow_dispatch`，使用无项目 Secrets、
+最小权限的专用 self-hosted runner；分别要求 Windows 10 22H2 ProductType 1/build 19045 与
+Windows 11 ProductType 1/build >= 22000，并执行同一完整检查面。runner 所有者必须在任务后
+恢复干净 checkpoint。当前这些工作流尚未取得本提交的真实通过记录，因此 M0 仍在执行中，
+也不能据此声称三平台发行就绪。
 
 ## M0 建议验证矩阵
 
 M0 只验证骨架，不生成或发布正式签名资产：
 
 1. 所有平台运行元数据、格式、全 Workspace Clippy/test、独立 Discord backend test 与前端
-   check/build；Cargo 命令使用 `--locked`，最终证明两份 lockfile 未改变。
+   check/build；Cargo 命令使用 `--locked`，最终证明根 Cargo、根 npm 与 Discord backend
+   三份 lockfile 未改变。
 2. Windows x64 运行 `alcomd-gui` 的完整 Tauri `build --no-bundle`，不能只做 `cargo check`。
 3. Ubuntu x64 安装 GUI 所需 Tauri 系统依赖后运行 `alcomd-gui` 的 `build --no-bundle`。
 4. macOS arm64 使用显式原生 runner/target 和 deployment target 11.0 运行 `alcomd-gui` 的

@@ -9,6 +9,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT_LICENSE = "AGPL-3.0-only"
+PROJECT_REPOSITORY = "https://github.com/ALCOMD/ALCOMD"
+RUST_VERSION = "1.97.1"
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 SHA256_FINGERPRINT_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -34,6 +36,8 @@ def main() -> int:
     require(product["product"]["family_name"] == "ALCOMD", "Unexpected product family")
     require(product["product"]["display_name"] == "ALCOMD3", "Unexpected display name")
     require(product["product"]["technical_name"] == "alcomd", "Unexpected technical name")
+    require(product["product"]["publisher_name"] == "CQMHV", "Unexpected publisher")
+    require(product["product"]["version"] == "4.0.0-alpha.0", "Unexpected product version")
     require(
         product["identity"]["bundle_identifier"] == "com.cqmhv.alcomd",
         "Unexpected bundle identifier",
@@ -42,6 +46,32 @@ def main() -> int:
         product["identity"]["windows_aumid"] == "CQMHV.ALCOMD",
         "Unexpected Windows AUMID",
     )
+    require(product["identity"]["uri_scheme"] == "alcomd", "Unexpected URI scheme")
+    require(
+        product["identity"]["linux_desktop_id"]
+        == product["identity"]["bundle_identifier"],
+        "Linux desktop ID does not match the bundle identity",
+    )
+    require(
+        product["identity"]["data_directory"] == "ALCOMD",
+        "Unexpected data directory",
+    )
+    require(
+        product["identity"]["install_directory"] == "ALCOMD",
+        "Unexpected install directory",
+    )
+    expected_binaries = {
+        "daemon": "alcomd",
+        "gui": "alcomd-gui",
+        "cli": "alcomd-cli",
+        "mcp": "alcomd-mcp",
+        "api": "alcomd-api",
+        "extension_host": "alcomd-extension-host",
+        "bootstrap": "alcomd-bootstrap",
+        "updater": "alcomd-updater",
+        "migration_v3": "alcomd-migrate-v3",
+    }
+    require(product["binaries"] == expected_binaries, "Unexpected product binary identity")
 
     tauri = load_json("apps/alcomd-gui/src-tauri/tauri.conf.json")
     require(
@@ -51,6 +81,18 @@ def main() -> int:
     require(
         tauri["identifier"] == product["identity"]["bundle_identifier"],
         "Tauri identifier does not match the product identity",
+    )
+    require(
+        tauri["version"] == product["product"]["version"],
+        "Tauri version does not match the product version",
+    )
+    require(
+        tauri["mainBinaryName"] == product["binaries"]["gui"],
+        "Tauri binary name does not match the product identity",
+    )
+    require(
+        tauri["bundle"]["publisher"] == product["product"]["publisher_name"],
+        "Tauri publisher does not match the product identity",
     )
 
     parity = load_toml("feature-parity.toml")
@@ -483,15 +525,21 @@ def main() -> int:
         "Invalid MCP conformance integrity",
     )
 
-    for relative in [
-        "extensions/first-party/alcomd-extension-mcp/alcomd-extension.toml",
-        "extensions/first-party/alcomd-extension-discord/alcomd-extension.toml",
-    ]:
+    for extension_name in ["mcp", "discord"]:
+        relative = (
+            "extensions/first-party/"
+            f"alcomd-extension-{extension_name}/alcomd-extension.toml"
+        )
         manifest = load_toml(relative)
         require(manifest["schema"] == 1, f"Unsupported extension schema: {relative}")
         require(
-            manifest["id"].startswith("com.cqmhv.alcomd.extension."),
+            manifest["id"]
+            == f"{product['identity']['bundle_identifier']}.extension.{extension_name}",
             f"Unexpected first-party extension ID: {relative}",
+        )
+        require(
+            manifest["publisher"] == product["product"]["publisher_name"],
+            f"Unexpected first-party extension publisher: {relative}",
         )
         require(
             manifest["license"] == PROJECT_LICENSE,
@@ -499,14 +547,55 @@ def main() -> int:
         )
 
     cargo_workspace = load_toml("Cargo.toml")
+    workspace_package = cargo_workspace["workspace"]["package"]
     require(
-        cargo_workspace["workspace"]["package"]["license"] == PROJECT_LICENSE,
+        workspace_package["version"] == product["product"]["version"],
+        "Rust workspace version does not match the product version",
+    )
+    require(workspace_package["edition"] == "2024", "Unexpected Rust edition")
+    require(
+        workspace_package["rust-version"] == RUST_VERSION,
+        "Unexpected Rust version",
+    )
+    require(
+        workspace_package["license"] == PROJECT_LICENSE,
         "Unexpected Rust workspace license",
     )
     require(
-        cargo_workspace["workspace"]["package"]["repository"]
-        == "https://github.com/ALCOMD/ALCOMD",
+        workspace_package["repository"] == PROJECT_REPOSITORY,
         "Unexpected Rust workspace repository",
+    )
+    expected_workspace_members = {
+        "apps/alcomd",
+        "apps/alcomd-cli",
+        "apps/alcomd-mcp",
+        "apps/alcomd-api",
+        "apps/alcomd-extension-host",
+        "apps/alcomd-bootstrap",
+        "apps/alcomd-updater",
+        "apps/alcomd-gui/src-tauri",
+        "crates/alcomd-domain",
+        "crates/alcomd-application",
+        "crates/alcomd-protocol",
+        "crates/alcomd-client",
+        "crates/alcomd-store",
+        "crates/alcomd-platform",
+        "crates/alcomd-vpm",
+        "crates/alcomd-extensions",
+        "crates/alcomd-import",
+        "crates/alcomd-testing",
+        "migrations/v3/app/alcomd-migrate-v3",
+        "xtask",
+    }
+    require(
+        set(cargo_workspace["workspace"]["members"]) == expected_workspace_members,
+        "Unexpected Cargo workspace members",
+    )
+
+    rust_toolchain = load_toml("rust-toolchain.toml")
+    require(
+        rust_toolchain["toolchain"]["channel"] == RUST_VERSION,
+        "Unexpected rust-toolchain channel",
     )
 
     discord_backend = load_toml(
@@ -514,22 +603,55 @@ def main() -> int:
     )
     require(
         discord_backend["package"]["repository"]
-        == "https://github.com/ALCOMD/ALCOMD",
+        == PROJECT_REPOSITORY,
         "Unexpected Discord backend repository",
     )
 
-    for relative in [
+    npm_package_paths = [
         "package.json",
         "apps/alcomd-gui/package.json",
         "packages/alcomd-extension-sdk/package.json",
         "packages/alcomd-sdk/package.json",
         "packages/alcomd-ui/package.json",
-    ]:
+    ]
+    for relative in npm_package_paths:
         package = load_json(relative)
         require(
             package["license"] == PROJECT_LICENSE,
             f"Unexpected npm package license: {relative}",
         )
+
+    root_package = load_json("package.json")
+    require(
+        root_package["name"] == f"{product['product']['technical_name']}-workspace",
+        "Unexpected root npm package name",
+    )
+    require(
+        root_package["version"] == product["product"]["version"],
+        "Root npm version does not match the product version",
+    )
+    require(root_package["engines"]["node"] == ">=24 <25", "Unexpected Node engine")
+
+    gui_package = load_json("apps/alcomd-gui/package.json")
+    require(
+        gui_package["name"] == f"@{product['product']['technical_name']}/gui",
+        "Unexpected GUI npm package name",
+    )
+    require(
+        gui_package["version"] == product["product"]["version"],
+        "GUI npm version does not match the product version",
+    )
+
+    package_lock = load_json("package-lock.json")
+    lock_root = package_lock["packages"][""]
+    require(
+        lock_root["version"] == product["product"]["version"],
+        "package-lock root version does not match the product version",
+    )
+    require(
+        lock_root["engines"]["node"] == root_package["engines"]["node"],
+        "package-lock Node engine does not match package.json",
+    )
 
     for relative in [
         "apps/alcomd-gui/src-tauri/capabilities/main.json",

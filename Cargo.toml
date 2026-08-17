@@ -7,6 +7,7 @@ members = [
     "apps/alcomd-api",
     "apps/alcomd-extension-host",
     "apps/alcomd-bootstrap",
+    "apps/alcomd-updater",
     "apps/alcomd-gui/src-tauri",
     "crates/alcomd-domain",
     "crates/alcomd-application",
@@ -16,7 +17,6 @@ members = [
     "crates/alcomd-platform",
     "crates/alcomd-vpm",
     "crates/alcomd-extensions",
-    "crates/alcomd-updater",
     "crates/alcomd-import",
     "crates/alcomd-testing",
     "migrations/v3/app/alcomd-migrate-v3",
@@ -29,6 +29,7 @@ default-members = [
     "apps/alcomd-api",
     "apps/alcomd-extension-host",
     "apps/alcomd-bootstrap",
+    "apps/alcomd-updater",
     "crates/alcomd-domain",
     "crates/alcomd-application",
     "crates/alcomd-protocol",
@@ -37,7 +38,6 @@ default-members = [
     "crates/alcomd-platform",
     "crates/alcomd-vpm",
     "crates/alcomd-extensions",
-    "crates/alcomd-updater",
     "crates/alcomd-import",
     "crates/alcomd-testing",
     "xtask",
@@ -61,6 +61,7 @@ tauri = "2"
 tauri-build = "2"
 thiserror = "2.0"
 tokio = { version = "1.0", features = ["macros", "rt-multi-thread", "signal"] }
+toml = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1.0", features = ["serde", "v4"] }
@@ -73,7 +74,7 @@ alcomd-store = { path = "crates/alcomd-store" }
 alcomd-platform = { path = "crates/alcomd-platform" }
 alcomd-vpm = { path = "crates/alcomd-vpm" }
 alcomd-extensions = { path = "crates/alcomd-extensions" }
-alcomd-updater = { path = "crates/alcomd-updater" }
+alcomd-updater = { path = "apps/alcomd-updater" }
 alcomd-import = { path = "crates/alcomd-import" }
 alcomd-testing = { path = "crates/alcomd-testing" }
 

@@ -2,35 +2,24 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+source ./scripts/common.sh
 
-skip_frontend=false
-skip_gui_rust=false
+assert_repository_toolchain
+lock_snapshot="$(get_lock_file_snapshot)"
 
-for argument in "$@"; do
-    case "$argument" in
-        --skip-frontend) skip_frontend=true ;;
-        --skip-gui-rust) skip_gui_rust=true ;;
-        *)
-            echo "Unknown argument: $argument" >&2
-            exit 2
-            ;;
-    esac
-done
-
-cargo xtask check
+cargo run --locked --package xtask -- check
 cargo fmt --all -- --check
-cargo clippy --workspace --exclude alcomd-gui --all-targets -- -D warnings
-cargo test --workspace --exclude alcomd-gui
-cargo fmt --manifest-path extensions/first-party/alcomd-extension-discord/backend/Cargo.toml -- --check
-cargo clippy --manifest-path extensions/first-party/alcomd-extension-discord/backend/Cargo.toml --all-targets -- -D warnings
+cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo test --locked --workspace
+cargo check --locked --package alcomd-gui
 
-if [[ "$skip_gui_rust" == false ]]; then
-    cargo check -p alcomd-gui
-fi
+discord_manifest="extensions/first-party/alcomd-extension-discord/backend/Cargo.toml"
+cargo fmt --manifest-path "$discord_manifest" -- --check
+cargo clippy --locked --manifest-path "$discord_manifest" --all-targets -- -D warnings
+cargo test --locked --manifest-path "$discord_manifest"
 
-if [[ "$skip_frontend" == false ]]; then
-    npm run check
-    npm run build
-fi
+npm run check
+npm run build
+invoke_metadata_validator
 
-python3 ./scripts/validate-metadata.py
+assert_lock_file_snapshot "$lock_snapshot"

@@ -10,75 +10,156 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  metadata:
-    name: Metadata and identity
-    runs-on: ubuntu-24.04
+  windows-hosted:
+    name: Windows Server 2025 hosted
+    runs-on: windows-2025
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Validate metadata
-        run: python3 scripts/validate-metadata.py
-
-  rust-core:
-    name: Rust core
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
       - name: Install Rust
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: 1.97.1
           components: rustfmt, clippy
-
-      - name: Repository invariants
-        run: cargo xtask check
-
-      - name: Format
-        run: cargo fmt --all -- --check
-
-      - name: Clippy
-        run: cargo clippy --workspace --exclude alcomd-gui --all-targets -- -D warnings
-
-      - name: Tests
-        run: cargo test --workspace --exclude alcomd-gui
-
-      - name: Check standalone Discord extension backend
+      - name: Setup
+        shell: pwsh
+        run: .\scripts\setup.ps1
+      - name: Check
+        shell: pwsh
+        run: .\scripts\check.ps1
+      - name: Test
+        shell: pwsh
+        run: .\scripts\test.ps1
+      - name: Build M0 executables
+        run: cargo build --locked --workspace --bins --release
+      - name: Build Tauri GUI without a bundle
+        run: npm run gui:build -- --no-bundle
+      - name: Verify lock files are unchanged
+        shell: pwsh
         run: |
-          cargo fmt --manifest-path extensions/first-party/alcomd-extension-discord/backend/Cargo.toml -- --check
-          cargo clippy --manifest-path extensions/first-party/alcomd-extension-discord/backend/Cargo.toml --all-targets -- -D warnings
+          git diff --exit-code -- `
+            Cargo.lock `
+            package-lock.json `
+            extensions/first-party/alcomd-extension-discord/backend/Cargo.lock
+      - name: Verify final diff
+        run: git diff --check
 
-  frontend:
-    name: TypeScript and Vite
-    runs-on: ubuntu-24.04
+  linux-hosted:
+    name: Ubuntu 22.04 hosted
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - name: Install Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Type check
-        run: npm run check
-
-      - name: Build frontend
-        run: npm run build
-
-  gui-rust:
-    name: Tauri Rust shell
-    runs-on: windows-2025
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
+          node-version: "24"
+          cache: npm
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
       - name: Install Rust
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: 1.97.1
+          components: rustfmt, clippy
+      - name: Install Tauri and ELF inspection dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            binutils \
+            build-essential \
+            file \
+            libayatana-appindicator3-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            pkg-config
+      - name: Setup
+        run: ./scripts/setup.sh
+      - name: Check
+        run: ./scripts/check.sh
+      - name: Test
+        run: ./scripts/test.sh
+      - name: Build M0 executables
+        run: cargo build --locked --workspace --bins --release
+      - name: Build Tauri GUI without a bundle
+        run: npm run gui:build -- --no-bundle
+      - name: Verify GLIBC symbol ceiling
+        run: bash ./scripts/check-glibc.sh
+      - name: Verify lock files are unchanged
+        run: |
+          git diff --exit-code -- \
+            Cargo.lock \
+            package-lock.json \
+            extensions/first-party/alcomd-extension-discord/backend/Cargo.lock
+      - name: Verify final diff
+        run: git diff --check
 
-      - name: Check GUI Rust crate
-        run: cargo check -p alcomd-gui
+  macos-hosted:
+    name: macOS 15 arm64 hosted
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.1
+          components: rustfmt, clippy
+      - name: Setup
+        run: ./scripts/setup.sh
+      - name: Check
+        run: ./scripts/check.sh
+      - name: Test
+        run: ./scripts/test.sh
+      - name: Build M0 executables
+        run: cargo build --locked --workspace --bins --release
+      - name: Build Tauri GUI without a bundle
+        run: npm run gui:build -- --no-bundle
+      - name: Verify architecture and deployment target
+        run: bash ./scripts/check-macos-target.sh
+      - name: Verify lock files are unchanged
+        run: |
+          git diff --exit-code -- \
+            Cargo.lock \
+            package-lock.json \
+            extensions/first-party/alcomd-extension-discord/backend/Cargo.lock
+      - name: Verify final diff
+        run: git diff --check

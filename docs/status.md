@@ -1,10 +1,10 @@
 # 项目状态
 
-最后更新：2026-08-17
+最后更新：2026-08-18
 
 ## 当前阶段
 
-`M-1：只读审计、基线冻结与开放决策（已批准完成；停止在 M0 之前）`
+`M0：仓库骨架、身份与 CI（执行中；等待五个目标平台 CI 的真实通过证据）`
 
 ## 已完成
 
@@ -55,7 +55,21 @@
 - 项目所有者已批准 M-1 完成；`feature-parity.toml` 的 `verified` 只表示对应基线、范围和验收
   合同已冻结，所有 `implementation_status` 仍独立反映真实实现状态。
 - M0 ExecPlan 已细化为固定工具链、`npm ci`、Cargo lock、三平台 `--no-bundle` build 和独立
-  扩展 test gate；尚未执行。
+  扩展 test gate。
+- M0 已补齐纯占位 `alcomd-updater` app 边界；它只报告 scaffold 状态，不包含下载、签名、
+  替换或回滚实现。
+- `alcomd.product.toml` 现在覆盖 updater 身份；xtask 与元数据验证器校验 Cargo Workspace、
+  Tauri、npm、第一方扩展和派生身份，并固定本地 crate 依赖方向。
+- PowerShell/Bash setup/check/test 已对齐：Node 安装使用 `npm ci`，Cargo 构建/Clippy/test 使用
+  `--locked`，完整 Workspace 不再排除 GUI，独立 Discord backend 增加 test gate，命令执行
+  前后校验根 `Cargo.lock`、根 `package-lock.json` 与 Discord backend `Cargo.lock` 摘要。
+- 跨平台 CI 已按批准方案配置：`windows-2025`、`ubuntu-22.04`、Apple Silicon `macos-15`
+  hosted job，以及仅允许 `main` 显式 dispatch 的 Windows 10 22H2/Windows 11 self-hosted job；
+  所有 job 固定 Rust 1.97.1、Node.js 24、Python 3.11 与 action commit。
+- Linux job 安装含 `libgtk-3-dev` 的 Tauri 前提并执行 GLIBC 符号上限检查；macOS job 检查
+  arm64 与实际最低部署版本；Windows 客户端 job 检查 ProductType 与 build。
+- Windows 本机已通过 setup、完整 check/test、Git Bash 语法检查和 Tauri
+  `build --no-bundle`；该结果只证明 GUI 子应用可构建，不是完整产品发行验证。
 
 ## 后续里程碑尚未完成
 
@@ -73,6 +87,13 @@
 - 安装器、签名与发布。
 
 ## 当前阻塞与缺口
+
+- M0 的三个 hosted job 与两个 Windows 客户端 self-hosted job 尚未取得当前变更的实际通过
+  记录；仅创建 workflow 不满足验收。Windows runner 还需由所有者准备无 Secrets 的干净
+  checkpoint 并在每次测试后恢复。在五项证据齐全前 M0 保持进行中，不得进入 M1。
+- GitHub 已宣布 `ubuntu-22.04` hosted runner 从 2026-09-17 开始弃用并于 2027-04-17 退役；
+  当前 M0 仍使用该构建基线，未来替代不能直接用 Ubuntu 24.04 冒充 Ubuntu 22.04 /
+  `GLIBC_2.35` 等价验证。
 
 - 真实安装快照和迁移 Fixture 尚未建立；因此 artifact 模板继续保持 `confirmed = false`，
   迁移删除、GUI/模板/备份/Unity 差异测试仍 blocked。项目所有者已决定不在 M-1 继续投入
@@ -92,7 +113,6 @@
 
 ## 下一停止点
 
-M-1 已由项目所有者批准完成，当前停止在 M0 执行之前。迁移实例证据留在 M11；所有迁移
-artifact 的现有 `confirmed` 值保持不变，未授予任何 v3 文件、配置、注册表项、安装目录或
-其他残留的删除权限。永久 Windows AppId/GUID 仍留在 M12 独立审批；安装器与 `xtask dist`
-只能在后续独立 M12 ExecPlan 获批后实现。没有新的明确指令不得开始 M0。
+下一步是本地验收 CI 配置并取得 Windows Server 2025、Ubuntu 22.04、macOS 15 arm64、
+Windows 10 22H2 与 Windows 11 五个 job 的真实通过记录。全部通过前不完成 M0，也不得进入
+M1；迁移删除、永久 Windows AppId/GUID、安装器与 `cargo xtask dist` 仍不在 M0 授权范围内。

@@ -1,6 +1,6 @@
 # M0：仓库骨架、身份与 CI
 
-状态：计划已细化，必须在 M-1 人工批准后才能执行
+状态：执行中；CI 实施已获批准，等待三平台 hosted 与两台 Windows 客户端真实验证
 
 ## 目标
 
@@ -48,6 +48,8 @@ scripts/*
 xtask/*
 docs/status.md
 docs/exec-plans/M0-bootstrap.md
+README.md
+docs/baselines/platforms.md
 ```
 
 禁止修改或实现：
@@ -78,8 +80,9 @@ M0 不新增公共 RPC、数据库 Schema、Extension API 或权限名称。唯�
    `npm ci`，证明空 GUI 和共享包可复现构建。
 5. 使 PowerShell 与 Bash 的 setup/check/test 脚本具有相同检查面，并显式报告缺少的平台原生
    依赖；脚本不得静默跳过失败。
-6. 所有 Cargo 检查使用 `--locked` 或等价只读锁定方式，并在 CI 末尾验证 Cargo/npm 锁文件
-   没有变化；独立 Discord backend 也执行 test gate。
+6. 所有 Cargo 检查使用 `--locked` 或等价只读锁定方式，并在 CI 末尾验证根 `Cargo.lock`、
+   根 `package-lock.json` 与独立 Discord backend `Cargo.lock` 没有变化；独立 Discord backend
+   也执行 test gate。
 7. 根据 A-017/A-024/A-025 配置 Windows、Ubuntu 与 macOS CI 骨架；
    安装 `alcomd-gui` 所需 Tauri 前提，三平台都执行显式 `tauri build --no-bundle`。该命令只
    验证 GUI 子应用，不收集其他组件，不创建完整产品、安装器、签名或 Release。
@@ -93,7 +96,9 @@ Windows PowerShell 7：
 ```powershell
 .\scripts\setup.ps1
 .\scripts\check.ps1
+.\scripts\test.ps1
 cargo check --locked -p alcomd-gui
+cargo build --locked --workspace --bins --release
 npm run gui:build -- --no-bundle
 git diff --check
 ```
@@ -103,7 +108,9 @@ Linux/macOS：
 ```bash
 ./scripts/setup.sh
 ./scripts/check.sh
+./scripts/test.sh
 cargo check --locked -p alcomd-gui
+cargo build --locked --workspace --bins --release
 npm run gui:build -- --no-bundle
 git diff --check
 ```
@@ -125,8 +132,12 @@ python/python3 scripts/validate-metadata.py
 - 所有已批准平台的 CI 必须通过，且任务使用固定 action commit 和最小权限。
 - Windows 正式验证覆盖 Windows 10 22H2 与 Windows 11；Linux 构建使用 Ubuntu 22.04 并检查
   产物最高所需 glibc 符号不超过 `GLIBC_2.35`；macOS arm64 固定 deployment target 11.0。
-- `Cargo.lock` 与 `package-lock.json` 由固定工具链生成并提交；CI 前端安装仅使用 `npm ci`。
-- 所有 Cargo 任务锁定依赖，构建后 `Cargo.lock` 与 `package-lock.json` 均无 diff。
+- 平台产物门禁要求 `alcomd`、`alcomd-api`、`alcomd-bootstrap`、`alcomd-cli`、
+  `alcomd-extension-host`、`alcomd-gui`、`alcomd-mcp`、`alcomd-migrate-v3` 与
+  `alcomd-updater` 全部存在；Linux 扫描这些 ELF，macOS 用 file/lipo/otool 检查这些 Mach-O。
+- 根 `Cargo.lock`、根 `package-lock.json` 与独立 Discord backend `Cargo.lock` 由固定工具链生成
+  并提交；CI 前端安装仅使用 `npm ci`。
+- 所有 Cargo 任务锁定依赖，构建后三份锁文件均无 diff。
 - 所有 Workspace 成员、独立第一方扩展后台、Tauri Rust 壳和前端均通过适用检查。
 - `npm run gui:build` 与 Tauri `--no-bundle` 只被记录为 GUI 验证，不被描述为完整产品发行命令；
   `cargo xtask dist` 与四种正式格式留在独立 M12 ExecPlan。
@@ -139,6 +150,9 @@ python/python3 scripts/validate-metadata.py
 
 - 平台 CI 可能因 Tauri 系统包或 runner 镜像变化失败；固定 runner/依赖并记录官方来源，不通过
   删除平台任务来规避。
+- GitHub 已宣布 `ubuntu-22.04` hosted runner 从 2026-09-17 开始弃用、于 2027-04-17 退役；
+  该风险不阻塞 M0。未来替代方案仍须维持 Ubuntu 22.04 / `GLIBC_2.35` 构建基线，不能直接以
+  `ubuntu-24.04` 冒充等价验证。
 - 锁文件重生成可能引入大范围依赖变化；单独审查锁文件，必要时恢复到 M0 开始前提交，而不是
   手工拼接锁文件。
 - 身份扫描可能误报迁移目录中的合法 v3 证据；扫描规则必须区分生产范围与
@@ -148,10 +162,30 @@ python/python3 scripts/validate-metadata.py
 ## 进度日志
 
 - 2026-08-16：M-1 期间完成计划细化；当前仓库已有初始化骨架，但尚未按本计划执行或验收。
-- 待执行：O-003 已由 A-025 关闭；在 M-1 其余审计条件完成并获人工批准后开始步骤 1。
+- 2026-08-17：项目所有者确认 M-1 验收通过并批准开始 M0；开始时 HEAD 为
+  `714110bcff37dfce070ba2bdc6bd04afcdd8c178`、工作树干净，且 M-1 元数据门禁通过。
+- 2026-08-17：完成 CI 之外的步骤 1 至 6：补齐纯占位 `alcomd-updater` app 边界，强化
+  `alcomd.product.toml` 派生身份、Workspace 成员和本地依赖方向校验；setup/check/test 的
+  PowerShell/Bash 检查面已对齐并改用 `npm ci`、Cargo `--locked`、独立 Discord test gate
+  和运行期间锁文件摘要校验。没有实现 updater、RPC、IPC、数据库、VPM、扩展运行时、MCP
+  或迁移业务。
+- 2026-08-17：Windows 本机已通过 `setup.ps1`、完整 `check.ps1`、`test.ps1`、Bash 语法检查
+  和 `npm run gui:build -- --no-bundle`；Tauri 命令只生成 GUI 可执行文件，没有 bundle、安装器
+  或发行资产。Ubuntu/macOS 与 Windows 客户端真实验证尚未执行。
+- 2026-08-17：项目所有者批准 CI 实施方案；CI 固定 `windows-2025`、`ubuntu-22.04`、
+  `macos-15`，固定 checkout/setup-node/setup-python/rust-toolchain action，三平台安装 Rust
+  1.97.1、Node.js 24、Python 3.11，并配置三锁文件、GLIBC、arm64/deployment target 与
+  Windows 客户端版本门禁。`windows-2025` 只作为 Windows Server 编译验证。
+- 2026-08-18：本地 CI 实施与静态核验完成；Windows 开发机再次通过 setup/check/test、九个
+  release binary build、Tauri `--no-bundle`、冻结基线、xtask、元数据与 diff 检查；三锁文件
+  PowerShell/Bash 摘要均覆盖三项。该结果不替代 hosted 或 Windows 客户端 CI。
+- 当前停止点：M0 仍须取得三个 hosted job、Windows 10
+  22H2 与 Windows 11 self-hosted job 的实际通过证据。任何 job 未实际通过时均不得完成 M0。
 
 ## 人工审批点
 
 - 开始 M0 前：项目所有者批准 M-1 功能基线、证据和迁移清单。
 - 调整跨平台 CI 前：复核 A-025 的 runner/镜像实现不会把测试范围误写成主动 OS 拒绝逻辑。
+- 运行 Windows 客户端 CI 前：runner 只响应 `main` 的显式 dispatch，不持有项目 Secrets，
+  使用最小权限；每次测试后由 runner 所有者恢复干净 checkpoint。
 - M0 完成后：项目所有者审查身份、依赖图、CI 与变更范围；批准前不得进入 M1。
