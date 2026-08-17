@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M-1：只读审计、基线冻结与开放决策（进行中，未完成）`
+`M-1：只读审计、基线冻结与开放决策（已批准完成；停止在 M0 之前）`
 
 ## 已完成
 
@@ -50,17 +50,19 @@
 - A-026 已批准 MCP v4 工具命名基线、33 项功能覆盖而非一对一工具、Plan/Apply、
   `OperationId`、`diagnostics.read` 与稳定结构化错误方向；未知内部错误固定使用
   `internal_error + diagnostic_id`。
+- 项目所有者已确认冻结 vrc-get 只作为实现与风险参考，不继续对其执行攻击性黑盒或网络
+  安全验证；路径、ZIP、事务、来源确定性和凭据边界进入 ALCOMD 自身实现的验收测试。
+- 项目所有者已批准 M-1 完成；`feature-parity.toml` 的 `verified` 只表示对应基线、范围和验收
+  合同已冻结，所有 `implementation_status` 仍独立反映真实实现状态。
 - M0 ExecPlan 已细化为固定工具链、`npm ci`、Cargo lock、三平台 `--no-bundle` build 和独立
   扩展 test gate；尚未执行。
 
-## 尚未完成
+## 后续里程碑尚未完成
 
 - v3.4.0 完整安装后快照、脱敏迁移 Fixture 和 GUI 冻结截图/流程已由项目所有者明确后移到
   M11；M-1 仅保留 VM 操作报告，不把它升级为实例证据或删除授权。
-- MCP 33 个 v3 用例已形成并获 A-026 批准逐项工具合同方向；正式 Schema、快照与兼容别名
-  策略留在对应协议实现里程碑。
-- vrc-get 高风险静态推断的独立黑盒确认，包括包 ID 路径穿越、同版本来源 tie、ZIP 链接、
-  Windows atomic replace 与跨 origin Authorization redirect。
+- MCP 33 个 v3 用例的 M-1 工具合同基线已形成并获 A-026 批准；正式 Schema、快照、兼容
+  别名策略和协议实现留在对应后续里程碑。
 - IPC 与 daemon。
 - SQLite、Operations、Events、Locks。
 - VPM、项目、模板与备份。
@@ -85,13 +87,12 @@
 - `specs/extensions/permissions-v1.md` 与 `specs/mcp/toolset-v1.md` 尚未应用 A-021/A-023；M-1
   允许范围不包含 `specs/`，必须在对应协议里程碑经 Schema/快照更新落地，生产实现不得继续
   使用 `mcp.sessions.read`。
-- 现有 `alcomd-mcp`、daemon、GUI 等仍是 scaffold；本阶段的 `verified` 只表示基线证据完成，
-  不表示生产功能已经实现。
+- 现有 `alcomd-mcp`、daemon、GUI 等仍是 scaffold；M-1 的 `verified` 只表示基线证据和验收
+  合同完成，不表示生产功能已经实现、Fixture 已建立或动态验证已经通过。
 
 ## 下一停止点
 
-VM 采集已按项目所有者决定停止，且未授予任何迁移删除权限。MCP 逐工具合同方向已由 A-026
-批准，M-1 下一项是 vrc-get 高风险静态推断的黑盒边界；迁移实例证据留在 M11。
-`feature-parity.toml` 保持
-`m1_complete = false`，不得进入 M0；安装器与 `xtask dist` 只能在后续独立 M12 ExecPlan
-获批后实现。
+M-1 已由项目所有者批准完成，当前停止在 M0 执行之前。迁移实例证据留在 M11；所有迁移
+artifact 的现有 `confirmed` 值保持不变，未授予任何 v3 文件、配置、注册表项、安装目录或
+其他残留的删除权限。永久 Windows AppId/GUID 仍留在 M12 独立审批；安装器与 `xtask dist`
+只能在后续独立 M12 ExecPlan 获批后实现。没有新的明确指令不得开始 M0。

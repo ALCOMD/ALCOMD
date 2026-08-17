@@ -2,7 +2,7 @@
 
 冻结规范：[`2026-07-28`](https://modelcontextprotocol.io/specification/2026-07-28)
 
-状态：核心规范与 conformance 输入已冻结；A-021 已关闭 4.0.0 Tasks 决策，ALCOMD 工具合同仍未完成
+状态：M-1 核心规范、conformance 输入与工具合同基线已冻结；正式 Schema 与实现留在后续里程碑
 
 最后核验：2026-08-16
 
@@ -89,8 +89,9 @@ A-021 已决定 4.0.0 不采用 Tasks：discover 不广告该扩展，`tools/cal
   `mcp.subscription-streams.read` 替代 `mcp.sessions.read`；`specs/` 的实际合同修改必须在允许
   修改该范围的里程碑执行并更新 Schema/快照。
 - `specs/rpc/alcomd-rpc-v1.md` 的连接 Principal 模型尚未定义 MCP HTTP 多 Principal 隔离。
-- 8 个候选工具没有完整 input/output Schema、错误、权限、资源 scope、revision、幂等和
-  waiting-for-input 合同，不能视为工具清单完成。
+- 旧 `specs/mcp/toolset-v1.md` 的 8 个候选工具尚未更新为 A-026 合同；M-1 已在
+  `docs/baselines/mcp-tool-contract.md` 冻结 33 个用例映射、权限、错误、Plan/Apply 与
+  waiting-for-input 方向，正式 input/output Schema、快照和实现仍由后续里程碑完成。
 
 ## 可复现输入
 
@@ -110,13 +111,13 @@ conformance 仍是 alpha 测试输入，不代表 Tasks Draft 已稳定，也不
 - `https://github.com/modelcontextprotocol/modelcontextprotocol/tree/main/docs/specification/2026-07-28`
 - `https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2026-07-28/schema.ts`
 
-## 工具合同草案
+## M-1 工具合同基线
 
 `docs/baselines/mcp-tool-contract.md` 已将冻结 v3 的 33 个用户工具逐项映射到 v4 工具、公开
 RPC 用例、最小权限、资源 scope、Plan/Apply、Operation 和错误族。A-026 已批准公开工具名
 作为正式 Schema 命名基线、`diagnostics.read` 与结构化错误方向；M-1 仍不修改 `specs/` 或实现。
 
-## 尚未关闭
+## 后续里程碑工作
 
 - MCP 工具合同的后续正式 Schema/快照与兼容别名策略实现。
 - MCP 客户端 OAuth scope 到 A-023 权限/Principal 的映射细节。

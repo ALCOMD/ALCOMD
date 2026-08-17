@@ -1,6 +1,6 @@
 # 冻结版本 vrc-get 细粒度行为审计
 
-状态：静态审计完成；黑盒、恶意输入、故障注入与跨平台实机验证待执行
+状态：静态参考审计完成；不对冻结实现继续执行攻击性黑盒
 
 审计提交：`14d73d018bdc90c5b005064eb10f8e9714fa8409`
 
@@ -101,7 +101,10 @@ ALCOMD CLI 不继承当前确认机制和输出缺口：必须统一支持 `--js
 | P2 | 同版本跨仓库来源可能受无序容器影响 | 冻结确定性来源优先级并做重复运行测试 |
 | P2 | legacy 删除错误只记录日志，可能部分成功且不可回滚 | ChangeSet 明示删除，失败进入事务恢复或结构化 partial result |
 
-## 必须执行的黑盒与差异测试
+## ALCOMD 实现必须覆盖的验收测试
+
+以下项目是从参考实现提取的 ALCOMD 防御性测试输入，不要求对冻结 vrc-get 本身重新执行
+攻击性黑盒、网络安全或故障注入。测试对象是后续 ALCOMD 独立实现：
 
 1. CLI help/alias/feature 快照、stdout/stderr/JSON/退出码和关闭 stdin 的超时测试。
 2. repository BOM/null/坏单包/key mismatch/ETag/部分失败/重复/等版本来源 Fixture。
@@ -113,9 +116,10 @@ ALCOMD CLI 不继承当前确认机制和输出缺口：必须统一支持 `--js
 8. symlink、junction、循环和特殊文件；三平台 Unity/路径/协议/更新差异。
 9. 错签名、错误资产、redirect、安装路径欺骗、跨设备和提权 helper 摘要错误。
 
-## 尚未确认
+## 静态风险参考边界
 
-- 包名路径穿越、同版本来源顺序、ZIP symlink 属性、Windows rename 覆盖语义、跨 origin
-  Authorization header 和完整 GUI 视觉流程均需独立 Fixture/黑盒验证。
+- 包名路径穿越、同版本来源顺序、ZIP symlink 属性、Windows rename 覆盖语义与跨 origin
+  Authorization header 只作为源码观察到的风险输入，不声称已经在冻结二进制中动态复现。
+  ALCOMD 不继承这些不确定行为，必须自行定义安全、确定且可测试的结果。
 - `RemovePackageErr::ConflictsWith` 在冻结源码未找到可观察构造路径，不能只凭枚举标记为功能。
 - 冻结仓库现有测试不足以证明事务、下载、ZIP、并发和崩溃安全；ALCOMD 必须建立自己的测试。
