@@ -292,6 +292,25 @@ fn check_workspace(
                 "{path} local dependencies differ: expected {expected:?}, found {actual_local_dependencies:?}"
             ));
         }
+
+        if *path == "crates/alcomd-domain" {
+            let actual_dependencies = manifest
+                .get("dependencies")
+                .and_then(toml::Value::as_table)
+                .map(|dependencies| {
+                    dependencies
+                        .keys()
+                        .map(String::as_str)
+                        .collect::<BTreeSet<_>>()
+                })
+                .unwrap_or_default();
+            let allowed_dependencies = ["serde", "uuid"].into_iter().collect::<BTreeSet<_>>();
+            if actual_dependencies != allowed_dependencies {
+                errors.push(format!(
+                    "{path} dependencies differ: expected {allowed_dependencies:?}, found {actual_dependencies:?}"
+                ));
+            }
+        }
     }
     Ok(())
 }

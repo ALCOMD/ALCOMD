@@ -394,14 +394,14 @@ id = "platform.release-matrix"
 title = "4.0.0 三个平台与四种主要发行格式"
 source = ["product-plan"]
 user_entry = ["Windows x86_64 Inno Setup EXE", "macOS arm64 DMG", "Linux x86_64 AppImage", "Linux amd64 DEB"]
-behavior = "三个发布平台与四种主要发行格式均为 4.0.0 blocker；Windows 当前用户/所有用户是同一 EXE 的两种模式，不是两个资产；辅助签名与 Manifest 不增加格式类别。A-025 已冻结 Windows 10 22H2/11 测试、Ubuntu 22.04 + GLIBC_2.35 符号上限、macOS arm64 deployment target 11.0；不增加旧系统主动拒绝门槛。"
+behavior = "三个发布平台与四种主要发行格式均为 4.0.0 blocker；Windows 当前用户/所有用户是同一 EXE 的两种模式，不是两个资产；辅助签名与 Manifest 不增加格式类别。A-025 已冻结 Windows 10 22H2/11 测试、Ubuntu 22.04 + GLIBC_2.35 符号上限、macOS arm64 deployment target 11.0；不增加旧系统主动拒绝门槛。M0 的 Windows Server hosted 编译不构成 Windows 客户端运行证据，真实 Win10/11 安装、启动、更新与卸载验证推迟到 M12。"
 implementation = "cargo xtask dist and distribution"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "not_started"
 evidence = ["docs/baselines/platforms.md", "docs/testing/release-matrix.md", "docs/decisions/accepted.md::A-017", "docs/decisions/accepted.md::A-024", "docs/decisions/accepted.md::A-025", "docs/adr/0015-platform-product-packaging.md"]
 coverage = ["toolchain locks", "three-platform build", "four full-product formats", "OS/runtime boundary", "install/upgrade/uninstall", "application integrity"]
-tests = ["platform.build-matrix", "platform.toolchain-locks", "platform.build.windows-x86_64", "platform.build.linux-x86_64", "platform.build.macos-aarch64", "platform.windows-webview2", "platform.linux-glibc-symbols", "platform.macos-deployment-unsigned", "distribution.full-product-staging", "distribution.version-coherence", "installer.matrix"]
+tests = ["platform.build-matrix", "platform.toolchain-locks", "platform.build.windows-x86_64", "platform.build.linux-x86_64", "platform.build.macos-aarch64", "platform.windows-client-runtime", "platform.windows-webview2", "platform.linux-glibc-symbols", "platform.macos-deployment-unsigned", "distribution.full-product-staging", "distribution.version-coherence", "installer.matrix"]
 
 [[feature]]
 id = "distribution.full-product"

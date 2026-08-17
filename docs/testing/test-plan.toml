@@ -1,7 +1,7 @@
 schema = 1
 
 [metadata]
-status_values = ["planned", "blocked", "implemented"]
+status_values = ["planned", "blocked", "deferred", "implemented"]
 
 [[test]]
 id = "identity.metadata"
@@ -16,7 +16,7 @@ id = "platform.build-matrix"
 stage = "M0"
 kind = "build"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
-status = "planned"
+status = "implemented"
 description = "使用固定工具链和锁文件执行 Rust、前端、Tauri 壳与无正式签名 GUI build。"
 
 [[test]]
@@ -24,8 +24,8 @@ id = "architecture.dependency-direction"
 stage = "M0"
 kind = "architecture"
 platforms = ["all"]
-status = "planned"
-description = "拒绝 Domain 对传输、存储、Tauri、MCP 与 OS API 的依赖，并拒绝入口绕过 application。"
+status = "implemented"
+description = "将 Domain 的直接依赖固定为 serde/uuid，拒绝本地 crate 越层依赖，并要求入口使用已批准的 application/client 边界。"
 
 [[test]]
 id = "daemon.single-writer"
@@ -360,7 +360,7 @@ id = "platform.toolchain-locks"
 stage = "M0"
 kind = "reproducibility"
 platforms = ["all"]
-status = "planned"
+status = "implemented"
 description = "强制 Rust 1.97.1、Node 24、npm ci、Cargo --locked 与构建后 lockfile 无漂移。"
 
 [[test]]
@@ -368,15 +368,15 @@ id = "platform.build.windows-x86_64"
 stage = "M0"
 kind = "build"
 platforms = ["windows-x86_64"]
-status = "planned"
-description = "覆盖 Windows 10 22H2 与 Windows 11，完成全 Workspace、独立扩展、前端与 alcomd-gui Tauri --no-bundle 构建；不主动阻止更旧系统，不生成完整产品。"
+status = "implemented"
+description = "在 Windows Server 2025 hosted runner 完成全 Workspace、独立扩展、前端与 alcomd-gui Tauri --no-bundle 构建；该项只提供 Windows x86_64 编译证据，不代表 Windows 10/11 客户端运行验证。"
 
 [[test]]
 id = "platform.build.linux-x86_64"
 stage = "M0"
 kind = "build"
 platforms = ["linux-x86_64"]
-status = "planned"
+status = "implemented"
 description = "在 Ubuntu 22.04 x86_64 安装 GUI 原生依赖，完成 Workspace、扩展、前端与 GUI 构建，并断言发行二进制最高所需 glibc 符号不超过 GLIBC_2.35。"
 
 [[test]]
@@ -384,8 +384,16 @@ id = "platform.build.macos-aarch64"
 stage = "M0"
 kind = "build"
 platforms = ["macos-aarch64"]
-status = "planned"
+status = "implemented"
 description = "在原生 Apple Silicon runner 以 MACOSX_DEPLOYMENT_TARGET=11.0 完成 Workspace、扩展、前端与 GUI 构建；不增加应用级旧系统门槛，不生成完整产品。"
+
+[[test]]
+id = "platform.windows-client-runtime"
+stage = "M12"
+kind = "system"
+platforms = ["windows-x86_64"]
+status = "deferred"
+description = "在 Windows 10 22H2 与 Windows 11 真实客户端安装并启动完整产品，验证 WebView2 渲染、托盘、注册表、用户数据路径、更新器、安装器、升级和卸载；M0 的 Windows Server hosted 与本机构建不能替代本项。"
 
 [[test]]
 id = "platform.windows-webview2"

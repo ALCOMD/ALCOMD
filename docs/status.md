@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M0：仓库骨架、身份与 CI（执行中；等待五个目标平台 CI 的真实通过证据）`
+`M0：仓库骨架、身份与 CI（完成；停止在 M1 之前等待人工验收）`
 
 ## 已完成
 
@@ -63,11 +63,12 @@
 - PowerShell/Bash setup/check/test 已对齐：Node 安装使用 `npm ci`，Cargo 构建/Clippy/test 使用
   `--locked`，完整 Workspace 不再排除 GUI，独立 Discord backend 增加 test gate，命令执行
   前后校验根 `Cargo.lock`、根 `package-lock.json` 与 Discord backend `Cargo.lock` 摘要。
-- 跨平台 CI 已按批准方案配置：`windows-2025`、`ubuntu-22.04`、Apple Silicon `macos-15`
-  hosted job，以及仅允许 `main` 显式 dispatch 的 Windows 10 22H2/Windows 11 self-hosted job；
-  所有 job 固定 Rust 1.97.1、Node.js 24、Python 3.11 与 action commit。
+- 跨平台 CI 已按批准方案配置并实际通过：`windows-2025`、`ubuntu-22.04`、Apple Silicon
+  `macos-15` hosted job；所有 job 固定 Rust 1.97.1、Node.js 24、Python 3.11 与 action commit。
 - Linux job 安装含 `libgtk-3-dev` 的 Tauri 前提并执行 GLIBC 符号上限检查；macOS job 检查
-  arm64 与实际最低部署版本；Windows 客户端 job 检查 ProductType 与 build。
+  arm64 与实际最低部署版本。GitHub Actions run `32056593208` 在提交
+  `8a6f2968bdf4212a7a98f0ea55d93cc291883e87` 上通过：Linux 实测最高 `GLIBC_2.34`，九个
+  macOS Mach-O 均为 arm64 / minos 11.0，三平台三锁文件 gate 均通过。
 - Windows 本机已通过 setup、完整 check/test、Git Bash 语法检查和 Tauri
   `build --no-bundle`；该结果只证明 GUI 子应用可构建，不是完整产品发行验证。
 
@@ -88,9 +89,10 @@
 
 ## 当前阻塞与缺口
 
-- M0 的三个 hosted job 与两个 Windows 客户端 self-hosted job 尚未取得当前变更的实际通过
-  记录；仅创建 workflow 不满足验收。Windows runner 还需由所有者准备无 Secrets 的干净
-  checkpoint 并在每次测试后恢复。在五项证据齐全前 M0 保持进行中，不得进入 M1。
+- Windows 10 22H2 与 Windows 11 仍是正式目标支持平台，但真实客户端运行验证尚未完成，
+  不得记为通过。项目所有者已将仅重复编译的 M0 self-hosted job 取消，并把验证 deferred 到
+  M12：届时必须安装并启动完整产品，覆盖 WebView2 渲染、托盘、注册表、用户数据路径、
+  更新器、安装器、升级与卸载。
 - GitHub 已宣布 `ubuntu-22.04` hosted runner 从 2026-09-17 开始弃用并于 2027-04-17 退役；
   当前 M0 仍使用该构建基线，未来替代不能直接用 Ubuntu 24.04 冒充 Ubuntu 22.04 /
   `GLIBC_2.35` 等价验证。
@@ -113,6 +115,6 @@
 
 ## 下一停止点
 
-下一步是本地验收 CI 配置并取得 Windows Server 2025、Ubuntu 22.04、macOS 15 arm64、
-Windows 10 22H2 与 Windows 11 五个 job 的真实通过记录。全部通过前不完成 M0，也不得进入
-M1；迁移删除、永久 Windows AppId/GUID、安装器与 `cargo xtask dist` 仍不在 M0 授权范围内。
+M0 已完成并停止。下一步只能在项目所有者人工验收并明确批准后开始 M1；当前不得实施 M1。
+Windows 客户端运行验证留在 M12，迁移删除、永久 Windows AppId/GUID、安装器与
+`cargo xtask dist` 仍不在当前授权范围内。

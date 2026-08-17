@@ -93,6 +93,9 @@ docs/exec-plans/M12-full-product-distribution.md
    应用级门槛；WebView2 Evergreen 覆盖在线 Bootstrapper 与离线 Standalone Installer。
 7. 当前不要求 Authenticode；测试必须覆盖未签名安装器的下载、SmartScreen 提示、启动和
    应用层更新验签。
+8. M0 的 Windows Server hosted 与开发机 compile-only 结果不属于客户端运行证据；在 Win10
+   22H2/Win11 实际安装并启动完整产品，验证 WebView2 渲染、托盘、注册表、用户数据路径、
+   更新、升级和卸载后，才可关闭 `platform.windows-client-runtime` deferred 项。
 
 ### 3. macOS DMG
 

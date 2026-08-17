@@ -1,6 +1,6 @@
 # M0：仓库骨架、身份与 CI
 
-状态：执行中；CI 实施已获批准，等待三平台 hosted 与两台 Windows 客户端真实验证
+状态：完成；三个 hosted 平台构建已通过，Windows 客户端运行验证 deferred 到 M12
 
 ## 目标
 
@@ -25,8 +25,10 @@ crate/app 边界和 CI，所有占位程序能够构建，但不实现 M1 RPC �
 - 平台构建前提和当前 CI 缺口以 `docs/baselines/platforms.md` 为准。
 - M-1 必须已经完成并获得项目所有者人工批准；不得从 M-1 自动进入本计划。
 - A-017/A-024/A-025 已批准三个发布平台、四种主要格式、独立全产品发行模型与平台技术
-  基线；M0 必须按 Windows 10 22H2/Windows 11、Ubuntu 22.04 + `GLIBC_2.35` 符号上限、
-  macOS arm64 deployment target 11.0 配置验证。
+  基线。M0 在 Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 hosted runner 验证跨平台
+  构建；Windows 10 22H2/Windows 11 继续是目标支持和正式发行测试范围，但 M0 不把重复编译
+  当作客户端运行证据。真实客户端安装、启动、WebView2、数据路径、更新和卸载验证 deferred
+  到 M12。
 
 ## 影响范围
 
@@ -129,9 +131,13 @@ python/python3 scripts/validate-metadata.py
 
 ## 验收标准
 
-- 所有已批准平台的 CI 必须通过，且任务使用固定 action commit 和最小权限。
-- Windows 正式验证覆盖 Windows 10 22H2 与 Windows 11；Linux 构建使用 Ubuntu 22.04 并检查
-  产物最高所需 glibc 符号不超过 `GLIBC_2.35`；macOS arm64 固定 deployment target 11.0。
+- Windows Server 2025、Ubuntu 22.04 和 macOS 15 arm64 hosted CI 必须通过，且任务使用固定
+  action commit 和最小权限。Windows hosted 结果只证明 Windows x86_64 编译，不证明
+  Windows 10/11 客户端运行兼容性。
+- Linux 构建使用 Ubuntu 22.04 并检查产物最高所需 glibc 符号不超过 `GLIBC_2.35`；macOS
+  arm64 固定 deployment target 11.0 并检查实际 Mach-O。
+- Windows 10 22H2 与 Windows 11 仍是目标支持平台；两者真实客户端安装、启动、WebView2
+  渲染、托盘、注册表、用户数据路径、更新与卸载验证在 M12 完成，当前明确未验证。
 - 平台产物门禁要求 `alcomd`、`alcomd-api`、`alcomd-bootstrap`、`alcomd-cli`、
   `alcomd-extension-host`、`alcomd-gui`、`alcomd-mcp`、`alcomd-migrate-v3` 与
   `alcomd-updater` 全部存在；Linux 扫描这些 ELF，macOS 用 file/lipo/otool 检查这些 Mach-O。
@@ -157,6 +163,8 @@ python/python3 scripts/validate-metadata.py
   手工拼接锁文件。
 - 身份扫描可能误报迁移目录中的合法 v3 证据；扫描规则必须区分生产范围与
   `migrations/v3/`，不得放宽生产范围限制。
+- M0 没有 Windows 10/11 真实客户端运行证据；Windows Server hosted 与开发机编译不能覆盖
+  WebView2 渲染、系统集成、安装、更新或卸载风险，这些验证已明确 deferred 到 M12。
 - M0 尚无用户数据或公共协议迁移，回滚应只恢复本里程碑文件，不修改 Git 历史或远端。
 
 ## 进度日志
@@ -179,13 +187,19 @@ python/python3 scripts/validate-metadata.py
 - 2026-08-18：本地 CI 实施与静态核验完成；Windows 开发机再次通过 setup/check/test、九个
   release binary build、Tauri `--no-bundle`、冻结基线、xtask、元数据与 diff 检查；三锁文件
   PowerShell/Bash 摘要均覆盖三项。该结果不替代 hosted 或 Windows 客户端 CI。
-- 当前停止点：M0 仍须取得三个 hosted job、Windows 10
-  22H2 与 Windows 11 self-hosted job 的实际通过证据。任何 job 未实际通过时均不得完成 M0。
+- 2026-08-18：GitHub Actions run `32056593208` 在提交
+  `8a6f2968bdf4212a7a98f0ea55d93cc291883e87` 上通过全部三个 hosted job：Windows Server
+  2025、Ubuntu 22.04 与 macOS 15 arm64；Linux 最高为 `GLIBC_2.34`，九个 macOS Mach-O 均为
+  arm64 / minos 11.0，三平台三锁文件 gate 均通过。
+- 2026-08-18：项目所有者调整 M0 验收范围，移除只重复编译的 Win10/Win11 self-hosted
+  blocker；两项不得记为通过，改为 deferred 到 M12 的真实客户端发行验收。M0 据三个 hosted
+  job 与完整本地校验完成，停止在 M1 之前。
+- 2026-08-18：v3 仓库归档重命名导致 GitHub API 返回的 Release URL 漂移，但 Release/asset
+  ID、大小和 SHA-256 未变；冻结脚本改为继续输出冻结时的原始稳定 URL，并保持实时身份与
+  摘要校验，避免仅因仓库重命名重写 M-1 快照。
 
 ## 人工审批点
 
 - 开始 M0 前：项目所有者批准 M-1 功能基线、证据和迁移清单。
 - 调整跨平台 CI 前：复核 A-025 的 runner/镜像实现不会把测试范围误写成主动 OS 拒绝逻辑。
-- 运行 Windows 客户端 CI 前：runner 只响应 `main` 的显式 dispatch，不持有项目 Secrets，
-  使用最小权限；每次测试后由 runner 所有者恢复干净 checkpoint。
 - M0 完成后：项目所有者审查身份、依赖图、CI 与变更范围；批准前不得进入 M1。

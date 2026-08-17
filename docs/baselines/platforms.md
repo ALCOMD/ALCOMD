@@ -62,11 +62,15 @@ Linux 安装含 `libgtk-3-dev` 的 Tauri 前提并扫描预期 M0 ELF 的 GLIBC 
 `MACOSX_DEPLOYMENT_TARGET=11.0` 并使用 file/lipo/otool 检查实际产物。`windows-2025` 只是
 Windows Server 编译证据，不代表 Windows 10/11 客户端兼容性。
 
-`.github/workflows/windows-client.yml` 仅允许 `main` 的 `workflow_dispatch`，使用无项目 Secrets、
-最小权限的专用 self-hosted runner；分别要求 Windows 10 22H2 ProductType 1/build 19045 与
-Windows 11 ProductType 1/build >= 22000，并执行同一完整检查面。runner 所有者必须在任务后
-恢复干净 checkpoint。当前这些工作流尚未取得本提交的真实通过记录，因此 M0 仍在执行中，
-也不能据此声称三平台发行就绪。
+GitHub Actions run `32056593208` 已在提交 `8a6f2968bdf4212a7a98f0ea55d93cc291883e87`
+实际通过三个 hosted job：Linux 最高 `GLIBC_2.34`，九个 macOS Mach-O 均为 arm64 / minos
+11.0，三平台三锁文件 gate 均通过。`windows-2025` 仍只提供 Windows Server 编译证据，不能
+据此声称 Windows 10/11 客户端兼容或三平台发行就绪。
+
+原 M0 Windows 10/11 self-hosted workflow 只重复编译且不启动或安装应用，已从 M0 验收删除。
+Windows 10 22H2 与 Windows 11 继续是目标支持平台，但真实客户端运行状态为 deferred、尚未
+通过；M12 必须以完整产品验证安装、启动、WebView2 渲染、托盘、注册表、用户数据路径、更新、
+升级与卸载，而不是再次用 compile-only job 代替。
 
 ## M0 建议验证矩阵
 
@@ -75,7 +79,8 @@ M0 只验证骨架，不生成或发布正式签名资产：
 1. 所有平台运行元数据、格式、全 Workspace Clippy/test、独立 Discord backend test 与前端
    check/build；Cargo 命令使用 `--locked`，最终证明根 Cargo、根 npm 与 Discord backend
    三份 lockfile 未改变。
-2. Windows x64 运行 `alcomd-gui` 的完整 Tauri `build --no-bundle`，不能只做 `cargo check`。
+2. Windows Server 2025 hosted 运行 `alcomd-gui` 的完整 Tauri `build --no-bundle`，不能只做
+   `cargo check`；该项只验证 Windows x86_64 编译。
 3. Ubuntu x64 安装 GUI 所需 Tauri 系统依赖后运行 `alcomd-gui` 的 `build --no-bundle`。
 4. macOS arm64 使用显式原生 runner/target 和 deployment target 11.0 运行 `alcomd-gui` 的
    `build --no-bundle`；若配额不允许，必须记录替代的真实机器验证证据，不能静默跳过。

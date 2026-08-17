@@ -45,6 +45,10 @@ Windows 正式测试 Windows 10 22H2 与 Windows 11，不增加主动拒绝更�
 WebView2 Evergreen Runtime 必须覆盖已安装、缺失后在线 Bootstrapper、离线 Standalone
 Installer、安装取消与失败恢复。
 
+M0 的 Windows Server 2025 hosted 与开发机编译不构成上述客户端运行证据。Windows 10 22H2
+与 Windows 11 的状态仍为 deferred、尚未通过；验证归属 M12，必须使用完整产品覆盖实际安装、
+启动、WebView2 渲染、托盘、注册表、用户数据路径、更新、升级和卸载，不能只重复编译。
+
 ## macOS 安装与 CLI
 
 - DMG 中的 `ALCOMD.app` 必须包含目标平台所需的完整产品组件，所有 arm64 产物使用

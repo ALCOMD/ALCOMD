@@ -11,6 +11,7 @@ $ErrorActionPreference = "Stop"
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $v3Repository = "https://github.com/ALCOMD/ALCOMD3.git"
 $v3RepositoryIdentity = "alcomd/alcomd3"
+$v3WebRepository = $v3Repository -replace '\.git$', ''
 $v3RemoteRefAtFreeze = "refs/heads/main"
 $vrcGetRepository = "https://github.com/vrc-get/vrc-get.git"
 $vrcGetRepositoryIdentity = "vrc-get/vrc-get"
@@ -349,7 +350,7 @@ function Get-FrozenReleaseAsset {
         Name = [string]$asset.name
         Size = [long]$asset.size
         Sha256 = [string]$Matches.hash
-        Url = [string]$asset.browser_download_url
+        Url = "$v3WebRepository/releases/download/$migrationTag/$Name"
     }
 }
 
@@ -648,7 +649,7 @@ foreach ($line in @(
     "release_id = $(Format-InvariantInteger ([long]$release.id))",
     "release_tag = `"$migrationTag`"",
     "release_commit = `"$(ConvertTo-TomlString $remoteMigrationCommit)`"",
-    "release_url = `"$(ConvertTo-TomlString ([string]$release.html_url))`"",
+    "release_url = `"$(ConvertTo-TomlString "$v3WebRepository/releases/tag/$migrationTag")`"",
     "release_api_url = `"$(ConvertTo-TomlString $releaseApiUrl)`"",
     "release_published_at = `"$publishedAt`"",
     "release_immutable = $releaseImmutable",
