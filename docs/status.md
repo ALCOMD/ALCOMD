@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M0：仓库骨架、身份与 CI（完成；停止在 M1 之前等待人工验收）`
+`M1：规划阶段（ExecPlan 草案等待人工审批；生产实现未开始）`
 
 ## 已完成
 
@@ -71,6 +71,11 @@
   macOS Mach-O 均为 arm64 / minos 11.0，三平台三锁文件 gate 均通过。
 - Windows 本机已通过 setup、完整 check/test、Git Bash 语法检查和 Tauri
   `build --no-bundle`；该结果只证明 GUI 子应用可构建，不是完整产品发行验证。
+- M0 最终提交 `8112415f1dae0dc6f521d5cc3a2c980baac3b408` 已通过 GitHub Actions run
+  `32066209115`：Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 三个 hosted job
+  全部成功；项目所有者已确认 M0 最终验收通过。
+- 已创建 `docs/exec-plans/M1-core-rpc-status.md` 草案。当前只规划每用户单实例核心、本地 RPC
+  握手与 CLI `system status` 的最小只读垂直切片；没有开始 M1 生产代码、Schema 或依赖修改。
 
 ## 后续里程碑尚未完成
 
@@ -88,6 +93,9 @@
 - 安装器、签名与发布。
 
 ## 当前阻塞与缺口
+
+- M1 ExecPlan 尚待项目所有者审批；RPC v1 线合同、IPC 端点与访问控制、单实例/按需启动策略
+  及任何新增生产依赖都必须先获批准。当前 `specs/rpc` 仍是 Draft，不能视为最终 ABI。
 
 - Windows 10 22H2 与 Windows 11 仍是正式目标支持平台，但真实客户端运行验证尚未完成，
   不得记为通过。项目所有者已将仅重复编译的 M0 self-hosted job 取消，并把验证 deferred 到
@@ -115,6 +123,7 @@
 
 ## 下一停止点
 
-M0 已完成并停止。下一步只能在项目所有者人工验收并明确批准后开始 M1；当前不得实施 M1。
-Windows 客户端运行验证留在 M12，迁移删除、永久 Windows AppId/GUID、安装器与
-`cargo xtask dist` 仍不在当前授权范围内。
+M0 已完成并通过最终人工验收。当前停止在 M1 规划审批点；项目所有者批准
+`docs/exec-plans/M1-core-rpc-status.md` 及其中技术决策前不得实施 M1。Windows 客户端运行验证
+留在 M12，迁移删除、永久 Windows AppId/GUID、安装器与 `cargo xtask dist` 仍不在当前授权
+范围内。
