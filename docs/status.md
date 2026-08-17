@@ -49,7 +49,8 @@
 
 ## 尚未完成
 
-- v3.4.0 真实安装快照、脱敏迁移 Fixture 和 GUI 冻结截图/流程。
+- v3.4.0 完整安装后快照、脱敏迁移 Fixture 和 GUI 冻结截图/流程已由项目所有者明确后移到
+  M11；M-1 仅保留 VM 操作报告，不把它升级为实例证据或删除授权。
 - MCP 33 个 v3 用例到 v4 工具 Schema、权限、错误与 Operation 输入/审批的逐项合同。
 - vrc-get 高风险静态推断的独立黑盒确认，包括包 ID 路径穿越、同版本来源 tie、ZIP 链接、
   Windows atomic replace 与跨 origin Authorization redirect。
@@ -64,8 +65,9 @@
 
 ## 当前阻塞与缺口
 
-- 真实安装快照和迁移 Fixture 尚未建立；因此 artifact 模板不能升级成实例删除授权，迁移、
-  GUI、模板、备份与 Unity 的差异测试仍 blocked。
+- 真实安装快照和迁移 Fixture 尚未建立；因此 artifact 模板继续保持 `confirmed = false`，
+  迁移删除、GUI/模板/备份/Unity 差异测试仍 blocked。项目所有者已决定不在 M-1 继续投入
+  合成状态与安装后采集，完整证据后移到 M11；这不再阻塞 M-1 的其余静态审计收尾。
 - v4 bridge 尚无版本/tag/资产、handoff、journal、恢复源、Health Check、Commit marker、DEB
   交接和 rollout 设计。M-1 已冻结输入与失败契约；实现/发布属于 M11，不能在本阶段伪造。
 - A-017 至 A-025 已批准发布平台范围、Local API/SDK 后置、第一方扩展默认状态、GUI 等价
@@ -81,8 +83,8 @@
 
 ## 下一停止点
 
-平台技术基线关闭后，下一项是从隔离 VM 采集 v3.4.0 真实安装快照；在首个脱敏 Fixture
-通过人工复核前，不授权任何迁移删除。MCP 逐工具合同和迁移删除实例授权仍未完成。
+VM 采集已按项目所有者决定停止，且未授予任何迁移删除权限。M-1 下一项转为补齐 MCP 逐工具
+合同与 vrc-get 高风险静态推断的黑盒边界；迁移实例证据留在 M11。
 `feature-parity.toml` 保持
 `m1_complete = false`，不得进入 M0；安装器与 `xtask dist` 只能在后续独立 M12 ExecPlan
 获批后实现。

@@ -19,7 +19,8 @@
 - `docs/decisions/open.md`
 - `../ALCOMD3-v3-readonly`
 - `../vrc-get-readonly`（仅用于可复现的行为基线，不是代码上游）
-- 真实 v3 安装快照与脱敏 Fixture
+- 真实 v3 安装快照与脱敏 Fixture（缺失时保持 artifact `confirmed = false` 并后移到 M11，
+  不得为完成 M-1 伪造或放宽删除授权）
 - 公开 VPM 格式、生态兼容要求与脱敏项目 Fixture
 
 ## 允许修改
