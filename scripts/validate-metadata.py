@@ -174,7 +174,7 @@ def main() -> int:
     require(len(artifact_ids) == len(set(artifact_ids)), "Duplicate migration artifact IDs")
 
     source_lock = load_toml("docs/baselines/source-lock.toml")
-    require(source_lock["schema"] == 4, "Unsupported source lock schema")
+    require(source_lock["schema"] == 5, "Unsupported source lock schema")
     require(source_lock["frozen"] is True, "Source/spec inputs are not frozen")
 
     for section_name in [
@@ -225,7 +225,21 @@ def main() -> int:
         require(section["remote_verified"] is True, f"Remote is unverified: {section_name}")
         require(section["tags_complete"] is True, f"Tags are incomplete: {section_name}")
         require(section["shallow"] is False, f"Shallow source is forbidden: {section_name}")
-        require(section["remote_ref"].startswith("refs/heads/"), f"Invalid remote ref: {section_name}")
+        require(
+            section["remote_ref_at_freeze"].startswith("refs/heads/"),
+            f"Invalid frozen remote ref: {section_name}",
+        )
+        expected_identity = (
+            section["repository"]
+            .removeprefix("https://github.com/")
+            .removesuffix(".git")
+            .lower()
+        )
+        require(
+            section["commit_api_url"]
+            == f"https://api.github.com/repos/{expected_identity}/commits/{section['commit']}",
+            f"Invalid commit API evidence: {section_name}",
+        )
 
     for field_name in ["version_manifest_blob_sha1"]:
         require(

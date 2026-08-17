@@ -11,8 +11,10 @@ $ErrorActionPreference = "Stop"
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $v3Repository = "https://github.com/ALCOMD/ALCOMD3.git"
 $v3RepositoryIdentity = "alcomd/alcomd3"
+$v3RemoteRefAtFreeze = "refs/heads/main"
 $vrcGetRepository = "https://github.com/vrc-get/vrc-get.git"
 $vrcGetRepositoryIdentity = "vrc-get/vrc-get"
+$vrcGetRemoteRefAtFreeze = "refs/heads/master"
 $migrationTag = "v3.4.0"
 $migrationVersion = "3.4.0"
 $mcpSpecification = "2026-07-28"
@@ -238,31 +240,19 @@ function Get-RemoteTagCommit {
     throw "Remote tag not found: $Tag"
 }
 
-function Get-RemoteBranchForCommit {
+function Assert-RemoteRefExists {
     param(
         [Parameter(Mandatory = $true)]
         [hashtable]$RemoteRefs,
         [Parameter(Mandatory = $true)]
-        [string]$Commit,
-        [string]$PreferredRef
+        [string]$Name,
+        [Parameter(Mandatory = $true)]
+        [string]$Ref
     )
 
-    if ($PreferredRef -and
-        $RemoteRefs.ContainsKey($PreferredRef) -and
-        $RemoteRefs[$PreferredRef] -eq $Commit) {
-        return $PreferredRef
+    if (-not $RemoteRefs.ContainsKey($Ref)) {
+        throw "$Name remote ref does not exist: $Ref"
     }
-
-    $matches = @(
-        $RemoteRefs.GetEnumerator() |
-            Where-Object { $_.Key.StartsWith("refs/heads/") -and $_.Value -eq $Commit } |
-            ForEach-Object { $_.Key } |
-            Sort-Object
-    )
-    if ($matches.Count -eq 0) {
-        throw "Commit $Commit is not the tip of any branch in the declared remote"
-    }
-    return $matches[0]
 }
 
 function Get-FileTextAtRef {
@@ -363,6 +353,27 @@ function Get-FrozenReleaseAsset {
     }
 }
 
+function Get-VerifiedGitHubCommitApiUrl {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepositoryIdentity,
+        [Parameter(Mandatory = $true)]
+        [string]$Commit,
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Headers,
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    $url = "https://api.github.com/repos/$RepositoryIdentity/commits/$Commit"
+    $metadata = Invoke-RestMethod -Headers $Headers -Uri $url
+    if ($metadata.sha -ne $Commit) {
+        throw "$Name commit identity mismatch"
+    }
+
+    return $url
+}
+
 function ConvertTo-TomlString {
     param(
         [Parameter(Mandatory = $true)]
@@ -404,8 +415,12 @@ Assert-DeclaredRemote -RepositoryPath $resolvedVrcGetPath -Name "vrc-get" -Expec
 
 $v3RemoteRefs = Get-RemoteRefs -RepositoryPath $resolvedV3Path -RepositoryUrl $v3Repository
 $vrcGetRemoteRefs = Get-RemoteRefs -RepositoryPath $resolvedVrcGetPath -RepositoryUrl $vrcGetRepository
-Assert-CompleteTags -RepositoryPath $resolvedV3Path -Name "ALCOMD3 v3" -RemoteRefs $v3RemoteRefs
-Assert-CompleteTags -RepositoryPath $resolvedVrcGetPath -Name "vrc-get" -RemoteRefs $vrcGetRemoteRefs
+if (-not $Check) {
+    Assert-CompleteTags -RepositoryPath $resolvedV3Path -Name "ALCOMD3 v3" -RemoteRefs $v3RemoteRefs
+    Assert-CompleteTags -RepositoryPath $resolvedVrcGetPath -Name "vrc-get" -RemoteRefs $vrcGetRemoteRefs
+    Assert-RemoteRefExists -RemoteRefs $v3RemoteRefs -Name "ALCOMD3 v3" -Ref $v3RemoteRefAtFreeze
+    Assert-RemoteRefExists -RemoteRefs $vrcGetRemoteRefs -Name "vrc-get" -Ref $vrcGetRemoteRefAtFreeze
+}
 
 $v3AuditCommit = Invoke-Git -RepositoryPath $resolvedV3Path -Arguments @("rev-parse", "HEAD^{commit}")
 $migrationCommit = Invoke-Git -RepositoryPath $resolvedV3Path -Arguments @(
@@ -427,7 +442,6 @@ $v3AuditTags = @(
 if ($migrationTag -notin $v3AuditTags) {
     throw "ALCOMD3 audit HEAD is not tagged $migrationTag"
 }
-$v3RemoteRef = Get-RemoteBranchForCommit -RemoteRefs $v3RemoteRefs -Commit $v3AuditCommit -PreferredRef "refs/heads/main"
 $v3AuditVersion = Get-VersionAtRef -RepositoryPath $resolvedV3Path -Ref $v3AuditCommit -ManifestPath "Cargo.toml"
 $lockedMigrationVersion = Get-VersionAtRef -RepositoryPath $resolvedV3Path -Ref $migrationCommit -ManifestPath "Cargo.toml"
 if ($v3AuditVersion -ne $migrationVersion -or $lockedMigrationVersion -ne $migrationVersion) {
@@ -468,11 +482,16 @@ $githubHeaders = @{
     "X-GitHub-Api-Version" = "2026-03-10"
     "User-Agent" = "ALCOMD-baseline-freezer"
 }
-$mcpCommitApiUrl = "https://api.github.com/repos/$mcpRepositoryIdentity/commits/$mcpCommit"
-$mcpCommitMetadata = Invoke-RestMethod -Headers $githubHeaders -Uri $mcpCommitApiUrl
-if ($mcpCommitMetadata.sha -ne $mcpCommit) {
-    throw "MCP specification commit identity mismatch"
-}
+$v3CommitApiUrl = Get-VerifiedGitHubCommitApiUrl `
+    -RepositoryIdentity $v3RepositoryIdentity `
+    -Commit $v3AuditCommit `
+    -Headers $githubHeaders `
+    -Name "ALCOMD3 v3"
+$mcpCommitApiUrl = Get-VerifiedGitHubCommitApiUrl `
+    -RepositoryIdentity $mcpRepositoryIdentity `
+    -Commit $mcpCommit `
+    -Headers $githubHeaders `
+    -Name "MCP specification"
 $mcpSchemaApiUrl = "https://api.github.com/repos/$mcpRepositoryIdentity/contents/$mcpSchemaPath`?ref=$mcpCommit"
 $mcpSchemaMetadata = Invoke-RestMethod -Headers $githubHeaders -Uri $mcpSchemaApiUrl
 if ($mcpSchemaMetadata.type -ne "file" -or $mcpSchemaMetadata.sha -notmatch '^[0-9a-f]{40}$') {
@@ -552,7 +571,11 @@ $updaterAssets = @($updaterAssets | Sort-Object Platform)
 $installerAssets = @($installerAssets | Sort-Object Platform, ConfigId, { $_.Asset.Name })
 
 $vrcGetCommit = Invoke-Git -RepositoryPath $resolvedVrcGetPath -Arguments @("rev-parse", "HEAD^{commit}")
-$vrcGetRemoteRef = Get-RemoteBranchForCommit -RemoteRefs $vrcGetRemoteRefs -Commit $vrcGetCommit -PreferredRef "refs/heads/master"
+$vrcGetCommitApiUrl = Get-VerifiedGitHubCommitApiUrl `
+    -RepositoryIdentity $vrcGetRepositoryIdentity `
+    -Commit $vrcGetCommit `
+    -Headers $githubHeaders `
+    -Name "vrc-get"
 $vrcGetExactTags = @(
     (Invoke-Git -RepositoryPath $resolvedVrcGetPath -Arguments @("tag", "--points-at", "HEAD")) -split "`n" |
         Where-Object { $_ } |
@@ -589,13 +612,14 @@ $lines = [System.Collections.Generic.List[string]]::new()
 foreach ($line in @(
     "# Generated by scripts/freeze-baselines.ps1. Do not edit manually.",
     "# frozen = true covers source, specification, and release-asset snapshots only; it does not mean M-1 is complete.",
-    "schema = 4",
+    "schema = 5",
     "frozen = true",
     "",
     "[alcomd3_v3_audit_source]",
     "repository = `"$(ConvertTo-TomlString $v3Repository)`"",
     "commit = `"$(ConvertTo-TomlString $v3AuditCommit)`"",
-    "remote_ref = `"$(ConvertTo-TomlString $v3RemoteRef)`"",
+    "remote_ref_at_freeze = `"$(ConvertTo-TomlString $v3RemoteRefAtFreeze)`"",
+    "commit_api_url = `"$(ConvertTo-TomlString $v3CommitApiUrl)`"",
     "tag = `"$migrationTag`"",
     "tag_commit = `"$(ConvertTo-TomlString $remoteMigrationCommit)`"",
     "version = `"$(ConvertTo-TomlString $v3AuditVersion)`"",
@@ -676,7 +700,8 @@ foreach ($line in @(
     "[vrc_get_function_behavior]",
     "repository = `"$(ConvertTo-TomlString $vrcGetRepository)`"",
     "commit = `"$(ConvertTo-TomlString $vrcGetCommit)`"",
-    "remote_ref = `"$(ConvertTo-TomlString $vrcGetRemoteRef)`"",
+    "remote_ref_at_freeze = `"$(ConvertTo-TomlString $vrcGetRemoteRefAtFreeze)`"",
+    "commit_api_url = `"$(ConvertTo-TomlString $vrcGetCommitApiUrl)`"",
     "exact_tag = $vrcExactTag",
     "exact_tags = $(ConvertTo-TomlStringArray $vrcGetExactTags)",
     "cli_describe = `"$(ConvertTo-TomlString $vrcGetCliDescribe)`"",

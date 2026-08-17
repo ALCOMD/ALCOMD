@@ -315,8 +315,8 @@ implementation = "specs/mcp/toolset-v1.md"
 release_class = "release_blocker"
 status = "in_progress"
 implementation_status = "not_started"
-evidence = ["docs/baselines/alcomd3-v3-audit.md::MCP", "specs/mcp/toolset-v1.md"]
-coverage = ["tool-by-tool use case", "input/output", "permission", "error", "operation"]
+evidence = ["docs/baselines/alcomd3-v3-audit.md::MCP", "docs/baselines/mcp-tool-contract.md", "docs/decisions/accepted.md::A-026", "specs/mcp/toolset-v1.md"]
+coverage = ["33 numbered v3 use cases", "input/output families", "minimum permission and resource scope", "stable error families", "Plan/Apply", "Operation input/approval/resume/cancel"]
 tests = ["mcp.tool-parity", "mcp.operation-input"]
 
 [[feature]]

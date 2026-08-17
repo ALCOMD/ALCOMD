@@ -5,8 +5,9 @@
 ## 定位
 
 vrc-get 是 ALCOMD v4 必须覆盖的功能与行为对照基线之一，但不是代码上游。
-`source-lock.toml` 中固定的 commit、版本和 describe 值用于确保功能审计、黑盒行为观察、
-安全测试与差异测试可复现。ALCOMD 不直接依赖、复制、Fork、包装、移植或改写
+`source-lock.toml` 中固定的 commit、冻结时分支上下文、commit API 证据、版本和 describe
+值用于确保功能审计、黑盒行为观察、安全测试与差异测试可复现。ALCOMD 不直接依赖、复制、
+Fork、包装、移植或改写
 vrc-get / vrc-get-vpm 源码，所有生产实现必须独立完成。
 
 vrc-get 基线与 `vpm-ecosystem.md` 分工如下：

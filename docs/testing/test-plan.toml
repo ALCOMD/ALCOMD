@@ -201,7 +201,7 @@ stage = "M8"
 kind = "differential"
 platforms = ["all"]
 status = "blocked"
-description = "逐项覆盖 v3 MCP 用户工具的参数、权限、计划、错误与 ALCOMD Operation 映射。"
+description = "以 docs/baselines/mcp-tool-contract.md 的 33 个编号为稳定 case ID，逐项覆盖参数、Schema、最小权限与资源 scope、计划、稳定错误码、幂等、revision 和 ALCOMD Operation 映射；命名、diagnostics.read 与错误方向由 A-026 批准。"
 
 [[test]]
 id = "mcp.management-independence"

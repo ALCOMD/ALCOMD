@@ -4,7 +4,8 @@
 
 ## 冻结信息
 
-从 `docs/baselines/source-lock.toml` 读取。`alcomd3_v3_audit_source` 锁定审计源，
+从 `docs/baselines/source-lock.toml` 读取。`alcomd3_v3_audit_source` 锁定审计源、冻结时分支
+上下文与 commit API 证据，
 `alcomd3_v3_migration_entry_release` 单独锁定唯一迁移入口版本，
 `alcomd3_v3_migration_assets` 锁定实际安装与迁移测试资产。锁定输入不代表功能审计完成。
 

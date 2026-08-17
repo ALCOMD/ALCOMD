@@ -110,9 +110,15 @@ conformance 仍是 alpha 测试输入，不代表 Tasks Draft 已稳定，也不
 - `https://github.com/modelcontextprotocol/modelcontextprotocol/tree/main/docs/specification/2026-07-28`
 - `https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2026-07-28/schema.ts`
 
+## 工具合同草案
+
+`docs/baselines/mcp-tool-contract.md` 已将冻结 v3 的 33 个用户工具逐项映射到 v4 工具、公开
+RPC 用例、最小权限、资源 scope、Plan/Apply、Operation 和错误族。A-026 已批准公开工具名
+作为正式 Schema 命名基线、`diagnostics.read` 与结构化错误方向；M-1 仍不修改 `specs/` 或实现。
+
 ## 尚未关闭
 
-- v3 MCP 33 个用户工具到 v4 RPC、权限、错误和 Operation 的逐项合同。
+- MCP 工具合同的后续正式 Schema/快照与兼容别名策略实现。
 - MCP 客户端 OAuth scope 到 A-023 权限/Principal 的映射细节。
 - `waiting_for_input` 的 input/approve/reject/resume 工具 Schema。
 - Rust SDK 候选版本、MSRV、规范覆盖和 conformance 版本；M-1 不新增生产 SDK 依赖。
