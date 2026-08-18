@@ -32,7 +32,7 @@ id = "daemon.single-writer"
 stage = "M1"
 kind = "integration"
 platforms = ["all"]
-status = "planned"
+status = "implemented"
 description = "并发启动核心与多个客户端，证明每用户单实例和所有写请求只有一个权威写入者。"
 
 [[test]]
@@ -40,7 +40,7 @@ id = "rpc.hello-contract"
 stage = "M1"
 kind = "contract"
 platforms = ["all"]
-status = "planned"
+status = "implemented"
 description = "对 system.hello、帧、版本协商、错误、DTO 和断线行为执行 Schema 快照与兼容性测试。"
 
 [[test]]
@@ -48,7 +48,7 @@ id = "rpc.per-user-ipc"
 stage = "M1"
 kind = "integration"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
-status = "planned"
+status = "implemented"
 description = "在三个 hosted 平台运行真实 Named Pipe/Unix socket，验证当前用户权限、单实例、stale socket、安全清理与并发客户端。"
 
 [[test]]
@@ -56,7 +56,7 @@ id = "cli.m1-system-status"
 stage = "M1"
 kind = "end-to-end"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
-status = "planned"
+status = "implemented"
 description = "运行真实 daemon 与 CLI，覆盖 human/JSON、stderr/退出码、--no-start-daemon 以及两个 CLI 并发按需启动只产生一个权威实例。"
 
 [[test]]

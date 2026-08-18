@@ -1,6 +1,6 @@
 # M1：核心进程、本地 RPC 握手与 CLI system status
 
-状态：本地实现与验证完成；等待最终提交的三平台 hosted CI，尚未进入 M2
+状态：M1 实现与三平台 hosted CI 完成；等待人工验收，尚未进入 M2
 
 ## 目标
 
@@ -324,4 +324,7 @@ Linux/macOS 使用等价 `./scripts/*.sh` 与 `python3` 命令。具体集成测
   FFI unsafe 边界均已获项目所有者逐项批准；Cargo.lock 只新增预期的 rustix/linux-raw-sys。
 - 2026-08-18：完整本地 `setup/check/test`、格式、Clippy、Workspace/合同/集成测试、并发按需启动、
   metadata、xtask、冻结基线与 diff 门禁全部通过；Linux x86_64 与 macOS arm64 目标交叉编译通过。
-  最终动态验收仍等待本候选提交在三个 hosted runner 上完成，尚未宣称 Unix 运行测试通过。
+  提交 `e509554af6cb1029f4a023e26013b495c0a56ffe` 对应的 GitHub Actions run `32124358425`
+  已通过 Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 三个 hosted job；Linux 实测最高
+  `GLIBC_2.34`，九个 macOS Mach-O 均为 arm64 / minos 11.0。M1 已具备提交人工验收的证据，
+  但未经项目所有者验收不得进入 M2。

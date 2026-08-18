@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M1：本地实现与验证完成；等待最终候选的 Windows/Ubuntu/macOS hosted CI`
+`M1：实现与 Windows/Ubuntu/macOS hosted CI 完成；等待人工验收`
 
 ## 已完成
 
@@ -83,10 +83,14 @@
   human/JSON 与两个 CLI 并发按需启动测试；最终只产生一个权威 daemon，测试进程已清理。
 - Unix 实现使用获批的 `rustix 1.1.4` safe API 完成有效 UID、逐组件 no-follow、0700/0600、
   fd-based 类型/所有权校验、非阻塞独占 flock 与 stale socket 恢复；Linux 与 macOS target
-  编译检查通过，真实运行证据等待各自 hosted job。
+  编译检查及各自 hosted 环境中的真实运行测试均已通过。
 - Windows FFI 仅存在于私有 `windows_security.rs`，所有 unsafe block/impl 有 SAFETY 说明；
   xtask 禁止其他文件使用 unsafe 或新增 allowance。Cargo.lock 只新增获批的 `rustix 1.1.4` 和
   `linux-raw-sys 0.12.1`，复用现有 bitflags/errno/libc/windows-sys。
+- M1 实现提交 `e509554af6cb1029f4a023e26013b495c0a56ffe` 已通过 GitHub Actions run
+  `32124358425`：Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 三个 hosted job 全部
+  成功；Linux 实测最高 `GLIBC_2.34`，九个 macOS Mach-O 均为 arm64 / minos 11.0，三平台
+  三锁文件与最终 diff 门禁均通过。Windows hosted 结果仍不代表 Win10/Win11 客户端发行验收。
 
 ## 后续里程碑尚未完成
 
@@ -104,9 +108,7 @@
 
 ## 当前阻塞与缺口
 
-- M1 本地实现和 Windows 动态验收已通过；Linux/macOS 的真实 socket 权限、flock、stale
-  socket 与并发按需启动必须由最终提交对应的 hosted CI 关闭，在三项 job 全绿前不得宣称
-  M1 最终验收完成。
+- M1 技术验收项已经关闭，当前只等待项目所有者人工验收；在明确批准前不得创建或执行 M2。
 
 - Windows 10 22H2 与 Windows 11 仍是正式目标支持平台，但真实客户端运行验证尚未完成，
   不得记为通过。项目所有者已将仅重复编译的 M0 self-hosted job 取消，并把验证 deferred 到
@@ -134,7 +136,6 @@
 
 ## 下一停止点
 
-M0 已完成并通过最终人工验收。M1 本地候选已完成，下一步只运行完整本地门禁、提交推送并取得
-同一最终提交的 Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 hosted CI。三项通过后
+M0 已完成并通过最终人工验收。M1 实现、完整本地门禁与三个 hosted 平台验收均已完成，当前
 停止在 M2 前等待人工验收。Windows 客户端运行验证仍留在 M12；迁移删除、永久 Windows
 AppId/GUID、安装器与 `cargo xtask dist` 仍不在当前授权范围内。
