@@ -113,7 +113,10 @@ fn runtime_path(config: &IpcConfig) -> io::Result<PathBuf> {
 
     #[cfg(target_os = "macos")]
     if let Some(base) = env::var_os("TMPDIR") {
-        return validate_absolute_runtime_path(&PathBuf::from(base).join("alcomd"));
+        let candidate = validate_absolute_runtime_path(&PathBuf::from(base).join("alcomd"))?;
+        if socket_path_fits(&candidate) {
+            return Ok(candidate);
+        }
     }
 
     let uid = geteuid().as_raw();
@@ -310,6 +313,11 @@ fn validate_socket_path_length(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+fn socket_path_fits(runtime_path: &Path) -> bool {
+    runtime_path.join(SOCKET_NAME).as_os_str().as_bytes().len() <= PORTABLE_SOCKET_PATH_LIMIT
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -322,7 +330,11 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("clock after epoch")
             .as_nanos();
-        env::temp_dir().join(format!("alcomd-m1-{label}-{}-{nonce}", std::process::id()))
+        #[cfg(target_os = "macos")]
+        let base = PathBuf::from("/private/tmp");
+        #[cfg(not(target_os = "macos"))]
+        let base = env::temp_dir();
+        base.join(format!("acm1-{label}-{}-{nonce}", std::process::id()))
     }
 
     #[tokio::test]
@@ -373,8 +385,8 @@ mod tests {
         fs::remove_dir(target).expect("remove target");
     }
 
-    #[test]
-    fn owned_stale_socket_is_recovered_after_lock() {
+    #[tokio::test]
+    async fn owned_stale_socket_is_recovered_after_lock() {
         let path = isolated_path("stale");
         let config = IpcConfig::isolated(path.clone());
         fs::create_dir(&path).expect("create runtime");

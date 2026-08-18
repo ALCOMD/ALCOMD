@@ -169,10 +169,11 @@ fn isolated_configuration() -> (IpcConfig, ClientConfig, Option<PathBuf>) {
         .duration_since(UNIX_EPOCH)
         .expect("clock after epoch")
         .as_nanos();
-    let path = std::env::temp_dir().join(format!(
-        "alcomd-m1-integration-{}-{nonce}",
-        std::process::id()
-    ));
+    #[cfg(target_os = "macos")]
+    let base = PathBuf::from("/private/tmp");
+    #[cfg(not(target_os = "macos"))]
+    let base = std::env::temp_dir();
+    let path = base.join(format!("acm1-rpc-{}-{nonce}", std::process::id()));
     (
         IpcConfig::isolated(path.clone()),
         ClientConfig::default()
