@@ -1,0 +1,52 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/response-envelope.json",
+    "title": "ALCOMD RPC v1 response envelope",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "id"
+    ],
+    "properties": {
+        "id": {
+            "oneOf": [
+                {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                },
+                {
+                    "type": "null"
+                }
+            ]
+        },
+        "result": {
+            "type": "object"
+        },
+        "error": {
+            "$ref": "rpc-error.schema.json"
+        }
+    },
+    "oneOf": [
+        {
+            "required": [
+                "result"
+            ],
+            "not": {
+                "required": [
+                    "error"
+                ]
+            }
+        },
+        {
+            "required": [
+                "error"
+            ],
+            "not": {
+                "required": [
+                    "result"
+                ]
+            }
+        }
+    ]
+}

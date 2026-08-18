@@ -18,7 +18,7 @@ async fn main() -> anyhow::Result<()> {
     let arguments = Arguments::parse();
 
     if arguments.once {
-        let response = alcomd_protocol::HelloResponse::scaffold();
+        let response = alcomd_protocol::HelloResult::m1();
         println!("{}", serde_json::to_string_pretty(&response)?);
         return Ok(());
     }

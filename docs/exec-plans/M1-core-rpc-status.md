@@ -1,6 +1,6 @@
 # M1：核心进程、本地 RPC 握手与 CLI system status
 
-状态：草案；等待项目所有者人工审批，尚未授权生产实现
+状态：已批准；contract-first 实施中，尚未进入 M2
 
 ## 目标
 
@@ -179,18 +179,19 @@ alcomd-application -> alcomd-protocol / IPC / Tokio transport
 
 ## 人工审批点
 
-开始任何 M1 生产实现前，项目所有者必须批准：
+项目所有者已于 2026-08-18 批准以下 M1 技术合同；严格符合这些决定的实现无需再次审批：
 
-1. **RPC v1 线合同**：帧上限、JSON-RPC 偏差、request ID、错误信封、capability 协商及最终
-   `system.hello`/`system.status` Schema。现有 `specs/rpc/alcomd-rpc-v1.md` 和 hello Schema
-   仍是 Draft，不能把当前 scaffold 类型直接视为最终 ABI。
-2. **IPC 端点与访问控制**：Windows Named Pipe 的精确命名/SID 与 ACL；Linux 的
-   `$XDG_RUNTIME_DIR/alcomd/rpc.sock`；macOS 在没有 XDG runtime 目录时的短路径、权限和清理
-   策略；显式测试覆盖方式。
-3. **单实例与按需启动策略**：以 OS 锁/端点所有权判定唯一实例，过期 Unix socket 的安全
-   恢复规则；M1 是否由 CLI 默认按需启动 sibling `alcomd`，以及 `--no-start-daemon` 是否在
-   M1 提前提供。建议采用默认按需启动加受限重试，确保形成完整垂直切片，但该行为须先批准。
-4. **新增生产依赖**：优先复用固定 Rust/Tokio 能力。若访问控制或跨平台锁确需新 crate，提交
+1. **RPC v1 线合同**：4 MiB 上限、JSON-RPC-inspired 偏差、字符串 request ID、稳定错误、
+   capability 协商及最小 `system.hello`/`system.status` Schema；framing error 关闭连接，完整
+   payload 的 RPC error 返回结构化响应。
+2. **IPC 端点与访问控制**：Windows 使用
+   `\\.\pipe\CQMHV.ALCOMD.<current-user-SID>.rpc-v1` 和当前用户 ACL；Linux 使用
+   `$XDG_RUNTIME_DIR/alcomd/rpc-v1.sock`；macOS/安全 fallback 使用经过所有权检查的短 per-user
+   路径；Unix 父目录 `0700`、socket `0600` 且不跟随 symlink。
+3. **单实例与按需启动策略**：使用生命周期绑定的 OS 锁；Unix stale socket 只有在取得锁并
+   验证类型、所有者和父目录后删除；CLI 仅在 endpoint not found/connection refused 时默认
+   启动 sibling `alcomd`，总等待不超过 5 秒，并提供 `--no-start-daemon`。
+4. **新增生产依赖仍未 blanket 批准**：优先复用固定 Rust/Tokio 能力。若访问控制或跨平台锁确需新 crate，提交
    其具体版本、维护状态、许可证、替代方案和锁文件 diff 后单独批准；不得先引入通用 RPC
    framework、数据库或 HTTP 依赖。
 
@@ -307,3 +308,5 @@ Linux/macOS 使用等价 `./scripts/*.sh` 与 `python3` 命令。具体集成测
 
 - 2026-08-18：M0 最终验收通过；创建本 M1 ExecPlan 草案。当前仅规划，未修改 M1 生产代码、
   公共 Schema、依赖或测试实现。
+- 2026-08-18：项目所有者批准 M1 总体范围与上述 RPC/IPC/单实例/CLI 合同，授权按
+  contract-first 顺序实施；任何偏离或新增生产依赖仍须停止审批。

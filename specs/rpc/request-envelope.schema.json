@@ -1,0 +1,28 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/request-envelope.json",
+    "title": "ALCOMD RPC v1 request envelope",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "id",
+        "method",
+        "params"
+    ],
+    "properties": {
+        "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+        },
+        "method": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)+$"
+        },
+        "params": {
+            "type": "object"
+        }
+    }
+}

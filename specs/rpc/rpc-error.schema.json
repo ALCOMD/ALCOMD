@@ -1,0 +1,98 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/rpc-error.json",
+    "title": "ALCOMD RPC v1 public error",
+    "type": "object",
+    "additionalProperties": true,
+    "required": [
+        "code",
+        "message"
+    ],
+    "properties": {
+        "code": {
+            "type": "string",
+            "enum": [
+                "invalid_request",
+                "method_not_found",
+                "handshake_required",
+                "handshake_already_completed",
+                "rpc_version_unsupported",
+                "component_upgrade_required",
+                "internal_error"
+            ]
+        },
+        "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+        },
+        "diagnosticId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "data": {
+            "type": "object"
+        }
+    },
+    "allOf": [
+        {
+            "if": {
+                "properties": {
+                    "code": {
+                        "const": "internal_error"
+                    }
+                },
+                "required": [
+                    "code"
+                ]
+            },
+            "then": {
+                "required": [
+                    "diagnosticId"
+                ]
+            }
+        },
+        {
+            "if": {
+                "properties": {
+                    "code": {
+                        "const": "rpc_version_unsupported"
+                    }
+                },
+                "required": [
+                    "code"
+                ]
+            },
+            "then": {
+                "required": [
+                    "data"
+                ],
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "required": [
+                            "requestedVersion",
+                            "supportedVersions"
+                        ],
+                        "properties": {
+                            "requestedVersion": {
+                                "type": "integer",
+                                "minimum": 0
+                            },
+                            "supportedVersions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                },
+                                "minItems": 1,
+                                "uniqueItems": true
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}

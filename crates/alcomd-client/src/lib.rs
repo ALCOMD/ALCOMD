@@ -2,7 +2,7 @@
 //!
 //! The transport is intentionally not implemented in M0.
 
-use alcomd_protocol::HelloResponse;
+use alcomd_protocol::HelloResult;
 use thiserror::Error;
 
 /// Client connection settings.
@@ -32,7 +32,7 @@ impl AlcomdClient {
     }
 
     /// Placeholder for the M1 RPC handshake.
-    pub async fn hello(&self) -> Result<HelloResponse, ClientError> {
+    pub async fn hello(&self) -> Result<HelloResult, ClientError> {
         Err(ClientError::TransportNotImplemented)
     }
 }
