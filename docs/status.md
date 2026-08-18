@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M1：已通过人工验收并正式完成；M2 生产实现尚未获批`
+`M2：ExecPlan 草案已创建；等待人工审批，生产实现尚未开始`
 
 ## 已完成
 
@@ -96,11 +96,13 @@
 
 ## 后续里程碑尚未完成
 
+- M2 的 SQLite/Operation/Event/Revision/幂等/资源锁/恢复实现；当前仅有
+  `docs/exec-plans/M2-state-operations-recovery.md` 规划草案，Schema、权限、依赖与生产代码
+  均未获实施批准。
 - v3.4.0 完整安装后快照、脱敏迁移 Fixture 和 GUI 冻结截图/流程已由项目所有者明确后移到
   M11；M-1 仅保留 VM 操作报告，不把它升级为实例证据或删除授权。
 - MCP 33 个 v3 用例的 M-1 工具合同基线已形成并获 A-026 批准；正式 Schema、快照、兼容
   别名策略和协议实现留在对应后续里程碑。
-- M2 的 SQLite、Operation/Event/Revision 与业务资源锁；M1 daemon 只有无副作用 status 查询。
 - VPM、项目、模板与备份。
 - Extension Host 和 WASM。
 - MCP 实现。
@@ -136,6 +138,7 @@
 
 ## 下一停止点
 
-M0 与 M1 均已完成并通过最终人工验收。当前只允许创建 M2 ExecPlan 草案，不得开始 M2 生产
-实现。Windows 客户端运行验证仍留在 M12；迁移删除、永久 Windows AppId/GUID、安装器与
-`cargo xtask dist` 仍不在当前授权范围内。
+M0 与 M1 均已完成并通过最终人工验收。M2 ExecPlan 草案已创建，下一步是人工审查并冻结
+Schema、Operation/Event/revision/幂等/锁/恢复、Principal/权限、RPC 兼容新增和精确生产依赖；
+未经批准不得开始 M2 生产实现。Windows 客户端运行验证仍留在 M12；迁移删除、永久 Windows
+AppId/GUID、安装器与 `cargo xtask dist` 仍不在当前授权范围内。

@@ -65,7 +65,7 @@ stage = "M2"
 kind = "security"
 platforms = ["all"]
 status = "planned"
-description = "验证客户端与扩展独立 Principal、最小权限、审批、审计和撤销后旧句柄失效。"
+description = "M2 验证核心 Principal、最小权限、owner scope、撤销与幂等隔离；外部应用、扩展和 MCP 的真实 credential/enrollment 由对应后续里程碑补齐。"
 
 [[test]]
 id = "operations.lifecycle"
@@ -74,6 +74,54 @@ kind = "state-machine"
 platforms = ["all"]
 status = "planned"
 description = "覆盖 Operation 全部状态、取消、断线、daemon 重启、恢复和幂等重试。"
+
+[[test]]
+id = "state.sqlite-migrations"
+stage = "M2"
+kind = "persistence"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "planned"
+description = "覆盖 state.db Schema v1、0->1 原子 migration、重复启动、较新版本拒绝、权限与迁移失败回滚。"
+
+[[test]]
+id = "state.transaction-boundaries"
+stage = "M2"
+kind = "integration"
+platforms = ["all"]
+status = "planned"
+description = "验证幂等保留、Operation、journal、Event 和结果在批准的短事务边界内原子提交，响应丢失后可恢复同一结果。"
+
+[[test]]
+id = "events.replay-sequence"
+stage = "M2"
+kind = "contract"
+platforms = ["all"]
+status = "planned"
+description = "验证 Event 全局 sequence、分页、重复读取、断线后从 afterSequence 恢复及未来 cursor-expired 兼容错误。"
+
+[[test]]
+id = "state.revision-idempotency"
+stage = "M2"
+kind = "state-machine"
+platforms = ["all"]
+status = "planned"
+description = "验证 expectedRevision 冲突、revision 单调、同 Principal 幂等重放、跨 Principal 隔离、fingerprint 冲突和 TTL 边界。"
+
+[[test]]
+id = "state.resource-locking"
+stage = "M2"
+kind = "concurrency"
+platforms = ["all"]
+status = "planned"
+description = "验证 StateStore/Operation canonical key、同资源串行、不同资源并行、排序防死锁与等待取消不残留 owner。"
+
+[[test]]
+id = "state.crash-recovery"
+stage = "M2"
+kind = "fault-injection"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "planned"
+description = "在 migration、journal、状态/Event commit、worker、取消和响应边界终止 daemon，验证重启无重复、无虚假成功且可恢复。"
 
 [[test]]
 id = "projects.v3-parity"
