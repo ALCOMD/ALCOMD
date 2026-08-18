@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M2：生产垂直切片已落盘；本地完整验收与三个 hosted 平台验证进行中`
+`M2：实现、本地验收、三平台 hosted CI 与项目所有者人工验收全部完成；M3 尚未开始`
 
 ## 已完成
 
@@ -102,7 +102,13 @@
 - M2 聚焦验证已覆盖 Schema/migration 回滚、幂等与 Revision 冲突、Principal owner 隔离、
   Event/Operation 分页、取消竞态、100 并发命令、journal 不一致安全失败、真实 IPC 垂直切片及
   子进程强制终止/重启恢复。完整本地 `check.ps1`、`test.ps1`、冻结基线、跨目标 platform
-  compile 与差异门禁均已通过；三个 hosted job 尚未取得，因此 M2 还不能记为最终验收通过。
+  compile 与差异门禁均已通过。
+- M2 最终提交 `9076574ef0f4d3de8690865dfb18aa5856d7ad64` 对应 GitHub Actions run
+  `32144082427`：Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 三个 hosted job
+  全部成功；Ubuntu 实测最高 `GLIBC_2.34`，macOS 预期产物均为 arm64 / minos 11.0。
+- 首轮 Windows hosted 测试发现 SQLite worker shutdown 与测试目录清理之间的生命周期竞态；
+  最终提交已改为在最后一个 state store handle 释放时确定性关闭并回收 worker，随后重新通过
+  Windows 完整测试。项目所有者已确认 M2 人工验收通过，M2 正式完成。
 
 ## 后续里程碑尚未完成
 
@@ -145,7 +151,7 @@
 
 ## 下一停止点
 
-M0 与 M1 均已完成并通过最终人工验收。M2 当前停止点是：完成本地全门禁，提交并推送最终候选，
-取得同一 head SHA 上 Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 三个 hosted job
-的真实 SQLite/kill/restart/recovery 通过证据，然后等待人工验收。真实 credential revocation、
-Win10/Win11 客户端发行验证和 M3 均未开始；不得进入 M3。
+M0、M1 与 M2 均已完成并通过最终人工验收。下一步仅允许创建 M3 项目与 VPM Repository
+只读垂直切片的 ExecPlan 草案；在项目所有者批准 M3 合同与实现前，不得开始 M3 生产代码。
+真实 credential revocation 仍未完成；Windows 10/11 完整客户端安装、启动、WebView2、更新与
+卸载验证继续 deferred 到 M12，不得把 Windows Server hosted 结果描述为客户端发行证据。

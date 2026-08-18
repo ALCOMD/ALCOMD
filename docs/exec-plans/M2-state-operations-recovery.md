@@ -1,6 +1,6 @@
 # M2：SQLite 权威状态、Operation、Event、Revision、幂等、资源锁与恢复
 
-状态：M2 实现与本地验收已通过；三个 hosted 平台验证尚未取得
+状态：M2 实现、本地验收、三平台 hosted CI 与人工验收全部完成；尚未进入 M3
 
 ## 目标
 
@@ -553,8 +553,8 @@ credential enrollment 与 revocation 尚未实现，因此该测试整体保持 
 
 上述 M2 合同与 SQLite/Tokio 依赖已于 2026-08-18 获批；Windows Known Folder feature 与第二个
 私有 unsafe 边界随后获得专项批准。ADR、RPC Schema、最终 migration SQL、状态/恢复/分页/
-幂等/权限/事务合同、生产垂直切片和本地测试均已落盘，本地完整门禁已通过；当前只剩三个
-hosted 平台的最终候选验证。
+幂等/权限/事务合同、生产垂直切片、本地测试和三个 hosted 平台的最终候选验证均已通过。
+项目所有者已完成 M2 人工验收；尚未进入 M3。
 
 仅在新增 production crate、进一步扩大 Windows feature/unsafe、需要偏离已冻结
 Schema/RPC/permission，或进入 M3 时重新停止审批。
@@ -598,3 +598,10 @@ Schema/RPC/permission，或进入 M3 时重新停止审批。
   `alcomd-platform` cross-target compile 均通过；并发自动启动改为先取得 OS 单实例锁、再打开/
   恢复 SQLite、最后 bind endpoint，测试数据通过隐藏参数落在隔离目录。当前仅待最终差异审查、
   提交推送与三个 hosted job。
+- 2026-08-18：首轮 Windows Server 2025 hosted 测试发现最后一个 `StateStoreHandle` 释放后，
+  SQLite worker 异步退出与测试目录清理存在生命周期竞态；最终修复使最后一个 handle 确定性
+  关闭命令通道并回收 worker，随后重新通过 Windows 完整测试。
+- 2026-08-18：最终提交 `9076574ef0f4d3de8690865dfb18aa5856d7ad64` 对应 GitHub Actions
+  run `32144082427`。Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 三个 hosted job
+  全部成功；Ubuntu 实测最高 `GLIBC_2.34`，macOS 预期产物均为 arm64 / minos 11.0。
+  项目所有者确认人工验收通过，M2 正式完成；尚未进入 M3。
