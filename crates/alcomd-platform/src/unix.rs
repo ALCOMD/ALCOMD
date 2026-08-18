@@ -5,8 +5,8 @@ use std::path::{Component, Path, PathBuf};
 
 use rustix::fd::OwnedFd;
 use rustix::fs::{
-    AtFlags, CWD, FileType, FlockOperation, Mode, OFlags, chmodat, fchmod, flock, fstat, mkdirat,
-    openat, statat, unlinkat,
+    AtFlags, CWD, FileType, FlockOperation, Mode, OFlags, RawMode, chmodat, fchmod, flock, fstat,
+    mkdirat, openat, statat, unlinkat,
 };
 use rustix::io::Errno;
 use rustix::process::geteuid;
@@ -16,8 +16,8 @@ use crate::{BindError, IpcConfig};
 
 const SOCKET_NAME: &str = "rpc-v1.sock";
 const LOCK_NAME: &str = "daemon-v1.lock";
-const PRIVATE_DIRECTORY_MODE: u32 = 0o700;
-const PRIVATE_FILE_MODE: u32 = 0o600;
+const PRIVATE_DIRECTORY_MODE: RawMode = 0o700;
+const PRIVATE_FILE_MODE: RawMode = 0o600;
 const PORTABLE_SOCKET_PATH_LIMIT: usize = 103;
 
 /// Unix IPC stream used by both daemon and client.
@@ -88,11 +88,11 @@ fn acquire_instance(runtime_fd: &OwnedFd) -> Result<InstanceGuard, BindError> {
         runtime_fd,
         LOCK_NAME,
         OFlags::CREATE | OFlags::RDWR | OFlags::CLOEXEC | OFlags::NOFOLLOW,
-        Mode::from_raw_mode(PRIVATE_FILE_MODE as _),
+        Mode::from_raw_mode(PRIVATE_FILE_MODE),
     )
     .map_err(io::Error::from)?;
     validate_owned_type(&lock_fd, FileType::RegularFile, "instance lock")?;
-    fchmod(&lock_fd, Mode::from_raw_mode(PRIVATE_FILE_MODE as _)).map_err(io::Error::from)?;
+    fchmod(&lock_fd, Mode::from_raw_mode(PRIVATE_FILE_MODE)).map_err(io::Error::from)?;
 
     match flock(&lock_fd, FlockOperation::NonBlockingLockExclusive) {
         Ok(()) => Ok(InstanceGuard { _lock_fd: lock_fd }),
@@ -177,7 +177,7 @@ fn ensure_private_runtime_directory(path: &Path) -> io::Result<OwnedFd> {
     match mkdirat(
         &parent_fd,
         name,
-        Mode::from_raw_mode(PRIVATE_DIRECTORY_MODE as _),
+        Mode::from_raw_mode(PRIVATE_DIRECTORY_MODE),
     ) {
         Ok(()) | Err(Errno::EXIST) => {}
         Err(error) => return Err(error.into()),
@@ -190,13 +190,9 @@ fn ensure_private_runtime_directory(path: &Path) -> io::Result<OwnedFd> {
     )
     .map_err(io::Error::from)?;
     validate_owned_type(&runtime_fd, FileType::Directory, "runtime directory")?;
-    fchmod(
-        &runtime_fd,
-        Mode::from_raw_mode(PRIVATE_DIRECTORY_MODE as _),
-    )
-    .map_err(io::Error::from)?;
+    fchmod(&runtime_fd, Mode::from_raw_mode(PRIVATE_DIRECTORY_MODE)).map_err(io::Error::from)?;
     let stat = fstat(&runtime_fd).map_err(io::Error::from)?;
-    if u32::from(stat.st_mode & 0o777) != PRIVATE_DIRECTORY_MODE {
+    if stat.st_mode & 0o777 != PRIVATE_DIRECTORY_MODE {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             "runtime directory permissions are not 0700",
@@ -269,13 +265,13 @@ fn secure_socket_node(runtime_fd: &OwnedFd) -> io::Result<()> {
     chmodat(
         runtime_fd,
         SOCKET_NAME,
-        Mode::from_raw_mode(PRIVATE_FILE_MODE as _),
+        Mode::from_raw_mode(PRIVATE_FILE_MODE),
         AtFlags::empty(),
     )
     .map_err(io::Error::from)?;
     let secured =
         statat(runtime_fd, SOCKET_NAME, AtFlags::SYMLINK_NOFOLLOW).map_err(io::Error::from)?;
-    if u32::from(secured.st_mode & 0o777) != PRIVATE_FILE_MODE {
+    if secured.st_mode & 0o777 != PRIVATE_FILE_MODE {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             "socket permissions are not 0600",

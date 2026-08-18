@@ -163,33 +163,32 @@ fn is_absent(error: &io::Error) -> bool {
         || cfg!(windows) && error.raw_os_error() == Some(231)
 }
 
+#[cfg(unix)]
 fn isolated_configuration() -> (IpcConfig, ClientConfig, Option<PathBuf>) {
-    #[cfg(unix)]
-    {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("clock after epoch")
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "alcomd-m1-integration-{}-{nonce}",
-            std::process::id()
-        ));
-        return (
-            IpcConfig::isolated(path.clone()),
-            ClientConfig::default()
-                .without_daemon_start()
-                .with_runtime_directory(path.clone()),
-            Some(path),
-        );
-    }
-    #[cfg(windows)]
-    {
-        (
-            IpcConfig::default(),
-            ClientConfig::default().without_daemon_start(),
-            None,
-        )
-    }
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock after epoch")
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!(
+        "alcomd-m1-integration-{}-{nonce}",
+        std::process::id()
+    ));
+    (
+        IpcConfig::isolated(path.clone()),
+        ClientConfig::default()
+            .without_daemon_start()
+            .with_runtime_directory(path.clone()),
+        Some(path),
+    )
+}
+
+#[cfg(windows)]
+fn isolated_configuration() -> (IpcConfig, ClientConfig, Option<PathBuf>) {
+    (
+        IpcConfig::default(),
+        ClientConfig::default().without_daemon_start(),
+        None,
+    )
 }
 
 fn cleanup_runtime(path: Option<PathBuf>) {
