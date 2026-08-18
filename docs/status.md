@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M2：实现、本地验收、三平台 hosted CI 与项目所有者人工验收全部完成；M3 尚未开始`
+`M3：ExecPlan 草案已创建并等待人工审批；生产合同与实现均未开始`
 
 ## 已完成
 
@@ -151,7 +151,8 @@
 
 ## 下一停止点
 
-M0、M1 与 M2 均已完成并通过最终人工验收。下一步仅允许创建 M3 项目与 VPM Repository
-只读垂直切片的 ExecPlan 草案；在项目所有者批准 M3 合同与实现前，不得开始 M3 生产代码。
-真实 credential revocation 仍未完成；Windows 10/11 完整客户端安装、启动、WebView2、更新与
-卸载验证继续 deferred 到 M12，不得把 Windows Server hosted 结果描述为客户端发行证据。
+M0、M1 与 M2 均已完成并通过最终人工验收。M3 项目与 VPM Repository 只读垂直切片的
+ExecPlan 草案已创建；当前停止在人工审批点，不得修改 RPC/storage Schema、permission、生产
+依赖或生产代码。真实 credential revocation 仍未完成；Windows 10/11 完整客户端安装、启动、
+WebView2、更新与卸载验证继续 deferred 到 M12，不得把 Windows Server hosted 结果描述为
+客户端发行证据。
