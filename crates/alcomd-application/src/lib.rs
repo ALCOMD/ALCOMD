@@ -1,36 +1,54 @@
 //! Application use cases and orchestration boundaries.
 //!
-//! Transport adapters must call this layer rather than implementing business rules themselves.
+//! Transport adapters call this layer rather than inventing business state in
+//! the daemon, CLI, or other entry points.
 
-use alcomd_domain::OperationState;
-use serde::{Deserialize, Serialize};
-
-/// Minimal health snapshot used by the initial vertical slice.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HealthSnapshot {
-    /// Human-readable component state.
-    pub status: String,
-    /// Version of the running component.
-    pub version: String,
-    /// Current operation subsystem state.
-    pub operation_state: Option<OperationState>,
+/// Minimal truthful daemon status for the M1 read-only vertical slice.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SystemStatus {
+    state: SystemState,
 }
 
-impl HealthSnapshot {
-    /// Creates a scaffold health response.
+impl SystemStatus {
+    /// Returns the state exposed by the running daemon.
     #[must_use]
-    pub fn scaffold() -> Self {
-        Self {
-            status: "scaffold".to_owned(),
-            version: env!("CARGO_PKG_VERSION").to_owned(),
-            operation_state: None,
+    pub const fn state(self) -> SystemState {
+        self.state
+    }
+}
+
+/// States that exist in the M1 system-status use case.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SystemState {
+    /// The daemon owns its endpoint and can serve M1 queries.
+    Ready,
+}
+
+impl SystemState {
+    /// Stable transport-neutral representation.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
         }
     }
 }
 
-/// Port implemented by a component that can report health.
-pub trait HealthProvider: Send + Sync {
-    /// Returns the current health snapshot.
-    fn health(&self) -> HealthSnapshot;
+/// Executes the M1 `system.status` query.
+#[must_use]
+pub const fn system_status() -> SystemStatus {
+    SystemStatus {
+        state: SystemState::Ready,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_reports_only_the_real_m1_state() {
+        assert_eq!(system_status().state(), SystemState::Ready);
+        assert_eq!(system_status().state().as_str(), "ready");
+    }
 }

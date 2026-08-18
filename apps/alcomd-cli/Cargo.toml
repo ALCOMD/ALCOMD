@@ -18,5 +18,9 @@ alcomd-client.workspace = true
 alcomd-protocol.workspace = true
 serde_json.workspace = true
 
+[dev-dependencies]
+alcomd-daemon = { package = "alcomd", path = "../alcomd" }
+alcomd-platform.workspace = true
+
 [lints]
 workspace = true

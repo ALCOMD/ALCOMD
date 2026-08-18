@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M1：contract-first 实施阶段（RPC/IPC 合同冻结中；尚未进入生产适配器实现）`
+`M1：本地实现与验证完成；等待最终候选的 Windows/Ubuntu/macOS hosted CI`
 
 ## 已完成
 
@@ -74,10 +74,19 @@
 - M0 最终提交 `8112415f1dae0dc6f521d5cc3a2c980baac3b408` 已通过 GitHub Actions run
   `32066209115`：Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 三个 hosted job
   全部成功；项目所有者已确认 M0 最终验收通过。
-- 已创建 `docs/exec-plans/M1-core-rpc-status.md` 草案。当前只规划每用户单实例核心、本地 RPC
-  握手与 CLI `system status` 的最小只读垂直切片；没有开始 M1 生产代码、Schema 或依赖修改。
-- 项目所有者已批准 M1 总体范围与 RPC v1、IPC 端点、单实例、CLI 按需启动合同，并要求先
-  冻结规范/ADR/Schema 和合同测试，再进入生产实现；新增生产依赖仍须单独审批。
+- M1 的 RPC v1 帧、envelope、稳定错误、`system.hello`/`system.status` Schema 与兼容规则已经
+  contract-first 冻结并通过 Rust/Schema 合同测试；响应不虚构后续 data/config/extension 版本。
+- 已实现真实的最小只读垂直切片：`alcomd-platform` 提供每用户安全端点与生命周期实例锁，
+  daemon 只经 `alcomd-application` 返回 ready 状态，`alcomd-client` 完成握手和类型化查询，
+  `alcomd-cli system status` 支持 human/JSON 与 `--no-start-daemon`。
+- Windows 本机已动态通过当前用户 SID Named Pipe/DACL、单实例、并发 client、帧错误、CLI
+  human/JSON 与两个 CLI 并发按需启动测试；最终只产生一个权威 daemon，测试进程已清理。
+- Unix 实现使用获批的 `rustix 1.1.4` safe API 完成有效 UID、逐组件 no-follow、0700/0600、
+  fd-based 类型/所有权校验、非阻塞独占 flock 与 stale socket 恢复；Linux 与 macOS target
+  编译检查通过，真实运行证据等待各自 hosted job。
+- Windows FFI 仅存在于私有 `windows_security.rs`，所有 unsafe block/impl 有 SAFETY 说明；
+  xtask 禁止其他文件使用 unsafe 或新增 allowance。Cargo.lock 只新增获批的 `rustix 1.1.4` 和
+  `linux-raw-sys 0.12.1`，复用现有 bitflags/errno/libc/windows-sys。
 
 ## 后续里程碑尚未完成
 
@@ -85,8 +94,7 @@
   M11；M-1 仅保留 VM 操作报告，不把它升级为实例证据或删除授权。
 - MCP 33 个 v3 用例的 M-1 工具合同基线已形成并获 A-026 批准；正式 Schema、快照、兼容
   别名策略和协议实现留在对应后续里程碑。
-- IPC 与 daemon。
-- SQLite、Operations、Events、Locks。
+- M2 的 SQLite、Operation/Event/Revision 与业务资源锁；M1 daemon 只有无副作用 status 查询。
 - VPM、项目、模板与备份。
 - Extension Host 和 WASM。
 - MCP 实现。
@@ -96,8 +104,9 @@
 
 ## 当前阻塞与缺口
 
-- M1 ExecPlan、RPC v1 线合同、IPC 端点与单实例/按需启动策略已获批准，正在按 contract-first
-  顺序落盘并验证。任何偏离批准合同或新增生产依赖仍必须先停下审批。
+- M1 本地实现和 Windows 动态验收已通过；Linux/macOS 的真实 socket 权限、flock、stale
+  socket 与并发按需启动必须由最终提交对应的 hosted CI 关闭，在三项 job 全绿前不得宣称
+  M1 最终验收完成。
 
 - Windows 10 22H2 与 Windows 11 仍是正式目标支持平台，但真实客户端运行验证尚未完成，
   不得记为通过。项目所有者已将仅重复编译的 M0 self-hosted job 取消，并把验证 deferred 到
@@ -120,12 +129,12 @@
 - `specs/extensions/permissions-v1.md` 与 `specs/mcp/toolset-v1.md` 尚未应用 A-021/A-023；M-1
   允许范围不包含 `specs/`，必须在对应协议里程碑经 Schema/快照更新落地，生产实现不得继续
   使用 `mcp.sessions.read`。
-- 现有 `alcomd-mcp`、daemon、GUI 等仍是 scaffold；M-1 的 `verified` 只表示基线证据和验收
-  合同完成，不表示生产功能已经实现、Fixture 已建立或动态验证已经通过。
+- `alcomd-mcp`、GUI 与其他后续入口仍是 scaffold；M1 只实现 daemon/client/CLI 的最小 status
+  切片，不得将其描述为完整 RPC、CLI、Operation 或业务功能。
 
 ## 下一停止点
 
-M0 已完成并通过最终人工验收。M1 已获实施批准，必须先完成 RPC/IPC 合同与测试，再实现最小
-只读垂直切片；若需新增生产依赖或偏离合同则停在人工审批点。M1 完成后必须停止在 M2 前等待
-人工验收。Windows 客户端运行验证留在 M12，迁移删除、永久 Windows AppId/GUID、安装器与
-`cargo xtask dist` 仍不在当前授权范围内。
+M0 已完成并通过最终人工验收。M1 本地候选已完成，下一步只运行完整本地门禁、提交推送并取得
+同一最终提交的 Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 hosted CI。三项通过后
+停止在 M2 前等待人工验收。Windows 客户端运行验证仍留在 M12；迁移删除、永久 Windows
+AppId/GUID、安装器与 `cargo xtask dist` 仍不在当前授权范围内。

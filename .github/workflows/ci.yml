@@ -43,7 +43,7 @@ jobs:
       - name: Check
         shell: pwsh
         run: .\scripts\check.ps1
-      - name: Test
+      - name: Test M0 and M1 contracts
         shell: pwsh
         run: .\scripts\test.ps1
       - name: Build M0 executables
@@ -101,7 +101,7 @@ jobs:
         run: ./scripts/setup.sh
       - name: Check
         run: ./scripts/check.sh
-      - name: Test
+      - name: Test M0 and M1 contracts
         run: ./scripts/test.sh
       - name: Build M0 executables
         run: cargo build --locked --workspace --bins --release
@@ -147,7 +147,7 @@ jobs:
         run: ./scripts/setup.sh
       - name: Check
         run: ./scripts/check.sh
-      - name: Test
+      - name: Test M0 and M1 contracts
         run: ./scripts/test.sh
       - name: Build M0 executables
         run: cargo build --locked --workspace --bins --release

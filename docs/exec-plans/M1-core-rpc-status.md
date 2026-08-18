@@ -1,6 +1,6 @@
 # M1：核心进程、本地 RPC 握手与 CLI system status
 
-状态：已批准；contract-first 实施中，尚未进入 M2
+状态：本地实现与验证完成；等待最终提交的三平台 hosted CI，尚未进入 M2
 
 ## 目标
 
@@ -78,6 +78,7 @@ apps/alcomd-cli/
 crates/alcomd-application/
 crates/alcomd-protocol/
 crates/alcomd-client/
+crates/alcomd-platform/                # 仅 M1 端点、IPC、访问控制与实例锁
 crates/alcomd-testing/                 # 仅 M1 测试支持
 specs/rpc/
 docs/adr/0002-single-writer-daemon.md   # 仅补充已批准的 M1 实现细节
@@ -88,6 +89,8 @@ docs/status.md
 feature-parity.toml
 Cargo.toml
 Cargo.lock
+xtask/src/main.rs                      # 仅批准的 unsafe 边界硬门禁
+scripts/validate-metadata.py           # 仅 M1 依赖与 lint 元数据门禁
 scripts/                               # 仅增加或接入 M1 验收命令
 .github/workflows/ci.yml               # 仅接入 M1 三平台测试，不改变 M0 平台基线
 ```
@@ -153,8 +156,9 @@ alcomd-application -> alcomd-protocol / IPC / Tokio transport
 3. 第一条请求为 `system.hello` 的状态机、RPC major 协商、客户端与服务端 capability 语义。
 4. `system.hello` request/response Schema；`client.name/version/instanceId` 只用于诊断和能力
    协商，绝不作为安全身份。
-5. `system.status` request/response Schema。结果仅暴露产品/daemon 版本、RPC 与 Schema 版本、
-   就绪状态和经批准的非敏感实例信息，不暴露 PID、完整路径、环境变量或凭据。
+5. `system.status` request/response Schema。结果仅暴露产品/daemon 版本、RPC 版本、就绪状态和
+   经批准的非敏感 capability；不虚构 data/config/extension Schema，不暴露 PID、完整路径、
+   环境变量或凭据。
 6. M1 可观测错误的稳定 code：至少覆盖 `invalid_request`、`rpc_version_unsupported`、
    `component_upgrade_required` 和 `internal_error + diagnostic_id`；技术细节不得进入普通响应。
 7. `alcomd-cli system status` 的成功 stdout、人类/JSON 输出、错误 stderr 和退出码；这不是完整
@@ -191,9 +195,12 @@ alcomd-application -> alcomd-protocol / IPC / Tokio transport
 3. **单实例与按需启动策略**：使用生命周期绑定的 OS 锁；Unix stale socket 只有在取得锁并
    验证类型、所有者和父目录后删除；CLI 仅在 endpoint not found/connection refused 时默认
    启动 sibling `alcomd`，总等待不超过 5 秒，并提供 `--no-start-daemon`。
-4. **新增生产依赖仍未 blanket 批准**：优先复用固定 Rust/Tokio 能力。若访问控制或跨平台锁确需新 crate，提交
-   其具体版本、维护状态、许可证、替代方案和锁文件 diff 后单独批准；不得先引入通用 RPC
-   framework、数据库或 HTTP 依赖。
+4. **M1 平台依赖已逐项批准**：Windows-only `windows-sys = 0.61.2` 仅用于 SID、当前用户 DACL、
+   Named Pipe 与实例 mutex；Unix-only `rustix = 1.1.4` 仅启用 `std/fs/process`，用于有效 UID、
+   no-follow/fd-based 校验、权限和 `flock`。两者只存在于 `alcomd-platform` 的目标条件依赖中。
+   其他新增生产依赖仍未 blanket 批准。
+5. **局部 unsafe 例外已批准**：仅私有 `windows_security.rs` 可使用带 SAFETY 说明的 Windows
+   FFI；`alcomd-platform` 其余文件保持 safe Rust，xtask 对位置和 allowance 进行硬门禁。
 
 以下不属于新的产品级开放决策：A-004 的唯一核心、A-005 的 application 边界和 A-026 的
 结构化错误方向已经接受；M1 只审批它们的技术合同细节。
@@ -310,3 +317,11 @@ Linux/macOS 使用等价 `./scripts/*.sh` 与 `python3` 命令。具体集成测
   公共 Schema、依赖或测试实现。
 - 2026-08-18：项目所有者批准 M1 总体范围与上述 RPC/IPC/单实例/CLI 合同，授权按
   contract-first 顺序实施；任何偏离或新增生产依赖仍须停止审批。
+- 2026-08-18：完成合同 Schema/DTO、application status、Windows Named Pipe + 当前用户 DACL、
+  Unix socket + 0700/0600/no-follow、生命周期实例锁、daemon 握手 dispatcher、类型化 client、
+  CLI status 与五秒有界并发按需启动；Windows 本地端到端、Linux/macOS target 编译检查通过。
+- 2026-08-18：Windows-only `windows-sys 0.61.2`、Unix-only `rustix 1.1.4` 与唯一私有 Windows
+  FFI unsafe 边界均已获项目所有者逐项批准；Cargo.lock 只新增预期的 rustix/linux-raw-sys。
+- 2026-08-18：完整本地 `setup/check/test`、格式、Clippy、Workspace/合同/集成测试、并发按需启动、
+  metadata、xtask、冻结基线与 diff 门禁全部通过；Linux x86_64 与 macOS arm64 目标交叉编译通过。
+  最终动态验收仍等待本候选提交在三个 hosted runner 上完成，尚未宣称 Unix 运行测试通过。

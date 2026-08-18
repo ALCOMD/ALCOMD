@@ -38,7 +38,7 @@ const MEMBERS: &[Member] = &[
     (
         "apps/alcomd",
         "alcomd",
-        &["alcomd-application", "alcomd-protocol"],
+        &["alcomd-application", "alcomd-platform", "alcomd-protocol"],
     ),
     (
         "apps/alcomd-cli",
@@ -73,7 +73,7 @@ const MEMBERS: &[Member] = &[
     (
         "crates/alcomd-client",
         "alcomd-client",
-        &["alcomd-protocol"],
+        &["alcomd-platform", "alcomd-protocol"],
     ),
     ("crates/alcomd-store", "alcomd-store", &[]),
     ("crates/alcomd-platform", "alcomd-platform", &[]),
@@ -156,6 +156,7 @@ fn check(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     check_product(&product, &mut errors);
     check_workspace(root, &mut errors)?;
     check_derived_identity(root, &product, &mut errors)?;
+    check_unsafe_boundary(root, &mut errors)?;
 
     for relative in PRODUCTION_ROOTS {
         scan_forbidden_tokens(&root.join(relative), &mut errors)?;
@@ -169,6 +170,78 @@ fn check(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("error: {error}");
     }
     Err(format!("{} repository check(s) failed", errors.len()).into())
+}
+
+fn check_unsafe_boundary(
+    root: &Path,
+    errors: &mut Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    const APPROVED: &str = "crates/alcomd-platform/src/windows_security.rs";
+    let unsafe_word = ["un", "safe"].concat();
+    let allowance = format!("allow({unsafe_word}_code)");
+    let approved_path = root.join(APPROVED);
+    let approved_content = fs::read_to_string(&approved_path)?;
+    if !approved_content.contains(&format!("#![{allowance}]")) {
+        errors.push(format!(
+            "{APPROVED} must contain the approved crate-local unsafe allowance"
+        ));
+    }
+
+    scan_rust_sources(root, root, APPROVED, errors)?;
+
+    let platform_manifest: toml::Value =
+        read_toml(&root.join("crates/alcomd-platform/Cargo.toml"))?;
+    if platform_manifest["lints"]["rust"]["unsafe_code"].as_str() != Some("deny") {
+        errors.push("alcomd-platform must set unsafe_code = \"deny\"".to_owned());
+    }
+    if platform_manifest["lints"]["clippy"]["undocumented_unsafe_blocks"].as_str() != Some("deny") {
+        errors.push("alcomd-platform must deny undocumented unsafe blocks".to_owned());
+    }
+    Ok(())
+}
+
+fn scan_rust_sources(
+    root: &Path,
+    path: &Path,
+    approved: &str,
+    errors: &mut Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if path.is_dir() {
+        for entry in fs::read_dir(path)? {
+            let child = entry?.path();
+            let name = child
+                .file_name()
+                .and_then(OsStr::to_str)
+                .unwrap_or_default();
+            if !matches!(name, "target" | "node_modules" | ".git") {
+                scan_rust_sources(root, &child, approved, errors)?;
+            }
+        }
+        return Ok(());
+    }
+    if path.extension().and_then(OsStr::to_str) != Some("rs") {
+        return Ok(());
+    }
+
+    let relative = path
+        .strip_prefix(root)?
+        .to_string_lossy()
+        .replace('\\', "/");
+    let content = fs::read_to_string(path)?;
+    let unsafe_word = ["un", "safe"].concat();
+    let contains_allow = content.contains(&format!("allow({unsafe_word}_code)"));
+    let unsafe_tokens =
+        ["{", "fn ", "impl ", "trait "].map(|suffix| format!("{unsafe_word} {suffix}"));
+    let contains_boundary_token = unsafe_tokens.iter().any(|token| content.contains(token));
+    if relative != approved && contains_allow {
+        errors.push(format!(
+            "unsafe_code allowance outside approved file: {relative}"
+        ));
+    }
+    if relative != approved && contains_boundary_token {
+        errors.push(format!("unsafe Rust outside approved file: {relative}"));
+    }
+    Ok(())
 }
 
 fn check_product(product: &ProductConfig, errors: &mut Vec<String>) {

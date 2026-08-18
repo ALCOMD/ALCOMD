@@ -1,37 +1,41 @@
 use anyhow::Context;
 use clap::Parser;
+use std::path::PathBuf;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
-/// ALCOMD core daemon scaffold.
+/// ALCOMD per-user core daemon.
 #[derive(Debug, Parser)]
 #[command(name = "alcomd", version, about)]
 struct Arguments {
-    /// Print the scaffold health response and exit.
-    #[arg(long)]
-    once: bool,
+    /// Override the private Unix runtime directory for isolated testing.
+    #[arg(long, hide = true)]
+    runtime_dir: Option<PathBuf>,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     init_tracing();
     let arguments = Arguments::parse();
-
-    if arguments.once {
-        let response = alcomd_protocol::HelloResult::m1();
-        println!("{}", serde_json::to_string_pretty(&response)?);
-        return Ok(());
-    }
-
+    let config = arguments
+        .runtime_dir
+        .map(alcomd_platform::IpcConfig::isolated)
+        .unwrap_or_default();
+    let endpoint = alcomd_platform::endpoint_display(&config)
+        .context("failed to resolve the per-user RPC endpoint")?;
     info!(
         product = alcomd_protocol::PRODUCT_FAMILY,
         rpc_version = alcomd_protocol::RPC_VERSION,
-        "starting scaffold daemon; IPC is intentionally not implemented in M0"
+        endpoint,
+        "starting per-user daemon"
     );
-
-    tokio::signal::ctrl_c()
-        .await
-        .context("failed to wait for Ctrl+C")?;
+    alcomd::serve_until(config, async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to wait for Ctrl+C");
+    })
+    .await
+    .context("daemon stopped")?;
     info!("shutdown requested");
     Ok(())
 }

@@ -591,6 +591,58 @@ def main() -> int:
         set(cargo_workspace["workspace"]["members"]) == expected_workspace_members,
         "Unexpected Cargo workspace members",
     )
+    tokio_features = set(cargo_workspace["workspace"]["dependencies"]["tokio"]["features"])
+    require(
+        {"io-util", "macros", "net", "rt-multi-thread", "signal", "time"}
+        <= tokio_features,
+        "Tokio lacks an M1-required feature",
+    )
+    require("full" not in tokio_features, "Tokio full feature is not allowed")
+
+    platform_manifest = load_toml("crates/alcomd-platform/Cargo.toml")
+    unix_rustix = platform_manifest["target"]["cfg(unix)"]["dependencies"]["rustix"]
+    require(unix_rustix["version"] == "=1.1.4", "Unexpected rustix version")
+    require(unix_rustix["default-features"] is False, "rustix defaults must be disabled")
+    require(
+        set(unix_rustix["features"]) == {"std", "fs", "process"},
+        "Unexpected rustix feature set",
+    )
+    windows_sys = platform_manifest["target"]["cfg(windows)"]["dependencies"][
+        "windows-sys"
+    ]
+    require(windows_sys["version"] == "=0.61.2", "Unexpected windows-sys version")
+    require(
+        set(windows_sys["features"])
+        == {
+            "Win32_Foundation",
+            "Win32_Security",
+            "Win32_Security_Authorization",
+            "Win32_System_Threading",
+        },
+        "Unexpected windows-sys feature set",
+    )
+    require(
+        platform_manifest["lints"]["rust"]["unsafe_code"] == "deny",
+        "alcomd-platform must deny unsafe_code by default",
+    )
+    require(
+        platform_manifest["lints"]["clippy"]["undocumented_unsafe_blocks"] == "deny",
+        "alcomd-platform must deny undocumented unsafe blocks",
+    )
+
+    cargo_lock = load_toml("Cargo.lock")
+    locked_packages = {
+        (package["name"], package["version"]) for package in cargo_lock["package"]
+    }
+    require(("rustix", "1.1.4") in locked_packages, "rustix 1.1.4 is not locked")
+    require(
+        ("linux-raw-sys", "0.12.1") in locked_packages,
+        "linux-raw-sys 0.12.1 is not locked",
+    )
+    require(
+        sum(1 for name, _ in locked_packages if name == "rustix") == 1,
+        "Multiple rustix versions are locked",
+    )
 
     rust_toolchain = load_toml("rust-toolchain.toml")
     require(
@@ -657,6 +709,11 @@ def main() -> int:
         "apps/alcomd-gui/src-tauri/capabilities/main.json",
         "specs/rpc/system-hello.request.schema.json",
         "specs/rpc/system-hello.response.schema.json",
+        "specs/rpc/request-envelope.schema.json",
+        "specs/rpc/response-envelope.schema.json",
+        "specs/rpc/rpc-error.schema.json",
+        "specs/rpc/system-status.request.schema.json",
+        "specs/rpc/system-status.response.schema.json",
         "specs/extensions/manifest-v1.schema.json",
         "migrations/v3/schemas/migration-bundle-v1.schema.json",
     ]:

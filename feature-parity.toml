@@ -34,8 +34,8 @@ behavior = "所有入口经同一 application 用例层，只有 alcomd 写数�
 implementation = "apps/alcomd"
 release_class = "release_blocker"
 status = "verified"
-implementation_status = "scaffold"
-evidence = ["docs/architecture/ALCOMD-V4.md::核心不变量"]
+implementation_status = "in_progress"
+evidence = ["docs/architecture/ALCOMD-V4.md::核心不变量", "apps/alcomd/src/lib.rs", "crates/alcomd-platform/src/lib.rs"]
 coverage = ["single instance", "single writer", "entrypoint bypass"]
 tests = ["daemon.single-writer", "architecture.dependency-direction"]
 
@@ -48,10 +48,10 @@ behavior = "公开 RPC 承载身份、权限、revision、幂等、Plan/Apply、
 implementation = "crates/alcomd-protocol"
 release_class = "release_blocker"
 status = "verified"
-implementation_status = "scaffold"
-evidence = ["docs/architecture/ALCOMD-V4.md", "specs/rpc/alcomd-rpc-v1.md"]
+implementation_status = "in_progress"
+evidence = ["docs/architecture/ALCOMD-V4.md", "specs/rpc/alcomd-rpc-v1.md", "crates/alcomd-protocol/src/lib.rs", "crates/alcomd-client/src/lib.rs"]
 coverage = ["framing", "errors", "principal", "operation lifecycle"]
-tests = ["rpc.hello-contract", "access.principal-revocation", "operations.lifecycle"]
+tests = ["rpc.hello-contract", "rpc.per-user-ipc", "cli.m1-system-status", "access.principal-revocation", "operations.lifecycle"]
 
 [[feature]]
 id = "projects.management"
@@ -202,10 +202,10 @@ behavior = "所有入口复用 application，用稳定 JSON/NDJSON、stdout/stde
 implementation = "apps/alcomd-cli"
 release_class = "release_blocker"
 status = "verified"
-implementation_status = "scaffold"
-evidence = ["docs/baselines/vrc-get-audit.md::CLI 功能与错误契约"]
+implementation_status = "in_progress"
+evidence = ["docs/baselines/vrc-get-audit.md::CLI 功能与错误契约", "apps/alcomd-cli/src/main.rs"]
 coverage = ["help/aliases", "human/json", "offline/no-update", "confirmation", "errors"]
-tests = ["cli.command-contract", "cli.help-output-exit", "cli.non-tty"]
+tests = ["cli.m1-system-status", "cli.command-contract", "cli.help-output-exit", "cli.non-tty"]
 
 [[feature]]
 id = "cli.automation-safety"
