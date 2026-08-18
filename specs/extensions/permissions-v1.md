@@ -54,3 +54,17 @@ mcp.configuration.manage
 - 权限不能隐式扩大到子权限。
 - 高风险权限必须显示具体资源范围。
 - `integrations.discord.presence` 只允许 Presence 窄能力，不代表任意 Discord IPC。
+
+## M3 项目与 Repository 权限
+
+- `projects.read`：允许 `projects.inspect/list/get` 以及读取被授权项目的 normalized snapshot；不允许
+  修改项目文件。
+- `projects.manage`：允许在 ALCOMD registry 中 register/refresh/unregister 项目；它不隐含
+  `packages.manage`，也不允许创建、删除或修改项目目录。
+- `repositories.read`：允许 `repositories.inspect/list/get/packages` 的 normalized metadata 查询。
+- `repositories.manage`：允许 register/refresh/unregister local 或匿名 HTTP(S) source 及
+  last-known-good cache；不允许 credential、自定义 header、package payload 下载或项目写入。
+- M3 `builtin:local-owner` 获得上述四项权限。capability、client metadata、路径、URL 与资源 ID
+  均不是身份或授权凭据。
+- 外部 Principal 的逐项目/逐 repository resource scope 和 credential enrollment/revocation 尚未
+  实现；`access.principal-revocation` 继续保持 planned。

@@ -1,10 +1,10 @@
 # 项目状态
 
-最后更新：2026-08-18
+最后更新：2026-08-19
 
 ## 当前阶段
 
-`M3：ExecPlan 草案已创建并等待人工审批；生产合同与实现均未开始`
+`M3：合同、生产切片与完整本地验收已完成，等待最终提交的三平台 hosted 验收；尚未进入 M4`
 
 ## 已完成
 
@@ -109,6 +109,18 @@
 - 首轮 Windows hosted 测试发现 SQLite worker shutdown 与测试目录清理之间的生命周期竞态；
   最终提交已改为在最后一个 state store handle 释放时确定性关闭并回收 worker，随后重新通过
   Windows 完整测试。项目所有者已确认 M2 人工验收通过，M2 正式完成。
+- M3 已冻结 ADR 0016、RPC/storage Schema v2、项目/仓库权限与稳定错误；实现 exact/parent 项目
+  发现、VPM/UPM/ProjectVersion bounded 读取、local/anonymous HTTP(S) repository 读取、平台对象
+  identity、Schema v2 registry、revision/Event/永久幂等、304/no-op 与 last-known-good 语义。
+- M3 已接通 daemon/application/store/vpm/protocol/client/CLI 的真实只读垂直切片；synthetic IPC
+  测试确认读取前后项目与 repository 源文件字节不变。完整 v3 parity、repository import/deep-link、
+  credential、SemVer/resolver、package 下载/安装与项目写入仍未实现。
+- M3 直接 HTTP 依赖保持精确 `reqwest 0.13.4`、`default-features = false`、仅 `rustls`；feature
+  graph 证明确认 quinn/HTTP3、system-proxy、cookie 和压缩未激活。Cargo.lock 中可存在获批的
+  optional/target-only 锁定项，但不将它们描述为 ALCOMD 当前运行时组件。
+- M3 Windows 本机 `check.ps1`、`test.ps1`、Tauri no-bundle、冻结基线与锁文件门禁已经通过；
+  这只属于本地候选证据。Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 的最终提交
+  hosted CI 尚未取得，M3 仍未完成最终验收。
 
 ## 后续里程碑尚未完成
 
@@ -151,8 +163,8 @@
 
 ## 下一停止点
 
-M0、M1 与 M2 均已完成并通过最终人工验收。M3 项目与 VPM Repository 只读垂直切片的
-ExecPlan 草案已创建；当前停止在人工审批点，不得修改 RPC/storage Schema、permission、生产
-依赖或生产代码。真实 credential revocation 仍未完成；Windows 10/11 完整客户端安装、启动、
-WebView2、更新与卸载验证继续 deferred 到 M12，不得把 Windows Server hosted 结果描述为
-客户端发行证据。
+M0、M1 与 M2 均已完成并通过最终人工验收。M3 项目与 VPM Repository 只读垂直切片的合同、
+本地生产实现与完整本地门禁已完成，当前仍需最终提交对应的 Windows Server 2025、Ubuntu 22.04、
+macOS 15 arm64 hosted CI；在这些证据取得并由项目所有者验收前不得进入 M4。真实 credential revocation 仍未完成；Windows
+10/11 完整客户端安装、启动、WebView2、更新与卸载验证继续 deferred 到 M12，不得把 Windows
+Server hosted 结果描述为客户端发行证据。

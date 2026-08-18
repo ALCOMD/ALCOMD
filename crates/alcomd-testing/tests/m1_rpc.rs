@@ -9,6 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use alcomd_client::{AlcomdClient, ClientConfig};
 use alcomd_platform::{BindError, IpcConfig, IpcListener, IpcStream};
 use alcomd_protocol::{
+    CAPABILITY_EVENTS_REPLAY_V1, CAPABILITY_OPERATIONS_V1, CAPABILITY_STATE_CHECK_V1,
     ErrorResponse, MAX_FRAME_PAYLOAD_BYTES, METHOD_SYSTEM_STATUS, RequestEnvelope, Response,
     decode_frame_length, encode_frame, error_code,
 };
@@ -34,7 +35,13 @@ async fn real_daemon_client_and_single_instance_contract() {
     let status = client.system_status().await.expect("query system status");
     assert_eq!(status.state, "ready");
     assert_eq!(status.rpc_version, 1);
-    assert_eq!(status.capabilities.len(), 3);
+    for capability in [
+        CAPABILITY_STATE_CHECK_V1,
+        CAPABILITY_OPERATIONS_V1,
+        CAPABILITY_EVENTS_REPLAY_V1,
+    ] {
+        assert!(status.capabilities.iter().any(|value| value == capability));
+    }
 
     assert!(matches!(
         IpcListener::bind(&ipc),
@@ -108,6 +115,8 @@ async fn stop_daemon(
         .expect("daemon stops before timeout")
         .expect("join daemon");
     assert!(result.is_ok(), "daemon stopped with error: {result:?}");
+    #[cfg(windows)]
+    tokio::time::sleep(Duration::from_millis(25)).await;
 }
 
 async fn connect_with_retry(config: ClientConfig) -> AlcomdClient {

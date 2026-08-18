@@ -60,12 +60,13 @@ serde_json = "1.0"
 tauri = "2"
 tauri-build = "2"
 thiserror = "2.0"
-tokio = { version = "1.0", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "1.0", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 toml = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1.0", features = ["serde", "v4"] }
 rusqlite = { version = "=0.40.1", default-features = false, features = ["bundled"] }
+reqwest = { version = "=0.13.4", default-features = false, features = ["rustls"] }
 
 alcomd-domain = { path = "crates/alcomd-domain" }
 alcomd-application = { path = "crates/alcomd-application" }

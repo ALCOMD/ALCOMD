@@ -593,7 +593,7 @@ def main() -> int:
     )
     tokio_features = set(cargo_workspace["workspace"]["dependencies"]["tokio"]["features"])
     require(
-        {"io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"}
+        {"fs", "io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"}
         <= tokio_features,
         "Tokio lacks an M1-required feature",
     )
@@ -617,6 +617,7 @@ def main() -> int:
             "Win32_Foundation",
             "Win32_Security",
             "Win32_Security_Authorization",
+            "Win32_Storage_FileSystem",
             "Win32_System_Com",
             "Win32_System_Threading",
             "Win32_UI_Shell",
@@ -631,6 +632,16 @@ def main() -> int:
         platform_manifest["lints"]["clippy"]["undocumented_unsafe_blocks"] == "deny",
         "alcomd-platform must deny undocumented unsafe blocks",
     )
+
+    vpm_manifest = load_toml("crates/alcomd-vpm/Cargo.toml")
+    require(
+        vpm_manifest["dependencies"]["reqwest"] == {"workspace": True},
+        "alcomd-vpm must use the approved workspace reqwest",
+    )
+    reqwest = cargo_workspace["workspace"]["dependencies"]["reqwest"]
+    require(reqwest["version"] == "=0.13.4", "Unexpected reqwest version")
+    require(reqwest["default-features"] is False, "reqwest defaults must be disabled")
+    require(reqwest["features"] == ["rustls"], "Unexpected reqwest feature set")
 
     cargo_lock = load_toml("Cargo.lock")
     locked_packages = {

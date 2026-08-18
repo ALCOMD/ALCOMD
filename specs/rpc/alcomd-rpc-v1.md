@@ -387,3 +387,51 @@ daemon 暴露成 half-ready，也不改变 `system.status state="ready"` 的成�
 - 外部 credential/pairing/revocation 与未来业务权限。
 - Event retention/compaction 与实际 `event_cursor_expired`。
 - 项目、VPM、文件事务或通用 workflow/job API。
+
+## 17. M3 兼容增加：项目与 Repository
+
+M3 在 RPC major 1 上增加四项 capability：`projects.read.v1`、`projects.registry.v1`、
+`repositories.read.v1`、`repositories.registry.v1`。
+
+| method | capability | permission | 语义 |
+|---|---|---|---|
+| `projects.inspect` | `projects.read.v1` | `projects.read` | 无状态读取绝对路径；显式 exact-root/search-parents |
+| `projects.list` | `projects.read.v1` | `projects.read` | 注册项目稳定分页 |
+| `projects.get` | `projects.read.v1` | `projects.read` | 读取一个已注册 snapshot |
+| `projects.register` | `projects.registry.v1` | `projects.manage` | exact root 读取成功后写 registry |
+| `projects.refresh` | `projects.registry.v1` | `projects.manage` | 刷新 normalized snapshot，不写项目 |
+| `projects.unregister` | `projects.registry.v1` | `projects.manage` | 只删 registry row，不删目录 |
+| `repositories.inspect` | `repositories.read.v1` | `repositories.read` | 无状态读取 local/remote source |
+| `repositories.list` | `repositories.read.v1` | `repositories.read` | 注册 source 稳定分页 |
+| `repositories.get` | `repositories.read.v1` | `repositories.read` | 读取一个 last-known-good snapshot |
+| `repositories.packages` | `repositories.read.v1` | `repositories.read` | raw package/version identity 分页 |
+| `repositories.register` | `repositories.registry.v1` | `repositories.manage` | 首次完整读取成功后写 registry/cache |
+| `repositories.refresh` | `repositories.registry.v1` | `repositories.manage` | 条件刷新并保留 last-known-good |
+| `repositories.unregister` | `repositories.registry.v1` | `repositories.manage` | 只删 registry/cache，不删 local source |
+
+`projects.inspect/register` 的 RPC path 必须绝对；CLI 可先解析相对路径。local repository path 同样
+必须绝对，remote URL 只允许无 userinfo 的 HTTP(S)。DTO、枚举、长度、cursor 与可选字段由
+`m3-project-repository.schema.json` 冻结。列表默认 limit 100、最大 1000；registry page 按
+`(registeredAtMs DESC, id DESC)`，package page 按 `(packageId ASC, version ASC)`，cursor exclusive。
+
+同步写命令使用 M2 永久幂等 scope，但成功响应不需要 OperationId。`register` 返回注册后的
+aggregate 与 `replayed`；`refresh` 返回最新 aggregate 与 `replayed`；`unregister` 返回资源 ID、
+删除前 revision + 1、`unregistered: true` 与 `replayed`。同 Principal、method、key、fingerprint
+重放 durable response；不同 fingerprint 返回 `idempotency_conflict`。外部 fetch/parse 失败发生在
+reservation 前，不消耗 key。
+
+Project/Repository Event kind 固定为 `project.registered/refreshed/unregistered` 与
+`repository.registered/refreshed/unregistered`。no-op、HTTP 304、validator-only update 与失败不增加
+revision、不写 Event。unregister Event 保留在历史中，重新注册生成新 ID。
+
+M3 增加稳定错误：`path_encoding_unsupported`、`project_not_found`、
+`project_not_registered`、`project_already_registered`、`project_inaccessible`、
+`project_version_missing`、`project_version_invalid`、`project_manifest_invalid`、
+`repository_not_found`、`repository_not_registered`、`repository_already_registered`、
+`repository_source_invalid`、`repository_inaccessible`、`repository_unavailable`、
+`repository_document_invalid`、`repository_document_too_large` 与
+`repository_credentials_unsupported`。普通错误不返回完整路径、URL userinfo、原始文档、parser
+debug、HTTP header、SQL 或 credential；未知错误继续使用 `internal_error + diagnosticId`。
+
+M3 仍不增加 notification、background refresh、credential、package payload、SemVer、resolver、
+Plan/Apply 或项目写入。新增 method/capability/可选响应字段是兼容增加；既有 M1/M2 方法语义不变。

@@ -115,6 +115,10 @@ impl AlcomdClient {
                 CAPABILITY_STATE_CHECK_V1.to_owned(),
                 CAPABILITY_OPERATIONS_V1.to_owned(),
                 CAPABILITY_EVENTS_REPLAY_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_PROJECTS_READ_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_PROJECTS_REGISTRY_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_REPOSITORIES_READ_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_REPOSITORIES_REGISTRY_V1.to_owned(),
             ],
         };
         self.call(METHOD_SYSTEM_HELLO, params).await
@@ -182,6 +186,193 @@ impl AlcomdClient {
             EventsListParams {
                 after_sequence,
                 limit,
+            },
+        )
+        .await
+    }
+
+    pub async fn project_inspect(
+        &mut self,
+        path: String,
+        discovery_mode: alcomd_protocol::ProjectDiscoveryMode,
+    ) -> Result<alcomd_protocol::ProjectResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_PROJECTS_INSPECT,
+            alcomd_protocol::ProjectsInspectParams {
+                path,
+                discovery_mode,
+            },
+        )
+        .await
+    }
+
+    pub async fn projects_list(
+        &mut self,
+        cursor: Option<alcomd_protocol::RegistryCursor>,
+        limit: Option<u32>,
+    ) -> Result<alcomd_protocol::ProjectsListResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_PROJECTS_LIST,
+            alcomd_protocol::RegistryListParams { cursor, limit },
+        )
+        .await
+    }
+
+    pub async fn project_get(
+        &mut self,
+        project_id: String,
+    ) -> Result<alcomd_protocol::ProjectResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_PROJECTS_GET,
+            alcomd_protocol::ProjectIdParams { project_id },
+        )
+        .await
+    }
+
+    pub async fn project_register(
+        &mut self,
+        path: String,
+        idempotency_key: String,
+    ) -> Result<alcomd_protocol::ProjectWriteResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_PROJECTS_REGISTER,
+            alcomd_protocol::ProjectRegisterParams {
+                path,
+                idempotency_key,
+            },
+        )
+        .await
+    }
+
+    pub async fn project_refresh(
+        &mut self,
+        project_id: String,
+        expected_revision: u64,
+        idempotency_key: String,
+    ) -> Result<alcomd_protocol::ProjectWriteResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_PROJECTS_REFRESH,
+            alcomd_protocol::ProjectMutationParams {
+                project_id,
+                expected_revision,
+                idempotency_key,
+            },
+        )
+        .await
+    }
+
+    pub async fn project_unregister(
+        &mut self,
+        project_id: String,
+        expected_revision: u64,
+        idempotency_key: String,
+    ) -> Result<alcomd_protocol::ProjectUnregisterResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_PROJECTS_UNREGISTER,
+            alcomd_protocol::ProjectMutationParams {
+                project_id,
+                expected_revision,
+                idempotency_key,
+            },
+        )
+        .await
+    }
+
+    pub async fn repository_inspect(
+        &mut self,
+        source: alcomd_protocol::RepositorySource,
+    ) -> Result<alcomd_protocol::RepositoryResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_REPOSITORIES_INSPECT,
+            alcomd_protocol::RepositoryInspectParams { source },
+        )
+        .await
+    }
+
+    pub async fn repositories_list(
+        &mut self,
+        cursor: Option<alcomd_protocol::RegistryCursor>,
+        limit: Option<u32>,
+    ) -> Result<alcomd_protocol::RepositoriesListResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_REPOSITORIES_LIST,
+            alcomd_protocol::RegistryListParams { cursor, limit },
+        )
+        .await
+    }
+
+    pub async fn repository_get(
+        &mut self,
+        repository_id: String,
+    ) -> Result<alcomd_protocol::RepositoryResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_REPOSITORIES_GET,
+            alcomd_protocol::RepositoryIdParams { repository_id },
+        )
+        .await
+    }
+
+    pub async fn repository_packages(
+        &mut self,
+        repository_id: String,
+        cursor: Option<alcomd_protocol::PackageCursor>,
+        limit: Option<u32>,
+    ) -> Result<alcomd_protocol::RepositoryPackagesResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_REPOSITORIES_PACKAGES,
+            alcomd_protocol::RepositoryPackagesParams {
+                repository_id,
+                cursor,
+                limit,
+            },
+        )
+        .await
+    }
+
+    pub async fn repository_register(
+        &mut self,
+        source: alcomd_protocol::RepositorySource,
+        idempotency_key: String,
+    ) -> Result<alcomd_protocol::RepositoryWriteResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_REPOSITORIES_REGISTER,
+            alcomd_protocol::RepositoryRegisterParams {
+                source,
+                idempotency_key,
+            },
+        )
+        .await
+    }
+
+    pub async fn repository_refresh(
+        &mut self,
+        repository_id: String,
+        expected_revision: u64,
+        idempotency_key: String,
+    ) -> Result<alcomd_protocol::RepositoryWriteResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_REPOSITORIES_REFRESH,
+            alcomd_protocol::RepositoryMutationParams {
+                repository_id,
+                expected_revision,
+                idempotency_key,
+            },
+        )
+        .await
+    }
+
+    pub async fn repository_unregister(
+        &mut self,
+        repository_id: String,
+        expected_revision: u64,
+        idempotency_key: String,
+    ) -> Result<alcomd_protocol::RepositoryUnregisterResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_REPOSITORIES_UNREGISTER,
+            alcomd_protocol::RepositoryMutationParams {
+                repository_id,
+                expected_revision,
+                idempotency_key,
             },
         )
         .await

@@ -37,6 +37,16 @@ enum Command {
         #[command(subcommand)]
         command: SystemCommand,
     },
+    /// Inspect and manage only the ALCOMD project registry.
+    Project {
+        #[command(subcommand)]
+        command: ProjectCommand,
+    },
+    /// Inspect and manage normalized VPM repository metadata.
+    Repository {
+        #[command(subcommand)]
+        command: RepositoryCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -45,12 +55,83 @@ enum SystemCommand {
     Status,
 }
 
+#[derive(Debug, Subcommand)]
+enum ProjectCommand {
+    Inspect {
+        path: PathBuf,
+        #[arg(long)]
+        search_parents: bool,
+    },
+    List {
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+    Get {
+        project_id: String,
+    },
+    Register {
+        path: PathBuf,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+    Refresh {
+        project_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+    Unregister {
+        project_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum RepositoryCommand {
+    Inspect {
+        source: String,
+    },
+    List {
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+    Get {
+        repository_id: String,
+    },
+    Packages {
+        repository_id: String,
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+    Register {
+        source: String,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+    Refresh {
+        repository_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+    Unregister {
+        repository_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let arguments = Arguments::parse();
 
-    let Command::System { command } = arguments.command;
-    let SystemCommand::Status = command;
     let mut config = alcomd_client::ClientConfig::default();
     if arguments.no_start_daemon {
         config = config.without_daemon_start();
@@ -65,9 +146,9 @@ async fn main() -> ExitCode {
         config = config.with_daemon_path(path);
     }
 
-    match query_status(config).await {
-        Ok(status) => {
-            print_status(arguments.json, &status);
+    match execute(config, arguments.command).await {
+        Ok(value) => {
+            print_result(arguments.json, &value);
             ExitCode::SUCCESS
         }
         Err(error) => {
@@ -77,24 +158,161 @@ async fn main() -> ExitCode {
     }
 }
 
-async fn query_status(
+async fn execute(
     config: alcomd_client::ClientConfig,
-) -> Result<alcomd_protocol::SystemStatusResult, alcomd_client::ClientError> {
+    command: Command,
+) -> Result<serde_json::Value, alcomd_client::ClientError> {
     let mut client = alcomd_client::AlcomdClient::connect(config).await?;
-    client.system_status().await
+    let value = match command {
+        Command::System {
+            command: SystemCommand::Status,
+        } => serde_json::to_value(client.system_status().await?),
+        Command::Project { command } => match command {
+            ProjectCommand::Inspect {
+                path,
+                search_parents,
+            } => {
+                let path = absolute_path(path).map_err(alcomd_client::ClientError::Transport)?;
+                serde_json::to_value(
+                    client
+                        .project_inspect(
+                            path,
+                            if search_parents {
+                                alcomd_protocol::ProjectDiscoveryMode::SearchParents
+                            } else {
+                                alcomd_protocol::ProjectDiscoveryMode::ExactRoot
+                            },
+                        )
+                        .await?,
+                )
+            }
+            ProjectCommand::List { limit } => {
+                serde_json::to_value(client.projects_list(None, limit).await?)
+            }
+            ProjectCommand::Get { project_id } => {
+                serde_json::to_value(client.project_get(project_id).await?)
+            }
+            ProjectCommand::Register {
+                path,
+                idempotency_key,
+            } => {
+                let path = absolute_path(path).map_err(alcomd_client::ClientError::Transport)?;
+                serde_json::to_value(client.project_register(path, idempotency_key).await?)
+            }
+            ProjectCommand::Refresh {
+                project_id,
+                expected_revision,
+                idempotency_key,
+            } => serde_json::to_value(
+                client
+                    .project_refresh(project_id, expected_revision, idempotency_key)
+                    .await?,
+            ),
+            ProjectCommand::Unregister {
+                project_id,
+                expected_revision,
+                idempotency_key,
+            } => serde_json::to_value(
+                client
+                    .project_unregister(project_id, expected_revision, idempotency_key)
+                    .await?,
+            ),
+        },
+        Command::Repository { command } => match command {
+            RepositoryCommand::Inspect { source } => serde_json::to_value(
+                client
+                    .repository_inspect(repository_source(source)?)
+                    .await?,
+            ),
+            RepositoryCommand::List { limit } => {
+                serde_json::to_value(client.repositories_list(None, limit).await?)
+            }
+            RepositoryCommand::Get { repository_id } => {
+                serde_json::to_value(client.repository_get(repository_id).await?)
+            }
+            RepositoryCommand::Packages {
+                repository_id,
+                limit,
+            } => serde_json::to_value(
+                client
+                    .repository_packages(repository_id, None, limit)
+                    .await?,
+            ),
+            RepositoryCommand::Register {
+                source,
+                idempotency_key,
+            } => serde_json::to_value(
+                client
+                    .repository_register(repository_source(source)?, idempotency_key)
+                    .await?,
+            ),
+            RepositoryCommand::Refresh {
+                repository_id,
+                expected_revision,
+                idempotency_key,
+            } => serde_json::to_value(
+                client
+                    .repository_refresh(repository_id, expected_revision, idempotency_key)
+                    .await?,
+            ),
+            RepositoryCommand::Unregister {
+                repository_id,
+                expected_revision,
+                idempotency_key,
+            } => serde_json::to_value(
+                client
+                    .repository_unregister(repository_id, expected_revision, idempotency_key)
+                    .await?,
+            ),
+        },
+    }
+    .map_err(|_| alcomd_client::ClientError::InvalidResponse)?;
+    Ok(value)
 }
 
-fn print_status(as_json: bool, status: &alcomd_protocol::SystemStatusResult) {
+fn print_result(as_json: bool, value: &serde_json::Value) {
     if as_json {
-        println!(
-            "{}",
-            serde_json::to_string(status).expect("approved status DTO must serialize")
-        );
+        println!("{value}");
+    } else if let (Some(product), Some(version), Some(state), Some(rpc_version)) = (
+        value.get("product").and_then(serde_json::Value::as_str),
+        value
+            .get("daemonVersion")
+            .and_then(serde_json::Value::as_str),
+        value.get("state").and_then(serde_json::Value::as_str),
+        value.get("rpcVersion").and_then(serde_json::Value::as_u64),
+    ) {
+        println!("{product} daemon {version}: {state} (RPC v{rpc_version})");
     } else {
         println!(
-            "{} daemon {}: {} (RPC v{})",
-            status.product, status.daemon_version, status.state, status.rpc_version
+            "{}",
+            serde_json::to_string_pretty(value).expect("approved result DTO must serialize")
         );
+    }
+}
+
+fn absolute_path(path: PathBuf) -> std::io::Result<String> {
+    let path = if path.is_absolute() {
+        path
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    path.to_str().map(str::to_owned).ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "path encoding is unsupported",
+        )
+    })
+}
+
+fn repository_source(
+    source: String,
+) -> Result<alcomd_protocol::RepositorySource, alcomd_client::ClientError> {
+    if source.starts_with("http://") || source.starts_with("https://") {
+        Ok(alcomd_protocol::RepositorySource::Remote { url: source })
+    } else {
+        let path =
+            absolute_path(PathBuf::from(source)).map_err(alcomd_client::ClientError::Transport)?;
+        Ok(alcomd_protocol::RepositorySource::Local { path })
     }
 }
 

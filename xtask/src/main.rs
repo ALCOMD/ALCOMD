@@ -43,6 +43,7 @@ const MEMBERS: &[Member] = &[
             "alcomd-platform",
             "alcomd-protocol",
             "alcomd-store",
+            "alcomd-vpm",
         ],
     ),
     (
@@ -86,7 +87,11 @@ const MEMBERS: &[Member] = &[
         &["alcomd-application"],
     ),
     ("crates/alcomd-platform", "alcomd-platform", &[]),
-    ("crates/alcomd-vpm", "alcomd-vpm", &[]),
+    (
+        "crates/alcomd-vpm",
+        "alcomd-vpm",
+        &["alcomd-application", "alcomd-platform"],
+    ),
     ("crates/alcomd-extensions", "alcomd-extensions", &[]),
     ("crates/alcomd-import", "alcomd-import", &[]),
     ("crates/alcomd-testing", "alcomd-testing", &[]),
@@ -185,9 +190,10 @@ fn check_unsafe_boundary(
     root: &Path,
     errors: &mut Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    const APPROVED: [&str; 2] = [
+    const APPROVED: [&str; 3] = [
         "crates/alcomd-platform/src/windows_security.rs",
         "crates/alcomd-platform/src/windows_known_folder.rs",
+        "crates/alcomd-platform/src/windows_file_identity.rs",
     ];
     let unsafe_word = ["un", "safe"].concat();
     let allowance = format!("allow({unsafe_word}_code)");

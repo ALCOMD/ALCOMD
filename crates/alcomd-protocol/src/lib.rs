@@ -65,6 +65,19 @@ pub const METHOD_OPERATIONS_CANCEL: &str = "operations.cancel";
 
 /// `events.list` method name.
 pub const METHOD_EVENTS_LIST: &str = "events.list";
+pub const METHOD_PROJECTS_INSPECT: &str = "projects.inspect";
+pub const METHOD_PROJECTS_LIST: &str = "projects.list";
+pub const METHOD_PROJECTS_GET: &str = "projects.get";
+pub const METHOD_PROJECTS_REGISTER: &str = "projects.register";
+pub const METHOD_PROJECTS_REFRESH: &str = "projects.refresh";
+pub const METHOD_PROJECTS_UNREGISTER: &str = "projects.unregister";
+pub const METHOD_REPOSITORIES_INSPECT: &str = "repositories.inspect";
+pub const METHOD_REPOSITORIES_LIST: &str = "repositories.list";
+pub const METHOD_REPOSITORIES_GET: &str = "repositories.get";
+pub const METHOD_REPOSITORIES_PACKAGES: &str = "repositories.packages";
+pub const METHOD_REPOSITORIES_REGISTER: &str = "repositories.register";
+pub const METHOD_REPOSITORIES_REFRESH: &str = "repositories.refresh";
+pub const METHOD_REPOSITORIES_UNREGISTER: &str = "repositories.unregister";
 
 /// Capability required by `state.check`.
 pub const CAPABILITY_STATE_CHECK_V1: &str = "state.check.v1";
@@ -74,6 +87,10 @@ pub const CAPABILITY_OPERATIONS_V1: &str = "operations.v1";
 
 /// Capability required by `events.list`.
 pub const CAPABILITY_EVENTS_REPLAY_V1: &str = "events.replay.v1";
+pub const CAPABILITY_PROJECTS_READ_V1: &str = "projects.read.v1";
+pub const CAPABILITY_PROJECTS_REGISTRY_V1: &str = "projects.registry.v1";
+pub const CAPABILITY_REPOSITORIES_READ_V1: &str = "repositories.read.v1";
+pub const CAPABILITY_REPOSITORIES_REGISTRY_V1: &str = "repositories.registry.v1";
 
 /// Stable RPC v1 error codes implemented through M2.
 pub mod error_code {
@@ -109,6 +126,23 @@ pub mod error_code {
     pub const DATA_SCHEMA_UNSUPPORTED: &str = "data_schema_unsupported";
     /// The ready daemon could not complete a state-store operation.
     pub const STORE_UNAVAILABLE: &str = "store_unavailable";
+    pub const PATH_ENCODING_UNSUPPORTED: &str = "path_encoding_unsupported";
+    pub const PROJECT_NOT_FOUND: &str = "project_not_found";
+    pub const PROJECT_NOT_REGISTERED: &str = "project_not_registered";
+    pub const PROJECT_ALREADY_REGISTERED: &str = "project_already_registered";
+    pub const PROJECT_INACCESSIBLE: &str = "project_inaccessible";
+    pub const PROJECT_VERSION_MISSING: &str = "project_version_missing";
+    pub const PROJECT_VERSION_INVALID: &str = "project_version_invalid";
+    pub const PROJECT_MANIFEST_INVALID: &str = "project_manifest_invalid";
+    pub const REPOSITORY_NOT_FOUND: &str = "repository_not_found";
+    pub const REPOSITORY_NOT_REGISTERED: &str = "repository_not_registered";
+    pub const REPOSITORY_ALREADY_REGISTERED: &str = "repository_already_registered";
+    pub const REPOSITORY_SOURCE_INVALID: &str = "repository_source_invalid";
+    pub const REPOSITORY_INACCESSIBLE: &str = "repository_inaccessible";
+    pub const REPOSITORY_UNAVAILABLE: &str = "repository_unavailable";
+    pub const REPOSITORY_DOCUMENT_INVALID: &str = "repository_document_invalid";
+    pub const REPOSITORY_DOCUMENT_TOO_LARGE: &str = "repository_document_too_large";
+    pub const REPOSITORY_CREDENTIALS_UNSUPPORTED: &str = "repository_credentials_unsupported";
 }
 
 /// JSON-RPC-inspired request envelope.
@@ -307,6 +341,34 @@ impl RpcError {
         )
     }
 
+    /// Creates one of the frozen non-sensitive M3 resource errors.
+    #[must_use]
+    pub fn m3_resource(code: &str) -> Self {
+        let message = match code {
+            error_code::PATH_ENCODING_UNSUPPORTED => "The path encoding is unsupported.",
+            error_code::PROJECT_NOT_FOUND => "The Unity project was not found.",
+            error_code::PROJECT_NOT_REGISTERED => "The project is not registered.",
+            error_code::PROJECT_ALREADY_REGISTERED => "The project is already registered.",
+            error_code::PROJECT_INACCESSIBLE => "The project cannot be read.",
+            error_code::PROJECT_VERSION_MISSING => "The Unity project version file is missing.",
+            error_code::PROJECT_VERSION_INVALID => "The Unity project version is invalid.",
+            error_code::PROJECT_MANIFEST_INVALID => "A project manifest is invalid.",
+            error_code::REPOSITORY_NOT_FOUND => "The repository source was not found.",
+            error_code::REPOSITORY_NOT_REGISTERED => "The repository is not registered.",
+            error_code::REPOSITORY_ALREADY_REGISTERED => "The repository is already registered.",
+            error_code::REPOSITORY_SOURCE_INVALID => "The repository source is invalid.",
+            error_code::REPOSITORY_INACCESSIBLE => "The repository source cannot be read.",
+            error_code::REPOSITORY_UNAVAILABLE => "The remote repository is unavailable.",
+            error_code::REPOSITORY_DOCUMENT_INVALID => "The repository document is invalid.",
+            error_code::REPOSITORY_DOCUMENT_TOO_LARGE => "The repository document is too large.",
+            error_code::REPOSITORY_CREDENTIALS_UNSUPPORTED => {
+                "Repository credentials are not supported in M3."
+            }
+            _ => "The resource request failed.",
+        };
+        Self::simple(code, message)
+    }
+
     /// Creates an `internal_error` with a non-sensitive diagnostic ID.
     #[must_use]
     pub fn internal(diagnostic_id: impl Into<String>) -> Self {
@@ -404,6 +466,17 @@ impl HelloResult {
             daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             capabilities,
             data_schema: Some(1),
+        }
+    }
+
+    /// Creates the M3 hello result after Schema v2 and read services are ready.
+    #[must_use]
+    pub fn m3(capabilities: Vec<String>) -> Self {
+        Self {
+            rpc_version: RPC_VERSION,
+            daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
+            capabilities,
+            data_schema: Some(2),
         }
     }
 }
@@ -589,6 +662,269 @@ pub struct EventsListResult {
     pub events: Vec<Event>,
     /// Last returned sequence, or the input `afterSequence` for an empty page.
     pub next_sequence: u64,
+}
+
+/// Explicit Unity project discovery policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProjectDiscoveryMode {
+    /// Inspect only the supplied directory.
+    ExactRoot,
+    /// Walk parent directories until a Unity root is found.
+    SearchParents,
+}
+
+/// Frozen M3 project classification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProjectType {
+    Avatars,
+    Worlds,
+    VpmStarter,
+    UpmAvatars,
+    UpmWorlds,
+    UpmStarter,
+    LegacySdk2,
+    LegacyWorlds,
+    LegacyAvatars,
+    Unknown,
+}
+
+/// Read state of an optional project manifest.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ManifestState {
+    Missing,
+    Valid,
+}
+
+/// Raw package identity/value pair; no SemVer meaning is implied.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DependencyIdentity {
+    pub package_id: String,
+    pub value: String,
+}
+
+/// Bounded non-sensitive parse issue.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadIssue {
+    pub code: String,
+    pub component: String,
+    pub item: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub column: Option<u64>,
+}
+
+/// Public normalized project snapshot.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSnapshot {
+    pub project_id: Option<String>,
+    pub root_path: String,
+    pub project_type: ProjectType,
+    pub unity_version: String,
+    pub unity_revision: Option<String>,
+    pub vpm_manifest: ManifestState,
+    pub upm_manifest: ManifestState,
+    pub direct_dependencies: Vec<DependencyIdentity>,
+    pub locked_dependencies: Vec<DependencyIdentity>,
+    pub issues: Vec<ReadIssue>,
+    pub observed_at_ms: u64,
+    pub revision: Option<u64>,
+}
+
+/// Local or anonymous remote repository source.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+pub enum RepositorySource {
+    Local { path: String },
+    Remote { url: String },
+}
+
+/// Public normalized repository metadata.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositorySnapshot {
+    pub repository_id: Option<String>,
+    pub source: RepositorySource,
+    pub declared_id: Option<String>,
+    pub name: Option<String>,
+    pub declared_url: Option<String>,
+    pub issues: Vec<ReadIssue>,
+    pub revision: Option<u64>,
+    pub refreshed_at_ms: u64,
+}
+
+/// M3 raw package/version display model.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryPackageVersion {
+    pub package_id: String,
+    pub version: String,
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+    pub yanked: bool,
+    pub unity: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RegistryCursor {
+    pub registered_at_ms: u64,
+    pub id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageCursor {
+    pub package_id: String,
+    pub version: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectsInspectParams {
+    pub path: String,
+    pub discovery_mode: ProjectDiscoveryMode,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RegistryListParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<RegistryCursor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectIdParams {
+    pub project_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectRegisterParams {
+    pub path: String,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectMutationParams {
+    pub project_id: String,
+    pub expected_revision: u64,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositoryInspectParams {
+    pub source: RepositorySource,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositoryIdParams {
+    pub repository_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositoryPackagesParams {
+    pub repository_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<PackageCursor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositoryRegisterParams {
+    pub source: RepositorySource,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositoryMutationParams {
+    pub repository_id: String,
+    pub expected_revision: u64,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectResult {
+    pub project: ProjectSnapshot,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectsListResult {
+    pub projects: Vec<ProjectSnapshot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<RegistryCursor>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectWriteResult {
+    pub project: ProjectSnapshot,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectUnregisterResult {
+    pub project_id: String,
+    pub revision: u64,
+    pub unregistered: bool,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryResult {
+    pub repository: RepositorySnapshot,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoriesListResult {
+    pub repositories: Vec<RepositorySnapshot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<RegistryCursor>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryWriteResult {
+    pub repository: RepositorySnapshot,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryUnregisterResult {
+    pub repository_id: String,
+    pub revision: u64,
+    pub unregistered: bool,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepositoryPackagesResult {
+    pub packages: Vec<RepositoryPackageVersion>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<PackageCursor>,
 }
 
 /// Successful `system.status` result.

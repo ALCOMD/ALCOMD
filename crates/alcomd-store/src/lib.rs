@@ -9,19 +9,23 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use alcomd_application::{
-    CheckClassification, CreateOperationOutcome, EventPage, IdempotencyKey, OperationCursor,
-    OperationId, OperationPage, OperationRecord, PrincipalId, Revision, StateCheckResult,
-    StateStore, StoreError,
+    CheckClassification, CreateOperationOutcome, EventPage, IdempotencyKey, M3Error,
+    M3RegistryStore, OperationCursor, OperationId, OperationPage, OperationRecord, PackageCursor,
+    PackagePage, PrincipalId, ProjectId, ProjectObservation, ProjectPage, ProjectRecord,
+    RegistryCursor, RepositoryId, RepositoryObservation, RepositoryPage, RepositoryRecord,
+    RepositoryValidators, Revision, StateCheckResult, StateStore, StoreError, SyncWrite,
+    UnregisterResult,
 };
 use tokio::sync::{mpsc, oneshot};
 
+mod m3;
 mod sqlite;
 
 /// Stable crate identifier used by repository checks.
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 1;
+pub const CURRENT_DATA_SCHEMA: u32 = 2;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]
@@ -122,6 +126,182 @@ impl StateStoreHandle {
             .await
             .map_err(|_| sqlite::unavailable())?;
         receiver.await.map_err(|_| sqlite::unavailable())?
+    }
+
+    async fn request_m3<T: Send + 'static>(
+        &self,
+        work: impl FnOnce(&mut rusqlite::Connection) -> Result<T, M3Error> + Send + 'static,
+    ) -> Result<T, M3Error> {
+        let (reply, response) = oneshot::channel();
+        let commands = self
+            .inner
+            .commands
+            .lock()
+            .map_err(|_| m3::unavailable())?
+            .as_ref()
+            .cloned()
+            .ok_or_else(m3::unavailable)?;
+        commands
+            .send(Command::M3(Box::new(move |connection| {
+                let _ = reply.send(work(connection));
+            })))
+            .await
+            .map_err(|_| m3::unavailable())?;
+        response.await.map_err(|_| m3::unavailable())?
+    }
+}
+
+impl M3RegistryStore for StateStoreHandle {
+    async fn register_project(
+        &self,
+        owner: PrincipalId,
+        observation: ProjectObservation,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
+        self.request_m3(move |connection| {
+            m3::register_project(connection, &owner, observation, &key, now_ms)
+        })
+        .await
+    }
+
+    async fn get_project(
+        &self,
+        owner: PrincipalId,
+        id: ProjectId,
+    ) -> Result<ProjectRecord, M3Error> {
+        self.request_m3(move |connection| m3::get_project(connection, &owner, id))
+            .await
+    }
+
+    async fn list_projects(
+        &self,
+        owner: PrincipalId,
+        cursor: Option<RegistryCursor<ProjectId>>,
+        limit: u32,
+    ) -> Result<ProjectPage, M3Error> {
+        self.request_m3(move |connection| m3::list_projects(connection, &owner, cursor, limit))
+            .await
+    }
+
+    async fn refresh_project(
+        &self,
+        owner: PrincipalId,
+        id: ProjectId,
+        expected: Revision,
+        observation: ProjectObservation,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
+        self.request_m3(move |connection| {
+            m3::refresh_project(connection, &owner, id, expected, observation, &key, now_ms)
+        })
+        .await
+    }
+
+    async fn unregister_project(
+        &self,
+        owner: PrincipalId,
+        id: ProjectId,
+        expected: Revision,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<UnregisterResult<ProjectId>, M3Error> {
+        self.request_m3(move |connection| {
+            m3::unregister_project(connection, &owner, id, expected, &key, now_ms)
+        })
+        .await
+    }
+
+    async fn register_repository(
+        &self,
+        owner: PrincipalId,
+        observation: RepositoryObservation,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        self.request_m3(move |connection| {
+            m3::register_repository(connection, &owner, observation, &key, now_ms)
+        })
+        .await
+    }
+
+    async fn get_repository(
+        &self,
+        owner: PrincipalId,
+        id: RepositoryId,
+    ) -> Result<RepositoryRecord, M3Error> {
+        self.request_m3(move |connection| m3::get_repository(connection, &owner, id))
+            .await
+    }
+
+    async fn list_repositories(
+        &self,
+        owner: PrincipalId,
+        cursor: Option<RegistryCursor<RepositoryId>>,
+        limit: u32,
+    ) -> Result<RepositoryPage, M3Error> {
+        self.request_m3(move |connection| m3::list_repositories(connection, &owner, cursor, limit))
+            .await
+    }
+
+    async fn list_repository_packages(
+        &self,
+        owner: PrincipalId,
+        id: RepositoryId,
+        cursor: Option<PackageCursor>,
+        limit: u32,
+    ) -> Result<PackagePage, M3Error> {
+        self.request_m3(move |connection| {
+            m3::list_repository_packages(connection, &owner, id, cursor, limit)
+        })
+        .await
+    }
+
+    async fn refresh_repository(
+        &self,
+        owner: PrincipalId,
+        id: RepositoryId,
+        expected: Revision,
+        observation: RepositoryObservation,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        self.request_m3(move |connection| {
+            m3::refresh_repository(connection, &owner, id, expected, observation, &key, now_ms)
+        })
+        .await
+    }
+
+    async fn update_repository_validators(
+        &self,
+        owner: PrincipalId,
+        id: RepositoryId,
+        expected: Revision,
+        validators: RepositoryValidators,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        self.request_m3(move |connection| {
+            m3::update_repository_validators(
+                connection, &owner, id, expected, validators, &key, now_ms,
+            )
+        })
+        .await
+    }
+
+    async fn unregister_repository(
+        &self,
+        owner: PrincipalId,
+        id: RepositoryId,
+        expected: Revision,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<UnregisterResult<RepositoryId>, M3Error> {
+        self.request_m3(move |connection| {
+            m3::unregister_repository(connection, &owner, id, expected, &key, now_ms)
+        })
+        .await
     }
 }
 
@@ -289,6 +469,7 @@ impl StateStore for StateStoreHandle {
 }
 
 enum Command {
+    M3(Box<dyn FnOnce(&mut rusqlite::Connection) + Send>),
     CreateStateCheck {
         owner: PrincipalId,
         idempotency_key: IdempotencyKey,
@@ -362,6 +543,7 @@ enum Command {
 fn run_worker(mut connection: rusqlite::Connection, mut receiver: mpsc::Receiver<Command>) {
     while let Some(command) = receiver.blocking_recv() {
         match command {
+            Command::M3(work) => work(&mut connection),
             Command::CreateStateCheck {
                 owner,
                 idempotency_key,

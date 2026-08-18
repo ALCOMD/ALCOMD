@@ -62,10 +62,10 @@ behavior = "保留 v3 项目入口，并兼容 VPM/UPM/ProjectVersion 可观察�
 implementation = "alcomd-application"
 release_class = "release_blocker"
 status = "verified"
-implementation_status = "not_started"
-evidence = ["docs/baselines/alcomd3-v3-audit.md::项目", "docs/baselines/vrc-get-audit.md::项目"]
+implementation_status = "in_progress"
+evidence = ["docs/baselines/alcomd3-v3-audit.md::项目", "docs/baselines/vrc-get-audit.md::项目", "docs/adr/0016-project-repository-read-model.md", "crates/alcomd-vpm/src/lib.rs", "crates/alcomd-store/src/m3.rs"]
 coverage = ["GUI", "CLI -p", "MCP", "invalid/missing project"]
-tests = ["projects.v3-parity", "packages.vpm-format"]
+tests = ["projects.v3-parity", "projects.m3-readonly-registry", "packages.vpm-format"]
 
 [[feature]]
 id = "projects.read-only-contract"
@@ -76,10 +76,10 @@ behavior = "只读查询不自动修复或重写 vpm-manifest；修复进入显�
 implementation = "alcomd-application"
 release_class = "release_blocker"
 status = "verified"
-implementation_status = "not_started"
-evidence = ["docs/baselines/vrc-get-audit.md::只读命令写 manifest 风险"]
+implementation_status = "in_progress"
+evidence = ["docs/baselines/vrc-get-audit.md::只读命令写 manifest 风险", "crates/alcomd-testing/tests/m3_read_rpc.rs"]
 coverage = ["mtime/hash", "malformed legacy value"]
-tests = ["projects.v3-parity", "packages.plan-apply"]
+tests = ["projects.v3-parity", "projects.m3-readonly-registry", "packages.plan-apply"]
 
 [[feature]]
 id = "packages.vpm"
@@ -132,10 +132,10 @@ behavior = "支持公开 repository JSON 与 vcc://vpm/addRepo，提供确定性
 implementation = "alcomd-vpm"
 release_class = "release_blocker"
 status = "verified"
-implementation_status = "not_started"
-evidence = ["docs/baselines/alcomd3-v3-audit.md::仓库", "docs/baselines/vrc-get-audit.md::仓库"]
+implementation_status = "in_progress"
+evidence = ["docs/baselines/alcomd3-v3-audit.md::仓库", "docs/baselines/vrc-get-audit.md::仓库", "docs/adr/0016-project-repository-read-model.md", "crates/alcomd-vpm/src/lib.rs", "crates/alcomd-testing/tests/m3_read_rpc.rs"]
 coverage = ["GUI", "CLI repo", "URI", "remote/local", "duplicate/equal-version sources"]
-tests = ["repositories.vpm-parity", "repositories.fixture-matrix"]
+tests = ["repositories.vpm-parity", "repositories.m3-read-registry", "repositories.fixture-matrix"]
 
 [[feature]]
 id = "repositories.credentials"

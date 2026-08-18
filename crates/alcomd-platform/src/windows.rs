@@ -9,10 +9,14 @@ use tokio::net::windows::named_pipe::{
 
 use crate::{BindError, DataConfig, IpcConfig};
 
+#[path = "windows_file_identity.rs"]
+mod file_identity;
 #[path = "windows_known_folder.rs"]
 mod known_folder;
 #[path = "windows_security.rs"]
 mod security;
+
+pub use file_identity::{WindowsFileIdentity, file_identity};
 
 /// A connected Windows Named Pipe endpoint.
 pub enum IpcStream {

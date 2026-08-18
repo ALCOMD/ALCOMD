@@ -132,12 +132,28 @@ status = "blocked"
 description = "用脱敏项目 Fixture 对照 v3 的发现、注册、排序、创建、复制、移除、类型识别和打开行为。"
 
 [[test]]
+id = "projects.m3-readonly-registry"
+stage = "M3"
+kind = "integration"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "implemented"
+description = "以 synthetic Unity Fixture 验证 exact/parent discovery、bounded VPM/UPM/ProjectVersion 读取、平台对象身份、真实 RPC、Schema v2 registry、revision/Event/幂等以及读取前后外部文件字节不变。"
+
+[[test]]
 id = "repositories.vpm-parity"
 stage = "M3"
 kind = "differential"
 platforms = ["all"]
 status = "planned"
 description = "使用公开 repository Fixture 覆盖添加、删除、导入、刷新、缓存、重复与错误隔离。"
+
+[[test]]
+id = "repositories.m3-read-registry"
+stage = "M3"
+kind = "integration"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "implemented"
+description = "验证 local/anonymous HTTP(S) 共用 bounded parser、确定性 raw package identity、200/304 validator、last-known-good、Schema v2 registry、no-op revision 与真实 RPC；不包含 import/deep-link/credential/package download。"
 
 [[test]]
 id = "packages.vpm-format"

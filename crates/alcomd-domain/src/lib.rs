@@ -19,10 +19,55 @@ impl ProjectId {
         Self(Uuid::new_v4())
     }
 
+    /// Parses a canonical UUID representation.
+    pub fn parse(value: &str) -> Result<Self, DomainValueError> {
+        Uuid::parse_str(value)
+            .map(Self)
+            .map_err(|_| DomainValueError::InvalidProjectId)
+    }
+
     /// Returns the underlying UUID.
     #[must_use]
     pub const fn as_uuid(self) -> Uuid {
         self.0
+    }
+}
+
+/// Stable identifier for a registered VPM repository source.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct RepositoryId(Uuid);
+
+impl RepositoryId {
+    /// Creates a new random repository identifier.
+    #[must_use]
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    /// Parses a canonical UUID representation.
+    pub fn parse(value: &str) -> Result<Self, DomainValueError> {
+        Uuid::parse_str(value)
+            .map(Self)
+            .map_err(|_| DomainValueError::InvalidRepositoryId)
+    }
+
+    /// Returns the underlying UUID.
+    #[must_use]
+    pub const fn as_uuid(self) -> Uuid {
+        self.0
+    }
+}
+
+impl Default for RepositoryId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for RepositoryId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
     }
 }
 
@@ -275,6 +320,18 @@ pub enum Permission {
     /// Replay visible durable Events.
     #[serde(rename = "events.read")]
     EventsRead,
+    /// Read project paths and normalized snapshots.
+    #[serde(rename = "projects.read")]
+    ProjectsRead,
+    /// Manage only the ALCOMD project registry and snapshot cache.
+    #[serde(rename = "projects.manage")]
+    ProjectsManage,
+    /// Read repository sources and normalized catalogs.
+    #[serde(rename = "repositories.read")]
+    RepositoriesRead,
+    /// Manage only the ALCOMD repository registry and metadata cache.
+    #[serde(rename = "repositories.manage")]
+    RepositoriesManage,
 }
 
 impl Permission {
@@ -286,6 +343,10 @@ impl Permission {
             Self::OperationsRead => "operations.read",
             Self::OperationsCancel => "operations.cancel",
             Self::EventsRead => "events.read",
+            Self::ProjectsRead => "projects.read",
+            Self::ProjectsManage => "projects.manage",
+            Self::RepositoriesRead => "repositories.read",
+            Self::RepositoriesManage => "repositories.manage",
         }
     }
 }
@@ -297,6 +358,10 @@ pub enum ResourceKey {
     StateStore,
     /// Serializes mutation of one Operation.
     Operation(OperationId),
+    /// Serializes mutation of one registered project.
+    Project(ProjectId),
+    /// Serializes mutation of one registered repository.
+    Repository(RepositoryId),
 }
 
 impl ResourceKey {
@@ -310,6 +375,16 @@ impl ResourceKey {
                 bytes.extend_from_slice(operation_id.as_uuid().as_bytes());
                 bytes
             }
+            Self::Project(project_id) => {
+                let mut bytes = b"project:".to_vec();
+                bytes.extend_from_slice(project_id.as_uuid().as_bytes());
+                bytes
+            }
+            Self::Repository(repository_id) => {
+                let mut bytes = b"repository:".to_vec();
+                bytes.extend_from_slice(repository_id.as_uuid().as_bytes());
+                bytes
+            }
         }
     }
 }
@@ -317,6 +392,10 @@ impl ResourceKey {
 /// Error returned when a bounded public domain value is invalid.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DomainValueError {
+    /// Project ID was not a valid UUID.
+    InvalidProjectId,
+    /// Repository ID was not a valid UUID.
+    InvalidRepositoryId,
     /// Operation ID was not a valid UUID.
     InvalidOperationId,
     /// Principal ID was empty, non-ASCII, or exceeded its frozen limit.
@@ -328,6 +407,8 @@ pub enum DomainValueError {
 impl fmt::Display for DomainValueError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidProjectId => formatter.write_str("invalid Project identifier"),
+            Self::InvalidRepositoryId => formatter.write_str("invalid Repository identifier"),
             Self::InvalidOperationId => formatter.write_str("invalid Operation identifier"),
             Self::InvalidPrincipalId => formatter.write_str("invalid Principal identifier"),
             Self::InvalidIdempotencyKey => formatter.write_str("invalid idempotency key"),

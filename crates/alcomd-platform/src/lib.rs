@@ -13,13 +13,45 @@ mod windows;
 
 #[cfg(unix)]
 pub use unix::{
-    DaemonInstance, IpcListener, IpcStream, connect, endpoint_display, state_database_path,
+    DaemonInstance, IpcListener, IpcStream, connect, endpoint_display, file_identity_key,
+    state_database_path,
 };
 #[cfg(windows)]
 pub use windows::{
-    DaemonInstance, IpcListener, IpcStream, connect, endpoint_display, local_app_data_directory,
-    state_database_path,
+    DaemonInstance, IpcListener, IpcStream, WindowsFileIdentity, connect, endpoint_display,
+    file_identity, local_app_data_directory, state_database_path,
 };
+
+#[cfg(windows)]
+/// Returns the fixed 24-byte Windows filesystem-object identity key.
+pub fn file_identity_key(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
+    Ok(file_identity(path)?.to_key().to_vec())
+}
+
+/// Resolves an existing directory to its final absolute Unicode path and opaque object identity.
+pub fn resolve_directory_identity(path: &std::path::Path) -> std::io::Result<(PathBuf, Vec<u8>)> {
+    if !path.is_absolute() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "path must be absolute",
+        ));
+    }
+    let canonical = std::fs::canonicalize(path)?;
+    if canonical.to_str().is_none() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "path encoding is unsupported",
+        ));
+    }
+    if !std::fs::metadata(&canonical)?.is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "path is not a directory",
+        ));
+    }
+    let identity = file_identity_key(&canonical)?;
+    Ok((canonical, identity))
+}
 
 /// Optional runtime-path override used by isolated tests and development tools.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

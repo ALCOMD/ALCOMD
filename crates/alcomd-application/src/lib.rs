@@ -9,7 +9,8 @@ use std::future::Future;
 use std::sync::{Arc, Weak};
 
 pub use alcomd_domain::{
-    IdempotencyKey, OperationId, OperationState, Permission, PrincipalId, ResourceKey, Revision,
+    IdempotencyKey, OperationId, OperationState, Permission, PrincipalId, ProjectId, RepositoryId,
+    ResourceKey, Revision,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, OwnedMutexGuard};
@@ -51,6 +52,334 @@ pub const fn system_status() -> SystemStatus {
     SystemStatus {
         state: SystemState::Ready,
     }
+}
+
+/// Explicit project discovery mode frozen for M3.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum ProjectDiscoveryMode {
+    ExactRoot,
+    SearchParents,
+}
+
+/// Frozen marker-based M3 project type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProjectType {
+    Avatars,
+    Worlds,
+    VpmStarter,
+    UpmAvatars,
+    UpmWorlds,
+    UpmStarter,
+    LegacySdk2,
+    LegacyWorlds,
+    LegacyAvatars,
+    Unknown,
+}
+
+/// State of one optional project manifest.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ManifestState {
+    Missing,
+    Valid,
+}
+
+/// Raw dependency identity/value pair with no version semantics.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DependencyIdentity {
+    pub package_id: String,
+    pub value: String,
+}
+
+/// Bounded parse issue safe for public DTOs and state.db.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct ReadIssue {
+    pub code: String,
+    pub component: String,
+    pub item: String,
+    pub line: Option<u64>,
+    pub column: Option<u64>,
+}
+
+/// Normalized project observation produced without modifying the project.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ProjectObservation {
+    pub root_path: String,
+    pub path_identity_key: Vec<u8>,
+    pub project_type: ProjectType,
+    pub unity_version: String,
+    pub unity_revision: Option<String>,
+    pub vpm_manifest: ManifestState,
+    pub upm_manifest: ManifestState,
+    pub direct_dependencies: Vec<DependencyIdentity>,
+    pub locked_dependencies: Vec<DependencyIdentity>,
+    pub issues: Vec<ReadIssue>,
+    pub observed_at_ms: u64,
+}
+
+/// Durable registered project record.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ProjectRecord {
+    pub project_id: ProjectId,
+    pub observation: ProjectObservation,
+    pub revision: Revision,
+    pub registered_at_ms: u64,
+}
+
+/// Local file or anonymous remote repository source.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RepositorySource {
+    Local { path: String },
+    Remote { url: String },
+}
+
+/// Conditional HTTP validators stored separately from semantic state.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RepositoryValidators {
+    pub etag: Option<String>,
+    pub last_modified: Option<String>,
+}
+
+/// Raw package/version display row; no SemVer meaning is implied.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RepositoryPackageVersion {
+    pub package_id: String,
+    pub version: String,
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+    pub yanked: bool,
+    pub unity: Option<String>,
+}
+
+/// Completely parsed repository observation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RepositoryObservation {
+    pub source: RepositorySource,
+    pub source_identity_key: Vec<u8>,
+    pub declared_id: Option<String>,
+    pub name: Option<String>,
+    pub declared_url: Option<String>,
+    pub issues: Vec<ReadIssue>,
+    pub packages: Vec<RepositoryPackageVersion>,
+    pub validators: RepositoryValidators,
+    pub refreshed_at_ms: u64,
+}
+
+/// Result of a conditional repository read.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RepositoryReadOutcome {
+    Fresh(RepositoryObservation),
+    NotModified(RepositoryValidators),
+}
+
+/// Durable registered repository record.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RepositoryRecord {
+    pub repository_id: RepositoryId,
+    pub observation: RepositoryObservation,
+    pub revision: Revision,
+    pub registered_at_ms: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RegistryCursor<I> {
+    pub registered_at_ms: u64,
+    pub id: I,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PackageCursor {
+    pub package_id: String,
+    pub version: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ProjectPage {
+    pub projects: Vec<ProjectRecord>,
+    pub next_cursor: Option<RegistryCursor<ProjectId>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RepositoryPage {
+    pub repositories: Vec<RepositoryRecord>,
+    pub next_cursor: Option<RegistryCursor<RepositoryId>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PackagePage {
+    pub packages: Vec<RepositoryPackageVersion>,
+    pub next_cursor: Option<PackageCursor>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SyncWrite<T> {
+    pub value: T,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UnregisterResult<I> {
+    pub id: I,
+    pub revision: Revision,
+    pub replayed: bool,
+}
+
+/// Stable M3 failure code; messages and technical sources stay adapter-private.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum M3ErrorCode {
+    PathEncodingUnsupported,
+    ProjectNotFound,
+    ProjectNotRegistered,
+    ProjectAlreadyRegistered,
+    ProjectInaccessible,
+    ProjectVersionMissing,
+    ProjectVersionInvalid,
+    ProjectManifestInvalid,
+    RepositoryNotFound,
+    RepositoryNotRegistered,
+    RepositoryAlreadyRegistered,
+    RepositorySourceInvalid,
+    RepositoryInaccessible,
+    RepositoryUnavailable,
+    RepositoryDocumentInvalid,
+    RepositoryDocumentTooLarge,
+    RepositoryCredentialsUnsupported,
+    RevisionConflict,
+    IdempotencyConflict,
+    PermissionDenied,
+    StoreUnavailable,
+    Internal,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct M3Error {
+    code: M3ErrorCode,
+}
+
+impl M3Error {
+    #[must_use]
+    pub const fn new(code: M3ErrorCode) -> Self {
+        Self { code }
+    }
+
+    #[must_use]
+    pub const fn code(&self) -> M3ErrorCode {
+        self.code
+    }
+}
+
+impl fmt::Display for M3Error {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "M3 request failed: {:?}", self.code)
+    }
+}
+
+impl std::error::Error for M3Error {}
+
+/// External read adapter. Implementations perform bounded I/O but never mutate sources.
+pub trait M3ReadAdapter: Clone + Send + Sync + 'static {
+    fn inspect_project(
+        &self,
+        path: String,
+        mode: ProjectDiscoveryMode,
+    ) -> impl Future<Output = Result<ProjectObservation, M3Error>> + Send;
+
+    fn inspect_repository(
+        &self,
+        source: RepositorySource,
+        validators: Option<RepositoryValidators>,
+    ) -> impl Future<Output = Result<RepositoryReadOutcome, M3Error>> + Send;
+}
+
+/// M3 persistence port implemented only by the authoritative state store.
+pub trait M3RegistryStore: Clone + Send + Sync + 'static {
+    fn register_project(
+        &self,
+        owner: PrincipalId,
+        observation: ProjectObservation,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<SyncWrite<ProjectRecord>, M3Error>> + Send;
+    fn get_project(
+        &self,
+        owner: PrincipalId,
+        id: ProjectId,
+    ) -> impl Future<Output = Result<ProjectRecord, M3Error>> + Send;
+    fn list_projects(
+        &self,
+        owner: PrincipalId,
+        cursor: Option<RegistryCursor<ProjectId>>,
+        limit: u32,
+    ) -> impl Future<Output = Result<ProjectPage, M3Error>> + Send;
+    fn refresh_project(
+        &self,
+        owner: PrincipalId,
+        id: ProjectId,
+        expected: Revision,
+        observation: ProjectObservation,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<SyncWrite<ProjectRecord>, M3Error>> + Send;
+    fn unregister_project(
+        &self,
+        owner: PrincipalId,
+        id: ProjectId,
+        expected: Revision,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<UnregisterResult<ProjectId>, M3Error>> + Send;
+    fn register_repository(
+        &self,
+        owner: PrincipalId,
+        observation: RepositoryObservation,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<SyncWrite<RepositoryRecord>, M3Error>> + Send;
+    fn get_repository(
+        &self,
+        owner: PrincipalId,
+        id: RepositoryId,
+    ) -> impl Future<Output = Result<RepositoryRecord, M3Error>> + Send;
+    fn list_repositories(
+        &self,
+        owner: PrincipalId,
+        cursor: Option<RegistryCursor<RepositoryId>>,
+        limit: u32,
+    ) -> impl Future<Output = Result<RepositoryPage, M3Error>> + Send;
+    fn list_repository_packages(
+        &self,
+        owner: PrincipalId,
+        id: RepositoryId,
+        cursor: Option<PackageCursor>,
+        limit: u32,
+    ) -> impl Future<Output = Result<PackagePage, M3Error>> + Send;
+    fn refresh_repository(
+        &self,
+        owner: PrincipalId,
+        id: RepositoryId,
+        expected: Revision,
+        observation: RepositoryObservation,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<SyncWrite<RepositoryRecord>, M3Error>> + Send;
+    fn update_repository_validators(
+        &self,
+        owner: PrincipalId,
+        id: RepositoryId,
+        expected: Revision,
+        validators: RepositoryValidators,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<SyncWrite<RepositoryRecord>, M3Error>> + Send;
+    fn unregister_repository(
+        &self,
+        owner: PrincipalId,
+        id: RepositoryId,
+        expected: Revision,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<UnregisterResult<RepositoryId>, M3Error>> + Send;
 }
 
 /// Versioned, typed, non-sensitive canonical fingerprint for `state.check`.
@@ -374,6 +703,10 @@ impl AccessContext {
                 Permission::OperationsRead,
                 Permission::OperationsCancel,
                 Permission::EventsRead,
+                Permission::ProjectsRead,
+                Permission::ProjectsManage,
+                Permission::RepositoriesRead,
+                Permission::RepositoriesManage,
             ],
         )
     }
@@ -655,6 +988,274 @@ impl<S: StateStore> Application<S> {
             .await?;
         Ok(())
     }
+}
+
+/// M3 project/repository read and registry use cases.
+#[derive(Clone)]
+pub struct M3Application<S: M3RegistryStore, R: M3ReadAdapter> {
+    store: S,
+    reader: R,
+    locks: Arc<ResourceLockCoordinator>,
+}
+
+impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
+    #[must_use]
+    pub fn new(store: S, reader: R) -> Self {
+        Self {
+            store,
+            reader,
+            locks: Arc::new(ResourceLockCoordinator::default()),
+        }
+    }
+
+    pub async fn inspect_project(
+        &self,
+        access: &AccessContext,
+        path: String,
+        mode: ProjectDiscoveryMode,
+    ) -> Result<ProjectObservation, M3Error> {
+        require_m3(access, Permission::ProjectsRead)?;
+        self.reader.inspect_project(path, mode).await
+    }
+
+    pub async fn list_projects(
+        &self,
+        access: &AccessContext,
+        cursor: Option<RegistryCursor<ProjectId>>,
+        limit: u32,
+    ) -> Result<ProjectPage, M3Error> {
+        require_m3(access, Permission::ProjectsRead)?;
+        validate_m3_limit(limit)?;
+        self.store
+            .list_projects(access.principal().clone(), cursor, limit)
+            .await
+    }
+
+    pub async fn get_project(
+        &self,
+        access: &AccessContext,
+        id: ProjectId,
+    ) -> Result<ProjectRecord, M3Error> {
+        require_m3(access, Permission::ProjectsRead)?;
+        self.store.get_project(access.principal().clone(), id).await
+    }
+
+    pub async fn register_project(
+        &self,
+        access: &AccessContext,
+        path: String,
+        key: IdempotencyKey,
+    ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
+        require_m3(access, Permission::ProjectsManage)?;
+        let observation = self
+            .reader
+            .inspect_project(path, ProjectDiscoveryMode::ExactRoot)
+            .await?;
+        self.store
+            .register_project(access.principal().clone(), observation, key, m3_time_ms()?)
+            .await
+    }
+
+    pub async fn refresh_project(
+        &self,
+        access: &AccessContext,
+        id: ProjectId,
+        expected: Revision,
+        key: IdempotencyKey,
+    ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
+        require_m3(access, Permission::ProjectsManage)?;
+        let _guard = self.locks.acquire(vec![ResourceKey::Project(id)]).await;
+        let current = self
+            .store
+            .get_project(access.principal().clone(), id)
+            .await?;
+        let observation = self
+            .reader
+            .inspect_project(
+                current.observation.root_path,
+                ProjectDiscoveryMode::ExactRoot,
+            )
+            .await?;
+        self.store
+            .refresh_project(
+                access.principal().clone(),
+                id,
+                expected,
+                observation,
+                key,
+                m3_time_ms()?,
+            )
+            .await
+    }
+
+    pub async fn unregister_project(
+        &self,
+        access: &AccessContext,
+        id: ProjectId,
+        expected: Revision,
+        key: IdempotencyKey,
+    ) -> Result<UnregisterResult<ProjectId>, M3Error> {
+        require_m3(access, Permission::ProjectsManage)?;
+        let _guard = self.locks.acquire(vec![ResourceKey::Project(id)]).await;
+        self.store
+            .unregister_project(access.principal().clone(), id, expected, key, m3_time_ms()?)
+            .await
+    }
+
+    pub async fn inspect_repository(
+        &self,
+        access: &AccessContext,
+        source: RepositorySource,
+    ) -> Result<RepositoryObservation, M3Error> {
+        require_m3(access, Permission::RepositoriesRead)?;
+        match self.reader.inspect_repository(source, None).await? {
+            RepositoryReadOutcome::Fresh(observation) => Ok(observation),
+            RepositoryReadOutcome::NotModified(_) => {
+                Err(M3Error::new(M3ErrorCode::RepositoryUnavailable))
+            }
+        }
+    }
+
+    pub async fn list_repositories(
+        &self,
+        access: &AccessContext,
+        cursor: Option<RegistryCursor<RepositoryId>>,
+        limit: u32,
+    ) -> Result<RepositoryPage, M3Error> {
+        require_m3(access, Permission::RepositoriesRead)?;
+        validate_m3_limit(limit)?;
+        self.store
+            .list_repositories(access.principal().clone(), cursor, limit)
+            .await
+    }
+
+    pub async fn get_repository(
+        &self,
+        access: &AccessContext,
+        id: RepositoryId,
+    ) -> Result<RepositoryRecord, M3Error> {
+        require_m3(access, Permission::RepositoriesRead)?;
+        self.store
+            .get_repository(access.principal().clone(), id)
+            .await
+    }
+
+    pub async fn list_repository_packages(
+        &self,
+        access: &AccessContext,
+        id: RepositoryId,
+        cursor: Option<PackageCursor>,
+        limit: u32,
+    ) -> Result<PackagePage, M3Error> {
+        require_m3(access, Permission::RepositoriesRead)?;
+        validate_m3_limit(limit)?;
+        self.store
+            .list_repository_packages(access.principal().clone(), id, cursor, limit)
+            .await
+    }
+
+    pub async fn register_repository(
+        &self,
+        access: &AccessContext,
+        source: RepositorySource,
+        key: IdempotencyKey,
+    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        require_m3(access, Permission::RepositoriesManage)?;
+        let observation = match self.reader.inspect_repository(source, None).await? {
+            RepositoryReadOutcome::Fresh(value) => value,
+            RepositoryReadOutcome::NotModified(_) => {
+                return Err(M3Error::new(M3ErrorCode::RepositoryUnavailable));
+            }
+        };
+        self.store
+            .register_repository(access.principal().clone(), observation, key, m3_time_ms()?)
+            .await
+    }
+
+    pub async fn refresh_repository(
+        &self,
+        access: &AccessContext,
+        id: RepositoryId,
+        expected: Revision,
+        key: IdempotencyKey,
+    ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+        require_m3(access, Permission::RepositoriesManage)?;
+        let _guard = self.locks.acquire(vec![ResourceKey::Repository(id)]).await;
+        let current = self
+            .store
+            .get_repository(access.principal().clone(), id)
+            .await?;
+        match self
+            .reader
+            .inspect_repository(
+                current.observation.source,
+                Some(current.observation.validators),
+            )
+            .await?
+        {
+            RepositoryReadOutcome::Fresh(observation) => {
+                self.store
+                    .refresh_repository(
+                        access.principal().clone(),
+                        id,
+                        expected,
+                        observation,
+                        key,
+                        m3_time_ms()?,
+                    )
+                    .await
+            }
+            RepositoryReadOutcome::NotModified(validators) => {
+                if current.revision != expected {
+                    return Err(M3Error::new(M3ErrorCode::RevisionConflict));
+                }
+                let record = self
+                    .store
+                    .update_repository_validators(
+                        access.principal().clone(),
+                        id,
+                        expected,
+                        validators,
+                        key,
+                        m3_time_ms()?,
+                    )
+                    .await?;
+                Ok(record)
+            }
+        }
+    }
+
+    pub async fn unregister_repository(
+        &self,
+        access: &AccessContext,
+        id: RepositoryId,
+        expected: Revision,
+        key: IdempotencyKey,
+    ) -> Result<UnregisterResult<RepositoryId>, M3Error> {
+        require_m3(access, Permission::RepositoriesManage)?;
+        let _guard = self.locks.acquire(vec![ResourceKey::Repository(id)]).await;
+        self.store
+            .unregister_repository(access.principal().clone(), id, expected, key, m3_time_ms()?)
+            .await
+    }
+}
+
+fn require_m3(access: &AccessContext, permission: Permission) -> Result<(), M3Error> {
+    access
+        .require(permission)
+        .map_err(|_| M3Error::new(M3ErrorCode::PermissionDenied))
+}
+
+fn validate_m3_limit(limit: u32) -> Result<(), M3Error> {
+    if (1..=1_000).contains(&limit) {
+        Ok(())
+    } else {
+        Err(M3Error::new(M3ErrorCode::Internal))
+    }
+}
+
+fn m3_time_ms() -> Result<u64, M3Error> {
+    unix_time_ms().map_err(|_| M3Error::new(M3ErrorCode::Internal))
 }
 
 fn validate_limit(limit: u32) -> Result<(), ApplicationError> {

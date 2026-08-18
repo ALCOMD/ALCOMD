@@ -14,6 +14,15 @@ use tokio::net::{UnixListener, UnixStream};
 
 use crate::{BindError, DataConfig, IpcConfig};
 
+/// Returns the current Unix filesystem object's device/inode identity.
+pub fn file_identity_key(path: &std::path::Path) -> io::Result<Vec<u8>> {
+    let metadata = rustix::fs::stat(path).map_err(io::Error::from)?;
+    let mut key = Vec::with_capacity(16);
+    key.extend_from_slice(&(metadata.st_dev as u64).to_le_bytes());
+    key.extend_from_slice(&(metadata.st_ino as u64).to_le_bytes());
+    Ok(key)
+}
+
 const SOCKET_NAME: &str = "rpc-v1.sock";
 const LOCK_NAME: &str = "daemon-v1.lock";
 const PRIVATE_DIRECTORY_MODE: RawMode = 0o700;

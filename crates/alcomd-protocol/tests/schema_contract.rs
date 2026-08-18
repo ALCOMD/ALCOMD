@@ -9,7 +9,7 @@ use alcomd_protocol::{
     RequestEnvelope, StateCheckParams, SuccessResponse, SystemStatusResult,
 };
 
-const SCHEMAS: [(&str, &str); 19] = [
+const SCHEMAS: [(&str, &str); 20] = [
     (
         "request-envelope",
         include_str!("../../../specs/rpc/request-envelope.schema.json"),
@@ -86,6 +86,10 @@ const SCHEMAS: [(&str, &str); 19] = [
         "events-list.response",
         include_str!("../../../specs/rpc/events-list.response.schema.json"),
     ),
+    (
+        "m3-project-repository",
+        include_str!("../../../specs/rpc/m3-project-repository.schema.json"),
+    ),
 ];
 
 #[test]
@@ -113,6 +117,66 @@ fn request_schema_freezes_m1_limits() {
     assert_eq!(schema["properties"]["id"]["maxLength"], 64);
     assert_eq!(schema["properties"]["method"]["maxLength"], 128);
     assert_eq!(schema["properties"]["params"]["type"], "object");
+}
+
+#[test]
+fn m3_schema_freezes_project_repository_contract() {
+    let contract = schema("m3-project-repository");
+    let definitions = contract["$defs"].as_object().expect("M3 definitions");
+    let project_types = definitions["projectSnapshot"]["properties"]["projectType"]["enum"]
+        .as_array()
+        .expect("project type enum")
+        .iter()
+        .map(|value| value.as_str().expect("project type"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        project_types,
+        [
+            "avatars",
+            "worlds",
+            "vpm-starter",
+            "upm-avatars",
+            "upm-worlds",
+            "upm-starter",
+            "legacy-sdk2",
+            "legacy-worlds",
+            "legacy-avatars",
+            "unknown",
+        ]
+    );
+    assert_eq!(
+        definitions["projectSnapshot"]["properties"]["issues"]["maxItems"],
+        1_024
+    );
+    assert_eq!(
+        definitions["projectSnapshot"]["properties"]["directDependencies"]["maxItems"],
+        4_096
+    );
+    assert_eq!(definitions["pageLimit"]["maximum"], 1_000);
+    assert_eq!(definitions["absolutePath"]["maxLength"], 32_768);
+    assert_eq!(definitions["idempotencyKey"]["maxLength"], 128);
+    assert!(definitions.contains_key("repositorySource"));
+    assert!(definitions.contains_key("packageVersion"));
+    assert!(definitions.contains_key("registryCursor"));
+    assert!(definitions.contains_key("packageCursor"));
+}
+
+#[test]
+fn m3_error_codes_are_machine_readable_and_frozen() {
+    let errors = schema("rpc-error");
+    let codes = errors["properties"]["code"]["enum"]
+        .as_array()
+        .expect("error code enum");
+    for code in [
+        "path_encoding_unsupported",
+        "project_not_registered",
+        "project_manifest_invalid",
+        "repository_not_registered",
+        "repository_document_too_large",
+        "repository_credentials_unsupported",
+    ] {
+        assert!(codes.iter().any(|candidate| candidate == code), "{code}");
+    }
 }
 
 #[test]

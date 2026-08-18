@@ -1,6 +1,7 @@
 use rusqlite::{Connection, params};
 
 const MIGRATION_V1: &str = include_str!("../migrations/0001_state.sql");
+const MIGRATION_V2: &str = include_str!("../migrations/0002_projects_repositories.sql");
 
 #[test]
 fn bundled_sqlite_version_is_frozen() {
@@ -150,6 +151,174 @@ fn schema_v1_has_no_expiry_or_future_business_tables() {
     }
 }
 
+#[test]
+fn migration_v2_is_atomic_and_adds_only_the_three_m3_tables() {
+    let connection = migrated_v2_connection();
+    assert_eq!(user_version(&connection), 2);
+    let tables = connection
+        .prepare(
+            "SELECT name FROM sqlite_schema
+             WHERE type='table' AND name NOT LIKE 'sqlite_%'
+             ORDER BY name",
+        )
+        .expect("prepare tables")
+        .query_map([], |row| row.get::<_, String>(0))
+        .expect("query tables")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect tables");
+    assert_eq!(
+        tables,
+        [
+            "events",
+            "idempotency_records",
+            "operation_journal",
+            "operations",
+            "projects",
+            "repositories",
+            "repository_package_versions",
+        ]
+    );
+    assert!(MIGRATION_V2.starts_with("BEGIN IMMEDIATE;"));
+    assert!(MIGRATION_V2.ends_with("COMMIT;\n"));
+    for forbidden in [
+        "CREATE TABLE packages",
+        "CREATE TABLE dependencies",
+        "CREATE TABLE credentials",
+        "CREATE TABLE plans",
+    ] {
+        assert!(!MIGRATION_V2.contains(forbidden));
+    }
+}
+
+#[test]
+fn migration_v2_preserves_events_indexes_and_autoincrement() {
+    let connection = migrated_connection();
+    insert_operation(&connection, "queued", 1).expect("valid operation");
+    connection
+        .execute(
+            "INSERT INTO events (
+                sequence, event_id, kind, aggregate_kind, aggregate_id, aggregate_revision,
+                principal_id, occurred_at_ms, payload_json
+             ) VALUES (7, '00000000-0000-4000-8000-000000000107', 'operation.queued',
+                       'operation', '00000000-0000-4000-8000-000000000001', 1,
+                       'builtin:local-owner', 1, '{}')",
+            [],
+        )
+        .expect("insert event with sequence gap");
+    connection
+        .execute_batch(MIGRATION_V2)
+        .expect("apply migration v2");
+    assert_eq!(user_version(&connection), 2);
+    assert_eq!(
+        connection
+            .query_row("SELECT sequence FROM events", [], |row| row
+                .get::<_, i64>(0))
+            .expect("preserved event"),
+        7
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT seq FROM sqlite_sequence WHERE name='events'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("event sequence"),
+        7
+    );
+    for index in ["events_principal_sequence", "events_aggregate_sequence"] {
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT count(*) FROM sqlite_schema WHERE type='index' AND name=?1",
+                    [index],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("event index"),
+            1
+        );
+    }
+    connection
+        .execute(
+            "INSERT INTO events (
+                event_id, kind, aggregate_kind, aggregate_id, aggregate_revision,
+                principal_id, occurred_at_ms, payload_json
+             ) VALUES ('00000000-0000-4000-8000-000000000108', 'project.registered',
+                       'project', '00000000-0000-4000-8000-000000000201', 1,
+                       'builtin:local-owner', 2, '{}')",
+            [],
+        )
+        .expect("insert M3 event");
+    assert_eq!(
+        connection
+            .query_row("SELECT max(sequence) FROM events", [], |row| row
+                .get::<_, i64>(0))
+            .expect("next event sequence"),
+        8
+    );
+}
+
+#[test]
+fn migration_v2_allows_completed_sync_idempotency_without_operation() {
+    let connection = migrated_v2_connection();
+    connection
+        .execute(
+            "INSERT INTO idempotency_records (
+                principal_id, method, idempotency_key, request_fingerprint, state,
+                operation_id, response_json, created_at_ms
+             ) VALUES ('builtin:local-owner', 'projects.register', 'project-once', '{}',
+                       'completed', NULL, '{\"projectId\":\"00000000-0000-4000-8000-000000000201\"}', 1)",
+            [],
+        )
+        .expect("completed synchronous idempotency");
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO idempotency_records (
+                    principal_id, method, idempotency_key, request_fingerprint, state,
+                    operation_id, response_json, created_at_ms
+                 ) VALUES ('builtin:local-owner', 'projects.refresh', 'pending-without-operation',
+                           '{}', 'pending', NULL, NULL, 1)",
+                [],
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn failed_migration_v2_restores_complete_v1() {
+    let connection = migrated_connection();
+    let failing = MIGRATION_V2.replace(
+        "PRAGMA user_version = 2;",
+        "THIS IS NOT VALID SQL;\nPRAGMA user_version = 2;",
+    );
+    assert!(connection.execute_batch(&failing).is_err());
+    connection
+        .execute_batch("ROLLBACK;")
+        .expect("rollback failed migration");
+    assert_eq!(user_version(&connection), 1);
+    let business_tables: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM sqlite_schema
+             WHERE type='table' AND name IN ('projects','repositories','repository_package_versions')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count M3 tables");
+    assert_eq!(business_tables, 0);
+    connection
+        .execute(
+            "INSERT INTO events (
+                event_id, kind, aggregate_kind, aggregate_id, aggregate_revision,
+                principal_id, occurred_at_ms, payload_json
+             ) VALUES ('00000000-0000-4000-8000-000000000109', 'project.registered',
+                       'project', '00000000-0000-4000-8000-000000000201', 1,
+                       'builtin:local-owner', 2, '{}')",
+            [],
+        )
+        .expect_err("v1 must still reject project aggregate");
+}
+
 fn migrated_connection() -> Connection {
     let connection = Connection::open_in_memory().expect("open SQLite");
     connection
@@ -158,6 +327,14 @@ fn migrated_connection() -> Connection {
     connection
         .execute_batch(MIGRATION_V1)
         .expect("apply migration");
+    connection
+}
+
+fn migrated_v2_connection() -> Connection {
+    let connection = migrated_connection();
+    connection
+        .execute_batch(MIGRATION_V2)
+        .expect("apply migration v2");
     connection
 }
 

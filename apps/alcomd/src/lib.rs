@@ -8,8 +8,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use alcomd_application::{
     AccessContext, Application, ApplicationError, EventRecord as ApplicationEvent, IdempotencyKey,
-    OperationCursor, OperationId, OperationRecord, OperationState as DomainState, Revision,
-    StoreErrorKind,
+    M3Application, OperationCursor, OperationId, OperationRecord, OperationState as DomainState,
+    Revision, StoreErrorKind,
 };
 use alcomd_platform::{BindError, DaemonInstance, DataConfig, IpcConfig, IpcListener, IpcStream};
 use alcomd_protocol::{
@@ -26,9 +26,17 @@ use alcomd_store::StateStoreHandle;
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+mod m3_rpc;
+
 static TEST_DATA_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 type M2Application = Application<StateStoreHandle>;
+type M3ReadApplication = M3Application<StateStoreHandle, alcomd_vpm::VpmReader>;
+
+struct Applications {
+    m2: M2Application,
+    m3: M3ReadApplication,
+}
 
 /// Runs the daemon with an ephemeral isolated data directory.
 ///
@@ -70,20 +78,25 @@ where
             "state store failed closed: {error}"
         )))
     })?;
-    let application = Arc::new(M2Application::new(store));
-    application
-        .recover()
+    let m2 = M2Application::new(store.clone());
+    m2.recover()
         .await
         .map_err(|_| BindError::Io(io::Error::other("Operation recovery failed")))?;
+    let reader = alcomd_vpm::VpmReader::new()
+        .map_err(|_| BindError::Io(io::Error::other("M3 reader initialization failed")))?;
+    let applications = Arc::new(Applications {
+        m2,
+        m3: M3ReadApplication::new(store, reader),
+    });
     let listener = instance.bind()?;
-    run_listener(listener, application, shutdown)
+    run_listener(listener, applications, shutdown)
         .await
         .map_err(BindError::Io)
 }
 
 async fn run_listener<F>(
     mut listener: IpcListener,
-    application: Arc<M2Application>,
+    applications: Arc<Applications>,
     shutdown: F,
 ) -> io::Result<()>
 where
@@ -95,9 +108,9 @@ where
         tokio::select! {
             result = listener.accept() => {
                 let stream = result?;
-                let application = Arc::clone(&application);
+                let applications = Arc::clone(&applications);
                 connections.spawn(async move {
-                    let _ = serve_connection(stream, application).await;
+                    let _ = serve_connection(stream, applications).await;
                 });
             }
             result = connections.join_next(), if !connections.is_empty() => {
@@ -120,7 +133,7 @@ struct ConnectionState {
 
 async fn serve_connection(
     mut stream: IpcStream,
-    application: Arc<M2Application>,
+    applications: Arc<Applications>,
 ) -> io::Result<()> {
     let mut state = ConnectionState::default();
     loop {
@@ -128,7 +141,7 @@ async fn serve_connection(
             Some(payload) => payload,
             None => return Ok(()),
         };
-        let action = dispatch_payload(&payload, &state, &application).await;
+        let action = dispatch_payload(&payload, &state, &applications).await;
         write_json_frame(&mut stream, &action.response).await?;
         if let Some(capabilities) = action.complete_handshake {
             state.handshake_complete = true;
@@ -149,7 +162,7 @@ struct DispatchAction {
 async fn dispatch_payload(
     payload: &[u8],
     state: &ConnectionState,
-    application: &M2Application,
+    applications: &Applications,
 ) -> DispatchAction {
     let parsed_value: Value = match serde_json::from_slice(payload) {
         Ok(value) => value,
@@ -179,7 +192,7 @@ async fn dispatch_payload(
     }
 
     let access = AccessContext::local_owner();
-    dispatch_m2(request, state, application, &access).await
+    dispatch_m2(request, state, &applications.m2, &applications.m3, &access).await
 }
 
 fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> DispatchAction {
@@ -208,6 +221,10 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         CAPABILITY_STATE_CHECK_V1,
         CAPABILITY_OPERATIONS_V1,
         CAPABILITY_EVENTS_REPLAY_V1,
+        alcomd_protocol::CAPABILITY_PROJECTS_READ_V1,
+        alcomd_protocol::CAPABILITY_PROJECTS_REGISTRY_V1,
+        alcomd_protocol::CAPABILITY_REPOSITORIES_READ_V1,
+        alcomd_protocol::CAPABILITY_REPOSITORIES_REGISTRY_V1,
     ];
     let capabilities = hello
         .capabilities
@@ -218,7 +235,7 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
     result_capabilities.sort();
     success_action(
         request.id,
-        HelloResult::m2(result_capabilities),
+        HelloResult::m3(result_capabilities),
         Some(capabilities),
     )
 }
@@ -251,6 +268,7 @@ async fn dispatch_m2(
     request: RequestEnvelope,
     state: &ConnectionState,
     application: &M2Application,
+    m3_application: &M3ReadApplication,
     access: &AccessContext,
 ) -> DispatchAction {
     match request.method.as_str() {
@@ -409,7 +427,7 @@ async fn dispatch_m2(
                 Err(error) => application_error(request.id, error),
             }
         }
-        _ => error_action(Some(request.id), RpcError::method_not_found(), false),
+        _ => m3_rpc::dispatch(request, state, m3_application, access).await,
     }
 }
 

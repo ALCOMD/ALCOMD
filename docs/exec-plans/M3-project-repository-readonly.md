@@ -1,6 +1,6 @@
 # M3：项目与 VPM Repository 只读垂直切片
 
-状态：规划草案，等待项目所有者审批；未冻结 M3 合同，未开始生产实现
+状态：合同、生产实现与完整本地验收已完成；尚未取得最终提交的三平台 hosted CI，未进入 M4
 
 ## 目标
 
@@ -78,7 +78,7 @@ M3 中“只读”的精确定义是：不得修改 Unity 项目、`Packages/vpm
 
 ## 允许修改范围
 
-M3 生产实现只有在本计划与合同另行获批后，才允许最小修改：
+M3 生产实现只有在本计划所列合同测试通过后，才允许最小修改：
 
 ```text
 apps/alcomd/                         # 仅 M3 RPC adapter 与启动接线
@@ -154,21 +154,25 @@ symlink/root identity、Windows 大小写与 Unix 非 Unicode 路径的精确政
 
 ### 项目类型
 
-contract-first 阶段建议冻结以下最小枚举：
+项目所有者已批准按冻结行为基线逐项绑定 marker，枚举与优先级固定为：
 
 ```text
 avatars
 worlds
 vpm-starter
-upm
+upm-avatars
+upm-worlds
+upm-starter
 legacy-sdk2
 legacy-avatars
 legacy-worlds
 unknown
 ```
 
-优先级依据冻结基线：已锁定 SDK/VPM marker 优先，其次 UPM，再检查批准的 legacy marker，最后
-`unknown`。M3 不因为包版本范围、Unity compatibility 或网络 catalog 改变项目类型。
+marker 依次为 VPM locked `com.vrchat.avatars`、VPM locked `com.vrchat.worlds`、任意 VPM locked、
+UPM `com.vrchat.avatars`、UPM `com.vrchat.worlds`、UPM `com.vrchat.base`、
+`Assets/VRCSDK/Plugins/VRCSDK2.dll`、`VRCSDK3.dll`、`VRCSDK3A.dll`，最后 `unknown`。M3 不因为
+包版本范围、Unity compatibility 或网络 catalog 改变项目类型。
 
 ### 注册与刷新
 
@@ -432,7 +436,7 @@ alcomd -> alcomd-application -> alcomd-domain
 alcomd -> alcomd-store
 alcomd -> alcomd-vpm
 alcomd-store -> alcomd-application / alcomd-domain
-alcomd-vpm -> alcomd-application / alcomd-domain   # 仅实现读取 ports
+alcomd-vpm -> alcomd-application / alcomd-platform # 仅实现读取 ports 与平台对象身份
 ```
 
 禁止：
@@ -449,21 +453,16 @@ application 定义 `ProjectInspector`、`RepositoryDocumentSource`/catalog port 
 `alcomd-vpm` 实现 bounded loader/parser；`alcomd-store` 只持久化 normalized DTO。不得为 M3 建立
 通用 repository framework、service locator、ORM、插件式 parser registry 或完整 VPM engine。
 
-## 生产依赖审批点
+## 已批准的生产依赖
 
-当前 Workspace 没有生产 HTTP client。M3 若包含 remote refresh，建议采用成熟 Rust HTTP client
-的最小 async 配置（优先评估 `reqwest`，关闭默认 feature、使用明确 TLS/stream feature）和必要的
-URL 类型；同时评估 Tokio `fs` feature。生产实现前必须提交：
+项目所有者批准 `reqwest = { version = "=0.13.4", default-features = false, features = ["rustls"] }`
+作为 M3 唯一新增生产 crate，并批准 Tokio 增加实际使用的 `fs` feature；不得启用 `full`。URL 使用
+`reqwest::Url`，不增加 `url` 直接依赖。HTTP client 固定 no-proxy、no-cookie、no-referer、15 秒总
+timeout、5 次 redirect、逐跳 scheme/userinfo 校验与 16 MiB 实际 body 累计限制。
 
-- crate 名称、精确版本与 feature；
-- 许可证、维护状态、MSRV 与安全更新策略；
-- 为什么 std/Tokio/现有依赖不足；
-- TLS backend、redirect、proxy、timeout 和 body streaming 行为；
-- Cargo.lock 精确新增 package 与替代方案。
-
-本草案不批准任何新生产 crate、Tokio feature 或 Cargo.lock 变化。不得引入通用 RPC/HTTP server、
-ORM、SemVer/resolver、watcher、credential、cache framework 或 async SQL crate。若先批准纯 local
-slice，remote source 必须明确标为未实现，不能用外部命令、PowerShell/curl 或同步无界请求绕过。
+生成 Cargo.lock 后必须检查精确新增 package；出现批准依赖解析之外的意外 production package、
+另一 HTTP/TLS stack 或新增直接依赖时停止审批。不得引入通用 RPC/HTTP server、ORM、SemVer/
+resolver、watcher、credential、cache framework 或 async SQL crate。
 
 ## 测试与验收
 
@@ -512,9 +511,9 @@ M3 实施时应在 `test-plan.toml` 增加或细化 synthetic readonly/registry/
 - **过度实现 VPM**：SemVer、resolver、package URL/hash、download/ZIP 与 Plan/Apply 必须留在 M4。
 - **平台证据误用**：Windows hosted 仍不是 Win10/11 完整客户端发行验证。
 
-## 需要人工审批的决策点
+## 已批准合同与下一审批点
 
-开始 M3 contract-first 或生产实现前，项目所有者至少需要批准：
+项目所有者已于 2026-08-18 批准：
 
 1. “外部源只读、state.db registry 可写”的 M3 定义，以及 register/refresh/unregister 是否纳入。
 2. ProjectSnapshot、project type 枚举、发现模式、路径 identity 与 non-Unicode/symlink 政策。
@@ -526,8 +525,9 @@ M3 实施时应在 `test-plan.toml` 增加或细化 synthetic readonly/registry/
 8. 新生产依赖的精确版本/features、许可证、Cargo.lock diff 与 Tokio feature 变化。
 9. M3 synthetic Fixture 可完成工程里程碑、但 `projects.v3-parity` 保持 blocked 到 M11 的验收解释。
 
-这些决定获批后仍采用 contract-first：先更新 ADR、RPC/storage Schema、migration snapshot 和合同
-测试；合同通过后才可写生产实现。偏离批准内容、新增依赖或扩大 unsafe 必须再次停止审批。
+上述决定采用 contract-first：先更新 ADR、RPC/storage Schema、migration snapshot 和合同测试；
+合同通过后才可写生产实现。仅在新增生产 crate、Windows 路径身份需要扩大 windows-sys/unsafe、
+Cargo.lock 出现非预期依赖、偏离冻结合同或进入 M4 时再次停止审批。
 
 ## 最小实施顺序
 
@@ -566,3 +566,15 @@ M3 实施时应在 `test-plan.toml` 增加或细化 synthetic readonly/registry/
   run `32144082427` 已由项目所有者人工验收；M2 正式完成。
 - 2026-08-18：创建本 M3 ExecPlan 草案，只规划项目与 VPM Repository 只读垂直切片；未修改
   RPC/storage Schema、permission、Cargo 依赖、migration 或生产代码，等待项目所有者审批。
+- 2026-08-18：项目所有者批准 M3 总体方向、Schema v2、同步幂等、RPC/权限、路径身份、bounded
+  parser、anonymous HTTP(S) refresh 与精确 `reqwest 0.13.4` 配置；进入 contract-first 阶段。
+- 2026-08-19：ADR 0016、RPC/storage Schema、权限、错误、Schema v2 migration 与合同测试完成；
+  随后实现 bounded project/repository reader、平台文件身份、SQLite registry、RPC/client/CLI 和
+  synthetic 真实 IPC 测试。外部项目与 repository 文件保持只读，M3 未实现任何 M4 package 操作。
+- 2026-08-19：项目所有者批准 `reqwest 0.13.4 + rustls` 的 38 个传递锁定项。feature graph 实测
+  `reqwest` 仅由 `alcomd-vpm` 激活 `rustls` 路径，`aws-lc-rs` 是该 TLS provider 的 active build
+  dependency；`quinn` 与 `ring` 无反向依赖输出，HTTP/3、system-proxy、cookie 与压缩 feature
+  均未激活。Cargo.lock 中未激活的 optional/target package 不描述为运行时组件。
+- 2026-08-19：Windows 本机最终正式 `check.ps1`、`test.ps1`、Tauri `build --no-bundle`、冻结基线、
+  metadata、format/clippy、全 Workspace/Discord/frontend 测试与三份锁文件摘要门禁通过。当前仍
+  等待最终提交对应的三个 hosted job，不能将本地结果描述为三平台验收完成。
