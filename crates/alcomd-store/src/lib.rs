@@ -5,6 +5,7 @@
 
 use std::fmt;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use alcomd_application::{
@@ -53,7 +54,26 @@ impl std::error::Error for StoreOpenError {}
 /// Cloneable async handle to the dedicated SQLite worker.
 #[derive(Clone, Debug)]
 pub struct StateStoreHandle {
-    commands: mpsc::Sender<Command>,
+    inner: Arc<StoreInner>,
+}
+
+#[derive(Debug)]
+struct StoreInner {
+    commands: Mutex<Option<mpsc::Sender<Command>>>,
+    worker: Option<thread::JoinHandle<()>>,
+}
+
+impl Drop for StoreInner {
+    fn drop(&mut self) {
+        let commands = match self.commands.get_mut() {
+            Ok(commands) => commands,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        commands.take();
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
 }
 
 impl StateStoreHandle {
@@ -61,7 +81,7 @@ impl StateStoreHandle {
     pub fn open(path: PathBuf) -> Result<Self, StoreOpenError> {
         let (commands, receiver) = mpsc::channel(128);
         let (ready_sender, ready_receiver) = std::sync::mpsc::sync_channel(1);
-        thread::Builder::new()
+        let worker = thread::Builder::new()
             .name("alcomd-state-store".to_owned())
             .spawn(move || match sqlite::initialize_connection(&path) {
                 Ok(connection) => {
@@ -76,7 +96,12 @@ impl StateStoreHandle {
         ready_receiver
             .recv()
             .map_err(|_| StoreOpenError::Unavailable)??;
-        Ok(Self { commands })
+        Ok(Self {
+            inner: Arc::new(StoreInner {
+                commands: Mutex::new(Some(commands)),
+                worker: Some(worker),
+            }),
+        })
     }
 
     async fn request<T>(
@@ -84,7 +109,15 @@ impl StateStoreHandle {
         create: impl FnOnce(oneshot::Sender<Result<T, StoreError>>) -> Command,
     ) -> Result<T, StoreError> {
         let (sender, receiver) = oneshot::channel();
-        self.commands
+        let commands = self
+            .inner
+            .commands
+            .lock()
+            .map_err(|_| sqlite::unavailable())?
+            .as_ref()
+            .cloned()
+            .ok_or_else(sqlite::unavailable)?;
+        commands
             .send(create(sender))
             .await
             .map_err(|_| sqlite::unavailable())?;
