@@ -1,6 +1,6 @@
 # M3：项目与 VPM Repository 只读垂直切片
 
-状态：合同、生产实现与完整本地验收已完成；尚未取得最终提交的三平台 hosted CI，未进入 M4
+状态：合同、生产实现、完整本地验收与三平台 hosted CI 已完成；等待项目所有者人工验收，未进入 M4
 
 ## 目标
 
@@ -582,3 +582,7 @@ Cargo.lock 出现非预期依赖、偏离冻结合同或进入 M4 时再次停�
   `32170852025` 在 macOS `Check` 暴露测试夹具使用长系统 `TMPDIR` 导致 Unix socket 超过 portable
   路径上限；生产端正确拒绝该路径。夹具改用短的 `/private/tmp` 隔离根，本地完整门禁重新通过，
   等待修复提交的三平台结果。
+- 2026-08-19：修复后生产候选 `ea22e3bf8d90b7924712141a66abe6c701fe3474` 对应 CI run
+  `32171689291` 的 Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 job 全部成功；Ubuntu
+  实测最高 `GLIBC_2.34`，macOS 九个预期 Mach-O 产物全部为 `arm64 / minos 11.0`，三平台
+  Tauri no-bundle、三份锁文件和最终 diff 门禁均通过。M3 现在停止并等待项目所有者人工验收。

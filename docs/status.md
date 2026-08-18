@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M3：合同、生产切片与完整本地验收已完成，等待最终提交的三平台 hosted 验收；尚未进入 M4`
+`M3：合同、生产切片、本地验收与三平台 hosted CI 已完成，等待项目所有者人工验收；尚未进入 M4`
 
 ## 已完成
 
@@ -119,8 +119,10 @@
   graph 证明确认 quinn/HTTP3、system-proxy、cookie 和压缩未激活。Cargo.lock 中可存在获批的
   optional/target-only 锁定项，但不将它们描述为 ALCOMD 当前运行时组件。
 - M3 Windows 本机 `check.ps1`、`test.ps1`、Tauri no-bundle、冻结基线与锁文件门禁已经通过；
-  这只属于本地候选证据。Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 的最终提交
-  hosted CI 尚未取得，M3 仍未完成最终验收。
+  修复后生产候选 `ea22e3bf8d90b7924712141a66abe6c701fe3474` 对应 GitHub Actions run
+  `32171689291` 的 Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 job 全部成功；Ubuntu
+  实测最高 `GLIBC_2.34`，macOS 九个预期产物全部为 arm64 / minos 11.0。M3 仍需项目所有者
+  人工验收，尚未进入 M4。
 
 ## 后续里程碑尚未完成
 
@@ -164,7 +166,7 @@
 ## 下一停止点
 
 M0、M1 与 M2 均已完成并通过最终人工验收。M3 项目与 VPM Repository 只读垂直切片的合同、
-本地生产实现与完整本地门禁已完成，当前仍需最终提交对应的 Windows Server 2025、Ubuntu 22.04、
-macOS 15 arm64 hosted CI；在这些证据取得并由项目所有者验收前不得进入 M4。真实 credential revocation 仍未完成；Windows
+本地生产实现、完整本地门禁与三平台 hosted CI 已完成，当前停止并等待项目所有者人工验收；
+在人工验收前不得进入 M4。真实 credential revocation 仍未完成；Windows
 10/11 完整客户端安装、启动、WebView2、更新与卸载验证继续 deferred 到 M12，不得把 Windows
 Server hosted 结果描述为客户端发行证据。
