@@ -578,3 +578,7 @@ Cargo.lock 出现非预期依赖、偏离冻结合同或进入 M4 时再次停�
 - 2026-08-19：Windows 本机最终正式 `check.ps1`、`test.ps1`、Tauri `build --no-bundle`、冻结基线、
   metadata、format/clippy、全 Workspace/Discord/frontend 测试与三份锁文件摘要门禁通过。当前仍
   等待最终提交对应的三个 hosted job，不能将本地结果描述为三平台验收完成。
+- 2026-08-19：首个 M3 候选 `5a2722bd51ecb47a73708217726e2f161d6e9ae6` 的 CI run
+  `32170852025` 在 macOS `Check` 暴露测试夹具使用长系统 `TMPDIR` 导致 Unix socket 超过 portable
+  路径上限；生产端正确拒绝该路径。夹具改用短的 `/private/tmp` 隔离根，本地完整门禁重新通过，
+  等待修复提交的三平台结果。
