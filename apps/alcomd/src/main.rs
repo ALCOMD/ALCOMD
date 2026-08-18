@@ -11,6 +11,9 @@ struct Arguments {
     /// Override the private Unix runtime directory for isolated testing.
     #[arg(long, hide = true)]
     runtime_dir: Option<PathBuf>,
+    /// Override the state data directory for isolated testing.
+    #[arg(long, hide = true)]
+    data_dir: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -21,6 +24,10 @@ async fn main() -> anyhow::Result<()> {
         .runtime_dir
         .map(alcomd_platform::IpcConfig::isolated)
         .unwrap_or_default();
+    let data = arguments
+        .data_dir
+        .map(alcomd_platform::DataConfig::isolated)
+        .unwrap_or_default();
     let endpoint = alcomd_platform::endpoint_display(&config)
         .context("failed to resolve the per-user RPC endpoint")?;
     info!(
@@ -29,7 +36,7 @@ async fn main() -> anyhow::Result<()> {
         endpoint,
         "starting per-user daemon"
     );
-    alcomd::serve_until(config, async {
+    alcomd::serve_with_data_until(config, data, async {
         tokio::signal::ctrl_c()
             .await
             .expect("failed to wait for Ctrl+C");

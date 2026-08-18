@@ -1,6 +1,6 @@
 # M2：SQLite 权威状态、Operation、Event、Revision、幂等、资源锁与恢复
 
-状态：草案；等待人工审批，未开始 M2 生产实现
+状态：M2 实现与本地验收已通过；三个 hosted 平台验证尚未取得
 
 ## 目标
 
@@ -74,8 +74,9 @@ alcomd-store -> data/state.db
 
 M2 只增加以下真实能力：
 
-- `state.check`：创建可恢复 Operation，对 `state.db` 执行有界完整性检查，结果只返回安全的
-  `ok`/失败分类，不返回原始 SQL 或本地路径。
+- `state.check`：创建可恢复 Operation，只读执行有严格输出数量/大小上限的
+  `PRAGMA integrity_check` 与 `PRAGMA foreign_key_check`。它不执行 repair、`VACUUM`、`REINDEX`
+  或隐式修改，公开结果只返回安全分类，不返回原始 SQL、路径或完整 SQLite 错误文本。
 - `operations.get`：按 ID 查询当前状态、revision、时间、结果或稳定错误。
 - `operations.list`：按稳定游标分页查询当前 Principal 可见的 Operation。
 - `operations.cancel`：携带 `expectedRevision` 与幂等键提交合作式取消请求。
@@ -110,7 +111,10 @@ M2 不增加任意脚本、任意 SQL、通用 job definition、用户自定义 
 CREATE TABLE operations (
     operation_id       TEXT PRIMARY KEY,
     kind               TEXT NOT NULL,
-    state              TEXT NOT NULL,
+    state              TEXT NOT NULL CHECK (state IN (
+        'queued', 'planning', 'waiting_for_input', 'running', 'cancelling',
+        'succeeded', 'failed', 'cancelled', 'interrupted', 'recovering'
+    )),
     revision           INTEGER NOT NULL CHECK (revision >= 1),
     owner_principal_id TEXT NOT NULL,
     request_json       TEXT NOT NULL,
@@ -122,17 +126,17 @@ CREATE TABLE operations (
     updated_at_ms      INTEGER NOT NULL,
     started_at_ms      INTEGER,
     completed_at_ms    INTEGER
-);
+) STRICT;
 
 CREATE TABLE operation_journal (
     operation_id   TEXT NOT NULL REFERENCES operations(operation_id),
     step           INTEGER NOT NULL,
     kind           TEXT NOT NULL,
-    state          TEXT NOT NULL,
+    state          TEXT NOT NULL CHECK (state IN ('prepared', 'applied')),
     payload_json   TEXT NOT NULL,
     updated_at_ms  INTEGER NOT NULL,
     PRIMARY KEY (operation_id, step)
-);
+) STRICT;
 
 CREATE TABLE events (
     sequence           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -144,23 +148,29 @@ CREATE TABLE events (
     principal_id       TEXT NOT NULL,
     occurred_at_ms     INTEGER NOT NULL,
     payload_json       TEXT NOT NULL
-);
+) STRICT;
 
 CREATE TABLE idempotency_records (
     principal_id        TEXT NOT NULL,
     method              TEXT NOT NULL,
     idempotency_key     TEXT NOT NULL,
     request_fingerprint TEXT NOT NULL,
-    state               TEXT NOT NULL,
+    state               TEXT NOT NULL CHECK (state IN ('pending', 'completed')),
     operation_id        TEXT REFERENCES operations(operation_id),
     response_json       TEXT,
     created_at_ms       INTEGER NOT NULL,
-    expires_at_ms       INTEGER NOT NULL,
     PRIMARY KEY (principal_id, method, idempotency_key)
-);
+) STRICT;
+
+CREATE INDEX operations_owner_page
+    ON operations(owner_principal_id, created_at_ms DESC, operation_id DESC);
+CREATE INDEX events_principal_sequence
+    ON events(principal_id, sequence);
 ```
 
-必需索引仅覆盖 Operation owner/state/created time 与 Event aggregate/sequence 查询。M2 不预建
+最终 migration 还必须对 revision、sequence、step 等正整数执行 SQL CHECK，并在 Rust 入口做
+相同 signed-`i64` 范围校验。必需索引只覆盖 Operation owner 的稳定分页和 Principal Event
+sequence 查询。M2 不预建
 项目、包、仓库、设置、扩展、审计或全文搜索表。
 
 JSON 字段是版本化的内部持久 DTO，不是第三方 API。每个字段有严格大小上限并用类型化结构
@@ -168,10 +178,17 @@ JSON 字段是版本化的内部持久 DTO，不是第三方 API。每个字段�
 
 ### SQLite 运行策略
 
-- 推荐一个专用 store worker 拥有一个 `rusqlite` connection，通过有界 channel 接受短请求；
+- daemon 先取得生命周期绑定的每用户 OS 单实例锁，再打开 store；初始化与恢复完成后才 bind
+  IPC endpoint，避免并发按需启动短暂产生两个 SQLite owner，也不在 ready 前接受请求。
+- 一个专用 store worker 拥有一个 `rusqlite` connection，通过有界 channel 接受短请求；
   不引入连接池、ORM、async SQL 宏或通用 repository framework。
-- 启用 `foreign_keys=ON`、WAL、`synchronous=FULL` 和有界 `busy_timeout`；实际 pragma 组合必须
-  用崩溃/重启测试证明，不能为性能静默降低持久性。
+- 打开后先读取 `user_version`；若高于当前支持版本立即 fail closed，不执行 migration 或写入。
+- 对受支持数据库设置并验证 `foreign_keys=ON` 与 `journal_mode=WAL`，设置
+  `synchronous=FULL`，`busy_timeout=5000 ms`。
+- `0 -> 1` 使用单个短 transaction，`user_version=1` 是 transaction 中最后的 Schema 版本
+  写入；失败完整回滚。
+- store 初始化或 migration 在 ready 前失败时 daemon fail closed，不建立 half-ready/degraded
+  模式，也不改变 M1 `system.status state="ready"` 的成功语义。
 - 不在 SQLite transaction 内等待 Resource Lock、IPC、用户输入或长任务。
 - Operation worker 在 transaction 外运行；每次状态转换使用一个短 `BEGIN IMMEDIATE`
   transaction。
@@ -193,23 +210,30 @@ JSON 字段是版本化的内部持久 DTO，不是第三方 API。每个字段�
 冻结状态集合继续使用：
 
 ```text
-queued -> planning -> waiting_for_input -> running -> cancelling
-                                            │             │
-                                            ├─────────────┤
-                                            ▼             ▼
-                                      succeeded | failed | cancelled
+queued -> running -> cancelling
+           │            │
+           ├────────────┤
+           ▼            ▼
+     succeeded | failed | cancelled
 
-non-terminal crash -> interrupted -> recovering -> queued/running/failed/cancelled
+planning / waiting_for_input：仅保留名称，不是 M2 state.check 动态路径
+
+queued crash -> queued -> rescheduled
+running/cancelling/recovering crash -> interrupted -> recovering
 ```
 
 - `succeeded`、`failed`、`cancelled` 是不可变终态。
-- `interrupted` 是必须持久化并发出 Event 的恢复观察点，不代表成功；恢复器随后进入
-  `recovering` 并按 operation kind 策略处理。
+- queued 重启后保持 queued 并直接重新调度，不产生虚假的 interrupted。
+- running、cancelling 或 recovering 重启后才进入 `interrupted`，随后进入 `recovering`；两次
+  公开变化分别增加 revision，并与 Event 在同一 transaction 提交。
 - `cancelling` 表示取消意图已接受，不保证最终一定为 `cancelled`；完成竞态可合法到
   `succeeded`/`failed`。
 - M2 的 `state.check` 动态路径只需要 queued/running/cancelling/终态/interrupted/recovering。
   全部状态转换规则在领域单元测试冻结；`waiting_for_input` 的公开 input/approve/reject/resume
   方法等第一个真实 Plan/Apply 用例出现时再冻结，不在 M2 预建通用审批引擎。
+- 取消是 cooperative：进入检查前、`integrity_check` 与 `foreign_key_check` 阶段之间及检查后
+  检查 `cancel_requested`。M2 不承诺中断正在执行的单条 SQLite pragma，也不引入 interrupt
+  framework；取消/完成竞态可合法收敛到 succeeded、failed 或 cancelled。
 - 客户端断开不改变 Operation；取消只能通过显式 `operations.cancel`。
 - 每次公开可观察变化增加 Operation revision，并在同一 SQL transaction 写对应 Event。
 
@@ -225,12 +249,18 @@ Operation 结果与稳定 domain error 持久化；未知内部失败只存 `int
 - sequence 不要求连续，客户端必须按“大于最后确认值”读取，不能用数量推算下一值。
 - 状态变更与 Event 在同一 transaction 提交。
 - `events.list(afterSequence, limit)` 使用 exclusive cursor、sequence 升序，M2 `limit` 建议默认
-  100、最大 1000；返回 `nextSequence`。
+  100、最大 1000。`nextSequence` 为本页最后一个 Event 的 sequence；空页时等于输入
+  `afterSequence`。下一页直接回传它，绝不能使用 `lastSequence + 1`，因为 sequence 允许空洞。
 - 客户端断线后使用最后已处理 sequence 重试；重复 Event 必须可安全去重。
 - M2 不实现 server-initiated notification 或无限流，避免破坏 M1 传输假设。后续可兼容增加
   live subscription，但必须仍以持久 sequence 为恢复事实。
-- M2 暂不删除 Event。Schema/RPC 预留未来 `event_cursor_expired` 错误语义；任何实际 retention/
-  compaction 策略必须在产生高频业务 Event 前另行批准。
+- M2 不删除 Event、不实现 retention。RPC 仅保留未来 `event_cursor_expired` 错误名称，M2 不得
+  声称或测试当前实现能够产生该错误。
+
+`operations.list` 固定按 `(createdAtMs DESC, operationId DESC)` 排序。opaque cursor 至少携带
+最后一项的 `createdAtMs + operationId`，客户端只应原样回传；下一页使用严格 tuple comparison，
+避免相同时间戳重复/遗漏。新 Operation 插入不改变已经继续向后的分页边界。M2 不建立通用
+pagination framework。
 
 ## Revision 与 expectedRevision
 
@@ -252,8 +282,8 @@ M3 及后续项目/仓库资源必须复用该语义，但各自何时增加 rev
   OperationId/已保存响应；相同 key 不同 fingerprint 返回 `idempotency_conflict`。
 - fingerprint 来自已验证的类型化 params 的稳定、非敏感序列化。M2 不使用进程随机 hash，也不
   为此保存 token、完整路径或原始任意 JSON。
-- 建议完成结果至少保存 24 小时；pending/non-terminal 记录不得在 Operation 完成前过期。精确
-  TTL、清理时机与“过期后 key 可重用”语义是实施前人工审批点。
+- M2 不自动删除 idempotency record，key 不因时间经过而重新可用；Schema v1 不包含
+  `expires_at_ms`。retention、expiry 与 key reuse 等第一个高频写用例出现时重新审批。
 - idempotency 只防重复提交，不替代 `expectedRevision`、授权或 Resource Lock。
 
 ## Resource Lock 模型
@@ -284,9 +314,10 @@ Operation(operation_id)
 - 完成阶段后将 step 置为 `applied`；需要补偿的外部文件步骤不是 M2 范围，M4 前必须另行冻结
   文件 journal、fsync、rename 与 rollback 合同。
 - daemon 启动并完成 migration 后、对外 ready 前扫描所有非终态 Operation：
-  1. 原子标记为 `interrupted` 并写 Event；
-  2. 依据显式 operation-kind recovery policy 决定是否进入 `recovering`；
-  3. `state.check` 可安全重跑；已请求取消则收敛到 `cancelled`；
+  1. queued 保持 queued 并重新调度；
+  2. running/cancelling/recovering 原子进入 `interrupted` 并写 Event，再进入 `recovering` 并写
+     第二个 Event；
+  3. `state.check` 可安全重跑；已持久 cancel_requested 的 Operation 进入恢复后收敛；
   4. 未知 kind 或 journal 不一致进入 `failed`/`internal_error + diagnostic_id`，不得猜测成功。
 - 恢复使用同一个 idempotency reservation 和 Resource Lock；不会创建第二个 Operation。
 - M2 不实现跨版本任意 workflow 恢复。升级前存在的 operation kind 若新版本不认识，daemon 必须
@@ -303,7 +334,8 @@ M2 第一次引入写 RPC，不能继续把 `client.name/version/instanceId`、S
   Principal。
 - M2 只提供一个明确命名的内建 first-party local-owner Principal，用于当前同用户官方客户端；
   它不是“任意同用户进程已被安全识别”的声明。
-- M2 提议冻结最小权限：`state.check`、`operations.read`、`operations.cancel`、`events.read`。
+- 内建 Principal 固定为 `builtin:local-owner`；最小权限固定为 `state.check`、
+  `operations.read`、`operations.cancel`、`events.read`。
 - 每个 application 用例再次校验 Principal/permission；RPC adapter 的预检查不构成授权。
 - 测试可使用隔离的 synthetic Principal 验证 owner、permission、撤销和幂等隔离，但不把 synthetic
   credential 当成发行机制。
@@ -316,7 +348,8 @@ M2 第一次引入写 RPC，不能继续把 `client.name/version/instanceId`、S
 
 M2 只以 M1 已允许的方式增加 method、capability、DTO 和可选字段，不提升 RPC major：
 
-- capabilities 建议：`state.schema.v1`、`operations.v1`、`events.replay.v1`。
+- capabilities：`state.check.v1`、`operations.v1`、`events.replay.v1`。方法只有在本连接 hello
+  协商到所需 capability 后才可调用，否则返回 `capability_required`。
 - `system.hello.result` 兼容增加可选 `dataSchema: 1`。
 - methods：`state.check`、`operations.get`、`operations.list`、`operations.cancel`、`events.list`。
 - DTO：`OperationSummary`/`OperationDetail`、`EventRecord`、分页 cursor、`Revision`、
@@ -423,16 +456,17 @@ protocol 不依赖 store/domain，client 不直接打开数据库。
 
 ## 生产依赖审批点
 
-M2 规划阶段不新增任何依赖。实施前至少需要项目所有者审批：
+项目所有者已批准 M2 使用：
 
-1. **SQLite crate**：建议优先评估固定版本 `rusqlite` + `libsqlite3-sys` bundled SQLite。需报告
-   精确版本、feature、SQLite 版本、许可证、MSRV、维护状态、C toolchain/二进制体积、三平台
-   构建、系统 SQLite 替代方案和 Cargo.lock diff。SQLx/ORM/连接池不是默认方案。
-2. **数据目录/Windows API**：优先复用已批准 `windows-sys`；若需新增 feature 或单一平台目录
-   crate，需报告精确用途和替代方案。不得通过环境显示名或外部命令猜测路径。
-3. **Tokio feature**：store worker/channel 与 lock coordinator 若需要现有 Tokio `sync` feature，
-   可在审批时作为最小 feature 变化列出；不得启用 `full`。
-4. **测试故障注入**：优先使用 `cfg(test)` hooks 和子进程终止，不引入生产 failpoint framework。
+1. **SQLite**：`rusqlite = 0.40.1`，关闭默认 feature，只启用 `bundled`；预期
+   `libsqlite3-sys 0.38.1` / SQLite 3.53.2。禁止 cache、ORM、连接池和 SQLx。
+2. **Tokio**：现有依赖最小增加 `sync`，不得启用 `full`。
+3. **数据目录/Windows API**：已批准现有 `windows-sys 0.61.2` 增加
+   `Win32_UI_Shell`/`Win32_System_Com`，且只在私有 `windows_known_folder.rs` 中调用
+   `SHGetKnownFolderPath(FOLDERID_LocalAppData)` 与所需 COM/内存释放 API。不得通过环境变量、
+   注册表、显示用户名或外部命令猜测正式路径，也不得把该边界扩展为通用 COM/Known Folder
+   abstraction。
+4. **测试故障注入**：使用 `cfg(test)` hooks 和子进程终止，不引入生产 failpoint framework。
 
 任何额外 production crate、unsafe 扩大、C FFI 直调、RPC major 变化或公共权限名称变化都必须
 停止审批。
@@ -444,7 +478,7 @@ M2 规划阶段不新增任何依赖。实施前至少需要项目所有者审�
 - migration `0 -> 1`、重复启动、较新 Schema 拒绝、migration 中途失败完整回滚。
 - 每张表约束、foreign key、大小上限、非法状态/revision/时间拒绝。
 - Operation 全状态转换表、终态不可变、取消/完成竞态、revision 单调性。
-- idempotency scope、相同/不同 fingerprint、pending/complete/expiry 边界。
+- idempotency scope、相同/不同 fingerprint、pending/complete 与永久 key 重放边界。
 - Resource Key canonical ordering、同 key 串行、不同 key 并行、等待取消。
 - RPC DTO/Schema、capability 协商、M1 client 忽略 `dataSchema`、全部稳定错误快照。
 - Event sequence、分页、重复读取和游标边界。
@@ -496,12 +530,14 @@ M2 至少关联：
 - `state.crash-recovery`
 - `access.principal-revocation`
 
-`access.principal-revocation` 在 M2 只验证核心 Principal/permission/owner/revocation 语义；外部
-应用、扩展与 MCP 的真实 credential/enrollment 集成仍由对应后续里程碑补齐。
+`access.principal-revocation` 在 M2 只实现并验证核心 Principal/permission/owner 隔离。真实
+credential enrollment 与 revocation 尚未实现，因此该测试整体保持 `planned`，由第一个外部
+写入口所在里程碑继续完成。
 
 ## Release blocker 与风险
 
-- **SQLite 供应链/ABI**：bundled 与 system SQLite 影响安全更新、体积和平台一致性，必须先审批。
+- **SQLite 供应链/ABI**：已固定 bundled SQLite 3.53.2；安全补丁升级需显式更新精确依赖、锁文件
+  与三平台证据，不得无意切换为 system SQLite。
 - **虚假异步**：同步 SQLite 不能阻塞 Tokio executor；使用单 worker，不用随意 `spawn_blocking`
   扩散连接所有权。
 - **事务过长**：不得在 transaction 内运行完整性检查、等锁或等客户端。
@@ -515,20 +551,13 @@ M2 至少关联：
 
 ## 人工审批点
 
-实施前必须一次性审批：
+上述 M2 合同与 SQLite/Tokio 依赖已于 2026-08-18 获批；Windows Known Folder feature 与第二个
+私有 unsafe 边界随后获得专项批准。ADR、RPC Schema、最终 migration SQL、状态/恢复/分页/
+幂等/权限/事务合同、生产垂直切片和本地测试均已落盘，本地完整门禁已通过；当前只剩三个
+hosted 平台的最终候选验证。
 
-1. Schema v1 的最终 SQL、SQLite pragma、migration/较新版本拒绝策略。
-2. `state.check` 作为 M2 最小真实 Operation kind 及其安全结果。
-3. Operation 状态转换、`interrupted/recovering`、取消竞态与结果持久化边界。
-4. Event sequence、分页、M2 不清理及未来 `event_cursor_expired` 合同。
-5. revision/expectedRevision 和 idempotency key/fingerprint/建议 24 小时 TTL。
-6. `StateStore`/`Operation(id)` Resource Lock 与进程内 RAII 模型。
-7. built-in local-owner Principal、四个最小权限名及 M2 同用户威胁限制。
-8. RPC v1 method/capability/DTO/error 名称和可选 `dataSchema`。
-9. 精确 SQLite dependency/feature/lockfile diff，以及任何平台路径/Tokio feature 变化。
-
-批准这些合同后仍须 contract-first：先更新 ADR/RPC Schema/migration snapshot 和合同测试，再写
-生产实现。偏离决定、增加生产依赖、扩大 unsafe 或进入 M3 都必须重新停止审批。
+仅在新增 production crate、进一步扩大 Windows feature/unsafe、需要偏离已冻结
+Schema/RPC/permission，或进入 M3 时重新停止审批。
 
 ## 与 M1、M3、M12 的关系
 
@@ -552,3 +581,20 @@ M2 至少关联：
 
 - 2026-08-18：M1 已通过人工验收。创建本 M2 ExecPlan 草案；未修改 RPC Schema、migration、
   Cargo 依赖或生产代码，M2 生产实现尚未获批。
+- 2026-08-18：项目所有者批准按修正后的合同进入 contract-first，并批准固定
+  `rusqlite 0.40.1` bundled 与 Tokio `sync`；合同与合同测试通过前不得开始生产实现。
+- 2026-08-18：contract-first 门禁通过：migration/schema 5 项、事务/幂等/分页 5 项、RPC
+  Schema/golden 8 项、领域状态/恢复/Revision/权限 6 项和 fingerprint 2 项。开始最小
+  application persistence port 与 RAII lock coordinator；未实现 store/daemon RPC 垂直切片。
+- 2026-08-18：Windows `FOLDERID_LocalAppData` 只读实现研究确认需要新增
+  `windows-sys` 的 `Win32_UI_Shell` 与 `Win32_System_Com` feature，并需要新的私有安全 FFI
+  边界；按批准条件在修改 manifest/unsafe 前暂停等待人工审批。
+- 2026-08-18：项目所有者批准上述两个 Windows-only feature 与第二个私有 unsafe 边界。
+  已实现 Local AppData Known Folder/COM RAII、data path、单连接 SQLite worker、五个 M2 RPC、
+  capability/permission/owner 校验、幂等/Revision/Event/锁与恢复；Windows 聚焦测试、真实
+  IPC state.check、子进程强制终止/恢复、Clippy、xtask 和元数据门禁均通过。最终完整门禁和
+  Windows/Ubuntu/macOS hosted 结果尚待执行，未进入 M3。
+- 2026-08-18：本地完整 `check.ps1`/`test.ps1`、冻结基线、metadata、diff、Linux/macOS
+  `alcomd-platform` cross-target compile 均通过；并发自动启动改为先取得 OS 单实例锁、再打开/
+  恢复 SQLite、最后 bind endpoint，测试数据通过隐藏参数落在隔离目录。当前仅待最终差异审查、
+  提交推送与三个 hosted job。

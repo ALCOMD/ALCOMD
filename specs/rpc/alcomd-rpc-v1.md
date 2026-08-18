@@ -1,6 +1,6 @@
 # ALCOMD RPC v1
 
-状态：M1 基础合同已批准；M2+ 章节仍为未来设计
+状态：M1 基础合同与 M2 兼容新增已实现；等待 M2 三平台最终验证
 
 ## 1. M1 合同范围
 
@@ -16,8 +16,8 @@ M1 只冻结并实现：
 `jsonrpc: "2.0"` 字段，也不采用 JSON-RPC 2.0 的全部错误码、通知、批处理或传输规则。因此
 ALCOMD RPC v1 **不是 JSON-RPC 2.0 兼容实现**。
 
-Operation、Event、Revision、幂等写操作、Principal、权限、订阅和恢复语义属于 M2 或后续
-里程碑。本文件末尾只保留其未来设计方向，不构成 M1 已冻结或已实现合同。
+M2 以兼容增加方式冻结最小 Operation/Event/Revision/幂等/Principal 合同；不改变 M1 framing、
+envelope、握手、status 或错误行为。
 
 ## 2. 传输与端点
 
@@ -233,14 +233,157 @@ M1 结果：
 - M1 不建立 daemon supervisor、system service、插件式 launcher 或正式安装布局；M12 再验证
   完整产品中的启动与生命周期。
 
-## 9. M2+ 未来设计（未由 M1 冻结或实现）
+## 9. M2 capability 与 hello 兼容增加
 
-下列方向仍有效，但必须在对应里程碑另行冻结 Schema、错误和安全合同：
+M2 capability 固定为：
 
-- 写命令幂等键与有限期结果缓存。
-- 可变资源 revision 与 `expectedRevision`。
-- Event 订阅、sequence 和断点恢复。
-- Operation、审批、输入、取消和恢复。
-- 每连接 Principal、配对、权限、撤销与审计。
+| capability | 允许的方法 |
+|---|---|
+| `state.check.v1` | `state.check` |
+| `operations.v1` | `operations.get`、`operations.list`、`operations.cancel` |
+| `events.replay.v1` | `events.list` |
 
-M1 不得广告或返回这些能力，也不得因本节存在就把它们记为已实现。
+客户端必须在本连接的 `system.hello.params.capabilities` 中请求，server 也实际支持并返回对应值后
+才能调用。缺少协商结果返回 `capability_required`。capability 只对当前连接有效，不是 Principal
+或 permission。
+
+store 成功初始化且 daemon ready 后，hello result 兼容增加可选 `dataSchema: 1`：
+
+```json
+{
+    "id": "hello-1",
+    "result": {
+        "rpcVersion": 1,
+        "daemonVersion": "4.0.0-alpha.0",
+        "capabilities": ["state.check.v1", "operations.v1", "events.replay.v1"],
+        "dataSchema": 1
+    }
+}
+```
+
+`dataSchema` 不替代 RPC version/capability 协商。M2 不增加 `configSchema` 或 `extensionApi`。旧 M1
+client 必须忽略该字段并继续工作。
+
+## 10. M2 Principal 与 permission
+
+M2 内建 Principal ID 是 `builtin:local-owner`，权限固定为：
+
+- `state.check`
+- `operations.read`
+- `operations.cancel`
+- `events.read`
+
+每个 application 用例复验 permission 和 owner/visibility。client metadata、SID、pipe 名、
+OperationId 与 capability 都不能证明 Principal。`builtin:local-owner` 是官方本地客户端的 M2
+bootstrap Principal，不代表任意同用户进程已经完成可信认证，也不自动获得未来业务权限。
+
+## 11. M2 method
+
+### state.check
+
+需要 capability `state.check.v1` 与 permission `state.check`。
+
+```json
+{
+    "id": "check-1",
+    "method": "state.check",
+    "params": {
+        "idempotencyKey": "check-2026-08-18"
+    }
+}
+```
+
+成功接受结果：
+
+```json
+{
+    "id": "check-1",
+    "result": {
+        "operationId": "00000000-0000-4000-8000-000000000001",
+        "replayed": false
+    }
+}
+```
+
+它只读执行有严格数量/大小上限的 `PRAGMA integrity_check` 与
+`PRAGMA foreign_key_check`，不 repair/VACUUM/REINDEX。公开 Operation 结果只包含安全分类。
+
+### operations.get
+
+需要 capability `operations.v1` 与 permission `operations.read`。params 只有 `operationId`；只
+返回当前 Principal 可见的 Operation。结果字段由 `operation.schema.json` 冻结。
+
+### operations.list
+
+需要 capability `operations.v1` 与 permission `operations.read`。默认 limit 100、最大 1000，
+按 `(createdAtMs DESC, operationId DESC)` 排序。可选 cursor 是 opaque DTO，包含上一页最后一项
+的 createdAtMs/operationId；下一页使用严格 tuple comparison。客户端不得构造或解释 cursor，
+只应原样回传。新 Operation 插入不改变已继续向后的分页边界。
+
+### operations.cancel
+
+需要 capability `operations.v1` 与 permission `operations.cancel`。params 固定包含 operationId、
+expectedRevision 与 idempotencyKey。接受取消意图不承诺最终 cancelled；合作式取消与完成竞态可
+得到 succeeded/failed/cancelled。返回最新 Operation 与 replayed。
+
+### events.list
+
+需要 capability `events.replay.v1` 与 permission `events.read`。`afterSequence` 是 exclusive
+cursor，limit 默认 100、最大 1000，结果严格 sequence ASC。非空页 nextSequence 是本页最后
+Event sequence；空页等于输入。下一页直接把 nextSequence 作为 afterSequence，不做 `+1`。
+
+M2 不删除 Event，因此不会产生 `event_cursor_expired`；该错误名只为未来 retention 保留。
+
+## 12. Operation、revision 与 recovery
+
+Operation 状态为：queued、planning、waiting_for_input、running、cancelling、succeeded、failed、
+cancelled、interrupted、recovering。M2 `state.check` 不进入 planning/waiting_for_input。终态不可变。
+
+- revision 从 1 开始，公开变化递增；no-op 与幂等重放不递增。
+- 既有 Operation 写命令必须携带 expectedRevision；stale 返回 `revision_conflict`。
+- Event aggregateRevision 等于提交后的 revision。
+- 公开 u64 在 store 限制为 SQLite signed i64 正整数范围。
+- queued 重启保持 queued 并重新调度。
+- running/cancelling/recovering 重启后依次进入 interrupted、recovering，每步增加 revision/Event。
+- interrupted/recovering 再次崩溃遵守同一规则。
+- state.check 在检查前、两个 pragma 之间与检查后观察 cancellation；不承诺中断单条 pragma。
+
+## 13. Event sequence
+
+Event sequence 是数据库全局 AUTOINCREMENT 正整数，允许空洞。Event 与聚合状态在同一 transaction
+提交。客户端按 sequence 去重并在断线后从最后成功处理的 sequence 继续。M2 不提供 notification、
+server-initiated request、无限流或 retention。
+
+## 14. 幂等
+
+scope 固定为 `(PrincipalId, method, idempotencyKey)`。key 是非空 ASCII，最多 128 bytes。
+同 key + 同 method-specific、版本化、类型化、非敏感 canonical fingerprint 返回原 Operation/响应；
+不同 fingerprint 返回 `idempotency_conflict`。M2 不删除记录、不按时间过期，也不允许 key 因时间
+经过重新使用。fingerprint 不使用 Rust DefaultHasher 或随机 hash。
+
+## 15. M2 稳定错误
+
+除 M1 错误外，M2 冻结：
+
+| `error.code` | 语义 |
+|---|---|
+| `capability_required` | 当前连接未协商 method 所需 capability |
+| `permission_denied` | Principal 缺少 permission 或 owner visibility |
+| `revision_conflict` | expectedRevision 与当前值不一致 |
+| `idempotency_conflict` | 同 scope key 对应不同 fingerprint |
+| `operation_not_found` | 当前 Principal 可见范围中不存在该 Operation |
+| `operation_not_cancellable` | Operation 已终态或当前转换不能取消 |
+| `event_cursor_expired` | 未来 retention 后 cursor 过旧；M2 当前不产生 |
+| `data_schema_unsupported` | store Schema 高于当前支持版本；启动期 fail closed |
+| `store_unavailable` | daemon ready 后 store 操作失败 |
+
+公开错误不包含 SQL、数据库路径、完整 SQLite 文本、堆栈或凭据。启动期 Schema 不支持不会把
+daemon 暴露成 half-ready，也不改变 `system.status state="ready"` 的成功合同。
+
+## 16. M2 仍不支持
+
+- notification、batch、server-initiated request、新 transport。
+- planning/waiting_for_input 的公开 input/approve/reject/resume。
+- 外部 credential/pairing/revocation 与未来业务权限。
+- Event retention/compaction 与实际 `event_cursor_expired`。
+- 项目、VPM、文件事务或通用 workflow/job API。

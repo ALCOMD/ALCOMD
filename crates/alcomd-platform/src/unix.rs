@@ -12,7 +12,7 @@ use rustix::io::Errno;
 use rustix::process::geteuid;
 use tokio::net::{UnixListener, UnixStream};
 
-use crate::{BindError, IpcConfig};
+use crate::{BindError, DataConfig, IpcConfig};
 
 const SOCKET_NAME: &str = "rpc-v1.sock";
 const LOCK_NAME: &str = "daemon-v1.lock";
@@ -22,6 +22,41 @@ const PORTABLE_SOCKET_PATH_LIMIT: usize = 103;
 
 /// Unix IPC stream used by both daemon and client.
 pub type IpcStream = UnixStream;
+
+/// Process-lifetime ownership acquired before the authoritative store opens.
+pub struct DaemonInstance {
+    runtime_path: PathBuf,
+    runtime_fd: OwnedFd,
+    instance: InstanceGuard,
+}
+
+impl DaemonInstance {
+    /// Acquires the per-user instance lock without publishing the IPC endpoint.
+    pub fn acquire(config: &IpcConfig) -> Result<Self, BindError> {
+        let runtime_path = runtime_path(config)?;
+        let runtime_fd = ensure_private_runtime_directory(&runtime_path)?;
+        let instance = acquire_instance(&runtime_fd)?;
+        Ok(Self {
+            runtime_path,
+            runtime_fd,
+            instance,
+        })
+    }
+
+    /// Recovers the owned stale socket and publishes the ready endpoint.
+    pub fn bind(self) -> Result<IpcListener, BindError> {
+        remove_stale_socket(&self.runtime_fd)?;
+        let socket_path = self.runtime_path.join(SOCKET_NAME);
+        validate_socket_path_length(&socket_path)?;
+        let listener = UnixListener::bind(&socket_path)?;
+        secure_socket_node(&self.runtime_fd)?;
+        Ok(IpcListener {
+            listener,
+            runtime_fd: self.runtime_fd,
+            _instance: self.instance,
+        })
+    }
+}
 
 /// Bound Unix endpoint together with the process-lifetime instance lock.
 pub struct IpcListener {
@@ -33,21 +68,7 @@ pub struct IpcListener {
 impl IpcListener {
     /// Acquires the instance lock, safely recovers a stale socket, and binds.
     pub fn bind(config: &IpcConfig) -> Result<Self, BindError> {
-        let runtime_path = runtime_path(config)?;
-        let runtime_fd = ensure_private_runtime_directory(&runtime_path)?;
-        let instance = acquire_instance(&runtime_fd)?;
-        remove_stale_socket(&runtime_fd)?;
-
-        let socket_path = runtime_path.join(SOCKET_NAME);
-        validate_socket_path_length(&socket_path)?;
-        let listener = UnixListener::bind(&socket_path)?;
-        secure_socket_node(&runtime_fd)?;
-
-        Ok(Self {
-            listener,
-            runtime_fd,
-            _instance: instance,
-        })
+        DaemonInstance::acquire(config)?.bind()
     }
 
     /// Accepts one same-user connection.
@@ -77,6 +98,75 @@ pub fn endpoint_display(config: &IpcConfig) -> io::Result<String> {
         .join(SOCKET_NAME)
         .display()
         .to_string())
+}
+
+/// Creates a current-user-owned private data directory and returns `state.db`.
+pub fn state_database_path(config: &DataConfig) -> io::Result<PathBuf> {
+    if let Some(path) = config.data_directory() {
+        let path = validate_absolute_runtime_path(path)?;
+        let _directory = ensure_private_runtime_directory(&path)?;
+        return Ok(path.join("state.db"));
+    }
+
+    let home = env::var_os("HOME").ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            "HOME is required for the data directory",
+        )
+    })?;
+    let home = validate_absolute_runtime_path(&PathBuf::from(home))?;
+    let home_fd = open_directory_chain(&home)?;
+    validate_owned_type(&home_fd, FileType::Directory, "home directory")?;
+
+    #[cfg(target_os = "linux")]
+    let (base_path, base_fd, components): (PathBuf, OwnedFd, &[&str]) =
+        if let Some(xdg) = env::var_os("XDG_DATA_HOME") {
+            let base = validate_absolute_runtime_path(&PathBuf::from(xdg))?;
+            let fd = open_directory_chain(&base)?;
+            validate_owned_type(&fd, FileType::Directory, "XDG data directory")?;
+            (base, fd, &["alcomd"])
+        } else {
+            (home.clone(), home_fd, &[".local", "share", "alcomd"])
+        };
+    #[cfg(target_os = "macos")]
+    let (base_path, base_fd, components): (PathBuf, OwnedFd, &[&str]) = (
+        home.clone(),
+        home_fd,
+        &["Library", "Application Support", "ALCOMD"],
+    );
+
+    let directory_fd = ensure_owned_relative_directories(base_fd, components)?;
+    fchmod(&directory_fd, Mode::from_raw_mode(PRIVATE_DIRECTORY_MODE)).map_err(io::Error::from)?;
+    let directory = components
+        .iter()
+        .fold(base_path, |path, component| path.join(component));
+    Ok(directory.join("state.db"))
+}
+
+fn ensure_owned_relative_directories(
+    mut current: OwnedFd,
+    components: &[&str],
+) -> io::Result<OwnedFd> {
+    for component in components {
+        match mkdirat(
+            &current,
+            *component,
+            Mode::from_raw_mode(PRIVATE_DIRECTORY_MODE),
+        ) {
+            Ok(()) | Err(Errno::EXIST) => {}
+            Err(error) => return Err(error.into()),
+        }
+        let next = openat(
+            &current,
+            *component,
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+            Mode::empty(),
+        )
+        .map_err(io::Error::from)?;
+        validate_owned_type(&next, FileType::Directory, "data directory")?;
+        current = next;
+    }
+    Ok(current)
 }
 
 struct InstanceGuard {
@@ -398,5 +488,30 @@ mod tests {
         let listener = IpcListener::bind(&config).expect("recover stale socket");
         drop(listener);
         fs::remove_dir_all(path).expect("remove isolated runtime");
+    }
+
+    #[test]
+    fn isolated_state_directory_is_private_and_symlinks_are_rejected() {
+        let path = isolated_path("data");
+        let database =
+            state_database_path(&DataConfig::isolated(path.clone())).expect("isolated data path");
+        assert_eq!(database, path.join("state.db"));
+        assert_eq!(
+            fs::metadata(&path)
+                .expect("data metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+        fs::remove_dir(path).expect("remove isolated data directory");
+
+        let target = isolated_path("data-target");
+        let link = isolated_path("data-link");
+        fs::create_dir(&target).expect("create data target");
+        symlink(&target, &link).expect("create data symlink");
+        assert!(state_database_path(&DataConfig::isolated(link.clone())).is_err());
+        fs::remove_file(link).expect("remove data symlink");
+        fs::remove_dir(target).expect("remove data target");
     }
 }

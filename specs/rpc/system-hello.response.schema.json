@@ -42,6 +42,10 @@
                     },
                     "maxItems": 64,
                     "uniqueItems": true
+                },
+                "dataSchema": {
+                    "type": "integer",
+                    "const": 1
                 }
             }
         }

@@ -34,7 +34,7 @@ async fn real_daemon_client_and_single_instance_contract() {
     let status = client.system_status().await.expect("query system status");
     assert_eq!(status.state, "ready");
     assert_eq!(status.rpc_version, 1);
-    assert!(status.capabilities.is_empty());
+    assert_eq!(status.capabilities.len(), 3);
 
     assert!(matches!(
         IpcListener::bind(&ipc),

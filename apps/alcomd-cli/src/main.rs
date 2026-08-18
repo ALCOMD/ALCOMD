@@ -18,6 +18,10 @@ struct Arguments {
     #[arg(long, global = true, hide = true)]
     runtime_dir: Option<PathBuf>,
 
+    /// Override the daemon data directory for isolated testing.
+    #[arg(long, global = true, hide = true)]
+    data_dir: Option<PathBuf>,
+
     /// Override the daemon executable for isolated testing.
     #[arg(long, global = true, hide = true)]
     daemon_path: Option<PathBuf>,
@@ -53,6 +57,9 @@ async fn main() -> ExitCode {
     }
     if let Some(path) = arguments.runtime_dir {
         config = config.with_runtime_directory(path);
+    }
+    if let Some(path) = arguments.data_dir {
+        config = config.with_data_directory(path);
     }
     if let Some(path) = arguments.daemon_path {
         config = config.with_daemon_path(path);

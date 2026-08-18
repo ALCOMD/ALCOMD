@@ -258,8 +258,9 @@ ExternalConfig(provider_id)
 }
 ```
 
-`dataSchema`、`configSchema` 与 `extensionApi` 尚未实现，不属于当前 M1 RPC v1 的必需字段。
-未来只有对应子系统真实存在后，才可按照 RPC v1 的兼容增加规则作为可选字段加入。
+M2 在 state store 成功初始化并完成恢复后，兼容增加可选 `dataSchema: 1`；它不是 RPC
+capability，也不属于 M1 客户端必读字段。`configSchema` 与 `extensionApi` 仍未实现，未来只有
+对应子系统真实存在后才可按照 RPC v1 的兼容增加规则作为可选字段加入。
 
 公共 DTO 与内部领域对象必须分离。破坏性变化提升对应协议大版本，而不是仅提升应用版本。
 

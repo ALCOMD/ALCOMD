@@ -38,7 +38,12 @@ const MEMBERS: &[Member] = &[
     (
         "apps/alcomd",
         "alcomd",
-        &["alcomd-application", "alcomd-platform", "alcomd-protocol"],
+        &[
+            "alcomd-application",
+            "alcomd-platform",
+            "alcomd-protocol",
+            "alcomd-store",
+        ],
     ),
     (
         "apps/alcomd-cli",
@@ -75,7 +80,11 @@ const MEMBERS: &[Member] = &[
         "alcomd-client",
         &["alcomd-platform", "alcomd-protocol"],
     ),
-    ("crates/alcomd-store", "alcomd-store", &[]),
+    (
+        "crates/alcomd-store",
+        "alcomd-store",
+        &["alcomd-application"],
+    ),
     ("crates/alcomd-platform", "alcomd-platform", &[]),
     ("crates/alcomd-vpm", "alcomd-vpm", &[]),
     ("crates/alcomd-extensions", "alcomd-extensions", &[]),
@@ -176,18 +185,23 @@ fn check_unsafe_boundary(
     root: &Path,
     errors: &mut Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    const APPROVED: &str = "crates/alcomd-platform/src/windows_security.rs";
+    const APPROVED: [&str; 2] = [
+        "crates/alcomd-platform/src/windows_security.rs",
+        "crates/alcomd-platform/src/windows_known_folder.rs",
+    ];
     let unsafe_word = ["un", "safe"].concat();
     let allowance = format!("allow({unsafe_word}_code)");
-    let approved_path = root.join(APPROVED);
-    let approved_content = fs::read_to_string(&approved_path)?;
-    if !approved_content.contains(&format!("#![{allowance}]")) {
-        errors.push(format!(
-            "{APPROVED} must contain the approved crate-local unsafe allowance"
-        ));
+    for approved in APPROVED {
+        let approved_path = root.join(approved);
+        let approved_content = fs::read_to_string(&approved_path)?;
+        if !approved_content.contains(&format!("#![{allowance}]")) {
+            errors.push(format!(
+                "{approved} must contain the approved crate-local unsafe allowance"
+            ));
+        }
     }
 
-    scan_rust_sources(root, root, APPROVED, errors)?;
+    scan_rust_sources(root, root, &APPROVED, errors)?;
 
     let platform_manifest: toml::Value =
         read_toml(&root.join("crates/alcomd-platform/Cargo.toml"))?;
@@ -203,7 +217,7 @@ fn check_unsafe_boundary(
 fn scan_rust_sources(
     root: &Path,
     path: &Path,
-    approved: &str,
+    approved: &[&str],
     errors: &mut Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if path.is_dir() {
@@ -233,12 +247,12 @@ fn scan_rust_sources(
     let unsafe_tokens =
         ["{", "fn ", "impl ", "trait "].map(|suffix| format!("{unsafe_word} {suffix}"));
     let contains_boundary_token = unsafe_tokens.iter().any(|token| content.contains(token));
-    if relative != approved && contains_allow {
+    if !approved.contains(&relative.as_str()) && contains_allow {
         errors.push(format!(
             "unsafe_code allowance outside approved file: {relative}"
         ));
     }
-    if relative != approved && contains_boundary_token {
+    if !approved.contains(&relative.as_str()) && contains_boundary_token {
         errors.push(format!("unsafe Rust outside approved file: {relative}"));
     }
     Ok(())

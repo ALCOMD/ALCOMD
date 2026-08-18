@@ -33,13 +33,49 @@ pub const MAX_CAPABILITIES: usize = 64;
 /// Maximum capability length in ASCII bytes.
 pub const MAX_CAPABILITY_BYTES: usize = 128;
 
+/// Maximum idempotency-key length in UTF-8 bytes.
+pub const MAX_IDEMPOTENCY_KEY_BYTES: usize = 128;
+
+/// Default page size for M2 list methods.
+pub const DEFAULT_PAGE_LIMIT: u32 = 100;
+
+/// Maximum page size for M2 list methods.
+pub const MAX_PAGE_LIMIT: u32 = 1_000;
+
+/// Maximum public integer representable by SQLite's signed integer storage.
+pub const MAX_SQLITE_PUBLIC_INTEGER: u64 = i64::MAX as u64;
+
 /// `system.hello` method name.
 pub const METHOD_SYSTEM_HELLO: &str = "system.hello";
 
 /// `system.status` method name.
 pub const METHOD_SYSTEM_STATUS: &str = "system.status";
 
-/// Stable M1 error codes.
+/// `state.check` method name.
+pub const METHOD_STATE_CHECK: &str = "state.check";
+
+/// `operations.get` method name.
+pub const METHOD_OPERATIONS_GET: &str = "operations.get";
+
+/// `operations.list` method name.
+pub const METHOD_OPERATIONS_LIST: &str = "operations.list";
+
+/// `operations.cancel` method name.
+pub const METHOD_OPERATIONS_CANCEL: &str = "operations.cancel";
+
+/// `events.list` method name.
+pub const METHOD_EVENTS_LIST: &str = "events.list";
+
+/// Capability required by `state.check`.
+pub const CAPABILITY_STATE_CHECK_V1: &str = "state.check.v1";
+
+/// Capability required by operation methods.
+pub const CAPABILITY_OPERATIONS_V1: &str = "operations.v1";
+
+/// Capability required by `events.list`.
+pub const CAPABILITY_EVENTS_REPLAY_V1: &str = "events.replay.v1";
+
+/// Stable RPC v1 error codes implemented through M2.
 pub mod error_code {
     /// A complete payload could not be parsed or validated as an RPC request.
     pub const INVALID_REQUEST: &str = "invalid_request";
@@ -55,6 +91,24 @@ pub mod error_code {
     pub const COMPONENT_UPGRADE_REQUIRED: &str = "component_upgrade_required";
     /// An unknown internal failure occurred.
     pub const INTERNAL_ERROR: &str = "internal_error";
+    /// The connection did not negotiate the capability required by the method.
+    pub const CAPABILITY_REQUIRED: &str = "capability_required";
+    /// The current Principal lacks the required permission or visibility.
+    pub const PERMISSION_DENIED: &str = "permission_denied";
+    /// The supplied expected revision is stale.
+    pub const REVISION_CONFLICT: &str = "revision_conflict";
+    /// An idempotency key was reused with a different canonical fingerprint.
+    pub const IDEMPOTENCY_CONFLICT: &str = "idempotency_conflict";
+    /// The requested operation does not exist or is not visible.
+    pub const OPERATION_NOT_FOUND: &str = "operation_not_found";
+    /// The requested operation can no longer accept cancellation.
+    pub const OPERATION_NOT_CANCELLABLE: &str = "operation_not_cancellable";
+    /// A future retained-event implementation no longer has the requested cursor.
+    pub const EVENT_CURSOR_EXPIRED: &str = "event_cursor_expired";
+    /// The data schema is newer than this daemon supports.
+    pub const DATA_SCHEMA_UNSUPPORTED: &str = "data_schema_unsupported";
+    /// The ready daemon could not complete a state-store operation.
+    pub const STORE_UNAVAILABLE: &str = "store_unavailable";
 }
 
 /// JSON-RPC-inspired request envelope.
@@ -187,6 +241,72 @@ impl RpcError {
         )
     }
 
+    /// Creates a `capability_required` error naming the missing capability.
+    #[must_use]
+    pub fn capability_required(capability: &str) -> Self {
+        Self {
+            code: error_code::CAPABILITY_REQUIRED.to_owned(),
+            message: "The method requires a capability not negotiated by this connection."
+                .to_owned(),
+            diagnostic_id: None,
+            data: Some(json!({"requiredCapability": capability})),
+        }
+    }
+
+    /// Creates a non-enumerating `permission_denied` error.
+    #[must_use]
+    pub fn permission_denied() -> Self {
+        Self::simple(
+            error_code::PERMISSION_DENIED,
+            "The current Principal cannot access this resource.",
+        )
+    }
+
+    /// Creates a `revision_conflict` error.
+    #[must_use]
+    pub fn revision_conflict() -> Self {
+        Self::simple(
+            error_code::REVISION_CONFLICT,
+            "The Operation revision no longer matches the request.",
+        )
+    }
+
+    /// Creates an `idempotency_conflict` error.
+    #[must_use]
+    pub fn idempotency_conflict() -> Self {
+        Self::simple(
+            error_code::IDEMPOTENCY_CONFLICT,
+            "The idempotency key was already used for a different request.",
+        )
+    }
+
+    /// Creates a non-enumerating `operation_not_found` error.
+    #[must_use]
+    pub fn operation_not_found() -> Self {
+        Self::simple(
+            error_code::OPERATION_NOT_FOUND,
+            "The Operation was not found.",
+        )
+    }
+
+    /// Creates an `operation_not_cancellable` error.
+    #[must_use]
+    pub fn operation_not_cancellable() -> Self {
+        Self::simple(
+            error_code::OPERATION_NOT_CANCELLABLE,
+            "The Operation cannot accept cancellation in its current state.",
+        )
+    }
+
+    /// Creates a ready-daemon `store_unavailable` error.
+    #[must_use]
+    pub fn store_unavailable() -> Self {
+        Self::simple(
+            error_code::STORE_UNAVAILABLE,
+            "The state store could not complete the request.",
+        )
+    }
+
     /// Creates an `internal_error` with a non-sensitive diagnostic ID.
     #[must_use]
     pub fn internal(diagnostic_id: impl Into<String>) -> Self {
@@ -259,6 +379,9 @@ pub struct HelloResult {
     pub daemon_version: String,
     /// Capabilities accepted by both peers.
     pub capabilities: Vec<String>,
+    /// Ready state-store schema version. Absent when the store is unavailable or not initialized.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_schema: Option<u32>,
 }
 
 impl HelloResult {
@@ -269,8 +392,203 @@ impl HelloResult {
             rpc_version: RPC_VERSION,
             daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             capabilities: Vec::new(),
+            data_schema: None,
         }
     }
+
+    /// Creates the M2 hello result after the state store is ready.
+    #[must_use]
+    pub fn m2(capabilities: Vec<String>) -> Self {
+        Self {
+            rpc_version: RPC_VERSION,
+            daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
+            capabilities,
+            data_schema: Some(1),
+        }
+    }
+}
+
+/// Public Operation lifecycle state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OperationState {
+    /// Waiting for dispatch.
+    Queued,
+    /// Producing a plan; reserved for a future milestone.
+    Planning,
+    /// Waiting for input; reserved for a future milestone.
+    WaitingForInput,
+    /// Running the operation.
+    Running,
+    /// Cancellation was requested.
+    Cancelling,
+    /// Completed successfully.
+    Succeeded,
+    /// Completed with an error.
+    Failed,
+    /// Cancelled before completion.
+    Cancelled,
+    /// Interrupted by process termination.
+    Interrupted,
+    /// Recovering from an interruption.
+    Recovering,
+}
+
+/// Parameters for `state.check`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StateCheckParams {
+    /// Caller-supplied idempotency key scoped to Principal and method.
+    pub idempotency_key: String,
+}
+
+/// Result returned when a new or replayed Operation is accepted.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationAccepted {
+    /// Stable Operation UUID.
+    pub operation_id: String,
+    /// Whether this result came from an idempotency replay.
+    pub replayed: bool,
+}
+
+/// Parameters for `operations.get`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OperationsGetParams {
+    /// Operation UUID visible to the current Principal.
+    pub operation_id: String,
+}
+
+/// Public Operation representation.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Operation {
+    /// Stable Operation UUID.
+    pub operation_id: String,
+    /// Stable operation kind. M2 only creates `state.check`.
+    pub kind: String,
+    /// Current lifecycle state.
+    pub state: OperationState,
+    /// Positive public revision bounded by signed SQLite integer range.
+    pub revision: u64,
+    /// Creation time as Unix epoch milliseconds.
+    pub created_at_ms: u64,
+    /// Last public update time as Unix epoch milliseconds.
+    pub updated_at_ms: u64,
+    /// Start time, when execution began.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub started_at_ms: Option<u64>,
+    /// Completion time for a terminal Operation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed_at_ms: Option<u64>,
+    /// Safe method-specific result.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<Value>,
+    /// Stable public failure code.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
+    /// Non-sensitive diagnostic correlation ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnostic_id: Option<String>,
+}
+
+/// Opaque stable cursor for `operations.list`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OperationsListCursor {
+    /// Creation time of the final item in the previous page.
+    pub created_at_ms: u64,
+    /// Operation UUID of the final item in the previous page.
+    pub operation_id: String,
+}
+
+/// Parameters for `operations.list`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OperationsListParams {
+    /// Exclusive tuple cursor for the next page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<OperationsListCursor>,
+    /// Page size; defaults to 100 and cannot exceed 1000.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+/// Result for `operations.list`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationsListResult {
+    /// Operations ordered by `(createdAtMs DESC, operationId DESC)`.
+    pub operations: Vec<Operation>,
+    /// Cursor for the final returned item, or absent when no item was returned.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<OperationsListCursor>,
+}
+
+/// Parameters for `operations.cancel`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OperationsCancelParams {
+    /// Operation UUID visible to the current Principal.
+    pub operation_id: String,
+    /// Required optimistic-concurrency revision.
+    pub expected_revision: u64,
+    /// Caller-supplied idempotency key scoped to Principal and method.
+    pub idempotency_key: String,
+}
+
+/// Result for an idempotent Operation write.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationWriteResult {
+    /// Current public Operation state.
+    pub operation: Operation,
+    /// Whether this result came from an idempotency replay.
+    pub replayed: bool,
+}
+
+/// Parameters for `events.list`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EventsListParams {
+    /// Exclusive global Event sequence cursor.
+    pub after_sequence: u64,
+    /// Page size; defaults to 100 and cannot exceed 1000.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+/// Public durable Event representation.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Event {
+    /// Positive global sequence allocated by SQLite AUTOINCREMENT.
+    pub sequence: u64,
+    /// Stable Event UUID.
+    pub event_id: String,
+    /// Stable Event kind.
+    pub kind: String,
+    /// Stable aggregate type.
+    pub aggregate_kind: String,
+    /// Aggregate identifier.
+    pub aggregate_id: String,
+    /// Aggregate revision after the state change committed with this Event.
+    pub aggregate_revision: u64,
+    /// Event time as Unix epoch milliseconds.
+    pub occurred_at_ms: u64,
+    /// Safe event-specific payload.
+    pub payload: Value,
+}
+
+/// Result for `events.list`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventsListResult {
+    /// Events ordered by strictly increasing sequence.
+    pub events: Vec<Event>,
+    /// Last returned sequence, or the input `afterSequence` for an empty page.
+    pub next_sequence: u64,
 }
 
 /// Successful `system.status` result.

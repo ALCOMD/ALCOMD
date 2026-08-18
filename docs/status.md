@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M2：ExecPlan 草案已创建；等待人工审批，生产实现尚未开始`
+`M2：生产垂直切片已落盘；本地完整验收与三个 hosted 平台验证进行中`
 
 ## 已完成
 
@@ -93,12 +93,19 @@
   三锁文件与最终 diff 门禁均通过。Windows hosted 结果仍不代表 Win10/Win11 客户端发行验收。
 - 项目所有者已确认 M1 最终提交 `7ed70626a0176f855a8e9efdc6d35d317f51ca78` 与 GitHub Actions
   run `32126344788` 人工验收通过；HEAD、`origin/main` 与 CI head SHA 一致，M1 正式完成。
+- M2 已按冻结合同实现 `state.db` Schema v1、单连接 SQLite worker、`state.check`、Operation/
+  Event/Revision/永久幂等、两个 Resource Key、恢复 journal、五个兼容 RPC 方法与三项 capability；
+  daemon 在 store 初始化和恢复完成后才 bind，启动失败保持 fail closed。
+- Windows 正式数据目录通过获批的私有 `windows_known_folder.rs` 使用
+  `SHGetKnownFolderPath(FOLDERID_LocalAppData)`；COM 初始化和返回内存由局部 RAII 平衡，xtask
+  将 unsafe 硬限制在两个已批准 Windows 文件。没有新增 crate 或额外 windows-sys 版本。
+- M2 聚焦验证已覆盖 Schema/migration 回滚、幂等与 Revision 冲突、Principal owner 隔离、
+  Event/Operation 分页、取消竞态、100 并发命令、journal 不一致安全失败、真实 IPC 垂直切片及
+  子进程强制终止/重启恢复。完整本地 `check.ps1`、`test.ps1`、冻结基线、跨目标 platform
+  compile 与差异门禁均已通过；三个 hosted job 尚未取得，因此 M2 还不能记为最终验收通过。
 
 ## 后续里程碑尚未完成
 
-- M2 的 SQLite/Operation/Event/Revision/幂等/资源锁/恢复实现；当前仅有
-  `docs/exec-plans/M2-state-operations-recovery.md` 规划草案，Schema、权限、依赖与生产代码
-  均未获实施批准。
 - v3.4.0 完整安装后快照、脱敏迁移 Fixture 和 GUI 冻结截图/流程已由项目所有者明确后移到
   M11；M-1 仅保留 VM 操作报告，不把它升级为实例证据或删除授权。
 - MCP 33 个 v3 用例的 M-1 工具合同基线已形成并获 A-026 批准；正式 Schema、快照、兼容
@@ -138,7 +145,7 @@
 
 ## 下一停止点
 
-M0 与 M1 均已完成并通过最终人工验收。M2 ExecPlan 草案已创建，下一步是人工审查并冻结
-Schema、Operation/Event/revision/幂等/锁/恢复、Principal/权限、RPC 兼容新增和精确生产依赖；
-未经批准不得开始 M2 生产实现。Windows 客户端运行验证仍留在 M12；迁移删除、永久 Windows
-AppId/GUID、安装器与 `cargo xtask dist` 仍不在当前授权范围内。
+M0 与 M1 均已完成并通过最终人工验收。M2 当前停止点是：完成本地全门禁，提交并推送最终候选，
+取得同一 head SHA 上 Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 三个 hosted job
+的真实 SQLite/kill/restart/recovery 通过证据，然后等待人工验收。真实 credential revocation、
+Win10/Win11 客户端发行验证和 M3 均未开始；不得进入 M3。

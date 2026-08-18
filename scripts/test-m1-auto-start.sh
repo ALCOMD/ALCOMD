@@ -6,6 +6,7 @@ daemon="$(pwd)/target/debug/alcomd"
 cli="$(pwd)/target/debug/alcomd-cli"
 probe_root="$(mktemp -d)"
 runtime="$probe_root/runtime"
+data="$probe_root/data"
 out_one="$probe_root/one.out"
 err_one="$probe_root/one.err"
 out_two="$probe_root/two.out"
@@ -15,7 +16,7 @@ regex_escape() {
     printf '%s' "$1" | sed 's/[][\.^$*+?(){}|]/\\&/g'
 }
 
-daemon_pattern="^$(regex_escape "$daemon") --runtime-dir $(regex_escape "$runtime")$"
+daemon_pattern="^$(regex_escape "$daemon") --runtime-dir $(regex_escape "$runtime") --data-dir $(regex_escape "$data")$"
 
 cleanup() {
     while IFS= read -r pid; do
@@ -27,9 +28,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-"$cli" --runtime-dir "$runtime" --json system status >"$out_one" 2>"$err_one" &
+"$cli" --runtime-dir "$runtime" --data-dir "$data" --json system status >"$out_one" 2>"$err_one" &
 first=$!
-"$cli" --runtime-dir "$runtime" --json system status >"$out_two" 2>"$err_two" &
+"$cli" --runtime-dir "$runtime" --data-dir "$data" --json system status >"$out_two" 2>"$err_two" &
 second=$!
 wait "$first"
 wait "$second"

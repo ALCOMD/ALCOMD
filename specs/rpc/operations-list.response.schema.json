@@ -1,0 +1,28 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/operations-list.response.json",
+    "title": "ALCOMD RPC v1 operations.list response",
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["id", "result"],
+    "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 64},
+        "result": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["operations"],
+            "properties": {
+                "operations": {"type": "array", "maxItems": 1000, "items": {"$ref": "operation.schema.json"}},
+                "nextCursor": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["createdAtMs", "operationId"],
+                    "properties": {
+                        "createdAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+                        "operationId": {"type": "string", "format": "uuid"}
+                    }
+                }
+            }
+        }
+    }
+}

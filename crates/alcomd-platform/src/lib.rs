@@ -12,9 +12,14 @@ mod unix;
 mod windows;
 
 #[cfg(unix)]
-pub use unix::{IpcListener, IpcStream, connect, endpoint_display};
+pub use unix::{
+    DaemonInstance, IpcListener, IpcStream, connect, endpoint_display, state_database_path,
+};
 #[cfg(windows)]
-pub use windows::{IpcListener, IpcStream, connect, endpoint_display};
+pub use windows::{
+    DaemonInstance, IpcListener, IpcStream, connect, endpoint_display, local_app_data_directory,
+    state_database_path,
+};
 
 /// Optional runtime-path override used by isolated tests and development tools.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -33,6 +38,26 @@ impl IpcConfig {
 
     pub(crate) fn runtime_directory(&self) -> Option<&std::path::Path> {
         self.runtime_directory.as_deref()
+    }
+}
+
+/// Optional data-directory override used only by isolated tests and development.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct DataConfig {
+    data_directory: Option<PathBuf>,
+}
+
+impl DataConfig {
+    /// Uses an explicit isolated directory instead of the formal platform path.
+    #[must_use]
+    pub fn isolated(data_directory: PathBuf) -> Self {
+        Self {
+            data_directory: Some(data_directory),
+        }
+    }
+
+    pub(crate) fn data_directory(&self) -> Option<&std::path::Path> {
+        self.data_directory.as_deref()
     }
 }
 

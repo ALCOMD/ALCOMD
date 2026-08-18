@@ -1,0 +1,12 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/operations-get.response.json",
+    "title": "ALCOMD RPC v1 operations.get response",
+    "type": "object",
+    "additionalProperties": true,
+    "required": ["id", "result"],
+    "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 64},
+        "result": {"$ref": "operation.schema.json"}
+    }
+}

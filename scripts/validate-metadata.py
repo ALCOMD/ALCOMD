@@ -593,7 +593,7 @@ def main() -> int:
     )
     tokio_features = set(cargo_workspace["workspace"]["dependencies"]["tokio"]["features"])
     require(
-        {"io-util", "macros", "net", "rt-multi-thread", "signal", "time"}
+        {"io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"}
         <= tokio_features,
         "Tokio lacks an M1-required feature",
     )
@@ -617,7 +617,9 @@ def main() -> int:
             "Win32_Foundation",
             "Win32_Security",
             "Win32_Security_Authorization",
+            "Win32_System_Com",
             "Win32_System_Threading",
+            "Win32_UI_Shell",
         },
         "Unexpected windows-sys feature set",
     )
@@ -638,6 +640,16 @@ def main() -> int:
     require(
         ("linux-raw-sys", "0.12.1") in locked_packages,
         "linux-raw-sys 0.12.1 is not locked",
+    )
+    root_manifest = load_toml("Cargo.toml")
+    rusqlite = root_manifest["workspace"]["dependencies"]["rusqlite"]
+    require(rusqlite["version"] == "=0.40.1", "Unexpected rusqlite version")
+    require(rusqlite["default-features"] is False, "rusqlite defaults must be disabled")
+    require(set(rusqlite["features"]) == {"bundled"}, "Unexpected rusqlite feature set")
+    require(("rusqlite", "0.40.1") in locked_packages, "rusqlite 0.40.1 is not locked")
+    require(
+        ("libsqlite3-sys", "0.38.1") in locked_packages,
+        "libsqlite3-sys 0.38.1 is not locked",
     )
     require(
         sum(1 for name, _ in locked_packages if name == "rustix") == 1,
@@ -714,6 +726,18 @@ def main() -> int:
         "specs/rpc/rpc-error.schema.json",
         "specs/rpc/system-status.request.schema.json",
         "specs/rpc/system-status.response.schema.json",
+        "specs/rpc/operation.schema.json",
+        "specs/rpc/event.schema.json",
+        "specs/rpc/state-check.request.schema.json",
+        "specs/rpc/state-check.response.schema.json",
+        "specs/rpc/operations-get.request.schema.json",
+        "specs/rpc/operations-get.response.schema.json",
+        "specs/rpc/operations-list.request.schema.json",
+        "specs/rpc/operations-list.response.schema.json",
+        "specs/rpc/operations-cancel.request.schema.json",
+        "specs/rpc/operations-cancel.response.schema.json",
+        "specs/rpc/events-list.request.schema.json",
+        "specs/rpc/events-list.response.schema.json",
         "specs/extensions/manifest-v1.schema.json",
         "migrations/v3/schemas/migration-bundle-v1.schema.json",
     ]:

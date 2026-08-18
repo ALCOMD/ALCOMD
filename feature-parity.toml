@@ -35,9 +35,9 @@ implementation = "apps/alcomd"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "in_progress"
-evidence = ["docs/architecture/ALCOMD-V4.md::核心不变量", "apps/alcomd/src/lib.rs", "crates/alcomd-platform/src/lib.rs"]
+evidence = ["docs/architecture/ALCOMD-V4.md::核心不变量", "apps/alcomd/src/lib.rs", "crates/alcomd-platform/src/lib.rs", "crates/alcomd-store/src/lib.rs", "specs/storage/state-v1.md"]
 coverage = ["single instance", "single writer", "entrypoint bypass"]
-tests = ["daemon.single-writer", "architecture.dependency-direction"]
+tests = ["daemon.single-writer", "architecture.dependency-direction", "state.sqlite-migrations", "state.transaction-boundaries", "state.crash-recovery"]
 
 [[feature]]
 id = "rpc.local"
@@ -49,9 +49,9 @@ implementation = "crates/alcomd-protocol"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "in_progress"
-evidence = ["docs/architecture/ALCOMD-V4.md", "specs/rpc/alcomd-rpc-v1.md", "crates/alcomd-protocol/src/lib.rs", "crates/alcomd-client/src/lib.rs"]
+evidence = ["docs/architecture/ALCOMD-V4.md", "specs/rpc/alcomd-rpc-v1.md", "specs/storage/state-v1.md", "crates/alcomd-protocol/src/lib.rs", "crates/alcomd-client/src/lib.rs", "crates/alcomd-application/src/lib.rs"]
 coverage = ["framing", "errors", "principal", "operation lifecycle"]
-tests = ["rpc.hello-contract", "rpc.per-user-ipc", "cli.m1-system-status", "access.principal-revocation", "operations.lifecycle"]
+tests = ["rpc.hello-contract", "rpc.per-user-ipc", "cli.m1-system-status", "access.principal-revocation", "operations.lifecycle", "events.replay-sequence", "state.revision-idempotency", "state.resource-locking"]
 
 [[feature]]
 id = "projects.management"

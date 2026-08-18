@@ -17,6 +17,7 @@ tracing-subscriber.workspace = true
 alcomd-application.workspace = true
 alcomd-platform.workspace = true
 alcomd-protocol.workspace = true
+alcomd-store.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

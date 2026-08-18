@@ -43,10 +43,10 @@ jobs:
       - name: Check
         shell: pwsh
         run: .\scripts\check.ps1
-      - name: Test M0 and M1 contracts
+      - name: Test repository contracts
         shell: pwsh
         run: .\scripts\test.ps1
-      - name: Build M0 executables
+      - name: Build release executables
         run: cargo build --locked --workspace --bins --release
       - name: Build Tauri GUI without a bundle
         run: npm run gui:build -- --no-bundle
@@ -101,9 +101,9 @@ jobs:
         run: ./scripts/setup.sh
       - name: Check
         run: ./scripts/check.sh
-      - name: Test M0 and M1 contracts
+      - name: Test repository contracts
         run: ./scripts/test.sh
-      - name: Build M0 executables
+      - name: Build release executables
         run: cargo build --locked --workspace --bins --release
       - name: Build Tauri GUI without a bundle
         run: npm run gui:build -- --no-bundle
@@ -147,9 +147,9 @@ jobs:
         run: ./scripts/setup.sh
       - name: Check
         run: ./scripts/check.sh
-      - name: Test M0 and M1 contracts
+      - name: Test repository contracts
         run: ./scripts/test.sh
-      - name: Build M0 executables
+      - name: Build release executables
         run: cargo build --locked --workspace --bins --release
       - name: Build Tauri GUI without a bundle
         run: npm run gui:build -- --no-bundle

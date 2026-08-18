@@ -8,8 +8,13 @@ use std::time::{Duration, Instant};
 
 use alcomd_platform::{IpcConfig, IpcStream};
 use alcomd_protocol::{
-    ClientInfo, HelloParams, HelloResult, METHOD_SYSTEM_HELLO, METHOD_SYSTEM_STATUS, RPC_VERSION,
-    RequestEnvelope, Response, RpcError, SystemStatusResult, decode_frame_length, encode_frame,
+    CAPABILITY_EVENTS_REPLAY_V1, CAPABILITY_OPERATIONS_V1, CAPABILITY_STATE_CHECK_V1, ClientInfo,
+    EventsListParams, EventsListResult, HelloParams, HelloResult, METHOD_EVENTS_LIST,
+    METHOD_OPERATIONS_CANCEL, METHOD_OPERATIONS_GET, METHOD_OPERATIONS_LIST, METHOD_STATE_CHECK,
+    METHOD_SYSTEM_HELLO, METHOD_SYSTEM_STATUS, Operation, OperationAccepted, OperationWriteResult,
+    OperationsCancelParams, OperationsGetParams, OperationsListCursor, OperationsListParams,
+    OperationsListResult, RPC_VERSION, RequestEnvelope, Response, RpcError, StateCheckParams,
+    SystemStatusResult, decode_frame_length, encode_frame,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -25,6 +30,7 @@ static INSTANCE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClientConfig {
     runtime_directory: Option<PathBuf>,
+    data_directory: Option<PathBuf>,
     start_daemon: bool,
     daemon_path: Option<PathBuf>,
 }
@@ -33,6 +39,7 @@ impl Default for ClientConfig {
     fn default() -> Self {
         Self {
             runtime_directory: None,
+            data_directory: None,
             start_daemon: true,
             daemon_path: None,
         }
@@ -51,6 +58,13 @@ impl ClientConfig {
     #[must_use]
     pub fn with_runtime_directory(mut self, path: PathBuf) -> Self {
         self.runtime_directory = Some(path);
+        self
+    }
+
+    /// Uses an isolated daemon data directory when auto-starting in tests.
+    #[must_use]
+    pub fn with_data_directory(mut self, path: PathBuf) -> Self {
+        self.data_directory = Some(path);
         self
     }
 
@@ -97,7 +111,11 @@ impl AlcomdClient {
                 version: env!("CARGO_PKG_VERSION").to_owned(),
                 instance_id: format!("{}-{sequence}", std::process::id()),
             },
-            capabilities: Vec::new(),
+            capabilities: vec![
+                CAPABILITY_STATE_CHECK_V1.to_owned(),
+                CAPABILITY_OPERATIONS_V1.to_owned(),
+                CAPABILITY_EVENTS_REPLAY_V1.to_owned(),
+            ],
         };
         self.call(METHOD_SYSTEM_HELLO, params).await
     }
@@ -105,6 +123,68 @@ impl AlcomdClient {
     /// Queries the truthful minimal daemon status.
     pub async fn system_status(&mut self) -> Result<SystemStatusResult, ClientError> {
         self.call(METHOD_SYSTEM_STATUS, json!({})).await
+    }
+
+    /// Starts or idempotently replays the read-only state integrity check.
+    pub async fn state_check(
+        &mut self,
+        idempotency_key: String,
+    ) -> Result<OperationAccepted, ClientError> {
+        self.call(METHOD_STATE_CHECK, StateCheckParams { idempotency_key })
+            .await
+    }
+
+    /// Returns one visible Operation.
+    pub async fn operation_get(&mut self, operation_id: String) -> Result<Operation, ClientError> {
+        self.call(METHOD_OPERATIONS_GET, OperationsGetParams { operation_id })
+            .await
+    }
+
+    /// Lists visible Operations using the frozen tuple cursor.
+    pub async fn operations_list(
+        &mut self,
+        cursor: Option<OperationsListCursor>,
+        limit: Option<u32>,
+    ) -> Result<OperationsListResult, ClientError> {
+        self.call(
+            METHOD_OPERATIONS_LIST,
+            OperationsListParams { cursor, limit },
+        )
+        .await
+    }
+
+    /// Requests idempotent cooperative cancellation.
+    pub async fn operation_cancel(
+        &mut self,
+        operation_id: String,
+        expected_revision: u64,
+        idempotency_key: String,
+    ) -> Result<OperationWriteResult, ClientError> {
+        self.call(
+            METHOD_OPERATIONS_CANCEL,
+            OperationsCancelParams {
+                operation_id,
+                expected_revision,
+                idempotency_key,
+            },
+        )
+        .await
+    }
+
+    /// Replays visible durable Events after an exclusive sequence.
+    pub async fn events_list(
+        &mut self,
+        after_sequence: u64,
+        limit: Option<u32>,
+    ) -> Result<EventsListResult, ClientError> {
+        self.call(
+            METHOD_EVENTS_LIST,
+            EventsListParams {
+                after_sequence,
+                limit,
+            },
+        )
+        .await
     }
 
     async fn call<P, T>(&mut self, method: &str, params: P) -> Result<T, ClientError>
@@ -168,6 +248,9 @@ fn spawn_daemon(config: &ClientConfig) -> Result<(), ClientError> {
     let mut command = Command::new(daemon);
     if let Some(runtime_directory) = &config.runtime_directory {
         command.arg("--runtime-dir").arg(runtime_directory);
+    }
+    if let Some(data_directory) = &config.data_directory {
+        command.arg("--data-dir").arg(data_directory);
     }
     command
         .stdin(Stdio::null())

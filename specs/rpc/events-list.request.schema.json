@@ -1,0 +1,21 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/events-list.request.json",
+    "title": "ALCOMD RPC v1 events.list request",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["id", "method", "params"],
+    "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 64},
+        "method": {"const": "events.list"},
+        "params": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["afterSequence"],
+            "properties": {
+                "afterSequence": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 100}
+            }
+        }
+    }
+}

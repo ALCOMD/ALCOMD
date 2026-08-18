@@ -27,8 +27,19 @@ framing error（零长度、超限、截断或无法形成完整 payload）直�
 类型/语义或改变既有方法语义才要求提升 RPC major。完整线合同与错误表由
 `specs/rpc/alcomd-rpc-v1.md` 和对应 JSON Schema 定义。
 
+M2 以兼容方式增加 `state.check`、`operations.get`、`operations.list`、`operations.cancel` 与
+`events.list`。对应 capability 固定为 `state.check.v1`、`operations.v1` 与
+`events.replay.v1`；方法只有在本连接 hello 协商到所需 capability 后才可调用，否则返回
+`capability_required`。
+
+store 成功初始化后，hello result 可选增加 `dataSchema: 1`。这是诊断/兼容信息，不替代 RPC
+major 或 capability 协商；不得同时虚构 `configSchema`/`extensionApi`。旧 M1 客户端必须继续
+能够忽略该字段并调用 `system.status`。
+
+M2 仍不增加 notification、batch、server-initiated request 或新 transport。Operation/Event 的
+分页、revision、幂等、Principal 与稳定错误由 RPC v1 规范和对应 JSON Schema 冻结。
+
 ## 结果
 
 RPC v1 独立于应用版本。新增 method、capability 或可选响应字段不提升 major；破坏性变化提升
-RPC 大版本。Operation、Event、Revision、幂等写操作与 Principal/权限仍是 M2+ 未来合同，
-不得因基础 RPC v1 冻结而描述为 M1 已实现。
+RPC 大版本。M1 基础合同继续有效；M2 只增加已批准的可选字段、capability、method 与 DTO。

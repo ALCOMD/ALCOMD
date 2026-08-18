@@ -1,29 +1,91 @@
-//! Minimal M1 daemon transport and dispatcher.
+//! M2 daemon lifecycle, local RPC transport, and application adapter.
 
+use std::collections::HashSet;
 use std::future::Future;
 use std::io;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use alcomd_platform::{BindError, IpcConfig, IpcListener, IpcStream};
-use alcomd_protocol::{
-    ErrorResponse, HelloParams, HelloResult, METHOD_SYSTEM_HELLO, METHOD_SYSTEM_STATUS,
-    RPC_VERSION, RequestEnvelope, RpcError, SuccessResponse, SystemStatusResult,
-    decode_frame_length, encode_frame,
+use alcomd_application::{
+    AccessContext, Application, ApplicationError, EventRecord as ApplicationEvent, IdempotencyKey,
+    OperationCursor, OperationId, OperationRecord, OperationState as DomainState, Revision,
+    StoreErrorKind,
 };
+use alcomd_platform::{BindError, DaemonInstance, DataConfig, IpcConfig, IpcListener, IpcStream};
+use alcomd_protocol::{
+    CAPABILITY_EVENTS_REPLAY_V1, CAPABILITY_OPERATIONS_V1, CAPABILITY_STATE_CHECK_V1,
+    ErrorResponse, Event, EventsListParams, EventsListResult, HelloParams, HelloResult,
+    METHOD_EVENTS_LIST, METHOD_OPERATIONS_CANCEL, METHOD_OPERATIONS_GET, METHOD_OPERATIONS_LIST,
+    METHOD_STATE_CHECK, METHOD_SYSTEM_HELLO, METHOD_SYSTEM_STATUS, Operation, OperationAccepted,
+    OperationState, OperationWriteResult, OperationsCancelParams, OperationsGetParams,
+    OperationsListCursor, OperationsListParams, OperationsListResult, RPC_VERSION, RequestEnvelope,
+    RpcError, StateCheckParams, SuccessResponse, SystemStatusResult, decode_frame_length,
+    encode_frame,
+};
+use alcomd_store::StateStoreHandle;
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-/// Runs the M1 daemon until the supplied shutdown signal completes.
-pub async fn serve_until<F>(config: IpcConfig, shutdown: F) -> Result<(), BindError>
+static TEST_DATA_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+
+type M2Application = Application<StateStoreHandle>;
+
+/// Runs the daemon with an ephemeral isolated data directory.
+///
+/// This compatibility entry point exists for M1 integration tests. Production
+/// callers must use [`serve_with_data_until`] with the formal platform config.
+pub async fn serve_until<F>(ipc: IpcConfig, shutdown: F) -> Result<(), BindError>
 where
     F: Future<Output = ()>,
 {
-    let listener = IpcListener::bind(&config)?;
-    run_listener(listener, shutdown)
+    let sequence = TEST_DATA_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let directory = std::env::temp_dir().join(format!(
+        "alcomd-daemon-test-{}-{sequence}",
+        std::process::id()
+    ));
+    let result =
+        serve_with_data_until(ipc, DataConfig::isolated(directory.clone()), shutdown).await;
+    for _ in 0..20 {
+        if std::fs::remove_dir_all(&directory).is_ok() || !directory.exists() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    result
+}
+
+/// Initializes the authoritative store, recovers Operations, then binds IPC.
+pub async fn serve_with_data_until<F>(
+    ipc: IpcConfig,
+    data: DataConfig,
+    shutdown: F,
+) -> Result<(), BindError>
+where
+    F: Future<Output = ()>,
+{
+    let instance = DaemonInstance::acquire(&ipc)?;
+    let database = alcomd_platform::state_database_path(&data)?;
+    let store = StateStoreHandle::open(database).map_err(|error| {
+        BindError::Io(io::Error::other(format!(
+            "state store failed closed: {error}"
+        )))
+    })?;
+    let application = Arc::new(M2Application::new(store));
+    application
+        .recover()
+        .await
+        .map_err(|_| BindError::Io(io::Error::other("Operation recovery failed")))?;
+    let listener = instance.bind()?;
+    run_listener(listener, application, shutdown)
         .await
         .map_err(BindError::Io)
 }
 
-async fn run_listener<F>(mut listener: IpcListener, shutdown: F) -> io::Result<()>
+async fn run_listener<F>(
+    mut listener: IpcListener,
+    application: Arc<M2Application>,
+    shutdown: F,
+) -> io::Result<()>
 where
     F: Future<Output = ()>,
 {
@@ -33,8 +95,9 @@ where
         tokio::select! {
             result = listener.accept() => {
                 let stream = result?;
+                let application = Arc::clone(&application);
                 connections.spawn(async move {
-                    let _ = serve_connection(stream).await;
+                    let _ = serve_connection(stream, application).await;
                 });
             }
             result = connections.join_next(), if !connections.is_empty() => {
@@ -49,17 +112,27 @@ where
     Ok(())
 }
 
-async fn serve_connection(mut stream: IpcStream) -> io::Result<()> {
-    let mut handshake_complete = false;
+#[derive(Default)]
+struct ConnectionState {
+    handshake_complete: bool,
+    capabilities: HashSet<String>,
+}
+
+async fn serve_connection(
+    mut stream: IpcStream,
+    application: Arc<M2Application>,
+) -> io::Result<()> {
+    let mut state = ConnectionState::default();
     loop {
         let payload = match read_frame(&mut stream).await? {
             Some(payload) => payload,
             None => return Ok(()),
         };
-        let action = dispatch_payload(&payload, handshake_complete);
+        let action = dispatch_payload(&payload, &state, &application).await;
         write_json_frame(&mut stream, &action.response).await?;
-        if action.complete_handshake {
-            handshake_complete = true;
+        if let Some(capabilities) = action.complete_handshake {
+            state.handshake_complete = true;
+            state.capabilities = capabilities;
         }
         if action.close_after_response {
             return Ok(());
@@ -69,11 +142,15 @@ async fn serve_connection(mut stream: IpcStream) -> io::Result<()> {
 
 struct DispatchAction {
     response: Value,
-    complete_handshake: bool,
+    complete_handshake: Option<HashSet<String>>,
     close_after_response: bool,
 }
 
-fn dispatch_payload(payload: &[u8], handshake_complete: bool) -> DispatchAction {
+async fn dispatch_payload(
+    payload: &[u8],
+    state: &ConnectionState,
+    application: &M2Application,
+) -> DispatchAction {
     let parsed_value: Value = match serde_json::from_slice(payload) {
         Ok(value) => value,
         Err(_) => return error_action(None, RpcError::invalid_request(), false),
@@ -92,59 +169,356 @@ fn dispatch_payload(payload: &[u8], handshake_complete: bool) -> DispatchAction 
     }
 
     if request.method == METHOD_SYSTEM_HELLO {
-        if handshake_complete {
-            return error_action(
-                Some(request.id),
-                RpcError::handshake_already_completed(),
-                false,
-            );
-        }
-        let hello: HelloParams = match serde_json::from_value(request.params) {
-            Ok(hello) => hello,
-            Err(_) => {
-                return error_action(Some(request.id), RpcError::invalid_request(), false);
-            }
-        };
-        if hello.validate().is_err() {
-            return error_action(Some(request.id), RpcError::invalid_request(), false);
-        }
-        if hello.rpc_version != RPC_VERSION {
-            return error_action(
-                Some(request.id),
-                RpcError::rpc_version_unsupported(hello.rpc_version),
-                true,
-            );
-        }
-        return success_action(request.id, HelloResult::m1(), true);
+        return dispatch_hello(request, state);
     }
-
-    if !handshake_complete {
+    if !state.handshake_complete {
         return error_action(Some(request.id), RpcError::handshake_required(), false);
     }
-
     if request.method == METHOD_SYSTEM_STATUS {
-        if request
-            .params
-            .as_object()
-            .is_none_or(|params| !params.is_empty())
-        {
-            return error_action(Some(request.id), RpcError::invalid_request(), false);
-        }
-        let application_status = alcomd_application::system_status();
-        let result = SystemStatusResult {
+        return dispatch_status(request, state);
+    }
+
+    let access = AccessContext::local_owner();
+    dispatch_m2(request, state, application, &access).await
+}
+
+fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> DispatchAction {
+    if state.handshake_complete {
+        return error_action(
+            Some(request.id),
+            RpcError::handshake_already_completed(),
+            false,
+        );
+    }
+    let hello: HelloParams = match serde_json::from_value(request.params) {
+        Ok(hello) => hello,
+        Err(_) => return error_action(Some(request.id), RpcError::invalid_request(), false),
+    };
+    if hello.validate().is_err() {
+        return error_action(Some(request.id), RpcError::invalid_request(), false);
+    }
+    if hello.rpc_version != RPC_VERSION {
+        return error_action(
+            Some(request.id),
+            RpcError::rpc_version_unsupported(hello.rpc_version),
+            true,
+        );
+    }
+    let supported = [
+        CAPABILITY_STATE_CHECK_V1,
+        CAPABILITY_OPERATIONS_V1,
+        CAPABILITY_EVENTS_REPLAY_V1,
+    ];
+    let capabilities = hello
+        .capabilities
+        .into_iter()
+        .filter(|capability| supported.contains(&capability.as_str()))
+        .collect::<HashSet<_>>();
+    let mut result_capabilities = capabilities.iter().cloned().collect::<Vec<_>>();
+    result_capabilities.sort();
+    success_action(
+        request.id,
+        HelloResult::m2(result_capabilities),
+        Some(capabilities),
+    )
+}
+
+fn dispatch_status(request: RequestEnvelope, state: &ConnectionState) -> DispatchAction {
+    if request
+        .params
+        .as_object()
+        .is_none_or(|params| !params.is_empty())
+    {
+        return error_action(Some(request.id), RpcError::invalid_request(), false);
+    }
+    let application_status = alcomd_application::system_status();
+    let mut capabilities = state.capabilities.iter().cloned().collect::<Vec<_>>();
+    capabilities.sort();
+    success_action(
+        request.id,
+        SystemStatusResult {
             product: alcomd_protocol::PRODUCT_FAMILY.to_owned(),
             daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             rpc_version: RPC_VERSION,
             state: application_status.state().as_str().to_owned(),
-            capabilities: Vec::new(),
-        };
-        return success_action(request.id, result, false);
-    }
-
-    error_action(Some(request.id), RpcError::method_not_found(), false)
+            capabilities,
+        },
+        None,
+    )
 }
 
-fn success_action<T: serde::Serialize>(id: String, result: T, handshake: bool) -> DispatchAction {
+async fn dispatch_m2(
+    request: RequestEnvelope,
+    state: &ConnectionState,
+    application: &M2Application,
+    access: &AccessContext,
+) -> DispatchAction {
+    match request.method.as_str() {
+        METHOD_STATE_CHECK => {
+            if let Some(action) = require_capability(&request.id, state, CAPABILITY_STATE_CHECK_V1)
+            {
+                return action;
+            }
+            let params: StateCheckParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(_) => return invalid(request.id),
+            };
+            let key = match IdempotencyKey::parse(params.idempotency_key) {
+                Ok(key) => key,
+                Err(_) => return invalid(request.id),
+            };
+            match application.state_check(access, key).await {
+                Ok(outcome) => success_action(
+                    request.id,
+                    OperationAccepted {
+                        operation_id: outcome.operation_id.to_string(),
+                        replayed: outcome.replayed,
+                    },
+                    None,
+                ),
+                Err(error) => application_error(request.id, error),
+            }
+        }
+        METHOD_OPERATIONS_GET => {
+            if let Some(action) = require_capability(&request.id, state, CAPABILITY_OPERATIONS_V1) {
+                return action;
+            }
+            let params: OperationsGetParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(_) => return invalid(request.id),
+            };
+            let operation_id = match OperationId::parse(&params.operation_id) {
+                Ok(value) => value,
+                Err(_) => return invalid(request.id),
+            };
+            match application.get_operation(access, operation_id).await {
+                Ok(operation) => match operation_to_rpc(operation) {
+                    Ok(operation) => success_action(request.id, operation, None),
+                    Err(error) => error_action(Some(request.id), error, false),
+                },
+                Err(error) => application_error(request.id, error),
+            }
+        }
+        METHOD_OPERATIONS_LIST => {
+            if let Some(action) = require_capability(&request.id, state, CAPABILITY_OPERATIONS_V1) {
+                return action;
+            }
+            let params: OperationsListParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(_) => return invalid(request.id),
+            };
+            let cursor = match params.cursor.map(cursor_from_rpc).transpose() {
+                Ok(cursor) => cursor,
+                Err(()) => return invalid(request.id),
+            };
+            match application
+                .list_operations(access, cursor, params.limit.unwrap_or(100))
+                .await
+            {
+                Ok(page) => {
+                    let operations = page
+                        .operations
+                        .into_iter()
+                        .map(operation_to_rpc)
+                        .collect::<Result<Vec<_>, _>>();
+                    match operations {
+                        Ok(operations) => success_action(
+                            request.id,
+                            OperationsListResult {
+                                operations,
+                                next_cursor: page.next_cursor.map(cursor_to_rpc),
+                            },
+                            None,
+                        ),
+                        Err(error) => error_action(Some(request.id), error, false),
+                    }
+                }
+                Err(error) => application_error(request.id, error),
+            }
+        }
+        METHOD_OPERATIONS_CANCEL => {
+            if let Some(action) = require_capability(&request.id, state, CAPABILITY_OPERATIONS_V1) {
+                return action;
+            }
+            let params: OperationsCancelParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(_) => return invalid(request.id),
+            };
+            let operation_id = match OperationId::parse(&params.operation_id) {
+                Ok(value) => value,
+                Err(_) => return invalid(request.id),
+            };
+            let revision = match Revision::new(params.expected_revision) {
+                Some(value) => value,
+                None => return invalid(request.id),
+            };
+            let key = match IdempotencyKey::parse(params.idempotency_key) {
+                Ok(value) => value,
+                Err(_) => return invalid(request.id),
+            };
+            match application
+                .cancel_operation(access, operation_id, revision, key)
+                .await
+            {
+                Ok((operation, replayed)) => match operation_to_rpc(operation) {
+                    Ok(operation) => success_action(
+                        request.id,
+                        OperationWriteResult {
+                            operation,
+                            replayed,
+                        },
+                        None,
+                    ),
+                    Err(error) => error_action(Some(request.id), error, false),
+                },
+                Err(error) => application_error(request.id, error),
+            }
+        }
+        METHOD_EVENTS_LIST => {
+            if let Some(action) =
+                require_capability(&request.id, state, CAPABILITY_EVENTS_REPLAY_V1)
+            {
+                return action;
+            }
+            let params: EventsListParams = match serde_json::from_value(request.params) {
+                Ok(params) => params,
+                Err(_) => return invalid(request.id),
+            };
+            match application
+                .list_events(access, params.after_sequence, params.limit.unwrap_or(100))
+                .await
+            {
+                Ok(page) => {
+                    let events = page
+                        .events
+                        .into_iter()
+                        .map(event_to_rpc)
+                        .collect::<Result<Vec<_>, _>>();
+                    match events {
+                        Ok(events) => success_action(
+                            request.id,
+                            EventsListResult {
+                                events,
+                                next_sequence: page.next_sequence,
+                            },
+                            None,
+                        ),
+                        Err(error) => error_action(Some(request.id), error, false),
+                    }
+                }
+                Err(error) => application_error(request.id, error),
+            }
+        }
+        _ => error_action(Some(request.id), RpcError::method_not_found(), false),
+    }
+}
+
+fn require_capability(
+    id: &str,
+    state: &ConnectionState,
+    capability: &str,
+) -> Option<DispatchAction> {
+    (!state.capabilities.contains(capability)).then(|| {
+        error_action(
+            Some(id.to_owned()),
+            RpcError::capability_required(capability),
+            false,
+        )
+    })
+}
+
+fn operation_to_rpc(record: OperationRecord) -> Result<Operation, RpcError> {
+    let result = record
+        .result_json
+        .map(|json| serde_json::from_str(&json))
+        .transpose()
+        .map_err(|_| RpcError::internal(OperationId::new().to_string()))?;
+    Ok(Operation {
+        operation_id: record.operation_id.to_string(),
+        kind: record.kind,
+        state: match record.state {
+            DomainState::Queued => OperationState::Queued,
+            DomainState::Planning => OperationState::Planning,
+            DomainState::WaitingForInput => OperationState::WaitingForInput,
+            DomainState::Running => OperationState::Running,
+            DomainState::Cancelling => OperationState::Cancelling,
+            DomainState::Succeeded => OperationState::Succeeded,
+            DomainState::Failed => OperationState::Failed,
+            DomainState::Cancelled => OperationState::Cancelled,
+            DomainState::Interrupted => OperationState::Interrupted,
+            DomainState::Recovering => OperationState::Recovering,
+        },
+        revision: record.revision.get(),
+        created_at_ms: record.created_at_ms,
+        updated_at_ms: record.updated_at_ms,
+        started_at_ms: record.started_at_ms,
+        completed_at_ms: record.completed_at_ms,
+        result,
+        error_code: record.error_code,
+        diagnostic_id: record.diagnostic_id,
+    })
+}
+
+fn event_to_rpc(record: ApplicationEvent) -> Result<Event, RpcError> {
+    let payload = serde_json::from_str(&record.payload_json)
+        .map_err(|_| RpcError::internal(OperationId::new().to_string()))?;
+    Ok(Event {
+        sequence: record.sequence,
+        event_id: record.event_id,
+        kind: record.kind,
+        aggregate_kind: record.aggregate_kind,
+        aggregate_id: record.aggregate_id,
+        aggregate_revision: record.aggregate_revision.get(),
+        occurred_at_ms: record.occurred_at_ms,
+        payload,
+    })
+}
+
+fn cursor_from_rpc(cursor: OperationsListCursor) -> Result<OperationCursor, ()> {
+    Ok(OperationCursor {
+        created_at_ms: cursor.created_at_ms,
+        operation_id: OperationId::parse(&cursor.operation_id).map_err(|_| ())?,
+    })
+}
+
+fn cursor_to_rpc(cursor: OperationCursor) -> OperationsListCursor {
+    OperationsListCursor {
+        created_at_ms: cursor.created_at_ms,
+        operation_id: cursor.operation_id.to_string(),
+    }
+}
+
+fn application_error(id: String, error: ApplicationError) -> DispatchAction {
+    let error = match error {
+        ApplicationError::PermissionDenied => RpcError::permission_denied(),
+        ApplicationError::InvalidInput => RpcError::invalid_request(),
+        ApplicationError::Store(StoreErrorKind::OperationNotFound) => {
+            RpcError::operation_not_found()
+        }
+        ApplicationError::Store(StoreErrorKind::RevisionConflict) => RpcError::revision_conflict(),
+        ApplicationError::Store(StoreErrorKind::IdempotencyConflict) => {
+            RpcError::idempotency_conflict()
+        }
+        ApplicationError::Store(StoreErrorKind::OperationNotCancellable) => {
+            RpcError::operation_not_cancellable()
+        }
+        ApplicationError::Store(StoreErrorKind::Unavailable) => RpcError::store_unavailable(),
+        ApplicationError::Store(StoreErrorKind::CorruptState) => {
+            RpcError::internal(OperationId::new().to_string())
+        }
+    };
+    error_action(Some(id), error, false)
+}
+
+fn invalid(id: String) -> DispatchAction {
+    error_action(Some(id), RpcError::invalid_request(), false)
+}
+
+fn success_action<T: serde::Serialize>(
+    id: String,
+    result: T,
+    handshake: Option<HashSet<String>>,
+) -> DispatchAction {
     let response = serde_json::to_value(SuccessResponse { id, result })
         .expect("approved response DTOs must serialize");
     DispatchAction {
@@ -159,7 +533,7 @@ fn error_action(id: Option<String>, error: RpcError, close: bool) -> DispatchAct
         .expect("approved error DTO must serialize");
     DispatchAction {
         response,
-        complete_handshake: false,
+        complete_handshake: None,
         close_after_response: close,
     }
 }
@@ -185,116 +559,4 @@ async fn write_json_frame(stream: &mut IpcStream, value: &Value) -> io::Result<(
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     stream.write_all(&frame).await?;
     stream.flush().await
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use alcomd_protocol::{ClientInfo, error_code};
-    use serde_json::json;
-
-    fn request(id: &str, method: &str, params: Value) -> Vec<u8> {
-        serde_json::to_vec(&RequestEnvelope {
-            id: id.to_owned(),
-            method: method.to_owned(),
-            params,
-        })
-        .expect("serialize request")
-    }
-
-    #[test]
-    fn status_requires_handshake() {
-        let action = dispatch_payload(&request("1", METHOD_SYSTEM_STATUS, json!({})), false);
-        assert_eq!(
-            action.response["error"]["code"],
-            error_code::HANDSHAKE_REQUIRED
-        );
-    }
-
-    #[test]
-    fn hello_then_status_are_truthful() {
-        let hello = HelloParams {
-            rpc_version: RPC_VERSION,
-            client: ClientInfo {
-                name: "test".to_owned(),
-                version: "1".to_owned(),
-                instance_id: "instance".to_owned(),
-            },
-            capabilities: vec!["unknown.safe-capability".to_owned()],
-        };
-        let action = dispatch_payload(
-            &request(
-                "hello",
-                METHOD_SYSTEM_HELLO,
-                serde_json::to_value(hello).expect("hello params"),
-            ),
-            false,
-        );
-        assert!(action.complete_handshake);
-        assert_eq!(action.response["result"]["capabilities"], json!([]));
-
-        let status = dispatch_payload(&request("status", METHOD_SYSTEM_STATUS, json!({})), true);
-        assert_eq!(status.response["result"]["state"], "ready");
-        assert!(status.response["result"].get("pid").is_none());
-    }
-
-    #[test]
-    fn unsupported_major_closes_only_after_structured_error() {
-        let action = dispatch_payload(
-            &request(
-                "hello",
-                METHOD_SYSTEM_HELLO,
-                json!({
-                    "rpcVersion": 99,
-                    "client": {"name": "test", "version": "1", "instanceId": "i"},
-                    "capabilities": []
-                }),
-            ),
-            false,
-        );
-        assert_eq!(
-            action.response["error"]["code"],
-            error_code::RPC_VERSION_UNSUPPORTED
-        );
-        assert!(action.close_after_response);
-    }
-
-    #[test]
-    fn repeated_hello_and_unknown_method_have_stable_errors() {
-        let repeated = dispatch_payload(
-            &request(
-                "hello-again",
-                METHOD_SYSTEM_HELLO,
-                json!({
-                    "rpcVersion": RPC_VERSION,
-                    "client": {"name": "test", "version": "1", "instanceId": "i"},
-                    "capabilities": []
-                }),
-            ),
-            true,
-        );
-        assert_eq!(
-            repeated.response["error"]["code"],
-            error_code::HANDSHAKE_ALREADY_COMPLETED
-        );
-        assert!(!repeated.close_after_response);
-
-        let unknown = dispatch_payload(&request("unknown", "system.unknown", json!({})), true);
-        assert_eq!(
-            unknown.response["error"]["code"],
-            error_code::METHOD_NOT_FOUND
-        );
-    }
-
-    #[test]
-    fn complete_malformed_payloads_return_invalid_request() {
-        for payload in [b"not-json".as_slice(), br#"{"id":"ok"}"#.as_slice()] {
-            let action = dispatch_payload(payload, false);
-            assert_eq!(
-                action.response["error"]["code"],
-                error_code::INVALID_REQUEST
-            );
-            assert!(!action.close_after_response);
-        }
-    }
 }

@@ -18,6 +18,15 @@
                 "handshake_already_completed",
                 "rpc_version_unsupported",
                 "component_upgrade_required",
+                "capability_required",
+                "permission_denied",
+                "revision_conflict",
+                "idempotency_conflict",
+                "operation_not_found",
+                "operation_not_cancellable",
+                "event_cursor_expired",
+                "data_schema_unsupported",
+                "store_unavailable",
                 "internal_error"
             ]
         },
