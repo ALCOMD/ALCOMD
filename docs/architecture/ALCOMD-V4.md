@@ -253,12 +253,13 @@ ExternalConfig(provider_id)
 ```json
 {
     "rpcVersion": 1,
-    "daemonVersion": "4.0.0",
-    "dataSchema": 1,
-    "configSchema": 1,
-    "extensionApi": 1
+    "daemonVersion": "4.0.0-alpha.0",
+    "capabilities": []
 }
 ```
+
+`dataSchema`、`configSchema` 与 `extensionApi` 尚未实现，不属于当前 M1 RPC v1 的必需字段。
+未来只有对应子系统真实存在后，才可按照 RPC v1 的兼容增加规则作为可选字段加入。
 
 公共 DTO 与内部领域对象必须分离。破坏性变化提升对应协议大版本，而不是仅提升应用版本。
 

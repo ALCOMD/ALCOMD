@@ -1,6 +1,6 @@
 # M1：核心进程、本地 RPC 握手与 CLI system status
 
-状态：M1 实现与三平台 hosted CI 完成；等待人工验收，尚未进入 M2
+状态：M1 已通过人工验收并正式完成；尚未进入 M2
 
 ## 目标
 
@@ -328,3 +328,7 @@ Linux/macOS 使用等价 `./scripts/*.sh` 与 `python3` 命令。具体集成测
   已通过 Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 三个 hosted job；Linux 实测最高
   `GLIBC_2.34`，九个 macOS Mach-O 均为 arm64 / minos 11.0。M1 已具备提交人工验收的证据，
   但未经项目所有者验收不得进入 M2。
+- 2026-08-18：项目所有者确认最终提交
+  `7ed70626a0176f855a8e9efdc6d35d317f51ca78` 与 GitHub Actions run `32126344788` 验收通过；
+  HEAD、`origin/main` 与 CI head SHA 一致。M1 正式完成，后续仅可先规划 M2，不得据此开始
+  M2 生产实现。

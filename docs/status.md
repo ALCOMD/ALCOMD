@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M1：实现与 Windows/Ubuntu/macOS hosted CI 完成；等待人工验收`
+`M1：已通过人工验收并正式完成；M2 生产实现尚未获批`
 
 ## 已完成
 
@@ -91,6 +91,8 @@
   `32124358425`：Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 三个 hosted job 全部
   成功；Linux 实测最高 `GLIBC_2.34`，九个 macOS Mach-O 均为 arm64 / minos 11.0，三平台
   三锁文件与最终 diff 门禁均通过。Windows hosted 结果仍不代表 Win10/Win11 客户端发行验收。
+- 项目所有者已确认 M1 最终提交 `7ed70626a0176f855a8e9efdc6d35d317f51ca78` 与 GitHub Actions
+  run `32126344788` 人工验收通过；HEAD、`origin/main` 与 CI head SHA 一致，M1 正式完成。
 
 ## 后续里程碑尚未完成
 
@@ -107,8 +109,6 @@
 - 安装器、签名与发布。
 
 ## 当前阻塞与缺口
-
-- M1 技术验收项已经关闭，当前只等待项目所有者人工验收；在明确批准前不得创建或执行 M2。
 
 - Windows 10 22H2 与 Windows 11 仍是正式目标支持平台，但真实客户端运行验证尚未完成，
   不得记为通过。项目所有者已将仅重复编译的 M0 self-hosted job 取消，并把验证 deferred 到
@@ -136,6 +136,6 @@
 
 ## 下一停止点
 
-M0 已完成并通过最终人工验收。M1 实现、完整本地门禁与三个 hosted 平台验收均已完成，当前
-停止在 M2 前等待人工验收。Windows 客户端运行验证仍留在 M12；迁移删除、永久 Windows
-AppId/GUID、安装器与 `cargo xtask dist` 仍不在当前授权范围内。
+M0 与 M1 均已完成并通过最终人工验收。当前只允许创建 M2 ExecPlan 草案，不得开始 M2 生产
+实现。Windows 客户端运行验证仍留在 M12；迁移删除、永久 Windows AppId/GUID、安装器与
+`cargo xtask dist` 仍不在当前授权范围内。
