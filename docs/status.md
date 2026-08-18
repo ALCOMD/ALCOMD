@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M3：合同、生产切片、本地验收与三平台 hosted CI 已完成，等待项目所有者人工验收；尚未进入 M4`
+`M3 已通过项目所有者人工验收并正式完成；正在起草 M4 ExecPlan，尚未开始 M4 生产实现`
 
 ## 已完成
 
@@ -119,10 +119,9 @@
   graph 证明确认 quinn/HTTP3、system-proxy、cookie 和压缩未激活。Cargo.lock 中可存在获批的
   optional/target-only 锁定项，但不将它们描述为 ALCOMD 当前运行时组件。
 - M3 Windows 本机 `check.ps1`、`test.ps1`、Tauri no-bundle、冻结基线与锁文件门禁已经通过；
-  修复后生产候选 `ea22e3bf8d90b7924712141a66abe6c701fe3474` 对应 GitHub Actions run
-  `32171689291` 的 Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 job 全部成功；Ubuntu
-  实测最高 `GLIBC_2.34`，macOS 九个预期产物全部为 arm64 / minos 11.0。M3 仍需项目所有者
-  人工验收，尚未进入 M4。
+  最终提交 `2082b5596d246975ca7a48dab20826899103e03d` 对应 GitHub Actions run
+  `32174028968` 的 Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 job 全部成功，且
+  CI head SHA、`HEAD` 与 `origin/main` 一致。项目所有者已完成人工验收，M3 正式完成。
 
 ## 后续里程碑尚未完成
 
@@ -162,11 +161,16 @@
   使用 `mcp.sessions.read`。
 - `alcomd-mcp`、GUI 与其他后续入口仍是 scaffold；M1 只实现 daemon/client/CLI 的最小 status
   切片，不得将其描述为完整 RPC、CLI、Operation 或业务功能。
+- `projects.v3-parity` 继续保持 `blocked`，直到 M11 建立脱敏真实 v3 Fixture；synthetic/public
+  Fixture 只能证明独立实现的格式与工程行为，不能冒充真实 v3 differential evidence。
+- 真实 credential enrollment/revocation 仍未完成；完整 `projects.management`、
+  `repositories.management`、`daemon.single-writer`、`rpc.local` 与 `cli.complete` 仍只实现了各自
+  的阶段性切片，必须保持真实的 `in_progress`/`planned` 状态。
 
 ## 下一停止点
 
-M0、M1 与 M2 均已完成并通过最终人工验收。M3 项目与 VPM Repository 只读垂直切片的合同、
-本地生产实现、完整本地门禁与三平台 hosted CI 已完成，当前停止并等待项目所有者人工验收；
-在人工验收前不得进入 M4。真实 credential revocation 仍未完成；Windows
-10/11 完整客户端安装、启动、WebView2、更新与卸载验证继续 deferred 到 M12，不得把 Windows
-Server hosted 结果描述为客户端发行证据。
+M0、M1、M2 与 M3 均已完成并通过最终人工验收。当前只创建 M4 package transaction 垂直切片的
+ExecPlan 草案；在项目所有者批准 M4 合同与实施范围前，不得修改生产 Schema、引入生产依赖或
+开始实现。`projects.v3-parity` 与真实 credential revocation 仍未完成；Windows 10/11 完整客户端
+安装、启动、WebView2、更新与卸载验证继续 deferred 到 M12，不得把 Windows Server hosted 结果
+描述为客户端发行证据。

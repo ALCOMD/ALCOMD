@@ -1,6 +1,6 @@
 # M3：项目与 VPM Repository 只读垂直切片
 
-状态：合同、生产实现、完整本地验收与三平台 hosted CI 已完成；等待项目所有者人工验收，未进入 M4
+状态：合同、生产实现、本地验收、三平台 hosted CI 与项目所有者人工验收全部完成；尚未进入 M4
 
 ## 目标
 
@@ -586,3 +586,7 @@ Cargo.lock 出现非预期依赖、偏离冻结合同或进入 M4 时再次停�
   `32171689291` 的 Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 job 全部成功；Ubuntu
   实测最高 `GLIBC_2.34`，macOS 九个预期 Mach-O 产物全部为 `arm64 / minos 11.0`，三平台
   Tauri no-bundle、三份锁文件和最终 diff 门禁均通过。M3 现在停止并等待项目所有者人工验收。
+- 2026-08-19：项目所有者确认最终提交 `2082b5596d246975ca7a48dab20826899103e03d` 与
+  GitHub Actions run `32174028968` 人工验收通过；Windows Server 2025、Ubuntu 22.04 与
+  macOS 15 arm64 全部成功，CI head SHA、`HEAD` 与 `origin/main` 一致。M3 正式完成，尚未
+  开始 M4 生产实现。
