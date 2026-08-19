@@ -1,10 +1,10 @@
 # 项目状态
 
-最后更新：2026-08-19
+最后更新：2026-08-20
 
 ## 当前阶段
 
-`M3 已正式完成；M4 最小 package transaction 已完成本地候选实现与验收，等待三平台 hosted CI 和人工验收`
+`M3 已正式完成；M4 最小 package transaction 已完成实现、本地验收与三平台 hosted CI，等待人工验收`
 
 ## 已完成
 
@@ -135,6 +135,12 @@
 - M4 保持 SHA-256-required remote archive 安全子集和 `Packages/manifest.json` byte-for-byte 不变；
   hashless VPM、legacy cleanup、credential、local user package、完整 GUI/MCP 与 M5 CLI 体验仍未完成，
   因此完整 `packages.vpm`、`packages.transaction-safety` 与 `packages.security` 只标记 `in_progress`。
+- M4 最终代码候选 `cd125da1ff4609dd34bf893ad193e7034fd91674` 对应 GitHub Actions run
+  `32274892596` 的 Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 job 全部成功；Ubuntu
+  实测最高 `GLIBC_2.34`，九个 macOS 预期产物均为 arm64 / minos 11.0，三平台锁文件与最终 diff
+  门禁均通过。首轮 CI 暴露的 macOS directory fsync `EINVAL` 平台差异和 Windows 测试临时路径
+  时间戳碰撞已在最终代码候选中修复；Ubuntu 前两次重跑停滞于系统软件源，第三次未复现且完整通过，
+  未修改 baseline、CI 或安全门禁以规避外部故障。
 
 ## 后续里程碑尚未完成
 
@@ -187,9 +193,9 @@
 ## 下一停止点
 
 M0、M1、M2 与 M3 均已完成并通过最终人工验收。M4 本地候选实现、完整 `check.ps1`/`test.ps1`、
-metadata/freeze/diff 门禁与 Windows Tauri no-bundle build 已完成；下一步是在获得明确 Git 授权后提交、
-推送最终候选并取得 Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 hosted CI。CI 与项目所有者
-人工验收前不得把 M4 标记为正式完成或进入 M5。
+metadata/freeze/diff 门禁、Windows Tauri no-bundle build 和最终代码候选的 Windows Server 2025、
+Ubuntu 22.04、macOS 15 arm64 hosted CI 均已通过。M4 仍等待项目所有者人工验收；验收前不得把
+M4 标记为正式完成或进入 M5。
 `projects.v3-parity` 与真实 credential
 revocation 仍未完成；Windows 10/11 完整客户端
 安装、启动、WebView2、更新与卸载验证继续 deferred 到 M12，不得把 Windows Server hosted 结果

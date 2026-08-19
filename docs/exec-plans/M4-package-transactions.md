@@ -1,7 +1,7 @@
 # M4：VPM Package Plan/Apply 与可恢复项目事务
 
-状态：M4 contract-first 合同、最小生产实现与完整本地验收已完成；尚待最终提交对应的三平台
-hosted CI 与项目所有者人工验收，尚未进入 M5
+状态：M4 contract-first 合同、最小生产实现、完整本地验收与最终代码候选三平台 hosted CI 已完成；
+尚待项目所有者人工验收，尚未进入 M5
 
 ## 目标
 
@@ -587,3 +587,13 @@ unsafe/平台 API、公共 RPC/DB/permission 变化或进入 M5 都必须再次�
   tests、真实 daemon/CLI 自动启动、独立 Discord 后端、TypeScript、Vite build、metadata 与三份锁文件
   无漂移；`npm run gui:build -- --no-bundle` 也成功生成 Windows release GUI。第一次沙箱内 Vite 运行
   因父路径读取权限被拒，随后在真实 Windows 用户环境原样重跑成功，未修改或放宽构建配置。
+- 2026-08-20：初始 hosted CI 在 macOS 发现 directory fsync 返回 `EINVAL` 的平台差异，在 Windows
+  发现仅由粗粒度系统时间生成测试临时路径导致的碰撞。最终代码候选
+  `cd125da1ff4609dd34bf893ad193e7034fd91674` 将 macOS 的精确 `EINVAL` 作为该平台不支持 directory
+  fsync 的结果处理而保留其他 I/O 错误，并为测试临时路径加入进程内原子序号；未新增依赖、unsafe、
+  平台 API 或放宽事务合同。
+- 2026-08-20：最终代码候选对应 GitHub Actions run `32274892596`。Windows Server 2025、Ubuntu
+  22.04 与 macOS 15 arm64 job 全部成功；Ubuntu 实测最高 `GLIBC_2.34`，九个 macOS 预期产物均为
+  arm64 / minos 11.0，三平台 Workspace check/test、M0-M4 合同与集成测试、release/Tauri no-bundle、
+  三份锁文件和最终 diff 门禁均通过。Ubuntu 前两次重跑停滞于系统软件源，第三次完整通过；没有修改
+  baseline、CI 或验证规则规避该外部故障。M4 仍等待项目所有者人工验收，尚未进入 M5。
