@@ -1,7 +1,7 @@
 # M4：VPM Package Plan/Apply 与可恢复项目事务
 
-状态：M4 contract-first 合同、最小生产实现、完整本地验收与最终代码候选三平台 hosted CI 已完成；
-尚待项目所有者人工验收，尚未进入 M5
+状态：M4 contract-first 合同、最小生产实现和补充 filesystem kill/restart/测试元数据验收候选已完成；
+最终补丁仍以其自身三平台 hosted CI 和项目所有者人工验收为准，尚未进入 M5
 
 ## 目标
 
@@ -314,6 +314,15 @@ M4 合同阶段必须冻结 Schema v3 和 filesystem journal：
   response 发送前后。
 - recovery 复用原 OperationId、Plan 和幂等 reservation，不创建第二 Operation、不重新 Plan、不从
   当前 catalog 猜测目标状态。
+- 真实子进程 kill gate 只在测试 feature 中编译启用，不增加 RPC method、Schema、生产 failpoint
+  framework 或公共环境配置。固定 gate 为 `archive_ready`、`prepared`、旧包已 rename 到 backup、
+  新包已 publish、`vpm_manifest_committed` 和 `filesystem_committed`；gate evidence 在强制终止前
+  flush/sync，恢复证据验证完成前 staging/backup 不得被清除。
+- download、cache partial 与 extract 属于同一个 pre-destructive recovery class：它们只写 content
+  cache 或 operation-owned staging；只有 durable `prepared` 后才允许第一次项目 mutation。因而
+  `archive_ready` 真实 kill/restart 证明该类重启入口，cache partial 排他/清理和 bounded archive
+  单元/故障测试证明不完整下载或 extraction 不会被 publish 到 `Packages/`；旧 attempt 的 partial
+  staging 不能作为恢复成功证据，也不能绕过重新验证。
 - cancellation 在 destructive phase 前可直接收敛 cancelled；进入项目 mutation 后只能在安全
   checkpoint 执行完整 rollback 或完成不可分割 commit，再报告最终状态，不能留下半提交。
 
@@ -597,3 +606,11 @@ unsafe/平台 API、公共 RPC/DB/permission 变化或进入 M5 都必须再次�
   arm64 / minos 11.0，三平台 Workspace check/test、M0-M4 合同与集成测试、release/Tauri no-bundle、
   三份锁文件和最终 diff 门禁均通过。Ubuntu 前两次重跑停滞于系统软件源，第三次完整通过；没有修改
   baseline、CI 或验证规则规避该外部故障。M4 仍等待项目所有者人工验收，尚未进入 M5。
+- 2026-08-20：按最终人工验收前补充要求，新增仅测试 feature 可达的 deterministic kill gates，
+  真实 daemon/Apply 子进程在 `prepared`、旧包 backup rename、新包 publish、VPM manifest atomic
+  replace 和 `filesystem_committed` 后分别被强制终止；保留既有 `archive_ready` 用例。每例重启后
+  均复用原 OperationId、Plan 与幂等键，不重新 Plan，并断言最终 package tree/manifest 只有完整
+  新状态、无虚假 succeeded；原 Apply 重放返回同一 OperationId。四个既有 M4 test ID 已逐项绑定
+  真实 evidence，validator 现同时拒绝空值、重复值和不存在的 feature test reference，并要求所有
+  `implemented` M4 test 给出存在的 evidence path。M4 继续等待最终补丁自身三平台 hosted CI 与
+  项目所有者人工验收，尚未进入 M5。

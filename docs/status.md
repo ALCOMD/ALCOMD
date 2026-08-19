@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M3 已正式完成；M4 最小 package transaction 已完成实现、本地验收与三平台 hosted CI，等待人工验收`
+`M3 已正式完成；M4 补充 filesystem kill/restart 与测试元数据验收候选已完成，等待最终 Hosted CI 与人工验收`
 
 ## 已完成
 
@@ -132,6 +132,15 @@
   Operation 重启恢复、append-only journal 合法重复阶段、脱敏持久 progress，以及同项目串行/
   不同项目并行的锁语义。恢复测试发现并移除了错误的 phase/state 唯一约束；journal 仍以 step 为
   主键且禁止 update/delete。
+- 补充真实进程测试保留 `archive_ready`，并覆盖 `prepared`、旧包已 rename 到 backup、新包已
+  publish、VPM manifest 已 atomic replace、`filesystem_committed` 后五个关键 checkpoint。每例均
+  在 durable test evidence 后强制终止 daemon，重启后复用原 OperationId/Plan/幂等键且不重新 Plan；
+  最终 package tree 与 manifest 收敛完整新状态，原 Apply 重放返回同一 OperationId。test gate 不
+  增加公开 RPC/Schema 或生产 failpoint framework。
+- `feature-parity.toml` 引用的四个 M4 test ID 均已存在并绑定真实 evidence；metadata gate 永久拒绝
+  空、重复或不存在的 feature test reference，并要求 `implemented` M4 test 的 evidence path 存在。
+  integrity/cache 与 concurrency 描述已收敛到实际离线/本地测试证据，不把已排除的攻击性网络、
+  凭据传播或公网故障测试描述为完成。
 - M4 保持 SHA-256-required remote archive 安全子集和 `Packages/manifest.json` byte-for-byte 不变；
   hashless VPM、legacy cleanup、credential、local user package、完整 GUI/MCP 与 M5 CLI 体验仍未完成，
   因此完整 `packages.vpm`、`packages.transaction-safety` 与 `packages.security` 只标记 `in_progress`。
@@ -192,10 +201,10 @@
 
 ## 下一停止点
 
-M0、M1、M2 与 M3 均已完成并通过最终人工验收。M4 本地候选实现、完整 `check.ps1`/`test.ps1`、
-metadata/freeze/diff 门禁、Windows Tauri no-bundle build 和最终代码候选的 Windows Server 2025、
-Ubuntu 22.04、macOS 15 arm64 hosted CI 均已通过。M4 仍等待项目所有者人工验收；验收前不得把
-M4 标记为正式完成或进入 M5。
+M0、M1、M2 与 M3 均已完成并通过最终人工验收。M4 原代码候选已取得完整本地和三平台 hosted
+证据；补充 filesystem kill/restart 与测试元数据候选也已完成本地验收，并以补丁最终提交自身的
+Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 hosted CI 作为最终技术证据。M4 仍等待项目
+所有者人工验收；验收前不得把 M4 标记为正式完成或进入 M5。
 `projects.v3-parity` 与真实 credential
 revocation 仍未完成；Windows 10/11 完整客户端
 安装、启动、WebView2、更新与卸载验证继续 deferred 到 M12，不得把 Windows Server hosted 结果

@@ -12,7 +12,7 @@ publish.workspace = true
 [dependencies]
 
 [dev-dependencies]
-alcomd-daemon = { package = "alcomd", path = "../../apps/alcomd" }
+alcomd-daemon = { package = "alcomd", path = "../../apps/alcomd", features = ["test-kill-gates"] }
 alcomd-client.workspace = true
 alcomd-application.workspace = true
 alcomd-domain.workspace = true

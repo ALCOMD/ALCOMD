@@ -460,6 +460,47 @@ mod tests {
         tokio::fs::remove_dir_all(root).await.expect("cleanup");
     }
 
+    #[tokio::test]
+    async fn missing_offline_object_is_a_stable_miss() {
+        let root = temporary_root("missing");
+        let cache = PackageCache::new(root.clone()).expect("cache");
+        assert_eq!(
+            cache
+                .get(
+                    [2_u8; 32],
+                    "https://network-must-not-be-used.invalid/package.zip",
+                    true,
+                )
+                .await
+                .expect_err("offline miss")
+                .code(),
+            CacheErrorCode::OfflineMiss
+        );
+    }
+
+    #[tokio::test]
+    async fn partial_download_claim_is_exclusive_and_unpublished_file_is_removed() {
+        let root = temporary_root("partial");
+        tokio::fs::create_dir_all(&root).await.expect("directory");
+        let part = root.join("object.zip.part");
+        let first = PartialDownload::create(part.clone())
+            .await
+            .expect("first claim");
+        let second_error = match PartialDownload::create(part.clone()).await {
+            Ok(_) => panic!("second claim must not overwrite"),
+            Err(error) => error,
+        };
+        assert_eq!(second_error.code(), CacheErrorCode::Io);
+        drop(first);
+        assert!(!part.exists());
+        drop(
+            PartialDownload::create(part)
+                .await
+                .expect("claim after cleanup"),
+        );
+        tokio::fs::remove_dir_all(root).await.expect("cleanup");
+    }
+
     #[test]
     fn cache_key_and_url_policy_are_fixed() {
         let cache = PackageCache::new(temporary_root("key")).expect("cache");

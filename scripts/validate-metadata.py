@@ -143,6 +143,22 @@ def main() -> int:
             test["status"] in test_status_values,
             f"Unsupported test plan status: {test_id}",
         )
+        if test["stage"] == "M4" and test["status"] == "implemented":
+            evidence = test.get("evidence")
+            require(
+                isinstance(evidence, list) and evidence,
+                f"Implemented M4 test has no concrete evidence: {test_id}",
+            )
+            for reference in evidence:
+                require(
+                    isinstance(reference, str) and reference,
+                    f"Invalid M4 test evidence: {test_id}",
+                )
+                evidence_path = reference.split("::", maxsplit=1)[0]
+                require(
+                    (ROOT / evidence_path).is_file(),
+                    f"M4 test evidence path does not exist: {test_id}: {evidence_path}",
+                )
 
     features = parity["feature"]
     feature_status_values = set(parity_metadata["status_values"])
@@ -163,12 +179,21 @@ def main() -> int:
             feature["implementation_status"] in implementation_status_values,
             f"Unsupported implementation status: {feature['id']}",
         )
-        require(isinstance(feature["tests"], list), f"Invalid tests field: {feature['id']}")
-        for test_id in feature["tests"]:
-            require(
-                test_id in tests_by_id,
-                f"Unknown test plan reference on {feature['id']}: {test_id}",
-            )
+        test_references = feature["tests"]
+        require(isinstance(test_references, list), f"Invalid tests field: {feature['id']}")
+        require(
+            all(isinstance(test_id, str) and test_id for test_id in test_references),
+            f"Invalid test plan reference on {feature['id']}",
+        )
+        require(
+            len(test_references) == len(set(test_references)),
+            f"Duplicate test plan reference on {feature['id']}",
+        )
+        missing_test_references = sorted(set(test_references) - tests_by_id.keys())
+        require(
+            not missing_test_references,
+            f"Unknown test plan reference on {feature['id']}: {missing_test_references}",
+        )
         if m1_complete:
             if feature["release_class"] == "release_blocker":
                 require(

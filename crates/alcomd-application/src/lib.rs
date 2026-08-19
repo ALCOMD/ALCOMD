@@ -1420,6 +1420,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn package_cache_locks_serialize_per_digest_but_not_globally() {
+        let coordinator = Arc::new(ResourceLockCoordinator::default());
+        let first_digest = [1_u8; 32];
+        let second_digest = [2_u8; 32];
+        let held = coordinator
+            .acquire(vec![ResourceKey::PackageCache(first_digest)])
+            .await;
+        let same_digest = {
+            let coordinator = Arc::clone(&coordinator);
+            tokio::spawn(async move {
+                coordinator
+                    .acquire(vec![ResourceKey::PackageCache(first_digest)])
+                    .await
+            })
+        };
+        tokio::task::yield_now().await;
+        assert!(!same_digest.is_finished());
+        let other_digest = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            coordinator.acquire(vec![ResourceKey::PackageCache(second_digest)]),
+        )
+        .await
+        .expect("different package digests must remain parallel");
+        assert_eq!(other_digest.len(), 1);
+        drop(held);
+        assert_eq!(same_digest.await.expect("same-digest waiter").len(), 1);
+    }
+
+    #[tokio::test]
     async fn cancelled_lock_waiter_leaves_no_owner() {
         let coordinator = Arc::new(ResourceLockCoordinator::default());
         let operation = OperationId::new();

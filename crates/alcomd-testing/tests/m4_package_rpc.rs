@@ -7,9 +7,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use alcomd_application::StateStore;
+use alcomd_application::{M4Store, StateStore};
 use alcomd_client::{AlcomdClient, ClientConfig};
-use alcomd_domain::{OperationId, PrincipalId};
+use alcomd_domain::{OperationId, PlanId, PrincipalId};
 use alcomd_platform::{DataConfig, IpcConfig};
 use alcomd_protocol::{OperationState, PackageOperationPhase, RepositorySource};
 use alcomd_store::StateStoreHandle;
@@ -19,6 +19,7 @@ use zip::write::SimpleFileOptions;
 
 const CRASH_ROOT_ENV: &str = "ALCOMD_M4_CRASH_ROOT";
 const CRASH_SIGNAL_ENV: &str = "ALCOMD_M4_CRASH_SIGNAL";
+const KILL_GATE_ENV: &str = "ALCOMD_TEST_M4_KILL_GATE";
 static RPC_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -153,115 +154,31 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn killed_package_apply_resumes_from_durable_archive_phase() {
     let _serial = RPC_TEST_LOCK.lock().await;
-    let fixture = TestDirectory::new();
-    let signal = fixture.path().join("operation.signal");
-    let child = Command::new(std::env::current_exe().expect("current test executable"))
-        .args([
-            "--exact",
-            "subprocess_runs_package_apply_until_killed",
-            "--ignored",
-            "--nocapture",
-        ])
-        .env(CRASH_ROOT_ENV, fixture.path())
-        .env(CRASH_SIGNAL_ENV, &signal)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("spawn package transaction subprocess");
-    let mut child = ChildGuard(Some(child));
+    run_kill_restart_case(KillCheckpoint::ArchiveReady).await;
+}
 
-    let operation_id = wait_for_operation_signal(&signal);
-    wait_for_archive_ready_marker(fixture.path(), &operation_id);
-    child
-        .0
-        .as_mut()
-        .expect("child process")
-        .kill()
-        .expect("force-kill package transaction subprocess");
-    let _ = child
-        .0
-        .as_mut()
-        .expect("child process")
-        .wait()
-        .expect("wait for killed subprocess");
-    child.0 = None;
-
-    let runtime = fixture.path().join("runtime");
-    let data = fixture.path().join("data");
-    let project = fixture.path().join("Project");
-    let killed_store = open_store_with_retry(&data.join("state.db"));
-    let killed_operation = killed_store
-        .get_operation(
-            PrincipalId::local_owner(),
-            OperationId::parse(&operation_id).expect("Operation ID"),
-        )
-        .await
-        .expect("load killed package Operation");
-    assert_eq!(
-        killed_operation.state,
-        alcomd_domain::OperationState::Running
-    );
-    assert_eq!(
-        killed_operation.progress_phase,
-        Some(alcomd_application::FilesystemPhase::ArchiveReady)
-    );
-    drop(killed_store);
-    let transaction_root = project
-        .join("Library/ALCOMD/transactions")
-        .join(&operation_id);
-    alcomd_platform::sync_directory(&transaction_root).expect("sync recovered transaction root");
-    let digest: [u8; 32] = Sha256::digest(
-        fs::read(fixture.path().join("package.zip")).expect("read cached crash archive"),
-    )
-    .into();
-    alcomd_vpm::PackageCache::new(data.join("package-cache"))
-        .expect("open package cache")
-        .get(
-            digest,
-            "https://network-must-not-be-used.invalid/package.zip",
-            true,
-        )
-        .await
-        .expect("revalidate offline cache after kill");
-    let (ipc, config) = isolated_ipc(runtime);
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let server_shutdown = Arc::clone(&shutdown);
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(
-            ipc,
-            DataConfig::isolated(data),
-            wait_for_shutdown(server_shutdown),
-        )
-        .await
-    });
-    let mut client = connect_with_retry(config).await;
-    let completed = wait_for_terminal(&mut client, &operation_id, &project).await;
-    assert_eq!(completed.state, OperationState::Succeeded);
-    assert_eq!(
-        completed.progress.expect("recovery progress").phase,
-        PackageOperationPhase::StateCommitted
-    );
-    assert_manifest_version(&project, Some("1.0.0"));
-    assert!(
-        project
-            .join("Packages/com.example.fixture/package.json")
-            .is_file()
-    );
-
-    shutdown.store(true, Ordering::Release);
-    let result = tokio::time::timeout(Duration::from_secs(3), daemon)
-        .await
-        .expect("daemon stop timeout")
-        .expect("join daemon");
-    assert!(result.is_ok());
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn destructive_package_transaction_kill_restart_matrix() {
+    let _serial = RPC_TEST_LOCK.lock().await;
+    for checkpoint in [
+        KillCheckpoint::Prepared,
+        KillCheckpoint::OldPackageBackedUp,
+        KillCheckpoint::NewPackagePublished,
+        KillCheckpoint::VpmManifestCommitted,
+        KillCheckpoint::FilesystemCommitted,
+    ] {
+        run_kill_restart_case(checkpoint).await;
+    }
 }
 
 #[test]
 #[ignore = "subprocess fixture invoked by the package kill/restart test"]
 fn subprocess_runs_package_apply_until_killed() {
     let root = PathBuf::from(std::env::var_os(CRASH_ROOT_ENV).expect("crash root"));
-    let signal = PathBuf::from(std::env::var_os(CRASH_SIGNAL_ENV).expect("crash signal"));
+    let signal_path = PathBuf::from(std::env::var_os(CRASH_SIGNAL_ENV).expect("crash signal"));
+    let checkpoint = KillCheckpoint::parse(
+        &std::env::var(KILL_GATE_ENV).expect("deterministic kill checkpoint"),
+    );
     let runtime = tokio::runtime::Runtime::new().expect("test runtime");
     runtime.block_on(async move {
         let runtime_root = root.join("runtime");
@@ -270,6 +187,9 @@ fn subprocess_runs_package_apply_until_killed() {
         fs::create_dir(&runtime_root).expect("create runtime");
         fs::create_dir(&data).expect("create data");
         create_project(&project);
+        if checkpoint.is_destructive() {
+            create_installed_package(&project, "0.9.0", b"old");
+        }
         let archive = root.join("package.zip");
         create_large_package_archive(&archive);
         let digest: [u8; 32] = Sha256::digest(fs::read(&archive).expect("read archive")).into();
@@ -318,30 +238,251 @@ fn subprocess_runs_package_apply_until_killed() {
             )
             .await
             .expect("refresh crash repository");
-        let plan = client
-            .package_plan_install(alcomd_protocol::PackagePlanInstallParams {
-                project_id,
-                expected_revision: 1,
-                package_id: "com.example.fixture".to_owned(),
-                version_range: Some("1.0.0".to_owned()),
-                repository_id: None,
-                include_prerelease: false,
-            })
-            .await
-            .expect("plan crash install");
+        let plan_params = alcomd_protocol::PackagePlanInstallParams {
+            project_id,
+            expected_revision: 1,
+            package_id: "com.example.fixture".to_owned(),
+            version_range: Some("1.0.0".to_owned()),
+            repository_id: None,
+            include_prerelease: false,
+        };
+        let plan = if checkpoint.is_destructive() {
+            client
+                .package_plan_upgrade(plan_params)
+                .await
+                .expect("plan crash upgrade")
+        } else {
+            client
+                .package_plan_install(plan_params)
+                .await
+                .expect("plan crash install")
+        };
+        let idempotency_key = format!("m4-crash-apply-{}", checkpoint.as_str());
         let accepted = client
             .package_apply_plan(alcomd_protocol::PackageApplyPlanParams {
-                plan_id: plan.plan_id,
+                plan_id: plan.plan_id.clone(),
                 expected_revision: 1,
-                idempotency_key: "m4-crash-apply".to_owned(),
+                idempotency_key: idempotency_key.clone(),
             })
             .await
             .expect("accept crash install");
-        fs::write(signal, &accepted.operation_id).expect("write operation signal");
+        let signal = CrashSignal {
+            operation_id: accepted.operation_id,
+            plan_id: plan.plan_id,
+            idempotency_key,
+            checkpoint: checkpoint.as_str().to_owned(),
+        };
+        fs::write(
+            signal_path,
+            serde_json::to_vec(&signal).expect("serialize operation signal"),
+        )
+        .expect("write operation signal");
         loop {
             tokio::time::sleep(Duration::from_secs(60)).await;
         }
     });
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum KillCheckpoint {
+    ArchiveReady,
+    Prepared,
+    OldPackageBackedUp,
+    NewPackagePublished,
+    VpmManifestCommitted,
+    FilesystemCommitted,
+}
+
+impl KillCheckpoint {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::ArchiveReady => "archive_ready",
+            Self::Prepared => "prepared",
+            Self::OldPackageBackedUp => "old_package_backed_up",
+            Self::NewPackagePublished => "new_package_published",
+            Self::VpmManifestCommitted => "vpm_manifest_committed",
+            Self::FilesystemCommitted => "filesystem_committed",
+        }
+    }
+
+    fn parse(value: &str) -> Self {
+        match value {
+            "archive_ready" => Self::ArchiveReady,
+            "prepared" => Self::Prepared,
+            "old_package_backed_up" => Self::OldPackageBackedUp,
+            "new_package_published" => Self::NewPackagePublished,
+            "vpm_manifest_committed" => Self::VpmManifestCommitted,
+            "filesystem_committed" => Self::FilesystemCommitted,
+            _ => panic!("unknown kill checkpoint {value}"),
+        }
+    }
+
+    const fn is_destructive(self) -> bool {
+        !matches!(self, Self::ArchiveReady)
+    }
+
+    const fn filesystem_phase(self) -> alcomd_application::FilesystemPhase {
+        match self {
+            Self::ArchiveReady => alcomd_application::FilesystemPhase::ArchiveReady,
+            Self::Prepared => alcomd_application::FilesystemPhase::Prepared,
+            Self::OldPackageBackedUp | Self::NewPackagePublished => {
+                alcomd_application::FilesystemPhase::PackagesReplaced
+            }
+            Self::VpmManifestCommitted => alcomd_application::FilesystemPhase::VpmManifestCommitted,
+            Self::FilesystemCommitted => alcomd_application::FilesystemPhase::FilesystemCommitted,
+        }
+    }
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CrashSignal {
+    operation_id: String,
+    plan_id: String,
+    idempotency_key: String,
+    checkpoint: String,
+}
+
+async fn run_kill_restart_case(checkpoint: KillCheckpoint) {
+    let fixture = TestDirectory::new();
+    let signal_path = fixture.path().join("operation.signal");
+    let child = Command::new(std::env::current_exe().expect("current test executable"))
+        .args([
+            "--exact",
+            "subprocess_runs_package_apply_until_killed",
+            "--ignored",
+            "--nocapture",
+        ])
+        .env(CRASH_ROOT_ENV, fixture.path())
+        .env(CRASH_SIGNAL_ENV, &signal_path)
+        .env(KILL_GATE_ENV, checkpoint.as_str())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn package transaction subprocess");
+    let mut child = ChildGuard(Some(child));
+
+    let signal = wait_for_operation_signal(&signal_path);
+    assert_eq!(signal.checkpoint, checkpoint.as_str());
+    let project = fixture.path().join("Project");
+    let transaction_root = project
+        .join("Library/ALCOMD/transactions")
+        .join(&signal.operation_id);
+    let attempt = wait_for_test_kill_gate(&transaction_root, checkpoint.as_str());
+    assert!(attempt.join("staging").is_dir());
+    assert!(attempt.join("backup").is_dir());
+    assert_checkpoint_state(&project, &attempt, checkpoint);
+
+    child
+        .0
+        .as_mut()
+        .expect("child process")
+        .kill()
+        .expect("force-kill package transaction subprocess");
+    let _status = child
+        .0
+        .as_mut()
+        .expect("child process")
+        .wait()
+        .expect("wait for killed subprocess");
+    child.0 = None;
+
+    let data = fixture.path().join("data");
+    let killed_store = open_store_with_retry(&data.join("state.db"));
+    let operation_id = OperationId::parse(&signal.operation_id).expect("Operation ID");
+    let killed_operation = killed_store
+        .get_operation(PrincipalId::local_owner(), operation_id)
+        .await
+        .expect("load killed package Operation");
+    assert_ne!(
+        killed_operation.state,
+        alcomd_domain::OperationState::Succeeded,
+        "killed checkpoint must not record false success"
+    );
+    assert_eq!(
+        killed_operation.progress_phase,
+        Some(checkpoint.filesystem_phase()),
+        "kill gate must follow durable journal progress"
+    );
+    let durable_plan = killed_store
+        .get_package_plan(
+            PrincipalId::local_owner(),
+            PlanId::parse(&signal.plan_id).expect("Plan ID"),
+        )
+        .await
+        .expect("load durable package Plan");
+    assert_eq!(durable_plan.apply_operation_id, Some(operation_id));
+    drop(killed_store);
+
+    if checkpoint == KillCheckpoint::ArchiveReady {
+        let digest: [u8; 32] = Sha256::digest(
+            fs::read(fixture.path().join("package.zip")).expect("read cached crash archive"),
+        )
+        .into();
+        alcomd_vpm::PackageCache::new(data.join("package-cache"))
+            .expect("open package cache")
+            .get(
+                digest,
+                "https://network-must-not-be-used.invalid/package.zip",
+                true,
+            )
+            .await
+            .expect("revalidate offline cache after kill");
+    }
+
+    let (ipc, config) = isolated_ipc(fixture.path().join("runtime"));
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let server_shutdown = Arc::clone(&shutdown);
+    let daemon_data = data.clone();
+    let daemon = tokio::spawn(async move {
+        alcomd_daemon::serve_with_data_until(
+            ipc,
+            DataConfig::isolated(daemon_data),
+            wait_for_shutdown(server_shutdown),
+        )
+        .await
+    });
+    let mut client = connect_with_retry(config).await;
+    let completed = wait_for_terminal(&mut client, &signal.operation_id, &project).await;
+    assert_eq!(completed.state, OperationState::Succeeded);
+    assert_eq!(
+        completed.progress.expect("recovery progress").phase,
+        PackageOperationPhase::StateCommitted
+    );
+    assert_eq!(
+        completed
+            .result
+            .as_ref()
+            .and_then(|result| result.get("planId"))
+            .and_then(serde_json::Value::as_str),
+        Some(signal.plan_id.as_str())
+    );
+    assert_complete_new_state(&project, checkpoint, &signal.operation_id);
+    assert!(
+        attempt
+            .join(format!("test-kill-gate-{}.json", checkpoint.as_str()))
+            .is_file(),
+        "durable recovery evidence must remain available"
+    );
+
+    let replayed = client
+        .package_apply_plan(alcomd_protocol::PackageApplyPlanParams {
+            plan_id: signal.plan_id,
+            expected_revision: 1,
+            idempotency_key: signal.idempotency_key,
+        })
+        .await
+        .expect("replay original Apply request");
+    assert!(replayed.replayed);
+    assert_eq!(replayed.operation_id, signal.operation_id);
+
+    shutdown.store(true, Ordering::Release);
+    let result = tokio::time::timeout(Duration::from_secs(3), daemon)
+        .await
+        .expect("daemon stop timeout")
+        .expect("join daemon");
+    assert!(result.is_ok());
 }
 
 fn create_project(root: &Path) {
@@ -362,6 +503,24 @@ fn create_project(root: &Path) {
         b"{\"dependencies\":{}}\n",
     )
     .expect("UPM manifest");
+}
+
+fn create_installed_package(project: &Path, version: &str, content: &[u8]) {
+    let package = project.join("Packages/com.example.fixture");
+    fs::create_dir_all(package.join("Runtime")).expect("installed package Runtime");
+    fs::write(
+        package.join("package.json"),
+        format!("{{\"name\":\"com.example.fixture\",\"version\":\"{version}\"}}"),
+    )
+    .expect("installed package manifest");
+    fs::write(package.join("Runtime/fixture.txt"), content).expect("installed package content");
+    fs::write(
+        project.join("Packages/vpm-manifest.json"),
+        format!(
+            "{{\"dependencies\":{{\"com.example.fixture\":\"{version}\"}},\"locked\":{{\"com.example.fixture\":{{\"version\":\"{version}\"}}}},\"preserved\":true}}\n"
+        ),
+    )
+    .expect("installed VPM manifest");
 }
 
 fn create_package_archive(path: &Path) {
@@ -411,14 +570,16 @@ fn create_large_package_archive(path: &Path) {
     writer.finish().expect("finish large archive");
 }
 
-fn wait_for_operation_signal(signal: &Path) -> String {
+fn wait_for_operation_signal(signal: &Path) -> CrashSignal {
     for _ in 0..10_000 {
-        if let Ok(value) = fs::read_to_string(signal) {
+        if let Ok(bytes) = fs::read(signal)
+            && let Ok(value) = serde_json::from_slice(&bytes)
+        {
             return value;
         }
         thread::sleep(Duration::from_millis(5));
     }
-    panic!("package subprocess did not publish its Operation ID");
+    panic!("package subprocess did not publish its durable identifiers");
 }
 
 struct ChildGuard(Option<std::process::Child>);
@@ -442,32 +603,87 @@ fn open_store_with_retry(database: &Path) -> StateStoreHandle {
     panic!("killed package subprocess did not release state.db");
 }
 
-fn wait_for_archive_ready_marker(root: &Path, operation_id: &str) {
-    let transaction = root
-        .join("Project/Library/ALCOMD/transactions")
-        .join(operation_id);
+fn wait_for_test_kill_gate(transaction: &Path, checkpoint: &str) -> PathBuf {
+    let file_name = format!("test-kill-gate-{checkpoint}.json");
     for _ in 0..10_000 {
-        if marker_contains_phase(&transaction, "archive_ready") {
-            return;
+        if let Ok(attempts) = fs::read_dir(transaction) {
+            for attempt in attempts.filter_map(Result::ok) {
+                if attempt.path().join(&file_name).is_file() {
+                    return attempt.path();
+                }
+            }
         }
-        thread::sleep(Duration::from_millis(1));
+        thread::sleep(Duration::from_millis(5));
     }
-    panic!("package subprocess did not durably reach archive_ready");
+    panic!("package subprocess did not durably reach {checkpoint}");
 }
 
-fn marker_contains_phase(transaction: &Path, phase: &str) -> bool {
-    let Ok(attempts) = fs::read_dir(transaction) else {
-        return false;
-    };
-    attempts.filter_map(Result::ok).any(|attempt| {
-        fs::read_dir(attempt.path()).is_ok_and(|entries| {
-            entries.filter_map(Result::ok).any(|entry| {
-                entry.file_name().to_string_lossy().starts_with("marker-")
-                    && fs::read_to_string(entry.path())
-                        .is_ok_and(|value| value.contains(&format!("\"phase\":\"{phase}\"")))
-            })
-        })
-    })
+fn assert_checkpoint_state(project: &Path, attempt: &Path, checkpoint: KillCheckpoint) {
+    let target = project.join("Packages/com.example.fixture");
+    let backup = attempt.join("backup/com.example.fixture");
+    match checkpoint {
+        KillCheckpoint::ArchiveReady => {
+            assert!(!target.exists());
+            assert_manifest_version(project, None);
+        }
+        KillCheckpoint::Prepared => {
+            assert_eq!(package_version(&target), Some("0.9.0".to_owned()));
+            assert_manifest_version(project, Some("0.9.0"));
+            assert!(!backup.exists());
+        }
+        KillCheckpoint::OldPackageBackedUp => {
+            assert!(!target.exists());
+            assert_eq!(package_version(&backup), Some("0.9.0".to_owned()));
+            assert_eq!(
+                fs::read(backup.join("Runtime/fixture.txt")).expect("backup content"),
+                b"old"
+            );
+            assert_manifest_version(project, Some("0.9.0"));
+        }
+        KillCheckpoint::NewPackagePublished => {
+            assert_eq!(package_version(&target), Some("1.0.0".to_owned()));
+            assert_eq!(package_version(&backup), Some("0.9.0".to_owned()));
+            assert_manifest_version(project, Some("0.9.0"));
+        }
+        KillCheckpoint::VpmManifestCommitted | KillCheckpoint::FilesystemCommitted => {
+            assert_eq!(package_version(&target), Some("1.0.0".to_owned()));
+            assert_eq!(package_version(&backup), Some("0.9.0".to_owned()));
+            assert_manifest_version(project, Some("1.0.0"));
+        }
+    }
+    assert_eq!(
+        fs::read(project.join("Packages/manifest.json")).expect("UPM manifest"),
+        b"{\"dependencies\":{}}\n"
+    );
+}
+
+fn assert_complete_new_state(project: &Path, checkpoint: KillCheckpoint, operation_id: &str) {
+    assert_eq!(
+        package_version(&project.join("Packages/com.example.fixture")),
+        Some("1.0.0".to_owned()),
+        "checkpoint {checkpoint:?} recovered with transaction entries {:?}",
+        transaction_entries(project, operation_id)
+    );
+    let value: serde_json::Value = serde_json::from_slice(
+        &fs::read(project.join("Packages/vpm-manifest.json")).expect("read recovered VPM manifest"),
+    )
+    .expect("parse recovered VPM manifest");
+    assert_eq!(
+        value["locked"]["com.example.fixture"]["version"].as_str(),
+        Some("1.0.0"),
+        "checkpoint {checkpoint:?} recovered with transaction entries {:?}",
+        transaction_entries(project, operation_id)
+    );
+    assert_eq!(
+        fs::read(project.join("Packages/manifest.json")).expect("UPM manifest"),
+        b"{\"dependencies\":{}}\n"
+    );
+}
+
+fn package_version(package: &Path) -> Option<String> {
+    let value: serde_json::Value =
+        serde_json::from_slice(&fs::read(package.join("package.json")).ok()?).ok()?;
+    value["version"].as_str().map(str::to_owned)
 }
 
 fn publish_cache_object(data: &Path, archive: &Path, digest: &[u8; 32]) {

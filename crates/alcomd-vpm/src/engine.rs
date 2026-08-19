@@ -181,6 +181,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             ),
             next_step - 1,
         )?;
+        test_kill_gate(&attempt, "archive_ready")?;
 
         for (package_id, archive) in archives {
             let destination = staging.join(&package_id);
@@ -286,6 +287,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             &AttemptMarker::new(&plan, FilesystemPhase::Prepared, JournalState::Completed),
             next_step - 1,
         )?;
+        test_kill_gate(&attempt, "prepared")?;
 
         append_phase(
             &self.store,
@@ -307,7 +309,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             ),
             next_step - 1,
         )?;
-        if let Err(error) = replace_packages(&packages_root, &staging, &backup, &plan) {
+        if let Err(error) = replace_packages(&packages_root, &staging, &backup, &attempt, &plan) {
             rollback_attempt(&packages_root, &manifest_path, &attempt, &plan)?;
             append_phase(
                 &self.store,
@@ -403,6 +405,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             ),
             next_step - 1,
         )?;
+        test_kill_gate(&attempt, "vpm_manifest_committed")?;
 
         if hash_file(&upm_path)? != upm_before
             || hash_file(&manifest_path)? != plan.change_set.vpm_manifest_sha256
@@ -444,6 +447,7 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             ),
             next_step - 1,
         )?;
+        test_kill_gate(&attempt, "filesystem_committed")?;
         append_phase(
             &self.store,
             &plan,
@@ -725,6 +729,7 @@ fn replace_packages(
     packages_root: &Path,
     staging: &Path,
     backup: &Path,
+    attempt: &Path,
     plan: &PackagePlanRecord,
 ) -> Result<(), M4Error> {
     for mutation in &plan.change_set.mutations {
@@ -737,6 +742,8 @@ fn replace_packages(
             Ok(metadata) if metadata.is_dir() && !is_link_or_reparse(&metadata) => {
                 std::fs::rename(&target, &backup_target)
                     .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+                sync_directories(&[packages_root, backup])?;
+                test_kill_gate(attempt, "old_package_backed_up")?;
             }
             Ok(_) => return Err(M4Error::new(M4ErrorCode::ProjectChangedDuringApply)),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -749,10 +756,33 @@ fn replace_packages(
         if mutation.kind != PackageMutationKind::Remove {
             std::fs::rename(staging.join(&mutation.package_id), &target)
                 .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+            sync_directories(&[packages_root, staging])?;
+            test_kill_gate(attempt, "new_package_published")?;
         }
         alcomd_platform::sync_directory(packages_root)
             .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
     }
+    Ok(())
+}
+
+#[cfg(feature = "test-kill-gates")]
+fn test_kill_gate(attempt: &Path, checkpoint: &str) -> Result<(), M4Error> {
+    if std::env::var("ALCOMD_TEST_M4_KILL_GATE").as_deref() != Ok(checkpoint) {
+        return Ok(());
+    }
+    write_new_file(
+        &attempt.join(format!("test-kill-gate-{checkpoint}.json")),
+        format!("{{\"checkpoint\":\"{checkpoint}\"}}\n").as_bytes(),
+    )?;
+    alcomd_platform::sync_directory(attempt)
+        .map_err(|_| M4Error::new(M4ErrorCode::RecoveryRequired))?;
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(60));
+    }
+}
+
+#[cfg(not(feature = "test-kill-gates"))]
+fn test_kill_gate(_attempt: &Path, _checkpoint: &str) -> Result<(), M4Error> {
     Ok(())
 }
 

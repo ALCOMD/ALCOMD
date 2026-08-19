@@ -457,6 +457,23 @@ mod tests {
     }
 
     #[test]
+    fn package_ids_cannot_encode_paths_or_platform_roots() {
+        for package_id in [
+            "../escape",
+            "com/example/package",
+            r"com\example\package",
+            "C:escape",
+            r"C:\escape",
+            r"\\server\share",
+            ".leading",
+            "trailing/",
+        ] {
+            assert!(validate_package_id(package_id).is_err(), "{package_id}");
+        }
+        validate_package_id("com.example-valid_package-1").expect("valid package ID");
+    }
+
+    #[test]
     fn missing_malformed_or_uppercase_hash_is_never_resolver_ready() {
         for hash in [None, Some("bad"), Some(&"A".repeat(64))] {
             let mut document: Value = serde_json::from_slice(READY).expect("fixture");

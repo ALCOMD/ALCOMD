@@ -554,6 +554,18 @@ where
             .store
             .get_package_plan(access.principal().clone(), plan_id)
             .await?;
+        if plan.state == PlanState::Applied {
+            return self
+                .store
+                .accept_package_plan(
+                    access.principal().clone(),
+                    plan_id,
+                    expected_revision,
+                    idempotency_key,
+                    m4_time_ms()?,
+                )
+                .await;
+        }
         let _guard = self
             .locks
             .acquire(vec![ResourceKey::Project(plan.project_id)])
