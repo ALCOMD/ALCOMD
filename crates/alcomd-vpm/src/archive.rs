@@ -402,16 +402,20 @@ const fn archive_error(code: ArchiveErrorCode) -> ArchiveError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use zip::write::SimpleFileOptions;
+
+    static NEXT_TEMPORARY_PATH: AtomicU64 = AtomicU64::new(0);
 
     fn temporary_path(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
-            "alcomd-m4-archive-{name}-{}-{}",
+            "alcomd-m4-archive-{name}-{}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .expect("clock")
-                .as_nanos()
+                .as_nanos(),
+            NEXT_TEMPORARY_PATH.fetch_add(1, Ordering::Relaxed)
         ))
     }
 

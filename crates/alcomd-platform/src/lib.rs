@@ -54,9 +54,25 @@ pub fn resolve_directory_identity(path: &std::path::Path) -> std::io::Result<(Pa
 }
 
 /// Flushes metadata for an existing directory using the platform's ordinary filesystem handle.
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 pub fn sync_directory(path: &std::path::Path) -> std::io::Result<()> {
     std::fs::File::open(path)?.sync_all()
+}
+
+/// Flushes directory metadata when macOS exposes a supported directory-sync operation.
+///
+/// macOS permits opening a directory but returns `EINVAL` from `fsync(2)` for that handle.
+/// The exact unsupported-operation result is therefore the strongest available success
+/// condition after the directory was opened; every other open or sync failure is preserved.
+#[cfg(target_os = "macos")]
+pub fn sync_directory(path: &std::path::Path) -> std::io::Result<()> {
+    const INVALID_ARGUMENT: i32 = 22;
+
+    let directory = std::fs::File::open(path)?;
+    match directory.sync_all() {
+        Err(error) if error.raw_os_error() == Some(INVALID_ARGUMENT) => Ok(()),
+        result => result,
+    }
 }
 
 /// Flushes metadata for an existing directory using a backup-semantics filesystem handle.
@@ -148,5 +164,41 @@ impl std::error::Error for BindError {
 impl From<std::io::Error> for BindError {
     fn from(error: std::io::Error) -> Self {
         Self::Io(error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sync_directory;
+
+    #[test]
+    fn existing_directory_sync_uses_the_platform_durability_primitive() {
+        let path = std::env::temp_dir().join(format!(
+            "alcomd-platform-sync-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        std::fs::create_dir(&path).expect("create directory");
+        sync_directory(&path).expect("sync directory");
+        std::fs::remove_dir(&path).expect("remove directory");
+    }
+
+    #[test]
+    fn missing_directory_sync_preserves_the_io_error() {
+        let path = std::env::temp_dir().join(format!(
+            "alcomd-platform-missing-sync-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        assert_eq!(
+            sync_directory(&path).expect_err("missing directory").kind(),
+            std::io::ErrorKind::NotFound
+        );
     }
 }
