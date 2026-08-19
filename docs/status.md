@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M3 已通过项目所有者人工验收并正式完成；正在起草 M4 ExecPlan，尚未开始 M4 生产实现`
+`M3 已正式完成；M4 最小 package transaction 已完成本地候选实现与验收，等待三平台 hosted CI 和人工验收`
 
 ## 已完成
 
@@ -122,6 +122,19 @@
   最终提交 `2082b5596d246975ca7a48dab20826899103e03d` 对应 GitHub Actions run
   `32174028968` 的 Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 job 全部成功，且
   CI head SHA、`HEAD` 与 `origin/main` 一致。项目所有者已完成人工验收，M3 正式完成。
+- M4 已按 contract-first 合同实现 State Schema v3、确定性 VPM range/resolver、不可变 Plan/
+  ChangeSet、stale/source revalidation、SHA-256 content cache、bounded hostile ZIP extraction、项目级
+  Resource Lock、install/remove 文件事务、持久 filesystem journal、阶段 progress 与重启恢复。
+- `semver 1.0.28` 是唯一 Version model；私有最小 range AST 只覆盖冻结 vectors，并使用
+  `Version::cmp_precedence`，不使用 Cargo `VersionReq`/`Comparator`。`zip 8.6.0`、`sha2 0.11.0` 与
+  `unicode-normalization 0.1.25` 保持获批的精确最小 features。
+- 本机离线测试已证明真实 RPC `Plan -> Apply -> Operation` 安装/卸载、强制终止子进程后的同一
+  Operation 重启恢复、append-only journal 合法重复阶段、脱敏持久 progress，以及同项目串行/
+  不同项目并行的锁语义。恢复测试发现并移除了错误的 phase/state 唯一约束；journal 仍以 step 为
+  主键且禁止 update/delete。
+- M4 保持 SHA-256-required remote archive 安全子集和 `Packages/manifest.json` byte-for-byte 不变；
+  hashless VPM、legacy cleanup、credential、local user package、完整 GUI/MCP 与 M5 CLI 体验仍未完成，
+  因此完整 `packages.vpm`、`packages.transaction-safety` 与 `packages.security` 只标记 `in_progress`。
 
 ## 后续里程碑尚未完成
 
@@ -166,11 +179,18 @@
 - 真实 credential enrollment/revocation 仍未完成；完整 `projects.management`、
   `repositories.management`、`daemon.single-writer`、`rpc.local` 与 `cli.complete` 仍只实现了各自
   的阶段性切片，必须保持真实的 `in_progress`/`planned` 状态。
+- M4 已批准并精确锁定 `semver 1.0.28`、`zip 8.6.0`、`sha2 0.11.0` 与
+  `unicode-normalization 0.1.25`；normalization 许可证记录保持
+  `(MIT OR Apache-2.0) AND Unicode-3.0`。`semver` 只提供 Version/precedence，冻结 VPM range 语义由
+  `alcomd-vpm` 私有最小 parser/matcher 实现；`nodejs-semver` 与 `node-semver` 未进入生产依赖。
 
 ## 下一停止点
 
-M0、M1、M2 与 M3 均已完成并通过最终人工验收。当前只创建 M4 package transaction 垂直切片的
-ExecPlan 草案；在项目所有者批准 M4 合同与实施范围前，不得修改生产 Schema、引入生产依赖或
-开始实现。`projects.v3-parity` 与真实 credential revocation 仍未完成；Windows 10/11 完整客户端
+M0、M1、M2 与 M3 均已完成并通过最终人工验收。M4 本地候选实现、完整 `check.ps1`/`test.ps1`、
+metadata/freeze/diff 门禁与 Windows Tauri no-bundle build 已完成；下一步是在获得明确 Git 授权后提交、
+推送最终候选并取得 Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 hosted CI。CI 与项目所有者
+人工验收前不得把 M4 标记为正式完成或进入 M5。
+`projects.v3-parity` 与真实 credential
+revocation 仍未完成；Windows 10/11 完整客户端
 安装、启动、WebView2、更新与卸载验证继续 deferred 到 M12，不得把 Windows Server hosted 结果
 描述为客户端发行证据。

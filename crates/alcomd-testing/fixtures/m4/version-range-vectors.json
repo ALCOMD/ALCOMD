@@ -1,0 +1,28 @@
+{
+    "formatVersion": 1,
+    "semantics": "VPM SemanticVersioning.NET/npm-style range contract",
+    "vectors": [
+        {"id": "exact-hit", "category": "exact", "range": "=1.2.3", "version": "1.2.3", "includePrerelease": false, "matches": true},
+        {"id": "exact-miss", "category": "exact", "range": "=1.2.3", "version": "1.2.4", "includePrerelease": false, "matches": false},
+        {"id": "bare-minimum", "category": "bare", "range": "1.2.3", "version": "1.4.0", "includePrerelease": false, "matches": true},
+        {"id": "comparator", "category": "comparator", "range": ">=1.2.3 <2.0.0", "version": "1.9.9", "includePrerelease": false, "matches": true},
+        {"id": "wildcard-x", "category": "wildcard", "range": "1.2.x", "version": "1.2.9", "includePrerelease": false, "matches": true},
+        {"id": "wildcard-star", "category": "wildcard", "range": "1.*", "version": "2.0.0", "includePrerelease": false, "matches": false},
+        {"id": "tilde", "category": "tilde", "range": "~1.2.3", "version": "1.2.9", "includePrerelease": false, "matches": true},
+        {"id": "tilde-upper", "category": "tilde", "range": "~1.2.3", "version": "1.3.0", "includePrerelease": false, "matches": false},
+        {"id": "caret", "category": "caret", "range": "^1.2.3", "version": "1.8.0", "includePrerelease": false, "matches": true},
+        {"id": "caret-zero", "category": "caret", "range": "^0.2.3", "version": "0.3.0", "includePrerelease": false, "matches": false},
+        {"id": "hyphen", "category": "hyphen", "range": "1.2.3 - 2.0.0", "version": "2.0.0", "includePrerelease": false, "matches": true},
+        {"id": "or", "category": "or", "range": "<1.0.0 || >=2.0.0", "version": "2.1.0", "includePrerelease": false, "matches": true},
+        {"id": "prerelease-default-excluded", "category": "prerelease", "range": ">=1.0.0", "version": "2.0.0-beta.1", "includePrerelease": false, "matches": false},
+        {"id": "prerelease-explicit-comparator", "category": "prerelease", "range": ">=2.0.0-beta.1 <2.0.0", "version": "2.0.0-beta.2", "includePrerelease": false, "matches": true},
+        {"id": "prerelease-opt-in", "category": "prerelease", "range": ">=1.0.0", "version": "2.0.0-beta.1", "includePrerelease": true, "matches": true},
+        {"id": "build-ignored", "category": "build-metadata", "range": "=1.2.3+build.1", "version": "1.2.3+build.9", "includePrerelease": false, "matches": true}
+    ],
+    "intersections": [
+        {"id": "intersection-hit", "ranges": [">=1.0.0", "<2.0.0", "^1.4.0"], "version": "1.5.0", "includePrerelease": false, "matches": true},
+        {"id": "intersection-miss", "ranges": [">=1.0.0", "<2.0.0", "^1.4.0"], "version": "2.0.0", "includePrerelease": false, "matches": false}
+    ],
+    "loose": ["", "1.2.3 ||", "1.2.3 -"],
+    "invalid": [">=", "not-a-version"]
+}

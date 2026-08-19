@@ -7,7 +7,7 @@
     "required": ["operationId", "kind", "state", "revision", "createdAtMs", "updatedAtMs"],
     "properties": {
         "operationId": {"type": "string", "format": "uuid"},
-        "kind": {"type": "string", "enum": ["state.check"]},
+        "kind": {"type": "string", "enum": ["state.check", "packages.apply"]},
         "state": {
             "type": "string",
             "enum": ["queued", "planning", "waiting_for_input", "running", "cancelling", "succeeded", "failed", "cancelled", "interrupted", "recovering"]
@@ -19,6 +19,7 @@
         "completedAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
         "result": {"type": "object"},
         "errorCode": {"type": "string", "minLength": 1, "maxLength": 128},
-        "diagnosticId": {"type": "string", "format": "uuid"}
+        "diagnosticId": {"type": "string", "format": "uuid"},
+        "progress": {"$ref": "m4-package-transaction.schema.json#/$defs/operationProgress"}
     }
 }

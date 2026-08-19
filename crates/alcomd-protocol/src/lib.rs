@@ -78,6 +78,12 @@ pub const METHOD_REPOSITORIES_PACKAGES: &str = "repositories.packages";
 pub const METHOD_REPOSITORIES_REGISTER: &str = "repositories.register";
 pub const METHOD_REPOSITORIES_REFRESH: &str = "repositories.refresh";
 pub const METHOD_REPOSITORIES_UNREGISTER: &str = "repositories.unregister";
+pub const METHOD_PACKAGES_PLAN_INSTALL: &str = "packages.planInstall";
+pub const METHOD_PACKAGES_PLAN_REMOVE: &str = "packages.planRemove";
+pub const METHOD_PACKAGES_PLAN_UPGRADE: &str = "packages.planUpgrade";
+pub const METHOD_PACKAGES_PLAN_DOWNGRADE: &str = "packages.planDowngrade";
+pub const METHOD_PACKAGES_PLAN_RESOLVE: &str = "packages.planResolve";
+pub const METHOD_PACKAGES_APPLY_PLAN: &str = "packages.applyPlan";
 
 /// Capability required by `state.check`.
 pub const CAPABILITY_STATE_CHECK_V1: &str = "state.check.v1";
@@ -91,6 +97,8 @@ pub const CAPABILITY_PROJECTS_READ_V1: &str = "projects.read.v1";
 pub const CAPABILITY_PROJECTS_REGISTRY_V1: &str = "projects.registry.v1";
 pub const CAPABILITY_REPOSITORIES_READ_V1: &str = "repositories.read.v1";
 pub const CAPABILITY_REPOSITORIES_REGISTRY_V1: &str = "repositories.registry.v1";
+pub const CAPABILITY_PACKAGES_PLAN_V1: &str = "packages.plan.v1";
+pub const CAPABILITY_PACKAGES_APPLY_V1: &str = "packages.apply.v1";
 
 /// Stable RPC v1 error codes implemented through M2.
 pub mod error_code {
@@ -143,6 +151,35 @@ pub mod error_code {
     pub const REPOSITORY_DOCUMENT_INVALID: &str = "repository_document_invalid";
     pub const REPOSITORY_DOCUMENT_TOO_LARGE: &str = "repository_document_too_large";
     pub const REPOSITORY_CREDENTIALS_UNSUPPORTED: &str = "repository_credentials_unsupported";
+    pub const REPOSITORY_REFRESH_REQUIRED: &str = "repository_refresh_required";
+    pub const PACKAGE_NOT_FOUND: &str = "package_not_found";
+    pub const PACKAGE_VERSION_INVALID: &str = "package_version_invalid";
+    pub const PACKAGE_RANGE_INVALID: &str = "package_range_invalid";
+    pub const PACKAGE_DEPENDENCY_MISSING: &str = "package_dependency_missing";
+    pub const PACKAGE_DEPENDENCY_CONFLICT: &str = "package_dependency_conflict";
+    pub const PACKAGE_UNITY_INCOMPATIBLE: &str = "package_unity_incompatible";
+    pub const PACKAGE_SOURCE_AMBIGUOUS: &str = "package_source_ambiguous";
+    pub const PACKAGE_MANIFEST_INVALID: &str = "package_manifest_invalid";
+    pub const PACKAGE_HASH_REQUIRED: &str = "package_hash_required";
+    pub const PACKAGE_LEGACY_CLEANUP_REQUIRED: &str = "package_legacy_cleanup_required";
+    pub const PACKAGE_VERSION_YANKED: &str = "package_version_yanked";
+    pub const PLAN_NOT_FOUND: &str = "plan_not_found";
+    pub const PLAN_STALE: &str = "plan_stale";
+    pub const PLAN_TOO_LARGE: &str = "plan_too_large";
+    pub const PROJECT_CHANGED_DURING_APPLY: &str = "project_changed_during_apply";
+    pub const PACKAGE_CACHE_CORRUPT: &str = "package_cache_corrupt";
+    pub const PACKAGE_CACHE_QUOTA_EXCEEDED: &str = "package_cache_quota_exceeded";
+    pub const PACKAGE_INTEGRITY_MISMATCH: &str = "package_integrity_mismatch";
+    pub const PACKAGE_DOWNLOAD_TOO_LARGE: &str = "package_download_too_large";
+    pub const OFFLINE_CACHE_MISS: &str = "offline_cache_miss";
+    pub const PACKAGE_ARCHIVE_INVALID: &str = "package_archive_invalid";
+    pub const PACKAGE_ARCHIVE_UNSUPPORTED_COMPRESSION: &str =
+        "package_archive_unsupported_compression";
+    pub const PACKAGE_ARCHIVE_LIMIT_EXCEEDED: &str = "package_archive_limit_exceeded";
+    pub const PACKAGE_PATH_INVALID: &str = "package_path_invalid";
+    pub const PACKAGE_PATH_COLLISION: &str = "package_path_collision";
+    pub const PROJECT_TRANSACTION_RECOVERY_REQUIRED: &str = "project_transaction_recovery_required";
+    pub const RECOVERY_REQUIRED: &str = "recovery_required";
 }
 
 /// JSON-RPC-inspired request envelope.
@@ -369,6 +406,17 @@ impl RpcError {
         Self::simple(code, message)
     }
 
+    /// Creates a stable, non-sensitive M4 package transaction error.
+    #[must_use]
+    pub fn m4_resource(code: &str, subreason: Option<&str>) -> Self {
+        Self {
+            code: code.to_owned(),
+            message: "The package transaction could not be completed.".to_owned(),
+            diagnostic_id: None,
+            data: subreason.map(|value| json!({"subreason": value})),
+        }
+    }
+
     /// Creates an `internal_error` with a non-sensitive diagnostic ID.
     #[must_use]
     pub fn internal(diagnostic_id: impl Into<String>) -> Self {
@@ -479,6 +527,17 @@ impl HelloResult {
             data_schema: Some(2),
         }
     }
+
+    /// Creates the M4 hello result after Schema v3 and package transactions are ready.
+    #[must_use]
+    pub fn m4(capabilities: Vec<String>) -> Self {
+        Self {
+            rpc_version: RPC_VERSION,
+            daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
+            capabilities,
+            data_schema: Some(3),
+        }
+    }
 }
 
 /// Public Operation lifecycle state.
@@ -564,6 +623,34 @@ pub struct Operation {
     /// Non-sensitive diagnostic correlation ID.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diagnostic_id: Option<String>,
+    /// Latest durable, non-sensitive package transaction phase.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub progress: Option<OperationProgress>,
+}
+
+/// Bounded progress exposed for a package transaction Operation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OperationProgress {
+    /// Latest durable filesystem transaction phase.
+    pub phase: PackageOperationPhase,
+}
+
+/// Public package transaction phases. These names are stable RPC values.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PackageOperationPhase {
+    Accepted,
+    ArchiveReady,
+    Extracted,
+    Prepared,
+    PackagesReplaced,
+    VpmManifestCommitted,
+    FilesystemCommitted,
+    StateCommitted,
+    RollingBack,
+    RolledBack,
+    RecoveryRequired,
 }
 
 /// Opaque stable cursor for `operations.list`.
@@ -919,6 +1006,143 @@ pub struct RepositoryUnregisterResult {
     pub replayed: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PackagePlanAction {
+    Install,
+    Remove,
+    Upgrade,
+    Downgrade,
+    Resolve,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PackagePlanState {
+    Unapplied,
+    Applied,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PackageMutationKind {
+    Install,
+    Remove,
+    Replace,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageSourcePin {
+    pub repository_id: String,
+    pub repository_revision: u64,
+    pub source_identity: String,
+    pub manifest_fingerprint: String,
+    pub package_id: String,
+    pub version: String,
+    pub artifact_url: String,
+    pub archive_sha256: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageMutation {
+    pub kind: PackageMutationKind,
+    pub package_id: String,
+    pub from_version: Option<String>,
+    pub to_version: Option<String>,
+    pub source: Option<PackageSourcePin>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageDependencyEdge {
+    pub from_package_id: String,
+    pub to_package_id: String,
+    pub range: String,
+    pub direct: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageChangeSet {
+    pub format_version: u32,
+    pub mutations: Vec<PackageMutation>,
+    pub dependency_edges: Vec<PackageDependencyEdge>,
+    pub vpm_manifest_sha256: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackagePlan {
+    pub plan_id: String,
+    pub action: PackagePlanAction,
+    pub state: PackagePlanState,
+    pub project_id: String,
+    pub project_revision: u64,
+    pub change_set_fingerprint: String,
+    pub change_set: PackageChangeSet,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackagePlanInstallParams {
+    pub project_id: String,
+    pub expected_revision: u64,
+    pub package_id: String,
+    #[serde(default)]
+    pub version_range: Option<String>,
+    #[serde(default)]
+    pub repository_id: Option<String>,
+    #[serde(default)]
+    pub include_prerelease: bool,
+}
+
+pub type PackagePlanUpgradeParams = PackagePlanInstallParams;
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackagePlanRemoveParams {
+    pub project_id: String,
+    pub expected_revision: u64,
+    pub package_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackagePlanDowngradeParams {
+    pub project_id: String,
+    pub expected_revision: u64,
+    pub package_id: String,
+    pub version: String,
+    #[serde(default)]
+    pub repository_id: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackagePlanResolveParams {
+    pub project_id: String,
+    pub expected_revision: u64,
+    #[serde(default)]
+    pub include_prerelease: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageApplyPlanParams {
+    pub plan_id: String,
+    pub expected_revision: u64,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackageApplyPlanResult {
+    pub operation_id: String,
+    pub replayed: bool,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepositoryPackagesResult {
@@ -1072,8 +1296,7 @@ fn validate_method(method: &str) -> Result<(), ContractViolation> {
 
 fn valid_method_segment(segment: &str) -> bool {
     let mut bytes = segment.bytes();
-    matches!(bytes.next(), Some(b'a'..=b'z'))
-        && bytes.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+    matches!(bytes.next(), Some(b'a'..=b'z')) && bytes.all(|byte| byte.is_ascii_alphanumeric())
 }
 
 fn validate_capabilities(capabilities: &[String]) -> Result<(), ContractViolation> {
@@ -1136,6 +1359,12 @@ mod tests {
             };
             assert_eq!(request.validate(), Err(ContractViolation::InvalidMethod));
         }
+        let request = RequestEnvelope {
+            id: "1".to_owned(),
+            method: METHOD_PACKAGES_APPLY_PLAN.to_owned(),
+            params: json!({}),
+        };
+        assert!(request.validate().is_ok());
     }
 
     #[test]

@@ -2,6 +2,7 @@ use rusqlite::{Connection, params};
 
 const MIGRATION_V1: &str = include_str!("../migrations/0001_state.sql");
 const MIGRATION_V2: &str = include_str!("../migrations/0002_projects_repositories.sql");
+const MIGRATION_V3: &str = include_str!("../migrations/0003_package_transactions.sql");
 
 #[test]
 fn bundled_sqlite_version_is_frozen() {
@@ -319,6 +320,300 @@ fn failed_migration_v2_restores_complete_v1() {
         .expect_err("v1 must still reject project aggregate");
 }
 
+#[test]
+fn migration_v3_is_atomic_and_adds_only_the_m4_contract_tables() {
+    let connection = migrated_v3_connection();
+    assert_eq!(user_version(&connection), 3);
+    let tables = connection
+        .prepare(
+            "SELECT name FROM sqlite_schema
+             WHERE type='table' AND name NOT LIKE 'sqlite_%'
+             ORDER BY name",
+        )
+        .expect("prepare tables")
+        .query_map([], |row| row.get::<_, String>(0))
+        .expect("query tables")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect tables");
+    assert_eq!(
+        tables,
+        [
+            "events",
+            "idempotency_records",
+            "operation_journal",
+            "operations",
+            "package_filesystem_journal",
+            "package_plans",
+            "projects",
+            "repositories",
+            "repository_package_versions",
+        ]
+    );
+    assert!(MIGRATION_V3.starts_with("BEGIN IMMEDIATE;"));
+    assert!(MIGRATION_V3.ends_with("COMMIT;\n"));
+    assert!(!MIGRATION_V3.contains("plan_expired"));
+    assert!(!MIGRATION_V3.contains("Packages/manifest.json"));
+}
+
+#[test]
+fn migration_v3_preserves_v2_rows_and_assigns_deterministic_priority() {
+    let connection = migrated_v2_connection();
+    insert_project(&connection);
+    for (repository_id, registered_at_ms) in [
+        ("00000000-0000-4000-8000-000000000302", 20_i64),
+        ("00000000-0000-4000-8000-000000000301", 10_i64),
+        ("00000000-0000-4000-8000-000000000303", 20_i64),
+    ] {
+        connection
+            .execute(
+                "INSERT INTO repositories (
+                    repository_id, owner_principal_id, source_kind, source_locator,
+                    source_identity_key, issues_json, revision, registered_at_ms,
+                    refreshed_at_ms, updated_at_ms
+                 ) VALUES (?1, 'builtin:local-owner', 'remote', ?1, CAST(?1 AS BLOB),
+                           '[]', 1, ?2, 1, 1)",
+                params![repository_id, registered_at_ms],
+            )
+            .expect("insert repository");
+    }
+    connection
+        .execute(
+            "INSERT INTO repository_package_versions (
+                repository_id, package_id, version_text, display_name, description,
+                yanked, unity_text
+             ) VALUES ('00000000-0000-4000-8000-000000000301',
+                       'com.example.base', '1.2.3', 'Example Base', NULL, 0, '2022.3')",
+            [],
+        )
+        .expect("insert raw package version");
+    insert_operation(&connection, "queued", 1).expect("insert v2 operation");
+
+    connection
+        .execute_batch(MIGRATION_V3)
+        .expect("apply migration v3");
+
+    let priorities = connection
+        .prepare("SELECT repository_id, priority FROM repositories ORDER BY priority")
+        .expect("prepare priorities")
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .expect("query priorities")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect priorities");
+    assert_eq!(
+        priorities,
+        [
+            ("00000000-0000-4000-8000-000000000301".to_owned(), 1),
+            ("00000000-0000-4000-8000-000000000302".to_owned(), 2),
+            ("00000000-0000-4000-8000-000000000303".to_owned(), 3),
+        ]
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT resolver_ready FROM repository_package_versions",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("resolver marker"),
+        0
+    );
+    assert!(
+        connection
+            .execute(
+                "UPDATE repository_package_versions SET resolver_ready=1",
+                [],
+            )
+            .is_err()
+    );
+    connection
+        .execute(
+            "UPDATE repository_package_versions SET
+                semantic_version='1.2.3', author_name='Fixture Author',
+                author_email='fixture@example.invalid',
+                artifact_url='https://fixtures.invalid/base.zip',
+                zip_sha256='0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+                manifest_fingerprint=zeroblob(32), resolver_ready=1",
+            [],
+        )
+        .expect("complete resolver-ready metadata");
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM operations", [], |row| row
+                .get::<_, i64>(0))
+            .expect("preserved operation"),
+        1
+    );
+    let foreign_key_errors: i64 = connection
+        .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+            row.get(0)
+        })
+        .expect("foreign key check");
+    assert_eq!(foreign_key_errors, 0);
+}
+
+#[test]
+fn schema_v3_freezes_immutable_plans_and_filesystem_phases() {
+    let connection = migrated_v3_connection();
+    insert_project(&connection);
+    let change_set = r#"{"formatVersion":1,"mutations":[],"dependencyEdges":[]}"#;
+    connection
+        .execute(
+            "INSERT INTO package_plans (
+                plan_id, owner_principal_id, project_id, action, state, project_revision,
+                project_snapshot_fingerprint, change_set_fingerprint, change_set_json,
+                source_set_json, created_at_ms
+             ) VALUES (
+                '00000000-0000-4000-8000-000000000401', 'builtin:local-owner',
+                '00000000-0000-4000-8000-000000000201', 'install', 'unapplied', 1,
+                zeroblob(32), zeroblob(32), ?1, '[]', 1
+             )",
+            [change_set],
+        )
+        .expect("insert package plan");
+    assert!(
+        connection
+            .execute(
+                "UPDATE package_plans SET action='remove'
+                 WHERE plan_id='00000000-0000-4000-8000-000000000401'",
+                [],
+            )
+            .is_err()
+    );
+    assert!(
+        connection
+            .execute(
+                "DELETE FROM package_plans
+                 WHERE plan_id='00000000-0000-4000-8000-000000000401'",
+                [],
+            )
+            .is_err()
+    );
+
+    connection
+        .execute(
+            "INSERT INTO operations (
+                operation_id, kind, state, revision, owner_principal_id, request_json,
+                cancel_requested, created_at_ms, updated_at_ms
+             ) VALUES ('00000000-0000-4000-8000-000000000402', 'packages.apply', 'queued',
+                       1, 'builtin:local-owner', '{}', 0, 1, 1)",
+            [],
+        )
+        .expect("insert packages.apply operation");
+    connection
+        .execute(
+            "UPDATE package_plans SET state='applied',
+                    apply_operation_id='00000000-0000-4000-8000-000000000402'
+             WHERE plan_id='00000000-0000-4000-8000-000000000401'",
+            [],
+        )
+        .expect("bind operation once");
+    assert!(
+        connection
+            .execute(
+                "UPDATE package_plans SET apply_operation_id=NULL
+                 WHERE plan_id='00000000-0000-4000-8000-000000000401'",
+                [],
+            )
+            .is_err()
+    );
+
+    for (step, phase) in [
+        (1_i64, "accepted"),
+        (2, "archive_ready"),
+        (3, "extracted"),
+        (4, "prepared"),
+        (5, "packages_replaced"),
+        (6, "vpm_manifest_committed"),
+        (7, "filesystem_committed"),
+        (8, "state_committed"),
+    ] {
+        connection
+            .execute(
+                "INSERT INTO package_filesystem_journal (
+                    operation_id, step, plan_id, project_id, phase, state,
+                    project_identity_key, change_set_fingerprint, evidence_json, updated_at_ms
+                 ) VALUES ('00000000-0000-4000-8000-000000000402', ?1,
+                           '00000000-0000-4000-8000-000000000401',
+                           '00000000-0000-4000-8000-000000000201', ?2, 'completed',
+                           x'01', zeroblob(32), '{}', 1)",
+                params![step, phase],
+            )
+            .expect("insert frozen filesystem phase");
+    }
+    connection
+        .execute(
+            "INSERT INTO package_filesystem_journal (
+                operation_id, step, plan_id, project_id, phase, state,
+                project_identity_key, change_set_fingerprint, evidence_json, updated_at_ms
+             ) VALUES ('00000000-0000-4000-8000-000000000402', 9,
+                       '00000000-0000-4000-8000-000000000401',
+                       '00000000-0000-4000-8000-000000000201', 'archive_ready', 'completed',
+                       x'01', zeroblob(32), '{\"attempt\":2}', 2)",
+            [],
+        )
+        .expect("a restarted attempt may repeat an append-only phase");
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO package_filesystem_journal (
+                    operation_id, step, plan_id, project_id, phase, state,
+                    project_identity_key, change_set_fingerprint, evidence_json, updated_at_ms
+                 ) VALUES ('00000000-0000-4000-8000-000000000402', 10,
+                           '00000000-0000-4000-8000-000000000401',
+                           '00000000-0000-4000-8000-000000000201', 'guessed', 'completed',
+                           x'01', zeroblob(32), '{}', 1)",
+                [],
+            )
+            .is_err()
+    );
+    assert!(
+        connection
+            .execute(
+                "UPDATE package_filesystem_journal SET evidence_json='{}'
+                 WHERE operation_id='00000000-0000-4000-8000-000000000402' AND step=1",
+                [],
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn failed_migration_v3_restores_complete_v2() {
+    let connection = migrated_v2_connection();
+    let failing = MIGRATION_V3.replace(
+        "PRAGMA user_version = 3;",
+        "THIS IS NOT VALID SQL;\nPRAGMA user_version = 3;",
+    );
+    assert!(connection.execute_batch(&failing).is_err());
+    connection
+        .execute_batch("ROLLBACK;")
+        .expect("rollback failed migration");
+    assert_eq!(user_version(&connection), 2);
+    let m4_tables: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM sqlite_schema
+             WHERE type='table' AND name IN ('package_plans','package_filesystem_journal')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count M4 tables");
+    assert_eq!(m4_tables, 0);
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO operations (
+                    operation_id, kind, state, revision, owner_principal_id, request_json,
+                    cancel_requested, created_at_ms, updated_at_ms
+                 ) VALUES ('00000000-0000-4000-8000-000000000403', 'packages.apply', 'queued',
+                           1, 'builtin:local-owner', '{}', 0, 1, 1)",
+                [],
+            )
+            .is_err()
+    );
+}
+
 fn migrated_connection() -> Connection {
     let connection = Connection::open_in_memory().expect("open SQLite");
     connection
@@ -336,6 +631,28 @@ fn migrated_v2_connection() -> Connection {
         .execute_batch(MIGRATION_V2)
         .expect("apply migration v2");
     connection
+}
+
+fn migrated_v3_connection() -> Connection {
+    let connection = migrated_v2_connection();
+    connection
+        .execute_batch(MIGRATION_V3)
+        .expect("apply migration v3");
+    connection
+}
+
+fn insert_project(connection: &Connection) {
+    connection
+        .execute(
+            "INSERT INTO projects (
+                project_id, owner_principal_id, root_path, path_identity_key, project_type,
+                unity_version, snapshot_json, revision, registered_at_ms, observed_at_ms,
+                updated_at_ms
+             ) VALUES ('00000000-0000-4000-8000-000000000201', 'builtin:local-owner',
+                       'X:/fixture', x'01', 'unknown', '2022.3.22f1', '{}', 1, 1, 1, 1)",
+            [],
+        )
+        .expect("insert project");
 }
 
 fn insert_operation(

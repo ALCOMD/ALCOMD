@@ -68,3 +68,16 @@ mcp.configuration.manage
   均不是身份或授权凭据。
 - 外部 Principal 的逐项目/逐 repository resource scope 和 credential enrollment/revocation 尚未
   实现；`access.principal-revocation` 继续保持 planned。
+
+## M4 Package Plan/Apply 权限
+
+- `packages.planInstall/planRemove/planUpgrade/planDowngrade/planResolve` 必须同时具备
+  `projects.read`、`repositories.read` 与 `packages.read`，并受目标 project 与所引用 repository
+  scope 限制。Plan 的内部 durable persistence 不要求 `packages.manage`，也不授权项目写入。
+- `packages.applyPlan` 必须再次具备上述 read 权限，并额外具备 `packages.manage` 与目标 project
+  write scope；每次 Apply 都复验 Plan owner、scope、revision 与 pinned source。
+- `packages.manage` 不隐含 repository credential、legacy cleanup、任意项目路径写入或 Unity 启动。
+  它只授权执行已经批准且绑定目标 ProjectId 的 package ChangeSet。
+- capability、PlanId、OperationId、package/repository ID、SID 和 client metadata 都不是身份凭据。
+- M4 仅允许 `builtin:local-owner` 使用 Apply 写路径。真实外部 credential enrollment/revocation 与
+  第三方 mutation 尚未实现，不得因 Schema 已冻结而描述为开放。

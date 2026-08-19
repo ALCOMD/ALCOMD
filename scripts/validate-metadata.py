@@ -642,6 +642,36 @@ def main() -> int:
     require(reqwest["version"] == "=0.13.4", "Unexpected reqwest version")
     require(reqwest["default-features"] is False, "reqwest defaults must be disabled")
     require(reqwest["features"] == ["rustls"], "Unexpected reqwest feature set")
+    approved_vpm_dependencies = {
+        "semver": {
+            "version": "=1.0.28",
+            "default-features": False,
+            "features": ["std"],
+        },
+        "sha2": {
+            "version": "=0.11.0",
+            "default-features": False,
+        },
+        "unicode-normalization": {
+            "version": "=0.1.25",
+            "default-features": False,
+            "features": ["std"],
+        },
+        "zip": {
+            "version": "=8.6.0",
+            "default-features": False,
+            "features": ["deflate-flate2-zlib-rs"],
+        },
+    }
+    for dependency, expected in approved_vpm_dependencies.items():
+        require(
+            vpm_manifest["dependencies"][dependency] == {"workspace": True},
+            f"alcomd-vpm must use the approved workspace {dependency}",
+        )
+        require(
+            cargo_workspace["workspace"]["dependencies"][dependency] == expected,
+            f"Unexpected {dependency} dependency contract",
+        )
 
     cargo_lock = load_toml("Cargo.lock")
     locked_packages = {
@@ -658,6 +688,22 @@ def main() -> int:
     require(rusqlite["default-features"] is False, "rusqlite defaults must be disabled")
     require(set(rusqlite["features"]) == {"bundled"}, "Unexpected rusqlite feature set")
     require(("rusqlite", "0.40.1") in locked_packages, "rusqlite 0.40.1 is not locked")
+    approved_m4_locked_packages = {
+        ("block-buffer", "0.12.1"),
+        ("crypto-common", "0.2.2"),
+        ("digest", "0.11.3"),
+        ("hybrid-array", "0.4.14"),
+        ("semver", "1.0.28"),
+        ("sha2", "0.11.0"),
+        ("typed-path", "0.12.3"),
+        ("unicode-normalization", "0.1.25"),
+        ("zip", "8.6.0"),
+        ("zlib-rs", "0.6.7"),
+    }
+    require(
+        approved_m4_locked_packages <= locked_packages,
+        "Approved M4 archive/hash/normalization dependency closure is not locked",
+    )
     require(
         ("libsqlite3-sys", "0.38.1") in locked_packages,
         "libsqlite3-sys 0.38.1 is not locked",
@@ -749,7 +795,14 @@ def main() -> int:
         "specs/rpc/operations-cancel.response.schema.json",
         "specs/rpc/events-list.request.schema.json",
         "specs/rpc/events-list.response.schema.json",
+        "specs/rpc/m3-project-repository.schema.json",
+        "specs/rpc/m4-package-transaction.schema.json",
         "specs/extensions/manifest-v1.schema.json",
+        "crates/alcomd-testing/fixtures/m4/repository-resolver-ready.json",
+        "crates/alcomd-testing/fixtures/m4/repository-key-mismatch.json",
+        "crates/alcomd-testing/fixtures/m4/version-range-vectors.json",
+        "crates/alcomd-testing/fixtures/m4/archive-path-vectors.json",
+        "crates/alcomd-testing/fixtures/m4/changeset-golden.json",
         "migrations/v3/schemas/migration-bundle-v1.schema.json",
     ]:
         load_json(relative)

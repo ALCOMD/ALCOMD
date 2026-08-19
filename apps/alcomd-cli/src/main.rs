@@ -47,6 +47,11 @@ enum Command {
         #[command(subcommand)]
         command: RepositoryCommand,
     },
+    /// Plan and apply the minimal M4 VPM package transaction slice.
+    Package {
+        #[command(subcommand)]
+        command: PackageCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -121,6 +126,63 @@ enum RepositoryCommand {
     },
     Unregister {
         repository_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum PackageCommand {
+    PlanInstall {
+        project_id: String,
+        package_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        version_range: Option<String>,
+        #[arg(long)]
+        repository_id: Option<String>,
+        #[arg(long)]
+        include_prerelease: bool,
+    },
+    PlanRemove {
+        project_id: String,
+        package_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+    },
+    PlanUpgrade {
+        project_id: String,
+        package_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        version_range: Option<String>,
+        #[arg(long)]
+        repository_id: Option<String>,
+        #[arg(long)]
+        include_prerelease: bool,
+    },
+    PlanDowngrade {
+        project_id: String,
+        package_id: String,
+        version: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        repository_id: Option<String>,
+    },
+    PlanResolve {
+        project_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        include_prerelease: bool,
+    },
+    ApplyPlan {
+        plan_id: String,
         #[arg(long)]
         expected_revision: u64,
         #[arg(long)]
@@ -262,6 +324,102 @@ async fn execute(
             } => serde_json::to_value(
                 client
                     .repository_unregister(repository_id, expected_revision, idempotency_key)
+                    .await?,
+            ),
+        },
+        Command::Package { command } => match command {
+            PackageCommand::PlanInstall {
+                project_id,
+                package_id,
+                expected_revision,
+                version_range,
+                repository_id,
+                include_prerelease,
+            } => serde_json::to_value(
+                client
+                    .package_plan_install(alcomd_protocol::PackagePlanInstallParams {
+                        project_id,
+                        expected_revision,
+                        package_id,
+                        version_range,
+                        repository_id,
+                        include_prerelease,
+                    })
+                    .await?,
+            ),
+            PackageCommand::PlanRemove {
+                project_id,
+                package_id,
+                expected_revision,
+            } => serde_json::to_value(
+                client
+                    .package_plan_remove(alcomd_protocol::PackagePlanRemoveParams {
+                        project_id,
+                        expected_revision,
+                        package_id,
+                    })
+                    .await?,
+            ),
+            PackageCommand::PlanUpgrade {
+                project_id,
+                package_id,
+                expected_revision,
+                version_range,
+                repository_id,
+                include_prerelease,
+            } => serde_json::to_value(
+                client
+                    .package_plan_upgrade(alcomd_protocol::PackagePlanUpgradeParams {
+                        project_id,
+                        expected_revision,
+                        package_id,
+                        version_range,
+                        repository_id,
+                        include_prerelease,
+                    })
+                    .await?,
+            ),
+            PackageCommand::PlanDowngrade {
+                project_id,
+                package_id,
+                version,
+                expected_revision,
+                repository_id,
+            } => serde_json::to_value(
+                client
+                    .package_plan_downgrade(alcomd_protocol::PackagePlanDowngradeParams {
+                        project_id,
+                        expected_revision,
+                        package_id,
+                        version,
+                        repository_id,
+                    })
+                    .await?,
+            ),
+            PackageCommand::PlanResolve {
+                project_id,
+                expected_revision,
+                include_prerelease,
+            } => serde_json::to_value(
+                client
+                    .package_plan_resolve(alcomd_protocol::PackagePlanResolveParams {
+                        project_id,
+                        expected_revision,
+                        include_prerelease,
+                    })
+                    .await?,
+            ),
+            PackageCommand::ApplyPlan {
+                plan_id,
+                expected_revision,
+                idempotency_key,
+            } => serde_json::to_value(
+                client
+                    .package_apply_plan(alcomd_protocol::PackageApplyPlanParams {
+                        plan_id,
+                        expected_revision,
+                        idempotency_key,
+                    })
                     .await?,
             ),
         },

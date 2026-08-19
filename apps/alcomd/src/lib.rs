@@ -8,8 +8,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use alcomd_application::{
     AccessContext, Application, ApplicationError, EventRecord as ApplicationEvent, IdempotencyKey,
-    M3Application, OperationCursor, OperationId, OperationRecord, OperationState as DomainState,
-    Revision, StoreErrorKind,
+    M3Application, M4Application, OperationCursor, OperationId, OperationRecord,
+    OperationState as DomainState, Revision, StoreErrorKind,
 };
 use alcomd_platform::{BindError, DaemonInstance, DataConfig, IpcConfig, IpcListener, IpcStream};
 use alcomd_protocol::{
@@ -17,25 +17,29 @@ use alcomd_protocol::{
     ErrorResponse, Event, EventsListParams, EventsListResult, HelloParams, HelloResult,
     METHOD_EVENTS_LIST, METHOD_OPERATIONS_CANCEL, METHOD_OPERATIONS_GET, METHOD_OPERATIONS_LIST,
     METHOD_STATE_CHECK, METHOD_SYSTEM_HELLO, METHOD_SYSTEM_STATUS, Operation, OperationAccepted,
-    OperationState, OperationWriteResult, OperationsCancelParams, OperationsGetParams,
-    OperationsListCursor, OperationsListParams, OperationsListResult, RPC_VERSION, RequestEnvelope,
-    RpcError, StateCheckParams, SuccessResponse, SystemStatusResult, decode_frame_length,
-    encode_frame,
+    OperationProgress, OperationState, OperationWriteResult, OperationsCancelParams,
+    OperationsGetParams, OperationsListCursor, OperationsListParams, OperationsListResult,
+    PackageOperationPhase, RPC_VERSION, RequestEnvelope, RpcError, StateCheckParams,
+    SuccessResponse, SystemStatusResult, decode_frame_length, encode_frame,
 };
 use alcomd_store::StateStoreHandle;
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 mod m3_rpc;
+mod m4_rpc;
 
 static TEST_DATA_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 type M2Application = Application<StateStoreHandle>;
 type M3ReadApplication = M3Application<StateStoreHandle, alcomd_vpm::VpmReader>;
+type M4PackageApplication =
+    M4Application<StateStoreHandle, alcomd_vpm::PackageEngine<StateStoreHandle>>;
 
 struct Applications {
     m2: M2Application,
     m3: M3ReadApplication,
+    m4: M4PackageApplication,
 }
 
 /// Runs the daemon with an ephemeral isolated data directory.
@@ -73,6 +77,10 @@ where
 {
     let instance = DaemonInstance::acquire(&ipc)?;
     let database = alcomd_platform::state_database_path(&data)?;
+    let cache_root = database
+        .parent()
+        .ok_or_else(|| BindError::Io(io::Error::other("state path has no parent")))?
+        .join("package-cache");
     let store = StateStoreHandle::open(database).map_err(|error| {
         BindError::Io(io::Error::other(format!(
             "state store failed closed: {error}"
@@ -84,9 +92,16 @@ where
         .map_err(|_| BindError::Io(io::Error::other("Operation recovery failed")))?;
     let reader = alcomd_vpm::VpmReader::new()
         .map_err(|_| BindError::Io(io::Error::other("M3 reader initialization failed")))?;
+    let engine = alcomd_vpm::PackageEngine::new(store.clone(), reader.clone(), cache_root)
+        .map_err(|_| BindError::Io(io::Error::other("M4 package engine initialization failed")))?;
+    let m4 = M4PackageApplication::new(store.clone(), engine);
+    m4.recover()
+        .await
+        .map_err(|_| BindError::Io(io::Error::other("package transaction recovery failed")))?;
     let applications = Arc::new(Applications {
         m2,
         m3: M3ReadApplication::new(store, reader),
+        m4,
     });
     let listener = instance.bind()?;
     run_listener(listener, applications, shutdown)
@@ -192,7 +207,15 @@ async fn dispatch_payload(
     }
 
     let access = AccessContext::local_owner();
-    dispatch_m2(request, state, &applications.m2, &applications.m3, &access).await
+    dispatch_m2(
+        request,
+        state,
+        &applications.m2,
+        &applications.m3,
+        &applications.m4,
+        &access,
+    )
+    .await
 }
 
 fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> DispatchAction {
@@ -225,6 +248,8 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         alcomd_protocol::CAPABILITY_PROJECTS_REGISTRY_V1,
         alcomd_protocol::CAPABILITY_REPOSITORIES_READ_V1,
         alcomd_protocol::CAPABILITY_REPOSITORIES_REGISTRY_V1,
+        alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V1,
+        alcomd_protocol::CAPABILITY_PACKAGES_APPLY_V1,
     ];
     let capabilities = hello
         .capabilities
@@ -235,7 +260,7 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
     result_capabilities.sort();
     success_action(
         request.id,
-        HelloResult::m3(result_capabilities),
+        HelloResult::m4(result_capabilities),
         Some(capabilities),
     )
 }
@@ -269,6 +294,7 @@ async fn dispatch_m2(
     state: &ConnectionState,
     application: &M2Application,
     m3_application: &M3ReadApplication,
+    m4_application: &M4PackageApplication,
     access: &AccessContext,
 ) -> DispatchAction {
     match request.method.as_str() {
@@ -427,6 +453,9 @@ async fn dispatch_m2(
                 Err(error) => application_error(request.id, error),
             }
         }
+        _ if request.method.starts_with("packages.") => {
+            m4_rpc::dispatch(request, state, m4_application, access).await
+        }
         _ => m3_rpc::dispatch(request, state, m3_application, access).await,
     }
 }
@@ -474,6 +503,37 @@ fn operation_to_rpc(record: OperationRecord) -> Result<Operation, RpcError> {
         result,
         error_code: record.error_code,
         diagnostic_id: record.diagnostic_id,
+        progress: record.progress_phase.map(|phase| OperationProgress {
+            phase: match phase {
+                alcomd_application::FilesystemPhase::Accepted => PackageOperationPhase::Accepted,
+                alcomd_application::FilesystemPhase::ArchiveReady => {
+                    PackageOperationPhase::ArchiveReady
+                }
+                alcomd_application::FilesystemPhase::Extracted => PackageOperationPhase::Extracted,
+                alcomd_application::FilesystemPhase::Prepared => PackageOperationPhase::Prepared,
+                alcomd_application::FilesystemPhase::PackagesReplaced => {
+                    PackageOperationPhase::PackagesReplaced
+                }
+                alcomd_application::FilesystemPhase::VpmManifestCommitted => {
+                    PackageOperationPhase::VpmManifestCommitted
+                }
+                alcomd_application::FilesystemPhase::FilesystemCommitted => {
+                    PackageOperationPhase::FilesystemCommitted
+                }
+                alcomd_application::FilesystemPhase::StateCommitted => {
+                    PackageOperationPhase::StateCommitted
+                }
+                alcomd_application::FilesystemPhase::RollingBack => {
+                    PackageOperationPhase::RollingBack
+                }
+                alcomd_application::FilesystemPhase::RolledBack => {
+                    PackageOperationPhase::RolledBack
+                }
+                alcomd_application::FilesystemPhase::RecoveryRequired => {
+                    PackageOperationPhase::RecoveryRequired
+                }
+            },
+        }),
     })
 }
 

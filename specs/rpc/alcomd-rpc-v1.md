@@ -1,6 +1,6 @@
 # ALCOMD RPC v1
 
-状态：M1 基础合同与 M2 兼容新增已实现；等待 M2 三平台最终验证
+状态：M1-M3 已完成；M4 兼容合同与最小生产实现已完成本地验收，尚待 hosted CI 与人工验收
 
 ## 1. M1 合同范围
 
@@ -435,3 +435,59 @@ debug、HTTP header、SQL 或 credential；未知错误继续使用 `internal_er
 
 M3 仍不增加 notification、background refresh、credential、package payload、SemVer、resolver、
 Plan/Apply 或项目写入。新增 method/capability/可选响应字段是兼容增加；既有 M1/M2 方法语义不变。
+
+## 18. M4 兼容增加：Package Plan/Apply
+
+M4 在 RPC major 1 上冻结两个 capability：
+
+| capability | method |
+|---|---|
+| `packages.plan.v1` | `packages.planInstall`、`packages.planRemove`、`packages.planUpgrade`、`packages.planDowngrade`、`packages.planResolve` |
+| `packages.apply.v1` | `packages.applyPlan` |
+
+本节同时约束已接入的 M4 最小生产垂直切片、hello capability 广告与 State Schema v3 自动
+migration。完整 GUI/CLI/MCP、credential、hashless/legacy VPM 和 v3 parity 仍未实现，不得因这些
+method 已接通而描述为完整 package manager。
+
+所有 Plan 方法是 bounded 同步 RPC，需要 `projects.read + repositories.read + packages.read` 及目标
+resource scope。它们可以保存 immutable durable Plan，但不得写 Unity 项目、下载 package、访问
+网络或触发 repository refresh。只使用最后一次显式 refresh 产生的 resolver-ready snapshot；否则
+返回 `repository_refresh_required`。
+
+Plan 的 action 与 method 一一对应，返回 `planId`、`state=unapplied`、project revision、byte-stable
+ChangeSet 与 SHA-256 fingerprint。ChangeSet 最多 1,024 package mutation 与 4,096 dependency edge，
+同时受 4 MiB RPC frame 限制；超限返回 `plan_too_large`，不得截断。Plan 无 TTL/expiry/自动清理，
+状态只有 `unapplied`/`applied`，一个 Plan 最多绑定一个 Apply Operation。
+
+`packages.applyPlan` 参数固定为：
+
+```json
+{
+    "planId": "00000000-0000-4000-8000-000000000401",
+    "expectedRevision": 7,
+    "idempotencyKey": "apply-package-plan-once"
+}
+```
+
+Apply 需要 `packages.apply.v1`、`packages.manage` 与目标 project write scope，并重新验证 read 权限、
+Plan owner、project identity/revision/fingerprint，以及每个 pinned repository ID/revision、source
+identity、manifest fingerprint、package version、artifact URL 与 SHA-256。任一前提变化返回
+`plan_stale` 与 `m4-package-transaction.schema.json#/$defs/planStaleReason` 中的稳定 subreason；Apply
+不得重新 resolve、fallback source、改变版本或产生新 ChangeSet。
+
+成功接受返回 `{operationId,replayed}`。永久幂等 scope 仍为
+`(PrincipalId, packages.applyPlan, idempotencyKey)`；fingerprint 包含 planId 与 expectedRevision。
+请求连接断开不取消已返回的 OperationId。Apply Operation kind 是 `packages.apply`，复用 M2 state、
+revision、Event、cancel/recovery 语义；公开 progress 只暴露脱敏 phase，不含完整 path/URL/entry。
+
+M4 remote archive 只接受 64-lower-hex SHA-256，缺失/畸形均为 `package_hash_required`。这是 M4
+安全子集而非完整 VPM hashless 兼容。M4 不提供 yanked override 或 legacy cleanup；yanked 不参与
+新选择，legacy metadata 需要变更时返回 `package_legacy_cleanup_required`。
+
+M4 新增的稳定错误由 `rpc-error.schema.json` 枚举冻结，包括 package manifest/range/dependency/
+Unity/source/hash/cache/archive/path、Plan、refresh 与 project transaction 错误。普通 `error.data` 只
+允许安全 subreason、opaque ID 和 revision，不得包含完整路径、credential/header、raw manifest、
+archive、SQL 或 parser/OS debug。未知错误仍为 `internal_error + diagnosticId`。
+
+完整 DTO、长度与枚举由 `m4-package-transaction.schema.json` 冻结。新增 method/capability/可选
+Operation progress 是兼容增加；M1-M3 字段与方法语义不变。

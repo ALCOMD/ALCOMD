@@ -13,9 +13,13 @@ publish.workspace = true
 alcomd-application.workspace = true
 alcomd-platform.workspace = true
 reqwest.workspace = true
+semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 tokio.workspace = true
+unicode-normalization.workspace = true
+zip.workspace = true
 
 [lints]
 workspace = true

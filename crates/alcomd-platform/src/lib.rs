@@ -53,6 +53,26 @@ pub fn resolve_directory_identity(path: &std::path::Path) -> std::io::Result<(Pa
     Ok((canonical, identity))
 }
 
+/// Flushes metadata for an existing directory using the platform's ordinary filesystem handle.
+#[cfg(unix)]
+pub fn sync_directory(path: &std::path::Path) -> std::io::Result<()> {
+    std::fs::File::open(path)?.sync_all()
+}
+
+/// Flushes metadata for an existing directory using a backup-semantics filesystem handle.
+#[cfg(windows)]
+pub fn sync_directory(path: &std::path::Path) -> std::io::Result<()> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_BACKUP_SEMANTICS;
+
+    std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)?
+        .sync_all()
+}
+
 /// Optional runtime-path override used by isolated tests and development tools.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct IpcConfig {

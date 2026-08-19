@@ -1,0 +1,46 @@
+{
+    "name": "ALCOMD M4 Public Fixture",
+    "id": "com.cqmhv.alcomd.fixture",
+    "url": "https://fixtures.invalid/repository.json",
+    "packages": {
+        "com.example.base": {
+            "versions": {
+                "1.2.3": {
+                    "name": "com.example.base",
+                    "displayName": "Example Base",
+                    "version": "1.2.3",
+                    "url": "https://fixtures.invalid/packages/base-1.2.3.zip",
+                    "zipSHA256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                    "author": {
+                        "name": "Fixture Author",
+                        "email": "fixture@example.invalid"
+                    },
+                    "unity": "2022.3",
+                    "unityRelease": "22f1",
+                    "vpmDependencies": {},
+                    "legacyFolders": [],
+                    "legacyFiles": [],
+                    "legacyPackages": []
+                }
+            }
+        },
+        "com.example.feature": {
+            "versions": {
+                "2.0.0": {
+                    "name": "com.example.feature",
+                    "displayName": "Example Feature",
+                    "version": "2.0.0",
+                    "url": "https://fixtures.invalid/packages/feature-2.0.0.zip",
+                    "zipSHA256": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+                    "author": {
+                        "name": "Fixture Author",
+                        "email": "fixture@example.invalid"
+                    },
+                    "vpmDependencies": {
+                        "com.example.base": "^1.2.0"
+                    }
+                }
+            }
+        }
+    }
+}

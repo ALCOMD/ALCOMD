@@ -9,7 +9,7 @@ use alcomd_protocol::{
     RequestEnvelope, StateCheckParams, SuccessResponse, SystemStatusResult,
 };
 
-const SCHEMAS: [(&str, &str); 20] = [
+const SCHEMAS: [(&str, &str); 21] = [
     (
         "request-envelope",
         include_str!("../../../specs/rpc/request-envelope.schema.json"),
@@ -89,6 +89,10 @@ const SCHEMAS: [(&str, &str); 20] = [
     (
         "m3-project-repository",
         include_str!("../../../specs/rpc/m3-project-repository.schema.json"),
+    ),
+    (
+        "m4-package-transaction",
+        include_str!("../../../specs/rpc/m4-package-transaction.schema.json"),
     ),
 ];
 
@@ -177,6 +181,149 @@ fn m3_error_codes_are_machine_readable_and_frozen() {
     ] {
         assert!(codes.iter().any(|candidate| candidate == code), "{code}");
     }
+}
+
+#[test]
+fn m4_schema_freezes_methods_capabilities_and_bounded_changeset() {
+    let contract = schema("m4-package-transaction");
+    let definitions = contract["$defs"].as_object().expect("M4 definitions");
+    assert_eq!(
+        definitions["methodName"]["enum"],
+        json!([
+            "packages.planInstall",
+            "packages.planRemove",
+            "packages.planUpgrade",
+            "packages.planDowngrade",
+            "packages.planResolve",
+            "packages.applyPlan"
+        ])
+    );
+    assert_eq!(
+        definitions["capability"]["enum"],
+        json!(["packages.plan.v1", "packages.apply.v1"])
+    );
+    assert_eq!(
+        definitions["changeSet"]["properties"]["mutations"]["maxItems"],
+        1_024
+    );
+    assert_eq!(
+        definitions["changeSet"]["properties"]["dependencyEdges"]["maxItems"],
+        4_096
+    );
+    assert_eq!(
+        definitions["applyPlanParams"]["required"],
+        json!(["planId", "expectedRevision", "idempotencyKey"])
+    );
+    assert_eq!(
+        definitions["plan"]["properties"]["state"]["enum"],
+        json!(["unapplied", "applied"])
+    );
+    assert!(definitions.get("planExpiry").is_none());
+}
+
+#[test]
+fn m4_schema_pins_source_and_stale_subreasons() {
+    let contract = schema("m4-package-transaction");
+    let definitions = contract["$defs"].as_object().expect("M4 definitions");
+    assert_eq!(
+        definitions["sourcePin"]["required"],
+        json!([
+            "repositoryId",
+            "repositoryRevision",
+            "sourceIdentity",
+            "manifestFingerprint",
+            "packageId",
+            "version",
+            "artifactUrl",
+            "archiveSha256"
+        ])
+    );
+    let stale = definitions["planStaleReason"]["enum"]
+        .as_array()
+        .expect("stale reasons");
+    for reason in [
+        "project_revision_changed",
+        "project_identity_changed",
+        "repository_revision_changed",
+        "source_identity_changed",
+        "manifest_fingerprint_changed",
+        "artifact_url_changed",
+        "archive_digest_changed",
+        "plan_already_applied",
+    ] {
+        assert!(
+            stale.iter().any(|candidate| candidate == reason),
+            "{reason}"
+        );
+    }
+}
+
+#[test]
+fn m4_package_manifest_freezes_required_identity_and_unity_semantics() {
+    let contract = schema("m4-package-transaction");
+    let definitions = contract["$defs"].as_object().expect("M4 definitions");
+    assert_eq!(
+        definitions["packageManifest"]["required"],
+        json!([
+            "name",
+            "displayName",
+            "version",
+            "url",
+            "zipSHA256",
+            "author"
+        ])
+    );
+    assert_eq!(
+        definitions["packageAuthor"]["required"],
+        json!(["name", "email"])
+    );
+    assert_eq!(
+        definitions["packageManifest"]["properties"]["unity"]["pattern"],
+        "^[0-9]+\\.[0-9]+$"
+    );
+    for legacy in ["legacyFolders", "legacyFiles", "legacyPackages"] {
+        assert_eq!(
+            definitions["packageManifest"]["properties"][legacy]["type"],
+            "array"
+        );
+    }
+}
+
+#[test]
+fn m4_error_codes_are_machine_readable_and_have_no_expiry_error() {
+    let errors = schema("rpc-error");
+    let codes = errors["properties"]["code"]["enum"]
+        .as_array()
+        .expect("error code enum");
+    for code in [
+        "package_manifest_invalid",
+        "package_version_yanked",
+        "package_legacy_cleanup_required",
+        "package_archive_unsupported_compression",
+        "package_cache_quota_exceeded",
+        "plan_too_large",
+        "repository_refresh_required",
+        "project_changed_during_apply",
+    ] {
+        assert!(codes.iter().any(|candidate| candidate == code), "{code}");
+    }
+    assert!(!codes.iter().any(|candidate| candidate == "plan_expired"));
+}
+
+#[test]
+fn m4_operation_and_data_schema_are_compatible_additions() {
+    let operation = schema("operation");
+    assert_eq!(
+        operation["properties"]["kind"]["enum"],
+        json!(["state.check", "packages.apply"])
+    );
+    assert!(operation["properties"].get("progress").is_some());
+
+    let hello = schema("system-hello.response");
+    assert_eq!(
+        hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
+        json!([1, 2, 3])
+    );
 }
 
 #[test]

@@ -77,6 +77,7 @@ fn repository(identity: u8, refreshed_at_ms: u64) -> RepositoryObservation {
             description: None,
             yanked: false,
             unity: None,
+            resolver: None,
         }],
         validators: RepositoryValidators {
             etag: Some("\"one\"".to_owned()),

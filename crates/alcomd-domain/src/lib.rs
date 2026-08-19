@@ -83,6 +83,44 @@ impl fmt::Display for ProjectId {
     }
 }
 
+/// Stable identifier for an immutable package transaction plan.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PlanId(Uuid);
+
+impl PlanId {
+    /// Creates a new random plan identifier.
+    #[must_use]
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    /// Parses a canonical UUID representation.
+    pub fn parse(value: &str) -> Result<Self, DomainValueError> {
+        Uuid::parse_str(value)
+            .map(Self)
+            .map_err(|_| DomainValueError::InvalidPlanId)
+    }
+
+    /// Returns the underlying UUID.
+    #[must_use]
+    pub const fn as_uuid(self) -> Uuid {
+        self.0
+    }
+}
+
+impl Default for PlanId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for PlanId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
 /// Stable identifier for a long-running operation.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -332,6 +370,12 @@ pub enum Permission {
     /// Manage only the ALCOMD repository registry and metadata cache.
     #[serde(rename = "repositories.manage")]
     RepositoriesManage,
+    /// Read package catalogs and produce immutable plans.
+    #[serde(rename = "packages.read")]
+    PackagesRead,
+    /// Apply package plans to owned projects.
+    #[serde(rename = "packages.manage")]
+    PackagesManage,
 }
 
 impl Permission {
@@ -347,6 +391,8 @@ impl Permission {
             Self::ProjectsManage => "projects.manage",
             Self::RepositoriesRead => "repositories.read",
             Self::RepositoriesManage => "repositories.manage",
+            Self::PackagesRead => "packages.read",
+            Self::PackagesManage => "packages.manage",
         }
     }
 }
@@ -362,6 +408,8 @@ pub enum ResourceKey {
     Project(ProjectId),
     /// Serializes mutation of one registered repository.
     Repository(RepositoryId),
+    /// Serializes publication of one content-addressed package cache object.
+    PackageCache([u8; 32]),
 }
 
 impl ResourceKey {
@@ -385,6 +433,11 @@ impl ResourceKey {
                 bytes.extend_from_slice(repository_id.as_uuid().as_bytes());
                 bytes
             }
+            Self::PackageCache(digest) => {
+                let mut bytes = b"package-cache:".to_vec();
+                bytes.extend_from_slice(digest);
+                bytes
+            }
         }
     }
 }
@@ -398,6 +451,8 @@ pub enum DomainValueError {
     InvalidRepositoryId,
     /// Operation ID was not a valid UUID.
     InvalidOperationId,
+    /// Plan ID was not a valid UUID.
+    InvalidPlanId,
     /// Principal ID was empty, non-ASCII, or exceeded its frozen limit.
     InvalidPrincipalId,
     /// Idempotency key was empty, non-ASCII, or exceeded its frozen limit.
@@ -410,6 +465,7 @@ impl fmt::Display for DomainValueError {
             Self::InvalidProjectId => formatter.write_str("invalid Project identifier"),
             Self::InvalidRepositoryId => formatter.write_str("invalid Repository identifier"),
             Self::InvalidOperationId => formatter.write_str("invalid Operation identifier"),
+            Self::InvalidPlanId => formatter.write_str("invalid Plan identifier"),
             Self::InvalidPrincipalId => formatter.write_str("invalid Principal identifier"),
             Self::InvalidIdempotencyKey => formatter.write_str("invalid idempotency key"),
         }

@@ -9,11 +9,15 @@ use std::future::Future;
 use std::sync::{Arc, Weak};
 
 pub use alcomd_domain::{
-    IdempotencyKey, OperationId, OperationState, Permission, PrincipalId, ProjectId, RepositoryId,
-    ResourceKey, Revision,
+    IdempotencyKey, OperationId, OperationState, Permission, PlanId, PrincipalId, ProjectId,
+    RepositoryId, ResourceKey, Revision,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, OwnedMutexGuard};
+
+mod m4;
+
+pub use m4::*;
 
 /// Minimal truthful daemon status for the M1 read-only vertical slice.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -150,6 +154,23 @@ pub struct RepositoryPackageVersion {
     pub description: Option<String>,
     pub yanked: bool,
     pub unity: Option<String>,
+    /// Strict M4 resolver metadata; absent for legacy/raw snapshots.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolver: Option<ResolverPackageMetadata>,
+}
+
+/// Resolver-ready package metadata persisted only after a complete strict parse.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ResolverPackageMetadata {
+    pub semantic_version: String,
+    pub author_name: String,
+    pub author_email: String,
+    pub artifact_url: String,
+    pub zip_sha256: String,
+    pub unity_release: Option<String>,
+    pub dependencies_json: String,
+    pub manifest_fingerprint: Vec<u8>,
+    pub legacy_metadata_present: bool,
 }
 
 /// Completely parsed repository observation.
@@ -473,6 +494,8 @@ pub struct OperationRecord {
     pub error_code: Option<String>,
     /// Safe diagnostic correlation identifier.
     pub diagnostic_id: Option<String>,
+    /// Latest durable package filesystem phase, absent for non-package Operations.
+    pub progress_phase: Option<FilesystemPhase>,
 }
 
 /// Opaque Operation pagination cursor used inside the application layer.
@@ -707,6 +730,8 @@ impl AccessContext {
                 Permission::ProjectsManage,
                 Permission::RepositoriesRead,
                 Permission::RepositoriesManage,
+                Permission::PackagesRead,
+                Permission::PackagesManage,
             ],
         )
     }
@@ -1363,6 +1388,35 @@ mod tests {
         .await
         .expect("different key must not block");
         assert_eq!(other.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn package_project_writes_serialize_per_project_but_not_globally() {
+        let coordinator = Arc::new(ResourceLockCoordinator::default());
+        let first_project = ProjectId::new();
+        let second_project = ProjectId::new();
+        let held = coordinator
+            .acquire(vec![ResourceKey::Project(first_project)])
+            .await;
+        let same_project = {
+            let coordinator = Arc::clone(&coordinator);
+            tokio::spawn(async move {
+                coordinator
+                    .acquire(vec![ResourceKey::Project(first_project)])
+                    .await
+            })
+        };
+        tokio::task::yield_now().await;
+        assert!(!same_project.is_finished());
+        let other_project = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            coordinator.acquire(vec![ResourceKey::Project(second_project)]),
+        )
+        .await
+        .expect("different projects must remain parallel");
+        assert_eq!(other_project.len(), 1);
+        drop(held);
+        assert_eq!(same_project.await.expect("same-project waiter").len(), 1);
     }
 
     #[tokio::test]

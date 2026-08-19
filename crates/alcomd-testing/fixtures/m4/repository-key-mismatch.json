@@ -1,0 +1,20 @@
+{
+    "name": "Rejected key mismatch",
+    "packages": {
+        "com.example.claimed": {
+            "versions": {
+                "1.0.0": {
+                    "name": "com.example.actual",
+                    "displayName": "Mismatched Package",
+                    "version": "1.0.1",
+                    "url": "https://fixtures.invalid/packages/mismatch.zip",
+                    "zipSHA256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                    "author": {
+                        "name": "Fixture Author",
+                        "email": "fixture@example.invalid"
+                    }
+                }
+            }
+        }
+    }
+}

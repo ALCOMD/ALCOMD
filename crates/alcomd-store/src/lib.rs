@@ -9,23 +9,25 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use alcomd_application::{
-    CheckClassification, CreateOperationOutcome, EventPage, IdempotencyKey, M3Error,
-    M3RegistryStore, OperationCursor, OperationId, OperationPage, OperationRecord, PackageCursor,
-    PackagePage, PrincipalId, ProjectId, ProjectObservation, ProjectPage, ProjectRecord,
-    RegistryCursor, RepositoryId, RepositoryObservation, RepositoryPage, RepositoryRecord,
-    RepositoryValidators, Revision, StateCheckResult, StateStore, StoreError, SyncWrite,
-    UnregisterResult,
+    ApplyPlanOutcome, CheckClassification, CreateOperationOutcome, EventPage,
+    FilesystemJournalEntry, IdempotencyKey, M3Error, M3RegistryStore, M4Error, M4Store,
+    OperationCursor, OperationId, OperationPage, OperationRecord, PackageApplyCompletion,
+    PackageCursor, PackagePage, PackagePlanDraft, PackagePlanRecord, PlanId, PrincipalId,
+    ProjectId, ProjectObservation, ProjectPage, ProjectRecord, RegistryCursor, RepositoryId,
+    RepositoryObservation, RepositoryPage, RepositoryRecord, RepositoryValidators, ResolverCatalog,
+    Revision, StateCheckResult, StateStore, StoreError, SyncWrite, UnregisterResult,
 };
 use tokio::sync::{mpsc, oneshot};
 
 mod m3;
+mod m4;
 mod sqlite;
 
 /// Stable crate identifier used by repository checks.
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 2;
+pub const CURRENT_DATA_SCHEMA: u32 = 3;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]
@@ -132,22 +134,30 @@ impl StateStoreHandle {
         &self,
         work: impl FnOnce(&mut rusqlite::Connection) -> Result<T, M3Error> + Send + 'static,
     ) -> Result<T, M3Error> {
+        self.request_worker(work, m3::unavailable).await
+    }
+
+    async fn request_worker<T: Send + 'static, E: Send + 'static>(
+        &self,
+        work: impl FnOnce(&mut rusqlite::Connection) -> Result<T, E> + Send + 'static,
+        unavailable: impl Fn() -> E,
+    ) -> Result<T, E> {
         let (reply, response) = oneshot::channel();
         let commands = self
             .inner
             .commands
             .lock()
-            .map_err(|_| m3::unavailable())?
+            .map_err(|_| unavailable())?
             .as_ref()
             .cloned()
-            .ok_or_else(m3::unavailable)?;
+            .ok_or_else(&unavailable)?;
         commands
             .send(Command::M3(Box::new(move |connection| {
                 let _ = reply.send(work(connection));
             })))
             .await
-            .map_err(|_| m3::unavailable())?;
-        response.await.map_err(|_| m3::unavailable())?
+            .map_err(|_| unavailable())?;
+        response.await.map_err(|_| unavailable())?
     }
 }
 
@@ -301,6 +311,147 @@ impl M3RegistryStore for StateStoreHandle {
         self.request_m3(move |connection| {
             m3::unregister_repository(connection, &owner, id, expected, &key, now_ms)
         })
+        .await
+    }
+}
+
+impl M4Store for StateStoreHandle {
+    async fn resolver_catalog(&self, owner: PrincipalId) -> Result<ResolverCatalog, M4Error> {
+        self.request_worker(
+            move |connection| m4::resolver_catalog(connection, &owner),
+            || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn create_package_plan(
+        &self,
+        owner: PrincipalId,
+        draft: PackagePlanDraft,
+        created_at_ms: u64,
+    ) -> Result<PackagePlanRecord, M4Error> {
+        self.request_worker(
+            move |connection| m4::create_package_plan(connection, &owner, draft, created_at_ms),
+            || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn get_package_plan(
+        &self,
+        owner: PrincipalId,
+        plan_id: PlanId,
+    ) -> Result<PackagePlanRecord, M4Error> {
+        self.request_worker(
+            move |connection| m4::get_package_plan(connection, &owner, plan_id),
+            || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn accept_package_plan(
+        &self,
+        owner: PrincipalId,
+        plan_id: PlanId,
+        expected_revision: Revision,
+        idempotency_key: IdempotencyKey,
+        created_at_ms: u64,
+    ) -> Result<ApplyPlanOutcome, M4Error> {
+        self.request_worker(
+            move |connection| {
+                m4::accept_package_plan(
+                    connection,
+                    &owner,
+                    plan_id,
+                    expected_revision,
+                    &idempotency_key,
+                    created_at_ms,
+                )
+            },
+            || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn append_filesystem_journal(
+        &self,
+        entry: FilesystemJournalEntry,
+    ) -> Result<(), M4Error> {
+        self.request_worker(
+            move |connection| m4::append_filesystem_journal(connection, entry),
+            || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn next_filesystem_journal_step(
+        &self,
+        operation_id: OperationId,
+    ) -> Result<u64, M4Error> {
+        self.request_worker(
+            move |connection| m4::next_filesystem_journal_step(connection, operation_id),
+            || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn begin_package_apply(
+        &self,
+        operation_id: OperationId,
+        updated_at_ms: u64,
+    ) -> Result<PackagePlanRecord, M4Error> {
+        self.request_worker(
+            move |connection| m4::begin_package_apply(connection, operation_id, updated_at_ms),
+            || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn complete_package_apply(
+        &self,
+        operation_id: OperationId,
+        completion: PackageApplyCompletion,
+        completed_at_ms: u64,
+    ) -> Result<(), M4Error> {
+        self.request_worker(
+            move |connection| {
+                m4::complete_package_apply(connection, operation_id, completion, completed_at_ms)
+            },
+            || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn fail_package_apply(
+        &self,
+        operation_id: OperationId,
+        error_code: String,
+        diagnostic_id: String,
+        completed_at_ms: u64,
+    ) -> Result<(), M4Error> {
+        self.request_worker(
+            move |connection| {
+                m4::fail_package_apply(
+                    connection,
+                    operation_id,
+                    &error_code,
+                    &diagnostic_id,
+                    completed_at_ms,
+                )
+            },
+            || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn recover_package_operations(
+        &self,
+        recovered_at_ms: u64,
+    ) -> Result<Vec<OperationId>, M4Error> {
+        self.request_worker(
+            move |connection| m4::recover_package_operations(connection, recovered_at_ms),
+            || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
+        )
         .await
     }
 }

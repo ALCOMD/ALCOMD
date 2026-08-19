@@ -1,0 +1,36 @@
+{
+    "formatVersion": 1,
+    "limits": {
+        "compressedBytes": 1073741824,
+        "entries": 65536,
+        "entryUncompressedBytes": 1073741824,
+        "totalUncompressedBytes": 4294967296,
+        "depth": 64,
+        "normalizedUtf8PathBytes": 1024,
+        "expansionRatio": 1000
+    },
+    "accepted": [
+        "package.json",
+        "Runtime/Example.dll",
+        "Editor/Config/default.json"
+    ],
+    "rejected": [
+        {"id": "parent", "path": "../escape"},
+        {"id": "absolute-unix", "path": "/escape"},
+        {"id": "drive", "path": "C:/escape"},
+        {"id": "unc", "path": "//server/share/file"},
+        {"id": "device", "path": "//?/C:/escape"},
+        {"id": "ads", "path": "file.txt:stream"},
+        {"id": "empty-segment", "path": "Runtime//file"},
+        {"id": "control", "path": "Runtime/line\nbreak"},
+        {"id": "windows-reserved", "path": "Runtime/CON"},
+        {"id": "trailing-dot", "path": "Runtime/name."},
+        {"id": "trailing-space", "path": "Runtime/name "}
+    ],
+    "collisions": [
+        {"id": "duplicate", "paths": ["Runtime/a", "Runtime/a"]},
+        {"id": "file-directory", "paths": ["Runtime/a", "Runtime/a/b"]},
+        {"id": "case", "paths": ["Runtime/File", "runtime/file"]},
+        {"id": "unicode-normalization", "paths": ["Runtime/café", "Runtime/café"]}
+    ]
+}

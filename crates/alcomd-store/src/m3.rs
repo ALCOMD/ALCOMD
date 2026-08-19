@@ -2,9 +2,10 @@ use alcomd_application::{
     IdempotencyKey, M3Error, M3ErrorCode, PackageCursor, PackagePage, PrincipalId, ProjectId,
     ProjectObservation, ProjectPage, ProjectRecord, RegistryCursor, RepositoryId,
     RepositoryObservation, RepositoryPackageVersion, RepositoryPage, RepositoryRecord,
-    RepositorySource, RepositoryValidators, Revision, SyncWrite, UnregisterResult,
+    RepositorySource, RepositoryValidators, ResolverPackageMetadata, Revision, SyncWrite,
+    UnregisterResult,
 };
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use uuid::Uuid;
@@ -508,13 +509,36 @@ fn source_parts(source: &RepositorySource) -> (&'static str, &str) {
     }
 }
 
+fn resolver_metadata(
+    row: &Row<'_>,
+    offset: usize,
+) -> rusqlite::Result<Option<ResolverPackageMetadata>> {
+    if row.get::<_, i64>(offset + 9)? == 0 {
+        return Ok(None);
+    }
+    Ok(Some(ResolverPackageMetadata {
+        semantic_version: row.get(offset)?,
+        author_name: row.get(offset + 1)?,
+        author_email: row.get(offset + 2)?,
+        artifact_url: row.get(offset + 3)?,
+        zip_sha256: row.get(offset + 4)?,
+        unity_release: row.get(offset + 5)?,
+        dependencies_json: row.get(offset + 6)?,
+        manifest_fingerprint: row.get(offset + 7)?,
+        legacy_metadata_present: row.get::<_, i64>(offset + 8)? != 0,
+    }))
+}
+
 fn load_packages(
     connection: &Connection,
     id: RepositoryId,
 ) -> Result<Vec<RepositoryPackageVersion>, M3Error> {
     let mut statement = connection
         .prepare(
-            "SELECT package_id, version_text, display_name, description, yanked, unity_text
+            "SELECT package_id, version_text, display_name, description, yanked, unity_text,
+                    semantic_version, author_name, author_email, artifact_url, zip_sha256,
+                    unity_release_text, dependencies_json, manifest_fingerprint,
+                    legacy_metadata_present, resolver_ready
          FROM repository_package_versions WHERE repository_id=?1
          ORDER BY package_id ASC, version_text ASC",
         )
@@ -528,6 +552,7 @@ fn load_packages(
                 description: row.get(3)?,
                 yanked: row.get::<_, i64>(4)? != 0,
                 unity: row.get(5)?,
+                resolver: resolver_metadata(row, 6)?,
             })
         })
         .map_err(|_| unavailable())?;
@@ -594,6 +619,7 @@ fn replace_packages(
     transaction: &Transaction<'_>,
     id: RepositoryId,
     packages: &[RepositoryPackageVersion],
+    resolver_ready: bool,
 ) -> Result<(), M3Error> {
     transaction
         .execute(
@@ -602,14 +628,50 @@ fn replace_packages(
         )
         .map_err(|_| unavailable())?;
     for package in packages {
-        transaction.execute(
-            "INSERT INTO repository_package_versions (
-                repository_id, package_id, version_text, display_name, description, yanked, unity_text
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![id.to_string(), package.package_id, package.version, package.display_name, package.description, i64::from(package.yanked), package.unity],
-        ).map_err(|_| unavailable())?;
+        let resolver = if resolver_ready {
+            package.resolver.as_ref()
+        } else {
+            None
+        };
+        transaction
+            .execute(
+                "INSERT INTO repository_package_versions (
+                repository_id, package_id, version_text, display_name, description, yanked,
+                unity_text, semantic_version, author_name, author_email, artifact_url,
+                zip_sha256, unity_release_text, dependencies_json, manifest_fingerprint,
+                legacy_metadata_present, resolver_ready
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
+                       coalesce(?14, '{}'), ?15, ?16, ?17)",
+                params![
+                    id.to_string(),
+                    package.package_id,
+                    package.version,
+                    package.display_name,
+                    package.description,
+                    i64::from(package.yanked),
+                    package.unity,
+                    resolver.map(|value| value.semantic_version.as_str()),
+                    resolver.map(|value| value.author_name.as_str()),
+                    resolver.map(|value| value.author_email.as_str()),
+                    resolver.map(|value| value.artifact_url.as_str()),
+                    resolver.map(|value| value.zip_sha256.as_str()),
+                    resolver.and_then(|value| value.unity_release.as_deref()),
+                    resolver.map(|value| value.dependencies_json.as_str()),
+                    resolver.map(|value| value.manifest_fingerprint.as_slice()),
+                    i64::from(resolver.is_some_and(|value| value.legacy_metadata_present)),
+                    i64::from(resolver.is_some()),
+                ],
+            )
+            .map_err(|_| unavailable())?;
     }
     Ok(())
+}
+
+struct RepositoryInsertOptions {
+    registered_at_ms: u64,
+    now_ms: u64,
+    priority: u64,
+    resolver_ready: bool,
 }
 
 fn insert_repository(
@@ -618,8 +680,7 @@ fn insert_repository(
     id: RepositoryId,
     observation: &RepositoryObservation,
     revision: Revision,
-    registered_at_ms: u64,
-    now_ms: u64,
+    options: RepositoryInsertOptions,
 ) -> Result<(), M3Error> {
     let (kind, locator) = source_parts(&observation.source);
     transaction
@@ -627,8 +688,8 @@ fn insert_repository(
             "INSERT INTO repositories (
             repository_id, owner_principal_id, source_kind, source_locator, source_identity_key,
             declared_id, name, declared_url, etag, last_modified, issues_json, revision,
-            registered_at_ms, refreshed_at_ms, updated_at_ms
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+            registered_at_ms, refreshed_at_ms, updated_at_ms, priority
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 id.to_string(),
                 owner.as_str(),
@@ -642,22 +703,31 @@ fn insert_repository(
                 observation.validators.last_modified,
                 json(&observation.issues)?,
                 integer(revision.get())?,
-                integer(registered_at_ms)?,
+                integer(options.registered_at_ms)?,
                 integer(observation.refreshed_at_ms)?,
-                integer(now_ms)?
+                integer(options.now_ms)?,
+                integer(options.priority)?
             ],
         )
         .map_err(|_| unavailable())?;
-    replace_packages(transaction, id, &observation.packages)
+    replace_packages(
+        transaction,
+        id,
+        &observation.packages,
+        options.resolver_ready,
+    )
 }
 
 pub(super) fn register_repository(
     connection: &mut Connection,
     owner: &PrincipalId,
-    observation: RepositoryObservation,
+    mut observation: RepositoryObservation,
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<SyncWrite<RepositoryRecord>, M3Error> {
+    for package in &mut observation.packages {
+        package.resolver = None;
+    }
     let fingerprint = repository_fingerprint(&observation)?;
     let transaction = begin(connection)?;
     if let Some(mut response) = existing_response::<SyncWrite<RepositoryRecord>>(
@@ -684,14 +754,25 @@ pub(super) fn register_repository(
         return Err(M3Error::new(M3ErrorCode::RepositoryAlreadyRegistered));
     }
     let id = RepositoryId::new();
+    let priority = transaction
+        .query_row(
+            "SELECT coalesce(max(priority), 0) + 1 FROM repositories WHERE owner_principal_id=?1",
+            [owner.as_str()],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|_| unavailable())?;
     insert_repository(
         &transaction,
         owner,
         id,
         &observation,
         Revision::INITIAL,
-        now_ms,
-        now_ms,
+        RepositoryInsertOptions {
+            registered_at_ms: now_ms,
+            now_ms,
+            priority: u64::try_from(priority).map_err(|_| internal())?,
+            resolver_ready: false,
+        },
     )?;
     let record = RepositoryRecord {
         repository_id: id,
@@ -790,7 +871,10 @@ pub(super) fn list_repository_packages(
     let _ = load_repository(connection, owner, id)?;
     let mut statement = connection
         .prepare(
-            "SELECT package_id, version_text, display_name, description, yanked, unity_text
+            "SELECT package_id, version_text, display_name, description, yanked, unity_text,
+                    semantic_version, author_name, author_email, artifact_url, zip_sha256,
+                    unity_release_text, dependencies_json, manifest_fingerprint,
+                    legacy_metadata_present, resolver_ready
          FROM repository_package_versions WHERE repository_id=?1 AND
          (?2 IS NULL OR package_id > ?2 OR (package_id = ?2 AND version_text > ?3))
          ORDER BY package_id ASC, version_text ASC LIMIT ?4",
@@ -814,6 +898,7 @@ pub(super) fn list_repository_packages(
                     description: row.get(3)?,
                     yanked: row.get::<_, i64>(4)? != 0,
                     unity: row.get(5)?,
+                    resolver: resolver_metadata(row, 6)?,
                 })
             },
         )
@@ -876,6 +961,13 @@ pub(super) fn refresh_repository(
     } else {
         current.revision
     };
+    let priority = transaction
+        .query_row(
+            "SELECT priority FROM repositories WHERE repository_id=?1",
+            [id.to_string()],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|_| unavailable())?;
     transaction
         .execute(
             "DELETE FROM repositories WHERE owner_principal_id=?1 AND repository_id=?2",
@@ -888,8 +980,12 @@ pub(super) fn refresh_repository(
         id,
         &observation,
         next,
-        current.registered_at_ms,
-        now_ms,
+        RepositoryInsertOptions {
+            registered_at_ms: current.registered_at_ms,
+            now_ms,
+            priority: u64::try_from(priority).map_err(|_| internal())?,
+            resolver_ready: true,
+        },
     )?;
     if changed {
         insert_event(

@@ -119,6 +119,8 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_PROJECTS_REGISTRY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_REPOSITORIES_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_REPOSITORIES_REGISTRY_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_PACKAGES_APPLY_V1.to_owned(),
             ],
         };
         self.call(METHOD_SYSTEM_HELLO, params).await
@@ -189,6 +191,54 @@ impl AlcomdClient {
             },
         )
         .await
+    }
+
+    pub async fn package_plan_install(
+        &mut self,
+        params: alcomd_protocol::PackagePlanInstallParams,
+    ) -> Result<alcomd_protocol::PackagePlan, ClientError> {
+        self.call(alcomd_protocol::METHOD_PACKAGES_PLAN_INSTALL, params)
+            .await
+    }
+
+    pub async fn package_plan_remove(
+        &mut self,
+        params: alcomd_protocol::PackagePlanRemoveParams,
+    ) -> Result<alcomd_protocol::PackagePlan, ClientError> {
+        self.call(alcomd_protocol::METHOD_PACKAGES_PLAN_REMOVE, params)
+            .await
+    }
+
+    pub async fn package_plan_upgrade(
+        &mut self,
+        params: alcomd_protocol::PackagePlanUpgradeParams,
+    ) -> Result<alcomd_protocol::PackagePlan, ClientError> {
+        self.call(alcomd_protocol::METHOD_PACKAGES_PLAN_UPGRADE, params)
+            .await
+    }
+
+    pub async fn package_plan_downgrade(
+        &mut self,
+        params: alcomd_protocol::PackagePlanDowngradeParams,
+    ) -> Result<alcomd_protocol::PackagePlan, ClientError> {
+        self.call(alcomd_protocol::METHOD_PACKAGES_PLAN_DOWNGRADE, params)
+            .await
+    }
+
+    pub async fn package_plan_resolve(
+        &mut self,
+        params: alcomd_protocol::PackagePlanResolveParams,
+    ) -> Result<alcomd_protocol::PackagePlan, ClientError> {
+        self.call(alcomd_protocol::METHOD_PACKAGES_PLAN_RESOLVE, params)
+            .await
+    }
+
+    pub async fn package_apply_plan(
+        &mut self,
+        params: alcomd_protocol::PackageApplyPlanParams,
+    ) -> Result<alcomd_protocol::PackageApplyPlanResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_PACKAGES_APPLY_PLAN, params)
+            .await
     }
 
     pub async fn project_inspect(

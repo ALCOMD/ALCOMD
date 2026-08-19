@@ -90,24 +90,24 @@ behavior = "独立实现公开 VPM 兼容语义，统一 Plan/Apply、冲突、�
 implementation = "alcomd-vpm"
 release_class = "release_blocker"
 status = "verified"
-implementation_status = "not_started"
-evidence = ["docs/baselines/alcomd3-v3-audit.md::包", "docs/baselines/vrc-get-audit.md::CLI 与核心 VPM"]
-coverage = ["GUI", "CLI", "MCP", "direct/transitive dependencies", "locked/unlocked"]
-tests = ["packages.vpm-format", "packages.version-range-differential", "packages.plan-apply"]
+implementation_status = "in_progress"
+evidence = ["docs/baselines/alcomd3-v3-audit.md::包", "docs/baselines/vrc-get-audit.md::CLI 与核心 VPM", "docs/adr/0017-vpm-package-transaction.md"]
+coverage = ["GUI", "CLI", "MCP", "direct/transitive dependencies", "locked/unlocked", "M4 requires SHA-256; hashless VPM remains incomplete", "legacy cleanup remains incomplete"]
+tests = ["packages.m4-contract", "packages.vpm-format", "packages.version-range-differential", "packages.plan-apply"]
 
 [[feature]]
 id = "packages.transaction-safety"
 title = "包事务、恢复与并发锁"
 source = ["vrc-get-frozen", "product-plan"]
 user_entry = ["all project mutations", "daemon restart recovery", "concurrent clients"]
-behavior = "项目级资源锁、持久 journal、双 manifest 原子提交与每阶段故障恢复，不继承无锁/部分提交。"
+behavior = "项目级资源锁、持久 journal、VPM manifest/包目录可恢复提交与阶段故障恢复，不继承无锁/部分提交。"
 implementation = "alcomd-vpm"
 release_class = "release_blocker"
 status = "verified"
-implementation_status = "not_started"
-evidence = ["docs/baselines/vrc-get-audit.md::事务与恢复风险"]
+implementation_status = "in_progress"
+evidence = ["docs/baselines/vrc-get-audit.md::事务与恢复风险", "docs/adr/0017-vpm-package-transaction.md", "specs/storage/state-v3.md"]
 coverage = ["extract", "rename", "manifest commits", "process kill", "same/different project concurrency"]
-tests = ["packages.transaction-faults", "packages.concurrency-locking"]
+tests = ["packages.m4-contract", "packages.transaction-faults", "packages.concurrency-locking"]
 
 [[feature]]
 id = "packages.security"
@@ -118,10 +118,10 @@ behavior = "严格校验包 ID、根内路径、声明哈希、下载配额、�
 implementation = "alcomd-vpm"
 release_class = "release_blocker"
 status = "verified"
-implementation_status = "not_started"
-evidence = ["docs/baselines/vrc-get-audit.md::安全负向基线"]
+implementation_status = "in_progress"
+evidence = ["docs/baselines/vrc-get-audit.md::安全负向基线", "docs/adr/0017-vpm-package-transaction.md"]
 coverage = ["ZipSlip", "zip bomb", "hash/cache", "symlink/junction", "legacy partial delete"]
-tests = ["packages.archive-security", "packages.integrity-cache", "packages.path-id-adversarial"]
+tests = ["packages.m4-contract", "packages.archive-security", "packages.integrity-cache", "packages.path-id-adversarial"]
 
 [[feature]]
 id = "repositories.management"

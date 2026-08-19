@@ -3,21 +3,22 @@ use std::time::Duration;
 
 use alcomd_application::{
     CancelOperationFingerprintV1, CheckClassification, CreateOperationOutcome, EventPage,
-    EventRecord, IdempotencyKey, OperationCursor, OperationId, OperationPage, OperationRecord,
-    OperationState, PrincipalId, Revision, StateCheckFingerprintV1, StateCheckResult, StoreError,
-    StoreErrorKind,
+    EventRecord, FilesystemPhase, IdempotencyKey, OperationCursor, OperationId, OperationPage,
+    OperationRecord, OperationState, PrincipalId, Revision, StateCheckFingerprintV1,
+    StateCheckResult, StoreError, StoreErrorKind,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use uuid::Uuid;
 
 use crate::{CURRENT_DATA_SCHEMA, StoreOpenError};
 
-const DATA_SCHEMA_VERSION: i64 = 2;
+const DATA_SCHEMA_VERSION: i64 = 3;
 const BUSY_TIMEOUT: Duration = Duration::from_millis(5_000);
 const CHECK_ROW_LIMIT: usize = 100;
 const CHECK_BYTE_LIMIT: usize = 65_536;
 const MIGRATION_V1: &str = include_str!("../migrations/0001_state.sql");
 const MIGRATION_V2: &str = include_str!("../migrations/0002_projects_repositories.sql");
+const MIGRATION_V3: &str = include_str!("../migrations/0003_package_transactions.sql");
 
 pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpenError> {
     let connection = Connection::open(path).map_err(|_| StoreOpenError::Unavailable)?;
@@ -65,6 +66,11 @@ pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpen
     if version <= 1 {
         connection
             .execute_batch(MIGRATION_V2)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+    }
+    if version <= 2 {
+        connection
+            .execute_batch(MIGRATION_V3)
             .map_err(|_| StoreOpenError::Unavailable)?;
     }
     let final_version: i64 = connection
@@ -483,6 +489,9 @@ pub(super) fn recover(
     let mut schedule = Vec::new();
     for (operation_id, state, kind) in candidates {
         let operation_id = OperationId::parse(&operation_id).map_err(|_| corrupt_state())?;
+        if kind == "packages.apply" {
+            continue;
+        }
         if kind != "state.check" || !journal_is_recoverable(connection, operation_id)? {
             fail_recovery(connection, operation_id, recovered_at_ms)?;
             continue;
@@ -626,7 +635,9 @@ pub(super) fn load_owned_operation(
         connection,
         "SELECT operation_id, kind, state, revision, owner_principal_id,
             cancel_requested, created_at_ms, updated_at_ms, started_at_ms,
-            completed_at_ms, result_json, error_code, diagnostic_id
+            completed_at_ms, result_json, error_code, diagnostic_id,
+            (SELECT phase FROM package_filesystem_journal j
+             WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1)
          FROM operations WHERE operation_id=?1 AND owner_principal_id=?2",
         params![operation_id.to_string(), owner.as_str()],
     )
@@ -640,7 +651,9 @@ fn load_operation(
         connection,
         "SELECT operation_id, kind, state, revision, owner_principal_id,
             cancel_requested, created_at_ms, updated_at_ms, started_at_ms,
-            completed_at_ms, result_json, error_code, diagnostic_id
+            completed_at_ms, result_json, error_code, diagnostic_id,
+            (SELECT phase FROM package_filesystem_journal j
+             WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1)
          FROM operations WHERE operation_id=?1",
         [operation_id.to_string()],
     )
@@ -683,6 +696,11 @@ fn map_operation_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<OperationRecor
         result_json: row.get(10)?,
         error_code: row.get(11)?,
         diagnostic_id: row.get(12)?,
+        progress_phase: row
+            .get::<_, Option<String>>(13)?
+            .map(|value| parse_filesystem_phase(&value))
+            .transpose()
+            .map_err(|()| rusqlite::Error::InvalidQuery)?,
     })
 }
 
@@ -706,7 +724,9 @@ pub(super) fn list_operations(
         .prepare(
             "SELECT operation_id, kind, state, revision, owner_principal_id,
                 cancel_requested, created_at_ms, updated_at_ms, started_at_ms,
-                completed_at_ms, result_json, error_code, diagnostic_id
+                completed_at_ms, result_json, error_code, diagnostic_id,
+                (SELECT phase FROM package_filesystem_journal j
+                 WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1)
              FROM operations
              WHERE owner_principal_id=?1
                AND (created_at_ms < ?2 OR (created_at_ms = ?2 AND operation_id < ?3))
@@ -729,6 +749,24 @@ pub(super) fn list_operations(
         operations,
         next_cursor,
     })
+}
+
+fn parse_filesystem_phase(value: &str) -> Result<FilesystemPhase, ()> {
+    use FilesystemPhase as Phase;
+    match value {
+        "accepted" => Ok(Phase::Accepted),
+        "archive_ready" => Ok(Phase::ArchiveReady),
+        "extracted" => Ok(Phase::Extracted),
+        "prepared" => Ok(Phase::Prepared),
+        "packages_replaced" => Ok(Phase::PackagesReplaced),
+        "vpm_manifest_committed" => Ok(Phase::VpmManifestCommitted),
+        "filesystem_committed" => Ok(Phase::FilesystemCommitted),
+        "state_committed" => Ok(Phase::StateCommitted),
+        "rolling_back" => Ok(Phase::RollingBack),
+        "rolled_back" => Ok(Phase::RolledBack),
+        "recovery_required" => Ok(Phase::RecoveryRequired),
+        _ => Err(()),
+    }
 }
 
 pub(super) fn list_events(

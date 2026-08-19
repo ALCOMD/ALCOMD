@@ -156,11 +156,19 @@ status = "implemented"
 description = "验证 local/anonymous HTTP(S) 共用 bounded parser、确定性 raw package identity、200/304 validator、last-known-good、Schema v2 registry、no-op revision 与真实 RPC；不包含 import/deep-link/credential/package download。"
 
 [[test]]
+id = "packages.m4-contract"
+stage = "M4"
+kind = "contract"
+platforms = ["all"]
+status = "implemented"
+description = "冻结 M4 RPC/permission、State Schema v3/migration、immutable Plan、source pin、filesystem phase、quota 与 public/synthetic Fixture，并以生产垂直切片验证合同；不代表完整 GUI/CLI/MCP 或 v3 parity 已完成。"
+
+[[test]]
 id = "packages.vpm-format"
 stage = "M4"
 kind = "compatibility"
 platforms = ["all"]
-status = "planned"
+status = "implemented"
 description = "验证 repository、package manifest、vpm-manifest、UPM manifest、版本范围和 Unity 兼容性。"
 
 [[test]]
@@ -168,24 +176,24 @@ id = "packages.plan-apply"
 stage = "M4"
 kind = "integration"
 platforms = ["all"]
-status = "planned"
-description = "覆盖安装、移除、升级、降级、resolve、冲突、revision 变化及 Plan 失效后的重新验证。"
+status = "implemented"
+description = "覆盖确定性 resolver、安装/移除真实 RPC、升级/降级动作约束、resolve、冲突、revision/source 变化及 Plan 失效后的重新验证。"
 
 [[test]]
 id = "packages.transaction-faults"
 stage = "M4"
 kind = "fault-injection"
 platforms = ["all"]
-status = "planned"
-description = "在下载、校验、解压、文件替换和 manifest 提交阶段注入失败，验证回滚与恢复日志。"
+status = "implemented"
+description = "覆盖回滚、append-only filesystem journal，并以真实子进程在 durable archive 阶段强制终止后重启恢复同一 Operation；未执行真实网络故障注入。"
 
 [[test]]
 id = "packages.archive-security"
 stage = "M4"
 kind = "security"
 platforms = ["all"]
-status = "planned"
-description = "拒绝路径穿越、绝对路径、符号链接逃逸、哈希不匹配和恶意 manifest。"
+status = "implemented"
+description = "拒绝路径穿越、绝对/平台特殊路径、链接、大小写/Unicode/文件目录碰撞、配额超限、哈希不匹配和恶意 manifest。"
 
 [[test]]
 id = "templates.v3-parity"
@@ -520,7 +528,7 @@ id = "packages.version-range-differential"
 stage = "M4"
 kind = "differential"
 platforms = ["all"]
-status = "planned"
+status = "implemented"
 description = "以公开 VPM/SemVer.NET Fixture 比较 exact、bare、caret、tilde、hyphen、OR、prerelease 与 build metadata。"
 
 [[test]]
@@ -528,15 +536,15 @@ id = "packages.integrity-cache"
 stage = "M4"
 kind = "security"
 platforms = ["all"]
-status = "planned"
-description = "覆盖 cache/sidecar 篡改、声明哈希缺失或畸形、离线、HTTP 中断、超时与下载尺寸上限。"
+status = "implemented"
+description = "覆盖内容寻址 cache 逐次重哈希、声明哈希缺失/畸形/错误、离线命中/损坏/缺失和下载 body 尺寸上限；按已批准范围不执行真实网络中断、凭据传播或攻击性网络测试。"
 
 [[test]]
 id = "packages.path-id-adversarial"
 stage = "M4"
 kind = "security"
 platforms = ["all"]
-status = "planned"
+status = "implemented"
 description = "恶意包 ID、repo key/manifest 失配、绝对路径、父目录、盘符、UNC 与分隔符不得写出 project/cache root。"
 
 [[test]]
@@ -544,8 +552,8 @@ id = "packages.concurrency-locking"
 stage = "M4"
 kind = "concurrency"
 platforms = ["all"]
-status = "planned"
-description = "覆盖同项目 install/install、install/remove、读写并发，不同项目并发以及 cache clear/download 竞态。"
+status = "implemented"
+description = "验证 ResourceLock 对同项目写入串行、不同项目可并行及同 digest cache 原子发布；完整 cache clear/download 与 repository refresh/apply 竞态留在后续管理功能。"
 
 [[test]]
 id = "mcp.request-result-meta"

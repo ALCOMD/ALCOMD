@@ -1,0 +1,23 @@
+{
+    "formatVersion": 1,
+    "mutations": [
+        {
+            "kind": "install",
+            "packageId": "com.example.base",
+            "fromVersion": null,
+            "toVersion": "1.2.3",
+            "source": {
+                "repositoryId": "00000000-0000-4000-8000-000000000301",
+                "repositoryRevision": 4,
+                "sourceIdentity": "remote:https://fixtures.invalid/repository.json",
+                "manifestFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+                "packageId": "com.example.base",
+                "version": "1.2.3",
+                "artifactUrl": "https://fixtures.invalid/packages/base-1.2.3.zip",
+                "archiveSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            }
+        }
+    ],
+    "dependencyEdges": [],
+    "vpmManifestSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+}

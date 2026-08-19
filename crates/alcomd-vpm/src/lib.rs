@@ -1,12 +1,39 @@
 //! Independent bounded read-only Unity/VPM parsers used by M3.
 
+mod archive;
+mod cache;
+mod engine;
+mod package;
+mod plan;
+mod range;
+mod resolver;
+
+pub use archive::{
+    ArchiveEntry, ArchiveError, ArchiveErrorCode, ArchivePreflight, extract_archive,
+    preflight_archive,
+};
+pub use cache::{CacheError, CacheErrorCode, PackageCache};
+pub use engine::PackageEngine;
+pub use package::{
+    PackageManifestError, PackageManifestErrorCode, RepositoryPackageContext, ResolverReadyPackage,
+    parse_resolver_ready_repository,
+};
+pub use plan::{
+    ProjectPackageSnapshot, build_remove_plan, build_resolution_plan, inspect_package_project,
+    materialize_vpm_manifest,
+};
+pub use resolver::{
+    PackageCandidate, PackageDependency, PackageDependencyEdge, PackageSource, Resolution,
+    ResolveError, ResolveRequest, ResolvedPackage, candidates_from_catalog, resolve_packages,
+};
+
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use alcomd_application::{
     DependencyIdentity, M3Error, M3ErrorCode, M3ReadAdapter, ManifestState, ProjectDiscoveryMode,
     ProjectObservation, ProjectType, ReadIssue, RepositoryObservation, RepositoryPackageVersion,
-    RepositoryReadOutcome, RepositorySource, RepositoryValidators,
+    RepositoryReadOutcome, RepositorySource, RepositoryValidators, ResolverPackageMetadata,
 };
 use reqwest::header::{CONTENT_LENGTH, ETAG, IF_MODIFIED_SINCE, IF_NONE_MATCH, LAST_MODIFIED};
 use reqwest::redirect::{Action, Attempt, Policy};
@@ -673,6 +700,7 @@ fn parse_repository(
                         .and_then(Value::as_bool)
                         .unwrap_or(false),
                     unity: optional_bounded_string(manifest, "unity", 1_024)?,
+                    resolver: None,
                 });
             }
         }
@@ -683,6 +711,46 @@ fn parse_repository(
             .cmp(right.package_id.as_bytes())
             .then_with(|| left.version.as_bytes().cmp(right.version.as_bytes()))
     });
+    let source_identity = match &source {
+        RepositorySource::Local { path } => format!("local:{path}"),
+        RepositorySource::Remote { url } => format!("remote:{url}"),
+    };
+    if let Ok(ready) = parse_resolver_ready_repository(
+        bytes,
+        &RepositoryPackageContext {
+            repository_id: "pending:repository".to_owned(),
+            repository_revision: 1,
+            priority: 1,
+            source_identity,
+        },
+    ) {
+        let ready = ready
+            .into_iter()
+            .map(|package| {
+                let key = (
+                    package.candidate.package_id.clone(),
+                    package.candidate.version.to_string(),
+                );
+                let metadata = ResolverPackageMetadata {
+                    semantic_version: package.candidate.version.to_string(),
+                    author_name: package.author_name,
+                    author_email: package.author_email,
+                    artifact_url: package.candidate.source.artifact_url,
+                    zip_sha256: digest_text(&package.candidate.source.archive_sha256),
+                    unity_release: package.unity_release,
+                    dependencies_json: package.dependencies_json,
+                    manifest_fingerprint: package.candidate.source.manifest_fingerprint.to_vec(),
+                    legacy_metadata_present: package.candidate.legacy_metadata_present,
+                };
+                (key, metadata)
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
+        for row in &mut rows {
+            row.resolver = ready
+                .get(&(row.package_id.clone(), row.version.clone()))
+                .cloned();
+        }
+    }
     issues.sort();
     Ok(RepositoryObservation {
         source,
@@ -695,6 +763,16 @@ fn parse_repository(
         validators,
         refreshed_at_ms,
     })
+}
+
+fn digest_text(digest: &[u8; 32]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut result = String::with_capacity(64);
+    for byte in digest {
+        result.push(char::from(HEX[(byte >> 4) as usize]));
+        result.push(char::from(HEX[(byte & 0x0f) as usize]));
+    }
+    result
 }
 
 fn optional_bounded_string(

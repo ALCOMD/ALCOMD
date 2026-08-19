@@ -1,6 +1,7 @@
 # M4：VPM Package Plan/Apply 与可恢复项目事务
 
-状态：草案，等待项目所有者审批；未冻结 M4 公共合同，未开始生产实现
+状态：M4 contract-first 合同、最小生产实现与完整本地验收已完成；尚待最终提交对应的三平台
+hosted CI 与项目所有者人工验收，尚未进入 M5
 
 ## 目标
 
@@ -53,9 +54,9 @@ package model 和 ChangeSet，不建立通用 workflow engine，也不一次实�
 3. install/remove/upgrade/downgrade/resolve 的 Plan 与不可变 ChangeSet；Apply 不得重新规划。
 4. package archive 的 bounded download、强完整性校验、content-addressed cache 与 offline 读取。
 5. hostile ZIP 验证、根内 staging extraction、数量/大小/膨胀限制和跨平台 path collision 检查。
-6. `Packages/`、`Packages/vpm-manifest.json` 及必要时 `Packages/manifest.json` 的可恢复项目事务。
+6. `Packages/` 与 `Packages/vpm-manifest.json` 的可恢复项目事务；`Packages/manifest.json` 保持不变。
 7. 在 M2 journal 上增加明确 filesystem transaction phase、补偿证据和 daemon restart recovery。
-8. Project/PackageCache/必要 Catalog resource lock、Operation progress/cancellation 与稳定错误。
+8. Project/PackageCache/Repository resource lock、Operation progress/cancellation 与稳定错误。
 9. RPC v1 的兼容新增 method/capability/DTO/Schema；仅提供证明切片所需的最小 CLI 驱动入口。
 10. synthetic/public compatibility Fixture、事务故障注入、并发与三平台 hosted 验收。
 
@@ -96,7 +97,8 @@ package model 和 ChangeSet，不建立通用 workflow engine，也不一次实�
 
 ## 允许修改范围
 
-M4 只有在合同、Schema、ADR、migration 和生产依赖分别获批后，才允许最小修改：
+contract-first 阶段只允许修改获批的合同、Schema、migration、Fixture 与合同测试。生产依赖获批且
+合同测试通过后，才允许最小修改：
 
 ```text
 apps/alcomd/                         # M4 RPC adapter、Operation worker 与启动恢复接线
@@ -176,7 +178,8 @@ xtask/                               # 仅依赖方向、unsafe 与 M4 契约硬
 ### Unity compatibility
 
 - 使用 M3 ProjectVersion normalized Unity version；缺失或 malformed 时 Plan fail closed，不猜测。
-- package `unity` range 的 major/minor/patch、prerelease 与缺省语义由 public Fixture 冻结。
+- package `unity` 固定表示最低 Unity major.minor，可选 `unityRelease` 补充 release；缺失表示无
+  Unity 限制，不把它解析为 SemVer range。
 - VRChat SDK/resolver 的历史 Unity 特例属于产品策略，不自动归入公开 VPM 格式；若 M4 必须兼容，
   应作为具名、版本化 policy 写入 ADR 和测试，而非藏在通用 comparator 中。
 - incompatible candidate 被过滤；如果所有 candidate 不兼容，返回独立结构化错误及安全的 package
@@ -186,8 +189,8 @@ xtask/                               # 仅依赖方向、unsafe 与 M4 契约硬
 
 - repository 注册顺序、显式用户优先级和 source identity 的关系必须在合同阶段冻结；不能依赖
   HashMap iteration、filesystem enumeration、响应到达顺序或 UUID 随机值。
-- 草案建议优先级为：请求显式 pin 的已注册 source，其次持久化 repository priority，最后
-  canonical source identity byte order。是否给 M3 Schema 增加 priority 是公共 Schema 决策点。
+- 优先级固定为：请求显式 pin 的已注册 source，其次持久化 repository priority（数值越小越优先）。
+  canonical source identity 只作身份与输出，不得为同一业务 priority 的冲突偷偷决胜。
 - 同 package/version 的不同 source 若 digest 不同，不得合并为同一 candidate；无显式 precedence
   时应返回 `package_source_ambiguous`，而不是任意选一个。
 - Plan 一旦生成必须保存精确 source identity、repository revision、manifest fingerprint、artifact
@@ -197,11 +200,11 @@ xtask/                               # 仅依赖方向、unsafe 与 M4 契约硬
 
 ### Plan
 
-- M4 候选方法为 `packages.planInstall`、`packages.planRemove`、`packages.planUpgrade`、
-  `packages.planDowngrade` 与 `packages.planResolve`；最终命名、是否收敛为一个带 action enum 的
-  method，以及 capability 名称必须经 Schema 审批。
-- Plan 是确定性计算结果，不写 Unity 项目。为支持 Apply/重启/授权复验，获批后以不可变 durable
-  record 保存，返回 `planId`、项目 revision、catalog/source fingerprints、expiry 与 ChangeSet。
+- M4 方法固定为 `packages.planInstall`、`packages.planRemove`、`packages.planUpgrade`、
+  `packages.planDowngrade` 与 `packages.planResolve`。
+- Plan 是确定性计算结果，不写 Unity 项目。为支持 Apply/重启/授权复验，以不可变 durable record
+  保存，返回 `planId`、项目 revision、source fingerprints 与 ChangeSet；状态只有 unapplied/applied，
+  不含 expiry、TTL 或自动清理。
 - ChangeSet 至少包含：安装/替换/移除 package、版本/source/hash、direct dependency mutation、
   locked package mutation、manifest field mutation、冲突/unsupported metadata 和预期最终摘要。
 - reinstall、legacy cleanup、local user package 不在首个切片；不能通过 install action 偷渡。
@@ -210,9 +213,9 @@ xtask/                               # 仅依赖方向、unsafe 与 M4 契约硬
 
 ### Apply
 
-- Apply 候选方法 `packages.applyPlan` 必须携带 `planId`、project `expectedRevision` 和永久
+- Apply 方法 `packages.applyPlan` 必须携带 `planId`、project `expectedRevision` 和永久
   `idempotencyKey`，成功接受后返回同一个 durable `OperationId`。
-- Apply 在任何项目写入前重新验证 Principal/permission、Plan owner/scope、Plan 未使用/未过期、
+- Apply 在任何项目写入前重新验证 Principal/permission、Plan owner/scope、Plan 未使用、
   project identity/revision、repository/source revision、manifest fingerprint、URL 与 digest。
 - 任一前提变化返回 `plan_stale` 或更具体的稳定 reason，不得在 Apply 内重新 resolve、替换 source、
   升降版本或产生新 ChangeSet。客户端必须显式重新 Plan。
@@ -224,8 +227,8 @@ xtask/                               # 仅依赖方向、unsafe 与 M4 契约硬
 ## Package download 与 cache
 
 - 复用 M3 受限 `reqwest` client 的 anonymous/no-proxy/no-cookie/no-credential 基线；package URL
-  只允许无 userinfo 的 HTTP/HTTPS。HTTPS -> HTTP redirect 拒绝，redirect 次数、跨 origin 规则、
-  connect/total timeout 与 body 上限必须在 M4 合同中重新冻结为 package payload 值。
+  只允许无 userinfo 的 HTTP/HTTPS。HTTPS -> HTTP redirect 拒绝，最多 5 次 redirect，connect
+  timeout 10 秒，单次下载总 timeout 10 分钟。
 - remote package 必须声明格式正确的强 digest；首个切片建议只接受 SHA-256 64 hex。缺失、畸形、
   不支持算法与 hash mismatch 都 fail closed，不静默退化为“下载后自算即可”。
 - 读取 `Content-Length` 只能提前拒绝，不能替代 streamed byte counter。达到上限、超时、中断或
@@ -238,8 +241,9 @@ xtask/                               # 仅依赖方向、unsafe 与 M4 契约硬
   可移除 ALCOMD 自有坏对象后重新下载，offline 返回 `package_cache_corrupt`/`offline_cache_miss`。
 - cache index/metadata 只能是可重建辅助信息，不取代 archive digest；cache clear 与全量管理留给
   后续完整 CLI，但并发/恢复测试要覆盖对象被清理或替换的竞态。
-- archive 最大下载字节数、cache 总量/清理策略和 partial retention 是合同审批点；不能为方便测试
-  设置无上限，也不在 M4 预建通用 LRU 服务。
+- compressed archive/cache object 最大 1 GiB，cache 总量硬上限 16 GiB；超限返回
+  `package_cache_quota_exceeded`。M4 不自动 LRU，也不预建通用 cache 管理服务。orphan partial 只能
+  在 recovery journal 证明不再拥有后清理。
 
 ## Archive 安全与 extraction staging
 
@@ -250,9 +254,9 @@ xtask/                               # 仅依赖方向、unsafe 与 M4 契约硬
 - 在真正写 entry 前完成全 archive 目录清单预检：duplicate、file-vs-directory conflict、Unicode
   normalization 风险和平台 case-insensitive collision 都返回稳定错误。Windows 还需覆盖 reserved
   names、尾随点/空格和大小写折叠。
-- 明确限制 compressed archive bytes、entry 数、单 entry uncompressed bytes、总 uncompressed
-  bytes、目录深度、路径长度与 expansion ratio；精确值在合同审批时冻结，并在流式 extraction 中
-  再次计数，不能只信 central directory。
+- quota 固定为 compressed 1 GiB、65,536 entries、单 entry uncompressed 1 GiB、总 uncompressed
+  4 GiB、目录深度 64、normalized UTF-8 path 1,024 bytes、expansion ratio 1,000:1；流式 extraction
+  再次计数，不能只信 central directory。仅支持 Stored/Deflate，拒绝 encryption 和其他 compression。
 - extraction 只能写入本次 Operation 独占 staging；create-new 防覆盖。CRC/EOF/size/hash 任一失败
   清理或保留为 recovery-owned staging，但绝不 publish 到 `Packages/`。
 - 完成 extraction 后校验根 package layout、`package.json` identity/version 与 Plan 一致；archive
@@ -265,14 +269,15 @@ xtask/                               # 仅依赖方向、unsafe 与 M4 契约硬
 - package directory 只允许位于已验证 project root 的 `Packages/<validated-package-id>`。
 - `Packages/vpm-manifest.json` 是首个切片的权威 VPM direct/locked mutation 输入；解析和写回必须
   preserve 不相关字段，并使用冻结的 canonical/minimal-diff 策略。
-- 是否必须同步修改 `Packages/manifest.json` 由公开 VPM/Unity Fixture 冻结。若该 operation 不需要，
-  文件必须 byte-for-byte 不变；若需要，必须加入同一个 ChangeSet/journal，不能作为 best effort。
+- `Packages/manifest.json` 在 M4 必须 byte-for-byte 不变。若后续公开 Fixture 证明必须修改，停止并
+  提交独立人工审批，不得作为 best effort 偷渡。
 - M4 不删除 legacy assets、`.meta`、任意 GUID 路径或未列入 ChangeSet 的 package directory。
 
 ### Staging、commit 与 rollback
 
-- project staging 必须位于与目标 `Packages/` 相同 filesystem/volume 的已验证项目内临时区域，保证
-  rename 语义可用；具体目录名、所有权、symlink/reparse 拒绝和 cleanup 由 ADR 冻结。
+- project staging 固定为已验证 project root 内同 filesystem/volume 的
+  `Library/ALCOMD/transactions/<OperationId>/`，保证 rename 语义可用；逐组件校验所有权、类型与
+  symlink/reparse，不得逃逸 root，证据未收敛前不得 cleanup。
 - 在首次破坏性 rename 前，所有 archive 已下载、校验、预检、解压；新 manifests 已完整生成到
   temp file，ChangeSet 与现状再次匹配，journal 已持久化并 fsync。
 - 旧 package directory 先原子 rename 到 transaction backup；新 directory 从 staging 原子 rename
@@ -280,8 +285,8 @@ xtask/                               # 仅依赖方向、unsafe 与 M4 契约硬
 - manifest temp 必须 flush + fsync 后 atomic replace；每次 replace 后同步必要父目录 metadata。
   Windows/macOS/Linux 的 replace-existing 与 directory fsync 差异须由平台测试验证，不能只凭 API
   名称宣称原子。
-- 双 manifest 不具备单一 filesystem 原子性。若两者都需改，固定 commit 顺序、每份 old/new digest、
-  已提交 marker 与反向补偿；任意时点恢复都能判断继续提交还是恢复两份旧 manifest。
+- M4 只替换 `vpm-manifest.json`；`Packages/manifest.json` 不参与事务且必须 byte-for-byte 不变。
+  package tree 与 VPM manifest 的提交仍必须以 old/new digest、marker 与 journal 支持确定性补偿。
 - 文件树验证通过后才在短 SQLite transaction 中提交 Project revision、Operation/Event、journal
   final state 与 durable idempotency result。DB commit 前不得向客户端报告 succeeded。
 - 正常错误先尝试恢复完整旧状态；rollback 本身失败时 Operation 进入明确的 recovering/interrupted
@@ -297,9 +302,10 @@ M4 合同阶段必须冻结 Schema v3 和 filesystem journal：
 - 不在 DB、Event、日志或普通错误保存完整私密路径、raw manifest、credential 或 archive 内容。
 - project-local staging/backup 保存完成恢复所需的文件实体；state.db 保存权威阶段与关联摘要。两者
   都必须在进入下一 destructive phase 前 durable。
-- 最小 phase 为：`accepted`、`archive_ready`、`extracted`、`prepared`、`packages_replaced`、
-  `manifests_committing`、`filesystem_committed`、`state_committed`，以及显式 rollback/recovery phase。
-  最终名称和转换表由 Schema/ADR 冻结，不能复用任意字符串。
+- phase 固定为：`accepted`、`archive_ready`、`extracted`、`prepared`、`packages_replaced`、
+  `vpm_manifest_committed`、`filesystem_committed`、`state_committed`、`rolling_back`、`rolled_back`、
+  `recovery_required`。每个 destructive phase 都先 durable intent、再 filesystem mutation 与 fsync/
+  evidence、最后 durable completed，不能复用任意字符串。
 - daemon ready 前扫描非终态 package Operation，重新验证 project identity、staging/backup 类型与
   digest，取得同一 Resource Lock 后从 journal 继续或回滚；未知 kind/phase、缺失证据或不一致一律
   fail closed 并返回 diagnostic ID。
@@ -322,7 +328,8 @@ M4 合同阶段必须冻结 Schema v3 和 filesystem journal：
 - Project lock 从 Apply 最终重验起覆盖 filesystem commit、recovery 与 SQLite finalization；同项目
   install/install、install/remove 和 recovery/write 串行，不同 ProjectId 可并行。
 - 若单阶段确实需要多个锁，先去重并使用 `ResourceKey::canonical_bytes` 一次性按序获取；合同测试
-  固定 Repository/Catalog、PackageCache、Project、Operation 的 canonical ordering。不得先持有较后
+  固定 Repository、PackageCache、Project、Operation 的 canonical ordering。M4 不增加全局 Catalog
+  锁。不得先持有较后
   key 再等待较前 key。
 - SQLite transaction 内不等待网络、解压、fsync、Resource Lock、cancel 或其他 Operation。
 - repository refresh 与 Apply 的并发通过 revision/fingerprint 产生 `plan_stale`，不能让 Apply 读到
@@ -344,9 +351,9 @@ M4 合同阶段必须冻结 Schema v3 和 filesystem journal：
 
 ### 权限、revision 与幂等
 
-- Plan 至少需要 `projects.read + packages.read + repositories.read` 及目标资源 scope；Apply 需要
-  `packages.manage` 与目标 Project scope，并再次校验 Plan owner。是否让 Plan 也要求
-  `packages.manage` 是人工审批点。
+- Plan 需要 `projects.read + packages.read + repositories.read` 及目标资源 scope；Apply 还需要
+  `packages.manage` 与目标 Project write scope，并再次校验 Plan owner。Plan 的内部持久化不要求
+  `packages.manage`。
 - `packages.read/manage` 已存在于权限名称基线，但 M4 必须精确定义其 project/source scope；不能
   把 `builtin:local-owner` 当作未来外部客户端 credential 方案。
 - Apply 的 expectedRevision 同时约束 project registry aggregate 与外部 project snapshot；外部文件
@@ -356,8 +363,7 @@ M4 合同阶段必须冻结 Schema v3 和 filesystem journal：
 
 ### RPC v1 兼容增加
 
-- 候选 capability 为 `packages.plan.v1` 与 `packages.apply.v1`；最终 method/capability/DTO/error Schema
-  经人工审批后，作为 RPC major 1 的兼容新增。
+- capability 固定为 `packages.plan.v1` 与 `packages.apply.v1`，作为 RPC major 1 的兼容新增。
 - 旧客户端继续忽略未知 capability/可选字段。M4 不删除或改变 M1-M3 字段和方法语义。
 - Plan/Apply public DTO 必须受 4 MiB frame、集合数量、字符串长度和 ChangeSet 项数上限约束；大型
   catalog/diagnostic 不塞进普通响应。
@@ -367,7 +373,7 @@ M4 合同阶段必须冻结 Schema v3 和 filesystem journal：
   `package_integrity_mismatch`、`package_download_too_large`、`package_cache_corrupt`、
   `offline_cache_miss`、`package_archive_invalid`、`package_archive_limit_exceeded`、
   `package_path_invalid`、`package_path_collision`、`plan_not_found`、`plan_stale`、
-  `plan_expired`、`plan_already_applied`、`project_transaction_recovery_required`；语义重叠项可在合同
+  `plan_too_large`、`plan_already_applied`、`project_transaction_recovery_required`；语义重叠项可在合同
   审批中合并，但不得退化为任意字符串。
 - 未知错误继续是 `internal_error + diagnosticId`。普通 error.data 只含安全枚举、资源 opaque ID、
   expected/actual revision 等，不含 raw archive/manifest、SQL、OS debug、完整路径或 credential。
@@ -408,19 +414,50 @@ M4 合同阶段必须冻结 Schema v3 和 filesystem journal：
 
 ## 生产依赖审批
 
-本草案不批准任何新 production crate。contract-first 阶段必须先评估现有依赖与标准库，再为每个
-确有需要的候选提交：crate 名称、精确版本、features/default-features、许可证、维护状态、
-Rust 1.97.1/MSRV、直接用途、替代方案、安全记录、binary/compile 成本与完整 Cargo.lock diff。
+项目所有者已批准以下三个 `alcomd-vpm` 直接 production dependency；配置由 metadata gate 固定：
 
-至少需要分别决策：
+| crate | 精确配置 | 许可证记录 | MSRV | M4 唯一用途 |
+| --- | --- | --- | --- | --- |
+| `zip 8.6.0` | defaults off；仅 `deflate-flate2-zlib-rs` | `MIT` | Rust 1.88 | ZIP metadata/preflight、Stored/Deflate 与逐 entry bounded extraction |
+| `sha2 0.11.0` | defaults off | `MIT OR Apache-2.0` | Rust 1.85 | SHA-256 digest、download/cache verification 与获批 fingerprint |
+| `unicode-normalization 0.1.25` | defaults off；仅 `std` | `(MIT OR Apache-2.0) AND Unicode-3.0` | Rust 1.36 | Unicode path normalization 与 collision detection |
 
-1. **SemVer/range**：标准 `semver` 是否足以表达公开 VPM/SemVer.NET range；若不足，只选择一个
-   维护良好的 range parser，不同时引入多个互相转换的 version model。
-2. **ZIP/archive**：候选库必须支持流式 bounded read、entry metadata、CRC/error、禁用未需压缩
-   算法和跨平台 path 检查；不能直接调用 convenience `extract` 绕过本计划安全策略。
-3. **hash**：只引入实际使用的 SHA-256 实现和最小 feature；不得因未来签名需求提前加入 crypto
-   framework。
-4. **temp/atomic file**：优先使用现有 platform adapter 与 std/Tokio；只有确实提供安全 create-new、
+`unicode-normalization` 的第三方记录必须保留上述包含 Unicode data 条款的完整表达，不能只抄 crate
+manifest 中的代码许可证。三个 crate 的上游实现可以包含第三方内部 unsafe；这不扩大 ALCOMD 自有
+unsafe allowlist。`zip` 不得调用 convenience extract 绕过 path/link/collision/quota gate，`sha2`
+不得扩展到其他算法/签名框架，normalization 不得演变成通用文本层。
+
+实际 Workspace resolver 只新增批准的 9 个 package：三个直接 crate，以及 `zlib-rs 0.6.7`、
+`typed-path 0.12.3`、`block-buffer 0.12.1`、`crypto-common 0.2.2`、`digest 0.11.3`、
+`hybrid-array 0.4.14`。active feature graph 证明 `zip` 仅走 `deflate-flate2-zlib-rs -> flate2/zlib-rs`，
+`unicode-normalization` 仅启用 `std`，`sha2` 无默认 feature；没有额外 production package。
+
+### Range crate 筛选结论
+
+已按冻结 vectors 做到合理候选上限，没有单一成熟 crate 完整匹配 VPM/SemVer.NET 合同：
+
+| 候选 | 许可证 / MSRV / 状态 | differential mismatch | 隔离锁文件与实现边界 |
+| --- | --- | --- | --- |
+| `nodejs-semver 5.0.0`，defaults off | 已完成先前审批材料 | 1：bare `1.2.3` 被当 exact，冻结期望是 minimum | 已拒绝；不 patch/fork，不进入 manifest/lock |
+| `semver 1.0.28`，defaults off + `std` | `MIT OR Apache-2.0`；Rust 1.68；维护中的 Cargo 语义库 | 8：空 loose、两个 trailing loose、space-separated comparator、hyphen、OR、显式 prerelease comparator、`includePrerelease` | isolated lock 仅该 crate；Workspace 已传递锁定同版，因此直接采用不会新增 package；无 native/build script，上游内部有 unsafe |
+| `node-semver 2.2.0`，defaults off | `Apache-2.0`；Rust 1.70；当前 crates.io 版本、公开维护仓库 | 3：bare minimum、空 loose、`includePrerelease` | isolated lock 共 19 个 package；与当前 Workspace lock 只读比对会新增 7 个 package：`node-semver`、`bytecount`、`miette`、`miette-derive`、`minimal-lexical`、`nom 7.1.3`、`unicode-width 0.1.14`；无 native/build script，crate 源码未发现 unsafe；未写入生产 Cargo files |
+
+`semver` 只实现 Cargo 风格并要求 compound comparator 使用逗号；`node-semver`/`nodejs-semver` 的 npm
+bare version 是 exact。`versions 7.0.0` 在初筛即因只提供单一 `Requirement` operator，不能表达 compound/
+hyphen/OR，未升级为 differential candidate。继续筛选同类 crate 不再具有合理收益。
+
+项目所有者随后批准方案 A：`semver 1.0.28` 是唯一 Version model，只用于 Version 解析、prerelease/
+build 结构与 `Version::cmp_precedence`；`alcomd-vpm` 的私有最小 AST/parser 只负责把冻结的 VPM grammar
+转换成 conjunction/OR predicates。生产代码不使用 `semver::VersionReq` 或 `semver::Comparator`，也没有
+第二套 Version/order/build model。上述 mismatch 表因此是对“直接复用候选 range matcher”的淘汰证据，
+不是对 `semver::Version` 的否决。
+
+剩余依赖边界：
+
+1. **SemVer/range**：三个成熟 crate 的现成 range matcher 均未通过冻结 vectors；已采用获批的
+   `semver 1.0.28` Version + 私有最小 VPM range parser 方案，不补丁/fork 上游，也不维护第二个
+   Version model。
+2. **temp/atomic file**：优先使用现有 platform adapter 与 std/Tokio；只有确实提供安全 create-new、
    persist/replace 语义且三平台验证后才考虑 crate，不预建通用文件事务库。
 
 禁止提前采用完整 VPM framework、通用 package manager/resolver、ORM、HTTP framework 或 workflow
@@ -434,7 +471,8 @@ feature，不为 package 下载顺手启用 HTTP/3、system-proxy、cookie、com
    recovery、lock/cancel 与 unsupported metadata。
 2. 冻结 RPC Schema/error/capability/permission 和 State Schema v3/migration；先通过 JSON/SQL snapshot
    与破坏性兼容测试。
-3. 提交生产依赖精确方案与 Cargo.lock diff，取得人工批准；不得先写依赖实现再补审批。
+3. ZIP/SHA-256/Unicode normalization 与 `semver 1.0.28` 精确依赖均已批准并锁定；私有 range
+   parser 只实现冻结 vectors，并以永久回归测试约束。
 4. 用 public/synthetic Fixture 实现纯 manifest/version/range/resolver，先证明 ChangeSet 确定性。
 5. 实现 Plan persistence/stale revalidation，不接项目写入；覆盖 owner/revision/idempotency。
 6. 实现 bounded download/content cache 与 hostile archive staging，所有安全负向测试通过后才接项目。
@@ -450,8 +488,8 @@ feature，不为 package 下载顺手启用 HTTP/3、system-proxy、cookie、com
 - **Apply 漂移**：任何隐式 re-resolve 或 source fallback 都破坏审批和幂等合同。
 - **下载完整性**：缺失/畸形 hash、partial publish 与 offline 坏 cache 不能被当作可用 package。
 - **archive 逃逸/耗尽**：根外写、链接、case collision 或无配额 extraction 是 M4 blocker。
-- **双 manifest 半提交**：两份文件与 package tree 不是单原子操作，必须由 journal/补偿和 kill test
-  证明恢复；只测试普通错误返回不够。
+- **package tree/manifest 半提交**：package directory 与 VPM manifest 不是单原子操作，必须由
+  journal/补偿和 kill test 证明恢复；只测试普通错误返回不够。
 - **DB 与 filesystem 分裂**：M2 DB journal 不覆盖外部 rename/fsync，未知状态必须 fail closed。
 - **取消误语义**：进入 destructive phase 后不能立即丢弃 worker；必须安全完成或回滚。
 - **并发锁放大**：全局 cache/catalog 长锁会使不同项目不能并行；锁粒度和顺序必须有测试。
@@ -463,21 +501,14 @@ feature，不为 package 下载顺手启用 HTTP/3、system-proxy、cookie、com
 
 ## 需要人工审批的决策点
 
-开始任何 M4 生产实现前，项目所有者至少需要批准：
+M4 业务合同、Schema v3、RPC/permission、quota、文件事务和恢复决定已于 2026-08-19 获批；
+`semver 1.0.28`、ZIP、SHA-256 与 Unicode normalization 精确依赖也已获批。当前没有未决的 M4
+合同或依赖审批点。
 
-1. package manifest strict/loose 规则、PackageId、SemVer/range、Unity compatibility、yanked policy。
-2. repository precedence、同版本 digest conflict、source fingerprint 与是否增加 repository priority。
-3. Plan durability/expiry、ChangeSet DTO、stale reason、Apply method/capability 与 no-replan 合同。
-4. package URL/redirect/timeout/size、强 hash 算法、cache key/layout、offline/corruption 语义。
-5. ZIP encoding/path/link/collision 与 entry/size/depth/ratio 的精确 quotas。
-6. project staging 路径、Packages/manifest mutation、fsync/replace、双 manifest 顺序与 rollback。
-7. State Schema v3、filesystem journal phase、recovery/unknown evidence/cancellation 转换表。
-8. ResourceKey 增加、lock scope/ordering，以及同/不同项目并发合同。
-9. RPC DTO/稳定错误/Operation progress、`packages.read/manage` scope 和 builtin local-owner 授权。
-10. 每个新 production crate 的精确版本/features/license/MSRV/Cargo.lock diff。
-11. 若需要新的平台 API 或 unsafe，其精确文件/API/资源生命周期与 xtask 门禁。
+若后续三平台实现需要新的 platform API 或第四个 unsafe 文件，提交精确 API、文件、资源生命周期与
+xtask 门禁。
 
-同一决定获批后，只要实现严格遵循冻结合同，不需要重复审批；任何偏离、新 production crate、扩大
+只要实现严格遵循冻结合同，不需要重复审批；任何偏离、新 production crate、扩大
 unsafe/平台 API、公共 RPC/DB/permission 变化或进入 M5 都必须再次停止。
 
 ## 与 M2、M3、M11、M12 的关系
@@ -512,3 +543,47 @@ unsafe/平台 API、公共 RPC/DB/permission 变化或进入 M5 都必须再次�
 - 2026-08-19：创建本 M4 ExecPlan 草案，只规划 package Plan/Apply、download/cache、archive、项目
   filesystem transaction 与 recovery 垂直切片；未修改 RPC/State Schema、permission、migration、
   Cargo 依赖或生产代码，等待项目所有者审批。
+- 2026-08-19：项目所有者批准 M4 总体方向与 contract-first 决定。开始冻结 ADR 0017、RPC/permission、
+  State Schema v3、migration、public/synthetic Fixture 与合同测试；生产依赖和生产实现仍未批准，合同
+  测试完成后必须停在精确依赖/Cargo.lock 审批点。
+- 2026-08-19：contract-first 本地验收通过：Rust format、Workspace Clippy/test、`cargo xtask check`、
+  metadata、冻结基线与 diff gate 均成功；Schema v3 测试覆盖 v1->v2->v3、v2->v3、rollback、既有
+  row/foreign key 保留、deterministic priority、resolver-ready gate、immutable Plan 与 append-only
+  filesystem journal。生产 store 仍只启用 Schema v2。
+- 2026-08-19：隔离完整 Workspace resolver probe 表明 `nodejs-semver 5.0.0` 唯一不一致为 VPM bare
+  version：range `1.2.3` 对 version `1.4.0` 的冻结期望为 true，crate 实际为 false。因此按批准条件
+  拒绝该候选，不加入生产 manifest/Cargo.lock，也不在其上增加语义补丁。
+- 2026-08-19：不含已拒绝 range crate 的候选组合为 `zip 8.6.0`（default off，仅
+  `deflate-flate2-zlib-rs`）、`sha2 0.11.0`（default off）与 `unicode-normalization 0.1.25`
+  （default off，仅 std）。真实 resolver diff 新增 9 个 locked package：上述三项以及
+  `zlib-rs 0.6.7`、`typed-path 0.12.3`、`block-buffer 0.12.1`、`crypto-common 0.2.2`、
+  `digest 0.11.3`、`hybrid-array 0.4.14`；93 insertions/7 dependency-reference rewrites，不删除 package。
+  主工作树三份生产 manifest 与 `Cargo.lock` 均未改变。等待项目所有者决定 range 替代候选并审批
+  ZIP/hash/Unicode 依赖；不得继续 resolver/download/archive 生产实现。
+- 2026-08-19：项目所有者批准 `zip 8.6.0`、`sha2 0.11.0`、`unicode-normalization 0.1.25` 及上述
+  6 个传递锁定项。精确配置已写入 Workspace/`alcomd-vpm`，Cargo.lock 实际只新增批准的 9 个 package；
+  metadata gate 与 active feature graph 已核验最小 feature 边界，Unicode 许可证记录保留完整
+  `(MIT OR Apache-2.0) AND Unicode-3.0`。
+- 2026-08-19：追加筛选 `semver 1.0.28` 与 `node-semver 2.2.0`。完整冻结向量分别有 8 项与 3 项
+  mismatch；结合已拒绝的 `nodejs-semver 5.0.0`，合理单 crate 候选已耗尽。未将两者写入生产依赖，
+  也未开始 resolver/download/archive/transaction 实现；停在“成熟 Version parser + 最小自有 range
+  parser”窄决策点等待人工批准。
+- 2026-08-19：项目所有者批准方案 A。`semver 1.0.28` 作为唯一 Version model 接入
+  `alcomd-vpm`；私有最小 range AST/parser 使用 `Version::cmp_precedence` 并通过冻结 exact、bare、
+  comparator、wildcard、caret、tilde、hyphen、OR、prerelease、build、intersection 与 loose/invalid
+  vectors，不使用 Cargo `VersionReq`/`Comparator`，不引入第二套版本模型。
+- 2026-08-19：完成 M4 最小生产垂直切片：resolver、不可变 durable Plan、Apply stale/source
+  revalidation、SHA-256 content cache、bounded hostile ZIP extraction、install/remove 项目文件事务、
+  filesystem journal、Operation progress 与 daemon restart recovery；`Packages/manifest.json` 保持
+  byte-for-byte 不变。
+- 2026-08-19：真实离线 RPC 测试通过 install/remove round trip；真实子进程在 durable
+  `archive_ready` 后被强制终止，重启后从同一 Operation 恢复并得到确定结果。测试发现原 Schema
+  对 `(operation_id, phase, state)` 的唯一约束会阻止新 attempt 合法重复阶段，已移除该错误约束；
+  journal 继续以 `(operation_id, step)` 为主键并禁止 update/delete。
+- 2026-08-19：本地 `cargo fmt --all -- --check`、Workspace Clippy（`-D warnings`）和
+  `cargo test --workspace --locked` 均通过。按项目所有者收缩的审计边界，没有执行攻击性网络安全、
+  凭据传播或真实网络故障注入；相关未覆盖项不得描述为已动态验证。
+- 2026-08-19：完整本地 `scripts/check.ps1` 与 `scripts/test.ps1` 通过，覆盖 Rust/Clippy/全 Workspace
+  tests、真实 daemon/CLI 自动启动、独立 Discord 后端、TypeScript、Vite build、metadata 与三份锁文件
+  无漂移；`npm run gui:build -- --no-bundle` 也成功生成 Windows release GUI。第一次沙箱内 Vite 运行
+  因父路径读取权限被拒，随后在真实 Windows 用户环境原样重跑成功，未修改或放宽构建配置。
