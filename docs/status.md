@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M3 已正式完成；M4 补充 filesystem kill/restart 与测试元数据验收候选已完成，等待最终 Hosted CI 与人工验收`
+`M4 已正式完成并通过人工验收；尚未进入 M5`
 
 ## 已完成
 
@@ -150,6 +150,12 @@
   门禁均通过。首轮 CI 暴露的 macOS directory fsync `EINVAL` 平台差异和 Windows 测试临时路径
   时间戳碰撞已在最终代码候选中修复；Ubuntu 前两次重跑停滞于系统软件源，第三次未复现且完整通过，
   未修改 baseline、CI 或安全门禁以规避外部故障。
+- M4 最终补充验收提交 `20a86d674b480981d269088cf0615ffdcd9b8e70` 对应 GitHub Actions run
+  `32289522274`：Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 全部成功；Ubuntu 实测最高
+  `GLIBC_2.34`，macOS 所有预期产物均为 arm64 / minos 11.0。真实 filesystem kill/restart matrix
+  覆盖 `archive_ready`、`prepared`、旧包 backup rename、新包 publish、VPM manifest atomic replace
+  与 `filesystem_committed`，均复用原 OperationId、Plan 和幂等键恢复且不重新 Plan。metadata
+  test-reference gate 已永久加入。项目所有者已确认最终人工验收通过，M4 正式完成。
 
 ## 后续里程碑尚未完成
 
@@ -201,10 +207,9 @@
 
 ## 下一停止点
 
-M0、M1、M2 与 M3 均已完成并通过最终人工验收。M4 原代码候选已取得完整本地和三平台 hosted
-证据；补充 filesystem kill/restart 与测试元数据候选也已完成本地验收，并以补丁最终提交自身的
-Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 hosted CI 作为最终技术证据。M4 仍等待项目
-所有者人工验收；验收前不得把 M4 标记为正式完成或进入 M5。
+M0、M1、M2、M3 与 M4 均已完成并通过最终人工验收；尚未进入 M5。M4 完整 VPM 产品功能以外的
+未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。进入 M5 生产实现
+前必须先完成 ExecPlan 草案并取得项目所有者人工审批。
 `projects.v3-parity` 与真实 credential
 revocation 仍未完成；Windows 10/11 完整客户端
 安装、启动、WebView2、更新与卸载验证继续 deferred 到 M12，不得把 Windows Server hosted 结果

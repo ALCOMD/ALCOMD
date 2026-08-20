@@ -1,7 +1,7 @@
 # M4：VPM Package Plan/Apply 与可恢复项目事务
 
-状态：M4 contract-first 合同、最小生产实现和补充 filesystem kill/restart/测试元数据验收候选已完成；
-最终补丁仍以其自身三平台 hosted CI 和项目所有者人工验收为准，尚未进入 M5
+状态：M4 contract-first、最小生产实现、本地验收、补充 filesystem kill/restart 验收、三平台
+Hosted CI 与项目所有者人工验收全部完成；尚未进入 M5
 
 ## 目标
 
@@ -614,3 +614,9 @@ unsafe/平台 API、公共 RPC/DB/permission 变化或进入 M5 都必须再次�
   真实 evidence，validator 现同时拒绝空值、重复值和不存在的 feature test reference，并要求所有
   `implemented` M4 test 给出存在的 evidence path。M4 继续等待最终补丁自身三平台 hosted CI 与
   项目所有者人工验收，尚未进入 M5。
+- 2026-08-20：项目所有者确认最终提交 `20a86d674b480981d269088cf0615ffdcd9b8e70` 和 GitHub
+  Actions run `32289522274` 通过最终人工验收。Windows Server 2025、Ubuntu 22.04 与 macOS 15
+  arm64 全部成功；Ubuntu 实测最高 `GLIBC_2.34`，macOS 所有预期产物均为 arm64 / minos 11.0。
+  补充真实 filesystem kill/restart matrix 覆盖 `archive_ready`、`prepared`、旧包 backup rename、
+  新包 publish、VPM manifest atomic replace 与 `filesystem_committed`，均复用原 OperationId、Plan
+  和幂等键恢复。metadata test-reference gate 已永久加入。M4 正式完成，尚未进入 M5。
