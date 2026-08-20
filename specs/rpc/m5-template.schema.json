@@ -1,0 +1,289 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m5-template.json",
+    "title": "ALCOMD RPC v1 M5 Template contract",
+    "x-alcomd-publication": "contract-only-until-production-capability-exists",
+    "x-alcomd-method-permissions": {
+        "templates.list": ["templates.read"],
+        "templates.get": ["templates.read"],
+        "templates.inspectBundle": ["templates.read"],
+        "templates.planImport": ["templates.manage"],
+        "templates.applyImport": ["templates.manage"],
+        "templates.planDerive": ["templates.manage", "projects.read"],
+        "templates.applyDerive": ["templates.manage", "projects.read"],
+        "templates.export": ["templates.read"],
+        "templates.setFavorite": ["templates.manage"],
+        "templates.remove": ["templates.manage"],
+        "templates.planCreateProject": [
+            "templates.read", "projects.create", "packages.read", "repositories.read"
+        ],
+        "templates.applyCreateProject": [
+            "templates.read", "projects.create", "packages.read", "repositories.read",
+            "packages.manage"
+        ]
+    },
+    "$defs": {
+        "methodName": {
+            "enum": [
+                "templates.list", "templates.get", "templates.inspectBundle",
+                "templates.planImport", "templates.applyImport", "templates.planDerive",
+                "templates.applyDerive", "templates.export", "templates.setFavorite",
+                "templates.remove", "templates.planCreateProject", "templates.applyCreateProject"
+            ]
+        },
+        "capability": {
+            "enum": ["templates.read.v1", "templates.manage.v1", "templates.create-project.v1"]
+        },
+        "uuid": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "revision": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "expectedOptionalRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9223372036854775807,
+            "description": "0 requires absence; a positive value requires an exact existing revision."
+        },
+        "idempotencyKey": {
+            "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[!-~]+$"
+        },
+        "absolutePath": {"type": "string", "minLength": 1, "maxLength": 32768},
+        "targetLeaf": {
+            "type": "string", "minLength": 1, "maxLength": 255,
+            "pattern": "^[^/\\\\\u0000-\u001f]+$"
+        },
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "templateSourceKind": {"enum": ["builtin", "user"]},
+        "templateProvenance": {"enum": ["authored", "imported", "derived"]},
+        "templateRecord": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+                "templateId", "sourceKind", "templateVersion", "displayName", "favorite",
+                "bundleSha256", "manifestFingerprint", "revision", "createdAtMs", "updatedAtMs"
+            ],
+            "properties": {
+                "templateId": {"$ref": "#/$defs/uuid"},
+                "sourceKind": {"$ref": "#/$defs/templateSourceKind"},
+                "templateVersion": {"type": "string", "minLength": 1, "maxLength": 128},
+                "displayName": {"type": "string", "minLength": 1, "maxLength": 128},
+                "description": {"type": "string", "maxLength": 4096},
+                "provenance": {"$ref": "#/$defs/templateProvenance"},
+                "favorite": {"type": "boolean"},
+                "bundleSha256": {"$ref": "#/$defs/sha256"},
+                "manifestFingerprint": {"$ref": "#/$defs/sha256"},
+                "revision": {"$ref": "#/$defs/revision"},
+                "createdAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+                "updatedAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807}
+            }
+        },
+        "bundleInspection": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+                "formatVersion", "templateId", "templateVersion", "bundleSha256",
+                "manifestFingerprint", "payloadTreeSha256", "entryCount", "totalBytes"
+            ],
+            "properties": {
+                "formatVersion": {"const": 1},
+                "templateId": {"$ref": "#/$defs/uuid"},
+                "templateVersion": {"type": "string", "minLength": 1, "maxLength": 128},
+                "bundleSha256": {"$ref": "#/$defs/sha256"},
+                "manifestFingerprint": {"$ref": "#/$defs/sha256"},
+                "payloadTreeSha256": {"$ref": "#/$defs/sha256"},
+                "entryCount": {"type": "integer", "minimum": 1, "maximum": 100000},
+                "totalBytes": {"type": "integer", "minimum": 1, "maximum": 8589934592}
+            }
+        },
+        "immutablePlanBase": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["planId", "action", "state", "planFingerprint"],
+            "properties": {
+                "planId": {"$ref": "#/$defs/uuid"},
+                "action": {"enum": ["import", "override", "derive", "create_project"]},
+                "state": {"enum": ["unapplied", "applied"]},
+                "planFingerprint": {"$ref": "#/$defs/sha256"}
+            }
+        },
+        "importPlan": {
+            "allOf": [
+                {"$ref": "#/$defs/immutablePlanBase"},
+                {
+                    "type": "object",
+                    "required": [
+                        "templateId", "expectedRevision", "sourceFilesystemIdentity",
+                        "oldBundleSha256", "newBundleSha256", "manifestFingerprint"
+                    ],
+                    "properties": {
+                        "templateId": {"$ref": "#/$defs/uuid"},
+                        "expectedRevision": {"$ref": "#/$defs/expectedOptionalRevision"},
+                        "sourceFilesystemIdentity": {"type": "string", "minLength": 1, "maxLength": 256},
+                        "oldBundleSha256": {"oneOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+                        "newBundleSha256": {"$ref": "#/$defs/sha256"},
+                        "manifestFingerprint": {"$ref": "#/$defs/sha256"}
+                    }
+                }
+            ]
+        },
+        "derivePlan": {
+            "allOf": [
+                {"$ref": "#/$defs/immutablePlanBase"},
+                {
+                    "type": "object",
+                    "required": [
+                        "templateId", "sourceProjectId", "sourceProjectRevision",
+                        "sourceProjectFingerprint", "includePolicyVersion"
+                    ],
+                    "properties": {
+                        "templateId": {"$ref": "#/$defs/uuid"},
+                        "sourceProjectId": {"$ref": "#/$defs/uuid"},
+                        "sourceProjectRevision": {"$ref": "#/$defs/revision"},
+                        "sourceProjectFingerprint": {"$ref": "#/$defs/sha256"},
+                        "includePolicyVersion": {"const": 1}
+                    }
+                }
+            ]
+        },
+        "createProjectPlan": {
+            "allOf": [
+                {"$ref": "#/$defs/immutablePlanBase"},
+                {
+                    "type": "object",
+                    "required": [
+                        "templateId", "templateRevision", "bundleSha256", "manifestFingerprint",
+                        "payloadTreeSha256", "parentFilesystemIdentity", "targetLeaf",
+                        "targetMustBeAbsent", "packageChangeSetFingerprint",
+                        "resourceDigests", "projectSummaryFingerprint"
+                    ],
+                    "properties": {
+                        "templateId": {"$ref": "#/$defs/uuid"},
+                        "templateRevision": {"$ref": "#/$defs/revision"},
+                        "bundleSha256": {"$ref": "#/$defs/sha256"},
+                        "manifestFingerprint": {"$ref": "#/$defs/sha256"},
+                        "payloadTreeSha256": {"$ref": "#/$defs/sha256"},
+                        "parentFilesystemIdentity": {"type": "string", "minLength": 1, "maxLength": 256},
+                        "targetLeaf": {"$ref": "#/$defs/targetLeaf"},
+                        "targetMustBeAbsent": {"const": true},
+                        "packageChangeSetFingerprint": {"$ref": "#/$defs/sha256"},
+                        "resourceDigests": {
+                            "type": "array", "maxItems": 4096, "uniqueItems": true,
+                            "items": {"$ref": "#/$defs/sha256"}
+                        },
+                        "projectSummaryFingerprint": {"$ref": "#/$defs/sha256"}
+                    }
+                }
+            ]
+        },
+        "listParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "cursor": {"type": "string", "minLength": 1, "maxLength": 1024},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 1000}
+            }
+        },
+        "getParams": {
+            "type": "object", "additionalProperties": false, "required": ["templateId"],
+            "properties": {"templateId": {"$ref": "#/$defs/uuid"}}
+        },
+        "inspectBundleParams": {
+            "type": "object", "additionalProperties": false, "required": ["bundlePath"],
+            "properties": {"bundlePath": {"$ref": "#/$defs/absolutePath"}}
+        },
+        "planImportParams": {
+            "type": "object", "additionalProperties": false,
+            "required": ["bundlePath", "override", "expectedRevision"],
+            "properties": {
+                "bundlePath": {"$ref": "#/$defs/absolutePath"},
+                "override": {"type": "boolean"},
+                "expectedRevision": {"$ref": "#/$defs/expectedOptionalRevision"}
+            }
+        },
+        "applyPlanParams": {
+            "type": "object", "additionalProperties": false,
+            "required": ["planId", "idempotencyKey"],
+            "properties": {
+                "planId": {"$ref": "#/$defs/uuid"},
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
+            }
+        },
+        "operationResult": {
+            "type": "object", "additionalProperties": true,
+            "required": ["operationId", "replayed"],
+            "properties": {
+                "operationId": {"$ref": "#/$defs/uuid"},
+                "replayed": {"type": "boolean"}
+            }
+        },
+        "planDeriveParams": {
+            "type": "object", "additionalProperties": false,
+            "required": [
+                "projectId", "expectedProjectRevision", "templateId", "templateVersion",
+                "displayName"
+            ],
+            "properties": {
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "expectedProjectRevision": {"$ref": "#/$defs/revision"},
+                "templateId": {"$ref": "#/$defs/uuid"},
+                "templateVersion": {"type": "string", "minLength": 1, "maxLength": 128},
+                "displayName": {"type": "string", "minLength": 1, "maxLength": 128},
+                "description": {"type": "string", "maxLength": 4096}
+            }
+        },
+        "exportParams": {
+            "type": "object", "additionalProperties": false,
+            "required": ["templateId", "expectedRevision", "targetPath", "idempotencyKey"],
+            "properties": {
+                "templateId": {"$ref": "#/$defs/uuid"},
+                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "targetPath": {"$ref": "#/$defs/absolutePath"},
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
+            }
+        },
+        "setFavoriteParams": {
+            "type": "object", "additionalProperties": false,
+            "required": ["templateId", "favorite", "expectedRevision", "idempotencyKey"],
+            "properties": {
+                "templateId": {"$ref": "#/$defs/uuid"},
+                "favorite": {"type": "boolean"},
+                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
+            }
+        },
+        "removeParams": {
+            "type": "object", "additionalProperties": false,
+            "required": ["templateId", "expectedRevision", "idempotencyKey"],
+            "properties": {
+                "templateId": {"$ref": "#/$defs/uuid"},
+                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
+            }
+        },
+        "planCreateProjectParams": {
+            "type": "object", "additionalProperties": false,
+            "required": ["templateId", "expectedTemplateRevision", "targetParent", "targetLeaf"],
+            "properties": {
+                "templateId": {"$ref": "#/$defs/uuid"},
+                "expectedTemplateRevision": {"$ref": "#/$defs/revision"},
+                "targetParent": {"$ref": "#/$defs/absolutePath"},
+                "targetLeaf": {"$ref": "#/$defs/targetLeaf"}
+            }
+        },
+        "createProjectProgress": {
+            "type": "object", "additionalProperties": false, "required": ["phase"],
+            "properties": {
+                "phase": {
+                    "enum": [
+                        "accepted", "prepared", "staging_complete", "target_publish_intent",
+                        "target_published", "project_registry_commit_intent", "state_committed",
+                        "rolling_back", "rolled_back", "recovery_required"
+                    ]
+                }
+            }
+        }
+    },
+    "type": "object",
+    "additionalProperties": true
+}

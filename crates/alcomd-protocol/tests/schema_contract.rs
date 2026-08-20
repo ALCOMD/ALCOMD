@@ -9,7 +9,7 @@ use alcomd_protocol::{
     RequestEnvelope, StateCheckParams, SuccessResponse, SystemStatusResult,
 };
 
-const SCHEMAS: [(&str, &str); 22] = [
+const SCHEMAS: [(&str, &str); 23] = [
     (
         "request-envelope",
         include_str!("../../../specs/rpc/request-envelope.schema.json"),
@@ -97,6 +97,10 @@ const SCHEMAS: [(&str, &str); 22] = [
     (
         "m5-unity",
         include_str!("../../../specs/rpc/m5-unity.schema.json"),
+    ),
+    (
+        "m5-template",
+        include_str!("../../../specs/rpc/m5-template.schema.json"),
     ),
 ];
 
@@ -425,6 +429,48 @@ fn m5_cli_and_unity_errors_are_stable_machine_codes() {
         "unity_project_selector_forbidden",
         "unity_launch_failed",
         "unity_launch_not_found",
+    ] {
+        assert!(codes.iter().any(|candidate| candidate == code), "{code}");
+    }
+}
+
+#[test]
+fn m5_template_contract_is_valid_but_not_claimed_as_implemented() {
+    let contract = schema("m5-template");
+    assert_eq!(
+        contract["x-alcomd-publication"],
+        "contract-only-until-production-capability-exists"
+    );
+    assert_eq!(
+        contract["$defs"]["capability"]["enum"],
+        json!([
+            "templates.read.v1",
+            "templates.manage.v1",
+            "templates.create-project.v1"
+        ])
+    );
+    assert_eq!(
+        contract["$defs"]["createProjectPlan"]["allOf"][1]["properties"]["targetMustBeAbsent"]["const"],
+        true
+    );
+    let errors = schema("rpc-error");
+    let codes = errors["properties"]["code"]["enum"]
+        .as_array()
+        .expect("error code enum");
+    for code in [
+        "template_not_found",
+        "template_bundle_invalid",
+        "template_manifest_invalid",
+        "template_digest_mismatch",
+        "template_payload_unavailable",
+        "template_conflict",
+        "template_builtin_immutable",
+        "template_dependency_unsatisfied",
+        "template_resource_invalid",
+        "template_target_exists",
+        "template_target_invalid",
+        "template_plan_stale",
+        "project_changed_during_template_create",
     ] {
         assert!(codes.iter().any(|candidate| candidate == code), "{code}");
     }

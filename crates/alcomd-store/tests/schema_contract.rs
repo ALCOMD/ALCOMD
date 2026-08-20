@@ -828,11 +828,41 @@ fn schema_v4_freezes_unity_identity_argv_and_immutable_backup_metadata_shape() {
                 manifest_json, payload_locator, payload_sha256, favorite, revision,
                 created_at_ms, updated_at_ms
              ) VALUES ('00000000-0000-4000-8000-000000000512', 'builtin:local-owner',
-                       'builtin', '1', '{}', 'objects/template.fixture', zeroblob(32),
+                       'builtin', '1', '{\"formatVersion\":1}',
+                       'builtin:00000000-0000-4000-8000-000000000512@1', zeroblob(32),
                        0, 1, 1, 1)",
             [],
         )
         .expect("insert structural template contract");
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO templates (
+                    template_id, owner_principal_id, source_kind, template_version,
+                    manifest_json, payload_locator, payload_sha256, favorite, revision,
+                    created_at_ms, updated_at_ms
+                 ) VALUES ('00000000-0000-4000-8000-000000000514', 'builtin:local-owner',
+                           'imported', '1', '{\"formatVersion\":1}',
+                           'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                           zeroblob(32), 0, 1, 1, 1)",
+                [],
+            )
+            .is_err(),
+        "imported provenance must not expand the builtin/user ownership enum"
+    );
+    connection
+        .execute(
+            "INSERT INTO templates (
+                template_id, owner_principal_id, source_kind, template_version,
+                manifest_json, payload_locator, payload_sha256, favorite, revision,
+                created_at_ms, updated_at_ms
+             ) VALUES ('00000000-0000-4000-8000-000000000515', 'builtin:local-owner',
+                       'user', 'fixture-1', '{\"formatVersion\":1,\"displayName\":\"Blank\"}',
+                       'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                       zeroblob(32), 0, 1, 1, 1)",
+            [],
+        )
+        .expect("same display name with a different TemplateId is structurally allowed");
     connection
         .execute(
             "INSERT INTO backups (

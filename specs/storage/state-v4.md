@@ -39,9 +39,10 @@ v4 预留且只预留已批准的最小 registry 字段。Template 的 archive/q
 合同仍须在 M5 Template slice 冻结；Backup exclusion/quota/create/restore RPC 合同仍须在对应 slice
 冻结。表存在不等于这些业务已实现。
 
-- `templates`：stable TemplateId、owner、builtin/user source、versioned bounded manifest、payload
-  locator/SHA-256、favorite、revision 与 timestamp。builtin immutability 和 base cycle/depth 是应用层
-  不变量。
+- `templates`：stable TemplateId、owner、`builtin | user` source、versioned bounded manifest、payload
+  locator/SHA-256、favorite、revision 与 timestamp。`imported | derived | authored` 只属于 manifest
+  provenance，不扩展 source_kind。M5 derived template 是 self-contained，因此没有 base cycle/depth 或
+  inheritance graph。
 - `backups`：BackupId、允许成为历史引用的 optional source ProjectId、archive locator、file identity、
   SHA-256、size、format version、createdAt、compression mode 与 exclude-VPM flag。它是 immutable
   artifact metadata，不强制建立 aggregate/Event state machine。
@@ -53,3 +54,18 @@ v4 预留且只预留已批准的最小 registry 字段。Template 的 archive/q
   sequence、永久 idempotency 与全部 foreign key。
 - v4 不改变既有 table/column/trigger 语义，也不改变 M1-M4 method。
 - future schema 继续由 daemon fail closed；`CURRENT_DATA_SCHEMA` 固定为 4。
+
+## Template Bundle v1 兼容断言
+
+Template contract 适配既有表，不修改 migration：
+
+- `manifest_json` 保存 `template-bundle-v1.schema.json` 的 bounded normalized object，仍受 1 MiB DB 上限；
+- user/imported/derived object locator 固定 `sha256:<64-lower-hex>`；builtin locator 固定
+  `builtin:<lowercase-uuid>@<template-version>`；两者均为内部 opaque locator；
+- `payload_sha256` 是完整 `.alcomdtemplate` object bytes 的 32-byte SHA-256；RPC 不返回 locator/path；
+- TemplateId 是 identity，displayName/file name 不参与唯一约束；同名不同 ID 可以共存；
+- builtin immutable、user conflict/no-op/override、locator grammar、manifest bounds 和 bundle digest
+  revalidation 是 application 不变量，不能通过增加关系表或修改 0004 规避。
+
+现有字段足以表达 M5 Template v1 必需不变量，因此本 contract-first slice 不增加 Schema v5、不改
+`0004_local_workflows.sql`，也不宣称 Template registry 已有生产 use case。

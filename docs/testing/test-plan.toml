@@ -209,12 +209,54 @@ status = "blocked"
 description = "使用脱敏 Fixture 对照 v3 模板创建、导入、导出、复制和依赖/附加资源行为。"
 
 [[test]]
-id = "templates.m5-workflows"
+id = "templates.m5-bundle"
+stage = "M5"
+kind = "contract-security"
+platforms = ["all"]
+status = "implemented"
+description = "冻结 native .alcomdtemplate v1 manifest/layout、独立 quota、UTF-8/NFC/path/link/collision/resource/digest 拒绝向量；这是 synthetic contract evidence，不是 production extractor 或 v3 parity。"
+evidence = ["specs/templates/template-bundle-v1.schema.json", "specs/templates/template-bundle-v1.md", "crates/alcomd-testing/fixtures/m5/template-contract-vectors.json", "crates/alcomd-testing/tests/m5_contract.rs"]
+
+[[test]]
+id = "templates.m5-registry"
+stage = "M5"
+kind = "contract-persistence"
+platforms = ["all"]
+status = "implemented"
+description = "冻结 builtin/user source、native inventory/许可证、opaque locator、TemplateId conflict 与 Schema v4 migration compatibility；不表示 registry production use case 已实现。"
+evidence = ["specs/templates/builtin-inventory-v1.toml", "specs/storage/state-v4.md", "crates/alcomd-store/tests/schema_contract.rs", "crates/alcomd-testing/tests/m5_contract.rs"]
+
+[[test]]
+id = "templates.m5-import-export"
 stage = "M5"
 kind = "integration"
 platforms = ["all"]
 status = "planned"
-description = "覆盖 versioned template registry、导入/导出/派生、冲突、依赖与通过既有文件事务创建全新项目；不替代真实 v3 differential parity。"
+description = "覆盖 read-only inspect、import no-op/conflict/override Plan/Apply、object digest revalidation、create-new export、crash/idempotency 和语义确定性。"
+
+[[test]]
+id = "templates.m5-derive"
+stage = "M5"
+kind = "integration"
+platforms = ["all"]
+status = "planned"
+description = "覆盖 writer gate、include/exclude、symlink/special-file、前后 project fingerprint、self-contained derived bundle 与 project_changed_during_template_create。"
+
+[[test]]
+id = "templates.m5-create-project"
+stage = "M5"
+kind = "integration"
+platforms = ["all"]
+status = "planned"
+description = "覆盖 deterministic Plan、resolver-ready/hash-required dependency、parent identity + target leaf lock、target race、M4 ChangeSet 复用、revision 与幂等重放。"
+
+[[test]]
+id = "templates.m5-transaction-faults"
+stage = "M5"
+kind = "fault-injection"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "planned"
+description = "真实 daemon create-project kill/restart matrix 覆盖 prepared、staging complete、publish 前后、registry commit 前和 state committed 后，复用原 Operation/Plan/idempotency。"
 
 [[test]]
 id = "backups.v3-parity"

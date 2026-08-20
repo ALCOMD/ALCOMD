@@ -1,6 +1,6 @@
 # M5：完整 CLI 合同与本地项目工作流
 
-状态：进行中；CLI + Unity contract-first 与 Unity 最小生产切片的本地验收已完成；停在内部停止点 B，尚未进入 Template slice
+状态：进行中；Unity 最小生产切片已独立提交；Template contract-first 已冻结并等待生产实现审批
 
 ## 目标
 
@@ -248,20 +248,24 @@ operation、现有 project/repository、M4 package shortcut、Unity 与 completi
 
 ## Templates
 
-- v4 template bundle 使用 versioned bounded manifest、content digest 和同一 bounded ZIP/path profile；
-  v3 import 格式在 M11 Fixture 前保持 blocked，不用 synthetic 格式冒充兼容。
-- registry source 为 built-in/imported/derived；保存 opaque TemplateId、版本、display fields、favorite、
-  bundle digest 与 normalized dependency/additional-resource descriptors。raw archive 不进入 state.db。
-- built-in template 的清单、内容来源和许可证必须单独人工确认；测试 synthetic template 不能自动变成
-  产品内建资产。
-- import 先完整 preflight/digest，再原子 publish object 和 registry。冲突必须显式 return
-  `template_conflict`；override 是 Plan/Apply，不按文件名静默覆盖。
-- export 从已验证 object 生成确定性 bundle；不得输出 credential、绝对项目路径或内部 DB metadata。
-- derive/copy 对项目做 bounded include/exclude；symlink/reparse/special file fail closed。Library/Temp/log/
-  credential 等默认排除策略须写入 manifest contract。
-- create-project 在首次写入前解析 template dependency 和额外资源，生成 durable Plan。Apply 使用
-  ProjectCreate(target identity) lock、同卷 staging、single journal 和已有 archive/transaction adapter；
-  任何 package dependency 无法满足时不创建半项目。
+- v4 原生格式固定为 `ALCOMD Template Bundle v1` / `.alcomdtemplate`，不是 v3 `.alcomtemplate`。
+  v3 v1/v2 import 与 differential parity 在 M11 前 blocked；M5 不引入 tar/gzip parser。
+- ZIP 根只允许 `template.json`、`payload/` 与 manifest 声明的 `resources/`；Stored/Deflate、UTF-8/NFC、
+  collision/link/special-file/path 与 streaming 检查复用 M4 engine。独立 template quota 固定为 2 GiB
+  compressed、100,000 entries、单 entry 2 GiB、total 8 GiB、depth 64、path 1,024 UTF-8 bytes、
+  ratio 1,000:1，见 `specs/templates/template-bundle-v1.md`。
+- registry `source_kind` 继续只有 `builtin | user`。imported/derived/authored 是 bounded provenance；user
+  object locator 是 `sha256:<digest>`，builtin locator 是 `builtin:<id>@<version>`，RPC 不暴露实际路径。
+- v1 builtin inventory 固定 Blank、VRChat Avatars、VRChat Worlds 三个 stable TemplateId。scaffold 为
+  ALCOMD 独立创作、AGPL-3.0-only，不嵌入 v3/vrc-get/Unity/VRChat SDK bytes；SDK 仅声明 VPM dependency。
+- import 先 inspect/preflight/digest/conflict，再 immutable Plan/Apply。user 同 ID 同 digest no-op，不同
+  digest conflict；builtin immutable。export create-new 且从已验证 object 复制，格式只承诺 semantic
+  deterministic；remove 只解除 user registry binding，不在 M5 做 object GC。
+- derive 是 self-contained 新 TemplateId/bundle，不建立 inheritance DAG。遍历 policy 逐项冻结在 bundle
+  规范；writer confirmed hard reject，suspected/unknown advisory，但前后 fingerprint 变化必定失败。
+- create-project Plan 固定 template/source/package/resource/parent identity 与 target leaf，且 target 必须
+  不存在。Resource Key 是 `ProjectCreate(parent_identity,target_leaf)`；Apply 返回 OperationId，复用 M4
+  archive/package/filesystem journal，不 nested package Operation、不重新 resolve、不创建半项目。
 
 ## Backups
 
@@ -337,7 +341,9 @@ implemented，动态/生产测试继续 planned：
   subprocess/golden/EOF 覆盖后。
 - `m5.cli-unity-contract` 绑定 CLI/Unity Schema、Schema v4 migration 与权限合同。
 - `unity.m5-registry-launch` 与 `unity.m5-writer-gate` 使用 synthetic layout/fake process provider。
-- `templates.m5-workflows`、`backups.m5-create`、`backups.m5-restore` 保持 planned，等各自 slice。
+- `templates.m5-bundle` 与 `templates.m5-registry` 只在 Schema/quota/security/migration snapshot 有真实
+  evidence 后标 implemented；import/export/derive/create-project/fault engineering tests 在生产实现前保持
+  planned。`backups.m5-create`、`backups.m5-restore` 继续 planned。
 
 四项 v3 differential test 保持 blocked 到 M11。公开 Unity 文档、synthetic Hub files 和 fake Editor
 只能证明工程合同；Hosted CI 不要求安装真实 Unity，未取得真实 evidence 时不得宣称 differential
@@ -365,8 +371,9 @@ workflow engine、第二 ZIP stack 或第二 process supervisor。
 
 - **A（已通过）**：冻结 Slice 0 CLI 与 Slice 1 Unity 的 ADR、Schema、RPC、错误、权限、State v4 结构
   migration 和合同测试；`sysinfo 0.39.6` 精确依赖已经批准。
-- **B（当前）**：CLI 共用 runtime 和 Unity registry/writer gate/launch 的生产垂直切片通过后停止；审批 Template
-  bundle、内建库存/许可证及 create-project transaction 合同。
+- **B（当前）**：Unity production slice 已作为提交
+  `8b63c6923b178a6ebb12bd5964412b2db7268e04` 保存。Template bundle、库存/许可证、权限、RPC 与
+  create-project transaction contract 已获批并冻结；当前再次停止，等待 Template production slice 审批。
 - **C**：Template 垂直切片通过后停止；审批 Backup create archive profile、exclude-VPM 精确语义。
 - **D**：Backup create 垂直切片通过后停止；审批全新目标 Backup restore Plan/Apply 与 recovery 合同。
 - **E**：Backup restore 与完整 CLI surface 收敛后，运行 M5 全量本地/Hosted 验收并停止在 M6 前。
@@ -426,7 +433,8 @@ workflow engine、第二 ZIP stack 或第二 process supervisor。
 ADR 冻结。process discovery production dependency 已按精确配置批准；后续 slice 仍分别审批：
 
 1. `M5-process-discovery-evaluation.md` 中 `sysinfo = 0.39.6` 已关闭；任何 feature 扩大仍须重新审批。
-2. v4 template bundle Schema、内建模板库存/来源/许可证和 conflict/override 语义。
+2. v4 template contract-first 已批准；production registry/import/export/derive/create-project 仍需本停止点
+   的独立批准。若 staging project 无法复用 M4 transaction primitive，还需窄 internal adapter 审批。
 3. backup archive profile 与 `exclude VPM packages` 精确语义。
 4. M5 仅限全新目标的 restore Plan/Apply/recovery 合同；覆盖已有目标不在 M5。
 5. 此后每个新 production crate、windows-sys/rustix feature、unsafe 文件或窗口/进程平台 API。
@@ -491,3 +499,7 @@ Unity process/writer gate、Tauri no-bundle、lockfile/unsafe/dependency feature
   TypeScript/Vite、Tauri release `--no-bundle`、Schema v4 migration、真实 daemon RPC、fake-provider 四态、
   Windows 短生命周期子进程、冻结基线、metadata 与 diff 门禁均成功。停在内部停止点 B；Linux/macOS
   真实子进程结果须由后续 hosted CI 取得，不得据 Windows 本机结果宣称三平台已通过。
+- 2026-08-21：Unity production slice 以独立提交 `8b63c6923b178a6ebb12bd5964412b2db7268e04`
+  保存。随后按项目所有者批准冻结 ADR 0020、`.alcomdtemplate` Bundle/manifest/quota、三个 native
+  builtin inventory/AGPL provenance、Template RPC/permission/error、planned CLI、Schema v4 compatibility、
+  synthetic Fixture 与 contract/security/migration snapshot；未开始任何 Template production adapter。

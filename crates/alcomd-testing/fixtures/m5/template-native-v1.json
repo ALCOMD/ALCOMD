@@ -1,0 +1,28 @@
+{
+    "formatVersion": 1,
+    "templateId": "8adbe775-fb69-4f62-bad9-a7e3a8f58001",
+    "templateVersion": "fixture-1",
+    "displayName": "Synthetic Native Template",
+    "description": "Synthetic ALCOMD v4 engineering fixture; not v3 parity evidence.",
+    "unity": {
+        "major": 2022,
+        "minor": 3
+    },
+    "dependencies": [
+        {
+            "packageId": "com.example.fixture",
+            "versionRange": ">=1.0.0",
+            "includePrerelease": false
+        }
+    ],
+    "additionalResources": [],
+    "payload": {
+        "root": "payload/",
+        "treeSha256": "827604d760a376315abfa5a8f2fdbd633c145e991b6d8cb97c49d756f325d1a4",
+        "entryCount": 3,
+        "totalBytes": 126
+    },
+    "provenance": {
+        "createdBy": "authored"
+    }
+}

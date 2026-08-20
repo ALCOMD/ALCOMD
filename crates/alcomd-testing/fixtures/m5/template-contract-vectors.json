@@ -1,0 +1,43 @@
+{
+    "contractVersion": 1,
+    "archiveQuota": {
+        "compressedBytes": 2147483648,
+        "entryCount": 100000,
+        "singleEntryBytes": 2147483648,
+        "totalUncompressedBytes": 8589934592,
+        "pathDepth": 64,
+        "pathBytes": 1024,
+        "expansionRatio": 1000
+    },
+    "bundleRejections": [
+        {"case": "missing-template-json", "error": "template_bundle_invalid"},
+        {"case": "multiple-root-manifests", "error": "template_bundle_invalid"},
+        {"case": "unknown-root-entry", "error": "template_bundle_invalid"},
+        {"case": "unknown-manifest-field", "error": "template_manifest_invalid"},
+        {"case": "malformed-manifest-field", "error": "template_manifest_invalid"},
+        {"case": "bundle-digest-mismatch", "error": "template_digest_mismatch"},
+        {"case": "undeclared-resource", "error": "template_resource_invalid"},
+        {"case": "missing-declared-resource", "error": "template_resource_invalid"},
+        {"case": "duplicate-path", "error": "template_bundle_invalid"},
+        {"case": "case-collision", "error": "template_bundle_invalid"},
+        {"case": "unicode-nfc-collision", "error": "template_bundle_invalid"},
+        {"case": "symlink-entry", "error": "template_bundle_invalid"},
+        {"case": "special-file-entry", "error": "template_bundle_invalid"},
+        {"case": "quota-exceeded", "error": "template_bundle_invalid"}
+    ],
+    "registryOutcomes": [
+        {"case": "new-user-id", "outcome": "plan-import"},
+        {"case": "same-user-id-same-digest", "outcome": "no-op"},
+        {"case": "same-user-id-different-digest", "error": "template_conflict"},
+        {"case": "builtin-id", "error": "template_builtin_immutable"},
+        {"case": "same-display-name-different-id", "outcome": "allowed"}
+    ],
+    "createProjectFaultGates": [
+        "prepared",
+        "staging_complete",
+        "target_publish_intent",
+        "target_published",
+        "project_registry_commit_intent",
+        "state_committed"
+    ]
+}

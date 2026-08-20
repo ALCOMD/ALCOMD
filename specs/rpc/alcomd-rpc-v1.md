@@ -532,3 +532,33 @@ supervisor。foreground/activation 不在本合同中。
 完整 DTO、enum 与上限由 `m5-unity.schema.json` 冻结。State Schema v4 已接入自动 migration；daemon
 在 store 成功初始化后通过 hello 广告 `dataSchema: 4` 和客户端实际协商的 M5 capability。此兼容增加不
 改变 M1-M4 方法语义，也不表示 Template、Backup 或完整 CLI 已实现。
+
+## 20. M5 contract-only 兼容增加：Template Bundle v1
+
+Template contract 冻结三项未来 capability，但 production adapter 存在前 `system.hello` 不得广告：
+
+| capability | method |
+|---|---|
+| `templates.read.v1` | `templates.list/get/inspectBundle/export` |
+| `templates.manage.v1` | `templates.planImport/applyImport/planDerive/applyDerive/setFavorite/remove` |
+| `templates.create-project.v1` | `templates.planCreateProject/applyCreateProject` |
+
+完整 DTO、collection/field bounds、immutable Plan、Operation progress 与 permission matrix 由
+`m5-template.schema.json` 冻结。该文件是兼容增加设计输入，不表示 method 已进入 dispatcher。
+
+inspect 纯只读。Import/override 和 derive 先产生 immutable Plan；Apply 返回 OperationId 并复验相同
+bundle/project identity、digest、revision、fingerprint 与 idempotency。新 ID import 可创建；user 同 ID
+同 digest 为 no-op；user 同 ID 异 digest为 `template_conflict`；builtin ID 永远
+`template_builtin_immutable`。favorite 是低影响 revision/idempotency command；remove 只删除 user registry
+binding，不执行 object GC。
+
+create-project Plan 固定 parent filesystem identity + normalized target leaf、target absent、template
+revision/digest、manifest/payload/resource fingerprint 和 M4 exact package ChangeSet/source pins。Plan 不刷新
+repository、不写目标目录。Apply 返回 OperationId，只能创建全新目录；不 overwrite、merge、删除既有
+内容或重新 resolve。package dependency 复用 M4 authority 和 transaction primitive，不创建 nested child
+Operation。state commit 前不得 succeeded，重启必须复用同一 OperationId/Plan/idempotency/ProjectId。
+
+普通错误只返回稳定 code、opaque ID/revision 和安全 subreason，不返回 bundle/source/target 完整私密
+路径、locator、raw manifest、ZIP entry、credential 或 SQL/OS debug。新增 Template errors 由
+`rpc-error.schema.json` 冻结。CLI planned names 在 `m5-template-commands-v1.json`；生产 capability 未实现前
+不得加入实际 command catalog/help。

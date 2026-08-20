@@ -1,0 +1,18 @@
+{
+    "descriptorVersion": 1,
+    "family": "vrchat-avatars",
+    "files": [
+        {
+            "path": "Packages/manifest.json",
+            "utf8": "{\n    \"dependencies\": {}\n}\n"
+        },
+        {
+            "path": "Packages/vpm-manifest.json",
+            "utf8": "{\n    \"dependencies\": {},\n    \"locked\": {}\n}\n"
+        },
+        {
+            "path": "ProjectSettings/ProjectVersion.txt",
+            "utf8": "m_EditorVersion: 2022.3\n"
+        }
+    ]
+}

@@ -1,0 +1,131 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/templates/template-bundle-v1.json",
+    "title": "ALCOMD Template Bundle v1 manifest",
+    "x-alcomd-archive-quota": {
+        "compressedBytes": 2147483648,
+        "entryCount": 100000,
+        "singleEntryBytes": 2147483648,
+        "totalUncompressedBytes": 8589934592,
+        "pathDepth": 64,
+        "pathBytes": 1024,
+        "expansionRatio": 1000
+    },
+    "$defs": {
+        "uuid": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "packageId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "versionRange": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "templateVersion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "payloadPath": {
+            "type": "string",
+            "minLength": 9,
+            "maxLength": 1024,
+            "pattern": "^payload/[A-Za-z0-9._/-]+$"
+        },
+        "resourcePath": {
+            "type": "string",
+            "minLength": 11,
+            "maxLength": 1024,
+            "pattern": "^resources/[A-Za-z0-9._/-]+$"
+        },
+        "projectPath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^[A-Za-z0-9._/-]+$"
+        },
+        "unityCompatibility": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["major", "minor"],
+            "properties": {
+                "major": {"type": "integer", "minimum": 1, "maximum": 9999},
+                "minor": {"type": "integer", "minimum": 0, "maximum": 9999}
+            }
+        },
+        "dependency": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["packageId", "versionRange"],
+            "properties": {
+                "packageId": {"$ref": "#/$defs/packageId"},
+                "versionRange": {"$ref": "#/$defs/versionRange"},
+                "includePrerelease": {"type": "boolean", "default": false}
+            }
+        },
+        "additionalResource": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["bundlePath", "targetPath", "sha256", "byteSize"],
+            "properties": {
+                "bundlePath": {"$ref": "#/$defs/resourcePath"},
+                "targetPath": {"$ref": "#/$defs/projectPath"},
+                "sha256": {"$ref": "#/$defs/sha256"},
+                "byteSize": {"type": "integer", "minimum": 0, "maximum": 2147483648}
+            }
+        },
+        "payload": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["root", "treeSha256", "entryCount", "totalBytes"],
+            "properties": {
+                "root": {"const": "payload/"},
+                "treeSha256": {"$ref": "#/$defs/sha256"},
+                "entryCount": {"type": "integer", "minimum": 1, "maximum": 100000},
+                "totalBytes": {"type": "integer", "minimum": 1, "maximum": 8589934592}
+            }
+        },
+        "provenance": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["createdBy"],
+            "properties": {
+                "createdBy": {"enum": ["authored", "imported", "derived"]},
+                "derivedFromTemplateId": {"$ref": "#/$defs/uuid"},
+                "derivedFromProjectId": {"$ref": "#/$defs/uuid"}
+            }
+        }
+    },
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "formatVersion", "templateId", "templateVersion", "displayName", "unity",
+        "dependencies", "additionalResources", "payload", "provenance"
+    ],
+    "properties": {
+        "formatVersion": {"const": 1},
+        "templateId": {"$ref": "#/$defs/uuid"},
+        "templateVersion": {"$ref": "#/$defs/templateVersion"},
+        "displayName": {"type": "string", "minLength": 1, "maxLength": 128},
+        "description": {"type": "string", "maxLength": 4096},
+        "unity": {"$ref": "#/$defs/unityCompatibility"},
+        "dependencies": {
+            "type": "array",
+            "maxItems": 1024,
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/dependency"}
+        },
+        "additionalResources": {
+            "type": "array",
+            "maxItems": 4096,
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/additionalResource"}
+        },
+        "payload": {"$ref": "#/$defs/payload"},
+        "provenance": {"$ref": "#/$defs/provenance"}
+    }
+}

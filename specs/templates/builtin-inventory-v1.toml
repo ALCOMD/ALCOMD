@@ -1,0 +1,50 @@
+schema = 1
+bundle_format = 1
+inventory_license = "AGPL-3.0-only"
+embedded_third_party_assets = false
+payload_digest_algorithm = "canonical-payload-tree-sha256-v1"
+
+[[template]]
+template_id = "7e2233c8-0b3f-4cf2-aeb4-57d3d240b001"
+family = "blank"
+template_version = "1"
+display_name = "Blank"
+description = "Minimal independently authored Unity project scaffold."
+unity_major = 2022
+unity_minor = 3
+dependencies = []
+payload_source = "specs/templates/builtin-scaffolds/blank-v1.json"
+payload_source_sha256 = "b63d2e689363103003f59b5e2859ceb7ee16f49b0693f99d8aae96789ee4005f"
+payload_tree_sha256 = "827604d760a376315abfa5a8f2fdbd633c145e991b6d8cb97c49d756f325d1a4"
+license = "AGPL-3.0-only"
+provenance = "Independently authored by the ALCOMD project; no v3, vrc-get, Unity proprietary, or VRChat SDK bytes."
+
+[[template]]
+template_id = "7e2233c8-0b3f-4cf2-aeb4-57d3d240b002"
+family = "vrchat-avatars"
+template_version = "1"
+display_name = "VRChat Avatars"
+description = "Unity project scaffold whose VRChat SDK content is resolved as a VPM dependency."
+unity_major = 2022
+unity_minor = 3
+dependencies = [{ package_id = "com.vrchat.avatars", version_range = ">=3.0.0", include_prerelease = false }]
+payload_source = "specs/templates/builtin-scaffolds/avatars-v1.json"
+payload_source_sha256 = "423a9f5fac566d22067ce73d36c8723b5ecea8b00c51ef4444d9a3ed5519dee5"
+payload_tree_sha256 = "827604d760a376315abfa5a8f2fdbd633c145e991b6d8cb97c49d756f325d1a4"
+license = "AGPL-3.0-only"
+provenance = "Independently authored by the ALCOMD project; VRChat SDK is a dependency declaration only and no SDK bytes are embedded."
+
+[[template]]
+template_id = "7e2233c8-0b3f-4cf2-aeb4-57d3d240b003"
+family = "vrchat-worlds"
+template_version = "1"
+display_name = "VRChat Worlds"
+description = "Unity project scaffold whose VRChat SDK content is resolved as a VPM dependency."
+unity_major = 2022
+unity_minor = 3
+dependencies = [{ package_id = "com.vrchat.worlds", version_range = ">=3.0.0", include_prerelease = false }]
+payload_source = "specs/templates/builtin-scaffolds/worlds-v1.json"
+payload_source_sha256 = "f9dabcb62e40cbaee79e71c4772cf9cc127f7e01624403e40fe950dd0b4a8d58"
+payload_tree_sha256 = "827604d760a376315abfa5a8f2fdbd633c145e991b6d8cb97c49d756f325d1a4"
+license = "AGPL-3.0-only"
+provenance = "Independently authored by the ALCOMD project; VRChat SDK is a dependency declaration only and no SDK bytes are embedded."

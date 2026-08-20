@@ -94,9 +94,18 @@ mcp.configuration.manage
   修改、shell command、任意 executable 或绕过 writer gate。
 - `projects.create`：只允许在显式、不存在的 destination 创建一个全新 Project；不允许删除、覆盖、
   merge 或修改既有 Project，也不扩大 `projects.manage` 的 M3 registry 语义。
-- template create-project 需要 `templates.read + projects.create`；backup restore 需要
+- `templates.read`：允许 list/get/inspect/export 已授权 template；不允许注册、favorite、remove、derive、
+  object publish 或创建项目。inspect/export 仍由 application/RPC 执行，不能据此直接读取 object store。
+- `templates.manage`：允许 user template import/explicit override、derive、favorite 与 remove；不允许修改或
+  删除 builtin，不隐含 `projects.create`、`projects.read` 或任意 package mutation authority。
+- derive from Project 还要求目标 Project 的 `projects.read` scope。template create-project Plan 需要
+  `templates.read + projects.create`；有 dependency 时还需要 `packages.read + repositories.read`，Apply
+  materialization 另需既有 `packages.manage`。`templates.manage` 不能隐式提供这些 package 权限。
+- backup restore 需要
   `backups.read + backups.manage + projects.create`；backup create 需要 `backups.manage` 与目标 project
   read scope。
+- Template/Backup 所有外部 filesystem write 当前仍只允许 `builtin:local-owner`；Schema/PlanId、
+  TemplateId、bundle digest、target path 与 object locator 都不是授权凭据。
 - `builtin:local-owner` 可获得 M5 已批准权限。真实外部 Principal credential enrollment/revocation
   尚未实现，高影响 write path 不得描述为已向任意第三方开放。
 - capability、InstallationId、LaunchId、TemplateId、BackupId、路径、PID 与 client metadata 都不是

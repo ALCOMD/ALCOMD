@@ -161,9 +161,9 @@ implementation = "alcomd-application"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "not_started"
-evidence = ["docs/baselines/alcomd3-v3-audit.md::模板"]
+evidence = ["docs/baselines/alcomd3-v3-audit.md::模板", "docs/adr/0020-native-template-bundle.md", "specs/templates/template-bundle-v1.schema.json", "specs/templates/builtin-inventory-v1.toml"]
 coverage = ["GUI", "file association", "conflicts", "round trip"]
-tests = ["templates.v3-parity", "templates.m5-workflows", "migration.fixture-chain"]
+tests = ["templates.v3-parity", "templates.m5-bundle", "templates.m5-registry", "templates.m5-import-export", "templates.m5-derive", "templates.m5-create-project", "templates.m5-transaction-faults", "migration.fixture-chain"]
 
 [[feature]]
 id = "backups.management"

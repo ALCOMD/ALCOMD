@@ -1,0 +1,39 @@
+{
+    "contractVersion": 1,
+    "status": "planned-not-published",
+    "publicationRule": "add-to-command-catalog-only-after-production-capability-is-implemented",
+    "commands": [
+        {"path": ["template", "list"], "rpc": "templates.list", "mutation": false},
+        {"path": ["template", "get"], "aliases": ["info"], "rpc": "templates.get", "mutation": false},
+        {"path": ["template", "inspect"], "rpc": "templates.inspectBundle", "mutation": false},
+        {
+            "path": ["template", "import"],
+            "rpc": ["templates.planImport", "templates.applyImport"],
+            "mutation": true,
+            "planApply": true
+        },
+        {"path": ["template", "export"], "rpc": "templates.export", "mutation": true},
+        {
+            "path": ["template", "derive"],
+            "rpc": ["templates.planDerive", "templates.applyDerive"],
+            "mutation": true,
+            "planApply": true
+        },
+        {"path": ["template", "remove"], "rpc": "templates.remove", "mutation": true},
+        {"path": ["template", "favorite"], "rpc": "templates.setFavorite", "mutation": true},
+        {
+            "path": ["project", "create"],
+            "requiredOption": "--template",
+            "rpc": ["templates.planCreateProject", "templates.applyCreateProject"],
+            "mutation": true,
+            "planApply": true
+        }
+    ],
+    "sharedMutationContract": {
+        "outputModes": ["human", "json", "ndjson"],
+        "options": ["--yes", "--dry-run", "--no-wait"],
+        "nonTtyRequiresExplicitConfirmation": true,
+        "operationFollow": true,
+        "bundleAccess": "rpc-only"
+    }
+}
