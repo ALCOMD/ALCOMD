@@ -408,7 +408,7 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
         self.writer_state_unchecked(access, project_id).await
     }
 
-    async fn writer_state_unchecked(
+    pub(crate) async fn writer_state_unchecked(
         &self,
         access: &AccessContext,
         project_id: ProjectId,

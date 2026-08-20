@@ -28,7 +28,7 @@ pub use unix::{
 #[cfg(windows)]
 pub use windows::{
     DaemonInstance, IpcListener, IpcStream, WindowsFileIdentity, connect, endpoint_display,
-    file_identity, local_app_data_directory, state_database_path,
+    file_identity, file_link_count, local_app_data_directory, state_database_path,
 };
 
 #[cfg(windows)]

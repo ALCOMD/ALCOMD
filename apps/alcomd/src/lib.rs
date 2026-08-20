@@ -8,8 +8,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use alcomd_application::{
     AccessContext, Application, ApplicationError, EventRecord as ApplicationEvent, IdempotencyKey,
-    M3Application, M4Application, M5UnityApplication as M5Application, OperationCursor,
-    OperationId, OperationRecord, OperationState as DomainState, Revision, StoreErrorKind,
+    M3Application, M4Application, M5TemplateApplication as TemplateService,
+    M5UnityApplication as M5Application, OperationCursor, OperationId, OperationRecord,
+    OperationState as DomainState, ResourceLockCoordinator, Revision, StoreErrorKind,
 };
 use alcomd_platform::{BindError, DaemonInstance, DataConfig, IpcConfig, IpcListener, IpcStream};
 use alcomd_protocol::{
@@ -30,6 +31,7 @@ mod m3_rpc;
 mod m4_rpc;
 mod m5_platform;
 mod m5_rpc;
+mod m5_template_rpc;
 
 static TEST_DATA_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -38,12 +40,15 @@ type M3ReadApplication = M3Application<StateStoreHandle, alcomd_vpm::VpmReader>;
 type M4PackageApplication =
     M4Application<StateStoreHandle, alcomd_vpm::PackageEngine<StateStoreHandle>>;
 type M5UnityApplication = M5Application<StateStoreHandle, m5_platform::PlatformUnityAdapter>;
+type TemplateApplication =
+    TemplateService<StateStoreHandle, alcomd_vpm::TemplateEngine, M5UnityApplication>;
 
 struct Applications {
     m2: M2Application,
     m3: M3ReadApplication,
     m4: M4PackageApplication,
     m5: M5UnityApplication,
+    templates: TemplateApplication,
 }
 
 /// Runs the daemon with an ephemeral isolated data directory.
@@ -81,10 +86,11 @@ where
 {
     let instance = DaemonInstance::acquire(&ipc)?;
     let database = alcomd_platform::state_database_path(&data)?;
-    let cache_root = database
+    let data_root = database
         .parent()
         .ok_or_else(|| BindError::Io(io::Error::other("state path has no parent")))?
-        .join("package-cache");
+        .to_path_buf();
+    let cache_root = data_root.join("package-cache");
     let store = StateStoreHandle::open(database).map_err(|error| {
         BindError::Io(io::Error::other(format!(
             "state store failed closed: {error}"
@@ -96,17 +102,42 @@ where
         .map_err(|_| BindError::Io(io::Error::other("Operation recovery failed")))?;
     let reader = alcomd_vpm::VpmReader::new()
         .map_err(|_| BindError::Io(io::Error::other("M3 reader initialization failed")))?;
-    let engine = alcomd_vpm::PackageEngine::new(store.clone(), reader.clone(), cache_root)
+    let engine = alcomd_vpm::PackageEngine::new(store.clone(), reader.clone(), cache_root.clone())
         .map_err(|_| BindError::Io(io::Error::other("M4 package engine initialization failed")))?;
-    let m4 = M4PackageApplication::new(store.clone(), engine);
+    let locks = Arc::new(ResourceLockCoordinator::default());
+    let m4 = M4PackageApplication::with_locks(store.clone(), engine, Arc::clone(&locks));
     m4.recover()
         .await
         .map_err(|_| BindError::Io(io::Error::other("package transaction recovery failed")))?;
+    let unity = M5Application::new(store.clone(), m5_platform::PlatformUnityAdapter);
+    let template_engine = alcomd_vpm::TemplateEngine::with_package_cache(
+        data_root.join("template-store"),
+        cache_root,
+    )
+    .map_err(|_| BindError::Io(io::Error::other("Template engine initialization failed")))?;
+    let templates = TemplateService::with_locks(
+        store.clone(),
+        template_engine.clone(),
+        unity.clone(),
+        Arc::clone(&locks),
+    );
+    let builtins = template_engine
+        .materialize_builtins(&data_root.join("template-builtin-staging"))
+        .map_err(|_| BindError::Io(io::Error::other("builtin Template initialization failed")))?;
+    templates
+        .ensure_builtins(builtins)
+        .await
+        .map_err(|_| BindError::Io(io::Error::other("builtin Template registration failed")))?;
+    templates
+        .recover()
+        .await
+        .map_err(|_| BindError::Io(io::Error::other("Template recovery failed")))?;
     let applications = Arc::new(Applications {
         m2,
         m3: M3ReadApplication::new(store.clone(), reader),
         m4,
-        m5: M5Application::new(store, m5_platform::PlatformUnityAdapter),
+        m5: unity,
+        templates,
     });
     let listener = instance.bind()?;
     run_listener(listener, applications, shutdown)
@@ -212,16 +243,7 @@ async fn dispatch_payload(
     }
 
     let access = AccessContext::local_owner();
-    dispatch_m2(
-        request,
-        state,
-        &applications.m2,
-        &applications.m3,
-        &applications.m4,
-        &applications.m5,
-        &access,
-    )
-    .await
+    dispatch_m2(request, state, applications, &access).await
 }
 
 fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> DispatchAction {
@@ -259,6 +281,9 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         alcomd_protocol::CAPABILITY_UNITY_READ_V1,
         alcomd_protocol::CAPABILITY_UNITY_MANAGE_V1,
         alcomd_protocol::CAPABILITY_UNITY_LAUNCH_V1,
+        alcomd_protocol::CAPABILITY_TEMPLATES_READ_V1,
+        alcomd_protocol::CAPABILITY_TEMPLATES_MANAGE_V1,
+        alcomd_protocol::CAPABILITY_TEMPLATES_CREATE_PROJECT_V1,
     ];
     let capabilities = hello
         .capabilities
@@ -301,12 +326,10 @@ fn dispatch_status(request: RequestEnvelope, state: &ConnectionState) -> Dispatc
 async fn dispatch_m2(
     request: RequestEnvelope,
     state: &ConnectionState,
-    application: &M2Application,
-    m3_application: &M3ReadApplication,
-    m4_application: &M4PackageApplication,
-    m5_application: &M5UnityApplication,
+    applications: &Applications,
     access: &AccessContext,
 ) -> DispatchAction {
+    let application = &applications.m2;
     match request.method.as_str() {
         METHOD_STATE_CHECK => {
             if let Some(action) = require_capability(&request.id, state, CAPABILITY_STATE_CHECK_V1)
@@ -464,12 +487,15 @@ async fn dispatch_m2(
             }
         }
         _ if request.method.starts_with("packages.") => {
-            m4_rpc::dispatch(request, state, m4_application, access).await
+            m4_rpc::dispatch(request, state, &applications.m4, access).await
         }
         _ if request.method.starts_with("unity.") => {
-            m5_rpc::dispatch(request, state, m5_application, access).await
+            m5_rpc::dispatch(request, state, &applications.m5, access).await
         }
-        _ => m3_rpc::dispatch(request, state, m3_application, access).await,
+        _ if request.method.starts_with("templates.") => {
+            m5_template_rpc::dispatch(request, state, &applications.templates, access).await
+        }
+        _ => m3_rpc::dispatch(request, state, &applications.m3, access).await,
     }
 }
 

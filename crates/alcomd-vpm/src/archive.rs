@@ -17,6 +17,45 @@ pub const MAX_NORMALIZED_PATH_BYTES: usize = 1_024;
 pub const MAX_EXPANSION_RATIO: u64 = 1_000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ArchiveLimits {
+    pub archive_bytes: u64,
+    pub entries: usize,
+    pub entry_bytes: u64,
+    pub total_uncompressed_bytes: u64,
+    pub path_depth: usize,
+    pub normalized_path_bytes: usize,
+    pub expansion_ratio: u64,
+}
+
+impl ArchiveLimits {
+    #[must_use]
+    pub const fn package() -> Self {
+        Self {
+            archive_bytes: MAX_ARCHIVE_BYTES,
+            entries: MAX_ARCHIVE_ENTRIES,
+            entry_bytes: MAX_ENTRY_BYTES,
+            total_uncompressed_bytes: MAX_TOTAL_UNCOMPRESSED_BYTES,
+            path_depth: MAX_PATH_DEPTH,
+            normalized_path_bytes: MAX_NORMALIZED_PATH_BYTES,
+            expansion_ratio: MAX_EXPANSION_RATIO,
+        }
+    }
+
+    #[must_use]
+    pub const fn template() -> Self {
+        Self {
+            archive_bytes: 2_147_483_648,
+            entries: 100_000,
+            entry_bytes: 2_147_483_648,
+            total_uncompressed_bytes: 8_589_934_592,
+            path_depth: 64,
+            normalized_path_bytes: 1_024,
+            expansion_ratio: 1_000,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ArchiveErrorCode {
     Invalid,
     UnsupportedCompression,
@@ -64,20 +103,35 @@ pub struct ArchivePreflight {
 }
 
 pub fn preflight_archive(path: &Path) -> Result<ArchivePreflight, ArchiveError> {
+    preflight_archive_with_limits(path, ArchiveLimits::package())
+}
+
+pub fn preflight_archive_with_limits(
+    path: &Path,
+    limits: ArchiveLimits,
+) -> Result<ArchivePreflight, ArchiveError> {
     let metadata = std::fs::metadata(path).map_err(|_| archive_error(ArchiveErrorCode::Io))?;
-    if !metadata.is_file() || metadata.len() > MAX_ARCHIVE_BYTES {
+    if !metadata.is_file() || metadata.len() > limits.archive_bytes {
         return Err(archive_error(ArchiveErrorCode::QuotaExceeded));
     }
     let file = File::open(path).map_err(|_| archive_error(ArchiveErrorCode::Io))?;
-    preflight_reader(file)
+    preflight_reader(file, limits)
 }
 
 pub fn extract_archive(
     archive_path: &Path,
     destination: &Path,
 ) -> Result<ArchivePreflight, ArchiveError> {
+    extract_archive_with_limits(archive_path, destination, ArchiveLimits::package())
+}
+
+pub fn extract_archive_with_limits(
+    archive_path: &Path,
+    destination: &Path,
+    limits: ArchiveLimits,
+) -> Result<ArchivePreflight, ArchiveError> {
     validate_empty_destination(destination)?;
-    let preflight = preflight_archive(archive_path)?;
+    let preflight = preflight_archive_with_limits(archive_path, limits)?;
     let file = File::open(archive_path).map_err(|_| archive_error(ArchiveErrorCode::Io))?;
     let mut archive =
         ZipArchive::new(file).map_err(|_| archive_error(ArchiveErrorCode::Invalid))?;
@@ -106,13 +160,18 @@ pub fn extract_archive(
             .create_new(true)
             .open(&target)
             .map_err(|_| archive_error(ArchiveErrorCode::Io))?;
-        let copied = copy_bounded(&mut entry, &mut output, planned.uncompressed_size)?;
+        let copied = copy_bounded(
+            &mut entry,
+            &mut output,
+            planned.uncompressed_size,
+            limits.entry_bytes,
+        )?;
         if copied != planned.uncompressed_size {
             return Err(archive_error(ArchiveErrorCode::Invalid));
         }
         streamed_total = streamed_total
             .checked_add(copied)
-            .filter(|total| *total <= MAX_TOTAL_UNCOMPRESSED_BYTES)
+            .filter(|total| *total <= limits.total_uncompressed_bytes)
             .ok_or_else(|| archive_error(ArchiveErrorCode::QuotaExceeded))?;
         output
             .flush()
@@ -133,10 +192,13 @@ pub fn extract_archive(
     Ok(preflight)
 }
 
-fn preflight_reader<R: Read + Seek>(reader: R) -> Result<ArchivePreflight, ArchiveError> {
+fn preflight_reader<R: Read + Seek>(
+    reader: R,
+    limits: ArchiveLimits,
+) -> Result<ArchivePreflight, ArchiveError> {
     let mut archive =
         ZipArchive::new(reader).map_err(|_| archive_error(ArchiveErrorCode::Invalid))?;
-    if archive.len() > MAX_ARCHIVE_ENTRIES {
+    if archive.len() > limits.entries {
         return Err(archive_error(ArchiveErrorCode::QuotaExceeded));
     }
     let mut entries = Vec::with_capacity(archive.len());
@@ -153,7 +215,7 @@ fn preflight_reader<R: Read + Seek>(reader: R) -> Result<ArchivePreflight, Archi
         if raw_name != entry.name() {
             return Err(archive_error(ArchiveErrorCode::UnsafePath));
         }
-        let (relative_path, collision_key) = normalize_path(raw_name)?;
+        let (relative_path, collision_key) = normalize_path(raw_name, limits)?;
         let directory = entry.is_dir();
         validate_collision(
             &relative_path,
@@ -164,14 +226,14 @@ fn preflight_reader<R: Read + Seek>(reader: R) -> Result<ArchivePreflight, Archi
         )?;
         let uncompressed_size = entry.size();
         let compressed_size = entry.compressed_size();
-        if uncompressed_size > MAX_ENTRY_BYTES
-            || expansion_ratio_exceeded(uncompressed_size, compressed_size)
+        if uncompressed_size > limits.entry_bytes
+            || expansion_ratio_exceeded(uncompressed_size, compressed_size, limits.expansion_ratio)
         {
             return Err(archive_error(ArchiveErrorCode::QuotaExceeded));
         }
         total = total
             .checked_add(uncompressed_size)
-            .filter(|total| *total <= MAX_TOTAL_UNCOMPRESSED_BYTES)
+            .filter(|total| *total <= limits.total_uncompressed_bytes)
             .ok_or_else(|| archive_error(ArchiveErrorCode::QuotaExceeded))?;
         entries.push(ArchiveEntry {
             index,
@@ -215,7 +277,7 @@ fn normalized_archive_name<R: Read>(
         .map_err(|_| archive_error(ArchiveErrorCode::UnsafePath))
 }
 
-fn normalize_path(raw: &str) -> Result<(PathBuf, String), ArchiveError> {
+fn normalize_path(raw: &str, limits: ArchiveLimits) -> Result<(PathBuf, String), ArchiveError> {
     if raw.is_empty()
         || raw.starts_with('/')
         || raw.starts_with('\\')
@@ -234,7 +296,7 @@ fn normalize_path(raw: &str) -> Result<(PathBuf, String), ArchiveError> {
         return Err(archive_error(ArchiveErrorCode::UnsafePath));
     }
     let segments = trimmed.split('/').collect::<Vec<_>>();
-    if segments.len() > MAX_PATH_DEPTH {
+    if segments.len() > limits.path_depth {
         return Err(archive_error(ArchiveErrorCode::QuotaExceeded));
     }
     for segment in &segments {
@@ -245,7 +307,7 @@ fn normalize_path(raw: &str) -> Result<(PathBuf, String), ArchiveError> {
         .map(|segment| segment.nfc().collect::<String>())
         .collect::<Vec<_>>()
         .join("/");
-    if normalized.len() > MAX_NORMALIZED_PATH_BYTES {
+    if normalized.len() > limits.normalized_path_bytes {
         return Err(archive_error(ArchiveErrorCode::QuotaExceeded));
     }
     let collision_key = normalized.to_lowercase();
@@ -310,13 +372,13 @@ fn validate_collision(
     Ok(())
 }
 
-fn expansion_ratio_exceeded(uncompressed: u64, compressed: u64) -> bool {
+fn expansion_ratio_exceeded(uncompressed: u64, compressed: u64, limit: u64) -> bool {
     if uncompressed == 0 {
         false
     } else if compressed == 0 {
         true
     } else {
-        uncompressed > compressed.saturating_mul(MAX_EXPANSION_RATIO)
+        uncompressed > compressed.saturating_mul(limit)
     }
 }
 
@@ -361,10 +423,11 @@ fn copy_bounded<R: Read, W: Write>(
     reader: &mut R,
     writer: &mut W,
     expected: u64,
+    maximum: u64,
 ) -> Result<u64, ArchiveError> {
     let mut limited = reader.take(expected.saturating_add(1));
     let copied = io::copy(&mut limited, writer).map_err(|_| archive_error(ArchiveErrorCode::Io))?;
-    if copied > expected || copied > MAX_ENTRY_BYTES {
+    if copied > expected || copied > maximum {
         return Err(archive_error(ArchiveErrorCode::QuotaExceeded));
     }
     Ok(copied)

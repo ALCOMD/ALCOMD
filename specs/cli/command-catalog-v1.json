@@ -23,6 +23,7 @@
             "name": "project",
             "aliases": ["projects"],
             "commands": [
+                {"name": "create", "aliases": []},
                 {"name": "inspect", "aliases": []},
                 {"name": "list", "aliases": []},
                 {"name": "get", "aliases": ["info"]},
@@ -71,6 +72,20 @@
                 {"name": "writer-state", "aliases": []},
                 {"name": "launch", "aliases": []},
                 {"name": "launch-status", "aliases": []}
+            ]
+        },
+        {
+            "name": "template",
+            "aliases": ["templates"],
+            "commands": [
+                {"name": "list", "aliases": []},
+                {"name": "get", "aliases": ["info"]},
+                {"name": "inspect", "aliases": []},
+                {"name": "import", "aliases": []},
+                {"name": "export", "aliases": []},
+                {"name": "derive", "aliases": []},
+                {"name": "remove", "aliases": []},
+                {"name": "favorite", "aliases": []}
             ]
         },
         {

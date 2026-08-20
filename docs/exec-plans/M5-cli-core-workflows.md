@@ -1,6 +1,6 @@
 # M5：完整 CLI 合同与本地项目工作流
 
-状态：进行中；Unity 最小生产切片已独立提交；Template contract-first 与 Schema v5 closure 已获批，正在实施 Template production
+状态：进行中；Unity 最小生产切片已独立提交；Template production/RPC/CLI 已完成本地验收，停止在 Backup Create contract 审批点
 
 ## 目标
 
@@ -439,8 +439,8 @@ workflow engine、第二 ZIP stack 或第二 process supervisor。
 ADR 冻结。process discovery production dependency 已按精确配置批准；后续 slice 仍分别审批：
 
 1. `M5-process-discovery-evaluation.md` 中 `sysinfo = 0.39.6` 已关闭；任何 feature 扩大仍须重新审批。
-2. v4 template contract-first 已批准；production registry/import/export/derive/create-project 仍需本停止点
-   的独立批准。若 staging project 无法复用 M4 transaction primitive，还需窄 internal adapter 审批。
+2. v4 template contract-first、production registry/import/export/derive/create-project 与窄 M4 staging
+   package adapter 已批准并实现；下一停止点是 Backup Create contract，不得提前实现 Backup。
 3. backup archive profile 与 `exclude VPM packages` 精确语义。
 4. M5 仅限全新目标的 restore Plan/Apply/recovery 合同；覆盖已有目标不在 M5。
 5. 此后每个新 production crate、windows-sys/rustix feature、unsafe 文件或窗口/进程平台 API。
@@ -498,6 +498,12 @@ Unity process/writer gate、Tauri no-bundle、lockfile/unsafe/dependency feature
   仍未接入 daemon，Unity method 仍未广告，未开始生产实现。
 - 2026-08-20：完成 `sysinfo 0.39.6`（defaults off，仅 `system`）隔离 feature/Cargo.lock 评估，未修改
   Workspace manifest/lockfile。按内部停止点 A 等待 process discovery production dependency 审批。
+- 2026-08-21：完成 Template registry/import/export/derive/create-project 的 production、RPC 与 CLI
+  垂直切片。create-project 复用一个 daemon-owned ResourceLockCoordinator 与 M4 PackageCache，冻结
+  ChangeSet 在取得 ProjectCreate lock 前完成 cache 验证，UPM manifest byte-for-byte 保持不变。
+  真实 daemon kill/restart matrix 覆盖 prepared、staging complete、target publish intent、target
+  published、project registry commit intent 与 state committed；全部复用原 OperationId、Plan、
+  idempotency 与预分配 ProjectId，且修复了 M2 通用恢复器误接管 Template Operation 的缺陷。
 - 2026-08-20：项目所有者批准 `sysinfo 0.39.6`，并纠正其官方 MSRV 为 Rust 1.95。依赖仅接入
   `alcomd-platform`；完成最小 process evidence、Unity executable registry/writer gate/launch adapter、
   State Schema v4 自动 migration、RPC v1 capability/method 和 client 接线，进入 Slice 1 本地验收。

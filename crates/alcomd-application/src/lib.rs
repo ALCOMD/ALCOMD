@@ -10,16 +10,18 @@ use std::sync::{Arc, Weak};
 
 pub use alcomd_domain::{
     IdempotencyKey, OperationId, OperationState, Permission, PlanId, PrincipalId, ProjectId,
-    RepositoryId, ResourceKey, Revision, UnityInstallationId, UnityLaunchId,
+    RepositoryId, ResourceKey, Revision, TemplateId, UnityInstallationId, UnityLaunchId,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 mod m4;
 mod m5;
+mod m5_template;
 
 pub use m4::*;
 pub use m5::*;
+pub use m5_template::*;
 
 /// Minimal truthful daemon status for the M1 read-only vertical slice.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -738,6 +740,8 @@ impl AccessContext {
                 Permission::UnityManage,
                 Permission::UnityLaunch,
                 Permission::ProjectsCreate,
+                Permission::TemplatesRead,
+                Permission::TemplatesManage,
             ],
         )
     }
@@ -1452,6 +1456,34 @@ mod tests {
         assert_eq!(other_digest.len(), 1);
         drop(held);
         assert_eq!(same_digest.await.expect("same-digest waiter").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn project_create_locks_serialize_only_the_same_parent_and_leaf() {
+        let coordinator = Arc::new(ResourceLockCoordinator::default());
+        let first = ResourceKey::ProjectCreate {
+            parent_identity_sha256: [3; 32],
+            target_leaf: "Example".to_owned(),
+        };
+        let held = coordinator.acquire(vec![first.clone()]).await;
+        let same = {
+            let coordinator = Arc::clone(&coordinator);
+            tokio::spawn(async move { coordinator.acquire(vec![first]).await })
+        };
+        tokio::task::yield_now().await;
+        assert!(!same.is_finished());
+        let other = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            coordinator.acquire(vec![ResourceKey::ProjectCreate {
+                parent_identity_sha256: [3; 32],
+                target_leaf: "Other".to_owned(),
+            }]),
+        )
+        .await
+        .expect("different target leaf must remain parallel");
+        assert_eq!(other.len(), 1);
+        drop(held);
+        assert_eq!(same.await.expect("same target waiter").len(), 1);
     }
 
     #[tokio::test]

@@ -148,12 +148,12 @@ fn aggregate_fingerprint<I: ToString>(id: I, expected: Revision) -> Result<Strin
     }))
 }
 
-fn semantic_project(mut observation: ProjectObservation) -> ProjectObservation {
+pub(super) fn semantic_project(mut observation: ProjectObservation) -> ProjectObservation {
     observation.observed_at_ms = 0;
     observation
 }
 
-fn project_type(value: alcomd_application::ProjectType) -> &'static str {
+pub(super) fn project_type(value: alcomd_application::ProjectType) -> &'static str {
     use alcomd_application::ProjectType;
     match value {
         ProjectType::Avatars => "avatars",

@@ -48,5 +48,5 @@ trigger 同时验证 Operation kind 与 Plan kind 精确匹配。其他字段、
 
 ## RPC compatibility
 
-RPC v1 只兼容增加新的 Operation kind 和 `dataSchema: 5`。Template capabilities 与 methods 仍只有
-在 application/backend 真实接入后才协商和发布；Schema v5 本身不证明 Template 生产功能已经实现。
+RPC v1 只兼容增加新的 Operation kind 和 `dataSchema: 5`。Template capabilities 与 methods 已在
+application/backend 真实接入后协商和发布；Schema v5 本身仍不证明 Backup 或完整 M5 已实现。

@@ -124,6 +124,9 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_UNITY_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_UNITY_MANAGE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_UNITY_LAUNCH_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_TEMPLATES_READ_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_TEMPLATES_MANAGE_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_TEMPLATES_CREATE_PROJECT_V1.to_owned(),
             ],
         };
         self.call(METHOD_SYSTEM_HELLO, params).await
@@ -335,6 +338,114 @@ impl AlcomdClient {
         self.call(
             alcomd_protocol::METHOD_UNITY_LAUNCH_STATUS,
             alcomd_protocol::UnityLaunchStatusParams { launch_id },
+        )
+        .await
+    }
+
+    pub async fn templates_list(
+        &mut self,
+        params: alcomd_protocol::TemplatesListParams,
+    ) -> Result<alcomd_protocol::TemplatesListResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_TEMPLATES_LIST, params)
+            .await
+    }
+
+    pub async fn template_get(
+        &mut self,
+        template_id: String,
+    ) -> Result<alcomd_protocol::TemplateRecordResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_TEMPLATES_GET,
+            alcomd_protocol::TemplateIdParams { template_id },
+        )
+        .await
+    }
+
+    pub async fn template_inspect_bundle(
+        &mut self,
+        bundle_path: String,
+    ) -> Result<alcomd_protocol::TemplateBundleInspection, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_TEMPLATES_INSPECT_BUNDLE,
+            alcomd_protocol::TemplateInspectBundleParams { bundle_path },
+        )
+        .await
+    }
+
+    pub async fn template_plan_import(
+        &mut self,
+        params: alcomd_protocol::TemplatePlanImportParams,
+    ) -> Result<alcomd_protocol::TemplatePlan, ClientError> {
+        self.call(alcomd_protocol::METHOD_TEMPLATES_PLAN_IMPORT, params)
+            .await
+    }
+
+    pub async fn template_apply_import(
+        &mut self,
+        params: alcomd_protocol::TemplateApplyPlanParams,
+    ) -> Result<alcomd_protocol::TemplateApplyResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_TEMPLATES_APPLY_IMPORT, params)
+            .await
+    }
+
+    pub async fn template_plan_derive(
+        &mut self,
+        params: alcomd_protocol::TemplatePlanDeriveParams,
+    ) -> Result<alcomd_protocol::TemplatePlan, ClientError> {
+        self.call(alcomd_protocol::METHOD_TEMPLATES_PLAN_DERIVE, params)
+            .await
+    }
+
+    pub async fn template_apply_derive(
+        &mut self,
+        params: alcomd_protocol::TemplateApplyPlanParams,
+    ) -> Result<alcomd_protocol::TemplateApplyResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_TEMPLATES_APPLY_DERIVE, params)
+            .await
+    }
+
+    pub async fn template_export(
+        &mut self,
+        params: alcomd_protocol::TemplateExportParams,
+    ) -> Result<alcomd_protocol::TemplateExportResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_TEMPLATES_EXPORT, params)
+            .await
+    }
+
+    pub async fn template_set_favorite(
+        &mut self,
+        params: alcomd_protocol::TemplateSetFavoriteParams,
+    ) -> Result<alcomd_protocol::TemplateRecordResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_TEMPLATES_SET_FAVORITE, params)
+            .await
+    }
+
+    pub async fn template_remove(
+        &mut self,
+        params: alcomd_protocol::TemplateRemoveParams,
+    ) -> Result<alcomd_protocol::TemplateRemoveResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_TEMPLATES_REMOVE, params)
+            .await
+    }
+
+    pub async fn template_plan_create_project(
+        &mut self,
+        params: alcomd_protocol::TemplatePlanCreateProjectParams,
+    ) -> Result<alcomd_protocol::TemplatePlan, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_TEMPLATES_PLAN_CREATE_PROJECT,
+            params,
+        )
+        .await
+    }
+
+    pub async fn template_apply_create_project(
+        &mut self,
+        params: alcomd_protocol::TemplateApplyPlanParams,
+    ) -> Result<alcomd_protocol::TemplateApplyResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_TEMPLATES_APPLY_CREATE_PROJECT,
+            params,
         )
         .await
     }

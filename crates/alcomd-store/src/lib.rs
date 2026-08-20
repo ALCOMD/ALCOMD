@@ -9,22 +9,25 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use alcomd_application::{
-    ApplyPlanOutcome, CheckClassification, CreateOperationOutcome, EventPage,
-    FilesystemJournalEntry, IdempotencyKey, M3Error, M3RegistryStore, M4Error, M4Store,
-    M5UnityError, M5UnityStore, OperationCursor, OperationId, OperationPage, OperationRecord,
-    PackageApplyCompletion, PackageCursor, PackagePage, PackagePlanDraft, PackagePlanRecord,
-    PlanId, PrincipalId, ProjectEditorPreference, ProjectId, ProjectObservation, ProjectPage,
-    ProjectRecord, RegistryCursor, RepositoryId, RepositoryObservation, RepositoryPage,
-    RepositoryRecord, RepositoryValidators, ResolverCatalog, Revision, StateCheckResult,
-    StateStore, StoreError, SyncWrite, UnityInstallationCursor, UnityInstallationId,
-    UnityInstallationObservation, UnityInstallationPage, UnityInstallationRecord, UnityLaunchId,
-    UnityLaunchRecord, UnityLaunchState, UnregisterResult,
+    ApplyPlanOutcome, CheckClassification, CreateOperationOutcome, CreatedTemplateProject,
+    EventPage, FilesystemJournalEntry, IdempotencyKey, M3Error, M3RegistryStore, M4Error, M4Store,
+    M5TemplateError, M5TemplateStore, M5UnityError, M5UnityStore, OperationCursor, OperationId,
+    OperationPage, OperationRecord, PackageApplyCompletion, PackageCursor, PackagePage,
+    PackagePlanDraft, PackagePlanRecord, PlanId, PrincipalId, ProjectEditorPreference, ProjectId,
+    ProjectObservation, ProjectPage, ProjectRecord, PublishedTemplate, RegistryCursor,
+    RepositoryId, RepositoryObservation, RepositoryPage, RepositoryRecord, RepositoryValidators,
+    ResolverCatalog, Revision, StateCheckResult, StateStore, StoreError, StoredTemplateRecord,
+    SyncWrite, TemplateApplyOutcome, TemplateCursor, TemplateId, TemplatePlanDraft,
+    TemplatePlanRecord, UnityInstallationCursor, UnityInstallationId, UnityInstallationObservation,
+    UnityInstallationPage, UnityInstallationRecord, UnityLaunchId, UnityLaunchRecord,
+    UnityLaunchState, UnregisterResult,
 };
 use tokio::sync::{mpsc, oneshot};
 
 mod m3;
 mod m4;
 mod m5;
+mod m5_template;
 mod sqlite;
 
 /// Stable crate identifier used by repository checks.
@@ -630,6 +633,250 @@ impl M5UnityStore for StateStoreHandle {
                 m5::set_launch_state(connection, &owner, launch_id, state, spawn_accepted)
             },
             m5::unavailable,
+        )
+        .await
+    }
+}
+
+impl M5TemplateStore for StateStoreHandle {
+    async fn ensure_builtin_templates(
+        &self,
+        owner: PrincipalId,
+        templates: Vec<StoredTemplateRecord>,
+        now_ms: u64,
+    ) -> Result<(), M5TemplateError> {
+        self.request_worker(
+            move |connection| {
+                m5_template::ensure_builtin_templates(connection, &owner, templates, now_ms)
+            },
+            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn list_templates(
+        &self,
+        owner: PrincipalId,
+        cursor: Option<TemplateCursor>,
+        limit: u32,
+    ) -> Result<Vec<StoredTemplateRecord>, M5TemplateError> {
+        self.request_worker(
+            move |connection| m5_template::list_templates(connection, &owner, cursor, limit),
+            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn get_template(
+        &self,
+        owner: PrincipalId,
+        template_id: TemplateId,
+    ) -> Result<StoredTemplateRecord, M5TemplateError> {
+        self.request_worker(
+            move |connection| m5_template::get_template(connection, &owner, template_id),
+            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn create_template_plan(
+        &self,
+        owner: PrincipalId,
+        draft: TemplatePlanDraft,
+        created_at_ms: u64,
+    ) -> Result<TemplatePlanRecord, M5TemplateError> {
+        self.request_worker(
+            move |connection| {
+                m5_template::create_template_plan(connection, &owner, draft, created_at_ms)
+            },
+            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn get_template_plan(
+        &self,
+        owner: PrincipalId,
+        plan_id: PlanId,
+    ) -> Result<TemplatePlanRecord, M5TemplateError> {
+        self.request_worker(
+            move |connection| m5_template::get_template_plan(connection, &owner, plan_id),
+            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn accept_template_plan(
+        &self,
+        owner: PrincipalId,
+        plan_id: PlanId,
+        key: IdempotencyKey,
+        created_at_ms: u64,
+    ) -> Result<TemplateApplyOutcome, M5TemplateError> {
+        self.request_worker(
+            move |connection| {
+                m5_template::accept_template_plan(connection, &owner, plan_id, &key, created_at_ms)
+            },
+            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn begin_template_apply(
+        &self,
+        operation_id: OperationId,
+        updated_at_ms: u64,
+    ) -> Result<TemplatePlanRecord, M5TemplateError> {
+        self.request_worker(
+            move |connection| {
+                m5_template::begin_template_apply(connection, operation_id, updated_at_ms)
+            },
+            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn complete_template_apply(
+        &self,
+        operation_id: OperationId,
+        template: PublishedTemplate,
+        completed_at_ms: u64,
+    ) -> Result<(), M5TemplateError> {
+        self.request_worker(
+            move |connection| {
+                m5_template::complete_template_apply(
+                    connection,
+                    operation_id,
+                    template,
+                    completed_at_ms,
+                )
+            },
+            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn record_template_checkpoint(
+        &self,
+        operation_id: OperationId,
+        step: u64,
+        phase: String,
+        updated_at_ms: u64,
+    ) -> Result<(), M5TemplateError> {
+        self.request_worker(
+            move |connection| {
+                m5_template::record_template_checkpoint(
+                    connection,
+                    operation_id,
+                    step,
+                    &phase,
+                    updated_at_ms,
+                )
+            },
+            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn complete_template_project_create(
+        &self,
+        operation_id: OperationId,
+        project: CreatedTemplateProject,
+        completed_at_ms: u64,
+    ) -> Result<(), M5TemplateError> {
+        self.request_worker(
+            move |connection| {
+                m5_template::complete_template_project_create(
+                    connection,
+                    operation_id,
+                    project,
+                    completed_at_ms,
+                )
+            },
+            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn fail_template_apply(
+        &self,
+        operation_id: OperationId,
+        error_code: String,
+        diagnostic_id: String,
+        completed_at_ms: u64,
+    ) -> Result<(), M5TemplateError> {
+        self.request_worker(
+            move |connection| {
+                m5_template::fail_template_apply(
+                    connection,
+                    operation_id,
+                    &error_code,
+                    &diagnostic_id,
+                    completed_at_ms,
+                )
+            },
+            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn recover_template_operations(
+        &self,
+        recovered_at_ms: u64,
+    ) -> Result<Vec<OperationId>, M5TemplateError> {
+        self.request_worker(
+            move |connection| m5_template::recover_template_operations(connection, recovered_at_ms),
+            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn set_template_favorite(
+        &self,
+        owner: PrincipalId,
+        template_id: TemplateId,
+        favorite: bool,
+        expected: Revision,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<(StoredTemplateRecord, bool), M5TemplateError> {
+        self.request_worker(
+            move |connection| {
+                m5_template::set_template_favorite(
+                    connection,
+                    &owner,
+                    template_id,
+                    favorite,
+                    expected,
+                    &key,
+                    now_ms,
+                )
+            },
+            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn remove_template(
+        &self,
+        owner: PrincipalId,
+        template_id: TemplateId,
+        expected: Revision,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<(bool, bool), M5TemplateError> {
+        self.request_worker(
+            move |connection| {
+                m5_template::remove_template(
+                    connection,
+                    &owner,
+                    template_id,
+                    expected,
+                    &key,
+                    now_ms,
+                )
+            },
+            || M5TemplateError::new(alcomd_application::M5TemplateErrorCode::StoreUnavailable),
         )
         .await
     }

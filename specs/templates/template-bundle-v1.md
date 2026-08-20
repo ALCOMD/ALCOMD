@@ -1,6 +1,6 @@
 # ALCOMD Template Bundle v1
 
-状态：Accepted contract；生产 reader/writer 尚未实现
+状态：Implemented through the M5 Template slice；真实 v3 differential parity 仍 blocked 到 M11
 
 文件扩展名固定为 `.alcomdtemplate`。v3 `.alcomtemplate` 不属于本格式。
 

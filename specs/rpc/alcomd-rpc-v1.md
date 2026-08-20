@@ -1,6 +1,6 @@
 # ALCOMD RPC v1
 
-状态：M1-M4 已完成并通过人工验收；M5 CLI/Unity 兼容合同已冻结，生产实现尚未获批
+状态：M1-M4 已完成并通过人工验收；M5 CLI/Unity/Template 兼容增加已实现，Backup 尚未开始
 
 ## 1. M1 合同范围
 
@@ -535,7 +535,8 @@ supervisor。foreground/activation 不在本合同中。
 
 ## 20. M5 contract-only 兼容增加：Template Bundle v1
 
-Template contract 冻结三项未来 capability，但 production adapter 存在前 `system.hello` 不得广告：
+Template production adapter 已实现以下三项 capability；`system.hello` 只在实际 dispatcher、application
+use case 与持久状态初始化成功后广告：
 
 | capability | method |
 |---|---|
@@ -544,7 +545,7 @@ Template contract 冻结三项未来 capability，但 production adapter 存在�
 | `templates.create-project.v1` | `templates.planCreateProject/applyCreateProject` |
 
 完整 DTO、collection/field bounds、immutable Plan、Operation progress 与 permission matrix 由
-`m5-template.schema.json` 冻结。该文件是兼容增加设计输入，不表示 method 已进入 dispatcher。
+`m5-template.schema.json` 冻结。这些 method 已进入 dispatcher；Backup 仍未实现或发布。
 
 Template Plan authority 使用 State Schema v5 的窄 `template_plans` 表。Plan JSON 固定 `version: 1`
 并按 import/derive/create-project 使用严格 DTO；唯一允许的持久更新是从 unapplied 绑定到精确匹配的
@@ -566,5 +567,5 @@ Operation。state commit 前不得 succeeded，重启必须复用同一 Operatio
 
 普通错误只返回稳定 code、opaque ID/revision 和安全 subreason，不返回 bundle/source/target 完整私密
 路径、locator、raw manifest、ZIP entry、credential 或 SQL/OS debug。新增 Template errors 由
-`rpc-error.schema.json` 冻结。CLI planned names 在 `m5-template-commands-v1.json`；生产 capability 未实现前
-不得加入实际 command catalog/help。
+`rpc-error.schema.json` 冻结。CLI 名称在 `m5-template-commands-v1.json`，并已加入实际 command
+catalog/help。

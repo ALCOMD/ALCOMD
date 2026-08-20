@@ -1,6 +1,6 @@
 {
     "contractVersion": 1,
-    "status": "planned-not-published",
+    "status": "implemented-published",
     "publicationRule": "add-to-command-catalog-only-after-production-capability-is-implemented",
     "commands": [
         {"path": ["template", "list"], "rpc": "templates.list", "mutation": false},

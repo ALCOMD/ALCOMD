@@ -94,6 +94,18 @@ pub const METHOD_UNITY_PROJECT_EDITOR_SET: &str = "unity.projectEditor.set";
 pub const METHOD_UNITY_WRITER_STATE: &str = "unity.writerState";
 pub const METHOD_UNITY_LAUNCH: &str = "unity.launch";
 pub const METHOD_UNITY_LAUNCH_STATUS: &str = "unity.launchStatus";
+pub const METHOD_TEMPLATES_LIST: &str = "templates.list";
+pub const METHOD_TEMPLATES_GET: &str = "templates.get";
+pub const METHOD_TEMPLATES_INSPECT_BUNDLE: &str = "templates.inspectBundle";
+pub const METHOD_TEMPLATES_PLAN_IMPORT: &str = "templates.planImport";
+pub const METHOD_TEMPLATES_APPLY_IMPORT: &str = "templates.applyImport";
+pub const METHOD_TEMPLATES_PLAN_DERIVE: &str = "templates.planDerive";
+pub const METHOD_TEMPLATES_APPLY_DERIVE: &str = "templates.applyDerive";
+pub const METHOD_TEMPLATES_EXPORT: &str = "templates.export";
+pub const METHOD_TEMPLATES_SET_FAVORITE: &str = "templates.setFavorite";
+pub const METHOD_TEMPLATES_REMOVE: &str = "templates.remove";
+pub const METHOD_TEMPLATES_PLAN_CREATE_PROJECT: &str = "templates.planCreateProject";
+pub const METHOD_TEMPLATES_APPLY_CREATE_PROJECT: &str = "templates.applyCreateProject";
 
 /// Capability required by `state.check`.
 pub const CAPABILITY_STATE_CHECK_V1: &str = "state.check.v1";
@@ -112,6 +124,9 @@ pub const CAPABILITY_PACKAGES_APPLY_V1: &str = "packages.apply.v1";
 pub const CAPABILITY_UNITY_READ_V1: &str = "unity.read.v1";
 pub const CAPABILITY_UNITY_MANAGE_V1: &str = "unity.manage.v1";
 pub const CAPABILITY_UNITY_LAUNCH_V1: &str = "unity.launch.v1";
+pub const CAPABILITY_TEMPLATES_READ_V1: &str = "templates.read.v1";
+pub const CAPABILITY_TEMPLATES_MANAGE_V1: &str = "templates.manage.v1";
+pub const CAPABILITY_TEMPLATES_CREATE_PROJECT_V1: &str = "templates.create-project.v1";
 
 /// Stable RPC v1 error codes implemented through M2.
 pub mod error_code {
@@ -204,6 +219,16 @@ pub mod error_code {
     pub const UNITY_PROJECT_SELECTOR_FORBIDDEN: &str = "unity_project_selector_forbidden";
     pub const UNITY_LAUNCH_FAILED: &str = "unity_launch_failed";
     pub const UNITY_LAUNCH_NOT_FOUND: &str = "unity_launch_not_found";
+    pub const TEMPLATE_NOT_FOUND: &str = "template_not_found";
+    pub const TEMPLATE_BUILTIN_IMMUTABLE: &str = "template_builtin_immutable";
+    pub const TEMPLATE_CONFLICT: &str = "template_conflict";
+    pub const TEMPLATE_PLAN_STALE: &str = "template_plan_stale";
+    pub const TEMPLATE_BUNDLE_INVALID: &str = "template_bundle_invalid";
+    pub const TEMPLATE_DIGEST_MISMATCH: &str = "template_digest_mismatch";
+    pub const TEMPLATE_PAYLOAD_UNAVAILABLE: &str = "template_payload_unavailable";
+    pub const TEMPLATE_TARGET_EXISTS: &str = "template_target_exists";
+    pub const PROJECT_CHANGED_DURING_TEMPLATE_CREATE: &str =
+        "project_changed_during_template_create";
 }
 
 /// JSON-RPC-inspired request envelope.
@@ -456,6 +481,12 @@ impl RpcError {
     #[must_use]
     pub fn unity(code: &str) -> Self {
         Self::simple(code, "The Unity request could not be completed.")
+    }
+
+    /// Creates a stable, non-sensitive M5 Template error.
+    #[must_use]
+    pub fn template(code: &str) -> Self {
+        Self::simple(code, "The Template request could not be completed.")
     }
 
     fn simple(code: &str, message: &str) -> Self {
@@ -1387,6 +1418,178 @@ pub struct UnityLaunchStatusParams {
 pub struct UnityLaunchResult {
     pub launch: UnityLaunchRecord,
     pub replayed: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TemplateSourceKind {
+    Builtin,
+    User,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateRecord {
+    pub template_id: String,
+    pub source_kind: TemplateSourceKind,
+    pub template_version: String,
+    pub display_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub provenance: String,
+    pub favorite: bool,
+    pub bundle_sha256: String,
+    pub manifest_fingerprint: String,
+    pub revision: u64,
+    pub created_at_ms: u64,
+    pub updated_at_ms: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TemplatesListParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplatesListResult {
+    pub templates: Vec<TemplateRecord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TemplateIdParams {
+    pub template_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateRecordResult {
+    pub template: TemplateRecord,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TemplateInspectBundleParams {
+    pub bundle_path: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateBundleInspection {
+    pub format_version: u32,
+    pub template_id: String,
+    pub template_version: String,
+    pub display_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub provenance: String,
+    pub bundle_sha256: String,
+    pub manifest_fingerprint: String,
+    pub payload_tree_sha256: String,
+    pub entry_count: u64,
+    pub total_bytes: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TemplatePlanImportParams {
+    pub bundle_path: String,
+    #[serde(rename = "override")]
+    pub override_existing: bool,
+    pub expected_revision: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TemplatePlanDeriveParams {
+    pub project_id: String,
+    pub expected_project_revision: u64,
+    pub template_id: String,
+    pub template_version: String,
+    pub display_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TemplateApplyPlanParams {
+    pub plan_id: String,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplatePlan {
+    pub plan_id: String,
+    pub action: String,
+    pub state: String,
+    pub plan_fingerprint: String,
+    #[serde(flatten)]
+    pub evidence: serde_json::Map<String, Value>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateApplyResult {
+    pub operation_id: String,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TemplateExportParams {
+    pub template_id: String,
+    pub expected_revision: u64,
+    pub target_path: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateExportResult {
+    pub exported: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TemplateSetFavoriteParams {
+    pub template_id: String,
+    pub favorite: bool,
+    pub expected_revision: u64,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TemplateRemoveParams {
+    pub template_id: String,
+    pub expected_revision: u64,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateRemoveResult {
+    pub template_id: String,
+    pub removed: bool,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TemplatePlanCreateProjectParams {
+    pub template_id: String,
+    pub expected_template_revision: u64,
+    pub target_parent: String,
+    pub target_leaf: String,
 }
 
 /// Successful `system.status` result.

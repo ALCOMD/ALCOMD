@@ -250,7 +250,7 @@ fn builtin_inventory_is_stable_native_and_contains_no_sdk_bytes() {
 }
 
 #[test]
-fn template_rpc_permissions_and_planned_cli_do_not_publish_production_capability() {
+fn template_rpc_permissions_and_cli_publish_only_the_implemented_capability() {
     let schema: Value = serde_json::from_str(TEMPLATE_RPC_SCHEMA).expect("Template RPC Schema");
     let cli: Value = serde_json::from_str(TEMPLATE_CLI).expect("Template planned CLI");
     let methods = schema["$defs"]["methodName"]["enum"]
@@ -265,7 +265,7 @@ fn template_rpc_permissions_and_planned_cli_do_not_publish_production_capability
             "templates.create-project.v1"
         ])
     );
-    assert_eq!(cli["status"], "planned-not-published");
+    assert_eq!(cli["status"], "implemented-published");
     assert_eq!(
         cli["commands"].as_array().expect("planned commands").len(),
         9
@@ -280,8 +280,8 @@ fn template_rpc_permissions_and_planned_cli_do_not_publish_production_capability
             "packages.manage"
         ])
     );
-    assert!(!PROTOCOL_SOURCE.contains("templates.read.v1"));
-    assert!(!COMMAND_CATALOG.contains("\"name\": \"template\""));
+    assert!(PROTOCOL_SOURCE.contains("templates.read.v1"));
+    assert!(COMMAND_CATALOG.contains("\"name\": \"template\""));
     for permission in [
         "templates.read",
         "templates.manage",

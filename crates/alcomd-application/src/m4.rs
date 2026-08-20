@@ -492,10 +492,23 @@ where
 {
     #[must_use]
     pub fn new(store: S, adapter: A) -> Self {
+        Self::with_locks(
+            store,
+            adapter,
+            std::sync::Arc::new(ResourceLockCoordinator::default()),
+        )
+    }
+
+    #[must_use]
+    pub fn with_locks(
+        store: S,
+        adapter: A,
+        locks: std::sync::Arc<ResourceLockCoordinator>,
+    ) -> Self {
         Self {
             store,
             adapter,
-            locks: std::sync::Arc::new(ResourceLockCoordinator::default()),
+            locks,
         }
     }
 

@@ -5479,6 +5479,7 @@ version = "4.0.0-alpha.0"
 dependencies = [
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "toml 1.1.4+spec-1.1.0",
 ]
 

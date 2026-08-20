@@ -148,6 +148,43 @@ impl fmt::Display for ProjectId {
     }
 }
 
+/// Stable identifier for a builtin or user Template.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct TemplateId(Uuid);
+
+impl TemplateId {
+    #[must_use]
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    pub fn parse(value: &str) -> Result<Self, DomainValueError> {
+        Uuid::parse_str(value)
+            .ok()
+            .filter(|parsed| parsed.to_string() == value)
+            .map(Self)
+            .ok_or(DomainValueError::InvalidTemplateId)
+    }
+
+    #[must_use]
+    pub const fn as_uuid(self) -> Uuid {
+        self.0
+    }
+}
+
+impl Default for TemplateId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for TemplateId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
 /// Stable identifier for an immutable package transaction plan.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -453,6 +490,12 @@ pub enum Permission {
     /// Create a new project at an explicit nonexistent destination.
     #[serde(rename = "projects.create")]
     ProjectsCreate,
+    /// Read Template registry records and inspect/export bundles.
+    #[serde(rename = "templates.read")]
+    TemplatesRead,
+    /// Import, derive, favorite, and remove user Templates.
+    #[serde(rename = "templates.manage")]
+    TemplatesManage,
 }
 
 impl Permission {
@@ -474,6 +517,8 @@ impl Permission {
             Self::UnityManage => "unity.manage",
             Self::UnityLaunch => "unity.launch",
             Self::ProjectsCreate => "projects.create",
+            Self::TemplatesRead => "templates.read",
+            Self::TemplatesManage => "templates.manage",
         }
     }
 }
@@ -491,6 +536,11 @@ pub enum ResourceKey {
     Repository(RepositoryId),
     /// Serializes publication of one content-addressed package cache object.
     PackageCache([u8; 32]),
+    /// Serializes creation of one absent child beneath a validated parent object.
+    ProjectCreate {
+        parent_identity_sha256: [u8; 32],
+        target_leaf: String,
+    },
 }
 
 impl ResourceKey {
@@ -519,6 +569,16 @@ impl ResourceKey {
                 bytes.extend_from_slice(digest);
                 bytes
             }
+            Self::ProjectCreate {
+                parent_identity_sha256,
+                target_leaf,
+            } => {
+                let mut bytes = b"project-create:".to_vec();
+                bytes.extend_from_slice(parent_identity_sha256);
+                bytes.push(b':');
+                bytes.extend_from_slice(target_leaf.as_bytes());
+                bytes
+            }
         }
     }
 }
@@ -538,6 +598,8 @@ pub enum DomainValueError {
     InvalidOperationId,
     /// Plan ID was not a valid UUID.
     InvalidPlanId,
+    /// Template ID was not a valid UUID.
+    InvalidTemplateId,
     /// Principal ID was empty, non-ASCII, or exceeded its frozen limit.
     InvalidPrincipalId,
     /// Idempotency key was empty, non-ASCII, or exceeded its frozen limit.
@@ -555,6 +617,7 @@ impl fmt::Display for DomainValueError {
             Self::InvalidUnityLaunchId => formatter.write_str("invalid Unity launch identifier"),
             Self::InvalidOperationId => formatter.write_str("invalid Operation identifier"),
             Self::InvalidPlanId => formatter.write_str("invalid Plan identifier"),
+            Self::InvalidTemplateId => formatter.write_str("invalid Template identifier"),
             Self::InvalidPrincipalId => formatter.write_str("invalid Principal identifier"),
             Self::InvalidIdempotencyKey => formatter.write_str("invalid idempotency key"),
         }
@@ -674,6 +737,14 @@ mod tests {
         let second = ResourceKey::Operation(OperationId::new());
         assert_ne!(first.canonical_bytes(), second.canonical_bytes());
         assert_eq!(ResourceKey::StateStore.canonical_bytes(), b"state-store");
+        let create = ResourceKey::ProjectCreate {
+            parent_identity_sha256: [7; 32],
+            target_leaf: "Example".to_owned(),
+        };
+        assert_eq!(
+            create.canonical_bytes(),
+            [b"project-create:".as_slice(), &[7; 32], b":Example"].concat()
+        );
     }
 
     #[test]

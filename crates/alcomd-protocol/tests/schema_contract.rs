@@ -441,7 +441,7 @@ fn m5_cli_and_unity_errors_are_stable_machine_codes() {
 }
 
 #[test]
-fn m5_template_contract_is_valid_but_not_claimed_as_implemented() {
+fn m5_template_contract_is_valid_and_implemented_without_backup_claims() {
     let contract = schema("m5-template");
     assert_eq!(
         contract["x-alcomd-publication"],

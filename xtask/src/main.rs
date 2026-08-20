@@ -1,10 +1,11 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 
 const LICENSE: &str = "AGPL-3.0-only";
 const FORBIDDEN_PRODUCTION_TOKENS: &[&str] = &[
@@ -140,6 +141,58 @@ struct Binaries {
     migration_v3: String,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BuiltinInventory {
+    schema: u32,
+    bundle_format: u32,
+    inventory_license: String,
+    embedded_third_party_assets: bool,
+    payload_digest_algorithm: String,
+    template: Vec<BuiltinInventoryEntry>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BuiltinInventoryEntry {
+    template_id: String,
+    family: String,
+    template_version: String,
+    display_name: String,
+    description: String,
+    unity_major: u32,
+    unity_minor: u32,
+    dependencies: Vec<BuiltinDependency>,
+    payload_source: String,
+    payload_source_sha256: String,
+    payload_tree_sha256: String,
+    license: String,
+    provenance: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BuiltinDependency {
+    package_id: String,
+    version_range: String,
+    include_prerelease: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct BuiltinPayloadDescriptor {
+    descriptor_version: u32,
+    family: String,
+    files: Vec<BuiltinPayloadFile>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BuiltinPayloadFile {
+    path: String,
+    utf8: String,
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let command = env::args().nth(1).unwrap_or_else(|| "check".to_owned());
     let root = workspace_root();
@@ -171,6 +224,7 @@ fn check(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     check_workspace(root, &mut errors)?;
     check_derived_identity(root, &product, &mut errors)?;
     check_unsafe_boundary(root, &mut errors)?;
+    check_builtin_inventory(root, &mut errors)?;
 
     for relative in PRODUCTION_ROOTS {
         scan_forbidden_tokens(&root.join(relative), &mut errors)?;
@@ -184,6 +238,143 @@ fn check(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("error: {error}");
     }
     Err(format!("{} repository check(s) failed", errors.len()).into())
+}
+
+fn check_builtin_inventory(
+    root: &Path,
+    errors: &mut Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let inventory_path = root.join("specs/templates/builtin-inventory-v1.toml");
+    let inventory: BuiltinInventory = read_toml(&inventory_path)?;
+    if inventory.schema != 1
+        || inventory.bundle_format != 1
+        || inventory.inventory_license != LICENSE
+        || inventory.embedded_third_party_assets
+        || inventory.payload_digest_algorithm != "canonical-payload-tree-sha256-v1"
+        || inventory.template.len() != 3
+    {
+        errors.push("builtin Template inventory header is not the frozen v1 contract".to_owned());
+    }
+    let expected_ids = [
+        "7e2233c8-0b3f-4cf2-aeb4-57d3d240b001",
+        "7e2233c8-0b3f-4cf2-aeb4-57d3d240b002",
+        "7e2233c8-0b3f-4cf2-aeb4-57d3d240b003",
+    ]
+    .into_iter()
+    .collect::<BTreeSet<_>>();
+    let actual_ids = inventory
+        .template
+        .iter()
+        .map(|entry| entry.template_id.as_str())
+        .collect::<BTreeSet<_>>();
+    if actual_ids != expected_ids {
+        errors.push("builtin Template IDs differ from the stable inventory".to_owned());
+    }
+    for entry in inventory.template {
+        if entry.template_version != "1"
+            || entry.license != LICENSE
+            || entry.display_name.is_empty()
+            || entry.description.is_empty()
+            || entry.unity_major != 2022
+            || entry.unity_minor != 3
+            || entry.provenance.is_empty()
+            || entry.dependencies.iter().any(|dependency| {
+                dependency.package_id.is_empty()
+                    || dependency.version_range.is_empty()
+                    || dependency.include_prerelease
+            })
+        {
+            errors.push(format!(
+                "builtin Template {} has an invalid version or license",
+                entry.template_id
+            ));
+        }
+        let source = root.join(&entry.payload_source);
+        if !source.starts_with(root.join("specs/templates/builtin-scaffolds")) {
+            errors.push(format!(
+                "builtin Template {} source is outside builtin-scaffolds",
+                entry.template_id
+            ));
+            continue;
+        }
+        let bytes = fs::read(&source)?;
+        if hex_sha256(&bytes) != entry.payload_source_sha256 {
+            errors.push(format!(
+                "builtin Template {} source digest is stale",
+                entry.template_id
+            ));
+        }
+        let descriptor: BuiltinPayloadDescriptor = serde_json::from_slice(&bytes)?;
+        if descriptor.descriptor_version != 1 || descriptor.family != entry.family {
+            errors.push(format!(
+                "builtin Template {} descriptor identity differs",
+                entry.template_id
+            ));
+        }
+        match builtin_tree_digest(&descriptor.files) {
+            Ok(digest) if digest == entry.payload_tree_sha256 => {}
+            Ok(_) => errors.push(format!(
+                "builtin Template {} payload tree digest is stale",
+                entry.template_id
+            )),
+            Err(error) => errors.push(format!(
+                "builtin Template {} descriptor is invalid: {error}",
+                entry.template_id
+            )),
+        }
+    }
+    Ok(())
+}
+
+fn builtin_tree_digest(files: &[BuiltinPayloadFile]) -> Result<String, &'static str> {
+    let mut sorted = BTreeMap::new();
+    for file in files {
+        if file.path.is_empty()
+            || file.path.len() > 1_024
+            || file.path.starts_with('/')
+            || file.path.contains('\\')
+            || file
+                .path
+                .split('/')
+                .any(|segment| segment.is_empty() || matches!(segment, "." | ".."))
+            || sorted
+                .insert(file.path.as_str(), file.utf8.as_bytes())
+                .is_some()
+        {
+            return Err("payload path is invalid or duplicated");
+        }
+    }
+    let mut digest = Sha256::new();
+    for (path, bytes) in sorted {
+        let path = path.as_bytes();
+        digest.update(
+            u32::try_from(path.len())
+                .map_err(|_| "payload path is too long")?
+                .to_le_bytes(),
+        );
+        digest.update(path);
+        digest.update(
+            u64::try_from(bytes.len())
+                .map_err(|_| "payload file is too large")?
+                .to_le_bytes(),
+        );
+        digest.update(bytes);
+    }
+    Ok(hex_bytes(&digest.finalize()))
+}
+
+fn hex_sha256(bytes: &[u8]) -> String {
+    hex_bytes(&Sha256::digest(bytes))
+}
+
+fn hex_bytes(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        output.push(char::from(HEX[(byte >> 4) as usize]));
+        output.push(char::from(HEX[(byte & 0x0f) as usize]));
+    }
+    output
 }
 
 fn check_unsafe_boundary(

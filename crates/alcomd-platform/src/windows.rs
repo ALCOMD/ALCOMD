@@ -16,7 +16,7 @@ mod known_folder;
 #[path = "windows_security.rs"]
 mod security;
 
-pub use file_identity::{WindowsFileIdentity, file_identity};
+pub use file_identity::{WindowsFileIdentity, file_identity, file_link_count};
 
 /// A connected Windows Named Pipe endpoint.
 pub enum IpcStream {

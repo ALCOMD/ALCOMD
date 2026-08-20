@@ -52,6 +52,11 @@ enum Command {
         #[command(subcommand)]
         command: PackageCommand,
     },
+    /// Inspect and manage native ALCOMD Template bundles.
+    Template {
+        #[command(subcommand)]
+        command: TemplateCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -62,6 +67,22 @@ enum SystemCommand {
 
 #[derive(Debug, Subcommand)]
 enum ProjectCommand {
+    Create {
+        #[arg(long)]
+        template: String,
+        target_parent: PathBuf,
+        target_leaf: String,
+        #[arg(long)]
+        expected_template_revision: u64,
+        #[arg(long)]
+        idempotency_key: String,
+        #[arg(long)]
+        yes: bool,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        no_wait: bool,
+    },
     Inspect {
         path: PathBuf,
         #[arg(long)]
@@ -190,6 +211,78 @@ enum PackageCommand {
     },
 }
 
+#[derive(Debug, Subcommand)]
+enum TemplateCommand {
+    List {
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+    Get {
+        template_id: String,
+    },
+    Inspect {
+        bundle_path: PathBuf,
+    },
+    Import {
+        bundle_path: PathBuf,
+        #[arg(long)]
+        override_existing: bool,
+        #[arg(long, default_value_t = 0)]
+        expected_revision: u64,
+        #[arg(long)]
+        idempotency_key: String,
+        #[arg(long)]
+        yes: bool,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        no_wait: bool,
+    },
+    Derive {
+        project_id: String,
+        template_id: String,
+        #[arg(long)]
+        expected_project_revision: u64,
+        #[arg(long)]
+        template_version: String,
+        #[arg(long)]
+        display_name: String,
+        #[arg(long)]
+        description: Option<String>,
+        #[arg(long)]
+        idempotency_key: String,
+        #[arg(long)]
+        yes: bool,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        no_wait: bool,
+    },
+    Export {
+        template_id: String,
+        target_path: PathBuf,
+        #[arg(long)]
+        expected_revision: u64,
+    },
+    Favorite {
+        template_id: String,
+        favorite: bool,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+    Remove {
+        template_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        idempotency_key: String,
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
     let arguments = Arguments::parse();
@@ -230,6 +323,47 @@ async fn execute(
             command: SystemCommand::Status,
         } => serde_json::to_value(client.system_status().await?),
         Command::Project { command } => match command {
+            ProjectCommand::Create {
+                template,
+                target_parent,
+                target_leaf,
+                expected_template_revision,
+                idempotency_key,
+                yes,
+                dry_run,
+                no_wait,
+            } => {
+                let target_parent =
+                    absolute_path(target_parent).map_err(alcomd_client::ClientError::Transport)?;
+                let plan = client
+                    .template_plan_create_project(
+                        alcomd_protocol::TemplatePlanCreateProjectParams {
+                            template_id: template,
+                            expected_template_revision,
+                            target_parent,
+                            target_leaf,
+                        },
+                    )
+                    .await?;
+                if dry_run {
+                    serde_json::to_value(plan)
+                } else {
+                    confirm_high_impact(yes)?;
+                    let accepted = client
+                        .template_apply_create_project(alcomd_protocol::TemplateApplyPlanParams {
+                            plan_id: plan.plan_id,
+                            idempotency_key,
+                        })
+                        .await?;
+                    if no_wait {
+                        serde_json::to_value(accepted)
+                    } else {
+                        serde_json::to_value(
+                            wait_for_operation(&mut client, accepted.operation_id).await?,
+                        )
+                    }
+                }
+            }
             ProjectCommand::Inspect {
                 path,
                 search_parents,
@@ -423,6 +557,151 @@ async fn execute(
                     .await?,
             ),
         },
+        Command::Template { command } => match command {
+            TemplateCommand::List { limit } => serde_json::to_value(
+                client
+                    .templates_list(alcomd_protocol::TemplatesListParams {
+                        cursor: None,
+                        limit,
+                    })
+                    .await?,
+            ),
+            TemplateCommand::Get { template_id } => {
+                serde_json::to_value(client.template_get(template_id).await?)
+            }
+            TemplateCommand::Inspect { bundle_path } => {
+                let bundle_path =
+                    absolute_path(bundle_path).map_err(alcomd_client::ClientError::Transport)?;
+                serde_json::to_value(client.template_inspect_bundle(bundle_path).await?)
+            }
+            TemplateCommand::Import {
+                bundle_path,
+                override_existing,
+                expected_revision,
+                idempotency_key,
+                yes,
+                dry_run,
+                no_wait,
+            } => {
+                let bundle_path =
+                    absolute_path(bundle_path).map_err(alcomd_client::ClientError::Transport)?;
+                let plan = client
+                    .template_plan_import(alcomd_protocol::TemplatePlanImportParams {
+                        bundle_path,
+                        override_existing,
+                        expected_revision,
+                    })
+                    .await?;
+                if dry_run {
+                    serde_json::to_value(plan)
+                } else {
+                    confirm_high_impact(yes)?;
+                    let accepted = client
+                        .template_apply_import(alcomd_protocol::TemplateApplyPlanParams {
+                            plan_id: plan.plan_id,
+                            idempotency_key,
+                        })
+                        .await?;
+                    if no_wait {
+                        serde_json::to_value(accepted)
+                    } else {
+                        serde_json::to_value(
+                            wait_for_operation(&mut client, accepted.operation_id).await?,
+                        )
+                    }
+                }
+            }
+            TemplateCommand::Derive {
+                project_id,
+                template_id,
+                expected_project_revision,
+                template_version,
+                display_name,
+                description,
+                idempotency_key,
+                yes,
+                dry_run,
+                no_wait,
+            } => {
+                let plan = client
+                    .template_plan_derive(alcomd_protocol::TemplatePlanDeriveParams {
+                        project_id,
+                        expected_project_revision,
+                        template_id,
+                        template_version,
+                        display_name,
+                        description,
+                    })
+                    .await?;
+                if dry_run {
+                    serde_json::to_value(plan)
+                } else {
+                    confirm_high_impact(yes)?;
+                    let accepted = client
+                        .template_apply_derive(alcomd_protocol::TemplateApplyPlanParams {
+                            plan_id: plan.plan_id,
+                            idempotency_key,
+                        })
+                        .await?;
+                    if no_wait {
+                        serde_json::to_value(accepted)
+                    } else {
+                        serde_json::to_value(
+                            wait_for_operation(&mut client, accepted.operation_id).await?,
+                        )
+                    }
+                }
+            }
+            TemplateCommand::Export {
+                template_id,
+                target_path,
+                expected_revision,
+            } => {
+                let target_path =
+                    absolute_path(target_path).map_err(alcomd_client::ClientError::Transport)?;
+                serde_json::to_value(
+                    client
+                        .template_export(alcomd_protocol::TemplateExportParams {
+                            template_id,
+                            expected_revision,
+                            target_path,
+                        })
+                        .await?,
+                )
+            }
+            TemplateCommand::Favorite {
+                template_id,
+                favorite,
+                expected_revision,
+                idempotency_key,
+            } => serde_json::to_value(
+                client
+                    .template_set_favorite(alcomd_protocol::TemplateSetFavoriteParams {
+                        template_id,
+                        favorite,
+                        expected_revision,
+                        idempotency_key,
+                    })
+                    .await?,
+            ),
+            TemplateCommand::Remove {
+                template_id,
+                expected_revision,
+                idempotency_key,
+                yes,
+            } => {
+                confirm_high_impact(yes)?;
+                serde_json::to_value(
+                    client
+                        .template_remove(alcomd_protocol::TemplateRemoveParams {
+                            template_id,
+                            expected_revision,
+                            idempotency_key,
+                        })
+                        .await?,
+                )
+            }
+        },
     }
     .map_err(|_| alcomd_client::ClientError::InvalidResponse)?;
     Ok(value)
@@ -460,6 +739,50 @@ fn absolute_path(path: PathBuf) -> std::io::Result<String> {
             "path encoding is unsupported",
         )
     })
+}
+
+fn confirm_high_impact(yes: bool) -> Result<(), alcomd_client::ClientError> {
+    if yes {
+        return Ok(());
+    }
+    use std::io::{IsTerminal, Write};
+    if !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal() {
+        return Err(alcomd_client::ClientError::Transport(
+            std::io::Error::other("confirmation_required: pass --yes in non-interactive use"),
+        ));
+    }
+    eprint!("Apply this high-impact Template operation? [y/N] ");
+    std::io::stderr()
+        .flush()
+        .map_err(alcomd_client::ClientError::Transport)?;
+    let mut response = String::new();
+    let read = std::io::stdin()
+        .read_line(&mut response)
+        .map_err(alcomd_client::ClientError::Transport)?;
+    if read == 0 || !matches!(response.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+        return Err(alcomd_client::ClientError::Transport(
+            std::io::Error::other("confirmation_required"),
+        ));
+    }
+    Ok(())
+}
+
+async fn wait_for_operation(
+    client: &mut alcomd_client::AlcomdClient,
+    operation_id: String,
+) -> Result<alcomd_protocol::Operation, alcomd_client::ClientError> {
+    loop {
+        let operation = client.operation_get(operation_id.clone()).await?;
+        if matches!(
+            operation.state,
+            alcomd_protocol::OperationState::Succeeded
+                | alcomd_protocol::OperationState::Failed
+                | alcomd_protocol::OperationState::Cancelled
+        ) {
+            return Ok(operation);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
 }
 
 fn repository_source(

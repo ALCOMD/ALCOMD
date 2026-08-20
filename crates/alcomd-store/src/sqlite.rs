@@ -501,7 +501,10 @@ pub(super) fn recover(
     let mut schedule = Vec::new();
     for (operation_id, state, kind) in candidates {
         let operation_id = OperationId::parse(&operation_id).map_err(|_| corrupt_state())?;
-        if kind == "packages.apply" {
+        // Later milestone handlers own recovery for their durable Operation kinds. The M2
+        // state-check recovery pass must leave those rows untouched so the package/Template
+        // recovery pass can reuse its own journal and immutable Plan authority.
+        if kind == "packages.apply" || kind.starts_with("templates.") {
             continue;
         }
         if kind != "state.check" || !journal_is_recoverable(connection, operation_id)? {

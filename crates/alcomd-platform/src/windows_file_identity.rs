@@ -12,7 +12,8 @@ use std::ptr::{null, null_mut};
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_ID_INFO, FILE_SHARE_DELETE, FILE_SHARE_READ,
-    FILE_SHARE_WRITE, FileIdInfo, GetFileInformationByHandleEx, OPEN_EXISTING,
+    FILE_SHARE_WRITE, FILE_STANDARD_INFO, FileIdInfo, FileStandardInfo,
+    GetFileInformationByHandleEx, OPEN_EXISTING,
 };
 
 /// Authoritative identity of one filesystem object on the current Windows machine.
@@ -47,25 +48,7 @@ impl Drop for OwnedHandle {
 
 /// Returns the final target object's volume serial and 128-bit file ID.
 pub fn file_identity(path: &Path) -> io::Result<WindowsFileIdentity> {
-    let wide_path = nul_terminated(path.as_os_str())?;
-    // SAFETY: `wide_path` is NUL-terminated and remains alive for the call. All
-    // other pointers are null as required. OPEN_REPARSE_POINT is intentionally
-    // absent, so CreateFileW resolves a root symlink/junction to its final target.
-    let raw_handle = unsafe {
-        CreateFileW(
-            wide_path.as_ptr(),
-            0,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-            null(),
-            OPEN_EXISTING,
-            FILE_FLAG_BACKUP_SEMANTICS,
-            null_mut(),
-        )
-    };
-    if raw_handle == INVALID_HANDLE_VALUE {
-        return Err(io::Error::last_os_error());
-    }
-    let handle = OwnedHandle(raw_handle);
+    let handle = open_object(path)?;
     let mut information = MaybeUninit::<FILE_ID_INFO>::zeroed();
     // SAFETY: `handle` is a valid owned HANDLE. `information` is writable,
     // correctly aligned storage exactly `size_of::<FILE_ID_INFO>()` bytes long;
@@ -89,6 +72,53 @@ pub fn file_identity(path: &Path) -> io::Result<WindowsFileIdentity> {
         volume_serial_number: information.VolumeSerialNumber,
         file_id: information.FileId.Identifier,
     })
+}
+
+/// Returns the authoritative hard-link count for one final target filesystem object.
+pub fn file_link_count(path: &Path) -> io::Result<u32> {
+    let handle = open_object(path)?;
+    let mut information = MaybeUninit::<FILE_STANDARD_INFO>::zeroed();
+    // SAFETY: `handle` is a valid exclusively owned HANDLE and `information` is writable,
+    // correctly aligned storage exactly `size_of::<FILE_STANDARD_INFO>()` bytes long.
+    // FileStandardInfo initializes the complete output on a nonzero return.
+    let succeeded = unsafe {
+        GetFileInformationByHandleEx(
+            handle.0,
+            FileStandardInfo,
+            information.as_mut_ptr().cast::<c_void>(),
+            size_of::<FILE_STANDARD_INFO>() as u32,
+        )
+    };
+    if succeeded == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: the successful FileStandardInfo query initialized the complete
+    // FILE_STANDARD_INFO buffer. NumberOfLinks is copied into a pure Rust u32;
+    // neither the Win32 structure nor the owned HANDLE escapes this module.
+    let information = unsafe { information.assume_init() };
+    Ok(information.NumberOfLinks)
+}
+
+fn open_object(path: &Path) -> io::Result<OwnedHandle> {
+    let wide_path = nul_terminated(path.as_os_str())?;
+    // SAFETY: `wide_path` is NUL-terminated and remains alive for the call. All
+    // other pointers are null as required. OPEN_REPARSE_POINT is intentionally
+    // absent, so CreateFileW resolves a root symlink/junction to its final target.
+    let raw_handle = unsafe {
+        CreateFileW(
+            wide_path.as_ptr(),
+            0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            null(),
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            null_mut(),
+        )
+    };
+    if raw_handle == INVALID_HANDLE_VALUE {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(OwnedHandle(raw_handle))
 }
 
 fn nul_terminated(path: &OsStr) -> io::Result<Vec<u16>> {
@@ -212,5 +242,55 @@ mod tests {
             io::ErrorKind::NotFound
         );
         fs::remove_dir(&root).expect("remove temporary directory");
+    }
+
+    #[test]
+    fn link_count_is_one_for_an_ordinary_file_and_handles_are_released() {
+        let root = temporary_directory("link-count-one");
+        let file = root.join("ordinary.txt");
+        let directory = root.join("ordinary-directory");
+        fs::write(&file, b"ordinary").expect("write ordinary file");
+        fs::create_dir(&directory).expect("create ordinary directory");
+        for _ in 0..256 {
+            assert_eq!(file_link_count(&file).expect("query link count"), 1);
+            let _ = file_link_count(&directory).expect("query directory link count");
+        }
+        let renamed = root.join("renamed.txt");
+        let renamed_directory = root.join("renamed-directory");
+        fs::rename(&file, &renamed).expect("rename after link-count queries");
+        fs::rename(&directory, &renamed_directory)
+            .expect("rename directory after link-count queries");
+        fs::remove_file(&renamed).expect("remove after link-count queries");
+        fs::remove_dir(&renamed_directory).expect("remove directory after link-count queries");
+        fs::remove_dir(&root).expect("remove fixture root");
+    }
+
+    #[test]
+    fn link_count_detects_links_inside_and_outside_a_project() {
+        let root = temporary_directory("hard-links");
+        let project = root.join("Project");
+        fs::create_dir(&project).expect("create project");
+        let source = project.join("source.txt");
+        let inside = project.join("inside.txt");
+        let outside = root.join("outside.txt");
+        fs::write(&source, b"linked").expect("write source");
+        fs::hard_link(&source, &inside).expect("create inside hard link");
+        assert_eq!(file_link_count(&source).expect("two links"), 2);
+        fs::hard_link(&source, &outside).expect("create outside hard link");
+        assert_eq!(file_link_count(&source).expect("three links"), 3);
+        fs::remove_dir_all(&root).expect("remove hard-link fixture");
+    }
+
+    #[test]
+    fn link_count_query_failure_is_an_io_error() {
+        let root = temporary_directory("link-count-missing");
+        let missing = root.join("missing.txt");
+        assert_eq!(
+            file_link_count(&missing)
+                .expect_err("missing link count")
+                .kind(),
+            io::ErrorKind::NotFound
+        );
+        fs::remove_dir(&root).expect("remove fixture root");
     }
 }

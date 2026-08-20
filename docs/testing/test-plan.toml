@@ -223,7 +223,7 @@ stage = "M5"
 kind = "contract-persistence"
 platforms = ["all"]
 status = "implemented"
-description = "冻结 builtin/user source、native inventory/许可证、opaque locator、TemplateId conflict、Schema v4 registry 与 Schema v5 immutable Template Plan migration；不表示 registry production use case 已实现。"
+description = "冻结并验证 builtin/user source、native inventory/许可证、opaque locator、TemplateId conflict、Schema v4 registry、Schema v5 immutable Template Plan migration 与真实 registry production use case。"
 evidence = ["specs/templates/builtin-inventory-v1.toml", "specs/storage/state-v4.md", "specs/storage/state-v5.md", "crates/alcomd-store/migrations/0005_template_plans.sql", "crates/alcomd-store/tests/schema_contract.rs", "crates/alcomd-testing/tests/m5_contract.rs"]
 
 [[test]]
@@ -231,32 +231,36 @@ id = "templates.m5-import-export"
 stage = "M5"
 kind = "integration"
 platforms = ["all"]
-status = "planned"
+status = "implemented"
 description = "覆盖 read-only inspect、import no-op/conflict/override Plan/Apply、object digest revalidation、create-new export、crash/idempotency 和语义确定性。"
+evidence = ["crates/alcomd-testing/tests/m5_template.rs", "crates/alcomd-testing/tests/m5_template_rpc.rs", "crates/alcomd-vpm/src/template_object.rs"]
 
 [[test]]
 id = "templates.m5-derive"
 stage = "M5"
 kind = "integration"
 platforms = ["all"]
-status = "planned"
+status = "implemented"
 description = "覆盖 writer gate、include/exclude、symlink/special-file、前后 project fingerprint、self-contained derived bundle 与 project_changed_during_template_create。"
+evidence = ["crates/alcomd-testing/tests/m5_template.rs", "crates/alcomd-vpm/src/template_derive.rs", "crates/alcomd-platform/src/windows_file_identity.rs"]
 
 [[test]]
 id = "templates.m5-create-project"
 stage = "M5"
 kind = "integration"
 platforms = ["all"]
-status = "planned"
+status = "implemented"
 description = "覆盖 deterministic Plan、resolver-ready/hash-required dependency、parent identity + target leaf lock、target race、M4 ChangeSet 复用、revision 与幂等重放。"
+evidence = ["crates/alcomd-vpm/src/staging_package.rs", "crates/alcomd-vpm/src/template_create.rs", "crates/alcomd-testing/tests/m5_template.rs", "crates/alcomd-testing/tests/m5_template_rpc.rs"]
 
 [[test]]
 id = "templates.m5-transaction-faults"
 stage = "M5"
 kind = "fault-injection"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
-status = "planned"
+status = "implemented"
 description = "真实 daemon create-project kill/restart matrix 覆盖 prepared、staging complete、publish 前后、registry commit 前和 state committed 后，复用原 Operation/Plan/idempotency。"
+evidence = ["crates/alcomd-testing/tests/m5_template_rpc.rs"]
 
 [[test]]
 id = "backups.v3-parity"

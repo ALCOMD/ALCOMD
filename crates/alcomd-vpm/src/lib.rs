@@ -7,10 +7,17 @@ mod package;
 mod plan;
 mod range;
 mod resolver;
+mod staging_package;
+mod template;
+mod template_builtin;
+mod template_create;
+mod template_derive;
+mod template_engine;
+mod template_object;
 
 pub use archive::{
-    ArchiveEntry, ArchiveError, ArchiveErrorCode, ArchivePreflight, extract_archive,
-    preflight_archive,
+    ArchiveEntry, ArchiveError, ArchiveErrorCode, ArchiveLimits, ArchivePreflight, extract_archive,
+    extract_archive_with_limits, preflight_archive, preflight_archive_with_limits,
 };
 pub use cache::{CacheError, CacheErrorCode, PackageCache};
 pub use engine::PackageEngine;
@@ -25,6 +32,21 @@ pub use plan::{
 pub use resolver::{
     PackageCandidate, PackageDependency, PackageDependencyEdge, PackageSource, Resolution,
     ResolveError, ResolveRequest, ResolvedPackage, candidates_from_catalog, resolve_packages,
+};
+pub use staging_package::{
+    FrozenPackageMaterializer, PreparedFrozenPackages, StagingPackageEvidence,
+    StagingProjectEvidence,
+};
+pub use template::{
+    TemplateDependency, TemplateError, TemplateErrorCode, TemplateInspection, TemplateManifest,
+    TemplatePayload, TemplateProvenance, TemplateProvenanceKind, TemplateResource,
+    TemplateUnityCompatibility, inspect_template_bundle, inspect_template_bundle_with_limits,
+};
+#[doc(hidden)]
+pub use template_create::{PreparedTemplateProject, StagedTemplateProject};
+pub use template_engine::TemplateEngine;
+pub use template_object::{
+    TemplateObject, TemplateObjectError, TemplateObjectErrorCode, TemplateObjectStore,
 };
 
 use std::path::{Path, PathBuf};
