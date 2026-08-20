@@ -254,7 +254,7 @@ stage = "M5"
 kind = "contract"
 platforms = ["all"]
 status = "implemented"
-description = "冻结 CLI v1 machine contract/command catalog、Unity RPC/capability/error/permission 与未接线 State Schema v4 migration；不代表 CLI/Unity 生产实现或真实 Editor parity。"
+description = "冻结 CLI v1 machine contract/command catalog、Unity RPC/capability/error/permission 与已接线 State Schema v4 migration；不代表完整 CLI/Unity 或真实 Editor parity。"
 evidence = ["crates/alcomd-testing/tests/m5_contract.rs", "crates/alcomd-protocol/tests/schema_contract.rs", "crates/alcomd-store/tests/schema_contract.rs"]
 
 [[test]]
@@ -262,16 +262,18 @@ id = "unity.m5-registry-launch"
 stage = "M5"
 kind = "integration"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
-status = "planned"
-description = "覆盖 Editor/Hub 发现、手工 registry、project preference、无 shell argv、launch observation 与三平台失败语义。"
+status = "implemented"
+description = "覆盖 synthetic Editor 校验、手工 registry、project preference、无 shell 独立 argv、launch 持久幂等与 daemon RPC 往返；真实 Hub/Editor parity 继续 blocked。"
+evidence = ["crates/alcomd-testing/tests/m5_unity_rpc.rs", "crates/alcomd-store/tests/m5_unity.rs", "crates/alcomd-platform/src/unity.rs"]
 
 [[test]]
 id = "unity.m5-writer-gate"
 stage = "M5"
 kind = "safety"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
-status = "planned"
-description = "覆盖 confirmed/suspected/not-observed/unknown evidence、PID reuse/权限/退出竞态及 package/template/backup mutation hard/advisory gate。"
+status = "implemented"
+description = "覆盖 confirmed/suspected/not-observed/unknown 四态、PID+start-time、exe/argv 缺失、fake permission failure、真实短生命周期子进程退出竞态与并行观察；后续 template/backup mutation 接线由各自 slice 测试负责。"
+evidence = ["crates/alcomd-application/src/m5.rs", "crates/alcomd-platform/src/process.rs", "crates/alcomd-testing/tests/m5_unity_rpc.rs"]
 
 [[test]]
 id = "cli.command-contract"

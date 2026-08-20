@@ -121,6 +121,9 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_REPOSITORIES_REGISTRY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_APPLY_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_UNITY_READ_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_UNITY_MANAGE_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_UNITY_LAUNCH_V1.to_owned(),
             ],
         };
         self.call(METHOD_SYSTEM_HELLO, params).await
@@ -239,6 +242,101 @@ impl AlcomdClient {
     ) -> Result<alcomd_protocol::PackageApplyPlanResult, ClientError> {
         self.call(alcomd_protocol::METHOD_PACKAGES_APPLY_PLAN, params)
             .await
+    }
+
+    pub async fn unity_installations_list(
+        &mut self,
+        params: alcomd_protocol::UnityInstallationsListParams,
+    ) -> Result<alcomd_protocol::UnityInstallationsListResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_UNITY_INSTALLATIONS_LIST, params)
+            .await
+    }
+
+    pub async fn unity_installation_get(
+        &mut self,
+        installation_id: String,
+    ) -> Result<alcomd_protocol::UnityInstallationResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_UNITY_INSTALLATIONS_GET,
+            alcomd_protocol::UnityInstallationIdParams { installation_id },
+        )
+        .await
+    }
+
+    pub async fn unity_installation_register(
+        &mut self,
+        params: alcomd_protocol::UnityInstallationRegisterParams,
+    ) -> Result<alcomd_protocol::UnityInstallationResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_UNITY_INSTALLATIONS_REGISTER, params)
+            .await
+    }
+
+    pub async fn unity_installation_remove(
+        &mut self,
+        params: alcomd_protocol::UnityInstallationRemoveParams,
+    ) -> Result<alcomd_protocol::UnityInstallationRemoveResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_UNITY_INSTALLATIONS_REMOVE, params)
+            .await
+    }
+
+    pub async fn unity_installations_refresh(
+        &mut self,
+        idempotency_key: String,
+    ) -> Result<alcomd_protocol::UnityInstallationsListResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_UNITY_INSTALLATIONS_REFRESH,
+            alcomd_protocol::UnityInstallationRefreshParams { idempotency_key },
+        )
+        .await
+    }
+
+    pub async fn unity_project_editor_get(
+        &mut self,
+        project_id: String,
+    ) -> Result<alcomd_protocol::ProjectEditorResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_UNITY_PROJECT_EDITOR_GET,
+            alcomd_protocol::UnityProjectIdParams { project_id },
+        )
+        .await
+    }
+
+    pub async fn unity_project_editor_set(
+        &mut self,
+        params: alcomd_protocol::ProjectEditorSetParams,
+    ) -> Result<alcomd_protocol::ProjectEditorResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_UNITY_PROJECT_EDITOR_SET, params)
+            .await
+    }
+
+    pub async fn unity_writer_state(
+        &mut self,
+        project_id: String,
+    ) -> Result<alcomd_protocol::UnityWriterState, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_UNITY_WRITER_STATE,
+            alcomd_protocol::UnityProjectIdParams { project_id },
+        )
+        .await
+    }
+
+    pub async fn unity_launch(
+        &mut self,
+        params: alcomd_protocol::UnityLaunchParams,
+    ) -> Result<alcomd_protocol::UnityLaunchResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_UNITY_LAUNCH, params)
+            .await
+    }
+
+    pub async fn unity_launch_status(
+        &mut self,
+        launch_id: String,
+    ) -> Result<alcomd_protocol::UnityLaunchResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_UNITY_LAUNCH_STATUS,
+            alcomd_protocol::UnityLaunchStatusParams { launch_id },
+        )
+        .await
     }
 
     pub async fn project_inspect(

@@ -11,23 +11,27 @@ use std::thread;
 use alcomd_application::{
     ApplyPlanOutcome, CheckClassification, CreateOperationOutcome, EventPage,
     FilesystemJournalEntry, IdempotencyKey, M3Error, M3RegistryStore, M4Error, M4Store,
-    OperationCursor, OperationId, OperationPage, OperationRecord, PackageApplyCompletion,
-    PackageCursor, PackagePage, PackagePlanDraft, PackagePlanRecord, PlanId, PrincipalId,
-    ProjectId, ProjectObservation, ProjectPage, ProjectRecord, RegistryCursor, RepositoryId,
-    RepositoryObservation, RepositoryPage, RepositoryRecord, RepositoryValidators, ResolverCatalog,
-    Revision, StateCheckResult, StateStore, StoreError, SyncWrite, UnregisterResult,
+    M5UnityError, M5UnityStore, OperationCursor, OperationId, OperationPage, OperationRecord,
+    PackageApplyCompletion, PackageCursor, PackagePage, PackagePlanDraft, PackagePlanRecord,
+    PlanId, PrincipalId, ProjectEditorPreference, ProjectId, ProjectObservation, ProjectPage,
+    ProjectRecord, RegistryCursor, RepositoryId, RepositoryObservation, RepositoryPage,
+    RepositoryRecord, RepositoryValidators, ResolverCatalog, Revision, StateCheckResult,
+    StateStore, StoreError, SyncWrite, UnityInstallationCursor, UnityInstallationId,
+    UnityInstallationObservation, UnityInstallationPage, UnityInstallationRecord, UnityLaunchId,
+    UnityLaunchRecord, UnityLaunchState, UnregisterResult,
 };
 use tokio::sync::{mpsc, oneshot};
 
 mod m3;
 mod m4;
+mod m5;
 mod sqlite;
 
 /// Stable crate identifier used by repository checks.
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 3;
+pub const CURRENT_DATA_SCHEMA: u32 = 4;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]
@@ -451,6 +455,181 @@ impl M4Store for StateStoreHandle {
         self.request_worker(
             move |connection| m4::recover_package_operations(connection, recovered_at_ms),
             || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+}
+
+impl M5UnityStore for StateStoreHandle {
+    async fn register_installation(
+        &self,
+        owner: PrincipalId,
+        observation: UnityInstallationObservation,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<(UnityInstallationRecord, bool), M5UnityError> {
+        self.request_worker(
+            move |connection| {
+                m5::register_installation(connection, &owner, observation, &key, now_ms)
+            },
+            m5::unavailable,
+        )
+        .await
+    }
+
+    async fn get_installation(
+        &self,
+        owner: PrincipalId,
+        id: UnityInstallationId,
+    ) -> Result<UnityInstallationRecord, M5UnityError> {
+        self.request_worker(
+            move |connection| m5::get_installation(connection, &owner, id),
+            m5::unavailable,
+        )
+        .await
+    }
+
+    async fn list_installations(
+        &self,
+        owner: PrincipalId,
+        cursor: Option<UnityInstallationCursor>,
+        limit: u32,
+    ) -> Result<UnityInstallationPage, M5UnityError> {
+        self.request_worker(
+            move |connection| m5::list_installations(connection, &owner, cursor, limit),
+            m5::unavailable,
+        )
+        .await
+    }
+
+    async fn remove_installation(
+        &self,
+        owner: PrincipalId,
+        id: UnityInstallationId,
+        expected: Revision,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<(bool, bool), M5UnityError> {
+        self.request_worker(
+            move |connection| {
+                m5::remove_installation(connection, &owner, id, expected, &key, now_ms)
+            },
+            m5::unavailable,
+        )
+        .await
+    }
+
+    async fn synchronize_installations(
+        &self,
+        owner: PrincipalId,
+        observations: Vec<UnityInstallationObservation>,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<(UnityInstallationPage, bool), M5UnityError> {
+        self.request_worker(
+            move |connection| {
+                m5::synchronize_installations(connection, &owner, observations, &key, now_ms)
+            },
+            m5::unavailable,
+        )
+        .await
+    }
+
+    async fn get_project_editor(
+        &self,
+        owner: PrincipalId,
+        project_id: ProjectId,
+    ) -> Result<ProjectEditorPreference, M5UnityError> {
+        self.request_worker(
+            move |connection| m5::get_project_editor(connection, &owner, project_id),
+            m5::unavailable,
+        )
+        .await
+    }
+
+    async fn set_project_editor(
+        &self,
+        owner: PrincipalId,
+        project_id: ProjectId,
+        installation_id: UnityInstallationId,
+        arguments: Vec<String>,
+        expected: Option<Revision>,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<(ProjectEditorPreference, bool), M5UnityError> {
+        self.request_worker(
+            move |connection| {
+                m5::set_project_editor(
+                    connection,
+                    &owner,
+                    project_id,
+                    installation_id,
+                    arguments,
+                    expected,
+                    &key,
+                    now_ms,
+                )
+            },
+            m5::unavailable,
+        )
+        .await
+    }
+
+    async fn accept_launch(
+        &self,
+        owner: PrincipalId,
+        project: ProjectRecord,
+        preference: ProjectEditorPreference,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<(UnityLaunchRecord, bool), M5UnityError> {
+        self.request_worker(
+            move |connection| {
+                m5::accept_launch(connection, &owner, project, preference, &key, now_ms)
+            },
+            m5::unavailable,
+        )
+        .await
+    }
+
+    async fn replay_launch(
+        &self,
+        owner: PrincipalId,
+        project: ProjectRecord,
+        preference: ProjectEditorPreference,
+        key: IdempotencyKey,
+    ) -> Result<Option<UnityLaunchRecord>, M5UnityError> {
+        self.request_worker(
+            move |connection| m5::replay_launch(connection, &owner, &project, &preference, &key),
+            m5::unavailable,
+        )
+        .await
+    }
+
+    async fn get_launch(
+        &self,
+        owner: PrincipalId,
+        launch_id: UnityLaunchId,
+    ) -> Result<UnityLaunchRecord, M5UnityError> {
+        self.request_worker(
+            move |connection| m5::get_launch(connection, &owner, launch_id),
+            m5::unavailable,
+        )
+        .await
+    }
+
+    async fn set_launch_state(
+        &self,
+        owner: PrincipalId,
+        launch_id: UnityLaunchId,
+        state: UnityLaunchState,
+        spawn_accepted: bool,
+    ) -> Result<UnityLaunchRecord, M5UnityError> {
+        self.request_worker(
+            move |connection| {
+                m5::set_launch_state(connection, &owner, launch_id, state, spawn_accepted)
+            },
+            m5::unavailable,
         )
         .await
     }

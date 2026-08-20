@@ -1,10 +1,10 @@
 # ALCOMD State Schema v4
 
-状态：Accepted（M5 contract-first；生产 migration 尚未接入）
+状态：Implemented（M5 Unity 最小生产切片已接入；Template/Backup 仍仅冻结表结构）
 
-权威 migration 合同是 `crates/alcomd-store/migrations/0004_local_workflows.sql`。M5 生产实现尚未
-获批，因此 daemon 当前支持版本仍为 v3；不得仅因本文件和 0004 存在就执行 migration、广告
-`dataSchema: 4` 或接受 M5 method。
+权威 migration 是 `crates/alcomd-store/migrations/0004_local_workflows.sql`。daemon 已在启动事务中
+从 v3 自动迁移到 v4，并在 store ready 后广告 `dataSchema: 4`；本阶段只接入 Unity registry、project
+Editor preference 与 launch 的既有持久幂等记录。Template/Backup 表仍不得被描述为生产功能。
 
 ## 范围
 
@@ -52,4 +52,4 @@ v4 预留且只预留已批准的最小 registry 字段。Template 的 archive/q
 - 完整保留 M2-M4 Operation、Plan、package filesystem journal、Project/Repository revision、Event
   sequence、永久 idempotency 与全部 foreign key。
 - v4 不改变既有 table/column/trigger 语义，也不改变 M1-M4 method。
-- future schema 继续由 daemon fail closed；生产接入前 `CURRENT_SCHEMA` 保持 3。
+- future schema 继续由 daemon fail closed；`CURRENT_DATA_SCHEMA` 固定为 4。

@@ -8,8 +8,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use alcomd_application::{
     AccessContext, Application, ApplicationError, EventRecord as ApplicationEvent, IdempotencyKey,
-    M3Application, M4Application, OperationCursor, OperationId, OperationRecord,
-    OperationState as DomainState, Revision, StoreErrorKind,
+    M3Application, M4Application, M5UnityApplication as M5Application, OperationCursor,
+    OperationId, OperationRecord, OperationState as DomainState, Revision, StoreErrorKind,
 };
 use alcomd_platform::{BindError, DaemonInstance, DataConfig, IpcConfig, IpcListener, IpcStream};
 use alcomd_protocol::{
@@ -28,6 +28,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 mod m3_rpc;
 mod m4_rpc;
+mod m5_platform;
+mod m5_rpc;
 
 static TEST_DATA_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -35,11 +37,13 @@ type M2Application = Application<StateStoreHandle>;
 type M3ReadApplication = M3Application<StateStoreHandle, alcomd_vpm::VpmReader>;
 type M4PackageApplication =
     M4Application<StateStoreHandle, alcomd_vpm::PackageEngine<StateStoreHandle>>;
+type M5UnityApplication = M5Application<StateStoreHandle, m5_platform::PlatformUnityAdapter>;
 
 struct Applications {
     m2: M2Application,
     m3: M3ReadApplication,
     m4: M4PackageApplication,
+    m5: M5UnityApplication,
 }
 
 /// Runs the daemon with an ephemeral isolated data directory.
@@ -100,8 +104,9 @@ where
         .map_err(|_| BindError::Io(io::Error::other("package transaction recovery failed")))?;
     let applications = Arc::new(Applications {
         m2,
-        m3: M3ReadApplication::new(store, reader),
+        m3: M3ReadApplication::new(store.clone(), reader),
         m4,
+        m5: M5Application::new(store, m5_platform::PlatformUnityAdapter),
     });
     let listener = instance.bind()?;
     run_listener(listener, applications, shutdown)
@@ -213,6 +218,7 @@ async fn dispatch_payload(
         &applications.m2,
         &applications.m3,
         &applications.m4,
+        &applications.m5,
         &access,
     )
     .await
@@ -250,6 +256,9 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         alcomd_protocol::CAPABILITY_REPOSITORIES_REGISTRY_V1,
         alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V1,
         alcomd_protocol::CAPABILITY_PACKAGES_APPLY_V1,
+        alcomd_protocol::CAPABILITY_UNITY_READ_V1,
+        alcomd_protocol::CAPABILITY_UNITY_MANAGE_V1,
+        alcomd_protocol::CAPABILITY_UNITY_LAUNCH_V1,
     ];
     let capabilities = hello
         .capabilities
@@ -260,7 +269,7 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
     result_capabilities.sort();
     success_action(
         request.id,
-        HelloResult::m4(result_capabilities),
+        HelloResult::m5(result_capabilities),
         Some(capabilities),
     )
 }
@@ -295,6 +304,7 @@ async fn dispatch_m2(
     application: &M2Application,
     m3_application: &M3ReadApplication,
     m4_application: &M4PackageApplication,
+    m5_application: &M5UnityApplication,
     access: &AccessContext,
 ) -> DispatchAction {
     match request.method.as_str() {
@@ -455,6 +465,9 @@ async fn dispatch_m2(
         }
         _ if request.method.starts_with("packages.") => {
             m4_rpc::dispatch(request, state, m4_application, access).await
+        }
+        _ if request.method.starts_with("unity.") => {
+            m5_rpc::dispatch(request, state, m5_application, access).await
         }
         _ => m3_rpc::dispatch(request, state, m3_application, access).await,
     }

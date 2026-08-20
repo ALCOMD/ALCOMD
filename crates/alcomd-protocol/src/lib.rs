@@ -84,6 +84,16 @@ pub const METHOD_PACKAGES_PLAN_UPGRADE: &str = "packages.planUpgrade";
 pub const METHOD_PACKAGES_PLAN_DOWNGRADE: &str = "packages.planDowngrade";
 pub const METHOD_PACKAGES_PLAN_RESOLVE: &str = "packages.planResolve";
 pub const METHOD_PACKAGES_APPLY_PLAN: &str = "packages.applyPlan";
+pub const METHOD_UNITY_INSTALLATIONS_LIST: &str = "unity.installations.list";
+pub const METHOD_UNITY_INSTALLATIONS_GET: &str = "unity.installations.get";
+pub const METHOD_UNITY_INSTALLATIONS_REGISTER: &str = "unity.installations.register";
+pub const METHOD_UNITY_INSTALLATIONS_REMOVE: &str = "unity.installations.remove";
+pub const METHOD_UNITY_INSTALLATIONS_REFRESH: &str = "unity.installations.refresh";
+pub const METHOD_UNITY_PROJECT_EDITOR_GET: &str = "unity.projectEditor.get";
+pub const METHOD_UNITY_PROJECT_EDITOR_SET: &str = "unity.projectEditor.set";
+pub const METHOD_UNITY_WRITER_STATE: &str = "unity.writerState";
+pub const METHOD_UNITY_LAUNCH: &str = "unity.launch";
+pub const METHOD_UNITY_LAUNCH_STATUS: &str = "unity.launchStatus";
 
 /// Capability required by `state.check`.
 pub const CAPABILITY_STATE_CHECK_V1: &str = "state.check.v1";
@@ -99,6 +109,9 @@ pub const CAPABILITY_REPOSITORIES_READ_V1: &str = "repositories.read.v1";
 pub const CAPABILITY_REPOSITORIES_REGISTRY_V1: &str = "repositories.registry.v1";
 pub const CAPABILITY_PACKAGES_PLAN_V1: &str = "packages.plan.v1";
 pub const CAPABILITY_PACKAGES_APPLY_V1: &str = "packages.apply.v1";
+pub const CAPABILITY_UNITY_READ_V1: &str = "unity.read.v1";
+pub const CAPABILITY_UNITY_MANAGE_V1: &str = "unity.manage.v1";
+pub const CAPABILITY_UNITY_LAUNCH_V1: &str = "unity.launch.v1";
 
 /// Stable RPC v1 error codes implemented through M2.
 pub mod error_code {
@@ -180,6 +193,17 @@ pub mod error_code {
     pub const PACKAGE_PATH_COLLISION: &str = "package_path_collision";
     pub const PROJECT_TRANSACTION_RECOVERY_REQUIRED: &str = "project_transaction_recovery_required";
     pub const RECOVERY_REQUIRED: &str = "recovery_required";
+    pub const UNITY_INSTALLATION_NOT_FOUND: &str = "unity_installation_not_found";
+    pub const UNITY_INSTALLATION_INVALID: &str = "unity_installation_invalid";
+    pub const UNITY_INSTALLATION_IN_USE: &str = "unity_installation_in_use";
+    pub const UNITY_VERSION_UNVERIFIED: &str = "unity_version_unverified";
+    pub const UNITY_VERSION_MISMATCH: &str = "unity_version_mismatch";
+    pub const UNITY_ARCHITECTURE_UNSUPPORTED: &str = "unity_architecture_unsupported";
+    pub const UNITY_PROJECT_RUNNING: &str = "unity_project_running";
+    pub const UNITY_LAUNCH_STATE_UNCERTAIN: &str = "unity_launch_state_uncertain";
+    pub const UNITY_PROJECT_SELECTOR_FORBIDDEN: &str = "unity_project_selector_forbidden";
+    pub const UNITY_LAUNCH_FAILED: &str = "unity_launch_failed";
+    pub const UNITY_LAUNCH_NOT_FOUND: &str = "unity_launch_not_found";
 }
 
 /// JSON-RPC-inspired request envelope.
@@ -428,6 +452,12 @@ impl RpcError {
         }
     }
 
+    /// Creates a stable, non-sensitive M5 Unity error.
+    #[must_use]
+    pub fn unity(code: &str) -> Self {
+        Self::simple(code, "The Unity request could not be completed.")
+    }
+
     fn simple(code: &str, message: &str) -> Self {
         Self {
             code: code.to_owned(),
@@ -536,6 +566,17 @@ impl HelloResult {
             daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             capabilities,
             data_schema: Some(3),
+        }
+    }
+
+    /// Creates the M5 hello result after Schema v4 and Unity services are ready.
+    #[must_use]
+    pub fn m5(capabilities: Vec<String>) -> Self {
+        Self {
+            rpc_version: RPC_VERSION,
+            daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
+            capabilities,
+            data_schema: Some(4),
         }
     }
 }
@@ -1149,6 +1190,203 @@ pub struct RepositoryPackagesResult {
     pub packages: Vec<RepositoryPackageVersion>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<PackageCursor>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnityArchitecture {
+    X86_64,
+    Arm64,
+    Universal,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnitySourceKind {
+    Manual,
+    HubConfig,
+    KnownInstallRoot,
+    UnityCliHint,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnityInstallation {
+    pub installation_id: String,
+    pub executable_path: String,
+    pub filesystem_identity: String,
+    pub unity_version: String,
+    pub architecture: UnityArchitecture,
+    pub source_kind: UnitySourceKind,
+    pub revision: u64,
+    pub observed_at_ms: u64,
+    pub updated_at_ms: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UnityInstallationsListParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnityInstallationsListResult {
+    pub installations: Vec<UnityInstallation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UnityInstallationIdParams {
+    pub installation_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UnityInstallationRegisterParams {
+    pub executable_path: String,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UnityInstallationRemoveParams {
+    pub installation_id: String,
+    pub expected_revision: u64,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UnityInstallationRefreshParams {
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnityInstallationResult {
+    pub installation: UnityInstallation,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnityInstallationRemoveResult {
+    pub installation_id: String,
+    pub removed: bool,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectEditorPreference {
+    pub project_id: String,
+    pub installation_id: String,
+    pub arguments: Vec<String>,
+    pub revision: u64,
+    pub updated_at_ms: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UnityProjectIdParams {
+    pub project_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectEditorSetParams {
+    pub project_id: String,
+    pub installation_id: String,
+    pub arguments: Vec<String>,
+    pub expected_revision: u64,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectEditorResult {
+    pub preference: ProjectEditorPreference,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnityWriterStateKind {
+    RunningConfirmed,
+    RunningSuspected,
+    NotObserved,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnityWriterEvidenceKind {
+    ProcessProjectArgument,
+    ProcessUnreadable,
+    InspectionError,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnityWriterEvidence {
+    pub kind: UnityWriterEvidenceKind,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnityWriterState {
+    pub project_id: String,
+    pub state: UnityWriterStateKind,
+    pub evidence: Vec<UnityWriterEvidence>,
+    pub checked_at_ms: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnityLaunchState {
+    Opening,
+    Open,
+    Failed,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnityLaunchRecord {
+    pub launch_id: String,
+    pub project_id: String,
+    pub installation_id: String,
+    pub state: UnityLaunchState,
+    pub spawn_accepted: bool,
+    pub created_at_ms: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UnityLaunchParams {
+    pub project_id: String,
+    pub expected_project_revision: u64,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UnityLaunchStatusParams {
+    pub launch_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnityLaunchResult {
+    pub launch: UnityLaunchRecord,
+    pub replayed: bool,
 }
 
 /// Successful `system.status` result.

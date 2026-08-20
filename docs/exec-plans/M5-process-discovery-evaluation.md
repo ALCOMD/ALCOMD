@@ -1,6 +1,6 @@
 # M5 process discovery 生产依赖评估
 
-状态：候选已完成隔离解析；尚未批准、尚未加入 Workspace
+状态：项目所有者已批准精确配置；依赖、最小 adapter 与三类回归测试已接入
 
 ## 需求边界
 
@@ -29,7 +29,7 @@ sysinfo = {
 - 放置：仅 `crates/alcomd-platform` 的直接 production dependency；类型不越过 platform adapter。
 - 版本/维护：0.39.6 发布于 2026-07-09；上游持续维护并提供三平台 process API。
 - 许可证：MIT。
-- MSRV：1.88，低于本仓库 Rust 1.97.1。
+- MSRV：1.95，低于本仓库 Rust 1.97.1。
 - 官方证据：
   [0.39.6 release](https://github.com/GuillaumeGomez/sysinfo/releases/tag/v0.39.6)、
   [Cargo.toml.orig](https://docs.rs/crate/sysinfo/0.39.6/source/Cargo.toml.orig)、
@@ -40,12 +40,12 @@ sysinfo = {
 
 ## 隔离 feature graph
 
-使用独立临时 manifest、Rust 1.97 工具链和精确配置运行：
+最初使用独立临时 manifest 评估，接入 Workspace 后使用固定 Rust 1.97.1 工具链和精确配置复核：
 
 ```text
 cargo generate-lockfile
 cargo tree -e features -i sysinfo
-cargo tree -i quinn
+cargo tree -i rayon
 cargo tree -e build
 ```
 
@@ -103,4 +103,7 @@ windows-threading 0.2.1
    start time、退出竞态和并行枚举。
 5. 实际 Cargo.lock 与 feature graph 必须复核本文件记录；偏离时重新审批。
 
-在项目所有者批准前，不修改 Workspace manifest/Cargo.lock，也不开始 Unity writer gate 生产实现。
+项目所有者已批准该配置。实际 Cargo.lock 只新增上述八项；`cargo tree -e features -i sysinfo`
+确认只有 `system` 及其 Windows 内部 `windows`，`cargo tree -i rayon` 确认 active graph 不含 rayon，
+`cargo tree -e build` 未发现无法解释的新增 build dependency。生产 adapter 使用每次独立 `System`、
+`without_tasks()`、exe/cmd `OnlyIfNotSet`，未增加 ALCOMD unsafe 文件或平台 API。

@@ -494,7 +494,7 @@ Operation progress 是兼容增加；M1-M3 字段与方法语义不变。
 
 ## 19. M5 contract-first 兼容增加：Unity registry 与 launch
 
-M5 在 RPC major 1 上冻结三项 capability；合同存在不代表 daemon 已经广告或实现：
+M5 在 RPC major 1 上兼容增加并实现三项 capability：
 
 | capability | method | permission |
 |---|---|---|
@@ -529,5 +529,6 @@ supervisor。foreground/activation 不在本合同中。
 `unity_launch_state_uncertain`、`unity_project_selector_forbidden`、`unity_launch_failed` 与
 `unity_launch_not_found`。普通 error 不包含完整进程命令行、私密路径、PID 列表或 OS debug。
 
-完整 DTO、enum 与上限由 `m5-unity.schema.json` 冻结。State Schema v4 仍是未接入的 contract-first
-migration；生产实现获批前 hello 的 `dataSchema` 最大仍为 3，M5 capability 不得广告。
+完整 DTO、enum 与上限由 `m5-unity.schema.json` 冻结。State Schema v4 已接入自动 migration；daemon
+在 store 成功初始化后通过 hello 广告 `dataSchema: 4` 和客户端实际协商的 M5 capability。此兼容增加不
+改变 M1-M4 方法语义，也不表示 Template、Backup 或完整 CLI 已实现。

@@ -1,6 +1,6 @@
 # M5：完整 CLI 合同与本地项目工作流
 
-状态：进行中；CLI + Unity contract-first 已获批，生产实现尚未获批、尚未开始
+状态：进行中；CLI + Unity contract-first 与 Unity 最小生产切片的本地验收已完成；停在内部停止点 B，尚未进入 Template slice
 
 ## 目标
 
@@ -351,7 +351,7 @@ parity 或客户端兼容已验证。
 | 需求 | 首选路径 | 潜在新增项 / 审批边界 |
 |---|---|---|
 | shell completion | 成熟 clap 生态生成器 | 候选 `clap_complete`；版本必须与已锁 clap 兼容，只进入 CLI |
-| process discovery | std/Tokio 无法可靠跨平台枚举 PID/exe/start time | 已隔离评估 `sysinfo = 0.39.6`（defaults off，仅 `system`），详见 `M5-process-discovery-evaluation.md`；尚未批准、不得加入 Workspace |
+| process discovery | std/Tokio 无法可靠跨平台枚举 PID/exe/start time | 已批准并接入 `sysinfo = 0.39.6`（defaults off，仅 `system`），只存在于 `alcomd-platform`；MSRV 1.95，详见 `M5-process-discovery-evaluation.md` |
 | archive/compression | 复用 `zip 8.6.0` + 现有 feature | 默认不新增 crate/codec，不启用 zip defaults |
 | digest/fingerprint | 复用 `sha2 0.11.0` | 不新增算法或 crypto framework |
 | filesystem/ownership | 复用 std/Tokio、rustix、现有 windows-sys adapter | 新 Win32 API、rustix feature 或 unsafe 文件必须单独审批 |
@@ -363,9 +363,9 @@ workflow engine、第二 ZIP stack 或第二 process supervisor。
 
 ### M5 内部停止点
 
-- **A（当前）**：冻结 Slice 0 CLI 与 Slice 1 Unity 的 ADR、Schema、RPC、错误、权限、State v4 结构
-  migration 和合同测试；提交 process discovery 精确依赖评估。未批准该依赖前停止，不接生产实现。
-- **B**：CLI 共用 runtime 和 Unity registry/writer gate/launch 的生产垂直切片通过后停止；审批 Template
+- **A（已通过）**：冻结 Slice 0 CLI 与 Slice 1 Unity 的 ADR、Schema、RPC、错误、权限、State v4 结构
+  migration 和合同测试；`sysinfo 0.39.6` 精确依赖已经批准。
+- **B（当前）**：CLI 共用 runtime 和 Unity registry/writer gate/launch 的生产垂直切片通过后停止；审批 Template
   bundle、内建库存/许可证及 create-project transaction 合同。
 - **C**：Template 垂直切片通过后停止；审批 Backup create archive profile、exclude-VPM 精确语义。
 - **D**：Backup create 垂直切片通过后停止；审批全新目标 Backup restore Plan/Apply 与 recovery 合同。
@@ -423,9 +423,9 @@ workflow engine、第二 ZIP stack 或第二 process supervisor。
 
 项目所有者已经批准 Slice 0/1 的 CLI、Unity、RPC/错误/权限与 State Schema v4 结构合同；这些合同
 由 A-030/A-031、`specs/cli/`、`specs/rpc/m5-unity.schema.json`、`specs/storage/state-v4.md` 和两个
-ADR 冻结。当前停止点仍需审批 process discovery production dependency；后续 slice 仍分别审批：
+ADR 冻结。process discovery production dependency 已按精确配置批准；后续 slice 仍分别审批：
 
-1. `M5-process-discovery-evaluation.md` 中 `sysinfo = 0.39.6` 的精确配置与锁文件闭包。
+1. `M5-process-discovery-evaluation.md` 中 `sysinfo = 0.39.6` 已关闭；任何 feature 扩大仍须重新审批。
 2. v4 template bundle Schema、内建模板库存/来源/许可证和 conflict/override 语义。
 3. backup archive profile 与 `exclude VPM packages` 精确语义。
 4. M5 仅限全新目标的 restore Plan/Apply/recovery 合同；覆盖已有目标不在 M5。
@@ -484,3 +484,10 @@ Unity process/writer gate、Tauri no-bundle、lockfile/unsafe/dependency feature
   仍未接入 daemon，Unity method 仍未广告，未开始生产实现。
 - 2026-08-20：完成 `sysinfo 0.39.6`（defaults off，仅 `system`）隔离 feature/Cargo.lock 评估，未修改
   Workspace manifest/lockfile。按内部停止点 A 等待 process discovery production dependency 审批。
+- 2026-08-20：项目所有者批准 `sysinfo 0.39.6`，并纠正其官方 MSRV 为 Rust 1.95。依赖仅接入
+  `alcomd-platform`；完成最小 process evidence、Unity executable registry/writer gate/launch adapter、
+  State Schema v4 自动 migration、RPC v1 capability/method 和 client 接线，进入 Slice 1 本地验收。
+- 2026-08-20：Slice 1 本地验收通过：统一 `scripts/check.ps1`、全 Workspace test/clippy、Discord、
+  TypeScript/Vite、Tauri release `--no-bundle`、Schema v4 migration、真实 daemon RPC、fake-provider 四态、
+  Windows 短生命周期子进程、冻结基线、metadata 与 diff 门禁均成功。停在内部停止点 B；Linux/macOS
+  真实子进程结果须由后续 hosted CI 取得，不得据 Windows 本机结果宣称三平台已通过。

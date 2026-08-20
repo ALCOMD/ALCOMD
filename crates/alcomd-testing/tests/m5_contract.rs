@@ -115,6 +115,6 @@ fn unity_contract_keeps_permissions_capabilities_and_writer_states_narrow() {
             "{permission}"
         );
     }
-    assert!(STATE_V4.contains("daemon 当前支持版本仍为 v3"));
+    assert!(STATE_V4.contains("广告 `dataSchema: 4`"));
     assert!(STATE_V4.contains("不增加通用 settings/property/value"));
 }

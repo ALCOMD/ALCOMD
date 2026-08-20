@@ -6,6 +6,15 @@
 
 use std::path::PathBuf;
 
+mod process;
+mod unity;
+
+pub use process::{ProcessEvidence, ProcessSnapshot, observe_processes};
+pub use unity::{
+    UnityArchitecture, ValidatedUnityExecutable, discover_unity_executables, launch_unity_editor,
+    validate_unity_executable,
+};
+
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]

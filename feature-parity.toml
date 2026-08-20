@@ -188,8 +188,8 @@ behavior = "跨平台识别 Unity/Hub，保留 v3 用户入口并结构化处理
 implementation = "alcomd-platform"
 release_class = "release_blocker"
 status = "verified"
-implementation_status = "not_started"
-evidence = ["docs/baselines/alcomd3-v3-audit.md::Unity", "docs/baselines/vrc-get-audit.md::Unity"]
+implementation_status = "in_progress"
+evidence = ["docs/baselines/alcomd3-v3-audit.md::Unity", "docs/baselines/vrc-get-audit.md::Unity", "crates/alcomd-testing/tests/m5_unity_rpc.rs", "crates/alcomd-platform/src/process.rs"]
 coverage = ["Windows", "macOS", "Linux", "Hub formats", "non-zero exit"]
 tests = ["m5.cli-unity-contract", "unity.m5-registry-launch", "unity.m5-writer-gate", "unity.v3-vrc-parity", "platform.build-matrix"]
 

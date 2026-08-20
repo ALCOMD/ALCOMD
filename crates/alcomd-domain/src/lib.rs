@@ -71,6 +71,71 @@ impl fmt::Display for RepositoryId {
     }
 }
 
+/// Stable identifier for a validated Unity Editor installation.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct UnityInstallationId(Uuid);
+
+impl UnityInstallationId {
+    #[must_use]
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    pub fn parse(value: &str) -> Result<Self, DomainValueError> {
+        Uuid::parse_str(value)
+            .map(Self)
+            .map_err(|_| DomainValueError::InvalidUnityInstallationId)
+    }
+
+    #[must_use]
+    pub const fn as_uuid(self) -> Uuid {
+        self.0
+    }
+}
+
+impl Default for UnityInstallationId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for UnityInstallationId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+/// Opaque identifier for one accepted Unity launch attempt.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct UnityLaunchId(Uuid);
+
+impl UnityLaunchId {
+    #[must_use]
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    pub fn parse(value: &str) -> Result<Self, DomainValueError> {
+        Uuid::parse_str(value)
+            .map(Self)
+            .map_err(|_| DomainValueError::InvalidUnityLaunchId)
+    }
+}
+
+impl Default for UnityLaunchId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for UnityLaunchId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
 impl Default for ProjectId {
     fn default() -> Self {
         Self::new()
@@ -376,6 +441,18 @@ pub enum Permission {
     /// Apply package plans to owned projects.
     #[serde(rename = "packages.manage")]
     PackagesManage,
+    /// Read Unity installations, preferences and writer state.
+    #[serde(rename = "unity.read")]
+    UnityRead,
+    /// Manage Unity installation registry and project Editor preferences.
+    #[serde(rename = "unity.manage")]
+    UnityManage,
+    /// Launch and observe a validated Unity Editor.
+    #[serde(rename = "unity.launch")]
+    UnityLaunch,
+    /// Create a new project at an explicit nonexistent destination.
+    #[serde(rename = "projects.create")]
+    ProjectsCreate,
 }
 
 impl Permission {
@@ -393,6 +470,10 @@ impl Permission {
             Self::RepositoriesManage => "repositories.manage",
             Self::PackagesRead => "packages.read",
             Self::PackagesManage => "packages.manage",
+            Self::UnityRead => "unity.read",
+            Self::UnityManage => "unity.manage",
+            Self::UnityLaunch => "unity.launch",
+            Self::ProjectsCreate => "projects.create",
         }
     }
 }
@@ -449,6 +530,10 @@ pub enum DomainValueError {
     InvalidProjectId,
     /// Repository ID was not a valid UUID.
     InvalidRepositoryId,
+    /// Unity installation ID was not a valid UUID.
+    InvalidUnityInstallationId,
+    /// Unity launch ID was not a valid UUID.
+    InvalidUnityLaunchId,
     /// Operation ID was not a valid UUID.
     InvalidOperationId,
     /// Plan ID was not a valid UUID.
@@ -464,6 +549,10 @@ impl fmt::Display for DomainValueError {
         match self {
             Self::InvalidProjectId => formatter.write_str("invalid Project identifier"),
             Self::InvalidRepositoryId => formatter.write_str("invalid Repository identifier"),
+            Self::InvalidUnityInstallationId => {
+                formatter.write_str("invalid Unity installation identifier")
+            }
+            Self::InvalidUnityLaunchId => formatter.write_str("invalid Unity launch identifier"),
             Self::InvalidOperationId => formatter.write_str("invalid Operation identifier"),
             Self::InvalidPlanId => formatter.write_str("invalid Plan identifier"),
             Self::InvalidPrincipalId => formatter.write_str("invalid Principal identifier"),
@@ -591,6 +680,10 @@ mod tests {
     fn principal_and_permission_names_are_frozen() {
         assert_eq!(PrincipalId::local_owner().as_str(), "builtin:local-owner");
         assert_eq!(Permission::EventsRead.as_str(), "events.read");
+        assert_eq!(Permission::UnityRead.as_str(), "unity.read");
+        assert_eq!(Permission::UnityManage.as_str(), "unity.manage");
+        assert_eq!(Permission::UnityLaunch.as_str(), "unity.launch");
+        assert_eq!(Permission::ProjectsCreate.as_str(), "projects.create");
         assert!(IdempotencyKey::parse("check-once").is_ok());
         assert_eq!(
             IdempotencyKey::parse("界"),

@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M5 Slice 0/1 contract-first 已完成；停在内部审批点 A，M5 生产实现尚未开始`
+`M5 Slice 1 Unity 最小生产垂直切片已通过本地验收；停在内部停止点 B，尚未进入 Template slice`
 
 ## 已完成
 
@@ -161,9 +161,13 @@
   catalog 只有后端 capability 真实实现后才允许发布，CLI 继续只能经 `alcomd-client`/RPC。
 - M5 Unity contract 已冻结 installation registry、project editor preference、bounded argv、launch/
   observation、四态 writer evidence、hard/advisory gate、RPC capability/error 与最小权限。State Schema
-  v4 migration 目前仅是未接线合同，daemon 仍支持 v3，M5 Unity method/capability 尚未生产广告。
-- M5 process discovery 已隔离评估 `sysinfo 0.39.6`（defaults off，仅 `system`）及精确 feature/锁文件
-  闭包；尚未批准、未加入 Workspace，Cargo.lock 未因此变化。M5 尚无生产实现。
+  v4 已接入 v3→v4 自动 migration，daemon/client 已广告并实现十个 Unity method 与三项 capability。
+- 项目所有者已批准 `sysinfo 0.39.6`（defaults off，仅 `system`，官方 MSRV Rust 1.95）。依赖只进入
+  `alcomd-platform`，最小 refresh 显式 `without_tasks()` 且只请求 exe/cmd；没有启用 rayon、增加
+  ALCOMD unsafe 文件或平台 API。fake provider、真实短生命周期子进程和并行观察测试已接入。
+- Unity 最小生产切片已实现 synthetic Editor 校验、手工/known-root registry、project Editor preference、
+  PID+start-time writer evidence、无 shell 独立 argv 启动、永久幂等 launch/status 与真实 daemon RPC
+  往返。完整 Hub 格式、真实 Unity/Hub parity、迁移/foreground 和完整 CLI 表面仍未完成。
 
 ## 后续里程碑尚未完成
 
@@ -208,8 +212,9 @@
 - 真实 credential enrollment/revocation 仍未完成；完整 `projects.management`、
   `repositories.management`、`daemon.single-writer`、`rpc.local` 与 `cli.complete` 仍只实现了各自
   的阶段性切片，必须保持真实的 `in_progress`/`planned` 状态。
-- `templates.v3-parity`、`backups.v3-parity` 与 `unity.v3-vrc-parity` 继续 blocked；CLI/Unity 合同测试
-  只证明 Schema/permission/migration 结构，不证明真实 Unity/Hub、模板、备份或 v3 differential parity。
+- `templates.v3-parity`、`backups.v3-parity` 与 `unity.v3-vrc-parity` 继续 blocked；M5 Unity engineering
+  测试只证明 synthetic Editor、进程观察和 RPC/migration 行为，不证明真实 Unity/Hub、模板、备份
+  或 v3 differential parity。
 - M4 已批准并精确锁定 `semver 1.0.28`、`zip 8.6.0`、`sha2 0.11.0` 与
   `unicode-normalization 0.1.25`；normalization 许可证记录保持
   `(MIT OR Apache-2.0) AND Unicode-3.0`。`semver` 只提供 Version/precedence，冻结 VPM range 语义由
@@ -218,8 +223,8 @@
 ## 下一停止点
 
 M0、M1、M2、M3 与 M4 均已完成并通过最终人工验收。M5 Slice 0/1 CLI/Unity contract-first 工件已
-冻结；当前停在内部停止点 A，等待审批 `M5-process-discovery-evaluation.md` 的精确生产依赖方案。
-Schema v4 migration 未接线，Unity/CLI 新生产入口未实现或广告，不得进入 Template slice。M4 完整
+冻结，`sysinfo` 依赖与 Unity 最小生产垂直切片已接入并通过 Windows 本地完整验收；当前停在内部停止点 B。
+Template 合同与生产 slice 尚未开始。M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential
 revocation 仍未完成；Windows 10/11 完整客户端

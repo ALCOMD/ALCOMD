@@ -10,14 +10,16 @@ use std::sync::{Arc, Weak};
 
 pub use alcomd_domain::{
     IdempotencyKey, OperationId, OperationState, Permission, PlanId, PrincipalId, ProjectId,
-    RepositoryId, ResourceKey, Revision,
+    RepositoryId, ResourceKey, Revision, UnityInstallationId, UnityLaunchId,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 mod m4;
+mod m5;
 
 pub use m4::*;
+pub use m5::*;
 
 /// Minimal truthful daemon status for the M1 read-only vertical slice.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -732,6 +734,10 @@ impl AccessContext {
                 Permission::RepositoriesManage,
                 Permission::PackagesRead,
                 Permission::PackagesManage,
+                Permission::UnityRead,
+                Permission::UnityManage,
+                Permission::UnityLaunch,
+                Permission::ProjectsCreate,
             ],
         )
     }
