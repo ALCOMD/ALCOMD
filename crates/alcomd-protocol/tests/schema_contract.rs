@@ -9,7 +9,7 @@ use alcomd_protocol::{
     RequestEnvelope, StateCheckParams, SuccessResponse, SystemStatusResult,
 };
 
-const SCHEMAS: [(&str, &str); 21] = [
+const SCHEMAS: [(&str, &str); 22] = [
     (
         "request-envelope",
         include_str!("../../../specs/rpc/request-envelope.schema.json"),
@@ -93,6 +93,10 @@ const SCHEMAS: [(&str, &str); 21] = [
     (
         "m4-package-transaction",
         include_str!("../../../specs/rpc/m4-package-transaction.schema.json"),
+    ),
+    (
+        "m5-unity",
+        include_str!("../../../specs/rpc/m5-unity.schema.json"),
     ),
 ];
 
@@ -324,6 +328,106 @@ fn m4_operation_and_data_schema_are_compatible_additions() {
         hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
         json!([1, 2, 3])
     );
+}
+
+#[test]
+fn m5_unity_schema_freezes_methods_capabilities_and_honest_writer_states() {
+    let contract = schema("m5-unity");
+    let definitions = contract["$defs"].as_object().expect("M5 Unity definitions");
+    assert_eq!(
+        definitions["methodName"]["enum"],
+        json!([
+            "unity.installations.list",
+            "unity.installations.get",
+            "unity.installations.register",
+            "unity.installations.remove",
+            "unity.installations.refresh",
+            "unity.projectEditor.get",
+            "unity.projectEditor.set",
+            "unity.writerState",
+            "unity.launch",
+            "unity.launchStatus"
+        ])
+    );
+    assert_eq!(
+        definitions["capability"]["enum"],
+        json!(["unity.read.v1", "unity.manage.v1", "unity.launch.v1"])
+    );
+    assert_eq!(
+        definitions["writerStateKind"]["enum"],
+        json!([
+            "running_confirmed",
+            "running_suspected",
+            "not_observed",
+            "unknown"
+        ])
+    );
+    assert_eq!(
+        definitions["architecture"]["enum"],
+        json!(["x86_64", "arm64", "universal", "unknown"])
+    );
+    assert_eq!(definitions["boundedArguments"]["maxItems"], 64);
+    assert_eq!(definitions["boundedArguments"]["items"]["maxLength"], 4_096);
+}
+
+#[test]
+fn m5_unity_schema_keeps_launch_and_management_separate() {
+    let definitions = schema("m5-unity")["$defs"]
+        .as_object()
+        .expect("M5 Unity definitions")
+        .clone();
+    assert_eq!(
+        definitions["projectEditorSetParams"]["required"],
+        json!([
+            "projectId",
+            "installationId",
+            "arguments",
+            "expectedRevision",
+            "idempotencyKey"
+        ])
+    );
+    assert_eq!(
+        definitions["launchParams"]["required"],
+        json!(["projectId", "expectedProjectRevision", "idempotencyKey"])
+    );
+    assert_eq!(
+        definitions["launchState"]["enum"],
+        json!(["opening", "open", "failed"])
+    );
+    assert_eq!(definitions["expectedOptionalRevision"]["minimum"], 0);
+}
+
+#[test]
+fn m5_contract_does_not_pretend_data_schema_v4_is_implemented() {
+    let hello = schema("system-hello.response");
+    assert_eq!(
+        hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
+        json!([1, 2, 3])
+    );
+}
+
+#[test]
+fn m5_cli_and_unity_errors_are_stable_machine_codes() {
+    let errors = schema("rpc-error");
+    let codes = errors["properties"]["code"]["enum"]
+        .as_array()
+        .expect("error code enum");
+    for code in [
+        "confirmation_required",
+        "unity_installation_not_found",
+        "unity_installation_invalid",
+        "unity_installation_in_use",
+        "unity_version_unverified",
+        "unity_version_mismatch",
+        "unity_architecture_unsupported",
+        "unity_project_running",
+        "unity_launch_state_uncertain",
+        "unity_project_selector_forbidden",
+        "unity_launch_failed",
+        "unity_launch_not_found",
+    ] {
+        assert!(codes.iter().any(|candidate| candidate == code), "{code}");
+    }
 }
 
 #[test]

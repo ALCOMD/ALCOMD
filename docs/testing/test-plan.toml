@@ -209,6 +209,14 @@ status = "blocked"
 description = "使用脱敏 Fixture 对照 v3 模板创建、导入、导出、复制和依赖/附加资源行为。"
 
 [[test]]
+id = "templates.m5-workflows"
+stage = "M5"
+kind = "integration"
+platforms = ["all"]
+status = "planned"
+description = "覆盖 versioned template registry、导入/导出/派生、冲突、依赖与通过既有文件事务创建全新项目；不替代真实 v3 differential parity。"
+
+[[test]]
 id = "backups.v3-parity"
 stage = "M5"
 kind = "differential"
@@ -217,12 +225,53 @@ status = "blocked"
 description = "对照 v3 备份创建、排除、压缩、取消、失败恢复与恢复目标行为。"
 
 [[test]]
+id = "backups.m5-create"
+stage = "M5"
+kind = "integration"
+platforms = ["all"]
+status = "planned"
+description = "覆盖一致性 fingerprint、bounded archive、progress/cancel、partial cleanup 与 ProjectBackup 锁。"
+
+[[test]]
+id = "backups.m5-restore"
+stage = "M5"
+kind = "fault-injection"
+platforms = ["all"]
+status = "planned"
+description = "覆盖仅全新目标的 restore Plan/Apply、staging、archive/path security、rollback 与真实 kill/restart recovery。"
+
+[[test]]
 id = "unity.v3-vrc-parity"
 stage = "M5"
 kind = "differential"
 platforms = ["all"]
 status = "blocked"
 description = "对照冻结行为验证 Unity Hub/Editor 发现、版本兼容、启动、进程状态与窗口激活。"
+
+[[test]]
+id = "m5.cli-unity-contract"
+stage = "M5"
+kind = "contract"
+platforms = ["all"]
+status = "implemented"
+description = "冻结 CLI v1 machine contract/command catalog、Unity RPC/capability/error/permission 与未接线 State Schema v4 migration；不代表 CLI/Unity 生产实现或真实 Editor parity。"
+evidence = ["crates/alcomd-testing/tests/m5_contract.rs", "crates/alcomd-protocol/tests/schema_contract.rs", "crates/alcomd-store/tests/schema_contract.rs"]
+
+[[test]]
+id = "unity.m5-registry-launch"
+stage = "M5"
+kind = "integration"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "planned"
+description = "覆盖 Editor/Hub 发现、手工 registry、project preference、无 shell argv、launch observation 与三平台失败语义。"
+
+[[test]]
+id = "unity.m5-writer-gate"
+stage = "M5"
+kind = "safety"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "planned"
+description = "覆盖 confirmed/suspected/not-observed/unknown evidence、PID reuse/权限/退出竞态及 package/template/backup mutation hard/advisory gate。"
 
 [[test]]
 id = "cli.command-contract"

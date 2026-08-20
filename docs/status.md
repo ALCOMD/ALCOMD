@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M4 已正式完成并通过人工验收；M5 ExecPlan 草案待人工审批，M5 生产实现尚未开始`
+`M5 Slice 0/1 contract-first 已完成；停在内部审批点 A，M5 生产实现尚未开始`
 
 ## 已完成
 
@@ -156,6 +156,14 @@
   覆盖 `archive_ready`、`prepared`、旧包 backup rename、新包 publish、VPM manifest atomic replace
   与 `filesystem_committed`，均复用原 OperationId、Plan 和幂等键恢复且不重新 Plan。metadata
   test-reference gate 已永久加入。项目所有者已确认最终人工验收通过，M4 正式完成。
+- M5 CLI contract v1 已冻结 human/JSON/NDJSON、stdout/stderr、`0/1/2/3/130` 退出码、alias、
+  `--yes`/`--dry-run`/`--no-wait`、TTY/EOF、Ctrl-C detach、Operation 分离与静态 completion；命令
+  catalog 只有后端 capability 真实实现后才允许发布，CLI 继续只能经 `alcomd-client`/RPC。
+- M5 Unity contract 已冻结 installation registry、project editor preference、bounded argv、launch/
+  observation、四态 writer evidence、hard/advisory gate、RPC capability/error 与最小权限。State Schema
+  v4 migration 目前仅是未接线合同，daemon 仍支持 v3，M5 Unity method/capability 尚未生产广告。
+- M5 process discovery 已隔离评估 `sysinfo 0.39.6`（defaults off，仅 `system`）及精确 feature/锁文件
+  闭包；尚未批准、未加入 Workspace，Cargo.lock 未因此变化。M5 尚无生产实现。
 
 ## 后续里程碑尚未完成
 
@@ -200,6 +208,8 @@
 - 真实 credential enrollment/revocation 仍未完成；完整 `projects.management`、
   `repositories.management`、`daemon.single-writer`、`rpc.local` 与 `cli.complete` 仍只实现了各自
   的阶段性切片，必须保持真实的 `in_progress`/`planned` 状态。
+- `templates.v3-parity`、`backups.v3-parity` 与 `unity.v3-vrc-parity` 继续 blocked；CLI/Unity 合同测试
+  只证明 Schema/permission/migration 结构，不证明真实 Unity/Hub、模板、备份或 v3 differential parity。
 - M4 已批准并精确锁定 `semver 1.0.28`、`zip 8.6.0`、`sha2 0.11.0` 与
   `unicode-normalization 0.1.25`；normalization 许可证记录保持
   `(MIT OR Apache-2.0) AND Unicode-3.0`。`semver` 只提供 Version/precedence，冻结 VPM range 语义由
@@ -207,8 +217,9 @@
 
 ## 下一停止点
 
-M0、M1、M2、M3 与 M4 均已完成并通过最终人工验收。M5 ExecPlan 草案已建立，只规划完整 CLI
-合同、Unity、本地模板与备份工作流；RPC/State/permission/依赖和生产实现仍待人工审批。M4 完整
+M0、M1、M2、M3 与 M4 均已完成并通过最终人工验收。M5 Slice 0/1 CLI/Unity contract-first 工件已
+冻结；当前停在内部停止点 A，等待审批 `M5-process-discovery-evaluation.md` 的精确生产依赖方案。
+Schema v4 migration 未接线，Unity/CLI 新生产入口未实现或广告，不得进入 Template slice。M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential
 revocation 仍未完成；Windows 10/11 完整客户端

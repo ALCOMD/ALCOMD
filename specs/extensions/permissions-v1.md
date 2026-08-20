@@ -7,6 +7,7 @@
 ```text
 projects.read
 projects.manage
+projects.create
 packages.read
 packages.manage
 repositories.read
@@ -14,6 +15,7 @@ repositories.manage
 templates.read
 templates.manage
 unity.read
+unity.manage
 unity.launch
 backups.read
 backups.manage
@@ -81,3 +83,21 @@ mcp.configuration.manage
 - capability、PlanId、OperationId、package/repository ID、SID 和 client metadata 都不是身份凭据。
 - M4 仅允许 `builtin:local-owner` 使用 Apply 写路径。真实外部 credential enrollment/revocation 与
   第三方 mutation 尚未实现，不得因 Schema 已冻结而描述为开放。
+
+## M5 CLI、Unity、Template 与 Backup 权限
+
+- `unity.read`：查询 installation registry、project Editor preference、writer state 与 launch status；
+  不允许修改 registry、启动 Editor 或读取任意进程技术信息。
+- `unity.manage`：manual installation add/remove、受限 discovery refresh 与 project Editor preference
+  修改；不包含 `unity.launch`、package mutation 或任意 settings 写入。
+- `unity.launch`：只允许通过 application 启动/观察已验证 Editor 与显式 ProjectId；不允许 registry
+  修改、shell command、任意 executable 或绕过 writer gate。
+- `projects.create`：只允许在显式、不存在的 destination 创建一个全新 Project；不允许删除、覆盖、
+  merge 或修改既有 Project，也不扩大 `projects.manage` 的 M3 registry 语义。
+- template create-project 需要 `templates.read + projects.create`；backup restore 需要
+  `backups.read + backups.manage + projects.create`；backup create 需要 `backups.manage` 与目标 project
+  read scope。
+- `builtin:local-owner` 可获得 M5 已批准权限。真实外部 Principal credential enrollment/revocation
+  尚未实现，高影响 write path 不得描述为已向任意第三方开放。
+- capability、InstallationId、LaunchId、TemplateId、BackupId、路径、PID 与 client metadata 都不是
+  Principal 或授权凭据。

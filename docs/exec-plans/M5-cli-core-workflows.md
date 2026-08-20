@@ -1,6 +1,6 @@
 # M5：完整 CLI 合同与本地项目工作流
 
-状态：草案；M4 已完成人工验收，M5 生产实现尚未获批、尚未开始
+状态：进行中；CLI + Unity contract-first 已获批，生产实现尚未获批、尚未开始
 
 ## 目标
 
@@ -57,7 +57,7 @@ M5 首先冻结所有 CLI 命令共用的 human/JSON/NDJSON、stdout/stderr、�
   `--yes` 不绕过 stale revision、权限、Unity writer 或 Plan revalidation。
 - Project/Repository/Package、Template、Backup、Unity 每个 M5 命令均有真实 daemon integration test；
   不发布只返回 scaffold/unsupported 的假命令。
-- Unity 正在使用项目的证据会触发明确 hard gate；证据缺失不被描述为“证明 Unity 未运行”。外部
+- Unity `running_confirmed` 会触发明确 hard gate；证据缺失不被描述为“证明 Unity 未运行”。外部
   writer 造成的 fingerprint 变化稳定返回 `project_changed`/`plan_stale`，不静默重试。
 - 模板创建和 backup restore 都复用已有 archive/path/Operation/filesystem journal 原语；项目写入
   crash 后只允许完整旧状态或完整新状态，不产生混合状态或虚假 succeeded。
@@ -99,6 +99,7 @@ crates/alcomd-platform/              # 三平台发现、进程、路径/权限�
 crates/alcomd-vpm/                   # 复用既有 bounded archive/project transaction adapter
 crates/alcomd-testing/               # synthetic/public Fixture、CLI/daemon/kill tests
 specs/rpc/                           # M5 RPC/error/output Schema 与兼容快照
+specs/cli/                           # CLI v1 进程合同、machine Schema 与 command catalog
 specs/storage/                       # State Schema v4/migration
 specs/extensions/permissions-v1.md   # 仅精化既有 M5 权限语义
 docs/adr/                            # CLI、Unity writer、template/backup transaction ADR
@@ -156,80 +157,63 @@ ProjectBackup lock。Unity 使用中的项目默认拒绝创建“可恢复一�
 
 ### Slice 4：Backup restore
 
-先支持空/新目标 restore，再支持已有目标的高影响 Plan/Apply。复用同一 filesystem journal 和真实
-kill/restart gate，完成后才接 CLI confirmation/`--yes`。不得将 restore 实现为普通 unzip。
+M5 只支持全新、不存在目标的 Plan/Apply restore；不支持已有目标、覆盖、merge 或先删除再恢复。
+复用同一 filesystem journal 和真实 kill/restart gate，完成后才接 CLI confirmation/`--yes`。不得将
+restore 实现为普通 unzip。
 
 ### Slice 5：CLI surface 收敛
 
 在真实后端存在后补齐 project/repository/package/template/backup/unity 命令、completion 和所有
 output/exit/TTY golden。没有后端的命令不进入 help；聚合 feature 状态按真实覆盖更新。
 
-## 完整 CLI contract 草案
+## 完整 CLI contract v1
 
 ### 命令面
 
-最终命名必须在 contract-first 阶段形成 snapshot。当前命名基线：
-
-| 组 | M5 计划入口 |
-|---|---|
-| `system` | `status` |
-| `operation` | `list`、`get`、`follow`、`cancel` |
-| `project` | `inspect`、`list`、`get/info`、`add/register`、`refresh`、`remove/unregister`、`create`、`copy`、`delete`、`favorite`、`open` |
-| `repository`（alias `repo`） | `inspect`、`list`、`get/info`、`packages`、`add/register`、`refresh`、`remove/unregister`、`hide/show`、`reorder`、`import/export`、`cleanup`、`cache clear` |
-| `package` | `search`、`info`、`outdated`、`install`（alias `i`）、`resolve`、`remove`（alias `rm`）、`upgrade`、`downgrade`、`reinstall`、`apply-plan`、`cache clear`、`local list/add/remove` |
-| `template` | `list`、`get/info`、`import`、`export`、`derive/copy`、`remove`、`favorite`、`create-project` |
-| `backup` | `list`、`get/info`、`create`、`plan-restore`、`restore/apply-plan`、`remove` |
-| `unity` | `list`、`refresh`、`register`、`remove`、`project get/set-editor/set-args`、`launch`、`status`；`activate` 仅在有可靠平台实现时加入 |
-| `completion` | 显式 shell 参数生成静态 completion，不连接或启动 daemon |
-
-上述表不是对所有命令生产实现的预先批准。hashless/legacy/credential/project migration 等被排除能力
-不能通过同名命令暗中实现；如果某入口在 M5 后仍缺后端，`cli.complete` 保持 `in_progress`。
+权威 Slice 0/1 名称与 alias snapshot 是 `specs/cli/command-catalog-v1.json`。它只冻结 system、
+operation、现有 project/repository、M4 package shortcut、Unity 与 completion。template/backup 命令
+必须等各自 contract slice 冻结后兼容增加；hashless/legacy/credential/project migration 等被排除能力
+不能通过同名命令暗中实现。任何命令只有 backend capability 真实存在后才可进入 help。
 
 ### 输出与退出
 
-contract-first 阶段必须冻结以下候选规则并取得人工批准：
-
-- human 为默认；`--json` 与 `--ndjson` 互斥。human 文案可本地化但关键字段/错误有 golden；JSON/
-  NDJSON envelope 和字段是稳定机器合同。
-- human 成功结果写 stdout；进度、确认提示和非结果诊断写 stderr。错误时 stdout 为空。
-- JSON 成功只写一个 complete result envelope 到 stdout；调用前/transport/domain 错误只写一个 error
-  envelope 到 stderr。不得混入日志、颜色、进度或提示。
-- NDJSON 对同步命令写单个 result record；对 Operation 写 operation/progress/event/final result 或 final
-  error typed records。stream 开始前的 CLI/transport 错误写 stderr；stream 开始后的终态错误作为最后
-  一条 stdout record，随后以非零退出。
-- 建议退出码：`0` 成功、`1` domain/Operation failure、`2` 参数/usage、`3` daemon/transport/protocol、
-  `4` permission/confirmation/safety gate、`130` 用户中断跟随。最终数字必须由 CLI Schema snapshot
-  冻结；不得按任意内部错误动态分配。
-- `--quiet` 只抑制 human 成功摘要和进度，不抑制错误，也不删除 JSON/NDJSON 最终 record。
-- `--no-progress` 只关闭进度显示；`--no-start-daemon` 继续沿用 M1 语义。
+- human 为默认；`--json` 与 `--ndjson` 互斥。JSON/NDJSON envelope 和字段是稳定机器合同。
+- human 最终结果写 stdout；progress/warning/diagnostic/fatal error 写 stderr。
+- JSON 成功 stdout 恰好一个 document 且 stderr 无普通日志；失败 stdout 为空，stderr 恰好一个稳定
+  error document。
+- NDJSON stdout 每行是带 type 的独立 JSON record；Operation follow 可输出 operation/progress/event，
+  stream 开始后终态 error 是最后一条 stdout record。diagnostic/log 仍写 stderr。
+- 退出码固定为 `0` success、`1` command/domain/Operation failure、`2` usage、`3` explicit partial
+  success、`130` interrupted/detached。机器分类继续使用稳定 error.code。
+- `--quiet` 只抑制非错误 human progress/diagnostic，不抑制最终结果或 fatal error。
+- `--no-start-daemon` 沿用 M1；broken pipe 必须有界退出且不 panic。
 
 ### 确认、TTY、EOF 与 Operation
 
 - 高影响 shortcut 必须先产生并展示 immutable Plan，再确认精确 `planId/fingerprint` 后 Apply。
-  `--yes` 只代替该确认，不跳过权限、expectedRevision、source pin、Unity writer gate 或 stale Plan。
-- 只有 stdin 与用于 prompt 的 stderr 都是 TTY 时才允许交互。prompt 只写 stderr；closed stdin/EOF/
-  非 TTY 立即返回 `confirmation_required`，不得循环或等待。
-- mutation 默认等待 Operation 到终态；`--detach` 只返回 OperationId。`--wait` 可显式要求默认行为并
-  与 `--detach` 互斥；`--no-progress` 不改变等待语义。
-- Ctrl+C/客户端断开只停止 follow 并返回 130，不默认取消已经创建的 Operation。业务取消只能通过
-  明确 `operation cancel`，其 ack 只表示已接受取消意图。
-- `--dry-run` 候选语义是“完成真实只读解析并创建 durable immutable Plan，但不 Apply/不写项目”；
-  它可能写入 Plan record，必须在帮助与 JSON 中明确，不得伪称零状态变化。若项目所有者要求完全
-  无状态 dry-run，需要新的 RPC 合同并另行审批。
+  `--yes` 只代替确认，不跳过 permission、expectedRevision、source pin、writer gate 或 stale Plan。
+- non-TTY 永不读取 prompt；closed stdin/EOF 立即返回 `confirmation_required`。JSON/NDJSON 总是
+  non-interactive。
+- mutation 默认等待 Operation 终态；`--no-wait` 接受后立即返回 OperationId。
+- Ctrl+C 在确认/Operation 创建前以 130 退出且不产生 mutation；OperationId 已产生后只 detach、输出
+  ID 并返回 130。业务取消只能显式 `operation cancel`。
+- `--dry-run` 只创建/返回 durable immutable Plan，绝不 Apply 或产生外部 filesystem/business mutation。
 - shell completion 只由 clap command tree 静态生成；不读取项目/repository 动态名称，不触发 daemon。
 
 ## Unity / Unity Hub integration
 
 ### 发现与身份
 
-- source 分为 `manual`、`hub_config`、`known_install_root`；同一 Editor 通过平台 file identity 去重，
-  path string、显示名和版本不是权威身份。
+- source 固定为 `manual`、`hub_config`、`known_install_root`、`unity_cli_hint`；同一 Editor 通过平台
+  file identity 去重，path string、显示名和版本不是权威身份。Unity CLI 只提供 advisory hint，Hub
+  CLI 不作为权威 source 或必需依赖。
 - Hub/config 读取必须 bounded、只读、no-follow 并保留 last-known-good registry；unknown/malformed
   source 返回结构化诊断，不删除手工记录。
-- version/revision 必须来自验证后的 Editor bundle/executable metadata；architecture 固定枚举
+- version 必须来自验证后的 Editor bundle/executable metadata；architecture 固定枚举
   `x86_64`/`arm64`/`universal`/`unknown`，unknown 不可偷偷当兼容。
 - 项目首选 Editor 是显式 ProjectId -> EditorId 关系；项目 `ProjectVersion.txt` 继续是兼容校验输入。
-  launch arguments 持久化为 bounded string list，不存 shell command line，不经 shell 解析。
+  launch arguments 持久化为最多 64 项、单项最多 4,096 bytes 的 string list，不存 shell command
+  line，不经 shell 解析，并拒绝 `-projectPath` 及等价重复 selector。
 - Unity 官方当前文档将独立 Unity CLI 标为 experimental，并将 Hub CLI 标为 deprecated；M5 不把
   两者当权威发现依赖。它们未来最多是经审批的可选 import source。
 
@@ -242,22 +226,23 @@ contract-first 阶段必须冻结以下候选规则并取得人工批准：
 ### 启动与进程状态
 
 - 直接执行已验证 Editor executable，并以独立 argv 传 `-projectPath <root>`；不得经 shell 拼接。
-- launch 在 Project lock 下复验 project/editor identity 与 version compatibility，成功 spawn 后记录
-  opaque launch ID、PID、start evidence 和 project/editor IDs。daemon 生命周期不拥有 Unity 生命期。
-- `running/not_running/unknown` 必须携带 evidence kind。PID 必须与 executable identity/start time
-  联合验证，避免 PID reuse；无法安全读取时返回 unknown，不猜测。
+- launch 在 Project lock 下复验 project/editor identity、project revision 与 version compatibility，成功
+  spawn 后只记录 opaque launch ID、`opening` 与 project/editor IDs；spawn accepted 不等于完全打开。
+  后续 observation 才可变为 `open`/`failed`，daemon 生命周期不拥有 Unity 生命期。
+- writer state 固定为 `running_confirmed`、`running_suspected`、`not_observed`、`unknown` 并携带 bounded
+  evidence。PID 必须与 executable identity/start evidence 联合验证；无法安全读取时返回 unknown。
 - 前台激活没有可靠的三平台统一语义，不是 M5 基础完成 blocker。只有 Windows/macOS/Linux 各有
   可测试且不依赖桌面自动化框架的实现时才兼容增加 `unity activate`；否则保持未发布。
 
 ### 外部 Unity writer 安全边界
 
-- ALCOMD 自身跟踪到目标 ProjectId 的 live Unity process 是 hard gate。
-- 目标内 Unity lock evidence（例如实际存在的 project lock）作为保守 hard gate；ALCOMD 不自动
-  删除或按 mtime 猜测其 stale，也不允许 `--yes` 覆盖。其格式/可靠性必须由支持版本 Fixture 冻结。
-- 只能观察到“系统上有 Unity 进程”但不能可靠关联目标时是 warning/advisory，不得误报目标正在运行。
-- 没有观察到 process/lock 不证明 Unity 未运行。每个 destructive operation 仍须在 Plan、首次 mutation
-  和 commit checkpoint 重验 project fingerprint；变化返回 `project_changed`/`plan_stale` 并进入已有
-  rollback/recovery。
+- package mutation、从项目生成 template 与 backup create 对 `running_confirmed` hard reject
+  `unity_project_running`。`running_suspected`（包括不足以关联进程的 lock evidence）与 `unknown` 只产生
+  advisory，并继续 live fingerprint/changed-during-operation 检查；不存在通用 `--force`。
+- Unity launch 对 confirmed 拒绝第二实例；suspected/unknown 返回 `unity_launch_state_uncertain`；只有
+  not_observed 允许启动。not_observed 不能描述成 definitely not running。
+- 每个 destructive operation 仍须在 Plan、首次 mutation 和 commit checkpoint 重验 project
+  fingerprint；变化返回 `project_changed`/`plan_stale` 并进入已有 rollback/recovery。
 - ALCOMD 无法阻止用户或外部 Unity 在检查后开始写入。文档与错误必须明确这一局限，不能宣称任意
   Unity writer 与 ALCOMD transaction 被全局协调。
 
@@ -282,8 +267,8 @@ contract-first 阶段必须冻结以下候选规则并取得人工批准：
 
 ### Create
 
-- 输入为已注册 ProjectId 和 expectedRevision；读取前后 fingerprint 必须一致。Unity writer hard gate
-  命中时拒绝一致性备份。
+- 输入为已注册 ProjectId 和 expectedRevision；读取前后 fingerprint 必须一致。Unity
+  `running_confirmed` 时拒绝一致性备份；suspected/unknown 产生 advisory 并依赖前后 fingerprint。
 - 流式写 ALCOMD backup root 内 operation-owned partial，使用现有 ZIP writer/profile、SHA-256、entry/
   total/path quota，flush/fsync 后原子 publish；取消/失败删除或保留 journal-owned partial。
 - compression profile 只暴露 Frozen 枚举（例如 stored/fast/maximum），不把第三方 codec 参数变成
@@ -295,8 +280,8 @@ contract-first 阶段必须冻结以下候选规则并取得人工批准：
 
 - restore 始终先 `backups.planRestore`：固定 archive digest、source project fingerprint、target identity、
   ChangeSet、expected target state 与冲突；Apply 返回 OperationId。
-- 空/新 target 仍须路径/owner/no-follow/同卷校验。已有 target restore 是高影响写入，必须获取
-  `ProjectRestore(target_identity)` 与必要 Project lock，且要求显式确认或 `--yes`。
+- target 必须全新且不存在，并通过路径/owner/no-follow/同卷校验；M5 不支持已有 target、覆盖、merge
+  或删除后恢复。restore 获取 `ProjectRestore(target_identity)`，且要求显式确认或 `--yes`。
 - archive 先在 target 同卷 sibling staging 完整验证/extract；旧 target 先 rename 到 backup，新 target
   再 publish。复用 M4 intent -> mutation -> evidence -> completed journal 规则，最终 DB commit 前不得
   succeeded。
@@ -310,60 +295,53 @@ contract-first 阶段必须冻结以下候选规则并取得人工批准：
 
 ## State Schema v4 与 RPC v1
 
-M5 的 durable registry 需求足以需要 Schema v4；候选最小表/变化为：
+M5 的 durable registry 需求使用已批准的 Schema v4：
 
-- `unity_installations`：EditorId、platform file identity、normalized version/revision/architecture、source、
-  last-seen revision；path 只在内部加密/受限 DB 中保存，不进入普通 Event/error。
-- `project_unity_preferences`：ProjectId、可选 EditorId、bounded argv list、revision。
-- `templates`：TemplateId、source kind、normalized manifest、bundle digest、favorite、revision。
-- `backups`：BackupId、可选 source ProjectId、archive digest/size、options、source fingerprint、created time、
-  terminal state；in-flight 状态继续由 Operation/filesystem journal 表达。
-- 兼容扩展现有 filesystem journal 的 versioned operation kind/evidence；不复制 package journal 表。
+- `unity_installations`：InstallationId、validated executable path、platform file identity、Unity version、
+  architecture/unknown、source kind、revision 与 observed/updated timestamp。
+- `project_editor_preferences`：ProjectId、InstallationId、bounded argv array、revision。
+- `templates`：TemplateId、builtin/user source、versioned bounded manifest、payload locator/digest、favorite、
+  revision。完整 template bundle/operation 合同留在 Slice 2。
+- `backups`：BackupId、可选历史 source ProjectId、archive locator、file identity/digest/size、format version、
+  createdAt、compression 与 exclude-VPM flag。它不是复杂 aggregate/Event 状态机。
 
 不新增 CLI 设置表、通用 workflow 表、Hub mirror 数据库、process history 日志或未来 GUI state。migration
 必须覆盖 v1->v2->v3->v4、v3->v4、rollback、未知 future schema fail closed 和现有 M4 journal 保留。
 
-RPC v1 候选兼容增加按领域拆分 capability 和 Schema：Project/Repository/Package query+management、
-`templates.manage.v1`、`backups.manage.v1`、`unity.manage.v1`。准确 method、DTO、collection limit、错误码
-和 capability 名必须在 contract-first 人工审批后冻结；新增 method/可选字段不提升 RPC major，删除/
-改义才提升 major。
+Slice 1 RPC v1 兼容增加已冻结为 `unity.read.v1`、`unity.manage.v1`、`unity.launch.v1`，准确 method、
+DTO、collection limit 与 enum 见 `specs/rpc/m5-unity.schema.json`。template/backup capability 必须等各自
+contract slice 再冻结。新增 method/capability/可选字段不提升 RPC major，删除/改义才提升 major。
 
 既有权限名优先直接精化：
 
-- template query：`templates.read`；import/derive/remove/favorite/Plan/Apply：`templates.manage`，创建项目
-  还需要 `projects.manage` 和相关 package read/manage scope。
-- backup query：`backups.read`；create/remove/restore：`backups.manage`，restore 还需要目标 project write
-  scope；不隐含任意路径写入。
-- Unity discovery/query：`unity.read`；manual registry 与 project preference 是否归 `unity.read` 或新增
-  manage 权限是人工决策点；launch/activate 使用 `unity.launch`。
+- template query 使用 `templates.read`；create-project 使用 `templates.read + projects.create`。
+- backup query 使用 `backups.read`；create 使用 `backups.manage + target project read scope`；restore 使用
+  `backups.read + backups.manage + projects.create`。
+- Unity query 使用 `unity.read`；registry/refresh/project preference 使用新增 `unity.manage`；launch/status
+  使用独立 `unity.launch`。
+- `projects.create` 只授权在显式、不存在 destination 创建一个全新 Project，不允许覆盖、删除、merge
+  或修改既有 Project；不得扩大 M3 `projects.manage`。
 - 所有 M5 外部文件写仍只对 `builtin:local-owner` 开放；真实外部 credential/revocation 未完成前不
   宣称第三方写入口可用。
 
-稳定错误至少覆盖 CLI `confirmation_required`/`non_interactive`/`operation_failed`，Unity
-`unity_editor_not_found`/`unity_version_mismatch`/`unity_architecture_unsupported`/`unity_project_in_use`/
-`unity_process_unknown`，template `template_not_found`/`template_conflict`/`template_archive_invalid`/
-`template_dependency_unavailable`，backup `backup_not_found`/`backup_corrupt`/`backup_target_invalid`/
-`backup_restore_stale`/`project_changed`/`project_restore_recovery_required`。最终集合需消除语义重复并
-更新公共 error Schema；未知错误继续 `internal_error + diagnosticId`。
+Slice 0/1 已冻结 `confirmation_required` 以及 Unity installation/version/architecture/running/launch/
+selector 错误，见 `rpc-error.schema.json`。template/backup 错误在对应 contract slice 冻结。未知错误
+继续 `internal_error + diagnosticId`。
 
 ## Fixture 与 parity
 
-M5 新增的 engineering test ID 在 contract-first 阶段写入 `docs/testing/test-plan.toml`，必须绑定真实
-evidence，不能创建空 metadata：
+M5 engineering test ID 写入 `docs/testing/test-plan.toml`；只有合同测试绑定真实 evidence 并标记
+implemented，动态/生产测试继续 planned：
 
 - `cli.command-contract`、`cli.help-output-exit`、`cli.non-tty`：由 planned 变为 implemented 仅在完整
   subprocess/golden/EOF 覆盖后。
-- 候选 `projects.m5-management`、`repositories.m5-management`、`packages.m5-cli-workflows`。
-- 候选 `unity.m5-engineering`：synthetic Hub/config、fake Editor process、manual registry、launch/status、
-  writer gate；不等于 `unity.v3-vrc-parity`。
-- 候选 `templates.m5-engineering`：v4 public/synthetic bundle、registry、create/derive/import/export、
-  fault matrix；不等于 `templates.v3-parity`。
-- 候选 `backups.m5-transaction`：create/restore/target validation/cancel/kill recovery；不等于
-  `backups.v3-parity`。
+- `m5.cli-unity-contract` 绑定 CLI/Unity Schema、Schema v4 migration 与权限合同。
+- `unity.m5-registry-launch` 与 `unity.m5-writer-gate` 使用 synthetic layout/fake process provider。
+- `templates.m5-workflows`、`backups.m5-create`、`backups.m5-restore` 保持 planned，等各自 slice。
 
 四项 v3 differential test 保持 blocked 到 M11。公开 Unity 文档、synthetic Hub files 和 fake Editor
-只能证明工程合同；真实 installed Editor/Hub 验收门槛必须由项目所有者决定是否在 M5 完成前提供，
-未取得时 `unity.integration` 保持 `in_progress`。
+只能证明工程合同；Hosted CI 不要求安装真实 Unity，未取得真实 evidence 时不得宣称 differential
+parity 或客户端兼容已验证。
 
 ## 生产依赖与平台 API 审批
 
@@ -373,7 +351,7 @@ evidence，不能创建空 metadata：
 | 需求 | 首选路径 | 潜在新增项 / 审批边界 |
 |---|---|---|
 | shell completion | 成熟 clap 生态生成器 | 候选 `clap_complete`；版本必须与已锁 clap 兼容，只进入 CLI |
-| process discovery | std/Tokio 无法可靠跨平台枚举 PID/exe/start time | 候选小型跨平台 process crate（优先评估 `sysinfo` 的最小 feature）；不得用于系统遥测 |
+| process discovery | std/Tokio 无法可靠跨平台枚举 PID/exe/start time | 已隔离评估 `sysinfo = 0.39.6`（defaults off，仅 `system`），详见 `M5-process-discovery-evaluation.md`；尚未批准、不得加入 Workspace |
 | archive/compression | 复用 `zip 8.6.0` + 现有 feature | 默认不新增 crate/codec，不启用 zip defaults |
 | digest/fingerprint | 复用 `sha2 0.11.0` | 不新增算法或 crypto framework |
 | filesystem/ownership | 复用 std/Tokio、rustix、现有 windows-sys adapter | 新 Win32 API、rustix feature 或 unsafe 文件必须单独审批 |
@@ -382,6 +360,19 @@ evidence，不能创建空 metadata：
 `semver`、`reqwest`、`unicode-normalization` 只在其现有职责需要时复用；CLI/template/backup 不因方便
 直接依赖它们。不得启用 Tokio `full`，不得引入通用 desktop automation、ORM、HTTP framework、
 workflow engine、第二 ZIP stack 或第二 process supervisor。
+
+### M5 内部停止点
+
+- **A（当前）**：冻结 Slice 0 CLI 与 Slice 1 Unity 的 ADR、Schema、RPC、错误、权限、State v4 结构
+  migration 和合同测试；提交 process discovery 精确依赖评估。未批准该依赖前停止，不接生产实现。
+- **B**：CLI 共用 runtime 和 Unity registry/writer gate/launch 的生产垂直切片通过后停止；审批 Template
+  bundle、内建库存/许可证及 create-project transaction 合同。
+- **C**：Template 垂直切片通过后停止；审批 Backup create archive profile、exclude-VPM 精确语义。
+- **D**：Backup create 垂直切片通过后停止；审批全新目标 Backup restore Plan/Apply 与 recovery 合同。
+- **E**：Backup restore 与完整 CLI surface 收敛后，运行 M5 全量本地/Hosted 验收并停止在 M6 前。
+
+不得因 Schema v4 migration 文件存在就越过停止点；production migration、capability 和 method 只有
+对应 adapter/use case 真正实现并通过当前 slice 验收后才能接线或广告。
 
 ## 单元、集成、故障与跨平台验收
 
@@ -430,15 +421,15 @@ workflow engine、第二 ZIP stack 或第二 process supervisor。
 
 ## 人工审批点
 
-开始任何 M5 生产代码前，项目所有者至少审批：
+项目所有者已经批准 Slice 0/1 的 CLI、Unity、RPC/错误/权限与 State Schema v4 结构合同；这些合同
+由 A-030/A-031、`specs/cli/`、`specs/rpc/m5-unity.schema.json`、`specs/storage/state-v4.md` 和两个
+ADR 冻结。当前停止点仍需审批 process discovery production dependency；后续 slice 仍分别审批：
 
-1. CLI 命令/alias、output envelope、stdout/stderr、exit code、TTY/EOF、`--yes`、`--dry-run`、Operation
-   wait/detach/cancel 的最终合同。
-2. RPC method/capability/error/permission 兼容新增和 State Schema v4/migration。
-3. Unity discovery source、process evidence、Project writer hard/advisory gate 与真实 Editor 验收门槛。
-4. v4 template bundle Schema、内建模板库存/来源/许可证和 conflict/override 语义。
-5. backup archive profile、`exclude VPM packages` 精确语义与覆盖已有目标的 restore Plan。
-6. 每个新 production crate、windows-sys/rustix feature、unsafe 文件或窗口/进程平台 API。
+1. `M5-process-discovery-evaluation.md` 中 `sysinfo = 0.39.6` 的精确配置与锁文件闭包。
+2. v4 template bundle Schema、内建模板库存/来源/许可证和 conflict/override 语义。
+3. backup archive profile 与 `exclude VPM packages` 精确语义。
+4. M5 仅限全新目标的 restore Plan/Apply/recovery 合同；覆盖已有目标不在 M5。
+5. 此后每个新 production crate、windows-sys/rustix feature、unsafe 文件或窗口/进程平台 API。
 
 审批后仍需在以下情况重新停止：新增未批准 production dependency；扩大 unsafe/平台 API；改变 RPC/
 State/permission/CLI public contract；放宽 archive/path/recovery/Unity writer safety；进入 M6 或其他后续
@@ -488,3 +479,8 @@ Unity process/writer gate、Tauri no-bundle、lockfile/unsafe/dependency feature
   `32289522274` 已由项目所有者人工验收；M4 正式完成。
 - 2026-08-20：创建本 M5 ExecPlan 草案。只规划完整 CLI 合同、Unity、本地模板和备份工作流；未修改
   RPC/State Schema、权限、生产依赖、生产代码或 M5 feature/test 状态，等待项目所有者审批。
+- 2026-08-20：项目所有者批准 M5 总体方向并进入 contract-first。已冻结 Slice 0 CLI v1 与 Slice 1
+  Unity RPC/capability/error/permission、State Schema v4 结构 migration 和 writer gate ADR；Schema v4
+  仍未接入 daemon，Unity method 仍未广告，未开始生产实现。
+- 2026-08-20：完成 `sysinfo 0.39.6`（defaults off，仅 `system`）隔离 feature/Cargo.lock 评估，未修改
+  Workspace manifest/lockfile。按内部停止点 A 等待 process discovery production dependency 审批。

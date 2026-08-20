@@ -1,0 +1,215 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m5-unity.json",
+    "title": "ALCOMD RPC v1 M5 Unity contract",
+    "$defs": {
+        "methodName": {
+            "enum": [
+                "unity.installations.list",
+                "unity.installations.get",
+                "unity.installations.register",
+                "unity.installations.remove",
+                "unity.installations.refresh",
+                "unity.projectEditor.get",
+                "unity.projectEditor.set",
+                "unity.writerState",
+                "unity.launch",
+                "unity.launchStatus"
+            ]
+        },
+        "capability": {
+            "enum": ["unity.read.v1", "unity.manage.v1", "unity.launch.v1"]
+        },
+        "uuid": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "revision": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "expectedOptionalRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9223372036854775807,
+            "description": "0 requires the preference to be absent; positive values require an exact match."
+        },
+        "idempotencyKey": {
+            "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[!-~]+$"
+        },
+        "absolutePath": {"type": "string", "minLength": 1, "maxLength": 32768},
+        "architecture": {"enum": ["x86_64", "arm64", "universal", "unknown"]},
+        "sourceKind": {
+            "enum": ["manual", "hub_config", "known_install_root", "unity_cli_hint"]
+        },
+        "writerStateKind": {
+            "enum": ["running_confirmed", "running_suspected", "not_observed", "unknown"]
+        },
+        "writerEvidenceKind": {
+            "enum": [
+                "tracked_launch",
+                "process_project_argument",
+                "project_lock",
+                "process_unreadable",
+                "platform_unsupported",
+                "inspection_error"
+            ]
+        },
+        "launchState": {"enum": ["opening", "open", "failed"]},
+        "boundedArguments": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {"type": "string", "maxLength": 4096}
+        },
+        "unityInstallation": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+                "installationId", "executablePath", "filesystemIdentity", "unityVersion",
+                "architecture", "sourceKind", "revision", "observedAtMs", "updatedAtMs"
+            ],
+            "properties": {
+                "installationId": {"$ref": "#/$defs/uuid"},
+                "executablePath": {"$ref": "#/$defs/absolutePath"},
+                "filesystemIdentity": {"type": "string", "minLength": 1, "maxLength": 256},
+                "unityVersion": {"type": "string", "minLength": 1, "maxLength": 128},
+                "architecture": {"$ref": "#/$defs/architecture"},
+                "sourceKind": {"$ref": "#/$defs/sourceKind"},
+                "revision": {"$ref": "#/$defs/revision"},
+                "observedAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+                "updatedAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807}
+            }
+        },
+        "projectEditorPreference": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["projectId", "installationId", "arguments", "revision", "updatedAtMs"],
+            "properties": {
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "installationId": {"$ref": "#/$defs/uuid"},
+                "arguments": {"$ref": "#/$defs/boundedArguments"},
+                "revision": {"$ref": "#/$defs/revision"},
+                "updatedAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807}
+            }
+        },
+        "writerEvidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind"],
+            "properties": {
+                "kind": {"$ref": "#/$defs/writerEvidenceKind"},
+                "launchId": {"$ref": "#/$defs/uuid"}
+            }
+        },
+        "writerState": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["projectId", "state", "evidence", "checkedAtMs"],
+            "properties": {
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "state": {"$ref": "#/$defs/writerStateKind"},
+                "evidence": {
+                    "type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/writerEvidence"}
+                },
+                "checkedAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807}
+            }
+        },
+        "launchRecord": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+                "launchId", "projectId", "installationId", "state", "spawnAccepted", "createdAtMs"
+            ],
+            "properties": {
+                "launchId": {"$ref": "#/$defs/uuid"},
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "installationId": {"$ref": "#/$defs/uuid"},
+                "state": {"$ref": "#/$defs/launchState"},
+                "spawnAccepted": {"type": "boolean"},
+                "createdAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807}
+            }
+        },
+        "installationListParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "cursor": {"type": "string", "minLength": 1, "maxLength": 1024},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 1000}
+            }
+        },
+        "installationGetParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["installationId"],
+            "properties": {"installationId": {"$ref": "#/$defs/uuid"}}
+        },
+        "installationRegisterParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["executablePath", "idempotencyKey"],
+            "properties": {
+                "executablePath": {"$ref": "#/$defs/absolutePath"},
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
+            }
+        },
+        "installationRemoveParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["installationId", "expectedRevision", "idempotencyKey"],
+            "properties": {
+                "installationId": {"$ref": "#/$defs/uuid"},
+                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
+            }
+        },
+        "installationRefreshParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["idempotencyKey"],
+            "properties": {"idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}}
+        },
+        "projectEditorGetParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["projectId"],
+            "properties": {"projectId": {"$ref": "#/$defs/uuid"}}
+        },
+        "projectEditorSetParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "projectId", "installationId", "arguments", "expectedRevision", "idempotencyKey"
+            ],
+            "properties": {
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "installationId": {"$ref": "#/$defs/uuid"},
+                "arguments": {"$ref": "#/$defs/boundedArguments"},
+                "expectedRevision": {"$ref": "#/$defs/expectedOptionalRevision"},
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
+            }
+        },
+        "writerStateParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["projectId"],
+            "properties": {"projectId": {"$ref": "#/$defs/uuid"}}
+        },
+        "launchParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["projectId", "expectedProjectRevision", "idempotencyKey"],
+            "properties": {
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "expectedProjectRevision": {"$ref": "#/$defs/revision"},
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
+            }
+        },
+        "launchStatusParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["launchId"],
+            "properties": {"launchId": {"$ref": "#/$defs/uuid"}}
+        }
+    },
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["contractVersion"],
+    "properties": {"contractVersion": {"const": 1}}
+}

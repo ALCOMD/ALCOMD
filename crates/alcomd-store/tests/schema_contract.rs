@@ -3,6 +3,7 @@ use rusqlite::{Connection, params};
 const MIGRATION_V1: &str = include_str!("../migrations/0001_state.sql");
 const MIGRATION_V2: &str = include_str!("../migrations/0002_projects_repositories.sql");
 const MIGRATION_V3: &str = include_str!("../migrations/0003_package_transactions.sql");
+const MIGRATION_V4: &str = include_str!("../migrations/0004_local_workflows.sql");
 
 #[test]
 fn bundled_sqlite_version_is_frozen() {
@@ -614,6 +615,275 @@ fn failed_migration_v3_restores_complete_v2() {
     );
 }
 
+#[test]
+fn migration_v4_is_atomic_and_adds_only_the_approved_m5_registry_tables() {
+    let connection = migrated_v4_connection();
+    assert_eq!(user_version(&connection), 4);
+    let tables = connection
+        .prepare(
+            "SELECT name FROM sqlite_schema
+             WHERE type='table' AND name NOT LIKE 'sqlite_%'
+             ORDER BY name",
+        )
+        .expect("prepare tables")
+        .query_map([], |row| row.get::<_, String>(0))
+        .expect("query tables")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect tables");
+    assert_eq!(
+        tables,
+        [
+            "backups",
+            "events",
+            "idempotency_records",
+            "operation_journal",
+            "operations",
+            "package_filesystem_journal",
+            "package_plans",
+            "project_editor_preferences",
+            "projects",
+            "repositories",
+            "repository_package_versions",
+            "templates",
+            "unity_installations",
+        ]
+    );
+    assert!(MIGRATION_V4.starts_with("BEGIN IMMEDIATE;"));
+    assert!(MIGRATION_V4.ends_with("COMMIT;\n"));
+    assert!(!MIGRATION_V4.contains("CREATE TABLE settings"));
+    assert!(!MIGRATION_V4.contains("process_history"));
+    assert!(!MIGRATION_V4.contains("workflow"));
+}
+
+#[test]
+fn migration_v4_preserves_m2_m3_m4_state_and_event_sequence() {
+    let connection = migrated_v3_connection();
+    insert_project(&connection);
+    connection
+        .execute(
+            "INSERT INTO events (
+                event_id, kind, aggregate_kind, aggregate_id, aggregate_revision,
+                principal_id, occurred_at_ms, payload_json
+             ) VALUES ('00000000-0000-4000-8000-000000000501', 'project.registered',
+                       'project', '00000000-0000-4000-8000-000000000201', 1,
+                       'builtin:local-owner', 1, '{}')",
+            [],
+        )
+        .expect("insert M3 event");
+    connection
+        .execute(
+            "INSERT INTO operations (
+                operation_id, kind, state, revision, owner_principal_id, request_json,
+                cancel_requested, created_at_ms, updated_at_ms
+             ) VALUES ('00000000-0000-4000-8000-000000000502', 'packages.apply', 'queued',
+                       1, 'builtin:local-owner', '{}', 0, 1, 1)",
+            [],
+        )
+        .expect("insert M4 operation");
+    connection
+        .execute(
+            "INSERT INTO package_plans (
+                plan_id, owner_principal_id, project_id, action, state, project_revision,
+                project_snapshot_fingerprint, change_set_fingerprint, change_set_json,
+                source_set_json, apply_operation_id, created_at_ms
+             ) VALUES ('00000000-0000-4000-8000-000000000503', 'builtin:local-owner',
+                       '00000000-0000-4000-8000-000000000201', 'install', 'applied', 1,
+                       zeroblob(32), zeroblob(32),
+                       '{\"formatVersion\":1,\"mutations\":[],\"dependencyEdges\":[]}', '[]',
+                       '00000000-0000-4000-8000-000000000502', 1)",
+            [],
+        )
+        .expect("insert M4 package plan");
+    connection
+        .execute(
+            "INSERT INTO package_filesystem_journal (
+                operation_id, step, plan_id, project_id, phase, state,
+                project_identity_key, change_set_fingerprint, evidence_json, updated_at_ms
+             ) VALUES ('00000000-0000-4000-8000-000000000502', 1,
+                       '00000000-0000-4000-8000-000000000503',
+                       '00000000-0000-4000-8000-000000000201', 'accepted', 'completed',
+                       x'01', zeroblob(32), '{}', 1)",
+            [],
+        )
+        .expect("insert M4 filesystem evidence");
+    connection
+        .execute(
+            "INSERT INTO idempotency_records (
+                principal_id, method, idempotency_key, request_fingerprint, state,
+                operation_id, response_json, created_at_ms
+             ) VALUES ('builtin:local-owner', 'packages.applyPlan', 'm5-preserve', '{}',
+                       'completed', '00000000-0000-4000-8000-000000000502', '{}', 1)",
+            [],
+        )
+        .expect("insert idempotency row");
+
+    connection
+        .execute_batch(MIGRATION_V4)
+        .expect("apply migration v4");
+
+    for table in [
+        "projects",
+        "operations",
+        "package_plans",
+        "package_filesystem_journal",
+        "idempotency_records",
+        "events",
+    ] {
+        let count: i64 = connection
+            .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .expect("count preserved row");
+        assert_eq!(count, 1, "{table}");
+    }
+    connection
+        .execute(
+            "INSERT INTO events (
+                event_id, kind, aggregate_kind, aggregate_id, aggregate_revision,
+                principal_id, occurred_at_ms, payload_json
+             ) VALUES ('00000000-0000-4000-8000-000000000504', 'unity.installation.registered',
+                       'unity-installation', '00000000-0000-4000-8000-000000000505', 1,
+                       'builtin:local-owner', 2, '{}')",
+            [],
+        )
+        .expect("new M5 aggregate kind is accepted");
+    let sequences = connection
+        .prepare("SELECT sequence FROM events ORDER BY sequence")
+        .expect("prepare sequences")
+        .query_map([], |row| row.get::<_, i64>(0))
+        .expect("query sequences")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect sequences");
+    assert_eq!(sequences, [1, 2]);
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("foreign key check"),
+        0
+    );
+}
+
+#[test]
+fn schema_v4_freezes_unity_identity_argv_and_immutable_backup_metadata_shape() {
+    let connection = migrated_v4_connection();
+    insert_project(&connection);
+    connection
+        .execute(
+            "INSERT INTO unity_installations (
+                installation_id, owner_principal_id, executable_path,
+                filesystem_identity_key, unity_version, architecture, source_kind,
+                revision, observed_at_ms, updated_at_ms
+             ) VALUES ('00000000-0000-4000-8000-000000000510', 'builtin:local-owner',
+                       'X:/Unity/Editor/Unity.exe', x'010203', '2022.3.22f1', 'x86_64',
+                       'manual', 1, 1, 1)",
+            [],
+        )
+        .expect("insert Unity installation");
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO unity_installations (
+                    installation_id, owner_principal_id, executable_path,
+                    filesystem_identity_key, unity_version, architecture, source_kind,
+                    revision, observed_at_ms, updated_at_ms
+                 ) VALUES ('00000000-0000-4000-8000-000000000511', 'builtin:local-owner',
+                           'X:/Alias/Unity.exe', x'010203', '2022.3.22f1', 'x86_64',
+                           'manual', 1, 1, 1)",
+                [],
+            )
+            .is_err()
+    );
+    connection
+        .execute(
+            "INSERT INTO project_editor_preferences (
+                project_id, installation_id, arguments_json, revision, updated_at_ms
+             ) VALUES ('00000000-0000-4000-8000-000000000201',
+                       '00000000-0000-4000-8000-000000000510', '[\"-batchmode\"]', 1, 1)",
+            [],
+        )
+        .expect("insert argv preference");
+    assert!(
+        connection
+            .execute(
+                "DELETE FROM unity_installations
+                 WHERE installation_id='00000000-0000-4000-8000-000000000510'",
+                [],
+            )
+            .is_err()
+    );
+    assert!(
+        connection
+            .execute(
+                "UPDATE project_editor_preferences SET arguments_json='{}'",
+                [],
+            )
+            .is_err()
+    );
+    connection
+        .execute(
+            "INSERT INTO templates (
+                template_id, owner_principal_id, source_kind, template_version,
+                manifest_json, payload_locator, payload_sha256, favorite, revision,
+                created_at_ms, updated_at_ms
+             ) VALUES ('00000000-0000-4000-8000-000000000512', 'builtin:local-owner',
+                       'builtin', '1', '{}', 'objects/template.fixture', zeroblob(32),
+                       0, 1, 1, 1)",
+            [],
+        )
+        .expect("insert structural template contract");
+    connection
+        .execute(
+            "INSERT INTO backups (
+                backup_id, owner_principal_id, source_project_id, archive_locator,
+                file_identity_key, archive_sha256, byte_size, format_version,
+                created_at_ms, compression_mode, exclude_vpm_packages
+             ) VALUES ('00000000-0000-4000-8000-000000000513', 'builtin:local-owner',
+                       '00000000-0000-4000-8000-000000000999', 'backups/fixture.zip',
+                       x'01', zeroblob(32), 0, 1, 1, 'fast', 1)",
+            [],
+        )
+        .expect("historical source ProjectId is not a live foreign key");
+}
+
+#[test]
+fn failed_migration_v4_restores_complete_v3() {
+    let connection = migrated_v3_connection();
+    insert_project(&connection);
+    let failing = MIGRATION_V4.replace(
+        "PRAGMA user_version = 4;",
+        "THIS IS NOT VALID SQL;\nPRAGMA user_version = 4;",
+    );
+    assert!(connection.execute_batch(&failing).is_err());
+    connection
+        .execute_batch("ROLLBACK;")
+        .expect("rollback failed migration");
+    assert_eq!(user_version(&connection), 3);
+    let m5_tables: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM sqlite_schema
+             WHERE type='table' AND name IN (
+                'unity_installations','project_editor_preferences','templates','backups'
+             )",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count M5 tables");
+    assert_eq!(m5_tables, 0);
+    connection
+        .execute(
+            "INSERT INTO events (
+                event_id, kind, aggregate_kind, aggregate_id, aggregate_revision,
+                principal_id, occurred_at_ms, payload_json
+             ) VALUES ('00000000-0000-4000-8000-000000000520', 'unity.installation.registered',
+                       'unity-installation', '00000000-0000-4000-8000-000000000521', 1,
+                       'builtin:local-owner', 1, '{}')",
+            [],
+        )
+        .expect_err("v3 event contract must remain intact after rollback");
+}
+
 fn migrated_connection() -> Connection {
     let connection = Connection::open_in_memory().expect("open SQLite");
     connection
@@ -638,6 +908,14 @@ fn migrated_v3_connection() -> Connection {
     connection
         .execute_batch(MIGRATION_V3)
         .expect("apply migration v3");
+    connection
+}
+
+fn migrated_v4_connection() -> Connection {
+    let connection = migrated_v3_connection();
+    connection
+        .execute_batch(MIGRATION_V4)
+        .expect("apply migration v4");
     connection
 }
 

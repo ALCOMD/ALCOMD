@@ -1,0 +1,90 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/cli/v1/alcomd-cli.json",
+    "title": "ALCOMD CLI contract v1",
+    "$defs": {
+        "outputMode": {"enum": ["human", "json", "ndjson"]},
+        "exitCode": {"enum": [0, 1, 2, 3, 130]},
+        "globalOption": {
+            "enum": [
+                "--json", "--ndjson", "--quiet", "--yes", "--dry-run",
+                "--no-wait", "--no-start-daemon"
+            ]
+        },
+        "commandName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z0-9][a-z0-9 -]*$"
+        },
+        "error": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["code", "message"],
+            "properties": {
+                "code": {"type": "string", "minLength": 1, "maxLength": 128},
+                "message": {"type": "string", "minLength": 1, "maxLength": 512},
+                "diagnosticId": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                "data": {"type": "object"}
+            }
+        },
+        "resultDocument": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "command", "result"],
+            "properties": {
+                "type": {"const": "result"},
+                "command": {"$ref": "#/$defs/commandName"},
+                "result": {}
+            }
+        },
+        "errorDocument": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "error"],
+            "properties": {
+                "type": {"const": "error"},
+                "error": {"$ref": "#/$defs/error"}
+            }
+        },
+        "ndjsonRecord": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["type"],
+            "properties": {
+                "type": {"enum": ["operation", "progress", "event", "result", "error"]},
+                "operationId": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                }
+            }
+        }
+    },
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["version", "defaultMode", "machineModes", "exitCodes", "globalOptions"],
+    "properties": {
+        "version": {"const": 1},
+        "defaultMode": {"const": "human"},
+        "machineModes": {
+            "type": "array",
+            "prefixItems": [{"const": "json"}, {"const": "ndjson"}],
+            "items": false
+        },
+        "exitCodes": {
+            "type": "array",
+            "prefixItems": [
+                {"const": 0}, {"const": 1}, {"const": 2}, {"const": 3}, {"const": 130}
+            ],
+            "items": false
+        },
+        "globalOptions": {
+            "type": "array",
+            "items": {"$ref": "#/$defs/globalOption"},
+            "uniqueItems": true
+        }
+    }
+}

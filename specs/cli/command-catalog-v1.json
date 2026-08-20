@@ -1,0 +1,82 @@
+{
+    "contractVersion": 1,
+    "publicationRule": "publish-only-when-backend-capability-is-implemented",
+    "groups": [
+        {
+            "name": "system",
+            "aliases": [],
+            "commands": [
+                {"name": "status", "aliases": []}
+            ]
+        },
+        {
+            "name": "operation",
+            "aliases": ["operations"],
+            "commands": [
+                {"name": "list", "aliases": []},
+                {"name": "get", "aliases": ["info"]},
+                {"name": "follow", "aliases": []},
+                {"name": "cancel", "aliases": []}
+            ]
+        },
+        {
+            "name": "project",
+            "aliases": ["projects"],
+            "commands": [
+                {"name": "inspect", "aliases": []},
+                {"name": "list", "aliases": []},
+                {"name": "get", "aliases": ["info"]},
+                {"name": "register", "aliases": ["add"]},
+                {"name": "refresh", "aliases": []},
+                {"name": "unregister", "aliases": ["remove"]}
+            ]
+        },
+        {
+            "name": "repository",
+            "aliases": ["repo"],
+            "commands": [
+                {"name": "inspect", "aliases": []},
+                {"name": "list", "aliases": []},
+                {"name": "get", "aliases": ["info"]},
+                {"name": "packages", "aliases": []},
+                {"name": "register", "aliases": ["add"]},
+                {"name": "refresh", "aliases": []},
+                {"name": "unregister", "aliases": ["remove"]}
+            ]
+        },
+        {
+            "name": "package",
+            "aliases": ["packages"],
+            "commands": [
+                {"name": "install", "aliases": ["i"]},
+                {"name": "remove", "aliases": ["rm"]},
+                {"name": "upgrade", "aliases": []},
+                {"name": "downgrade", "aliases": []},
+                {"name": "resolve", "aliases": []},
+                {"name": "apply-plan", "aliases": []}
+            ]
+        },
+        {
+            "name": "unity",
+            "aliases": [],
+            "commands": [
+                {"name": "list", "aliases": []},
+                {"name": "get", "aliases": ["info"]},
+                {"name": "refresh", "aliases": []},
+                {"name": "register", "aliases": ["add"]},
+                {"name": "remove", "aliases": []},
+                {"name": "project-get", "aliases": []},
+                {"name": "project-set-editor", "aliases": []},
+                {"name": "project-set-args", "aliases": []},
+                {"name": "writer-state", "aliases": []},
+                {"name": "launch", "aliases": []},
+                {"name": "launch-status", "aliases": []}
+            ]
+        },
+        {
+            "name": "completion",
+            "aliases": [],
+            "commands": []
+        }
+    ]
+}

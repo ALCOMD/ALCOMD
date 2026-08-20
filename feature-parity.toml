@@ -163,7 +163,7 @@ status = "verified"
 implementation_status = "not_started"
 evidence = ["docs/baselines/alcomd3-v3-audit.md::模板"]
 coverage = ["GUI", "file association", "conflicts", "round trip"]
-tests = ["templates.v3-parity", "migration.fixture-chain"]
+tests = ["templates.v3-parity", "templates.m5-workflows", "migration.fixture-chain"]
 
 [[feature]]
 id = "backups.management"
@@ -177,7 +177,7 @@ status = "verified"
 implementation_status = "not_started"
 evidence = ["docs/baselines/alcomd3-v3-audit.md::备份", "docs/baselines/vrc-get-audit.md::GUI backup"]
 coverage = ["GUI", "progress", "partial archive", "restore target"]
-tests = ["backups.v3-parity", "migration.fixture-chain"]
+tests = ["backups.v3-parity", "backups.m5-create", "backups.m5-restore", "migration.fixture-chain"]
 
 [[feature]]
 id = "unity.integration"
@@ -191,7 +191,7 @@ status = "verified"
 implementation_status = "not_started"
 evidence = ["docs/baselines/alcomd3-v3-audit.md::Unity", "docs/baselines/vrc-get-audit.md::Unity"]
 coverage = ["Windows", "macOS", "Linux", "Hub formats", "non-zero exit"]
-tests = ["unity.v3-vrc-parity", "platform.build-matrix"]
+tests = ["m5.cli-unity-contract", "unity.m5-registry-launch", "unity.m5-writer-gate", "unity.v3-vrc-parity", "platform.build-matrix"]
 
 [[feature]]
 id = "cli.complete"
@@ -205,7 +205,7 @@ status = "verified"
 implementation_status = "in_progress"
 evidence = ["docs/baselines/vrc-get-audit.md::CLI 功能与错误契约", "apps/alcomd-cli/src/main.rs"]
 coverage = ["help/aliases", "human/json", "offline/no-update", "confirmation", "errors"]
-tests = ["cli.m1-system-status", "cli.command-contract", "cli.help-output-exit", "cli.non-tty"]
+tests = ["cli.m1-system-status", "m5.cli-unity-contract", "cli.command-contract", "cli.help-output-exit", "cli.non-tty"]
 
 [[feature]]
 id = "cli.automation-safety"
@@ -219,7 +219,7 @@ status = "verified"
 implementation_status = "not_started"
 evidence = ["docs/baselines/vrc-get-audit.md::stdin EOF 死循环", "docs/baselines/vrc-get-audit.md::只读写入"]
 coverage = ["EOF timeout", "TTY detection", "exit code", "project hash"]
-tests = ["cli.non-tty", "cli.help-output-exit", "projects.v3-parity"]
+tests = ["m5.cli-unity-contract", "cli.non-tty", "cli.help-output-exit", "projects.v3-parity"]
 
 [[feature]]
 id = "gui.v3-surfaces"

@@ -1,6 +1,6 @@
 # ALCOMD RPC v1
 
-状态：M1-M3 已完成；M4 兼容合同与最小生产实现已完成本地验收，尚待 hosted CI 与人工验收
+状态：M1-M4 已完成并通过人工验收；M5 CLI/Unity 兼容合同已冻结，生产实现尚未获批
 
 ## 1. M1 合同范围
 
@@ -491,3 +491,43 @@ archive、SQL 或 parser/OS debug。未知错误仍为 `internal_error + diagnos
 
 完整 DTO、长度与枚举由 `m4-package-transaction.schema.json` 冻结。新增 method/capability/可选
 Operation progress 是兼容增加；M1-M3 字段与方法语义不变。
+
+## 19. M5 contract-first 兼容增加：Unity registry 与 launch
+
+M5 在 RPC major 1 上冻结三项 capability；合同存在不代表 daemon 已经广告或实现：
+
+| capability | method | permission |
+|---|---|---|
+| `unity.read.v1` | `unity.installations.list/get`、`unity.projectEditor.get`、`unity.writerState` | `unity.read` |
+| `unity.manage.v1` | `unity.installations.register/remove/refresh`、`unity.projectEditor.set` | `unity.manage` |
+| `unity.launch.v1` | `unity.launch`、`unity.launchStatus` | `unity.launch` |
+
+manual register 与 discovery candidate 必须经同一 executable validator。`unity.installations.register`
+只接受绝对 executable path 与 idempotencyKey；path、Hub/CLI 声明或显示版本本身不能证明 identity。
+`refresh` 是 bounded registry synchronization，可返回显式 partial diagnostics，但 malformed/不存在的
+candidate 不得注册为有效 installation。Hub CLI 不成为权威依赖。
+
+project Editor preference 保存 InstallationId 与 bounded argv array。`expectedRevision=0` 表示调用方
+要求 preference 尚不存在，正整数要求精确 revision。参数不得包含 `-projectPath` 或等价重复 project
+selector；daemon 固定把已验证 absolute project root 作为独立 `-projectPath` argv 传给已验证 Editor，
+不得经 shell。
+
+`unity.writerState` 返回 `running_confirmed`、`running_suspected`、`not_observed` 或 `unknown` 及有界、
+脱敏 evidence。process/path/argv 检查失败必须为 unknown；not_observed 不表示 definitely not running。
+package/template/backup mutation 对 confirmed 返回 `unity_project_running`，suspected/unknown 仅 advisory
+并继续 live fingerprint gate。Unity launch 对 confirmed 拒绝第二实例，对 suspected/unknown 返回
+`unity_launch_state_uncertain`，只有 not_observed 允许 spawn。
+
+`unity.launch` 复验 project/installation identity、project revision、permission 与永久 idempotency；成功
+只返回 opaque launch record 且 `state=opening`/`spawnAccepted=true`，不宣称 Unity 已完全打开。
+`unity.launchStatus` 后续只能观察为 opening/open/failed。客户端断开不终止 Unity；M5 不建立通用
+supervisor。foreground/activation 不在本合同中。
+
+新增稳定错误为 `confirmation_required`、`unity_installation_not_found`、
+`unity_installation_invalid`、`unity_installation_in_use`、`unity_version_unverified`、
+`unity_version_mismatch`、`unity_architecture_unsupported`、`unity_project_running`、
+`unity_launch_state_uncertain`、`unity_project_selector_forbidden`、`unity_launch_failed` 与
+`unity_launch_not_found`。普通 error 不包含完整进程命令行、私密路径、PID 列表或 OS debug。
+
+完整 DTO、enum 与上限由 `m5-unity.schema.json` 冻结。State Schema v4 仍是未接入的 contract-first
+migration；生产实现获批前 hello 的 `dataSchema` 最大仍为 3，M5 capability 不得广告。
