@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M4 已正式完成并通过人工验收；尚未进入 M5`
+`M4 已正式完成并通过人工验收；M5 ExecPlan 草案待人工审批，M5 生产实现尚未开始`
 
 ## 已完成
 
@@ -207,9 +207,9 @@
 
 ## 下一停止点
 
-M0、M1、M2、M3 与 M4 均已完成并通过最终人工验收；尚未进入 M5。M4 完整 VPM 产品功能以外的
-未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。进入 M5 生产实现
-前必须先完成 ExecPlan 草案并取得项目所有者人工审批。
+M0、M1、M2、M3 与 M4 均已完成并通过最终人工验收。M5 ExecPlan 草案已建立，只规划完整 CLI
+合同、Unity、本地模板与备份工作流；RPC/State/permission/依赖和生产实现仍待人工审批。M4 完整
+VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential
 revocation 仍未完成；Windows 10/11 完整客户端
 安装、启动、WebView2、更新与卸载验证继续 deferred 到 M12，不得把 Windows Server hosted 结果
