@@ -1,6 +1,6 @@
 # M5：完整 CLI 合同与本地项目工作流
 
-状态：进行中；Unity 最小生产切片已独立提交；Template contract-first 已冻结并等待生产实现审批
+状态：进行中；Unity 最小生产切片已独立提交；Template contract-first 与 Schema v5 closure 已获批，正在实施 Template production
 
 ## 目标
 
@@ -45,7 +45,7 @@ M5 首先冻结所有 CLI 命令共用的 human/JSON/NDJSON、stdout/stderr、�
 4. versioned template registry、内建/导入/派生模板和从模板创建项目的 Plan/Apply Operation。
 5. backup create 与高影响 restore：bounded archive、Plan/Apply、ProjectRestore lock、staging、journal、
    rollback、取消和真实 kill/restart recovery。
-6. 最小 State Schema v4 和 RPC v1 兼容新增；不为未来 GUI/MCP/扩展预建字段。
+6. State Schema v4 的 Unity/registry 与 Schema v5 的窄 Template Plan authority；不为未来 GUI/MCP/扩展预建字段。
 7. public/synthetic engineering Fixture、CLI subprocess golden、跨平台 process/filesystem 测试和三个
    hosted 平台验收；真实 v3 differential 项保持 blocked。
 
@@ -94,13 +94,13 @@ crates/alcomd-domain/                # 纯 Unity/template/backup/plan identity �
 crates/alcomd-application/           # 用例、ports、权限、锁、Plan/Apply 编排
 crates/alcomd-protocol/              # 获批的 RPC v1 兼容 DTO
 crates/alcomd-client/                # 类型化 RPC 调用与 Operation follow
-crates/alcomd-store/                 # 获批的 Schema v4/migration/registry/journal
+crates/alcomd-store/                 # 获批的 Schema v4/v5 migration、registry/Plan/journal
 crates/alcomd-platform/              # 三平台发现、进程、路径/权限与启动原语
 crates/alcomd-vpm/                   # 复用既有 bounded archive/project transaction adapter
 crates/alcomd-testing/               # synthetic/public Fixture、CLI/daemon/kill tests
 specs/rpc/                           # M5 RPC/error/output Schema 与兼容快照
 specs/cli/                           # CLI v1 进程合同、machine Schema 与 command catalog
-specs/storage/                       # State Schema v4/migration
+specs/storage/                       # State Schema v4/v5 migration
 specs/extensions/permissions-v1.md   # 仅精化既有 M5 权限语义
 docs/adr/                            # CLI、Unity writer、template/backup transaction ADR
 docs/exec-plans/M5-cli-core-workflows.md
@@ -297,7 +297,7 @@ operation、现有 project/repository、M4 package shortcut、Unity 与 completi
 - backup 不是普通 unzip；不支持链接、root escape、case/Unicode collision、special file 或未经批准
   的 codec。backup archive profile 可有不同 quota 参数，但必须调用同一安全 engine。
 
-## State Schema v4 与 RPC v1
+## State Schema v4/v5 与 RPC v1
 
 M5 的 durable registry 需求使用已批准的 Schema v4：
 
@@ -309,8 +309,13 @@ M5 的 durable registry 需求使用已批准的 Schema v4：
 - `backups`：BackupId、可选历史 source ProjectId、archive locator、file identity/digest/size、format version、
   createdAt、compression 与 exclude-VPM flag。它不是复杂 aggregate/Event 状态机。
 
-不新增 CLI 设置表、通用 workflow 表、Hub mirror 数据库、process history 日志或未来 GUI state。migration
-必须覆盖 v1->v2->v3->v4、v3->v4、rollback、未知 future schema fail closed 和现有 M4 journal 保留。
+Template immutable Plan 使用获批的 Schema v5 窄表 `template_plans`，只允许 import/derive/
+create-project 和一次性 `unapplied -> applied + OperationId` transition；M4 `package_plans` 不泛化。
+operations.kind 只精确增加 `templates.import`、`templates.derive`、`templates.create-project`，不预建
+export/Backup/generic workflow kind。migration 覆盖 v1->...->v5、v4->v5、rollback、future schema
+fail closed，并保留 M2-M4 Operation/journal/idempotency/Event sequence、package Plan 与 Unity registry。
+
+不新增 CLI 设置表、通用 workflow 表、Hub mirror 数据库、process history 日志或未来 GUI state。
 
 Slice 1 RPC v1 兼容增加已冻结为 `unity.read.v1`、`unity.manage.v1`、`unity.launch.v1`，准确 method、
 DTO、collection limit 与 enum 见 `specs/rpc/m5-unity.schema.json`。template/backup capability 必须等各自
@@ -371,14 +376,15 @@ workflow engine、第二 ZIP stack 或第二 process supervisor。
 
 - **A（已通过）**：冻结 Slice 0 CLI 与 Slice 1 Unity 的 ADR、Schema、RPC、错误、权限、State v4 结构
   migration 和合同测试；`sysinfo 0.39.6` 精确依赖已经批准。
-- **B（当前）**：Unity production slice 已作为提交
+- **B（已通过）**：Unity production slice 已作为提交
   `8b63c6923b178a6ebb12bd5964412b2db7268e04` 保存。Template bundle、库存/许可证、权限、RPC 与
-  create-project transaction contract 已获批并冻结；当前再次停止，等待 Template production slice 审批。
+  create-project transaction contract 已获批并冻结；项目所有者已进一步批准 Schema v5 closure 与
+  Template production。严格按 parser/inventory/object/registry/import-export/derive/create-project 推进。
 - **C**：Template 垂直切片通过后停止；审批 Backup create archive profile、exclude-VPM 精确语义。
 - **D**：Backup create 垂直切片通过后停止；审批全新目标 Backup restore Plan/Apply 与 recovery 合同。
 - **E**：Backup restore 与完整 CLI surface 收敛后，运行 M5 全量本地/Hosted 验收并停止在 M6 前。
 
-不得因 Schema v4 migration 文件存在就越过停止点；production migration、capability 和 method 只有
+不得因 Schema v5 migration 文件存在就越过后端真实性门禁；capability 和 method 只有
 对应 adapter/use case 真正实现并通过当前 slice 验收后才能接线或广告。
 
 ## 单元、集成、故障与跨平台验收
@@ -389,7 +395,7 @@ workflow engine、第二 ZIP stack 或第二 process supervisor。
 - injected IO/terminal state 覆盖 TTY/non-TTY、EOF、unknown input、拒绝/同意、`--yes` 和 Ctrl+C。
 - Unity version/architecture/identity/config bounded parser；argv 不经 shell。
 - template/backup manifest、path profile、include/exclude、collision/quota 和 canonical digest。
-- Schema v4/migration、RPC backward compatibility、permission/resource scope、unknown optional fields。
+- Schema v4/v5 migration、RPC backward compatibility、permission/resource scope、unknown optional fields。
 
 ### 集成/故障
 
@@ -503,3 +509,7 @@ Unity process/writer gate、Tauri no-bundle、lockfile/unsafe/dependency feature
   保存。随后按项目所有者批准冻结 ADR 0020、`.alcomdtemplate` Bundle/manifest/quota、三个 native
   builtin inventory/AGPL provenance、Template RPC/permission/error、planned CLI、Schema v4 compatibility、
   synthetic Fixture 与 contract/security/migration snapshot；未开始任何 Template production adapter。
+- 2026-08-21：项目所有者批准 Template contract-first 总体审核与 production slice。先增加
+  `0005_template_plans.sql`：窄 immutable Plan authority、三个精确 Template Operation kind、Schema v5
+  hello compatibility，并以 migration/rollback/foreign-key/state-preservation 测试闭环；随后无需再次
+  停止，按 parser -> inventory -> object store -> registry -> import/export -> derive -> create-project 实施。

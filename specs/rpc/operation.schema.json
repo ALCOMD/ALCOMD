@@ -7,7 +7,16 @@
     "required": ["operationId", "kind", "state", "revision", "createdAtMs", "updatedAtMs"],
     "properties": {
         "operationId": {"type": "string", "format": "uuid"},
-        "kind": {"type": "string", "enum": ["state.check", "packages.apply"]},
+        "kind": {
+            "type": "string",
+            "enum": [
+                "state.check",
+                "packages.apply",
+                "templates.import",
+                "templates.derive",
+                "templates.create-project"
+            ]
+        },
         "state": {
             "type": "string",
             "enum": ["queued", "planning", "waiting_for_input", "running", "cancelling", "succeeded", "failed", "cancelled", "interrupted", "recovering"]

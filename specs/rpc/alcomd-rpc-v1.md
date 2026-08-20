@@ -529,8 +529,8 @@ supervisor。foreground/activation 不在本合同中。
 `unity_launch_state_uncertain`、`unity_project_selector_forbidden`、`unity_launch_failed` 与
 `unity_launch_not_found`。普通 error 不包含完整进程命令行、私密路径、PID 列表或 OS debug。
 
-完整 DTO、enum 与上限由 `m5-unity.schema.json` 冻结。State Schema v4 已接入自动 migration；daemon
-在 store 成功初始化后通过 hello 广告 `dataSchema: 4` 和客户端实际协商的 M5 capability。此兼容增加不
+完整 DTO、enum 与上限由 `m5-unity.schema.json` 冻结。State Schema v5 已接入自动 migration；daemon
+在 store 成功初始化后通过 hello 广告 `dataSchema: 5` 和客户端实际协商的 M5 capability。此兼容增加不
 改变 M1-M4 方法语义，也不表示 Template、Backup 或完整 CLI 已实现。
 
 ## 20. M5 contract-only 兼容增加：Template Bundle v1
@@ -545,6 +545,12 @@ Template contract 冻结三项未来 capability，但 production adapter 存在�
 
 完整 DTO、collection/field bounds、immutable Plan、Operation progress 与 permission matrix 由
 `m5-template.schema.json` 冻结。该文件是兼容增加设计输入，不表示 method 已进入 dispatcher。
+
+Template Plan authority 使用 State Schema v5 的窄 `template_plans` 表。Plan JSON 固定 `version: 1`
+并按 import/derive/create-project 使用严格 DTO；唯一允许的持久更新是从 unapplied 绑定到精确匹配的
+`templates.import`、`templates.derive` 或 `templates.create-project` Operation。M4 `package_plans`
+保持不变且不得承载 Template Plan。Schema v5 只使这些 Operation kind 可持久化，不等同于 capability
+或 dispatcher 已发布。
 
 inspect 纯只读。Import/override 和 derive 先产生 immutable Plan；Apply 返回 OperationId 并复验相同
 bundle/project identity、digest、revision、fingerprint 与 idempotency。新 ID import 可创建；user 同 ID

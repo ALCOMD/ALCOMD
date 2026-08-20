@@ -223,8 +223,8 @@ stage = "M5"
 kind = "contract-persistence"
 platforms = ["all"]
 status = "implemented"
-description = "冻结 builtin/user source、native inventory/许可证、opaque locator、TemplateId conflict 与 Schema v4 migration compatibility；不表示 registry production use case 已实现。"
-evidence = ["specs/templates/builtin-inventory-v1.toml", "specs/storage/state-v4.md", "crates/alcomd-store/tests/schema_contract.rs", "crates/alcomd-testing/tests/m5_contract.rs"]
+description = "冻结 builtin/user source、native inventory/许可证、opaque locator、TemplateId conflict、Schema v4 registry 与 Schema v5 immutable Template Plan migration；不表示 registry production use case 已实现。"
+evidence = ["specs/templates/builtin-inventory-v1.toml", "specs/storage/state-v4.md", "specs/storage/state-v5.md", "crates/alcomd-store/migrations/0005_template_plans.sql", "crates/alcomd-store/tests/schema_contract.rs", "crates/alcomd-testing/tests/m5_contract.rs"]
 
 [[test]]
 id = "templates.m5-import-export"

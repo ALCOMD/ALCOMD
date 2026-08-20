@@ -1,6 +1,6 @@
 # ALCOMD State Schema v4
 
-状态：Implemented（M5 Unity 最小生产切片已接入；Template/Backup 仍仅冻结表结构）
+状态：Implemented and superseded by Schema v5（M5 Unity registry 基线；0004 保持冻结）
 
 权威 migration 是 `crates/alcomd-store/migrations/0004_local_workflows.sql`。daemon 已在启动事务中
 从 v3 自动迁移到 v4，并在 store ready 后广告 `dataSchema: 4`；本阶段只接入 Unity registry、project
@@ -67,5 +67,6 @@ Template contract 适配既有表，不修改 migration：
 - builtin immutable、user conflict/no-op/override、locator grammar、manifest bounds 和 bundle digest
   revalidation 是 application 不变量，不能通过增加关系表或修改 0004 规避。
 
-现有字段足以表达 M5 Template v1 必需不变量，因此本 contract-first slice 不增加 Schema v5、不改
-`0004_local_workflows.sql`，也不宣称 Template registry 已有生产 use case。
+现有 registry 字段足以表达 M5 Template v1 artifact metadata，因此 Schema v5 不修改
+`0004_local_workflows.sql` 或 `templates`。Template immutable Plan 的独立真实需求由后续
+`0005_template_plans.sql` 和 `state-v5.md` 承担；它不改变本文件冻结的 v4 registry 语义。

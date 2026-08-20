@@ -569,14 +569,14 @@ impl HelloResult {
         }
     }
 
-    /// Creates the M5 hello result after Schema v4 and Unity services are ready.
+    /// Creates the M5 hello result after Schema v5 and local workflow services are ready.
     #[must_use]
     pub fn m5(capabilities: Vec<String>) -> Self {
         Self {
             rpc_version: RPC_VERSION,
             daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             capabilities,
-            data_schema: Some(4),
+            data_schema: Some(5),
         }
     }
 }

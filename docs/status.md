@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M5 Template contract-first 已冻结并通过本地合同验收；停在内部停止点 B，等待 Template production slice 审批`
+`M5 Template contract-first 与 Schema v5 closure 已获批；正在实施 Template production slice，尚未进入 Backup Create`
 
 ## 已完成
 
@@ -170,9 +170,11 @@
   往返。完整 Hub 格式、真实 Unity/Hub parity、迁移/foreground 和完整 CLI 表面仍未完成。
 - Unity production slice 已作为独立提交 `8b63c6923b178a6ebb12bd5964412b2db7268e04` 保存。M5
   Template contract-first 已冻结原生 `.alcomdtemplate` v1、独立 archive quota、三个 native builtin
-  inventory/AGPL provenance、Schema v4 compatibility、RPC/permission/error、planned CLI、synthetic Fixture
-  和 contract/security/migration snapshot。Template capability 仍未广告，registry/import/export/derive/
-  create-project 生产 use case 均未开始；v3 `.alcomtemplate` parity 继续 blocked 到 M11。
+  inventory/AGPL provenance、Schema v4 registry compatibility、RPC/permission/error、planned CLI、synthetic
+  Fixture 和 contract/security/migration snapshot。项目所有者已批准 Schema v5 的窄 immutable
+  `template_plans` authority 与三个精确 Template Operation kind，并批准闭环通过后直接实施 production。
+  Template capability 仍未广告，registry/import/export/derive/create-project 生产 use case 正在推进；
+  v3 `.alcomtemplate` parity 继续 blocked 到 M11。
 
 ## 后续里程碑尚未完成
 
@@ -229,8 +231,8 @@
 
 M0、M1、M2、M3 与 M4 均已完成并通过最终人工验收。M5 Slice 0/1 CLI/Unity contract-first 工件已
 冻结，`sysinfo` 依赖与 Unity 最小生产垂直切片已接入并通过 Windows 本地完整验收；Template
-contract-first 也已冻结并通过本地合同验收。当前仍停在内部停止点 B，等待 Template production slice
-审批；production capability/method/CLI 尚未发布。M4 完整
+contract-first、Schema v5 closure 与 production slice 已获批，当前正在实施，production
+capability/method/CLI 尚未发布且尚未进入 Backup Create。M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential
 revocation 仍未完成；Windows 10/11 完整客户端

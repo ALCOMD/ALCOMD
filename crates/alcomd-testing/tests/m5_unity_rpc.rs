@@ -82,13 +82,6 @@ async fn unity_registry_writer_gate_preference_and_launch_round_trip_over_rpc() 
             .len(),
         1
     );
-    let writer = client
-        .unity_writer_state(project_id.clone())
-        .await
-        .expect("observe writer state");
-    assert_eq!(writer.state, UnityWriterStateKind::NotObserved);
-    assert!(writer.evidence.is_empty());
-
     let preference = client
         .unity_project_editor_set(ProjectEditorSetParams {
             project_id: project_id.clone(),
@@ -100,6 +93,40 @@ async fn unity_registry_writer_gate_preference_and_launch_round_trip_over_rpc() 
         .await
         .expect("set Editor preference");
     assert_eq!(preference.preference.revision, 1);
+    let writer = client
+        .unity_writer_state(project_id.clone())
+        .await
+        .expect("observe writer state");
+    match writer.state {
+        UnityWriterStateKind::NotObserved => assert!(writer.evidence.is_empty()),
+        UnityWriterStateKind::RunningSuspected => {
+            assert!(
+                !writer.evidence.is_empty(),
+                "an unrelated or unreadable Unity process must retain conservative evidence"
+            );
+            let error = client
+                .unity_launch(UnityLaunchParams {
+                    project_id,
+                    expected_project_revision: project.project.revision.expect("project revision"),
+                    idempotency_key: "m5-unity-launch-suspected".to_owned(),
+                })
+                .await
+                .expect_err("suspected external Unity must conservatively block launch");
+            assert!(matches!(
+                error,
+                alcomd_client::ClientError::Remote(ref remote)
+                    if remote.code == "unity_launch_state_uncertain"
+            ));
+            shutdown.store(true, Ordering::Release);
+            let result = tokio::time::timeout(Duration::from_secs(3), daemon)
+                .await
+                .expect("daemon stop timeout")
+                .expect("join daemon");
+            assert!(result.is_ok());
+            return;
+        }
+        other => panic!("unexpected writer state before fixture launch: {other:?}"),
+    }
     let launch = client
         .unity_launch(UnityLaunchParams {
             project_id,

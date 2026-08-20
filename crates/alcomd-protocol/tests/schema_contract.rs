@@ -323,14 +323,20 @@ fn m4_operation_and_data_schema_are_compatible_additions() {
     let operation = schema("operation");
     assert_eq!(
         operation["properties"]["kind"]["enum"],
-        json!(["state.check", "packages.apply"])
+        json!([
+            "state.check",
+            "packages.apply",
+            "templates.import",
+            "templates.derive",
+            "templates.create-project"
+        ])
     );
     assert!(operation["properties"].get("progress").is_some());
 
     let hello = schema("system-hello.response");
     assert_eq!(
         hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
-        json!([1, 2, 3, 4])
+        json!([1, 2, 3, 4, 5])
     );
 }
 
@@ -402,11 +408,11 @@ fn m5_unity_schema_keeps_launch_and_management_separate() {
 }
 
 #[test]
-fn m5_hello_advertises_the_implemented_data_schema_v4() {
+fn m5_hello_advertises_the_implemented_data_schema_v5() {
     let hello = schema("system-hello.response");
     assert_eq!(
         hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
-        json!([1, 2, 3, 4])
+        json!([1, 2, 3, 4, 5])
     );
 }
 

@@ -19,8 +19,10 @@ const WORLDS_SCAFFOLD: &[u8] =
     include_bytes!("../../../specs/templates/builtin-scaffolds/worlds-v1.json");
 const PROTOCOL_SOURCE: &str = include_str!("../../alcomd-protocol/src/lib.rs");
 const MIGRATION_V4: &str = include_str!("../../alcomd-store/migrations/0004_local_workflows.sql");
+const MIGRATION_V5: &str = include_str!("../../alcomd-store/migrations/0005_template_plans.sql");
 const PERMISSIONS: &str = include_str!("../../../specs/extensions/permissions-v1.md");
 const STATE_V4: &str = include_str!("../../../specs/storage/state-v4.md");
+const STATE_V5: &str = include_str!("../../../specs/storage/state-v5.md");
 
 #[test]
 fn cli_machine_contract_freezes_modes_options_records_and_exit_codes() {
@@ -133,6 +135,7 @@ fn unity_contract_keeps_permissions_capabilities_and_writer_states_narrow() {
     }
     assert!(STATE_V4.contains("广告 `dataSchema: 4`"));
     assert!(STATE_V4.contains("不增加通用 settings/property/value"));
+    assert!(STATE_V5.contains("广告 `dataSchema: 5`"));
 }
 
 #[test]
@@ -292,15 +295,19 @@ fn template_rpc_permissions_and_planned_cli_do_not_publish_production_capability
 }
 
 #[test]
-fn template_contract_fits_state_v4_without_migration_change() {
+fn template_registry_keeps_v4_shape_and_plan_authority_uses_narrow_v5_table() {
     assert!(MIGRATION_V4.contains("source_kind IN ('builtin', 'user')"));
     assert!(!MIGRATION_V4.contains("'imported'"));
     assert!(!MIGRATION_V4.contains("'derived'"));
     assert!(MIGRATION_V4.contains("length(manifest_json) <= 1048576"));
     assert!(MIGRATION_V4.contains("length(payload_sha256) = 32"));
-    assert!(STATE_V4.contains("不修改 migration"));
+    assert!(STATE_V4.contains("不修改"));
     assert!(STATE_V4.contains("sha256:<64-lower-hex>"));
-    assert!(STATE_V4.contains("不增加 Schema v5"));
+    assert!(MIGRATION_V5.contains("CREATE TABLE template_plans"));
+    assert!(MIGRATION_V5.contains("'templates.create-project'"));
+    assert!(MIGRATION_V5.contains("length(CAST(plan_json AS BLOB)) <= 4194304"));
+    assert!(STATE_V5.contains("`package_plans` 保持 M4 专用表"));
+    assert!(!MIGRATION_V5.contains("backup_restore_plans"));
 }
 
 fn hex_digest(bytes: &[u8]) -> String {
