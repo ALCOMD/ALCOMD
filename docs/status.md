@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M5 最终候选的 Restore、CLI surface 与本地完整验收已完成；等待 Hosted CI 与人工验收，尚未进入 M6`
+`M5 已正式完成并通过最终人工验收；尚未进入 M6`
 
 ## 已完成
 
@@ -203,6 +203,11 @@
 - M5 Restore/CLI 生产提交为 `50d76ba301ff9190f0d01d3c80f229e0a4c654d9`。本地 fmt、clippy、完整
   Workspace tests、xtask、metadata、baseline freeze、diff、`scripts/check.ps1`、`scripts/test.ps1` 与
   Tauri no-bundle 已通过；三份锁文件未变化，未新增 production dependency、ALCOMD unsafe 或平台 API。
+- M5 最终候选 `48b188e3bf3f90c10b5cb3257365fa2ff8259faf` 对应 GitHub Actions run
+  `32668802957`：Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 全部成功；Ubuntu 实测最高
+  `GLIBC_2.34`，九个 macOS 预期产物均为 arm64 / minos 11.0。项目所有者已确认最终人工验收通过，
+  M5 正式完成；四项 v3 differential parity 仍 blocked，Windows 10/11 完整客户端发行验证仍 deferred
+  到 M12。
 
 ## 后续里程碑尚未完成
 
@@ -257,13 +262,7 @@
 
 ## 下一停止点
 
-M0、M1、M2、M3 与 M4 均已完成并通过最终人工验收。M5 Slice 0/1 CLI/Unity contract-first 工件已
-冻结，`sysinfo` 依赖与 Unity 最小生产垂直切片已接入并通过 Windows 本地完整验收；Template
-contract-first、Schema v5 closure 与 production/RPC/CLI slice 已完成本地验收。Backup Create
-contract-first、Schema v6/RPC/permission/error/archive profile 与 production slice 已完成。Backup Restore
-contract-first、Schema v7/Plan/RPC/permission/error/recovery/hostile fixture 与 production slice 已完成；
-M5 CLI surface 与本地完整验收已完成，当前等待最终提交自身的 Hosted CI，之后停止在 M6 前等待人工
-验收。M4 完整
+M0、M1、M2、M3、M4 与 M5 均已完成并通过最终人工验收；尚未进入 M6。M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential
 revocation 仍未完成；Windows 10/11 完整客户端

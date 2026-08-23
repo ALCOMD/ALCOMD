@@ -1,6 +1,6 @@
 # M5：完整 CLI 合同与本地项目工作流
 
-状态：最终候选；Backup Restore、M5 CLI surface 与本地完整验收已完成，等待最终提交 Hosted CI 与项目所有者人工验收；尚未进入 M6
+状态：M5 已完成，并通过本地完整验收、三平台 Hosted CI 和项目所有者最终人工验收；尚未开始 M6
 
 ## 目标
 
@@ -578,3 +578,7 @@ Unity process/writer gate、Tauri no-bundle、lockfile/unsafe/dependency feature
   non-TTY confirmation、Operation follow/detach、退出码和 broken-pipe 边界。本地 fmt/clippy/workspace test、
   xtask、metadata、baseline freeze、diff、`scripts/check.ps1`、`scripts/test.ps1` 与 Tauri no-bundle 全部通过；
   未新增 production dependency、ALCOMD unsafe 或平台 API，等待最终 Hosted CI。
+- 2026-08-24：M5 最终候选 `48b188e3bf3f90c10b5cb3257365fa2ff8259faf` 对应 GitHub Actions
+  run `32668802957`：Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 全部成功；Ubuntu
+  实测最高 `GLIBC_2.34`，九个 macOS 预期产物均为 arm64 / minos 11.0。项目所有者已确认最终
+  人工验收通过，M5 正式完成；尚未开始 M6。
