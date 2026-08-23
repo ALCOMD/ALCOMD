@@ -49,7 +49,14 @@ try {
     }
     $firstStatus = Get-Content -Raw -LiteralPath $outputs[0] | ConvertFrom-Json
     $secondStatus = Get-Content -Raw -LiteralPath $outputs[2] | ConvertFrom-Json
-    if ($firstStatus.state -ne "ready" -or $secondStatus.state -ne "ready") {
+    if (
+        $firstStatus.type -ne "result" -or
+        $firstStatus.command -ne "system status" -or
+        $firstStatus.result.state -ne "ready" -or
+        $secondStatus.type -ne "result" -or
+        $secondStatus.command -ne "system status" -or
+        $secondStatus.result.state -ne "ready"
+    ) {
         throw "One or more concurrent clients did not receive ready status."
     }
     Write-Host "M1 concurrent daemon auto-start passed; authoritative daemon count: 1."
