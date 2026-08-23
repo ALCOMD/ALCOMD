@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M5 Backup Restore production slice 已完成；正在进行 M5 最终 CLI 与验收收尾，尚未进入 M6`
+`M5 最终候选的 Restore、CLI surface 与本地完整验收已完成；等待 Hosted CI 与人工验收，尚未进入 M6`
 
 ## 已完成
 
@@ -167,7 +167,7 @@
   ALCOMD unsafe 文件或平台 API。fake provider、真实短生命周期子进程和并行观察测试已接入。
 - Unity 最小生产切片已实现 synthetic Editor 校验、手工/known-root registry、project Editor preference、
   PID+start-time writer evidence、无 shell 独立 argv 启动、永久幂等 launch/status 与真实 daemon RPC
-  往返。完整 Hub 格式、真实 Unity/Hub parity、迁移/foreground 和完整 CLI 表面仍未完成。
+  往返。完整 Hub 格式、真实 Unity/Hub parity、迁移与 foreground 仍未完成。
 - Unity production slice 已作为独立提交 `8b63c6923b178a6ebb12bd5964412b2db7268e04` 保存。M5
   Template contract-first 已冻结原生 `.alcomdtemplate` v1、独立 archive quota、三个 native builtin
   inventory/AGPL provenance、Schema v4 registry compatibility、RPC/permission/error、已发布 CLI、synthetic
@@ -195,6 +195,14 @@
   feature 保持 in progress，`backups.v3-parity` 继续 blocked 到 M11。
 - CLI 高影响确认现在由窄本地 `CliError::ConfirmationRequired` 分类；非 TTY/EOF/拒绝以退出码 1 和
   `confirmation_required` 返回，不再被错误映射为 `daemon_unavailable`，且没有改动 RPC/daemon。
+- M5 CLI 已完成与真实后端一致的 Operation/Project/Repository/Package/Unity/Template/Backup 命令树、
+  alias、human/JSON/NDJSON envelope、stdout/stderr、usage/domain/interrupt 退出码、non-TTY/EOF、
+  `--yes`/`--dry-run`/`--no-wait`、Operation follow/detach、broken-pipe 与不连接 daemon 的静态
+  completion。`cli.command-contract`、`cli.non-tty` 与 `cli.help-output-exit` engineering tests 已实现；
+  `cli.complete` 聚合 feature 仍因 M5 外 roadmap 命令保持 `in_progress`，不虚构为完整产品 CLI。
+- M5 Restore/CLI 生产提交为 `50d76ba301ff9190f0d01d3c80f229e0a4c654d9`。本地 fmt、clippy、完整
+  Workspace tests、xtask、metadata、baseline freeze、diff、`scripts/check.ps1`、`scripts/test.ps1` 与
+  Tauri no-bundle 已通过；三份锁文件未变化，未新增 production dependency、ALCOMD unsafe 或平台 API。
 
 ## 后续里程碑尚未完成
 
@@ -254,7 +262,8 @@ M0、M1、M2、M3 与 M4 均已完成并通过最终人工验收。M5 Slice 0/1 
 contract-first、Schema v5 closure 与 production/RPC/CLI slice 已完成本地验收。Backup Create
 contract-first、Schema v6/RPC/permission/error/archive profile 与 production slice 已完成。Backup Restore
 contract-first、Schema v7/Plan/RPC/permission/error/recovery/hostile fixture 与 production slice 已完成；
-当前正在执行 M5 最终 CLI/本地/Hosted CI 验收，完成后停止在 M6 前等待人工验收。M4 完整
+M5 CLI surface 与本地完整验收已完成，当前等待最终提交自身的 Hosted CI，之后停止在 M6 前等待人工
+验收。M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential
 revocation 仍未完成；Windows 10/11 完整客户端

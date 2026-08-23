@@ -1,6 +1,6 @@
 # M5：完整 CLI 合同与本地项目工作流
 
-状态：进行中；Backup Restore contract-first 与 production slice 已完成，正在进行 M5 最终 CLI/验收收尾
+状态：最终候选；Backup Restore、M5 CLI surface 与本地完整验收已完成，等待最终提交 Hosted CI 与项目所有者人工验收；尚未进入 M6
 
 ## 目标
 
@@ -403,9 +403,10 @@ workflow engine、第二 ZIP stack 或第二 process supervisor。
   create-project transaction contract 已获批并冻结；项目所有者已进一步批准 Schema v5 closure 与
   Template production。严格按 parser/inventory/object/registry/import-export/derive/create-project 推进。
 - **C（已通过）**：Backup Create contract-first 与 production worker/RPC/CLI/真实 recovery matrix 已完成。
-- **D（已通过 contract-first）**：全新目标 Backup Restore Plan/Apply、Schema v7、RPC/permission/error、
-  planned CLI、专用 journal 与 forward recovery 合同已冻结；production implementation 尚未批准。
-- **E**：Backup restore 与完整 CLI surface 收敛后，运行 M5 全量本地/Hosted 验收并停止在 M6 前。
+- **D（已通过）**：全新目标 Backup Restore Plan/Apply、Schema v7、RPC/permission/error、已发布 CLI、
+  专用 journal、forward recovery 与 production/fault implementation 已完成。
+- **E（本地已通过）**：Backup Restore 与完整 M5 CLI surface 已收敛，本地全量门禁通过；等待最终提交
+  对应的三个 Hosted job，之后停止在 M6 前等待人工验收。
 
 不得因 Schema migration 文件存在就越过后端真实性门禁；capability 和 method 只有
 对应 adapter/use case 真正实现并通过当前 slice 验收后才能接线或广告。
@@ -568,3 +569,12 @@ Unity process/writer gate、Tauri no-bundle、lockfile/unsafe/dependency feature
   覆盖 archive_verified、extracting、staging_complete、publish_intent、target_published、
   project_registry_commit_intent 与 state_committed；artifact/target race、同目标并发和 publish 后外部修改
   fail-closed 测试通过。未新增 production dependency、unsafe 或平台 API，进入 M5 最终 CLI/验收收尾。
+- 2026-08-24：Backup Restore 与 M5 CLI surface 生产实现以提交
+  `50d76ba301ff9190f0d01d3c80f229e0a4c654d9` 保存。Restore 真实 daemon kill/restart 覆盖
+  `archive_verified`、`extracting`、`staging_complete`、`publish_intent`、`target_published`、
+  `project_registry_commit_intent` 与 `state_committed`；target race 覆盖 Plan 前、Apply 前、extracting 与
+  publish intent，artifact race 覆盖 replace/truncate/bytes mutation/recreate。CLI 已发布真实后端对应的
+  Operation/Project/Repository/Package/Unity/Template/Backup 与静态 completion，并实现 human/JSON/NDJSON、
+  non-TTY confirmation、Operation follow/detach、退出码和 broken-pipe 边界。本地 fmt/clippy/workspace test、
+  xtask、metadata、baseline freeze、diff、`scripts/check.ps1`、`scripts/test.ps1` 与 Tauri no-bundle 全部通过；
+  未新增 production dependency、ALCOMD unsafe 或平台 API，等待最终 Hosted CI。
