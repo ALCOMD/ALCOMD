@@ -352,7 +352,8 @@ async fn backup_restore_fails_closed_for_artifact_and_target_races() {
                 fs::write(&archive, changed).expect("modify archive bytes");
             }
             "recreate" => {
-                fs::remove_file(&archive).expect("remove archive");
+                let removed = archive.with_extension("removed");
+                fs::rename(&archive, &removed).expect("preserve removed archive identity");
                 fs::write(&archive, original).expect("recreate archive");
             }
             _ => unreachable!(),
