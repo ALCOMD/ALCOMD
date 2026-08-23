@@ -127,6 +127,8 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_TEMPLATES_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_TEMPLATES_MANAGE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_TEMPLATES_CREATE_PROJECT_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_BACKUPS_READ_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_BACKUPS_CREATE_V1.to_owned(),
             ],
         };
         self.call(METHOD_SYSTEM_HELLO, params).await
@@ -448,6 +450,33 @@ impl AlcomdClient {
             params,
         )
         .await
+    }
+
+    pub async fn backups_list(
+        &mut self,
+        params: alcomd_protocol::BackupsListParams,
+    ) -> Result<alcomd_protocol::BackupsListResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_BACKUPS_LIST, params)
+            .await
+    }
+
+    pub async fn backup_get(
+        &mut self,
+        backup_id: String,
+    ) -> Result<alcomd_protocol::BackupRecord, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_BACKUPS_GET,
+            alcomd_protocol::BackupGetParams { backup_id },
+        )
+        .await
+    }
+
+    pub async fn backup_create(
+        &mut self,
+        params: alcomd_protocol::BackupCreateParams,
+    ) -> Result<alcomd_protocol::BackupCreateResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_BACKUPS_CREATE, params)
+            .await
     }
 
     pub async fn project_inspect(

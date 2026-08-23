@@ -570,9 +570,9 @@ Operation。state commit 前不得 succeeded，重启必须复用同一 Operatio
 `rpc-error.schema.json` 冻结。CLI 名称在 `m5-template-commands-v1.json`，并已加入实际 command
 catalog/help。
 
-## 21. M5 contract-only 兼容增加：Backup Create
+## 21. M5 兼容增加：Backup Create
 
-Backup Create 在 RPC major 1 上冻结但尚未发布两项 capability：`backups.read.v1` 与
+Backup Create 在 RPC major 1 上冻结并发布两项 capability：`backups.read.v1` 与
 `backups.create.v1`。完整 DTO 与 bounds 由 `m5-backup-create.schema.json` 冻结：`backups.list/get`
 要求 `backups.read`；`backups.create` 要求 `backups.manage` 与目标 Project read scope，并直接返回预分配
 且可幂等重放的 `operationId`/`backupId`。它没有 Plan/Apply，不接收任意 output path。
@@ -585,5 +585,5 @@ Operation phase 固定为 `accepted`、`inventory_ready`、`archiving`、`archiv
 新增稳定错误为 `backup_not_found`、`backup_unavailable`、`backup_source_unsafe`、
 `backup_archive_limit_exceeded`、`backup_integrity_mismatch` 与 `project_changed_during_backup`。普通错误、
 Event 和 activity 不得包含完整 source/archive path、内部 locator、原始 argv、credential 或 journal。
-Backup Archive v1/profile 由 `specs/backups/` 冻结。Restore method/capability 尚未冻结；这些 contract-only
-method 不进入 dispatcher、client 默认 capability 或 CLI help，直到生产能力真实存在。
+Backup Archive v1/profile 由 `specs/backups/` 冻结。Restore method/capability 尚未冻结；Create method 已
+进入 dispatcher、official client 默认 capability 与 CLI help，Restore 仍不得提前发布。

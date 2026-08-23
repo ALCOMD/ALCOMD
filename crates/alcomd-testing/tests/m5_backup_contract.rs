@@ -135,7 +135,7 @@ fn rpc_permissions_errors_phases_and_cli_publication_are_narrow() {
         rpc["$defs"]["createResult"]["required"],
         json!(["operationId", "backupId", "replayed"])
     );
-    assert_eq!(cli["status"], "planned-not-published");
+    assert_eq!(cli["status"], "implemented");
     assert_eq!(cli["commands"][2]["planApply"], false);
     assert_eq!(
         cli["commands"][2]["forbiddenOptions"],

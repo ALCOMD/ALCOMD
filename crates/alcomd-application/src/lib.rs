@@ -9,18 +9,20 @@ use std::future::Future;
 use std::sync::{Arc, Weak};
 
 pub use alcomd_domain::{
-    IdempotencyKey, OperationId, OperationState, Permission, PlanId, PrincipalId, ProjectId,
-    RepositoryId, ResourceKey, Revision, TemplateId, UnityInstallationId, UnityLaunchId,
+    BackupId, IdempotencyKey, OperationId, OperationState, Permission, PlanId, PrincipalId,
+    ProjectId, RepositoryId, ResourceKey, Revision, TemplateId, UnityInstallationId, UnityLaunchId,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 mod m4;
 mod m5;
+mod m5_backup;
 mod m5_template;
 
 pub use m4::*;
 pub use m5::*;
+pub use m5_backup::*;
 pub use m5_template::*;
 
 /// Minimal truthful daemon status for the M1 read-only vertical slice.
@@ -742,6 +744,8 @@ impl AccessContext {
                 Permission::ProjectsCreate,
                 Permission::TemplatesRead,
                 Permission::TemplatesManage,
+                Permission::BackupsRead,
+                Permission::BackupsManage,
             ],
         )
     }

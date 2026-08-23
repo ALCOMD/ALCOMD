@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -89,6 +89,11 @@ enum Command {
     Template {
         #[command(subcommand)]
         command: TemplateCommand,
+    },
+    /// List, inspect, and create managed native Backup archives.
+    Backup {
+        #[command(subcommand)]
+        command: BackupCommand,
     },
 }
 
@@ -313,6 +318,40 @@ enum TemplateCommand {
         idempotency_key: String,
         #[arg(long)]
         yes: bool,
+    },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum BackupCompression {
+    Store,
+    Fast,
+    Maximum,
+}
+
+#[derive(Debug, Subcommand)]
+enum BackupCommand {
+    List {
+        #[arg(long)]
+        project_id: Option<String>,
+        #[arg(long)]
+        cursor: Option<String>,
+        #[arg(long)]
+        limit: Option<u32>,
+    },
+    #[command(visible_alias = "info")]
+    Get { backup_id: String },
+    Create {
+        project_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long, value_enum, default_value = "fast")]
+        compression: BackupCompression,
+        #[arg(long)]
+        exclude_vpm_packages: bool,
+        #[arg(long)]
+        idempotency_key: String,
+        #[arg(long)]
+        no_wait: bool,
     },
 }
 
@@ -735,6 +774,55 @@ async fn execute(
                 )
             }
         },
+        Command::Backup { command } => match command {
+            BackupCommand::List {
+                project_id,
+                cursor,
+                limit,
+            } => serde_json::to_value(
+                client
+                    .backups_list(alcomd_protocol::BackupsListParams {
+                        project_id,
+                        cursor,
+                        limit,
+                    })
+                    .await?,
+            ),
+            BackupCommand::Get { backup_id } => {
+                serde_json::to_value(client.backup_get(backup_id).await?)
+            }
+            BackupCommand::Create {
+                project_id,
+                expected_revision,
+                compression,
+                exclude_vpm_packages,
+                idempotency_key,
+                no_wait,
+            } => {
+                let accepted = client
+                    .backup_create(alcomd_protocol::BackupCreateParams {
+                        project_id,
+                        expected_revision,
+                        compression_mode: match compression {
+                            BackupCompression::Store => alcomd_protocol::BackupCompression::Store,
+                            BackupCompression::Fast => alcomd_protocol::BackupCompression::Fast,
+                            BackupCompression::Maximum => {
+                                alcomd_protocol::BackupCompression::Maximum
+                            }
+                        },
+                        exclude_vpm_packages,
+                        idempotency_key,
+                    })
+                    .await?;
+                if no_wait {
+                    serde_json::to_value(accepted)
+                } else {
+                    serde_json::to_value(
+                        wait_for_operation(&mut client, accepted.operation_id).await?,
+                    )
+                }
+            }
+        },
     }
     .map_err(|_| CliError::Client(alcomd_client::ClientError::InvalidResponse))?;
     Ok(value)
@@ -841,5 +929,89 @@ fn print_error(as_json: bool, error: &CliError) {
         eprintln!("{{\"error\":{{\"code\":{}}}}}", serde_json::json!(code));
     } else {
         eprintln!("error: {error}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backup_commands_publish_exact_surface_and_info_alias() {
+        let list = Arguments::try_parse_from([
+            "alcomd-cli",
+            "backup",
+            "list",
+            "--project-id",
+            "00000000-0000-4000-8000-000000000001",
+            "--limit",
+            "10",
+        ])
+        .expect("backup list");
+        assert!(matches!(
+            list.command,
+            Command::Backup {
+                command: BackupCommand::List {
+                    limit: Some(10),
+                    ..
+                }
+            }
+        ));
+        let info = Arguments::try_parse_from([
+            "alcomd-cli",
+            "backup",
+            "info",
+            "00000000-0000-4000-8000-000000000002",
+        ])
+        .expect("info alias");
+        assert!(matches!(
+            info.command,
+            Command::Backup {
+                command: BackupCommand::Get { .. }
+            }
+        ));
+        let create = Arguments::try_parse_from([
+            "alcomd-cli",
+            "backup",
+            "create",
+            "00000000-0000-4000-8000-000000000001",
+            "--expected-revision",
+            "1",
+            "--compression",
+            "maximum",
+            "--exclude-vpm-packages",
+            "--idempotency-key",
+            "fixture",
+            "--no-wait",
+        ])
+        .expect("backup create");
+        assert!(matches!(
+            create.command,
+            Command::Backup {
+                command: BackupCommand::Create {
+                    compression: BackupCompression::Maximum,
+                    exclude_vpm_packages: true,
+                    no_wait: true,
+                    ..
+                }
+            }
+        ));
+        for forbidden in ["--yes", "--dry-run", "--output"] {
+            assert!(
+                Arguments::try_parse_from([
+                    "alcomd-cli",
+                    "backup",
+                    "create",
+                    "00000000-0000-4000-8000-000000000001",
+                    "--expected-revision",
+                    "1",
+                    "--idempotency-key",
+                    "fixture",
+                    forbidden,
+                ])
+                .is_err(),
+                "{forbidden} must remain unavailable"
+            );
+        }
     }
 }

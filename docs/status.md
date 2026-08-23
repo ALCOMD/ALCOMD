@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M5 Backup Create contract-first 已冻结并完成本地合同验收；生产实现尚未批准`
+`M5 Backup Create contract-first 与获批 production slice 已完成；停止在 Backup Restore contract-first 前`
 
 ## 已完成
 
@@ -176,14 +176,16 @@
   Template capability、registry/import/export/derive/create-project、M4 frozen staging package adapter 与
   RPC/CLI 已真实接入。create-project 的六点真实 daemon kill/restart matrix 已复用原
   OperationId/Plan/idempotency 收敛成功；v3 `.alcomtemplate` parity 继续 blocked 到 M11。
-- M5 Backup Create contract-first 已冻结 `ALCOMD Backup Archive v1`、严格 `backup.json`、ZIP64
+- M5 Backup Create contract-first 与获批 production slice 已完成：`ALCOMD Backup Archive v1`、严格 `backup.json`、ZIP64
   Stored/Deflate、64 GiB/500,000 entries/32 GiB single file/128 GiB uncompressed/depth 128/path 1,024
   bytes/ratio 10,000:1 配额，以及 Logs/Obj/Temp、任意 `.git`、根 `Library*` 与唯一直接文件例外的精确
   排除表。locked VPM 排除不猜测、不联网，manifest 与 unknown/unlocked/embedded child 保留。
 - State Schema v6 只增加严格 Operation kind `backups.create`，原子重建并保留 operation journal、
   idempotency、package plan/filesystem journal 与 template plan 外键依赖；现有 `backups` 表保持不变。
-  Backup RPC/permission/error/recovery phase 与 planned CLI catalog 已冻结，但 dispatcher/client/CLI help/
-  worker 均未发布，`backups.m5-create` 继续 planned，完整 backups feature 保持未实现。
+  Backup RPC/permission/error/recovery phase、dispatcher、official client、CLI `backup list/get/create` 与
+  Operation worker 已真实接入。六点真实子进程 kill/restart matrix 复用原 OperationId、预分配 BackupId
+  与幂等键并只产生一个最终 archive；`backups.m5-create` 已 implemented。Backup Restore 尚未开始，完整
+  backups feature 因而继续保持 in progress，`backups.v3-parity` 继续 blocked 到 M11。
 - CLI 高影响确认现在由窄本地 `CliError::ConfirmationRequired` 分类；非 TTY/EOF/拒绝以退出码 1 和
   `confirmation_required` 返回，不再被错误映射为 `daemon_unavailable`，且没有改动 RPC/daemon。
 

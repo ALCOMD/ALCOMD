@@ -53,6 +53,19 @@ impl ArchiveLimits {
             expansion_ratio: 1_000,
         }
     }
+
+    #[must_use]
+    pub const fn backup() -> Self {
+        Self {
+            archive_bytes: 68_719_476_736,
+            entries: 500_000,
+            entry_bytes: 34_359_738_368,
+            total_uncompressed_bytes: 137_438_953_472,
+            path_depth: 128,
+            normalized_path_bytes: 1_024,
+            expansion_ratio: 10_000,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

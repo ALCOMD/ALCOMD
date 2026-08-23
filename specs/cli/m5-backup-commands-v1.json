@@ -1,6 +1,6 @@
 {
     "contractVersion": 1,
-    "status": "planned-not-published",
+    "status": "implemented",
     "publicationRule": "add-to-command-catalog-and-help-only-after-production-capability-is-implemented",
     "commands": [
         {"path": ["backup", "list"], "rpc": "backups.list", "mutation": false},

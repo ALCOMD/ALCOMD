@@ -8,9 +8,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use alcomd_application::{
     AccessContext, Application, ApplicationError, EventRecord as ApplicationEvent, IdempotencyKey,
-    M3Application, M4Application, M5TemplateApplication as TemplateService,
-    M5UnityApplication as M5Application, OperationCursor, OperationId, OperationRecord,
-    OperationState as DomainState, ResourceLockCoordinator, Revision, StoreErrorKind,
+    M3Application, M4Application, M5BackupApplication as BackupService,
+    M5TemplateApplication as TemplateService, M5UnityApplication as M5Application, OperationCursor,
+    OperationId, OperationRecord, OperationState as DomainState, ResourceLockCoordinator, Revision,
+    StoreErrorKind,
 };
 use alcomd_platform::{BindError, DaemonInstance, DataConfig, IpcConfig, IpcListener, IpcStream};
 use alcomd_protocol::{
@@ -29,6 +30,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 mod m3_rpc;
 mod m4_rpc;
+mod m5_backup_rpc;
 mod m5_platform;
 mod m5_rpc;
 mod m5_template_rpc;
@@ -42,6 +44,8 @@ type M4PackageApplication =
 type M5UnityApplication = M5Application<StateStoreHandle, m5_platform::PlatformUnityAdapter>;
 type TemplateApplication =
     TemplateService<StateStoreHandle, alcomd_vpm::TemplateEngine, M5UnityApplication>;
+type BackupApplication =
+    BackupService<StateStoreHandle, alcomd_vpm::BackupEngine, M5UnityApplication>;
 
 struct Applications {
     m2: M2Application,
@@ -49,6 +53,7 @@ struct Applications {
     m4: M4PackageApplication,
     m5: M5UnityApplication,
     templates: TemplateApplication,
+    backups: BackupApplication,
 }
 
 /// Runs the daemon with an ephemeral isolated data directory.
@@ -132,12 +137,24 @@ where
         .recover()
         .await
         .map_err(|_| BindError::Io(io::Error::other("Template recovery failed")))?;
+    let backups = BackupService::with_locks(
+        store.clone(),
+        alcomd_vpm::BackupEngine::new(data_root.join("backups"))
+            .map_err(|_| BindError::Io(io::Error::other("Backup engine initialization failed")))?,
+        unity.clone(),
+        Arc::clone(&locks),
+    );
+    backups
+        .recover()
+        .await
+        .map_err(|_| BindError::Io(io::Error::other("Backup recovery failed")))?;
     let applications = Arc::new(Applications {
         m2,
         m3: M3ReadApplication::new(store.clone(), reader),
         m4,
         m5: unity,
         templates,
+        backups,
     });
     let listener = instance.bind()?;
     run_listener(listener, applications, shutdown)
@@ -284,6 +301,8 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         alcomd_protocol::CAPABILITY_TEMPLATES_READ_V1,
         alcomd_protocol::CAPABILITY_TEMPLATES_MANAGE_V1,
         alcomd_protocol::CAPABILITY_TEMPLATES_CREATE_PROJECT_V1,
+        alcomd_protocol::CAPABILITY_BACKUPS_READ_V1,
+        alcomd_protocol::CAPABILITY_BACKUPS_CREATE_V1,
     ];
     let capabilities = hello
         .capabilities
@@ -495,6 +514,9 @@ async fn dispatch_m2(
         _ if request.method.starts_with("templates.") => {
             m5_template_rpc::dispatch(request, state, &applications.templates, access).await
         }
+        _ if request.method.starts_with("backups.") => {
+            m5_backup_rpc::dispatch(request, state, &applications.backups, access).await
+        }
         _ => m3_rpc::dispatch(request, state, &applications.m3, access).await,
     }
 }
@@ -545,8 +567,18 @@ fn operation_to_rpc(record: OperationRecord) -> Result<Operation, RpcError> {
         progress: record.progress_phase.map(|phase| OperationProgress {
             phase: match phase {
                 alcomd_application::FilesystemPhase::Accepted => PackageOperationPhase::Accepted,
+                alcomd_application::FilesystemPhase::InventoryReady => {
+                    PackageOperationPhase::InventoryReady
+                }
+                alcomd_application::FilesystemPhase::Archiving => PackageOperationPhase::Archiving,
                 alcomd_application::FilesystemPhase::ArchiveReady => {
                     PackageOperationPhase::ArchiveReady
+                }
+                alcomd_application::FilesystemPhase::PublishIntent => {
+                    PackageOperationPhase::PublishIntent
+                }
+                alcomd_application::FilesystemPhase::ArchivePublished => {
+                    PackageOperationPhase::ArchivePublished
                 }
                 alcomd_application::FilesystemPhase::Extracted => PackageOperationPhase::Extracted,
                 alcomd_application::FilesystemPhase::Prepared => PackageOperationPhase::Prepared,

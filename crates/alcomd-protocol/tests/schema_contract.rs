@@ -487,11 +487,11 @@ fn m5_template_contract_is_valid_and_implemented_without_backup_claims() {
 }
 
 #[test]
-fn m5_backup_create_contract_is_additive_and_not_published() {
+fn m5_backup_create_contract_is_additive_and_published() {
     let contract = schema("m5-backup-create");
     assert_eq!(
         contract["x-alcomd-publication"],
-        "contract-only-until-production-capability-exists"
+        "implemented-additive-rpc-v1"
     );
     assert_eq!(
         contract["$defs"]["methodName"]["enum"],

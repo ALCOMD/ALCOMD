@@ -179,6 +179,38 @@ impl Default for TemplateId {
     }
 }
 
+/// Stable identifier for one managed native backup archive.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct BackupId(Uuid);
+
+impl BackupId {
+    #[must_use]
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    pub fn parse(value: &str) -> Result<Self, DomainValueError> {
+        Uuid::parse_str(value)
+            .ok()
+            .filter(|parsed| parsed.to_string() == value)
+            .map(Self)
+            .ok_or(DomainValueError::InvalidBackupId)
+    }
+}
+
+impl Default for BackupId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for BackupId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
 impl fmt::Display for TemplateId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(formatter)
@@ -496,6 +528,12 @@ pub enum Permission {
     /// Import, derive, favorite, and remove user Templates.
     #[serde(rename = "templates.manage")]
     TemplatesManage,
+    /// Read public-safe managed Backup metadata.
+    #[serde(rename = "backups.read")]
+    BackupsRead,
+    /// Create managed native Backup archives.
+    #[serde(rename = "backups.manage")]
+    BackupsManage,
 }
 
 impl Permission {
@@ -519,6 +557,8 @@ impl Permission {
             Self::ProjectsCreate => "projects.create",
             Self::TemplatesRead => "templates.read",
             Self::TemplatesManage => "templates.manage",
+            Self::BackupsRead => "backups.read",
+            Self::BackupsManage => "backups.manage",
         }
     }
 }
@@ -600,6 +640,8 @@ pub enum DomainValueError {
     InvalidPlanId,
     /// Template ID was not a valid UUID.
     InvalidTemplateId,
+    /// Backup ID was not a canonical UUID.
+    InvalidBackupId,
     /// Principal ID was empty, non-ASCII, or exceeded its frozen limit.
     InvalidPrincipalId,
     /// Idempotency key was empty, non-ASCII, or exceeded its frozen limit.
@@ -618,6 +660,7 @@ impl fmt::Display for DomainValueError {
             Self::InvalidOperationId => formatter.write_str("invalid Operation identifier"),
             Self::InvalidPlanId => formatter.write_str("invalid Plan identifier"),
             Self::InvalidTemplateId => formatter.write_str("invalid Template identifier"),
+            Self::InvalidBackupId => formatter.write_str("invalid Backup identifier"),
             Self::InvalidPrincipalId => formatter.write_str("invalid Principal identifier"),
             Self::InvalidIdempotencyKey => formatter.write_str("invalid idempotency key"),
         }

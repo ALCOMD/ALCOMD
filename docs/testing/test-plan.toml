@@ -276,7 +276,7 @@ stage = "M5"
 kind = "contract"
 platforms = ["all"]
 status = "implemented"
-description = "冻结原生 Backup Archive v1、严格 manifest/profile、精确排除表、locked VPM 排除、Schema v6 operation kind、RPC/权限/错误、恢复阶段和未发布 CLI catalog；不代表 Backup worker 已实现。"
+description = "冻结原生 Backup Archive v1、严格 manifest/profile、精确排除表、locked VPM 排除、Schema v6 operation kind、RPC/权限/错误与恢复阶段；production capability/CLI 发布由 backups.m5-create 的真实实现证据承接。"
 evidence = ["docs/adr/0021-native-backup-archive.md", "specs/backups/backup-archive-v1.md", "specs/backups/backup-v1.schema.json", "specs/backups/backup-profile-v1.json", "specs/rpc/m5-backup-create.schema.json", "specs/storage/state-v6.md", "crates/alcomd-testing/tests/m5_backup_contract.rs", "crates/alcomd-store/tests/schema_contract.rs"]
 
 [[test]]
@@ -284,8 +284,9 @@ id = "backups.m5-create"
 stage = "M5"
 kind = "integration"
 platforms = ["all"]
-status = "planned"
-description = "生产实现后覆盖 Project Resource Lock、一致性 fingerprint、逐文件 evidence、bounded archive、progress/cancel、幂等 replay、partial cleanup、并发与六点 kill/restart recovery。"
+status = "implemented"
+description = "覆盖真实 daemon/RPC/CLI client 的 Project Resource Lock、稳定 inventory 与逐文件 evidence、精确 profile/VPM 排除、三种压缩、注入小配额、progress/cancel cleanup、幂等 replay，以及 inventory_ready、archiving、archive_ready、publish_intent、archive_published、state_committed 六点真实子进程 kill/restart recovery。"
+evidence = ["crates/alcomd-vpm/src/backup.rs", "crates/alcomd-store/src/m5_backup.rs", "crates/alcomd-testing/tests/m5_backup_rpc.rs"]
 
 [[test]]
 id = "backups.m5-restore"

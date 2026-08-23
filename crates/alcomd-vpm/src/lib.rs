@@ -1,6 +1,7 @@
 //! Independent bounded read-only Unity/VPM parsers used by M3.
 
 mod archive;
+mod backup;
 mod cache;
 mod engine;
 mod package;
@@ -19,6 +20,7 @@ pub use archive::{
     ArchiveEntry, ArchiveError, ArchiveErrorCode, ArchiveLimits, ArchivePreflight, extract_archive,
     extract_archive_with_limits, preflight_archive, preflight_archive_with_limits,
 };
+pub use backup::BackupEngine;
 pub use cache::{CacheError, CacheErrorCode, PackageCache};
 pub use engine::PackageEngine;
 pub use package::{

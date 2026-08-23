@@ -1,6 +1,6 @@
 # M5：完整 CLI 合同与本地项目工作流
 
-状态：进行中；Backup Create contract-first 已冻结并完成本地合同验收，生产实现尚未批准
+状态：进行中；Backup Create contract-first 与获批 production slice 已完成，停止在 Backup Restore contract-first 前
 
 ## 目标
 
@@ -448,8 +448,8 @@ ADR 冻结。process discovery production dependency 已按精确配置批准；
 1. `M5-process-discovery-evaluation.md` 中 `sysinfo = 0.39.6` 已关闭；任何 feature 扩大仍须重新审批。
 2. v4 template contract-first、production registry/import/export/derive/create-project 与窄 M4 staging
    package adapter 已批准并实现；下一停止点是 Backup Create contract，不得提前实现 Backup。
-3. Backup Create archive/profile、exclude-VPM、Schema v6、RPC/permission/error/recovery 合同已批准；
-   当前等待 production 实现审批。
+3. Backup Create archive/profile、exclude-VPM、Schema v6、RPC/permission/error/recovery 合同与 production
+   slice 已批准并实现；下一停止点是 Backup Restore contract-first，不得提前实现 Restore。
 4. M5 仅限全新目标的 restore Plan/Apply/recovery 合同；覆盖已有目标不在 M5。
 5. 此后每个新 production crate、windows-sys/rustix feature、unsafe 文件或窗口/进程平台 API。
 
@@ -531,3 +531,10 @@ Unity process/writer gate、Tauri no-bundle、lockfile/unsafe/dependency feature
   manifest/profile、精确排除表、locked VPM 排除、Project Resource Lock、一致性证据、七阶段 Operation、
   六点 recovery、RPC/permission/error 与 planned CLI；Schema v6 只增加 `backups.create` 并完整保留
   v5 外键依赖。CLI non-TTY confirmation 已改为本地 `confirmation_required`，未开始 Backup production。
+- 2026-08-24：Backup Create production slice 完成。daemon-owned `BackupEngine` 以稳定 inventory、逐文件
+  identity/size/mtime revalidation、精确 locked VPM 排除、流式 bounded ZIP/SHA-256、atomic managed publish
+  和 Schema v6 registry commit 实现 `backups.list/get/create`；CLI 只经 official client/RPC 调用。真实
+  daemon 子进程在 inventory_ready、archiving、archive_ready、publish_intent、archive_published 与
+  state_committed 被父进程强制终止，重启后复用原 OperationId、预分配 BackupId 与 idempotency，最终
+  只存在一个完整 archive 且 partial 清空。未新增 production crate、feature、unsafe 或平台 API；停止在
+  Backup Restore contract-first 前。

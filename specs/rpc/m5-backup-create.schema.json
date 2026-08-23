@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m5-backup-create.json",
     "title": "ALCOMD RPC v1 M5 Backup Create contract",
-    "x-alcomd-publication": "contract-only-until-production-capability-exists",
+    "x-alcomd-publication": "implemented-additive-rpc-v1",
     "x-alcomd-method-permissions": {
         "backups.list": ["backups.read"],
         "backups.get": ["backups.read"],

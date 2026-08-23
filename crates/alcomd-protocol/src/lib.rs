@@ -106,6 +106,9 @@ pub const METHOD_TEMPLATES_SET_FAVORITE: &str = "templates.setFavorite";
 pub const METHOD_TEMPLATES_REMOVE: &str = "templates.remove";
 pub const METHOD_TEMPLATES_PLAN_CREATE_PROJECT: &str = "templates.planCreateProject";
 pub const METHOD_TEMPLATES_APPLY_CREATE_PROJECT: &str = "templates.applyCreateProject";
+pub const METHOD_BACKUPS_LIST: &str = "backups.list";
+pub const METHOD_BACKUPS_GET: &str = "backups.get";
+pub const METHOD_BACKUPS_CREATE: &str = "backups.create";
 
 /// Capability required by `state.check`.
 pub const CAPABILITY_STATE_CHECK_V1: &str = "state.check.v1";
@@ -127,6 +130,8 @@ pub const CAPABILITY_UNITY_LAUNCH_V1: &str = "unity.launch.v1";
 pub const CAPABILITY_TEMPLATES_READ_V1: &str = "templates.read.v1";
 pub const CAPABILITY_TEMPLATES_MANAGE_V1: &str = "templates.manage.v1";
 pub const CAPABILITY_TEMPLATES_CREATE_PROJECT_V1: &str = "templates.create-project.v1";
+pub const CAPABILITY_BACKUPS_READ_V1: &str = "backups.read.v1";
+pub const CAPABILITY_BACKUPS_CREATE_V1: &str = "backups.create.v1";
 
 /// Stable RPC v1 error codes implemented through M2.
 pub mod error_code {
@@ -217,6 +222,12 @@ pub mod error_code {
     pub const UNITY_PROJECT_RUNNING: &str = "unity_project_running";
     pub const UNITY_LAUNCH_STATE_UNCERTAIN: &str = "unity_launch_state_uncertain";
     pub const UNITY_PROJECT_SELECTOR_FORBIDDEN: &str = "unity_project_selector_forbidden";
+    pub const BACKUP_NOT_FOUND: &str = "backup_not_found";
+    pub const BACKUP_UNAVAILABLE: &str = "backup_unavailable";
+    pub const BACKUP_SOURCE_UNSAFE: &str = "backup_source_unsafe";
+    pub const BACKUP_ARCHIVE_LIMIT_EXCEEDED: &str = "backup_archive_limit_exceeded";
+    pub const PROJECT_CHANGED_DURING_BACKUP: &str = "project_changed_during_backup";
+    pub const BACKUP_INTEGRITY_MISMATCH: &str = "backup_integrity_mismatch";
     pub const UNITY_LAUNCH_FAILED: &str = "unity_launch_failed";
     pub const UNITY_LAUNCH_NOT_FOUND: &str = "unity_launch_not_found";
     pub const TEMPLATE_NOT_FOUND: &str = "template_not_found";
@@ -489,6 +500,12 @@ impl RpcError {
         Self::simple(code, "The Template request could not be completed.")
     }
 
+    /// Creates a stable, non-sensitive M5 Backup error.
+    #[must_use]
+    pub fn backup(code: &str) -> Self {
+        Self::simple(code, "The Backup request could not be completed.")
+    }
+
     fn simple(code: &str, message: &str) -> Self {
         Self {
             code: code.to_owned(),
@@ -713,7 +730,11 @@ pub struct OperationProgress {
 #[serde(rename_all = "snake_case")]
 pub enum PackageOperationPhase {
     Accepted,
+    InventoryReady,
+    Archiving,
     ArchiveReady,
+    PublishIntent,
+    ArchivePublished,
     Extracted,
     Prepared,
     PackagesReplaced,
@@ -1590,6 +1611,70 @@ pub struct TemplatePlanCreateProjectParams {
     pub expected_template_revision: u64,
     pub target_parent: String,
     pub target_leaf: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackupCompression {
+    Store,
+    Fast,
+    Maximum,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupRecord {
+    pub backup_id: String,
+    pub source_project_id: String,
+    pub archive_sha256: String,
+    pub archive_bytes: u64,
+    pub format_version: u32,
+    pub created_at_ms: u64,
+    pub compression_mode: BackupCompression,
+    pub exclude_vpm_packages: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BackupsListParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupsListResult {
+    pub backups: Vec<BackupRecord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BackupGetParams {
+    pub backup_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BackupCreateParams {
+    pub project_id: String,
+    pub expected_revision: u64,
+    pub compression_mode: BackupCompression,
+    pub exclude_vpm_packages: bool,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupCreateResult {
+    pub operation_id: String,
+    pub backup_id: String,
+    pub replayed: bool,
 }
 
 /// Successful `system.status` result.

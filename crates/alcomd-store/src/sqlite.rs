@@ -657,8 +657,11 @@ pub(super) fn load_owned_operation(
         "SELECT operation_id, kind, state, revision, owner_principal_id,
             cancel_requested, created_at_ms, updated_at_ms, started_at_ms,
             completed_at_ms, result_json, error_code, diagnostic_id,
-            (SELECT phase FROM package_filesystem_journal j
-             WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1)
+            coalesce((SELECT phase FROM package_filesystem_journal j
+             WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
+             (SELECT json_extract(payload_json,'$.phase') FROM operation_journal j
+              WHERE j.operation_id=operations.operation_id AND j.kind='backups.create'
+              ORDER BY step DESC LIMIT 1))
          FROM operations WHERE operation_id=?1 AND owner_principal_id=?2",
         params![operation_id.to_string(), owner.as_str()],
     )
@@ -673,8 +676,11 @@ fn load_operation(
         "SELECT operation_id, kind, state, revision, owner_principal_id,
             cancel_requested, created_at_ms, updated_at_ms, started_at_ms,
             completed_at_ms, result_json, error_code, diagnostic_id,
-            (SELECT phase FROM package_filesystem_journal j
-             WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1)
+            coalesce((SELECT phase FROM package_filesystem_journal j
+             WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
+             (SELECT json_extract(payload_json,'$.phase') FROM operation_journal j
+              WHERE j.operation_id=operations.operation_id AND j.kind='backups.create'
+              ORDER BY step DESC LIMIT 1))
          FROM operations WHERE operation_id=?1",
         [operation_id.to_string()],
     )
@@ -746,8 +752,11 @@ pub(super) fn list_operations(
             "SELECT operation_id, kind, state, revision, owner_principal_id,
                 cancel_requested, created_at_ms, updated_at_ms, started_at_ms,
                 completed_at_ms, result_json, error_code, diagnostic_id,
-                (SELECT phase FROM package_filesystem_journal j
-                 WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1)
+                coalesce((SELECT phase FROM package_filesystem_journal j
+                 WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
+                 (SELECT json_extract(payload_json,'$.phase') FROM operation_journal j
+                  WHERE j.operation_id=operations.operation_id AND j.kind='backups.create'
+                  ORDER BY step DESC LIMIT 1))
              FROM operations
              WHERE owner_principal_id=?1
                AND (created_at_ms < ?2 OR (created_at_ms = ?2 AND operation_id < ?3))
@@ -776,7 +785,11 @@ fn parse_filesystem_phase(value: &str) -> Result<FilesystemPhase, ()> {
     use FilesystemPhase as Phase;
     match value {
         "accepted" => Ok(Phase::Accepted),
+        "inventory_ready" => Ok(Phase::InventoryReady),
+        "archiving" => Ok(Phase::Archiving),
         "archive_ready" => Ok(Phase::ArchiveReady),
+        "publish_intent" => Ok(Phase::PublishIntent),
+        "archive_published" => Ok(Phase::ArchivePublished),
         "extracted" => Ok(Phase::Extracted),
         "prepared" => Ok(Phase::Prepared),
         "packages_replaced" => Ok(Phase::PackagesReplaced),

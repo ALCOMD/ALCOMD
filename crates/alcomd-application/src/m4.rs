@@ -189,7 +189,11 @@ pub struct ApplyPlanOutcome {
 #[serde(rename_all = "snake_case")]
 pub enum FilesystemPhase {
     Accepted,
+    InventoryReady,
+    Archiving,
     ArchiveReady,
+    PublishIntent,
+    ArchivePublished,
     Extracted,
     Prepared,
     PackagesReplaced,
@@ -206,7 +210,11 @@ impl FilesystemPhase {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Accepted => "accepted",
+            Self::InventoryReady => "inventory_ready",
+            Self::Archiving => "archiving",
             Self::ArchiveReady => "archive_ready",
+            Self::PublishIntent => "publish_intent",
+            Self::ArchivePublished => "archive_published",
             Self::Extracted => "extracted",
             Self::Prepared => "prepared",
             Self::PackagesReplaced => "packages_replaced",
