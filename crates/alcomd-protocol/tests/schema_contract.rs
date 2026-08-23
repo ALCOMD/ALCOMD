@@ -9,7 +9,7 @@ use alcomd_protocol::{
     RequestEnvelope, StateCheckParams, SuccessResponse, SystemStatusResult,
 };
 
-const SCHEMAS: [(&str, &str); 23] = [
+const SCHEMAS: [(&str, &str); 24] = [
     (
         "request-envelope",
         include_str!("../../../specs/rpc/request-envelope.schema.json"),
@@ -101,6 +101,10 @@ const SCHEMAS: [(&str, &str); 23] = [
     (
         "m5-template",
         include_str!("../../../specs/rpc/m5-template.schema.json"),
+    ),
+    (
+        "m5-backup-create",
+        include_str!("../../../specs/rpc/m5-backup-create.schema.json"),
     ),
 ];
 
@@ -336,7 +340,7 @@ fn m4_operation_and_data_schema_are_compatible_additions() {
     let hello = schema("system-hello.response");
     assert_eq!(
         hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
-        json!([1, 2, 3, 4, 5])
+        json!([1, 2, 3, 4, 5, 6])
     );
 }
 
@@ -408,11 +412,11 @@ fn m5_unity_schema_keeps_launch_and_management_separate() {
 }
 
 #[test]
-fn m5_hello_advertises_the_implemented_data_schema_v5() {
+fn m5_hello_advertises_the_implemented_data_schema_v6() {
     let hello = schema("system-hello.response");
     assert_eq!(
         hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
-        json!([1, 2, 3, 4, 5])
+        json!([1, 2, 3, 4, 5, 6])
     );
 }
 
@@ -480,6 +484,27 @@ fn m5_template_contract_is_valid_and_implemented_without_backup_claims() {
     ] {
         assert!(codes.iter().any(|candidate| candidate == code), "{code}");
     }
+}
+
+#[test]
+fn m5_backup_create_contract_is_additive_and_not_published() {
+    let contract = schema("m5-backup-create");
+    assert_eq!(
+        contract["x-alcomd-publication"],
+        "contract-only-until-production-capability-exists"
+    );
+    assert_eq!(
+        contract["$defs"]["methodName"]["enum"],
+        json!(["backups.list", "backups.get", "backups.create"])
+    );
+    assert_eq!(
+        contract["$defs"]["capability"]["enum"],
+        json!(["backups.read.v1", "backups.create.v1"])
+    );
+    assert_eq!(
+        contract["$defs"]["createResult"]["required"],
+        json!(["operationId", "backupId", "replayed"])
+    );
 }
 
 #[test]

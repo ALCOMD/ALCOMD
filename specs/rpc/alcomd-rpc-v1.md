@@ -1,6 +1,6 @@
 # ALCOMD RPC v1
 
-状态：M1-M4 已完成并通过人工验收；M5 CLI/Unity/Template 兼容增加已实现，Backup 尚未开始
+状态：M1-M4 已完成并通过人工验收；M5 CLI/Unity/Template 已实现，Backup Create 合同已冻结但未实现
 
 ## 1. M1 合同范围
 
@@ -530,7 +530,7 @@ supervisor。foreground/activation 不在本合同中。
 `unity_launch_not_found`。普通 error 不包含完整进程命令行、私密路径、PID 列表或 OS debug。
 
 完整 DTO、enum 与上限由 `m5-unity.schema.json` 冻结。State Schema v5 已接入自动 migration；daemon
-在 store 成功初始化后通过 hello 广告 `dataSchema: 5` 和客户端实际协商的 M5 capability。此兼容增加不
+在 store 成功初始化后通过 hello 广告当前 `dataSchema: 6` 和客户端实际协商的已实现 M5 capability。此兼容增加不
 改变 M1-M4 方法语义，也不表示 Template、Backup 或完整 CLI 已实现。
 
 ## 20. M5 contract-only 兼容增加：Template Bundle v1
@@ -569,3 +569,21 @@ Operation。state commit 前不得 succeeded，重启必须复用同一 Operatio
 路径、locator、raw manifest、ZIP entry、credential 或 SQL/OS debug。新增 Template errors 由
 `rpc-error.schema.json` 冻结。CLI 名称在 `m5-template-commands-v1.json`，并已加入实际 command
 catalog/help。
+
+## 21. M5 contract-only 兼容增加：Backup Create
+
+Backup Create 在 RPC major 1 上冻结但尚未发布两项 capability：`backups.read.v1` 与
+`backups.create.v1`。完整 DTO 与 bounds 由 `m5-backup-create.schema.json` 冻结：`backups.list/get`
+要求 `backups.read`；`backups.create` 要求 `backups.manage` 与目标 Project read scope，并直接返回预分配
+且可幂等重放的 `operationId`/`backupId`。它没有 Plan/Apply，不接收任意 output path。
+
+请求固定 `projectId`、`expectedRevision`、`compressionMode`、`excludeVpmPackages`、`idempotencyKey`。
+Operation phase 固定为 `accepted`、`inventory_ready`、`archiving`、`archive_ready`、`publish_intent`、
+`archive_published`、`state_committed`。进入 publish intent 后，取消不能产生 ambiguous final artifact；
+恢复必须复用原 OperationId、BackupId 和幂等请求。
+
+新增稳定错误为 `backup_not_found`、`backup_unavailable`、`backup_source_unsafe`、
+`backup_archive_limit_exceeded`、`backup_integrity_mismatch` 与 `project_changed_during_backup`。普通错误、
+Event 和 activity 不得包含完整 source/archive path、内部 locator、原始 argv、credential 或 journal。
+Backup Archive v1/profile 由 `specs/backups/` 冻结。Restore method/capability 尚未冻结；这些 contract-only
+method 不进入 dispatcher、client 默认 capability 或 CLI help，直到生产能力真实存在。

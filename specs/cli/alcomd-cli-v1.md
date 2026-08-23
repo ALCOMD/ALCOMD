@@ -1,6 +1,6 @@
 # ALCOMD CLI contract v1
 
-状态：Implemented through the M5 Template slice（2026-08-21；Backup 尚未开始）
+状态：Implemented through the M5 Template slice（2026-08-24；Backup Create 仅冻结 planned contract）
 
 本合同只定义 `alcomd-cli` 的公共进程行为。CLI 永远是
 `alcomd-cli -> alcomd-client -> RPC -> alcomd-application` 的适配器，不读取 `state.db`、项目、

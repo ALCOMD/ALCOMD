@@ -1,10 +1,10 @@
 # 项目状态
 
-最后更新：2026-08-21
+最后更新：2026-08-24
 
 ## 当前阶段
 
-`M5 Template production/RPC/CLI 切片已完成本地验收；停止在 Backup Create contract 审批点`
+`M5 Backup Create contract-first 已冻结并完成本地合同验收；生产实现尚未批准`
 
 ## 已完成
 
@@ -176,6 +176,16 @@
   Template capability、registry/import/export/derive/create-project、M4 frozen staging package adapter 与
   RPC/CLI 已真实接入。create-project 的六点真实 daemon kill/restart matrix 已复用原
   OperationId/Plan/idempotency 收敛成功；v3 `.alcomtemplate` parity 继续 blocked 到 M11。
+- M5 Backup Create contract-first 已冻结 `ALCOMD Backup Archive v1`、严格 `backup.json`、ZIP64
+  Stored/Deflate、64 GiB/500,000 entries/32 GiB single file/128 GiB uncompressed/depth 128/path 1,024
+  bytes/ratio 10,000:1 配额，以及 Logs/Obj/Temp、任意 `.git`、根 `Library*` 与唯一直接文件例外的精确
+  排除表。locked VPM 排除不猜测、不联网，manifest 与 unknown/unlocked/embedded child 保留。
+- State Schema v6 只增加严格 Operation kind `backups.create`，原子重建并保留 operation journal、
+  idempotency、package plan/filesystem journal 与 template plan 外键依赖；现有 `backups` 表保持不变。
+  Backup RPC/permission/error/recovery phase 与 planned CLI catalog 已冻结，但 dispatcher/client/CLI help/
+  worker 均未发布，`backups.m5-create` 继续 planned，完整 backups feature 保持未实现。
+- CLI 高影响确认现在由窄本地 `CliError::ConfirmationRequired` 分类；非 TTY/EOF/拒绝以退出码 1 和
+  `confirmation_required` 返回，不再被错误映射为 `daemon_unavailable`，且没有改动 RPC/daemon。
 
 ## 后续里程碑尚未完成
 
@@ -232,8 +242,9 @@
 
 M0、M1、M2、M3 与 M4 均已完成并通过最终人工验收。M5 Slice 0/1 CLI/Unity contract-first 工件已
 冻结，`sysinfo` 依赖与 Unity 最小生产垂直切片已接入并通过 Windows 本地完整验收；Template
-contract-first、Schema v5 closure 与 production/RPC/CLI slice 已完成本地验收，当前停止在 Backup
-Create contract 审批点，尚未开始 Backup Create。M4 完整
+contract-first、Schema v5 closure 与 production/RPC/CLI slice 已完成本地验收。Backup Create
+contract-first、Schema v6/RPC/permission/error/archive profile 已冻结并完成合同测试；当前等待 production
+实现审批，尚未开始 Backup worker。M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential
 revocation 仍未完成；Windows 10/11 完整客户端

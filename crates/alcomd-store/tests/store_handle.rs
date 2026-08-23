@@ -4,7 +4,7 @@ use std::thread;
 use std::time::Duration;
 
 use alcomd_application::{StateCheckResult, StateStore, StoreErrorKind};
-use alcomd_domain::{IdempotencyKey, OperationState, PrincipalId, Revision};
+use alcomd_domain::{IdempotencyKey, OperationId, OperationState, PrincipalId, Revision};
 use alcomd_store::{StateStoreHandle, StoreOpenError};
 use rusqlite::Connection;
 use uuid::Uuid;
@@ -349,6 +349,48 @@ async fn missing_recovery_journal_fails_operation_safely() {
 }
 
 #[tokio::test]
+async fn generic_state_check_recovery_does_not_claim_backup_create() {
+    let directory = TestDirectory::new();
+    let database = directory.database();
+    {
+        let store = StateStoreHandle::open(database.clone()).expect("initialize v6 store");
+        drop(store);
+    }
+    wait_until_unlocked(&database);
+    let operation_id = "00000000-0000-4000-8000-000000000731";
+    let connection = Connection::open(&database).expect("open database for Backup fixture");
+    connection
+        .execute(
+            "INSERT INTO operations (
+                operation_id, kind, state, revision, owner_principal_id, request_json,
+                cancel_requested, created_at_ms, updated_at_ms
+             ) VALUES (?1, 'backups.create', 'queued', 1, 'builtin:local-owner',
+                       '{}', 0, 1, 1)",
+            [operation_id],
+        )
+        .expect("insert Backup Create operation");
+    drop(connection);
+
+    let store = StateStoreHandle::open(database).expect("reopen store");
+    assert!(
+        store
+            .recover(20)
+            .await
+            .expect("run generic recovery")
+            .is_empty()
+    );
+    let operation = store
+        .get_operation(
+            PrincipalId::local_owner(),
+            OperationId::parse(operation_id).expect("operation ID"),
+        )
+        .await
+        .expect("load untouched Backup operation");
+    assert_eq!(operation.state, OperationState::Queued);
+    assert_eq!(operation.revision, Revision::INITIAL);
+}
+
+#[tokio::test]
 async fn principal_scopes_operations_events_and_idempotency() {
     let directory = TestDirectory::new();
     let store = StateStoreHandle::open(directory.database()).expect("open store");
@@ -417,15 +459,15 @@ fn newer_schema_is_rejected_before_migration_or_pragma_changes() {
     let database = directory.database();
     let connection = Connection::open(&database).expect("create newer database");
     connection
-        .execute_batch("PRAGMA user_version=6; CREATE TABLE sentinel(value TEXT);")
+        .execute_batch("PRAGMA user_version=7; CREATE TABLE sentinel(value TEXT);")
         .expect("create future schema");
     drop(connection);
     let error = StateStoreHandle::open(database.clone()).expect_err("reject future schema");
     assert!(matches!(
         error,
         StoreOpenError::UnsupportedDataSchema {
-            found: 6,
-            supported: 5
+            found: 7,
+            supported: 6
         }
     ));
     let connection = Connection::open(database).expect("reopen future database");
@@ -439,7 +481,7 @@ fn newer_schema_is_rejected_before_migration_or_pragma_changes() {
             |row| row.get(0),
         )
         .expect("read sentinel");
-    assert_eq!(version, 6);
+    assert_eq!(version, 7);
     assert_eq!(sentinel, 1);
 }
 

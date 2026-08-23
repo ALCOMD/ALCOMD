@@ -1,0 +1,50 @@
+{
+    "manifest": {
+        "formatVersion": 1,
+        "createdAtMs": 1787500000000,
+        "compressionMode": "fast",
+        "excludeVpmPackages": true,
+        "sourceProjectRevision": 7,
+        "sourceProjectFingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "unityVersion": "2022.3.22f1",
+        "excludedPackages": [
+            {"packageId": "com.example.locked", "version": "1.2.3"}
+        ],
+        "packagesRequireResolve": true
+    },
+    "pathCases": [
+        {"path": "Logs/Editor.log", "decision": "exclude"},
+        {"path": "Obj/cache.bin", "decision": "exclude"},
+        {"path": "Temp/work", "decision": "exclude"},
+        {"path": "Assets/Nested/.git/config", "decision": "exclude"},
+        {"path": "Library/cache", "decision": "exclude"},
+        {"path": "Library-foo/cache", "decision": "exclude"},
+        {"path": "LibraryWhatever/cache", "decision": "exclude"},
+        {"path": "Library/LastSceneManagerSetup.txt", "decision": "include"},
+        {"path": "Library/Sub/LastSceneManagerSetup.txt", "decision": "exclude"},
+        {"path": "ProjectSettings/ProjectVersion.txt", "decision": "include"},
+        {"path": "Packages/vpm-manifest.json", "decision": "include"},
+        {"path": "Packages/manifest.json", "decision": "include"},
+        {"path": "MemoryCaptures/capture.bin", "decision": "include"},
+        {"path": "UserSettings/EditorUserSettings.asset", "decision": "include"},
+        {"path": ".vscode/settings.json", "decision": "include"},
+        {"path": ".idea/workspace.xml", "decision": "include"}
+    ],
+    "vpmCases": [
+        {"path": "Packages/com.example.locked/file.cs", "kind": "validated-locked", "decision": "exclude"},
+        {"path": "Packages/com.example.embedded/file.cs", "kind": "embedded", "decision": "include"},
+        {"path": "Packages/com.example.unknown/file.cs", "kind": "unknown", "decision": "include"}
+    ],
+    "unsafeKinds": [
+        "symlink", "reparse-point", "junction", "hardlink-with-link-count-greater-than-1",
+        "socket", "fifo", "device", "special", "unknown"
+    ],
+    "progressPhases": [
+        "accepted", "inventory_ready", "archiving", "archive_ready",
+        "publish_intent", "archive_published", "state_committed"
+    ],
+    "killRestartPoints": [
+        "inventory_ready", "archiving", "archive_ready", "publish_intent",
+        "archive_published", "state_committed-before-response"
+    ]
+}

@@ -271,12 +271,21 @@ status = "blocked"
 description = "对照 v3 备份创建、排除、压缩、取消、失败恢复与恢复目标行为。"
 
 [[test]]
+id = "backups.m5-create-contract"
+stage = "M5"
+kind = "contract"
+platforms = ["all"]
+status = "implemented"
+description = "冻结原生 Backup Archive v1、严格 manifest/profile、精确排除表、locked VPM 排除、Schema v6 operation kind、RPC/权限/错误、恢复阶段和未发布 CLI catalog；不代表 Backup worker 已实现。"
+evidence = ["docs/adr/0021-native-backup-archive.md", "specs/backups/backup-archive-v1.md", "specs/backups/backup-v1.schema.json", "specs/backups/backup-profile-v1.json", "specs/rpc/m5-backup-create.schema.json", "specs/storage/state-v6.md", "crates/alcomd-testing/tests/m5_backup_contract.rs", "crates/alcomd-store/tests/schema_contract.rs"]
+
+[[test]]
 id = "backups.m5-create"
 stage = "M5"
 kind = "integration"
 platforms = ["all"]
 status = "planned"
-description = "覆盖一致性 fingerprint、bounded archive、progress/cancel、partial cleanup 与 ProjectBackup 锁。"
+description = "生产实现后覆盖 Project Resource Lock、一致性 fingerprint、逐文件 evidence、bounded archive、progress/cancel、幂等 replay、partial cleanup、并发与六点 kill/restart recovery。"
 
 [[test]]
 id = "backups.m5-restore"

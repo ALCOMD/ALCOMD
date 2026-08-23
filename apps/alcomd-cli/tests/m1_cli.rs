@@ -41,6 +41,17 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
     assert_eq!(value["state"], "ready");
     assert_eq!(value["rpcVersion"], 1);
 
+    let confirmation_runtime = runtime.clone();
+    let confirmation =
+        tokio::task::spawn_blocking(move || run_confirmation_required_cli(confirmation_runtime))
+            .await
+            .expect("join confirmation CLI");
+    assert_eq!(confirmation.status.code(), Some(1));
+    assert!(confirmation.stdout.is_empty());
+    let confirmation_error: serde_json::Value =
+        serde_json::from_slice(&confirmation.stderr).expect("confirmation JSON stderr");
+    assert_eq!(confirmation_error["error"]["code"], "confirmation_required");
+
     shutdown.store(true, Ordering::Release);
     let daemon_result = tokio::time::timeout(Duration::from_secs(2), daemon)
         .await
@@ -62,6 +73,24 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
     if let Some(runtime) = runtime {
         let _ = std::fs::remove_dir_all(runtime);
     }
+}
+
+fn run_confirmation_required_cli(runtime: Option<PathBuf>) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_alcomd-cli"));
+    command.arg("--no-start-daemon").arg("--json");
+    if let Some(runtime) = runtime {
+        command.arg("--runtime-dir").arg(runtime);
+    }
+    command.args([
+        "template",
+        "remove",
+        "00000000-0000-4000-8000-000000000001",
+        "--expected-revision",
+        "1",
+        "--idempotency-key",
+        "confirmation-contract",
+    ]);
+    command.output().expect("run confirmation CLI")
 }
 
 async fn wait_for_shutdown(shutdown: Arc<AtomicBool>) {

@@ -34,7 +34,7 @@ mod sqlite;
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 5;
+pub const CURRENT_DATA_SCHEMA: u32 = 6;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]

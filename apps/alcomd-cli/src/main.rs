@@ -2,6 +2,39 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+#[derive(Debug)]
+enum CliError {
+    Client(alcomd_client::ClientError),
+    ConfirmationRequired,
+    LocalIo(std::io::Error),
+}
+
+impl From<alcomd_client::ClientError> for CliError {
+    fn from(error: alcomd_client::ClientError) -> Self {
+        Self::Client(error)
+    }
+}
+
+impl std::fmt::Display for CliError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Client(error) => error.fmt(formatter),
+            Self::ConfirmationRequired => formatter.write_str("confirmation is required"),
+            Self::LocalIo(_) => formatter.write_str("local CLI I/O failed"),
+        }
+    }
+}
+
+impl std::error::Error for CliError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Client(error) => Some(error),
+            Self::LocalIo(error) => Some(error),
+            Self::ConfirmationRequired => None,
+        }
+    }
+}
+
 /// Command-line client for ALCOMD.
 #[derive(Debug, Parser)]
 #[command(name = "alcomd-cli", version, about)]
@@ -316,7 +349,7 @@ async fn main() -> ExitCode {
 async fn execute(
     config: alcomd_client::ClientConfig,
     command: Command,
-) -> Result<serde_json::Value, alcomd_client::ClientError> {
+) -> Result<serde_json::Value, CliError> {
     let mut client = alcomd_client::AlcomdClient::connect(config).await?;
     let value = match command {
         Command::System {
@@ -703,7 +736,7 @@ async fn execute(
             }
         },
     }
-    .map_err(|_| alcomd_client::ClientError::InvalidResponse)?;
+    .map_err(|_| CliError::Client(alcomd_client::ClientError::InvalidResponse))?;
     Ok(value)
 }
 
@@ -741,28 +774,22 @@ fn absolute_path(path: PathBuf) -> std::io::Result<String> {
     })
 }
 
-fn confirm_high_impact(yes: bool) -> Result<(), alcomd_client::ClientError> {
+fn confirm_high_impact(yes: bool) -> Result<(), CliError> {
     if yes {
         return Ok(());
     }
     use std::io::{IsTerminal, Write};
     if !std::io::stdin().is_terminal() || !std::io::stderr().is_terminal() {
-        return Err(alcomd_client::ClientError::Transport(
-            std::io::Error::other("confirmation_required: pass --yes in non-interactive use"),
-        ));
+        return Err(CliError::ConfirmationRequired);
     }
     eprint!("Apply this high-impact Template operation? [y/N] ");
-    std::io::stderr()
-        .flush()
-        .map_err(alcomd_client::ClientError::Transport)?;
+    std::io::stderr().flush().map_err(CliError::LocalIo)?;
     let mut response = String::new();
     let read = std::io::stdin()
         .read_line(&mut response)
-        .map_err(alcomd_client::ClientError::Transport)?;
+        .map_err(CliError::LocalIo)?;
     if read == 0 || !matches!(response.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
-        return Err(alcomd_client::ClientError::Transport(
-            std::io::Error::other("confirmation_required"),
-        ));
+        return Err(CliError::ConfirmationRequired);
     }
     Ok(())
 }
@@ -797,15 +824,19 @@ fn repository_source(
     }
 }
 
-fn print_error(as_json: bool, error: &alcomd_client::ClientError) {
+fn print_error(as_json: bool, error: &CliError) {
     if as_json {
         let code = match error {
-            alcomd_client::ClientError::Remote(remote) => remote.code.as_str(),
-            alcomd_client::ClientError::InvalidResponse => "invalid_response",
-            alcomd_client::ClientError::StartTimeout => "daemon_start_timeout",
-            alcomd_client::ClientError::Transport(_)
-            | alcomd_client::ClientError::StartDaemon(_)
-            | alcomd_client::ClientError::DaemonPathUnavailable => "daemon_unavailable",
+            CliError::ConfirmationRequired => "confirmation_required",
+            CliError::LocalIo(_) => "local_io_error",
+            CliError::Client(alcomd_client::ClientError::Remote(remote)) => remote.code.as_str(),
+            CliError::Client(alcomd_client::ClientError::InvalidResponse) => "invalid_response",
+            CliError::Client(alcomd_client::ClientError::StartTimeout) => "daemon_start_timeout",
+            CliError::Client(
+                alcomd_client::ClientError::Transport(_)
+                | alcomd_client::ClientError::StartDaemon(_)
+                | alcomd_client::ClientError::DaemonPathUnavailable,
+            ) => "daemon_unavailable",
         };
         eprintln!("{{\"error\":{{\"code\":{}}}}}", serde_json::json!(code));
     } else {

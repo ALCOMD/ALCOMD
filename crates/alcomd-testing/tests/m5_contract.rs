@@ -23,6 +23,7 @@ const MIGRATION_V5: &str = include_str!("../../alcomd-store/migrations/0005_temp
 const PERMISSIONS: &str = include_str!("../../../specs/extensions/permissions-v1.md");
 const STATE_V4: &str = include_str!("../../../specs/storage/state-v4.md");
 const STATE_V5: &str = include_str!("../../../specs/storage/state-v5.md");
+const STATE_V6: &str = include_str!("../../../specs/storage/state-v6.md");
 
 #[test]
 fn cli_machine_contract_freezes_modes_options_records_and_exit_codes() {
@@ -136,6 +137,7 @@ fn unity_contract_keeps_permissions_capabilities_and_writer_states_narrow() {
     assert!(STATE_V4.contains("广告 `dataSchema: 4`"));
     assert!(STATE_V4.contains("不增加通用 settings/property/value"));
     assert!(STATE_V5.contains("广告 `dataSchema: 5`"));
+    assert!(STATE_V6.contains("广告 `dataSchema: 6`"));
 }
 
 #[test]

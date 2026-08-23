@@ -1,6 +1,6 @@
 # M5：完整 CLI 合同与本地项目工作流
 
-状态：进行中；Unity 最小生产切片已独立提交；Template production/RPC/CLI 已完成本地验收，停止在 Backup Create contract 审批点
+状态：进行中；Backup Create contract-first 已冻结并完成本地合同验收，生产实现尚未批准
 
 ## 目标
 
@@ -151,9 +151,11 @@ Operation 创建完整新项目；dependency resolution 必须在首次目标写
 
 ### Slice 3：Backup create
 
-实现一致性前后 fingerprint、流式压缩、SHA-256、partial cleanup、Operation progress/cancel 和
-ProjectBackup lock。Unity 使用中的项目默认拒绝创建“可恢复一致备份”，不把 best-effort ZIP 称为
-一致备份。
+合同使用原生 Backup Archive v1、Schema v6 的精确 `backups.create` Operation kind 与
+`ResourceKey::Project(ProjectId)`。生产实现获批后再接流式压缩、SHA-256、partial cleanup、Operation
+progress/cancel 和六点 kill/restart recovery；不同 Project 可并行，同一 Project 的 package/template/
+backup 窗口串行。只对 `running_confirmed` hard reject，suspected/unknown 产生 advisory 并继续一致性
+复验；不把 best-effort ZIP 或 observable checks 描述为 filesystem snapshot。
 
 ### Slice 4：Backup restore
 
@@ -275,10 +277,13 @@ operation、现有 project/repository、M4 package shortcut、Unity 与 completi
   `running_confirmed` 时拒绝一致性备份；suspected/unknown 产生 advisory 并依赖前后 fingerprint。
 - 流式写 ALCOMD backup root 内 operation-owned partial，使用现有 ZIP writer/profile、SHA-256、entry/
   total/path quota，flush/fsync 后原子 publish；取消/失败删除或保留 journal-owned partial。
-- compression profile 只暴露 Frozen 枚举（例如 stored/fast/maximum），不把第三方 codec 参数变成
+- compression profile 只暴露冻结枚举 `store/fast/maximum`，不把第三方 codec 参数变成
   公共合同。
-- `exclude VPM packages` 的精确语义是人工审批点：必须冻结被排除目录、保留的 manifests、restore
-  时 package resolve 前提和 offline/credential 失败行为，不能仅按目录名猜测。
+- `exclude VPM packages` 已冻结为只排除成功解析的 normalized locked set 中经 identity/containment/type
+  验证的 `Packages/<validated-package-id>/`。两个 manifest、unlocked/embedded/unknown child 永远保留；
+  不 refresh/download/探测未来可用性，归档记录 `packagesRequireResolve=true`。
+- 根排除表与 64 GiB archive、500,000 entries、32 GiB single file、128 GiB uncompressed、depth 128、
+  path 1,024 bytes、ratio 10,000:1 由 `specs/backups/backup-profile-v1.json` 机器冻结。
 
 ### Restore
 
@@ -334,8 +339,8 @@ contract slice 再冻结。新增 method/capability/可选字段不提升 RPC ma
   宣称第三方写入口可用。
 
 Slice 0/1 已冻结 `confirmation_required` 以及 Unity installation/version/architecture/running/launch/
-selector 错误，见 `rpc-error.schema.json`。template/backup 错误在对应 contract slice 冻结。未知错误
-继续 `internal_error + diagnosticId`。
+selector 错误，见 `rpc-error.schema.json`。Backup Create 已冻结六个具体 backup/change 错误，禁止以
+`backup_failed` 吞并；未知错误继续 `internal_error + diagnosticId`。
 
 ## Fixture 与 parity
 
@@ -348,7 +353,8 @@ implemented，动态/生产测试继续 planned：
 - `unity.m5-registry-launch` 与 `unity.m5-writer-gate` 使用 synthetic layout/fake process provider。
 - `templates.m5-bundle` 与 `templates.m5-registry` 只在 Schema/quota/security/migration snapshot 有真实
   evidence 后标 implemented；import/export/derive/create-project/fault engineering tests 在生产实现前保持
-  planned。`backups.m5-create`、`backups.m5-restore` 继续 planned。
+  planned。`backups.m5-create-contract` 绑定已冻结 archive/Schema/RPC/migration 工件并标 implemented；
+  `backups.m5-create` 与 `backups.m5-restore` 继续 planned。
 
 四项 v3 differential test 保持 blocked 到 M11。公开 Unity 文档、synthetic Hub files 和 fake Editor
 只能证明工程合同；Hosted CI 不要求安装真实 Unity，未取得真实 evidence 时不得宣称 differential
@@ -380,7 +386,8 @@ workflow engine、第二 ZIP stack 或第二 process supervisor。
   `8b63c6923b178a6ebb12bd5964412b2db7268e04` 保存。Template bundle、库存/许可证、权限、RPC 与
   create-project transaction contract 已获批并冻结；项目所有者已进一步批准 Schema v5 closure 与
   Template production。严格按 parser/inventory/object/registry/import-export/derive/create-project 推进。
-- **C**：Template 垂直切片通过后停止；审批 Backup create archive profile、exclude-VPM 精确语义。
+- **C（已通过 contract-first）**：Backup Create archive/profile、exclude-VPM、Schema v6、RPC、权限、
+  error、recovery phase 与 planned CLI 已冻结；生产 worker 尚未批准。
 - **D**：Backup create 垂直切片通过后停止；审批全新目标 Backup restore Plan/Apply 与 recovery 合同。
 - **E**：Backup restore 与完整 CLI surface 收敛后，运行 M5 全量本地/Hosted 验收并停止在 M6 前。
 
@@ -395,7 +402,7 @@ workflow engine、第二 ZIP stack 或第二 process supervisor。
 - injected IO/terminal state 覆盖 TTY/non-TTY、EOF、unknown input、拒绝/同意、`--yes` 和 Ctrl+C。
 - Unity version/architecture/identity/config bounded parser；argv 不经 shell。
 - template/backup manifest、path profile、include/exclude、collision/quota 和 canonical digest。
-- Schema v4/v5 migration、RPC backward compatibility、permission/resource scope、unknown optional fields。
+- Schema v4/v5/v6 migration、RPC backward compatibility、permission/resource scope、unknown optional fields。
 
 ### 集成/故障
 
@@ -405,8 +412,8 @@ workflow engine、第二 ZIP stack 或第二 process supervisor。
   lock evidence、外部项目变化和不虚构 running 状态。
 - template create 与 backup restore 在每个 destructive journal boundary 强制 kill daemon，重启后复用
   OperationId/Plan/idempotency，断言完整旧/新状态和 evidence 生命周期。
-- 同项目 package/template/backup/Unity launch 串行；不同项目并行；ProjectBackup/ProjectRestore 与
-  package Apply lock ordering 无死锁。
+- 同项目 package/template/backup/Unity launch 通过同一个 Project key 串行；不同项目并行；未来
+  ProjectRestore 与 package Apply lock ordering 无死锁。
 - 所有 HTTP 测试仅使用本地 mock；M5 不执行攻击性公网、真实 credential 或凭据传播测试。
 
 ### 三平台
@@ -441,7 +448,8 @@ ADR 冻结。process discovery production dependency 已按精确配置批准；
 1. `M5-process-discovery-evaluation.md` 中 `sysinfo = 0.39.6` 已关闭；任何 feature 扩大仍须重新审批。
 2. v4 template contract-first、production registry/import/export/derive/create-project 与窄 M4 staging
    package adapter 已批准并实现；下一停止点是 Backup Create contract，不得提前实现 Backup。
-3. backup archive profile 与 `exclude VPM packages` 精确语义。
+3. Backup Create archive/profile、exclude-VPM、Schema v6、RPC/permission/error/recovery 合同已批准；
+   当前等待 production 实现审批。
 4. M5 仅限全新目标的 restore Plan/Apply/recovery 合同；覆盖已有目标不在 M5。
 5. 此后每个新 production crate、windows-sys/rustix feature、unsafe 文件或窗口/进程平台 API。
 
@@ -519,3 +527,7 @@ Unity process/writer gate、Tauri no-bundle、lockfile/unsafe/dependency feature
   `0005_template_plans.sql`：窄 immutable Plan authority、三个精确 Template Operation kind、Schema v5
   hello compatibility，并以 migration/rollback/foreign-key/state-preservation 测试闭环；随后无需再次
   停止，按 parser -> inventory -> object store -> registry -> import/export -> derive -> create-project 实施。
+- 2026-08-24：项目所有者批准 Backup Create contract-first。冻结 `ALCOMD Backup Archive v1`、严格
+  manifest/profile、精确排除表、locked VPM 排除、Project Resource Lock、一致性证据、七阶段 Operation、
+  六点 recovery、RPC/permission/error 与 planned CLI；Schema v6 只增加 `backups.create` 并完整保留
+  v5 外键依赖。CLI non-TTY confirmation 已改为本地 `confirmation_required`，未开始 Backup production。

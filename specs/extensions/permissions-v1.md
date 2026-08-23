@@ -101,9 +101,12 @@ mcp.configuration.manage
 - derive from Project 还要求目标 Project 的 `projects.read` scope。template create-project Plan 需要
   `templates.read + projects.create`；有 dependency 时还需要 `packages.read + repositories.read`，Apply
   materialization 另需既有 `packages.manage`。`templates.manage` 不能隐式提供这些 package 权限。
-- backup restore 需要
-  `backups.read + backups.manage + projects.create`；backup create 需要 `backups.manage` 与目标 project
-  read scope。
+- `backups.list` 与 `backups.get` 只要求 `backups.read`。Backup Create contract-first 的
+  `backups.create` 要求 `backups.manage` 与目标 Project 的 `projects.read` scope；它不要求
+  `projects.manage`、`projects.create` 或 `packages.manage`。`excludeVpmPackages` 只读取 normalized locked
+  set，不授予 package mutation authority。filesystem write 仍只对 `builtin:local-owner` 开放。
+- backup restore 尚未冻结；未来若按当前 M5 范围批准，至少需要
+  `backups.read + backups.manage + projects.create`。
 - Template/Backup 所有外部 filesystem write 当前仍只允许 `builtin:local-owner`；Schema/PlanId、
   TemplateId、bundle digest、target path 与 object locator 都不是授权凭据。
 - `builtin:local-owner` 可获得 M5 已批准权限。真实外部 Principal credential enrollment/revocation

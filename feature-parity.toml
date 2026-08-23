@@ -175,9 +175,9 @@ implementation = "alcomd-application"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "not_started"
-evidence = ["docs/baselines/alcomd3-v3-audit.md::备份", "docs/baselines/vrc-get-audit.md::GUI backup"]
+evidence = ["docs/baselines/alcomd3-v3-audit.md::备份", "docs/baselines/vrc-get-audit.md::GUI backup", "docs/adr/0021-native-backup-archive.md", "specs/backups/backup-archive-v1.md"]
 coverage = ["GUI", "progress", "partial archive", "restore target"]
-tests = ["backups.v3-parity", "backups.m5-create", "backups.m5-restore", "migration.fixture-chain"]
+tests = ["backups.v3-parity", "backups.m5-create-contract", "backups.m5-create", "backups.m5-restore", "migration.fixture-chain"]
 
 [[feature]]
 id = "unity.integration"

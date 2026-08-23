@@ -1,0 +1,53 @@
+{
+    "profileVersion": 1,
+    "archiveFormat": "zip",
+    "zip64": true,
+    "compressionMethods": ["stored", "deflate"],
+    "compressionModes": ["store", "fast", "maximum"],
+    "limits": {
+        "archiveBytes": 68719476736,
+        "entries": 500000,
+        "singleRegularFileBytes": 34359738368,
+        "totalUncompressedBytes": 137438953472,
+        "pathDepth": 128,
+        "normalizedPathUtf8Bytes": 1024,
+        "expansionRatio": 10000
+    },
+    "archiveRoots": ["backup.json", "project/"],
+    "pathPolicy": {
+        "default": "include",
+        "rootDirectoriesExcluded": ["Logs", "Obj", "Temp"],
+        "directoriesExcludedAtAnyDepth": [".git"],
+        "rootDirectoryPrefixesExcludedAsciiCaseInsensitive": ["Library"],
+        "directFileExceptions": [
+            {
+                "underRootPrefix": "Library",
+                "relativeFile": "LastSceneManagerSetup.txt",
+                "recursive": false
+            }
+        ],
+        "alwaysIncludedFiles": [
+            "ProjectSettings/ProjectVersion.txt",
+            "Packages/vpm-manifest.json",
+            "Packages/manifest.json"
+        ],
+        "notImplicitlyExcluded": ["MemoryCaptures", "UserSettings", ".vscode", ".idea"]
+    },
+    "objectPolicy": {
+        "allowed": ["regular-directory", "regular-file-with-link-count-1"],
+        "rejected": [
+            "symlink", "reparse-point", "junction", "hardlink-with-link-count-greater-than-1",
+            "socket", "fifo", "device", "special", "unknown"
+        ],
+        "errorCode": "backup_source_unsafe"
+    },
+    "vpmExclusion": {
+        "enabledOnlyWhenRequested": true,
+        "excludedShape": "Packages/<validated-locked-package-id>/",
+        "manifestFilesAlwaysIncluded": true,
+        "preserveUnlockedEmbeddedAndUnknownChildren": true,
+        "networkAccess": false,
+        "packagesRequireResolve": true,
+        "mismatch": "fail-closed"
+    }
+}

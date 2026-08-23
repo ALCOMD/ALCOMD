@@ -607,7 +607,7 @@ impl HelloResult {
             rpc_version: RPC_VERSION,
             daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             capabilities,
-            data_schema: Some(5),
+            data_schema: Some(6),
         }
     }
 }

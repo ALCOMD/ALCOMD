@@ -1,0 +1,28 @@
+{
+    "contractVersion": 1,
+    "status": "planned-not-published",
+    "publicationRule": "add-to-command-catalog-and-help-only-after-production-capability-is-implemented",
+    "commands": [
+        {"path": ["backup", "list"], "rpc": "backups.list", "mutation": false},
+        {"path": ["backup", "get"], "aliases": ["info"], "rpc": "backups.get", "mutation": false},
+        {
+            "path": ["backup", "create"],
+            "rpc": "backups.create",
+            "mutation": true,
+            "planApply": false,
+            "options": [
+                "--expected-revision", "--compression", "--exclude-vpm-packages",
+                "--idempotency-key", "--no-wait"
+            ],
+            "forbiddenOptions": ["--yes", "--dry-run", "--output"]
+        }
+    ],
+    "createContract": {
+        "requiredArgument": "project-id",
+        "compressionValues": ["store", "fast", "maximum"],
+        "defaultWaitsForTerminalOperation": true,
+        "noWaitReturns": ["operationId", "backupId"],
+        "outputModes": ["human", "json", "ndjson"],
+        "archiveAccess": "rpc-only-managed-root"
+    }
+}

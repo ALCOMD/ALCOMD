@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::{CURRENT_DATA_SCHEMA, StoreOpenError};
 
-const DATA_SCHEMA_VERSION: i64 = 5;
+const DATA_SCHEMA_VERSION: i64 = 6;
 const BUSY_TIMEOUT: Duration = Duration::from_millis(5_000);
 const CHECK_ROW_LIMIT: usize = 100;
 const CHECK_BYTE_LIMIT: usize = 65_536;
@@ -21,6 +21,7 @@ const MIGRATION_V2: &str = include_str!("../migrations/0002_projects_repositorie
 const MIGRATION_V3: &str = include_str!("../migrations/0003_package_transactions.sql");
 const MIGRATION_V4: &str = include_str!("../migrations/0004_local_workflows.sql");
 const MIGRATION_V5: &str = include_str!("../migrations/0005_template_plans.sql");
+const MIGRATION_V6: &str = include_str!("../migrations/0006_backup_create.sql");
 
 pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpenError> {
     let connection = Connection::open(path).map_err(|_| StoreOpenError::Unavailable)?;
@@ -83,6 +84,11 @@ pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpen
     if version <= 4 {
         connection
             .execute_batch(MIGRATION_V5)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+    }
+    if version <= 5 {
+        connection
+            .execute_batch(MIGRATION_V6)
             .map_err(|_| StoreOpenError::Unavailable)?;
     }
     let final_version: i64 = connection
@@ -504,7 +510,7 @@ pub(super) fn recover(
         // Later milestone handlers own recovery for their durable Operation kinds. The M2
         // state-check recovery pass must leave those rows untouched so the package/Template
         // recovery pass can reuse its own journal and immutable Plan authority.
-        if kind == "packages.apply" || kind.starts_with("templates.") {
+        if kind == "packages.apply" || kind.starts_with("templates.") || kind == "backups.create" {
             continue;
         }
         if kind != "state.check" || !journal_is_recoverable(connection, operation_id)? {

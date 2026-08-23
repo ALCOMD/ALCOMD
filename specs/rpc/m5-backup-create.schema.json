@@ -1,0 +1,84 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m5-backup-create.json",
+    "title": "ALCOMD RPC v1 M5 Backup Create contract",
+    "x-alcomd-publication": "contract-only-until-production-capability-exists",
+    "x-alcomd-method-permissions": {
+        "backups.list": ["backups.read"],
+        "backups.get": ["backups.read"],
+        "backups.create": ["backups.manage", "projects.read:target-project"]
+    },
+    "$defs": {
+        "methodName": {"enum": ["backups.list", "backups.get", "backups.create"]},
+        "capability": {"enum": ["backups.read.v1", "backups.create.v1"]},
+        "uuid": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "revision": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "idempotencyKey": {
+            "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[!-~]+$"
+        },
+        "compressionMode": {"enum": ["store", "fast", "maximum"]},
+        "backupRecord": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+                "backupId", "sourceProjectId", "archiveSha256", "archiveBytes",
+                "formatVersion", "createdAtMs", "compressionMode", "excludeVpmPackages"
+            ],
+            "properties": {
+                "backupId": {"$ref": "#/$defs/uuid"},
+                "sourceProjectId": {"$ref": "#/$defs/uuid"},
+                "archiveSha256": {"$ref": "#/$defs/sha256"},
+                "archiveBytes": {"type": "integer", "minimum": 1, "maximum": 68719476736},
+                "formatVersion": {"const": 1},
+                "createdAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+                "compressionMode": {"$ref": "#/$defs/compressionMode"},
+                "excludeVpmPackages": {"type": "boolean"}
+            }
+        },
+        "listParams": {
+            "type": "object", "additionalProperties": false,
+            "properties": {
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "cursor": {"type": "string", "minLength": 1, "maxLength": 1024},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 1000}
+            }
+        },
+        "getParams": {
+            "type": "object", "additionalProperties": false, "required": ["backupId"],
+            "properties": {"backupId": {"$ref": "#/$defs/uuid"}}
+        },
+        "createParams": {
+            "type": "object", "additionalProperties": false,
+            "required": [
+                "projectId", "expectedRevision", "compressionMode",
+                "excludeVpmPackages", "idempotencyKey"
+            ],
+            "properties": {
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "compressionMode": {"$ref": "#/$defs/compressionMode"},
+                "excludeVpmPackages": {"type": "boolean"},
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
+            }
+        },
+        "createResult": {
+            "type": "object", "additionalProperties": true,
+            "required": ["operationId", "backupId", "replayed"],
+            "properties": {
+                "operationId": {"$ref": "#/$defs/uuid"},
+                "backupId": {"$ref": "#/$defs/uuid"},
+                "replayed": {"type": "boolean"}
+            }
+        },
+        "progressPhase": {
+            "enum": [
+                "accepted", "inventory_ready", "archiving", "archive_ready",
+                "publish_intent", "archive_published", "state_committed"
+            ]
+        }
+    }
+}

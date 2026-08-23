@@ -5,6 +5,7 @@ const MIGRATION_V2: &str = include_str!("../migrations/0002_projects_repositorie
 const MIGRATION_V3: &str = include_str!("../migrations/0003_package_transactions.sql");
 const MIGRATION_V4: &str = include_str!("../migrations/0004_local_workflows.sql");
 const MIGRATION_V5: &str = include_str!("../migrations/0005_template_plans.sql");
+const MIGRATION_V6: &str = include_str!("../migrations/0006_backup_create.sql");
 
 #[test]
 fn bundled_sqlite_version_is_frozen() {
@@ -1262,6 +1263,171 @@ fn failed_migration_v5_restores_complete_v4() {
     );
 }
 
+#[test]
+fn schema_v6_adds_only_backup_create_operation_kind() {
+    let connection = migrated_v6_connection();
+    assert_eq!(user_version(&connection), 6);
+    assert!(MIGRATION_V6.starts_with("BEGIN IMMEDIATE;"));
+    assert!(MIGRATION_V6.ends_with("COMMIT;\n"));
+    assert!(!MIGRATION_V6.contains("CREATE TABLE backups"));
+    assert!(!MIGRATION_V6.contains("backup_plans"));
+    assert!(!MIGRATION_V6.contains("restore"));
+    assert!(!MIGRATION_V6.contains("workflow"));
+
+    connection
+        .execute(
+            "INSERT INTO operations (
+                operation_id, kind, state, revision, owner_principal_id, request_json,
+                cancel_requested, created_at_ms, updated_at_ms
+             ) VALUES ('00000000-0000-4000-8000-000000000701', 'backups.create',
+                       'queued', 1, 'builtin:local-owner', '{}', 0, 1, 1)",
+            [],
+        )
+        .expect("insert Backup Create operation");
+    for rejected in ["backups.restore", "backups.plan", "future.operation"] {
+        assert!(
+            connection
+                .execute(
+                    "INSERT INTO operations (
+                        operation_id, kind, state, revision, owner_principal_id, request_json,
+                        cancel_requested, created_at_ms, updated_at_ms
+                     ) VALUES ('00000000-0000-4000-8000-000000000702', ?1,
+                               'queued', 1, 'builtin:local-owner', '{}', 0, 1, 1)",
+                    [rejected],
+                )
+                .is_err(),
+            "unexpected operation kind accepted: {rejected}"
+        );
+    }
+}
+
+#[test]
+fn migration_v6_preserves_all_direct_dependencies_and_existing_state() {
+    let connection = migrated_v5_connection();
+    insert_project(&connection);
+    connection
+        .execute_batch(
+            "INSERT INTO operations (
+                operation_id, kind, state, revision, owner_principal_id, request_json,
+                cancel_requested, created_at_ms, updated_at_ms
+             ) VALUES ('00000000-0000-4000-8000-000000000711', 'packages.apply',
+                       'running', 7, 'builtin:local-owner', '{}', 0, 1, 2);
+             INSERT INTO operation_journal (
+                operation_id, step, kind, state, payload_json, updated_at_ms
+             ) VALUES ('00000000-0000-4000-8000-000000000711', 1,
+                       'package-apply', 'prepared', '{}', 2);
+             INSERT INTO idempotency_records (
+                principal_id, method, idempotency_key, request_fingerprint, state,
+                operation_id, response_json, created_at_ms
+             ) VALUES ('builtin:local-owner', 'packages.applyPlan', 'v6-preserve', '{}',
+                       'pending', '00000000-0000-4000-8000-000000000711', NULL, 1);
+             INSERT INTO package_plans (
+                plan_id, owner_principal_id, project_id, action, state, project_revision,
+                project_snapshot_fingerprint, change_set_fingerprint, change_set_json,
+                source_set_json, apply_operation_id, created_at_ms
+             ) VALUES ('00000000-0000-4000-8000-000000000712', 'builtin:local-owner',
+                       '00000000-0000-4000-8000-000000000201', 'install', 'applied', 1,
+                       zeroblob(32), zeroblob(32),
+                       '{\"formatVersion\":1,\"mutations\":[],\"dependencyEdges\":[]}', '[]',
+                       '00000000-0000-4000-8000-000000000711', 1);
+             INSERT INTO package_filesystem_journal (
+                operation_id, step, plan_id, project_id, phase, state,
+                project_identity_key, change_set_fingerprint, evidence_json, updated_at_ms
+             ) VALUES ('00000000-0000-4000-8000-000000000711', 1,
+                       '00000000-0000-4000-8000-000000000712',
+                       '00000000-0000-4000-8000-000000000201', 'prepared', 'completed',
+                       x'01', zeroblob(32), '{}', 2);
+             INSERT INTO template_plans (
+                plan_id, owner_principal_id, kind, state, plan_fingerprint,
+                plan_json, apply_operation_id, created_at_ms
+             ) VALUES ('00000000-0000-4000-8000-000000000713', 'builtin:local-owner',
+                       'derive', 'unapplied', zeroblob(32),
+                       '{\"version\":1,\"kind\":\"derive\"}', NULL, 1);
+             INSERT INTO events (
+                event_id, kind, aggregate_kind, aggregate_id, aggregate_revision,
+                principal_id, occurred_at_ms, payload_json
+             ) VALUES ('00000000-0000-4000-8000-000000000714', 'project.registered',
+                       'project', '00000000-0000-4000-8000-000000000201', 1,
+                       'builtin:local-owner', 1, '{}');
+             INSERT INTO backups (
+                backup_id, owner_principal_id, source_project_id, archive_locator,
+                file_identity_key, archive_sha256, byte_size, format_version,
+                created_at_ms, compression_mode, exclude_vpm_packages
+             ) VALUES ('00000000-0000-4000-8000-000000000715', 'builtin:local-owner',
+                       '00000000-0000-4000-8000-000000000201', 'backup:fixture',
+                       x'01', zeroblob(32), 42, 1, 1, 'store', 0);",
+        )
+        .expect("insert v5 preservation fixtures");
+
+    connection
+        .execute_batch(MIGRATION_V6)
+        .expect("apply migration v6");
+
+    for table in [
+        "operations",
+        "operation_journal",
+        "idempotency_records",
+        "package_plans",
+        "package_filesystem_journal",
+        "template_plans",
+        "events",
+        "backups",
+    ] {
+        let count: i64 = connection
+            .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .expect("count preserved v6 row");
+        assert_eq!(count, 1, "{table}");
+    }
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("foreign key check"),
+        0
+    );
+}
+
+#[test]
+fn failed_migration_v6_restores_complete_v5() {
+    let connection = migrated_v5_connection();
+    let failing = MIGRATION_V6.replace(
+        "PRAGMA user_version = 6;",
+        "THIS IS NOT VALID SQL;\nPRAGMA user_version = 6;",
+    );
+    assert!(connection.execute_batch(&failing).is_err());
+    connection
+        .execute_batch("ROLLBACK;")
+        .expect("rollback failed migration v6");
+    assert_eq!(user_version(&connection), 5);
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT count(*) FROM sqlite_schema
+                 WHERE type='table' AND name='template_plans'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("v5 template plans remain"),
+        1
+    );
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO operations (
+                    operation_id, kind, state, revision, owner_principal_id, request_json,
+                    cancel_requested, created_at_ms, updated_at_ms
+                 ) VALUES ('00000000-0000-4000-8000-000000000721', 'backups.create',
+                           'queued', 1, 'builtin:local-owner', '{}', 0, 1, 1)",
+                [],
+            )
+            .is_err(),
+        "v5 operation contract must remain intact after rollback"
+    );
+}
+
 fn migrated_connection() -> Connection {
     let connection = Connection::open_in_memory().expect("open SQLite");
     connection
@@ -1302,6 +1468,14 @@ fn migrated_v5_connection() -> Connection {
     connection
         .execute_batch(MIGRATION_V5)
         .expect("apply migration v5");
+    connection
+}
+
+fn migrated_v6_connection() -> Connection {
+    let connection = migrated_v5_connection();
+    connection
+        .execute_batch(MIGRATION_V6)
+        .expect("apply migration v6");
     connection
 }
 
