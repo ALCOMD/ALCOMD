@@ -294,7 +294,8 @@ stage = "M5"
 kind = "fault-injection"
 platforms = ["all"]
 status = "planned"
-description = "覆盖仅全新目标的 restore Plan/Apply、staging、archive/path security、rollback 与真实 kill/restart recovery。"
+description = "contract-first 已冻结只恢复到不存在的新 Project、durable immutable Plan、预分配 ProjectId、Schema v7、ProjectCreate lock、hostile archive validation、同卷 staging/atomic publish、publish 后 forward recovery 与六点 kill/restart matrix；production worker/fault tests 尚未实现，故保持 planned。"
+evidence = ["docs/adr/0022-backup-restore-new-project.md", "specs/backups/backup-restore-plan-v1.schema.json", "specs/rpc/m5-backup-restore.schema.json", "specs/storage/state-v7.md", "crates/alcomd-testing/tests/m5_backup_restore_contract.rs", "crates/alcomd-store/tests/schema_contract.rs"]
 
 [[test]]
 id = "unity.v3-vrc-parity"

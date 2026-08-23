@@ -1,0 +1,113 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m5-backup-restore.json",
+    "title": "ALCOMD RPC v1 M5 Backup Restore contract",
+    "x-alcomd-publication": "contract-only-until-production-capability-exists",
+    "x-alcomd-method-permissions": {
+        "backups.planRestore": ["backups.read", "projects.create"],
+        "backups.applyRestore": ["backups.read", "backups.manage", "projects.create"]
+    },
+    "$defs": {
+        "methodName": {"enum": ["backups.planRestore", "backups.applyRestore"]},
+        "capability": {"const": "backups.restore.v1"},
+        "uuid": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "idempotencyKey": {
+            "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[!-~]+$"
+        },
+        "targetLeaf": {
+            "type": "string", "minLength": 1, "maxLength": 255,
+            "pattern": "^[^/\\\\\u0000-\u001f]+$"
+        },
+        "excludedPackage": {
+            "type": "object", "additionalProperties": false,
+            "required": ["packageId", "version"],
+            "properties": {
+                "packageId": {"type": "string", "minLength": 1, "maxLength": 214},
+                "version": {"type": "string", "minLength": 1, "maxLength": 128}
+            }
+        },
+        "targetSummary": {
+            "type": "object", "additionalProperties": false,
+            "required": ["parent", "leaf", "mustBeAbsent"],
+            "properties": {
+                "parent": {"type": "string", "minLength": 1, "maxLength": 32768},
+                "leaf": {"$ref": "#/$defs/targetLeaf"},
+                "mustBeAbsent": {"const": true}
+            }
+        },
+        "planRestoreParams": {
+            "type": "object", "additionalProperties": false,
+            "required": ["backupId", "targetParent", "targetLeaf"],
+            "properties": {
+                "backupId": {"$ref": "#/$defs/uuid"},
+                "targetParent": {"type": "string", "minLength": 1, "maxLength": 32768},
+                "targetLeaf": {"$ref": "#/$defs/targetLeaf"}
+            }
+        },
+        "restorePlan": {
+            "type": "object", "additionalProperties": true,
+            "required": [
+                "planId", "projectId", "backupId", "target", "archiveSha256",
+                "packagesRequireResolve", "excludedPackages", "planFingerprint"
+            ],
+            "properties": {
+                "planId": {"$ref": "#/$defs/uuid"},
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "backupId": {"$ref": "#/$defs/uuid"},
+                "target": {"$ref": "#/$defs/targetSummary"},
+                "archiveSha256": {"$ref": "#/$defs/sha256"},
+                "packagesRequireResolve": {"type": "boolean"},
+                "excludedPackages": {
+                    "type": "array", "maxItems": 4096,
+                    "items": {"$ref": "#/$defs/excludedPackage"}
+                },
+                "planFingerprint": {"$ref": "#/$defs/sha256"}
+            }
+        },
+        "applyRestoreParams": {
+            "type": "object", "additionalProperties": false,
+            "required": ["planId", "idempotencyKey"],
+            "properties": {
+                "planId": {"$ref": "#/$defs/uuid"},
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
+            }
+        },
+        "applyRestoreResult": {
+            "type": "object", "additionalProperties": true,
+            "required": ["operationId", "projectId", "replayed"],
+            "properties": {
+                "operationId": {"$ref": "#/$defs/uuid"},
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "replayed": {"type": "boolean"}
+            }
+        },
+        "restoreResult": {
+            "type": "object", "additionalProperties": true,
+            "required": [
+                "backupId", "projectId", "target", "packagesRequireResolve",
+                "excludedPackages"
+            ],
+            "properties": {
+                "backupId": {"$ref": "#/$defs/uuid"},
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "target": {"$ref": "#/$defs/targetSummary"},
+                "packagesRequireResolve": {"type": "boolean"},
+                "excludedPackages": {
+                    "type": "array", "maxItems": 4096,
+                    "items": {"$ref": "#/$defs/excludedPackage"}
+                }
+            }
+        },
+        "progressPhase": {
+            "enum": [
+                "accepted", "archive_verified", "extracting", "staging_complete",
+                "publish_intent", "target_published", "project_registry_commit_intent",
+                "state_committed"
+            ]
+        }
+    }
+}

@@ -1,0 +1,33 @@
+{
+    "archiveRoots": ["backup.json", "project/"],
+    "progressPhases": [
+        "accepted", "archive_verified", "extracting", "staging_complete",
+        "publish_intent", "target_published", "project_registry_commit_intent",
+        "state_committed"
+    ],
+    "killRestartPoints": [
+        "extracting", "staging_complete", "publish_intent", "target_published",
+        "project_registry_commit_intent", "state_committed-before-response"
+    ],
+    "hostileEntries": [
+        {"path": "../escape", "reason": "traversal"},
+        {"path": "/absolute", "reason": "absolute"},
+        {"path": "C:/device", "reason": "drive"},
+        {"path": "//server/share", "reason": "unc"},
+        {"path": "project/A.txt|project/a.txt", "reason": "case-collision"},
+        {"path": "project/é|project/é", "reason": "unicode-collision"},
+        {"path": "project/link", "reason": "symlink-or-reparse"},
+        {"path": "project/device", "reason": "special-file"},
+        {"path": "extra-root/file", "reason": "unexpected-root"}
+    ],
+    "targetRaces": [
+        "created-after-plan", "created-before-apply", "created-during-staging",
+        "created-before-publish", "parent-identity-changed", "target-became-reparse"
+    ],
+    "artifactRaces": ["modified", "replaced", "truncated", "identity-changed"],
+    "terminalOutcomes": [
+        "target-absent-and-no-project-row",
+        "complete-target-and-preallocated-project-row",
+        "recovery-required-with-user-visible-target-preserved"
+    ]
+}

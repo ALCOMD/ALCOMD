@@ -1,0 +1,83 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/backups/restore-plan-v1.json",
+    "title": "ALCOMD Backup Restore Plan v1",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "version", "planId", "backupId", "preallocatedProjectId", "backupArchiveSha256",
+        "backupFileIdentity", "backupByteSize", "backupFormatVersion",
+        "backupManifestFingerprint", "excludeVpmPackages", "excludedPackages",
+        "targetParentPath", "targetParentIdentity", "targetLeaf", "targetMustBeAbsent",
+        "expectedUnityProject", "packagesRequireResolve", "planFingerprint"
+    ],
+    "properties": {
+        "version": {"const": 1},
+        "planId": {"$ref": "#/$defs/uuid"},
+        "backupId": {"$ref": "#/$defs/uuid"},
+        "preallocatedProjectId": {"$ref": "#/$defs/uuid"},
+        "backupArchiveSha256": {"$ref": "#/$defs/sha256"},
+        "backupFileIdentity": {"$ref": "#/$defs/opaqueIdentity"},
+        "backupByteSize": {"type": "integer", "minimum": 1, "maximum": 68719476736},
+        "backupFormatVersion": {"const": 1},
+        "backupManifestFingerprint": {"$ref": "#/$defs/sha256"},
+        "excludeVpmPackages": {"type": "boolean"},
+        "excludedPackages": {
+            "type": "array", "maxItems": 4096,
+            "items": {"$ref": "#/$defs/excludedPackage"}
+        },
+        "targetParentPath": {"type": "string", "minLength": 1, "maxLength": 32768},
+        "targetParentIdentity": {"$ref": "#/$defs/opaqueIdentity"},
+        "targetLeaf": {"$ref": "#/$defs/targetLeaf"},
+        "targetMustBeAbsent": {"const": true},
+        "expectedUnityProject": {"$ref": "#/$defs/unityProjectSummary"},
+        "packagesRequireResolve": {"type": "boolean"},
+        "planFingerprint": {"$ref": "#/$defs/sha256"}
+    },
+    "allOf": [
+        {
+            "if": {"properties": {"excludeVpmPackages": {"const": true}}},
+            "then": {"properties": {"packagesRequireResolve": {"const": true}}},
+            "else": {
+                "properties": {
+                    "packagesRequireResolve": {"const": false},
+                    "excludedPackages": {"maxItems": 0}
+                }
+            }
+        }
+    ],
+    "$defs": {
+        "uuid": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "opaqueIdentity": {"type": "string", "pattern": "^[0-9a-f]{2,256}$"},
+        "targetLeaf": {
+            "type": "string", "minLength": 1, "maxLength": 255,
+            "pattern": "^[^/\\\\\u0000-\u001f]+$"
+        },
+        "excludedPackage": {
+            "type": "object", "additionalProperties": false,
+            "required": ["packageId", "version"],
+            "properties": {
+                "packageId": {"type": "string", "minLength": 1, "maxLength": 214},
+                "version": {"type": "string", "minLength": 1, "maxLength": 128}
+            }
+        },
+        "unityProjectSummary": {
+            "type": "object", "additionalProperties": false,
+            "required": [
+                "unityVersion", "projectType", "hasVpmManifest", "hasUpmManifest",
+                "summaryFingerprint"
+            ],
+            "properties": {
+                "unityVersion": {"type": "string", "minLength": 1, "maxLength": 128},
+                "projectType": {"type": "string", "minLength": 1, "maxLength": 64},
+                "hasVpmManifest": {"type": "boolean"},
+                "hasUpmManifest": {"type": "boolean"},
+                "summaryFingerprint": {"$ref": "#/$defs/sha256"}
+            }
+        }
+    }
+}

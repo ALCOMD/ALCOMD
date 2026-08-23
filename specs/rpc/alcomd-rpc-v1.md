@@ -530,7 +530,7 @@ supervisor。foreground/activation 不在本合同中。
 `unity_launch_not_found`。普通 error 不包含完整进程命令行、私密路径、PID 列表或 OS debug。
 
 完整 DTO、enum 与上限由 `m5-unity.schema.json` 冻结。State Schema v5 已接入自动 migration；daemon
-在 store 成功初始化后通过 hello 广告当前 `dataSchema: 6` 和客户端实际协商的已实现 M5 capability。此兼容增加不
+在 store 成功初始化后通过 hello 广告当前 `dataSchema: 7` 和客户端实际协商的已实现 M5 capability。此兼容增加不
 改变 M1-M4 方法语义，也不表示 Template、Backup 或完整 CLI 已实现。
 
 ## 20. M5 contract-only 兼容增加：Template Bundle v1
@@ -585,5 +585,12 @@ Operation phase 固定为 `accepted`、`inventory_ready`、`archiving`、`archiv
 新增稳定错误为 `backup_not_found`、`backup_unavailable`、`backup_source_unsafe`、
 `backup_archive_limit_exceeded`、`backup_integrity_mismatch` 与 `project_changed_during_backup`。普通错误、
 Event 和 activity 不得包含完整 source/archive path、内部 locator、原始 argv、credential 或 journal。
-Backup Archive v1/profile 由 `specs/backups/` 冻结。Restore method/capability 尚未冻结；Create method 已
-进入 dispatcher、official client 默认 capability 与 CLI help，Restore 仍不得提前发布。
+Backup Archive v1/profile 由 `specs/backups/` 冻结。Create method 已进入 dispatcher、official client 默认
+capability 与 CLI help。
+
+Backup Restore contract-first 在 RPC major 1 上兼容冻结 `backups.planRestore`、
+`backups.applyRestore` 与 `backups.restore.v1`，完整 DTO 由 `m5-backup-restore.schema.json` 冻结。Plan
+要求 `backups.read + projects.create`；Apply 另需 `backups.manage`，返回固定 OperationId 与 Plan 预分配的
+ProjectId。公共 Plan/result 只含 target/Backup 安全摘要，不返回 archive/staging path、DB locator 或 journal
+detail。Restore dispatcher/worker/client/CLI 尚未实现，daemon 不广告 capability，也不接受 method；Schema v7
+只证明 durable authority 可存储，不代表 production Restore 已发布。

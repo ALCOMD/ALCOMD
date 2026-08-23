@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::{CURRENT_DATA_SCHEMA, StoreOpenError};
 
-const DATA_SCHEMA_VERSION: i64 = 6;
+const DATA_SCHEMA_VERSION: i64 = 7;
 const BUSY_TIMEOUT: Duration = Duration::from_millis(5_000);
 const CHECK_ROW_LIMIT: usize = 100;
 const CHECK_BYTE_LIMIT: usize = 65_536;
@@ -22,6 +22,7 @@ const MIGRATION_V3: &str = include_str!("../migrations/0003_package_transactions
 const MIGRATION_V4: &str = include_str!("../migrations/0004_local_workflows.sql");
 const MIGRATION_V5: &str = include_str!("../migrations/0005_template_plans.sql");
 const MIGRATION_V6: &str = include_str!("../migrations/0006_backup_create.sql");
+const MIGRATION_V7: &str = include_str!("../migrations/0007_backup_restore.sql");
 
 pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpenError> {
     let connection = Connection::open(path).map_err(|_| StoreOpenError::Unavailable)?;
@@ -89,6 +90,11 @@ pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpen
     if version <= 5 {
         connection
             .execute_batch(MIGRATION_V6)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+    }
+    if version <= 6 {
+        connection
+            .execute_batch(MIGRATION_V7)
             .map_err(|_| StoreOpenError::Unavailable)?;
     }
     let final_version: i64 = connection

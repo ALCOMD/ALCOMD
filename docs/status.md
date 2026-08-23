@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M5 Backup Create contract-first 与获批 production slice 已完成；停止在 Backup Restore contract-first 前`
+`M5 Backup Restore contract-first 已冻结并完成本地合同验收；等待 production slice 审批`
 
 ## 已完成
 
@@ -184,8 +184,14 @@
   idempotency、package plan/filesystem journal 与 template plan 外键依赖；现有 `backups` 表保持不变。
   Backup RPC/permission/error/recovery phase、dispatcher、official client、CLI `backup list/get/create` 与
   Operation worker 已真实接入。六点真实子进程 kill/restart matrix 复用原 OperationId、预分配 BackupId
-  与幂等键并只产生一个最终 archive；`backups.m5-create` 已 implemented。Backup Restore 尚未开始，完整
-  backups feature 因而继续保持 in progress，`backups.v3-parity` 继续 blocked 到 M11。
+  与幂等键并只产生一个最终 archive；`backups.m5-create` 已 implemented。
+- M5 Backup Restore contract-first 已冻结只恢复到不存在的全新 Unity Project、durable immutable
+  Plan/Apply、预分配 ProjectId、`ProjectCreate(parent identity, leaf)` 锁、完整 Backup Archive v1 hostile
+  validation、同卷 sibling staging/atomic publish 与 publish 后 forward recovery。State Schema v7 只增加
+  `backups.restore`、窄 `backup_restore_plans` 和 Restore 专用 append-only filesystem journal；Template
+  checkpoint 仍保持 Template-specific。`backups.restore.v1`、permissions/errors 与 CLI planned surface 已
+  冻结，但 dispatcher/worker/client/CLI 尚未实现或发布，`backups.m5-restore` 继续 planned。完整 backups
+  feature 保持 in progress，`backups.v3-parity` 继续 blocked 到 M11。
 - CLI 高影响确认现在由窄本地 `CliError::ConfirmationRequired` 分类；非 TTY/EOF/拒绝以退出码 1 和
   `confirmation_required` 返回，不再被错误映射为 `daemon_unavailable`，且没有改动 RPC/daemon。
 
@@ -245,8 +251,9 @@
 M0、M1、M2、M3 与 M4 均已完成并通过最终人工验收。M5 Slice 0/1 CLI/Unity contract-first 工件已
 冻结，`sysinfo` 依赖与 Unity 最小生产垂直切片已接入并通过 Windows 本地完整验收；Template
 contract-first、Schema v5 closure 与 production/RPC/CLI slice 已完成本地验收。Backup Create
-contract-first、Schema v6/RPC/permission/error/archive profile 已冻结并完成合同测试；当前等待 production
-实现审批，尚未开始 Backup worker。M4 完整
+contract-first、Schema v6/RPC/permission/error/archive profile 与 production slice 已完成。Backup Restore
+contract-first、Schema v7/Plan/RPC/permission/error/recovery/hostile fixture 已冻结；当前等待 Restore
+production implementation 审批，尚未接入 dispatcher/worker/client/CLI。M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential
 revocation 仍未完成；Windows 10/11 完整客户端

@@ -14,7 +14,9 @@
                 "packages.apply",
                 "templates.import",
                 "templates.derive",
-                "templates.create-project"
+                "templates.create-project",
+                "backups.create",
+                "backups.restore"
             ]
         },
         "state": {

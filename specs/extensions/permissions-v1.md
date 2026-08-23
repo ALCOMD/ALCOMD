@@ -105,8 +105,10 @@ mcp.configuration.manage
   `backups.create` 要求 `backups.manage` 与目标 Project 的 `projects.read` scope；它不要求
   `projects.manage`、`projects.create` 或 `packages.manage`。`excludeVpmPackages` 只读取 normalized locked
   set，不授予 package mutation authority。filesystem write 仍只对 `builtin:local-owner` 开放。
-- backup restore 尚未冻结；未来若按当前 M5 范围批准，至少需要
-  `backups.read + backups.manage + projects.create`。
+- `backups.planRestore` 需要 `backups.read + projects.create`；它只创建永久 immutable Plan，不创建
+  staging、target 或 Operation。`backups.applyRestore` 必须重新验证相同权限，并额外需要
+  `backups.manage`。两者都只允许恢复到明确不存在的全新 Project target，不隐含 package/repository/
+  Unity 权限，也不允许 overwrite、merge、delete-then-restore 或 arbitrary ZIP。
 - Template/Backup 所有外部 filesystem write 当前仍只允许 `builtin:local-owner`；Schema/PlanId、
   TemplateId、bundle digest、target path 与 object locator 都不是授权凭据。
 - `builtin:local-owner` 可获得 M5 已批准权限。真实外部 Principal credential enrollment/revocation

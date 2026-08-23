@@ -1,6 +1,6 @@
 # M5：完整 CLI 合同与本地项目工作流
 
-状态：进行中；Backup Create contract-first 与获批 production slice 已完成，停止在 Backup Restore contract-first 前
+状态：进行中；Backup Restore contract-first 已冻结并完成本地合同验收，production implementation 尚未批准
 
 ## 目标
 
@@ -43,9 +43,10 @@ M5 首先冻结所有 CLI 命令共用的 human/JSON/NDJSON、stdout/stderr、�
 2. Project/Repository/Package 已有 RPC 的完整 CLI 表面，以及 M5 实际补齐的本地管理 RPC。
 3. 三平台 Unity Hub/Editor 只读发现、手工 Editor 注册、项目 Editor/参数选择、启动与诚实的进程状态。
 4. versioned template registry、内建/导入/派生模板和从模板创建项目的 Plan/Apply Operation。
-5. backup create 与高影响 restore：bounded archive、Plan/Apply、ProjectRestore lock、staging、journal、
+5. backup create 与高影响 restore：bounded archive、Plan/Apply、ProjectCreate lock、staging、journal、
    rollback、取消和真实 kill/restart recovery。
-6. State Schema v4 的 Unity/registry 与 Schema v5 的窄 Template Plan authority；不为未来 GUI/MCP/扩展预建字段。
+6. State Schema v4 的 Unity/registry、Schema v5 的窄 Template Plan、Schema v6 Backup Create kind 与
+   Schema v7 Restore Plan/journal authority；不为未来 GUI/MCP/扩展预建字段。
 7. public/synthetic engineering Fixture、CLI subprocess golden、跨平台 process/filesystem 测试和三个
    hosted 平台验收；真实 v3 differential 项保持 blocked。
 
@@ -94,13 +95,13 @@ crates/alcomd-domain/                # 纯 Unity/template/backup/plan identity �
 crates/alcomd-application/           # 用例、ports、权限、锁、Plan/Apply 编排
 crates/alcomd-protocol/              # 获批的 RPC v1 兼容 DTO
 crates/alcomd-client/                # 类型化 RPC 调用与 Operation follow
-crates/alcomd-store/                 # 获批的 Schema v4/v5 migration、registry/Plan/journal
+crates/alcomd-store/                 # 获批的 Schema v4-v7 migration、registry/Plan/journal
 crates/alcomd-platform/              # 三平台发现、进程、路径/权限与启动原语
 crates/alcomd-vpm/                   # 复用既有 bounded archive/project transaction adapter
 crates/alcomd-testing/               # synthetic/public Fixture、CLI/daemon/kill tests
 specs/rpc/                           # M5 RPC/error/output Schema 与兼容快照
 specs/cli/                           # CLI v1 进程合同、machine Schema 与 command catalog
-specs/storage/                       # State Schema v4/v5 migration
+specs/storage/                       # State Schema v4-v7 migration
 specs/extensions/permissions-v1.md   # 仅精化既有 M5 权限语义
 docs/adr/                            # CLI、Unity writer、template/backup transaction ADR
 docs/exec-plans/M5-cli-core-workflows.md
@@ -151,17 +152,21 @@ Operation 创建完整新项目；dependency resolution 必须在首次目标写
 
 ### Slice 3：Backup create
 
-合同使用原生 Backup Archive v1、Schema v6 的精确 `backups.create` Operation kind 与
-`ResourceKey::Project(ProjectId)`。生产实现获批后再接流式压缩、SHA-256、partial cleanup、Operation
-progress/cancel 和六点 kill/restart recovery；不同 Project 可并行，同一 Project 的 package/template/
-backup 窗口串行。只对 `running_confirmed` hard reject，suspected/unknown 产生 advisory 并继续一致性
-复验；不把 best-effort ZIP 或 observable checks 描述为 filesystem snapshot。
+原生 Backup Archive v1、Schema v6 的精确 `backups.create` Operation kind 与
+`ResourceKey::Project(ProjectId)` 已完成生产实现：流式压缩、SHA-256、partial cleanup、Operation
+progress/cancel 和六点 kill/restart recovery 均已接入。不同 Project 可并行，同一 Project 的 package/
+template/backup 窗口串行。只对 `running_confirmed` hard reject，suspected/unknown 产生 advisory 并继续
+一致性复验；不把 best-effort ZIP 或 observable checks 描述为 filesystem snapshot。
 
 ### Slice 4：Backup restore
 
-M5 只支持全新、不存在目标的 Plan/Apply restore；不支持已有目标、覆盖、merge 或先删除再恢复。
-复用同一 filesystem journal 和真实 kill/restart gate，完成后才接 CLI confirmation/`--yes`。不得将
-restore 实现为普通 unzip。
+M5 只支持把已注册且重新验证的 Backup Archive v1 恢复为全新、不存在目标的 Plan/Apply restore；不支持
+已有目标、覆盖、merge、先删除再恢复、legacy backup 或 arbitrary ZIP。Plan 预分配 ProjectId，固定
+archive/manifest/parent/target/Project summary evidence；Apply 返回 OperationId 并复用同一 authority。
+Template persisted checkpoint 明确为 Template-specific，因此 Restore 使用 Schema v7 的窄
+`backup_restore_filesystem_journal`，同时复用现有 archive/path/new-project publish primitive 和
+`ProjectCreate(parent_identity,target_leaf)` 锁。production 获批后才接 worker、dispatcher、CLI
+confirmation/`--yes` 与六点真实 kill/restart；不得将 restore 实现为普通 unzip。
 
 ### Slice 5：CLI surface 收敛
 
@@ -287,22 +292,28 @@ operation、现有 project/repository、M4 package shortcut、Unity 与 completi
 
 ### Restore
 
-- restore 始终先 `backups.planRestore`：固定 archive digest、source project fingerprint、target identity、
-  ChangeSet、expected target state 与冲突；Apply 返回 OperationId。
+- restore 始终先 `backups.planRestore`：重新打开 artifact 并固定 BackupId、file identity、archive SHA-256/
+  size/format、`backup.json` fingerprint、exclude-VPM summary、target parent identity/path、normalized leaf、
+  target absent、预分配 ProjectId、expected Unity Project summary 与 Plan fingerprint。Apply 返回
+  OperationId 与同一 ProjectId，不重新 Plan。
 - target 必须全新且不存在，并通过路径/owner/no-follow/同卷校验；M5 不支持已有 target、覆盖、merge
-  或删除后恢复。restore 获取 `ProjectRestore(target_identity)`，且要求显式确认或 `--yes`。
-- archive 先在 target 同卷 sibling staging 完整验证/extract；旧 target 先 rename 到 backup，新 target
-  再 publish。复用 M4 intent -> mutation -> evidence -> completed journal 规则，最终 DB commit 前不得
+  或删除后恢复。restore 与 Template create-project 共用
+  `ProjectCreate(parent_identity,target_leaf)`，且要求显式确认或 `--yes`。
+- archive 在 target parent 的 operation-owned 同卷 sibling staging 完整验证/extract `project/`；没有旧
+  target rename/backup 路径。publish 前验证完整 Unity Project，durable intent 后 atomic staging->target、
+  sync parent、记录 target identity/fingerprint，再以预分配 ProjectId 注册；最终 DB commit 前不得
   succeeded。
-- crash/取消发生在旧 target rename、新 target publish、manifest validation、filesystem committed、
-  state committed 各边界时，重启必须复用原 OperationId/Plan/幂等键恢复。证据完成前不得删除旧 target
-  backup/staging。
-- restore 目标存在 Unity writer hard-gate 时拒绝。不存在 evidence 仍不保证没有外部 writer，故每个
-  checkpoint 继续做 target fingerprint/identity 检查。
+- crash/取消发生在 extracting、staging complete、publish intent、target published、Project registry
+  commit intent、state committed 各边界时，重启必须复用原 OperationId/PlanId/ProjectId/BackupId/幂等键。
+  publish 前 staging 可丢弃重建；publish 后只 forward-finalize，外部修改返回
+  `backup_restore_recovery_required`，不得删除或覆盖用户可见 target。
+- `excludeVpmPackages=true` 只恢复 archive 中实际存在的文件并保留两个 manifest；不联网、refresh、下载、
+  resolve 或 package materialize，结果明确 `packagesRequireResolve=true` 与 bounded excluded summary。
 - backup 不是普通 unzip；不支持链接、root escape、case/Unicode collision、special file 或未经批准
-  的 codec。backup archive profile 可有不同 quota 参数，但必须调用同一安全 engine。
+  的 codec。Restore 完整复用 Backup Archive v1 profile 与同一安全 engine，ZIP 根只能是
+  `backup.json + project/`。
 
-## State Schema v4/v5 与 RPC v1
+## State Schema v4-v7 与 RPC v1
 
 M5 的 durable registry 需求使用已批准的 Schema v4：
 
@@ -316,21 +327,24 @@ M5 的 durable registry 需求使用已批准的 Schema v4：
 
 Template immutable Plan 使用获批的 Schema v5 窄表 `template_plans`，只允许 import/derive/
 create-project 和一次性 `unapplied -> applied + OperationId` transition；M4 `package_plans` 不泛化。
-operations.kind 只精确增加 `templates.import`、`templates.derive`、`templates.create-project`，不预建
-export/Backup/generic workflow kind。migration 覆盖 v1->...->v5、v4->v5、rollback、future schema
-fail closed，并保留 M2-M4 Operation/journal/idempotency/Event sequence、package Plan 与 Unity registry。
+Schema v6 精确增加 `backups.create`。Schema v7 精确增加 `backups.restore`、窄
+`backup_restore_plans` 与 Restore 专用 append-only filesystem journal；不改写 Template checkpoint，
+不泛化 package/template Plan，也不建立 generic workflow。migration 覆盖 v1->...->v7、v6->v7、rollback、
+future schema fail closed，并保留 Operation/journal/idempotency/Event sequence、package/template Plan、
+Backup rows、Project/Repository revision 与 Unity registry。
 
 不新增 CLI 设置表、通用 workflow 表、Hub mirror 数据库、process history 日志或未来 GUI state。
 
 Slice 1 RPC v1 兼容增加已冻结为 `unity.read.v1`、`unity.manage.v1`、`unity.launch.v1`，准确 method、
-DTO、collection limit 与 enum 见 `specs/rpc/m5-unity.schema.json`。template/backup capability 必须等各自
-contract slice 再冻结。新增 method/capability/可选字段不提升 RPC major，删除/改义才提升 major。
+DTO、collection limit 与 enum 见 `specs/rpc/m5-unity.schema.json`。Template 与 Backup Create capability 已
+实现；Restore contract-only 冻结 `backups.restore.v1`，生产 adapter 存在前不得广告。新增
+method/capability/可选字段不提升 RPC major，删除/改义才提升 major。
 
 既有权限名优先直接精化：
 
 - template query 使用 `templates.read`；create-project 使用 `templates.read + projects.create`。
-- backup query 使用 `backups.read`；create 使用 `backups.manage + target project read scope`；restore 使用
-  `backups.read + backups.manage + projects.create`。
+- backup query 使用 `backups.read`；create 使用 `backups.manage + target project read scope`；Restore Plan
+  使用 `backups.read + projects.create`，Apply 另需 `backups.manage`。
 - Unity query 使用 `unity.read`；registry/refresh/project preference 使用新增 `unity.manage`；launch/status
   使用独立 `unity.launch`。
 - `projects.create` 只授权在显式、不存在 destination 创建一个全新 Project，不允许覆盖、删除、merge
@@ -340,7 +354,8 @@ contract slice 再冻结。新增 method/capability/可选字段不提升 RPC ma
 
 Slice 0/1 已冻结 `confirmation_required` 以及 Unity installation/version/architecture/running/launch/
 selector 错误，见 `rpc-error.schema.json`。Backup Create 已冻结六个具体 backup/change 错误，禁止以
-`backup_failed` 吞并；未知错误继续 `internal_error + diagnosticId`。
+`backup_failed` 吞并；Restore 另冻结 plan not found/stale、target exists/invalid、archive invalid、integrity/
+unavailable 与 recovery required，禁止 `restore_failed`；未知错误继续 `internal_error + diagnosticId`。
 
 ## Fixture 与 parity
 
@@ -353,8 +368,8 @@ implemented，动态/生产测试继续 planned：
 - `unity.m5-registry-launch` 与 `unity.m5-writer-gate` 使用 synthetic layout/fake process provider。
 - `templates.m5-bundle` 与 `templates.m5-registry` 只在 Schema/quota/security/migration snapshot 有真实
   evidence 后标 implemented；import/export/derive/create-project/fault engineering tests 在生产实现前保持
-  planned。`backups.m5-create-contract` 绑定已冻结 archive/Schema/RPC/migration 工件并标 implemented；
-  `backups.m5-create` 与 `backups.m5-restore` 继续 planned。
+  planned。`backups.m5-create-contract` 与 `backups.m5-create` 已有真实 evidence 并标 implemented；
+  `backups.m5-restore` 已绑定 contract-first 工件但在 production/fault matrix 前继续 planned。
 
 四项 v3 differential test 保持 blocked 到 M11。公开 Unity 文档、synthetic Hub files 和 fake Editor
 只能证明工程合同；Hosted CI 不要求安装真实 Unity，未取得真实 evidence 时不得宣称 differential
@@ -386,12 +401,12 @@ workflow engine、第二 ZIP stack 或第二 process supervisor。
   `8b63c6923b178a6ebb12bd5964412b2db7268e04` 保存。Template bundle、库存/许可证、权限、RPC 与
   create-project transaction contract 已获批并冻结；项目所有者已进一步批准 Schema v5 closure 与
   Template production。严格按 parser/inventory/object/registry/import-export/derive/create-project 推进。
-- **C（已通过 contract-first）**：Backup Create archive/profile、exclude-VPM、Schema v6、RPC、权限、
-  error、recovery phase 与 planned CLI 已冻结；生产 worker 尚未批准。
-- **D**：Backup create 垂直切片通过后停止；审批全新目标 Backup restore Plan/Apply 与 recovery 合同。
+- **C（已通过）**：Backup Create contract-first 与 production worker/RPC/CLI/真实 recovery matrix 已完成。
+- **D（已通过 contract-first）**：全新目标 Backup Restore Plan/Apply、Schema v7、RPC/permission/error、
+  planned CLI、专用 journal 与 forward recovery 合同已冻结；production implementation 尚未批准。
 - **E**：Backup restore 与完整 CLI surface 收敛后，运行 M5 全量本地/Hosted 验收并停止在 M6 前。
 
-不得因 Schema v5 migration 文件存在就越过后端真实性门禁；capability 和 method 只有
+不得因 Schema migration 文件存在就越过后端真实性门禁；capability 和 method 只有
 对应 adapter/use case 真正实现并通过当前 slice 验收后才能接线或广告。
 
 ## 单元、集成、故障与跨平台验收
@@ -402,7 +417,7 @@ workflow engine、第二 ZIP stack 或第二 process supervisor。
 - injected IO/terminal state 覆盖 TTY/non-TTY、EOF、unknown input、拒绝/同意、`--yes` 和 Ctrl+C。
 - Unity version/architecture/identity/config bounded parser；argv 不经 shell。
 - template/backup manifest、path profile、include/exclude、collision/quota 和 canonical digest。
-- Schema v4/v5/v6 migration、RPC backward compatibility、permission/resource scope、unknown optional fields。
+- Schema v4/v5/v6/v7 migration、RPC backward compatibility、permission/resource scope、unknown optional fields。
 
 ### 集成/故障
 
@@ -412,8 +427,8 @@ workflow engine、第二 ZIP stack 或第二 process supervisor。
   lock evidence、外部项目变化和不虚构 running 状态。
 - template create 与 backup restore 在每个 destructive journal boundary 强制 kill daemon，重启后复用
   OperationId/Plan/idempotency，断言完整旧/新状态和 evidence 生命周期。
-- 同项目 package/template/backup/Unity launch 通过同一个 Project key 串行；不同项目并行；未来
-  ProjectRestore 与 package Apply lock ordering 无死锁。
+- 同项目 package/template/backup/Unity launch 通过同一个 Project key 串行；Template create-project 与
+  Backup Restore 对同一新目标通过同一个 ProjectCreate key 串行，不同目标并行。
 - 所有 HTTP 测试仅使用本地 mock；M5 不执行攻击性公网、真实 credential 或凭据传播测试。
 
 ### 三平台
@@ -435,7 +450,7 @@ workflow engine、第二 ZIP stack 或第二 process supervisor。
 - **不一致备份**：Unity/外部 writer 修改中的 best-effort ZIP 不能标记为可恢复一致备份。
 - **restore 半提交**：目标目录与 registry/Operation 分裂必须由 journal 与真实 kill test证明恢复。
 - **archive 复制**：template/backup 各自实现 unzip/zip policy 会造成安全规则漂移，必须共享 engine。
-- **Schema 膨胀**：不得把 Hub cache、process telemetry、CLI view state 或未来 GUI 状态塞入 v4。
+- **Schema 膨胀**：不得把 Hub cache、process telemetry、CLI view state 或未来 GUI 状态塞入当前 Schema。
 - **parity 误报**：synthetic Fixture 不能解除四项 M11 differential blocker。
 - **范围过大**：任一 slice 只有合同没有端到端用户入口时不得同时开启下一 slice。
 
@@ -449,8 +464,9 @@ ADR 冻结。process discovery production dependency 已按精确配置批准；
 2. v4 template contract-first、production registry/import/export/derive/create-project 与窄 M4 staging
    package adapter 已批准并实现；下一停止点是 Backup Create contract，不得提前实现 Backup。
 3. Backup Create archive/profile、exclude-VPM、Schema v6、RPC/permission/error/recovery 合同与 production
-   slice 已批准并实现；下一停止点是 Backup Restore contract-first，不得提前实现 Restore。
-4. M5 仅限全新目标的 restore Plan/Apply/recovery 合同；覆盖已有目标不在 M5。
+   slice 已批准并实现。
+4. Backup Restore contract-first 已批准并冻结；M5 仅限全新目标的 Plan/Apply/recovery，覆盖已有目标不在
+   M5。下一停止点是 Restore production slice 审批，不得提前接入 dispatcher/worker/client/CLI。
 5. 此后每个新 production crate、windows-sys/rustix feature、unsafe 文件或窗口/进程平台 API。
 
 审批后仍需在以下情况重新停止：新增未批准 production dependency；扩大 unsafe/平台 API；改变 RPC/
@@ -538,3 +554,9 @@ Unity process/writer gate、Tauri no-bundle、lockfile/unsafe/dependency feature
   state_committed 被父进程强制终止，重启后复用原 OperationId、预分配 BackupId 与 idempotency，最终
   只存在一个完整 archive 且 partial 清空。未新增 production crate、feature、unsafe 或平台 API；停止在
   Backup Restore contract-first 前。
+- 2026-08-24：项目所有者批准 Backup Restore contract-first。ADR 0022 冻结只恢复到不存在的新 Project、
+  durable immutable Plan/Apply、预分配 ProjectId、`ProjectCreate(parent_identity,leaf)` 锁、Backup Archive
+  v1 hostile validation、同卷 sibling staging/atomic publish 与 publish 后 forward recovery。Schema v7 只
+  增加 `backups.restore`、`backup_restore_plans` 和 Restore 专用 append-only filesystem journal；Template
+  checkpoint 继续保持 Template-specific。RPC/permission/error/planned CLI、六点 recovery 与 hostile/race
+  synthetic vectors 已冻结；`backups.m5-restore` 在生产实现前保持 planned，停止等待 production 审批。
