@@ -89,6 +89,16 @@
             ]
         },
         {
+            "name": "backup",
+            "aliases": [],
+            "commands": [
+                {"name": "list", "aliases": []},
+                {"name": "get", "aliases": ["info"]},
+                {"name": "create", "aliases": []},
+                {"name": "restore", "aliases": []}
+            ]
+        },
+        {
             "name": "completion",
             "aliases": [],
             "commands": []

@@ -5,9 +5,12 @@ use std::path::{Path, PathBuf};
 
 use alcomd_application::{
     BackupArchiveEvidence, BackupCancellation, BackupCompression, BackupCreateRequest,
-    M5BackupAdapter, M5BackupError, M5BackupErrorCode, OperationId, ProjectRecord, PublishedBackup,
+    BackupRestorePlanDraft, BackupRestorePlanRecord, BackupRestoreTarget, M5BackupAdapter,
+    M5BackupError, M5BackupErrorCode, OperationId, PlanId, PreparedBackupRestore, ProjectId,
+    ProjectRecord, PublishedBackup, ResourceKey, RestoreExcludedPackage, RestoredProject,
+    StagedBackupRestore, StoredBackupRecord,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use unicode_normalization::UnicodeNormalization;
 use zip::write::SimpleFileOptions;
@@ -17,6 +20,7 @@ use crate::{ArchiveLimits, preflight_archive_with_limits};
 
 #[derive(Clone, Debug)]
 pub struct BackupEngine {
+    root: PathBuf,
     partial: PathBuf,
     objects: PathBuf,
     limits: ArchiveLimits,
@@ -83,6 +87,7 @@ impl BackupEngine {
             }
         }
         Ok(Self {
+            root,
             partial,
             objects,
             limits,
@@ -175,6 +180,705 @@ impl M5BackupAdapter for BackupEngine {
         .await
         .map_err(|_| internal())?
     }
+
+    async fn plan_restore(
+        &self,
+        backup: StoredBackupRecord,
+        target_parent: PathBuf,
+        target_leaf: String,
+    ) -> Result<BackupRestorePlanDraft, M5BackupError> {
+        let engine = self.clone();
+        tokio::task::spawn_blocking(move || {
+            plan_restore(&engine, backup, target_parent, target_leaf)
+        })
+        .await
+        .map_err(|_| internal())?
+    }
+
+    fn restore_resource(
+        &self,
+        plan: &BackupRestorePlanRecord,
+    ) -> Result<ResourceKey, M5BackupError> {
+        Ok(ResourceKey::ProjectCreate {
+            parent_identity_sha256: digest(&plan.draft.target_parent_identity),
+            target_leaf: plan.draft.target.leaf.clone(),
+        })
+    }
+
+    async fn prepare_restore(
+        &self,
+        plan: BackupRestorePlanRecord,
+    ) -> Result<PreparedBackupRestore, M5BackupError> {
+        let engine = self.clone();
+        tokio::task::spawn_blocking(move || prepare_restore(&engine, plan))
+            .await
+            .map_err(|_| internal())?
+    }
+
+    async fn stage_restore(
+        &self,
+        operation_id: OperationId,
+        prepared: PreparedBackupRestore,
+    ) -> Result<StagedBackupRestore, M5BackupError> {
+        let limits = self.limits;
+        tokio::task::spawn_blocking(move || stage_restore(operation_id, prepared, limits))
+            .await
+            .map_err(|_| internal())?
+    }
+
+    async fn discard_staged_restore(
+        &self,
+        staged: StagedBackupRestore,
+    ) -> Result<(), M5BackupError> {
+        tokio::task::spawn_blocking(move || discard_staged_restore(staged))
+            .await
+            .map_err(|_| internal())?
+    }
+
+    async fn publish_restore(
+        &self,
+        staged: StagedBackupRestore,
+    ) -> Result<RestoredProject, M5BackupError> {
+        tokio::task::spawn_blocking(move || publish_restore(staged))
+            .await
+            .map_err(|_| internal())?
+    }
+
+    async fn validate_published_restore(
+        &self,
+        operation_id: OperationId,
+        plan: BackupRestorePlanRecord,
+    ) -> Result<RestoredProject, M5BackupError> {
+        tokio::task::spawn_blocking(move || validate_published_restore(operation_id, &plan))
+            .await
+            .map_err(|_| internal())?
+    }
+
+    async fn finalize_restore(
+        &self,
+        operation_id: OperationId,
+        plan: BackupRestorePlanRecord,
+    ) -> Result<(), M5BackupError> {
+        tokio::task::spawn_blocking(move || finalize_restore(operation_id, &plan))
+            .await
+            .map_err(|_| internal())?
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RestoreAuthority {
+    version: u32,
+    backup_id: String,
+    preallocated_project_id: String,
+    archive_sha256: String,
+    archive_file_identity: String,
+    archive_bytes: u64,
+    backup_manifest_fingerprint: String,
+    exclude_vpm_packages: bool,
+    excluded_packages: Vec<RestoreExcludedPackage>,
+    target_parent_path: String,
+    target_parent_identity: String,
+    target_leaf: String,
+    target_must_be_absent: bool,
+    expected_project_fingerprint: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RestoreManifest {
+    format_version: u32,
+    created_at_ms: u64,
+    compression_mode: BackupCompression,
+    exclude_vpm_packages: bool,
+    source_project_revision: u64,
+    source_project_fingerprint: String,
+    unity_version: String,
+    excluded_packages: Vec<RestoreExcludedPackage>,
+    packages_require_resolve: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RestoreOwnerMarker {
+    version: u32,
+    operation_id: String,
+    project_id: String,
+    plan_fingerprint: String,
+}
+
+fn plan_restore(
+    engine: &BackupEngine,
+    backup: StoredBackupRecord,
+    target_parent: PathBuf,
+    target_leaf: String,
+) -> Result<BackupRestorePlanDraft, M5BackupError> {
+    validate_restore_leaf(&target_leaf)?;
+    let (parent, parent_identity) = alcomd_platform::resolve_directory_identity(&target_parent)
+        .map_err(|_| restore_unsafe())?;
+    let data_root = engine.root.parent().ok_or_else(restore_unsafe)?;
+    if parent.starts_with(data_root) || has_unity_project_ancestor(&parent) {
+        return Err(restore_unsafe());
+    }
+    ensure_restore_absent(&parent.join(&target_leaf))?;
+    let archive_path = engine
+        .objects
+        .join(format!("{}.zip", backup.record.backup_id));
+    if backup.archive_locator != format!("backup-v1:{}", backup.record.backup_id) {
+        return Err(error(M5BackupErrorCode::BackupIntegrityMismatch));
+    }
+    let inspection = inspect_restore_archive(&archive_path, engine.limits)?;
+    let identity = alcomd_platform::file_identity_key(&archive_path)
+        .map_err(|_| error(M5BackupErrorCode::BackupIntegrityMismatch))?;
+    let bytes = std::fs::metadata(&archive_path)
+        .map_err(|_| error(M5BackupErrorCode::BackupIntegrityMismatch))?
+        .len();
+    if identity != backup.file_identity_key
+        || bytes != backup.record.archive_bytes
+        || hash_file(&archive_path)? != backup.record.archive_sha256
+        || inspection.manifest.format_version != backup.record.format_version
+        || inspection.manifest.exclude_vpm_packages != backup.record.exclude_vpm_packages
+    {
+        return Err(error(M5BackupErrorCode::BackupIntegrityMismatch));
+    }
+    let plan_id = PlanId::new();
+    let project_id = ProjectId::new();
+    let authority = RestoreAuthority {
+        version: 1,
+        backup_id: backup.record.backup_id.to_string(),
+        preallocated_project_id: project_id.to_string(),
+        archive_sha256: hex(&backup.record.archive_sha256),
+        archive_file_identity: hex_slice(&identity),
+        archive_bytes: bytes,
+        backup_manifest_fingerprint: hex(&inspection.manifest_fingerprint),
+        exclude_vpm_packages: inspection.manifest.exclude_vpm_packages,
+        excluded_packages: inspection.manifest.excluded_packages.clone(),
+        target_parent_path: path_text(&parent)?,
+        target_parent_identity: hex_slice(&parent_identity),
+        target_leaf: target_leaf.clone(),
+        target_must_be_absent: true,
+        expected_project_fingerprint: hex(&inspection.project_fingerprint),
+    };
+    let plan_json = serde_json::to_string(&authority).map_err(|_| internal())?;
+    Ok(BackupRestorePlanDraft {
+        plan_id,
+        project_id,
+        backup_id: backup.record.backup_id,
+        archive_sha256: backup.record.archive_sha256,
+        archive_file_identity: identity,
+        archive_bytes: bytes,
+        manifest_fingerprint: inspection.manifest_fingerprint,
+        exclude_vpm_packages: inspection.manifest.exclude_vpm_packages,
+        excluded_packages: inspection.manifest.excluded_packages,
+        target: BackupRestoreTarget {
+            parent: path_text(&parent)?,
+            leaf: target_leaf,
+            must_be_absent: true,
+        },
+        target_parent_identity: parent_identity,
+        expected_unity_project_json: serde_json::json!({
+            "projectFingerprint": hex(&inspection.project_fingerprint),
+            "unityVersion": inspection.manifest.unity_version,
+            "packagesRequireResolve": inspection.manifest.packages_require_resolve,
+        })
+        .to_string(),
+        plan_fingerprint: digest(plan_json.as_bytes()),
+        plan_json,
+    })
+}
+
+struct RestoreInspection {
+    manifest: RestoreManifest,
+    manifest_fingerprint: [u8; 32],
+    project_fingerprint: [u8; 32],
+}
+
+fn inspect_restore_archive(
+    path: &Path,
+    limits: ArchiveLimits,
+) -> Result<RestoreInspection, M5BackupError> {
+    validate_v1(path, limits)?;
+    let file = File::open(path).map_err(|_| integrity())?;
+    let mut archive = ZipArchive::new(file).map_err(|_| integrity())?;
+    let mut manifest_entry = archive.by_name("backup.json").map_err(|_| integrity())?;
+    let mut manifest_bytes = Vec::new();
+    manifest_entry
+        .by_ref()
+        .take(65_537)
+        .read_to_end(&mut manifest_bytes)
+        .map_err(|_| integrity())?;
+    if manifest_bytes.len() > 65_536 {
+        return Err(error(M5BackupErrorCode::BackupLimitExceeded));
+    }
+    drop(manifest_entry);
+    let manifest: RestoreManifest =
+        serde_json::from_slice(&manifest_bytes).map_err(|_| integrity())?;
+    if manifest.format_version != 1
+        || manifest.excluded_packages.len() > 4_096
+        || manifest.source_project_revision == 0
+        || manifest.source_project_fingerprint.len() != 64
+        || manifest.created_at_ms == 0
+    {
+        return Err(integrity());
+    }
+    let project_fingerprint = archive_project_fingerprint(&mut archive)?;
+    Ok(RestoreInspection {
+        manifest,
+        manifest_fingerprint: digest(&manifest_bytes),
+        project_fingerprint,
+    })
+}
+
+fn archive_project_fingerprint(archive: &mut ZipArchive<File>) -> Result<[u8; 32], M5BackupError> {
+    let mut entries = Vec::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).map_err(|_| integrity())?;
+        let name = entry.name().to_owned();
+        if name == "project/" || !name.starts_with("project/") {
+            continue;
+        }
+        let relative = name.trim_start_matches("project/").trim_end_matches('/');
+        if relative.is_empty() {
+            continue;
+        }
+        let mut hasher = Sha256::new();
+        while !entry.is_dir() {
+            let read = entry.read(&mut buffer).map_err(|_| integrity())?;
+            if read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..read]);
+        }
+        entries.push((
+            relative.to_owned(),
+            entry.is_dir(),
+            <[u8; 32]>::from(hasher.finalize()),
+        ));
+    }
+    let existing = entries
+        .iter()
+        .map(|entry| entry.0.clone())
+        .collect::<BTreeSet<_>>();
+    let implicit = entries
+        .iter()
+        .flat_map(|entry| Path::new(&entry.0).ancestors().skip(1))
+        .filter(|path| !path.as_os_str().is_empty())
+        .map(|path| path.to_string_lossy().replace('\\', "/"))
+        .filter(|path| !existing.contains(path))
+        .collect::<BTreeSet<_>>();
+    entries.extend(implicit.into_iter().map(|path| (path, true, digest(&[]))));
+    entries.sort_by(|left, right| left.0.cmp(&right.0));
+    let mut hasher = Sha256::new();
+    for (relative, directory, content) in entries {
+        hash_field(&mut hasher, relative.as_bytes())?;
+        hasher.update([u8::from(directory)]);
+        hasher.update(content);
+    }
+    Ok(hasher.finalize().into())
+}
+
+fn prepare_restore(
+    engine: &BackupEngine,
+    plan: BackupRestorePlanRecord,
+) -> Result<PreparedBackupRestore, M5BackupError> {
+    let authority = restore_authority(&plan)?;
+    verify_restore_parent(&plan)?;
+    let archive_path = engine.objects.join(format!("{}.zip", plan.draft.backup_id));
+    let inspection = inspect_restore_archive(&archive_path, engine.limits)?;
+    let identity = alcomd_platform::file_identity_key(&archive_path).map_err(|_| stale())?;
+    let bytes = std::fs::metadata(&archive_path).map_err(|_| stale())?.len();
+    if identity != plan.draft.archive_file_identity
+        || bytes != plan.draft.archive_bytes
+        || hash_file(&archive_path)? != plan.draft.archive_sha256
+        || inspection.manifest_fingerprint != plan.draft.manifest_fingerprint
+        || hex(&inspection.project_fingerprint) != authority.expected_project_fingerprint
+    {
+        return Err(stale());
+    }
+    Ok(PreparedBackupRestore { plan, archive_path })
+}
+
+fn stage_restore(
+    operation_id: OperationId,
+    prepared: PreparedBackupRestore,
+    limits: ArchiveLimits,
+) -> Result<StagedBackupRestore, M5BackupError> {
+    let authority = restore_authority(&prepared.plan)?;
+    verify_restore_parent(&prepared.plan)?;
+    let parent = PathBuf::from(&authority.target_parent_path);
+    let target_root = parent.join(&authority.target_leaf);
+    let staging_root = parent.join(format!(".alcomd-restore-{operation_id}"));
+    let project_root = staging_root.join("project");
+    let owner_sidecar = staging_root.with_extension("owner.json");
+    if target_root.exists() {
+        if !owner_sidecar.exists() {
+            return Err(error(M5BackupErrorCode::BackupRestoreTargetExists));
+        }
+        validate_restore_owner(&owner_sidecar, operation_id, &prepared.plan)?;
+        return Ok(StagedBackupRestore {
+            plan: prepared.plan,
+            staging_root,
+            project_root,
+            target_root,
+            owner_sidecar,
+            already_published: true,
+        });
+    }
+    remove_restore_staging(&staging_root, &owner_sidecar, operation_id, &prepared.plan)?;
+    std::fs::create_dir(&staging_root).map_err(|_| internal())?;
+    write_restore_owner(&owner_sidecar, operation_id, &prepared.plan)?;
+    crate::extract_archive_with_limits(&prepared.archive_path, &staging_root, limits)
+        .map_err(|_| integrity())?;
+    let after_identity =
+        alcomd_platform::file_identity_key(&prepared.archive_path).map_err(|_| stale())?;
+    if after_identity != prepared.plan.draft.archive_file_identity
+        || hash_file(&prepared.archive_path)? != prepared.plan.draft.archive_sha256
+    {
+        return Err(stale());
+    }
+    let actual_fingerprint = tree_fingerprint(&project_root)?;
+    let expected_fingerprint = parse_digest(&authority.expected_project_fingerprint)?;
+    if actual_fingerprint != expected_fingerprint {
+        return Err(integrity());
+    }
+    validate_restore_project(&project_root, prepared.plan.draft.project_id)?;
+    Ok(StagedBackupRestore {
+        plan: prepared.plan,
+        staging_root,
+        project_root,
+        target_root,
+        owner_sidecar,
+        already_published: false,
+    })
+}
+
+fn discard_staged_restore(staged: StagedBackupRestore) -> Result<(), M5BackupError> {
+    if staged.already_published {
+        return Err(error(M5BackupErrorCode::BackupRestoreRecoveryRequired));
+    }
+    remove_restore_staging(
+        &staged.staging_root,
+        &staged.owner_sidecar,
+        OperationId::parse(&read_restore_owner(&staged.owner_sidecar)?.operation_id)
+            .map_err(|_| recovery())?,
+        &staged.plan,
+    )
+}
+
+fn publish_restore(staged: StagedBackupRestore) -> Result<RestoredProject, M5BackupError> {
+    let operation_id = OperationId::parse(&read_restore_owner(&staged.owner_sidecar)?.operation_id)
+        .map_err(|_| recovery())?;
+    if !staged.already_published {
+        verify_restore_parent(&staged.plan)?;
+        ensure_restore_absent(&staged.target_root)?;
+        std::fs::rename(&staged.project_root, &staged.target_root)
+            .map_err(|_| error(M5BackupErrorCode::BackupRestoreTargetExists))?;
+        alcomd_platform::sync_directory(staged.target_root.parent().ok_or_else(recovery)?)
+            .map_err(|_| recovery())?;
+    }
+    validate_published_restore(operation_id, &staged.plan)
+}
+
+fn validate_published_restore(
+    operation_id: OperationId,
+    plan: &BackupRestorePlanRecord,
+) -> Result<RestoredProject, M5BackupError> {
+    let authority = restore_authority(plan)?;
+    verify_restore_parent(plan)?;
+    let parent = PathBuf::from(&authority.target_parent_path);
+    let target = parent.join(&authority.target_leaf);
+    let staging = parent.join(format!(".alcomd-restore-{operation_id}"));
+    validate_restore_owner(&staging.with_extension("owner.json"), operation_id, plan)?;
+    let fingerprint = tree_fingerprint(&target).map_err(|_| recovery())?;
+    if fingerprint != parse_digest(&authority.expected_project_fingerprint)? {
+        return Err(recovery());
+    }
+    let observation = validate_restore_project(&target, plan.draft.project_id)?;
+    let target_identity = alcomd_platform::file_identity_key(&target).map_err(|_| recovery())?;
+    Ok(RestoredProject {
+        project_id: plan.draft.project_id,
+        observation,
+        target_identity,
+        project_fingerprint: fingerprint,
+    })
+}
+
+fn finalize_restore(
+    operation_id: OperationId,
+    plan: &BackupRestorePlanRecord,
+) -> Result<(), M5BackupError> {
+    let authority = restore_authority(plan)?;
+    let parent = PathBuf::from(authority.target_parent_path);
+    let staging = parent.join(format!(".alcomd-restore-{operation_id}"));
+    let sidecar = staging.with_extension("owner.json");
+    let target = parent.join(authority.target_leaf);
+    if tree_fingerprint(&target)? != parse_digest(&authority.expected_project_fingerprint)? {
+        return Err(recovery());
+    }
+    if !staging.exists() && !sidecar.exists() {
+        return Ok(());
+    }
+    validate_restore_owner(&sidecar, operation_id, plan)?;
+    if staging.exists() {
+        let metadata = std::fs::symlink_metadata(&staging).map_err(|_| recovery())?;
+        if !metadata.is_dir() || is_link_or_reparse(&metadata) {
+            return Err(recovery());
+        }
+        std::fs::remove_dir_all(&staging).map_err(|_| internal())?;
+    }
+    std::fs::remove_file(&sidecar).map_err(|_| internal())?;
+    alcomd_platform::sync_directory(&parent).map_err(|_| internal())
+}
+
+fn validate_restore_project(
+    root: &Path,
+    _project_id: ProjectId,
+) -> Result<alcomd_application::ProjectObservation, M5BackupError> {
+    let (root, identity) =
+        alcomd_platform::resolve_directory_identity(root).map_err(|_| recovery())?;
+    let reader = crate::VpmReader::new().map_err(|_| internal())?;
+    tokio::runtime::Handle::current()
+        .block_on(reader.inspect_project_root(root, identity, current_time_ms()?))
+        .map_err(|_| error(M5BackupErrorCode::BackupIntegrityMismatch))
+}
+
+fn restore_authority(plan: &BackupRestorePlanRecord) -> Result<RestoreAuthority, M5BackupError> {
+    if digest(plan.draft.plan_json.as_bytes()) != plan.draft.plan_fingerprint {
+        return Err(stale());
+    }
+    let authority: RestoreAuthority =
+        serde_json::from_str(&plan.draft.plan_json).map_err(|_| stale())?;
+    if authority.version != 1
+        || authority.backup_id != plan.draft.backup_id.to_string()
+        || authority.preallocated_project_id != plan.draft.project_id.to_string()
+        || !authority.target_must_be_absent
+        || authority.archive_sha256 != hex(&plan.draft.archive_sha256)
+        || authority.archive_file_identity != hex_slice(&plan.draft.archive_file_identity)
+    {
+        return Err(stale());
+    }
+    Ok(authority)
+}
+
+fn verify_restore_parent(plan: &BackupRestorePlanRecord) -> Result<(), M5BackupError> {
+    let authority = restore_authority(plan)?;
+    let (parent, identity) =
+        alcomd_platform::resolve_directory_identity(Path::new(&authority.target_parent_path))
+            .map_err(|_| stale())?;
+    if path_text(&parent)? != authority.target_parent_path
+        || identity != plan.draft.target_parent_identity
+        || authority.target_parent_identity != hex_slice(&identity)
+    {
+        return Err(stale());
+    }
+    Ok(())
+}
+
+fn tree_fingerprint(root: &Path) -> Result<[u8; 32], M5BackupError> {
+    let metadata = std::fs::symlink_metadata(root).map_err(|_| recovery())?;
+    if !metadata.is_dir() || is_link_or_reparse(&metadata) {
+        return Err(recovery());
+    }
+    let mut entries = Vec::new();
+    collect_tree_entries(root, root, &mut entries)?;
+    entries.sort_by(|left, right| left.0.cmp(&right.0));
+    let mut hasher = Sha256::new();
+    for (relative, directory, content) in entries {
+        hash_field(&mut hasher, relative.as_bytes())?;
+        hasher.update([u8::from(directory)]);
+        hasher.update(content);
+    }
+    Ok(hasher.finalize().into())
+}
+
+fn collect_tree_entries(
+    root: &Path,
+    directory: &Path,
+    entries: &mut Vec<(String, bool, [u8; 32])>,
+) -> Result<(), M5BackupError> {
+    let mut children = std::fs::read_dir(directory)
+        .map_err(|_| recovery())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| recovery())?;
+    children.sort_by_key(std::fs::DirEntry::file_name);
+    for child in children {
+        let path = child.path();
+        let metadata = std::fs::symlink_metadata(&path).map_err(|_| recovery())?;
+        if is_link_or_reparse(&metadata) || (!metadata.is_dir() && !metadata.is_file()) {
+            return Err(recovery());
+        }
+        let relative = normalized_relative(root, &path)?;
+        if metadata.is_dir() {
+            entries.push((relative, true, digest(&[])));
+            collect_tree_entries(root, &path, entries)?;
+        } else {
+            entries.push((relative, false, hash_file(&path)?));
+        }
+    }
+    Ok(())
+}
+
+fn validate_restore_leaf(value: &str) -> Result<(), M5BackupError> {
+    let normalized = value.nfc().collect::<String>();
+    let stem = value
+        .split('.')
+        .next()
+        .unwrap_or(value)
+        .to_ascii_uppercase();
+    let reserved = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || stem
+            .strip_prefix("COM")
+            .or_else(|| stem.strip_prefix("LPT"))
+            .is_some_and(|suffix| suffix.len() == 1 && matches!(suffix.as_bytes()[0], b'1'..=b'9'));
+    if value.is_empty()
+        || value.len() > 255
+        || normalized != value
+        || matches!(value, "." | "..")
+        || value.ends_with([' ', '.'])
+        || value
+            .chars()
+            .any(|character| character.is_control() || matches!(character, '/' | '\\' | ':'))
+        || reserved
+    {
+        return Err(error(M5BackupErrorCode::InvalidInput));
+    }
+    Ok(())
+}
+
+fn has_unity_project_ancestor(path: &Path) -> bool {
+    path.ancestors().any(|ancestor| {
+        ancestor
+            .join("ProjectSettings/ProjectVersion.txt")
+            .is_file()
+            && ancestor.join("Packages/manifest.json").is_file()
+    })
+}
+
+fn ensure_restore_absent(path: &Path) -> Result<(), M5BackupError> {
+    match std::fs::symlink_metadata(path) {
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Ok(_) => Err(error(M5BackupErrorCode::BackupRestoreTargetExists)),
+        Err(_) => Err(restore_unsafe()),
+    }
+}
+
+fn write_restore_owner(
+    path: &Path,
+    operation_id: OperationId,
+    plan: &BackupRestorePlanRecord,
+) -> Result<(), M5BackupError> {
+    let bytes = serde_json::to_vec(&RestoreOwnerMarker {
+        version: 1,
+        operation_id: operation_id.to_string(),
+        project_id: plan.draft.project_id.to_string(),
+        plan_fingerprint: hex(&plan.draft.plan_fingerprint),
+    })
+    .map_err(|_| internal())?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|_| internal())?;
+    file.write_all(&bytes)
+        .and_then(|()| file.sync_all())
+        .map_err(|_| internal())?;
+    alcomd_platform::sync_directory(path.parent().ok_or_else(internal)?).map_err(|_| internal())
+}
+
+fn read_restore_owner(path: &Path) -> Result<RestoreOwnerMarker, M5BackupError> {
+    let metadata = std::fs::symlink_metadata(path).map_err(|_| recovery())?;
+    if !metadata.is_file() || is_link_or_reparse(&metadata) || metadata.len() > 4_096 {
+        return Err(recovery());
+    }
+    serde_json::from_slice(&std::fs::read(path).map_err(|_| recovery())?).map_err(|_| recovery())
+}
+
+fn validate_restore_owner(
+    path: &Path,
+    operation_id: OperationId,
+    plan: &BackupRestorePlanRecord,
+) -> Result<(), M5BackupError> {
+    let marker = read_restore_owner(path)?;
+    if marker.version != 1
+        || marker.operation_id != operation_id.to_string()
+        || marker.project_id != plan.draft.project_id.to_string()
+        || marker.plan_fingerprint != hex(&plan.draft.plan_fingerprint)
+    {
+        return Err(recovery());
+    }
+    Ok(())
+}
+
+fn remove_restore_staging(
+    staging: &Path,
+    sidecar: &Path,
+    operation_id: OperationId,
+    plan: &BackupRestorePlanRecord,
+) -> Result<(), M5BackupError> {
+    match std::fs::symlink_metadata(staging) {
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
+            if sidecar.exists() {
+                validate_restore_owner(sidecar, operation_id, plan)?;
+                std::fs::remove_file(sidecar).map_err(|_| internal())?;
+            }
+            return Ok(());
+        }
+        Ok(metadata) if metadata.is_dir() && !is_link_or_reparse(&metadata) => {}
+        _ => return Err(recovery()),
+    }
+    validate_restore_owner(sidecar, operation_id, plan)?;
+    std::fs::remove_dir_all(staging).map_err(|_| internal())?;
+    std::fs::remove_file(sidecar).map_err(|_| internal())
+}
+
+fn path_text(path: &Path) -> Result<String, M5BackupError> {
+    path.to_str().map(str::to_owned).ok_or_else(restore_unsafe)
+}
+
+fn hex_slice(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn parse_digest(value: &str) -> Result<[u8; 32], M5BackupError> {
+    if value.len() != 64 {
+        return Err(stale());
+    }
+    let mut bytes = [0_u8; 32];
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16).map_err(|_| stale())?;
+    }
+    Ok(bytes)
+}
+
+fn digest(bytes: &[u8]) -> [u8; 32] {
+    Sha256::digest(bytes).into()
+}
+
+fn current_time_ms() -> Result<u64, M5BackupError> {
+    u64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| internal())?
+            .as_millis(),
+    )
+    .map_err(|_| internal())
+}
+
+const fn integrity() -> M5BackupError {
+    error(M5BackupErrorCode::BackupIntegrityMismatch)
+}
+
+const fn stale() -> M5BackupError {
+    error(M5BackupErrorCode::BackupRestorePlanStale)
+}
+
+const fn restore_unsafe() -> M5BackupError {
+    error(M5BackupErrorCode::BackupRestoreTargetUnsafe)
+}
+
+const fn recovery() -> M5BackupError {
+    error(M5BackupErrorCode::BackupRestoreRecoveryRequired)
 }
 
 fn build_inventory(

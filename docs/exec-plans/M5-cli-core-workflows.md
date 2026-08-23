@@ -1,6 +1,6 @@
 # M5：完整 CLI 合同与本地项目工作流
 
-状态：进行中；Backup Restore contract-first 已冻结并完成本地合同验收，production implementation 尚未批准
+状态：进行中；Backup Restore contract-first 与 production slice 已完成，正在进行 M5 最终 CLI/验收收尾
 
 ## 目标
 
@@ -165,8 +165,9 @@ M5 只支持把已注册且重新验证的 Backup Archive v1 恢复为全新、�
 archive/manifest/parent/target/Project summary evidence；Apply 返回 OperationId 并复用同一 authority。
 Template persisted checkpoint 明确为 Template-specific，因此 Restore 使用 Schema v7 的窄
 `backup_restore_filesystem_journal`，同时复用现有 archive/path/new-project publish primitive 和
-`ProjectCreate(parent_identity,target_leaf)` 锁。production 获批后才接 worker、dispatcher、CLI
-confirmation/`--yes` 与六点真实 kill/restart；不得将 restore 实现为普通 unzip。
+`ProjectCreate(parent_identity,target_leaf)` 锁。worker、dispatcher、client、CLI confirmation/`--yes`、
+artifact/target race、同目标并发、post-publish external mutation 与真实 kill/restart matrix 已完成；Restore
+不是普通 unzip，也不执行隐藏 package resolve。
 
 ### Slice 5：CLI surface 收敛
 
@@ -465,8 +466,8 @@ ADR 冻结。process discovery production dependency 已按精确配置批准；
    package adapter 已批准并实现；下一停止点是 Backup Create contract，不得提前实现 Backup。
 3. Backup Create archive/profile、exclude-VPM、Schema v6、RPC/permission/error/recovery 合同与 production
    slice 已批准并实现。
-4. Backup Restore contract-first 已批准并冻结；M5 仅限全新目标的 Plan/Apply/recovery，覆盖已有目标不在
-   M5。下一停止点是 Restore production slice 审批，不得提前接入 dispatcher/worker/client/CLI。
+4. Backup Restore contract-first 与 production slice 已批准并实现；M5 仅限全新目标的
+   Plan/Apply/recovery，覆盖已有目标不在 M5。下一停止点是 M5 最终本地与 Hosted CI 验收，不得进入 M6。
 5. 此后每个新 production crate、windows-sys/rustix feature、unsafe 文件或窗口/进程平台 API。
 
 审批后仍需在以下情况重新停止：新增未批准 production dependency；扩大 unsafe/平台 API；改变 RPC/
@@ -560,3 +561,10 @@ Unity process/writer gate、Tauri no-bundle、lockfile/unsafe/dependency feature
   增加 `backups.restore`、`backup_restore_plans` 和 Restore 专用 append-only filesystem journal；Template
   checkpoint 继续保持 Template-specific。RPC/permission/error/planned CLI、六点 recovery 与 hostile/race
   synthetic vectors 已冻结；`backups.m5-restore` 在生产实现前保持 planned，停止等待 production 审批。
+- 2026-08-24：Backup Restore contract-first 以提交 `65ad5fe18a868d79bef689445aaae833dee2a7a4`
+  独立保存。随后完成 `backups.planRestore/applyRestore`、Schema v7 immutable Plan/append-only journal、
+  archive identity/SHA/profile revalidation、同卷 sibling staging、`ProjectCreate` 锁、原子 publish、预分配
+  ProjectId 注册和 forward recovery；RPC/client/CLI `backup restore` 已发布。真实 daemon kill/restart
+  覆盖 archive_verified、extracting、staging_complete、publish_intent、target_published、
+  project_registry_commit_intent 与 state_committed；artifact/target race、同目标并发和 publish 后外部修改
+  fail-closed 测试通过。未新增 production dependency、unsafe 或平台 API，进入 M5 最终 CLI/验收收尾。

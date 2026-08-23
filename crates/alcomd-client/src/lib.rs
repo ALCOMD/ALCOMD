@@ -129,6 +129,7 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_TEMPLATES_CREATE_PROJECT_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_BACKUPS_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_BACKUPS_CREATE_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_BACKUPS_RESTORE_V1.to_owned(),
             ],
         };
         self.call(METHOD_SYSTEM_HELLO, params).await
@@ -476,6 +477,22 @@ impl AlcomdClient {
         params: alcomd_protocol::BackupCreateParams,
     ) -> Result<alcomd_protocol::BackupCreateResult, ClientError> {
         self.call(alcomd_protocol::METHOD_BACKUPS_CREATE, params)
+            .await
+    }
+
+    pub async fn backup_plan_restore(
+        &mut self,
+        params: alcomd_protocol::BackupPlanRestoreParams,
+    ) -> Result<alcomd_protocol::BackupRestorePlan, ClientError> {
+        self.call(alcomd_protocol::METHOD_BACKUPS_PLAN_RESTORE, params)
+            .await
+    }
+
+    pub async fn backup_apply_restore(
+        &mut self,
+        params: alcomd_protocol::BackupApplyRestoreParams,
+    ) -> Result<alcomd_protocol::BackupApplyRestoreResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_BACKUPS_APPLY_RESTORE, params)
             .await
     }
 

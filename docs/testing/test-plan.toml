@@ -293,9 +293,9 @@ id = "backups.m5-restore"
 stage = "M5"
 kind = "fault-injection"
 platforms = ["all"]
-status = "planned"
-description = "contract-first 已冻结只恢复到不存在的新 Project、durable immutable Plan、预分配 ProjectId、Schema v7、ProjectCreate lock、hostile archive validation、同卷 staging/atomic publish、publish 后 forward recovery 与六点 kill/restart matrix；production worker/fault tests 尚未实现，故保持 planned。"
-evidence = ["docs/adr/0022-backup-restore-new-project.md", "specs/backups/backup-restore-plan-v1.schema.json", "specs/rpc/m5-backup-restore.schema.json", "specs/storage/state-v7.md", "crates/alcomd-testing/tests/m5_backup_restore_contract.rs", "crates/alcomd-store/tests/schema_contract.rs"]
+status = "implemented"
+description = "覆盖只恢复到不存在的新 Project、durable immutable Plan、预分配 ProjectId、Schema v7、ProjectCreate lock、hostile archive validation、同卷 staging/atomic publish、artifact/target race、同目标并发、publish 后外部修改 fail-closed，以及 archive_verified/extracting/staging_complete/publish_intent/target_published/project_registry_commit_intent/state_committed 真实 daemon kill/restart recovery。"
+evidence = ["docs/adr/0022-backup-restore-new-project.md", "specs/backups/backup-restore-plan-v1.schema.json", "specs/rpc/m5-backup-restore.schema.json", "specs/storage/state-v7.md", "crates/alcomd-testing/tests/m5_backup_restore_contract.rs", "crates/alcomd-testing/tests/m5_backup_rpc.rs", "crates/alcomd-store/tests/schema_contract.rs"]
 
 [[test]]
 id = "unity.v3-vrc-parity"
@@ -337,16 +337,18 @@ id = "cli.command-contract"
 stage = "M5"
 kind = "contract"
 platforms = ["all"]
-status = "planned"
-description = "逐命令验证参数、stdout、stderr、JSON/NDJSON、退出码、确认、错误和 Operation 分离。"
+status = "implemented"
+description = "验证已发布命令树/alias、human/JSON/NDJSON envelope、Operation follow/detach/failure、静态 completion 与真实 daemon 只读命令组往返。"
+evidence = ["apps/alcomd-cli/src/main.rs", "apps/alcomd-cli/tests/m1_cli.rs"]
 
 [[test]]
 id = "cli.non-tty"
 stage = "M5"
 kind = "safety"
 platforms = ["all"]
-status = "planned"
-description = "EOF 与非 TTY 永不无限等待；需要确认的命令明确失败或要求 --yes。"
+status = "implemented"
+description = "EOF 与非 TTY 永不等待；机器模式不提示，需要确认的命令稳定返回 confirmation_required，--yes 只跳过本地确认。"
+evidence = ["apps/alcomd-cli/tests/m1_cli.rs", "apps/alcomd-cli/src/main.rs"]
 
 [[test]]
 id = "gui.v3-entry-parity"
@@ -625,8 +627,9 @@ id = "cli.help-output-exit"
 stage = "M5"
 kind = "contract"
 platforms = ["all"]
-status = "planned"
-description = "冻结所有命令 help/alias、参数错误 2、业务错误 1、stdout/stderr 与 JSON/NDJSON 无污染。"
+status = "implemented"
+description = "冻结已发布 help/alias、参数错误 2、业务错误 1、stdout/stderr 路由、JSON/NDJSON envelope、broken-pipe 有界退出和静态 completion。"
+evidence = ["apps/alcomd-cli/src/main.rs", "apps/alcomd-cli/tests/m1_cli.rs", "specs/cli/command-catalog-v1.json"]
 
 [[test]]
 id = "repositories.fixture-matrix"

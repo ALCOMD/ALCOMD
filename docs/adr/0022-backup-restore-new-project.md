@@ -1,6 +1,6 @@
 # ADR 0022：Backup Restore 只创建全新项目
 
-状态：Accepted（2026-08-24，contract-first；Restore 生产实现尚未获批）
+状态：Accepted / Implemented（2026-08-24；Restore 生产切片已接入，等待 M5 最终验收）
 
 ## 决定
 
@@ -67,6 +67,6 @@ RPC v1 兼容冻结 capability `backups.restore.v1` 与两个方法。Plan 需�
 需要 `backups.read + backups.manage + projects.create`。外部 filesystem write 仍只允许
 `builtin:local-owner`。公共 DTO 不返回 archive/staging 路径、DB locator 或 journal detail。
 
-本 ADR 只批准合同、Schema v7 migration、synthetic hostile fixture 与合同/迁移/安全测试。它不批准 Restore
-dispatcher/client/CLI publication、application use case、worker、提取/publish/registry adapter、新 production
-dependency、unsafe 或平台 API。
+本 ADR 的生产切片已实现 dispatcher/client/CLI、application use case、worker、提取/publish/registry adapter
+及真实 kill/restart、race、并发与 post-publish mutation 测试；没有新增 production dependency、unsafe 或
+平台 API。legacy/in-place/overwrite/merge 与 M6+ 范围仍不属于本实现。

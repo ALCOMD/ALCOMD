@@ -53,15 +53,12 @@ fn restore_plan_schema_freezes_exact_authority_without_archive_paths() {
 }
 
 #[test]
-fn restore_rpc_permissions_errors_and_planned_cli_are_narrow() {
+fn restore_rpc_permissions_errors_and_published_cli_are_narrow() {
     let rpc: Value = serde_json::from_str(RPC_SCHEMA).expect("Restore RPC Schema");
     let cli: Value = serde_json::from_str(CLI_CATALOG).expect("Backup CLI catalog");
     let errors: Value = serde_json::from_str(ERROR_SCHEMA).expect("RPC error Schema");
 
-    assert_eq!(
-        rpc["x-alcomd-publication"],
-        "contract-only-until-production-capability-exists"
-    );
+    assert_eq!(rpc["x-alcomd-publication"], "implemented-published");
     assert_eq!(
         rpc["$defs"]["methodName"]["enum"],
         json!(["backups.planRestore", "backups.applyRestore"])
@@ -79,19 +76,17 @@ fn restore_rpc_permissions_errors_and_planned_cli_are_narrow() {
     assert!(PERMISSIONS.contains("`backups.applyRestore`"));
 
     let commands = cli["commands"].as_array().expect("published commands");
-    assert!(
-        !commands
-            .iter()
-            .any(|command| command["path"] == json!(["backup", "restore"]))
-    );
-    let planned = &cli["plannedCommands"][0];
-    assert_eq!(planned["path"], json!(["backup", "restore"]));
-    assert_eq!(planned["published"], false);
-    assert_eq!(planned["nonTtyWithoutYes"], "confirmation_required");
+    let published = commands
+        .iter()
+        .find(|command| command["path"] == json!(["backup", "restore"]))
+        .expect("published Restore command");
+    assert_eq!(published["published"], true);
+    assert_eq!(published["nonTtyWithoutYes"], "confirmation_required");
     assert_eq!(
-        planned["dryRun"],
+        published["dryRun"],
         "persist-plan-only-no-operation-no-filesystem-write"
     );
+    assert_eq!(cli["plannedCommands"], json!([]));
 
     let codes = errors["properties"]["code"]["enum"]
         .as_array()

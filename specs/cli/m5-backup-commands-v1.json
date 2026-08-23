@@ -15,6 +15,19 @@
                 "--idempotency-key", "--no-wait"
             ],
             "forbiddenOptions": ["--yes", "--dry-run", "--output"]
+        },
+        {
+            "path": ["backup", "restore"],
+            "arguments": ["backup-id", "target-parent", "target-leaf"],
+            "rpc": ["backups.planRestore", "backups.applyRestore"],
+            "mutation": true,
+            "planApply": true,
+            "published": true,
+            "options": ["--idempotency-key", "--yes", "--dry-run", "--no-wait"],
+            "defaultFlow": ["plan", "display-summary", "confirm", "apply", "follow"],
+            "nonTtyWithoutYes": "confirmation_required",
+            "dryRun": "persist-plan-only-no-operation-no-filesystem-write",
+            "noWaitReturns": ["operationId", "projectId"]
         }
     ],
     "createContract": {
@@ -25,21 +38,7 @@
         "outputModes": ["human", "json", "ndjson"],
         "archiveAccess": "rpc-only-managed-root"
     },
-    "plannedCommands": [
-        {
-            "path": ["backup", "restore"],
-            "arguments": ["backup-id", "target-parent", "target-leaf"],
-            "rpc": ["backups.planRestore", "backups.applyRestore"],
-            "mutation": true,
-            "planApply": true,
-            "published": false,
-            "options": ["--idempotency-key", "--yes", "--dry-run", "--no-wait"],
-            "defaultFlow": ["plan", "display-summary", "confirm", "apply"],
-            "nonTtyWithoutYes": "confirmation_required",
-            "dryRun": "persist-plan-only-no-operation-no-filesystem-write",
-            "noWaitReturns": ["operationId", "projectId"]
-        }
-    ],
+    "plannedCommands": [],
     "restoreContract": {
         "targetState": "nonexistent-new-project-only",
         "forbiddenModes": ["in-place", "overwrite", "merge", "delete-then-restore"],

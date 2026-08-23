@@ -1,15 +1,16 @@
 //! M5 managed native Backup Create use cases.
 
 use std::future::Future;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AccessContext, BackupId, IdempotencyKey, M3RegistryStore, OperationId, Permission, PrincipalId,
-    ProjectId, ProjectRecord, ResourceKey, ResourceLockCoordinator, Revision, StateStore,
-    UnityWriterState, UnityWriterStateKind,
+    AccessContext, BackupId, IdempotencyKey, M3RegistryStore, OperationId, Permission, PlanId,
+    PrincipalId, ProjectId, ProjectObservation, ProjectRecord, ResourceKey,
+    ResourceLockCoordinator, Revision, StateStore, UnityWriterState, UnityWriterStateKind,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -118,6 +119,131 @@ pub struct PublishedBackup {
     pub file_identity_key: Vec<u8>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreExcludedPackage {
+    pub package_id: String,
+    pub version: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupRestoreTarget {
+    pub parent: String,
+    pub leaf: String,
+    pub must_be_absent: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupRestorePlanDraft {
+    pub plan_id: PlanId,
+    pub project_id: ProjectId,
+    pub backup_id: BackupId,
+    pub archive_sha256: [u8; 32],
+    pub archive_file_identity: Vec<u8>,
+    pub archive_bytes: u64,
+    pub manifest_fingerprint: [u8; 32],
+    pub exclude_vpm_packages: bool,
+    pub excluded_packages: Vec<RestoreExcludedPackage>,
+    pub target: BackupRestoreTarget,
+    pub target_parent_identity: Vec<u8>,
+    pub expected_unity_project_json: String,
+    pub plan_fingerprint: [u8; 32],
+    pub plan_json: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupRestorePlanRecord {
+    #[serde(flatten)]
+    pub draft: BackupRestorePlanDraft,
+    pub owner: PrincipalId,
+    pub created_at_ms: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupRestorePlanOutcome {
+    pub plan_id: PlanId,
+    pub project_id: ProjectId,
+    pub backup_id: BackupId,
+    pub target: BackupRestoreTarget,
+    pub archive_sha256: [u8; 32],
+    pub packages_require_resolve: bool,
+    pub excluded_packages: Vec<RestoreExcludedPackage>,
+    pub plan_fingerprint: [u8; 32],
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupRestoreApplyOutcome {
+    pub operation_id: OperationId,
+    pub project_id: ProjectId,
+    pub replayed: bool,
+    #[serde(skip)]
+    pub schedule: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BackupRestorePhase {
+    Accepted,
+    ArchiveVerified,
+    Extracting,
+    StagingComplete,
+    PublishIntent,
+    TargetPublished,
+    ProjectRegistryCommitIntent,
+    StateCommitted,
+}
+
+impl BackupRestorePhase {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Accepted => "accepted",
+            Self::ArchiveVerified => "archive_verified",
+            Self::Extracting => "extracting",
+            Self::StagingComplete => "staging_complete",
+            Self::PublishIntent => "publish_intent",
+            Self::TargetPublished => "target_published",
+            Self::ProjectRegistryCommitIntent => "project_registry_commit_intent",
+            Self::StateCommitted => "state_committed",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BackupRestoreOperationRecord {
+    pub plan: BackupRestorePlanRecord,
+    pub phase: BackupRestorePhase,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PreparedBackupRestore {
+    pub plan: BackupRestorePlanRecord,
+    pub archive_path: PathBuf,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StagedBackupRestore {
+    pub plan: BackupRestorePlanRecord,
+    pub staging_root: PathBuf,
+    pub project_root: PathBuf,
+    pub target_root: PathBuf,
+    pub owner_sidecar: PathBuf,
+    pub already_published: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RestoredProject {
+    pub project_id: ProjectId,
+    pub observation: ProjectObservation,
+    pub target_identity: Vec<u8>,
+    pub project_fingerprint: [u8; 32],
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum M5BackupErrorCode {
     InvalidInput,
@@ -131,6 +257,11 @@ pub enum M5BackupErrorCode {
     BackupLimitExceeded,
     ProjectChangedDuringBackup,
     BackupIntegrityMismatch,
+    BackupRestorePlanNotFound,
+    BackupRestorePlanStale,
+    BackupRestoreTargetExists,
+    BackupRestoreTargetUnsafe,
+    BackupRestoreRecoveryRequired,
     RecoveryRequired,
     StoreUnavailable,
     Internal,
@@ -215,6 +346,56 @@ pub trait M5BackupStore: Clone + Send + Sync + 'static {
         &self,
         recovered_at_ms: u64,
     ) -> impl Future<Output = Result<Vec<OperationId>, M5BackupError>> + Send;
+    fn create_backup_restore_plan(
+        &self,
+        owner: PrincipalId,
+        draft: BackupRestorePlanDraft,
+        created_at_ms: u64,
+    ) -> impl Future<Output = Result<BackupRestorePlanRecord, M5BackupError>> + Send;
+    fn accept_backup_restore(
+        &self,
+        owner: PrincipalId,
+        plan_id: PlanId,
+        key: IdempotencyKey,
+        created_at_ms: u64,
+    ) -> impl Future<Output = Result<BackupRestoreApplyOutcome, M5BackupError>> + Send;
+    fn begin_backup_restore(
+        &self,
+        operation_id: OperationId,
+        updated_at_ms: u64,
+    ) -> impl Future<Output = Result<BackupRestoreOperationRecord, M5BackupError>> + Send;
+    fn record_backup_restore_checkpoint(
+        &self,
+        operation_id: OperationId,
+        phase: BackupRestorePhase,
+        restored: Option<RestoredProject>,
+        updated_at_ms: u64,
+    ) -> impl Future<Output = Result<(), M5BackupError>> + Send;
+    fn complete_backup_restore(
+        &self,
+        operation_id: OperationId,
+        restored: RestoredProject,
+        completed_at_ms: u64,
+    ) -> impl Future<Output = Result<(), M5BackupError>> + Send;
+    fn finish_backup_restore_success(
+        &self,
+        operation_id: OperationId,
+        completed_at_ms: u64,
+    ) -> impl Future<Output = Result<(), M5BackupError>> + Send;
+    fn fail_backup_restore(
+        &self,
+        operation_id: OperationId,
+        error_code: String,
+        diagnostic_id: String,
+        completed_at_ms: u64,
+    ) -> impl Future<Output = Result<(), M5BackupError>> + Send;
+    fn recover_backup_restore_operations(
+        &self,
+        recovered_at_ms: u64,
+    ) -> impl Future<Output = Result<Vec<OperationId>, M5BackupError>> + Send;
+    fn completed_backup_restores(
+        &self,
+    ) -> impl Future<Output = Result<Vec<(OperationId, BackupRestorePlanRecord)>, M5BackupError>> + Send;
 }
 
 #[derive(Clone, Default)]
@@ -263,6 +444,43 @@ pub trait M5BackupAdapter: Clone + Send + Sync + 'static {
     fn discard_partial(
         &self,
         operation_id: OperationId,
+    ) -> impl Future<Output = Result<(), M5BackupError>> + Send;
+    fn plan_restore(
+        &self,
+        backup: StoredBackupRecord,
+        target_parent: PathBuf,
+        target_leaf: String,
+    ) -> impl Future<Output = Result<BackupRestorePlanDraft, M5BackupError>> + Send;
+    fn restore_resource(
+        &self,
+        plan: &BackupRestorePlanRecord,
+    ) -> Result<ResourceKey, M5BackupError>;
+    fn prepare_restore(
+        &self,
+        plan: BackupRestorePlanRecord,
+    ) -> impl Future<Output = Result<PreparedBackupRestore, M5BackupError>> + Send;
+    fn stage_restore(
+        &self,
+        operation_id: OperationId,
+        prepared: PreparedBackupRestore,
+    ) -> impl Future<Output = Result<StagedBackupRestore, M5BackupError>> + Send;
+    fn discard_staged_restore(
+        &self,
+        staged: StagedBackupRestore,
+    ) -> impl Future<Output = Result<(), M5BackupError>> + Send;
+    fn publish_restore(
+        &self,
+        staged: StagedBackupRestore,
+    ) -> impl Future<Output = Result<RestoredProject, M5BackupError>> + Send;
+    fn validate_published_restore(
+        &self,
+        operation_id: OperationId,
+        plan: BackupRestorePlanRecord,
+    ) -> impl Future<Output = Result<RestoredProject, M5BackupError>> + Send;
+    fn finalize_restore(
+        &self,
+        operation_id: OperationId,
+        plan: BackupRestorePlanRecord,
     ) -> impl Future<Output = Result<(), M5BackupError>> + Send;
 }
 
@@ -322,6 +540,16 @@ where
     pub async fn recover(&self) -> Result<(), M5BackupError> {
         for operation_id in self.store.recover_backup_operations(now_ms()?).await? {
             self.schedule(operation_id);
+        }
+        for operation_id in self
+            .store
+            .recover_backup_restore_operations(now_ms()?)
+            .await?
+        {
+            self.schedule_restore(operation_id);
+        }
+        for (operation_id, plan) in self.store.completed_backup_restores().await? {
+            self.adapter.finalize_restore(operation_id, plan).await?;
         }
         Ok(())
     }
@@ -405,11 +633,218 @@ where
         Ok(outcome)
     }
 
+    pub async fn plan_restore(
+        &self,
+        access: &AccessContext,
+        backup_id: BackupId,
+        target_parent: PathBuf,
+        target_leaf: String,
+    ) -> Result<BackupRestorePlanOutcome, M5BackupError> {
+        require(access, Permission::BackupsRead)?;
+        require(access, Permission::ProjectsCreate)?;
+        if access.principal() != &PrincipalId::local_owner() {
+            return Err(error(M5BackupErrorCode::PermissionDenied));
+        }
+        let backup = self
+            .store
+            .get_backup(access.principal().clone(), backup_id)
+            .await?;
+        let draft = self
+            .adapter
+            .plan_restore(backup, target_parent, target_leaf)
+            .await?;
+        let plan = self
+            .store
+            .create_backup_restore_plan(access.principal().clone(), draft, now_ms()?)
+            .await?;
+        Ok(BackupRestorePlanOutcome {
+            plan_id: plan.draft.plan_id,
+            project_id: plan.draft.project_id,
+            backup_id: plan.draft.backup_id,
+            target: plan.draft.target,
+            archive_sha256: plan.draft.archive_sha256,
+            packages_require_resolve: plan.draft.exclude_vpm_packages,
+            excluded_packages: plan.draft.excluded_packages,
+            plan_fingerprint: plan.draft.plan_fingerprint,
+        })
+    }
+
+    pub async fn apply_restore(
+        &self,
+        access: &AccessContext,
+        plan_id: PlanId,
+        key: IdempotencyKey,
+    ) -> Result<BackupRestoreApplyOutcome, M5BackupError> {
+        require(access, Permission::BackupsRead)?;
+        require(access, Permission::BackupsManage)?;
+        require(access, Permission::ProjectsCreate)?;
+        if access.principal() != &PrincipalId::local_owner() {
+            return Err(error(M5BackupErrorCode::PermissionDenied));
+        }
+        let outcome = self
+            .store
+            .accept_backup_restore(access.principal().clone(), plan_id, key, now_ms()?)
+            .await?;
+        if outcome.schedule {
+            self.schedule_restore(outcome.operation_id);
+        }
+        Ok(outcome)
+    }
+
     fn schedule(&self, operation_id: OperationId) {
         let application = self.clone();
         tokio::spawn(async move {
             let _ = application.run(operation_id).await;
         });
+    }
+
+    fn schedule_restore(&self, operation_id: OperationId) {
+        let application = self.clone();
+        tokio::spawn(async move {
+            let _ = application.run_restore(operation_id).await;
+        });
+    }
+
+    async fn run_restore(&self, operation_id: OperationId) -> Result<(), M5BackupError> {
+        let result = self.run_restore_inner(operation_id).await;
+        if let Err(source) = result {
+            self.store
+                .fail_backup_restore(
+                    operation_id,
+                    error_name(source.code()).to_owned(),
+                    OperationId::new().to_string(),
+                    now_ms()?,
+                )
+                .await?;
+            return Err(source);
+        }
+        Ok(())
+    }
+
+    async fn run_restore_inner(&self, operation_id: OperationId) -> Result<(), M5BackupError> {
+        let operation = self
+            .store
+            .begin_backup_restore(operation_id, now_ms()?)
+            .await?;
+        if operation.phase == BackupRestorePhase::StateCommitted {
+            self.adapter
+                .validate_published_restore(operation_id, operation.plan.clone())
+                .await?;
+            self.adapter
+                .finalize_restore(operation_id, operation.plan)
+                .await?;
+            self.store
+                .finish_backup_restore_success(operation_id, now_ms()?)
+                .await?;
+            return Ok(());
+        }
+        let resource = self.adapter.restore_resource(&operation.plan)?;
+        let prepared = self.adapter.prepare_restore(operation.plan.clone()).await?;
+        if operation.phase == BackupRestorePhase::Accepted {
+            self.store
+                .record_backup_restore_checkpoint(
+                    operation_id,
+                    BackupRestorePhase::ArchiveVerified,
+                    None,
+                    now_ms()?,
+                )
+                .await?;
+            restore_kill_gate("archive_verified");
+        }
+        let _guard = self.locks.acquire(vec![resource]).await;
+        let restored = if matches!(
+            operation.phase,
+            BackupRestorePhase::Accepted
+                | BackupRestorePhase::ArchiveVerified
+                | BackupRestorePhase::Extracting
+                | BackupRestorePhase::StagingComplete
+                | BackupRestorePhase::PublishIntent
+        ) {
+            if cancelled(&self.store, operation_id).await?
+                && matches!(
+                    operation.phase,
+                    BackupRestorePhase::Accepted
+                        | BackupRestorePhase::ArchiveVerified
+                        | BackupRestorePhase::Extracting
+                        | BackupRestorePhase::StagingComplete
+                )
+            {
+                let staged = self.adapter.stage_restore(operation_id, prepared).await?;
+                self.adapter.discard_staged_restore(staged).await?;
+                finish_cancelled(&self.store, operation_id).await?;
+                return Ok(());
+            }
+            self.store
+                .record_backup_restore_checkpoint(
+                    operation_id,
+                    BackupRestorePhase::Extracting,
+                    None,
+                    now_ms()?,
+                )
+                .await?;
+            restore_kill_gate("extracting");
+            restore_pause_gate("extracting");
+            let staged = self.adapter.stage_restore(operation_id, prepared).await?;
+            self.store
+                .record_backup_restore_checkpoint(
+                    operation_id,
+                    BackupRestorePhase::StagingComplete,
+                    None,
+                    now_ms()?,
+                )
+                .await?;
+            restore_kill_gate("staging_complete");
+            if cancelled(&self.store, operation_id).await? {
+                self.adapter.discard_staged_restore(staged).await?;
+                finish_cancelled(&self.store, operation_id).await?;
+                return Ok(());
+            }
+            self.store
+                .record_backup_restore_checkpoint(
+                    operation_id,
+                    BackupRestorePhase::PublishIntent,
+                    None,
+                    now_ms()?,
+                )
+                .await?;
+            restore_kill_gate("publish_intent");
+            restore_pause_gate("publish_intent");
+            let restored = self.adapter.publish_restore(staged).await?;
+            self.store
+                .record_backup_restore_checkpoint(
+                    operation_id,
+                    BackupRestorePhase::TargetPublished,
+                    Some(restored.clone()),
+                    now_ms()?,
+                )
+                .await?;
+            restore_kill_gate("target_published");
+            restored
+        } else {
+            self.adapter
+                .validate_published_restore(operation_id, operation.plan.clone())
+                .await?
+        };
+        self.store
+            .record_backup_restore_checkpoint(
+                operation_id,
+                BackupRestorePhase::ProjectRegistryCommitIntent,
+                Some(restored.clone()),
+                now_ms()?,
+            )
+            .await?;
+        restore_kill_gate("project_registry_commit_intent");
+        self.store
+            .complete_backup_restore(operation_id, restored, now_ms()?)
+            .await?;
+        restore_kill_gate("state_committed");
+        self.adapter
+            .finalize_restore(operation_id, operation.plan)
+            .await?;
+        self.store
+            .finish_backup_restore_success(operation_id, now_ms()?)
+            .await?;
+        Ok(())
     }
 
     async fn run(&self, operation_id: OperationId) -> Result<(), M5BackupError> {
@@ -642,6 +1077,38 @@ fn kill_gate(phase: &str) {
 fn kill_gate(_: &str) {}
 
 #[cfg(feature = "test-kill-gates")]
+fn restore_kill_gate(phase: &str) {
+    if std::env::var("ALCOMD_TEST_BACKUP_RESTORE_KILL_GATE").as_deref() == Ok(phase) {
+        let signal = std::env::var_os("ALCOMD_TEST_BACKUP_RESTORE_KILL_SIGNAL")
+            .expect("Backup Restore kill gate signal path");
+        std::fs::write(signal, phase).expect("write Backup Restore kill gate signal");
+        loop {
+            std::thread::park();
+        }
+    }
+}
+
+#[cfg(not(feature = "test-kill-gates"))]
+fn restore_kill_gate(_: &str) {}
+
+#[cfg(feature = "test-kill-gates")]
+fn restore_pause_gate(phase: &str) {
+    if std::env::var("ALCOMD_TEST_BACKUP_RESTORE_PAUSE_GATE").as_deref() == Ok(phase) {
+        let signal = std::env::var_os("ALCOMD_TEST_BACKUP_RESTORE_PAUSE_SIGNAL")
+            .expect("Backup Restore pause gate signal path");
+        let release = std::env::var_os("ALCOMD_TEST_BACKUP_RESTORE_PAUSE_RELEASE")
+            .expect("Backup Restore pause gate release path");
+        std::fs::write(signal, phase).expect("write Backup Restore pause gate signal");
+        while !std::path::Path::new(&release).exists() {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+}
+
+#[cfg(not(feature = "test-kill-gates"))]
+fn restore_pause_gate(_: &str) {}
+
+#[cfg(feature = "test-kill-gates")]
 fn operation_signal(outcome: &BackupCreateOutcome) {
     if let Some(path) = std::env::var_os("ALCOMD_TEST_BACKUP_OPERATION_SIGNAL") {
         std::fs::write(
@@ -672,6 +1139,11 @@ pub const fn error_name(code: M5BackupErrorCode) -> &'static str {
         M5BackupErrorCode::BackupLimitExceeded => "backup_archive_limit_exceeded",
         M5BackupErrorCode::ProjectChangedDuringBackup => "project_changed_during_backup",
         M5BackupErrorCode::BackupIntegrityMismatch => "backup_integrity_mismatch",
+        M5BackupErrorCode::BackupRestorePlanNotFound => "backup_restore_plan_not_found",
+        M5BackupErrorCode::BackupRestorePlanStale => "backup_restore_plan_stale",
+        M5BackupErrorCode::BackupRestoreTargetExists => "backup_target_exists",
+        M5BackupErrorCode::BackupRestoreTargetUnsafe => "backup_target_invalid",
+        M5BackupErrorCode::BackupRestoreRecoveryRequired => "backup_restore_recovery_required",
         M5BackupErrorCode::RecoveryRequired => "backup_unavailable",
         M5BackupErrorCode::StoreUnavailable => "store_unavailable",
         M5BackupErrorCode::Internal => "internal_error",

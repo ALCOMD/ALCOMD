@@ -516,7 +516,10 @@ pub(super) fn recover(
         // Later milestone handlers own recovery for their durable Operation kinds. The M2
         // state-check recovery pass must leave those rows untouched so the package/Template
         // recovery pass can reuse its own journal and immutable Plan authority.
-        if kind == "packages.apply" || kind.starts_with("templates.") || kind == "backups.create" {
+        if kind == "packages.apply"
+            || kind.starts_with("templates.")
+            || matches!(kind.as_str(), "backups.create" | "backups.restore")
+        {
             continue;
         }
         if kind != "state.check" || !journal_is_recoverable(connection, operation_id)? {
@@ -665,6 +668,8 @@ pub(super) fn load_owned_operation(
             completed_at_ms, result_json, error_code, diagnostic_id,
             coalesce((SELECT phase FROM package_filesystem_journal j
              WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
+             (SELECT phase FROM backup_restore_filesystem_journal j
+              WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
              (SELECT json_extract(payload_json,'$.phase') FROM operation_journal j
               WHERE j.operation_id=operations.operation_id AND j.kind='backups.create'
               ORDER BY step DESC LIMIT 1))
@@ -684,6 +689,8 @@ fn load_operation(
             completed_at_ms, result_json, error_code, diagnostic_id,
             coalesce((SELECT phase FROM package_filesystem_journal j
              WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
+             (SELECT phase FROM backup_restore_filesystem_journal j
+              WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
              (SELECT json_extract(payload_json,'$.phase') FROM operation_journal j
               WHERE j.operation_id=operations.operation_id AND j.kind='backups.create'
               ORDER BY step DESC LIMIT 1))
@@ -760,6 +767,8 @@ pub(super) fn list_operations(
                 completed_at_ms, result_json, error_code, diagnostic_id,
                 coalesce((SELECT phase FROM package_filesystem_journal j
                  WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
+                 (SELECT phase FROM backup_restore_filesystem_journal j
+                  WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
                  (SELECT json_extract(payload_json,'$.phase') FROM operation_journal j
                   WHERE j.operation_id=operations.operation_id AND j.kind='backups.create'
                   ORDER BY step DESC LIMIT 1))
@@ -796,6 +805,11 @@ fn parse_filesystem_phase(value: &str) -> Result<FilesystemPhase, ()> {
         "archive_ready" => Ok(Phase::ArchiveReady),
         "publish_intent" => Ok(Phase::PublishIntent),
         "archive_published" => Ok(Phase::ArchivePublished),
+        "archive_verified" => Ok(Phase::ArchiveVerified),
+        "extracting" => Ok(Phase::Extracting),
+        "staging_complete" => Ok(Phase::StagingComplete),
+        "target_published" => Ok(Phase::TargetPublished),
+        "project_registry_commit_intent" => Ok(Phase::ProjectRegistryCommitIntent),
         "extracted" => Ok(Phase::Extracted),
         "prepared" => Ok(Phase::Prepared),
         "packages_replaced" => Ok(Phase::PackagesReplaced),

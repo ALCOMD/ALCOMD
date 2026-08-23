@@ -1,6 +1,6 @@
 # ALCOMD CLI contract v1
 
-状态：Implemented through the M5 Template slice（2026-08-24；Backup Create 仅冻结 planned contract）
+状态：M5 已发布命令面的生产实现与本地验收已完成（2026-08-24；等待最终 Hosted CI 与人工验收）
 
 本合同只定义 `alcomd-cli` 的公共进程行为。CLI 永远是
 `alcomd-cli -> alcomd-client -> RPC -> alcomd-application` 的适配器，不读取 `state.db`、项目、
@@ -10,10 +10,10 @@ capability 已真实实现时才可进入 help；合同中存在名称不等于�
 权威 machine-readable 工件：
 
 - `alcomd-cli-v1.schema.json`：machine output、stream record、退出码与全局选项。
-- `command-catalog-v1.json`：截至 M5 Slice 1 冻结的命令和 alias。后续 template/backup slice 只能
-  兼容增加自己的命令，不得重命名本文件已有入口。
+- `command-catalog-v1.json`：M5 已发布命令和 alias；只列出已有真实 daemon capability 的入口。
 - `m5-template-commands-v1.json`：已发布的 Template 命令合同；对应 daemon capability、RPC 与生产
   use case 已真实存在，并以兼容增加方式进入 help/catalog。
+- `m5-backup-commands-v1.json`：已发布的 Backup list/get/create/restore 命令合同。
 
 ## 输出模式
 

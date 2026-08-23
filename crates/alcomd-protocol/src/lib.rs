@@ -109,6 +109,8 @@ pub const METHOD_TEMPLATES_APPLY_CREATE_PROJECT: &str = "templates.applyCreatePr
 pub const METHOD_BACKUPS_LIST: &str = "backups.list";
 pub const METHOD_BACKUPS_GET: &str = "backups.get";
 pub const METHOD_BACKUPS_CREATE: &str = "backups.create";
+pub const METHOD_BACKUPS_PLAN_RESTORE: &str = "backups.planRestore";
+pub const METHOD_BACKUPS_APPLY_RESTORE: &str = "backups.applyRestore";
 
 /// Capability required by `state.check`.
 pub const CAPABILITY_STATE_CHECK_V1: &str = "state.check.v1";
@@ -132,6 +134,7 @@ pub const CAPABILITY_TEMPLATES_MANAGE_V1: &str = "templates.manage.v1";
 pub const CAPABILITY_TEMPLATES_CREATE_PROJECT_V1: &str = "templates.create-project.v1";
 pub const CAPABILITY_BACKUPS_READ_V1: &str = "backups.read.v1";
 pub const CAPABILITY_BACKUPS_CREATE_V1: &str = "backups.create.v1";
+pub const CAPABILITY_BACKUPS_RESTORE_V1: &str = "backups.restore.v1";
 
 /// Stable RPC v1 error codes implemented through M2.
 pub mod error_code {
@@ -228,6 +231,11 @@ pub mod error_code {
     pub const BACKUP_ARCHIVE_LIMIT_EXCEEDED: &str = "backup_archive_limit_exceeded";
     pub const PROJECT_CHANGED_DURING_BACKUP: &str = "project_changed_during_backup";
     pub const BACKUP_INTEGRITY_MISMATCH: &str = "backup_integrity_mismatch";
+    pub const BACKUP_RESTORE_PLAN_NOT_FOUND: &str = "backup_restore_plan_not_found";
+    pub const BACKUP_RESTORE_PLAN_STALE: &str = "backup_restore_plan_stale";
+    pub const BACKUP_TARGET_EXISTS: &str = "backup_target_exists";
+    pub const BACKUP_TARGET_INVALID: &str = "backup_target_invalid";
+    pub const BACKUP_RESTORE_RECOVERY_REQUIRED: &str = "backup_restore_recovery_required";
     pub const UNITY_LAUNCH_FAILED: &str = "unity_launch_failed";
     pub const UNITY_LAUNCH_NOT_FOUND: &str = "unity_launch_not_found";
     pub const TEMPLATE_NOT_FOUND: &str = "template_not_found";
@@ -735,6 +743,11 @@ pub enum PackageOperationPhase {
     ArchiveReady,
     PublishIntent,
     ArchivePublished,
+    ArchiveVerified,
+    Extracting,
+    StagingComplete,
+    TargetPublished,
+    ProjectRegistryCommitIntent,
     Extracted,
     Prepared,
     PackagesReplaced,
@@ -1674,6 +1687,57 @@ pub struct BackupCreateParams {
 pub struct BackupCreateResult {
     pub operation_id: String,
     pub backup_id: String,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BackupPlanRestoreParams {
+    pub backup_id: String,
+    pub target_parent: String,
+    pub target_leaf: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupRestoreExcludedPackage {
+    pub package_id: String,
+    pub version: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupRestoreTarget {
+    pub parent: String,
+    pub leaf: String,
+    pub must_be_absent: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupRestorePlan {
+    pub plan_id: String,
+    pub project_id: String,
+    pub backup_id: String,
+    pub target: BackupRestoreTarget,
+    pub archive_sha256: String,
+    pub packages_require_resolve: bool,
+    pub excluded_packages: Vec<BackupRestoreExcludedPackage>,
+    pub plan_fingerprint: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BackupApplyRestoreParams {
+    pub plan_id: String,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupApplyRestoreResult {
+    pub operation_id: String,
+    pub project_id: String,
     pub replayed: bool,
 }
 

@@ -114,6 +114,88 @@ pub(super) async fn dispatch(
                 Err(source) => backup_error(request.id, source),
             }
         }
+        rpc::METHOD_BACKUPS_PLAN_RESTORE => {
+            if let Some(action) =
+                require_capability(&request.id, state, rpc::CAPABILITY_BACKUPS_RESTORE_V1)
+            {
+                return action;
+            }
+            let params: rpc::BackupPlanRestoreParams = match serde_json::from_value(request.params)
+            {
+                Ok(value) => value,
+                Err(_) => return invalid(request.id),
+            };
+            let backup_id = match app::BackupId::parse(&params.backup_id) {
+                Ok(value) => value,
+                Err(_) => return invalid(request.id),
+            };
+            match application
+                .plan_restore(
+                    access,
+                    backup_id,
+                    std::path::PathBuf::from(params.target_parent),
+                    params.target_leaf,
+                )
+                .await
+            {
+                Ok(value) => success_action(
+                    request.id,
+                    rpc::BackupRestorePlan {
+                        plan_id: value.plan_id.to_string(),
+                        project_id: value.project_id.to_string(),
+                        backup_id: value.backup_id.to_string(),
+                        target: rpc::BackupRestoreTarget {
+                            parent: value.target.parent,
+                            leaf: value.target.leaf,
+                            must_be_absent: value.target.must_be_absent,
+                        },
+                        archive_sha256: hex(&value.archive_sha256),
+                        packages_require_resolve: value.packages_require_resolve,
+                        excluded_packages: value
+                            .excluded_packages
+                            .into_iter()
+                            .map(|package| rpc::BackupRestoreExcludedPackage {
+                                package_id: package.package_id,
+                                version: package.version,
+                            })
+                            .collect(),
+                        plan_fingerprint: hex(&value.plan_fingerprint),
+                    },
+                    None,
+                ),
+                Err(source) => backup_error(request.id, source),
+            }
+        }
+        rpc::METHOD_BACKUPS_APPLY_RESTORE => {
+            if let Some(action) =
+                require_capability(&request.id, state, rpc::CAPABILITY_BACKUPS_RESTORE_V1)
+            {
+                return action;
+            }
+            let params: rpc::BackupApplyRestoreParams = match serde_json::from_value(request.params)
+            {
+                Ok(value) => value,
+                Err(_) => return invalid(request.id),
+            };
+            let parsed = app::PlanId::parse(&params.plan_id)
+                .ok()
+                .zip(IdempotencyKey::parse(params.idempotency_key).ok());
+            let Some((plan_id, key)) = parsed else {
+                return invalid(request.id);
+            };
+            match application.apply_restore(access, plan_id, key).await {
+                Ok(value) => success_action(
+                    request.id,
+                    rpc::BackupApplyRestoreResult {
+                        operation_id: value.operation_id.to_string(),
+                        project_id: value.project_id.to_string(),
+                        replayed: value.replayed,
+                    },
+                    None,
+                ),
+                Err(source) => backup_error(request.id, source),
+            }
+        }
         _ => error_action(Some(request.id), rpc::RpcError::method_not_found(), false),
     }
 }

@@ -10,19 +10,21 @@ use std::thread;
 
 use alcomd_application::{
     ApplyPlanOutcome, BackupArchiveEvidence, BackupCreateOutcome, BackupCreateRequest,
-    BackupCursor, BackupId, BackupOperationRecord, BackupPhase, CheckClassification,
-    CreateOperationOutcome, CreatedTemplateProject, EventPage, FilesystemJournalEntry,
-    IdempotencyKey, M3Error, M3RegistryStore, M4Error, M4Store, M5BackupError, M5BackupStore,
-    M5TemplateError, M5TemplateStore, M5UnityError, M5UnityStore, OperationCursor, OperationId,
-    OperationPage, OperationRecord, PackageApplyCompletion, PackageCursor, PackagePage,
-    PackagePlanDraft, PackagePlanRecord, PlanId, PrincipalId, ProjectEditorPreference, ProjectId,
-    ProjectObservation, ProjectPage, ProjectRecord, PublishedTemplate, RegistryCursor,
-    RepositoryId, RepositoryObservation, RepositoryPage, RepositoryRecord, RepositoryValidators,
-    ResolverCatalog, Revision, StateCheckResult, StateStore, StoreError, StoredBackupRecord,
-    StoredTemplateRecord, SyncWrite, TemplateApplyOutcome, TemplateCursor, TemplateId,
-    TemplatePlanDraft, TemplatePlanRecord, UnityInstallationCursor, UnityInstallationId,
-    UnityInstallationObservation, UnityInstallationPage, UnityInstallationRecord, UnityLaunchId,
-    UnityLaunchRecord, UnityLaunchState, UnregisterResult,
+    BackupCursor, BackupId, BackupOperationRecord, BackupPhase, BackupRestoreApplyOutcome,
+    BackupRestoreOperationRecord, BackupRestorePhase, BackupRestorePlanDraft,
+    BackupRestorePlanRecord, CheckClassification, CreateOperationOutcome, CreatedTemplateProject,
+    EventPage, FilesystemJournalEntry, IdempotencyKey, M3Error, M3RegistryStore, M4Error, M4Store,
+    M5BackupError, M5BackupStore, M5TemplateError, M5TemplateStore, M5UnityError, M5UnityStore,
+    OperationCursor, OperationId, OperationPage, OperationRecord, PackageApplyCompletion,
+    PackageCursor, PackagePage, PackagePlanDraft, PackagePlanRecord, PlanId, PrincipalId,
+    ProjectEditorPreference, ProjectId, ProjectObservation, ProjectPage, ProjectRecord,
+    PublishedTemplate, RegistryCursor, RepositoryId, RepositoryObservation, RepositoryPage,
+    RepositoryRecord, RepositoryValidators, ResolverCatalog, RestoredProject, Revision,
+    StateCheckResult, StateStore, StoreError, StoredBackupRecord, StoredTemplateRecord, SyncWrite,
+    TemplateApplyOutcome, TemplateCursor, TemplateId, TemplatePlanDraft, TemplatePlanRecord,
+    UnityInstallationCursor, UnityInstallationId, UnityInstallationObservation,
+    UnityInstallationPage, UnityInstallationRecord, UnityLaunchId, UnityLaunchRecord,
+    UnityLaunchState, UnregisterResult,
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -30,6 +32,7 @@ mod m3;
 mod m4;
 mod m5;
 mod m5_backup;
+mod m5_backup_restore;
 mod m5_template;
 mod sqlite;
 
@@ -783,6 +786,143 @@ impl M5BackupStore for StateStoreHandle {
         self.request_worker(
             move |connection| m5_backup::recover_backup_operations(connection, recovered_at_ms),
             m5_backup::unavailable,
+        )
+        .await
+    }
+
+    async fn create_backup_restore_plan(
+        &self,
+        owner: PrincipalId,
+        draft: BackupRestorePlanDraft,
+        created_at_ms: u64,
+    ) -> Result<BackupRestorePlanRecord, M5BackupError> {
+        self.request_worker(
+            move |connection| {
+                m5_backup_restore::create_plan(connection, &owner, draft, created_at_ms)
+            },
+            m5_backup_restore::unavailable,
+        )
+        .await
+    }
+
+    async fn accept_backup_restore(
+        &self,
+        owner: PrincipalId,
+        plan_id: PlanId,
+        key: IdempotencyKey,
+        created_at_ms: u64,
+    ) -> Result<BackupRestoreApplyOutcome, M5BackupError> {
+        self.request_worker(
+            move |connection| {
+                m5_backup_restore::accept(connection, &owner, plan_id, &key, created_at_ms)
+            },
+            m5_backup_restore::unavailable,
+        )
+        .await
+    }
+
+    async fn begin_backup_restore(
+        &self,
+        operation_id: OperationId,
+        updated_at_ms: u64,
+    ) -> Result<BackupRestoreOperationRecord, M5BackupError> {
+        self.request_worker(
+            move |connection| m5_backup_restore::begin(connection, operation_id, updated_at_ms),
+            m5_backup_restore::unavailable,
+        )
+        .await
+    }
+
+    async fn record_backup_restore_checkpoint(
+        &self,
+        operation_id: OperationId,
+        phase: BackupRestorePhase,
+        restored: Option<RestoredProject>,
+        updated_at_ms: u64,
+    ) -> Result<(), M5BackupError> {
+        self.request_worker(
+            move |connection| {
+                m5_backup_restore::checkpoint(
+                    connection,
+                    operation_id,
+                    phase,
+                    restored,
+                    updated_at_ms,
+                )
+            },
+            m5_backup_restore::unavailable,
+        )
+        .await
+    }
+
+    async fn complete_backup_restore(
+        &self,
+        operation_id: OperationId,
+        restored: RestoredProject,
+        completed_at_ms: u64,
+    ) -> Result<(), M5BackupError> {
+        self.request_worker(
+            move |connection| {
+                m5_backup_restore::complete(connection, operation_id, restored, completed_at_ms)
+            },
+            m5_backup_restore::unavailable,
+        )
+        .await
+    }
+
+    async fn finish_backup_restore_success(
+        &self,
+        operation_id: OperationId,
+        completed_at_ms: u64,
+    ) -> Result<(), M5BackupError> {
+        self.request_worker(
+            move |connection| {
+                m5_backup_restore::finish_success(connection, operation_id, completed_at_ms)
+            },
+            m5_backup_restore::unavailable,
+        )
+        .await
+    }
+
+    async fn fail_backup_restore(
+        &self,
+        operation_id: OperationId,
+        error_code: String,
+        diagnostic_id: String,
+        completed_at_ms: u64,
+    ) -> Result<(), M5BackupError> {
+        self.request_worker(
+            move |connection| {
+                m5_backup_restore::fail(
+                    connection,
+                    operation_id,
+                    &error_code,
+                    &diagnostic_id,
+                    completed_at_ms,
+                )
+            },
+            m5_backup_restore::unavailable,
+        )
+        .await
+    }
+
+    async fn recover_backup_restore_operations(
+        &self,
+        recovered_at_ms: u64,
+    ) -> Result<Vec<OperationId>, M5BackupError> {
+        self.request_worker(
+            move |connection| m5_backup_restore::recover(connection, recovered_at_ms),
+            m5_backup_restore::unavailable,
+        )
+        .await
+    }
+
+    async fn completed_backup_restores(
+        &self,
+    ) -> Result<Vec<(OperationId, BackupRestorePlanRecord)>, M5BackupError> {
+        self.request_worker(
+            |connection| m5_backup_restore::completed(connection),
+            m5_backup_restore::unavailable,
         )
         .await
     }

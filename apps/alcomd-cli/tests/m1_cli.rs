@@ -38,8 +38,36 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
     assert!(json.status.success());
     assert!(json.stderr.is_empty());
     let value: serde_json::Value = serde_json::from_slice(&json.stdout).expect("JSON stdout");
-    assert_eq!(value["state"], "ready");
-    assert_eq!(value["rpcVersion"], 1);
+    assert_eq!(value["type"], "result");
+    assert_eq!(value["command"], "system status");
+    assert_eq!(value["result"]["state"], "ready");
+    assert_eq!(value["result"]["rpcVersion"], 1);
+
+    let ndjson_runtime = runtime.clone();
+    let ndjson = tokio::task::spawn_blocking(move || run_ndjson_cli(ndjson_runtime))
+        .await
+        .expect("join NDJSON CLI");
+    assert!(ndjson.status.success());
+    assert!(ndjson.stderr.is_empty());
+    let record: serde_json::Value = serde_json::from_slice(&ndjson.stdout).expect("NDJSON stdout");
+    assert_eq!(record["type"], "result");
+    assert_eq!(record["command"], "system status");
+
+    for (arguments, expected_command) in [
+        (&["operation", "list"][..], "operation list"),
+        (&["project", "list"][..], "project list"),
+        (&["repository", "list"][..], "repository list"),
+        (&["unity", "list"][..], "unity list"),
+        (&["template", "list"][..], "template list"),
+        (&["backup", "list"][..], "backup list"),
+    ] {
+        let output = run_group_cli(runtime.clone(), arguments);
+        assert!(output.status.success(), "{expected_command}");
+        assert!(output.stderr.is_empty(), "{expected_command}");
+        let document: serde_json::Value =
+            serde_json::from_slice(&output.stdout).expect("group JSON stdout");
+        assert_eq!(document["command"], expected_command);
+    }
 
     let confirmation_runtime = runtime.clone();
     let confirmation =
@@ -50,6 +78,7 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
     assert!(confirmation.stdout.is_empty());
     let confirmation_error: serde_json::Value =
         serde_json::from_slice(&confirmation.stderr).expect("confirmation JSON stderr");
+    assert_eq!(confirmation_error["type"], "error");
     assert_eq!(confirmation_error["error"]["code"], "confirmation_required");
 
     shutdown.store(true, Ordering::Release);
@@ -69,6 +98,25 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
     assert!(!absent.status.success());
     assert!(absent.stdout.is_empty());
     assert!(!absent.stderr.is_empty());
+
+    let usage = Command::new(env!("CARGO_BIN_EXE_alcomd-cli"))
+        .arg("not-a-command")
+        .output()
+        .expect("run invalid CLI");
+    assert_eq!(usage.status.code(), Some(2));
+    assert!(usage.stdout.is_empty());
+
+    let completion = Command::new(env!("CARGO_BIN_EXE_alcomd-cli"))
+        .args(["--no-start-daemon", "completion", "powershell"])
+        .output()
+        .expect("run static completion");
+    assert!(completion.status.success());
+    assert!(completion.stderr.is_empty());
+    assert!(
+        String::from_utf8(completion.stdout)
+            .expect("completion UTF-8")
+            .contains("Register-ArgumentCompleter")
+    );
 
     if let Some(runtime) = runtime {
         let _ = std::fs::remove_dir_all(runtime);
@@ -110,6 +158,26 @@ fn run_cli(json: bool, runtime: Option<PathBuf>) -> std::process::Output {
     }
     command.args(["system", "status"]);
     command.output().expect("run CLI")
+}
+
+fn run_ndjson_cli(runtime: Option<PathBuf>) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_alcomd-cli"));
+    command.arg("--no-start-daemon").arg("--ndjson");
+    if let Some(runtime) = runtime {
+        command.arg("--runtime-dir").arg(runtime);
+    }
+    command.args(["system", "status"]);
+    command.output().expect("run NDJSON CLI")
+}
+
+fn run_group_cli(runtime: Option<PathBuf>, arguments: &[&str]) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_alcomd-cli"));
+    command.arg("--no-start-daemon").arg("--json");
+    if let Some(runtime) = runtime {
+        command.arg("--runtime-dir").arg(runtime);
+    }
+    command.args(arguments);
+    command.output().expect("run command group CLI")
 }
 
 async fn wait_until_ready(config: ClientConfig) {

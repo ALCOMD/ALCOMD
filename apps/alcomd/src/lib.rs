@@ -303,6 +303,7 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         alcomd_protocol::CAPABILITY_TEMPLATES_CREATE_PROJECT_V1,
         alcomd_protocol::CAPABILITY_BACKUPS_READ_V1,
         alcomd_protocol::CAPABILITY_BACKUPS_CREATE_V1,
+        alcomd_protocol::CAPABILITY_BACKUPS_RESTORE_V1,
     ];
     let capabilities = hello
         .capabilities
@@ -579,6 +580,21 @@ fn operation_to_rpc(record: OperationRecord) -> Result<Operation, RpcError> {
                 }
                 alcomd_application::FilesystemPhase::ArchivePublished => {
                     PackageOperationPhase::ArchivePublished
+                }
+                alcomd_application::FilesystemPhase::ArchiveVerified => {
+                    PackageOperationPhase::ArchiveVerified
+                }
+                alcomd_application::FilesystemPhase::Extracting => {
+                    PackageOperationPhase::Extracting
+                }
+                alcomd_application::FilesystemPhase::StagingComplete => {
+                    PackageOperationPhase::StagingComplete
+                }
+                alcomd_application::FilesystemPhase::TargetPublished => {
+                    PackageOperationPhase::TargetPublished
+                }
+                alcomd_application::FilesystemPhase::ProjectRegistryCommitIntent => {
+                    PackageOperationPhase::ProjectRegistryCommitIntent
                 }
                 alcomd_application::FilesystemPhase::Extracted => PackageOperationPhase::Extracted,
                 alcomd_application::FilesystemPhase::Prepared => PackageOperationPhase::Prepared,

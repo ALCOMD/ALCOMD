@@ -514,12 +514,9 @@ fn m5_backup_create_contract_is_additive_and_published() {
 }
 
 #[test]
-fn m5_backup_restore_contract_is_additive_but_not_published() {
+fn m5_backup_restore_contract_is_additive_and_published() {
     let contract = schema("m5-backup-restore");
-    assert_eq!(
-        contract["x-alcomd-publication"],
-        "contract-only-until-production-capability-exists"
-    );
+    assert_eq!(contract["x-alcomd-publication"], "implemented-published");
     assert_eq!(
         contract["$defs"]["methodName"]["enum"],
         json!(["backups.planRestore", "backups.applyRestore"])
