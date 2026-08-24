@@ -524,3 +524,11 @@ git diff --check
   WebView2/WebKitGTK/WKWebView probe、A/X-B/X-A/Y origin/session matrix、`headless.test.ping` positive Bridge
   control、main-WebView-only Tauri command control、CSP/IPC/DOM/network/filesystem/clipboard/notification denial
   与 fail-closed CI glue；production Extension UI container 继续 `not yet frozen`，未开始 M7 production。
+- 2026-08-25：首轮 evidence commit `ab10de612c5aaf7c06ca2505a94f8ee85e4152c6` 的 CI run
+  `32746528244` 按 fail-closed 结束：Ubuntu 与 macOS 已进入 Rust `main` 并创建真实 WebView，但测试资产未完成；
+  Windows 在 `main` 前以 `0xc0000139` 退出。排障确认 Windows 原因是 test-only example 未嵌入 Common
+  Controls v6 activation manifest，三平台共同原因是直接 debug build 使用基础配置的 dev server URL，而非
+  embedded test assets。窄修复只调整 test harness：使用 release + existing `tauri/custom-protocol`、Windows SDK
+  `mt.exe` 嵌入 test-only manifest，并将 trusted host coordinator 限定为 main-frame-only initialization script。
+  本机 Windows 修复后已进入 `main` 并创建 WebView2；iframe extension document 仍超时，等待修复提交自身的
+  三平台 Hosted CI 取得最终 candidate evidence。production container/physical mapping 继续 `not yet frozen`。

@@ -1,4 +1,5 @@
 (() => {
+    window.__m7ProbeHostScriptStarted = true;
     const bindings = {
         ax: {
             frame: document.getElementById("extension-frame-ax"),

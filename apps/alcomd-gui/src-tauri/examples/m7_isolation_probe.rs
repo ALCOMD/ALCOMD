@@ -3,9 +3,12 @@ use std::{collections::BTreeMap, thread, time::Duration};
 use tauri::{
     WebviewUrl, WebviewWindowBuilder,
     http::{HeaderValue, Request, Response, StatusCode, header},
+    webview::PageLoadEvent,
 };
 
 const RESULT_HOST: &str = "m7-probe-result.invalid";
+// The host document is embedded by the test-only Tauri context; extension assets stay explicit.
+const HOST_JS: &str = include_str!("../../m7-probe-dist/m7-probe-host.js");
 const EXTENSION_HTML: &[u8] = include_bytes!("../../m7-probe-dist/m7-probe-extension.html");
 const EXTENSION_JS: &[u8] = include_bytes!("../../m7-probe-dist/m7-probe-extension.js");
 const WORKER_JS: &[u8] = include_bytes!("../../m7-probe-dist/m7-probe-worker.js");
@@ -156,6 +159,10 @@ fn is_approved_asset_path(path: &str) -> Option<&str> {
 }
 
 fn extension_asset(request: Request<Vec<u8>>) -> Response<Vec<u8>> {
+    eprintln!(
+        "m7-webview-probe: custom-protocol request {}",
+        request.uri()
+    );
     let (status, content_type, body) = match is_approved_asset_path(request.uri().path()) {
         Some("m7-probe-extension.html") => {
             (StatusCode::OK, "text/html; charset=utf-8", EXTENSION_HTML)
@@ -198,6 +205,36 @@ fn extension_asset(request: Request<Vec<u8>>) -> Response<Vec<u8>> {
 fn main() {
     phase_evidence(false);
     tauri::Builder::default()
+        .on_page_load(|webview, payload| {
+            eprintln!(
+                "m7-webview-probe: page-load label={} event={:?} url={}",
+                webview.label(),
+                payload.event(),
+                payload.url()
+            );
+            if webview.label() == "m7-isolation-probe" && payload.event() == PageLoadEvent::Finished
+            {
+                let _ = webview.eval(
+                    r#"
+                    setTimeout(() => {
+                        if (!location.host.endsWith("m7-probe-result.invalid")) {
+                            const hostStarted = window.__m7ProbeHostScriptStarted === true;
+                            const query = new URLSearchParams({
+                                result: "harness_unavailable",
+                                processEnteredMain: "true",
+                                webviewCreated: "true",
+                                extensionDocumentLoaded: "false",
+                                failedChecks: hostStarted
+                                    ? "extension-document-timeout"
+                                    : "host-script-not-started",
+                            });
+                            location.href = `https://m7-probe-result.invalid/?${query}`;
+                        }
+                    }, 20000);
+                    "#,
+                );
+            }
+        })
         .register_uri_scheme_protocol("alcomd-extension-ui", |_context, request| {
             extension_asset(request)
         })
@@ -219,7 +256,11 @@ fn main() {
             .inner_size(720.0, 480.0)
             .visible(true)
             .use_https_scheme(true)
+            .initialization_script(format!(
+                "window.addEventListener('DOMContentLoaded', () => {{ {HOST_JS} }});"
+            ))
             .on_navigation(move |url| {
+                eprintln!("m7-webview-probe: navigation {url}");
                 if url.host_str() != Some(RESULT_HOST) {
                     return true;
                 }
@@ -229,10 +270,10 @@ fn main() {
                     .map(|(key, value)| (key.into_owned(), value.into_owned()))
                     .collect::<BTreeMap<_, _>>();
                 let requested_result = fields.get("result").map(String::as_str);
-                let result = if requested_result == Some("pass") {
-                    "pass"
-                } else {
-                    "isolation_failed"
+                let result = match requested_result {
+                    Some("pass") => "pass",
+                    Some("harness_unavailable") => "harness_unavailable",
+                    _ => "isolation_failed",
                 };
                 if write_evidence(result, &fields).is_err() {
                     result_handle.exit(3);

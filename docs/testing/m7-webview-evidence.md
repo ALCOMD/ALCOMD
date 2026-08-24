@@ -14,6 +14,11 @@ commands, capabilities, dependencies, platform APIs, or public contracts.
   production binary.
 - Windows runs the probe with WebView2, Ubuntu under Xvfb with WebKitGTK, and macOS directly with
   WKWebView. Xvfb supplies a display only; it does not replace the WebKitGTK engine.
+- The harness builds with Tauri's existing `custom-protocol` feature in release asset mode. The
+  Windows runner embeds a test-only Common Controls v6 activation manifest with the installed
+  Windows SDK `mt.exe`; the manifest is not attached to any production binary.
+- The trusted host coordinator is a main-frame-only initialization script. Extension documents do
+  not receive it, remain subject to their own CSP, and still must cross the Bridge boundary.
 - `isolation_failed`, `harness_unavailable`, malformed evidence, a timeout, a process failure, or
   an unexpected engine fails the hosted job. No probe step uses `continue-on-error`.
 

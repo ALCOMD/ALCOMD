@@ -255,11 +255,12 @@
 - GitHub 已宣布 `ubuntu-22.04` hosted runner 从 2026-09-17 开始弃用并于 2027-04-17 退役；
   当前 M0 仍使用该构建基线，未来替代不能直接用 Ubuntu 24.04 冒充 Ubuntu 22.04 /
   `GLIBC_2.35` 等价验证。
-- M7 Extension UI 最终 container/physical mapping 尚未冻结：WebView2、WebKitGTK、WKWebView 的 actual in-app
-  isolation evidence 尚未取得。静态 Tauri 2.11.5 source evidence 显示 managed child WebView 会获得 invoke
-  initialization surface，因此不能只靠“无 matching capability”声称 `__TAURI_INTERNALS__` absent；sandboxed
-  cross-origin iframe 只是 preferred probe candidate。test-only example 已编译，但本机 Windows 在进入 `main` 前
-  被 loader `STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139)` 阻止；三平台 harness 未通过前保持 blocker。
+- M7 Extension UI 最终 container/physical mapping 尚未冻结。CI run `32746528244` 的首轮 test-only iframe
+  evidence 按 fail-closed 失败：Ubuntu/macOS 创建了真实 WebView 但测试资产未完成，Windows 在 `main` 前以
+  `0xc0000139` 退出。排障已把前者收敛到 harness 错用 dev server asset mode，把 Windows 问题收敛到 test-only
+  executable 缺少 Common Controls v6 activation manifest；窄修复后本机已进入 `main` 并创建 WebView2，但 iframe
+  extension document 仍超时。修复提交自身的 WebView2/WebKitGTK/WKWebView Hosted 证据取得前保持 blocker；
+  不得把 harness 修复或对象缺失冒充 production isolation 通过。
 
 - 真实安装快照和迁移 Fixture 尚未建立；因此 artifact 模板继续保持 `confirmed = false`，
   迁移删除、GUI/模板/备份/Unity 差异测试仍 blocked。项目所有者已决定不在 M-1 继续投入
