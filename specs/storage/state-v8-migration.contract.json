@@ -2,7 +2,7 @@
     "from": 7,
     "to": 8,
     "transaction": "BEGIN IMMEDIATE",
-    "productionMigration": "not-yet-created",
+    "productionMigration": "crates/alcomd-store/migrations/0008_extension_runtime.sql",
     "operationKindsAdded": [
         "extensions.install",
         "extensions.uninstall"
@@ -25,6 +25,13 @@
     "grantStates": ["granted", "revoked"],
     "resourceKinds": ["Extension", "Project"],
     "planActions": ["install", "uninstall"],
+    "planAuthorityFields": [
+        "extension_id", "version", "api_major", "profile_version",
+        "package_digest", "manifest_digest", "component_digest",
+        "publisher_fingerprint", "permissions", "interfaces", "source_evidence"
+    ],
+    "extensionApiMajor": 1,
+    "packageProfileVersion": 1,
     "dataDispositions": ["retain_data", "delete_data"],
     "installSourceKinds": ["local_owner_selected", "first_party_packaged"],
     "installPhases": [

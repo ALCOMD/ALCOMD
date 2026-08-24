@@ -28,18 +28,37 @@ diagnostic。channel 是 daemon-spawned child binding，不接受外部 reconnec
 
 ## Message catalog
 
-daemon -> Host：`bootstrap`、`invoke-export`、`cancel-call`、`revoke-lease`、`shutdown`。
+daemon -> Host：`bootstrap`、`invoke-export`、`cancel-call`、`capability-result`、`revoke-lease`、`shutdown`。
 
 Host -> daemon：`ready`、`capability-call`、`capability-cancelled`、`export-result`、`host-fault`。
 
-每条消息有 protocolVersion=1、daemon epoch、InstanceId、lifecycle generation、strict sequence、requestId/callId
-和 bounded payload。oversize、duplicate/replay ID、wrong instance/generation、stale daemon epoch、malformed message
+每条消息有 protocolVersion=1、daemon epoch、InstanceId、lifecycle generation 与 strict sequence。`invoke-export`/
+`export-result` 使用 `requestId` 标识一次 daemon 发起的 guest export；`capability-call`/`capability-result`/
+`capability-cancelled` 只使用 `callId` 标识一次 Host 发起的 capability invocation。任何一类消息不得同时携带两个 ID，
+两种 ID 不得互换或用于匹配另一类调用。oversize、duplicate/replay ID、wrong instance/generation、stale daemon epoch、malformed message
 或 unsolicited authority metadata 均终止 channel。`capability-call` 可以携带
 leaseId 与 capability input，但不得携带或覆盖 PrincipalId、ExtensionId、publisher、first-party status、permission
 或 scope。daemon 以 pipe session 找到 current lease，再从 application authority 解析这些身份。
 
 M6 capability catalog 只有 `host-projects.get-summary` 与 self `host-data.get/set/delete`。unknown capability fail closed；
 network/filesystem/clipboard/notification/Discord 不在 catalog。
+
+### `capability-result`
+
+`capability-result` 是 daemon 对一个 pending `capability-call.callId` 的唯一响应，用于完成已经冻结的同步 WIT
+`host-projects.get-summary` 与 `host-data.get/set/delete`。envelope 必须绑定 protocolVersion、daemon epoch、InstanceId、
+lifecycle generation、strict sequence 和原 `callId`，并且必须恰好包含 bounded `result` 或 stable `error` 之一。
+`result` 与 `error` 互斥；序列化前的 capability-specific value 与序列化后的完整 frame 都必须分别验证上限。
+
+`capability-result` 不得携带 PrincipalId、ExtensionId override、publisher override、first-party status、permission、
+resource scope、grant revision、lifecycle authority 或新 lease。authority 只来自 daemon-created current lease 与当前
+application/state authority。error 只允许当前 capability 已冻结的 stable machine code 与 `internal_error` 的 optional
+diagnosticId；不得包含 Wasmtime trap、Rust/SQLite Debug、filesystem path 或 backtrace。
+
+duplicate response、unknown/already-completed `callId`、wrong InstanceId/generation、stale daemon epoch、invalid sequence、
+oversized frame 或 malformed result/error envelope 都是 protocol violation：立即关闭该 Host channel/instance，并进入
+既有 crash/protocol-failure 路径，不忽略后继续。Host frame 仍不超过 512 KiB，WIT input/output 各不超过 256 KiB；
+Project summary、data key/value 的更窄既有上限优先。
 
 ## Revocation/cancellation
 

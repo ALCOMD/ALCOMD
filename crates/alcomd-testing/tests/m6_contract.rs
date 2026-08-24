@@ -238,7 +238,10 @@ fn state_rpc_errors_and_publication_boundary_are_frozen() {
     let errors: Value = serde_json::from_str(ERROR_SCHEMA).expect("error Schema");
     assert_eq!(state["from"], 7);
     assert_eq!(state["to"], 8);
-    assert_eq!(state["productionMigration"], "not-yet-created");
+    assert_eq!(
+        state["productionMigration"],
+        "crates/alcomd-store/migrations/0008_extension_runtime.sql"
+    );
     assert_eq!(state["tablesAdded"].as_array().expect("tables").len(), 8);
     assert_eq!(
         state["operationKindsAdded"],
@@ -250,6 +253,24 @@ fn state_rpc_errors_and_publication_boundary_are_frozen() {
     );
     assert_eq!(state["quarantineStates"], json!(["clear", "quarantined"]));
     assert_eq!(state["crashEvidencePerExtension"], 16);
+    assert_eq!(state["extensionApiMajor"], 1);
+    assert_eq!(state["packageProfileVersion"], 1);
+    assert_eq!(
+        state["planAuthorityFields"],
+        json!([
+            "extension_id",
+            "version",
+            "api_major",
+            "profile_version",
+            "package_digest",
+            "manifest_digest",
+            "component_digest",
+            "publisher_fingerprint",
+            "permissions",
+            "interfaces",
+            "source_evidence"
+        ])
+    );
     assert_eq!(
         state["installSourceKinds"],
         json!(["local_owner_selected", "first_party_packaged"])
@@ -265,6 +286,46 @@ fn state_rpc_errors_and_publication_boundary_are_frozen() {
             .len(),
         10
     );
+    for (method, result) in [
+        ("extensions.list", "#/$defs/listResult"),
+        ("extensions.get", "#/$defs/extensionResult"),
+        ("extensions.planInstall", "#/$defs/planResult"),
+        ("extensions.applyInstall", "#/$defs/operationResult"),
+        ("extensions.enable", "#/$defs/extensionResult"),
+        ("extensions.disable", "#/$defs/extensionResult"),
+        ("extensions.planUninstall", "#/$defs/planResult"),
+        ("extensions.applyUninstall", "#/$defs/operationResult"),
+        ("extensions.setGrant", "#/$defs/grantResult"),
+        ("extensions.revokeGrant", "#/$defs/grantResult"),
+    ] {
+        assert_eq!(rpc["x-alcomd-method-results"][method], result, "{method}");
+    }
+    assert_eq!(
+        rpc["x-alcomd-list-pagination"]["order"],
+        "extensionId ascending"
+    );
+    assert_eq!(
+        rpc["$defs"]["planRecord"]["properties"]["apiMajor"]["const"],
+        1
+    );
+    assert_eq!(
+        rpc["$defs"]["planRecord"]["properties"]["profileVersion"]["const"],
+        1
+    );
+    assert_eq!(
+        rpc["$defs"]["listResult"]["properties"]["extensions"]["maxItems"],
+        1_000
+    );
+    assert_eq!(
+        rpc["$defs"]["listResult"]["properties"]["nextCursor"]["maxLength"],
+        1_024
+    );
+    assert!(HOST_PROTOCOL.contains(
+        "daemon -> Host：`bootstrap`、`invoke-export`、`cancel-call`、`capability-result`"
+    ));
+    assert!(HOST_PROTOCOL.contains("只使用 `callId`"));
+    assert!(HOST_PROTOCOL.contains("必须恰好包含 bounded `result` 或 stable `error` 之一"));
+    assert!(HOST_PROTOCOL.contains("两种 ID 不得互换"));
     assert_eq!(
         hello["properties"]["result"]["properties"]["extensionApi"]["properties"]["world"]["const"],
         "alcomd:extension/extension-v1@1.0.0"

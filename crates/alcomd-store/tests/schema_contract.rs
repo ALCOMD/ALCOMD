@@ -7,6 +7,7 @@ const MIGRATION_V4: &str = include_str!("../migrations/0004_local_workflows.sql"
 const MIGRATION_V5: &str = include_str!("../migrations/0005_template_plans.sql");
 const MIGRATION_V6: &str = include_str!("../migrations/0006_backup_create.sql");
 const MIGRATION_V7: &str = include_str!("../migrations/0007_backup_restore.sql");
+const MIGRATION_V8: &str = include_str!("../migrations/0008_extension_runtime.sql");
 
 #[test]
 fn bundled_sqlite_version_is_frozen() {
@@ -1718,6 +1719,237 @@ fn failed_migration_v7_restores_complete_v6() {
     );
 }
 
+#[test]
+fn schema_v8_adds_only_two_extension_operation_kinds_and_bounded_state() {
+    let connection = migrated_v8_connection();
+    assert_eq!(user_version(&connection), 8);
+    assert!(MIGRATION_V8.starts_with("BEGIN IMMEDIATE;"));
+    assert!(MIGRATION_V8.ends_with("COMMIT;\n"));
+    for table in [
+        "extensions",
+        "extension_grants",
+        "extension_instances",
+        "extension_crashes",
+        "extension_plans",
+        "extension_filesystem_journal",
+        "extension_data_namespaces",
+        "extension_data_items",
+    ] {
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name=?1",
+                    [table],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("v8 table"),
+            1,
+            "{table}"
+        );
+    }
+    for (index, kind) in ["extensions.install", "extensions.uninstall"]
+        .into_iter()
+        .enumerate()
+    {
+        connection
+            .execute(
+                "INSERT INTO operations (
+                    operation_id, kind, state, revision, owner_principal_id, request_json,
+                    cancel_requested, created_at_ms, updated_at_ms
+                 ) VALUES (?1, ?2, 'queued', 1, 'builtin:local-owner', '{}', 0, 1, 1)",
+                params![format!("00000000-0000-4000-8000-{:012}", 900 + index), kind],
+            )
+            .expect("approved extension operation kind");
+    }
+    for rejected in ["extensions.enable", "extensions.disable", "extensions.call"] {
+        assert!(
+            connection
+                .execute(
+                    "INSERT INTO operations (
+                        operation_id, kind, state, revision, owner_principal_id, request_json,
+                        cancel_requested, created_at_ms, updated_at_ms
+                     ) VALUES ('00000000-0000-4000-8000-000000000999', ?1,
+                               'queued', 1, 'builtin:local-owner', '{}', 0, 1, 1)",
+                    [rejected],
+                )
+                .is_err(),
+            "unexpected operation kind accepted: {rejected}"
+        );
+    }
+    assert!(MIGRATION_V8.contains("sequence INTEGER NOT NULL CHECK (sequence BETWEEN 1 AND 16)"));
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("foreign key check"),
+        0
+    );
+}
+
+#[test]
+fn schema_v8_retained_data_survives_registry_delete_and_keeps_publisher_owner() {
+    let connection = migrated_v8_connection();
+    let fingerprint_a = format!("ed25519-sha256:{}", "a".repeat(64));
+    connection
+        .execute(
+            "INSERT INTO extensions (
+                extension_id, version, api_major, package_digest, manifest_digest,
+                component_digest, publisher_fingerprint, trust_decision, principal_id,
+                live_package_locator, desired_state, quarantine_state, grant_revision,
+                lifecycle_generation, revision, installed_at_ms, updated_at_ms
+             ) VALUES ('dev.example.fixture', '1.0.0', 1, zeroblob(32), zeroblob(32),
+                       zeroblob(32), ?1, 'user_approved_for_extension',
+                       'extension:dev.example.fixture', 'extension:fixture',
+                       'installed_disabled', 'clear', 1, 1, 1, 1, 1)",
+            [&fingerprint_a],
+        )
+        .expect("insert extension");
+    connection
+        .execute(
+            "INSERT INTO extension_data_namespaces (
+                extension_id, publisher_fingerprint, revision, key_count,
+                total_value_bytes, updated_at_ms
+             ) VALUES ('dev.example.fixture', ?1, 1, 1, 6, 1)",
+            [&fingerprint_a],
+        )
+        .expect("insert namespace");
+    connection
+        .execute(
+            "INSERT INTO extension_data_items (
+                extension_id, publisher_fingerprint, key, value, key_revision
+             ) VALUES ('dev.example.fixture', ?1, 'secret', x'736563726574', 1)",
+            [&fingerprint_a],
+        )
+        .expect("insert data");
+    connection
+        .execute(
+            "DELETE FROM extensions WHERE extension_id='dev.example.fixture'",
+            [],
+        )
+        .expect("delete extension registry row");
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT count(*) FROM extension_data_items
+                 WHERE extension_id='dev.example.fixture' AND publisher_fingerprint=?1",
+                [&fingerprint_a],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("retained item"),
+        1
+    );
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("foreign key check"),
+        0
+    );
+}
+
+#[test]
+fn schema_v8_extension_plan_authority_is_explicit_bounded_and_immutable() {
+    let connection = migrated_v8_connection();
+    let insert = "INSERT INTO extension_plans (
+        plan_id, owner_principal_id, action, state, extension_id, version, api_major,
+        profile_version, source_kind, source_locator, source_identity, package_digest,
+        manifest_digest, component_digest, publisher_fingerprint, trust_decision,
+        requested_permissions_json, requested_interfaces_json, data_disposition,
+        plan_fingerprint, created_at_ms
+    ) VALUES (?1, 'builtin:local-owner', 'install', 'unapplied',
+              'dev.example.fixture', '1.2.3-beta.1+build.7', ?2, ?3,
+              'local_owner_selected', 'C:/fixture.alcomdext', x'01', zeroblob(32),
+              zeroblob(32), zeroblob(32), ?4, 'user_approved_for_extension',
+              '{\"required\":[\"background.run\"],\"optional\":[]}',
+              '{\"required\":[],\"optional\":[]}', 'not_applicable', zeroblob(32), 1)";
+    let fingerprint = format!("ed25519-sha256:{}", "a".repeat(64));
+    connection
+        .execute(
+            insert,
+            params!["00000000-0000-4000-8000-000000000801", 1, 1, fingerprint],
+        )
+        .expect("insert complete extension plan");
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT version, api_major, profile_version FROM extension_plans
+                 WHERE plan_id='00000000-0000-4000-8000-000000000801'",
+                [],
+                |row| Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?
+                )),
+            )
+            .expect("round-trip authority"),
+        ("1.2.3-beta.1+build.7".to_owned(), 1, 1)
+    );
+    for (plan_id, api_major, profile_version) in [
+        ("00000000-0000-4000-8000-000000000802", 2, 1),
+        ("00000000-0000-4000-8000-000000000803", 1, 2),
+    ] {
+        assert!(
+            connection
+                .execute(
+                    insert,
+                    params![plan_id, api_major, profile_version, fingerprint]
+                )
+                .is_err(),
+            "invalid API/profile version accepted"
+        );
+    }
+    assert!(
+        connection
+            .execute(
+                "UPDATE extension_plans SET version='9.9.9'
+                 WHERE plan_id='00000000-0000-4000-8000-000000000801'",
+                [],
+            )
+            .is_err(),
+        "immutable Plan version changed"
+    );
+}
+
+#[test]
+fn migration_v8_preserves_v7_rows_and_failed_v8_rolls_back() {
+    let connection = migrated_v7_connection();
+    insert_operation(&connection, "queued", 1).expect("insert v7 operation");
+    connection
+        .execute_batch(MIGRATION_V8)
+        .expect("apply migration v8");
+    assert_eq!(user_version(&connection), 8);
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM operations", [], |row| row
+                .get::<_, i64>(0))
+            .expect("preserved operation"),
+        1
+    );
+
+    let rollback = migrated_v7_connection();
+    let failing = MIGRATION_V8.replace(
+        "PRAGMA user_version = 8;",
+        "THIS IS NOT VALID SQL;\nPRAGMA user_version = 8;",
+    );
+    assert!(rollback.execute_batch(&failing).is_err());
+    rollback
+        .execute_batch("ROLLBACK;")
+        .expect("rollback failed migration v8");
+    assert_eq!(user_version(&rollback), 7);
+    assert_eq!(
+        rollback
+            .query_row(
+                "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='extensions'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("v8 table absent after rollback"),
+        0
+    );
+}
+
 fn migrated_connection() -> Connection {
     let connection = Connection::open_in_memory().expect("open SQLite");
     connection
@@ -1774,6 +2006,14 @@ fn migrated_v7_connection() -> Connection {
     connection
         .execute_batch(MIGRATION_V7)
         .expect("apply migration v7");
+    connection
+}
+
+fn migrated_v8_connection() -> Connection {
+    let connection = migrated_v7_connection();
+    connection
+        .execute_batch(MIGRATION_V8)
+        .expect("apply migration v8");
     connection
 }
 

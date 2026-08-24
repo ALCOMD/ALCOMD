@@ -42,9 +42,14 @@ service 或第二份 Event/telemetry history。
 ### `extension_plans`
 
 永久 immutable install/uninstall Plan authority：PlanId、owner Principal、action、state、ExtensionId、expected revision/
-absence、`local_owner_selected|first_party_packaged` source kind、source filesystem identity、所有 digest、publisher/trust decision、requested permission/interface snapshot、
-uninstall data disposition、profile version、plan fingerprint、唯一 Apply OperationId 与 timestamps。唯一 update 是
-`unapplied + NULL -> applied + matching OperationId`；禁止 delete/rewrite/TTL。
+absence、`local_owner_selected|first_party_packaged` source kind、source filesystem identity、canonical SemVer `version`
+（1-128 UTF-8 bytes）、固定 `api_major=1`、固定 `profile_version=1`、所有 digest、publisher/trust decision、requested
+permission/interface snapshot、uninstall data disposition、plan fingerprint、唯一 Apply OperationId 与 timestamps。
+上述字段均为独立 immutable authority，不得藏入 permissions/grant/scope JSON；唯一 update 是 `unapplied + NULL ->
+applied + matching OperationId`；禁止 delete/rewrite/TTL。
+
+Apply 与 recovery 必须同时复核 ExtensionId、version、API/profile version、package/Manifest/component digest、publisher、
+permission/interface snapshot 与 source evidence；typed snapshot JSON 不得覆盖或绕过这些独立列。
 
 ### `extension_filesystem_journal`
 
