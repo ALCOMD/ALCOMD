@@ -375,12 +375,21 @@ status = "planned"
 description = "活动与日志不泄露 token、Authorization、完整私密路径和项目敏感信息。"
 
 [[test]]
+id = "extensions.m6-contract"
+stage = "M6"
+kind = "contract"
+platforms = ["all"]
+status = "implemented"
+description = "冻结 .alcomdext/Manifest/signature/WIT compatibility、permission/scope/lease/revocation、desired/runtime state、Schema v8/RPC contract、KV/UI/runtime quota 与 hostile synthetic vectors；同时证明 production source 尚未广告 M6 capability。"
+evidence = ["crates/alcomd-testing/tests/m6_contract.rs", "crates/alcomd-testing/fixtures/m6"]
+
+[[test]]
 id = "extensions.first-third-parity"
 stage = "M6"
 kind = "contract"
 platforms = ["all"]
 status = "planned"
-description = "用测试扩展证明第一方与第三方使用相同 Manifest、权限、API、Bridge、Host 和数据隔离。"
+description = "Stop A 已冻结相同 Manifest、签名、权限、WIT、Bridge、Host、数据与 headless parity fixture；真实 first/third production Host 执行仍 planned。"
 
 [[test]]
 id = "extensions.sandbox-abuse"
@@ -388,7 +397,7 @@ stage = "M6"
 kind = "security"
 platforms = ["all"]
 status = "planned"
-description = "覆盖恶意 UI、WASM 崩溃、越权、撤销、资源耗尽、供应链替换和宿主隔离。"
+description = "Stop A 已冻结 hostile package/UI、scope、revoke race、resource/crash vectors；真实 Wasmtime/Host sandbox-abuse 三平台执行仍 planned。"
 
 [[test]]
 id = "mcp.protocol-conformance"

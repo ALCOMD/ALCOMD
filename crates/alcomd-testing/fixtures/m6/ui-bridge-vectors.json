@@ -1,0 +1,17 @@
+{
+    "contribution": "headless/test contribution",
+    "validRequest": {
+        "bridgeVersion": 1,
+        "sessionId": "00000000-0000-4000-8000-000000000001",
+        "sequence": 1,
+        "requestId": "request-1",
+        "method": "headless.test.ping",
+        "params": {}
+    },
+    "negative": [
+        "origin-spoof", "session-mismatch", "generation-mismatch", "grant-revision-mismatch",
+        "sequence-replay", "sequence-out-of-order", "request-id-collision", "oversized-message",
+        "rate-flood", "concurrency-overflow", "dom-access", "tauri-ipc", "private-channel"
+    ],
+    "publishedProductPlacements": []
+}

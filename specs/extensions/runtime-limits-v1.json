@@ -1,0 +1,29 @@
+{
+    "profile": "alcomd-extension-runtime-v1",
+    "hostProcessesPerEnabledExtensionId": 1,
+    "activeComponentInstancesPerHost": 1,
+    "linearMemoryBytes": 67108864,
+    "tableElements": 10000,
+    "concurrentGuestCalls": 1,
+    "witInputBytes": 262144,
+    "witOutputBytes": 262144,
+    "hostProtocolFrameBytes": 524288,
+    "hostCallRate": {
+        "windowMs": 60000,
+        "calls": 100,
+        "burst": 20
+    },
+    "fuelPerGuestCall": 10000000,
+    "epochTickMs": 10,
+    "wallTimeoutMs": 2000,
+    "activateTimeoutMs": 5000,
+    "deactivateTimeoutMs": 2000,
+    "backgroundLeaseMs": 60000,
+    "crashLoop": {
+        "threshold": 3,
+        "windowMs": 300000,
+        "restartDelaysMs": [1000, 5000]
+    },
+    "enforcement": "hard",
+    "instructionPolicy": "fuel-and-epoch"
+}

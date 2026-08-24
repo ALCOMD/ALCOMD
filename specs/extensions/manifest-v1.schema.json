@@ -1,108 +1,89 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://alcomd.cqmhv.com/schema/extensions/manifest-v1.json",
-    "title": "ALCOMD Extension Manifest v1",
+    "title": "ALCOMD Extension Manifest v1 parsed TOML object",
     "type": "object",
     "additionalProperties": false,
     "required": [
-        "schema",
-        "id",
-        "name",
-        "version",
-        "api",
-        "publisher",
-        "entrypoints",
-        "permissions"
+        "schema", "id", "name", "version", "api", "publisher_name",
+        "publisher_key_fingerprint", "license", "entrypoints", "interfaces", "permissions"
     ],
     "properties": {
-        "schema": {
-            "type": "integer",
-            "const": 1
-        },
+        "schema": {"const": 1},
         "id": {
             "type": "string",
-            "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)+$"
+            "minLength": 3,
+            "maxLength": 255,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
         },
-        "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 120
-        },
+        "name": {"type": "string", "minLength": 1, "maxLength": 120},
         "version": {
             "type": "string",
-            "minLength": 1
+            "minLength": 5,
+            "maxLength": 128,
+            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
         },
-        "api": {
+        "api": {"const": 1},
+        "publisher_name": {"type": "string", "minLength": 1, "maxLength": 120},
+        "publisher_key_fingerprint": {
             "type": "string",
-            "minLength": 1
+            "pattern": "^ed25519-sha256:[0-9a-f]{64}$"
         },
-        "publisher": {
-            "type": "string",
-            "minLength": 1
-        },
-        "license": {
-            "type": "string"
-        },
+        "license": {"type": "string", "minLength": 1, "maxLength": 128},
         "entrypoints": {
             "type": "object",
             "additionalProperties": false,
+            "minProperties": 1,
             "properties": {
-                "ui": {
+                "background_component": {"const": "component/extension.wasm"},
+                "ui_entry": {
                     "type": "string",
-                    "minLength": 1
-                },
-                "background_wasm": {
-                    "type": "string",
-                    "minLength": 1
-                }
-            },
-            "minProperties": 1
-        },
-        "activation": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-                "background": {
-                    "type": "boolean",
-                    "default": false
-                },
-                "events": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "uniqueItems": true
+                    "minLength": 8,
+                    "maxLength": 512,
+                    "pattern": "^ui/(?:[^/\\\\\\u0000-\\u001f]+/)*[^/\\\\\\u0000-\\u001f]+$"
                 }
             }
         },
-        "contributions": {
+        "interfaces": {
             "type": "object",
-            "additionalProperties": {
-                "type": "boolean"
+            "additionalProperties": false,
+            "required": ["required", "optional"],
+            "properties": {
+                "required": {"$ref": "#/$defs/interfaces"},
+                "optional": {"$ref": "#/$defs/interfaces"}
             }
         },
         "permissions": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-                "required",
-                "optional"
-            ],
+            "required": ["required", "optional"],
             "properties": {
-                "required": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "uniqueItems": true
-                },
-                "optional": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "uniqueItems": true
-                }
+                "required": {"$ref": "#/$defs/permissions"},
+                "optional": {"$ref": "#/$defs/permissions"}
+            }
+        }
+    },
+    "$defs": {
+        "interfaces": {
+            "type": "array",
+            "maxItems": 32,
+            "uniqueItems": true,
+            "items": {
+                "type": "string",
+                "minLength": 5,
+                "maxLength": 128,
+                "pattern": "^[a-z0-9][a-z0-9-]*:[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*@[0-9]+\\.[0-9]+\\.[0-9]+$"
+            }
+        },
+        "permissions": {
+            "type": "array",
+            "maxItems": 64,
+            "uniqueItems": true,
+            "items": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 128,
+                "pattern": "^[a-z0-9][a-z0-9.-]*$"
             }
         }
     }

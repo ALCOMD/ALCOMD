@@ -1,0 +1,25 @@
+{
+    "oldGuest": {
+        "world": "alcomd:extension/extension-v1@1.0.0",
+        "requiredImports": [
+            "alcomd:extension/host-data@1.0.0",
+            "alcomd:extension/host-projects@1.0.0"
+        ],
+        "optionalImports": [],
+        "exports": ["alcomd:extension/guest-lifecycle@1.0.0"]
+    },
+    "newHost": {
+        "supportedImports": [
+            "alcomd:extension/host-data@1.0.0",
+            "alcomd:extension/host-projects@1.0.0",
+            "alcomd:extension/host-future-example@1.0.0"
+        ],
+        "negotiatedOptionalImports": [],
+        "result": "compatible"
+    },
+    "breakingCases": [
+        "record-field-add", "record-field-remove", "record-field-change",
+        "variant-or-enum-semantic-change", "tuple-result-option-change",
+        "parameter-type-change", "result-type-change", "existing-required-import-change"
+    ]
+}

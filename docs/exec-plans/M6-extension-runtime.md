@@ -1,6 +1,6 @@
 # M6：统一扩展运行时与公开 Extension API
 
-状态：已通过附条件人工审阅；批准进入 contract-first，统一 Stop A 前不得开始 M6 生产实现
+状态：contract-first 统一 Stop A 工件、本地完整验收与依赖评估已完成；等待项目所有者审批，M6 生产实现未开始
 
 ## 目标
 
@@ -358,3 +358,8 @@ fault matrix、Tauri no-bundle、dependency/unsafe/lockfile gates 和三平台 C
   process、无 ambient WASI authority、WIT shape breaking 规则、lease/revocation linearization、desired/runtime
   分离、bounded key/value、Project summary read 第一能力、publisher 信任分层、exact runtime limit 与统一 Stop A；
   production implementation 和 Wasmtime/WASI/WIT 依赖仍未批准。
+- 2026-08-24：统一 Stop A 已形成 Manifest/package/signature/archive、WIT ABI v1、permission/lease/revocation、
+  lifecycle/State v8 migration contract、RPC/error/hello optional contract、bounded key/value、UI Bridge headless
+  envelope、threat model、synthetic fixtures 与 contract tests。隔离依赖评估推荐 `wasmtime 48.0.0` 和
+  `ed25519-dalek 3.0.0`，但未修改 Cargo manifest 或 lock file，也未接入生产代码。`fmt`、Clippy、Workspace
+  tests、xtask、metadata、baseline freeze、diff/lock gates 全部通过；停止等待项目所有者审批。

@@ -1,0 +1,55 @@
+{
+    "from": 7,
+    "to": 8,
+    "transaction": "BEGIN IMMEDIATE",
+    "productionMigration": "not-yet-created",
+    "operationKindsAdded": [
+        "extensions.install",
+        "extensions.enable",
+        "extensions.disable",
+        "extensions.uninstall"
+    ],
+    "tablesAdded": [
+        "extension_crashes",
+        "extension_data_items",
+        "extension_data_namespaces",
+        "extension_filesystem_journal",
+        "extension_grants",
+        "extension_instances",
+        "extension_plans",
+        "extensions"
+    ],
+    "desiredStates": ["installed_disabled", "enabled", "uninstalling", "quarantined"],
+    "runtimeStates": ["stopped", "starting", "running", "stopping", "crashed"],
+    "trustDecisions": ["official", "user_approved_for_extension"],
+    "grantStates": ["granted", "revoked"],
+    "resourceKinds": ["Extension", "Project"],
+    "planActions": ["install", "uninstall"],
+    "dataDispositions": ["retain_data", "delete_data"],
+    "installPhases": [
+        "accepted", "source_verified", "archive_verified", "staging_complete",
+        "publish_intent", "package_published", "state_commit_intent",
+        "state_committed", "cleanup_complete"
+    ],
+    "uninstallPhases": [
+        "accepted", "lease_revoked", "host_stopped", "package_backup_intent",
+        "package_moved_to_backup", "data_delete_intent", "data_deleted",
+        "state_commit_intent", "state_committed", "cleanup_complete"
+    ],
+    "dataLimits": {
+        "namespaceValueBytes": 4194304,
+        "keys": 1024,
+        "keyUtf8Bytes": 128,
+        "valueBytes": 65536
+    },
+    "invariants": [
+        "all-v7-data-preserved",
+        "foreign-key-check-empty",
+        "plans-immutable-except-apply-binding",
+        "filesystem-journal-append-only",
+        "grant-revision-update-is-linearization-point",
+        "runtime-running-requires-current-daemon-epoch-and-live-child-handle",
+        "data-delete-only-from-explicit-uninstall-plan",
+        "future-schema-fail-closed"
+    ]
+}

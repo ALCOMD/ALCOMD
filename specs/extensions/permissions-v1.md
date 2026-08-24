@@ -1,6 +1,6 @@
 # Extension Permissions v1
 
-状态：Draft
+状态：M6 contract-first Stop A candidate；M6 permission production wiring 尚未实现。
 
 ## 通用数据与业务权限
 
@@ -27,6 +27,9 @@ settings.read
 settings.manage
 access.read
 access.manage
+extensions.read
+extensions.manage
+extensions.permissions.manage
 ```
 
 ## 扩展专用权限
@@ -41,7 +44,6 @@ clipboard.write
 external-config.read
 external-config.manage
 integrations.discord.presence
-mcp.sessions.read
 mcp.clients.read
 mcp.clients.manage
 mcp.configuration.read
@@ -115,3 +117,28 @@ mcp.configuration.manage
   尚未实现，高影响 write path 不得描述为已向任意第三方开放。
 - capability、InstallationId、LaunchId、TemplateId、BackupId、路径、PID 与 client metadata 都不是
   Principal 或授权凭据。
+
+## M6 Extension Runtime 权限与 scope
+
+M6 第一条生产 slice 冻结并仅使用以下权限：
+
+| permission | caller | exact authority |
+|---|---|---|
+| `extensions.read` | local management Principal | list/get installed extension、desired/runtime safe summary；不返回 Host PID、路径、lease secret 或 data value |
+| `extensions.manage` | local management Principal | plan/apply install、enable、disable、plan/apply uninstall；不隐含 permission grant |
+| `extensions.permissions.manage` | local management Principal | set/revoke extension grant 与 specific resource scope；grant revision durable update 是 revoke linearization point |
+| `background.run` | extension Principal | 允许已验证 background Component 被 Host 启动；不隐含任何业务 capability |
+| `projects.read` | extension Principal | 仅通过 `host-projects.get-summary` 读取 grant 中 specific ProjectId 的安全摘要 |
+
+规则：
+
+- extension Principal 默认零权限。Manifest request、ExtensionId、publisher、first-party status、package digest、
+  WIT capability 或 `ExtensionInstanceLease` ID 都不是 grant。
+- M6 scope 的唯一 business resource kind 是 `Project`，resource ID 是 lowercase UUID。`projects.read` 对 extension
+  必须有至少一个 specific ProjectId；不允许 wildcard、path、URL 或自报 selector。
+- `ExtensionInstanceLease` 绑定 current grant revision；每次 Host/data call 重新解析真实 Principal/grant/scope。
+- revoke transaction 提交后，尚未被 application 接受的 call、Host queue、session/handle 均失败或取消。
+- 第一方只可获得同名 permission 与同种 scope；official trust 不绕过 grant/revoke/quota。
+- `network.request`、notifications、clipboard、external-config、Discord 与 M7 UI placement 仍 planned，M6 第一条
+  slice 不链接或广告它们。
+- `mcp.sessions.read` 已由 A-023 拒绝；未来 MCP request/connection/subscription scope 属于 M8，不在 M6 重建。

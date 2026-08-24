@@ -594,3 +594,34 @@ Backup Restore contract-first 在 RPC major 1 上兼容冻结 `backups.planResto
 ProjectId。公共 Plan/result 只含 target/Backup 安全摘要，不返回 archive/staging path、DB locator 或 journal
 detail。Restore dispatcher/worker/client/CLI 尚未实现，daemon 不广告 capability，也不接受 method；Schema v7
 只证明 durable authority 可存储，不代表 production Restore 已发布。
+
+## 22. M6 contract-only 兼容增加：Extension Runtime
+
+M6 Stop A 在 RPC major 1 上冻结两项未来 capability；production dispatcher/use case/state migration/Host 全部存在
+前不得由 `system.hello` 广告：
+
+| capability | method | permission |
+|---|---|---|
+| `extensions.lifecycle.v1` | `extensions.list/get/planInstall/applyInstall/enable/disable/planUninstall/applyUninstall` | read 使用 `extensions.read`；mutation 使用 `extensions.manage` |
+| `extensions.permissions.v1` | `extensions.setGrant/revokeGrant` | `extensions.permissions.manage` |
+
+完整 DTO 与 bounds 由 `m6-extension-runtime.schema.json` 冻结。install/uninstall 先创建永久 immutable Plan；Apply
+复验 package/source/signature/publisher/trust/revision/digest 并返回 OperationId，不重新 Plan。uninstall 默认
+`retain_data`；`delete_data` 必须在 immutable Plan 中显式选择。
+
+enable/disable 是 durable Operation。enable 在 package/API/grant 重验后创建 daemon-owned
+`ExtensionInstanceLease`；disable/revoke 的 durable grant revision commit 是 authority linearization point。
+Host/guest 不能自报 PrincipalId、ExtensionId、publisher、first-party status 或 scope。desired state 与 runtime
+state 分离，公开 record 不返回 PID、Host pipe、lease nonce、安装路径、trap/backtrace 或 extension data。
+
+`extensions.setGrant/revokeGrant` 的 M6 business scope 只允许 `background.run + ExtensionId self` 与
+`projects.read + specific ProjectId`。permission/grant update 使用 expected grant revision 与永久幂等；wildcard、path、
+URL 和 Manifest selector 全部拒绝。
+
+`system.hello.result.extensionApi` 是未来兼容 optional field，只有 data Schema v8 migration、Host/WIT/runtime 与
+对应 capability 全部生产可用后才返回 `{major:1,world:"alcomd:extension/extension-v1@1.0.0"}`。当前 daemon 继续
+返回 dataSchema 7、不返回 extensionApi、不广告 M6 capability；旧 client 必须忽略未来 optional field。
+
+M6 stable errors 由 `rpc-error.schema.json` 冻结。普通 error 只返回安全 code、opaque ID/revision 与必要 subreason，
+不返回 package/source/data 完整路径、public key material 以外的 credential、Host protocol、trap、WIT parser debug、
+SQLite 或 OS debug。未知错误仍为 `internal_error + diagnosticId`。

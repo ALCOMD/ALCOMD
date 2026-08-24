@@ -346,7 +346,7 @@ fn m4_operation_and_data_schema_are_compatible_additions() {
     let hello = schema("system-hello.response");
     assert_eq!(
         hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
-        json!([1, 2, 3, 4, 5, 6, 7])
+        json!([1, 2, 3, 4, 5, 6, 7, 8])
     );
 }
 
@@ -418,11 +418,11 @@ fn m5_unity_schema_keeps_launch_and_management_separate() {
 }
 
 #[test]
-fn m5_hello_advertises_the_implemented_data_schema_v7() {
+fn hello_schema_accepts_implemented_v7_and_contract_only_v8() {
     let hello = schema("system-hello.response");
     assert_eq!(
         hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
-        json!([1, 2, 3, 4, 5, 6, 7])
+        json!([1, 2, 3, 4, 5, 6, 7, 8])
     );
 }
 
@@ -532,14 +532,27 @@ fn m5_backup_restore_contract_is_additive_and_published() {
 }
 
 #[test]
-fn hello_schema_only_adds_the_ready_m2_data_schema() {
+fn hello_schema_adds_contract_only_extension_api_as_optional() {
     let response = schema("system-hello.response");
     let properties = response["properties"]["result"]["properties"]
         .as_object()
         .expect("hello result properties");
     assert_eq!(
         properties.keys().cloned().collect::<Vec<_>>(),
-        ["capabilities", "daemonVersion", "dataSchema", "rpcVersion"]
+        [
+            "capabilities",
+            "daemonVersion",
+            "dataSchema",
+            "extensionApi",
+            "rpcVersion"
+        ]
+    );
+    assert!(
+        !response["properties"]["result"]["required"]
+            .as_array()
+            .expect("hello required fields")
+            .iter()
+            .any(|field| field == "extensionApi")
     );
     assert_eq!(
         response["properties"]["result"]["additionalProperties"],

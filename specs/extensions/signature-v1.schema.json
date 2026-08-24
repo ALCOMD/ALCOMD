@@ -1,0 +1,22 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/extensions/signature-v1.json",
+    "title": "ALCOMD Extension Signature Envelope v1",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "formatVersion", "algorithm", "packageDigest", "publicKey",
+        "publisherFingerprint", "signature"
+    ],
+    "properties": {
+        "formatVersion": {"const": 1},
+        "algorithm": {"const": "ed25519"},
+        "packageDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "publicKey": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "publisherFingerprint": {
+            "type": "string",
+            "pattern": "^ed25519-sha256:[0-9a-f]{64}$"
+        },
+        "signature": {"type": "string", "pattern": "^[0-9a-f]{128}$"}
+    }
+}

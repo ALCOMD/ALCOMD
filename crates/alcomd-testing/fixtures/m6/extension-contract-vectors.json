@@ -1,0 +1,69 @@
+{
+    "manifest": {
+        "schema": 1,
+        "id": "dev.example.project-summary",
+        "name": "Project Summary",
+        "version": "1.0.0",
+        "api": 1,
+        "publisher_name": "Example Publisher",
+        "publisher_key_fingerprint": "ed25519-sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "license": "MIT",
+        "entrypoints": {"background_component": "component/extension.wasm"},
+        "interfaces": {
+            "required": [
+                "alcomd:extension/host-data@1.0.0",
+                "alcomd:extension/host-projects@1.0.0"
+            ],
+            "optional": []
+        },
+        "permissions": {
+            "required": ["background.run", "projects.read"],
+            "optional": []
+        }
+    },
+    "canonicalDigest": {
+        "domain": "ALCOMD-EXT-CONTENT-SHA256-V1\\u0000",
+        "entries": [
+            {
+                "path": "alcomd-extension.toml",
+                "contentUtf8": "schema = 1\nid = \"dev.example.project-summary\"\n"
+            },
+            {
+                "path": "component/extension.wasm",
+                "contentHex": "0061736d0d000100"
+            }
+        ],
+        "expectedSha256": "231e8f281520c4701cf1a6534ecb3c8c1eb39587fad2a0b25e23a54a8979824f"
+    },
+    "signatureGolden": {
+        "formatVersion": 1,
+        "algorithm": "ed25519",
+        "packageDigest": "231e8f281520c4701cf1a6534ecb3c8c1eb39587fad2a0b25e23a54a8979824f",
+        "publicKey": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "publisherFingerprint": "ed25519-sha256:56475aa75463474c0285df5dbf2bcab73da651358839e9b77481b2eab107708c",
+        "signature": "7cb86b2f2704f1d892f764d5fbcdef6a484129ae3b5ebf772a14d505ce1010b263e5e4c93d35ca247613d37fa1947c7f03e6065d406c1ee029094ef73e4d900a"
+    },
+    "permissions": {
+        "projectRead": {
+            "permission": "projects.read",
+            "resourceKind": "Project",
+            "resourceId": "00000000-0000-4000-8000-000000000001"
+        },
+        "background": {
+            "permission": "background.run",
+            "resourceKind": "Extension",
+            "resourceId": "dev.example.project-summary"
+        }
+    },
+    "revokeRace": [
+        "accepted-before-linearization-keeps-existing-operation-authority-only",
+        "queued-before-linearization-cancelled-after-commit",
+        "new-call-after-linearization-denied",
+        "stale-lease-grant-revision-denied"
+    ],
+    "lifecycle": {
+        "desiredStates": ["installed_disabled", "enabled", "uninstalling", "quarantined"],
+        "runtimeStates": ["stopped", "starting", "running", "stopping", "crashed"],
+        "legalComposite": {"desired": "enabled", "runtime": "crashed"}
+    }
+}

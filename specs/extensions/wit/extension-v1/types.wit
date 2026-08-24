@@ -1,0 +1,68 @@
+package alcomd:extension@1.0.0;
+
+interface types {
+    type extension-id = string;
+    type instance-id = string;
+    type project-id = string;
+
+    enum project-kind {
+        vpm,
+        upm,
+        unknown,
+    }
+
+    enum error-code {
+        invalid-argument,
+        permission-denied,
+        scope-denied,
+        lease-expired,
+        lease-revoked,
+        project-not-found,
+        project-inaccessible,
+        data-not-found,
+        data-revision-conflict,
+        data-quota-exceeded,
+        resource-limit,
+        cancelled,
+        internal-error,
+    }
+
+    record extension-error {
+        code: error-code,
+        diagnostic-id: option<string>,
+    }
+
+    record project-summary {
+        project-id: project-id,
+        display-name: string,
+        kind: project-kind,
+        unity-version: option<string>,
+        revision: u64,
+    }
+
+    record activation-context {
+        extension-id: extension-id,
+        instance-id: instance-id,
+        api-major: u32,
+        lifecycle-generation: u64,
+    }
+
+    enum stop-reason {
+        disabled,
+        permission-revoked,
+        lease-expired,
+        daemon-shutdown,
+        uninstalling,
+    }
+
+    record data-value {
+        bytes: list<u8>,
+        key-revision: u64,
+        namespace-revision: u64,
+    }
+
+    record data-write-result {
+        key-revision: u64,
+        namespace-revision: u64,
+    }
+}

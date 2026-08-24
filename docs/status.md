@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M5 已正式完成并通过最终人工验收；尚未进入 M6`
+`M6 contract-first 统一 Stop A 已完成并通过完整本地验收；等待项目所有者审批，production implementation 未开始`
 
 ## 已完成
 
@@ -208,6 +208,17 @@
   `GLIBC_2.34`，九个 macOS 预期产物均为 arm64 / minos 11.0。项目所有者已确认最终人工验收通过，
   M5 正式完成；四项 v3 differential parity 仍 blocked，Windows 10/11 完整客户端发行验证仍 deferred
   到 M12。
+- M6 ExecPlan 已按项目所有者附条件审阅冻结：每个 enabled ExtensionId 独占一个 Host OS process、无 ambient
+  WASI authority、WIT type/function shape 默认 breaking、lease/grant revision linearization、desired/runtime
+  state 分离、bounded key/value、scoped Project summary 第一能力、publisher trust 分层与 exact runtime limits。
+- M6 Stop A contract-first 工件已形成 `.alcomdext`/Manifest/signature/archive profile、WIT ABI v1/compatibility
+  fixture、permissions/scope/lease/revocation、State Schema v8 migration contract、RPC/error/hello optional contract、
+  UI Bridge headless envelope、threat model、synthetic vectors 和永久 contract test。production daemon 仍为
+  dataSchema 7，不广告 `extensionApi` 或 M6 capability，未修改 production Rust/TS。
+- 隔离依赖评估推荐 `wasmtime 48.0.0` LTS（defaults off，仅 async/component-model/cranelift/runtime/std）与
+  `ed25519-dalek 3.0.0`（defaults off）；第一条 slice 不依赖 `wasmtime-wasi`。该方案预计新增 68 个 lock package，
+  Windows cold probe 291.641 s、最小 binary delta 10,190,336 bytes。根 manifest/三份 lock file 尚未修改，依赖与
+  production wiring 等待 Stop A 人工审批。
 
 ## 后续里程碑尚未完成
 
@@ -216,7 +227,7 @@
 - MCP 33 个 v3 用例的 M-1 工具合同基线已形成并获 A-026 批准；正式 Schema、快照、兼容
   别名策略和协议实现留在对应后续里程碑。
 - VPM、项目、模板与备份。
-- Extension Host 和 WASM。
+- Extension Host 和 WASM production implementation；M6 Stop A 只有 contract-first 工件。
 - MCP 实现。
 - Discord IPC。
 - v3 迁移与 Bootstrap。
@@ -242,9 +253,8 @@
   基线和 MCP 工具/诊断/错误方向。O-008 已被 A-024/ADR 0015 替代，O-003 已由 A-025 关闭。
 - Tasks SEP 已 Final，但扩展 artifact 仍带 Draft/experimental 标记，且所审错误码与最终 core
   Schema 冲突；在固定兼容版本前保持阻塞。
-- `specs/extensions/permissions-v1.md` 与 `specs/mcp/toolset-v1.md` 尚未应用 A-021/A-023；M-1
-  允许范围不包含 `specs/`，必须在对应协议里程碑经 Schema/快照更新落地，生产实现不得继续
-  使用 `mcp.sessions.read`。
+- `specs/extensions/permissions-v1.md` 已在 M6 Stop A 应用 A-023 并明确拒绝 `mcp.sessions.read`；
+  `specs/mcp/toolset-v1.md` 的 A-021/A-023 正式 Schema/快照更新仍属于 M8，不能由 M6 提前发布。
 - `alcomd-mcp`、GUI 与其他后续入口仍是 scaffold；M1 只实现 daemon/client/CLI 的最小 status
   切片，不得将其描述为完整 RPC、CLI、Operation 或业务功能。
 - `projects.v3-parity` 继续保持 `blocked`，直到 M11 建立脱敏真实 v3 Fixture；synthetic/public
@@ -262,7 +272,10 @@
 
 ## 下一停止点
 
-M0、M1、M2、M3、M4 与 M5 均已完成并通过最终人工验收；尚未进入 M6。M4 完整
+M0、M1、M2、M3、M4 与 M5 均已完成并通过最终人工验收。M6 已进入 contract-first，统一 Stop A 的
+公共合同、synthetic fixtures、contract tests 与依赖评估完成后必须停止，等待项目所有者人工审批；
+production implementation、Cargo dependency、runtime/Host wiring 与 capability advertisement 均未获批准。
+M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential
 revocation 仍未完成；Windows 10/11 完整客户端

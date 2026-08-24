@@ -1,0 +1,72 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/extensions/ui-bridge-v1.json",
+    "title": "ALCOMD Extension UI Bridge v1 envelope",
+    "oneOf": [
+        {"$ref": "#/$defs/request"},
+        {"$ref": "#/$defs/response"},
+        {"$ref": "#/$defs/event"}
+    ],
+    "$defs": {
+        "base": {
+            "type": "object",
+            "required": ["bridgeVersion", "sessionId", "sequence"],
+            "properties": {
+                "bridgeVersion": {"const": 1},
+                "sessionId": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27}$"},
+                "sequence": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807}
+            }
+        },
+        "request": {
+            "allOf": [
+                {"$ref": "#/$defs/base"},
+                {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["bridgeVersion", "sessionId", "sequence", "requestId", "method", "params"],
+                    "properties": {
+                        "bridgeVersion": {"const": 1},
+                        "sessionId": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27}$"},
+                        "sequence": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+                        "requestId": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[!-~]+$"},
+                        "method": {"type": "string", "minLength": 3, "maxLength": 128, "pattern": "^[a-z0-9][a-z0-9.-]*$"},
+                        "params": {"type": "object"}
+                    }
+                }
+            ]
+        },
+        "response": {
+            "allOf": [
+                {"$ref": "#/$defs/base"},
+                {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["bridgeVersion", "sessionId", "sequence", "requestId"],
+                    "properties": {
+                        "bridgeVersion": {"const": 1},
+                        "sessionId": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27}$"},
+                        "sequence": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+                        "requestId": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[!-~]+$"},
+                        "result": {},
+                        "error": {"type": "object"}
+                    },
+                    "oneOf": [{"required": ["result"]}, {"required": ["error"]}]
+                }
+            ]
+        },
+        "event": {
+            "allOf": [
+                {"$ref": "#/$defs/base"},
+                {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["bridgeVersion", "sessionId", "sequence", "event", "data"],
+                    "properties": {
+                        "bridgeVersion": {"const": 1},
+                        "sessionId": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f-]{27}$"},
+                        "sequence": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+                        "event": {"type": "string", "minLength": 3, "maxLength": 128, "pattern": "^[a-z0-9][a-z0-9.-]*$"},
+                        "data": {}
+                    }
+                }
+            ]
+        }
+    }
+}

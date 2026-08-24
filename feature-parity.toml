@@ -261,7 +261,7 @@ status = "verified"
 implementation_status = "scaffold"
 evidence = ["docs/baselines/access-and-extensions.md", "docs/architecture/ALCOMD-V4.md"]
 coverage = ["UI", "WASM", "principal", "resource limits", "revocation"]
-tests = ["extensions.first-third-parity", "extensions.sandbox-abuse"]
+tests = ["extensions.m6-contract", "extensions.first-third-parity", "extensions.sandbox-abuse"]
 
 [[feature]]
 id = "extensions.abi-v1"
@@ -275,7 +275,7 @@ status = "verified"
 implementation_status = "not_started"
 evidence = ["docs/decisions/accepted.md::A-022", "docs/baselines/access-and-extensions.md"]
 coverage = ["ABI negotiation", "WIT compatibility", "runtime major pin", "security patch policy", "WASI 0.3 non-breaking path"]
-tests = ["extensions.first-third-parity", "extensions.sandbox-abuse"]
+tests = ["extensions.m6-contract", "extensions.first-third-parity", "extensions.sandbox-abuse"]
 
 [[feature]]
 id = "mcp.protocol"

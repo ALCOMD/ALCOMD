@@ -1,0 +1,158 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m6-extension-runtime.json",
+    "title": "ALCOMD RPC v1 M6 Extension Runtime contract",
+    "x-alcomd-publication": "contract-only-until-production-capability-exists",
+    "x-alcomd-method-permissions": {
+        "extensions.list": ["extensions.read"],
+        "extensions.get": ["extensions.read"],
+        "extensions.planInstall": ["extensions.manage"],
+        "extensions.applyInstall": ["extensions.manage"],
+        "extensions.enable": ["extensions.manage"],
+        "extensions.disable": ["extensions.manage"],
+        "extensions.planUninstall": ["extensions.manage"],
+        "extensions.applyUninstall": ["extensions.manage"],
+        "extensions.setGrant": ["extensions.permissions.manage"],
+        "extensions.revokeGrant": ["extensions.permissions.manage"]
+    },
+    "$defs": {
+        "methodName": {
+            "enum": [
+                "extensions.list", "extensions.get", "extensions.planInstall",
+                "extensions.applyInstall", "extensions.enable", "extensions.disable",
+                "extensions.planUninstall", "extensions.applyUninstall",
+                "extensions.setGrant", "extensions.revokeGrant"
+            ]
+        },
+        "capability": {"enum": ["extensions.lifecycle.v1", "extensions.permissions.v1"]},
+        "extensionId": {
+            "type": "string", "minLength": 3, "maxLength": 255,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+        },
+        "uuid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "revision": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "expectedOptionalRevision": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+        "idempotencyKey": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[!-~]+$"},
+        "absolutePath": {"type": "string", "minLength": 1, "maxLength": 32768},
+        "desiredState": {"enum": ["installed_disabled", "enabled", "uninstalling", "quarantined"]},
+        "runtimeState": {"enum": ["stopped", "starting", "running", "stopping", "crashed"]},
+        "extensionRecord": {
+            "type": "object", "additionalProperties": true,
+            "required": [
+                "extensionId", "version", "apiMajor", "packageDigest", "publisherFingerprint",
+                "trustDecision", "desiredState", "runtimeState", "grantRevision",
+                "lifecycleGeneration", "revision"
+            ],
+            "properties": {
+                "extensionId": {"$ref": "#/$defs/extensionId"},
+                "version": {"type": "string", "minLength": 5, "maxLength": 128},
+                "apiMajor": {"const": 1},
+                "packageDigest": {"$ref": "#/$defs/sha256"},
+                "publisherFingerprint": {"type": "string", "pattern": "^ed25519-sha256:[0-9a-f]{64}$"},
+                "trustDecision": {"enum": ["official", "user_approved_for_extension"]},
+                "desiredState": {"$ref": "#/$defs/desiredState"},
+                "runtimeState": {"$ref": "#/$defs/runtimeState"},
+                "grantRevision": {"$ref": "#/$defs/revision"},
+                "lifecycleGeneration": {"$ref": "#/$defs/revision"},
+                "revision": {"$ref": "#/$defs/revision"}
+            }
+        },
+        "listParams": {
+            "type": "object", "additionalProperties": false,
+            "properties": {
+                "cursor": {"type": "string", "minLength": 1, "maxLength": 1024},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 1000}
+            }
+        },
+        "getParams": {
+            "type": "object", "additionalProperties": false, "required": ["extensionId"],
+            "properties": {"extensionId": {"$ref": "#/$defs/extensionId"}}
+        },
+        "planInstallParams": {
+            "type": "object", "additionalProperties": false,
+            "required": ["packagePath", "expectedRevision", "publisherApproval"],
+            "properties": {
+                "packagePath": {"$ref": "#/$defs/absolutePath"},
+                "expectedRevision": {"$ref": "#/$defs/expectedOptionalRevision"},
+                "publisherApproval": {"enum": ["none", "approve_for_extension"]}
+            }
+        },
+        "planUninstallParams": {
+            "type": "object", "additionalProperties": false,
+            "required": ["extensionId", "expectedRevision", "dataDisposition"],
+            "properties": {
+                "extensionId": {"$ref": "#/$defs/extensionId"},
+                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "dataDisposition": {"enum": ["retain_data", "delete_data"]}
+            }
+        },
+        "planRecord": {
+            "type": "object", "additionalProperties": true,
+            "required": [
+                "planId", "action", "state", "extensionId", "packageDigest",
+                "publisherFingerprint", "trustDecision", "dataDisposition", "planFingerprint"
+            ],
+            "properties": {
+                "planId": {"$ref": "#/$defs/uuid"},
+                "action": {"enum": ["install", "uninstall"]},
+                "state": {"enum": ["unapplied", "applied"]},
+                "extensionId": {"$ref": "#/$defs/extensionId"},
+                "packageDigest": {"$ref": "#/$defs/sha256"},
+                "publisherFingerprint": {"type": "string", "pattern": "^ed25519-sha256:[0-9a-f]{64}$"},
+                "trustDecision": {"enum": ["official", "user_approved_for_extension"]},
+                "dataDisposition": {"enum": ["not_applicable", "retain_data", "delete_data"]},
+                "planFingerprint": {"$ref": "#/$defs/sha256"}
+            }
+        },
+        "applyPlanParams": {
+            "type": "object", "additionalProperties": false, "required": ["planId", "idempotencyKey"],
+            "properties": {
+                "planId": {"$ref": "#/$defs/uuid"},
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
+            }
+        },
+        "lifecycleParams": {
+            "type": "object", "additionalProperties": false,
+            "required": ["extensionId", "expectedRevision", "idempotencyKey"],
+            "properties": {
+                "extensionId": {"$ref": "#/$defs/extensionId"},
+                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
+            }
+        },
+        "operationResult": {
+            "type": "object", "additionalProperties": true,
+            "required": ["operationId", "replayed"],
+            "properties": {
+                "operationId": {"$ref": "#/$defs/uuid"},
+                "replayed": {"type": "boolean"}
+            }
+        },
+        "grantParams": {
+            "type": "object", "additionalProperties": false,
+            "required": [
+                "extensionId", "permission", "resourceKind", "resourceId",
+                "expectedGrantRevision", "idempotencyKey"
+            ],
+            "properties": {
+                "extensionId": {"$ref": "#/$defs/extensionId"},
+                "permission": {"enum": ["background.run", "projects.read"]},
+                "resourceKind": {"enum": ["Extension", "Project"]},
+                "resourceId": {"type": "string", "minLength": 3, "maxLength": 255},
+                "expectedGrantRevision": {"$ref": "#/$defs/revision"},
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
+            }
+        },
+        "grantResult": {
+            "type": "object", "additionalProperties": true,
+            "required": ["extensionId", "grantRevision", "state", "replayed"],
+            "properties": {
+                "extensionId": {"$ref": "#/$defs/extensionId"},
+                "grantRevision": {"$ref": "#/$defs/revision"},
+                "state": {"enum": ["granted", "revoked"]},
+                "replayed": {"type": "boolean"}
+            }
+        }
+    }
+}
