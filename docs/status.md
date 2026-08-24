@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成并通过最终人工验收；M7 ExecPlan 草案已创建，M7 production implementation 尚未获批。`
+`M6 已正式完成；M7 仅进入 contract-first Stop A，production implementation 尚未获批。`
 
 ## 已完成
 
@@ -226,6 +226,12 @@
   `9fcd7c31dc1c5707f9490555e2b298d0fa28ca01`）对应 CI run `32724915827`：Windows Server 2025 成功，
   Ubuntu 22.04 成功且最高 `GLIBC_2.34`，macOS 15 arm64 成功且九个预期产物均为 arm64 / minos 11.0。
   项目所有者已确认最终人工验收通过，M6 正式完成；尚未开始 M7。
+- M7 Stop A 已形成 route/flow matrix、appearance/settings State v9/RPC/permission proposal、Activity 对现有
+  Event/Operation read model 的复用、closed typed Tauri adapter/main capability proposal、app-private generated
+  TypeScript contract 选择、Extension UI placement/asset/CSP/sandbox proposal、threat model、synthetic vectors 与依赖
+  候选审计。运行时 Permission baseline 没有 `activity.read`/`diagnostics.read`；Stop A 不新增前者，也不提出或
+  预批准后者。所有上述内容仍是等待人工审批的 proposal，没有修改 production RPC、State Schema、Permission、
+  Tauri capability、dependency 或 UI Bridge public contract。
 
 ## 后续里程碑尚未完成
 
@@ -249,6 +255,11 @@
 - GitHub 已宣布 `ubuntu-22.04` hosted runner 从 2026-09-17 开始弃用并于 2027-04-17 退役；
   当前 M0 仍使用该构建基线，未来替代不能直接用 Ubuntu 24.04 冒充 Ubuntu 22.04 /
   `GLIBC_2.35` 等价验证。
+- M7 Extension UI 最终 container/physical mapping 尚未冻结：WebView2、WebKitGTK、WKWebView 的 actual in-app
+  isolation evidence 尚未取得。静态 Tauri 2.11.5 source evidence 显示 managed child WebView 会获得 invoke
+  initialization surface，因此不能只靠“无 matching capability”声称 `__TAURI_INTERNALS__` absent；sandboxed
+  cross-origin iframe 只是 preferred probe candidate。test-only example 已编译，但本机 Windows 在进入 `main` 前
+  被 loader `STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139)` 阻止；三平台 harness 未通过前保持 blocker。
 
 - 真实安装快照和迁移 Fixture 尚未建立；因此 artifact 模板继续保持 `confirmed = false`，
   迁移删除、GUI/模板/备份/Unity 差异测试仍 blocked。项目所有者已决定不在 M-1 继续投入
@@ -279,8 +290,9 @@
 
 ## 下一停止点
 
-M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 ExecPlan 草案已创建；下一停止点是
-项目所有者对 M7 范围与 contract-first Stop A 的人工审批，不得开始 M7 production implementation。
+M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 当前只执行 contract-first Stop A；下一停止点是
+项目所有者对 Stop A proposals、三平台 WebView probe 执行方式与依赖候选的人工审批，不得开始 M7 production
+implementation。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential

@@ -1,0 +1,19 @@
+{
+    "$schema": "https://schema.tauri.app/config/2",
+    "productName": "ALCOMD M7 Isolation Probe",
+    "version": "0.0.0",
+    "identifier": "com.cqmhv.alcomd.m7-probe",
+    "build": {
+        "frontendDist": "../m7-probe-dist"
+    },
+    "app": {
+        "withGlobalTauri": true,
+        "windows": [],
+        "security": {
+            "capabilities": []
+        }
+    },
+    "bundle": {
+        "active": false
+    }
+}

@@ -359,6 +359,32 @@ status = "blocked"
 description = "以冻结截图和流程覆盖 v3 页面、菜单、错误、进度、主题、多语言和可访问状态。"
 
 [[test]]
+id = "gui.m7-stop-a-contract"
+stage = "M7"
+kind = "contract"
+platforms = ["all"]
+status = "implemented"
+description = "验证 Stop A route identity/state matrix、Activity 复用、diagnostics deferred、appearance proposal、closed typed Tauri adapter、host-owned placement 与 isolation negative vector 完整性；这不是 production GUI 或已发布 RPC/Permission/Schema 证据。"
+evidence = ["specs/gui/m7-stop-a.md", "specs/gui/m7-settings-appearance-v1.proposal.schema.json", "crates/alcomd-testing/fixtures/m7/stop-a-vectors.json", "crates/alcomd-testing/tests/m7_contract.rs"]
+
+[[test]]
+id = "gui.m7-webview-isolation"
+stage = "M7"
+kind = "security-integration"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "blocked"
+description = "必须在 WebView2、WebKitGTK 与 WKWebView 的 test-only in-app harness 中证明 Tauri globals/transport、parent/opener/DOM、confused deputy、local authority、network 与 top navigation fail closed；当前仅有 contract vectors，尚无三平台 actual WebView evidence，因此 container choice 未冻结。"
+evidence = ["apps/alcomd-gui/src-tauri/examples/m7_isolation_probe.rs", "apps/alcomd-gui/src-tauri/tauri.m7-probe.conf.json", "apps/alcomd-gui/m7-probe-dist", "crates/alcomd-testing/fixtures/m7/stop-a-vectors.json"]
+
+[[test]]
+id = "gui.m7-accessibility"
+stage = "M7"
+kind = "accessibility"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "planned"
+description = "分别记录 component/DOM keyboard-focus-ARIA automation、200%/320px layout、manual screenshot 和 Narrator/VoiceOver/Linux reader smoke；任何单一证据不得冒充完整 accessibility 验收。"
+
+[[test]]
 id = "settings.authoritative-storage"
 stage = "M7"
 kind = "integration"

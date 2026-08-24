@@ -1,6 +1,6 @@
 # M7：官方 GUI 与扩展 UI 容器
 
-状态：Draft；只规划 M7，production implementation 尚未获得批准
+状态：M7 总体方向已获批；仅执行 contract-first Stop A，production implementation 尚未获得批准
 
 ## 目标
 
@@ -134,7 +134,7 @@ M7 milestone 完成不等于 M8 MCP、M9 Discord、M11 migration/updater 或 M12
 - 以 Material Design 3 color/type/shape/elevation/motion token 构建，不复制 v3 像素布局。
 - M7 最小 appearance 为 `system | light | dark`、主题 source color、density/compact preference、motion preference
   与 locale。九种 v3 scheme 是否全部进入 M7 由 A-020 流程对照在 Stop A 冻结，不从审计文字直接推断实现。
-- 权威 appearance 与 locale 由 daemon 的已批准 settings use case 持久化；`localStorage` 只能保存可丢失的
+- 权威 appearance 与 locale 必须由 Stop A 获批后的 daemon settings use case 持久化；`localStorage` 只能保存可丢失的
   drawer 开合、最后 tab、列表列宽等 view state，并必须可在清空后无损恢复业务状态。
 - 系统主题变化在 `system` 模式即时生效；用户明确 light/dark 时不被系统变化覆盖。
 - reduced motion 来自系统偏好和用户设置的更严格结果；不得用动画作为唯一状态或进度表达。
@@ -238,10 +238,14 @@ extension UI。新增 Bridge method 必须同时有：public permission、resour
 生产实现前必须形成并由项目所有者统一审批：
 
 1. GUI route/flow matrix：页面、入口、RPC、permission、loading/empty/error/progress/confirmation 与 deferred 项。
-2. appearance/settings v1：权威字段、revision/concurrency、Config Schema、RPC method/capability/permission 候选和
+2. appearance/settings v1：权威字段、revision/concurrency、State 或 Config 二选一的 persistence、RPC
+   method/capability/permission 候选和
    localStorage 白名单。
-3. activity/diagnostics read model：Event/Operation 映射、分页/cursor、脱敏、`activity.read` 与已批准
-   `diagnostics.read` 的实际边界；原始诊断导出继续排除。
+3. activity/diagnostics read model：Activity 默认只组合 `events.list` 与 `operations.*`，分别复用
+   `events.read` 与 `operations.read`；不默认新增 `activity.read`。当前 Permission baseline 没有
+   `diagnostics.read`，Stop A 只有在证明现有 Event/Operation read model 存在真实缺口并冻结 exact safe DTO、
+   daemon/application redaction boundary、pagination/bounds、stable errors、capability、permission requirement 与
+   Principal availability 后，才可把新的 read model/permission 作为候选提交审批。原始诊断导出继续排除。
 4. main-WebView typed Tauri command schema、capability 文件和 extension frame 无 private IPC 的 negative contract。
 5. Extension UI placement、physical scheme/origin、asset serving、MIME/cache/CSP/sandbox 与 Bridge transport。
 6. public/synthetic flow fixtures、a11y matrix、截图清单和三平台真实 WebView 验收方案。
@@ -250,6 +254,13 @@ extension UI。新增 Bridge method 必须同时有：public permission、resour
 
 Stop A 前不得修改 public RPC、permission name、Config/State Schema、Manifest/WIT/UI Bridge contract 或 production
 代码。Stop A 通过不代表 M7 完成，只允许按获批 slice 实施。
+
+Stop A proposal 已集中记录在 `specs/gui/m7-stop-a.md`；appearance exact wire shape 位于
+`specs/gui/m7-settings-appearance-v1.proposal.schema.json`，synthetic vectors 位于
+`crates/alcomd-testing/fixtures/m7/stop-a-vectors.json`，依赖候选位于
+`docs/exec-plans/M7-dependency-evaluation.md`。这些文件名中的 proposal 含义是“等待下一轮人工审批”，不构成
+published contract。三平台 actual WebView evidence 尚未取得，因此 container choice 与 physical mapping 保持
+`not yet frozen`；不得从 preferred probe candidate 推导 production 授权。
 
 ## 实施顺序
 
@@ -273,10 +284,11 @@ Stop A 前不得修改 public RPC、permission name、Config/State Schema、Mani
 - 项目 registry、repository registry、package Plan/Apply、Unity registry/launch、template、backup 和 extension lifecycle。
 - 每一类写入复用现有 revision/idempotency/Operation/writer gate，不建立 GUI 专用业务路径。
 
-### Slice 4：settings、activity 与 diagnostics
+### Slice 4：settings 与 activity
 
-- 只实现 Stop A 获批的最小 Config/RPC；无真实 daemon use case 的设置不显示为可保存。
-- 活动/诊断默认脱敏，技术详情不能落入普通前端日志或 telemetry。
+- 只实现 Stop A 获批的最小 State/Config/RPC；无真实 daemon use case 的设置不显示为可保存。
+- Activity 只组合现有 Event/Operation authority；Stop A 未证明 diagnostics 独立缺口，因此 production slice
+  默认不包含 diagnostics。技术详情不能落入普通前端日志或 telemetry。
 
 ### Slice 5：真实 Extension UI 容器
 
@@ -432,7 +444,8 @@ Stop A 应分别评估：
 ## 人工审批点
 
 1. Stop A 的 route/flow matrix、M7 completion boundary 与哪些 v3 flow 明确 deferred。
-2. appearance/settings、activity/diagnostics 的 RPC、capability、permission 与 Config/State Schema。
+2. appearance/settings 的 RPC、capability、permission 与 Config/State Schema，以及 Activity 复用
+   `events.read`/`operations.read` 的边界；任何 diagnostics 候选必须另行证明并审批。
 3. `@alcomd/sdk` 在 M7 的修改边界，或 app-private typed contract 到 M10 的临时边界。
 4. isolated WebView 与 sandboxed iframe 的最终选择，以及 physical scheme/origin、CSP、asset serving 和 placement。
 5. 所有新增 frontend/dev/runtime dependency 与 lockfile diff。
@@ -494,3 +507,16 @@ git diff --check
 - 2026-08-24：创建本 M7 ExecPlan 草案。只规划官方 GUI、MD3/appearance、typed RPC client、connection state、
   accessibility、Extension UI WebView/Tauri 隔离和三平台验收；未修改 production code、RPC、State/Config Schema、
   Manifest/WIT/UI Bridge、permission、dependency、lockfile、unsafe 或 platform API。
+- 2026-08-24：项目所有者批准仅进入 contract-first Stop A，并纠正权限基线：Activity 优先复用
+  `events.read`/`operations.read`，`activity.read` 不默认新增；`diagnostics.read` 当前不是已批准 Permission。
+  Stop A 只形成提案、fixtures、threat model、test plan 与 test-only isolation evidence，不开始 production。
+- 2026-08-24：形成 Stop A route/settings/activity/typed adapter/placement/physical mapping/CSP/sandbox proposals、
+  threat-model 增量、synthetic contract vectors 与精确依赖候选审计。选择 app-private generated/snapshot-verified
+  TypeScript contract 到 M10；未安装依赖或修改 lockfile。三平台 actual WebView evidence 尚未取得，故 iframe 与
+  isolated child WebView 的最终选择保持 `not yet frozen`。test-only Tauri example 已通过 compile check；本机 Windows
+  probe 在进入 `main` 前被 loader `STATUS_ENTRYPOINT_NOT_FOUND (0xc0000139)` 阻止，不能记为 WebView2 security
+  evidence，等待项目所有者审批 hosted harness 后再取得三平台结果。
+- 2026-08-24：M7 focused contract tests（5 项）、`cargo fmt --all -- --check`、Workspace all-target Clippy、
+  `cargo xtask check`、metadata validation、baseline freeze check 与 `git diff --check` 通过；三份 lockfile 无变化，
+  未新增 production dependency、public contract、unsafe 或 platform API。Stop A 停在 container/physical mapping 的
+  三平台 actual WebView evidence 与下一轮人工审批之前。

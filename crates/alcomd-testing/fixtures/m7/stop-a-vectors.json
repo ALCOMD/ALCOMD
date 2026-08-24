@@ -1,0 +1,79 @@
+{
+    "status": "proposal",
+    "routes": [
+        {"identity": "home", "path": "/"},
+        {"identity": "projects.list", "path": "/projects"},
+        {"identity": "projects.overview", "path": "/projects/:projectId/overview"},
+        {"identity": "projects.packages", "path": "/projects/:projectId/packages"},
+        {"identity": "projects.unity", "path": "/projects/:projectId/unity"},
+        {"identity": "projects.backups", "path": "/projects/:projectId/backups"},
+        {"identity": "repositories.list", "path": "/repositories"},
+        {"identity": "repositories.detail", "path": "/repositories/:repositoryId"},
+        {"identity": "templates.list", "path": "/templates"},
+        {"identity": "templates.detail", "path": "/templates/:templateId"},
+        {"identity": "operations.list", "path": "/operations"},
+        {"identity": "operations.detail", "path": "/operations/:operationId"},
+        {"identity": "extensions.list", "path": "/extensions"},
+        {"identity": "extensions.detail", "path": "/extensions/:extensionId"},
+        {"identity": "extensions.ui", "path": "/extensions/:extensionId/ui"},
+        {"identity": "settings.appearance", "path": "/settings/appearance"},
+        {"identity": "activity", "path": "/activity"},
+        {"identity": "about", "path": "/about"}
+    ],
+    "requiredRouteStates": [
+        "initial-loading",
+        "refreshing",
+        "empty",
+        "error",
+        "disconnected",
+        "operation-running",
+        "confirmation-required",
+        "success",
+        "failed",
+        "cancelled",
+        "stale-revision-conflict",
+        "retry"
+    ],
+    "activity": {
+        "methods": ["events.list", "operations.list", "operations.get"],
+        "permissions": ["events.read", "operations.read"],
+        "newPermission": null,
+        "duplicateStore": false
+    },
+    "diagnostics": {
+        "decision": "deferred-no-independent-m7-gap",
+        "permission": null,
+        "rpc": null
+    },
+    "tauriCommands": ["gui_query", "gui_command", "gui_select_path"],
+    "forbiddenTauriShapes": [
+        "arbitrary-method-string",
+        "arbitrary-json-params",
+        "raw-rpc-frame",
+        "raw-daemon-socket"
+    ],
+    "extensionPlacement": "/extensions/:extensionId/ui",
+    "isolationNegativeCases": [
+        "window.__TAURI__",
+        "window.__TAURI_INTERNALS__",
+        "raw-tauri-invoke",
+        "tauri-event",
+        "tauri-channel",
+        "parent-opener-access",
+        "postmessage-confused-deputy",
+        "main-dom-access",
+        "daemon-socket",
+        "filesystem",
+        "clipboard",
+        "notification",
+        "network",
+        "top-level-navigation"
+    ],
+    "actualWebviewEvidence": {
+        "windows-local-webview2": "attempted-loader-blocked-status-entrypoint-not-found",
+        "windows-server-2025-webview2": "not-yet-obtained",
+        "ubuntu-22.04-webkitgtk": "not-yet-obtained",
+        "macos-15-wkwebview": "not-yet-obtained",
+        "containerChoice": "not-yet-frozen"
+    }
+}
