@@ -120,7 +120,14 @@ fn test_only_probe_has_no_production_capability_and_uses_physical_candidate() {
     let config: Value = serde_json::from_str(PROBE_CONFIG).expect("probe config must be JSON");
     assert_eq!(
         config["app"]["security"]["capabilities"],
-        serde_json::json!([])
+        serde_json::json!([
+            {
+                "identifier": "m7-probe-main-only",
+                "description": "Test-only positive control for the M7 WebView isolation probe.",
+                "windows": ["m7-isolation-probe"],
+                "permissions": ["core:app:allow-name"]
+            }
+        ])
     );
     assert_eq!(config["app"]["windows"], serde_json::json!([]));
     assert!(PROBE_RUST.contains("register_uri_scheme_protocol(\"alcomd-extension-ui\""));

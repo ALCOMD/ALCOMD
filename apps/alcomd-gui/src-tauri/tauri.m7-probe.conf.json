@@ -10,7 +10,14 @@
         "withGlobalTauri": true,
         "windows": [],
         "security": {
-            "capabilities": []
+            "capabilities": [
+                {
+                    "identifier": "m7-probe-main-only",
+                    "description": "Test-only positive control for the M7 WebView isolation probe.",
+                    "windows": ["m7-isolation-probe"],
+                    "permissions": ["core:app:allow-name"]
+                }
+            ]
         }
     },
     "bundle": {

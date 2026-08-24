@@ -520,3 +520,7 @@ git diff --check
   `cargo xtask check`、metadata validation、baseline freeze check 与 `git diff --check` 通过；三份 lockfile 无变化，
   未新增 production dependency、public contract、unsafe 或 platform API。Stop A 停在 container/physical mapping 的
   三平台 actual WebView evidence 与下一轮人工审批之前。
+- 2026-08-24：项目所有者批准仅执行 test-only 三平台 WebView evidence。为 iframe candidate 增加真实
+  WebView2/WebKitGTK/WKWebView probe、A/X-B/X-A/Y origin/session matrix、`headless.test.ping` positive Bridge
+  control、main-WebView-only Tauri command control、CSP/IPC/DOM/network/filesystem/clipboard/notification denial
+  与 fail-closed CI glue；production Extension UI container 继续 `not yet frozen`，未开始 M7 production。
