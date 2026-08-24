@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 contract-first、最小 production implementation 与本地完整验收已完成；等待最终提交的三平台 Hosted CI 和项目所有者人工验收，尚未进入 M7`
+`M6 已正式完成并通过最终人工验收；尚未进入 M7。`
 
 ## 已完成
 
@@ -222,8 +222,10 @@
 - M6 真实测试已覆盖 Component/Host/daemon 生命周期、first-party/third-party 同权路径、scoped Project summary、
   bounded extension data、trap/fuel limit/quarantine、revoke-in-flight，以及 `archive_verified`、
   `staging_complete`、`package_published`、`state_committed`、`package_moved_to_backup` kill/restart matrix。
-  本地 `scripts/check.ps1` 与合同、metadata、baseline、unsafe、dependency/lock 门禁通过；最终三平台 Hosted CI
-  尚未取得，因此 M6 尚未正式完成。
+  最终 SHA `b666e8fcac6fd4153750c401b76f2f61f6d2a34a`（production commit
+  `9fcd7c31dc1c5707f9490555e2b298d0fa28ca01`）对应 CI run `32724915827`：Windows Server 2025 成功，
+  Ubuntu 22.04 成功且最高 `GLIBC_2.34`，macOS 15 arm64 成功且九个预期产物均为 arm64 / minos 11.0。
+  项目所有者已确认最终人工验收通过，M6 正式完成；尚未开始 M7。
 
 ## 后续里程碑尚未完成
 
@@ -277,9 +279,8 @@
 
 ## 下一停止点
 
-M0、M1、M2、M3、M4 与 M5 均已完成并通过最终人工验收。M6 contract-first、最小 production implementation
-与本地完整验收已完成；下一停止点是最终提交自身的 Windows Server 2025、Ubuntu 22.04、macOS 15 arm64
-Hosted CI 全部成功并完成 SHA 对齐后，等待项目所有者人工验收。M6 正式验收前不得进入 M7。
+M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M6 尚未进入 M7；下一步仅允许创建
+M7 ExecPlan 草案并等待项目所有者人工审批，不得开始 M7 production implementation。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential

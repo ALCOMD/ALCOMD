@@ -1,6 +1,6 @@
 # M6：统一扩展运行时与公开 Extension API
 
-状态：M6 contract-first、最小 production implementation 与本地完整验收已完成；等待最终提交的三平台 Hosted CI 和项目所有者人工验收，尚未进入 M7
+状态：M6 已完成，并通过本地完整验收、三平台 Hosted CI 和项目所有者最终人工验收；尚未开始 M7
 
 ## 目标
 
@@ -384,3 +384,8 @@ fault matrix、Tauri no-bundle、dependency/unsafe/lockfile gates 和三平台 C
   kill/restart checkpoints；均复用原 OperationId/Plan/idempotency。第一方与第三方通过相同 package、grant、
   Host capability 和 data authority 路径。完整 `scripts/check.ps1` 与本地合同/metadata/baseline/unsafe/lock
   门禁通过；等待最终提交自身的三平台 Hosted CI，未进入 M7。
+- 2026-08-24：项目所有者确认 M6 最终人工验收通过。最终 SHA
+  `b666e8fcac6fd4153750c401b76f2f61f6d2a34a`，production commit
+  `9fcd7c31dc1c5707f9490555e2b298d0fa28ca01`，CI run `32724915827`；Windows Server 2025
+  成功，Ubuntu 22.04 成功且最高 `GLIBC_2.34`，macOS 15 arm64 成功且九个预期产物均为 arm64 / minos 11.0。
+  M6 正式完成，尚未开始 M7。
