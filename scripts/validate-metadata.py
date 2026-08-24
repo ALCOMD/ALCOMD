@@ -729,6 +729,55 @@ def main() -> int:
         approved_m4_locked_packages <= locked_packages,
         "Approved M4 archive/hash/normalization dependency closure is not locked",
     )
+    extension_manifest = load_toml("crates/alcomd-extensions/Cargo.toml")
+    host_manifest = load_toml("apps/alcomd-extension-host/Cargo.toml")
+    require(
+        extension_manifest["dependencies"]["ed25519-dalek"] == {"workspace": True},
+        "alcomd-extensions must use the approved workspace ed25519-dalek",
+    )
+    require(
+        host_manifest["dependencies"]["wasmtime"] == {"workspace": True},
+        "alcomd-extension-host must use the approved workspace Wasmtime",
+    )
+    ed25519 = cargo_workspace["workspace"]["dependencies"]["ed25519-dalek"]
+    require(ed25519["version"] == "=3.0.0", "Unexpected ed25519-dalek version")
+    require(
+        ed25519["default-features"] is False,
+        "ed25519-dalek defaults must be disabled",
+    )
+    wasmtime = cargo_workspace["workspace"]["dependencies"]["wasmtime"]
+    require(wasmtime["version"] == "=48.0.0", "Unexpected Wasmtime version")
+    require(
+        wasmtime["default-features"] is False,
+        "Wasmtime defaults must be disabled",
+    )
+    require(
+        set(wasmtime["features"])
+        == {"async", "component-model", "cranelift", "runtime", "std"},
+        "Unexpected Wasmtime feature set",
+    )
+    for relative in [
+        "apps/alcomd/Cargo.toml",
+        "apps/alcomd-cli/Cargo.toml",
+        "apps/alcomd-gui/src-tauri/Cargo.toml",
+        "crates/alcomd-application/Cargo.toml",
+        "crates/alcomd-client/Cargo.toml",
+        "crates/alcomd-domain/Cargo.toml",
+        "crates/alcomd-platform/Cargo.toml",
+        "crates/alcomd-protocol/Cargo.toml",
+        "crates/alcomd-store/Cargo.toml",
+        "crates/alcomd-vpm/Cargo.toml",
+    ]:
+        manifest = load_toml(relative)
+        require(
+            "wasmtime" not in manifest.get("dependencies", {}),
+            f"Wasmtime escaped the Extension Host graph: {relative}",
+        )
+    require(
+        {("ed25519-dalek", "3.0.0"), ("wasmtime", "48.0.0")}
+        <= locked_packages,
+        "Approved M6 runtime dependencies are not locked",
+    )
     require(
         ("libsqlite3-sys", "0.38.1") in locked_packages,
         "libsqlite3-sys 0.38.1 is not locked",

@@ -9,9 +9,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use alcomd_application::{
     AccessContext, Application, ApplicationError, EventRecord as ApplicationEvent, IdempotencyKey,
     M3Application, M4Application, M5BackupApplication as BackupService,
-    M5TemplateApplication as TemplateService, M5UnityApplication as M5Application, OperationCursor,
-    OperationId, OperationRecord, OperationState as DomainState, ResourceLockCoordinator, Revision,
-    StoreErrorKind,
+    M5TemplateApplication as TemplateService, M5UnityApplication as M5Application, M6Application,
+    OperationCursor, OperationId, OperationRecord, OperationState as DomainState,
+    ResourceLockCoordinator, Revision, StoreErrorKind,
 };
 use alcomd_platform::{BindError, DaemonInstance, DataConfig, IpcConfig, IpcListener, IpcStream};
 use alcomd_protocol::{
@@ -34,6 +34,8 @@ mod m5_backup_rpc;
 mod m5_platform;
 mod m5_rpc;
 mod m5_template_rpc;
+mod m6_rpc;
+mod m6_runtime;
 
 static TEST_DATA_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -46,6 +48,11 @@ type TemplateApplication =
     TemplateService<StateStoreHandle, alcomd_vpm::TemplateEngine, M5UnityApplication>;
 type BackupApplication =
     BackupService<StateStoreHandle, alcomd_vpm::BackupEngine, M5UnityApplication>;
+type M6ExtensionApplication = M6Application<
+    StateStoreHandle,
+    alcomd_extensions::ExtensionEngine<StateStoreHandle>,
+    m6_runtime::PlatformExtensionRuntime,
+>;
 
 struct Applications {
     m2: M2Application,
@@ -54,6 +61,7 @@ struct Applications {
     m5: M5UnityApplication,
     templates: TemplateApplication,
     backups: BackupApplication,
+    m6: M6ExtensionApplication,
 }
 
 /// Runs the daemon with an ephemeral isolated data directory.
@@ -148,6 +156,22 @@ where
         .recover()
         .await
         .map_err(|_| BindError::Io(io::Error::other("Backup recovery failed")))?;
+    let extension_engine =
+        alcomd_extensions::ExtensionEngine::new(store.clone(), data_root.join("extensions"))
+            .map_err(|_| {
+                BindError::Io(io::Error::other("Extension engine initialization failed"))
+            })?;
+    let extension_runtime = m6_runtime::PlatformExtensionRuntime::new(store.clone())
+        .map_err(|_| BindError::Io(io::Error::other("Extension Host initialization failed")))?;
+    let m6 = M6Application::new(
+        store.clone(),
+        extension_engine,
+        extension_runtime,
+        Arc::clone(&locks),
+    );
+    m6.recover(current_time_ms()?)
+        .await
+        .map_err(|_| BindError::Io(io::Error::other("Extension recovery failed")))?;
     let applications = Arc::new(Applications {
         m2,
         m3: M3ReadApplication::new(store.clone(), reader),
@@ -155,11 +179,20 @@ where
         m5: unity,
         templates,
         backups,
+        m6,
     });
     let listener = instance.bind()?;
     run_listener(listener, applications, shutdown)
         .await
         .map_err(BindError::Io)
+}
+
+fn current_time_ms() -> Result<u64, BindError> {
+    let duration = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| BindError::Io(io::Error::other("system clock is before Unix epoch")))?;
+    u64::try_from(duration.as_millis())
+        .map_err(|_| BindError::Io(io::Error::other("system clock exceeds supported range")))
 }
 
 async fn run_listener<F>(
@@ -171,6 +204,8 @@ where
     F: Future<Output = ()>,
 {
     let mut connections = tokio::task::JoinSet::new();
+    let mut runtime_tick = tokio::time::interval(std::time::Duration::from_millis(250));
+    runtime_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     tokio::pin!(shutdown);
     loop {
         tokio::select! {
@@ -184,13 +219,32 @@ where
             result = connections.join_next(), if !connections.is_empty() => {
                 let _ = result;
             }
+            _ = runtime_tick.tick() => {
+                applications
+                    .m6
+                    .maintain_runtime(current_time_ms().map_err(bind_as_io)?)
+                    .await
+                    .map_err(|_| io::Error::other("Extension runtime maintenance failed"))?;
+            }
             () = &mut shutdown => break,
         }
     }
 
     connections.abort_all();
     while connections.join_next().await.is_some() {}
+    applications
+        .m6
+        .shutdown_runtime()
+        .await
+        .map_err(|_| io::Error::other("Extension runtime shutdown failed"))?;
     Ok(())
+}
+
+fn bind_as_io(error: BindError) -> io::Error {
+    match error {
+        BindError::Io(error) => error,
+        other => io::Error::other(other.to_string()),
+    }
 }
 
 #[derive(Default)]
@@ -304,6 +358,8 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         alcomd_protocol::CAPABILITY_BACKUPS_READ_V1,
         alcomd_protocol::CAPABILITY_BACKUPS_CREATE_V1,
         alcomd_protocol::CAPABILITY_BACKUPS_RESTORE_V1,
+        alcomd_protocol::CAPABILITY_EXTENSIONS_LIFECYCLE_V1,
+        alcomd_protocol::CAPABILITY_EXTENSIONS_PERMISSIONS_V1,
     ];
     let capabilities = hello
         .capabilities
@@ -314,7 +370,7 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
     result_capabilities.sort();
     success_action(
         request.id,
-        HelloResult::m5(result_capabilities),
+        HelloResult::m6(result_capabilities),
         Some(capabilities),
     )
 }
@@ -517,6 +573,9 @@ async fn dispatch_m2(
         }
         _ if request.method.starts_with("backups.") => {
             m5_backup_rpc::dispatch(request, state, &applications.backups, access).await
+        }
+        _ if request.method.starts_with("extensions.") => {
+            m6_rpc::dispatch(request, state, &applications.m6, access).await
         }
         _ => m3_rpc::dispatch(request, state, &applications.m3, access).await,
     }

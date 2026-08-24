@@ -13,16 +13,19 @@ use alcomd_application::{
     BackupCursor, BackupId, BackupOperationRecord, BackupPhase, BackupRestoreApplyOutcome,
     BackupRestoreOperationRecord, BackupRestorePhase, BackupRestorePlanDraft,
     BackupRestorePlanRecord, CheckClassification, CreateOperationOutcome, CreatedTemplateProject,
-    EventPage, FilesystemJournalEntry, IdempotencyKey, M3Error, M3RegistryStore, M4Error, M4Store,
-    M5BackupError, M5BackupStore, M5TemplateError, M5TemplateStore, M5UnityError, M5UnityStore,
-    OperationCursor, OperationId, OperationPage, OperationRecord, PackageApplyCompletion,
-    PackageCursor, PackagePage, PackagePlanDraft, PackagePlanRecord, PlanId, PrincipalId,
-    ProjectEditorPreference, ProjectId, ProjectObservation, ProjectPage, ProjectRecord,
-    PublishedTemplate, RegistryCursor, RepositoryId, RepositoryObservation, RepositoryPage,
-    RepositoryRecord, RepositoryValidators, ResolverCatalog, RestoredProject, Revision,
-    StateCheckResult, StateStore, StoreError, StoredBackupRecord, StoredTemplateRecord, SyncWrite,
-    TemplateApplyOutcome, TemplateCursor, TemplateId, TemplatePlanDraft, TemplatePlanRecord,
-    UnityInstallationCursor, UnityInstallationId, UnityInstallationObservation,
+    EventPage, ExtensionApplyOutcome, ExtensionDataValue, ExtensionDataWriteResult,
+    ExtensionFilesystemJournalEntry, ExtensionGrantMutation, ExtensionGrantRecord,
+    ExtensionInstallPlanDraft, ExtensionInstanceLease, ExtensionPlanRecord, ExtensionRecord,
+    ExtensionUninstallPlanDraft, FilesystemJournalEntry, IdempotencyKey, M3Error, M3RegistryStore,
+    M4Error, M4Store, M5BackupError, M5BackupStore, M5TemplateError, M5TemplateStore, M5UnityError,
+    M5UnityStore, M6Error, M6Store, OperationCursor, OperationId, OperationPage, OperationRecord,
+    PackageApplyCompletion, PackageCursor, PackagePage, PackagePlanDraft, PackagePlanRecord,
+    PlanId, PrincipalId, ProjectEditorPreference, ProjectId, ProjectObservation, ProjectPage,
+    ProjectRecord, PublishedTemplate, RegistryCursor, RepositoryId, RepositoryObservation,
+    RepositoryPage, RepositoryRecord, RepositoryValidators, ResolverCatalog, RestoredProject,
+    Revision, StateCheckResult, StateStore, StoreError, StoredBackupRecord, StoredTemplateRecord,
+    SyncWrite, TemplateApplyOutcome, TemplateCursor, TemplateId, TemplatePlanDraft,
+    TemplatePlanRecord, UnityInstallationCursor, UnityInstallationId, UnityInstallationObservation,
     UnityInstallationPage, UnityInstallationRecord, UnityLaunchId, UnityLaunchRecord,
     UnityLaunchState, UnregisterResult,
 };
@@ -34,13 +37,14 @@ mod m5;
 mod m5_backup;
 mod m5_backup_restore;
 mod m5_template;
+mod m6;
 mod sqlite;
 
 /// Stable crate identifier used by repository checks.
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 7;
+pub const CURRENT_DATA_SCHEMA: u32 = 8;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]
@@ -464,6 +468,406 @@ impl M4Store for StateStoreHandle {
         self.request_worker(
             move |connection| m4::recover_package_operations(connection, recovered_at_ms),
             || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+}
+
+impl M6Store for StateStoreHandle {
+    async fn list_extensions(
+        &self,
+        owner: PrincipalId,
+        cursor: Option<alcomd_application::ExtensionCursor>,
+        limit: u32,
+    ) -> Result<alcomd_application::ExtensionPage, M6Error> {
+        self.request_worker(
+            move |connection| m6::list_extensions(connection, &owner, cursor.as_ref(), limit),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn get_extension(
+        &self,
+        owner: PrincipalId,
+        extension_id: String,
+    ) -> Result<ExtensionRecord, M6Error> {
+        self.request_worker(
+            move |connection| m6::get_extension(connection, &owner, &extension_id),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn live_package_locator(
+        &self,
+        owner: PrincipalId,
+        extension_id: String,
+    ) -> Result<String, M6Error> {
+        self.request_worker(
+            move |connection| m6::live_package_locator(connection, &owner, &extension_id),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn create_install_plan(
+        &self,
+        owner: PrincipalId,
+        draft: ExtensionInstallPlanDraft,
+        now_ms: u64,
+    ) -> Result<ExtensionPlanRecord, M6Error> {
+        self.request_worker(
+            move |connection| m6::create_install_plan(connection, &owner, draft, now_ms),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn create_uninstall_plan(
+        &self,
+        owner: PrincipalId,
+        draft: ExtensionUninstallPlanDraft,
+        now_ms: u64,
+    ) -> Result<ExtensionPlanRecord, M6Error> {
+        self.request_worker(
+            move |connection| m6::create_uninstall_plan(connection, &owner, draft, now_ms),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn accept_plan(
+        &self,
+        owner: PrincipalId,
+        plan_id: PlanId,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<ExtensionApplyOutcome, M6Error> {
+        self.request_worker(
+            move |connection| m6::accept_plan(connection, &owner, plan_id, &key, now_ms),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn get_plan(&self, plan_id: PlanId) -> Result<ExtensionPlanRecord, M6Error> {
+        self.request_worker(
+            move |connection| m6::get_plan(connection, plan_id),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn begin_apply(
+        &self,
+        operation_id: OperationId,
+        now_ms: u64,
+    ) -> Result<ExtensionPlanRecord, M6Error> {
+        self.request_worker(
+            move |connection| m6::begin_apply(connection, operation_id, now_ms),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn append_filesystem_journal(
+        &self,
+        entry: ExtensionFilesystemJournalEntry,
+    ) -> Result<(), M6Error> {
+        self.request_worker(
+            move |connection| m6::append_filesystem_journal(connection, entry),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn next_filesystem_journal_step(
+        &self,
+        operation_id: OperationId,
+    ) -> Result<u64, M6Error> {
+        self.request_worker(
+            move |connection| m6::next_filesystem_journal_step(connection, operation_id),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn filesystem_journal_has_phase(
+        &self,
+        operation_id: OperationId,
+        phase: alcomd_application::ExtensionJournalPhase,
+    ) -> Result<bool, M6Error> {
+        self.request_worker(
+            move |connection| m6::filesystem_journal_has_phase(connection, operation_id, phase),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn recover_operations(&self, now_ms: u64) -> Result<Vec<OperationId>, M6Error> {
+        self.request_worker(
+            move |connection| m6::recover_operations(connection, now_ms),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn finish_install(
+        &self,
+        operation_id: OperationId,
+        live_locator: String,
+        now_ms: u64,
+    ) -> Result<(), M6Error> {
+        self.request_worker(
+            move |connection| m6::finish_install(connection, operation_id, &live_locator, now_ms),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn finish_uninstall(
+        &self,
+        operation_id: OperationId,
+        now_ms: u64,
+    ) -> Result<(), M6Error> {
+        self.request_worker(
+            move |connection| m6::finish_uninstall(connection, operation_id, now_ms),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn complete_operation(
+        &self,
+        operation_id: OperationId,
+        now_ms: u64,
+    ) -> Result<(), M6Error> {
+        self.request_worker(
+            move |connection| m6::complete_operation(connection, operation_id, now_ms),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn fail_operation(
+        &self,
+        operation_id: OperationId,
+        code: alcomd_application::M6ErrorCode,
+        now_ms: u64,
+    ) -> Result<(), M6Error> {
+        self.request_worker(
+            move |connection| m6::fail_operation(connection, operation_id, code, now_ms),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn enable(
+        &self,
+        owner: PrincipalId,
+        extension_id: String,
+        expected: Revision,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<ExtensionRecord, M6Error> {
+        self.request_worker(
+            move |connection| {
+                m6::set_desired(
+                    connection,
+                    &owner,
+                    &extension_id,
+                    expected,
+                    &key,
+                    true,
+                    now_ms,
+                )
+            },
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn disable(
+        &self,
+        owner: PrincipalId,
+        extension_id: String,
+        expected: Revision,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<ExtensionRecord, M6Error> {
+        self.request_worker(
+            move |connection| {
+                m6::set_desired(
+                    connection,
+                    &owner,
+                    &extension_id,
+                    expected,
+                    &key,
+                    false,
+                    now_ms,
+                )
+            },
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn set_grant(
+        &self,
+        owner: PrincipalId,
+        mutation: ExtensionGrantMutation,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<ExtensionGrantRecord, M6Error> {
+        self.request_worker(
+            move |connection| {
+                m6::set_grant(
+                    connection,
+                    &owner,
+                    &mutation.extension_id,
+                    &mutation.permission,
+                    &mutation.resource_kind,
+                    &mutation.resource_id,
+                    mutation.expected_revision,
+                    &key,
+                    mutation.grant,
+                    now_ms,
+                )
+            },
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn data_get(
+        &self,
+        lease: ExtensionInstanceLease,
+        key: String,
+        now_ms: u64,
+    ) -> Result<Option<ExtensionDataValue>, M6Error> {
+        self.request_worker(
+            move |connection| m6::data_get(connection, &lease, &key, now_ms),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn data_set(
+        &self,
+        lease: ExtensionInstanceLease,
+        key: String,
+        value: Vec<u8>,
+        expected: Option<Revision>,
+        now_ms: u64,
+    ) -> Result<ExtensionDataWriteResult, M6Error> {
+        self.request_worker(
+            move |connection| m6::data_set(connection, &lease, &key, &value, expected, now_ms),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn data_delete(
+        &self,
+        lease: ExtensionInstanceLease,
+        key: String,
+        expected: Revision,
+        now_ms: u64,
+    ) -> Result<ExtensionDataWriteResult, M6Error> {
+        self.request_worker(
+            move |connection| m6::data_delete(connection, &lease, &key, expected, now_ms),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn prepare_instance(
+        &self,
+        owner: PrincipalId,
+        extension_id: String,
+        daemon_epoch: String,
+        now_ms: u64,
+    ) -> Result<alcomd_application::ExtensionStartContext, M6Error> {
+        self.request_worker(
+            move |connection| {
+                m6::prepare_instance(connection, &owner, &extension_id, &daemon_epoch, now_ms)
+            },
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn mark_instance_running(
+        &self,
+        lease: ExtensionInstanceLease,
+        now_ms: u64,
+    ) -> Result<(), M6Error> {
+        self.request_worker(
+            move |connection| m6::mark_instance_running(connection, &lease, now_ms),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn mark_instance_stopped(
+        &self,
+        extension_id: String,
+        _now_ms: u64,
+    ) -> Result<(), M6Error> {
+        self.request_worker(
+            move |connection| m6::mark_instance_stopped(connection, &extension_id),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn renew_instance(
+        &self,
+        lease: ExtensionInstanceLease,
+        now_ms: u64,
+    ) -> Result<ExtensionInstanceLease, M6Error> {
+        self.request_worker(
+            move |connection| m6::renew_instance(connection, &lease, now_ms),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn record_instance_crash(
+        &self,
+        lease: ExtensionInstanceLease,
+        reason: String,
+        now_ms: u64,
+    ) -> Result<alcomd_application::ExtensionCrashDecision, M6Error> {
+        self.request_worker(
+            move |connection| m6::record_instance_crash(connection, &lease, &reason, now_ms),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn recover_instances(
+        &self,
+        daemon_epoch: String,
+        now_ms: u64,
+    ) -> Result<Vec<String>, M6Error> {
+        self.request_worker(
+            move |connection| m6::recover_instances(connection, &daemon_epoch, now_ms),
+            m6::unavailable,
+        )
+        .await
+    }
+
+    async fn project_summary(
+        &self,
+        lease: ExtensionInstanceLease,
+        project_id: String,
+        now_ms: u64,
+    ) -> Result<alcomd_application::ExtensionProjectSummary, M6Error> {
+        self.request_worker(
+            move |connection| m6::project_summary(connection, &lease, &project_id, now_ms),
+            m6::unavailable,
         )
         .await
     }

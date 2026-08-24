@@ -355,7 +355,7 @@ fn state_rpc_errors_and_publication_boundary_are_frozen() {
             "missing error {code}"
         );
     }
-    assert_production_does_not_advertise_m6();
+    assert_production_advertises_m6_only_through_the_approved_boundary();
 }
 
 #[test]
@@ -414,17 +414,31 @@ fn hex(bytes: &[u8]) -> String {
     output
 }
 
-fn assert_production_does_not_advertise_m6() {
+fn assert_production_advertises_m6_only_through_the_approved_boundary() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
         .expect("Workspace root");
-    for relative in ["apps", "crates", "packages"] {
-        scan_source_tree(&root.join(relative));
+    let daemon = fs::read_to_string(root.join("apps/alcomd/src/lib.rs")).expect("daemon source");
+    let protocol = fs::read_to_string(root.join("crates/alcomd-protocol/src/lib.rs"))
+        .expect("protocol source");
+    assert!(daemon.contains("HelloResult::m6"));
+    assert!(daemon.contains("CAPABILITY_EXTENSIONS_LIFECYCLE_V1"));
+    assert!(protocol.contains("extensions.lifecycle.v1"));
+    assert!(protocol.contains("extensions.permissions.v1"));
+    assert!(protocol.contains("alcomd:extension/extension-v1@1.0.0"));
+
+    for relative in [
+        "apps/alcomd-gui",
+        "crates/alcomd-domain",
+        "crates/alcomd-platform",
+        "crates/alcomd-vpm",
+    ] {
+        scan_forbidden_m6_publication(&root.join(relative));
     }
 }
 
-fn scan_source_tree(path: &Path) {
+fn scan_forbidden_m6_publication(path: &Path) {
     if path.is_dir() {
         for entry in fs::read_dir(path).expect("scan source directory") {
             let child = entry.expect("source entry").path();
@@ -433,7 +447,7 @@ fn scan_source_tree(path: &Path) {
                 .and_then(|name| name.to_str())
                 .unwrap_or("");
             if !matches!(name, "target" | "node_modules" | "dist") {
-                scan_source_tree(&child);
+                scan_forbidden_m6_publication(&child);
             }
         }
         return;
@@ -444,20 +458,16 @@ fn scan_source_tree(path: &Path) {
     ) {
         return;
     }
-    let relative = path.to_string_lossy();
-    if relative.ends_with("m6_contract.rs") {
-        return;
-    }
     let content = fs::read_to_string(path).expect("read production source");
-    for unpublished in [
+    for privileged in [
         "extensions.lifecycle.v1",
         "extensions.permissions.v1",
         "extensions.planInstall",
         "alcomd:extension/extension-v1@1.0.0",
     ] {
         assert!(
-            !content.contains(unpublished),
-            "M6 contract advertised in production source: {} contains {unpublished}",
+            !content.contains(privileged),
+            "M6 contract escaped the approved protocol/application/host boundary: {} contains {privileged}",
             path.display()
         );
     }

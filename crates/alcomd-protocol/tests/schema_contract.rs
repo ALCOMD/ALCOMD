@@ -338,7 +338,9 @@ fn m4_operation_and_data_schema_are_compatible_additions() {
             "templates.derive",
             "templates.create-project",
             "backups.create",
-            "backups.restore"
+            "backups.restore",
+            "extensions.install",
+            "extensions.uninstall"
         ])
     );
     assert!(operation["properties"].get("progress").is_some());

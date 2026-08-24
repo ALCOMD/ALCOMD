@@ -8,9 +8,22 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[features]
+test-kill-gates = []
 
 [dependencies]
+alcomd-application.workspace = true
+alcomd-platform.workspace = true
+ed25519-dalek.workspace = true
+semver.workspace = true
 serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+tokio.workspace = true
+unicode-normalization.workspace = true
+zip.workspace = true
 
 [lints]
 workspace = true

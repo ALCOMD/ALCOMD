@@ -1,6 +1,6 @@
 # M6：统一扩展运行时与公开 Extension API
 
-状态：统一 Stop A 与 review closure 已完成并通过合同门禁；获准进入 M6 production，尚未进入 M7
+状态：M6 contract-first、最小 production implementation 与本地完整验收已完成；等待最终提交的三平台 Hosted CI 和项目所有者人工验收，尚未进入 M7
 
 ## 目标
 
@@ -371,3 +371,16 @@ fault matrix、Tauri no-bundle、dependency/unsafe/lockfile gates 和三平台 C
   grant revocation、logical UI origin、仅 `extensions.install/uninstall` 两个 Operation kind、每 ExtensionId 16 条
   crash evidence、受控本地 source kind 与 Host child/protocol hardening 均已冻结。M6 contract 6/6、RPC Schema
   22/22、fmt、xtask、metadata、baseline freeze、diff/三锁文件门禁通过；production source 与 Cargo manifest 未修改。
+- 2026-08-24：项目所有者批准三个窄 production 合同补充：RPC list 使用版本化 opaque keyset cursor，Host
+  protocol 使用显式 `capability-result`，State v8 的 install plan 固定 `version`、`api_major` 与
+  `profile_version`。对应合同测试已永久化，未扩大 RPC/WIT/permission、依赖、unsafe 或平台 API。
+- 2026-08-24：M6 Slice A-F 最小 production implementation 已完成：精确 `wasmtime 48.0.0` 仅进入
+  `alcomd-extension-host` graph，精确 `ed25519-dalek 3.0.0` 仅进入 `.alcomdext` 验签路径；State v8、
+  install/uninstall Plan/Apply/recovery、deny-by-default grant/scope/lease、extension-owned bounded data、
+  versioned RPC、one-host-per-ExtensionId、无 ambient WASI 的 Component Model Host、UI Bridge headless
+  envelope、crash/quarantine 与 revoke-in-flight 已接入。真实 Component/Host/daemon 测试覆盖 install -> grant ->
+  enable -> scoped Project summary -> revoke -> disable -> uninstall、trap/fuel limit/quarantine，以及
+  `archive_verified`、`staging_complete`、`package_published`、`state_committed`、`package_moved_to_backup`
+  kill/restart checkpoints；均复用原 OperationId/Plan/idempotency。第一方与第三方通过相同 package、grant、
+  Host capability 和 data authority 路径。完整 `scripts/check.ps1` 与本地合同/metadata/baseline/unsafe/lock
+  门禁通过；等待最终提交自身的三平台 Hosted CI，未进入 M7。

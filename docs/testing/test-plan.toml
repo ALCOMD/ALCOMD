@@ -380,24 +380,26 @@ stage = "M6"
 kind = "contract"
 platforms = ["all"]
 status = "implemented"
-description = "冻结 .alcomdext/Manifest/signature/WIT compatibility、permission/scope/lease/revocation、desired/runtime state、Schema v8/RPC contract、KV/UI/runtime quota 与 hostile synthetic vectors；同时证明 production source 尚未广告 M6 capability。"
-evidence = ["crates/alcomd-testing/tests/m6_contract.rs", "crates/alcomd-testing/fixtures/m6"]
+description = "冻结并验证 .alcomdext/Manifest/signature/WIT compatibility、permission/scope/lease/revocation、desired/runtime state、Schema v8/RPC contract、keyset cursor、KV/UI/runtime quota 与 hostile vectors；production 只经批准的 protocol/application/Host 边界广告 M6 capability。"
+evidence = ["crates/alcomd-testing/tests/m6_contract.rs", "crates/alcomd-testing/fixtures/m6", "crates/alcomd-protocol/tests/schema_contract.rs", "crates/alcomd-store/tests/m6_runtime.rs"]
 
 [[test]]
 id = "extensions.first-third-parity"
 stage = "M6"
 kind = "contract"
 platforms = ["all"]
-status = "planned"
-description = "Stop A 已冻结相同 Manifest、签名、权限、WIT、Bridge、Host、数据与 headless parity fixture；真实 first/third production Host 执行仍 planned。"
+status = "implemented"
+description = "同一 package/signature/WIT/Host/data/project capability pipeline 不接收 first-party authority；official 与 owner-approved policy 只改变 trust/source evidence，runtime grant、scope、lease 与 capability 结果保持一致，Host 与 UI Bridge 无 first-party-only API。"
+evidence = ["crates/alcomd-store/tests/m6_runtime.rs::first_party_policy_and_owner_approved_policy_share_the_same_runtime_authority", "apps/alcomd-extension-host/tests/m6_lifecycle.rs", "crates/alcomd-testing/tests/m6_contract.rs"]
 
 [[test]]
 id = "extensions.sandbox-abuse"
 stage = "M6"
 kind = "security"
 platforms = ["all"]
-status = "planned"
-description = "Stop A 已冻结 hostile package/UI、scope、revoke race、resource/crash vectors；真实 Wasmtime/Host sandbox-abuse 三平台执行仍 planned。"
+status = "implemented"
+description = "真实 Wasmtime Host 覆盖 trap、无限循环/fuel/epoch、crash quarantine、Host authority/sequence/rate limits；package 覆盖签名、路径、case collision 与 link 拒绝，store 覆盖 scope、quota、revocation stale lease，headless UI Bridge 覆盖 spoof/replay/flood/private channel。"
+evidence = ["apps/alcomd-extension-host/tests/minimal_component.rs", "apps/alcomd-extension-host/tests/m6_lifecycle.rs", "apps/alcomd-extension-host/src/main.rs::tests", "crates/alcomd-extensions/src/package.rs::tests", "crates/alcomd-extensions/src/ui_bridge.rs::tests", "crates/alcomd-store/tests/m6_runtime.rs"]
 
 [[test]]
 id = "mcp.protocol-conformance"

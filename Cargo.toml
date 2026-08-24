@@ -71,6 +71,8 @@ semver = { version = "=1.0.28", default-features = false, features = ["std"] }
 sha2 = { version = "=0.11.0", default-features = false }
 unicode-normalization = { version = "=0.1.25", default-features = false, features = ["std"] }
 zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+ed25519-dalek = { version = "=3.0.0", default-features = false }
+wasmtime = { version = "=48.0.0", default-features = false, features = ["async", "component-model", "cranelift", "runtime", "std"] }
 
 alcomd-domain = { path = "crates/alcomd-domain" }
 alcomd-application = { path = "crates/alcomd-application" }

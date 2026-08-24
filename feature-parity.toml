@@ -258,8 +258,8 @@ behavior = "第一方与第三方使用相同公开 API、权限、宿主、沙�
 implementation = "alcomd-extensions"
 release_class = "release_blocker"
 status = "verified"
-implementation_status = "scaffold"
-evidence = ["docs/baselines/access-and-extensions.md", "docs/architecture/ALCOMD-V4.md"]
+implementation_status = "in_progress"
+evidence = ["docs/baselines/access-and-extensions.md", "docs/architecture/ALCOMD-V4.md", "apps/alcomd/src/m6_runtime.rs", "apps/alcomd-extension-host/src/main.rs", "crates/alcomd-extensions/src", "crates/alcomd-store/tests/m6_runtime.rs"]
 coverage = ["UI", "WASM", "principal", "resource limits", "revocation"]
 tests = ["extensions.m6-contract", "extensions.first-third-parity", "extensions.sandbox-abuse"]
 
@@ -272,8 +272,8 @@ behavior = "ABI v1 使用 WASI 0.2 Component Model 与版本化 WIT；Wasmtime �
 implementation = "alcomd-extensions"
 release_class = "release_blocker"
 status = "verified"
-implementation_status = "not_started"
-evidence = ["docs/decisions/accepted.md::A-022", "docs/baselines/access-and-extensions.md"]
+implementation_status = "implemented"
+evidence = ["docs/decisions/accepted.md::A-022", "docs/baselines/access-and-extensions.md", "specs/extensions/wit/extension-v1", "apps/alcomd-extension-host/src/main.rs", "apps/alcomd-extension-host/tests/minimal_component.rs"]
 coverage = ["ABI negotiation", "WIT compatibility", "runtime major pin", "security patch policy", "WASI 0.3 non-breaking path"]
 tests = ["extensions.m6-contract", "extensions.first-third-parity", "extensions.sandbox-abuse"]
 

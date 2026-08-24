@@ -534,6 +534,18 @@ pub enum Permission {
     /// Create managed native Backup archives.
     #[serde(rename = "backups.manage")]
     BackupsManage,
+    /// Read installed extension metadata.
+    #[serde(rename = "extensions.read")]
+    ExtensionsRead,
+    /// Manage extension install and lifecycle.
+    #[serde(rename = "extensions.manage")]
+    ExtensionsManage,
+    /// Grant and revoke scoped extension permissions.
+    #[serde(rename = "extensions.permissions.manage")]
+    ExtensionsPermissionsManage,
+    /// Permit a verified extension Component to run in its Host.
+    #[serde(rename = "background.run")]
+    BackgroundRun,
 }
 
 impl Permission {
@@ -559,6 +571,10 @@ impl Permission {
             Self::TemplatesManage => "templates.manage",
             Self::BackupsRead => "backups.read",
             Self::BackupsManage => "backups.manage",
+            Self::ExtensionsRead => "extensions.read",
+            Self::ExtensionsManage => "extensions.manage",
+            Self::ExtensionsPermissionsManage => "extensions.permissions.manage",
+            Self::BackgroundRun => "background.run",
         }
     }
 }
@@ -581,6 +597,8 @@ pub enum ResourceKey {
         parent_identity_sha256: [u8; 32],
         target_leaf: String,
     },
+    /// Serializes mutation of one extension identity.
+    Extension(String),
 }
 
 impl ResourceKey {
@@ -617,6 +635,11 @@ impl ResourceKey {
                 bytes.extend_from_slice(parent_identity_sha256);
                 bytes.push(b':');
                 bytes.extend_from_slice(target_leaf.as_bytes());
+                bytes
+            }
+            Self::Extension(extension_id) => {
+                let mut bytes = b"extension:".to_vec();
+                bytes.extend_from_slice(extension_id.as_bytes());
                 bytes
             }
         }

@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 Stop A 与独立 review closure 已通过合同门禁；获准进入 production implementation，尚未进入 M7`
+`M6 contract-first、最小 production implementation 与本地完整验收已完成；等待最终提交的三平台 Hosted CI 和项目所有者人工验收，尚未进入 M7`
 
 ## 已完成
 
@@ -213,12 +213,17 @@
   state 分离、bounded key/value、scoped Project summary 第一能力、publisher trust 分层与 exact runtime limits。
 - M6 Stop A contract-first 工件已形成 `.alcomdext`/Manifest/signature/archive profile、WIT ABI v1/compatibility
   fixture、permissions/scope/lease/revocation、State Schema v8 migration contract、RPC/error/hello optional contract、
-  UI Bridge headless envelope、threat model、synthetic vectors 和永久 contract test。production daemon 仍为
-  dataSchema 7，不广告 `extensionApi` 或 M6 capability，未修改 production Rust/TS。
+  UI Bridge headless envelope、threat model、synthetic vectors 和永久 contract test。
 - 项目所有者已批准 `wasmtime 48.0.0` LTS（defaults off，仅 async/component-model/cranelift/runtime/std）与
-  `ed25519-dalek 3.0.0`（defaults off）；第一条 slice 不依赖 `wasmtime-wasi`。该方案预计新增 68 个 lock package，
-  Windows cold probe 291.641 s、最小 binary delta 10,190,336 bytes。依赖尚未写入 manifest/lock；Wasmtime 只能进入
-  Host graph，review closure 完成后按 Slice A-F 开始 production。
+  `ed25519-dalek 3.0.0`（defaults off）；第一条 slice 不依赖 `wasmtime-wasi`。实际依赖已按批准配置落盘：Wasmtime
+  只进入 `alcomd-extension-host` graph，Ed25519 只进入 `.alcomdext` 验签路径，没有新增 ALCOMD unsafe 或平台 API。
+  State v8、版本化 RPC、Plan/Apply/recovery、permission/scope/lease/data、one-host-per-ExtensionId Component Host、
+  UI Bridge headless envelope、crash/quarantine 与即时 revoke 已完成最小 production wiring。
+- M6 真实测试已覆盖 Component/Host/daemon 生命周期、first-party/third-party 同权路径、scoped Project summary、
+  bounded extension data、trap/fuel limit/quarantine、revoke-in-flight，以及 `archive_verified`、
+  `staging_complete`、`package_published`、`state_committed`、`package_moved_to_backup` kill/restart matrix。
+  本地 `scripts/check.ps1` 与合同、metadata、baseline、unsafe、dependency/lock 门禁通过；最终三平台 Hosted CI
+  尚未取得，因此 M6 尚未正式完成。
 
 ## 后续里程碑尚未完成
 
@@ -227,7 +232,7 @@
 - MCP 33 个 v3 用例的 M-1 工具合同基线已形成并获 A-026 批准；正式 Schema、快照、兼容
   别名策略和协议实现留在对应后续里程碑。
 - VPM、项目、模板与备份。
-- Extension Host 和 WASM production implementation；M6 Stop A 只有 contract-first 工件。
+- M6 完整产品化、M7 GUI placement 与后续 extension capability；当前只有已冻结的最小 Extension Runtime 垂直切片。
 - MCP 实现。
 - Discord IPC。
 - v3 迁移与 Bootstrap。
@@ -272,9 +277,9 @@
 
 ## 下一停止点
 
-M0、M1、M2、M3、M4 与 M5 均已完成并通过最终人工验收。M6 已进入 contract-first，统一 Stop A 的
-公共合同、synthetic fixtures、contract tests 与依赖评估完成后必须停止，等待项目所有者人工审批；
-production implementation、Cargo dependency、runtime/Host wiring 与 capability advertisement 均未获批准。
+M0、M1、M2、M3、M4 与 M5 均已完成并通过最终人工验收。M6 contract-first、最小 production implementation
+与本地完整验收已完成；下一停止点是最终提交自身的 Windows Server 2025、Ubuntu 22.04、macOS 15 arm64
+Hosted CI 全部成功并完成 SHA 对齐后，等待项目所有者人工验收。M6 正式验收前不得进入 M7。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential

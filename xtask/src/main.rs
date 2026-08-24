@@ -41,6 +41,7 @@ const MEMBERS: &[Member] = &[
         "alcomd",
         &[
             "alcomd-application",
+            "alcomd-extensions",
             "alcomd-platform",
             "alcomd-protocol",
             "alcomd-store",
@@ -57,7 +58,7 @@ const MEMBERS: &[Member] = &[
     (
         "apps/alcomd-extension-host",
         "alcomd-extension-host",
-        &["alcomd-client", "alcomd-extensions"],
+        &["alcomd-application", "alcomd-extensions"],
     ),
     (
         "apps/alcomd-bootstrap",
@@ -93,7 +94,11 @@ const MEMBERS: &[Member] = &[
         "alcomd-vpm",
         &["alcomd-application", "alcomd-platform"],
     ),
-    ("crates/alcomd-extensions", "alcomd-extensions", &[]),
+    (
+        "crates/alcomd-extensions",
+        "alcomd-extensions",
+        &["alcomd-application", "alcomd-platform"],
+    ),
     ("crates/alcomd-import", "alcomd-import", &[]),
     ("crates/alcomd-testing", "alcomd-testing", &[]),
     (

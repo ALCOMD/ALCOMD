@@ -1,6 +1,6 @@
 # M6 Runtime dependency evaluation (Stop A candidate)
 
-状态：仅评估；尚未批准写入 Workspace manifest/Cargo.lock，尚未开始 production wiring。
+状态：评估已获项目所有者批准并按精确配置落盘；本文件记录选择依据与最终 active graph 约束。
 
 评估日期：2026-08-24。来源：Wasmtime 官方 [release policy](https://docs.wasmtime.dev/stability-release.html)、
 [Wasmtime repository](https://github.com/bytecodealliance/wasmtime)、crates.io published metadata 与 docs.rs crate
@@ -21,8 +21,9 @@ ed25519-dalek = {
 }
 ```
 
-placement：两项都只进入 `crates/alcomd-extensions` production dependency；其他 crate 不直接依赖。Host binary
-通过 `alcomd-extensions` 的窄 safe adapter 使用，不泄露 Wasmtime/Ed25519 类型到 domain/application/protocol。
+placement：`wasmtime` 只作为 `apps/alcomd-extension-host` 的直接 production dependency；`ed25519-dalek` 只作为
+`crates/alcomd-extensions` 的直接 production dependency。其他 crate 不直接依赖；Wasmtime/Ed25519 类型不泄露到
+domain/application/protocol 或公共 RPC。
 
 ### Wasmtime 48.0.0
 
@@ -57,7 +58,8 @@ placement：两项都只进入 `crates/alcomd-extensions` production dependency�
 
 ## Active feature/build evidence
 
-隔离 `cargo tree -e features` 只显示 Wasmtime direct features `async/component-model/cranelift/runtime/std`；
+隔离评估与实际 Workspace `cargo tree -e features` 均只显示 Wasmtime direct features
+`async/component-model/cranelift/runtime/std`；
 `wasmtime-wasi` 与 `rayon` 均不在 graph。`wit-component 0.254.0` 只由
 `wasmtime-internal-wit-bindgen -> wasmtime-internal-component-macro -> wasmtime` 引入。Ed25519 没有 active feature。
 
@@ -167,7 +169,9 @@ wit-parser 0.254.0
 - direct latest `wit-component`：会与 Wasmtime locked tooling 形成第二版本，拒绝。
 - OpenSSL/platform signing/复杂 PKI：跨平台/native/权限范围过大；M6 只需 Ed25519 verify，拒绝。
 
-## Approval request at Stop A
+## Stop A approval outcome
 
-production 前需人工批准上面的 exact `wasmtime 48.0.0` 与 `ed25519-dalek 3.0.0` 配置、68-package projected
-lock delta、第三方 unsafe/native/build-script cost。当前未修改根 Cargo.toml/Cargo.lock，未加入任何 dependency。
+项目所有者已批准上面的 exact `wasmtime 48.0.0` 与 `ed25519-dalek 3.0.0` 配置、预期锁定闭包及第三方
+unsafe/native/build-script cost。实际 Workspace 已按上述 placement 落盘；没有直接 `wasmtime-wasi` 或
+`wit-component` dependency，没有扩大 ALCOMD unsafe whitelist。最终三平台 active graph 与 runtime/resource-limit
+行为仍由 M6 最终提交对应的 Hosted CI 验收。

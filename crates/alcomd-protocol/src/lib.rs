@@ -111,6 +111,16 @@ pub const METHOD_BACKUPS_GET: &str = "backups.get";
 pub const METHOD_BACKUPS_CREATE: &str = "backups.create";
 pub const METHOD_BACKUPS_PLAN_RESTORE: &str = "backups.planRestore";
 pub const METHOD_BACKUPS_APPLY_RESTORE: &str = "backups.applyRestore";
+pub const METHOD_EXTENSIONS_LIST: &str = "extensions.list";
+pub const METHOD_EXTENSIONS_GET: &str = "extensions.get";
+pub const METHOD_EXTENSIONS_PLAN_INSTALL: &str = "extensions.planInstall";
+pub const METHOD_EXTENSIONS_APPLY_INSTALL: &str = "extensions.applyInstall";
+pub const METHOD_EXTENSIONS_ENABLE: &str = "extensions.enable";
+pub const METHOD_EXTENSIONS_DISABLE: &str = "extensions.disable";
+pub const METHOD_EXTENSIONS_PLAN_UNINSTALL: &str = "extensions.planUninstall";
+pub const METHOD_EXTENSIONS_APPLY_UNINSTALL: &str = "extensions.applyUninstall";
+pub const METHOD_EXTENSIONS_SET_GRANT: &str = "extensions.setGrant";
+pub const METHOD_EXTENSIONS_REVOKE_GRANT: &str = "extensions.revokeGrant";
 
 /// Capability required by `state.check`.
 pub const CAPABILITY_STATE_CHECK_V1: &str = "state.check.v1";
@@ -135,6 +145,8 @@ pub const CAPABILITY_TEMPLATES_CREATE_PROJECT_V1: &str = "templates.create-proje
 pub const CAPABILITY_BACKUPS_READ_V1: &str = "backups.read.v1";
 pub const CAPABILITY_BACKUPS_CREATE_V1: &str = "backups.create.v1";
 pub const CAPABILITY_BACKUPS_RESTORE_V1: &str = "backups.restore.v1";
+pub const CAPABILITY_EXTENSIONS_LIFECYCLE_V1: &str = "extensions.lifecycle.v1";
+pub const CAPABILITY_EXTENSIONS_PERMISSIONS_V1: &str = "extensions.permissions.v1";
 
 /// Stable RPC v1 error codes implemented through M2.
 pub mod error_code {
@@ -248,6 +260,25 @@ pub mod error_code {
     pub const TEMPLATE_TARGET_EXISTS: &str = "template_target_exists";
     pub const PROJECT_CHANGED_DURING_TEMPLATE_CREATE: &str =
         "project_changed_during_template_create";
+    pub const EXTENSION_MANIFEST_INVALID: &str = "extension_manifest_invalid";
+    pub const EXTENSION_PACKAGE_INVALID: &str = "extension_package_invalid";
+    pub const EXTENSION_PACKAGE_UNTRUSTED: &str = "extension_package_untrusted";
+    pub const EXTENSION_PUBLISHER_CONFIRMATION_REQUIRED: &str =
+        "extension_publisher_confirmation_required";
+    pub const EXTENSION_SIGNATURE_INVALID: &str = "extension_signature_invalid";
+    pub const EXTENSION_ALREADY_INSTALLED: &str = "extension_already_installed";
+    pub const EXTENSION_NOT_INSTALLED: &str = "extension_not_installed";
+    pub const EXTENSION_PERMISSION_DENIED: &str = "extension_permission_denied";
+    pub const EXTENSION_SCOPE_DENIED: &str = "extension_scope_denied";
+    pub const EXTENSION_API_UNSUPPORTED: &str = "extension_api_unsupported";
+    pub const EXTENSION_INSTANCE_STALE: &str = "extension_instance_stale";
+    pub const EXTENSION_RESOURCE_LIMIT: &str = "extension_resource_limit";
+    pub const EXTENSION_CRASHED: &str = "extension_crashed";
+    pub const EXTENSION_QUARANTINED: &str = "extension_quarantined";
+    pub const EXTENSION_PLAN_STALE: &str = "extension_plan_stale";
+    pub const EXTENSION_DATA_QUOTA_EXCEEDED: &str = "extension_data_quota_exceeded";
+    pub const EXTENSION_DATA_OWNER_MISMATCH: &str = "extension_data_owner_mismatch";
+    pub const EXTENSION_RECOVERY_REQUIRED: &str = "extension_recovery_required";
 }
 
 /// JSON-RPC-inspired request envelope.
@@ -514,6 +545,12 @@ impl RpcError {
         Self::simple(code, "The Backup request could not be completed.")
     }
 
+    /// Creates a stable, non-sensitive M6 Extension Runtime error.
+    #[must_use]
+    pub fn extension(code: &str) -> Self {
+        Self::simple(code, "The Extension request could not be completed.")
+    }
+
     fn simple(code: &str, message: &str) -> Self {
         Self {
             code: code.to_owned(),
@@ -578,6 +615,16 @@ pub struct HelloResult {
     /// Ready state-store schema version. Absent when the store is unavailable or not initialized.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data_schema: Option<u32>,
+    /// Extension ABI information, present only once the M6 runtime is available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extension_api: Option<ExtensionApiInfo>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionApiInfo {
+    pub major: u32,
+    pub world: String,
 }
 
 impl HelloResult {
@@ -589,6 +636,7 @@ impl HelloResult {
             daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             capabilities: Vec::new(),
             data_schema: None,
+            extension_api: None,
         }
     }
 
@@ -600,6 +648,7 @@ impl HelloResult {
             daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             capabilities,
             data_schema: Some(1),
+            extension_api: None,
         }
     }
 
@@ -611,6 +660,7 @@ impl HelloResult {
             daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             capabilities,
             data_schema: Some(2),
+            extension_api: None,
         }
     }
 
@@ -622,6 +672,7 @@ impl HelloResult {
             daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             capabilities,
             data_schema: Some(3),
+            extension_api: None,
         }
     }
 
@@ -633,6 +684,22 @@ impl HelloResult {
             daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             capabilities,
             data_schema: Some(6),
+            extension_api: None,
+        }
+    }
+
+    /// Creates the M6 hello result after Schema v8 and Extension ABI v1 are ready.
+    #[must_use]
+    pub fn m6(capabilities: Vec<String>) -> Self {
+        Self {
+            rpc_version: RPC_VERSION,
+            daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
+            capabilities,
+            data_schema: Some(8),
+            extension_api: Some(ExtensionApiInfo {
+                major: 1,
+                world: "alcomd:extension/extension-v1@1.0.0".to_owned(),
+            }),
         }
     }
 }
@@ -1909,6 +1976,188 @@ fn validate_capabilities(capabilities: &[String]) -> Result<(), ContractViolatio
         }
     }
     Ok(())
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionsListParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionIdParams {
+    pub extension_id: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtensionSourceKind {
+    LocalOwnerSelected,
+    FirstPartyPackaged,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtensionPublisherApproval {
+    None,
+    ApproveForExtension,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionPlanInstallParams {
+    pub source_kind: ExtensionSourceKind,
+    pub package_path: String,
+    pub expected_revision: u64,
+    pub publisher_approval: ExtensionPublisherApproval,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtensionDataDisposition {
+    RetainData,
+    DeleteData,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionPlanUninstallParams {
+    pub extension_id: String,
+    pub expected_revision: u64,
+    pub data_disposition: ExtensionDataDisposition,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionApplyParams {
+    pub plan_id: String,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionLifecycleParams {
+    pub extension_id: String,
+    pub expected_revision: u64,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionGrantParams {
+    pub extension_id: String,
+    pub permission: String,
+    pub resource_kind: String,
+    pub resource_id: String,
+    pub expected_grant_revision: u64,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtensionTrustDecision {
+    Official,
+    UserApprovedForExtension,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtensionDesiredState {
+    InstalledDisabled,
+    Enabled,
+    Uninstalling,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtensionQuarantineState {
+    Clear,
+    Quarantined,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtensionRuntimeState {
+    Stopped,
+    Starting,
+    Running,
+    Stopping,
+    Crashed,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionRecord {
+    pub extension_id: String,
+    pub version: String,
+    pub api_major: u32,
+    pub package_digest: String,
+    pub publisher_fingerprint: String,
+    pub trust_decision: ExtensionTrustDecision,
+    pub desired_state: ExtensionDesiredState,
+    pub quarantine_state: ExtensionQuarantineState,
+    pub runtime_state: ExtensionRuntimeState,
+    pub grant_revision: u64,
+    pub lifecycle_generation: u64,
+    pub revision: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionPlan {
+    pub plan_id: String,
+    pub action: String,
+    pub state: String,
+    pub source_kind: String,
+    pub extension_id: String,
+    pub version: String,
+    pub api_major: u32,
+    pub profile_version: u32,
+    pub package_digest: String,
+    pub publisher_fingerprint: String,
+    pub trust_decision: ExtensionTrustDecision,
+    pub data_disposition: String,
+    pub plan_fingerprint: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionsListResult {
+    pub extensions: Vec<ExtensionRecord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionResult {
+    pub extension: ExtensionRecord,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionPlanResult {
+    pub plan: ExtensionPlan,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionOperationResult {
+    pub operation_id: String,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionGrantResult {
+    pub extension_id: String,
+    pub grant_revision: u64,
+    pub state: String,
+    pub replayed: bool,
 }
 
 #[cfg(test)]

@@ -9,7 +9,7 @@ repository.workspace = true
 publish.workspace = true
 
 [features]
-test-kill-gates = ["alcomd-application/test-kill-gates", "alcomd-vpm/test-kill-gates", "alcomd-store/test-kill-gates"]
+test-kill-gates = ["alcomd-application/test-kill-gates", "alcomd-extensions/test-kill-gates", "alcomd-vpm/test-kill-gates", "alcomd-store/test-kill-gates"]
 
 [dependencies]
 anyhow.workspace = true
@@ -21,6 +21,7 @@ alcomd-application.workspace = true
 alcomd-platform.workspace = true
 alcomd-protocol.workspace = true
 alcomd-store.workspace = true
+alcomd-extensions.workspace = true
 alcomd-vpm.workspace = true
 serde.workspace = true
 serde_json.workspace = true

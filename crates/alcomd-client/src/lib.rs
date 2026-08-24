@@ -130,6 +130,8 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_BACKUPS_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_BACKUPS_CREATE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_BACKUPS_RESTORE_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_EXTENSIONS_LIFECYCLE_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_EXTENSIONS_PERMISSIONS_V1.to_owned(),
             ],
         };
         self.call(METHOD_SYSTEM_HELLO, params).await
@@ -200,6 +202,89 @@ impl AlcomdClient {
             },
         )
         .await
+    }
+
+    pub async fn extensions_list(
+        &mut self,
+        params: alcomd_protocol::ExtensionsListParams,
+    ) -> Result<alcomd_protocol::ExtensionsListResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_EXTENSIONS_LIST, params)
+            .await
+    }
+
+    pub async fn extension_get(
+        &mut self,
+        extension_id: String,
+    ) -> Result<alcomd_protocol::ExtensionResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_EXTENSIONS_GET,
+            alcomd_protocol::ExtensionIdParams { extension_id },
+        )
+        .await
+    }
+
+    pub async fn extension_plan_install(
+        &mut self,
+        params: alcomd_protocol::ExtensionPlanInstallParams,
+    ) -> Result<alcomd_protocol::ExtensionPlanResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_EXTENSIONS_PLAN_INSTALL, params)
+            .await
+    }
+
+    pub async fn extension_apply_install(
+        &mut self,
+        params: alcomd_protocol::ExtensionApplyParams,
+    ) -> Result<alcomd_protocol::ExtensionOperationResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_EXTENSIONS_APPLY_INSTALL, params)
+            .await
+    }
+
+    pub async fn extension_enable(
+        &mut self,
+        params: alcomd_protocol::ExtensionLifecycleParams,
+    ) -> Result<alcomd_protocol::ExtensionResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_EXTENSIONS_ENABLE, params)
+            .await
+    }
+
+    pub async fn extension_disable(
+        &mut self,
+        params: alcomd_protocol::ExtensionLifecycleParams,
+    ) -> Result<alcomd_protocol::ExtensionResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_EXTENSIONS_DISABLE, params)
+            .await
+    }
+
+    pub async fn extension_plan_uninstall(
+        &mut self,
+        params: alcomd_protocol::ExtensionPlanUninstallParams,
+    ) -> Result<alcomd_protocol::ExtensionPlanResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_EXTENSIONS_PLAN_UNINSTALL, params)
+            .await
+    }
+
+    pub async fn extension_apply_uninstall(
+        &mut self,
+        params: alcomd_protocol::ExtensionApplyParams,
+    ) -> Result<alcomd_protocol::ExtensionOperationResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_EXTENSIONS_APPLY_UNINSTALL, params)
+            .await
+    }
+
+    pub async fn extension_set_grant(
+        &mut self,
+        params: alcomd_protocol::ExtensionGrantParams,
+    ) -> Result<alcomd_protocol::ExtensionGrantResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_EXTENSIONS_SET_GRANT, params)
+            .await
+    }
+
+    pub async fn extension_revoke_grant(
+        &mut self,
+        params: alcomd_protocol::ExtensionGrantParams,
+    ) -> Result<alcomd_protocol::ExtensionGrantResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_EXTENSIONS_REVOKE_GRANT, params)
+            .await
     }
 
     pub async fn package_plan_install(
