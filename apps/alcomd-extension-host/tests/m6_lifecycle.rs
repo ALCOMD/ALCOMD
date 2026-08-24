@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use alcomd_client::{AlcomdClient, ClientConfig};
 use alcomd_platform::{DataConfig, IpcConfig};
@@ -313,7 +313,7 @@ async fn subprocess_extension_apply_until_killed() {
     let (ipc, config) = isolated_ipc(runtime);
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
-    let daemon = tokio::spawn(async move {
+    let _daemon = tokio::spawn(async move {
         alcomd_daemon::serve_with_data_until(
             ipc,
             DataConfig::isolated(data),
@@ -385,7 +385,20 @@ async fn subprocess_extension_apply_until_killed() {
         serde_json::to_vec(&metadata).expect("metadata json"),
     )
     .expect("metadata");
-    let _ = daemon.await;
+    loop {
+        let operation = client
+            .operation_get(metadata.operation_id.clone())
+            .await
+            .expect("observe crash-gate operation");
+        assert!(
+            !matches!(
+                operation.state,
+                OperationState::Succeeded | OperationState::Failed | OperationState::Cancelled
+            ),
+            "operation became terminal before the requested kill gate: {operation:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
 }
 
 async fn run_kill_restart_case(checkpoint: &str) {
@@ -407,12 +420,20 @@ async fn run_kill_restart_case(checkpoint: &str) {
         .env(KILL_SIGNAL_ENV, &signal)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::inherit())
         .spawn()
         .expect("spawn crash subprocess");
     let mut child = ChildGuard(Some(child));
-    wait_for_file(&signal, checkpoint);
-    wait_for_file(&metadata_path, "operation metadata");
+    wait_for_file(
+        &signal,
+        checkpoint,
+        child.0.as_mut().expect("crash subprocess"),
+    );
+    wait_for_file(
+        &metadata_path,
+        "operation metadata",
+        child.0.as_mut().expect("crash subprocess"),
+    );
     let metadata: CrashMetadata =
         serde_json::from_slice(&fs::read(&metadata_path).expect("read metadata"))
             .expect("parse metadata");
@@ -487,14 +508,21 @@ struct CrashMetadata {
     idempotency_key: String,
 }
 
-fn wait_for_file(path: &Path, description: &str) {
-    for _ in 0..6_000 {
+fn wait_for_file(path: &Path, description: &str, child: &mut std::process::Child) {
+    let deadline = Instant::now() + Duration::from_secs(120);
+    loop {
         if path.is_file() {
             return;
         }
-        thread::sleep(Duration::from_millis(5));
+        if let Some(status) = child.try_wait().expect("inspect crash subprocess") {
+            panic!("crash subprocess exited before {description}: {status}");
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for {description}"
+        );
+        thread::sleep(Duration::from_millis(10));
     }
-    panic!("timed out waiting for {description}");
 }
 
 struct ChildGuard(Option<std::process::Child>);
