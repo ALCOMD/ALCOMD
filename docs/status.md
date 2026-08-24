@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成并通过最终人工验收；尚未进入 M7。`
+`M6 已正式完成并通过最终人工验收；M7 ExecPlan 草案已创建，M7 production implementation 尚未获批。`
 
 ## 已完成
 
@@ -279,8 +279,8 @@
 
 ## 下一停止点
 
-M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M6 尚未进入 M7；下一步仅允许创建
-M7 ExecPlan 草案并等待项目所有者人工审批，不得开始 M7 production implementation。
+M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 ExecPlan 草案已创建；下一停止点是
+项目所有者对 M7 范围与 contract-first Stop A 的人工审批，不得开始 M7 production implementation。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential
