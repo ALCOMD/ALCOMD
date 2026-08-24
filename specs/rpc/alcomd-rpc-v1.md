@@ -609,14 +609,19 @@ M6 Stop A 在 RPC major 1 上冻结两项未来 capability；production dispatch
 复验 package/source/signature/publisher/trust/revision/digest 并返回 OperationId，不重新 Plan。uninstall 默认
 `retain_data`；`delete_data` 必须在 immutable Plan 中显式选择。
 
-enable/disable 是 durable Operation。enable 在 package/API/grant 重验后创建 daemon-owned
-`ExtensionInstanceLease`；disable/revoke 的 durable grant revision commit 是 authority linearization point。
+enable/disable 是 revisioned、永久幂等的窄 lifecycle command，不创建 Operation kind。enable 在
+package/API/grant 重验后创建 daemon-owned `ExtensionInstanceLease`；disable/revoke 的 durable grant revision commit
+是 authority linearization point。State v8 只增加 `extensions.install` 与 `extensions.uninstall` 两个 Operation kind。
 Host/guest 不能自报 PrincipalId、ExtensionId、publisher、first-party status 或 scope。desired state 与 runtime
 state 分离，公开 record 不返回 PID、Host pipe、lease nonce、安装路径、trap/backtrace 或 extension data。
 
 `extensions.setGrant/revokeGrant` 的 M6 business scope 只允许 `background.run + ExtensionId self` 与
 `projects.read + specific ProjectId`。permission/grant update 使用 expected grant revision 与永久幂等；wildcard、path、
 URL 和 Manifest selector 全部拒绝。
+
+install source kind 只允许 `local_owner_selected` 与 `first_party_packaged`，不接受 URL、registry、marketplace、remote
+catalog 或任意网络 fetch。retained data namespace 绑定 ExtensionId + publisher fingerprint；publisher 不同返回
+`extension_data_owner_mismatch`。uninstall 总是撤销全部 grants/lease/session/handle，reinstall 不恢复旧 grant。
 
 `system.hello.result.extensionApi` 是未来兼容 optional field，只有 data Schema v8 migration、Host/WIT/runtime 与
 对应 capability 全部生产可用后才返回 `{major:1,world:"alcomd:extension/extension-v1@1.0.0"}`。当前 daemon 继续

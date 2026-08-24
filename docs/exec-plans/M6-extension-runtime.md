@@ -1,6 +1,6 @@
 # M6：统一扩展运行时与公开 Extension API
 
-状态：contract-first 统一 Stop A 工件、本地完整验收与依赖评估已完成；等待项目所有者审批，M6 生产实现未开始
+状态：统一 Stop A 与 review closure 已完成并通过合同门禁；获准进入 M6 production，尚未进入 M7
 
 ## 目标
 
@@ -131,21 +131,24 @@ alcomd-extension-host
 
 ## 生命周期与持久状态
 
-durable desired state 与瞬时 runtime instance state 分开建模：
+durable desired state、quarantine enforcement 与瞬时 runtime instance state 分开建模：
 
-- durable lifecycle/desired state：`installed_disabled`、`enabled`、`uninstalling`、`quarantined`；
+- durable lifecycle/desired state：`installed_disabled`、`enabled`、`uninstalling`；
+- quarantine state：`clear`、`quarantined`；
 - runtime instance state：`stopped`、`starting`、`running`、`stopping`、`crashed`。
 
-`desired_state = enabled` 与 `instance_state = crashed` 是合法组合。数据库中的 `enabled` 不代表进程仍存在，
-daemon/Host crash 不得产生 phantom running instance；重启后的自动启动只由 contract-first 冻结的 bounded restart
-policy 决定。不存在或未复验的包不能仅凭数据库行启动。
+`desired_state = enabled + quarantine_state = quarantined + instance_state = stopped` 是合法组合。quarantine 不覆盖或
+丢失用户 enabled intent。数据库中的 `enabled` 不代表进程仍存在，daemon/Host crash 不得产生 phantom running
+instance；解除 quarantine 与重启后的自动启动只由 bounded restart policy 决定。不存在或未复验的包不能仅凭
+数据库行启动。每 ExtensionId crash evidence 最多保留 16 条。
 
 - install/uninstall 是高影响 Operation，使用 immutable Plan、digest revalidation、Extension(id) 资源锁、
   staging、atomic publish、journal 与恢复；不能直接解压到 live directory。
 - enable 在启动 Host 前验证 package、ABI、grant 和 data namespace；disable 先撤销 lease，再有界停止 Host。
 - crash 产生脱敏 Event/error，并按冻结的有界策略重启或 quarantine；不得无限 crash loop。
 - uninstall 默认先 disable/revoke，再移除 live package。extension-owned data 的保留或删除必须在 Plan 中
-  明示；M6 不静默删除用户数据，也不实现未来迁移清理。
+  明示；M6 不静默删除用户数据，也不实现未来迁移清理。retained namespace 绑定 ExtensionId + publisher
+  fingerprint，uninstall 总是撤销所有 grants，reinstall 从 deny-by-default 开始。
 - 最小 State Schema 只容纳真实需要的 extension registry、grant/scope、instance/crash 状态、install plan
   和 journal；具体 Schema 版本及 migration 必须另行人工审批。
 
@@ -288,18 +291,15 @@ migration contract draft；不得修改 production Rust/TS implementation、adve
 
 ## 生产依赖审批点
 
-ExecPlan 与 Stop A 不新增依赖，也不修改 Cargo manifest/lock。Stop A 必须提交候选比较与精确评估，生产实现前
-由项目所有者单独审批：
+Stop A review 已批准以下精确 production dependency，除此之外均需重新人工审批：
 
-- Wasmtime LTS 与 WASI 0.2 Component Model/WIT tooling；
-- Component encode/decode/validation 工具；
-- `.alcomdext` archive、签名/摘要或 canonical TOML 若现有依赖不足；
-- 任何平台 sandbox/process primitive 或新增 `windows-sys`/`rustix` feature。
+- `wasmtime = 48.0.0`，defaults off，仅 `async/component-model/cranelift/runtime/std`，只进入 Extension Host graph；
+- `ed25519-dalek = 3.0.0`，defaults off，只用于 daemon package/signature verification。
 
-每项必须报告 exact version/features、default-features、license、MSRV、维护/LTS/安全补丁策略、unsafe/native/
-build script、active feature graph、二进制体积和编译时间影响、平台影响、替代方案、rejected alternatives 和
-Cargo.lock diff。Wasmtime 评估必须列出 exact WASI crates、Component Model/WIT tooling。不得在评估前写入 Cargo manifest；不得
-用通用 RPC/HTTP/framework crate 替代窄 Host protocol。
+明确不批准 `wasmtime-wasi`、`component-model-async`、direct `wit-component`、新 platform sandbox crate 或新
+`windows-sys`/`rustix` feature。首次写入 manifest 后立即检查 active graph 与 lock diff。任何其他 Component
+tooling、archive/signature dependency 或平台 primitive 都必须重新提交 exact version/features/license/MSRV/
+unsafe/native/build-script/lock diff 评估；不得用通用 RPC/HTTP/framework crate 替代窄 Host protocol。
 
 ## Release blockers 与风险
 
@@ -310,10 +310,10 @@ Cargo.lock diff。Wasmtime 评估必须列出 exact WASI crates、Component Mode
 - Wasmtime 主版本/LTS 选择不明确、无法及时接收兼容安全修复或三平台行为未经实测是 blocker。
 - 将 synthetic parity 描述为真实 v3/Discord/MCP 产品验证是 blocker。
 
-## 统一 Stop A 人工审批点
+## 统一 Stop A 人工审批结果
 
-本次人工审阅批准修改本 ExecPlan 并直接编写所有 contract-first 工件，不需中途为同一决定再次停下。以下内容
-作为一个统一 Stop A 提交并报告，获下一次人工审批后才可生产实现：
+统一 Stop A 已于 2026-08-24 通过项目所有者人工审批。review closure 作为独立提交完成并通过 contract gates 后，
+可按批准的 Slice A-F 开始 production：
 
 1. `.alcomdext` exact layout/quota、canonical package/publisher/signature、ExtensionId/version/API negotiation。
 2. exact WIT world/interfaces、compatibility matrix、old guest/new host fixture 与 ambient WASI deny list。
@@ -322,8 +322,8 @@ Cargo.lock diff。Wasmtime 评估必须列出 exact WASI crates、Component Mode
 5. extension-owned key/value API/quota、UI Bridge security envelope/headless harness、exact runtime limits 与 one-host-per-ID topology。
 6. Wasmtime/WASI/WIT dependency assessment 及任何生产 dependency/unsafe/platform API 需求。
 
-Stop A 前不得修改 production Rust/TS implementation。可以新增 Schema、WIT、ADR/spec、metadata、synthetic fixture、
-contract test 与 migration contract test，但 capability 不得 advertised，CLI/GUI 不得发布不存在的 backend。
+closure commit 前不得修改 production Rust/TS implementation 或 Cargo manifest/lock。closure 后 production 必须保持
+Wasmtime 只进入 Host graph、daemon 不实例化 guest、无 ambient WASI、无 M7 placement，并遵守新的停止条件。
 
 ## 验证命令
 
@@ -363,3 +363,11 @@ fault matrix、Tauri no-bundle、dependency/unsafe/lockfile gates 和三平台 C
   envelope、threat model、synthetic fixtures 与 contract tests。隔离依赖评估推荐 `wasmtime 48.0.0` 和
   `ed25519-dalek 3.0.0`，但未修改 Cargo manifest 或 lock file，也未接入生产代码。`fmt`、Clippy、Workspace
   tests、xtask、metadata、baseline freeze、diff/lock gates 全部通过；停止等待项目所有者审批。
+- 2026-08-24：项目所有者批准 Stop A 与精确 `wasmtime 48.0.0`、`ed25519-dalek 3.0.0` production dependency，要求先
+  以独立 closure commit 修正 desired/quarantine/runtime 三分模型、publisher-bound retained data、uninstall grant
+  revocation、logical UI origin、两个 exact Operation kind、16 条 crash evidence 上限与本地/first-party source kind；
+  closure contract gates 通过后可直接按 Slice A-F 实施，不得进入 M7。
+- 2026-08-24：review closure 已完成：desired/quarantine/runtime 三分、publisher-bound retained namespace、uninstall
+  grant revocation、logical UI origin、仅 `extensions.install/uninstall` 两个 Operation kind、每 ExtensionId 16 条
+  crash evidence、受控本地 source kind 与 Host child/protocol hardening 均已冻结。M6 contract 6/6、RPC Schema
+  22/22、fmt、xtask、metadata、baseline freeze、diff/三锁文件门禁通过；production source 与 Cargo manifest 未修改。

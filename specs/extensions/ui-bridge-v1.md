@@ -5,10 +5,13 @@
 M6 不定义 sidebar、settings page、toolbar、context menu 或 navigation placement。package 可携带 static `ui/`
 assets；测试使用 `headless/test contribution` synthetic fixture，不形成 public product slot。
 
-## Isolation 与 origin
+## Isolation 与 logical origin
 
-- UI 位于 sandboxed iframe/isolated WebView，origin 精确为
-  `alcomd-extension://<ExtensionId>/<packageDigest>/`，只加载已验证 package 的 static assets。
+- M6 冻结 logical `ExtensionUiOrigin { extension_id, package_digest }`；Bridge session 必须绑定这一逻辑身份，只加载
+  已验证 package 的 static assets。`alcomd-extension://<ExtensionId>/<packageDigest>/` 只是 candidate/illustrative
+  mapping，不是 Extension ABI v1 的永久 public URL contract。
+- custom scheme registration、CSP 以及 WebView2/WebKit/WKWebView origin mapping 属于 M7 实际验证；未来改变 URL
+  mapping 不构成 Extension ABI v1 breaking change。
 - 无主 DOM、Tauri IPC、Node、Host filesystem、daemon RPC socket、private channel 或 cross-extension frame access。
 - Bridge session 由 core 创建，绑定 ExtensionId、InstanceId、package digest、PrincipalId、grant revision、origin 和
   lifecycle generation；页面 input 不能声明这些 authority values。
@@ -38,5 +41,6 @@ event：`bridgeVersion=1, sessionId, sequence, event, data`。
 | idle session | 300,000 ms |
 | absolute session lifetime | 3,600,000 ms |
 
-M6 headless harness 只使用 `headless.test.ping` synthetic method；它不进入 production Bridge catalog。origin spoof、
+M6 headless harness 只使用 `headless.test.ping` synthetic method，并只验证 ExtensionId + package digest logical origin
+isolation；它不进入 production Bridge catalog。origin spoof、
 replay、collision、oversize、flood、DOM/Tauri/private-channel attempt 都必须有 negative vector。

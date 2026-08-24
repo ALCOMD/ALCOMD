@@ -138,6 +138,8 @@ M6 第一条生产 slice 冻结并仅使用以下权限：
   必须有至少一个 specific ProjectId；不允许 wildcard、path、URL 或自报 selector。
 - `ExtensionInstanceLease` 绑定 current grant revision；每次 Host/data call 重新解析真实 Principal/grant/scope。
 - revoke transaction 提交后，尚未被 application 接受的 call、Host queue、session/handle 均失败或取消。
+- uninstall 无论 `retain_data|delete_data` 都在 package authority removal 前 revoke 全部 grant/lease/session/handle；
+  retained namespace 不保留 active grant，未来 reinstall 重新从 deny-by-default 开始。
 - 第一方只可获得同名 permission 与同种 scope；official trust 不绕过 grant/revoke/quota。
 - `network.request`、notifications、clipboard、external-config、Discord 与 M7 UI placement 仍 planned，M6 第一条
   slice 不链接或广告它们。

@@ -8,13 +8,19 @@ daemon 为每个 enabled ExtensionId spawn 一个 Host，并建立 dedicated pip
 UDS、TCP、daemon RPC forwarding 或 extension-visible endpoint；guest 不继承 Host stdio。Rust `Command`/piped stdio
 足够表达当前 contract，不要求新 platform API。
 
+daemon 只启动已知可信 sibling Host executable，不经 shell；args 固定并验证。child 使用 `env_clear()`，只有实际证明
+必需的最小环境才可逐项加入，默认为空，不能继承 token、credential、proxy 或任意用户/daemon secret。stdout 专用于
+binary Host protocol，普通日志不得污染 framing。stderr 是 bounded/redacted diagnostic channel；guest 无 WASI stdio，
+不能无限写入。
+
 frame 是 `u32 little-endian payload length + UTF-8 JSON`，payload 1-524,288 bytes。零长、oversize、truncated、
 invalid UTF-8/JSON 或 sequence violation 立即终止该 Host；不把 malformed Host protocol 转为 public RPC response。
 
 ## Bootstrap/channel binding
 
-首帧只能由 daemon 发送 `bootstrap`：protocolVersion=1、一次性 256-bit random nonce、ExtensionInstanceLease 的
-opaque leaseId/InstanceId/API world 和 exact limits。Host 必须以 `ready` echo nonce 与 monotonically increasing
+首帧只能由 daemon 发送 `bootstrap`：protocolVersion=1、daemon epoch、一次性 256-bit random nonce、
+ExtensionInstanceLease 的 opaque leaseId/InstanceId/lifecycle generation/API world 和 exact limits。Host 必须以
+`ready` echo nonce 与 monotonically increasing
 sequence=1；不匹配立即终止。
 
 nonce、pipe handle 与 lease 只存在当前 daemon/Host memory；不写 package、extension data、SQLite、log、Event 或
@@ -26,7 +32,9 @@ daemon -> Host：`bootstrap`、`invoke-export`、`cancel-call`、`revoke-lease`�
 
 Host -> daemon：`ready`、`capability-call`、`capability-cancelled`、`export-result`、`host-fault`。
 
-每条消息有 protocolVersion=1、strict sequence、requestId/callId 和 bounded payload。`capability-call` 可以携带
+每条消息有 protocolVersion=1、daemon epoch、InstanceId、lifecycle generation、strict sequence、requestId/callId
+和 bounded payload。oversize、duplicate/replay ID、wrong instance/generation、stale daemon epoch、malformed message
+或 unsolicited authority metadata 均终止 channel。`capability-call` 可以携带
 leaseId 与 capability input，但不得携带或覆盖 PrincipalId、ExtensionId、publisher、first-party status、permission
 或 scope。daemon 以 pipe session 找到 current lease，再从 application authority 解析这些身份。
 

@@ -24,9 +24,11 @@ Host pipe、daemon/application authority、SQLite/object store。第一方 packa
 | revoke race / cached authorization | durable grant revision commit linearizes; every call rechecks; queue/session/handle cancellation | revoke-in-flight matrix |
 | guest reads project files/DB | only extension-safe Project summary application use case | scope/capability vectors |
 | cross-extension data read | lease-selected namespace, no ExtensionId argument, transaction/quota constraints | cross-read vectors |
+| publisher reuses retained ExtensionId data | namespace owner binds ExtensionId + publisher fingerprint; mismatch fails closed; no publisher transfer | owner-mismatch vectors |
 | infinite loop/memory/table/call flood | exact fuel+epoch/wall/memory/table/instance/concurrency/rate limits | resource-limit vectors |
 | Host crash/hang/OOM affects core/peer | one ExtensionId per Host process, bounded stop, crash-loop quarantine | topology/crash vectors |
 | phantom running after restart | desired/runtime split, daemon epoch + live child handle required | lifecycle recovery vectors |
+| quarantine erases user intent | desired/quarantine/runtime are independent; crash loop changes quarantine only | lifecycle recovery vectors |
 | install/uninstall half commit | immutable Plan, resource lock, staging/backup, append-only journal, forward recovery | phase kill matrix |
 | malicious UI origin/replay/flood/private channel | isolated origin/session, sequence/request ID, revoke, exact limits, no Tauri/DOM/Node | headless UI vectors |
 | logs leak data | stable safe errors, diagnostic ID, no raw path/argv/trap/token/value | redaction tests |

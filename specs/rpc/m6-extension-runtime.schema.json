@@ -35,13 +35,14 @@
         "expectedOptionalRevision": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
         "idempotencyKey": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[!-~]+$"},
         "absolutePath": {"type": "string", "minLength": 1, "maxLength": 32768},
-        "desiredState": {"enum": ["installed_disabled", "enabled", "uninstalling", "quarantined"]},
+        "desiredState": {"enum": ["installed_disabled", "enabled", "uninstalling"]},
+        "quarantineState": {"enum": ["clear", "quarantined"]},
         "runtimeState": {"enum": ["stopped", "starting", "running", "stopping", "crashed"]},
         "extensionRecord": {
             "type": "object", "additionalProperties": true,
             "required": [
                 "extensionId", "version", "apiMajor", "packageDigest", "publisherFingerprint",
-                "trustDecision", "desiredState", "runtimeState", "grantRevision",
+                "trustDecision", "desiredState", "quarantineState", "runtimeState", "grantRevision",
                 "lifecycleGeneration", "revision"
             ],
             "properties": {
@@ -52,6 +53,7 @@
                 "publisherFingerprint": {"type": "string", "pattern": "^ed25519-sha256:[0-9a-f]{64}$"},
                 "trustDecision": {"enum": ["official", "user_approved_for_extension"]},
                 "desiredState": {"$ref": "#/$defs/desiredState"},
+                "quarantineState": {"$ref": "#/$defs/quarantineState"},
                 "runtimeState": {"$ref": "#/$defs/runtimeState"},
                 "grantRevision": {"$ref": "#/$defs/revision"},
                 "lifecycleGeneration": {"$ref": "#/$defs/revision"},
@@ -71,8 +73,9 @@
         },
         "planInstallParams": {
             "type": "object", "additionalProperties": false,
-            "required": ["packagePath", "expectedRevision", "publisherApproval"],
+            "required": ["sourceKind", "packagePath", "expectedRevision", "publisherApproval"],
             "properties": {
+                "sourceKind": {"enum": ["local_owner_selected", "first_party_packaged"]},
                 "packagePath": {"$ref": "#/$defs/absolutePath"},
                 "expectedRevision": {"$ref": "#/$defs/expectedOptionalRevision"},
                 "publisherApproval": {"enum": ["none", "approve_for_extension"]}
@@ -90,13 +93,14 @@
         "planRecord": {
             "type": "object", "additionalProperties": true,
             "required": [
-                "planId", "action", "state", "extensionId", "packageDigest",
+                "planId", "action", "state", "sourceKind", "extensionId", "packageDigest",
                 "publisherFingerprint", "trustDecision", "dataDisposition", "planFingerprint"
             ],
             "properties": {
                 "planId": {"$ref": "#/$defs/uuid"},
                 "action": {"enum": ["install", "uninstall"]},
                 "state": {"enum": ["unapplied", "applied"]},
+                "sourceKind": {"enum": ["not_applicable", "local_owner_selected", "first_party_packaged"]},
                 "extensionId": {"$ref": "#/$defs/extensionId"},
                 "packageDigest": {"$ref": "#/$defs/sha256"},
                 "publisherFingerprint": {"type": "string", "pattern": "^ed25519-sha256:[0-9a-f]{64}$"},

@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 contract-first 统一 Stop A 已完成并通过完整本地验收；等待项目所有者审批，production implementation 未开始`
+`M6 Stop A 与独立 review closure 已通过合同门禁；获准进入 production implementation，尚未进入 M7`
 
 ## 已完成
 
@@ -215,10 +215,10 @@
   fixture、permissions/scope/lease/revocation、State Schema v8 migration contract、RPC/error/hello optional contract、
   UI Bridge headless envelope、threat model、synthetic vectors 和永久 contract test。production daemon 仍为
   dataSchema 7，不广告 `extensionApi` 或 M6 capability，未修改 production Rust/TS。
-- 隔离依赖评估推荐 `wasmtime 48.0.0` LTS（defaults off，仅 async/component-model/cranelift/runtime/std）与
+- 项目所有者已批准 `wasmtime 48.0.0` LTS（defaults off，仅 async/component-model/cranelift/runtime/std）与
   `ed25519-dalek 3.0.0`（defaults off）；第一条 slice 不依赖 `wasmtime-wasi`。该方案预计新增 68 个 lock package，
-  Windows cold probe 291.641 s、最小 binary delta 10,190,336 bytes。根 manifest/三份 lock file 尚未修改，依赖与
-  production wiring 等待 Stop A 人工审批。
+  Windows cold probe 291.641 s、最小 binary delta 10,190,336 bytes。依赖尚未写入 manifest/lock；Wasmtime 只能进入
+  Host graph，review closure 完成后按 Slice A-F 开始 production。
 
 ## 后续里程碑尚未完成
 

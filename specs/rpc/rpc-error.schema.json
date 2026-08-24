@@ -121,6 +121,7 @@
                 "extension_quarantined",
                 "extension_plan_stale",
                 "extension_data_quota_exceeded",
+                "extension_data_owner_mismatch",
                 "extension_recovery_required",
                 "operation_not_found",
                 "operation_not_cancellable",

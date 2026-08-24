@@ -213,8 +213,14 @@ fn lease_revocation_data_and_runtime_limits_are_exact() {
     assert_eq!(limits["instructionPolicy"], "fuel-and-epoch");
     assert_eq!(
         vectors["lifecycle"]["legalComposite"],
-        json!({"desired": "enabled", "runtime": "crashed"})
+        json!({"desired": "enabled", "quarantine": "quarantined", "runtime": "stopped"})
     );
+    assert_eq!(vectors["lifecycle"]["crashEvidencePerExtension"], 16);
+    assert_eq!(
+        vectors["retainedData"]["owner"],
+        json!(["ExtensionId", "publisherFingerprint"])
+    );
+    assert_eq!(vectors["retainedData"]["grantsRestoredOnReinstall"], false);
     assert!(LIFECYCLE.contains("grant revision durable update 是 revoke linearization point"));
     assert!(LIFECYCLE.contains("一个独立 `alcomd-extension-host` OS process"));
     assert!(HOST_PROTOCOL.contains("dedicated piped stdin/stdout"));
@@ -234,6 +240,20 @@ fn state_rpc_errors_and_publication_boundary_are_frozen() {
     assert_eq!(state["to"], 8);
     assert_eq!(state["productionMigration"], "not-yet-created");
     assert_eq!(state["tablesAdded"].as_array().expect("tables").len(), 8);
+    assert_eq!(
+        state["operationKindsAdded"],
+        json!(["extensions.install", "extensions.uninstall"])
+    );
+    assert_eq!(
+        state["desiredStates"],
+        json!(["installed_disabled", "enabled", "uninstalling"])
+    );
+    assert_eq!(state["quarantineStates"], json!(["clear", "quarantined"]));
+    assert_eq!(state["crashEvidencePerExtension"], 16);
+    assert_eq!(
+        state["installSourceKinds"],
+        json!(["local_owner_selected", "first_party_packaged"])
+    );
     assert_eq!(
         rpc["$defs"]["capability"]["enum"],
         json!(["extensions.lifecycle.v1", "extensions.permissions.v1"])
@@ -262,6 +282,7 @@ fn state_rpc_errors_and_publication_boundary_are_frozen() {
         "extension_quarantined",
         "extension_plan_stale",
         "extension_data_quota_exceeded",
+        "extension_data_owner_mismatch",
         "extension_recovery_required",
     ] {
         assert!(
@@ -283,6 +304,11 @@ fn ui_bridge_is_headless_only_and_bounded() {
     assert_eq!(schema["oneOf"].as_array().expect("envelopes").len(), 3);
     assert_eq!(vectors["contribution"], "headless/test contribution");
     assert_eq!(vectors["publishedProductPlacements"], json!([]));
+    assert_eq!(vectors["illustrativeUrlMappingIsPublicContract"], false);
+    assert_eq!(
+        vectors["logicalOrigin"]["extensionId"],
+        "dev.example.project-summary"
+    );
     assert_eq!(vectors["validRequest"]["bridgeVersion"], 1);
     for negative in [
         "origin-spoof",

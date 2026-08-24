@@ -1,5 +1,10 @@
 {
     "contribution": "headless/test contribution",
+    "logicalOrigin": {
+        "extensionId": "dev.example.project-summary",
+        "packageDigest": "231e8f281520c4701cf1a6534ecb3c8c1eb39587fad2a0b25e23a54a8979824f"
+    },
+    "illustrativeUrlMappingIsPublicContract": false,
     "validRequest": {
         "bridgeVersion": 1,
         "sessionId": "00000000-0000-4000-8000-000000000001",

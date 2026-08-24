@@ -62,8 +62,19 @@
         "stale-lease-grant-revision-denied"
     ],
     "lifecycle": {
-        "desiredStates": ["installed_disabled", "enabled", "uninstalling", "quarantined"],
+        "desiredStates": ["installed_disabled", "enabled", "uninstalling"],
+        "quarantineStates": ["clear", "quarantined"],
         "runtimeStates": ["stopped", "starting", "running", "stopping", "crashed"],
-        "legalComposite": {"desired": "enabled", "runtime": "crashed"}
+        "legalComposite": {"desired": "enabled", "quarantine": "quarantined", "runtime": "stopped"},
+        "crashEvidencePerExtension": 16
+    },
+    "retainedData": {
+        "owner": ["ExtensionId", "publisherFingerprint"],
+        "publisherMismatchError": "extension_data_owner_mismatch",
+        "grantsRestoredOnReinstall": false
+    },
+    "installSources": {
+        "allowed": ["local_owner_selected", "first_party_packaged"],
+        "networkFetch": false
     }
 }

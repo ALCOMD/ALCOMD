@@ -19,10 +19,10 @@ OOM 与 authority blast radius。
    generation 和 expiry/cancel state。pipe session 而非 guest parameter 绑定 identity。
 5. revoke grant revision commit 是 authority linearization point。已获 OperationId 的 core Operation 继续遵守既有
    recovery，但不获得新的 capability authority。
-6. durable desired state 与 runtime process state 分离；`enabled + crashed` 合法，crash loop 有 bounded restart/
-   quarantine，数据库 enabled 不等于进程存在。
-7. extension-owned data v1 只有 bounded opaque-byte key/value `get/set/delete`；uninstall 默认保留，显式
-   high-impact immutable Plan 才可删除。
+6. durable desired state、quarantine enforcement 与 runtime process state 三者分离；`enabled + quarantined + stopped`
+   合法，quarantine 不覆盖用户 intent，数据库 enabled 不等于进程存在。
+7. extension-owned data v1 只有 bounded opaque-byte key/value `get/set/delete`；namespace 绑定 ExtensionId + publisher
+   fingerprint。uninstall 默认保留，显式 high-impact immutable Plan 才可删除；grant 永不作为 reinstall authority 保留。
 8. package content identity、publisher cryptographic identity、local trust 与 first-party policy 分层。Manifest
    不能自报 first-party；unknown/self-signed approval 只绑定 ExtensionId + fingerprint + package digest。
 
@@ -30,4 +30,6 @@ OOM 与 authority blast radius。
 
 - Host pool、通用 DI/service discovery/workflow、native extension、raw socket/arbitrary filesystem 被排除。
 - M6 只冻结 UI Bridge security envelope/headless harness；M7 才冻结产品 placement。
-- Wasmtime、signature verification 与任何新 production dependency 在 Stop A 后单独人工审批。
+- UI origin 在 M6 是 ExtensionId + package digest logical identity；具体 custom URL scheme 留给 M7。
+- 项目所有者已在 Stop A review 批准 Wasmtime 48.0.0 与 ed25519-dalek 3.0.0 的精确最小配置；其他 production
+  dependency 仍需单独审批。

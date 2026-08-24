@@ -5,8 +5,6 @@
     "productionMigration": "not-yet-created",
     "operationKindsAdded": [
         "extensions.install",
-        "extensions.enable",
-        "extensions.disable",
         "extensions.uninstall"
     ],
     "tablesAdded": [
@@ -19,20 +17,23 @@
         "extension_plans",
         "extensions"
     ],
-    "desiredStates": ["installed_disabled", "enabled", "uninstalling", "quarantined"],
+    "desiredStates": ["installed_disabled", "enabled", "uninstalling"],
+    "quarantineStates": ["clear", "quarantined"],
     "runtimeStates": ["stopped", "starting", "running", "stopping", "crashed"],
+    "crashEvidencePerExtension": 16,
     "trustDecisions": ["official", "user_approved_for_extension"],
     "grantStates": ["granted", "revoked"],
     "resourceKinds": ["Extension", "Project"],
     "planActions": ["install", "uninstall"],
     "dataDispositions": ["retain_data", "delete_data"],
+    "installSourceKinds": ["local_owner_selected", "first_party_packaged"],
     "installPhases": [
         "accepted", "source_verified", "archive_verified", "staging_complete",
         "publish_intent", "package_published", "state_commit_intent",
         "state_committed", "cleanup_complete"
     ],
     "uninstallPhases": [
-        "accepted", "lease_revoked", "host_stopped", "package_backup_intent",
+        "accepted", "grants_revoked", "lease_revoked", "host_stopped", "package_backup_intent",
         "package_moved_to_backup", "data_delete_intent", "data_deleted",
         "state_commit_intent", "state_committed", "cleanup_complete"
     ],
@@ -48,7 +49,10 @@
         "plans-immutable-except-apply-binding",
         "filesystem-journal-append-only",
         "grant-revision-update-is-linearization-point",
+        "uninstall-revokes-all-grants-before-package-authority-removal",
         "runtime-running-requires-current-daemon-epoch-and-live-child-handle",
+        "quarantine-does-not-overwrite-desired-state",
+        "retained-data-owned-by-extension-id-and-publisher-fingerprint-without-registry-cascade",
         "data-delete-only-from-explicit-uninstall-plan",
         "future-schema-fail-closed"
     ]

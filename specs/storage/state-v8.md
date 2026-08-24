@@ -1,23 +1,24 @@
 # ALCOMD State Schema v8：Extension Runtime contract draft
 
-状态：M6 contract-first Stop A candidate；`state.db` production migration 尚未实现，daemon 仍广告 v7。
+状态：M6 Stop A review closure；`state.db` production migration 尚未实现，daemon 仍广告 v7。
 
 权威 contract snapshot 是 `state-v8-migration.contract.json`。生产获批后才允许创建
 `crates/alcomd-store/migrations/0008_extension_runtime.sql`、接入自动 migration 并广告 `dataSchema: 8`。
 
 ## Operation kinds
 
-v8 计划严格增加：`extensions.install`、`extensions.enable`、`extensions.disable`、`extensions.uninstall`。
-install/uninstall 使用 immutable Plan/Apply；enable/disable 使用 durable Operation、idempotency 与 lifecycle journal，
-但不创建通用 workflow engine。
+v8 只增加：`extensions.install`、`extensions.uninstall`。install/uninstall 使用 immutable Plan/Apply 和各自 recovery
+dispatcher；enable/disable 是 revisioned、永久幂等的窄 lifecycle command，不建立 durable Operation kind 或通用
+workflow engine。既有与新增 dispatcher 永久只接管自己的 exact kind；unknown future kind fail closed。
 
 ## 表
 
 ### `extensions`
 
 每 ExtensionId 一行：version/API major、package/Manifest/component SHA-256、publisher fingerprint、
-`official|user_approved_for_extension` trust decision、extension PrincipalId、desired state、grant revision、lifecycle
-generation、revision、timestamps。没有 runtime `running` boolean。
+`official|user_approved_for_extension` trust decision、extension PrincipalId、`installed_disabled|enabled|uninstalling`
+desired state、`clear|quarantined` quarantine state、grant revision、lifecycle generation、revision、timestamps。没有
+runtime `running` boolean；quarantine 不覆盖用户 desired intent。
 
 ### `extension_grants`
 
@@ -34,13 +35,14 @@ epoch + live in-memory child handle 才能证明 running；restart 先把旧 epo
 
 ### `extension_crashes`
 
-保存 bounded crash window 所需 timestamp 与 safe reason code；按 ExtensionId + occurred time 查询。production recovery
-只需保留最近 300,000 ms 的计数 evidence，不保存 trap/backtrace/path/argv。
+保存 bounded crash window 所需 timestamp 与 safe reason code；按 ExtensionId + occurred time 查询。每 ExtensionId
+最多保留最近 16 条、并只使用最近 300,000 ms 的计数 evidence，不保存 trap/backtrace/path/argv，也不建立后台 GC
+service 或第二份 Event/telemetry history。
 
 ### `extension_plans`
 
 永久 immutable install/uninstall Plan authority：PlanId、owner Principal、action、state、ExtensionId、expected revision/
-absence、source filesystem identity、所有 digest、publisher/trust decision、requested permission/interface snapshot、
+absence、`local_owner_selected|first_party_packaged` source kind、source filesystem identity、所有 digest、publisher/trust decision、requested permission/interface snapshot、
 uninstall data disposition、profile version、plan fingerprint、唯一 Apply OperationId 与 timestamps。唯一 update 是
 `unapplied + NULL -> applied + matching OperationId`；禁止 delete/rewrite/TTL。
 
@@ -51,9 +53,15 @@ staging/backup identity、bounded safe evidence 与 time。phase 必须来自 li
 
 ### `extension_data_namespaces` / `extension_data_items`
 
-namespace 保存 ExtensionId、revision、key count、total value bytes；items 保存 key、opaque BLOB、key revision。trigger/
-transaction 强制 1,024 keys、4 MiB total、128-byte key、64 KiB value。无 list index、cross-extension foreign key、blob
-object、TTL 或 shared namespace。
+namespace authority 至少由 `(ExtensionId, publisher fingerprint)` 绑定，并保存 revision、key count、total value bytes；
+items 保存 key、opaque BLOB、key revision。namespace 不以会被 uninstall 删除的 `extensions` registry row 为
+`ON DELETE CASCADE` parent。same ExtensionId + different publisher 不能 attach/read 旧 namespace，返回
+`extension_data_owner_mismatch`；M6 不实现 publisher transfer/key rotation。trigger/transaction 强制 1,024 keys、
+4 MiB total、128-byte key、64 KiB value。无 list index、cross-extension foreign key、blob object、TTL 或 shared namespace。
+
+任何 uninstall 都在移除 package authority 前 durable revoke 全部 grants/lease/session/handle；grant row 不作为未来
+reinstall 的 active authority，reinstall 始终从 deny-by-default 开始。只有 immutable uninstall Plan 明确
+`delete_data` 才允许删除 namespace/data。
 
 ## Migration/rollback
 

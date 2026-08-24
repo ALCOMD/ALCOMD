@@ -46,3 +46,9 @@ for each entry:
 - Apply 重验签名、digest、source identity 与 trust decision。任一变化返回 `extension_plan_stale`。
 - uninstall 删除该 installed-extension 绑定的 user approval；重装必须重新确认。official trust 由产品 policy 持有。
 - 长期 private/signing key 不进入 ALCOMD state；package、data、log、Event 不保存 bearer credential。
+
+## M6 install source
+
+M6 只接受 owner-selected local package 或明确 first-party packaged source，wire name 分别为
+`local_owner_selected`、`first_party_packaged`。不提供 URL、registry、marketplace、remote catalog 或 extension
+store/download service；验证过程不执行网络请求。

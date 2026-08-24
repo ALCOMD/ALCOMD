@@ -2,14 +2,17 @@
 
 状态：M6 contract-first Stop A candidate；production 尚未实现。
 
-## Durable desired state 与 runtime state
+## Durable desired state、quarantine 与 runtime state
 
-durable `desired_state`：`installed_disabled | enabled | uninstalling | quarantined`。
+durable `desired_state`：`installed_disabled | enabled | uninstalling`。
+
+durable `quarantine_state`：`clear | quarantined`。
 
 runtime `instance_state`：`stopped | starting | running | stopping | crashed`。
 
-`enabled + crashed` 合法。`enabled` 不证明 OS process 存在。runtime row 还绑定 daemon epoch；daemon restart 时
-旧 epoch 的 `starting|running|stopping` 先变为 `crashed`，绝不能产生 phantom running。
+`enabled + quarantined + stopped` 合法。crash-loop quarantine 不覆盖或丢失用户的 `enabled` intent；解除 quarantine
+后按 bounded restart policy 决定是否恢复。`enabled` 不证明 OS process 存在。runtime row 还绑定 daemon epoch；daemon
+restart 时旧 epoch 的 `starting|running|stopping` 先变为 `crashed`，绝不能产生 phantom running。
 
 ## Host topology
 
@@ -37,20 +40,24 @@ termination 不自动回滚它，也不授予任何新的后续 capability autho
 ## Restart/quarantine
 
 - crash 后 1,000 ms 第一次 restart；第二次 crash 后 5,000 ms restart。
-- rolling 300,000 ms window 内第 3 次 crash 把 desired state durable 改为 `quarantined`，runtime 为 `crashed`。
+- rolling 300,000 ms window 内第 3 次 crash 把 `quarantine_state` durable 改为 `quarantined`；保留原
+  `desired_state`，runtime 收敛为 `stopped`。
 - crash window 从每次 Host abnormal exit 的 durable timestamp 计算；daemon restart 不清零。
+- 每个 ExtensionId 只保留最近 16 条 crash evidence；它不是第二份 Event/telemetry log。
 - quarantine 只能由显式 enable/recovery action 在 package/signature/grant 重验后解除；不无限 auto-restart。
 
 ## Plan/Apply 与 recovery
 
-Install Plan immutable 固定 source identity、ExtensionId/version/API、package/Manifest/component digest、publisher key/
+Install source kind 只允许 `local_owner_selected` 或 `first_party_packaged`；没有 URL、registry、marketplace、remote
+catalog 或任意网络 fetch。Install Plan immutable 固定 source kind/identity、ExtensionId/version/API、package/Manifest/component digest、publisher key/
 trust decision、permissions/interfaces、archive profile v1、expected absence/revision。Apply 不重新 Plan。
 
 Install phases：`accepted -> source_verified -> archive_verified -> staging_complete -> publish_intent ->
 package_published -> state_commit_intent -> state_committed -> cleanup_complete`。
 
 Uninstall Plan immutable 固定 ExtensionId/revision/package digest、`retain_data|delete_data`。默认 retain；delete 是显式
-high-impact choice。Uninstall phases：`accepted -> lease_revoked -> host_stopped -> package_backup_intent ->
+high-impact choice。任何 uninstall 都先 durable revoke 全部 grants、lease/session/handle，停止 Host 并移除 live package
+authority；未来 reinstall 默认 deny-by-default，旧 grants 不恢复。Uninstall phases：`accepted -> grants_revoked -> lease_revoked -> host_stopped -> package_backup_intent ->
 package_moved_to_backup -> data_delete_intent? -> data_deleted? -> state_commit_intent -> state_committed -> cleanup_complete`。
 
 publish/move 后只有 identity/digest/evidence 全匹配才可 forward recover；否则 `extension_recovery_required`。
