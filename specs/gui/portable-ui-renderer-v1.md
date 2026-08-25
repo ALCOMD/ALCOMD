@@ -10,13 +10,19 @@
   extension-provided 标记。
 - draft 严格绑定 session/snapshot revision/form nodeId，只存在 GUI process memory；不写 localStorage、state、data、
   Event或log。revision改变、disconnect、stale或close时失效，禁止按 field name/type保留或合并。
+- open 只接受 revision 1；后续只接受高于当前 revision 的新 Snapshot，或等于当前 revision 的 exact replay，拒绝较低
+  revision。daemon 的 checked-u64 overflow 只作为安全 `internal_error`，renderer 不推测或回绕 revision。
 - Portable UI无server push。只允许用户主动 refresh，或页面可见且没有dirty form时有界轮询；dirty draft的刷新/导航必须
   先经过host-owned discard confirmation。
+- locale 在 session open时规范化并固定。切换 locale 必须先确认 dirty draft、关闭旧 session，再以新 locale 打开新 session；
+  theme、density、platform 和 GUI identity 不发送给 guest。
 - keyboard order遵循 tree/order；form labels、status live region、progress semantics由 renderer生成，不接受 custom ARIA。
   invalid field设置原生invalid state，并让 `aria-describedby` 指向host-generated validation message ID；最多512 UTF-8
   bytes的extension validation text不是security confirmation。
 - component tests覆盖 keyboard/focus/ARIA、200% zoom、320 CSS px、reduced motion、loading/empty/error/disconnected。
 - 不使用 extension Tauri command/capability、iframe/WebView、private first-party node或 GUI-to-Host direct channel。
+- UiDocument text、draft、action、Snapshot 与 replay evidence 均视为潜在敏感数据，不写 log、Event、telemetry、state 或
+  `internal_error`；renderer error UI 只消费稳定 code 与 diagnosticId。
 
 ## Non-Tauri headless reference consumer
 

@@ -42,14 +42,52 @@
         "exactReplay": {
             "match": ["sequence", "requestId", "expectedSnapshotRevision", "canonicalActionFingerprint"],
             "guestInvocations": 0,
-            "result": "original-resulting-snapshot",
+            "currentRevisionRequired": true,
+            "result": "original-resulting-snapshot-only-if-current",
             "replayed": true
+        },
+        "historicalExactReplay": {
+            "condition": "cached-resulting-revision-is-not-current-session-revision",
+            "error": "extension_ui_snapshot_stale",
+            "guestInvocations": 0,
+            "returnsHistoricalSnapshot": false
         },
         "conflictOrOutOfOrder": {
             "error": "extension_ui_action_invalid",
             "guestInvocations": 0
         },
         "durableAcrossConnectionOrRestart": false
+    },
+    "x-alcomd-snapshot-monotonicity": {
+        "openRevision": 1,
+        "successfulGuestRefreshOrDispatch": "checked-u64-increment",
+        "overflow": "internal_error-without-wrap",
+        "rendererAcceptance": "greater-than-current-or-equal-current-exact-replay"
+    },
+    "x-alcomd-session-coordination": {
+        "scope": "one-in-flight-refresh-dispatch-or-close-per-session",
+        "states": ["active", "closing", "closed"],
+        "closingRejectsNewInvocations": true,
+        "pendingInvocationUsesExistingCancellationAndDeadline": true,
+        "outOfOrderSnapshotCommit": false
+    },
+    "x-alcomd-locale": {
+        "canonicalizedAtOpen": true,
+        "immutablePerSession": true,
+        "change": "confirm-dirty-close-old-open-new",
+        "guestAppearanceInputs": []
+    },
+    "x-alcomd-invocation-capability-matrix": {
+        "background": "existing-m6-grant-and-scope",
+        "interactive-ui-render": ["host-projects.get-summary", "host-data.get"],
+        "interactive-ui-action": ["host-projects.get-summary", "host-data.get", "host-data.set", "host-data.delete"],
+        "interactive-ui-close": []
+    },
+    "x-alcomd-sensitive-payload": {
+        "classes": ["ui-document-text", "form-drafts", "actions", "snapshots", "replay-evidence"],
+        "forbiddenSinks": ["event", "log", "host-stderr", "crash-evidence", "operation", "state-db", "telemetry", "public-internal-error"],
+        "replayMemoryReleasedAtClose": true,
+        "secureZeroizationClaimed": false
     },
     "x-alcomd-stable-errors": [
         "invalid_request",

@@ -14,21 +14,31 @@ daemon-issued UI session/invocation context 才构成授权边界。
   fail closed；host-owned chrome永远位于 Snapshot 外，并显示daemon record中的name、ExtensionId、publisher/trust、
   version、desired/runtime/quarantine与extension-provided标记。
 - confused deputy：open/refresh/dispatch同时检查 client `extensions.ui.use` scope 与 extension current lease；UI 内业务
-  Host call取双方等价 scope 交集，extension-owned host-data 例外不向 client 暴露 raw data。
+  Host call取双方等价 scope 交集。project summary要求双方对同一 ProjectId 均有 `projects.read`；extension-owned host-data
+  同时要求client scoped UI permission与extension self namespace，且不向client暴露raw data。
+- render impurity：`interactive-ui-render`只允许project summary与host-data get；render中的set/delete稳定返回
+  `extension_permission_denied`，guest可处理后返回有效document，不计作protocol violation、crash或quarantine。
 - context forgery：InvocationContextId只由daemon签发并绑定一个in-flight export。grant/lease/session/deadline/generation
   正常推进返回stable stale/permission/cancel并取消调用；unknown/cross-extension/session/invocation、completed reuse或
   authority修改/伪造才终止Host并计入crash/quarantine。
 - stale/replay：session绑定 connection/package/grant/generation/revision；strict sequence与64项
-  sequence/requestId/expected-revision/action-fingerprint/resulting-Snapshot evidence在guest前验证。exact replay返回原始
-  resulting Snapshot，冲突/gap/out-of-order返回 `extension_ui_action_invalid`。断线使session失效。
+  sequence/requestId/expected-revision/action-fingerprint/resulting-Snapshot evidence在guest前验证。exact replay仅在缓存
+  resulting revision仍为current时返回；历史exact replay返回 `extension_ui_snapshot_stale`且不泄露旧Snapshot。
+  冲突/gap/out-of-order返回 `extension_ui_action_invalid`。断线使session失效。
+- session race：每个session的refresh/dispatch/close由窄 coordinator串行化；close先标记closing/closed并拒绝新调用，再以
+  无Host capability context best-effort通知guest。close trap不能复活session，Snapshot不得乱序提交。
 - resource exhaustion：exact Snapshot/action/node/text/form/session/concurrency/rate/deadline quota；oversize在 renderer前拒绝。
 - Unicode spoof：拒绝 NUL/control/bidi marks；security chrome不使用 extension label作为 authority。
 - malicious document：结构错误关闭 session并终止 Host，计入 existing crash/quarantine；bounded Event/diagnostic不含内容。
 - data exfiltration：无 network/filesystem/browser surface；argv/path/token/Host protocol/context不进入 RPC/Event/log。
+- payload disclosure：UiDocument text、draft、action、Snapshot与replay evidence均可能敏感，不进入Event/log/Host stderr/
+  crash evidence/Operation/state/telemetry/public internal error；只保留安全ID、stable code、counter与diagnosticId。
 - first-party privilege：M8/M9 synthetic fixtures与第三方使用同一 schema、permission、Host 和 renderer contract，无
   private node、page、command 或 permission。
 - dirty-draft confusion：draft只在GUI memory并绑定session/revision/form；dirty时不自动refresh/merge，主动refresh/navigation
   使用host-owned discard confirmation，revision/disconnect/stale/close使draft失效。
+- locale/appearance confusion：locale在open时规范化并固定；切换locale必须关闭旧session并重新open。theme、density、platform
+  与GUI identity不发送给guest，appearance只由renderer决定。
 - validation spoof：extension validation message有512-byte上限、只绑定field并由renderer生成ARIA关联；它不能替代任何
   host-owned permission、Plan/Apply、credential、system error或trust confirmation。
 

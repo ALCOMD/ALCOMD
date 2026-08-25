@@ -28,6 +28,23 @@ WIT `guest-session-id` 是daemon生成的opaque correlation token，只允许gue
 Capability authority，不能选择Client Principal、不能替代InvocationContextId，也不能跨Host lifecycle generation重用。
 RPC/session的sequence、requestId、revision与replay完全由daemon验证，只有验证通过的新action才调用一次guest dispatch。
 
+## Invocation kinds 与 render purity
+
+M7 只允许以下四种显式 invocation kind，不建立通用 policy engine：
+
+| invocation kind | guest export / lifecycle | 允许的 Host capability |
+| --- | --- | --- |
+| `background` | 既有 M6 background 行为 | 既有 M6 grant/scope 所允许的能力 |
+| `interactive-ui-render` | `activate(interactive-ui)`、`guest-ui.open`、`guest-ui.refresh` | `host-projects.get-summary`、`host-data.get` |
+| `interactive-ui-action` | `guest-ui.dispatch` | `host-projects.get-summary`、`host-data.get`、`host-data.set`、`host-data.delete` |
+| `interactive-ui-close` | `guest-ui.close`、`deactivate(interactive-ui-idle)` | 无 |
+
+render invocation 必须保持纯读取。若 guest 在 render 中请求 `host-data.set` 或 `host-data.delete`，daemon 使用既有稳定
+`extension_permission_denied` 拒绝该 capability call；这不是 Host protocol violation、guest crash 或 quarantine evidence。
+guest 可以处理该拒绝并继续返回有效 document。项目读取同时要求 Client Principal 与 Extension Principal 对同一 ProjectId
+均具备 `projects.read`；extension-owned host-data 同时要求 Client Principal 的 scoped `extensions.ui.use` 与 Extension Principal
+只能访问自身 ExtensionId namespace。client metadata、guest-session-id 与 InvocationContextId 都不替代这组双重授权。
+
 ## Flat tree 与 exact parent/child matrix
 
 所有 node/field/action/option identity token 必须匹配 `^[a-z][a-z0-9._-]{0,63}$`。对 form 而言，form node 的 `nodeId`
@@ -93,6 +110,10 @@ extension data、Event 或 log。新 revision 不得自动套用旧 draft。用�
 discard confirmation。disconnect、stale 或 close 使 draft 失效；不得按 field name/type进行 heuristic merge。所有支持 v1
 的 GUI consumer 都必须遵守这些 renderer conformance 规则。
 
+locale 在 `extensions.ui.open` 时规范化并固定到 session；refresh/dispatch 不接受 locale 变化。切换 locale 时，renderer 必须
+先处理 dirty-form discard confirmation，再关闭旧 session 并用新 locale 打开新 session。theme、density、platform 与官方
+GUI identity 不发送给 guest；appearance 始终由 renderer 控制。
+
 ## Sequence、exact replay 与断线
 
 session 的首个 accepted sequence 是 1，之后严格 `+1`。每个 requestId 是 1-64 printable ASCII bytes。daemon 为每个
@@ -105,14 +126,21 @@ form values按 document node order）。该 fingerprint 只做 replay equality�
 
 - 新请求必须满足 `sequence == lastAcceptedSequence + 1` 且 requestId 未使用；guest 只调用一次，验证新 document，分配新
   revision，缓存 resulting Snapshot，返回 `replayed=false`。
-- sequence、requestId、expected revision 与 action fingerprint 全部匹配已缓存项时，不调用 guest，返回该项原始 resulting
-  Snapshot，返回 `replayed=true`；不是返回 current Snapshot。
+- sequence、requestId、expected revision 与 action fingerprint 全部匹配已缓存项，并且该项 resulting Snapshot revision
+  仍等于 session 当前 revision 时，不调用 guest，返回该项 resulting Snapshot，返回 `replayed=true`。
+- exact evidence 匹配但该项 resulting Snapshot 已因后续 refresh 或 dispatch 不再是当前 revision 时，稳定返回
+  `extension_ui_snapshot_stale`，不调用 guest，也不返回历史 Snapshot。
 - 相同 requestId 或 sequence但 revision/fingerprint 不同，稳定返回 `extension_ui_action_invalid`，不调用 guest。
 - sequence gap、out-of-order 或已淘汰 evidence 的重放稳定返回 `extension_ui_action_invalid`，不调用 guest。
 
 expectedSnapshotRevision 对新请求必须等于当前 revision，否则 `extension_ui_snapshot_stale`。一次 session 只允许一个
 action；并发第二个 action返回 `extension_ui_action_invalid`。evidence 只在 daemon memory；client connection断开后 session
 失效，不承诺跨连接或 daemon restart replay。需要 durable exactly-once 的业务操作继续使用既有 idempotency/Plan/Operation。
+
+open 成功分配 revision 1。每次实际调用 guest 且 document 验证成功的 refresh/dispatch 都以 checked `u64` 严格增加一次；
+溢出返回安全 `internal_error`，不得 wrap。每个 session 对 refresh、dispatch 和 close coordination 只允许一个 in-flight，
+由窄的 `UiSessionCoordinator` 串行化；closing/closed 阻止新调用，已有调用遵循既有 cancellation/deadline，且不得乱序提交
+Snapshot。Renderer 只接受高于当前 revision 的新结果，或 revision 等于当前值的 exact replay；绝不接受更低 revision。
 
 ## Session 与 interactive-ui lifecycle
 
@@ -137,6 +165,11 @@ timeout 或 protocol violation立即关闭 session。refresh/dispatch 对非当�
 `extension_ui_session_not_found`，对已知但失效的 ID返回 `extension_ui_session_stale`。close 返回 `{closed:boolean}`；它不泄露
 session owner，且只 best-effort通知 guest。
 
+close 的权威顺序固定为：daemon 先将 session 标为 `closing`/`closed`，使新的 refresh/dispatch 失败，再在
+`interactive-ui-close` context 中 best-effort 调用 `guest-ui.close`。该 context 没有 Host capability；guest 不能恢复 session、
+写 host-data、修改 desired state 或延长 lease。close trap 不重新打开 session；如果 Host 因其他 UI session 或 background
+lease 继续存在，该 trap 仍按真实 guest crash 进入既有 crash/quarantine policy。
+
 ## Guest/client failure responsibility
 
 Guest 返回 malformed document、duplicate ID、unknown node、cycle、oversize、forbidden Unicode、invalid parent/child 或
@@ -150,6 +183,11 @@ field/action、invalid option、replay conflict、gap/out-of-order使用 `extens
 `extension_ui_limit_exceeded`。这些都在 guest前拒绝，不算 Host crash且不触发 quarantine。滚动 60,000 ms内第三次 action
 invalid/limit violation关闭当前 session。Guest正常 trap/fuel/timeout继续映射既有 `extension_crashed`/
 `extension_resource_limit`并进入已有 crash/quarantine policy。
+
+UiDocument text、form draft、action values、Snapshot 与 replay evidence 都视为潜在敏感数据。原始 payload 不得进入 Event、
+普通日志、Host stderr、crash evidence、Operation、state.db、telemetry 或 public `internal_error`。允许记录的只有 ExtensionId、
+安全的 node/action/field ID、稳定 error code、计数与 diagnosticId。replay evidence 只存在 session memory 并在 close 时释放；
+本合同不宣称 secure zeroization。
 
 ## Host-owned chrome 与 high-impact boundary
 

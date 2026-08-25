@@ -21,6 +21,8 @@ const PERMISSION_PROPOSAL: &str =
 const HOST_PROTOCOL_PROPOSAL: &str =
     include_str!("../../../specs/extensions/proposals/host-protocol-invocation-context-v1.md");
 const RENDERER_PROPOSAL: &str = include_str!("../../../specs/gui/portable-ui-renderer-v1.md");
+const THREAT_MODEL: &str =
+    include_str!("../../../specs/security/extension-portable-ui-threat-model.md");
 const ACTIVE_WORLD: &str = include_str!("../../../specs/extensions/wit/extension-v1/world.wit");
 const PROPOSAL_TYPES: &str =
     include_str!("../../../specs/extensions/wit/extension-v1-portable-ui-proposal/types.wit");
@@ -158,7 +160,8 @@ fn review_closure_freezes_manifest_lifecycle_draft_and_security_responsibility()
     assert!(MANIFEST_PROPOSAL_TEXT.contains("官方 SDK/reference guest提供空桩"));
     assert!(MANIFEST_PROPOSAL_TEXT.contains("required permissions不自动加入 `background.run`"));
     assert!(PORTABLE_CONTRACT.contains("`/extensions/:extensionId/ui`"));
-    assert!(PORTABLE_CONTRACT.contains("原始 resulting"));
+    assert!(PORTABLE_CONTRACT.contains("仍等于 session 当前 revision"));
+    assert!(PORTABLE_CONTRACT.contains("不返回历史 Snapshot"));
     assert!(PORTABLE_CONTRACT.contains("不写 localStorage、state.db"));
     assert!(PORTABLE_CONTRACT.contains("discard confirmation"));
     assert!(PORTABLE_CONTRACT.contains("disabled/read-only field 不出现在 wire values"));
@@ -175,6 +178,15 @@ fn review_closure_freezes_manifest_lifecycle_draft_and_security_responsibility()
     assert!(HOST_PROTOCOL_PROPOSAL.contains("`cancelled`"));
     assert!(HOST_PROTOCOL_PROPOSAL.contains("completed context reuse"));
     assert!(HOST_PROTOCOL_PROPOSAL.contains("立即完成并失效"));
+    assert!(HOST_PROTOCOL_PROPOSAL.contains("Invocation kind 与 capability matrix"));
+    assert!(HOST_PROTOCOL_PROPOSAL.contains("interactive-ui-render"));
+    assert!(HOST_PROTOCOL_PROPOSAL.contains("interactive-ui-action"));
+    assert!(HOST_PROTOCOL_PROPOSAL.contains("interactive-ui-close"));
+    assert!(HOST_PROTOCOL_PROPOSAL.contains("extension_permission_denied"));
+    assert!(THREAT_MODEL.contains("render impurity"));
+    assert!(THREAT_MODEL.contains("历史exact replay"));
+    assert!(THREAT_MODEL.contains("session race"));
+    assert!(THREAT_MODEL.contains("payload disclosure"));
 }
 
 #[test]
@@ -262,7 +274,33 @@ fn rpc_state_permissions_and_limits_are_exact_and_closed() {
     assert_eq!(rpc["x-alcomd-route"], "/extensions/:extensionId/ui");
     assert_eq!(
         rpc["x-alcomd-dispatch-replay"]["exactReplay"]["result"],
-        "original-resulting-snapshot"
+        "original-resulting-snapshot-only-if-current"
+    );
+    assert_eq!(
+        rpc["x-alcomd-dispatch-replay"]["exactReplay"]["currentRevisionRequired"],
+        true
+    );
+    assert_eq!(
+        rpc["x-alcomd-dispatch-replay"]["historicalExactReplay"]["error"],
+        "extension_ui_snapshot_stale"
+    );
+    assert_eq!(rpc["x-alcomd-snapshot-monotonicity"]["openRevision"], 1);
+    assert_eq!(
+        rpc["x-alcomd-session-coordination"]["states"],
+        json!(["active", "closing", "closed"])
+    );
+    assert_eq!(
+        rpc["x-alcomd-invocation-capability-matrix"]["interactive-ui-render"],
+        json!(["host-projects.get-summary", "host-data.get"])
+    );
+    assert_eq!(
+        rpc["x-alcomd-invocation-capability-matrix"]["interactive-ui-close"],
+        json!([])
+    );
+    assert_eq!(rpc["x-alcomd-locale"]["immutablePerSession"], true);
+    assert_eq!(
+        rpc["x-alcomd-sensitive-payload"]["secureZeroizationClaimed"],
+        false
     );
     assert_eq!(
         rpc["x-alcomd-dispatch-replay"]["conflictOrOutOfOrder"]["error"],
@@ -432,7 +470,8 @@ fn adversarial_vectors_freeze_guest_client_replay_and_session_failure_classes() 
             "missing client vector {required}"
         );
     }
-    assert!(replay.contains("exact-accepted-request"));
+    assert!(replay.contains("exact-accepted-request-current-revision"));
+    assert!(replay.contains("exact-accepted-request-historical-after-refresh"));
     assert!(replay.contains("same-request-id-different-revision"));
     assert!(replay.contains("same-request-id-different-action-fingerprint"));
     assert!(replay.contains("same-sequence-different-revision"));
@@ -442,12 +481,56 @@ fn adversarial_vectors_freeze_guest_client_replay_and_session_failure_classes() 
         .as_array()
         .expect("replay cases")
         .iter()
-        .find(|case| case["id"] == "exact-accepted-request")
+        .find(|case| case["id"] == "exact-accepted-request-current-revision")
         .expect("exact replay");
+    assert_eq!(exact["cachedRevisionIsCurrent"], true);
     assert_eq!(exact["invokeGuest"], false);
     assert_eq!(exact["returnOriginalResultingSnapshot"], true);
-    assert_eq!(exact["returnCurrentSnapshot"], false);
+    assert_eq!(exact["returnCurrentSnapshot"], true);
     assert_eq!(exact["replayed"], true);
+    let historical = vectors["replayCases"]
+        .as_array()
+        .expect("replay cases")
+        .iter()
+        .find(|case| case["id"] == "exact-accepted-request-historical-after-refresh")
+        .expect("historical exact replay");
+    assert_eq!(historical["cachedRevisionIsCurrent"], false);
+    assert_eq!(historical["expectedError"], "extension_ui_snapshot_stale");
+    assert_eq!(historical["invokeGuest"], false);
+    assert_eq!(historical["returnOriginalResultingSnapshot"], false);
+
+    let capabilities = vector_ids(&vectors["invocationCapabilityCases"]);
+    for required in [
+        "background-existing-m6-authority",
+        "render-project-summary",
+        "render-host-data-get",
+        "render-host-data-set-denied",
+        "render-host-data-delete-denied",
+        "action-host-data-write",
+        "close-no-capability",
+        "project-dual-principal",
+        "host-data-dual-authority",
+    ] {
+        assert!(
+            capabilities.contains(required),
+            "missing capability vector {required}"
+        );
+    }
+    for denied_id in [
+        "render-host-data-set-denied",
+        "render-host-data-delete-denied",
+    ] {
+        let denied = vectors["invocationCapabilityCases"]
+            .as_array()
+            .expect("capability cases")
+            .iter()
+            .find(|case| case["id"] == denied_id)
+            .expect("render write denial");
+        assert_eq!(denied["expectedError"], "extension_permission_denied");
+        assert_eq!(denied["protocolViolation"], false);
+        assert_eq!(denied["countCrash"], false);
+        assert_eq!(denied["quarantine"], false);
+    }
 
     let contexts = vectors["invocationContextCases"]
         .as_array()
@@ -465,6 +548,38 @@ fn adversarial_vectors_freeze_guest_client_replay_and_session_failure_classes() 
     let drafts = vector_ids(&vectors["rendererDraftCases"]);
     assert!(drafts.contains("dirty-form-no-automatic-refresh"));
     assert!(drafts.contains("new-revision-invalidates-draft"));
+    let monotonic = vector_ids(&vectors["snapshotMonotonicityCases"]);
+    for required in [
+        "open-starts-at-one",
+        "successful-refresh-increments",
+        "successful-dispatch-increments",
+        "revision-overflow",
+        "renderer-newer-revision",
+        "renderer-equal-exact-replay",
+        "renderer-lower-revision",
+    ] {
+        assert!(monotonic.contains(required));
+    }
+    let coordination = vector_ids(&vectors["sessionCoordinationCases"]);
+    for required in [
+        "one-in-flight-refresh-dispatch-close",
+        "close-marks-closed-before-guest",
+        "pending-invoke-cancelled-by-close",
+        "close-context-has-no-capability",
+        "close-trap-session-remains-closed",
+        "out-of-order-snapshot-commit",
+    ] {
+        assert!(coordination.contains(required));
+    }
+    let locales = vector_ids(&vectors["localeCases"]);
+    for required in [
+        "open-canonicalizes-locale",
+        "locale-change-clean",
+        "locale-change-dirty",
+        "guest-appearance-inputs",
+    ] {
+        assert!(locales.contains(required));
+    }
     let lifecycle = vector_ids(&vectors["lifecycleCases"]);
     for required in [
         "open-does-not-enable",
@@ -523,6 +638,24 @@ fn adversarial_vectors_freeze_guest_client_replay_and_session_failure_classes() 
             "guest-trap"
         ])
     );
+    assert_eq!(
+        vectors["sensitivePayloadForbiddenSinks"],
+        json!([
+            "event",
+            "log",
+            "host-stderr",
+            "crash-evidence",
+            "operation",
+            "state-db",
+            "telemetry",
+            "public-internal-error"
+        ])
+    );
+    assert_eq!(
+        vectors["replayEvidenceLifetime"],
+        "session-memory-until-close"
+    );
+    assert_eq!(vectors["secureZeroizationClaimed"], false);
 }
 
 struct DocumentSummary {

@@ -43,12 +43,24 @@
         {"id": "third-invalid-action-in-60000ms", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": true, "terminateHost": false}
     ],
     "replayCases": [
-        {"id": "exact-accepted-request", "match": ["sequence", "requestId", "expectedSnapshotRevision", "canonicalActionFingerprint"], "invokeGuest": false, "returnOriginalResultingSnapshot": true, "returnCurrentSnapshot": false, "replayed": true},
+        {"id": "exact-accepted-request-current-revision", "match": ["sequence", "requestId", "expectedSnapshotRevision", "canonicalActionFingerprint"], "cachedRevisionIsCurrent": true, "invokeGuest": false, "returnOriginalResultingSnapshot": true, "returnCurrentSnapshot": true, "replayed": true},
+        {"id": "exact-accepted-request-historical-after-refresh", "match": ["sequence", "requestId", "expectedSnapshotRevision", "canonicalActionFingerprint"], "cachedRevisionIsCurrent": false, "expectedError": "extension_ui_snapshot_stale", "invokeGuest": false, "returnOriginalResultingSnapshot": false, "returnCurrentSnapshot": false},
         {"id": "same-request-id-different-revision", "expectedError": "extension_ui_action_invalid", "invokeGuest": false},
         {"id": "same-request-id-different-action-fingerprint", "expectedError": "extension_ui_action_invalid", "invokeGuest": false},
         {"id": "same-sequence-different-revision", "expectedError": "extension_ui_action_invalid", "invokeGuest": false},
         {"id": "sequence-gap-or-out-of-order", "expectedError": "extension_ui_action_invalid", "invokeGuest": false},
         {"id": "connection-lost-before-response", "invalidateSession": true, "automaticRetry": false, "reopenRequired": true}
+    ],
+    "invocationCapabilityCases": [
+        {"id": "background-existing-m6-authority", "kind": "background", "capabilities": ["existing-m6-grant-and-scope"]},
+        {"id": "render-project-summary", "kind": "interactive-ui-render", "capability": "host-projects.get-summary", "allowed": true},
+        {"id": "render-host-data-get", "kind": "interactive-ui-render", "capability": "host-data.get", "allowed": true},
+        {"id": "render-host-data-set-denied", "kind": "interactive-ui-render", "capability": "host-data.set", "allowed": false, "expectedError": "extension_permission_denied", "protocolViolation": false, "countCrash": false, "quarantine": false},
+        {"id": "render-host-data-delete-denied", "kind": "interactive-ui-render", "capability": "host-data.delete", "allowed": false, "expectedError": "extension_permission_denied", "protocolViolation": false, "countCrash": false, "quarantine": false},
+        {"id": "action-host-data-write", "kind": "interactive-ui-action", "capabilities": ["host-projects.get-summary", "host-data.get", "host-data.set", "host-data.delete"]},
+        {"id": "close-no-capability", "kind": "interactive-ui-close", "capabilities": []},
+        {"id": "project-dual-principal", "kind": "interactive-ui-render", "resource": "ProjectId", "clientPermission": "projects.read", "extensionPermission": "projects.read", "bothRequired": true},
+        {"id": "host-data-dual-authority", "kind": "interactive-ui-action", "clientPermission": "extensions.ui.use:ExtensionId", "extensionNamespace": "self", "bothRequired": true}
     ],
     "invocationContextCases": [
         {"id": "grant-revision-race", "classification": "normal-authority-race", "terminateHost": false},
@@ -74,6 +86,29 @@
         {"id": "new-revision-invalidates-draft", "mergeByFieldName": false},
         {"id": "disconnect-stale-close-invalidates-draft", "persistentStorage": false}
     ],
+    "snapshotMonotonicityCases": [
+        {"id": "open-starts-at-one", "revision": 1},
+        {"id": "successful-refresh-increments", "checkedIncrement": true},
+        {"id": "successful-dispatch-increments", "checkedIncrement": true},
+        {"id": "revision-overflow", "expectedError": "internal_error", "wrap": false},
+        {"id": "renderer-newer-revision", "accepted": true},
+        {"id": "renderer-equal-exact-replay", "accepted": true},
+        {"id": "renderer-lower-revision", "accepted": false}
+    ],
+    "sessionCoordinationCases": [
+        {"id": "one-in-flight-refresh-dispatch-close", "maxInFlight": 1},
+        {"id": "close-marks-closed-before-guest", "rejectNewCallsBeforeGuestClose": true},
+        {"id": "pending-invoke-cancelled-by-close", "usesExistingCancellationDeadline": true},
+        {"id": "close-context-has-no-capability", "capabilities": []},
+        {"id": "close-trap-session-remains-closed", "reopen": false, "countCrashWhenHostRemains": true},
+        {"id": "out-of-order-snapshot-commit", "allowed": false}
+    ],
+    "localeCases": [
+        {"id": "open-canonicalizes-locale", "immutablePerSession": true},
+        {"id": "locale-change-clean", "closeOldSession": true, "openNewSession": true},
+        {"id": "locale-change-dirty", "hostOwnedDiscardConfirmation": true, "closeOldSession": true, "openNewSession": true},
+        {"id": "guest-appearance-inputs", "values": []}
+    ],
     "lifecycleCases": [
         {"id": "open-does-not-enable", "expectedError": "extension_not_enabled"},
         {"id": "quarantined-open", "expectedError": "extension_quarantined"},
@@ -91,5 +126,8 @@
         "package-digest-change", "lifecycle-generation-change", "host-crash", "quarantine",
         "idle-timeout", "absolute-timeout", "protocol-violation"
     ],
-    "diagnosticPayloadForbidden": ["document", "field-values", "filesystem-path", "host-frame", "guest-trap"]
+    "diagnosticPayloadForbidden": ["document", "field-values", "filesystem-path", "host-frame", "guest-trap"],
+    "sensitivePayloadForbiddenSinks": ["event", "log", "host-stderr", "crash-evidence", "operation", "state-db", "telemetry", "public-internal-error"],
+    "replayEvidenceLifetime": "session-memory-until-close",
+    "secureZeroizationClaimed": false
 }
