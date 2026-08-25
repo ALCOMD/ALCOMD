@@ -1,7 +1,8 @@
 # M7：官方 GUI 与 Portable Extension UI
 
-状态：M7 Portable UI Stop A 与执行语义补充已通过最终人工审批；Slice B0 active contract replacement 与 Slice B1
-Core + Extension Host 已完成本地实现及定向验证，正在进入 Slice C official React/MD3 renderer；M7 尚未完成，尚未进入 M8。
+状态：M7 Portable UI Stop A 与执行语义补充已通过最终人工审批；Slice B0 active contract replacement、Slice B1
+Core + Extension Host 与 Slice C official React/MD3 renderer 已完成本地实现及定向验证，正在进入 Slice D；M7 尚未完成，
+尚未进入 M8。
 
 ## 目标与完成定义
 
@@ -24,7 +25,7 @@ permission、Host、session、RPC 与 renderer contract。
 
 M7 完成需要：Stop A 人工批准；Core/Host implementation；官方 renderer；headless conformance consumer；本地完整 gate；
 Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted CI；GUI/a11y evidence；项目所有者最终人工验收。当前 B0/B1
-已完成，但 official renderer、headless conformance、完整 security/fault matrix 与最终三平台证据仍未完成。
+与 official renderer 已完成，但 headless conformance、完整 security/fault matrix 与最终三平台证据仍未完成。
 
 ## 已完成前置证据
 
@@ -40,7 +41,7 @@ Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted CI；GUI/a11y evidenc
 
 以下合同已获项目所有者批准。Slice B0 已原子替换 active Manifest/package/WIT，加入 State v9 migration、typed
 `ui_protocol`、`extensions.ui.use` 与 RPC DTO foundation；Slice B1 已完成 Session runtime 与 capability advertising；
-renderer 仍留在 Slice C，不能由 B0/B1 状态冒充完成。
+renderer 已在 Slice C 完成；B0/B1 状态没有被用于冒充 renderer evidence。
 
 ### Manifest、package 与单一 Portable UI
 
@@ -172,7 +173,7 @@ hello 已广告 dataSchema 9 与 `extensions.ui.portable.v1`。
 官方 React/MD3 renderer与non-Tauri headless consumer使用同一 public DTO/fixtures。官方 contract冻结 host-owned
 name/ExtensionId/publisher-trust/version/desired/runtime/quarantine/extension-provided chrome、exhaustive match、
 keyboard/focus/ARIA、200%/320px、reduced motion、无 extension CSS/DOM/Tauri。headless consumer不依赖GUI/Tauri并输出
-确定性 semantic summary。B0/B1 不实现任何 renderer。
+确定性 semantic summary。B0/B1 不实现任何 renderer；Slice C 已实现 official renderer，headless consumer 仍留在 Slice D。
 
 ## Contract artifacts
 
@@ -193,8 +194,9 @@ keyboard/focus/ARIA、200%/320px、reduced motion、无 extension CSS/DOM/Tauri�
 1. Slice B0（已完成）：原子替换 active Manifest/package/WIT/ABI/permission/State contract。
 2. Slice B1（已完成）：接入 Host/Core/RPC memory-only session、InvocationContext、interactive lifecycle、render purity、
    current-only replay、validation、capability advertising 与 invalidation。
-3. Slice C（下一步）：官方 shell/typed adapter/React/MD3 renderer 与既有 Core pages，仍只调用 public client/RPC。
-4. Slice D（待执行）：non-Tauri consumer、first/third parity、malformed/revoke/crash/reconnect 与三平台/a11y验收。
+3. Slice C（已完成）：官方 shell/typed adapter/React/MD3 renderer、forms、host-owned chrome 与
+   loading/error/disconnected/reconnect，仍只调用 public client/RPC。
+4. Slice D（下一步）：non-Tauri consumer、first/third parity、malformed/revoke/crash/reconnect 与三平台/a11y验收。
 
 不得同时保留旧 Web UI和Portable UI parser/world/renderer，不建立通用 UI/workflow engine。
 
@@ -258,8 +260,12 @@ M11真实v3 fixture缺失继续阻塞GUI differential parity；M12继续承担Wi
   disconnect/disable/digest/grant/generation invalidation 与 schema/capability advertising。真实 daemon/RPC/Host 测试证明
   UI-only open/close、background Host 保留、render write 不落库、action write 落库、cross-connection denial、disconnect cleanup、
   malformed document terminate/crash/quarantine；未开始 official renderer。
+- 2026-08-26：Slice C 完成 official main-shell route、五个窄 typed Tauri-to-client adapter、全部 17 node/2 action 的
+  exhaustive React renderer、memory-only revision-bound form draft、host-owned identity/error/discard confirmation、
+  light/dark/system/source-color/density/locale、320 CSS px/reduced-motion/focus/ARIA 边界。共享 MCP/Discord Fixture 在 Node 24
+  真实 consumer test 中通过；未增加 dependency、lockfile、unsafe、platform API、Tauri capability 或 private Host channel。
 
 ## 下一停止点
 
-继续 Slice C official React/MD3 renderer。保持职责清晰的本地提交且不 push；遇到已列 stop condition立即停止。不得开始
-M8/M9。
+继续 Slice D non-Tauri/headless 与 security/fault conformance。保持职责清晰的本地提交且不 push；遇到已列 stop
+condition立即停止。不得开始 M8/M9。

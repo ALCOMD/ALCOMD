@@ -1,6 +1,7 @@
 # Portable UI v1 consumer contracts
 
-状态：M7 Stop A proposal-only；没有 production React renderer 或 headless executable。
+状态：M7 active consumer contract；Slice C official React/MD3 renderer 已实现并通过共享 Fixture/静态 authority
+边界测试，non-Tauri headless consumer 与最终三平台 GUI/a11y evidence 仍留在 Slice D。
 
 ## Official React / Material Design 3 renderer
 
@@ -34,4 +35,5 @@
 - 不渲染像素，不执行 guest，不直接访问 Host/state/project/data；它是 portability/conformance evidence，不是产品 GUI。
 
 `crates/alcomd-testing/fixtures/m7/headless-renderer-conformance.json` 冻结两个 synthetic document的期望 semantic summary。
-Stop A 只提供 contract test；production renderer、真实 third-party consumer、a11y automation与三平台 GUI验收仍 planned。
+Slice C official renderer 已消费同一 public DTO/Fixture；non-Tauri headless consumer、真实 third-party consumer、完整
+a11y automation与三平台 GUI验收仍 planned。

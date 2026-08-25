@@ -17,8 +17,8 @@
                 "title": "ALCOMD3",
                 "width": 1180,
                 "height": 760,
-                "minWidth": 860,
-                "minHeight": 600,
+                "minWidth": 320,
+                "minHeight": 480,
                 "center": true
             }
         ],

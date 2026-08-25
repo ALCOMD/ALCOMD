@@ -1,5 +1,3 @@
-import "@material/web/button/filled-button.js";
-import "@material/web/icon/icon.js";
 import React from "react";
 import ReactDOM from "react-dom/client";
 

@@ -1,5 +1,7 @@
 export const RPC_VERSION = 1 as const;
 
+export * from "./portable-ui";
+
 export interface ClientInfo {
     name: string;
     version: string;

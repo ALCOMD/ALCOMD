@@ -400,7 +400,16 @@ stage = "M7"
 kind = "integration"
 platforms = ["all"]
 status = "planned"
-description = "B0/B1 已验证 active Manifest/package/WIT/Host/Core/RPC/State v9、interactive-ui lease、InvocationContext 与 session lifecycle；本聚合项仍等待 official renderer、headless consumer、完整 fault/security matrix 与最终三平台验收。"
+description = "B0/B1/C 已验证 active Manifest/package/WIT/Host/Core/RPC/State v9、interactive-ui lease、InvocationContext、session lifecycle 与 official renderer；本聚合项仍等待 headless consumer、完整 fault/security matrix 与最终三平台验收。"
+
+[[test]]
+id = "gui.m7-portable-ui-renderer"
+stage = "M7"
+kind = "ui-contract"
+platforms = ["all"]
+status = "implemented"
+description = "Official React/MD3 renderer 通过同一 public DTO 与 MCP/Discord synthetic Fixture exhaustive match 17 node/2 action，覆盖 typed editable set、disabled/read-only 排除、dirty memory draft、monotonic Snapshot、unknown protocol/node fail closed、host-owned chrome、320px/reduced-motion/focus/ARIA 静态边界；不冒充 headless、完整 a11y 或最终三平台 GUI 验收。"
+evidence = ["apps/alcomd-gui/src/PortableUiRenderer.tsx", "apps/alcomd-gui/src/portable-ui.ts", "apps/alcomd-gui/src/portable-ui.test.ts", "apps/alcomd-gui/src/App.tsx", "crates/alcomd-testing/tests/m7_official_renderer.rs"]
 
 [[test]]
 id = "gui.m7-portable-ui-conformance"
@@ -408,7 +417,7 @@ stage = "M7"
 kind = "contract-integration"
 platforms = ["all"]
 status = "planned"
-description = "未来由真实 official React/MD3 renderer 与独立 non-Tauri headless consumer 执行同一 Snapshot/Action fixture，覆盖全部 node/action、unknown protocol fail closed 与同一 semantic result；Stop A 当前只有 proposal fixture/contract test。"
+description = "Official React/MD3 renderer 已执行同一 Snapshot/Action Fixture；本聚合项仍等待独立 non-Tauri headless consumer 证明全部 node/action、unknown protocol fail closed 与相同 semantic result。"
 
 [[test]]
 id = "gui.m7-portable-ui-security"
