@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI，Official GUI Completion 已完成生产实现与本地自动化验收，仍等待人工视觉签收、最终候选 Hosted CI 和项目所有者验收；尚未进入 M8/M9。`
+`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。Official GUI functional candidate 192672… 技术与本地自动化验收有效，但因不符合 v3 宏观布局基线且未真正采用 Material Web component system，被项目所有者拒绝 visual/layout acceptance；当前只完成 visual realignment audit，尚未批准 H0-H7 production，也未进入 M8/M9。`
 
 ## 已完成
 
@@ -266,7 +266,15 @@
 - G1 的 Playwright 1.62.1 / Chromium revision 1234 browser suite 本地 12/12 通过，覆盖键盘与焦点、dialog/form/live region、
   320 CSS px、deterministic 200% layout、reduced motion、light/dark targeted contrast、17 个 Portable UI node 与 Core
   success/stale/failed/cancelled flows。完整本地 Rust/npm/Tauri/metadata/baseline/lock/authority gates 已通过，production bundle
-  与 production npm graph 均不含 Playwright。G2 人工 checklist 已准备但尚未执行；最终候选 Hosted CI 与人工验收仍未取得。
+  与 production npm graph 均不含 Playwright。这些继续是 functional/accessibility infrastructure evidence，不表示 visual design
+  已通过。
+- 项目所有者在正式 checklist 前实际查看 `19267230507071dc61ba306b98c8cfdd113e9ea2`，将其记录为
+  `technically_valid but rejected_for_m7_visual_design_acceptance`；该候选不得 push。Core/RPC、Settings、Activity、Diagnostics、
+  Portable UI、Plan/Apply 与 Playwright/a11y 证据不回滚。
+- A-033 已冻结 v3 macro information architecture/navigation/page grouping/major layout 为 official GUI v4 基线；MD3 只现代化
+  component/visual language，重大结构偏离必须记录并单独审批。只读基线、映射、当前gap与Material审计位于 `docs/gui/`。
+- 源码审计确认 locked `@material/web 2.5.0` production import 与 rendered `md-*` 均为 0；现状是
+  `material_web_dependency_present_but_component_system_not_adopted` 与 `material_theme_not_actually_wired`。H0-H7 仍只是规划。
 
 ## 后续里程碑尚未完成
 
@@ -275,8 +283,8 @@
 - MCP 33 个 v3 用例的 M-1 工具合同基线已形成并获 A-026 批准；正式 Schema、快照、兼容
   别名策略和协议实现留在对应后续里程碑。
 - VPM、项目、模板与备份。
-- M7 Official GUI Completion 的一次交互桌面视觉/键盘签收、最终候选三平台 Hosted CI 与最终人工验收；E1-G1/G3 的本地
-  完成状态和 B0-D Hosted-green candidate 均不冒充完整 M7 acceptance。
+- M7 Official GUI H0-H7 realignment、四个分阶段 Visual Gate、一次交互桌面最终视觉/键盘签收、最终候选三平台 Hosted CI 与
+  最终人工验收；既有 functional/browser evidence 和 B0-D Hosted-green candidate 均不冒充 visual/M7 acceptance。
 - MCP 实现。
 - Discord IPC。
 - v3 迁移与 Bootstrap。
@@ -295,7 +303,8 @@
   scheme/CSP 或三平台 WebView isolation matrix 作为产品 blocker。Portable UI production 已获批准且 B0/B1 已完成；
   Slice C official renderer、Slice D headless/security/fault conformance 与 Hosted CI 已通过；restored Official GUI Core
   surfaces/flows、Settings/Activity/Diagnostics contracts 与 Chromium browser-level accessibility 已完成本地实现和验收。
-  当前真实缺口是 manual visual/flow/keyboard evidence、最终候选自身的三平台 Hosted CI 与项目所有者最终人工验收。
+  当前真实缺口是 v3-faithful macro layout、真实 Material component/theme foundation、H0-H7/Visual Gates、最终候选自身的
+  三平台 Hosted CI 与项目所有者最终人工验收。
 
 - 真实安装快照和迁移 Fixture 尚未建立；因此 artifact 模板继续保持 `confirmed = false`，
   迁移删除、GUI/模板/备份/Unity 差异测试仍 blocked。项目所有者已决定不在 M-1 继续投入
@@ -326,10 +335,10 @@
 
 ## 下一停止点
 
-M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 Portable UI B0-D 已通过 Hosted CI；当前按批准顺序
-完成了 Official GUI Completion E1-G1/G3 的 production、browser tests、完整本地 gate 与 manual evidence preparation，
-正在形成新的未 push local candidate并停止等待人工视觉签收与 push gate；仍按 stop conditions 控制依赖、unsafe、
-platform API、公共合同与范围，不得进入 M8/M9。
+M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 Portable UI B0-D 已通过 Hosted CI；Official GUI
+functional candidate `192672…` 保留技术证据但已被拒绝 visual/layout acceptance。当前只形成 visual realignment planning
+commit，停止等待项目所有者审批 v3 baseline、v4 MD3 mapping、component policy、deviations 与 H0-H7；不得 push、不得修改
+production、不得进入 M8/M9。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential

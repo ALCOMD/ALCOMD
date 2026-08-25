@@ -231,9 +231,9 @@ implementation = "apps/alcomd-gui"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "scaffold"
-evidence = ["docs/baselines/alcomd3-v3-audit.md::GUI", "docs/baselines/vrc-get-audit.md::GUI", "docs/decisions/accepted.md::A-020"]
-coverage = ["routes", "menus", "dialogs", "errors", "progress", "settings"]
-tests = ["gui.m7-stop-a-contract", "gui.m7-webview-isolation", "gui.m7-portable-ui-contract", "gui.m7-portable-ui-core", "gui.m7-portable-ui-renderer", "gui.m7-portable-ui-production", "gui.m7-portable-ui-conformance", "gui.m7-portable-ui-security", "gui.m7-accessibility", "gui.m7-core-surfaces", "gui.m7-operation-flows", "gui.m7-accessibility-automation", "gui.m7-visual-flow-evidence", "gui.v3-entry-parity", "gui.m12-screen-reader-smoke", "settings.authoritative-storage", "activity.log-redaction", "diagnostics.redacted-list"]
+evidence = ["docs/baselines/alcomd3-v3-audit.md::GUI", "docs/baselines/vrc-get-audit.md::GUI", "docs/decisions/accepted.md::A-020", "docs/decisions/accepted.md::A-033", "docs/gui/alcomd3-v3-layout-baseline.md", "docs/gui/m7-layout-mapping.md"]
+coverage = ["routes", "macro layout/navigation/page grouping", "menus", "dialogs", "errors", "progress", "settings"]
+tests = ["gui.m7-stop-a-contract", "gui.m7-webview-isolation", "gui.m7-portable-ui-contract", "gui.m7-portable-ui-core", "gui.m7-portable-ui-renderer", "gui.m7-portable-ui-production", "gui.m7-portable-ui-conformance", "gui.m7-portable-ui-security", "gui.m7-accessibility", "gui.m7-core-surfaces", "gui.m7-v3-layout-translation", "gui.m7-material-component-foundation", "gui.m7-visual-gates", "gui.m7-operation-flows", "gui.m7-accessibility-automation", "gui.m7-visual-flow-evidence", "gui.v3-entry-parity", "gui.m12-screen-reader-smoke", "settings.authoritative-storage", "activity.log-redaction", "diagnostics.redacted-list"]
 
 [[feature]]
 id = "gui.m7-core-surfaces"
@@ -245,9 +245,9 @@ implementation = "apps/alcomd-gui"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "in_progress"
-evidence = ["docs/exec-plans/M7-official-gui-extension-ui.md::Restored Official GUI Completion", "docs/exec-plans/M7-gui-rpc-coverage.md", "apps/alcomd-gui/src/App.tsx", "apps/alcomd-gui/src/CorePages.tsx", "apps/alcomd-gui/src/CoreActions.tsx", "apps/alcomd-gui/tests/browser/m7-accessibility.spec.ts"]
-coverage = ["routes/pages", "typed adapter", "read states", "mutation/Plan/Operation", "settings/activity/diagnostics", "browser accessibility", "manual visual flow"]
-tests = ["gui.m7-core-surfaces", "gui.m7-operation-flows", "gui.m7-accessibility-automation", "gui.m7-visual-flow-evidence", "settings.authoritative-storage", "activity.log-redaction", "diagnostics.redacted-list", "gui.m7-portable-ui-production"]
+evidence = ["docs/exec-plans/M7-official-gui-extension-ui.md::Restored Official GUI Completion", "docs/exec-plans/M7-gui-rpc-coverage.md", "docs/gui/m7-current-layout-gap.md", "docs/gui/m7-material-component-audit.md", "apps/alcomd-gui/src/App.tsx", "apps/alcomd-gui/src/CorePages.tsx", "apps/alcomd-gui/src/CoreActions.tsx", "apps/alcomd-gui/tests/browser/m7-accessibility.spec.ts"]
+coverage = ["functional routes/pages", "typed adapter", "read states", "mutation/Plan/Operation", "settings/activity/diagnostics", "browser accessibility", "pending v3 layout/Material component/visual acceptance"]
+tests = ["gui.m7-core-surfaces", "gui.m7-v3-layout-translation", "gui.m7-material-component-foundation", "gui.m7-visual-gates", "gui.m7-operation-flows", "gui.m7-accessibility-automation", "gui.m7-visual-flow-evidence", "settings.authoritative-storage", "activity.log-redaction", "diagnostics.redacted-list", "gui.m7-portable-ui-production"]
 
 [[feature]]
 id = "activity.observability"

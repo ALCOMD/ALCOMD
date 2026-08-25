@@ -1,9 +1,10 @@
 # M7：官方 GUI 与 Portable Extension UI
 
 状态：Portable UI B0-D production candidate `aa1323430252ed21995284a7b36dd36e45a15e0a` 已通过 Hosted CI
-`32877438910`；Official GUI Completion E1-G1 与 G3 已完成生产实现及本地完整验收，G2 人工视觉/流程/键盘焦点
-checklist 已准备但尚未执行。最终候选自身的三平台 Hosted CI 与项目所有者人工验收尚未取得；M7 仍未完成，尚未进入
-M8/M9。
+`32877438910`。Official GUI functional candidate `19267230507071dc61ba306b98c8cfdd113e9ea2` 完成 E1-G1/G3
+生产实现与本地自动化验收，但项目所有者在正式 checklist 开始前拒绝其 visual/layout acceptance：其宏观布局没有以 v3 为
+基线，且 `@material/web` dependency 存在但 component system 未被采用。当前只完成 visual realignment audit；H0-H7 尚未获
+production approval。M7 仍未完成，尚未进入 M8/M9。
 
 ## 目标与完成定义
 
@@ -31,7 +32,8 @@ M7 完成需要：
 2. official GUI 完整覆盖 M1-M7 已真实发布的 GUI-relevant application/RPC use case；
 3. 统一实现 navigation、route、responsive shell、typed adapter、页面状态、Plan review、Apply、Operation follow 与恢复；
 4. 实现获批的 Config Schema v1、`settings.get`/`settings.update`、`activity.list` 与 `diagnostics.list`；
-5. Chromium browser-level DOM/component accessibility automation 与一次真实交互桌面的视觉/流程/键盘焦点签收完成；
+5. Chromium browser-level DOM/component accessibility automation，以及 A-033 所要求的 v3 macro layout、Material component
+   behavior、分阶段截图和一次真实交互桌面的视觉/流程/键盘焦点签收完成；
 6. 本地完整 gate 和最终提交自身的 Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted CI 通过；
 7. 项目所有者完成人工验收。
 
@@ -227,6 +229,16 @@ completion audit 后恢复以下批准切片：
 
 ### Information architecture
 
+Official GUI 的宏观 information architecture 受 A-033 约束。冻结参考与映射分别位于：
+
+- `docs/gui/alcomd3-v3-layout-baseline.md`；
+- `docs/gui/m7-layout-mapping.md`；
+- `docs/gui/m7-current-layout-gap.md`；
+- `docs/gui/m7-material-component-audit.md`。
+
+v3 是 layout/navigation/page grouping/action placement 的设计基线，不是源码上游。以下 route identity 与当前 Core capability
+继续有效，但最终 navigation grouping/composition 必须按 mapping 经项目所有者批准后落地：
+
 ```text
 Home
 Projects
@@ -250,6 +262,32 @@ About
 route identity 使用稳定 ASCII ID 和 opaque resource ID，不使用翻译文案或完整路径作为 key。不存在 Core/RPC capability 的
 业务不显示假按钮或 disabled fake page。M8 MCP、M9 Discord、migration/import、updater/distribution、Local API、Custom
 Web UI 与 full external-client credential pairing/revocation 不进入 M7。
+
+`Home`、独立 Unity/Backups/Operations、Activity/Diagnostics 分离和 About 等 v4-specific surface 不能仅因 route 已存在就视为
+布局获批。它们必须保留已实现业务能力，同时在 v3 context/workflow 中找到可识别位置；重大偏离继续是 `pending`。
+
+### Visual architecture and component policy
+
+`19267230507071dc61ba306b98c8cfdd113e9ea2` 的功能接线保持有效，但状态固定为：
+
+```text
+technically_valid
+but
+rejected_for_m7_visual_design_acceptance
+```
+
+源码审计确认 `@material/web 2.5.0` production import 为 0、rendered `md-*` element 为 0；Core 与 Portable UI 使用 native
+button/input/select/textarea/progress 和 custom CSS。该事实分类为
+`material_web_dependency_present_but_component_system_not_adopted`，主题分类为
+`material_theme_not_actually_wired`。
+
+Material Web 成为 interactive component foundation。只要 2.5.0 提供对应组件，Core 与 Portable UI 都必须经
+`@alcomd/ui` 的窄 typed wrapper 使用真实 Material behavior；不得自行模拟 ripple/state layer。应用 shell、data table、page
+grid、split pane 等 Material Web 未提供的结构，使用 semantic HTML + 最小 `@alcomd/ui` layout primitive + 同一 MD3 tokens。
+`apps/alcomd-gui` 原则上不散布 direct Material imports。
+
+React 19 custom-element properties/events/boolean/form/ref/typing/validation 必须在 H0 用真实 2.5.0 component test 冻结；优先使用
+React 19 原生支持，不增加第三方 adapter。新增 dependency 仍是人工停止点。
 
 ### RPC coverage authority
 
@@ -310,6 +348,16 @@ M7 manual owner 是一次真实交互桌面的 visual screenshot、flow、keyboa
 entry/flow/migration-state/screenshot differential parity。M12 owner 是 Windows Narrator、macOS VoiceOver、Linux screen reader
 及真实平台 client accessibility runtime validation。
 
+visual work 不再等到全部页面完成后一次性查看。H1-H5 期间设置四个阻塞 gate：
+
+1. Visual Gate 1：main shell/navigation；
+2. Visual Gate 2：Projects/packages/repositories；
+3. Visual Gate 3：remaining core pages；
+4. Visual Gate 4：Portable UI/settings/diagnostics。
+
+每个 gate 必须启动真实 GUI、采集仓库外 bounded screenshot 并取得项目所有者签收后才能进入下一大块。最终 H7 还要检查
+Material hover/pressed/focus/ripple/disabled behavior，不以自动测试或截图替代真实交互。
+
 不得同时保留旧 Web UI和Portable UI parser/world/renderer，不建立通用 UI/workflow engine。
 
 ## 已批准 production 修改范围
@@ -352,8 +400,31 @@ npm check/build、Playwright Chromium browser suite、Tauri no-bundle 与 diff c
 
 后续 first-party private node/page/command/permission、partial v1 renderer、GUI-to-Host direct channel、renderer作为business
 authority均是M7 blocker。
+native interactive control 在 Material Web 已有对应组件时继续以 custom CSS 模拟、Core/Portable UI 使用不同 component
+foundation、未批准的 v3 macro layout deviation 或跳过任一 Visual Gate，同样是 M7 blocker。
 M11真实v3 fixture缺失继续阻塞GUI differential parity，但不阻塞 `gui.m7-core-surfaces`。M12继续承担Win10/Win11安装/启动/
 WebView2/update/uninstall，以及 Narrator/VoiceOver/Linux screen-reader 和真实平台 accessibility runtime validation。
+
+## Planned visual realignment slices（未批准 production）
+
+1. **H0 Material foundation**：`@alcomd/ui` 封装审计中真实需要的 Material Web components；接通真实 MD3 color/type/shape/
+   elevation/state tokens；验证 React 19 integration、interaction/ripple、component accessibility 和Core/Portable共用层。
+2. **H1 v3-faithful shell/navigation**：wide persistent sidebar、single content canvas、page toolbar 与 narrow adaptive drawer；完成
+   Visual Gate 1。
+3. **H2 Projects/packages/repositories**：恢复 Projects header/list-grid/create、Project package-centric workspace、Packages &
+   Templates grouping、repository table/actions；完成 Visual Gate 2。
+4. **H3 Templates/Unity/backups/Operations**：在 v3 context workflow中安置 v4 durable surfaces，不改 Plan/Apply/Operation；完成
+   Visual Gate 3 的第一部分。
+5. **H4 Extensions/Portable UI**：Extensions utility placement、host chrome、Portable node renderer全部使用共同Material components；
+   不改 Portable UI protocol；完成 Visual Gate 4 的第一部分。
+6. **H5 Settings/Activity/Diagnostics/About**：恢复 grouped Settings 与 observability utility关系，保留 Config v1/A-026权限分离；
+   完成 Visual Gate 3/4。
+7. **H6 responsive/a11y/Playwright regression**：覆盖 v3 macro navigation/page grouping/action placement、Material element presence和
+   observable interaction、theme propagation、wide/narrow/200%/reduced motion；不测试Material shadow DOM私有细节。
+8. **H7 manual visual signoff**：执行更新后的真实GUI checklist和最终screenshots；再进入候选Hosted CI/push审批。
+
+H0-H7 只重组 shell、composition、component rendering 和 visual hierarchy；不得重新设计 RPC、Plan/Apply、Operation、Settings、
+Activity、Diagnostics 或 Portable UI authority。
 
 ## Progress log
 
@@ -404,9 +475,14 @@ WebView2/update/uninstall，以及 Narrator/VoiceOver/Linux screen-reader 和真
   semantics，不替代 M12 的真实 WebView/辅助技术验证。
 - 2026-08-26：G3 本地 fmt/clippy/locked Workspace tests、xtask、metadata、baseline freeze、npm ci/check/build、Playwright、
   Tauri release no-bundle 与 diff/lock/authority gates 通过；production Vite bundle 不含 Playwright，production npm graph 不含
-  Playwright。G2 checklist 已准备但未执行，最终三平台 Hosted CI 与项目所有者人工验收仍待 push 后取得。
+  Playwright。当时 G2 checklist 已准备但尚未执行，最终三平台 Hosted CI 与项目所有者人工验收仍待 push 后取得。
+- 2026-08-26：项目所有者实际查看 functional candidate `19267230507071dc61ba306b98c8cfdd113e9ea2` 后，在正式
+  checklist 开始前拒绝 visual/layout acceptance；候选未 push。功能、RPC、Config/Activity/Diagnostics、Portable UI、
+  Plan/Apply与自动化证据保留，official GUI shell/rendering进入realignment。
+- 2026-08-26：只读审计冻结 v3 final source/reference 的 macro layout baseline、v3->v4 mapping、当前逐页 gap、Material Web
+  2.5.0 control/theme/integration inventory；新增 A-033 约束 A-020。H0-H7 仅完成规划，production未开始。
 
 ## 下一停止点
 
-完成 E1-G3、完整本地 gate 与 manual evidence preparation 后，形成新的未 push M7 Official GUI local candidate并停止，
-等待项目所有者明确批准 push。不得开始 M8/M9。
+本 visual realignment audit 形成独立未 push planning commit 后停止。等待项目所有者批准 v3 layout baseline、v4 MD3 mapping、
+Material component policy、所有 `pending` deviation 与 H0-H7，再开始任何 GUI production redesign。不得 push，不得开始 M8/M9。

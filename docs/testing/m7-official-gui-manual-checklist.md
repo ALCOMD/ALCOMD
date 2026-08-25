@@ -1,7 +1,24 @@
 # M7 official GUI manual visual and flow checklist
 
-Status: prepared, not executed. This checklist is the owner-visible evidence gate for M7 and does not replace the
-Playwright Chromium suite or M12 platform-client accessibility testing.
+Status: reset after pre-checklist visual rejection. Candidate `19267230507071dc61ba306b98c8cfdd113e9ea2` was
+technically valid but failed layout/component-system inspection before this checklist began; it is not an accepted visual
+baseline and must not be pushed. This checklist applies only after H0-H6 and the four visual gates are approved and passed.
+
+This checklist is the owner-visible evidence gate for M7 and does not replace the Playwright Chromium suite or M12
+platform-client accessibility testing.
+
+## Prerequisite visual gates
+
+Each gate runs the real production Tauri GUI, stores a bounded screenshot outside the repository, records the exact SHA and
+receives project-owner approval before the next large slice starts.
+
+1. Visual Gate 1: v3-recognizable wide main shell/navigation and narrow adaptive drawer.
+2. Visual Gate 2: Projects, Project package workspace, Packages & Templates grouping, Repositories.
+3. Visual Gate 3: Templates, Unity, Backups, Operations and remaining core pages.
+4. Visual Gate 4: Extensions, Portable UI, Settings, Activity, Diagnostics and About.
+
+The reviewer checks structure and action placement, not pixel identity. Every intentional deviation from
+`docs/gui/m7-layout-mapping.md` must already be approved. A gate failure stops the next production slice.
 
 ## Evidence boundary
 
@@ -17,11 +34,12 @@ Playwright Chromium suite or M12 platform-client accessibility testing.
 
 ## Required flow
 
-1. Launch the production GUI and confirm the shell reaches Home through `alcomd-client`/RPC. Capture the wide shell
-   in light appearance and record the daemon connection state.
-2. Navigate using only the keyboard through Projects, Repositories, Templates, Unity, Operations, Extensions,
-   Activity, Diagnostics, Settings, and About. Confirm each route moves focus to its page heading and keeps a visible
-   focus indicator.
+1. Launch the production GUI and confirm the shell reaches the approved default work entry (normally Projects) through
+   `alcomd-client`/RPC. Capture the wide shell in light appearance and record the daemon connection state. If Home/status is
+   retained as an approved deviation, visit it separately. Confirm the shell remains recognizable from the v3-to-v4 mapping.
+2. Navigate using only the keyboard through the approved groups to Projects, Repositories, Templates, Unity, Operations,
+   Extensions, Activity, Diagnostics, Settings and About. Confirm each published route moves focus to its page heading and
+   keeps a visible focus indicator; do not flatten grouped destinations merely to satisfy this checklist.
 3. On a safe owner-selected fixture, open Project detail, Packages, Project Unity, and Backups. Confirm loading,
    refreshing/last-known-good, empty, error, and disconnected presentations are distinguishable and do not expose a
    private path.
@@ -42,6 +60,9 @@ Playwright Chromium suite or M12 platform-client accessibility testing.
    horizontal clipping occurs. Capture the narrow view.
 10. Enable the product reduced-motion setting and confirm state remains understandable without animation. At 200%
     effective text/display scale, confirm content and confirmation controls remain reachable without loss.
+11. Exercise representative filled/tonal/icon buttons, text field, select, switch/checkbox, tabs, dialog and progress in both
+    Core and Portable UI. Confirm observable Material hover/pressed/focus/ripple/disabled behavior where Material Web provides
+    it. Confirm both render through the shared `@alcomd/ui` foundation; do not inspect private shadow DOM internals.
 
 ## Required record
 
@@ -63,6 +84,9 @@ Portable UI host chrome/dirty form: pass/fail
 Settings persistence/discard: pass/fail
 Activity/Diagnostics redaction review: pass/fail
 Reduced motion/200% layout: pass/fail
+V3 macro layout and approved deviations: pass/fail
+Material component presence and interaction: pass/fail
+Core/Portable shared design system: pass/fail
 Blocking issue:
 Owner acceptance: pending
 ```

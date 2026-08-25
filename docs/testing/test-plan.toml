@@ -445,8 +445,35 @@ stage = "M7"
 kind = "integration-ui"
 platforms = ["all"]
 status = "implemented"
-description = "验证 M1-M7 GUI-relevant RPC 在 official shell 的完整 page/route/read-state 覆盖，包含 Home、Project、Package、Repository、Template、Unity、Backup、Operation、Extension、Settings、Activity、Diagnostics 与 About。"
+description = "验证 M1-M7 GUI-relevant RPC 在 official shell 的完整 functional page/route/read-state 覆盖，包含 Home、Project、Package、Repository、Template、Unity、Backup、Operation、Extension、Settings、Activity、Diagnostics 与 About；192672 candidate 的该证据保持有效，但不表示 v3 macro layout 或 Material component visual acceptance。"
 evidence = ["apps/alcomd-gui/src/App.tsx", "apps/alcomd-gui/src/CorePages.tsx", "apps/alcomd-gui/tests/browser/m7-accessibility.spec.ts", "docs/exec-plans/M7-gui-rpc-coverage.md"]
+
+[[test]]
+id = "gui.m7-v3-layout-translation"
+stage = "M7"
+kind = "ui-contract"
+platforms = ["all"]
+status = "planned"
+description = "验证 A-033 的 v3 macro navigation、page grouping、major content/action placement、list/detail 与 settings/workflow shape；只允许文档中获批的 md3/adaptive/deviation translation，不冒充 M11 full differential parity。"
+evidence = ["docs/gui/alcomd3-v3-layout-baseline.md", "docs/gui/m7-layout-mapping.md", "docs/gui/m7-current-layout-gap.md"]
+
+[[test]]
+id = "gui.m7-material-component-foundation"
+stage = "M7"
+kind = "component-ui"
+platforms = ["all"]
+status = "planned"
+description = "验证 @alcomd/ui 的真实 Material Web 2.5.0 component presence，以及 Core/Portable UI 共用 typed wrapper、React 19 properties/events/forms/refs、MD3 token propagation、hover/pressed/focus/ripple/disabled observable behavior；不测试 Material shadow DOM 私有实现。"
+evidence = ["docs/gui/m7-material-component-audit.md"]
+
+[[test]]
+id = "gui.m7-visual-gates"
+stage = "M7"
+kind = "manual-ui"
+platforms = ["one-interactive-desktop"]
+status = "planned"
+description = "四个阻塞截图/交互 gate 依次签收 main shell/navigation、Projects/packages/repositories、remaining core pages、Portable UI/settings/diagnostics；每个 gate 使用真实 GUI 与仓库外 bounded screenshot。"
+evidence = ["docs/testing/m7-official-gui-manual-checklist.md", "docs/gui/m7-layout-mapping.md"]
 
 [[test]]
 id = "gui.m7-operation-flows"
@@ -472,7 +499,7 @@ stage = "M7"
 kind = "manual-ui"
 platforms = ["one-interactive-desktop"]
 status = "planned"
-description = "项目所有者可见的单一真实交互桌面截图/flow/keyboard-focus签收；覆盖完整 IA、light/dark、wide/narrow与统一 loading/empty/error/disconnected/confirmation/progress/terminal states，不作为 sandbox evidence。"
+description = "192672 candidate 在正式 checklist 前已因 layout/component system 失败。下一候选须先通过四个 visual gates，再完成单一真实交互桌面的 v3-recognizable IA、Material interaction、light/dark、wide/narrow、flow/keyboard-focus与统一状态签收；不作为 sandbox或M11 parity evidence。"
 evidence = ["docs/testing/m7-official-gui-manual-checklist.md"]
 
 [[test]]
