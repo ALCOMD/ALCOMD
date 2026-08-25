@@ -647,5 +647,5 @@ M7 在 RPC major 1 上兼容增加 `extensions.ui.portable.v1` 与四个 method�
 lease secret、InvocationContextId、private Principal metadata 或 raw Wasmtime error。
 
 State v9 只为 `extensions` 与 immutable `extension_plans` 增加 nullable checked `ui_protocol`；UI Session、Snapshot、
-action、replay 与 renderer state 都不持久化。完整 daemon/Host/RPC wiring 前 hello 继续广告 `dataSchema: 8` 且不回显
-`extensions.ui.portable.v1`；B1 production wiring 完成后才广告 `dataSchema: 9` 和该 capability。
+action、replay 与 renderer state 都不持久化。B1 daemon/Host/RPC wiring 完成后，hello 广告 `dataSchema: 9`，并只在
+client 请求时回显已实现的 `extensions.ui.portable.v1` capability。

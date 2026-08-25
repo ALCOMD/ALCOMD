@@ -10,7 +10,7 @@ use alcomd_application::{
     AccessContext, Application, ApplicationError, EventRecord as ApplicationEvent, IdempotencyKey,
     M3Application, M4Application, M5BackupApplication as BackupService,
     M5TemplateApplication as TemplateService, M5UnityApplication as M5Application, M6Application,
-    OperationCursor, OperationId, OperationRecord, OperationState as DomainState,
+    M7Application, OperationCursor, OperationId, OperationRecord, OperationState as DomainState,
     ResourceLockCoordinator, Revision, StoreErrorKind,
 };
 use alcomd_platform::{BindError, DaemonInstance, DataConfig, IpcConfig, IpcListener, IpcStream};
@@ -36,6 +36,7 @@ mod m5_rpc;
 mod m5_template_rpc;
 mod m6_rpc;
 mod m6_runtime;
+mod m7_rpc;
 
 static TEST_DATA_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -53,6 +54,12 @@ type M6ExtensionApplication = M6Application<
     alcomd_extensions::ExtensionEngine<StateStoreHandle>,
     m6_runtime::PlatformExtensionRuntime,
 >;
+type M7ExtensionApplication = M7Application<
+    StateStoreHandle,
+    alcomd_extensions::ExtensionEngine<StateStoreHandle>,
+    m6_runtime::PlatformExtensionRuntime,
+    m7_rpc::ProtocolUiValidator,
+>;
 
 struct Applications {
     m2: M2Application,
@@ -62,6 +69,7 @@ struct Applications {
     templates: TemplateApplication,
     backups: BackupApplication,
     m6: M6ExtensionApplication,
+    m7: M7ExtensionApplication,
 }
 
 /// Runs the daemon with an ephemeral isolated data directory.
@@ -172,6 +180,7 @@ where
     m6.recover(current_time_ms()?)
         .await
         .map_err(|_| BindError::Io(io::Error::other("Extension recovery failed")))?;
+    let m7 = M7Application::new(m6.clone(), m7_rpc::ProtocolUiValidator);
     let applications = Arc::new(Applications {
         m2,
         m3: M3ReadApplication::new(store.clone(), reader),
@@ -180,6 +189,7 @@ where
         templates,
         backups,
         m6,
+        m7,
     });
     let listener = instance.bind()?;
     run_listener(listener, applications, shutdown)
@@ -225,6 +235,7 @@ where
                     .maintain_runtime(current_time_ms().map_err(bind_as_io)?)
                     .await
                     .map_err(|_| io::Error::other("Extension runtime maintenance failed"))?;
+                applications.m7.maintain(current_time_ms().map_err(bind_as_io)?).await;
             }
             () = &mut shutdown => break,
         }
@@ -247,8 +258,9 @@ fn bind_as_io(error: BindError) -> io::Error {
     }
 }
 
-#[derive(Default)]
 struct ConnectionState {
+    connection_id: String,
+    client_instance_id: Option<String>,
     handshake_complete: bool,
     capabilities: HashSet<String>,
 }
@@ -257,27 +269,42 @@ async fn serve_connection(
     mut stream: IpcStream,
     applications: Arc<Applications>,
 ) -> io::Result<()> {
-    let mut state = ConnectionState::default();
-    loop {
-        let payload = match read_frame(&mut stream).await? {
-            Some(payload) => payload,
-            None => return Ok(()),
-        };
-        let action = dispatch_payload(&payload, &state, &applications).await;
-        write_json_frame(&mut stream, &action.response).await?;
-        if let Some(capabilities) = action.complete_handshake {
-            state.handshake_complete = true;
-            state.capabilities = capabilities;
-        }
-        if action.close_after_response {
-            return Ok(());
+    let mut state = ConnectionState {
+        connection_id: OperationId::new().to_string(),
+        client_instance_id: None,
+        handshake_complete: false,
+        capabilities: HashSet::new(),
+    };
+    let result = async {
+        loop {
+            let payload = match read_frame(&mut stream).await? {
+                Some(payload) => payload,
+                None => return Ok(()),
+            };
+            let action = dispatch_payload(&payload, &state, &applications).await;
+            write_json_frame(&mut stream, &action.response).await?;
+            if let Some(capabilities) = action.complete_handshake {
+                state.handshake_complete = true;
+                state.capabilities = capabilities;
+                state.client_instance_id = action.client_instance_id;
+            }
+            if action.close_after_response {
+                return Ok(());
+            }
         }
     }
+    .await;
+    applications
+        .m7
+        .close_connection(&state.connection_id, current_time_ms().unwrap_or(0))
+        .await;
+    result
 }
 
 struct DispatchAction {
     response: Value,
     complete_handshake: Option<HashSet<String>>,
+    client_instance_id: Option<String>,
     close_after_response: bool,
 }
 
@@ -360,7 +387,9 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         alcomd_protocol::CAPABILITY_BACKUPS_RESTORE_V1,
         alcomd_protocol::CAPABILITY_EXTENSIONS_LIFECYCLE_V1,
         alcomd_protocol::CAPABILITY_EXTENSIONS_PERMISSIONS_V1,
+        alcomd_protocol::CAPABILITY_EXTENSIONS_UI_PORTABLE_V1,
     ];
+    let client_instance_id = hello.client.instance_id;
     let capabilities = hello
         .capabilities
         .into_iter()
@@ -368,11 +397,13 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         .collect::<HashSet<_>>();
     let mut result_capabilities = capabilities.iter().cloned().collect::<Vec<_>>();
     result_capabilities.sort();
-    success_action(
+    let mut action = success_action(
         request.id,
-        HelloResult::m6(result_capabilities),
+        HelloResult::m7(result_capabilities),
         Some(capabilities),
-    )
+    );
+    action.client_instance_id = Some(client_instance_id);
+    action
 }
 
 fn dispatch_status(request: RequestEnvelope, state: &ConnectionState) -> DispatchAction {
@@ -575,7 +606,17 @@ async fn dispatch_m2(
             m5_backup_rpc::dispatch(request, state, &applications.backups, access).await
         }
         _ if request.method.starts_with("extensions.") => {
-            m6_rpc::dispatch(request, state, &applications.m6, access).await
+            if matches!(
+                request.method.as_str(),
+                alcomd_protocol::METHOD_EXTENSIONS_UI_OPEN
+                    | alcomd_protocol::METHOD_EXTENSIONS_UI_REFRESH
+                    | alcomd_protocol::METHOD_EXTENSIONS_UI_DISPATCH
+                    | alcomd_protocol::METHOD_EXTENSIONS_UI_CLOSE
+            ) {
+                m7_rpc::dispatch(request, state, &applications.m7, access).await
+            } else {
+                m6_rpc::dispatch(request, state, &applications.m6, access).await
+            }
         }
         _ => m3_rpc::dispatch(request, state, &applications.m3, access).await,
     }
@@ -748,6 +789,7 @@ fn success_action<T: serde::Serialize>(
     DispatchAction {
         response,
         complete_handshake: handshake,
+        client_instance_id: None,
         close_after_response: false,
     }
 }
@@ -758,6 +800,7 @@ fn error_action(id: Option<String>, error: RpcError, close: bool) -> DispatchAct
     DispatchAction {
         response,
         complete_handshake: None,
+        client_instance_id: None,
         close_after_response: close,
     }
 }

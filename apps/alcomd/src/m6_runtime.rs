@@ -5,13 +5,14 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use alcomd_application::{
-    ExtensionInstanceLease, ExtensionProjectSummary, ExtensionRuntimePoll, ExtensionStartContext,
-    ExtensionStopReason, M6Error, M6ErrorCode, M6HostApplication, M6RuntimeAdapter, OperationId,
-    ProjectId, Revision,
+    ExtensionActivationKind, ExtensionInstanceLease, ExtensionInvocationKind,
+    ExtensionProjectSummary, ExtensionRuntimePoll, ExtensionStartContext, ExtensionStopReason,
+    ExtensionUiExport, ExtensionUiInvocationAuthority, M6Error, M6ErrorCode, M6HostApplication,
+    M6RuntimeAdapter, M7RuntimeAdapter, OperationId, ProjectId, Revision,
 };
 use alcomd_extensions::{
     HOST_PROTOCOL_VERSION, HostMessage, HostMessageBody, HostStableError, RuntimeLimits,
-    bootstrap_nonce, read_host_message, write_host_message,
+    bootstrap_nonce, invocation_context_id, read_host_message, write_host_message,
 };
 use alcomd_store::StateStoreHandle;
 use serde_json::{Value, json};
@@ -46,6 +47,12 @@ struct HostProcess {
     lease: ExtensionInstanceLease,
     daemon_sequence: u64,
     host_sequence: u64,
+    background_active: bool,
+}
+
+struct RuntimeInvocation {
+    kind: ExtensionInvocationKind,
+    ui_authority: Option<ExtensionUiInvocationAuthority>,
 }
 
 impl PlatformExtensionRuntime {
@@ -96,7 +103,7 @@ impl M6RuntimeAdapter for PlatformExtensionRuntime {
 
     async fn start(&self, context: ExtensionStartContext) -> Result<(), M6Error> {
         let inner = Arc::clone(&self.inner);
-        tokio::task::spawn_blocking(move || start_host(&inner, context))
+        tokio::task::spawn_blocking(move || start_host(&inner, context, None))
             .await
             .map_err(|_| internal())?
     }
@@ -142,6 +149,121 @@ impl M6RuntimeAdapter for PlatformExtensionRuntime {
     }
 }
 
+impl M7RuntimeAdapter for PlatformExtensionRuntime {
+    async fn start_interactive(
+        &self,
+        context: ExtensionStartContext,
+        authority: ExtensionUiInvocationAuthority,
+    ) -> Result<(), M6Error> {
+        let inner = Arc::clone(&self.inner);
+        tokio::task::spawn_blocking(move || start_host(&inner, context, Some(authority)))
+            .await
+            .map_err(|_| internal())?
+    }
+
+    async fn active_lease(
+        &self,
+        extension_id: String,
+    ) -> Result<Option<ExtensionInstanceLease>, M6Error> {
+        Ok(self
+            .inner
+            .processes
+            .lock()
+            .map_err(|_| internal())?
+            .get(&extension_id)
+            .map(|process| process.lease.clone()))
+    }
+
+    async fn background_active(&self, extension_id: String) -> Result<bool, M6Error> {
+        Ok(self
+            .inner
+            .processes
+            .lock()
+            .map_err(|_| internal())?
+            .get(&extension_id)
+            .is_some_and(|process| process.background_active))
+    }
+
+    async fn invoke_ui(
+        &self,
+        lease: ExtensionInstanceLease,
+        authority: ExtensionUiInvocationAuthority,
+        export: ExtensionUiExport,
+    ) -> Result<Option<Vec<u8>>, M6Error> {
+        let remaining_ms = authority.deadline_ms.saturating_sub(now_ms()?);
+        if remaining_ms == 0 {
+            return Err(error(M6ErrorCode::ResourceLimit));
+        }
+        let timeout = Duration::from_millis(remaining_ms.min(2_000));
+        let inner = Arc::clone(&self.inner);
+        tokio::task::spawn_blocking(move || {
+            let mut processes = inner.processes.lock().map_err(|_| internal())?;
+            let process = processes
+                .get_mut(&lease.extension_id)
+                .filter(|process| process.lease == lease)
+                .ok_or_else(|| error(M6ErrorCode::InstanceStale))?;
+            let (name, input, expects_document) = match export {
+                ExtensionUiExport::Open { session_id, locale } => (
+                    "ui.open",
+                    json!({"sessionId": session_id, "locale": locale}),
+                    true,
+                ),
+                ExtensionUiExport::Refresh { session_id } => {
+                    ("ui.refresh", json!({"sessionId": session_id}), true)
+                }
+                ExtensionUiExport::Dispatch { session_id, action } => {
+                    let action = serde_json::from_slice::<Value>(&action)
+                        .map_err(|_| error(M6ErrorCode::InvalidInput))?;
+                    (
+                        "ui.dispatch",
+                        json!({"sessionId": session_id, "action": action}),
+                        true,
+                    )
+                }
+                ExtensionUiExport::Close { session_id } => {
+                    ("ui.close", json!({"sessionId": session_id}), false)
+                }
+            };
+            let result = invoke(
+                &inner,
+                process,
+                name,
+                input,
+                timeout,
+                RuntimeInvocation {
+                    kind: authority.kind,
+                    ui_authority: Some(authority),
+                },
+            )?;
+            if expects_document {
+                serde_json::to_vec(&result)
+                    .map(Some)
+                    .map_err(|_| internal())
+            } else {
+                Ok(None)
+            }
+        })
+        .await
+        .map_err(|_| internal())?
+    }
+
+    async fn terminate_host(
+        &self,
+        extension_id: String,
+    ) -> Result<Option<ExtensionInstanceLease>, M6Error> {
+        let process = self
+            .inner
+            .processes
+            .lock()
+            .map_err(|_| internal())?
+            .remove(&extension_id);
+        Ok(process.map(|mut process| {
+            terminate(&mut process.child);
+            process.lease
+        }))
+    }
+}
+
 fn poll_hosts(inner: &RuntimeInner) -> Result<ExtensionRuntimePoll, M6Error> {
     let mut processes = inner.processes.lock().map_err(|_| internal())?;
     let exited_ids = processes
@@ -163,7 +285,11 @@ fn poll_hosts(inner: &RuntimeInner) -> Result<ExtensionRuntimePoll, M6Error> {
     Ok(ExtensionRuntimePoll { active, exited })
 }
 
-fn start_host(inner: &RuntimeInner, context: ExtensionStartContext) -> Result<(), M6Error> {
+fn start_host(
+    inner: &RuntimeInner,
+    context: ExtensionStartContext,
+    activation_authority: Option<ExtensionUiInvocationAuthority>,
+) -> Result<(), M6Error> {
     let component = PathBuf::from(&context.component_path);
     validate_component(&component)?;
     let mut processes = inner.processes.lock().map_err(|_| internal())?;
@@ -216,13 +342,18 @@ fn start_host(inner: &RuntimeInner, context: ExtensionStartContext) -> Result<()
         lease: context.lease,
         daemon_sequence: 1,
         host_sequence: 1,
+        background_active: context.activation_kind == ExtensionActivationKind::Background,
+    };
+    let activation_kind = match context.activation_kind {
+        ExtensionActivationKind::Background => "background",
+        ExtensionActivationKind::InteractiveUi => "interactive_ui",
     };
     let activation = json!({
         "extensionId": process.lease.extension_id,
         "instanceId": process.lease.instance_id,
         "apiMajor": 1,
         "lifecycleGeneration": process.lease.lifecycle_generation.get(),
-        "kind": "background"
+        "kind": activation_kind
     });
     if let Err(error) = invoke(
         inner,
@@ -230,6 +361,15 @@ fn start_host(inner: &RuntimeInner, context: ExtensionStartContext) -> Result<()
         "activate",
         activation,
         Duration::from_millis(5_000),
+        RuntimeInvocation {
+            kind: match context.activation_kind {
+                ExtensionActivationKind::Background => ExtensionInvocationKind::Background,
+                ExtensionActivationKind::InteractiveUi => {
+                    ExtensionInvocationKind::InteractiveUiRender
+                }
+            },
+            ui_authority: activation_authority,
+        },
     ) {
         terminate(&mut process.child);
         return Err(error);
@@ -253,8 +393,10 @@ fn stop_host(
     let reason = match reason {
         ExtensionStopReason::Disabled => "disabled",
         ExtensionStopReason::PermissionRevoked => "permission_revoked",
+        ExtensionStopReason::LeaseExpired => "lease_expired",
         ExtensionStopReason::DaemonShutdown => "daemon_shutdown",
         ExtensionStopReason::Uninstalling => "uninstalling",
+        ExtensionStopReason::InteractiveUiIdle => "interactive_ui_idle",
     };
     process.daemon_sequence = process
         .daemon_sequence
@@ -279,6 +421,14 @@ fn stop_host(
         "deactivate",
         json!({"reason": reason}),
         Duration::from_millis(2_000),
+        RuntimeInvocation {
+            kind: if reason == "interactive_ui_idle" {
+                ExtensionInvocationKind::InteractiveUiClose
+            } else {
+                ExtensionInvocationKind::Background
+            },
+            ui_authority: None,
+        },
     );
     process.daemon_sequence = process
         .daemon_sequence
@@ -305,12 +455,14 @@ fn invoke(
     export: &str,
     input: Value,
     timeout: Duration,
-) -> Result<(), M6Error> {
+    invocation: RuntimeInvocation,
+) -> Result<Value, M6Error> {
     process.daemon_sequence = process
         .daemon_sequence
         .checked_add(1)
         .ok_or_else(internal)?;
     let request_id = format!("export-{}", process.daemon_sequence);
+    let context_id = invocation_context_id();
     write_host_message(
         &mut process.input,
         &HostMessage {
@@ -321,6 +473,7 @@ fn invoke(
             sequence: process.daemon_sequence,
             body: HostMessageBody::InvokeExport {
                 request_id: request_id.clone(),
+                invocation_context_id: context_id.clone(),
                 export: export.to_owned(),
                 input,
             },
@@ -345,27 +498,32 @@ fn invoke(
         match message.body {
             HostMessageBody::CapabilityCall {
                 call_id,
+                invocation_context_id: returned_context_id,
                 lease_id,
                 capability,
                 input,
             } => {
-                if lease_id != process.lease.lease_id {
+                if returned_context_id != context_id || lease_id != process.lease.lease_id {
                     terminate(&mut process.child);
-                    return Err(error(M6ErrorCode::InstanceStale));
+                    return Err(error(M6ErrorCode::Crashed));
                 }
-                let response = route_capability(
-                    &inner.authority,
-                    process.lease.clone(),
-                    capability.as_str(),
-                    input,
-                );
                 process.daemon_sequence = process
                     .daemon_sequence
                     .checked_add(1)
                     .ok_or_else(internal)?;
-                let (result, response_error) = match response {
-                    Ok(result) => (Some(result), None),
-                    Err(error) => (None, Some(stable_error(error))),
+                let (result, response_error) = if invocation_cancelled(&invocation) {
+                    (None, Some(cancelled_error()))
+                } else {
+                    match route_capability(
+                        &inner.authority,
+                        process.lease.clone(),
+                        &invocation,
+                        capability.as_str(),
+                        input,
+                    ) {
+                        Ok(result) => (Some(result), None),
+                        Err(error) => (None, Some(stable_error(error))),
+                    }
                 };
                 write_host_message(
                     &mut process.input,
@@ -386,9 +544,9 @@ fn invoke(
             }
             HostMessageBody::ExportResult {
                 request_id: response_id,
-                result: Some(_),
+                result: Some(result),
                 error: None,
-            } if response_id == request_id => return Ok(()),
+            } if response_id == request_id => return Ok(result),
             HostMessageBody::ExportResult {
                 request_id: response_id,
                 result: None,
@@ -405,9 +563,13 @@ fn invoke(
 fn route_capability(
     authority: &M6HostApplication<StateStoreHandle>,
     lease: ExtensionInstanceLease,
+    invocation: &RuntimeInvocation,
     capability: &str,
     input: Value,
 ) -> Result<Value, M6Error> {
+    if !capability_allowed(invocation.kind, capability) {
+        return Err(error(M6ErrorCode::PermissionDenied));
+    }
     let runtime = tokio::runtime::Handle::current();
     match capability {
         "host-projects.get-summary" => {
@@ -416,6 +578,15 @@ fn route_capability(
                 .and_then(Value::as_str)
                 .ok_or_else(|| error(M6ErrorCode::InvalidInput))?;
             ProjectId::parse(project_id).map_err(|_| error(M6ErrorCode::InvalidInput))?;
+            if invocation.kind != ExtensionInvocationKind::Background {
+                invocation
+                    .ui_authority
+                    .as_ref()
+                    .ok_or_else(|| error(M6ErrorCode::ScopeDenied))?
+                    .client_access
+                    .require_project_read_scope(project_id)
+                    .map_err(|_| error(M6ErrorCode::ScopeDenied))?;
+            }
             let value = runtime.block_on(authority.project_summary(
                 lease,
                 project_id.to_owned(),
@@ -424,6 +595,7 @@ fn route_capability(
             Ok(json!({"summary": project_summary(value)}))
         }
         "host-data.get" => {
+            require_ui_data_authority(invocation, &lease)?;
             let key = input_string(&input, "key")?;
             let value = runtime.block_on(authority.data_get(lease, key, now_ms()?))?;
             Ok(json!({"value": value.map(|value| json!({
@@ -433,6 +605,7 @@ fn route_capability(
             }))}))
         }
         "host-data.set" => {
+            require_ui_data_authority(invocation, &lease)?;
             let key = input_string(&input, "key")?;
             let value = input_bytes(&input, "value")?;
             let expected = input
@@ -448,6 +621,7 @@ fn route_capability(
             }))
         }
         "host-data.delete" => {
+            require_ui_data_authority(invocation, &lease)?;
             let key = input_string(&input, "key")?;
             let expected = input
                 .get("expectedKeyRevision")
@@ -463,6 +637,45 @@ fn route_capability(
         }
         _ => Err(error(M6ErrorCode::PermissionDenied)),
     }
+}
+
+fn capability_allowed(kind: ExtensionInvocationKind, capability: &str) -> bool {
+    match kind {
+        ExtensionInvocationKind::Background => matches!(
+            capability,
+            "host-projects.get-summary" | "host-data.get" | "host-data.set" | "host-data.delete"
+        ),
+        ExtensionInvocationKind::InteractiveUiRender => {
+            matches!(capability, "host-projects.get-summary" | "host-data.get")
+        }
+        ExtensionInvocationKind::InteractiveUiAction => matches!(
+            capability,
+            "host-projects.get-summary" | "host-data.get" | "host-data.set" | "host-data.delete"
+        ),
+        ExtensionInvocationKind::InteractiveUiClose => false,
+    }
+}
+
+fn invocation_cancelled(invocation: &RuntimeInvocation) -> bool {
+    invocation.ui_authority.as_ref().is_some_and(|authority| {
+        !authority.is_current() || now_ms().map_or(true, |now_ms| now_ms >= authority.deadline_ms)
+    })
+}
+
+fn require_ui_data_authority(
+    invocation: &RuntimeInvocation,
+    lease: &ExtensionInstanceLease,
+) -> Result<(), M6Error> {
+    if invocation.kind != ExtensionInvocationKind::Background {
+        invocation
+            .ui_authority
+            .as_ref()
+            .ok_or_else(|| error(M6ErrorCode::ScopeDenied))?
+            .client_access
+            .require_extension_ui_scope(&lease.extension_id)
+            .map_err(|_| error(M6ErrorCode::ScopeDenied))?;
+    }
+    Ok(())
 }
 
 fn read_with_timeout(
@@ -510,6 +723,13 @@ fn stable_error(error: M6Error) -> HostStableError {
     HostStableError {
         code: code.to_owned(),
         diagnostic_id: (code == "internal_error").then(|| OperationId::new().to_string()),
+    }
+}
+
+fn cancelled_error() -> HostStableError {
+    HostStableError {
+        code: "cancelled".to_owned(),
+        diagnostic_id: None,
     }
 }
 
@@ -602,4 +822,56 @@ fn error(code: M6ErrorCode) -> M6Error {
 
 fn internal() -> M6Error {
     error(M6ErrorCode::Internal)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn portable_ui_capability_matrix_is_explicit_and_closed() {
+        for capability in [
+            "host-projects.get-summary",
+            "host-data.get",
+            "host-data.set",
+            "host-data.delete",
+        ] {
+            assert!(capability_allowed(
+                ExtensionInvocationKind::Background,
+                capability
+            ));
+        }
+        assert!(capability_allowed(
+            ExtensionInvocationKind::InteractiveUiRender,
+            "host-projects.get-summary"
+        ));
+        assert!(capability_allowed(
+            ExtensionInvocationKind::InteractiveUiRender,
+            "host-data.get"
+        ));
+        assert!(!capability_allowed(
+            ExtensionInvocationKind::InteractiveUiRender,
+            "host-data.set"
+        ));
+        assert!(!capability_allowed(
+            ExtensionInvocationKind::InteractiveUiRender,
+            "host-data.delete"
+        ));
+        assert!(capability_allowed(
+            ExtensionInvocationKind::InteractiveUiAction,
+            "host-data.set"
+        ));
+        assert!(capability_allowed(
+            ExtensionInvocationKind::InteractiveUiAction,
+            "host-data.delete"
+        ));
+        assert!(!capability_allowed(
+            ExtensionInvocationKind::InteractiveUiClose,
+            "host-data.get"
+        ));
+        assert!(!capability_allowed(
+            ExtensionInvocationKind::InteractiveUiAction,
+            "future-capability"
+        ));
+    }
 }

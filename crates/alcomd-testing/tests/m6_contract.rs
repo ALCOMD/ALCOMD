@@ -381,7 +381,7 @@ fn state_rpc_errors_and_publication_boundary_are_frozen() {
             "missing error {code}"
         );
     }
-    assert_production_advertises_m6_only_through_the_approved_boundary();
+    assert_production_keeps_m6_authority_inside_the_approved_boundary();
 }
 
 fn decode_hex(value: &str) -> Vec<u8> {
@@ -406,7 +406,7 @@ fn hex(bytes: &[u8]) -> String {
     output
 }
 
-fn assert_production_advertises_m6_only_through_the_approved_boundary() {
+fn assert_production_keeps_m6_authority_inside_the_approved_boundary() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .and_then(Path::parent)
@@ -414,8 +414,9 @@ fn assert_production_advertises_m6_only_through_the_approved_boundary() {
     let daemon = fs::read_to_string(root.join("apps/alcomd/src/lib.rs")).expect("daemon source");
     let protocol = fs::read_to_string(root.join("crates/alcomd-protocol/src/lib.rs"))
         .expect("protocol source");
-    assert!(daemon.contains("HelloResult::m6"));
+    assert!(daemon.contains("HelloResult::m7"));
     assert!(daemon.contains("CAPABILITY_EXTENSIONS_LIFECYCLE_V1"));
+    assert!(daemon.contains("CAPABILITY_EXTENSIONS_UI_PORTABLE_V1"));
     assert!(protocol.contains("extensions.lifecycle.v1"));
     assert!(protocol.contains("extensions.permissions.v1"));
     assert!(protocol.contains("alcomd:extension/extension-v1@1.0.0"));

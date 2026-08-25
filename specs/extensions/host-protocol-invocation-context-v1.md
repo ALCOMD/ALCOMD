@@ -1,14 +1,14 @@
-# Extension Host protocol InvocationContextId proposal
+# Extension Host protocol InvocationContextId v1
 
-状态：M7 Stop A review closure proposal-only；不修改 active Host protocol 或 production Host。
+状态：M7 active internal production contract；不是 public RPC，也不暴露给 guest WIT。
 
-现有 requestId/callId 继续只做 correlation。M7 direct rewrite 在每个 `invoke-export` 增加 daemon-issued
+现有 requestId/callId 继续只做 correlation。每个 `invoke-export` 增加 daemon-issued
 `invocationContextId`，格式为 `ictx_` 加 43 个 unpadded base64url 字符（256 random bits），总长 48 ASCII bytes。
 它只存在 daemon/Host memory，不写 state/Event/log/diagnostic，也不返回 public RPC或暴露给 guest WIT。
 
 daemon context record绑定 invocation kind、ExtensionId、Extension PrincipalId、InstanceId、leaseId、grant revision、
 lifecycle generation、deadline/cancellation；interactive-ui context另外绑定 Client PrincipalId、client connection/instance、
-UiSessionId和 SnapshotRevision。`guest-session-id` 只是 guest correlation token，不是 InvocationContextId或 authority。
+UiSessionId和 SnapshotRevision。`guest-session-id` 只是guest correlation token，不是 InvocationContextId或 authority。
 
 `invoke-export` 携带 context ID；该 export 内的每个 `capability-call` 必须原样回显。Host/guest不能创建、选择、修改、
 替换或跨 invocation/session重用 context。Host不把 Principal/scope/grant metadata放进 capability call；daemon从 context

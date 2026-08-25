@@ -13,8 +13,8 @@ const ACTIVE_RPC: &str = include_str!("../../../specs/rpc/m7-portable-ui.schema.
 const RPC_ERROR: &str = include_str!("../../../specs/rpc/rpc-error.schema.json");
 const ACTIVE_STATE: &str = include_str!("../../../specs/storage/state-v9-migration.contract.json");
 const ACTIVE_PERMISSIONS: &str = include_str!("../../../specs/extensions/permissions-v1.md");
-const HOST_PROTOCOL_PROPOSAL: &str =
-    include_str!("../../../specs/extensions/proposals/host-protocol-invocation-context-v1.md");
+const HOST_PROTOCOL_CONTEXT: &str =
+    include_str!("../../../specs/extensions/host-protocol-invocation-context-v1.md");
 const RENDERER_PROPOSAL: &str = include_str!("../../../specs/gui/portable-ui-renderer-v1.md");
 const THREAT_MODEL: &str =
     include_str!("../../../specs/security/extension-portable-ui-threat-model.md");
@@ -155,18 +155,19 @@ fn review_closure_freezes_manifest_lifecycle_draft_and_security_responsibility()
     assert!(RENDERER_PROPOSAL.contains("publisher-trust/version/desired/runtime/quarantine"));
     assert!(RENDERER_PROPOSAL.contains("aria-describedby"));
     assert!(RENDERER_PROPOSAL.contains("512 UTF-8"));
-    assert!(HOST_PROTOCOL_PROPOSAL.contains("Normal authority races"));
-    assert!(HOST_PROTOCOL_PROPOSAL.contains("`permission-denied`"));
-    assert!(HOST_PROTOCOL_PROPOSAL.contains("`lease-revoked`"));
-    assert!(HOST_PROTOCOL_PROPOSAL.contains("`invocation_context_stale`"));
-    assert!(HOST_PROTOCOL_PROPOSAL.contains("`cancelled`"));
-    assert!(HOST_PROTOCOL_PROPOSAL.contains("completed context reuse"));
-    assert!(HOST_PROTOCOL_PROPOSAL.contains("立即完成并失效"));
-    assert!(HOST_PROTOCOL_PROPOSAL.contains("Invocation kind 与 capability matrix"));
-    assert!(HOST_PROTOCOL_PROPOSAL.contains("interactive-ui-render"));
-    assert!(HOST_PROTOCOL_PROPOSAL.contains("interactive-ui-action"));
-    assert!(HOST_PROTOCOL_PROPOSAL.contains("interactive-ui-close"));
-    assert!(HOST_PROTOCOL_PROPOSAL.contains("extension_permission_denied"));
+    assert!(HOST_PROTOCOL_CONTEXT.contains("active internal production contract"));
+    assert!(HOST_PROTOCOL_CONTEXT.contains("Normal authority races"));
+    assert!(HOST_PROTOCOL_CONTEXT.contains("`permission-denied`"));
+    assert!(HOST_PROTOCOL_CONTEXT.contains("`lease-revoked`"));
+    assert!(HOST_PROTOCOL_CONTEXT.contains("`invocation_context_stale`"));
+    assert!(HOST_PROTOCOL_CONTEXT.contains("`cancelled`"));
+    assert!(HOST_PROTOCOL_CONTEXT.contains("completed context reuse"));
+    assert!(HOST_PROTOCOL_CONTEXT.contains("立即完成并失效"));
+    assert!(HOST_PROTOCOL_CONTEXT.contains("Invocation kind 与 capability matrix"));
+    assert!(HOST_PROTOCOL_CONTEXT.contains("interactive-ui-render"));
+    assert!(HOST_PROTOCOL_CONTEXT.contains("interactive-ui-action"));
+    assert!(HOST_PROTOCOL_CONTEXT.contains("interactive-ui-close"));
+    assert!(HOST_PROTOCOL_CONTEXT.contains("extension_permission_denied"));
     assert!(THREAT_MODEL.contains("render impurity"));
     assert!(THREAT_MODEL.contains("历史exact replay"));
     assert!(THREAT_MODEL.contains("session race"));
@@ -346,10 +347,10 @@ fn rpc_state_permissions_and_limits_are_exact_and_closed() {
     assert!(ACTIVE_PERMISSIONS.contains("不存在 `ui.contribute`"));
     assert!(ACTIVE_PERMISSIONS.contains("Client Principal 与 Extension Principal"));
     assert!(ACTIVE_PERMISSIONS.contains("任一侧不能扩大另一侧 authority"));
-    assert!(HOST_PROTOCOL_PROPOSAL.contains("InvocationContextId"));
-    assert!(HOST_PROTOCOL_PROPOSAL.contains("Normal authority races"));
-    assert!(HOST_PROTOCOL_PROPOSAL.contains("completed context reuse"));
-    assert!(HOST_PROTOCOL_PROPOSAL.contains("Host protocol violation"));
+    assert!(HOST_PROTOCOL_CONTEXT.contains("InvocationContextId"));
+    assert!(HOST_PROTOCOL_CONTEXT.contains("Normal authority races"));
+    assert!(HOST_PROTOCOL_CONTEXT.contains("completed context reuse"));
+    assert!(HOST_PROTOCOL_CONTEXT.contains("Host protocol violation"));
 }
 
 #[test]

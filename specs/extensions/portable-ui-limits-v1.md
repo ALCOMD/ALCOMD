@@ -1,6 +1,6 @@
 # Portable UI v1 exact limits
 
-状态：M7 Stop A contract candidate；production 尚未实现。机器可读权威值在 `portable-ui-limits-v1.json`。
+状态：M7 active production contract；B1 daemon/Host validator 已实现，renderer conformance 在 Slice C/D 完成。机器可读权威值在 `portable-ui-limits-v1.json`。
 
 v1 每个扩展最多公开一个隐式 Portable UI。MCP management 与 Discord Presence synthetic fixture 均能在一个 page 中
 通过 section/list/form 表达；合同不保存或传输页面 identity，也不预留数组、选择 API 或动态 discovery。

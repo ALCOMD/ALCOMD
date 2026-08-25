@@ -1,6 +1,7 @@
 # Portable UI v1 threat model candidate
 
-状态：M7 Stop A proposal-only；补充 `extension-threat-model.md`，不表示 production mitigation 已实现。
+状态：M7 active security contract；Slice B0/B1 已接入 Core/Host/RPC mitigation，official renderer 与完整 Slice D
+hostile/fault conformance 尚未完成。
 
 ## Assets and trust boundaries
 

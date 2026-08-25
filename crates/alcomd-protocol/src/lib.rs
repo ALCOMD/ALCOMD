@@ -720,6 +720,21 @@ impl HelloResult {
             }),
         }
     }
+
+    /// Creates the M7 hello result after Schema v9 and Portable UI wiring are ready.
+    #[must_use]
+    pub fn m7(capabilities: Vec<String>) -> Self {
+        Self {
+            rpc_version: RPC_VERSION,
+            daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
+            capabilities,
+            data_schema: Some(9),
+            extension_api: Some(ExtensionApiInfo {
+                major: 1,
+                world: "alcomd:extension/extension-v1@1.0.0".to_owned(),
+            }),
+        }
+    }
 }
 
 /// Public Operation lifecycle state.

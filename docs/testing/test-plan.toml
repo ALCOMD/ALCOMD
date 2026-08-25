@@ -382,8 +382,17 @@ stage = "M7"
 kind = "contract"
 platforms = ["all"]
 status = "implemented"
-description = "冻结并验证 active Portable UI v1 Manifest/package/WIT/ABI、State v9、Permission/RPC DTO foundation，以及17 node、2 action、单一隐式页面、exact tree/form/draft/quota/replay/failure 与 renderer consumer contract；不表示 B1 runtime、official/headless consumer 或 M7 已完成。"
-evidence = ["specs/extensions/manifest-v1.schema.json", "specs/extensions/package-profile-v1.json", "specs/extensions/abi-compatibility-v1.json", "specs/extensions/wit/extension-v1", "specs/extensions/portable-ui-v1.md", "specs/extensions/portable-ui-v1.schema.json", "specs/extensions/portable-ui-limits-v1.json", "specs/extensions/proposals", "specs/rpc/m7-portable-ui.schema.json", "specs/storage/state-v9-migration.contract.json", "specs/security/extension-portable-ui-threat-model.md", "specs/gui/portable-ui-renderer-v1.md", "crates/alcomd-testing/fixtures/m7", "crates/alcomd-testing/tests/m7_contract.rs"]
+description = "冻结并验证 active Portable UI v1 Manifest/package/WIT/ABI、State v9、Permission/RPC DTO foundation，以及17 node、2 action、单一隐式页面、exact tree/form/draft/quota/replay/failure 与 renderer consumer contract；不表示 official/headless consumer 或 M7 已完成。"
+evidence = ["specs/extensions/manifest-v1.schema.json", "specs/extensions/package-profile-v1.json", "specs/extensions/abi-compatibility-v1.json", "specs/extensions/wit/extension-v1", "specs/extensions/portable-ui-v1.md", "specs/extensions/portable-ui-v1.schema.json", "specs/extensions/portable-ui-limits-v1.json", "specs/extensions/host-protocol-invocation-context-v1.md", "specs/rpc/m7-portable-ui.schema.json", "specs/storage/state-v9-migration.contract.json", "specs/security/extension-portable-ui-threat-model.md", "specs/gui/portable-ui-renderer-v1.md", "crates/alcomd-testing/fixtures/m7", "crates/alcomd-testing/tests/m7_contract.rs"]
+
+[[test]]
+id = "gui.m7-portable-ui-core"
+stage = "M7"
+kind = "integration-security"
+platforms = ["all"]
+status = "implemented"
+description = "真实 daemon/RPC/Extension Host 与 Component 覆盖 UI-only/background interactive lifecycle、InvocationContext capability matrix、render write denial/action write、memory-only Session、cross-connection ownership、current-only replay、disconnect/disable stale、malformed document termination 与 quarantine；不包含 official renderer、headless consumer 或最终三平台验收。"
+evidence = ["crates/alcomd-application/src/m7.rs", "crates/alcomd-protocol/src/m7.rs", "apps/alcomd/src/m6_runtime.rs", "apps/alcomd/src/m7_rpc.rs", "apps/alcomd-extension-host/src/main.rs", "apps/alcomd-extension-host/tests/minimal_component.rs", "apps/alcomd-extension-host/tests/m6_lifecycle.rs"]
 
 [[test]]
 id = "gui.m7-portable-ui-production"
@@ -391,7 +400,7 @@ stage = "M7"
 kind = "integration"
 platforms = ["all"]
 status = "planned"
-description = "未来验证 active Manifest/package/WIT/Host/Core/RPC/State v9 replacement、interactive-ui lease、InvocationContext、session lifecycle 与官方 renderer 的 production wiring；Stop A proposal 不构成本项 evidence。"
+description = "B0/B1 已验证 active Manifest/package/WIT/Host/Core/RPC/State v9、interactive-ui lease、InvocationContext 与 session lifecycle；本聚合项仍等待 official renderer、headless consumer、完整 fault/security matrix 与最终三平台验收。"
 
 [[test]]
 id = "gui.m7-portable-ui-conformance"
@@ -407,7 +416,7 @@ stage = "M7"
 kind = "security"
 platforms = ["all"]
 status = "planned"
-description = "未来以 production Host/Core/RPC 覆盖 dual Principal confused-deputy denial、InvocationContext forge/stale、revoke-in-flight、replay/rate/quota、malformed guest termination/quarantine、redaction 与 first/third-party 无隐藏 authority。"
+description = "B1 已覆盖 exact scope、InvocationContext shape/stale、render purity、replay、session ownership、malformed guest termination/quarantine 与部分 limits；本聚合项仍等待 dual Principal real capability matrix、forge/revoke races、payload redaction、first/third parity 和完整 Slice D hostile/fault evidence。"
 
 [[test]]
 id = "gui.m7-accessibility"

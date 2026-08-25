@@ -24,6 +24,31 @@ pub fn bootstrap_nonce() -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+/// Issues one daemon-side opaque authority token for exactly one guest export.
+#[must_use]
+pub fn invocation_context_id() -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"ALCOMD-EXT-INVOCATION-CONTEXT-V1\0");
+    for _ in 0..4 {
+        digest.update(
+            alcomd_application::OperationId::new()
+                .to_string()
+                .as_bytes(),
+        );
+    }
+    let bytes: [u8; 32] = digest.finalize().into();
+    format!("ictx_{}", base64url_unpadded(&bytes))
+}
+
+/// Computes the frozen in-memory Portable UI action replay fingerprint.
+#[must_use]
+pub fn portable_ui_action_fingerprint(canonical_action: &[u8]) -> [u8; 32] {
+    let mut digest = Sha256::new();
+    digest.update(b"ALCOMD-PORTABLE-UI-ACTION-V1\0");
+    digest.update(canonical_action);
+    digest.finalize().into()
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RuntimeLimits {
@@ -136,6 +161,7 @@ pub enum HostMessageBody {
     },
     InvokeExport {
         request_id: String,
+        invocation_context_id: String,
         export: String,
         input: Value,
     },
@@ -144,6 +170,7 @@ pub enum HostMessageBody {
     },
     CapabilityCall {
         call_id: String,
+        invocation_context_id: String,
         lease_id: String,
         capability: String,
         input: Value,
@@ -218,11 +245,21 @@ impl HostMessage {
             }
             HostMessageBody::InvokeExport {
                 request_id,
+                invocation_context_id,
                 export,
                 input,
             } => {
                 validate_id(request_id)?;
-                if !matches!(export.as_str(), "activate" | "deactivate") {
+                validate_invocation_context_id(invocation_context_id)?;
+                if !matches!(
+                    export.as_str(),
+                    "activate"
+                        | "deactivate"
+                        | "ui.open"
+                        | "ui.refresh"
+                        | "ui.dispatch"
+                        | "ui.close"
+                ) {
                     return Err(HostProtocolError::InvalidEnvelope);
                 }
                 validate_value(input)?;
@@ -230,11 +267,13 @@ impl HostMessage {
             HostMessageBody::CancelCall { request_id } => validate_id(request_id)?,
             HostMessageBody::CapabilityCall {
                 call_id,
+                invocation_context_id,
                 lease_id,
                 capability,
                 input,
             } => {
                 validate_id(call_id)?;
+                validate_invocation_context_id(invocation_context_id)?;
                 if lease_id.len() != 36
                     || !matches!(
                         capability.as_str(),
@@ -394,6 +433,37 @@ fn validate_id(value: &str) -> Result<(), HostProtocolError> {
     }
 }
 
+fn validate_invocation_context_id(value: &str) -> Result<(), HostProtocolError> {
+    if value.len() != 48
+        || !value.starts_with("ictx_")
+        || !value[5..]
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        return Err(HostProtocolError::InvalidEnvelope);
+    }
+    Ok(())
+}
+
+fn base64url_unpadded(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut output = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let bits = (u32::from(chunk[0]) << 16)
+            | (chunk.get(1).copied().map_or(0, u32::from) << 8)
+            | chunk.get(2).copied().map_or(0, u32::from);
+        output.push(char::from(ALPHABET[((bits >> 18) & 0x3f) as usize]));
+        output.push(char::from(ALPHABET[((bits >> 12) & 0x3f) as usize]));
+        if chunk.len() > 1 {
+            output.push(char::from(ALPHABET[((bits >> 6) & 0x3f) as usize]));
+        }
+        if chunk.len() > 2 {
+            output.push(char::from(ALPHABET[(bits & 0x3f) as usize]));
+        }
+    }
+    output
+}
+
 fn validate_value(value: &Value) -> Result<(), HostProtocolError> {
     let bytes = serde_json::to_vec(value).map_err(|_| HostProtocolError::InvalidEnvelope)?;
     if bytes.len() > MAX_WIT_VALUE_BYTES {
@@ -414,6 +484,7 @@ fn validate_error(error: &HostStableError) -> Result<(), HostProtocolError> {
             | "project_not_found"
             | "revision_conflict"
             | "extension_data_quota_exceeded"
+            | "cancelled"
             | "internal_error"
     ) || (error.code == "internal_error") != error.diagnostic_id.is_some()
         || error
@@ -470,6 +541,15 @@ mod tests {
             invalid.validate_bounds(),
             Err(HostProtocolError::InvalidEnvelope)
         );
+        let cancelled = message(HostMessageBody::CapabilityResult {
+            call_id: "call-1".to_owned(),
+            result: None,
+            error: Some(HostStableError {
+                code: "cancelled".to_owned(),
+                diagnostic_id: None,
+            }),
+        });
+        assert!(cancelled.validate_bounds().is_ok());
     }
 
     #[test]
@@ -515,5 +595,36 @@ mod tests {
             .expect("host envelope object")
             .insert("grantRevision".to_owned(), Value::from(99));
         assert!(serde_json::from_value::<HostMessage>(with_nested_unknown).is_err());
+    }
+
+    #[test]
+    fn invocation_context_ids_are_exact_and_unforgeable_by_shape() {
+        let first = invocation_context_id();
+        let second = invocation_context_id();
+        assert_eq!(first.len(), 48);
+        assert!(first.starts_with("ictx_"));
+        assert!(
+            first[5..]
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        );
+        assert_ne!(first, second);
+        assert!(validate_invocation_context_id(&first).is_ok());
+        assert_eq!(
+            validate_invocation_context_id("ictx_invalid"),
+            Err(HostProtocolError::InvalidEnvelope)
+        );
+    }
+
+    #[test]
+    fn portable_ui_fingerprint_uses_the_frozen_domain_separator() {
+        let action = br#"{"kind":"activate","actionId":"refresh"}"#;
+        let fingerprint = portable_ui_action_fingerprint(action);
+        let mut expected = Sha256::new();
+        expected.update(b"ALCOMD-PORTABLE-UI-ACTION-V1\0");
+        expected.update(action);
+        let expected: [u8; 32] = expected.finalize().into();
+        assert_eq!(fingerprint, expected);
+        assert_ne!(fingerprint, portable_ui_action_fingerprint(b"{}"));
     }
 }

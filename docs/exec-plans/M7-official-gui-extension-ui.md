@@ -1,7 +1,7 @@
 # M7：官方 GUI 与 Portable Extension UI
 
-状态：M7 Portable UI Stop A 与执行语义补充已通过最终人工审批；Slice B0 active contract replacement 已完成本地实现与
-验证，正在进入 Slice B1 Core + Extension Host；M7 尚未完成，尚未进入 M8。
+状态：M7 Portable UI Stop A 与执行语义补充已通过最终人工审批；Slice B0 active contract replacement 与 Slice B1
+Core + Extension Host 已完成本地实现及定向验证，正在进入 Slice C official React/MD3 renderer；M7 尚未完成，尚未进入 M8。
 
 ## 目标与完成定义
 
@@ -23,8 +23,8 @@ package cache、extension data 或 Host protocol。first-party extension 与 thi
 permission、Host、session、RPC 与 renderer contract。
 
 M7 完成需要：Stop A 人工批准；Core/Host implementation；官方 renderer；headless conformance consumer；本地完整 gate；
-Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted CI；GUI/a11y evidence；项目所有者最终人工验收。当前只完成
-Stop A approved candidate contract evidence，不满足 production 完成定义。
+Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted CI；GUI/a11y evidence；项目所有者最终人工验收。当前 B0/B1
+已完成，但 official renderer、headless conformance、完整 security/fault matrix 与最终三平台证据仍未完成。
 
 ## 已完成前置证据
 
@@ -39,12 +39,12 @@ Stop A approved candidate contract evidence，不满足 production 完成定义�
 ## Stop A frozen contract
 
 以下合同已获项目所有者批准。Slice B0 已原子替换 active Manifest/package/WIT，加入 State v9 migration、typed
-`ui_protocol`、`extensions.ui.use` 与 RPC DTO foundation；Session runtime、capability advertising 和 renderer 分别留在
-B1/C，不能由 B0 状态冒充完成。
+`ui_protocol`、`extensions.ui.use` 与 RPC DTO foundation；Slice B1 已完成 Session runtime 与 capability advertising；
+renderer 仍留在 Slice C，不能由 B0/B1 状态冒充完成。
 
 ### Manifest、package 与单一 Portable UI
 
-Manifest v1 future direct rewrite 使用：
+active Manifest v1 已直接改写为：
 
 ```toml
 [entrypoints]
@@ -72,12 +72,12 @@ node/action。没有 hostId、official GUI identity、framework/renderer name、
 不支持的 GUI 继续提供 extension management，并把功能页标为 unsupported。unknown v1 node fail closed；新增 node 使用
 新的 capability/version。
 
-### WIT/ABI v1 proposal
+### Active WIT/ABI v1
 
-proposal-only WIT 位于 `specs/extensions/wit/extension-v1-portable-ui-proposal/`，不修改 production bindgen 读取的
-active `extension-v1/`。最终仍是 `alcomd:extension/extension-v1@1.0.0`，import host-projects/host-data，required export
-guest-lifecycle/guest-ui。所有ABI v1 Component都必须实现guest-ui；Manifest无 `[ui]` 时daemon不调用，SDK/reference
-提供empty stub，Host instantiate仍验证完整world。guest-ui exact sync functions：
+active WIT 位于 `specs/extensions/wit/extension-v1/`，production bindgen 与真实 Extension Host 使用
+`alcomd:extension/extension-v1@1.0.0`，import host-projects/host-data，required export guest-lifecycle/guest-ui。所有 ABI v1
+Component 都必须实现 guest-ui；Manifest 无 `[ui]` 时 daemon 不调用，reference fixture 提供 empty stub，Host instantiate
+仍验证完整 world。guest-ui exact sync functions：
 
 ```text
 open(guest-session-id, locale) -> UiDocument
@@ -86,9 +86,8 @@ dispatch(guest-session-id, UiAction) -> UiDocument
 close(guest-session-id)
 ```
 
-Host embedding 继续 async；不启用 component-model-async、WASI future/stream、wasmtime-wasi、guest thread 或依赖。
-production 获批时 proposal 原子替换 active v1 并删除 proposal directory；不保留 parallel world，不创建 ABI v2，
-`extensionApi.major` 仍为 1。
+Host embedding 继续 async；没有启用 component-model-async、WASI future/stream、wasmtime-wasi、guest thread 或新依赖。
+旧 proposal directory 已删除；没有保留 parallel world，没有创建 ABI v2，`extensionApi.major` 仍为 1。
 
 ### Lifecycle 与 Host protocol
 
@@ -165,60 +164,59 @@ RPC compatible addition只有 capability 与 open/refresh/dispatch/close。DTO c
 
 ### State v9 与 renderer
 
-M6 已广告v8，故proposal使用v9：extensions和immutable extension_plans各只增nullable `ui_protocol`，合法值NULL或
+M6 曾广告 v8；active v9 只为 extensions 和 immutable extension_plans 各增 nullable `ui_protocol`，合法值 NULL 或
 `portable-v1`。不保存页面常量，不建session/Snapshot/replay/action/draft/renderer/browser/cache/workflow table。v8->v9
-必须单事务保留rows/FK/revision/Event sequence，existing默认NULL，future schema fail closed；production wiring前hello继续
-广告v8，不创建production 0009 SQL。
+单事务 migration 已保留 rows/FK/revision/Event sequence，existing 默认 NULL，future schema fail closed；B1 完整接线后
+hello 已广告 dataSchema 9 与 `extensions.ui.portable.v1`。
 
 官方 React/MD3 renderer与non-Tauri headless consumer使用同一 public DTO/fixtures。官方 contract冻结 host-owned
 name/ExtensionId/publisher-trust/version/desired/runtime/quarantine/extension-provided chrome、exhaustive match、
 keyboard/focus/ARIA、200%/320px、reduced motion、无 extension CSS/DOM/Tauri。headless consumer不依赖GUI/Tauri并输出
-确定性 semantic summary。Stop A不实现任何 renderer。
+确定性 semantic summary。B0/B1 不实现任何 renderer。
 
 ## Contract artifacts
 
 - ADR refinement：`docs/adr/0024-portable-extension-ui.md`；
 - Portable UI contract/schema/limits：`specs/extensions/portable-ui-v1.*`、`portable-ui-limits-v1.*`；
-- Manifest/package/ABI/permission/Host protocol proposals：`specs/extensions/proposals/`；
-- WIT proposal：`specs/extensions/wit/extension-v1-portable-ui-proposal/`；
-- RPC proposal：`specs/rpc/m7-portable-ui.schema.json`；
-- State v9/migration proposal：`specs/storage/state-v9*`；
+- active Manifest/package/ABI/permission/Host protocol：`specs/extensions/`、
+  `specs/extensions/host-protocol-invocation-context-v1.md`；
+- active WIT：`specs/extensions/wit/extension-v1/`；
+- RPC contract：`specs/rpc/m7-portable-ui.schema.json`、`specs/rpc/alcomd-rpc-v1.md`；
+- State v9/migration：`specs/storage/state-v9*`、`crates/alcomd-store/migrations/0009_portable_extension_ui.sql`；
 - threat model/consumer contract：`specs/security/extension-portable-ui-threat-model.md`、
   `specs/gui/portable-ui-renderer-v1.md`；
 - MCP/Discord/adversarial/headless fixtures：`crates/alcomd-testing/fixtures/m7/`；
 - contract tests：`crates/alcomd-testing/tests/m7_contract.rs`。
 
-## 后续 production slices（未批准）
+## 已批准 production slices
 
-1. Slice B：原子替换 active Manifest/package/WIT/ABI/permission/State contract，接入 Host/Core/RPC session与dual authority。
-2. Slice C：官方 shell/typed adapter/React/MD3 renderer与既有 Core pages，仍只调用 public client/RPC。
-3. Slice D：non-Tauri consumer、first/third parity、malformed/revoke/crash/reconnect与三平台/a11y验收。
+1. Slice B0（已完成）：原子替换 active Manifest/package/WIT/ABI/permission/State contract。
+2. Slice B1（已完成）：接入 Host/Core/RPC memory-only session、InvocationContext、interactive lifecycle、render purity、
+   current-only replay、validation、capability advertising 与 invalidation。
+3. Slice C（下一步）：官方 shell/typed adapter/React/MD3 renderer 与既有 Core pages，仍只调用 public client/RPC。
+4. Slice D（待执行）：non-Tauri consumer、first/third parity、malformed/revoke/crash/reconnect 与三平台/a11y验收。
 
 不得同时保留旧 Web UI和Portable UI parser/world/renderer，不建立通用 UI/workflow engine。
 
-## Stop A 允许修改范围
+## 已批准 production 修改范围
 
 ```text
-docs/adr/0024-portable-extension-ui.md
-docs/exec-plans/M7-official-gui-extension-ui.md
-docs/status.md
-docs/testing/test-plan.toml
+apps/alcomd/
+apps/alcomd-extension-host/
+apps/alcomd-gui/
+crates/alcomd-application/
+crates/alcomd-client/
+crates/alcomd-extensions/
+crates/alcomd-protocol/
+crates/alcomd-store/
+crates/alcomd-testing/
+docs/adr/ docs/exec-plans/ docs/status.md docs/testing/
 feature-parity.toml
-specs/extensions/proposals/
-specs/extensions/portable-ui-v1.*
-specs/extensions/portable-ui-limits-v1.*
-specs/extensions/wit/extension-v1-portable-ui-proposal/
-specs/gui/portable-ui-renderer-v1.md
-specs/rpc/m7-portable-ui.schema.json
-specs/security/extension-threat-model.md
-specs/security/extension-portable-ui-threat-model.md
-specs/storage/state-v9*
-crates/alcomd-testing/fixtures/m7/
-crates/alcomd-testing/tests/m7_contract.rs
+specs/extensions/ specs/gui/ specs/rpc/ specs/security/ specs/storage/
 ```
 
-cleanup commit另允许删除obsolete probe与CI probe steps。Stop A禁止 active Manifest/package/WIT、production Host/daemon/
-application/protocol/store/Permission/React/Tauri、Cargo/npm manifests/locks、dependency、unsafe、platform API。
+范围仍禁止 Cargo/npm manifests/locks、dependency graph、unsafe whitelist、platform API、Tauri unstable/capability、iframe/
+child WebView/WebviewWindow，以及任何 M8/M9 production wiring。
 
 ## 明确排除
 
@@ -226,15 +224,16 @@ application/protocol/store/Permission/React/Tauri、Cargo/npm manifests/locks、
 - custom Web UI、iframe/child WebView/WebviewWindow、asset/origin/CSP/Tauri capability；
 - Local API、migration/bootstrap/updater/installer/signing/dist与M12 Windows client validation；
 - WASI 0.3、component-model-async、wasmtime-wasi、guest thread、新 dependency；
-- production GUI/Core/Host/State/RPC wiring与M8进入。
+- M8/M9 production wiring，以及 Portable UI 合同外的新 public RPC/Permission/error/node/action/surface。
 
 ## 验证与 release blockers
 
-Stop A运行 format/clippy/workspace tests、xtask、metadata、baseline freeze、diff check。必须证明 Cargo/npm manifests与三份
-lockfile不变、active WIT不变、production source不变、unsafe/platform API不变。
+每个 production slice 运行 targeted tests；最终候选运行 format/clippy/workspace tests、xtask、metadata、baseline freeze、
+npm check/build、Tauri no-bundle 与 diff check。必须证明 Cargo/npm manifests与三份 lockfile依赖图不变、unsafe/platform
+API 不变。
 
-Stop A人工批准前，任何 active contract replacement或production capability都是blocker。后续 first-party private node/page/
-command/permission、partial v1 renderer、GUI-to-Host direct channel、renderer作为business authority均是M7 blocker。
+后续 first-party private node/page/command/permission、partial v1 renderer、GUI-to-Host direct channel、renderer作为business
+authority均是M7 blocker。
 M11真实v3 fixture缺失继续阻塞GUI differential parity；M12继续承担Win10/Win11安装/启动/WebView2/update/uninstall。
 
 ## Progress log
@@ -253,10 +252,14 @@ M11真实v3 fixture缺失继续阻塞GUI differential parity；M12继续承担Wi
   `41f049365894f347d59b44eb7a41ac41c95e64df` 冻结 InvocationContext、render purity、close/replay/race/locale 与脱敏边界。
 - 2026-08-25：Slice B0 完成 active Manifest/package profile/WIT ABI v1 direct replacement、State v9、immutable typed
   `ui_protocol`、`extensions.ui.use` 与四个 RPC DTO foundation；backend fixture 使用同一 mandatory guest-ui world，未保留
-  Web UI compatibility path。B1 尚未完成，因此 hello 继续广告 dataSchema 8且不回显Portable UI capability。
+  Web UI compatibility path。
+- 2026-08-26：Slice B1 完成 daemon-memory-only `UiSessionCoordinator`、InvocationContext exact echo/capability matrix、
+  real guest-ui Host binding、interactive lifecycle、dual authority、render purity、current-only replay、monotonic snapshot、
+  disconnect/disable/digest/grant/generation invalidation 与 schema/capability advertising。真实 daemon/RPC/Host 测试证明
+  UI-only open/close、background Host 保留、render write 不落库、action write 落库、cross-connection denial、disconnect cleanup、
+  malformed document terminate/crash/quarantine；未开始 official renderer。
 
 ## 下一停止点
 
-继续 Slice B1 Core + Extension Host，完成 UiSessionCoordinator、InvocationContext、guest-ui binding、interactive lifecycle、
-replay、dual authorization、validation 与 invalidation/recovery。保持职责清晰的本地提交且不 push；遇到已列 stop condition
-立即停止。不得开始 M8/M9。
+继续 Slice C official React/MD3 renderer。保持职责清晰的本地提交且不 push；遇到已列 stop condition立即停止。不得开始
+M8/M9。

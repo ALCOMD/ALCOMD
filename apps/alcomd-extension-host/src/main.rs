@@ -22,6 +22,7 @@ wasmtime::component::bindgen!({
 });
 
 use crate::alcomd::extension::{host_data, host_projects, types};
+use crate::exports::alcomd::extension::guest_ui;
 
 #[derive(Debug, Parser)]
 #[command(name = "alcomd-extension-host", version, about)]
@@ -56,6 +57,7 @@ struct ProtocolChannel {
     call_burst: f64,
     wit_input_bytes: usize,
     wit_output_bytes: usize,
+    current_invocation_context_id: Option<String>,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -132,6 +134,7 @@ async fn run() -> Result<()> {
         call_burst: f64::from(limits.host_call_burst),
         wit_input_bytes: usize::try_from(limits.wit_input_bytes).context("limit")?,
         wit_output_bytes: usize::try_from(limits.wit_output_bytes).context("limit")?,
+        current_invocation_context_id: None,
     };
     let mut store = Store::new(
         &engine,
@@ -181,13 +184,28 @@ async fn event_loop(
         match message.body {
             HostMessageBody::InvokeExport {
                 request_id,
+                invocation_context_id,
                 export,
                 input,
             } => {
+                if store
+                    .data()
+                    .protocol
+                    .current_invocation_context_id
+                    .is_some()
+                {
+                    bail!("protocol");
+                }
+                store.data_mut().protocol.current_invocation_context_id =
+                    Some(invocation_context_id);
                 prepare_call(store, limits, export.as_str())?;
                 let result = match export.as_str() {
                     "activate" => invoke_activate(bindings, store, &input).await,
                     "deactivate" => invoke_deactivate(bindings, store, &input).await,
+                    "ui.open" => invoke_ui_open(bindings, store, &input).await,
+                    "ui.refresh" => invoke_ui_refresh(bindings, store, &input).await,
+                    "ui.dispatch" => invoke_ui_dispatch(bindings, store, &input).await,
+                    "ui.close" => invoke_ui_close(bindings, store, &input).await,
                     _ => bail!("protocol"),
                 };
                 if store.data().protocol.failed {
@@ -205,6 +223,7 @@ async fn event_loop(
                         error: Some(error),
                     },
                 };
+                store.data_mut().protocol.current_invocation_context_id = None;
                 store.data_mut().protocol.send(body)?;
             }
             HostMessageBody::RevokeLease { lease_id } => {
@@ -290,6 +309,283 @@ async fn invoke_deactivate(
         Ok(Err(error)) => Err(wit_error(error)),
         Err(error) => Err(trap_error(&error)),
     }
+}
+
+async fn invoke_ui_open(
+    bindings: &ExtensionV1,
+    store: &mut Store<HostState>,
+    input: &Value,
+) -> Result<Value, HostStableError> {
+    let session_id = required_input_string(input, "sessionId")?;
+    let locale = required_input_string(input, "locale")?;
+    bindings
+        .alcomd_extension_guest_ui()
+        .call_open(store, &session_id, &locale)
+        .await
+        .map(|document| ui_document(&document))
+        .map_err(|error| trap_error(&error))
+}
+
+async fn invoke_ui_refresh(
+    bindings: &ExtensionV1,
+    store: &mut Store<HostState>,
+    input: &Value,
+) -> Result<Value, HostStableError> {
+    let session_id = required_input_string(input, "sessionId")?;
+    bindings
+        .alcomd_extension_guest_ui()
+        .call_refresh(store, &session_id)
+        .await
+        .map(|document| ui_document(&document))
+        .map_err(|error| trap_error(&error))
+}
+
+async fn invoke_ui_dispatch(
+    bindings: &ExtensionV1,
+    store: &mut Store<HostState>,
+    input: &Value,
+) -> Result<Value, HostStableError> {
+    let session_id = required_input_string(input, "sessionId")?;
+    let action = input
+        .get("action")
+        .ok_or_else(resource_error)
+        .and_then(ui_action)?;
+    bindings
+        .alcomd_extension_guest_ui()
+        .call_dispatch(store, &session_id, &action)
+        .await
+        .map(|document| ui_document(&document))
+        .map_err(|error| trap_error(&error))
+}
+
+async fn invoke_ui_close(
+    bindings: &ExtensionV1,
+    store: &mut Store<HostState>,
+    input: &Value,
+) -> Result<Value, HostStableError> {
+    let session_id = required_input_string(input, "sessionId")?;
+    bindings
+        .alcomd_extension_guest_ui()
+        .call_close(store, &session_id)
+        .await
+        .map(|()| json!({}))
+        .map_err(|error| trap_error(&error))
+}
+
+fn ui_document(document: &guest_ui::UiDocument) -> Value {
+    json!({
+        "protocol": "portable-v1",
+        "title": document.title,
+        "nodes": document.nodes.iter().map(ui_node).collect::<Vec<_>>()
+    })
+}
+
+fn ui_node(node: &guest_ui::UiNode) -> Value {
+    let (kind, payload) = match &node.payload {
+        guest_ui::NodePayload::Page(value) => ("page", json!({"title": value.title})),
+        guest_ui::NodePayload::Section(value) => ("section", json!({"label": value.label})),
+        guest_ui::NodePayload::Stack(value) => (
+            "stack",
+            json!({"orientation": match value.orientation {
+                guest_ui::StackOrientation::Vertical => "vertical",
+                guest_ui::StackOrientation::Horizontal => "horizontal",
+            }}),
+        ),
+        guest_ui::NodePayload::Group(value) => ("group", optional_label(&value.label)),
+        guest_ui::NodePayload::Form(value) => (
+            "form",
+            json!({
+                "submitActionId": value.submit_action_id,
+                "submitLabel": value.submit_label,
+                "disabled": value.disabled
+            }),
+        ),
+        guest_ui::NodePayload::List(value) => ("list", optional_label(&value.label)),
+        guest_ui::NodePayload::ListItem(value) => ("list-item", optional_label(&value.label)),
+        guest_ui::NodePayload::Text(value) => (
+            "text",
+            json!({"text": value.text, "tone": ui_tone(value.tone)}),
+        ),
+        guest_ui::NodePayload::Status(value) => (
+            "status",
+            json!({"label": value.label, "tone": ui_tone(value.tone)}),
+        ),
+        guest_ui::NodePayload::KeyValue(value) => (
+            "key-value",
+            json!({"label": value.label, "value": value.value}),
+        ),
+        guest_ui::NodePayload::Progress(value) => (
+            "progress",
+            json!({"label": value.label, "value": match value.value {
+                guest_ui::ProgressValue::Indeterminate => json!({"mode": "indeterminate"}),
+                guest_ui::ProgressValue::BasisPoints(value) => {
+                    json!({"mode": "determinate", "basisPoints": value})
+                }
+            }}),
+        ),
+        guest_ui::NodePayload::Divider => ("divider", json!({})),
+        guest_ui::NodePayload::Button(value) => (
+            "button",
+            json!({
+                "label": value.label,
+                "actionId": value.action_id,
+                "disabled": value.disabled
+            }),
+        ),
+        guest_ui::NodePayload::Switch(value) => (
+            "switch",
+            field_payload(
+                json!({
+                    "fieldId": value.field_id,
+                    "label": value.label,
+                    "initialValue": value.initial_value,
+                    "disabled": value.disabled,
+                    "readOnly": value.read_only
+                }),
+                value.validation.as_ref(),
+            ),
+        ),
+        guest_ui::NodePayload::TextField(value) => (
+            "text-field",
+            field_payload(
+                json!({
+                    "fieldId": value.field_id,
+                    "label": value.label,
+                    "initialValue": value.initial_value,
+                    "required": value.required,
+                    "minLength": value.min_length,
+                    "maxLength": value.max_length,
+                    "multiline": value.multiline,
+                    "disabled": value.disabled,
+                    "readOnly": value.read_only
+                }),
+                value.validation.as_ref(),
+            ),
+        ),
+        guest_ui::NodePayload::IntegerField(value) => (
+            "integer-field",
+            field_payload(
+                json!({
+                    "fieldId": value.field_id,
+                    "label": value.label,
+                    "initialValue": value.initial_value,
+                    "required": value.required,
+                    "minimum": value.minimum,
+                    "maximum": value.maximum,
+                    "disabled": value.disabled,
+                    "readOnly": value.read_only
+                }),
+                value.validation.as_ref(),
+            ),
+        ),
+        guest_ui::NodePayload::Select(value) => (
+            "select",
+            field_payload(
+                json!({
+                    "fieldId": value.field_id,
+                    "label": value.label,
+                    "initialOptionId": value.initial_option_id,
+                    "required": value.required,
+                    "options": value.options.iter().map(|option| json!({
+                        "optionId": option.option_id,
+                        "label": option.label
+                    })).collect::<Vec<_>>(),
+                    "disabled": value.disabled,
+                    "readOnly": value.read_only
+                }),
+                value.validation.as_ref(),
+            ),
+        ),
+    };
+    let mut encoded = serde_json::Map::new();
+    encoded.insert("kind".to_owned(), Value::String(kind.to_owned()));
+    encoded.insert("nodeId".to_owned(), Value::String(node.node_id.clone()));
+    if let Some(parent_id) = &node.parent_id {
+        encoded.insert("parentId".to_owned(), Value::String(parent_id.clone()));
+    }
+    encoded.insert("order".to_owned(), Value::from(node.order));
+    encoded.insert("payload".to_owned(), payload);
+    Value::Object(encoded)
+}
+
+fn optional_label(label: &Option<String>) -> Value {
+    label
+        .as_ref()
+        .map_or_else(|| json!({}), |label| json!({"label": label}))
+}
+
+fn ui_tone(tone: guest_ui::Tone) -> &'static str {
+    match tone {
+        guest_ui::Tone::Neutral => "neutral",
+        guest_ui::Tone::Info => "info",
+        guest_ui::Tone::Success => "success",
+        guest_ui::Tone::Warning => "warning",
+        guest_ui::Tone::Danger => "danger",
+    }
+}
+
+fn field_payload(mut value: Value, validation: Option<&guest_ui::FieldValidation>) -> Value {
+    if let (Some(object), Some(validation)) = (value.as_object_mut(), validation) {
+        object.insert(
+            "validation".to_owned(),
+            match validation {
+                guest_ui::FieldValidation::Valid => json!({"state": "valid"}),
+                guest_ui::FieldValidation::Invalid(message) => {
+                    json!({"state": "invalid", "message": message})
+                }
+            },
+        );
+    }
+    value
+}
+
+fn ui_action(value: &Value) -> Result<guest_ui::UiAction, HostStableError> {
+    match value.get("kind").and_then(Value::as_str) {
+        Some("activate") => {
+            required_input_string(value, "actionId").map(guest_ui::UiAction::Activate)
+        }
+        Some("submit-form") => {
+            let action_id = required_input_string(value, "actionId")?;
+            let values = value
+                .get("values")
+                .and_then(Value::as_array)
+                .ok_or_else(resource_error)?
+                .iter()
+                .map(ui_submitted_field)
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(guest_ui::UiAction::SubmitForm(guest_ui::FormSubmission {
+                action_id,
+                values,
+            }))
+        }
+        _ => Err(resource_error()),
+    }
+}
+
+fn ui_submitted_field(value: &Value) -> Result<guest_ui::SubmittedField, HostStableError> {
+    let field_id = required_input_string(value, "fieldId")?;
+    let value = value.get("value").ok_or_else(resource_error)?;
+    let value = match value.get("kind").and_then(Value::as_str) {
+        Some("boolean") => value
+            .get("value")
+            .and_then(Value::as_bool)
+            .map(guest_ui::FieldValue::Boolean),
+        Some("text") => value
+            .get("value")
+            .and_then(Value::as_str)
+            .map(|value| guest_ui::FieldValue::Text(value.to_owned())),
+        Some("integer") => value
+            .get("value")
+            .and_then(Value::as_i64)
+            .map(guest_ui::FieldValue::Integer),
+        Some("selection") => value
+            .get("value")
+            .and_then(Value::as_str)
+            .map(|value| guest_ui::FieldValue::Selection(value.to_owned())),
+        _ => None,
+    }
+    .ok_or_else(resource_error)?;
+    Ok(guest_ui::SubmittedField { field_id, value })
 }
 
 impl host_projects::Host for HostState {
@@ -434,6 +730,10 @@ impl ProtocolChannel {
         self.next_call = self.next_call.checked_add(1).context("call sequence")?;
         self.send(HostMessageBody::CapabilityCall {
             call_id: call_id.clone(),
+            invocation_context_id: self
+                .current_invocation_context_id
+                .clone()
+                .context("invocation context")?,
             lease_id: self.lease_id.clone(),
             capability: capability.to_owned(),
             input,
@@ -564,6 +864,7 @@ fn parse_wit_error(value: &Value) -> types::ExtensionError {
         Some("project_not_found") => types::ErrorCode::ProjectNotFound,
         Some("revision_conflict") => types::ErrorCode::DataRevisionConflict,
         Some("extension_data_quota_exceeded") => types::ErrorCode::DataQuotaExceeded,
+        Some("cancelled") => types::ErrorCode::LeaseRevoked,
         _ => types::ErrorCode::InternalError,
     };
     types::ExtensionError {
@@ -705,6 +1006,7 @@ mod tests {
             call_burst: 1.0,
             wit_input_bytes: 256 * 1024,
             wit_output_bytes: 256 * 1024,
+            current_invocation_context_id: None,
         }
     }
 

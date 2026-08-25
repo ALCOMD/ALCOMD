@@ -132,6 +132,7 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_BACKUPS_RESTORE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_EXTENSIONS_LIFECYCLE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_EXTENSIONS_PERMISSIONS_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_EXTENSIONS_UI_PORTABLE_V1.to_owned(),
             ],
         };
         self.call(METHOD_SYSTEM_HELLO, params).await
@@ -284,6 +285,38 @@ impl AlcomdClient {
         params: alcomd_protocol::ExtensionGrantParams,
     ) -> Result<alcomd_protocol::ExtensionGrantResult, ClientError> {
         self.call(alcomd_protocol::METHOD_EXTENSIONS_REVOKE_GRANT, params)
+            .await
+    }
+
+    pub async fn extension_ui_open(
+        &mut self,
+        params: alcomd_protocol::ExtensionUiOpenParams,
+    ) -> Result<alcomd_protocol::ExtensionUiOpenResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_EXTENSIONS_UI_OPEN, params)
+            .await
+    }
+
+    pub async fn extension_ui_refresh(
+        &mut self,
+        params: alcomd_protocol::ExtensionUiRefreshParams,
+    ) -> Result<alcomd_protocol::ExtensionUiSnapshotResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_EXTENSIONS_UI_REFRESH, params)
+            .await
+    }
+
+    pub async fn extension_ui_dispatch(
+        &mut self,
+        params: alcomd_protocol::ExtensionUiDispatchParams,
+    ) -> Result<alcomd_protocol::ExtensionUiDispatchResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_EXTENSIONS_UI_DISPATCH, params)
+            .await
+    }
+
+    pub async fn extension_ui_close(
+        &mut self,
+        params: alcomd_protocol::ExtensionUiCloseParams,
+    ) -> Result<alcomd_protocol::ExtensionUiCloseResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_EXTENSIONS_UI_CLOSE, params)
             .await
     }
 

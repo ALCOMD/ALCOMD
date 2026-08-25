@@ -20,12 +20,14 @@ mod m5;
 mod m5_backup;
 mod m5_template;
 mod m6;
+mod m7;
 
 pub use m4::*;
 pub use m5::*;
 pub use m5_backup::*;
 pub use m5_template::*;
 pub use m6::*;
+pub use m7::*;
 
 /// Minimal truthful daemon status for the M1 read-only vertical slice.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -712,6 +714,16 @@ pub trait StateStore: Clone + Send + Sync + 'static {
 pub struct AccessContext {
     principal: PrincipalId,
     permissions: HashSet<Permission>,
+    project_read_scopes: AccessScopes,
+    extension_ui_scopes: AccessScopes,
+}
+
+#[derive(Clone, Debug, Default)]
+enum AccessScopes {
+    #[default]
+    None,
+    All,
+    Exact(HashSet<String>),
 }
 
 impl AccessContext {
@@ -721,13 +733,15 @@ impl AccessContext {
         Self {
             principal,
             permissions: permissions.into_iter().collect(),
+            project_read_scopes: AccessScopes::None,
+            extension_ui_scopes: AccessScopes::None,
         }
     }
 
     /// Creates the M2 built-in official-client context.
     #[must_use]
     pub fn local_owner() -> Self {
-        Self::new(
+        let mut access = Self::new(
             PrincipalId::local_owner(),
             [
                 Permission::StateCheck,
@@ -753,7 +767,10 @@ impl AccessContext {
                 Permission::ExtensionsPermissionsManage,
                 Permission::ExtensionsUiUse,
             ],
-        )
+        );
+        access.project_read_scopes = AccessScopes::All;
+        access.extension_ui_scopes = AccessScopes::All;
+        access
     }
 
     /// Returns the authenticated transport-neutral Principal.
@@ -768,6 +785,47 @@ impl AccessContext {
             .contains(&permission)
             .then_some(())
             .ok_or(ApplicationError::PermissionDenied)
+    }
+
+    /// Narrows a caller to exact project-read resources for isolation tests or
+    /// a future authenticated external-client adapter.
+    #[must_use]
+    pub fn with_project_read_scopes(
+        mut self,
+        project_ids: impl IntoIterator<Item = String>,
+    ) -> Self {
+        self.project_read_scopes = AccessScopes::Exact(project_ids.into_iter().collect());
+        self
+    }
+
+    /// Narrows a caller to exact Portable UI extension resources.
+    #[must_use]
+    pub fn with_extension_ui_scopes(
+        mut self,
+        extension_ids: impl IntoIterator<Item = String>,
+    ) -> Self {
+        self.extension_ui_scopes = AccessScopes::Exact(extension_ids.into_iter().collect());
+        self
+    }
+
+    /// Revalidates `projects.read` for one exact project resource.
+    pub fn require_project_read_scope(&self, project_id: &str) -> Result<(), ApplicationError> {
+        self.require(Permission::ProjectsRead)?;
+        require_scope(&self.project_read_scopes, project_id)
+    }
+
+    /// Revalidates `extensions.ui.use` for one exact ExtensionId resource.
+    pub fn require_extension_ui_scope(&self, extension_id: &str) -> Result<(), ApplicationError> {
+        self.require(Permission::ExtensionsUiUse)?;
+        require_scope(&self.extension_ui_scopes, extension_id)
+    }
+}
+
+fn require_scope(scopes: &AccessScopes, resource_id: &str) -> Result<(), ApplicationError> {
+    match scopes {
+        AccessScopes::All => Ok(()),
+        AccessScopes::Exact(values) if values.contains(resource_id) => Ok(()),
+        AccessScopes::None | AccessScopes::Exact(_) => Err(ApplicationError::PermissionDenied),
     }
 }
 

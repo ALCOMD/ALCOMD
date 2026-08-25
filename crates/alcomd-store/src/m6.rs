@@ -107,6 +107,28 @@ pub(super) fn live_package_locator(
         .ok_or_else(|| error(M6ErrorCode::NotInstalled))
 }
 
+pub(super) fn has_background_authority(
+    connection: &Connection,
+    owner: &PrincipalId,
+    extension_id: &str,
+) -> Result<bool, M6Error> {
+    connection
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM extensions e
+                JOIN extension_grants g ON g.extension_id=e.extension_id
+                WHERE e.principal_id=?1 AND e.extension_id=?2
+                  AND g.permission_name='background.run'
+                  AND g.resource_kind='Extension'
+                  AND g.resource_id=e.extension_id
+                  AND g.state='granted'
+            )",
+            params![owner.as_str(), extension_id],
+            |row| row.get(0),
+        )
+        .map_err(store_error)
+}
+
 pub(super) fn create_install_plan(
     connection: &mut Connection,
     owner: &PrincipalId,
@@ -1177,6 +1199,7 @@ pub(super) fn prepare_instance(
             expires_at_ms,
         },
         component_path,
+        activation_kind: alcomd_application::ExtensionActivationKind::Background,
     })
 }
 

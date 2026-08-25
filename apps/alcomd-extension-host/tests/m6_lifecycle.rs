@@ -7,12 +7,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use alcomd_client::{AlcomdClient, ClientConfig};
+use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use alcomd_platform::{DataConfig, IpcConfig};
 use alcomd_protocol::{
     ExtensionApplyParams, ExtensionDataDisposition, ExtensionDesiredState, ExtensionGrantParams,
     ExtensionLifecycleParams, ExtensionPlanInstallParams, ExtensionPlanUninstallParams,
-    ExtensionPublisherApproval, ExtensionRuntimeState, ExtensionSourceKind, OperationState,
+    ExtensionPublisherApproval, ExtensionRuntimeState, ExtensionSourceKind, ExtensionUiCloseParams,
+    ExtensionUiDispatchParams, ExtensionUiOpenParams, ExtensionUiRefreshParams, OperationState,
+    UiAction,
 };
 use ed25519_dalek::{Signer, SigningKey};
 use sha2::{Digest, Sha256};
@@ -34,7 +36,7 @@ async fn signed_extension_lifecycle_runs_through_real_daemon_and_host() {
     fs::create_dir(&runtime).expect("runtime");
     fs::create_dir(&data).expect("data");
     let package = fixture.path().join("fixture.alcomdext");
-    create_signed_package(&package);
+    create_signed_background_ui_package(&package);
 
     let (ipc, config) = isolated_ipc(runtime);
     let shutdown = Arc::new(AtomicBool::new(false));
@@ -125,6 +127,31 @@ async fn signed_extension_lifecycle_runs_through_real_daemon_and_host() {
         .extension;
     assert_eq!(enabled.runtime_state, ExtensionRuntimeState::Running);
 
+    let opened = client
+        .extension_ui_open(ExtensionUiOpenParams {
+            extension_id: enabled.extension_id.clone(),
+            locale: "en-US".to_owned(),
+        })
+        .await
+        .expect("open UI on background Host");
+    assert_eq!(opened.snapshot.snapshot_revision, 1);
+    let closed = client
+        .extension_ui_close(ExtensionUiCloseParams {
+            session_id: opened.session.session_id,
+        })
+        .await
+        .expect("close UI on background Host");
+    assert!(closed.closed);
+    let background_after_ui_close = client
+        .extension_get(enabled.extension_id.clone())
+        .await
+        .expect("background Host remains running")
+        .extension;
+    assert_eq!(
+        background_after_ui_close.runtime_state,
+        ExtensionRuntimeState::Running
+    );
+
     let revoked = client
         .extension_revoke_grant(ExtensionGrantParams {
             extension_id: enabled.extension_id.clone(),
@@ -182,6 +209,332 @@ async fn signed_extension_lifecycle_runs_through_real_daemon_and_host() {
             .await
             .is_err()
     );
+
+    shutdown.store(true, Ordering::Release);
+    assert!(daemon.await.expect("join daemon").is_ok());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn portable_ui_runs_through_real_rpc_daemon_and_host() {
+    let _serial = RPC_TEST_LOCK.lock().await;
+    let fixture = TestDirectory::new();
+    let runtime = fixture.path().join("runtime");
+    let data = fixture.path().join("data");
+    fs::create_dir(&runtime).expect("runtime");
+    fs::create_dir(&data).expect("data");
+    let package = fixture.path().join("portable-ui.alcomdext");
+    create_signed_ui_package(&package);
+
+    let (ipc, config) = isolated_ipc(runtime);
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let server_shutdown = Arc::clone(&shutdown);
+    let daemon_data = data.clone();
+    let daemon = tokio::spawn(async move {
+        alcomd_daemon::serve_with_data_until(
+            ipc,
+            DataConfig::isolated(daemon_data),
+            wait_for_shutdown(server_shutdown),
+        )
+        .await
+    });
+    let mut client = connect_with_retry(config.clone()).await;
+
+    let plan = client
+        .extension_plan_install(ExtensionPlanInstallParams {
+            source_kind: ExtensionSourceKind::LocalOwnerSelected,
+            package_path: package.to_string_lossy().into_owned(),
+            expected_revision: 0,
+            publisher_approval: ExtensionPublisherApproval::ApproveForExtension,
+        })
+        .await
+        .expect("plan UI install")
+        .plan;
+    let install = client
+        .extension_apply_install(ExtensionApplyParams {
+            plan_id: plan.plan_id,
+            idempotency_key: "m7-ui-install".to_owned(),
+        })
+        .await
+        .expect("install UI fixture");
+    assert_eq!(
+        wait_for_terminal(&mut client, &install.operation_id).await,
+        OperationState::Succeeded
+    );
+    let installed = client
+        .extension_get("dev.alcomd.fixture".to_owned())
+        .await
+        .expect("installed UI extension")
+        .extension;
+    let enabled = client
+        .extension_enable(ExtensionLifecycleParams {
+            extension_id: installed.extension_id.clone(),
+            expected_revision: installed.revision,
+            idempotency_key: "m7-ui-enable".to_owned(),
+        })
+        .await
+        .expect("enable UI-only extension")
+        .extension;
+    assert_eq!(enabled.desired_state, ExtensionDesiredState::Enabled);
+    assert_eq!(enabled.runtime_state, ExtensionRuntimeState::Stopped);
+
+    let opened = client
+        .extension_ui_open(ExtensionUiOpenParams {
+            extension_id: enabled.extension_id.clone(),
+            locale: "en-US".to_owned(),
+        })
+        .await
+        .expect("open portable UI");
+    assert_eq!(opened.snapshot.snapshot_revision, 1);
+    assert_eq!(opened.snapshot.document.title, "Fixture UI");
+    assert_eq!(opened.snapshot.document.nodes.len(), 2);
+    assert!(!sqlite_state_contains(&data, b"M7_RENDER_MUST_NOT_PERSIST"));
+    let running = client
+        .extension_get(enabled.extension_id.clone())
+        .await
+        .expect("interactive Host is running")
+        .extension;
+    assert_eq!(running.runtime_state, ExtensionRuntimeState::Running);
+    let mut other_client = connect_with_retry(config).await;
+    let cross_connection = other_client
+        .extension_ui_refresh(ExtensionUiRefreshParams {
+            session_id: opened.session.session_id.clone(),
+            expected_snapshot_revision: 1,
+        })
+        .await;
+    assert!(matches!(
+        cross_connection,
+        Err(ClientError::Remote(error))
+            if error.code == alcomd_protocol::error_code::EXTENSION_UI_SESSION_NOT_FOUND
+    ));
+
+    let refreshed = client
+        .extension_ui_refresh(ExtensionUiRefreshParams {
+            session_id: opened.session.session_id.clone(),
+            expected_snapshot_revision: 1,
+        })
+        .await
+        .expect("refresh portable UI");
+    assert_eq!(refreshed.snapshot.snapshot_revision, 2);
+    assert!(!sqlite_state_contains(&data, b"M7_RENDER_MUST_NOT_PERSIST"));
+    let dispatch_params = ExtensionUiDispatchParams {
+        session_id: opened.session.session_id.clone(),
+        expected_snapshot_revision: 2,
+        sequence: 1,
+        request_id: "m7-action-1".to_owned(),
+        action: UiAction::Activate {
+            action_id: "refresh".to_owned(),
+        },
+    };
+    let dispatched = client
+        .extension_ui_dispatch(dispatch_params.clone())
+        .await
+        .expect("dispatch portable UI action");
+    assert!(!dispatched.replayed);
+    assert_eq!(dispatched.snapshot.snapshot_revision, 3);
+    assert!(
+        wait_for_sqlite_value(&data, b"M7_ACTION_PERSISTED").await,
+        "interactive UI action value must be committed to extension data"
+    );
+    let replayed = client
+        .extension_ui_dispatch(dispatch_params.clone())
+        .await
+        .expect("replay current portable UI action");
+    assert!(replayed.replayed);
+    assert_eq!(replayed.snapshot.snapshot_revision, 3);
+
+    let latest = client
+        .extension_ui_refresh(ExtensionUiRefreshParams {
+            session_id: opened.session.session_id.clone(),
+            expected_snapshot_revision: 3,
+        })
+        .await
+        .expect("advance snapshot after action");
+    assert_eq!(latest.snapshot.snapshot_revision, 4);
+    let historical = client.extension_ui_dispatch(dispatch_params).await;
+    assert!(matches!(
+        historical,
+        Err(ClientError::Remote(error))
+            if error.code == alcomd_protocol::error_code::EXTENSION_UI_SNAPSHOT_STALE
+    ));
+
+    let closed = client
+        .extension_ui_close(ExtensionUiCloseParams {
+            session_id: opened.session.session_id.clone(),
+        })
+        .await
+        .expect("close portable UI");
+    assert!(closed.closed);
+    let closed_again = client
+        .extension_ui_close(ExtensionUiCloseParams {
+            session_id: opened.session.session_id,
+        })
+        .await
+        .expect("close remains non-leaking");
+    assert!(!closed_again.closed);
+    let stopped = client
+        .extension_get(enabled.extension_id.clone())
+        .await
+        .expect("UI-only Host stopped")
+        .extension;
+    assert_eq!(stopped.runtime_state, ExtensionRuntimeState::Stopped);
+
+    let disconnected = other_client
+        .extension_ui_open(ExtensionUiOpenParams {
+            extension_id: enabled.extension_id.clone(),
+            locale: "en-US".to_owned(),
+        })
+        .await
+        .expect("open session owned by disconnecting client");
+    assert_eq!(disconnected.snapshot.snapshot_revision, 1);
+    drop(other_client);
+    wait_for_runtime_state(
+        &mut client,
+        &enabled.extension_id,
+        ExtensionRuntimeState::Stopped,
+    )
+    .await;
+
+    let reopened = client
+        .extension_ui_open(ExtensionUiOpenParams {
+            extension_id: enabled.extension_id.clone(),
+            locale: "en-US".to_owned(),
+        })
+        .await
+        .expect("reopen portable UI");
+    let active = client
+        .extension_get(enabled.extension_id.clone())
+        .await
+        .expect("active UI extension")
+        .extension;
+    let disabled = client
+        .extension_disable(ExtensionLifecycleParams {
+            extension_id: enabled.extension_id,
+            expected_revision: active.revision,
+            idempotency_key: "m7-ui-disable".to_owned(),
+        })
+        .await
+        .expect("disable UI extension")
+        .extension;
+    assert_eq!(disabled.runtime_state, ExtensionRuntimeState::Stopped);
+    let stale_after_disable = client
+        .extension_ui_refresh(ExtensionUiRefreshParams {
+            session_id: reopened.session.session_id,
+            expected_snapshot_revision: 1,
+        })
+        .await;
+    assert!(matches!(
+        stale_after_disable,
+        Err(ClientError::Remote(error))
+            if error.code == alcomd_protocol::error_code::EXTENSION_UI_SESSION_STALE
+    ));
+
+    shutdown.store(true, Ordering::Release);
+    assert!(daemon.await.expect("join daemon").is_ok());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn malformed_portable_ui_document_terminates_and_quarantines_the_guest() {
+    let _serial = RPC_TEST_LOCK.lock().await;
+    let fixture = TestDirectory::new();
+    let runtime = fixture.path().join("runtime");
+    let data = fixture.path().join("data");
+    fs::create_dir(&runtime).expect("runtime");
+    fs::create_dir(&data).expect("data");
+    let package = fixture.path().join("malformed-portable-ui.alcomdext");
+    create_signed_malformed_ui_package(&package);
+
+    let (ipc, config) = isolated_ipc(runtime);
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let server_shutdown = Arc::clone(&shutdown);
+    let daemon = tokio::spawn(async move {
+        alcomd_daemon::serve_with_data_until(
+            ipc,
+            DataConfig::isolated(data),
+            wait_for_shutdown(server_shutdown),
+        )
+        .await
+    });
+    let mut client = connect_with_retry(config).await;
+    let plan = client
+        .extension_plan_install(ExtensionPlanInstallParams {
+            source_kind: ExtensionSourceKind::LocalOwnerSelected,
+            package_path: package.to_string_lossy().into_owned(),
+            expected_revision: 0,
+            publisher_approval: ExtensionPublisherApproval::ApproveForExtension,
+        })
+        .await
+        .expect("plan malformed UI fixture")
+        .plan;
+    let install = client
+        .extension_apply_install(ExtensionApplyParams {
+            plan_id: plan.plan_id,
+            idempotency_key: "m7-malformed-ui-install".to_owned(),
+        })
+        .await
+        .expect("install malformed UI fixture");
+    assert_eq!(
+        wait_for_terminal(&mut client, &install.operation_id).await,
+        OperationState::Succeeded
+    );
+    let installed = client
+        .extension_get("dev.alcomd.fixture".to_owned())
+        .await
+        .expect("malformed UI fixture")
+        .extension;
+    let enabled = client
+        .extension_enable(ExtensionLifecycleParams {
+            extension_id: installed.extension_id.clone(),
+            expected_revision: installed.revision,
+            idempotency_key: "m7-malformed-ui-enable".to_owned(),
+        })
+        .await
+        .expect("enable malformed UI fixture")
+        .extension;
+
+    for attempt in 1..=3 {
+        let result = client
+            .extension_ui_open(ExtensionUiOpenParams {
+                extension_id: enabled.extension_id.clone(),
+                locale: "en-US".to_owned(),
+            })
+            .await;
+        assert!(
+            matches!(
+                &result,
+                Err(ClientError::Remote(error))
+                    if error.code == alcomd_protocol::error_code::EXTENSION_UI_DOCUMENT_INVALID
+            ),
+            "malformed UI attempt {attempt}: {result:?}"
+        );
+        let observed = client
+            .extension_get(enabled.extension_id.clone())
+            .await
+            .expect("observe malformed UI crash")
+            .extension;
+        if attempt < 3 {
+            assert_eq!(
+                observed.quarantine_state,
+                alcomd_protocol::ExtensionQuarantineState::Clear
+            );
+        } else {
+            assert_eq!(
+                observed.quarantine_state,
+                alcomd_protocol::ExtensionQuarantineState::Quarantined
+            );
+            assert_eq!(observed.runtime_state, ExtensionRuntimeState::Stopped);
+        }
+    }
+    let quarantined = client
+        .extension_ui_open(ExtensionUiOpenParams {
+            extension_id: enabled.extension_id,
+            locale: "en-US".to_owned(),
+        })
+        .await;
+    assert!(matches!(
+        quarantined,
+        Err(ClientError::Remote(error))
+            if error.code == alcomd_protocol::error_code::EXTENSION_QUARANTINED
+    ));
 
     shutdown.store(true, Ordering::Release);
     assert!(daemon.await.expect("join daemon").is_ok());
@@ -543,7 +896,43 @@ fn create_signed_package(path: &Path) {
     );
 }
 
+fn create_signed_background_ui_package(path: &Path) {
+    create_signed_package_with_profile(
+        path,
+        include_bytes!("../../../crates/alcomd-testing/fixtures/m7/portable-ui-extension-v1.wasm"),
+        "M7 Background Portable UI Fixture",
+        "[permissions]\nrequired = [\"background.run\"]\noptional = []\n\n[ui]\nprotocol = \"portable-v1\"\n",
+    );
+}
+
+fn create_signed_ui_package(path: &Path) {
+    create_signed_package_with_profile(
+        path,
+        include_bytes!("../../../crates/alcomd-testing/fixtures/m7/portable-ui-extension-v1.wasm"),
+        "M7 Portable UI Fixture",
+        "[permissions]\nrequired = []\noptional = []\n\n[ui]\nprotocol = \"portable-v1\"\n",
+    );
+}
+
+fn create_signed_malformed_ui_package(path: &Path) {
+    create_signed_package_with_profile(
+        path,
+        include_bytes!("../../../crates/alcomd-testing/fixtures/m6/minimal-extension-v1.wasm"),
+        "M7 Malformed Portable UI Fixture",
+        "[permissions]\nrequired = []\noptional = []\n\n[ui]\nprotocol = \"portable-v1\"\n",
+    );
+}
+
 fn create_signed_package_with_component(path: &Path, component: &[u8]) {
+    create_signed_package_with_profile(
+        path,
+        component,
+        "M6 Fixture",
+        "[permissions]\nrequired = [\"background.run\"]\noptional = []\n",
+    );
+}
+
+fn create_signed_package_with_profile(path: &Path, component: &[u8], name: &str, profile: &str) {
     const MANIFEST_PATH: &str = "alcomd-extension.toml";
     const COMPONENT_PATH: &str = "component/extension.wasm";
     const SIGNATURE_PATH: &str = "META-INF/alcomd-signature-v1.json";
@@ -551,7 +940,7 @@ fn create_signed_package_with_component(path: &Path, component: &[u8]) {
     let public_key = signing.verifying_key().to_bytes();
     let fingerprint = format!("ed25519-sha256:{}", hex(&Sha256::digest(public_key)));
     let manifest = format!(
-        "schema = 1\nid = \"dev.alcomd.fixture\"\nname = \"M6 Fixture\"\nversion = \"1.0.0\"\napi = 1\npublisher_name = \"ALCOMD Test\"\npublisher_key_fingerprint = \"{fingerprint}\"\nlicense = \"MIT\"\n\n[entrypoints]\ncomponent = \"component/extension.wasm\"\n\n[interfaces]\nrequired = []\noptional = []\n\n[permissions]\nrequired = [\"background.run\"]\noptional = []\n"
+        "schema = 1\nid = \"dev.alcomd.fixture\"\nname = \"{name}\"\nversion = \"1.0.0\"\napi = 1\npublisher_name = \"ALCOMD Test\"\npublisher_key_fingerprint = \"{fingerprint}\"\nlicense = \"MIT\"\n\n[entrypoints]\ncomponent = \"component/extension.wasm\"\n\n[interfaces]\nrequired = []\noptional = []\n\n{profile}"
     );
     let content = [
         (MANIFEST_PATH, manifest.as_bytes()),
@@ -624,6 +1013,30 @@ async fn wait_for_terminal(client: &mut AlcomdClient, operation_id: &str) -> Ope
     }
 }
 
+async fn wait_for_runtime_state(
+    client: &mut AlcomdClient,
+    extension_id: &str,
+    expected: ExtensionRuntimeState,
+) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let state = client
+            .extension_get(extension_id.to_owned())
+            .await
+            .expect("extension runtime state")
+            .extension
+            .runtime_state;
+        if state == expected {
+            return;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "extension runtime state timeout: expected {expected:?}, observed {state:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
 async fn connect_with_retry(config: ClientConfig) -> AlcomdClient {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     loop {
@@ -641,6 +1054,26 @@ async fn wait_for_shutdown(shutdown: Arc<AtomicBool>) {
     while !shutdown.load(Ordering::Acquire) {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
+}
+
+async fn wait_for_sqlite_value(data: &Path, needle: &[u8]) -> bool {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        if sqlite_state_contains(data, needle) {
+            return true;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+fn sqlite_state_contains(data: &Path, needle: &[u8]) -> bool {
+    ["state.db", "state.db-wal"]
+        .into_iter()
+        .filter_map(|name| fs::read(data.join(name)).ok())
+        .any(|bytes| bytes.windows(needle.len()).any(|window| window == needle))
 }
 
 #[cfg(unix)]

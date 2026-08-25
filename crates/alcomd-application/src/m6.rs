@@ -299,6 +299,13 @@ pub struct ExtensionInstanceLease {
 pub struct ExtensionStartContext {
     pub lease: ExtensionInstanceLease,
     pub component_path: String,
+    pub activation_kind: ExtensionActivationKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExtensionActivationKind {
+    Background,
+    InteractiveUi,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -318,8 +325,10 @@ pub struct ExtensionCrashDecision {
 pub enum ExtensionStopReason {
     Disabled,
     PermissionRevoked,
+    LeaseExpired,
     DaemonShutdown,
     Uninstalling,
+    InteractiveUiIdle,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -453,6 +462,11 @@ pub trait M6Store: Clone + Send + Sync + 'static {
         owner: PrincipalId,
         extension_id: String,
     ) -> impl Future<Output = Result<String, M6Error>> + Send;
+    fn has_background_authority(
+        &self,
+        owner: PrincipalId,
+        extension_id: String,
+    ) -> impl Future<Output = Result<bool, M6Error>> + Send;
     fn create_install_plan(
         &self,
         owner: PrincipalId,
@@ -659,9 +673,9 @@ impl<S: M6Store> M6HostApplication<S> {
 }
 
 pub struct M6Application<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> {
-    store: S,
-    packages: P,
-    runtime: R,
+    pub(crate) store: S,
+    pub(crate) packages: P,
+    pub(crate) runtime: R,
     locks: Arc<ResourceLockCoordinator>,
 }
 
@@ -1012,7 +1026,7 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
         });
     }
 
-    fn schedule_restart(&self, extension_id: String, delay_ms: u64) {
+    pub(crate) fn schedule_restart(&self, extension_id: String, delay_ms: u64) {
         let application = self.clone();
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
@@ -1081,12 +1095,19 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
         Ok(())
     }
 
-    async fn start_enabled(
+    pub(crate) async fn start_enabled(
         &self,
         owner: PrincipalId,
         extension_id: String,
         now_ms: u64,
     ) -> Result<(), M6Error> {
+        if !self
+            .store
+            .has_background_authority(owner.clone(), extension_id.clone())
+            .await?
+        {
+            return Ok(());
+        }
         let record = self
             .store
             .get_extension(owner.clone(), extension_id.clone())
@@ -1096,10 +1117,11 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
             .live_package_locator(owner.clone(), extension_id.clone())
             .await?;
         self.packages.verify_installed(record, locator).await?;
-        let context = self
+        let mut context = self
             .store
             .prepare_instance(owner, extension_id, self.runtime.daemon_epoch(), now_ms)
             .await?;
+        context.activation_kind = ExtensionActivationKind::Background;
         if let Err(start_error) = self.runtime.start(context.clone()).await {
             let decision = self
                 .store

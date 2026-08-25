@@ -1,6 +1,6 @@
 # ALCOMD State Schema v9 Portable UI
 
-状态：M7 production migration 已创建；daemon 只在完整 Portable UI wiring 后广告 `dataSchema: 9`。
+状态：M7 production migration 与 Portable UI B1 wiring 已完成；daemon 广告 `dataSchema: 9`。
 
 M6 已真实实现、广告并验收 Schema v8，因此同一个 v8 identity 不得代表两套结构。v9 migration 位于
 `crates/alcomd-store/migrations/0009_portable_extension_ui.sql`。完整 production wiring 完成前 `system.hello` 继续广告 v8。

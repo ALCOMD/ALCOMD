@@ -511,6 +511,18 @@ impl M6Store for StateStoreHandle {
         .await
     }
 
+    async fn has_background_authority(
+        &self,
+        owner: PrincipalId,
+        extension_id: String,
+    ) -> Result<bool, M6Error> {
+        self.request_worker(
+            move |connection| m6::has_background_authority(connection, &owner, &extension_id),
+            m6::unavailable,
+        )
+        .await
+    }
+
     async fn create_install_plan(
         &self,
         owner: PrincipalId,

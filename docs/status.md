@@ -1,10 +1,10 @@
 # 项目状态
 
-最后更新：2026-08-25
+最后更新：2026-08-26
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI Stop A 与执行语义已通过最终人工审批，Slice B0 active contract replacement 已完成本地实现与验证，正在进入 Slice B1；尚未进入 M8。`
+`M6 已正式完成；M7 Portable UI Slice B0 active contract replacement 与 Slice B1 Core + Extension Host 已完成本地实现和定向验证，正在进入 Slice C official renderer；尚未进入 M8。`
 
 ## 已完成
 
@@ -244,7 +244,10 @@
   Manifest仅声明protocol，ABI v1强制guest-ui export，WIT只向guest暴露guest-session-id/locale/action，RPC冻结64项
   exact replay，State v9只增nullable ui_protocol。Slice B0 已完成 active Manifest/package/WIT direct replacement、production
   migration、typed Plan/record authority、client permission name与四个 RPC DTO foundation；旧 Web UI production contract已删除。
-  B1 Session/Host/Core wiring、capability advertising、React renderer与headless conformance尚未完成，M7仍为进行中。
+  Slice B1 已完成 memory-only Session/InvocationContext、guest-ui Host binding、interactive lifecycle、dual authority、render
+  purity、current-only replay、validator、invalidation 与 dataSchema 9/capability advertising。真实 daemon/RPC/Host 测试覆盖
+  UI-only/background 生命周期、render write denial、action write、cross-connection、disconnect、disable stale 与 malformed guest
+  quarantine。React renderer、headless conformance、完整 security/fault matrix 与最终三平台验收尚未完成，M7仍为进行中。
 
 ## 后续里程碑尚未完成
 
@@ -253,8 +256,8 @@
 - MCP 33 个 v3 用例的 M-1 工具合同基线已形成并获 A-026 批准；正式 Schema、快照、兼容
   别名策略和协议实现留在对应后续里程碑。
 - VPM、项目、模板与备份。
-- M7 Portable UI B1 Session/Host/Core wiring、官方 renderer、headless real consumer 与 extension UI capability；B0 active
-  contract replacement不冒充完整 production。
+- M7 Portable UI official renderer、headless real consumer、完整 security/fault conformance 与三平台 GUI/a11y 验收；B0/B1
+  不冒充完整 M7 production。
 - MCP 实现。
 - Discord IPC。
 - v3 迁移与 Bootstrap。
@@ -270,9 +273,8 @@
   当前 M0 仍使用该构建基线，未来替代不能直接用 Ubuntu 24.04 冒充 Ubuntu 22.04 /
   `GLIBC_2.35` 等价验证。
 - M7 WebView-based Extension UI direction 已在 production 前拒绝，不再把 container/physical mapping、custom
-  scheme/CSP 或三平台 WebView isolation matrix 作为产品 blocker。当前真实缺口是 Portable UI Stop A production尚未获
-  最终批准，active Manifest/WIT/package/State/RPC/Permission replacement、Host/Core session、official/headless renderer、
-  production security/conformance 与三平台 GUI evidence 均未实现。
+  scheme/CSP 或三平台 WebView isolation matrix 作为产品 blocker。Portable UI production 已获批准且 B0/B1 已完成；
+  当前真实缺口是 official/headless renderer、完整 production security/conformance 与三平台 GUI evidence。
 
 - 真实安装快照和迁移 Fixture 尚未建立；因此 artifact 模板继续保持 `confirmed = false`，
   迁移删除、GUI/模板/备份/Unity 差异测试仍 blocked。项目所有者已决定不在 M-1 继续投入
@@ -303,8 +305,8 @@
 
 ## 下一停止点
 
-M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 Portable UI Stop A已获最终人工批准，Slice B0已完成；
-下一阶段是已批准的 Slice B1 Core + Extension Host。仍按stop conditions控制依赖、unsafe、platform API、公共合同与范围，
+M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 Portable UI Slice B0/B1 已完成本地实现与定向验证；
+下一阶段是已批准的 Slice C official React/MD3 renderer。仍按stop conditions控制依赖、unsafe、platform API、公共合同与范围，
 不得进入 M8/M9。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
