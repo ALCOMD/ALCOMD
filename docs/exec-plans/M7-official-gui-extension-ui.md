@@ -2,7 +2,7 @@
 
 状态：M7 Portable UI Stop A 与执行语义补充已通过最终人工审批；Slice B0 active contract replacement、Slice B1
 Core + Extension Host、Slice C official React/MD3 renderer 与 Slice D headless/security/fault conformance 已完成本地实现及
-定向验证，正在执行最终完整本地 gate；M7 尚未完成，尚未进入 M8。
+定向验证，最终完整本地 gate 已通过并形成未 push 的本地技术候选；M7 尚未完成，尚未进入 M8。
 
 ## 目标与完成定义
 
@@ -25,7 +25,7 @@ permission、Host、session、RPC 与 renderer contract。
 
 M7 完成需要：Stop A 人工批准；Core/Host implementation；官方 renderer；headless conformance consumer；本地完整 gate；
 Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted CI；GUI/a11y evidence；项目所有者最终人工验收。当前 B0-D
-production 与 conformance 已完成本地定向验证，但完整本地 gate、最终三平台/a11y证据与人工验收仍未完成。
+production/conformance 与完整本地 gate 已通过，但最终三平台/a11y证据与人工验收仍未完成。
 
 ## 已完成前置证据
 
@@ -270,8 +270,11 @@ M11真实v3 fixture缺失继续阻塞GUI differential parity；M12继续承担Wi
   matrix、session exact cap/rate/timeout/u64 overflow、Host binding forge/stale rejection、dual-authority route永久门禁和敏感
   payload无日志sink/close后不可访问证据；复用真实 daemon/RPC/Host lifecycle、Store scope/revoke及first/third parity测试，
   未增加 dependency、lockfile、unsafe、platform API或公共合同。
+- 2026-08-26：最终完整本地 fmt/clippy/workspace tests、xtask、metadata、baseline freeze、npm check/build、Tauri release
+  no-bundle 与 diff/lock/authority gate 全部通过，形成等待项目所有者明确 push 批准的本地技术候选；尚无 Hosted CI 或
+  最终人工验收证据。
 
 ## 下一停止点
 
-执行最终完整本地 gate并形成不 push 的 M7 本地技术候选；Hosted CI、三平台 GUI/a11y 与项目所有者最终验收留在明确
-批准 push 后。遇到已列 stop condition立即停止。不得开始 M8/M9。
+停止并报告未 push 的 M7 本地技术候选，等待项目所有者明确批准 push；Hosted CI、三平台 GUI/a11y 与最终人工验收留在
+push 后。不得开始 M8/M9。

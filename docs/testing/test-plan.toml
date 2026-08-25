@@ -399,8 +399,9 @@ id = "gui.m7-portable-ui-production"
 stage = "M7"
 kind = "integration"
 platforms = ["all"]
-status = "planned"
-description = "B0-D 已完成 active Manifest/package/WIT/Host/Core/RPC/State v9、interactive-ui lease、InvocationContext、session lifecycle、official renderer、headless与security/fault本地定向验证；本聚合项仍等待完整本地 gate、最终三平台/a11y证据与人工验收。"
+status = "implemented"
+description = "B0-D 已完成 active Manifest/package/WIT/Host/Core/RPC/State v9、interactive-ui lease、InvocationContext、session lifecycle、official renderer、headless与security/fault production tests及完整本地 gate；最终三平台/a11y证据与人工验收仍未完成。"
+evidence = ["crates/alcomd-testing/tests/m7_contract.rs", "apps/alcomd-extension-host/tests/m6_lifecycle.rs", "crates/alcomd-testing/tests/m7_official_renderer.rs", "crates/alcomd-testing/tests/m7_headless_conformance.rs", "crates/alcomd-testing/tests/m7_security_conformance.rs"]
 
 [[test]]
 id = "gui.m7-portable-ui-renderer"
