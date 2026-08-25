@@ -1145,7 +1145,6 @@ impl UiSessionCoordinator {
         let revision = session
             .snapshot_revision
             .checked_add(1)
-            .filter(|value| *value <= i64::MAX as u64)
             .ok_or_else(internal)?;
         session.snapshot_revision = revision;
         session.current_document = document;
@@ -1180,7 +1179,6 @@ impl UiSessionCoordinator {
         let revision = session
             .snapshot_revision
             .checked_add(1)
-            .filter(|value| *value <= i64::MAX as u64)
             .ok_or_else(internal)?;
         session.next_sequence = session.next_sequence.checked_add(1).ok_or_else(internal)?;
         session.snapshot_revision = revision;
@@ -1872,5 +1870,244 @@ mod tests {
                 .code(),
             M7ErrorCode::SessionStale
         );
+    }
+
+    #[test]
+    fn session_limits_enforce_extension_connection_and_daemon_caps() {
+        let access = AccessContext::local_owner();
+        let mut per_extension = UiSessionCoordinator::default();
+        let record = extension_record();
+        for index in 0..MAX_SESSIONS_PER_EXTENSION {
+            reserve_opening(
+                &mut per_extension,
+                &access,
+                &record,
+                &format!("extension-connection-{index}"),
+                &format!("extension-session-{index}"),
+            )
+            .expect("within extension cap");
+        }
+        assert_eq!(
+            reserve_opening(
+                &mut per_extension,
+                &access,
+                &record,
+                "extension-connection-overflow",
+                "extension-session-overflow",
+            )
+            .expect_err("extension session cap")
+            .code(),
+            M7ErrorCode::LimitExceeded
+        );
+
+        let mut per_connection = UiSessionCoordinator::default();
+        for index in 0..MAX_SESSIONS_PER_CONNECTION {
+            let mut record = extension_record();
+            record.extension_id = format!("dev.example.connection-{index}");
+            reserve_opening(
+                &mut per_connection,
+                &access,
+                &record,
+                "shared-connection",
+                &format!("connection-session-{index}"),
+            )
+            .expect("within connection cap");
+        }
+        let mut record = extension_record();
+        record.extension_id = "dev.example.connection-overflow".to_owned();
+        assert_eq!(
+            reserve_opening(
+                &mut per_connection,
+                &access,
+                &record,
+                "shared-connection",
+                "connection-session-overflow",
+            )
+            .expect_err("connection session cap")
+            .code(),
+            M7ErrorCode::LimitExceeded
+        );
+
+        let mut total = UiSessionCoordinator::default();
+        for index in 0..MAX_SESSIONS_TOTAL {
+            let mut record = extension_record();
+            record.extension_id = format!("dev.example.total-{index}");
+            reserve_opening(
+                &mut total,
+                &access,
+                &record,
+                &format!("total-connection-{index}"),
+                &format!("total-session-{index}"),
+            )
+            .expect("within daemon cap");
+        }
+        let mut record = extension_record();
+        record.extension_id = "dev.example.total-overflow".to_owned();
+        assert_eq!(
+            reserve_opening(
+                &mut total,
+                &access,
+                &record,
+                "total-connection-overflow",
+                "total-session-overflow",
+            )
+            .expect_err("daemon session cap")
+            .code(),
+            M7ErrorCode::LimitExceeded
+        );
+    }
+
+    #[test]
+    fn rate_limit_refills_and_single_in_flight_prevents_reordering() {
+        let (mut coordinator, access) = open_session();
+        let session_id = "00000000-0000-4000-8000-000000000004";
+        coordinator
+            .prepare_call(&access, "connection-a", session_id, 1, 2_000)
+            .expect("first call");
+        assert_eq!(
+            coordinator
+                .prepare_call(&access, "connection-a", session_id, 1, 2_000)
+                .err()
+                .expect("second in-flight call")
+                .code(),
+            M7ErrorCode::ActionInvalid
+        );
+        coordinator
+            .commit_refresh(session_id, b"document-2".to_vec(), 2_000)
+            .expect("complete first call");
+
+        for revision in 2..=10 {
+            coordinator
+                .prepare_call(&access, "connection-a", session_id, revision, 2_000)
+                .expect("within burst");
+            coordinator
+                .commit_refresh(
+                    session_id,
+                    format!("document-{}", revision + 1).into_bytes(),
+                    2_000,
+                )
+                .expect("commit bounded refresh");
+        }
+        assert_eq!(
+            coordinator
+                .prepare_call(&access, "connection-a", session_id, 11, 2_000)
+                .err()
+                .expect("burst exhausted")
+                .code(),
+            M7ErrorCode::LimitExceeded
+        );
+        coordinator
+            .prepare_call(&access, "connection-a", session_id, 11, 3_000)
+            .expect("one token refilled after one second");
+    }
+
+    #[test]
+    fn idle_absolute_and_revision_overflow_fail_closed() {
+        let (mut idle, access) = open_session();
+        let session_id = "00000000-0000-4000-8000-000000000004";
+        assert_eq!(
+            idle.prepare_call(&access, "connection-a", session_id, 1, 301_000)
+                .err()
+                .expect("idle timeout")
+                .code(),
+            M7ErrorCode::SessionStale
+        );
+
+        let (mut absolute, access) = open_session();
+        absolute
+            .sessions
+            .get_mut(session_id)
+            .expect("session")
+            .idle_deadline_ms = 4_000_000;
+        assert_eq!(
+            absolute
+                .prepare_call(&access, "connection-a", session_id, 1, 3_601_000)
+                .err()
+                .expect("absolute timeout")
+                .code(),
+            M7ErrorCode::SessionStale
+        );
+
+        let (mut overflow, _) = open_session();
+        overflow
+            .sessions
+            .get_mut(session_id)
+            .expect("session")
+            .snapshot_revision = u64::MAX;
+        assert_eq!(
+            overflow
+                .commit_refresh(session_id, b"never-published".to_vec(), 2_000)
+                .expect_err("revision overflow")
+                .code(),
+            M7ErrorCode::Internal
+        );
+        assert_eq!(
+            overflow
+                .sessions
+                .get(session_id)
+                .expect("session retained")
+                .snapshot_revision,
+            u64::MAX
+        );
+    }
+
+    #[test]
+    fn sensitive_documents_and_replay_payloads_are_inaccessible_after_close() {
+        let (mut coordinator, access) = open_session();
+        let session_id = "00000000-0000-4000-8000-000000000004";
+        let sensitive = b"m7-sensitive-form-value".to_vec();
+        coordinator
+            .prepare_call(&access, "connection-a", session_id, 1, 2_000)
+            .expect("prepare sensitive result");
+        coordinator
+            .commit_dispatch(
+                session_id,
+                1,
+                1,
+                "request-sensitive".to_owned(),
+                [4; 32],
+                sensitive.clone(),
+                2_000,
+            )
+            .expect("commit in-memory result");
+        let closing = coordinator
+            .begin_close(&access, "connection-a", session_id, 2_001)
+            .expect("close session");
+        assert!(closing.replay.is_empty());
+        coordinator.finish_close(session_id);
+        assert!(!coordinator.sessions.contains_key(session_id));
+        assert!(coordinator.stale.iter().all(|entry| {
+            !entry.session_id.contains("m7-sensitive-form-value")
+                && !entry
+                    .client_principal_id
+                    .contains("m7-sensitive-form-value")
+                && !entry
+                    .client_connection_id
+                    .contains("m7-sensitive-form-value")
+        }));
+        let error = coordinator
+            .current_document(session_id)
+            .expect_err("closed payload unavailable");
+        assert!(!format!("{error:?} {error}").contains("m7-sensitive-form-value"));
+    }
+
+    fn reserve_opening(
+        coordinator: &mut UiSessionCoordinator,
+        access: &AccessContext,
+        record: &ExtensionRecord,
+        connection_id: &str,
+        session_id: &str,
+    ) -> Result<(), M7Error> {
+        coordinator.reserve(
+            access,
+            connection_id,
+            "client-instance",
+            record,
+            session_id,
+            "en-US",
+            1_000,
+            301_000,
+            3_601_000,
+        )
     }
 }

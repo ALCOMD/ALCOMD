@@ -1,7 +1,7 @@
 # Portable UI v1 threat model candidate
 
-状态：M7 active security contract；Slice B0/B1 已接入 Core/Host/RPC mitigation，official renderer 与完整 Slice D
-hostile/fault conformance 尚未完成。
+状态：M7 active security contract；Slice B0/B1 已接入 Core/Host/RPC mitigation，Slice C official renderer 与 Slice D
+hostile/fault conformance 已完成本地实现和定向验证；最终完整 gate与三平台验收尚未完成。
 
 ## Assets and trust boundaries
 

@@ -400,7 +400,7 @@ stage = "M7"
 kind = "integration"
 platforms = ["all"]
 status = "planned"
-description = "B0/B1/C 已验证 active Manifest/package/WIT/Host/Core/RPC/State v9、interactive-ui lease、InvocationContext、session lifecycle 与 official renderer；本聚合项仍等待 headless consumer、完整 fault/security matrix 与最终三平台验收。"
+description = "B0-D 已完成 active Manifest/package/WIT/Host/Core/RPC/State v9、interactive-ui lease、InvocationContext、session lifecycle、official renderer、headless与security/fault本地定向验证；本聚合项仍等待完整本地 gate、最终三平台/a11y证据与人工验收。"
 
 [[test]]
 id = "gui.m7-portable-ui-renderer"
@@ -416,16 +416,18 @@ id = "gui.m7-portable-ui-conformance"
 stage = "M7"
 kind = "contract-integration"
 platforms = ["all"]
-status = "planned"
-description = "Official React/MD3 renderer 已执行同一 Snapshot/Action Fixture；本聚合项仍等待独立 non-Tauri headless consumer 证明全部 node/action、unknown protocol fail closed 与相同 semantic result。"
+status = "implemented"
+description = "独立 non-Tauri/non-GUI headless consumer 仅使用 public protocol DTO，对同一 MCP/Discord synthetic Fixture 产生确定性 semantic summary，exhaustive match全部17 node/2 action，并覆盖typed完整form、unknown protocol/node/tree fail closed与hostile document/action quotas。"
+evidence = ["crates/alcomd-testing/tests/m7_headless_conformance.rs", "crates/alcomd-testing/fixtures/m7/headless-renderer-conformance.json", "crates/alcomd-testing/tests/m7_official_renderer.rs"]
 
 [[test]]
 id = "gui.m7-portable-ui-security"
 stage = "M7"
 kind = "security"
 platforms = ["all"]
-status = "planned"
-description = "B1 已覆盖 exact scope、InvocationContext shape/stale、render purity、replay、session ownership、malformed guest termination/quarantine 与部分 limits；本聚合项仍等待 dual Principal real capability matrix、forge/revoke races、payload redaction、first/third parity 和完整 Slice D hostile/fault evidence。"
+status = "implemented"
+description = "Core/Host/Store与Slice D conformance覆盖explicit capability matrix、Client exact scope与Extension lease双重route、Host binding forge/stale拒绝、render purity/action write、current-only replay、ownership/concurrency/lifecycle/quarantine、exact caps/rate/timeouts、hostile document/action、payload无日志sink及close后memory-only cache不可访问；不表示真实external credential enrollment/revocation或最终三平台GUI验收已完成。"
+evidence = ["crates/alcomd-testing/tests/m7_security_conformance.rs", "crates/alcomd-application/src/m7.rs", "apps/alcomd/src/m6_runtime.rs", "apps/alcomd-extension-host/tests/m6_lifecycle.rs", "crates/alcomd-store/tests/m6_runtime.rs", "crates/alcomd-testing/tests/m7_headless_conformance.rs"]
 
 [[test]]
 id = "gui.m7-accessibility"

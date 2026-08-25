@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI Slice B0 active contract replacement、Slice B1 Core + Extension Host 与 Slice C official renderer 已完成本地实现和定向验证，正在进入 Slice D；尚未进入 M8。`
+`M6 已正式完成；M7 Portable UI Slice B0-D 已完成本地实现和定向验证，正在执行最终完整本地 gate；尚未进入 M8。`
 
 ## 已完成
 
@@ -247,8 +247,9 @@
   Slice B1 已完成 memory-only Session/InvocationContext、guest-ui Host binding、interactive lifecycle、dual authority、render
   purity、current-only replay、validator、invalidation 与 dataSchema 9/capability advertising。真实 daemon/RPC/Host 测试覆盖
   UI-only/background 生命周期、render write denial、action write、cross-connection、disconnect、disable stale 与 malformed guest
-  quarantine。Slice C official React/MD3 renderer 已通过共享 Fixture/authority 边界定向测试；headless conformance、完整
-  security/fault matrix、完整 a11y 与最终三平台验收尚未完成，M7仍为进行中。
+  quarantine。Slice C official React/MD3 renderer 已通过共享 Fixture/authority 边界定向测试；Slice D 已完成独立
+  non-Tauri headless consumer、hostile document/action、dual-authority/Host binding、replay/race/limits与payload redaction
+  本地证据。完整本地 gate、完整 a11y、最终三平台验收与人工验收尚未完成，M7仍为进行中。
 
 ## 后续里程碑尚未完成
 
@@ -257,8 +258,7 @@
 - MCP 33 个 v3 用例的 M-1 工具合同基线已形成并获 A-026 批准；正式 Schema、快照、兼容
   别名策略和协议实现留在对应后续里程碑。
 - VPM、项目、模板与备份。
-- M7 Portable UI headless real consumer、完整 security/fault conformance 与三平台 GUI/a11y 验收；B0/B1/C 不冒充完整
-  M7 production。
+- M7 Portable UI 完整本地 gate与三平台 GUI/a11y验收；B0-D 本地实现不冒充 Hosted CI 或最终 M7 acceptance。
 - MCP 实现。
 - Discord IPC。
 - v3 迁移与 Bootstrap。
@@ -275,8 +275,8 @@
   `GLIBC_2.35` 等价验证。
 - M7 WebView-based Extension UI direction 已在 production 前拒绝，不再把 container/physical mapping、custom
   scheme/CSP 或三平台 WebView isolation matrix 作为产品 blocker。Portable UI production 已获批准且 B0/B1 已完成；
-  Slice C official renderer 已完成；当前真实缺口是 headless consumer、完整 production security/conformance 与三平台
-  GUI/a11y evidence。
+  Slice C official renderer 与 Slice D headless/security/fault conformance 已完成本地定向验证；当前真实缺口是完整本地
+  gate、三平台 GUI/a11y evidence 与最终人工验收。
 
 - 真实安装快照和迁移 Fixture 尚未建立；因此 artifact 模板继续保持 `confirmed = false`，
   迁移删除、GUI/模板/备份/Unity 差异测试仍 blocked。项目所有者已决定不在 M-1 继续投入
@@ -307,8 +307,8 @@
 
 ## 下一停止点
 
-M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 Portable UI Slice B0/B1/C 已完成本地实现与定向验证；
-下一阶段是已批准的 Slice D non-Tauri/headless 与 security/fault conformance。仍按stop conditions控制依赖、unsafe、platform API、公共合同与范围，
+M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 Portable UI Slice B0-D 已完成本地实现与定向验证；
+下一步是最终完整本地 gate和不 push 的本地技术候选。仍按stop conditions控制依赖、unsafe、platform API、公共合同与范围，
 不得进入 M8/M9。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。

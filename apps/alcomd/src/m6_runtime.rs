@@ -829,6 +829,54 @@ mod tests {
     use super::*;
 
     #[test]
+    fn host_message_binding_rejects_forged_or_stale_authority() {
+        let lease = ExtensionInstanceLease {
+            lease_id: "00000000-0000-4000-8000-000000000001".to_owned(),
+            extension_id: "dev.example.fixture".to_owned(),
+            instance_id: "00000000-0000-4000-8000-000000000002".to_owned(),
+            principal_id: alcomd_application::PrincipalId::parse("extension-instance:test")
+                .expect("principal"),
+            publisher_fingerprint: format!("ed25519-sha256:{}", "a".repeat(64)),
+            grant_revision: Revision::INITIAL,
+            lifecycle_generation: Revision::INITIAL,
+            daemon_epoch: "00000000-0000-4000-8000-000000000003".to_owned(),
+            expires_at_ms: 60_000,
+        };
+        let message = HostMessage {
+            protocol_version: HOST_PROTOCOL_VERSION,
+            daemon_epoch: lease.daemon_epoch.clone(),
+            instance_id: lease.instance_id.clone(),
+            lifecycle_generation: lease.lifecycle_generation.get(),
+            sequence: 7,
+            body: HostMessageBody::Ready {
+                nonce: "bounded-nonce".to_owned(),
+            },
+        };
+        assert!(bound(&message, &lease, 7));
+
+        let mut wrong_protocol = message.clone();
+        wrong_protocol.protocol_version += 1;
+        let mut wrong_epoch = message.clone();
+        wrong_epoch.daemon_epoch = "00000000-0000-4000-8000-000000000099".to_owned();
+        let mut wrong_instance = message.clone();
+        wrong_instance.instance_id = "00000000-0000-4000-8000-000000000098".to_owned();
+        let mut wrong_generation = message.clone();
+        wrong_generation.lifecycle_generation += 1;
+        let mut replayed_sequence = message;
+        replayed_sequence.sequence -= 1;
+
+        for forged in [
+            wrong_protocol,
+            wrong_epoch,
+            wrong_instance,
+            wrong_generation,
+            replayed_sequence,
+        ] {
+            assert!(!bound(&forged, &lease, 7));
+        }
+    }
+
+    #[test]
     fn portable_ui_capability_matrix_is_explicit_and_closed() {
         for capability in [
             "host-projects.get-summary",

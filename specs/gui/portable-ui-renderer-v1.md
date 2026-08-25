@@ -1,7 +1,7 @@
 # Portable UI v1 consumer contracts
 
-状态：M7 active consumer contract；Slice C official React/MD3 renderer 已实现并通过共享 Fixture/静态 authority
-边界测试，non-Tauri headless consumer 与最终三平台 GUI/a11y evidence 仍留在 Slice D。
+状态：M7 active consumer contract；Slice C official React/MD3 renderer 与 Slice D non-Tauri headless consumer 已实现并
+通过共享 Fixture/authority/hostile input 定向测试，最终三平台 GUI/a11y evidence 尚未完成。
 
 ## Official React / Material Design 3 renderer
 
@@ -35,5 +35,5 @@
 - 不渲染像素，不执行 guest，不直接访问 Host/state/project/data；它是 portability/conformance evidence，不是产品 GUI。
 
 `crates/alcomd-testing/fixtures/m7/headless-renderer-conformance.json` 冻结两个 synthetic document的期望 semantic summary。
-Slice C official renderer 已消费同一 public DTO/Fixture；non-Tauri headless consumer、真实 third-party consumer、完整
-a11y automation与三平台 GUI验收仍 planned。
+Slice C official renderer 与 Slice D non-Tauri headless consumer 已消费同一 public DTO/Fixture；真实 third-party consumer、
+完整a11y automation与三平台 GUI验收仍 planned。

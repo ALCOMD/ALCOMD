@@ -58,6 +58,15 @@ if (submit.kind === "submit-form") {
     );
 }
 
+const unicodeDraft = updateDraft(original, "presence-text", {
+    kind: "text",
+    value: "😀"
+});
+assertEqual(
+    submitFormAction(discordDocument, "settings-form", unicodeDraft).kind,
+    "submit-form"
+);
+
 const authorityDocument = structuredClone(discordDocument);
 const disabledSwitch = authorityDocument.nodes.find((node) => node.nodeId === "presence-enabled");
 const readOnlyText = authorityDocument.nodes.find((node) => node.nodeId === "presence-text");

@@ -1,8 +1,8 @@
 # M7：官方 GUI 与 Portable Extension UI
 
 状态：M7 Portable UI Stop A 与执行语义补充已通过最终人工审批；Slice B0 active contract replacement、Slice B1
-Core + Extension Host 与 Slice C official React/MD3 renderer 已完成本地实现及定向验证，正在进入 Slice D；M7 尚未完成，
-尚未进入 M8。
+Core + Extension Host、Slice C official React/MD3 renderer 与 Slice D headless/security/fault conformance 已完成本地实现及
+定向验证，正在执行最终完整本地 gate；M7 尚未完成，尚未进入 M8。
 
 ## 目标与完成定义
 
@@ -24,8 +24,8 @@ package cache、extension data 或 Host protocol。first-party extension 与 thi
 permission、Host、session、RPC 与 renderer contract。
 
 M7 完成需要：Stop A 人工批准；Core/Host implementation；官方 renderer；headless conformance consumer；本地完整 gate；
-Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted CI；GUI/a11y evidence；项目所有者最终人工验收。当前 B0/B1
-与 official renderer 已完成，但 headless conformance、完整 security/fault matrix 与最终三平台证据仍未完成。
+Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted CI；GUI/a11y evidence；项目所有者最终人工验收。当前 B0-D
+production 与 conformance 已完成本地定向验证，但完整本地 gate、最终三平台/a11y证据与人工验收仍未完成。
 
 ## 已完成前置证据
 
@@ -173,7 +173,8 @@ hello 已广告 dataSchema 9 与 `extensions.ui.portable.v1`。
 官方 React/MD3 renderer与non-Tauri headless consumer使用同一 public DTO/fixtures。官方 contract冻结 host-owned
 name/ExtensionId/publisher-trust/version/desired/runtime/quarantine/extension-provided chrome、exhaustive match、
 keyboard/focus/ARIA、200%/320px、reduced motion、无 extension CSS/DOM/Tauri。headless consumer不依赖GUI/Tauri并输出
-确定性 semantic summary。B0/B1 不实现任何 renderer；Slice C 已实现 official renderer，headless consumer 仍留在 Slice D。
+确定性 semantic summary。B0/B1 不实现任何 renderer；Slice C 已实现 official renderer，Slice D 已实现独立 headless
+consumer 并用相同 public DTO/Fixture 验证全部 node/action 与 fail-closed 行为。
 
 ## Contract artifacts
 
@@ -196,7 +197,8 @@ keyboard/focus/ARIA、200%/320px、reduced motion、无 extension CSS/DOM/Tauri�
    current-only replay、validation、capability advertising 与 invalidation。
 3. Slice C（已完成）：官方 shell/typed adapter/React/MD3 renderer、forms、host-owned chrome 与
    loading/error/disconnected/reconnect，仍只调用 public client/RPC。
-4. Slice D（下一步）：non-Tauri consumer、first/third parity、malformed/revoke/crash/reconnect 与三平台/a11y验收。
+4. Slice D（本地实现与定向验证已完成）：non-Tauri consumer、first/third parity、malformed/revoke/crash/reconnect、
+   InvocationContext binding、dual-authority route、payload redaction 与 limits；最终三平台/a11y验收仍待 push 后执行。
 
 不得同时保留旧 Web UI和Portable UI parser/world/renderer，不建立通用 UI/workflow engine。
 
@@ -264,8 +266,12 @@ M11真实v3 fixture缺失继续阻塞GUI differential parity；M12继续承担Wi
   exhaustive React renderer、memory-only revision-bound form draft、host-owned identity/error/discard confirmation、
   light/dark/system/source-color/density/locale、320 CSS px/reduced-motion/focus/ARIA 边界。共享 MCP/Discord Fixture 在 Node 24
   真实 consumer test 中通过；未增加 dependency、lockfile、unsafe、platform API、Tauri capability 或 private Host channel。
+- 2026-08-26：Slice D 完成独立 non-Tauri headless consumer与共享 Fixture semantic conformance、hostile document/action
+  matrix、session exact cap/rate/timeout/u64 overflow、Host binding forge/stale rejection、dual-authority route永久门禁和敏感
+  payload无日志sink/close后不可访问证据；复用真实 daemon/RPC/Host lifecycle、Store scope/revoke及first/third parity测试，
+  未增加 dependency、lockfile、unsafe、platform API或公共合同。
 
 ## 下一停止点
 
-继续 Slice D non-Tauri/headless 与 security/fault conformance。保持职责清晰的本地提交且不 push；遇到已列 stop
-condition立即停止。不得开始 M8/M9。
+执行最终完整本地 gate并形成不 push 的 M7 本地技术候选；Hosted CI、三平台 GUI/a11y 与项目所有者最终验收留在明确
+批准 push 后。遇到已列 stop condition立即停止。不得开始 M8/M9。

@@ -246,8 +246,9 @@ function validFieldValue(
         case "text-field":
             return value.kind === "text"
                 && (!node.payload.required || value.value.length > 0)
-                && utf8Length(value.value) >= node.payload.minLength
-                && utf8Length(value.value) <= node.payload.maxLength;
+                && scalarLength(value.value) >= node.payload.minLength
+                && scalarLength(value.value) <= node.payload.maxLength
+                && utf8Length(value.value) <= 4_096;
         case "integer-field":
             return value.kind === "integer"
                 && Number.isSafeInteger(value.value)
@@ -263,6 +264,10 @@ function validFieldValue(
 
 function utf8Length(value: string): number {
     return new TextEncoder().encode(value).length;
+}
+
+function scalarLength(value: string): number {
+    return Array.from(value).length;
 }
 
 function assertKnownNode(node: UiNode): void {
