@@ -1,7 +1,7 @@
 package alcomd:extension@1.0.0;
 
 interface guest-ui {
-    use types.{ui-session-id, extension-error};
+    use types.{guest-session-id};
 
     enum tone {
         neutral,
@@ -19,6 +19,11 @@ interface guest-ui {
     variant progress-value {
         indeterminate,
         basis-points(u16),
+    }
+
+    variant field-validation {
+        valid,
+        invalid(string),
     }
 
     record page-node {
@@ -70,6 +75,8 @@ interface guest-ui {
         label: string,
         initial-value: bool,
         disabled: bool,
+        read-only: bool,
+        validation: option<field-validation>,
     }
     record text-field-node {
         field-id: string,
@@ -80,6 +87,8 @@ interface guest-ui {
         max-length: u32,
         multiline: bool,
         disabled: bool,
+        read-only: bool,
+        validation: option<field-validation>,
     }
     record integer-field-node {
         field-id: string,
@@ -89,6 +98,8 @@ interface guest-ui {
         minimum: s64,
         maximum: s64,
         disabled: bool,
+        read-only: bool,
+        validation: option<field-validation>,
     }
     record select-option {
         option-id: string,
@@ -101,6 +112,8 @@ interface guest-ui {
         required: bool,
         options: list<select-option>,
         disabled: bool,
+        read-only: bool,
+        validation: option<field-validation>,
     }
 
     variant node-payload {
@@ -131,7 +144,6 @@ interface guest-ui {
     }
 
     record ui-document {
-        surface-id: string,
         title: string,
         nodes: list<ui-node>,
     }
@@ -158,8 +170,8 @@ interface guest-ui {
         submit-form(form-submission),
     }
 
-    open: func(session-id: ui-session-id, surface-id: string, locale: string) -> result<ui-document, extension-error>;
-    refresh: func(session-id: ui-session-id) -> result<ui-document, extension-error>;
-    dispatch: func(session-id: ui-session-id, sequence: u64, request-id: string, action: ui-action) -> result<ui-document, extension-error>;
-    close: func(session-id: ui-session-id) -> result<_, extension-error>;
+    open: func(session-id: guest-session-id, locale: string) -> ui-document;
+    refresh: func(session-id: guest-session-id) -> ui-document;
+    dispatch: func(session-id: guest-session-id, action: ui-action) -> ui-document;
+    close: func(session-id: guest-session-id);
 }

@@ -6,4 +6,3 @@ interface guest-lifecycle {
     activate: func(context: activation-context) -> result<_, extension-error>;
     deactivate: func(reason: stop-reason) -> result<_, extension-error>;
 }
-

@@ -4,6 +4,7 @@
     "title": "ALCOMD RPC v1 M7 Portable UI contract candidate",
     "x-alcomd-publication": "proposal-only-until-production-capability-exists",
     "x-alcomd-capability": "extensions.ui.portable.v1",
+    "x-alcomd-route": "/extensions/:extensionId/ui",
     "x-alcomd-method-permissions": {
         "extensions.ui.open": ["extensions.read", "extensions.ui.use:ExtensionId"],
         "extensions.ui.refresh": ["extensions.read", "extensions.ui.use:ExtensionId"],
@@ -16,10 +17,44 @@
         "extensions.ui.dispatch": "#/$defs/dispatchResult",
         "extensions.ui.close": "#/$defs/closeResult"
     },
+    "x-alcomd-dispatch-replay": {
+        "scope": "daemon-memory-per-session",
+        "capacity": 64,
+        "evidence": [
+            "sequence",
+            "requestId",
+            "expectedSnapshotRevision",
+            "canonicalActionFingerprint",
+            "resultingSnapshot"
+        ],
+        "fingerprint": {
+            "algorithm": "sha256",
+            "domainSeparatorAscii": "ALCOMD-PORTABLE-UI-ACTION-V1",
+            "separatorByte": 0,
+            "encoding": "schema-order-canonical-compact-utf8-json",
+            "formValueOrder": "document-node-order"
+        },
+        "newRequest": {
+            "precondition": "sequence-is-last-accepted-plus-one-and-request-id-unused",
+            "guestInvocations": 1,
+            "replayed": false
+        },
+        "exactReplay": {
+            "match": ["sequence", "requestId", "expectedSnapshotRevision", "canonicalActionFingerprint"],
+            "guestInvocations": 0,
+            "result": "original-resulting-snapshot",
+            "replayed": true
+        },
+        "conflictOrOutOfOrder": {
+            "error": "extension_ui_action_invalid",
+            "guestInvocations": 0
+        },
+        "durableAcrossConnectionOrRestart": false
+    },
     "x-alcomd-stable-errors": [
+        "invalid_request",
         "extension_not_enabled",
         "extension_ui_not_available",
-        "extension_ui_surface_not_found",
         "extension_ui_protocol_unsupported",
         "extension_ui_session_not_found",
         "extension_ui_session_stale",
@@ -49,10 +84,6 @@
             "type": "string", "minLength": 3, "maxLength": 255,
             "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
         },
-        "surfaceId": {
-            "type": "string", "minLength": 1, "maxLength": 64,
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
-        },
         "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "sessionId": {
             "type": "string",
@@ -64,15 +95,10 @@
             "pattern": "^[a-z]{2,3}(?:-[A-Z][a-z]{3})?(?:-(?:[A-Z]{2}|[0-9]{3}))?$"
         },
         "uiDeclaration": {
-            "type": "object", "additionalProperties": false,
-            "required": ["protocol", "surfaces"],
-            "properties": {
-                "protocol": {"const": "portable-v1"},
-                "surfaces": {
-                    "type": "array", "minItems": 1, "maxItems": 1,
-                    "prefixItems": [{"const": "main"}], "items": false
-                }
-            }
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["protocol"],
+            "properties": {"protocol": {"const": "portable-v1"}}
         },
         "extensionRecord": {
             "type": "object", "additionalProperties": false,
@@ -99,13 +125,10 @@
         },
         "session": {
             "type": "object", "additionalProperties": false,
-            "required": [
-                "sessionId", "extensionId", "surfaceId", "locale", "idleTimeoutMs", "absoluteTimeoutMs"
-            ],
+            "required": ["sessionId", "extensionId", "locale", "idleTimeoutMs", "absoluteTimeoutMs"],
             "properties": {
                 "sessionId": {"$ref": "#/$defs/sessionId"},
                 "extensionId": {"$ref": "#/$defs/extensionId"},
-                "surfaceId": {"const": "main"},
                 "locale": {"$ref": "#/$defs/locale"},
                 "idleTimeoutMs": {"const": 300000},
                 "absoluteTimeoutMs": {"const": 3600000}
@@ -113,10 +136,9 @@
         },
         "openParams": {
             "type": "object", "additionalProperties": false,
-            "required": ["extensionId", "surfaceId", "locale"],
+            "required": ["extensionId", "locale"],
             "properties": {
                 "extensionId": {"$ref": "#/$defs/extensionId"},
-                "surfaceId": {"$ref": "#/$defs/surfaceId"},
                 "locale": {"$ref": "#/$defs/locale"}
             }
         },

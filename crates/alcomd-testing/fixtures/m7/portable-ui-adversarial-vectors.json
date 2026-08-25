@@ -15,15 +15,27 @@
         {"id": "invalid-progress-basis-points", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true},
         {"id": "invalid-integer-range", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true},
         {"id": "nul-control-or-bidi", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true},
-        {"id": "input-outside-form", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true}
+        {"id": "input-outside-form", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "nested-form", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "list-direct-non-item-child", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "list-item-outside-list", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "leaf-with-child", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "unreachable-node", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "invalid-identifier-grammar", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "validation-message-over-512-utf8-bytes", "expectedError": "extension_ui_limit_exceeded", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "submit-action-bound-to-other-form", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true}
     ],
     "clientActionCases": [
+        {"id": "malformed-rpc-envelope", "expectedError": "invalid_request", "invokeGuest": false, "closeSession": false, "terminateHost": false},
         {"id": "snapshot-stale", "expectedError": "extension_ui_snapshot_stale", "invokeGuest": false, "closeSession": false, "terminateHost": false},
         {"id": "unknown-action", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": false, "terminateHost": false},
         {"id": "disabled-action", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": false, "terminateHost": false},
         {"id": "missing-form-field", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": false, "terminateHost": false},
         {"id": "wrong-field-type", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": false, "terminateHost": false},
         {"id": "unknown-select-option", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": false, "terminateHost": false},
+        {"id": "extra-form-field", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": false, "terminateHost": false},
+        {"id": "submitted-disabled-field", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": false, "terminateHost": false},
+        {"id": "submitted-read-only-field", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": false, "terminateHost": false},
         {"id": "future-sequence", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": false, "terminateHost": false},
         {"id": "same-sequence-new-request-id", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": false, "terminateHost": false},
         {"id": "replayed-request-id-new-sequence", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": false, "terminateHost": false},
@@ -31,8 +43,48 @@
         {"id": "third-invalid-action-in-60000ms", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": true, "terminateHost": false}
     ],
     "replayCases": [
-        {"id": "duplicate-live-pair", "invokeGuest": false, "returnCurrentSnapshot": true, "replayed": true},
+        {"id": "exact-accepted-request", "match": ["sequence", "requestId", "expectedSnapshotRevision", "canonicalActionFingerprint"], "invokeGuest": false, "returnOriginalResultingSnapshot": true, "returnCurrentSnapshot": false, "replayed": true},
+        {"id": "same-request-id-different-revision", "expectedError": "extension_ui_action_invalid", "invokeGuest": false},
+        {"id": "same-request-id-different-action-fingerprint", "expectedError": "extension_ui_action_invalid", "invokeGuest": false},
+        {"id": "same-sequence-different-revision", "expectedError": "extension_ui_action_invalid", "invokeGuest": false},
+        {"id": "sequence-gap-or-out-of-order", "expectedError": "extension_ui_action_invalid", "invokeGuest": false},
         {"id": "connection-lost-before-response", "invalidateSession": true, "automaticRetry": false, "reopenRequired": true}
+    ],
+    "invocationContextCases": [
+        {"id": "grant-revision-race", "classification": "normal-authority-race", "terminateHost": false},
+        {"id": "lease-revoked-race", "classification": "normal-authority-race", "terminateHost": false},
+        {"id": "session-closed-race", "classification": "normal-authority-race", "terminateHost": false},
+        {"id": "deadline-or-cancel-race", "classification": "normal-authority-race", "terminateHost": false},
+        {"id": "generation-advanced-race", "classification": "normal-authority-race", "terminateHost": false},
+        {"id": "unknown-context", "classification": "host-protocol-violation", "terminateHost": true},
+        {"id": "cross-extension-context", "classification": "host-protocol-violation", "terminateHost": true},
+        {"id": "cross-session-context", "classification": "host-protocol-violation", "terminateHost": true},
+        {"id": "cross-invocation-context", "classification": "host-protocol-violation", "terminateHost": true},
+        {"id": "completed-context-reuse", "classification": "host-protocol-violation", "terminateHost": true},
+        {"id": "authority-field-modification", "classification": "host-protocol-violation", "terminateHost": true}
+    ],
+    "guestExecutionCases": [
+        {"id": "guest-trap", "expectedError": "extension_crashed", "countCrash": true},
+        {"id": "guest-fuel-or-timeout", "expectedError": "extension_resource_limit", "countCrash": true}
+    ],
+    "rendererDraftCases": [
+        {"id": "visible-clean-bounded-poll", "refreshAllowed": true},
+        {"id": "dirty-form-no-automatic-refresh", "refreshAllowed": false},
+        {"id": "dirty-user-refresh-requires-discard-confirmation", "hostOwnedConfirmation": true},
+        {"id": "new-revision-invalidates-draft", "mergeByFieldName": false},
+        {"id": "disconnect-stale-close-invalidates-draft", "persistentStorage": false}
+    ],
+    "lifecycleCases": [
+        {"id": "open-does-not-enable", "expectedError": "extension_not_enabled"},
+        {"id": "quarantined-open", "expectedError": "extension_quarantined"},
+        {"id": "ui-protocol-null-open", "expectedError": "extension_ui_not_available"},
+        {"id": "first-ui-session-activates-interactive-ui-once", "activationCount": 1},
+        {"id": "additional-ui-session-reuses-activation", "activationCount": 0},
+        {"id": "background-host-open-does-not-reactivate", "activationCount": 0},
+        {"id": "last-session-no-background-deactivates", "reason": "interactive-ui-idle", "stopDeadlineMs": 5000},
+        {"id": "route-close-keeps-desired-state", "desiredStateChanged": false},
+        {"id": "required-background-ungranted-blocks-enable", "enableAllowed": false},
+        {"id": "optional-background-ungranted-allows-ui", "openAllowed": true, "backgroundLeaseCreated": false}
     ],
     "sessionInvalidation": [
         "client-disconnect", "daemon-restart", "extension-disable", "grant-revoke", "extension-uninstall",

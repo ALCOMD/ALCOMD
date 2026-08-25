@@ -4,7 +4,6 @@
     "fixtures": [
         {
             "path": "crates/alcomd-testing/fixtures/m7/mcp-management-snapshot.json",
-            "surfaceId": "main",
             "nodeCount": 15,
             "orderedKinds": [
                 "page", "section", "status", "key-value", "divider", "section", "list",
@@ -15,7 +14,6 @@
         },
         {
             "path": "crates/alcomd-testing/fixtures/m7/discord-presence-snapshot.json",
-            "surfaceId": "main",
             "nodeCount": 15,
             "orderedKinds": [
                 "page", "section", "status", "progress", "stack", "group", "key-value",
@@ -31,10 +29,14 @@
         "button", "switch", "text-field", "integer-field", "select"
     ],
     "requiredActionKinds": ["activate", "submit-form"],
+    "requiredFieldSemantics": ["disabled", "readOnly", "validation"],
+    "formDraftBinding": ["sessionId", "snapshotRevision", "formNodeId"],
+    "dirtyDraftAutomaticRefresh": false,
+    "draftPersistentStorage": false,
+    "invalidFieldAriaDescribedBy": "host-generated-validation-message-id",
     "unknownProtocolResult": "extension_ui_protocol_unsupported",
     "unknownNodeResult": "extension_ui_document_invalid",
     "sameSemanticResultRequired": true,
     "tauriDependency": false,
     "guiDependency": false
 }
-

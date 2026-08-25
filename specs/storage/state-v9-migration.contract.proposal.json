@@ -1,33 +1,42 @@
 {
-    "status": "m7-stop-a-proposal-only",
+    "status": "m7-stop-a-review-closure-proposal-only",
     "from": 8,
     "to": 9,
+    "advertisedBeforeProductionWiring": 8,
     "transaction": "BEGIN IMMEDIATE",
     "productionMigration": null,
     "productionWiringCreated": false,
     "tablesAdded": [],
     "columnsAdded": {
-        "extensions": ["ui_protocol", "ui_surfaces_json"],
-        "extension_plans": ["ui_protocol", "ui_surfaces_json"]
+        "extensions": ["ui_protocol"],
+        "extension_plans": ["ui_protocol"]
     },
     "uiProtocolValues": [null, "portable-v1"],
-    "uiSurfacesCanonicalValues": ["[]", "[\"main\"]"],
-    "surfacesPerExtension": 1,
-    "planFieldsImmutable": ["ui_protocol", "ui_surfaces_json"],
+    "existingExtensionDefault": null,
+    "planFieldsImmutable": ["ui_protocol"],
     "tablesForbidden": [
-        "ui_sessions", "ui_snapshots", "ui_actions", "ui_renderers", "gui_hosts",
-        "browser_state", "ui_cache", "ui_workflows"
+        "ui_sessions",
+        "ui_snapshots",
+        "ui_replay",
+        "ui_actions",
+        "ui_drafts",
+        "ui_renderers",
+        "gui_hosts",
+        "browser_state",
+        "ui_cache",
+        "ui_workflows"
     ],
     "developerResetAllowed": true,
     "publicBackwardCompatibilityCommitment": false,
     "invariants": [
-        "all-v8-authority-preserved",
+        "all-v8-rows-and-authority-preserved",
+        "all-v8-foreign-keys-preserved",
+        "revision-and-event-sequence-preserved",
         "foreign-key-check-empty",
-        "protocol-null-requires-empty-surfaces",
-        "portable-v1-requires-main-only",
-        "install-plan-pins-ui-declaration",
-        "no-durable-ui-session-state",
-        "future-schema-fail-closed"
+        "ui-protocol-null-or-portable-v1",
+        "install-plan-pins-ui-protocol",
+        "no-durable-ui-session-snapshot-replay-draft-or-action-state",
+        "future-schema-fail-closed",
+        "migration-failure-rolls-back-to-v8-authority"
     ]
 }
-

@@ -1,6 +1,5 @@
 {
     "protocol": "portable-v1",
-    "surfaceId": "main",
     "title": "MCP Management",
     "nodes": [
         {"nodeId": "root", "order": 0, "kind": "page", "payload": {"title": "MCP Management"}},
@@ -16,8 +15,7 @@
         {"nodeId": "refresh-connections", "parentId": "connections", "order": 1, "kind": "button", "payload": {"label": "Refresh", "actionId": "refresh-connections", "disabled": false}},
         {"nodeId": "manage", "parentId": "root", "order": 3, "kind": "section", "payload": {"label": "Manage a client"}},
         {"nodeId": "manage-form", "parentId": "manage", "order": 0, "kind": "form", "payload": {"submitActionId": "apply-client-action", "submitLabel": "Apply", "disabled": false}},
-        {"nodeId": "client-id", "parentId": "manage-form", "order": 0, "kind": "text-field", "payload": {"fieldId": "client-id", "label": "Client ID", "initialValue": "", "required": true, "minLength": 1, "maxLength": 64, "multiline": false, "disabled": false}},
-        {"nodeId": "client-action", "parentId": "manage-form", "order": 1, "kind": "select", "payload": {"fieldId": "client-action", "label": "Action", "required": true, "initialOptionId": "disable", "options": [{"optionId": "disable", "label": "Disable"}, {"optionId": "revoke", "label": "Revoke access"}], "disabled": false}}
+        {"nodeId": "client-id", "parentId": "manage-form", "order": 0, "kind": "text-field", "payload": {"fieldId": "client-id", "label": "Client ID", "initialValue": "", "required": true, "minLength": 1, "maxLength": 64, "multiline": false, "disabled": false, "readOnly": false}},
+        {"nodeId": "client-action", "parentId": "manage-form", "order": 1, "kind": "select", "payload": {"fieldId": "client-action", "label": "Action", "required": true, "initialOptionId": "disable", "options": [{"optionId": "disable", "label": "Disable"}, {"optionId": "revoke", "label": "Revoke access"}], "disabled": false, "readOnly": false}}
     ]
 }
-

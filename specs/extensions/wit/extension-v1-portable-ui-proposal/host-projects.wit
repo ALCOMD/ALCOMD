@@ -5,4 +5,3 @@ interface host-projects {
 
     get-summary: func(project-id: project-id) -> result<project-summary, extension-error>;
 }
-

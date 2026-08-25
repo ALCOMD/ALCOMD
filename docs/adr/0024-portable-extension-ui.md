@@ -1,6 +1,6 @@
 # ADR: Portable Extension UI
 
-- 状态：Accepted pre-release product direction；M7 Stop A contract candidate frozen for owner review；implementation pending
+- 状态：Accepted pre-release product direction；M7 Stop A overall architecture reviewed，candidate closure pending final production approval
 - 日期：2026-08-25
 - Supersedes：ADR 0007 中未发布的 Web UI contribution/container 部分
 
@@ -21,14 +21,14 @@ security contract 的证据。继续寻找 iframe、child WebView 或 WebviewWin
 ALCOMD Extension 是 Core Extension，不是 `alcomd-gui` plugin。Extension Runtime compatibility 与 Extension UI
 compatibility 分开版本化和协商。
 
-Extension Backend 继续运行于统一的 `alcomd-extension-host`。扩展 UI 改为 GUI-neutral Portable Extension UI
-Surface：扩展只提供 bounded semantic UI tree、state 和 typed action，不携带 HTML、CSS、JavaScript、React、
+Extension Backend 继续运行于统一的 `alcomd-extension-host`。扩展 UI 改为 GUI-neutral Portable Extension UI：
+扩展只提供 bounded semantic UI tree、state 和 typed action，不携带 HTML、CSS、JavaScript、React、
 Tauri 或其他 GUI framework code。
 
 ```text
 Extension Backend
     -> alcomd-extension-host
-    -> Portable Extension UI Surface
+    -> Portable Extension UI document/action contract
     -> alcomd application
     -> ALCOMD RPC v1
         -> alcomd-gui renderer
@@ -38,7 +38,7 @@ Extension Backend
 
 `alcomd-gui` 是第一个 renderer，而不是 Extension UI 标准。官方 GUI 在主窗口内容区使用 React、Material Design 3
 和自身可访问性体系渲染；不打开额外窗口，不加载扩展网页，不创建 iframe、child WebView 或 WebviewWindow，
-也不向扩展授予 Tauri capability。第三方 GUI 使用同一 RPC Surface 和自己的原生组件/设计系统。
+也不向扩展授予 Tauri capability。第三方 GUI 使用同一 RPC contract 和自己的原生组件/设计系统。
 
 GUI 以 `extensions.ui.portable.v1` capability 表达完整 v1 支持，不协商 hostId、renderer identity 或 feature 子集。GUI
 不支持 Portable UI 或不提供扩展页面时，只影响功能页面；扩展安装、启用、后台运行、权限、数据和生命周期不依赖
@@ -46,20 +46,20 @@ renderer。unknown v1 node fail closed；未来节点使用新 capability/versio
 
 UI Session 和 action 必须同时验证 client Principal authority 与 extension Principal grant/scope/lease，避免 GUI 作为
 confused deputy。GUI 只能经 RPC -> `alcomd-application` -> Extension Host；不建立 GUI 到 Host 的直连，也不允许
-first-party extension 使用 private React page、private Tauri command、hidden renderer、额外权限或专用 Surface。
+first-party extension 使用 private React page、private Tauri command、hidden renderer、额外权限或专用页面。
 
-Custom Web UI、GUI-specific code surface 和其他高级 Surface 延后到出现真实用例后独立设计，不为它们保留 Web
+Custom Web UI、GUI-specific code contribution 和其他高级 UI 延后到出现真实用例后独立设计，不为它们保留 Web
 fallback、兼容字段或双路 renderer。M8 MCP management extension 与 M9 Discord extension 使用同一个 Portable UI。
 
 由于合同尚未公开，implementation 获批后可直接替换 Manifest/package/WIT/ABI v1 与未发布 UI-specific 实现，不创建
 v2、alias、dual parser/world/renderer。M6 已真实广告并验收 State Schema v8，因此 Portable UI normalized declaration
 使用 v9 proposal；它不恢复旧 Web UI compatibility，开发数据库仍可 reset。
 
-M7 Stop A candidate 进一步冻结：单一隐式 `main` surface；daemon-owned SnapshotRevision 与 memory-only session；17 种
-bounded semantic node；只有 activate/submit-form 两种 action；Client `extensions.ui.use` 与 Extension grant/scope 的
-双重授权；daemon-issued InvocationContextId；`background`/`interactive-ui` activation；四个 RPC method；官方 MD3 与
-non-Tauri headless 两个 consumer contract。所有内容仍是 proposal，必须经下一次人工审批才可替换 active contract或
-开始 production。
+M7 Stop A candidate 进一步冻结：每extension至多一个隐式Portable UI且不保存/传输页面identity；daemon-owned
+SnapshotRevision 与 memory-only session；17种bounded semantic node；只有activate/submit-form两种action；Client
+`extensions.ui.use` 与 Extension grant/scope的双重授权；daemon-issued InvocationContextId；
+`background`/`interactive-ui` activation；四个RPC method；官方MD3与non-Tauri headless两个consumer contract。
+总体架构方向已经人工审阅，所有内容仍是proposal，必须经最终production审批才可替换active contract或开始implementation。
 
 ## 结果
 

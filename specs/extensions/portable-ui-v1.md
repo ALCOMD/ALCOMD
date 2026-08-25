@@ -1,15 +1,16 @@
 # ALCOMD Portable UI v1 contract candidate
 
-状态：M7 contract-first Stop A；proposal-only，尚未被 daemon、Host、RPC client 或 renderer 实现/广告。
+状态：M7 contract-first Stop A review closure；proposal-only，尚未被 daemon、Host、RPC client 或 renderer 实现或广告。
 
-## 协议与 surface
+## 协议与单一页面
 
 Portable UI 是 Core/RPC contract，不是 Tauri API。客户端在 `system.hello.params.capabilities` 请求
 `extensions.ui.portable.v1`；daemon 只有完整实现 v1 后才回显。声明该 capability 的 consumer 必须完整支持 v1，
 unknown node/action fail closed。v1 不协商 hostId、framework、renderer、平台、官方 GUI 身份或 feature 子集。
 
-每个声明 `[ui]` 的 extension 只有一个隐式 `main` surface。M8 MCP management 和 M9 Discord Presence fixtures 都可
-在单一 page 中表达，因此不增加 list-surfaces、surface array 或 guest dynamic discovery。
+每个声明 `[ui]` 的 extension 最多公开一个 Portable UI，逻辑身份隐式为 `main`，但 `main` 不进入 Manifest、WIT、RPC、
+State 或 Snapshot。固定入口 route 是 `/extensions/:extensionId/ui`。v1 没有页面列表、identity 参数、guest discovery 或为第二个
+页面预留的兼容槽位；若未来出现真实的第二页面需求，必须通过新的 Portable UI protocol capability/version 设计。
 
 ## Daemon authority
 
@@ -19,19 +20,39 @@ Guest 每次只返回完整 `UiDocument`。daemon 验证成功后包装：
 UiSnapshot { sessionId, snapshotRevision, document }
 ```
 
-revision 从 1 开始，仅由 daemon 单调递增。Guest 不决定 session、client Principal、revision、grant revision、
-lifecycle generation、package digest 或 authority scope。v1 没有 patch/diff、client reducer、expression、durable
-UI session 或 guest revision。
+revision 从 1 开始，仅由 daemon 单调递增。Guest 不决定 session、client Principal、revision、grant revision、lifecycle
+generation、package digest 或 authority scope。v1 没有 patch/diff、client reducer、expression、durable UI session 或 guest
+revision。
 
-## Flat tree
+WIT `guest-session-id` 是daemon生成的opaque correlation token，只允许guest区分自己的多个UI session；它不产生Host
+Capability authority，不能选择Client Principal、不能替代InvocationContextId，也不能跨Host lifecycle generation重用。
+RPC/session的sequence、requestId、revision与replay完全由daemon验证，只有验证通过的新action才调用一次guest dispatch。
 
-每个 node 是 `{nodeId,parentId?,order,kind,payload}`。必须恰好一个没有 parent 的 `page`，且它是首个 node；其他
-node 必须引用此前出现的 parent。nodeId、fieldId、actionId 分别在 Snapshot 内唯一。每组 siblings 的 order 必须从
-0 连续递增且不重复。tree depth 把 page 计为 1，最大 8；cycle、missing/later parent、第二个 root 均无效。
+## Flat tree 与 exact parent/child matrix
 
-只有 page/section/stack/group/form/list/list-item 可含 child；leaf 不可含 child。list 的直接 child 只能是 list-item，
-list-item 不得嵌套 list-item。form 不得嵌套；每个 switch/text-field/integer-field/select 必须有且只有一个最近 form
-ancestor。disabled field 仍出现在 submit values 中并必须等于 Snapshot initial value。
+所有 node/field/action/option identity token 必须匹配 `^[a-z][a-z0-9._-]{0,63}$`。对 form 而言，form node 的 `nodeId`
+就是其 `formId`；不引入第二个 form identity。空白、control、Unicode、slash、colon 与 display text 均不得作为 ID。
+
+每个 node 是 `{nodeId,parentId?,order,kind,payload}`。必须恰好一个没有 parent 的 `page`，且它是首个 node；其他 node
+必须引用此前出现的 parent。nodeId、fieldId、actionId、optionId 分别在 Snapshot 内唯一。每组 siblings 的 order 必须从
+0 连续递增且不重复。tree depth 把 page 计为 1，最大 8；cycle、unreachable node、missing/later parent 或第二个 root
+均无效。
+
+合法直接 child 冻结如下；未列出的组合全部拒绝：
+
+| parent | direct children |
+| --- | --- |
+| page | section, stack, group, form, list, text, status, key-value, progress, divider, button |
+| section | section, stack, group, form, list, text, status, key-value, progress, divider, button, switch, text-field, integer-field, select |
+| stack | section, stack, group, form, list, text, status, key-value, progress, divider, button, switch, text-field, integer-field, select |
+| group | section, stack, group, form, list, text, status, key-value, progress, divider, button, switch, text-field, integer-field, select |
+| form | section, stack, group, text, status, key-value, progress, divider, switch, text-field, integer-field, select |
+| list | list-item |
+| list-item | section, stack, group, form, list, text, status, key-value, progress, divider, button |
+
+`page` 不能作为 child；`list-item` 只能直接属于 `list`；form 不可嵌套。每个 switch/text-field/integer-field/select 必须
+拥有且只拥有一个 form ancestor。text/status/key-value/progress/divider/button/switch/text-field/integer-field/select 是 leaf，
+不得拥有 children。button 只声明无任意 payload 的 `activate`；form payload 产生的 submit control 只绑定所在 form。
 
 固定 node 集合：
 
@@ -40,66 +61,101 @@ ancestor。disabled field 仍出现在 submit values 中并必须等于 Snapshot
 - input：button、switch、text-field、integer-field、select。
 
 tone 只有 neutral/info/success/warning/danger。progress 只有 indeterminate 或 0-10000 basis points。integer 使用
-JSON-safe signed integer。禁止 HTML、CSS、JavaScript、Markdown HTML、Canvas、image/icon URL、external link、URI、
-font、color、animation、absolute positioning、custom ARIA/DOM/component、script/expression、iframe/WebView 和 GUI
-navigation contribution。
+JSON-safe signed integer。禁止 HTML、CSS、JavaScript、Markdown HTML、Canvas、image/icon URL、external link、URI、font、
+color、animation、absolute positioning、custom ARIA/DOM/component、script/expression、iframe/WebView 和 GUI navigation
+contribution。
 
-## Forms 与 actions
+## Forms、validation 与 actions
 
 v1 动作只有：
 
-- `activate { actionId }`：只对应 enabled button；
-- `submit-form { actionId, values[] }`：只对应 enabled form 的 submitActionId。
+- `activate { actionId }`：只对应 enabled button，不携带任意 payload；
+- `submit-form { actionId, values[] }`：只对应 enabled form 的 `submitActionId`。
 
-switch、select、text-field、integer-field 仅是 form field，没有 immediate change action。GUI 在内存维护 draft，绝不按
-keystroke 调 RPC。submit 必须按 document node order 提交该 form 的每个 field 恰好一次；类型、required、length、
-integer min/max、select option、disabled initial value 和完整性均由 daemon 对当前 Snapshot 验证。GUI 不能发送任意
-JSON。button 不在 form 中承担 submit；form payload 明确给出 host renderer 的 submit button。
+switch、select、text-field、integer-field 没有 immediate change action。GUI 在内存维护 draft，绝不按 keystroke 调 RPC。
+submit 必须按 document node order 提交该 form 的完整 editable field set，恰好一次且无额外 field。editable 定义为
+`disabled=false && readOnly=false`。disabled/read-only field 不出现在 wire values；daemon 从当前 Snapshot 取得其值，客户端
+若提交它们则 action invalid。daemon 对当前 Snapshot 验证 form/action 归属、field 唯一性与完整性、类型、required、text
+length、integer min/max、select option 和 encoded request quota后才调用 guest。
 
-## Sequence、replay 与断线
+每个 field 可携带 `validation`：`valid`，或 `invalid` 加最多 512 UTF-8 bytes 的 plain-text message；该对象属于 field
+payload，因此只绑定该 field。Renderer 对 invalid field设置原生 invalid state，并以 host-generated message element ID建立
+`aria-describedby`；extension 不提供 ARIA ID。validation text 只是 extension content，不能替代 permission、Plan/Apply、
+credential 或其他 host-owned security confirmation。
 
-session 的首个 sequence 是 1，之后严格 `+1`。每个 requestId 是 1-64 printable ASCII bytes 且 session 内唯一。
-daemon 记住最近 64 个已完成 pair 与 result revision，不缓存 64 份 document：同一 `(sequence,requestId)` 的
-live-session duplicate 不再调用 guest，而返回当前 Snapshot 并标记 `replayed=true`。同 sequence/different ID、
-同 ID/different sequence、future
-sequence 或已淘汰 sequence 返回 `extension_ui_action_invalid`，绝不调用 guest。
+## Refresh 与本地 draft
 
-expectedSnapshotRevision 必须等于当前 revision，否则 `extension_ui_snapshot_stale`。一次 session 只允许一个 action；
-并发第二个 action返回 `extension_ui_action_invalid`。v1 不承诺 durable exactly-once。连接在 response 前断开会关闭
-session；客户端不得自动重发，必须重新 open 并从新 Snapshot 观察结果。Core durable write 继续使用自己的
-Plan/Operation/idempotency。
+v1 没有 server-push UI event。refresh 是 client 主动请求的 read-like session action。Renderer 只可由用户主动刷新，或在
+页面可见且没有 dirty form 时有界轮询；存在 dirty form 时不得自动 refresh 或静默合并。
 
-## Session lifecycle
+Form draft 严格绑定 UiSessionId、SnapshotRevision 与 Form nodeId，只存在 GUI process memory，不写 localStorage、state.db、
+extension data、Event 或 log。新 revision 不得自动套用旧 draft。用户刷新或导航时若 draft dirty，必须先显示 host-owned
+discard confirmation。disconnect、stale 或 close 使 draft 失效；不得按 field name/type进行 heuristic merge。所有支持 v1
+的 GUI consumer 都必须遵守这些 renderer conformance 规则。
 
-daemon memory session 至少绑定 UiSessionId、Client PrincipalId、client connection/instance、ExtensionId、Extension
-PrincipalId、Extension InstanceId、PackageDigest、`main`、GrantRevision、LifecycleGeneration、SnapshotRevision、locale、
-created/last-activity/idle/absolute deadline、next sequence、64-entry request cache。它不写 state.db、Event payload、
-extension data、package 或 log。
+## Sequence、exact replay 与断线
 
-client disconnect、daemon restart、disable、grant revoke、uninstall、package digest change、lifecycle generation change、
-Host crash、quarantine、timeout 或 protocol violation立即关闭 session。旧 ID/sequence/requestId 不可用于新 session。
-refresh/dispatch 对从未由当前 connection 获得的 ID返回 `extension_ui_session_not_found`，对已知但失效的 ID返回
-`extension_ui_session_stale`。close 返回 `{closed:boolean}`：live session 被关闭时 true，已经 absent/stale/unknown 时 false；它不抛 session-not-found，
-也不泄露 session owner。close 不调用 guest action，只 best-effort 通知 guest。
+session 的首个 accepted sequence 是 1，之后严格 `+1`。每个 requestId 是 1-64 printable ASCII bytes。daemon 为每个
+session 在内存保存最近 64 个 accepted dispatch evidence：sequence、requestId、expectedSnapshotRevision、canonical action
+fingerprint 与 resulting Snapshot。
 
-## Invalid input 与 guest failure
+action fingerprint 固定为 SHA-256：输入依次为 ASCII domain separator `ALCOMD-PORTABLE-UI-ACTION-V1`、一个 NUL byte，
+以及 action 的 schema-order canonical compact UTF-8 JSON（无 insignificant whitespace；object member按 action schema顺序，
+form values按 document node order）。该 fingerprint 只做 replay equality，不是授权或持久 identity。
 
-client 的 stale/malformed/unknown/disabled/action constraint failure在调用 guest 前返回稳定错误。每个 session 在滚动
-60,000 ms 内第三次 `extension_ui_action_invalid` 或 request limit violation时立即关闭该 session；不终止 Host，也不计
-入 crash window。
+- 新请求必须满足 `sequence == lastAcceptedSequence + 1` 且 requestId 未使用；guest 只调用一次，验证新 document，分配新
+  revision，缓存 resulting Snapshot，返回 `replayed=false`。
+- sequence、requestId、expected revision 与 action fingerprint 全部匹配已缓存项时，不调用 guest，返回该项原始 resulting
+  Snapshot，返回 `replayed=true`；不是返回 current Snapshot。
+- 相同 requestId 或 sequence但 revision/fingerprint 不同，稳定返回 `extension_ui_action_invalid`，不调用 guest。
+- sequence gap、out-of-order 或已淘汰 evidence 的重放稳定返回 `extension_ui_action_invalid`，不调用 guest。
 
-Guest 在 open/refresh/dispatch 返回 malformed tree、duplicate/cycle/unknown node、oversize、invalid Unicode 或非法
-action declaration时：当前 session 立即关闭，Host instance 终止，记录现有 crash/quarantine window 的 safe reason
-`ui-protocol-violation`。结构错误返回 `extension_ui_document_invalid`，quota 错误返回
-`extension_ui_limit_exceeded`。Event 只可包含 ExtensionId、InstanceId、surfaceId、failure class、diagnosticId 与时间；
-不得包含 document、field value、path、Host frame 或 guest trap。Host timeout/trap 继续映射现有
-`extension_resource_limit`/`extension_crashed`。malformed document 永不交给 renderer。
+expectedSnapshotRevision 对新请求必须等于当前 revision，否则 `extension_ui_snapshot_stale`。一次 session 只允许一个
+action；并发第二个 action返回 `extension_ui_action_invalid`。evidence 只在 daemon memory；client connection断开后 session
+失效，不承诺跨连接或 daemon restart replay。需要 durable exactly-once 的业务操作继续使用既有 idempotency/Plan/Operation。
+
+## Session 与 interactive-ui lifecycle
+
+memory-only session 绑定 UiSessionId、Client PrincipalId、client connection/instance、ExtensionId、Extension PrincipalId、
+Extension InstanceId、PackageDigest、GrantRevision、LifecycleGeneration、SnapshotRevision、locale、deadline、next sequence 与
+64-entry replay evidence。它不写 state.db、Event、extension data、package 或 log。
+
+`extensions.ui.open` 不隐式 enable。desired state 不是 enabled 返回 `extension_not_enabled`；quarantined 返回
+`extension_quarantined`；`ui_protocol=NULL` 返回 `extension_ui_not_available`。open 顺序固定为：检查 Client Principal；检查
+package/Manifest/digest；检查 grant/lifecycle/quarantine；创建 interactive-ui lease；按需启动 Host；若本次 Host activation 尚未
+发生则调用 `guest-lifecycle.activate(interactive-ui)`；最后调用 `guest-ui.open`。多个 UI session 共用一个 activated Host；
+background Host 不重复 activate。
+
+最后一个 UI session 关闭且没有 background lease时，daemon 调用 `deactivate(interactive-ui-idle)`，并在 5,000 ms deadline
+内停止 Host；timeout 进入既有 bounded termination/crash分类。关闭窗口或 route不改变 desired state。Manifest required
+permissions 不自动加入 `background.run`：UI-only extension 无该权限仍可 install/enable/open；扩展若自行将其列为 required，
+未授权时 enable失败；列为 optional但未授权时 UI可用，最后一个 interactive session关闭后 Host停止。Portable UI 不产生
+隐式 background lease。
+
+client disconnect、daemon restart、disable、grant revoke、uninstall、package digest/generation change、Host crash、quarantine、
+timeout 或 protocol violation立即关闭 session。refresh/dispatch 对非当前 connection的 ID返回
+`extension_ui_session_not_found`，对已知但失效的 ID返回 `extension_ui_session_stale`。close 返回 `{closed:boolean}`；它不泄露
+session owner，且只 best-effort通知 guest。
+
+## Guest/client failure responsibility
+
+Guest 返回 malformed document、duplicate ID、unknown node、cycle、oversize、forbidden Unicode、invalid parent/child 或
+自相矛盾 action/field declaration，属于 guest protocol violation：关闭 session、终止 Host、记录 bounded safe reason并进入
+既有 crash/restart/quarantine evidence。结构/Unicode错误返回 `extension_ui_document_invalid`，quota错误返回
+`extension_ui_limit_exceeded`；malformed document绝不交给 renderer。Event 只可包含 ExtensionId、InstanceId、failure class、
+diagnosticId 与时间，不得包含 document、field value、path、Host frame、argv 或 guest trap。
+
+Client malformed envelope使用既有 `invalid_request`；stale revision使用 `extension_ui_snapshot_stale`；unknown/wrong/extra/missing
+field/action、invalid option、replay conflict、gap/out-of-order使用 `extension_ui_action_invalid`；request quota使用
+`extension_ui_limit_exceeded`。这些都在 guest前拒绝，不算 Host crash且不触发 quarantine。滚动 60,000 ms内第三次 action
+invalid/limit violation关闭当前 session。Guest正常 trap/fuel/timeout继续映射既有 `extension_crashed`/
+`extension_resource_limit`并进入已有 crash/quarantine policy。
 
 ## Host-owned chrome 与 high-impact boundary
 
-Renderer 在 Snapshot 外显示 extension name、ExtensionId、publisher/trust summary、enabled/runtime/quarantine state和
-“extension-provided content”。Extension text 不能创建/伪造 permission grant、Plan/Apply、credential、daemon error、
-file picker、notification permission、core navigation 或 updater/install confirmation。未来 typed high-impact interaction
-必须由 daemon authority 与 host-owned GUI 渲染；v1 不预建 HostInteraction framework。
+Renderer 在 Snapshot 外显示 daemon Extension record中的 extension name、ExtensionId、publisher/trust、version、desired/runtime/
+quarantine state与“extension-provided content”身份。UiDocument 不能创建或伪造 permission approval、Plan/Apply confirmation、
+credential prompt、OS file picker、daemon/system error dialog、updater/install confirmation、core navigation、native notification
+permission或 security trust badge。Extension text 永远不能替代 host-owned confirmation。
 
 所有 exact quota、locale 与 Unicode 规则见 `portable-ui-limits-v1.*`。

@@ -4,7 +4,7 @@ interface types {
     type extension-id = string;
     type instance-id = string;
     type project-id = string;
-    type ui-session-id = string;
+    type guest-session-id = string;
 
     enum project-kind {
         vpm,
@@ -74,4 +74,3 @@ interface types {
         namespace-revision: u64,
     }
 }
-

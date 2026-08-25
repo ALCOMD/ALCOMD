@@ -1,7 +1,7 @@
 # M7：官方 GUI 与 Portable Extension UI
 
-状态：M7 Phase 0 architecture reset 与 obsolete WebView probe cleanup 已完成；Portable UI contract-first Stop A candidate
-已形成并等待项目所有者人工审批；M7 production implementation 未开始，尚未进入 M8。
+状态：M7 Phase 0 architecture reset 与 obsolete WebView probe cleanup 已完成；Portable UI Stop A 总体架构方向已通过
+人工审阅，本轮窄 review closure 已形成并等待 production 最终批准；M7 production implementation 未开始，尚未进入 M8。
 
 ## 目标与完成定义
 
@@ -24,7 +24,7 @@ permission、Host、session、RPC 与 renderer contract。
 
 M7 完成需要：Stop A 人工批准；Core/Host implementation；官方 renderer；headless conformance consumer；本地完整 gate；
 Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted CI；GUI/a11y evidence；项目所有者最终人工验收。当前只完成
-Stop A candidate，不满足 production 完成定义。
+Stop A approved candidate contract evidence，不满足 production 完成定义。
 
 ## 已完成前置证据
 
@@ -40,7 +40,7 @@ Stop A candidate，不满足 production 完成定义。
 
 所有下述内容仍是 proposal；没有 production parser、binding、migration、DTO、permission enum、renderer 或 capability。
 
-### Manifest、package 与 surface
+### Manifest、package 与单一 Portable UI
 
 Manifest v1 future direct rewrite 使用：
 
@@ -55,11 +55,12 @@ protocol = "portable-v1"
 `background_component` 直接改名为 `component`，不保留 alias；删除 `ui_entry`。package allowed roots 只剩
 `alcomd-extension.toml`、`META-INF/`、`component/`，删除 `ui/` 与 UI quota，保留全部 ZIP/signature/digest 安全规则。
 
-v1 采用一个隐式 stable surface `main`。MCP management 与 Discord Presence synthetic fixture 都可在一个 page 内使用
-section/list/form 表达，当前没有引入最多 8 surfaces 所需的真实证据。extension record optional addition 固定为：
+v1 每个 extension 最多公开一个隐式 Portable UI；其逻辑身份 `main` 不保存或传输。MCP management 与 Discord Presence
+synthetic fixture 都可在一个 page 内使用 section/list/form 表达。Manifest、State、WIT、RPC与Snapshot均没有页面数组、
+ID参数、dynamic discovery或兼容槽位。extension record optional addition固定为：
 
 ```json
-{"ui":{"protocol":"portable-v1","surfaces":["main"]}}
+{"ui":{"protocol":"portable-v1"}}
 ```
 
 ### Capability 与 consumer completeness
@@ -72,14 +73,15 @@ node/action。没有 hostId、official GUI identity、framework/renderer name、
 ### WIT/ABI v1 proposal
 
 proposal-only WIT 位于 `specs/extensions/wit/extension-v1-portable-ui-proposal/`，不修改 production bindgen 读取的
-active `extension-v1/`。最终仍是 `alcomd:extension/extension-v1@1.0.0`，import host-projects/host-data，export
-guest-lifecycle/guest-ui。guest-ui exact sync functions：
+active `extension-v1/`。最终仍是 `alcomd:extension/extension-v1@1.0.0`，import host-projects/host-data，required export
+guest-lifecycle/guest-ui。所有ABI v1 Component都必须实现guest-ui；Manifest无 `[ui]` 时daemon不调用，SDK/reference
+提供empty stub，Host instantiate仍验证完整world。guest-ui exact sync functions：
 
 ```text
-open(session-id, surface-id, locale) -> UiDocument
-refresh(session-id) -> UiDocument
-dispatch(session-id, sequence, request-id, UiAction) -> UiDocument
-close(session-id) -> result
+open(guest-session-id, locale) -> UiDocument
+refresh(guest-session-id) -> UiDocument
+dispatch(guest-session-id, UiAction) -> UiDocument
+close(guest-session-id)
 ```
 
 Host embedding 继续 async；不启用 component-model-async、WASI future/stream、wasmtime-wasi、guest thread 或依赖。
@@ -89,19 +91,25 @@ production 获批时 proposal 原子替换 active v1 并删除 proposal director
 ### Lifecycle 与 Host protocol
 
 activation kind 固定 `background|interactive-ui`；stop reason增加 `interactive-ui-idle`，并保留 disabled、permission-revoked、
-lease-expired、daemon-shutdown、uninstalling。`background.run` 只授权无 active UI session 时继续后台运行，不授权 UI/
-业务/network/filesystem/长调用。UI-only extension 可 install/enable，open按需创建 interactive-ui lease；最后 session
-关闭且无 background lease后 5,000 ms 停 Host。已 background-running 时 open不重复 activate。
+lease-expired、daemon-shutdown、uninstalling。`extensions.ui.open`不隐式enable；disabled/quarantined/no-ui分别返回
+`extension_not_enabled`/`extension_quarantined`/`extension_ui_not_available`。检查client、package/digest、
+grant/lifecycle/quarantine后创建interactive-ui lease，按需启动并仅在本次Host activation尚未发生时activate。
+多个session共用activation，background-running Host不重复activate。最后session关闭且无background lease时调用
+`deactivate(interactive-ui-idle)`并在5,000 ms内停Host；关闭route不修改desired state。
+`background.run`不自动加入Manifest required permissions。扩展若主动列为required且未授权，enable失败；列为optional且
+未授权时UI仍可用，但最后一个interactive session关闭后Host停止。Portable UI不产生隐式background lease。
 
 daemon 为每个 invoke-export签发 `InvocationContextId`，绑定 invocation kind、Extension lease/grant/generation、deadline/
-cancel，以及 interactive-ui 的 Client Principal/connection/UiSession/snapshot。capability-call必须回显。well-formed stale
-context返回内部 `invocation_context_stale`；unknown/wrong/cross-session context 是 Host protocol violation并终止 Host。
-requestId/callId 仍只做 correlation。
+cancel，以及 interactive-ui 的 Client Principal/connection/UiSession/snapshot。capability-call必须回显。grant/lease/
+session/deadline/generation正常竞态返回stable stale/permission/cancel并取消invocation，不计Host crash。unknown/cross
+extension/session/invocation、completed reuse或authority修改/伪造才是Host protocol violation并终止Host。export返回后
+context立即失效；requestId/callId仍只做correlation。
 
 ### Document、tree、form 与 action
 
 Guest 只返回完整 UiDocument；daemon验证并包装从 1 单调递增的 UiSnapshot revision。flat tree必须恰好一个 page root、
-parent-before-child、无 cycle、连续唯一 sibling order、unique node/field/action ID、depth 8。固定 node：
+parent-before-child、无 cycle/unreachable node、连续唯一 sibling order、exact parent/child matrix、unique
+node/field/action/option ID、depth 8。ID grammar固定 `^[a-z][a-z0-9._-]{0,63}$`，form nodeId即formId。固定 node：
 
 - layout：page、section、stack、group、form、list、list-item；
 - display：text、status、key-value、progress、divider；
@@ -111,15 +119,16 @@ tone 只有 neutral/info/success/warning/danger；progress 为 indeterminate 或
 signed integer。禁止 HTML/CSS/JS/Markdown HTML/canvas/image/icon URL/link/URI/font/color/animation/absolute/custom ARIA/
 DOM/component/expression/iframe/WebView/navigation。
 
-switch/select/text/integer 只属于 form，GUI本地维护 draft；v1 action只有 `activate` 与 `submit-form`，没有 per-keystroke
-或 immediate change。submit按 node order携带完整 typed field set，daemon先验证 current Snapshot、disabled、type、required、
-length/range/option/completeness/size，绝不转发任意 JSON。
+switch/select/text/integer拥有且只拥有一个form ancestor，禁止nested form；v1 action只有 `activate` 与 `submit-form`。
+submit按node order只携带完整editable field set；disabled/read-only值来自Snapshot，client提交它们即invalid。daemon验证
+form/action归属、type/required/length/range/option/completeness/size。field可带valid或invalid+最多512 UTF-8 bytes纯文本；
+renderer设置invalid与host-generated `aria-describedby`，该文本不是security confirmation。
 
 ### Exact limits
 
-机器权威值在 `specs/extensions/portable-ui-limits-v1.json`：surface 1；session per extension/client/daemon 为 8/16/128；
+机器权威值在 `specs/extensions/portable-ui-limits-v1.json`：session per extension/client/daemon 为 8/16/128；
 Snapshot/action 262,144/65,536 bytes；nodes 256；depth 8；ID 1-64 lowercase ASCII；single/total text 4,096/65,536
-UTF-8 bytes；form 64 fields；select 64 options、label 256 bytes；Host/session concurrency 1；token bucket 60/minute、
+UTF-8 bytes；validation 512 bytes；form 64 fields；select 64 options、label 256 bytes；Host/session concurrency 1；token bucket 60/minute、
 burst 10；idle/absolute 300,000/3,600,000 ms；request cache 64；Host idle stop 5,000 ms。
 
 plain text拒绝 NUL、C0/C1/DEL与冻结 bidi controls。text node允许 LF；text-field只有 multiline 时允许 LF；其他字段
@@ -127,15 +136,16 @@ plain text拒绝 NUL、C0/C1/DEL与冻结 bidi controls。text node允许 LF；t
 
 ### Session、replay 与 failure
 
-memory-only session绑定 Client Principal/connection、Extension Principal/instance/package、main surface、grant/lifecycle/
+memory-only session绑定 Client Principal/connection、Extension Principal/instance/package、grant/lifecycle/
 snapshot revisions、locale/deadlines、next sequence和64-entry replay cache。disconnect/restart/disable/revoke/uninstall/
 package or generation change/Host crash/quarantine/timeout/protocol violation立即关闭。session不写 DB/Event/data/package/log，
 不 crash-recover，不创建 Operation。
 
-dispatch严格 sequence + unique requestId。live duplicate pair返回 current Snapshot、`replayed=true`且不调用 guest；mismatched/
-out-of-order/replayed ID fail closed。断线前未知结果不自动重发，新 session通过 Snapshot观察。client invalid action在 guest
-前拒绝；60秒第三次关闭该 session但不惩罚 Host。guest invalid document立即关闭 session、终止 Host、计入 existing
-crash/quarantine，返回 document-invalid或limit-exceeded，Event/diagnostic只保留 bounded safe classification。
+dispatch每session内存保存最近64项sequence/requestId/expected revision/canonical action fingerprint/resulting Snapshot。
+新连续请求调用guest一次；exact replay不调用guest并返回原resulting Snapshot、`replayed=true`；相同ID/sequence但
+revision/fingerprint冲突或gap/out-of-order统一返回 `extension_ui_action_invalid`。Client错误不计Host crash；Guest invalid
+document关闭session、终止Host并计入既有crash/quarantine。Portable UI无server push；draft只在GUI memory并绑定
+session/revision/form，dirty时禁止自动refresh/merge，主动刷新/导航需host-owned discard confirmation。
 
 ### Authorization 与 RPC
 
@@ -146,19 +156,22 @@ declaration用 extensions.read；open/refresh/dispatch用 extensions.read + exte
 UI invocation 内 Host business capability取 Client Principal与 Extension Principal同一 resource scope交集；host-data
 仍由 extension self namespace authority控制，client只需 UI permission。high-impact Plan/credential/Operation继续 host-owned。
 
-RPC compatible addition只有 capability 与 open/refresh/dispatch/close；没有 listSurfaces。DTO closed/bounded，open只接收
-extensionId/main/locale，不接收 host/framework/platform。stable error分类由 `m7-portable-ui.schema.json`冻结，不创建宽泛
+RPC compatible addition只有 capability 与 open/refresh/dispatch/close。DTO closed/bounded，open只接收extensionId/locale，
+不接收页面ID、host/framework/platform。固定route为 `/extensions/:extensionId/ui`。stable error分类由
+`m7-portable-ui.schema.json`冻结，删除 `extension_ui_surface_not_found`，不创建宽泛
 `extension_ui_failed`，也不公开 Host PID/pipe/lease/path/identity/context。
 
 ### State v9 与 renderer
 
-M6 已广告 v8，故 proposal使用 v9：extensions和immutable extension_plans各增 ui_protocol、ui_surfaces_json；canonical
-值只允许 `(NULL,[])` 或 `(portable-v1,[main])`。没有 session/Snapshot/action/renderer/browser/cache/workflow table，不创建
-production 0009 SQL。additive v8->v9只作为未来实现便利，不作公开 compatibility promise；开发 DB可 reset。
+M6 已广告v8，故proposal使用v9：extensions和immutable extension_plans各只增nullable `ui_protocol`，合法值NULL或
+`portable-v1`。不保存页面常量，不建session/Snapshot/replay/action/draft/renderer/browser/cache/workflow table。v8->v9
+必须单事务保留rows/FK/revision/Event sequence，existing默认NULL，future schema fail closed；production wiring前hello继续
+广告v8，不创建production 0009 SQL。
 
-官方 React/MD3 renderer与non-Tauri headless consumer使用同一 public DTO/fixtures。官方 contract冻结 host-owned chrome、
-exhaustive match、keyboard/focus/ARIA、200%/320px、reduced motion、无 extension CSS/DOM/Tauri。headless consumer不依赖
-GUI/Tauri并输出确定性 semantic summary。Stop A不实现任何 renderer。
+官方 React/MD3 renderer与non-Tauri headless consumer使用同一 public DTO/fixtures。官方 contract冻结 host-owned
+name/ExtensionId/publisher-trust/version/desired/runtime/quarantine/extension-provided chrome、exhaustive match、
+keyboard/focus/ARIA、200%/320px、reduced motion、无 extension CSS/DOM/Tauri。headless consumer不依赖GUI/Tauri并输出
+确定性 semantic summary。Stop A不实现任何 renderer。
 
 ## Contract artifacts
 
@@ -231,9 +244,12 @@ M11真实v3 fixture缺失继续阻塞GUI differential parity；M12继续承担Wi
   `12089661f7c694f059aaf172344809ff814716f6`。
 - 2026-08-25：独立cleanup commit `c05c5d2c712dd7a791401efc22b8dd19b88023a6`删除obsolete test-only harness与CI
   probe，保留历史evidence与普通Tauri gates。
-- 2026-08-25：形成本Portable UI Stop A proposal、synthetic fixtures与contract tests；active/production未修改，等待人工审批。
+- 2026-08-25：形成本Portable UI Stop A proposal、synthetic fixtures与contract tests；active/production未修改。
+- 2026-08-25：项目所有者认可Stop A总体架构方向，并要求完成单一隐式页面、required guest-ui、exact replay/form/tree、
+  InvocationContext分类、State v9最小列与EOF格式的窄review closure；production仍未批准。
 
 ## 下一停止点
 
-创建独立本地 `docs: freeze M7 portable UI contract candidate` commit，不push。报告精确合同、验证、HEAD/origin/main与
-clean worktree后停止。未经项目所有者批准不得开始active replacement、Host/Core/React implementation或M8。
+创建独立本地 `docs: close M7 portable UI Stop A review` commit，不push。报告精确合同、验证、HEAD/origin/main与
+clean worktree后停止，等待项目所有者最终批准production。未经批准不得开始active replacement、Host/Core/React
+implementation或M8。

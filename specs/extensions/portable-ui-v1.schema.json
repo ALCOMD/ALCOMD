@@ -3,23 +3,79 @@
     "$id": "https://alcomd.cqmhv.com/schema/extensions/portable-ui-v1.json",
     "title": "ALCOMD Portable UI v1 UiDocument contract candidate",
     "$ref": "#/$defs/uiDocument",
+    "x-alcomd-parent-child-matrix": {
+        "page": ["section", "stack", "group", "form", "list", "text", "status", "key-value", "progress", "divider", "button"],
+        "section": ["section", "stack", "group", "form", "list", "text", "status", "key-value", "progress", "divider", "button", "switch", "text-field", "integer-field", "select"],
+        "stack": ["section", "stack", "group", "form", "list", "text", "status", "key-value", "progress", "divider", "button", "switch", "text-field", "integer-field", "select"],
+        "group": ["section", "stack", "group", "form", "list", "text", "status", "key-value", "progress", "divider", "button", "switch", "text-field", "integer-field", "select"],
+        "form": ["section", "stack", "group", "text", "status", "key-value", "progress", "divider", "switch", "text-field", "integer-field", "select"],
+        "list": ["list-item"],
+        "list-item": ["section", "stack", "group", "form", "list", "text", "status", "key-value", "progress", "divider", "button"],
+        "text": [],
+        "status": [],
+        "key-value": [],
+        "progress": [],
+        "divider": [],
+        "button": [],
+        "switch": [],
+        "text-field": [],
+        "integer-field": [],
+        "select": []
+    },
+    "x-alcomd-semantic-invariants": [
+        "exactly-one-page-root",
+        "page-is-first-node-and-never-a-child",
+        "parent-precedes-child",
+        "sibling-order-starts-at-zero-and-is-contiguous-and-unique",
+        "tree-is-acyclic-and-all-nodes-reachable",
+        "list-directly-contains-only-list-item",
+        "list-item-direct-parent-is-list",
+        "forms-are-not-nested",
+        "every-input-has-exactly-one-form-ancestor",
+        "node-field-action-option-identifiers-are-unique-in-their-namespace",
+        "form-node-id-is-form-id",
+        "submit-action-belongs-to-its-form",
+        "activate-button-has-no-arbitrary-payload"
+    ],
     "$defs": {
         "identifier": {
             "type": "string",
             "minLength": 1,
             "maxLength": 64,
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+            "pattern": "^[a-z][a-z0-9._-]{0,63}$"
         },
         "label": {"type": "string", "minLength": 1, "maxLength": 256},
         "plainText": {"type": "string", "maxLength": 4096},
         "tone": {"enum": ["neutral", "info", "success", "warning", "danger"]},
+        "validation": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["state"],
+                    "properties": {"state": {"const": "valid"}}
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["state", "message"],
+                    "properties": {
+                        "state": {"const": "invalid"},
+                        "message": {
+                            "type": "string",
+                            "maxLength": 512,
+                            "x-alcomd-maxUtf8Bytes": 512
+                        }
+                    }
+                }
+            ]
+        },
         "uiDocument": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["protocol", "surfaceId", "title", "nodes"],
+            "required": ["protocol", "title", "nodes"],
             "properties": {
                 "protocol": {"const": "portable-v1"},
-                "surfaceId": {"const": "main"},
                 "title": {"$ref": "#/$defs/label"},
                 "nodes": {
                     "type": "array",
@@ -144,19 +200,21 @@
         },
         "switchPayload": {
             "type": "object", "additionalProperties": false,
-            "required": ["fieldId", "label", "initialValue", "disabled"],
+            "required": ["fieldId", "label", "initialValue", "disabled", "readOnly"],
             "properties": {
                 "fieldId": {"$ref": "#/$defs/identifier"},
                 "label": {"$ref": "#/$defs/label"},
                 "initialValue": {"type": "boolean"},
-                "disabled": {"type": "boolean"}
+                "disabled": {"type": "boolean"},
+                "readOnly": {"type": "boolean"},
+                "validation": {"$ref": "#/$defs/validation"}
             }
         },
         "textFieldPayload": {
             "type": "object", "additionalProperties": false,
             "required": [
                 "fieldId", "label", "initialValue", "required", "minLength", "maxLength",
-                "multiline", "disabled"
+                "multiline", "disabled", "readOnly"
             ],
             "properties": {
                 "fieldId": {"$ref": "#/$defs/identifier"},
@@ -166,12 +224,14 @@
                 "minLength": {"type": "integer", "minimum": 0, "maximum": 4096},
                 "maxLength": {"type": "integer", "minimum": 0, "maximum": 4096},
                 "multiline": {"type": "boolean"},
-                "disabled": {"type": "boolean"}
+                "disabled": {"type": "boolean"},
+                "readOnly": {"type": "boolean"},
+                "validation": {"$ref": "#/$defs/validation"}
             }
         },
         "integerFieldPayload": {
             "type": "object", "additionalProperties": false,
-            "required": ["fieldId", "label", "required", "minimum", "maximum", "disabled"],
+            "required": ["fieldId", "label", "required", "minimum", "maximum", "disabled", "readOnly"],
             "properties": {
                 "fieldId": {"$ref": "#/$defs/identifier"},
                 "label": {"$ref": "#/$defs/label"},
@@ -179,12 +239,14 @@
                 "required": {"type": "boolean"},
                 "minimum": {"type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991},
                 "maximum": {"type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991},
-                "disabled": {"type": "boolean"}
+                "disabled": {"type": "boolean"},
+                "readOnly": {"type": "boolean"},
+                "validation": {"$ref": "#/$defs/validation"}
             }
         },
         "selectPayload": {
             "type": "object", "additionalProperties": false,
-            "required": ["fieldId", "label", "required", "options", "disabled"],
+            "required": ["fieldId", "label", "required", "options", "disabled", "readOnly"],
             "properties": {
                 "fieldId": {"$ref": "#/$defs/identifier"},
                 "label": {"$ref": "#/$defs/label"},
@@ -201,7 +263,9 @@
                         }
                     }
                 },
-                "disabled": {"type": "boolean"}
+                "disabled": {"type": "boolean"},
+                "readOnly": {"type": "boolean"},
+                "validation": {"$ref": "#/$defs/validation"}
             }
         },
         "fieldValue": {
@@ -265,4 +329,3 @@
         }
     }
 }
-

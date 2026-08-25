@@ -382,7 +382,7 @@ stage = "M7"
 kind = "contract"
 platforms = ["all"]
 status = "implemented"
-description = "冻结 proposal-only Portable UI v1 Manifest/package/WIT/ABI/lifecycle/Host context/Permission/RPC/State v9、17 node、2 action、single main surface、exact quota、双 Principal、session/replay/failure 与 renderer consumer contract；不表示 active contract 或 production wiring 已实现。"
+description = "approved candidate contract evidence：冻结 proposal-only Portable UI v1 Manifest/package/WIT/ABI/lifecycle/Host context/Permission/RPC/State v9、17 node、2 action、单一隐式页面、exact tree/form/draft/quota/replay/failure 与 renderer consumer contract；不表示 active contract、production wiring、official/headless consumer 或 M7 已实现。"
 evidence = ["specs/extensions/portable-ui-v1.md", "specs/extensions/portable-ui-v1.schema.json", "specs/extensions/portable-ui-limits-v1.json", "specs/extensions/proposals", "specs/extensions/wit/extension-v1-portable-ui-proposal", "specs/rpc/m7-portable-ui.schema.json", "specs/storage/state-v9-migration.contract.proposal.json", "specs/security/extension-portable-ui-threat-model.md", "specs/gui/portable-ui-renderer-v1.md", "crates/alcomd-testing/fixtures/m7", "crates/alcomd-testing/tests/m7_contract.rs"]
 
 [[test]]
@@ -448,7 +448,7 @@ stage = "M6"
 kind = "contract"
 platforms = ["all"]
 status = "implemented"
-description = "同一 package/signature/WIT/Host/data/project capability pipeline 不接收 first-party authority；official 与 owner-approved policy 只改变 trust/source evidence，runtime grant、scope、lease 与 capability 结果保持一致。未来 Portable UI 同样不得拥有 first-party-only Surface 或 renderer。"
+description = "同一 package/signature/WIT/Host/data/project capability pipeline 不接收 first-party authority；official 与 owner-approved policy 只改变 trust/source evidence，runtime grant、scope、lease 与 capability 结果保持一致。未来 Portable UI 同样不得拥有 first-party-only 页面、node 或 renderer authority。"
 evidence = ["crates/alcomd-store/tests/m6_runtime.rs::first_party_policy_and_owner_approved_policy_share_the_same_runtime_authority", "apps/alcomd-extension-host/tests/m6_lifecycle.rs", "crates/alcomd-testing/tests/m6_contract.rs"]
 
 [[test]]

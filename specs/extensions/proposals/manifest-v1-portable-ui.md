@@ -36,12 +36,13 @@ optional = ["background.run"]
 ```
 
 `background_component` 直接改名为 `component`，不保留 alias。`ui_entry` 被删除且不得忽略；遇到旧字段或任何未知
-字段都 fail closed。一个 Component 同时承载 lifecycle 与可选 `guest-ui` export。
+字段都 fail closed。一个 Component 同时承载 lifecycle 与 required `guest-ui` export。
 
-`[ui]` 可选。存在时只允许 `protocol = "portable-v1"`，并隐式声明唯一稳定 surface ID `main`；Manifest 不声明
-surface title，title 由 Snapshot 返回。两个 M8/M9 synthetic fixture 已证明单一页面能表达本轮真实用例，因此 v1
-不声明 surface 数组、动态 surface、GUI identity、URL、asset 或 renderer hint。
+`[ui]` 可选。存在时只允许 `protocol = "portable-v1"`，并权威声明“此扩展公开 Portable UI”；它不判断 Component
+是否具有 `guest-ui` symbol。两个 M8/M9 synthetic fixture 已证明单一页面能表达本轮真实用例，因此 v1 不声明页面
+identity/数组、动态 discovery、GUI identity、URL、asset 或 renderer hint。
 
-没有 `[ui]` 的扩展不需要导出 `guest-ui`。具有 `[ui]` 但不请求 `background.run` 的 UI-only 扩展仍可安装、启用并
-由 `extensions.ui.open` 按需启动；`background.run` 不是 Portable UI 权限。
-
+`guest-ui` 是全部 ABI v1 Component 的 required export，Host instantiate 时必须验证完整 world shape；没有 `[ui]` 时
+daemon 永不调用它，官方 SDK/reference guest提供空桩。缺少该 export 始终是 ABI incompatibility，不创建 optional-export
+negotiation、background-only world 或 ABI v2。具有 `[ui]` 但不请求 `background.run` 的 UI-only 扩展仍可安装、启用并由
+`extensions.ui.open` 按需启动；required permissions不自动加入 `background.run`，它也不是 Portable UI 权限。

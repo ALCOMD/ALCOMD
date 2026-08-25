@@ -6,4 +6,3 @@ world extension-v1 {
     export guest-lifecycle;
     export guest-ui;
 }
-

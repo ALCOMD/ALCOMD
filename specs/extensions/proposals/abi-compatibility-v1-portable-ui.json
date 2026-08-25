@@ -11,6 +11,13 @@
         "alcomd:extension/guest-lifecycle@1.0.0",
         "alcomd:extension/guest-ui@1.0.0"
     ],
+    "requiredExports": [
+        "alcomd:extension/guest-lifecycle@1.0.0",
+        "alcomd:extension/guest-ui@1.0.0"
+    ],
+    "guestUiRequiredForEveryAbiV1Component": true,
+    "manifestUiControlsPublicationNotWorldShape": true,
+    "noUiGuestUsesDefaultEmptyStub": true,
     "ambientWasiImports": [],
     "hostEmbedding": "async",
     "witFunctions": "sync",
@@ -35,4 +42,3 @@
         "existing-required-import-change", "existing-required-export-change"
     ]
 }
-

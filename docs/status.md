@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成；M7 architecture reset 与 obsolete WebView probe cleanup 已完成，Portable UI contract-first Stop A candidate 已形成并等待人工审批；M7 production implementation 未开始。`
+`M6 已正式完成；M7 architecture reset 与 obsolete WebView probe cleanup 已完成，Portable UI Stop A 总体架构方向已通过人工审阅，窄 review closure 已形成并等待 production 最终批准；M7 production implementation 未开始。`
 
 ## 已完成
 
@@ -236,14 +236,15 @@
   `child_webview_navigation_unavailable`，managed child 结论为 `rejected_for_m7_v1`；没有继续 custom protocol、
   Ubuntu/macOS child、WebviewWindow、direct Wry 或平台 API 研究。
 - M7 基础 Extension UI 已在公开发布前重置为 GUI-neutral Portable UI：Extension Backend 经统一 Host、application
-  和 RPC 暴露 semantic Surface，官方 React/Material Design 3 GUI 与第三方 GUI 使用各自 renderer。ADR 0024 只
+  和 RPC 暴露 semantic document，官方 React/Material Design 3 GUI 与第三方 GUI 使用各自 renderer。ADR 0024 只
   接受产品方向。Phase 0 commit `12089661f7c694f059aaf172344809ff814716f6` 已获人工验收；obsolete WebView probe
   已在独立 cleanup commit `c05c5d2c712dd7a791401efc22b8dd19b88023a6` 退役，历史 rejected evidence 与普通
   Tauri build/no-bundle gate 保留。
-- M7 Portable UI Stop A candidate 已冻结 proposal-only Manifest/package/WIT/ABI、single `main` Surface、17 node、
-  activate/submit-form、daemon-owned Snapshot/session、dual Principal、InvocationContext、interactive-ui lease、RPC、
-  State v9、exact limits、renderer/headless contract，以及 synthetic MCP/Discord/adversarial fixtures。active contract、
-  production Host/Core/RPC/State/Permission/React implementation 与 capability advertising 均未开始。
+- M7 Portable UI Stop A总体架构方向已通过人工审阅；review closure把proposal收敛为每extension至多一个隐式Portable UI，
+  Manifest仅声明protocol，ABI v1强制guest-ui export，WIT只向guest暴露guest-session-id/locale/action，RPC冻结64项
+  exact replay，State v9只增nullable ui_protocol。17 node、2 action、exact tree/form/draft/lifecycle/error/context规则和
+  synthetic fixtures仍只是approved candidate contract evidence。active contract、production Host/Core/RPC/State/Permission/
+  React implementation与capability advertising均未开始。
 
 ## 后续里程碑尚未完成
 
@@ -269,8 +270,8 @@
   当前 M0 仍使用该构建基线，未来替代不能直接用 Ubuntu 24.04 冒充 Ubuntu 22.04 /
   `GLIBC_2.35` 等价验证。
 - M7 WebView-based Extension UI direction 已在 production 前拒绝，不再把 container/physical mapping、custom
-  scheme/CSP 或三平台 WebView isolation matrix 作为产品 blocker。当前真实缺口是 Portable UI Stop A 尚未获人工
-  批准，active Manifest/WIT/package/State/RPC/Permission replacement、Host/Core session、official/headless renderer、
+  scheme/CSP 或三平台 WebView isolation matrix 作为产品 blocker。当前真实缺口是 Portable UI Stop A production尚未获
+  最终批准，active Manifest/WIT/package/State/RPC/Permission replacement、Host/Core session、official/headless renderer、
   production security/conformance 与三平台 GUI evidence 均未实现。
 
 - 真实安装快照和迁移 Fixture 尚未建立；因此 artifact 模板继续保持 `confirmed = false`，
@@ -302,9 +303,9 @@
 
 ## 下一停止点
 
-M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 Portable UI Stop A proposal已形成；下一停止点是
-项目所有者人工审批该候选合同。未经批准不得替换 active Manifest/package/WIT/Host protocol/RPC/Permission/State
-Schema，不得开始 M7 production implementation或M8。
+M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 Portable UI Stop A总体架构方向已通过人工审阅，
+review closure后下一停止点是项目所有者最终批准production。未经批准不得替换 active Manifest/package/WIT/Host
+protocol/RPC/Permission/State Schema，不得开始 M7 production implementation或M8。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential
