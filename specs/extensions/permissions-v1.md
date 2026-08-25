@@ -23,6 +23,7 @@ operations.read
 operations.cancel
 events.subscribe
 activity.read
+diagnostics.read
 settings.read
 settings.manage
 access.read
@@ -159,3 +160,17 @@ M6 第一条生产 slice 冻结并仅使用以下权限：
 - `background.run` 只允许没有 active client UI session 时持有 background lifecycle lease，不由 `[ui]` 隐式加入。
   UI-only extension 可不请求它；Portable UI session 也不产生隐式 background lease。
 - client capability/metadata、GUI identity、session ID、guest-session-id 与 InvocationContextId 都不是授权凭据。
+
+## M7 Official GUI settings/activity/diagnostics
+
+- `settings.read` 只允许读取 Config Schema 1 的规范化公开设置；不允许直接读取文件、extension-owned
+  data 或未来 updater/MCP/Discord/migration setting。
+- `settings.manage` 只允许以 `expectedRevision` 更新同一 closed partial settings DTO；它不授权通用
+  key/value config、路径写入或 State DB 修改。
+- `activity.read` 只允许读取现有 durable Event/Operation 的 closed user-facing projection；不返回 payload、
+  request/result JSON、技术日志、路径、credential 或 extension value。
+- `diagnostics.read` 只允许读取 Operation failure 与 safe Event evidence 的 bounded redacted projection；不
+  授权 raw log export、argv/env、SQL、Debug/backtrace、路径或 Portable UI payload，且默认不授予外部
+  Principal。
+- `settings.get`、`settings.update`、`activity.list`、`diagnostics.list` 是 base RPC v1 compatible additions；
+  不新建 capability，也不能把 client metadata 当作上述 permission。

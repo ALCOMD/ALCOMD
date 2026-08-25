@@ -1,0 +1,107 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m7-official-gui.json",
+    "title": "ALCOMD RPC v1 M7 official GUI support contract",
+    "x-alcomd-publication": "active-additive-rpc-v1",
+    "x-alcomd-method-permissions": {
+        "settings.get": ["settings.read"],
+        "settings.update": ["settings.manage"],
+        "activity.list": ["activity.read"],
+        "diagnostics.list": ["diagnostics.read"]
+    },
+    "x-alcomd-capability": null,
+    "x-alcomd-redaction": {
+        "forbidden": [
+            "token", "authorization", "raw-argv", "environment", "full-private-path",
+            "raw-sql", "rust-debug", "backtrace", "extension-owned-value", "portable-ui-payload",
+            "raw-request-json", "raw-result-json"
+        ],
+        "rawDiagnosticExport": false
+    },
+    "$defs": {
+        "methodName": {"enum": ["settings.get", "settings.update", "activity.list", "diagnostics.list"]},
+        "revision": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615},
+        "timestamp": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+        "safeCode": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+        "safeIdentity": {"type": "string", "minLength": 1, "maxLength": 255, "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$"},
+        "pageLimit": {"type": "integer", "minimum": 1, "maximum": 200},
+        "settingsGetParams": {"type": "object", "additionalProperties": false},
+        "settingsGetResult": {
+            "type": "object", "additionalProperties": false,
+            "required": ["configSchema", "revision", "settings"],
+            "properties": {
+                "configSchema": {"const": 1},
+                "revision": {"$ref": "#/$defs/revision"},
+                "settings": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v1.json#/$defs/settings"}
+            }
+        },
+        "settingsUpdateParams": {
+            "type": "object", "additionalProperties": false,
+            "required": ["expectedRevision", "update"],
+            "properties": {
+                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "update": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v1.json#/$defs/partialUpdate"}
+            }
+        },
+        "settingsUpdateResult": {"$ref": "#/$defs/settingsGetResult"},
+        "activityCursor": {
+            "type": "object", "additionalProperties": false,
+            "required": ["occurredAtMs", "sourceRank", "stableId"],
+            "properties": {
+                "occurredAtMs": {"$ref": "#/$defs/timestamp"},
+                "sourceRank": {"type": "integer", "minimum": 0, "maximum": 1},
+                "stableId": {"$ref": "#/$defs/safeIdentity"}
+            }
+        },
+        "activityListParams": {
+            "type": "object", "additionalProperties": false,
+            "properties": {"cursor": {"$ref": "#/$defs/activityCursor"}, "limit": {"$ref": "#/$defs/pageLimit"}}
+        },
+        "activityItem": {
+            "type": "object", "additionalProperties": false,
+            "required": ["occurredAtMs", "type", "summaryCode"],
+            "properties": {
+                "occurredAtMs": {"$ref": "#/$defs/timestamp"},
+                "type": {"enum": ["operation", "event"]},
+                "summaryCode": {"$ref": "#/$defs/safeCode"},
+                "operationId": {"$ref": "#/$defs/safeIdentity"},
+                "eventSequence": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+                "resourceKind": {"$ref": "#/$defs/safeCode"},
+                "resourceId": {"$ref": "#/$defs/safeIdentity"},
+                "state": {"$ref": "#/$defs/safeCode"}
+            }
+        },
+        "activityListResult": {
+            "type": "object", "additionalProperties": false,
+            "required": ["items"],
+            "properties": {"items": {"type": "array", "maxItems": 200, "items": {"$ref": "#/$defs/activityItem"}}, "nextCursor": {"$ref": "#/$defs/activityCursor"}}
+        },
+        "diagnosticCursor": {
+            "type": "object", "additionalProperties": false,
+            "required": ["occurredAtMs", "operationId"],
+            "properties": {"occurredAtMs": {"$ref": "#/$defs/timestamp"}, "operationId": {"$ref": "#/$defs/safeIdentity"}}
+        },
+        "diagnosticsListParams": {
+            "type": "object", "additionalProperties": false,
+            "properties": {"cursor": {"$ref": "#/$defs/diagnosticCursor"}, "limit": {"$ref": "#/$defs/pageLimit"}}
+        },
+        "diagnosticItem": {
+            "type": "object", "additionalProperties": false,
+            "required": ["occurredAtMs", "severity", "subsystem", "code", "summary"],
+            "properties": {
+                "occurredAtMs": {"$ref": "#/$defs/timestamp"},
+                "severity": {"enum": ["warning", "error"]},
+                "subsystem": {"$ref": "#/$defs/safeCode"},
+                "code": {"$ref": "#/$defs/safeCode"},
+                "diagnosticId": {"$ref": "#/$defs/safeIdentity"},
+                "operationId": {"$ref": "#/$defs/safeIdentity"},
+                "summary": {"type": "string", "minLength": 1, "maxLength": 256}
+            }
+        },
+        "diagnosticsListResult": {
+            "type": "object", "additionalProperties": false,
+            "required": ["items"],
+            "properties": {"items": {"type": "array", "maxItems": 200, "items": {"$ref": "#/$defs/diagnosticItem"}}, "nextCursor": {"$ref": "#/$defs/diagnosticCursor"}}
+        }
+    }
+}

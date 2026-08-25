@@ -1,0 +1,68 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/config/settings-v1.json",
+    "title": "ALCOMD Config Schema 1 settings",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["schema", "revision", "appearance", "locale"],
+    "properties": {
+        "schema": {"const": 1},
+        "revision": {"$ref": "#/$defs/revision"},
+        "appearance": {"$ref": "#/$defs/appearance"},
+        "locale": {"$ref": "#/$defs/locale"}
+    },
+    "$defs": {
+        "revision": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615},
+        "mode": {"enum": ["system", "light", "dark"]},
+        "sourceColor": {"type": ["string", "null"], "pattern": "^#[0-9A-F]{6}$"},
+        "density": {"enum": ["default", "compact"]},
+        "motion": {"enum": ["system", "reduced"]},
+        "locale": {"enum": ["system", "en-US", "zh-CN", "ja-JP"]},
+        "settings": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["appearance", "locale"],
+            "properties": {
+                "appearance": {"$ref": "#/$defs/appearance"},
+                "locale": {"$ref": "#/$defs/locale"}
+            }
+        },
+        "appearance": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["mode", "sourceColor", "density", "motion"],
+            "properties": {
+                "mode": {"$ref": "#/$defs/mode"},
+                "sourceColor": {"$ref": "#/$defs/sourceColor"},
+                "density": {"$ref": "#/$defs/density"},
+                "motion": {"$ref": "#/$defs/motion"}
+            }
+        },
+        "partialUpdate": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+                "appearance": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "minProperties": 1,
+                    "properties": {
+                        "mode": {"$ref": "#/$defs/mode"},
+                        "sourceColor": {"$ref": "#/$defs/sourceColor"},
+                        "density": {"$ref": "#/$defs/density"},
+                        "motion": {"$ref": "#/$defs/motion"}
+                    }
+                },
+                "locale": {"$ref": "#/$defs/locale"}
+            }
+        }
+    },
+    "x-alcomd-storage": {
+        "path": "config/settings.toml",
+        "writer": "alcomd",
+        "maxUtf8Bytes": 16384,
+        "unknownFields": "fail-closed",
+        "replacement": "same-directory-synced-temp-then-recoverable-rename"
+    }
+}

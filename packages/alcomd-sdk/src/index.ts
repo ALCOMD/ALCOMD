@@ -17,7 +17,11 @@ export interface HelloRequest {
 export interface HelloResponse {
     rpcVersion: typeof RPC_VERSION;
     daemonVersion: string;
-    dataSchema: number;
-    configSchema: number;
-    extensionApi: number;
+    capabilities: string[];
+    dataSchema?: number;
+    configSchema?: number;
+    extensionApi?: {
+        major: number;
+        world: string;
+    };
 }

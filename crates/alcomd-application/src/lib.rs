@@ -21,6 +21,7 @@ mod m5_backup;
 mod m5_template;
 mod m6;
 mod m7;
+mod m7_official;
 
 pub use m4::*;
 pub use m5::*;
@@ -28,6 +29,7 @@ pub use m5_backup::*;
 pub use m5_template::*;
 pub use m6::*;
 pub use m7::*;
+pub use m7_official::*;
 
 /// Minimal truthful daemon status for the M1 read-only vertical slice.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -748,6 +750,10 @@ impl AccessContext {
                 Permission::OperationsRead,
                 Permission::OperationsCancel,
                 Permission::EventsRead,
+                Permission::ActivityRead,
+                Permission::DiagnosticsRead,
+                Permission::SettingsRead,
+                Permission::SettingsManage,
                 Permission::ProjectsRead,
                 Permission::ProjectsManage,
                 Permission::RepositoriesRead,

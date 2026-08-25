@@ -9,7 +9,7 @@ use alcomd_protocol::{
     RequestEnvelope, StateCheckParams, SuccessResponse, SystemStatusResult,
 };
 
-const SCHEMAS: [(&str, &str); 25] = [
+const SCHEMAS: [(&str, &str); 26] = [
     (
         "request-envelope",
         include_str!("../../../specs/rpc/request-envelope.schema.json"),
@@ -110,6 +110,10 @@ const SCHEMAS: [(&str, &str); 25] = [
         "m5-backup-restore",
         include_str!("../../../specs/rpc/m5-backup-restore.schema.json"),
     ),
+    (
+        "m7-official-gui",
+        include_str!("../../../specs/rpc/m7-official-gui.schema.json"),
+    ),
 ];
 
 #[test]
@@ -128,6 +132,46 @@ fn all_rpc_v1_schemas_are_valid_json_schema_documents() {
                 .is_some_and(|id| id.contains("/rpc/v1/"))
         );
     }
+}
+
+#[test]
+fn m7_official_gui_contract_freezes_only_the_approved_additions() {
+    let contract = schema("m7-official-gui");
+    assert_eq!(contract["x-alcomd-publication"], "active-additive-rpc-v1");
+    assert_eq!(contract["x-alcomd-capability"], Value::Null);
+    assert_eq!(
+        contract["$defs"]["methodName"]["enum"],
+        json!([
+            "settings.get",
+            "settings.update",
+            "activity.list",
+            "diagnostics.list"
+        ])
+    );
+    assert_eq!(
+        contract["x-alcomd-method-permissions"],
+        json!({
+            "settings.get": ["settings.read"],
+            "settings.update": ["settings.manage"],
+            "activity.list": ["activity.read"],
+            "diagnostics.list": ["diagnostics.read"]
+        })
+    );
+    assert_eq!(contract["x-alcomd-redaction"]["rawDiagnosticExport"], false);
+
+    let settings: Value = serde_json::from_str(include_str!(
+        "../../../specs/config/settings-v1.schema.json"
+    ))
+    .expect("Config Schema 1 must be valid JSON");
+    assert_eq!(
+        settings["$schema"],
+        "https://json-schema.org/draft/2020-12/schema"
+    );
+    assert_eq!(settings["$defs"]["settings"]["additionalProperties"], false);
+    assert_eq!(
+        settings["$defs"]["partialUpdate"]["additionalProperties"],
+        false
+    );
 }
 
 #[test]
@@ -534,7 +578,7 @@ fn m5_backup_restore_contract_is_additive_and_published() {
 }
 
 #[test]
-fn hello_schema_adds_contract_only_extension_api_as_optional() {
+fn hello_schema_adds_extension_api_and_config_schema_as_optional() {
     let response = schema("system-hello.response");
     let properties = response["properties"]["result"]["properties"]
         .as_object()
@@ -543,6 +587,7 @@ fn hello_schema_adds_contract_only_extension_api_as_optional() {
         properties.keys().cloned().collect::<Vec<_>>(),
         [
             "capabilities",
+            "configSchema",
             "daemonVersion",
             "dataSchema",
             "extensionApi",
@@ -555,6 +600,17 @@ fn hello_schema_adds_contract_only_extension_api_as_optional() {
             .expect("hello required fields")
             .iter()
             .any(|field| field == "extensionApi")
+    );
+    assert!(
+        !response["properties"]["result"]["required"]
+            .as_array()
+            .expect("hello required fields")
+            .iter()
+            .any(|field| field == "configSchema")
+    );
+    assert_eq!(
+        response["properties"]["result"]["properties"]["configSchema"]["const"],
+        1
     );
     assert_eq!(
         response["properties"]["result"]["additionalProperties"],

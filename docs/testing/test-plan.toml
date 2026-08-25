@@ -435,32 +435,36 @@ id = "gui.m7-accessibility"
 stage = "M7"
 kind = "accessibility"
 platforms = ["all"]
-status = "planned"
+status = "implemented"
 description = "使用获批 Playwright Chromium 执行真实 DOM/browser keyboard-focus-ARIA、live region、contrast、200% deterministic layout、320px、reduced-motion 与全部 Portable UI node semantics；不冒充平台 screen-reader 认证。"
+evidence = ["apps/alcomd-gui/tests/browser/m7-accessibility.spec.ts", "apps/alcomd-gui/tests/browser/harness.tsx", "apps/alcomd-gui/playwright.config.ts"]
 
 [[test]]
 id = "gui.m7-core-surfaces"
 stage = "M7"
 kind = "integration-ui"
 platforms = ["all"]
-status = "planned"
+status = "implemented"
 description = "验证 M1-M7 GUI-relevant RPC 在 official shell 的完整 page/route/read-state 覆盖，包含 Home、Project、Package、Repository、Template、Unity、Backup、Operation、Extension、Settings、Activity、Diagnostics 与 About。"
+evidence = ["apps/alcomd-gui/src/App.tsx", "apps/alcomd-gui/src/CorePages.tsx", "apps/alcomd-gui/tests/browser/m7-accessibility.spec.ts", "docs/exec-plans/M7-gui-rpc-coverage.md"]
 
 [[test]]
 id = "gui.m7-operation-flows"
 stage = "M7"
 kind = "integration-ui"
 platforms = ["all"]
-status = "planned"
+status = "implemented"
 description = "验证当前 Core mutation 的确认与 revision/idempotency，以及高影响 Plan review、explicit Apply、Operation follow/cancel/reconnect、stale 后回到 review且不静默重新规划。"
+evidence = ["apps/alcomd-gui/src/CoreActions.tsx", "apps/alcomd-gui/tests/browser/m7-accessibility.spec.ts", "crates/alcomd-testing/tests/m7_official_rpc.rs"]
 
 [[test]]
 id = "gui.m7-accessibility-automation"
 stage = "M7"
 kind = "browser-accessibility"
 platforms = ["all"]
-status = "planned"
+status = "implemented"
 description = "Playwright 1.62.1 matched Chromium browser-level evidence：semantic roles/names/forms、keyboard/tab/arrow/Escape、drawer/dialog/route focus、live region、visible focus、light/dark contrast、200% layout、320 CSS px与reduced motion。"
+evidence = ["apps/alcomd-gui/tests/browser/m7-accessibility.spec.ts", "apps/alcomd-gui/playwright.config.ts", ".github/workflows/ci.yml"]
 
 [[test]]
 id = "gui.m7-visual-flow-evidence"
@@ -469,6 +473,7 @@ kind = "manual-ui"
 platforms = ["one-interactive-desktop"]
 status = "planned"
 description = "项目所有者可见的单一真实交互桌面截图/flow/keyboard-focus签收；覆盖完整 IA、light/dark、wide/narrow与统一 loading/empty/error/disconnected/confirmation/progress/terminal states，不作为 sandbox evidence。"
+evidence = ["docs/testing/m7-official-gui-manual-checklist.md"]
 
 [[test]]
 id = "gui.m12-screen-reader-smoke"
@@ -483,24 +488,27 @@ id = "settings.authoritative-storage"
 stage = "M7"
 kind = "integration"
 platforms = ["all"]
-status = "planned"
+status = "implemented"
 description = "权威设置只经 RPC 持久化，localStorage 仅包含可丢失视图状态。"
+evidence = ["crates/alcomd-application/src/m7_official.rs", "crates/alcomd-testing/tests/m7_official_rpc.rs", "specs/config/settings-v1.schema.json", "apps/alcomd-gui/tests/browser/m7-accessibility.spec.ts"]
 
 [[test]]
 id = "activity.log-redaction"
 stage = "M7"
 kind = "security"
 platforms = ["all"]
-status = "planned"
+status = "implemented"
 description = "活动与日志不泄露 token、Authorization、完整私密路径和项目敏感信息。"
+evidence = ["crates/alcomd-store/src/m7_official.rs", "crates/alcomd-store/tests/store_handle.rs", "crates/alcomd-testing/tests/m7_official_rpc.rs", "specs/security/official-gui-read-model-threat-model.md"]
 
 [[test]]
 id = "diagnostics.redacted-list"
 stage = "M7"
 kind = "security"
 platforms = ["all"]
-status = "planned"
+status = "implemented"
 description = "diagnostics.list 只返回 bounded structured redacted items，并验证 permission、pagination及 token/Authorization/argv/env/path/SQL/Debug/backtrace/extension value/Portable UI payload 均不可见。"
+evidence = ["crates/alcomd-store/src/m7_official.rs", "crates/alcomd-store/tests/store_handle.rs", "crates/alcomd-testing/tests/m7_official_rpc.rs", "specs/security/official-gui-read-model-threat-model.md"]
 
 [[test]]
 id = "extensions.m6-contract"

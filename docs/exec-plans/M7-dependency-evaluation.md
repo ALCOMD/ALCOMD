@@ -1,6 +1,7 @@
 # M7 Stop A dependency candidate evaluation
 
-状态：候选审计；**未批准、未安装、未修改 manifest 或 lockfile**
+状态：原 Stop A 候选审计；本报告摘要中的 production/component 候选均未批准或安装。唯一后续例外是文末已获批并落盘的
+`@playwright/test = 1.62.1` GUI test-only devDependency 及其正常 lock closure。
 
 查询日期：2026-08-24。版本、metadata 与维护时间来自 npm registry / crates.io exact package metadata；生产采用前
 仍须以独立 lockfile diff 和现有三平台 build 验证。Workspace 继续固定 Node 24 与 Rust 1.97.1。
@@ -121,5 +122,7 @@ Playwright只能提供 DOM/browser evidence，不能证明 WKWebView/WebKitGTK/T
 
 安装前根 `package-lock.json` SHA-256 为
 `61117ba5e1fa9d3804912aa1ab43b0946a020abd8bf372d09d27b14dfe6e46d1`。安装后审计只新增上述三项与 optional
-`playwright/node_modules/fsevents` record，没有删除或改变既有 package version；具体 after hash 与 browser revision 在最终
-M7 local candidate evidence 中记录。
+`playwright/node_modules/fsevents` record，没有删除或改变既有 package version。安装后 SHA-256 为
+`ead52597d90d5dc02d780e20edcf737a5c673ef46be7f967ed2c3fd4f5984639`。Windows 本地使用
+`npx playwright install chromium` 安装 package-matched Chromium 与 headless shell revision `1234`；同时取得 Playwright
+测试工具所需的 `ffmpeg-1011` 与 `winldd-1007`，这些均位于用户测试缓存，不进入 repository、production bundle 或发行资产。

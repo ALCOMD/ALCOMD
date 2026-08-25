@@ -1,8 +1,9 @@
 # M7：官方 GUI 与 Portable Extension UI
 
 状态：Portable UI B0-D production candidate `aa1323430252ed21995284a7b36dd36e45a15e0a` 已通过 Hosted CI
-`32877438910`；completion audit 发现 architecture reset 期间误删了仍属于 M7 的 official GUI completion scope。项目所有者
-已批准恢复该范围并继续实施；M7 尚未完成，尚未进入 M8/M9。
+`32877438910`；Official GUI Completion E1-G1 与 G3 已完成生产实现及本地完整验收，G2 人工视觉/流程/键盘焦点
+checklist 已准备但尚未执行。最终候选自身的三平台 Hosted CI 与项目所有者人工验收尚未取得；M7 仍未完成，尚未进入
+M8/M9。
 
 ## 目标与完成定义
 
@@ -394,6 +395,16 @@ WebView2/update/uninstall，以及 Narrator/VoiceOver/Linux screen-reader 和真
   Config Schema v1，并将 v3 differential parity 与三平台 screen-reader smoke 分别归属 M11 与 M12。
 - 2026-08-26：唯一新增前端测试依赖 `@playwright/test = 1.62.1` 获批；Chromium-only browser automation 不进入 production
   bundle/runtime，也不作为 WebView2/WebKitGTK/WKWebView compatibility certification。
+- 2026-08-26：Official GUI Completion E1-F3 完成 M1-M7 GUI-relevant Core routes、typed Tauri/client/RPC adapter、
+  Plan/Apply/Operation flows、Config Schema v1 durable settings、safe Activity/Diagnostics projection 与统一页面状态；只新增已批准
+  的四个 RPC 和四个 permission，没有 State DB 新表、generic RPC passthrough、新 Cargo dependency、unsafe 或平台 API。
+- 2026-08-26：G1 Chromium automation 使用 `@playwright/test 1.62.1` 匹配的 Chromium revision `1234`，12 项 browser tests
+  全部通过，覆盖 keyboard/focus/dialog/form/live region、320 CSS px、deterministic 200% layout、reduced motion、light/dark targeted
+  contrast、全部 17 个 Portable UI node、dirty discard 及 Core success/stale/failed/cancelled flows。该证据只证明 Web frontend
+  semantics，不替代 M12 的真实 WebView/辅助技术验证。
+- 2026-08-26：G3 本地 fmt/clippy/locked Workspace tests、xtask、metadata、baseline freeze、npm ci/check/build、Playwright、
+  Tauri release no-bundle 与 diff/lock/authority gates 通过；production Vite bundle 不含 Playwright，production npm graph 不含
+  Playwright。G2 checklist 已准备但未执行，最终三平台 Hosted CI 与项目所有者人工验收仍待 push 后取得。
 
 ## 下一停止点
 

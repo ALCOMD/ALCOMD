@@ -38,6 +38,7 @@ mod m5_backup;
 mod m5_backup_restore;
 mod m5_template;
 mod m6;
+mod m7_official;
 mod sqlite;
 
 /// Stable crate identifier used by repository checks.

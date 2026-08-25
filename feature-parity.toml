@@ -244,8 +244,8 @@ behavior = "official React/MD3 GUI 通过 typed Tauri adapter、alcomd-client、
 implementation = "apps/alcomd-gui"
 release_class = "release_blocker"
 status = "verified"
-implementation_status = "not_started"
-evidence = ["docs/exec-plans/M7-official-gui-extension-ui.md::Restored Official GUI Completion", "docs/exec-plans/M7-gui-rpc-coverage.md"]
+implementation_status = "in_progress"
+evidence = ["docs/exec-plans/M7-official-gui-extension-ui.md::Restored Official GUI Completion", "docs/exec-plans/M7-gui-rpc-coverage.md", "apps/alcomd-gui/src/App.tsx", "apps/alcomd-gui/src/CorePages.tsx", "apps/alcomd-gui/src/CoreActions.tsx", "apps/alcomd-gui/tests/browser/m7-accessibility.spec.ts"]
 coverage = ["routes/pages", "typed adapter", "read states", "mutation/Plan/Operation", "settings/activity/diagnostics", "browser accessibility", "manual visual flow"]
 tests = ["gui.m7-core-surfaces", "gui.m7-operation-flows", "gui.m7-accessibility-automation", "gui.m7-visual-flow-evidence", "settings.authoritative-storage", "activity.log-redaction", "diagnostics.redacted-list", "gui.m7-portable-ui-production"]
 
@@ -258,8 +258,8 @@ behavior = "结构化活动和日志可观察且不泄露 token、Authorization 
 implementation = "alcomd-application"
 release_class = "release_blocker"
 status = "verified"
-implementation_status = "not_started"
-evidence = ["docs/baselines/alcomd3-v3-audit.md::日志", "AGENTS.md::代码规则"]
+implementation_status = "in_progress"
+evidence = ["docs/baselines/alcomd3-v3-audit.md::日志", "AGENTS.md::代码规则", "crates/alcomd-store/src/m7_official.rs", "apps/alcomd-gui/src/CorePages.tsx", "crates/alcomd-testing/tests/m7_official_rpc.rs"]
 coverage = ["GUI", "CLI stderr", "MCP errors", "migration"]
 tests = ["activity.log-redaction", "diagnostics.redacted-list", "operations.lifecycle"]
 

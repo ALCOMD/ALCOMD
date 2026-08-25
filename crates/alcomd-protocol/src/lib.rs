@@ -129,6 +129,10 @@ pub const METHOD_EXTENSIONS_UI_OPEN: &str = "extensions.ui.open";
 pub const METHOD_EXTENSIONS_UI_REFRESH: &str = "extensions.ui.refresh";
 pub const METHOD_EXTENSIONS_UI_DISPATCH: &str = "extensions.ui.dispatch";
 pub const METHOD_EXTENSIONS_UI_CLOSE: &str = "extensions.ui.close";
+pub const METHOD_SETTINGS_GET: &str = "settings.get";
+pub const METHOD_SETTINGS_UPDATE: &str = "settings.update";
+pub const METHOD_ACTIVITY_LIST: &str = "activity.list";
+pub const METHOD_DIAGNOSTICS_LIST: &str = "diagnostics.list";
 
 /// Capability required by `state.check`.
 pub const CAPABILITY_STATE_CHECK_V1: &str = "state.check.v1";
@@ -633,6 +637,9 @@ pub struct HelloResult {
     /// Ready state-store schema version. Absent when the store is unavailable or not initialized.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data_schema: Option<u32>,
+    /// Public settings Config Schema version, present only once durable config RPC is ready.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_schema: Option<u32>,
     /// Extension ABI information, present only once the M6 runtime is available.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extension_api: Option<ExtensionApiInfo>,
@@ -654,6 +661,7 @@ impl HelloResult {
             daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             capabilities: Vec::new(),
             data_schema: None,
+            config_schema: None,
             extension_api: None,
         }
     }
@@ -666,6 +674,7 @@ impl HelloResult {
             daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             capabilities,
             data_schema: Some(1),
+            config_schema: None,
             extension_api: None,
         }
     }
@@ -678,6 +687,7 @@ impl HelloResult {
             daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             capabilities,
             data_schema: Some(2),
+            config_schema: None,
             extension_api: None,
         }
     }
@@ -690,6 +700,7 @@ impl HelloResult {
             daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             capabilities,
             data_schema: Some(3),
+            config_schema: None,
             extension_api: None,
         }
     }
@@ -702,6 +713,7 @@ impl HelloResult {
             daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             capabilities,
             data_schema: Some(6),
+            config_schema: None,
             extension_api: None,
         }
     }
@@ -714,6 +726,7 @@ impl HelloResult {
             daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             capabilities,
             data_schema: Some(8),
+            config_schema: None,
             extension_api: Some(ExtensionApiInfo {
                 major: 1,
                 world: "alcomd:extension/extension-v1@1.0.0".to_owned(),
@@ -729,11 +742,20 @@ impl HelloResult {
             daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             capabilities,
             data_schema: Some(9),
+            config_schema: None,
             extension_api: Some(ExtensionApiInfo {
                 major: 1,
                 world: "alcomd:extension/extension-v1@1.0.0".to_owned(),
             }),
         }
+    }
+
+    /// Creates the complete M7 hello result after Config Schema 1 is durable and queryable.
+    #[must_use]
+    pub fn m7_official_gui(capabilities: Vec<String>) -> Self {
+        let mut result = Self::m7(capabilities);
+        result.config_schema = Some(1);
+        result
     }
 }
 
@@ -1839,6 +1861,231 @@ pub struct BackupApplyRestoreResult {
     pub operation_id: String,
     pub project_id: String,
     pub replayed: bool,
+}
+
+pub const CONFIG_SCHEMA_VERSION: u32 = 1;
+pub const MAX_OFFICIAL_GUI_PAGE_LIMIT: u32 = 200;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AppearanceMode {
+    System,
+    Light,
+    Dark,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AppearanceDensity {
+    Default,
+    Compact,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AppearanceMotion {
+    System,
+    Reduced,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum SettingsLocale {
+    #[serde(rename = "system")]
+    System,
+    #[serde(rename = "en-US")]
+    EnUs,
+    #[serde(rename = "zh-CN")]
+    ZhCn,
+    #[serde(rename = "ja-JP")]
+    JaJp,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AppearanceSettings {
+    pub mode: AppearanceMode,
+    pub source_color: Option<String>,
+    pub density: AppearanceDensity,
+    pub motion: AppearanceMotion,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Settings {
+    pub appearance: AppearanceSettings,
+    pub locale: SettingsLocale,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub enum NullableUpdate<T> {
+    #[default]
+    Unchanged,
+    Clear,
+    Set(T),
+}
+
+impl<T> NullableUpdate<T> {
+    #[must_use]
+    pub const fn is_unchanged(&self) -> bool {
+        matches!(self, Self::Unchanged)
+    }
+}
+
+impl<T: Serialize> Serialize for NullableUpdate<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Self::Unchanged | Self::Clear => serializer.serialize_none(),
+            Self::Set(value) => value.serialize(serializer),
+        }
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for NullableUpdate<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Option::<T>::deserialize(deserializer).map(|value| match value {
+            Some(value) => Self::Set(value),
+            None => Self::Clear,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AppearanceSettingsUpdate {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<AppearanceMode>,
+    #[serde(default, skip_serializing_if = "NullableUpdate::is_unchanged")]
+    pub source_color: NullableUpdate<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub density: Option<AppearanceDensity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub motion: Option<AppearanceMotion>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SettingsUpdate {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub appearance: Option<AppearanceSettingsUpdate>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locale: Option<SettingsLocale>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsGetResult {
+    pub config_schema: u32,
+    pub revision: u64,
+    pub settings: Settings,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SettingsUpdateParams {
+    pub expected_revision: u64,
+    pub update: SettingsUpdate,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ActivityCursor {
+    pub occurred_at_ms: u64,
+    pub source_rank: u8,
+    pub stable_id: String,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ActivityListParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<ActivityCursor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ActivityItemType {
+    Operation,
+    Event,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityItem {
+    pub occurred_at_ms: u64,
+    #[serde(rename = "type")]
+    pub item_type: ActivityItemType,
+    pub summary_code: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_sequence: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityListResult {
+    pub items: Vec<ActivityItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<ActivityCursor>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DiagnosticCursor {
+    pub occurred_at_ms: u64,
+    pub operation_id: String,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DiagnosticsListParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<DiagnosticCursor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DiagnosticSeverity {
+    Warning,
+    Error,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticItem {
+    pub occurred_at_ms: u64,
+    pub severity: DiagnosticSeverity,
+    pub subsystem: String,
+    pub code: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnostic_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation_id: Option<String>,
+    pub summary: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiagnosticsListResult {
+    pub items: Vec<DiagnosticItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<DiagnosticCursor>,
 }
 
 /// Successful `system.status` result.

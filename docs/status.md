@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI candidate aa132343 已通过三平台 Hosted CI，completion audit 后正在恢复并实施 Official GUI Completion；尚未进入 M8/M9。`
+`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI，Official GUI Completion 已完成生产实现与本地自动化验收，仍等待人工视觉签收、最终候选 Hosted CI 和项目所有者验收；尚未进入 M8/M9。`
 
 ## 已完成
 
@@ -259,6 +259,14 @@
   `docs/exec-plans/M7-gui-rpc-coverage.md`。
 - GUI browser-level accessibility automation 唯一获批新增 `@playwright/test 1.62.1` devDependency 与匹配 Chromium；它不进入
   production bundle/runtime，不复活旧 WebView probe，也不替代 M12 的真实平台 screen-reader 验收。
+- M7 Official GUI Completion E1-F3 已完成 M1-M7 GUI-relevant Core 页面与流程、typed Tauri/client/RPC adapter、
+  Plan/Apply/Operation、Config Schema v1 durable settings、safe Activity/Diagnostics projection 和统一 loading/refreshing/empty/
+  error/disconnected 状态。新增公共合同严格限于获批的四个 RPC 与四个 permission；没有 State DB 新表、generic RPC
+  passthrough、新 Cargo dependency、unsafe 或平台 API。
+- G1 的 Playwright 1.62.1 / Chromium revision 1234 browser suite 本地 12/12 通过，覆盖键盘与焦点、dialog/form/live region、
+  320 CSS px、deterministic 200% layout、reduced motion、light/dark targeted contrast、17 个 Portable UI node 与 Core
+  success/stale/failed/cancelled flows。完整本地 Rust/npm/Tauri/metadata/baseline/lock/authority gates 已通过，production bundle
+  与 production npm graph 均不含 Playwright。G2 人工 checklist 已准备但尚未执行；最终候选 Hosted CI 与人工验收仍未取得。
 
 ## 后续里程碑尚未完成
 
@@ -267,8 +275,8 @@
 - MCP 33 个 v3 用例的 M-1 工具合同基线已形成并获 A-026 批准；正式 Schema、快照、兼容
   别名策略和协议实现留在对应后续里程碑。
 - VPM、项目、模板与备份。
-- M7 Official GUI Completion E1-G3、Chromium DOM/accessibility automation、一次交互桌面视觉/键盘签收与最终人工验收；
-  B0-D Hosted-green candidate 不冒充完整 M7 acceptance。
+- M7 Official GUI Completion 的一次交互桌面视觉/键盘签收、最终候选三平台 Hosted CI 与最终人工验收；E1-G1/G3 的本地
+  完成状态和 B0-D Hosted-green candidate 均不冒充完整 M7 acceptance。
 - MCP 实现。
 - Discord IPC。
 - v3 迁移与 Bootstrap。
@@ -285,9 +293,9 @@
   `GLIBC_2.35` 等价验证。
 - M7 WebView-based Extension UI direction 已在 production 前拒绝，不再把 container/physical mapping、custom
   scheme/CSP 或三平台 WebView isolation matrix 作为产品 blocker。Portable UI production 已获批准且 B0/B1 已完成；
-  Slice C official renderer、Slice D headless/security/fault conformance 与 Hosted CI 已通过；当前真实缺口是 restored
-  official GUI Core surfaces/flows、Settings/Activity/Diagnostics contracts、browser-level accessibility、manual visual flow
-  evidence 与最终人工验收。
+  Slice C official renderer、Slice D headless/security/fault conformance 与 Hosted CI 已通过；restored Official GUI Core
+  surfaces/flows、Settings/Activity/Diagnostics contracts 与 Chromium browser-level accessibility 已完成本地实现和验收。
+  当前真实缺口是 manual visual/flow/keyboard evidence、最终候选自身的三平台 Hosted CI 与项目所有者最终人工验收。
 
 - 真实安装快照和迁移 Fixture 尚未建立；因此 artifact 模板继续保持 `confirmed = false`，
   迁移删除、GUI/模板/备份/Unity 差异测试仍 blocked。项目所有者已决定不在 M-1 继续投入
@@ -319,9 +327,9 @@
 ## 下一停止点
 
 M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 Portable UI B0-D 已通过 Hosted CI；当前按批准顺序
-实施 Official GUI Completion E1-G3。完成 production、browser tests、完整本地 gate 与 manual evidence preparation 后形成新的
-未 push local candidate并停止等待人工 push gate；仍按 stop conditions 控制依赖、unsafe、platform API、公共合同与范围，
-不得进入 M8/M9。
+完成了 Official GUI Completion E1-G1/G3 的 production、browser tests、完整本地 gate 与 manual evidence preparation，
+正在形成新的未 push local candidate并停止等待人工视觉签收与 push gate；仍按 stop conditions 控制依赖、unsafe、
+platform API、公共合同与范围，不得进入 M8/M9。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential

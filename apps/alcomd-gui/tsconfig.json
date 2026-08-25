@@ -10,6 +10,8 @@
     },
     "include": [
         "src",
+        "tests",
+        "playwright.config.ts",
         "vite.config.ts"
     ]
 }

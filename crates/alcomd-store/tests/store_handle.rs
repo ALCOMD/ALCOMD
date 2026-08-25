@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
-use alcomd_application::{StateCheckResult, StateStore, StoreErrorKind};
+use alcomd_application::{OfficialGuiStore, StateCheckResult, StateStore, StoreErrorKind};
 use alcomd_domain::{IdempotencyKey, OperationId, OperationState, PrincipalId, Revision};
 use alcomd_store::{StateStoreHandle, StoreOpenError};
 use rusqlite::Connection;
@@ -92,6 +92,77 @@ async fn state_check_is_persistent_idempotent_and_evented() {
         .await
         .expect("list operations");
     assert_eq!(operations.operations, [completed]);
+}
+
+#[tokio::test]
+async fn official_activity_and_diagnostics_are_owner_scoped_redacted_and_pageable() {
+    let directory = TestDirectory::new();
+    let store = StateStoreHandle::open(directory.database()).expect("open store");
+    let owner = PrincipalId::local_owner();
+    let accepted = store
+        .create_state_check(owner.clone(), key("official-gui-failure"), 10)
+        .await
+        .expect("create operation");
+    store
+        .begin_state_check(accepted.operation_id, 20)
+        .await
+        .expect("begin operation");
+    store
+        .finish_failed(
+            accepted.operation_id,
+            "internal_error".to_owned(),
+            "00000000-0000-4000-8000-000000000777".to_owned(),
+            30,
+        )
+        .await
+        .expect("fail operation");
+
+    let first = store
+        .list_official_activity(owner.clone(), None, 2)
+        .await
+        .expect("first activity page");
+    assert_eq!(first.items.len(), 2);
+    assert!(first.next_cursor.is_some());
+    assert!(first.items.iter().all(|item| {
+        !item.summary_code.contains("Authorization")
+            && !item.summary_code.contains('\\')
+            && !item.summary_code.contains('/')
+    }));
+    let second = store
+        .list_official_activity(owner.clone(), first.next_cursor, 2)
+        .await
+        .expect("second activity page");
+    assert_eq!(second.items.len(), 2);
+    assert!(second.next_cursor.is_none());
+
+    let diagnostics = store
+        .list_official_diagnostics(owner.clone(), None, 100)
+        .await
+        .expect("diagnostics");
+    assert_eq!(diagnostics.items.len(), 1);
+    assert_eq!(diagnostics.items[0].code, "internal_error");
+    assert_eq!(
+        diagnostics.items[0].diagnostic_id.as_deref(),
+        Some("00000000-0000-4000-8000-000000000777")
+    );
+
+    let other = PrincipalId::parse("test:other-owner").expect("other principal");
+    assert!(
+        store
+            .list_official_activity(other.clone(), None, 100)
+            .await
+            .expect("isolated activity")
+            .items
+            .is_empty()
+    );
+    assert!(
+        store
+            .list_official_diagnostics(other, None, 100)
+            .await
+            .expect("isolated diagnostics")
+            .items
+            .is_empty()
+    );
 }
 
 #[tokio::test]

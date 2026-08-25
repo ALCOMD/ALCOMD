@@ -59,6 +59,11 @@ jobs:
             extensions/first-party/alcomd-extension-discord/backend/Cargo.lock
       - name: Verify final diff
         run: git diff --check
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
+        working-directory: apps/alcomd-gui
+      - name: Test official GUI in Chromium
+        run: npm run test:browser --workspace @alcomd/gui
 
   linux-hosted:
     name: Ubuntu 22.04 hosted
@@ -118,6 +123,11 @@ jobs:
             extensions/first-party/alcomd-extension-discord/backend/Cargo.lock
       - name: Verify final diff
         run: git diff --check
+      - name: Install Playwright Chromium and system test dependencies
+        run: npx playwright install --with-deps chromium
+        working-directory: apps/alcomd-gui
+      - name: Test official GUI in Chromium
+        run: npm run test:browser --workspace @alcomd/gui
 
   macos-hosted:
     name: macOS 15 arm64 hosted
@@ -164,3 +174,8 @@ jobs:
             extensions/first-party/alcomd-extension-discord/backend/Cargo.lock
       - name: Verify final diff
         run: git diff --check
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
+        working-directory: apps/alcomd-gui
+      - name: Test official GUI in Chromium
+        run: npm run test:browser --workspace @alcomd/gui

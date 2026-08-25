@@ -205,6 +205,41 @@ impl AlcomdClient {
         .await
     }
 
+    /// Reads the durable Config Schema 1 settings snapshot.
+    pub async fn settings_get(
+        &mut self,
+    ) -> Result<alcomd_protocol::SettingsGetResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_SETTINGS_GET, json!({}))
+            .await
+    }
+
+    /// Applies an optimistic-concurrency settings update.
+    pub async fn settings_update(
+        &mut self,
+        params: alcomd_protocol::SettingsUpdateParams,
+    ) -> Result<alcomd_protocol::SettingsGetResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_SETTINGS_UPDATE, params)
+            .await
+    }
+
+    /// Lists the current Principal's redacted activity projection.
+    pub async fn activity_list(
+        &mut self,
+        params: alcomd_protocol::ActivityListParams,
+    ) -> Result<alcomd_protocol::ActivityListResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_ACTIVITY_LIST, params)
+            .await
+    }
+
+    /// Lists the current Principal's redacted diagnostic projection.
+    pub async fn diagnostics_list(
+        &mut self,
+        params: alcomd_protocol::DiagnosticsListParams,
+    ) -> Result<alcomd_protocol::DiagnosticsListResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_DIAGNOSTICS_LIST, params)
+            .await
+    }
+
     pub async fn extensions_list(
         &mut self,
         params: alcomd_protocol::ExtensionsListParams,

@@ -8,30 +8,79 @@ import {
     applyAppearance,
     defaultAppearance,
     productFamily,
-    type AppearanceMode,
-    type AppearanceSettings,
-    type InterfaceDensity,
-    type SourceColor
+    type AppearanceSettings
 } from "@alcomd/ui";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import {
+    AboutPage,
+    ActivityPage,
+    BackupDetailPage,
+    DiagnosticsPage,
+    ExtensionDetailPage,
+    ExtensionsPage,
+    HomePage,
+    OperationDetailPage,
+    OperationsPage,
+    ProjectBackupsPage,
+    ProjectDetailPage,
+    ProjectPackagesPage,
+    ProjectsPage,
+    ProjectUnityPage,
+    RepositoriesPage,
+    RepositoryDetailPage,
+    RouteState,
+    SettingsPage,
+    TemplateDetailPage,
+    TemplatesPage,
+    UnityPage
+} from "./CorePages";
 import { PortableUiRenderer } from "./PortableUiRenderer";
 import {
     PortableUiConsumerError,
     acceptSnapshot
 } from "./portable-ui";
 import { guiRpcClient, type GuiRpcClient } from "./rpc";
+import type { SettingsGetResult } from "./core-models";
 
-const DISCARD_MESSAGE = "Discard the unsaved extension form changes?";
+const DISCARD_MESSAGE = "Discard the unsaved changes?";
 
-type Route = { kind: "home" } | { kind: "extension-ui"; extensionId: string };
+type Route =
+    | { kind: "home" }
+    | { kind: "projects" }
+    | { kind: "project-detail"; projectId: string }
+    | { kind: "project-packages"; projectId: string }
+    | { kind: "project-unity"; projectId: string }
+    | { kind: "project-backups"; projectId: string }
+    | { kind: "repositories" }
+    | { kind: "repository-detail"; repositoryId: string }
+    | { kind: "templates" }
+    | { kind: "template-detail"; templateId: string }
+    | { kind: "unity" }
+    | { kind: "backup-detail"; backupId: string }
+    | { kind: "operations" }
+    | { kind: "operation-detail"; operationId: string }
+    | { kind: "extensions" }
+    | { kind: "extension-detail"; extensionId: string }
+    | { kind: "extension-ui"; extensionId: string }
+    | { kind: "activity" }
+    | { kind: "diagnostics" }
+    | { kind: "settings" }
+    | { kind: "about" }
+    | { kind: "not-found" };
 
-export function App() {
+interface AppProps {
+    client?: GuiRpcClient;
+}
+
+export function App({ client = guiRpcClient }: AppProps) {
     const [route, setRoute] = useState<Route>(() => readRoute(window.location.pathname));
+    const [navigationOpen, setNavigationOpen] = useState(false);
     const [appearance, setAppearance] = useState<AppearanceSettings>(defaultAppearance);
     const [locale, setLocale] = useState(() => preferredLocale(navigator.language));
     const dirtyRef = useRef(false);
+    const navigationToggleRef = useRef<HTMLButtonElement>(null);
     const handleDirtyChange = useCallback((dirty: boolean) => {
         dirtyRef.current = dirty;
     }, []);
@@ -39,6 +88,31 @@ export function App() {
     useEffect(() => {
         applyAppearance(document.documentElement, appearance);
     }, [appearance]);
+
+    const applySettings = useCallback((value: SettingsGetResult) => {
+        const sourceColor = sourceColorName(value.settings.appearance.sourceColor);
+        setAppearance({
+            mode: value.settings.appearance.mode,
+            sourceColor,
+            density: value.settings.appearance.density === "compact" ? "compact" : "comfortable"
+        });
+        const nextLocale = value.settings.locale === "system"
+            ? preferredLocale(navigator.language)
+            : value.settings.locale;
+        setLocale(nextLocale);
+        document.documentElement.lang = nextLocale;
+        document.documentElement.dataset.motion = value.settings.appearance.motion;
+    }, []);
+
+    useEffect(() => {
+        let active = true;
+        void client.settingsGet().then((value) => {
+            if (active) applySettings(value);
+        }).catch(() => {
+            // The durable Settings page exposes reconnect/error state; shell defaults remain safe.
+        });
+        return () => { active = false; };
+    }, [applySettings, client]);
 
     useEffect(() => {
         const onPopState = () => {
@@ -64,7 +138,35 @@ export function App() {
         return () => window.removeEventListener("beforeunload", beforeUnload);
     }, []);
 
-    const navigate = (next: Route) => {
+    useEffect(() => {
+        setNavigationOpen(false);
+        window.requestAnimationFrame(() => {
+            document.querySelector<HTMLElement>("#route-title, #extension-ui-title")?.focus();
+        });
+    }, [route]);
+
+    useEffect(() => {
+        if (!navigationOpen) return;
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") {
+                event.preventDefault();
+                setNavigationOpen(false);
+                window.requestAnimationFrame(() => navigationToggleRef.current?.focus());
+            }
+        };
+        window.addEventListener("keydown", onKeyDown);
+        const focusTimer = window.setTimeout(() => {
+            const currentItem = document.querySelector<HTMLElement>("#primary-navigation nav button[aria-current='page']");
+            const firstItem = document.querySelector<HTMLElement>("#primary-navigation nav button");
+            (currentItem ?? firstItem)?.focus();
+        }, 0);
+        return () => {
+            window.clearTimeout(focusTimer);
+            window.removeEventListener("keydown", onKeyDown);
+        };
+    }, [navigationOpen]);
+
+    const navigateRoute = (next: Route) => {
         if (dirtyRef.current && !window.confirm(DISCARD_MESSAGE)) {
             return;
         }
@@ -73,85 +175,144 @@ export function App() {
         setRoute(next);
     };
 
-    const changeLocale = (next: string) => {
-        if (next === locale) {
-            return;
-        }
-        if (dirtyRef.current && !window.confirm(DISCARD_MESSAGE)) {
-            return;
-        }
-        dirtyRef.current = false;
-        setLocale(next);
-    };
+    const navigate = (path: string) => navigateRoute(readRoute(path));
 
     return (
         <div className="app-shell">
             <header className="top-app-bar">
-                <button className="brand-button" onClick={() => navigate({ kind: "home" })} type="button">
+                <button
+                    aria-controls="primary-navigation"
+                    aria-expanded={navigationOpen}
+                    className="navigation-toggle"
+                    onClick={() => setNavigationOpen((current) => !current)}
+                    ref={navigationToggleRef}
+                    type="button"
+                >
+                    <span aria-hidden="true">☰</span><span className="visually-hidden">Toggle navigation</span>
+                </button>
+                <button className="brand-button" onClick={() => navigateRoute({ kind: "home" })} type="button">
                     <span className="brand-mark" aria-hidden="true">A</span>
                     <span><strong>ALCOMD3</strong><small>{productFamily} platform</small></span>
                 </button>
-                <AppearanceControls
-                    appearance={appearance}
-                    locale={locale}
-                    onAppearanceChange={setAppearance}
-                    onLocaleChange={changeLocale}
-                />
+                <button className="button button--tonal settings-shortcut" onClick={() => navigateRoute({ kind: "settings" })} type="button">Settings</button>
             </header>
-            <main className="main-content">
-                {route.kind === "home" ? (
-                    <HomePage onOpen={(extensionId) => navigate({ kind: "extension-ui", extensionId })} />
-                ) : (
-                    <ExtensionUiPage
-                        client={guiRpcClient}
-                        extensionId={route.extensionId}
+            <div className="app-body">
+                {navigationOpen ? <button aria-hidden="true" className="navigation-scrim" onClick={() => setNavigationOpen(false)} tabIndex={-1} type="button" /> : null}
+                <PrimaryNavigation
+                    current={route}
+                    navigate={navigate}
+                    onClose={() => {
+                        setNavigationOpen(false);
+                        window.requestAnimationFrame(() => navigationToggleRef.current?.focus());
+                    }}
+                    open={navigationOpen}
+                />
+                <main className="main-content" id="main-content">
+                    <RouteContent
+                        client={client}
                         locale={locale}
+                        navigate={navigate}
                         onDirtyChange={handleDirtyChange}
+                        onSettingsApplied={applySettings}
+                        route={route}
                     />
-                )}
-            </main>
+                </main>
+            </div>
         </div>
     );
 }
 
-function HomePage({ onOpen }: { onOpen(extensionId: string): void }) {
-    const [extensionId, setExtensionId] = useState("");
-    const valid = /^[a-z][a-z0-9._-]{0,63}$/.test(extensionId);
+function PrimaryNavigation({ current, navigate, onClose, open }: { current: Route; navigate(path: string): void; onClose(): void; open: boolean }) {
+    const items = [
+        ["/", "Home", "home"],
+        ["/projects", "Projects", "projects"],
+        ["/repositories", "Repositories", "repositories"],
+        ["/templates", "Templates", "templates"],
+        ["/unity", "Unity", "unity"],
+        ["/operations", "Operations", "operations"],
+        ["/extensions", "Extensions", "extensions"],
+        ["/activity", "Activity", "activity"],
+        ["/diagnostics", "Diagnostics", "diagnostics"],
+        ["/settings", "Settings", "settings"],
+        ["/about", "About", "about"]
+    ] as const;
     return (
-        <section className="home-card" aria-labelledby="home-title">
-            <p className="eyebrow">Official desktop client</p>
-            <h1 id="home-title">ALCOMD3</h1>
-            <p className="supporting-text">
-                Open a Portable UI exposed by an enabled extension. Extension content remains inside the
-                official renderer and cannot provide its own HTML, CSS, script, or Tauri authority.
-            </p>
-            <form
-                className="open-extension-form"
-                onSubmit={(event) => {
-                    event.preventDefault();
-                    if (valid) {
-                        onOpen(extensionId);
-                    }
-                }}
-            >
-                <label>
-                    <span>Extension ID</span>
-                    <input
-                        aria-describedby="extension-id-hint"
-                        autoComplete="off"
-                        maxLength={64}
-                        onChange={(event) => setExtensionId(event.currentTarget.value)}
-                        pattern="[a-z][a-z0-9._-]{0,63}"
-                        required
-                        spellCheck={false}
-                        value={extensionId}
-                    />
-                </label>
-                <p className="field-hint" id="extension-id-hint">Use the installed extension's stable ID.</p>
-                <button className="button button--filled" disabled={!valid} type="submit">Open extension UI</button>
-            </form>
-        </section>
+        <aside className={`primary-navigation${open ? " primary-navigation--open" : ""}`} id="primary-navigation" onKeyDown={(event) => {
+            if (open) keepFocusInside(event);
+        }}>
+            <a className="skip-link" href="#main-content">Skip to content</a>
+            <button aria-label="Close navigation" className="navigation-close" onClick={onClose} type="button">×</button>
+            <nav aria-label="Primary">
+                {items.map(([path, label, section]) => (
+                    <button
+                        aria-current={routeSection(current) === section ? "page" : undefined}
+                        key={path}
+                        onClick={() => navigate(path)}
+                        type="button"
+                    >{label}</button>
+                ))}
+            </nav>
+        </aside>
     );
+}
+
+function keepFocusInside(event: React.KeyboardEvent<HTMLElement>): void {
+    if (event.key !== "Tab") return;
+    const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])"))
+        .filter((element) => element.getClientRects().length > 0);
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (first === undefined || last === undefined) {
+        event.preventDefault();
+    } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+    }
+}
+
+function RouteContent({
+    client,
+    locale,
+    navigate,
+    onDirtyChange,
+    onSettingsApplied,
+    route
+}: {
+    client: GuiRpcClient;
+    locale: string;
+    navigate(path: string): void;
+    onDirtyChange(dirty: boolean): void;
+    onSettingsApplied(value: SettingsGetResult): void;
+    route: Route;
+}) {
+    const props = { client, navigate };
+    switch (route.kind) {
+        case "home": return <HomePage {...props} />;
+        case "projects": return <ProjectsPage {...props} />;
+        case "project-detail": return <ProjectDetailPage {...props} projectId={route.projectId} />;
+        case "project-packages": return <ProjectPackagesPage {...props} projectId={route.projectId} />;
+        case "project-unity": return <ProjectUnityPage {...props} projectId={route.projectId} />;
+        case "project-backups": return <ProjectBackupsPage {...props} projectId={route.projectId} />;
+        case "repositories": return <RepositoriesPage {...props} />;
+        case "repository-detail": return <RepositoryDetailPage {...props} repositoryId={route.repositoryId} />;
+        case "templates": return <TemplatesPage {...props} />;
+        case "template-detail": return <TemplateDetailPage {...props} templateId={route.templateId} />;
+        case "unity": return <UnityPage {...props} />;
+        case "backup-detail": return <BackupDetailPage {...props} backupId={route.backupId} />;
+        case "operations": return <OperationsPage {...props} />;
+        case "operation-detail": return <OperationDetailPage {...props} operationId={route.operationId} />;
+        case "extensions": return <ExtensionsPage {...props} />;
+        case "extension-detail": return <ExtensionDetailPage {...props} extensionId={route.extensionId} />;
+        case "extension-ui": return <ExtensionUiPage client={client} extensionId={route.extensionId} locale={locale} onDirtyChange={onDirtyChange} />;
+        case "activity": return <ActivityPage {...props} />;
+        case "diagnostics": return <DiagnosticsPage {...props} />;
+        case "settings": return <SettingsPage {...props} onApplied={onSettingsApplied} onDirtyChange={onDirtyChange} />;
+        case "about": return <AboutPage {...props} />;
+        case "not-found": return <RouteState kind="error" title="Page not found" detail="Use the primary navigation to continue." />;
+    }
 }
 
 interface ExtensionUiPageProps {
@@ -346,52 +507,6 @@ function ExtensionIdentity({ extension }: { extension: ExtensionRecord }) {
     );
 }
 
-interface AppearanceControlsProps {
-    appearance: AppearanceSettings;
-    locale: string;
-    onAppearanceChange(settings: AppearanceSettings): void;
-    onLocaleChange(locale: string): void;
-}
-
-function AppearanceControls({
-    appearance,
-    locale,
-    onAppearanceChange,
-    onLocaleChange
-}: AppearanceControlsProps) {
-    const set = <Key extends keyof AppearanceSettings>(key: Key, value: AppearanceSettings[Key]) => {
-        onAppearanceChange({ ...appearance, [key]: value });
-    };
-    return (
-        <details className="appearance-menu">
-            <summary>Appearance and language</summary>
-            <div className="appearance-grid">
-                <label>Theme
-                    <select value={appearance.mode} onChange={(event) => set("mode", event.currentTarget.value as AppearanceMode)}>
-                        <option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option>
-                    </select>
-                </label>
-                <label>Color
-                    <select value={appearance.sourceColor} onChange={(event) => set("sourceColor", event.currentTarget.value as SourceColor)}>
-                        <option value="violet">Violet</option><option value="blue">Blue</option><option value="teal">Teal</option>
-                    </select>
-                </label>
-                <label>Density
-                    <select value={appearance.density} onChange={(event) => set("density", event.currentTarget.value as InterfaceDensity)}>
-                        <option value="comfortable">Comfortable</option><option value="compact">Compact</option>
-                    </select>
-                </label>
-                <label>Language
-                    <select value={locale} onChange={(event) => onLocaleChange(event.currentTarget.value)}>
-                        <option value="en-US">English</option><option value="zh-CN">简体中文</option><option value="ja-JP">日本語</option>
-                    </select>
-                </label>
-            </div>
-            <p className="field-hint">Appearance remains host-owned and is never sent to extensions.</p>
-        </details>
-    );
-}
-
 interface StatePanelProps {
     kind: "loading" | "error" | "disconnected";
     title: string;
@@ -481,11 +596,88 @@ function preferredLocale(value: string): string {
     return /^(?:en-US|zh-CN|ja-JP)$/.test(canonical) ? canonical : "en-US";
 }
 
+function sourceColorName(value: string | null): AppearanceSettings["sourceColor"] {
+    switch (value) {
+        case "#315DA8": return "blue";
+        case "#006A60": return "teal";
+        default: return "violet";
+    }
+}
+
 function readRoute(pathname: string): Route {
-    const match = /^\/extensions\/([a-z][a-z0-9._-]{0,63})\/ui\/?$/.exec(pathname);
-    return match?.[1] === undefined ? { kind: "home" } : { kind: "extension-ui", extensionId: match[1] };
+    const segments = pathname.split("/").filter(Boolean).map((segment) => decodeURIComponent(segment));
+    if (segments.length === 0) return { kind: "home" };
+    if (segments.length === 1) {
+        switch (segments[0]) {
+            case "projects": return { kind: "projects" };
+            case "repositories": return { kind: "repositories" };
+            case "templates": return { kind: "templates" };
+            case "unity": return { kind: "unity" };
+            case "operations": return { kind: "operations" };
+            case "extensions": return { kind: "extensions" };
+            case "activity": return { kind: "activity" };
+            case "diagnostics": return { kind: "diagnostics" };
+            case "settings": return { kind: "settings" };
+            case "about": return { kind: "about" };
+            default: return { kind: "not-found" };
+        }
+    }
+    if (segments[0] === "projects" && segments[1] !== undefined) {
+        if (segments.length === 2) return { kind: "project-detail", projectId: segments[1] };
+        if (segments.length === 3 && segments[2] === "packages") return { kind: "project-packages", projectId: segments[1] };
+        if (segments.length === 3 && segments[2] === "unity") return { kind: "project-unity", projectId: segments[1] };
+        if (segments.length === 3 && segments[2] === "backups") return { kind: "project-backups", projectId: segments[1] };
+    }
+    if (segments[0] === "repositories" && segments.length === 2 && segments[1] !== undefined) return { kind: "repository-detail", repositoryId: segments[1] };
+    if (segments[0] === "templates" && segments.length === 2 && segments[1] !== undefined) return { kind: "template-detail", templateId: segments[1] };
+    if (segments[0] === "backups" && segments.length === 2 && segments[1] !== undefined) return { kind: "backup-detail", backupId: segments[1] };
+    if (segments[0] === "operations" && segments.length === 2 && segments[1] !== undefined) return { kind: "operation-detail", operationId: segments[1] };
+    if (segments[0] === "extensions" && segments[1] !== undefined) {
+        if (segments.length === 2) return { kind: "extension-detail", extensionId: segments[1] };
+        if (segments.length === 3 && segments[2] === "ui") return { kind: "extension-ui", extensionId: segments[1] };
+    }
+    return { kind: "not-found" };
 }
 
 function routePath(route: Route): string {
-    return route.kind === "home" ? "/" : `/extensions/${route.extensionId}/ui`;
+    switch (route.kind) {
+        case "home": return "/";
+        case "projects": return "/projects";
+        case "project-detail": return `/projects/${encodeURIComponent(route.projectId)}`;
+        case "project-packages": return `/projects/${encodeURIComponent(route.projectId)}/packages`;
+        case "project-unity": return `/projects/${encodeURIComponent(route.projectId)}/unity`;
+        case "project-backups": return `/projects/${encodeURIComponent(route.projectId)}/backups`;
+        case "repositories": return "/repositories";
+        case "repository-detail": return `/repositories/${encodeURIComponent(route.repositoryId)}`;
+        case "templates": return "/templates";
+        case "template-detail": return `/templates/${encodeURIComponent(route.templateId)}`;
+        case "unity": return "/unity";
+        case "backup-detail": return `/backups/${encodeURIComponent(route.backupId)}`;
+        case "operations": return "/operations";
+        case "operation-detail": return `/operations/${encodeURIComponent(route.operationId)}`;
+        case "extensions": return "/extensions";
+        case "extension-detail": return `/extensions/${encodeURIComponent(route.extensionId)}`;
+        case "extension-ui": return `/extensions/${encodeURIComponent(route.extensionId)}/ui`;
+        case "activity": return "/activity";
+        case "diagnostics": return "/diagnostics";
+        case "settings": return "/settings";
+        case "about": return "/about";
+        case "not-found": return window.location.pathname;
+    }
+}
+
+function routeSection(route: Route): string {
+    switch (route.kind) {
+        case "project-detail":
+        case "project-packages":
+        case "project-unity":
+        case "project-backups": return "projects";
+        case "repository-detail": return "repositories";
+        case "template-detail": return "templates";
+        case "backup-detail": return "projects";
+        case "operation-detail": return "operations";
+        case "extension-detail":
+        case "extension-ui": return "extensions";
+        default: return route.kind;
+    }
 }

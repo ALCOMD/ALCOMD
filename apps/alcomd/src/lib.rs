@@ -10,8 +10,8 @@ use alcomd_application::{
     AccessContext, Application, ApplicationError, EventRecord as ApplicationEvent, IdempotencyKey,
     M3Application, M4Application, M5BackupApplication as BackupService,
     M5TemplateApplication as TemplateService, M5UnityApplication as M5Application, M6Application,
-    M7Application, OperationCursor, OperationId, OperationRecord, OperationState as DomainState,
-    ResourceLockCoordinator, Revision, StoreErrorKind,
+    M7Application, M7OfficialApplication, OperationCursor, OperationId, OperationRecord,
+    OperationState as DomainState, ResourceLockCoordinator, Revision, StoreErrorKind,
 };
 use alcomd_platform::{BindError, DaemonInstance, DataConfig, IpcConfig, IpcListener, IpcStream};
 use alcomd_protocol::{
@@ -36,6 +36,7 @@ mod m5_rpc;
 mod m5_template_rpc;
 mod m6_rpc;
 mod m6_runtime;
+mod m7_official_rpc;
 mod m7_rpc;
 
 static TEST_DATA_SEQUENCE: AtomicU64 = AtomicU64::new(1);
@@ -60,6 +61,7 @@ type M7ExtensionApplication = M7Application<
     m6_runtime::PlatformExtensionRuntime,
     m7_rpc::ProtocolUiValidator,
 >;
+type M7OfficialGuiApplication = M7OfficialApplication<StateStoreHandle>;
 
 struct Applications {
     m2: M2Application,
@@ -70,6 +72,7 @@ struct Applications {
     backups: BackupApplication,
     m6: M6ExtensionApplication,
     m7: M7ExtensionApplication,
+    official_gui: M7OfficialGuiApplication,
 }
 
 /// Runs the daemon with an ephemeral isolated data directory.
@@ -181,6 +184,10 @@ where
         .await
         .map_err(|_| BindError::Io(io::Error::other("Extension recovery failed")))?;
     let m7 = M7Application::new(m6.clone(), m7_rpc::ProtocolUiValidator);
+    let official_gui = M7OfficialApplication::new(
+        store.clone(),
+        data_root.join("config").join("settings.toml"),
+    );
     let applications = Arc::new(Applications {
         m2,
         m3: M3ReadApplication::new(store.clone(), reader),
@@ -190,6 +197,7 @@ where
         backups,
         m6,
         m7,
+        official_gui,
     });
     let listener = instance.bind()?;
     run_listener(listener, applications, shutdown)
@@ -399,7 +407,7 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
     result_capabilities.sort();
     let mut action = success_action(
         request.id,
-        HelloResult::m7(result_capabilities),
+        HelloResult::m7_official_gui(result_capabilities),
         Some(capabilities),
     );
     action.client_instance_id = Some(client_instance_id);
@@ -592,6 +600,16 @@ async fn dispatch_m2(
                 }
                 Err(error) => application_error(request.id, error),
             }
+        }
+        _ if matches!(
+            request.method.as_str(),
+            alcomd_protocol::METHOD_SETTINGS_GET
+                | alcomd_protocol::METHOD_SETTINGS_UPDATE
+                | alcomd_protocol::METHOD_ACTIVITY_LIST
+                | alcomd_protocol::METHOD_DIAGNOSTICS_LIST
+        ) =>
+        {
+            m7_official_rpc::dispatch(request, &applications.official_gui, access).await
         }
         _ if request.method.starts_with("packages.") => {
             m4_rpc::dispatch(request, state, &applications.m4, access).await

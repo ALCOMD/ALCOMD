@@ -649,3 +649,23 @@ lease secret、InvocationContextId、private Principal metadata 或 raw Wasmtime
 State v9 只为 `extensions` 与 immutable `extension_plans` 增加 nullable checked `ui_protocol`；UI Session、Snapshot、
 action、replay 与 renderer state 都不持久化。B1 daemon/Host/RPC wiring 完成后，hello 广告 `dataSchema: 9`，并只在
 client 请求时回显已实现的 `extensions.ui.portable.v1` capability。
+
+## 24. M7 兼容增加：Official GUI settings/activity/diagnostics
+
+M7 在 RPC major 1 上兼容增加四个 base method；不增加 capability：
+
+| method | params | result | permission |
+|---|---|---|---|
+| `settings.get` | `{}` | `configSchema`, `revision`, full normalized `settings` | `settings.read` |
+| `settings.update` | `expectedRevision`, closed partial `update` | new `revision`, full normalized `settings` | `settings.manage` |
+| `activity.list` | optional tuple `cursor`, optional `limit` | closed Event/Operation projection and next cursor | `activity.read` |
+| `diagnostics.list` | optional tuple `cursor`, optional `limit` | closed redacted diagnostics and next cursor | `diagnostics.read` |
+
+`settings.update` 不接受 idempotency key、generic key/value、路径或 extension setting；revision conflict 使用现有
+`revision_conflict`。只有 `config/settings.toml` production storage 和四个 RPC 全部接线后，hello 才以兼容
+optional field 广告 `configSchema: 1`。
+
+Activity/Diagnostics page size 默认 100、最大 200，使用确定性 tuple keyset cursor。Activity 不返回 Event payload
+或 Operation request/result；Diagnostics v1 只投影已有 Operation failure 与 safe Event evidence，不新建 durable log
+table，也不提供 raw export。完整 DTO、redaction denylist 与 bounds 由 `m7-official-gui.schema.json`、
+`../config/settings-v1.schema.json` 和 `../security/official-gui-read-model-threat-model.md` 冻结。

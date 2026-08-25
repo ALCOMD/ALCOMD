@@ -63,7 +63,18 @@ fn official_renderer_exhaustively_maps_v1_without_private_authority() {
     assert!(!APP.contains("sessionStorage"));
     assert!(!APP.contains("alcomd-extension-host"));
     assert!(!RPC.contains("state.db"));
-    assert_eq!(RPC.matches("gui_extension_").count(), 5);
+    for command in [
+        "gui_extension_get",
+        "gui_extension_ui_open",
+        "gui_extension_ui_refresh",
+        "gui_extension_ui_dispatch",
+        "gui_extension_ui_close",
+    ] {
+        assert!(RPC.contains(command), "missing typed adapter {command}");
+    }
+    assert!(!RENDERER.contains("@tauri-apps/api"));
+    assert!(!RENDERER.contains("invoke("));
+    assert!(!RPC.contains("gui_extension_host"));
 }
 
 #[test]
@@ -71,10 +82,11 @@ fn official_shell_preserves_host_owned_accessibility_and_responsive_boundaries()
     assert!(APP.contains("Extension-provided content"));
     assert!(APP.contains("Host-verified extension identity"));
     assert!(APP.contains("window.confirm(DISCARD_MESSAGE)"));
-    assert!(
-        APP.contains("appearance remains host-owned")
-            || APP.contains("Appearance remains host-owned")
-    );
+    assert!(APP.contains("applyAppearance"));
+    assert!(APP.contains("client.settingsGet()"));
+    assert!(APP.contains("sourceColorName"));
+    assert!(!RENDERER.contains("@alcomd/ui"));
+    assert!(!RENDERER.contains("applyAppearance"));
     assert!(STYLE.contains("min-width: 320px"));
     assert!(STYLE.contains("prefers-reduced-motion: reduce"));
     assert!(STYLE.contains(":focus-visible"));
