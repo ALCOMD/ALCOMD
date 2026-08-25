@@ -1,43 +1,69 @@
 # M7 ALCOMD3 v3 -> ALCOMD v4 布局映射
 
-状态：visual realignment proposal；所有 `pending` 项在项目所有者批准前不得作为 production 设计结论。
+状态：information architecture synthesis；尚未选择 production target。本文把 v3 的可识别产品连续性映射到 v4 用户能力，
+不把 v3 的具体导航树或当前 route inventory 当成预先批准的 sidebar。
 
-分类：`same`、`md3_translation`、`adaptive_translation`、`intentional_deviation`、`missing`、
-`incorrect_current_design`。
+候选方案、wide wireframe、adaptive behavior 与逐项比较位于
+`docs/gui/m7-information-architecture-candidates.md`。项目所有者可以选择一个候选、明确组合其部分，或要求新的候选；在此之前
+H0/H1 production 不得开始。
 
-| v3 surface | v3 layout | v4 route | v4 intended MD3 layout | difference | reason | approval status |
-|---|---|---|---|---|---|---|
-| Main shell | 约 260 px persistent left sidebar + rounded right content canvas；无长期 top product bar | shell | wide 保持 left navigation + single content canvas；narrow 转 modal drawer；品牌/连接状态紧凑进入侧栏或内容 header | `incorrect_current_design` | 当前 top app bar + 11 项平铺 rail 改变第一眼结构 | pending |
-| Landing | Projects 是主要工作入口，无独立 Home | `/`、`/projects` | 默认工作入口恢复为 Projects；Home/status 可由 brand/secondary destination 到达 | `intentional_deviation` | v4 有 daemon/RPC status，但不应替代项目工作入口 | pending |
-| Projects | header: title/refresh/search/list-grid/create；body 单一 list/grid | `/projects` | 同结构，用 MD3 buttons/icon buttons/text field/segmented treatment；保留 typed RPC data | `md3_translation` | 功能相同，恢复动作位置和信息密度 | pending |
-| Project manage | back/name/path + Unity selector/Open Unity/overflow；package table 为主 | `/projects/:id` 及 packages/unity/backups routes | 单一 Project workspace；header 保留 back/name/Unity/open/overflow；Packages/Unity/Backups 作为 secondary tabs/sections | `adaptive_translation` | v4 有稳定子路由和更多 durable read model | pending |
-| Package management | Project context 中的 dense package table、search/filter、version/action | `/projects/:id/packages` | Project workspace 默认/主要 tab，table/list 保持主导；Plan review 使用 daemon ChangeSet | `md3_translation` | M4 Plan/Apply 改变 authority，不改变 workflow shape | pending |
-| Packages & Templates group | 一级分组，Repositories/User Packages/Templates 三段 selector | `/repositories`、`/templates` | 一级“Packages & Templates” destination，页内 tabs 至少连接 Repositories/Templates；未实现能力不显示假 tab | `incorrect_current_design` | 当前把 Repositories/Templates 拆成平级一级入口且没有 group | pending |
-| User Packages | Packages group 内独立 tab/list | no complete route | capability 不存在时不发布；未来以兼容 tab 加入 | `missing` | M7 不能虚构尚未实现的完整 user-package registry | not applicable until capability exists |
-| Repositories | page tabs + Add Repository at upper-right + dense list/table | `/repositories`、`/repositories/:id` | 保留 group tabs、header add/refresh、table/list 与 detail drill-in | `incorrect_current_design` | 当前 generic cards + page-bottom action section 弱化主要动作 | pending |
-| Templates | Packages group tab + template list/cards + contextual create | `/templates`、`/templates/:id` | 保留 group tabs；list/detail/context actions；Plan/Apply 保持当前 RPC | `incorrect_current_design` | 当前独立一级 generic grid/detail/action section | pending |
-| Unity in project | Project header selector/Open Unity，迁移 dialog | `/projects/:id/unity` | header 仍显示 selected editor/open；详细 registry/writer evidence 可在 project Unity tab | `adaptive_translation` | v4 M5 有 writer-state 与 installation identity | pending |
-| Unity registry | Settings cards | `/unity` | 可保留专用 registry page，但在 primary nav 中归入 secondary/utility group；Project workflow 不绕到 registry 才能 launch | `intentional_deviation` | v4 有完整 installation registry use case | pending |
-| Backup create/restore | Projects/Project context action + modal/progress；settings 保存 format/path | `/projects/:id/backups`、`/backups/:id` | Project Backups tab 展示 durable records；create/restore 主动作留在 Project/Projects header 或 overflow | `intentional_deviation` | v4 M5 有 durable metadata、Plan/Operation/recovery | pending |
-| Long-running work | context modal/progress host，无 history page | `/operations`、`/operations/:id` | 原业务上下文继续展示 active Operation；独立 Operations 作为历史/恢复 utility destination | `intentional_deviation` | M2 durable OperationId 是 v4 新能力 | pending |
-| Extensions | bottom utility entry；MCP/Discord 可直接出现在 sidebar | `/extensions`、detail、Portable UI | Extensions 位于 utility section；detail/permissions/UI 使用 host MD3 components；未来 first-party entry 可按合同贡献 | `adaptive_translation` | v4 统一 first/third contract 和 Portable UI | pending |
-| Settings | 单一 header + vertical scroll card groups；Theme 快捷动作 | `/settings` | 恢复 grouped scrolling settings；appearance/theme 是同一 Config v1 section；save/discard 保留 authoritative RPC | `incorrect_current_design` | 当前通用大标题 + 少量原生 selects，组织与 v3 差异大 | pending |
-| Log | Activity/Technical tabs + search + filters | `/activity`、`/diagnostics` | utility group内可见的 Activity/Diagnostics destinations；可用 secondary tabs 保留共同 observability context | `intentional_deviation` | A-026 分离 permission/redaction，不能合并 authority | pending |
-| About/licenses | Settings cards/License child；version/update在侧栏底部 | `/about` | About 可作为 Settings 内 secondary route；版本、Schema、licenses 用 definition/list/card | `intentional_deviation` | v4 需要明确产品/contract/notice disclosure | pending |
-| Narrow window | compact icon sidebar | shell | modal navigation drawer + retained page toolbar/content ordering | `adaptive_translation` | MD3 adaptive layout 与 320 CSS px accessibility | pending |
-| Dialogs | centered modal with headline/content/footer | all mutations | `@alcomd/ui` Material Dialog；daemon Plan/risk/result contract不变 | `md3_translation` | 只替换组件与视觉层级 | pending |
-| Progress | modal/task host, cancel/minimize | Operation follow | Material progress + durable Operation summary；close 不等于 cancel | `adaptive_translation` | v4 Operation 是 authority | pending |
+## Mapping principles
 
-## 允许的设计变化
+### Continuity anchors
 
-无需逐项偏离审批的 MD3 translation：颜色、字体、角半径、elevation、细节 spacing、图标、component visual treatment、
-motion，以及 narrow/compact 的合理 adaptive composition。
+- sidebar + main content 的可识别 shell composition；
+- 与 v3 同数量级、有限深度并按用户任务分组的 navigation；
+- Projects、资源和 project workspace 的主要空间关系；
+- desktop management tool 所需的 dense list/table/compact row 与 page toolbar；
+- search/create/refresh/context action、list/detail、Settings/observability/footer utility 的位置习惯；
+- ALCOMD3 产品身份，而不是 generic domain dashboard。
 
-以下变化必须继续出现在上表并由项目所有者明确批准：primary navigation model、major page grouping/hierarchy、主要内容和
-动作位置、list/detail 关系、Settings 组织、package/repository/project workflow shape。
+### Permitted reinterpretation
 
-## 业务边界
+- individual page 可因真实用户价值合并、拆分或重组；
+- v4 新能力可进入既有分组、secondary surface、project context、utility 或经论证的新一级区域；
+- Material Design 3 可现代化 component、interaction、token、surface、motion 和 adaptive composition；
+- narrow 模式可以使用 drawer、priority columns、overflow 与紧凑 secondary navigation；
+- 旧 CSS、旧组件、固定像素、每个按钮和不合理历史 UX 都不是兼容合同。
 
-本映射不改变现有 RPC、Plan/Apply、Operation、Settings Config v1、Activity、Diagnostics 或 Portable UI protocol。实现时优先
-复用 `19267230507071dc61ba306b98c8cfdd113e9ea2` 已完成的 typed hooks/client/state/flow logic，只重组 shell、page
-composition、component rendering 和 visual hierarchy。
+Core/domain/API/RPC namespace 只决定 authority 和实现边界，不自动决定 GUI 一级导航。
+
+## Capability synthesis matrix
+
+| Capability / concern | v3 continuity reference | Current `192672…` evidence or gap | IA question and allowed placement | Decision state |
+|---|---|---|---|---|
+| Main shell | left sidebar + right business canvas；page toolbar；desktop density | top brand/settings bar + 11-item flat rail 改变第一眼结构 | 所有候选保留 recognizable sidebar/content composition；具体宽度、header chrome 与 group label 可现代化 | shared candidate constraint |
+| Landing | Projects 是 home-equivalent | Home/status 成为 generic default dashboard | A/B 使用 Projects landing；C 允许 bounded Overview。必须比较用户价值，不由 `system.status` route 自动决定 | owner selection pending |
+| Projects | title/search/refresh/list-grid/create；single list/grid | generic cards 与下方 action section，typed data/action wiring 可复用 | 保持一级工作入口与 dense list/grid；是否同时存在 Overview 不改变 Projects 的核心地位 | shared candidate constraint |
+| Project workspace | header 集中 project/Unity/open/overflow；packages 是主要工作面 | Packages/Unity/Backups 被实现为 generic subnav/actions | 使用一个 Project workspace；Packages、project Unity、Backups 作为 contextual tabs/sections/actions，不提升为三个全局入口 | shared candidate constraint |
+| Repositories / Templates / User Packages | Packages & Templates 是资源型大类，内部三段 | Repositories/Templates 各自成为一级 route；User Packages 完整能力尚不存在 | A/B/C 均使用 Resources 类高层语义；真实能力存在时才显示 User Packages，不显示 fake tab | naming/refinement pending |
+| Unity | project action在 Project；installation management 在 Settings | global `/unity` 和 project route 都已接线 | project-specific Unity 留在 Project；global registry 可在 Settings（A/C）或经论证的 Platform hub（B） | owner selection pending |
+| Backups | create/restore 从 Projects/Project context 发起；settings 保存偏好 | durable Project Backups/detail route 已存在 | durable records 可作为 Project workspace tab/detail；create/restore 仍从项目上下文进入 | shared candidate constraint |
+| Operations | context progress/task；无 catalog | durable list/detail 是真实 v4 能力 | 可由 footer/status/history utility（A/C）或 Platform secondary surface（B）承载；active follow 仍留在业务上下文 | owner selection pending |
+| Extensions / Portable UI | Extensions 靠近 footer；extension entries 位于同一 sidebar 体系 | 独立一级 list/detail/UI route；host-owned chrome 和协议接线有效 | 可为 utility entry（A）、Platform child（B）或产品级一级入口（C）；不能因 Extension Host 是独立 subsystem 自动升级 | owner selection pending |
+| Activity / Diagnostics | Log 内 Activity/Technical 分段 | 两个平级一级 generic page；permission/RPC 分离正确 | 可共享 Logs/Activity 类用户 surface 和 secondary tabs，同时保持 `activity.read`/`diagnostics.read` authority 分离 | wording/refinement pending |
+| Settings | grouped scrolling settings；appearance 属于同一组织 | top shortcut + sparse generic sections；Config v1 接线有效 | 保持 utility placement 与 grouped sections；global Unity placement依候选决定 | owner selection pending |
+| About / licenses / version | licenses/system info 在 Settings；version/update 在 footer | About 成为平级大页面 | footer/version utility 可进入独立 deep-link page 或 Settings-style secondary surface；无需一级 nav | shared candidate constraint |
+| Narrow/adaptive | compact sidebar | drawer/focus/320 px logic 已存在 | group/order/semantic hierarchy不变；drawer、compact tabs、priority columns 是 adaptive translation | shared candidate constraint |
+| Dialog / progress | modal review/progress/context task | semantic/state tests有效，Material component foundation缺失 | 使用共享 `@alcomd/ui` Material Dialog/Progress；Plan/Apply/Operation authority不变 | H0 pending |
+
+现有 route identity 与 deep link 可以保留，即使 route 不出现在 sidebar；“存在 route”不等于“批准为一级产品区域”。
+
+## Divergence budget
+
+| Class | Meaning | Approval treatment |
+|---|---|---|
+| `STRUCTURAL_CONTINUITY` | 延续可识别 shell、用户分组、密度、workspace/list/detail/action 关系 | candidate 必须具备 |
+| `MD3_MODERNIZATION` | component、interaction、token、color、type、shape、elevation、state layer、motion | 在 Material policy 内允许 |
+| `V4_NECESSARY_ADDITION` | 真实新增能力需要新的可见 surface 或状态表达 | 记录用户价值与 placement，owner 选择 |
+| `UX_CORRECTION` | 修正 v3 已知不合理 UX，而不改变 authority | 记录理由与 workflow 影响 |
+| `ADAPTIVE_CHANGE` | narrow/zoom/input modality 所需的结构转换 | 必须保持任务、顺序和可访问性 |
+| `UNJUSTIFIED_DEVIATION` | 仅因 module/RPC/route 存在、generic dashboard潮流或实现方便而改变产品 IA | 不得进入推荐或 production |
+
+不要求所有内容都像 v3；但任何推荐方案中不得存在 `UNJUSTIFIED_DEVIATION`。
+
+## Business and implementation boundary
+
+本映射不改变 RPC、Plan/Apply、Operation、Settings Config v1、Activity、Diagnostics、Portable UI protocol 或 application
+authority。后续应复用 `19267230507071dc61ba306b98c8cfdd113e9ea2` 已完成的 typed hooks/client/state/workflow 和
+Playwright infrastructure，只重构经批准的 presentation、composition、component layer 与 visual hierarchy。

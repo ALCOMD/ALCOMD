@@ -107,6 +107,13 @@ radial-gradient 或 JavaScript ripple imitation。
 ALCOMD variants 集中在 `@alcomd/ui`。Core 与 Portable UI 使用同一层；Portable UI protocol/node/action/surface/RPC/permission
 不变。
 
+### Information architecture non-conclusion
+
+本审计只证明 interactive component foundation 与 theme wiring 尚未采用 Material Web；它不选择 GUI information architecture，
+也不把 Material component catalog、Rust module、RPC namespace 或 route inventory解释为一级导航清单。Semantic HTML、application
+shell、layout、data table 与 navigation composition 仍可由 ALCOMD 实现，并由同一 MD3 tokens 驱动。最终结构必须同时满足
+A-033 的 v3 产品连续性、真实 v4 用户任务和已批准的 IA 候选；Material Design 3 是组件、交互与视觉语言，不是 IA 替代品。
+
 ## Theme audit
 
 当前 `applyAppearance()` 只设置：

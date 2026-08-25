@@ -1,6 +1,7 @@
 # ALCOMD3 v3 GUI 宏观布局基线
 
-状态：M7 visual realignment 的只读设计输入；不是源码上游，也不是 M11 的完整 differential parity 证据。
+状态：M7 visual realignment 的只读设计输入；不是源码上游，也不是 M11 的完整 differential parity 证据。本文记录 v3
+具体事实以识别产品连续性，不把其导航树、像素尺寸或每个历史页面冻结为 v4 目标。
 
 ## 证据边界
 
@@ -43,7 +44,7 @@ M11 仍负责真实脱敏 Fixture、迁移与 release-grade exhaustive different
 
 ## B. 导航
 
-冻结源码的默认侧栏顺序为：
+冻结源码的默认侧栏顺序事实为：
 
 1. Projects；
 2. Packages & Templates；
@@ -75,7 +76,8 @@ M11 仍负责真实脱敏 Fixture、迁移与 release-grade exhaustive different
 ### Home
 
 v3 没有独立 Home route。应用完成 setup 后以 Projects 作为默认主要工作区。版本/更新状态在侧栏底部，系统信息在
-Settings。v4 若保留 Home/status dashboard，应作为有明确理由的结构偏离，不得挤走 Projects 的首要工作入口。
+Settings。这证明 Projects 的 home-equivalent 角色是重要连续性参考，但不预先禁止 v4 提供有明确用户价值、克制且不泄漏
+domain namespace 的 Overview。是否保留该 surface、它是否承担 landing，必须在 IA 候选中与 Projects landing 明确比较。
 
 ### Projects
 
@@ -119,7 +121,8 @@ v3 没有独立 Backup 一级页：
 ### Operations / equivalent v3 UX
 
 v3 没有 durable Operation catalog。等价 UX 是 modal progress、可最小化的 project progress task 和完成/失败 toast。v4 的
-durable OperationId 是架构新增事实，独立 Operations 页需要作为有理由的 v4 偏离接受，但其动作入口仍应留在原业务上下文。
+durable OperationId 是架构新增事实；它可以由业务上下文、全局 status/history utility、次级 surface 或经论证的独立区域承载。
+是否需要一级入口取决于用户心智模型和使用频率，不能由 Operation RPC/domain 边界自动决定；动作入口仍应留在原业务上下文。
 
 ### Extensions / v4 equivalent
 
@@ -157,9 +160,14 @@ durable OperationId 是架构新增事实，独立 Operations 页需要作为有
 
 ## E. 用于 v4 MD3 转译的视觉结构
 
-- 识别性来自“持久侧栏 + 单一右侧内容画布 + 页内顶部工具栏 + 密集业务列表/表格”，不是来自某个具体颜色值。
+- 识别性来自“sidebar + main content”的整体 shell、有限层级的用户语义分组、页内工具栏、桌面友好信息密度与
+  list/detail/workspace 空间关系，不是来自某个具体颜色值、260 px 尺寸或固定入口清单。
 - 选中导航、分段 selector、filled/tonal action、rounded surface 与 modal 是可转译到 MD3 的结构锚点。
 - v4 可以改变 color、typography、corner、elevation、spacing、icon、motion 和 adaptive behavior；不复制 v3 CSS/Tailwind/Radix
   实现。
-- 数据密集页面优先保持 title/search/actions/table 的空间关系；不能仅把每一项改成大卡片后声称是视觉现代化。
-- narrow 模式可把持久侧栏转为 modal drawer，但 wide 模式仍应保留 v3 可识别的左侧导航和右侧业务画布关系。
+- v4 可以为真实用户价值重组个别页面，合并或拆分 secondary surface，并新增 v3 不存在的能力；Core/domain/API 边界不能
+  因此逐项变成一级导航。
+- 数据密集页面优先延续 title/search/actions/table 的位置习惯与桌面密度；不要求每个按钮逐像素同位，也不能仅把每一项改成
+  大卡片后声称是视觉现代化。
+- narrow 模式可把持久侧栏转为 modal drawer；wide 模式应保留 v3 可识别的左侧导航和右侧业务画布关系，但无需复制固定
+  宽度、旧组件或每个历史页面。

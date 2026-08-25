@@ -2,9 +2,10 @@
 
 状态：Portable UI B0-D production candidate `aa1323430252ed21995284a7b36dd36e45a15e0a` 已通过 Hosted CI
 `32877438910`。Official GUI functional candidate `19267230507071dc61ba306b98c8cfdd113e9ea2` 完成 E1-G1/G3
-生产实现与本地自动化验收，但项目所有者在正式 checklist 开始前拒绝其 visual/layout acceptance：其宏观布局没有以 v3 为
-基线，且 `@material/web` dependency 存在但 component system 未被采用。当前只完成 visual realignment audit；H0-H7 尚未获
-production approval。M7 仍未完成，尚未进入 M8/M9。
+生产实现与本地自动化验收，但项目所有者在正式 checklist 开始前拒绝其 visual/information architecture acceptance：其宏观
+布局缺少与 v3 可识别的产品连续性，且 `@material/web` dependency 存在但 component system 未被采用。第二轮只完成对早期
+过度机械解释的纠正、divergence budget 与三个 IA 候选；项目所有者尚未选择目标，H0-H7 尚未获 production approval。M7
+仍未完成，尚未进入 M8/M9。
 
 ## 目标与完成定义
 
@@ -234,10 +235,15 @@ Official GUI 的宏观 information architecture 受 A-033 约束。冻结参考�
 - `docs/gui/alcomd3-v3-layout-baseline.md`；
 - `docs/gui/m7-layout-mapping.md`；
 - `docs/gui/m7-current-layout-gap.md`；
-- `docs/gui/m7-material-component-audit.md`。
+- `docs/gui/m7-material-component-audit.md`；
+- `docs/gui/m7-information-architecture-candidates.md`。
 
-v3 是 layout/navigation/page grouping/action placement 的设计基线，不是源码上游。以下 route identity 与当前 Core capability
-继续有效，但最终 navigation grouping/composition 必须按 mapping 经项目所有者批准后落地：
+v3 是整体 shell composition、navigation depth/user grouping、information density、major workflow spatial relationship 与产品
+identity 的参考基线，不是源码上游或必须逐项复制的固定导航树。v4 可以为真实用户价值重组 individual page、合并或拆分
+secondary surface 并新增能力；Core/domain/API boundary 不自动成为一级导航。
+
+以下是当前仍有效的 implementation route/capability inventory，不是 proposed sidebar hierarchy；route 可以保留作 deep link、
+secondary surface 或 context workspace：
 
 ```text
 Home
@@ -263,17 +269,18 @@ route identity 使用稳定 ASCII ID 和 opaque resource ID，不使用翻译文
 业务不显示假按钮或 disabled fake page。M8 MCP、M9 Discord、migration/import、updater/distribution、Local API、Custom
 Web UI 与 full external-client credential pairing/revocation 不进入 M7。
 
-`Home`、独立 Unity/Backups/Operations、Activity/Diagnostics 分离和 About 等 v4-specific surface 不能仅因 route 已存在就视为
-布局获批。它们必须保留已实现业务能力，同时在 v3 context/workflow 中找到可识别位置；重大偏离继续是 `pending`。
+`Home`、Unity、Backups、Operations、Extensions、Activity、Diagnostics 与 About 等 v4-specific surface 不能仅因 route、RPC
+或 module 已存在就视为一级导航获批。它们必须保留已实现业务能力，并在候选 IA 中按用户心智模型找到 context、secondary、
+utility 或有充分理由的 primary placement。Candidate A/B/C 与所有重大 divergence 继续是 `pending owner selection`。
 
 ### Visual architecture and component policy
 
 `19267230507071dc61ba306b98c8cfdd113e9ea2` 的功能接线保持有效，但状态固定为：
 
 ```text
-technically_valid
+functional_implementation_candidate
 but
-rejected_for_m7_visual_design_acceptance
+rejected_for_visual_and_information_architecture_acceptance
 ```
 
 源码审计确认 `@material/web 2.5.0` production import 为 0、rendered `md-*` element 为 0；Core 与 Portable UI 使用 native
@@ -401,7 +408,7 @@ npm check/build、Playwright Chromium browser suite、Tauri no-bundle 与 diff c
 后续 first-party private node/page/command/permission、partial v1 renderer、GUI-to-Host direct channel、renderer作为business
 authority均是M7 blocker。
 native interactive control 在 Material Web 已有对应组件时继续以 custom CSS 模拟、Core/Portable UI 使用不同 component
-foundation、未批准的 v3 macro layout deviation 或跳过任一 Visual Gate，同样是 M7 blocker。
+foundation、违反已选 IA/A-033 continuity 或包含 `UNJUSTIFIED_DEVIATION`、跳过任一 Visual Gate，同样是 M7 blocker。
 M11真实v3 fixture缺失继续阻塞GUI differential parity，但不阻塞 `gui.m7-core-surfaces`。M12继续承担Win10/Win11安装/启动/
 WebView2/update/uninstall，以及 Narrator/VoiceOver/Linux screen-reader 和真实平台 accessibility runtime validation。
 
@@ -409,18 +416,18 @@ WebView2/update/uninstall，以及 Narrator/VoiceOver/Linux screen-reader 和真
 
 1. **H0 Material foundation**：`@alcomd/ui` 封装审计中真实需要的 Material Web components；接通真实 MD3 color/type/shape/
    elevation/state tokens；验证 React 19 integration、interaction/ripple、component accessibility 和Core/Portable共用层。
-2. **H1 v3-faithful shell/navigation**：wide persistent sidebar、single content canvas、page toolbar 与 narrow adaptive drawer；完成
-   Visual Gate 1。
-3. **H2 Projects/packages/repositories**：恢复 Projects header/list-grid/create、Project package-centric workspace、Packages &
-   Templates grouping、repository table/actions；完成 Visual Gate 2。
-4. **H3 Templates/Unity/backups/Operations**：在 v3 context workflow中安置 v4 durable surfaces，不改 Plan/Apply/Operation；完成
-   Visual Gate 3 的第一部分。
-5. **H4 Extensions/Portable UI**：Extensions utility placement、host chrome、Portable node renderer全部使用共同Material components；
+2. **H1 approved continuity shell/navigation**：按项目所有者选定的 Candidate 或明确组合实现 recognizable sidebar/content shell、
+   page toolbar 与 narrow adaptive drawer；不从 route inventory 推导导航；完成 Visual Gate 1。
+3. **H2 approved Projects/resources composition**：按所选 IA 实现 Projects header/list-grid/create、Project package-centric workspace、
+   resource grouping 与 repository table/actions；完成 Visual Gate 2。
+4. **H3 contextual v4 capabilities**：按所选 IA 安置 Templates、global/project Unity、Backups 与 Operations，不改
+   Plan/Apply/Operation；完成 Visual Gate 3 的第一部分。
+5. **H4 Extensions/Portable UI**：按所选 IA 放置 Extensions，host chrome、Portable node renderer全部使用共同Material components；
    不改 Portable UI protocol；完成 Visual Gate 4 的第一部分。
-6. **H5 Settings/Activity/Diagnostics/About**：恢复 grouped Settings 与 observability utility关系，保留 Config v1/A-026权限分离；
+6. **H5 utilities/observability**：按所选 IA 实现 Settings、Activity/Diagnostics 与 About/version，保留 Config v1/A-026权限分离；
    完成 Visual Gate 3/4。
-7. **H6 responsive/a11y/Playwright regression**：覆盖 v3 macro navigation/page grouping/action placement、Material element presence和
-   observable interaction、theme propagation、wide/narrow/200%/reduced motion；不测试Material shadow DOM私有细节。
+7. **H6 responsive/a11y/Playwright regression**：覆盖已选 IA 的 structural continuity、grouping/workspace/action placement、Material
+   element presence和observable interaction、theme propagation、wide/narrow/200%/reduced motion；不测试Material shadow DOM私有细节。
 8. **H7 manual visual signoff**：执行更新后的真实GUI checklist和最终screenshots；再进入候选Hosted CI/push审批。
 
 H0-H7 只重组 shell、composition、component rendering 和 visual hierarchy；不得重新设计 RPC、Plan/Apply、Operation、Settings、
@@ -481,8 +488,12 @@ Activity、Diagnostics 或 Portable UI authority。
   Plan/Apply与自动化证据保留，official GUI shell/rendering进入realignment。
 - 2026-08-26：只读审计冻结 v3 final source/reference 的 macro layout baseline、v3->v4 mapping、当前逐页 gap、Material Web
   2.5.0 control/theme/integration inventory；新增 A-033 约束 A-020。H0-H7 仅完成规划，production未开始。
+- 2026-08-26：项目所有者纠正“参照 v3”被机械解释为固定导航树的问题。A-033 修订为 recognizable structural/product
+  continuity；新增 divergence budget 与 Candidate A（project-first）、B（three workspace hubs）、C（bounded Overview）IA
+  synthesis。Material Web事实结论、`192672…`功能证据与M7边界不变；尚未选择production target，H0/H1未开始。
 
 ## 下一停止点
 
-本 visual realignment audit 形成独立未 push planning commit 后停止。等待项目所有者批准 v3 layout baseline、v4 MD3 mapping、
-Material component policy、所有 `pending` deviation 与 H0-H7，再开始任何 GUI production redesign。不得 push，不得开始 M8/M9。
+本 IA correction 形成独立未 push planning commit 后停止。等待项目所有者选择或修改 Candidate A/B/C（或明确组合）、批准相应
+divergence budget 与 H0-H7，再开始任何 GUI production redesign。Material component policy 仍是设计输入，但本轮不修改组件。
+不得 push，不得开始 H0/H1 或 M8/M9。
