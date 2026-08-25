@@ -46,9 +46,6 @@ jobs:
       - name: Test repository contracts
         shell: pwsh
         run: .\scripts\test.ps1
-      - name: Run M7 WebView2 isolation evidence probe
-        shell: pwsh
-        run: .\scripts\run-m7-webview-probe.ps1
       - name: Build release executables
         run: cargo build --locked --workspace --bins --release
       - name: Build Tauri GUI without a bundle
@@ -107,10 +104,6 @@ jobs:
         run: ./scripts/check.sh
       - name: Test repository contracts
         run: ./scripts/test.sh
-      - name: Run M7 WebKitGTK isolation evidence probe
-        env:
-          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
-        run: ./scripts/run-m7-webview-probe.sh linux WebKitGTK
       - name: Build release executables
         run: cargo build --locked --workspace --bins --release
       - name: Build Tauri GUI without a bundle
@@ -157,8 +150,6 @@ jobs:
         run: ./scripts/check.sh
       - name: Test repository contracts
         run: ./scripts/test.sh
-      - name: Run M7 WKWebView isolation evidence probe
-        run: ./scripts/run-m7-webview-probe.sh macos WKWebView
       - name: Build release executables
         run: cargo build --locked --workspace --bins --release
       - name: Build Tauri GUI without a bundle

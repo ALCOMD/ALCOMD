@@ -364,8 +364,8 @@ stage = "M7"
 kind = "contract"
 platforms = ["all"]
 status = "implemented"
-description = "保留旧 WebView Stop A route/settings/typed-adapter proposal 的历史 contract evidence；该 proposal 已被 Portable UI architecture reset supersede，不是 Portable UI contract、production GUI 或已发布 RPC/Permission/Schema 证据。"
-evidence = ["specs/gui/m7-stop-a.md", "specs/gui/m7-settings-appearance-v1.proposal.schema.json", "crates/alcomd-testing/fixtures/m7/stop-a-vectors.json", "crates/alcomd-testing/tests/m7_contract.rs"]
+description = "保留旧 WebView Stop A 的历史 rejected-design contract evidence；该 proposal 已被 Portable UI architecture reset supersede，不是 Portable UI contract、production GUI 或已发布 RPC/Permission/Schema 证据。"
+evidence = ["specs/gui/m7-stop-a.md", "crates/alcomd-testing/tests/m7_contract.rs"]
 
 [[test]]
 id = "gui.m7-webview-isolation"
@@ -374,7 +374,7 @@ kind = "design-evidence"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "blocked"
 description = "记录已拒绝的 iframe/managed-child WebView 设计研究；现有证据没有完成 private IPC security matrix，不能冒充 product test success。WebView container 已退出 M7 v1 产品方向，本 ID 只保留历史 rejected-design 状态。"
-evidence = ["specs/gui/m7-stop-a.md", "apps/alcomd-gui/src-tauri/examples/m7_isolation_probe.rs", "apps/alcomd-gui/src-tauri/tauri.m7-probe.conf.json", "apps/alcomd-gui/m7-probe-dist"]
+evidence = ["specs/gui/m7-stop-a.md"]
 
 [[test]]
 id = "gui.m7-portable-ui-conformance"
