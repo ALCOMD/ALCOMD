@@ -1,38 +1,22 @@
 schema = 1
-
 id = "com.cqmhv.alcomd.extension.mcp"
 name = "MCP 管理"
 version = "0.1.0"
-api = "^1"
-publisher = "CQMHV"
+api = 1
+publisher_name = "CQMHV"
+publisher_key_fingerprint = "ed25519-sha256:0000000000000000000000000000000000000000000000000000000000000000"
 license = "AGPL-3.0-only"
 
 [entrypoints]
-ui = "ui/index.html"
+component = "component/extension.wasm"
 
-[activation]
-background = false
-events = []
+[ui]
+protocol = "portable-v1"
 
-[contributions]
-sidebar = true
-settings_page = true
-command_palette = true
+[interfaces]
+required = []
+optional = []
 
 [permissions]
-required = [
-    "ui.contribute",
-    "mcp.sessions.read",
-    "mcp.clients.read",
-    "mcp.configuration.read",
-    "operations.read",
-    "activity.read",
-]
-
-optional = [
-    "mcp.clients.manage",
-    "mcp.configuration.manage",
-    "operations.cancel",
-    "access.read",
-    "access.manage",
-]
+required = []
+optional = []

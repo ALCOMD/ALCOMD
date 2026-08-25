@@ -1,6 +1,6 @@
 # Extension Permissions v1
 
-状态：M6 contract-first Stop A candidate；M6 permission production wiring 尚未实现。
+状态：M7 active permission contract；M6 runtime 权限与 M7 Portable UI client permission 已接入 production。
 
 ## 通用数据与业务权限
 
@@ -30,12 +30,12 @@ access.manage
 extensions.read
 extensions.manage
 extensions.permissions.manage
+extensions.ui.use
 ```
 
 ## 扩展专用权限
 
 ```text
-ui.contribute
 background.run
 network.request
 notifications.send
@@ -144,3 +144,18 @@ M6 第一条生产 slice 冻结并仅使用以下权限：
 - `network.request`、notifications、clipboard、external-config、Discord 与 M7 UI placement 仍 planned，M6 第一条
   slice 不链接或广告它们。
 - `mcp.sessions.read` 已由 A-023 拒绝；未来 MCP request/connection/subscription scope 属于 M8，不在 M6 重建。
+
+## M7 Portable UI 权限与双重授权
+
+- `extensions.ui.use` 是 client permission，resource kind 固定为 `Extension`，resource ID 必须是 exact ExtensionId。
+  它不允许 list/install/enable/grant、读取 extension-owned data 或调用其他 extension scope。
+- `extensions.ui.open/refresh/dispatch` 每次都要求 client 同时拥有 `extensions.read` 与 scoped
+  `extensions.ui.use`；close 只允许当前 connection/session owner best-effort 执行。
+- interactive UI 中的 `host-projects.get-summary(ProjectId)` 要求 Client Principal 与 Extension Principal 对同一
+  ProjectId 均有 `projects.read`。任一侧不能扩大另一侧 authority。
+- interactive UI 中的 host-data 要求 client scoped `extensions.ui.use`，同时 Extension Principal 只能访问自身
+  ExtensionId namespace；client 不因 UI session 获得 raw extension data authority。
+- 不存在 `ui.contribute`。Manifest `[ui]` 只是 package declaration，不是 permission 或 OS/Core capability。
+- `background.run` 只允许没有 active client UI session 时持有 background lifecycle lease，不由 `[ui]` 隐式加入。
+  UI-only extension 可不请求它；Portable UI session 也不产生隐式 background lease。
+- client capability/metadata、GUI identity、session ID、guest-session-id 与 InvocationContextId 都不是授权凭据。

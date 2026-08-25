@@ -8,7 +8,6 @@ const PACKAGE_PROFILE: &str = include_str!("../../../specs/extensions/package-pr
 const SIGNATURE_SCHEMA: &str = include_str!("../../../specs/extensions/signature-v1.schema.json");
 const ABI_MATRIX: &str = include_str!("../../../specs/extensions/abi-compatibility-v1.json");
 const RUNTIME_LIMITS: &str = include_str!("../../../specs/extensions/runtime-limits-v1.json");
-const UI_SCHEMA: &str = include_str!("../../../specs/extensions/ui-bridge-v1.schema.json");
 const RPC_SCHEMA: &str = include_str!("../../../specs/rpc/m6-extension-runtime.schema.json");
 const HELLO_SCHEMA: &str = include_str!("../../../specs/rpc/system-hello.response.schema.json");
 const ERROR_SCHEMA: &str = include_str!("../../../specs/rpc/rpc-error.schema.json");
@@ -24,11 +23,10 @@ const PROJECTS_WIT: &str =
 const DATA_WIT: &str = include_str!("../../../specs/extensions/wit/extension-v1/host-data.wit");
 const LIFECYCLE_WIT: &str =
     include_str!("../../../specs/extensions/wit/extension-v1/guest-lifecycle.wit");
+const UI_WIT: &str = include_str!("../../../specs/extensions/wit/extension-v1/guest-ui.wit");
 const WORLD_WIT: &str = include_str!("../../../specs/extensions/wit/extension-v1/world.wit");
 const VECTORS: &str = include_str!("../fixtures/m6/extension-contract-vectors.json");
 const HOSTILE: &str = include_str!("../fixtures/m6/hostile-package-vectors.json");
-const COMPATIBILITY: &str = include_str!("../fixtures/m6/old-guest-new-host-v1.json");
-const UI_VECTORS: &str = include_str!("../fixtures/m6/ui-bridge-vectors.json");
 
 #[test]
 fn manifest_package_signature_and_digest_are_frozen() {
@@ -41,8 +39,22 @@ fn manifest_package_signature_and_digest_are_frozen() {
     assert_eq!(manifest["properties"]["schema"]["const"], 1);
     assert_eq!(manifest["properties"]["api"]["const"], 1);
     assert_eq!(
-        manifest["properties"]["entrypoints"]["properties"]["background_component"]["const"],
+        manifest["properties"]["entrypoints"]["properties"]["component"]["const"],
         "component/extension.wasm"
+    );
+    assert_eq!(
+        manifest["properties"]["ui"]["properties"]["protocol"]["const"],
+        "portable-v1"
+    );
+    assert!(
+        manifest["properties"]["entrypoints"]["properties"]
+            .get("background_component")
+            .is_none()
+    );
+    assert!(
+        manifest["properties"]["entrypoints"]["properties"]
+            .get("ui_entry")
+            .is_none()
     );
     assert_eq!(profile["container"], "zip");
     assert_eq!(profile["zip64"], false);
@@ -151,14 +163,16 @@ fn hostile_archive_profile_has_each_frozen_negative_class() {
 }
 
 #[test]
-fn exact_wit_world_has_no_ambient_wasi_and_shape_changes_are_breaking() {
+fn exact_wit_world_has_required_portable_ui_and_no_ambient_wasi() {
     let matrix: Value = serde_json::from_str(ABI_MATRIX).expect("ABI matrix");
-    let fixture: Value = serde_json::from_str(COMPATIBILITY).expect("compatibility fixture");
     assert_eq!(matrix["abiMajor"], 1);
     assert_eq!(matrix["world"], "alcomd:extension/extension-v1@1.0.0");
     assert_eq!(matrix["ambientWasiImports"], json!([]));
-    assert_eq!(fixture["newHost"]["result"], "compatible");
-    assert_eq!(fixture["oldGuest"]["requiredImports"], matrix["imports"]);
+    assert_eq!(matrix["guestUiRequiredForEveryAbiV1Component"], true);
+    assert_eq!(
+        matrix["preReleaseDirectRewrite"]["oldGuestCompatibilityRetained"],
+        false
+    );
     for breaking in [
         "record-field-add",
         "record-field-remove",
@@ -181,7 +195,19 @@ fn exact_wit_world_has_no_ambient_wasi_and_shape_changes_are_breaking() {
     assert!(WORLD_WIT.contains("import host-projects;"));
     assert!(WORLD_WIT.contains("import host-data;"));
     assert!(WORLD_WIT.contains("export guest-lifecycle;"));
-    for wit in [TYPES_WIT, PROJECTS_WIT, DATA_WIT, LIFECYCLE_WIT, WORLD_WIT] {
+    assert!(WORLD_WIT.contains("export guest-ui;"));
+    assert!(UI_WIT.contains("open: func"));
+    assert!(UI_WIT.contains("refresh: func"));
+    assert!(UI_WIT.contains("dispatch: func"));
+    assert!(UI_WIT.contains("close: func"));
+    for wit in [
+        TYPES_WIT,
+        PROJECTS_WIT,
+        DATA_WIT,
+        LIFECYCLE_WIT,
+        UI_WIT,
+        WORLD_WIT,
+    ] {
         assert!(wit.contains("package alcomd:extension@1.0.0;"));
         assert!(!wit.contains("wasi:"));
     }
@@ -356,40 +382,6 @@ fn state_rpc_errors_and_publication_boundary_are_frozen() {
         );
     }
     assert_production_advertises_m6_only_through_the_approved_boundary();
-}
-
-#[test]
-fn ui_bridge_is_headless_only_and_bounded() {
-    let schema: Value = serde_json::from_str(UI_SCHEMA).expect("UI Bridge Schema");
-    let vectors: Value = serde_json::from_str(UI_VECTORS).expect("UI vectors");
-    assert_eq!(schema["oneOf"].as_array().expect("envelopes").len(), 3);
-    assert_eq!(vectors["contribution"], "headless/test contribution");
-    assert_eq!(vectors["publishedProductPlacements"], json!([]));
-    assert_eq!(vectors["illustrativeUrlMappingIsPublicContract"], false);
-    assert_eq!(
-        vectors["logicalOrigin"]["extensionId"],
-        "dev.example.project-summary"
-    );
-    assert_eq!(vectors["validRequest"]["bridgeVersion"], 1);
-    for negative in [
-        "origin-spoof",
-        "sequence-replay",
-        "request-id-collision",
-        "oversized-message",
-        "rate-flood",
-        "dom-access",
-        "tauri-ipc",
-        "private-channel",
-    ] {
-        assert!(
-            vectors["negative"]
-                .as_array()
-                .expect("negative vectors")
-                .iter()
-                .any(|value| value == negative),
-            "missing UI abuse vector {negative}"
-        );
-    }
 }
 
 fn decode_hex(value: &str) -> Vec<u8> {

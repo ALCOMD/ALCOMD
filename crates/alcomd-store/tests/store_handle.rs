@@ -459,15 +459,15 @@ fn newer_schema_is_rejected_before_migration_or_pragma_changes() {
     let database = directory.database();
     let connection = Connection::open(&database).expect("create newer database");
     connection
-        .execute_batch("PRAGMA user_version=9; CREATE TABLE sentinel(value TEXT);")
+        .execute_batch("PRAGMA user_version=10; CREATE TABLE sentinel(value TEXT);")
         .expect("create future schema");
     drop(connection);
     let error = StateStoreHandle::open(database.clone()).expect_err("reject future schema");
     assert!(matches!(
         error,
         StoreOpenError::UnsupportedDataSchema {
-            found: 9,
-            supported: 8
+            found: 10,
+            supported: 9
         }
     ));
     let connection = Connection::open(database).expect("reopen future database");
@@ -481,7 +481,7 @@ fn newer_schema_is_rejected_before_migration_or_pragma_changes() {
             |row| row.get(0),
         )
         .expect("read sentinel");
-    assert_eq!(version, 9);
+    assert_eq!(version, 10);
     assert_eq!(sentinel, 1);
 }
 

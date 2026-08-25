@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成；M7 architecture reset 与 obsolete WebView probe cleanup 已完成，Portable UI Stop A 总体架构方向已通过人工审阅，窄 review closure 已形成并等待 production 最终批准；M7 production implementation 未开始。`
+`M6 已正式完成；M7 Portable UI Stop A 与执行语义已通过最终人工审批，Slice B0 active contract replacement 已完成本地实现与验证，正在进入 Slice B1；尚未进入 M8。`
 
 ## 已完成
 
@@ -240,11 +240,11 @@
   接受产品方向。Phase 0 commit `12089661f7c694f059aaf172344809ff814716f6` 已获人工验收；obsolete WebView probe
   已在独立 cleanup commit `c05c5d2c712dd7a791401efc22b8dd19b88023a6` 退役，历史 rejected evidence 与普通
   Tauri build/no-bundle gate 保留。
-- M7 Portable UI Stop A总体架构方向已通过人工审阅；review closure把proposal收敛为每extension至多一个隐式Portable UI，
+- M7 Portable UI Stop A与执行语义已通过最终人工审批；review closure把合同收敛为每extension至多一个隐式Portable UI，
   Manifest仅声明protocol，ABI v1强制guest-ui export，WIT只向guest暴露guest-session-id/locale/action，RPC冻结64项
-  exact replay，State v9只增nullable ui_protocol。17 node、2 action、exact tree/form/draft/lifecycle/error/context规则和
-  synthetic fixtures仍只是approved candidate contract evidence。active contract、production Host/Core/RPC/State/Permission/
-  React implementation与capability advertising均未开始。
+  exact replay，State v9只增nullable ui_protocol。Slice B0 已完成 active Manifest/package/WIT direct replacement、production
+  migration、typed Plan/record authority、client permission name与四个 RPC DTO foundation；旧 Web UI production contract已删除。
+  B1 Session/Host/Core wiring、capability advertising、React renderer与headless conformance尚未完成，M7仍为进行中。
 
 ## 后续里程碑尚未完成
 
@@ -253,8 +253,8 @@
 - MCP 33 个 v3 用例的 M-1 工具合同基线已形成并获 A-026 批准；正式 Schema、快照、兼容
   别名策略和协议实现留在对应后续里程碑。
 - VPM、项目、模板与备份。
-- M7 Portable UI production replacement、官方 renderer、headless real consumer 与 extension UI capability；M6 已验收
-  backend runtime 保持有效，Stop A proposal 不冒充 production。
+- M7 Portable UI B1 Session/Host/Core wiring、官方 renderer、headless real consumer 与 extension UI capability；B0 active
+  contract replacement不冒充完整 production。
 - MCP 实现。
 - Discord IPC。
 - v3 迁移与 Bootstrap。
@@ -303,9 +303,9 @@
 
 ## 下一停止点
 
-M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 Portable UI Stop A总体架构方向已通过人工审阅，
-review closure后下一停止点是项目所有者最终批准production。未经批准不得替换 active Manifest/package/WIT/Host
-protocol/RPC/Permission/State Schema，不得开始 M7 production implementation或M8。
+M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 Portable UI Stop A已获最终人工批准，Slice B0已完成；
+下一阶段是已批准的 Slice B1 Core + Extension Host。仍按stop conditions控制依赖、unsafe、platform API、公共合同与范围，
+不得进入 M8/M9。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential

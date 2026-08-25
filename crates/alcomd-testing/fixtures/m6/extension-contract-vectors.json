@@ -8,7 +8,7 @@
         "publisher_name": "Example Publisher",
         "publisher_key_fingerprint": "ed25519-sha256:0000000000000000000000000000000000000000000000000000000000000000",
         "license": "MIT",
-        "entrypoints": {"background_component": "component/extension.wasm"},
+        "entrypoints": {"component": "component/extension.wasm"},
         "interfaces": {
             "required": [
                 "alcomd:extension/host-data@1.0.0",

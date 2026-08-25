@@ -4,6 +4,7 @@ interface types {
     type extension-id = string;
     type instance-id = string;
     type project-id = string;
+    type guest-session-id = string;
 
     enum project-kind {
         vpm,
@@ -40,11 +41,17 @@ interface types {
         revision: u64,
     }
 
+    enum activation-kind {
+        background,
+        interactive-ui,
+    }
+
     record activation-context {
         extension-id: extension-id,
         instance-id: instance-id,
         api-major: u32,
         lifecycle-generation: u64,
+        kind: activation-kind,
     }
 
     enum stop-reason {
@@ -53,6 +60,7 @@ interface types {
         lease-expired,
         daemon-shutdown,
         uninstalling,
+        interactive-ui-idle,
     }
 
     record data-value {

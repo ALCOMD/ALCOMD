@@ -76,7 +76,8 @@ fn minimal_component_activates_revokes_and_deactivates() {
                 "extensionId": extension_id,
                 "instanceId": instance,
                 "apiMajor": 1,
-                "lifecycleGeneration": 1
+                "lifecycleGeneration": 1,
+                "kind": "background"
             }),
         },
     );
@@ -192,7 +193,8 @@ fn assert_failed_activation(name: &str, component_bytes: &[u8], expected: &str) 
                 "extensionId": "dev.alcomd.fixture",
                 "instanceId": instance,
                 "apiMajor": 1,
-                "lifecycleGeneration": 1
+                "lifecycleGeneration": 1,
+                "kind": "background"
             }),
         },
     );

@@ -382,8 +382,8 @@ stage = "M7"
 kind = "contract"
 platforms = ["all"]
 status = "implemented"
-description = "approved candidate contract evidence：冻结 proposal-only Portable UI v1 Manifest/package/WIT/ABI/lifecycle/Host context/Permission/RPC/State v9、17 node、2 action、单一隐式页面、exact tree/form/draft/quota/replay/failure 与 renderer consumer contract；不表示 active contract、production wiring、official/headless consumer 或 M7 已实现。"
-evidence = ["specs/extensions/portable-ui-v1.md", "specs/extensions/portable-ui-v1.schema.json", "specs/extensions/portable-ui-limits-v1.json", "specs/extensions/proposals", "specs/extensions/wit/extension-v1-portable-ui-proposal", "specs/rpc/m7-portable-ui.schema.json", "specs/storage/state-v9-migration.contract.proposal.json", "specs/security/extension-portable-ui-threat-model.md", "specs/gui/portable-ui-renderer-v1.md", "crates/alcomd-testing/fixtures/m7", "crates/alcomd-testing/tests/m7_contract.rs"]
+description = "冻结并验证 active Portable UI v1 Manifest/package/WIT/ABI、State v9、Permission/RPC DTO foundation，以及17 node、2 action、单一隐式页面、exact tree/form/draft/quota/replay/failure 与 renderer consumer contract；不表示 B1 runtime、official/headless consumer 或 M7 已完成。"
+evidence = ["specs/extensions/manifest-v1.schema.json", "specs/extensions/package-profile-v1.json", "specs/extensions/abi-compatibility-v1.json", "specs/extensions/wit/extension-v1", "specs/extensions/portable-ui-v1.md", "specs/extensions/portable-ui-v1.schema.json", "specs/extensions/portable-ui-limits-v1.json", "specs/extensions/proposals", "specs/rpc/m7-portable-ui.schema.json", "specs/storage/state-v9-migration.contract.json", "specs/security/extension-portable-ui-threat-model.md", "specs/gui/portable-ui-renderer-v1.md", "crates/alcomd-testing/fixtures/m7", "crates/alcomd-testing/tests/m7_contract.rs"]
 
 [[test]]
 id = "gui.m7-portable-ui-production"

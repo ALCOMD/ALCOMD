@@ -322,6 +322,13 @@ fn record(value: app::ExtensionRecord) -> rpc::ExtensionRecord {
         grant_revision: value.grant_revision.get(),
         lifecycle_generation: value.lifecycle_generation.get(),
         revision: value.revision.get(),
+        ui: value
+            .ui_protocol
+            .map(|protocol| rpc::ExtensionUiDeclaration {
+                protocol: match protocol {
+                    app::ExtensionUiProtocol::PortableV1 => rpc::ExtensionUiProtocol::PortableV1,
+                },
+            }),
     }
 }
 
@@ -355,6 +362,9 @@ fn plan(value: app::ExtensionPlanRecord) -> rpc::ExtensionPlan {
         }
         .to_owned(),
         plan_fingerprint: hex(&value.plan_fingerprint),
+        ui_protocol: value.evidence.ui_protocol.map(|protocol| match protocol {
+            app::ExtensionUiProtocol::PortableV1 => rpc::ExtensionUiProtocol::PortableV1,
+        }),
     }
 }
 

@@ -751,6 +751,7 @@ impl AccessContext {
                 Permission::ExtensionsRead,
                 Permission::ExtensionsManage,
                 Permission::ExtensionsPermissionsManage,
+                Permission::ExtensionsUiUse,
             ],
         )
     }

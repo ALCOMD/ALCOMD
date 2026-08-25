@@ -1,8 +1,8 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m7-portable-ui.json",
-    "title": "ALCOMD RPC v1 M7 Portable UI contract candidate",
-    "x-alcomd-publication": "proposal-only-until-production-capability-exists",
+    "title": "ALCOMD RPC v1 M7 Portable UI contract",
+    "x-alcomd-publication": "active-production-contract",
     "x-alcomd-capability": "extensions.ui.portable.v1",
     "x-alcomd-route": "/extensions/:extensionId/ui",
     "x-alcomd-method-permissions": {

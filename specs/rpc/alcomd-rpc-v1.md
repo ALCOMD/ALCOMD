@@ -595,10 +595,9 @@ ProjectId。公共 Plan/result 只含 target/Backup 安全摘要，不返回 arc
 detail。Restore dispatcher/worker/client/CLI 尚未实现，daemon 不广告 capability，也不接受 method；Schema v7
 只证明 durable authority 可存储，不代表 production Restore 已发布。
 
-## 22. M6 contract-only 兼容增加：Extension Runtime
+## 22. M6 兼容增加：Extension Runtime
 
-M6 Stop A 在 RPC major 1 上冻结两项未来 capability；production dispatcher/use case/state migration/Host 全部存在
-前不得由 `system.hello` 广告：
+M6 在 RPC major 1 上实现并广告两项 capability：
 
 | capability | method | permission |
 |---|---|---|
@@ -623,10 +622,30 @@ install source kind 只允许 `local_owner_selected` 与 `first_party_packaged`�
 catalog 或任意网络 fetch。retained data namespace 绑定 ExtensionId + publisher fingerprint；publisher 不同返回
 `extension_data_owner_mismatch`。uninstall 总是撤销全部 grants/lease/session/handle，reinstall 不恢复旧 grant。
 
-`system.hello.result.extensionApi` 是未来兼容 optional field，只有 data Schema v8 migration、Host/WIT/runtime 与
-对应 capability 全部生产可用后才返回 `{major:1,world:"alcomd:extension/extension-v1@1.0.0"}`。当前 daemon 继续
-返回 dataSchema 7、不返回 extensionApi、不广告 M6 capability；旧 client 必须忽略未来 optional field。
+`system.hello.result.extensionApi` 是兼容 optional field；daemon 在 data Schema v8 migration、Host/WIT/runtime 与
+对应 capability 全部生产可用后返回 `{major:1,world:"alcomd:extension/extension-v1@1.0.0"}`，并广告
+`dataSchema: 8`。旧 client 必须忽略未知 optional field。
 
 M6 stable errors 由 `rpc-error.schema.json` 冻结。普通 error 只返回安全 code、opaque ID/revision 与必要 subreason，
 不返回 package/source/data 完整路径、public key material 以外的 credential、Host protocol、trap、WIT parser debug、
 SQLite 或 OS debug。未知错误仍为 `internal_error + diagnosticId`。
+
+## 23. M7 兼容增加：Portable Extension UI
+
+M7 在 RPC major 1 上兼容增加 `extensions.ui.portable.v1` 与四个 method：
+
+| method | params | result | client authority |
+|---|---|---|---|
+| `extensions.ui.open` | `extensionId`, `locale` | `session`, `snapshot` | `extensions.read` + `extensions.ui.use` scoped exact ExtensionId |
+| `extensions.ui.refresh` | `sessionId`, `expectedSnapshotRevision` | `snapshot` | 每次重验当前 Session owner 与上述双权限 |
+| `extensions.ui.dispatch` | `sessionId`, `expectedSnapshotRevision`, `sequence`, `requestId`, `action` | `snapshot`, `replayed` | 每次重验当前 Session owner 与上述双权限 |
+| `extensions.ui.close` | `sessionId` | `closed` | 当前 Session owner best-effort close |
+
+完整闭合 DTO、tagged unions、bounds、replay、revision、Session coordination 与安全错误由
+`m7-portable-ui.schema.json`、`../extensions/portable-ui-v1.schema.json` 和
+`../extensions/portable-ui-v1.md` 冻结。没有 `listSurfaces`、surface identity、filesystem locator、Host PID、pipe、
+lease secret、InvocationContextId、private Principal metadata 或 raw Wasmtime error。
+
+State v9 只为 `extensions` 与 immutable `extension_plans` 增加 nullable checked `ui_protocol`；UI Session、Snapshot、
+action、replay 与 renderer state 都不持久化。完整 daemon/Host/RPC wiring 前 hello 继续广告 `dataSchema: 8` 且不回显
+`extensions.ui.portable.v1`；B1 production wiring 完成后才广告 `dataSchema: 9` 和该 capability。

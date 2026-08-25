@@ -56,6 +56,10 @@
         "desiredState": {"enum": ["installed_disabled", "enabled", "uninstalling"]},
         "quarantineState": {"enum": ["clear", "quarantined"]},
         "runtimeState": {"enum": ["stopped", "starting", "running", "stopping", "crashed"]},
+        "uiDeclaration": {
+            "type": "object", "additionalProperties": false, "required": ["protocol"],
+            "properties": {"protocol": {"const": "portable-v1"}}
+        },
         "extensionRecord": {
             "type": "object", "additionalProperties": true,
             "required": [
@@ -75,7 +79,8 @@
                 "runtimeState": {"$ref": "#/$defs/runtimeState"},
                 "grantRevision": {"$ref": "#/$defs/revision"},
                 "lifecycleGeneration": {"$ref": "#/$defs/revision"},
-                "revision": {"$ref": "#/$defs/revision"}
+                "revision": {"$ref": "#/$defs/revision"},
+                "ui": {"$ref": "#/$defs/uiDeclaration"}
             }
         },
         "listParams": {
@@ -128,7 +133,8 @@
                 "publisherFingerprint": {"type": "string", "pattern": "^ed25519-sha256:[0-9a-f]{64}$"},
                 "trustDecision": {"enum": ["official", "user_approved_for_extension"]},
                 "dataDisposition": {"enum": ["not_applicable", "retain_data", "delete_data"]},
-                "planFingerprint": {"$ref": "#/$defs/sha256"}
+                "planFingerprint": {"$ref": "#/$defs/sha256"},
+                "uiProtocol": {"enum": ["portable-v1"]}
             }
         },
         "applyPlanParams": {

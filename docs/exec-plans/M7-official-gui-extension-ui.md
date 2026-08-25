@@ -1,7 +1,7 @@
 # M7：官方 GUI 与 Portable Extension UI
 
-状态：M7 Phase 0 architecture reset 与 obsolete WebView probe cleanup 已完成；Portable UI Stop A 总体架构方向已通过
-人工审阅，本轮窄 review closure 已形成并等待 production 最终批准；M7 production implementation 未开始，尚未进入 M8。
+状态：M7 Portable UI Stop A 与执行语义补充已通过最终人工审批；Slice B0 active contract replacement 已完成本地实现与
+验证，正在进入 Slice B1 Core + Extension Host；M7 尚未完成，尚未进入 M8。
 
 ## 目标与完成定义
 
@@ -36,9 +36,11 @@ Stop A approved candidate contract evidence，不满足 production 完成定义�
 - obsolete test-only WebView harness cleanup commit `c05c5d2c712dd7a791401efc22b8dd19b88023a6` 独立保留；普通 Tauri
   build/no-bundle gate 未删除。
 
-## Stop A frozen candidate
+## Stop A frozen contract
 
-所有下述内容仍是 proposal；没有 production parser、binding、migration、DTO、permission enum、renderer 或 capability。
+以下合同已获项目所有者批准。Slice B0 已原子替换 active Manifest/package/WIT，加入 State v9 migration、typed
+`ui_protocol`、`extensions.ui.use` 与 RPC DTO foundation；Session runtime、capability advertising 和 renderer 分别留在
+B1/C，不能由 B0 状态冒充完成。
 
 ### Manifest、package 与单一 Portable UI
 
@@ -247,9 +249,14 @@ M11真实v3 fixture缺失继续阻塞GUI differential parity；M12继续承担Wi
 - 2026-08-25：形成本Portable UI Stop A proposal、synthetic fixtures与contract tests；active/production未修改。
 - 2026-08-25：项目所有者认可Stop A总体架构方向，并要求完成单一隐式页面、required guest-ui、exact replay/form/tree、
   InvocationContext分类、State v9最小列与EOF格式的窄review closure；production仍未批准。
+- 2026-08-25：项目所有者最终批准 Portable UI Stop A production implementation；独立执行语义补充 commit
+  `41f049365894f347d59b44eb7a41ac41c95e64df` 冻结 InvocationContext、render purity、close/replay/race/locale 与脱敏边界。
+- 2026-08-25：Slice B0 完成 active Manifest/package profile/WIT ABI v1 direct replacement、State v9、immutable typed
+  `ui_protocol`、`extensions.ui.use` 与四个 RPC DTO foundation；backend fixture 使用同一 mandatory guest-ui world，未保留
+  Web UI compatibility path。B1 尚未完成，因此 hello 继续广告 dataSchema 8且不回显Portable UI capability。
 
 ## 下一停止点
 
-创建独立本地 `docs: close M7 portable UI Stop A review` commit，不push。报告精确合同、验证、HEAD/origin/main与
-clean worktree后停止，等待项目所有者最终批准production。未经批准不得开始active replacement、Host/Core/React
-implementation或M8。
+继续 Slice B1 Core + Extension Host，完成 UiSessionCoordinator、InvocationContext、guest-ui binding、interactive lifecycle、
+replay、dual authorization、validation 与 invalidation/recovery。保持职责清晰的本地提交且不 push；遇到已列 stop condition
+立即停止。不得开始 M8/M9。

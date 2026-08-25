@@ -1,6 +1,6 @@
 # ALCOMD Extension Manifest v1
 
-状态：M6 contract-first Stop A candidate；production 尚未实现或广告。
+状态：M7 active Manifest v1；由 pre-release direct replacement 实现，不保留旧 Web UI shape。
 
 扩展包后缀是 `.alcomdext`，根 Manifest 固定为 UTF-8、无 BOM 的 `alcomd-extension.toml`。解析后的
 对象必须满足 `manifest-v1.schema.json`；未知字段 fail closed。
@@ -18,7 +18,10 @@ publisher_key_fingerprint = "ed25519-sha256:000000000000000000000000000000000000
 license = "MIT"
 
 [entrypoints]
-background_component = "component/extension.wasm"
+component = "component/extension.wasm"
+
+[ui]
+protocol = "portable-v1"
 
 [interfaces]
 required = [
@@ -28,8 +31,8 @@ required = [
 optional = []
 
 [permissions]
-required = ["background.run", "projects.read"]
-optional = []
+required = ["projects.read"]
+optional = ["background.run"]
 ```
 
 `publisher_name` 仅用于显示，不是身份。`publisher_key_fingerprint` 必须与签名 envelope 中的公钥相符；
@@ -46,19 +49,22 @@ optional = []
 
 ## Entrypoint 与 UI
 
-- `background_component` 如存在必须精确为 `component/extension.wasm`；第一条 M6 slice 要求存在。
-- `ui_entry` 如存在必须位于 `ui/`，只声明 packaged static asset identity，不声明 sidebar/settings/toolbar/
-  context-menu/navigation placement。
-- 至少一个 entrypoint；native DLL、`.so`、`.dylib`、script/shell entrypoint 均禁止。
+- `component` 必须精确为 `component/extension.wasm`。`background_component` 与 `ui_entry` 是未知字段并 fail closed；
+  不存在 alias、deprecated parser 或 compatibility warning。
+- `[ui]` 可选；存在时只允许 `protocol = "portable-v1"`，表示唯一隐式 main Portable UI。它不包含页面 identity、
+  URL、asset、framework、renderer 或 GUI placement。没有 `[ui]` 的 backend extension 仍完整有效。
+- 所有 ABI v1 Component 都必须实现 `guest-ui`；没有 `[ui]` 时 daemon 永不调用，官方 SDK/reference guest提供空桩。
+- native DLL、`.so`、`.dylib`、script/shell entrypoint 和 static Web UI asset 均禁止。
 - entrypoint 经过 `package-profile-v1.json` 的 normalized path、type、digest 和 quota 检查。
 
 ## 权限
 
 - Manifest 只声明 permission name，不包含 scope 或 grant。scope 由 daemon grant authority 保存。
 - required permission 未授予时不能 enable；optional 未授予时 Host 不链接对应 optional interface。
-- 第一条生产 slice 的 required permission 仅为 `background.run` 与 `projects.read`。Project read grant 必须
+- `background.run` 不由 `[ui]` 隐式添加。UI-only extension 可不请求该权限，并由 interactive UI session按需启动。
+  Project read grant 必须
   绑定一个或多个 specific ProjectId；它不允许 guest 读取项目路径、项目文件或 `state.db`。
-- `network.request`、filesystem、clipboard、notification、Discord 和 M7 UI placement 不属于第一条 slice。
+- `network.request`、filesystem、clipboard、notification、Discord 与 private GUI authority 不属于本合同。
 
 ## 长度与确定性
 

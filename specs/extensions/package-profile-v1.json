@@ -6,9 +6,10 @@
     "compressionMethods": ["stored", "deflate"],
     "requiredRootEntries": [
         "alcomd-extension.toml",
-        "META-INF/alcomd-signature-v1.json"
+        "META-INF/alcomd-signature-v1.json",
+        "component/extension.wasm"
     ],
-    "allowedRoots": ["alcomd-extension.toml", "META-INF/", "component/", "ui/"],
+    "allowedRoots": ["alcomd-extension.toml", "META-INF/", "component/"],
     "limits": {
         "archiveBytes": 67108864,
         "entries": 1024,
@@ -17,7 +18,6 @@
         "manifestBytes": 65536,
         "signatureEnvelopeBytes": 8192,
         "componentBytes": 33554432,
-        "uiTotalBytes": 67108864,
         "pathDepth": 16,
         "normalizedPathUtf8Bytes": 512,
         "expansionRatio": 100
@@ -25,7 +25,8 @@
     "rejected": [
         "encrypted", "data-after-eocd", "traversal", "absolute", "device", "unc",
         "symlink", "reparse-point", "duplicate", "case-collision", "unicode-collision",
-        "file-directory-collision", "special-entry", "unsupported-codec"
+        "file-directory-collision", "special-entry", "unsupported-codec", "ui-root",
+        "html-css-javascript", "static-image-font-web-asset"
     ],
     "normalization": "forward-slash+nfc+full-unicode-casefold-collision-v1",
     "contentDigest": "alcomd-extension-content-sha256-v1"

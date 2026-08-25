@@ -273,7 +273,7 @@ implementation = "alcomd-extensions"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "in_progress"
-evidence = ["docs/decisions/accepted.md::A-022", "docs/baselines/access-and-extensions.md", "specs/extensions/wit/extension-v1", "specs/extensions/wit/extension-v1-portable-ui-proposal", "apps/alcomd-extension-host/src/main.rs", "apps/alcomd-extension-host/tests/minimal_component.rs"]
+evidence = ["docs/decisions/accepted.md::A-022", "docs/baselines/access-and-extensions.md", "specs/extensions/wit/extension-v1", "apps/alcomd-extension-host/src/main.rs", "apps/alcomd-extension-host/tests/minimal_component.rs"]
 coverage = ["ABI negotiation", "WIT compatibility", "runtime major pin", "security patch policy", "WASI 0.3 non-breaking path"]
 tests = ["extensions.m6-contract", "extensions.first-third-parity", "extensions.sandbox-abuse", "gui.m7-portable-ui-contract", "gui.m7-portable-ui-production"]
 

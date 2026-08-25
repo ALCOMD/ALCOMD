@@ -19,7 +19,6 @@ const MAX_ENTRY_BYTES: u64 = 33_554_432;
 const MAX_TOTAL_BYTES: u64 = 134_217_728;
 const MAX_MANIFEST_BYTES: u64 = 65_536;
 const MAX_SIGNATURE_BYTES: u64 = 8_192;
-const MAX_UI_BYTES: u64 = 67_108_864;
 const MAX_PATH_DEPTH: usize = 16;
 const MAX_PATH_BYTES: usize = 512;
 const MAX_EXPANSION_RATIO: u64 = 100;
@@ -61,6 +60,7 @@ pub struct ExtensionManifest {
     pub publisher_key_fingerprint: String,
     pub license: String,
     pub entrypoints: ManifestEntrypoints,
+    pub ui: Option<ManifestUi>,
     pub interfaces: ManifestRequirements,
     pub permissions: ManifestRequirements,
 }
@@ -68,8 +68,13 @@ pub struct ExtensionManifest {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ManifestEntrypoints {
-    pub background_component: Option<String>,
-    pub ui_entry: Option<String>,
+    pub component: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestUi {
+    pub protocol: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -353,7 +358,6 @@ fn preflight<R: Read + Seek>(archive: &mut ZipArchive<R>) -> Result<Vec<EntryPla
     let mut plans = Vec::with_capacity(archive.len());
     let mut paths = BTreeMap::<String, bool>::new();
     let mut total = 0_u64;
-    let mut ui_total = 0_u64;
     for index in 0..archive.len() {
         let entry = archive
             .by_index(index)
@@ -396,12 +400,6 @@ fn preflight<R: Read + Seek>(archive: &mut ZipArchive<R>) -> Result<Vec<EntryPla
             .checked_add(size)
             .filter(|value| *value <= MAX_TOTAL_BYTES)
             .ok_or_else(|| error(PackageErrorCode::ArchiveLimitExceeded))?;
-        if path.starts_with("ui/") {
-            ui_total = ui_total
-                .checked_add(size)
-                .filter(|value| *value <= MAX_UI_BYTES)
-                .ok_or_else(|| error(PackageErrorCode::ArchiveLimitExceeded))?;
-        }
         if !directory {
             plans.push(EntryPlan { index, path, size });
         }
@@ -470,12 +468,11 @@ fn is_windows_device_name(segments: &[&str]) -> bool {
 }
 
 fn validate_allowed_root(path: &str, directory: bool) -> Result<(), PackageError> {
-    if (directory && matches!(path, "META-INF" | "component" | "ui"))
+    if (directory && matches!(path, "META-INF" | "component"))
         || path == MANIFEST_PATH
         || path == SIGNATURE_PATH
         || path.starts_with("META-INF/")
         || path.starts_with("component/")
-        || path.starts_with("ui/")
     {
         Ok(())
     } else {
@@ -608,15 +605,14 @@ fn parse_manifest(bytes: &[u8]) -> Result<ExtensionManifest, PackageError> {
         || manifest.publisher_name.len() > 120
         || manifest.license.is_empty()
         || manifest.license.len() > 128
-        || manifest.entrypoints.background_component.as_deref() != Some(COMPONENT_PATH)
+        || manifest.entrypoints.component != COMPONENT_PATH
+        || manifest
+            .ui
+            .as_ref()
+            .is_some_and(|ui| ui.protocol != "portable-v1")
         || !valid_fingerprint(&manifest.publisher_key_fingerprint)
         || !valid_requirements(&manifest.interfaces, 32, valid_interface)
         || !valid_requirements(&manifest.permissions, 64, valid_permission)
-    {
-        return Err(error(PackageErrorCode::ManifestInvalid));
-    }
-    if let Some(ui) = &manifest.entrypoints.ui_entry
-        && (!ui.starts_with("ui/") || ui.len() > MAX_PATH_BYTES)
     {
         return Err(error(PackageErrorCode::ManifestInvalid));
     }
@@ -782,7 +778,7 @@ mod tests {
         let public_key = signing.verifying_key().to_bytes();
         let fingerprint = format!("ed25519-sha256:{}", hex(&Sha256::digest(public_key)));
         let manifest = format!(
-            "schema = 1\nid = \"dev.example.fixture\"\nname = \"Fixture\"\nversion = \"1.0.0\"\napi = 1\npublisher_name = \"Fixture Publisher\"\npublisher_key_fingerprint = \"{}\"\nlicense = \"MIT\"\n\n[entrypoints]\nbackground_component = \"component/extension.wasm\"\n\n[interfaces]\nrequired = [\"alcomd:extension/host-data@1.0.0\", \"alcomd:extension/host-projects@1.0.0\"]\noptional = []\n\n[permissions]\nrequired = [\"background.run\", \"projects.read\"]\noptional = []\n",
+            "schema = 1\nid = \"dev.example.fixture\"\nname = \"Fixture\"\nversion = \"1.0.0\"\napi = 1\npublisher_name = \"Fixture Publisher\"\npublisher_key_fingerprint = \"{}\"\nlicense = \"MIT\"\n\n[entrypoints]\ncomponent = \"component/extension.wasm\"\n\n[interfaces]\nrequired = [\"alcomd:extension/host-data@1.0.0\", \"alcomd:extension/host-projects@1.0.0\"]\noptional = []\n\n[permissions]\nrequired = [\"background.run\", \"projects.read\"]\noptional = []\n",
             fingerprint_override.unwrap_or(&fingerprint)
         );
         let component = b"\0asm\x0d\0\x01\0";
@@ -830,13 +826,48 @@ mod tests {
 
     #[test]
     fn signed_package_is_bounded_parsed_and_strictly_verified() {
-        let path = signed_package(&[("ui/index.html", b"fixture")], None);
+        let path = signed_package(&[], None);
         let package = inspect_extension_package(&path).expect("verify package");
         assert_eq!(package.manifest.id, "dev.example.fixture");
         assert_eq!(package.manifest.version, "1.0.0");
         assert_eq!(package.manifest.api, 1);
         assert_eq!(package.publisher_fingerprint.len(), 79);
         std::fs::remove_file(path).expect("remove package");
+    }
+
+    #[test]
+    fn portable_ui_manifest_is_optional_and_old_web_shape_fails_closed() {
+        let base = "schema = 1\nid = \"dev.example.fixture\"\nname = \"Fixture\"\nversion = \"1.0.0\"\napi = 1\npublisher_name = \"Fixture Publisher\"\npublisher_key_fingerprint = \"ed25519-sha256:0000000000000000000000000000000000000000000000000000000000000000\"\nlicense = \"MIT\"\n\n[entrypoints]\ncomponent = \"component/extension.wasm\"\n";
+        let suffix = "\n[interfaces]\nrequired = []\noptional = []\n\n[permissions]\nrequired = []\noptional = []\n";
+        let backend = parse_manifest(format!("{base}{suffix}").as_bytes()).expect("backend");
+        assert!(backend.ui.is_none());
+
+        let portable = parse_manifest(
+            format!("{base}\n[ui]\nprotocol = \"portable-v1\"\n{suffix}").as_bytes(),
+        )
+        .expect("portable UI");
+        assert_eq!(portable.ui.expect("UI declaration").protocol, "portable-v1");
+
+        let old_background = base.replace("component =", "background_component =");
+        assert_eq!(
+            parse_manifest(format!("{old_background}{suffix}").as_bytes())
+                .expect_err("old background field")
+                .code(),
+            PackageErrorCode::ManifestInvalid
+        );
+        let old_ui = format!("{base}ui_entry = \"ui/index.html\"\n{suffix}");
+        assert_eq!(
+            parse_manifest(old_ui.as_bytes())
+                .expect_err("old UI field")
+                .code(),
+            PackageErrorCode::ManifestInvalid
+        );
+        assert_eq!(
+            validate_allowed_root("ui/index.html", false)
+                .expect_err("static UI root")
+                .code(),
+            PackageErrorCode::UnsafePath
+        );
     }
 
     #[test]
@@ -871,7 +902,10 @@ mod tests {
     #[test]
     fn case_collision_and_link_entries_fail_closed() {
         let collision = signed_package(
-            &[("ui/Panel.html", b"first"), ("ui/panel.html", b"second")],
+            &[
+                ("component/Panel.bin", b"first"),
+                ("component/panel.bin", b"second"),
+            ],
             None,
         );
         assert_eq!(
@@ -896,7 +930,7 @@ mod tests {
             writer.write_all(content).expect("required content");
         }
         writer
-            .add_symlink("ui/link", "target", SimpleFileOptions::default())
+            .add_symlink("component/link", "target", SimpleFileOptions::default())
             .expect("link entry");
         writer.finish().expect("finish link package");
         assert_eq!(

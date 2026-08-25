@@ -4,4 +4,5 @@ world extension-v1 {
     import host-projects;
     import host-data;
     export guest-lifecycle;
+    export guest-ui;
 }

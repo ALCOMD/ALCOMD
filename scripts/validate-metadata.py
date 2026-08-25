@@ -563,7 +563,7 @@ def main() -> int:
             f"Unexpected first-party extension ID: {relative}",
         )
         require(
-            manifest["publisher"] == product["product"]["publisher_name"],
+            manifest["publisher_name"] == product["product"]["publisher_name"],
             f"Unexpected first-party extension publisher: {relative}",
         )
         require(

@@ -671,7 +671,7 @@ fn check_derived_identity(
         if manifest["id"].as_str() != Some(&expected_id) {
             errors.push(format!("{relative} ID does not match alcomd.product.toml"));
         }
-        if manifest["publisher"].as_str() != Some(product.product.publisher_name.as_str()) {
+        if manifest["publisher_name"].as_str() != Some(product.product.publisher_name.as_str()) {
             errors.push(format!(
                 "{relative} publisher does not match alcomd.product.toml"
             ));

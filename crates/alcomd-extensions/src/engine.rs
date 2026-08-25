@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use alcomd_application::{
     ExtensionFilesystemJournalEntry, ExtensionJournalPhase, ExtensionJournalState,
-    ExtensionPackageEvidence, ExtensionPlanRecord, ExtensionSourceKind, M6Error, M6ErrorCode,
-    M6PackageAdapter, M6Store, OperationId,
+    ExtensionPackageEvidence, ExtensionPlanRecord, ExtensionSourceKind, ExtensionUiProtocol,
+    M6Error, M6ErrorCode, M6PackageAdapter, M6Store, OperationId,
 };
 
 use crate::{
@@ -123,6 +123,7 @@ impl<S: M6Store> M6PackageAdapter for ExtensionEngine<S> {
             || record.api_major != verified.manifest.api
             || record.package_digest != verified.package_digest
             || record.publisher_fingerprint != verified.publisher_fingerprint
+            || record.ui_protocol != manifest_ui_protocol(&verified)
             || !required_interfaces_supported(&verified.manifest.interfaces.required)
         {
             return Err(error(M6ErrorCode::PackageInvalid));
@@ -378,6 +379,7 @@ fn package_evidence(
         .to_str()
         .map(ToOwned::to_owned)
         .ok_or_else(|| error(M6ErrorCode::PackageInvalid))?;
+    let ui_protocol = manifest_ui_protocol(&package);
     Ok(ExtensionPackageEvidence {
         source_kind,
         source_locator,
@@ -394,6 +396,7 @@ fn package_evidence(
         optional_permissions: package.manifest.permissions.optional,
         required_interfaces: package.manifest.interfaces.required,
         optional_interfaces: package.manifest.interfaces.optional,
+        ui_protocol,
     })
 }
 
@@ -423,10 +426,19 @@ fn verify_plan(
         || evidence.optional_permissions != package.manifest.permissions.optional
         || evidence.required_interfaces != package.manifest.interfaces.required
         || evidence.optional_interfaces != package.manifest.interfaces.optional
+        || evidence.ui_protocol != manifest_ui_protocol(package)
     {
         return Err(error(M6ErrorCode::PlanStale));
     }
     Ok(())
+}
+
+fn manifest_ui_protocol(package: &VerifiedExtensionPackage) -> Option<ExtensionUiProtocol> {
+    package
+        .manifest
+        .ui
+        .as_ref()
+        .map(|_| ExtensionUiProtocol::PortableV1)
 }
 
 fn map_package_error(error: PackageError) -> M6Error {

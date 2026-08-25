@@ -1,39 +1,22 @@
 schema = 1
-
 id = "com.cqmhv.alcomd.extension.discord"
 name = "Discord 状态"
 version = "0.1.0"
-api = "^1"
-publisher = "CQMHV"
+api = 1
+publisher_name = "CQMHV"
+publisher_key_fingerprint = "ed25519-sha256:0000000000000000000000000000000000000000000000000000000000000000"
 license = "AGPL-3.0-only"
 
 [entrypoints]
-ui = "ui/index.html"
-background_wasm = "backend/alcomd_extension_discord.wasm"
+component = "component/extension.wasm"
 
-[activation]
-background = true
-events = [
-    "unity.session.started",
-    "unity.session.updated",
-    "unity.session.ended",
-]
+[ui]
+protocol = "portable-v1"
 
-[contributions]
-sidebar = true
-settings_page = true
-command_palette = false
+[interfaces]
+required = []
+optional = []
 
 [permissions]
-required = [
-    "ui.contribute",
-    "background.run",
-    "unity.read",
-    "events.subscribe",
-    "integrations.discord.presence",
-]
-
-optional = [
-    "projects.read",
-    "activity.read",
-]
+required = []
+optional = []

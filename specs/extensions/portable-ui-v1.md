@@ -1,6 +1,6 @@
-# ALCOMD Portable UI v1 contract candidate
+# ALCOMD Portable UI v1
 
-状态：M7 contract-first Stop A review closure；proposal-only，尚未被 daemon、Host、RPC client 或 renderer 实现或广告。
+状态：M7 active production contract；daemon/Host/RPC runtime 与 renderer 按 B1/C 分阶段接入，完整 wiring 前不广告 capability。
 
 ## 协议与单一页面
 

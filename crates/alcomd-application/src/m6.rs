@@ -56,6 +56,21 @@ pub enum ExtensionDataDisposition {
     DeleteData,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ExtensionUiProtocol {
+    PortableV1,
+}
+
+impl ExtensionUiProtocol {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::PortableV1 => "portable-v1",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionPackageEvidence {
@@ -74,6 +89,7 @@ pub struct ExtensionPackageEvidence {
     pub optional_permissions: Vec<String>,
     pub required_interfaces: Vec<String>,
     pub optional_interfaces: Vec<String>,
+    pub ui_protocol: Option<ExtensionUiProtocol>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -91,6 +107,7 @@ pub struct ExtensionRecord {
     pub grant_revision: Revision,
     pub lifecycle_generation: Revision,
     pub revision: Revision,
+    pub ui_protocol: Option<ExtensionUiProtocol>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

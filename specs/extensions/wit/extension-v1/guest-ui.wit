@@ -122,7 +122,7 @@ interface guest-ui {
         stack(stack-node),
         group(group-node),
         form(form-node),
-        list(list-node),
+        %list(list-node),
         list-item(list-item-node),
         text(text-node),
         status(status-node),

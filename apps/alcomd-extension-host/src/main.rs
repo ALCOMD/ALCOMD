@@ -141,7 +141,16 @@ async fn run() -> Result<()> {
         },
     );
     store.limiter(|state| &mut state.limits);
+    store
+        .set_fuel(limits.fuel_per_guest_call)
+        .map_err(|_| anyhow::anyhow!("fuel"))?;
     store.epoch_deadline_trap();
+    store.set_epoch_deadline(
+        limits
+            .activate_timeout_ms
+            .div_ceil(limits.epoch_tick_ms)
+            .max(1),
+    );
     let ticker_running = Arc::new(AtomicBool::new(true));
     let ticker = start_epoch_ticker(
         engine.clone(),
@@ -241,6 +250,11 @@ async fn invoke_activate(
             .get("lifecycleGeneration")
             .and_then(Value::as_u64)
             .ok_or_else(resource_error)?,
+        kind: match input.get("kind").and_then(Value::as_str) {
+            Some("background") => types::ActivationKind::Background,
+            Some("interactive_ui") => types::ActivationKind::InteractiveUi,
+            _ => return Err(resource_error()),
+        },
     };
     match bindings
         .alcomd_extension_guest_lifecycle()
@@ -264,6 +278,7 @@ async fn invoke_deactivate(
         Some("lease_expired") => types::StopReason::LeaseExpired,
         Some("daemon_shutdown") => types::StopReason::DaemonShutdown,
         Some("uninstalling") => types::StopReason::Uninstalling,
+        Some("interactive_ui_idle") => types::StopReason::InteractiveUiIdle,
         _ => return Err(resource_error()),
     };
     match bindings

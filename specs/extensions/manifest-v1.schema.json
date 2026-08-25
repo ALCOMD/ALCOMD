@@ -33,15 +33,17 @@
         "entrypoints": {
             "type": "object",
             "additionalProperties": false,
-            "minProperties": 1,
+            "required": ["component"],
             "properties": {
-                "background_component": {"const": "component/extension.wasm"},
-                "ui_entry": {
-                    "type": "string",
-                    "minLength": 8,
-                    "maxLength": 512,
-                    "pattern": "^ui/(?:[^/\\\\\\u0000-\\u001f]+/)*[^/\\\\\\u0000-\\u001f]+$"
-                }
+                "component": {"const": "component/extension.wasm"}
+            }
+        },
+        "ui": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["protocol"],
+            "properties": {
+                "protocol": {"const": "portable-v1"}
             }
         },
         "interfaces": {

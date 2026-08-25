@@ -1,9 +1,10 @@
-# ALCOMD State Schema v9 Portable UI proposal
+# ALCOMD State Schema v9 Portable UI
 
-状态：M7 Stop A review closure proposal-only；不创建 production `0009` SQL，不改变当前 daemon 的 `dataSchema: 8`。
+状态：M7 production migration 已创建；daemon 只在完整 Portable UI wiring 后广告 `dataSchema: 9`。
 
-M6 已真实实现、广告并验收 Schema v8，因此同一个 v8 identity 不得代表两套结构。production wiring 完成前
-`system.hello` 继续广告 v8。v9 只保存已验证 package declaration；UI session、Snapshot、action、replay evidence、
+M6 已真实实现、广告并验收 Schema v8，因此同一个 v8 identity 不得代表两套结构。v9 migration 位于
+`crates/alcomd-store/migrations/0009_portable_extension_ui.sql`。完整 production wiring 完成前 `system.hello` 继续广告 v8。
+v9 只保存已验证 package declaration；UI session、Snapshot、action、replay evidence、
 draft、renderer 与 browser state全部只在内存。
 
 ## Exact additions

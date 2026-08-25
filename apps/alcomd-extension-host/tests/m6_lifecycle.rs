@@ -551,7 +551,7 @@ fn create_signed_package_with_component(path: &Path, component: &[u8]) {
     let public_key = signing.verifying_key().to_bytes();
     let fingerprint = format!("ed25519-sha256:{}", hex(&Sha256::digest(public_key)));
     let manifest = format!(
-        "schema = 1\nid = \"dev.alcomd.fixture\"\nname = \"M6 Fixture\"\nversion = \"1.0.0\"\napi = 1\npublisher_name = \"ALCOMD Test\"\npublisher_key_fingerprint = \"{fingerprint}\"\nlicense = \"MIT\"\n\n[entrypoints]\nbackground_component = \"component/extension.wasm\"\n\n[interfaces]\nrequired = []\noptional = []\n\n[permissions]\nrequired = [\"background.run\"]\noptional = []\n"
+        "schema = 1\nid = \"dev.alcomd.fixture\"\nname = \"M6 Fixture\"\nversion = \"1.0.0\"\napi = 1\npublisher_name = \"ALCOMD Test\"\npublisher_key_fingerprint = \"{fingerprint}\"\nlicense = \"MIT\"\n\n[entrypoints]\ncomponent = \"component/extension.wasm\"\n\n[interfaces]\nrequired = []\noptional = []\n\n[permissions]\nrequired = [\"background.run\"]\noptional = []\n"
     );
     let content = [
         (MANIFEST_PATH, manifest.as_bytes()),

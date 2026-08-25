@@ -9,6 +9,10 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+mod m7;
+
+pub use m7::*;
+
 /// Current ALCOMD RPC major version.
 pub const RPC_VERSION: u32 = 1;
 
@@ -121,6 +125,10 @@ pub const METHOD_EXTENSIONS_PLAN_UNINSTALL: &str = "extensions.planUninstall";
 pub const METHOD_EXTENSIONS_APPLY_UNINSTALL: &str = "extensions.applyUninstall";
 pub const METHOD_EXTENSIONS_SET_GRANT: &str = "extensions.setGrant";
 pub const METHOD_EXTENSIONS_REVOKE_GRANT: &str = "extensions.revokeGrant";
+pub const METHOD_EXTENSIONS_UI_OPEN: &str = "extensions.ui.open";
+pub const METHOD_EXTENSIONS_UI_REFRESH: &str = "extensions.ui.refresh";
+pub const METHOD_EXTENSIONS_UI_DISPATCH: &str = "extensions.ui.dispatch";
+pub const METHOD_EXTENSIONS_UI_CLOSE: &str = "extensions.ui.close";
 
 /// Capability required by `state.check`.
 pub const CAPABILITY_STATE_CHECK_V1: &str = "state.check.v1";
@@ -147,6 +155,7 @@ pub const CAPABILITY_BACKUPS_CREATE_V1: &str = "backups.create.v1";
 pub const CAPABILITY_BACKUPS_RESTORE_V1: &str = "backups.restore.v1";
 pub const CAPABILITY_EXTENSIONS_LIFECYCLE_V1: &str = "extensions.lifecycle.v1";
 pub const CAPABILITY_EXTENSIONS_PERMISSIONS_V1: &str = "extensions.permissions.v1";
+pub const CAPABILITY_EXTENSIONS_UI_PORTABLE_V1: &str = "extensions.ui.portable.v1";
 
 /// Stable RPC v1 error codes implemented through M2.
 pub mod error_code {
@@ -268,6 +277,7 @@ pub mod error_code {
     pub const EXTENSION_SIGNATURE_INVALID: &str = "extension_signature_invalid";
     pub const EXTENSION_ALREADY_INSTALLED: &str = "extension_already_installed";
     pub const EXTENSION_NOT_INSTALLED: &str = "extension_not_installed";
+    pub const EXTENSION_NOT_ENABLED: &str = "extension_not_enabled";
     pub const EXTENSION_PERMISSION_DENIED: &str = "extension_permission_denied";
     pub const EXTENSION_SCOPE_DENIED: &str = "extension_scope_denied";
     pub const EXTENSION_API_UNSUPPORTED: &str = "extension_api_unsupported";
@@ -279,6 +289,14 @@ pub mod error_code {
     pub const EXTENSION_DATA_QUOTA_EXCEEDED: &str = "extension_data_quota_exceeded";
     pub const EXTENSION_DATA_OWNER_MISMATCH: &str = "extension_data_owner_mismatch";
     pub const EXTENSION_RECOVERY_REQUIRED: &str = "extension_recovery_required";
+    pub const EXTENSION_UI_NOT_AVAILABLE: &str = "extension_ui_not_available";
+    pub const EXTENSION_UI_PROTOCOL_UNSUPPORTED: &str = "extension_ui_protocol_unsupported";
+    pub const EXTENSION_UI_SESSION_NOT_FOUND: &str = "extension_ui_session_not_found";
+    pub const EXTENSION_UI_SESSION_STALE: &str = "extension_ui_session_stale";
+    pub const EXTENSION_UI_SNAPSHOT_STALE: &str = "extension_ui_snapshot_stale";
+    pub const EXTENSION_UI_DOCUMENT_INVALID: &str = "extension_ui_document_invalid";
+    pub const EXTENSION_UI_ACTION_INVALID: &str = "extension_ui_action_invalid";
+    pub const EXTENSION_UI_LIMIT_EXCEEDED: &str = "extension_ui_limit_exceeded";
 }
 
 /// JSON-RPC-inspired request envelope.
@@ -2104,6 +2122,8 @@ pub struct ExtensionRecord {
     pub grant_revision: u64,
     pub lifecycle_generation: u64,
     pub revision: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ui: Option<ExtensionUiDeclaration>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2122,6 +2142,8 @@ pub struct ExtensionPlan {
     pub trust_decision: ExtensionTrustDecision,
     pub data_disposition: String,
     pub plan_fingerprint: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ui_protocol: Option<ExtensionUiProtocol>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

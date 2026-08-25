@@ -543,6 +543,9 @@ pub enum Permission {
     /// Grant and revoke scoped extension permissions.
     #[serde(rename = "extensions.permissions.manage")]
     ExtensionsPermissionsManage,
+    /// Open and interact with one explicitly scoped extension Portable UI.
+    #[serde(rename = "extensions.ui.use")]
+    ExtensionsUiUse,
     /// Permit a verified extension Component to run in its Host.
     #[serde(rename = "background.run")]
     BackgroundRun,
@@ -574,6 +577,7 @@ impl Permission {
             Self::ExtensionsRead => "extensions.read",
             Self::ExtensionsManage => "extensions.manage",
             Self::ExtensionsPermissionsManage => "extensions.permissions.manage",
+            Self::ExtensionsUiUse => "extensions.ui.use",
             Self::BackgroundRun => "background.run",
         }
     }

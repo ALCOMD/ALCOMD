@@ -1,9 +1,0 @@
-package alcomd:extension@1.0.0;
-
-interface host-data {
-    use types.{data-value, data-write-result, extension-error};
-
-    get: func(key: string) -> result<data-value, extension-error>;
-    set: func(key: string, value: list<u8>, expected-key-revision: option<u64>) -> result<data-write-result, extension-error>;
-    delete: func(key: string, expected-key-revision: option<u64>) -> result<data-write-result, extension-error>;
-}

@@ -6,7 +6,10 @@
         "alcomd:extension/host-data@1.0.0",
         "alcomd:extension/host-projects@1.0.0"
     ],
-    "exports": ["alcomd:extension/guest-lifecycle@1.0.0"],
+    "exports": [
+        "alcomd:extension/guest-lifecycle@1.0.0",
+        "alcomd:extension/guest-ui@1.0.0"
+    ],
     "ambientWasiImports": [],
     "compatibleChanges": [
         "new-independent-optional-interface",
@@ -19,5 +22,16 @@
         "variant-or-enum-semantic-change", "tuple-result-option-change",
         "parameter-type-change", "result-type-change", "existing-required-import-change"
     ],
-    "goldenFixture": "crates/alcomd-testing/fixtures/m6/old-guest-new-host-v1.json"
+    "hostEmbedding": "async",
+    "witFunctions": "sync",
+    "componentModelAsync": false,
+    "wasmtimeWasi": false,
+    "guestUiRequiredForEveryAbiV1Component": true,
+    "manifestUiControlsPublicationNotWorldShape": true,
+    "noUiGuestUsesDefaultEmptyStub": true,
+    "preReleaseDirectRewrite": {
+        "parallelWorldRetained": false,
+        "oldGuestCompatibilityRetained": false
+    },
+    "goldenFixture": "crates/alcomd-testing/fixtures/m7/portable-ui-abi-v1.json"
 }

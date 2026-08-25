@@ -8,6 +8,7 @@ const MIGRATION_V5: &str = include_str!("../migrations/0005_template_plans.sql")
 const MIGRATION_V6: &str = include_str!("../migrations/0006_backup_create.sql");
 const MIGRATION_V7: &str = include_str!("../migrations/0007_backup_restore.sql");
 const MIGRATION_V8: &str = include_str!("../migrations/0008_extension_runtime.sql");
+const MIGRATION_V9: &str = include_str!("../migrations/0009_portable_extension_ui.sql");
 
 #[test]
 fn bundled_sqlite_version_is_frozen() {
@@ -1950,6 +1951,202 @@ fn migration_v8_preserves_v7_rows_and_failed_v8_rolls_back() {
     );
 }
 
+#[test]
+fn schema_v9_adds_only_nullable_checked_ui_protocol_authority() {
+    let connection = migrated_v8_connection();
+    let fingerprint = format!("ed25519-sha256:{}", "a".repeat(64));
+    connection
+        .execute_batch(
+            "INSERT INTO operations (
+                operation_id, kind, state, revision, owner_principal_id, request_json,
+                cancel_requested, created_at_ms, updated_at_ms
+             ) VALUES ('00000000-0000-4000-8000-000000000901', 'state.check',
+                       'queued', 7, 'builtin:local-owner', '{}', 0, 1, 1);
+             INSERT INTO events (
+                sequence, event_id, kind, aggregate_kind, aggregate_id, aggregate_revision,
+                principal_id, occurred_at_ms, payload_json
+             ) VALUES (19, '00000000-0000-4000-8000-000000000902', 'operation.queued',
+                       'operation', '00000000-0000-4000-8000-000000000901', 7,
+                       'builtin:local-owner', 1, '{}');",
+        )
+        .expect("insert retained M2 state");
+    connection
+        .execute(
+            "INSERT INTO extensions (
+                extension_id, version, api_major, package_digest, manifest_digest,
+                component_digest, publisher_fingerprint, trust_decision, principal_id,
+                live_package_locator, desired_state, quarantine_state, grant_revision,
+                lifecycle_generation, revision, installed_at_ms, updated_at_ms
+             ) VALUES ('dev.example.fixture', '1.0.0', 1, zeroblob(32), zeroblob(32),
+                       zeroblob(32), ?1, 'user_approved_for_extension',
+                       'builtin:local-owner', 'extension:fixture', 'installed_disabled',
+                       'clear', 5, 6, 7, 1, 1)",
+            [&fingerprint],
+        )
+        .expect("insert retained extension");
+    connection
+        .execute(
+            "INSERT INTO extension_plans (
+                plan_id, owner_principal_id, action, state, extension_id, version, api_major,
+                profile_version, source_kind, source_locator, source_identity, package_digest,
+                manifest_digest, component_digest, publisher_fingerprint, trust_decision,
+                requested_permissions_json, requested_interfaces_json, data_disposition,
+                plan_fingerprint, created_at_ms
+             ) VALUES ('00000000-0000-4000-8000-000000000903', 'builtin:local-owner',
+                       'install', 'unapplied', 'dev.example.other', '1.0.0', 1, 1,
+                       'local_owner_selected', 'fixture', x'01', zeroblob(32), zeroblob(32),
+                       zeroblob(32), ?1, 'user_approved_for_extension',
+                       '{\"required\":[],\"optional\":[]}',
+                       '{\"required\":[],\"optional\":[]}', 'not_applicable', zeroblob(32), 1)",
+            [&fingerprint],
+        )
+        .expect("insert retained plan");
+
+    connection
+        .execute_batch(MIGRATION_V9)
+        .expect("apply migration v9");
+    assert_eq!(user_version(&connection), 9);
+    assert!(MIGRATION_V9.starts_with("BEGIN IMMEDIATE;"));
+    assert!(MIGRATION_V9.ends_with("COMMIT;\n"));
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT ui_protocol, grant_revision, lifecycle_generation, revision
+                 FROM extensions WHERE extension_id='dev.example.fixture'",
+                [],
+                |row| Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, i64>(3)?
+                )),
+            )
+            .expect("extension authority"),
+        (None, 5, 6, 7)
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT ui_protocol FROM extension_plans WHERE plan_id='00000000-0000-4000-8000-000000000903'",
+                [],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .expect("plan authority"),
+        None
+    );
+    assert_eq!(
+        connection
+            .query_row("SELECT max(sequence) FROM events", [], |row| row
+                .get::<_, i64>(0))
+            .expect("event sequence"),
+        19
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT seq FROM sqlite_sequence WHERE name='events'",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .expect("sqlite event sequence"),
+        19
+    );
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("foreign key check"),
+        0
+    );
+    assert!(
+        connection
+            .execute("UPDATE extensions SET ui_protocol='web-v1' WHERE extension_id='dev.example.fixture'", [])
+            .is_err()
+    );
+    connection
+        .execute("UPDATE extensions SET ui_protocol='portable-v1' WHERE extension_id='dev.example.fixture'", [])
+        .expect("valid UI protocol");
+    assert!(
+        connection
+            .execute("UPDATE extension_plans SET ui_protocol='portable-v1' WHERE plan_id='00000000-0000-4000-8000-000000000903'", [])
+            .is_err(),
+        "durable plan UI authority changed"
+    );
+    for forbidden in [
+        "ui_sessions",
+        "ui_snapshots",
+        "ui_replay",
+        "ui_actions",
+        "ui_drafts",
+        "ui_renderers",
+        "gui_hosts",
+        "browser_state",
+        "ui_cache",
+        "ui_workflows",
+    ] {
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name=?1",
+                    [forbidden],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("forbidden table check"),
+            0
+        );
+    }
+}
+
+#[test]
+fn migration_v9_full_chain_and_failed_upgrade_preserve_exact_v8() {
+    let full = migrated_v9_connection();
+    assert_eq!(user_version(&full), 9);
+    assert_eq!(
+        full.query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .expect("full chain foreign keys"),
+        0
+    );
+
+    let rollback = migrated_v8_connection();
+    let before = rollback
+        .prepare("SELECT type, name, sql FROM sqlite_schema ORDER BY type, name")
+        .expect("prepare before schema")
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })
+        .expect("query before schema")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect before schema");
+    let failing = MIGRATION_V9.replace(
+        "PRAGMA user_version = 9;",
+        "THIS IS NOT VALID SQL;\nPRAGMA user_version = 9;",
+    );
+    assert!(rollback.execute_batch(&failing).is_err());
+    rollback.execute_batch("ROLLBACK;").expect("rollback v9");
+    assert_eq!(user_version(&rollback), 8);
+    let after = rollback
+        .prepare("SELECT type, name, sql FROM sqlite_schema ORDER BY type, name")
+        .expect("prepare after schema")
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })
+        .expect("query after schema")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect after schema");
+    assert_eq!(after, before);
+}
+
 fn migrated_connection() -> Connection {
     let connection = Connection::open_in_memory().expect("open SQLite");
     connection
@@ -2014,6 +2211,14 @@ fn migrated_v8_connection() -> Connection {
     connection
         .execute_batch(MIGRATION_V8)
         .expect("apply migration v8");
+    connection
+}
+
+fn migrated_v9_connection() -> Connection {
+    let connection = migrated_v8_connection();
+    connection
+        .execute_batch(MIGRATION_V9)
+        .expect("apply migration v9");
     connection
 }
 

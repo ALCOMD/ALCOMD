@@ -2,37 +2,27 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 const WEBVIEW_EVIDENCE: &str = include_str!("../../../specs/gui/m7-stop-a.md");
-const MANIFEST_PROPOSAL: &str =
-    include_str!("../../../specs/extensions/proposals/manifest-v1-portable-ui.schema.json");
-const MANIFEST_PROPOSAL_TEXT: &str =
-    include_str!("../../../specs/extensions/proposals/manifest-v1-portable-ui.md");
-const PACKAGE_PROPOSAL: &str =
-    include_str!("../../../specs/extensions/proposals/package-profile-v1-portable-ui.json");
-const ABI_PROPOSAL: &str =
-    include_str!("../../../specs/extensions/proposals/abi-compatibility-v1-portable-ui.json");
+const ACTIVE_MANIFEST: &str = include_str!("../../../specs/extensions/manifest-v1.schema.json");
+const ACTIVE_MANIFEST_TEXT: &str = include_str!("../../../specs/extensions/manifest-v1.md");
+const ACTIVE_PACKAGE: &str = include_str!("../../../specs/extensions/package-profile-v1.json");
+const ACTIVE_ABI: &str = include_str!("../../../specs/extensions/abi-compatibility-v1.json");
 const PORTABLE_SCHEMA: &str = include_str!("../../../specs/extensions/portable-ui-v1.schema.json");
 const PORTABLE_CONTRACT: &str = include_str!("../../../specs/extensions/portable-ui-v1.md");
 const LIMITS: &str = include_str!("../../../specs/extensions/portable-ui-limits-v1.json");
-const RPC_PROPOSAL: &str = include_str!("../../../specs/rpc/m7-portable-ui.schema.json");
-const STATE_PROPOSAL: &str =
-    include_str!("../../../specs/storage/state-v9-migration.contract.proposal.json");
-const PERMISSION_PROPOSAL: &str =
-    include_str!("../../../specs/extensions/proposals/permissions-portable-ui-v1.md");
+const ACTIVE_RPC: &str = include_str!("../../../specs/rpc/m7-portable-ui.schema.json");
+const RPC_ERROR: &str = include_str!("../../../specs/rpc/rpc-error.schema.json");
+const ACTIVE_STATE: &str = include_str!("../../../specs/storage/state-v9-migration.contract.json");
+const ACTIVE_PERMISSIONS: &str = include_str!("../../../specs/extensions/permissions-v1.md");
 const HOST_PROTOCOL_PROPOSAL: &str =
     include_str!("../../../specs/extensions/proposals/host-protocol-invocation-context-v1.md");
 const RENDERER_PROPOSAL: &str = include_str!("../../../specs/gui/portable-ui-renderer-v1.md");
 const THREAT_MODEL: &str =
     include_str!("../../../specs/security/extension-portable-ui-threat-model.md");
 const ACTIVE_WORLD: &str = include_str!("../../../specs/extensions/wit/extension-v1/world.wit");
-const PROPOSAL_TYPES: &str =
-    include_str!("../../../specs/extensions/wit/extension-v1-portable-ui-proposal/types.wit");
-const PROPOSAL_LIFECYCLE: &str = include_str!(
-    "../../../specs/extensions/wit/extension-v1-portable-ui-proposal/guest-lifecycle.wit"
-);
-const PROPOSAL_UI: &str =
-    include_str!("../../../specs/extensions/wit/extension-v1-portable-ui-proposal/guest-ui.wit");
-const PROPOSAL_WORLD: &str =
-    include_str!("../../../specs/extensions/wit/extension-v1-portable-ui-proposal/world.wit");
+const ACTIVE_TYPES: &str = include_str!("../../../specs/extensions/wit/extension-v1/types.wit");
+const ACTIVE_LIFECYCLE: &str =
+    include_str!("../../../specs/extensions/wit/extension-v1/guest-lifecycle.wit");
+const ACTIVE_UI: &str = include_str!("../../../specs/extensions/wit/extension-v1/guest-ui.wit");
 const MCP_FIXTURE: &str = include_str!("../fixtures/m7/mcp-management-snapshot.json");
 const DISCORD_FIXTURE: &str = include_str!("../fixtures/m7/discord-presence-snapshot.json");
 const HEADLESS_FIXTURE: &str = include_str!("../fixtures/m7/headless-renderer-conformance.json");
@@ -51,9 +41,9 @@ fn superseded_webview_evidence_remains_rejected_and_non_production() {
 }
 
 #[test]
-fn manifest_and_package_proposals_are_direct_rewrites_without_web_assets() {
-    let manifest: Value = serde_json::from_str(MANIFEST_PROPOSAL).expect("Manifest proposal");
-    let package: Value = serde_json::from_str(PACKAGE_PROPOSAL).expect("package proposal");
+fn active_manifest_and_package_are_direct_rewrites_without_web_assets() {
+    let manifest: Value = serde_json::from_str(ACTIVE_MANIFEST).expect("Manifest");
+    let package: Value = serde_json::from_str(ACTIVE_PACKAGE).expect("package profile");
 
     assert_eq!(manifest["properties"]["schema"]["const"], 1);
     assert_eq!(manifest["properties"]["api"]["const"], 1);
@@ -90,8 +80,8 @@ fn manifest_and_package_proposals_are_direct_rewrites_without_web_assets() {
 }
 
 #[test]
-fn wit_proposal_keeps_abi_major_one_and_active_world_untouched() {
-    let abi: Value = serde_json::from_str(ABI_PROPOSAL).expect("ABI proposal");
+fn active_wit_keeps_abi_major_one_and_requires_portable_ui() {
+    let abi: Value = serde_json::from_str(ACTIVE_ABI).expect("ABI contract");
     assert_eq!(abi["abiMajor"], 1);
     assert_eq!(abi["world"], "alcomd:extension/extension-v1@1.0.0");
     assert_eq!(abi["ambientWasiImports"], json!([]));
@@ -107,23 +97,22 @@ fn wit_proposal_keeps_abi_major_one_and_active_world_untouched() {
         false
     );
 
-    assert!(!ACTIVE_WORLD.contains("guest-ui"));
-    assert!(PROPOSAL_WORLD.contains("world extension-v1"));
-    assert!(PROPOSAL_WORLD.contains("import host-projects;"));
-    assert!(PROPOSAL_WORLD.contains("import host-data;"));
-    assert!(PROPOSAL_WORLD.contains("export guest-lifecycle;"));
-    assert!(PROPOSAL_WORLD.contains("export guest-ui;"));
-    assert!(PROPOSAL_TYPES.contains("type guest-session-id = string;"));
-    assert!(!PROPOSAL_TYPES.contains("ui-session-id"));
+    assert!(ACTIVE_WORLD.contains("world extension-v1"));
+    assert!(ACTIVE_WORLD.contains("import host-projects;"));
+    assert!(ACTIVE_WORLD.contains("import host-data;"));
+    assert!(ACTIVE_WORLD.contains("export guest-lifecycle;"));
+    assert!(ACTIVE_WORLD.contains("export guest-ui;"));
+    assert!(ACTIVE_TYPES.contains("type guest-session-id = string;"));
+    assert!(!ACTIVE_TYPES.contains("ui-session-id"));
     assert!(
-        PROPOSAL_UI
+        ACTIVE_UI
             .contains("open: func(session-id: guest-session-id, locale: string) -> ui-document;")
     );
-    assert!(PROPOSAL_UI.contains("refresh: func(session-id: guest-session-id) -> ui-document;"));
-    assert!(PROPOSAL_UI.contains(
+    assert!(ACTIVE_UI.contains("refresh: func(session-id: guest-session-id) -> ui-document;"));
+    assert!(ACTIVE_UI.contains(
         "dispatch: func(session-id: guest-session-id, action: ui-action) -> ui-document;"
     ));
-    assert!(PROPOSAL_UI.contains("close: func(session-id: guest-session-id);"));
+    assert!(ACTIVE_UI.contains("close: func(session-id: guest-session-id);"));
     for forbidden in [
         "surface-id",
         "sequence:",
@@ -135,30 +124,25 @@ fn wit_proposal_keeps_abi_major_one_and_active_world_untouched() {
         "invocation-context",
     ] {
         assert!(
-            !PROPOSAL_UI.contains(forbidden),
+            !ACTIVE_UI.contains(forbidden),
             "guest-ui leaked {forbidden}"
         );
     }
-    assert!(PROPOSAL_TYPES.contains("enum activation-kind"));
-    assert!(PROPOSAL_TYPES.contains("background,"));
-    assert!(PROPOSAL_TYPES.contains("interactive-ui,"));
-    assert!(PROPOSAL_TYPES.contains("interactive-ui-idle,"));
-    assert!(PROPOSAL_LIFECYCLE.contains("activate: func"));
-    for wit in [
-        PROPOSAL_TYPES,
-        PROPOSAL_LIFECYCLE,
-        PROPOSAL_UI,
-        PROPOSAL_WORLD,
-    ] {
+    assert!(ACTIVE_TYPES.contains("enum activation-kind"));
+    assert!(ACTIVE_TYPES.contains("background,"));
+    assert!(ACTIVE_TYPES.contains("interactive-ui,"));
+    assert!(ACTIVE_TYPES.contains("interactive-ui-idle,"));
+    assert!(ACTIVE_LIFECYCLE.contains("activate: func"));
+    for wit in [ACTIVE_TYPES, ACTIVE_LIFECYCLE, ACTIVE_UI, ACTIVE_WORLD] {
         assert!(!wit.contains("wasi:"));
     }
 }
 
 #[test]
 fn review_closure_freezes_manifest_lifecycle_draft_and_security_responsibility() {
-    assert!(MANIFEST_PROPOSAL_TEXT.contains("required `guest-ui` export"));
-    assert!(MANIFEST_PROPOSAL_TEXT.contains("官方 SDK/reference guest提供空桩"));
-    assert!(MANIFEST_PROPOSAL_TEXT.contains("required permissions不自动加入 `background.run`"));
+    assert!(ACTIVE_MANIFEST_TEXT.contains("所有 ABI v1 Component 都必须实现 `guest-ui`"));
+    assert!(ACTIVE_MANIFEST_TEXT.contains("官方 SDK/reference guest提供空桩"));
+    assert!(ACTIVE_MANIFEST_TEXT.contains("`background.run` 不由 `[ui]` 隐式添加"));
     assert!(PORTABLE_CONTRACT.contains("`/extensions/:extensionId/ui`"));
     assert!(PORTABLE_CONTRACT.contains("仍等于 session 当前 revision"));
     assert!(PORTABLE_CONTRACT.contains("不返回历史 Snapshot"));
@@ -193,8 +177,11 @@ fn review_closure_freezes_manifest_lifecycle_draft_and_security_responsibility()
 fn rpc_state_permissions_and_limits_are_exact_and_closed() {
     let schema: Value = serde_json::from_str(PORTABLE_SCHEMA).expect("Portable UI Schema");
     let limits: Value = serde_json::from_str(LIMITS).expect("limits");
-    let rpc: Value = serde_json::from_str(RPC_PROPOSAL).expect("RPC proposal");
-    let state: Value = serde_json::from_str(STATE_PROPOSAL).expect("State proposal");
+    let rpc: Value = serde_json::from_str(ACTIVE_RPC).expect("active RPC contract");
+    let rpc_error: Value = serde_json::from_str(RPC_ERROR).expect("RPC errors");
+    let state: Value = serde_json::from_str(ACTIVE_STATE).expect("active State contract");
+
+    assert_eq!(rpc["x-alcomd-publication"], "active-production-contract");
 
     assert!(limits.get("surfacesPerExtension").is_none());
     assert!(limits.get("surfaceId").is_none());
@@ -325,6 +312,14 @@ fn rpc_state_permissions_and_limits_are_exact_and_closed() {
                 .any(|value| value == code),
             "missing stable error {code}"
         );
+        assert!(
+            rpc_error["properties"]["code"]["enum"]
+                .as_array()
+                .expect("global RPC errors")
+                .iter()
+                .any(|value| value == code),
+            "global RPC error contract is missing {code}"
+        );
     }
     assert!(
         !rpc["x-alcomd-stable-errors"]
@@ -335,7 +330,10 @@ fn rpc_state_permissions_and_limits_are_exact_and_closed() {
 
     assert_eq!(state["from"], 8);
     assert_eq!(state["to"], 9);
-    assert!(state["productionMigration"].is_null());
+    assert_eq!(
+        state["productionMigration"],
+        "crates/alcomd-store/migrations/0009_portable_extension_ui.sql"
+    );
     assert_eq!(state["tablesAdded"], json!([]));
     assert_eq!(state["planFieldsImmutable"], json!(["ui_protocol"]));
     assert_eq!(state["columnsAdded"]["extensions"], json!(["ui_protocol"]));
@@ -344,10 +342,10 @@ fn rpc_state_permissions_and_limits_are_exact_and_closed() {
         json!(["ui_protocol"])
     );
     assert!(!state.to_string().contains("ui_surfaces_json"));
-    assert!(PERMISSION_PROPOSAL.contains("`extensions.ui.use`"));
-    assert!(PERMISSION_PROPOSAL.contains("不新增 `ui.contribute`"));
-    assert!(PERMISSION_PROPOSAL.contains("Client Principal 等价业务"));
-    assert!(PERMISSION_PROPOSAL.contains("permission/scope 的交集"));
+    assert!(ACTIVE_PERMISSIONS.contains("`extensions.ui.use`"));
+    assert!(ACTIVE_PERMISSIONS.contains("不存在 `ui.contribute`"));
+    assert!(ACTIVE_PERMISSIONS.contains("Client Principal 与 Extension Principal"));
+    assert!(ACTIVE_PERMISSIONS.contains("任一侧不能扩大另一侧 authority"));
     assert!(HOST_PROTOCOL_PROPOSAL.contains("InvocationContextId"));
     assert!(HOST_PROTOCOL_PROPOSAL.contains("Normal authority races"));
     assert!(HOST_PROTOCOL_PROPOSAL.contains("completed context reuse"));

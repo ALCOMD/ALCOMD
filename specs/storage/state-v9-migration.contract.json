@@ -1,11 +1,12 @@
 {
-    "status": "m7-stop-a-review-closure-proposal-only",
+    "status": "m7-production",
     "from": 8,
     "to": 9,
     "advertisedBeforeProductionWiring": 8,
+    "advertisedAfterProductionWiring": 9,
     "transaction": "BEGIN IMMEDIATE",
-    "productionMigration": null,
-    "productionWiringCreated": false,
+    "productionMigration": "crates/alcomd-store/migrations/0009_portable_extension_ui.sql",
+    "productionWiringCreated": true,
     "tablesAdded": [],
     "columnsAdded": {
         "extensions": ["ui_protocol"],

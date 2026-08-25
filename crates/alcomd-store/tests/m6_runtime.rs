@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use alcomd_application::{
     ExtensionDataDisposition, ExtensionGrantMutation, ExtensionInstallPlanDraft,
-    ExtensionPackageEvidence, ExtensionSourceKind, ExtensionTrustDecision,
+    ExtensionPackageEvidence, ExtensionSourceKind, ExtensionTrustDecision, ExtensionUiProtocol,
     ExtensionUninstallPlanDraft, IdempotencyKey, M3RegistryStore, M6ErrorCode, M6Store,
     ManifestState, PrincipalId, ProjectObservation, ProjectType,
 };
@@ -38,6 +38,7 @@ fn evidence() -> ExtensionPackageEvidence {
         optional_permissions: vec!["projects.read".to_owned()],
         required_interfaces: vec!["alcomd:extension/host-data@1.0.0".to_owned()],
         optional_interfaces: vec!["alcomd:extension/host-projects@1.0.0".to_owned()],
+        ui_protocol: Some(ExtensionUiProtocol::PortableV1),
     }
 }
 

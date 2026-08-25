@@ -221,7 +221,8 @@ fn start_host(inner: &RuntimeInner, context: ExtensionStartContext) -> Result<()
         "extensionId": process.lease.extension_id,
         "instanceId": process.lease.instance_id,
         "apiMajor": 1,
-        "lifecycleGeneration": process.lease.lifecycle_generation.get()
+        "lifecycleGeneration": process.lease.lifecycle_generation.get(),
+        "kind": "background"
     });
     if let Err(error) = invoke(
         inner,
