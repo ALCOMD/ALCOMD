@@ -69,7 +69,7 @@ ALCOMD 是一个 Rust Workspace 和多组件本地应用平台。`alcomd-gui` �
 | 程序 | 职责 |
 |---|---|
 | `alcomd` | 每用户唯一核心、唯一状态持有者和唯一写入者 |
-| `alcomd-gui` | 官方 GUI、扩展 UI 容器、审批与操作中心 |
+| `alcomd-gui` | 官方 GUI、Portable Extension UI renderer、审批与操作中心 |
 | `alcomd-cli` | 完整可自动化命令行客户端 |
 | `alcomd-mcp` | 独立 MCP 协议适配器 |
 | `alcomd-api` | 可选 Loopback HTTP 网关 |
@@ -328,7 +328,9 @@ Unity
 GUI 迁移要求用户入口、用例、数据结果、错误、进度和可访问性等价，不要求像素级复刻。
 导航或视觉重构必须有冻结流程对照与人工截图签收，不能用外观变化掩盖功能或状态缺失。
 
-Tauri command 只能用于窗口、文件选择器、系统通知、RPC 桥接和扩展容器。不得实现包、项目、MCP、Discord 或迁移业务。
+Tauri command 只能用于窗口、文件选择器、系统通知和 typed RPC 桥接。Portable Extension UI 仍经同一
+ALCOMD RPC/application 边界，不使用 extension private command。Tauri command 不得实现包、项目、MCP、Discord
+或迁移业务。
 
 Tauri Bundler 可在某个平台作为 `cargo xtask dist` 的受控底层工具，但不得决定产品组成、
 安装布局、更新事务、迁移流程或最终发行资产集合。这不是禁用 Tauri Bundler；它可以参与
@@ -361,7 +363,7 @@ stdout 只输出结果，stderr 输出日志和进度。非 TTY 环境不得突�
 - `.alcomdext`
 - Extension Manifest
 - Extension API
-- UI Bridge
+- Portable Extension UI contract
 - 权限
 - 数据命名空间
 - WASM/WASI 后台宿主
@@ -370,11 +372,32 @@ stdout 只输出结果，stderr 输出日志和进度。非 TTY 环境不得突�
 
 区别只允许是发行者、签名、默认安装策略与官方支持等级。
 
-扩展 UI 运行在 sandboxed iframe 或隔离 WebView。Extension ABI v1 使用 WASI 0.2 Component
-Model 和版本化 WIT；后台运行在 `alcomd-extension-host`。运行时采用实现时合适的 Wasmtime
+ALCOMD Extension 是 Core Extension，不是 `alcomd-gui` plugin。Extension Runtime compatibility 与
+Extension UI compatibility 相互独立。Extension ABI v1 使用 WASI 0.2 Component Model 和版本化 WIT；后台运行在
+`alcomd-extension-host`。运行时采用实现时合适的 Wasmtime
 LTS 并固定其主版本线，兼容的安全与关键正确性补丁必须升级。WASI 0.3 不阻塞 4.0.0，后续
 只通过兼容层或 Extension ABI v2 评估，不直接破坏 ABI v1。禁止原生 DLL、`.so` 与 `.dylib`
 扩展。
+
+ADR 0024 接受基础 Extension UI 的 GUI-neutral Portable UI Surface 方向。扩展只描述 bounded semantic UI tree、state 与 typed
+action，不携带 HTML、CSS、JavaScript 或 GUI framework code。GUI Host 通过自己的原生组件渲染：
+
+```text
+.alcomdext
+    -> Extension Host
+    -> Portable UI Surface
+    -> alcomd application
+    -> ALCOMD RPC v1
+        -> alcomd-gui React / Material Design 3 renderer
+        -> third-party GUI renderer
+        -> headless conformance client
+```
+
+`alcomd-gui` 不拥有 Extension Runtime，Portable UI 不依赖 Tauri，第三方 GUI 不需要加载 React、HTML 或扩展网页。
+GUI 不支持某个 Surface 时只影响扩展功能页面，不影响安装、启用、后台运行、权限、数据或生命周期。官方 GUI 的
+扩展页面位于主窗口内容区并统一使用 React/Material Design 3、主题和可访问性体系；不打开额外窗口，不创建
+iframe、child WebView 或 WebviewWindow，也不向扩展授予 Tauri capability。Custom Web UI 和 GUI-specific
+surface 不属于 4.0.0；M8/M9 第一方扩展与第三方扩展使用同一 Portable UI 合同。
 
 系统能力必须是窄接口，例如：
 
@@ -711,7 +734,7 @@ M3  项目与仓库只读垂直切片
 M4  VPM Plan / Apply 与包事务
 M5  完整 CLI 与核心项目能力
 M6  扩展运行时与公开 API
-M7  官方 GUI 与扩展 UI 容器
+M7  官方 GUI 与 Portable Extension UI
 M8  MCP 协议与 MCP 管理扩展
 M9  Discord 第一方扩展
 M10 TypeScript/Rust SDK 与公共合同硬化
@@ -741,3 +764,4 @@ Post-v4 可选 Loopback API、Python SDK 与 .NET SDK
 15. v3 与 vrc-get 不是 v4 的代码上游，VPM 必须独立实现。
 16. ALCOMD 是多组件 Rust 本地应用平台，只有 `alcomd-gui` 是 Tauri 应用。
 17. 正式发行必须打包完整产品；Tauri/Tauri Bundler 只能是受控子工具。
+18. Extension Runtime compatibility 与 Portable Extension UI compatibility 相互独立；官方 GUI 只是第一个 renderer。

@@ -166,6 +166,20 @@ instance；解除 quarantine 与重启后的自动启动只由 bounded restart p
 
 ## UI contribution 与后台能力
 
+### Pre-release UI contract supersession
+
+M6 backend runtime acceptance remains valid; its unshipped Web UI contribution contract is superseded
+by the M7 Portable Extension UI architecture reset.
+
+因此 M6 已验收的 package/signature validation、Wasmtime/WASI Component Host、one ExtensionId per Host process、
+Principal、grant/scope、`ExtensionInstanceLease`、revocation、lifecycle、quarantine、extension-owned data、crash
+isolation 与 first-party/third-party parity 继续有效。以下未发布的 UI-specific 合同不再作为当前产品方向：packaged
+static `ui/` assets、`ui_entry`、HTML/JavaScript contribution、Web UI Bridge physical/container assumptions、logical
+Web origin authority 和 headless Web UI ping 作为最终 GUI integration model。
+
+Portable UI 的 Manifest/WIT/package/State/RPC/permission/Host protocol 调整属于新的 M7 contract-first Stop A；本注记
+不修改既有合同或生产实现，也不重新打开 M6 backend 验收。
+
 - M6 只冻结 packaged static UI asset identity、sandbox/origin、versioned Bridge session、request/response/event
   envelope、request ID、replay protection、size/rate/concurrency limit、permission/revocation 与 headless malicious-UI
   harness；不冻结 sidebar、settings page、toolbar、context menu 或 navigation placement，这些属于 M7 产品合同。
@@ -389,3 +403,6 @@ fault matrix、Tauri no-bundle、dependency/unsafe/lockfile gates 和三平台 C
   `9fcd7c31dc1c5707f9490555e2b298d0fa28ca01`，CI run `32724915827`；Windows Server 2025
   成功，Ubuntu 22.04 成功且最高 `GLIBC_2.34`，macOS 15 arm64 成功且九个预期产物均为 arm64 / minos 11.0。
   M6 正式完成，尚未开始 M7。
+- 2026-08-25：公开发布前 Extension UI 方向重置为 GUI-neutral Portable UI。M6 backend runtime acceptance 保持有效；
+  未发布的 static Web UI、`ui_entry`、Web origin/container 和 headless Web UI integration contract 被 M7 Portable UI
+  方向 supersede。此次仅记录 pre-release supersession，不修改 Manifest/WIT/RPC/Permission/State 或生产实现。

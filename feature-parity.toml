@@ -233,7 +233,7 @@ status = "verified"
 implementation_status = "scaffold"
 evidence = ["docs/baselines/alcomd3-v3-audit.md::GUI", "docs/baselines/vrc-get-audit.md::GUI", "docs/decisions/accepted.md::A-020"]
 coverage = ["routes", "menus", "dialogs", "errors", "progress", "settings"]
-tests = ["gui.m7-stop-a-contract", "gui.m7-webview-isolation", "gui.m7-accessibility", "gui.v3-entry-parity", "settings.authoritative-storage"]
+tests = ["gui.m7-stop-a-contract", "gui.m7-webview-isolation", "gui.m7-portable-ui-conformance", "gui.m7-accessibility", "gui.v3-entry-parity", "settings.authoritative-storage"]
 
 [[feature]]
 id = "activity.observability"
@@ -253,15 +253,15 @@ tests = ["activity.log-redaction", "operations.lifecycle"]
 id = "extensions.runtime"
 title = "第一方与第三方统一扩展运行时"
 source = ["product-plan"]
-user_entry = ["install/enable/disable/uninstall", "UI contribution", "WASM backend", "permissions", "background lease"]
-behavior = "第一方与第三方使用相同公开 API、权限、宿主、沙箱和撤销语义。"
+user_entry = ["install/enable/disable/uninstall", "Portable UI Surface", "WASM backend", "permissions", "background lease"]
+behavior = "第一方与第三方使用相同公开 API、权限、宿主、沙箱和撤销语义；Portable UI 属于 Core/RPC，不绑定官方 GUI 技术栈。"
 implementation = "alcomd-extensions"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "in_progress"
 evidence = ["docs/baselines/access-and-extensions.md", "docs/architecture/ALCOMD-V4.md", "apps/alcomd/src/m6_runtime.rs", "apps/alcomd-extension-host/src/main.rs", "crates/alcomd-extensions/src", "crates/alcomd-store/tests/m6_runtime.rs"]
-coverage = ["UI", "WASM", "principal", "resource limits", "revocation"]
-tests = ["extensions.m6-contract", "extensions.first-third-parity", "extensions.sandbox-abuse"]
+coverage = ["Portable UI", "WASM", "principal", "resource limits", "revocation"]
+tests = ["extensions.m6-contract", "extensions.first-third-parity", "extensions.sandbox-abuse", "gui.m7-portable-ui-conformance"]
 
 [[feature]]
 id = "extensions.abi-v1"
