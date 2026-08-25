@@ -133,6 +133,16 @@ docs/exec-plans/M12-full-product-distribution.md
 `updater.full-product-atomic`、迁移与 residue 测试。真实机器覆盖安装、升级、范围转换、CLI、
 协议/文件关联、多用户、进程占用、磁盘满、提升取消、重启、签名失败和每个恢复阶段。
 
+M12 同时拥有真实目标客户端的辅助技术 runtime 验收：
+
+- Windows 10/11 安装后的 Windows Narrator minimum smoke；
+- macOS 实际 DMG/App 启动后的 VoiceOver minimum smoke；
+- Ubuntu 22.04 实际 AppImage/DEB 启动后的可用 screen-reader minimum smoke；
+- 真实 WebView2/WebKitGTK/WKWebView 中的键盘、焦点、缩放、high-contrast/平台主题与辅助技术互操作。
+
+这些测试保持 `planned`/`blocked` 直到真实客户端证据到位；Hosted compile/build、Playwright Chromium DOM automation、
+截图或单一平台结果不能替代。M7 只负责 Web frontend semantic/accessibility automation 与一次交互桌面视觉/键盘签收。
+
 ## 验收标准
 
 - 四种主要格式均从同一版本化 staging 合同产生并包含完整必需组件。
@@ -142,6 +152,8 @@ docs/exec-plans/M12-full-product-distribution.md
 - updater/bootstrap/平台包对完整产品版本和组件集合达成一致，故障注入可恢复。
 - 应用层签名/摘要、安装、升级、卸载与 residue 测试在真实目标系统通过；当前未启用的
   Authenticode/Developer ID/notarization 明确标为非 blocker，并验证对应系统警告路径。
+- Narrator、VoiceOver 与 Linux screen reader 在对应真实发布客户端完成 minimum smoke；结果按平台分别记录，不把
+  Playwright/Hosted runner evidence 描述为平台辅助技术认证。
 - 所有公开 Schema、快照、ExecPlan 进度和 `docs/status.md` 已更新，并再次停在人工发布审批点。
 
 ## 人工审批点

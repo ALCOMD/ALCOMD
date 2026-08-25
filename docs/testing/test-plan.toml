@@ -352,11 +352,11 @@ evidence = ["apps/alcomd-cli/tests/m1_cli.rs", "apps/alcomd-cli/src/main.rs"]
 
 [[test]]
 id = "gui.v3-entry-parity"
-stage = "M7"
+stage = "M11"
 kind = "ui-contract"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "blocked"
-description = "以冻结截图和流程覆盖 v3 页面、菜单、错误、进度、主题、多语言和可访问状态。"
+description = "M11 在真实脱敏 v3 Fixture 到位后执行 entry differential、flow/migration-state comparison、截图比较与 missing-entry audit；M7 synthetic/public GUI evidence 不得冒充该 parity。"
 
 [[test]]
 id = "gui.m7-stop-a-contract"
@@ -434,9 +434,49 @@ evidence = ["crates/alcomd-testing/tests/m7_security_conformance.rs", "crates/al
 id = "gui.m7-accessibility"
 stage = "M7"
 kind = "accessibility"
+platforms = ["all"]
+status = "planned"
+description = "使用获批 Playwright Chromium 执行真实 DOM/browser keyboard-focus-ARIA、live region、contrast、200% deterministic layout、320px、reduced-motion 与全部 Portable UI node semantics；不冒充平台 screen-reader 认证。"
+
+[[test]]
+id = "gui.m7-core-surfaces"
+stage = "M7"
+kind = "integration-ui"
+platforms = ["all"]
+status = "planned"
+description = "验证 M1-M7 GUI-relevant RPC 在 official shell 的完整 page/route/read-state 覆盖，包含 Home、Project、Package、Repository、Template、Unity、Backup、Operation、Extension、Settings、Activity、Diagnostics 与 About。"
+
+[[test]]
+id = "gui.m7-operation-flows"
+stage = "M7"
+kind = "integration-ui"
+platforms = ["all"]
+status = "planned"
+description = "验证当前 Core mutation 的确认与 revision/idempotency，以及高影响 Plan review、explicit Apply、Operation follow/cancel/reconnect、stale 后回到 review且不静默重新规划。"
+
+[[test]]
+id = "gui.m7-accessibility-automation"
+stage = "M7"
+kind = "browser-accessibility"
+platforms = ["all"]
+status = "planned"
+description = "Playwright 1.62.1 matched Chromium browser-level evidence：semantic roles/names/forms、keyboard/tab/arrow/Escape、drawer/dialog/route focus、live region、visible focus、light/dark contrast、200% layout、320 CSS px与reduced motion。"
+
+[[test]]
+id = "gui.m7-visual-flow-evidence"
+stage = "M7"
+kind = "manual-ui"
+platforms = ["one-interactive-desktop"]
+status = "planned"
+description = "项目所有者可见的单一真实交互桌面截图/flow/keyboard-focus签收；覆盖完整 IA、light/dark、wide/narrow与统一 loading/empty/error/disconnected/confirmation/progress/terminal states，不作为 sandbox evidence。"
+
+[[test]]
+id = "gui.m12-screen-reader-smoke"
+stage = "M12"
+kind = "manual-accessibility"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
 status = "planned"
-description = "分别记录 component/DOM keyboard-focus-ARIA automation、200%/320px layout、manual screenshot 和 Narrator/VoiceOver/Linux reader smoke；任何单一证据不得冒充完整 accessibility 验收。"
+description = "在真实发布客户端分别执行 Windows Narrator、macOS VoiceOver 与 Linux available screen reader minimum smoke；Hosted runner、Playwright DOM automation和截图均不能替代。"
 
 [[test]]
 id = "settings.authoritative-storage"
@@ -453,6 +493,14 @@ kind = "security"
 platforms = ["all"]
 status = "planned"
 description = "活动与日志不泄露 token、Authorization、完整私密路径和项目敏感信息。"
+
+[[test]]
+id = "diagnostics.redacted-list"
+stage = "M7"
+kind = "security"
+platforms = ["all"]
+status = "planned"
+description = "diagnostics.list 只返回 bounded structured redacted items，并验证 permission、pagination及 token/Authorization/argv/env/path/SQL/Debug/backtrace/extension value/Portable UI payload 均不可见。"
 
 [[test]]
 id = "extensions.m6-contract"

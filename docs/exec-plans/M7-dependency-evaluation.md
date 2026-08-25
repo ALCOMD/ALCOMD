@@ -100,3 +100,26 @@ Playwright只能提供 DOM/browser evidence，不能证明 WKWebView/WebKitGTK/T
 本报告未执行 `npm install`、`cargo add` 或 manifest变更，三份 lockfile应保持 byte-for-byte不变。任何候选获批后先
 在隔离变更中生成锁文件并报告 exact diff、active feature graph、native/build script与三平台 bundle delta；出现本报告
 无法解释的 production package时停止。候选版本不是 ranges，升级需要重新审计。
+
+## 2026-08-26 Official GUI Completion test dependency approval
+
+项目所有者批准唯一新增 GUI test-only devDependency：
+
+```json
+"@playwright/test": "1.62.1"
+```
+
+- placement：仅 `apps/alcomd-gui` devDependencies，exact version；
+- license：Apache-2.0；Node engine `>=20`，兼容固定 Node 24；
+- direct lock closure：`@playwright/test 1.62.1 -> playwright 1.62.1 -> playwright-core 1.62.1`；
+- optional `fsevents 2.3.2` 已存在于锁图，只是 Playwright 下的 optional dev record；
+- browser：只使用 package-matched Chromium revision，不使用 system Chrome、Firefox 或 WebKit；
+- authority：真实 browser DOM/keyboard/focus/layout/ARIA/contrast automation，不是 WebView2/WebKitGTK/WKWebView 或平台
+  screen-reader certification；
+- production：不得进入 Vite shipping bundle、Tauri runtime、Rust graph、Extension Runtime、Portable UI contract 或 SDK；
+- excluded：axe、Vitest/jsdom/happy-dom/testing-library、Puppeteer/Selenium/WebDriver 与 screenshot-diff framework。
+
+安装前根 `package-lock.json` SHA-256 为
+`61117ba5e1fa9d3804912aa1ab43b0946a020abd8bf372d09d27b14dfe6e46d1`。安装后审计只新增上述三项与 optional
+`playwright/node_modules/fsevents` record，没有删除或改变既有 package version；具体 after hash 与 browser revision 在最终
+M7 local candidate evidence 中记录。

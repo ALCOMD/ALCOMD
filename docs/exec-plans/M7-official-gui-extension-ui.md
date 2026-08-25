@@ -1,8 +1,8 @@
 # M7：官方 GUI 与 Portable Extension UI
 
-状态：M7 Portable UI Stop A 与执行语义补充已通过最终人工审批；Slice B0 active contract replacement、Slice B1
-Core + Extension Host、Slice C official React/MD3 renderer 与 Slice D headless/security/fault conformance 已完成本地实现及
-定向验证，最终完整本地 gate 已通过并形成未 push 的本地技术候选；M7 尚未完成，尚未进入 M8。
+状态：Portable UI B0-D production candidate `aa1323430252ed21995284a7b36dd36e45a15e0a` 已通过 Hosted CI
+`32877438910`；completion audit 发现 architecture reset 期间误删了仍属于 M7 的 official GUI completion scope。项目所有者
+已批准恢复该范围并继续实施；M7 尚未完成，尚未进入 M8/M9。
 
 ## 目标与完成定义
 
@@ -23,9 +23,19 @@ Extension Component
 package cache、extension data 或 Host protocol。first-party extension 与 third-party extension 使用相同 package、WIT、
 permission、Host、session、RPC 与 renderer contract。
 
-M7 完成需要：Stop A 人工批准；Core/Host implementation；官方 renderer；headless conformance consumer；本地完整 gate；
-Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted CI；GUI/a11y evidence；项目所有者最终人工验收。当前 B0-D
-production/conformance 与完整本地 gate 已通过，但最终三平台/a11y证据与人工验收仍未完成。
+M7 完成需要：
+
+1. 保持已经通过 Hosted CI 的 Portable UI B0-D contract、Core/Host、official renderer、headless conformance 与
+   security/fault evidence；
+2. official GUI 完整覆盖 M1-M7 已真实发布的 GUI-relevant application/RPC use case；
+3. 统一实现 navigation、route、responsive shell、typed adapter、页面状态、Plan review、Apply、Operation follow 与恢复；
+4. 实现获批的 Config Schema v1、`settings.get`/`settings.update`、`activity.list` 与 `diagnostics.list`；
+5. Chromium browser-level DOM/component accessibility automation 与一次真实交互桌面的视觉/流程/键盘焦点签收完成；
+6. 本地完整 gate 和最终提交自身的 Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted CI 通过；
+7. 项目所有者完成人工验收。
+
+`gui.v3-entry-parity` 不属于 M7 completion blocker：它保持 blocked 并由 M11 在真实脱敏 v3 Fixture 到位后完成。
+Narrator、VoiceOver 与 Linux screen-reader smoke 由 M12 在真实目标客户端/辅助技术 runtime 上完成，M7 不把它们标记为通过。
 
 ## 已完成前置证据
 
@@ -200,6 +210,105 @@ consumer 并用相同 public DTO/Fixture 验证全部 node/action 与 fail-close
 4. Slice D（本地实现与定向验证已完成）：non-Tauri consumer、first/third parity、malformed/revoke/crash/reconnect、
    InvocationContext binding、dual-authority route、payload redaction 与 limits；最终三平台/a11y验收仍待 push 后执行。
 
+## Restored Official GUI Completion
+
+Portable UI architecture reset 只替换旧 Web UI/iframe/isolated WebView 方向，不删除 official GUI 对当前 Core use case 的覆盖。
+completion audit 后恢复以下批准切片：
+
+1. Slice E1：Core read surfaces、stable route identity、wide rail/drawer、narrow modal drawer 与统一 data-route state；
+2. Slice E2：当前既有 mutation、typed Plan review、explicit Apply、Operation progress/cancel/reconnect；
+3. Slice F1：Config Schema v1、`settings.toml` 单 writer durability、settings permission/RPC；
+4. Slice F2：Event/Operation 的 safe Activity projection 与 redacted Diagnostics projection；
+5. Slice F3：Settings、Activity、Diagnostics 与 About GUI；
+6. Slice G1：Chromium browser-level DOM/component accessibility automation；
+7. Slice G2：一次真实交互桌面的 manual screenshot/flow/keyboard-focus evidence preparation；
+8. Slice G3：metadata/completion audit、完整本地 gate 与最终本地候选。
+
+### Information architecture
+
+```text
+Home
+Projects
+  -> Project Detail
+       -> Packages
+       -> Unity
+       -> Backups
+Repositories
+Templates
+Operations
+Extensions
+  -> Extension Detail
+       -> Permissions
+       -> Portable UI
+Settings
+Activity
+Diagnostics
+About
+```
+
+route identity 使用稳定 ASCII ID 和 opaque resource ID，不使用翻译文案或完整路径作为 key。不存在 Core/RPC capability 的
+业务不显示假按钮或 disabled fake page。M8 MCP、M9 Discord、migration/import、updater/distribution、Local API、Custom
+Web UI 与 full external-client credential pairing/revocation 不进入 M7。
+
+### RPC coverage authority
+
+`docs/exec-plans/M7-gui-rpc-coverage.md` 是 M1-M7 public RPC 到 official GUI 的枚举矩阵。每个 GUI-relevant method 必须有
+page、user action、read/write、confirmation、Operation、state handling 与 test owner；transport/internal method 显式标记
+`not_applicable`。矩阵由 protocol constants 与 official client 自动枚举结果核对，不凭记忆删减。
+
+### Typed GUI adapter
+
+所有业务保持 `React -> typed Tauri adapter -> alcomd-client -> RPC -> alcomd-application`。允许使用 app-private closed
+`gui_query`/`gui_command` discriminated variants 收敛 adapter，但 Rust/TypeScript 必须 exhaustive match，unknown variant
+fail closed，且不能成为 arbitrary method/JSON passthrough。GUI 不直接连接 daemon socket、SQLite、project filesystem、
+repository HTTP、package cache 或 Extension Host。
+
+### Common states and mutation semantics
+
+每个 data route 实现 `initial-loading`、保留 last-known-good 的 `refreshing`、`empty`、`error` 与 `disconnected`；mutation
+route 另实现 `confirmation-required`、`operation-running`、`success`、`failed`、`cancelled`。permission denial 不是 empty；
+`internal_error` 只展示 stable code 与 `diagnosticId`。
+
+高影响写入保持 `Plan -> review daemon ChangeSet/safe risk summary -> explicit Apply -> OperationId -> progress -> terminal
+result`。stale/revision conflict 回到明确 review，不静默重新 Plan；route/window close 不等于取消 Operation。
+
+### Settings Config Schema v1
+
+M7 获准使用 `config/settings.toml`，由 daemon 单写；不建立 State Schema v10。公开 permission 只有 `settings.read`、
+`settings.manage`，公开 RPC 只有 `settings.get`、`settings.update`。Config v1 的 closed fields 为：
+
+- `appearance.mode = system|light|dark`；
+- `appearance.sourceColor = null|canonical #RRGGBB`；
+- `appearance.density = default|compact`；
+- `appearance.motion = system|reduced`；
+- `locale = system|canonical supported locale`。
+
+`settings.get` 返回 `configSchema`、revision、full settings；`settings.update` 接收 expectedRevision 与 closed partial update，
+返回新 revision 和 normalized full settings。revision 为 checked monotonic u64，stale 复用既有 revision-conflict family。
+文件必须 strict/unknown-field fail closed、bounded UTF-8、deterministic serialization、crash-safe replacement。只有 storage/RPC
+完整接线后 hello 才广告 `configSchema: 1`。不得新增 updater/MCP/Discord/migration/extension arbitrary key/value 设置。
+
+### Activity and Diagnostics
+
+公开 permission 限定 `activity.read`、`diagnostics.read`，公开 RPC 限定 `activity.list`、`diagnostics.list`。Activity 是现有
+durable Event/Operation 的 bounded、deterministic、keyset-paginated safe projection，不创建第二份 history；不得返回 raw
+request/result/error、完整路径、token、extension payload 或 UI form value。前端不自行 join `events.list`/`operations.list`。
+
+Diagnostics v1 只返回 redacted structured items：occurredAt、severity、subsystem、stable code、optional diagnosticId 与 bounded
+safe summary；不提供 raw log export，不建立第二个 durable log table，不暴露 argv/env/SQL/Debug/backtrace/extension-owned value
+或 Portable UI payload。若现有 safe evidence 无法形成 read model 且需要新 durable logging subsystem，立即停止审批。
+
+### Accessibility and manual ownership
+
+M7 automation 使用唯一获批 devDependency `@playwright/test = 1.62.1` 与其匹配 Chromium revision，覆盖 semantic HTML、
+landmark/heading/name/label/validation/live region、drawer/dialog focus trap/restore、route focus、keyboard-only flow、Tab/arrow/Escape、
+visible focus、reduced motion、light/dark contrast、200% deterministic layout evidence、320 CSS px、error/disabled/progress 与全部
+17 Portable UI node 的真实 DOM semantics。自动化不复活 iframe/child WebView probe，也不宣称真实平台辅助技术认证。
+
+M7 manual owner 是一次真实交互桌面的 visual screenshot、flow、keyboard/focus smoke 与项目所有者签收。M11 owner 是真实 v3
+entry/flow/migration-state/screenshot differential parity。M12 owner 是 Windows Narrator、macOS VoiceOver、Linux screen reader
+及真实平台 client accessibility runtime validation。
+
 不得同时保留旧 Web UI和Portable UI parser/world/renderer，不建立通用 UI/workflow engine。
 
 ## 已批准 production 修改范围
@@ -214,31 +323,36 @@ crates/alcomd-extensions/
 crates/alcomd-protocol/
 crates/alcomd-store/
 crates/alcomd-testing/
+packages/alcomd-sdk/
+packages/alcomd-ui/
+.github/workflows/ci.yml
 docs/adr/ docs/exec-plans/ docs/status.md docs/testing/
 feature-parity.toml
-specs/extensions/ specs/gui/ specs/rpc/ specs/security/ specs/storage/
+specs/config/ specs/extensions/ specs/gui/ specs/rpc/ specs/security/ specs/storage/
 ```
 
-范围仍禁止 Cargo/npm manifests/locks、dependency graph、unsafe whitelist、platform API、Tauri unstable/capability、iframe/
-child WebView/WebviewWindow，以及任何 M8/M9 production wiring。
+唯一 manifest/lock 例外是获批的 `apps/alcomd-gui/package.json` exact devDependency `@playwright/test = 1.62.1` 与根
+`package-lock.json` 正常 Playwright closure。其余 Cargo/npm manifest/lock、dependency graph、unsafe whitelist、platform API、
+Tauri unstable/capability、iframe/child WebView/WebviewWindow 以及任何 M8/M9 production wiring 仍禁止。
 
 ## 明确排除
 
 - M8 MCP backend/management product logic、M9 Discord IPC/Presence product logic；fixtures只证明UI表达能力；
 - custom Web UI、iframe/child WebView/WebviewWindow、asset/origin/CSP/Tauri capability；
-- Local API、migration/bootstrap/updater/installer/signing/dist与M12 Windows client validation；
+- Local API、migration/import/bootstrap/updater/installer/signing/dist、update channel 与 full external-client credential pairing；
 - WASI 0.3、component-model-async、wasmtime-wasi、guest thread、新 dependency；
 - M8/M9 production wiring，以及 Portable UI 合同外的新 public RPC/Permission/error/node/action/surface。
 
 ## 验证与 release blockers
 
 每个 production slice 运行 targeted tests；最终候选运行 format/clippy/workspace tests、xtask、metadata、baseline freeze、
-npm check/build、Tauri no-bundle 与 diff check。必须证明 Cargo/npm manifests与三份 lockfile依赖图不变、unsafe/platform
-API 不变。
+npm check/build、Playwright Chromium browser suite、Tauri no-bundle 与 diff check。必须证明除获批 Playwright dev-only closure
+外 Cargo/npm manifests与三份 lockfile依赖图不变、production Vite bundle不含 Playwright、unsafe/platform API 不变。
 
 后续 first-party private node/page/command/permission、partial v1 renderer、GUI-to-Host direct channel、renderer作为business
 authority均是M7 blocker。
-M11真实v3 fixture缺失继续阻塞GUI differential parity；M12继续承担Win10/Win11安装/启动/WebView2/update/uninstall。
+M11真实v3 fixture缺失继续阻塞GUI differential parity，但不阻塞 `gui.m7-core-surfaces`。M12继续承担Win10/Win11安装/启动/
+WebView2/update/uninstall，以及 Narrator/VoiceOver/Linux screen-reader 和真实平台 accessibility runtime validation。
 
 ## Progress log
 
@@ -273,8 +387,15 @@ M11真实v3 fixture缺失继续阻塞GUI differential parity；M12继续承担Wi
 - 2026-08-26：最终完整本地 fmt/clippy/workspace tests、xtask、metadata、baseline freeze、npm check/build、Tauri release
   no-bundle 与 diff/lock/authority gate 全部通过，形成等待项目所有者明确 push 批准的本地技术候选；尚无 Hosted CI 或
   最终人工验收证据。
+- 2026-08-26：Portable UI candidate `aa1323430252ed21995284a7b36dd36e45a15e0a` 正常 push 后由 Hosted CI
+  `32877438910` 在 Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 全部验证成功；completion audit 未将其冒充完整
+  M7 acceptance。
+- 2026-08-26：项目所有者确认 architecture reset 误删 official GUI scope，批准恢复 E1-G3、四个新 RPC、四个 permission、
+  Config Schema v1，并将 v3 differential parity 与三平台 screen-reader smoke 分别归属 M11 与 M12。
+- 2026-08-26：唯一新增前端测试依赖 `@playwright/test = 1.62.1` 获批；Chromium-only browser automation 不进入 production
+  bundle/runtime，也不作为 WebView2/WebKitGTK/WKWebView compatibility certification。
 
 ## 下一停止点
 
-停止并报告未 push 的 M7 本地技术候选，等待项目所有者明确批准 push；Hosted CI、三平台 GUI/a11y 与最终人工验收留在
-push 后。不得开始 M8/M9。
+完成 E1-G3、完整本地 gate 与 manual evidence preparation 后，形成新的未 push M7 Official GUI local candidate并停止，
+等待项目所有者明确批准 push。不得开始 M8/M9。

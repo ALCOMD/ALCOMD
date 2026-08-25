@@ -8,6 +8,7 @@
         "dev": "vite",
         "check": "tsc --noEmit",
         "build": "tsc --noEmit && vite build",
+        "test:browser": "playwright test",
         "tauri": "tauri"
     },
     "dependencies": {
@@ -19,6 +20,7 @@
         "react-dom": "^19.0.0"
     },
     "devDependencies": {
+        "@playwright/test": "1.62.1",
         "@tauri-apps/cli": "^2.0.0",
         "@types/react": "^19.0.0",
         "@types/react-dom": "^19.0.0",

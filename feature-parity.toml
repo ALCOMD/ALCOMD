@@ -233,7 +233,21 @@ status = "verified"
 implementation_status = "scaffold"
 evidence = ["docs/baselines/alcomd3-v3-audit.md::GUI", "docs/baselines/vrc-get-audit.md::GUI", "docs/decisions/accepted.md::A-020"]
 coverage = ["routes", "menus", "dialogs", "errors", "progress", "settings"]
-tests = ["gui.m7-stop-a-contract", "gui.m7-webview-isolation", "gui.m7-portable-ui-contract", "gui.m7-portable-ui-core", "gui.m7-portable-ui-renderer", "gui.m7-portable-ui-production", "gui.m7-portable-ui-conformance", "gui.m7-portable-ui-security", "gui.m7-accessibility", "gui.v3-entry-parity", "settings.authoritative-storage"]
+tests = ["gui.m7-stop-a-contract", "gui.m7-webview-isolation", "gui.m7-portable-ui-contract", "gui.m7-portable-ui-core", "gui.m7-portable-ui-renderer", "gui.m7-portable-ui-production", "gui.m7-portable-ui-conformance", "gui.m7-portable-ui-security", "gui.m7-accessibility", "gui.m7-core-surfaces", "gui.m7-operation-flows", "gui.m7-accessibility-automation", "gui.m7-visual-flow-evidence", "gui.v3-entry-parity", "gui.m12-screen-reader-smoke", "settings.authoritative-storage", "activity.log-redaction", "diagnostics.redacted-list"]
+
+[[feature]]
+id = "gui.m7-core-surfaces"
+title = "M1-M7 当前 Core capability 的官方 GUI"
+source = ["product-plan", "m7-owner-approval"]
+user_entry = ["home/status", "projects/packages", "repositories", "templates", "Unity", "backups", "Operations", "extensions/Portable UI", "settings", "activity", "diagnostics", "about/licenses"]
+behavior = "official React/MD3 GUI 通过 typed Tauri adapter、alcomd-client、RPC 与 application 完整覆盖当前真实 use case；统一状态、Plan review、Operation follow 与可访问性，不创建前端业务 authority。"
+implementation = "apps/alcomd-gui"
+release_class = "release_blocker"
+status = "verified"
+implementation_status = "not_started"
+evidence = ["docs/exec-plans/M7-official-gui-extension-ui.md::Restored Official GUI Completion", "docs/exec-plans/M7-gui-rpc-coverage.md"]
+coverage = ["routes/pages", "typed adapter", "read states", "mutation/Plan/Operation", "settings/activity/diagnostics", "browser accessibility", "manual visual flow"]
+tests = ["gui.m7-core-surfaces", "gui.m7-operation-flows", "gui.m7-accessibility-automation", "gui.m7-visual-flow-evidence", "settings.authoritative-storage", "activity.log-redaction", "diagnostics.redacted-list", "gui.m7-portable-ui-production"]
 
 [[feature]]
 id = "activity.observability"
@@ -247,7 +261,7 @@ status = "verified"
 implementation_status = "not_started"
 evidence = ["docs/baselines/alcomd3-v3-audit.md::日志", "AGENTS.md::代码规则"]
 coverage = ["GUI", "CLI stderr", "MCP errors", "migration"]
-tests = ["activity.log-redaction", "operations.lifecycle"]
+tests = ["activity.log-redaction", "diagnostics.redacted-list", "operations.lifecycle"]
 
 [[feature]]
 id = "extensions.runtime"

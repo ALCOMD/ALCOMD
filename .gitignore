@@ -31,6 +31,8 @@ desktop.ini
 .local/
 /artifacts/
 coverage/
+apps/alcomd-gui/test-results/
+apps/alcomd-gui/playwright-report/
 
 # Signing and publishing secrets
 *.key
