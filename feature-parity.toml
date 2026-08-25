@@ -233,7 +233,7 @@ status = "verified"
 implementation_status = "scaffold"
 evidence = ["docs/baselines/alcomd3-v3-audit.md::GUI", "docs/baselines/vrc-get-audit.md::GUI", "docs/decisions/accepted.md::A-020"]
 coverage = ["routes", "menus", "dialogs", "errors", "progress", "settings"]
-tests = ["gui.m7-stop-a-contract", "gui.m7-webview-isolation", "gui.m7-portable-ui-conformance", "gui.m7-accessibility", "gui.v3-entry-parity", "settings.authoritative-storage"]
+tests = ["gui.m7-stop-a-contract", "gui.m7-webview-isolation", "gui.m7-portable-ui-contract", "gui.m7-portable-ui-production", "gui.m7-portable-ui-conformance", "gui.m7-portable-ui-security", "gui.m7-accessibility", "gui.v3-entry-parity", "settings.authoritative-storage"]
 
 [[feature]]
 id = "activity.observability"
@@ -261,7 +261,7 @@ status = "verified"
 implementation_status = "in_progress"
 evidence = ["docs/baselines/access-and-extensions.md", "docs/architecture/ALCOMD-V4.md", "apps/alcomd/src/m6_runtime.rs", "apps/alcomd-extension-host/src/main.rs", "crates/alcomd-extensions/src", "crates/alcomd-store/tests/m6_runtime.rs"]
 coverage = ["Portable UI", "WASM", "principal", "resource limits", "revocation"]
-tests = ["extensions.m6-contract", "extensions.first-third-parity", "extensions.sandbox-abuse", "gui.m7-portable-ui-conformance"]
+tests = ["extensions.m6-contract", "extensions.first-third-parity", "extensions.sandbox-abuse", "gui.m7-portable-ui-contract", "gui.m7-portable-ui-production", "gui.m7-portable-ui-conformance", "gui.m7-portable-ui-security"]
 
 [[feature]]
 id = "extensions.abi-v1"
@@ -272,10 +272,10 @@ behavior = "ABI v1 使用 WASI 0.2 Component Model 与版本化 WIT；Wasmtime �
 implementation = "alcomd-extensions"
 release_class = "release_blocker"
 status = "verified"
-implementation_status = "implemented"
-evidence = ["docs/decisions/accepted.md::A-022", "docs/baselines/access-and-extensions.md", "specs/extensions/wit/extension-v1", "apps/alcomd-extension-host/src/main.rs", "apps/alcomd-extension-host/tests/minimal_component.rs"]
+implementation_status = "in_progress"
+evidence = ["docs/decisions/accepted.md::A-022", "docs/baselines/access-and-extensions.md", "specs/extensions/wit/extension-v1", "specs/extensions/wit/extension-v1-portable-ui-proposal", "apps/alcomd-extension-host/src/main.rs", "apps/alcomd-extension-host/tests/minimal_component.rs"]
 coverage = ["ABI negotiation", "WIT compatibility", "runtime major pin", "security patch policy", "WASI 0.3 non-breaking path"]
-tests = ["extensions.m6-contract", "extensions.first-third-parity", "extensions.sandbox-abuse"]
+tests = ["extensions.m6-contract", "extensions.first-third-parity", "extensions.sandbox-abuse", "gui.m7-portable-ui-contract", "gui.m7-portable-ui-production"]
 
 [[feature]]
 id = "mcp.protocol"

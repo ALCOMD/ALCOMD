@@ -1,0 +1,33 @@
+{
+    "status": "m7-stop-a-proposal-only",
+    "from": 8,
+    "to": 9,
+    "transaction": "BEGIN IMMEDIATE",
+    "productionMigration": null,
+    "productionWiringCreated": false,
+    "tablesAdded": [],
+    "columnsAdded": {
+        "extensions": ["ui_protocol", "ui_surfaces_json"],
+        "extension_plans": ["ui_protocol", "ui_surfaces_json"]
+    },
+    "uiProtocolValues": [null, "portable-v1"],
+    "uiSurfacesCanonicalValues": ["[]", "[\"main\"]"],
+    "surfacesPerExtension": 1,
+    "planFieldsImmutable": ["ui_protocol", "ui_surfaces_json"],
+    "tablesForbidden": [
+        "ui_sessions", "ui_snapshots", "ui_actions", "ui_renderers", "gui_hosts",
+        "browser_state", "ui_cache", "ui_workflows"
+    ],
+    "developerResetAllowed": true,
+    "publicBackwardCompatibilityCommitment": false,
+    "invariants": [
+        "all-v8-authority-preserved",
+        "foreign-key-check-empty",
+        "protocol-null-requires-empty-surfaces",
+        "portable-v1-requires-main-only",
+        "install-plan-pins-ui-declaration",
+        "no-durable-ui-session-state",
+        "future-schema-fail-closed"
+    ]
+}
+

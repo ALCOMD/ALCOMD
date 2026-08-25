@@ -1,0 +1,40 @@
+{
+    "protocol": "portable-v1",
+    "consumerContracts": ["official-react-md3", "non-tauri-headless"],
+    "fixtures": [
+        {
+            "path": "crates/alcomd-testing/fixtures/m7/mcp-management-snapshot.json",
+            "surfaceId": "main",
+            "nodeCount": 15,
+            "orderedKinds": [
+                "page", "section", "status", "key-value", "divider", "section", "list",
+                "list-item", "text", "status", "button", "section", "form", "text-field", "select"
+            ],
+            "actionIds": ["refresh-connections", "apply-client-action"],
+            "fieldIds": ["client-id", "client-action"]
+        },
+        {
+            "path": "crates/alcomd-testing/fixtures/m7/discord-presence-snapshot.json",
+            "surfaceId": "main",
+            "nodeCount": 15,
+            "orderedKinds": [
+                "page", "section", "status", "progress", "stack", "group", "key-value",
+                "text", "form", "switch", "select", "text-field", "integer-field", "divider", "status"
+            ],
+            "actionIds": ["save-presence"],
+            "fieldIds": ["presence-enabled", "presence-mode", "presence-text", "refresh-interval"]
+        }
+    ],
+    "requiredNodeKinds": [
+        "page", "section", "stack", "group", "form", "list", "list-item",
+        "text", "status", "key-value", "progress", "divider",
+        "button", "switch", "text-field", "integer-field", "select"
+    ],
+    "requiredActionKinds": ["activate", "submit-form"],
+    "unknownProtocolResult": "extension_ui_protocol_unsupported",
+    "unknownNodeResult": "extension_ui_document_invalid",
+    "sameSemanticResultRequired": true,
+    "tauriDependency": false,
+    "guiDependency": false
+}
+

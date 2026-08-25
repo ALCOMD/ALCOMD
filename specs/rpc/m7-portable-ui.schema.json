@@ -1,0 +1,174 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m7-portable-ui.json",
+    "title": "ALCOMD RPC v1 M7 Portable UI contract candidate",
+    "x-alcomd-publication": "proposal-only-until-production-capability-exists",
+    "x-alcomd-capability": "extensions.ui.portable.v1",
+    "x-alcomd-method-permissions": {
+        "extensions.ui.open": ["extensions.read", "extensions.ui.use:ExtensionId"],
+        "extensions.ui.refresh": ["extensions.read", "extensions.ui.use:ExtensionId"],
+        "extensions.ui.dispatch": ["extensions.read", "extensions.ui.use:ExtensionId"],
+        "extensions.ui.close": ["session-owner-best-effort"]
+    },
+    "x-alcomd-method-results": {
+        "extensions.ui.open": "#/$defs/openResult",
+        "extensions.ui.refresh": "#/$defs/snapshotResult",
+        "extensions.ui.dispatch": "#/$defs/dispatchResult",
+        "extensions.ui.close": "#/$defs/closeResult"
+    },
+    "x-alcomd-stable-errors": [
+        "extension_not_enabled",
+        "extension_ui_not_available",
+        "extension_ui_surface_not_found",
+        "extension_ui_protocol_unsupported",
+        "extension_ui_session_not_found",
+        "extension_ui_session_stale",
+        "extension_ui_snapshot_stale",
+        "extension_ui_document_invalid",
+        "extension_ui_action_invalid",
+        "extension_ui_limit_exceeded",
+        "permission_denied",
+        "extension_permission_denied",
+        "extension_scope_denied",
+        "extension_instance_stale",
+        "extension_quarantined",
+        "extension_crashed",
+        "extension_resource_limit",
+        "internal_error"
+    ],
+    "$defs": {
+        "methodName": {
+            "enum": [
+                "extensions.ui.open",
+                "extensions.ui.refresh",
+                "extensions.ui.dispatch",
+                "extensions.ui.close"
+            ]
+        },
+        "extensionId": {
+            "type": "string", "minLength": 3, "maxLength": 255,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
+        },
+        "surfaceId": {
+            "type": "string", "minLength": 1, "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+        },
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "sessionId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "revision": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "locale": {
+            "type": "string", "minLength": 2, "maxLength": 15,
+            "pattern": "^[a-z]{2,3}(?:-[A-Z][a-z]{3})?(?:-(?:[A-Z]{2}|[0-9]{3}))?$"
+        },
+        "uiDeclaration": {
+            "type": "object", "additionalProperties": false,
+            "required": ["protocol", "surfaces"],
+            "properties": {
+                "protocol": {"const": "portable-v1"},
+                "surfaces": {
+                    "type": "array", "minItems": 1, "maxItems": 1,
+                    "prefixItems": [{"const": "main"}], "items": false
+                }
+            }
+        },
+        "extensionRecord": {
+            "type": "object", "additionalProperties": false,
+            "required": [
+                "extensionId", "version", "apiMajor", "packageDigest", "publisherFingerprint",
+                "trustDecision", "desiredState", "quarantineState", "runtimeState", "grantRevision",
+                "lifecycleGeneration", "revision"
+            ],
+            "properties": {
+                "extensionId": {"$ref": "#/$defs/extensionId"},
+                "version": {"type": "string", "minLength": 5, "maxLength": 128},
+                "apiMajor": {"const": 1},
+                "packageDigest": {"$ref": "#/$defs/sha256"},
+                "publisherFingerprint": {"type": "string", "pattern": "^ed25519-sha256:[0-9a-f]{64}$"},
+                "trustDecision": {"enum": ["official", "user_approved_for_extension"]},
+                "desiredState": {"enum": ["installed_disabled", "enabled", "uninstalling"]},
+                "quarantineState": {"enum": ["clear", "quarantined"]},
+                "runtimeState": {"enum": ["stopped", "starting", "running", "stopping", "crashed"]},
+                "grantRevision": {"$ref": "#/$defs/revision"},
+                "lifecycleGeneration": {"$ref": "#/$defs/revision"},
+                "revision": {"$ref": "#/$defs/revision"},
+                "ui": {"$ref": "#/$defs/uiDeclaration"}
+            }
+        },
+        "session": {
+            "type": "object", "additionalProperties": false,
+            "required": [
+                "sessionId", "extensionId", "surfaceId", "locale", "idleTimeoutMs", "absoluteTimeoutMs"
+            ],
+            "properties": {
+                "sessionId": {"$ref": "#/$defs/sessionId"},
+                "extensionId": {"$ref": "#/$defs/extensionId"},
+                "surfaceId": {"const": "main"},
+                "locale": {"$ref": "#/$defs/locale"},
+                "idleTimeoutMs": {"const": 300000},
+                "absoluteTimeoutMs": {"const": 3600000}
+            }
+        },
+        "openParams": {
+            "type": "object", "additionalProperties": false,
+            "required": ["extensionId", "surfaceId", "locale"],
+            "properties": {
+                "extensionId": {"$ref": "#/$defs/extensionId"},
+                "surfaceId": {"$ref": "#/$defs/surfaceId"},
+                "locale": {"$ref": "#/$defs/locale"}
+            }
+        },
+        "refreshParams": {
+            "type": "object", "additionalProperties": false,
+            "required": ["sessionId", "expectedSnapshotRevision"],
+            "properties": {
+                "sessionId": {"$ref": "#/$defs/sessionId"},
+                "expectedSnapshotRevision": {"$ref": "#/$defs/revision"}
+            }
+        },
+        "dispatchParams": {
+            "type": "object", "additionalProperties": false,
+            "required": ["sessionId", "expectedSnapshotRevision", "sequence", "requestId", "action"],
+            "properties": {
+                "sessionId": {"$ref": "#/$defs/sessionId"},
+                "expectedSnapshotRevision": {"$ref": "#/$defs/revision"},
+                "sequence": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+                "requestId": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[!-~]+$"},
+                "action": {
+                    "$ref": "https://alcomd.cqmhv.com/schema/extensions/portable-ui-v1.json#/$defs/action"
+                }
+            }
+        },
+        "closeParams": {
+            "type": "object", "additionalProperties": false, "required": ["sessionId"],
+            "properties": {"sessionId": {"$ref": "#/$defs/sessionId"}}
+        },
+        "snapshot": {
+            "$ref": "https://alcomd.cqmhv.com/schema/extensions/portable-ui-v1.json#/$defs/snapshot"
+        },
+        "openResult": {
+            "type": "object", "additionalProperties": false, "required": ["session", "snapshot"],
+            "properties": {
+                "session": {"$ref": "#/$defs/session"},
+                "snapshot": {"$ref": "#/$defs/snapshot"}
+            }
+        },
+        "snapshotResult": {
+            "type": "object", "additionalProperties": false, "required": ["snapshot"],
+            "properties": {"snapshot": {"$ref": "#/$defs/snapshot"}}
+        },
+        "dispatchResult": {
+            "type": "object", "additionalProperties": false, "required": ["snapshot", "replayed"],
+            "properties": {
+                "snapshot": {"$ref": "#/$defs/snapshot"},
+                "replayed": {"type": "boolean"}
+            }
+        },
+        "closeResult": {
+            "type": "object", "additionalProperties": false, "required": ["closed"],
+            "properties": {"closed": {"type": "boolean"}}
+        }
+    }
+}

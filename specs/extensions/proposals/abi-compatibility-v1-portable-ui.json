@@ -1,0 +1,38 @@
+{
+    "status": "m7-stop-a-proposal-only",
+    "abiMajor": 1,
+    "witPackage": "alcomd:extension@1.0.0",
+    "world": "alcomd:extension/extension-v1@1.0.0",
+    "imports": [
+        "alcomd:extension/host-data@1.0.0",
+        "alcomd:extension/host-projects@1.0.0"
+    ],
+    "exports": [
+        "alcomd:extension/guest-lifecycle@1.0.0",
+        "alcomd:extension/guest-ui@1.0.0"
+    ],
+    "ambientWasiImports": [],
+    "hostEmbedding": "async",
+    "witFunctions": "sync",
+    "componentModelAsync": false,
+    "wasmtimeWasi": false,
+    "directWitComponentDependency": false,
+    "preReleaseDirectRewrite": {
+        "activeWorldChangedDuringStopA": false,
+        "proposalReplacesActiveWorldAtomicallyAfterApproval": true,
+        "proposalDirectoryRemovedAfterReplacement": true,
+        "parallelWorldRetained": false,
+        "abiV2Created": false,
+        "oldGuestCompatibilityPromised": false
+    },
+    "compatibleAfterFinalV1Publication": [
+        "new-independent-optional-interface",
+        "new-negotiated-rpc-capability"
+    ],
+    "breakingAfterFinalV1Publication": [
+        "record-field-add", "record-field-remove", "record-field-change",
+        "variant-or-enum-semantic-change", "parameter-type-change", "result-type-change",
+        "existing-required-import-change", "existing-required-export-change"
+    ]
+}
+

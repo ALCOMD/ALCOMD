@@ -46,22 +46,13 @@ M6 first slice 没有 network、filesystem、clipboard、notification、Discord�
 daemon RPC socket、Host listener、OS credential store、M7 product placement 或 native library。测试只用 synthetic/local
 fixture，不执行攻击性公网、真实 credential 或凭据传播测试。
 
-## M7 Stop A Extension UI proposal（尚未成为 production contract）
+## M7 Portable UI proposal（尚未成为 production contract）
 
-M7 只候选 host-owned `/extensions/:extensionId/ui`，不增加 Manifest contribution。候选 container 是 main WebView
-内 `sandbox="allow-scripts"` 的 cross-origin iframe；isolated Tauri-managed child WebView 仍保留比较项。最终选择必须由
-WebView2、WebKitGTK 与 WKWebView actual in-app harness 证明，静态源码检查或 DOM automation 不构成证明。
+旧 iframe/managed-child WebView 设计已在 production 前拒绝，其 evidence 保留于 `specs/gui/m7-stop-a.md`。M7 Stop A
+不再加载 extension HTML/CSS/JavaScript、asset、origin 或 Tauri capability。当前完整 proposal threat model 位于
+`specs/security/extension-portable-ui-threat-model.md`，覆盖 daemon-owned session/revision、Client/Extension dual
+authority、InvocationContext、防 replay、resource/Unicode limits、host-owned chrome、malformed guest fail-closed 与
+first/third-party parity。
 
-| threat | proposed mitigation | required actual negative evidence |
-|---|---|---|
-| extension 获得 Tauri private IPC | extension frame 不匹配 capability；iframe 不运行 main-frame initialization；无通用 invoke | `__TAURI__` 与 `__TAURI_INTERNALS__` absent，raw invoke/event/channel 在 app command 前失败 |
-| frame 读取 host DOM/parent/opener | cross-origin + opaque sandbox origin；无 `allow-same-origin`/popup/top navigation | parent/opener/main DOM read/write 全失败 |
-| confused-deputy `postMessage` | exact `contentWindow` + current session/generation + strict Bridge schema/sequence；不以 `event.origin=null` 授权 | sibling/parent/old frame/forged session/replay 全拒绝 |
-| asset path/package confusion | verified package digest、random per-open token、normalized `ui/` regular file、exact MIME、no listing/fallback | traversal/link/collision/unknown MIME/cross digest/token 全拒绝 |
-| network/exfiltration | CSP `connect-src 'none'`、no forms/popup/worker/top navigation；M7 不增加 `network.request` | fetch/WebSocket/beacon/navigation/download/form blocked |
-| direct local authority | 无 daemon socket、filesystem、clipboard、notification、Node 或 Tauri plugin capability | 每项 actual probe unavailable/denied |
-| package replacement keeps old authority | digest/lifecycle generation change atomically closes Bridge, token, pending, queue and cache binding | old frame/request/asset URL 均失败，新 package 使用新 session |
-| sensitive diagnostic reaches WebView | daemon/application boundary 先产生 safe DTO；M7 不创建 diagnostics read model | token/Authorization/credential/full private path/argv/stack/arbitrary internal string 不出现在 result/console/artifact |
-
-当前 actual evidence 尚未取得，container choice 与 physical mapping 均为 `not yet frozen`。在三平台 probe 完成并经人工
-审批前，不得实现 production asset protocol、Bridge transport 或 Tauri capability。
+该 proposal 未接入 active Manifest/WIT/Host/RPC/Permission/State 或 renderer。只有项目所有者批准 Stop A 后才能开始
+production replacement；M6 backend runtime 已验收的 sandbox、lease、data 与 crash isolation 保持有效。

@@ -1,0 +1,165 @@
+package alcomd:extension@1.0.0;
+
+interface guest-ui {
+    use types.{ui-session-id, extension-error};
+
+    enum tone {
+        neutral,
+        info,
+        success,
+        warning,
+        danger,
+    }
+
+    enum stack-orientation {
+        vertical,
+        horizontal,
+    }
+
+    variant progress-value {
+        indeterminate,
+        basis-points(u16),
+    }
+
+    record page-node {
+        title: string,
+    }
+    record section-node {
+        label: string,
+    }
+    record stack-node {
+        orientation: stack-orientation,
+    }
+    record group-node {
+        label: option<string>,
+    }
+    record form-node {
+        submit-action-id: string,
+        submit-label: string,
+        disabled: bool,
+    }
+    record list-node {
+        label: option<string>,
+    }
+    record list-item-node {
+        label: option<string>,
+    }
+    record text-node {
+        text: string,
+        tone: tone,
+    }
+    record status-node {
+        label: string,
+        tone: tone,
+    }
+    record key-value-node {
+        label: string,
+        value: string,
+    }
+    record progress-node {
+        label: string,
+        value: progress-value,
+    }
+    record button-node {
+        label: string,
+        action-id: string,
+        disabled: bool,
+    }
+    record switch-node {
+        field-id: string,
+        label: string,
+        initial-value: bool,
+        disabled: bool,
+    }
+    record text-field-node {
+        field-id: string,
+        label: string,
+        initial-value: string,
+        required: bool,
+        min-length: u32,
+        max-length: u32,
+        multiline: bool,
+        disabled: bool,
+    }
+    record integer-field-node {
+        field-id: string,
+        label: string,
+        initial-value: option<s64>,
+        required: bool,
+        minimum: s64,
+        maximum: s64,
+        disabled: bool,
+    }
+    record select-option {
+        option-id: string,
+        label: string,
+    }
+    record select-node {
+        field-id: string,
+        label: string,
+        initial-option-id: option<string>,
+        required: bool,
+        options: list<select-option>,
+        disabled: bool,
+    }
+
+    variant node-payload {
+        page(page-node),
+        section(section-node),
+        stack(stack-node),
+        group(group-node),
+        form(form-node),
+        list(list-node),
+        list-item(list-item-node),
+        text(text-node),
+        status(status-node),
+        key-value(key-value-node),
+        progress(progress-node),
+        divider,
+        button(button-node),
+        switch(switch-node),
+        text-field(text-field-node),
+        integer-field(integer-field-node),
+        select(select-node),
+    }
+
+    record ui-node {
+        node-id: string,
+        parent-id: option<string>,
+        order: u32,
+        payload: node-payload,
+    }
+
+    record ui-document {
+        surface-id: string,
+        title: string,
+        nodes: list<ui-node>,
+    }
+
+    variant field-value {
+        boolean(bool),
+        text(string),
+        integer(s64),
+        selection(string),
+    }
+
+    record submitted-field {
+        field-id: string,
+        value: field-value,
+    }
+
+    record form-submission {
+        action-id: string,
+        values: list<submitted-field>,
+    }
+
+    variant ui-action {
+        activate(string),
+        submit-form(form-submission),
+    }
+
+    open: func(session-id: ui-session-id, surface-id: string, locale: string) -> result<ui-document, extension-error>;
+    refresh: func(session-id: ui-session-id) -> result<ui-document, extension-error>;
+    dispatch: func(session-id: ui-session-id, sequence: u64, request-id: string, action: ui-action) -> result<ui-document, extension-error>;
+    close: func(session-id: ui-session-id) -> result<_, extension-error>;
+}

@@ -1,6 +1,6 @@
 # ADR: Portable Extension UI
 
-- 状态：Accepted as pre-release product direction; contract and implementation pending
+- 状态：Accepted pre-release product direction；M7 Stop A contract candidate frozen for owner review；implementation pending
 - 日期：2026-08-25
 - Supersedes：ADR 0007 中未发布的 Web UI contribution/container 部分
 
@@ -40,8 +40,9 @@ Extension Backend
 和自身可访问性体系渲染；不打开额外窗口，不加载扩展网页，不创建 iframe、child WebView 或 WebviewWindow，
 也不向扩展授予 Tauri capability。第三方 GUI 使用同一 RPC Surface 和自己的原生组件/设计系统。
 
-GUI 不支持 Portable UI、只支持部分 required feature，或不提供扩展页面时，只影响该扩展的功能页面；扩展安装、
-启用、后台运行、权限、数据和生命周期不依赖 GUI renderer。renderer 不得静默丢弃 Surface 声明的 required feature。
+GUI 以 `extensions.ui.portable.v1` capability 表达完整 v1 支持，不协商 hostId、renderer identity 或 feature 子集。GUI
+不支持 Portable UI 或不提供扩展页面时，只影响功能页面；扩展安装、启用、后台运行、权限、数据和生命周期不依赖
+renderer。unknown v1 node fail closed；未来节点使用新 capability/version。
 
 UI Session 和 action 必须同时验证 client Principal authority 与 extension Principal grant/scope/lease，避免 GUI 作为
 confused deputy。GUI 只能经 RPC -> `alcomd-application` -> Extension Host；不建立 GUI 到 Host 的直连，也不允许
@@ -50,14 +51,15 @@ first-party extension 使用 private React page、private Tauri command、hidden
 Custom Web UI、GUI-specific code surface 和其他高级 Surface 延后到出现真实用例后独立设计，不为它们保留 Web
 fallback、兼容字段或双路 renderer。M8 MCP management extension 与 M9 Discord extension 使用同一个 Portable UI。
 
-由于合同尚未公开，下一轮 contract-first 可以直接替换 Manifest v1、package profile v1、Extension WIT/ABI v1、
-UI contract v1、未发布的 State Schema v8 及 M6 UI-specific 实现/测试。不创建 Manifest/ABI v2、deprecated
-`ui_entry`、old/new parser/world alias、UI Bridge compatibility alias、State v9 compatibility migration 或旧开发
-数据库迁移；需要时开发者清空本地 `state.db` 后重新初始化。
+由于合同尚未公开，implementation 获批后可直接替换 Manifest/package/WIT/ABI v1 与未发布 UI-specific 实现，不创建
+v2、alias、dual parser/world/renderer。M6 已真实广告并验收 State Schema v8，因此 Portable UI normalized declaration
+使用 v9 proposal；它不恢复旧 Web UI compatibility，开发数据库仍可 reset。
 
-本 ADR 只接受产品方向。Portable UI Snapshot/Node/Action Schema、UI Session、Host protocol、RPC method/capability/error、
-client permission、State v8 调整、renderer contract、third-party GUI descriptor、threat model、资源限制和 conformance
-tests 必须在 M7 Portable UI contract-first Stop A 单独冻结并再次人工审批。
+M7 Stop A candidate 进一步冻结：单一隐式 `main` surface；daemon-owned SnapshotRevision 与 memory-only session；17 种
+bounded semantic node；只有 activate/submit-form 两种 action；Client `extensions.ui.use` 与 Extension grant/scope 的
+双重授权；daemon-issued InvocationContextId；`background`/`interactive-ui` activation；四个 RPC method；官方 MD3 与
+non-Tauri headless 两个 consumer contract。所有内容仍是 proposal，必须经下一次人工审批才可替换 active contract或
+开始 production。
 
 ## 结果
 
@@ -65,4 +67,5 @@ tests 必须在 M7 Portable UI contract-first Stop A 单独冻结并再次人工
 - packaged static `ui/`、`ui_entry`、HTML/JavaScript contribution、Web UI Bridge physical/container、logical Web origin
   authority 与 headless Web UI ping 作为最终 GUI 模型的假设被 supersede。
 - M7 不再以 WebView physical mapping、custom scheme/CSP 或 Tauri IPC negative matrix 作为 product blocker。
-- Portable UI 与 renderer 的实际合同和实现仍未开始；任何候选字段、节点、权限和 RPC 名称都不是已发布合同。
+- Portable UI Stop A proposal、Schema/WIT proposal、fixtures 与 contract tests 已形成；active contract、Host/Core/React
+  implementation 与 capability advertising 均未开始。

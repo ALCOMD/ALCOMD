@@ -1,350 +1,239 @@
 # M7：官方 GUI 与 Portable Extension UI
 
-状态：M7 architecture direction reset in progress；WebView-based Extension UI 已在 production 前拒绝；Portable UI contract-first 尚未开始；M7 production implementation 未开始
+状态：M7 Phase 0 architecture reset 与 obsolete WebView probe cleanup 已完成；Portable UI contract-first Stop A candidate
+已形成并等待项目所有者人工审批；M7 production implementation 未开始，尚未进入 M8。
 
-## 目标
+## 目标与完成定义
 
-在 M1-M6 已完成的 daemon、RPC、Operation、Event、项目/仓库、VPM transaction、Unity、模板、备份与
-Extension Runtime 基础上，把 M0 GUI 壳收敛为官方客户端，并建立与 GUI 技术栈无关的 Portable Extension UI：
+M7 在 M1-M6 已完成的 daemon/RPC/application/Extension Host 基础上交付官方 React/Material Design 3 客户端，并建立
+GUI-neutral Portable Extension UI v1：
 
 ```text
-React / Material Design 3 official shell
-    -> typed Tauri adapter
-        -> alcomd-client
-            -> ALCOMD RPC v1
-                -> alcomd-application
-
-Extension Backend
+Extension Component
     -> alcomd-extension-host
-    -> Portable Extension UI Surface
-    -> alcomd application
-    -> ALCOMD RPC v1
-        -> official React / Material Design 3 renderer
-        -> third-party GUI renderer
-        -> headless conformance client
+    -> alcomd-application authority
+    -> ALCOMD RPC v1 Portable UI
+        -> official React/MD3 renderer
+        -> non-Tauri headless conformance consumer
+        -> future third-party GUI renderer
 ```
 
-ALCOMD Extension 是 Core Extension，不是 `alcomd-gui` plugin。Extension Runtime compatibility 与 Extension UI
-compatibility 相互独立。Portable UI 只携带 bounded semantic UI tree、state 和 typed action，不携带 HTML、CSS、
-JavaScript、React、Tauri 或其他 GUI framework code。`alcomd-gui` 是第一个 renderer，不是 Extension UI 标准。
+官方 GUI 与 extension renderer 都只经 typed client/RPC/application 访问权威状态；不直接读 state.db、项目、repository、
+package cache、extension data 或 Host protocol。first-party extension 与 third-party extension 使用相同 package、WIT、
+permission、Host、session、RPC 与 renderer contract。
 
-M7 不建立第二个业务 authority。GUI 不直接读取 `state.db`、项目文件、repository、package cache、extension-owned
-data 或 Extension Host private protocol；所有业务结果、revision、Plan、Operation、权限和错误以 daemon 为准。
+M7 完成需要：Stop A 人工批准；Core/Host implementation；官方 renderer；headless conformance consumer；本地完整 gate；
+Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted CI；GUI/a11y evidence；项目所有者最终人工验收。当前只完成
+Stop A candidate，不满足 production 完成定义。
 
-## 前置条件与本轮边界
+## 已完成前置证据
 
-- M6 最终候选 `b666e8fcac6fd4153750c401b76f2f61f6d2a34a` 与 CI run `32724915827` 已通过三平台
-  Hosted CI 和项目所有者最终人工验收；M6 backend runtime acceptance 保持有效。
-- M6 acceptance closure `577af7d4cd5746ea259c047e9b80189ca698db70` 对应 CI run `32733276048` 三平台成功。
-- M1-M6 RPC v1 继续只能兼容增加；下一轮对未发布 Extension UI-specific v1 合同的直接替换必须在统一
-  Portable UI Stop A 明确冻结，不能从本计划候选直接推导 production 授权。
-- 当前没有公开 Extension ABI 用户、第三方扩展、第三方 GUI 适配或需保留的真实数据兼容包袱；获批后允许直接
-  替换未发布合同，不设计 v2/compatibility layer/dual parser/dual renderer/旧开发数据库 migration。
-- Phase 0 只修改架构、ADR、ExecPlan、状态和必要 metadata；不修改 Manifest/WIT/RPC/Permission/State Schema、
-  production Rust/TypeScript、dependency、lockfile、测试实现、Tauri capability、CI 或平台 API。
+- M6 final `b666e8fcac6fd4153750c401b76f2f61f6d2a34a` / CI `32724915827` 已通过最终人工验收；M6 backend runtime
+  acceptance 保持有效。
+- M7 WebView evidence 只证明 sandboxed iframe 与 Tauri managed child 不适合作为 v1 产品方向，保留在
+  `specs/gui/m7-stop-a.md`，不属于 security/compatibility success。
+- Phase 0 architecture reset commit `12089661f7c694f059aaf172344809ff814716f6` 独立保留。
+- obsolete test-only WebView harness cleanup commit `c05c5d2c712dd7a791401efc22b8dd19b88023a6` 独立保留；普通 Tauri
+  build/no-bundle gate 未删除。
 
-## M6 保持有效与被替代的边界
+## Stop A frozen candidate
 
-以下 M6 能力继续有效，不重新宣布 M6 整体失败或未完成：
+所有下述内容仍是 proposal；没有 production parser、binding、migration、DTO、permission enum、renderer 或 capability。
 
-- Extension package/signature validation；
-- Wasmtime/WASI Component Host；
-- one ExtensionId per Host OS process；
-- Principal、grant/scope、`ExtensionInstanceLease` 与 revocation；
-- lifecycle、quarantine、extension-owned data 与 crash isolation；
-- first-party/third-party parity。
+### Manifest、package 与 surface
 
-以下未发布的 UI-specific pre-release contract 被 Portable UI 方向 supersede：
-
-- packaged static `ui/` assets 与 `ui_entry`；
-- HTML/CSS/JavaScript UI contribution；
-- Web UI Bridge physical/container assumptions；
-- logical Web origin 作为 UI authority；
-- headless Web UI ping 作为最终 GUI integration model。
-
-不建立 deprecated `ui_entry`、Manifest/ABI v2、old/new parser/world alias、UI Bridge compatibility alias、Web UI
-fallback、双路 renderer 或 State v8 -> v9 compatibility migration。开发期不兼容数据库允许清空后重新初始化。
-
-## 产品体验与 GUI renderer 边界
-
-官方 GUI 保持单一主窗口 shell。核心页面继续规划为首页、项目、包、仓库、模板、Unity、备份、Operation、扩展、
-设置、活动和关于；尚未存在的 external access、technical diagnostics、migration、updater 和 distribution 用例不以
-占位成功页面冒充实现。
-
-Portable Extension UI 的官方 route 候选为：
-
-```text
-/extensions/:extensionId/ui/:surfaceId
-```
-
-页面位于主窗口内容区，由官方 React/Material Design 3 组件渲染。官方 GUI 负责 layout、theme、typography、shape、
-spacing、density、motion、focus、keyboard、ARIA/accessibility，以及 loading/empty/error/progress/disconnected state。
-扩展只能提供语义内容和 typed action；不能提供 CSS、颜色、字体、absolute positioning、animation 或 GUI component。
-
-因此 M7 基础 Extension UI：
-
-- 不打开第二窗口；
-- 不创建 iframe、child WebView 或 WebviewWindow；
-- 不加载第三方网页或扩展 JavaScript；
-- 不授予 extension Tauri IPC/capability；
-- 深色、浅色和主题色由 GUI renderer 统一控制。
-
-GUI 不支持某个 UI Surface 时，扩展安装、启用、后台运行、权限、数据和生命周期仍正常。支持 `portable-v1` 的 GUI
-使用自己的 native renderer；只支持部分 feature 的 GUI 只有在满足 Surface required features 时才显示，不能静默
-丢弃关键节点；完全不支持的 GUI 仍显示标准 extension management，并把功能页面明确标为 unsupported。
-
-## Portable UI proposed design（不是已发布合同）
-
-以下内容只是下一轮 Stop A 的候选输入。本轮不创建或修改真实 Schema、WIT、RPC、Permission 或 State Schema。
-
-### Manifest v1
-
-未来候选直接删除 `ui_entry` 与 `ui/` static asset semantics，并可加入：
+Manifest v1 future direct rewrite 使用：
 
 ```toml
+[entrypoints]
+component = "component/extension.wasm"
+
 [ui]
 protocol = "portable-v1"
 ```
 
-没有 `[ui]` 的扩展仍可正常安装、启用和运行后台。不要增加 Manifest v2。
+`background_component` 直接改名为 `component`，不保留 alias；删除 `ui_entry`。package allowed roots 只剩
+`alcomd-extension.toml`、`META-INF/`、`component/`，删除 `ui/` 与 UI quota，保留全部 ZIP/signature/digest 安全规则。
 
-### Package profile v1
+v1 采用一个隐式 stable surface `main`。MCP management 与 Discord Presence synthetic fixture 都可在一个 page 内使用
+section/list/form 表达，当前没有引入最多 8 surfaces 所需的真实证据。extension record optional addition 固定为：
 
-未来候选删除 `ui/` allowed root 与 UI static asset quota，把包根收窄为：
-
-```text
-alcomd-extension.toml
-META-INF/
-component/
+```json
+{"ui":{"protocol":"portable-v1","surfaces":["main"]}}
 ```
 
-### Extension ABI/WIT v1
+### Capability 与 consumer completeness
 
-未来候选直接更新当前 v1 world，增加 guest UI export；没有 UI 的扩展返回 empty surface list。不增加并行 v2
-world。具体 WIT type/function、sync/async 调用、limits 和 cancellation 必须由 Stop A 冻结。
+客户端在 hello 请求 `extensions.ui.portable.v1`；daemon 完整实现后才回显。声明支持的 consumer 必须实现全部 v1
+node/action。没有 hostId、official GUI identity、framework/renderer name、feature subset/intersection 或 GUI-specific tree。
+不支持的 GUI 继续提供 extension management，并把功能页标为 unsupported。unknown v1 node fail closed；新增 node 使用
+新的 capability/version。
 
-### Portable UI Snapshot/Node/Action v1
+### WIT/ABI v1 proposal
 
-候选采用 bounded、semantic、flat node tree。候选最小 node family：
-
-- layout：`page`、`section`、`stack`、`group`；
-- display：`text`、`status`、`key-value`、`progress`、`divider`；
-- input：`button`、`switch`、`text-field`、`number-field`、`select`。
-
-明确排除 HTML、CSS、JavaScript、arbitrary Markdown HTML、Canvas、arbitrary image/network URL、custom font/color、
-absolute positioning、expression language、GUI framework component 和 extension-defined animation。具体 node、field、
-required feature、tree/depth/text/action/state quota 与 stable error 必须在 Stop A 冻结。
-
-### RPC v1 compatible additions
-
-候选 capability：
+proposal-only WIT 位于 `specs/extensions/wit/extension-v1-portable-ui-proposal/`，不修改 production bindgen 读取的
+active `extension-v1/`。最终仍是 `alcomd:extension/extension-v1@1.0.0`，import host-projects/host-data，export
+guest-lifecycle/guest-ui。guest-ui exact sync functions：
 
 ```text
-extensions.ui.portable.v1
+open(session-id, surface-id, locale) -> UiDocument
+refresh(session-id) -> UiDocument
+dispatch(session-id, sequence, request-id, UiAction) -> UiDocument
+close(session-id) -> result
 ```
 
-候选 methods：
+Host embedding 继续 async；不启用 component-model-async、WASI future/stream、wasmtime-wasi、guest thread 或依赖。
+production 获批时 proposal 原子替换 active v1 并删除 proposal directory；不保留 parallel world，不创建 ABI v2，
+`extensionApi.major` 仍为 1。
+
+### Lifecycle 与 Host protocol
+
+activation kind 固定 `background|interactive-ui`；stop reason增加 `interactive-ui-idle`，并保留 disabled、permission-revoked、
+lease-expired、daemon-shutdown、uninstalling。`background.run` 只授权无 active UI session 时继续后台运行，不授权 UI/
+业务/network/filesystem/长调用。UI-only extension 可 install/enable，open按需创建 interactive-ui lease；最后 session
+关闭且无 background lease后 5,000 ms 停 Host。已 background-running 时 open不重复 activate。
+
+daemon 为每个 invoke-export签发 `InvocationContextId`，绑定 invocation kind、Extension lease/grant/generation、deadline/
+cancel，以及 interactive-ui 的 Client Principal/connection/UiSession/snapshot。capability-call必须回显。well-formed stale
+context返回内部 `invocation_context_stale`；unknown/wrong/cross-session context 是 Host protocol violation并终止 Host。
+requestId/callId 仍只做 correlation。
+
+### Document、tree、form 与 action
+
+Guest 只返回完整 UiDocument；daemon验证并包装从 1 单调递增的 UiSnapshot revision。flat tree必须恰好一个 page root、
+parent-before-child、无 cycle、连续唯一 sibling order、unique node/field/action ID、depth 8。固定 node：
+
+- layout：page、section、stack、group、form、list、list-item；
+- display：text、status、key-value、progress、divider；
+- input：button、switch、text-field、integer-field、select。
+
+tone 只有 neutral/info/success/warning/danger；progress 为 indeterminate 或 0-10000 basis points；integer 为 JSON-safe
+signed integer。禁止 HTML/CSS/JS/Markdown HTML/canvas/image/icon URL/link/URI/font/color/animation/absolute/custom ARIA/
+DOM/component/expression/iframe/WebView/navigation。
+
+switch/select/text/integer 只属于 form，GUI本地维护 draft；v1 action只有 `activate` 与 `submit-form`，没有 per-keystroke
+或 immediate change。submit按 node order携带完整 typed field set，daemon先验证 current Snapshot、disabled、type、required、
+length/range/option/completeness/size，绝不转发任意 JSON。
+
+### Exact limits
+
+机器权威值在 `specs/extensions/portable-ui-limits-v1.json`：surface 1；session per extension/client/daemon 为 8/16/128；
+Snapshot/action 262,144/65,536 bytes；nodes 256；depth 8；ID 1-64 lowercase ASCII；single/total text 4,096/65,536
+UTF-8 bytes；form 64 fields；select 64 options、label 256 bytes；Host/session concurrency 1；token bucket 60/minute、
+burst 10；idle/absolute 300,000/3,600,000 ms；request cache 64；Host idle stop 5,000 ms。
+
+plain text拒绝 NUL、C0/C1/DEL与冻结 bidi controls。text node允许 LF；text-field只有 multiline 时允许 LF；其他字段
+单行，CR/TAB始终拒绝。locale只接受 2-15 ASCII bytes 的 canonical language[-Script][-Region] core BCP47 子集。
+
+### Session、replay 与 failure
+
+memory-only session绑定 Client Principal/connection、Extension Principal/instance/package、main surface、grant/lifecycle/
+snapshot revisions、locale/deadlines、next sequence和64-entry replay cache。disconnect/restart/disable/revoke/uninstall/
+package or generation change/Host crash/quarantine/timeout/protocol violation立即关闭。session不写 DB/Event/data/package/log，
+不 crash-recover，不创建 Operation。
+
+dispatch严格 sequence + unique requestId。live duplicate pair返回 current Snapshot、`replayed=true`且不调用 guest；mismatched/
+out-of-order/replayed ID fail closed。断线前未知结果不自动重发，新 session通过 Snapshot观察。client invalid action在 guest
+前拒绝；60秒第三次关闭该 session但不惩罚 Host。guest invalid document立即关闭 session、终止 Host、计入 existing
+crash/quarantine，返回 document-invalid或limit-exceeded，Event/diagnostic只保留 bounded safe classification。
+
+### Authorization 与 RPC
+
+client candidate permission 是 `extensions.ui.use` scoped exact ExtensionId；没有 extension `ui.contribute`。list/get UI
+declaration用 extensions.read；open/refresh/dispatch用 extensions.read + extensions.ui.use + exact scope；close返回
+`{closed:boolean}`并 best effort，不泄露 owner。
+
+UI invocation 内 Host business capability取 Client Principal与 Extension Principal同一 resource scope交集；host-data
+仍由 extension self namespace authority控制，client只需 UI permission。high-impact Plan/credential/Operation继续 host-owned。
+
+RPC compatible addition只有 capability 与 open/refresh/dispatch/close；没有 listSurfaces。DTO closed/bounded，open只接收
+extensionId/main/locale，不接收 host/framework/platform。stable error分类由 `m7-portable-ui.schema.json`冻结，不创建宽泛
+`extension_ui_failed`，也不公开 Host PID/pipe/lease/path/identity/context。
+
+### State v9 与 renderer
+
+M6 已广告 v8，故 proposal使用 v9：extensions和immutable extension_plans各增 ui_protocol、ui_surfaces_json；canonical
+值只允许 `(NULL,[])` 或 `(portable-v1,[main])`。没有 session/Snapshot/action/renderer/browser/cache/workflow table，不创建
+production 0009 SQL。additive v8->v9只作为未来实现便利，不作公开 compatibility promise；开发 DB可 reset。
+
+官方 React/MD3 renderer与non-Tauri headless consumer使用同一 public DTO/fixtures。官方 contract冻结 host-owned chrome、
+exhaustive match、keyboard/focus/ARIA、200%/320px、reduced motion、无 extension CSS/DOM/Tauri。headless consumer不依赖
+GUI/Tauri并输出确定性 semantic summary。Stop A不实现任何 renderer。
+
+## Contract artifacts
+
+- ADR refinement：`docs/adr/0024-portable-extension-ui.md`；
+- Portable UI contract/schema/limits：`specs/extensions/portable-ui-v1.*`、`portable-ui-limits-v1.*`；
+- Manifest/package/ABI/permission/Host protocol proposals：`specs/extensions/proposals/`；
+- WIT proposal：`specs/extensions/wit/extension-v1-portable-ui-proposal/`；
+- RPC proposal：`specs/rpc/m7-portable-ui.schema.json`；
+- State v9/migration proposal：`specs/storage/state-v9*`；
+- threat model/consumer contract：`specs/security/extension-portable-ui-threat-model.md`、
+  `specs/gui/portable-ui-renderer-v1.md`；
+- MCP/Discord/adversarial/headless fixtures：`crates/alcomd-testing/fixtures/m7/`；
+- contract tests：`crates/alcomd-testing/tests/m7_contract.rs`。
+
+## 后续 production slices（未批准）
+
+1. Slice B：原子替换 active Manifest/package/WIT/ABI/permission/State contract，接入 Host/Core/RPC session与dual authority。
+2. Slice C：官方 shell/typed adapter/React/MD3 renderer与既有 Core pages，仍只调用 public client/RPC。
+3. Slice D：non-Tauri consumer、first/third parity、malformed/revoke/crash/reconnect与三平台/a11y验收。
+
+不得同时保留旧 Web UI和Portable UI parser/world/renderer，不建立通用 UI/workflow engine。
+
+## Stop A 允许修改范围
 
 ```text
-extensions.ui.listSurfaces
-extensions.ui.open
-extensions.ui.refresh
-extensions.ui.dispatch
-extensions.ui.close
-```
-
-所有调用保持 `GUI -> RPC -> alcomd-application -> Extension Host`，不建立 GUI 到 Host 直连。method/capability/DTO、
-pagination、bounds、revision、cancellation 和 stable errors 尚未冻结。
-
-### Authority 与 UI Session
-
-候选 UI Session 至少绑定：
-
-- `UiSessionId`；
-- Client `PrincipalId`、connection/instance；
-- `ExtensionId`、Extension `PrincipalId`、`ExtensionInstanceId`；
-- `PackageDigest`、`SurfaceId`；
-- `GrantRevision`、`LifecycleGeneration`、`SnapshotRevision`。
-
-UI Action 同时验证 Client Principal authority 与 Extension Principal grant/scope/lease，避免 GUI 通过扩展页面成为
-confused deputy。候选客户端权限为 `extensions.ui.use`，可 scope 到 ExtensionId；是否采用必须在 Stop A 审批。
-提供 UI 本身不需要 extension permission，不增加 `ui.contribute`。
-
-### State Schema v8
-
-未来候选直接调整未发布的 State Schema v8，例如记录 `ui_protocol` 并同步 immutable install Plan。不增加 v9
-compatibility migration；不兼容的开发数据库要求清空后重新初始化。具体 table/column/check/migration bootstrap 仍待
-Stop A 冻结。
-
-### Renderer portability
-
-同一 Snapshot/Action contract 至少由两个 consumer 验证：
-
-1. `alcomd-gui` React/Material Design 3 renderer；
-2. 非 Tauri headless reference consumer。
-
-第二个 consumer 证明协议属于 Core/RPC，而不是 `alcomd-gui` 私有 API。未来第三方 GUI 自己实现 renderer。
-
-## M7 阶段与停止点
-
-### Phase 0：Architecture direction reset
-
-本轮只完成：
-
-- 接受 ADR 0024 并把 ADR 0007 UI 部分标为 partially superseded；
-- 同步 Architecture、M6/M7 ExecPlan、状态、旧 Stop A evidence 和必要 metadata；
-- 记录并清理尚未提交的 test-only WebView diagnostic WIP；
-- 不开始 Portable UI contract-first 或 production implementation。
-
-### Stop A：Portable UI contract-first
-
-下一轮必须形成并统一人工审批：
-
-1. Manifest v1 direct rewrite；
-2. package profile v1 direct rewrite；
-3. Extension WIT world v1 direct rewrite；
-4. Portable UI Snapshot/Node/Action Schema；
-5. UI Session authority；
-6. Host protocol；
-7. RPC capability/methods/errors；
-8. client permission；
-9. dual Principal authorization；
-10. State Schema v8 direct adjustment；
-11. official renderer contract；
-12. third-party GUI host descriptor；
-13. threat model；
-14. exact limits；
-15. renderer/headless conformance fixtures/tests。
-
-Stop A 通过仍不等于 production 完成；任何公共合同偏离、新 dependency、unsafe 或 platform API 都必须重新审批。
-
-### Slice B：Core and Extension Host implementation
-
-- 直接替换未发布的 M6 UI-specific Manifest/package/WIT/State/UI Bridge 实现与测试；
-- 实现 bounded Surface discovery/open/refresh/action/close、UI Session、dual Principal authority 和 Host export；
-- 不建立 GUI 到 Host 直连、第二套 business authority 或通用 UI/workflow engine。
-
-### Slice C：Official React/MD3 renderer
-
-- 完成 shell、typed Tauri/RPC adapter、connection/recovery state、官方 route 和 semantic node renderer；
-- 使用 `@alcomd/ui`/Material Design 3 统一主题、layout、focus、keyboard、ARIA、loading/error/progress；
-- 核心项目/包/仓库/模板/Unity/备份/Operation/扩展管理继续只调用已存在的 typed RPC/application use case。
-
-### Slice D：Cross-GUI conformance proof
-
-- official renderer 与非 Tauri headless consumer 使用同一 Snapshot/Action fixtures；
-- 覆盖 required feature negotiation、unknown optional field、unsupported surface、dual Principal、revoke、stale snapshot、
-  malformed/oversized tree、action replay、crash/disconnect 和 first-party/third-party parity；
-- 完成本地与三平台 Hosted CI、GUI/a11y/截图签收后停止在 M8 前。
-
-## 测试与验收规划
-
-Portable UI contract-first 将规划：
-
-- Schema/WIT/Manifest/package/State/RPC/permission snapshot 与 compatibility tests；
-- bounded tree、duplicate ID、depth/node/text/action/state quota 和 malformed input；
-- SnapshotRevision/action idempotency、stale session、revoke-in-flight、lifecycle/package replacement invalidation；
-- client Principal + extension Principal 双 authority 与 confused-deputy denial；
-- official React/MD3 renderer component/a11y tests；
-- headless reference consumer conformance；
-- first-party/third-party 使用同一 public Surface，不存在 hidden renderer/private command；
-- Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 的完整 repository/GUI build 和 test gate。
-
-真实 v3 GUI、template、backup、Unity differential parity 继续 blocked 到 M11 Fixture。Windows 10/11 安装、启动、
-WebView2、更新和卸载继续 deferred 到 M12。synthetic/headless fixture 不能冒充真实 v3 或客户端发行证据。
-
-## 允许修改范围
-
-Phase 0 只允许：
-
-```text
-docs/architecture/ALCOMD-V4.md
-docs/adr/0007-extension-sandbox.md
 docs/adr/0024-portable-extension-ui.md
-docs/exec-plans/M6-extension-runtime.md
 docs/exec-plans/M7-official-gui-extension-ui.md
 docs/status.md
-specs/gui/m7-stop-a.md
-docs/testing/test-plan.toml           # 仅规划状态
-feature-parity.toml                   # 仅影响清单/规划状态
+docs/testing/test-plan.toml
+feature-parity.toml
+specs/extensions/proposals/
+specs/extensions/portable-ui-v1.*
+specs/extensions/portable-ui-limits-v1.*
+specs/extensions/wit/extension-v1-portable-ui-proposal/
+specs/gui/portable-ui-renderer-v1.md
+specs/rpc/m7-portable-ui.schema.json
+specs/security/extension-threat-model.md
+specs/security/extension-portable-ui-threat-model.md
+specs/storage/state-v9*
+crates/alcomd-testing/fixtures/m7/
+crates/alcomd-testing/tests/m7_contract.rs
 ```
 
-Stop A 和 production 的实际修改范围必须在下一轮重新批准。本列表不授权修改 Manifest/WIT/RPC/Permission/State、
-production Rust/TypeScript、Tauri capability、dependency/lockfile、test implementation、CI、unsafe 或 platform API。
+cleanup commit另允许删除obsolete probe与CI probe steps。Stop A禁止 active Manifest/package/WIT、production Host/daemon/
+application/protocol/store/Permission/React/Tauri、Cargo/npm manifests/locks、dependency、unsafe、platform API。
 
 ## 明确排除
 
-- Custom Web UI、GUI-specific code Surface、iframe、child WebView、WebviewWindow、direct Wry、WebView2 COM 或其他
-  native WebView container search；
-- M8 MCP 协议/管理产品逻辑与 M9 Discord Presence 产品逻辑；
-- Local API、M10 SDK 完整硬化、M11 migration/bootstrap/updater、M12 installer/signing/dist；
-- new background capability、native extension、WASI 0.3、通用 service locator、dependency injection 或 workflow engine；
-- 本轮任何 Portable UI parser/session/renderer 或 React production implementation。
+- M8 MCP backend/management product logic、M9 Discord IPC/Presence product logic；fixtures只证明UI表达能力；
+- custom Web UI、iframe/child WebView/WebviewWindow、asset/origin/CSP/Tauri capability；
+- Local API、migration/bootstrap/updater/installer/signing/dist与M12 Windows client validation；
+- WASI 0.3、component-model-async、wasmtime-wasi、guest thread、新 dependency；
+- production GUI/Core/Host/State/RPC wiring与M8进入。
 
-## WebView 研究的历史证据
+## 验证与 release blockers
 
-### Sandboxed cross-origin iframe
+Stop A运行 format/clippy/workspace tests、xtask、metadata、baseline freeze、diff check。必须证明 Cargo/npm manifests与三份
+lockfile不变、active WIT不变、production source不变、unsafe/platform API不变。
 
-CI run `32752875840` 在 Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 均成功创建主 WebView，但 extension
-document 超时，custom protocol handler 未触发。结论为 `rejected_for_m7_v1`。这只证明当前 iframe + physical
-mapping 不可实施，不能声称 private IPC security 已通过或已被证明失败。
+Stop A人工批准前，任何 active contract replacement或production capability都是blocker。后续 first-party private node/page/
+command/permission、partial v1 renderer、GUI-to-Host direct channel、renderer作为business authority均是M7 blocker。
+M11真实v3 fixture缺失继续阻塞GUI differential parity；M12继续承担Win10/Win11安装/启动/WebView2/update/uninstall。
 
-### Tauri managed child WebView
+## Progress log
 
-Windows 本地环境为 Tauri `2.11.5`、WebView2 `151.0.4129.101`。`Window::add_child` 返回成功，但已知
-`WebviewUrl::App("m7-child-control.html")` 页面仍不可用：`on_navigation`、`on_page_load`、title callback 均未触发；
-`Webview::url()` 返回 `runtime error: failed to receive message from webview`；`eval_with_callback` 没有回调。分类为
-`child_webview_navigation_unavailable`，结论为 `isolated_managed_child_webview rejected_for_m7_v1`。
+- 2026-08-24：M6完成；M7最初研究WebView-based UI。
+- 2026-08-24至2026-08-25：iframe CI `32752875840` 与Windows managed-child diagnostic形成rejected-design evidence，
+  没有production security/compatibility success。
+- 2026-08-25：项目所有者批准GUI-neutral Portable UI architecture reset；commit
+  `12089661f7c694f059aaf172344809ff814716f6`。
+- 2026-08-25：独立cleanup commit `c05c5d2c712dd7a791401efc22b8dd19b88023a6`删除obsolete test-only harness与CI
+  probe，保留历史evidence与普通Tauri gates。
+- 2026-08-25：形成本Portable UI Stop A proposal、synthetic fixtures与contract tests；active/production未修改，等待人工审批。
 
-因此不继续 Stage 2 custom protocol、Stage 3 initial custom URL、Ubuntu/macOS child probe、WebviewWindow、Tauri
-unstable production adoption、direct Wry、native platform API、WebView2 COM 或新的容器搜索。两类证据都是
-rejected design evidence，不是 production security/compatibility success。
+## 下一停止点
 
-## Release blockers 与风险
-
-- Portable UI Manifest/WIT/State/RPC/permission/limits 尚未冻结；在 Stop A 前不能实现或广告 capability。
-- Renderer 不得成为业务 authority、绕过 permission/lease，或静默丢弃 required node/action。
-- first-party extension 若使用 private page/command/renderer/permission，或协议只由 Tauri consumer 验证，是 blocker。
-- 当前没有真实 v3 GUI screenshot/flow Fixture；它阻塞 differential parity，不阻塞明确标注的 engineering work。
-- hosted GUI/build evidence不替代 M12 Windows 10/11 完整客户端发行验证。
-
-## 与 M0、M6、M8/M9、M11/M12 的关系
-
-- M0 提供固定 Tauri/React/Vite/Material shell 和三平台 no-bundle build；M7 不改变完整产品发行模型。
-- M6 backend runtime acceptance 保持有效；仅未发布 UI-specific contract 被 Portable UI 方向替换。
-- M8 MCP management extension 与 M9 Discord extension 使用同一 Portable UI，不能获得 private React page、Tauri
-  command、hidden renderer、extra permission 或 first-party-only Surface。
-- M11 提供真实 v3 migration/Fixture；其缺失继续阻塞真实 differential parity。
-- M12 承担 installer/updater/dist 和 Win10/Win11 完整客户端验证。
-
-## 验证命令
-
-Phase 0 至少运行：
-
-```text
-cargo xtask check
-python scripts/validate-metadata.py
-pwsh -NoProfile -File scripts/freeze-baselines.ps1 -Check
-git diff --check
-```
-
-并确认 Cargo/npm manifests、三份 lockfile、production source、unsafe、platform API、CI 和 test implementation 无变化，
-工作树只包含获批规划文档。
-
-## 下一停止条件
-
-1. Phase 0 创建独立本地规划提交，不 push，`origin/main` 保持当前已推送基线。
-2. Portable UI contract-first 尚未开始；等待项目所有者下一轮人工审批。
-3. 未获批前不修改 Manifest/package profile/WIT/UI Bridge/Host protocol/RPC/Permission/State Schema 或生产代码。
-4. 不自动开始 Slice B/C/D，也不进入 M8。
-
-## 进度日志
-
-- 2026-08-24：M6 正式完成并通过最终人工验收；M7 初始草案规划官方 GUI 与 WebView-based Extension UI container。
-- 2026-08-24 至 2026-08-25：形成旧 Stop A proposal 和 test-only iframe/managed child WebView evidence；所有
-  physical mapping、custom scheme、Tauri unstable 和 Web UI container 均未进入 production。
-- 2026-08-25：iframe CI run `32752875840` 得到 `rejected_for_m7_v1`；Windows managed child 诊断得到
-  `child_webview_navigation_unavailable` 和 `isolated_managed_child_webview rejected_for_m7_v1`。实验完成架构决策
-  价值，停止继续搜索 WebView container。
-- 2026-08-25：项目所有者在无公开兼容对象的前提下，将基础 Extension UI 重置为 Core/RPC Portable UI。Phase 0
-  只同步 architecture/ADR/ExecPlan/status/evidence/metadata；Portable UI contract-first 与 production 均未开始。
+创建独立本地 `docs: freeze M7 portable UI contract candidate` commit，不push。报告精确合同、验证、HEAD/origin/main与
+clean worktree后停止。未经项目所有者批准不得开始active replacement、Host/Core/React implementation或M8。

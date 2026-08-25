@@ -1,0 +1,268 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/extensions/portable-ui-v1.json",
+    "title": "ALCOMD Portable UI v1 UiDocument contract candidate",
+    "$ref": "#/$defs/uiDocument",
+    "$defs": {
+        "identifier": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+        },
+        "label": {"type": "string", "minLength": 1, "maxLength": 256},
+        "plainText": {"type": "string", "maxLength": 4096},
+        "tone": {"enum": ["neutral", "info", "success", "warning", "danger"]},
+        "uiDocument": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["protocol", "surfaceId", "title", "nodes"],
+            "properties": {
+                "protocol": {"const": "portable-v1"},
+                "surfaceId": {"const": "main"},
+                "title": {"$ref": "#/$defs/label"},
+                "nodes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 256,
+                    "items": {"$ref": "#/$defs/node"}
+                }
+            }
+        },
+        "node": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["nodeId", "order", "kind", "payload"],
+            "properties": {
+                "nodeId": {"$ref": "#/$defs/identifier"},
+                "parentId": {"$ref": "#/$defs/identifier"},
+                "order": {"type": "integer", "minimum": 0, "maximum": 255},
+                "kind": {
+                    "enum": [
+                        "page", "section", "stack", "group", "form", "list", "list-item",
+                        "text", "status", "key-value", "progress", "divider",
+                        "button", "switch", "text-field", "integer-field", "select"
+                    ]
+                },
+                "payload": {"type": "object"}
+            },
+            "allOf": [
+                {"if": {"properties": {"kind": {"const": "page"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/pagePayload"}}}},
+                {"if": {"properties": {"kind": {"const": "section"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/sectionPayload"}}}},
+                {"if": {"properties": {"kind": {"const": "stack"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/stackPayload"}}}},
+                {"if": {"properties": {"kind": {"const": "group"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/groupPayload"}}}},
+                {"if": {"properties": {"kind": {"const": "form"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/formPayload"}}}},
+                {"if": {"properties": {"kind": {"const": "list"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/listPayload"}}}},
+                {"if": {"properties": {"kind": {"const": "list-item"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/listItemPayload"}}}},
+                {"if": {"properties": {"kind": {"const": "text"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/textPayload"}}}},
+                {"if": {"properties": {"kind": {"const": "status"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/statusPayload"}}}},
+                {"if": {"properties": {"kind": {"const": "key-value"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/keyValuePayload"}}}},
+                {"if": {"properties": {"kind": {"const": "progress"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/progressPayload"}}}},
+                {"if": {"properties": {"kind": {"const": "divider"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/emptyPayload"}}}},
+                {"if": {"properties": {"kind": {"const": "button"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/buttonPayload"}}}},
+                {"if": {"properties": {"kind": {"const": "switch"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/switchPayload"}}}},
+                {"if": {"properties": {"kind": {"const": "text-field"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/textFieldPayload"}}}},
+                {"if": {"properties": {"kind": {"const": "integer-field"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/integerFieldPayload"}}}},
+                {"if": {"properties": {"kind": {"const": "select"}}}, "then": {"properties": {"payload": {"$ref": "#/$defs/selectPayload"}}}}
+            ]
+        },
+        "pagePayload": {
+            "type": "object", "additionalProperties": false, "required": ["title"],
+            "properties": {"title": {"$ref": "#/$defs/label"}}
+        },
+        "sectionPayload": {
+            "type": "object", "additionalProperties": false, "required": ["label"],
+            "properties": {"label": {"$ref": "#/$defs/label"}}
+        },
+        "stackPayload": {
+            "type": "object", "additionalProperties": false, "required": ["orientation"],
+            "properties": {"orientation": {"enum": ["vertical", "horizontal"]}}
+        },
+        "groupPayload": {
+            "type": "object", "additionalProperties": false,
+            "properties": {"label": {"$ref": "#/$defs/label"}}
+        },
+        "formPayload": {
+            "type": "object", "additionalProperties": false,
+            "required": ["submitActionId", "submitLabel", "disabled"],
+            "properties": {
+                "submitActionId": {"$ref": "#/$defs/identifier"},
+                "submitLabel": {"$ref": "#/$defs/label"},
+                "disabled": {"type": "boolean"}
+            }
+        },
+        "listPayload": {
+            "type": "object", "additionalProperties": false,
+            "properties": {"label": {"$ref": "#/$defs/label"}}
+        },
+        "listItemPayload": {
+            "type": "object", "additionalProperties": false,
+            "properties": {"label": {"$ref": "#/$defs/label"}}
+        },
+        "textPayload": {
+            "type": "object", "additionalProperties": false, "required": ["text", "tone"],
+            "properties": {"text": {"$ref": "#/$defs/plainText"}, "tone": {"$ref": "#/$defs/tone"}}
+        },
+        "statusPayload": {
+            "type": "object", "additionalProperties": false, "required": ["label", "tone"],
+            "properties": {"label": {"$ref": "#/$defs/label"}, "tone": {"$ref": "#/$defs/tone"}}
+        },
+        "keyValuePayload": {
+            "type": "object", "additionalProperties": false, "required": ["label", "value"],
+            "properties": {"label": {"$ref": "#/$defs/label"}, "value": {"$ref": "#/$defs/plainText"}}
+        },
+        "progressPayload": {
+            "type": "object", "additionalProperties": false, "required": ["label", "value"],
+            "properties": {
+                "label": {"$ref": "#/$defs/label"},
+                "value": {
+                    "oneOf": [
+                        {
+                            "type": "object", "additionalProperties": false, "required": ["mode"],
+                            "properties": {"mode": {"const": "indeterminate"}}
+                        },
+                        {
+                            "type": "object", "additionalProperties": false, "required": ["mode", "basisPoints"],
+                            "properties": {
+                                "mode": {"const": "determinate"},
+                                "basisPoints": {"type": "integer", "minimum": 0, "maximum": 10000}
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        "emptyPayload": {"type": "object", "maxProperties": 0},
+        "buttonPayload": {
+            "type": "object", "additionalProperties": false,
+            "required": ["label", "actionId", "disabled"],
+            "properties": {
+                "label": {"$ref": "#/$defs/label"},
+                "actionId": {"$ref": "#/$defs/identifier"},
+                "disabled": {"type": "boolean"}
+            }
+        },
+        "switchPayload": {
+            "type": "object", "additionalProperties": false,
+            "required": ["fieldId", "label", "initialValue", "disabled"],
+            "properties": {
+                "fieldId": {"$ref": "#/$defs/identifier"},
+                "label": {"$ref": "#/$defs/label"},
+                "initialValue": {"type": "boolean"},
+                "disabled": {"type": "boolean"}
+            }
+        },
+        "textFieldPayload": {
+            "type": "object", "additionalProperties": false,
+            "required": [
+                "fieldId", "label", "initialValue", "required", "minLength", "maxLength",
+                "multiline", "disabled"
+            ],
+            "properties": {
+                "fieldId": {"$ref": "#/$defs/identifier"},
+                "label": {"$ref": "#/$defs/label"},
+                "initialValue": {"type": "string", "maxLength": 4096},
+                "required": {"type": "boolean"},
+                "minLength": {"type": "integer", "minimum": 0, "maximum": 4096},
+                "maxLength": {"type": "integer", "minimum": 0, "maximum": 4096},
+                "multiline": {"type": "boolean"},
+                "disabled": {"type": "boolean"}
+            }
+        },
+        "integerFieldPayload": {
+            "type": "object", "additionalProperties": false,
+            "required": ["fieldId", "label", "required", "minimum", "maximum", "disabled"],
+            "properties": {
+                "fieldId": {"$ref": "#/$defs/identifier"},
+                "label": {"$ref": "#/$defs/label"},
+                "initialValue": {"type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991},
+                "required": {"type": "boolean"},
+                "minimum": {"type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991},
+                "maximum": {"type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991},
+                "disabled": {"type": "boolean"}
+            }
+        },
+        "selectPayload": {
+            "type": "object", "additionalProperties": false,
+            "required": ["fieldId", "label", "required", "options", "disabled"],
+            "properties": {
+                "fieldId": {"$ref": "#/$defs/identifier"},
+                "label": {"$ref": "#/$defs/label"},
+                "initialOptionId": {"$ref": "#/$defs/identifier"},
+                "required": {"type": "boolean"},
+                "options": {
+                    "type": "array", "minItems": 1, "maxItems": 64,
+                    "items": {
+                        "type": "object", "additionalProperties": false,
+                        "required": ["optionId", "label"],
+                        "properties": {
+                            "optionId": {"$ref": "#/$defs/identifier"},
+                            "label": {"$ref": "#/$defs/label"}
+                        }
+                    }
+                },
+                "disabled": {"type": "boolean"}
+            }
+        },
+        "fieldValue": {
+            "oneOf": [
+                {
+                    "type": "object", "additionalProperties": false, "required": ["kind", "value"],
+                    "properties": {"kind": {"const": "boolean"}, "value": {"type": "boolean"}}
+                },
+                {
+                    "type": "object", "additionalProperties": false, "required": ["kind", "value"],
+                    "properties": {"kind": {"const": "text"}, "value": {"type": "string", "maxLength": 4096}}
+                },
+                {
+                    "type": "object", "additionalProperties": false, "required": ["kind", "value"],
+                    "properties": {
+                        "kind": {"const": "integer"},
+                        "value": {"type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991}
+                    }
+                },
+                {
+                    "type": "object", "additionalProperties": false, "required": ["kind", "value"],
+                    "properties": {"kind": {"const": "selection"}, "value": {"$ref": "#/$defs/identifier"}}
+                }
+            ]
+        },
+        "action": {
+            "oneOf": [
+                {
+                    "type": "object", "additionalProperties": false, "required": ["kind", "actionId"],
+                    "properties": {"kind": {"const": "activate"}, "actionId": {"$ref": "#/$defs/identifier"}}
+                },
+                {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["kind", "actionId", "values"],
+                    "properties": {
+                        "kind": {"const": "submit-form"},
+                        "actionId": {"$ref": "#/$defs/identifier"},
+                        "values": {
+                            "type": "array", "maxItems": 64,
+                            "items": {
+                                "type": "object", "additionalProperties": false,
+                                "required": ["fieldId", "value"],
+                                "properties": {
+                                    "fieldId": {"$ref": "#/$defs/identifier"},
+                                    "value": {"$ref": "#/$defs/fieldValue"}
+                                }
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        "snapshot": {
+            "type": "object", "additionalProperties": false,
+            "required": ["sessionId", "snapshotRevision", "document"],
+            "properties": {
+                "sessionId": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+                "snapshotRevision": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+                "document": {"$ref": "#/$defs/uiDocument"}
+            }
+        }
+    }
+}
+

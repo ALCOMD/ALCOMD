@@ -1,0 +1,8 @@
+package alcomd:extension@1.0.0;
+
+interface host-projects {
+    use types.{project-id, project-summary, extension-error};
+
+    get-summary: func(project-id: project-id) -> result<project-summary, extension-error>;
+}
+

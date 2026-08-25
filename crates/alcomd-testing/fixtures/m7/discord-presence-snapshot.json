@@ -1,0 +1,23 @@
+{
+    "protocol": "portable-v1",
+    "surfaceId": "main",
+    "title": "Discord Presence",
+    "nodes": [
+        {"nodeId": "root", "order": 0, "kind": "page", "payload": {"title": "Discord Presence"}},
+        {"nodeId": "connection", "parentId": "root", "order": 0, "kind": "section", "payload": {"label": "Connection"}},
+        {"nodeId": "connection-status", "parentId": "connection", "order": 0, "kind": "status", "payload": {"label": "Connecting", "tone": "info"}},
+        {"nodeId": "connection-progress", "parentId": "connection", "order": 1, "kind": "progress", "payload": {"label": "Connecting to Discord", "value": {"mode": "indeterminate"}}},
+        {"nodeId": "content", "parentId": "root", "order": 1, "kind": "stack", "payload": {"orientation": "vertical"}},
+        {"nodeId": "profile", "parentId": "content", "order": 0, "kind": "group", "payload": {"label": "Current profile"}},
+        {"nodeId": "profile-name", "parentId": "profile", "order": 0, "kind": "key-value", "payload": {"label": "Mode", "value": "Editing project"}},
+        {"nodeId": "profile-note", "parentId": "profile", "order": 1, "kind": "text", "payload": {"text": "Only submitted settings are shared with the extension.", "tone": "neutral"}},
+        {"nodeId": "settings-form", "parentId": "content", "order": 1, "kind": "form", "payload": {"submitActionId": "save-presence", "submitLabel": "Save", "disabled": false}},
+        {"nodeId": "presence-enabled", "parentId": "settings-form", "order": 0, "kind": "switch", "payload": {"fieldId": "presence-enabled", "label": "Enable presence", "initialValue": true, "disabled": false}},
+        {"nodeId": "presence-mode", "parentId": "settings-form", "order": 1, "kind": "select", "payload": {"fieldId": "presence-mode", "label": "Details", "required": true, "initialOptionId": "project", "options": [{"optionId": "project", "label": "Project"}, {"optionId": "unity", "label": "Unity version"}], "disabled": false}},
+        {"nodeId": "presence-text", "parentId": "settings-form", "order": 2, "kind": "text-field", "payload": {"fieldId": "presence-text", "label": "Custom detail", "initialValue": "", "required": false, "minLength": 0, "maxLength": 128, "multiline": false, "disabled": false}},
+        {"nodeId": "refresh-interval", "parentId": "settings-form", "order": 3, "kind": "integer-field", "payload": {"fieldId": "refresh-interval", "label": "Refresh interval seconds", "initialValue": 15, "required": true, "minimum": 5, "maximum": 300, "disabled": false}},
+        {"nodeId": "status-divider", "parentId": "root", "order": 2, "kind": "divider", "payload": {}},
+        {"nodeId": "last-error", "parentId": "root", "order": 3, "kind": "status", "payload": {"label": "No current error", "tone": "danger"}}
+    ]
+}
+

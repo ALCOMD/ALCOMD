@@ -377,12 +377,37 @@ description = "记录已拒绝的 iframe/managed-child WebView 设计研究；�
 evidence = ["specs/gui/m7-stop-a.md"]
 
 [[test]]
+id = "gui.m7-portable-ui-contract"
+stage = "M7"
+kind = "contract"
+platforms = ["all"]
+status = "implemented"
+description = "冻结 proposal-only Portable UI v1 Manifest/package/WIT/ABI/lifecycle/Host context/Permission/RPC/State v9、17 node、2 action、single main surface、exact quota、双 Principal、session/replay/failure 与 renderer consumer contract；不表示 active contract 或 production wiring 已实现。"
+evidence = ["specs/extensions/portable-ui-v1.md", "specs/extensions/portable-ui-v1.schema.json", "specs/extensions/portable-ui-limits-v1.json", "specs/extensions/proposals", "specs/extensions/wit/extension-v1-portable-ui-proposal", "specs/rpc/m7-portable-ui.schema.json", "specs/storage/state-v9-migration.contract.proposal.json", "specs/security/extension-portable-ui-threat-model.md", "specs/gui/portable-ui-renderer-v1.md", "crates/alcomd-testing/fixtures/m7", "crates/alcomd-testing/tests/m7_contract.rs"]
+
+[[test]]
+id = "gui.m7-portable-ui-production"
+stage = "M7"
+kind = "integration"
+platforms = ["all"]
+status = "planned"
+description = "未来验证 active Manifest/package/WIT/Host/Core/RPC/State v9 replacement、interactive-ui lease、InvocationContext、session lifecycle 与官方 renderer 的 production wiring；Stop A proposal 不构成本项 evidence。"
+
+[[test]]
 id = "gui.m7-portable-ui-conformance"
 stage = "M7"
 kind = "contract-integration"
 platforms = ["all"]
 status = "planned"
-description = "未来验证同一 bounded Snapshot/Action contract 可由官方 React/MD3 renderer 与非 Tauri headless consumer 使用，并覆盖 required feature、dual Principal、revoke/stale、malformed/oversized input 和 first/third-party parity；Portable UI Stop A 尚未开始。"
+description = "未来由真实 official React/MD3 renderer 与独立 non-Tauri headless consumer 执行同一 Snapshot/Action fixture，覆盖全部 node/action、unknown protocol fail closed 与同一 semantic result；Stop A 当前只有 proposal fixture/contract test。"
+
+[[test]]
+id = "gui.m7-portable-ui-security"
+stage = "M7"
+kind = "security"
+platforms = ["all"]
+status = "planned"
+description = "未来以 production Host/Core/RPC 覆盖 dual Principal confused-deputy denial、InvocationContext forge/stale、revoke-in-flight、replay/rate/quota、malformed guest termination/quarantine、redaction 与 first/third-party 无隐藏 authority。"
 
 [[test]]
 id = "gui.m7-accessibility"

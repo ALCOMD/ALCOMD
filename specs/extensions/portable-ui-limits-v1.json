@@ -1,0 +1,36 @@
+{
+    "protocol": "portable-v1",
+    "surfacesPerExtension": 1,
+    "surfaceId": "main",
+    "activeSessionsPerExtension": 8,
+    "activeSessionsPerClientConnection": 16,
+    "totalActiveSessions": 128,
+    "encodedSnapshotBytes": 262144,
+    "encodedDispatchRequestBytes": 65536,
+    "nodesPerSnapshot": 256,
+    "treeDepth": 8,
+    "identifierUtf8Bytes": {"minimum": 1, "maximum": 64},
+    "individualPlainTextUtf8Bytes": 4096,
+    "totalPlainTextUtf8BytesPerSnapshot": 65536,
+    "formFieldsPerSnapshot": 64,
+    "selectOptionsPerField": 64,
+    "selectOptionLabelUtf8Bytes": 256,
+    "concurrentGuestUiCallsPerExtensionHost": 1,
+    "concurrentActionsPerSession": 1,
+    "requestRatePerMinute": 60,
+    "requestBurst": 10,
+    "idleSessionMs": 300000,
+    "absoluteSessionLifetimeMs": 3600000,
+    "rememberedRequestIdsPerSession": 64,
+    "interactiveHostIdleStopMs": 5000,
+    "guestUiCallWallTimeoutMs": 2000,
+    "progressBasisPoints": {"minimum": 0, "maximum": 10000},
+    "signedInteger": {"minimum": -9007199254740991, "maximum": 9007199254740991},
+    "localeUtf8Bytes": {"minimum": 2, "maximum": 15},
+    "localePattern": "^[a-z]{2,3}(?:-[A-Z][a-z]{3})?(?:-(?:[A-Z]{2}|[0-9]{3}))?$",
+    "identifierPattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+    "forbiddenBidiCodePoints": [
+        "U+061C", "U+200E", "U+200F", "U+202A-U+202E", "U+2066-U+2069"
+    ]
+}
+

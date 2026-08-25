@@ -1,0 +1,43 @@
+{
+    "protocol": "portable-v1",
+    "guestDocumentCases": [
+        {"id": "missing-page-root", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "duplicate-node-id", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "duplicate-action-id", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "duplicate-field-id", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "missing-or-later-parent", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "cycle", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "unknown-node", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "unknown-payload-field", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "tree-depth-nine", "expectedError": "extension_ui_limit_exceeded", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "nodes-257", "expectedError": "extension_ui_limit_exceeded", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "snapshot-over-262144-bytes", "expectedError": "extension_ui_limit_exceeded", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "invalid-progress-basis-points", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "invalid-integer-range", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "nul-control-or-bidi", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true},
+        {"id": "input-outside-form", "expectedError": "extension_ui_document_invalid", "closeSession": true, "terminateHost": true, "countCrash": true}
+    ],
+    "clientActionCases": [
+        {"id": "snapshot-stale", "expectedError": "extension_ui_snapshot_stale", "invokeGuest": false, "closeSession": false, "terminateHost": false},
+        {"id": "unknown-action", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": false, "terminateHost": false},
+        {"id": "disabled-action", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": false, "terminateHost": false},
+        {"id": "missing-form-field", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": false, "terminateHost": false},
+        {"id": "wrong-field-type", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": false, "terminateHost": false},
+        {"id": "unknown-select-option", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": false, "terminateHost": false},
+        {"id": "future-sequence", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": false, "terminateHost": false},
+        {"id": "same-sequence-new-request-id", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": false, "terminateHost": false},
+        {"id": "replayed-request-id-new-sequence", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": false, "terminateHost": false},
+        {"id": "action-over-65536-bytes", "expectedError": "extension_ui_limit_exceeded", "invokeGuest": false, "closeSession": false, "terminateHost": false},
+        {"id": "third-invalid-action-in-60000ms", "expectedError": "extension_ui_action_invalid", "invokeGuest": false, "closeSession": true, "terminateHost": false}
+    ],
+    "replayCases": [
+        {"id": "duplicate-live-pair", "invokeGuest": false, "returnCurrentSnapshot": true, "replayed": true},
+        {"id": "connection-lost-before-response", "invalidateSession": true, "automaticRetry": false, "reopenRequired": true}
+    ],
+    "sessionInvalidation": [
+        "client-disconnect", "daemon-restart", "extension-disable", "grant-revoke", "extension-uninstall",
+        "package-digest-change", "lifecycle-generation-change", "host-crash", "quarantine",
+        "idle-timeout", "absolute-timeout", "protocol-violation"
+    ],
+    "diagnosticPayloadForbidden": ["document", "field-values", "filesystem-path", "host-frame", "guest-trap"]
+}
