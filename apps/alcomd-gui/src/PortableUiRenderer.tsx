@@ -11,6 +11,7 @@ import {
     type FormDraft,
     type UiTreeNode
 } from "./portable-ui";
+import { Button } from "./Material";
 
 interface PortableUiRendererProps {
     snapshot: UiSnapshot;
@@ -179,18 +180,17 @@ export function PortableUiRenderer({
                 return <hr className="portable-divider" key={key} />;
             case "button":
                 return (
-                    <button
-                        className="button button--tonal"
+                    <Button
                         disabled={inheritedDisabled || node.payload.disabled || busy}
                         key={key}
                         onClick={() => void onAction({
                             kind: "activate",
                             actionId: node.payload.actionId
                         })}
-                        type="button"
+                        variant="tonal"
                     >
                         {node.payload.label}
-                    </button>
+                    </Button>
                 );
             case "switch":
                 return renderSwitch(node, entry.formId, drafts, inheritedDisabled || busy, changeField);

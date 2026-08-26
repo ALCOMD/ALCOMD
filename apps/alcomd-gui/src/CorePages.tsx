@@ -33,6 +33,7 @@ import {
     UnityRegistryActions
 } from "./CoreActions";
 import type { GuiRpcClient } from "./rpc";
+import { Button } from "./Material";
 
 interface PageProps {
     client: GuiRpcClient;
@@ -172,7 +173,7 @@ function ProjectCard({ project, navigate }: { project: ProjectSnapshot; navigate
             <h2>{project.rootPath.split(/[\\/]/).at(-1) ?? "Unity project"}</h2>
             <p>{project.projectType} · Unity {project.unityVersion || "unknown"}</p>
             <p>{project.directDependencies.length} direct packages · revision {project.revision ?? "unregistered"}</p>
-            {id === undefined ? null : <button className="text-link" onClick={() => navigate(`/projects/${id}`)} type="button">View project</button>}
+            {id === undefined ? null : <Button onClick={() => navigate(`/projects/${id}`)} variant="text">View project</Button>}
         </article>
     );
 }

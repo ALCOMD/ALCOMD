@@ -20,13 +20,15 @@ import { App } from "../../src/App";
 import type { OfficialSettings, Operation, PackagePlan, SettingsGetResult } from "../../src/core-models";
 import type { GuiRpcClient } from "../../src/rpc";
 import "../../src/styles.css";
+import { MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
 
 type HarnessMode = "ready" | "empty" | "error" | "disconnected" | "loading" | "stale" | "failed" | "cancelled";
 
 const query = new URLSearchParams(window.location.search);
 const initialRoute = query.get("route") ?? "/";
 const mode = (query.get("state") ?? "ready") as HarnessMode;
-window.history.replaceState(null, "", initialRoute);
+const materialEvidence = query.get("material") === "1";
+if (!materialEvidence) window.history.replaceState(null, "", initialRoute);
 
 class DeterministicGuiClient implements GuiRpcClient {
     private settings: SettingsGetResult = {
@@ -224,6 +226,8 @@ const root = document.getElementById("root");
 if (root === null) throw new Error("Missing #root element");
 ReactDOM.createRoot(root).render(
     <React.StrictMode>
-        <App client={new DeterministicGuiClient(mode)} />
+        {materialEvidence
+            ? <MaterialFoundationEvidence />
+            : <App client={new DeterministicGuiClient(mode)} />}
     </React.StrictMode>
 );

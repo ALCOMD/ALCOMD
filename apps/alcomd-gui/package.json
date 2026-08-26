@@ -14,7 +14,6 @@
     "dependencies": {
         "@alcomd/sdk": "0.1.0",
         "@alcomd/ui": "0.1.0",
-        "@material/web": "^2.0.0",
         "@tauri-apps/api": "^2.0.0",
         "react": "^19.0.0",
         "react-dom": "^19.0.0"

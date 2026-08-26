@@ -6,10 +6,14 @@
     "description": "Shared Material Design 3 tokens and extension-safe UI primitives.",
     "type": "module",
     "exports": {
-        ".": "./src/index.ts"
+        ".": "./src/index.ts",
+        "./theme.css": "./src/theme.css"
     },
     "scripts": {
         "check": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@material/web": "2.5.0"
     },
     "devDependencies": {
         "typescript": "^6.0.0"
