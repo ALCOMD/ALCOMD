@@ -1,19 +1,22 @@
 # M7 Material Web component audit
 
-审计基线：`19267230507071dc61ba306b98c8cfdd113e9ea2`。本文件只记录事实和下一阶段计划，没有修改 production GUI。
+审计基线：`19267230507071dc61ba306b98c8cfdd113e9ea2`。下列 inventory 保留该候选的历史事实；H0 已在本地提交
+`35c7110` 完成审计结论的修复，尚待 Visual Gate 1。
 
 ## 结论
+
+历史结论：
 
 ```text
 material_web_dependency_present_but_component_system_not_adopted
 material_theme_not_actually_wired
 ```
 
-- `apps/alcomd-gui/package.json` 声明 `@material/web = ^2.0.0`；`package-lock.json` 与本地 locked package 精确解析为
-  `2.5.0`。
-- production source 中 `@material/web` import 为 0，实际 rendered `md-*` element 为 0。
-- Material Web dependency 不是 unavailable；它当前只被锁定，没有成为 production component foundation。
-- button 的 hover/pressed 是 custom CSS（例如 brightness/filter）；没有来自 Material Web 的 ripple/state layer。
+H0 当前结果：`@material/web = 2.5.0` 的 direct ownership 已迁移到 `@alcomd/ui`，没有新增 package；Material registration
+集中在该 package，GUI 通过窄 React 19 facade 使用真实 Button/IconButton/TextField/Select/Switch/Checkbox/Dialog/Progress。
+Core Project action 与 Portable UI button 已共同渲染真实 `md-*` element；Playwright 已验证 keyboard/pointer/focus/disabled、
+property/event 和共享 theme token 行为。`material-color-utilities` 未进入依赖图；当前三档冻结 source color 直接映射到正式
+`--md-sys-color-*` token，没有实现近似 HCT 算法。
 
 ## Static production JSX control inventory
 
@@ -38,8 +41,8 @@ map/render 后的实际实例数可能更大。例如 primary navigation 的一�
 | list | multiple dynamic surfaces | custom React + semantic list/table/card where present | Resource grid、DataTable、Portable UI list；没有 Material List |
 | navigation item | 1 map site / 11 runtime items | native buttons in custom aside/nav | Project secondary navigation另有3个native buttons |
 
-生产 import 搜索只在 `apps/alcomd-gui/package.json` 找到 dependency 声明；没有 direct Material module import，也没有
-`@alcomd/ui` 组件 wrapper 间接加载 Material Web。
+H0 后 production Material module import 只位于 `packages/alcomd-ui/src/index.ts`；`apps/alcomd-gui` 没有 direct
+`@material/web/*` import。
 
 实现来源汇总：interactive element 的叶节点全部是 native HTML；dialog、route/list/card、navigation map 与 Portable node
 renderer 属于 custom React composition；`@alcomd/ui` interactive component 为 0；direct Material Web component 为 0；其他
@@ -47,23 +50,23 @@ renderer 属于 custom React composition；`@alcomd/ui` interactive component �
 
 ## `@alcomd/ui` 当前能力
 
-`packages/alcomd-ui/src/index.ts` 当前只提供：
+H0 后 `packages/alcomd-ui` 提供：
 
 - product/technical name constants；
 - 三档 spacing constants；
-- appearance type、defaults；
-- `applyAppearance()`，把 mode/density/sourceColor 写为 document dataset。
+- appearance type、defaults和`applyAppearance()`；
+- Material Web 2.5.0 的集中 registration 与窄 element name contract；
+- shared `theme.css` 的真实 MD3 color/type/shape token source；
+- GUI 本地窄 React 19 facade 使用的 Button、IconButton、TextField、Select、Switch、Checkbox、Dialog、Progress。
 
-它当前不提供：
+它仍不提供：
 
-- Material Web import/export；
-- Button、TextField、Dialog 等 component wrapper；
 - navigation/page/grid/split-pane layout primitives；
-- MD3 color/typescale/shape/elevation/state token generation；
-- React custom element property/event/ref/form integration。
+- 任意 source color 的动态 HCT palette generation；
+- 未有 H0/H1 真实需求的 Menu/Tabs/Radio。
 
-因此当前准确能力是 `token-like constants + dataset theme helper`，而不是已完成的 design-system component layer。下一阶段
-计划把它扩展为 ALCOMD official design-system component layer，但不得建立第二套 Material implementation。
+React integration 保持在 GUI 的本地窄 facade，因此 `@alcomd/ui` 不需要新增 React dependency；Core 与 Portable UI 共用该
+facade和同一 token source，没有建立第二套 Material implementation。
 
 ## Component coverage matrix
 
@@ -117,21 +120,15 @@ A-033 的 v3 user-model continuity、真实 v4 用户任务和项目所有者批
 
 ## Theme audit
 
-当前 `applyAppearance()` 只设置：
+`applyAppearance()` 继续只设置：
 
 - `data-appearance`；
 - `data-density`；
 - `data-source-color`。
 
-`styles.css` 随后切换 ALCOMD 自定义 `--primary`、`--surface`、`--text` 等变量。production 没有真实生成或驱动：
-
-- `--md-sys-color-*`；
-- `--md-sys-typescale-*`；
-- MD3 shape/elevation/state tokens；
-- Material Web component token overrides。
-
-所以 source color、light/dark、density、motion 当前只是 custom theme imitation。H0 必须从一个受测试的 theme source 同时驱动
-Material components 和 semantic layout primitives；reduced motion仍由产品设置与系统偏好共同决定。
+H0 的 `theme.css` 已让 Material components 与 semantic layout 同时消费正式 `--md-sys-color-*`、type和shape token；旧变量
+只是兼容现有未迁移页面的 alias。当前未引入动态 palette generator，也未实现近似 Material color algorithm。后续仍需按
+H2-H5 将其余页面控件逐步迁移，不能把 H0 representative coverage 描述为所有 native control 已迁移。
 
 ## React 19 + Material Web 2.5.0 integration audit
 

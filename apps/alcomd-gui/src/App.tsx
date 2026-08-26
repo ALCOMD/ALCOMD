@@ -20,7 +20,6 @@ import {
     DiagnosticsPage,
     ExtensionDetailPage,
     ExtensionsPage,
-    HomePage,
     OperationDetailPage,
     OperationsPage,
     ProjectBackupsPage,
@@ -47,7 +46,6 @@ import type { SettingsGetResult } from "./core-models";
 const DISCARD_MESSAGE = "Discard the unsaved changes?";
 
 type Route =
-    | { kind: "home" }
     | { kind: "projects" }
     | { kind: "project-detail"; projectId: string }
     | { kind: "project-packages"; projectId: string }
@@ -156,8 +154,8 @@ export function App({ client = guiRpcClient }: AppProps) {
         };
         window.addEventListener("keydown", onKeyDown);
         const focusTimer = window.setTimeout(() => {
-            const currentItem = document.querySelector<HTMLElement>("#primary-navigation nav button[aria-current='page']");
-            const firstItem = document.querySelector<HTMLElement>("#primary-navigation nav button");
+            const currentItem = document.querySelector<HTMLElement>("#primary-navigation nav .navigation-item[aria-current='page']");
+            const firstItem = document.querySelector<HTMLElement>("#primary-navigation nav .navigation-item");
             (currentItem ?? firstItem)?.focus();
         }, 0);
         return () => {
@@ -190,15 +188,16 @@ export function App({ client = guiRpcClient }: AppProps) {
                 >
                     <span aria-hidden="true">☰</span><span className="visually-hidden">Toggle navigation</span>
                 </button>
-                <button className="brand-button" onClick={() => navigateRoute({ kind: "home" })} type="button">
+                <button className="brand-button" onClick={() => navigateRoute({ kind: "projects" })} type="button">
                     <span className="brand-mark" aria-hidden="true">A</span>
                     <span><strong>ALCOMD3</strong><small>{productFamily} platform</small></span>
                 </button>
-                <button className="button button--tonal settings-shortcut" onClick={() => navigateRoute({ kind: "settings" })} type="button">Settings</button>
+                <span className="shell-current-area">{sectionLabel(routeSection(route))}</span>
             </header>
             <div className="app-body">
                 {navigationOpen ? <button aria-hidden="true" className="navigation-scrim" onClick={() => setNavigationOpen(false)} tabIndex={-1} type="button" /> : null}
                 <PrimaryNavigation
+                    client={client}
                     current={route}
                     navigate={navigate}
                     onClose={() => {
@@ -222,19 +221,23 @@ export function App({ client = guiRpcClient }: AppProps) {
     );
 }
 
-function PrimaryNavigation({ current, navigate, onClose, open }: { current: Route; navigate(path: string): void; onClose(): void; open: boolean }) {
-    const items = [
-        ["/", "Home", "home"],
-        ["/projects", "Projects", "projects"],
-        ["/repositories", "Repositories", "repositories"],
-        ["/templates", "Templates", "templates"],
-        ["/unity", "Unity", "unity"],
-        ["/operations", "Operations", "operations"],
-        ["/extensions", "Extensions", "extensions"],
-        ["/activity", "Activity", "activity"],
-        ["/diagnostics", "Diagnostics", "diagnostics"],
-        ["/settings", "Settings", "settings"],
-        ["/about", "About", "about"]
+function PrimaryNavigation({ client, current, navigate, onClose, open }: { client: GuiRpcClient; current: Route; navigate(path: string): void; onClose(): void; open: boolean }) {
+    const groups = [
+        {
+            label: "Workspace",
+            items: [
+                ["/projects", "Projects", "projects"],
+                ["/repositories", "Packages & Templates", "packages"],
+                ["/extensions", "Extensions", "extensions"]
+            ]
+        },
+        {
+            label: "System",
+            items: [
+                ["/settings", "Settings", "settings"],
+                ["/activity", "Log", "log"]
+            ]
+        }
     ] as const;
     return (
         <aside className={`primary-navigation${open ? " primary-navigation--open" : ""}`} id="primary-navigation" onKeyDown={(event) => {
@@ -243,22 +246,68 @@ function PrimaryNavigation({ current, navigate, onClose, open }: { current: Rout
             <a className="skip-link" href="#main-content">Skip to content</a>
             <button aria-label="Close navigation" className="navigation-close" onClick={onClose} type="button">×</button>
             <nav aria-label="Primary">
-                {items.map(([path, label, section]) => (
-                    <button
-                        aria-current={routeSection(current) === section ? "page" : undefined}
-                        key={path}
-                        onClick={() => navigate(path)}
-                        type="button"
-                    >{label}</button>
+                {groups.map((group) => (
+                    <section className="navigation-group" key={group.label}>
+                        <h2>{group.label}</h2>
+                        {group.items.map(([path, label, section]) => (
+                            <button
+                                aria-current={routeSection(current) === section ? "page" : undefined}
+                                className="navigation-item"
+                                key={path}
+                                onClick={() => navigate(path)}
+                                type="button"
+                            >{label}</button>
+                        ))}
+                    </section>
                 ))}
             </nav>
+            <NavigationUtilities client={client} current={current} navigate={navigate} />
         </aside>
+    );
+}
+
+function NavigationUtilities({ client, current, navigate }: { client: GuiRpcClient; current: Route; navigate(path: string): void }) {
+    const [summary, setSummary] = useState<{ activeTasks: number; daemonVersion?: string }>({ activeTasks: 0 });
+    useEffect(() => {
+        let active = true;
+        void Promise.allSettled([client.operationsList(), client.systemStatus()]).then(([operations, status]) => {
+            if (!active) return;
+            setSummary({
+                activeTasks: operations.status === "fulfilled"
+                    ? operations.value.operations.filter((operation) => !["succeeded", "failed", "cancelled"].includes(operation.state)).length
+                    : 0,
+                ...(status.status === "fulfilled" ? { daemonVersion: status.value.daemonVersion } : {})
+            });
+        });
+        return () => { active = false; };
+    }, [client, current.kind]);
+    return (
+        <footer className="navigation-utilities">
+            <button
+                aria-current={routeSection(current) === "tasks" ? "page" : undefined}
+                className="navigation-item navigation-item--utility"
+                onClick={() => navigate("/operations")}
+                type="button"
+            >
+                <span>Task Center</span>
+                {summary.activeTasks === 0 ? null : <span className="task-count">{summary.activeTasks} active</span>}
+            </button>
+            <button
+                aria-current={routeSection(current) === "about" ? "page" : undefined}
+                className="navigation-item navigation-item--utility"
+                onClick={() => navigate("/about")}
+                type="button"
+            >
+                <span>About</span>
+                {summary.daemonVersion === undefined ? null : <span className="utility-detail">{summary.daemonVersion}</span>}
+            </button>
+        </footer>
     );
 }
 
 function keepFocusInside(event: React.KeyboardEvent<HTMLElement>): void {
     if (event.key !== "Tab") return;
-    const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])"))
+    const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("a[href], button:not(:disabled), md-icon-button:not([disabled]), md-text-button:not([disabled]), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])"))
         .filter((element) => element.getClientRects().length > 0);
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
@@ -290,7 +339,6 @@ function RouteContent({
 }) {
     const props = { client, navigate };
     switch (route.kind) {
-        case "home": return <HomePage {...props} />;
         case "projects": return <ProjectsPage {...props} />;
         case "project-detail": return <ProjectDetailPage {...props} projectId={route.projectId} />;
         case "project-packages": return <ProjectPackagesPage {...props} projectId={route.projectId} />;
@@ -606,7 +654,7 @@ function sourceColorName(value: string | null): AppearanceSettings["sourceColor"
 
 function readRoute(pathname: string): Route {
     const segments = pathname.split("/").filter(Boolean).map((segment) => decodeURIComponent(segment));
-    if (segments.length === 0) return { kind: "home" };
+    if (segments.length === 0) return { kind: "projects" };
     if (segments.length === 1) {
         switch (segments[0]) {
             case "projects": return { kind: "projects" };
@@ -641,7 +689,6 @@ function readRoute(pathname: string): Route {
 
 function routePath(route: Route): string {
     switch (route.kind) {
-        case "home": return "/";
         case "projects": return "/projects";
         case "project-detail": return `/projects/${encodeURIComponent(route.projectId)}`;
         case "project-packages": return `/projects/${encodeURIComponent(route.projectId)}/packages`;
@@ -672,12 +719,33 @@ function routeSection(route: Route): string {
         case "project-packages":
         case "project-unity":
         case "project-backups": return "projects";
-        case "repository-detail": return "repositories";
-        case "template-detail": return "templates";
+        case "repositories":
+        case "repository-detail":
+        case "templates":
+        case "template-detail": return "packages";
         case "backup-detail": return "projects";
-        case "operation-detail": return "operations";
+        case "operations":
+        case "operation-detail": return "tasks";
         case "extension-detail":
         case "extension-ui": return "extensions";
+        case "activity":
+        case "diagnostics": return "log";
+        case "unity":
+        case "settings": return "settings";
+        case "about": return "about";
         default: return route.kind;
+    }
+}
+
+function sectionLabel(section: string): string {
+    switch (section) {
+        case "projects": return "Projects";
+        case "packages": return "Packages & Templates";
+        case "extensions": return "Extensions";
+        case "settings": return "Settings";
+        case "log": return "Log";
+        case "tasks": return "Task Center";
+        case "about": return "About";
+        default: return productFamily;
     }
 }

@@ -5,7 +5,8 @@
 生产实现与本地自动化验收，但项目所有者在正式 checklist 开始前拒绝其 visual/information architecture acceptance：其宏观
 布局缺少与 v3 可识别的产品连续性，且 `@material/web` dependency 存在但 component system 未被采用。前两轮 A/B/C IA
 探索已降为 historical；以 v3 用户模型为默认的 minimum-change proposal 已通过项目所有者审批。当前只批准 H0 Material
-foundation 与 H1 shell/navigation production；H1 后必须停止在 Visual Gate 1。H2-H7 未获批准，M7仍未完成，尚未进入M8/M9。
+foundation 与 H1 shell/navigation production；二者已形成独立本地提交并通过前端自动化验收，当前停止在 Visual Gate 1。
+H2-H7 未获批准，M7仍未完成，尚未进入M8/M9。
 
 ## 目标与完成定义
 
@@ -506,6 +507,9 @@ Activity、Diagnostics 或 Portable UI authority。
   extension permission/quarantine视为嵌入既有区域的有限新用户价值。形成单一minimum-change proposal；production未开始。
 - 2026-08-26：项目所有者批准minimum-change IA baseline与H0/H1 production，并冻结Project tree只表达语义归属、Portable UI
   无navigation contribution、Task Center为secondary utility、Update仅在真实capability存在时显示。H1后停止Visual Gate 1。
+- 2026-08-26：H0以`@alcomd/ui`集中注册Material Web 2.5.0、共享MD3 tokens和窄React 19 facade完成；H1将一级用户区域
+  收敛为Projects、Packages & Templates、Extensions、Settings、Log及footer utilities，默认进入Projects并保留全部既有route。
+  npm check/build和Playwright 15项通过；等待完整repository/Tauri gate与真实GUI Visual Gate 1签收。
 
 ## 下一停止点
 

@@ -21,6 +21,23 @@ test("keyboard navigation moves routes and focuses the destination heading", asy
     await expect(theme).toHaveValue("light");
 });
 
+test("H1 shell exposes the approved user areas without promoting internal routes", async ({ page }) => {
+    await openHarness(page, "/projects");
+    const primary = page.getByRole("navigation", { name: "Primary" });
+    for (const name of ["Projects", "Packages & Templates", "Extensions", "Settings", "Log"]) {
+        await expect(primary.getByRole("button", { name, exact: true })).toBeVisible();
+    }
+    for (const hiddenRoute of ["Home", "Repositories", "Templates", "Unity", "Operations", "Activity", "Diagnostics"]) {
+        await expect(primary.getByRole("button", { name: hiddenRoute, exact: true })).toHaveCount(0);
+    }
+    await expect(page.getByRole("button", { name: /Task Center/ })).toContainText("1 active");
+    await expect(page.getByRole("button", { name: /About/ })).toContainText("4.0.0-alpha.0");
+
+    await primary.getByRole("button", { name: "Packages & Templates" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Repositories" })).toBeFocused();
+    await expect(primary.getByRole("button", { name: "Packages & Templates" })).toHaveAttribute("aria-current", "page");
+});
+
 test("modal traps focus, closes on Escape, and restores the invoking control", async ({ page }) => {
     await openHarness(page, "/projects");
     const root = page.getByLabel("Project root");
@@ -62,7 +79,7 @@ test("loading, empty, error, and disconnected states have stable live semantics"
 
 test("every M1-M7 official GUI route resolves through the typed client", async ({ page }) => {
     const routes = [
-        ["/", "Home"],
+        ["/", "Projects"],
         ["/projects", "Projects"],
         ["/projects/00000000-0000-4000-8000-000000000101", "Project detail"],
         ["/projects/00000000-0000-4000-8000-000000000101/packages", "Packages"],

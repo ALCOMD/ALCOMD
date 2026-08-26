@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。Official GUI functional candidate 192672… 技术与本地自动化验收有效，但因不符合 v3 宏观布局基线且未真正采用 Material Web component system，被项目所有者拒绝 visual/layout acceptance；当前只完成 visual realignment audit，尚未批准 H0-H7 production，也未进入 M8/M9。`
+`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。M7 minimum-change IA 的 H0 Material foundation 与 H1 shell/navigation 已完成本地实现及前端自动化验收；当前停止在 Visual Gate 1，等待真实 GUI 人工签收。H2-H7 未获批准，M7 未完成，也未进入 M8/M9。`
 
 ## 已完成
 
