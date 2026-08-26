@@ -4,8 +4,8 @@
 `32877438910`。Official GUI functional candidate `19267230507071dc61ba306b98c8cfdd113e9ea2` 完成 E1-G1/G3
 生产实现与本地自动化验收，但项目所有者在正式 checklist 开始前拒绝其 visual/information architecture acceptance：其宏观
 布局缺少与 v3 可识别的产品连续性，且 `@material/web` dependency 存在但 component system 未被采用。前两轮 A/B/C IA
-探索已降为 historical；当前只形成以 v3 用户模型为默认的 minimum-change proposal，等待项目所有者审批。H0-H7 尚未获
-production approval，M7 仍未完成，尚未进入 M8/M9。
+探索已降为 historical；以 v3 用户模型为默认的 minimum-change proposal 已通过项目所有者审批。当前只批准 H0 Material
+foundation 与 H1 shell/navigation production；H1 后必须停止在 Visual Gate 1。H2-H7 未获批准，M7仍未完成，尚未进入M8/M9。
 
 ## 目标与完成定义
 
@@ -276,7 +276,8 @@ Web UI 与 full external-client credential pairing/revocation 不进入 M7。
 当前 minimum-change proposal 将 Projects 恢复为 home-equivalent，将 Repositories/Templates移回Packages & Templates，将
 project Unity/Backups保留在Project context，将global Unity放入Settings，将Operations表达为context progress与secondary Task
 Center，将Activity/Diagnostics放入同一Log utility，并把About/version放入footer/Settings。Extensions是v3既有用户概念，保持
-其utility身份和大致归属；permission/quarantine/Portable UI进入Extension detail。该proposal仍是`pending owner approval`。
+其utility身份和大致归属；permission/quarantine/Portable UI进入Extension detail。Portable UI v1不提供sidebar/menu/toolbar/
+arbitrary navigation contribution。该proposal已获项目所有者批准。
 
 ### Visual architecture and component policy
 
@@ -418,26 +419,26 @@ foundation、违反已批准 minimum-change user model/A-033 continuity 或包�
 M11真实v3 fixture缺失继续阻塞GUI differential parity，但不阻塞 `gui.m7-core-surfaces`。M12继续承担Win10/Win11安装/启动/
 WebView2/update/uninstall，以及 Narrator/VoiceOver/Linux screen-reader 和真实平台 accessibility runtime validation。
 
-## Planned visual realignment slices（未批准 production）
+## Visual realignment slices
 
-1. **H0 Material foundation**：`@alcomd/ui` 封装审计中真实需要的 Material Web components；接通真实 MD3 color/type/shape/
+1. **H0 Material foundation（已批准）**：`@alcomd/ui` 封装审计中真实需要的 Material Web components；接通真实 MD3 color/type/shape/
    elevation/state tokens；验证 React 19 integration、interaction/ripple、component accessibility 和Core/Portable共用层。
-2. **H1 v3 user-model continuity shell/navigation**：项目所有者批准 minimum-change proposal 后，实现 recognizable
+2. **H1 v3 user-model continuity shell/navigation（已批准）**：实现 recognizable
    sidebar/content shell、v3-scale user areas、page toolbar 与 narrow adaptive drawer；不从 route inventory 推导导航；完成
    Visual Gate 1。
-3. **H2 Projects/Packages & Templates**：实现 Projects header/list-grid/create、Project package-centric workspace、v3 resource
+3. **H2 Projects/Packages & Templates（未批准）**：实现 Projects header/list-grid/create、Project package-centric workspace、v3 resource
    grouping 与 repository/template dense table/list；完成 Visual Gate 2。
-4. **H3 contextual v4 enhancements**：把global/project Unity、Backups 与 Operations增强嵌入既有Settings/Project/progress workflow，不改
+4. **H3 contextual v4 enhancements（未批准）**：把global/project Unity、Backups 与 Operations增强嵌入既有Settings/Project/progress workflow，不改
    Plan/Apply/Operation；完成 Visual Gate 3 的第一部分。
-5. **H4 Extensions/Portable UI**：保留Extensions既有用户概念和utility归属；permission/quarantine/Portable UI位于detail，host
+5. **H4 Extensions/Portable UI（未批准）**：保留Extensions既有用户概念和utility归属；permission/quarantine/Portable UI位于detail，host
    chrome与renderer全部使用共同Material components；不改 Portable UI protocol；完成 Visual Gate 4 的第一部分。
-6. **H5 utilities/observability**：实现 grouped Settings、Log内Activity/Diagnostics与footer About/version，保留
+6. **H5 utilities/observability（未批准）**：实现 grouped Settings、Log内Activity/Diagnostics与footer About/version，保留
    Config v1/A-026权限分离；
    完成 Visual Gate 3/4。
-7. **H6 responsive/a11y/Playwright regression**：覆盖已批准 minimum-change user model 的 structural continuity、grouping/workspace/
+7. **H6 responsive/a11y/Playwright regression（未批准）**：覆盖已批准 minimum-change user model 的 structural continuity、grouping/workspace/
    action placement、Material element presence和observable interaction、theme propagation、wide/narrow/200%/reduced motion；
    不测试Material shadow DOM私有细节。
-8. **H7 manual visual signoff**：执行更新后的真实GUI checklist和最终screenshots；再进入候选Hosted CI/push审批。
+8. **H7 manual visual signoff（未批准）**：执行更新后的真实GUI checklist和最终screenshots；再进入候选Hosted CI/push审批。
 
 H0-H7 只重组 shell、composition、component rendering 和 visual hierarchy；不得重新设计 RPC、Plan/Apply、Operation、Settings、
 Activity、Diagnostics 或 Portable UI authority。
@@ -503,9 +504,10 @@ Activity、Diagnostics 或 Portable UI authority。
 - 2026-08-26：项目所有者进一步冻结“v4默认继承v3用户模型”的前提。A/B/C降为historical exploration；建立v3/v4
   user-facing capability map，将M1-M7绝大多数变化归为same/enhanced existing capability，仅把durable task recovery/history与
   extension permission/quarantine视为嵌入既有区域的有限新用户价值。形成单一minimum-change proposal；production未开始。
+- 2026-08-26：项目所有者批准minimum-change IA baseline与H0/H1 production，并冻结Project tree只表达语义归属、Portable UI
+  无navigation contribution、Task Center为secondary utility、Update仅在真实capability存在时显示。H1后停止Visual Gate 1。
 
 ## 下一停止点
 
-本 user-model correction 形成独立未 push planning commit 后停止。等待项目所有者批准或修改
-`docs/gui/m7-user-model-continuity.md` 的 minimum-change proposal，再决定 H0-H7 production。A/B/C 不再是选择项；Material
-component policy仍是设计输入，但本轮不修改组件。不得 push，不得开始 H0/H1 或 M8/M9。
+执行已批准的H0/H1后停止在Visual Gate 1，运行真实daemon+GUI并准备bounded screenshots等待项目所有者签收。不得开始H2-H7，
+不得push，不得进入M8/M9。A/B/C不再是选择项。

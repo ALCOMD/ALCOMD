@@ -1,6 +1,6 @@
 # M7 ALCOMD3 v3 -> ALCOMD v4 user-model mapping
 
-状态：minimum-change IA proposal 的映射输入，等待项目所有者人工审批；不是 H0/H1 production approval。
+状态：项目所有者已批准的 minimum-change IA mapping；授权 H0/H1，H1 后停止在 Visual Gate 1。
 
 权威综合说明位于 `docs/gui/m7-user-model-continuity.md`。此前 Candidate A/B/C 已降为 historical exploration，不再是下一轮
 production 候选。
@@ -23,8 +23,8 @@ crate、RPC、State、permission 或 subsystem 边界不能跳过该顺序。
 |---|---|---|---|---|
 | Projects landing | Projects | `SAME` + `ENHANCED_EXISTING` | 保持 landing/home-equivalent、toolbar、list/grid、create/import/restore | 删除独立 Home domain dashboard；status进入shell/footer |
 | Project Manage | Packages | `ENHANCED_EXISTING` | package table仍是Project主要工作面；Plan/Apply/Operation嵌入原流程 | 从generic detail/subnav恢复package-centric workspace |
-| Project header/context | project Unity | `ENHANCED_EXISTING` | selector、writer state、Open Unity在Project header/detail | 不把project Unity提升为global nav |
-| Projects/Project actions | Backups | `ENHANCED_EXISTING` | create/restore从context发起；durable history/detail作为Project secondary surface | 不从Backup RPC推导全局domain |
+| Project header/context | project Unity | `ENHANCED_EXISTING` | selector、writer state、Open Unity留在Project context；不冻结为同级tab | 不把project Unity提升为global nav |
+| Projects/Project actions | Backups | `ENHANCED_EXISTING` | create/restore从context发起；history/detail使用context action、secondary view、dialog或project sub-surface | 不从树形文档或Backup RPC推导同级tab/global domain |
 | Packages & Templates | Repositories | `ENHANCED_EXISTING` | 同一资源区域的Repositories secondary view | 从平级primary移回资源分组 |
 | Packages & Templates | User Packages | `SAME` target；implementation incomplete | 真实能力完成后恢复同组secondary view | 当前不显示fake/disabled entry |
 | Packages & Templates | Templates | `ENHANCED_EXISTING` | 同一资源区域的Templates secondary view；create-project回到Projects | 从平级primary移回资源分组 |
@@ -35,7 +35,7 @@ crate、RPC、State、permission 或 subsystem 边界不能跳过该顺序。
 | Log > Activity | Activity | `ENHANCED_EXISTING` | Log/Activity utility内secondary view | 与Diagnostics合并用户容器，不合并RPC/permission |
 | Log > Technical | Diagnostics | `ENHANCED_EXISTING` | 同一utility内Diagnostics secondary view | 移除独立Diagnostics primary entry |
 | Progress/task/toast | Operations | `ENHANCED_EXISTING` + bounded `GENUINELY_NEW` history | context progress + footer active-task + secondary Task Center/history | 移除Operations primary-domain地位 |
-| Settings/licenses + footer version | About/licenses | `SAME` | footer/version action或Settings secondary page | 移除About primary entry |
+| Settings/licenses + footer version | About/licenses | `SAME` | footer/version action或Settings secondary page；Updater真实存在后才显示Update | 移除About primary entry与fake update UI |
 
 ## Structural continuity anchors
 

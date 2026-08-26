@@ -1,6 +1,6 @@
 # M7 user-model continuity and minimum-change IA proposal
 
-状态：等待项目所有者人工审批；不是 H0/H1 production approval。
+状态：项目所有者已批准为 M7 official GUI product IA baseline，并批准 H0/H1 production；H1 后必须停止在 Visual Gate 1。
 
 本文以用户实际看到、理解和完成的任务为轴，而不是以 Rust crate、RPC namespace、State table 或内部 authority 为轴。默认
 产品模型是：
@@ -142,9 +142,6 @@ Playwright infrastructure 继续复用。
 │   Packages &     ├─────────────────────────────────────────────────────────┤
 │   Templates      │ optional secondary navigation                           │
 │                  │                                                         │
-│ EXTENSION ENTRY  │ dense list / table / project workspace                  │
-│   when real      │                                                         │
-│                  │                                                         │
 │ UTILITIES        │                                                         │
 │   Settings       │                                                         │
 │   Log            │                                                         │
@@ -155,8 +152,8 @@ Playwright infrastructure 继续复用。
 └──────────────────┴─────────────────────────────────────────────────────────┘
 ```
 
-未来 MCP/Discord 等 first-party extension 的具体 entry 只有在 M8/M9 真实能力存在并遵守公开 extension contract 后才显示；本图
-不授权其 production wiring。
+Portable UI v1 不提供 sidebar、menu、toolbar 或 arbitrary navigation contribution。M8/M9 的 MCP/Discord production wiring
+不属于 M7；未来若要改变 navigation contribution contract，必须另行审批。
 
 ### Navigation and workspace hierarchy
 
@@ -164,9 +161,7 @@ Playwright infrastructure 继续复用。
 Projects (landing/home-equivalent)
   -> Project workspace
        -> Packages (primary/default workspace)
-       -> Unity details when needed
-       -> Backups/history when needed
-       -> header/overflow: Unity selection, Open, Backup, Copy, Remove
+       -> project context: Unity selection/Open, Backup/history, Copy, Remove
 
 Packages & Templates
   -> VPM Repositories
@@ -192,8 +187,13 @@ Extensions
 
 Footer utility
   -> active task status / Task Center history
-  -> version / update / About / licenses
+  -> version / About / licenses
 ```
+
+该树只冻结用户语义归属，不冻结三个同级 Project tabs。Unity 与 Backup 的 exact presentation 可在后续页面 realignment 中使用
+page toolbar action、context action、secondary view、dialog 或 project sub-surface；不得从树形文档机械生成 subnavigation。
+Task Center/history 是低权重 secondary utility，不与 Projects 或 Packages & Templates 等同。Update 只有真实 updater/application
+capability存在后才允许显示；M7不得提供fake、placeholder或disabled future update UI。
 
 ### v3 structure retained
 
@@ -245,5 +245,5 @@ GUI 继续只经 typed client/RPC/application 使用 Core。本文不修改 rout
 
 ## Approval stop
 
-在项目所有者批准或修改本 minimum-change proposal 前，不开始 H0/H1。此前 Candidate A/B/C 只保留为历史探索，不再作为
-下一轮 production 候选。
+本 minimum-change proposal 已获项目所有者批准。H0/H1 可以实施；H1 后必须停止在 Visual Gate 1。此前 Candidate A/B/C 只
+保留为历史探索，不再作为 production 候选。不得开始 H2-H7、M8 或 M9。
