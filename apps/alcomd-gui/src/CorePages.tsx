@@ -1,5 +1,5 @@
 import type { ExtensionRecord, RpcError } from "@alcomd/sdk";
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import type {
     ActivityItem,
@@ -25,7 +25,6 @@ import {
     PackageActions,
     ProjectActions,
     ProjectUnityActions,
-    RegisterProjectPanel,
     RegisterRepositoryPanel,
     RepositoryActions,
     TemplateActions,
@@ -33,7 +32,7 @@ import {
     UnityRegistryActions
 } from "./CoreActions";
 import type { GuiRpcClient } from "./rpc";
-import { Button } from "./Material";
+import { Button, Dialog, Select, TextField } from "./Material";
 
 interface PageProps {
     client: GuiRpcClient;
@@ -156,26 +155,203 @@ export function HomePage({ client, navigate }: PageProps) {
 }
 
 export function ProjectsPage({ client, navigate }: PageProps) {
-    const load = useCallback(() => client.projectsList(), [client]);
+    const [state, setState] = useState<{
+        error?: RpcError;
+        loading: boolean;
+        projects: ProjectSnapshot[];
+        refreshing: boolean;
+    }>({ loading: true, projects: [], refreshing: false });
+    const [search, setSearch] = useState("");
+    const [sort, setSort] = useState("observed");
+    const [descending, setDescending] = useState(true);
+    const [view, setView] = useState<"list" | "grid">("list");
+    const [registerOpen, setRegisterOpen] = useState(false);
+    const [registrationMessage, setRegistrationMessage] = useState<string>();
+
+    const refresh = useCallback(async () => {
+        setState((current) => ({ ...current, error: undefined, refreshing: current.projects.length > 0 }));
+        try {
+            const value = await client.projectsList();
+            setState({ loading: false, projects: value.projects, refreshing: false });
+        } catch (caught: unknown) {
+            setState((current) => ({ ...current, error: safeError(caught), loading: false, refreshing: false }));
+        }
+    }, [client]);
+
+    useEffect(() => {
+        void refresh();
+    }, [refresh]);
+
+    const projects = state.projects
+        .filter((project) => projectName(project).toLocaleLowerCase().includes(search.toLocaleLowerCase()))
+        .sort((left, right) => {
+            let compared = 0;
+            if (sort === "name") compared = projectName(left).localeCompare(projectName(right));
+            if (sort === "type") compared = left.projectType.localeCompare(right.projectType);
+            if (sort === "unity") compared = left.unityVersion.localeCompare(right.unityVersion);
+            if (sort === "observed") compared = left.observedAtMs - right.observedAtMs;
+            return descending ? -compared : compared;
+        });
+
     return (
-        <Page title="Projects" eyebrow="Registered Unity projects">
-            <ResourcePage load={load}>
-                {(value, refresh) => <>{value.projects.length === 0 ? <RouteState kind="empty" title="No registered projects" /> : <CardList>{value.projects.map((project) => <ProjectCard key={project.projectId ?? project.rootPath} project={project} navigate={navigate} />)}</CardList>}<RegisterProjectPanel client={client} onChanged={refresh} /></>}
-            </ResourcePage>
-        </Page>
+        <section className="projects-page">
+            <header className="projects-toolbar">
+                <h1 id="route-title" tabIndex={-1}>Projects</h1>
+                <Button disabled={state.refreshing} onClick={() => void refresh()} type="button" variant="text">
+                    {state.refreshing ? "Refreshing…" : "Refresh"}
+                </Button>
+                <TextField className="projects-search" label="Search projects" onInput={setSearch} value={search} />
+                <Button onClick={() => setView((current) => current === "list" ? "grid" : "list")} type="button" variant="text">
+                    {view === "list" ? "Grid view" : "List view"}
+                </Button>
+                <Button onClick={() => setRegisterOpen(true)} type="button">Register project</Button>
+            </header>
+            <div className="projects-secondary-toolbar">
+                <Select
+                    className="projects-sort"
+                    label="Sort by"
+                    onChange={setSort}
+                    options={[
+                        { label: "Last observed", value: "observed" },
+                        { label: "Name", value: "name" },
+                        { label: "Project type", value: "type" },
+                        { label: "Unity version", value: "unity" }
+                    ]}
+                    value={sort}
+                />
+                <Button onClick={() => setDescending((current) => !current)} type="button" variant="text">
+                    {descending ? "Descending" : "Ascending"}
+                </Button>
+                <span className="projects-result-count" role="status" aria-live="polite">
+                    {projects.length} {projects.length === 1 ? "project" : "projects"}
+                </span>
+            </div>
+            <div className="projects-content">
+                {state.loading ? <RouteState kind="loading" title="Loading projects" /> : null}
+                {state.error !== undefined && state.projects.length === 0 ? <ErrorState error={state.error} retry={() => void refresh()} /> : null}
+                {!state.loading && state.error === undefined && projects.length === 0 ? (
+                    <section className="projects-empty" role="status">
+                        <h2>{search.length === 0 ? "No registered projects" : "No matching projects"}</h2>
+                        <p>{search.length === 0 ? "Register an existing Unity project from the toolbar." : "Change the search text to see other projects."}</p>
+                    </section>
+                ) : null}
+                {projects.length > 0 && view === "list" ? <ProjectsTable navigate={navigate} projects={projects} /> : null}
+                {projects.length > 0 && view === "grid" ? <div className="projects-grid">{projects.map((project) => <ProjectCard key={project.projectId ?? project.rootPath} project={project} navigate={navigate} />)}</div> : null}
+            </div>
+            {registrationMessage === undefined ? null : <p className="operation-feedback" role="status">{registrationMessage}</p>}
+            <RegisterProjectDialog
+                client={client}
+                onChanged={() => {
+                    setRegistrationMessage("Project registered");
+                    void refresh();
+                }}
+                onClose={() => setRegisterOpen(false)}
+                open={registerOpen}
+            />
+        </section>
+    );
+}
+
+function ProjectsTable({ navigate, projects }: { navigate(path: string): void; projects: ProjectSnapshot[] }) {
+    return (
+        <div className="projects-table-scroll">
+            <table className="projects-table">
+                <thead><tr><th>Project</th><th>Type</th><th>Unity</th><th>Packages</th><th>Last observed</th><th><span className="visually-hidden">Actions</span></th></tr></thead>
+                <tbody>{projects.map((project) => {
+                    const id = project.projectId;
+                    return (
+                        <tr key={id ?? project.rootPath}>
+                            <td><strong>{projectName(project)}</strong><small>{project.rootPath}</small></td>
+                            <td>{project.projectType}</td>
+                            <td>{project.unityVersion || "Unknown"}</td>
+                            <td>{project.directDependencies.length} direct</td>
+                            <td>{formatObserved(project.observedAtMs)}</td>
+                            <td>{id === undefined ? <span className="project-unregistered">Unregistered</span> : <div className="project-row-actions"><Button onClick={() => navigate(`/projects/${id}`)} type="button" variant="tonal">Manage</Button><Button onClick={() => navigate(`/projects/${id}/backups`)} type="button" variant="text">Backups</Button></div>}</td>
+                        </tr>
+                    );
+                })}</tbody>
+            </table>
+        </div>
     );
 }
 
 function ProjectCard({ project, navigate }: { project: ProjectSnapshot; navigate(path: string): void }) {
     const id = project.projectId;
     return (
-        <article className="resource-card">
+        <article className="project-card">
             <h2>{project.rootPath.split(/[\\/]/).at(-1) ?? "Unity project"}</h2>
+            <p className="project-path">{project.rootPath}</p>
             <p>{project.projectType} · Unity {project.unityVersion || "unknown"}</p>
-            <p>{project.directDependencies.length} direct packages · revision {project.revision ?? "unregistered"}</p>
-            {id === undefined ? null : <Button onClick={() => navigate(`/projects/${id}`)} variant="text">View project</Button>}
+            <p className="project-meta">{project.directDependencies.length} direct packages · observed {formatObserved(project.observedAtMs)}</p>
+            {id === undefined ? <span className="project-unregistered">Unregistered</span> : <div className="project-card-actions"><Button onClick={() => navigate(`/projects/${id}`)} variant="tonal">Manage</Button><Button onClick={() => navigate(`/projects/${id}/backups`)} variant="text">Backups</Button></div>}
         </article>
     );
+}
+
+function RegisterProjectDialog({ client, onChanged, onClose, open }: { client: GuiRpcClient; onChanged(): void; onClose(): void; open: boolean }) {
+    const [path, setPath] = useState("");
+    const [reviewing, setReviewing] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<RpcError>();
+    const confirmRef = useRef<HTMLElement>(null);
+
+    useEffect(() => {
+        if (open) return;
+        setPath("");
+        setReviewing(false);
+        setBusy(false);
+        setError(undefined);
+    }, [open]);
+
+    useEffect(() => {
+        if (!reviewing) return;
+        window.requestAnimationFrame(() => confirmRef.current?.focus());
+    }, [reviewing]);
+
+    const register = async () => {
+        setBusy(true);
+        setError(undefined);
+        try {
+            await client.projectRegister(path);
+            onChanged();
+            onClose();
+        } catch (caught: unknown) {
+            setBusy(false);
+            setError(safeError(caught));
+        }
+    };
+
+    return (
+        <Dialog onClose={onClose} open={open} title={reviewing ? "Register this project?" : "Register project"}>
+            {reviewing ? (
+                <div className="project-register-review">
+                    <p>ALCOMD will inspect this Unity project and add it to the per-user registry.</p>
+                    <code>{path}</code>
+                    <div className="dialog-actions">
+                        <Button disabled={busy} onClick={() => setReviewing(false)} type="button" variant="text">Go back</Button>
+                        <Button disabled={busy} onClick={() => void register()} ref={confirmRef} type="button">{busy ? "Registering…" : "Confirm"}</Button>
+                    </div>
+                </div>
+            ) : (
+                <form className="project-register-form" onSubmit={(event) => { event.preventDefault(); setReviewing(true); }}>
+                    <TextField label="Project root" maxLength={1024} onInput={setPath} required supportingText="The daemon validates and owns this path." value={path} />
+                    <div className="dialog-actions">
+                        <Button onClick={onClose} type="button" variant="text">Cancel</Button>
+                        <Button disabled={path.length === 0} type="submit">Review registration</Button>
+                    </div>
+                </form>
+            )}
+            {error === undefined ? null : <p className="inline-error" role="alert">Registration failed: {error.code}</p>}
+        </Dialog>
+    );
+}
+
+function projectName(project: ProjectSnapshot): string {
+    return project.rootPath.split(/[\\/]/).at(-1) ?? "Unity project";
+}
+
+function formatObserved(value: number): string {
+    return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value));
 }
 
 export function ProjectDetailPage({ client, navigate, projectId }: PageProps & { projectId: string }) {

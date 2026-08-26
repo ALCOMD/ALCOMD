@@ -28,10 +28,10 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
 }
 
 export const Button = forwardRef(function Button(
-    { children, variant = "filled", ...props }: ButtonProps,
+    { "aria-expanded": ariaExpanded, children, variant = "filled", ...props }: ButtonProps,
     ref: Ref<HTMLElement>
 ) {
-    return createElement(materialElements.button[variant], { ...props, ref } as MaterialProps, children);
+    return createElement(materialElements.button[variant], { ...props, ariaExpanded, ref } as MaterialProps, children);
 });
 
 export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "ref"> {
@@ -50,8 +50,10 @@ export const IconButton = forwardRef(function IconButton(
 });
 
 export interface TextFieldProps {
+    className?: string;
     disabled?: boolean;
     label: string;
+    maxLength?: number;
     onInput?(value: string): void;
     required?: boolean;
     supportingText?: string;
@@ -59,10 +61,12 @@ export interface TextFieldProps {
     value: string;
 }
 
-export function TextField({ disabled, label, onInput, required, supportingText, type = "text", value }: TextFieldProps) {
+export function TextField({ className, disabled, label, maxLength, onInput, required, supportingText, type = "text", value }: TextFieldProps) {
     return createElement(materialElements.textField, {
+        className,
         disabled,
         label,
+        maxLength,
         onInput: (event: FormEvent<MaterialElement>) => onInput?.(event.currentTarget.value as string),
         required,
         supportingText,
@@ -77,6 +81,7 @@ export interface SelectOption {
 }
 
 export interface SelectProps {
+    className?: string;
     disabled?: boolean;
     label: string;
     onChange?(value: string): void;
@@ -84,10 +89,11 @@ export interface SelectProps {
     value: string;
 }
 
-export function Select({ disabled, label, onChange, options, value }: SelectProps) {
+export function Select({ className, disabled, label, onChange, options, value }: SelectProps) {
     return createElement(
         materialElements.select,
         {
+            className,
             disabled,
             label,
             onChange: (event: ChangeEvent<MaterialElement>) => onChange?.(event.currentTarget.value as string),

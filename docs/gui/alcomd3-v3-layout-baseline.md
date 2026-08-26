@@ -188,3 +188,113 @@ durable OperationId 是架构新增事实；它可以由业务上下文、全局
   大卡片后声称是视觉现代化。
 - narrow 模式可把持久侧栏转为 modal drawer；wide 模式应保留 v3 可识别的左侧导航和右侧业务画布关系，但无需复制固定
   宽度、旧组件或每个历史页面。
+
+## F. Reference-driven visual decomposition
+
+本节是 2026-08-26 Visual Gate 1 重置后的直接视觉实现输入。它不从“现代桌面应用”或 Web dashboard 惯例推导界面，
+只记录发布图中实际可见的关系以及冻结源码明确表达的几何。发布图是合成宣传图，Projects 主体的一部分被 Theme dialog
+遮挡；被遮挡部分只采用冻结源码可验证的结构，不猜测不可见像素。
+
+### F.1 Projects wide desktop
+
+证据：`../ALCOMD3-v3-readonly/docs/release-assets/ALCOMD3-BOOTH-1.png` 中两张 Projects 窗口，以及
+`app/_main/route.tsx`、`components/SideBar.tsx`、`components/layout.tsx`、`app/_main/projects/index.tsx`、
+`-projects-list-card.tsx`、`-project-row.tsx`、`-projects-grid-card.tsx` 和 `-project-grid-item.tsx`。
+
+1. **Window composition**：原生标题栏下面立即进入二栏应用主体；没有第二条产品级 top app bar。左栏是背景上的持久导航，
+   右栏是一个接近窗口全高的大圆角内容画布。
+2. **Sidebar geometry**：冻结源码的常规宽度是 260 px。按发布图中的常规桌面窗口估算，侧栏约占可用宽度的 18%–21%，
+   主画布约占 79%–82%。侧栏不是窄 rail，也不是带独立卡片边界的 admin navigation。
+3. **Sidebar icon + label**：每项单行水平排列，20 px 图标在前、标签在后，二者约 16 px 间隔；常规项高 48 px，横向
+   padding 16 px。所有主入口使用同一视觉重量，不加 `WORKSPACE` / `SYSTEM` 分组标题。
+4. **Selected navigation shape**：选中状态覆盖整行，使用 full pill/container；不是左侧细线，也不是独立卡片。未选中项保持透明，
+   hover 与 selected 共享同一 surface-container 家族。
+5. **Main content outer margin**：主画布相对窗口顶部、右侧和底部约 12 px，左侧紧邻 sidebar 的内容边界；视觉上形成一块完整的
+   大工作区，而不是背景中央的 max-width card。
+6. **Main rounded surface**：主画布圆角为约 28 px，内部 padding 常规为 24 px；画布占满余下高度。页面内容与画布边缘之间的
+   24 px inset 明显大于页面内部连续控件间的 8–12 px gap。
+7. **Page toolbar**：顶部 `HNavBar` 是页面内工具栏，约一行 40 px 控件加上下 8 px padding，即约 56 px；它与下方主体之间
+   只有约 12 px 间隔。工具栏自身横向充满画布，不再套一层居中的页面容器。
+8. **Search placement**：标题和刷新之后立即是可伸展搜索框；搜索承担中段弹性空间，而不是另起一行或放入筛选卡片。
+9. **Refresh placement**：刷新是紧邻 Projects 标题的 icon action；加载时原地旋转，不改变工具栏结构。
+10. **View toggle**：搜索之后是带 list/grid 图标和文字的轻量 action；它与搜索、标题属于同一 toolbar leading group。
+11. **Primary action**：最右侧是 Create Project filled split action；主按钮直接创建，窄下拉段承载 Add existing / Restore 等邻近入口。
+    它是工具栏右端的唯一主要视觉强调。
+12. **Sort/filter row**：list mode 直接把排序放进 sticky table header；grid mode 才在内容前放一个约 40–48 px 的紧凑
+    secondary toolbar（label、160 px select、方向 icon）。不存在占据大块高度的筛选面板。
+13. **Project item geometry**：list 是 full-width dense table；每个 cell 约 10 px 内边距，名称单元允许两行信息，动作集中在最右。
+    grid card 使用 1/2/3 列容器查询，常规双列阈值约 40.75 rem、三列约 67.5 rem，每卡约 20–22 rem 的可读宽度，卡间距
+    约 12 px。
+14. **Metadata hierarchy**：名称是主文本；路径是 14 px、约半透明的次文本；类型以 20 px 图标加标签呈现；Unity version、创建时间、
+    最近修改时间是同层紧凑 metadata。完整路径是 secondary detail，不成为巨型 identity heading。
+15. **Row/card actions**：Open Unity 是强调动作，Manage/Migrate 与 Backup 紧邻，overflow 承载 open folder/copy/remove；favorite 是
+    最左或卡片右上角的轻量 icon state。常用动作不被搬到独立详情 dashboard。
+16. **Scroll behavior**：sidebar 可独立滚动；主 canvas 固定；toolbar 不滚；项目表/网格在剩余高度内滚动。list header sticky，
+    水平滚动只在表格不足以容纳列时出现。
+17. **Information density**：toolbar、secondary toolbar、row/card 之间保持 8–12 px 节奏；宽屏首屏应出现多行项目或多张卡片，
+    不以 hero、营销留白或巨型 empty card消耗工作区。
+18. **Typography hierarchy**：页面标题约 24 px、normal；项目名称为普通正文强调；metadata 约 12–14 px；没有 eyebrow，也没有
+    40–56 px display headline。字体是 Noto Sans/system sans。
+19. **Utility/footer placement**：Extensions 位于主导航之后、底部 version/update 之前；hostname warning 等状态也在 sidebar footer。
+    版本、更新和 utilities 不形成横跨窗口的 global web header。
+
+Empty state 仍必须保留完整 shell、toolbar 和内容滚动骨架。v3 源码的 empty card 居中且有 create/import 动作，但 v4 Visual Gate 1
+只保留紧凑 contextual empty message；Register/New Project 必须由 toolbar action 打开 dialog 或专用 flow，不在页面常驻表单。
+
+### F.2 Other v3 page families
+
+| 页面 | frame / toolbar | content organization | action placement / density |
+|---|---|---|---|
+| Project management / package workspace | 同一 canvas 和 `HNavBar`；左侧 back + project name/path，右侧 Unity selector、Open Unity split action、overflow | 单一 package table/list 占满剩余高度；可在表格前出现窄建议条 | refresh/search/filter 在 package header；Apply review、migration、backup 等进入 dialog/progress host |
+| Resources | sidebar 一级入口 `Packages & Templates`；canvas 顶部是 Repositories/User Packages/Templates 三段 selector | repository 为 dense table；packages 为 list；templates 为 list/card | Add Repository 等 primary action 位于 toolbar 右端；排序和 row actions 贴近数据 |
+| MCP | 与其他页面相同的标题 toolbar | 主体是按状态/工具组织的紧凑 section 与 tool grid，不改变 shell | connect/config/action 位于相应 section；技术详情不提升为全局 dashboard |
+| Theme | sidebar utility action打开 modal panel，而非独立全局 header page | dialog 内左右两列：color/sliders 与 mode/scheme，窄屏再单列 | reset 在 dialog title row，Close 在 footer；外层 Projects 页面保持可见 |
+| Settings | 简单 Settings toolbar | canvas 内纵向滚动 settings cards，按 Unity、paths、appearance、locale、update、legacy、licenses/system 分组 | action/switch/select 与说明文字留在同一 section，页面不使用 hero |
+| Log | Log 标题 + Activity/Technical segmented selector + search/filter/open-directory | dense activity cards/list 或 technical log stream，主体自行滚动 | filter 与 auto-scroll 属于 toolbar/secondary controls；details 就地展开 |
+| Discord | 标准标题 toolbar | 紧凑 status/config cards；宽屏可用信息/预览双列，但仍在同一 canvas | connect/enable/test 等动作留在对应 section，不形成独立 admin landing |
+| Extensions | 标准 Extensions toolbar | sidebar-order card + installed/available sections；extension items为密集 list/card grid | visibility/reorder/enable/action 与 extension item 同位；Portable UI 是 detail，不拥有应用 chrome |
+
+这些页面共享的事实不是“每页都做卡片”，而是 `page toolbar -> 一块主要工作内容 -> 必要时局部 secondary controls/dialog`。
+卡片只表达确有边界的设置组、extension item 或项目卡，不把每个标题和字段再次套入嵌套 surface。
+
+## G. v3 component/layout vocabulary
+
+以下名称只用于 M7 implementation vocabulary，不构成公共 UI framework 或 Extension UI 合同：
+
+| vocabulary | v3 可见职责 | 不得演变为 |
+|---|---|---|
+| `AppShell` | 原生标题栏下的 sidebar + content canvas | 全局 Web header + dashboard body |
+| `Sidebar` | 常规 260 px、可 compact 的持久一级导航 | admin 分组树 |
+| `SidebarItem` | 48 px icon + label row，selected full pill | route/domain 自动生成器 |
+| `SidebarUtilityItem` | Extensions、version/update、warning 等底部项 | 第二套 top-bar utility nav |
+| `ContentCanvas` | 填满剩余窗口的大圆角 surface | centered max-width page card |
+| `PageToolbar` | 页面标题、search/context actions、primary action | hero/header banner |
+| `SearchField` | toolbar 中可伸展搜索 | 独立搜索页面 |
+| `ToolbarAction` | refresh/view/overflow 等局部动作 | 通用 command bus |
+| `SecondaryToolbar` | grid sort、table filter 等紧凑第二行控件 | 大型 filter panel |
+| `DenseGrid` | 1/2/3 列项目或 tool items | marketing card gallery |
+| `DenseList` | 可滚动的短行列表 | 无限嵌套 feed |
+| `ProjectCard` | project identity、metadata、常用 actions | project dashboard |
+| `DataTable` | sticky sortable header + dense rows | 自有通用 data-grid framework |
+| `SettingsSection` | 同主题字段、说明和 action 的局部 surface | 每字段一张卡 |
+| `LogView` | segmented activity/technical stream | 独立 analytics dashboard |
+| `ContextActions` | row/card/project toolbar 的主次动作与 overflow | 全局 action palette |
+| `ProgressDialog` | review/progress/cancel/minimize 的 modal host | 第二套 Operation engine |
+
+## H. MD3 translation contract for Visual Gate 1
+
+| v3 element | v4 MD3 expression | preserved relationship |
+|---|---|---|
+| selected sidebar row | selected state/container + Material state layer | full-row pill、icon-label spacing、48 px rhythm |
+| content canvas | `surface-container` family + large shape | fills remaining window、12 px outer margin、24 px inset |
+| page title | MD3 title typography | 24 px class hierarchy；no eyebrow/display hero |
+| Create Project | Material Web filled Button | toolbar far right、split/adjacent menu semantics |
+| search | Material Web TextField | between refresh and view control、flex-grow |
+| grid sorting | Material Web Select + icon action | compact secondary toolbar immediately above grid |
+| project row/card | MD3 surface/color/state/shape | dense metadata and action hierarchy unchanged |
+| create/register flow | Material Web Dialog and fields | invoked from toolbar; never persistent page form |
+| refresh/view actions | Material Web Button/IconButton state/ripple/focus | remain in page toolbar, no global header |
+
+Visual Gate 1 的 first runnable slice 只实现 wide desktop 的 `AppShell + Sidebar + ContentCanvas + Projects PageToolbar +
+SecondaryToolbar + Dense Project Content`。其他页面分析只冻结后续共同空间语言，不授权同时修改它们。至少 Button、TextField、
+Select 必须经 `@alcomd/ui` 渲染真实 Material Web 2.5.0 元素，并以可观察的 focus/state/disabled/ripple 证据验收。

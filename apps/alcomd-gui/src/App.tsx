@@ -40,6 +40,7 @@ import {
     PortableUiConsumerError,
     acceptSnapshot
 } from "./portable-ui";
+import { Button } from "./Material";
 import { guiRpcClient, type GuiRpcClient } from "./rpc";
 import type { SettingsGetResult } from "./core-models";
 
@@ -78,7 +79,7 @@ export function App({ client = guiRpcClient }: AppProps) {
     const [appearance, setAppearance] = useState<AppearanceSettings>(defaultAppearance);
     const [locale, setLocale] = useState(() => preferredLocale(navigator.language));
     const dirtyRef = useRef(false);
-    const navigationToggleRef = useRef<HTMLButtonElement>(null);
+    const navigationToggleRef = useRef<HTMLElement>(null);
     const handleDirtyChange = useCallback((dirty: boolean) => {
         dirtyRef.current = dirty;
     }, []);
@@ -154,7 +155,7 @@ export function App({ client = guiRpcClient }: AppProps) {
         };
         window.addEventListener("keydown", onKeyDown);
         const focusTimer = window.setTimeout(() => {
-            const currentItem = document.querySelector<HTMLElement>("#primary-navigation nav .navigation-item[aria-current='page']");
+            const currentItem = document.querySelector<HTMLElement>("#primary-navigation nav .navigation-item[data-aria-current='page']");
             const firstItem = document.querySelector<HTMLElement>("#primary-navigation nav .navigation-item");
             (currentItem ?? firstItem)?.focus();
         }, 0);
@@ -177,24 +178,18 @@ export function App({ client = guiRpcClient }: AppProps) {
 
     return (
         <div className="app-shell">
-            <header className="top-app-bar">
-                <button
+            <div className="app-body">
+                <Button
                     aria-controls="primary-navigation"
                     aria-expanded={navigationOpen}
                     className="navigation-toggle"
                     onClick={() => setNavigationOpen((current) => !current)}
                     ref={navigationToggleRef}
                     type="button"
+                    variant="text"
                 >
-                    <span aria-hidden="true">☰</span><span className="visually-hidden">Toggle navigation</span>
-                </button>
-                <button className="brand-button" onClick={() => navigateRoute({ kind: "projects" })} type="button">
-                    <span className="brand-mark" aria-hidden="true">A</span>
-                    <span><strong>ALCOMD3</strong><small>{productFamily} platform</small></span>
-                </button>
-                <span className="shell-current-area">{sectionLabel(routeSection(route))}</span>
-            </header>
-            <div className="app-body">
+                    Menu
+                </Button>
                 {navigationOpen ? <button aria-hidden="true" className="navigation-scrim" onClick={() => setNavigationOpen(false)} tabIndex={-1} type="button" /> : null}
                 <PrimaryNavigation
                     client={client}
@@ -222,45 +217,38 @@ export function App({ client = guiRpcClient }: AppProps) {
 }
 
 function PrimaryNavigation({ client, current, navigate, onClose, open }: { client: GuiRpcClient; current: Route; navigate(path: string): void; onClose(): void; open: boolean }) {
-    const groups = [
-        {
-            label: "Workspace",
-            items: [
-                ["/projects", "Projects", "projects"],
-                ["/repositories", "Packages & Templates", "packages"],
-                ["/extensions", "Extensions", "extensions"]
-            ]
-        },
-        {
-            label: "System",
-            items: [
-                ["/settings", "Settings", "settings"],
-                ["/activity", "Log", "log"]
-            ]
-        }
+    const items = [
+        ["/projects", "Projects", "projects"],
+        ["/repositories", "Packages & Templates", "packages"],
+        ["/settings", "Settings", "settings"],
+        ["/activity", "Log", "log"]
     ] as const;
     return (
         <aside className={`primary-navigation${open ? " primary-navigation--open" : ""}`} id="primary-navigation" onKeyDown={(event) => {
             if (open) keepFocusInside(event);
         }}>
             <a className="skip-link" href="#main-content">Skip to content</a>
-            <button aria-label="Close navigation" className="navigation-close" onClick={onClose} type="button">×</button>
+            <Button className="navigation-close" onClick={onClose} type="button" variant="text">Close</Button>
             <nav aria-label="Primary">
-                {groups.map((group) => (
-                    <section className="navigation-group" key={group.label}>
-                        <h2>{group.label}</h2>
-                        {group.items.map(([path, label, section]) => (
-                            <button
-                                aria-current={routeSection(current) === section ? "page" : undefined}
-                                className="navigation-item"
-                                key={path}
-                                onClick={() => navigate(path)}
-                                type="button"
-                            >{label}</button>
-                        ))}
-                    </section>
+                {items.map(([path, label, section]) => (
+                    <Button
+                        aria-current={routeSection(current) === section ? "page" : undefined}
+                        className="navigation-item"
+                        key={path}
+                        onClick={() => navigate(path)}
+                        type="button"
+                        variant="text"
+                    >{label}</Button>
                 ))}
             </nav>
+            <div className="navigation-spacer" />
+            <Button
+                aria-current={routeSection(current) === "extensions" ? "page" : undefined}
+                className="navigation-item navigation-item--extension"
+                onClick={() => navigate("/extensions")}
+                type="button"
+                variant="text"
+            >Extensions</Button>
             <NavigationUtilities client={client} current={current} navigate={navigate} />
         </aside>
     );
@@ -283,24 +271,26 @@ function NavigationUtilities({ client, current, navigate }: { client: GuiRpcClie
     }, [client, current.kind]);
     return (
         <footer className="navigation-utilities">
-            <button
+            <Button
                 aria-current={routeSection(current) === "tasks" ? "page" : undefined}
                 className="navigation-item navigation-item--utility"
                 onClick={() => navigate("/operations")}
                 type="button"
+                variant="text"
             >
                 <span>Task Center</span>
                 {summary.activeTasks === 0 ? null : <span className="task-count">{summary.activeTasks} active</span>}
-            </button>
-            <button
+            </Button>
+            <Button
                 aria-current={routeSection(current) === "about" ? "page" : undefined}
                 className="navigation-item navigation-item--utility"
                 onClick={() => navigate("/about")}
                 type="button"
+                variant="text"
             >
                 <span>About</span>
                 {summary.daemonVersion === undefined ? null : <span className="utility-detail">{summary.daemonVersion}</span>}
-            </button>
+            </Button>
         </footer>
     );
 }

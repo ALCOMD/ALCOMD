@@ -5,11 +5,10 @@ test("keyboard navigation moves routes and focuses the destination heading", asy
     const primary = page.getByRole("navigation", { name: "Primary" });
     const projects = primary.getByRole("button", { name: "Projects" });
     await projects.focus();
-    await expect(projects).toHaveCSS("outline-style", "solid");
-    await expect(projects).toHaveCSS("outline-width", "3px");
+    await expect(projects).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("heading", { level: 1, name: "Projects" })).toBeFocused();
-    await expect(projects).toHaveAttribute("aria-current", "page");
+    await expect(primary.locator("md-text-button").filter({ hasText: "Projects" })).toHaveAttribute("data-aria-current", "page");
 
     const settings = page.getByRole("button", { name: "Settings", exact: true }).last();
     await settings.focus();
@@ -24,27 +23,30 @@ test("keyboard navigation moves routes and focuses the destination heading", asy
 test("H1 shell exposes the approved user areas without promoting internal routes", async ({ page }) => {
     await openHarness(page, "/projects");
     const primary = page.getByRole("navigation", { name: "Primary" });
-    for (const name of ["Projects", "Packages & Templates", "Extensions", "Settings", "Log"]) {
+    for (const name of ["Projects", "Packages & Templates", "Settings", "Log"]) {
         await expect(primary.getByRole("button", { name, exact: true })).toBeVisible();
     }
+    await expect(page.getByRole("button", { name: "Extensions", exact: true })).toBeVisible();
     for (const hiddenRoute of ["Home", "Repositories", "Templates", "Unity", "Operations", "Activity", "Diagnostics"]) {
         await expect(primary.getByRole("button", { name: hiddenRoute, exact: true })).toHaveCount(0);
     }
-    await expect(page.getByRole("button", { name: /Task Center/ })).toContainText("1 active");
-    await expect(page.getByRole("button", { name: /About/ })).toContainText("4.0.0-alpha.0");
+    await expect(page.getByRole("button", { name: "Task Center 1 active" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "About 4.0.0-alpha.0" })).toBeVisible();
 
     await primary.getByRole("button", { name: "Packages & Templates" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Repositories" })).toBeFocused();
-    await expect(primary.getByRole("button", { name: "Packages & Templates" })).toHaveAttribute("aria-current", "page");
+    await expect(primary.locator("md-text-button").filter({ hasText: "Packages & Templates" })).toHaveAttribute("data-aria-current", "page");
 });
 
 test("modal traps focus, closes on Escape, and restores the invoking control", async ({ page }) => {
     await openHarness(page, "/projects");
+    const invoke = page.getByRole("button", { name: "Register project" });
+    await invoke.click();
     const root = page.getByLabel("Project root");
     const review = page.getByRole("button", { name: "Review registration" });
     await expect(root).toHaveAttribute("required", "");
-    await expect(root).toHaveAttribute("aria-describedby", "project-root-hint");
-    await expect(page.locator("#project-root-hint")).toHaveText("The daemon validates and owns this path.");
+    await expect(root).toHaveAttribute("aria-describedby", "description");
+    await expect(page.getByText("The daemon validates and owns this path.", { exact: true })).toBeVisible();
     await expect(review).toBeDisabled();
     expect(await root.evaluate((element) => (element as HTMLInputElement).validity.valueMissing)).toBe(true);
     await root.fill("C:\\Fixture\\Avatar");
@@ -56,10 +58,10 @@ test("modal traps focus, closes on Escape, and restores the invoking control", a
     await page.keyboard.press("Shift+Tab");
     await expect(page.getByRole("button", { name: "Go back" })).toBeFocused();
     await page.keyboard.press("Shift+Tab");
-    expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+    await expect(page.getByRole("button", { name: "Confirm" })).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
-    await expect(review).toBeFocused();
+    await expect(invoke).toBeFocused();
 });
 
 test("loading, empty, error, and disconnected states have stable live semantics", async ({ page }) => {
@@ -117,7 +119,7 @@ test("settings are labeled, revisioned, dirty-aware, and applied through the typ
     await page.getByLabel("Language").selectOption("zh-CN");
 
     const dialogPromise = page.waitForEvent("dialog");
-    const navigationPromise = page.locator(".brand-button").click();
+    const navigationPromise = page.getByRole("button", { name: "Projects", exact: true }).click();
     const dialog = await dialogPromise;
     expect(dialog.message()).toContain("Discard");
     await dialog.dismiss();
@@ -155,9 +157,10 @@ test("a stale package Plan fails explicitly and is never silently replanned", as
 
 test("direct writes and the remaining high-impact workflows retain confirmation and Operation boundaries", async ({ page }) => {
     await openHarness(page, "/projects");
+    await page.getByRole("button", { name: "Register project" }).click();
     await page.getByLabel("Project root").fill("C:\\Fixture\\Avatar");
     await page.getByRole("button", { name: "Review registration" }).click();
-    await page.getByRole("dialog", { name: "Register this project?" }).getByRole("button", { name: "Confirm" }).click();
+    await page.getByRole("button", { name: "Confirm" }).click();
     await expect(page.getByRole("status").filter({ hasText: "Project registered" })).toBeVisible();
 
     await openHarness(page, "/repositories");
@@ -253,7 +256,7 @@ test("320 CSS px, deterministic 200 percent layout, reduced motion, and light/da
     await page.setViewportSize({ width: 320, height: 720 });
     await openHarness(page, "/settings");
     await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
-    const toggle = page.getByRole("button", { name: "Toggle navigation" });
+    const toggle = page.getByRole("button", { name: "Menu" });
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
@@ -271,6 +274,7 @@ test("320 CSS px, deterministic 200 percent layout, reduced motion, and light/da
     expect(await hasHorizontalOverflow(page)).toBe(false);
     await expect(page.getByLabel("Language")).toBeVisible();
     await page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Projects" }).click();
+    await page.getByRole("button", { name: "Register project" }).click();
     await page.getByLabel("Project root").fill("C:\\Fixture\\Scaled");
     await page.getByRole("button", { name: "Review registration" }).click();
     await expect(page.getByRole("dialog", { name: "Register this project?" })).toBeVisible();

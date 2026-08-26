@@ -24,7 +24,7 @@ test("shared Material foundation renders real controls with React 19 interaction
 
 test("Core and Portable UI share Material controls and the same MD3 theme source", async ({ page }) => {
     await openHarness(page, "/projects");
-    await expect(page.getByRole("main").locator("md-text-button").filter({ hasText: "View project" })).toBeVisible();
+    await expect(page.getByRole("main").locator("md-text-button").filter({ hasText: "Refresh" })).toBeVisible();
     const corePrimary = await page.locator("html").evaluate((element) => getComputedStyle(element).getPropertyValue("--md-sys-color-primary").trim());
 
     await openHarness(page, "/extensions/com.cqmhv.mcp-management/ui");
