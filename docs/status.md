@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。M7 H0 Material foundation 已实现；首次 H1 shell/navigation 虽通过前端自动化验收，但被项目所有者标记为 rejected_for_visual_direction。当前正按真实 v3 发布图与冻结源码重新执行 wide Projects reference-driven prototype；其他页面、H2-H7、M8/M9 均未开始。`
+`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已在检查点 7bb325b78a74518881fb65e03de7f79902e72cd3 通过 Visual Gate 1 人工验收。当前仅执行获批的 H2-A Project workspace / Packages 窄切片并停止在 Visual Gate 2；其他 H2 内容、H3-H7、M8/M9 均未开始。`
 
 ## 已完成
 
@@ -278,8 +278,9 @@
 - 首次 H1 本地提交采用了 global top app bar、admin-style sidebar grouping、centered max-width page、hero typography 与低密度
   empty/form cards；项目所有者将其标记为 `rejected_for_visual_direction`。现改为 reference-driven implementation：先以 v3
   发布图和冻结 GUI 源码完成直接视觉拆解，再只重建 wide Projects prototype；功能/RPC/state/hooks/flows 证据不回滚。
-- 源码审计确认 locked `@material/web 2.5.0` production import 与 rendered `md-*` 均为 0；现状是
-  `material_web_dependency_present_but_component_system_not_adopted` 与 `material_theme_not_actually_wired`。H0-H7 仍只是规划。
+- reference-driven wide Projects prototype 已由项目所有者在真实 release GUI 中通过 Visual Gate 1；检查点
+  `7bb325b78a74518881fb65e03de7f79902e72cd3`。sidebar/main canvas、Projects toolbar、桌面密度及真实 Material Web
+  Button/TextField/Select 的 interaction、ripple/state layer 与 keyboard focus 均取得人工证据，但不冒充整个 M7 visual 完成。
 
 ## 后续里程碑尚未完成
 
@@ -308,8 +309,8 @@
   scheme/CSP 或三平台 WebView isolation matrix 作为产品 blocker。Portable UI production 已获批准且 B0/B1 已完成；
   Slice C official renderer、Slice D headless/security/fault conformance 与 Hosted CI 已通过；restored Official GUI Core
   surfaces/flows、Settings/Activity/Diagnostics contracts 与 Chromium browser-level accessibility 已完成本地实现和验收。
-  当前真实缺口是 reference-driven H1 wide Projects shell、Visual Gate 1，以及后续尚未批准的 H2-H7、最终候选三平台
-  Hosted CI与项目所有者最终人工验收；首次 H1 技术通过不构成视觉通过。
+  当前真实缺口是 H2-A Project workspace / Packages、Visual Gate 2，以及后续尚未批准的其他 H2-H7、最终候选三平台
+  Hosted CI与项目所有者最终人工验收。
 
 - 真实安装快照和迁移 Fixture 尚未建立；因此 artifact 模板继续保持 `confirmed = false`，
   迁移删除、GUI/模板/备份/Unity 差异测试仍 blocked。项目所有者已决定不在 M-1 继续投入
@@ -342,8 +343,9 @@
 
 M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 Portable UI B0-D 已通过 Hosted CI；Official GUI
 functional candidate `192672…` 保留技术证据但已被拒绝 visual/IA acceptance；首次 H1 也已被标记为
-`rejected_for_visual_direction`。当前只执行 v3-reference 的 wide Projects prototype，完成 first runnable screenshot 后停止
-Visual Gate 1。A/B/C不再是production候选；不得push，不得开始其他页面、H2-H7或M8/M9。
+`rejected_for_visual_direction`。替代的 v3-reference wide Projects shell 已在 `7bb325b…` 通过 Visual Gate 1。当前只执行
+H2-A Project workspace / Packages 并停止 Visual Gate 2；A/B/C不再是production候选，不得push，不得开始其他 H2、H3-H7
+或M8/M9。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential

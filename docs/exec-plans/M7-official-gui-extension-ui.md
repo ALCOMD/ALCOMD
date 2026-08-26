@@ -6,8 +6,9 @@
 布局缺少与 v3 可识别的产品连续性，且 `@material/web` dependency 存在但 component system 未被采用。前两轮 A/B/C IA
 探索已降为 historical；以 v3 用户模型为默认的 minimum-change proposal 已通过项目所有者审批。H0 Material foundation
 已形成独立本地提交；首次 H1 shell/navigation 虽通过前端自动化验收，但项目所有者判定其采用 Web dashboard/admin panel
-空间模式，状态为 `rejected_for_visual_direction`。当前只批准 reference-driven 的 v3 visual decomposition，以及仅限 wide
-desktop Projects 的新 Visual Gate 1 prototype；H2-H7 未获批准，M7仍未完成，尚未进入M8/M9。
+空间模式，状态为 `rejected_for_visual_direction`。reference-driven wide desktop Projects prototype 已由项目所有者通过
+Visual Gate 1，检查点为 `7bb325b78a74518881fb65e03de7f79902e72cd3`。当前仅批准继续 H2-A Project workspace /
+Packages 窄切片并停止在 Visual Gate 2；M7仍未完成，尚未进入M8/M9。
 
 ## 目标与完成定义
 
@@ -425,13 +426,14 @@ WebView2/update/uninstall，以及 Narrator/VoiceOver/Linux screen-reader 和真
 
 1. **H0 Material foundation（已批准）**：`@alcomd/ui` 封装审计中真实需要的 Material Web components；接通真实 MD3 color/type/shape/
    elevation/state tokens；验证 React 19 integration、interaction/ripple、component accessibility 和Core/Portable共用层。
-2. **H1 v3-reference Projects shell/navigation（重新执行中）**：首次实现因 global top app bar、admin-style sidebar grouping、
+2. **H1 v3-reference Projects shell/navigation（Visual Gate 1 已通过）**：首次实现因 global top app bar、admin-style sidebar grouping、
    centered max-width page、hero typography、giant empty/form cards 与过低桌面密度被标记为
    `rejected_for_visual_direction`。重新执行必须先完成 `docs/gui/alcomd3-v3-layout-baseline.md` 的直接视觉拆解，再只实现
    wide desktop 的 recognizable sidebar/content canvas、Projects page toolbar、sort/filter 与 dense content。narrow adaptive
    不能反向决定本 gate 的宽屏结构；完成 first runnable prototype 后立即停止 Visual Gate 1。
-3. **H2 Projects/Packages & Templates（未批准）**：实现 Projects header/list-grid/create、Project package-centric workspace、v3 resource
-   grouping 与 repository/template dense table/list；完成 Visual Gate 2。
+3. **H2 Projects/Packages & Templates（仅 H2-A 获批）**：当前只实现 Project package-centric workspace 的 Packages 默认主内容、
+   dense package table、project-context Plan/Apply/Operation 与真实 Unity/Backup secondary actions；repository/template 页面和
+   其他 H2 内容仍未批准。H2-A 完成后停止 Visual Gate 2。
 4. **H3 contextual v4 enhancements（未批准）**：把global/project Unity、Backups 与 Operations增强嵌入既有Settings/Project/progress workflow，不改
    Plan/Apply/Operation；完成 Visual Gate 3 的第一部分。
 5. **H4 Extensions/Portable UI（未批准）**：保留Extensions既有用户概念和utility归属；permission/quarantine/Portable UI位于detail，host
@@ -516,9 +518,14 @@ Activity、Diagnostics 或 Portable UI authority。
 - 2026-08-26：项目所有者在真实 GUI 中拒绝首次 H1 的视觉方向，分类为 `rejected_for_visual_direction`；技术 gate 不冒充
   visual acceptance。停止对该 shell 的补丁式修改，改为以 v3 发布图和冻结 GUI 源码为直接 reference，先形成 Projects 的
   relative geometry、其他主要页面、共同 component/layout vocabulary 与 MD3 translation，再仅重建 wide Projects prototype。
+- 2026-08-26：项目所有者以真实 v3 Projects reference 和真实 release GUI 对照，人工确认新的 wide desktop shell、sidebar/
+  main canvas、Projects toolbar、桌面密度及 Material Web Button/TextField/Select 的 interaction、ripple/state layer 与 keyboard
+  focus；Visual Gate 1 为 `PASS`。独立检查点 `7bb325b78a74518881fb65e03de7f79902e72cd3`，该结论不代表整个 M7 visual
+  acceptance 完成。获批下一步仅为 H2-A Project workspace / Packages。
 
 ## 下一停止点
 
-完成 reference-driven wide Projects first runnable prototype 后立即停止在 Visual Gate 1，运行真实 daemon+GUI，并以 v3
-reference、新 v4 screenshot、sidebar/main canvas/toolbar/density 对照及真实 Material Button/TextField/Select/ripple 证据等待项目
-所有者签收。不得继续其他页面、narrow redesign 或 H2-H7，不得 push，不得进入 M8/M9，也不得 amend 已有历史。
+完成 H2-A Project workspace / Packages 后立即停止在 Visual Gate 2，运行真实 daemon+release GUI，并以安全注册的
+disposable/synthetic Project 展示 workspace、populated package list、search/filter、toolbar、Unity/Backup context actions、package
+action state，以及安全可触发时的 Plan review/Operation。不得继续 repository/template 或其他页面，不得 push，不得进入 M8/M9，
+也不得 amend 已有历史。
