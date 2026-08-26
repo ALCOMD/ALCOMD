@@ -1,4 +1,5 @@
 import { materialElements } from "@alcomd/ui";
+import type { IconAsset } from "@alcomd/ui/icons";
 import {
     createElement,
     forwardRef,
@@ -6,6 +7,7 @@ import {
     useRef,
     type ButtonHTMLAttributes,
     type ChangeEvent,
+    type CSSProperties,
     type FormEvent,
     type HTMLAttributes,
     type ReactNode,
@@ -22,6 +24,22 @@ type MaterialElement = HTMLElement & {
 };
 
 type MaterialProps = HTMLAttributes<HTMLElement> & Record<string, unknown>;
+
+export function Icon({ asset, className, size = 20, slot }: { asset: IconAsset; className?: string; size?: 20 | 24; slot?: string }) {
+    const style = {
+        "--alcomd-icon-size": `${size}px`,
+        "--alcomd-icon-url": `url("${asset.url}")`
+    } as CSSProperties;
+    return (
+        <span
+            aria-hidden="true"
+            className={["alcomd-icon", className].filter(Boolean).join(" ")}
+            data-filled={asset.filled ? "true" : "false"}
+            slot={slot}
+            style={style}
+        />
+    );
+}
 
 export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "ref"> {
     variant?: "filled" | "tonal" | "text";

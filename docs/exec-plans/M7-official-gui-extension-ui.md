@@ -396,8 +396,9 @@ feature-parity.toml
 specs/config/ specs/extensions/ specs/gui/ specs/rpc/ specs/security/ specs/storage/
 ```
 
-唯一 manifest/lock 例外是获批的 `apps/alcomd-gui/package.json` exact devDependency `@playwright/test = 1.62.1` 与根
-`package-lock.json` 正常 Playwright closure。其余 Cargo/npm manifest/lock、dependency graph、unsafe whitelist、platform API、
+manifest/lock 例外只有获批的 `apps/alcomd-gui/package.json` exact devDependency `@playwright/test = 1.62.1`、
+`packages/alcomd-ui/package.json` exact production asset dependency `@material-symbols/svg-400 = 0.47.0`，以及根
+`package-lock.json` 对应的零传递 Material Symbols record 与正常 Playwright closure。其余 Cargo/npm manifest/lock、dependency graph、unsafe whitelist、platform API、
 Tauri unstable/capability、iframe/child WebView/WebviewWindow 以及任何 M8/M9 production wiring 仍禁止。
 
 ## 明确排除
@@ -412,7 +413,8 @@ Tauri unstable/capability、iframe/child WebView/WebviewWindow 以及任何 M8/M
 
 每个 production slice 运行 targeted tests；最终候选运行 format/clippy/workspace tests、xtask、metadata、baseline freeze、
 npm check/build、Playwright Chromium browser suite、Tauri no-bundle 与 diff check。必须证明除获批 Playwright dev-only closure
-外 Cargo/npm manifests与三份 lockfile依赖图不变、production Vite bundle不含 Playwright、unsafe/platform API 不变。
+和 Material Symbols 单一零传递 production asset record 外 Cargo/npm manifests与三份 lockfile依赖图不变、production Vite
+bundle不含 Playwright或完整 icon corpus、unsafe/platform API 不变。
 
 后续 first-party private node/page/command/permission、partial v1 renderer、GUI-to-Host direct channel、renderer作为business
 authority均是M7 blocker。
@@ -522,6 +524,9 @@ Activity、Diagnostics 或 Portable UI authority。
   main canvas、Projects toolbar、桌面密度及 Material Web Button/TextField/Select 的 interaction、ripple/state layer 与 keyboard
   focus；Visual Gate 1 为 `PASS`。独立检查点 `7bb325b78a74518881fb65e03de7f79902e72cd3`，该结论不代表整个 M7 visual
   acceptance 完成。获批下一步仅为 H2-A Project workspace / Packages。
+- 2026-08-26：项目所有者批准唯一 production UI asset dependency `@material-symbols/svg-400 = 0.47.0`，冻结
+  Material Symbols Rounded/weight 400、default fill 0、selected navigation fill 1、`@alcomd/ui` ownership、显式
+  `?url` import 与 CSS mask。动态字符串 registry、remote font/CDN、SVGR 和第二套通用 icon language 保持禁止。
 
 ## 下一停止点
 

@@ -9,6 +9,9 @@ ALCOMD v4 自有代码统一使用 `AGPL-3.0-only`，但第三方依赖与资产
   Creative Commons Attribution 4.0 International；完整条款见
   `apps/alcomd-gui/icon-LICENSE`，来源提交、原始摘要与生成文件摘要见
   `docs/baselines/asset-provenance.toml`。
+- Official GUI 使用由 `@material-symbols/svg-400` package 提供并实际打入产品的 Material Symbols SVG。
+  npm package 由 `marella/material-symbols` 维护并自动同步 Google Material Symbols；图标来源为 Google
+  Material Symbols，采用 Apache License 2.0。该 npm package 不是 Google 官方 npm 发行。
 
 构建依赖的许可证记录由 Cargo 与 npm lockfile 保留，发行前必须生成完整依赖清单。
 

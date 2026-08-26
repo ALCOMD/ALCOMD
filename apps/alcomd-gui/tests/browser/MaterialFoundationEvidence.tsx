@@ -1,6 +1,7 @@
 import { useState } from "react";
+import { projectsIcon } from "@alcomd/ui/icons";
 
-import { Button, Checkbox, Dialog, IconButton, Progress, Select, Switch, TextField } from "../../src/Material";
+import { Button, Checkbox, Dialog, Icon, IconButton, Progress, Select, Switch, TextField } from "../../src/Material";
 
 export function MaterialFoundationEvidence() {
     const [dialogOpen, setDialogOpen] = useState(false);
@@ -13,7 +14,7 @@ export function MaterialFoundationEvidence() {
             <h1 id="material-evidence-title">Material foundation evidence</h1>
             <Button onClick={() => setDialogOpen(true)}>Open dialog</Button>
             <Button disabled variant="tonal">Disabled action</Button>
-            <IconButton label="Refresh evidence">↻</IconButton>
+            <IconButton label="Project evidence"><Icon asset={projectsIcon} /></IconButton>
             <TextField label="Project name" onInput={setName} supportingText="Host-owned test value" value={name} />
             <Select label="Project type" onChange={setKind} options={[
                 { label: "Avatar", value: "avatar" },

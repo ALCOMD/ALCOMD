@@ -43,6 +43,23 @@
     --alcomd-space: 20px;
 }
 
+.alcomd-icon {
+    display: inline-block;
+    width: var(--alcomd-icon-size, 20px);
+    height: var(--alcomd-icon-size, 20px);
+    flex: 0 0 auto;
+    vertical-align: middle;
+    background-color: currentColor;
+    mask-image: var(--alcomd-icon-url);
+    mask-position: center;
+    mask-repeat: no-repeat;
+    mask-size: contain;
+    -webkit-mask-image: var(--alcomd-icon-url);
+    -webkit-mask-position: center;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-size: contain;
+}
+
 :root[data-source-color="blue"] {
     --md-sys-color-primary: #315da8;
     --md-sys-color-primary-container: #d9e2ff;

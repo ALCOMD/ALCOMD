@@ -10,6 +10,19 @@ import {
     productFamily,
     type AppearanceSettings
 } from "@alcomd/ui";
+import {
+    extensionIcon,
+    extensionSelectedIcon,
+    logIcon,
+    logSelectedIcon,
+    packagesIcon,
+    packagesSelectedIcon,
+    projectsIcon,
+    projectsSelectedIcon,
+    settingsIcon,
+    settingsSelectedIcon,
+    type IconAsset
+} from "@alcomd/ui/icons";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -40,7 +53,7 @@ import {
     PortableUiConsumerError,
     acceptSnapshot
 } from "./portable-ui";
-import { Button } from "./Material";
+import { Button, Icon } from "./Material";
 import { guiRpcClient, type GuiRpcClient } from "./rpc";
 import type { SettingsGetResult } from "./core-models";
 
@@ -217,12 +230,12 @@ export function App({ client = guiRpcClient }: AppProps) {
 }
 
 function PrimaryNavigation({ client, current, navigate, onClose, open }: { client: GuiRpcClient; current: Route; navigate(path: string): void; onClose(): void; open: boolean }) {
-    const items = [
-        ["/projects", "Projects", "projects"],
-        ["/repositories", "Packages & Templates", "packages"],
-        ["/settings", "Settings", "settings"],
-        ["/activity", "Log", "log"]
-    ] as const;
+    const items: readonly NavigationItem[] = [
+        { icon: projectsIcon, label: "Projects", path: "/projects", section: "projects", selectedIcon: projectsSelectedIcon },
+        { icon: packagesIcon, label: "Packages & Templates", path: "/repositories", section: "packages", selectedIcon: packagesSelectedIcon },
+        { icon: settingsIcon, label: "Settings", path: "/settings", section: "settings", selectedIcon: settingsSelectedIcon },
+        { icon: logIcon, label: "Log", path: "/activity", section: "log", selectedIcon: logSelectedIcon }
+    ];
     return (
         <aside className={`primary-navigation${open ? " primary-navigation--open" : ""}`} id="primary-navigation" onKeyDown={(event) => {
             if (open) keepFocusInside(event);
@@ -230,16 +243,22 @@ function PrimaryNavigation({ client, current, navigate, onClose, open }: { clien
             <a className="skip-link" href="#main-content">Skip to content</a>
             <Button className="navigation-close" onClick={onClose} type="button" variant="text">Close</Button>
             <nav aria-label="Primary">
-                {items.map(([path, label, section]) => (
-                    <Button
-                        aria-current={routeSection(current) === section ? "page" : undefined}
-                        className="navigation-item"
-                        key={path}
-                        onClick={() => navigate(path)}
-                        type="button"
-                        variant="text"
-                    >{label}</Button>
-                ))}
+                {items.map((item) => {
+                    const selected = routeSection(current) === item.section;
+                    return (
+                        <Button
+                            aria-current={selected ? "page" : undefined}
+                            className="navigation-item"
+                            key={item.path}
+                            onClick={() => navigate(item.path)}
+                            type="button"
+                            variant="text"
+                        >
+                            <Icon asset={selected ? item.selectedIcon : item.icon} slot="icon" />
+                            {item.label}
+                        </Button>
+                    );
+                })}
             </nav>
             <div className="navigation-spacer" />
             <Button
@@ -248,10 +267,24 @@ function PrimaryNavigation({ client, current, navigate, onClose, open }: { clien
                 onClick={() => navigate("/extensions")}
                 type="button"
                 variant="text"
-            >Extensions</Button>
+            >
+                <Icon
+                    asset={routeSection(current) === "extensions" ? extensionSelectedIcon : extensionIcon}
+                    slot="icon"
+                />
+                Extensions
+            </Button>
             <NavigationUtilities client={client} current={current} navigate={navigate} />
         </aside>
     );
+}
+
+interface NavigationItem {
+    readonly icon: IconAsset;
+    readonly label: string;
+    readonly path: string;
+    readonly section: "projects" | "packages" | "settings" | "log";
+    readonly selectedIcon: IconAsset;
 }
 
 function NavigationUtilities({ client, current, navigate }: { client: GuiRpcClient; current: Route; navigate(path: string): void }) {

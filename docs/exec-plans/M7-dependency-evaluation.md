@@ -126,3 +126,95 @@ Playwright只能提供 DOM/browser evidence，不能证明 WKWebView/WebKitGTK/T
 `ead52597d90d5dc02d780e20edcf737a5c673ef46be7f967ed2c3fd4f5984639`。Windows 本地使用
 `npx playwright install chromium` 安装 package-matched Chromium 与 headless shell revision `1234`；同时取得 Playwright
 测试工具所需的 `ffmpeg-1011` 与 `winldd-1007`，这些均位于用户测试缓存，不进入 repository、production bundle 或发行资产。
+
+## 2026-08-26 Material Symbols icon foundation candidate
+
+状态：项目所有者已批准 production dependency 与 icon contract；exact dependency 已落盘并完成 lock closure 审计。
+
+推荐 exact dependency：
+
+```json
+"@material-symbols/svg-400": "0.47.0"
+```
+
+- placement：只作为 `packages/alcomd-ui` 的 direct production dependency；business page 不得直接 import
+  `@material-symbols/svg-400`。
+- registry live metadata（2026-08-26）：license `Apache-2.0`，零 dependency，零 install/build script，npm tarball
+  1,915,158 bytes，unpacked 13,020,796 bytes，共 23,421 files；integrity
+  `sha512-M3vW/MQCkr7NlN+1D9LDwRiKJeUjXbUB/O3gqPExNFAz1Vk/IFr0Ajlhr/lXVti46yhWknooVKAYMQj4o1VE3w==`。
+- source/maintenance：`marella/material-symbols` 自动从 Google Material Symbols 更新并发布三种 style 的 weight-400
+  SVG。它是社区维护的 npm packaging，不应描述为 Google 官方 npm publisher；自动更新频繁，因此必须 exact pin，升级重新审计。
+- isolated lock probe：使用 `npm install --package-lock-only --ignore-scripts --no-audit --no-fund` 和 exact version
+  得到唯一 package record；无 transitive closure、native addon 或 build script。若获批，预期 root `package-lock.json`
+  只增加该 exact package record，三份 Cargo lock 不变；出现其他 package 必须停止。
+
+### 建议冻结的 icon contract
+
+- visual language：统一使用 **Material Symbols Rounded，weight 400**；普通 navigation/action 使用 fill 0，只有 selected
+  navigation 或具有明确 on/off 状态的控件可使用对应 `-fill.svg`。不混用 Material Symbols Outlined、Lucide、Heroicons
+  或第二套通用 icon language。
+- ownership：`@alcomd/ui` 通过显式、静态、逐图标 import 提供 named icon exports/shared icon primitive；business
+  page 只依赖 `@alcomd/ui`。不得建立 `string -> icon` 动态 registry、目录 glob 或 runtime path 拼接。
+- rendering：优先以 `?url` 静态导入 SVG，并在 shared icon primitive 中使用 CSS mask + `currentColor`；不使用
+  `dangerouslySetInnerHTML`，不引入 SVGR。装饰图标为 `aria-hidden`，icon-only control 的 accessible name 由 control
+  提供。
+- offline：所有 SVG 进入本地 npm/install/build graph；不得使用 Google Fonts、远程 stylesheet、远程 font 或运行时网络请求。
+- size gate：只允许显式 import 实际使用图标；每次新增图标都应能从 `@alcomd/ui` 的静态 import 和 shipping bundle
+  中审计。selected navigation 的 filled variant 是独立资产，也必须显式 import。
+- sizing：navigation/dense control 默认 20 px，primary button/icon button 默认 24 px；本包 SVG 固定 optical-size 48，
+  缩放后的笔画密度必须继续经过 real GUI visual gate，不把 package choice 当作视觉验收。
+
+### Vite 与实际 bundle probe
+
+当前 GUI 使用 Vite 7.3.6，现有配置无需 SVG loader。隔离 probe 以 `?url` 显式导入四个 Rounded SVG
+（`folder`、`folder-fill`、`search`、`settings`）并用 CSS mask 渲染：
+
+- `vite build` 成功，未新增 dependency 或 manifest 变更；
+- 只处理四个 reachable assets，没有把 23,421-file catalog 打入产物；
+- 四个 SVG 均小于 Vite 默认 4096-byte inline limit，因此成为四个 `data:image/svg+xml` URL；没有 emitted `.svg`；
+- probe output 为 `index.html` 349 bytes 和 JavaScript 3,810 bytes（Vite 报告 gzip 1.73 kB）。
+
+这里的保证来自 Vite static asset graph 与显式 import，不应称为 package entrypoint 的 JavaScript tree-shaking。
+若改为 glob、dynamic registry 或 directory import，就失去“只打包实际使用图标”的可审计保证。
+
+### Variable-font alternative
+
+同版本的 font alternatives 均为 `Apache-2.0` 且零 dependency：
+
+| candidate | Rounded shipping asset | unpacked package | conclusion |
+|---|---:|---:|---|
+| `@material-symbols/font-400@0.47.0` | `material-symbols-rounded.woff2` 567,372 B | 1,609,395 B | 即使只 import Rounded，也为固定约 554 KiB；仅 FILL 可变 |
+| `material-symbols@0.47.0` | `material-symbols-rounded.woff2` 5,352,780 B | 12,918,328 B | 支持 FILL/weight/grade/optical-size，但当前 GUI 代价过高 |
+
+当前 desktop GUI 的实际 icon set 远小于完整字体，因此 SVG candidate 在 offline、按需资产和 bundle 可审计性上更合适。
+若未来图标数量增长到字体更有优势，必须以真实 shipping bundle 重新评估，不能现在预装完整字体。
+
+### Rounded 与 v3 continuity
+
+v3 readonly GUI 使用 Lucide line icons，视觉特征是轻量、圆润、未填充，并配合 rounded navigation container。
+M7 不继续引入 Lucide；Material Symbols Rounded fill 0 比 Material Symbols Outlined 更接近 v3 的柔和轮廓，同时与当前
+MD3 rounded surfaces 连续。selected navigation 可用同名 fill 1 增强状态，但普通 action 保持 fill 0，避免界面从 v3 的
+轻量 icon density 突然转为大面积实心符号。
+
+Rounded/Outlined 的判断是视觉连续性建议，不是像素复刻。最终 icon size、alignment、selected fill 与文本基线仍须在
+Windows real GUI visual gate 中人工验收。
+
+### 审批点
+
+项目所有者已批准：
+
+1. exact dependency `@material-symbols/svg-400 = 0.47.0`；
+2. dependency placement 为 `packages/alcomd-ui`；
+3. 上述 Rounded/weight 400、静态 named import、CSS mask、selected fill 和 offline contract。
+
+安装前按 registry live metadata 重新核验 exact version、integrity、license、dependencies 与 scripts，结果与评估一致。
+安装前根 `package-lock.json` SHA-256 为
+`7e143c8ecd505befc9b42804f362489f2093e254c7b6bb221d9497ce043102c1`；安装后为
+`48d32aae0ce5a290c0dc4ee2ff3c5baa3c3cc506a203ac5dd1a908c8f20f8aca`。新增 package record 只有
+`node_modules/@material-symbols/svg-400` 0.47.0；`packages/alcomd-ui` workspace record 只增加同一 direct dependency。
+没有删除 package record、版本变化、传递 dependency、native addon 或 install/build script。
+
+供应链记录：source 为 npm registry package `@material-symbols/svg-400@0.47.0`，package repository 为
+`marella/material-symbols`，icon origin 为 Google Material Symbols，license 为 `Apache-2.0`，lock integrity 为
+`sha512-M3vW/MQCkr7NlN+1D9LDwRiKJeUjXbUB/O3gqPExNFAz1Vk/IFr0Ajlhr/lXVti46yhWknooVKAYMQj4o1VE3w==`。
+未来任何 patch/minor upgrade 都重新执行 dependency audit。
