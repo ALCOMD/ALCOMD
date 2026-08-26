@@ -3,9 +3,9 @@
 状态：Portable UI B0-D production candidate `aa1323430252ed21995284a7b36dd36e45a15e0a` 已通过 Hosted CI
 `32877438910`。Official GUI functional candidate `19267230507071dc61ba306b98c8cfdd113e9ea2` 完成 E1-G1/G3
 生产实现与本地自动化验收，但项目所有者在正式 checklist 开始前拒绝其 visual/information architecture acceptance：其宏观
-布局缺少与 v3 可识别的产品连续性，且 `@material/web` dependency 存在但 component system 未被采用。第二轮只完成对早期
-过度机械解释的纠正、divergence budget 与三个 IA 候选；项目所有者尚未选择目标，H0-H7 尚未获 production approval。M7
-仍未完成，尚未进入 M8/M9。
+布局缺少与 v3 可识别的产品连续性，且 `@material/web` dependency 存在但 component system 未被采用。前两轮 A/B/C IA
+探索已降为 historical；当前只形成以 v3 用户模型为默认的 minimum-change proposal，等待项目所有者审批。H0-H7 尚未获
+production approval，M7 仍未完成，尚未进入 M8/M9。
 
 ## 目标与完成定义
 
@@ -33,7 +33,7 @@ M7 完成需要：
 2. official GUI 完整覆盖 M1-M7 已真实发布的 GUI-relevant application/RPC use case；
 3. 统一实现 navigation、route、responsive shell、typed adapter、页面状态、Plan review、Apply、Operation follow 与恢复；
 4. 实现获批的 Config Schema v1、`settings.get`/`settings.update`、`activity.list` 与 `diagnostics.list`；
-5. Chromium browser-level DOM/component accessibility automation，以及 A-033 所要求的 v3 macro layout、Material component
+5. Chromium browser-level DOM/component accessibility automation，以及 A-033 所要求的 v3 user-model continuity、Material component
    behavior、分阶段截图和一次真实交互桌面的视觉/流程/键盘焦点签收完成；
 6. 本地完整 gate 和最终提交自身的 Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted CI 通过；
 7. 项目所有者完成人工验收。
@@ -236,11 +236,15 @@ Official GUI 的宏观 information architecture 受 A-033 约束。冻结参考�
 - `docs/gui/m7-layout-mapping.md`；
 - `docs/gui/m7-current-layout-gap.md`；
 - `docs/gui/m7-material-component-audit.md`；
-- `docs/gui/m7-information-architecture-candidates.md`。
+- `docs/gui/m7-user-model-continuity.md`；
+- `docs/gui/m7-information-architecture-candidates.md`（historical exploration only）。
 
-v3 是整体 shell composition、navigation depth/user grouping、information density、major workflow spatial relationship 与产品
-identity 的参考基线，不是源码上游或必须逐项复制的固定导航树。v4 可以为真实用户价值重组 individual page、合并或拆分
-secondary surface 并新增能力；Core/domain/API boundary 不自动成为一级导航。
+Official GUI 默认继承 v3 用户模型：Projects、package-centric Project workflow、Packages & Templates、Extensions、Settings、
+Log 与 footer/progress utilities。v4 的首要目标是在同一用户结构中提供 MD3 现代化和更可靠、安全、可观察的实现，而不是为
+daemon、RPC、Operation、Extension Host、Portable UI、permission/scope 或 State Schema 建立新产品领域。
+
+只有 v3 无对应用户用例、用户需要独立工作区、无法自然容纳于既有概念且独立入口明确提升可用性时，才考虑新增 user-level
+surface。Candidate A/B/C 因仍从“如何给 v4 domain 找位置”出发，现只保留为 historical exploration。
 
 以下是当前仍有效的 implementation route/capability inventory，不是 proposed sidebar hierarchy；route 可以保留作 deep link、
 secondary surface 或 context workspace：
@@ -269,9 +273,10 @@ route identity 使用稳定 ASCII ID 和 opaque resource ID，不使用翻译文
 业务不显示假按钮或 disabled fake page。M8 MCP、M9 Discord、migration/import、updater/distribution、Local API、Custom
 Web UI 与 full external-client credential pairing/revocation 不进入 M7。
 
-`Home`、Unity、Backups、Operations、Extensions、Activity、Diagnostics 与 About 等 v4-specific surface 不能仅因 route、RPC
-或 module 已存在就视为一级导航获批。它们必须保留已实现业务能力，并在候选 IA 中按用户心智模型找到 context、secondary、
-utility 或有充分理由的 primary placement。Candidate A/B/C 与所有重大 divergence 继续是 `pending owner selection`。
+当前 minimum-change proposal 将 Projects 恢复为 home-equivalent，将 Repositories/Templates移回Packages & Templates，将
+project Unity/Backups保留在Project context，将global Unity放入Settings，将Operations表达为context progress与secondary Task
+Center，将Activity/Diagnostics放入同一Log utility，并把About/version放入footer/Settings。Extensions是v3既有用户概念，保持
+其utility身份和大致归属；permission/quarantine/Portable UI进入Extension detail。该proposal仍是`pending owner approval`。
 
 ### Visual architecture and component policy
 
@@ -408,7 +413,8 @@ npm check/build、Playwright Chromium browser suite、Tauri no-bundle 与 diff c
 后续 first-party private node/page/command/permission、partial v1 renderer、GUI-to-Host direct channel、renderer作为business
 authority均是M7 blocker。
 native interactive control 在 Material Web 已有对应组件时继续以 custom CSS 模拟、Core/Portable UI 使用不同 component
-foundation、违反已选 IA/A-033 continuity 或包含 `UNJUSTIFIED_DEVIATION`、跳过任一 Visual Gate，同样是 M7 blocker。
+foundation、违反已批准 minimum-change user model/A-033 continuity 或包含 `UNJUSTIFIED_DEVIATION`、跳过任一 Visual Gate，
+同样是 M7 blocker。
 M11真实v3 fixture缺失继续阻塞GUI differential parity，但不阻塞 `gui.m7-core-surfaces`。M12继续承担Win10/Win11安装/启动/
 WebView2/update/uninstall，以及 Narrator/VoiceOver/Linux screen-reader 和真实平台 accessibility runtime validation。
 
@@ -416,18 +422,21 @@ WebView2/update/uninstall，以及 Narrator/VoiceOver/Linux screen-reader 和真
 
 1. **H0 Material foundation**：`@alcomd/ui` 封装审计中真实需要的 Material Web components；接通真实 MD3 color/type/shape/
    elevation/state tokens；验证 React 19 integration、interaction/ripple、component accessibility 和Core/Portable共用层。
-2. **H1 approved continuity shell/navigation**：按项目所有者选定的 Candidate 或明确组合实现 recognizable sidebar/content shell、
-   page toolbar 与 narrow adaptive drawer；不从 route inventory 推导导航；完成 Visual Gate 1。
-3. **H2 approved Projects/resources composition**：按所选 IA 实现 Projects header/list-grid/create、Project package-centric workspace、
-   resource grouping 与 repository table/actions；完成 Visual Gate 2。
-4. **H3 contextual v4 capabilities**：按所选 IA 安置 Templates、global/project Unity、Backups 与 Operations，不改
+2. **H1 v3 user-model continuity shell/navigation**：项目所有者批准 minimum-change proposal 后，实现 recognizable
+   sidebar/content shell、v3-scale user areas、page toolbar 与 narrow adaptive drawer；不从 route inventory 推导导航；完成
+   Visual Gate 1。
+3. **H2 Projects/Packages & Templates**：实现 Projects header/list-grid/create、Project package-centric workspace、v3 resource
+   grouping 与 repository/template dense table/list；完成 Visual Gate 2。
+4. **H3 contextual v4 enhancements**：把global/project Unity、Backups 与 Operations增强嵌入既有Settings/Project/progress workflow，不改
    Plan/Apply/Operation；完成 Visual Gate 3 的第一部分。
-5. **H4 Extensions/Portable UI**：按所选 IA 放置 Extensions，host chrome、Portable node renderer全部使用共同Material components；
-   不改 Portable UI protocol；完成 Visual Gate 4 的第一部分。
-6. **H5 utilities/observability**：按所选 IA 实现 Settings、Activity/Diagnostics 与 About/version，保留 Config v1/A-026权限分离；
+5. **H4 Extensions/Portable UI**：保留Extensions既有用户概念和utility归属；permission/quarantine/Portable UI位于detail，host
+   chrome与renderer全部使用共同Material components；不改 Portable UI protocol；完成 Visual Gate 4 的第一部分。
+6. **H5 utilities/observability**：实现 grouped Settings、Log内Activity/Diagnostics与footer About/version，保留
+   Config v1/A-026权限分离；
    完成 Visual Gate 3/4。
-7. **H6 responsive/a11y/Playwright regression**：覆盖已选 IA 的 structural continuity、grouping/workspace/action placement、Material
-   element presence和observable interaction、theme propagation、wide/narrow/200%/reduced motion；不测试Material shadow DOM私有细节。
+7. **H6 responsive/a11y/Playwright regression**：覆盖已批准 minimum-change user model 的 structural continuity、grouping/workspace/
+   action placement、Material element presence和observable interaction、theme propagation、wide/narrow/200%/reduced motion；
+   不测试Material shadow DOM私有细节。
 8. **H7 manual visual signoff**：执行更新后的真实GUI checklist和最终screenshots；再进入候选Hosted CI/push审批。
 
 H0-H7 只重组 shell、composition、component rendering 和 visual hierarchy；不得重新设计 RPC、Plan/Apply、Operation、Settings、
@@ -491,9 +500,12 @@ Activity、Diagnostics 或 Portable UI authority。
 - 2026-08-26：项目所有者纠正“参照 v3”被机械解释为固定导航树的问题。A-033 修订为 recognizable structural/product
   continuity；新增 divergence budget 与 Candidate A（project-first）、B（three workspace hubs）、C（bounded Overview）IA
   synthesis。Material Web事实结论、`192672…`功能证据与M7边界不变；尚未选择production target，H0/H1未开始。
+- 2026-08-26：项目所有者进一步冻结“v4默认继承v3用户模型”的前提。A/B/C降为historical exploration；建立v3/v4
+  user-facing capability map，将M1-M7绝大多数变化归为same/enhanced existing capability，仅把durable task recovery/history与
+  extension permission/quarantine视为嵌入既有区域的有限新用户价值。形成单一minimum-change proposal；production未开始。
 
 ## 下一停止点
 
-本 IA correction 形成独立未 push planning commit 后停止。等待项目所有者选择或修改 Candidate A/B/C（或明确组合）、批准相应
-divergence budget 与 H0-H7，再开始任何 GUI production redesign。Material component policy 仍是设计输入，但本轮不修改组件。
-不得 push，不得开始 H0/H1 或 M8/M9。
+本 user-model correction 形成独立未 push planning commit 后停止。等待项目所有者批准或修改
+`docs/gui/m7-user-model-continuity.md` 的 minimum-change proposal，再决定 H0-H7 production。A/B/C 不再是选择项；Material
+component policy仍是设计输入，但本轮不修改组件。不得 push，不得开始 H0/H1 或 M8/M9。

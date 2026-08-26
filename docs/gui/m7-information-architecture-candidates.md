@@ -1,11 +1,15 @@
-# M7 Official GUI information architecture candidates
+# M7 historical information architecture exploration
 
-状态：人工选择输入，全部 `not approved`。本文不授权 H0/H1 production，不改变 route、RPC、Schema、Permission、State 或
-Portable UI contract。
+状态：`historical exploration`，已由 `docs/gui/m7-user-model-continuity.md` 取代。Candidate A/B/C 均不是下一轮 production
+候选，不得从中选择后直接开始 H0/H1。本文保留用于记录“为 v4 domain 找位置”的探索如何暴露了错误设计前提；它不改变
+route、RPC、Schema、Permission、State 或 Portable UI contract。
 
-## Synthesis constraints
+后续唯一待审方向是以 v3 用户模型为默认、只加入最小必要 v4 调整的 proposal。Projects、Packages & Templates、Extensions、
+Settings 与 Log 等既有用户概念不应因为 Core/Extension/Operation 重构而重新分类。
 
-三个候选共同满足：
+## Historical synthesis assumptions
+
+三个候选当时共同采用：
 
 - wide desktop 保持 ALCOMD3 可识别的 `sidebar + main content` composition；
 - primary navigation 体现用户心智模型，不枚举 Rust module、RPC namespace 或 authority boundary；
@@ -32,9 +36,11 @@ toolbar 从其下方开始。
 | `ADAPTIVE_CHANGE` | wide/narrow/compact因MD3 adaptive与可访问性改变composition | 允许，但用户语义顺序保持 |
 | `UNJUSTIFIED_DEVIATION` | 仅因Core/domain/API独立、实现方便或“重新设计”而新增/拆分结构 | 不得进入推荐方案 |
 
-三个候选均不包含已知 `UNJUSTIFIED_DEVIATION`。若后续实现新增这种变化，应立即停止并回到 IA 审批。
+后续审阅确认这套 budget 的应用仍不充分：虽然三个候选尝试减少 flat domain navigation，却仍把问题设为“给 v4 domain 找
+位置”，没有先证明用户模型是否产生了新领域。因此它们不能继续声称不存在 `UNJUSTIFIED_DEVIATION`，也不能作为 implementation
+input。修正后的分类和 proposal 见 `docs/gui/m7-user-model-continuity.md`。
 
-## Candidate A — Project-first classic continuity（Codex recommendation）
+## Historical Candidate A — Project-first classic continuity
 
 ### Design summary
 
@@ -180,7 +186,7 @@ sections，Activity/Diagnostics 使用同一 observability container 的 seconda
 中等：重写shell/nav/page toolbar composition，合并资源和observability页面容器；保留大多数route、typed client、query/action
 components与tests fixture，逐步把native controls换成`@alcomd/ui`。
 
-## Candidate B — Three workspace hubs
+## Historical Candidate B — Three workspace hubs
 
 ### Design summary
 
@@ -302,7 +308,7 @@ Diagnostics 保持各自的 utility workspace。
 中等偏低：保留更多现有独立页面，主要新增workspace容器、二级tabs和shell重组；仍需完成Material component migration与
 dense layout realignment。
 
-## Candidate C — Overview-assisted next generation
+## Historical Candidate C — Overview-assisted next generation
 
 ### Design summary
 
@@ -435,9 +441,9 @@ component layer。
 | G. Activity + Diagnostics | one utility surface, separate tabs/contracts | same | same |
 | H. About placement | footer utility | footer utility | footer utility |
 
-## Codex recommendation（not approved）
+## Historical recommendation（withdrawn）
 
-推荐 **Candidate A** 作为项目所有者下一轮 refinement 的起点，理由：
+上一轮曾推荐 **Candidate A** 作为 refinement 起点，理由是：
 
 1. 它最直接保留v3的产品识别性、导航数量级、Projects/Resources心智模型、信息密度和context action习惯；
 2. 它容纳Operation、Portable UI、Diagnostics等v4真实新增能力，但没有把这些authority namespace全部提升为sidebar entry；
@@ -447,4 +453,6 @@ component layer。
 建议从B吸收的要点：为global Unity/Extensions/Operations保持可复用的secondary route和清晰deep link。建议从C吸收的要点：
 在sidebar footer或Projects header提供connection/active-operation摘要，但不必建立永久Overview landing。
 
-本推荐不是批准。项目所有者可以选择A/B/C、组合其明确部分，或要求第四个候选；在选择前不得开始H0/H1 production。
+该推荐已撤回。A/B/C 的共同问题是仍从“如何给 v4 新 domain 找位置”出发，而不是先证明用户模型是否真的改变。后续不得选择、
+组合或实现这三个 historical candidate；只审阅 `docs/gui/m7-user-model-continuity.md` 的 minimum-change proposal。在新的人工
+批准前不得开始 H0/H1 production。

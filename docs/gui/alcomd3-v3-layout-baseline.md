@@ -19,6 +19,23 @@
 M11 仍负责真实脱敏 Fixture、迁移与 release-grade exhaustive differential parity。本文不能解除
 `gui.v3-entry-parity = blocked`。
 
+## User-model interpretation
+
+本文中的具体入口和页面用于证明 v3 用户模型，而不是要求 v4 逐项复刻。该用户模型的主要区域是：
+
+- Projects 及其 package-centric Project workspace；
+- Packages & Templates 资源区域及其 Repositories、User Packages、Templates secondary views；
+- Extensions management 与 extension-specific entries；
+- Settings / UI Theme utility；
+- Log / Activity / Technical observability utility；
+- context progress、footer version/update 与 Settings 内的 licenses/system information。
+
+特别是，Extensions 不是 v4 新增用户概念。v4 的 Extension Host、permission/scope、quarantine 与 Portable UI 是既有
+Extensions 用户任务的增强实现，默认应进入 Extensions detail，而不是成为重新分类 Extensions 的理由。
+
+v4 默认继承该用户模型。只有 v3 没有对应用户用例、用户确实需要独立工作区、无法自然容纳于既有概念且独立入口可明确提升
+可用性时，才考虑新增 user-level surface。
+
 ## A. 主窗口
 
 ### Window structure
@@ -165,8 +182,8 @@ durable OperationId 是架构新增事实；它可以由业务上下文、全局
 - 选中导航、分段 selector、filled/tonal action、rounded surface 与 modal 是可转译到 MD3 的结构锚点。
 - v4 可以改变 color、typography、corner、elevation、spacing、icon、motion 和 adaptive behavior；不复制 v3 CSS/Tailwind/Radix
   实现。
-- v4 可以为真实用户价值重组个别页面，合并或拆分 secondary surface，并新增 v3 不存在的能力；Core/domain/API 边界不能
-  因此逐项变成一级导航。
+- v4 可以在有明确用户价值时重组个别页面或 secondary surface，但默认先把新可靠性/安全机制嵌入既有用户 workflow。只有通过
+  user-level independent-workspace test 才考虑新增 surface；Core/domain/API 边界不能逐项变成一级导航。
 - 数据密集页面优先延续 title/search/actions/table 的位置习惯与桌面密度；不要求每个按钮逐像素同位，也不能仅把每一项改成
   大卡片后声称是视觉现代化。
 - narrow 模式可把持久侧栏转为 modal drawer；wide 模式应保留 v3 可识别的左侧导航和右侧业务画布关系，但无需复制固定
