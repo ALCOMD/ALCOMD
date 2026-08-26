@@ -41,7 +41,7 @@ test("shared Material foundation renders real controls with React 19 interaction
 
 test("Core and Portable UI share Material controls and the same MD3 theme source", async ({ page }) => {
     await openHarness(page, "/projects");
-    await expect(page.getByRole("main").locator("md-text-button").filter({ hasText: "Refresh" })).toBeVisible();
+    await expect(page.getByRole("main").getByRole("button", { name: "Refresh projects" })).toBeVisible();
     const corePrimary = await page.locator("html").evaluate((element) => getComputedStyle(element).getPropertyValue("--md-sys-color-primary").trim());
 
     await openHarness(page, "/extensions/com.cqmhv.mcp-management/ui");
@@ -58,16 +58,34 @@ test("official navigation uses offline decorative Rounded icons with filled sele
     await openHarness(page, "/projects");
 
     const navigation = page.locator("#primary-navigation");
-    await expect(navigation.locator(".alcomd-icon")).toHaveCount(5);
+    await expect(navigation.locator(".alcomd-icon")).toHaveCount(7);
     await expect(page.getByRole("button", { name: "Projects", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Packages & Templates", exact: true })).toBeVisible();
 
-    const projects = navigation.locator("md-text-button.navigation-item").filter({ hasText: "Projects" });
-    const packages = navigation.locator("md-text-button.navigation-item").filter({ hasText: "Packages & Templates" });
+    const projects = navigation.getByRole("button", { name: "Projects", exact: true });
+    const packages = navigation.getByRole("button", { name: "Packages & Templates", exact: true });
     await expect(projects.locator(".alcomd-icon")).toHaveAttribute("aria-hidden", "true");
     await expect(projects.locator(".alcomd-icon")).toHaveAttribute("data-filled", "true");
     await expect(packages.locator(".alcomd-icon")).toHaveAttribute("data-filled", "false");
+    const projectsBox = await projects.boundingBox();
+    const projectsIconBox = await projects.locator(".alcomd-icon").boundingBox();
+    const projectsLabelBox = await projects.locator("span").nth(1).boundingBox();
+    expect(projectsBox).not.toBeNull();
+    expect(projectsIconBox).not.toBeNull();
+    expect(projectsLabelBox).not.toBeNull();
+    expect((projectsIconBox?.x ?? 0) - (projectsBox?.x ?? 0)).toBeLessThanOrEqual(20);
+    expect(projectsIconBox?.x ?? 0).toBeLessThan(projectsLabelBox?.x ?? 0);
     expect(remoteFontRequests).toEqual([]);
+});
+
+test("Projects toolbar uses semantic Material icons without replacing clear action labels", async ({ page }) => {
+    await openHarness(page, "/projects");
+    const main = page.getByRole("main");
+    await expect(main.locator(".projects-toolbar md-icon-button > .alcomd-icon")).toHaveAttribute("aria-hidden", "true");
+    await expect(main.locator("md-text-button", { hasText: "Grid view" }).locator('.alcomd-icon[slot="icon"]')).toBeVisible();
+    await expect(main.locator(".projects-secondary-toolbar md-icon-button > .alcomd-icon")).toBeVisible();
+    await expect(main.locator('.projects-search > .alcomd-icon[slot="leading-icon"]')).toBeVisible();
+    await expect(main.getByRole("button", { name: "Register project" })).toBeVisible();
 });
 
 async function openHarness(page: Page, route: string) {

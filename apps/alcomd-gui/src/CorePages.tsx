@@ -1,6 +1,8 @@
 import type { ExtensionRecord, RpcError } from "@alcomd/sdk";
 import {
     arrowBackIcon,
+    arrowDownwardIcon,
+    arrowUpwardIcon,
     backupIcon,
     deleteIcon,
     downloadIcon,
@@ -9,7 +11,9 @@ import {
     refreshIcon,
     searchIcon,
     syncIcon,
-    upgradeIcon
+    upgradeIcon,
+    viewGridIcon,
+    viewListIcon
 } from "@alcomd/ui/icons";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
@@ -44,7 +48,7 @@ import {
     UnityRegistryActions
 } from "./CoreActions";
 import type { GuiRpcClient } from "./rpc";
-import { Button, Dialog, Icon, Select, TextField } from "./Material";
+import { Button, Dialog, Icon, IconButton, Select, TextField } from "./Material";
 
 interface PageProps {
     client: GuiRpcClient;
@@ -210,11 +214,12 @@ export function ProjectsPage({ client, navigate }: PageProps) {
         <section className="projects-page">
             <header className="projects-toolbar">
                 <h1 id="route-title" tabIndex={-1}>Projects</h1>
-                <Button disabled={state.refreshing} onClick={() => void refresh()} type="button" variant="text">
-                    {state.refreshing ? "Refreshing…" : "Refresh"}
-                </Button>
-                <TextField className="projects-search" label="Search projects" onInput={setSearch} value={search} />
+                <IconButton disabled={state.refreshing} label={state.refreshing ? "Refreshing projects" : "Refresh projects"} onClick={() => void refresh()} type="button">
+                    <Icon asset={refreshIcon} />
+                </IconButton>
+                <TextField className="projects-search" label="Search projects" leadingIcon={<Icon asset={searchIcon} slot="leading-icon" />} onInput={setSearch} value={search} />
                 <Button onClick={() => setView((current) => current === "list" ? "grid" : "list")} type="button" variant="text">
+                    <Icon asset={view === "list" ? viewGridIcon : viewListIcon} slot="icon" />
                     {view === "list" ? "Grid view" : "List view"}
                 </Button>
                 <Button onClick={() => setRegisterOpen(true)} type="button">Register project</Button>
@@ -232,9 +237,9 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                     ]}
                     value={sort}
                 />
-                <Button onClick={() => setDescending((current) => !current)} type="button" variant="text">
-                    {descending ? "Descending" : "Ascending"}
-                </Button>
+                <IconButton label={descending ? "Sort descending" : "Sort ascending"} onClick={() => setDescending((current) => !current)} type="button">
+                    <Icon asset={descending ? arrowDownwardIcon : arrowUpwardIcon} />
+                </IconButton>
                 <span className="projects-result-count" role="status" aria-live="polite">
                     {projects.length} {projects.length === 1 ? "project" : "projects"}
                 </span>

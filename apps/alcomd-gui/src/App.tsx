@@ -13,6 +13,8 @@ import {
 import {
     extensionIcon,
     extensionSelectedIcon,
+    infoIcon,
+    infoSelectedIcon,
     logIcon,
     logSelectedIcon,
     packagesIcon,
@@ -21,6 +23,8 @@ import {
     projectsSelectedIcon,
     settingsIcon,
     settingsSelectedIcon,
+    taskCenterIcon,
+    taskCenterSelectedIcon,
     type IconAsset
 } from "@alcomd/ui/icons";
 import type { ReactNode } from "react";
@@ -168,7 +172,7 @@ export function App({ client = guiRpcClient }: AppProps) {
         };
         window.addEventListener("keydown", onKeyDown);
         const focusTimer = window.setTimeout(() => {
-            const currentItem = document.querySelector<HTMLElement>("#primary-navigation nav .navigation-item[data-aria-current='page']");
+            const currentItem = document.querySelector<HTMLElement>("#primary-navigation nav .navigation-item[aria-current='page']");
             const firstItem = document.querySelector<HTMLElement>("#primary-navigation nav .navigation-item");
             (currentItem ?? firstItem)?.focus();
         }, 0);
@@ -246,34 +250,31 @@ function PrimaryNavigation({ client, current, navigate, onClose, open }: { clien
                 {items.map((item) => {
                     const selected = routeSection(current) === item.section;
                     return (
-                        <Button
+                        <button
                             aria-current={selected ? "page" : undefined}
                             className="navigation-item"
                             key={item.path}
                             onClick={() => navigate(item.path)}
                             type="button"
-                            variant="text"
                         >
-                            <Icon asset={selected ? item.selectedIcon : item.icon} slot="icon" />
-                            {item.label}
-                        </Button>
+                            <Icon asset={selected ? item.selectedIcon : item.icon} />
+                            <span>{item.label}</span>
+                        </button>
                     );
                 })}
             </nav>
             <div className="navigation-spacer" />
-            <Button
+            <button
                 aria-current={routeSection(current) === "extensions" ? "page" : undefined}
                 className="navigation-item navigation-item--extension"
                 onClick={() => navigate("/extensions")}
                 type="button"
-                variant="text"
             >
                 <Icon
                     asset={routeSection(current) === "extensions" ? extensionSelectedIcon : extensionIcon}
-                    slot="icon"
                 />
-                Extensions
-            </Button>
+                <span>Extensions</span>
+            </button>
             <NavigationUtilities client={client} current={current} navigate={navigate} />
         </aside>
     );
@@ -304,26 +305,30 @@ function NavigationUtilities({ client, current, navigate }: { client: GuiRpcClie
     }, [client, current.kind]);
     return (
         <footer className="navigation-utilities">
-            <Button
+            <button
                 aria-current={routeSection(current) === "tasks" ? "page" : undefined}
                 className="navigation-item navigation-item--utility"
                 onClick={() => navigate("/operations")}
                 type="button"
-                variant="text"
             >
-                <span>Task Center</span>
-                {summary.activeTasks === 0 ? null : <span className="task-count">{summary.activeTasks} active</span>}
-            </Button>
-            <Button
+                <Icon asset={routeSection(current) === "tasks" ? taskCenterSelectedIcon : taskCenterIcon} />
+                <span className="navigation-item-copy">
+                    <span>Task Center</span>
+                    {summary.activeTasks === 0 ? null : <span className="task-count">{summary.activeTasks} active</span>}
+                </span>
+            </button>
+            <button
                 aria-current={routeSection(current) === "about" ? "page" : undefined}
                 className="navigation-item navigation-item--utility"
                 onClick={() => navigate("/about")}
                 type="button"
-                variant="text"
             >
-                <span>About</span>
-                {summary.daemonVersion === undefined ? null : <span className="utility-detail">{summary.daemonVersion}</span>}
-            </Button>
+                <Icon asset={routeSection(current) === "about" ? infoSelectedIcon : infoIcon} />
+                <span className="navigation-item-copy">
+                    <span>About</span>
+                    {summary.daemonVersion === undefined ? null : <span className="utility-detail">{summary.daemonVersion}</span>}
+                </span>
+            </button>
         </footer>
     );
 }

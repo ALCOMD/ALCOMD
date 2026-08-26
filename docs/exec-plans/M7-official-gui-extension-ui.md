@@ -533,6 +533,13 @@ Activity、Diagnostics 或 Portable UI authority。
   十个 H2 action），不含完整 icon corpus、Outlined/Sharp、远程字体或 emitted SVG。npm check/build、Playwright 17项、
   Tauri release no-bundle、fmt/clippy/Workspace tests、xtask、metadata、baseline freeze 与 diff gate 已通过；Visual Gate 2
   尚未人工验收。
+- 2026-08-26：项目所有者查看 `1eddee436fcd0343e57d85f300312dab1c97e120` real release GUI 后拒绝首轮
+  Visual Gate 2：Material text button 使 sidebar icon/label group 居中，Projects toolbar 的 refresh、view switch 与排序方向仍以
+  纯文字表达，偏离 v3 reference 和已冻结 icon contract。修正只改为 left-aligned semantic navigation + MD3 state layer，
+  并为实际 toolbar action 接入 named Material Symbols；不改变页面、RPC、状态或业务流程。
+- 2026-08-26：首轮 Visual Gate 2 修正候选已完成本地技术验证：npm check/build、Playwright 18 项、Tauri release
+  no-bundle、xtask、metadata、baseline freeze 与 diff gate 均通过；shipping bundle 包含 30 个实际使用的 SVG data URL，
+  不含 Google Fonts 请求或第三方 package path。Visual Gate 2 仍等待项目所有者复看 real release GUI，不因自动化通过而关闭。
 
 ## 下一停止点
 

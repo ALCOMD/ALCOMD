@@ -8,7 +8,7 @@ test("keyboard navigation moves routes and focuses the destination heading", asy
     await expect(projects).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("heading", { level: 1, name: "Projects" })).toBeFocused();
-    await expect(primary.locator("md-text-button").filter({ hasText: "Projects" })).toHaveAttribute("data-aria-current", "page");
+    await expect(primary.getByRole("button", { name: "Projects", exact: true })).toHaveAttribute("aria-current", "page");
 
     const settings = page.getByRole("button", { name: "Settings", exact: true }).last();
     await settings.focus();
@@ -35,7 +35,7 @@ test("H1 shell exposes the approved user areas without promoting internal routes
 
     await primary.getByRole("button", { name: "Packages & Templates" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Repositories" })).toBeFocused();
-    await expect(primary.locator("md-text-button").filter({ hasText: "Packages & Templates" })).toHaveAttribute("data-aria-current", "page");
+    await expect(primary.getByRole("button", { name: "Packages & Templates", exact: true })).toHaveAttribute("aria-current", "page");
 });
 
 test("modal traps focus, closes on Escape, and restores the invoking control", async ({ page }) => {
