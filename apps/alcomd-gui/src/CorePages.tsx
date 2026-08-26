@@ -1,4 +1,16 @@
 import type { ExtensionRecord, RpcError } from "@alcomd/sdk";
+import {
+    arrowBackIcon,
+    backupIcon,
+    deleteIcon,
+    downloadIcon,
+    historyIcon,
+    playArrowIcon,
+    refreshIcon,
+    searchIcon,
+    syncIcon,
+    upgradeIcon
+} from "@alcomd/ui/icons";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import type {
@@ -23,7 +35,7 @@ import {
     OperationActions,
     OperationFollow,
     PackageActions,
-    ProjectActions,
+    type PackageActionSelection,
     ProjectUnityActions,
     RegisterRepositoryPanel,
     RepositoryActions,
@@ -32,7 +44,7 @@ import {
     UnityRegistryActions
 } from "./CoreActions";
 import type { GuiRpcClient } from "./rpc";
-import { Button, Dialog, Select, TextField } from "./Material";
+import { Button, Dialog, Icon, Select, TextField } from "./Material";
 
 interface PageProps {
     client: GuiRpcClient;
@@ -41,12 +53,13 @@ interface PageProps {
 
 interface ResourcePageProps<T> {
     load(): Promise<T>;
-    children(value: T, refresh: () => void, refreshing: boolean): ReactNode;
+    children(value: T, refresh: () => void, refreshing: boolean, error?: RpcError): ReactNode;
     empty?(value: T): boolean;
     emptyTitle?: string;
+    showRefreshBar?: boolean;
 }
 
-function ResourcePage<T>({ load, children, empty, emptyTitle = "Nothing here yet" }: ResourcePageProps<T>) {
+function ResourcePage<T>({ load, children, empty, emptyTitle = "Nothing here yet", showRefreshBar = true }: ResourcePageProps<T>) {
     const [state, setState] = useState<{
         value?: T;
         error?: RpcError;
@@ -93,15 +106,15 @@ function ResourcePage<T>({ load, children, empty, emptyTitle = "Nothing here yet
     if (empty?.(state.value) === true) {
         return (
             <>
-                <RefreshBar error={state.error} refresh={refresh} refreshing={state.refreshing} />
+                {showRefreshBar ? <RefreshBar error={state.error} refresh={refresh} refreshing={state.refreshing} /> : null}
                 <RouteState kind="empty" title={emptyTitle} />
             </>
         );
     }
     return (
         <>
-            <RefreshBar error={state.error} refresh={refresh} refreshing={state.refreshing} />
-            {children(state.value, refresh, state.refreshing)}
+            {showRefreshBar ? <RefreshBar error={state.error} refresh={refresh} refreshing={state.refreshing} /> : null}
+            {children(state.value, refresh, state.refreshing, state.error)}
         </>
     );
 }
@@ -354,49 +367,146 @@ function formatObserved(value: number): string {
     return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value));
 }
 
-export function ProjectDetailPage({ client, navigate, projectId }: PageProps & { projectId: string }) {
-    const load = useCallback(() => client.projectGet(projectId), [client, projectId]);
+export function ProjectDetailPage(props: PageProps & { projectId: string }) {
+    return <ProjectPackageWorkspace {...props} />;
+}
+
+export function ProjectPackagesPage(props: PageProps & { projectId: string }) {
+    return <ProjectPackageWorkspace {...props} />;
+}
+
+interface WorkspaceCatalogVersion extends RepositoryPackageVersion {
+    source: string;
+}
+
+interface PackageWorkspaceRow {
+    availableVersions: string[];
+    displayName: string;
+    installedVersion?: string;
+    packageId: string;
+    requestedRange?: string;
+    sources: string[];
+    status: "available" | "installed" | "missing-source";
+}
+
+function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { projectId: string }) {
+    const load = useCallback(async () => {
+        const [project, repositories] = await Promise.all([client.projectGet(projectId), client.repositoriesList()]);
+        const catalogs = await Promise.all(repositories.repositories.map(async (repository) => {
+            if (repository.repositoryId === undefined) return [] as WorkspaceCatalogVersion[];
+            const result = await client.repositoryPackages(repository.repositoryId);
+            const source = repository.name ?? repository.declaredId ?? sourceText(repository);
+            return result.packages.map((item) => ({ ...item, source }));
+        }));
+        return { project: project.project, catalog: catalogs.flat() };
+    }, [client, projectId]);
+    const [search, setSearch] = useState("");
+    const [filter, setFilter] = useState("all");
+    const [selection, setSelection] = useState<PackageActionSelection>();
+    const selectAction = (action: PackageActionSelection["action"], packageId: string, version?: string) => {
+        setSelection({ action, key: (selection?.key ?? 0) + 1, packageId, ...(version === undefined ? {} : { version }) });
+    };
     return (
-        <Page title="Project detail" eyebrow={projectId}>
-            <ResourcePage load={load}>{({ project }, refresh) => (
-                <>
-                    <dl className="detail-grid">
-                        <Detail label="Type" value={project.projectType} /><Detail label="Unity" value={project.unityVersion || "Unknown"} />
-                        <Detail label="Revision" value={String(project.revision ?? "—")} /><Detail label="VPM manifest" value={project.vpmManifest} />
-                    </dl>
-                    <nav className="subnav" aria-label="Project sections">
-                        <button onClick={() => navigate(`/projects/${projectId}/packages`)} type="button">Packages</button>
-                        <button onClick={() => navigate(`/projects/${projectId}/unity`)} type="button">Unity</button>
-                        <button onClick={() => navigate(`/projects/${projectId}/backups`)} type="button">Backups</button>
-                    </nav>
-                    <h2>Direct packages</h2>
-                    <DataTable headers={["Package", "Requested"]} rows={project.directDependencies.map((item) => [item.packageId, item.value])} />
-                    <ProjectActions client={client} onChanged={refresh} project={project} />
-                </>
-            )}</ResourcePage>
-        </Page>
+        <ResourcePage load={load} showRefreshBar={false}>{({ project, catalog }, refresh, refreshing, refreshError) => {
+            const rows = packageWorkspaceRows(project, catalog).filter((row) => {
+                const query = search.toLocaleLowerCase();
+                const matchesSearch = query.length === 0 || [row.displayName, row.packageId, ...row.sources].some((value) => value.toLocaleLowerCase().includes(query));
+                const matchesFilter = filter === "all"
+                    || (filter === "installed" && row.installedVersion !== undefined)
+                    || (filter === "available" && row.installedVersion === undefined && row.availableVersions.length > 0)
+                    || (filter === "missing" && row.status === "missing-source");
+                return matchesSearch && matchesFilter;
+            });
+            return (
+                <section className="project-workspace">
+                    <header className="project-workspace-header">
+                        <div className="project-workspace-context">
+                            <Button className="project-back-action" onClick={() => navigate("/projects")} type="button" variant="text"><Icon asset={arrowBackIcon} slot="icon" />Back</Button>
+                            <div className="project-workspace-title">
+                                <h1 id="route-title" tabIndex={-1}>{projectName(project)}</h1>
+                                <p title={project.rootPath}>{project.rootPath}</p>
+                            </div>
+                        </div>
+                        <nav aria-label="Project actions" className="project-workspace-actions">
+                            {refreshError === undefined ? null : <span className="inline-error" role="alert">Refresh failed: {refreshError.code}</span>}
+                            <span className="project-unity-version">Unity {project.unityVersion}</span>
+                            <Button onClick={() => navigate(`/projects/${projectId}/unity`)} type="button"><Icon asset={playArrowIcon} slot="icon" />Open Unity</Button>
+                            <Button onClick={() => navigate(`/projects/${projectId}/backups`)} type="button" variant="text"><Icon asset={backupIcon} slot="icon" />Backups</Button>
+                        </nav>
+                    </header>
+                    <section aria-labelledby="packages-heading" className="package-workspace-surface">
+                        <header className="package-workspace-toolbar">
+                            <h2 id="packages-heading">Manage packages</h2>
+                            <Button className="package-refresh-action" disabled={refreshing} onClick={refresh} type="button" variant="text"><Icon asset={refreshIcon} slot="icon" />{refreshing ? "Refreshing…" : "Refresh"}</Button>
+                            <TextField className="package-workspace-search" label="Search packages" leadingIcon={<Icon asset={searchIcon} slot="leading-icon" />} onInput={setSearch} value={search} />
+                            <Select
+                                className="package-workspace-filter"
+                                label="Filter"
+                                onChange={setFilter}
+                                options={[
+                                    { label: "All packages", value: "all" },
+                                    { label: "Installed", value: "installed" },
+                                    { label: "Available", value: "available" },
+                                    { label: "Missing source", value: "missing" }
+                                ]}
+                                value={filter}
+                            />
+                            <Button onClick={() => selectAction("resolve", "")} type="button" variant="text"><Icon asset={syncIcon} slot="icon" />Resolve</Button>
+                            <span className="package-workspace-count" role="status" aria-live="polite">{rows.length} packages</span>
+                        </header>
+                        <div className="package-workspace-table-scroll">
+                            {rows.length === 0 ? <section className="projects-empty" role="status"><h3>No matching packages</h3><p>Change the search or package filter.</p></section> : (
+                                <table className="package-workspace-table">
+                                    <thead><tr><th>Package</th><th>Installed</th><th>Latest</th><th>Source</th><th><span className="visually-hidden">Actions</span></th></tr></thead>
+                                    <tbody>{rows.map((row) => {
+                                        const latest = row.availableVersions.at(-1);
+                                        const canUpgrade = row.installedVersion !== undefined && latest !== undefined && latest !== row.installedVersion;
+                                        return (
+                                            <tr key={row.packageId}>
+                                                <td><strong>{row.displayName}</strong><small>{row.packageId}</small></td>
+                                                <td>{row.installedVersion ?? "—"}{row.requestedRange === undefined ? null : <small>Requested {row.requestedRange}</small>}</td>
+                                                <td>{canUpgrade ? <Button onClick={() => selectAction("upgrade", row.packageId, latest)} type="button" variant="tonal"><Icon asset={upgradeIcon} slot="icon" />{latest}</Button> : latest ?? "—"}</td>
+                                                <td>{row.sources.length === 0 ? <span className="package-source-missing">No configured source</span> : row.sources.join(", ")}</td>
+                                                <td><div className="package-row-actions">{row.installedVersion === undefined ? <Button disabled={latest === undefined} onClick={() => selectAction("install", row.packageId, latest)} type="button" variant="tonal"><Icon asset={downloadIcon} slot="icon" />Install</Button> : <><Button onClick={() => selectAction("downgrade", row.packageId)} type="button" variant="text"><Icon asset={historyIcon} slot="icon" />Versions</Button><Button onClick={() => selectAction("remove", row.packageId)} type="button" variant="text"><Icon asset={deleteIcon} slot="icon" />Remove</Button></>}</div></td>
+                                            </tr>
+                                        );
+                                    })}</tbody>
+                                </table>
+                            )}
+                        </div>
+                    </section>
+                    <PackageActions client={client} onChanged={refresh} project={project} selection={selection} />
+                </section>
+            );
+        }}</ResourcePage>
     );
 }
 
-export function ProjectPackagesPage({ client, projectId }: PageProps & { projectId: string }) {
-    const load = useCallback(async () => {
-        const [project, repositories] = await Promise.all([client.projectGet(projectId), client.repositoriesList()]);
-        const repository = repositories.repositories[0];
-        const catalog = repository?.repositoryId === undefined
-            ? { packages: [] as RepositoryPackageVersion[] }
-            : await client.repositoryPackages(repository.repositoryId);
-        return { project: project.project, catalog: catalog.packages };
-    }, [client, projectId]);
-    return (
-        <Page title="Packages" eyebrow={`Project ${projectId}`}>
-            <ResourcePage load={load}>{({ project, catalog }, refresh) => (
-                <><div className="two-column">
-                    <section><h2>Project state</h2><DataTable headers={["Package", "Locked version"]} rows={project.lockedDependencies.map((item) => [item.packageId, item.value])} /></section>
-                    <section><h2>Repository catalog</h2><DataTable headers={["Package", "Version", "Unity"]} rows={catalog.map((item) => [item.displayName ?? item.packageId, item.version, item.unity ?? "Any"])} /></section>
-                </div><PackageActions client={client} onChanged={refresh} project={project} /></>
-            )}</ResourcePage>
-        </Page>
-    );
+function packageWorkspaceRows(project: ProjectSnapshot, catalog: WorkspaceCatalogVersion[]): PackageWorkspaceRow[] {
+    const catalogByPackage = new Map<string, WorkspaceCatalogVersion[]>();
+    for (const item of catalog) {
+        const versions = catalogByPackage.get(item.packageId) ?? [];
+        versions.push(item);
+        catalogByPackage.set(item.packageId, versions);
+    }
+    const installed = new Map(project.lockedDependencies.map((item) => [item.packageId, item.value]));
+    const requested = new Map(project.directDependencies.map((item) => [item.packageId, item.value]));
+    const packageIds = new Set([...installed.keys(), ...requested.keys(), ...catalogByPackage.keys()]);
+    return [...packageIds].sort((left, right) => left.localeCompare(right)).map((packageId) => {
+        const versions = catalogByPackage.get(packageId) ?? [];
+        const availableVersions = [...new Set(versions.filter((item) => !item.yanked).map((item) => item.version))].sort((left, right) => left.localeCompare(right));
+        const sources = [...new Set(versions.map((item) => item.source))].sort((left, right) => left.localeCompare(right));
+        const installedVersion = installed.get(packageId);
+        return {
+            availableVersions,
+            displayName: versions.find((item) => item.displayName !== undefined)?.displayName ?? packageId,
+            ...(installedVersion === undefined ? {} : { installedVersion }),
+            packageId,
+            ...(requested.has(packageId) ? { requestedRange: requested.get(packageId) } : {}),
+            sources,
+            status: installedVersion !== undefined ? "installed" : availableVersions.length > 0 ? "available" : "missing-source"
+        };
+    });
 }
 
 export function RepositoriesPage({ client, navigate }: PageProps) {

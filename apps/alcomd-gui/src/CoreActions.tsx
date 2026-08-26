@@ -14,6 +14,7 @@ import type {
     UnityInstallation
 } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
+import { Button, Dialog as MaterialDialog, Select, TextField } from "./Material";
 
 interface ActionProps {
     client: GuiRpcClient;
@@ -125,33 +126,61 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
     );
 }
 
-export function PackageActions({ client, project, onChanged }: ActionProps & { project: ProjectSnapshot }) {
-    const [action, setAction] = useState<"install" | "remove" | "upgrade" | "downgrade" | "resolve">("install");
+export interface PackageActionSelection {
+    action: "install" | "remove" | "upgrade" | "downgrade" | "resolve";
+    key: number;
+    packageId: string;
+    version?: string;
+}
+
+export function PackageActions({ client, project, onChanged, selection }: ActionProps & { project: ProjectSnapshot; selection?: PackageActionSelection }) {
     const [packageId, setPackageId] = useState("");
     const [version, setVersion] = useState("");
-    const [includePrerelease, setIncludePrerelease] = useState(false);
     const [plan, setPlan] = useState<PackagePlan>();
+    const [versionDialogOpen, setVersionDialogOpen] = useState(false);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
+    const handledSelectionKey = useRef<number | undefined>(undefined);
     const revision = project.revision;
     const projectId = project.projectId;
-    const makePlan = async (event: FormEvent) => {
-        event.preventDefault();
+    const prepareChanges = useCallback(async (action: PackageActionSelection["action"], selectedPackageId: string, selectedVersion = "") => {
         if (revision === undefined || projectId === undefined) return;
+        setPlan(undefined);
         setFeedback({ busy: true });
         try {
             let result: PackagePlan;
-            if (action === "remove") result = await client.packagePlanRemove({ projectId, expectedRevision: revision, packageId });
-            else if (action === "resolve") result = await client.packagePlanResolve({ projectId, expectedRevision: revision, includePrerelease });
-            else if (action === "downgrade") result = await client.packagePlanDowngrade({ projectId, expectedRevision: revision, packageId, version });
+            if (action === "remove") result = await client.packagePlanRemove({ projectId, expectedRevision: revision, packageId: selectedPackageId });
+            else if (action === "resolve") result = await client.packagePlanResolve({ projectId, expectedRevision: revision, includePrerelease: false });
+            else if (action === "downgrade") result = await client.packagePlanDowngrade({ projectId, expectedRevision: revision, packageId: selectedPackageId, version: selectedVersion });
             else {
-                const params = { projectId, expectedRevision: revision, packageId, includePrerelease, ...(version.length === 0 ? {} : { versionRange: version }) };
+                const params = { projectId, expectedRevision: revision, packageId: selectedPackageId, includePrerelease: false, ...(selectedVersion.length === 0 ? {} : { versionRange: selectedVersion }) };
                 result = action === "upgrade" ? await client.packagePlanUpgrade(params) : await client.packagePlanInstall(params);
             }
             setPlan(result);
+            setVersionDialogOpen(false);
             setFeedback({ busy: false });
         } catch (caught: unknown) {
+            setVersionDialogOpen(false);
             setFeedback({ busy: false, error: safeError(caught) });
         }
+    }, [client, projectId, revision]);
+    useEffect(() => {
+        if (selection === undefined) return;
+        if (handledSelectionKey.current === selection.key) return;
+        handledSelectionKey.current = selection.key;
+        setPackageId(selection.packageId);
+        setVersion(selection.version ?? "");
+        setPlan(undefined);
+        setFeedback(INITIAL_FEEDBACK);
+        if (selection.action === "downgrade" && selection.version === undefined) {
+            setVersionDialogOpen(true);
+            return;
+        }
+        setVersionDialogOpen(false);
+        void prepareChanges(selection.action, selection.packageId, selection.version);
+    }, [prepareChanges, selection]);
+    const chooseVersion = (event: FormEvent) => {
+        event.preventDefault();
+        void prepareChanges("downgrade", packageId, version);
     };
     const apply = async () => {
         if (plan === undefined) return;
@@ -159,27 +188,49 @@ export function PackageActions({ client, project, onChanged }: ActionProps & { p
         try {
             const result = await client.packageApplyPlan({ planId: plan.planId, expectedRevision: plan.projectRevision });
             setPlan(undefined);
-            setFeedback({ busy: false, operationId: result.operationId, message: "Package operation accepted." });
+            setFeedback({ busy: false, operationId: result.operationId, message: "Package changes started." });
             onChanged?.();
         } catch (caught: unknown) {
             setPlan(undefined);
             setFeedback({ busy: false, error: safeError(caught) });
         }
     };
+    const closeVersionDialog = () => {
+        if (feedback.busy) return;
+        setVersionDialogOpen(false);
+    };
+    const closeChanges = () => { if (!feedback.busy) setPlan(undefined); };
+    const hasChanges = (plan?.changeSet.mutations.length ?? 0) > 0;
     return (
-        <ActionSection title="Change packages">
-            <form onSubmit={(event) => void makePlan(event)}>
-                <Field label="Action" id="package-action"><select id="package-action" value={action} onChange={(event) => setAction(event.currentTarget.value as typeof action)}><option value="install">Install</option><option value="remove">Remove</option><option value="upgrade">Upgrade</option><option value="downgrade">Downgrade</option><option value="resolve">Resolve</option></select></Field>
-                {action === "resolve" ? null : <Field label="Package ID" id="package-id"><input id="package-id" maxLength={214} required onChange={(event) => setPackageId(event.currentTarget.value)} value={packageId} /></Field>}
-                {action === "remove" || action === "resolve" ? null : <Field label={action === "downgrade" ? "Exact version" : "Version range (optional)"} id="package-version"><input id="package-version" maxLength={128} required={action === "downgrade"} onChange={(event) => setVersion(event.currentTarget.value)} value={version} /></Field>}
-                {action === "remove" || action === "downgrade" ? null : <label className="checkbox-field"><input checked={includePrerelease} onChange={(event) => setIncludePrerelease(event.currentTarget.checked)} type="checkbox" />Include prerelease versions</label>}
-                <button className="button button--filled" disabled={feedback.busy || revision === undefined} type="submit">Create plan</button>
-            </form>
-            <PlanDialog busy={feedback.busy} open={plan !== undefined} title="Review package plan" onClose={() => setPlan(undefined)} onApply={apply}>
-                {plan === undefined ? null : <><p><strong>{humanize(plan.action)}</strong> at project revision {plan.projectRevision}</p><ul className="change-list">{plan.changeSet.mutations.map((mutation) => <li key={`${mutation.kind}-${mutation.packageId}`}>{humanize(mutation.kind)} <code>{mutation.packageId}</code>{mutation.fromVersion === undefined ? "" : ` from ${mutation.fromVersion}`}{mutation.toVersion === undefined ? "" : ` to ${mutation.toVersion}`}</li>)}</ul><p>Plan fingerprint: <code>{shortValue(plan.changeSetFingerprint)}</code></p></>}
-            </PlanDialog>
-            <MutationFeedback client={client} feedback={feedback} />
-        </ActionSection>
+        <>
+            <MaterialDialog onClose={closeVersionDialog} open={versionDialogOpen} title="Choose package version">
+                <form className="package-action-form" onSubmit={chooseVersion}>
+                    <p>Enter the version you want to use for <strong>{packageId}</strong>.</p>
+                    <TextField className="package-action-version" label="Version" maxLength={128} onInput={setVersion} required value={version} />
+                    <div className="dialog-actions">
+                        <Button disabled={feedback.busy} onClick={closeVersionDialog} type="button" variant="text">Cancel</Button>
+                        <Button disabled={feedback.busy || version.length === 0} type="submit">{feedback.busy ? "Checking…" : "Continue"}</Button>
+                    </div>
+                </form>
+            </MaterialDialog>
+            <MaterialDialog onClose={closeChanges} open={plan !== undefined} title={hasChanges ? "Apply package changes?" : "Packages are up to date"}>
+                {plan === undefined ? null : hasChanges ? (
+                    <div className="package-plan-review">
+                        <p>Review the changes ALCOMD will make to this project.</p>
+                        <ul className="change-list">{plan.changeSet.mutations.map((mutation) => <li key={`${mutation.kind}-${mutation.packageId}`}><strong>{packageChangeLabel(mutation.kind)}</strong><span>{mutation.packageId}</span>{mutation.fromVersion === undefined && mutation.toVersion === undefined ? null : <small>{packageVersionChange(mutation.fromVersion, mutation.toVersion)}</small>}</li>)}</ul>
+                        <div className="dialog-actions">
+                            <Button disabled={feedback.busy} onClick={closeChanges} type="button" variant="text">Cancel</Button>
+                            <Button disabled={feedback.busy} onClick={() => void apply()} type="button">{feedback.busy ? "Applying…" : "Apply changes"}</Button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="package-plan-review"><p>No package changes are required for this project.</p><div className="dialog-actions"><Button onClick={closeChanges} type="button">Close</Button></div></div>
+                )}
+            </MaterialDialog>
+            {feedback.busy && plan === undefined && !versionDialogOpen ? <div className="mutation-feedback" role="status" aria-live="polite">Checking package changes…</div> : null}
+            {feedback.error === undefined ? null : <div className="mutation-feedback mutation-feedback--error" role="alert"><strong>Package changes were not applied</strong><span>{packageErrorMessage(feedback.error)}</span></div>}
+            {feedback.operationId === undefined ? null : <OperationFollow client={client} operationId={feedback.operationId} title="Package changes" />}
+        </>
     );
 }
 
@@ -414,7 +465,7 @@ function MutationFeedback({ client, feedback }: { client: GuiRpcClient; feedback
     return null;
 }
 
-export function OperationFollow({ client, operationId }: { client: GuiRpcClient; operationId: string }) {
+export function OperationFollow({ client, operationId, title = "Operation" }: { client: GuiRpcClient; operationId: string; title?: string }) {
     const [operation, setOperation] = useState<Operation>();
     const [error, setError] = useState<RpcError>();
     const load = useCallback(async () => {
@@ -427,7 +478,7 @@ export function OperationFollow({ client, operationId }: { client: GuiRpcClient;
         const timer = window.setTimeout(() => void load(), 750);
         return () => window.clearTimeout(timer);
     }, [load, operation]);
-    return <section className="operation-follow" aria-live="polite" aria-atomic="true" role="status"><h3>Operation</h3>{operation === undefined ? <p>Reading operation state…</p> : <><p><strong>{humanize(operation.state)}</strong>{operation.progress?.phase === undefined ? "" : ` · ${humanize(operation.progress.phase)}`}</p><progress aria-label="Operation progress" max={1} value={isTerminal(operation.state) ? 1 : undefined} /></>}{error === undefined ? null : <p className="inline-error"><code>{error.code}</code> — retrying preserves the same OperationId.</p>}</section>;
+    return <section className="operation-follow" aria-live="polite" aria-atomic="true" role="status"><h3>{title}</h3>{operation === undefined ? <p>Reading progress…</p> : <><p><strong>{humanize(operation.state)}</strong>{operation.progress?.phase === undefined ? "" : ` · ${humanize(operation.progress.phase)}`}</p><progress aria-label={`${title} progress`} max={1} value={isTerminal(operation.state) ? 1 : undefined} /></>}{error === undefined ? null : <p className="inline-error">Progress is temporarily unavailable. ALCOMD will keep following the same task.</p>}</section>;
 }
 
 async function runSimple<T>(setFeedback: (value: FeedbackState) => void, run: () => Promise<T>, message: string, onChanged?: () => void): Promise<void> {
@@ -444,5 +495,25 @@ function safeError(caught: unknown): RpcError {
 }
 
 function humanize(value: string): string { return value.replaceAll("_", " "); }
+function packageChangeLabel(kind: string): string {
+    if (kind === "install") return "Install";
+    if (kind === "remove") return "Remove";
+    if (kind === "replace") return "Change version";
+    return "Update";
+}
+function packageVersionChange(fromVersion: string | undefined, toVersion: string | undefined): string {
+    if (fromVersion !== undefined && toVersion !== undefined) return `${fromVersion} → ${toVersion}`;
+    if (toVersion !== undefined) return `Version ${toVersion}`;
+    return `Version ${fromVersion}`;
+}
+function packageErrorMessage(error: RpcError): string {
+    if (["plan_stale", "project_revision_conflict", "resource_revision_conflict", "revision_conflict"].includes(error.code)) {
+        return "This project changed while the package changes were being prepared. Refresh the package list and try again.";
+    }
+    if (["package_not_found", "package_source_changed", "repository_revision_conflict"].includes(error.code)) {
+        return "The package information changed or is no longer available. Refresh the package list and try again.";
+    }
+    return "ALCOMD could not complete the package changes. Try again or open Log for more information.";
+}
 function shortValue(value: string): string { return value.length <= 28 ? value : `${value.slice(0, 20)}…${value.slice(-8)}`; }
 function isTerminal(state: string): boolean { return ["succeeded", "failed", "cancelled"].includes(state); }

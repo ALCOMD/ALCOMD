@@ -71,6 +71,7 @@ export interface TextFieldProps {
     className?: string;
     disabled?: boolean;
     label: string;
+    leadingIcon?: ReactNode;
     maxLength?: number;
     onInput?(value: string): void;
     required?: boolean;
@@ -79,7 +80,7 @@ export interface TextFieldProps {
     value: string;
 }
 
-export function TextField({ className, disabled, label, maxLength, onInput, required, supportingText, type = "text", value }: TextFieldProps) {
+export function TextField({ className, disabled, label, leadingIcon, maxLength, onInput, required, supportingText, type = "text", value }: TextFieldProps) {
     return createElement(materialElements.textField, {
         className,
         disabled,
@@ -90,7 +91,7 @@ export function TextField({ className, disabled, label, maxLength, onInput, requ
         supportingText,
         type,
         value
-    } as MaterialProps);
+    } as MaterialProps, leadingIcon);
 }
 
 export interface SelectOption {

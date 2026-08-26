@@ -83,8 +83,8 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
     const routes = [
         ["/", "Projects"],
         ["/projects", "Projects"],
-        ["/projects/00000000-0000-4000-8000-000000000101", "Project detail"],
-        ["/projects/00000000-0000-4000-8000-000000000101/packages", "Packages"],
+        ["/projects/00000000-0000-4000-8000-000000000101", "<private-project>"],
+        ["/projects/00000000-0000-4000-8000-000000000101/packages", "<private-project>"],
         ["/projects/00000000-0000-4000-8000-000000000101/unity", "Project Unity"],
         ["/projects/00000000-0000-4000-8000-000000000101/backups", "Backups"],
         ["/repositories", "Repositories"],
@@ -111,6 +111,25 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
     }
 });
 
+test("project workspace keeps package discovery and user actions in project context", async ({ page }) => {
+    await openHarness(page, "/projects/00000000-0000-4000-8000-000000000101");
+    await expect(page.getByRole("heading", { level: 1, name: "<private-project>" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Manage packages" })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Project actions" }).getByRole("button", { name: "Open Unity" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Backups" })).toBeVisible();
+    const row = page.getByRole("row").filter({ hasText: "Avatar tools" });
+    await expect(row).toContainText("com.example.avatar");
+    await expect(row).toContainText("1.2.3");
+    await expect(row).toContainText("Example packages");
+    await page.getByLabel("Search packages").fill("not present");
+    await expect(page.getByRole("status").filter({ hasText: "No matching packages" })).toBeVisible();
+    await page.getByLabel("Search packages").fill("");
+    await row.getByRole("button", { name: "1.3.0" }).click();
+    const dialog = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
+    await expect(dialog).toContainText("com.example.avatar");
+    await expect(dialog).not.toContainText(/plan|revision|fingerprint/i);
+});
+
 test("settings are labeled, revisioned, dirty-aware, and applied through the typed client", async ({ page }) => {
     await openHarness(page, "/settings");
     const color = page.getByLabel("Source color");
@@ -132,26 +151,26 @@ test("settings are labeled, revisioned, dirty-aware, and applied through the typ
     await expect(page.locator("html")).toHaveAttribute("data-source-color", "blue");
 });
 
-test("Plan review applies once and follows one durable Operation to a terminal state", async ({ page }) => {
+test("package changes use a v3-style confirmation while the durable Plan stays internal", async ({ page }) => {
     await openHarness(page, `/projects/00000000-0000-4000-8000-000000000101/packages`);
-    await page.getByLabel("Package ID").fill("com.example.avatar");
-    await page.getByRole("button", { name: "Create plan" }).click();
-    const dialog = page.getByRole("dialog", { name: "Review package plan" });
-    await expect(dialog).toContainText("project revision 2");
-    await expect(dialog).toContainText("stale plan fails");
-    await dialog.getByRole("button", { name: "Apply reviewed plan" }).click();
-    const follow = page.getByRole("status").filter({ hasText: "Operation" });
+    await page.getByRole("row").filter({ hasText: "Avatar tools" }).getByRole("button", { name: "1.3.0" }).click();
+    const dialog = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
+    await expect(dialog).toContainText("Review the changes ALCOMD will make");
+    await expect(dialog).toContainText("com.example.avatar");
+    await expect(dialog).not.toContainText(/plan|revision|fingerprint/i);
+    await page.getByRole("button", { name: "Apply changes" }).click();
+    const follow = page.getByRole("status").filter({ hasText: "Package changes" });
     await expect(follow).toContainText(/running|succeeded/);
     await expect(follow).toContainText("succeeded", { timeout: 3_000 });
-    await expect(follow.getByRole("progressbar", { name: "Operation progress" })).toHaveAttribute("value", "1");
+    await expect(follow.getByRole("progressbar", { name: "Package changes progress" })).toHaveAttribute("value", "1");
 });
 
-test("a stale package Plan fails explicitly and is never silently replanned", async ({ page }) => {
+test("a changed project is explained without exposing stale Plan internals", async ({ page }) => {
     await openHarness(page, "/projects/00000000-0000-4000-8000-000000000101/packages", "stale");
-    await page.getByLabel("Package ID").fill("com.example.avatar");
-    await page.getByRole("button", { name: "Create plan" }).click();
-    await page.getByRole("dialog", { name: "Review package plan" }).getByRole("button", { name: "Apply reviewed plan" }).click();
-    await expect(page.getByRole("alert")).toContainText("plan_stale");
+    await page.getByRole("row").filter({ hasText: "Avatar tools" }).getByRole("button", { name: "1.3.0" }).click();
+    await page.getByRole("button", { name: "Apply changes" }).click();
+    await expect(page.getByRole("alert")).toContainText("This project changed");
+    await expect(page.getByRole("alert")).not.toContainText("plan_stale");
     await expect(page.getByRole("status").filter({ hasText: "Operation" })).toHaveCount(0);
 });
 

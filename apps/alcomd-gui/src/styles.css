@@ -156,7 +156,7 @@ md-linear-progress {
     --md-text-button-pressed-label-text-color: var(--md-sys-color-on-surface);
 }
 
-.navigation-item[aria-current="page"] {
+.navigation-item[data-aria-current="page"] {
     background: var(--md-sys-color-secondary-container);
     --md-text-button-label-text-color: var(--md-sys-color-on-secondary-container);
 }
@@ -251,6 +251,153 @@ md-linear-progress {
 .project-unregistered { color: var(--on-surface-variant); font-size: 0.8rem; }
 .project-register-form, .project-register-review { display: grid; gap: 18px; min-width: min(520px, calc(100vw - 64px)); }
 .project-register-form md-outlined-text-field { width: 100%; }
+
+.project-workspace {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    height: 100%;
+    min-height: 0;
+}
+
+.project-workspace-header,
+.package-workspace-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.project-workspace-header {
+    min-height: 56px;
+    padding: 2px 0;
+}
+
+.project-workspace-context {
+    display: flex;
+    align-items: center;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.project-back-action { flex: 0 0 auto; }
+
+.project-workspace-title {
+    min-width: 0;
+    padding-left: 8px;
+}
+
+.project-workspace-title h1,
+.project-workspace-title p,
+.package-workspace-toolbar h2,
+.package-action-panel h2 {
+    margin: 0;
+}
+
+.project-workspace-title h1 {
+    overflow: hidden;
+    color: var(--on-surface);
+    font-size: 1.05rem;
+    font-weight: 650;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.project-workspace-title p {
+    max-width: min(44vw, 640px);
+    overflow: hidden;
+    color: var(--on-surface-variant);
+    font-size: 0.78rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.project-workspace-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.project-unity-version {
+    max-width: 180px;
+    overflow: hidden;
+    padding: 0 8px;
+    color: var(--on-surface-variant);
+    font-size: 0.84rem;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.package-workspace-surface {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 260px;
+    overflow: hidden;
+    border-radius: 18px;
+    background: var(--md-sys-color-surface-container-lowest);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--outline) 10%, transparent);
+}
+
+.package-workspace-toolbar {
+    flex: 0 0 auto;
+    min-height: 56px;
+    padding: 6px 8px;
+    background: var(--md-sys-color-surface-container-low);
+}
+
+.package-workspace-toolbar h2 {
+    flex: 0 0 auto;
+    padding: 0 2px 0 6px;
+    font-size: 1rem;
+    font-weight: 650;
+}
+
+.package-refresh-action { flex: 0 0 auto; }
+.package-workspace-search { min-width: 220px; flex: 1 1 360px; }
+.package-workspace-filter { width: 170px; }
+.package-workspace-count { flex: 0 0 auto; color: var(--on-surface-variant); font-size: 0.8rem; }
+.package-workspace-table-scroll { min-height: 0; flex: 1; overflow: auto; }
+.package-workspace-table { min-width: 780px; }
+.package-workspace-table thead { position: sticky; z-index: 2; top: 0; background: var(--surface-container); }
+.package-workspace-table th,
+.package-workspace-table td { padding: 8px 12px; vertical-align: middle; }
+.package-workspace-table th { border-bottom: 1px solid color-mix(in srgb, var(--outline) 30%, transparent); color: var(--on-surface-variant); font-size: 0.76rem; font-weight: 550; }
+.package-workspace-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--surface-container) 48%, transparent); }
+.package-workspace-table tbody tr:hover { background: var(--md-sys-color-surface-container); }
+.package-workspace-table td:first-child { max-width: 300px; }
+.package-workspace-table td:first-child strong,
+.package-workspace-table td small { display: block; }
+.package-workspace-table td:first-child strong,
+.package-workspace-table td:first-child small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.package-workspace-table td small { margin-top: 2px; color: var(--on-surface-variant); font-size: 0.75rem; }
+.package-row-actions { display: flex; justify-content: flex-end; gap: 2px; }
+.package-source-missing { color: var(--error); font-size: 0.8rem; }
+
+.package-action-form {
+    display: grid;
+    gap: 12px;
+    min-width: min(520px, calc(100vw - 64px));
+}
+
+.package-action-kind,
+.package-action-id,
+.package-action-version { width: 100%; }
+.package-plan-review { display: grid; gap: 12px; min-width: min(560px, calc(100vw - 64px)); }
+.package-plan-review p { margin: 0; }
+.project-workspace > .operation-follow,
+.project-workspace > .mutation-feedback {
+    position: absolute;
+    z-index: 8;
+    right: 12px;
+    bottom: 12px;
+    width: min(360px, calc(100% - 24px));
+    margin: 0;
+    box-shadow: 0 6px 24px rgb(0 0 0 / 0.16);
+}
 
 .home-card,
 .extension-surface,
@@ -583,6 +730,20 @@ th {
     display: grid;
     gap: 8px;
     padding-left: 24px;
+}
+
+.change-list li {
+    padding-left: 4px;
+}
+
+.change-list li > span,
+.change-list li > small {
+    display: block;
+}
+
+.change-list li > small {
+    margin-top: 2px;
+    color: var(--on-surface-variant);
 }
 
 .mutation-feedback,
@@ -1082,6 +1243,19 @@ code {
     }
 
     .main-content { height: calc(100vh - 24px); margin-left: 12px; }
+
+    .project-workspace-header,
+    .package-workspace-toolbar {
+        flex-wrap: wrap;
+    }
+
+    .project-workspace-context,
+    .project-workspace-actions {
+        width: 100%;
+    }
+
+    .project-workspace-actions { justify-content: flex-end; }
+    .project-workspace-title p { max-width: calc(100vw - 190px); }
 }
 
 @media (max-width: 620px) {
@@ -1134,6 +1308,19 @@ code {
         width: min(100% - 16px, 1120px);
         padding-top: 12px;
     }
+
+    .project-workspace-header { padding-top: 48px; }
+    .project-workspace-context { align-items: flex-start; flex-direction: column; }
+    .project-workspace-title { width: 100%; padding: 4px 0 0; }
+    .project-workspace-title p { max-width: 100%; }
+    .project-workspace-actions { justify-content: flex-start; flex-wrap: wrap; }
+    .package-workspace-search,
+    .package-workspace-filter { width: 100%; min-width: 0; flex-basis: 100%; }
+    .package-action-form { align-items: stretch; flex-direction: column; }
+    .package-action-kind,
+    .package-action-id,
+    .package-action-version,
+    .package-action-form > md-filled-button { width: 100%; }
 
     .home-card,
     .extension-surface,

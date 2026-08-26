@@ -1,13 +1,23 @@
+import arrowBackIconUrl from "@material-symbols/svg-400/rounded/arrow_back.svg?url";
+import backupIconUrl from "@material-symbols/svg-400/rounded/backup.svg?url";
+import deleteIconUrl from "@material-symbols/svg-400/rounded/delete.svg?url";
+import downloadIconUrl from "@material-symbols/svg-400/rounded/download.svg?url";
 import extensionIconUrl from "@material-symbols/svg-400/rounded/extension.svg?url";
 import extensionSelectedIconUrl from "@material-symbols/svg-400/rounded/extension-fill.svg?url";
+import historyIconUrl from "@material-symbols/svg-400/rounded/history.svg?url";
 import logIconUrl from "@material-symbols/svg-400/rounded/list.svg?url";
 import logSelectedIconUrl from "@material-symbols/svg-400/rounded/list-fill.svg?url";
 import packagesIconUrl from "@material-symbols/svg-400/rounded/package_2.svg?url";
 import packagesSelectedIconUrl from "@material-symbols/svg-400/rounded/package_2-fill.svg?url";
 import projectsIconUrl from "@material-symbols/svg-400/rounded/folder.svg?url";
 import projectsSelectedIconUrl from "@material-symbols/svg-400/rounded/folder-fill.svg?url";
+import playArrowIconUrl from "@material-symbols/svg-400/rounded/play_arrow.svg?url";
+import refreshIconUrl from "@material-symbols/svg-400/rounded/refresh.svg?url";
+import searchIconUrl from "@material-symbols/svg-400/rounded/search.svg?url";
 import settingsIconUrl from "@material-symbols/svg-400/rounded/settings.svg?url";
 import settingsSelectedIconUrl from "@material-symbols/svg-400/rounded/settings-fill.svg?url";
+import syncIconUrl from "@material-symbols/svg-400/rounded/sync.svg?url";
+import upgradeIconUrl from "@material-symbols/svg-400/rounded/upgrade.svg?url";
 
 export interface IconAsset {
     readonly filled: boolean;
@@ -18,13 +28,23 @@ function defineIcon(url: string, filled = false): IconAsset {
     return Object.freeze({ filled, url });
 }
 
+export const arrowBackIcon = defineIcon(arrowBackIconUrl);
+export const backupIcon = defineIcon(backupIconUrl);
+export const deleteIcon = defineIcon(deleteIconUrl);
+export const downloadIcon = defineIcon(downloadIconUrl);
 export const extensionIcon = defineIcon(extensionIconUrl);
 export const extensionSelectedIcon = defineIcon(extensionSelectedIconUrl, true);
+export const historyIcon = defineIcon(historyIconUrl);
 export const logIcon = defineIcon(logIconUrl);
 export const logSelectedIcon = defineIcon(logSelectedIconUrl, true);
 export const packagesIcon = defineIcon(packagesIconUrl);
 export const packagesSelectedIcon = defineIcon(packagesSelectedIconUrl, true);
 export const projectsIcon = defineIcon(projectsIconUrl);
 export const projectsSelectedIcon = defineIcon(projectsSelectedIconUrl, true);
+export const playArrowIcon = defineIcon(playArrowIconUrl);
+export const refreshIcon = defineIcon(refreshIconUrl);
+export const searchIcon = defineIcon(searchIconUrl);
 export const settingsIcon = defineIcon(settingsIconUrl);
 export const settingsSelectedIcon = defineIcon(settingsSelectedIconUrl, true);
+export const syncIcon = defineIcon(syncIconUrl);
+export const upgradeIcon = defineIcon(upgradeIconUrl);

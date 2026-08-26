@@ -527,6 +527,12 @@ Activity、Diagnostics 或 Portable UI authority。
 - 2026-08-26：项目所有者批准唯一 production UI asset dependency `@material-symbols/svg-400 = 0.47.0`，冻结
   Material Symbols Rounded/weight 400、default fill 0、selected navigation fill 1、`@alcomd/ui` ownership、显式
   `?url` import 与 CSS mask。动态字符串 registry、remote font/CDN、SVGR 和第二套通用 icon language 保持禁止。
+- 2026-08-26：icon foundation 以独立提交 `ea3312b1c10be2f021a5c516cec61449778be761` 落盘；lock closure 只有
+  一个零传递 package record。H2-A Project package workspace 已完成本地候选并只增加当前可见 action 所需的十个
+  named Rounded glyph。production bundle 精确包含二十个 Material Symbols data URL（十个 navigation regular/filled 与
+  十个 H2 action），不含完整 icon corpus、Outlined/Sharp、远程字体或 emitted SVG。npm check/build、Playwright 17项、
+  Tauri release no-bundle、fmt/clippy/Workspace tests、xtask、metadata、baseline freeze 与 diff gate 已通过；Visual Gate 2
+  尚未人工验收。
 
 ## 下一停止点
 

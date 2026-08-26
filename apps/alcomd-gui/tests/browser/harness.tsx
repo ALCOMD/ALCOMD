@@ -110,7 +110,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     repositoriesInspect(): ReturnType<GuiRpcClient["repositoriesInspect"]> { return this.value({ repository: repository() }); }
     repositoriesList(): ReturnType<GuiRpcClient["repositoriesList"]> { return this.value({ repositories: this.mode === "empty" ? [] : [repository()] }); }
     repositoryGet(): ReturnType<GuiRpcClient["repositoryGet"]> { return this.value({ repository: repository() }); }
-    repositoryPackages(): ReturnType<GuiRpcClient["repositoryPackages"]> { return this.value({ packages: [{ packageId: "com.example.avatar", version: "1.2.3", displayName: "Avatar tools", yanked: false, unity: ">=2022.3" }] }); }
+    repositoryPackages(): ReturnType<GuiRpcClient["repositoryPackages"]> { return this.value({ packages: [{ packageId: "com.example.avatar", version: "1.2.3", displayName: "Avatar tools", yanked: false, unity: ">=2022.3" }, { packageId: "com.example.avatar", version: "1.3.0", displayName: "Avatar tools", yanked: false, unity: ">=2022.3" }] }); }
     repositoryRegister(): ReturnType<GuiRpcClient["repositoryRegister"]> { return this.value({ repository: repository(), replayed: false }); }
     repositoryRefresh(): ReturnType<GuiRpcClient["repositoryRefresh"]> { return this.value({ repository: repository(), replayed: false }); }
     repositoryUnregister(): ReturnType<GuiRpcClient["repositoryUnregister"]> { return this.value({ repositoryId: REPOSITORY_ID, revision: 3, unregistered: true, replayed: false }); }
