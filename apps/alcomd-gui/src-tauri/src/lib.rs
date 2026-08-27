@@ -1079,6 +1079,7 @@ fn daemon_unavailable() -> RpcError {
 /// Business logic must remain in `alcomd`; this process is only a client and UI host.
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(GuiClientState::default())
         .invoke_handler(tauri::generate_handler![
             gui_system_status,

@@ -73,6 +73,8 @@ unicode-normalization = { version = "=0.1.25", default-features = false, feature
 zip = { version = "=8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 ed25519-dalek = { version = "=3.0.0", default-features = false }
 wasmtime = { version = "=48.0.0", default-features = false, features = ["async", "component-model", "cranelift", "runtime", "std"] }
+open = { version = "=5.4.2", default-features = false }
+tauri-plugin-dialog = { version = "=2.7.2", default-features = false, features = ["gtk3"] }
 
 alcomd-domain = { path = "crates/alcomd-domain" }
 alcomd-application = { path = "crates/alcomd-application" }

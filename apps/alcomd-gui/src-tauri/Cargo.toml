@@ -19,7 +19,9 @@ tauri-build.workspace = true
 [dependencies]
 alcomd-client.workspace = true
 alcomd-protocol.workspace = true
+open.workspace = true
 tauri.workspace = true
+tauri-plugin-dialog.workspace = true
 
 [lints]
 workspace = true
