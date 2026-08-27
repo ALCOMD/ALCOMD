@@ -120,7 +120,14 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     await expect(main.locator(".projects-toolbar md-icon-button > .alcomd-icon")).toHaveAttribute("aria-hidden", "true");
     await expect(main.locator(".projects-toolbar md-icon-button > .alcomd-icon")).toHaveAttribute("data-icon-name", "refresh");
     await expect(main.locator(".projects-toolbar md-icon-button > .alcomd-icon")).toHaveAttribute("data-optical-size", "24");
-    await expect(main.locator("md-text-button", { hasText: "Grid view" }).locator('.alcomd-icon[slot="icon"]')).toBeVisible();
+    const refreshProjects = main.locator(".projects-toolbar md-icon-button");
+    const viewToggle = main.locator(".projects-toolbar md-text-button").filter({ hasText: "Grid view" });
+    const registerProject = main.locator(".projects-toolbar md-filled-button").filter({ hasText: "Register project" });
+    for (const action of [refreshProjects, viewToggle, registerProject]) {
+        await expect(action).toHaveCSS("height", "40px");
+    }
+    await expect(refreshProjects).toHaveCSS("width", "40px");
+    await expect(viewToggle.locator('.alcomd-icon[slot="icon"]')).toBeVisible();
     await expect(main.locator('.projects-search > .alcomd-icon[slot="leading-icon"]')).toBeVisible();
     const search = main.locator("md-filled-text-field.projects-search");
     await expect(search).toHaveJSProperty("placeholder", "Search...");
@@ -163,6 +170,13 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     expect(wideProjectWidth).toBeGreaterThan(projectWidth);
     const rowActions = main.locator(".project-row-actions");
     const openUnity = rowActions.locator("md-filled-button.project-open-unity-action");
+    const manage = rowActions.locator("md-filled-tonal-button").filter({ hasText: "Manage" });
+    const backups = rowActions.locator("md-filled-tonal-button").filter({ hasText: "Backups" });
+    const moreActions = rowActions.locator("md-icon-button.project-more-actions");
+    for (const action of [openUnity, manage, backups, moreActions]) {
+        await expect(action).toHaveCSS("height", "40px");
+    }
+    await expect(moreActions).toHaveCSS("width", "40px");
     const actionsWidth = (await rowActions.boundingBox())?.width;
     const openUnityWidth = (await openUnity.boundingBox())?.width;
     await openUnity.click();
@@ -182,7 +196,6 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     expect((narrowActionsBox?.x ?? 0) + (narrowActionsBox?.width ?? 0)).toBeLessThanOrEqual((narrowScrollBox?.x ?? 0) + (narrowScrollBox?.width ?? 0) + 1);
     expect(Math.abs(((narrowActionsHeaderBox?.x ?? 0) + (narrowActionsHeaderBox?.width ?? 0)) - ((narrowScrollBox?.x ?? 0) + (narrowScrollBox?.width ?? 0)))).toBeLessThanOrEqual(1);
     await expect(actionsHeader).toHaveCSS("position", "sticky");
-    const moreActions = rowActions.locator("md-icon-button.project-more-actions");
     await expect(moreActions).toHaveJSProperty("ariaLabel", "More actions for <private-project>");
     const moreIcon = moreActions.locator(".alcomd-icon");
     await expect(moreIcon).toBeVisible();

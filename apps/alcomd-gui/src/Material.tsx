@@ -50,10 +50,15 @@ export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
 }
 
 export const Button = forwardRef(function Button(
-    { "aria-expanded": ariaExpanded, children, variant = "filled", ...props }: ButtonProps,
+    { "aria-expanded": ariaExpanded, children, className, variant = "filled", ...props }: ButtonProps,
     ref: Ref<HTMLElement>
 ) {
-    return createElement(materialElements.button[variant], { ...props, ariaExpanded, ref } as MaterialProps, children);
+    return createElement(materialElements.button[variant], {
+        ...props,
+        ariaExpanded,
+        className: ["alcomd-button--standard", className].filter(Boolean).join(" "),
+        ref
+    } as MaterialProps, children);
 });
 
 export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "ref"> {
@@ -61,7 +66,7 @@ export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonEle
 }
 
 export const IconButton = forwardRef(function IconButton(
-    { "aria-controls": ariaControls, "aria-expanded": ariaExpanded, children, label, ...props }: IconButtonProps,
+    { "aria-controls": ariaControls, "aria-expanded": ariaExpanded, children, className, label, ...props }: IconButtonProps,
     ref: Ref<HTMLElement>
 ) {
     return createElement(materialElements.iconButton, {
@@ -69,6 +74,7 @@ export const IconButton = forwardRef(function IconButton(
         ariaControls,
         ariaExpanded,
         ariaLabel: label,
+        className: ["alcomd-icon-button--standard", className].filter(Boolean).join(" "),
         ref
     } as MaterialProps, children);
 });

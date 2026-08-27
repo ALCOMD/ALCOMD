@@ -40,8 +40,25 @@
     --md-sys-shape-corner-large: 16px;
     --md-sys-shape-corner-extra-large: 28px;
     --md-sys-shape-corner-full: 9999px;
+    --alcomd-button-height: 40px;
+    --alcomd-icon-button-size: 40px;
     --alcomd-control-height: 48px;
     --alcomd-space: 20px;
+}
+
+.alcomd-button--standard {
+    height: var(--alcomd-button-height);
+    --md-filled-button-container-height: var(--alcomd-button-height);
+    --md-filled-tonal-button-container-height: var(--alcomd-button-height);
+    --md-outlined-button-container-height: var(--alcomd-button-height);
+    --md-text-button-container-height: var(--alcomd-button-height);
+}
+
+.alcomd-icon-button--standard {
+    width: var(--alcomd-icon-button-size);
+    height: var(--alcomd-icon-button-size);
+    --md-icon-button-state-layer-height: var(--alcomd-icon-button-size);
+    --md-icon-button-state-layer-width: var(--alcomd-icon-button-size);
 }
 
 .alcomd-icon {

@@ -235,7 +235,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                 <TextField aria-label="Search projects" className="projects-search" label="" leadingIcon={<Icon asset={searchIcon} slot="leading-icon" />} onInput={setSearch} placeholder="Search..." type="search" value={search} variant="filled" />
                 <Button onClick={() => setView((current) => current === "list" ? "grid" : "list")} type="button" variant="text">
                     <Icon asset={view === "list" ? viewGridIcon : viewListIcon} slot="icon" />
-                    {view === "list" ? "Grid view" : "List view"}
+                    <StateSizedLabel current={view === "list" ? "Grid view" : "List view"} labels={["Grid view", "List view"]} />
                 </Button>
                 <Button onClick={() => setRegisterOpen(true)} type="button">Register project</Button>
             </header>
@@ -386,7 +386,7 @@ function ProjectRowActions({ client, navigate, onChanged, onFeedback, project }:
                     <StateSizedLabel current={opening ? "Opening…" : "Open Unity"} labels={["Open Unity", "Opening…"]} />
                 </Button>
                 <Button onClick={() => navigate(`/projects/${projectId}`)} type="button" variant="tonal">Manage</Button>
-                <Button onClick={() => navigate(`/projects/${projectId}/backups`)} type="button" variant="text">Backups</Button>
+                <Button onClick={() => navigate(`/projects/${projectId}/backups`)} type="button" variant="tonal">Backups</Button>
                 <IconButton className="project-more-actions" label={`More actions for ${projectName(project)}`} onClick={() => setMenuOpen(true)} ref={menuAnchorRef} type="button">
                     <Icon asset={moreVertIcon} size={24} />
                 </IconButton>
