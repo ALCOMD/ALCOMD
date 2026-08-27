@@ -396,9 +396,9 @@ feature-parity.toml
 specs/config/ specs/extensions/ specs/gui/ specs/rpc/ specs/security/ specs/storage/
 ```
 
-manifest/lock 例外只有获批的 `apps/alcomd-gui/package.json` exact devDependency `@playwright/test = 1.62.1`、
-`packages/alcomd-ui/package.json` exact production asset dependency `@material-symbols/svg-400 = 0.47.0`，以及根
-`package-lock.json` 对应的零传递 Material Symbols record 与正常 Playwright closure。其余 Cargo/npm manifest/lock、dependency graph、unsafe whitelist、platform API、
+manifest/lock 例外只有获批的 `apps/alcomd-gui/package.json` exact devDependency `@playwright/test = 1.62.1`
+及根 `package-lock.json` 的正常 Playwright closure。Material Symbols 改为固定 Google upstream commit 的 only-used
+vendored SVG，不再存在 Material Symbols npm dependency。其余 Cargo/npm manifest/lock、dependency graph、unsafe whitelist、platform API、
 Tauri unstable/capability、iframe/child WebView/WebviewWindow 以及任何 M8/M9 production wiring 仍禁止。
 
 ## 明确排除
@@ -540,6 +540,45 @@ Activity、Diagnostics 或 Portable UI authority。
 - 2026-08-26：首轮 Visual Gate 2 修正候选已完成本地技术验证：npm check/build、Playwright 18 项、Tauri release
   no-bundle、xtask、metadata、baseline freeze 与 diff gate 均通过；shipping bundle 包含 30 个实际使用的 SVG data URL，
   不含 Google Fonts 请求或第三方 package path。Visual Gate 2 仍等待项目所有者复看 real release GUI，不因自动化通过而关闭。
+- 2026-08-26：项目所有者复看 `6dd463852227f565b055fdd8ada21575ee9ba6a8` 后确认左对齐问题已修复，但拒绝继续用
+  native control + custom CSS 模拟 Material Web component。正式执行规则修正为：只要 `@material/web 2.5.0` 存在适用组件，
+  official GUI 和 Portable UI 必须经 `@alcomd/ui` 的窄 facade 渲染真实 `md-*` element；native button/input/select/
+  textarea/progress/dialog 均由 source gate 禁止。2.5.0 没有完整 Navigation Drawer/Rail，且 `md-list-item` 不能提供本导航
+  所需的 button/`aria-current` 合同，因此 primary navigation 是唯一窄例外：保留 semantic native button，并组合真实
+  `md-ripple`/`md-focus-ring`，不再用伪元素或 JavaScript 模拟 Material state layer。该例外不得扩展到其他控件。
+- 2026-08-27：项目所有者要求导航实现以 Material Web 官方页面源码而非截图近似为准。只读核对官方仓库
+  `cac97678831d48d4eb4a606ca50f92673a1dc20c` 后，确认 catalog drawer 的真实 composition 是 custom `nav-drawer`
+  shell + `md-list` + `md-list-item`，并以 12px list/item spacing、28px shape 和 `surface-container-highest` selected
+  container 实现。Primary Navigation 因此移除最后一个 native button exception，改由 `@alcomd/ui` 集中注册并由 GUI 窄
+  facade 渲染真实 Material List/ListItem；semantic aside/nav shell保留，未采用labs drawer、未新增dependency，也未改变
+  route/RPC/state/permission。Material 2.5.0 的 delegated ARIA行为由integration test固定，不以shadow DOM私有结构作为合同。
+- 2026-08-27：项目所有者复看后指出连续 navigation items 仍过于松散。进一步核对 Material 3 Navigation Drawer
+  component contract，确认 item shape top/bottom inset 为 0dp；Material Web catalog site 的 12px block margin 是文档站局部
+  layout，并非必须继承的MD3导航间距。ALCOMD移除连续item之间的额外margin，保留56px component height、28px shape、
+  12px drawer inline inset、Material state layer以及独立区域之间的语义分隔。
+- 2026-08-27：项目所有者最终选择 v3 final 的实际尺寸作为导航密度基线，并明确包含总宽、高度和间距。只读审计
+  `SideBar.tsx` 冻结：260px sidebar、12px padding、4px item gap、48px item height、16px item inline padding、
+  20px icon、16px icon-label gap、full-pill shape、14px/20px weight-500 label和
+  `surface-container-highest` selected/hover container。v4只覆盖Material List tokens与host spacing，仍使用真实
+  `md-list`/`md-list-item`、Material Symbols和既有route/RPC边界，不复制v3 React/Tailwind实现。
+- 2026-08-27：项目所有者纠正 icon infrastructure：`@material-symbols/svg-400`/`svg-500` static SVG 固定
+  `opsz=48`，均标记 `rejected_as_final_icon_source` 并从 manifest/lock 移除。最终只从 Google 官方
+  `google/material-design-icons@e083cc60a0828fdd3b404cea0cb8a5b900e9c23e` vendoring 当前实际使用的 Rounded / weight
+  400 / grade 0 / fill 0 / opsz 20 或 24 SVG；`@alcomd/ui` 按 exact optical size 提供闭合 named export，mask 保留
+  官方 geometry/currentColor 并删除 120% 裁边及单图标补丁。selected navigation 继续复用 fill-0 symbol，只由
+  Material selected container/state 表达选择。
+- 2026-08-27：项目所有者在真实 release GUI 中观察后判定 primary navigation 的真实 20px/opsz20 symbols 视觉过小。
+  primary navigation 因此整体使用真实 24px/opsz24 SVG，并把 host icon-label gap 从 16px 调整为 12px，使标签起点、
+  48px item height 与其他 v3-derived shell geometry 保持不变；没有裁边、scale、weight override 或 per-icon 特例。
+- 2026-08-27：项目所有者批准 Projects 列表移除低价值 package count，并以 v3 的添加日期体验恢复真实注册时间。
+  RPC v1 只兼容增加可选 `ProjectSnapshot.registeredAtMs`：注册项目返回 store 中既有的 registration timestamp，
+  未注册 `projects.inspect` snapshot 省略；不新增 method、capability、permission 或 State Schema，GUI 不得以
+  `observedAtMs` 伪造添加日期。
+- 2026-08-28：项目所有者在真实 release GUI 中逐项复看 Projects 列表后认可当前局部实现。列表模式只通过表头排序，
+  Project 列保留可见最小宽度并在宽屏伸展，其余可预测列与 action region 按最长冻结文案锁定宽度；Added 使用
+  `YYYY-MM-DD`，Last observed 使用相对时间。表头与单元格统一左对齐、单行截断，Type 的 24px symbol 与文本基线对齐；
+  Open Unity、Manage、Backups 与 Material overflow menu 均保留固定 action footprint。Primary navigation 不提供收起状态，
+  窄宽度直接裁切而不产生额外滚动条。本次局部认可不关闭完整 Visual Gate 2，也不批准其他 H2、H3-H7。
 
 ## 下一停止点
 

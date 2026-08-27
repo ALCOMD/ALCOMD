@@ -39,25 +39,26 @@
     --md-sys-shape-corner-medium: 12px;
     --md-sys-shape-corner-large: 16px;
     --md-sys-shape-corner-extra-large: 28px;
+    --md-sys-shape-corner-full: 9999px;
     --alcomd-control-height: 48px;
     --alcomd-space: 20px;
 }
 
 .alcomd-icon {
     display: inline-block;
-    width: var(--alcomd-icon-size, 20px);
-    height: var(--alcomd-icon-size, 20px);
+    width: var(--alcomd-icon-size, 24px);
+    height: var(--alcomd-icon-size, 24px);
     flex: 0 0 auto;
     vertical-align: middle;
     background-color: currentColor;
     mask-image: var(--alcomd-icon-url);
     mask-position: center;
     mask-repeat: no-repeat;
-    mask-size: contain;
+    mask-size: 100%;
     -webkit-mask-image: var(--alcomd-icon-url);
     -webkit-mask-position: center;
     -webkit-mask-repeat: no-repeat;
-    -webkit-mask-size: contain;
+    -webkit-mask-size: 100%;
 }
 
 :root[data-source-color="blue"] {

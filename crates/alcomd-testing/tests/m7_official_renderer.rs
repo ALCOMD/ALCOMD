@@ -81,7 +81,11 @@ fn official_renderer_exhaustively_maps_v1_without_private_authority() {
 fn official_shell_preserves_host_owned_accessibility_and_responsive_boundaries() {
     assert!(APP.contains("Extension-provided content"));
     assert!(APP.contains("Host-verified extension identity"));
-    assert!(APP.contains("window.confirm(DISCARD_MESSAGE)"));
+    assert!(!APP.contains("window.confirm("));
+    assert!(APP.contains("<MaterialDialog"));
+    assert!(APP.contains("Discard unsaved changes?"));
+    assert!(APP.contains("Keep editing"));
+    assert!(APP.contains("Discard changes"));
     assert!(APP.contains("applyAppearance"));
     assert!(APP.contains("client.settingsGet()"));
     assert!(APP.contains("sourceColorName"));

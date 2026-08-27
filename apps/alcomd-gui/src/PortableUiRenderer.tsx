@@ -1,4 +1,4 @@
-import type { ChangeEvent, FormEvent, ReactNode } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { useEffect, useState } from "react";
 import type { UiAction, UiFieldValue, UiNode, UiSnapshot } from "@alcomd/sdk";
 
@@ -11,7 +11,7 @@ import {
     type FormDraft,
     type UiTreeNode
 } from "./portable-ui";
-import { Button } from "./Material";
+import { Button, Progress, Select, Switch, TextField } from "./Material";
 
 interface PortableUiRendererProps {
     snapshot: UiSnapshot;
@@ -127,9 +127,9 @@ export function PortableUiRenderer({
                     >
                         <fieldset disabled={disabled}>
                             {formChildren}
-                            <button className="button button--filled" type="submit">
+                            <Button disabled={disabled} type="submit">
                                 {node.payload.submitLabel}
-                            </button>
+                            </Button>
                         </fieldset>
                         {formError?.formId !== node.nodeId ? null : (
                             <p className="field-error" role="alert">{formError.message}</p>
@@ -170,10 +170,10 @@ export function PortableUiRenderer({
                     ? node.payload.value.basisPoints
                     : undefined;
                 return (
-                    <label className="portable-progress" key={key}>
+                    <div className="portable-progress" key={key}>
                         <span>{node.payload.label}</span>
-                        <progress max={10_000} value={progress} />
-                    </label>
+                        <Progress label={node.payload.label} max={10_000} value={progress} />
+                    </div>
                 );
             }
             case "divider":
@@ -222,27 +222,25 @@ function renderSwitch(
     const checked = current?.kind === "boolean" ? current.value : node.payload.initialValue;
     const validationId = invalidValidationId(node);
     return (
-        <label className="portable-switch" key={node.nodeId}>
-            <input
+        <div className="portable-switch" key={node.nodeId}>
+            <Switch
                 aria-describedby={validationId}
                 aria-invalid={validationId === undefined ? undefined : true}
                 aria-readonly={node.payload.readOnly}
-                checked={checked}
                 disabled={inheritedDisabled || node.payload.disabled || node.payload.readOnly}
-                onChange={(event) => {
+                label={node.payload.label}
+                onChange={(selected) => {
                     if (!node.payload.readOnly) {
                         changeField(formId, node.payload.fieldId, {
                             kind: "boolean",
-                            value: event.currentTarget.checked
+                            value: selected
                         });
                     }
                 }}
-                readOnly={node.payload.readOnly}
-                type="checkbox"
+                selected={checked}
             />
-            <span>{node.payload.label}</span>
             {renderValidation(node)}
-        </label>
+        </div>
     );
 }
 
@@ -256,28 +254,34 @@ function renderTextField(
     const current = fieldValue(drafts, formId, node.payload.fieldId);
     const value = current?.kind === "text" ? current.value : node.payload.initialValue;
     const validationId = invalidValidationId(node);
-    const shared = {
-        "aria-describedby": validationId,
-        "aria-invalid": validationId === undefined ? undefined : true,
-        disabled: inheritedDisabled || node.payload.disabled,
-        maxLength: node.payload.maxLength,
-        minLength: node.payload.minLength,
-        onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-            changeField(formId, node.payload.fieldId, {
-                kind: "text",
-                value: event.currentTarget.value
-            });
-        },
-        readOnly: node.payload.readOnly,
-        required: node.payload.required,
-        value
-    };
+    const validationMessage = node.payload.validation?.state === "invalid"
+        ? node.payload.validation.message
+        : undefined;
     return (
-        <label className="portable-field" key={node.nodeId}>
-            <span>{node.payload.label}</span>
-            {node.payload.multiline ? <textarea {...shared} rows={4} /> : <input {...shared} type="text" />}
-            {renderValidation(node)}
-        </label>
+        <div className="portable-field" key={node.nodeId}>
+            <TextField
+                aria-describedby={validationId}
+                aria-invalid={validationId === undefined ? undefined : true}
+                disabled={inheritedDisabled || node.payload.disabled}
+                error={validationId !== undefined}
+                errorText={validationMessage}
+                id={node.payload.fieldId}
+                label={node.payload.label}
+                maxLength={node.payload.maxLength}
+                minLength={node.payload.minLength}
+                onInput={(nextValue) => {
+                    changeField(formId, node.payload.fieldId, {
+                        kind: "text",
+                        value: nextValue
+                    });
+                }}
+                readOnly={node.payload.readOnly}
+                required={node.payload.required}
+                rows={node.payload.multiline ? 4 : undefined}
+                type={node.payload.multiline ? "textarea" : "text"}
+                value={value}
+            />
+        </div>
     );
 }
 
@@ -291,17 +295,22 @@ function renderIntegerField(
     const current = fieldValue(drafts, formId, node.payload.fieldId);
     const value = current?.kind === "integer" ? current.value : (node.payload.initialValue ?? "");
     const validationId = invalidValidationId(node);
+    const validationMessage = node.payload.validation?.state === "invalid"
+        ? node.payload.validation.message
+        : undefined;
     return (
-        <label className="portable-field" key={node.nodeId}>
-            <span>{node.payload.label}</span>
-            <input
+        <div className="portable-field" key={node.nodeId}>
+            <TextField
                 aria-describedby={validationId}
                 aria-invalid={validationId === undefined ? undefined : true}
                 disabled={inheritedDisabled || node.payload.disabled}
+                error={validationId !== undefined}
+                errorText={validationMessage}
+                id={node.payload.fieldId}
+                label={node.payload.label}
                 max={node.payload.maximum}
                 min={node.payload.minimum}
-                onChange={(event) => {
-                    const input = event.currentTarget.value;
+                onInput={(input) => {
                     const parsed = Number(input);
                     changeField(
                         formId,
@@ -316,8 +325,7 @@ function renderIntegerField(
                 type="number"
                 value={value}
             />
-            {renderValidation(node)}
-        </label>
+        </div>
     );
 }
 
@@ -332,31 +340,30 @@ function renderSelect(
     const value = current?.kind === "selection" ? current.value : (node.payload.initialOptionId ?? "");
     const validationId = invalidValidationId(node);
     return (
-        <label className="portable-field" key={node.nodeId}>
-            <span>{node.payload.label}</span>
-            <select
+        <div className="portable-field" key={node.nodeId}>
+            <Select
                 aria-describedby={validationId}
                 aria-invalid={validationId === undefined ? undefined : true}
-                aria-readonly={node.payload.readOnly}
                 disabled={inheritedDisabled || node.payload.disabled || node.payload.readOnly}
-                onChange={(event) => {
+                id={node.payload.fieldId}
+                label={node.payload.label}
+                onChange={(nextValue) => {
                     if (!node.payload.readOnly) {
                         changeField(formId, node.payload.fieldId, {
                             kind: "selection",
-                            value: event.currentTarget.value
+                            value: nextValue
                         });
                     }
                 }}
+                options={[
+                    ...(node.payload.initialOptionId === undefined ? [{ label: "Select…", value: "" }] : []),
+                    ...node.payload.options.map((option) => ({ label: option.label, value: option.optionId }))
+                ]}
                 required={node.payload.required}
                 value={value}
-            >
-                {node.payload.initialOptionId === undefined ? <option value="">Select…</option> : null}
-                {node.payload.options.map((option) => (
-                    <option key={option.optionId} value={option.optionId}>{option.label}</option>
-                ))}
-            </select>
+            />
             {renderValidation(node)}
-        </label>
+        </div>
     );
 }
 

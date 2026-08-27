@@ -134,7 +134,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     unityProjectEditorGet(): ReturnType<GuiRpcClient["unityProjectEditorGet"]> { return this.value({ preference: editorPreference(), replayed: false }); }
     unityProjectEditorSet(): ReturnType<GuiRpcClient["unityProjectEditorSet"]> { return this.value({ preference: editorPreference(), replayed: false }); }
     unityWriterState(): ReturnType<GuiRpcClient["unityWriterState"]> { return this.value({ projectId: PROJECT_ID, state: "not_observed", evidence: [], checkedAtMs: 1_700_000_000_000 }); }
-    unityLaunch(): ReturnType<GuiRpcClient["unityLaunch"]> { return this.value({ launch: launch(), replayed: false }); }
+    unityLaunch(): ReturnType<GuiRpcClient["unityLaunch"]> { return new Promise((resolve) => window.setTimeout(() => resolve({ launch: launch(), replayed: false }), 100)); }
     unityLaunchStatus(): ReturnType<GuiRpcClient["unityLaunchStatus"]> { return this.value({ launch: launch(), replayed: false }); }
 
     templatesList(): ReturnType<GuiRpcClient["templatesList"]> { return this.value({ templates: this.mode === "empty" ? [] : [template()] }); }
@@ -208,7 +208,7 @@ const MCP_ID = "com.cqmhv.mcp-management";
 const HASH = "a".repeat(64);
 
 function project() {
-    return { projectId: PROJECT_ID, rootPath: "<private-project>", projectType: "avatars", unityVersion: "2022.3.22f1", vpmManifest: "valid", upmManifest: "valid", directDependencies: [{ packageId: "com.example.avatar", value: "^1.2.0" }], lockedDependencies: [{ packageId: "com.example.avatar", value: "1.2.3" }], issues: [], observedAtMs: 1_700_000_000_000, revision: 2 };
+    return { projectId: PROJECT_ID, registeredAtMs: 1_690_000_000_000, rootPath: "<private-project>", projectType: "avatars", unityVersion: "2022.3.22f1", vpmManifest: "valid", upmManifest: "valid", directDependencies: [{ packageId: "com.example.avatar", value: "^1.2.0" }], lockedDependencies: [{ packageId: "com.example.avatar", value: "1.2.3" }], issues: [], observedAtMs: 1_700_000_000_000, revision: 2 };
 }
 function repository() { return { repositoryId: REPOSITORY_ID, source: { kind: "remote" as const, url: "https://packages.example.invalid/index.json" }, declaredId: "example", name: "Example packages", declaredUrl: "https://packages.example.invalid/index.json", issues: [], revision: 2, refreshedAtMs: 1_700_000_000_000 }; }
 function installation() { return { installationId: INSTALLATION_ID, executablePath: "<private-editor>", filesystemIdentity: "opaque", unityVersion: "2022.3.22f1", architecture: "x86_64", sourceKind: "manual", revision: 2, observedAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_000_000 }; }

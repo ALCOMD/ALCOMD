@@ -12,19 +12,12 @@ import {
 } from "@alcomd/ui";
 import {
     extensionIcon,
-    extensionSelectedIcon,
     infoIcon,
-    infoSelectedIcon,
     logIcon,
-    logSelectedIcon,
     packagesIcon,
-    packagesSelectedIcon,
     projectsIcon,
-    projectsSelectedIcon,
     settingsIcon,
-    settingsSelectedIcon,
     taskCenterIcon,
-    taskCenterSelectedIcon,
     type IconAsset
 } from "@alcomd/ui/icons";
 import type { ReactNode } from "react";
@@ -57,7 +50,7 @@ import {
     PortableUiConsumerError,
     acceptSnapshot
 } from "./portable-ui";
-import { Button, Icon } from "./Material";
+import { Button, Dialog as MaterialDialog, Icon, NavigationList, NavigationListItem } from "./Material";
 import { guiRpcClient, type GuiRpcClient } from "./rpc";
 import type { SettingsGetResult } from "./core-models";
 
@@ -92,11 +85,10 @@ interface AppProps {
 
 export function App({ client = guiRpcClient }: AppProps) {
     const [route, setRoute] = useState<Route>(() => readRoute(window.location.pathname));
-    const [navigationOpen, setNavigationOpen] = useState(false);
+    const [pendingRoute, setPendingRoute] = useState<Route>();
     const [appearance, setAppearance] = useState<AppearanceSettings>(defaultAppearance);
     const [locale, setLocale] = useState(() => preferredLocale(navigator.language));
     const dirtyRef = useRef(false);
-    const navigationToggleRef = useRef<HTMLElement>(null);
     const handleDirtyChange = useCallback((dirty: boolean) => {
         dirtyRef.current = dirty;
     }, []);
@@ -133,8 +125,9 @@ export function App({ client = guiRpcClient }: AppProps) {
     useEffect(() => {
         const onPopState = () => {
             const next = readRoute(window.location.pathname);
-            if (dirtyRef.current && !window.confirm(DISCARD_MESSAGE)) {
+            if (dirtyRef.current) {
                 window.history.pushState(null, "", routePath(route));
+                setPendingRoute(next);
                 return;
             }
             dirtyRef.current = false;
@@ -155,35 +148,14 @@ export function App({ client = guiRpcClient }: AppProps) {
     }, []);
 
     useEffect(() => {
-        setNavigationOpen(false);
         window.requestAnimationFrame(() => {
             document.querySelector<HTMLElement>("#route-title, #extension-ui-title")?.focus();
         });
     }, [route]);
 
-    useEffect(() => {
-        if (!navigationOpen) return;
-        const onKeyDown = (event: KeyboardEvent) => {
-            if (event.key === "Escape") {
-                event.preventDefault();
-                setNavigationOpen(false);
-                window.requestAnimationFrame(() => navigationToggleRef.current?.focus());
-            }
-        };
-        window.addEventListener("keydown", onKeyDown);
-        const focusTimer = window.setTimeout(() => {
-            const currentItem = document.querySelector<HTMLElement>("#primary-navigation nav .navigation-item[aria-current='page']");
-            const firstItem = document.querySelector<HTMLElement>("#primary-navigation nav .navigation-item");
-            (currentItem ?? firstItem)?.focus();
-        }, 0);
-        return () => {
-            window.clearTimeout(focusTimer);
-            window.removeEventListener("keydown", onKeyDown);
-        };
-    }, [navigationOpen]);
-
     const navigateRoute = (next: Route) => {
-        if (dirtyRef.current && !window.confirm(DISCARD_MESSAGE)) {
+        if (dirtyRef.current) {
+            setPendingRoute(next);
             return;
         }
         dirtyRef.current = false;
@@ -191,32 +163,23 @@ export function App({ client = guiRpcClient }: AppProps) {
         setRoute(next);
     };
 
+    const discardAndNavigate = () => {
+        if (pendingRoute === undefined) return;
+        dirtyRef.current = false;
+        window.history.pushState(null, "", routePath(pendingRoute));
+        setRoute(pendingRoute);
+        setPendingRoute(undefined);
+    };
+
     const navigate = (path: string) => navigateRoute(readRoute(path));
 
     return (
         <div className="app-shell">
             <div className="app-body">
-                <Button
-                    aria-controls="primary-navigation"
-                    aria-expanded={navigationOpen}
-                    className="navigation-toggle"
-                    onClick={() => setNavigationOpen((current) => !current)}
-                    ref={navigationToggleRef}
-                    type="button"
-                    variant="text"
-                >
-                    Menu
-                </Button>
-                {navigationOpen ? <button aria-hidden="true" className="navigation-scrim" onClick={() => setNavigationOpen(false)} tabIndex={-1} type="button" /> : null}
                 <PrimaryNavigation
                     client={client}
                     current={route}
                     navigate={navigate}
-                    onClose={() => {
-                        setNavigationOpen(false);
-                        window.requestAnimationFrame(() => navigationToggleRef.current?.focus());
-                    }}
-                    open={navigationOpen}
                 />
                 <main className="main-content" id="main-content">
                     <RouteContent
@@ -229,53 +192,48 @@ export function App({ client = guiRpcClient }: AppProps) {
                     />
                 </main>
             </div>
+            <MaterialDialog onClose={() => setPendingRoute(undefined)} open={pendingRoute !== undefined} title="Discard unsaved changes?">
+                <p>{DISCARD_MESSAGE}</p>
+                <div className="dialog-actions">
+                    <Button onClick={() => setPendingRoute(undefined)} type="button" variant="text">Keep editing</Button>
+                    <Button onClick={discardAndNavigate} type="button">Discard changes</Button>
+                </div>
+            </MaterialDialog>
         </div>
     );
 }
 
-function PrimaryNavigation({ client, current, navigate, onClose, open }: { client: GuiRpcClient; current: Route; navigate(path: string): void; onClose(): void; open: boolean }) {
+function PrimaryNavigation({ client, current, navigate }: { client: GuiRpcClient; current: Route; navigate(path: string): void }) {
     const items: readonly NavigationItem[] = [
-        { icon: projectsIcon, label: "Projects", path: "/projects", section: "projects", selectedIcon: projectsSelectedIcon },
-        { icon: packagesIcon, label: "Packages & Templates", path: "/repositories", section: "packages", selectedIcon: packagesSelectedIcon },
-        { icon: settingsIcon, label: "Settings", path: "/settings", section: "settings", selectedIcon: settingsSelectedIcon },
-        { icon: logIcon, label: "Log", path: "/activity", section: "log", selectedIcon: logSelectedIcon }
+        { icon: projectsIcon, label: "Projects", path: "/projects", section: "projects" },
+        { icon: packagesIcon, label: "Resources", path: "/repositories", section: "packages" },
+        { icon: settingsIcon, label: "Settings", path: "/settings", section: "settings" },
+        { icon: logIcon, label: "Logs", path: "/activity", section: "log" }
     ];
     return (
-        <aside className={`primary-navigation${open ? " primary-navigation--open" : ""}`} id="primary-navigation" onKeyDown={(event) => {
-            if (open) keepFocusInside(event);
-        }}>
+        <aside className="primary-navigation" id="primary-navigation">
             <a className="skip-link" href="#main-content">Skip to content</a>
-            <Button className="navigation-close" onClick={onClose} type="button" variant="text">Close</Button>
             <nav aria-label="Primary">
-                {items.map((item) => {
-                    const selected = routeSection(current) === item.section;
-                    return (
-                        <button
-                            aria-current={selected ? "page" : undefined}
-                            className="navigation-item"
-                            key={item.path}
-                            onClick={() => navigate(item.path)}
-                            type="button"
-                        >
-                            <Icon asset={selected ? item.selectedIcon : item.icon} />
-                            <span>{item.label}</span>
-                        </button>
-                    );
-                })}
+                <NavigationList className="navigation-list">
+                    {items.map((item) => {
+                        const selected = routeSection(current) === item.section;
+                        return (
+                            <NavigationListItem
+                                aria-current={selected ? "page" : undefined}
+                                className="navigation-item"
+                                key={item.path}
+                                onClick={() => navigate(item.path)}
+                                selected={selected}
+                            >
+                                <Icon asset={item.icon} size={24} slot="start" />
+                                <span className="navigation-item-label" slot="headline">{item.label}</span>
+                            </NavigationListItem>
+                        );
+                    })}
+                </NavigationList>
             </nav>
             <div className="navigation-spacer" />
-            <button
-                aria-current={routeSection(current) === "extensions" ? "page" : undefined}
-                className="navigation-item navigation-item--extension"
-                onClick={() => navigate("/extensions")}
-                type="button"
-            >
-                <Icon
-                    asset={routeSection(current) === "extensions" ? extensionSelectedIcon : extensionIcon}
-                />
-                <span>Extensions</span>
-            </button>
-            <NavigationUtilities client={client} current={current} navigate={navigate} />
+            <NavigationFooter client={client} current={current} navigate={navigate} />
         </aside>
     );
 }
@@ -285,10 +243,9 @@ interface NavigationItem {
     readonly label: string;
     readonly path: string;
     readonly section: "projects" | "packages" | "settings" | "log";
-    readonly selectedIcon: IconAsset;
 }
 
-function NavigationUtilities({ client, current, navigate }: { client: GuiRpcClient; current: Route; navigate(path: string): void }) {
+function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient; current: Route; navigate(path: string): void }) {
     const [summary, setSummary] = useState<{ activeTasks: number; daemonVersion?: string }>({ activeTasks: 0 });
     useEffect(() => {
         let active = true;
@@ -304,50 +261,44 @@ function NavigationUtilities({ client, current, navigate }: { client: GuiRpcClie
         return () => { active = false; };
     }, [client, current.kind]);
     return (
-        <footer className="navigation-utilities">
-            <button
-                aria-current={routeSection(current) === "tasks" ? "page" : undefined}
-                className="navigation-item navigation-item--utility"
-                onClick={() => navigate("/operations")}
-                type="button"
-            >
-                <Icon asset={routeSection(current) === "tasks" ? taskCenterSelectedIcon : taskCenterIcon} />
-                <span className="navigation-item-copy">
-                    <span>Task Center</span>
-                    {summary.activeTasks === 0 ? null : <span className="task-count">{summary.activeTasks} active</span>}
-                </span>
-            </button>
-            <button
-                aria-current={routeSection(current) === "about" ? "page" : undefined}
-                className="navigation-item navigation-item--utility"
-                onClick={() => navigate("/about")}
-                type="button"
-            >
-                <Icon asset={routeSection(current) === "about" ? infoSelectedIcon : infoIcon} />
-                <span className="navigation-item-copy">
-                    <span>About</span>
-                    {summary.daemonVersion === undefined ? null : <span className="utility-detail">{summary.daemonVersion}</span>}
-                </span>
-            </button>
+        <footer className="navigation-footer">
+            <nav aria-label="Utilities">
+                <NavigationList className="navigation-list navigation-list--footer">
+                    <NavigationListItem
+                        aria-current={routeSection(current) === "extensions" ? "page" : undefined}
+                        className="navigation-item"
+                        onClick={() => navigate("/extensions")}
+                        selected={routeSection(current) === "extensions"}
+                    >
+                        <Icon asset={extensionIcon} size={24} slot="start" />
+                        <span className="navigation-item-label" slot="headline">Extensions</span>
+                    </NavigationListItem>
+                    <NavigationListItem
+                        aria-label={summary.activeTasks === 0 ? "Task Center" : `Task Center ${summary.activeTasks} active`}
+                        aria-current={routeSection(current) === "tasks" ? "page" : undefined}
+                        className="navigation-item"
+                        onClick={() => navigate("/operations")}
+                        selected={routeSection(current) === "tasks"}
+                    >
+                        <Icon asset={taskCenterIcon} size={24} slot="start" />
+                        <span className="navigation-item-label" slot="headline">Task Center</span>
+                        {summary.activeTasks === 0 ? null : <span aria-hidden="true" className="navigation-item-meta" slot="end">{summary.activeTasks}</span>}
+                    </NavigationListItem>
+                    <NavigationListItem
+                        aria-label={summary.daemonVersion === undefined ? "About" : `About ${summary.daemonVersion}`}
+                        aria-current={routeSection(current) === "about" ? "page" : undefined}
+                        className="navigation-item"
+                        onClick={() => navigate("/about")}
+                        selected={routeSection(current) === "about"}
+                    >
+                        <Icon asset={infoIcon} size={24} slot="start" />
+                    <span className="navigation-item-label" slot="headline">About</span>
+                    {summary.daemonVersion === undefined ? null : <span aria-hidden="true" className="navigation-item-meta" slot="end">{summary.daemonVersion}</span>}
+                    </NavigationListItem>
+                </NavigationList>
+            </nav>
         </footer>
     );
-}
-
-function keepFocusInside(event: React.KeyboardEvent<HTMLElement>): void {
-    if (event.key !== "Tab") return;
-    const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("a[href], button:not(:disabled), md-icon-button:not([disabled]), md-text-button:not([disabled]), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])"))
-        .filter((element) => element.getClientRects().length > 0);
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (first === undefined || last === undefined) {
-        event.preventDefault();
-    } else if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-    }
 }
 
 function RouteContent({
@@ -402,6 +353,7 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
     const [extension, setExtension] = useState<ExtensionRecord>();
     const [snapshot, setSnapshot] = useState<UiSnapshot>();
     const [error, setError] = useState<RpcError>();
+    const [pendingDiscardAction, setPendingDiscardAction] = useState<"reconnect" | "refresh">();
     const [busy, setBusy] = useState(false);
     const [dirty, setDirty] = useState(false);
     const [generation, setGeneration] = useState(0);
@@ -478,11 +430,8 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
         };
     }, [client, extensionId, generation, locale, updateDirty]);
 
-    const refresh = async () => {
+    const performRefresh = async () => {
         if (snapshot === undefined || sessionIdRef.current === undefined || busy) {
-            return;
-        }
-        if (dirty && !window.confirm(DISCARD_MESSAGE)) {
             return;
         }
         setBusy(true);
@@ -499,6 +448,14 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
         } finally {
             setBusy(false);
         }
+    };
+
+    const refresh = async () => {
+        if (dirty) {
+            setPendingDiscardAction("refresh");
+            return;
+        }
+        await performRefresh();
     };
 
     const dispatch = async (action: UiAction) => {
@@ -527,11 +484,23 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
     };
 
     const reconnect = () => {
-        if (dirty && !window.confirm(DISCARD_MESSAGE)) {
+        if (dirty) {
+            setPendingDiscardAction("reconnect");
             return;
         }
         updateDirty(false);
         setGeneration((current) => current + 1);
+    };
+
+    const discardAndContinue = async () => {
+        const action = pendingDiscardAction;
+        setPendingDiscardAction(undefined);
+        updateDirty(false);
+        if (action === "refresh") {
+            await performRefresh();
+        } else if (action === "reconnect") {
+            setGeneration((current) => current + 1);
+        }
     };
 
     return (
@@ -542,9 +511,9 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
                     <h1 id="extension-ui-title" ref={headingRef} tabIndex={-1}>Extension UI</h1>
                     <p className="extension-id"><code>{extensionId}</code></p>
                 </div>
-                <button className="button button--tonal" disabled={busy || snapshot === undefined} onClick={() => void refresh()} type="button">
+                <Button disabled={busy || snapshot === undefined} onClick={() => void refresh()} type="button" variant="tonal">
                     {busy && snapshot !== undefined ? "Working…" : "Refresh"}
-                </button>
+                </Button>
             </header>
             {extension === undefined ? null : <ExtensionIdentity extension={extension} />}
             {busy && snapshot === undefined ? (
@@ -552,12 +521,19 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
             ) : null}
             {error === undefined ? null : (
                 <StatePanel
-                    action={<button className="button button--filled" onClick={reconnect} type="button">Reconnect</button>}
+                    action={<Button onClick={reconnect} type="button">Reconnect</Button>}
                     detail={error.diagnosticId === undefined ? undefined : `Diagnostic ID: ${error.diagnosticId}`}
                     kind={error.code === "daemon_unavailable" ? "disconnected" : "error"}
                     title={errorTitle(error.code)}
                 />
             )}
+            <MaterialDialog onClose={() => setPendingDiscardAction(undefined)} open={pendingDiscardAction !== undefined} title="Discard unsaved changes?">
+                <p>{DISCARD_MESSAGE}</p>
+                <div className="dialog-actions">
+                    <Button onClick={() => setPendingDiscardAction(undefined)} type="button" variant="text">Keep editing</Button>
+                    <Button onClick={() => void discardAndContinue()} type="button">Discard changes</Button>
+                </div>
+            </MaterialDialog>
             {snapshot === undefined ? null : (
                 <PortableUiRenderer
                     busy={busy}
@@ -768,10 +744,10 @@ function routeSection(route: Route): string {
 function sectionLabel(section: string): string {
     switch (section) {
         case "projects": return "Projects";
-        case "packages": return "Packages & Templates";
+        case "packages": return "Resources";
         case "extensions": return "Extensions";
         case "settings": return "Settings";
-        case "log": return "Log";
+        case "log": return "Logs";
         case "tasks": return "Task Center";
         case "about": return "About";
         default: return productFamily;

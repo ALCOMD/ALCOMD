@@ -1,5 +1,6 @@
 import type { ExtensionRecord, RpcError } from "@alcomd/sdk";
 import {
+    accountCircleIcon,
     arrowBackIcon,
     arrowDownwardIcon,
     arrowUpwardIcon,
@@ -7,7 +8,10 @@ import {
     deleteIcon,
     downloadIcon,
     historyIcon,
+    helpIcon,
+    moreVertIcon,
     playArrowIcon,
+    publicIcon,
     refreshIcon,
     searchIcon,
     syncIcon,
@@ -47,8 +51,9 @@ import {
     TemplateImportPanel,
     UnityRegistryActions
 } from "./CoreActions";
+import { DataTableHeader, MaterialDataTable } from "./DataTable";
 import type { GuiRpcClient } from "./rpc";
-import { Button, Dialog, Icon, IconButton, Select, TextField } from "./Material";
+import { Button, Dialog, Icon, IconButton, Menu, MenuItem, Select, TextField } from "./Material";
 
 interface PageProps {
     client: GuiRpcClient;
@@ -128,9 +133,9 @@ function RefreshBar({ error, refresh, refreshing }: { error?: RpcError; refresh(
         <div className="refresh-bar" role="status" aria-live="polite">
             <span>{refreshing ? "Refreshing while keeping the last result…" : "Current daemon state"}</span>
             {error === undefined ? null : <span className="inline-error">Refresh failed: {error.code}</span>}
-            <button className="button button--tonal" disabled={refreshing} onClick={refresh} type="button">
+            <Button disabled={refreshing} onClick={refresh} type="button" variant="tonal">
                 {refreshing ? "Refreshing…" : "Refresh"}
-            </button>
+            </Button>
         </div>
     );
 }
@@ -151,7 +156,7 @@ function ErrorState({ error, retry }: { error: RpcError; retry(): void }) {
             <h2>{disconnected ? "ALCOMD core disconnected" : "Request failed"}</h2>
             <p><code>{error.code}</code></p>
             {error.diagnosticId === undefined ? null : <p>Diagnostic ID: <code>{error.diagnosticId}</code></p>}
-            <button className="button button--filled" onClick={retry} type="button">Reconnect and retry</button>
+            <Button onClick={retry} type="button">Reconnect and retry</Button>
         </section>
     );
 }
@@ -164,7 +169,7 @@ export function HomePage({ client, navigate }: PageProps) {
                 <div className="dashboard-grid">
                     <article className="summary-card"><h2>ALCOMD core</h2><p className="status-value">{status.state}</p><p>Daemon {status.daemonVersion}</p></article>
                     <article className="summary-card"><h2>Protocol</h2><p className="status-value">RPC v{status.rpcVersion}</p><p>{status.capabilities.length} capabilities negotiated</p></article>
-                    <article className="summary-card"><h2>Get started</h2><button className="text-link" onClick={() => navigate("/projects")} type="button">Open projects</button></article>
+                    <article className="summary-card"><h2>Get started</h2><Button onClick={() => navigate("/projects")} type="button" variant="text">Open projects</Button></article>
                 </div>
             )}</ResourcePage>
         </Page>
@@ -206,9 +211,19 @@ export function ProjectsPage({ client, navigate }: PageProps) {
             if (sort === "name") compared = projectName(left).localeCompare(projectName(right));
             if (sort === "type") compared = left.projectType.localeCompare(right.projectType);
             if (sort === "unity") compared = left.unityVersion.localeCompare(right.unityVersion);
+            if (sort === "added") compared = (left.registeredAtMs ?? 0) - (right.registeredAtMs ?? 0);
             if (sort === "observed") compared = left.observedAtMs - right.observedAtMs;
             return descending ? -compared : compared;
         });
+
+    const updateSort = (nextSort: string) => {
+        if (sort === nextSort) {
+            setDescending((current) => !current);
+            return;
+        }
+        setSort(nextSort);
+        setDescending(nextSort === "added" || nextSort === "observed");
+    };
 
     return (
         <section className="projects-page">
@@ -217,33 +232,39 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                 <IconButton disabled={state.refreshing} label={state.refreshing ? "Refreshing projects" : "Refresh projects"} onClick={() => void refresh()} type="button">
                     <Icon asset={refreshIcon} />
                 </IconButton>
-                <TextField className="projects-search" label="Search projects" leadingIcon={<Icon asset={searchIcon} slot="leading-icon" />} onInput={setSearch} value={search} />
+                <TextField aria-label="Search projects" className="projects-search" label="" leadingIcon={<Icon asset={searchIcon} slot="leading-icon" />} onInput={setSearch} placeholder="Search..." type="search" value={search} variant="filled" />
                 <Button onClick={() => setView((current) => current === "list" ? "grid" : "list")} type="button" variant="text">
                     <Icon asset={view === "list" ? viewGridIcon : viewListIcon} slot="icon" />
                     {view === "list" ? "Grid view" : "List view"}
                 </Button>
                 <Button onClick={() => setRegisterOpen(true)} type="button">Register project</Button>
             </header>
-            <div className="projects-secondary-toolbar">
-                <Select
-                    className="projects-sort"
-                    label="Sort by"
-                    onChange={setSort}
-                    options={[
-                        { label: "Last observed", value: "observed" },
-                        { label: "Name", value: "name" },
-                        { label: "Project type", value: "type" },
-                        { label: "Unity version", value: "unity" }
-                    ]}
-                    value={sort}
-                />
-                <IconButton label={descending ? "Sort descending" : "Sort ascending"} onClick={() => setDescending((current) => !current)} type="button">
-                    <Icon asset={descending ? arrowDownwardIcon : arrowUpwardIcon} />
-                </IconButton>
-                <span className="projects-result-count" role="status" aria-live="polite">
-                    {projects.length} {projects.length === 1 ? "project" : "projects"}
-                </span>
-            </div>
+            {view === "grid" ? (
+                <div className="projects-secondary-toolbar">
+                    <span className="projects-sort-label">Sort by:</span>
+                    <Select
+                        aria-label="Sort by"
+                        className="projects-sort"
+                        label=""
+                        onChange={updateSort}
+                        options={[
+                            { label: "Last observed", value: "observed" },
+                            { label: "Name", value: "name" },
+                            { label: "Project type", value: "type" },
+                            { label: "Unity version", value: "unity" },
+                            { label: "Added", value: "added" }
+                        ]}
+                        value={sort}
+                        variant="filled"
+                    />
+                    <IconButton label={descending ? "Sort descending" : "Sort ascending"} onClick={() => setDescending((current) => !current)} type="button">
+                        <Icon asset={descending ? arrowDownwardIcon : arrowUpwardIcon} />
+                    </IconButton>
+                    <span className="projects-result-count" role="status" aria-live="polite">
+                        {projects.length} {projects.length === 1 ? "project" : "projects"}
+                    </span>
+                </div>
+            ) : null}
             <div className="projects-content">
                 {state.loading ? <RouteState kind="loading" title="Loading projects" /> : null}
                 {state.error !== undefined && state.projects.length === 0 ? <ErrorState error={state.error} retry={() => void refresh()} /> : null}
@@ -253,7 +274,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                         <p>{search.length === 0 ? "Register an existing Unity project from the toolbar." : "Change the search text to see other projects."}</p>
                     </section>
                 ) : null}
-                {projects.length > 0 && view === "list" ? <ProjectsTable navigate={navigate} projects={projects} /> : null}
+                {projects.length > 0 && view === "list" ? <ProjectsTable client={client} descending={descending} navigate={navigate} onChanged={() => void refresh()} onFeedback={setRegistrationMessage} onSort={updateSort} projects={projects} sort={sort} /> : null}
                 {projects.length > 0 && view === "grid" ? <div className="projects-grid">{projects.map((project) => <ProjectCard key={project.projectId ?? project.rootPath} project={project} navigate={navigate} />)}</div> : null}
             </div>
             {registrationMessage === undefined ? null : <p className="operation-feedback" role="status">{registrationMessage}</p>}
@@ -270,26 +291,130 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     );
 }
 
-function ProjectsTable({ navigate, projects }: { navigate(path: string): void; projects: ProjectSnapshot[] }) {
+function ProjectsTable({
+    client,
+    descending,
+    navigate,
+    onChanged,
+    onFeedback,
+    onSort,
+    projects,
+    sort
+}: {
+    client: GuiRpcClient;
+    descending: boolean;
+    navigate(path: string): void;
+    onChanged(): void;
+    onFeedback(message: string): void;
+    onSort(sort: string): void;
+    projects: ProjectSnapshot[];
+    sort: string;
+}) {
+    const sortableHeader = (label: string, key: string) => {
+        const active = sort === key;
+        return (
+            <DataTableHeader onSort={() => onSort(key)} sortDirection={active ? (descending ? "descending" : "ascending") : undefined}>
+                {label}
+            </DataTableHeader>
+        );
+    };
     return (
-        <div className="projects-table-scroll">
-            <table className="projects-table">
-                <thead><tr><th>Project</th><th>Type</th><th>Unity</th><th>Packages</th><th>Last observed</th><th><span className="visually-hidden">Actions</span></th></tr></thead>
+        <MaterialDataTable className="projects-table" label="Projects" minWidth={720}>
+                <colgroup><col className="projects-column-project" /><col className="projects-column-type" /><col className="projects-column-unity" /><col className="projects-column-added" /><col className="projects-column-observed" /><col className="projects-column-actions" /></colgroup>
+                <thead><tr>{sortableHeader("Project", "name")}{sortableHeader("Type", "type")}{sortableHeader("Unity", "unity")}{sortableHeader("Added", "added")}{sortableHeader("Last observed", "observed")}<DataTableHeader><span className="visually-hidden">Actions</span></DataTableHeader></tr></thead>
                 <tbody>{projects.map((project) => {
                     const id = project.projectId;
                     return (
                         <tr key={id ?? project.rootPath}>
-                            <td><strong>{projectName(project)}</strong><small>{project.rootPath}</small></td>
-                            <td>{project.projectType}</td>
+                            <td><strong>{projectName(project)}</strong><small title={displayProjectPath(project.rootPath)}>{displayProjectPath(project.rootPath)}</small></td>
+                            <td><span className="project-type project-type--table"><Icon asset={projectTypeIcon(project.projectType)} /><span>{projectTypeLabel(project.projectType)}</span></span></td>
                             <td>{project.unityVersion || "Unknown"}</td>
-                            <td>{project.directDependencies.length} direct</td>
+                            <td>{formatRegistered(project.registeredAtMs)}</td>
                             <td>{formatObserved(project.observedAtMs)}</td>
-                            <td>{id === undefined ? <span className="project-unregistered">Unregistered</span> : <div className="project-row-actions"><Button onClick={() => navigate(`/projects/${id}`)} type="button" variant="tonal">Manage</Button><Button onClick={() => navigate(`/projects/${id}/backups`)} type="button" variant="text">Backups</Button></div>}</td>
+                            <td>{id === undefined ? <span className="project-unregistered">Unregistered</span> : <ProjectRowActions client={client} navigate={navigate} onChanged={onChanged} onFeedback={onFeedback} project={project} />}</td>
                         </tr>
                     );
                 })}</tbody>
-            </table>
-        </div>
+        </MaterialDataTable>
+    );
+}
+
+function ProjectRowActions({ client, navigate, onChanged, onFeedback, project }: { client: GuiRpcClient; navigate(path: string): void; onChanged(): void; onFeedback(message: string): void; project: ProjectSnapshot }) {
+    const [opening, setOpening] = useState(false);
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [unregistering, setUnregistering] = useState(false);
+    const [confirmUnregister, setConfirmUnregister] = useState(false);
+    const menuAnchorRef = useRef<HTMLElement>(null);
+    const projectId = project.projectId;
+    const revision = project.revision;
+    if (projectId === undefined) return null;
+
+    const openUnity = async () => {
+        if (revision === undefined) return;
+        setOpening(true);
+        onFeedback("Opening Unity…");
+        try {
+            const result = await client.unityLaunch(projectId, revision);
+            onFeedback(`Unity launch ${result.launch.state}.`);
+        } catch (caught: unknown) {
+            onFeedback(`Unable to open Unity: ${safeError(caught).code}`);
+        } finally {
+            setOpening(false);
+        }
+    };
+
+    const unregister = async () => {
+        if (revision === undefined) return;
+        setUnregistering(true);
+        try {
+            await client.projectUnregister(projectId, revision);
+            setConfirmUnregister(false);
+            onFeedback("Project unregistered. Files were not deleted.");
+            onChanged();
+        } catch (caught: unknown) {
+            onFeedback(`Unable to unregister project: ${safeError(caught).code}`);
+        } finally {
+            setUnregistering(false);
+        }
+    };
+
+    return (
+        <>
+            <div className="project-row-actions">
+                <Button className="project-open-unity-action" disabled={opening || revision === undefined} onClick={() => void openUnity()} type="button">
+                    <Icon asset={playArrowIcon} slot="icon" />
+                    <StateSizedLabel current={opening ? "Opening…" : "Open Unity"} labels={["Open Unity", "Opening…"]} />
+                </Button>
+                <Button onClick={() => navigate(`/projects/${projectId}`)} type="button" variant="tonal">Manage</Button>
+                <Button onClick={() => navigate(`/projects/${projectId}/backups`)} type="button" variant="text">Backups</Button>
+                <IconButton className="project-more-actions" label={`More actions for ${projectName(project)}`} onClick={() => setMenuOpen(true)} ref={menuAnchorRef} type="button">
+                    <Icon asset={moreVertIcon} size={24} />
+                </IconButton>
+                <Menu anchorRef={menuAnchorRef} className="project-actions-menu" onClose={() => setMenuOpen(false)} open={menuOpen}>
+                    <MenuItem className="project-actions-menu-item" disabled label="Open Project Directory" title="Requires an approved project-directory RPC capability" />
+                    <MenuItem className="project-actions-menu-item" disabled label="Copy Project" title="Requires an approved project-copy RPC capability" />
+                    <MenuItem className="project-actions-menu-item project-actions-menu-item--danger" disabled={revision === undefined} label="Remove Project" onClick={() => setConfirmUnregister(true)} />
+                </Menu>
+            </div>
+            <Dialog onClose={() => setConfirmUnregister(false)} open={confirmUnregister} title="Remove this project?">
+                <p>This removes the project from ALCOMD. It does not delete the Unity project directory.</p>
+                <div className="dialog-actions">
+                    <Button disabled={unregistering} onClick={() => setConfirmUnregister(false)} type="button" variant="text">Cancel</Button>
+                    <Button className="material-button--danger" disabled={unregistering || revision === undefined} onClick={() => void unregister()} type="button" variant="text">
+                        <StateSizedLabel current={unregistering ? "Removing…" : "Remove"} labels={["Remove", "Removing…"]} />
+                    </Button>
+                </div>
+            </Dialog>
+        </>
+    );
+}
+
+function StateSizedLabel({ current, labels }: { current: string; labels: readonly string[] }) {
+    return (
+        <span className="state-sized-label">
+            {labels.map((label) => <span aria-hidden="true" className="state-sized-label-reserve" key={label}>{label}</span>)}
+            <span className="state-sized-label-current">{current}</span>
+        </span>
     );
 }
 
@@ -297,10 +422,10 @@ function ProjectCard({ project, navigate }: { project: ProjectSnapshot; navigate
     const id = project.projectId;
     return (
         <article className="project-card">
-            <h2>{project.rootPath.split(/[\\/]/).at(-1) ?? "Unity project"}</h2>
-            <p className="project-path">{project.rootPath}</p>
-            <p>{project.projectType} · Unity {project.unityVersion || "unknown"}</p>
-            <p className="project-meta">{project.directDependencies.length} direct packages · observed {formatObserved(project.observedAtMs)}</p>
+            <h2>{projectName(project)}</h2>
+            <p className="project-path" title={displayProjectPath(project.rootPath)}>{displayProjectPath(project.rootPath)}</p>
+            <p><span className="project-type"><Icon asset={projectTypeIcon(project.projectType)} /><span>{projectTypeLabel(project.projectType)}</span></span> · Unity {project.unityVersion || "unknown"}</p>
+            <p className="project-meta">Added {formatRegistered(project.registeredAtMs)} · observed {formatObserved(project.observedAtMs)}</p>
             {id === undefined ? <span className="project-unregistered">Unregistered</span> : <div className="project-card-actions"><Button onClick={() => navigate(`/projects/${id}`)} variant="tonal">Manage</Button><Button onClick={() => navigate(`/projects/${id}/backups`)} variant="text">Backups</Button></div>}
         </article>
     );
@@ -365,11 +490,57 @@ function RegisterProjectDialog({ client, onChanged, onClose, open }: { client: G
 }
 
 function projectName(project: ProjectSnapshot): string {
-    return project.rootPath.split(/[\\/]/).at(-1) ?? "Unity project";
+    return displayProjectPath(project.rootPath).split(/[\\/]/).at(-1) ?? "Unity project";
 }
 
 function formatObserved(value: number): string {
-    return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value));
+    const elapsed = Date.now() - value;
+    const absoluteElapsed = Math.abs(elapsed);
+    const minute = 60_000;
+    const hour = 60 * minute;
+    const day = 24 * hour;
+    const week = 7 * day;
+    const month = 30 * day;
+    const year = 365 * day;
+    const formatter = new Intl.RelativeTimeFormat("en", { numeric: "always" });
+
+    if (!Number.isFinite(value)) return "Unknown";
+    if (absoluteElapsed < minute) return elapsed >= 0 ? "moments ago" : "in moments";
+    if (absoluteElapsed < hour) return formatter.format(-Math.trunc(elapsed / minute), "minute");
+    if (absoluteElapsed < day) return formatter.format(-Math.trunc(elapsed / hour), "hour");
+    if (absoluteElapsed < week) return formatter.format(-Math.trunc(elapsed / day), "day");
+    if (absoluteElapsed < month) return formatter.format(-Math.trunc(elapsed / week), "week");
+    if (absoluteElapsed < year) return formatter.format(-Math.trunc(elapsed / month), "month");
+    return formatter.format(-Math.trunc(elapsed / year), "year");
+}
+
+function formatRegistered(value: number | undefined): string {
+    if (value === undefined || !Number.isFinite(value)) return "Unknown";
+    const date = new Date(value);
+    const year = date.getFullYear().toString().padStart(4, "0");
+    const month = (date.getMonth() + 1).toString().padStart(2, "0");
+    const day = date.getDate().toString().padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+function displayProjectPath(path: string): string {
+    if (path.startsWith("\\\\?\\UNC\\")) return `\\\\${path.slice(8)}`;
+    if (path.startsWith("\\\\?\\")) return path.slice(4);
+    return path;
+}
+
+function projectTypeIcon(projectType: string) {
+    const normalized = projectType.toLocaleLowerCase();
+    if (normalized.includes("avatar")) return accountCircleIcon;
+    if (normalized.includes("world")) return publicIcon;
+    return helpIcon;
+}
+
+function projectTypeLabel(projectType: string): string {
+    const normalized = projectType.toLocaleLowerCase();
+    if (normalized.includes("avatar")) return "Avatar";
+    if (normalized.includes("world")) return "World";
+    return projectType.length === 0 ? "Unknown" : projectType;
 }
 
 export function ProjectDetailPage(props: PageProps & { projectId: string }) {
@@ -461,8 +632,8 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                         </header>
                         <div className="package-workspace-table-scroll">
                             {rows.length === 0 ? <section className="projects-empty" role="status"><h3>No matching packages</h3><p>Change the search or package filter.</p></section> : (
-                                <table className="package-workspace-table">
-                                    <thead><tr><th>Package</th><th>Installed</th><th>Latest</th><th>Source</th><th><span className="visually-hidden">Actions</span></th></tr></thead>
+                                <MaterialDataTable className="package-workspace-table" label="Packages" minWidth={780}>
+                                    <thead><tr><DataTableHeader>Package</DataTableHeader><DataTableHeader>Installed</DataTableHeader><DataTableHeader>Latest</DataTableHeader><DataTableHeader>Source</DataTableHeader><DataTableHeader><span className="visually-hidden">Actions</span></DataTableHeader></tr></thead>
                                     <tbody>{rows.map((row) => {
                                         const latest = row.availableVersions.at(-1);
                                         const canUpgrade = row.installedVersion !== undefined && latest !== undefined && latest !== row.installedVersion;
@@ -476,7 +647,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                             </tr>
                                         );
                                     })}</tbody>
-                                </table>
+                                </MaterialDataTable>
                             )}
                         </div>
                     </section>
@@ -520,7 +691,7 @@ export function RepositoriesPage({ client, navigate }: PageProps) {
 }
 
 function RepositoryCard({ repository, navigate }: { repository: RepositorySnapshot; navigate(path: string): void }) {
-    return <article className="resource-card"><h2>{repository.name ?? repository.declaredId ?? "Repository"}</h2><p>{sourceText(repository)}</p><p>Revision {repository.revision ?? "unregistered"}</p>{repository.repositoryId === undefined ? null : <button className="text-link" onClick={() => navigate(`/repositories/${repository.repositoryId}`)} type="button">Browse packages</button>}</article>;
+    return <article className="resource-card"><h2>{repository.name ?? repository.declaredId ?? "Repository"}</h2><p>{sourceText(repository)}</p><p>Revision {repository.revision ?? "unregistered"}</p>{repository.repositoryId === undefined ? null : <Button onClick={() => navigate(`/repositories/${repository.repositoryId}`)} type="button" variant="text">Browse packages</Button>}</article>;
 }
 
 export function RepositoryDetailPage({ client, repositoryId }: PageProps & { repositoryId: string }) {
@@ -534,7 +705,7 @@ export function TemplatesPage({ client, navigate }: PageProps) {
 }
 
 function TemplateCard({ template, navigate }: { template: TemplateRecord; navigate(path: string): void }) {
-    return <article className="resource-card"><h2>{template.displayName}</h2><p>{template.description ?? "No description"}</p><p>{template.sourceKind} · v{template.templateVersion}{template.favorite ? " · Favorite" : ""}</p><button className="text-link" onClick={() => navigate(`/templates/${template.templateId}`)} type="button">View template</button></article>;
+    return <article className="resource-card"><h2>{template.displayName}</h2><p>{template.description ?? "No description"}</p><p>{template.sourceKind} · v{template.templateVersion}{template.favorite ? " · Favorite" : ""}</p><Button onClick={() => navigate(`/templates/${template.templateId}`)} type="button" variant="text">View template</Button></article>;
 }
 
 export function TemplateDetailPage({ client, templateId }: PageProps & { templateId: string }) {
@@ -565,7 +736,7 @@ export function ProjectBackupsPage({ client, navigate, projectId }: PageProps & 
 }
 
 function BackupCard({ backup, navigate }: { backup: BackupRecord; navigate(path: string): void }) {
-    return <article className="resource-card"><h2>{formatTime(backup.createdAtMs)}</h2><p>{formatBytes(backup.archiveBytes)} · {backup.compressionMode}</p><p>{backup.excludeVpmPackages ? "VPM packages excluded" : "VPM packages included"}</p><button className="text-link" onClick={() => navigate(`/backups/${backup.backupId}`)} type="button">View backup</button></article>;
+    return <article className="resource-card"><h2>{formatTime(backup.createdAtMs)}</h2><p>{formatBytes(backup.archiveBytes)} · {backup.compressionMode}</p><p>{backup.excludeVpmPackages ? "VPM packages excluded" : "VPM packages included"}</p><Button onClick={() => navigate(`/backups/${backup.backupId}`)} type="button" variant="text">View backup</Button></article>;
 }
 
 export function BackupDetailPage({ client, backupId }: PageProps & { backupId: string }) {
@@ -579,7 +750,7 @@ export function OperationsPage({ client, navigate }: PageProps) {
 }
 
 function OperationCard({ operation, navigate }: { operation: Operation; navigate(path: string): void }) {
-    return <article className="resource-card"><h2>{humanize(operation.kind)}</h2><p className={`state-chip state-chip--${operation.state}`}>{humanize(operation.state)}</p><p>{operation.progress?.phase === undefined ? "No phase reported" : humanize(operation.progress.phase)}</p><button className="text-link" onClick={() => navigate(`/operations/${operation.operationId}`)} type="button">View operation</button></article>;
+    return <article className="resource-card"><h2>{humanize(operation.kind)}</h2><p className={`state-chip state-chip--${operation.state}`}>{humanize(operation.state)}</p><p>{operation.progress?.phase === undefined ? "No phase reported" : humanize(operation.progress.phase)}</p><Button onClick={() => navigate(`/operations/${operation.operationId}`)} type="button" variant="text">View operation</Button></article>;
 }
 
 export function OperationDetailPage({ client, operationId }: PageProps & { operationId: string }) {
@@ -593,12 +764,12 @@ export function ExtensionsPage({ client, navigate }: PageProps) {
 }
 
 function ExtensionCard({ extension, navigate }: { extension: ExtensionRecord; navigate(path: string): void }) {
-    return <article className="resource-card"><h2>{extension.extensionId}</h2><p>v{extension.version} · {humanize(extension.trustDecision)}</p><p>{humanize(extension.desiredState)} · {humanize(extension.runtimeState)}</p><button className="text-link" onClick={() => navigate(`/extensions/${extension.extensionId}`)} type="button">Manage extension</button></article>;
+    return <article className="resource-card"><h2>{extension.extensionId}</h2><p>v{extension.version} · {humanize(extension.trustDecision)}</p><p>{humanize(extension.desiredState)} · {humanize(extension.runtimeState)}</p><Button onClick={() => navigate(`/extensions/${extension.extensionId}`)} type="button" variant="text">Manage extension</Button></article>;
 }
 
 export function ExtensionDetailPage({ client, navigate, extensionId }: PageProps & { extensionId: string }) {
     const load = useCallback(() => client.extensionGet(extensionId), [client, extensionId]);
-    return <Page title="Extension detail" eyebrow={extensionId}><ResourcePage load={load}>{({ extension }, refresh) => <><dl className="detail-grid"><Detail label="Version" value={extension.version} /><Detail label="Publisher" value={shortHash(extension.publisherFingerprint)} /><Detail label="Trust" value={humanize(extension.trustDecision)} /><Detail label="Desired state" value={humanize(extension.desiredState)} /><Detail label="Runtime" value={humanize(extension.runtimeState)} /><Detail label="Quarantine" value={humanize(extension.quarantineState)} /><Detail label="Grant revision" value={String(extension.grantRevision)} /><Detail label="Record revision" value={String(extension.revision)} /></dl>{extension.ui?.protocol === "portable-v1" ? <button className="button button--filled" onClick={() => navigate(`/extensions/${extensionId}/ui`)} type="button">Open Portable UI</button> : <RouteState kind="empty" title="This extension has no Portable UI" />}<ExtensionActions client={client} extension={extension} onChanged={refresh} /></>}</ResourcePage></Page>;
+    return <Page title="Extension detail" eyebrow={extensionId}><ResourcePage load={load}>{({ extension }, refresh) => <><dl className="detail-grid"><Detail label="Version" value={extension.version} /><Detail label="Publisher" value={shortHash(extension.publisherFingerprint)} /><Detail label="Trust" value={humanize(extension.trustDecision)} /><Detail label="Desired state" value={humanize(extension.desiredState)} /><Detail label="Runtime" value={humanize(extension.runtimeState)} /><Detail label="Quarantine" value={humanize(extension.quarantineState)} /><Detail label="Grant revision" value={String(extension.grantRevision)} /><Detail label="Record revision" value={String(extension.revision)} /></dl>{extension.ui?.protocol === "portable-v1" ? <Button onClick={() => navigate(`/extensions/${extensionId}/ui`)} type="button">Open Portable UI</Button> : <RouteState kind="empty" title="This extension has no Portable UI" />}<ExtensionActions client={client} extension={extension} onChanged={refresh} /></>}</ResourcePage></Page>;
 }
 
 export function AboutPage({ client }: PageProps) {
@@ -623,7 +794,7 @@ function ActivityCard({ item, navigate }: { item: ActivityItem; navigate(path: s
             <h2>{humanize(item.summaryCode)}</h2>
             <p>{humanize(item.type)} · {formatTime(item.occurredAtMs)}</p>
             {item.state === undefined ? null : <p className={`state-chip state-chip--${item.state}`}>{humanize(item.state)}</p>}
-            {item.operationId === undefined ? null : <button className="text-link" onClick={() => navigate(`/operations/${item.operationId}`)} type="button">View operation</button>}
+            {item.operationId === undefined ? null : <Button onClick={() => navigate(`/operations/${item.operationId}`)} type="button" variant="text">View operation</Button>}
         </article>
     );
 }
@@ -651,7 +822,7 @@ export function DiagnosticsPage({ client }: PageProps) {
             <section className="action-section">
                 <h2>State integrity</h2>
                 <p>Start the daemon-owned read-only integrity check and follow its durable Operation.</p>
-                <button className="button button--filled" disabled={checking} onClick={() => void runStateCheck()} type="button">{checking ? "Starting…" : "Run state check"}</button>
+                <Button disabled={checking} onClick={() => void runStateCheck()} type="button">{checking ? "Starting…" : "Run state check"}</Button>
                 {checkError === undefined ? null : <p className="inline-error" role="alert"><code>{checkError.code}</code> — the state check could not be started.</p>}
                 {operationId === undefined ? null : <OperationFollow client={client} operationId={operationId} />}
             </section>
@@ -750,34 +921,18 @@ function SettingsForm({
 
     return (
         <form className="action-panel settings-form" onSubmit={(event) => void save(event)}>
-            <label htmlFor="settings-theme">Theme</label>
-            <select id="settings-theme" value={settings.appearance.mode} onChange={(event) => updateAppearance("mode", event.currentTarget.value as OfficialSettings["appearance"]["mode"])}>
-                <option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option>
-            </select>
-            <label htmlFor="settings-color">Source color</label>
-            <select aria-describedby="settings-color-hint" id="settings-color" value={settings.appearance.sourceColor ?? ""} onChange={(event) => updateAppearance("sourceColor", event.currentTarget.value || null)}>
-                <option value="">Product default</option><option value="#6750A4">Violet</option><option value="#315DA8">Blue</option><option value="#006A60">Teal</option>
-            </select>
-            <p className="field-hint" id="settings-color-hint">Saved as a canonical #RRGGBB value; extensions never receive this preference.</p>
-            <label htmlFor="settings-density">Density</label>
-            <select id="settings-density" value={settings.appearance.density} onChange={(event) => updateAppearance("density", event.currentTarget.value as OfficialSettings["appearance"]["density"])}>
-                <option value="default">Default</option><option value="compact">Compact</option>
-            </select>
-            <label htmlFor="settings-motion">Motion</label>
-            <select id="settings-motion" value={settings.appearance.motion} onChange={(event) => updateAppearance("motion", event.currentTarget.value as OfficialSettings["appearance"]["motion"])}>
-                <option value="system">System preference</option><option value="reduced">Reduce motion</option>
-            </select>
-            <label htmlFor="settings-locale">Language</label>
-            <select id="settings-locale" value={settings.locale} onChange={(event) => {
-                const locale = event.currentTarget.value as SettingsLocale;
+            <Select id="settings-theme" label="Theme" onChange={(next) => updateAppearance("mode", next as OfficialSettings["appearance"]["mode"])} options={[{ label: "System", value: "system" }, { label: "Light", value: "light" }, { label: "Dark", value: "dark" }]} value={settings.appearance.mode} />
+            <Select id="settings-color" label="Source color" onChange={(next) => updateAppearance("sourceColor", next || null)} options={[{ label: "Product default", value: "" }, { label: "Violet", value: "#6750A4" }, { label: "Blue", value: "#315DA8" }, { label: "Teal", value: "#006A60" }]} supportingText="Saved as a canonical #RRGGBB value; extensions never receive this preference." value={settings.appearance.sourceColor ?? ""} />
+            <Select id="settings-density" label="Density" onChange={(next) => updateAppearance("density", next as OfficialSettings["appearance"]["density"])} options={[{ label: "Default", value: "default" }, { label: "Compact", value: "compact" }]} value={settings.appearance.density} />
+            <Select id="settings-motion" label="Motion" onChange={(next) => updateAppearance("motion", next as OfficialSettings["appearance"]["motion"])} options={[{ label: "System preference", value: "system" }, { label: "Reduce motion", value: "reduced" }]} value={settings.appearance.motion} />
+            <Select id="settings-locale" label="Language" onChange={(next) => {
+                const locale = next as SettingsLocale;
                 setSettings((current) => ({ ...current, locale }));
-            }}>
-                <option value="system">System language</option><option value="en-US">English</option><option value="zh-CN">简体中文</option><option value="ja-JP">日本語</option>
-            </select>
+            }} options={[{ label: "System language", value: "system" }, { label: "English", value: "en-US" }, { label: "简体中文", value: "zh-CN" }, { label: "日本語", value: "ja-JP" }]} value={settings.locale} />
             {error === undefined ? null : <p className="form-error" role="alert">{error.code === "revision_conflict" ? "Settings changed elsewhere. Reload and try again." : "Settings could not be saved."}</p>}
             <div className="action-row">
-                <button className="button button--filled" disabled={!dirty || busy} type="submit">{busy ? "Saving…" : "Save settings"}</button>
-                <button className="button button--tonal" disabled={!dirty || busy} onClick={() => setSettings(snapshot.settings)} type="button">Discard changes</button>
+                <Button disabled={!dirty || busy} type="submit">{busy ? "Saving…" : "Save settings"}</Button>
+                <Button disabled={!dirty || busy} onClick={() => setSettings(snapshot.settings)} type="button" variant="tonal">Discard changes</Button>
             </div>
             <p aria-live="polite" className="field-hint">Config Schema {snapshot.configSchema} · revision {snapshot.revision}</p>
         </form>

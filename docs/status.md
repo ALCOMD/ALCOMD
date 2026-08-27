@@ -1,6 +1,6 @@
 # 项目状态
 
-最后更新：2026-08-26
+最后更新：2026-08-28
 
 ## 当前阶段
 
@@ -309,8 +309,8 @@
   scheme/CSP 或三平台 WebView isolation matrix 作为产品 blocker。Portable UI production 已获批准且 B0/B1 已完成；
   Slice C official renderer、Slice D headless/security/fault conformance 与 Hosted CI 已通过；restored Official GUI Core
   surfaces/flows、Settings/Activity/Diagnostics contracts 与 Chromium browser-level accessibility 已完成本地实现和验收。
-  当前真实缺口是 H2-A Project workspace / Packages、Visual Gate 2，以及后续尚未批准的其他 H2-H7、最终候选三平台
-  Hosted CI与项目所有者最终人工验收。
+  当前 H2-A Projects 列表与导航的本地视觉迭代已获项目所有者局部认可；完整 Project workspace / Packages、Visual Gate 2、
+  后续尚未批准的其他 H2-H7、最终候选三平台 Hosted CI 与项目所有者最终人工验收仍是实际缺口。
 
 - 真实安装快照和迁移 Fixture 尚未建立；因此 artifact 模板继续保持 `confirmed = false`，
   迁移删除、GUI/模板/备份/Unity 差异测试仍 blocked。项目所有者已决定不在 M-1 继续投入

@@ -33,6 +33,7 @@ desktop.ini
 coverage/
 apps/alcomd-gui/test-results/
 apps/alcomd-gui/playwright-report/
+/test-results/
 
 # Signing and publishing secrets
 *.key

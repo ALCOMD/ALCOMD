@@ -6,8 +6,8 @@
     "type": "module",
     "scripts": {
         "dev": "vite",
-        "check": "tsc --noEmit",
-        "build": "tsc --noEmit && vite build",
+        "check": "tsc --noEmit && node scripts/check-material-controls.mjs",
+        "build": "npm run check && vite build",
         "test:browser": "playwright test",
         "tauri": "tauri"
     },

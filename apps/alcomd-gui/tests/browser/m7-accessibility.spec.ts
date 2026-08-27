@@ -2,40 +2,40 @@ import { expect, test, type Page } from "@playwright/test";
 
 test("keyboard navigation moves routes and focuses the destination heading", async ({ page }) => {
     await openHarness(page, "/");
-    const primary = page.getByRole("navigation", { name: "Primary" });
-    const projects = primary.getByRole("button", { name: "Projects" });
+    const projects = navigationItem(page, "Projects");
     await projects.focus();
     await expect(projects).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("heading", { level: 1, name: "Projects" })).toBeFocused();
-    await expect(primary.getByRole("button", { name: "Projects", exact: true })).toHaveAttribute("aria-current", "page");
+    expect(await navigationItem(page, "Projects").evaluate((element) => element.getAttribute("aria-current"))).toBe("page");
 
-    const settings = page.getByRole("button", { name: "Settings", exact: true }).last();
+    const settings = navigationItem(page, "Settings");
     await settings.focus();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeFocused();
-    const theme = page.getByLabel("Theme");
+    const theme = page.getByRole("combobox", { name: "Theme" });
     await theme.focus();
+    await page.keyboard.press("Enter");
     await page.keyboard.press("ArrowDown");
-    await expect(theme).toHaveValue("light");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("md-outlined-select#settings-theme")).toHaveJSProperty("value", "light");
 });
 
 test("H1 shell exposes the approved user areas without promoting internal routes", async ({ page }) => {
     await openHarness(page, "/projects");
-    const primary = page.getByRole("navigation", { name: "Primary" });
-    for (const name of ["Projects", "Packages & Templates", "Settings", "Log"]) {
-        await expect(primary.getByRole("button", { name, exact: true })).toBeVisible();
+    for (const name of ["Projects", "Resources", "Settings", "Logs"]) {
+        await expect(navigationItem(page, name)).toBeVisible();
     }
-    await expect(page.getByRole("button", { name: "Extensions", exact: true })).toBeVisible();
+    await expect(navigationItem(page, "Extensions")).toBeVisible();
     for (const hiddenRoute of ["Home", "Repositories", "Templates", "Unity", "Operations", "Activity", "Diagnostics"]) {
-        await expect(primary.getByRole("button", { name: hiddenRoute, exact: true })).toHaveCount(0);
+        await expect(navigationItem(page, hiddenRoute)).toHaveCount(0);
     }
-    await expect(page.getByRole("button", { name: "Task Center 1 active" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "About 4.0.0-alpha.0" })).toBeVisible();
+    await expect(navigationItem(page, "Task Center")).toBeVisible();
+    await expect(navigationItem(page, "About")).toBeVisible();
 
-    await primary.getByRole("button", { name: "Packages & Templates" }).click();
+    await navigationItem(page, "Resources").click();
     await expect(page.getByRole("heading", { level: 1, name: "Repositories" })).toBeFocused();
-    await expect(primary.getByRole("button", { name: "Packages & Templates", exact: true })).toHaveAttribute("aria-current", "page");
+    expect(await navigationItem(page, "Resources").evaluate((element) => element.getAttribute("aria-current"))).toBe("page");
 });
 
 test("modal traps focus, closes on Escape, and restores the invoking control", async ({ page }) => {
@@ -107,7 +107,7 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         await openHarness(page, route);
         const main = page.getByRole("main");
         await expect(main.getByRole("heading", { level: 1, name: title })).toBeVisible();
-        await expect(main.getByRole("alert")).toHaveCount(0);
+        await expect(main.locator('.route-state[role="alert"]')).toHaveCount(0);
     }
 });
 
@@ -132,17 +132,15 @@ test("project workspace keeps package discovery and user actions in project cont
 
 test("settings are labeled, revisioned, dirty-aware, and applied through the typed client", async ({ page }) => {
     await openHarness(page, "/settings");
-    const color = page.getByLabel("Source color");
-    await expect(color).toHaveAttribute("aria-describedby", "settings-color-hint");
-    await color.selectOption("#315DA8");
-    await page.getByLabel("Language").selectOption("zh-CN");
+    const color = page.locator("md-outlined-select#settings-color");
+    await expect(page.getByRole("combobox", { name: "Source color" })).toHaveAccessibleDescription("Saved as a canonical #RRGGBB value; extensions never receive this preference.");
+    await selectMaterialOption(color, "#315DA8");
+    await selectMaterialOption(page.locator("md-outlined-select#settings-locale"), "zh-CN");
 
-    const dialogPromise = page.waitForEvent("dialog");
-    const navigationPromise = page.getByRole("button", { name: "Projects", exact: true }).click();
-    const dialog = await dialogPromise;
-    expect(dialog.message()).toContain("Discard");
-    await dialog.dismiss();
-    await navigationPromise;
+    await navigationItem(page, "Projects").click();
+    const dialog = page.getByRole("dialog", { name: "Discard unsaved changes?" });
+    await expect(dialog).toBeVisible();
+    await page.getByRole("button", { name: "Keep editing" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
 
     await page.getByRole("button", { name: "Save settings" }).click();
@@ -162,7 +160,7 @@ test("package changes use a v3-style confirmation while the durable Plan stays i
     const follow = page.getByRole("status").filter({ hasText: "Package changes" });
     await expect(follow).toContainText(/running|succeeded/);
     await expect(follow).toContainText("succeeded", { timeout: 3_000 });
-    await expect(follow.getByRole("progressbar", { name: "Package changes progress" })).toHaveAttribute("value", "1");
+    await expect(follow.getByRole("progressbar", { name: "Package changes progress" })).toHaveAttribute("aria-valuenow", "1");
 });
 
 test("a changed project is explained without exposing stale Plan internals", async ({ page }) => {
@@ -185,36 +183,37 @@ test("direct writes and the remaining high-impact workflows retain confirmation 
     await openHarness(page, "/repositories");
     await page.getByLabel("Repository URL").fill("https://packages.example.invalid/index.json");
     await page.getByRole("button", { name: "Review repository" }).click();
-    await page.getByRole("dialog", { name: "Register this repository?" }).getByRole("button", { name: "Confirm" }).click();
+    await expect(page.getByRole("dialog", { name: "Register this repository?" })).toBeVisible();
+    await page.getByRole("button", { name: "Confirm" }).click();
     await expect(page.getByRole("status").filter({ hasText: "Repository registered" })).toBeVisible();
 
     await openHarness(page, "/templates");
     await page.getByLabel("Template bundle").fill("C:\\Fixture\\avatar.alcomdtemplate");
     await page.getByRole("button", { name: "Create import plan" }).click();
-    await page.getByRole("dialog", { name: "Review template import" }).getByRole("button", { name: "Apply reviewed plan" }).click();
+    await clickDialogAction(page, "Review template import", "Apply reviewed plan");
     await expect(page.getByRole("status").filter({ hasText: "Operation" })).toBeVisible();
 
     await openHarness(page, "/projects/00000000-0000-4000-8000-000000000101/backups");
     await page.getByRole("button", { name: "Review backup" }).click();
-    await page.getByRole("dialog", { name: "Create this backup?" }).getByRole("button", { name: "Confirm" }).click();
+    await clickDialogAction(page, "Create this backup?", "Confirm");
     await expect(page.getByRole("status").filter({ hasText: "Operation" })).toBeVisible();
 
     await openHarness(page, "/backups/00000000-0000-4000-8000-000000000104");
     await page.getByLabel("Target parent").fill("C:\\Fixture");
     await page.getByLabel("New directory name").fill("Restored");
     await page.getByRole("button", { name: "Create restore plan" }).click();
-    await page.getByRole("dialog", { name: "Review backup restore" }).getByRole("button", { name: "Apply reviewed plan" }).click();
+    await clickDialogAction(page, "Review backup restore", "Apply reviewed plan");
     await expect(page.getByRole("status").filter({ hasText: "Operation" })).toBeVisible();
 
     await openHarness(page, "/extensions");
     await page.getByLabel("Extension package").fill("C:\\Fixture\\extension.alcomdext");
     await page.getByRole("button", { name: "Create install plan" }).click();
-    await page.getByRole("dialog", { name: "Review extension install" }).getByRole("button", { name: "Apply reviewed plan" }).click();
+    await clickDialogAction(page, "Review extension install", "Apply reviewed plan");
     await expect(page.getByRole("status").filter({ hasText: "Operation" })).toBeVisible();
 
     await openHarness(page, "/operations/00000000-0000-4000-8000-000000000105");
     await page.getByRole("button", { name: "Cancel operation" }).click();
-    await page.getByRole("dialog", { name: "Request cancellation?" }).getByRole("button", { name: "Confirm" }).click();
+    await clickDialogAction(page, "Request cancellation?", "Confirm");
     await expect(page.getByRole("status").filter({ hasText: "Cancellation requested" })).toBeVisible();
 
     await openHarness(page, "/diagnostics");
@@ -240,59 +239,56 @@ test("Portable UI renders all 17 node kinds with host-owned chrome and safe form
     await expect(page.getByRole("progressbar")).toBeVisible();
     await expect(page.getByRole("group").filter({ has: page.getByLabel("Enable presence") })).toBeVisible();
     await expect(page.getByLabel("Enable presence")).toBeChecked();
-    await expect(page.getByLabel("Details")).toHaveValue("project");
+    await expect(page.locator("md-outlined-select#presence-mode")).toHaveJSProperty("value", "project");
     await expect(page.getByLabel("Refresh interval seconds")).toHaveValue("15");
     const readOnly = page.getByLabel("Custom detail");
     await expect(readOnly).toHaveAttribute("readonly", "");
     await expect(readOnly).toHaveAttribute("aria-invalid", "true");
-    await expect(readOnly).toHaveAttribute("aria-describedby", "presence-text-validation");
+    await expect(readOnly).toHaveAccessibleDescription(/The host rejected the previous value\./);
     await expect(page.getByRole("separator")).toBeVisible();
     await expect(page.locator(".portable-stack--vertical")).toBeVisible();
     await expect(page.locator(".portable-group")).toBeVisible();
     await expect(page.locator(".portable-key-value")).toContainText("Editing project");
 
     await openHarness(page, "/extensions/com.cqmhv.mcp-management/ui");
+    const mcp = page.getByRole("region", { name: "MCP Management" });
     await expect(page.getByRole("heading", { level: 2, name: "MCP Management" })).toBeVisible();
-    await expect(page.getByRole("list")).toBeVisible();
-    await expect(page.getByRole("listitem")).toContainText("Codex desktop");
-    await expect(page.getByRole("region", { name: "MCP Management" }).getByRole("button", { name: "Refresh" })).toBeVisible();
+    await expect(mcp.getByRole("list")).toBeVisible();
+    await expect(mcp.getByRole("listitem")).toContainText("Codex desktop");
+    await expect(mcp.getByRole("button", { name: "Refresh" })).toBeVisible();
     await expect(page.getByText("Connection mcp-client-01")).toBeVisible();
 });
 
 test("dirty Portable UI form requires host-owned discard confirmation", async ({ page }) => {
     await openHarness(page, "/extensions/com.cqmhv.discord/ui");
     await page.getByLabel("Enable presence").uncheck();
-    const dialogPromise = page.waitForEvent("dialog");
-    const navigationPromise = page.getByRole("button", { name: "Settings", exact: true }).first().click();
-    const dialog = await dialogPromise;
-    expect(dialog.message()).toContain("Discard");
-    await dialog.dismiss();
-    await navigationPromise;
+    await navigationItem(page, "Settings").click();
+    const dialog = page.getByRole("dialog", { name: "Discard unsaved changes?" });
+    await expect(dialog).toBeVisible();
+    await page.getByRole("button", { name: "Keep editing" }).click();
     await expect(page.getByRole("heading", { level: 2, name: "Discord Presence" })).toBeVisible();
+    await navigationItem(page, "Settings").click();
+    await expect(dialog).toBeVisible();
+    await page.getByRole("button", { name: "Discard changes" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
 });
 
-test("320 CSS px, deterministic 200 percent layout, reduced motion, and light/dark contrast remain usable", async ({ page }) => {
+test("fixed desktop navigation, deterministic 200 percent layout, reduced motion, and light/dark contrast remain usable", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 });
     await openHarness(page, "/settings");
-    await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
-    const toggle = page.getByRole("button", { name: "Menu" });
-    await expect(toggle).toHaveAttribute("aria-expanded", "false");
-    await toggle.click();
-    await expect(toggle).toHaveAttribute("aria-expanded", "true");
-    await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
-    await expect(page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Settings", exact: true })).toBeFocused();
-    await page.keyboard.press("Escape");
-    await expect(toggle).toHaveAttribute("aria-expanded", "false");
-    await expect(toggle).toBeFocused();
-    await toggle.click();
+    await expect(page.getByRole("button", { name: "Menu" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Close navigation" })).toHaveCount(0);
+    const navigation = page.locator("#primary-navigation");
+    await expect(navigation).toBeVisible();
+    expect((await navigation.boundingBox())?.width).toBe(260);
     expect(await hasHorizontalOverflow(page)).toBe(false);
-    await expect(page.getByRole("button", { name: "Save settings" })).toBeVisible();
+    await expect(page.locator(".main-content")).toHaveCSS("overflow", "hidden");
 
     await page.setViewportSize({ width: 640, height: 800 });
     await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
     expect(await hasHorizontalOverflow(page)).toBe(false);
-    await expect(page.getByLabel("Language")).toBeVisible();
-    await page.getByRole("navigation", { name: "Primary" }).getByRole("button", { name: "Projects" }).click();
+    await expect(page.getByRole("combobox", { name: "Language" })).toBeVisible();
+    await navigationItem(page, "Projects").click();
     await page.getByRole("button", { name: "Register project" }).click();
     await page.getByLabel("Project root").fill("C:\\Fixture\\Scaled");
     await page.getByRole("button", { name: "Review registration" }).click();
@@ -302,7 +298,6 @@ test("320 CSS px, deterministic 200 percent layout, reduced motion, and light/da
     await page.keyboard.press("Escape");
 
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await toggle.click();
     const duration = await page.locator("#primary-navigation").evaluate((element) => getComputedStyle(element).transitionDuration);
     expect(seconds(duration)).toBeLessThanOrEqual(0.001);
 
@@ -321,6 +316,29 @@ test("320 CSS px, deterministic 200 percent layout, reduced motion, and light/da
 
 async function openHarness(page: Page, route: string, state: "ready" | "empty" | "error" | "disconnected" | "loading" | "stale" | "failed" | "cancelled" = "ready") {
     await page.goto(`/browser-harness.html?route=${encodeURIComponent(route)}&state=${state}`);
+}
+
+function navigationItem(page: Page, label: string) {
+    return page.locator("#primary-navigation md-list-item").filter({
+        has: page.locator(".navigation-item-label", { hasText: new RegExp(`^${escapeRegex(label)}$`) })
+    });
+}
+
+function escapeRegex(value: string) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function selectMaterialOption(select: ReturnType<Page["locator"]>, value: string) {
+    await select.evaluate((element, next) => {
+        const materialSelect = element as HTMLElement & { select(value: string): void };
+        materialSelect.select(next);
+        materialSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    }, value);
+}
+
+async function clickDialogAction(page: Page, title: string, action: string) {
+    await expect(page.getByRole("dialog", { name: title })).toBeVisible();
+    await page.getByRole("button", { name: action }).click();
 }
 
 async function hasHorizontalOverflow(page: Page): Promise<boolean> {
