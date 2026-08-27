@@ -1,11 +1,44 @@
 {
-    "status": "proposal-only-not-active",
+    "status": "approved-not-active",
     "capability": "projects.copy.v1",
     "methods": ["projects.planCopy", "projects.applyCopy"],
     "operationKind": "projects.copy",
     "permissions": ["projects.read", "projects.create"],
     "planExpiryMs": 900000,
     "planClaimsFullInventory": false,
+    "privateInventoryManifest": {
+        "format": "versioned-json-lines",
+        "location": "operation-owned-private-recovery-staging-area",
+        "header": [
+            "formatVersion", "operationId", "planId", "sourceProjectId", "sourceRootIdentity",
+            "copyProfileVersion", "entryCount", "totalRegularFileBytes", "createdAt"
+        ],
+        "entry": [
+            "normalizedRelativePath", "entryKind", "size", "sourceFilesystemIdentityEvidence",
+            "executableBit", "contentSha256"
+        ],
+        "journalEvidence": ["privateLocator", "sha256", "byteLength"],
+        "syncBeforePhase": "inventory_ready",
+        "publicRpc": false,
+        "logged": false,
+        "deleteAfter": "cleanup_complete"
+    },
+    "sourceConsistency": {
+        "copyCalculatesSha256": true,
+        "secondPassBefore": "publish_intent",
+        "secondPassVerifies": [
+            "exact-normalized-entry-set", "entry-kind", "source-filesystem-identity", "file-size",
+            "regular-file-content-sha256", "unix-executable-bit"
+        ],
+        "mismatchError": "project_copy_source_changed"
+    },
+    "stagingLayout": {
+        "shell": ".alcomd-copy-<opaque-operation-id>.staging",
+        "payload": "payload",
+        "publish": "atomic-payload-to-target-leaf",
+        "ownershipEvidenceOutsidePayloadUntil": "state_committed",
+        "permanentMarkerInFinalProject": false
+    },
     "profile": {
         "id": "alcomd-project-copy",
         "version": 1,

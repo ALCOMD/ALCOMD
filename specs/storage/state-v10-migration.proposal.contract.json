@@ -1,5 +1,5 @@
 {
-    "status": "proposal-only-not-active",
+    "status": "approved-not-active",
     "from": 9,
     "to": 10,
     "productionMigration": null,
@@ -18,6 +18,14 @@
         "sourceProjectForeignKey": true,
         "ownerIdempotencyBinding": true,
         "preallocatedTargetProjectId": true
+    },
+    "privateInventoryManifest": {
+        "format": "versioned-json-lines",
+        "operationOwned": true,
+        "storedInStateDb": false,
+        "journalStoresOnly": ["private_locator", "sha256", "byte_length"],
+        "syncBeforeInventoryReady": true,
+        "deleteAfterCleanupComplete": true
     },
     "journal": {
         "table": "project_copy_filesystem_journal",
@@ -59,6 +67,8 @@
         "revision-and-event-sequence-preserved",
         "foreign-key-check-empty",
         "plan-does-not-claim-full-inventory",
+        "source-second-pass-content-digest-matches-staging-inventory",
+        "final-project-root-has-no-permanent-alcomd-owner-marker",
         "publish-intent-is-forward-recovery-boundary",
         "project-registry-row-created-only-after-target-published-and-revalidated",
         "future-schema-fail-closed",

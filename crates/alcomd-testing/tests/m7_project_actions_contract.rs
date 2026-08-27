@@ -12,12 +12,14 @@ const ACTIVE_STORE: &str = include_str!("../../alcomd-store/src/sqlite.rs");
 const ROOT_MANIFEST: &str = include_str!("../../../Cargo.toml");
 const GUI_MANIFEST: &str = include_str!("../../../apps/alcomd-gui/src-tauri/Cargo.toml");
 const ROOT_LOCK: &str = include_str!("../../../Cargo.lock");
+const DEPENDENCY_EVALUATION: &str =
+    include_str!("../../../docs/exec-plans/M7-project-actions-dependency-evaluation.md");
 const CURRENT_PROJECTS_UI: &str = include_str!("../../../apps/alcomd-gui/src/CorePages.tsx");
 
 #[test]
-fn project_copy_proposal_is_bounded_and_not_active() {
+fn approved_project_copy_contract_is_bounded_and_not_active() {
     let schema: Value = serde_json::from_str(COPY_SCHEMA).expect("copy proposal schema");
-    assert_eq!(schema["x-alcomd-publication"], "proposal-only-not-active");
+    assert_eq!(schema["x-alcomd-publication"], "approved-not-active");
     assert_eq!(schema["x-alcomd-active-rpc-modified"], false);
     assert_eq!(schema["x-alcomd-capability"], "projects.copy.v1");
     assert_eq!(schema["x-alcomd-operation-kind"], "projects.copy");
@@ -72,7 +74,7 @@ fn project_copy_proposal_is_bounded_and_not_active() {
 #[test]
 fn project_copy_profile_phases_and_recovery_are_exact() {
     let vectors: Value = serde_json::from_str(COPY_VECTORS).expect("copy vectors");
-    assert_eq!(vectors["status"], "proposal-only-not-active");
+    assert_eq!(vectors["status"], "approved-not-active");
     assert_eq!(vectors["planExpiryMs"], 900_000);
     assert_eq!(vectors["planClaimsFullInventory"], false);
     assert_eq!(vectors["profile"]["quota"]["maxEntries"], 500_000);
@@ -107,6 +109,21 @@ fn project_copy_profile_phases_and_recovery_are_exact() {
     assert_eq!(vectors["afterPublishIntent"], "forward-recovery-only");
     assert_eq!(vectors["lockOrdering"], "ResourceKey::canonical_bytes");
     assert_eq!(vectors["forbiddenError"], "project_copy_failed");
+    assert_eq!(vectors["privateInventoryManifest"]["publicRpc"], false);
+    assert_eq!(vectors["privateInventoryManifest"]["logged"], false);
+    assert_eq!(
+        vectors["privateInventoryManifest"]["syncBeforePhase"],
+        "inventory_ready"
+    );
+    assert_eq!(vectors["sourceConsistency"]["copyCalculatesSha256"], true);
+    assert_eq!(
+        vectors["sourceConsistency"]["secondPassBefore"],
+        "publish_intent"
+    );
+    assert_eq!(
+        vectors["stagingLayout"]["permanentMarkerInFinalProject"],
+        false
+    );
 
     let rejects = vectors["profile"]["reject"]
         .as_array()
@@ -133,10 +150,10 @@ fn project_copy_profile_phases_and_recovery_are_exact() {
 }
 
 #[test]
-fn state_v10_remains_copy_only_and_proposal_only() {
+fn state_v10_remains_copy_only_and_approved_not_active() {
     let migration: Value =
         serde_json::from_str(STATE_V10_MIGRATION).expect("state v10 migration proposal");
-    assert_eq!(migration["status"], "proposal-only-not-active");
+    assert_eq!(migration["status"], "approved-not-active");
     assert_eq!(migration["from"], 9);
     assert_eq!(migration["to"], 10);
     assert_eq!(migration["productionMigration"], Value::Null);
@@ -149,17 +166,22 @@ fn state_v10_remains_copy_only_and_proposal_only() {
     assert_eq!(migration["plan"]["fullInventoryStored"], false);
     assert_eq!(migration["plan"]["expiryMs"], 900_000);
     assert_eq!(migration["journal"]["appendOnly"], true);
+    assert_eq!(
+        migration["privateInventoryManifest"]["storedInStateDb"],
+        false
+    );
     assert!(STATE_V10.contains("daemon 继续广告 `dataSchema: 9`"));
     assert!(STATE_V10.contains("不包含 Favorite"));
 }
 
 #[test]
-fn dependency_candidates_have_not_entered_production() {
-    for candidate in ["tauri-plugin-opener", "tauri-plugin-dialog"] {
-        assert!(!ROOT_MANIFEST.contains(candidate));
-        assert!(!GUI_MANIFEST.contains(candidate));
-        assert!(!ROOT_LOCK.contains(&format!("name = \"{candidate}\"")));
-    }
+fn dependency_decisions_are_exact_and_opener_plugin_stays_rejected() {
+    assert!(!ROOT_MANIFEST.contains("tauri-plugin-opener"));
+    assert!(!GUI_MANIFEST.contains("tauri-plugin-opener"));
+    assert!(!ROOT_LOCK.contains("name = \"tauri-plugin-opener\""));
+    assert!(DEPENDENCY_EVALUATION.contains("`tauri-plugin-opener`：**rejected**"));
+    assert!(DEPENDENCY_EVALUATION.contains("`open = 5.4.2`：**approved**"));
+    assert!(DEPENDENCY_EVALUATION.contains("`tauri-plugin-dialog = 2.7.2`：**approved**"));
 }
 
 #[test]

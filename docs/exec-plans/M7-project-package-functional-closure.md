@@ -1,7 +1,7 @@
 # M7 Project / Package Functional Closure：contract-first Stop A
 
-状态：Stop A proposal 已形成，等待项目所有者人工审批；production implementation 未获批准。H2 visual WIP 保持独立，
-M8/M9 未开始。
+状态：Stop A 已由项目所有者附合同修正批准；允许依次实施 P0-P4，完成完整本地 gate 后停止。H2 visual WIP 已以独立、
+未验收 checkpoint 保存且继续暂停，M8/M9 未开始。
 
 ## 目标与边界
 
@@ -33,8 +33,9 @@ React(ProjectId only)
 - command busy 时入口是 current-state conditional disabled；不得永久 disabled。
 - app-private error code 只允许 `project_not_registered`、`project_directory_missing`、
   `project_directory_not_directory`、`project_directory_open_failed`、`internal_error`。响应不得包含完整路径、shell、OS Debug。
-- `tauri-plugin-opener = "=2.5.4"` 仍是待审批生产依赖；精确评估见
-  `M7-project-actions-dependency-evaluation.md`。
+- `tauri-plugin-opener` 已拒绝。批准的窄依赖为
+  `open = { version = "=5.4.2", default-features = false }`；永久禁止 `insecure` 与
+  `shellexecute-on-windows`，只允许 `open::that(validated_registered_project_root)`。
 
 ## Native directory chooser
 
@@ -49,7 +50,7 @@ gui_select_directory() -> { outcome: "selected", path: string } | { outcome: "ca
 
 React 不提供初始任意路径，不接收 File handle，不直接调用 plugin command。production capability 不加入 `dialog:*`，不安装
 frontend npm binding。plugin registration 是 Rust API 工作所必需，但 guest WebView 没有对应 capability。错误只返回 private
-`directory_selection_failed` 或 `internal_error`，取消不是错误。依赖仍待项目所有者批准。
+`directory_selection_failed` 或 `internal_error`，取消不是错误。该 exact dependency/feature 已获批准。
 
 ## Copy Project public proposal
 
@@ -102,10 +103,29 @@ accepted
 -> cleanup_complete
 ```
 
-`inventory_ready` 在 worker 内执行 bounded traversal，保存 exact normalized path/type/size evidence、source snapshot
-fingerprint、profile/quota validation，并复验 source 与 target parent identity、target absence。staging 严格按 durable inventory
-复制。写入 `publish_intent` 前必须完整重扫并重算 fingerprint；任何差异返回 `project_copy_source_changed`，删除 journal-owned
-staging，不 publish。Plan 从不声称 full inventory 已冻结。
+`inventory_ready` 在 worker 内执行 bounded traversal，并把完整 inventory 写入 Operation-owned private recovery/staging area 中的
+versioned deterministic JSON Lines manifest。它不是 Project content、public API 或 State DB table，也不得写入
+`evidence_json`。header 至少包含 formatVersion、OperationId、PlanId、source ProjectId/root identity、copy profile version、entry
+count、total regular-file bytes、createdAt；每个 entry 至少包含 normalized relative path、entry kind、size、source filesystem
+identity evidence 与适用的 executable bit。manifest 必须 bounded、crash durable，在 journal 进入 `inventory_ready` 前 flush/sync；
+journal 只记录其 private locator、SHA-256 与 byte length。它不得通过 RPC 返回或写入日志，并在 `cleanup_complete` 后删除。
+
+staging 读取每个 regular file 时同步写入 payload 并计算 SHA-256，把 staging/source-read digest 写入 inventory evidence。
+`staging_complete` 后、`publish_intent` 前，对 Source 执行第二次 bounded verification pass，精确复验 normalized entry set、entry
+type、filesystem identity、size、content SHA-256 与 executable bit。最终 Source digest 必须与 staging inventory digest 一致；任何
+差异返回 `project_copy_source_changed`，清理 owned staging，不 publish。Plan 从不声称 full inventory 已冻结。
+
+staging 固定采用同一 target parent 下的 sibling shell：
+
+```text
+.alcomd-copy-<opaque-operation-id>.staging/
+    owner/recovery metadata
+    inventory.jsonl
+    payload/
+```
+
+publish 只把 `payload` 原子 rename/move 到 target leaf；shell 中的 ownership/recovery metadata 保留至 `state_committed` 后清理，
+最终 Project root 不永久留下 ALCOMD marker。
 
 ### Copy profile v1
 
@@ -144,8 +164,8 @@ revision、Event、idempotency result、Operation 与 journal state。Projects l
 
 ## State Schema v10 proposal
 
-`specs/storage/state-v10.md` 与 `state-v10-migration.proposal.contract.json` 只冻结 migration contract，不存在 production
-`0010` SQL，也不改变 daemon 的 `dataSchema: 9`。
+`specs/storage/state-v10.md` 与 `state-v10-migration.proposal.contract.json` 已获 production 批准；在完整 Copy wiring 落盘前仍不
+存在 active `0010` SQL，daemon 继续广告 `dataSchema: 9`。完整接线后才广告 `10`。
 
 v10 只为 Copy 增加 `project_copy_plans`、`project_copy_filesystem_journal` 与 `operations.kind='projects.copy'`。它复用
 Project registry、Revision、Event、idempotency 与 Operation；Plan authority immutable/durable，journal append-only，带 recovery
@@ -172,17 +192,16 @@ GUI 不计算 collision、identity、inventory、exclusion authority、copy size
 
 ## 其他缺口与顺序
 
-完整 ownership/contract matrix 位于 `docs/baselines/m7-project-package-functional-closure.md`。建议在同一 M7 内按以下独立
-vertical slice 顺序执行，每个需对应合同审批，不能同时铺开：
+完整 ownership/contract matrix 位于 `docs/baselines/m7-project-package-functional-closure.md`。M7 ownership 与顺序冻结为：
 
-1. P1：Open Directory + native chooser + Add/Register/Create/Restore wiring；
-2. P2：Copy Project Core Plan/Apply/Operation/Schema v10 + GUI；
-3. P3：Favorite 与 Clear Unity preference；
-4. P4：package refresh/filter presentation 与 Config Schema v2；
-5. P5：Reinstall/Bulk Plan/Apply；
-6. P6：local user package enrollment/model 与 safe docs/changelog external link；
-7. P7：Remove Directory 独立 high-impact deletion contract；
-8. M11：VCC Import/Migrate 与真实 v3 parity。
+1. P0：`open` + `tauri-plugin-dialog` dependency foundation；
+2. P1：Open Directory + native chooser + Add/Register；
+3. P2-P4：Copy active contract/State v10、filesystem Operation/recovery、client/CLI/GUI；
+4. P5：Create/Restore/Favorite/Clear Unity preference closure proposal；
+5. P6：package refresh/filter/prerelease/hidden/docs/changelog/Reinstall/Bulk/User Packages closure；
+6. P7：Remove Directory 独立 high-impact Stop A；
+7. P8：visible-action completeness gate；
+8. M11：仅 VCC Import/Migrate、legacy migration 与真实 differential parity。
 
 ## Visible action completeness gate
 

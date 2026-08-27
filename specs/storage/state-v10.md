@@ -1,6 +1,6 @@
 # ALCOMD State Schema v10 Project Copy proposal
 
-状态：M7 proposal-only；production migration 未创建，daemon 继续广告 `dataSchema: 9`。
+状态：项目所有者已批准 production contract；migration/wiring 尚未创建，daemon 继续广告 `dataSchema: 9`。
 
 v10 是 Project Copy 的最小 durable authority，不包含 Favorite、Package Reinstall/Bulk、Config visibility、Remove Directory
 或任何 generic workflow/table。它在单个 `BEGIN IMMEDIATE` migration 中从 v9 增加：
@@ -21,18 +21,19 @@ operation`，其余字段逐列 `IS`/`=` 不变；其他 UPDATE trigger fail，D
 idempotency表绑定，不能通过修改 Plan row 换 owner/target/profile。source FK 只保证注册 identity；Apply 仍重新验证 revision 与
 filesystem identity。
 
-Plan JSON 与 evidence 每项有 4 MiB 上限，且必须是 canonical valid JSON。完整 inventory **不**保存在 Plan row。
+Plan JSON 与 evidence 每项有 4 MiB 上限，且必须是 canonical valid JSON。完整 inventory **不**保存在 Plan row或 SQLite
+journal evidence；它是 Operation-owned private durable manifest file。
 
 ## `project_copy_filesystem_journal`
 
 append-only 主键 `(operation_id, step)`，每行绑定 OperationId、PlanId、source/target ProjectId、phase、intent/completed state、
-source/target parent/target identity evidence、inventory fingerprint、exact bounded inventory evidence或其 daemon-owned locator、
+source/target parent/target identity evidence、inventory fingerprint、private inventory locator、inventory SHA-256/byte length、
 target owner/recovery marker、updated timestamp。insert trigger要求 Operation kind=`projects.copy` 且 Plan 的 apply Operation完全相同。
 
 phase 只允许：`accepted`、`inventory_ready`、`staging`、`staging_complete`、`publish_intent`、
 `target_published`、`project_registry_commit_intent`、`state_committed`、`cleanup_complete`、`recovery_required`。
 UPDATE/DELETE 全部拒绝；recovery index 是 `(operation_id, step DESC)`，另有未终结 Operation 恢复索引。journal-owned staging/backup
-locator不得进入 public RPC/Event/activity/log。
+locator不得进入 public RPC/Event/activity/log。不得新增 inventory entries DB table。
 
 ## 事务与恢复不变量
 
@@ -46,5 +47,5 @@ locator不得进入 public RPC/Event/activity/log。
 - migration保留全部 v9 row/FK/revision/Event sequence；`foreign_key_check`必须为空，失败完整回滚为v9。
 - schema version大于10继续fail closed。
 
-精确机器可读提案位于 `state-v10-migration.proposal.contract.json`。production activation前必须人工批准真实 0010 SQL、trigger
-逐列不变量、migration tests 和 capability advertisement；本文件本身不授权实现。
+精确机器可读合同位于 `state-v10-migration.proposal.contract.json`。本合同已授权实现；完整 Copy wiring 前保持 dataSchema 9，
+完成 production migration、逐列 trigger、migration tests 与 dispatcher/worker/client 接线后才广告 10。

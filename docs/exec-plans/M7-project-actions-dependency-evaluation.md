@@ -1,6 +1,7 @@
 # M7 Project Actions dependency evaluation
 
-状态：2026-08-28 隔离 probe 完成；两个候选均未写入 production manifest/Cargo.lock，均等待人工审批。
+状态：2026-08-28 隔离 probe 完成并经项目所有者审批。`tauri-plugin-opener`：**rejected**；
+`open = 5.4.2`：**approved**；`tauri-plugin-dialog = 2.7.2`：**approved**。production 落盘必须保持独立 dependency commit。
 
 ## 方法与不变量
 
@@ -149,3 +150,13 @@ plugin registration 带来的 guest command surface 必须由 capability absence
 - dialog 确实需要 plugin registration；不能声称当前 GUI 已有 picker，也不能把 Rust-side use 说成零 plugin runtime surface。
 - 两者均不需要 npm binding、frontend capability、ALCOMD unsafe 或 direct platform API；均未落盘。
 - 生产批准应分别给出，不能把 directory chooser 需求自动扩张为 opener 或反向绑定。
+
+## 最终人工决策
+
+- 拒绝 `tauri-plugin-opener`；当前窄需求不需要完整 plugin infrastructure。
+- 批准 `open = { version = "=5.4.2", default-features = false }`，永久禁止 `insecure` 与
+  `shellexecute-on-windows`，只允许 official GUI Rust adapter 对已重新查询并验证的 registered Project root 调用
+  `open::that`。落盘前必须以 `--locked` 隔离审计 exact graph，出现 build script、native addon、隐式 feature 或无关 family
+  立即停止。
+- 批准 `tauri-plugin-dialog = { version = "=2.7.2", default-features = false, features = ["gtk3"] }`；允许 Rust-side
+  plugin registration，但不安装 npm binding，不授予 frontend `dialog:*` capability。

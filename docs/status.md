@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已在检查点 7bb325b78a74518881fb65e03de7f79902e72cd3 通过 Visual Gate 1 人工验收。H2 visual implementation 已暂停；当前只执行 M7 Project / Package Functional Closure contract-first Stop A，production implementation 未批准。projects.management 与 packages.vpm 保持 in_progress，M8/M9 未开始。`
+`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。H2 visual implementation 已以独立未验收 checkpoint 暂停；M7 Project / Package Functional Closure Stop A 已获附合同修正批准，当前按 P0-P4 实施 Open/Picker/Copy，完整本地 gate 后停止。projects.management 与 packages.vpm 保持 in_progress，M8/M9 未开始。`
 
 ## 已完成
 

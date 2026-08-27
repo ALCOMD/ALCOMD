@@ -5,8 +5,8 @@
 
 | 用户入口 | 当前 Core 是否足够 | 最小合同 / 实现归属 | Permission 复用 | State / Config 影响 | dependency / platform | slice |
 |---|---|---|---|---|---|---|
-| Open Project Directory | `projects.get` + `ProjectSnapshot.rootPath` 足够 | closed Tauri `ProjectId` adapter；无 public RPC | `projects.read`（existing client call） | 无 | opener 候选待审批 | P1 / S |
-| Add/Register chooser | register RPC 足够；native chooser 缺失 | closed folder picker 后调用 existing `projects.register` | `projects.manage` | 无 | dialog 候选待审批 | P1 / S |
+| Open Project Directory | `projects.get` + `ProjectSnapshot.rootPath` 足够 | closed Tauri `ProjectId` adapter；无 public RPC | `projects.read`（existing client call） | 无 | approved `open 5.4.2`，defaults off | P1 / S |
+| Add/Register chooser | register RPC 足够；native chooser 缺失 | closed folder picker 后调用 existing `projects.register` | `projects.manage` | 无 | approved dialog 2.7.2，defaults off + gtk3 | P1 / S |
 | Create | `templates.planCreateProject/applyCreateProject` 足够；built-in template 可表达 blank/create | GUI wiring + folder picker + existing Plan/Apply | existing template/project/package read/manage matrix | 无 | dialog 候选 | P1 / M |
 | Restore | `backups.planRestore/applyRestore` 足够 | GUI wiring + folder picker + existing Plan/Apply | existing backup/project permissions | 无 | dialog 候选 | P1 / M |
 | Copy Project | 不足 | proposal `projects.copy.v1`, `projects.planCopy/applyCopy`, Operation `projects.copy` | `projects.read + projects.create` | proposed State v10 | dialog；copy engine不需新 dependency/platform unsafe | P2 / XL |
@@ -41,7 +41,8 @@
 
 ## Release / milestone ownership
 
-- P1-P6 均属于 M7 functional closure；未完成前 `projects.management` / `packages.vpm` 不得提升为 implemented。
+- 除明确属于 M11 的 migration/differential parity 外，已知 Project/Package 缺口均属于 M7 functional closure；未完成前
+  `projects.management` / `packages.vpm` 不得提升为 implemented。
 - P7 Remove Directory 是 M7 内独立 high-impact approval slice；没有批准前保留缺口，不显示永久 disabled production fake action。
 - VCC import/migrate 与真实 v3 differential evidence属于 M11，保持 blocked。
 - Win10/Win11完整客户端安装/运行/WebView2/更新/卸载仍属于 M12。
