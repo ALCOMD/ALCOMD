@@ -372,12 +372,13 @@ fn registry_cursor<I: ToString>(value: app::RegistryCursor<I>) -> rpc::RegistryC
 }
 
 fn project_observation(value: app::ProjectObservation) -> rpc::ProjectSnapshot {
-    project_snapshot(None, value, None)
+    project_snapshot(None, None, value, None)
 }
 
 fn project_record(value: app::ProjectRecord) -> rpc::ProjectSnapshot {
     project_snapshot(
         Some(value.project_id.to_string()),
+        Some(value.registered_at_ms),
         value.observation,
         Some(value.revision.get()),
     )
@@ -385,11 +386,13 @@ fn project_record(value: app::ProjectRecord) -> rpc::ProjectSnapshot {
 
 fn project_snapshot(
     project_id: Option<String>,
+    registered_at_ms: Option<u64>,
     value: app::ProjectObservation,
     revision: Option<u64>,
 ) -> rpc::ProjectSnapshot {
     rpc::ProjectSnapshot {
         project_id,
+        registered_at_ms,
         root_path: value.root_path,
         project_type: project_type(value.project_type),
         unity_version: value.unity_version,

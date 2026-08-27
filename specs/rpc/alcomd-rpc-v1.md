@@ -413,6 +413,9 @@ M3 在 RPC major 1 上增加四项 capability：`projects.read.v1`、`projects.r
 必须绝对，remote URL 只允许无 userinfo 的 HTTP(S)。DTO、枚举、长度、cursor 与可选字段由
 `m3-project-repository.schema.json` 冻结。列表默认 limit 100、最大 1000；registry page 按
 `(registeredAtMs DESC, id DESC)`，package page 按 `(packageId ASC, version ASC)`，cursor exclusive。
+注册项目的 `ProjectSnapshot` 以兼容可选字段返回 `registeredAtMs`（Unix epoch
+milliseconds）；`projects.inspect` 产生的未注册 snapshot 不返回该字段。客户端必须继续接受字段缺失，
+不得使用 `observedAtMs` 推断或伪造注册时间。
 
 同步写命令使用 M2 永久幂等 scope，但成功响应不需要 OperationId。`register` 返回注册后的
 aggregate 与 `replayed`；`refresh` 返回最新 aggregate 与 `replayed`；`unregister` 返回资源 ID、

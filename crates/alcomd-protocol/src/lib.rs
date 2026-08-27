@@ -1039,6 +1039,8 @@ pub struct ReadIssue {
 #[serde(rename_all = "camelCase")]
 pub struct ProjectSnapshot {
     pub project_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub registered_at_ms: Option<u64>,
     pub root_path: String,
     pub project_type: ProjectType,
     pub unity_version: String,

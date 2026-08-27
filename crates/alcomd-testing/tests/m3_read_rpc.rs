@@ -44,6 +44,7 @@ async fn project_and_repository_read_slice_round_trips_without_source_writes() {
         .expect("inspect project");
     assert_eq!(inspected.project.project_type, ProjectType::Avatars);
     assert!(inspected.project.project_id.is_none());
+    assert!(inspected.project.registered_at_ms.is_none());
     let registered = client
         .project_register(
             project.to_string_lossy().into_owned(),
@@ -52,21 +53,24 @@ async fn project_and_repository_read_slice_round_trips_without_source_writes() {
         .await
         .expect("register project");
     assert_eq!(registered.project.revision, Some(1));
+    let registered_at_ms = registered
+        .project
+        .registered_at_ms
+        .expect("registered project timestamp");
     let project_id = registered.project.project_id.expect("registered ID");
     let no_op = client
         .project_refresh(project_id.clone(), 1, "m3-project-refresh".to_owned())
         .await
         .expect("refresh project");
     assert_eq!(no_op.project.revision, Some(1));
-    assert_eq!(
-        client
-            .projects_list(None, Some(100))
-            .await
-            .expect("list projects")
-            .projects
-            .len(),
-        1
-    );
+    assert_eq!(no_op.project.registered_at_ms, Some(registered_at_ms));
+    let projects = client
+        .projects_list(None, Some(100))
+        .await
+        .expect("list projects")
+        .projects;
+    assert_eq!(projects.len(), 1);
+    assert_eq!(projects[0].registered_at_ms, Some(registered_at_ms));
 
     let source = RepositorySource::Local {
         path: repository.to_string_lossy().into_owned(),

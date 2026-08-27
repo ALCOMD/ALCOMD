@@ -216,6 +216,17 @@ fn m3_schema_freezes_project_repository_contract() {
         definitions["projectSnapshot"]["properties"]["directDependencies"]["maxItems"],
         4_096
     );
+    assert_eq!(
+        definitions["projectSnapshot"]["properties"]["registeredAtMs"]["maximum"],
+        9_223_372_036_854_775_807_i64
+    );
+    assert!(
+        !definitions["projectSnapshot"]["required"]
+            .as_array()
+            .expect("project snapshot required fields")
+            .iter()
+            .any(|field| field.as_str() == Some("registeredAtMs"))
+    );
     assert_eq!(definitions["pageLimit"]["maximum"], 1_000);
     assert_eq!(definitions["absolutePath"]["maxLength"], 32_768);
     assert_eq!(definitions["idempotencyKey"]["maxLength"], 128);

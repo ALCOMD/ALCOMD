@@ -43,6 +43,7 @@
             ],
             "properties": {
                 "projectId": {"oneOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
+                "registeredAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
                 "rootPath": {"$ref": "#/$defs/absolutePath"},
                 "projectType": {
                     "enum": [

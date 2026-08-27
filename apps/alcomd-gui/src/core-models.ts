@@ -123,6 +123,7 @@ export interface ReadIssue {
 
 export interface ProjectSnapshot {
     projectId?: string;
+    registeredAtMs?: number;
     rootPath: string;
     projectType: string;
     unityVersion: string;
