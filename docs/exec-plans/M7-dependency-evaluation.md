@@ -129,7 +129,9 @@ Playwright只能提供 DOM/browser evidence，不能证明 WKWebView/WebKitGTK/T
 
 ## 2026-08-26 Material Symbols icon foundation candidate
 
-状态：项目所有者已批准 production dependency 与 icon contract；exact dependency 已落盘并完成 lock closure 审计。
+状态：`@material-symbols/svg-400` 与后续 `@material-symbols/svg-500` 仅保留为历史评估，均为
+`rejected_as_final_icon_source`；两者的静态 SVG 固定为 `opsz=48`，不能提供当前 GUI 要求的真实 opsz 20/24。
+当前生效合同见本节末尾的“Official vendored SVG replacement”。
 
 推荐 exact dependency：
 
@@ -218,3 +220,20 @@ Windows real GUI visual gate 中人工验收。
 `marella/material-symbols`，icon origin 为 Google Material Symbols，license 为 `Apache-2.0`，lock integrity 为
 `sha512-M3vW/MQCkr7NlN+1D9LDwRiKJeUjXbUB/O3gqPExNFAz1Vk/IFr0Ajlhr/lXVti46yhWknooVKAYMQj4o1VE3w==`。
 未来任何 patch/minor upgrade 都重新执行 dependency audit。
+
+### 2026-08-27 Official vendored SVG replacement
+
+项目所有者纠正了 static npm SVG foundation：`@material-symbols/svg-400` 与
+`@material-symbols/svg-500` 的静态 SVG 均固定为 `opsz=48`，不得通过 CSS 缩小、裁边或单图标补丁模拟
+20/24 optical size。两项 npm package 均从 production dependency 与 lockfile 移除，不替换为固定 opsz=48 的
+`@material-symbols/font-400`，也不建立 variable-font subset pipeline。
+
+最终 source of truth 固定为 Google 官方 `google/material-design-icons` 提交
+`e083cc60a0828fdd3b404cea0cb8a5b900e9c23e`。`packages/alcomd-ui/assets/material-symbols/` 只 vendoring
+产品真实使用的 Rounded / weight 400 / grade 0 / fill 0 / opsz 20 或 24 SVG，来源路径和 SHA-256 记录在
+`manifest.toml`。business page 继续只使用 `@alcomd/ui` named export；不接受 arbitrary icon string、asset URL 或 SVG
+path，不使用 glob、dynamic registry、remote font/CDN、SVGR 或第二套 icon language。共享 mask primitive 保留官方
+viewBox/path 与 `100%` geometry，不再裁切 optical keyline；默认 action/icon-button 与 primary navigation 为真实
+24px/opsz24，table sort indicator 仅在显式传入 20 时使用真实 opsz20。primary navigation 曾短暂评估真实
+20px/opsz20，但项目所有者在 release GUI 中观察其官方 keyline 后判定视觉过小，因此整体切换到 24px/opsz24，
+并以 12px icon-label gap 保持原有标签起点；这不是 per-icon scale hack。

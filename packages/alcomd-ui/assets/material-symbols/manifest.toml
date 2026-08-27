@@ -1,0 +1,210 @@
+upstream_repository = "https://github.com/google/material-design-icons"
+upstream_commit = "e083cc60a0828fdd3b404cea0cb8a5b900e9c23e"
+license = "Apache-2.0"
+style = "Rounded"
+weight = 400
+grade = 0
+fill = 0
+
+[[asset]]
+name = "extension"
+optical_size = 24
+path = "24/extension.svg"
+upstream_path = "symbols/web/extension/materialsymbolsrounded/extension_24px.svg"
+sha256 = "f185d23e1c8c6efb3374f178acf4567f27e84326a4ae78990fab7f00580edcd1"
+
+[[asset]]
+name = "folder"
+optical_size = 24
+path = "24/folder.svg"
+upstream_path = "symbols/web/folder/materialsymbolsrounded/folder_24px.svg"
+sha256 = "f42ede1360730469cc156f21e4bc334f2c82b66f7b34cf1c0551fae4be2be4df"
+
+[[asset]]
+name = "info"
+optical_size = 24
+path = "24/info.svg"
+upstream_path = "symbols/web/info/materialsymbolsrounded/info_24px.svg"
+sha256 = "ab779a17ff3bc8f5a30e3231509ef9ff6fee709ffcaa46fb65217ce170f03e14"
+
+[[asset]]
+name = "keyboard_arrow_down"
+optical_size = 20
+path = "20/keyboard_arrow_down.svg"
+upstream_path = "symbols/web/keyboard_arrow_down/materialsymbolsrounded/keyboard_arrow_down_20px.svg"
+sha256 = "9802c62be8f937eee6f808e478a20a72e70ddb35793e5e0db422e23e83858678"
+
+[[asset]]
+name = "keyboard_arrow_up"
+optical_size = 20
+path = "20/keyboard_arrow_up.svg"
+upstream_path = "symbols/web/keyboard_arrow_up/materialsymbolsrounded/keyboard_arrow_up_20px.svg"
+sha256 = "6d4c89b0092504556d0d1c95fe72926088ed34f3fada42576e96dde70b44d9f6"
+
+[[asset]]
+name = "list"
+optical_size = 24
+path = "24/list.svg"
+upstream_path = "symbols/web/list/materialsymbolsrounded/list_24px.svg"
+sha256 = "6542877ce9319ab424e78c583c407322f044884a8fd4b94e8c3bcebb302d2b6b"
+
+[[asset]]
+name = "package_2"
+optical_size = 24
+path = "24/package_2.svg"
+upstream_path = "symbols/web/package_2/materialsymbolsrounded/package_2_24px.svg"
+sha256 = "f636ce667107594fc2d23116122bfe1247d6a6faed34cb6732425f43913bebb9"
+
+[[asset]]
+name = "settings"
+optical_size = 24
+path = "24/settings.svg"
+upstream_path = "symbols/web/settings/materialsymbolsrounded/settings_24px.svg"
+sha256 = "6cd47de90647ece6b00922f497f8c4ea9c1649548cf15828d1df9d78d5bdf30d"
+
+[[asset]]
+name = "task_alt"
+optical_size = 24
+path = "24/task_alt.svg"
+upstream_path = "symbols/web/task_alt/materialsymbolsrounded/task_alt_24px.svg"
+sha256 = "6ba4c66bffc14b3d12614fc446b4302f94948fe78bec4cff65698706de52e086"
+
+[[asset]]
+name = "account_circle"
+optical_size = 24
+path = "24/account_circle.svg"
+upstream_path = "symbols/web/account_circle/materialsymbolsrounded/account_circle_24px.svg"
+sha256 = "a00a7e524203f2196358884c04eda55fe5cfa461351b6401b92f4e0ecedb7595"
+
+[[asset]]
+name = "arrow_back"
+optical_size = 24
+path = "24/arrow_back.svg"
+upstream_path = "symbols/web/arrow_back/materialsymbolsrounded/arrow_back_24px.svg"
+sha256 = "b9b58d54e13e0e3693a10d997c1001ec270c12eaa935f993cee1d8c916236ceb"
+
+[[asset]]
+name = "arrow_downward"
+optical_size = 24
+path = "24/arrow_downward.svg"
+upstream_path = "symbols/web/arrow_downward/materialsymbolsrounded/arrow_downward_24px.svg"
+sha256 = "f434d017632890936ecce60902286240b82682e18cebba6ec7a6aff2f93308ac"
+
+[[asset]]
+name = "arrow_upward"
+optical_size = 24
+path = "24/arrow_upward.svg"
+upstream_path = "symbols/web/arrow_upward/materialsymbolsrounded/arrow_upward_24px.svg"
+sha256 = "28f6a3032188778a7760394d22a91b0b85aa20395c7da20e091f36b51dc5d8b5"
+
+[[asset]]
+name = "backup"
+optical_size = 24
+path = "24/backup.svg"
+upstream_path = "symbols/web/backup/materialsymbolsrounded/backup_24px.svg"
+sha256 = "b5363ffb223bdd180239b07937a78fbc657c75bd76034ce9ca02eb77d43923a9"
+
+[[asset]]
+name = "close"
+optical_size = 24
+path = "24/close.svg"
+upstream_path = "symbols/web/close/materialsymbolsrounded/close_24px.svg"
+sha256 = "fabc7e16160e93ed11d6d72b87f5c67092d04abfcc1fc2410fab1abe075cd8fc"
+
+[[asset]]
+name = "delete"
+optical_size = 24
+path = "24/delete.svg"
+upstream_path = "symbols/web/delete/materialsymbolsrounded/delete_24px.svg"
+sha256 = "cd90ebd4c5aa36ef2332e2511ed6dcb051a32e5c99effd60494060473f27b9f9"
+
+[[asset]]
+name = "download"
+optical_size = 24
+path = "24/download.svg"
+upstream_path = "symbols/web/download/materialsymbolsrounded/download_24px.svg"
+sha256 = "af215e8e4960234aec60127e3819718a972f4d2a90b3c617602134681bad557f"
+
+[[asset]]
+name = "grid_view"
+optical_size = 24
+path = "24/grid_view.svg"
+upstream_path = "symbols/web/grid_view/materialsymbolsrounded/grid_view_24px.svg"
+sha256 = "8c3937acee82f64fc66f6221d9103d0e5d69a71f5979fedb8c5e5d74a0727dc9"
+
+[[asset]]
+name = "help"
+optical_size = 24
+path = "24/help.svg"
+upstream_path = "symbols/web/help/materialsymbolsrounded/help_24px.svg"
+sha256 = "e02de48c4fb9e714eb92bd9b429f3661d7943b9242c1d62e6dc25ff963cc0d55"
+
+[[asset]]
+name = "history"
+optical_size = 24
+path = "24/history.svg"
+upstream_path = "symbols/web/history/materialsymbolsrounded/history_24px.svg"
+sha256 = "98a0aacd0f8de1393b7fd627f3a4958986c33009192d59f022269505df6dbe51"
+
+[[asset]]
+name = "menu"
+optical_size = 24
+path = "24/menu.svg"
+upstream_path = "symbols/web/menu/materialsymbolsrounded/menu_24px.svg"
+sha256 = "440bf7bd76d77ddbd704f6fb9f5b6022acb25c5fa6de1e4d8a224ea25e1b5b3c"
+
+[[asset]]
+name = "more_vert"
+optical_size = 24
+path = "24/more_vert.svg"
+upstream_path = "symbols/web/more_vert/materialsymbolsrounded/more_vert_24px.svg"
+sha256 = "f3959916d17e6ec783267c2753bdddfe4b3f4b12b835c875231dbbba792f070b"
+
+[[asset]]
+name = "play_arrow"
+optical_size = 24
+path = "24/play_arrow.svg"
+upstream_path = "symbols/web/play_arrow/materialsymbolsrounded/play_arrow_24px.svg"
+sha256 = "226815e34bc8589e63a3641fcf6b0fdac06fc87dd9d9feda539f133c514878cc"
+
+[[asset]]
+name = "public"
+optical_size = 24
+path = "24/public.svg"
+upstream_path = "symbols/web/public/materialsymbolsrounded/public_24px.svg"
+sha256 = "5b8ad24e63e4a2f601728fe0e589df9ca943b813ad24a71635c803a677e1ecc0"
+
+[[asset]]
+name = "refresh"
+optical_size = 24
+path = "24/refresh.svg"
+upstream_path = "symbols/web/refresh/materialsymbolsrounded/refresh_24px.svg"
+sha256 = "9287665cb15b61441487cb2d579ba5630f9b249dbcaa5991e7028aa6f925edf8"
+
+[[asset]]
+name = "search"
+optical_size = 24
+path = "24/search.svg"
+upstream_path = "symbols/web/search/materialsymbolsrounded/search_24px.svg"
+sha256 = "8d12ac6ba27a23ccf0e57794c28481ce9c978efcb2f80ba6d2979ccdf238c993"
+
+[[asset]]
+name = "sync"
+optical_size = 24
+path = "24/sync.svg"
+upstream_path = "symbols/web/sync/materialsymbolsrounded/sync_24px.svg"
+sha256 = "4e76b510662a3d4317205bfac9cb8be32178dc7ee7d89447144bf9a1d38ca7a1"
+
+[[asset]]
+name = "upgrade"
+optical_size = 24
+path = "24/upgrade.svg"
+upstream_path = "symbols/web/upgrade/materialsymbolsrounded/upgrade_24px.svg"
+sha256 = "5f3351038b9c9d5828330b28f6c37cfaab2b7f3ecd9ef64433dce5c8b73d2d69"
+
+[[asset]]
+name = "view_list"
+optical_size = 24
+path = "24/view_list.svg"
+upstream_path = "symbols/web/view_list/materialsymbolsrounded/view_list_24px.svg"
+sha256 = "a5625312a42a6c7cd67265c4324ed8ce8037baa65d88a0fe76d5b236a1404081"
