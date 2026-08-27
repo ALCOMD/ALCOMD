@@ -15,6 +15,10 @@ const ROOT_LOCK: &str = include_str!("../../../Cargo.lock");
 const DEPENDENCY_EVALUATION: &str =
     include_str!("../../../docs/exec-plans/M7-project-actions-dependency-evaluation.md");
 const CURRENT_PROJECTS_UI: &str = include_str!("../../../apps/alcomd-gui/src/CorePages.tsx");
+const GUI_RUST_ADAPTER: &str = include_str!("../../../apps/alcomd-gui/src-tauri/src/lib.rs");
+const GUI_RPC_ADAPTER: &str = include_str!("../../../apps/alcomd-gui/src/rpc.ts");
+const GUI_CAPABILITY: &str =
+    include_str!("../../../apps/alcomd-gui/src-tauri/capabilities/main.json");
 
 #[test]
 fn approved_project_copy_contract_is_bounded_and_not_active() {
@@ -188,7 +192,7 @@ fn dependency_decisions_are_exact_and_opener_plugin_stays_rejected() {
 fn visible_action_gate_records_real_current_gaps_instead_of_hiding_them() {
     let gate: Value = serde_json::from_str(ACTION_GATE).expect("visible action gate");
     assert_eq!(gate["productionGateMayPass"], false);
-    assert_eq!(gate["expectedCurrentPermanentFakeCount"], 2);
+    assert_eq!(gate["expectedCurrentPermanentFakeCount"], 1);
     assert_eq!(
         gate["releaseBlockerFeatures"],
         json!(["projects.management", "packages.vpm"])
@@ -198,18 +202,13 @@ fn visible_action_gate_records_real_current_gaps_instead_of_hiding_them() {
         .iter()
         .filter(|action| action["classification"] == "permanent-disabled-release-blocker")
         .collect::<Vec<_>>();
-    assert_eq!(permanent.len(), 2);
-    assert!(
-        permanent
-            .iter()
-            .any(|action| action["id"] == "projects.open-directory")
-    );
+    assert_eq!(permanent.len(), 1);
     assert!(
         permanent
             .iter()
             .any(|action| action["id"] == "projects.copy")
     );
-    assert!(CURRENT_PROJECTS_UI.contains("disabled label=\"Open Project Directory\""));
+    assert!(!CURRENT_PROJECTS_UI.contains("disabled label=\"Open Project Directory\""));
     assert!(CURRENT_PROJECTS_UI.contains("disabled label=\"Copy Project\""));
     assert!(
         gate["knownParityGaps"]
@@ -218,4 +217,18 @@ fn visible_action_gate_records_real_current_gaps_instead_of_hiding_them() {
             .len()
             > 2
     );
+}
+
+#[test]
+fn official_gui_local_project_affordances_remain_closed() {
+    assert!(GUI_RUST_ADAPTER.contains("async fn gui_open_project_directory("));
+    assert!(GUI_RUST_ADAPTER.contains("project_id: String"));
+    assert!(GUI_RUST_ADAPTER.contains("client.project_get(project_id).await"));
+    assert!(GUI_RUST_ADAPTER.contains("open::that(root)"));
+    assert!(!GUI_RUST_ADAPTER.contains("open::with"));
+    assert!(GUI_RUST_ADAPTER.contains("async fn gui_select_directory(app: tauri::AppHandle)"));
+    assert!(GUI_RPC_ADAPTER.contains("gui_open_project_directory"));
+    assert!(GUI_RPC_ADAPTER.contains("gui_select_directory"));
+    assert!(!GUI_CAPABILITY.contains("dialog:"));
+    assert!(!GUI_CAPABILITY.contains("opener:"));
 }

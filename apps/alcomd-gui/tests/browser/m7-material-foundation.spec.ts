@@ -209,7 +209,7 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     await expect(projectMenu).toHaveJSProperty("open", true);
     const openDirectory = projectMenu.locator("md-menu-item").filter({ hasText: "Open Project Directory" });
     const copyProject = projectMenu.locator("md-menu-item").filter({ hasText: "Copy Project" });
-    await expect(openDirectory).toHaveJSProperty("disabled", true);
+    await expect(openDirectory).toHaveJSProperty("disabled", false);
     await expect(copyProject).toHaveJSProperty("disabled", true);
     await expect(openDirectory.getByRole("menuitem", { name: "Open Project Directory" })).toBeVisible();
     await expect(copyProject.getByRole("menuitem", { name: "Copy Project" })).toBeVisible();

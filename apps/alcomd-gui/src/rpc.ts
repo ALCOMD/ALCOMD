@@ -77,6 +77,8 @@ export interface GuiRpcClient {
     projectsInspect(path: string, discoveryMode: "exact-root" | "search-parents"): Promise<ProjectResult>;
     projectsList(): Promise<ProjectsListResult>;
     projectGet(projectId: string): Promise<ProjectResult>;
+    openProjectDirectory(projectId: string): Promise<void>;
+    selectDirectory(): Promise<string | undefined>;
     projectRegister(path: string): Promise<ProjectWriteResult>;
     projectRefresh(projectId: string, expectedRevision: number): Promise<ProjectWriteResult>;
     projectUnregister(projectId: string, expectedRevision: number): Promise<ProjectUnregisterResult>;
@@ -183,6 +185,14 @@ class TauriGuiRpcClient implements GuiRpcClient {
 
     projectGet(projectId: string): Promise<ProjectResult> {
         return invokeTyped("gui_project_get", { projectId });
+    }
+
+    openProjectDirectory(projectId: string): Promise<void> {
+        return invokeTyped("gui_open_project_directory", { projectId });
+    }
+
+    selectDirectory(): Promise<string | undefined> {
+        return invokeTyped<string | null>("gui_select_directory", {}).then((path) => path ?? undefined);
     }
 
     projectRegister(path: string): Promise<ProjectWriteResult> {

@@ -6,6 +6,7 @@ use alcomd_protocol::{
 };
 use tauri::State;
 use tauri::async_runtime::Mutex;
+use tauri_plugin_dialog::DialogExt;
 
 #[derive(Default)]
 struct GuiClientState {
@@ -186,6 +187,69 @@ async fn gui_project_get(
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_open_project_directory(
+    state: State<'_, GuiClientState>,
+    project_id: String,
+) -> Result<(), RpcError> {
+    let project = {
+        let mut client = state.client.lock().await;
+        connect_if_needed(&mut client).await?;
+        let result = match client.as_mut() {
+            Some(client) => client.project_get(project_id).await,
+            None => return Err(daemon_unavailable()),
+        };
+        finish_call(&mut client, result)?.project
+    };
+
+    let root = validated_registered_project_root(&project.root_path)?;
+    open::that(root).map_err(|_| RpcError::extension("project_directory_open_failed"))
+}
+
+#[tauri::command]
+async fn gui_select_directory(app: tauri::AppHandle) -> Result<Option<String>, RpcError> {
+    let selected = app.dialog().file().blocking_pick_folder();
+    selected
+        .map(|path| {
+            let path = path
+                .into_path()
+                .map_err(|_| RpcError::extension("directory_selection_failed"))?;
+            let canonical = std::fs::canonicalize(path)
+                .map_err(|_| RpcError::extension("directory_selection_failed"))?;
+            if !canonical.is_absolute()
+                || !std::fs::metadata(&canonical)
+                    .map(|metadata| metadata.is_dir())
+                    .unwrap_or(false)
+            {
+                return Err(RpcError::extension("directory_selection_failed"));
+            }
+            canonical
+                .into_os_string()
+                .into_string()
+                .map_err(|_| RpcError::extension("directory_selection_failed"))
+        })
+        .transpose()
+}
+
+fn validated_registered_project_root(root_path: &str) -> Result<std::path::PathBuf, RpcError> {
+    let registered = std::path::Path::new(root_path);
+    if !registered.is_absolute() {
+        return Err(RpcError::extension("project_directory_missing"));
+    }
+    let metadata = std::fs::metadata(registered).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            RpcError::extension("project_directory_missing")
+        } else {
+            RpcError::extension("project_directory_open_failed")
+        }
+    })?;
+    if !metadata.is_dir() {
+        return Err(RpcError::extension("project_directory_not_directory"));
+    }
+    std::fs::canonicalize(registered)
+        .map_err(|_| RpcError::extension("project_directory_open_failed"))
 }
 
 #[tauri::command]
@@ -1094,6 +1158,8 @@ pub fn run() {
             gui_projects_inspect,
             gui_projects_list,
             gui_project_get,
+            gui_open_project_directory,
+            gui_select_directory,
             gui_project_register,
             gui_project_refresh,
             gui_project_unregister,
@@ -1154,4 +1220,53 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("failed to run alcomd-gui");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validated_registered_project_root;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_test_path(name: &str) -> std::path::PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        std::env::temp_dir().join(format!("alcomd-gui-{name}-{}-{nonce}", std::process::id()))
+    }
+
+    #[test]
+    fn registered_project_root_must_exist_and_be_a_directory() {
+        let directory = unique_test_path("directory");
+        fs::create_dir(&directory).expect("create test directory");
+        let resolved = validated_registered_project_root(
+            directory.to_str().expect("test path must be Unicode"),
+        )
+        .expect("existing directory should resolve");
+        assert!(resolved.is_absolute());
+
+        let file = directory.join("not-a-directory");
+        fs::write(&file, b"fixture").expect("create test file");
+        let error =
+            validated_registered_project_root(file.to_str().expect("test path must be Unicode"))
+                .expect_err("regular file must be rejected");
+        assert_eq!(error.code, "project_directory_not_directory");
+
+        fs::remove_file(file).expect("remove test file");
+        fs::remove_dir(directory).expect("remove test directory");
+    }
+
+    #[test]
+    fn missing_and_relative_registered_roots_fail_closed() {
+        let missing = unique_test_path("missing");
+        let error =
+            validated_registered_project_root(missing.to_str().expect("test path must be Unicode"))
+                .expect_err("missing directory must fail");
+        assert_eq!(error.code, "project_directory_missing");
+
+        let error = validated_registered_project_root("relative-project")
+            .expect_err("relative path must fail");
+        assert_eq!(error.code, "project_directory_missing");
+    }
 }

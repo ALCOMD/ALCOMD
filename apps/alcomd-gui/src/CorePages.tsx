@@ -188,7 +188,10 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     const [descending, setDescending] = useState(true);
     const [view, setView] = useState<"list" | "grid">("list");
     const [registerOpen, setRegisterOpen] = useState(false);
+    const [registerPath, setRegisterPath] = useState("");
+    const [selectingDirectory, setSelectingDirectory] = useState(false);
     const [registrationMessage, setRegistrationMessage] = useState<string>();
+    const registerButtonRef = useRef<HTMLElement>(null);
 
     const refresh = useCallback(async () => {
         setState((current) => ({ ...current, error: undefined, refreshing: current.projects.length > 0 }));
@@ -225,6 +228,26 @@ export function ProjectsPage({ client, navigate }: PageProps) {
         setDescending(nextSort === "added" || nextSort === "observed");
     };
 
+    const chooseProjectDirectory = async () => {
+        setSelectingDirectory(true);
+        setRegistrationMessage(undefined);
+        try {
+            const selected = await client.selectDirectory();
+            if (selected === undefined) return;
+            setRegisterPath(selected);
+            setRegisterOpen(true);
+        } catch (caught: unknown) {
+            setRegistrationMessage(`Unable to select directory: ${safeError(caught).code}`);
+        } finally {
+            setSelectingDirectory(false);
+        }
+    };
+
+    const closeRegisterDialog = () => {
+        setRegisterOpen(false);
+        window.requestAnimationFrame(() => registerButtonRef.current?.focus());
+    };
+
     return (
         <section className="projects-page">
             <header className="projects-toolbar">
@@ -237,7 +260,9 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                     <Icon asset={view === "list" ? viewGridIcon : viewListIcon} slot="icon" />
                     <StateSizedLabel current={view === "list" ? "Grid view" : "List view"} labels={["Grid view", "List view"]} />
                 </Button>
-                <Button onClick={() => setRegisterOpen(true)} type="button">Register project</Button>
+                <Button disabled={selectingDirectory} onClick={() => void chooseProjectDirectory()} ref={registerButtonRef} type="button">
+                    <StateSizedLabel current={selectingDirectory ? "Choosing…" : "Register project"} labels={["Register project", "Choosing…"]} />
+                </Button>
             </header>
             {view === "grid" ? (
                 <div className="projects-secondary-toolbar">
@@ -284,8 +309,9 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                     setRegistrationMessage("Project registered");
                     void refresh();
                 }}
-                onClose={() => setRegisterOpen(false)}
+                onClose={closeRegisterDialog}
                 open={registerOpen}
+                path={registerPath}
             />
         </section>
     );
@@ -340,6 +366,7 @@ function ProjectsTable({
 }
 
 function ProjectRowActions({ client, navigate, onChanged, onFeedback, project }: { client: GuiRpcClient; navigate(path: string): void; onChanged(): void; onFeedback(message: string): void; project: ProjectSnapshot }) {
+    const [openingDirectory, setOpeningDirectory] = useState(false);
     const [opening, setOpening] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
     const [unregistering, setUnregistering] = useState(false);
@@ -378,6 +405,19 @@ function ProjectRowActions({ client, navigate, onChanged, onFeedback, project }:
         }
     };
 
+    const openDirectory = async () => {
+        setOpeningDirectory(true);
+        setMenuOpen(false);
+        try {
+            await client.openProjectDirectory(projectId);
+            onFeedback("Project directory opened.");
+        } catch (caught: unknown) {
+            onFeedback(`Unable to open project directory: ${safeError(caught).code}`);
+        } finally {
+            setOpeningDirectory(false);
+        }
+    };
+
     return (
         <>
             <div className="project-row-actions">
@@ -391,7 +431,7 @@ function ProjectRowActions({ client, navigate, onChanged, onFeedback, project }:
                     <Icon asset={moreVertIcon} size={24} />
                 </IconButton>
                 <Menu anchorRef={menuAnchorRef} className="project-actions-menu" onClose={() => setMenuOpen(false)} open={menuOpen}>
-                    <MenuItem className="project-actions-menu-item" disabled label="Open Project Directory" title="Requires an approved project-directory RPC capability" />
+                    <MenuItem className="project-actions-menu-item" disabled={openingDirectory} label={openingDirectory ? "Opening Project Directory…" : "Open Project Directory"} onClick={() => void openDirectory()} />
                     <MenuItem className="project-actions-menu-item" disabled label="Copy Project" title="Requires an approved project-copy RPC capability" />
                     <MenuItem className="project-actions-menu-item project-actions-menu-item--danger" disabled={revision === undefined} label="Remove Project" onClick={() => setConfirmUnregister(true)} />
                 </Menu>
@@ -431,25 +471,21 @@ function ProjectCard({ project, navigate }: { project: ProjectSnapshot; navigate
     );
 }
 
-function RegisterProjectDialog({ client, onChanged, onClose, open }: { client: GuiRpcClient; onChanged(): void; onClose(): void; open: boolean }) {
-    const [path, setPath] = useState("");
-    const [reviewing, setReviewing] = useState(false);
+function RegisterProjectDialog({ client, onChanged, onClose, open, path }: { client: GuiRpcClient; onChanged(): void; onClose(): void; open: boolean; path: string }) {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<RpcError>();
     const confirmRef = useRef<HTMLElement>(null);
 
     useEffect(() => {
         if (open) return;
-        setPath("");
-        setReviewing(false);
         setBusy(false);
         setError(undefined);
     }, [open]);
 
     useEffect(() => {
-        if (!reviewing) return;
+        if (!open) return;
         window.requestAnimationFrame(() => confirmRef.current?.focus());
-    }, [reviewing]);
+    }, [open]);
 
     const register = async () => {
         setBusy(true);
@@ -465,25 +501,15 @@ function RegisterProjectDialog({ client, onChanged, onClose, open }: { client: G
     };
 
     return (
-        <Dialog onClose={onClose} open={open} title={reviewing ? "Register this project?" : "Register project"}>
-            {reviewing ? (
-                <div className="project-register-review">
-                    <p>ALCOMD will inspect this Unity project and add it to the per-user registry.</p>
-                    <code>{path}</code>
-                    <div className="dialog-actions">
-                        <Button disabled={busy} onClick={() => setReviewing(false)} type="button" variant="text">Go back</Button>
-                        <Button disabled={busy} onClick={() => void register()} ref={confirmRef} type="button">{busy ? "Registering…" : "Confirm"}</Button>
-                    </div>
+        <Dialog onClose={onClose} open={open} title="Register this project?">
+            <div className="project-register-review">
+                <p>ALCOMD will inspect this Unity project and add it to the per-user registry.</p>
+                <code>{path}</code>
+                <div className="dialog-actions">
+                    <Button disabled={busy} onClick={onClose} type="button" variant="text">Cancel</Button>
+                    <Button disabled={busy || path.length === 0} onClick={() => void register()} ref={confirmRef} type="button">{busy ? "Registering…" : "Confirm"}</Button>
                 </div>
-            ) : (
-                <form className="project-register-form" onSubmit={(event) => { event.preventDefault(); setReviewing(true); }}>
-                    <TextField label="Project root" maxLength={1024} onInput={setPath} required supportingText="The daemon validates and owns this path." value={path} />
-                    <div className="dialog-actions">
-                        <Button onClick={onClose} type="button" variant="text">Cancel</Button>
-                        <Button disabled={path.length === 0} type="submit">Review registration</Button>
-                    </div>
-                </form>
-            )}
+            </div>
             {error === undefined ? null : <p className="inline-error" role="alert">Registration failed: {error.code}</p>}
         </Dialog>
     );

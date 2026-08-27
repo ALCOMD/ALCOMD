@@ -42,21 +42,12 @@ test("modal traps focus, closes on Escape, and restores the invoking control", a
     await openHarness(page, "/projects");
     const invoke = page.getByRole("button", { name: "Register project" });
     await invoke.click();
-    const root = page.getByLabel("Project root");
-    const review = page.getByRole("button", { name: "Review registration" });
-    await expect(root).toHaveAttribute("required", "");
-    await expect(root).toHaveAttribute("aria-describedby", "description");
-    await expect(page.getByText("The daemon validates and owns this path.", { exact: true })).toBeVisible();
-    await expect(review).toBeDisabled();
-    expect(await root.evaluate((element) => (element as HTMLInputElement).validity.valueMissing)).toBe(true);
-    await root.fill("C:\\Fixture\\Avatar");
-    await review.click();
-
     const dialog = page.getByRole("dialog", { name: "Register this project?" });
     await expect(dialog).toBeVisible();
+    await expect(page.locator(".project-register-review code")).toHaveText("C:\\Fixture\\Avatar");
     await expect(page.getByRole("button", { name: "Confirm" })).toBeFocused();
     await page.keyboard.press("Shift+Tab");
-    await expect(page.getByRole("button", { name: "Go back" })).toBeFocused();
+    await expect(page.getByRole("button", { name: "Cancel" })).toBeFocused();
     await page.keyboard.press("Shift+Tab");
     await expect(page.getByRole("button", { name: "Confirm" })).toBeFocused();
     await page.keyboard.press("Escape");
@@ -175,8 +166,7 @@ test("a changed project is explained without exposing stale Plan internals", asy
 test("direct writes and the remaining high-impact workflows retain confirmation and Operation boundaries", async ({ page }) => {
     await openHarness(page, "/projects");
     await page.getByRole("button", { name: "Register project" }).click();
-    await page.getByLabel("Project root").fill("C:\\Fixture\\Avatar");
-    await page.getByRole("button", { name: "Review registration" }).click();
+    await expect(page.locator(".project-register-review code")).toHaveText("C:\\Fixture\\Avatar");
     await page.getByRole("button", { name: "Confirm" }).click();
     await expect(page.getByRole("status").filter({ hasText: "Project registered" })).toBeVisible();
 
@@ -290,8 +280,6 @@ test("fixed desktop navigation, deterministic 200 percent layout, reduced motion
     await expect(page.getByRole("combobox", { name: "Language" })).toBeVisible();
     await navigationItem(page, "Projects").click();
     await page.getByRole("button", { name: "Register project" }).click();
-    await page.getByLabel("Project root").fill("C:\\Fixture\\Scaled");
-    await page.getByRole("button", { name: "Review registration" }).click();
     await expect(page.getByRole("dialog", { name: "Register this project?" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Confirm" })).toBeVisible();
     expect(await hasHorizontalOverflow(page)).toBe(false);
