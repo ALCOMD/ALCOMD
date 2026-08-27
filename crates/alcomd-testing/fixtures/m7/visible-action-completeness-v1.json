@@ -22,7 +22,7 @@
         {"id": "projects.backups", "classification": "implemented"},
         {"id": "projects.unregister", "classification": "conditional-disabled"},
         {"id": "projects.open-directory", "classification": "implemented"},
-        {"id": "projects.copy", "classification": "permanent-disabled-release-blocker"}
+        {"id": "projects.copy", "classification": "implemented"}
     ],
     "knownParityGaps": [
         "create-entry",
@@ -40,7 +40,7 @@
         "remove-directory",
         "vcc-import-migrate"
     ],
-    "expectedCurrentPermanentFakeCount": 1,
+    "expectedCurrentPermanentFakeCount": 0,
     "releaseBlockerFeatures": ["projects.management", "packages.vpm"],
     "productionGateMayPass": false
 }

@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。H2 visual implementation 已以独立未验收 checkpoint 暂停；M7 Project / Package Functional Closure Stop A 已获附合同修正批准，当前按 P0-P4 实施 Open/Picker/Copy，完整本地 gate 后停止。projects.management 与 packages.vpm 保持 in_progress，M8/M9 未开始。`
+`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。H2 visual implementation 已以独立未验收 checkpoint 暂停；M7 Project / Package Functional Closure P0-P4 production local candidate 已通过完整本地 gate，并停止在 P5 与 H2 前等待人工验收。projects.management 与 packages.vpm 保持 in_progress，M8/M9 未开始。`
 
 ## 已完成
 
@@ -281,6 +281,15 @@
 - reference-driven wide Projects prototype 已由项目所有者在真实 release GUI 中通过 Visual Gate 1；检查点
   `7bb325b78a74518881fb65e03de7f79902e72cd3`。sidebar/main canvas、Projects toolbar、桌面密度及真实 Material Web
   Button/TextField/Select 的 interaction、ripple/state layer 与 keyboard focus 均取得人工证据，但不冒充整个 M7 visual 完成。
+- M7 Project Actions Functional Closure Stop A 已完成 P0-P4 本地候选：exact `open 5.4.2` 与
+  `tauri-plugin-dialog 2.7.2`、closed ProjectId opener/native directory picker、active `projects.copy.v1`、State Schema v10、
+  durable JSONL inventory、两遍 SHA-256 source consistency、sibling staging/forward recovery，以及 CLI/Projects list/grid/
+  workspace Plan/Apply flow。真实子进程 kill/restart matrix 覆盖 inventory_ready、staging、staging_complete、publish_intent、
+  target_published、project_registry_commit_intent、state_committed 与 cleanup_complete；重启复用原 PlanId、OperationId、
+  idempotency 和预分配 target ProjectId。P5-P8 与 H2 visual 继续暂停，聚合 `projects.management`/`packages.vpm` 不提升。
+- P0-P4 本地验收已通过 Rust fmt/strict Clippy/完整 locked Workspace tests、npm check/build、19 项 browser tests、xtask、
+  metadata、baseline freeze、diff check 与 Tauri release no-bundle build；同 target 并发只发布一次，Plan expiry 与四态 writer
+  gate 也有直接回归证据。该证据不等于完整 M7、Visual Gate 或三平台 Hosted CI 已通过。
 
 ## 后续里程碑尚未完成
 
@@ -309,8 +318,9 @@
   scheme/CSP 或三平台 WebView isolation matrix 作为产品 blocker。Portable UI production 已获批准且 B0/B1 已完成；
   Slice C official renderer、Slice D headless/security/fault conformance 与 Hosted CI 已通过；restored Official GUI Core
   surfaces/flows、Settings/Activity/Diagnostics contracts 与 Chromium browser-level accessibility 已完成本地实现和验收。
-  当前 H2-A Projects 列表与导航的本地视觉迭代已获项目所有者局部认可；完整 Project workspace / Packages、Visual Gate 2、
-  后续尚未批准的其他 H2-H7、最终候选三平台 Hosted CI 与项目所有者最终人工验收仍是实际缺口。
+  当前 H2-A Projects 列表与导航的本地视觉迭代已获项目所有者局部认可；H2 visual 已按 Stop A 要求暂停。Project Copy
+  P0-P4 已形成 production local candidate，但 Create/Restore/Favorite、Package closure、Delete Directory、完整 Visual Gate 2、
+  后续 H2-H7、最终候选三平台 Hosted CI 与项目所有者最终人工验收仍是实际缺口。
 
 - 真实安装快照和迁移 Fixture 尚未建立；因此 artifact 模板继续保持 `confirmed = false`，
   迁移删除、GUI/模板/备份/Unity 差异测试仍 blocked。项目所有者已决定不在 M-1 继续投入
@@ -343,9 +353,9 @@
 
 M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 Portable UI B0-D 已通过 Hosted CI；Official GUI
 functional candidate `192672…` 保留技术证据但已被拒绝 visual/IA acceptance；首次 H1 也已被标记为
-`rejected_for_visual_direction`。替代的 v3-reference wide Projects shell 已在 `7bb325b…` 通过 Visual Gate 1。当前只执行
-H2-A Project workspace / Packages 并停止 Visual Gate 2；A/B/C不再是production候选，不得push，不得开始其他 H2、H3-H7
-或M8/M9。
+`rejected_for_visual_direction`。替代的 v3-reference wide Projects shell 已在 `7bb325b…` 通过 Visual Gate 1。当前只完成
+Project / Package Functional Closure P0-P4 的本地 gate 与提交；之后停止，不得 push、不得自动进入 P5-P8、不得恢复 H2 visual、
+不得进入 M8/M9。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential

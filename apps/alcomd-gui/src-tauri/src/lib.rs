@@ -233,6 +233,34 @@ async fn gui_select_directory(app: tauri::AppHandle) -> Result<Option<String>, R
         .transpose()
 }
 
+#[tauri::command]
+async fn gui_project_plan_copy(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::ProjectsPlanCopyParams,
+) -> Result<alcomd_protocol::ProjectsPlanCopyResult, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.project_plan_copy(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_project_apply_copy(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::ProjectsApplyCopyParams,
+) -> Result<alcomd_protocol::ProjectsApplyCopyResult, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.project_apply_copy(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
 fn validated_registered_project_root(root_path: &str) -> Result<std::path::PathBuf, RpcError> {
     let registered = std::path::Path::new(root_path);
     if !registered.is_absolute() {
@@ -1160,6 +1188,8 @@ pub fn run() {
             gui_project_get,
             gui_open_project_directory,
             gui_select_directory,
+            gui_project_plan_copy,
+            gui_project_apply_copy,
             gui_project_register,
             gui_project_refresh,
             gui_project_unregister,

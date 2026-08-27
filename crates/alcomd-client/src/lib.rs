@@ -117,6 +117,7 @@ impl AlcomdClient {
                 CAPABILITY_EVENTS_REPLAY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_REGISTRY_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_PROJECTS_COPY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_REPOSITORIES_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_REPOSITORIES_REGISTRY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V1.to_owned(),
@@ -662,6 +663,22 @@ impl AlcomdClient {
             },
         )
         .await
+    }
+
+    pub async fn project_plan_copy(
+        &mut self,
+        params: alcomd_protocol::ProjectsPlanCopyParams,
+    ) -> Result<alcomd_protocol::ProjectsPlanCopyResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_PROJECTS_PLAN_COPY, params)
+            .await
+    }
+
+    pub async fn project_apply_copy(
+        &mut self,
+        params: alcomd_protocol::ProjectsApplyCopyParams,
+    ) -> Result<alcomd_protocol::ProjectsApplyCopyResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_PROJECTS_APPLY_COPY, params)
+            .await
     }
 
     pub async fn projects_list(

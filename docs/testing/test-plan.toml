@@ -508,8 +508,17 @@ stage = "M7"
 kind = "contract"
 platforms = ["all"]
 status = "implemented"
-description = "验证 Project Copy proposal 的 bounded Plan、900000ms expiry、exact profile/quota、Operation phase、forward recovery、State v10 proposal 与其他 Project/Package gap ownership；只证明 proposal 自洽，不表示 active RPC、migration 或 production 已实现。"
-evidence = ["docs/exec-plans/M7-project-package-functional-closure.md", "docs/baselines/m7-project-package-functional-closure.md", "specs/rpc/m7-project-copy.proposal.schema.json", "specs/storage/state-v10.md", "specs/storage/state-v10-migration.proposal.contract.json", "crates/alcomd-testing/fixtures/m7/project-copy-contract-vectors.json", "crates/alcomd-testing/tests/m7_project_actions_contract.rs"]
+description = "验证 active Project Copy 的 bounded Plan、900000ms expiry、exact profile/quota、Operation phase、forward recovery、State v10 两表边界与其他 Project/Package gap ownership。"
+evidence = ["docs/exec-plans/M7-project-package-functional-closure.md", "docs/baselines/m7-project-package-functional-closure.md", "specs/rpc/alcomd-rpc-v1.md", "specs/rpc/m7-project-copy.proposal.schema.json", "specs/storage/state-v10.md", "specs/storage/state-v10-migration.proposal.contract.json", "crates/alcomd-store/migrations/0010_project_copy.sql", "crates/alcomd-testing/fixtures/m7/project-copy-contract-vectors.json", "crates/alcomd-testing/tests/m7_project_actions_contract.rs"]
+
+[[test]]
+id = "projects.m7-copy-transaction"
+stage = "M7"
+kind = "integration-fault"
+platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
+status = "implemented"
+description = "真实 daemon/client Plan/Apply Copy、private inventory、profile exclusions、Project registration、幂等重放及 inventory_ready 到 cleanup_complete 每个 durable checkpoint 的子进程 kill/restart forward recovery。"
+evidence = ["crates/alcomd-testing/tests/m7_project_copy_rpc.rs", "crates/alcomd-vpm/src/project_copy.rs", "crates/alcomd-store/tests/schema_contract.rs"]
 
 [[test]]
 id = "gui.m7-visible-action-completeness"
@@ -517,7 +526,7 @@ stage = "M7"
 kind = "integration-ui"
 platforms = ["all"]
 status = "planned"
-description = "production gate 要求每个可见业务 action 是真实 implemented、current-state conditional disabled 或非 release-blocker 的显式 unavailable；永久 disabled fake action、empty handler、no-op success、local fake mutation 与通过删除 release-blocker 入口隐藏缺口均失败。当前 fixture 明确记录两个永久 fake entry 和更多已知缺口，因此不得标记 implemented。"
+description = "production gate 要求每个可见业务 action 是真实 implemented、current-state conditional disabled 或非 release-blocker 的显式 unavailable；P1-P4 已将当前 Projects 页永久 fake count 收敛为零，但 Create/Restore/Favorite/Package/Delete Directory 等 P5-P8 缺口仍阻止完整 gate。"
 evidence = ["crates/alcomd-testing/fixtures/m7/visible-action-completeness-v1.json", "docs/baselines/m7-project-package-functional-closure.md", "crates/alcomd-testing/tests/m7_project_actions_contract.rs"]
 
 [[test]]

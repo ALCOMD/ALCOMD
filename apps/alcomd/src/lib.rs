@@ -10,8 +10,9 @@ use alcomd_application::{
     AccessContext, Application, ApplicationError, EventRecord as ApplicationEvent, IdempotencyKey,
     M3Application, M4Application, M5BackupApplication as BackupService,
     M5TemplateApplication as TemplateService, M5UnityApplication as M5Application, M6Application,
-    M7Application, M7OfficialApplication, OperationCursor, OperationId, OperationRecord,
-    OperationState as DomainState, ResourceLockCoordinator, Revision, StoreErrorKind,
+    M7Application, M7CopyApplication as ProjectCopyService, M7OfficialApplication, OperationCursor,
+    OperationId, OperationRecord, OperationState as DomainState, ResourceLockCoordinator, Revision,
+    StoreErrorKind,
 };
 use alcomd_platform::{BindError, DaemonInstance, DataConfig, IpcConfig, IpcListener, IpcStream};
 use alcomd_protocol::{
@@ -36,6 +37,7 @@ mod m5_rpc;
 mod m5_template_rpc;
 mod m6_rpc;
 mod m6_runtime;
+mod m7_copy_rpc;
 mod m7_official_rpc;
 mod m7_rpc;
 
@@ -62,6 +64,8 @@ type M7ExtensionApplication = M7Application<
     m7_rpc::ProtocolUiValidator,
 >;
 type M7OfficialGuiApplication = M7OfficialApplication<StateStoreHandle>;
+type ProjectCopyApplication =
+    ProjectCopyService<StateStoreHandle, alcomd_vpm::ProjectCopyEngine, M5UnityApplication>;
 
 struct Applications {
     m2: M2Application,
@@ -73,6 +77,7 @@ struct Applications {
     m6: M6ExtensionApplication,
     m7: M7ExtensionApplication,
     official_gui: M7OfficialGuiApplication,
+    project_copy: ProjectCopyApplication,
 }
 
 /// Runs the daemon with an ephemeral isolated data directory.
@@ -167,6 +172,16 @@ where
         .recover()
         .await
         .map_err(|_| BindError::Io(io::Error::other("Backup recovery failed")))?;
+    let project_copy = ProjectCopyService::with_locks(
+        store.clone(),
+        alcomd_vpm::ProjectCopyEngine,
+        unity.clone(),
+        Arc::clone(&locks),
+    );
+    project_copy
+        .recover()
+        .await
+        .map_err(|_| BindError::Io(io::Error::other("Project Copy recovery failed")))?;
     let extension_engine =
         alcomd_extensions::ExtensionEngine::new(store.clone(), data_root.join("extensions"))
             .map_err(|_| {
@@ -198,6 +213,7 @@ where
         m6,
         m7,
         official_gui,
+        project_copy,
     });
     let listener = instance.bind()?;
     run_listener(listener, applications, shutdown)
@@ -380,6 +396,7 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         CAPABILITY_EVENTS_REPLAY_V1,
         alcomd_protocol::CAPABILITY_PROJECTS_READ_V1,
         alcomd_protocol::CAPABILITY_PROJECTS_REGISTRY_V1,
+        alcomd_protocol::CAPABILITY_PROJECTS_COPY_V1,
         alcomd_protocol::CAPABILITY_REPOSITORIES_READ_V1,
         alcomd_protocol::CAPABILITY_REPOSITORIES_REGISTRY_V1,
         alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V1,
@@ -614,6 +631,14 @@ async fn dispatch_m2(
         _ if request.method.starts_with("packages.") => {
             m4_rpc::dispatch(request, state, &applications.m4, access).await
         }
+        _ if matches!(
+            request.method.as_str(),
+            alcomd_protocol::METHOD_PROJECTS_PLAN_COPY
+                | alcomd_protocol::METHOD_PROJECTS_APPLY_COPY
+        ) =>
+        {
+            m7_copy_rpc::dispatch(request, state, &applications.project_copy, access).await
+        }
         _ if request.method.starts_with("unity.") => {
             m5_rpc::dispatch(request, state, &applications.m5, access).await
         }
@@ -705,6 +730,7 @@ fn operation_to_rpc(record: OperationRecord) -> Result<Operation, RpcError> {
                 alcomd_application::FilesystemPhase::Extracting => {
                     PackageOperationPhase::Extracting
                 }
+                alcomd_application::FilesystemPhase::Staging => PackageOperationPhase::Staging,
                 alcomd_application::FilesystemPhase::StagingComplete => {
                     PackageOperationPhase::StagingComplete
                 }
@@ -727,6 +753,9 @@ fn operation_to_rpc(record: OperationRecord) -> Result<Operation, RpcError> {
                 }
                 alcomd_application::FilesystemPhase::StateCommitted => {
                     PackageOperationPhase::StateCommitted
+                }
+                alcomd_application::FilesystemPhase::CleanupComplete => {
+                    PackageOperationPhase::CleanupComplete
                 }
                 alcomd_application::FilesystemPhase::RollingBack => {
                     PackageOperationPhase::RollingBack

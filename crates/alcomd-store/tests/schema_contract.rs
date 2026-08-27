@@ -9,6 +9,79 @@ const MIGRATION_V6: &str = include_str!("../migrations/0006_backup_create.sql");
 const MIGRATION_V7: &str = include_str!("../migrations/0007_backup_restore.sql");
 const MIGRATION_V8: &str = include_str!("../migrations/0008_extension_runtime.sql");
 const MIGRATION_V9: &str = include_str!("../migrations/0009_portable_extension_ui.sql");
+const MIGRATION_V10: &str = include_str!("../migrations/0010_project_copy.sql");
+
+#[test]
+fn schema_v10_adds_only_project_copy_authority_and_is_atomic() {
+    let connection = migrated_v9_connection();
+    insert_project(&connection);
+    let before_events: i64 = connection
+        .query_row("SELECT count(*) FROM events", [], |row| row.get(0))
+        .expect("event count");
+    connection
+        .execute_batch(MIGRATION_V10)
+        .expect("apply migration v10");
+    assert_eq!(user_version(&connection), 10);
+    assert_eq!(
+        table_names(&connection)
+            .into_iter()
+            .filter(|name| name.starts_with("project_copy_"))
+            .collect::<Vec<_>>(),
+        ["project_copy_filesystem_journal", "project_copy_plans"]
+    );
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM events", [], |row| row
+                .get::<_, i64>(0))
+            .expect("event count"),
+        before_events
+    );
+    connection
+        .execute(
+            "INSERT INTO operations (
+                operation_id,kind,state,revision,owner_principal_id,request_json,
+                created_at_ms,updated_at_ms
+             ) VALUES ('00000000-0000-4000-8000-000000000299','projects.copy','queued',1,
+                       'builtin:local-owner','{}',1,1)",
+            [],
+        )
+        .expect("projects.copy operation kind");
+    let foreign_keys: i64 = connection
+        .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+            row.get(0)
+        })
+        .expect("foreign key check");
+    assert_eq!(foreign_keys, 0);
+
+    let rollback = migrated_v9_connection();
+    let failing = MIGRATION_V10.replace(
+        "PRAGMA user_version = 10;",
+        "THIS IS NOT VALID SQL;\nPRAGMA user_version = 10;",
+    );
+    assert!(rollback.execute_batch(&failing).is_err());
+    rollback.execute_batch("ROLLBACK;").expect("rollback v10");
+    assert_eq!(user_version(&rollback), 9);
+    assert!(
+        !table_names(&rollback)
+            .iter()
+            .any(|name| name.starts_with("project_copy_"))
+    );
+}
+
+fn table_names(connection: &Connection) -> Vec<String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT name FROM sqlite_schema
+             WHERE type='table' AND name NOT LIKE 'sqlite_%'
+             ORDER BY name",
+        )
+        .expect("prepare table-name query");
+    statement
+        .query_map([], |row| row.get(0))
+        .expect("query table names")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect table names")
+}
 
 #[test]
 fn bundled_sqlite_version_is_frozen() {

@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::{CURRENT_DATA_SCHEMA, StoreOpenError};
 
-const DATA_SCHEMA_VERSION: i64 = 9;
+const DATA_SCHEMA_VERSION: i64 = 10;
 const BUSY_TIMEOUT: Duration = Duration::from_millis(5_000);
 const CHECK_ROW_LIMIT: usize = 100;
 const CHECK_BYTE_LIMIT: usize = 65_536;
@@ -25,6 +25,7 @@ const MIGRATION_V6: &str = include_str!("../migrations/0006_backup_create.sql");
 const MIGRATION_V7: &str = include_str!("../migrations/0007_backup_restore.sql");
 const MIGRATION_V8: &str = include_str!("../migrations/0008_extension_runtime.sql");
 const MIGRATION_V9: &str = include_str!("../migrations/0009_portable_extension_ui.sql");
+const MIGRATION_V10: &str = include_str!("../migrations/0010_project_copy.sql");
 
 pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpenError> {
     let connection = Connection::open(path).map_err(|_| StoreOpenError::Unavailable)?;
@@ -107,6 +108,11 @@ pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpen
     if version <= 8 {
         connection
             .execute_batch(MIGRATION_V9)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+    }
+    if version <= 9 {
+        connection
+            .execute_batch(MIGRATION_V10)
             .map_err(|_| StoreOpenError::Unavailable)?;
     }
     let final_version: i64 = connection
@@ -262,6 +268,21 @@ pub(super) fn cancel_operation(
         return Err(StoreError::new(StoreErrorKind::RevisionConflict));
     }
     if operation.state.is_terminal() {
+        return Err(StoreError::new(StoreErrorKind::OperationNotCancellable));
+    }
+    if operation.kind == "projects.copy"
+        && matches!(
+            operation.progress_phase,
+            Some(
+                FilesystemPhase::PublishIntent
+                    | FilesystemPhase::TargetPublished
+                    | FilesystemPhase::ProjectRegistryCommitIntent
+                    | FilesystemPhase::StateCommitted
+                    | FilesystemPhase::CleanupComplete
+                    | FilesystemPhase::RecoveryRequired
+            )
+        )
+    {
         return Err(StoreError::new(StoreErrorKind::OperationNotCancellable));
     }
     let next_state = match operation.state {
@@ -532,6 +553,7 @@ pub(super) fn recover(
             || kind.starts_with("templates.")
             || matches!(kind.as_str(), "backups.create" | "backups.restore")
             || matches!(kind.as_str(), "extensions.install" | "extensions.uninstall")
+            || kind == "projects.copy"
         {
             continue;
         }
@@ -681,6 +703,8 @@ pub(super) fn load_owned_operation(
             completed_at_ms, result_json, error_code, diagnostic_id,
             coalesce((SELECT phase FROM package_filesystem_journal j
              WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
+             (SELECT phase FROM project_copy_filesystem_journal j
+              WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
              (SELECT phase FROM backup_restore_filesystem_journal j
               WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
              (SELECT json_extract(payload_json,'$.phase') FROM operation_journal j
@@ -702,6 +726,8 @@ fn load_operation(
             completed_at_ms, result_json, error_code, diagnostic_id,
             coalesce((SELECT phase FROM package_filesystem_journal j
              WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
+             (SELECT phase FROM project_copy_filesystem_journal j
+              WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
              (SELECT phase FROM backup_restore_filesystem_journal j
               WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
              (SELECT json_extract(payload_json,'$.phase') FROM operation_journal j
@@ -780,6 +806,8 @@ pub(super) fn list_operations(
                 completed_at_ms, result_json, error_code, diagnostic_id,
                 coalesce((SELECT phase FROM package_filesystem_journal j
                  WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
+                 (SELECT phase FROM project_copy_filesystem_journal j
+                  WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
                  (SELECT phase FROM backup_restore_filesystem_journal j
                   WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
                  (SELECT json_extract(payload_json,'$.phase') FROM operation_journal j
@@ -820,6 +848,7 @@ fn parse_filesystem_phase(value: &str) -> Result<FilesystemPhase, ()> {
         "archive_published" => Ok(Phase::ArchivePublished),
         "archive_verified" => Ok(Phase::ArchiveVerified),
         "extracting" => Ok(Phase::Extracting),
+        "staging" => Ok(Phase::Staging),
         "staging_complete" => Ok(Phase::StagingComplete),
         "target_published" => Ok(Phase::TargetPublished),
         "project_registry_commit_intent" => Ok(Phase::ProjectRegistryCommitIntent),
@@ -829,6 +858,7 @@ fn parse_filesystem_phase(value: &str) -> Result<FilesystemPhase, ()> {
         "vpm_manifest_committed" => Ok(Phase::VpmManifestCommitted),
         "filesystem_committed" => Ok(Phase::FilesystemCommitted),
         "state_committed" => Ok(Phase::StateCommitted),
+        "cleanup_complete" => Ok(Phase::CleanupComplete),
         "rolling_back" => Ok(Phase::RollingBack),
         "rolled_back" => Ok(Phase::RolledBack),
         "recovery_required" => Ok(Phase::RecoveryRequired),

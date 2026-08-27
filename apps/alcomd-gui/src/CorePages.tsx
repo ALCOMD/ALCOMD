@@ -27,6 +27,7 @@ import type {
     DiagnosticItem,
     OfficialSettings,
     Operation,
+    ProjectCopyPlan,
     ProjectSnapshot,
     RepositoryPackageVersion,
     RepositorySnapshot,
@@ -366,6 +367,9 @@ function ProjectsTable({
 }
 
 function ProjectRowActions({ client, navigate, onChanged, onFeedback, project }: { client: GuiRpcClient; navigate(path: string): void; onChanged(): void; onFeedback(message: string): void; project: ProjectSnapshot }) {
+    const [copyParent, setCopyParent] = useState("");
+    const [copyOpen, setCopyOpen] = useState(false);
+    const [selectingCopyTarget, setSelectingCopyTarget] = useState(false);
     const [openingDirectory, setOpeningDirectory] = useState(false);
     const [opening, setOpening] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
@@ -418,6 +422,21 @@ function ProjectRowActions({ client, navigate, onChanged, onFeedback, project }:
         }
     };
 
+    const beginCopy = async () => {
+        setMenuOpen(false);
+        setSelectingCopyTarget(true);
+        try {
+            const selected = await client.selectDirectory();
+            if (selected === undefined) return;
+            setCopyParent(selected);
+            setCopyOpen(true);
+        } catch (caught: unknown) {
+            onFeedback(`Unable to select copy destination: ${safeError(caught).code}`);
+        } finally {
+            setSelectingCopyTarget(false);
+        }
+    };
+
     return (
         <>
             <div className="project-row-actions">
@@ -432,7 +451,7 @@ function ProjectRowActions({ client, navigate, onChanged, onFeedback, project }:
                 </IconButton>
                 <Menu anchorRef={menuAnchorRef} className="project-actions-menu" onClose={() => setMenuOpen(false)} open={menuOpen}>
                     <MenuItem className="project-actions-menu-item" disabled={openingDirectory} label={openingDirectory ? "Opening Project Directory…" : "Open Project Directory"} onClick={() => void openDirectory()} />
-                    <MenuItem className="project-actions-menu-item" disabled label="Copy Project" title="Requires an approved project-copy RPC capability" />
+                    <MenuItem className="project-actions-menu-item" disabled={revision === undefined || selectingCopyTarget} label={selectingCopyTarget ? "Choosing Copy Destination…" : "Copy Project"} onClick={() => void beginCopy()} />
                     <MenuItem className="project-actions-menu-item project-actions-menu-item--danger" disabled={revision === undefined} label="Remove Project" onClick={() => setConfirmUnregister(true)} />
                 </Menu>
             </div>
@@ -445,7 +464,135 @@ function ProjectRowActions({ client, navigate, onChanged, onFeedback, project }:
                     </Button>
                 </div>
             </Dialog>
+            <CopyProjectDialog
+                client={client}
+                onCompleted={() => {
+                    onFeedback("Project copy completed.");
+                    onChanged();
+                }}
+                onClose={() => setCopyOpen(false)}
+                open={copyOpen}
+                project={project}
+                targetParent={copyParent}
+            />
         </>
+    );
+}
+
+function CopyProjectDialog({ client, onCompleted, onClose, open, project, targetParent }: { client: GuiRpcClient; onCompleted(targetProjectId: string): void; onClose(): void; open: boolean; project: ProjectSnapshot; targetParent: string }) {
+    const [targetLeaf, setTargetLeaf] = useState("");
+    const [plan, setPlan] = useState<ProjectCopyPlan>();
+    const [operation, setOperation] = useState<Operation>();
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<RpcError>();
+
+    useEffect(() => {
+        if (!open) {
+            setPlan(undefined);
+            setOperation(undefined);
+            setBusy(false);
+            setError(undefined);
+            return;
+        }
+        setTargetLeaf(`${projectName(project)} Copy`);
+    }, [open, project]);
+
+    useEffect(() => {
+        if (operation === undefined || !["queued", "running", "recovering", "cancelling", "interrupted"].includes(operation.state)) return;
+        let active = true;
+        const timer = window.setTimeout(() => {
+            void client.operationGet(operation.operationId).then((next) => {
+                if (!active) return;
+                setOperation(next);
+                if (next.state === "succeeded" && plan !== undefined) onCompleted(plan.targetProjectId);
+            }).catch((caught: unknown) => {
+                if (active) setError(safeError(caught));
+            });
+        }, 300);
+        return () => {
+            active = false;
+            window.clearTimeout(timer);
+        };
+    }, [client, onCompleted, operation, plan]);
+
+    const createPlan = async () => {
+        if (project.projectId === undefined || project.revision === undefined) return;
+        setBusy(true);
+        setError(undefined);
+        try {
+            const result = await client.projectPlanCopy(project.projectId, project.revision, targetParent, targetLeaf.trim());
+            setPlan(result.plan);
+        } catch (caught: unknown) {
+            setError(safeError(caught));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const apply = async () => {
+        if (plan === undefined) return;
+        setBusy(true);
+        setError(undefined);
+        try {
+            const accepted = await client.projectApplyCopy(plan.planId, plan.sourceProjectRevision);
+            setOperation(await client.operationGet(accepted.operationId));
+        } catch (caught: unknown) {
+            setError(safeError(caught));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const cancel = async () => {
+        if (operation === undefined) return;
+        setBusy(true);
+        try {
+            const result = await client.operationCancel(operation.operationId, operation.revision);
+            setOperation(result.operation);
+        } catch (caught: unknown) {
+            setError(safeError(caught));
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const terminal = operation !== undefined && ["succeeded", "failed", "cancelled"].includes(operation.state);
+    return (
+        <Dialog onClose={onClose} open={open} title="Copy project">
+            <div className="project-copy-review">
+                {plan === undefined ? (
+                    <>
+                        <p>Choose the new project name. ALCOMD will copy the registered project into the selected directory without overwriting an existing target.</p>
+                        <code>{targetParent}</code>
+                        <TextField aria-label="Copied project name" label="Project name" onInput={setTargetLeaf} value={targetLeaf} />
+                        <div className="dialog-actions">
+                            <Button disabled={busy} onClick={onClose} type="button" variant="text">Cancel</Button>
+                            <Button disabled={busy || targetLeaf.trim().length === 0} onClick={() => void createPlan()} type="button">{busy ? "Planning…" : "Review copy"}</Button>
+                        </div>
+                    </>
+                ) : operation === undefined ? (
+                    <>
+                        <p><strong>Source:</strong> {projectName(project)}</p>
+                        <p><strong>Destination:</strong> {plan.targetParentCanonicalPath}\{plan.normalizedTargetLeaf}</p>
+                        <p><strong>Unity writer:</strong> {plan.writerEvidence.state.replaceAll("_", " ")}</p>
+                        <p><strong>Copy profile:</strong> v{plan.profile.version}; excludes Logs, Obj, Temp and .git.</p>
+                        <div className="dialog-actions">
+                            <Button disabled={busy} onClick={() => setPlan(undefined)} type="button" variant="text">Back</Button>
+                            <Button disabled={busy} onClick={() => void apply()} type="button">{busy ? "Starting…" : "Start copy"}</Button>
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        <p role="status">Copy {operation.state.replaceAll("_", " ")}{operation.progress?.phase === undefined ? "." : `: ${operation.progress.phase.replaceAll("_", " ")}.`}</p>
+                        <div className="dialog-actions">
+                            {!terminal ? <Button disabled={busy} onClick={() => void cancel()} type="button" variant="text">Cancel copy</Button> : null}
+                            <Button disabled={!terminal} onClick={onClose} type="button">Close</Button>
+                        </div>
+                    </>
+                )}
+                {error === undefined ? null : <p className="inline-error" role="alert">Copy failed: {error.code}</p>}
+            </div>
+        </Dialog>
     );
 }
 
@@ -591,6 +738,45 @@ interface PackageWorkspaceRow {
     status: "available" | "installed" | "missing-source";
 }
 
+function ProjectWorkspaceCopyAction({ client, navigate, project }: { client: GuiRpcClient; navigate(path: string): void; project: ProjectSnapshot }) {
+    const [copyParent, setCopyParent] = useState("");
+    const [copyOpen, setCopyOpen] = useState(false);
+    const [selecting, setSelecting] = useState(false);
+    const [error, setError] = useState<RpcError>();
+
+    const beginCopy = async () => {
+        setSelecting(true);
+        setError(undefined);
+        try {
+            const selected = await client.selectDirectory();
+            if (selected === undefined) return;
+            setCopyParent(selected);
+            setCopyOpen(true);
+        } catch (caught: unknown) {
+            setError(safeError(caught));
+        } finally {
+            setSelecting(false);
+        }
+    };
+
+    return (
+        <>
+            {error === undefined ? null : <span className="inline-error" role="alert">Copy unavailable: {error.code}</span>}
+            <Button disabled={selecting || project.revision === undefined} onClick={() => void beginCopy()} type="button" variant="text">
+                {selecting ? "Choosing destination…" : "Copy project"}
+            </Button>
+            <CopyProjectDialog
+                client={client}
+                onCompleted={(targetProjectId) => navigate(`/projects/${targetProjectId}`)}
+                onClose={() => setCopyOpen(false)}
+                open={copyOpen}
+                project={project}
+                targetParent={copyParent}
+            />
+        </>
+    );
+}
+
 function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { projectId: string }) {
     const load = useCallback(async () => {
         const [project, repositories] = await Promise.all([client.projectGet(projectId), client.repositoriesList()]);
@@ -634,6 +820,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                             <span className="project-unity-version">Unity {project.unityVersion}</span>
                             <Button onClick={() => navigate(`/projects/${projectId}/unity`)} type="button"><Icon asset={playArrowIcon} slot="icon" />Open Unity</Button>
                             <Button onClick={() => navigate(`/projects/${projectId}/backups`)} type="button" variant="text"><Icon asset={backupIcon} slot="icon" />Backups</Button>
+                            <ProjectWorkspaceCopyAction client={client} navigate={navigate} project={project} />
                         </nav>
                     </header>
                     <section aria-labelledby="packages-heading" className="package-workspace-surface">

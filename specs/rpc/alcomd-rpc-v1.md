@@ -672,3 +672,22 @@ Activity/Diagnostics page size 默认 100、最大 200，使用确定性 tuple k
 或 Operation request/result；Diagnostics v1 只投影已有 Operation failure 与 safe Event evidence，不新建 durable log
 table，也不提供 raw export。完整 DTO、redaction denylist 与 bounds 由 `m7-official-gui.schema.json`、
 `../config/settings-v1.schema.json` 和 `../security/official-gui-read-model-threat-model.md` 冻结。
+
+## 25. M7 兼容增加：Project Copy
+
+M7 在 RPC major 1 上实现并广告 `projects.copy.v1`：
+
+| method | params | result | permission |
+|---|---|---|---|
+| `projects.planCopy` | source ProjectId/revision、target parent/leaf、idempotency key | immutable bounded Copy Plan、`replayed` | `projects.read + projects.create` |
+| `projects.applyCopy` | PlanId、expected source revision、idempotency key | durable OperationId、预分配 target ProjectId、`replayed` | `projects.read + projects.create` |
+
+外部 filesystem mutation 仍只允许 `builtin:local-owner`。Plan 有效期固定为 900000ms，只做 bounded
+identity/writer/target preflight，不遍历 source、不计算 inventory 或内容 digest。Apply 返回
+`projects.copy` Operation；完整 inventory 是 Operation-owned、versioned JSON Lines 私有文件，不进入 RPC、Event、日志或
+SQLite inventory table。
+
+Operation phase、Copy Profile v1、quota、source 两遍 SHA-256 一致性、sibling staging、forward recovery、取消边界、
+Resource Lock 与稳定错误由 `m7-project-copy.proposal.schema.json` 和 `../storage/state-v10.md` 冻结。State v10 只增加
+`project_copy_plans`、`project_copy_filesystem_journal` 与 `operations.kind='projects.copy'`；完整 wiring 后 hello 广告
+`dataSchema: 10`。新增 method/capability/字段是 RPC v1 兼容增加，既有 Project/Package 方法语义不变。

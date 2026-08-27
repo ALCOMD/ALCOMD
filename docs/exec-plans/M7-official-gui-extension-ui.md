@@ -9,7 +9,8 @@
 空间模式，状态为 `rejected_for_visual_direction`。reference-driven wide desktop Projects prototype 已由项目所有者通过
 Visual Gate 1，检查点为 `7bb325b78a74518881fb65e03de7f79902e72cd3`。项目所有者随后确认 Project/Package 用户入口存在
 超出两个 permanent-disabled menu item 的真实功能缺口，H2 visual implementation 已暂停；当前只执行
-`M7 Project / Package Functional Closure` contract-first Stop A，production implementation 未批准。M7仍未完成，尚未进入M8/M9。
+`M7 Project / Package Functional Closure` Stop A P0-P4 已形成 production local candidate，正在完成完整本地 gate；H2 visual、
+P5-P8、M8/M9 均未开始或继续暂停。M7仍未完成。
 
 ## 目标与完成定义
 
@@ -586,9 +587,12 @@ Activity、Diagnostics 或 Portable UI authority。
   等真实缺口不能被 fake-entry grep 覆盖。H2 visual work暂停，形成独立 Project/Package Functional Closure Stop A proposal、
   State v10 Copy-only migration contract、fixtures/tests、dependency evaluation 与 milestone ownership；active RPC、production
   migration/implementation和依赖均未改变。
+- 2026-08-28：项目所有者附合同修正批准 Functional Closure P0-P4 production。exact opener/dialog dependency、closed
+  ProjectId opener/native picker、active Project Copy RPC/State v10、durable inventory/two-pass content verification、forward
+  recovery、CLI 与 list/grid/workspace GUI flow 已形成 local candidate；每个 durable Copy phase 的真实 kill/restart matrix 已通过。
+  H2 visual 与 P5-P8 继续暂停，完整聚合 feature 状态未提升。
 
 ## 下一停止点
 
-当前停止点是 Project / Package Functional Closure Stop A 人工审批。不得开始 opener/dialog依赖落盘、Copy production、State v10
-production migration、Favorite/Package新合同实现或恢复H2视觉推进。审批后也必须按 P1-P7独立vertical slice顺序执行，不得直接
-把全部缺口铺开；不得push、不得进入M8/M9，也不得amend已有历史。
+当前停止点是 Project / Package Functional Closure P0-P4 完整本地 gate 与提交。完成后不得 push、不得自动进入 P5-P8、
+不得恢复 H2 visual、不得进入 M8/M9；等待项目所有者决定下一条 vertical slice。

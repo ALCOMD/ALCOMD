@@ -38,6 +38,8 @@ import type {
     PackagePlanResolveParams,
     ProjectEditorResult,
     ProjectResult,
+    ProjectsApplyCopyResult,
+    ProjectsPlanCopyResult,
     ProjectUnregisterResult,
     ProjectWriteResult,
     ProjectsListResult,
@@ -82,6 +84,8 @@ export interface GuiRpcClient {
     projectRegister(path: string): Promise<ProjectWriteResult>;
     projectRefresh(projectId: string, expectedRevision: number): Promise<ProjectWriteResult>;
     projectUnregister(projectId: string, expectedRevision: number): Promise<ProjectUnregisterResult>;
+    projectPlanCopy(sourceProjectId: string, expectedRevision: number, targetParentPath: string, targetLeaf: string): Promise<ProjectsPlanCopyResult>;
+    projectApplyCopy(planId: string, expectedRevision: number): Promise<ProjectsApplyCopyResult>;
     repositoriesInspect(source: RepositorySource): Promise<RepositoryResult>;
     repositoriesList(): Promise<RepositoriesListResult>;
     repositoryGet(repositoryId: string): Promise<RepositoryResult>;
@@ -205,6 +209,14 @@ class TauriGuiRpcClient implements GuiRpcClient {
 
     projectUnregister(projectId: string, expectedRevision: number): Promise<ProjectUnregisterResult> {
         return invokeTyped("gui_project_unregister", { projectId, expectedRevision, idempotencyKey: crypto.randomUUID() });
+    }
+
+    projectPlanCopy(sourceProjectId: string, expectedRevision: number, targetParentPath: string, targetLeaf: string): Promise<ProjectsPlanCopyResult> {
+        return invokeTyped("gui_project_plan_copy", { params: { sourceProjectId, expectedRevision, targetParentPath, targetLeaf, idempotencyKey: crypto.randomUUID() } });
+    }
+
+    projectApplyCopy(planId: string, expectedRevision: number): Promise<ProjectsApplyCopyResult> {
+        return invokeTyped("gui_project_apply_copy", { params: { planId, expectedRevision, idempotencyKey: crypto.randomUUID() } });
     }
 
     repositoriesInspect(source: RepositorySource): Promise<RepositoryResult> {

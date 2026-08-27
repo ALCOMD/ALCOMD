@@ -210,9 +210,19 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     const openDirectory = projectMenu.locator("md-menu-item").filter({ hasText: "Open Project Directory" });
     const copyProject = projectMenu.locator("md-menu-item").filter({ hasText: "Copy Project" });
     await expect(openDirectory).toHaveJSProperty("disabled", false);
-    await expect(copyProject).toHaveJSProperty("disabled", true);
+    await expect(copyProject).toHaveJSProperty("disabled", false);
     await expect(openDirectory.getByRole("menuitem", { name: "Open Project Directory" })).toBeVisible();
     await expect(copyProject.getByRole("menuitem", { name: "Copy Project" })).toBeVisible();
+    await copyProject.getByRole("menuitem", { name: "Copy Project" }).click();
+    const copyDialog = page.getByRole("dialog", { name: "Copy project" });
+    await expect(copyDialog).toBeVisible();
+    await page.getByRole("button", { name: "Review copy" }).click();
+    await expect(page.getByText(/C:\\Fixture\\Avatar/)).toBeVisible();
+    await page.getByRole("button", { name: "Start copy" }).click();
+    await expect(page.locator('[role="status"]').filter({ hasText: "Copy succeeded" })).toBeVisible({ timeout: 3_000 });
+    await page.getByRole("button", { name: "Close" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Projects" })).toBeVisible();
+    await moreActions.click();
     const removeProject = projectMenu.getByRole("menuitem", { name: "Remove Project" });
     await expect(removeProject).toBeVisible();
     await expect(removeProject).toHaveCSS("--md-menu-item-label-text-color", "#b3261e");
@@ -271,6 +281,17 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     await expect(main.getByRole("columnheader", { name: "Last observed" })).toHaveAttribute("aria-sort", "ascending");
     await addedHeader.getByRole("button", { name: "Added" }).click();
     await expect(addedHeader).toHaveAttribute("aria-sort", "descending");
+});
+
+test("Project workspace Copy completes through Plan Apply and navigates to the copied Project", async ({ page }) => {
+    await openHarness(page, "/projects/00000000-0000-4000-8000-000000000101");
+    const main = page.getByRole("main");
+    await main.getByRole("button", { name: "Copy project" }).click();
+    const dialog = page.getByRole("dialog", { name: "Copy project" });
+    await expect(dialog).toBeVisible();
+    await page.getByRole("button", { name: "Review copy" }).click();
+    await page.getByRole("button", { name: "Start copy" }).click();
+    await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000061$/);
 });
 
 async function openHarness(page: Page, route: string) {

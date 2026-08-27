@@ -1,6 +1,6 @@
-# ALCOMD State Schema v10 Project Copy proposal
+# ALCOMD State Schema v10 Project Copy
 
-状态：项目所有者已批准 production contract；migration/wiring 尚未创建，daemon 继续广告 `dataSchema: 9`。
+状态：production migration、Store/worker/dispatcher/client wiring 与恢复测试已实现；daemon 广告 `dataSchema: 10`。
 
 v10 是 Project Copy 的最小 durable authority，不包含 Favorite、Package Reinstall/Bulk、Config visibility、Remove Directory
 或任何 generic workflow/table。它在单个 `BEGIN IMMEDIATE` migration 中从 v9 增加：
@@ -47,5 +47,7 @@ locator不得进入 public RPC/Event/activity/log。不得新增 inventory entri
 - migration保留全部 v9 row/FK/revision/Event sequence；`foreign_key_check`必须为空，失败完整回滚为v9。
 - schema version大于10继续fail closed。
 
-精确机器可读合同位于 `state-v10-migration.proposal.contract.json`。本合同已授权实现；完整 Copy wiring 前保持 dataSchema 9，
-完成 production migration、逐列 trigger、migration tests 与 dispatcher/worker/client 接线后才广告 10。
+精确机器可读合同位于 `state-v10-migration.proposal.contract.json`，production migration 位于
+`crates/alcomd-store/migrations/0010_project_copy.sql`。migration、逐列 trigger、migration tests、dispatcher/worker/client
+及 Project Copy recovery 已接线，因此 daemon 广告 dataSchema 10；这不表示 Favorite、Remove Directory 或完整
+`projects.management` 已实现。

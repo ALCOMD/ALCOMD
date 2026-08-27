@@ -115,6 +115,8 @@ pub const METHOD_BACKUPS_GET: &str = "backups.get";
 pub const METHOD_BACKUPS_CREATE: &str = "backups.create";
 pub const METHOD_BACKUPS_PLAN_RESTORE: &str = "backups.planRestore";
 pub const METHOD_BACKUPS_APPLY_RESTORE: &str = "backups.applyRestore";
+pub const METHOD_PROJECTS_PLAN_COPY: &str = "projects.planCopy";
+pub const METHOD_PROJECTS_APPLY_COPY: &str = "projects.applyCopy";
 pub const METHOD_EXTENSIONS_LIST: &str = "extensions.list";
 pub const METHOD_EXTENSIONS_GET: &str = "extensions.get";
 pub const METHOD_EXTENSIONS_PLAN_INSTALL: &str = "extensions.planInstall";
@@ -144,6 +146,7 @@ pub const CAPABILITY_OPERATIONS_V1: &str = "operations.v1";
 pub const CAPABILITY_EVENTS_REPLAY_V1: &str = "events.replay.v1";
 pub const CAPABILITY_PROJECTS_READ_V1: &str = "projects.read.v1";
 pub const CAPABILITY_PROJECTS_REGISTRY_V1: &str = "projects.registry.v1";
+pub const CAPABILITY_PROJECTS_COPY_V1: &str = "projects.copy.v1";
 pub const CAPABILITY_REPOSITORIES_READ_V1: &str = "repositories.read.v1";
 pub const CAPABILITY_REPOSITORIES_REGISTRY_V1: &str = "repositories.registry.v1";
 pub const CAPABILITY_PACKAGES_PLAN_V1: &str = "packages.plan.v1";
@@ -261,6 +264,14 @@ pub mod error_code {
     pub const BACKUP_TARGET_EXISTS: &str = "backup_target_exists";
     pub const BACKUP_TARGET_INVALID: &str = "backup_target_invalid";
     pub const BACKUP_RESTORE_RECOVERY_REQUIRED: &str = "backup_restore_recovery_required";
+    pub const PROJECT_COPY_PLAN_NOT_FOUND: &str = "project_copy_plan_not_found";
+    pub const PROJECT_COPY_PLAN_STALE: &str = "project_copy_plan_stale";
+    pub const PROJECT_COPY_TARGET_EXISTS: &str = "project_copy_target_exists";
+    pub const PROJECT_COPY_TARGET_UNSAFE: &str = "project_copy_target_unsafe";
+    pub const PROJECT_COPY_SOURCE_UNSAFE: &str = "project_copy_source_unsafe";
+    pub const PROJECT_COPY_SOURCE_CHANGED: &str = "project_copy_source_changed";
+    pub const PROJECT_COPY_LIMIT_EXCEEDED: &str = "project_copy_limit_exceeded";
+    pub const PROJECT_COPY_RECOVERY_REQUIRED: &str = "project_copy_recovery_required";
     pub const UNITY_LAUNCH_FAILED: &str = "unity_launch_failed";
     pub const UNITY_LAUNCH_NOT_FOUND: &str = "unity_launch_not_found";
     pub const TEMPLATE_NOT_FOUND: &str = "template_not_found";
@@ -567,6 +578,12 @@ impl RpcError {
         Self::simple(code, "The Backup request could not be completed.")
     }
 
+    /// Creates a stable, non-sensitive M7 Project Copy error.
+    #[must_use]
+    pub fn project_copy(code: &str) -> Self {
+        Self::simple(code, "The Project Copy request could not be completed.")
+    }
+
     /// Creates a stable, non-sensitive M6 Extension Runtime error.
     #[must_use]
     pub fn extension(code: &str) -> Self {
@@ -734,14 +751,14 @@ impl HelloResult {
         }
     }
 
-    /// Creates the M7 hello result after Schema v9 and Portable UI wiring are ready.
+    /// Creates the M7 hello result after Schema v10 and Project Copy wiring are ready.
     #[must_use]
     pub fn m7(capabilities: Vec<String>) -> Self {
         Self {
             rpc_version: RPC_VERSION,
             daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             capabilities,
-            data_schema: Some(9),
+            data_schema: Some(10),
             config_schema: None,
             extension_api: Some(ExtensionApiInfo {
                 major: 1,
@@ -867,6 +884,7 @@ pub enum PackageOperationPhase {
     ArchivePublished,
     ArchiveVerified,
     Extracting,
+    Staging,
     StagingComplete,
     TargetPublished,
     ProjectRegistryCommitIntent,
@@ -876,6 +894,7 @@ pub enum PackageOperationPhase {
     VpmManifestCommitted,
     FilesystemCommitted,
     StateCommitted,
+    CleanupComplete,
     RollingBack,
     RolledBack,
     RecoveryRequired,
@@ -1862,6 +1881,94 @@ pub struct BackupApplyRestoreParams {
 pub struct BackupApplyRestoreResult {
     pub operation_id: String,
     pub project_id: String,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectsPlanCopyParams {
+    pub source_project_id: String,
+    pub expected_revision: u64,
+    pub target_parent_path: String,
+    pub target_leaf: String,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectCopyWriterEvidence {
+    pub state: String,
+    pub observed_at_ms: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectCopyQuota {
+    pub max_entries: u64,
+    pub max_single_file_bytes: u64,
+    pub max_total_regular_file_bytes: u64,
+    pub max_depth: u32,
+    pub max_normalized_path_utf8_bytes: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectCopyProfile {
+    pub id: String,
+    pub version: u32,
+    pub includes: Vec<String>,
+    pub excludes: Vec<String>,
+    pub rejects: Vec<String>,
+    pub quota: ProjectCopyQuota,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectCopyPlan {
+    pub plan_id: String,
+    pub owner_principal_id: String,
+    pub source_project_id: String,
+    pub source_project_revision: u64,
+    pub source_canonical_root_path: String,
+    pub source_filesystem_identity: String,
+    pub source_project_kind: String,
+    pub expected_unity_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_unity_revision: Option<String>,
+    pub writer_evidence: ProjectCopyWriterEvidence,
+    pub target_parent_canonical_path: String,
+    pub target_parent_filesystem_identity: String,
+    pub normalized_target_leaf: String,
+    pub target_must_not_exist: bool,
+    pub target_project_id: String,
+    pub profile: ProjectCopyProfile,
+    pub safe_exclusion_summary: Vec<String>,
+    pub plan_fingerprint: String,
+    pub idempotency_key: String,
+    pub created_at_ms: u64,
+    pub expires_at_ms: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectsPlanCopyResult {
+    pub plan: ProjectCopyPlan,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectsApplyCopyParams {
+    pub plan_id: String,
+    pub expected_revision: u64,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectsApplyCopyResult {
+    pub operation_id: String,
+    pub target_project_id: String,
     pub replayed: bool,
 }
 

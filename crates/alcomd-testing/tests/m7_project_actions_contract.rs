@@ -9,6 +9,9 @@ const COPY_VECTORS: &str = include_str!("../fixtures/m7/project-copy-contract-ve
 const ACTION_GATE: &str = include_str!("../fixtures/m7/visible-action-completeness-v1.json");
 const ACTIVE_RPC: &str = include_str!("../../../specs/rpc/alcomd-rpc-v1.md");
 const ACTIVE_STORE: &str = include_str!("../../alcomd-store/src/sqlite.rs");
+const ACTIVE_PROTOCOL: &str = include_str!("../../alcomd-protocol/src/lib.rs");
+const ACTIVE_COPY_MIGRATION: &str =
+    include_str!("../../alcomd-store/migrations/0010_project_copy.sql");
 const ROOT_MANIFEST: &str = include_str!("../../../Cargo.toml");
 const GUI_MANIFEST: &str = include_str!("../../../apps/alcomd-gui/src-tauri/Cargo.toml");
 const ROOT_LOCK: &str = include_str!("../../../Cargo.lock");
@@ -21,10 +24,10 @@ const GUI_CAPABILITY: &str =
     include_str!("../../../apps/alcomd-gui/src-tauri/capabilities/main.json");
 
 #[test]
-fn approved_project_copy_contract_is_bounded_and_not_active() {
+fn implemented_project_copy_contract_is_bounded_and_active() {
     let schema: Value = serde_json::from_str(COPY_SCHEMA).expect("copy proposal schema");
-    assert_eq!(schema["x-alcomd-publication"], "approved-not-active");
-    assert_eq!(schema["x-alcomd-active-rpc-modified"], false);
+    assert_eq!(schema["x-alcomd-publication"], "implemented");
+    assert_eq!(schema["x-alcomd-active-rpc-modified"], true);
     assert_eq!(schema["x-alcomd-capability"], "projects.copy.v1");
     assert_eq!(schema["x-alcomd-operation-kind"], "projects.copy");
     assert_eq!(schema["x-alcomd-plan-expiry-ms"], 900_000);
@@ -70,15 +73,18 @@ fn approved_project_copy_contract_is_bounded_and_not_active() {
     assert!(!required.contains("inventory"));
     assert!(!required.contains("treeFingerprint"));
 
-    assert!(!ACTIVE_RPC.contains("projects.planCopy"));
-    assert!(!ACTIVE_RPC.contains("projects.applyCopy"));
-    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 9;"));
+    assert!(ACTIVE_RPC.contains("projects.planCopy"));
+    assert!(ACTIVE_RPC.contains("projects.applyCopy"));
+    assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_PLAN_COPY"));
+    assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_APPLY_COPY"));
+    assert!(ACTIVE_PROTOCOL.contains("CAPABILITY_PROJECTS_COPY_V1"));
+    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 10;"));
 }
 
 #[test]
 fn project_copy_profile_phases_and_recovery_are_exact() {
     let vectors: Value = serde_json::from_str(COPY_VECTORS).expect("copy vectors");
-    assert_eq!(vectors["status"], "approved-not-active");
+    assert_eq!(vectors["status"], "implemented");
     assert_eq!(vectors["planExpiryMs"], 900_000);
     assert_eq!(vectors["planClaimsFullInventory"], false);
     assert_eq!(vectors["profile"]["quota"]["maxEntries"], 500_000);
@@ -154,14 +160,17 @@ fn project_copy_profile_phases_and_recovery_are_exact() {
 }
 
 #[test]
-fn state_v10_remains_copy_only_and_approved_not_active() {
+fn state_v10_remains_copy_only_and_is_implemented() {
     let migration: Value =
         serde_json::from_str(STATE_V10_MIGRATION).expect("state v10 migration proposal");
-    assert_eq!(migration["status"], "approved-not-active");
+    assert_eq!(migration["status"], "implemented");
     assert_eq!(migration["from"], 9);
     assert_eq!(migration["to"], 10);
-    assert_eq!(migration["productionMigration"], Value::Null);
-    assert_eq!(migration["productionWiringCreated"], false);
+    assert_eq!(
+        migration["productionMigration"],
+        "crates/alcomd-store/migrations/0010_project_copy.sql"
+    );
+    assert_eq!(migration["productionWiringCreated"], true);
     assert_eq!(migration["operationKindsAdded"], json!(["projects.copy"]));
     assert_eq!(
         migration["tablesAdded"],
@@ -174,8 +183,11 @@ fn state_v10_remains_copy_only_and_approved_not_active() {
         migration["privateInventoryManifest"]["storedInStateDb"],
         false
     );
-    assert!(STATE_V10.contains("daemon 继续广告 `dataSchema: 9`"));
+    assert!(STATE_V10.contains("daemon 广告 `dataSchema: 10`"));
     assert!(STATE_V10.contains("不包含 Favorite"));
+    assert!(ACTIVE_COPY_MIGRATION.contains("PRAGMA user_version = 10;"));
+    assert!(ACTIVE_COPY_MIGRATION.contains("project_copy_plans"));
+    assert!(ACTIVE_COPY_MIGRATION.contains("project_copy_filesystem_journal"));
 }
 
 #[test]
@@ -192,7 +204,7 @@ fn dependency_decisions_are_exact_and_opener_plugin_stays_rejected() {
 fn visible_action_gate_records_real_current_gaps_instead_of_hiding_them() {
     let gate: Value = serde_json::from_str(ACTION_GATE).expect("visible action gate");
     assert_eq!(gate["productionGateMayPass"], false);
-    assert_eq!(gate["expectedCurrentPermanentFakeCount"], 1);
+    assert_eq!(gate["expectedCurrentPermanentFakeCount"], 0);
     assert_eq!(
         gate["releaseBlockerFeatures"],
         json!(["projects.management", "packages.vpm"])
@@ -202,14 +214,11 @@ fn visible_action_gate_records_real_current_gaps_instead_of_hiding_them() {
         .iter()
         .filter(|action| action["classification"] == "permanent-disabled-release-blocker")
         .collect::<Vec<_>>();
-    assert_eq!(permanent.len(), 1);
-    assert!(
-        permanent
-            .iter()
-            .any(|action| action["id"] == "projects.copy")
-    );
+    assert!(permanent.is_empty());
     assert!(!CURRENT_PROJECTS_UI.contains("disabled label=\"Open Project Directory\""));
-    assert!(CURRENT_PROJECTS_UI.contains("disabled label=\"Copy Project\""));
+    assert!(CURRENT_PROJECTS_UI.contains(
+        "label={selectingCopyTarget ? \"Choosing Copy Destination…\" : \"Copy Project\"}"
+    ));
     assert!(
         gate["knownParityGaps"]
             .as_array()

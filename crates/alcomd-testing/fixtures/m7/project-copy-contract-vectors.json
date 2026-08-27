@@ -1,5 +1,5 @@
 {
-    "status": "approved-not-active",
+    "status": "implemented",
     "capability": "projects.copy.v1",
     "methods": ["projects.planCopy", "projects.applyCopy"],
     "operationKind": "projects.copy",

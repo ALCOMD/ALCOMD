@@ -108,6 +108,30 @@ class DeterministicGuiClient implements GuiRpcClient {
     projectRegister(): ReturnType<GuiRpcClient["projectRegister"]> { return this.value({ project: project(), replayed: false }); }
     projectRefresh(): ReturnType<GuiRpcClient["projectRefresh"]> { return this.value({ project: project(), replayed: false }); }
     projectUnregister(): ReturnType<GuiRpcClient["projectUnregister"]> { return this.value({ projectId: PROJECT_ID, revision: 3, unregistered: true, replayed: false }); }
+    projectPlanCopy(_sourceProjectId: string, expectedRevision: number, targetParentPath: string, targetLeaf: string): ReturnType<GuiRpcClient["projectPlanCopy"]> {
+        return this.value({
+            plan: {
+                planId: "00000000-0000-4000-8000-000000000060",
+                sourceProjectId: PROJECT_ID,
+                sourceProjectRevision: expectedRevision,
+                sourceCanonicalRootPath: "C:\\Projects\\Sample",
+                targetParentCanonicalPath: targetParentPath,
+                normalizedTargetLeaf: targetLeaf,
+                targetProjectId: "00000000-0000-4000-8000-000000000061",
+                writerEvidence: { state: "not_observed", observedAtMs: 1 },
+                profile: {
+                    id: "alcomd-project-copy",
+                    version: 1,
+                    excludes: ["root/Logs", "root/Obj", "root/Temp", "**/.git"],
+                    quota: { maxEntries: 500000, maxSingleFileBytes: 34359738368, maxTotalRegularFileBytes: 137438953472, maxDepth: 128, maxNormalizedPathUtf8Bytes: 1024 }
+                },
+                createdAtMs: 1,
+                expiresAtMs: 900001
+            },
+            replayed: false
+        });
+    }
+    projectApplyCopy(): ReturnType<GuiRpcClient["projectApplyCopy"]> { return this.value({ operationId: "00000000-0000-4000-8000-000000000062", targetProjectId: "00000000-0000-4000-8000-000000000061", replayed: false }); }
 
     repositoriesInspect(): ReturnType<GuiRpcClient["repositoriesInspect"]> { return this.value({ repository: repository() }); }
     repositoriesList(): ReturnType<GuiRpcClient["repositoriesList"]> { return this.value({ repositories: this.mode === "empty" ? [] : [repository()] }); }

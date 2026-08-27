@@ -1,16 +1,16 @@
 # M7 Project / Package Functional Closure：contract-first Stop A
 
-状态：Stop A 已由项目所有者附合同修正批准；允许依次实施 P0-P4，完成完整本地 gate 后停止。H2 visual WIP 已以独立、
-未验收 checkpoint 保存且继续暂停，M8/M9 未开始。
+状态：Stop A 合同修正与 P0-P4 production implementation 已完成本地候选和完整本地 gate；已停止在 P5 与 H2 前等待
+项目所有者验收。H2 visual WIP 继续暂停，P5-P8、M8/M9 未开始。
 
 ## 目标与边界
 
 本 Stop A 把 v3 已有、但当前 M7 official GUI 尚未形成真实用户入口的 Project / Package 行为变成可审阅的最小合同。
-本轮只允许 proposal、dependency/platform probe、Schema/migration proposal、fixture、contract test 和 milestone ownership。
-下列内容明确不在本轮：生产 Rust/TypeScript、active RPC、production migration、Cargo/npm manifest、lockfile、unsafe、平台
-API、H2 视觉推进、M8/M9。
+P0-P4 已按批准范围落盘 dependency foundation、closed GUI affordance、active Copy RPC/State v10、filesystem
+Operation/recovery 与 client/CLI/GUI flow。下列内容仍明确不在本轮：Favorite/Remove Directory/Package 新合同、H2 视觉推进、
+M8/M9、任何新 unsafe 或额外平台 API。
 
-当前两个可见永久假入口是 `Open Project Directory` 与 `Copy Project`，但这不等于全部功能缺口只有两个。
+此前两个可见永久假入口 `Open Project Directory` 与 `Copy Project` 已成为真实入口，但这不等于全部功能缺口已经关闭。
 `projects.management` 与 `packages.vpm` 必须继续保持 `in_progress`。
 
 ## Open Project Directory
@@ -52,9 +52,10 @@ React 不提供初始任意路径，不接收 File handle，不直接调用 plug
 frontend npm binding。plugin registration 是 Rust API 工作所必需，但 guest WebView 没有对应 capability。错误只返回 private
 `directory_selection_failed` 或 `internal_error`，取消不是错误。该 exact dependency/feature 已获批准。
 
-## Copy Project public proposal
+## Copy Project public contract
 
-proposal 文件为 `specs/rpc/m7-project-copy.proposal.schema.json`；它不是 active RPC publication。
+机器可读文件为 `specs/rpc/m7-project-copy.proposal.schema.json`；文件名保留审计沿革，但 publication 已切换为 implemented，
+active RPC v1 规范、protocol、dispatcher 与 client 已接线。
 
 - capability：`projects.copy.v1`
 - methods：`projects.planCopy`、`projects.applyCopy`
@@ -162,10 +163,10 @@ publish 前不得创建 Project registry row。target 完整发布并复验后�
 revision、Event、idempotency result、Operation 与 journal state。Projects list/grid 发起后留在列表并刷新；workspace 发起后
 进入新 Project workspace；两者调用相同 Core Plan/Apply。
 
-## State Schema v10 proposal
+## State Schema v10 production
 
-`specs/storage/state-v10.md` 与 `state-v10-migration.proposal.contract.json` 已获 production 批准；在完整 Copy wiring 落盘前仍不
-存在 active `0010` SQL，daemon 继续广告 `dataSchema: 9`。完整接线后才广告 `10`。
+`specs/storage/state-v10.md`、`state-v10-migration.proposal.contract.json` 与 active
+`crates/alcomd-store/migrations/0010_project_copy.sql` 已落盘；完整 Copy wiring 后 daemon 广告 `dataSchema: 10`。
 
 v10 只为 Copy 增加 `project_copy_plans`、`project_copy_filesystem_journal` 与 `operations.kind='projects.copy'`。它复用
 Project registry、Revision、Event、idempotency 与 Operation；Plan authority immutable/durable，journal append-only，带 recovery
@@ -212,12 +213,27 @@ fixture `visible-action-completeness-v1.json` 冻结每个用户可见业务 act
 - `unavailable-non-blocker`：backend capability 明确不存在，且不是承诺的 release blocker。
 
 禁止 permanent-disabled fake action、empty handler、no-op success、local fake mutation 与 placeholder production button。已承诺的
-v3 release-blocker 不能通过删除按钮或改成 `unavailable-non-blocker` 隐藏；metadata 必须保持 in_progress/blocked。Stop A test
-只验证 inventory 与 gate proposal 自洽，并明确记录当前两个 known fake entries；production gate 要等 P1/P2 activation 后才能改为
-implemented，当前不能虚构通过。
+v3 release-blocker 不能通过删除按钮或改成 `unavailable-non-blocker` 隐藏；metadata 必须保持 in_progress/blocked。P1/P4 已把
+Open Directory、native Register chooser 与 Copy 标为真实 implemented；完整 visible-action gate 仍因 P5-P8 已知缺口保持未通过。
 
 ## 验收与停止
 
-Stop A 必须执行 fmt、clippy、Workspace tests、xtask、metadata、baseline freeze 与 diff check，并证明 active RPC、production
-Rust/TypeScript、manifests、locks、unsafe、platform API 和现有 H2 WIP 未变。完成后停止，等待 dependency、Copy/State v10 与
-后续 slices 的人工审批。
+P0-P4 必须执行 fmt、clippy、Workspace tests、npm check/build/browser tests、xtask、metadata、baseline freeze 与 diff check，
+并证明没有第三个 production dependency、新 unsafe、新平台 API、额外 public RPC/Permission/State table 或 H2 视觉推进。
+完成并提交后停止，等待项目所有者决定进入 P5 还是返回视觉 Gate。
+
+## P0-P4 implementation progress
+
+- P0：exact `open 5.4.2` 与 `tauri-plugin-dialog 2.7.2` 已以独立 dependency commit 落盘；没有 opener plugin、frontend dialog
+  binding/capability、`open` insecure feature、新 ALCOMD unsafe 或直接平台 API。
+- P1：Open Directory 只接收 ProjectId 并逐次 `projects.get` 复验；Add/Register 与 Copy 共用 Rust-side native directory picker。
+- P2：`projects.copy.v1`、`projects.planCopy/applyCopy`、State v10 两表 migration、protocol/dispatcher/store/client 已接线。
+- P3：private durable JSONL inventory、两遍 content SHA-256、sibling staging/atomic publish、forward recovery 与每个 durable phase
+  的真实子进程 kill/restart matrix 已落盘；M2 generic recovery 已显式把 `projects.copy` 交给专属恢复器。
+- P4：CLI Plan/Apply、Projects list/grid 与 Project workspace Copy flow 已接线；list/grid 完成后刷新，workspace 完成后进入新
+  Project workspace。
+- 2026-08-28 本地验收：`cargo fmt --all -- --check`、严格 Clippy、完整 locked Workspace tests、npm check/build、19 项
+  Playwright browser tests、`cargo xtask check`、metadata、baseline freeze、`git diff --check` 与 Tauri release
+  `--no-bundle` 全部通过。Copy 额外证明 15 分钟 expiry 边界、四种 writer state、同 target 并发单次发布、pre-intent
+  cancel、post-intent 不可取消、外部 target 修改进入 recovery-required，以及全部八个 durable checkpoint 的真实
+  kill/restart。没有新增第三个 production dependency、ALCOMD unsafe、平台 API、Permission、ResourceKey 或 v10 第三张表。

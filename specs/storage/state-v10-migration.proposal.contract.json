@@ -1,9 +1,9 @@
 {
-    "status": "approved-not-active",
+    "status": "implemented",
     "from": 9,
     "to": 10,
-    "productionMigration": null,
-    "productionWiringCreated": false,
+    "productionMigration": "crates/alcomd-store/migrations/0010_project_copy.sql",
+    "productionWiringCreated": true,
     "transaction": "BEGIN IMMEDIATE",
     "operationKindsAdded": ["projects.copy"],
     "tablesAdded": ["project_copy_plans", "project_copy_filesystem_journal"],

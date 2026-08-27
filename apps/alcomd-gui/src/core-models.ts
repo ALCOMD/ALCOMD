@@ -142,6 +142,34 @@ export interface ProjectsListResult { projects: ProjectSnapshot[]; nextCursor?: 
 export interface ProjectWriteResult { project: ProjectSnapshot; replayed: boolean }
 export interface ProjectUnregisterResult { projectId: string; revision: number; unregistered: boolean; replayed: boolean }
 
+export interface ProjectCopyPlan {
+    planId: string;
+    sourceProjectId: string;
+    sourceProjectRevision: number;
+    sourceCanonicalRootPath: string;
+    targetParentCanonicalPath: string;
+    normalizedTargetLeaf: string;
+    targetProjectId: string;
+    writerEvidence: { state: string; observedAtMs: number };
+    profile: {
+        id: string;
+        version: number;
+        excludes: string[];
+        quota: {
+            maxEntries: number;
+            maxSingleFileBytes: number;
+            maxTotalRegularFileBytes: number;
+            maxDepth: number;
+            maxNormalizedPathUtf8Bytes: number;
+        };
+    };
+    createdAtMs: number;
+    expiresAtMs: number;
+}
+
+export interface ProjectsPlanCopyResult { plan: ProjectCopyPlan; replayed: boolean }
+export interface ProjectsApplyCopyResult { operationId: string; targetProjectId: string; replayed: boolean }
+
 export interface RegistryCursor {
     registeredAtMs: number;
     id: string;

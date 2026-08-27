@@ -6,6 +6,7 @@ mod cache;
 mod engine;
 mod package;
 mod plan;
+mod project_copy;
 mod range;
 mod resolver;
 mod staging_package;
@@ -31,6 +32,7 @@ pub use plan::{
     ProjectPackageSnapshot, build_remove_plan, build_resolution_plan, inspect_package_project,
     materialize_vpm_manifest,
 };
+pub use project_copy::ProjectCopyEngine;
 pub use resolver::{
     PackageCandidate, PackageDependency, PackageDependencyEdge, PackageSource, Resolution,
     ResolveError, ResolveRequest, ResolvedPackage, candidates_from_catalog, resolve_packages,

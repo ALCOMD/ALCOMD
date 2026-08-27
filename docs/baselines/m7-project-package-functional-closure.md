@@ -1,7 +1,7 @@
 # M7 Project / Package Functional Closure matrix
 
-状态：contract-first proposal。v3 只作行为参考；没有复制、移植或改写其源码。`implemented` 仅表示当前 Core 已有真实能力，
-不是本矩阵已完成 GUI 入口。
+状态：Stop A P0-P4 production candidate。v3 只作行为参考；没有复制、移植或改写其源码。Open Directory、native
+Register chooser 与 Copy 已有真实 GUI/Core 入口；P5-P8 仍未完成，因此聚合 feature 继续 `in_progress`。
 
 | 用户入口 | 当前 Core 是否足够 | 最小合同 / 实现归属 | Permission 复用 | State / Config 影响 | dependency / platform | slice |
 |---|---|---|---|---|---|---|
@@ -9,7 +9,7 @@
 | Add/Register chooser | register RPC 足够；native chooser 缺失 | closed folder picker 后调用 existing `projects.register` | `projects.manage` | 无 | approved dialog 2.7.2，defaults off + gtk3 | P1 / S |
 | Create | `templates.planCreateProject/applyCreateProject` 足够；built-in template 可表达 blank/create | GUI wiring + folder picker + existing Plan/Apply | existing template/project/package read/manage matrix | 无 | dialog 候选 | P1 / M |
 | Restore | `backups.planRestore/applyRestore` 足够 | GUI wiring + folder picker + existing Plan/Apply | existing backup/project permissions | 无 | dialog 候选 | P1 / M |
-| Copy Project | 不足 | proposal `projects.copy.v1`, `projects.planCopy/applyCopy`, Operation `projects.copy` | `projects.read + projects.create` | proposed State v10 | dialog；copy engine不需新 dependency/platform unsafe | P2 / XL |
+| Copy Project | P2-P4 已实现 | active `projects.copy.v1`, `projects.planCopy/applyCopy`, Operation `projects.copy` | `projects.read + projects.create` | active State v10 两表 | approved dialog；copy engine无新 dependency/platform unsafe | P2-P4 / implemented candidate |
 | Favorite | 不足；Project DTO/registry 没有 favorite | proposed `projects.setFavorite(projectId,expectedRevision,favorite,idempotencyKey)`；兼容可选 `favorite` DTO | `projects.manage` | **不并入 v10**；后续最小 schema proposal或经审批的独立 preference authority | 无 | P3 / M |
 | Clear/Forget Unity preference | 不足；`unity.projectEditor.set` 要求 non-null installationId | 新窄 `unity.projectEditor.clear(projectId,expectedRevision,idempotencyKey)`，不把 existing set 的 required string 扩为 null | `unity.manage` | 删除 existing preference row；无新表 | 无 | P3 / S |
 | Open Unity / Backup | 已有真实 RPC/Operation | 保持 existing wiring；不是新合同 | existing | 无 | existing | 已实现证据保持 |

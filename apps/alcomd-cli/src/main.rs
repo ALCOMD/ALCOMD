@@ -175,6 +175,17 @@ enum OperationCommand {
 
 #[derive(Debug, Subcommand)]
 enum ProjectCommand {
+    Copy {
+        project_id: String,
+        target_parent: PathBuf,
+        target_leaf: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        plan_idempotency_key: String,
+        #[arg(long)]
+        idempotency_key: String,
+    },
     Create {
         #[arg(long)]
         template: String,
@@ -610,6 +621,50 @@ async fn execute(
             ),
         },
         Command::Project { command } => match command {
+            ProjectCommand::Copy {
+                project_id,
+                target_parent,
+                target_leaf,
+                expected_revision,
+                plan_idempotency_key,
+                idempotency_key,
+            } => {
+                let target_parent =
+                    absolute_path(target_parent).map_err(alcomd_client::ClientError::Transport)?;
+                let plan = client
+                    .project_plan_copy(alcomd_protocol::ProjectsPlanCopyParams {
+                        source_project_id: project_id,
+                        expected_revision,
+                        target_parent_path: target_parent,
+                        target_leaf,
+                        idempotency_key: plan_idempotency_key,
+                    })
+                    .await?;
+                if options.dry_run {
+                    serde_json::to_value(plan)
+                } else {
+                    confirm_high_impact(options)?;
+                    let accepted = client
+                        .project_apply_copy(alcomd_protocol::ProjectsApplyCopyParams {
+                            plan_id: plan.plan.plan_id,
+                            expected_revision,
+                            idempotency_key,
+                        })
+                        .await?;
+                    if options.no_wait {
+                        serde_json::to_value(accepted)
+                    } else {
+                        serde_json::to_value(
+                            wait_for_operation(
+                                &mut client,
+                                accepted.operation_id,
+                                options.output_mode,
+                            )
+                            .await?,
+                        )
+                    }
+                }
+            }
             ProjectCommand::Create {
                 template,
                 target_parent,
@@ -1249,6 +1304,7 @@ impl Command {
                 OperationCommand::Cancel { .. } => "operation cancel",
             },
             Self::Project { command } => match command {
+                ProjectCommand::Copy { .. } => "project copy",
                 ProjectCommand::Create { .. } => "project create",
                 ProjectCommand::Inspect { .. } => "project inspect",
                 ProjectCommand::List { .. } => "project list",
