@@ -1,0 +1,195 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/proposal/m7-project-copy.json",
+    "title": "ALCOMD M7 Project Copy proposal",
+    "x-alcomd-publication": "proposal-only-not-active",
+    "x-alcomd-active-rpc-modified": false,
+    "x-alcomd-capability": "projects.copy.v1",
+    "x-alcomd-method-permissions": {
+        "projects.planCopy": ["projects.read", "projects.create"],
+        "projects.applyCopy": ["projects.read", "projects.create"]
+    },
+    "x-alcomd-filesystem-writer": "builtin:local-owner",
+    "x-alcomd-operation-kind": "projects.copy",
+    "x-alcomd-plan-expiry-ms": 900000,
+    "x-alcomd-resource-locks": [
+        "Project(sourceProjectId)",
+        "ProjectCreate(targetParentIdentity,normalizedTargetLeaf)"
+    ],
+    "$defs": {
+        "uuid": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "revision": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "timestamp": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "opaqueIdentity": {"type": "string", "minLength": 1, "maxLength": 256},
+        "canonicalPath": {"type": "string", "minLength": 1, "maxLength": 32768},
+        "targetLeaf": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "pattern": "^[^/\\\\]+$"
+        },
+        "writerEvidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["state", "observedAtMs"],
+            "properties": {
+                "state": {
+                    "enum": ["running_confirmed", "running_suspected", "not_observed", "unknown"]
+                },
+                "observedAtMs": {"$ref": "#/$defs/timestamp"},
+                "evidenceId": {"type": "string", "minLength": 1, "maxLength": 128}
+            }
+        },
+        "copyQuota": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "maxEntries", "maxSingleFileBytes", "maxTotalRegularFileBytes",
+                "maxDepth", "maxNormalizedPathUtf8Bytes"
+            ],
+            "properties": {
+                "maxEntries": {"const": 500000},
+                "maxSingleFileBytes": {"const": 34359738368},
+                "maxTotalRegularFileBytes": {"const": 137438953472},
+                "maxDepth": {"const": 128},
+                "maxNormalizedPathUtf8Bytes": {"const": 1024}
+            }
+        },
+        "copyProfile": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "version", "includes", "excludes", "rejects", "quota"],
+            "properties": {
+                "id": {"const": "alcomd-project-copy"},
+                "version": {"const": 1},
+                "includes": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 32,
+                    "items": {"type": "string", "minLength": 1, "maxLength": 128}
+                },
+                "excludes": {
+                    "type": "array",
+                    "minItems": 4,
+                    "maxItems": 16,
+                    "items": {"type": "string", "minLength": 1, "maxLength": 128}
+                },
+                "rejects": {
+                    "type": "array",
+                    "minItems": 10,
+                    "maxItems": 32,
+                    "items": {"type": "string", "minLength": 1, "maxLength": 128}
+                },
+                "quota": {"$ref": "#/$defs/copyQuota"}
+            }
+        },
+        "projectCopyPlan": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "planId", "ownerPrincipalId", "sourceProjectId", "sourceProjectRevision",
+                "sourceCanonicalRootPath", "sourceFilesystemIdentity", "sourceProjectKind",
+                "expectedUnityVersion", "writerEvidence", "targetParentCanonicalPath",
+                "targetParentFilesystemIdentity", "normalizedTargetLeaf", "targetMustNotExist",
+                "targetProjectId", "profile", "safeExclusionSummary", "planFingerprint",
+                "idempotencyKey", "createdAtMs", "expiresAtMs"
+            ],
+            "properties": {
+                "planId": {"$ref": "#/$defs/uuid"},
+                "ownerPrincipalId": {"type": "string", "minLength": 1, "maxLength": 128},
+                "sourceProjectId": {"$ref": "#/$defs/uuid"},
+                "sourceProjectRevision": {"$ref": "#/$defs/revision"},
+                "sourceCanonicalRootPath": {"$ref": "#/$defs/canonicalPath"},
+                "sourceFilesystemIdentity": {"$ref": "#/$defs/opaqueIdentity"},
+                "sourceProjectKind": {
+                    "enum": ["avatars", "worlds", "legacy_avatars", "legacy_worlds", "unknown"]
+                },
+                "expectedUnityVersion": {"type": "string", "minLength": 1, "maxLength": 128},
+                "expectedUnityRevision": {"type": "string", "minLength": 1, "maxLength": 128},
+                "writerEvidence": {"$ref": "#/$defs/writerEvidence"},
+                "targetParentCanonicalPath": {"$ref": "#/$defs/canonicalPath"},
+                "targetParentFilesystemIdentity": {"$ref": "#/$defs/opaqueIdentity"},
+                "normalizedTargetLeaf": {"$ref": "#/$defs/targetLeaf"},
+                "targetMustNotExist": {"const": true},
+                "targetProjectId": {"$ref": "#/$defs/uuid"},
+                "profile": {"$ref": "#/$defs/copyProfile"},
+                "safeExclusionSummary": {
+                    "type": "array",
+                    "minItems": 4,
+                    "maxItems": 16,
+                    "items": {"type": "string", "minLength": 1, "maxLength": 128}
+                },
+                "planFingerprint": {"$ref": "#/$defs/sha256"},
+                "idempotencyKey": {"type": "string", "minLength": 1, "maxLength": 128},
+                "createdAtMs": {"$ref": "#/$defs/timestamp"},
+                "expiresAtMs": {"$ref": "#/$defs/timestamp"}
+            }
+        },
+        "planCopyParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sourceProjectId", "expectedRevision", "targetParentPath", "targetLeaf", "idempotencyKey"],
+            "properties": {
+                "sourceProjectId": {"$ref": "#/$defs/uuid"},
+                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "targetParentPath": {"$ref": "#/$defs/canonicalPath"},
+                "targetLeaf": {"$ref": "#/$defs/targetLeaf"},
+                "idempotencyKey": {"type": "string", "minLength": 1, "maxLength": 128}
+            }
+        },
+        "planCopyResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["plan", "replayed"],
+            "properties": {
+                "plan": {"$ref": "#/$defs/projectCopyPlan"},
+                "replayed": {"type": "boolean"}
+            }
+        },
+        "applyCopyParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["planId", "expectedRevision", "idempotencyKey"],
+            "properties": {
+                "planId": {"$ref": "#/$defs/uuid"},
+                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "idempotencyKey": {"type": "string", "minLength": 1, "maxLength": 128}
+            }
+        },
+        "applyCopyResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["operationId", "targetProjectId", "replayed"],
+            "properties": {
+                "operationId": {"$ref": "#/$defs/uuid"},
+                "targetProjectId": {"$ref": "#/$defs/uuid"},
+                "replayed": {"type": "boolean"}
+            }
+        },
+        "operationPhase": {
+            "enum": [
+                "accepted", "inventory_ready", "staging", "staging_complete", "publish_intent",
+                "target_published", "project_registry_commit_intent", "state_committed", "cleanup_complete"
+            ]
+        },
+        "staleReason": {
+            "enum": [
+                "expired", "owner_changed", "source_revision_changed", "source_identity_changed",
+                "target_parent_identity_changed", "writer_state_changed", "plan_fingerprint_changed"
+            ]
+        },
+        "errorCode": {
+            "enum": [
+                "project_copy_plan_not_found", "project_copy_plan_stale", "project_copy_target_exists",
+                "project_copy_target_unsafe", "project_copy_source_unsafe", "project_copy_source_changed",
+                "project_copy_limit_exceeded", "project_copy_recovery_required", "project_not_registered",
+                "revision_conflict", "unity_project_running", "idempotency_conflict", "permission_denied",
+                "internal_error"
+            ]
+        }
+    }
+}

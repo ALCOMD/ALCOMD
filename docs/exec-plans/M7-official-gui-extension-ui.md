@@ -7,8 +7,9 @@
 探索已降为 historical；以 v3 用户模型为默认的 minimum-change proposal 已通过项目所有者审批。H0 Material foundation
 已形成独立本地提交；首次 H1 shell/navigation 虽通过前端自动化验收，但项目所有者判定其采用 Web dashboard/admin panel
 空间模式，状态为 `rejected_for_visual_direction`。reference-driven wide desktop Projects prototype 已由项目所有者通过
-Visual Gate 1，检查点为 `7bb325b78a74518881fb65e03de7f79902e72cd3`。当前仅批准继续 H2-A Project workspace /
-Packages 窄切片并停止在 Visual Gate 2；M7仍未完成，尚未进入M8/M9。
+Visual Gate 1，检查点为 `7bb325b78a74518881fb65e03de7f79902e72cd3`。项目所有者随后确认 Project/Package 用户入口存在
+超出两个 permanent-disabled menu item 的真实功能缺口，H2 visual implementation 已暂停；当前只执行
+`M7 Project / Package Functional Closure` contract-first Stop A，production implementation 未批准。M7仍未完成，尚未进入M8/M9。
 
 ## 目标与完成定义
 
@@ -579,10 +580,15 @@ Activity、Diagnostics 或 Portable UI authority。
   `YYYY-MM-DD`，Last observed 使用相对时间。表头与单元格统一左对齐、单行截断，Type 的 24px symbol 与文本基线对齐；
   Open Unity、Manage、Backups 与 Material overflow menu 均保留固定 action footprint。Primary navigation 不提供收起状态，
   窄宽度直接裁切而不产生额外滚动条。本次局部认可不关闭完整 Visual Gate 2，也不批准其他 H2、H3-H7。
+- 2026-08-28：Project Actions Functional Parity Audit 经项目所有者接受。确认当前 permanent-disabled visible fake
+  entries 只有 Open Project Directory 与 Copy Project，但 Add/Register chooser、Create、Restore、Favorite、Unity
+  preference clear、package reinstall/bulk/source/local/prerelease/hidden/docs/changelog、Remove Directory 与 M11 VCC migration
+  等真实缺口不能被 fake-entry grep 覆盖。H2 visual work暂停，形成独立 Project/Package Functional Closure Stop A proposal、
+  State v10 Copy-only migration contract、fixtures/tests、dependency evaluation 与 milestone ownership；active RPC、production
+  migration/implementation和依赖均未改变。
 
 ## 下一停止点
 
-完成 H2-A Project workspace / Packages 后立即停止在 Visual Gate 2，运行真实 daemon+release GUI，并以安全注册的
-disposable/synthetic Project 展示 workspace、populated package list、search/filter、toolbar、Unity/Backup context actions、package
-action state，以及安全可触发时的 Plan review/Operation。不得继续 repository/template 或其他页面，不得 push，不得进入 M8/M9，
-也不得 amend 已有历史。
+当前停止点是 Project / Package Functional Closure Stop A 人工审批。不得开始 opener/dialog依赖落盘、Copy production、State v10
+production migration、Favorite/Package新合同实现或恢复H2视觉推进。审批后也必须按 P1-P7独立vertical slice顺序执行，不得直接
+把全部缺口铺开；不得push、不得进入M8/M9，也不得amend已有历史。

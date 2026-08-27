@@ -1,0 +1,47 @@
+{
+    "status": "proposal-gate-production-not-yet-complete",
+    "allowedVisibleClassifications": [
+        "implemented",
+        "conditional-disabled",
+        "unavailable-non-blocker"
+    ],
+    "forbiddenPatterns": [
+        "permanent-disabled-release-blocker",
+        "empty-handler",
+        "no-op-success",
+        "local-fake-mutation",
+        "placeholder-production-button"
+    ],
+    "visibleActions": [
+        {"id": "projects.refresh", "classification": "implemented"},
+        {"id": "projects.change-view", "classification": "implemented"},
+        {"id": "projects.register-manual-path", "classification": "implemented"},
+        {"id": "projects.sort", "classification": "implemented"},
+        {"id": "projects.open-unity", "classification": "conditional-disabled"},
+        {"id": "projects.manage", "classification": "implemented"},
+        {"id": "projects.backups", "classification": "implemented"},
+        {"id": "projects.unregister", "classification": "conditional-disabled"},
+        {"id": "projects.open-directory", "classification": "permanent-disabled-release-blocker"},
+        {"id": "projects.copy", "classification": "permanent-disabled-release-blocker"}
+    ],
+    "knownParityGaps": [
+        "native-add-register-directory-chooser",
+        "create-entry",
+        "restore-entry",
+        "favorite",
+        "clear-unity-preference",
+        "package-refresh",
+        "package-reinstall",
+        "package-bulk-actions",
+        "package-source-filters",
+        "local-user-package",
+        "prerelease-control",
+        "hidden-source-control",
+        "package-docs-changelog",
+        "remove-directory",
+        "vcc-import-migrate"
+    ],
+    "expectedCurrentPermanentFakeCount": 2,
+    "releaseBlockerFeatures": ["projects.management", "packages.vpm"],
+    "productionGateMayPass": false
+}

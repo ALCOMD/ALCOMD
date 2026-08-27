@@ -1,0 +1,90 @@
+{
+    "status": "proposal-only-not-active",
+    "capability": "projects.copy.v1",
+    "methods": ["projects.planCopy", "projects.applyCopy"],
+    "operationKind": "projects.copy",
+    "permissions": ["projects.read", "projects.create"],
+    "planExpiryMs": 900000,
+    "planClaimsFullInventory": false,
+    "profile": {
+        "id": "alcomd-project-copy",
+        "version": 1,
+        "include": [
+            "ordinary-project-contents",
+            "Library",
+            "Library*",
+            "Packages",
+            "locked-vpm-packages",
+            "Packages/manifest.json",
+            "Packages/vpm-manifest.json",
+            "ordinary-hidden-entries"
+        ],
+        "exclude": ["root/Logs", "root/Obj", "root/Temp", "**/.git-case-insensitive-any-entry-type"],
+        "reject": [
+            "symlink",
+            "junction",
+            "reparse-point",
+            "hard-linked-regular-file",
+            "special-file",
+            "non-utf8-name",
+            "absolute-device-unc-escape",
+            "traversal",
+            "unicode-collision",
+            "case-collision",
+            "file-directory-collision",
+            "target-inside-source",
+            "source-inside-target",
+            "overwrite",
+            "merge"
+        ],
+        "quota": {
+            "maxEntries": 500000,
+            "maxSingleFileBytes": 34359738368,
+            "maxTotalRegularFileBytes": 137438953472,
+            "maxDepth": 128,
+            "maxNormalizedPathUtf8Bytes": 1024
+        },
+        "metadata": {
+            "mustPreserve": ["regular-file-bytes", "directory-hierarchy", "unix-executable-bits"],
+            "notPromised": [
+                "timestamps", "owner", "acl", "xattr", "creation-time",
+                "platform-specific-metadata", "complete-unix-mode"
+            ]
+        }
+    },
+    "phases": [
+        "accepted",
+        "inventory_ready",
+        "staging",
+        "staging_complete",
+        "publish_intent",
+        "target_published",
+        "project_registry_commit_intent",
+        "state_committed",
+        "cleanup_complete"
+    ],
+    "cancelBefore": "publish_intent",
+    "afterPublishIntent": "forward-recovery-only",
+    "writerGate": {
+        "running_confirmed": "hard-reject-unity_project_running",
+        "running_suspected": "advisory-plus-final-fingerprint",
+        "unknown": "advisory-plus-final-fingerprint",
+        "not_observed": "allowed-not-proof-plus-final-fingerprint"
+    },
+    "locks": ["Project(sourceProjectId)", "ProjectCreate(targetParentIdentity,normalizedTargetLeaf)"],
+    "lockOrdering": "ResourceKey::canonical_bytes",
+    "stableErrors": [
+        "project_copy_plan_not_found",
+        "project_copy_plan_stale",
+        "project_copy_target_exists",
+        "project_copy_target_unsafe",
+        "project_copy_source_unsafe",
+        "project_copy_source_changed",
+        "project_copy_limit_exceeded",
+        "project_copy_recovery_required"
+    ],
+    "forbiddenError": "project_copy_failed",
+    "recoveryReuses": [
+        "PlanId", "OperationId", "idempotency", "preallocatedProjectId", "profile", "inventoryEvidence"
+    ]
+}

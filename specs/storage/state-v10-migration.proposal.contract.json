@@ -1,0 +1,67 @@
+{
+    "status": "proposal-only-not-active",
+    "from": 9,
+    "to": 10,
+    "productionMigration": null,
+    "productionWiringCreated": false,
+    "transaction": "BEGIN IMMEDIATE",
+    "operationKindsAdded": ["projects.copy"],
+    "tablesAdded": ["project_copy_plans", "project_copy_filesystem_journal"],
+    "plan": {
+        "table": "project_copy_plans",
+        "states": ["unapplied", "applied"],
+        "expiryMs": 900000,
+        "fullInventoryStored": false,
+        "immutableAuthority": true,
+        "deleteForbidden": true,
+        "onlyTransition": "unapplied-without-operation-to-applied-with-exact-projects-copy-operation",
+        "sourceProjectForeignKey": true,
+        "ownerIdempotencyBinding": true,
+        "preallocatedTargetProjectId": true
+    },
+    "journal": {
+        "table": "project_copy_filesystem_journal",
+        "appendOnly": true,
+        "updateForbidden": true,
+        "deleteForbidden": true,
+        "recoveryIndex": ["operation_id", "step DESC"],
+        "phases": [
+            "accepted",
+            "inventory_ready",
+            "staging",
+            "staging_complete",
+            "publish_intent",
+            "target_published",
+            "project_registry_commit_intent",
+            "state_committed",
+            "cleanup_complete",
+            "recovery_required"
+        ]
+    },
+    "reuses": [
+        "projects",
+        "operations",
+        "events",
+        "idempotency_records",
+        "revision"
+    ],
+    "forbiddenAdditions": [
+        "generic_plans",
+        "generic_filesystem_journal",
+        "favorite_state",
+        "package_bulk_state",
+        "configuration_state",
+        "remove_directory_state"
+    ],
+    "invariants": [
+        "all-v9-rows-and-authority-preserved",
+        "all-v9-foreign-keys-preserved",
+        "revision-and-event-sequence-preserved",
+        "foreign-key-check-empty",
+        "plan-does-not-claim-full-inventory",
+        "publish-intent-is-forward-recovery-boundary",
+        "project-registry-row-created-only-after-target-published-and-revalidated",
+        "future-schema-fail-closed",
+        "migration-failure-rolls-back-to-v9-authority"
+    ]
+}

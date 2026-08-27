@@ -63,9 +63,9 @@ implementation = "alcomd-application"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "in_progress"
-evidence = ["docs/baselines/alcomd3-v3-audit.md::项目", "docs/baselines/vrc-get-audit.md::项目", "docs/adr/0016-project-repository-read-model.md", "crates/alcomd-vpm/src/lib.rs", "crates/alcomd-store/src/m3.rs"]
+evidence = ["docs/baselines/alcomd3-v3-audit.md::项目", "docs/baselines/vrc-get-audit.md::项目", "docs/baselines/m7-project-package-functional-closure.md", "docs/adr/0016-project-repository-read-model.md", "crates/alcomd-vpm/src/lib.rs", "crates/alcomd-store/src/m3.rs"]
 coverage = ["GUI", "CLI -p", "MCP", "invalid/missing project"]
-tests = ["projects.v3-parity", "projects.m3-readonly-registry", "packages.vpm-format"]
+tests = ["projects.v3-parity", "projects.m3-readonly-registry", "packages.vpm-format", "gui.m7-project-action-contract", "gui.m7-visible-action-completeness"]
 
 [[feature]]
 id = "projects.read-only-contract"
@@ -91,9 +91,9 @@ implementation = "alcomd-vpm"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "in_progress"
-evidence = ["docs/baselines/alcomd3-v3-audit.md::包", "docs/baselines/vrc-get-audit.md::CLI 与核心 VPM", "docs/adr/0017-vpm-package-transaction.md"]
+evidence = ["docs/baselines/alcomd3-v3-audit.md::包", "docs/baselines/vrc-get-audit.md::CLI 与核心 VPM", "docs/baselines/m7-project-package-functional-closure.md", "docs/adr/0017-vpm-package-transaction.md"]
 coverage = ["GUI", "CLI", "MCP", "direct/transitive dependencies", "locked/unlocked", "M4 requires SHA-256; hashless VPM remains incomplete", "legacy cleanup remains incomplete"]
-tests = ["packages.m4-contract", "packages.vpm-format", "packages.version-range-differential", "packages.plan-apply"]
+tests = ["packages.m4-contract", "packages.vpm-format", "packages.version-range-differential", "packages.plan-apply", "gui.m7-project-action-contract", "gui.m7-visible-action-completeness"]
 
 [[feature]]
 id = "packages.transaction-safety"
