@@ -1,9 +1,9 @@
-# ALCOMD State Schema v11 Project Preferences Proposal
+# ALCOMD State Schema v11 Project Preferences
 
-状态：P5-B contract-first 已获人工批准，等待 production wiring；尚无 production migration，daemon 仍广告
-`dataSchema: 10`。
+状态：P5-B production migration、Store/Application/RPC/client/GUI wiring 已实现；daemon 广告
+`dataSchema: 11`。
 
-v11 候选只承载 Project Favorite 与可清除的 Unity editor selection，不包含 Package、Remove Directory、GUI view state、
+v11 只承载 Project Favorite 与可清除的 Unity editor selection，不包含 Package、Remove Directory、GUI view state、
 Config visibility 或任何 generic preference framework。
 
 ## `projects.favorite`
@@ -44,5 +44,5 @@ migration 使用单一 `BEGIN IMMEDIATE` transaction，先增加 Favorite column
 `ProjectRecord.favorite` 使用 serde default，保证 v10 durable JSON 可读取/replay。旧 `ProjectEditorPreference` 与 get/set response
 保持 explicit-only；新 selection state 单独表达 automatic/explicit，并且仅其 public revision 接受 sentinel 0。
 
-精确机器合同位于 `state-v11-migration.proposal.contract.json`。在 production migration、store、application、RPC、typed client 与 GUI
-全部接线前不得广告 dataSchema 11。
+精确机器合同位于 `state-v11-migration.proposal.contract.json`；production migration 位于
+`crates/alcomd-store/migrations/0011_project_preferences.sql`。

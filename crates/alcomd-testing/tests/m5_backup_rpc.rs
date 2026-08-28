@@ -211,6 +211,7 @@ async fn backup_restore_plans_applies_and_registers_one_new_project() {
         project.project.project_id.as_deref(),
         Some(plan.project_id.as_str())
     );
+    assert_eq!(project.project.favorite, Some(false));
     let replay = client
         .backup_apply_restore(BackupApplyRestoreParams {
             plan_id: plan.plan_id,

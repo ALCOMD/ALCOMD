@@ -185,6 +185,56 @@ pub(super) async fn dispatch(
                 Err(error) => m5_error(request.id, error),
             }
         }
+        rpc::METHOD_UNITY_PROJECT_EDITOR_SELECTION_GET => {
+            require!(request, state, rpc::CAPABILITY_UNITY_READ_V1);
+            let params = parse!(request, rpc::UnityProjectIdParams);
+            let id = match app::ProjectId::parse(&params.project_id) {
+                Ok(value) => value,
+                Err(_) => return invalid(request.id),
+            };
+            match application.get_project_editor_selection(access, id).await {
+                Ok(value) => success_action(
+                    request.id,
+                    rpc::ProjectEditorSelectionResult {
+                        preference: selection_state(value),
+                    },
+                    None,
+                ),
+                Err(error) => m5_error(request.id, error),
+            }
+        }
+        rpc::METHOD_UNITY_PROJECT_EDITOR_CLEAR => {
+            require!(request, state, rpc::CAPABILITY_UNITY_MANAGE_V1);
+            let params = parse!(request, rpc::ProjectEditorClearParams);
+            let parsed = app::ProjectId::parse(&params.project_id)
+                .ok()
+                .zip(IdempotencyKey::parse(params.idempotency_key).ok());
+            let Some((project_id, key)) = parsed else {
+                return invalid(request.id);
+            };
+            let expected = if params.expected_revision == 0 {
+                None
+            } else {
+                Revision::new(params.expected_revision)
+            };
+            if params.expected_revision != 0 && expected.is_none() {
+                return invalid(request.id);
+            }
+            match application
+                .clear_project_editor(access, project_id, expected, key)
+                .await
+            {
+                Ok((value, replayed)) => success_action(
+                    request.id,
+                    rpc::ProjectEditorClearResult {
+                        preference: selection_state(value),
+                        replayed,
+                    },
+                    None,
+                ),
+                Err(error) => m5_error(request.id, error),
+            }
+        }
         rpc::METHOD_UNITY_WRITER_STATE => {
             require!(request, state, rpc::CAPABILITY_UNITY_READ_V1);
             let params = parse!(request, rpc::UnityProjectIdParams);
@@ -287,6 +337,23 @@ fn preference(value: app::ProjectEditorPreference) -> rpc::ProjectEditorPreferen
     }
 }
 
+fn selection_state(value: app::ProjectEditorSelectionState) -> rpc::ProjectEditorSelectionState {
+    rpc::ProjectEditorSelectionState {
+        project_id: value.project_id.to_string(),
+        selection: match value.selection {
+            app::ProjectEditorSelection::Automatic => rpc::ProjectEditorSelection::Automatic,
+            app::ProjectEditorSelection::Explicit { installation_id } => {
+                rpc::ProjectEditorSelection::Explicit {
+                    installation_id: installation_id.to_string(),
+                }
+            }
+        },
+        arguments: value.arguments,
+        revision: value.revision.map_or(0, Revision::get),
+        updated_at_ms: value.updated_at_ms,
+    }
+}
+
 fn writer_state(value: app::UnityWriterState) -> rpc::UnityWriterState {
     rpc::UnityWriterState {
         project_id: value.project_id.to_string(),
@@ -365,6 +432,9 @@ fn m5_error(id: String, error: app::M5UnityError) -> DispatchAction {
         }
         app::M5UnityErrorCode::InstallationInUse => {
             rpc::RpcError::unity(rpc::error_code::UNITY_INSTALLATION_IN_USE)
+        }
+        app::M5UnityErrorCode::EditorSelectionRequired => {
+            rpc::RpcError::unity(rpc::error_code::UNITY_EDITOR_SELECTION_REQUIRED)
         }
         app::M5UnityErrorCode::VersionUnverified => {
             rpc::RpcError::unity(rpc::error_code::UNITY_VERSION_UNVERIFIED)

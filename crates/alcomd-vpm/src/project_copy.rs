@@ -908,6 +908,7 @@ mod tests {
                 observed_at_ms: 1,
             },
             revision: Revision::INITIAL,
+            favorite: false,
             registered_at_ms: 1,
         };
         let writer = UnityWriterState {

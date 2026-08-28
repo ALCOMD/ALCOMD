@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use alcomd_client::{AlcomdClient, ClientConfig};
 use alcomd_platform::{DataConfig, IpcConfig};
-use alcomd_protocol::{ProjectType, RepositorySource};
+use alcomd_protocol::{ProjectSetFavoriteParams, ProjectType, RepositorySource};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -45,6 +45,13 @@ async fn project_and_repository_read_slice_round_trips_without_source_writes() {
     assert_eq!(inspected.project.project_type, ProjectType::Avatars);
     assert!(inspected.project.project_id.is_none());
     assert!(inspected.project.registered_at_ms.is_none());
+    assert!(inspected.project.favorite.is_none());
+    assert!(
+        serde_json::to_value(&inspected.project)
+            .expect("serialize anonymous project")
+            .get("favorite")
+            .is_none()
+    );
     let registered = client
         .project_register(
             project.to_string_lossy().into_owned(),
@@ -53,6 +60,7 @@ async fn project_and_repository_read_slice_round_trips_without_source_writes() {
         .await
         .expect("register project");
     assert_eq!(registered.project.revision, Some(1));
+    assert_eq!(registered.project.favorite, Some(false));
     let registered_at_ms = registered
         .project
         .registered_at_ms
@@ -71,6 +79,27 @@ async fn project_and_repository_read_slice_round_trips_without_source_writes() {
         .projects;
     assert_eq!(projects.len(), 1);
     assert_eq!(projects[0].registered_at_ms, Some(registered_at_ms));
+    assert_eq!(projects[0].favorite, Some(false));
+    let favorite = client
+        .project_set_favorite(ProjectSetFavoriteParams {
+            project_id: project_id.clone(),
+            favorite: true,
+            expected_revision: 1,
+            idempotency_key: "m7-project-favorite".to_owned(),
+        })
+        .await
+        .expect("favorite project over RPC");
+    assert_eq!(favorite.project.revision, Some(2));
+    assert_eq!(favorite.project.favorite, Some(true));
+    assert_eq!(
+        client
+            .projects_list(None, Some(100))
+            .await
+            .expect("list favorite project")
+            .projects[0]
+            .favorite,
+        Some(true)
+    );
 
     let source = RepositorySource::Local {
         path: repository.to_string_lossy().into_owned(),

@@ -1,5 +1,5 @@
 {
-    "status": "approved-for-production-implementation",
+    "status": "implemented-active-contract-evidence",
     "v3Favorite": {
         "persistent": true,
         "newProjectDefault": false,
@@ -63,6 +63,6 @@
         "stateSchema": 11,
         "newTable": false
     },
-    "activeProductionModified": false,
+    "activeProductionModified": true,
     "ownerApproved": true
 }

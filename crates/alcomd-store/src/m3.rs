@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 const PROJECT_REGISTER: &str = "projects.register";
 const PROJECT_REFRESH: &str = "projects.refresh";
+const PROJECT_SET_FAVORITE: &str = "projects.setFavorite";
 const PROJECT_UNREGISTER: &str = "projects.unregister";
 const REPOSITORY_REGISTER: &str = "repositories.register";
 const REPOSITORY_REFRESH: &str = "repositories.refresh";
@@ -176,7 +177,7 @@ fn load_project(
 ) -> Result<ProjectRecord, M3Error> {
     let row = connection
         .query_row(
-            "SELECT snapshot_json, revision, registered_at_ms, observed_at_ms
+            "SELECT snapshot_json, revision, registered_at_ms, observed_at_ms, favorite
              FROM projects WHERE owner_principal_id=?1 AND project_id=?2",
             params![owner.as_str(), id.to_string()],
             |row| {
@@ -185,6 +186,7 @@ fn load_project(
                     row.get::<_, i64>(1)?,
                     row.get::<_, i64>(2)?,
                     row.get::<_, i64>(3)?,
+                    row.get::<_, i64>(4)?,
                 ))
             },
         )
@@ -198,6 +200,7 @@ fn load_project(
         observation,
         revision: revision(row.1)?,
         registered_at_ms: u64::try_from(row.2).map_err(|_| internal())?,
+        favorite: row.4 != 0,
     })
 }
 
@@ -261,6 +264,7 @@ pub(super) fn register_project(
         observation,
         revision: Revision::INITIAL,
         registered_at_ms: now_ms,
+        favorite: false,
     };
     insert_event(
         &transaction,
@@ -415,6 +419,7 @@ pub(super) fn refresh_project(
         observation,
         revision: next_revision,
         registered_at_ms: current.registered_at_ms,
+        favorite: current.favorite,
     };
     let response = SyncWrite {
         value: record,
@@ -424,6 +429,87 @@ pub(super) fn refresh_project(
         &transaction,
         owner,
         PROJECT_REFRESH,
+        key,
+        &fingerprint,
+        &response,
+        now_ms,
+    )?;
+    transaction.commit().map_err(|_| unavailable())?;
+    Ok(response)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn set_project_favorite(
+    connection: &mut Connection,
+    owner: &PrincipalId,
+    id: ProjectId,
+    favorite: bool,
+    expected: Revision,
+    key: &IdempotencyKey,
+    now_ms: u64,
+) -> Result<SyncWrite<ProjectRecord>, M3Error> {
+    let fingerprint = format!(
+        r#"{{"expectedRevision":{},"favorite":{},"projectId":"{}","version":1}}"#,
+        expected.get(),
+        favorite,
+        id
+    );
+    let transaction = begin(connection)?;
+    if let Some(mut response) = existing_response::<SyncWrite<ProjectRecord>>(
+        &transaction,
+        owner,
+        PROJECT_SET_FAVORITE,
+        key,
+        &fingerprint,
+    )? {
+        response.replayed = true;
+        transaction.commit().map_err(|_| unavailable())?;
+        return Ok(response);
+    }
+    let current = load_project(&transaction, owner, id)?;
+    if current.revision != expected {
+        return Err(M3Error::new(M3ErrorCode::RevisionConflict));
+    }
+    let record = if current.favorite == favorite {
+        current
+    } else {
+        let revision = current.revision.checked_next().ok_or_else(internal)?;
+        transaction
+            .execute(
+                "UPDATE projects SET favorite=?1,revision=?2,updated_at_ms=?3
+                 WHERE owner_principal_id=?4 AND project_id=?5",
+                params![
+                    i64::from(favorite),
+                    integer(revision.get())?,
+                    integer(now_ms)?,
+                    owner.as_str(),
+                    id.to_string()
+                ],
+            )
+            .map_err(|_| unavailable())?;
+        insert_event(
+            &transaction,
+            owner,
+            "project",
+            &id.to_string(),
+            revision,
+            "project.favorite_changed",
+            now_ms,
+        )?;
+        ProjectRecord {
+            favorite,
+            revision,
+            ..current
+        }
+    };
+    let response = SyncWrite {
+        value: record,
+        replayed: false,
+    };
+    save_response(
+        &transaction,
+        owner,
+        PROJECT_SET_FAVORITE,
         key,
         &fingerprint,
         &response,

@@ -2,8 +2,8 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://alcomd.cqmhv.com/schema/proposals/m7-project-preferences.json",
     "title": "ALCOMD M7 P5-B Project preference proposal",
-    "x-alcomd-publication": "approved-for-production-implementation",
-    "x-alcomd-active-rpc-modified": false,
+    "x-alcomd-publication": "implemented-active-contract-evidence",
+    "x-alcomd-active-rpc-modified": true,
     "x-alcomd-state-schema": 11,
     "$defs": {
         "uuid": {

@@ -1283,6 +1283,7 @@ mod tests {
             },
             revision: Revision::INITIAL,
             registered_at_ms: 1,
+            favorite: false,
         }
     }
 

@@ -469,6 +469,25 @@ impl AlcomdClient {
             .await
     }
 
+    pub async fn project_editor_selection_get(
+        &mut self,
+        project_id: String,
+    ) -> Result<alcomd_protocol::ProjectEditorSelectionResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_UNITY_PROJECT_EDITOR_SELECTION_GET,
+            alcomd_protocol::UnityProjectIdParams { project_id },
+        )
+        .await
+    }
+
+    pub async fn project_editor_clear(
+        &mut self,
+        params: alcomd_protocol::ProjectEditorClearParams,
+    ) -> Result<alcomd_protocol::ProjectEditorClearResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_UNITY_PROJECT_EDITOR_CLEAR, params)
+            .await
+    }
+
     pub async fn unity_writer_state(
         &mut self,
         project_id: String,
@@ -734,6 +753,14 @@ impl AlcomdClient {
             },
         )
         .await
+    }
+
+    pub async fn project_set_favorite(
+        &mut self,
+        params: alcomd_protocol::ProjectSetFavoriteParams,
+    ) -> Result<alcomd_protocol::ProjectWriteResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_PROJECTS_SET_FAVORITE, params)
+            .await
     }
 
     pub async fn project_unregister(

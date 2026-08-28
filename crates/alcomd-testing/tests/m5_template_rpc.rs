@@ -89,6 +89,17 @@ async fn template_builtin_create_project_round_trips_over_rpc() {
         .expect("apply create");
     let operation = wait_for_operation(&mut client, &accepted.operation_id).await;
     assert_eq!(operation.state, OperationState::Succeeded);
+    let created_project_id = operation
+        .result
+        .as_ref()
+        .and_then(|value| value.get("projectId"))
+        .and_then(serde_json::Value::as_str)
+        .expect("created project ID");
+    let created_project = client
+        .project_get(created_project_id.to_owned())
+        .await
+        .expect("created project");
+    assert_eq!(created_project.project.favorite, Some(false));
     assert!(
         projects
             .join("RPC Project/Packages/vpm-manifest.json")

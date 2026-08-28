@@ -310,6 +310,7 @@ async fn project_copy_plan_apply_registers_an_exact_independent_copy() {
         Path::new(&copied.project.root_path),
         fs::canonicalize(target).expect("canonical copied project")
     );
+    assert_eq!(copied.project.favorite, Some(false));
 
     shutdown_daemon(trace, shutdown, daemon).await;
 }

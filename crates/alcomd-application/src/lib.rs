@@ -143,6 +143,9 @@ pub struct ProjectRecord {
     pub observation: ProjectObservation,
     pub revision: Revision,
     pub registered_at_ms: u64,
+    /// User-controlled registry metadata; absent in durable v10 JSON means false.
+    #[serde(default)]
+    pub favorite: bool,
 }
 
 /// Local file or anonymous remote repository source.
@@ -353,6 +356,15 @@ pub trait M3RegistryStore: Clone + Send + Sync + 'static {
         id: ProjectId,
         expected: Revision,
         observation: ProjectObservation,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<SyncWrite<ProjectRecord>, M3Error>> + Send;
+    fn set_project_favorite(
+        &self,
+        owner: PrincipalId,
+        id: ProjectId,
+        favorite: bool,
+        expected: Revision,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> impl Future<Output = Result<SyncWrite<ProjectRecord>, M3Error>> + Send;
@@ -1193,6 +1205,28 @@ impl<S: M3RegistryStore, R: M3ReadAdapter> M3Application<S, R> {
                 id,
                 expected,
                 observation,
+                key,
+                m3_time_ms()?,
+            )
+            .await
+    }
+
+    pub async fn set_project_favorite(
+        &self,
+        access: &AccessContext,
+        id: ProjectId,
+        favorite: bool,
+        expected: Revision,
+        key: IdempotencyKey,
+    ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
+        require_m3(access, Permission::ProjectsManage)?;
+        let _guard = self.locks.acquire(vec![ResourceKey::Project(id)]).await;
+        self.store
+            .set_project_favorite(
+                access.principal().clone(),
+                id,
+                favorite,
+                expected,
                 key,
                 m3_time_ms()?,
             )

@@ -1,9 +1,9 @@
 {
-    "status": "approved-for-production-implementation",
+    "status": "implemented-active-contract-evidence",
     "from": 10,
     "to": 11,
-    "productionMigration": null,
-    "productionWiringCreated": false,
+    "productionMigration": "crates/alcomd-store/migrations/0011_project_preferences.sql",
+    "productionWiringCreated": true,
     "transaction": "BEGIN IMMEDIATE",
     "userVersionSetLast": true,
     "rollbackAuthorityOnFailure": 10,

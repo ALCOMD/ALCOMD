@@ -691,3 +691,30 @@ Operation phase、Copy Profile v1、quota、source 两遍 SHA-256 一致性、si
 Resource Lock 与稳定错误由 `m7-project-copy.proposal.schema.json` 和 `../storage/state-v10.md` 冻结。State v10 只增加
 `project_copy_plans`、`project_copy_filesystem_journal` 与 `operations.kind='projects.copy'`；完整 wiring 后 hello 广告
 `dataSchema: 10`。新增 method/capability/字段是 RPC v1 兼容增加，既有 Project/Package 方法语义不变。
+
+## 26. M7 兼容增加：Project Favorite 与 Unity Editor Selection
+
+M7 在 RPC major 1 上兼容增加三个 method，不增加 capability 或 permission：
+
+| method | params | result | capability / permission |
+|---|---|---|---|
+| `projects.setFavorite` | ProjectId、boolean Favorite、positive exact Project revision、idempotency key | 既有 `ProjectWriteResult` | `projects.registry.v1` / `projects.manage` |
+| `unity.projectEditor.selection.get` | ProjectId | `ProjectEditorSelectionState`，不含 `replayed` | `unity.read.v1` / `unity.read` |
+| `unity.projectEditor.clear` | ProjectId、preference expected revision、idempotency key | automatic selection state、`replayed` | `unity.manage.v1` / `unity.manage` |
+
+注册 Project 的 `ProjectSnapshot` 兼容增加 `favorite: boolean`；anonymous `projects.inspect` snapshot 省略该字段。
+Favorite 是 registry metadata，不进入 filesystem observation 或 `snapshot_json`。Core list ordering/cursor 不变；真实 mutation
+增加 Project revision并写 `project.favorite_changed`，精确 same-value request 是保存幂等结果的 semantic no-op。
+
+现有 `ProjectEditorPreference` 及 `unity.projectEditor.get/set` 保持 explicit-only 成功 shape。新 selection state 使用 closed
+`automatic | explicit { installationId }` union；缺失 preference row 规范化为 automatic、empty arguments、revision 0、
+updatedAtMs 0。`clear` 保留 arguments，只把 explicit selection 改为 automatic，并写
+`unity.project-editor.selection_cleared`；它不增加 Project revision。
+
+automatic `unity.launch` 复用既有 Unity major.minor compatibility：零候选返回
+`unity_installation_not_found`，一个候选启动，多个候选返回唯一新增错误
+`unity_editor_selection_required`。explicit launch 保持既有 fingerprint v1；automatic authority 使用不含解析后
+installation ID 的 fingerprint v2，并在 registry 解析前优先 replay 已接受结果。完整 DTO、legacy compatibility、CAS 与
+fingerprint 由 `m3-project-repository.schema.json`、`m5-unity.schema.json` 和
+`m7-project-preferences.proposal.schema.json` 的 implemented contract evidence 冻结。State v11 完整接线后 hello 广告
+`dataSchema: 11`。

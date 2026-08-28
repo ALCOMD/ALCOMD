@@ -44,6 +44,7 @@
             "properties": {
                 "projectId": {"oneOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
                 "registeredAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+                "favorite": {"type": "boolean"},
                 "rootPath": {"$ref": "#/$defs/absolutePath"},
                 "projectType": {
                     "enum": [
@@ -149,6 +150,16 @@
             "type": "object", "additionalProperties": false, "required": ["projectId", "expectedRevision", "idempotencyKey"],
             "properties": {
                 "projectId": {"$ref": "#/$defs/uuid"},
+                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
+            }
+        },
+        "projectSetFavoriteParams": {
+            "type": "object", "additionalProperties": false,
+            "required": ["projectId", "favorite", "expectedRevision", "idempotencyKey"],
+            "properties": {
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "favorite": {"type": "boolean"},
                 "expectedRevision": {"$ref": "#/$defs/revision"},
                 "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
             }

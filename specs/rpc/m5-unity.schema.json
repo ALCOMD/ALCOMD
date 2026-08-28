@@ -12,6 +12,8 @@
                 "unity.installations.refresh",
                 "unity.projectEditor.get",
                 "unity.projectEditor.set",
+                "unity.projectEditor.selection.get",
+                "unity.projectEditor.clear",
                 "unity.writerState",
                 "unity.launch",
                 "unity.launchStatus"
@@ -29,7 +31,7 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 9223372036854775807,
-            "description": "0 requires the preference to be absent; positive values require an exact match."
+            "description": "0 is the missing-state sentinel. Legacy projectEditor.set also accepts 0 for stored automatic selection; clear requires an exact positive revision for every stored row."
         },
         "idempotencyKey": {
             "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[!-~]+$"
@@ -86,6 +88,34 @@
                 "installationId": {"$ref": "#/$defs/uuid"},
                 "arguments": {"$ref": "#/$defs/boundedArguments"},
                 "revision": {"$ref": "#/$defs/revision"},
+                "updatedAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807}
+            }
+        },
+        "projectEditorSelection": {
+            "oneOf": [
+                {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["mode"], "properties": {"mode": {"const": "automatic"}}
+                },
+                {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["mode", "installationId"],
+                    "properties": {
+                        "mode": {"const": "explicit"},
+                        "installationId": {"$ref": "#/$defs/uuid"}
+                    }
+                }
+            ]
+        },
+        "projectEditorSelectionState": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["projectId", "selection", "arguments", "revision", "updatedAtMs"],
+            "properties": {
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "selection": {"$ref": "#/$defs/projectEditorSelection"},
+                "arguments": {"$ref": "#/$defs/boundedArguments"},
+                "revision": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
                 "updatedAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807}
             }
         },
@@ -181,6 +211,19 @@
                 "projectId": {"$ref": "#/$defs/uuid"},
                 "installationId": {"$ref": "#/$defs/uuid"},
                 "arguments": {"$ref": "#/$defs/boundedArguments"},
+                "expectedRevision": {"$ref": "#/$defs/expectedOptionalRevision"},
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
+            }
+        },
+        "projectEditorSelectionGetParams": {
+            "type": "object", "additionalProperties": false, "required": ["projectId"],
+            "properties": {"projectId": {"$ref": "#/$defs/uuid"}}
+        },
+        "projectEditorClearParams": {
+            "type": "object", "additionalProperties": false,
+            "required": ["projectId", "expectedRevision", "idempotencyKey"],
+            "properties": {
+                "projectId": {"$ref": "#/$defs/uuid"},
                 "expectedRevision": {"$ref": "#/$defs/expectedOptionalRevision"},
                 "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
             }

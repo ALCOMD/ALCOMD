@@ -131,6 +131,31 @@ pub(super) async fn dispatch(
                 Err(error) => m3_error(request.id, error),
             }
         }
+        rpc::METHOD_PROJECTS_SET_FAVORITE => {
+            require!(request, state, rpc::CAPABILITY_PROJECTS_REGISTRY_V1);
+            let params: rpc::ProjectSetFavoriteParams = parse!(request);
+            let parsed = app::ProjectId::parse(&params.project_id)
+                .ok()
+                .zip(Revision::new(params.expected_revision))
+                .zip(IdempotencyKey::parse(params.idempotency_key).ok());
+            let Some(((id, expected), key)) = parsed else {
+                return invalid(request.id);
+            };
+            match application
+                .set_project_favorite(access, id, params.favorite, expected, key)
+                .await
+            {
+                Ok(value) => success_action(
+                    request.id,
+                    rpc::ProjectWriteResult {
+                        project: project_record(value.value),
+                        replayed: value.replayed,
+                    },
+                    None,
+                ),
+                Err(error) => m3_error(request.id, error),
+            }
+        }
         rpc::METHOD_PROJECTS_UNREGISTER => {
             require!(request, state, rpc::CAPABILITY_PROJECTS_REGISTRY_V1);
             let params: rpc::ProjectMutationParams = parse!(request);
@@ -372,7 +397,7 @@ fn registry_cursor<I: ToString>(value: app::RegistryCursor<I>) -> rpc::RegistryC
 }
 
 fn project_observation(value: app::ProjectObservation) -> rpc::ProjectSnapshot {
-    project_snapshot(None, None, value, None)
+    project_snapshot(None, None, value, None, None)
 }
 
 fn project_record(value: app::ProjectRecord) -> rpc::ProjectSnapshot {
@@ -381,6 +406,7 @@ fn project_record(value: app::ProjectRecord) -> rpc::ProjectSnapshot {
         Some(value.registered_at_ms),
         value.observation,
         Some(value.revision.get()),
+        Some(value.favorite),
     )
 }
 
@@ -389,6 +415,7 @@ fn project_snapshot(
     registered_at_ms: Option<u64>,
     value: app::ProjectObservation,
     revision: Option<u64>,
+    favorite: Option<bool>,
 ) -> rpc::ProjectSnapshot {
     rpc::ProjectSnapshot {
         project_id,
@@ -412,6 +439,7 @@ fn project_snapshot(
         issues: value.issues.into_iter().map(issue).collect(),
         observed_at_ms: value.observed_at_ms,
         revision,
+        favorite,
     }
 }
 

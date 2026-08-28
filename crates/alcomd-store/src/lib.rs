@@ -23,12 +23,12 @@ use alcomd_application::{
     PackagePlanDraft, PackagePlanRecord, PlanId, PrincipalId, ProjectCopyApplyOutcome,
     ProjectCopyInventoryEvidence, ProjectCopyOperationRecord, ProjectCopyPhase,
     ProjectCopyPlanDraft, ProjectCopyPlanOutcome, ProjectCopyPlanRecord, ProjectEditorPreference,
-    ProjectId, ProjectObservation, ProjectPage, ProjectRecord, PublishedProjectCopy,
-    PublishedTemplate, RegistryCursor, RepositoryId, RepositoryObservation, RepositoryPage,
-    RepositoryRecord, RepositoryValidators, ResolverCatalog, RestoredProject, Revision,
-    StateCheckResult, StateStore, StoreError, StoredBackupRecord, StoredTemplateRecord, SyncWrite,
-    TemplateApplyOutcome, TemplateCursor, TemplateId, TemplatePlanDraft, TemplatePlanRecord,
-    UnityInstallationCursor, UnityInstallationId, UnityInstallationObservation,
+    ProjectEditorSelectionState, ProjectId, ProjectObservation, ProjectPage, ProjectRecord,
+    PublishedProjectCopy, PublishedTemplate, RegistryCursor, RepositoryId, RepositoryObservation,
+    RepositoryPage, RepositoryRecord, RepositoryValidators, ResolverCatalog, RestoredProject,
+    Revision, StateCheckResult, StateStore, StoreError, StoredBackupRecord, StoredTemplateRecord,
+    SyncWrite, TemplateApplyOutcome, TemplateCursor, TemplateId, TemplatePlanDraft,
+    TemplatePlanRecord, UnityInstallationCursor, UnityInstallationId, UnityInstallationObservation,
     UnityInstallationPage, UnityInstallationRecord, UnityLaunchId, UnityLaunchRecord,
     UnityLaunchState, UnregisterResult,
 };
@@ -49,7 +49,7 @@ mod sqlite;
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 10;
+pub const CURRENT_DATA_SCHEMA: u32 = 11;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]
@@ -227,6 +227,21 @@ impl M3RegistryStore for StateStoreHandle {
     ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
         self.request_m3(move |connection| {
             m3::refresh_project(connection, &owner, id, expected, observation, &key, now_ms)
+        })
+        .await
+    }
+
+    async fn set_project_favorite(
+        &self,
+        owner: PrincipalId,
+        id: ProjectId,
+        favorite: bool,
+        expected: Revision,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<SyncWrite<ProjectRecord>, M3Error> {
+        self.request_m3(move |connection| {
+            m3::set_project_favorite(connection, &owner, id, favorite, expected, &key, now_ms)
         })
         .await
     }
@@ -977,6 +992,18 @@ impl M5UnityStore for StateStoreHandle {
         .await
     }
 
+    async fn get_project_editor_selection(
+        &self,
+        owner: PrincipalId,
+        project_id: ProjectId,
+    ) -> Result<ProjectEditorSelectionState, M5UnityError> {
+        self.request_worker(
+            move |connection| m5::get_project_editor_selection(connection, &owner, project_id),
+            m5::unavailable,
+        )
+        .await
+    }
+
     async fn set_project_editor(
         &self,
         owner: PrincipalId,
@@ -1005,17 +1032,43 @@ impl M5UnityStore for StateStoreHandle {
         .await
     }
 
+    async fn clear_project_editor(
+        &self,
+        owner: PrincipalId,
+        project_id: ProjectId,
+        expected: Option<Revision>,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<(ProjectEditorSelectionState, bool), M5UnityError> {
+        self.request_worker(
+            move |connection| {
+                m5::clear_project_editor(connection, &owner, project_id, expected, &key, now_ms)
+            },
+            m5::unavailable,
+        )
+        .await
+    }
+
     async fn accept_launch(
         &self,
         owner: PrincipalId,
         project: ProjectRecord,
-        preference: ProjectEditorPreference,
+        selection: ProjectEditorSelectionState,
+        resolved_installation_id: UnityInstallationId,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<(UnityLaunchRecord, bool), M5UnityError> {
         self.request_worker(
             move |connection| {
-                m5::accept_launch(connection, &owner, project, preference, &key, now_ms)
+                m5::accept_launch(
+                    connection,
+                    &owner,
+                    project,
+                    selection,
+                    resolved_installation_id,
+                    &key,
+                    now_ms,
+                )
             },
             m5::unavailable,
         )
@@ -1026,11 +1079,11 @@ impl M5UnityStore for StateStoreHandle {
         &self,
         owner: PrincipalId,
         project: ProjectRecord,
-        preference: ProjectEditorPreference,
+        selection: ProjectEditorSelectionState,
         key: IdempotencyKey,
     ) -> Result<Option<UnityLaunchRecord>, M5UnityError> {
         self.request_worker(
-            move |connection| m5::replay_launch(connection, &owner, &project, &preference, &key),
+            move |connection| m5::replay_launch(connection, &owner, &project, &selection, &key),
             m5::unavailable,
         )
         .await

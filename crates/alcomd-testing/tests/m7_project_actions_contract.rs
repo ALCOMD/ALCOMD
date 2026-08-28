@@ -85,7 +85,7 @@ fn implemented_project_copy_contract_is_bounded_and_active() {
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_PLAN_COPY"));
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_APPLY_COPY"));
     assert!(ACTIVE_PROTOCOL.contains("CAPABILITY_PROJECTS_COPY_V1"));
-    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 10;"));
+    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 11;"));
 }
 
 #[test]
@@ -278,18 +278,20 @@ fn official_gui_local_project_affordances_remain_closed() {
 }
 
 #[test]
-fn p5_b_project_preferences_are_exact_proposals_not_production_wiring() {
+fn p5_b_project_preferences_are_exact_active_contracts() {
     let schema: Value =
         serde_json::from_str(P5_PREFERENCE_SCHEMA).expect("P5 preference proposal schema");
     let vectors: Value =
         serde_json::from_str(P5_PREFERENCE_VECTORS).expect("P5 preference vectors");
     let migration: Value = serde_json::from_str(STATE_V11_MIGRATION).expect("State v11 proposal");
 
+    assert_eq!(vectors["status"], "implemented-active-contract-evidence");
+    assert_eq!(vectors["activeProductionModified"], true);
     assert_eq!(
         schema["x-alcomd-publication"],
-        "approved-for-production-implementation"
+        "implemented-active-contract-evidence"
     );
-    assert_eq!(schema["x-alcomd-active-rpc-modified"], false);
+    assert_eq!(schema["x-alcomd-active-rpc-modified"], true);
     assert_eq!(schema["x-alcomd-state-schema"], 11);
     assert_eq!(
         schema["properties"]["methods"]["const"],
@@ -369,14 +371,14 @@ fn p5_b_project_preferences_are_exact_proposals_not_production_wiring() {
         "unity_editor_selection_required"
     );
 
-    assert_eq!(
-        migration["status"],
-        "approved-for-production-implementation"
-    );
+    assert_eq!(migration["status"], "implemented-active-contract-evidence");
     assert_eq!(migration["from"], 10);
     assert_eq!(migration["to"], 11);
-    assert_eq!(migration["productionMigration"], Value::Null);
-    assert_eq!(migration["productionWiringCreated"], false);
+    assert_eq!(
+        migration["productionMigration"],
+        "crates/alcomd-store/migrations/0011_project_preferences.sql"
+    );
+    assert_eq!(migration["productionWiringCreated"], true);
     assert_eq!(migration["userVersionSetLast"], true);
     assert_eq!(migration["rollbackAuthorityOnFailure"], 10);
     assert_eq!(migration["tablesAdded"], json!([]));
@@ -384,17 +386,16 @@ fn p5_b_project_preferences_are_exact_proposals_not_production_wiring() {
         migration["projectEditorPreference"]["argumentsPreservedOnClear"],
         true
     );
-    assert!(STATE_V11.contains("尚无 production migration"));
-    assert!(STATE_V11.contains("`dataSchema: 10`"));
+    assert!(STATE_V11.contains("`dataSchema: 11`"));
 
-    assert!(!ACTIVE_RPC.contains("projects.setFavorite"));
-    assert!(!ACTIVE_RPC.contains("unity.projectEditor.selection.get"));
-    assert!(!ACTIVE_RPC.contains("unity.projectEditor.clear"));
-    assert!(!ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_SET_FAVORITE"));
-    assert!(!ACTIVE_PROTOCOL.contains("METHOD_UNITY_PROJECT_EDITOR_CLEAR"));
-    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 10;"));
+    assert!(ACTIVE_RPC.contains("projects.setFavorite"));
+    assert!(ACTIVE_RPC.contains("unity.projectEditor.selection.get"));
+    assert!(ACTIVE_RPC.contains("unity.projectEditor.clear"));
+    assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_SET_FAVORITE"));
+    assert!(ACTIVE_PROTOCOL.contains("METHOD_UNITY_PROJECT_EDITOR_CLEAR"));
+    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 11;"));
     assert!(
-        !std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../alcomd-store/migrations/0011_project_preferences.sql")
             .exists()
     );

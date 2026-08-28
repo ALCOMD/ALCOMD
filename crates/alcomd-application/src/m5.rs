@@ -73,6 +73,26 @@ pub struct ProjectEditorPreference {
     pub updated_at_ms: u64,
 }
 
+/// Authoritative editor selection without weakening the legacy explicit DTO.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum ProjectEditorSelection {
+    Automatic,
+    Explicit {
+        installation_id: UnityInstallationId,
+    },
+}
+
+/// Editor selection state. `None` is the implicit automatic revision-zero sentinel.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ProjectEditorSelectionState {
+    pub project_id: ProjectId,
+    pub selection: ProjectEditorSelection,
+    pub arguments: Vec<String>,
+    pub revision: Option<Revision>,
+    pub updated_at_ms: u64,
+}
+
 /// One short-lived, non-persisted process observation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UnityProcessObservation {
@@ -142,6 +162,7 @@ pub enum M5UnityErrorCode {
     InstallationNotFound,
     InstallationInvalid,
     InstallationInUse,
+    EditorSelectionRequired,
     VersionUnverified,
     VersionMismatch,
     ProjectSelectorForbidden,
@@ -219,6 +240,11 @@ pub trait M5UnityStore: Clone + Send + Sync + 'static {
         owner: PrincipalId,
         project_id: ProjectId,
     ) -> impl Future<Output = Result<ProjectEditorPreference, M5UnityError>> + Send;
+    fn get_project_editor_selection(
+        &self,
+        owner: PrincipalId,
+        project_id: ProjectId,
+    ) -> impl Future<Output = Result<ProjectEditorSelectionState, M5UnityError>> + Send;
     #[allow(clippy::too_many_arguments)]
     fn set_project_editor(
         &self,
@@ -230,11 +256,20 @@ pub trait M5UnityStore: Clone + Send + Sync + 'static {
         key: IdempotencyKey,
         now_ms: u64,
     ) -> impl Future<Output = Result<(ProjectEditorPreference, bool), M5UnityError>> + Send;
+    fn clear_project_editor(
+        &self,
+        owner: PrincipalId,
+        project_id: ProjectId,
+        expected: Option<Revision>,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> impl Future<Output = Result<(ProjectEditorSelectionState, bool), M5UnityError>> + Send;
     fn accept_launch(
         &self,
         owner: PrincipalId,
         project: ProjectRecord,
-        preference: ProjectEditorPreference,
+        selection: ProjectEditorSelectionState,
+        resolved_installation_id: UnityInstallationId,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> impl Future<Output = Result<(UnityLaunchRecord, bool), M5UnityError>> + Send;
@@ -242,7 +277,7 @@ pub trait M5UnityStore: Clone + Send + Sync + 'static {
         &self,
         owner: PrincipalId,
         project: ProjectRecord,
-        preference: ProjectEditorPreference,
+        selection: ProjectEditorSelectionState,
         key: IdempotencyKey,
     ) -> impl Future<Output = Result<Option<UnityLaunchRecord>, M5UnityError>> + Send;
     fn get_launch(
@@ -375,6 +410,17 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
             .await
     }
 
+    pub async fn get_project_editor_selection(
+        &self,
+        access: &AccessContext,
+        project_id: ProjectId,
+    ) -> Result<ProjectEditorSelectionState, M5UnityError> {
+        require(access, Permission::UnityRead)?;
+        self.store
+            .get_project_editor_selection(access.principal().clone(), project_id)
+            .await
+    }
+
     pub async fn set_project_editor(
         &self,
         access: &AccessContext,
@@ -392,6 +438,25 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
                 project_id,
                 installation_id,
                 arguments,
+                expected,
+                key,
+                now_ms()?,
+            )
+            .await
+    }
+
+    pub async fn clear_project_editor(
+        &self,
+        access: &AccessContext,
+        project_id: ProjectId,
+        expected: Option<Revision>,
+        key: IdempotencyKey,
+    ) -> Result<(ProjectEditorSelectionState, bool), M5UnityError> {
+        require(access, Permission::UnityManage)?;
+        self.store
+            .clear_project_editor(
+                access.principal().clone(),
+                project_id,
                 expected,
                 key,
                 now_ms()?,
@@ -453,26 +518,16 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
         if project.revision != expected_project_revision {
             return Err(M5UnityError::new(M5UnityErrorCode::RevisionConflict));
         }
-        let preference = self
+        let selection = self
             .store
-            .get_project_editor(access.principal().clone(), project_id)
+            .get_project_editor_selection(access.principal().clone(), project_id)
             .await?;
-        let installation = self
-            .store
-            .get_installation(access.principal().clone(), preference.installation_id)
-            .await?;
-        if !compatible_unity_versions(
-            &project.observation.unity_version,
-            &installation.observation.unity_version,
-        ) {
-            return Err(M5UnityError::new(M5UnityErrorCode::VersionMismatch));
-        }
         if let Some(record) = self
             .store
             .replay_launch(
                 access.principal().clone(),
                 project.clone(),
-                preference.clone(),
+                selection.clone(),
                 key.clone(),
             )
             .await?
@@ -482,6 +537,46 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
             } else {
                 Ok((record, true))
             };
+        }
+        let installation_id = match selection.selection {
+            ProjectEditorSelection::Explicit { installation_id } => installation_id,
+            ProjectEditorSelection::Automatic => {
+                let mut cursor = None;
+                let mut compatible = Vec::new();
+                loop {
+                    let page = self
+                        .store
+                        .list_installations(access.principal().clone(), cursor, 1_000)
+                        .await?;
+                    compatible.extend(page.installations.into_iter().filter(|installation| {
+                        compatible_unity_versions(
+                            &project.observation.unity_version,
+                            &installation.observation.unity_version,
+                        )
+                    }));
+                    let Some(next) = page.next_cursor else {
+                        break;
+                    };
+                    cursor = Some(next);
+                }
+                match compatible.as_slice() {
+                    [] => return Err(M5UnityError::new(M5UnityErrorCode::InstallationNotFound)),
+                    [installation] => installation.installation_id,
+                    _ => {
+                        return Err(M5UnityError::new(M5UnityErrorCode::EditorSelectionRequired));
+                    }
+                }
+            }
+        };
+        let installation = self
+            .store
+            .get_installation(access.principal().clone(), installation_id)
+            .await?;
+        if !compatible_unity_versions(
+            &project.observation.unity_version,
+            &installation.observation.unity_version,
+        ) {
+            return Err(M5UnityError::new(M5UnityErrorCode::VersionMismatch));
         }
         let writer = self.writer_state_unchecked(access, project_id).await?;
         match writer.state {
@@ -498,7 +593,8 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
             .accept_launch(
                 access.principal().clone(),
                 project.clone(),
-                preference.clone(),
+                selection.clone(),
+                installation_id,
                 key,
                 now_ms()?,
             )
@@ -514,7 +610,7 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
             .launch(
                 installation.observation.executable_path,
                 project.observation.root_path,
-                preference.arguments,
+                selection.arguments,
             )
             .await
             .is_err()
@@ -870,6 +966,7 @@ mod tests {
             },
             revision: Revision::INITIAL,
             registered_at_ms: 1,
+            favorite: false,
         }
     }
 

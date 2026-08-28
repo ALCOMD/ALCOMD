@@ -80,6 +80,7 @@
                 "unity_project_selector_forbidden",
                 "unity_launch_failed",
                 "unity_launch_not_found",
+                "unity_editor_selection_required",
                 "template_not_found",
                 "template_bundle_invalid",
                 "template_manifest_invalid",

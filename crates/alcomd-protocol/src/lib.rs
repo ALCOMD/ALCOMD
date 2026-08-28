@@ -74,6 +74,7 @@ pub const METHOD_PROJECTS_LIST: &str = "projects.list";
 pub const METHOD_PROJECTS_GET: &str = "projects.get";
 pub const METHOD_PROJECTS_REGISTER: &str = "projects.register";
 pub const METHOD_PROJECTS_REFRESH: &str = "projects.refresh";
+pub const METHOD_PROJECTS_SET_FAVORITE: &str = "projects.setFavorite";
 pub const METHOD_PROJECTS_UNREGISTER: &str = "projects.unregister";
 pub const METHOD_REPOSITORIES_INSPECT: &str = "repositories.inspect";
 pub const METHOD_REPOSITORIES_LIST: &str = "repositories.list";
@@ -95,6 +96,8 @@ pub const METHOD_UNITY_INSTALLATIONS_REMOVE: &str = "unity.installations.remove"
 pub const METHOD_UNITY_INSTALLATIONS_REFRESH: &str = "unity.installations.refresh";
 pub const METHOD_UNITY_PROJECT_EDITOR_GET: &str = "unity.projectEditor.get";
 pub const METHOD_UNITY_PROJECT_EDITOR_SET: &str = "unity.projectEditor.set";
+pub const METHOD_UNITY_PROJECT_EDITOR_SELECTION_GET: &str = "unity.projectEditor.selection.get";
+pub const METHOD_UNITY_PROJECT_EDITOR_CLEAR: &str = "unity.projectEditor.clear";
 pub const METHOD_UNITY_WRITER_STATE: &str = "unity.writerState";
 pub const METHOD_UNITY_LAUNCH: &str = "unity.launch";
 pub const METHOD_UNITY_LAUNCH_STATUS: &str = "unity.launchStatus";
@@ -247,6 +250,7 @@ pub mod error_code {
     pub const UNITY_INSTALLATION_NOT_FOUND: &str = "unity_installation_not_found";
     pub const UNITY_INSTALLATION_INVALID: &str = "unity_installation_invalid";
     pub const UNITY_INSTALLATION_IN_USE: &str = "unity_installation_in_use";
+    pub const UNITY_EDITOR_SELECTION_REQUIRED: &str = "unity_editor_selection_required";
     pub const UNITY_VERSION_UNVERIFIED: &str = "unity_version_unverified";
     pub const UNITY_VERSION_MISMATCH: &str = "unity_version_mismatch";
     pub const UNITY_ARCHITECTURE_UNSUPPORTED: &str = "unity_architecture_unsupported";
@@ -751,14 +755,14 @@ impl HelloResult {
         }
     }
 
-    /// Creates the M7 hello result after Schema v10 and Project Copy wiring are ready.
+    /// Creates the M7 hello result after Schema v11 and Project preference wiring are ready.
     #[must_use]
     pub fn m7(capabilities: Vec<String>) -> Self {
         Self {
             rpc_version: RPC_VERSION,
             daemon_version: env!("CARGO_PKG_VERSION").to_owned(),
             capabilities,
-            data_schema: Some(10),
+            data_schema: Some(11),
             config_schema: None,
             extension_api: Some(ExtensionApiInfo {
                 major: 1,
@@ -1071,6 +1075,8 @@ pub struct ProjectSnapshot {
     pub issues: Vec<ReadIssue>,
     pub observed_at_ms: u64,
     pub revision: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub favorite: Option<bool>,
 }
 
 /// Local or anonymous remote repository source.
@@ -1154,6 +1160,15 @@ pub struct ProjectRegisterParams {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProjectMutationParams {
     pub project_id: String,
+    pub expected_revision: u64,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectSetFavoriteParams {
+    pub project_id: String,
+    pub favorite: bool,
     pub expected_revision: u64,
     pub idempotency_key: String,
 }
@@ -1522,6 +1537,44 @@ pub struct ProjectEditorSetParams {
 #[serde(rename_all = "camelCase")]
 pub struct ProjectEditorResult {
     pub preference: ProjectEditorPreference,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ProjectEditorSelection {
+    Automatic,
+    Explicit { installation_id: String },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectEditorSelectionState {
+    pub project_id: String,
+    pub selection: ProjectEditorSelection,
+    pub arguments: Vec<String>,
+    pub revision: u64,
+    pub updated_at_ms: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectEditorSelectionResult {
+    pub preference: ProjectEditorSelectionState,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectEditorClearParams {
+    pub project_id: String,
+    pub expected_revision: u64,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectEditorClearResult {
+    pub preference: ProjectEditorSelectionState,
     pub replayed: bool,
 }
 

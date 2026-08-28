@@ -403,7 +403,7 @@ fn m4_operation_and_data_schema_are_compatible_additions() {
     let hello = schema("system-hello.response");
     assert_eq!(
         hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
-        json!([1, 2, 3, 4, 5, 6, 7, 8, 9])
+        json!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
     );
 }
 
@@ -421,6 +421,8 @@ fn m5_unity_schema_freezes_methods_capabilities_and_honest_writer_states() {
             "unity.installations.refresh",
             "unity.projectEditor.get",
             "unity.projectEditor.set",
+            "unity.projectEditor.selection.get",
+            "unity.projectEditor.clear",
             "unity.writerState",
             "unity.launch",
             "unity.launchStatus"
@@ -475,11 +477,11 @@ fn m5_unity_schema_keeps_launch_and_management_separate() {
 }
 
 #[test]
-fn hello_schema_accepts_the_implemented_v9_store() {
+fn hello_schema_accepts_the_implemented_v11_store() {
     let hello = schema("system-hello.response");
     assert_eq!(
         hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
-        json!([1, 2, 3, 4, 5, 6, 7, 8, 9])
+        json!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
     );
 }
 
@@ -502,9 +504,48 @@ fn m5_cli_and_unity_errors_are_stable_machine_codes() {
         "unity_project_selector_forbidden",
         "unity_launch_failed",
         "unity_launch_not_found",
+        "unity_editor_selection_required",
     ] {
         assert!(codes.iter().any(|candidate| candidate == code), "{code}");
     }
+}
+
+#[test]
+fn m7_project_preferences_are_active_compatible_additions() {
+    let projects = schema("m3-project-repository");
+    assert_eq!(
+        projects["$defs"]["projectSnapshot"]["properties"]["favorite"]["type"],
+        "boolean"
+    );
+    assert_eq!(
+        projects["$defs"]["projectSetFavoriteParams"]["required"],
+        json!([
+            "projectId",
+            "favorite",
+            "expectedRevision",
+            "idempotencyKey"
+        ])
+    );
+
+    let unity = schema("m5-unity");
+    assert_eq!(
+        unity["$defs"]["projectEditorSelectionState"]["required"],
+        json!([
+            "projectId",
+            "selection",
+            "arguments",
+            "revision",
+            "updatedAtMs"
+        ])
+    );
+    assert_eq!(
+        unity["$defs"]["projectEditorSelectionState"]["properties"]["revision"]["minimum"],
+        0
+    );
+    assert_eq!(
+        unity["$defs"]["projectEditorClearParams"]["required"],
+        json!(["projectId", "expectedRevision", "idempotencyKey"])
+    );
 }
 
 #[test]

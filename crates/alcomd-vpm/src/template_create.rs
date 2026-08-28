@@ -106,6 +106,7 @@ pub(super) async fn plan_create_project(
             observation,
             revision: Revision::INITIAL,
             registered_at_ms: 0,
+            favorite: false,
         };
         let snapshot = inspect_package_project(&project)
             .map_err(|_| error(M5TemplateErrorCode::TemplateBundleInvalid))?;

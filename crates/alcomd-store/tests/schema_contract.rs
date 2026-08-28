@@ -10,6 +10,184 @@ const MIGRATION_V7: &str = include_str!("../migrations/0007_backup_restore.sql")
 const MIGRATION_V8: &str = include_str!("../migrations/0008_extension_runtime.sql");
 const MIGRATION_V9: &str = include_str!("../migrations/0009_portable_extension_ui.sql");
 const MIGRATION_V10: &str = include_str!("../migrations/0010_project_copy.sql");
+const MIGRATION_V11: &str = include_str!("../migrations/0011_project_preferences.sql");
+
+#[test]
+fn schema_v11_adds_favorite_and_rebuilds_editor_preferences_atomically() {
+    let connection = migrated_v10_connection();
+    insert_project(&connection);
+    connection
+        .execute_batch(
+            "INSERT INTO projects (
+                project_id, owner_principal_id, root_path, path_identity_key, project_type,
+                unity_version, snapshot_json, revision, registered_at_ms, observed_at_ms,
+                updated_at_ms
+             ) VALUES ('00000000-0000-4000-8000-000000000202', 'builtin:local-owner',
+                       'X:/fixture-missing-preference', x'03', 'unknown', '2022.3.22f1',
+                       '{}', 4, 2, 2, 2);
+             INSERT INTO events (
+                event_id, kind, aggregate_kind, aggregate_id, aggregate_revision,
+                principal_id, occurred_at_ms, payload_json
+             ) VALUES ('00000000-0000-4000-8000-000000000403', 'project.refreshed',
+                       'project', '00000000-0000-4000-8000-000000000202', 4,
+                       'builtin:local-owner', 2, '{}');
+             INSERT INTO idempotency_records (
+                principal_id, method, idempotency_key, request_fingerprint, state,
+                operation_id, response_json, created_at_ms
+             ) VALUES ('builtin:local-owner', 'projects.refresh', 'v11-preserved', '{}',
+                       'completed', NULL, '{\"preserved\":true}', 2);",
+        )
+        .expect("insert v10 preservation fixtures");
+    let event_sequence_before: i64 = connection
+        .query_row("SELECT max(sequence) FROM events", [], |row| row.get(0))
+        .expect("read v10 event sequence");
+    connection
+        .execute(
+            "INSERT INTO unity_installations (
+                installation_id, owner_principal_id, executable_path, filesystem_identity_key,
+                unity_version, architecture, source_kind, revision, observed_at_ms, updated_at_ms
+             ) VALUES (
+                '00000000-0000-4000-8000-000000000401', 'builtin:local-owner',
+                'X:/Unity.exe', x'02', '2022.3.22f1', 'x86_64', 'manual', 1, 1, 1
+             )",
+            [],
+        )
+        .expect("insert Unity installation");
+    connection
+        .execute(
+            "INSERT INTO project_editor_preferences (
+                project_id, installation_id, arguments_json, revision, updated_at_ms
+             ) VALUES (
+                '00000000-0000-4000-8000-000000000201',
+                '00000000-0000-4000-8000-000000000401', '[\"-logFile\"]', 3, 9
+             )",
+            [],
+        )
+        .expect("insert v10 editor preference");
+
+    connection
+        .execute_batch(MIGRATION_V11)
+        .expect("apply migration v11");
+
+    assert_eq!(user_version(&connection), 11);
+    let favorite: i64 = connection
+        .query_row(
+            "SELECT favorite FROM projects WHERE project_id =
+             '00000000-0000-4000-8000-000000000201'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read favorite default");
+    assert_eq!(favorite, 0);
+    let favorites: Vec<i64> = connection
+        .prepare("SELECT favorite FROM projects ORDER BY project_id")
+        .expect("prepare favorites")
+        .query_map([], |row| row.get(0))
+        .expect("query favorites")
+        .collect::<Result<_, _>>()
+        .expect("collect favorites");
+    assert_eq!(favorites, vec![0, 0]);
+    let preference: (String, Option<String>, String, i64, i64) = connection
+        .query_row(
+            "SELECT selection_mode, installation_id, arguments_json, revision, updated_at_ms
+             FROM project_editor_preferences WHERE project_id =
+             '00000000-0000-4000-8000-000000000201'",
+            [],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .expect("read migrated preference");
+    assert_eq!(
+        preference,
+        (
+            "explicit".to_owned(),
+            Some("00000000-0000-4000-8000-000000000401".to_owned()),
+            "[\"-logFile\"]".to_owned(),
+            3,
+            9,
+        )
+    );
+    let preference_count: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM project_editor_preferences",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count preferences");
+    assert_eq!(preference_count, 1, "missing preferences stay implicit");
+    let project_revision: i64 = connection
+        .query_row(
+            "SELECT revision FROM projects WHERE project_id =
+             '00000000-0000-4000-8000-000000000202'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read preserved project revision");
+    assert_eq!(project_revision, 4);
+    let event_sequence_after: i64 = connection
+        .query_row("SELECT max(sequence) FROM events", [], |row| row.get(0))
+        .expect("read v11 event sequence");
+    assert_eq!(event_sequence_after, event_sequence_before);
+    let idempotency_response: String = connection
+        .query_row(
+            "SELECT response_json FROM idempotency_records
+             WHERE principal_id='builtin:local-owner' AND method='projects.refresh'
+               AND idempotency_key='v11-preserved'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read preserved idempotency response");
+    assert_eq!(idempotency_response, "{\"preserved\":true}");
+    let foreign_keys: i64 = connection
+        .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+            row.get(0)
+        })
+        .expect("foreign key check");
+    assert_eq!(foreign_keys, 0);
+
+    let rollback = migrated_v10_connection();
+    let before = rollback
+        .prepare("SELECT type, name, sql FROM sqlite_schema ORDER BY type, name")
+        .expect("prepare v10 schema")
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })
+        .expect("query v10 schema")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect v10 schema");
+    let failing = MIGRATION_V11.replace(
+        "PRAGMA user_version = 11;",
+        "THIS IS NOT VALID SQL;\nPRAGMA user_version = 11;",
+    );
+    assert!(rollback.execute_batch(&failing).is_err());
+    rollback.execute_batch("ROLLBACK;").expect("rollback v11");
+    assert_eq!(user_version(&rollback), 10);
+    let after = rollback
+        .prepare("SELECT type, name, sql FROM sqlite_schema ORDER BY type, name")
+        .expect("prepare restored v10 schema")
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })
+        .expect("query restored v10 schema")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("collect restored v10 schema");
+    assert_eq!(after, before);
+}
 
 #[test]
 fn schema_v10_adds_only_project_copy_authority_and_is_atomic() {
@@ -2292,6 +2470,14 @@ fn migrated_v9_connection() -> Connection {
     connection
         .execute_batch(MIGRATION_V9)
         .expect("apply migration v9");
+    connection
+}
+
+fn migrated_v10_connection() -> Connection {
+    let connection = migrated_v9_connection();
+    connection
+        .execute_batch(MIGRATION_V10)
+        .expect("apply migration v10");
     connection
 }
 

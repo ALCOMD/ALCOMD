@@ -1,8 +1,9 @@
 use alcomd_application::{
     IdempotencyKey, M5UnityError, M5UnityErrorCode, PrincipalId, ProjectEditorPreference,
-    ProjectId, ProjectRecord, Revision, UnityArchitecture, UnityInstallationCursor,
-    UnityInstallationId, UnityInstallationObservation, UnityInstallationPage,
-    UnityInstallationRecord, UnityLaunchId, UnityLaunchRecord, UnityLaunchState, UnitySourceKind,
+    ProjectEditorSelection, ProjectEditorSelectionState, ProjectId, ProjectRecord, Revision,
+    UnityArchitecture, UnityInstallationCursor, UnityInstallationId, UnityInstallationObservation,
+    UnityInstallationPage, UnityInstallationRecord, UnityLaunchId, UnityLaunchRecord,
+    UnityLaunchState, UnitySourceKind,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::Serialize;
@@ -274,7 +275,8 @@ pub(super) fn get_project_editor(
             "SELECT p.installation_id,p.arguments_json,p.revision,p.updated_at_ms
              FROM project_editor_preferences p
              JOIN projects j ON j.project_id=p.project_id
-             WHERE p.project_id=?1 AND j.owner_principal_id=?2",
+             WHERE p.project_id=?1 AND j.owner_principal_id=?2
+               AND p.selection_mode='explicit'",
             params![project_id.to_string(), owner.as_str()],
             |row| {
                 let id = row.get::<_, String>(0)?;
@@ -294,6 +296,65 @@ pub(super) fn get_project_editor(
                 updated_at_ms: parse_u64(updated)?,
             })
         })
+}
+
+pub(super) fn get_project_editor_selection(
+    connection: &Connection,
+    owner: &PrincipalId,
+    project_id: ProjectId,
+) -> Result<ProjectEditorSelectionState, M5UnityError> {
+    let registered = connection
+        .query_row(
+            "SELECT 1 FROM projects WHERE project_id=?1 AND owner_principal_id=?2",
+            params![project_id.to_string(), owner.as_str()],
+            |_| Ok(()),
+        )
+        .optional()
+        .map_err(failure)?
+        .is_some();
+    if !registered {
+        return Err(error(M5UnityErrorCode::ProjectNotRegistered));
+    }
+    let row = connection
+        .query_row(
+            "SELECT selection_mode,installation_id,arguments_json,revision,updated_at_ms
+             FROM project_editor_preferences WHERE project_id=?1",
+            params![project_id.to_string()],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, i64>(4)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(failure)?;
+    let Some((mode, installation_id, arguments, revision, updated_at_ms)) = row else {
+        return Ok(ProjectEditorSelectionState {
+            project_id,
+            selection: ProjectEditorSelection::Automatic,
+            arguments: Vec::new(),
+            revision: None,
+            updated_at_ms: 0,
+        });
+    };
+    let selection = match (mode.as_str(), installation_id) {
+        ("automatic", None) => ProjectEditorSelection::Automatic,
+        ("explicit", Some(id)) => ProjectEditorSelection::Explicit {
+            installation_id: UnityInstallationId::parse(&id).map_err(|_| corrupt())?,
+        },
+        _ => return Err(corrupt()),
+    };
+    Ok(ProjectEditorSelectionState {
+        project_id,
+        selection,
+        arguments: serde_json::from_str(&arguments).map_err(|_| corrupt())?,
+        revision: Some(parse_revision(revision)?),
+        updated_at_ms: parse_u64(updated_at_ms)?,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -329,28 +390,24 @@ pub(super) fn set_project_editor(
         return Ok((record, true));
     }
     let _ = load_installation(&transaction, owner, installation_id)?;
-    let current = match get_project_editor(&transaction, owner, project_id) {
-        Ok(value) => Some(value),
-        Err(error) if error.code() == M5UnityErrorCode::InstallationNotFound => None,
-        Err(error) => return Err(error),
-    };
-    match (&current, expected) {
-        (None, None) => {}
-        (Some(current), Some(expected)) if current.revision == expected => {}
+    let current = get_project_editor_selection(&transaction, owner, project_id)?;
+    match (current.revision, &current.selection, expected) {
+        (None, ProjectEditorSelection::Automatic, None) => {}
+        (Some(_), ProjectEditorSelection::Automatic, None) => {}
+        (Some(current), _, Some(expected)) if current == expected => {}
         _ => return Err(error(M5UnityErrorCode::RevisionConflict)),
     }
     let revision = current
-        .as_ref()
-        .map_or(Some(Revision::INITIAL), |value| {
-            value.revision.checked_next()
-        })
+        .revision
+        .map_or(Some(Revision::INITIAL), Revision::checked_next)
         .ok_or_else(corrupt)?;
     transaction
         .execute(
             "INSERT INTO project_editor_preferences (
-                project_id,installation_id,arguments_json,revision,updated_at_ms
-             ) VALUES (?1,?2,?3,?4,?5)
+                project_id,selection_mode,installation_id,arguments_json,revision,updated_at_ms
+             ) VALUES (?1,'explicit',?2,?3,?4,?5)
              ON CONFLICT(project_id) DO UPDATE SET
+                selection_mode='explicit',
                 installation_id=excluded.installation_id,
                 arguments_json=excluded.arguments_json,
                 revision=excluded.revision,
@@ -387,16 +444,91 @@ pub(super) fn set_project_editor(
     Ok((record, false))
 }
 
+pub(super) fn clear_project_editor(
+    connection: &mut Connection,
+    owner: &PrincipalId,
+    project_id: ProjectId,
+    expected: Option<Revision>,
+    key: &IdempotencyKey,
+    now_ms: u64,
+) -> Result<(ProjectEditorSelectionState, bool), M5UnityError> {
+    let transaction = transaction(connection)?;
+    let fingerprint = format!(
+        r#"{{"expectedRevision":{},"projectId":"{}","version":1}}"#,
+        expected.map_or(0, Revision::get),
+        project_id
+    );
+    if let Some(record) = replay::<ProjectEditorSelectionState>(
+        &transaction,
+        owner,
+        "unity.projectEditor.clear",
+        key,
+        &fingerprint,
+    )? {
+        transaction.commit().map_err(failure)?;
+        return Ok((record, true));
+    }
+    let current = get_project_editor_selection(&transaction, owner, project_id)?;
+    match (current.revision, &current.selection, expected) {
+        (None, ProjectEditorSelection::Automatic, None) => {}
+        (Some(revision), ProjectEditorSelection::Automatic, Some(expected))
+            if revision == expected => {}
+        (Some(revision), ProjectEditorSelection::Explicit { .. }, Some(expected))
+            if revision == expected => {}
+        _ => return Err(error(M5UnityErrorCode::RevisionConflict)),
+    }
+    let record = match (&current.selection, current.revision) {
+        (ProjectEditorSelection::Explicit { .. }, Some(revision)) => {
+            let next = revision.checked_next().ok_or_else(corrupt)?;
+            transaction
+                .execute(
+                    "UPDATE project_editor_preferences
+                     SET selection_mode='automatic',installation_id=NULL,revision=?1,updated_at_ms=?2
+                     WHERE project_id=?3",
+                    params![
+                        integer(next.get())?,
+                        integer(now_ms)?,
+                        project_id.to_string()
+                    ],
+                )
+                .map_err(failure)?;
+            insert_event(
+                &transaction,
+                owner,
+                "unity.project-editor.selection_cleared",
+                "project-editor-preference",
+                &project_id.to_string(),
+                next,
+                now_ms,
+            )?;
+            get_project_editor_selection(&transaction, owner, project_id)?
+        }
+        _ => current,
+    };
+    save_response(
+        &transaction,
+        owner,
+        "unity.projectEditor.clear",
+        key,
+        &fingerprint,
+        &record,
+        now_ms,
+    )?;
+    transaction.commit().map_err(failure)?;
+    Ok((record, false))
+}
+
 pub(super) fn accept_launch(
     connection: &mut Connection,
     owner: &PrincipalId,
     project: ProjectRecord,
-    preference: ProjectEditorPreference,
+    selection: ProjectEditorSelectionState,
+    resolved_installation_id: UnityInstallationId,
     key: &IdempotencyKey,
     now_ms: u64,
 ) -> Result<(UnityLaunchRecord, bool), M5UnityError> {
     let transaction = transaction(connection)?;
-    let fingerprint = launch_fingerprint(&project, &preference);
+    let fingerprint = launch_fingerprint(&project, &selection);
     if let Some(record) =
         replay::<UnityLaunchRecord>(&transaction, owner, "unity.launch", key, &fingerprint)?
     {
@@ -406,7 +538,7 @@ pub(super) fn accept_launch(
     let record = UnityLaunchRecord {
         launch_id: UnityLaunchId::new(),
         project_id: project.project_id,
-        installation_id: preference.installation_id,
+        installation_id: resolved_installation_id,
         state: UnityLaunchState::Opening,
         spawn_accepted: false,
         created_at_ms: now_ms,
@@ -428,10 +560,10 @@ pub(super) fn replay_launch(
     connection: &Connection,
     owner: &PrincipalId,
     project: &ProjectRecord,
-    preference: &ProjectEditorPreference,
+    selection: &ProjectEditorSelectionState,
     key: &IdempotencyKey,
 ) -> Result<Option<UnityLaunchRecord>, M5UnityError> {
-    let fingerprint = launch_fingerprint(project, preference);
+    let fingerprint = launch_fingerprint(project, selection);
     let existing = connection
         .query_row(
             "SELECT request_fingerprint,response_json FROM idempotency_records
@@ -452,14 +584,22 @@ pub(super) fn replay_launch(
     }
 }
 
-fn launch_fingerprint(project: &ProjectRecord, preference: &ProjectEditorPreference) -> String {
-    format!(
-        r#"{{"installationId":"{}","preferenceRevision":{},"projectId":"{}","projectRevision":{},"version":1}}"#,
-        preference.installation_id,
-        preference.revision.get(),
-        project.project_id,
-        project.revision.get()
-    )
+fn launch_fingerprint(project: &ProjectRecord, selection: &ProjectEditorSelectionState) -> String {
+    match selection.selection {
+        ProjectEditorSelection::Explicit { installation_id } => format!(
+            r#"{{"installationId":"{}","preferenceRevision":{},"projectId":"{}","projectRevision":{},"version":1}}"#,
+            installation_id,
+            selection.revision.map_or(0, Revision::get),
+            project.project_id,
+            project.revision.get()
+        ),
+        ProjectEditorSelection::Automatic => format!(
+            r#"{{"mode":"automatic","preferenceRevision":{},"projectId":"{}","projectRevision":{},"version":2}}"#,
+            selection.revision.map_or(0, Revision::get),
+            project.project_id,
+            project.revision.get()
+        ),
+    }
 }
 
 pub(super) fn get_launch(
