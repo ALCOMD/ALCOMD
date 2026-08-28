@@ -516,7 +516,8 @@ where
                 )
                 .await?;
             project_copy_kill_gate(ProjectCopyPhase::Staging.as_str());
-            project_copy_pause_gate(ProjectCopyPhase::Staging.as_str());
+            #[cfg(feature = "test-kill-gates")]
+            project_copy_pause_gate(ProjectCopyPhase::Staging.as_str()).await;
             inventory = self
                 .adapter
                 .stage(operation_id, operation.plan.clone(), inventory)
@@ -564,7 +565,8 @@ where
                 )
                 .await?;
             project_copy_kill_gate(ProjectCopyPhase::PublishIntent.as_str());
-            project_copy_pause_gate(ProjectCopyPhase::PublishIntent.as_str());
+            #[cfg(feature = "test-kill-gates")]
+            project_copy_pause_gate(ProjectCopyPhase::PublishIntent.as_str()).await;
         }
         let published = if matches!(
             operation.phase,
@@ -703,7 +705,7 @@ fn project_copy_kill_gate(phase: &str) {
 fn project_copy_kill_gate(_: &str) {}
 
 #[cfg(feature = "test-kill-gates")]
-fn project_copy_pause_gate(phase: &str) {
+async fn project_copy_pause_gate(phase: &str) {
     if std::env::var("ALCOMD_TEST_PROJECT_COPY_PAUSE_GATE").as_deref() == Ok(phase) {
         let signal = std::env::var_os("ALCOMD_TEST_PROJECT_COPY_PAUSE_SIGNAL")
             .expect("Project Copy pause gate signal path");
@@ -711,10 +713,7 @@ fn project_copy_pause_gate(phase: &str) {
             .expect("Project Copy pause gate release path");
         std::fs::write(signal, phase).expect("write Project Copy pause gate signal");
         while !std::path::Path::new(&release).exists() {
-            std::thread::sleep(std::time::Duration::from_millis(5));
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
     }
 }
-
-#[cfg(not(feature = "test-kill-gates"))]
-fn project_copy_pause_gate(_: &str) {}
