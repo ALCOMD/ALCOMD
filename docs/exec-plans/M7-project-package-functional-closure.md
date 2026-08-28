@@ -1,8 +1,8 @@
 # M7 Project / Package Functional Closure：contract-first Stop A
 
 状态：Stop A 合同修正与 P0-P4 production implementation 已通过本地、三平台 Hosted CI、CodeQL 和项目所有者验收；
-P5-A Create / Restore existing-Core GUI wiring 已通过本地完整验收、三平台 Hosted CI 与 CodeQL。P5-B Favorite / Clear
-Unity Preference 已完成 contract-first 修正、production implementation 与本地完整验收，正在等待同一候选的 Hosted CI 与 CodeQL；P6/H2 仍未开始。
+P5-A Create / Restore existing-Core GUI wiring 与 P5-B Favorite / Clear Unity Preference 均已通过本地完整验收、三平台
+Hosted CI 与 CodeQL。P6/H2 仍未开始。
 H2 visual WIP 继续暂停，P6-P8、M8/M9 未开始。
 
 ## 目标与边界
@@ -261,3 +261,8 @@ P0-P4 必须执行 fmt、clippy、Workspace tests、npm check/build/browser test
   automatic 0/1/multiple resolution 与独立 launch fingerprint v2；explicit fingerprint v1保持不变。`0011` migration、
   Store/Application/RPC/typed client/Tauri/official GUI、迁移与浏览器回归已完成，本地完整门禁通过；没有新 Permission、
   capability、table、dependency、unsafe、平台 API 或 Operation kind。
+- P5-B 最终远端候选 `1fc139b8fd47572d52e8cf468a247195e61091f4` 的 Hosted CI run `33209167919` 已在
+  Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 全部成功，CodeQL run `33209165247` 的 Python、
+  JavaScript/TypeScript、Rust 与 Actions 分析全部成功；Ubuntu 实测最高 `GLIBC_2.34`，macOS 9 个预期产物均为
+  arm64 / minos 11.0。该候选包含仅使用 Material Web 官方 spacing token 的跨平台 Project action density 修复；
+  三个平台的 26 项 Official GUI Playwright suite 均通过。

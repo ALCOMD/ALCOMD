@@ -1,7 +1,7 @@
 # M7 Project / Package Functional Closure matrix
 
-状态：P0-P4 remote checkpoint 与 P5-A Create/Restore production wiring 已通过；P5-B Favorite/Clear Unity Preference
-已按修订合同完成 production implementation 与本地验收，等待 Hosted CI。v3 只作行为参考；没有复制、移植或改写其源码。P6-P8 仍未完成，
+状态：P0-P4 remote checkpoint、P5-A Create/Restore production wiring 与 P5-B Favorite/Clear Unity Preference
+均已通过本地与远端验收。v3 只作行为参考；没有复制、移植或改写其源码。P6-P8 仍未完成，
 因此聚合 feature 继续 `in_progress`。
 
 | 用户入口 | 当前 Core 是否足够 | 最小合同 / 实现归属 | Permission 复用 | State / Config 影响 | dependency / platform | slice |
@@ -11,8 +11,8 @@
 | Create | `templates.planCreateProject/applyCreateProject` 足够；built-in template 可表达 blank/create | Projects toolbar + native folder picker + existing Plan/Apply/Operation + Core ProjectId navigation | existing template/project/package read/manage matrix | 无 | compact host-owned dialog | P5-A / implemented + remote green |
 | Restore | `backups.planRestore/applyRestore` 足够 | Projects toolbar + managed Backup selector + native folder picker + existing Plan/Apply/Operation + Core ProjectId navigation | existing backup/project permissions | 无 | compact host-owned dialog | P5-A / implemented + remote green |
 | Copy Project | P2-P4 已实现 | active `projects.copy.v1`, `projects.planCopy/applyCopy`, Operation `projects.copy` | `projects.read + projects.create` | active State v10 两表 | approved dialog；copy engine无新 dependency/platform unsafe | P2-P4 / implemented candidate |
-| Favorite | active DTO/registry/GUI 已实现 | `projects.setFavorite(projectId,favorite,expectedRevision,idempotencyKey)`；registered Project DTO兼容可选 `favorite` | `projects.manage` | active State v11 `projects.favorite`；不进入 observation JSON | 无 | P5-B / implemented local candidate |
-| Clear/Forget Unity preference | active automatic/explicit state 与 legacy view 已实现 | `unity.projectEditor.selection.get` + `unity.projectEditor.clear`；tagged automatic/explicit selection；既有 set 保持 non-null | `unity.read` / `unity.manage` | active State v11重建 existing preference table；clear保留 arguments；无新表 | 无 | P5-B / implemented local candidate |
+| Favorite | active DTO/registry/GUI 已实现 | `projects.setFavorite(projectId,favorite,expectedRevision,idempotencyKey)`；registered Project DTO兼容可选 `favorite` | `projects.manage` | active State v11 `projects.favorite`；不进入 observation JSON | 无 | P5-B / implemented + remote green |
+| Clear/Forget Unity preference | active automatic/explicit state 与 legacy view 已实现 | `unity.projectEditor.selection.get` + `unity.projectEditor.clear`；tagged automatic/explicit selection；既有 set 保持 non-null | `unity.read` / `unity.manage` | active State v11重建 existing preference table；clear保留 arguments；无新表 | 无 | P5-B / implemented + remote green |
 | Open Unity / Backup | 已有真实 RPC/Operation | 保持 existing wiring；不是新合同 | existing | 无 | existing | 已实现证据保持 |
 | Remove registry row | `projects.unregister` 足够 | GUI confirmation + existing RPC；不删除目录 | `projects.manage` | existing | 无 | P3 / S |
 | Remove directory | 不足且是高影响删除 | 独立 Plan/Apply/Operation、writer gate、Project lock、trash/delete/recovery contract，另行人工审批 | 待定；不得从 `projects.manage` 隐式获得任意删除 | 后续 schema | 可能需平台 trash/删除评估 | P7 / XL |

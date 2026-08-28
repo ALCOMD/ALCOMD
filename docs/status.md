@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。H2 visual implementation 继续暂停；M7 Project / Package Functional Closure P0-P4 remote checkpoint 与 P5-A Create/Restore 已通过本地及远端验收。P5-B Favorite/Clear Unity Preference 已完成 production implementation 与本地完整验收，正在等待 Hosted CI。projects.management 与 packages.vpm 保持 in_progress，M8/M9 未开始。`
+`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。H2 visual implementation 继续暂停；M7 Project / Package Functional Closure P0-P4、P5-A Create/Restore 与 P5-B Favorite/Clear Unity Preference 均已通过本地完整验收、三平台 Hosted CI 与 CodeQL。projects.management 与 packages.vpm 保持 in_progress，M8/M9 未开始。`
 
 ## 已完成
 
@@ -304,7 +304,10 @@
   replay/Event、refresh保留、完整分页 stable favorite-first 与 list/grid toggle；Unity复用 `unity.read/manage`，实现 automatic/
   explicit selection、保留 arguments的 clear、legacy get/set compatibility、0/1/multiple automatic launch与 v1/v2 idempotency。
   active daemon广告 `dataSchema: 11`；无新增 dependency、Permission、capability、table、Operation、ResourceKey、unsafe或平台 API。
-  当前只等待同一候选的 Hosted CI/CodeQL，聚合 feature不提升。
+  最终候选 `1fc139b8fd47572d52e8cf468a247195e61091f4` 的 Hosted CI run `33209167919` 已在 Windows Server 2025、
+  Ubuntu 22.04 与 macOS 15 arm64 全部成功，CodeQL run `33209165247` 四个分析 job 全部成功；Ubuntu最高
+  `GLIBC_2.34`，macOS 9 个预期产物均为 arm64 / minos 11.0，三平台 Official GUI 26 项 Playwright suite 均通过。
+  聚合 feature不提升。
 
 ## 后续里程碑尚未完成
 
@@ -334,7 +337,7 @@
   Slice C official renderer、Slice D headless/security/fault conformance 与 Hosted CI 已通过；restored Official GUI Core
   surfaces/flows、Settings/Activity/Diagnostics contracts 与 Chromium browser-level accessibility 已完成本地实现和验收。
   当前 H2-A Projects 列表与导航的本地视觉迭代已获项目所有者局部认可；H2 visual 已按 Stop A 要求暂停。Project Copy
-  P0-P4 remote checkpoint 与 P5-A Create/Restore 已通过；P5-B Favorite/Clear Unity preference 已完成本地候选并等待远端。Package closure、Delete Directory、完整 Visual Gate 2、
+  P0-P4 remote checkpoint、P5-A Create/Restore 与 P5-B Favorite/Clear Unity preference 已通过本地及远端验收。Package closure、Delete Directory、完整 Visual Gate 2、
   后续 H2-H7、最终候选三平台 Hosted CI 与项目所有者最终人工验收仍是实际缺口。
 
 - 真实安装快照和迁移 Fixture 尚未建立；因此 artifact 模板继续保持 `confirmed = false`，
@@ -369,8 +372,8 @@
 M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 Portable UI B0-D 已通过 Hosted CI；Official GUI
 functional candidate `192672…` 保留技术证据但已被拒绝 visual/IA acceptance；首次 H1 也已被标记为
 `rejected_for_visual_direction`。替代的 v3-reference wide Projects shell 已在 `7bb325b…` 通过 Visual Gate 1。当前只完成
-Project / Package Functional Closure P0-P4 remote checkpoint 与 P5-A Create/Restore 已远端通过；P5-B Favorite/Clear Unity Preference
-已完成 active State v11 与本地完整验收，等待同一候选的 Hosted CI/CodeQL。不得开始 P6-P8、H2 visual、M8 或 M9。
+Project / Package Functional Closure P0-P4 remote checkpoint、P5-A Create/Restore 与 P5-B Favorite/Clear Unity Preference
+均已远端通过。不得开始 P6-P8、H2 visual、M8 或 M9。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential

@@ -1,6 +1,7 @@
 # M7 P5-B Project Favorite / Unity Preference Clear 审计
 
-状态：contract-first Stop A 已按项目所有者修订批准并完成 production implementation 与本地完整验收，正在等待 Hosted CI。
+状态：contract-first Stop A 已按项目所有者修订批准并完成 production implementation、本地完整验收、三平台 Hosted CI 与 CodeQL；
+P6/H2 尚未开始。
 本文保留 v3 行为证据与进入 P5-B 时的 v4 缺口，并记录已经激活的 State v11、RPC、typed client与 official GUI合同。
 
 ## v3 Project Favorite 精确行为
