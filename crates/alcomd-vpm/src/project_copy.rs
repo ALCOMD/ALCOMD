@@ -368,16 +368,7 @@ fn walk(
         if excluded(&normalized, depth) {
             continue;
         }
-        let collision_key = normalized
-            .nfkc()
-            .flat_map(char::to_lowercase)
-            .collect::<String>();
-        if collisions
-            .insert(collision_key, normalized.clone())
-            .is_some()
-        {
-            return Err(source_error());
-        }
+        register_collision(collisions, &normalized)?;
         if result.len() as u64 >= MAX_ENTRIES {
             return Err(limit_error());
         }
@@ -702,6 +693,24 @@ fn normalize_relative(path: &Path) -> Result<String, M7CopyError> {
         return Err(limit_error());
     }
     Ok(normalized)
+}
+
+fn register_collision(
+    collisions: &mut BTreeMap<String, String>,
+    normalized: &str,
+) -> Result<(), M7CopyError> {
+    let collision_key = normalized
+        .nfkc()
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+    if collisions
+        .insert(collision_key, normalized.to_owned())
+        .is_some()
+    {
+        Err(source_error())
+    } else {
+        Ok(())
+    }
 }
 
 fn path_from_normalized(value: &str) -> Result<PathBuf, M7CopyError> {
@@ -1084,27 +1093,39 @@ mod tests {
         assert!(scan(&root.0, false).is_ok());
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     #[test]
-    fn non_utf8_and_normalization_collisions_are_rejected() {
+    fn non_utf8_paths_are_rejected() {
         use std::ffi::OsString;
+
+        #[cfg(unix)]
         use std::os::unix::ffi::OsStringExt;
 
-        let non_utf8 = TestDirectory::new();
-        fs::write(non_utf8.0.join(OsString::from_vec(vec![0xff])), b"invalid")
-            .expect("non-UTF-8 fixture");
+        #[cfg(windows)]
+        use std::os::windows::ffi::OsStringExt;
+
+        #[cfg(unix)]
+        let name = OsString::from_vec(vec![0xff]);
+        #[cfg(windows)]
+        let name = OsString::from_wide(&[0xd800]);
         assert_eq!(
-            scan(&non_utf8.0, false)
+            normalize_relative(Path::new(&name))
                 .expect_err("non-UTF-8 must fail")
                 .code(),
             M7CopyErrorCode::ProjectCopySourceUnsafe
         );
+    }
 
-        let collision = TestDirectory::new();
-        fs::write(collision.0.join("é.txt"), b"one").expect("composed");
-        fs::write(collision.0.join("e\u{301}.txt"), b"two").expect("decomposed");
+    #[test]
+    fn normalization_collisions_are_rejected() {
+        let composed = normalize_relative(Path::new("é.txt")).expect("composed path");
+        let decomposed = normalize_relative(Path::new("e\u{301}.txt")).expect("decomposed path");
+        assert_ne!(composed, decomposed);
+
+        let mut collisions = BTreeMap::new();
+        register_collision(&mut collisions, &composed).expect("first path");
         assert_eq!(
-            scan(&collision.0, false)
+            register_collision(&mut collisions, &decomposed)
                 .expect_err("Unicode collision must fail")
                 .code(),
             M7CopyErrorCode::ProjectCopySourceUnsafe
