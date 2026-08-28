@@ -406,6 +406,14 @@ md-linear-progress {
     min-width: max-content;
 }
 .project-row-actions > :is(md-filled-button, md-filled-tonal-button, md-text-button, md-icon-button) { flex: 0 0 auto; }
+.project-row-actions > md-filled-button {
+    --md-filled-button-with-leading-icon-leading-space: 12px;
+    --md-filled-button-with-leading-icon-trailing-space: 12px;
+}
+.project-row-actions > md-filled-tonal-button {
+    --md-filled-tonal-button-leading-space: 12px;
+    --md-filled-tonal-button-trailing-space: 12px;
+}
 .project-favorite-action[aria-pressed="true"] { color: var(--md-sys-color-primary); }
 .project-row-actions > md-menu {
     text-align: left;
