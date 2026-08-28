@@ -55,6 +55,7 @@ import {
 import { DataTableHeader, MaterialDataTable } from "./DataTable";
 import type { GuiRpcClient } from "./rpc";
 import { Button, Dialog, Icon, IconButton, Menu, MenuItem, Select, TextField } from "./Material";
+import { CreateProjectDialog, RestoreProjectDialog } from "./ProjectCreationDialogs";
 
 interface PageProps {
     client: GuiRpcClient;
@@ -189,10 +190,14 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     const [descending, setDescending] = useState(true);
     const [view, setView] = useState<"list" | "grid">("list");
     const [registerOpen, setRegisterOpen] = useState(false);
+    const [createOpen, setCreateOpen] = useState(false);
+    const [restoreOpen, setRestoreOpen] = useState(false);
     const [registerPath, setRegisterPath] = useState("");
     const [selectingDirectory, setSelectingDirectory] = useState(false);
     const [registrationMessage, setRegistrationMessage] = useState<string>();
     const registerButtonRef = useRef<HTMLElement>(null);
+    const createButtonRef = useRef<HTMLElement>(null);
+    const restoreButtonRef = useRef<HTMLElement>(null);
 
     const refresh = useCallback(async () => {
         setState((current) => ({ ...current, error: undefined, refreshing: current.projects.length > 0 }));
@@ -261,9 +266,11 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                     <Icon asset={view === "list" ? viewGridIcon : viewListIcon} slot="icon" />
                     <StateSizedLabel current={view === "list" ? "Grid view" : "List view"} labels={["Grid view", "List view"]} />
                 </Button>
+                <Button onClick={() => setRestoreOpen(true)} ref={restoreButtonRef} type="button" variant="tonal">Restore project</Button>
                 <Button disabled={selectingDirectory} onClick={() => void chooseProjectDirectory()} ref={registerButtonRef} type="button">
                     <StateSizedLabel current={selectingDirectory ? "Choosing…" : "Register project"} labels={["Register project", "Choosing…"]} />
                 </Button>
+                <Button onClick={() => setCreateOpen(true)} ref={createButtonRef} type="button">Create project</Button>
             </header>
             {view === "grid" ? (
                 <div className="projects-secondary-toolbar">
@@ -313,6 +320,32 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                 onClose={closeRegisterDialog}
                 open={registerOpen}
                 path={registerPath}
+            />
+            <CreateProjectDialog
+                client={client}
+                onCompleted={(projectId) => {
+                    setRegistrationMessage("Project created");
+                    setCreateOpen(false);
+                    void refresh().then(() => navigate(`/projects/${projectId}`));
+                }}
+                onClose={() => {
+                    setCreateOpen(false);
+                    window.requestAnimationFrame(() => createButtonRef.current?.focus());
+                }}
+                open={createOpen}
+            />
+            <RestoreProjectDialog
+                client={client}
+                onCompleted={(projectId) => {
+                    setRegistrationMessage("Project restored");
+                    setRestoreOpen(false);
+                    void refresh().then(() => navigate(`/projects/${projectId}`));
+                }}
+                onClose={() => {
+                    setRestoreOpen(false);
+                    window.requestAnimationFrame(() => restoreButtonRef.current?.focus());
+                }}
+                open={restoreOpen}
             />
         </section>
     );

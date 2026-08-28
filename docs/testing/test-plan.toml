@@ -526,8 +526,8 @@ stage = "M7"
 kind = "integration-ui"
 platforms = ["all"]
 status = "planned"
-description = "production gate 要求每个可见业务 action 是真实 implemented、current-state conditional disabled 或非 release-blocker 的显式 unavailable；P1-P4 已将当前 Projects 页永久 fake count 收敛为零，但 Create/Restore/Favorite/Package/Delete Directory 等 P5-P8 缺口仍阻止完整 gate。"
-evidence = ["crates/alcomd-testing/fixtures/m7/visible-action-completeness-v1.json", "docs/baselines/m7-project-package-functional-closure.md", "crates/alcomd-testing/tests/m7_project_actions_contract.rs"]
+description = "production gate 要求每个可见业务 action 是真实 implemented、current-state conditional disabled 或非 release-blocker 的显式 unavailable；P1-P5-A 已将当前 Projects 页永久 fake count 收敛为零，并完成 Create/Restore existing-Core GUI wiring，但 Favorite/Unity clear/Package/Delete Directory 等 P5-B-P8 缺口仍阻止完整 gate。"
+evidence = ["crates/alcomd-testing/fixtures/m7/visible-action-completeness-v1.json", "docs/baselines/m7-project-package-functional-closure.md", "crates/alcomd-testing/tests/m7_project_actions_contract.rs", "apps/alcomd-gui/src/ProjectCreationDialogs.tsx", "apps/alcomd-gui/tests/browser/m7-project-create-restore.spec.ts"]
 
 [[test]]
 id = "gui.m12-screen-reader-smoke"

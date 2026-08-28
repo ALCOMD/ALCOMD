@@ -1,10 +1,10 @@
 # 项目状态
 
-最后更新：2026-08-28
+最后更新：2026-08-29
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。H2 visual implementation 已以独立未验收 checkpoint 暂停；M7 Project / Package Functional Closure P0-P4 production local candidate 已通过完整本地 gate，并停止在 P5 与 H2 前等待人工验收。projects.management 与 packages.vpm 保持 in_progress，M8/M9 未开始。`
+`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。H2 visual implementation 继续暂停；M7 Project / Package Functional Closure P0-P4 remote checkpoint 已通过。P5-A Create / Restore existing-Core GUI wiring 已通过完整本地验收，等待候选自身 Hosted CI；P5-B 仅获 contract-first Stop A 授权。projects.management 与 packages.vpm 保持 in_progress，M8/M9 未开始。`
 
 ## 已完成
 
@@ -289,7 +289,14 @@
   idempotency 和预分配 target ProjectId。P5-P8 与 H2 visual 继续暂停，聚合 `projects.management`/`packages.vpm` 不提升。
 - P0-P4 本地验收已通过 Rust fmt/strict Clippy/完整 locked Workspace tests、npm check/build、19 项 browser tests、xtask、
   metadata、baseline freeze、diff check 与 Tauri release no-bundle build；同 target 并发只发布一次，Plan expiry 与四态 writer
-  gate 也有直接回归证据。该证据不等于完整 M7、Visual Gate 或三平台 Hosted CI 已通过。
+  gate 也有直接回归证据。最终 checkpoint `287790b3e3ef1855a6b7cea92c476b46873d2ca9` 的 Hosted CI run
+  `33175602728`、CodeQL run `33175602645` 与项目所有者人工验收均已通过。
+- P5-A Projects Create / Restore 已复用现有 Template / Backup typed RPC、Plan / Apply / Operation、native directory chooser 和
+  Projects registry 形成最小 GUI 垂直切片；成功身份来自 Core Operation/Apply 结果，完成后刷新列表并进入新 Project workspace。
+  Create/Restore 的选择、取消、chooser、名称、Plan review、Apply、Operation、成功/失败、空备份和新注册项目可见性已有 3 项
+  browser tests；完整 22 项 Playwright suite、Rust fmt/strict Clippy/完整 locked Workspace tests、npm check/build、Tauri release
+  no-bundle、xtask、metadata、baseline freeze 与 diff check 均已本地通过。未新增 RPC、State、Permission、dependency、unsafe
+  或平台 API；候选自身 Hosted CI 尚待最终记录，聚合 feature 状态不提升。
 
 ## 后续里程碑尚未完成
 
@@ -319,7 +326,7 @@
   Slice C official renderer、Slice D headless/security/fault conformance 与 Hosted CI 已通过；restored Official GUI Core
   surfaces/flows、Settings/Activity/Diagnostics contracts 与 Chromium browser-level accessibility 已完成本地实现和验收。
   当前 H2-A Projects 列表与导航的本地视觉迭代已获项目所有者局部认可；H2 visual 已按 Stop A 要求暂停。Project Copy
-  P0-P4 已形成 production local candidate，但 Create/Restore/Favorite、Package closure、Delete Directory、完整 Visual Gate 2、
+  P0-P4 remote checkpoint 已通过，Create/Restore 已形成 P5-A 本地候选；Favorite/Clear Unity preference、Package closure、Delete Directory、完整 Visual Gate 2、
   后续 H2-H7、最终候选三平台 Hosted CI 与项目所有者最终人工验收仍是实际缺口。
 
 - 真实安装快照和迁移 Fixture 尚未建立；因此 artifact 模板继续保持 `confirmed = false`，
@@ -354,8 +361,8 @@
 M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 Portable UI B0-D 已通过 Hosted CI；Official GUI
 functional candidate `192672…` 保留技术证据但已被拒绝 visual/IA acceptance；首次 H1 也已被标记为
 `rejected_for_visual_direction`。替代的 v3-reference wide Projects shell 已在 `7bb325b…` 通过 Visual Gate 1。当前只完成
-Project / Package Functional Closure P0-P4 的本地 gate 与提交；之后停止，不得 push、不得自动进入 P5-P8、不得恢复 H2 visual、
-不得进入 M8/M9。
+Project / Package Functional Closure P0-P4 remote checkpoint；P5-A Create / Restore 正在候选验收，完成后只允许进入 P5-B
+contract-first Stop A，不得开始 Favorite/Clear production、P6-P8、H2 visual、M8 或 M9。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential

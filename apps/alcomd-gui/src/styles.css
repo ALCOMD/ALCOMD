@@ -230,6 +230,7 @@ md-linear-progress {
 }
 
 .projects-toolbar h1 { flex: 0 0 auto; margin: 0 2px 0 4px; color: var(--primary); font-size: 1.5rem; font-weight: 500; line-height: 1.2; }
+.projects-toolbar md-icon-button { flex: 0 0 40px; }
 .projects-search {
     min-width: 220px;
     flex: 1 1 360px;
@@ -438,6 +439,13 @@ md-linear-progress {
 .project-unregistered { color: var(--on-surface-variant); font-size: 0.8rem; }
 .project-register-form, .project-register-review { display: grid; gap: 18px; min-width: min(520px, calc(100vw - 64px)); }
 .project-register-form md-outlined-text-field { width: 100%; }
+.project-create-flow { display: grid; gap: 16px; width: min(560px, calc(100vw - 64px)); }
+.project-create-flow > md-outlined-select,
+.project-create-flow > md-filled-select,
+.project-create-flow > md-outlined-text-field { width: 100%; }
+.project-target-picker { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+.project-target-picker md-outlined-text-field { width: 100%; }
+.dialog-empty { display: grid; gap: 6px; padding: 12px 0; }
 
 .project-workspace {
     position: relative;

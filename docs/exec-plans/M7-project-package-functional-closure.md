@@ -1,7 +1,8 @@
 # M7 Project / Package Functional Closure：contract-first Stop A
 
-状态：Stop A 合同修正与 P0-P4 production implementation 已完成本地候选和完整本地 gate；已停止在 P5 与 H2 前等待
-项目所有者验收。H2 visual WIP 继续暂停，P5-P8、M8/M9 未开始。
+状态：Stop A 合同修正与 P0-P4 production implementation 已通过本地、三平台 Hosted CI、CodeQL 和项目所有者验收；
+P5-A Create / Restore existing-Core GUI wiring 已形成仅使用既有 typed client、Plan / Apply / Operation 合同的本地候选并
+通过完整本地 gate，等待该候选自身 Hosted CI。H2 visual WIP 继续暂停，P5-B 只允许 contract-first Stop A，P6-P8、M8/M9 未开始。
 
 ## 目标与边界
 
@@ -237,3 +238,13 @@ P0-P4 必须执行 fmt、clippy、Workspace tests、npm check/build/browser test
   `--no-bundle` 全部通过。Copy 额外证明 15 分钟 expiry 边界、四种 writer state、同 target 并发单次发布、pre-intent
   cancel、post-intent 不可取消、外部 target 修改进入 recovery-required，以及全部八个 durable checkpoint 的真实
   kill/restart。没有新增第三个 production dependency、ALCOMD unsafe、平台 API、Permission、ResourceKey 或 v10 第三张表。
+- 2026-08-29 P0-P4 remote checkpoint：commit `287790b3e3ef1855a6b7cea92c476b46873d2ca9` 的 Hosted CI run
+  `33175602728` 在 Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 全部成功，CodeQL run `33175602645`
+  成功；项目所有者已正式通过该 checkpoint。
+- P5-A Create / Restore 直接复用既有 `templates.list/get/planCreateProject/applyCreateProject`、
+  `backups.list/get/planRestore/applyRestore`、native directory chooser、Operation 与 Projects registry。Projects toolbar
+  提供 Create / Restore 入口；对话框覆盖来源选择、目标目录、名称、Plan 审阅、Apply、进度/取消、结构化失败、空备份、
+  完成后刷新和进入 Core 返回 ProjectId 的 workspace。未新增 `projects.create`/`projects.restore`、RPC、State、Permission、
+  dependency、unsafe 或平台 API；归档、冲突、writer gate 与恢复规则仍只由 Core 执行。新增 3 项 browser flow tests，完整
+  22 项 Playwright suite、Rust fmt/strict Clippy/完整 locked Workspace tests、npm check/build、Tauri release no-bundle、xtask、
+  metadata、baseline freeze 与 diff check 均已本地通过；Hosted CI 证据待本候选提交后取得。

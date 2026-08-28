@@ -210,6 +210,14 @@ fn visible_action_gate_records_real_current_gaps_instead_of_hiding_them() {
         json!(["projects.management", "packages.vpm"])
     );
     let visible = gate["visibleActions"].as_array().expect("visible actions");
+    for implemented in [
+        "projects.create-from-template",
+        "projects.restore-managed-backup",
+    ] {
+        assert!(visible.iter().any(|action| {
+            action["id"] == implemented && action["classification"] == "implemented"
+        }));
+    }
     let permanent = visible
         .iter()
         .filter(|action| action["classification"] == "permanent-disabled-release-blocker")
@@ -225,6 +233,13 @@ fn visible_action_gate_records_real_current_gaps_instead_of_hiding_them() {
             .expect("known gaps")
             .len()
             > 2
+    );
+    assert!(
+        !gate["knownParityGaps"]
+            .as_array()
+            .expect("known gaps")
+            .iter()
+            .any(|gap| gap == "create-entry" || gap == "restore-entry")
     );
 }
 

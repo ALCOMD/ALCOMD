@@ -16,6 +16,8 @@
         {"id": "projects.refresh", "classification": "implemented"},
         {"id": "projects.change-view", "classification": "implemented"},
         {"id": "projects.register-native-directory", "classification": "implemented"},
+        {"id": "projects.create-from-template", "classification": "implemented"},
+        {"id": "projects.restore-managed-backup", "classification": "implemented"},
         {"id": "projects.sort", "classification": "implemented"},
         {"id": "projects.open-unity", "classification": "conditional-disabled"},
         {"id": "projects.manage", "classification": "implemented"},
@@ -25,8 +27,6 @@
         {"id": "projects.copy", "classification": "implemented"}
     ],
     "knownParityGaps": [
-        "create-entry",
-        "restore-entry",
         "favorite",
         "clear-unity-preference",
         "package-refresh",

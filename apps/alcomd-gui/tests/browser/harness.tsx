@@ -22,7 +22,7 @@ import type { GuiRpcClient } from "../../src/rpc";
 import "../../src/styles.css";
 import { MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
 
-type HarnessMode = "ready" | "empty" | "error" | "disconnected" | "loading" | "stale" | "failed" | "cancelled";
+type HarnessMode = "ready" | "empty" | "error" | "disconnected" | "loading" | "stale" | "failed" | "cancelled" | "create-error" | "restore-error";
 
 const query = new URLSearchParams(window.location.search);
 const initialRoute = query.get("route") ?? "/";
@@ -40,6 +40,8 @@ class DeterministicGuiClient implements GuiRpcClient {
         }
     };
     private operationReads = 0;
+    private pendingProject?: ReturnType<typeof project>;
+    private createdProjects: ReturnType<typeof project>[] = [];
     private snapshotRevision = 1;
 
     constructor(private readonly mode: HarnessMode) {}
@@ -68,7 +70,17 @@ class DeterministicGuiClient implements GuiRpcClient {
         this.operationReads += 1;
         const terminal = this.operationReads > 2;
         const state = this.mode === "failed" ? "failed" : this.mode === "cancelled" ? "cancelled" : terminal ? "succeeded" : "running";
-        return this.value({ ...runningOperation(), operationId, state, progress: { phase: state === "running" ? "extracting" : "state_committed" }, ...(state === "failed" ? { errorCode: "package_archive_invalid" } : {}) });
+        if (state === "succeeded" && this.pendingProject !== undefined && !this.createdProjects.some((candidate) => candidate.projectId === this.pendingProject?.projectId)) {
+            this.createdProjects.push(this.pendingProject);
+        }
+        return this.value({
+            ...runningOperation(),
+            operationId,
+            state,
+            progress: { phase: state === "running" ? "extracting" : "state_committed" },
+            ...(state === "succeeded" && this.pendingProject !== undefined ? { result: { projectId: this.pendingProject.projectId, revision: 1 } } : {}),
+            ...(state === "failed" ? { errorCode: "package_archive_invalid" } : {})
+        });
     }
 
     operationCancel(operationId: string): ReturnType<GuiRpcClient["operationCancel"]> {
@@ -101,8 +113,8 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
 
     projectsInspect(): ReturnType<GuiRpcClient["projectsInspect"]> { return this.value({ project: project() }); }
-    projectsList(): ReturnType<GuiRpcClient["projectsList"]> { return this.value({ projects: this.mode === "empty" ? [] : [project()] }); }
-    projectGet(): ReturnType<GuiRpcClient["projectGet"]> { return this.value({ project: project() }); }
+    projectsList(): ReturnType<GuiRpcClient["projectsList"]> { return this.value({ projects: this.mode === "empty" ? [] : [project(), ...this.createdProjects] }); }
+    projectGet(projectId: string): ReturnType<GuiRpcClient["projectGet"]> { return this.value({ project: this.createdProjects.find((candidate) => candidate.projectId === projectId) ?? project(projectId) }); }
     openProjectDirectory(): ReturnType<GuiRpcClient["openProjectDirectory"]> { return this.value(undefined); }
     selectDirectory(): ReturnType<GuiRpcClient["selectDirectory"]> { return this.value("C:\\Fixture\\Avatar"); }
     projectRegister(): ReturnType<GuiRpcClient["projectRegister"]> { return this.value({ project: project(), replayed: false }); }
@@ -173,14 +185,22 @@ class DeterministicGuiClient implements GuiRpcClient {
     templateExport(): ReturnType<GuiRpcClient["templateExport"]> { return this.value({ exported: true }); }
     templateSetFavorite(): ReturnType<GuiRpcClient["templateSetFavorite"]> { return this.value({ template: { ...template(), favorite: true }, replayed: false }); }
     templateRemove(): ReturnType<GuiRpcClient["templateRemove"]> { return this.value({ templateId: TEMPLATE_ID, removed: true, replayed: false }); }
-    templatePlanCreateProject(): ReturnType<GuiRpcClient["templatePlanCreateProject"]> { return this.value(templatePlan("create-project")); }
-    templateApplyCreateProject(): ReturnType<GuiRpcClient["templateApplyCreateProject"]> { return this.value({ operationId: OPERATION_ID, replayed: false }); }
+    templatePlanCreateProject(_templateId: string, _expectedTemplateRevision: number, _targetParent: string, targetLeaf: string): ReturnType<GuiRpcClient["templatePlanCreateProject"]> {
+        if (this.mode === "create-error") return Promise.reject({ code: "template_plan_stale" });
+        this.pendingProject = project(CREATED_PROJECT_ID, targetLeaf);
+        return this.value({ ...templatePlan("create-project"), targetLeaf });
+    }
+    templateApplyCreateProject(): ReturnType<GuiRpcClient["templateApplyCreateProject"]> { this.operationReads = 0; return this.value({ operationId: OPERATION_ID, replayed: false }); }
 
     backupsList(): ReturnType<GuiRpcClient["backupsList"]> { return this.value({ backups: this.mode === "empty" ? [] : [backup()] }); }
     backupGet(): ReturnType<GuiRpcClient["backupGet"]> { return this.value(backup()); }
     backupCreate(): ReturnType<GuiRpcClient["backupCreate"]> { return this.value({ operationId: OPERATION_ID, backupId: BACKUP_ID, replayed: false }); }
-    backupPlanRestore(): ReturnType<GuiRpcClient["backupPlanRestore"]> { return this.value({ planId: PLAN_ID, projectId: PROJECT_ID, backupId: BACKUP_ID, target: { parent: "<private-parent>", leaf: "Restored", mustBeAbsent: true }, archiveSha256: HASH, packagesRequireResolve: false, excludedPackages: [], planFingerprint: HASH }); }
-    backupApplyRestore(): ReturnType<GuiRpcClient["backupApplyRestore"]> { return this.value({ operationId: OPERATION_ID, projectId: PROJECT_ID, replayed: false }); }
+    backupPlanRestore(_backupId: string, targetParent: string, targetLeaf: string): ReturnType<GuiRpcClient["backupPlanRestore"]> {
+        if (this.mode === "restore-error") return Promise.reject({ code: "backup_target_conflict" });
+        this.pendingProject = project(RESTORED_PROJECT_ID, targetLeaf);
+        return this.value({ planId: PLAN_ID, projectId: RESTORED_PROJECT_ID, backupId: BACKUP_ID, target: { parent: targetParent, leaf: targetLeaf, mustBeAbsent: true }, archiveSha256: HASH, packagesRequireResolve: false, excludedPackages: [], planFingerprint: HASH });
+    }
+    backupApplyRestore(): ReturnType<GuiRpcClient["backupApplyRestore"]> { this.operationReads = 0; return this.value({ operationId: OPERATION_ID, projectId: RESTORED_PROJECT_ID, replayed: false }); }
 
     extensionsList(): ReturnType<GuiRpcClient["extensionsList"]> { return this.value({ extensions: this.mode === "empty" ? [] : [extension(DISCORD_ID), extension(MCP_ID)] }); }
     extensionGet(extensionId: string): ReturnType<GuiRpcClient["extensionGet"]> { return this.value({ extension: extension(extensionId) }); }
@@ -223,6 +243,8 @@ class DeterministicGuiClient implements GuiRpcClient {
 }
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000101";
+const CREATED_PROJECT_ID = "00000000-0000-4000-8000-000000000108";
+const RESTORED_PROJECT_ID = "00000000-0000-4000-8000-000000000109";
 const REPOSITORY_ID = "00000000-0000-4000-8000-000000000102";
 const INSTALLATION_ID = "00000000-0000-4000-8000-000000000103";
 const TEMPLATE_ID = "com.cqmhv.template.avatar";
@@ -233,8 +255,9 @@ const DISCORD_ID = "com.cqmhv.discord";
 const MCP_ID = "com.cqmhv.mcp-management";
 const HASH = "a".repeat(64);
 
-function project() {
-    return { projectId: PROJECT_ID, registeredAtMs: 1_690_000_000_000, rootPath: "<private-project>", projectType: "avatars", unityVersion: "2022.3.22f1", vpmManifest: "valid", upmManifest: "valid", directDependencies: [{ packageId: "com.example.avatar", value: "^1.2.0" }], lockedDependencies: [{ packageId: "com.example.avatar", value: "1.2.3" }], issues: [], observedAtMs: 1_700_000_000_000, revision: 2 };
+function project(projectId = PROJECT_ID, name = "Sample") {
+    const rootPath = projectId === PROJECT_ID && name === "Sample" ? "<private-project>" : `C:\\Fixture\\${name}`;
+    return { projectId, registeredAtMs: 1_690_000_000_000, rootPath, projectType: "avatars", unityVersion: "2022.3.22f1", vpmManifest: "valid", upmManifest: "valid", directDependencies: [{ packageId: "com.example.avatar", value: "^1.2.0" }], lockedDependencies: [{ packageId: "com.example.avatar", value: "1.2.3" }], issues: [], observedAtMs: 1_700_000_000_000, revision: 2 };
 }
 function repository() { return { repositoryId: REPOSITORY_ID, source: { kind: "remote" as const, url: "https://packages.example.invalid/index.json" }, declaredId: "example", name: "Example packages", declaredUrl: "https://packages.example.invalid/index.json", issues: [], revision: 2, refreshedAtMs: 1_700_000_000_000 }; }
 function installation() { return { installationId: INSTALLATION_ID, executablePath: "<private-editor>", filesystemIdentity: "opaque", unityVersion: "2022.3.22f1", architecture: "x86_64", sourceKind: "manual", revision: 2, observedAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_000_000 }; }
