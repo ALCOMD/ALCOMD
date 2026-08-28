@@ -316,6 +316,20 @@ async fn gui_project_refresh(
 }
 
 #[tauri::command]
+async fn gui_project_set_favorite(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::ProjectSetFavoriteParams,
+) -> Result<alcomd_protocol::ProjectWriteResult, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.project_set_favorite(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
 async fn gui_project_unregister(
     state: State<'_, GuiClientState>,
     project_id: String,
@@ -645,6 +659,34 @@ async fn gui_unity_project_editor_set(
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
         Some(client) => client.unity_project_editor_set(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_unity_project_editor_selection_get(
+    state: State<'_, GuiClientState>,
+    project_id: String,
+) -> Result<alcomd_protocol::ProjectEditorSelectionResult, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.project_editor_selection_get(project_id).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_unity_project_editor_clear(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::ProjectEditorClearParams,
+) -> Result<alcomd_protocol::ProjectEditorClearResult, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.project_editor_clear(params).await,
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)
@@ -1192,6 +1234,7 @@ pub fn run() {
             gui_project_apply_copy,
             gui_project_register,
             gui_project_refresh,
+            gui_project_set_favorite,
             gui_project_unregister,
             gui_repositories_inspect,
             gui_repositories_list,
@@ -1213,6 +1256,8 @@ pub fn run() {
             gui_unity_installations_refresh,
             gui_unity_project_editor_get,
             gui_unity_project_editor_set,
+            gui_unity_project_editor_selection_get,
+            gui_unity_project_editor_clear,
             gui_unity_writer_state,
             gui_unity_launch,
             gui_unity_launch_status,

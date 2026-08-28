@@ -2,14 +2,14 @@
 
 状态：Stop A 合同修正与 P0-P4 production implementation 已通过本地、三平台 Hosted CI、CodeQL 和项目所有者验收；
 P5-A Create / Restore existing-Core GUI wiring 已通过本地完整验收、三平台 Hosted CI 与 CodeQL。P5-B Favorite / Clear
-Unity Preference contract-first Stop A 已按项目所有者修订批准，production implementation 正在进行；P6/H2 仍未开始。
+Unity Preference 已完成 contract-first 修正、production implementation 与本地完整验收，正在等待同一候选的 Hosted CI 与 CodeQL；P6/H2 仍未开始。
 H2 visual WIP 继续暂停，P6-P8、M8/M9 未开始。
 
 ## 目标与边界
 
 本 Stop A 把 v3 已有、但当前 M7 official GUI 尚未形成真实用户入口的 Project / Package 行为变成可审阅的最小合同。
 P0-P4 已按批准范围落盘 dependency foundation、closed GUI affordance、active Copy RPC/State v10、filesystem
-Operation/recovery 与 client/CLI/GUI flow。下列内容仍明确不在本轮：Favorite/Remove Directory/Package 新合同、H2 视觉推进、
+Operation/recovery 与 client/CLI/GUI flow；P5-B 又完成 Favorite 与 Unity selection/clear 垂直切片。下列内容仍明确不在本轮：Remove Directory/Package 新合同、H2 视觉推进、
 M8/M9、任何新 unsafe 或额外平台 API。
 
 此前两个可见永久假入口 `Open Project Directory` 与 `Copy Project` 已成为真实入口，但这不等于全部功能缺口已经关闭。
@@ -252,10 +252,12 @@ P0-P4 必须执行 fmt、clippy、Workspace tests、npm check/build/browser test
   run `33189137494` 已在 Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 全部成功，CodeQL run `33189136465`
   四个分析 job 全部成功；Ubuntu最高 `GLIBC_2.34`，macOS 9 个预期产物均为 arm64 / minos 11.0。
 - P5-B 精确审计确认：v3 Favorite 是持久 Project metadata，新项目默认 false、restart保留、注销后同路径重新注册不保留，
-  且在所有 selected sort 之前做 favorite-first stable partition；没有 favorite-only filter。Stop A提出 State v11
-  `projects.favorite`、兼容可选 registered DTO字段及 `projects.setFavorite`，复用 `projects.manage`，Project revision/Event/
-  idempotency语义已冻结为 proposal。
-- v3 Clear Unity path只移除 explicit path、保留 custom arguments并恢复 automatic version matching。active v4 required
-  `installationId` 与同 row arguments无法表达这一语义；Stop A因此提出 tagged `unity.projectEditor.selection.get`、窄
-  `unity.projectEditor.clear` 与 State v11 existing table rebuild，复用 `unity.read/manage`且不新增 table。所有工件明确为
-  proposal-only；没有 `0011` migration、active RPC/State/Permission/production wiring。
+  且在所有 selected sort 之前做 favorite-first stable partition；没有 favorite-only filter。active State v11 已实现
+  `projects.favorite`、兼容可选 registered DTO字段及 `projects.setFavorite`，复用 `projects.manage` 与既有
+  `projects.registry.v1` capability；Project revision/Event/idempotency、refresh保留、完整分页后稳定 favorite-first 及
+  list/grid toggle 均已有生产和自动化证据。
+- v3 Clear Unity path只移除 explicit path、保留 custom arguments并恢复 automatic version matching。State v11 已以 existing
+  table rebuild 实现 tagged `unity.projectEditor.selection.get`、窄 `unity.projectEditor.clear`、legacy get/set compatibility、
+  automatic 0/1/multiple resolution 与独立 launch fingerprint v2；explicit fingerprint v1保持不变。`0011` migration、
+  Store/Application/RPC/typed client/Tauri/official GUI、迁移与浏览器回归已完成，本地完整门禁通过；没有新 Permission、
+  capability、table、dependency、unsafe、平台 API 或 Operation kind。

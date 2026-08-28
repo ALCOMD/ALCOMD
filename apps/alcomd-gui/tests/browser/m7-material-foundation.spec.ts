@@ -170,12 +170,14 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     expect(wideProjectWidth).toBeGreaterThan(projectWidth);
     const rowActions = main.locator(".project-row-actions");
     const openUnity = rowActions.locator("md-filled-button.project-open-unity-action");
+    const favorite = rowActions.locator("md-icon-button.project-favorite-action");
     const manage = rowActions.locator("md-filled-tonal-button").filter({ hasText: "Manage" });
     const backups = rowActions.locator("md-filled-tonal-button").filter({ hasText: "Backups" });
     const moreActions = rowActions.locator("md-icon-button.project-more-actions");
-    for (const action of [openUnity, manage, backups, moreActions]) {
+    for (const action of [favorite, openUnity, manage, backups, moreActions]) {
         await expect(action).toHaveCSS("height", "40px");
     }
+    await expect(favorite).toHaveCSS("width", "40px");
     await expect(moreActions).toHaveCSS("width", "40px");
     const actionsWidth = (await rowActions.boundingBox())?.width;
     const openUnityWidth = (await openUnity.boundingBox())?.width;

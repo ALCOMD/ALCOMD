@@ -7,6 +7,7 @@ import type {
     ExtensionPlan,
     Operation,
     PackagePlan,
+    ProjectEditorSelectionState,
     ProjectSnapshot,
     RepositorySnapshot,
     TemplatePlan,
@@ -264,18 +265,41 @@ export function UnityRegistryActions({ client, installations, onChanged }: Actio
     );
 }
 
-export function ProjectUnityActions({ client, installations, project, preferenceRevision, onChanged }: ActionProps & { installations: UnityInstallation[]; project: ProjectSnapshot; preferenceRevision: number }) {
-    const [installationId, setInstallationId] = useState("");
-    const [argumentsText, setArgumentsText] = useState("");
+export function ProjectUnityActions({ client, installations, project, selection, onChanged }: ActionProps & { installations: UnityInstallation[]; project: ProjectSnapshot; selection: ProjectEditorSelectionState }) {
+    const [installationId, setInstallationId] = useState(selection.selection.mode === "explicit" ? selection.selection.installationId : "");
+    const [argumentsText, setArgumentsText] = useState(selection.arguments.join("\n"));
     const [confirmLaunch, setConfirmLaunch] = useState(false);
+    const [selectionRequired, setSelectionRequired] = useState(false);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const projectId = project.projectId;
     const projectRevision = project.revision;
+    const compatibleInstallations = installations.filter((installation) => compatibleUnityMajorMinor(project.unityVersion, installation.unityVersion));
+    useEffect(() => {
+        setInstallationId(selection.selection.mode === "explicit" ? selection.selection.installationId : "");
+        setArgumentsText(selection.arguments.join("\n"));
+    }, [selection]);
     const setEditor = async (event: FormEvent) => {
         event.preventDefault();
         if (projectId === undefined) return;
         const arguments_ = argumentsText.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
-        await runSimple(setFeedback, () => client.unityProjectEditorSet(projectId, installationId, arguments_, preferenceRevision), "Project editor preference updated.", onChanged);
+        setFeedback({ busy: true });
+        try {
+            await client.unityProjectEditorSet(projectId, installationId, arguments_, selection.revision);
+            if (selectionRequired && projectRevision !== undefined) {
+                const result = await client.unityLaunch(projectId, projectRevision);
+                setFeedback({ busy: false, message: `Unity launch ${result.launch.state}.` });
+                setSelectionRequired(false);
+            } else {
+                setFeedback({ busy: false, message: "Project editor preference updated." });
+            }
+            onChanged?.();
+        } catch (caught: unknown) {
+            setFeedback({ busy: false, error: safeError(caught) });
+        }
+    };
+    const clearEditor = async () => {
+        if (projectId === undefined || selection.selection.mode !== "explicit") return;
+        await runSimple(setFeedback, () => client.unityProjectEditorClear(projectId, selection.revision), "Editor selection returned to Automatic. Arguments were preserved.", onChanged);
     };
     const launch = async () => {
         if (projectId === undefined || projectRevision === undefined) return;
@@ -283,20 +307,37 @@ export function ProjectUnityActions({ client, installations, project, preference
         try {
             const result = await client.unityLaunch(projectId, projectRevision);
             setFeedback({ busy: false, message: `Unity launch ${result.launch.state}.` });
-        } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+        } catch (caught: unknown) {
+            const error = safeError(caught);
+            if (error.code === "unity_editor_selection_required") {
+                setSelectionRequired(true);
+                setFeedback({ busy: false, message: "Choose a compatible Unity editor to continue launching." });
+                onChanged?.();
+            } else {
+                setFeedback({ busy: false, error });
+            }
+        }
     };
     return (
         <ActionSection title="Unity actions">
+            <p>Selection: <strong>{selection.selection.mode === "automatic" ? "Automatic" : "Explicit"}</strong></p>
             <form onSubmit={(event) => void setEditor(event)}>
-                <Select id="project-editor" label="Selected editor" onChange={setInstallationId} options={[{ label: "Choose an editor", value: "" }, ...installations.map((item) => ({ label: `Unity ${item.unityVersion} (${item.architecture})`, value: item.installationId }))]} required value={installationId} />
+                <Select id="project-editor" label={selectionRequired ? "Choose a compatible editor" : "Selected editor"} onChange={setInstallationId} options={[{ label: "Choose an editor", value: "" }, ...(selectionRequired ? compatibleInstallations : installations).map((item) => ({ label: `Unity ${item.unityVersion} (${item.architecture})`, value: item.installationId }))]} required value={installationId} />
                 <TextField aria-describedby="unity-arguments-hint" id="unity-arguments" label="Additional arguments" maxLength={4096} onInput={setArgumentsText} rows={4} supportingText="One argument per line. The daemon validates forbidden arguments." type="textarea" value={argumentsText} />
-                <Button disabled={feedback.busy || projectId === undefined} type="submit" variant="tonal">Save editor preference</Button>
+                <Button disabled={feedback.busy || projectId === undefined || installationId.length === 0} type="submit" variant="tonal">{selectionRequired ? "Select and launch" : "Save editor preference"}</Button>
             </form>
+            {selection.selection.mode === "explicit" ? <Button disabled={feedback.busy} onClick={() => void clearEditor()} type="button" variant="text">Forget selected editor</Button> : null}
             <Button disabled={feedback.busy || projectRevision === undefined} onClick={() => setConfirmLaunch(true)} type="button">Launch Unity</Button>
             <ConfirmDialog busy={feedback.busy} open={confirmLaunch} title="Launch this project in Unity?" detail="ALCOMD will revalidate the selected editor, project revision, and writer observation." onClose={() => setConfirmLaunch(false)} onConfirm={launch} />
             <MutationFeedback client={client} feedback={feedback} />
         </ActionSection>
     );
+}
+
+function compatibleUnityMajorMinor(projectVersion: string, installationVersion: string): boolean {
+    const project = projectVersion.match(/^(\d+)\.(\d+)/);
+    const installation = installationVersion.match(/^(\d+)\.(\d+)/);
+    return project !== null && installation !== null && project[1] === installation[1] && project[2] === installation[2];
 }
 
 export function TemplateImportPanel({ client, onChanged }: ActionProps) {

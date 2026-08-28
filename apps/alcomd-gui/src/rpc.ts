@@ -37,12 +37,15 @@ import type {
     PackagePlanRemoveParams,
     PackagePlanResolveParams,
     ProjectEditorResult,
+    ProjectEditorSelectionResult,
+    ProjectEditorClearResult,
     ProjectResult,
     ProjectsApplyCopyResult,
     ProjectsPlanCopyResult,
     ProjectUnregisterResult,
     ProjectWriteResult,
     ProjectsListResult,
+    RegistryCursor,
     RepositoriesListResult,
     RepositoryPackagesResult,
     RepositoryResult,
@@ -77,12 +80,13 @@ export interface GuiRpcClient {
     activityList(cursor?: ActivityCursor): Promise<ActivityListResult>;
     diagnosticsList(cursor?: DiagnosticCursor): Promise<DiagnosticsListResult>;
     projectsInspect(path: string, discoveryMode: "exact-root" | "search-parents"): Promise<ProjectResult>;
-    projectsList(): Promise<ProjectsListResult>;
+    projectsList(cursor?: RegistryCursor): Promise<ProjectsListResult>;
     projectGet(projectId: string): Promise<ProjectResult>;
     openProjectDirectory(projectId: string): Promise<void>;
     selectDirectory(): Promise<string | undefined>;
     projectRegister(path: string): Promise<ProjectWriteResult>;
     projectRefresh(projectId: string, expectedRevision: number): Promise<ProjectWriteResult>;
+    projectSetFavorite(projectId: string, favorite: boolean, expectedRevision: number): Promise<ProjectWriteResult>;
     projectUnregister(projectId: string, expectedRevision: number): Promise<ProjectUnregisterResult>;
     projectPlanCopy(sourceProjectId: string, expectedRevision: number, targetParentPath: string, targetLeaf: string): Promise<ProjectsPlanCopyResult>;
     projectApplyCopy(planId: string, expectedRevision: number): Promise<ProjectsApplyCopyResult>;
@@ -99,13 +103,15 @@ export interface GuiRpcClient {
     packagePlanDowngrade(params: PackagePlanDowngradeParams): Promise<PackagePlan>;
     packagePlanResolve(params: PackagePlanResolveParams): Promise<PackagePlan>;
     packageApplyPlan(params: Omit<PackageApplyPlanParams, "idempotencyKey">): Promise<{ operationId: string; replayed: boolean }>;
-    unityInstallationsList(): Promise<UnityInstallationsListResult>;
+    unityInstallationsList(cursor?: string): Promise<UnityInstallationsListResult>;
     unityInstallationGet(installationId: string): Promise<UnityInstallationResult>;
     unityInstallationRegister(executablePath: string): Promise<UnityInstallationResult>;
     unityInstallationRemove(installationId: string, expectedRevision: number): Promise<UnityInstallationRemoveResult>;
     unityInstallationsRefresh(): Promise<UnityInstallationsListResult>;
     unityProjectEditorGet(projectId: string): Promise<ProjectEditorResult>;
     unityProjectEditorSet(projectId: string, installationId: string, arguments_: string[], expectedRevision: number): Promise<ProjectEditorResult>;
+    unityProjectEditorSelectionGet(projectId: string): Promise<ProjectEditorSelectionResult>;
+    unityProjectEditorClear(projectId: string, expectedRevision: number): Promise<ProjectEditorClearResult>;
     unityWriterState(projectId: string): Promise<UnityWriterState>;
     unityLaunch(projectId: string, expectedProjectRevision: number): Promise<UnityLaunchResult>;
     unityLaunchStatus(launchId: string): Promise<UnityLaunchResult>;
@@ -183,8 +189,8 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_projects_inspect", { params: { path, discoveryMode } });
     }
 
-    projectsList(): Promise<ProjectsListResult> {
-        return invokeTyped("gui_projects_list", { params: { limit: 100 } });
+    projectsList(cursor?: RegistryCursor): Promise<ProjectsListResult> {
+        return invokeTyped("gui_projects_list", { params: { cursor, limit: 100 } });
     }
 
     projectGet(projectId: string): Promise<ProjectResult> {
@@ -205,6 +211,10 @@ class TauriGuiRpcClient implements GuiRpcClient {
 
     projectRefresh(projectId: string, expectedRevision: number): Promise<ProjectWriteResult> {
         return invokeTyped("gui_project_refresh", { projectId, expectedRevision, idempotencyKey: crypto.randomUUID() });
+    }
+
+    projectSetFavorite(projectId: string, favorite: boolean, expectedRevision: number): Promise<ProjectWriteResult> {
+        return invokeTyped("gui_project_set_favorite", { params: { projectId, favorite, expectedRevision, idempotencyKey: crypto.randomUUID() } });
     }
 
     projectUnregister(projectId: string, expectedRevision: number): Promise<ProjectUnregisterResult> {
@@ -271,8 +281,8 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_package_apply_plan", { params: { ...params, idempotencyKey: crypto.randomUUID() } });
     }
 
-    unityInstallationsList(): Promise<UnityInstallationsListResult> {
-        return invokeTyped("gui_unity_installations_list", { params: { limit: 100 } });
+    unityInstallationsList(cursor?: string): Promise<UnityInstallationsListResult> {
+        return invokeTyped("gui_unity_installations_list", { params: { cursor, limit: 100 } });
     }
 
     unityInstallationGet(installationId: string): Promise<UnityInstallationResult> {
@@ -297,6 +307,14 @@ class TauriGuiRpcClient implements GuiRpcClient {
 
     unityProjectEditorSet(projectId: string, installationId: string, arguments_: string[], expectedRevision: number): Promise<ProjectEditorResult> {
         return invokeTyped("gui_unity_project_editor_set", { params: { projectId, installationId, arguments: arguments_, expectedRevision, idempotencyKey: crypto.randomUUID() } });
+    }
+
+    unityProjectEditorSelectionGet(projectId: string): Promise<ProjectEditorSelectionResult> {
+        return invokeTyped("gui_unity_project_editor_selection_get", { projectId });
+    }
+
+    unityProjectEditorClear(projectId: string, expectedRevision: number): Promise<ProjectEditorClearResult> {
+        return invokeTyped("gui_unity_project_editor_clear", { params: { projectId, expectedRevision, idempotencyKey: crypto.randomUUID() } });
     }
 
     unityWriterState(projectId: string): Promise<UnityWriterState> {

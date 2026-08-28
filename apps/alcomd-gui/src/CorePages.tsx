@@ -14,6 +14,7 @@ import {
     publicIcon,
     refreshIcon,
     searchIcon,
+    starIcon,
     syncIcon,
     upgradeIcon,
     viewGridIcon,
@@ -28,7 +29,9 @@ import type {
     OfficialSettings,
     Operation,
     ProjectCopyPlan,
+    ProjectEditorSelectionState,
     ProjectSnapshot,
+    RegistryCursor,
     RepositoryPackageVersion,
     RepositorySnapshot,
     TemplateRecord,
@@ -202,8 +205,14 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     const refresh = useCallback(async () => {
         setState((current) => ({ ...current, error: undefined, refreshing: current.projects.length > 0 }));
         try {
-            const value = await client.projectsList();
-            setState({ loading: false, projects: value.projects, refreshing: false });
+            const projects: ProjectSnapshot[] = [];
+            let cursor: RegistryCursor | undefined;
+            do {
+                const value = await client.projectsList(cursor);
+                projects.push(...value.projects);
+                cursor = value.nextCursor;
+            } while (cursor !== undefined);
+            setState({ loading: false, projects, refreshing: false });
         } catch (caught: unknown) {
             setState((current) => ({ ...current, error: safeError(caught), loading: false, refreshing: false }));
         }
@@ -213,9 +222,11 @@ export function ProjectsPage({ client, navigate }: PageProps) {
         void refresh();
     }, [refresh]);
 
-    const projects = state.projects
+    const projects = [...state.projects]
         .filter((project) => projectName(project).toLocaleLowerCase().includes(search.toLocaleLowerCase()))
         .sort((left, right) => {
+            const favorite = Number(right.favorite === true) - Number(left.favorite === true);
+            if (favorite !== 0) return favorite;
             let compared = 0;
             if (sort === "name") compared = projectName(left).localeCompare(projectName(right));
             if (sort === "type") compared = left.projectType.localeCompare(right.projectType);
@@ -224,6 +235,13 @@ export function ProjectsPage({ client, navigate }: PageProps) {
             if (sort === "observed") compared = left.observedAtMs - right.observedAtMs;
             return descending ? -compared : compared;
         });
+
+    const updateProject = (project: ProjectSnapshot) => {
+        setState((current) => ({
+            ...current,
+            projects: current.projects.map((existing) => existing.projectId === project.projectId ? project : existing)
+        }));
+    };
 
     const updateSort = (nextSort: string) => {
         if (sort === nextSort) {
@@ -307,8 +325,8 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                         <p>{search.length === 0 ? "Register an existing Unity project from the toolbar." : "Change the search text to see other projects."}</p>
                     </section>
                 ) : null}
-                {projects.length > 0 && view === "list" ? <ProjectsTable client={client} descending={descending} navigate={navigate} onChanged={() => void refresh()} onFeedback={setRegistrationMessage} onSort={updateSort} projects={projects} sort={sort} /> : null}
-                {projects.length > 0 && view === "grid" ? <div className="projects-grid">{projects.map((project) => <ProjectCard key={project.projectId ?? project.rootPath} project={project} navigate={navigate} />)}</div> : null}
+                {projects.length > 0 && view === "list" ? <ProjectsTable client={client} descending={descending} navigate={navigate} onChanged={() => void refresh()} onFeedback={setRegistrationMessage} onProjectChanged={updateProject} onSort={updateSort} projects={projects} sort={sort} /> : null}
+                {projects.length > 0 && view === "grid" ? <div className="projects-grid">{projects.map((project) => <ProjectCard client={client} key={project.projectId ?? project.rootPath} onChanged={updateProject} onFeedback={setRegistrationMessage} onRefresh={() => void refresh()} project={project} navigate={navigate} />)}</div> : null}
             </div>
             {registrationMessage === undefined ? null : <p className="operation-feedback" role="status">{registrationMessage}</p>}
             <RegisterProjectDialog
@@ -357,6 +375,7 @@ function ProjectsTable({
     navigate,
     onChanged,
     onFeedback,
+    onProjectChanged,
     onSort,
     projects,
     sort
@@ -366,6 +385,7 @@ function ProjectsTable({
     navigate(path: string): void;
     onChanged(): void;
     onFeedback(message: string): void;
+    onProjectChanged(project: ProjectSnapshot): void;
     onSort(sort: string): void;
     projects: ProjectSnapshot[];
     sort: string;
@@ -391,7 +411,7 @@ function ProjectsTable({
                             <td>{project.unityVersion || "Unknown"}</td>
                             <td>{formatRegistered(project.registeredAtMs)}</td>
                             <td>{formatObserved(project.observedAtMs)}</td>
-                            <td>{id === undefined ? <span className="project-unregistered">Unregistered</span> : <ProjectRowActions client={client} navigate={navigate} onChanged={onChanged} onFeedback={onFeedback} project={project} />}</td>
+                            <td>{id === undefined ? <span className="project-unregistered">Unregistered</span> : <ProjectRowActions client={client} navigate={navigate} onChanged={onChanged} onFeedback={onFeedback} onProjectChanged={onProjectChanged} project={project} />}</td>
                         </tr>
                     );
                 })}</tbody>
@@ -399,7 +419,7 @@ function ProjectsTable({
     );
 }
 
-function ProjectRowActions({ client, navigate, onChanged, onFeedback, project }: { client: GuiRpcClient; navigate(path: string): void; onChanged(): void; onFeedback(message: string): void; project: ProjectSnapshot }) {
+function ProjectRowActions({ client, navigate, onChanged, onFeedback, onProjectChanged, project }: { client: GuiRpcClient; navigate(path: string): void; onChanged(): void; onFeedback(message: string): void; onProjectChanged(project: ProjectSnapshot): void; project: ProjectSnapshot }) {
     const [copyParent, setCopyParent] = useState("");
     const [copyOpen, setCopyOpen] = useState(false);
     const [selectingCopyTarget, setSelectingCopyTarget] = useState(false);
@@ -473,6 +493,7 @@ function ProjectRowActions({ client, navigate, onChanged, onFeedback, project }:
     return (
         <>
             <div className="project-row-actions">
+                <ProjectFavoriteButton client={client} onChanged={onProjectChanged} onFeedback={onFeedback} onRefresh={onChanged} project={project} />
                 <Button className="project-open-unity-action" disabled={opening || revision === undefined} onClick={() => void openUnity()} type="button">
                     <Icon asset={playArrowIcon} slot="icon" />
                     <StateSizedLabel current={opening ? "Opening…" : "Open Unity"} labels={["Open Unity", "Opening…"]} />
@@ -638,7 +659,7 @@ function StateSizedLabel({ current, labels }: { current: string; labels: readonl
     );
 }
 
-function ProjectCard({ project, navigate }: { project: ProjectSnapshot; navigate(path: string): void }) {
+function ProjectCard({ client, onChanged, onFeedback, onRefresh, project, navigate }: { client: GuiRpcClient; onChanged(project: ProjectSnapshot): void; onFeedback(message: string): void; onRefresh(): void; project: ProjectSnapshot; navigate(path: string): void }) {
     const id = project.projectId;
     return (
         <article className="project-card">
@@ -646,9 +667,33 @@ function ProjectCard({ project, navigate }: { project: ProjectSnapshot; navigate
             <p className="project-path" title={displayProjectPath(project.rootPath)}>{displayProjectPath(project.rootPath)}</p>
             <p><span className="project-type"><Icon asset={projectTypeIcon(project.projectType)} /><span>{projectTypeLabel(project.projectType)}</span></span> · Unity {project.unityVersion || "unknown"}</p>
             <p className="project-meta">Added {formatRegistered(project.registeredAtMs)} · observed {formatObserved(project.observedAtMs)}</p>
-            {id === undefined ? <span className="project-unregistered">Unregistered</span> : <div className="project-card-actions"><Button onClick={() => navigate(`/projects/${id}`)} variant="tonal">Manage</Button><Button onClick={() => navigate(`/projects/${id}/backups`)} variant="text">Backups</Button></div>}
+            {id === undefined ? <span className="project-unregistered">Unregistered</span> : <div className="project-card-actions"><ProjectFavoriteButton client={client} onChanged={onChanged} onFeedback={onFeedback} onRefresh={onRefresh} project={project} /><Button onClick={() => navigate(`/projects/${id}`)} variant="tonal">Manage</Button><Button onClick={() => navigate(`/projects/${id}/backups`)} variant="text">Backups</Button></div>}
         </article>
     );
+}
+
+function ProjectFavoriteButton({ client, onChanged, onFeedback, onRefresh, project }: { client: GuiRpcClient; onChanged(project: ProjectSnapshot): void; onFeedback(message: string): void; onRefresh(): void; project: ProjectSnapshot }) {
+    const [busy, setBusy] = useState(false);
+    const projectId = project.projectId;
+    const revision = project.revision;
+    const favorite = project.favorite === true;
+    const toggle = async () => {
+        if (projectId === undefined || revision === undefined) return;
+        setBusy(true);
+        try {
+            const result = await client.projectSetFavorite(projectId, !favorite, revision);
+            onChanged(result.project);
+            onFeedback(result.project.favorite === true ? "Project added to favorites." : "Project removed from favorites.");
+        } catch (caught: unknown) {
+            const error = safeError(caught);
+            onFeedback(`Unable to update favorite: ${error.code}`);
+            if (error.code === "revision_conflict") onRefresh();
+        } finally {
+            setBusy(false);
+        }
+    };
+    const label = busy ? "Updating favorite" : favorite ? "Remove from favorites" : "Add to favorites";
+    return <IconButton aria-pressed={favorite} className="project-favorite-action" disabled={busy || revision === undefined} label={label} onClick={() => void toggle()} title={label} type="button"><Icon asset={starIcon} /></IconButton>;
 }
 
 function RegisterProjectDialog({ client, onChanged, onClose, open, path }: { client: GuiRpcClient; onChanged(): void; onClose(): void; open: boolean; path: string }) {
@@ -970,10 +1015,33 @@ function UnityCard({ installation }: { installation: UnityInstallation }) {
 
 export function ProjectUnityPage({ client, projectId }: PageProps & { projectId: string }) {
     const load = useCallback(async () => {
-        const [project, installations, ...results] = await Promise.all([client.projectGet(projectId), client.unityInstallationsList(), Promise.allSettled([client.unityProjectEditorGet(projectId), client.unityWriterState(projectId)])]);
-        return { project: project.project, installations: installations.installations, preference: results[0][0].status === "fulfilled" ? results[0][0].value.preference : undefined, writer: results[0][1].status === "fulfilled" ? results[0][1].value : undefined };
+        const [project, installations, selection, writer] = await Promise.all([
+            client.projectGet(projectId),
+            loadAllUnityInstallations(client),
+            client.unityProjectEditorSelectionGet(projectId),
+            client.unityWriterState(projectId).catch(() => undefined)
+        ]);
+        return { project: project.project, installations, selection: selection.preference, writer };
     }, [client, projectId]);
-    return <Page title="Project Unity" eyebrow={projectId}><ResourcePage load={load}>{({ project, installations, preference, writer }, refresh) => <><dl className="detail-grid"><Detail label="Selected editor" value={preference?.installationId ?? "Not selected"} /><Detail label="Writer observation" value={writer?.state ?? "Unknown"} /><Detail label="Arguments" value={preference?.arguments.length === 0 ? "Default" : `${preference?.arguments.length ?? 0} configured arguments`} /><Detail label="Observed" value={writer === undefined ? "—" : formatTime(writer.checkedAtMs)} /></dl><ProjectUnityActions client={client} installations={installations} onChanged={refresh} preferenceRevision={preference?.revision ?? 0} project={project} /></>}</ResourcePage></Page>;
+    return <Page title="Project Unity" eyebrow={projectId}><ResourcePage load={load}>{({ project, installations, selection, writer }, refresh) => <><dl className="detail-grid"><Detail label="Selected editor" value={editorSelectionLabel(selection, installations)} /><Detail label="Writer observation" value={writer?.state ?? "Unknown"} /><Detail label="Arguments" value={selection.arguments.length === 0 ? "Default" : `${selection.arguments.length} configured arguments`} /><Detail label="Observed" value={writer === undefined ? "—" : formatTime(writer.checkedAtMs)} /></dl><ProjectUnityActions client={client} installations={installations} onChanged={refresh} project={project} selection={selection} /></>}</ResourcePage></Page>;
+}
+
+async function loadAllUnityInstallations(client: GuiRpcClient): Promise<UnityInstallation[]> {
+    const installations: UnityInstallation[] = [];
+    let cursor: string | undefined;
+    do {
+        const page = await client.unityInstallationsList(cursor);
+        installations.push(...page.installations);
+        cursor = page.nextCursor;
+    } while (cursor !== undefined);
+    return installations;
+}
+
+function editorSelectionLabel(selection: ProjectEditorSelectionState, installations: UnityInstallation[]): string {
+    if (selection.selection.mode === "automatic") return "Automatic";
+    const installationId = selection.selection.installationId;
+    const installation = installations.find((item) => item.installationId === installationId);
+    return installation === undefined ? "Selected editor unavailable" : `Unity ${installation.unityVersion} (${installation.architecture})`;
 }
 
 export function ProjectBackupsPage({ client, navigate, projectId }: PageProps & { projectId: string }) {

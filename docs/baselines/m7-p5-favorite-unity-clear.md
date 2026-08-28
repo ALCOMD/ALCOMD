@@ -1,7 +1,7 @@
 # M7 P5-B Project Favorite / Unity Preference Clear 审计
 
-状态：contract-first Stop A proposal。本文只冻结 v3 行为证据、当前 v4 缺口与待审批合同；没有修改 active RPC、State v10、
-Permission、production source 或 GUI wiring。
+状态：contract-first Stop A 已按项目所有者修订批准并完成 production implementation 与本地完整验收，正在等待 Hosted CI。
+本文保留 v3 行为证据与进入 P5-B 时的 v4 缺口，并记录已经激活的 State v11、RPC、typed client与 official GUI合同。
 
 ## v3 Project Favorite 精确行为
 
@@ -21,7 +21,7 @@ Permission、production source 或 GUI wiring。
 - v3 没有 Project revision；Favorite 属于持久 Project metadata，而不是从项目目录重新观察出的文件内容。v3 activity log
   有记录，但没有可供 v4 复用的 durable aggregate revision/Event 合同。
 
-## 当前 v4 Project 能力
+## P5-B 前 v4 Project 能力
 
 - `ProjectRecord` 只有 observation、revision 与 registered timestamp；`ProjectSnapshot` 和 `projects` table 均无 Favorite。
 - `snapshot_json` 是可刷新、由磁盘重新观察得到的 project read model，不适合承载用户 Favorite；把 Favorite 放进去会让 refresh
@@ -29,7 +29,7 @@ Permission、production source 或 GUI wiring。
 - active `projects.list` cursor 只由 registration ordering 构成。P5-B proposal 不改变 registry page ordering 或 cursor；official
   GUI 在已加载结果上做稳定 favorite-first presentation，继续保留用户所选 secondary sort。没有 favorite-only filter。
 
-## Favorite 最小提案
+## Favorite 最小合同与实现
 
 - State v11 给 `projects` 增加 `favorite INTEGER NOT NULL DEFAULT 0 CHECK (favorite IN (0,1))`；v10 保持冻结。
 - registered `ProjectSnapshot` 兼容增加可选 `favorite:boolean`，实现后 registered project 必须返回它，未注册 inspect snapshot
@@ -56,14 +56,14 @@ Permission、production source 或 GUI wiring。
 - v3 对已经没有 override 的 clear 仍可安全移除缺失字段并保存，但正常 GUI 不显示该 action。v3 没有 revision；命令 activity
   记录更新。missing installation 不让 stale path 继续成为 launch authority。
 
-## 当前 v4 Unity 能力与缺口
+## P5-B 前 v4 Unity 能力与缺口
 
 - active `unity.projectEditor.set` 要求 non-null `installationId`，并把 installation 与 arguments 存在同一
   `project_editor_preferences` row；`unity.projectEditor.get` 和 `unity.launch` 都要求该 row 存在。
 - table 的 `installation_id` 是 `NOT NULL` 且 `ON DELETE RESTRICT`。现有 set/get 无法表达 automatic selection，也无法在清除
   installation override 时保留 arguments。把既有 required string 偷改成 nullable 是破坏性合同，不接受。
 
-## Unity 最小提案
+## Unity 最小合同与实现
 
 - 复用现有 `unity.read` / `unity.manage` / `unity.launch` Permission 和 capability；不新增 Permission。
 - 新增 `unity.projectEditor.selection.get`，返回 tagged selection：`automatic` 或 `explicit{installationId}`，并返回 arguments、
@@ -81,13 +81,16 @@ Permission、production source 或 GUI wiring。
 - clear 后下一次 launch 立即使用上述 resolution；arguments 原样保留。missing/stale explicit installation 继续 fail closed；
   不回退到环境变量或不受管理的 executable path。
 
-## Stop A 边界
+## Active production evidence
 
-Proposal schema 位于 `specs/rpc/m7-project-preferences.proposal.schema.json`，State proposal 位于
+经批准后保留为 implemented evidence 的 proposal schema 位于 `specs/rpc/m7-project-preferences.proposal.schema.json`，active State合同位于
 `specs/storage/state-v11.md` 和 `state-v11-migration.proposal.contract.json`，machine vectors 位于
-`crates/alcomd-testing/fixtures/m7/project-preferences-contract-vectors.json`。在项目所有者批准前：
+`crates/alcomd-testing/fixtures/m7/project-preferences-contract-vectors.json`。active implementation包括：
 
-- 不创建 `0011` migration；
-- 不修改 active protocol/dispatcher/client/store/application/GUI；
-- 不广告新 method/capability/dataSchema；
-- Favorite 与 Unity clear 继续是 visible-action gap，`projects.management` 继续 `in_progress`。
+- `0011_project_preferences.sql` 单事务 migration与 State v11广告；
+- active protocol/dispatcher/store/application/typed client/Tauri/GUI；
+- Favorite完整分页 stable-first presentation、list/grid真实 toggle；
+- automatic/explicit selection、legacy get/set、clear与 automatic launch 0/1/multiple分支；
+- Rust migration/store/RPC/compatibility tests与 deterministic Playwright tests。
+
+P6-P8仍未完成，因此 `projects.management` 与 visible-action completeness继续 `in_progress`/`planned`。

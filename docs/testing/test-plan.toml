@@ -508,8 +508,8 @@ stage = "M7"
 kind = "contract"
 platforms = ["all"]
 status = "implemented"
-description = "验证 active Project Copy 的 bounded Plan、900000ms expiry、exact profile/quota、Operation phase、forward recovery、State v10 两表边界，并硬门禁 P5-B Favorite/Unity clear 在完整 production wiring 前保持 approved in-progress State v11 合同。"
-evidence = ["docs/exec-plans/M7-project-package-functional-closure.md", "docs/baselines/m7-project-package-functional-closure.md", "docs/baselines/m7-p5-favorite-unity-clear.md", "specs/rpc/alcomd-rpc-v1.md", "specs/rpc/m7-project-copy.proposal.schema.json", "specs/rpc/m7-project-preferences.proposal.schema.json", "specs/storage/state-v10.md", "specs/storage/state-v10-migration.proposal.contract.json", "specs/storage/state-v11.md", "specs/storage/state-v11-migration.proposal.contract.json", "crates/alcomd-store/migrations/0010_project_copy.sql", "crates/alcomd-testing/fixtures/m7/project-copy-contract-vectors.json", "crates/alcomd-testing/fixtures/m7/project-preferences-contract-vectors.json", "crates/alcomd-testing/tests/m7_project_actions_contract.rs"]
+description = "验证 active Project Copy 的 bounded Plan/Operation/recovery，以及 P5-B State v11、Favorite exact CAS/no-op/Event/完整集合排序、Unity automatic/explicit/clear、legacy compatibility 与 launch idempotency合同。"
+evidence = ["docs/exec-plans/M7-project-package-functional-closure.md", "docs/baselines/m7-project-package-functional-closure.md", "docs/baselines/m7-p5-favorite-unity-clear.md", "specs/rpc/alcomd-rpc-v1.md", "specs/rpc/m7-project-copy.proposal.schema.json", "specs/rpc/m7-project-preferences.proposal.schema.json", "specs/storage/state-v10.md", "specs/storage/state-v10-migration.proposal.contract.json", "specs/storage/state-v11.md", "specs/storage/state-v11-migration.proposal.contract.json", "crates/alcomd-store/migrations/0010_project_copy.sql", "crates/alcomd-store/migrations/0011_project_preferences.sql", "crates/alcomd-testing/fixtures/m7/project-copy-contract-vectors.json", "crates/alcomd-testing/fixtures/m7/project-preferences-contract-vectors.json", "crates/alcomd-testing/tests/m7_project_actions_contract.rs", "crates/alcomd-testing/tests/m3_read_rpc.rs", "crates/alcomd-testing/tests/m5_unity_rpc.rs", "apps/alcomd-gui/tests/browser/m7-project-preferences.spec.ts"]
 
 [[test]]
 id = "projects.m7-copy-transaction"
@@ -526,8 +526,8 @@ stage = "M7"
 kind = "integration-ui"
 platforms = ["all"]
 status = "planned"
-description = "production gate 要求每个可见业务 action 是真实 implemented、current-state conditional disabled 或非 release-blocker 的显式 unavailable；P1-P5-A 已将当前 Projects 页永久 fake count 收敛为零，并完成 Create/Restore existing-Core GUI wiring。Favorite/Unity clear 已形成 proposal-only Stop A但仍未生产实现，Package/Delete Directory 等 P6-P8 缺口继续阻止完整 gate。"
-evidence = ["crates/alcomd-testing/fixtures/m7/visible-action-completeness-v1.json", "docs/baselines/m7-project-package-functional-closure.md", "crates/alcomd-testing/tests/m7_project_actions_contract.rs", "apps/alcomd-gui/src/ProjectCreationDialogs.tsx", "apps/alcomd-gui/tests/browser/m7-project-create-restore.spec.ts"]
+description = "production gate 要求每个可见业务 action 是真实 implemented、current-state conditional disabled 或非 release-blocker 的显式 unavailable；P1-P5-B 已完成 Create/Restore/Favorite/Unity clear 的真实 Core入口。Package/Delete Directory 等 P6-P8 缺口继续阻止完整 gate。"
+evidence = ["crates/alcomd-testing/fixtures/m7/visible-action-completeness-v1.json", "docs/baselines/m7-project-package-functional-closure.md", "crates/alcomd-testing/tests/m7_project_actions_contract.rs", "apps/alcomd-gui/src/ProjectCreationDialogs.tsx", "apps/alcomd-gui/tests/browser/m7-project-create-restore.spec.ts", "apps/alcomd-gui/tests/browser/m7-project-preferences.spec.ts"]
 
 [[test]]
 id = "gui.m12-screen-reader-smoke"

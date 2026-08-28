@@ -196,6 +196,13 @@ upstream_path = "symbols/web/sync/materialsymbolsrounded/sync_24px.svg"
 sha256 = "4e76b510662a3d4317205bfac9cb8be32178dc7ee7d89447144bf9a1d38ca7a1"
 
 [[asset]]
+name = "star"
+optical_size = 24
+path = "24/star.svg"
+upstream_path = "symbols/web/star/materialsymbolsrounded/star_24px.svg"
+sha256 = "c0bfa8bb656fa17290b2292100b07e1d9ff12fe7a6dbee8bac4b8e84ed08384c"
+
+[[asset]]
 name = "upgrade"
 optical_size = 24
 path = "24/upgrade.svg"

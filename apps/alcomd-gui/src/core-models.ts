@@ -124,6 +124,7 @@ export interface ReadIssue {
 export interface ProjectSnapshot {
     projectId?: string;
     registeredAtMs?: number;
+    favorite?: boolean;
     rootPath: string;
     projectType: string;
     unityVersion: string;
@@ -289,6 +290,21 @@ export interface ProjectEditorPreference {
 }
 
 export interface ProjectEditorResult { preference: ProjectEditorPreference; replayed: boolean }
+
+export type ProjectEditorSelection =
+    | { mode: "automatic" }
+    | { mode: "explicit"; installationId: string };
+
+export interface ProjectEditorSelectionState {
+    projectId: string;
+    selection: ProjectEditorSelection;
+    arguments: string[];
+    revision: number;
+    updatedAtMs: number;
+}
+
+export interface ProjectEditorSelectionResult { preference: ProjectEditorSelectionState }
+export interface ProjectEditorClearResult { preference: ProjectEditorSelectionState; replayed: boolean }
 
 export interface UnityWriterState {
     projectId: string;
