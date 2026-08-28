@@ -40,6 +40,18 @@
         "remove-directory",
         "vcc-import-migrate"
     ],
+    "contractFirstProposals": [
+        {
+            "id": "favorite",
+            "status": "proposal-only-owner-approval-required",
+            "productionImplemented": false
+        },
+        {
+            "id": "clear-unity-preference",
+            "status": "proposal-only-owner-approval-required",
+            "productionImplemented": false
+        }
+    ],
     "expectedCurrentPermanentFakeCount": 0,
     "releaseBlockerFeatures": ["projects.management", "packages.vpm"],
     "productionGateMayPass": false

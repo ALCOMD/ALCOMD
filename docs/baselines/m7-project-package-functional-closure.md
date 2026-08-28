@@ -1,17 +1,18 @@
 # M7 Project / Package Functional Closure matrix
 
-状态：Stop A P0-P4 production candidate。v3 只作行为参考；没有复制、移植或改写其源码。Open Directory、native
-Register chooser 与 Copy 已有真实 GUI/Core 入口；P5-P8 仍未完成，因此聚合 feature 继续 `in_progress`。
+状态：P0-P4 remote checkpoint 与 P5-A Create/Restore production wiring 已通过；P5-B Favorite/Clear Unity Preference
+contract-first Stop A proposal 已形成，尚未获生产实现批准。v3 只作行为参考；没有复制、移植或改写其源码。P6-P8 仍未完成，
+因此聚合 feature 继续 `in_progress`。
 
 | 用户入口 | 当前 Core 是否足够 | 最小合同 / 实现归属 | Permission 复用 | State / Config 影响 | dependency / platform | slice |
 |---|---|---|---|---|---|---|
 | Open Project Directory | `projects.get` + `ProjectSnapshot.rootPath` 足够 | closed Tauri `ProjectId` adapter；无 public RPC | `projects.read`（existing client call） | 无 | approved `open 5.4.2`，defaults off | P1 / S |
 | Add/Register chooser | register RPC 足够；native chooser 缺失 | closed folder picker 后调用 existing `projects.register` | `projects.manage` | 无 | approved dialog 2.7.2，defaults off + gtk3 | P1 / S |
-| Create | `templates.planCreateProject/applyCreateProject` 足够；built-in template 可表达 blank/create | Projects toolbar + native folder picker + existing Plan/Apply/Operation + Core ProjectId navigation | existing template/project/package read/manage matrix | 无 | compact host-owned dialog | P5-A / implemented candidate |
-| Restore | `backups.planRestore/applyRestore` 足够 | Projects toolbar + managed Backup selector + native folder picker + existing Plan/Apply/Operation + Core ProjectId navigation | existing backup/project permissions | 无 | compact host-owned dialog | P5-A / implemented candidate |
+| Create | `templates.planCreateProject/applyCreateProject` 足够；built-in template 可表达 blank/create | Projects toolbar + native folder picker + existing Plan/Apply/Operation + Core ProjectId navigation | existing template/project/package read/manage matrix | 无 | compact host-owned dialog | P5-A / implemented + remote green |
+| Restore | `backups.planRestore/applyRestore` 足够 | Projects toolbar + managed Backup selector + native folder picker + existing Plan/Apply/Operation + Core ProjectId navigation | existing backup/project permissions | 无 | compact host-owned dialog | P5-A / implemented + remote green |
 | Copy Project | P2-P4 已实现 | active `projects.copy.v1`, `projects.planCopy/applyCopy`, Operation `projects.copy` | `projects.read + projects.create` | active State v10 两表 | approved dialog；copy engine无新 dependency/platform unsafe | P2-P4 / implemented candidate |
-| Favorite | 不足；Project DTO/registry 没有 favorite | proposed `projects.setFavorite(projectId,expectedRevision,favorite,idempotencyKey)`；兼容可选 `favorite` DTO | `projects.manage` | **不并入 v10**；后续最小 schema proposal或经审批的独立 preference authority | 无 | P3 / M |
-| Clear/Forget Unity preference | 不足；`unity.projectEditor.set` 要求 non-null installationId | 新窄 `unity.projectEditor.clear(projectId,expectedRevision,idempotencyKey)`，不把 existing set 的 required string 扩为 null | `unity.manage` | 删除 existing preference row；无新表 | 无 | P3 / S |
+| Favorite | 不足；Project DTO/registry 没有 favorite | Stop A proposed `projects.setFavorite(projectId,favorite,expectedRevision,idempotencyKey)`；registered Project DTO兼容可选 `favorite` | `projects.manage` | proposed State v11 `projects.favorite`；不进入 observation JSON | 无 | P5-B proposal / M |
+| Clear/Forget Unity preference | 不足；`unity.projectEditor.set` 要求 non-null installationId，且 installation/arguments 共存一行 | Stop A proposed `unity.projectEditor.selection.get` + `unity.projectEditor.clear`；tagged automatic/explicit selection；既有 set 不改 nullable | `unity.read` / `unity.manage` | proposed State v11重建 existing preference table；clear保留 arguments；无新表 | 无 | P5-B proposal / M |
 | Open Unity / Backup | 已有真实 RPC/Operation | 保持 existing wiring；不是新合同 | existing | 无 | existing | 已实现证据保持 |
 | Remove registry row | `projects.unregister` 足够 | GUI confirmation + existing RPC；不删除目录 | `projects.manage` | existing | 无 | P3 / S |
 | Remove directory | 不足且是高影响删除 | 独立 Plan/Apply/Operation、writer gate、Project lock、trash/delete/recovery contract，另行人工审批 | 待定；不得从 `projects.manage` 隐式获得任意删除 | 后续 schema | 可能需平台 trash/删除评估 | P7 / XL |
@@ -38,6 +39,10 @@ Register chooser 与 Copy 已有真实 GUI/Core 入口；P5-P8 仍未完成，�
    单一概念。
 6. docs/changelog URL 来自不可信 repository manifest；React 不得把任意 URL传给 generic opener。
 7. State v10 保持 Copy-only，避免一次 proposal 同时改变 Copy、Favorite 与 Package Plan authority。
+8. v3 Favorite 是持久 Project metadata，始终作为 selected sort 的第一排序键；v4 proposal 不改变 Core pagination cursor，
+   official GUI只对完整加载集合做稳定 favorite-first presentation，也不新增 favorite-only filter。
+9. v3 Clear Unity path 保留 custom arguments并恢复 automatic selection。当前 v4 set/get 无法兼容表达；删除 preference row会丢失
+   arguments且让 launch直接失败，因此 P5-B proposal需要显式 tagged read + clear method与 State v11 table rebuild。
 
 ## Release / milestone ownership
 

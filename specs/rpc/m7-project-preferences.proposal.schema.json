@@ -1,0 +1,177 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/proposals/m7-project-preferences.json",
+    "title": "ALCOMD M7 P5-B Project preference proposal",
+    "x-alcomd-publication": "proposal-only-owner-approval-required",
+    "x-alcomd-active-rpc-modified": false,
+    "x-alcomd-state-schema": 11,
+    "$defs": {
+        "uuid": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9223372036854775807
+        },
+        "expectedOptionalRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9223372036854775807,
+            "description": "0 requires absent/default automatic state; positive values require an exact preference revision."
+        },
+        "idempotencyKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[!-~]+$"
+        },
+        "boundedArguments": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {"type": "string", "maxLength": 4096}
+        },
+        "projectSetFavoriteParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["projectId", "favorite", "expectedRevision", "idempotencyKey"],
+            "properties": {
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "favorite": {"type": "boolean"},
+                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
+            }
+        },
+        "registeredProjectFavoriteExtension": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["projectId", "revision", "favorite"],
+            "properties": {
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "revision": {"$ref": "#/$defs/revision"},
+                "favorite": {"type": "boolean"}
+            },
+            "description": "favorite is emitted for registered Project snapshots and omitted from anonymous inspect snapshots."
+        },
+        "projectSetFavoriteResult": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["project", "replayed"],
+            "properties": {
+                "project": {"$ref": "#/$defs/registeredProjectFavoriteExtension"},
+                "replayed": {"type": "boolean"}
+            }
+        },
+        "projectEditorSelection": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["mode"],
+                    "properties": {"mode": {"const": "automatic"}}
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["mode", "installationId"],
+                    "properties": {
+                        "mode": {"const": "explicit"},
+                        "installationId": {"$ref": "#/$defs/uuid"}
+                    }
+                }
+            ]
+        },
+        "projectEditorSelectionState": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["projectId", "selection", "arguments", "revision", "updatedAtMs"],
+            "properties": {
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "selection": {"$ref": "#/$defs/projectEditorSelection"},
+                "arguments": {"$ref": "#/$defs/boundedArguments"},
+                "revision": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+                "updatedAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807}
+            }
+        },
+        "projectEditorClearParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["projectId", "expectedRevision", "idempotencyKey"],
+            "properties": {
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "expectedRevision": {"$ref": "#/$defs/expectedOptionalRevision"},
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
+            }
+        },
+        "projectEditorSelectionGetParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["projectId"],
+            "properties": {"projectId": {"$ref": "#/$defs/uuid"}}
+        },
+        "projectEditorSelectionResult": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["preference", "replayed"],
+            "properties": {
+                "preference": {"$ref": "#/$defs/projectEditorSelectionState"},
+                "replayed": {"type": "boolean"}
+            }
+        }
+    },
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["contractVersion", "methods", "permissions", "capabilities"],
+    "properties": {
+        "contractVersion": {"const": 1},
+        "methods": {
+            "const": [
+                "projects.setFavorite",
+                "unity.projectEditor.selection.get",
+                "unity.projectEditor.clear"
+            ]
+        },
+        "permissions": {
+            "const": {
+                "projects.setFavorite": ["projects.manage"],
+                "unity.projectEditor.selection.get": ["unity.read"],
+                "unity.projectEditor.clear": ["unity.manage"]
+            }
+        },
+        "capabilities": {
+            "const": {
+                "projects.setFavorite": "projects.manage.v1",
+                "unity.projectEditor.selection.get": "unity.read.v1",
+                "unity.projectEditor.clear": "unity.manage.v1"
+            }
+        },
+        "stableErrors": {
+            "const": {
+                "projects.setFavorite": [
+                    "project_not_registered",
+                    "revision_conflict",
+                    "idempotency_conflict",
+                    "permission_denied",
+                    "internal_error"
+                ],
+                "unity.projectEditor.selection.get": [
+                    "project_not_registered",
+                    "permission_denied",
+                    "internal_error"
+                ],
+                "unity.projectEditor.clear": [
+                    "project_not_registered",
+                    "revision_conflict",
+                    "idempotency_conflict",
+                    "permission_denied",
+                    "internal_error"
+                ],
+                "automaticLaunchResolution": [
+                    "unity_installation_not_found",
+                    "unity_editor_selection_required"
+                ]
+            }
+        }
+    }
+}

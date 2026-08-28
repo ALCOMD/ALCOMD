@@ -1,0 +1,42 @@
+{
+    "status": "proposal-only-owner-approval-required",
+    "from": 10,
+    "to": 11,
+    "productionMigration": null,
+    "productionWiringCreated": false,
+    "transaction": "BEGIN IMMEDIATE",
+    "tablesAdded": [],
+    "columnsAdded": ["projects.favorite", "project_editor_preferences.selection_mode"],
+    "tablesRebuilt": ["project_editor_preferences"],
+    "projectFavorite": {
+        "default": false,
+        "storedOutsideSnapshotJson": true,
+        "newProjectDefault": false,
+        "tombstoneAfterUnregister": false
+    },
+    "projectEditorPreference": {
+        "selectionModes": ["automatic", "explicit"],
+        "installationIdNullableOnlyForAutomatic": true,
+        "argumentsPreservedOnClear": true,
+        "missingRowMeans": "automatic-empty-arguments-revision-zero",
+        "existingRowsMigrateAs": "explicit",
+        "newTableAdded": false
+    },
+    "invariants": [
+        "all-v10-rows-and-authority-preserved",
+        "event-sequence-preserved",
+        "idempotency-authority-preserved",
+        "foreign-key-check-empty",
+        "favorite-not-stored-in-observation-snapshot",
+        "editor-arguments-preserved-when-selection-cleared",
+        "future-schema-fail-closed",
+        "migration-failure-rolls-back-to-v10-authority"
+    ],
+    "forbiddenAdditions": [
+        "favorite-tombstone-table",
+        "second-unity-arguments-table",
+        "generic-preferences-table",
+        "package-state",
+        "remove-directory-state"
+    ]
+}

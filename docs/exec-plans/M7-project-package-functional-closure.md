@@ -1,8 +1,9 @@
 # M7 Project / Package Functional Closure：contract-first Stop A
 
 状态：Stop A 合同修正与 P0-P4 production implementation 已通过本地、三平台 Hosted CI、CodeQL 和项目所有者验收；
-P5-A Create / Restore existing-Core GUI wiring 已形成仅使用既有 typed client、Plan / Apply / Operation 合同的本地候选并
-通过完整本地 gate，等待该候选自身 Hosted CI。H2 visual WIP 继续暂停，P5-B 只允许 contract-first Stop A，P6-P8、M8/M9 未开始。
+P5-A Create / Restore existing-Core GUI wiring 已通过本地完整验收、三平台 Hosted CI 与 CodeQL。P5-B Favorite / Clear
+Unity Preference 已完成 proposal-only contract-first Stop A，等待项目所有者审批；没有开始其 production implementation。
+H2 visual WIP 继续暂停，P6-P8、M8/M9 未开始。
 
 ## 目标与边界
 
@@ -247,4 +248,14 @@ P0-P4 必须执行 fmt、clippy、Workspace tests、npm check/build/browser test
   完成后刷新和进入 Core 返回 ProjectId 的 workspace。未新增 `projects.create`/`projects.restore`、RPC、State、Permission、
   dependency、unsafe 或平台 API；归档、冲突、writer gate 与恢复规则仍只由 Core 执行。新增 3 项 browser flow tests，完整
   22 项 Playwright suite、Rust fmt/strict Clippy/完整 locked Workspace tests、npm check/build、Tauri release no-bundle、xtask、
-  metadata、baseline freeze 与 diff check 均已本地通过；Hosted CI 证据待本候选提交后取得。
+  metadata、baseline freeze 与 diff check 均已本地通过。commit `12638e7bdc5ba10ea9e9438b8dbc209a3993cafc` 的 Hosted CI
+  run `33189137494` 已在 Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 全部成功，CodeQL run `33189136465`
+  四个分析 job 全部成功；Ubuntu最高 `GLIBC_2.34`，macOS 9 个预期产物均为 arm64 / minos 11.0。
+- P5-B 精确审计确认：v3 Favorite 是持久 Project metadata，新项目默认 false、restart保留、注销后同路径重新注册不保留，
+  且在所有 selected sort 之前做 favorite-first stable partition；没有 favorite-only filter。Stop A提出 State v11
+  `projects.favorite`、兼容可选 registered DTO字段及 `projects.setFavorite`，复用 `projects.manage`，Project revision/Event/
+  idempotency语义已冻结为 proposal。
+- v3 Clear Unity path只移除 explicit path、保留 custom arguments并恢复 automatic version matching。active v4 required
+  `installationId` 与同 row arguments无法表达这一语义；Stop A因此提出 tagged `unity.projectEditor.selection.get`、窄
+  `unity.projectEditor.clear` 与 State v11 existing table rebuild，复用 `unity.read/manage`且不新增 table。所有工件明确为
+  proposal-only；没有 `0011` migration、active RPC/State/Permission/production wiring。

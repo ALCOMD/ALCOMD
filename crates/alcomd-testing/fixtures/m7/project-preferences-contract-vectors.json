@@ -1,0 +1,54 @@
+{
+    "status": "proposal-only-owner-approval-required",
+    "v3Favorite": {
+        "persistent": true,
+        "newProjectDefault": false,
+        "favoriteFirstForEverySelectedSort": true,
+        "favoriteOnlyFilter": false,
+        "survivesRestart": true,
+        "survivesUnregister": false,
+        "samePathReregisterDefault": false,
+        "copyCreateRestoreDefault": false,
+        "activityRecorded": true,
+        "domainMetadata": true
+    },
+    "favoriteProposal": {
+        "method": "projects.setFavorite",
+        "permission": "projects.manage",
+        "projectRevisionChangesOnMutation": true,
+        "event": "project.favorite_changed",
+        "sameValueNoOp": true,
+        "idempotent": true,
+        "coreListOrderingChanges": false,
+        "cursorChanges": false,
+        "guiStableFavoriteFirst": true,
+        "stateSchema": 11
+    },
+    "v3UnityClear": {
+        "clearsOnlyExplicitPath": true,
+        "preservesArguments": true,
+        "restoresAutomaticSelection": true,
+        "immediatelyAffectsNextLaunch": true,
+        "zeroMatches": "installation-not-found",
+        "oneMatch": "launch",
+        "multipleMatches": "ask-user",
+        "missingOverride": "safe-no-op"
+    },
+    "unityProposal": {
+        "existingSetCanExpressClear": false,
+        "readMethod": "unity.projectEditor.selection.get",
+        "clearMethod": "unity.projectEditor.clear",
+        "readPermission": "unity.read",
+        "clearPermission": "unity.manage",
+        "projectRevisionChanges": false,
+        "preferenceRevisionChangesOnMutation": true,
+        "event": "unity.project-editor.selection_cleared",
+        "sameStateNoOp": true,
+        "idempotent": true,
+        "argumentsPreserved": true,
+        "automaticMultipleMatchError": "unity_editor_selection_required",
+        "stateSchema": 11,
+        "newTable": false
+    },
+    "activeProductionModified": false
+}

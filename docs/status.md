@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。H2 visual implementation 继续暂停；M7 Project / Package Functional Closure P0-P4 remote checkpoint 已通过。P5-A Create / Restore existing-Core GUI wiring 已通过完整本地验收，等待候选自身 Hosted CI；P5-B 仅获 contract-first Stop A 授权。projects.management 与 packages.vpm 保持 in_progress，M8/M9 未开始。`
+`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。H2 visual implementation 继续暂停；M7 Project / Package Functional Closure P0-P4 remote checkpoint 与 P5-A Create/Restore 已通过本地及远端验收。P5-B Favorite/Clear Unity Preference 已完成 proposal-only contract-first Stop A，等待人工审批；production 未开始。projects.management 与 packages.vpm 保持 in_progress，M8/M9 未开始。`
 
 ## 已完成
 
@@ -296,7 +296,13 @@
   Create/Restore 的选择、取消、chooser、名称、Plan review、Apply、Operation、成功/失败、空备份和新注册项目可见性已有 3 项
   browser tests；完整 22 项 Playwright suite、Rust fmt/strict Clippy/完整 locked Workspace tests、npm check/build、Tauri release
   no-bundle、xtask、metadata、baseline freeze 与 diff check 均已本地通过。未新增 RPC、State、Permission、dependency、unsafe
-  或平台 API；候选自身 Hosted CI 尚待最终记录，聚合 feature 状态不提升。
+  或平台 API。commit `12638e7bdc5ba10ea9e9438b8dbc209a3993cafc` 的 Hosted CI run `33189137494` 在 Windows、
+  Ubuntu、macOS 全部成功，CodeQL run `33189136465` 全部成功；Ubuntu最高 `GLIBC_2.34`，macOS 9 个预期产物均为
+  arm64 / minos 11.0。聚合 feature 状态不提升。
+- P5-B Favorite/Clear Unity Preference 已完成精确 v3/current-v4 审计、proposal RPC Schema、State v11 proposal、机器 vectors
+  与 contract gate。Favorite proposal复用 `projects.manage`并明确 Project revision/Event/idempotency、GUI stable favorite-first、
+  无 favorite-only filter和注销后重置；Unity clear proposal复用 `unity.read/manage`，保留 arguments并恢复 automatic selection。
+  active protocol/State v10/Permission/production source均未修改，Favorite/clear visible gaps继续存在，等待项目所有者审批。
 
 ## 后续里程碑尚未完成
 
@@ -361,8 +367,8 @@
 M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 Portable UI B0-D 已通过 Hosted CI；Official GUI
 functional candidate `192672…` 保留技术证据但已被拒绝 visual/IA acceptance；首次 H1 也已被标记为
 `rejected_for_visual_direction`。替代的 v3-reference wide Projects shell 已在 `7bb325b…` 通过 Visual Gate 1。当前只完成
-Project / Package Functional Closure P0-P4 remote checkpoint；P5-A Create / Restore 正在候选验收，完成后只允许进入 P5-B
-contract-first Stop A，不得开始 Favorite/Clear production、P6-P8、H2 visual、M8 或 M9。
+Project / Package Functional Closure P0-P4 remote checkpoint 与 P5-A Create/Restore 已远端通过；P5-B contract-first Stop A
+proposal 已完成并停止。不得开始 Favorite/Clear production、State v11 migration、P6-P8、H2 visual、M8 或 M9。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential

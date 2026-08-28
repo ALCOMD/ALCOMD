@@ -7,6 +7,13 @@ const STATE_V10_MIGRATION: &str =
     include_str!("../../../specs/storage/state-v10-migration.proposal.contract.json");
 const COPY_VECTORS: &str = include_str!("../fixtures/m7/project-copy-contract-vectors.json");
 const ACTION_GATE: &str = include_str!("../fixtures/m7/visible-action-completeness-v1.json");
+const P5_PREFERENCE_SCHEMA: &str =
+    include_str!("../../../specs/rpc/m7-project-preferences.proposal.schema.json");
+const P5_PREFERENCE_VECTORS: &str =
+    include_str!("../fixtures/m7/project-preferences-contract-vectors.json");
+const STATE_V11: &str = include_str!("../../../specs/storage/state-v11.md");
+const STATE_V11_MIGRATION: &str =
+    include_str!("../../../specs/storage/state-v11-migration.proposal.contract.json");
 const ACTIVE_RPC: &str = include_str!("../../../specs/rpc/alcomd-rpc-v1.md");
 const ACTIVE_STORE: &str = include_str!("../../alcomd-store/src/sqlite.rs");
 const ACTIVE_PROTOCOL: &str = include_str!("../../alcomd-protocol/src/lib.rs");
@@ -241,6 +248,19 @@ fn visible_action_gate_records_real_current_gaps_instead_of_hiding_them() {
             .iter()
             .any(|gap| gap == "create-entry" || gap == "restore-entry")
     );
+    for proposal in ["favorite", "clear-unity-preference"] {
+        assert!(
+            gate["contractFirstProposals"]
+                .as_array()
+                .expect("contract-first proposals")
+                .iter()
+                .any(|entry| {
+                    entry["id"] == proposal
+                        && entry["status"] == "proposal-only-owner-approval-required"
+                        && entry["productionImplemented"] == false
+                })
+        );
+    }
 }
 
 #[test]
@@ -255,4 +275,97 @@ fn official_gui_local_project_affordances_remain_closed() {
     assert!(GUI_RPC_ADAPTER.contains("gui_select_directory"));
     assert!(!GUI_CAPABILITY.contains("dialog:"));
     assert!(!GUI_CAPABILITY.contains("opener:"));
+}
+
+#[test]
+fn p5_b_project_preferences_are_exact_proposals_not_production_wiring() {
+    let schema: Value =
+        serde_json::from_str(P5_PREFERENCE_SCHEMA).expect("P5 preference proposal schema");
+    let vectors: Value =
+        serde_json::from_str(P5_PREFERENCE_VECTORS).expect("P5 preference vectors");
+    let migration: Value = serde_json::from_str(STATE_V11_MIGRATION).expect("State v11 proposal");
+
+    assert_eq!(
+        schema["x-alcomd-publication"],
+        "proposal-only-owner-approval-required"
+    );
+    assert_eq!(schema["x-alcomd-active-rpc-modified"], false);
+    assert_eq!(schema["x-alcomd-state-schema"], 11);
+    assert_eq!(
+        schema["properties"]["methods"]["const"],
+        json!([
+            "projects.setFavorite",
+            "unity.projectEditor.selection.get",
+            "unity.projectEditor.clear"
+        ])
+    );
+    assert_eq!(
+        schema["properties"]["permissions"]["const"],
+        json!({
+            "projects.setFavorite": ["projects.manage"],
+            "unity.projectEditor.selection.get": ["unity.read"],
+            "unity.projectEditor.clear": ["unity.manage"]
+        })
+    );
+    assert!(
+        schema["$defs"]["registeredProjectFavoriteExtension"]["required"]
+            .as_array()
+            .expect("registered project favorite fields")
+            .iter()
+            .any(|field| field == "favorite")
+    );
+    assert_eq!(
+        schema["properties"]["stableErrors"]["const"]["automaticLaunchResolution"],
+        json!([
+            "unity_installation_not_found",
+            "unity_editor_selection_required"
+        ])
+    );
+
+    assert_eq!(vectors["v3Favorite"]["favoriteOnlyFilter"], false);
+    assert_eq!(vectors["v3Favorite"]["survivesUnregister"], false);
+    assert_eq!(
+        vectors["favoriteProposal"]["event"],
+        "project.favorite_changed"
+    );
+    assert_eq!(
+        vectors["favoriteProposal"]["coreListOrderingChanges"],
+        false
+    );
+    assert_eq!(vectors["favoriteProposal"]["cursorChanges"], false);
+    assert_eq!(vectors["v3UnityClear"]["preservesArguments"], true);
+    assert_eq!(
+        vectors["unityProposal"]["clearMethod"],
+        "unity.projectEditor.clear"
+    );
+    assert_eq!(vectors["unityProposal"]["projectRevisionChanges"], false);
+    assert_eq!(
+        vectors["unityProposal"]["automaticMultipleMatchError"],
+        "unity_editor_selection_required"
+    );
+
+    assert_eq!(migration["status"], "proposal-only-owner-approval-required");
+    assert_eq!(migration["from"], 10);
+    assert_eq!(migration["to"], 11);
+    assert_eq!(migration["productionMigration"], Value::Null);
+    assert_eq!(migration["productionWiringCreated"], false);
+    assert_eq!(migration["tablesAdded"], json!([]));
+    assert_eq!(
+        migration["projectEditorPreference"]["argumentsPreservedOnClear"],
+        true
+    );
+    assert!(STATE_V11.contains("尚无 production migration"));
+    assert!(STATE_V11.contains("daemon 仍广告 `dataSchema: 10`"));
+
+    assert!(!ACTIVE_RPC.contains("projects.setFavorite"));
+    assert!(!ACTIVE_RPC.contains("unity.projectEditor.selection.get"));
+    assert!(!ACTIVE_RPC.contains("unity.projectEditor.clear"));
+    assert!(!ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_SET_FAVORITE"));
+    assert!(!ACTIVE_PROTOCOL.contains("METHOD_UNITY_PROJECT_EDITOR_CLEAR"));
+    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 10;"));
+    assert!(
+        !std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../alcomd-store/migrations/0011_project_preferences.sql")
+            .exists()
+    );
 }
