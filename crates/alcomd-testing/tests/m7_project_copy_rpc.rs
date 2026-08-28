@@ -1,10 +1,11 @@
 use std::fs;
+use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use alcomd_application::{
     AccessContext, IdempotencyKey, M3RegistryStore, M5BackupError, M5BackupWriterGate,
@@ -19,6 +20,12 @@ use alcomd_vpm::ProjectCopyEngine;
 
 static RPC_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+const RPC_STAGE_TIMEOUT: Duration = Duration::from_secs(30);
+const RPC_TEST_LOCK_TIMEOUT: Duration = Duration::from_secs(90);
+const DAEMON_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
+const CHILD_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
+const CHILD_DROP_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
+
 const CRASH_ROOT_ENV: &str = "ALCOMD_TEST_PROJECT_COPY_CRASH_ROOT";
 const KILL_GATE_ENV: &str = "ALCOMD_TEST_PROJECT_COPY_KILL_GATE";
 const KILL_SIGNAL_ENV: &str = "ALCOMD_TEST_PROJECT_COPY_KILL_SIGNAL";
@@ -26,6 +33,59 @@ const OPERATION_SIGNAL_ENV: &str = "ALCOMD_TEST_PROJECT_COPY_OPERATION_SIGNAL";
 const PAUSE_GATE_ENV: &str = "ALCOMD_TEST_PROJECT_COPY_PAUSE_GATE";
 const PAUSE_SIGNAL_ENV: &str = "ALCOMD_TEST_PROJECT_COPY_PAUSE_SIGNAL";
 const PAUSE_RELEASE_ENV: &str = "ALCOMD_TEST_PROJECT_COPY_PAUSE_RELEASE";
+
+#[derive(Clone, Copy)]
+struct TestTrace {
+    name: &'static str,
+    started: Instant,
+}
+
+impl TestTrace {
+    fn new(name: &'static str) -> Self {
+        let trace = Self {
+            name,
+            started: Instant::now(),
+        };
+        trace.stage("test-start");
+        trace
+    }
+
+    fn stage(self, stage: &str) {
+        eprintln!(
+            "[m7-project-copy][{}][+{:.3}s] {stage}",
+            self.name,
+            self.started.elapsed().as_secs_f64()
+        );
+    }
+}
+
+async fn acquire_rpc_test_lock(trace: TestTrace) -> tokio::sync::MutexGuard<'static, ()> {
+    trace.stage("waiting-rpc-test-lock");
+    match tokio::time::timeout(RPC_TEST_LOCK_TIMEOUT, RPC_TEST_LOCK.lock()).await {
+        Ok(guard) => {
+            trace.stage("acquired-rpc-test-lock");
+            guard
+        }
+        Err(_) => {
+            trace.stage("rpc-test-lock-timeout");
+            panic!("m7_project_copy_rpc timed out at stage: rpc-test-lock");
+        }
+    }
+}
+
+async fn await_rpc<T>(trace: TestTrace, stage: &'static str, future: impl Future<Output = T>) -> T {
+    trace.stage(&format!("{stage}-start"));
+    match tokio::time::timeout(RPC_STAGE_TIMEOUT, future).await {
+        Ok(value) => {
+            trace.stage(&format!("{stage}-complete"));
+            value
+        }
+        Err(_) => {
+            trace.stage(&format!("{stage}-timeout"));
+            panic!("m7_project_copy_rpc timed out at stage: {stage}");
+        }
+    }
+}
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,7 +115,8 @@ impl M5BackupWriterGate for FixedWriter {
 
 #[tokio::test]
 async fn project_copy_plan_expiry_and_all_writer_states_are_fail_closed() {
-    let fixture = TestDirectory::new();
+    let trace = TestTrace::new("project-copy-plan-expiry-and-writer-states");
+    let fixture = TestDirectory::new(trace);
     let source = fixture.path().join("SourceProject");
     let destination = fixture.path().join("Copies");
     create_project(&source);
@@ -157,8 +218,9 @@ async fn project_copy_plan_expiry_and_all_writer_states_are_fail_closed() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn project_copy_plan_apply_registers_an_exact_independent_copy() {
-    let _serial = RPC_TEST_LOCK.lock().await;
-    let fixture = TestDirectory::new();
+    let trace = TestTrace::new("project-copy-plan-apply");
+    let _serial = acquire_rpc_test_lock(trace).await;
+    let fixture = TestDirectory::new(trace);
     let runtime = fixture.path().join("runtime");
     let data = fixture.path().join("data");
     let source = fixture.path().join("SourceProject");
@@ -179,36 +241,46 @@ async fn project_copy_plan_apply_registers_an_exact_independent_copy() {
         )
         .await
     });
-    let mut client = connect_with_retry(config).await;
-    let registered = client
-        .project_register(
+    trace.stage("daemon-task-spawned");
+    let mut client = connect_with_retry(config, trace).await;
+    let registered = await_rpc(
+        trace,
+        "project-register-rpc",
+        client.project_register(
             source.to_string_lossy().into_owned(),
             "m7-copy-register".to_owned(),
-        )
-        .await
-        .expect("register source");
+        ),
+    )
+    .await
+    .expect("register source");
     let source_id = registered.project.project_id.expect("source ID");
-    let plan = client
-        .project_plan_copy(alcomd_protocol::ProjectsPlanCopyParams {
+    let plan = await_rpc(
+        trace,
+        "project-copy-plan-rpc",
+        client.project_plan_copy(alcomd_protocol::ProjectsPlanCopyParams {
             source_project_id: source_id,
             expected_revision: 1,
             target_parent_path: destination.to_string_lossy().into_owned(),
             target_leaf: "CopiedProject".to_owned(),
             idempotency_key: "m7-copy-plan".to_owned(),
-        })
-        .await
-        .expect("plan copy");
+        }),
+    )
+    .await
+    .expect("plan copy");
     assert_eq!(plan.plan.profile.version, 1);
     assert_eq!(plan.plan.writer_evidence.state, "not_observed");
-    let accepted = client
-        .project_apply_copy(alcomd_protocol::ProjectsApplyCopyParams {
+    let accepted = await_rpc(
+        trace,
+        "project-copy-apply-rpc",
+        client.project_apply_copy(alcomd_protocol::ProjectsApplyCopyParams {
             plan_id: plan.plan.plan_id,
             expected_revision: 1,
             idempotency_key: "m7-copy-apply".to_owned(),
-        })
-        .await
-        .expect("apply copy");
-    let operation = wait_for_terminal(&mut client, accepted.operation_id).await;
+        }),
+    )
+    .await
+    .expect("apply copy");
+    let operation = wait_for_terminal(&mut client, accepted.operation_id, trace).await;
     assert_eq!(operation.state, alcomd_protocol::OperationState::Succeeded);
     let target = destination.join("CopiedProject");
     assert_eq!(
@@ -227,23 +299,26 @@ async fn project_copy_plan_apply_registers_an_exact_independent_copy() {
                 .to_string_lossy()
                 .starts_with(".alcomd-copy-"))
     );
-    let copied = client
-        .project_get(accepted.target_project_id)
-        .await
-        .expect("copied project registered");
+    let copied = await_rpc(
+        trace,
+        "project-get-rpc",
+        client.project_get(accepted.target_project_id),
+    )
+    .await
+    .expect("copied project registered");
     assert_eq!(
         Path::new(&copied.project.root_path),
         fs::canonicalize(target).expect("canonical copied project")
     );
 
-    shutdown.store(true, Ordering::Release);
-    daemon.await.expect("join daemon").expect("daemon result");
+    shutdown_daemon(trace, shutdown, daemon).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_copy_plans_for_the_same_target_publish_exactly_once() {
-    let _serial = RPC_TEST_LOCK.lock().await;
-    let fixture = TestDirectory::new();
+    let trace = TestTrace::new("concurrent-copy-same-target");
+    let _serial = acquire_rpc_test_lock(trace).await;
+    let fixture = TestDirectory::new(trace);
     let runtime = fixture.path().join("runtime");
     let data = fixture.path().join("data");
     let source = fixture.path().join("SourceProject");
@@ -264,49 +339,62 @@ async fn concurrent_copy_plans_for_the_same_target_publish_exactly_once() {
         )
         .await
     });
-    let mut first = connect_with_retry(config.clone()).await;
-    let mut second = connect_with_retry(config).await;
-    let registered = first
-        .project_register(
+    trace.stage("daemon-task-spawned");
+    let mut first = connect_with_retry(config.clone(), trace).await;
+    let mut second = connect_with_retry(config, trace).await;
+    let registered = await_rpc(
+        trace,
+        "project-register-rpc",
+        first.project_register(
             source.to_string_lossy().into_owned(),
             "m7-copy-race-register".to_owned(),
-        )
-        .await
-        .expect("register source");
+        ),
+    )
+    .await
+    .expect("register source");
     let source_project_id = registered.project.project_id.expect("source ID");
-    let first_plan = first
-        .project_plan_copy(alcomd_protocol::ProjectsPlanCopyParams {
+    let first_plan = await_rpc(
+        trace,
+        "project-copy-plan-rpc",
+        first.project_plan_copy(alcomd_protocol::ProjectsPlanCopyParams {
             source_project_id: source_project_id.clone(),
             expected_revision: 1,
             target_parent_path: destination.to_string_lossy().into_owned(),
             target_leaf: "SameTarget".to_owned(),
             idempotency_key: "m7-copy-race-plan-a".to_owned(),
-        })
-        .await
-        .expect("first Plan");
-    let second_plan = second
-        .project_plan_copy(alcomd_protocol::ProjectsPlanCopyParams {
+        }),
+    )
+    .await
+    .expect("first Plan");
+    let second_plan = await_rpc(
+        trace,
+        "project-copy-plan-rpc",
+        second.project_plan_copy(alcomd_protocol::ProjectsPlanCopyParams {
             source_project_id,
             expected_revision: 1,
             target_parent_path: destination.to_string_lossy().into_owned(),
             target_leaf: "SameTarget".to_owned(),
             idempotency_key: "m7-copy-race-plan-b".to_owned(),
-        })
-        .await
-        .expect("second Plan");
-
-    let (first_apply, second_apply) = tokio::join!(
-        first.project_apply_copy(alcomd_protocol::ProjectsApplyCopyParams {
-            plan_id: first_plan.plan.plan_id,
-            expected_revision: 1,
-            idempotency_key: "m7-copy-race-apply-a".to_owned(),
         }),
-        second.project_apply_copy(alcomd_protocol::ProjectsApplyCopyParams {
-            plan_id: second_plan.plan.plan_id,
-            expected_revision: 1,
-            idempotency_key: "m7-copy-race-apply-b".to_owned(),
-        })
-    );
+    )
+    .await
+    .expect("second Plan");
+
+    let (first_apply, second_apply) = await_rpc(trace, "project-copy-apply-rpc", async {
+        tokio::join!(
+            first.project_apply_copy(alcomd_protocol::ProjectsApplyCopyParams {
+                plan_id: first_plan.plan.plan_id,
+                expected_revision: 1,
+                idempotency_key: "m7-copy-race-apply-a".to_owned(),
+            }),
+            second.project_apply_copy(alcomd_protocol::ProjectsApplyCopyParams {
+                plan_id: second_plan.plan.plan_id,
+                expected_revision: 1,
+                idempotency_key: "m7-copy-race-apply-b".to_owned(),
+            })
+        )
+    })
+    .await;
     let mut accepted = Vec::new();
     let mut rejected = 0;
     for result in [first_apply, second_apply] {
@@ -319,7 +407,7 @@ async fn concurrent_copy_plans_for_the_same_target_publish_exactly_once() {
         }
     }
     for operation_id in accepted {
-        let operation = wait_for_terminal(&mut first, operation_id).await;
+        let operation = wait_for_terminal(&mut first, operation_id, trace).await;
         match operation.state {
             alcomd_protocol::OperationState::Succeeded => {}
             alcomd_protocol::OperationState::Failed
@@ -335,10 +423,13 @@ async fn concurrent_copy_plans_for_the_same_target_publish_exactly_once() {
         fs::read(destination.join("SameTarget/Assets/content.txt")).expect("published content"),
         b"copy me"
     );
-    let projects = first
-        .projects_list(None, Some(100))
-        .await
-        .expect("list registered Projects");
+    let projects = await_rpc(
+        trace,
+        "projects-list-rpc",
+        first.projects_list(None, Some(100)),
+    )
+    .await
+    .expect("list registered Projects");
     assert_eq!(
         projects
             .projects
@@ -357,13 +448,13 @@ async fn concurrent_copy_plans_for_the_same_target_publish_exactly_once() {
                 .starts_with(".alcomd-copy-"))
     );
 
-    shutdown.store(true, Ordering::Release);
-    daemon.await.expect("join daemon").expect("daemon result");
+    shutdown_daemon(trace, shutdown, daemon).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn project_copy_recovers_from_every_durable_kill_checkpoint() {
-    let _serial = RPC_TEST_LOCK.lock().await;
+    let trace = TestTrace::new("project-copy-kill-restart-matrix");
+    let _serial = acquire_rpc_test_lock(trace).await;
     for checkpoint in [
         "inventory_ready",
         "staging",
@@ -374,22 +465,25 @@ async fn project_copy_recovers_from_every_durable_kill_checkpoint() {
         "state_committed",
         "cleanup_complete",
     ] {
-        eprintln!("running Project Copy kill/restart checkpoint: {checkpoint}");
-        run_kill_restart_case(checkpoint).await;
+        trace.stage(&format!("kill-checkpoint-start checkpoint={checkpoint}"));
+        run_kill_restart_case(checkpoint, trace).await;
+        trace.stage(&format!("kill-checkpoint-complete checkpoint={checkpoint}"));
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn project_copy_cancel_is_honored_before_publish_and_rejected_after_intent() {
-    let _serial = RPC_TEST_LOCK.lock().await;
-    run_cancel_case("staging", true).await;
-    run_cancel_case("publish_intent", false).await;
+    let trace = TestTrace::new("project-copy-cancellation");
+    let _serial = acquire_rpc_test_lock(trace).await;
+    run_cancel_case("staging", true, trace).await;
+    run_cancel_case("publish_intent", false, trace).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn project_copy_preserves_externally_modified_published_target_for_manual_recovery() {
-    let _serial = RPC_TEST_LOCK.lock().await;
-    let fixture = TestDirectory::new();
+    let trace = TestTrace::new("project-copy-external-modification-recovery");
+    let _serial = acquire_rpc_test_lock(trace).await;
+    let fixture = TestDirectory::new(trace);
     let kill_signal = fixture.path().join("kill.signal");
     let operation_signal = fixture.path().join("operation.signal");
     let child = Command::new(std::env::current_exe().expect("test executable"))
@@ -405,18 +499,22 @@ async fn project_copy_preserves_externally_modified_published_target_for_manual_
         .env(OPERATION_SIGNAL_ENV, &operation_signal)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::inherit())
         .spawn()
         .expect("spawn Project Copy subprocess");
-    let mut child = ChildGuard(Some(child));
-    wait_for_file(&operation_signal, None, "target_published");
-    wait_for_file(&kill_signal, Some(b"target_published"), "target_published");
+    let mut child = ChildGuard::new(child, trace);
+    trace.stage("child-process-spawned");
+    wait_for_file(&operation_signal, None, "target_published", trace);
+    wait_for_file(
+        &kill_signal,
+        Some(b"target_published"),
+        "target_published",
+        trace,
+    );
     let signal: CopyCrashSignal =
         serde_json::from_slice(&fs::read(&operation_signal).expect("read operation signal"))
             .expect("parse operation signal");
-    child.0.as_mut().expect("child").kill().expect("force kill");
-    child.0.as_mut().expect("child").wait().expect("wait child");
-    child.0 = None;
+    child.stop_and_wait("child-kill-wait");
     let target = fixture.path().join("Copies/CopiedProject");
     fs::write(target.join("Assets/external.txt"), b"preserve me")
         .expect("external target mutation");
@@ -433,8 +531,9 @@ async fn project_copy_preserves_externally_modified_published_target_for_manual_
         )
         .await
     });
-    let mut client = connect_with_retry(config).await;
-    let operation = wait_for_recovery_required(&mut client, &signal.operation_id).await;
+    trace.stage("daemon-task-spawned");
+    let mut client = connect_with_retry(config, trace).await;
+    let operation = wait_for_recovery_required(&mut client, &signal.operation_id, trace).await;
     assert_eq!(operation.state, alcomd_protocol::OperationState::Recovering);
     assert_eq!(
         operation.error_code.as_deref(),
@@ -452,23 +551,26 @@ async fn project_copy_preserves_externally_modified_published_target_for_manual_
             .is_dir(),
         "ownership evidence must remain for manual recovery"
     );
-    let replay = client
-        .project_apply_copy(alcomd_protocol::ProjectsApplyCopyParams {
+    let replay = await_rpc(
+        trace,
+        "project-copy-apply-rpc",
+        client.project_apply_copy(alcomd_protocol::ProjectsApplyCopyParams {
             plan_id: signal.plan_id,
             expected_revision: 1,
             idempotency_key: "m7-copy-kill-apply".to_owned(),
-        })
-        .await
-        .expect("replay recovery-required Apply");
+        }),
+    )
+    .await
+    .expect("replay recovery-required Apply");
     assert!(replay.replayed);
     assert_eq!(replay.operation_id, signal.operation_id);
-    shutdown.store(true, Ordering::Release);
-    daemon.await.expect("join daemon").expect("daemon result");
+    shutdown_daemon(trace, shutdown, daemon).await;
 }
 
 #[test]
 #[ignore = "subprocess fixture invoked by Project Copy kill/restart matrix"]
 fn subprocess_runs_project_copy_until_parent_kills_it() {
+    let trace = TestTrace::new("project-copy-subprocess-fixture");
     let fixture = PathBuf::from(std::env::var_os(CRASH_ROOT_ENV).expect("crash root"));
     let runtime = tokio::runtime::Runtime::new().expect("runtime");
     runtime.block_on(async move {
@@ -490,32 +592,42 @@ fn subprocess_runs_project_copy_until_parent_kills_it() {
             )
             .await
         });
-        let mut client = connect_with_retry(config).await;
-        let registered = client
-            .project_register(
+        trace.stage("daemon-task-spawned");
+        let mut client = connect_with_retry(config, trace).await;
+        let registered = await_rpc(
+            trace,
+            "project-register-rpc",
+            client.project_register(
                 source.to_string_lossy().into_owned(),
                 "m7-copy-kill-register".to_owned(),
-            )
-            .await
-            .expect("register source");
-        let plan = client
-            .project_plan_copy(alcomd_protocol::ProjectsPlanCopyParams {
+            ),
+        )
+        .await
+        .expect("register source");
+        let plan = await_rpc(
+            trace,
+            "project-copy-plan-rpc",
+            client.project_plan_copy(alcomd_protocol::ProjectsPlanCopyParams {
                 source_project_id: registered.project.project_id.expect("source ID"),
                 expected_revision: 1,
                 target_parent_path: destination.to_string_lossy().into_owned(),
                 target_leaf: "CopiedProject".to_owned(),
                 idempotency_key: "m7-copy-kill-plan".to_owned(),
-            })
-            .await
-            .expect("plan copy");
-        let accepted = client
-            .project_apply_copy(alcomd_protocol::ProjectsApplyCopyParams {
+            }),
+        )
+        .await
+        .expect("plan copy");
+        let accepted = await_rpc(
+            trace,
+            "project-copy-apply-rpc",
+            client.project_apply_copy(alcomd_protocol::ProjectsApplyCopyParams {
                 plan_id: plan.plan.plan_id.clone(),
                 expected_revision: 1,
                 idempotency_key: "m7-copy-kill-apply".to_owned(),
-            })
-            .await
-            .expect("apply copy");
+            }),
+        )
+        .await
+        .expect("apply copy");
         let signal = CopyCrashSignal {
             plan_id: plan.plan.plan_id,
             operation_id: accepted.operation_id,
@@ -526,14 +638,15 @@ fn subprocess_runs_project_copy_until_parent_kills_it() {
             serde_json::to_vec(&signal).expect("serialize operation signal"),
         )
         .expect("write operation signal");
+        trace.stage("operation-signal-written");
         loop {
             tokio::time::sleep(Duration::from_secs(60)).await;
         }
     });
 }
 
-async fn run_kill_restart_case(checkpoint: &str) {
-    let fixture = TestDirectory::new();
+async fn run_kill_restart_case(checkpoint: &str, trace: TestTrace) {
+    let fixture = TestDirectory::new(trace);
     let kill_signal = fixture.path().join("kill.signal");
     let operation_signal = fixture.path().join("operation.signal");
     let child = Command::new(std::env::current_exe().expect("test executable"))
@@ -549,23 +662,17 @@ async fn run_kill_restart_case(checkpoint: &str) {
         .env(OPERATION_SIGNAL_ENV, &operation_signal)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::inherit())
         .spawn()
         .expect("spawn Project Copy subprocess");
-    let mut child = ChildGuard(Some(child));
-    wait_for_file(&operation_signal, None, checkpoint);
-    wait_for_file(&kill_signal, Some(checkpoint.as_bytes()), checkpoint);
+    let mut child = ChildGuard::new(child, trace);
+    trace.stage("child-process-spawned");
+    wait_for_file(&operation_signal, None, checkpoint, trace);
+    wait_for_file(&kill_signal, Some(checkpoint.as_bytes()), checkpoint, trace);
     let signal: CopyCrashSignal =
         serde_json::from_slice(&fs::read(&operation_signal).expect("read operation signal"))
             .expect("parse operation signal");
-    child
-        .0
-        .as_mut()
-        .expect("child")
-        .kill()
-        .expect("force-kill Project Copy subprocess");
-    child.0.as_mut().expect("child").wait().expect("wait child");
-    child.0 = None;
+    child.stop_and_wait("child-kill-wait");
 
     let (ipc, config) = isolated_ipc(fixture.path().join("runtime"));
     let shutdown = Arc::new(AtomicBool::new(false));
@@ -579,22 +686,26 @@ async fn run_kill_restart_case(checkpoint: &str) {
         )
         .await
     });
-    let mut client = connect_with_retry(config).await;
-    let replay = client
-        .project_apply_copy(alcomd_protocol::ProjectsApplyCopyParams {
+    trace.stage("daemon-task-spawned");
+    let mut client = connect_with_retry(config, trace).await;
+    let replay = await_rpc(
+        trace,
+        "project-copy-apply-rpc",
+        client.project_apply_copy(alcomd_protocol::ProjectsApplyCopyParams {
             plan_id: signal.plan_id.clone(),
             expected_revision: 1,
             idempotency_key: "m7-copy-kill-apply".to_owned(),
-        })
-        .await
-        .expect("replay Project Copy Apply");
+        }),
+    )
+    .await
+    .expect("replay Project Copy Apply");
     assert!(replay.replayed, "{checkpoint}");
     assert_eq!(replay.operation_id, signal.operation_id, "{checkpoint}");
     assert_eq!(
         replay.target_project_id, signal.target_project_id,
         "{checkpoint}"
     );
-    let completed = wait_for_terminal(&mut client, signal.operation_id.clone()).await;
+    let completed = wait_for_terminal(&mut client, signal.operation_id.clone(), trace).await;
     assert_eq!(
         completed.state,
         alcomd_protocol::OperationState::Succeeded,
@@ -606,10 +717,13 @@ async fn run_kill_restart_case(checkpoint: &str) {
         b"copy me",
         "{checkpoint}"
     );
-    let copied = client
-        .project_get(signal.target_project_id)
-        .await
-        .expect("recovered Project registration");
+    let copied = await_rpc(
+        trace,
+        "project-get-rpc",
+        client.project_get(signal.target_project_id),
+    )
+    .await
+    .expect("recovered Project registration");
     assert_eq!(
         Path::new(&copied.project.root_path),
         fs::canonicalize(&target).expect("canonical recovered target"),
@@ -625,12 +739,12 @@ async fn run_kill_restart_case(checkpoint: &str) {
                 .starts_with(".alcomd-copy-")),
         "{checkpoint}"
     );
-    shutdown.store(true, Ordering::Release);
-    daemon.await.expect("join daemon").expect("daemon result");
+    shutdown_daemon(trace, shutdown, daemon).await;
 }
 
-async fn run_cancel_case(checkpoint: &str, should_cancel: bool) {
-    let fixture = TestDirectory::new();
+async fn run_cancel_case(checkpoint: &str, should_cancel: bool, trace: TestTrace) {
+    trace.stage(&format!("cancel-checkpoint-start checkpoint={checkpoint}"));
+    let fixture = TestDirectory::new(trace);
     let pause_signal = fixture.path().join("pause.signal");
     let pause_release = fixture.path().join("pause.release");
     let operation_signal = fixture.path().join("operation.signal");
@@ -648,28 +762,40 @@ async fn run_cancel_case(checkpoint: &str, should_cancel: bool) {
         .env(OPERATION_SIGNAL_ENV, &operation_signal)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::inherit())
         .spawn()
         .expect("spawn paused Project Copy subprocess");
-    let mut child = ChildGuard(Some(child));
-    wait_for_file(&operation_signal, None, checkpoint);
-    wait_for_file(&pause_signal, Some(checkpoint.as_bytes()), checkpoint);
+    let mut child = ChildGuard::new(child, trace);
+    trace.stage("child-process-spawned");
+    wait_for_file(&operation_signal, None, checkpoint, trace);
+    wait_for_file(
+        &pause_signal,
+        Some(checkpoint.as_bytes()),
+        checkpoint,
+        trace,
+    );
     let signal: CopyCrashSignal =
         serde_json::from_slice(&fs::read(&operation_signal).expect("read operation signal"))
             .expect("parse operation signal");
     let (_, config) = isolated_ipc(fixture.path().join("runtime"));
-    let mut client = connect_with_retry(config).await;
-    let operation = client
-        .operation_get(signal.operation_id.clone())
-        .await
-        .expect("paused operation");
-    let cancellation = client
-        .operation_cancel(
+    let mut client = connect_with_retry(config, trace).await;
+    let operation = await_rpc(
+        trace,
+        "operation-get-rpc",
+        client.operation_get(signal.operation_id.clone()),
+    )
+    .await
+    .expect("paused operation");
+    let cancellation = await_rpc(
+        trace,
+        "operation-cancel-rpc",
+        client.operation_cancel(
             signal.operation_id.clone(),
             operation.revision,
             format!("m7-copy-cancel-{checkpoint}"),
-        )
-        .await;
+        ),
+    )
+    .await;
     if should_cancel {
         assert_eq!(
             cancellation
@@ -685,7 +811,8 @@ async fn run_cancel_case(checkpoint: &str, should_cancel: bool) {
         ));
     }
     fs::write(&pause_release, b"continue").expect("release pause gate");
-    let terminal = wait_for_terminal(&mut client, signal.operation_id).await;
+    trace.stage("pause-gate-released");
+    let terminal = wait_for_terminal(&mut client, signal.operation_id, trace).await;
     let target = fixture.path().join("Copies/CopiedProject");
     if should_cancel {
         assert_eq!(terminal.state, alcomd_protocol::OperationState::Cancelled);
@@ -694,30 +821,75 @@ async fn run_cancel_case(checkpoint: &str, should_cancel: bool) {
         assert_eq!(terminal.state, alcomd_protocol::OperationState::Succeeded);
         assert!(target.join("Assets/content.txt").is_file());
     }
-    child.0.as_mut().expect("child").kill().expect("stop child");
-    child.0.as_mut().expect("child").wait().expect("wait child");
-    child.0 = None;
+    child.stop_and_wait("child-kill-wait");
+    trace.stage(&format!(
+        "cancel-checkpoint-complete checkpoint={checkpoint}"
+    ));
 }
 
-fn wait_for_file(path: &Path, expected: Option<&[u8]>, checkpoint: &str) {
+fn wait_for_file(path: &Path, expected: Option<&[u8]>, checkpoint: &str, trace: TestTrace) {
+    trace.stage(&format!("checkpoint-wait-start checkpoint={checkpoint}"));
     for _ in 0..10_000 {
         if let Ok(bytes) = fs::read(path)
             && expected.is_none_or(|expected| bytes == expected)
         {
+            trace.stage(&format!("checkpoint-wait-complete checkpoint={checkpoint}"));
             return;
         }
         thread::sleep(Duration::from_millis(5));
     }
-    panic!("timed out waiting for {} at {checkpoint}", path.display());
+    trace.stage(&format!("checkpoint-wait-timeout checkpoint={checkpoint}"));
+    panic!("m7_project_copy_rpc timed out at stage: checkpoint-wait ({checkpoint})");
 }
 
-struct ChildGuard(Option<std::process::Child>);
+struct ChildGuard {
+    child: Option<Child>,
+    trace: TestTrace,
+}
+
+impl ChildGuard {
+    fn new(child: Child, trace: TestTrace) -> Self {
+        Self {
+            child: Some(child),
+            trace,
+        }
+    }
+
+    fn stop_and_wait(&mut self, stage: &'static str) {
+        self.trace.stage(&format!("{stage}-start"));
+        let child = self.child.as_mut().expect("child");
+        child.kill().expect("stop Project Copy subprocess");
+        if wait_for_child_exit(child, CHILD_WAIT_TIMEOUT) {
+            self.child = None;
+            self.trace.stage(&format!("{stage}-complete"));
+        } else {
+            self.trace.stage(&format!("{stage}-timeout"));
+            panic!("m7_project_copy_rpc timed out at stage: {stage}");
+        }
+    }
+}
 
 impl Drop for ChildGuard {
     fn drop(&mut self) {
-        if let Some(child) = &mut self.0 {
+        if let Some(child) = &mut self.child {
+            self.trace.stage("child-drop-cleanup-start");
             let _ = child.kill();
-            let _ = child.wait();
+            if wait_for_child_exit(child, CHILD_DROP_WAIT_TIMEOUT) {
+                self.trace.stage("child-drop-cleanup-complete");
+            } else {
+                self.trace.stage("child-drop-cleanup-timeout");
+            }
+        }
+    }
+}
+
+fn wait_for_child_exit(child: &mut Child, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return true,
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
+            Ok(None) | Err(_) => return false,
         }
     }
 }
@@ -773,19 +945,25 @@ fn key(value: &str) -> IdempotencyKey {
 async fn wait_for_terminal(
     client: &mut AlcomdClient,
     operation_id: String,
+    trace: TestTrace,
 ) -> alcomd_protocol::Operation {
+    trace.stage("terminal-wait-start");
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     loop {
-        let operation = client
-            .operation_get(operation_id.clone())
-            .await
-            .expect("get operation");
+        let operation = await_rpc(
+            trace,
+            "operation-get-rpc",
+            client.operation_get(operation_id.clone()),
+        )
+        .await
+        .expect("get operation");
         if matches!(
             operation.state,
             alcomd_protocol::OperationState::Succeeded
                 | alcomd_protocol::OperationState::Failed
                 | alcomd_protocol::OperationState::Cancelled
         ) {
+            trace.stage("terminal-wait-complete");
             return operation;
         }
         assert!(tokio::time::Instant::now() < deadline, "copy timed out");
@@ -796,14 +974,20 @@ async fn wait_for_terminal(
 async fn wait_for_recovery_required(
     client: &mut AlcomdClient,
     operation_id: &str,
+    trace: TestTrace,
 ) -> alcomd_protocol::Operation {
+    trace.stage("recovery-wait-start");
     let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
     loop {
-        let operation = client
-            .operation_get(operation_id.to_owned())
-            .await
-            .expect("get recovery-required operation");
+        let operation = await_rpc(
+            trace,
+            "operation-get-rpc",
+            client.operation_get(operation_id.to_owned()),
+        )
+        .await
+        .expect("get recovery-required operation");
         if operation.error_code.as_deref() == Some("project_copy_recovery_required") {
+            trace.stage("recovery-wait-complete");
             return operation;
         }
         assert!(
@@ -814,15 +998,47 @@ async fn wait_for_recovery_required(
     }
 }
 
-async fn connect_with_retry(config: ClientConfig) -> AlcomdClient {
+async fn connect_with_retry(config: ClientConfig, trace: TestTrace) -> AlcomdClient {
+    trace.stage("client-connect-start");
     let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
     loop {
-        match AlcomdClient::connect(config.clone()).await {
-            Ok(client) => return client,
-            Err(_) if tokio::time::Instant::now() < deadline => {
+        match tokio::time::timeout_at(deadline, AlcomdClient::connect(config.clone())).await {
+            Ok(Ok(client)) => {
+                trace.stage("client-connected");
+                return client;
+            }
+            Ok(Err(_)) if tokio::time::Instant::now() < deadline => {
                 tokio::time::sleep(Duration::from_millis(25)).await;
             }
-            Err(error) => panic!("daemon did not become ready: {error}"),
+            Ok(Err(error)) => {
+                trace.stage("client-connect-failed");
+                panic!("daemon did not become ready: {error}");
+            }
+            Err(_) => {
+                trace.stage("client-connect-timeout");
+                panic!("m7_project_copy_rpc timed out at stage: client-connect");
+            }
+        }
+    }
+}
+
+async fn shutdown_daemon(
+    trace: TestTrace,
+    shutdown: Arc<AtomicBool>,
+    mut daemon: tokio::task::JoinHandle<Result<(), alcomd_platform::BindError>>,
+) {
+    trace.stage("daemon-shutdown-start");
+    shutdown.store(true, Ordering::Release);
+    match tokio::time::timeout(DAEMON_SHUTDOWN_TIMEOUT, &mut daemon).await {
+        Ok(result) => {
+            result.expect("join daemon").expect("daemon result");
+            trace.stage("daemon-shutdown-complete");
+        }
+        Err(_) => {
+            trace.stage("daemon-shutdown-timeout");
+            daemon.abort();
+            let _ = tokio::time::timeout(Duration::from_secs(5), daemon).await;
+            panic!("m7_project_copy_rpc timed out at stage: daemon-shutdown");
         }
     }
 }
@@ -851,26 +1067,35 @@ fn isolated_ipc(_runtime: PathBuf) -> (IpcConfig, ClientConfig) {
     )
 }
 
-struct TestDirectory(PathBuf);
+struct TestDirectory {
+    path: PathBuf,
+    trace: TestTrace,
+}
 
 impl TestDirectory {
-    fn new() -> Self {
+    fn new(trace: TestTrace) -> Self {
         #[cfg(target_os = "macos")]
         let base = PathBuf::from("/private/tmp");
         #[cfg(not(target_os = "macos"))]
         let base = std::env::temp_dir();
         let path = base.join(format!("alcomd-m7-copy-{}", uuid::Uuid::new_v4()));
         fs::create_dir(&path).expect("fixture root");
-        Self(path)
+        trace.stage("fixture-created");
+        Self { path, trace }
     }
 
     fn path(&self) -> &Path {
-        &self.0
+        &self.path
     }
 }
 
 impl Drop for TestDirectory {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
+        self.trace.stage("fixture-cleanup-start");
+        if fs::remove_dir_all(&self.path).is_ok() || !self.path.exists() {
+            self.trace.stage("fixture-cleanup-complete");
+        } else {
+            self.trace.stage("fixture-cleanup-failed");
+        }
     }
 }
