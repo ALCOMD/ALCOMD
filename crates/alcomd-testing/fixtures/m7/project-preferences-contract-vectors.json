@@ -1,5 +1,5 @@
 {
-    "status": "proposal-only-owner-approval-required",
+    "status": "approved-for-production-implementation",
     "v3Favorite": {
         "persistent": true,
         "newProjectDefault": false,
@@ -15,9 +15,13 @@
     "favoriteProposal": {
         "method": "projects.setFavorite",
         "permission": "projects.manage",
+        "capability": "projects.registry.v1",
+        "response": "ProjectWriteResult",
+        "compareRevisionBeforeState": true,
         "projectRevisionChangesOnMutation": true,
         "event": "project.favorite_changed",
         "sameValueNoOp": true,
+        "sameValueNoUpdatedAtChange": true,
         "idempotent": true,
         "coreListOrderingChanges": false,
         "cursorChanges": false,
@@ -46,9 +50,19 @@
         "sameStateNoOp": true,
         "idempotent": true,
         "argumentsPreserved": true,
+        "selectionReadHasReplayed": false,
+        "missingAutomatic": {"revision": 0, "updatedAtMs": 0, "arguments": []},
+        "legacyGetAutomaticError": "unity_installation_not_found",
+        "legacySetStoredAutomaticExpectedZero": "stored-revision-plus-1",
+        "clearStoredAutomaticExpectedZero": "revision_conflict",
         "automaticMultipleMatchError": "unity_editor_selection_required",
+        "explicitLaunchFingerprintVersion": 1,
+        "automaticLaunchFingerprintVersion": 2,
+        "automaticReplayBeforeRegistryResolution": true,
+        "automaticFingerprintIncludesCandidateInstallation": false,
         "stateSchema": 11,
         "newTable": false
     },
-    "activeProductionModified": false
+    "activeProductionModified": false,
+    "ownerApproved": true
 }

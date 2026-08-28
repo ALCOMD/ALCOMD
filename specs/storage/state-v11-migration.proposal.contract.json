@@ -1,10 +1,12 @@
 {
-    "status": "proposal-only-owner-approval-required",
+    "status": "approved-for-production-implementation",
     "from": 10,
     "to": 11,
     "productionMigration": null,
     "productionWiringCreated": false,
     "transaction": "BEGIN IMMEDIATE",
+    "userVersionSetLast": true,
+    "rollbackAuthorityOnFailure": 10,
     "tablesAdded": [],
     "columnsAdded": ["projects.favorite", "project_editor_preferences.selection_mode"],
     "tablesRebuilt": ["project_editor_preferences"],
@@ -12,15 +14,21 @@
         "default": false,
         "storedOutsideSnapshotJson": true,
         "newProjectDefault": false,
-        "tombstoneAfterUnregister": false
+        "tombstoneAfterUnregister": false,
+        "refreshPreservesFavorite": true,
+        "durableProjectRecordSerdeDefault": true
     },
     "projectEditorPreference": {
         "selectionModes": ["automatic", "explicit"],
         "installationIdNullableOnlyForAutomatic": true,
         "argumentsPreservedOnClear": true,
         "missingRowMeans": "automatic-empty-arguments-revision-zero",
+        "missingRowUpdatedAtMs": 0,
+        "missingRowsMaterializedByMigration": false,
         "existingRowsMigrateAs": "explicit",
-        "newTableAdded": false
+        "existingRowsPreserveAllFields": true,
+        "newTableAdded": false,
+        "explicitForeignKeyDelete": "restrict"
     },
     "invariants": [
         "all-v10-rows-and-authority-preserved",

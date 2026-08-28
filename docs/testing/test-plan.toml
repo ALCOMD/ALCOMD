@@ -508,7 +508,7 @@ stage = "M7"
 kind = "contract"
 platforms = ["all"]
 status = "implemented"
-description = "验证 active Project Copy 的 bounded Plan、900000ms expiry、exact profile/quota、Operation phase、forward recovery、State v10 两表边界，并硬门禁 P5-B Favorite/Unity clear 仅为未接线的 proposal-only State v11 合同。"
+description = "验证 active Project Copy 的 bounded Plan、900000ms expiry、exact profile/quota、Operation phase、forward recovery、State v10 两表边界，并硬门禁 P5-B Favorite/Unity clear 在完整 production wiring 前保持 approved in-progress State v11 合同。"
 evidence = ["docs/exec-plans/M7-project-package-functional-closure.md", "docs/baselines/m7-project-package-functional-closure.md", "docs/baselines/m7-p5-favorite-unity-clear.md", "specs/rpc/alcomd-rpc-v1.md", "specs/rpc/m7-project-copy.proposal.schema.json", "specs/rpc/m7-project-preferences.proposal.schema.json", "specs/storage/state-v10.md", "specs/storage/state-v10-migration.proposal.contract.json", "specs/storage/state-v11.md", "specs/storage/state-v11-migration.proposal.contract.json", "crates/alcomd-store/migrations/0010_project_copy.sql", "crates/alcomd-testing/fixtures/m7/project-copy-contract-vectors.json", "crates/alcomd-testing/fixtures/m7/project-preferences-contract-vectors.json", "crates/alcomd-testing/tests/m7_project_actions_contract.rs"]
 
 [[test]]

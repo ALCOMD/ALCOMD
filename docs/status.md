@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。H2 visual implementation 继续暂停；M7 Project / Package Functional Closure P0-P4 remote checkpoint 与 P5-A Create/Restore 已通过本地及远端验收。P5-B Favorite/Clear Unity Preference 已完成 proposal-only contract-first Stop A，等待人工审批；production 未开始。projects.management 与 packages.vpm 保持 in_progress，M8/M9 未开始。`
+`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。H2 visual implementation 继续暂停；M7 Project / Package Functional Closure P0-P4 remote checkpoint 与 P5-A Create/Restore 已通过本地及远端验收。P5-B Favorite/Clear Unity Preference 已按修订合同获批并进入 production implementation。projects.management 与 packages.vpm 保持 in_progress，M8/M9 未开始。`
 
 ## 已完成
 
@@ -302,7 +302,8 @@
 - P5-B Favorite/Clear Unity Preference 已完成精确 v3/current-v4 审计、proposal RPC Schema、State v11 proposal、机器 vectors
   与 contract gate。Favorite proposal复用 `projects.manage`并明确 Project revision/Event/idempotency、GUI stable favorite-first、
   无 favorite-only filter和注销后重置；Unity clear proposal复用 `unity.read/manage`，保留 arguments并恢复 automatic selection。
-  active protocol/State v10/Permission/production source均未修改，Favorite/clear visible gaps继续存在，等待项目所有者审批。
+  项目所有者已修订批准 capability、legacy Unity compatibility、automatic launch authority 与 State v11 migration 细节；
+  production implementation 正在进行，完成前 active protocol 仍保持 State v10。
 
 ## 后续里程碑尚未完成
 
@@ -368,7 +369,7 @@ M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 
 functional candidate `192672…` 保留技术证据但已被拒绝 visual/IA acceptance；首次 H1 也已被标记为
 `rejected_for_visual_direction`。替代的 v3-reference wide Projects shell 已在 `7bb325b…` 通过 Visual Gate 1。当前只完成
 Project / Package Functional Closure P0-P4 remote checkpoint 与 P5-A Create/Restore 已远端通过；P5-B contract-first Stop A
-proposal 已完成并停止。不得开始 Favorite/Clear production、State v11 migration、P6-P8、H2 visual、M8 或 M9。
+已按修订合同获批并进入 Favorite/Clear production 与 State v11 migration。不得开始 P6-P8、H2 visual、M8 或 M9。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential

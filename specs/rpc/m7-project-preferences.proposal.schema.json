@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://alcomd.cqmhv.com/schema/proposals/m7-project-preferences.json",
     "title": "ALCOMD M7 P5-B Project preference proposal",
-    "x-alcomd-publication": "proposal-only-owner-approval-required",
+    "x-alcomd-publication": "approved-for-production-implementation",
     "x-alcomd-active-rpc-modified": false,
     "x-alcomd-state-schema": 11,
     "$defs": {
@@ -61,7 +61,8 @@
             "properties": {
                 "project": {"$ref": "#/$defs/registeredProjectFavoriteExtension"},
                 "replayed": {"type": "boolean"}
-            }
+            },
+            "description": "Reuses the active ProjectWriteResult response shape."
         },
         "projectEditorSelection": {
             "oneOf": [
@@ -113,11 +114,11 @@
         "projectEditorSelectionResult": {
             "type": "object",
             "additionalProperties": true,
-            "required": ["preference", "replayed"],
+            "required": ["preference"],
             "properties": {
-                "preference": {"$ref": "#/$defs/projectEditorSelectionState"},
-                "replayed": {"type": "boolean"}
-            }
+                "preference": {"$ref": "#/$defs/projectEditorSelectionState"}
+            },
+            "description": "Pure read result; replayed is forbidden because the method has no idempotency key."
         }
     },
     "type": "object",
@@ -141,9 +142,35 @@
         },
         "capabilities": {
             "const": {
-                "projects.setFavorite": "projects.manage.v1",
+                "projects.setFavorite": "projects.registry.v1",
                 "unity.projectEditor.selection.get": "unity.read.v1",
                 "unity.projectEditor.clear": "unity.manage.v1"
+            }
+        },
+        "legacyProjectEditorCompatibility": {
+            "const": {
+                "legacyGetExplicitOnly": true,
+                "legacyGetAutomaticError": "unity_installation_not_found",
+                "legacySetMissingExpectedRevisionZero": "revision-1",
+                "legacySetStoredAutomaticExpectedRevisionZero": "stored-revision-plus-1",
+                "legacySetStoredAutomaticExactRevision": "stored-revision-plus-1",
+                "legacySetExplicitExpectedRevisionZero": "revision_conflict",
+                "legacyResponseShapesUnchanged": true
+            }
+        },
+        "automaticLaunchAuthority": {
+            "const": {
+                "explicitFingerprintVersion": 1,
+                "automaticFingerprintVersion": 2,
+                "automaticFingerprintFields": [
+                    "mode",
+                    "preferenceRevision",
+                    "projectId",
+                    "projectRevision"
+                ],
+                "candidateInstallationIdInFingerprint": false,
+                "replayBeforeRegistryResolution": true,
+                "multipleCandidatesError": "unity_editor_selection_required"
             }
         },
         "stableErrors": {

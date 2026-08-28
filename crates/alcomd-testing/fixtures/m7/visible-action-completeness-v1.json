@@ -43,12 +43,12 @@
     "contractFirstProposals": [
         {
             "id": "favorite",
-            "status": "proposal-only-owner-approval-required",
+            "status": "approved-production-in-progress",
             "productionImplemented": false
         },
         {
             "id": "clear-unity-preference",
-            "status": "proposal-only-owner-approval-required",
+            "status": "approved-production-in-progress",
             "productionImplemented": false
         }
     ],

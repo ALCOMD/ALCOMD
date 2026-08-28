@@ -256,7 +256,7 @@ fn visible_action_gate_records_real_current_gaps_instead_of_hiding_them() {
                 .iter()
                 .any(|entry| {
                     entry["id"] == proposal
-                        && entry["status"] == "proposal-only-owner-approval-required"
+                        && entry["status"] == "approved-production-in-progress"
                         && entry["productionImplemented"] == false
                 })
         );
@@ -287,7 +287,7 @@ fn p5_b_project_preferences_are_exact_proposals_not_production_wiring() {
 
     assert_eq!(
         schema["x-alcomd-publication"],
-        "proposal-only-owner-approval-required"
+        "approved-for-production-implementation"
     );
     assert_eq!(schema["x-alcomd-active-rpc-modified"], false);
     assert_eq!(schema["x-alcomd-state-schema"], 11);
@@ -306,6 +306,14 @@ fn p5_b_project_preferences_are_exact_proposals_not_production_wiring() {
             "unity.projectEditor.selection.get": ["unity.read"],
             "unity.projectEditor.clear": ["unity.manage"]
         })
+    );
+    assert_eq!(
+        schema["properties"]["capabilities"]["const"]["projects.setFavorite"],
+        "projects.registry.v1"
+    );
+    assert_eq!(
+        schema["$defs"]["projectEditorSelectionResult"]["required"],
+        json!(["preference"])
     );
     assert!(
         schema["$defs"]["registeredProjectFavoriteExtension"]["required"]
@@ -333,29 +341,51 @@ fn p5_b_project_preferences_are_exact_proposals_not_production_wiring() {
         false
     );
     assert_eq!(vectors["favoriteProposal"]["cursorChanges"], false);
+    assert_eq!(
+        vectors["favoriteProposal"]["capability"],
+        "projects.registry.v1"
+    );
+    assert_eq!(
+        vectors["favoriteProposal"]["compareRevisionBeforeState"],
+        true
+    );
     assert_eq!(vectors["v3UnityClear"]["preservesArguments"], true);
     assert_eq!(
         vectors["unityProposal"]["clearMethod"],
         "unity.projectEditor.clear"
     );
     assert_eq!(vectors["unityProposal"]["projectRevisionChanges"], false);
+    assert_eq!(vectors["unityProposal"]["selectionReadHasReplayed"], false);
+    assert_eq!(
+        vectors["unityProposal"]["automaticLaunchFingerprintVersion"],
+        2
+    );
+    assert_eq!(
+        vectors["unityProposal"]["automaticReplayBeforeRegistryResolution"],
+        true
+    );
     assert_eq!(
         vectors["unityProposal"]["automaticMultipleMatchError"],
         "unity_editor_selection_required"
     );
 
-    assert_eq!(migration["status"], "proposal-only-owner-approval-required");
+    assert_eq!(
+        migration["status"],
+        "approved-for-production-implementation"
+    );
     assert_eq!(migration["from"], 10);
     assert_eq!(migration["to"], 11);
     assert_eq!(migration["productionMigration"], Value::Null);
     assert_eq!(migration["productionWiringCreated"], false);
+    assert_eq!(migration["userVersionSetLast"], true);
+    assert_eq!(migration["rollbackAuthorityOnFailure"], 10);
     assert_eq!(migration["tablesAdded"], json!([]));
     assert_eq!(
         migration["projectEditorPreference"]["argumentsPreservedOnClear"],
         true
     );
     assert!(STATE_V11.contains("尚无 production migration"));
-    assert!(STATE_V11.contains("daemon 仍广告 `dataSchema: 10`"));
+    assert!(STATE_V11.contains("`dataSchema: 10`"));
 
     assert!(!ACTIVE_RPC.contains("projects.setFavorite"));
     assert!(!ACTIVE_RPC.contains("unity.projectEditor.selection.get"));

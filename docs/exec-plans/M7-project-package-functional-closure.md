@@ -2,7 +2,7 @@
 
 状态：Stop A 合同修正与 P0-P4 production implementation 已通过本地、三平台 Hosted CI、CodeQL 和项目所有者验收；
 P5-A Create / Restore existing-Core GUI wiring 已通过本地完整验收、三平台 Hosted CI 与 CodeQL。P5-B Favorite / Clear
-Unity Preference 已完成 proposal-only contract-first Stop A，等待项目所有者审批；没有开始其 production implementation。
+Unity Preference contract-first Stop A 已按项目所有者修订批准，production implementation 正在进行；P6/H2 仍未开始。
 H2 visual WIP 继续暂停，P6-P8、M8/M9 未开始。
 
 ## 目标与边界
