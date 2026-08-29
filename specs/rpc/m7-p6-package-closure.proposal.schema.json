@@ -1,0 +1,119 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/proposals/m7-p6-package-closure.json",
+    "title": "ALCOMD M7 P6 Package Functional Closure proposal",
+    "x-alcomd-publication": "approved-contract-first",
+    "x-alcomd-production-wiring-created": false,
+    "x-alcomd-config-schema": 2,
+    "x-alcomd-state-schema": 12,
+    "$defs": {
+        "uuid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+        "revision": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "packageId": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+        "versionText": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "idempotencyKey": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[!-~]+$"},
+        "sourceSelector": {
+            "oneOf": [
+                {"type": "object", "additionalProperties": false, "required": ["kind", "repositoryId"], "properties": {"kind": {"const": "repository"}, "repositoryId": {"$ref": "#/$defs/uuid"}}},
+                {"type": "object", "additionalProperties": false, "required": ["kind", "userPackageId"], "properties": {"kind": {"const": "user_package"}, "userPackageId": {"$ref": "#/$defs/uuid"}}}
+            ]
+        },
+        "reinstallSelection": {
+            "oneOf": [
+                {"type": "object", "additionalProperties": false, "required": ["kind", "packageIds"], "properties": {"kind": {"const": "packages"}, "packageIds": {"type": "array", "minItems": 1, "maxItems": 256, "uniqueItems": true, "items": {"$ref": "#/$defs/packageId"}}}},
+                {"type": "object", "additionalProperties": false, "required": ["kind"], "properties": {"kind": {"const": "all"}}}
+            ]
+        },
+        "reinstallSource": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["packageId", "source"],
+            "properties": {"packageId": {"$ref": "#/$defs/packageId"}, "source": {"$ref": "#/$defs/sourceSelector"}}
+        },
+        "planReinstallParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["projectId", "expectedRevision", "selection"],
+            "properties": {
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "selection": {"$ref": "#/$defs/reinstallSelection"},
+                "sources": {"type": "array", "maxItems": 256, "items": {"$ref": "#/$defs/reinstallSource"}}
+            }
+        },
+        "bulkIntent": {
+            "oneOf": [
+                {"type": "object", "additionalProperties": false, "required": ["kind", "packageId", "includePrerelease"], "properties": {"kind": {"const": "install"}, "packageId": {"$ref": "#/$defs/packageId"}, "versionRange": {"$ref": "#/$defs/versionText"}, "source": {"$ref": "#/$defs/sourceSelector"}, "includePrerelease": {"type": "boolean"}}},
+                {"type": "object", "additionalProperties": false, "required": ["kind", "packageId", "includePrerelease"], "properties": {"kind": {"const": "upgrade"}, "packageId": {"$ref": "#/$defs/packageId"}, "versionRange": {"$ref": "#/$defs/versionText"}, "source": {"$ref": "#/$defs/sourceSelector"}, "includePrerelease": {"type": "boolean"}}},
+                {"type": "object", "additionalProperties": false, "required": ["kind", "packageId"], "properties": {"kind": {"const": "remove"}, "packageId": {"$ref": "#/$defs/packageId"}}},
+                {"type": "object", "additionalProperties": false, "required": ["kind", "packageId"], "properties": {"kind": {"const": "reinstall"}, "packageId": {"$ref": "#/$defs/packageId"}, "source": {"$ref": "#/$defs/sourceSelector"}}}
+            ]
+        },
+        "planBulkParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["projectId", "expectedRevision", "intents"],
+            "properties": {
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "intents": {"type": "array", "minItems": 1, "maxItems": 256, "items": {"$ref": "#/$defs/bulkIntent"}}
+            }
+        },
+        "userPackageListParams": {
+            "type": "object", "additionalProperties": false,
+            "properties": {"cursor": {"type": "object", "additionalProperties": false, "required": ["updatedAtMs", "userPackageId"], "properties": {"updatedAtMs": {"type": "integer", "minimum": 0}, "userPackageId": {"$ref": "#/$defs/uuid"}}}, "limit": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 100}}
+        },
+        "userPackageGetParams": {"type": "object", "additionalProperties": false, "required": ["userPackageId"], "properties": {"userPackageId": {"$ref": "#/$defs/uuid"}}},
+        "userPackageEnrollParams": {"type": "object", "additionalProperties": false, "required": ["sourcePath", "idempotencyKey"], "properties": {"sourcePath": {"type": "string", "minLength": 1, "maxLength": 32768}, "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}}},
+        "userPackageMutationParams": {"type": "object", "additionalProperties": false, "required": ["userPackageId", "expectedRevision", "idempotencyKey"], "properties": {"userPackageId": {"$ref": "#/$defs/uuid"}, "expectedRevision": {"$ref": "#/$defs/revision"}, "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}}},
+        "userPackageRecord": {
+            "type": "object", "additionalProperties": true,
+            "required": ["userPackageId", "sourceRootPath", "packageId", "version", "revision", "archiveSha256", "createdAtMs", "updatedAtMs"],
+            "properties": {
+                "userPackageId": {"$ref": "#/$defs/uuid"}, "sourceRootPath": {"type": "string"},
+                "packageId": {"$ref": "#/$defs/packageId"}, "version": {"$ref": "#/$defs/versionText"},
+                "displayName": {"type": "string"}, "revision": {"$ref": "#/$defs/revision"},
+                "archiveSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                "createdAtMs": {"type": "integer", "minimum": 0}, "updatedAtMs": {"type": "integer", "minimum": 0}
+            }
+        },
+        "packageLinks": {
+            "type": "object", "additionalProperties": false, "minProperties": 1,
+            "properties": {
+                "documentation": {"type": "object", "additionalProperties": false, "required": ["url"], "properties": {"url": {"type": "string", "maxLength": 2048}}},
+                "changelog": {"type": "object", "additionalProperties": false, "required": ["url"], "properties": {"url": {"type": "string", "maxLength": 2048}}}
+            }
+        },
+        "repositoryPackageVersionExtensions": {
+            "type": "object", "additionalProperties": true,
+            "properties": {
+                "prerelease": {"type": "boolean", "description": "Absent means classification_unavailable, never false."},
+                "links": {"$ref": "#/$defs/packageLinks"}
+            }
+        },
+        "repositorySourcePinV1": {
+            "type": "object", "additionalProperties": false,
+            "required": ["repositoryId", "repositoryRevision", "sourceIdentity", "manifestFingerprint", "packageId", "version", "artifactUrl", "archiveSha256"],
+            "properties": {"repositoryId": {"$ref": "#/$defs/uuid"}, "repositoryRevision": {"$ref": "#/$defs/revision"}, "sourceIdentity": {"type": "string"}, "manifestFingerprint": {"type": "string"}, "packageId": {"$ref": "#/$defs/packageId"}, "version": {"$ref": "#/$defs/versionText"}, "artifactUrl": {"type": "string"}, "archiveSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+        },
+        "userPackageSourcePinV2": {
+            "type": "object", "additionalProperties": false,
+            "required": ["userPackageId", "sourceRevision", "sourceIdentity", "manifestFingerprint", "packageId", "version", "archiveSha256"],
+            "properties": {"userPackageId": {"$ref": "#/$defs/uuid"}, "sourceRevision": {"$ref": "#/$defs/revision"}, "sourceIdentity": {"type": "string"}, "manifestFingerprint": {"type": "string"}, "packageId": {"$ref": "#/$defs/packageId"}, "version": {"$ref": "#/$defs/versionText"}, "archiveSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+        },
+        "packageSourcePin": {"oneOf": [{"$ref": "#/$defs/repositorySourcePinV1"}, {"$ref": "#/$defs/userPackageSourcePinV2"}]}
+    },
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["contractVersion", "methods", "capabilities", "permissions", "stableErrors"],
+    "properties": {
+        "contractVersion": {"const": 1},
+        "methods": {"const": ["packages.planReinstall", "packages.planBulk", "packages.userPackages.list", "packages.userPackages.get", "packages.userPackages.enroll", "packages.userPackages.refresh", "packages.userPackages.remove"]},
+        "capabilities": {"const": ["packages.plan.v1", "packages.plan.v2", "packages.apply.v1", "packages.user-packages.v1"]},
+        "permissions": {"const": {"packages.planReinstall": ["projects.read", "repositories.read", "packages.read"], "packages.planBulk": ["projects.read", "repositories.read", "packages.read"], "packages.userPackages.list": ["packages.read"], "packages.userPackages.get": ["packages.read"], "packages.userPackages.enroll": ["packages.manage"], "packages.userPackages.refresh": ["packages.manage"], "packages.userPackages.remove": ["packages.manage"]}},
+        "principalConstraints": {"const": {"packages.userPackages.enroll": "builtin:local-owner", "packages.userPackages.refresh": "builtin:local-owner"}},
+        "stableErrors": {"const": ["package_not_installed", "package_intent_conflict", "user_package_not_found", "user_package_already_enrolled", "user_package_source_unavailable", "user_package_source_unsafe", "user_package_source_changed", "user_package_manifest_invalid", "user_package_limit_exceeded"]},
+        "changeSetVersions": {"const": {"repositoryOnly": 1, "containsUserPackageSource": 2}},
+        "userPackageQuotas": {"const": {"maxEntries": 65536, "maxSingleRegularFileBytes": 1073741824, "maxTotalRegularBytes": 4294967296, "maxDepth": 64, "maxNormalizedPathUtf8Bytes": 1024, "maxFinalArchiveBytes": 1073741824}}
+    }
+}

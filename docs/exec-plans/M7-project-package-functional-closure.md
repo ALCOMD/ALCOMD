@@ -2,8 +2,8 @@
 
 状态：Stop A 合同修正与 P0-P4 production implementation 已通过本地、三平台 Hosted CI、CodeQL 和项目所有者验收；
 P5-A Create / Restore existing-Core GUI wiring 与 P5-B Favorite / Clear Unity Preference 均已通过本地完整验收、三平台
-Hosted CI 与 CodeQL。P6-A Package refresh/source filter 已形成通过本地定向测试的 production candidate，远端验收待取得；
-P6-B/P6-C 仍只允许 contract-first。
+Hosted CI 与 CodeQL。P6-A Package refresh/source filter 已通过本地完整验收、三平台 Hosted CI 与 CodeQL；
+P6-B/P6-C Stop A contract-first 提案已形成但尚未获生产实现批准。
 H2 visual WIP 继续暂停，P7-P8、M8/M9 未开始。
 
 ## 目标与边界
@@ -267,9 +267,259 @@ P0-P4 必须执行 fmt、clippy、Workspace tests、npm check/build/browser test
   JavaScript/TypeScript、Rust 与 Actions 分析全部成功；Ubuntu 实测最高 `GLIBC_2.34`，macOS 9 个预期产物均为
   arm64 / minos 11.0。该候选包含仅使用 Material Web 官方 spacing token 的跨平台 Project action density 修复；
   三个平台的 26 项 Official GUI Playwright suite 均通过。
-- P6-A production candidate 只复用 `repositories.list`、`repositories.refresh`、`repositories.get`、
+- P6-A production 只复用 `repositories.list`、`repositories.refresh`、`repositories.get`、
   `repositories.packages` 与现有 typed client：完整分页读取 registered repositories，按顺序 refresh，逐项记录 success/failure，
   `revision_conflict` 重新读取当前 revision 后最多重试一次，并在 partial failure 后仍 reload package data。Source filter 只消费
   daemon `RepositorySource.kind` 并提供 All/Remote/Local，不持久化且不参与 resolver/Plan/Apply/source pin。新增 browser test 覆盖
   zero/one/multiple、partial failure、single retry、final reload 和三种 source presentation；没有新增 RPC、Capability、Permission、
-  State、Config、dependency、unsafe 或平台 API。远端三平台 Hosted CI 与 CodeQL 尚未取得。
+  State、Config、dependency、unsafe 或平台 API。最终 hotfix commit `bb934ef94ad57f26cb40a6d718fc46181a4915f4`
+  只修改 `crates/alcomd-testing/tests/m7_project_copy_rpc.rs`，使 test daemon guard 的 shutdown/drop 顺序和 client
+  connect timeout 与 production 5 秒启动窗口不再相互竞速；production timeout、IPC、RPC 与 daemon 均未修改。
+  Hosted CI run `33264281642` 的 Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 全部成功，CodeQL run
+  `33264281469` 的 Actions、Rust、JavaScript/TypeScript 与 Python 分析全部成功。
+
+## P6-B Stop A：package visibility / metadata
+
+本节只是待人工批准的合同提案。没有修改 Config Schema、State Schema、RPC Schema、DTO 或 production wiring。
+
+### Core evidence 与 prerelease DTO
+
+- `alcomd-vpm` 已用唯一获批的 `semver 1.0.28` 解析 resolver-ready package；Core request 已有
+  `includePrerelease`。当前 public `RepositoryPackageVersion` 只有原始 `version`，React 无权自行用 split/regex
+  分类 prerelease。
+- 提案对 read DTO 兼容增加 `prerelease?: boolean`。严格 `semver::Version` 解析成功时，Core 根据
+  `Version.pre` 是否为空返回 `true`/`false`；legacy/raw/unparseable version 返回字段 absent，语义固定为
+  `classification_unavailable`，不得当作 `false`。
+- 未知分类不得进入新的默认可选候选；若它已经被项目 exact lock 安装，仍显示该 installed row，并标记
+  classification/source unavailable。旧 durable snapshot 不会因为缺字段被误归类为 stable。
+
+### Config Schema 2
+
+规范 TOML 提案为：
+
+```toml
+schema = 2
+revision = 1
+locale = "system"
+
+[appearance]
+mode = "system"
+source_color = "#6750A4" # 仅非空时出现
+density = "default"
+motion = "system"
+
+[packages]
+show_prerelease = false
+hidden_repository_ids = []
+hide_local_user_packages = false
+```
+
+公开 `settings.get` normalized JSON 在原 `settings` 对象中兼容增加：
+
+```json
+{
+    "packages": {
+        "showPrerelease": false,
+        "hiddenRepositoryIds": [],
+        "hideLocalUserPackages": false
+    }
+}
+```
+
+`settings.update.update.packages` 是 closed partial object；`showPrerelease`、`hiddenRepositoryIds` 与
+`hideLocalUserPackages` 均可独立省略，
+省略保持当前值。`hiddenRepositoryIds` 是整个集合的 CAS replacement，不提供 add/remove patch DSL。
+
+- `showPrerelease` 默认 `false`，与 v3 serde default 和 v4 当前安全行为一致。
+- `hideLocalUserPackages` 默认 `false`，且只控制 official GUI 的 User Package source/section presentation。
+- `hiddenRepositoryIds` 最多 256 个 canonical lowercase UUID；空数组清空。输入重复、非 canonical UUID 或超限
+  均拒绝，daemon 不静默去重。规范写出按 UUID UTF-8 byte order 升序。
+- 未注册/stale ID 保留但 inactive；unregister 不改设置。相同 source 后续重新注册取得新 RepositoryId，因此默认
+  可见，旧 stale ID 不自动绑定新 authority。
+- v1 -> v2 仅在 daemon startup、对外 ready 前执行：验证完整 v1 后补 `packages` 默认值，保留现有 revision，
+  使用既有 same-directory synced temp/backup/recovery 原子替换。此迁移不是用户 mutation，不增加 revision；之后每次
+  成功 `settings.update` 仍把 revision 精确加一。
+- migration 失败保留或恢复原合法 v1，daemon 对 settings RPC fail closed；不得用默认值覆盖。v2 未知字段/section、
+  错误类型、重复 ID 与 future schema 均 fail closed。`settings.get/update` 方法、permission 和 CAS 错误不变；hello
+  只在 v2 durable/queryable 后把兼容可选 `configSchema` 从 1 广告为 2。
+
+### Hidden presentation policy
+
+v3 审计证明 hidden 不是一个布尔业务属性：`gui_hidden_repositories`、`hide_local_user_packages`、prerelease、yanked、
+unavailable source、Unity incompatible 与折叠 section 是不同原因。P6-B 因此冻结分离原因：
+
+- `hidden_repository`：repository 在 Config v2 列表；official GUI 隐藏该 repository/source，并不改变 Core catalog。
+- `prerelease_preference`：`showPrerelease=false` 时从默认可选候选中排除。
+- `yanked`：保持现有 Core policy，绝不因“显示隐藏项”而可被新选择；installed exact row 仅显示警告。
+- `source_unavailable` / `classification_unavailable`：不可新选择；installed exact row 保留并显示原因。
+- `unity_incompatible`：仍是独立 compatibility reason，不与 hidden 合并。
+- User Package：P6-C 的独立 source kind/section，不冒充 local repository 或 hidden repository。
+- folded/collapsed section：纯瞬时 UI 状态，不进入 Config v2。
+
+隐藏只影响 official GUI presentation 和用户主动选择 source 的 UI，不改变 Core resolver catalog、dependency resolution、
+repository refresh、已创建 Plan、pinned source、Apply 或 recovery。用户选择可见 repository 后，GUI把该 RepositoryId 作为
+existing source selector显式传入；不得通过隐藏配置隐式改变authority。`hideLocalUserPackages` 同样不注销source、不删除cache、
+不使Plan失效。public DTO 应返回可组合 reason，不增加 `hidden: bool`。
+
+### Docs / Changelog 与 official GUI closed opener
+
+v3 package manifest 的真实字段是 `documentationUrl` 和 `changelogUrl`；P6-B 不把 homepage/repository/任意 manifest
+字段扩成 generic links。Core parse 时复用已有 `reqwest::Url`：原始 UTF-8 最多 2,048 bytes，必须是 absolute
+`http`/`https`、有 host、无 username/password userinfo；malformed/unsupported 值作为脱敏 read issue 丢弃。query 与
+fragment 可以保留。提案兼容增加：
+
+```json
+{
+    "links": {
+        "documentation": {"url": "https://example.invalid/docs"},
+        "changelog": {"url": "https://example.invalid/changelog"}
+    }
+}
+```
+
+`links` 及两个 member 均 optional；State v12 为 repository package row 增加 nullable bounded
+`documentation_url` / `changelog_url`，以便 restart/HTTP 304 后仍保留已验证 authority。旧 row 为 NULL。
+
+Official GUI 新 closed Tauri command 只接收 `(repositoryId, packageId, version, linkKind)`，其中 `linkKind` 仅
+`documentation|changelog`。Rust adapter 每次通过 typed client 重新读取 current repository package metadata，按完整
+三元组找到当前 descriptor，再用现有 `open::that` 打开。React 不传 URL；不存在 generic `openUrl(string)`，也不增加
+Extension capability。第三方 GUI 可消费 Core 已验证的 public descriptor并自行选择 opener。
+
+P6-B 不需要新 public RPC method、capability、permission、production dependency、unsafe 或平台 API；只提议 existing read
+DTO/settings DTO 的兼容字段、Config Schema 2 以及 State v12 的两个 nullable cache columns。
+
+## P6-C Stop A：package mutation / User Packages
+
+本节同样只是提案。没有接线 method、migration、resolver、cache 或 GUI。
+
+### Reinstall
+
+当前 `packages.planInstall` 经过 `build_resolution_plan` 后，目标 exact version 与 installed lock 相同时可以得到空
+ChangeSet，因此不能冒充 reinstall；remove+install 或多个 Plan 也不具备单事务语义。
+
+提案新增 compatible RPC `packages.planReinstall`：
+
+```json
+{
+    "projectId": "uuid",
+    "expectedRevision": 1,
+    "selection": {"kind": "packages", "packageIds": ["com.example.package"]}
+}
+```
+
+或 `{"selection":{"kind":"all"}}`。
+
+- explicit list 为 1..256 个现有 package ID，必须 unique；Core 以 package ID UTF-8 byte order 规范排序后参与 fingerprint。
+  空数组不表示 all。`all` 由 Core 从 authoritative vpm lock 扩展为全部 locked direct+transitive package，排序后仍不得
+  超过 256，超限失败。
+- 允许显式 repair direct 或 transitive package；任一 ID 未安装/未 locked 时整个 Plan 返回
+  `package_not_installed`。`all` 在没有 installed package 时返回空的成功 Plan，不制造 Apply Operation。
+- Reinstall 固定 current locked exact version，但当前 installed state 不包含 original source/digest provenance，不能声称恢复
+  原来源。Core只寻找 exact version candidate；有多个authority且没有selector时返回 `package_source_ambiguous`，显式
+  repository/user-package selector必须确实提供该exact version。成功生成 `replace` mutation，不升级/降级、不改变
+  dependency graph或VPM manifest语义，并优先逐字节保留当前`vpm-manifest.json`。
+- Plan 阶段沿用 `projects.read + repositories.read + packages.read`，Apply仍使用现有
+  `packages.applyPlan` + `packages.manage`、一个 durable Operation 与同一 filesystem recovery。
+- 新方法要求 `packages.plan.v2`；`packages.plan.v1` 完整冻结且继续只使用repository catalog。`packages.apply.v1`与
+  `packages.applyPlan`不变。State v12 的 `package_plans.action` 增加`reinstall`；ChangeSet/source set/fingerprint
+  保持durable。selection超限复用`plan_too_large`和safe subreason=`selection_limit`。
+
+### Bulk
+
+提案新增 `packages.planBulk`，要求 `packages.plan.v2`，输入 1..256 个 closed typed intents：
+
+```json
+{
+    "projectId": "uuid",
+    "expectedRevision": 1,
+    "intents": [
+        {"kind": "install", "packageId": "a", "versionRange": "^1.0.0", "repositoryId": "uuid", "includePrerelease": false},
+        {"kind": "upgrade", "packageId": "b", "versionRange": "^2.0.0", "includePrerelease": false},
+        {"kind": "remove", "packageId": "c"},
+        {"kind": "reinstall", "packageId": "d"}
+    ]
+}
+```
+
+只支持当前 install/upgrade/remove/reinstall intent；不加入表达式语言、nested batch、resolve/downgrade alias。每个 package
+最多出现一次，重复或互斥 intent 返回 `package_intent_conflict`。Core 验证并按 `(packageId, kind, normalized fields)`
+规范排序，将 normalized intent array、project revision与resolver inputs纳入 Plan request fingerprint；caller 顺序不影响结果。
+
+Core 在一个 resolver invocation 中处理完整 intent set。依赖/版本/source冲突使整个 Plan失败，不产出部分 Plan。成功只产生
+一个 immutable durable PackagePlan（action=`bulk`），随后复用一次 `packages.applyPlan`、一个 `packages.apply`
+Operation、现有 Resource Lock、transaction与recovery；React不得拼接多个 Plan/Apply。
+
+### User Packages / loose local packages
+
+v3 `settings.json.userPackageFolders` 与 `folder/package.json` 证明该能力是 loose local package directory enrollment，
+不是 local VPM repository，也不接受 archive。P6-C 提案只支持 directory：
+
+- RPC compatible additions：`packages.userPackages.list/get/enroll/refresh/remove`，capability
+  `packages.user-packages.v1`。list/get使用 `packages.read`；enroll/refresh/remove使用 `packages.manage` 与既有
+  `builtin:local-owner` filesystem authority。不提议新 Permission。
+- enroll input 是 daemon重新验证的 absolute UTF-8 directory path（official GUI picker仅提供候选）。root及每个 component
+  不得是 symlink/reparse/junction；tree只允许 directory/regular file，拒绝 non-UTF-8、escape、collision、special file及
+  multi-hard-link regular file。复用现有 file identity/path normalization和package archive validator。exact quotas为65,536 entries、
+  1 GiB single regular file、4 GiB total、depth 64、normalized path 1,024 UTF-8 bytes、final archive不超过1 GiB。
+- authoritative manifest 只来自 root `package.json`，使用现有 strict VPM manifest + `semver::Version` parser。enrollment
+  identity 是 daemon分配 `UserPackageId`；root opaque filesystem identity阻止路径字符串重绑。每个 owner的
+  `packageId` 必须唯一；重复identity返回`user_package_already_enrolled`。同一UserPackageId refresh可改变version但不得改变
+  packageId，否则`user_package_source_changed`。
+- enroll/refresh 完整验证后，把 normalized tree打包为 deterministic、immutable ALCOMD-owned cache archive，记录 SHA-256
+  archive digest、manifest fingerprint与normalized tree fingerprint。source directory从不成为Apply时的可变输入；resolver
+  pin为 `(UserPackageId, sourceRevision, packageId, version, archiveSha256)`，M4下载/完整性/ZIP/path/transaction/recovery
+  继续处理该本地cache object。这样离线Apply可用且不建立第二套package filesystem engine。
+- refresh只针对同一 UserPackageId/path/root identity；重读发生变化的tree后以CAS发布新 sourceRevision和新immutable cache
+  snapshot。路径丢失、identity改变或安全验证失败时，source标为`unavailable`，不静默重绑。已创建Plan继续引用原cache
+  snapshot；新Plan不得选择unavailable source。
+- remove只注销 enrollment并增加 revision/Event；绝不删除用户目录。已创建Plan/运行中Operation与其pinned cache仍可恢复，
+  后续GC只能在没有durable reference时按既有cache policy处理。
+
+### State Schema 12 proposal
+
+State v11保持sealed。State v12只做三组有独立理由的变化：
+
+1. rebuild `package_plans`，保留全部列/trigger/index/data，仅把 action CHECK扩为
+   `install|remove|upgrade|downgrade|resolve|reinstall|bulk`；
+2. `repository_package_versions` 增加 nullable `documentation_url`、`changelog_url`，每项 1..2,048 UTF-8 bytes；
+3. 新建专用 `user_package_sources`，不是generic source registry：
+
+| column | contract |
+|---|---|
+| `user_package_id` | canonical UUID primary key |
+| `owner_principal_id` | 1..128；参与所有查询与mutation |
+| `source_root_path` | absolute normalized UTF-8，1..32,768；不得进入普通日志/Event |
+| `source_identity_key` | opaque BLOB，1..1,024；不暴露平台类型 |
+| `package_id` | current package ID grammar，1..128 |
+| `version` | strict canonical SemVer，1..1,024 |
+| `manifest_json` | normalized bounded manifest authority；不要求upstream url/zipSHA256 |
+| `manifest_fingerprint`, `content_fingerprint` | exact 32-byte SHA-256 BLOB |
+| `archive_sha256` | 64 lower-hex；指向ALCOMD-owned immutable cache object |
+| `revision` | positive monotonic integer |
+| `created_at_ms`, `updated_at_ms` | bounded nonnegative integer |
+
+约束为 `UNIQUE(owner_principal_id, source_identity_key)` 和
+`UNIQUE(owner_principal_id, package_id)`；refresh只允许相同root object/packageId的checked mutation，remove通过RPC显式
+删除registry row但不得级联删除被Plan引用的cache evidence。迁移复制现有rows后重建trigger/index，transaction失败完整回滚，
+future schema fail closed。没有generic workflow/state table。
+
+### Public errors、dependencies 与 test vectors
+
+批准新增稳定错误：`package_not_installed`、`package_intent_conflict`、`user_package_not_found`、
+`user_package_already_enrolled`、`user_package_source_unavailable`、`user_package_source_unsafe`、
+`user_package_source_changed`、`user_package_manifest_invalid`、`user_package_limit_exceeded`。selection超限复用
+`plan_too_large`/`selection_limit`；manifest/range/hash/cache/archive/path错误继续复用现有精确package error，不增加宽泛
+`user_package_failed`。
+
+提案不需要新production dependency、unsafe或平台API：SemVer、SHA-256、ZIP、path/file identity、cache与local opener均复用
+现有边界。production前永久contract/test vectors至少覆盖：same-version install no-op证明；reinstall one/direct/transitive/all/
+empty-all/missing/limit/order/fingerprint/pinned-source/offline cache；bulk四kind、duplicate/conflict、resolver atomic failure、single
+Plan/Operation/idempotency/order；State 11->12 copy/rollback/future fail-closed；User Package ordinary enroll、same identity、duplicate
+id/version、rename/delete/recreate、symlink/reparse/hardlink/non-UTF8/collision/quota、refresh CAS、unavailable/remove、cache corruption、
+offline Apply、existing Plan after refresh/remove，以及三平台filesystem identity行为。
+
+## P6 approved production boundary
+
+项目所有者已批准按本节及machine-readable proposal实施Config Schema 2、State Schema 12、`packages.plan.v2`、Reinstall、
+Bulk、User Package registry/cache/resolver与official GUI closure；不新增Permission、dependency、unsafe/platform API、
+ResourceKey或Operation kind。P7、P8、H2、M8、M9与M11仍未开始。

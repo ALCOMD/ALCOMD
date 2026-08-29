@@ -1,8 +1,8 @@
 # M7 Project / Package Functional Closure matrix
 
 状态：P0-P4 remote checkpoint、P5-A Create/Restore production wiring 与 P5-B Favorite/Clear Unity Preference
-均已通过本地与远端验收。P6-A Package refresh/source filter 已形成通过本地定向测试的 production candidate，远端验收待取得。
-v3 只作行为参考；没有复制、移植或改写其源码。P6-B/P6-C、P7-P8 仍未完成，
+均已通过本地与远端验收。P6-A Package refresh/source filter 已通过本地完整验收、三平台 Hosted CI 与 CodeQL。
+v3 只作行为参考；没有复制、移植或改写其源码。P6-B/P6-C Stop A 已按合同修正获生产批准；P7-P8 仍未完成，
 因此聚合 feature 继续 `in_progress`。
 
 | 用户入口 | 当前 Core 是否足够 | 最小合同 / 实现归属 | Permission 复用 | State / Config 影响 | dependency / platform | slice |
@@ -17,15 +17,15 @@ v3 只作行为参考；没有复制、移植或改写其源码。P6-B/P6-C、P7
 | Open Unity / Backup | 已有真实 RPC/Operation | 保持 existing wiring；不是新合同 | existing | 无 | existing | 已实现证据保持 |
 | Remove registry row | `projects.unregister` 足够 | GUI confirmation + existing RPC；不删除目录 | `projects.manage` | existing | 无 | P3 / S |
 | Remove directory | 不足且是高影响删除 | 独立 Plan/Apply/Operation、writer gate、Project lock、trash/delete/recovery contract，另行人工审批 | 待定；不得从 `projects.manage` 隐式获得任意删除 | 后续 schema | 可能需平台 trash/删除评估 | P7 / XL |
-| Package workspace refresh | 单 repo `repositories.refresh` 足够 | GUI 完整分页 list，顺序逐 registered repo refresh，逐项记录 partial failure，`revision_conflict` 仅 fresh retry 一次，最后 reload；不声称 atomic refresh-all | `repositories.manage/read` | 无 | existing HTTP/local | P6-A / implemented local candidate |
-| Package source filter | registered local/remote repository DTO 足够做展示过滤 | GUI-only All/Remote/Local filter，source identity只来自 daemon `RepositorySource.kind`；GUI不做 resolver | read only | 不持久化；无 authority state | 无 | P6-A / implemented local candidate |
-| Show prerelease | resolver已有 `includePrerelease`，read DTO只有 version string | proposed optional `RepositoryPackageVersion.prerelease: bool`，避免前端建立第二套 SemVer；偏好进入 Config Schema v2 | settings read/manage | Config v2，不是 State v10 | 无 | P4 / M |
-| Hidden repositories | current Config v1 无字段 | Config v2 proposed `hiddenRepositoryIds`（bounded opaque IDs）；只影响展示/候选可见性，不能篡改 pinned Plan | settings read/manage | Config v2 | 无 | P4 / M |
-| Hide local user packages | true local user package model不存在 | 先冻结 local package enrollment/source identity/hash/visibility；不得把 local repository JSON冒充 loose user package | 待审批 | 可能 registry + Config v2 | directory/path security另审 | P6 / L |
-| Reinstall one/all | existing Plan action没有 reinstall；install same version可成为 no-op | proposed `packages.planReinstall`，输入 bounded package IDs（one/all由显式集合表达），仍由 `packages.applyPlan` Apply | existing packages read/manage + projects/repositories read | package plan action需后续 migration，**不并入 v10** | 无新依赖 | P5 / L |
-| Bulk selected install/upgrade/remove/reinstall | ChangeSet可多 mutation，但现有 request不能表达显式混合集合 | proposed `packages.planBulk`，bounded typed intents，单 durable Plan/Apply；禁止客户端拼接多个 Plan | existing package permissions | package plan action/request evidence需后续 migration | 无 | P5 / XL |
+| Package workspace refresh | 单 repo `repositories.refresh` 足够 | GUI 完整分页 list，顺序逐 registered repo refresh，逐项记录 partial failure，`revision_conflict` 仅 fresh retry 一次，最后 reload；不声称 atomic refresh-all | `repositories.manage/read` | 无 | existing HTTP/local | P6-A / implemented + remote green |
+| Package source filter | registered local/remote repository DTO 足够做展示过滤 | GUI-only All/Remote/Local filter，source identity只来自 daemon `RepositorySource.kind`；GUI不做 resolver | read only | 不持久化；无 authority state | 无 | P6-A / implemented + remote green |
+| Show prerelease | resolver已有 `includePrerelease`，read DTO只有 version string | proposed optional `RepositoryPackageVersion.prerelease: bool`；strict Core parse返回bool，legacy/unparseable absent且不可当stable；默认false | settings read/manage | Config v2，不是State | 无 | P6-B Stop A |
+| Hidden repositories | current Config v1 无字段 | Config v2 max 256 canonical unique `hiddenRepositoryIds`；stale ID保留，只影响official GUI展示/source chooser，不修改resolver authority | settings read/manage | Config v2 | 无 | P6-B approved |
+| User Packages | v3 是 `userPackageFolders` loose directory，不是local repository | approved directory-only enrollment、opaque file identity、deterministic owned cache archive、v2 source pin、refresh/remove CAS；不接受archive input | packages.read/manage + local-owner | State v12专用 `user_package_sources` | 复用现有semver/sha2/zip/platform；无新依赖 | P6-C approved |
+| Reinstall one/all | existing Plan action没有 reinstall；install same version可成为 no-op | approved `packages.planReinstall`，plan.v2、`packages|all` tagged selection、max 256，locked exact version重新解析source并force replace | existing packages read/manage + projects/repositories read | State v12 action=`reinstall` | 无新依赖 | P6-C approved |
+| Bulk selected install/upgrade/remove/reinstall | ChangeSet可多 mutation，但现有 request不能表达显式混合集合 | approved `packages.planBulk`，plan.v2、max 256 unique typed intents，单 durable Plan/Apply；禁止客户端拼接多个 Plan | existing package permissions | State v12 action=`bulk` | 无 | P6-C approved |
 | Hidden package section | Core 能返回 yanked/source，但 visibility policy不完整 | 由 Config v2 + daemon-provided prerelease/source class驱动；yanked保持不可新选 | settings/read | Config v2 | 无 | P4/P6 |
-| Docs / changelog | 当前 normalized read DTO 丢弃对应 manifest字段 | proposed bounded optional link descriptors；GUI closed command只接受 `(repositoryId,packageId,version,linkKind)`，daemon re-fetch current link，拒绝非 http/https/userinfo | repositories/packages read | cache row/DTO兼容增加，是否迁移另审 | opener `open_url` 不能接收 frontend URL；依赖同 opener候选 | P6 / L |
+| Docs / changelog | 当前 normalized read DTO 丢弃真实 `documentationUrl`/`changelogUrl` | proposed 2,048-byte validated optional descriptors；GUI closed command只接受 `(repositoryId,packageId,version,linkKind)`，daemon re-fetch current link，拒绝非 http/https/userinfo | repositories/packages read | State v12 nullable URL columns | 复用reqwest URL与open；无新依赖 | P6-B Stop A |
 | VCC Import / Migrate | 不足 | M11 migration-only implementation +真实脱敏 Fixture | M11决定 | M11 | M11 | M11 / blocked |
 
 ## 关键判断

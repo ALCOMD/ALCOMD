@@ -1,0 +1,57 @@
+{
+    "status": "approved-contract-first",
+    "from": 11,
+    "to": 12,
+    "productionMigration": "crates/alcomd-store/migrations/0012_package_functional_closure.sql",
+    "productionWiringCreated": false,
+    "transaction": "BEGIN IMMEDIATE",
+    "userVersionSetLast": true,
+    "rollbackAuthorityOnFailure": 11,
+    "tablesAdded": ["user_package_sources"],
+    "tablesRebuilt": ["package_plans"],
+    "columnsAdded": [
+        "repository_package_versions.documentation_url",
+        "repository_package_versions.changelog_url"
+    ],
+    "packagePlanActions": [
+        "install", "remove", "upgrade", "downgrade", "resolve", "reinstall", "bulk"
+    ],
+    "packageOperationKind": "packages.apply",
+    "repositoryPackageLinks": {
+        "nullable": true,
+        "maximumUtf8Bytes": 2048,
+        "resolverReadyDoesNotRequireLinks": true,
+        "storedOnlyAfterUrlValidation": true
+    },
+    "userPackageSources": {
+        "columns": [
+            "user_package_id", "owner_principal_id", "source_root_path", "source_identity_key",
+            "package_id", "version", "manifest_json", "manifest_fingerprint",
+            "content_fingerprint", "archive_sha256", "revision", "created_at_ms", "updated_at_ms"
+        ],
+        "unique": [
+            ["owner_principal_id", "source_identity_key"],
+            ["owner_principal_id", "package_id"]
+        ],
+        "forbiddenColumns": ["repository_id", "artifact_url", "generic_source_kind"],
+        "removeDeletesUserDirectory": false,
+        "removeDeletesCacheObject": false
+    },
+    "invariants": [
+        "all-v11-rows-and-authority-preserved",
+        "project-favorite-preserved",
+        "unity-selection-preserved",
+        "event-autoincrement-sequence-preserved",
+        "idempotency-authority-preserved",
+        "operations-and-package-journals-preserved",
+        "project-copy-state-preserved",
+        "extension-state-preserved",
+        "foreign-key-check-empty",
+        "future-schema-fail-closed",
+        "migration-failure-rolls-back-to-v11-authority"
+    ],
+    "forbiddenAdditions": [
+        "generic-sources-table", "generic-local-artifacts-table", "generic-workflow-table",
+        "delete-project-directory-state", "h2-state", "m8-state", "m9-state"
+    ]
+}

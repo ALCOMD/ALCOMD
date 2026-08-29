@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。H2 visual implementation 继续暂停；M7 Project / Package Functional Closure P0-P4、P5-A 与 P5-B 已远端通过，P6-A Package refresh/source filter 已形成通过本地定向测试的 production candidate并等待远端验收；P6-B/P6-C 只进入 contract-first。projects.management 与 packages.vpm 保持 in_progress，M8/M9 未开始。`
+`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。H2 visual implementation 继续暂停；M7 Project / Package Functional Closure P0-P4、P5-A、P5-B 与 P6-A 已远端通过，P6-B/P6-C Stop A 已按合同修正获生产实施批准并进入P6-0合同提交阶段。projects.management 与 packages.vpm 保持 in_progress，M8/M9 未开始。`
 
 ## 已完成
 
@@ -311,7 +311,10 @@
 - P6-A Package workspace 已复用 existing repository typed client 完成完整分页读取、顺序逐仓库 refresh、partial failure、
   `revision_conflict` 单次 fresh retry、最终 catalog reload 与 GUI-only All/Remote/Local source filter。browser regression 覆盖零/单/多
   仓库、部分失败、不虚假成功及 source kind presentation；无新增 RPC、Capability、Permission、State、Config、dependency、unsafe
-  或平台 API。当前仅为本地 candidate，三平台 Hosted CI/CodeQL 尚未取得，聚合 `packages.vpm`/`repositories.management` 不提升。
+  或平台 API。测试热修复 commit `bb934ef94ad57f26cb40a6d718fc46181a4915f4` 对应 Hosted CI run
+  `33264281642`：Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 全部成功；CodeQL run `33264281469`
+  的四类分析全部成功。热修复只修改 test daemon harness，production 5 秒启动窗口与 IPC 未变。P6-B/P6-C 仍仅为
+  contract-first Stop A 已获附修正批准，正在先形成独立合同commit；聚合 `packages.vpm`/`repositories.management` 暂不提升。
 
 ## 后续里程碑尚未完成
 
@@ -377,7 +380,7 @@ M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 
 functional candidate `192672…` 保留技术证据但已被拒绝 visual/IA acceptance；首次 H1 也已被标记为
 `rejected_for_visual_direction`。替代的 v3-reference wide Projects shell 已在 `7bb325b…` 通过 Visual Gate 1。当前只完成
 Project / Package Functional Closure P0-P4 remote checkpoint、P5-A Create/Restore 与 P5-B Favorite/Clear Unity Preference
-均已远端通过。P6-A 已获生产授权并形成等待远端 gate 的本地 candidate；P6-B/P6-C 仅可进行 contract-first，P7-P8、H2 visual、
+均已远端通过。P6-A 也已通过三平台 Hosted CI 与 CodeQL；P6-B/P6-C 已获生产批准并从P6-0合同commit开始，P7-P8、H2 visual、
 M8 或 M9 不得开始。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。

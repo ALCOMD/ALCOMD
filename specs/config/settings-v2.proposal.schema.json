@@ -1,0 +1,88 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/proposals/config/settings-v2.json",
+    "title": "ALCOMD Config Schema 2 proposal",
+    "x-alcomd-publication": "approved-contract-first",
+    "x-alcomd-production-wiring-created": false,
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["schema", "revision", "appearance", "packages", "locale"],
+    "properties": {
+        "schema": {"const": 2},
+        "revision": {"$ref": "#/$defs/revision"},
+        "appearance": {"$ref": "#/$defs/appearance"},
+        "packages": {"$ref": "#/$defs/packages"},
+        "locale": {"$ref": "#/$defs/locale"}
+    },
+    "$defs": {
+        "revision": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615},
+        "uuid": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "mode": {"enum": ["system", "light", "dark"]},
+        "sourceColor": {"type": ["string", "null"], "pattern": "^#[0-9A-F]{6}$"},
+        "density": {"enum": ["default", "compact"]},
+        "motion": {"enum": ["system", "reduced"]},
+        "locale": {"enum": ["system", "en-US", "zh-CN", "ja-JP"]},
+        "appearance": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["mode", "sourceColor", "density", "motion"],
+            "properties": {
+                "mode": {"$ref": "#/$defs/mode"},
+                "sourceColor": {"$ref": "#/$defs/sourceColor"},
+                "density": {"$ref": "#/$defs/density"},
+                "motion": {"$ref": "#/$defs/motion"}
+            }
+        },
+        "hiddenRepositoryIds": {
+            "type": "array",
+            "maxItems": 256,
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/uuid"},
+            "x-alcomd-order": "canonical-lexical-ascending",
+            "x-alcomd-duplicates": "invalid_request"
+        },
+        "packages": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["showPrerelease", "hiddenRepositoryIds", "hideLocalUserPackages"],
+            "properties": {
+                "showPrerelease": {"type": "boolean", "default": false},
+                "hiddenRepositoryIds": {"$ref": "#/$defs/hiddenRepositoryIds"},
+                "hideLocalUserPackages": {"type": "boolean", "default": false}
+            }
+        },
+        "partialPackagesUpdate": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+                "showPrerelease": {"type": "boolean"},
+                "hiddenRepositoryIds": {"$ref": "#/$defs/hiddenRepositoryIds"},
+                "hideLocalUserPackages": {"type": "boolean"}
+            }
+        }
+    },
+    "x-alcomd-migration": {
+        "from": 1,
+        "preserveRevision": true,
+        "runBeforeReady": true,
+        "defaults": {
+            "showPrerelease": false,
+            "hiddenRepositoryIds": [],
+            "hideLocalUserPackages": false
+        },
+        "failure": "restore-valid-v1-and-fail-closed"
+    },
+    "x-alcomd-storage": {
+        "path": "config/settings.toml",
+        "writer": "alcomd",
+        "maxUtf8Bytes": 16384,
+        "maxHiddenRepositoryIds": 256,
+        "maximumCanonicalV2FitsExistingLimit": true,
+        "unknownFields": "fail-closed",
+        "replacement": "same-directory-synced-temp-then-recoverable-rename"
+    }
+}
