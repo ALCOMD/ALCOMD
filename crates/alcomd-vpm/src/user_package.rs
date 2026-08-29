@@ -700,6 +700,46 @@ mod tests {
         ))
     }
 
+    #[cfg(unix)]
+    fn short_unix_socket_root() -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "aup-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_millis()
+        ))
+    }
+
+    fn assert_path_collision(left: &str, right: &str) {
+        let limits = ArchiveLimits::package();
+        let (left_path, left_key) = normalize_path(left, limits).expect("left path");
+        let (right_path, right_key) = normalize_path(right, limits).expect("right path");
+        let mut normalized_paths = BTreeMap::new();
+        let mut explicit_paths = BTreeSet::new();
+        validate_collision(
+            &left_path,
+            &left_key,
+            false,
+            &mut normalized_paths,
+            &mut explicit_paths,
+        )
+        .expect("first path");
+        assert_eq!(
+            validate_collision(
+                &right_path,
+                &right_key,
+                false,
+                &mut normalized_paths,
+                &mut explicit_paths,
+            )
+            .expect_err("collision")
+            .code(),
+            crate::ArchiveErrorCode::PathCollision
+        );
+    }
+
     fn fixture(root: &Path) {
         std::fs::create_dir_all(root.join("Runtime")).expect("fixture directories");
         std::fs::write(
@@ -870,13 +910,13 @@ mod tests {
     fn special_and_non_utf8_entries_are_rejected() {
         use std::os::unix::ffi::OsStringExt;
 
-        let special_root = temporary_root("special");
-        let special_source = special_root.join("source");
+        let special_root = short_unix_socket_root();
+        let special_source = special_root.join("s");
         fixture(&special_source);
-        let socket = std::os::unix::net::UnixListener::bind(special_source.join("socket"))
+        let socket = std::os::unix::net::UnixListener::bind(special_source.join("x"))
             .expect("socket fixture");
         assert_eq!(
-            prepare_snapshot(&special_source, &special_root.join("staging"))
+            prepare_snapshot(&special_source, &special_root.join("t"))
                 .expect_err("special file")
                 .code(),
             UserPackageErrorCode::SourceUnsafe
@@ -898,34 +938,39 @@ mod tests {
         std::fs::remove_dir_all(text_root).expect("cleanup text");
     }
 
-    #[cfg(unix)]
     #[test]
     fn case_and_unicode_normalization_collisions_are_rejected() {
-        let case_root = temporary_root("case-collision");
-        let case_source = case_root.join("source");
-        fixture(&case_source);
-        std::fs::write(case_source.join("A.txt"), b"A").expect("uppercase");
-        std::fs::write(case_source.join("a.txt"), b"a").expect("lowercase");
-        assert_eq!(
-            prepare_snapshot(&case_source, &case_root.join("staging"))
-                .expect_err("case collision")
-                .code(),
-            UserPackageErrorCode::SourceUnsafe
-        );
-        std::fs::remove_dir_all(case_root).expect("cleanup case");
+        assert_path_collision("A.txt", "a.txt");
+        assert_path_collision("é.txt", "e\u{301}.txt");
 
-        let unicode_root = temporary_root("unicode-collision");
-        let unicode_source = unicode_root.join("source");
-        fixture(&unicode_source);
-        std::fs::write(unicode_source.join("é.txt"), b"one").expect("composed");
-        std::fs::write(unicode_source.join("e\u{301}.txt"), b"two").expect("decomposed");
-        assert_eq!(
-            prepare_snapshot(&unicode_source, &unicode_root.join("staging"))
-                .expect_err("Unicode collision")
-                .code(),
-            UserPackageErrorCode::SourceUnsafe
-        );
-        std::fs::remove_dir_all(unicode_root).expect("cleanup unicode");
+        #[cfg(target_os = "linux")]
+        {
+            let case_root = temporary_root("case-collision");
+            let case_source = case_root.join("source");
+            fixture(&case_source);
+            std::fs::write(case_source.join("A.txt"), b"A").expect("uppercase");
+            std::fs::write(case_source.join("a.txt"), b"a").expect("lowercase");
+            assert_eq!(
+                prepare_snapshot(&case_source, &case_root.join("staging"))
+                    .expect_err("case collision")
+                    .code(),
+                UserPackageErrorCode::SourceUnsafe
+            );
+            std::fs::remove_dir_all(case_root).expect("cleanup case");
+
+            let unicode_root = temporary_root("unicode-collision");
+            let unicode_source = unicode_root.join("source");
+            fixture(&unicode_source);
+            std::fs::write(unicode_source.join("é.txt"), b"one").expect("composed");
+            std::fs::write(unicode_source.join("e\u{301}.txt"), b"two").expect("decomposed");
+            assert_eq!(
+                prepare_snapshot(&unicode_source, &unicode_root.join("staging"))
+                    .expect_err("Unicode collision")
+                    .code(),
+                UserPackageErrorCode::SourceUnsafe
+            );
+            std::fs::remove_dir_all(unicode_root).expect("cleanup unicode");
+        }
     }
 
     #[test]
