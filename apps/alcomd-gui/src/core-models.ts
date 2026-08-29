@@ -48,10 +48,15 @@ export interface OfficialSettings {
         motion: AppearanceMotion;
     };
     locale: SettingsLocale;
+    packages: {
+        showPrerelease: boolean;
+        hiddenRepositoryIds: string[];
+        hideLocalUserPackages: boolean;
+    };
 }
 
 export interface SettingsGetResult {
-    configSchema: 1;
+    configSchema: 2;
     revision: number;
     settings: OfficialSettings;
 }
@@ -64,6 +69,11 @@ export interface SettingsUpdate {
         motion?: AppearanceMotion;
     };
     locale?: SettingsLocale;
+    packages?: {
+        showPrerelease?: boolean;
+        hiddenRepositoryIds?: string[];
+        hideLocalUserPackages?: boolean;
+    };
 }
 
 export interface ActivityCursor {

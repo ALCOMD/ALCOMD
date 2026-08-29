@@ -2025,7 +2025,7 @@ pub struct ProjectsApplyCopyResult {
     pub replayed: bool,
 }
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 1;
+pub const CONFIG_SCHEMA_VERSION: u32 = 2;
 pub const MAX_OFFICIAL_GUI_PAGE_LIMIT: u32 = 200;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2076,6 +2076,15 @@ pub struct AppearanceSettings {
 pub struct Settings {
     pub appearance: AppearanceSettings,
     pub locale: SettingsLocale,
+    pub packages: PackageSettings,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageSettings {
+    pub show_prerelease: bool,
+    pub hidden_repository_ids: Vec<String>,
+    pub hide_local_user_packages: bool,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -2137,6 +2146,19 @@ pub struct SettingsUpdate {
     pub appearance: Option<AppearanceSettingsUpdate>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locale: Option<SettingsLocale>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub packages: Option<PackageSettingsUpdate>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageSettingsUpdate {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_prerelease: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hidden_repository_ids: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hide_local_user_packages: Option<bool>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

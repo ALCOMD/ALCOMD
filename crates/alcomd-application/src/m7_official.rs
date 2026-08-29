@@ -51,6 +51,14 @@ pub struct ConfigAppearance {
 pub struct ConfigSettings {
     pub appearance: ConfigAppearance,
     pub locale: ConfigLocale,
+    pub packages: ConfigPackageSettings,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConfigPackageSettings {
+    pub show_prerelease: bool,
+    pub hidden_repository_ids: Vec<String>,
+    pub hide_local_user_packages: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -78,6 +86,14 @@ pub struct ConfigAppearanceUpdate {
 pub struct ConfigUpdate {
     pub appearance: Option<ConfigAppearanceUpdate>,
     pub locale: Option<ConfigLocale>,
+    pub packages: Option<ConfigPackageSettingsUpdate>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConfigPackageSettingsUpdate {
+    pub show_prerelease: Option<bool>,
+    pub hidden_repository_ids: Option<Vec<String>>,
+    pub hide_local_user_packages: Option<bool>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -179,6 +195,14 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
             .map_err(|_| OfficialGuiError::Unavailable)?
     }
 
+    pub async fn initialize_settings(&self) -> Result<(), OfficialGuiError> {
+        let _guard = self.settings_lock.lock().await;
+        let path = Arc::clone(&self.settings_path);
+        tokio::task::spawn_blocking(move || initialize_settings_file(&path))
+            .await
+            .map_err(|_| OfficialGuiError::Unavailable)?
+    }
+
     pub async fn update_settings(
         &self,
         access: &AccessContext,
@@ -263,8 +287,26 @@ fn default_snapshot() -> ConfigSnapshot {
                 motion: ConfigAppearanceMotion::System,
             },
             locale: ConfigLocale::System,
+            packages: ConfigPackageSettings {
+                show_prerelease: false,
+                hidden_repository_ids: Vec::new(),
+                hide_local_user_packages: false,
+            },
         },
     }
+}
+
+fn initialize_settings_file(path: &Path) -> Result<(), OfficialGuiError> {
+    recover_settings_replace(path)?;
+    if !path.exists() {
+        publish_settings(path, &serialize_settings(&default_snapshot()))?;
+        return Ok(());
+    }
+    let (snapshot, schema) = read_settings_with_schema(path)?;
+    if schema == 1 {
+        publish_settings(path, &serialize_settings(&snapshot))?;
+    }
+    Ok(())
 }
 
 fn read_settings(path: &Path) -> Result<ConfigSnapshot, OfficialGuiError> {
@@ -288,6 +330,18 @@ fn read_settings(path: &Path) -> Result<ConfigSnapshot, OfficialGuiError> {
     }
     let text = std::str::from_utf8(&bytes).map_err(|_| OfficialGuiError::Corrupt)?;
     parse_settings(text)
+}
+
+fn read_settings_with_schema(path: &Path) -> Result<(ConfigSnapshot, u64), OfficialGuiError> {
+    let metadata = fs::symlink_metadata(path).map_err(map_io)?;
+    if !metadata.file_type().is_file() || metadata.len() > MAX_SETTINGS_BYTES {
+        return Err(OfficialGuiError::Corrupt);
+    }
+    let bytes = fs::read(path).map_err(map_io)?;
+    if bytes.len() as u64 > MAX_SETTINGS_BYTES || bytes.contains(&0) {
+        return Err(OfficialGuiError::Corrupt);
+    }
+    parse_settings_with_schema(std::str::from_utf8(&bytes).map_err(|_| OfficialGuiError::Corrupt)?)
 }
 
 fn update_settings_file(
@@ -337,10 +391,25 @@ fn apply_update(
     if let Some(locale) = update.locale {
         settings.locale = locale;
     }
+    if let Some(packages) = update.packages {
+        if let Some(value) = packages.show_prerelease {
+            settings.packages.show_prerelease = value;
+        }
+        if let Some(value) = packages.hidden_repository_ids {
+            settings.packages.hidden_repository_ids = validate_hidden_repository_ids(value)?;
+        }
+        if let Some(value) = packages.hide_local_user_packages {
+            settings.packages.hide_local_user_packages = value;
+        }
+    }
     Ok(settings)
 }
 
 fn parse_settings(text: &str) -> Result<ConfigSnapshot, OfficialGuiError> {
+    parse_settings_with_schema(text).map(|(snapshot, _)| snapshot)
+}
+
+fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), OfficialGuiError> {
     let mut section = "root";
     let mut seen = HashSet::<String>::new();
     let mut schema = None;
@@ -350,19 +419,24 @@ fn parse_settings(text: &str) -> Result<ConfigSnapshot, OfficialGuiError> {
     let mut source_color = None;
     let mut density = None;
     let mut motion = None;
+    let mut show_prerelease = None;
+    let mut hidden_repository_ids = None;
+    let mut hide_local_user_packages = None;
     for raw in text.lines() {
         let line = raw.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
         if line.starts_with('[') {
-            if line != "[appearance]"
-                || section != "root"
-                || !seen.insert("section:appearance".to_owned())
-            {
+            let next = match line {
+                "[appearance]" => "appearance",
+                "[packages]" => "packages",
+                _ => return Err(OfficialGuiError::Corrupt),
+            };
+            if !seen.insert(format!("section:{next}")) {
                 return Err(OfficialGuiError::Corrupt);
             }
-            section = "appearance";
+            section = next;
             continue;
         }
         let (key, value) = line.split_once('=').ok_or(OfficialGuiError::Corrupt)?;
@@ -386,27 +460,62 @@ fn parse_settings(text: &str) -> Result<ConfigSnapshot, OfficialGuiError> {
             }
             ("appearance", "density") => density = Some(parse_density(parse_string(value)?)?),
             ("appearance", "motion") => motion = Some(parse_motion(parse_string(value)?)?),
+            ("packages", "show_prerelease") => show_prerelease = Some(parse_bool(value)?),
+            ("packages", "hidden_repository_ids") => {
+                hidden_repository_ids = Some(parse_uuid_array(value)?)
+            }
+            ("packages", "hide_local_user_packages") => {
+                hide_local_user_packages = Some(parse_bool(value)?)
+            }
             _ => return Err(OfficialGuiError::Corrupt),
         }
     }
-    if schema != Some(1) {
+    let schema = schema.ok_or(OfficialGuiError::Corrupt)?;
+    if !matches!(schema, 1 | 2) {
         return Err(OfficialGuiError::Corrupt);
     }
     let revision = revision
         .filter(|value| *value > 0)
         .ok_or(OfficialGuiError::Corrupt)?;
-    Ok(ConfigSnapshot {
-        revision,
-        settings: ConfigSettings {
-            appearance: ConfigAppearance {
-                mode: mode.ok_or(OfficialGuiError::Corrupt)?,
-                source_color,
-                density: density.ok_or(OfficialGuiError::Corrupt)?,
-                motion: motion.ok_or(OfficialGuiError::Corrupt)?,
+    let packages = if schema == 1 {
+        if show_prerelease.is_some()
+            || hidden_repository_ids.is_some()
+            || hide_local_user_packages.is_some()
+            || seen.contains("section:packages")
+        {
+            return Err(OfficialGuiError::Corrupt);
+        }
+        ConfigPackageSettings {
+            show_prerelease: false,
+            hidden_repository_ids: Vec::new(),
+            hide_local_user_packages: false,
+        }
+    } else {
+        if !seen.contains("section:packages") {
+            return Err(OfficialGuiError::Corrupt);
+        }
+        ConfigPackageSettings {
+            show_prerelease: show_prerelease.ok_or(OfficialGuiError::Corrupt)?,
+            hidden_repository_ids: hidden_repository_ids.ok_or(OfficialGuiError::Corrupt)?,
+            hide_local_user_packages: hide_local_user_packages.ok_or(OfficialGuiError::Corrupt)?,
+        }
+    };
+    Ok((
+        ConfigSnapshot {
+            revision,
+            settings: ConfigSettings {
+                appearance: ConfigAppearance {
+                    mode: mode.ok_or(OfficialGuiError::Corrupt)?,
+                    source_color,
+                    density: density.ok_or(OfficialGuiError::Corrupt)?,
+                    motion: motion.ok_or(OfficialGuiError::Corrupt)?,
+                },
+                locale: locale.ok_or(OfficialGuiError::Corrupt)?,
+                packages,
             },
-            locale: locale.ok_or(OfficialGuiError::Corrupt)?,
         },
-    })
+        schema,
+    ))
 }
 
 fn serialize_settings(snapshot: &ConfigSnapshot) -> Vec<u8> {
@@ -417,13 +526,23 @@ fn serialize_settings(snapshot: &ConfigSnapshot) -> Vec<u8> {
         .as_ref()
         .map_or_else(String::new, |value| format!("source_color = \"{value}\"\n"));
     format!(
-        "schema = 1\nrevision = {}\nlocale = \"{}\"\n\n[appearance]\nmode = \"{}\"\n{}density = \"{}\"\nmotion = \"{}\"\n",
+        "schema = 2\nrevision = {}\nlocale = \"{}\"\n\n[appearance]\nmode = \"{}\"\n{}density = \"{}\"\nmotion = \"{}\"\n\n[packages]\nshow_prerelease = {}\nhidden_repository_ids = [{}]\nhide_local_user_packages = {}\n",
         snapshot.revision,
         locale_str(snapshot.settings.locale),
         mode_str(snapshot.settings.appearance.mode),
         source,
         density_str(snapshot.settings.appearance.density),
         motion_str(snapshot.settings.appearance.motion),
+        snapshot.settings.packages.show_prerelease,
+        snapshot
+            .settings
+            .packages
+            .hidden_repository_ids
+            .iter()
+            .map(|value| format!("\"{value}\""))
+            .collect::<Vec<_>>()
+            .join(", "),
+        snapshot.settings.packages.hide_local_user_packages,
     ).into_bytes()
 }
 
@@ -505,6 +624,11 @@ fn update_is_empty(update: &ConfigUpdate) -> bool {
                 && value.motion.is_none()
                 && matches!(value.source_color, ConfigNullableUpdate::Unchanged)
         })
+        && update.packages.as_ref().is_none_or(|value| {
+            value.show_prerelease.is_none()
+                && value.hidden_repository_ids.is_none()
+                && value.hide_local_user_packages.is_none()
+        })
 }
 
 fn validate_limit(limit: Option<u32>) -> Result<u32, OfficialGuiError> {
@@ -545,6 +669,54 @@ fn parse_string(value: &str) -> Result<&str, OfficialGuiError> {
 }
 fn parse_u64(value: &str) -> Result<u64, OfficialGuiError> {
     value.parse().map_err(|_| OfficialGuiError::Corrupt)
+}
+fn parse_bool(value: &str) -> Result<bool, OfficialGuiError> {
+    match value {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => Err(OfficialGuiError::Corrupt),
+    }
+}
+fn parse_uuid_array(value: &str) -> Result<Vec<String>, OfficialGuiError> {
+    let inner = value
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .ok_or(OfficialGuiError::Corrupt)?
+        .trim();
+    let values = if inner.is_empty() {
+        Vec::new()
+    } else {
+        inner
+            .split(',')
+            .map(|value| parse_string(value.trim()).map(str::to_owned))
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    let original = values.clone();
+    let canonical =
+        validate_hidden_repository_ids(values).map_err(|_| OfficialGuiError::Corrupt)?;
+    (canonical == original)
+        .then_some(canonical)
+        .ok_or(OfficialGuiError::Corrupt)
+}
+fn validate_hidden_repository_ids(
+    mut values: Vec<String>,
+) -> Result<Vec<String>, OfficialGuiError> {
+    if values.len() > 256 || values.iter().any(|value| !canonical_uuid(value)) {
+        return Err(OfficialGuiError::InvalidInput);
+    }
+    let mut seen = HashSet::with_capacity(values.len());
+    if values.iter().any(|value| !seen.insert(value.clone())) {
+        return Err(OfficialGuiError::InvalidInput);
+    }
+    values.sort_unstable();
+    Ok(values)
+}
+fn canonical_uuid(value: &str) -> bool {
+    value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => byte == b'-',
+            _ => byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte),
+        })
 }
 fn valid_source_color(value: &str) -> bool {
     value.len() == 7
@@ -656,6 +828,14 @@ mod tests {
                         motion: Some(ConfigAppearanceMotion::Reduced),
                     }),
                     locale: Some(ConfigLocale::ZhCn),
+                    packages: Some(ConfigPackageSettingsUpdate {
+                        show_prerelease: Some(true),
+                        hidden_repository_ids: Some(vec![
+                            "ffffffff-ffff-ffff-ffff-ffffffffffff".to_owned(),
+                            "00000000-0000-0000-0000-000000000000".to_owned(),
+                        ]),
+                        hide_local_user_packages: Some(true),
+                    }),
                 },
             )
             .await
@@ -668,7 +848,8 @@ mod tests {
                 1,
                 ConfigUpdate {
                     appearance: None,
-                    locale: Some(ConfigLocale::EnUs)
+                    locale: Some(ConfigLocale::EnUs),
+                    packages: None,
                 }
             )
             .await,
@@ -677,6 +858,63 @@ mod tests {
         fs::rename(&path, path.with_extension("toml.bak")).expect("simulate backup boundary");
         assert_eq!(app.get_settings(&access).await.expect("recover"), updated);
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn startup_migrates_v1_without_incrementing_revision() {
+        let root = temporary_path("migration");
+        let path = root.join("config/settings.toml");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(path.parent().expect("parent")).expect("create config directory");
+        fs::write(
+            &path,
+            "schema = 1\nrevision = 7\nlocale = \"en-US\"\n\n[appearance]\nmode = \"dark\"\ndensity = \"compact\"\nmotion = \"reduced\"\n",
+        )
+        .expect("write v1");
+        let app = M7OfficialApplication::new(NoStore, path.clone());
+        app.initialize_settings().await.expect("migrate v1");
+        let migrated = app
+            .get_settings(&AccessContext::local_owner())
+            .await
+            .expect("read v2");
+        assert_eq!(migrated.revision, 7);
+        assert!(!migrated.settings.packages.show_prerelease);
+        assert!(migrated.settings.packages.hidden_repository_ids.is_empty());
+        assert!(!migrated.settings.packages.hide_local_user_packages);
+        assert!(
+            fs::read_to_string(&path)
+                .expect("read file")
+                .starts_with("schema = 2\n")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn maximum_v2_snapshot_fits_existing_byte_limit() {
+        let mut snapshot = default_snapshot();
+        snapshot.settings.appearance.source_color = Some("#FFFFFF".to_owned());
+        snapshot.settings.packages.hidden_repository_ids = (0..256)
+            .map(|value| format!("00000000-0000-0000-0000-{value:012x}"))
+            .collect();
+        let encoded = serialize_settings(&snapshot);
+        assert!(encoded.len() as u64 <= MAX_SETTINGS_BYTES);
+        assert_eq!(
+            parse_settings(std::str::from_utf8(&encoded).expect("utf8")),
+            Ok(snapshot)
+        );
+    }
+
+    #[test]
+    fn hidden_repository_ids_reject_duplicates_and_noncanonical_storage() {
+        assert_eq!(
+            validate_hidden_repository_ids(vec![
+                "00000000-0000-0000-0000-000000000000".to_owned(),
+                "00000000-0000-0000-0000-000000000000".to_owned(),
+            ]),
+            Err(OfficialGuiError::InvalidInput)
+        );
+        let unsorted = "schema = 2\nrevision = 1\nlocale = \"system\"\n\n[appearance]\nmode = \"system\"\ndensity = \"default\"\nmotion = \"system\"\n\n[packages]\nshow_prerelease = false\nhidden_repository_ids = [\"ffffffff-ffff-ffff-ffff-ffffffffffff\", \"00000000-0000-0000-0000-000000000000\"]\nhide_local_user_packages = false\n";
+        assert_eq!(parse_settings(unsorted), Err(OfficialGuiError::Corrupt));
     }
 
     #[derive(Clone)]

@@ -32,11 +32,16 @@ if (!materialEvidence) window.history.replaceState(null, "", initialRoute);
 
 class DeterministicGuiClient implements GuiRpcClient {
     private settings: SettingsGetResult = {
-        configSchema: 1,
+        configSchema: 2,
         revision: 7,
         settings: {
             appearance: { mode: "system", sourceColor: null, density: "default", motion: "system" },
-            locale: "en-US"
+            locale: "en-US",
+            packages: {
+                showPrerelease: false,
+                hiddenRepositoryIds: [],
+                hideLocalUserPackages: false
+            }
         }
     };
     private operationReads = 0;
@@ -99,11 +104,12 @@ class DeterministicGuiClient implements GuiRpcClient {
     settingsUpdate(expectedRevision: number, update: Partial<OfficialSettings>): ReturnType<GuiRpcClient["settingsUpdate"]> {
         if (expectedRevision !== this.settings.revision) return Promise.reject({ code: "revision_conflict" });
         this.settings = {
-            configSchema: 1,
+            configSchema: 2,
             revision: expectedRevision + 1,
             settings: {
                 appearance: { ...this.settings.settings.appearance, ...update.appearance },
-                locale: update.locale ?? this.settings.settings.locale
+                locale: update.locale ?? this.settings.settings.locale,
+                packages: { ...this.settings.settings.packages, ...update.packages }
             }
         };
         return this.value(this.settings);

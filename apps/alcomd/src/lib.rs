@@ -203,6 +203,10 @@ where
         store.clone(),
         data_root.join("config").join("settings.toml"),
     );
+    official_gui
+        .initialize_settings()
+        .await
+        .map_err(|_| BindError::Io(io::Error::other("Config initialization failed")))?;
     let applications = Arc::new(Applications {
         m2,
         m3: M3ReadApplication::new(store.clone(), reader),

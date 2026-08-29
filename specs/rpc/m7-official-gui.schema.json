@@ -30,9 +30,9 @@
             "type": "object", "additionalProperties": false,
             "required": ["configSchema", "revision", "settings"],
             "properties": {
-                "configSchema": {"const": 1},
+                "configSchema": {"const": 2},
                 "revision": {"$ref": "#/$defs/revision"},
-                "settings": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v1.json#/$defs/settings"}
+                "settings": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v2.json#/$defs/settings"}
             }
         },
         "settingsUpdateParams": {
@@ -40,7 +40,7 @@
             "required": ["expectedRevision", "update"],
             "properties": {
                 "expectedRevision": {"$ref": "#/$defs/revision"},
-                "update": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v1.json#/$defs/partialUpdate"}
+                "update": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v2.json#/$defs/partialUpdate"}
             }
         },
         "settingsUpdateResult": {"$ref": "#/$defs/settingsGetResult"},

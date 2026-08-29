@@ -666,12 +666,13 @@ M7 在 RPC major 1 上兼容增加四个 base method；不增加 capability：
 
 `settings.update` 不接受 idempotency key、generic key/value、路径或 extension setting；revision conflict 使用现有
 `revision_conflict`。只有 `config/settings.toml` production storage 和四个 RPC 全部接线后，hello 才以兼容
-optional field 广告 `configSchema: 1`。
+optional field 广告当前 production `configSchema: 2`。Schema 2 只兼容增加 package presentation
+settings；Schema 1 仅作为启动迁移输入保留。
 
 Activity/Diagnostics page size 默认 100、最大 200，使用确定性 tuple keyset cursor。Activity 不返回 Event payload
 或 Operation request/result；Diagnostics v1 只投影已有 Operation failure 与 safe Event evidence，不新建 durable log
 table，也不提供 raw export。完整 DTO、redaction denylist 与 bounds 由 `m7-official-gui.schema.json`、
-`../config/settings-v1.schema.json` 和 `../security/official-gui-read-model-threat-model.md` 冻结。
+`../config/settings-v2.schema.json` 和 `../security/official-gui-read-model-threat-model.md` 冻结。
 
 ## 25. M7 兼容增加：Project Copy
 

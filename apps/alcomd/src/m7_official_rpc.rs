@@ -47,6 +47,14 @@ pub(super) async fn dispatch(
                         motion: value.motion.map(appearance_motion_from_rpc),
                     }),
                 locale: params.update.locale.map(locale_from_rpc),
+                packages: params
+                    .update
+                    .packages
+                    .map(|value| app::ConfigPackageSettingsUpdate {
+                        show_prerelease: value.show_prerelease,
+                        hidden_repository_ids: value.hidden_repository_ids,
+                        hide_local_user_packages: value.hide_local_user_packages,
+                    }),
             };
             match application
                 .update_settings(access, params.expected_revision, update)
@@ -175,6 +183,11 @@ fn settings_result(value: app::ConfigSnapshot) -> rpc::SettingsGetResult {
                 app::ConfigLocale::EnUs => rpc::SettingsLocale::EnUs,
                 app::ConfigLocale::ZhCn => rpc::SettingsLocale::ZhCn,
                 app::ConfigLocale::JaJp => rpc::SettingsLocale::JaJp,
+            },
+            packages: rpc::PackageSettings {
+                show_prerelease: value.settings.packages.show_prerelease,
+                hidden_repository_ids: value.settings.packages.hidden_repository_ids,
+                hide_local_user_packages: value.settings.packages.hide_local_user_packages,
             },
         },
     }

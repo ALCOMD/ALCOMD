@@ -8,8 +8,8 @@ use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use alcomd_platform::{DataConfig, IpcConfig};
 use alcomd_protocol::{
     ActivityListParams, AppearanceDensity, AppearanceMode, AppearanceMotion,
-    AppearanceSettingsUpdate, DiagnosticsListParams, NullableUpdate, SettingsLocale,
-    SettingsUpdate, SettingsUpdateParams,
+    AppearanceSettingsUpdate, DiagnosticsListParams, NullableUpdate, PackageSettingsUpdate,
+    SettingsLocale, SettingsUpdate, SettingsUpdateParams,
 };
 use uuid::Uuid;
 
@@ -40,7 +40,7 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
     };
 
     let defaults = client.settings_get().await.expect("read default settings");
-    assert_eq!(defaults.config_schema, 1);
+    assert_eq!(defaults.config_schema, 2);
     assert_eq!(defaults.revision, 1);
     assert_eq!(defaults.settings.appearance.mode, AppearanceMode::System);
 
@@ -55,12 +55,28 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
                     motion: Some(AppearanceMotion::Reduced),
                 }),
                 locale: Some(SettingsLocale::ZhCn),
+                packages: Some(PackageSettingsUpdate {
+                    show_prerelease: Some(true),
+                    hidden_repository_ids: Some(vec![
+                        "ffffffff-ffff-ffff-ffff-ffffffffffff".to_owned(),
+                        "00000000-0000-0000-0000-000000000000".to_owned(),
+                    ]),
+                    hide_local_user_packages: Some(true),
+                }),
             },
         })
         .await
         .expect("update settings");
     assert_eq!(updated.revision, 2);
     assert_eq!(updated.settings.locale, SettingsLocale::ZhCn);
+    assert!(updated.settings.packages.show_prerelease);
+    assert_eq!(
+        updated.settings.packages.hidden_repository_ids,
+        [
+            "00000000-0000-0000-0000-000000000000",
+            "ffffffff-ffff-ffff-ffff-ffffffffffff",
+        ]
+    );
     assert_eq!(
         updated.settings.appearance.source_color.as_deref(),
         Some("#315DA8")
@@ -126,7 +142,7 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
         fs::read_to_string(data.join("config/settings.toml")).expect("read durable settings file");
     assert_eq!(
         settings_file,
-        "schema = 1\nrevision = 2\nlocale = \"zh-CN\"\n\n[appearance]\nmode = \"dark\"\nsource_color = \"#315DA8\"\ndensity = \"compact\"\nmotion = \"reduced\"\n"
+        "schema = 2\nrevision = 2\nlocale = \"zh-CN\"\n\n[appearance]\nmode = \"dark\"\nsource_color = \"#315DA8\"\ndensity = \"compact\"\nmotion = \"reduced\"\n\n[packages]\nshow_prerelease = true\nhidden_repository_ids = [\"00000000-0000-0000-0000-000000000000\", \"ffffffff-ffff-ffff-ffff-ffffffffffff\"]\nhide_local_user_packages = true\n"
     );
 }
 
