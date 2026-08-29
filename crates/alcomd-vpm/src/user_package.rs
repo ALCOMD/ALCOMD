@@ -928,13 +928,21 @@ mod tests {
         let text_source = text_root.join("source");
         fixture(&text_source);
         let invalid_name = std::ffi::OsString::from_vec(vec![b'i', b'n', b'v', 0xff]);
-        std::fs::write(text_source.join(invalid_name), b"invalid").expect("non-UTF-8 fixture");
-        assert_eq!(
-            prepare_snapshot(&text_source, &text_root.join("staging"))
-                .expect_err("non-UTF-8 entry")
-                .code(),
-            UserPackageErrorCode::SourceUnsafe
-        );
+        let invalid_path = text_source.join(&invalid_name);
+        match std::fs::write(&invalid_path, b"invalid") {
+            Ok(()) => assert_eq!(
+                prepare_snapshot(&text_source, &text_root.join("staging"))
+                    .expect_err("non-UTF-8 entry")
+                    .code(),
+                UserPackageErrorCode::SourceUnsafe
+            ),
+            Err(error_value) if cfg!(target_os = "macos") => {
+                assert!(invalid_name.to_str().is_none());
+                assert!(!invalid_path.exists());
+                assert_ne!(error_value.kind(), std::io::ErrorKind::NotFound);
+            }
+            Err(error_value) => panic!("non-UTF-8 fixture: {error_value}"),
+        }
         std::fs::remove_dir_all(text_root).expect("cleanup text");
     }
 
