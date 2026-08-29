@@ -22,7 +22,9 @@ static RPC_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(())
 
 const RPC_STAGE_TIMEOUT: Duration = Duration::from_secs(30);
 const RPC_TEST_LOCK_TIMEOUT: Duration = Duration::from_secs(90);
+const CLIENT_CONNECT_TEST_TIMEOUT: Duration = Duration::from_secs(10);
 const DAEMON_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
+const DAEMON_DROP_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 const CHILD_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 const CHILD_DROP_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -231,18 +233,8 @@ async fn project_copy_plan_apply_registers_an_exact_independent_copy() {
     create_project(&source);
 
     let (ipc, config) = isolated_ipc(runtime);
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let server_shutdown = Arc::clone(&shutdown);
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(
-            ipc,
-            DataConfig::isolated(data),
-            wait_for_shutdown(server_shutdown),
-        )
-        .await
-    });
-    trace.stage("daemon-task-spawned");
-    let mut client = connect_with_retry(config, trace).await;
+    let mut daemon = spawn_test_daemon(ipc, DataConfig::isolated(data), trace);
+    let mut client = connect_client(config, trace).await;
     let registered = await_rpc(
         trace,
         "project-register-rpc",
@@ -312,7 +304,31 @@ async fn project_copy_plan_apply_registers_an_exact_independent_copy() {
     );
     assert_eq!(copied.project.favorite, Some(false));
 
-    shutdown_daemon(trace, shutdown, daemon).await;
+    daemon.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_daemon_guard_drop_releases_endpoint_for_the_next_daemon() {
+    let trace = TestTrace::new("test-daemon-guard-drop-cleanup");
+    let _serial = acquire_rpc_test_lock(trace).await;
+    let fixture = TestDirectory::new(trace);
+    let runtime = fixture.path().join("runtime");
+    let data = fixture.path().join("data");
+    fs::create_dir(&runtime).expect("runtime");
+    fs::create_dir(&data).expect("data");
+
+    let (first_ipc, first_config) = isolated_ipc(runtime.clone());
+    let first_daemon = spawn_test_daemon(first_ipc, DataConfig::isolated(data.clone()), trace);
+    let first_client = connect_client(first_config, trace).await;
+    drop(first_client);
+    trace.stage("daemon-guard-fallback-triggered");
+    drop(first_daemon);
+
+    let (second_ipc, second_config) = isolated_ipc(runtime);
+    let mut second_daemon = spawn_test_daemon(second_ipc, DataConfig::isolated(data), trace);
+    let second_client = connect_client(second_config, trace).await;
+    drop(second_client);
+    second_daemon.shutdown().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -330,19 +346,9 @@ async fn concurrent_copy_plans_for_the_same_target_publish_exactly_once() {
     create_project(&source);
 
     let (ipc, config) = isolated_ipc(runtime);
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let server_shutdown = Arc::clone(&shutdown);
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(
-            ipc,
-            DataConfig::isolated(data),
-            wait_for_shutdown(server_shutdown),
-        )
-        .await
-    });
-    trace.stage("daemon-task-spawned");
-    let mut first = connect_with_retry(config.clone(), trace).await;
-    let mut second = connect_with_retry(config, trace).await;
+    let mut daemon = spawn_test_daemon(ipc, DataConfig::isolated(data), trace);
+    let mut first = connect_client(config.clone(), trace).await;
+    let mut second = connect_client(config, trace).await;
     let registered = await_rpc(
         trace,
         "project-register-rpc",
@@ -449,7 +455,7 @@ async fn concurrent_copy_plans_for_the_same_target_publish_exactly_once() {
                 .starts_with(".alcomd-copy-"))
     );
 
-    shutdown_daemon(trace, shutdown, daemon).await;
+    daemon.shutdown().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -521,19 +527,9 @@ async fn project_copy_preserves_externally_modified_published_target_for_manual_
         .expect("external target mutation");
 
     let (ipc, config) = isolated_ipc(fixture.path().join("runtime"));
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let server_shutdown = Arc::clone(&shutdown);
     let data = fixture.path().join("data");
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(
-            ipc,
-            DataConfig::isolated(data),
-            wait_for_shutdown(server_shutdown),
-        )
-        .await
-    });
-    trace.stage("daemon-task-spawned");
-    let mut client = connect_with_retry(config, trace).await;
+    let mut daemon = spawn_test_daemon(ipc, DataConfig::isolated(data), trace);
+    let mut client = connect_client(config, trace).await;
     let operation = wait_for_recovery_required(&mut client, &signal.operation_id, trace).await;
     assert_eq!(operation.state, alcomd_protocol::OperationState::Recovering);
     assert_eq!(
@@ -565,7 +561,7 @@ async fn project_copy_preserves_externally_modified_published_target_for_manual_
     .expect("replay recovery-required Apply");
     assert!(replay.replayed);
     assert_eq!(replay.operation_id, signal.operation_id);
-    shutdown_daemon(trace, shutdown, daemon).await;
+    daemon.shutdown().await;
 }
 
 #[test]
@@ -594,7 +590,7 @@ fn subprocess_runs_project_copy_until_parent_kills_it() {
             .await
         });
         trace.stage("daemon-task-spawned");
-        let mut client = connect_with_retry(config, trace).await;
+        let mut client = connect_client(config, trace).await;
         let registered = await_rpc(
             trace,
             "project-register-rpc",
@@ -676,19 +672,9 @@ async fn run_kill_restart_case(checkpoint: &str, trace: TestTrace) {
     child.stop_and_wait("child-kill-wait");
 
     let (ipc, config) = isolated_ipc(fixture.path().join("runtime"));
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let server_shutdown = Arc::clone(&shutdown);
     let data = fixture.path().join("data");
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(
-            ipc,
-            DataConfig::isolated(data),
-            wait_for_shutdown(server_shutdown),
-        )
-        .await
-    });
-    trace.stage("daemon-task-spawned");
-    let mut client = connect_with_retry(config, trace).await;
+    let mut daemon = spawn_test_daemon(ipc, DataConfig::isolated(data), trace);
+    let mut client = connect_client(config, trace).await;
     let replay = await_rpc(
         trace,
         "project-copy-apply-rpc",
@@ -740,7 +726,7 @@ async fn run_kill_restart_case(checkpoint: &str, trace: TestTrace) {
                 .starts_with(".alcomd-copy-")),
         "{checkpoint}"
     );
-    shutdown_daemon(trace, shutdown, daemon).await;
+    daemon.shutdown().await;
 }
 
 async fn run_cancel_case(checkpoint: &str, should_cancel: bool, trace: TestTrace) {
@@ -779,7 +765,7 @@ async fn run_cancel_case(checkpoint: &str, should_cancel: bool, trace: TestTrace
         serde_json::from_slice(&fs::read(&operation_signal).expect("read operation signal"))
             .expect("parse operation signal");
     let (_, config) = isolated_ipc(fixture.path().join("runtime"));
-    let mut client = connect_with_retry(config, trace).await;
+    let mut client = connect_client(config, trace).await;
     let operation = await_rpc(
         trace,
         "operation-get-rpc",
@@ -841,6 +827,77 @@ fn wait_for_file(path: &Path, expected: Option<&[u8]>, checkpoint: &str, trace: 
     }
     trace.stage(&format!("checkpoint-wait-timeout checkpoint={checkpoint}"));
     panic!("m7_project_copy_rpc timed out at stage: checkpoint-wait ({checkpoint})");
+}
+
+struct TestDaemonGuard {
+    shutdown: Arc<AtomicBool>,
+    daemon: Option<tokio::task::JoinHandle<Result<(), alcomd_platform::BindError>>>,
+    trace: TestTrace,
+    completed: bool,
+}
+
+impl TestDaemonGuard {
+    fn new(
+        shutdown: Arc<AtomicBool>,
+        daemon: tokio::task::JoinHandle<Result<(), alcomd_platform::BindError>>,
+        trace: TestTrace,
+    ) -> Self {
+        Self {
+            shutdown,
+            daemon: Some(daemon),
+            trace,
+            completed: false,
+        }
+    }
+
+    async fn shutdown(&mut self) {
+        self.trace.stage("daemon-shutdown-start");
+        self.shutdown.store(true, Ordering::Release);
+        let result = tokio::time::timeout(
+            DAEMON_SHUTDOWN_TIMEOUT,
+            self.daemon.as_mut().expect("daemon task"),
+        )
+        .await;
+        match result {
+            Ok(result) => {
+                self.completed = true;
+                self.daemon.take();
+                result.expect("join daemon").expect("daemon result");
+                self.trace.stage("daemon-shutdown-complete");
+            }
+            Err(_) => {
+                self.trace.stage("daemon-shutdown-timeout");
+                let daemon = self.daemon.as_mut().expect("daemon task");
+                daemon.abort();
+                let _ = tokio::time::timeout(DAEMON_DROP_WAIT_TIMEOUT, daemon).await;
+                self.completed = true;
+                self.daemon.take();
+                panic!("m7_project_copy_rpc timed out at stage: daemon-shutdown");
+            }
+        }
+    }
+}
+
+impl Drop for TestDaemonGuard {
+    fn drop(&mut self) {
+        if self.completed {
+            return;
+        }
+        self.trace.stage("daemon-drop-cleanup-start");
+        self.shutdown.store(true, Ordering::Release);
+        if let Some(daemon) = self.daemon.take() {
+            daemon.abort();
+            let deadline = Instant::now() + DAEMON_DROP_WAIT_TIMEOUT;
+            while !daemon.is_finished() && Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(10));
+            }
+            if daemon.is_finished() {
+                self.trace.stage("daemon-drop-cleanup-complete");
+            } else {
+                self.trace.stage("daemon-drop-cleanup-timeout");
+            }
+        }
+    }
 }
 
 struct ChildGuard {
@@ -999,49 +1056,32 @@ async fn wait_for_recovery_required(
     }
 }
 
-async fn connect_with_retry(config: ClientConfig, trace: TestTrace) -> AlcomdClient {
+async fn connect_client(config: ClientConfig, trace: TestTrace) -> AlcomdClient {
     trace.stage("client-connect-start");
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
-    loop {
-        match tokio::time::timeout_at(deadline, AlcomdClient::connect(config.clone())).await {
-            Ok(Ok(client)) => {
-                trace.stage("client-connected");
-                return client;
-            }
-            Ok(Err(_)) if tokio::time::Instant::now() < deadline => {
-                tokio::time::sleep(Duration::from_millis(25)).await;
-            }
-            Ok(Err(error)) => {
-                trace.stage("client-connect-failed");
-                panic!("daemon did not become ready: {error}");
-            }
-            Err(_) => {
-                trace.stage("client-connect-timeout");
-                panic!("m7_project_copy_rpc timed out at stage: client-connect");
-            }
+    match tokio::time::timeout(CLIENT_CONNECT_TEST_TIMEOUT, AlcomdClient::connect(config)).await {
+        Ok(Ok(client)) => {
+            trace.stage("client-connected");
+            client
+        }
+        Ok(Err(error)) => {
+            trace.stage("client-connect-failed");
+            panic!("client establishment failed: {error}");
+        }
+        Err(_) => {
+            trace.stage("client-connect-timeout");
+            panic!("m7_project_copy_rpc timed out at stage: client-connect");
         }
     }
 }
 
-async fn shutdown_daemon(
-    trace: TestTrace,
-    shutdown: Arc<AtomicBool>,
-    mut daemon: tokio::task::JoinHandle<Result<(), alcomd_platform::BindError>>,
-) {
-    trace.stage("daemon-shutdown-start");
-    shutdown.store(true, Ordering::Release);
-    match tokio::time::timeout(DAEMON_SHUTDOWN_TIMEOUT, &mut daemon).await {
-        Ok(result) => {
-            result.expect("join daemon").expect("daemon result");
-            trace.stage("daemon-shutdown-complete");
-        }
-        Err(_) => {
-            trace.stage("daemon-shutdown-timeout");
-            daemon.abort();
-            let _ = tokio::time::timeout(Duration::from_secs(5), daemon).await;
-            panic!("m7_project_copy_rpc timed out at stage: daemon-shutdown");
-        }
-    }
+fn spawn_test_daemon(ipc: IpcConfig, data: DataConfig, trace: TestTrace) -> TestDaemonGuard {
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let server_shutdown = Arc::clone(&shutdown);
+    let daemon = tokio::spawn(async move {
+        alcomd_daemon::serve_with_data_until(ipc, data, wait_for_shutdown(server_shutdown)).await
+    });
+    trace.stage("daemon-task-spawned");
+    TestDaemonGuard::new(shutdown, daemon, trace)
 }
 
 async fn wait_for_shutdown(shutdown: Arc<AtomicBool>) {
