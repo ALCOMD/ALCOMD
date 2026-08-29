@@ -31,6 +31,7 @@ import type {
     OperationWriteResult,
     OperationsListResult,
     PackageApplyPlanParams,
+    PackageCursor,
     PackagePlan,
     PackagePlanDowngradeParams,
     PackagePlanInstallParams,
@@ -91,9 +92,9 @@ export interface GuiRpcClient {
     projectPlanCopy(sourceProjectId: string, expectedRevision: number, targetParentPath: string, targetLeaf: string): Promise<ProjectsPlanCopyResult>;
     projectApplyCopy(planId: string, expectedRevision: number): Promise<ProjectsApplyCopyResult>;
     repositoriesInspect(source: RepositorySource): Promise<RepositoryResult>;
-    repositoriesList(): Promise<RepositoriesListResult>;
+    repositoriesList(cursor?: RegistryCursor): Promise<RepositoriesListResult>;
     repositoryGet(repositoryId: string): Promise<RepositoryResult>;
-    repositoryPackages(repositoryId: string): Promise<RepositoryPackagesResult>;
+    repositoryPackages(repositoryId: string, cursor?: PackageCursor): Promise<RepositoryPackagesResult>;
     repositoryRegister(source: RepositorySource): Promise<RepositoryWriteResult>;
     repositoryRefresh(repositoryId: string, expectedRevision: number): Promise<RepositoryWriteResult>;
     repositoryUnregister(repositoryId: string, expectedRevision: number): Promise<RepositoryUnregisterResult>;
@@ -233,16 +234,16 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_repositories_inspect", { params: { source } });
     }
 
-    repositoriesList(): Promise<RepositoriesListResult> {
-        return invokeTyped("gui_repositories_list", { params: { limit: 100 } });
+    repositoriesList(cursor?: RegistryCursor): Promise<RepositoriesListResult> {
+        return invokeTyped("gui_repositories_list", { params: { cursor, limit: 100 } });
     }
 
     repositoryGet(repositoryId: string): Promise<RepositoryResult> {
         return invokeTyped("gui_repository_get", { repositoryId });
     }
 
-    repositoryPackages(repositoryId: string): Promise<RepositoryPackagesResult> {
-        return invokeTyped("gui_repository_packages", { params: { repositoryId, limit: 100 } });
+    repositoryPackages(repositoryId: string, cursor?: PackageCursor): Promise<RepositoryPackagesResult> {
+        return invokeTyped("gui_repository_packages", { params: { repositoryId, cursor, limit: 100 } });
     }
 
     repositoryRegister(source: RepositorySource): Promise<RepositoryWriteResult> {

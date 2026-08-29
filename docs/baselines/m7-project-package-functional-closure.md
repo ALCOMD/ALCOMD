@@ -1,7 +1,8 @@
 # M7 Project / Package Functional Closure matrix
 
 状态：P0-P4 remote checkpoint、P5-A Create/Restore production wiring 与 P5-B Favorite/Clear Unity Preference
-均已通过本地与远端验收。v3 只作行为参考；没有复制、移植或改写其源码。P6-P8 仍未完成，
+均已通过本地与远端验收。P6-A Package refresh/source filter 已形成通过本地定向测试的 production candidate，远端验收待取得。
+v3 只作行为参考；没有复制、移植或改写其源码。P6-B/P6-C、P7-P8 仍未完成，
 因此聚合 feature 继续 `in_progress`。
 
 | 用户入口 | 当前 Core 是否足够 | 最小合同 / 实现归属 | Permission 复用 | State / Config 影响 | dependency / platform | slice |
@@ -16,8 +17,8 @@
 | Open Unity / Backup | 已有真实 RPC/Operation | 保持 existing wiring；不是新合同 | existing | 无 | existing | 已实现证据保持 |
 | Remove registry row | `projects.unregister` 足够 | GUI confirmation + existing RPC；不删除目录 | `projects.manage` | existing | 无 | P3 / S |
 | Remove directory | 不足且是高影响删除 | 独立 Plan/Apply/Operation、writer gate、Project lock、trash/delete/recovery contract，另行人工审批 | 待定；不得从 `projects.manage` 隐式获得任意删除 | 后续 schema | 可能需平台 trash/删除评估 | P7 / XL |
-| Package workspace refresh | 单 repo `repositories.refresh` 足够 | GUI 先 list，再逐 registered repo refresh，逐项显示 partial failure，最后 reload；不声称 atomic refresh-all | `repositories.manage/read` | 无 | existing HTTP/local | P4 / M |
-| Package source filter | registered local/remote repository DTO 足够做展示过滤 | GUI-only filter，source identity来自 daemon；GUI不做 resolver | read only | 可保持 view state；无 authority state | 无 | P4 / S |
+| Package workspace refresh | 单 repo `repositories.refresh` 足够 | GUI 完整分页 list，顺序逐 registered repo refresh，逐项记录 partial failure，`revision_conflict` 仅 fresh retry 一次，最后 reload；不声称 atomic refresh-all | `repositories.manage/read` | 无 | existing HTTP/local | P6-A / implemented local candidate |
+| Package source filter | registered local/remote repository DTO 足够做展示过滤 | GUI-only All/Remote/Local filter，source identity只来自 daemon `RepositorySource.kind`；GUI不做 resolver | read only | 不持久化；无 authority state | 无 | P6-A / implemented local candidate |
 | Show prerelease | resolver已有 `includePrerelease`，read DTO只有 version string | proposed optional `RepositoryPackageVersion.prerelease: bool`，避免前端建立第二套 SemVer；偏好进入 Config Schema v2 | settings read/manage | Config v2，不是 State v10 | 无 | P4 / M |
 | Hidden repositories | current Config v1 无字段 | Config v2 proposed `hiddenRepositoryIds`（bounded opaque IDs）；只影响展示/候选可见性，不能篡改 pinned Plan | settings read/manage | Config v2 | 无 | P4 / M |
 | Hide local user packages | true local user package model不存在 | 先冻结 local package enrollment/source identity/hash/visibility；不得把 local repository JSON冒充 loose user package | 待审批 | 可能 registry + Config v2 | directory/path security另审 | P6 / L |

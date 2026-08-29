@@ -22,7 +22,7 @@ import type { GuiRpcClient } from "../../src/rpc";
 import "../../src/styles.css";
 import { MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
 
-type HarnessMode = "ready" | "empty" | "error" | "disconnected" | "loading" | "stale" | "failed" | "cancelled" | "create-error" | "restore-error" | "favorite-pages" | "favorite-error" | "favorite-conflict" | "unity-automatic" | "unity-zero" | "unity-multiple";
+type HarnessMode = "ready" | "empty" | "error" | "disconnected" | "loading" | "stale" | "failed" | "cancelled" | "create-error" | "restore-error" | "favorite-pages" | "favorite-error" | "favorite-conflict" | "unity-automatic" | "unity-zero" | "unity-multiple" | "package-no-repositories" | "package-multiple" | "package-partial-failure" | "package-revision-conflict";
 
 const query = new URLSearchParams(window.location.search);
 const initialRoute = query.get("route") ?? "/";
@@ -46,6 +46,8 @@ class DeterministicGuiClient implements GuiRpcClient {
     private selectionCleared = false;
     private selectionExplicit = false;
     private snapshotRevision = 1;
+    private repositoryRefreshCompleted = false;
+    private repositoryRefreshAttempts = new Map<string, number>();
 
     constructor(private readonly mode: HarnessMode) {}
 
@@ -164,11 +166,40 @@ class DeterministicGuiClient implements GuiRpcClient {
     projectApplyCopy(): ReturnType<GuiRpcClient["projectApplyCopy"]> { return this.value({ operationId: "00000000-0000-4000-8000-000000000062", targetProjectId: "00000000-0000-4000-8000-000000000061", replayed: false }); }
 
     repositoriesInspect(): ReturnType<GuiRpcClient["repositoriesInspect"]> { return this.value({ repository: repository() }); }
-    repositoriesList(): ReturnType<GuiRpcClient["repositoriesList"]> { return this.value({ repositories: this.mode === "empty" ? [] : [repository()] }); }
-    repositoryGet(): ReturnType<GuiRpcClient["repositoryGet"]> { return this.value({ repository: repository() }); }
-    repositoryPackages(): ReturnType<GuiRpcClient["repositoryPackages"]> { return this.value({ packages: [{ packageId: "com.example.avatar", version: "1.2.3", displayName: "Avatar tools", yanked: false, unity: ">=2022.3" }, { packageId: "com.example.avatar", version: "1.3.0", displayName: "Avatar tools", yanked: false, unity: ">=2022.3" }] }); }
+    repositoriesList(cursor?: { registeredAtMs: number; id: string }): ReturnType<GuiRpcClient["repositoriesList"]> {
+        if (this.mode === "empty" || this.mode === "package-no-repositories") return this.value({ repositories: [] });
+        if (["package-multiple", "package-partial-failure"].includes(this.mode)) {
+            return cursor === undefined
+                ? this.value({ repositories: [repository()], nextCursor: { registeredAtMs: 1_690_000_000_000, id: REPOSITORY_ID } })
+                : this.value({ repositories: [localRepository()] });
+        }
+        return this.value({ repositories: [repository()] });
+    }
+    repositoryGet(repositoryId: string): ReturnType<GuiRpcClient["repositoryGet"]> {
+        const value = repositoryId === LOCAL_REPOSITORY_ID ? localRepository() : repository();
+        return this.value({ repository: this.mode === "package-revision-conflict" ? { ...value, revision: 3 } : value });
+    }
+    repositoryPackages(repositoryId: string): ReturnType<GuiRpcClient["repositoryPackages"]> {
+        const packages = repositoryId === LOCAL_REPOSITORY_ID
+            ? [{ packageId: "com.example.local", version: "2.0.0", displayName: "Local tools", yanked: false }]
+            : [
+                { packageId: "com.example.avatar", version: "1.2.3", displayName: "Avatar tools", yanked: false, unity: ">=2022.3" },
+                { packageId: "com.example.avatar", version: "1.3.0", displayName: "Avatar tools", yanked: false, unity: ">=2022.3" },
+                { packageId: "com.example.remote", version: "1.0.0", displayName: "Remote tools", yanked: false },
+                ...(this.repositoryRefreshCompleted ? [{ packageId: "com.example.refreshed", version: "1.0.0", displayName: "Refreshed package", yanked: false }] : [])
+            ];
+        return this.value({ packages });
+    }
     repositoryRegister(): ReturnType<GuiRpcClient["repositoryRegister"]> { return this.value({ repository: repository(), replayed: false }); }
-    repositoryRefresh(): ReturnType<GuiRpcClient["repositoryRefresh"]> { return this.value({ repository: repository(), replayed: false }); }
+    repositoryRefresh(repositoryId: string): ReturnType<GuiRpcClient["repositoryRefresh"]> {
+        const attempts = (this.repositoryRefreshAttempts.get(repositoryId) ?? 0) + 1;
+        this.repositoryRefreshAttempts.set(repositoryId, attempts);
+        if (this.mode === "package-partial-failure" && repositoryId === LOCAL_REPOSITORY_ID) return Promise.reject({ code: "repository_unavailable" });
+        if (this.mode === "package-revision-conflict" && repositoryId === REPOSITORY_ID && attempts === 1) return Promise.reject({ code: "revision_conflict" });
+        if (this.mode === "package-revision-conflict" && repositoryId === REPOSITORY_ID && attempts > 2) return Promise.reject({ code: "unexpected_retry" });
+        this.repositoryRefreshCompleted = true;
+        return this.value({ repository: repositoryId === LOCAL_REPOSITORY_ID ? localRepository() : repository(), replayed: false });
+    }
     repositoryUnregister(): ReturnType<GuiRpcClient["repositoryUnregister"]> { return this.value({ repositoryId: REPOSITORY_ID, revision: 3, unregistered: true, replayed: false }); }
 
     packagePlanInstall(): ReturnType<GuiRpcClient["packagePlanInstall"]> { return this.value(packagePlan("install")); }
@@ -286,6 +317,7 @@ const PROJECT_ID = "00000000-0000-4000-8000-000000000101";
 const CREATED_PROJECT_ID = "00000000-0000-4000-8000-000000000108";
 const RESTORED_PROJECT_ID = "00000000-0000-4000-8000-000000000109";
 const REPOSITORY_ID = "00000000-0000-4000-8000-000000000102";
+const LOCAL_REPOSITORY_ID = "00000000-0000-4000-8000-000000000112";
 const INSTALLATION_ID = "00000000-0000-4000-8000-000000000103";
 const TEMPLATE_ID = "com.cqmhv.template.avatar";
 const BACKUP_ID = "00000000-0000-4000-8000-000000000104";
@@ -300,6 +332,7 @@ function project(projectId = PROJECT_ID, name = "Sample", favorite = false) {
     return { projectId, registeredAtMs: 1_690_000_000_000, favorite, rootPath, projectType: "avatars", unityVersion: "2022.3.22f1", vpmManifest: "valid", upmManifest: "valid", directDependencies: [{ packageId: "com.example.avatar", value: "^1.2.0" }], lockedDependencies: [{ packageId: "com.example.avatar", value: "1.2.3" }], issues: [], observedAtMs: 1_700_000_000_000, revision: 2 };
 }
 function repository() { return { repositoryId: REPOSITORY_ID, source: { kind: "remote" as const, url: "https://packages.example.invalid/index.json" }, declaredId: "example", name: "Example packages", declaredUrl: "https://packages.example.invalid/index.json", issues: [], revision: 2, refreshedAtMs: 1_700_000_000_000 }; }
+function localRepository() { return { repositoryId: LOCAL_REPOSITORY_ID, source: { kind: "local" as const, path: "<private-local-repository>" }, declaredId: "local-example", name: "Local packages", issues: [], revision: 2, refreshedAtMs: 1_700_000_000_000 }; }
 function installation() { return { installationId: INSTALLATION_ID, executablePath: "<private-editor>", filesystemIdentity: "opaque", unityVersion: "2022.3.22f1", architecture: "x86_64", sourceKind: "manual", revision: 2, observedAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_000_000 }; }
 function editorPreference() { return { projectId: PROJECT_ID, installationId: INSTALLATION_ID, arguments: [], revision: 2, updatedAtMs: 1_700_000_000_000 }; }
 function editorSelection() { return { projectId: PROJECT_ID, selection: { mode: "explicit" as const, installationId: INSTALLATION_ID }, arguments: ["-logFile"], revision: 2, updatedAtMs: 1_700_000_000_000 }; }

@@ -2,8 +2,9 @@
 
 状态：Stop A 合同修正与 P0-P4 production implementation 已通过本地、三平台 Hosted CI、CodeQL 和项目所有者验收；
 P5-A Create / Restore existing-Core GUI wiring 与 P5-B Favorite / Clear Unity Preference 均已通过本地完整验收、三平台
-Hosted CI 与 CodeQL。P6/H2 仍未开始。
-H2 visual WIP 继续暂停，P6-P8、M8/M9 未开始。
+Hosted CI 与 CodeQL。P6-A Package refresh/source filter 已形成通过本地定向测试的 production candidate，远端验收待取得；
+P6-B/P6-C 仍只允许 contract-first。
+H2 visual WIP 继续暂停，P7-P8、M8/M9 未开始。
 
 ## 目标与边界
 
@@ -266,3 +267,9 @@ P0-P4 必须执行 fmt、clippy、Workspace tests、npm check/build/browser test
   JavaScript/TypeScript、Rust 与 Actions 分析全部成功；Ubuntu 实测最高 `GLIBC_2.34`，macOS 9 个预期产物均为
   arm64 / minos 11.0。该候选包含仅使用 Material Web 官方 spacing token 的跨平台 Project action density 修复；
   三个平台的 26 项 Official GUI Playwright suite 均通过。
+- P6-A production candidate 只复用 `repositories.list`、`repositories.refresh`、`repositories.get`、
+  `repositories.packages` 与现有 typed client：完整分页读取 registered repositories，按顺序 refresh，逐项记录 success/failure，
+  `revision_conflict` 重新读取当前 revision 后最多重试一次，并在 partial failure 后仍 reload package data。Source filter 只消费
+  daemon `RepositorySource.kind` 并提供 All/Remote/Local，不持久化且不参与 resolver/Plan/Apply/source pin。新增 browser test 覆盖
+  zero/one/multiple、partial failure、single retry、final reload 和三种 source presentation；没有新增 RPC、Capability、Permission、
+  State、Config、dependency、unsafe 或平台 API。远端三平台 Hosted CI 与 CodeQL 尚未取得。

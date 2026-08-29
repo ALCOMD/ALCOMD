@@ -207,7 +207,12 @@ export interface RepositoryPackageVersion {
 
 export interface RepositoryPackagesResult {
     packages: RepositoryPackageVersion[];
-    nextCursor?: { packageId: string; version: string };
+    nextCursor?: PackageCursor;
+}
+
+export interface PackageCursor {
+    packageId: string;
+    version: string;
 }
 
 export interface PackageSourcePin {

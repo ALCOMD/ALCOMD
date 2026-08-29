@@ -93,7 +93,7 @@ status = "verified"
 implementation_status = "in_progress"
 evidence = ["docs/baselines/alcomd3-v3-audit.md::包", "docs/baselines/vrc-get-audit.md::CLI 与核心 VPM", "docs/baselines/m7-project-package-functional-closure.md", "docs/adr/0017-vpm-package-transaction.md"]
 coverage = ["GUI", "CLI", "MCP", "direct/transitive dependencies", "locked/unlocked", "M4 requires SHA-256; hashless VPM remains incomplete", "legacy cleanup remains incomplete"]
-tests = ["packages.m4-contract", "packages.vpm-format", "packages.version-range-differential", "packages.plan-apply", "gui.m7-project-action-contract", "gui.m7-visible-action-completeness"]
+tests = ["packages.m4-contract", "packages.vpm-format", "packages.version-range-differential", "packages.plan-apply", "gui.m7-project-action-contract", "gui.m7-package-workspace", "gui.m7-visible-action-completeness"]
 
 [[feature]]
 id = "packages.transaction-safety"
@@ -135,7 +135,7 @@ status = "verified"
 implementation_status = "in_progress"
 evidence = ["docs/baselines/alcomd3-v3-audit.md::仓库", "docs/baselines/vrc-get-audit.md::仓库", "docs/adr/0016-project-repository-read-model.md", "crates/alcomd-vpm/src/lib.rs", "crates/alcomd-testing/tests/m3_read_rpc.rs"]
 coverage = ["GUI", "CLI repo", "URI", "remote/local", "duplicate/equal-version sources"]
-tests = ["repositories.vpm-parity", "repositories.m3-read-registry", "repositories.fixture-matrix"]
+tests = ["repositories.vpm-parity", "repositories.m3-read-registry", "repositories.fixture-matrix", "gui.m7-package-workspace"]
 
 [[feature]]
 id = "repositories.credentials"

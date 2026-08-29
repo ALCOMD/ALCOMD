@@ -28,6 +28,7 @@ import type {
     DiagnosticItem,
     OfficialSettings,
     Operation,
+    PackageCursor,
     ProjectCopyPlan,
     ProjectEditorSelectionState,
     ProjectSnapshot,
@@ -804,6 +805,7 @@ export function ProjectPackagesPage(props: PageProps & { projectId: string }) {
 
 interface WorkspaceCatalogVersion extends RepositoryPackageVersion {
     source: string;
+    sourceKind: RepositorySnapshot["source"]["kind"];
 }
 
 interface PackageWorkspaceRow {
@@ -812,8 +814,56 @@ interface PackageWorkspaceRow {
     installedVersion?: string;
     packageId: string;
     requestedRange?: string;
+    sourceKinds: Array<RepositorySnapshot["source"]["kind"]>;
     sources: string[];
     status: "available" | "installed" | "missing-source";
+}
+
+interface PackageWorkspaceValue {
+    catalog: WorkspaceCatalogVersion[];
+    project: ProjectSnapshot;
+}
+
+interface RepositoryRefreshProgress {
+    completed: number;
+    failures: Array<{ code: string; repositoryId: string }>;
+    results: Array<{ code?: string; repositoryId: string; status: "failure" | "success" }>;
+    running: boolean;
+    successes: number;
+    total: number;
+}
+
+async function listAllRepositories(client: GuiRpcClient): Promise<RepositorySnapshot[]> {
+    const repositories: RepositorySnapshot[] = [];
+    let cursor: RegistryCursor | undefined;
+    do {
+        const page = await client.repositoriesList(cursor);
+        repositories.push(...page.repositories);
+        cursor = page.nextCursor;
+    } while (cursor !== undefined);
+    return repositories;
+}
+
+async function listAllRepositoryPackages(client: GuiRpcClient, repositoryId: string): Promise<RepositoryPackageVersion[]> {
+    const packages: RepositoryPackageVersion[] = [];
+    let cursor: PackageCursor | undefined;
+    do {
+        const page = await client.repositoryPackages(repositoryId, cursor);
+        packages.push(...page.packages);
+        cursor = page.nextCursor;
+    } while (cursor !== undefined);
+    return packages;
+}
+
+async function loadPackageWorkspace(client: GuiRpcClient, projectId: string): Promise<PackageWorkspaceValue> {
+    const [project, repositories] = await Promise.all([client.projectGet(projectId), listAllRepositories(client)]);
+    const catalogs = await Promise.all(repositories.map(async (repository) => {
+        if (repository.repositoryId === undefined) return [] as WorkspaceCatalogVersion[];
+        const packages = await listAllRepositoryPackages(client, repository.repositoryId);
+        const source = repository.name ?? repository.declaredId ?? sourceText(repository);
+        return packages.map((item) => ({ ...item, source, sourceKind: repository.source.kind }));
+    }));
+    return { project: project.project, catalog: catalogs.flat() };
 }
 
 function ProjectWorkspaceCopyAction({ client, navigate, project }: { client: GuiRpcClient; navigate(path: string): void; project: ProjectSnapshot }) {
@@ -856,21 +906,64 @@ function ProjectWorkspaceCopyAction({ client, navigate, project }: { client: Gui
 }
 
 function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { projectId: string }) {
-    const load = useCallback(async () => {
-        const [project, repositories] = await Promise.all([client.projectGet(projectId), client.repositoriesList()]);
-        const catalogs = await Promise.all(repositories.repositories.map(async (repository) => {
-            if (repository.repositoryId === undefined) return [] as WorkspaceCatalogVersion[];
-            const result = await client.repositoryPackages(repository.repositoryId);
-            const source = repository.name ?? repository.declaredId ?? sourceText(repository);
-            return result.packages.map((item) => ({ ...item, source }));
-        }));
-        return { project: project.project, catalog: catalogs.flat() };
-    }, [client, projectId]);
+    const load = useCallback(() => loadPackageWorkspace(client, projectId), [client, projectId]);
     const [search, setSearch] = useState("");
     const [filter, setFilter] = useState("all");
+    const [sourceFilter, setSourceFilter] = useState<"all" | "local" | "remote">("all");
+    const [repositoryRefresh, setRepositoryRefresh] = useState<RepositoryRefreshProgress>();
     const [selection, setSelection] = useState<PackageActionSelection>();
     const selectAction = (action: PackageActionSelection["action"], packageId: string, version?: string) => {
         setSelection({ action, key: (selection?.key ?? 0) + 1, packageId, ...(version === undefined ? {} : { version }) });
+    };
+    const refreshRepositories = async (reload: () => void) => {
+        setRepositoryRefresh({ completed: 0, failures: [], results: [], running: true, successes: 0, total: 0 });
+        let repositories: RepositorySnapshot[];
+        try {
+            repositories = await listAllRepositories(client);
+        } catch (caught: unknown) {
+            const error = safeError(caught);
+            setRepositoryRefresh({ completed: 1, failures: [{ code: error.code, repositoryId: "catalog" }], results: [{ code: error.code, repositoryId: "catalog", status: "failure" }], running: false, successes: 0, total: 1 });
+            return;
+        }
+        setRepositoryRefresh({ completed: 0, failures: [], results: [], running: true, successes: 0, total: repositories.length });
+        let successes = 0;
+        const failures: RepositoryRefreshProgress["failures"] = [];
+        const results: RepositoryRefreshProgress["results"] = [];
+        for (const repository of repositories) {
+            const repositoryId = repository.repositoryId;
+            const revision = repository.revision;
+            if (repositoryId === undefined || revision === undefined) {
+                failures.push({ code: "invalid_repository_snapshot", repositoryId: repositoryId ?? "unknown" });
+                results.push({ code: "invalid_repository_snapshot", repositoryId: repositoryId ?? "unknown", status: "failure" });
+            } else {
+                try {
+                    await client.repositoryRefresh(repositoryId, revision);
+                    successes += 1;
+                    results.push({ repositoryId, status: "success" });
+                } catch (caught: unknown) {
+                    const error = safeError(caught);
+                    if (error.code === "revision_conflict") {
+                        try {
+                            const current = await client.repositoryGet(repositoryId);
+                            if (current.repository.revision === undefined) throw { code: "invalid_repository_snapshot" };
+                            await client.repositoryRefresh(repositoryId, current.repository.revision);
+                            successes += 1;
+                            results.push({ repositoryId, status: "success" });
+                        } catch (retryCaught: unknown) {
+                            const retryError = safeError(retryCaught);
+                            failures.push({ code: retryError.code, repositoryId });
+                            results.push({ code: retryError.code, repositoryId, status: "failure" });
+                        }
+                    } else {
+                        failures.push({ code: error.code, repositoryId });
+                        results.push({ code: error.code, repositoryId, status: "failure" });
+                    }
+                }
+            }
+            setRepositoryRefresh({ completed: results.length, failures: [...failures], results: [...results], running: true, successes, total: repositories.length });
+        }
+        setRepositoryRefresh({ completed: repositories.length, failures, results, running: false, successes, total: repositories.length });
+        reload();
     };
     return (
         <ResourcePage load={load} showRefreshBar={false}>{({ project, catalog }, refresh, refreshing, refreshError) => {
@@ -881,7 +974,8 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                     || (filter === "installed" && row.installedVersion !== undefined)
                     || (filter === "available" && row.installedVersion === undefined && row.availableVersions.length > 0)
                     || (filter === "missing" && row.status === "missing-source");
-                return matchesSearch && matchesFilter;
+                const matchesSource = sourceFilter === "all" || row.sourceKinds.includes(sourceFilter);
+                return matchesSearch && matchesFilter && matchesSource;
             });
             return (
                 <section className="project-workspace">
@@ -904,7 +998,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                     <section aria-labelledby="packages-heading" className="package-workspace-surface">
                         <header className="package-workspace-toolbar">
                             <h2 id="packages-heading">Manage packages</h2>
-                            <Button className="package-refresh-action" disabled={refreshing} onClick={refresh} type="button" variant="text"><Icon asset={refreshIcon} slot="icon" />{refreshing ? "Refreshing…" : "Refresh"}</Button>
+                            <Button className="package-refresh-action" disabled={refreshing || repositoryRefresh?.running === true} onClick={() => void refreshRepositories(refresh)} type="button" variant="text"><Icon asset={refreshIcon} slot="icon" />{repositoryRefresh?.running === true ? "Refreshing…" : "Refresh"}</Button>
                             <TextField className="package-workspace-search" label="Search packages" leadingIcon={<Icon asset={searchIcon} slot="leading-icon" />} onInput={setSearch} value={search} />
                             <Select
                                 className="package-workspace-filter"
@@ -918,9 +1012,28 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                 ]}
                                 value={filter}
                             />
+                            <Select
+                                className="package-workspace-source-filter"
+                                label="Source"
+                                onChange={(value) => setSourceFilter(value as typeof sourceFilter)}
+                                options={[
+                                    { label: "All", value: "all" },
+                                    { label: "Remote", value: "remote" },
+                                    { label: "Local", value: "local" }
+                                ]}
+                                value={sourceFilter}
+                            />
                             <Button onClick={() => selectAction("resolve", "")} type="button" variant="text"><Icon asset={syncIcon} slot="icon" />Resolve</Button>
                             <span className="package-workspace-count" role="status" aria-live="polite">{rows.length} packages</span>
                         </header>
+                        {repositoryRefresh === undefined ? null : (
+                            <div className={repositoryRefresh.failures.length > 0 ? "package-refresh-status package-refresh-status--failed" : "package-refresh-status"} role={repositoryRefresh.failures.length > 0 ? "alert" : "status"} aria-live="polite">
+                                <span>{repositoryRefresh.running
+                                    ? `Refreshing repositories: ${repositoryRefresh.completed} of ${repositoryRefresh.total}.`
+                                    : `${repositoryRefresh.successes} refreshed, ${repositoryRefresh.failures.length} failed.`}</span>
+                                <ul className="visually-hidden">{repositoryRefresh.results.map((result) => <li key={result.repositoryId}>{result.repositoryId}: {result.status}{result.code === undefined ? "" : ` (${result.code})`}</li>)}</ul>
+                            </div>
+                        )}
                         <div className="package-workspace-table-scroll">
                             {rows.length === 0 ? <section className="projects-empty" role="status"><h3>No matching packages</h3><p>Change the search or package filter.</p></section> : (
                                 <MaterialDataTable className="package-workspace-table" label="Packages" minWidth={780}>
@@ -963,6 +1076,7 @@ function packageWorkspaceRows(project: ProjectSnapshot, catalog: WorkspaceCatalo
         const versions = catalogByPackage.get(packageId) ?? [];
         const availableVersions = [...new Set(versions.filter((item) => !item.yanked).map((item) => item.version))].sort((left, right) => left.localeCompare(right));
         const sources = [...new Set(versions.map((item) => item.source))].sort((left, right) => left.localeCompare(right));
+        const sourceKinds = [...new Set(versions.map((item) => item.sourceKind))].sort();
         const installedVersion = installed.get(packageId);
         return {
             availableVersions,
@@ -970,6 +1084,7 @@ function packageWorkspaceRows(project: ProjectSnapshot, catalog: WorkspaceCatalo
             ...(installedVersion === undefined ? {} : { installedVersion }),
             packageId,
             ...(requested.has(packageId) ? { requestedRange: requested.get(packageId) } : {}),
+            sourceKinds,
             sources,
             status: installedVersion !== undefined ? "installed" : availableVersions.length > 0 ? "available" : "missing-source"
         };
