@@ -2,9 +2,8 @@
 
 状态：Stop A 合同修正与 P0-P4 production implementation 已通过本地、三平台 Hosted CI、CodeQL 和项目所有者验收；
 P5-A Create / Restore existing-Core GUI wiring 与 P5-B Favorite / Clear Unity Preference 均已通过本地完整验收、三平台
-Hosted CI 与 CodeQL。P6-A Package refresh/source filter 已通过本地完整验收、三平台 Hosted CI 与 CodeQL；
-P6-B/P6-C 已完成获批合同、Config Schema 2、State Schema 12 与最小 production implementation，当前正在完成本地完整验收，
-尚未提交最终 Hosted CI 候选。
+Hosted CI 与 CodeQL。P6-A、P6-B 与 P6-C 已完成获批合同和 production implementation，并通过适用的本地门禁、
+同一最终候选的三平台 Hosted CI 与 CodeQL；P6 remote checkpoint 为 PASS。
 H2 visual WIP 继续暂停，P7-P8、M8/M9 未开始。
 
 ## 目标与边界
@@ -538,5 +537,10 @@ ResourceKey或Operation kind。P7、P8、H2、M8、M9与M11仍未开始。
   Plan 只固定 UserPackageId/revision/identity/manifest/archive digest。源目录在 Plan 后变化或 registry remove 不改变 Plan；owned
   cache 丢失时返回 `offline_cache_miss`，不得回读 mutable source。
 - Windows 本地已通过 nested/root reparse、hard-link与deterministic archive测试；Rust P6 targeted suites、TypeScript check、Vite
-  production build与32项Chromium Playwright均通过。完整workspace test与三平台Hosted CI仍待最终候选取得，故P6尚未宣告PASS。
+  production build与32项Chromium Playwright均通过。
+- P6 最终候选 `c7477089571246376ab4f90d106b860d9a8e98cd` 的 Hosted CI run `33277180223` 已在
+  Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 全部成功，CodeQL run `33277179920` 的四类分析全部成功；
+  Ubuntu最高 `GLIBC_2.34`，macOS 9 个预期产物均为 arm64 / minos 11.0，三平台 Official GUI 32 项 Playwright suite
+  均通过。最终 test-only hotfix 为慢速 Windows runner 提供 120 秒有界 subprocess startup deadline 与提前退出诊断，
+  没有修改 production recovery、IPC 或 socket 合同。P6-A、P6-B、P6-C 均为 PASS。
 - 未新增 production dependency、Permission、ResourceKey、Operation kind、unsafe 文件或平台 API；P7/P8/H2/M8/M9/M11继续停止。
