@@ -22,7 +22,7 @@ import type { GuiRpcClient } from "../../src/rpc";
 import "../../src/styles.css";
 import { MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
 
-type HarnessMode = "ready" | "empty" | "error" | "disconnected" | "loading" | "stale" | "failed" | "cancelled" | "create-error" | "restore-error" | "favorite-pages" | "favorite-error" | "favorite-conflict" | "unity-automatic" | "unity-zero" | "unity-multiple" | "package-no-repositories" | "package-multiple" | "package-partial-failure" | "package-revision-conflict";
+type HarnessMode = "ready" | "empty" | "error" | "disconnected" | "loading" | "stale" | "failed" | "cancelled" | "create-error" | "restore-error" | "favorite-pages" | "favorite-error" | "favorite-conflict" | "unity-automatic" | "unity-zero" | "unity-multiple" | "package-no-repositories" | "package-multiple" | "package-user-source" | "package-partial-failure" | "package-revision-conflict";
 
 const query = new URLSearchParams(window.location.search);
 const initialRoute = query.get("route") ?? "/";
@@ -53,6 +53,8 @@ class DeterministicGuiClient implements GuiRpcClient {
     private snapshotRevision = 1;
     private repositoryRefreshCompleted = false;
     private repositoryRefreshAttempts = new Map<string, number>();
+    private userPackageRemoved = false;
+    private userPackageRevision = 1;
 
     constructor(private readonly mode: HarnessMode) {}
 
@@ -217,10 +219,26 @@ class DeterministicGuiClient implements GuiRpcClient {
     packagePlanUpgrade(): ReturnType<GuiRpcClient["packagePlanUpgrade"]> { return this.value(packagePlan("upgrade")); }
     packagePlanDowngrade(): ReturnType<GuiRpcClient["packagePlanDowngrade"]> { return this.value(packagePlan("downgrade")); }
     packagePlanResolve(): ReturnType<GuiRpcClient["packagePlanResolve"]> { return this.value(packagePlan("resolve")); }
+    packagePlanReinstall(): ReturnType<GuiRpcClient["packagePlanReinstall"]> { return this.value(packagePlan("reinstall")); }
+    packagePlanBulk(): ReturnType<GuiRpcClient["packagePlanBulk"]> { return this.value(packagePlan("bulk")); }
     packageApplyPlan(): ReturnType<GuiRpcClient["packageApplyPlan"]> {
         if (this.mode === "stale") return Promise.reject({ code: "plan_stale" });
         this.operationReads = 0;
         return this.value({ operationId: OPERATION_ID, replayed: false });
+    }
+
+    userPackagesList(): ReturnType<GuiRpcClient["userPackagesList"]> {
+        return this.value({ userPackages: this.mode === "package-user-source" && !this.userPackageRemoved ? [userPackage(this.userPackageRevision)] : [] });
+    }
+    userPackageGet(): ReturnType<GuiRpcClient["userPackageGet"]> { return this.value({ userPackage: userPackage() }); }
+    userPackageEnroll(): ReturnType<GuiRpcClient["userPackageEnroll"]> { return this.value({ userPackage: userPackage(), replayed: false }); }
+    userPackageRefresh(): ReturnType<GuiRpcClient["userPackageRefresh"]> {
+        this.userPackageRevision = 2;
+        return this.value({ userPackage: userPackage(2), replayed: false });
+    }
+    userPackageRemove(): ReturnType<GuiRpcClient["userPackageRemove"]> {
+        this.userPackageRemoved = true;
+        return this.value({ userPackageId: USER_PACKAGE_ID, revision: 2, removed: true, replayed: false });
     }
 
     unityInstallationsList(): ReturnType<GuiRpcClient["unityInstallationsList"]> {
@@ -328,6 +346,7 @@ const CREATED_PROJECT_ID = "00000000-0000-4000-8000-000000000108";
 const RESTORED_PROJECT_ID = "00000000-0000-4000-8000-000000000109";
 const REPOSITORY_ID = "00000000-0000-4000-8000-000000000102";
 const LOCAL_REPOSITORY_ID = "00000000-0000-4000-8000-000000000112";
+const USER_PACKAGE_ID = "00000000-0000-4000-8000-000000000113";
 const INSTALLATION_ID = "00000000-0000-4000-8000-000000000103";
 const TEMPLATE_ID = "com.cqmhv.template.avatar";
 const BACKUP_ID = "00000000-0000-4000-8000-000000000104";
@@ -343,6 +362,7 @@ function project(projectId = PROJECT_ID, name = "Sample", favorite = false) {
 }
 function repository() { return { repositoryId: REPOSITORY_ID, source: { kind: "remote" as const, url: "https://packages.example.invalid/index.json" }, declaredId: "example", name: "Example packages", declaredUrl: "https://packages.example.invalid/index.json", issues: [], revision: 2, refreshedAtMs: 1_700_000_000_000 }; }
 function localRepository() { return { repositoryId: LOCAL_REPOSITORY_ID, source: { kind: "local" as const, path: "<private-local-repository>" }, declaredId: "local-example", name: "Local packages", issues: [], revision: 2, refreshedAtMs: 1_700_000_000_000 }; }
+function userPackage(revision = 1) { return { userPackageId: USER_PACKAGE_ID, sourceRootPath: "<private-user-package>", packageId: "com.example.avatar", version: "1.2.3", displayName: "Local avatar tools", revision, archiveSha256: HASH, createdAtMs: 1_700_000_000_000, updatedAtMs: revision === 1 ? 1_700_000_000_000 : 1_700_000_001_000 }; }
 function installation() { return { installationId: INSTALLATION_ID, executablePath: "<private-editor>", filesystemIdentity: "opaque", unityVersion: "2022.3.22f1", architecture: "x86_64", sourceKind: "manual", revision: 2, observedAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_000_000 }; }
 function editorPreference() { return { projectId: PROJECT_ID, installationId: INSTALLATION_ID, arguments: [], revision: 2, updatedAtMs: 1_700_000_000_000 }; }
 function editorSelection() { return { projectId: PROJECT_ID, selection: { mode: "explicit" as const, installationId: INSTALLATION_ID }, arguments: ["-logFile"], revision: 2, updatedAtMs: 1_700_000_000_000 }; }

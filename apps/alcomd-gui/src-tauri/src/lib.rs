@@ -602,6 +602,136 @@ async fn gui_package_plan_resolve(
 }
 
 #[tauri::command]
+async fn gui_package_plan_reinstall(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::PackagePlanReinstallParams,
+) -> Result<alcomd_protocol::PackagePlan, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.package_plan_reinstall(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_package_plan_bulk(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::PackagePlanBulkParams,
+) -> Result<alcomd_protocol::PackagePlan, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.package_plan_bulk(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_user_packages_list(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::UserPackagesListParams,
+) -> Result<alcomd_protocol::UserPackagesListResult, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.user_packages_list(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_user_package_get(
+    state: State<'_, GuiClientState>,
+    user_package_id: String,
+) -> Result<alcomd_protocol::UserPackageResult, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => {
+            client
+                .user_package_get(alcomd_protocol::UserPackageGetParams { user_package_id })
+                .await
+        }
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_user_package_enroll(
+    state: State<'_, GuiClientState>,
+    source_path: String,
+    idempotency_key: String,
+) -> Result<alcomd_protocol::UserPackageWriteResult, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => {
+            client
+                .user_package_enroll(alcomd_protocol::UserPackageEnrollParams {
+                    source_path,
+                    idempotency_key,
+                })
+                .await
+        }
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_user_package_refresh(
+    state: State<'_, GuiClientState>,
+    user_package_id: String,
+    expected_revision: u64,
+    idempotency_key: String,
+) -> Result<alcomd_protocol::UserPackageWriteResult, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => {
+            client
+                .user_package_refresh(alcomd_protocol::UserPackageMutationParams {
+                    user_package_id,
+                    expected_revision,
+                    idempotency_key,
+                })
+                .await
+        }
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_user_package_remove(
+    state: State<'_, GuiClientState>,
+    user_package_id: String,
+    expected_revision: u64,
+    idempotency_key: String,
+) -> Result<alcomd_protocol::UserPackageRemoveResult, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => {
+            client
+                .user_package_remove(alcomd_protocol::UserPackageMutationParams {
+                    user_package_id,
+                    expected_revision,
+                    idempotency_key,
+                })
+                .await
+        }
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
 async fn gui_package_apply_plan(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::PackageApplyPlanParams,
@@ -1316,7 +1446,14 @@ pub fn run() {
             gui_package_plan_upgrade,
             gui_package_plan_downgrade,
             gui_package_plan_resolve,
+            gui_package_plan_reinstall,
+            gui_package_plan_bulk,
             gui_package_apply_plan,
+            gui_user_packages_list,
+            gui_user_package_get,
+            gui_user_package_enroll,
+            gui_user_package_refresh,
+            gui_user_package_remove,
             gui_unity_installations_list,
             gui_unity_installation_get,
             gui_unity_installation_register,

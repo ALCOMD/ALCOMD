@@ -535,8 +535,26 @@ stage = "M7"
 kind = "integration-ui"
 platforms = ["all"]
 status = "implemented"
-description = "验证 Package workspace 使用现有 repositories.list/refresh/packages 完成零仓库、单/多仓库、partial failure、revision_conflict 单次重试与最终 reload，并仅按 daemon RepositorySource.kind 提供 All/Remote/Local presentation filter；不代表 prerelease/hidden/link/reinstall/bulk/User Packages 已完成。"
-evidence = ["apps/alcomd-gui/src/CorePages.tsx", "apps/alcomd-gui/tests/browser/m7-package-workspace.spec.ts", "docs/baselines/m7-project-package-functional-closure.md"]
+description = "验证 Package workspace 使用完整分页 repository refresh、source-kind presentation filter、Config v2 prerelease/hidden/local presentation、closed documentation/changelog opener、source choice、Reinstall/Bulk单一Plan review与User Package enrollment管理；不代表P7/P8或完整VPM聚合功能已完成。"
+evidence = ["apps/alcomd-gui/src/CorePages.tsx", "apps/alcomd-gui/src-tauri/src/lib.rs", "apps/alcomd-gui/tests/browser/m7-package-workspace.spec.ts", "apps/alcomd-gui/tests/browser/m7-accessibility.spec.ts::settings_are_labeled_revisioned_dirty_aware_and_applied_through_the_typed_client", "docs/baselines/m7-project-package-functional-closure.md"]
+
+[[test]]
+id = "packages.m7-functional-closure"
+stage = "M7"
+kind = "contract-integration"
+platforms = ["all"]
+status = "implemented"
+description = "验证Config Schema 2、State Schema 12、兼容plan.v2 source pin、exact-version Reinstall、四类atomic Bulk intent、256/257边界、deterministic ordering、单Plan/Apply/Operation及既有filesystem recovery不变。"
+evidence = ["specs/rpc/m7-p6-package-closure.proposal.schema.json", "specs/rpc/m7-p6-package-closure.contract-vectors.json", "specs/storage/state-v12-migration.proposal.contract.json", "crates/alcomd-vpm/src/engine.rs::tests", "crates/alcomd-testing/tests/m7_p6_package_closure.rs", "crates/alcomd-testing/tests/m4_package_rpc.rs::install_and_remove_round_trip_through_rpc_without_network", "crates/alcomd-store/tests/schema_contract.rs"]
+
+[[test]]
+id = "packages.m7-user-packages"
+stage = "M7"
+kind = "security-integration"
+platforms = ["all"]
+status = "implemented"
+description = "验证loose-directory enrollment、strict manifest、filesystem identity、link/reparse/hardlink/special/non-UTF8/collision/quota边界、deterministic owned cache、revision/idempotency/Event、v1排除/v2纳入、源变化后Plan不可变及cache miss禁止回读mutable source。"
+evidence = ["crates/alcomd-vpm/src/user_package.rs", "crates/alcomd-store/tests/user_packages.rs", "crates/alcomd-testing/tests/m4_package_rpc.rs::user_package_plan_uses_owned_cache_after_source_mutation_and_registry_removal", "crates/alcomd-testing/tests/m4_package_rpc.rs::user_package_plan_does_not_fall_back_to_mutable_source_when_cache_is_missing", "crates/alcomd-vpm/src/resolver.rs::tests::repository_and_user_package_require_explicit_source_without_hidden_priority"]
 
 [[test]]
 id = "gui.m12-screen-reader-smoke"

@@ -3,7 +3,8 @@
 状态：Stop A 合同修正与 P0-P4 production implementation 已通过本地、三平台 Hosted CI、CodeQL 和项目所有者验收；
 P5-A Create / Restore existing-Core GUI wiring 与 P5-B Favorite / Clear Unity Preference 均已通过本地完整验收、三平台
 Hosted CI 与 CodeQL。P6-A Package refresh/source filter 已通过本地完整验收、三平台 Hosted CI 与 CodeQL；
-P6-B/P6-C Stop A contract-first 提案已形成但尚未获生产实现批准。
+P6-B/P6-C 已完成获批合同、Config Schema 2、State Schema 12 与最小 production implementation，当前正在完成本地完整验收，
+尚未提交最终 Hosted CI 候选。
 H2 visual WIP 继续暂停，P7-P8、M8/M9 未开始。
 
 ## 目标与边界
@@ -280,7 +281,8 @@ P0-P4 必须执行 fmt、clippy、Workspace tests、npm check/build/browser test
 
 ## P6-B Stop A：package visibility / metadata
 
-本节只是待人工批准的合同提案。没有修改 Config Schema、State Schema、RPC Schema、DTO 或 production wiring。
+本节记录已获批准并已实施的 contract-first 基线；Config Schema 2、State Schema 12、兼容 RPC/DTO 与 production wiring
+均严格按本节及 machine-readable proposal 落盘。
 
 ### Core evidence 与 prerelease DTO
 
@@ -390,7 +392,7 @@ DTO/settings DTO 的兼容字段、Config Schema 2 以及 State v12 的两个 nu
 
 ## P6-C Stop A：package mutation / User Packages
 
-本节同样只是提案。没有接线 method、migration、resolver、cache 或 GUI。
+本节记录已获批准并已实施的 contract-first 基线；method、migration、resolver、cache 与 official GUI 均已按冻结边界接线。
 
 ### Reinstall
 
@@ -523,3 +525,18 @@ offline Apply、existing Plan after refresh/remove，以及三平台filesystem i
 项目所有者已批准按本节及machine-readable proposal实施Config Schema 2、State Schema 12、`packages.plan.v2`、Reinstall、
 Bulk、User Package registry/cache/resolver与official GUI closure；不新增Permission、dependency、unsafe/platform API、
 ResourceKey或Operation kind。P7、P8、H2、M8、M9与M11仍未开始。
+
+## P6-B/P6-C production progress
+
+- Config Schema 2 已实现 v1 原 revision 迁移、CAS 更新、默认关闭 prerelease/local hiding、canonical hidden RepositoryId 集合、
+  256/257 边界与 16 KiB 上限；official GUI 只把这些设置用于 presentation，Core resolver authority 不变。
+- State Schema 12 已原子重建 `package_plans` action CHECK、持久化 nullable documentation/changelog URL，并加入唯一的
+  `user_package_sources` business table；迁移链、回滚与 future-schema fail-closed 测试已接入。
+- `packages.plan.v2`、Reinstall、Bulk 与 User Package RPC/client/CLI/official GUI 已接线。Reinstall 固定 locked exact version并生成
+  Replace；Bulk 在一个 deterministic resolver invocation 中生成一个 durable Plan，并继续只产生一个 `packages.apply` Operation。
+- User Package enrollment/refresh 会对 loose directory 做 bounded fail-closed scan并生成 deterministic ALCOMD-owned cache ZIP；
+  Plan 只固定 UserPackageId/revision/identity/manifest/archive digest。源目录在 Plan 后变化或 registry remove 不改变 Plan；owned
+  cache 丢失时返回 `offline_cache_miss`，不得回读 mutable source。
+- Windows 本地已通过 nested/root reparse、hard-link与deterministic archive测试；Rust P6 targeted suites、TypeScript check、Vite
+  production build与32项Chromium Playwright均通过。完整workspace test与三平台Hosted CI仍待最终候选取得，故P6尚未宣告PASS。
+- 未新增 production dependency、Permission、ResourceKey、Operation kind、unsafe 文件或平台 API；P7/P8/H2/M8/M9/M11继续停止。

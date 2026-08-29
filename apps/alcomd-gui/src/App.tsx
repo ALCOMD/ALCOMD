@@ -43,7 +43,8 @@ import {
     SettingsPage,
     TemplateDetailPage,
     TemplatesPage,
-    UnityPage
+    UnityPage,
+    UserPackagesPage
 } from "./CorePages";
 import { PortableUiRenderer } from "./PortableUiRenderer";
 import {
@@ -65,6 +66,7 @@ type Route =
     | { kind: "repositories" }
     | { kind: "repository-detail"; repositoryId: string }
     | { kind: "templates" }
+    | { kind: "user-packages" }
     | { kind: "template-detail"; templateId: string }
     | { kind: "unity" }
     | { kind: "backup-detail"; backupId: string }
@@ -326,6 +328,7 @@ function RouteContent({
         case "repositories": return <RepositoriesPage {...props} />;
         case "repository-detail": return <RepositoryDetailPage {...props} repositoryId={route.repositoryId} />;
         case "templates": return <TemplatesPage {...props} />;
+        case "user-packages": return <UserPackagesPage {...props} />;
         case "template-detail": return <TemplateDetailPage {...props} templateId={route.templateId} />;
         case "unity": return <UnityPage {...props} />;
         case "backup-detail": return <BackupDetailPage {...props} backupId={route.backupId} />;
@@ -664,6 +667,7 @@ function readRoute(pathname: string): Route {
             case "projects": return { kind: "projects" };
             case "repositories": return { kind: "repositories" };
             case "templates": return { kind: "templates" };
+            case "user-packages": return { kind: "user-packages" };
             case "unity": return { kind: "unity" };
             case "operations": return { kind: "operations" };
             case "extensions": return { kind: "extensions" };
@@ -701,6 +705,7 @@ function routePath(route: Route): string {
         case "repositories": return "/repositories";
         case "repository-detail": return `/repositories/${encodeURIComponent(route.repositoryId)}`;
         case "templates": return "/templates";
+        case "user-packages": return "/user-packages";
         case "template-detail": return `/templates/${encodeURIComponent(route.templateId)}`;
         case "unity": return "/unity";
         case "backup-detail": return `/backups/${encodeURIComponent(route.backupId)}`;
@@ -726,6 +731,7 @@ function routeSection(route: Route): string {
         case "repositories":
         case "repository-detail":
         case "templates":
+        case "user-packages":
         case "template-detail": return "packages";
         case "backup-detail": return "projects";
         case "operations":

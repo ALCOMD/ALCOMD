@@ -127,6 +127,9 @@ test("settings are labeled, revisioned, dirty-aware, and applied through the typ
     await expect(page.getByRole("combobox", { name: "Source color" })).toHaveAccessibleDescription("Saved as a canonical #RRGGBB value; extensions never receive this preference.");
     await selectMaterialOption(color, "#315DA8");
     await selectMaterialOption(page.locator("md-outlined-select#settings-locale"), "zh-CN");
+    await page.getByRole("checkbox", { name: "Show prerelease package versions" }).check();
+    await page.getByRole("checkbox", { name: "Hide local User Packages" }).check();
+    await page.getByRole("checkbox", { name: "Hide Example packages" }).check();
 
     await navigationItem(page, "Projects").click();
     const dialog = page.getByRole("dialog", { name: "Discard unsaved changes?" });
@@ -135,7 +138,10 @@ test("settings are labeled, revisioned, dirty-aware, and applied through the typ
     await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
 
     await page.getByRole("button", { name: "Save settings" }).click();
-    await expect(page.getByText("Config Schema 1 · revision 8")).toBeVisible();
+    await expect(page.getByText("Config Schema 2 · revision 8")).toBeVisible();
+    await expect(page.getByRole("checkbox", { name: "Show prerelease package versions" })).toBeChecked();
+    await expect(page.getByRole("checkbox", { name: "Hide local User Packages" })).toBeChecked();
+    await expect(page.getByRole("checkbox", { name: "Hide Example packages" })).toBeChecked();
     await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
     await expect(page.locator("html")).toHaveAttribute("data-source-color", "blue");
 });

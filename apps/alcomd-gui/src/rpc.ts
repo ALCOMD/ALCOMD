@@ -33,10 +33,12 @@ import type {
     PackageApplyPlanParams,
     PackageCursor,
     PackagePlan,
+    PackagePlanBulkParams,
     PackagePlanDowngradeParams,
     PackagePlanInstallParams,
     PackagePlanRemoveParams,
     PackagePlanResolveParams,
+    PackagePlanReinstallParams,
     ProjectEditorResult,
     ProjectEditorSelectionResult,
     ProjectEditorClearResult,
@@ -67,7 +69,12 @@ import type {
     UnityInstallationRemoveResult,
     UnityInstallationsListResult,
     UnityLaunchResult,
-    UnityWriterState
+    UnityWriterState,
+    UserPackageCursor,
+    UserPackageRemoveResult,
+    UserPackageResult,
+    UserPackagesListResult,
+    UserPackageWriteResult
 } from "./core-models";
 
 export interface GuiRpcClient {
@@ -104,7 +111,14 @@ export interface GuiRpcClient {
     packagePlanUpgrade(params: PackagePlanInstallParams): Promise<PackagePlan>;
     packagePlanDowngrade(params: PackagePlanDowngradeParams): Promise<PackagePlan>;
     packagePlanResolve(params: PackagePlanResolveParams): Promise<PackagePlan>;
+    packagePlanReinstall(params: PackagePlanReinstallParams): Promise<PackagePlan>;
+    packagePlanBulk(params: PackagePlanBulkParams): Promise<PackagePlan>;
     packageApplyPlan(params: Omit<PackageApplyPlanParams, "idempotencyKey">): Promise<{ operationId: string; replayed: boolean }>;
+    userPackagesList(cursor?: UserPackageCursor): Promise<UserPackagesListResult>;
+    userPackageGet(userPackageId: string): Promise<UserPackageResult>;
+    userPackageEnroll(sourcePath: string): Promise<UserPackageWriteResult>;
+    userPackageRefresh(userPackageId: string, expectedRevision: number): Promise<UserPackageWriteResult>;
+    userPackageRemove(userPackageId: string, expectedRevision: number): Promise<UserPackageRemoveResult>;
     unityInstallationsList(cursor?: string): Promise<UnityInstallationsListResult>;
     unityInstallationGet(installationId: string): Promise<UnityInstallationResult>;
     unityInstallationRegister(executablePath: string): Promise<UnityInstallationResult>;
@@ -283,8 +297,36 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_package_plan_resolve", { params });
     }
 
+    packagePlanReinstall(params: PackagePlanReinstallParams): Promise<PackagePlan> {
+        return invokeTyped("gui_package_plan_reinstall", { params });
+    }
+
+    packagePlanBulk(params: PackagePlanBulkParams): Promise<PackagePlan> {
+        return invokeTyped("gui_package_plan_bulk", { params });
+    }
+
     packageApplyPlan(params: Omit<PackageApplyPlanParams, "idempotencyKey">): Promise<{ operationId: string; replayed: boolean }> {
         return invokeTyped("gui_package_apply_plan", { params: { ...params, idempotencyKey: crypto.randomUUID() } });
+    }
+
+    userPackagesList(cursor?: UserPackageCursor): Promise<UserPackagesListResult> {
+        return invokeTyped("gui_user_packages_list", { params: { cursor, limit: 100 } });
+    }
+
+    userPackageGet(userPackageId: string): Promise<UserPackageResult> {
+        return invokeTyped("gui_user_package_get", { userPackageId });
+    }
+
+    userPackageEnroll(sourcePath: string): Promise<UserPackageWriteResult> {
+        return invokeTyped("gui_user_package_enroll", { sourcePath, idempotencyKey: crypto.randomUUID() });
+    }
+
+    userPackageRefresh(userPackageId: string, expectedRevision: number): Promise<UserPackageWriteResult> {
+        return invokeTyped("gui_user_package_refresh", { userPackageId, expectedRevision, idempotencyKey: crypto.randomUUID() });
+    }
+
+    userPackageRemove(userPackageId: string, expectedRevision: number): Promise<UserPackageRemoveResult> {
+        return invokeTyped("gui_user_package_remove", { userPackageId, expectedRevision, idempotencyKey: crypto.randomUUID() });
     }
 
     unityInstallationsList(cursor?: string): Promise<UnityInstallationsListResult> {

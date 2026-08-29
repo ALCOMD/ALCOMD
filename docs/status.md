@@ -1,10 +1,10 @@
 # 项目状态
 
-最后更新：2026-08-29
+最后更新：2026-08-30
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。H2 visual implementation 继续暂停；M7 Project / Package Functional Closure P0-P4、P5-A、P5-B 与 P6-A 已远端通过，P6-B/P6-C Stop A 已按合同修正获生产实施批准并进入P6-0合同提交阶段。projects.management 与 packages.vpm 保持 in_progress，M8/M9 未开始。`
+`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。H2 visual implementation 继续暂停；M7 Project / Package Functional Closure P0-P4、P5-A、P5-B 与 P6-A 已远端通过。P6-B/P6-C 已完成获批合同与本地 production candidate，正在完成最终本地门禁，尚未提交三平台 Hosted CI。projects.management 与 packages.vpm 保持 in_progress，M8/M9 未开始。`
 
 ## 已完成
 
@@ -313,8 +313,13 @@
   仓库、部分失败、不虚假成功及 source kind presentation；无新增 RPC、Capability、Permission、State、Config、dependency、unsafe
   或平台 API。测试热修复 commit `bb934ef94ad57f26cb40a6d718fc46181a4915f4` 对应 Hosted CI run
   `33264281642`：Windows Server 2025、Ubuntu 22.04 与 macOS 15 arm64 全部成功；CodeQL run `33264281469`
-  的四类分析全部成功。热修复只修改 test daemon harness，production 5 秒启动窗口与 IPC 未变。P6-B/P6-C 仍仅为
-  contract-first Stop A 已获附修正批准，正在先形成独立合同commit；聚合 `packages.vpm`/`repositories.management` 暂不提升。
+  的四类分析全部成功。热修复只修改 test daemon harness，production 5 秒启动窗口与 IPC 未变；该远端检查点取得时，
+  P6-B/P6-C 尚只完成获附修正批准的 contract-first Stop A。
+- P6-B/P6-C 本地候选已实现 Config Schema 2、State Schema 12、package metadata links、`packages.plan.v2`、Reinstall、
+  atomic Bulk、User Package loose-directory registry/deterministic owned cache、v1/v2 resolver隔离与official GUI用户入口。
+  Targeted Rust suites、TypeScript、Vite build与32项Chromium Playwright均已通过；owned cache缺失明确验证不回读mutable source。
+  完整workspace/local gate与最终同一HEAD的Windows/Ubuntu/macOS/CodeQL仍未取得，因此P6-B/P6-C尚未标记PASS，聚合
+  `packages.vpm`/`repositories.management`继续保持`in_progress`。本切片没有新增production dependency、Permission、unsafe或平台API。
 
 ## 后续里程碑尚未完成
 
@@ -380,7 +385,7 @@ M0、M1、M2、M3、M4、M5 与 M6 均已完成并通过最终人工验收。M7 
 functional candidate `192672…` 保留技术证据但已被拒绝 visual/IA acceptance；首次 H1 也已被标记为
 `rejected_for_visual_direction`。替代的 v3-reference wide Projects shell 已在 `7bb325b…` 通过 Visual Gate 1。当前只完成
 Project / Package Functional Closure P0-P4 remote checkpoint、P5-A Create/Restore 与 P5-B Favorite/Clear Unity Preference
-均已远端通过。P6-A 也已通过三平台 Hosted CI 与 CodeQL；P6-B/P6-C 已获生产批准并从P6-0合同commit开始，P7-P8、H2 visual、
+均已远端通过。P6-A 也已通过三平台 Hosted CI 与 CodeQL；P6-B/P6-C 已形成尚待最终local/Hosted gate的production candidate，P7-P8、H2 visual、
 M8 或 M9 不得开始。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。

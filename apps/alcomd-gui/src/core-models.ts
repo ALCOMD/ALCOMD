@@ -230,7 +230,7 @@ export interface PackageCursor {
     version: string;
 }
 
-export interface PackageSourcePin {
+export interface RepositoryPackageSourcePin {
     repositoryId: string;
     repositoryRevision: number;
     sourceIdentity: string;
@@ -240,6 +240,21 @@ export interface PackageSourcePin {
     artifactUrl: string;
     archiveSha256: string;
 }
+
+export interface UserPackageSourcePin {
+    userPackageId: string;
+    sourceRevision: number;
+    sourceIdentity: string;
+    manifestFingerprint: string;
+    packageId: string;
+    version: string;
+    archiveSha256: string;
+}
+
+export type PackageSourcePin = RepositoryPackageSourcePin | UserPackageSourcePin;
+export type PackageSourceSelector =
+    | { kind: "repository"; repositoryId: string }
+    | { kind: "user_package"; userPackageId: string };
 
 export interface PackageMutation {
     kind: "install" | "remove" | "replace";
@@ -258,7 +273,7 @@ export interface PackageChangeSet {
 
 export interface PackagePlan {
     planId: string;
-    action: "install" | "remove" | "upgrade" | "downgrade" | "resolve";
+    action: "install" | "remove" | "upgrade" | "downgrade" | "resolve" | "reinstall" | "bulk";
     state: "unapplied" | "applied";
     projectId: string;
     projectRevision: number;
@@ -272,13 +287,40 @@ export interface PackagePlanInstallParams {
     packageId: string;
     versionRange?: string;
     repositoryId?: string;
+    source?: PackageSourceSelector;
     includePrerelease: boolean;
 }
 
 export interface PackagePlanRemoveParams { projectId: string; expectedRevision: number; packageId: string }
-export interface PackagePlanDowngradeParams { projectId: string; expectedRevision: number; packageId: string; version: string; repositoryId?: string }
+export interface PackagePlanDowngradeParams { projectId: string; expectedRevision: number; packageId: string; version: string; repositoryId?: string; source?: PackageSourceSelector }
 export interface PackagePlanResolveParams { projectId: string; expectedRevision: number; includePrerelease: boolean }
+export type PackageReinstallSelection = { kind: "packages"; packageIds: string[] } | { kind: "all" };
+export interface PackageReinstallSource { packageId: string; source: PackageSourceSelector }
+export interface PackagePlanReinstallParams { projectId: string; expectedRevision: number; selection: PackageReinstallSelection; sources?: PackageReinstallSource[] }
+export type PackageBulkIntent =
+    | { kind: "install"; packageId: string; versionRange?: string; source?: PackageSourceSelector; includePrerelease: boolean }
+    | { kind: "upgrade"; packageId: string; versionRange?: string; source?: PackageSourceSelector; includePrerelease: boolean }
+    | { kind: "remove"; packageId: string }
+    | { kind: "reinstall"; packageId: string; source?: PackageSourceSelector };
+export interface PackagePlanBulkParams { projectId: string; expectedRevision: number; intents: PackageBulkIntent[] }
 export interface PackageApplyPlanParams { planId: string; expectedRevision: number; idempotencyKey: string }
+
+export interface UserPackageRecord {
+    userPackageId: string;
+    sourceRootPath: string;
+    packageId: string;
+    version: string;
+    displayName?: string;
+    revision: number;
+    archiveSha256: string;
+    createdAtMs: number;
+    updatedAtMs: number;
+}
+export interface UserPackageCursor { updatedAtMs: number; userPackageId: string }
+export interface UserPackagesListResult { userPackages: UserPackageRecord[]; nextCursor?: UserPackageCursor }
+export interface UserPackageResult { userPackage: UserPackageRecord }
+export interface UserPackageWriteResult { userPackage: UserPackageRecord; replayed: boolean }
+export interface UserPackageRemoveResult { userPackageId: string; revision: number; removed: boolean; replayed: boolean }
 
 export interface UnityInstallation {
     installationId: string;

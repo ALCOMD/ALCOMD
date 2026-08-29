@@ -7,6 +7,7 @@ import type {
     ExtensionPlan,
     Operation,
     PackagePlan,
+    PackageSourceSelector,
     ProjectEditorSelectionState,
     ProjectSnapshot,
     RepositorySnapshot,
@@ -126,9 +127,12 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
 }
 
 export interface PackageActionSelection {
-    action: "install" | "remove" | "upgrade" | "downgrade" | "resolve";
+    action: "install" | "remove" | "upgrade" | "downgrade" | "resolve" | "reinstall" | "reinstall-all" | "bulk-reinstall";
     key: number;
     packageId: string;
+    packageIds?: string[];
+    source?: PackageSourceSelector;
+    sources?: Array<{ packageId: string; source: PackageSourceSelector }>;
     version?: string;
 }
 
@@ -141,7 +145,7 @@ export function PackageActions({ client, project, onChanged, selection }: Action
     const handledSelectionKey = useRef<number | undefined>(undefined);
     const revision = project.revision;
     const projectId = project.projectId;
-    const prepareChanges = useCallback(async (action: PackageActionSelection["action"], selectedPackageId: string, selectedVersion = "") => {
+    const prepareChanges = useCallback(async (action: PackageActionSelection["action"], selectedPackageId: string, selectedVersion = "", selectedSource?: PackageSourceSelector, packageIds?: string[], sources?: Array<{ packageId: string; source: PackageSourceSelector }>) => {
         if (revision === undefined || projectId === undefined) return;
         setPlan(undefined);
         setFeedback({ busy: true });
@@ -149,9 +153,12 @@ export function PackageActions({ client, project, onChanged, selection }: Action
             let result: PackagePlan;
             if (action === "remove") result = await client.packagePlanRemove({ projectId, expectedRevision: revision, packageId: selectedPackageId });
             else if (action === "resolve") result = await client.packagePlanResolve({ projectId, expectedRevision: revision, includePrerelease: false });
-            else if (action === "downgrade") result = await client.packagePlanDowngrade({ projectId, expectedRevision: revision, packageId: selectedPackageId, version: selectedVersion });
+            else if (action === "reinstall-all") result = await client.packagePlanReinstall({ projectId, expectedRevision: revision, selection: { kind: "all" } });
+            else if (action === "reinstall") result = await client.packagePlanReinstall({ projectId, expectedRevision: revision, selection: { kind: "packages", packageIds: [selectedPackageId] }, ...(selectedSource === undefined ? {} : { sources: [{ packageId: selectedPackageId, source: selectedSource }] }) });
+            else if (action === "bulk-reinstall") result = await client.packagePlanBulk({ projectId, expectedRevision: revision, intents: (packageIds ?? []).map((packageId) => ({ kind: "reinstall" as const, packageId, ...(sources?.find((item) => item.packageId === packageId)?.source === undefined ? {} : { source: sources.find((item) => item.packageId === packageId)?.source }) })) });
+            else if (action === "downgrade") result = await client.packagePlanDowngrade({ projectId, expectedRevision: revision, packageId: selectedPackageId, version: selectedVersion, ...(selectedSource === undefined ? {} : { source: selectedSource }) });
             else {
-                const params = { projectId, expectedRevision: revision, packageId: selectedPackageId, includePrerelease: false, ...(selectedVersion.length === 0 ? {} : { versionRange: selectedVersion }) };
+                const params = { projectId, expectedRevision: revision, packageId: selectedPackageId, includePrerelease: false, ...(selectedVersion.length === 0 ? {} : { versionRange: selectedVersion }), ...(selectedSource === undefined ? {} : { source: selectedSource }) };
                 result = action === "upgrade" ? await client.packagePlanUpgrade(params) : await client.packagePlanInstall(params);
             }
             setPlan(result);
@@ -175,7 +182,7 @@ export function PackageActions({ client, project, onChanged, selection }: Action
             return;
         }
         setVersionDialogOpen(false);
-        void prepareChanges(selection.action, selection.packageId, selection.version);
+        void prepareChanges(selection.action, selection.packageId, selection.version, selection.source, selection.packageIds, selection.sources);
     }, [prepareChanges, selection]);
     const chooseVersion = (event: FormEvent) => {
         event.preventDefault();
@@ -522,6 +529,15 @@ function packageErrorMessage(error: RpcError): string {
     }
     if (["package_not_found", "package_source_changed", "repository_revision_conflict"].includes(error.code)) {
         return "The package information changed or is no longer available. Refresh the package list and try again.";
+    }
+    if (error.code === "package_not_installed") {
+        return "This package is not currently installed in the project.";
+    }
+    if (error.code === "package_source_ambiguous") {
+        return "More than one source provides this package version. Choose a source and try again.";
+    }
+    if (error.code === "package_intent_conflict") {
+        return "The selected package actions conflict. Review the selection and try again.";
     }
     return "ALCOMD could not complete the package changes. Try again or open Logs for more information.";
 }

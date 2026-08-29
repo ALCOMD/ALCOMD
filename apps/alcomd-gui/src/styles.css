@@ -575,7 +575,15 @@ md-linear-progress {
 .package-workspace-table td:first-child strong,
 .package-workspace-table td:first-child small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .package-workspace-table td small { margin-top: 2px; color: var(--on-surface-variant); font-size: 0.75rem; }
-.package-row-actions { display: flex; justify-content: flex-end; gap: 2px; }
+.package-column-select { width: 56px; }
+.package-column-name { width: auto; }
+.package-column-installed { width: 140px; }
+.package-column-latest { width: 100px; }
+.package-column-source { width: 180px; }
+.package-column-actions { width: 312px; }
+.package-row-actions { position: relative; z-index: 1; display: flex; justify-content: flex-end; gap: 2px; }
+.package-row-actions > * { flex: 0 0 auto; }
+.package-row-source-menu { max-width: 100%; }
 .package-source-missing { color: var(--error); font-size: 0.8rem; }
 
 .package-action-form {
