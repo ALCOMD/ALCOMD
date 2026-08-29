@@ -27,6 +27,7 @@ const DAEMON_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
 const DAEMON_DROP_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 const CHILD_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 const CHILD_DROP_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
+const CHECKPOINT_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
 
 const CRASH_ROOT_ENV: &str = "ALCOMD_TEST_PROJECT_COPY_CRASH_ROOT";
 const KILL_GATE_ENV: &str = "ALCOMD_TEST_PROJECT_COPY_KILL_GATE";
@@ -511,12 +512,19 @@ async fn project_copy_preserves_externally_modified_published_target_for_manual_
         .expect("spawn Project Copy subprocess");
     let mut child = ChildGuard::new(child, trace);
     trace.stage("child-process-spawned");
-    wait_for_file(&operation_signal, None, "target_published", trace);
+    wait_for_file(
+        &operation_signal,
+        None,
+        "target_published",
+        trace,
+        &mut child,
+    );
     wait_for_file(
         &kill_signal,
         Some(b"target_published"),
         "target_published",
         trace,
+        &mut child,
     );
     let signal: CopyCrashSignal =
         serde_json::from_slice(&fs::read(&operation_signal).expect("read operation signal"))
@@ -664,8 +672,14 @@ async fn run_kill_restart_case(checkpoint: &str, trace: TestTrace) {
         .expect("spawn Project Copy subprocess");
     let mut child = ChildGuard::new(child, trace);
     trace.stage("child-process-spawned");
-    wait_for_file(&operation_signal, None, checkpoint, trace);
-    wait_for_file(&kill_signal, Some(checkpoint.as_bytes()), checkpoint, trace);
+    wait_for_file(&operation_signal, None, checkpoint, trace, &mut child);
+    wait_for_file(
+        &kill_signal,
+        Some(checkpoint.as_bytes()),
+        checkpoint,
+        trace,
+        &mut child,
+    );
     let signal: CopyCrashSignal =
         serde_json::from_slice(&fs::read(&operation_signal).expect("read operation signal"))
             .expect("parse operation signal");
@@ -754,12 +768,13 @@ async fn run_cancel_case(checkpoint: &str, should_cancel: bool, trace: TestTrace
         .expect("spawn paused Project Copy subprocess");
     let mut child = ChildGuard::new(child, trace);
     trace.stage("child-process-spawned");
-    wait_for_file(&operation_signal, None, checkpoint, trace);
+    wait_for_file(&operation_signal, None, checkpoint, trace, &mut child);
     wait_for_file(
         &pause_signal,
         Some(checkpoint.as_bytes()),
         checkpoint,
         trace,
+        &mut child,
     );
     let signal: CopyCrashSignal =
         serde_json::from_slice(&fs::read(&operation_signal).expect("read operation signal"))
@@ -814,16 +829,50 @@ async fn run_cancel_case(checkpoint: &str, should_cancel: bool, trace: TestTrace
     ));
 }
 
-fn wait_for_file(path: &Path, expected: Option<&[u8]>, checkpoint: &str, trace: TestTrace) {
+fn wait_for_file(
+    path: &Path,
+    expected: Option<&[u8]>,
+    checkpoint: &str,
+    trace: TestTrace,
+    child: &mut ChildGuard,
+) {
     trace.stage(&format!("checkpoint-wait-start checkpoint={checkpoint}"));
-    for _ in 0..10_000 {
+    let deadline = Instant::now() + CHECKPOINT_WAIT_TIMEOUT;
+    loop {
         if let Ok(bytes) = fs::read(path)
             && expected.is_none_or(|expected| bytes == expected)
         {
             trace.stage(&format!("checkpoint-wait-complete checkpoint={checkpoint}"));
             return;
         }
-        thread::sleep(Duration::from_millis(5));
+        match child
+            .child
+            .as_mut()
+            .expect("Project Copy subprocess")
+            .try_wait()
+        {
+            Ok(Some(status)) => {
+                trace.stage(&format!(
+                    "checkpoint-wait-child-exited checkpoint={checkpoint} status={status}"
+                ));
+                child.child = None;
+                panic!(
+                    "m7_project_copy_rpc subprocess exited before checkpoint {checkpoint}: {status}"
+                );
+            }
+            Err(error) => {
+                trace.stage(&format!(
+                    "checkpoint-wait-child-status-error checkpoint={checkpoint} error={error}"
+                ));
+                panic!(
+                    "m7_project_copy_rpc could not inspect subprocess at checkpoint {checkpoint}: {error}"
+                );
+            }
+            Ok(None) if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(10));
+            }
+            Ok(None) => break,
+        }
     }
     trace.stage(&format!("checkpoint-wait-timeout checkpoint={checkpoint}"));
     panic!("m7_project_copy_rpc timed out at stage: checkpoint-wait ({checkpoint})");
