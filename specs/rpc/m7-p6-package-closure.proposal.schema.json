@@ -2,8 +2,8 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://alcomd.cqmhv.com/schema/proposals/m7-p6-package-closure.json",
     "title": "ALCOMD M7 P6 Package Functional Closure proposal",
-    "x-alcomd-publication": "approved-contract-first",
-    "x-alcomd-production-wiring-created": false,
+    "x-alcomd-publication": "implemented-candidate",
+    "x-alcomd-production-wiring-created": true,
     "x-alcomd-config-schema": 2,
     "x-alcomd-state-schema": 12,
     "$defs": {

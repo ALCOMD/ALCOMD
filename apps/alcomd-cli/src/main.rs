@@ -822,6 +822,7 @@ async fn execute(
                         package_id,
                         version_range,
                         repository_id,
+                        source: None,
                         include_prerelease,
                     })
                     .await?;
@@ -872,6 +873,7 @@ async fn execute(
                         package_id,
                         version_range,
                         repository_id,
+                        source: None,
                         include_prerelease,
                     })
                     .await?;
@@ -899,6 +901,7 @@ async fn execute(
                         package_id,
                         version,
                         repository_id,
+                        source: None,
                     })
                     .await?;
                 Ok(apply_or_return_package_plan(

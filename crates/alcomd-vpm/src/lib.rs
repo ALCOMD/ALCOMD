@@ -16,6 +16,7 @@ mod template_create;
 mod template_derive;
 mod template_engine;
 mod template_object;
+mod user_package;
 
 pub use archive::{
     ArchiveEntry, ArchiveError, ArchiveErrorCode, ArchiveLimits, ArchivePreflight, extract_archive,
@@ -29,13 +30,14 @@ pub use package::{
     parse_resolver_ready_repository,
 };
 pub use plan::{
-    ProjectPackageSnapshot, build_remove_plan, build_resolution_plan, inspect_package_project,
-    materialize_vpm_manifest,
+    ProjectPackageSnapshot, build_bulk_plan, build_reinstall_plan, build_remove_plan,
+    build_resolution_plan, inspect_package_project, materialize_vpm_manifest,
 };
 pub use project_copy::ProjectCopyEngine;
 pub use resolver::{
-    PackageCandidate, PackageDependency, PackageDependencyEdge, PackageSource, Resolution,
-    ResolveError, ResolveRequest, ResolvedPackage, candidates_from_catalog, resolve_packages,
+    PackageCandidate, PackageDependency, PackageDependencyEdge, PackageSource,
+    PackageSourceAuthority, Resolution, ResolveError, ResolveRequest, ResolvedPackage,
+    candidates_from_catalog, resolve_packages,
 };
 pub use staging_package::{
     FrozenPackageMaterializer, PreparedFrozenPackages, StagingPackageEvidence,
@@ -52,6 +54,7 @@ pub use template_engine::TemplateEngine;
 pub use template_object::{
     TemplateObject, TemplateObjectError, TemplateObjectErrorCode, TemplateObjectStore,
 };
+pub use user_package::UserPackageEngine;
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -762,23 +765,28 @@ fn parse_repository(
     ) {
         let ready = ready
             .into_iter()
-            .map(|package| {
+            .filter_map(|package| {
                 let key = (
                     package.candidate.package_id.clone(),
                     package.candidate.version.to_string(),
                 );
+                let PackageSourceAuthority::Repository { artifact_url, .. } =
+                    package.candidate.source.authority
+                else {
+                    return None;
+                };
                 let metadata = ResolverPackageMetadata {
                     semantic_version: package.candidate.version.to_string(),
                     author_name: package.author_name,
                     author_email: package.author_email,
-                    artifact_url: package.candidate.source.artifact_url,
+                    artifact_url,
                     zip_sha256: digest_text(&package.candidate.source.archive_sha256),
                     unity_release: package.unity_release,
                     dependencies_json: package.dependencies_json,
                     manifest_fingerprint: package.candidate.source.manifest_fingerprint.to_vec(),
                     legacy_metadata_present: package.candidate.legacy_metadata_present,
                 };
-                (key, metadata)
+                Some((key, metadata))
             })
             .collect::<std::collections::BTreeMap<_, _>>();
         for row in &mut rows {
@@ -814,7 +822,7 @@ fn package_links(
     )
 }
 
-fn sanitized_package_link(value: Option<&Value>) -> Option<String> {
+pub(crate) fn sanitized_package_link(value: Option<&Value>) -> Option<String> {
     let text = value?.as_str()?;
     if text.is_empty() || text.len() > 2_048 {
         return None;
@@ -959,7 +967,7 @@ mod tests {
         );
         assert!(links.changelog.is_none());
 
-        let wrong_type = document.iter().copied().collect::<Vec<_>>();
+        let wrong_type = document.to_vec();
         let text = String::from_utf8(wrong_type).expect("utf8").replace(
             "\"documentationUrl\":\"https://example.invalid/docs?q=1#intro\"",
             "\"documentationUrl\":42",

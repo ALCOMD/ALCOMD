@@ -290,7 +290,10 @@ fn normalized_archive_name<R: Read>(
         .map_err(|_| archive_error(ArchiveErrorCode::UnsafePath))
 }
 
-fn normalize_path(raw: &str, limits: ArchiveLimits) -> Result<(PathBuf, String), ArchiveError> {
+pub(crate) fn normalize_path(
+    raw: &str,
+    limits: ArchiveLimits,
+) -> Result<(PathBuf, String), ArchiveError> {
     if raw.is_empty()
         || raw.starts_with('/')
         || raw.starts_with('\\')
@@ -351,7 +354,7 @@ fn validate_segment(segment: &str) -> Result<(), ArchiveError> {
     Ok(())
 }
 
-fn validate_collision(
+pub(crate) fn validate_collision(
     path: &Path,
     collision_key: &str,
     directory: bool,

@@ -6,8 +6,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use alcomd_application::{
     M5TemplateError, M5TemplateErrorCode, ProjectId, ProjectRecord, PublishedTemplate,
-    ResolverCatalog, Revision, StoredTemplateRecord, TemplateId, TemplatePlanDraft,
-    TemplatePlanKind, TemplatePlanRecord, TemplateSourceKind, UnityWriterStateKind,
+    ResolverCatalog, ResolverCatalogSource, Revision, StoredTemplateRecord, TemplateId,
+    TemplatePlanDraft, TemplatePlanKind, TemplatePlanRecord, TemplateSourceKind,
+    UnityWriterStateKind,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -222,20 +223,23 @@ fn derive_dependencies(
         let mut candidates = catalog
             .entries
             .iter()
-            .filter(|entry| entry.package_id == locked.package_id && entry.version == locked.value)
+            .filter(|entry| {
+                entry.package_id == locked.package_id
+                    && entry.version == locked.value
+                    && matches!(entry.source, ResolverCatalogSource::Repository { .. })
+            })
             .collect::<Vec<_>>();
         candidates.sort_by(|left, right| {
-            right
-                .repository_priority
-                .cmp(&left.repository_priority)
-                .then_with(|| left.repository_id.cmp(&right.repository_id))
+            repository_sort_key(right)
+                .cmp(&repository_sort_key(left))
+                .then_with(|| repository_id(left).cmp(repository_id(right)))
         });
         let Some(selected) = candidates.first() else {
             return Err(error(M5TemplateErrorCode::TemplatePlanStale));
         };
         if candidates.get(1).is_some_and(|other| {
-            other.repository_priority == selected.repository_priority
-                && other.manifest_fingerprint != selected.manifest_fingerprint
+            repository_sort_key(other) == repository_sort_key(selected)
+                && repository_fingerprint(other) != repository_fingerprint(selected)
         }) {
             return Err(error(M5TemplateErrorCode::TemplateConflict));
         }
@@ -249,6 +253,36 @@ fn derive_dependencies(
     }
     dependencies.sort_by(|left, right| left.package_id.cmp(&right.package_id));
     Ok(dependencies)
+}
+
+fn repository_sort_key(entry: &alcomd_application::ResolverCatalogEntry) -> u64 {
+    match &entry.source {
+        ResolverCatalogSource::Repository {
+            repository_priority,
+            ..
+        } => *repository_priority,
+        ResolverCatalogSource::UserPackage { .. } => 0,
+    }
+}
+
+fn repository_id(entry: &alcomd_application::ResolverCatalogEntry) -> &str {
+    match &entry.source {
+        ResolverCatalogSource::Repository { repository_id, .. } => repository_id,
+        ResolverCatalogSource::UserPackage { .. } => "",
+    }
+}
+
+fn repository_fingerprint(entry: &alcomd_application::ResolverCatalogEntry) -> [u8; 32] {
+    match &entry.source {
+        ResolverCatalogSource::Repository {
+            manifest_fingerprint,
+            ..
+        }
+        | ResolverCatalogSource::UserPackage {
+            manifest_fingerprint,
+            ..
+        } => *manifest_fingerprint,
+    }
 }
 
 fn scan_source_tree(

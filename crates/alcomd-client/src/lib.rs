@@ -121,7 +121,9 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_REPOSITORIES_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_REPOSITORIES_REGISTRY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V2.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_APPLY_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_PACKAGES_USER_PACKAGES_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_UNITY_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_UNITY_MANAGE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_UNITY_LAUNCH_V1.to_owned(),
@@ -396,12 +398,77 @@ impl AlcomdClient {
             .await
     }
 
+    pub async fn package_plan_reinstall(
+        &mut self,
+        params: alcomd_protocol::PackagePlanReinstallParams,
+    ) -> Result<alcomd_protocol::PackagePlan, ClientError> {
+        self.call(alcomd_protocol::METHOD_PACKAGES_PLAN_REINSTALL, params)
+            .await
+    }
+
+    pub async fn package_plan_bulk(
+        &mut self,
+        params: alcomd_protocol::PackagePlanBulkParams,
+    ) -> Result<alcomd_protocol::PackagePlan, ClientError> {
+        self.call(alcomd_protocol::METHOD_PACKAGES_PLAN_BULK, params)
+            .await
+    }
+
     pub async fn package_apply_plan(
         &mut self,
         params: alcomd_protocol::PackageApplyPlanParams,
     ) -> Result<alcomd_protocol::PackageApplyPlanResult, ClientError> {
         self.call(alcomd_protocol::METHOD_PACKAGES_APPLY_PLAN, params)
             .await
+    }
+
+    pub async fn user_packages_list(
+        &mut self,
+        params: alcomd_protocol::UserPackagesListParams,
+    ) -> Result<alcomd_protocol::UserPackagesListResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_PACKAGES_USER_PACKAGES_LIST, params)
+            .await
+    }
+
+    pub async fn user_package_get(
+        &mut self,
+        params: alcomd_protocol::UserPackageGetParams,
+    ) -> Result<alcomd_protocol::UserPackageResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_PACKAGES_USER_PACKAGES_GET, params)
+            .await
+    }
+
+    pub async fn user_package_enroll(
+        &mut self,
+        params: alcomd_protocol::UserPackageEnrollParams,
+    ) -> Result<alcomd_protocol::UserPackageWriteResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_PACKAGES_USER_PACKAGES_ENROLL,
+            params,
+        )
+        .await
+    }
+
+    pub async fn user_package_refresh(
+        &mut self,
+        params: alcomd_protocol::UserPackageMutationParams,
+    ) -> Result<alcomd_protocol::UserPackageWriteResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_PACKAGES_USER_PACKAGES_REFRESH,
+            params,
+        )
+        .await
+    }
+
+    pub async fn user_package_remove(
+        &mut self,
+        params: alcomd_protocol::UserPackageMutationParams,
+    ) -> Result<alcomd_protocol::UserPackageRemoveResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_PACKAGES_USER_PACKAGES_REMOVE,
+            params,
+        )
+        .await
     }
 
     pub async fn unity_installations_list(

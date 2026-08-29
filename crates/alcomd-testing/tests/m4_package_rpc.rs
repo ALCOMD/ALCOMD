@@ -74,7 +74,7 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
         .expect("repository ID");
     client
         .repository_refresh(
-            repository_id,
+            repository_id.clone(),
             registered_repository.repository.revision.expect("revision"),
             "m4-repository-refresh".to_owned(),
         )
@@ -88,6 +88,7 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
             package_id: "com.example.fixture".to_owned(),
             version_range: Some("1.0.0".to_owned()),
             repository_id: None,
+            source: None,
             include_prerelease: false,
         })
         .await
@@ -118,18 +119,64 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
         b"{\"dependencies\":{}}\n"
     );
 
-    let remove = client
-        .package_plan_remove(alcomd_protocol::PackagePlanRemoveParams {
-            project_id,
+    let manifest_before_reinstall =
+        fs::read(project.join("Packages/vpm-manifest.json")).expect("manifest before reinstall");
+    let reinstall = client
+        .package_plan_reinstall(alcomd_protocol::PackagePlanReinstallParams {
+            project_id: project_id.clone(),
             expected_revision: 2,
-            package_id: "com.example.fixture".to_owned(),
+            selection: alcomd_protocol::PackageReinstallSelection::Packages {
+                package_ids: vec!["com.example.fixture".to_owned()],
+            },
+            sources: vec![alcomd_protocol::PackageReinstallSource {
+                package_id: "com.example.fixture".to_owned(),
+                source: alcomd_protocol::PackageSourceSelector::Repository { repository_id },
+            }],
         })
         .await
-        .expect("plan remove");
+        .expect("plan exact reinstall");
+    assert_eq!(reinstall.change_set.format_version, 1);
+    assert_eq!(reinstall.change_set.mutations.len(), 1);
+    assert_eq!(
+        reinstall.change_set.mutations[0].kind,
+        alcomd_protocol::PackageMutationKind::Replace
+    );
+    assert_eq!(
+        reinstall.change_set.mutations[0].from_version,
+        reinstall.change_set.mutations[0].to_version
+    );
+    let accepted = client
+        .package_apply_plan(alcomd_protocol::PackageApplyPlanParams {
+            plan_id: reinstall.plan_id,
+            expected_revision: 2,
+            idempotency_key: "p6-apply-reinstall".to_owned(),
+        })
+        .await
+        .expect("apply exact reinstall");
+    let completed = wait_for_terminal(&mut client, &accepted.operation_id, &project).await;
+    assert_eq!(completed.state, OperationState::Succeeded);
+    assert_eq!(
+        fs::read(project.join("Packages/vpm-manifest.json")).expect("manifest after reinstall"),
+        manifest_before_reinstall,
+        "reinstall must preserve exact manifest bytes"
+    );
+
+    let remove = client
+        .package_plan_bulk(alcomd_protocol::PackagePlanBulkParams {
+            project_id,
+            expected_revision: 3,
+            intents: vec![alcomd_protocol::PackageBulkIntent::Remove {
+                package_id: "com.example.fixture".to_owned(),
+            }],
+        })
+        .await
+        .expect("plan atomic bulk remove");
+    assert_eq!(remove.action, alcomd_protocol::PackagePlanAction::Bulk);
+    assert_eq!(remove.change_set.mutations.len(), 1);
     let accepted = client
         .package_apply_plan(alcomd_protocol::PackageApplyPlanParams {
             plan_id: remove.plan_id,
-            expected_revision: 2,
+            expected_revision: 3,
             idempotency_key: "m4-apply-remove".to_owned(),
         })
         .await
@@ -142,6 +189,222 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
     );
     assert!(!project.join("Packages/com.example.fixture").exists());
     assert_manifest_version(&project, None);
+
+    shutdown.store(true, Ordering::Release);
+    let result = tokio::time::timeout(Duration::from_secs(3), daemon)
+        .await
+        .expect("daemon stop timeout")
+        .expect("join daemon");
+    assert!(result.is_ok());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn user_package_plan_uses_owned_cache_after_source_mutation_and_registry_removal() {
+    let _serial = RPC_TEST_LOCK.lock().await;
+    let fixture = TestDirectory::new();
+    let runtime = fixture.path().join("runtime-user-package");
+    let data = fixture.path().join("data-user-package");
+    let project = fixture.path().join("UserPackageProject");
+    let source = fixture.path().join("LoosePackage");
+    fs::create_dir(&runtime).expect("create runtime");
+    fs::create_dir(&data).expect("create data");
+    create_project(&project);
+    fs::create_dir_all(source.join("Runtime")).expect("create loose package");
+    fs::write(
+        source.join("package.json"),
+        br#"{"name":"com.example.local","version":"1.0.0","displayName":"Local fixture","vpmDependencies":{}}"#,
+    )
+    .expect("write loose manifest");
+    fs::write(source.join("Runtime/payload.txt"), b"original").expect("write loose payload");
+
+    let (ipc, config) = isolated_ipc(runtime);
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let server_shutdown = Arc::clone(&shutdown);
+    let daemon = tokio::spawn(async move {
+        alcomd_daemon::serve_with_data_until(
+            ipc,
+            DataConfig::isolated(data),
+            wait_for_shutdown(server_shutdown),
+        )
+        .await
+    });
+    let mut client = connect_with_retry(config).await;
+    let project_result = client
+        .project_register(
+            project.to_string_lossy().into_owned(),
+            "p6-user-package-project".to_owned(),
+        )
+        .await
+        .expect("register project");
+    let project_id = project_result.project.project_id.expect("project ID");
+    let enrolled = client
+        .user_package_enroll(alcomd_protocol::UserPackageEnrollParams {
+            source_path: source.to_string_lossy().into_owned(),
+            idempotency_key: "p6-user-package-enroll".to_owned(),
+        })
+        .await
+        .expect("enroll loose package");
+    assert_eq!(enrolled.user_package.revision, 1);
+    let user_package_id = enrolled.user_package.user_package_id.clone();
+    assert_eq!(
+        client
+            .user_packages_list(alcomd_protocol::UserPackagesListParams {
+                cursor: None,
+                limit: None,
+            })
+            .await
+            .expect("list User Packages")
+            .user_packages
+            .len(),
+        1
+    );
+
+    let plan = client
+        .package_plan_install(alcomd_protocol::PackagePlanInstallParams {
+            project_id,
+            expected_revision: 1,
+            package_id: "com.example.local".to_owned(),
+            version_range: Some("=1.0.0".to_owned()),
+            repository_id: None,
+            source: Some(alcomd_protocol::PackageSourceSelector::UserPackage {
+                user_package_id: user_package_id.clone(),
+            }),
+            include_prerelease: false,
+        })
+        .await
+        .expect("plan User Package install");
+    assert_eq!(plan.change_set.format_version, 2);
+    assert!(matches!(
+        plan.change_set.mutations[0].source.as_ref(),
+        Some(alcomd_protocol::PackageSourcePin::UserPackage(_))
+    ));
+
+    fs::write(source.join("Runtime/payload.txt"), b"mutated after plan")
+        .expect("mutate loose source");
+    client
+        .user_package_remove(alcomd_protocol::UserPackageMutationParams {
+            user_package_id,
+            expected_revision: 1,
+            idempotency_key: "p6-user-package-remove".to_owned(),
+        })
+        .await
+        .expect("remove enrollment only");
+    assert!(
+        source.is_dir(),
+        "remove must leave the user source directory"
+    );
+
+    let accepted = client
+        .package_apply_plan(alcomd_protocol::PackageApplyPlanParams {
+            plan_id: plan.plan_id,
+            expected_revision: 1,
+            idempotency_key: "p6-user-package-apply".to_owned(),
+        })
+        .await
+        .expect("apply frozen User Package plan");
+    let completed = wait_for_terminal(&mut client, &accepted.operation_id, &project).await;
+    assert_eq!(completed.state, OperationState::Succeeded);
+    assert_eq!(
+        fs::read(project.join("Packages/com.example.local/Runtime/payload.txt"))
+            .expect("installed owned snapshot"),
+        b"original"
+    );
+
+    shutdown.store(true, Ordering::Release);
+    let result = tokio::time::timeout(Duration::from_secs(3), daemon)
+        .await
+        .expect("daemon stop timeout")
+        .expect("join daemon");
+    assert!(result.is_ok());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn user_package_plan_does_not_fall_back_to_mutable_source_when_cache_is_missing() {
+    let _serial = RPC_TEST_LOCK.lock().await;
+    let fixture = TestDirectory::new();
+    let runtime = fixture.path().join("runtime-user-package-missing-cache");
+    let data = fixture.path().join("data-user-package-missing-cache");
+    let project = fixture.path().join("UserPackageMissingCacheProject");
+    let source = fixture.path().join("LoosePackageMissingCache");
+    fs::create_dir(&runtime).expect("create runtime");
+    fs::create_dir(&data).expect("create data");
+    create_project(&project);
+    fs::create_dir_all(source.join("Runtime")).expect("create loose package");
+    fs::write(
+        source.join("package.json"),
+        br#"{"name":"com.example.local-missing","version":"1.0.0","vpmDependencies":{}}"#,
+    )
+    .expect("write loose manifest");
+    fs::write(source.join("Runtime/payload.txt"), b"original").expect("write loose payload");
+
+    let (ipc, config) = isolated_ipc(runtime);
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let server_shutdown = Arc::clone(&shutdown);
+    let daemon_data = data.clone();
+    let daemon = tokio::spawn(async move {
+        alcomd_daemon::serve_with_data_until(
+            ipc,
+            DataConfig::isolated(daemon_data),
+            wait_for_shutdown(server_shutdown),
+        )
+        .await
+    });
+    let mut client = connect_with_retry(config).await;
+    let project_id = client
+        .project_register(
+            project.to_string_lossy().into_owned(),
+            "p6-user-package-missing-cache-project".to_owned(),
+        )
+        .await
+        .expect("register project")
+        .project
+        .project_id
+        .expect("project ID");
+    let enrolled = client
+        .user_package_enroll(alcomd_protocol::UserPackageEnrollParams {
+            source_path: source.to_string_lossy().into_owned(),
+            idempotency_key: "p6-user-package-missing-cache-enroll".to_owned(),
+        })
+        .await
+        .expect("enroll loose package")
+        .user_package;
+    let plan = client
+        .package_plan_install(alcomd_protocol::PackagePlanInstallParams {
+            project_id,
+            expected_revision: 1,
+            package_id: "com.example.local-missing".to_owned(),
+            version_range: Some("=1.0.0".to_owned()),
+            repository_id: None,
+            source: Some(alcomd_protocol::PackageSourceSelector::UserPackage {
+                user_package_id: enrolled.user_package_id,
+            }),
+            include_prerelease: false,
+        })
+        .await
+        .expect("plan User Package install");
+
+    fs::write(source.join("Runtime/payload.txt"), b"mutated after plan")
+        .expect("mutate loose source");
+    let digest = &enrolled.archive_sha256;
+    fs::remove_file(
+        data.join("package-cache/sha256")
+            .join(&digest[..2])
+            .join(format!("{digest}.zip")),
+    )
+    .expect("remove owned cache object");
+
+    let accepted = client
+        .package_apply_plan(alcomd_protocol::PackageApplyPlanParams {
+            plan_id: plan.plan_id,
+            expected_revision: 1,
+            idempotency_key: "p6-user-package-missing-cache-apply".to_owned(),
+        })
+        .await
+        .expect("accept frozen plan before cache read");
+    let completed = wait_for_terminal(&mut client, &accepted.operation_id, &project).await;
+    assert_eq!(completed.state, OperationState::Failed);
+    assert_eq!(completed.error_code.as_deref(), Some("offline_cache_miss"));
+    assert!(!project.join("Packages/com.example.local-missing").exists());
 
     shutdown.store(true, Ordering::Release);
     let result = tokio::time::timeout(Duration::from_secs(3), daemon)
@@ -244,6 +507,7 @@ fn subprocess_runs_package_apply_until_killed() {
             package_id: "com.example.fixture".to_owned(),
             version_range: Some("1.0.0".to_owned()),
             repository_id: None,
+            source: None,
             include_prerelease: false,
         };
         let plan = if checkpoint.is_destructive() {

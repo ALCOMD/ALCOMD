@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     AccessContext, IdempotencyKey, M3RegistryStore, OperationId, PlanId, PrincipalId, ProjectId,
     ProjectObservation, ProjectRecord, ResourceKey, ResourceLockCoordinator, Revision, StateStore,
-    StoreErrorKind,
+    StoreErrorKind, UserPackageId,
 };
 
 pub const MAX_PACKAGE_MUTATIONS: usize = 1_024;
@@ -20,6 +20,8 @@ pub enum PlanAction {
     Upgrade,
     Downgrade,
     Resolve,
+    Reinstall,
+    Bulk,
 }
 
 impl PlanAction {
@@ -31,6 +33,8 @@ impl PlanAction {
             Self::Upgrade => "upgrade",
             Self::Downgrade => "downgrade",
             Self::Resolve => "resolve",
+            Self::Reinstall => "reinstall",
+            Self::Bulk => "bulk",
         }
     }
 }
@@ -44,7 +48,7 @@ pub enum PlanState {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PackageSourcePin {
+pub struct RepositoryPackageSourcePin {
     pub repository_id: String,
     pub repository_revision: u64,
     pub source_identity: String,
@@ -55,6 +59,74 @@ pub struct PackageSourcePin {
     pub artifact_url: String,
     #[serde(with = "sha256_hex")]
     pub archive_sha256: [u8; 32],
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserPackageSourcePin {
+    pub user_package_id: UserPackageId,
+    pub source_revision: u64,
+    pub source_identity: String,
+    #[serde(with = "sha256_hex")]
+    pub manifest_fingerprint: [u8; 32],
+    pub package_id: String,
+    pub version: String,
+    #[serde(with = "sha256_hex")]
+    pub archive_sha256: [u8; 32],
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PackageSourcePin {
+    Repository(RepositoryPackageSourcePin),
+    UserPackage(UserPackageSourcePin),
+}
+
+impl PackageSourcePin {
+    #[must_use]
+    pub fn package_id(&self) -> &str {
+        match self {
+            Self::Repository(value) => &value.package_id,
+            Self::UserPackage(value) => &value.package_id,
+        }
+    }
+
+    #[must_use]
+    pub fn version(&self) -> &str {
+        match self {
+            Self::Repository(value) => &value.version,
+            Self::UserPackage(value) => &value.version,
+        }
+    }
+
+    #[must_use]
+    pub const fn archive_sha256(&self) -> [u8; 32] {
+        match self {
+            Self::Repository(value) => value.archive_sha256,
+            Self::UserPackage(value) => value.archive_sha256,
+        }
+    }
+
+    #[must_use]
+    pub fn artifact_url(&self) -> Option<&str> {
+        match self {
+            Self::Repository(value) => Some(&value.artifact_url),
+            Self::UserPackage(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn is_user_package(&self) -> bool {
+        matches!(self, Self::UserPackage(_))
+    }
+
+    #[must_use]
+    pub fn deterministic_source_key(&self) -> String {
+        match self {
+            Self::Repository(value) => format!("repository:{}", value.repository_id),
+            Self::UserPackage(value) => format!("user-package:{}", value.user_package_id),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -96,9 +168,23 @@ pub struct PackageChangeSet {
 
 impl PackageChangeSet {
     pub fn validate_bounds(&self) -> Result<(), M4Error> {
-        if self.format_version != 1
+        if !matches!(self.format_version, 1 | 2)
             || self.mutations.len() > MAX_PACKAGE_MUTATIONS
             || self.dependency_edges.len() > MAX_DEPENDENCY_EDGES
+            || (self.format_version == 1
+                && self.mutations.iter().any(|mutation| {
+                    mutation
+                        .source
+                        .as_ref()
+                        .is_some_and(PackageSourcePin::is_user_package)
+                }))
+            || (self.format_version == 2
+                && !self.mutations.iter().any(|mutation| {
+                    mutation
+                        .source
+                        .as_ref()
+                        .is_some_and(PackageSourcePin::is_user_package)
+                }))
         {
             return Err(M4Error::new(M4ErrorCode::PlanTooLarge));
         }
@@ -134,22 +220,36 @@ pub struct PackagePlanRecord {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ResolverCatalogSource {
+    Repository {
+        repository_id: String,
+        repository_revision: u64,
+        repository_priority: u64,
+        source_identity: String,
+        artifact_url: String,
+        zip_sha256: String,
+        manifest_fingerprint: [u8; 32],
+    },
+    UserPackage {
+        user_package_id: UserPackageId,
+        source_revision: u64,
+        source_identity: String,
+        archive_sha256: [u8; 32],
+        manifest_fingerprint: [u8; 32],
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolverCatalogEntry {
-    pub repository_id: String,
-    pub repository_revision: u64,
-    pub repository_priority: u64,
-    pub source_identity: String,
+    pub source: ResolverCatalogSource,
     pub package_id: String,
     pub version: String,
     pub yanked: bool,
     pub unity: Option<String>,
     pub author_name: String,
     pub author_email: String,
-    pub artifact_url: String,
-    pub zip_sha256: String,
     pub unity_release: Option<String>,
     pub dependencies_json: String,
-    pub manifest_fingerprint: [u8; 32],
     pub legacy_metadata_present: bool,
 }
 
@@ -168,6 +268,65 @@ pub struct PackagePlanRequest {
     pub version_range: Option<String>,
     pub repository_id: Option<String>,
     pub include_prerelease: bool,
+    pub plan_version: PackagePlanVersion,
+    pub source_selector: Option<PackageSourceSelector>,
+    pub reinstall_selection: Option<ReinstallSelection>,
+    pub reinstall_sources: Vec<(String, PackageSourceSelector)>,
+    pub bulk_intents: Vec<PackageBulkIntent>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PackagePlanVersion {
+    V1,
+    V2,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PackageSourceSelector {
+    Repository { repository_id: String },
+    UserPackage { user_package_id: UserPackageId },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ReinstallSelection {
+    Packages(Vec<String>),
+    All,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PackageBulkIntent {
+    Install {
+        package_id: String,
+        version_range: Option<String>,
+        source: Option<PackageSourceSelector>,
+        include_prerelease: bool,
+    },
+    Upgrade {
+        package_id: String,
+        version_range: Option<String>,
+        source: Option<PackageSourceSelector>,
+        include_prerelease: bool,
+    },
+    Remove {
+        package_id: String,
+    },
+    Reinstall {
+        package_id: String,
+        source: Option<PackageSourceSelector>,
+    },
+}
+
+impl PackageBulkIntent {
+    #[must_use]
+    pub fn package_id(&self) -> &str {
+        match self {
+            Self::Install { package_id, .. }
+            | Self::Upgrade { package_id, .. }
+            | Self::Remove { package_id }
+            | Self::Reinstall { package_id, .. } => package_id,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -286,6 +445,8 @@ pub enum M4ErrorCode {
     PackageDependencyConflict,
     PackageUnityIncompatible,
     PackageSourceAmbiguous,
+    PackageNotInstalled,
+    PackageIntentConflict,
     PackageManifestInvalid,
     PackageHashRequired,
     PackageLegacyCleanupRequired,
@@ -327,6 +488,8 @@ impl M4ErrorCode {
             Self::PackageDependencyConflict => "package_dependency_conflict",
             Self::PackageUnityIncompatible => "package_unity_incompatible",
             Self::PackageSourceAmbiguous => "package_source_ambiguous",
+            Self::PackageNotInstalled => "package_not_installed",
+            Self::PackageIntentConflict => "package_intent_conflict",
             Self::PackageManifestInvalid => "package_manifest_invalid",
             Self::PackageHashRequired => "package_hash_required",
             Self::PackageLegacyCleanupRequired => "package_legacy_cleanup_required",
@@ -415,6 +578,7 @@ pub trait M4Store: Clone + Send + Sync + 'static {
     fn resolver_catalog(
         &self,
         owner: PrincipalId,
+        include_user_packages: bool,
     ) -> impl Future<Output = Result<ResolverCatalog, M4Error>> + Send;
 
     fn create_package_plan(
@@ -560,7 +724,10 @@ where
         }
         let catalog = self
             .store
-            .resolver_catalog(access.principal().clone())
+            .resolver_catalog(
+                access.principal().clone(),
+                request.plan_version == PackagePlanVersion::V2,
+            )
             .await?;
         if request.action != PlanAction::Remove && !catalog.complete {
             return Err(M4Error::new(M4ErrorCode::RepositoryRefreshRequired));
@@ -612,7 +779,10 @@ where
             .map_err(map_m3_error)?;
         let catalog = self
             .store
-            .resolver_catalog(access.principal().clone())
+            .resolver_catalog(
+                access.principal().clone(),
+                plan.change_set.format_version == 2,
+            )
             .await?;
         self.adapter.revalidate_plan(project, catalog, plan).await?;
         let outcome = self

@@ -64,16 +64,19 @@ impl FrozenPackageMaterializer {
         let required = validate_frozen_sources(&change_set, &source_set)?;
         let mut objects = BTreeMap::new();
         for source in required {
-            let guard = locks
-                .acquire(vec![ResourceKey::PackageCache(source.archive_sha256)])
-                .await;
+            let digest = source.archive_sha256();
+            let guard = locks.acquire(vec![ResourceKey::PackageCache(digest)]).await;
             let object = self
                 .cache
-                .get(source.archive_sha256, &source.artifact_url, false)
+                .get(
+                    digest,
+                    source.artifact_url().unwrap_or(""),
+                    source.is_user_package(),
+                )
                 .await
                 .map_err(|_| M4Error::new(M4ErrorCode::PackageCacheCorrupt))?;
             drop(guard);
-            objects.insert(source.package_id.clone(), object);
+            objects.insert(source.package_id().to_owned(), object);
         }
         Ok(PreparedFrozenPackages {
             change_set,
@@ -112,15 +115,15 @@ fn validate_frozen_sources<'a>(
     }
     let mut seen = BTreeSet::new();
     for source in source_set {
-        if !seen.insert(source.package_id.as_str()) || !expected.contains(&source) {
+        if !seen.insert(source.package_id()) || !expected.contains(&source) {
             return Err(M4Error::new(M4ErrorCode::PlanStale));
         }
     }
     let mut ordered = source_set.iter().collect::<Vec<_>>();
     ordered.sort_by(|left, right| {
-        left.archive_sha256
-            .cmp(&right.archive_sha256)
-            .then_with(|| left.package_id.cmp(&right.package_id))
+        left.archive_sha256()
+            .cmp(&right.archive_sha256())
+            .then_with(|| left.package_id().cmp(right.package_id()))
     });
     Ok(ordered)
 }
@@ -357,7 +360,7 @@ mod tests {
     use std::io::Write;
     use std::sync::atomic::{AtomicU64, Ordering};
 
-    use alcomd_application::{PackageDependencyEdge, PackageMutation};
+    use alcomd_application::{PackageDependencyEdge, PackageMutation, RepositoryPackageSourcePin};
     use zip::CompressionMethod;
     use zip::write::SimpleFileOptions;
 
@@ -433,7 +436,7 @@ mod tests {
 
         let archive = package_archive(payload);
         let archive_sha256: [u8; 32] = Sha256::digest(&archive).into();
-        let source = PackageSourcePin {
+        let source = PackageSourcePin::Repository(RepositoryPackageSourcePin {
             repository_id: "repository-fixture".to_owned(),
             repository_revision: 7,
             source_identity: "fixture-source".to_owned(),
@@ -442,20 +445,20 @@ mod tests {
             version: "1.2.3".to_owned(),
             artifact_url: "https://example.invalid/com.example.fixture.zip".to_owned(),
             archive_sha256,
-        };
+        });
         let mut change_set = PackageChangeSet {
             format_version: 1,
             mutations: vec![PackageMutation {
                 kind: PackageMutationKind::Install,
-                package_id: source.package_id.clone(),
+                package_id: source.package_id().to_owned(),
                 from_version: None,
-                to_version: Some(source.version.clone()),
+                to_version: Some(source.version().to_owned()),
                 source: Some(source.clone()),
             }],
             dependency_edges: vec![PackageDependencyEdge {
                 from_package_id: "project".to_owned(),
-                to_package_id: source.package_id.clone(),
-                range: source.version.clone(),
+                to_package_id: source.package_id().to_owned(),
+                range: source.version().to_owned(),
                 direct: true,
             }],
             vpm_manifest_sha256: [0; 32],
@@ -559,7 +562,10 @@ mod tests {
     async fn source_pin_or_initial_manifest_mismatch_fails_closed() {
         let fixture = fixture("stale");
         let mut mismatched = fixture.source.clone();
-        mismatched.repository_revision += 1;
+        let PackageSourcePin::Repository(value) = &mut mismatched else {
+            panic!("repository source");
+        };
+        value.repository_revision += 1;
         assert_eq!(
             fixture
                 .materializer
@@ -611,7 +617,7 @@ mod tests {
         std::fs::write(
             fixture
                 .materializer
-                .object_path(&fixture.source.archive_sha256),
+                .object_path(&fixture.source.archive_sha256()),
             b"corrupt",
         )
         .expect("corrupt object");
@@ -641,7 +647,9 @@ mod tests {
         let second = fixture_with_payload("lock-second", b"other fixture");
         let locks = Arc::new(ResourceLockCoordinator::default());
         let held = locks
-            .acquire(vec![ResourceKey::PackageCache(first.source.archive_sha256)])
+            .acquire(vec![ResourceKey::PackageCache(
+                first.source.archive_sha256(),
+            )])
             .await;
         let waiting = {
             let materializer = first.materializer.clone();

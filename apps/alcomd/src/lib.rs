@@ -12,7 +12,7 @@ use alcomd_application::{
     M5TemplateApplication as TemplateService, M5UnityApplication as M5Application, M6Application,
     M7Application, M7CopyApplication as ProjectCopyService, M7OfficialApplication, OperationCursor,
     OperationId, OperationRecord, OperationState as DomainState, ResourceLockCoordinator, Revision,
-    StoreErrorKind,
+    StoreErrorKind, UserPackageApplication as UserPackageService,
 };
 use alcomd_platform::{BindError, DaemonInstance, DataConfig, IpcConfig, IpcListener, IpcStream};
 use alcomd_protocol::{
@@ -40,6 +40,7 @@ mod m6_runtime;
 mod m7_copy_rpc;
 mod m7_official_rpc;
 mod m7_rpc;
+mod m7_user_packages_rpc;
 
 static TEST_DATA_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
@@ -66,6 +67,7 @@ type M7ExtensionApplication = M7Application<
 type M7OfficialGuiApplication = M7OfficialApplication<StateStoreHandle>;
 type ProjectCopyApplication =
     ProjectCopyService<StateStoreHandle, alcomd_vpm::ProjectCopyEngine, M5UnityApplication>;
+type UserPackageApplication = UserPackageService<StateStoreHandle, alcomd_vpm::UserPackageEngine>;
 
 struct Applications {
     m2: M2Application,
@@ -78,6 +80,7 @@ struct Applications {
     m7: M7ExtensionApplication,
     official_gui: M7OfficialGuiApplication,
     project_copy: ProjectCopyApplication,
+    user_packages: UserPackageApplication,
 }
 
 /// Runs the daemon with an ephemeral isolated data directory.
@@ -141,7 +144,7 @@ where
     let unity = M5Application::new(store.clone(), m5_platform::PlatformUnityAdapter);
     let template_engine = alcomd_vpm::TemplateEngine::with_package_cache(
         data_root.join("template-store"),
-        cache_root,
+        cache_root.clone(),
     )
     .map_err(|_| BindError::Io(io::Error::other("Template engine initialization failed")))?;
     let templates = TemplateService::with_locks(
@@ -182,6 +185,14 @@ where
         .recover()
         .await
         .map_err(|_| BindError::Io(io::Error::other("Project Copy recovery failed")))?;
+    let user_packages = UserPackageService::new(
+        store.clone(),
+        alcomd_vpm::UserPackageEngine::new(
+            cache_root.clone(),
+            data_root.join("user-package-staging"),
+        )
+        .map_err(|_| BindError::Io(io::Error::other("User Package initialization failed")))?,
+    );
     let extension_engine =
         alcomd_extensions::ExtensionEngine::new(store.clone(), data_root.join("extensions"))
             .map_err(|_| {
@@ -218,6 +229,7 @@ where
         m7,
         official_gui,
         project_copy,
+        user_packages,
     });
     let listener = instance.bind()?;
     run_listener(listener, applications, shutdown)
@@ -404,7 +416,9 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         alcomd_protocol::CAPABILITY_REPOSITORIES_READ_V1,
         alcomd_protocol::CAPABILITY_REPOSITORIES_REGISTRY_V1,
         alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V1,
+        alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V2,
         alcomd_protocol::CAPABILITY_PACKAGES_APPLY_V1,
+        alcomd_protocol::CAPABILITY_PACKAGES_USER_PACKAGES_V1,
         alcomd_protocol::CAPABILITY_UNITY_READ_V1,
         alcomd_protocol::CAPABILITY_UNITY_MANAGE_V1,
         alcomd_protocol::CAPABILITY_UNITY_LAUNCH_V1,
@@ -631,6 +645,10 @@ async fn dispatch_m2(
         ) =>
         {
             m7_official_rpc::dispatch(request, &applications.official_gui, access).await
+        }
+        _ if request.method.starts_with("packages.userPackages.") => {
+            m7_user_packages_rpc::dispatch(request, state, &applications.user_packages, access)
+                .await
         }
         _ if request.method.starts_with("packages.") => {
             m4_rpc::dispatch(request, state, &applications.m4, access).await

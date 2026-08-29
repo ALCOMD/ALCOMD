@@ -11,6 +11,7 @@ use std::sync::{Arc, Weak};
 pub use alcomd_domain::{
     BackupId, IdempotencyKey, OperationId, OperationState, Permission, PlanId, PrincipalId,
     ProjectId, RepositoryId, ResourceKey, Revision, TemplateId, UnityInstallationId, UnityLaunchId,
+    UserPackageId,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, OwnedMutexGuard};
@@ -23,6 +24,7 @@ mod m6;
 mod m7;
 mod m7_copy;
 mod m7_official;
+mod m7_user_packages;
 
 pub use m4::*;
 pub use m5::*;
@@ -32,6 +34,7 @@ pub use m6::*;
 pub use m7::*;
 pub use m7_copy::*;
 pub use m7_official::*;
+pub use m7_user_packages::*;
 
 /// Minimal truthful daemon status for the M1 read-only vertical slice.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -917,6 +917,17 @@ mod tests {
         assert_eq!(parse_settings(unsorted), Err(OfficialGuiError::Corrupt));
     }
 
+    #[test]
+    fn hidden_repository_ids_reject_more_than_256_entries() {
+        let values = (0..257)
+            .map(|value| format!("00000000-0000-0000-0000-{value:012x}"))
+            .collect();
+        assert_eq!(
+            validate_hidden_repository_ids(values),
+            Err(OfficialGuiError::InvalidInput)
+        );
+    }
+
     #[derive(Clone)]
     struct NoStore;
     impl OfficialGuiStore for NoStore {

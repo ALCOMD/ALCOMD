@@ -88,7 +88,14 @@ pub const METHOD_PACKAGES_PLAN_REMOVE: &str = "packages.planRemove";
 pub const METHOD_PACKAGES_PLAN_UPGRADE: &str = "packages.planUpgrade";
 pub const METHOD_PACKAGES_PLAN_DOWNGRADE: &str = "packages.planDowngrade";
 pub const METHOD_PACKAGES_PLAN_RESOLVE: &str = "packages.planResolve";
+pub const METHOD_PACKAGES_PLAN_REINSTALL: &str = "packages.planReinstall";
+pub const METHOD_PACKAGES_PLAN_BULK: &str = "packages.planBulk";
 pub const METHOD_PACKAGES_APPLY_PLAN: &str = "packages.applyPlan";
+pub const METHOD_PACKAGES_USER_PACKAGES_LIST: &str = "packages.userPackages.list";
+pub const METHOD_PACKAGES_USER_PACKAGES_GET: &str = "packages.userPackages.get";
+pub const METHOD_PACKAGES_USER_PACKAGES_ENROLL: &str = "packages.userPackages.enroll";
+pub const METHOD_PACKAGES_USER_PACKAGES_REFRESH: &str = "packages.userPackages.refresh";
+pub const METHOD_PACKAGES_USER_PACKAGES_REMOVE: &str = "packages.userPackages.remove";
 pub const METHOD_UNITY_INSTALLATIONS_LIST: &str = "unity.installations.list";
 pub const METHOD_UNITY_INSTALLATIONS_GET: &str = "unity.installations.get";
 pub const METHOD_UNITY_INSTALLATIONS_REGISTER: &str = "unity.installations.register";
@@ -153,7 +160,9 @@ pub const CAPABILITY_PROJECTS_COPY_V1: &str = "projects.copy.v1";
 pub const CAPABILITY_REPOSITORIES_READ_V1: &str = "repositories.read.v1";
 pub const CAPABILITY_REPOSITORIES_REGISTRY_V1: &str = "repositories.registry.v1";
 pub const CAPABILITY_PACKAGES_PLAN_V1: &str = "packages.plan.v1";
+pub const CAPABILITY_PACKAGES_PLAN_V2: &str = "packages.plan.v2";
 pub const CAPABILITY_PACKAGES_APPLY_V1: &str = "packages.apply.v1";
+pub const CAPABILITY_PACKAGES_USER_PACKAGES_V1: &str = "packages.user-packages.v1";
 pub const CAPABILITY_UNITY_READ_V1: &str = "unity.read.v1";
 pub const CAPABILITY_UNITY_MANAGE_V1: &str = "unity.manage.v1";
 pub const CAPABILITY_UNITY_LAUNCH_V1: &str = "unity.launch.v1";
@@ -771,11 +780,12 @@ impl HelloResult {
         }
     }
 
-    /// Creates the complete M7 hello result after Config Schema 1 is durable and queryable.
+    /// Creates the current M7 hello result after State Schema 12 and Config Schema 2 are ready.
     #[must_use]
     pub fn m7_official_gui(capabilities: Vec<String>) -> Self {
         let mut result = Self::m7(capabilities);
-        result.config_schema = Some(1);
+        result.data_schema = Some(12);
+        result.config_schema = Some(2);
         result
     }
 }
@@ -1297,6 +1307,8 @@ pub enum PackagePlanAction {
     Upgrade,
     Downgrade,
     Resolve,
+    Reinstall,
+    Bulk,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1316,7 +1328,7 @@ pub enum PackageMutationKind {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct PackageSourcePin {
+pub struct RepositoryPackageSourcePin {
     pub repository_id: String,
     pub repository_revision: u64,
     pub source_identity: String,
@@ -1325,6 +1337,25 @@ pub struct PackageSourcePin {
     pub version: String,
     pub artifact_url: String,
     pub archive_sha256: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UserPackageSourcePin {
+    pub user_package_id: String,
+    pub source_revision: u64,
+    pub source_identity: String,
+    pub manifest_fingerprint: String,
+    pub package_id: String,
+    pub version: String,
+    pub archive_sha256: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PackageSourcePin {
+    Repository(RepositoryPackageSourcePin),
+    UserPackage(UserPackageSourcePin),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1378,6 +1409,8 @@ pub struct PackagePlanInstallParams {
     #[serde(default)]
     pub repository_id: Option<String>,
     #[serde(default)]
+    pub source: Option<PackageSourceSelector>,
+    #[serde(default)]
     pub include_prerelease: bool,
 }
 
@@ -1400,6 +1433,8 @@ pub struct PackagePlanDowngradeParams {
     pub version: String,
     #[serde(default)]
     pub repository_id: Option<String>,
+    #[serde(default)]
+    pub source: Option<PackageSourceSelector>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -1412,11 +1447,161 @@ pub struct PackagePlanResolveParams {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PackageSourceSelector {
+    Repository { repository_id: String },
+    UserPackage { user_package_id: String },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PackageReinstallSelection {
+    Packages { package_ids: Vec<String> },
+    All,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackageReinstallSource {
+    pub package_id: String,
+    pub source: PackageSourceSelector,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackagePlanReinstallParams {
+    pub project_id: String,
+    pub expected_revision: u64,
+    pub selection: PackageReinstallSelection,
+    #[serde(default)]
+    pub sources: Vec<PackageReinstallSource>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum PackageBulkIntent {
+    Install {
+        package_id: String,
+        #[serde(default)]
+        version_range: Option<String>,
+        #[serde(default)]
+        source: Option<PackageSourceSelector>,
+        include_prerelease: bool,
+    },
+    Upgrade {
+        package_id: String,
+        #[serde(default)]
+        version_range: Option<String>,
+        #[serde(default)]
+        source: Option<PackageSourceSelector>,
+        include_prerelease: bool,
+    },
+    Remove {
+        package_id: String,
+    },
+    Reinstall {
+        package_id: String,
+        #[serde(default)]
+        source: Option<PackageSourceSelector>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PackagePlanBulkParams {
+    pub project_id: String,
+    pub expected_revision: u64,
+    pub intents: Vec<PackageBulkIntent>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PackageApplyPlanParams {
     pub plan_id: String,
     pub expected_revision: u64,
     pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UserPackageCursor {
+    pub updated_at_ms: u64,
+    pub user_package_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UserPackagesListParams {
+    #[serde(default)]
+    pub cursor: Option<UserPackageCursor>,
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UserPackageGetParams {
+    pub user_package_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UserPackageEnrollParams {
+    pub source_path: String,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UserPackageMutationParams {
+    pub user_package_id: String,
+    pub expected_revision: u64,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UserPackageRecord {
+    pub user_package_id: String,
+    pub source_root_path: String,
+    pub package_id: String,
+    pub version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    pub revision: u64,
+    pub archive_sha256: String,
+    pub created_at_ms: u64,
+    pub updated_at_ms: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UserPackagesListResult {
+    pub user_packages: Vec<UserPackageRecord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<UserPackageCursor>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UserPackageResult {
+    pub user_package: UserPackageRecord,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UserPackageWriteResult {
+    pub user_package: UserPackageRecord,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UserPackageRemoveResult {
+    pub user_package_id: String,
+    pub revision: u64,
+    pub removed: bool,
+    pub replayed: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2749,5 +2934,48 @@ mod tests {
             panic!("expected success response");
         };
         assert_eq!(success.result.capabilities, ["future.capability"]);
+    }
+
+    #[test]
+    fn package_source_pin_preserves_v1_repository_wire_shape_and_adds_unambiguous_v2_user_shape() {
+        let repository = PackageSourcePin::Repository(RepositoryPackageSourcePin {
+            repository_id: "00000000-0000-4000-8000-000000000001".to_owned(),
+            repository_revision: 2,
+            source_identity: "repository-source".to_owned(),
+            manifest_fingerprint: "11".repeat(32),
+            package_id: "com.example.package".to_owned(),
+            version: "1.2.3".to_owned(),
+            artifact_url: "https://example.invalid/package.zip".to_owned(),
+            archive_sha256: "22".repeat(32),
+        });
+        assert_eq!(
+            serde_json::to_value(repository).expect("repository pin"),
+            json!({
+                "repositoryId": "00000000-0000-4000-8000-000000000001",
+                "repositoryRevision": 2,
+                "sourceIdentity": "repository-source",
+                "manifestFingerprint": "11".repeat(32),
+                "packageId": "com.example.package",
+                "version": "1.2.3",
+                "artifactUrl": "https://example.invalid/package.zip",
+                "archiveSha256": "22".repeat(32)
+            })
+        );
+
+        let user = PackageSourcePin::UserPackage(UserPackageSourcePin {
+            user_package_id: "00000000-0000-4000-8000-000000000002".to_owned(),
+            source_revision: 3,
+            source_identity: "opaque-user-source".to_owned(),
+            manifest_fingerprint: "33".repeat(32),
+            package_id: "com.example.package".to_owned(),
+            version: "1.2.3".to_owned(),
+            archive_sha256: "44".repeat(32),
+        });
+        let value = serde_json::to_value(user).expect("user pin");
+        assert_eq!(value["sourceRevision"], 3);
+        assert!(value.get("userPackageId").is_some());
+        assert!(value.get("repositoryId").is_none());
+        assert!(value.get("artifactUrl").is_none());
+        assert!(value.get("kind").is_none());
     }
 }

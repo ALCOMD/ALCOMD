@@ -8,7 +8,7 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 use crate::range::VpmRange;
-use crate::resolver::{PackageCandidate, PackageDependency, PackageSource};
+use crate::resolver::{PackageCandidate, PackageDependency, PackageSource, PackageSourceAuthority};
 use crate::{JSON_COLLECTION_LIMIT, M3ErrorCode, parse_bounded_json};
 
 const PACKAGE_ID_LIMIT: usize = 128;
@@ -224,12 +224,14 @@ fn parse_manifest(
             legacy_metadata_present,
             dependencies,
             source: PackageSource {
-                repository_id: context.repository_id.clone(),
-                repository_revision: context.repository_revision,
-                priority: context.priority,
+                authority: PackageSourceAuthority::Repository {
+                    repository_id: context.repository_id.clone(),
+                    repository_revision: context.repository_revision,
+                    priority: context.priority,
+                    artifact_url,
+                },
                 source_identity: context.source_identity.clone(),
                 manifest_fingerprint,
-                artifact_url,
                 archive_sha256,
             },
         },

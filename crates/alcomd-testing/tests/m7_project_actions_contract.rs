@@ -85,7 +85,7 @@ fn implemented_project_copy_contract_is_bounded_and_active() {
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_PLAN_COPY"));
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_APPLY_COPY"));
     assert!(ACTIVE_PROTOCOL.contains("CAPABILITY_PROJECTS_COPY_V1"));
-    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 11;"));
+    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 12;"));
 }
 
 #[test]
@@ -393,7 +393,7 @@ fn p5_b_project_preferences_are_exact_active_contracts() {
     assert!(ACTIVE_RPC.contains("unity.projectEditor.clear"));
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_SET_FAVORITE"));
     assert!(ACTIVE_PROTOCOL.contains("METHOD_UNITY_PROJECT_EDITOR_CLEAR"));
-    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 11;"));
+    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 12;"));
     assert!(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../alcomd-store/migrations/0011_project_preferences.sql")

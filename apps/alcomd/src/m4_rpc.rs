@@ -12,19 +12,43 @@ pub(super) async fn dispatch(
     application: &M4PackageApplication,
     access: &AccessContext,
 ) -> DispatchAction {
-    let action = match request.method.as_str() {
-        rpc::METHOD_PACKAGES_PLAN_INSTALL => app::PlanAction::Install,
-        rpc::METHOD_PACKAGES_PLAN_REMOVE => app::PlanAction::Remove,
-        rpc::METHOD_PACKAGES_PLAN_UPGRADE => app::PlanAction::Upgrade,
-        rpc::METHOD_PACKAGES_PLAN_DOWNGRADE => app::PlanAction::Downgrade,
-        rpc::METHOD_PACKAGES_PLAN_RESOLVE => app::PlanAction::Resolve,
+    let (action, v2_only) = match request.method.as_str() {
+        rpc::METHOD_PACKAGES_PLAN_INSTALL => (app::PlanAction::Install, false),
+        rpc::METHOD_PACKAGES_PLAN_REMOVE => (app::PlanAction::Remove, false),
+        rpc::METHOD_PACKAGES_PLAN_UPGRADE => (app::PlanAction::Upgrade, false),
+        rpc::METHOD_PACKAGES_PLAN_DOWNGRADE => (app::PlanAction::Downgrade, false),
+        rpc::METHOD_PACKAGES_PLAN_RESOLVE => (app::PlanAction::Resolve, false),
+        rpc::METHOD_PACKAGES_PLAN_REINSTALL => (app::PlanAction::Reinstall, true),
+        rpc::METHOD_PACKAGES_PLAN_BULK => (app::PlanAction::Bulk, true),
         rpc::METHOD_PACKAGES_APPLY_PLAN => return apply(request, state, application, access).await,
         _ => return error_action(Some(request.id), rpc::RpcError::method_not_found(), false),
     };
-    if let Some(value) = require_capability(&request.id, state, rpc::CAPABILITY_PACKAGES_PLAN_V1) {
+    if v2_only {
+        if let Some(value) =
+            require_capability(&request.id, state, rpc::CAPABILITY_PACKAGES_PLAN_V2)
+        {
+            return value;
+        }
+    } else if !state
+        .capabilities
+        .contains(rpc::CAPABILITY_PACKAGES_PLAN_V1)
+        && !state
+            .capabilities
+            .contains(rpc::CAPABILITY_PACKAGES_PLAN_V2)
+        && let Some(value) =
+            require_capability(&request.id, state, rpc::CAPABILITY_PACKAGES_PLAN_V1)
+    {
         return value;
     }
-    let plan_request = match plan_request(action, request.params) {
+    let plan_version = if state
+        .capabilities
+        .contains(rpc::CAPABILITY_PACKAGES_PLAN_V2)
+    {
+        app::PackagePlanVersion::V2
+    } else {
+        app::PackagePlanVersion::V1
+    };
+    let plan_request = match plan_request(action, plan_version, request.params) {
         Ok(value) => value,
         Err(()) => return invalid(request.id),
     };
@@ -74,59 +98,129 @@ async fn apply(
 
 fn plan_request(
     action: app::PlanAction,
+    plan_version: app::PackagePlanVersion,
     params: serde_json::Value,
 ) -> Result<app::PackagePlanRequest, ()> {
-    let (project_id, expected_revision, package_id, version_range, repository_id, prerelease) =
-        match action {
-            app::PlanAction::Install | app::PlanAction::Upgrade => {
-                let value: rpc::PackagePlanInstallParams =
-                    serde_json::from_value(params).map_err(|_| ())?;
-                (
-                    value.project_id,
-                    value.expected_revision,
-                    Some(value.package_id),
-                    value.version_range,
-                    value.repository_id,
-                    value.include_prerelease,
-                )
+    if action == app::PlanAction::Reinstall {
+        let value: rpc::PackagePlanReinstallParams =
+            serde_json::from_value(params).map_err(|_| ())?;
+        let selection = match value.selection {
+            rpc::PackageReinstallSelection::Packages { package_ids } => {
+                app::ReinstallSelection::Packages(package_ids)
             }
-            app::PlanAction::Remove => {
-                let value: rpc::PackagePlanRemoveParams =
-                    serde_json::from_value(params).map_err(|_| ())?;
-                (
-                    value.project_id,
-                    value.expected_revision,
-                    Some(value.package_id),
-                    None,
-                    None,
-                    false,
-                )
-            }
-            app::PlanAction::Downgrade => {
-                let value: rpc::PackagePlanDowngradeParams =
-                    serde_json::from_value(params).map_err(|_| ())?;
-                (
-                    value.project_id,
-                    value.expected_revision,
-                    Some(value.package_id),
-                    Some(format!("={}", value.version)),
-                    value.repository_id,
-                    false,
-                )
-            }
-            app::PlanAction::Resolve => {
-                let value: rpc::PackagePlanResolveParams =
-                    serde_json::from_value(params).map_err(|_| ())?;
-                (
-                    value.project_id,
-                    value.expected_revision,
-                    None,
-                    None,
-                    None,
-                    value.include_prerelease,
-                )
-            }
+            rpc::PackageReinstallSelection::All => app::ReinstallSelection::All,
         };
+        let sources = value
+            .sources
+            .into_iter()
+            .map(|value| Ok((value.package_id, source_selector(value.source)?)))
+            .collect::<Result<Vec<_>, ()>>()?;
+        return Ok(app::PackagePlanRequest {
+            action,
+            project_id: app::ProjectId::parse(&value.project_id).map_err(|_| ())?,
+            expected_revision: Revision::new(value.expected_revision).ok_or(())?,
+            package_id: None,
+            version_range: None,
+            repository_id: None,
+            include_prerelease: false,
+            plan_version,
+            source_selector: None,
+            reinstall_selection: Some(selection),
+            reinstall_sources: sources,
+            bulk_intents: Vec::new(),
+        });
+    }
+    if action == app::PlanAction::Bulk {
+        let value: rpc::PackagePlanBulkParams = serde_json::from_value(params).map_err(|_| ())?;
+        let intents = value
+            .intents
+            .into_iter()
+            .map(bulk_intent)
+            .collect::<Result<Vec<_>, ()>>()?;
+        return Ok(app::PackagePlanRequest {
+            action,
+            project_id: app::ProjectId::parse(&value.project_id).map_err(|_| ())?,
+            expected_revision: Revision::new(value.expected_revision).ok_or(())?,
+            package_id: None,
+            version_range: None,
+            repository_id: None,
+            include_prerelease: false,
+            plan_version,
+            source_selector: None,
+            reinstall_selection: None,
+            reinstall_sources: Vec::new(),
+            bulk_intents: intents,
+        });
+    }
+    let (
+        project_id,
+        expected_revision,
+        package_id,
+        version_range,
+        repository_id,
+        source,
+        prerelease,
+    ) = match action {
+        app::PlanAction::Install | app::PlanAction::Upgrade => {
+            let value: rpc::PackagePlanInstallParams =
+                serde_json::from_value(params).map_err(|_| ())?;
+            (
+                value.project_id,
+                value.expected_revision,
+                Some(value.package_id),
+                value.version_range,
+                value.repository_id,
+                value.source,
+                value.include_prerelease,
+            )
+        }
+        app::PlanAction::Remove => {
+            let value: rpc::PackagePlanRemoveParams =
+                serde_json::from_value(params).map_err(|_| ())?;
+            (
+                value.project_id,
+                value.expected_revision,
+                Some(value.package_id),
+                None,
+                None,
+                None,
+                false,
+            )
+        }
+        app::PlanAction::Downgrade => {
+            let value: rpc::PackagePlanDowngradeParams =
+                serde_json::from_value(params).map_err(|_| ())?;
+            (
+                value.project_id,
+                value.expected_revision,
+                Some(value.package_id),
+                Some(format!("={}", value.version)),
+                value.repository_id,
+                value.source,
+                false,
+            )
+        }
+        app::PlanAction::Resolve => {
+            let value: rpc::PackagePlanResolveParams =
+                serde_json::from_value(params).map_err(|_| ())?;
+            (
+                value.project_id,
+                value.expected_revision,
+                None,
+                None,
+                None,
+                None,
+                value.include_prerelease,
+            )
+        }
+        app::PlanAction::Reinstall | app::PlanAction::Bulk => return Err(()),
+    };
+    if source.is_some() && plan_version == app::PackagePlanVersion::V1 {
+        return Err(());
+    }
+    if source.is_some() && repository_id.is_some() {
+        return Err(());
+    }
     Ok(app::PackagePlanRequest {
         action,
         project_id: app::ProjectId::parse(&project_id).map_err(|_| ())?,
@@ -135,6 +229,60 @@ fn plan_request(
         version_range,
         repository_id,
         include_prerelease: prerelease,
+        plan_version,
+        source_selector: source.map(source_selector).transpose()?,
+        reinstall_selection: None,
+        reinstall_sources: Vec::new(),
+        bulk_intents: Vec::new(),
+    })
+}
+
+fn source_selector(value: rpc::PackageSourceSelector) -> Result<app::PackageSourceSelector, ()> {
+    match value {
+        rpc::PackageSourceSelector::Repository { repository_id } => {
+            Ok(app::PackageSourceSelector::Repository { repository_id })
+        }
+        rpc::PackageSourceSelector::UserPackage { user_package_id } => {
+            Ok(app::PackageSourceSelector::UserPackage {
+                user_package_id: app::UserPackageId::parse(&user_package_id).map_err(|_| ())?,
+            })
+        }
+    }
+}
+
+fn bulk_intent(value: rpc::PackageBulkIntent) -> Result<app::PackageBulkIntent, ()> {
+    Ok(match value {
+        rpc::PackageBulkIntent::Install {
+            package_id,
+            version_range,
+            source,
+            include_prerelease,
+        } => app::PackageBulkIntent::Install {
+            package_id,
+            version_range,
+            source: source.map(source_selector).transpose()?,
+            include_prerelease,
+        },
+        rpc::PackageBulkIntent::Upgrade {
+            package_id,
+            version_range,
+            source,
+            include_prerelease,
+        } => app::PackageBulkIntent::Upgrade {
+            package_id,
+            version_range,
+            source: source.map(source_selector).transpose()?,
+            include_prerelease,
+        },
+        rpc::PackageBulkIntent::Remove { package_id } => {
+            app::PackageBulkIntent::Remove { package_id }
+        }
+        rpc::PackageBulkIntent::Reinstall { package_id, source } => {
+            app::PackageBulkIntent::Reinstall {
+                package_id,
+                source: source.map(source_selector).transpose()?,
+            }
+        }
     })
 }
 
@@ -147,6 +295,8 @@ fn plan_to_rpc(value: app::PackagePlanRecord) -> rpc::PackagePlan {
             app::PlanAction::Upgrade => rpc::PackagePlanAction::Upgrade,
             app::PlanAction::Downgrade => rpc::PackagePlanAction::Downgrade,
             app::PlanAction::Resolve => rpc::PackagePlanAction::Resolve,
+            app::PlanAction::Reinstall => rpc::PackagePlanAction::Reinstall,
+            app::PlanAction::Bulk => rpc::PackagePlanAction::Bulk,
         },
         state: match value.state {
             app::PlanState::Unapplied => rpc::PackagePlanState::Unapplied,
@@ -189,16 +339,35 @@ fn mutation(value: app::PackageMutation) -> rpc::PackageMutation {
         package_id: value.package_id,
         from_version: value.from_version,
         to_version: value.to_version,
-        source: value.source.map(|source| rpc::PackageSourcePin {
-            repository_id: source.repository_id,
-            repository_revision: source.repository_revision,
-            source_identity: source.source_identity,
-            manifest_fingerprint: hex(&source.manifest_fingerprint),
-            package_id: source.package_id,
-            version: source.version,
-            artifact_url: source.artifact_url,
-            archive_sha256: hex(&source.archive_sha256),
-        }),
+        source: value.source.map(source_pin),
+    }
+}
+
+fn source_pin(value: app::PackageSourcePin) -> rpc::PackageSourcePin {
+    match value {
+        app::PackageSourcePin::Repository(source) => {
+            rpc::PackageSourcePin::Repository(rpc::RepositoryPackageSourcePin {
+                repository_id: source.repository_id,
+                repository_revision: source.repository_revision,
+                source_identity: source.source_identity,
+                manifest_fingerprint: hex(&source.manifest_fingerprint),
+                package_id: source.package_id,
+                version: source.version,
+                artifact_url: source.artifact_url,
+                archive_sha256: hex(&source.archive_sha256),
+            })
+        }
+        app::PackageSourcePin::UserPackage(source) => {
+            rpc::PackageSourcePin::UserPackage(rpc::UserPackageSourcePin {
+                user_package_id: source.user_package_id.to_string(),
+                source_revision: source.source_revision,
+                source_identity: source.source_identity,
+                manifest_fingerprint: hex(&source.manifest_fingerprint),
+                package_id: source.package_id,
+                version: source.version,
+                archive_sha256: hex(&source.archive_sha256),
+            })
+        }
     }
 }
 

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use alcomd_application::{
     M4Error, M4ErrorCode, PackageChangeSet, PackageDependencyEdge as ChangeSetEdge,
     PackageMutation, PackageMutationKind, PackagePlanDraft, PackageSourcePin, PlanAction,
-    ProjectRecord,
+    ProjectRecord, RepositoryPackageSourcePin, UserPackageSourcePin,
 };
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
@@ -23,6 +23,7 @@ pub struct ProjectPackageSnapshot {
     pub path_identity_key: Vec<u8>,
     pub fingerprint: [u8; 32],
     vpm_manifest: Value,
+    vpm_manifest_bytes: Vec<u8>,
 }
 
 pub fn inspect_package_project(project: &ProjectRecord) -> Result<ProjectPackageSnapshot, M4Error> {
@@ -93,7 +94,124 @@ pub fn inspect_package_project(project: &ProjectRecord) -> Result<ProjectPackage
         path_identity_key: identity,
         fingerprint: hasher.finalize().into(),
         vpm_manifest,
+        vpm_manifest_bytes: vpm_bytes,
     })
+}
+
+pub fn build_reinstall_plan(
+    snapshot: &ProjectPackageSnapshot,
+    resolution: &Resolution,
+    targets: &BTreeSet<String>,
+) -> Result<PackagePlanDraft, M4Error> {
+    build_complete_resolution_plan(snapshot, PlanAction::Reinstall, resolution, targets, true)
+}
+
+pub fn build_bulk_plan(
+    snapshot: &ProjectPackageSnapshot,
+    resolution: &Resolution,
+    reinstall_targets: &BTreeSet<String>,
+) -> Result<PackagePlanDraft, M4Error> {
+    build_complete_resolution_plan(
+        snapshot,
+        PlanAction::Bulk,
+        resolution,
+        reinstall_targets,
+        false,
+    )
+}
+
+fn build_complete_resolution_plan(
+    snapshot: &ProjectPackageSnapshot,
+    action: PlanAction,
+    resolution: &Resolution,
+    force_replace: &BTreeSet<String>,
+    preserve_manifest_bytes: bool,
+) -> Result<PackagePlanDraft, M4Error> {
+    let object = snapshot
+        .vpm_manifest
+        .as_object()
+        .ok_or_else(|| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
+    let old_direct = string_map(object.get("dependencies"))?;
+    let old_locked = locked_map(object.get("locked"))?;
+    let mut new_direct = BTreeMap::new();
+    let mut new_locked = BTreeMap::new();
+    let mut selected = BTreeMap::new();
+    for package in &resolution.packages {
+        validate_package_id(&package.package_id)?;
+        let version = package.version.to_string();
+        new_locked.insert(package.package_id.clone(), version.clone());
+        if package.direct {
+            new_direct.insert(package.package_id.clone(), version);
+        }
+        selected.insert(package.package_id.as_str(), package);
+    }
+    if preserve_manifest_bytes && (new_direct != old_direct || new_locked != old_locked) {
+        return Err(M4Error::with_subreason(
+            M4ErrorCode::PlanStale,
+            "reinstall_graph_changed",
+        ));
+    }
+
+    let package_ids = old_locked
+        .keys()
+        .chain(new_locked.keys())
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let mut mutations = Vec::new();
+    let mut source_set = Vec::new();
+    for package_id in package_ids {
+        let old = old_locked.get(&package_id);
+        let new = new_locked.get(&package_id);
+        match (old, new) {
+            (Some(from), None) => mutations.push(PackageMutation {
+                kind: PackageMutationKind::Remove,
+                package_id,
+                from_version: Some(from.clone()),
+                to_version: None,
+                source: None,
+            }),
+            (None, Some(to)) | (Some(_), Some(to))
+                if old != Some(to) || force_replace.contains(&package_id) =>
+            {
+                let package = selected
+                    .get(package_id.as_str())
+                    .ok_or_else(|| M4Error::new(M4ErrorCode::Internal))?;
+                let source = source_pin(package);
+                mutations.push(PackageMutation {
+                    kind: if old.is_some() {
+                        PackageMutationKind::Replace
+                    } else {
+                        PackageMutationKind::Install
+                    },
+                    package_id,
+                    from_version: old.cloned(),
+                    to_version: Some(to.clone()),
+                    source: Some(source.clone()),
+                });
+                source_set.push(source);
+            }
+            _ => {}
+        }
+    }
+
+    let manifest_bytes = if preserve_manifest_bytes {
+        snapshot.vpm_manifest_bytes.clone()
+    } else {
+        let mut manifest = snapshot.vpm_manifest.clone();
+        let object = manifest
+            .as_object_mut()
+            .ok_or_else(|| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
+        write_manifest_maps(object, &new_direct, &new_locked);
+        serialize_manifest(&manifest)?
+    };
+    build_draft_from_bytes(
+        snapshot,
+        action,
+        manifest_bytes,
+        mutations,
+        resolution.dependency_edges.clone(),
+        source_set,
+    )
 }
 
 pub fn build_resolution_plan(
@@ -237,6 +355,15 @@ pub fn materialize_vpm_manifest(
     current: &[u8],
     change_set: &PackageChangeSet,
 ) -> Result<Vec<u8>, M4Error> {
+    if !change_set.mutations.is_empty()
+        && change_set.mutations.iter().all(|mutation| {
+            mutation.kind == PackageMutationKind::Replace
+                && mutation.from_version == mutation.to_version
+        })
+        && <[u8; 32]>::from(Sha256::digest(current)) == change_set.vpm_manifest_sha256
+    {
+        return Ok(current.to_vec());
+    }
     let mut manifest: Value =
         serde_json::from_slice(current.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(current))
             .map_err(|_| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
@@ -277,24 +404,40 @@ fn build_draft(
     snapshot: &ProjectPackageSnapshot,
     action: PlanAction,
     manifest: Value,
+    mutations: Vec<PackageMutation>,
+    dependency_edges: Vec<PackageDependencyEdge>,
+    source_set: Vec<PackageSourcePin>,
+) -> Result<PackagePlanDraft, M4Error> {
+    build_draft_from_bytes(
+        snapshot,
+        action,
+        serialize_manifest(&manifest)?,
+        mutations,
+        dependency_edges,
+        source_set,
+    )
+}
+
+fn build_draft_from_bytes(
+    snapshot: &ProjectPackageSnapshot,
+    action: PlanAction,
+    manifest_bytes: Vec<u8>,
     mut mutations: Vec<PackageMutation>,
     dependency_edges: Vec<PackageDependencyEdge>,
     mut source_set: Vec<PackageSourcePin>,
 ) -> Result<PackagePlanDraft, M4Error> {
     mutations.sort_by(|left, right| left.package_id.as_bytes().cmp(right.package_id.as_bytes()));
     source_set.sort_by(|left, right| {
-        left.package_id
+        left.package_id()
             .as_bytes()
-            .cmp(right.package_id.as_bytes())
-            .then_with(|| left.version.as_bytes().cmp(right.version.as_bytes()))
+            .cmp(right.package_id().as_bytes())
+            .then_with(|| left.version().as_bytes().cmp(right.version().as_bytes()))
             .then_with(|| {
-                left.repository_id
-                    .as_bytes()
-                    .cmp(right.repository_id.as_bytes())
+                left.deterministic_source_key()
+                    .cmp(&right.deterministic_source_key())
             })
     });
     source_set.dedup();
-    let manifest_bytes = serialize_manifest(&manifest)?;
     let vpm_manifest_sha256 = Sha256::digest(&manifest_bytes).into();
     let mut edges = dependency_edges
         .into_iter()
@@ -308,7 +451,11 @@ fn build_draft(
     edges.sort();
     edges.dedup();
     let change_set = PackageChangeSet {
-        format_version: 1,
+        format_version: if source_set.iter().any(PackageSourcePin::is_user_package) {
+            2
+        } else {
+            1
+        },
         mutations,
         dependency_edges: edges,
         vpm_manifest_sha256,
@@ -330,15 +477,34 @@ fn build_draft(
 }
 
 fn source_pin(package: &ResolvedPackage) -> PackageSourcePin {
-    PackageSourcePin {
-        repository_id: package.source.repository_id.clone(),
-        repository_revision: package.source.repository_revision,
-        source_identity: package.source.source_identity.clone(),
-        manifest_fingerprint: package.source.manifest_fingerprint,
-        package_id: package.package_id.clone(),
-        version: package.version.to_string(),
-        artifact_url: package.source.artifact_url.clone(),
-        archive_sha256: package.source.archive_sha256,
+    match &package.source.authority {
+        crate::PackageSourceAuthority::Repository {
+            repository_id,
+            repository_revision,
+            artifact_url,
+            ..
+        } => PackageSourcePin::Repository(RepositoryPackageSourcePin {
+            repository_id: repository_id.clone(),
+            repository_revision: *repository_revision,
+            source_identity: package.source.source_identity.clone(),
+            manifest_fingerprint: package.source.manifest_fingerprint,
+            package_id: package.package_id.clone(),
+            version: package.version.to_string(),
+            artifact_url: artifact_url.clone(),
+            archive_sha256: package.source.archive_sha256,
+        }),
+        crate::PackageSourceAuthority::UserPackage {
+            user_package_id,
+            source_revision,
+        } => PackageSourcePin::UserPackage(UserPackageSourcePin {
+            user_package_id: *user_package_id,
+            source_revision: *source_revision,
+            source_identity: package.source.source_identity.clone(),
+            manifest_fingerprint: package.source.manifest_fingerprint,
+            package_id: package.package_id.clone(),
+            version: package.version.to_string(),
+            archive_sha256: package.source.archive_sha256,
+        }),
     }
 }
 

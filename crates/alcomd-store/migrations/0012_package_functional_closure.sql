@@ -130,11 +130,62 @@ ALTER TABLE repository_package_versions ADD COLUMN documentation_url TEXT
 ALTER TABLE repository_package_versions ADD COLUMN changelog_url TEXT
     CHECK (changelog_url IS NULL OR length(CAST(changelog_url AS BLOB)) BETWEEN 1 AND 2048);
 
+CREATE TEMP TABLE m12_events_sequence_backup (
+    sequence_value INTEGER NOT NULL
+) STRICT;
+
+INSERT INTO m12_events_sequence_backup(sequence_value)
+SELECT seq FROM sqlite_sequence WHERE name = 'events';
+
+DROP INDEX events_principal_sequence;
+DROP INDEX events_aggregate_sequence;
+ALTER TABLE events RENAME TO events_v11;
+
+CREATE TABLE events (
+    sequence INTEGER PRIMARY KEY AUTOINCREMENT
+        CHECK (sequence BETWEEN 1 AND 9223372036854775807),
+    event_id TEXT NOT NULL UNIQUE CHECK (length(event_id) = 36),
+    kind TEXT NOT NULL CHECK (length(kind) BETWEEN 1 AND 128),
+    aggregate_kind TEXT NOT NULL CHECK (aggregate_kind IN (
+        'operation', 'project', 'repository', 'unity-installation',
+        'project-editor-preference', 'template', 'user-package'
+    )),
+    aggregate_id TEXT NOT NULL CHECK (length(aggregate_id) = 36),
+    aggregate_revision INTEGER NOT NULL
+        CHECK (aggregate_revision BETWEEN 1 AND 9223372036854775807),
+    principal_id TEXT NOT NULL CHECK (length(principal_id) BETWEEN 1 AND 128),
+    occurred_at_ms INTEGER NOT NULL
+        CHECK (occurred_at_ms BETWEEN 0 AND 9223372036854775807),
+    payload_json TEXT NOT NULL
+        CHECK (json_valid(payload_json) AND length(payload_json) <= 65536)
+) STRICT;
+
+INSERT INTO events (
+    sequence,event_id,kind,aggregate_kind,aggregate_id,aggregate_revision,
+    principal_id,occurred_at_ms,payload_json
+)
+SELECT sequence,event_id,kind,aggregate_kind,aggregate_id,aggregate_revision,
+       principal_id,occurred_at_ms,payload_json
+FROM events_v11 ORDER BY sequence;
+
+DROP TABLE events_v11;
+
+UPDATE sqlite_sequence
+SET seq = (SELECT sequence_value FROM m12_events_sequence_backup)
+WHERE name = 'events' AND EXISTS (SELECT 1 FROM m12_events_sequence_backup);
+
+DROP TABLE m12_events_sequence_backup;
+
+CREATE INDEX events_principal_sequence
+    ON events(principal_id, sequence ASC);
+CREATE INDEX events_aggregate_sequence
+    ON events(aggregate_kind, aggregate_id, sequence ASC);
+
 CREATE TABLE user_package_sources (
     user_package_id TEXT PRIMARY KEY CHECK (length(user_package_id) = 36),
     owner_principal_id TEXT NOT NULL CHECK (length(owner_principal_id) BETWEEN 1 AND 128),
     source_root_path TEXT NOT NULL CHECK (length(CAST(source_root_path AS BLOB)) BETWEEN 1 AND 32768),
-    source_identity_key BLOB NOT NULL CHECK (length(source_identity_key) BETWEEN 1 AND 128),
+    source_identity_key BLOB NOT NULL CHECK (length(source_identity_key) BETWEEN 1 AND 1024),
     package_id TEXT NOT NULL CHECK (length(package_id) BETWEEN 1 AND 128),
     version TEXT NOT NULL CHECK (length(version) BETWEEN 1 AND 1024),
     manifest_json TEXT NOT NULL CHECK (

@@ -2,13 +2,14 @@ use alcomd_application::{
     ApplyPlanOutcome, FilesystemJournalEntry, IdempotencyKey, M4Error, M4ErrorCode, OperationId,
     PackageApplyCompletion, PackageChangeSet, PackagePlanDraft, PackagePlanRecord,
     PackageSourcePin, PlanAction, PlanId, PlanState, PrincipalId, ResolverCatalog,
-    ResolverCatalogEntry, Revision,
+    ResolverCatalogEntry, ResolverCatalogSource, Revision, UserPackageId,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
 
 pub(super) fn resolver_catalog(
     connection: &Connection,
     owner: &PrincipalId,
+    include_user_packages: bool,
 ) -> Result<ResolverCatalog, M4Error> {
     let incomplete: i64 = connection
         .query_row(
@@ -44,26 +45,78 @@ pub(super) fn resolver_catalog(
                 _ => return Err(invalid_query()),
             };
             Ok(ResolverCatalogEntry {
-                repository_id: row.get(0)?,
-                repository_revision: nonnegative(row.get(1)?)?,
-                repository_priority: nonnegative(row.get(2)?)?,
-                source_identity,
+                source: ResolverCatalogSource::Repository {
+                    repository_id: row.get(0)?,
+                    repository_revision: nonnegative(row.get(1)?)?,
+                    repository_priority: nonnegative(row.get(2)?)?,
+                    source_identity,
+                    artifact_url: row.get(12)?,
+                    zip_sha256: row.get(13)?,
+                    manifest_fingerprint: digest(row.get(16)?)?,
+                },
                 package_id: row.get(6)?,
                 version: row.get(7)?,
                 yanked: row.get::<_, i64>(8)? != 0,
                 unity: row.get(9)?,
                 author_name: row.get(10)?,
                 author_email: row.get(11)?,
-                artifact_url: row.get(12)?,
-                zip_sha256: row.get(13)?,
                 unity_release: row.get(14)?,
                 dependencies_json: row.get(15)?,
-                manifest_fingerprint: digest(row.get(16)?)?,
                 legacy_metadata_present: row.get::<_, i64>(17)? != 0,
             })
         })
         .map_err(store_error)?;
-    let entries = rows.collect::<Result<Vec<_>, _>>().map_err(store_error)?;
+    let mut entries = rows.collect::<Result<Vec<_>, _>>().map_err(store_error)?;
+    if include_user_packages {
+        let mut statement = connection
+            .prepare(
+                "SELECT user_package_id,revision,source_identity_key,package_id,version,
+                        manifest_json,manifest_fingerprint,archive_sha256
+                 FROM user_package_sources WHERE owner_principal_id=?1
+                 ORDER BY package_id ASC,version ASC,user_package_id ASC",
+            )
+            .map_err(store_error)?;
+        let rows = statement
+            .query_map([owner.as_str()], |row| {
+                let identity: Vec<u8> = row.get(2)?;
+                let manifest_json: String = row.get(5)?;
+                let manifest: serde_json::Value =
+                    serde_json::from_str(&manifest_json).map_err(|_| invalid_query())?;
+                let dependencies_json = serde_json::to_string(
+                    manifest
+                        .get("vpmDependencies")
+                        .unwrap_or(&serde_json::json!({})),
+                )
+                .map_err(|_| invalid_query())?;
+                Ok(ResolverCatalogEntry {
+                    source: ResolverCatalogSource::UserPackage {
+                        user_package_id: UserPackageId::parse(&row.get::<_, String>(0)?)
+                            .map_err(|_| invalid_query())?,
+                        source_revision: nonnegative(row.get(1)?)?,
+                        source_identity: format!(
+                            "user-package-identity-v1:{}",
+                            bytes_hex(&identity)
+                        ),
+                        archive_sha256: parse_digest_hex(&row.get::<_, String>(7)?)?,
+                        manifest_fingerprint: digest(row.get(6)?)?,
+                    },
+                    package_id: row.get(3)?,
+                    version: row.get(4)?,
+                    yanked: false,
+                    unity: manifest
+                        .get("unity")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::to_owned),
+                    author_name: String::new(),
+                    author_email: String::new(),
+                    unity_release: None,
+                    dependencies_json,
+                    legacy_metadata_present: false,
+                })
+            })
+            .map_err(store_error)?;
+        entries.extend(rows.collect::<Result<Vec<_>, _>>().map_err(store_error)?);
+    }
     Ok(ResolverCatalog {
         entries,
         complete: incomplete == 0,
@@ -846,6 +899,8 @@ fn parse_action(value: &str) -> rusqlite::Result<PlanAction> {
         "upgrade" => Ok(PlanAction::Upgrade),
         "downgrade" => Ok(PlanAction::Downgrade),
         "resolve" => Ok(PlanAction::Resolve),
+        "reinstall" => Ok(PlanAction::Reinstall),
+        "bulk" => Ok(PlanAction::Bulk),
         _ => Err(invalid_query()),
     }
 }
@@ -870,6 +925,18 @@ fn bytes_hex(value: &[u8]) -> String {
         result.push(char::from(HEX[(byte & 0x0f) as usize]));
     }
     result
+}
+
+fn parse_digest_hex(value: &str) -> rusqlite::Result<[u8; 32]> {
+    if value.len() != 64 {
+        return Err(invalid_query());
+    }
+    let mut result = [0_u8; 32];
+    for (index, target) in result.iter_mut().enumerate() {
+        *target = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16)
+            .map_err(|_| invalid_query())?;
+    }
+    Ok(result)
 }
 
 fn positive_revision(value: i64) -> rusqlite::Result<Revision> {

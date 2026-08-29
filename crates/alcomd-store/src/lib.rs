@@ -30,7 +30,9 @@ use alcomd_application::{
     SyncWrite, TemplateApplyOutcome, TemplateCursor, TemplateId, TemplatePlanDraft,
     TemplatePlanRecord, UnityInstallationCursor, UnityInstallationId, UnityInstallationObservation,
     UnityInstallationPage, UnityInstallationRecord, UnityLaunchId, UnityLaunchRecord,
-    UnityLaunchState, UnregisterResult,
+    UnityLaunchState, UnregisterResult, UserPackageCursor, UserPackageError, UserPackageErrorCode,
+    UserPackageId, UserPackagePage, UserPackageRecord, UserPackageRemoveResult,
+    UserPackageSnapshot, UserPackageStore, UserPackageWriteResult,
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -43,6 +45,7 @@ mod m5_template;
 mod m6;
 mod m7_copy;
 mod m7_official;
+mod m7_user_packages;
 mod sqlite;
 
 /// Stable crate identifier used by repository checks.
@@ -353,9 +356,13 @@ impl M3RegistryStore for StateStoreHandle {
 }
 
 impl M4Store for StateStoreHandle {
-    async fn resolver_catalog(&self, owner: PrincipalId) -> Result<ResolverCatalog, M4Error> {
+    async fn resolver_catalog(
+        &self,
+        owner: PrincipalId,
+        include_user_packages: bool,
+    ) -> Result<ResolverCatalog, M4Error> {
         self.request_worker(
-            move |connection| m4::resolver_catalog(connection, &owner),
+            move |connection| m4::resolver_catalog(connection, &owner, include_user_packages),
             || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
         )
         .await
@@ -488,6 +495,134 @@ impl M4Store for StateStoreHandle {
         self.request_worker(
             move |connection| m4::recover_package_operations(connection, recovered_at_ms),
             || M4Error::new(alcomd_application::M4ErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+}
+
+impl UserPackageStore for StateStoreHandle {
+    async fn replay_user_package_enroll(
+        &self,
+        owner: PrincipalId,
+        source_path: String,
+        key: IdempotencyKey,
+    ) -> Result<Option<UserPackageWriteResult>, UserPackageError> {
+        self.request_worker(
+            move |connection| {
+                m7_user_packages::replay_enroll(connection, &owner, &source_path, &key)
+            },
+            || UserPackageError::new(UserPackageErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn replay_user_package_refresh(
+        &self,
+        owner: PrincipalId,
+        user_package_id: UserPackageId,
+        expected_revision: Revision,
+        key: IdempotencyKey,
+    ) -> Result<Option<UserPackageWriteResult>, UserPackageError> {
+        self.request_worker(
+            move |connection| {
+                m7_user_packages::replay_refresh(
+                    connection,
+                    &owner,
+                    user_package_id,
+                    expected_revision,
+                    &key,
+                )
+            },
+            || UserPackageError::new(UserPackageErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn list_user_packages(
+        &self,
+        owner: PrincipalId,
+        cursor: Option<UserPackageCursor>,
+        limit: u32,
+    ) -> Result<UserPackagePage, UserPackageError> {
+        self.request_worker(
+            move |connection| m7_user_packages::list(connection, &owner, cursor, limit),
+            || UserPackageError::new(UserPackageErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn get_user_package(
+        &self,
+        owner: PrincipalId,
+        user_package_id: UserPackageId,
+    ) -> Result<UserPackageRecord, UserPackageError> {
+        self.request_worker(
+            move |connection| m7_user_packages::get(connection, &owner, user_package_id),
+            || UserPackageError::new(UserPackageErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn enroll_user_package(
+        &self,
+        owner: PrincipalId,
+        snapshot: UserPackageSnapshot,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<UserPackageWriteResult, UserPackageError> {
+        self.request_worker(
+            move |connection| m7_user_packages::enroll(connection, &owner, snapshot, &key, now_ms),
+            || UserPackageError::new(UserPackageErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn refresh_user_package(
+        &self,
+        owner: PrincipalId,
+        user_package_id: UserPackageId,
+        expected_revision: Revision,
+        snapshot: UserPackageSnapshot,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<UserPackageWriteResult, UserPackageError> {
+        self.request_worker(
+            move |connection| {
+                m7_user_packages::refresh(
+                    connection,
+                    &owner,
+                    user_package_id,
+                    expected_revision,
+                    snapshot,
+                    &key,
+                    now_ms,
+                )
+            },
+            || UserPackageError::new(UserPackageErrorCode::StoreUnavailable),
+        )
+        .await
+    }
+
+    async fn remove_user_package(
+        &self,
+        owner: PrincipalId,
+        user_package_id: UserPackageId,
+        expected_revision: Revision,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<UserPackageRemoveResult, UserPackageError> {
+        self.request_worker(
+            move |connection| {
+                m7_user_packages::remove(
+                    connection,
+                    &owner,
+                    user_package_id,
+                    expected_revision,
+                    &key,
+                    now_ms,
+                )
+            },
+            || UserPackageError::new(UserPackageErrorCode::StoreUnavailable),
         )
         .await
     }

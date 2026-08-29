@@ -211,6 +211,38 @@ impl fmt::Display for BackupId {
     }
 }
 
+/// Stable identifier for one enrolled loose local package source.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct UserPackageId(Uuid);
+
+impl UserPackageId {
+    #[must_use]
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    pub fn parse(value: &str) -> Result<Self, DomainValueError> {
+        Uuid::parse_str(value)
+            .ok()
+            .filter(|parsed| parsed.to_string() == value)
+            .map(Self)
+            .ok_or(DomainValueError::InvalidUserPackageId)
+    }
+}
+
+impl Default for UserPackageId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for UserPackageId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
 impl fmt::Display for TemplateId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(formatter)
@@ -685,6 +717,8 @@ pub enum DomainValueError {
     InvalidTemplateId,
     /// Backup ID was not a canonical UUID.
     InvalidBackupId,
+    /// User Package ID was not a canonical UUID.
+    InvalidUserPackageId,
     /// Principal ID was empty, non-ASCII, or exceeded its frozen limit.
     InvalidPrincipalId,
     /// Idempotency key was empty, non-ASCII, or exceeded its frozen limit.
@@ -704,6 +738,7 @@ impl fmt::Display for DomainValueError {
             Self::InvalidPlanId => formatter.write_str("invalid Plan identifier"),
             Self::InvalidTemplateId => formatter.write_str("invalid Template identifier"),
             Self::InvalidBackupId => formatter.write_str("invalid Backup identifier"),
+            Self::InvalidUserPackageId => formatter.write_str("invalid User Package identifier"),
             Self::InvalidPrincipalId => formatter.write_str("invalid Principal identifier"),
             Self::InvalidIdempotencyKey => formatter.write_str("invalid idempotency key"),
         }

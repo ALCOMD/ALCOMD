@@ -617,7 +617,7 @@ where
         }
         let catalog = self
             .store
-            .resolver_catalog(access.principal().clone())
+            .resolver_catalog(access.principal().clone(), false)
             .await
             .map_err(|_| error(M5TemplateErrorCode::Internal))?;
         if !catalog.complete {
@@ -686,7 +686,7 @@ where
         }
         let catalog = self
             .store
-            .resolver_catalog(access.principal().clone())
+            .resolver_catalog(access.principal().clone(), false)
             .await
             .map_err(|_| error(M5TemplateErrorCode::StoreUnavailable))?;
         if !catalog.complete {

@@ -1,12 +1,13 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use alcomd_application::{
     FilesystemJournalEntry, FilesystemPhase, JournalState, M3ReadAdapter, M4Error, M4ErrorCode,
-    M4PackageAdapter, M4Store, OperationId, PackageApplyCompletion, PackageMutationKind,
-    PackagePlanDraft, PackagePlanRecord, PackagePlanRequest, PlanAction, ProjectDiscoveryMode,
-    ProjectRecord, ResolverCatalog, ResourceKey, ResourceLockCoordinator, StateStore,
+    M4PackageAdapter, M4Store, OperationId, PackageApplyCompletion, PackageBulkIntent,
+    PackageMutationKind, PackagePlanDraft, PackagePlanRecord, PackagePlanRequest,
+    PackageSourceSelector, PlanAction, ProjectDiscoveryMode, ProjectRecord, ReinstallSelection,
+    ResolverCatalog, ResourceKey, ResourceLockCoordinator, StateStore,
 };
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -14,9 +15,9 @@ use sha2::{Digest, Sha256};
 
 use crate::package::validate_extracted_package;
 use crate::{
-    PackageCache, ResolveError, ResolveRequest, VpmReader, build_remove_plan,
-    build_resolution_plan, candidates_from_catalog, extract_archive, inspect_package_project,
-    materialize_vpm_manifest, resolve_packages,
+    PackageCache, ResolveError, ResolveRequest, VpmReader, build_bulk_plan, build_reinstall_plan,
+    build_remove_plan, build_resolution_plan, candidates_from_catalog, extract_archive,
+    inspect_package_project, materialize_vpm_manifest, resolve_packages,
 };
 
 #[derive(Clone)]
@@ -51,6 +52,12 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
         })
         .await
         .map_err(|_| M4Error::new(M4ErrorCode::Internal))??;
+        if request.action == PlanAction::Reinstall {
+            return prepare_reinstall(&snapshot, &project, &catalog, &request);
+        }
+        if request.action == PlanAction::Bulk {
+            return prepare_bulk(&snapshot, &project, &catalog, &request);
+        }
         if request.action == PlanAction::Remove {
             let package_id = request
                 .package_id
@@ -66,7 +73,7 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
                 .map(|dependency| ResolveRequest {
                     package_id: dependency.package_id.clone(),
                     range: dependency.value.clone(),
-                    repository_id: None,
+                    source: None,
                     include_prerelease: request.include_prerelease,
                     unity_version,
                 })
@@ -107,6 +114,317 @@ impl<S: M4Store + StateStore> M4PackageAdapter for PackageEngine<S> {
     ) -> Result<PackageApplyCompletion, M4Error> {
         self.execute(operation_id, project, plan, locks).await
     }
+}
+
+fn prepare_reinstall(
+    snapshot: &crate::ProjectPackageSnapshot,
+    project: &ProjectRecord,
+    catalog: &ResolverCatalog,
+    request: &PackagePlanRequest,
+) -> Result<PackagePlanDraft, M4Error> {
+    let selection = request
+        .reinstall_selection
+        .as_ref()
+        .ok_or_else(|| M4Error::new(M4ErrorCode::InvalidInput))?;
+    let locked = project
+        .observation
+        .locked_dependencies
+        .iter()
+        .map(|dependency| (dependency.package_id.clone(), dependency.value.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let targets = match selection {
+        ReinstallSelection::Packages(package_ids) => {
+            if package_ids.is_empty() || package_ids.len() > 256 {
+                return selection_limit();
+            }
+            let targets = package_ids.iter().cloned().collect::<BTreeSet<_>>();
+            if targets.len() != package_ids.len() {
+                return Err(M4Error::new(M4ErrorCode::InvalidInput));
+            }
+            for package_id in &targets {
+                if !locked.contains_key(package_id) {
+                    return Err(M4Error::new(M4ErrorCode::PackageNotInstalled));
+                }
+            }
+            targets
+        }
+        ReinstallSelection::All => {
+            if !request.reinstall_sources.is_empty() {
+                return Err(M4Error::new(M4ErrorCode::InvalidInput));
+            }
+            if locked.len() > 256 {
+                return selection_limit();
+            }
+            locked.keys().cloned().collect()
+        }
+    };
+    let selectors = reinstall_selectors(&targets, &request.reinstall_sources)?;
+    let unity_version = parse_unity_editor_version(&project.observation.unity_version)?;
+    let requests = locked
+        .iter()
+        .map(|(package_id, version)| ResolveRequest {
+            package_id: package_id.clone(),
+            range: format!("={version}"),
+            source: selectors.get(package_id).cloned(),
+            include_prerelease: version.contains('-'),
+            unity_version,
+        })
+        .collect::<Vec<_>>();
+    let candidates = candidates_from_catalog(catalog).map_err(map_resolve_error)?;
+    let mut resolution = if requests.is_empty() {
+        crate::Resolution {
+            packages: Vec::new(),
+            dependency_edges: Vec::new(),
+        }
+    } else {
+        resolve_packages(&candidates, &requests).map_err(map_resolve_error)?
+    };
+    normalize_direct_authority(project, &mut resolution);
+    validate_locked_versions(&locked, &resolution)?;
+    build_reinstall_plan(snapshot, &resolution, &targets)
+}
+
+fn prepare_bulk(
+    snapshot: &crate::ProjectPackageSnapshot,
+    project: &ProjectRecord,
+    catalog: &ResolverCatalog,
+    request: &PackagePlanRequest,
+) -> Result<PackagePlanDraft, M4Error> {
+    if request.bulk_intents.is_empty() || request.bulk_intents.len() > 256 {
+        return selection_limit();
+    }
+    let mut intents = BTreeMap::new();
+    for intent in &request.bulk_intents {
+        if intents
+            .insert(intent.package_id().to_owned(), intent)
+            .is_some()
+        {
+            return Err(M4Error::new(M4ErrorCode::PackageIntentConflict));
+        }
+    }
+    let locked = project
+        .observation
+        .locked_dependencies
+        .iter()
+        .map(|dependency| (dependency.package_id.clone(), dependency.value.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let mut desired = project
+        .observation
+        .direct_dependencies
+        .iter()
+        .map(|dependency| {
+            (
+                dependency.package_id.clone(),
+                (dependency.value.clone(), None, false),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut reinstall_targets = BTreeSet::new();
+    let mut upgrade_targets = BTreeSet::new();
+    let mut removed = BTreeSet::new();
+    for intent in intents.values() {
+        match intent {
+            PackageBulkIntent::Install {
+                package_id,
+                version_range,
+                source,
+                include_prerelease,
+            } => {
+                desired.insert(
+                    package_id.clone(),
+                    (
+                        version_range.clone().unwrap_or_else(|| "*".to_owned()),
+                        source.clone(),
+                        *include_prerelease,
+                    ),
+                );
+            }
+            PackageBulkIntent::Upgrade {
+                package_id,
+                version_range,
+                source,
+                include_prerelease,
+            } => {
+                if !locked.contains_key(package_id) {
+                    return Err(M4Error::new(M4ErrorCode::PackageNotInstalled));
+                }
+                desired.insert(
+                    package_id.clone(),
+                    (
+                        version_range.clone().unwrap_or_else(|| "*".to_owned()),
+                        source.clone(),
+                        *include_prerelease,
+                    ),
+                );
+                upgrade_targets.insert(package_id.clone());
+            }
+            PackageBulkIntent::Remove { package_id } => {
+                if desired.remove(package_id).is_none() {
+                    return Err(M4Error::new(M4ErrorCode::PackageNotFound));
+                }
+                removed.insert(package_id.clone());
+            }
+            PackageBulkIntent::Reinstall { package_id, source } => {
+                let version = locked
+                    .get(package_id)
+                    .ok_or_else(|| M4Error::new(M4ErrorCode::PackageNotInstalled))?;
+                if desired.contains_key(package_id) {
+                    desired.insert(
+                        package_id.clone(),
+                        (format!("={version}"), source.clone(), version.contains('-')),
+                    );
+                }
+                reinstall_targets.insert(package_id.clone());
+            }
+        }
+    }
+    let unity_version = parse_unity_editor_version(&project.observation.unity_version)?;
+    let mut requests = desired
+        .iter()
+        .map(
+            |(package_id, (range, source, include_prerelease))| ResolveRequest {
+                package_id: package_id.clone(),
+                range: range.clone(),
+                source: source.clone(),
+                include_prerelease: *include_prerelease,
+                unity_version,
+            },
+        )
+        .collect::<Vec<_>>();
+    for package_id in &reinstall_targets {
+        if desired.contains_key(package_id) {
+            continue;
+        }
+        let version = locked
+            .get(package_id)
+            .ok_or_else(|| M4Error::new(M4ErrorCode::PackageNotInstalled))?;
+        let source = match intents.get(package_id) {
+            Some(PackageBulkIntent::Reinstall { source, .. }) => source.clone(),
+            _ => None,
+        };
+        requests.push(ResolveRequest {
+            package_id: package_id.clone(),
+            range: format!("={version}"),
+            source,
+            include_prerelease: version.contains('-'),
+            unity_version,
+        });
+    }
+    let candidates = candidates_from_catalog(catalog).map_err(map_resolve_error)?;
+    let mut resolution = if requests.is_empty() {
+        crate::Resolution {
+            packages: Vec::new(),
+            dependency_edges: Vec::new(),
+        }
+    } else {
+        resolve_packages(&candidates, &requests).map_err(map_resolve_error)?
+    };
+    let desired_ids = desired.keys().map(String::as_str).collect::<BTreeSet<_>>();
+    for package in &mut resolution.packages {
+        package.direct = desired_ids.contains(package.package_id.as_str());
+    }
+    for edge in &mut resolution.dependency_edges {
+        if edge.direct {
+            edge.direct = desired_ids.contains(edge.to_package_id.as_str());
+        }
+    }
+    if removed.iter().any(|package_id| {
+        resolution
+            .packages
+            .iter()
+            .any(|package| &package.package_id == package_id)
+    }) {
+        return Err(M4Error::new(M4ErrorCode::PackageDependencyConflict));
+    }
+    for package_id in &reinstall_targets {
+        let expected = locked
+            .get(package_id)
+            .ok_or_else(|| M4Error::new(M4ErrorCode::PackageNotInstalled))?;
+        let actual = resolution
+            .packages
+            .iter()
+            .find(|package| &package.package_id == package_id)
+            .ok_or_else(|| M4Error::new(M4ErrorCode::PackageNotFound))?;
+        if actual.version.to_string() != *expected {
+            return Err(M4Error::new(M4ErrorCode::PackageDependencyConflict));
+        }
+    }
+    for package_id in upgrade_targets {
+        let installed = Version::parse(
+            locked
+                .get(&package_id)
+                .ok_or_else(|| M4Error::new(M4ErrorCode::PackageNotInstalled))?,
+        )
+        .map_err(|_| M4Error::new(M4ErrorCode::PackageManifestInvalid))?;
+        let selected = resolution
+            .packages
+            .iter()
+            .find(|package| package.package_id == package_id)
+            .ok_or_else(|| M4Error::new(M4ErrorCode::PackageNotFound))?;
+        if !selected.version.cmp_precedence(&installed).is_gt() {
+            return Err(M4Error::new(M4ErrorCode::InvalidInput));
+        }
+    }
+    build_bulk_plan(snapshot, &resolution, &reinstall_targets)
+}
+
+fn reinstall_selectors(
+    targets: &BTreeSet<String>,
+    values: &[(String, PackageSourceSelector)],
+) -> Result<BTreeMap<String, PackageSourceSelector>, M4Error> {
+    if values.len() > 256 {
+        return selection_limit();
+    }
+    let mut selectors = BTreeMap::new();
+    for (package_id, source) in values {
+        if !targets.contains(package_id)
+            || selectors
+                .insert(package_id.clone(), source.clone())
+                .is_some()
+        {
+            return Err(M4Error::new(M4ErrorCode::InvalidInput));
+        }
+    }
+    Ok(selectors)
+}
+
+fn normalize_direct_authority(project: &ProjectRecord, resolution: &mut crate::Resolution) {
+    let direct = project
+        .observation
+        .direct_dependencies
+        .iter()
+        .map(|dependency| dependency.package_id.as_str())
+        .collect::<BTreeSet<_>>();
+    for package in &mut resolution.packages {
+        package.direct = direct.contains(package.package_id.as_str());
+    }
+    for edge in &mut resolution.dependency_edges {
+        if edge.direct {
+            edge.direct = direct.contains(edge.to_package_id.as_str());
+        }
+    }
+}
+
+fn validate_locked_versions(
+    locked: &BTreeMap<String, String>,
+    resolution: &crate::Resolution,
+) -> Result<(), M4Error> {
+    if locked.len() != resolution.packages.len() {
+        return Err(M4Error::new(M4ErrorCode::PackageDependencyConflict));
+    }
+    for package in &resolution.packages {
+        if locked.get(&package.package_id) != Some(&package.version.to_string()) {
+            return Err(M4Error::new(M4ErrorCode::PackageDependencyConflict));
+        }
+    }
+    Ok(())
+}
+
+fn selection_limit<T>() -> Result<T, M4Error> {
+    Err(M4Error::with_subreason(
+        M4ErrorCode::PlanTooLarge,
+        "selection_limit",
+    ))
 }
 
 impl<S: M4Store + StateStore> PackageEngine<S> {
@@ -150,12 +468,15 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
             let Some(source) = &mutation.source else {
                 continue;
             };
-            let _cache_guard = locks
-                .acquire(vec![ResourceKey::PackageCache(source.archive_sha256)])
-                .await;
+            let digest = source.archive_sha256();
+            let _cache_guard = locks.acquire(vec![ResourceKey::PackageCache(digest)]).await;
             let archive = self
                 .cache
-                .get(source.archive_sha256, &source.artifact_url, false)
+                .get(
+                    digest,
+                    source.artifact_url().unwrap_or(""),
+                    source.is_user_package(),
+                )
                 .await
                 .map_err(map_cache_error)?;
             archives.insert(mutation.package_id.clone(), archive);
@@ -242,7 +563,10 @@ impl<S: M4Store + StateStore> PackageEngine<S> {
                 ResourceKey::Operation(operation_id),
             ])
             .await;
-        let catalog = self.store.resolver_catalog(plan.owner.clone()).await?;
+        let catalog = self
+            .store
+            .resolver_catalog(plan.owner.clone(), plan.change_set.format_version == 2)
+            .await?;
         revalidate(&project, &catalog, &plan).await?;
         if self
             .store
@@ -576,31 +900,83 @@ async fn revalidate(
         ));
     }
     for source in &plan.source_set {
+        if matches!(source, alcomd_application::PackageSourcePin::UserPackage(_)) {
+            // A v2 User Package plan is authorized by its immutable owned cache digest.
+            // Registry refresh/removal must not rewrite or invalidate an existing plan.
+            continue;
+        }
         let row = catalog
             .entries
             .iter()
-            .find(|row| {
-                row.repository_id == source.repository_id
-                    && row.package_id == source.package_id
-                    && row.version == source.version
+            .find(|row| row.package_id == source.package_id() && row.version == source.version())
+            .and_then(|row| match (&row.source, source) {
+                (
+                    alcomd_application::ResolverCatalogSource::Repository { repository_id, .. },
+                    alcomd_application::PackageSourcePin::Repository(pin),
+                ) if repository_id == &pin.repository_id => Some(row),
+                (
+                    alcomd_application::ResolverCatalogSource::UserPackage {
+                        user_package_id, ..
+                    },
+                    alcomd_application::PackageSourcePin::UserPackage(pin),
+                ) if user_package_id == &pin.user_package_id => Some(row),
+                _ => None,
             })
             .ok_or_else(|| {
-                M4Error::with_subreason(M4ErrorCode::PlanStale, "repository_revision_changed")
+                M4Error::with_subreason(M4ErrorCode::PlanStale, "source_revision_changed")
             })?;
-        if row.repository_revision != source.repository_revision {
-            return stale("repository_revision_changed");
-        }
-        if row.source_identity != source.source_identity {
-            return stale("source_identity_changed");
-        }
-        if row.manifest_fingerprint != source.manifest_fingerprint {
-            return stale("manifest_fingerprint_changed");
-        }
-        if row.artifact_url != source.artifact_url {
-            return stale("artifact_url_changed");
-        }
-        if parse_digest(&row.zip_sha256)? != source.archive_sha256 {
-            return stale("archive_digest_changed");
+        match (&row.source, source) {
+            (
+                alcomd_application::ResolverCatalogSource::Repository {
+                    repository_revision,
+                    source_identity,
+                    artifact_url,
+                    zip_sha256,
+                    manifest_fingerprint,
+                    ..
+                },
+                alcomd_application::PackageSourcePin::Repository(pin),
+            ) => {
+                if repository_revision != &pin.repository_revision {
+                    return stale("repository_revision_changed");
+                }
+                if source_identity != &pin.source_identity {
+                    return stale("source_identity_changed");
+                }
+                if manifest_fingerprint != &pin.manifest_fingerprint {
+                    return stale("manifest_fingerprint_changed");
+                }
+                if artifact_url != &pin.artifact_url {
+                    return stale("artifact_url_changed");
+                }
+                if parse_digest(zip_sha256)? != pin.archive_sha256 {
+                    return stale("archive_digest_changed");
+                }
+            }
+            (
+                alcomd_application::ResolverCatalogSource::UserPackage {
+                    source_revision,
+                    source_identity,
+                    archive_sha256,
+                    manifest_fingerprint,
+                    ..
+                },
+                alcomd_application::PackageSourcePin::UserPackage(pin),
+            ) => {
+                if source_revision != &pin.source_revision {
+                    return stale("source_revision_changed");
+                }
+                if source_identity != &pin.source_identity {
+                    return stale("source_identity_changed");
+                }
+                if manifest_fingerprint != &pin.manifest_fingerprint {
+                    return stale("manifest_fingerprint_changed");
+                }
+                if archive_sha256 != &pin.archive_sha256 {
+                    return stale("archive_digest_changed");
+                }
+            }
+            _ => return stale("source_authority_changed"),
         }
     }
     Ok(())
@@ -619,7 +995,7 @@ fn resolution_requests(
             .map(|dependency| ResolveRequest {
                 package_id: dependency.package_id.clone(),
                 range: dependency.value.clone(),
-                repository_id: None,
+                source: None,
                 include_prerelease: request.include_prerelease,
                 unity_version,
             })
@@ -639,7 +1015,11 @@ fn resolution_requests(
             .version_range
             .clone()
             .unwrap_or_else(|| "*".to_owned()),
-        repository_id: request.repository_id.clone(),
+        source: request.source_selector.clone().or_else(|| {
+            request.repository_id.clone().map(|repository_id| {
+                alcomd_application::PackageSourceSelector::Repository { repository_id }
+            })
+        }),
         include_prerelease: request.include_prerelease,
         unity_version,
     }])
@@ -1128,7 +1508,8 @@ mod tests {
     use super::*;
     use alcomd_application::{
         DependencyIdentity, ManifestState, PackageChangeSet, PackageMutation, PackagePlanRecord,
-        PlanState, PrincipalId, ProjectId, ProjectObservation, ProjectType, Revision,
+        PackagePlanVersion, PlanState, PrincipalId, ProjectId, ProjectObservation, ProjectType,
+        ResolverCatalogEntry, ResolverCatalogSource, Revision,
     };
 
     #[test]
@@ -1259,6 +1640,282 @@ mod tests {
         );
     }
 
+    #[test]
+    fn reinstall_targets_direct_transitive_and_all_without_changing_locked_versions() {
+        let installed = [
+            ("com.example.direct".to_owned(), "1.0.0".to_owned()),
+            ("com.example.transitive".to_owned(), "2.0.0".to_owned()),
+        ];
+        let (root, project, snapshot) = planning_fixture(&installed[..1], &installed);
+        let catalog = catalog(&[
+            ("com.example.direct", "1.0.0"),
+            ("com.example.direct", "1.1.0"),
+            ("com.example.transitive", "2.0.0"),
+            ("com.example.transitive", "3.0.0"),
+        ]);
+
+        let mut request = package_request(PlanAction::Reinstall);
+        request.plan_version = PackagePlanVersion::V2;
+        request.reinstall_selection = Some(ReinstallSelection::Packages(vec![
+            "com.example.transitive".to_owned(),
+        ]));
+        let transitive = prepare_reinstall(&snapshot, &project, &catalog, &request)
+            .expect("reinstall transitive package");
+        assert_eq!(transitive.change_set.mutations.len(), 1);
+        assert_eq!(
+            transitive.change_set.mutations[0].kind,
+            PackageMutationKind::Replace
+        );
+        assert_eq!(
+            transitive.change_set.mutations[0].from_version.as_deref(),
+            Some("2.0.0")
+        );
+        assert_eq!(
+            transitive.change_set.mutations[0].to_version.as_deref(),
+            Some("2.0.0")
+        );
+
+        request.reinstall_selection = Some(ReinstallSelection::All);
+        let all = prepare_reinstall(&snapshot, &project, &catalog, &request)
+            .expect("reinstall all locked packages");
+        assert_eq!(all.change_set.mutations.len(), 2);
+        assert!(all.change_set.mutations.iter().all(|mutation| {
+            mutation.kind == PackageMutationKind::Replace
+                && mutation.from_version == mutation.to_version
+        }));
+
+        request.reinstall_selection = Some(ReinstallSelection::Packages(vec![
+            "com.example.missing".to_owned(),
+        ]));
+        assert_eq!(
+            prepare_reinstall(&snapshot, &project, &catalog, &request)
+                .expect_err("uninstalled target must fail")
+                .code(),
+            M4ErrorCode::PackageNotInstalled
+        );
+        std::fs::remove_dir_all(root).expect("remove fixture");
+
+        let (empty_root, empty_project, empty_snapshot) = planning_fixture(&[], &[]);
+        request.reinstall_selection = Some(ReinstallSelection::All);
+        let empty = prepare_reinstall(
+            &empty_snapshot,
+            &empty_project,
+            &ResolverCatalog {
+                entries: Vec::new(),
+                complete: true,
+            },
+            &request,
+        )
+        .expect("empty all is a successful empty Plan");
+        assert!(empty.change_set.mutations.is_empty());
+        std::fs::remove_dir_all(empty_root).expect("remove empty fixture");
+    }
+
+    #[test]
+    fn same_version_install_remains_noop_while_reinstall_forces_replace() {
+        let installed = [("com.example.fixture".to_owned(), "1.0.0".to_owned())];
+        let (root, _project, snapshot) = planning_fixture(&installed, &installed);
+        let resolved = resolution("1.0.0");
+        let install = build_resolution_plan(&snapshot, PlanAction::Install, &resolved)
+            .expect("same-version install plan");
+        assert!(install.change_set.mutations.is_empty());
+
+        let reinstall = build_reinstall_plan(
+            &snapshot,
+            &resolved,
+            &BTreeSet::from(["com.example.fixture".to_owned()]),
+        )
+        .expect("same-version reinstall plan");
+        assert_eq!(reinstall.change_set.mutations.len(), 1);
+        assert_eq!(
+            reinstall.change_set.mutations[0].kind,
+            PackageMutationKind::Replace
+        );
+        assert_eq!(
+            reinstall.change_set.mutations[0].from_version,
+            reinstall.change_set.mutations[0].to_version
+        );
+        std::fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn bulk_supports_all_four_intents_in_one_canonical_atomic_plan() {
+        let direct = [
+            ("com.example.alpha".to_owned(), "1.0.0".to_owned()),
+            ("com.example.beta".to_owned(), "1.0.0".to_owned()),
+            ("com.example.delta".to_owned(), "1.0.0".to_owned()),
+        ];
+        let (root, project, snapshot) = planning_fixture(&direct, &direct);
+        let catalog = catalog(&[
+            ("com.example.alpha", "1.0.0"),
+            ("com.example.alpha", "1.1.0"),
+            ("com.example.beta", "1.0.0"),
+            ("com.example.gamma", "1.0.0"),
+        ]);
+        let mut request = package_request(PlanAction::Bulk);
+        request.plan_version = PackagePlanVersion::V2;
+        request.bulk_intents = vec![
+            PackageBulkIntent::Reinstall {
+                package_id: "com.example.beta".to_owned(),
+                source: None,
+            },
+            PackageBulkIntent::Install {
+                package_id: "com.example.gamma".to_owned(),
+                version_range: Some("=1.0.0".to_owned()),
+                source: None,
+                include_prerelease: false,
+            },
+            PackageBulkIntent::Remove {
+                package_id: "com.example.delta".to_owned(),
+            },
+            PackageBulkIntent::Upgrade {
+                package_id: "com.example.alpha".to_owned(),
+                version_range: Some("=1.1.0".to_owned()),
+                source: None,
+                include_prerelease: false,
+            },
+        ];
+
+        let plan =
+            prepare_bulk(&snapshot, &project, &catalog, &request).expect("one atomic mixed plan");
+        assert_eq!(plan.action, PlanAction::Bulk);
+        assert_eq!(
+            plan.change_set
+                .mutations
+                .iter()
+                .map(|mutation| mutation.package_id.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "com.example.alpha",
+                "com.example.beta",
+                "com.example.delta",
+                "com.example.gamma"
+            ]
+        );
+        assert_eq!(
+            plan.change_set
+                .mutations
+                .iter()
+                .map(|mutation| mutation.kind)
+                .collect::<Vec<_>>(),
+            vec![
+                PackageMutationKind::Replace,
+                PackageMutationKind::Replace,
+                PackageMutationKind::Remove,
+                PackageMutationKind::Install
+            ]
+        );
+        request.bulk_intents.reverse();
+        let reversed = prepare_bulk(&snapshot, &project, &catalog, &request)
+            .expect("caller order must not change the Plan");
+        assert_eq!(reversed.change_set, plan.change_set);
+        assert_eq!(reversed.change_set_fingerprint, plan.change_set_fingerprint);
+        std::fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn bulk_rejects_duplicate_intents_and_257_but_accepts_256() {
+        let installed = (0..256)
+            .map(|value| {
+                (
+                    format!("com.example.package-{value:03}"),
+                    "1.0.0".to_owned(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let (root, project, snapshot) = planning_fixture(&installed, &installed);
+        let mut request = package_request(PlanAction::Bulk);
+        request.plan_version = PackagePlanVersion::V2;
+        request.bulk_intents = installed
+            .iter()
+            .map(|(package_id, _)| PackageBulkIntent::Remove {
+                package_id: package_id.clone(),
+            })
+            .collect();
+        let plan = prepare_bulk(
+            &snapshot,
+            &project,
+            &ResolverCatalog {
+                entries: Vec::new(),
+                complete: true,
+            },
+            &request,
+        )
+        .expect("256 intents are accepted");
+        assert_eq!(plan.change_set.mutations.len(), 256);
+
+        request.bulk_intents.push(PackageBulkIntent::Install {
+            package_id: "com.example.too-many".to_owned(),
+            version_range: None,
+            source: None,
+            include_prerelease: false,
+        });
+        let too_many = prepare_bulk(
+            &snapshot,
+            &project,
+            &ResolverCatalog {
+                entries: Vec::new(),
+                complete: true,
+            },
+            &request,
+        )
+        .expect_err("257 intents must fail");
+        assert_eq!(too_many.code(), M4ErrorCode::PlanTooLarge);
+        assert_eq!(too_many.subreason(), Some("selection_limit"));
+
+        request.bulk_intents = vec![
+            PackageBulkIntent::Remove {
+                package_id: installed[0].0.clone(),
+            },
+            PackageBulkIntent::Reinstall {
+                package_id: installed[0].0.clone(),
+                source: None,
+            },
+        ];
+        assert_eq!(
+            prepare_bulk(
+                &snapshot,
+                &project,
+                &ResolverCatalog {
+                    entries: Vec::new(),
+                    complete: true,
+                },
+                &request,
+            )
+            .expect_err("duplicate intent must fail")
+            .code(),
+            M4ErrorCode::PackageIntentConflict
+        );
+        std::fs::remove_dir_all(root).expect("remove fixture");
+
+        let installed_over = (0..257)
+            .map(|value| {
+                (
+                    format!("com.example.reinstall-{value:03}"),
+                    "1.0.0".to_owned(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let (over_root, over_project, over_snapshot) =
+            planning_fixture(&installed_over, &installed_over);
+        let mut reinstall = package_request(PlanAction::Reinstall);
+        reinstall.plan_version = PackagePlanVersion::V2;
+        reinstall.reinstall_selection = Some(ReinstallSelection::All);
+        let too_many = prepare_reinstall(
+            &over_snapshot,
+            &over_project,
+            &ResolverCatalog {
+                entries: Vec::new(),
+                complete: true,
+            },
+            &reinstall,
+        )
+        .expect_err("reinstall all over 256 must fail");
+        assert_eq!(too_many.code(), M4ErrorCode::PlanTooLarge);
+        assert_eq!(too_many.subreason(), Some("selection_limit"));
+        std::fs::remove_dir_all(over_root).expect("remove over-limit fixture");
+    }
+
     fn project_with_locked_version(version: &str) -> ProjectRecord {
         ProjectRecord {
             project_id: ProjectId::new(),
@@ -1296,6 +1953,11 @@ mod tests {
             version_range: None,
             repository_id: None,
             include_prerelease: false,
+            plan_version: alcomd_application::PackagePlanVersion::V1,
+            source_selector: None,
+            reinstall_selection: None,
+            reinstall_sources: Vec::new(),
+            bulk_intents: Vec::new(),
         }
     }
 
@@ -1305,17 +1967,120 @@ mod tests {
                 package_id: "com.example.fixture".to_owned(),
                 version: Version::parse(version).expect("version"),
                 source: crate::PackageSource {
-                    repository_id: "repo".to_owned(),
-                    repository_revision: 1,
-                    priority: 1,
+                    authority: crate::PackageSourceAuthority::Repository {
+                        repository_id: "repo".to_owned(),
+                        repository_revision: 1,
+                        priority: 1,
+                        artifact_url: "https://example.invalid/package.zip".to_owned(),
+                    },
                     source_identity: "repo-source".to_owned(),
                     manifest_fingerprint: [4; 32],
-                    artifact_url: "https://example.invalid/package.zip".to_owned(),
                     archive_sha256: [5; 32],
                 },
                 direct: true,
             }],
             dependency_edges: Vec::new(),
+        }
+    }
+
+    fn planning_fixture(
+        direct: &[(String, String)],
+        locked: &[(String, String)],
+    ) -> (PathBuf, ProjectRecord, crate::ProjectPackageSnapshot) {
+        let root = temporary_root("planning");
+        std::fs::create_dir_all(root.join("Packages")).expect("Packages");
+        let dependencies = direct
+            .iter()
+            .map(|(package_id, version)| (package_id.clone(), serde_json::json!(version)))
+            .collect::<serde_json::Map<_, _>>();
+        let locked_json = locked
+            .iter()
+            .map(|(package_id, version)| {
+                (
+                    package_id.clone(),
+                    serde_json::json!({ "version": version }),
+                )
+            })
+            .collect::<serde_json::Map<_, _>>();
+        std::fs::write(
+            root.join("Packages/vpm-manifest.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "dependencies": dependencies,
+                "locked": locked_json,
+                "preserved": true
+            }))
+            .expect("serialize VPM manifest"),
+        )
+        .expect("VPM manifest");
+        std::fs::write(
+            root.join("Packages/manifest.json"),
+            b"{\"dependencies\":{}}\n",
+        )
+        .expect("UPM manifest");
+        let (_, identity) =
+            alcomd_platform::resolve_directory_identity(&root).expect("project identity");
+        let project = ProjectRecord {
+            project_id: ProjectId::new(),
+            observation: ProjectObservation {
+                root_path: root.to_string_lossy().into_owned(),
+                path_identity_key: identity,
+                project_type: ProjectType::Unknown,
+                unity_version: "2022.3.22f1".to_owned(),
+                unity_revision: None,
+                vpm_manifest: ManifestState::Valid,
+                upm_manifest: ManifestState::Valid,
+                direct_dependencies: direct
+                    .iter()
+                    .map(|(package_id, value)| DependencyIdentity {
+                        package_id: package_id.clone(),
+                        value: value.clone(),
+                    })
+                    .collect(),
+                locked_dependencies: locked
+                    .iter()
+                    .map(|(package_id, value)| DependencyIdentity {
+                        package_id: package_id.clone(),
+                        value: value.clone(),
+                    })
+                    .collect(),
+                issues: Vec::new(),
+                observed_at_ms: 1,
+            },
+            revision: Revision::INITIAL,
+            registered_at_ms: 1,
+            favorite: false,
+        };
+        let snapshot = inspect_package_project(&project).expect("inspect package project");
+        (root, project, snapshot)
+    }
+
+    fn catalog(values: &[(&str, &str)]) -> ResolverCatalog {
+        ResolverCatalog {
+            entries: values
+                .iter()
+                .enumerate()
+                .map(|(index, (package_id, version))| ResolverCatalogEntry {
+                    source: ResolverCatalogSource::Repository {
+                        repository_id: "00000000-0000-4000-8000-000000000001".to_owned(),
+                        repository_revision: 1,
+                        repository_priority: 1,
+                        source_identity: "fixture-repository".to_owned(),
+                        artifact_url: format!("https://example.invalid/{package_id}/{version}.zip"),
+                        zip_sha256: format!("{index:064x}"),
+                        manifest_fingerprint: [u8::try_from(index % 255).expect("byte"); 32],
+                    },
+                    package_id: (*package_id).to_owned(),
+                    version: (*version).to_owned(),
+                    yanked: false,
+                    unity: None,
+                    author_name: "Fixture".to_owned(),
+                    author_email: "fixture@example.invalid".to_owned(),
+                    unity_release: None,
+                    dependencies_json: "{}".to_owned(),
+                    legacy_metadata_present: false,
+                })
+                .collect(),
+            complete: true,
         }
     }
 

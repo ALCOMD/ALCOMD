@@ -6,19 +6,70 @@ use semver::Version;
 use serde_json::Value;
 
 use crate::range::{VpmRange, compare_precedence};
-use alcomd_application::ResolverCatalog;
+use alcomd_application::{PackageSourceSelector, ResolverCatalog, ResolverCatalogSource};
 
 const MAX_REQUIREMENTS: usize = 4_096;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PackageSource {
-    pub repository_id: String,
-    pub repository_revision: u64,
-    pub priority: u64,
+    pub authority: PackageSourceAuthority,
     pub source_identity: String,
     pub manifest_fingerprint: [u8; 32],
-    pub artifact_url: String,
     pub archive_sha256: [u8; 32],
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PackageSourceAuthority {
+    Repository {
+        repository_id: String,
+        repository_revision: u64,
+        priority: u64,
+        artifact_url: String,
+    },
+    UserPackage {
+        user_package_id: alcomd_application::UserPackageId,
+        source_revision: u64,
+    },
+}
+
+impl PackageSource {
+    fn priority(&self) -> u64 {
+        match self.authority {
+            PackageSourceAuthority::Repository { priority, .. } => priority,
+            PackageSourceAuthority::UserPackage { .. } => u64::MAX,
+        }
+    }
+
+    fn deterministic_key(&self) -> String {
+        match &self.authority {
+            PackageSourceAuthority::Repository { repository_id, .. } => {
+                format!("repository:{repository_id}")
+            }
+            PackageSourceAuthority::UserPackage {
+                user_package_id, ..
+            } => format!("user-package:{user_package_id}"),
+        }
+    }
+
+    fn matches_selector(&self, selector: &PackageSourceSelector) -> bool {
+        match (&self.authority, selector) {
+            (
+                PackageSourceAuthority::Repository { repository_id, .. },
+                PackageSourceSelector::Repository {
+                    repository_id: selected,
+                },
+            ) => repository_id == selected,
+            (
+                PackageSourceAuthority::UserPackage {
+                    user_package_id, ..
+                },
+                PackageSourceSelector::UserPackage {
+                    user_package_id: selected,
+                },
+            ) => user_package_id == selected,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -42,7 +93,7 @@ pub struct PackageCandidate {
 pub struct ResolveRequest {
     pub package_id: String,
     pub range: String,
-    pub repository_id: Option<String>,
+    pub source: Option<PackageSourceSelector>,
     pub include_prerelease: bool,
     pub unity_version: Option<(u64, u64)>,
 }
@@ -106,6 +157,52 @@ pub fn candidates_from_catalog(
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
+        let (source, manifest_fingerprint, archive_sha256) = match &row.source {
+            ResolverCatalogSource::Repository {
+                repository_id,
+                repository_revision,
+                repository_priority,
+                source_identity,
+                artifact_url,
+                zip_sha256,
+                manifest_fingerprint,
+            } => (
+                PackageSource {
+                    authority: PackageSourceAuthority::Repository {
+                        repository_id: repository_id.clone(),
+                        repository_revision: *repository_revision,
+                        priority: *repository_priority,
+                        artifact_url: artifact_url.clone(),
+                    },
+                    source_identity: source_identity.clone(),
+                    manifest_fingerprint: *manifest_fingerprint,
+                    archive_sha256: parse_digest(zip_sha256)?,
+                },
+                *manifest_fingerprint,
+                parse_digest(zip_sha256)?,
+            ),
+            ResolverCatalogSource::UserPackage {
+                user_package_id,
+                source_revision,
+                source_identity,
+                archive_sha256,
+                manifest_fingerprint,
+            } => (
+                PackageSource {
+                    authority: PackageSourceAuthority::UserPackage {
+                        user_package_id: *user_package_id,
+                        source_revision: *source_revision,
+                    },
+                    source_identity: source_identity.clone(),
+                    manifest_fingerprint: *manifest_fingerprint,
+                    archive_sha256: *archive_sha256,
+                },
+                *manifest_fingerprint,
+                *archive_sha256,
+            ),
+        };
+        debug_assert_eq!(source.manifest_fingerprint, manifest_fingerprint);
+        debug_assert_eq!(source.archive_sha256, archive_sha256);
         candidates.push(PackageCandidate {
             package_id: row.package_id.clone(),
             version,
@@ -113,15 +210,7 @@ pub fn candidates_from_catalog(
             unity_minimum,
             legacy_metadata_present: row.legacy_metadata_present,
             dependencies,
-            source: PackageSource {
-                repository_id: row.repository_id.clone(),
-                repository_revision: row.repository_revision,
-                priority: row.repository_priority,
-                source_identity: row.source_identity.clone(),
-                manifest_fingerprint: row.manifest_fingerprint,
-                artifact_url: row.artifact_url.clone(),
-                archive_sha256: parse_digest(&row.zip_sha256)?,
-            },
+            source,
         });
     }
     candidates.sort_by(|left, right| {
@@ -129,12 +218,11 @@ pub fn candidates_from_catalog(
             .as_bytes()
             .cmp(right.package_id.as_bytes())
             .then_with(|| compare_precedence(&left.version, &right.version))
-            .then_with(|| left.source.priority.cmp(&right.source.priority))
+            .then_with(|| left.source.priority().cmp(&right.source.priority()))
             .then_with(|| {
                 left.source
-                    .repository_id
-                    .as_bytes()
-                    .cmp(right.source.repository_id.as_bytes())
+                    .deterministic_key()
+                    .cmp(&right.source.deterministic_key())
             })
     });
     Ok(candidates)
@@ -195,7 +283,7 @@ struct Requirement {
     from_package_id: String,
     range_text: String,
     range: VpmRange,
-    repository_id: Option<String>,
+    source: Option<PackageSourceSelector>,
     direct: bool,
 }
 
@@ -232,7 +320,7 @@ pub fn resolve_packages(
                 from_package_id: request.package_id.clone(),
                 range_text: range.canonical(),
                 range,
-                repository_id: request.repository_id.clone(),
+                source: request.source.clone(),
                 direct: true,
             });
     }
@@ -359,14 +447,35 @@ fn solve<'a>(
         let precedence_group = &candidates[index..precedence_end];
         let best_priority = precedence_group
             .iter()
-            .map(|candidate| candidate.source.priority)
+            .map(|candidate| candidate.source.priority())
             .min()
             .expect("non-empty candidate group");
         let preferred = precedence_group
             .iter()
             .copied()
-            .filter(|candidate| candidate.source.priority == best_priority)
+            .filter(|candidate| candidate.source.priority() == best_priority)
             .collect::<Vec<_>>();
+        let has_repository = precedence_group.iter().any(|candidate| {
+            matches!(
+                candidate.source.authority,
+                PackageSourceAuthority::Repository { .. }
+            )
+        });
+        let has_user_package = precedence_group.iter().any(|candidate| {
+            matches!(
+                candidate.source.authority,
+                PackageSourceAuthority::UserPackage { .. }
+            )
+        });
+        let source_is_explicit = package_requirements
+            .iter()
+            .any(|requirement| requirement.source.is_some());
+        if !source_is_explicit && has_repository && has_user_package {
+            return Err(ResolveError::SourceAmbiguous {
+                package_id: package_id.clone(),
+                version: candidates[index].version.to_string(),
+            });
+        }
         if preferred.len() > 1 {
             return Err(ResolveError::SourceAmbiguous {
                 package_id: package_id.clone(),
@@ -392,7 +501,7 @@ fn solve<'a>(
                 from_package_id: candidate.package_id.clone(),
                 range_text: range.canonical(),
                 range,
-                repository_id: None,
+                source: None,
                 direct: false,
             });
             if next_requirements.values().map(Vec::len).sum::<usize>() > MAX_REQUIREMENTS {
@@ -447,9 +556,9 @@ fn classify_no_candidates(
     let source_and_range_match = |candidate: &&PackageCandidate| {
         requirements.iter().all(|requirement| {
             requirement
-                .repository_id
+                .source
                 .as_ref()
-                .is_none_or(|repository_id| repository_id == &candidate.source.repository_id)
+                .is_none_or(|selector| candidate.source.matches_selector(selector))
                 && requirement
                     .range
                     .matches(&candidate.version, include_prerelease)
@@ -502,9 +611,9 @@ fn candidate_satisfies(
             .is_none_or(|minimum| unity_version.is_some_and(|unity| unity >= minimum))
         && requirements.iter().all(|requirement| {
             requirement
-                .repository_id
+                .source
                 .as_ref()
-                .is_none_or(|repository_id| repository_id == &candidate.source.repository_id)
+                .is_none_or(|selector| candidate.source.matches_selector(selector))
                 && requirement
                     .range
                     .matches(&candidate.version, include_prerelease)
@@ -513,17 +622,30 @@ fn candidate_satisfies(
 
 fn candidate_order(left: &&PackageCandidate, right: &&PackageCandidate) -> Ordering {
     compare_precedence(&right.version, &left.version)
-        .then_with(|| left.source.priority.cmp(&right.source.priority))
+        .then_with(|| left.source.priority().cmp(&right.source.priority()))
         .then_with(|| left.package_id.as_bytes().cmp(right.package_id.as_bytes()))
 }
 
 fn validate_candidate(candidate: &PackageCandidate) -> Result<(), ResolveError> {
     validate_package_id(&candidate.package_id)?;
-    if candidate.source.repository_id.is_empty()
-        || candidate.source.repository_revision == 0
-        || candidate.source.priority == 0
+    let authority_valid = match &candidate.source.authority {
+        PackageSourceAuthority::Repository {
+            repository_id,
+            repository_revision,
+            priority,
+            artifact_url,
+        } => {
+            !repository_id.is_empty()
+                && *repository_revision != 0
+                && *priority != 0
+                && !artifact_url.is_empty()
+        }
+        PackageSourceAuthority::UserPackage {
+            source_revision, ..
+        } => *source_revision != 0,
+    };
+    if !authority_valid
         || candidate.source.source_identity.is_empty()
-        || candidate.source.artifact_url.is_empty()
         || candidate.dependencies.len() > MAX_REQUIREMENTS
     {
         return Err(ResolveError::InvalidPackageId);
@@ -612,12 +734,14 @@ mod tests {
                 })
                 .collect(),
             source: PackageSource {
-                repository_id: repository_id.to_owned(),
-                repository_revision: 1,
-                priority,
+                authority: PackageSourceAuthority::Repository {
+                    repository_id: repository_id.to_owned(),
+                    repository_revision: 1,
+                    priority,
+                    artifact_url: format!("https://example.invalid/{package_id}-{version}.zip"),
+                },
                 source_identity: format!("source:{repository_id}"),
                 manifest_fingerprint: [priority as u8; 32],
-                artifact_url: format!("https://example.invalid/{package_id}-{version}.zip"),
                 archive_sha256: [priority as u8; 32],
             },
         }
@@ -627,9 +751,29 @@ mod tests {
         ResolveRequest {
             package_id: package_id.to_owned(),
             range: range.to_owned(),
-            repository_id: None,
+            source: None,
             include_prerelease: false,
             unity_version: Some((2022, 3)),
+        }
+    }
+
+    fn user_candidate(package_id: &str, version: &str) -> PackageCandidate {
+        PackageCandidate {
+            package_id: package_id.to_owned(),
+            version: Version::parse(version).expect("version"),
+            yanked: false,
+            unity_minimum: None,
+            legacy_metadata_present: false,
+            dependencies: Vec::new(),
+            source: PackageSource {
+                authority: PackageSourceAuthority::UserPackage {
+                    user_package_id: alcomd_application::UserPackageId::new(),
+                    source_revision: 1,
+                },
+                source_identity: "user-package-source".to_owned(),
+                manifest_fingerprint: [8; 32],
+                archive_sha256: [9; 32],
+            },
         }
     }
 
@@ -678,6 +822,48 @@ mod tests {
     }
 
     #[test]
+    fn repository_and_user_package_require_explicit_source_without_hidden_priority() {
+        let repository = candidate("com.example.pkg", "1.0.0", 1, "repo-a", &[]);
+        let user = user_candidate("com.example.pkg", "1.0.0");
+        let user_id = match &user.source.authority {
+            PackageSourceAuthority::UserPackage {
+                user_package_id, ..
+            } => *user_package_id,
+            PackageSourceAuthority::Repository { .. } => unreachable!(),
+        };
+        assert!(matches!(
+            resolve_packages(
+                &[repository.clone(), user.clone()],
+                &[request("com.example.pkg", "=1.0.0")]
+            ),
+            Err(ResolveError::SourceAmbiguous { .. })
+        ));
+
+        let mut repository_request = request("com.example.pkg", "=1.0.0");
+        repository_request.source = Some(PackageSourceSelector::Repository {
+            repository_id: "repo-a".to_owned(),
+        });
+        let repository_resolution =
+            resolve_packages(&[repository.clone(), user.clone()], &[repository_request])
+                .expect("explicit repository source");
+        assert!(matches!(
+            repository_resolution.packages[0].source.authority,
+            PackageSourceAuthority::Repository { .. }
+        ));
+
+        let mut user_request = request("com.example.pkg", "=1.0.0");
+        user_request.source = Some(PackageSourceSelector::UserPackage {
+            user_package_id: user_id,
+        });
+        let user_resolution =
+            resolve_packages(&[repository, user], &[user_request]).expect("explicit user source");
+        assert!(matches!(
+            user_resolution.packages[0].source.authority,
+            PackageSourceAuthority::UserPackage { .. }
+        ));
+    }
+
+    #[test]
     fn build_metadata_never_becomes_a_hidden_version_tiebreak() {
         let catalog = [
             candidate("com.example.pkg", "1.0.0+z", 2, "repo-low", &[]),
@@ -685,7 +871,11 @@ mod tests {
         ];
         let resolution = resolve_packages(&catalog, &[request("com.example.pkg", ">=1.0.0")])
             .expect("resolution");
-        assert_eq!(resolution.packages[0].source.repository_id, "repo-high");
+        assert!(matches!(
+            &resolution.packages[0].source.authority,
+            PackageSourceAuthority::Repository { repository_id, .. }
+                if repository_id == "repo-high"
+        ));
         assert_eq!(resolution.packages[0].version.to_string(), "1.0.0+a");
     }
 
@@ -696,7 +886,9 @@ mod tests {
         let mut incompatible = candidate("com.example.pkg", "2.0.0", 1, "repo-a", &[]);
         incompatible.unity_minimum = Some((2023, 1));
         let mut pinned = request("com.example.pkg", ">=1.0.0");
-        pinned.repository_id = Some("repo-b".to_owned());
+        pinned.source = Some(PackageSourceSelector::Repository {
+            repository_id: "repo-b".to_owned(),
+        });
         assert!(matches!(
             resolve_packages(&[blocked, incompatible], &[pinned]),
             Err(ResolveError::PackageNotFound { .. })

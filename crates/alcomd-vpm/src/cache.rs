@@ -104,6 +104,58 @@ impl PackageCache {
         Ok(object)
     }
 
+    /// Atomically publishes an already validated ALCOMD-owned archive.
+    pub async fn publish_owned(
+        &self,
+        source: &Path,
+        digest: [u8; 32],
+    ) -> Result<PathBuf, CacheError> {
+        let source_metadata = tokio::fs::symlink_metadata(source)
+            .await
+            .map_err(|_| cache_error(CacheErrorCode::Io))?;
+        if !source_metadata.is_file()
+            || is_link_or_reparse(&source_metadata)
+            || source_metadata.len() > MAX_ARCHIVE_BYTES
+        {
+            return Err(cache_error(CacheErrorCode::QuotaExceeded));
+        }
+        if !verify_object(source, &digest).await? {
+            return Err(cache_error(CacheErrorCode::IntegrityMismatch));
+        }
+        let object = self.object_path(&digest);
+        match verify_object(&object, &digest).await {
+            Ok(true) => {
+                tokio::fs::remove_file(source)
+                    .await
+                    .map_err(|_| cache_error(CacheErrorCode::Io))?;
+                return Ok(object);
+            }
+            Ok(false) => {}
+            Err(error) => return Err(error),
+        }
+        let existing = cache_size(&self.root).await?;
+        if existing.saturating_add(source_metadata.len()) > MAX_CACHE_BYTES {
+            return Err(cache_error(CacheErrorCode::QuotaExceeded));
+        }
+        let parent = object
+            .parent()
+            .ok_or_else(|| cache_error(CacheErrorCode::Io))?;
+        prepare_cache_directory(&self.root, parent).await?;
+        tokio::fs::rename(source, &object)
+            .await
+            .map_err(|_| cache_error(CacheErrorCode::Io))?;
+        let parent = parent.to_path_buf();
+        tokio::task::spawn_blocking(move || alcomd_platform::sync_directory(&parent))
+            .await
+            .map_err(|_| cache_error(CacheErrorCode::Io))?
+            .map_err(|_| cache_error(CacheErrorCode::Io))?;
+        if verify_object(&object, &digest).await? {
+            Ok(object)
+        } else {
+            Err(cache_error(CacheErrorCode::Corrupt))
+        }
+    }
+
     async fn download(
         &self,
         url: &Url,

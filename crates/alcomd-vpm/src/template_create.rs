@@ -119,7 +119,7 @@ pub(super) async fn plan_create_project(
             .map(|dependency| ResolveRequest {
                 package_id: dependency.package_id.clone(),
                 range: dependency.version_range.clone(),
-                repository_id: None,
+                source: None,
                 include_prerelease: dependency.include_prerelease,
                 unity_version: Some((
                     u64::from(inspection.manifest.unity.major),
