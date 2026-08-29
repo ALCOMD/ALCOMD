@@ -322,7 +322,7 @@ async fn user_package_plan_uses_owned_cache_after_source_mutation_and_registry_r
 async fn user_package_plan_does_not_fall_back_to_mutable_source_when_cache_is_missing() {
     let _serial = RPC_TEST_LOCK.lock().await;
     let fixture = TestDirectory::new();
-    let runtime = fixture.path().join("runtime-user-package-missing-cache");
+    let runtime = fixture.path().join("runtime");
     let data = fixture.path().join("data-user-package-missing-cache");
     let project = fixture.path().join("UserPackageMissingCacheProject");
     let source = fixture.path().join("LoosePackageMissingCache");
