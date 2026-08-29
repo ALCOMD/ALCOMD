@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use alcomd_application::{M4Store, StateStore};
 use alcomd_client::{AlcomdClient, ClientConfig};
@@ -622,12 +622,15 @@ async fn run_kill_restart_case(checkpoint: KillCheckpoint) {
         .env(KILL_GATE_ENV, checkpoint.as_str())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::inherit())
         .spawn()
         .expect("spawn package transaction subprocess");
     let mut child = ChildGuard(Some(child));
 
-    let signal = wait_for_operation_signal(&signal_path);
+    let signal = wait_for_operation_signal(
+        &signal_path,
+        child.0.as_mut().expect("package transaction subprocess"),
+    );
     assert_eq!(signal.checkpoint, checkpoint.as_str());
     let project = fixture.path().join("Project");
     let transaction_root = project
@@ -834,16 +837,27 @@ fn create_large_package_archive(path: &Path) {
     writer.finish().expect("finish large archive");
 }
 
-fn wait_for_operation_signal(signal: &Path) -> CrashSignal {
-    for _ in 0..10_000 {
+fn wait_for_operation_signal(signal: &Path, child: &mut std::process::Child) -> CrashSignal {
+    let deadline = Instant::now() + Duration::from_secs(120);
+    loop {
         if let Ok(bytes) = fs::read(signal)
             && let Ok(value) = serde_json::from_slice(&bytes)
         {
             return value;
         }
-        thread::sleep(Duration::from_millis(5));
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                panic!("package subprocess exited before publishing durable identifiers: {status}")
+            }
+            Ok(None) => {}
+            Err(error) => panic!("failed to inspect package subprocess status: {error}"),
+        }
+        assert!(
+            Instant::now() < deadline,
+            "package subprocess did not publish its durable identifiers within 120 seconds"
+        );
+        thread::sleep(Duration::from_millis(10));
     }
-    panic!("package subprocess did not publish its durable identifiers");
 }
 
 struct ChildGuard(Option<std::process::Child>);
