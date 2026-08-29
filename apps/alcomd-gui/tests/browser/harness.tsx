@@ -196,6 +196,10 @@ class DeterministicGuiClient implements GuiRpcClient {
             ];
         return this.value({ packages });
     }
+
+    openPackageLink(): ReturnType<GuiRpcClient["openPackageLink"]> {
+        return this.value(undefined);
+    }
     repositoryRegister(): ReturnType<GuiRpcClient["repositoryRegister"]> { return this.value({ repository: repository(), replayed: false }); }
     repositoryRefresh(repositoryId: string): ReturnType<GuiRpcClient["repositoryRefresh"]> {
         const attempts = (this.repositoryRefreshAttempts.get(repositoryId) ?? 0) + 1;

@@ -64,6 +64,7 @@ use alcomd_application::{
 use reqwest::header::{CONTENT_LENGTH, ETAG, IF_MODIFIED_SINCE, IF_NONE_MATCH, LAST_MODIFIED};
 use reqwest::redirect::{Action, Attempt, Policy};
 use reqwest::{Client, StatusCode, Url};
+use semver::Version;
 use serde_json::{Map, Value};
 use tokio::io::AsyncReadExt;
 
@@ -78,6 +79,14 @@ pub const DEPENDENCY_LIMIT: usize = 4_096;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const REDIRECT_LIMIT: usize = 5;
+
+/// Classifies a version with the single approved SemVer parser.
+#[must_use]
+pub fn classify_prerelease(version: &str) -> Option<bool> {
+    Version::parse(version)
+        .ok()
+        .map(|version| !version.pre.is_empty())
+}
 
 /// Bounded M3 reader. It owns one anonymous no-proxy HTTP client.
 #[derive(Clone)]
@@ -726,6 +735,7 @@ fn parse_repository(
                         .and_then(Value::as_bool)
                         .unwrap_or(false),
                     unity: optional_bounded_string(manifest, "unity", 1_024)?,
+                    links: package_links(manifest),
                     resolver: None,
                 });
             }
@@ -789,6 +799,36 @@ fn parse_repository(
         validators,
         refreshed_at_ms,
     })
+}
+
+fn package_links(
+    manifest: &Map<String, Value>,
+) -> Option<alcomd_application::RepositoryPackageLinks> {
+    let documentation = sanitized_package_link(manifest.get("documentationUrl"));
+    let changelog = sanitized_package_link(manifest.get("changelogUrl"));
+    (documentation.is_some() || changelog.is_some()).then_some(
+        alcomd_application::RepositoryPackageLinks {
+            documentation,
+            changelog,
+        },
+    )
+}
+
+fn sanitized_package_link(value: Option<&Value>) -> Option<String> {
+    let text = value?.as_str()?;
+    if text.is_empty() || text.len() > 2_048 {
+        return None;
+    }
+    let url = Url::parse(text).ok()?;
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return None;
+    }
+    let canonical = url.to_string();
+    (canonical.len() <= 2_048).then_some(canonical)
 }
 
 fn digest_text(digest: &[u8; 32]) -> String {
@@ -880,6 +920,62 @@ mod tests {
             ]
         );
         assert_eq!(parsed.issues.len(), 2);
+    }
+
+    #[test]
+    fn prerelease_classification_uses_core_semver_and_preserves_unavailable() {
+        assert_eq!(classify_prerelease("1.2.3"), Some(false));
+        assert_eq!(classify_prerelease("1.2.3-beta.1+build.7"), Some(true));
+        assert_eq!(classify_prerelease("not-semver"), None);
+    }
+
+    #[test]
+    fn optional_package_links_are_sanitized_without_invalidating_package() {
+        let document = br#"{
+            "packages":{"com.example.package":{"versions":{"1.2.3":{
+                "name":"com.example.package","version":"1.2.3",
+                "displayName":"Example","url":"https://example.invalid/package.zip",
+                "zipSHA256":"0000000000000000000000000000000000000000000000000000000000000000",
+                "author":{"name":"Example","email":"dev@example.invalid"},
+                "documentationUrl":"https://example.invalid/docs?q=1#intro",
+                "changelogUrl":"https://user@example.invalid/changelog"
+            }}}}
+        }"#;
+        let parsed = parse_repository(
+            document,
+            RepositorySource::Remote {
+                url: "https://example.invalid/repository.json".to_owned(),
+            },
+            vec![1],
+            RepositoryValidators::default(),
+            1,
+        )
+        .expect("repository remains valid");
+        assert!(parsed.packages[0].resolver.is_some());
+        let links = parsed.packages[0].links.as_ref().expect("one valid link");
+        assert_eq!(
+            links.documentation.as_deref(),
+            Some("https://example.invalid/docs?q=1#intro")
+        );
+        assert!(links.changelog.is_none());
+
+        let wrong_type = document.iter().copied().collect::<Vec<_>>();
+        let text = String::from_utf8(wrong_type).expect("utf8").replace(
+            "\"documentationUrl\":\"https://example.invalid/docs?q=1#intro\"",
+            "\"documentationUrl\":42",
+        );
+        let parsed = parse_repository(
+            text.as_bytes(),
+            RepositorySource::Local {
+                path: "fixture.json".to_owned(),
+            },
+            vec![1],
+            RepositoryValidators::default(),
+            1,
+        )
+        .expect("invalid optional link is ignored");
+        assert!(parsed.packages[0].resolver.is_some());
+        assert!(parsed.packages[0].links.is_none());
     }
 
     #[test]

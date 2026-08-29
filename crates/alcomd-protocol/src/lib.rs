@@ -1111,6 +1111,25 @@ pub struct RepositoryPackageVersion {
     pub description: Option<String>,
     pub yanked: bool,
     pub unity: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prerelease: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub links: Option<RepositoryPackageLinks>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositoryPackageLinks {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub documentation: Option<RepositoryPackageLink>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changelog: Option<RepositoryPackageLink>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RepositoryPackageLink {
+    pub url: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

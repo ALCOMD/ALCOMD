@@ -103,7 +103,15 @@
                 "displayName": {"type": ["string", "null"], "minLength": 1, "maxLength": 4096},
                 "description": {"type": ["string", "null"], "minLength": 1, "maxLength": 65536},
                 "yanked": {"type": "boolean"},
-                "unity": {"type": ["string", "null"], "minLength": 1, "maxLength": 1024}
+                "unity": {"type": ["string", "null"], "minLength": 1, "maxLength": 1024},
+                "prerelease": {"type": "boolean", "description": "Absent means classification_unavailable."},
+                "links": {
+                    "type": "object", "additionalProperties": false, "minProperties": 1,
+                    "properties": {
+                        "documentation": {"type": "object", "additionalProperties": false, "required": ["url"], "properties": {"url": {"type": "string", "maxLength": 2048}}},
+                        "changelog": {"type": "object", "additionalProperties": false, "required": ["url"], "properties": {"url": {"type": "string", "maxLength": 2048}}}
+                    }
+                }
             }
         },
         "registryCursor": {

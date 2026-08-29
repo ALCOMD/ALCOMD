@@ -1,6 +1,6 @@
 # State Schema 12 proposal
 
-状态：M7 P6 已获项目所有者批准，等待 production migration与完整wiring。
+状态：M7 P6 已获项目所有者批准，production migration 已实现；完整 P6 application wiring 继续进行。
 
 State v12只允许：重建`package_plans`以增加`reinstall|bulk` action；为
 `repository_package_versions`增加nullable sanitized docs/changelog URL；新增单一专用

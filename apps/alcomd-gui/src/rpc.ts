@@ -95,6 +95,7 @@ export interface GuiRpcClient {
     repositoriesList(cursor?: RegistryCursor): Promise<RepositoriesListResult>;
     repositoryGet(repositoryId: string): Promise<RepositoryResult>;
     repositoryPackages(repositoryId: string, cursor?: PackageCursor): Promise<RepositoryPackagesResult>;
+    openPackageLink(repositoryId: string, packageId: string, version: string, linkKind: "documentation" | "changelog"): Promise<void>;
     repositoryRegister(source: RepositorySource): Promise<RepositoryWriteResult>;
     repositoryRefresh(repositoryId: string, expectedRevision: number): Promise<RepositoryWriteResult>;
     repositoryUnregister(repositoryId: string, expectedRevision: number): Promise<RepositoryUnregisterResult>;
@@ -244,6 +245,10 @@ class TauriGuiRpcClient implements GuiRpcClient {
 
     repositoryPackages(repositoryId: string, cursor?: PackageCursor): Promise<RepositoryPackagesResult> {
         return invokeTyped("gui_repository_packages", { params: { repositoryId, cursor, limit: 100 } });
+    }
+
+    openPackageLink(repositoryId: string, packageId: string, version: string, linkKind: "documentation" | "changelog"): Promise<void> {
+        return invokeTyped("gui_open_package_link", { repositoryId, packageId, version, linkKind });
     }
 
     repositoryRegister(source: RepositorySource): Promise<RepositoryWriteResult> {

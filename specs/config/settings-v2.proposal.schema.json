@@ -3,7 +3,7 @@
     "$id": "https://alcomd.cqmhv.com/schema/proposals/config/settings-v2.json",
     "title": "ALCOMD Config Schema 2 proposal",
     "x-alcomd-publication": "approved-contract-first",
-    "x-alcomd-production-wiring-created": false,
+    "x-alcomd-production-wiring-created": true,
     "type": "object",
     "additionalProperties": false,
     "required": ["schema", "revision", "appearance", "packages", "locale"],

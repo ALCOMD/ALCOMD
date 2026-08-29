@@ -624,7 +624,7 @@ fn load_packages(
             "SELECT package_id, version_text, display_name, description, yanked, unity_text,
                     semantic_version, author_name, author_email, artifact_url, zip_sha256,
                     unity_release_text, dependencies_json, manifest_fingerprint,
-                    legacy_metadata_present, resolver_ready
+                    legacy_metadata_present, resolver_ready, documentation_url, changelog_url
          FROM repository_package_versions WHERE repository_id=?1
          ORDER BY package_id ASC, version_text ASC",
         )
@@ -639,6 +639,7 @@ fn load_packages(
                 yanked: row.get::<_, i64>(4)? != 0,
                 unity: row.get(5)?,
                 resolver: resolver_metadata(row, 6)?,
+                links: repository_package_links(row.get(16)?, row.get(17)?),
             })
         })
         .map_err(|_| unavailable())?;
@@ -725,9 +726,9 @@ fn replace_packages(
                 repository_id, package_id, version_text, display_name, description, yanked,
                 unity_text, semantic_version, author_name, author_email, artifact_url,
                 zip_sha256, unity_release_text, dependencies_json, manifest_fingerprint,
-                legacy_metadata_present, resolver_ready
+                legacy_metadata_present, resolver_ready, documentation_url, changelog_url
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
-                       coalesce(?14, '{}'), ?15, ?16, ?17)",
+                       coalesce(?14, '{}'), ?15, ?16, ?17, ?18, ?19)",
                 params![
                     id.to_string(),
                     package.package_id,
@@ -746,6 +747,14 @@ fn replace_packages(
                     resolver.map(|value| value.manifest_fingerprint.as_slice()),
                     i64::from(resolver.is_some_and(|value| value.legacy_metadata_present)),
                     i64::from(resolver.is_some()),
+                    package
+                        .links
+                        .as_ref()
+                        .and_then(|value| value.documentation.as_deref()),
+                    package
+                        .links
+                        .as_ref()
+                        .and_then(|value| value.changelog.as_deref()),
                 ],
             )
             .map_err(|_| unavailable())?;
@@ -960,7 +969,7 @@ pub(super) fn list_repository_packages(
             "SELECT package_id, version_text, display_name, description, yanked, unity_text,
                     semantic_version, author_name, author_email, artifact_url, zip_sha256,
                     unity_release_text, dependencies_json, manifest_fingerprint,
-                    legacy_metadata_present, resolver_ready
+                    legacy_metadata_present, resolver_ready, documentation_url, changelog_url
          FROM repository_package_versions WHERE repository_id=?1 AND
          (?2 IS NULL OR package_id > ?2 OR (package_id = ?2 AND version_text > ?3))
          ORDER BY package_id ASC, version_text ASC LIMIT ?4",
@@ -985,6 +994,7 @@ pub(super) fn list_repository_packages(
                     yanked: row.get::<_, i64>(4)? != 0,
                     unity: row.get(5)?,
                     resolver: resolver_metadata(row, 6)?,
+                    links: repository_package_links(row.get(16)?, row.get(17)?),
                 })
             },
         )
@@ -1009,6 +1019,18 @@ pub(super) fn list_repository_packages(
         packages,
         next_cursor,
     })
+}
+
+fn repository_package_links(
+    documentation: Option<String>,
+    changelog: Option<String>,
+) -> Option<alcomd_application::RepositoryPackageLinks> {
+    (documentation.is_some() || changelog.is_some()).then_some(
+        alcomd_application::RepositoryPackageLinks {
+            documentation,
+            changelog,
+        },
+    )
 }
 
 pub(super) fn refresh_repository(

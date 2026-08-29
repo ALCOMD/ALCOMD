@@ -1,6 +1,6 @@
 # settings.toml Config Schema 2 proposal
 
-状态：M7 P6 已获项目所有者批准，等待 production wiring。
+状态：M7 P6 已获项目所有者批准，production wiring 已由 active `settings-v2.*` 合同实现。
 
 Config Schema 2 保持 daemon 唯一 writer、strict UTF-8、16 KiB 上限、checked revision CAS 与既有
 same-directory `.new`/`.bak` 原子替换和恢复纪律。它只在 Config Schema 1 上增加 package presentation设置：

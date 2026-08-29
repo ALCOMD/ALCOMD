@@ -213,6 +213,11 @@ export interface RepositoryPackageVersion {
     description?: string;
     yanked: boolean;
     unity?: string;
+    prerelease?: boolean;
+    links?: {
+        documentation?: { url: string };
+        changelog?: { url: string };
+    };
 }
 
 export interface RepositoryPackagesResult {

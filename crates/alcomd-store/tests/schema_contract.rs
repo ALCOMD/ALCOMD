@@ -11,6 +11,70 @@ const MIGRATION_V8: &str = include_str!("../migrations/0008_extension_runtime.sq
 const MIGRATION_V9: &str = include_str!("../migrations/0009_portable_extension_ui.sql");
 const MIGRATION_V10: &str = include_str!("../migrations/0010_project_copy.sql");
 const MIGRATION_V11: &str = include_str!("../migrations/0011_project_preferences.sql");
+const MIGRATION_V12: &str = include_str!("../migrations/0012_package_functional_closure.sql");
+
+#[test]
+fn schema_v12_adds_only_approved_package_closure_authority_and_is_atomic() {
+    let connection = migrated_v11_connection();
+    insert_project(&connection);
+    let event_sequence_before: i64 = connection
+        .query_row(
+            "SELECT seq FROM sqlite_sequence WHERE name='events'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    connection
+        .execute_batch(MIGRATION_V12)
+        .expect("apply migration v12");
+    assert_eq!(user_version(&connection), 12);
+    assert!(table_names(&connection).contains(&"user_package_sources".to_owned()));
+    let package_plan_sql: String = connection
+        .query_row(
+            "SELECT sql FROM sqlite_schema WHERE type='table' AND name='package_plans'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read package plan schema");
+    assert!(package_plan_sql.contains("'reinstall'"));
+    assert!(package_plan_sql.contains("'bulk'"));
+    let package_columns: Vec<String> = connection
+        .prepare("SELECT name FROM pragma_table_info('repository_package_versions') ORDER BY cid")
+        .expect("prepare package columns")
+        .query_map([], |row| row.get(0))
+        .expect("query package columns")
+        .collect::<Result<_, _>>()
+        .expect("collect package columns");
+    assert!(package_columns.contains(&"documentation_url".to_owned()));
+    assert!(package_columns.contains(&"changelog_url".to_owned()));
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("foreign key check"),
+        0
+    );
+    let event_sequence_after: i64 = connection
+        .query_row(
+            "SELECT seq FROM sqlite_sequence WHERE name='events'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    assert_eq!(event_sequence_after, event_sequence_before);
+
+    let rollback = migrated_v11_connection();
+    let before = schema_snapshot(&rollback);
+    let failing = MIGRATION_V12.replace(
+        "PRAGMA user_version = 12;",
+        "THIS IS NOT VALID SQL;\nPRAGMA user_version = 12;",
+    );
+    assert!(rollback.execute_batch(&failing).is_err());
+    rollback.execute_batch("ROLLBACK;").expect("rollback v12");
+    assert_eq!(user_version(&rollback), 11);
+    assert_eq!(schema_snapshot(&rollback), before);
+}
 
 #[test]
 fn schema_v11_adds_favorite_and_rebuilds_editor_preferences_atomically() {
@@ -2479,6 +2543,24 @@ fn migrated_v10_connection() -> Connection {
         .execute_batch(MIGRATION_V10)
         .expect("apply migration v10");
     connection
+}
+
+fn migrated_v11_connection() -> Connection {
+    let connection = migrated_v10_connection();
+    connection
+        .execute_batch(MIGRATION_V11)
+        .expect("apply migration v11");
+    connection
+}
+
+fn schema_snapshot(connection: &Connection) -> Vec<(String, String, Option<String>)> {
+    connection
+        .prepare("SELECT type, name, sql FROM sqlite_schema ORDER BY type, name")
+        .expect("prepare schema snapshot")
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .expect("query schema snapshot")
+        .collect::<Result<_, _>>()
+        .expect("collect schema snapshot")
 }
 
 fn insert_project(connection: &Connection) {

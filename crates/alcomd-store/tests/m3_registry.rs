@@ -6,8 +6,8 @@ use std::time::Duration;
 use alcomd_application::{
     DependencyIdentity, IdempotencyKey, M3ErrorCode, M3RegistryStore, M5UnityStore, ManifestState,
     PrincipalId, ProjectEditorPreference, ProjectId, ProjectObservation, ProjectRecord,
-    ProjectType, RepositoryObservation, RepositoryPackageVersion, RepositorySource,
-    RepositoryValidators, Revision, StateStore, SyncWrite, UnityInstallationId,
+    ProjectType, RepositoryObservation, RepositoryPackageLinks, RepositoryPackageVersion,
+    RepositorySource, RepositoryValidators, Revision, StateStore, SyncWrite, UnityInstallationId,
 };
 use alcomd_store::StateStoreHandle;
 use rusqlite::{Connection, params};
@@ -92,6 +92,10 @@ fn repository(identity: u8, refreshed_at_ms: u64) -> RepositoryObservation {
             description: None,
             yanked: false,
             unity: None,
+            links: Some(RepositoryPackageLinks {
+                documentation: Some("https://example.invalid/docs".to_owned()),
+                changelog: None,
+            }),
             resolver: None,
         }],
         validators: RepositoryValidators {
@@ -597,6 +601,13 @@ async fn repository_refresh_preserves_snapshot_on_error_and_304_is_no_op() {
         .await
         .expect("list packages");
     assert_eq!(page.packages.len(), 1);
+    assert_eq!(
+        page.packages[0]
+            .links
+            .as_ref()
+            .and_then(|links| links.documentation.as_deref()),
+        Some("https://example.invalid/docs")
+    );
     let duplicate = store
         .register_repository(owner, repository(1, 30), key("repo-duplicate"), 30)
         .await

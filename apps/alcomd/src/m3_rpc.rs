@@ -517,6 +517,7 @@ fn repository_snapshot(
 }
 
 fn package(value: app::RepositoryPackageVersion) -> rpc::RepositoryPackageVersion {
+    let prerelease = alcomd_vpm::classify_prerelease(&value.version);
     rpc::RepositoryPackageVersion {
         package_id: value.package_id,
         version: value.version,
@@ -524,6 +525,15 @@ fn package(value: app::RepositoryPackageVersion) -> rpc::RepositoryPackageVersio
         description: value.description,
         yanked: value.yanked,
         unity: value.unity,
+        prerelease,
+        links: value.links.map(|links| rpc::RepositoryPackageLinks {
+            documentation: links
+                .documentation
+                .map(|url| rpc::RepositoryPackageLink { url }),
+            changelog: links
+                .changelog
+                .map(|url| rpc::RepositoryPackageLink { url }),
+        }),
     }
 }
 

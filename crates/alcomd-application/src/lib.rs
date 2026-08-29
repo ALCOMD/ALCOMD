@@ -171,9 +171,18 @@ pub struct RepositoryPackageVersion {
     pub description: Option<String>,
     pub yanked: bool,
     pub unity: Option<String>,
+    /// Sanitized optional presentation links.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub links: Option<RepositoryPackageLinks>,
     /// Strict M4 resolver metadata; absent for legacy/raw snapshots.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolver: Option<ResolverPackageMetadata>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RepositoryPackageLinks {
+    pub documentation: Option<String>,
+    pub changelog: Option<String>,
 }
 
 /// Resolver-ready package metadata persisted only after a complete strict parse.

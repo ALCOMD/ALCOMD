@@ -804,6 +804,7 @@ export function ProjectPackagesPage(props: PageProps & { projectId: string }) {
 }
 
 interface WorkspaceCatalogVersion extends RepositoryPackageVersion {
+    repositoryId: string;
     source: string;
     sourceKind: RepositorySnapshot["source"]["kind"];
 }
@@ -812,6 +813,12 @@ interface PackageWorkspaceRow {
     availableVersions: string[];
     displayName: string;
     installedVersion?: string;
+    linkTarget?: {
+        changelog: boolean;
+        documentation: boolean;
+        repositoryId: string;
+        version: string;
+    };
     packageId: string;
     requestedRange?: string;
     sourceKinds: Array<RepositorySnapshot["source"]["kind"]>;
@@ -861,7 +868,7 @@ async function loadPackageWorkspace(client: GuiRpcClient, projectId: string): Pr
         if (repository.repositoryId === undefined) return [] as WorkspaceCatalogVersion[];
         const packages = await listAllRepositoryPackages(client, repository.repositoryId);
         const source = repository.name ?? repository.declaredId ?? sourceText(repository);
-        return packages.map((item) => ({ ...item, source, sourceKind: repository.source.kind }));
+        return packages.map((item) => ({ ...item, repositoryId: repository.repositoryId as string, source, sourceKind: repository.source.kind }));
     }));
     return { project: project.project, catalog: catalogs.flat() };
 }
@@ -1047,7 +1054,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                                 <td>{row.installedVersion ?? "—"}{row.requestedRange === undefined ? null : <small>Requested {row.requestedRange}</small>}</td>
                                                 <td>{canUpgrade ? <Button onClick={() => selectAction("upgrade", row.packageId, latest)} type="button" variant="tonal"><Icon asset={upgradeIcon} slot="icon" />{latest}</Button> : latest ?? "—"}</td>
                                                 <td>{row.sources.length === 0 ? <span className="package-source-missing">No configured source</span> : row.sources.join(", ")}</td>
-                                                <td><div className="package-row-actions">{row.installedVersion === undefined ? <Button disabled={latest === undefined} onClick={() => selectAction("install", row.packageId, latest)} type="button" variant="tonal"><Icon asset={downloadIcon} slot="icon" />Install</Button> : <><Button onClick={() => selectAction("downgrade", row.packageId)} type="button" variant="text"><Icon asset={historyIcon} slot="icon" />Versions</Button><Button onClick={() => selectAction("remove", row.packageId)} type="button" variant="text"><Icon asset={deleteIcon} slot="icon" />Remove</Button></>}</div></td>
+                                                <td><div className="package-row-actions"><PackageLinkActions client={client} packageId={row.packageId} target={row.linkTarget} />{row.installedVersion === undefined ? <Button disabled={latest === undefined} onClick={() => selectAction("install", row.packageId, latest)} type="button" variant="tonal"><Icon asset={downloadIcon} slot="icon" />Install</Button> : <><Button onClick={() => selectAction("downgrade", row.packageId)} type="button" variant="text"><Icon asset={historyIcon} slot="icon" />Versions</Button><Button onClick={() => selectAction("remove", row.packageId)} type="button" variant="text"><Icon asset={deleteIcon} slot="icon" />Remove</Button></>}</div></td>
                                             </tr>
                                         );
                                     })}</tbody>
@@ -1078,10 +1085,22 @@ function packageWorkspaceRows(project: ProjectSnapshot, catalog: WorkspaceCatalo
         const sources = [...new Set(versions.map((item) => item.source))].sort((left, right) => left.localeCompare(right));
         const sourceKinds = [...new Set(versions.map((item) => item.sourceKind))].sort();
         const installedVersion = installed.get(packageId);
+        const preferredVersion = installedVersion ?? availableVersions.at(-1);
+        const linkVersion = versions
+            .filter((item) => item.version === preferredVersion && item.links !== undefined)
+            .sort((left, right) => left.repositoryId.localeCompare(right.repositoryId))[0];
         return {
             availableVersions,
             displayName: versions.find((item) => item.displayName !== undefined)?.displayName ?? packageId,
             ...(installedVersion === undefined ? {} : { installedVersion }),
+            ...(linkVersion === undefined ? {} : {
+                linkTarget: {
+                    changelog: linkVersion.links?.changelog !== undefined,
+                    documentation: linkVersion.links?.documentation !== undefined,
+                    repositoryId: linkVersion.repositoryId,
+                    version: linkVersion.version
+                }
+            }),
             packageId,
             ...(requested.has(packageId) ? { requestedRange: requested.get(packageId) } : {}),
             sourceKinds,
@@ -1089,6 +1108,24 @@ function packageWorkspaceRows(project: ProjectSnapshot, catalog: WorkspaceCatalo
             status: installedVersion !== undefined ? "installed" : availableVersions.length > 0 ? "available" : "missing-source"
         };
     });
+}
+
+function PackageLinkActions({ client, packageId, target }: {
+    client: GuiRpcClient;
+    packageId: string;
+    target?: PackageWorkspaceRow["linkTarget"];
+}) {
+    const [error, setError] = useState<string>();
+    if (target === undefined) return null;
+    const open = async (kind: "documentation" | "changelog") => {
+        setError(undefined);
+        try {
+            await client.openPackageLink(target.repositoryId, packageId, target.version, kind);
+        } catch (caught: unknown) {
+            setError(safeError(caught).code);
+        }
+    };
+    return <>{target.documentation ? <Button onClick={() => void open("documentation")} type="button" variant="text">Docs</Button> : null}{target.changelog ? <Button onClick={() => void open("changelog")} type="button" variant="text">Changelog</Button> : null}{error === undefined ? null : <span className="visually-hidden" role="alert">Package link unavailable: {error}</span>}</>;
 }
 
 export function RepositoriesPage({ client, navigate }: PageProps) {
