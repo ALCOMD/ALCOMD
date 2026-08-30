@@ -714,11 +714,11 @@ struct TestDirectory(PathBuf);
 
 impl TestDirectory {
     fn new() -> Self {
-        let path = std::env::temp_dir().join(format!(
-            "alcomd-m7-delete-{}-{}",
-            std::process::id(),
-            uuid::Uuid::new_v4()
-        ));
+        #[cfg(target_os = "macos")]
+        let base = PathBuf::from("/private/tmp");
+        #[cfg(not(target_os = "macos"))]
+        let base = std::env::temp_dir();
+        let path = base.join(format!("alcomd-m7-delete-{}", uuid::Uuid::new_v4()));
         fs::create_dir(&path).expect("fixture directory");
         Self(path)
     }
