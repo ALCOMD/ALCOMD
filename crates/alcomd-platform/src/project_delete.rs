@@ -300,6 +300,7 @@ mod platform {
     pub(super) fn preflight(root: &Path) -> Result<u64, ProjectDeleteFilesystemError> {
         let (parent, leaf) = split_root(root)?;
         let parent_fd = open_parent(parent)?;
+        verify_root_directory(&parent_fd, leaf)?;
         let root_fd = open_directory(&parent_fd, leaf)?;
         walk(&root_fd, false)
     }
@@ -307,6 +308,7 @@ mod platform {
     pub(super) fn cleanup(root: &Path) -> Result<u64, ProjectDeleteFilesystemError> {
         let (parent, leaf) = split_root(root)?;
         let parent_fd = open_parent(parent)?;
+        verify_root_directory(&parent_fd, leaf)?;
         let root_fd = open_directory(&parent_fd, leaf)?;
         let count = walk(&root_fd, true)?;
         unlinkat(&parent_fd, leaf, AtFlags::REMOVEDIR).map_err(map_errno)?;
@@ -330,6 +332,19 @@ mod platform {
 
     fn open_parent(parent: &Path) -> Result<OwnedFd, ProjectDeleteFilesystemError> {
         openat(CWD, parent, DIRECTORY_FLAGS, Mode::empty()).map_err(map_errno)
+    }
+
+    fn verify_root_directory(
+        parent: &OwnedFd,
+        leaf: &std::ffi::OsStr,
+    ) -> Result<(), ProjectDeleteFilesystemError> {
+        let stat = statat(parent, leaf, AtFlags::SYMLINK_NOFOLLOW).map_err(map_errno)?;
+        if FileType::from_raw_mode(stat.st_mode) != FileType::Directory {
+            return Err(ProjectDeleteFilesystemError::classified(
+                ProjectDeleteFilesystemErrorKind::UnsafeEntry,
+            ));
+        }
+        Ok(())
     }
 
     fn open_directory<Fd: std::os::fd::AsFd, P: rustix::path::Arg>(
@@ -437,6 +452,7 @@ mod platform {
         let (parent, leaf) = split_root(root)?;
         let parent_fd = open_parent(parent)?;
         let root_token = mount_token(&parent_fd)?;
+        verify_root_directory(&parent_fd, leaf)?;
         let root_fd = open_directory(&parent_fd, leaf)?;
         verify_mount(&root_fd, &root_token)?;
         walk(&root_fd, &root_token, false)
@@ -446,6 +462,7 @@ mod platform {
         let (parent, leaf) = split_root(root)?;
         let parent_fd = open_parent(parent)?;
         let root_token = mount_token(&parent_fd)?;
+        verify_root_directory(&parent_fd, leaf)?;
         let root_fd = open_directory(&parent_fd, leaf)?;
         verify_mount(&root_fd, &root_token)?;
         let count = walk(&root_fd, &root_token, true)?;
@@ -470,6 +487,19 @@ mod platform {
 
     fn open_parent(parent: &Path) -> Result<OwnedFd, ProjectDeleteFilesystemError> {
         openat(CWD, parent, DIRECTORY_FLAGS, Mode::empty()).map_err(map_errno)
+    }
+
+    fn verify_root_directory(
+        parent: &OwnedFd,
+        leaf: &std::ffi::OsStr,
+    ) -> Result<(), ProjectDeleteFilesystemError> {
+        let stat = statat(parent, leaf, AtFlags::SYMLINK_NOFOLLOW).map_err(map_errno)?;
+        if FileType::from_raw_mode(stat.st_mode) != FileType::Directory {
+            return Err(ProjectDeleteFilesystemError::classified(
+                ProjectDeleteFilesystemErrorKind::UnsafeEntry,
+            ));
+        }
+        Ok(())
     }
 
     fn open_directory<Fd: std::os::fd::AsFd, P: rustix::path::Arg>(
