@@ -11,7 +11,7 @@ use alcomd_application::{
     M7DeleteApplication, ManifestState, OperationState, PrincipalId, ProjectId, ProjectObservation,
     ProjectType, ResourceLockCoordinator, StateStore, UnityWriterState, UnityWriterStateKind,
 };
-use alcomd_client::{AlcomdClient, ClientConfig};
+use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use alcomd_platform::{DataConfig, IpcConfig};
 use alcomd_store::StateStoreHandle;
 use alcomd_vpm::ProjectDeleteEngine;
@@ -588,10 +588,14 @@ async fn wait_for_terminal_rpc(
 }
 
 async fn connect_client(config: ClientConfig) -> AlcomdClient {
-    tokio::time::timeout(Duration::from_secs(10), AlcomdClient::connect(config))
-        .await
-        .expect("client connection timeout")
-        .expect("client connection")
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        match AlcomdClient::connect(config.clone()).await {
+            Ok(client) => return client,
+            Err(ClientError::StartTimeout) if tokio::time::Instant::now() < deadline => {}
+            Err(error) => panic!("client connection: {error}"),
+        }
+    }
 }
 
 async fn wait_for_shutdown(shutdown: Arc<AtomicBool>) {
