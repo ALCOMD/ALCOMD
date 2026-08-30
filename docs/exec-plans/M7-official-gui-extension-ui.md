@@ -11,8 +11,11 @@ Visual Gate 1，检查点为 `7bb325b78a74518881fb65e03de7f79902e72cd3`。项目
 超出两个 permanent-disabled menu item 的真实功能缺口，H2 visual implementation 已暂停；当前只执行
 `M7 Project / Package Functional Closure` P0-P7 已通过远端验收；P7 sealed HEAD
 `2ee11066c07a0994f3aebe6a9ce3f84ab2c8acd9` 的 Hosted CI run `33298022030` 与 CodeQL run `33298021806`
-均通过。P8 M7-owned visible-action completeness 本地候选为 PASS，正在等待最终提交的 Hosted CI 与 CodeQL；global gate
-因 M11 保持 blocked。H2 visual 继续暂停，M8/M9 未开始。M7仍未完成。
+均通过。P8 technical checkpoint 已在 sealed functional HEAD
+`d314b155374d31a8d7c0449c62efdea5dd745e72` 通过；但 Visual Gate 2 期间项目所有者重新冻结 Project Unity
+Version / Open Unity 产品模型，M7-owned visible-action completeness 当前为 `REOPENED_BY_PRODUCT_MODEL_CHANGE`，global
+gate 因 M11 保持 `BLOCKED_BY_M11`。H2-A 状态为 `PAUSED_FOR_UNITY_MODEL_CLOSURE`；visual candidate
+`24b03916bd6d958c921b4039bd62bec00afe25d4` 不是 rejected。M8/M9 未开始，M7仍未完成。
 
 ## 目标与完成定义
 
@@ -598,8 +601,14 @@ Activity、Diagnostics 或 Portable UI authority。
   exact behavior、现有 v4 primitive、Windows/Linux/macOS delete primitive 与 Rust `remove_dir_all` 审计，提出 ProjectId-only
   Plan/Apply、独立 `projects.delete`、sibling quarantine permanent-delete、State v13 durable evidence 与 recovery/path vectors；
   active RPC、State、Permission、production source、dependency、unsafe 与平台 API 均未改变。
+- 2026-08-31：Visual Gate 2 期间重新冻结 Project Unity Version / Open Unity 产品模型。v3 exact behavior 与当前 v4
+  Automatic/Explicit preference model 已完成源码审计；Stop A 提出 canonical exact version、0/1/>1 Open Unity、one-shot
+  installation chooser、独立 migration Plan/Apply/Operation、State v14 preference removal/launch-config split 与 crash recovery。
+  VRChat 2019 -> 2022 明确为 `UNITY_MIGRATION_REQUIRES_SECONDARY_PACKAGE_CONTRACT`，未扩展 P6。P8 historical PASS
+  保留，但当前 completeness 为 `REOPENED_BY_PRODUCT_MODEL_CHANGE`；H2-A 暂停而非拒绝。
 
 ## 下一停止点
 
-当前停止点是 P8 M7-owned visible-action completeness 最终远端验收。P7 的 proposal schema、State v13、path/recovery
-vectors 与 Unix mount-safe cleanup 已实施并通过远端验收。不得恢复 H2 visual 或进入 M8/M9/M11。
+当前停止点是 M7 Unity Project Version / Open Unity Model Stop A 项目所有者合同审阅。P8 historical technical checkpoint
+保留 PASS，但因产品模型变化而重新打开；H2-A 保持 `PAUSED_FOR_UNITY_MODEL_CLOSURE`。不得 production implement、恢复
+Visual Gate 2 或进入 H2-B/H3-H7/M8/M9/M11。

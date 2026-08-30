@@ -1,0 +1,152 @@
+{
+    "status": "proposal-only-not-approved-for-production",
+    "from": 13,
+    "to": 14,
+    "activeSchemaModified": false,
+    "productionMigrationCreated": false,
+    "transaction": "BEGIN IMMEDIATE",
+    "tablesRemoved": ["project_editor_preferences"],
+    "tablesAdded": [
+        "project_unity_launch_config",
+        "project_unity_migration_plans",
+        "project_unity_migration_journal"
+    ],
+    "migrationBusinessTablesAdded": [
+        "project_unity_migration_plans",
+        "project_unity_migration_journal"
+    ],
+    "thirdMigrationBusinessTableAdded": false,
+    "launchConfig": {
+        "table": "project_unity_launch_config",
+        "columns": ["project_id", "arguments_json", "revision", "updated_at_ms"],
+        "migratesFrom": [
+            "project_editor_preferences.project_id",
+            "project_editor_preferences.arguments_json",
+            "project_editor_preferences.revision",
+            "project_editor_preferences.updated_at_ms"
+        ],
+        "forbiddenColumns": ["selection_mode", "installation_id", "executable_path", "project_path"],
+        "argumentBoundsUnchanged": true
+    },
+    "removedPreferenceAuthority": {
+        "automaticRemoved": true,
+        "explicitRemoved": true,
+        "preferredInstallationRemoved": true,
+        "compatibilityAliasCreated": false,
+        "dualWriteCreated": false,
+        "newPreferenceEventsForbidden": [
+            "unity.project-editor.updated",
+            "unity.project-editor.selection_cleared"
+        ],
+        "historicalEventsRetainedAsInertEvidence": true,
+        "removedMethodIdempotencyRecordsDeleted": [
+            "unity.projectEditor.set",
+            "unity.projectEditor.clear"
+        ]
+    },
+    "migrationPlans": {
+        "table": "project_unity_migration_plans",
+        "states": ["unapplied", "applied"],
+        "expiryMs": 900000,
+        "immutableAuthority": true,
+        "onlyTransition": "unapplied-without-operation-to-applied-with-exact-projects-unity-migration-operation",
+        "stores": [
+            "plan_id",
+            "project_id",
+            "project_revision",
+            "source_unity_version",
+            "project_root_identity",
+            "project_version_marker_sha256",
+            "target_unity_version",
+            "target_installation_id",
+            "target_installation_revision",
+            "target_installation_identity",
+            "writer_evidence_revision",
+            "classification",
+            "request_fingerprint",
+            "created_at_ms",
+            "expires_at_ms",
+            "state",
+            "operation_id"
+        ],
+        "forbidden": [
+            "project_path",
+            "installation_path",
+            "executable_path",
+            "arguments",
+            "pid",
+            "stdout",
+            "stderr"
+        ]
+    },
+    "migrationJournal": {
+        "table": "project_unity_migration_journal",
+        "appendOnly": true,
+        "updateForbidden": true,
+        "deleteForbiddenBeforeCleanup": true,
+        "phases": [
+            "accepted",
+            "preflight_complete",
+            "launch_intent",
+            "unity_started",
+            "unity_exited",
+            "project_reobserved",
+            "state_committed",
+            "cleanup_complete",
+            "recovery_required"
+        ],
+        "privateProcessEvidenceAllowed": ["pid", "observed_start_time", "evidence_digest"],
+        "publicProcessEvidenceForbidden": true,
+        "automaticRespawnAfterLaunchIntentForbidden": true,
+        "killOnCancelForbidden": true
+    },
+    "event": {
+        "kind": "project.unity_version_migrated",
+        "countOnSuccess": 1,
+        "writtenAt": "state_committed",
+        "safeFields": [
+            "project_id",
+            "operation_id",
+            "from_unity_version",
+            "to_unity_version",
+            "classification",
+            "project_revision"
+        ],
+        "forbiddenFields": [
+            "path",
+            "pid",
+            "argv",
+            "executable",
+            "stdout",
+            "stderr",
+            "journal_locator"
+        ]
+    },
+    "reuses": [
+        "projects",
+        "unity_installations",
+        "operations",
+        "events",
+        "idempotency_records",
+        "revision"
+    ],
+    "forbiddenAdditions": [
+        "third_migration_business_table",
+        "generic_workflow_table",
+        "generic_process_supervisor",
+        "generic_filesystem_writer",
+        "state_schema_v15"
+    ],
+    "invariants": [
+        "all-v13-authority-preserved-except-explicitly-removed-editor-preferences",
+        "all-bounded-launch-arguments-migrated",
+        "no-installation-preference-persists",
+        "plan-is-immutable",
+        "apply-never-replans",
+        "launch-intent-prevents-automatic-respawn",
+        "success-requires-exact-project-reobservation",
+        "foreign-key-check-empty",
+        "migration-failure-rolls-back-to-v13-authority",
+        "future-schema-fails-closed"
+    ]
+}

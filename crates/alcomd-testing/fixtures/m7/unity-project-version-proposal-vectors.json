@@ -1,0 +1,101 @@
+{
+    "status": "proposal-only-not-production-test-authority",
+    "version": 1,
+    "canonicalVersionVectors": [
+        {"input": "2022.3.22f1", "result": "2022.3.22f1"},
+        {"input": "2022.3.22F1", "result": "2022.3.22f1"},
+        {"input": "2022.3.22f1c1", "result": "2022.3.22f1c1"},
+        {"input": "02022.3.22f1", "error": "unity_version_unverified"},
+        {"input": "2022.3.22", "error": "unity_version_unverified"},
+        {"input": "2022.3.22f0", "error": "unity_version_unverified"},
+        {"input": "2022.3.22f1c0", "error": "unity_version_unverified"},
+        {"input": "2022.3.22f1 extra", "error": "unity_version_unverified"}
+    ],
+    "exactEqualityVectors": [
+        {"left": "2022.3.22f1", "right": "2022.3.22f1", "equal": true},
+        {"left": "2022.3.22f1", "right": "2022.3.22f1c1", "equal": false},
+        {"left": "2022.3.22f1c1", "right": "2022.3.22f1c2", "equal": false},
+        {
+            "left": "2022.3.22f1",
+            "leftRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "right": "2022.3.22f1",
+            "rightRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "equal": true,
+            "installationIdentityEqual": false
+        }
+    ],
+    "launchCardinalityVectors": [
+        {"exactVerifiedCandidates": 0, "result": "unity_exact_installation_not_found", "spawn": false},
+        {"exactVerifiedCandidates": 1, "result": "launch", "spawn": true},
+        {"exactVerifiedCandidates": 2, "result": "unity_editor_selection_required", "spawn": false},
+        {
+            "exactVerifiedCandidates": 2,
+            "oneShotInstallationProvided": true,
+            "result": "launch-selected-once",
+            "persistedSelection": false
+        }
+    ],
+    "selectorVectors": [
+        {"current": "2022.3.22f1", "installed": [], "displayCurrent": true, "targets": []},
+        {
+            "current": "2022.3.22f1",
+            "installed": ["2022.3.22f1", "2022.3.22f1", "2022.3.21f1"],
+            "targets": ["2022.3.22f1", "2022.3.21f1"],
+            "dedupeByCanonicalVersion": true
+        },
+        {"current": "2022.3.22f1", "selected": "2022.3.22f1", "result": "no_change"}
+    ],
+    "classificationVectors": [
+        {"from": "2022.3.21f1", "to": "2022.3.22f1", "classification": "patch_or_minor_upgrade"},
+        {"from": "2021.3.45f1", "to": "2022.3.22f1", "classification": "major_upgrade"},
+        {"from": "2022.3.22f1", "to": "2022.3.21f1", "classification": "patch_or_minor_downgrade"},
+        {"from": "2022.3.22f1", "to": "2019.4.31f1", "classification": "major_downgrade"},
+        {"from": "2022.3.22f1", "to": "2022.3.22f1c1", "classification": "china_variant_change"},
+        {"from": "2022.3.22x1", "to": "2022.3.22f1", "classification": "unsupported_or_unsafe"}
+    ],
+    "writerVectors": [
+        {"state": "not_observed", "planAllowed": true, "applyAllowed": true},
+        {"state": "running_confirmed", "planAllowed": false, "applyAllowed": false},
+        {"state": "running_suspected", "planAllowed": false, "applyAllowed": false},
+        {"state": "unknown", "planAllowed": false, "applyAllowed": false}
+    ],
+    "staleAndIdentityVectors": [
+        {"mutation": "project_revision_changed", "result": "unity_migration_plan_stale"},
+        {"mutation": "project_root_identity_changed", "result": "unity_migration_plan_stale"},
+        {"mutation": "project_version_marker_changed", "result": "unity_migration_plan_stale"},
+        {"mutation": "installation_revision_changed", "result": "unity_migration_plan_stale"},
+        {"mutation": "installation_identity_changed", "result": "unity_migration_plan_stale"},
+        {"mutation": "plan_expired", "result": "unity_migration_plan_expired"},
+        {"mutation": "target_is_symlink_swap", "result": "unity_migration_plan_stale"}
+    ],
+    "processRecoveryVectors": [
+        {"checkpoint": "preflight_complete", "crash": true, "automaticRespawnAllowed": true},
+        {"checkpoint": "launch_intent", "crash": true, "automaticRespawnAllowed": false, "result": "recovery_required"},
+        {"checkpoint": "unity_started", "crash": true, "automaticRespawnAllowed": false, "result": "recovery_required"},
+        {"checkpoint": "unity_exited", "exitCode": 0, "reobservedVersion": "unchanged", "result": "recovery_required"},
+        {"checkpoint": "unity_exited", "exitCode": 1, "result": "recovery_required"},
+        {
+            "checkpoint": "project_reobserved",
+            "exitCode": 0,
+            "rootIdentity": "same",
+            "reobservedVersion": "exact-target",
+            "result": "state_commit_allowed"
+        },
+        {"checkpoint": "launch_intent", "cancelRequested": true, "killUnity": false, "result": "cancel_rejected"}
+    ],
+    "compositionVectors": [
+        {"flow": "backup-then-migrate", "backupSucceeded": true, "migrationFailed": true, "backupRetained": true},
+        {"flow": "copy-then-migrate", "copySucceeded": true, "migrationFailed": true, "copyRetained": true},
+        {
+            "flow": "vrc-2019-to-2022",
+            "result": "UNITY_MIGRATION_REQUIRES_SECONDARY_PACKAGE_CONTRACT",
+            "p6ExpansionAllowed": false
+        }
+    ],
+    "privacyVectors": [
+        {"surface": "rpc", "forbidden": ["projectPath", "executablePath", "argv", "pid", "stdout", "stderr"]},
+        {"surface": "event", "forbidden": ["projectPath", "executablePath", "argv", "pid", "stdout", "stderr"]},
+        {"surface": "activity", "forbidden": ["projectPath", "executablePath", "argv", "pid", "stdout", "stderr"]},
+        {"surface": "ordinaryLog", "forbidden": ["fullPrivatePath", "argv", "stdout", "stderr"]}
+    ]
+}

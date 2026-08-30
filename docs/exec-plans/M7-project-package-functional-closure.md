@@ -7,8 +7,10 @@ Hosted CI 与 CodeQL。P6-A、P6-B 与 P6-C 已完成获批合同和 production 
 P7 Delete Project Directory 已按项目所有者批准及实施修正完成 active RPC/Permission、State v13、mount-safe filesystem
 primitive、Plan/Apply/Operation/recovery、CLI/GUI 与真实 fault tests，并在 sealed HEAD
 `2ee11066c07a0994f3aebe6a9ce3f84ab2c8acd9` 通过 Hosted CI run `33298022030` 的 Windows、Ubuntu、macOS
-及 CodeQL run `33298021806`。P7 remote checkpoint 为 PASS。P8 正在执行 M7-owned 可见 action 完整性审计；H2 visual WIP
-继续暂停，M8/M9 未开始。
+及 CodeQL run `33298021806`。P7 remote checkpoint 为 PASS。P8 technical checkpoint 已在 sealed functional HEAD
+`d314b155374d31a8d7c0449c62efdea5dd745e72` 通过；随后因 Project Unity Version / Open Unity 产品模型变化，
+M7-owned visible-action completeness 改为 `REOPENED_BY_PRODUCT_MODEL_CHANGE`。H2-A 为
+`PAUSED_FOR_UNITY_MODEL_CLOSURE`，M8/M9 未开始。
 
 ## 目标与边界
 
@@ -609,10 +611,13 @@ release-blocker 状态，不再把 M11 缺口混入 M7-owned 分母。P8 gate �
 
 聚合 `projects.management`、`packages.vpm` 与 `repositories.management` 继续保持 `in_progress`：这些 feature 的冻结
 user-entry 仍包含 M11 differential parity、M8 MCP 或其他后续里程碑范围。P8 PASS 只表示 M7-owned official GUI action
-完整性，不把完整产品/发行状态提升为 implemented，也不恢复 H2 visual。
+完整性，不把完整产品/发行状态提升为 implemented，也不恢复 H2 visual。该 historical PASS 不覆盖后来冻结的新 Unity
+version/migration/launch user model；新模型关闭前，当前 gate 明确为 `REOPENED_BY_PRODUCT_MODEL_CHANGE`。
 
 2026-08-30 本地 P8 候选已核对唯一清单中的 90 个 action：86 个 M7-owned action 为 33 个 `implemented` 与 53 个
 `conditional-disabled`，4 个 M11-owned action 保持 `blocked-future-milestone`，永久 fake 数为 0。GUI 现在从
 `system.status.capabilities` 消费实际协商结果，页面和 action 在 capability 缺失时不调用受保护 method；已有公开 M6 capability
 常量经 typed SDK 复用，未增加 RPC、Permission、State、dependency、unsafe 或平台 API。Rust 完整 locked Workspace tests、
-strict Clippy、34 项 Playwright、npm check/build 与 Tauri release no-bundle 已通过；最终提交仍需取得三平台 Hosted CI 与 CodeQL。
+strict Clippy、34 项 Playwright、npm check/build 与 Tauri release no-bundle 已通过；sealed functional HEAD
+`d314b155374d31a8d7c0449c62efdea5dd745e72` 的 technical checkpoint 已通过。2026-08-31 的 Unity model Stop A
+只重新打开受产品模型变化影响的 M7-owned visible actions，不推翻此前 P0-P8 技术证据。
