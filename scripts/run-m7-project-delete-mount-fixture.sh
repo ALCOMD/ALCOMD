@@ -5,15 +5,16 @@ fixture_root="$(mktemp -d "${TMPDIR:-/tmp}/alcomd-m7-delete-mount.XXXXXX")"
 payload_root="$fixture_root/payload"
 nested_mount="$payload_root/mounted"
 image_path="$fixture_root/nested.dmg"
+mount_attached=false
 mkdir -p "$nested_mount"
 
 cleanup() {
-    if [[ "$(uname -s)" == "Linux" ]]; then
-        if mountpoint -q "$nested_mount"; then
+    if [[ "$mount_attached" == true ]]; then
+        if [[ "$(uname -s)" == "Linux" ]]; then
             sudo umount "$nested_mount"
+        else
+            hdiutil detach -quiet "$nested_mount"
         fi
-    elif mount | grep -Fq " on $nested_mount "; then
-        hdiutil detach -quiet "$nested_mount"
     fi
     rm -rf -- "$fixture_root"
 }
@@ -24,9 +25,11 @@ if [[ "$(uname -s)" == "Linux" ]]; then
     mkdir -p "$external_root"
     printf 'preserve me' > "$external_root/sentinel.txt"
     sudo mount --bind "$external_root" "$nested_mount"
+    mount_attached=true
 else
     hdiutil create -quiet -size 16m -fs APFS -volname ALCOMD_M7_DELETE "$image_path"
     hdiutil attach -quiet -nobrowse -mountpoint "$nested_mount" "$image_path"
+    mount_attached=true
     printf 'preserve me' > "$nested_mount/sentinel.txt"
 fi
 
