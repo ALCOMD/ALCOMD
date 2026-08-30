@@ -11,6 +11,7 @@ import type {
     UiDocument,
     UiSnapshot
 } from "@alcomd/sdk";
+import { RPC_CAPABILITIES } from "@alcomd/sdk";
 import React from "react";
 import ReactDOM from "react-dom/client";
 
@@ -22,7 +23,43 @@ import type { GuiRpcClient } from "../../src/rpc";
 import "../../src/styles.css";
 import { MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
 
-type HarnessMode = "ready" | "empty" | "error" | "disconnected" | "loading" | "stale" | "failed" | "cancelled" | "create-error" | "restore-error" | "favorite-pages" | "favorite-error" | "favorite-conflict" | "unity-automatic" | "unity-zero" | "unity-multiple" | "package-no-repositories" | "package-multiple" | "package-user-source" | "package-partial-failure" | "package-revision-conflict";
+type HarnessMode = "ready" | "empty" | "error" | "disconnected" | "loading" | "stale" | "failed" | "cancelled" | "create-error" | "restore-error" | "favorite-pages" | "favorite-error" | "favorite-conflict" | "unity-automatic" | "unity-zero" | "unity-multiple" | "package-no-repositories" | "package-multiple" | "package-user-source" | "package-partial-failure" | "package-revision-conflict" | "capabilities-missing";
+
+const SUPPORTED_CAPABILITIES = [
+    "backups.create.v1",
+    "backups.read.v1",
+    "backups.restore.v1",
+    RPC_CAPABILITIES.extensionsLifecycle,
+    RPC_CAPABILITIES.extensionsPermissions,
+    "extensions.ui.portable.v1",
+    "operations.v1",
+    "packages.apply.v1",
+    "packages.plan.v1",
+    "packages.plan.v2",
+    "packages.user-packages.v1",
+    "projects.copy.v1",
+    "projects.delete.v1",
+    "projects.read.v1",
+    "projects.registry.v1",
+    "repositories.read.v1",
+    "repositories.registry.v1",
+    "state.check.v1",
+    "templates.create-project.v1",
+    "templates.manage.v1",
+    "templates.read.v1",
+    "unity.launch.v1",
+    "unity.manage.v1",
+    "unity.read.v1"
+] as const;
+
+const CAPABILITIES_WITH_OPTIONAL_ACTIONS_MISSING = [
+    "backups.read.v1",
+    RPC_CAPABILITIES.extensionsLifecycle,
+    "projects.read.v1",
+    "repositories.read.v1",
+    "templates.read.v1",
+    "unity.read.v1"
+] as const;
 
 const query = new URLSearchParams(window.location.search);
 const initialRoute = query.get("route") ?? "/";
@@ -68,7 +105,15 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
 
     systemStatus(): ReturnType<GuiRpcClient["systemStatus"]> {
-        return this.value({ product: "ALCOMD", daemonVersion: "4.0.0-alpha.0", rpcVersion: 1, state: "ready", capabilities: ["extensions.ui.portable.v1"] });
+        return this.value({
+            product: "ALCOMD",
+            daemonVersion: "4.0.0-alpha.0",
+            rpcVersion: 1,
+            state: "ready",
+            capabilities: this.mode === "capabilities-missing"
+                ? [...CAPABILITIES_WITH_OPTIONAL_ACTIONS_MISSING]
+                : [...SUPPORTED_CAPABILITIES]
+        });
     }
 
     stateCheck(): ReturnType<GuiRpcClient["stateCheck"]> {

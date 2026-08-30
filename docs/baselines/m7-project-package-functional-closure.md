@@ -2,8 +2,10 @@
 
 状态：P0-P4 remote checkpoint、P5-A Create/Restore production wiring 与 P5-B Favorite/Clear Unity Preference
 均已通过本地与远端验收。P6-A/P6-B/P6-C 已通过本地完整验收、三平台 Hosted CI 与 CodeQL。
-v3 只作行为参考；没有复制、移植或改写其源码。P7 Delete Project Directory 已形成 proposal-only Stop A，尚待项目所有者
-人工审批；P8 仍未完成，因此聚合 feature 继续 `in_progress`。
+v3 只作行为参考；没有复制、移植或改写其源码。P7 Delete Project Directory 已在 sealed HEAD
+`2ee11066c07a0994f3aebe6a9ce3f84ab2c8acd9` 通过三平台 Hosted CI run `33298022030` 与 CodeQL run
+`33298021806`，remote checkpoint 为 PASS。P8 的 M7-owned visible-action gate 可独立 PASS；M11 VCC Import/Migrate、
+legacy entry 与真实 v3 differential parity 仍是全局 release blocker。聚合 feature 按完整冻结 user-entry 保持 `in_progress`。
 
 | 用户入口 | 当前 Core 是否足够 | 最小合同 / 实现归属 | Permission 复用 | State / Config 影响 | dependency / platform | slice |
 |---|---|---|---|---|---|---|
@@ -16,7 +18,7 @@ v3 只作行为参考；没有复制、移植或改写其源码。P7 Delete Proj
 | Clear/Forget Unity preference | active automatic/explicit state 与 legacy view 已实现 | `unity.projectEditor.selection.get` + `unity.projectEditor.clear`；tagged automatic/explicit selection；既有 set 保持 non-null | `unity.read` / `unity.manage` | active State v11重建 existing preference table；clear保留 arguments；无新表 | 无 | P5-B / implemented + remote green |
 | Open Unity / Backup | 已有真实 RPC/Operation | 保持 existing wiring；不是新合同 | existing | 无 | existing | 已实现证据保持 |
 | Remove registry row | `projects.unregister` 足够 | GUI confirmation + existing RPC；不删除目录 | `projects.manage` | existing | 无 | P3 / S |
-| Delete Project Directory | 不足且是高影响删除 | proposal-only `projects.delete.v1`、ProjectId-only Plan/Apply、sibling quarantine permanent-delete、writer/protected-root/path gate 与 forward recovery | 新 `projects.delete`；local-owner only；4.0.0 不授予 extension | State v13 proposal：两张专用表 + durable Project FK correction | 不新增依赖；Unix mount-safe cleanup 尚待窄审批 | P7 Stop A / awaiting owner approval |
+| Delete Project Directory | 已完成并通过远端验收 | active `projects.delete.v1`、ProjectId-only Plan/Apply、sibling quarantine permanent-delete、writer/protected-root/path gate 与 forward recovery | `projects.delete`；local-owner only；4.0.0 不授予 extension | State v13：两张专用表 + durable Project FK correction | 无新增依赖；三平台 mount-safe cleanup 已验证 | P7 / implemented + remote green |
 | Package workspace refresh | 单 repo `repositories.refresh` 足够 | GUI 完整分页 list，顺序逐 registered repo refresh，逐项记录 partial failure，`revision_conflict` 仅 fresh retry 一次，最后 reload；不声称 atomic refresh-all | `repositories.manage/read` | 无 | existing HTTP/local | P6-A / implemented + remote green |
 | Package source filter | registered local/remote repository DTO 足够做展示过滤 | GUI-only All/Remote/Local filter，source identity只来自 daemon `RepositorySource.kind`；GUI不做 resolver | read only | 不持久化；无 authority state | 无 | P6-A / implemented + remote green |
 | Show prerelease | resolver已有 `includePrerelease`，read DTO已有 Core-classified optional bool | implemented `RepositoryPackageVersion.prerelease: bool?`；strict Core parse返回bool，legacy/unparseable absent且不可当stable；默认false | settings read/manage | Config v2，不是State | 无 | P6-B / implemented + remote green |
@@ -49,8 +51,7 @@ v3 只作行为参考；没有复制、移植或改写其源码。P7 Delete Proj
 
 - 除明确属于 M11 的 migration/differential parity 外，已知 Project/Package 缺口均属于 M7 functional closure；未完成前
   `projects.management` / `packages.vpm` 不得提升为 implemented。
-- P7 Remove Directory 是 M7 内独立 high-impact approval slice；没有批准前保留缺口，不显示永久 disabled production fake action。
-- P7 proposal 选择永久 sibling quarantine，而不是 OS Trash 或直接就地 `remove_dir_all`；完整合同见
-  `docs/baselines/m7-p7-project-directory-delete.md`。这只是设计输入，不代表 Permission、RPC、State v13 或 production 已存在。
+- P7 Remove Directory 是 M7 内已完成的 high-impact slice；选择永久 sibling quarantine，而不是 OS Trash 或直接就地
+  `remove_dir_all`，完整合同与远端证据见 `docs/baselines/m7-p7-project-directory-delete.md`。
 - VCC import/migrate 与真实 v3 differential evidence属于 M11，保持 blocked。
 - Win10/Win11完整客户端安装/运行/WebView2/更新/卸载仍属于 M12。

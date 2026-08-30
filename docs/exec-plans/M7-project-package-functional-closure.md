@@ -4,9 +4,11 @@
 P5-A Create / Restore existing-Core GUI wiring 与 P5-B Favorite / Clear Unity Preference 均已通过本地完整验收、三平台
 Hosted CI 与 CodeQL。P6-A、P6-B 与 P6-C 已完成获批合同和 production implementation，并通过适用的本地门禁、
 同一最终候选的三平台 Hosted CI 与 CodeQL；P6 remote checkpoint 为 PASS。
-P7 Delete Project Directory 已按项目所有者批准及实施修正形成 local production candidate：active RPC/Permission、State v13、
-mount-safe filesystem primitive、Plan/Apply/Operation/recovery、CLI/GUI与真实 fault tests 均已接线，正在等待同一提交的三平台
-Hosted CI 与 CodeQL。H2 visual WIP 继续暂停，P8、M8/M9 未开始。
+P7 Delete Project Directory 已按项目所有者批准及实施修正完成 active RPC/Permission、State v13、mount-safe filesystem
+primitive、Plan/Apply/Operation/recovery、CLI/GUI 与真实 fault tests，并在 sealed HEAD
+`2ee11066c07a0994f3aebe6a9ce3f84ab2c8acd9` 通过 Hosted CI run `33298022030` 的 Windows、Ubuntu、macOS
+及 CodeQL run `33298021806`。P7 remote checkpoint 为 PASS。P8 正在执行 M7-owned 可见 action 完整性审计；H2 visual WIP
+继续暂停，M8/M9 未开始。
 
 ## 目标与边界
 
@@ -582,5 +584,35 @@ P7 的精确审计、策略比较、合同与测试矩阵位于：
   leaf 解锁 Apply；输入确认不是后端 authority。
 
 P7 已实现 active RPC/Permission、State v13 migration、Linux `openat2` `NO_XDEV`/macOS mount token/Windows std no-follow、
-sibling quarantine、durable forward recovery、CLI/GUI入口及真实 subprocess kill/restart矩阵。当前停止点是同一候选的三平台
-Hosted CI 与 CodeQL；通过前不得将P7标记PASS，也不得进入 P8/H2/M8/M9/M11。
+sibling quarantine、durable forward recovery、CLI/GUI入口及真实 subprocess kill/restart矩阵。sealed HEAD
+`2ee11066c07a0994f3aebe6a9ce3f84ab2c8acd9` 已通过 Hosted CI run `33298022030` 的 Windows、Ubuntu、macOS
+以及 CodeQL run `33298021806`，P7 remote checkpoint 为 PASS。P8 只审计并关闭 M7-owned 可见 action；M11 的
+VCC Import/Migrate、legacy entry 与真实 v3 differential parity 继续作为全局 release blocker，不计入 M7-owned 分母。
+
+## P8 visible-action completeness
+
+唯一机器可读 inventory 是
+`crates/alcomd-testing/fixtures/m7/visible-action-completeness-v1.json`。它逐项区分 owner milestone、当前分类和全局
+release-blocker 状态，不再把 M11 缺口混入 M7-owned 分母。P8 gate 固定输出：
+
+- `m7OwnedCompleteness = PASS`：M7 official GUI 当前可见 Project、Repository、Package、User Package、Template、Unity、
+  Backup、Operation、Extension、Settings、Activity 与 Diagnostics action 均有真实 typed client/closed adapter 实现，或按实际
+  daemon capability/current state 明确禁用；
+- `globalReleaseCompleteness = BLOCKED_BY_M11`：VCC Import、VCC Migrate、legacy migration entry 与真实 v3 differential
+  parity 继续是 release blocker，且没有 fake/placeholder GUI 入口；
+- capability 来源是 `system.status.capabilities`。GUI 不把 client 请求集合当成已授权事实；缺失 `projects.delete.v1`、
+  `projects.copy.v1`、`packages.plan.v2`、`packages.user-packages.v1` 或其他 M7 capability 时不得发起对应 RPC；
+- GUI 仍只使用 `GuiRpcClient` 的 closed typed method，以及 native directory picker、registered Project directory opener 和经过
+  daemon 重新验证的 package link opener。不存在 generic RPC method/string invoke、generic path/URL opener 或 direct state/filesystem mutation；
+- Delete Project Directory 与 Remove from list 保持两个独立 action；exact typed confirmation 可在 Apply 前 Escape，Apply 后由
+  durable Operation/recovery 权威推进，不提供前端伪取消。
+
+聚合 `projects.management`、`packages.vpm` 与 `repositories.management` 继续保持 `in_progress`：这些 feature 的冻结
+user-entry 仍包含 M11 differential parity、M8 MCP 或其他后续里程碑范围。P8 PASS 只表示 M7-owned official GUI action
+完整性，不把完整产品/发行状态提升为 implemented，也不恢复 H2 visual。
+
+2026-08-30 本地 P8 候选已核对唯一清单中的 90 个 action：86 个 M7-owned action 为 33 个 `implemented` 与 53 个
+`conditional-disabled`，4 个 M11-owned action 保持 `blocked-future-milestone`，永久 fake 数为 0。GUI 现在从
+`system.status.capabilities` 消费实际协商结果，页面和 action 在 capability 缺失时不调用受保护 method；已有公开 M6 capability
+常量经 typed SDK 复用，未增加 RPC、Permission、State、dependency、unsafe 或平台 API。Rust 完整 locked Workspace tests、
+strict Clippy、34 项 Playwright、npm check/build 与 Tauri release no-bundle 已通过；最终提交仍需取得三平台 Hosted CI 与 CodeQL。

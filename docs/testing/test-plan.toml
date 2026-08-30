@@ -525,9 +525,9 @@ id = "gui.m7-visible-action-completeness"
 stage = "M7"
 kind = "integration-ui"
 platforms = ["all"]
-status = "planned"
-description = "production gate 要求每个可见业务 action 是真实 implemented、current-state conditional disabled 或非 release-blocker 的显式 unavailable；P1-P7 已完成真实 Core入口。M11 VCC Import/Migrate 仍 blocked，因此完整 P8 gate 继续 planned。"
-evidence = ["crates/alcomd-testing/fixtures/m7/visible-action-completeness-v1.json", "docs/baselines/m7-project-package-functional-closure.md", "docs/baselines/m7-p7-project-directory-delete.md", "crates/alcomd-testing/tests/m7_project_actions_contract.rs", "crates/alcomd-testing/tests/m7_project_delete_rpc.rs", "apps/alcomd-gui/src/ProjectCreationDialogs.tsx", "apps/alcomd-gui/tests/browser/m7-project-create-restore.spec.ts", "apps/alcomd-gui/tests/browser/m7-project-preferences.spec.ts", "apps/alcomd-gui/tests/browser/m7-material-foundation.spec.ts"]
+status = "implemented"
+description = "M7-owned production gate 要求每个可见业务 action 是真实 implemented 或基于当前状态/协商 capability 的明确 conditional disabled；唯一 inventory 独立报告 m7OwnedCompleteness=PASS 与 globalReleaseCompleteness=BLOCKED_BY_M11。M11 VCC Import/Migrate、legacy entry 和真实 v3 differential parity 不计入 M7 分母，但继续作为全局 release blocker。"
+evidence = ["crates/alcomd-testing/fixtures/m7/visible-action-completeness-v1.json", "docs/baselines/m7-project-package-functional-closure.md", "docs/baselines/m7-p7-project-directory-delete.md", "crates/alcomd-testing/tests/m7_project_actions_contract.rs", "crates/alcomd-testing/tests/m7_project_delete_rpc.rs", "packages/alcomd-sdk/src/index.ts", "apps/alcomd-gui/src/capabilities.tsx", "apps/alcomd-gui/src/App.tsx", "apps/alcomd-gui/src/CorePages.tsx", "apps/alcomd-gui/src/CoreActions.tsx", "apps/alcomd-gui/src/ProjectCreationDialogs.tsx", "apps/alcomd-gui/tests/browser/m7-project-create-restore.spec.ts", "apps/alcomd-gui/tests/browser/m7-project-preferences.spec.ts", "apps/alcomd-gui/tests/browser/m7-material-foundation.spec.ts"]
 
 [[test]]
 id = "projects.m7-delete-directory-transaction"

@@ -27,6 +27,9 @@ const ROOT_LOCK: &str = include_str!("../../../Cargo.lock");
 const DEPENDENCY_EVALUATION: &str =
     include_str!("../../../docs/exec-plans/M7-project-actions-dependency-evaluation.md");
 const CURRENT_PROJECTS_UI: &str = include_str!("../../../apps/alcomd-gui/src/CorePages.tsx");
+const CURRENT_ACTIONS_UI: &str = include_str!("../../../apps/alcomd-gui/src/CoreActions.tsx");
+const CURRENT_CAPABILITY_GATE: &str = include_str!("../../../apps/alcomd-gui/src/capabilities.tsx");
+const CURRENT_APP: &str = include_str!("../../../apps/alcomd-gui/src/App.tsx");
 const GUI_RUST_ADAPTER: &str = include_str!("../../../apps/alcomd-gui/src-tauri/src/lib.rs");
 const GUI_RPC_ADAPTER: &str = include_str!("../../../apps/alcomd-gui/src/rpc.ts");
 const GUI_CAPABILITY: &str =
@@ -217,41 +220,67 @@ fn dependency_decisions_are_exact_and_opener_plugin_stays_rejected() {
 }
 
 #[test]
-fn visible_action_gate_records_real_current_gaps_instead_of_hiding_them() {
+fn visible_action_gate_separates_m7_completeness_from_m11_release_blockers() {
     let gate: Value = serde_json::from_str(ACTION_GATE).expect("visible action gate");
-    assert_eq!(gate["productionGateMayPass"], false);
     assert_eq!(gate["expectedCurrentPermanentFakeCount"], 0);
     assert_eq!(
         gate["releaseBlockerFeatures"],
         json!(["projects.management", "packages.vpm"])
     );
     let visible = gate["visibleActions"].as_array().expect("visible actions");
-    for implemented in [
-        "projects.create-from-template",
-        "projects.restore-managed-backup",
-    ] {
-        assert!(visible.iter().any(|action| {
-            action["id"] == implemented && action["classification"] == "implemented"
-        }));
+    assert!(
+        visible.len() >= 80,
+        "visible action inventory must remain exhaustive"
+    );
+    let mut ids = BTreeSet::new();
+    for action in visible {
+        let id = action["id"].as_str().expect("visible action id");
+        assert!(ids.insert(id), "duplicate visible action {id}");
+        let owner = action["ownerMilestone"].as_str().expect("owner milestone");
+        let classification = action["classification"].as_str().expect("classification");
+        let release_blocker = action["releaseBlocker"].as_bool().expect("release blocker");
+        match owner {
+            "M7" => {
+                assert!(
+                    matches!(classification, "implemented" | "conditional-disabled"),
+                    "M7 action {id} has incomplete classification {classification}"
+                );
+                assert!(
+                    !release_blocker,
+                    "M7-owned completeness must not hide a release blocker"
+                );
+            }
+            "M11" => {
+                assert_eq!(classification, "blocked-future-milestone");
+                assert!(
+                    release_blocker,
+                    "M11 parity entry must remain a release blocker"
+                );
+            }
+            unexpected => panic!("unexpected owner milestone {unexpected}"),
+        }
     }
-    let permanent = visible
-        .iter()
-        .filter(|action| action["classification"] == "permanent-disabled-release-blocker")
-        .collect::<Vec<_>>();
-    assert!(permanent.is_empty());
+    assert_eq!(gate["verdicts"]["m7OwnedCompleteness"], "PASS");
+    assert_eq!(
+        gate["verdicts"]["globalReleaseCompleteness"],
+        "BLOCKED_BY_M11"
+    );
+    assert_eq!(gate["verdicts"]["m7OwnedGateMayPass"], true);
+    assert_eq!(gate["verdicts"]["globalReleaseGateMayPass"], false);
+    assert_eq!(
+        gate["verdicts"]["globalBlockers"],
+        json!([
+            "migration.vcc-import",
+            "migration.vcc-migrate",
+            "migration.legacy-entry",
+            "migration.v3-differential-parity-entry"
+        ])
+    );
     assert!(!CURRENT_PROJECTS_UI.contains("disabled label=\"Open Project Directory\""));
     assert!(CURRENT_PROJECTS_UI.contains(
         "label={selectingCopyTarget ? \"Choosing Copy Destination…\" : \"Copy Project\"}"
     ));
-    assert_eq!(gate["knownParityGaps"], json!(["vcc-import-migrate"]));
-    assert!(
-        !gate["knownParityGaps"]
-            .as_array()
-            .expect("known gaps")
-            .iter()
-            .any(|gap| gap == "create-entry" || gap == "restore-entry")
-    );
-    for implemented in ["favorite", "clear-unity-preference"] {
+    for implemented in ["favorite", "clear-unity-preference", "remove-directory"] {
         assert!(
             gate["contractFirstProposals"]
                 .as_array()
@@ -264,20 +293,23 @@ fn visible_action_gate_records_real_current_gaps_instead_of_hiding_them() {
                 })
         );
     }
-    assert!(
-        gate["contractFirstProposals"]
-            .as_array()
-            .expect("contract-first proposals")
-            .iter()
-            .any(|entry| {
-                entry["id"] == "remove-directory"
-                    && entry["status"] == "implemented-local-remote-pending"
-                    && entry["productionImplemented"] == true
-            })
-    );
-    assert!(visible.iter().any(|action| {
-        action["id"] == "projects.delete-directory" && action["classification"] == "implemented"
-    }));
+
+    for capability in [
+        "projects.delete.v1",
+        "projects.copy.v1",
+        "packages.plan.v2",
+        "packages.user-packages.v1",
+        "extensions.ui.portable.v1",
+    ] {
+        assert!(CURRENT_CAPABILITY_GATE.contains(capability));
+    }
+    assert!(CURRENT_APP.contains("new Set(status.capabilities)"));
+    assert!(CURRENT_PROJECTS_UI.contains("capabilityUnavailableTitle"));
+    assert!(CURRENT_PROJECTS_UI.contains("disabled={deleting}"));
+    assert!(!CURRENT_PROJECTS_UI.contains("Cancel deletion"));
+    assert!(CURRENT_ACTIONS_UI.contains("capability_required"));
+    assert!(!GUI_RPC_ADAPTER.contains("invokeTyped(\"generic"));
+    assert!(!GUI_RPC_ADAPTER.contains("method: string"));
 }
 
 #[test]

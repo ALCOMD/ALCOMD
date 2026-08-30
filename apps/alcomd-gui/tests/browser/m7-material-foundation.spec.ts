@@ -231,6 +231,7 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     await removeProject.click();
     const removeDialog = page.getByRole("dialog", { name: "Remove this project?" });
     await expect(removeDialog).toBeVisible();
+    await expect(page.getByRole("button", { name: "Remove from list" })).toBeVisible();
     await page.getByRole("button", { name: "Delete Project Directory…" }).click();
     const deleteDialog = page.getByRole("dialog", { name: "Permanently delete project directory?" });
     await expect(page.getByText(/does not use the Recycle Bin or Trash/)).toBeVisible();
@@ -239,8 +240,12 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     await expect(page.getByText(/Unity writer observation:.*not_observed/)).toBeVisible();
     const permanentDelete = page.getByRole("button", { name: "Permanently delete" });
     await expect(permanentDelete).toBeDisabled();
-    await page.getByRole("textbox", { name: "Confirm project directory name" }).fill("Sample");
+    const confirmation = page.getByRole("textbox", { name: "Confirm project directory name" });
+    await confirmation.focus();
+    await expect(confirmation).toBeFocused();
+    await page.keyboard.type("Sample");
     await expect(permanentDelete).toBeEnabled();
+    await expect(page.getByRole("button", { name: /cancel deletion/i })).toHaveCount(0);
     await page.keyboard.press("Escape");
     await expect(deleteDialog).not.toBeVisible();
     const observedButton = observedHeader.getByRole("button", { name: "Last observed" });
@@ -327,8 +332,31 @@ test("Project directory deletion requires exact leaf confirmation and follows th
     await expect(main.getByText("No registered projects")).toBeVisible();
 });
 
-async function openHarness(page: Page, route: string) {
-    await page.goto(`/browser-harness.html?route=${encodeURIComponent(route)}&state=ready`);
+test("missing negotiated capabilities remain visibly unavailable without dispatching their actions", async ({ page }) => {
+    await openHarness(page, "/projects", "capabilities-missing");
+    const register = page.getByRole("button", { name: "Register project" });
+    await expect(register).toBeDisabled();
+    await expect(page.locator("md-filled-button", { has: register })).toHaveAttribute("title", /projects\.registry\.v1 was not negotiated/);
+    await expect(page.getByRole("button", { name: "Create project" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Restore project" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Open Unity" })).toBeDisabled();
+
+    const actions = page.locator(".project-row-actions");
+    await actions.getByRole("button", { name: "More actions for <private-project>" }).click();
+    await expect(actions.locator("md-menu-item").filter({ hasText: "Copy Project" })).toHaveJSProperty("disabled", true);
+    await expect(actions.locator("md-menu-item").filter({ hasText: "Remove Project" })).toHaveJSProperty("disabled", true);
+
+    await openHarness(page, "/user-packages", "capabilities-missing");
+    await expect(page.getByRole("heading", { name: "Feature unavailable" })).toBeVisible();
+    await expect(page.getByText(/packages\.user-packages\.v1 was not negotiated/)).toBeVisible();
+
+    await openHarness(page, "/extensions/com.cqmhv.discord/ui", "capabilities-missing");
+    await expect(page.getByRole("heading", { name: "Feature unavailable" })).toBeVisible();
+    await expect(page.getByText(/extensions\.ui\.portable\.v1 was not negotiated/)).toBeVisible();
+});
+
+async function openHarness(page: Page, route: string, state = "ready") {
+    await page.goto(`/browser-harness.html?route=${encodeURIComponent(route)}&state=${state}`);
 }
 
 function navigationItem(page: Page, label: string) {

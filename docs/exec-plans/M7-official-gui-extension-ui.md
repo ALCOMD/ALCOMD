@@ -9,8 +9,10 @@
 空间模式，状态为 `rejected_for_visual_direction`。reference-driven wide desktop Projects prototype 已由项目所有者通过
 Visual Gate 1，检查点为 `7bb325b78a74518881fb65e03de7f79902e72cd3`。项目所有者随后确认 Project/Package 用户入口存在
 超出两个 permanent-disabled menu item 的真实功能缺口，H2 visual implementation 已暂停；当前只执行
-`M7 Project / Package Functional Closure` P0-P6 已通过远端验收；P7 Delete Project Directory 仅完成 proposal-only
-contract-first Stop A 草案，正在等待项目所有者人工审批。H2 visual、P8、M8/M9 均未开始或继续暂停。M7仍未完成。
+`M7 Project / Package Functional Closure` P0-P7 已通过远端验收；P7 sealed HEAD
+`2ee11066c07a0994f3aebe6a9ce3f84ab2c8acd9` 的 Hosted CI run `33298022030` 与 CodeQL run `33298021806`
+均通过。P8 M7-owned visible-action completeness 本地候选为 PASS，正在等待最终提交的 Hosted CI 与 CodeQL；global gate
+因 M11 保持 blocked。H2 visual 继续暂停，M8/M9 未开始。M7仍未完成。
 
 ## 目标与完成定义
 
@@ -599,6 +601,5 @@ Activity、Diagnostics 或 Portable UI authority。
 
 ## 下一停止点
 
-当前停止点是 P7 Delete Project Directory contract-first Stop A 人工审批。不得开始 P7 production，不得进入 P8、恢复 H2
-visual 或进入 M8/M9/M11；等待项目所有者审阅 proposal schema、State v13、path/recovery vectors 与 Unix mount-safe cleanup
-审批点。
+当前停止点是 P8 M7-owned visible-action completeness 最终远端验收。P7 的 proposal schema、State v13、path/recovery
+vectors 与 Unix mount-safe cleanup 已实施并通过远端验收。不得恢复 H2 visual 或进入 M8/M9/M11。

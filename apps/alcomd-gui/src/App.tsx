@@ -54,6 +54,13 @@ import {
 import { Button, Dialog as MaterialDialog, Icon, NavigationList, NavigationListItem } from "./Material";
 import { guiRpcClient, type GuiRpcClient } from "./rpc";
 import type { SettingsGetResult } from "./core-models";
+import {
+    capabilities,
+    CapabilityProvider,
+    type CapabilitySnapshot,
+    useCapabilityCheck,
+    useCapabilityState
+} from "./capabilities";
 
 const DISCARD_MESSAGE = "Discard the unsaved changes?";
 
@@ -90,6 +97,7 @@ export function App({ client = guiRpcClient }: AppProps) {
     const [pendingRoute, setPendingRoute] = useState<Route>();
     const [appearance, setAppearance] = useState<AppearanceSettings>(defaultAppearance);
     const [locale, setLocale] = useState(() => preferredLocale(navigator.language));
+    const [negotiatedCapabilities, setNegotiatedCapabilities] = useState<CapabilitySnapshot>();
     const dirtyRef = useRef(false);
     const handleDirtyChange = useCallback((dirty: boolean) => {
         dirtyRef.current = dirty;
@@ -123,6 +131,17 @@ export function App({ client = guiRpcClient }: AppProps) {
         });
         return () => { active = false; };
     }, [applySettings, client]);
+
+    useEffect(() => {
+        let active = true;
+        setNegotiatedCapabilities(undefined);
+        void client.systemStatus().then((status) => {
+            if (active) setNegotiatedCapabilities({ kind: "ready", values: new Set(status.capabilities) });
+        }).catch(() => {
+            if (active) setNegotiatedCapabilities({ kind: "status-unavailable" });
+        });
+        return () => { active = false; };
+    }, [client, route.kind]);
 
     useEffect(() => {
         const onPopState = () => {
@@ -176,32 +195,34 @@ export function App({ client = guiRpcClient }: AppProps) {
     const navigate = (path: string) => navigateRoute(readRoute(path));
 
     return (
-        <div className="app-shell">
-            <div className="app-body">
-                <PrimaryNavigation
-                    client={client}
-                    current={route}
-                    navigate={navigate}
-                />
-                <main className="main-content" id="main-content">
-                    <RouteContent
+        <CapabilityProvider value={negotiatedCapabilities}>
+            <div className="app-shell">
+                <div className="app-body">
+                    <PrimaryNavigation
                         client={client}
-                        locale={locale}
+                        current={route}
                         navigate={navigate}
-                        onDirtyChange={handleDirtyChange}
-                        onSettingsApplied={applySettings}
-                        route={route}
                     />
-                </main>
-            </div>
-            <MaterialDialog onClose={() => setPendingRoute(undefined)} open={pendingRoute !== undefined} title="Discard unsaved changes?">
-                <p>{DISCARD_MESSAGE}</p>
-                <div className="dialog-actions">
-                    <Button onClick={() => setPendingRoute(undefined)} type="button" variant="text">Keep editing</Button>
-                    <Button onClick={discardAndNavigate} type="button">Discard changes</Button>
+                    <main className="main-content" id="main-content">
+                        <RouteContent
+                            client={client}
+                            locale={locale}
+                            navigate={navigate}
+                            onDirtyChange={handleDirtyChange}
+                            onSettingsApplied={applySettings}
+                            route={route}
+                        />
+                    </main>
                 </div>
-            </MaterialDialog>
-        </div>
+                <MaterialDialog onClose={() => setPendingRoute(undefined)} open={pendingRoute !== undefined} title="Discard unsaved changes?">
+                    <p>{DISCARD_MESSAGE}</p>
+                    <div className="dialog-actions">
+                        <Button onClick={() => setPendingRoute(undefined)} type="button" variant="text">Keep editing</Button>
+                        <Button onClick={discardAndNavigate} type="button">Discard changes</Button>
+                    </div>
+                </MaterialDialog>
+            </div>
+        </CapabilityProvider>
     );
 }
 
@@ -248,10 +269,14 @@ interface NavigationItem {
 }
 
 function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient; current: Route; navigate(path: string): void }) {
+    const operationsCapability = useCapabilityState(capabilities.operations);
     const [summary, setSummary] = useState<{ activeTasks: number; daemonVersion?: string }>({ activeTasks: 0 });
     useEffect(() => {
         let active = true;
-        void Promise.allSettled([client.operationsList(), client.systemStatus()]).then(([operations, status]) => {
+        const operationsRequest = operationsCapability === "available"
+            ? client.operationsList()
+            : Promise.resolve({ operations: [] });
+        void Promise.allSettled([operationsRequest, client.systemStatus()]).then(([operations, status]) => {
             if (!active) return;
             setSummary({
                 activeTasks: operations.status === "fulfilled"
@@ -261,7 +286,7 @@ function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient;
             });
         });
         return () => { active = false; };
-    }, [client, current.kind]);
+    }, [client, current.kind, operationsCapability]);
     return (
         <footer className="navigation-footer">
             <nav aria-label="Utilities">
@@ -279,8 +304,10 @@ function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient;
                         aria-label={summary.activeTasks === 0 ? "Task Center" : `Task Center ${summary.activeTasks} active`}
                         aria-current={routeSection(current) === "tasks" ? "page" : undefined}
                         className="navigation-item"
+                        disabled={operationsCapability !== "available"}
                         onClick={() => navigate("/operations")}
                         selected={routeSection(current) === "tasks"}
+                        title={operationsCapability === "unavailable" ? `${capabilities.operations} was not negotiated by the connected daemon.` : undefined}
                     >
                         <Icon asset={taskCenterIcon} size={24} slot="start" />
                         <span className="navigation-item-label" slot="headline">Task Center</span>
@@ -320,29 +347,46 @@ function RouteContent({
 }) {
     const props = { client, navigate };
     switch (route.kind) {
-        case "projects": return <ProjectsPage {...props} />;
-        case "project-detail": return <ProjectDetailPage {...props} projectId={route.projectId} />;
-        case "project-packages": return <ProjectPackagesPage {...props} projectId={route.projectId} />;
-        case "project-unity": return <ProjectUnityPage {...props} projectId={route.projectId} />;
-        case "project-backups": return <ProjectBackupsPage {...props} projectId={route.projectId} />;
-        case "repositories": return <RepositoriesPage {...props} />;
-        case "repository-detail": return <RepositoryDetailPage {...props} repositoryId={route.repositoryId} />;
-        case "templates": return <TemplatesPage {...props} />;
-        case "user-packages": return <UserPackagesPage {...props} />;
-        case "template-detail": return <TemplateDetailPage {...props} templateId={route.templateId} />;
-        case "unity": return <UnityPage {...props} />;
-        case "backup-detail": return <BackupDetailPage {...props} backupId={route.backupId} />;
-        case "operations": return <OperationsPage {...props} />;
-        case "operation-detail": return <OperationDetailPage {...props} operationId={route.operationId} />;
-        case "extensions": return <ExtensionsPage {...props} />;
-        case "extension-detail": return <ExtensionDetailPage {...props} extensionId={route.extensionId} />;
-        case "extension-ui": return <ExtensionUiPage client={client} extensionId={route.extensionId} locale={locale} onDirtyChange={onDirtyChange} />;
+        case "projects": return <CapabilityRoute required={[capabilities.projectsRead]}><ProjectsPage {...props} /></CapabilityRoute>;
+        case "project-detail": return <CapabilityRoute required={[capabilities.projectsRead, capabilities.repositoriesRead]}><ProjectDetailPage {...props} projectId={route.projectId} /></CapabilityRoute>;
+        case "project-packages": return <CapabilityRoute required={[capabilities.projectsRead, capabilities.repositoriesRead]}><ProjectPackagesPage {...props} projectId={route.projectId} /></CapabilityRoute>;
+        case "project-unity": return <CapabilityRoute required={[capabilities.projectsRead, capabilities.unityRead]}><ProjectUnityPage {...props} projectId={route.projectId} /></CapabilityRoute>;
+        case "project-backups": return <CapabilityRoute required={[capabilities.projectsRead, capabilities.backupsRead]}><ProjectBackupsPage {...props} projectId={route.projectId} /></CapabilityRoute>;
+        case "repositories": return <CapabilityRoute required={[capabilities.repositoriesRead]}><RepositoriesPage {...props} /></CapabilityRoute>;
+        case "repository-detail": return <CapabilityRoute required={[capabilities.repositoriesRead]}><RepositoryDetailPage {...props} repositoryId={route.repositoryId} /></CapabilityRoute>;
+        case "templates": return <CapabilityRoute required={[capabilities.templatesRead]}><TemplatesPage {...props} /></CapabilityRoute>;
+        case "user-packages": return <CapabilityRoute required={[capabilities.packagesUserPackages]}><UserPackagesPage {...props} /></CapabilityRoute>;
+        case "template-detail": return <CapabilityRoute required={[capabilities.templatesRead]}><TemplateDetailPage {...props} templateId={route.templateId} /></CapabilityRoute>;
+        case "unity": return <CapabilityRoute required={[capabilities.unityRead]}><UnityPage {...props} /></CapabilityRoute>;
+        case "backup-detail": return <CapabilityRoute required={[capabilities.backupsRead]}><BackupDetailPage {...props} backupId={route.backupId} /></CapabilityRoute>;
+        case "operations": return <CapabilityRoute required={[capabilities.operations]}><OperationsPage {...props} /></CapabilityRoute>;
+        case "operation-detail": return <CapabilityRoute required={[capabilities.operations]}><OperationDetailPage {...props} operationId={route.operationId} /></CapabilityRoute>;
+        case "extensions": return <CapabilityRoute required={[capabilities.extensionsLifecycle]}><ExtensionsPage {...props} /></CapabilityRoute>;
+        case "extension-detail": return <CapabilityRoute required={[capabilities.extensionsLifecycle]}><ExtensionDetailPage {...props} extensionId={route.extensionId} /></CapabilityRoute>;
+        case "extension-ui": return <CapabilityRoute required={[capabilities.extensionsLifecycle, capabilities.extensionsPortableUi]}><ExtensionUiPage client={client} extensionId={route.extensionId} locale={locale} onDirtyChange={onDirtyChange} /></CapabilityRoute>;
         case "activity": return <ActivityPage {...props} />;
         case "diagnostics": return <DiagnosticsPage {...props} />;
         case "settings": return <SettingsPage {...props} onApplied={onSettingsApplied} onDirtyChange={onDirtyChange} />;
         case "about": return <AboutPage {...props} />;
         case "not-found": return <RouteState kind="error" title="Page not found" detail="Use the primary navigation to continue." />;
     }
+}
+
+function CapabilityRoute({ required, children }: { required: readonly string[]; children: ReactNode }) {
+    const { missing, state } = useCapabilityCheck(required);
+    if (state === "checking") {
+        return <RouteState kind="loading" title="Loading" detail="Checking daemon capabilities." />;
+    }
+    if (state === "status-unavailable") {
+        return children;
+    }
+    if (state === "unavailable") {
+        const detail = missing.length === 1
+            ? `${missing[0]} was not negotiated by the connected daemon.`
+            : `${missing.join(", ")} were not negotiated by the connected daemon.`;
+        return <RouteState kind="error" title="Feature unavailable" detail={detail} />;
+    }
+    return children;
 }
 
 interface ExtensionUiPageProps {

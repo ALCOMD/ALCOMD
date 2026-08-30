@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。H2 visual implementation 继续暂停；M7 Project / Package Functional Closure P0-P6 均已远端通过。P7 Delete Project Directory 已按项目所有者批准合同完成本地 production candidate，正在等待同一提交的三平台 Hosted CI 与 CodeQL；projects.management 与 packages.vpm 保持 in_progress，P8 与 M8/M9 未开始。`
+`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。H2 visual implementation 继续暂停；M7 Project / Package Functional Closure P0-P7 均已远端通过。P7 sealed HEAD 2ee11066c07a0994f3aebe6a9ce3f84ab2c8acd9 的三平台 Hosted CI run 33298022030 与 CodeQL run 33298021806 均通过。P8 M7-owned visible-action completeness 本地候选为 PASS，正在等待同一提交的 Hosted CI；global release completeness 仍为 BLOCKED_BY_M11。projects.management、packages.vpm 与 repositories.management 保持 in_progress，M8/M9 未开始。`
 
 ## 已完成
 
@@ -322,10 +322,16 @@
   Ubuntu 22.04 与 macOS 15 arm64 全部成功，CodeQL run `33277179920` 四类分析全部成功；Ubuntu最高 `GLIBC_2.34`，
   macOS 9 个预期产物均为 arm64 / minos 11.0。P6-A/P6-B/P6-C 均为 PASS；聚合 `packages.vpm`/
   `repositories.management`继续保持`in_progress`；该P6切片没有新增production dependency、Permission、unsafe或平台API。
-- P7 Delete Project Directory 已按获批合同形成 local production candidate：active `projects.delete.v1`、独立
+- P7 Delete Project Directory 已按获批合同形成并通过远端验收：active `projects.delete.v1`、独立
   `projects.delete`、State v13、ProjectId-only Plan/Apply、sibling quarantine永久删除、mount-safe cleanup、forward recovery、
   CLI/GUI入口及 accepted 到 cleanup_complete 的真实 kill/restart矩阵均已接线。未新增dependency、unsafe或Windows API；
-  `projects.management`仍保持`in_progress`，在同一候选的 Hosted CI 与 CodeQL通过前不把P7记为远端完成。
+  sealed HEAD `2ee11066c07a0994f3aebe6a9ce3f84ab2c8acd9` 已通过 Hosted CI run `33298022030` 的 Windows、
+  Ubuntu、macOS 与 CodeQL run `33298021806`；P7 remote checkpoint 为 PASS。`projects.management`仍保持`in_progress`。
+- P8 使用唯一 `visible-action-completeness-v1.json` 清单核对 90 个 action：86 个 M7-owned action 中 33 个为
+  `implemented`、53 个只按可观察状态或未协商 capability 条件禁用，永久 fake/placeholder 为 0；4 个 M11-owned
+  VCC/legacy/differential parity action 继续作为全局 blocker。GUI 已消费 `system.status.capabilities`，缺失 capability 时不下发
+  对应受保护 RPC；typed client/closed adapter、Delete/Remove 双动作及键盘确认边界均通过本地 Rust、34 项 Playwright、npm
+  build 与 Tauri release no-bundle 验收。P8 仍等待最终提交自身的三平台 Hosted CI 与 CodeQL，H2 未恢复。
 
 ## 后续里程碑尚未完成
 
@@ -392,8 +398,10 @@ functional candidate `192672…` 保留技术证据但已被拒绝 visual/IA acc
 `rejected_for_visual_direction`。替代的 v3-reference wide Projects shell 已在 `7bb325b…` 通过 Visual Gate 1。当前只完成
 Project / Package Functional Closure P0-P4 remote checkpoint、P5-A Create/Restore 与 P5-B Favorite/Clear Unity Preference
 均已远端通过。P6-A/P6-B/P6-C 也已通过同一最终候选的三平台 Hosted CI 与 CodeQL；P6 remote checkpoint 为 PASS。
-当前唯一获准工作是完成 P7 Delete Project Directory production candidate 的本地与远端验收。P7 在同一提交的 Windows、
-Ubuntu、macOS 与 CodeQL 全绿前不得记为 PASS；P8、H2 visual、M8、M9 或 M11 不得开始。
+P7 Delete Project Directory 已通过 sealed HEAD 的三平台 Hosted CI 与 CodeQL，remote checkpoint 为 PASS。
+当前唯一获准工作是完成 P8 M7-owned visible-action completeness 最终远端验收。M11 VCC
+Import/Migrate、legacy entry 与真实 v3 differential parity 必须继续显示为全局 release blocker，但不计入 M7-owned completeness
+分母。H2 visual、M8、M9 与 M11 production 不得开始。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential
