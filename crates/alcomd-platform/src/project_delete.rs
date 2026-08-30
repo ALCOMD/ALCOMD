@@ -355,9 +355,9 @@ mod platform {
     }
 
     fn walk(directory: &OwnedFd, remove: bool) -> Result<u64, ProjectDeleteFilesystemError> {
-        let mut entries = Dir::read_from(directory).map_err(map_errno)?;
+        let entries = Dir::read_from(directory).map_err(map_errno)?;
         let mut count = 0_u64;
-        while let Some(entry) = entries.next() {
+        for entry in entries {
             let entry = entry.map_err(map_errno)?;
             let name = entry.file_name();
             if name.to_bytes() == b"." || name.to_bytes() == b".." {
@@ -485,9 +485,9 @@ mod platform {
         remove: bool,
     ) -> Result<u64, ProjectDeleteFilesystemError> {
         verify_mount(directory, root_token)?;
-        let mut entries = Dir::read_from(directory).map_err(map_errno)?;
+        let entries = Dir::read_from(directory).map_err(map_errno)?;
         let mut count = 0_u64;
-        while let Some(entry) = entries.next() {
+        for entry in entries {
             let entry = entry.map_err(map_errno)?;
             let name = entry.file_name();
             if name.to_bytes() == b"." || name.to_bytes() == b".." {
