@@ -7,9 +7,14 @@
 use std::path::PathBuf;
 
 mod process;
+mod project_delete;
 mod unity;
 
 pub use process::{ProcessEvidence, ProcessSnapshot, observe_processes};
+pub use project_delete::{
+    ProjectDeleteFilesystemError, ProjectDeleteFilesystemErrorKind, project_delete_cleanup,
+    project_delete_preflight,
+};
 pub use unity::{
     UnityArchitecture, ValidatedUnityExecutable, discover_unity_executables, launch_unity_editor,
     validate_unity_executable,

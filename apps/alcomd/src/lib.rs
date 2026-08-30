@@ -10,7 +10,8 @@ use alcomd_application::{
     AccessContext, Application, ApplicationError, EventRecord as ApplicationEvent, IdempotencyKey,
     M3Application, M4Application, M5BackupApplication as BackupService,
     M5TemplateApplication as TemplateService, M5UnityApplication as M5Application, M6Application,
-    M7Application, M7CopyApplication as ProjectCopyService, M7OfficialApplication, OperationCursor,
+    M7Application, M7CopyApplication as ProjectCopyService,
+    M7DeleteApplication as ProjectDeleteService, M7OfficialApplication, OperationCursor,
     OperationId, OperationRecord, OperationState as DomainState, ResourceLockCoordinator, Revision,
     StoreErrorKind, UserPackageApplication as UserPackageService,
 };
@@ -38,6 +39,7 @@ mod m5_template_rpc;
 mod m6_rpc;
 mod m6_runtime;
 mod m7_copy_rpc;
+mod m7_delete_rpc;
 mod m7_official_rpc;
 mod m7_rpc;
 mod m7_user_packages_rpc;
@@ -67,6 +69,8 @@ type M7ExtensionApplication = M7Application<
 type M7OfficialGuiApplication = M7OfficialApplication<StateStoreHandle>;
 type ProjectCopyApplication =
     ProjectCopyService<StateStoreHandle, alcomd_vpm::ProjectCopyEngine, M5UnityApplication>;
+type ProjectDeleteApplication =
+    ProjectDeleteService<StateStoreHandle, alcomd_vpm::ProjectDeleteEngine, M5UnityApplication>;
 type UserPackageApplication = UserPackageService<StateStoreHandle, alcomd_vpm::UserPackageEngine>;
 
 struct Applications {
@@ -80,6 +84,7 @@ struct Applications {
     m7: M7ExtensionApplication,
     official_gui: M7OfficialGuiApplication,
     project_copy: ProjectCopyApplication,
+    project_delete: ProjectDeleteApplication,
     user_packages: UserPackageApplication,
 }
 
@@ -185,6 +190,16 @@ where
         .recover()
         .await
         .map_err(|_| BindError::Io(io::Error::other("Project Copy recovery failed")))?;
+    let project_delete = ProjectDeleteService::with_locks(
+        store.clone(),
+        alcomd_vpm::ProjectDeleteEngine,
+        unity.clone(),
+        Arc::clone(&locks),
+    );
+    project_delete
+        .recover()
+        .await
+        .map_err(|_| BindError::Io(io::Error::other("Project Delete recovery failed")))?;
     let user_packages = UserPackageService::new(
         store.clone(),
         alcomd_vpm::UserPackageEngine::new(
@@ -229,6 +244,7 @@ where
         m7,
         official_gui,
         project_copy,
+        project_delete,
         user_packages,
     });
     let listener = instance.bind()?;
@@ -413,6 +429,7 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         alcomd_protocol::CAPABILITY_PROJECTS_READ_V1,
         alcomd_protocol::CAPABILITY_PROJECTS_REGISTRY_V1,
         alcomd_protocol::CAPABILITY_PROJECTS_COPY_V1,
+        alcomd_protocol::CAPABILITY_PROJECTS_DELETE_V1,
         alcomd_protocol::CAPABILITY_REPOSITORIES_READ_V1,
         alcomd_protocol::CAPABILITY_REPOSITORIES_REGISTRY_V1,
         alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V1,
@@ -661,6 +678,14 @@ async fn dispatch_m2(
         {
             m7_copy_rpc::dispatch(request, state, &applications.project_copy, access).await
         }
+        _ if matches!(
+            request.method.as_str(),
+            alcomd_protocol::METHOD_PROJECTS_PLAN_DELETE_DIRECTORY
+                | alcomd_protocol::METHOD_PROJECTS_APPLY_DELETE_DIRECTORY
+        ) =>
+        {
+            m7_delete_rpc::dispatch(request, state, &applications.project_delete, access).await
+        }
         _ if request.method.starts_with("unity.") => {
             m5_rpc::dispatch(request, state, &applications.m5, access).await
         }
@@ -733,6 +758,18 @@ fn operation_to_rpc(record: OperationRecord) -> Result<Operation, RpcError> {
         progress: record.progress_phase.map(|phase| OperationProgress {
             phase: match phase {
                 alcomd_application::FilesystemPhase::Accepted => PackageOperationPhase::Accepted,
+                alcomd_application::FilesystemPhase::PreflightComplete => {
+                    PackageOperationPhase::PreflightComplete
+                }
+                alcomd_application::FilesystemPhase::QuarantineIntent => {
+                    PackageOperationPhase::QuarantineIntent
+                }
+                alcomd_application::FilesystemPhase::RootQuarantined => {
+                    PackageOperationPhase::RootQuarantined
+                }
+                alcomd_application::FilesystemPhase::RegistryCommitIntent => {
+                    PackageOperationPhase::RegistryCommitIntent
+                }
                 alcomd_application::FilesystemPhase::InventoryReady => {
                     PackageOperationPhase::InventoryReady
                 }
@@ -776,6 +813,7 @@ fn operation_to_rpc(record: OperationRecord) -> Result<Operation, RpcError> {
                 alcomd_application::FilesystemPhase::StateCommitted => {
                     PackageOperationPhase::StateCommitted
                 }
+                alcomd_application::FilesystemPhase::Deleting => PackageOperationPhase::Deleting,
                 alcomd_application::FilesystemPhase::CleanupComplete => {
                     PackageOperationPhase::CleanupComplete
                 }

@@ -1,7 +1,7 @@
-# M7 P7 Project Directory Delete：contract-first Stop A
+# M7 P7 Project Directory Delete：approved production contract
 
-状态：`proposal-only`、`owner-approval-required`。本文件只冻结审计结论与候选合同；P7 production、
-State v13 migration、active RPC/Permission、Operation worker、CLI/GUI handler 均未开始。
+状态：`owner-approved`、`implemented-local-remote-pending`。本文件冻结审计结论与 active production contract；State v13、
+RPC/Permission、Operation worker、CLI/GUI handler及fault tests已实现，等待同一候选的三平台Hosted CI与CodeQL。
 
 ## v3 exact behavior
 
@@ -45,7 +45,7 @@ State v13 migration、active RPC/Permission、Operation worker、CLI/GUI handler
 | directory identity | Windows 为 volume serial + 128-bit file ID；Unix 为 device + inode；`resolve_directory_identity` 返回 canonical directory + opaque identity。 | `crates/alcomd-platform/src/windows_file_identity.rs:19-75`；`unix.rs:17-23`；`lib.rs:40-63` |
 | link count | Windows 现有 `file_link_count` 可读 hard-link count，但 P7 删除单个 pathname不需要据此拒绝 hardlink；不得把该 helper扩成删除 API。 | `windows_file_identity.rs:77-100` |
 | path / link validation | 现有 VPM/Copy/Backup 有 bounded normalization 与 link/reparse检测，可复用规则和测试思路；private profile-specific实现不能被误称为现成 generic deleter。 | `crates/alcomd-vpm/src/plan.rs`、`project_copy.rs`、`backup.rs` |
-| approved platform surface | 当前无 Trash API、generic delete adapter 或额外 Windows delete API。`rustix` 已存在于 Unix platform crate，但其既有批准范围不自动授权 P7 recursive cleanup。 | `crates/alcomd-platform/Cargo.toml`；`src/lib.rs` |
+| approved platform surface | 不使用 Trash API、generic delete adapter 或额外 Windows delete API。Unix只在Project-Delete-private实现中使用已批准的safe `rustix 1.1.4` openat/mount surface。 | `crates/alcomd-platform/Cargo.toml`；`src/project_delete.rs` |
 
 ## Rust 1.97.1 filesystem audit
 
@@ -61,10 +61,9 @@ State v13 migration、active RPC/Permission、Operation worker、CLI/GUI handler
 - **缺口**：std 没有承诺不跨 Unix mount/bind-mount boundary。`st_dev` 能识别普通 cross-device mount，却不能充分识别同设备
   bind mount。由此推断，单独调用 std API 不能证明“只删 Project tree object graph”这一冻结安全合同。
 
-P7 production 因此有一个明确人工停止点：Windows 可优先使用 pinned Rust std 的 no-follow删除；Unix 必须先批准一个
-Project-Delete-private、fd-relative、no-follow且不跨 mount boundary 的精确实现方案。可以评估扩大现有 safe `rustix 1.1.4`
-用法，但若无法覆盖 Linux/macOS mount boundary，不得退回 libc FFI、新 unsafe 或“pre-scan 后 remove_dir_all”。本 Stop A 不作
-该生产改动。
+获批实现保持：Windows使用pinned Rust std的no-follow删除；Linux使用Project-Delete-private `openat2`/`NO_XDEV`，macOS使用
+fd-relative遍历与`st_dev + f_mntonname` mount token。任何guard不可用均fail closed，不退回libc FFI、新unsafe或“pre-scan后
+remove_dir_all”。
 
 ## 删除策略决策
 
@@ -78,7 +77,7 @@ P7 v1 deletion mode固定：`sibling-quarantine-permanent-v1`。它不是 Trash�
 
 ## Public RPC、Permission 与 Principal
 
-候选 compatible RPC v1 additions：
+active compatible RPC v1 additions：
 
 ```text
 capability: projects.delete.v1
@@ -274,7 +273,7 @@ GUI保留两个独立动作：`Remove from list` 与 `Delete Project Directory�
 display name、canonical local root、永久删除本地文件、不会进入Trash、不会自动Backup、与Remove from list的区别、writer safe
 summary。用户必须输入exact displayed project leaf/name后才能按destructive Apply；该输入只解锁GUI，不进入RPC authority。
 
-CLI在P7 production获批后提议发布独立`alcomd-cli project delete-directory --project-id <uuid>`，不复用`project unregister`
+CLI发布独立`alcomd-cli project delete-directory --project-id <uuid>`，不复用`project unregister`
 的`remove` alias。默认human/TTY显示Plan并确认；non-TTY/EOF需`--yes`，`--dry-run`只Plan，`--no-wait`返回OperationId；所有模式
 仍经typed client/RPC且不接受path。public RPC即当前API publication；Local API未实现，不在P7增加。MCP不自动新增destructive tool。
 
@@ -289,9 +288,8 @@ Windows/Linux/macOS真实filesystem测试。
 
 Synthetic engineering evidence不能冒充M11 v3 differential parity。P7只恢复用户可见Delete Directory行为；不进入P8/H2/M8/M9/M11。
 
-## Owner approval points before production
+## Approved implementation boundary
 
-1. 批准本文件的RPC/Permission/Plan/Quarantine/State v13/Event/GUI/CLI合同；
-2. 批准v13对existing durable Project FK的精确constraint rebuild；
-3. 批准Unix Project-Delete-private mount-safe cleanup方案，或提供另一个能证明同等边界的safe实现；
-4. production仍不得新增crate、unsafe或平台API；若第3项确实需要，必须另行提交exact依赖/API/unsafe评估。
+项目所有者已批准本文件的RPC/Permission/Plan/Quarantine/State v13/Event/GUI/CLI合同、durable Project FK correction及Unix
+Project-Delete-private mount-safe cleanup方案。production没有新增crate、unsafe或Windows API；任何超出已批准rustix safe surface的
+平台机制仍是新的人工停止点。

@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。H2 visual implementation 继续暂停；M7 Project / Package Functional Closure P0-P6 均已远端通过。P7 Delete Project Directory 只完成 proposal-only contract-first Stop A 草案，正在等待项目所有者审批；projects.management 与 packages.vpm 保持 in_progress，P8 与 M8/M9 未开始。`
+`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。H2 visual implementation 继续暂停；M7 Project / Package Functional Closure P0-P6 均已远端通过。P7 Delete Project Directory 已按项目所有者批准合同完成本地 production candidate，正在等待同一提交的三平台 Hosted CI 与 CodeQL；projects.management 与 packages.vpm 保持 in_progress，P8 与 M8/M9 未开始。`
 
 ## 已完成
 
@@ -322,10 +322,10 @@
   Ubuntu 22.04 与 macOS 15 arm64 全部成功，CodeQL run `33277179920` 四类分析全部成功；Ubuntu最高 `GLIBC_2.34`，
   macOS 9 个预期产物均为 arm64 / minos 11.0。P6-A/P6-B/P6-C 均为 PASS；聚合 `packages.vpm`/
   `repositories.management`继续保持`in_progress`；该P6切片没有新增production dependency、Permission、unsafe或平台API。
-- P7 Delete Project Directory 已完成 proposal-only Stop A：v3 exact behavior 与现有 v4 primitive 审计、OS Trash/直接删除/
-  sibling quarantine 比较、ProjectId-only Plan/Apply、独立 `projects.delete`、State v13 durable evidence、protected-root/writer/
-  link/mount/recovery vectors 均已形成待审合同。没有修改 active RPC、State、Permission、production source、dependency、unsafe
-  或平台 API；Unix mount/bind-mount safe cleanup 仍是 production 前必须人工审批的窄实现点。
+- P7 Delete Project Directory 已按获批合同形成 local production candidate：active `projects.delete.v1`、独立
+  `projects.delete`、State v13、ProjectId-only Plan/Apply、sibling quarantine永久删除、mount-safe cleanup、forward recovery、
+  CLI/GUI入口及 accepted 到 cleanup_complete 的真实 kill/restart矩阵均已接线。未新增dependency、unsafe或Windows API；
+  `projects.management`仍保持`in_progress`，在同一候选的 Hosted CI 与 CodeQL通过前不把P7记为远端完成。
 
 ## 后续里程碑尚未完成
 
@@ -392,8 +392,8 @@ functional candidate `192672…` 保留技术证据但已被拒绝 visual/IA acc
 `rejected_for_visual_direction`。替代的 v3-reference wide Projects shell 已在 `7bb325b…` 通过 Visual Gate 1。当前只完成
 Project / Package Functional Closure P0-P4 remote checkpoint、P5-A Create/Restore 与 P5-B Favorite/Clear Unity Preference
 均已远端通过。P6-A/P6-B/P6-C 也已通过同一最终候选的三平台 Hosted CI 与 CodeQL；P6 remote checkpoint 为 PASS。
-当前唯一获准工作是 P7 Delete Project Directory proposal-only Stop A，现已形成草案并等待项目所有者人工审批。P7 production、
-P8、H2 visual、M8、M9 或 M11 不得开始。
+当前唯一获准工作是完成 P7 Delete Project Directory production candidate 的本地与远端验收。P7 在同一提交的 Windows、
+Ubuntu、macOS 与 CodeQL 全绿前不得记为 PASS；P8、H2 visual、M8、M9 或 M11 不得开始。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential

@@ -7,6 +7,7 @@ mod engine;
 mod package;
 mod plan;
 mod project_copy;
+mod project_delete;
 mod range;
 mod resolver;
 mod staging_package;
@@ -34,6 +35,7 @@ pub use plan::{
     build_resolution_plan, inspect_package_project, materialize_vpm_manifest,
 };
 pub use project_copy::ProjectCopyEngine;
+pub use project_delete::ProjectDeleteEngine;
 pub use resolver::{
     PackageCandidate, PackageDependency, PackageDependencyEdge, PackageSource,
     PackageSourceAuthority, Resolution, ResolveError, ResolveRequest, ResolvedPackage,

@@ -18,21 +18,24 @@ use alcomd_application::{
     ExtensionInstallPlanDraft, ExtensionInstanceLease, ExtensionPlanRecord, ExtensionRecord,
     ExtensionUninstallPlanDraft, FilesystemJournalEntry, IdempotencyKey, M3Error, M3RegistryStore,
     M4Error, M4Store, M5BackupError, M5BackupStore, M5TemplateError, M5TemplateStore, M5UnityError,
-    M5UnityStore, M6Error, M6Store, M7CopyError, M7CopyStore, OperationCursor, OperationId,
-    OperationPage, OperationRecord, PackageApplyCompletion, PackageCursor, PackagePage,
-    PackagePlanDraft, PackagePlanRecord, PlanId, PrincipalId, ProjectCopyApplyOutcome,
-    ProjectCopyInventoryEvidence, ProjectCopyOperationRecord, ProjectCopyPhase,
-    ProjectCopyPlanDraft, ProjectCopyPlanOutcome, ProjectCopyPlanRecord, ProjectEditorPreference,
-    ProjectEditorSelectionState, ProjectId, ProjectObservation, ProjectPage, ProjectRecord,
-    PublishedProjectCopy, PublishedTemplate, RegistryCursor, RepositoryId, RepositoryObservation,
-    RepositoryPage, RepositoryRecord, RepositoryValidators, ResolverCatalog, RestoredProject,
-    Revision, StateCheckResult, StateStore, StoreError, StoredBackupRecord, StoredTemplateRecord,
-    SyncWrite, TemplateApplyOutcome, TemplateCursor, TemplateId, TemplatePlanDraft,
-    TemplatePlanRecord, UnityInstallationCursor, UnityInstallationId, UnityInstallationObservation,
-    UnityInstallationPage, UnityInstallationRecord, UnityLaunchId, UnityLaunchRecord,
-    UnityLaunchState, UnregisterResult, UserPackageCursor, UserPackageError, UserPackageErrorCode,
-    UserPackageId, UserPackagePage, UserPackageRecord, UserPackageRemoveResult,
-    UserPackageSnapshot, UserPackageStore, UserPackageWriteResult,
+    M5UnityStore, M6Error, M6Store, M7CopyError, M7CopyStore, M7DeleteError, M7DeleteStore,
+    OperationCursor, OperationId, OperationPage, OperationRecord, PackageApplyCompletion,
+    PackageCursor, PackagePage, PackagePlanDraft, PackagePlanRecord, PlanId, PrincipalId,
+    ProjectCopyApplyOutcome, ProjectCopyInventoryEvidence, ProjectCopyOperationRecord,
+    ProjectCopyPhase, ProjectCopyPlanDraft, ProjectCopyPlanOutcome, ProjectCopyPlanRecord,
+    ProjectDeleteApplyOutcome, ProjectDeleteFilesystemEvidence, ProjectDeleteOperationRecord,
+    ProjectDeletePhase, ProjectDeletePlanDraft, ProjectDeletePlanOutcome, ProjectDeletePlanRecord,
+    ProjectEditorPreference, ProjectEditorSelectionState, ProjectId, ProjectObservation,
+    ProjectPage, ProjectRecord, PublishedProjectCopy, PublishedTemplate, RegistryCursor,
+    RepositoryId, RepositoryObservation, RepositoryPage, RepositoryRecord, RepositoryValidators,
+    ResolverCatalog, RestoredProject, Revision, StateCheckResult, StateStore, StoreError,
+    StoredBackupRecord, StoredTemplateRecord, SyncWrite, TemplateApplyOutcome, TemplateCursor,
+    TemplateId, TemplatePlanDraft, TemplatePlanRecord, UnityInstallationCursor,
+    UnityInstallationId, UnityInstallationObservation, UnityInstallationPage,
+    UnityInstallationRecord, UnityLaunchId, UnityLaunchRecord, UnityLaunchState, UnregisterResult,
+    UserPackageCursor, UserPackageError, UserPackageErrorCode, UserPackageId, UserPackagePage,
+    UserPackageRecord, UserPackageRemoveResult, UserPackageSnapshot, UserPackageStore,
+    UserPackageWriteResult,
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -44,6 +47,7 @@ mod m5_backup_restore;
 mod m5_template;
 mod m6;
 mod m7_copy;
+mod m7_delete;
 mod m7_official;
 mod m7_user_packages;
 mod sqlite;
@@ -52,7 +56,7 @@ mod sqlite;
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 12;
+pub const CURRENT_DATA_SCHEMA: u32 = 13;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]
@@ -1702,6 +1706,167 @@ impl M7CopyStore for StateStoreHandle {
         self.request_worker(
             move |connection| m7_copy::finish_cancelled(connection, operation_id, now_ms),
             m7_copy::unavailable,
+        )
+        .await
+    }
+}
+
+impl M7DeleteStore for StateStoreHandle {
+    async fn create_project_delete_plan(
+        &self,
+        owner: PrincipalId,
+        draft: ProjectDeletePlanDraft,
+    ) -> Result<ProjectDeletePlanOutcome, M7DeleteError> {
+        self.request_worker(
+            move |connection| m7_delete::create_plan(connection, &owner, draft),
+            m7_delete::unavailable,
+        )
+        .await
+    }
+
+    async fn get_project_delete_plan(
+        &self,
+        owner: PrincipalId,
+        plan_id: PlanId,
+    ) -> Result<ProjectDeletePlanRecord, M7DeleteError> {
+        self.request_worker(
+            move |connection| m7_delete::get_plan(connection, &owner, plan_id),
+            m7_delete::unavailable,
+        )
+        .await
+    }
+
+    async fn replay_project_delete_apply(
+        &self,
+        owner: PrincipalId,
+        plan_id: PlanId,
+        expected_revision: Revision,
+        key: IdempotencyKey,
+    ) -> Result<Option<ProjectDeleteApplyOutcome>, M7DeleteError> {
+        self.request_worker(
+            move |connection| {
+                m7_delete::replay_apply(connection, &owner, plan_id, expected_revision, &key)
+            },
+            m7_delete::unavailable,
+        )
+        .await
+    }
+
+    async fn accept_project_delete(
+        &self,
+        owner: PrincipalId,
+        plan_id: PlanId,
+        expected_revision: Revision,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<ProjectDeleteApplyOutcome, M7DeleteError> {
+        self.request_worker(
+            move |connection| {
+                m7_delete::accept(connection, &owner, plan_id, expected_revision, &key, now_ms)
+            },
+            m7_delete::unavailable,
+        )
+        .await
+    }
+
+    async fn begin_project_delete(
+        &self,
+        operation_id: OperationId,
+        now_ms: u64,
+    ) -> Result<ProjectDeleteOperationRecord, M7DeleteError> {
+        self.request_worker(
+            move |connection| m7_delete::begin_operation(connection, operation_id, now_ms),
+            m7_delete::unavailable,
+        )
+        .await
+    }
+
+    async fn record_project_delete_checkpoint(
+        &self,
+        operation_id: OperationId,
+        phase: ProjectDeletePhase,
+        evidence: ProjectDeleteFilesystemEvidence,
+        now_ms: u64,
+    ) -> Result<(), M7DeleteError> {
+        self.request_worker(
+            move |connection| {
+                m7_delete::checkpoint(connection, operation_id, phase, evidence, now_ms)
+            },
+            m7_delete::unavailable,
+        )
+        .await
+    }
+
+    async fn commit_project_delete(
+        &self,
+        operation_id: OperationId,
+        now_ms: u64,
+    ) -> Result<(), M7DeleteError> {
+        self.request_worker(
+            move |connection| m7_delete::commit_registry(connection, operation_id, now_ms),
+            m7_delete::unavailable,
+        )
+        .await
+    }
+
+    async fn finish_project_delete_success(
+        &self,
+        operation_id: OperationId,
+        now_ms: u64,
+    ) -> Result<(), M7DeleteError> {
+        self.request_worker(
+            move |connection| m7_delete::finish_success(connection, operation_id, now_ms),
+            m7_delete::unavailable,
+        )
+        .await
+    }
+
+    async fn fail_project_delete(
+        &self,
+        operation_id: OperationId,
+        code: String,
+        diagnostic_id: String,
+        now_ms: u64,
+    ) -> Result<(), M7DeleteError> {
+        self.request_worker(
+            move |connection| {
+                m7_delete::fail(connection, operation_id, &code, &diagnostic_id, now_ms)
+            },
+            m7_delete::unavailable,
+        )
+        .await
+    }
+
+    async fn recover_project_delete_operations(
+        &self,
+        now_ms: u64,
+    ) -> Result<Vec<OperationId>, M7DeleteError> {
+        self.request_worker(
+            move |connection| m7_delete::recover(connection, now_ms),
+            m7_delete::unavailable,
+        )
+        .await
+    }
+
+    async fn project_delete_cancel_requested(
+        &self,
+        operation_id: OperationId,
+    ) -> Result<bool, M7DeleteError> {
+        self.request_worker(
+            move |connection| m7_delete::cancellation_requested(connection, operation_id),
+            m7_delete::unavailable,
+        )
+        .await
+    }
+
+    async fn finish_project_delete_cancelled(
+        &self,
+        operation_id: OperationId,
+        now_ms: u64,
+    ) -> Result<(), M7DeleteError> {
+        self.request_worker(
+            move |connection| m7_delete::finish_cancelled(connection, operation_id, now_ms),
+            m7_delete::unavailable,
         )
         .await
     }

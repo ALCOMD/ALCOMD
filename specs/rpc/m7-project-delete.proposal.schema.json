@@ -1,10 +1,10 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m7-project-delete-proposal.json",
-    "title": "ALCOMD M7 P7 Project Directory Delete proposal",
-    "x-alcomd-publication": "proposal-only",
-    "x-alcomd-approval": "owner-approval-required",
-    "x-alcomd-active-rpc-modified": false,
+    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m7-project-delete.json",
+    "title": "ALCOMD M7 P7 Project Directory Delete",
+    "x-alcomd-publication": "implemented",
+    "x-alcomd-approval": "owner-approved",
+    "x-alcomd-active-rpc-modified": true,
     "x-alcomd-capability": "projects.delete.v1",
     "x-alcomd-method-permissions": {
         "projects.planDeleteDirectory": ["projects.read", "projects.delete"],

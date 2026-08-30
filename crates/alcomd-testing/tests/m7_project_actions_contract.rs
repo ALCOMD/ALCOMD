@@ -19,6 +19,8 @@ const ACTIVE_STORE: &str = include_str!("../../alcomd-store/src/sqlite.rs");
 const ACTIVE_PROTOCOL: &str = include_str!("../../alcomd-protocol/src/lib.rs");
 const ACTIVE_COPY_MIGRATION: &str =
     include_str!("../../alcomd-store/migrations/0010_project_copy.sql");
+const ACTIVE_DELETE_MIGRATION: &str =
+    include_str!("../../alcomd-store/migrations/0013_project_directory_delete.sql");
 const ROOT_MANIFEST: &str = include_str!("../../../Cargo.toml");
 const GUI_MANIFEST: &str = include_str!("../../../apps/alcomd-gui/src-tauri/Cargo.toml");
 const ROOT_LOCK: &str = include_str!("../../../Cargo.lock");
@@ -92,7 +94,7 @@ fn implemented_project_copy_contract_is_bounded_and_active() {
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_PLAN_COPY"));
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_APPLY_COPY"));
     assert!(ACTIVE_PROTOCOL.contains("CAPABILITY_PROJECTS_COPY_V1"));
-    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 12;"));
+    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 13;"));
 }
 
 #[test]
@@ -241,10 +243,7 @@ fn visible_action_gate_records_real_current_gaps_instead_of_hiding_them() {
     assert!(CURRENT_PROJECTS_UI.contains(
         "label={selectingCopyTarget ? \"Choosing Copy Destination…\" : \"Copy Project\"}"
     ));
-    assert_eq!(
-        gate["knownParityGaps"],
-        json!(["remove-directory", "vcc-import-migrate"])
-    );
+    assert_eq!(gate["knownParityGaps"], json!(["vcc-import-migrate"]));
     assert!(
         !gate["knownParityGaps"]
             .as_array()
@@ -272,20 +271,23 @@ fn visible_action_gate_records_real_current_gaps_instead_of_hiding_them() {
             .iter()
             .any(|entry| {
                 entry["id"] == "remove-directory"
-                    && entry["status"] == "proposal-only-owner-approval-required"
-                    && entry["productionImplemented"] == false
+                    && entry["status"] == "implemented-local-remote-pending"
+                    && entry["productionImplemented"] == true
             })
     );
+    assert!(visible.iter().any(|action| {
+        action["id"] == "projects.delete-directory" && action["classification"] == "implemented"
+    }));
 }
 
 #[test]
-fn p7_delete_directory_contract_is_proposal_only_and_not_active() {
+fn p7_delete_directory_contract_is_implemented_and_active() {
     let schema: Value = serde_json::from_str(P7_DELETE_SCHEMA).expect("P7 delete proposal schema");
     let state: Value = serde_json::from_str(P7_STATE_V13).expect("P7 State v13 proposal");
 
-    assert_eq!(schema["x-alcomd-publication"], "proposal-only");
-    assert_eq!(schema["x-alcomd-approval"], "owner-approval-required");
-    assert_eq!(schema["x-alcomd-active-rpc-modified"], false);
+    assert_eq!(schema["x-alcomd-publication"], "implemented");
+    assert_eq!(schema["x-alcomd-approval"], "owner-approved");
+    assert_eq!(schema["x-alcomd-active-rpc-modified"], true);
     assert_eq!(schema["x-alcomd-capability"], "projects.delete.v1");
     assert_eq!(
         schema["x-alcomd-operation-kind"],
@@ -335,12 +337,15 @@ fn p7_delete_directory_contract_is_proposal_only_and_not_active() {
     }
     assert!(!plan_required.contains("recursiveInventory"));
 
-    assert_eq!(state["status"], "proposal-only");
-    assert_eq!(state["approval"], "owner-approval-required");
+    assert_eq!(state["status"], "implemented");
+    assert_eq!(state["approval"], "owner-approved");
     assert_eq!(state["from"], 12);
     assert_eq!(state["to"], 13);
-    assert_eq!(state["productionMigration"], Value::Null);
-    assert_eq!(state["productionWiringCreated"], false);
+    assert_eq!(
+        state["productionMigration"],
+        "crates/alcomd-store/migrations/0013_project_directory_delete.sql"
+    );
+    assert_eq!(state["productionWiringCreated"], true);
     assert_eq!(
         state["tablesAdded"],
         json!(["project_delete_plans", "project_delete_filesystem_journal"])
@@ -370,22 +375,22 @@ fn p7_delete_directory_contract_is_proposal_only_and_not_active() {
         json!(["project_editor_preferences"])
     );
 
-    assert!(!ACTIVE_RPC.contains("projects.planDeleteDirectory"));
-    assert!(!ACTIVE_RPC.contains("projects.applyDeleteDirectory"));
-    assert!(!ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_PLAN_DELETE_DIRECTORY"));
-    assert!(!ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_APPLY_DELETE_DIRECTORY"));
-    assert!(!ACTIVE_PROTOCOL.contains("CAPABILITY_PROJECTS_DELETE_V1"));
-    assert!(!ACTIVE_STORE.contains("project_delete_plans"));
-    assert!(!ACTIVE_STORE.contains("project_delete_filesystem_journal"));
-    assert!(!ACTIVE_PERMISSIONS.contains("`projects.delete`"));
-    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 12;"));
+    assert!(ACTIVE_RPC.contains("projects.planDeleteDirectory"));
+    assert!(ACTIVE_RPC.contains("projects.applyDeleteDirectory"));
+    assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_PLAN_DELETE_DIRECTORY"));
+    assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_APPLY_DELETE_DIRECTORY"));
+    assert!(ACTIVE_PROTOCOL.contains("CAPABILITY_PROJECTS_DELETE_V1"));
+    assert!(ACTIVE_DELETE_MIGRATION.contains("project_delete_plans"));
+    assert!(ACTIVE_DELETE_MIGRATION.contains("project_delete_filesystem_journal"));
+    assert!(ACTIVE_PERMISSIONS.contains("`projects.delete`"));
+    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 13;"));
 }
 
 #[test]
 fn p7_delete_directory_vectors_freeze_fail_closed_recovery_boundaries() {
     let vectors: Value = serde_json::from_str(P7_DELETE_VECTORS).expect("P7 delete path vectors");
-    assert_eq!(vectors["status"], "proposal-only");
-    assert_eq!(vectors["approval"], "owner-approval-required");
+    assert_eq!(vectors["status"], "implemented");
+    assert_eq!(vectors["approval"], "owner-approved");
     assert_eq!(vectors["mode"], "sibling-quarantine-permanent-v1");
     assert_eq!(vectors["planExpiryMs"], 900_000);
     assert_eq!(vectors["cancelBefore"], "quarantine_intent");
@@ -587,7 +592,7 @@ fn p5_b_project_preferences_are_exact_active_contracts() {
     assert!(ACTIVE_RPC.contains("unity.projectEditor.clear"));
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_SET_FAVORITE"));
     assert!(ACTIVE_PROTOCOL.contains("METHOD_UNITY_PROJECT_EDITOR_CLEAR"));
-    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 12;"));
+    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 13;"));
     assert!(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../alcomd-store/migrations/0011_project_preferences.sql")

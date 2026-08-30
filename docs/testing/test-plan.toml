@@ -526,17 +526,17 @@ stage = "M7"
 kind = "integration-ui"
 platforms = ["all"]
 status = "planned"
-description = "production gate 要求每个可见业务 action 是真实 implemented、current-state conditional disabled 或非 release-blocker 的显式 unavailable；P1-P6 已完成真实 Core入口。P7 Delete Project Directory 仍是 proposal-only，M11 VCC Import/Migrate 仍 blocked，因此完整 gate 继续 planned。"
-evidence = ["crates/alcomd-testing/fixtures/m7/visible-action-completeness-v1.json", "docs/baselines/m7-project-package-functional-closure.md", "docs/baselines/m7-p7-project-directory-delete.md", "crates/alcomd-testing/tests/m7_project_actions_contract.rs", "apps/alcomd-gui/src/ProjectCreationDialogs.tsx", "apps/alcomd-gui/tests/browser/m7-project-create-restore.spec.ts", "apps/alcomd-gui/tests/browser/m7-project-preferences.spec.ts"]
+description = "production gate 要求每个可见业务 action 是真实 implemented、current-state conditional disabled 或非 release-blocker 的显式 unavailable；P1-P7 已完成真实 Core入口。M11 VCC Import/Migrate 仍 blocked，因此完整 P8 gate 继续 planned。"
+evidence = ["crates/alcomd-testing/fixtures/m7/visible-action-completeness-v1.json", "docs/baselines/m7-project-package-functional-closure.md", "docs/baselines/m7-p7-project-directory-delete.md", "crates/alcomd-testing/tests/m7_project_actions_contract.rs", "crates/alcomd-testing/tests/m7_project_delete_rpc.rs", "apps/alcomd-gui/src/ProjectCreationDialogs.tsx", "apps/alcomd-gui/tests/browser/m7-project-create-restore.spec.ts", "apps/alcomd-gui/tests/browser/m7-project-preferences.spec.ts", "apps/alcomd-gui/tests/browser/m7-material-foundation.spec.ts"]
 
 [[test]]
 id = "projects.m7-delete-directory-transaction"
 stage = "M7"
 kind = "contract-fault-security"
 platforms = ["windows-x86_64", "linux-x86_64", "macos-aarch64"]
-status = "planned"
-description = "P7 proposal-only gate：未来验证 ProjectId-only Plan/Apply、独立 permission、writer/protected-root/path identity、sibling quarantine、永久删除、原路径重建存活、registry/state exact commit、取消/幂等与每个 durable phase 的真实 kill/restart recovery。Unix mount/bind-mount safe cleanup 与 production implementation 尚未获批，不得把 proposal vectors 标为动态通过。"
-evidence = ["docs/baselines/m7-p7-project-directory-delete.md", "specs/rpc/m7-project-delete.proposal.schema.json", "specs/storage/state-v13-project-delete.proposal.contract.json", "specs/security/m7-project-delete-path-vectors.json", "crates/alcomd-testing/tests/m7_project_actions_contract.rs"]
+status = "implemented"
+description = "验证 ProjectId-only Plan/Apply、独立 permission、writer/protected-root/path identity、sibling quarantine永久删除、原路径重建存活、registry/state exact commit、取消/幂等以及 accepted 到 cleanup_complete 每个 durable phase 的真实 subprocess kill/restart recovery；Linux/macOS mount boundary 与 Windows reparse no-follow 使用真实平台 fixture。"
+evidence = ["docs/baselines/m7-p7-project-directory-delete.md", "specs/rpc/m7-project-delete.proposal.schema.json", "specs/storage/state-v13-project-delete.proposal.contract.json", "specs/security/m7-project-delete-path-vectors.json", "crates/alcomd-testing/tests/m7_project_actions_contract.rs", "crates/alcomd-testing/tests/m7_project_delete_rpc.rs", "crates/alcomd-platform/src/project_delete.rs", "crates/alcomd-store/tests/schema_contract.rs", "apps/alcomd-gui/tests/browser/m7-material-foundation.spec.ts"]
 
 [[test]]
 id = "gui.m7-package-workspace"

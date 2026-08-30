@@ -12,6 +12,127 @@ const MIGRATION_V9: &str = include_str!("../migrations/0009_portable_extension_u
 const MIGRATION_V10: &str = include_str!("../migrations/0010_project_copy.sql");
 const MIGRATION_V11: &str = include_str!("../migrations/0011_project_preferences.sql");
 const MIGRATION_V12: &str = include_str!("../migrations/0012_package_functional_closure.sql");
+const MIGRATION_V13: &str = include_str!("../migrations/0013_project_directory_delete.sql");
+
+#[test]
+fn schema_v13_adds_exact_delete_authority_and_corrects_durable_project_references() {
+    let connection = migrated_v12_connection();
+    insert_project(&connection);
+    insert_historical_project_authority(&connection);
+    let schema_before = schema_snapshot(&connection);
+
+    connection
+        .execute_batch(MIGRATION_V13)
+        .expect("apply migration v13");
+
+    assert_eq!(user_version(&connection), 13);
+    let tables = table_names(&connection);
+    assert!(tables.contains(&"project_delete_plans".to_owned()));
+    assert!(tables.contains(&"project_delete_filesystem_journal".to_owned()));
+    let operation_sql: String = connection
+        .query_row(
+            "SELECT sql FROM sqlite_schema WHERE type='table' AND name='operations'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read operation schema");
+    assert!(operation_sql.contains("'projects.delete-directory'"));
+
+    for table in [
+        "package_plans",
+        "package_filesystem_journal",
+        "project_copy_plans",
+        "project_copy_filesystem_journal",
+        "project_delete_plans",
+        "project_delete_filesystem_journal",
+    ] {
+        let project_references: i64 = connection
+            .query_row(
+                &format!(
+                    "SELECT count(*) FROM pragma_foreign_key_list('{table}') WHERE \"table\"='projects'"
+                ),
+                [],
+                |row| row.get(0),
+            )
+            .expect("read durable ProjectId references");
+        assert_eq!(project_references, 0, "{table}");
+    }
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT count(*) FROM pragma_foreign_key_list('project_editor_preferences')
+                 WHERE \"table\"='projects' AND on_delete='CASCADE'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("read live editor preference reference"),
+        1
+    );
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("foreign key check"),
+        0
+    );
+    connection
+        .execute(
+            "DELETE FROM projects WHERE project_id='00000000-0000-4000-8000-000000000201'",
+            [],
+        )
+        .expect("delete registry row while retaining durable authority");
+    for table in [
+        "package_plans",
+        "package_filesystem_journal",
+        "project_copy_plans",
+        "project_copy_filesystem_journal",
+    ] {
+        assert_eq!(
+            connection
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .expect("historical authority count"),
+            1,
+            "{table}"
+        );
+    }
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM operations", [], |row| row
+                .get::<_, i64>(0))
+            .expect("operations preserved"),
+        2
+    );
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM idempotency_records", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("idempotency preserved"),
+        1
+    );
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM events", [], |row| row
+                .get::<_, i64>(0))
+            .expect("events preserved"),
+        1
+    );
+
+    let rollback = migrated_v12_connection();
+    let rollback_before = schema_snapshot(&rollback);
+    let failing = MIGRATION_V13.replace(
+        "PRAGMA user_version = 13;",
+        "THIS IS NOT VALID SQL;\nPRAGMA user_version = 13;",
+    );
+    assert!(rollback.execute_batch(&failing).is_err());
+    rollback.execute_batch("ROLLBACK;").expect("rollback v13");
+    assert_eq!(user_version(&rollback), 12);
+    assert_eq!(schema_snapshot(&rollback), rollback_before);
+    assert_ne!(schema_before, schema_snapshot(&connection));
+}
 
 #[test]
 fn schema_v12_adds_only_approved_package_closure_authority_and_is_atomic() {
@@ -2553,6 +2674,14 @@ fn migrated_v11_connection() -> Connection {
     connection
 }
 
+fn migrated_v12_connection() -> Connection {
+    let connection = migrated_v11_connection();
+    connection
+        .execute_batch(MIGRATION_V12)
+        .expect("apply migration v12");
+    connection
+}
+
 fn schema_snapshot(connection: &Connection) -> Vec<(String, String, Option<String>)> {
     connection
         .prepare("SELECT type, name, sql FROM sqlite_schema ORDER BY type, name")
@@ -2575,6 +2704,83 @@ fn insert_project(connection: &Connection) {
             [],
         )
         .expect("insert project");
+}
+
+fn insert_historical_project_authority(connection: &Connection) {
+    connection
+        .execute_batch(
+            r#"INSERT INTO operations (
+                operation_id, kind, state, revision, owner_principal_id, request_json,
+                result_json, cancel_requested, created_at_ms, updated_at_ms, completed_at_ms
+             ) VALUES
+                ('00000000-0000-4000-8000-000000000211', 'packages.apply', 'succeeded', 1,
+                 'builtin:local-owner', '{}', '{}', 0, 1, 1, 1),
+                ('00000000-0000-4000-8000-000000000212', 'projects.copy', 'succeeded', 1,
+                 'builtin:local-owner', '{}', '{}', 0, 1, 1, 1);
+
+             INSERT INTO package_plans (
+                plan_id, owner_principal_id, project_id, action, state, project_revision,
+                project_snapshot_fingerprint, change_set_fingerprint, change_set_json,
+                source_set_json, apply_operation_id, created_at_ms
+             ) VALUES (
+                '00000000-0000-4000-8000-000000000221', 'builtin:local-owner',
+                '00000000-0000-4000-8000-000000000201', 'install', 'applied', 1,
+                zeroblob(32), zeroblob(32), '{"mutations":[],"dependencyEdges":[]}', '[]',
+                '00000000-0000-4000-8000-000000000211', 1
+             );
+             INSERT INTO package_filesystem_journal (
+                operation_id, step, plan_id, project_id, phase, state,
+                project_identity_key, change_set_fingerprint, evidence_json, updated_at_ms
+             ) VALUES (
+                '00000000-0000-4000-8000-000000000211', 1,
+                '00000000-0000-4000-8000-000000000221',
+                '00000000-0000-4000-8000-000000000201', 'state_committed', 'completed',
+                x'01', zeroblob(32), '{"evidence":"package-history"}', 1
+             );
+
+             INSERT INTO project_copy_plans (
+                plan_id, owner_principal_id, state, source_project_id, source_revision,
+                source_root_path, source_root_identity, source_snapshot_json,
+                target_parent_path, target_parent_identity, target_parent_identity_sha256,
+                target_leaf, target_project_id, profile_version, writer_evidence_json,
+                plan_fingerprint, plan_json, plan_idempotency_key, apply_operation_id,
+                created_at_ms, expires_at_ms
+             ) VALUES (
+                '00000000-0000-4000-8000-000000000222', 'builtin:local-owner', 'applied',
+                '00000000-0000-4000-8000-000000000201', 1, 'X:/fixture', x'01', '{}',
+                'X:/copies', x'02', zeroblob(32), 'Copy',
+                '00000000-0000-4000-8000-000000000223', 1, '{}', zeroblob(32), '{}',
+                'copy-plan-key', '00000000-0000-4000-8000-000000000212', 1, 900001
+             );
+             INSERT INTO project_copy_filesystem_journal (
+                operation_id, step, plan_id, source_project_id, target_project_id,
+                phase, state, source_identity, target_parent_identity, target_identity,
+                evidence_json, updated_at_ms
+             ) VALUES (
+                '00000000-0000-4000-8000-000000000212', 1,
+                '00000000-0000-4000-8000-000000000222',
+                '00000000-0000-4000-8000-000000000201',
+                '00000000-0000-4000-8000-000000000223', 'cleanup_complete', 'completed',
+                x'01', x'02', x'03', '{"evidence":"copy-history"}', 1
+             );
+
+             INSERT INTO idempotency_records (
+                principal_id, method, idempotency_key, request_fingerprint, state,
+                operation_id, response_json, created_at_ms
+             ) VALUES (
+                'builtin:local-owner', 'packages.applyPlan', 'historical-idempotency', '{}',
+                'completed', '00000000-0000-4000-8000-000000000211', '{}', 1
+             );
+             INSERT INTO events (
+                event_id, kind, aggregate_kind, aggregate_id, aggregate_revision,
+                principal_id, occurred_at_ms, payload_json
+             ) VALUES (
+                '00000000-0000-4000-8000-000000000231', 'operation.succeeded', 'operation',
+                '00000000-0000-4000-8000-000000000211', 1,
+                'builtin:local-owner', 1, '{}'
+             );"#,
+        )
+        .expect("insert historical Project authority");
 }
 
 fn insert_operation(

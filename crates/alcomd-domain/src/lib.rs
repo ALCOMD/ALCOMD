@@ -566,6 +566,9 @@ pub enum Permission {
     /// Create a new project at an explicit nonexistent destination.
     #[serde(rename = "projects.create")]
     ProjectsCreate,
+    /// Permanently delete one registered project directory through a durable Plan/Apply workflow.
+    #[serde(rename = "projects.delete")]
+    ProjectsDelete,
     /// Read Template registry records and inspect/export bundles.
     #[serde(rename = "templates.read")]
     TemplatesRead,
@@ -618,6 +621,7 @@ impl Permission {
             Self::UnityManage => "unity.manage",
             Self::UnityLaunch => "unity.launch",
             Self::ProjectsCreate => "projects.create",
+            Self::ProjectsDelete => "projects.delete",
             Self::TemplatesRead => "templates.read",
             Self::TemplatesManage => "templates.manage",
             Self::BackupsRead => "backups.read",
@@ -876,6 +880,7 @@ mod tests {
         assert_eq!(Permission::UnityManage.as_str(), "unity.manage");
         assert_eq!(Permission::UnityLaunch.as_str(), "unity.launch");
         assert_eq!(Permission::ProjectsCreate.as_str(), "projects.create");
+        assert_eq!(Permission::ProjectsDelete.as_str(), "projects.delete");
         assert!(IdempotencyKey::parse("check-once").is_ok());
         assert_eq!(
             IdempotencyKey::parse("界"),

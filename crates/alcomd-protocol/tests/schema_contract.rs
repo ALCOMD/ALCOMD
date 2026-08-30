@@ -403,7 +403,7 @@ fn m4_operation_and_data_schema_are_compatible_additions() {
     let hello = schema("system-hello.response");
     assert_eq!(
         hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
-        json!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+        json!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
     );
 }
 
@@ -477,11 +477,11 @@ fn m5_unity_schema_keeps_launch_and_management_separate() {
 }
 
 #[test]
-fn hello_schema_accepts_the_implemented_v12_store() {
+fn hello_schema_accepts_the_implemented_v13_store() {
     let hello = schema("system-hello.response");
     assert_eq!(
         hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
-        json!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+        json!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
     );
 }
 

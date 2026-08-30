@@ -127,6 +127,8 @@ pub const METHOD_BACKUPS_PLAN_RESTORE: &str = "backups.planRestore";
 pub const METHOD_BACKUPS_APPLY_RESTORE: &str = "backups.applyRestore";
 pub const METHOD_PROJECTS_PLAN_COPY: &str = "projects.planCopy";
 pub const METHOD_PROJECTS_APPLY_COPY: &str = "projects.applyCopy";
+pub const METHOD_PROJECTS_PLAN_DELETE_DIRECTORY: &str = "projects.planDeleteDirectory";
+pub const METHOD_PROJECTS_APPLY_DELETE_DIRECTORY: &str = "projects.applyDeleteDirectory";
 pub const METHOD_EXTENSIONS_LIST: &str = "extensions.list";
 pub const METHOD_EXTENSIONS_GET: &str = "extensions.get";
 pub const METHOD_EXTENSIONS_PLAN_INSTALL: &str = "extensions.planInstall";
@@ -157,6 +159,7 @@ pub const CAPABILITY_EVENTS_REPLAY_V1: &str = "events.replay.v1";
 pub const CAPABILITY_PROJECTS_READ_V1: &str = "projects.read.v1";
 pub const CAPABILITY_PROJECTS_REGISTRY_V1: &str = "projects.registry.v1";
 pub const CAPABILITY_PROJECTS_COPY_V1: &str = "projects.copy.v1";
+pub const CAPABILITY_PROJECTS_DELETE_V1: &str = "projects.delete.v1";
 pub const CAPABILITY_REPOSITORIES_READ_V1: &str = "repositories.read.v1";
 pub const CAPABILITY_REPOSITORIES_REGISTRY_V1: &str = "repositories.registry.v1";
 pub const CAPABILITY_PACKAGES_PLAN_V1: &str = "packages.plan.v1";
@@ -285,6 +288,12 @@ pub mod error_code {
     pub const PROJECT_COPY_SOURCE_CHANGED: &str = "project_copy_source_changed";
     pub const PROJECT_COPY_LIMIT_EXCEEDED: &str = "project_copy_limit_exceeded";
     pub const PROJECT_COPY_RECOVERY_REQUIRED: &str = "project_copy_recovery_required";
+    pub const PROJECT_DELETE_PLAN_NOT_FOUND: &str = "project_delete_plan_not_found";
+    pub const PROJECT_DELETE_PLAN_STALE: &str = "project_delete_plan_stale";
+    pub const PROJECT_DELETE_SOURCE_MISSING: &str = "project_delete_source_missing";
+    pub const PROJECT_DELETE_SOURCE_UNSAFE: &str = "project_delete_source_unsafe";
+    pub const PROJECT_DELETE_SOURCE_CHANGED: &str = "project_delete_source_changed";
+    pub const PROJECT_DELETE_RECOVERY_REQUIRED: &str = "project_delete_recovery_required";
     pub const UNITY_LAUNCH_FAILED: &str = "unity_launch_failed";
     pub const UNITY_LAUNCH_NOT_FOUND: &str = "unity_launch_not_found";
     pub const TEMPLATE_NOT_FOUND: &str = "template_not_found";
@@ -597,6 +606,15 @@ impl RpcError {
         Self::simple(code, "The Project Copy request could not be completed.")
     }
 
+    /// Creates a stable, non-sensitive M7 Project Directory Delete error.
+    #[must_use]
+    pub fn project_delete(code: &str) -> Self {
+        Self::simple(
+            code,
+            "The Project Directory Delete request could not be completed.",
+        )
+    }
+
     /// Creates a stable, non-sensitive M6 Extension Runtime error.
     #[must_use]
     pub fn extension(code: &str) -> Self {
@@ -780,11 +798,11 @@ impl HelloResult {
         }
     }
 
-    /// Creates the current M7 hello result after State Schema 12 and Config Schema 2 are ready.
+    /// Creates the current M7 hello result after State Schema 13 and Config Schema 2 are ready.
     #[must_use]
     pub fn m7_official_gui(capabilities: Vec<String>) -> Self {
         let mut result = Self::m7(capabilities);
-        result.data_schema = Some(12);
+        result.data_schema = Some(13);
         result.config_schema = Some(2);
         result
     }
@@ -891,6 +909,10 @@ pub struct OperationProgress {
 #[serde(rename_all = "snake_case")]
 pub enum PackageOperationPhase {
     Accepted,
+    PreflightComplete,
+    QuarantineIntent,
+    RootQuarantined,
+    RegistryCommitIntent,
     InventoryReady,
     Archiving,
     ArchiveReady,
@@ -908,6 +930,7 @@ pub enum PackageOperationPhase {
     VpmManifestCommitted,
     FilesystemCommitted,
     StateCommitted,
+    Deleting,
     CleanupComplete,
     RollingBack,
     RolledBack,
@@ -2229,6 +2252,80 @@ pub struct ProjectsApplyCopyResult {
     pub replayed: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectsPlanDeleteDirectoryParams {
+    pub project_id: String,
+    pub expected_revision: u64,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectDeleteWriterEvidence {
+    pub state: String,
+    pub observed_at_ms: u64,
+    pub safe_evidence: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectDeleteProfile {
+    pub id: String,
+    pub version: u32,
+    pub mode: String,
+    pub protected_root_profile_version: u32,
+    pub progress: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectDeletePlan {
+    pub plan_id: String,
+    pub owner_principal_id: String,
+    pub project_id: String,
+    pub project_revision: u64,
+    pub canonical_root_path: String,
+    pub root_filesystem_identity: String,
+    pub canonical_parent_path: String,
+    pub parent_filesystem_identity: String,
+    pub parent_identity_sha256: String,
+    pub normalized_leaf: String,
+    pub project_marker_sha256: String,
+    pub expected_unity_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_unity_revision: Option<String>,
+    pub writer_evidence: ProjectDeleteWriterEvidence,
+    pub profile: ProjectDeleteProfile,
+    pub plan_fingerprint: String,
+    pub idempotency_key: String,
+    pub created_at_ms: u64,
+    pub expires_at_ms: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectsPlanDeleteDirectoryResult {
+    pub plan: ProjectDeletePlan,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectsApplyDeleteDirectoryParams {
+    pub plan_id: String,
+    pub expected_revision: u64,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectsApplyDeleteDirectoryResult {
+    pub operation_id: String,
+    pub project_id: String,
+    pub replayed: bool,
+}
+
 pub const CONFIG_SCHEMA_VERSION: u32 = 2;
 pub const MAX_OFFICIAL_GUI_PAGE_LIMIT: u32 = 200;
 
@@ -2902,6 +2999,13 @@ mod tests {
             assert!(hello.get(forbidden).is_none());
             assert!(status.get(forbidden).is_none());
         }
+    }
+
+    #[test]
+    fn m7_official_gui_hello_advertises_current_schemas() {
+        let hello = HelloResult::m7_official_gui(Vec::new());
+        assert_eq!(hello.data_schema, Some(13));
+        assert_eq!(hello.config_schema, Some(2));
     }
 
     #[test]

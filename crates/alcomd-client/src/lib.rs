@@ -118,6 +118,7 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_PROJECTS_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_REGISTRY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_COPY_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_PROJECTS_DELETE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_REPOSITORIES_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_REPOSITORIES_REGISTRY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V1.to_owned(),
@@ -765,6 +766,28 @@ impl AlcomdClient {
     ) -> Result<alcomd_protocol::ProjectsApplyCopyResult, ClientError> {
         self.call(alcomd_protocol::METHOD_PROJECTS_APPLY_COPY, params)
             .await
+    }
+
+    pub async fn project_plan_delete_directory(
+        &mut self,
+        params: alcomd_protocol::ProjectsPlanDeleteDirectoryParams,
+    ) -> Result<alcomd_protocol::ProjectsPlanDeleteDirectoryResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_PROJECTS_PLAN_DELETE_DIRECTORY,
+            params,
+        )
+        .await
+    }
+
+    pub async fn project_apply_delete_directory(
+        &mut self,
+        params: alcomd_protocol::ProjectsApplyDeleteDirectoryParams,
+    ) -> Result<alcomd_protocol::ProjectsApplyDeleteDirectoryResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_PROJECTS_APPLY_DELETE_DIRECTORY,
+            params,
+        )
+        .await
     }
 
     pub async fn projects_list(

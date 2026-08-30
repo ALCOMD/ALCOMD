@@ -1,6 +1,6 @@
 {
-    "status": "proposal-only",
-    "approval": "owner-approval-required",
+    "status": "implemented",
+    "approval": "owner-approved",
     "profile": {"id": "alcomd-project-delete", "version": 1},
     "mode": "sibling-quarantine-permanent-v1",
     "planExpiryMs": 900000,

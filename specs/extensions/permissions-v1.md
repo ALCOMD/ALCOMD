@@ -8,6 +8,7 @@
 projects.read
 projects.manage
 projects.create
+projects.delete
 packages.read
 packages.manage
 repositories.read
@@ -73,6 +74,18 @@ mcp.configuration.manage
   均不是身份或授权凭据。
 - 外部 Principal 的逐项目/逐 repository resource scope 和 credential enrollment/revocation 尚未
   实现；`access.principal-revocation` 继续保持 planned。
+
+## M7 Project Directory Delete 权限
+
+- `projects.delete` 只授权 `projects.planDeleteDirectory` / `projects.applyDeleteDirectory` 对一个已注册
+  `ProjectId` 执行已冻结的 sibling-quarantine permanent delete；它不接受 caller path，也不隐含
+  `projects.manage`、`projects.create`、package mutation 或任意目录删除能力。
+- Plan 同时要求 `projects.read`；Apply 再次要求 `projects.delete`，并复验 Plan owner、Project revision、
+  root/parent filesystem identity、ProjectVersion marker、writer evidence 与 protected-root policy。
+- 外部 filesystem writer 只允许 `builtin:local-owner`。`projects.delete` 在 4.0.0 不授予 extension；
+  first-party 身份、ExtensionId、ProjectId、PlanId、OperationId 与 client metadata 都不能替代授权。
+- `quarantine_intent` 之后只能 forward recovery。权限不允许跳过 sibling quarantine、跨 mount、跟随 link、
+  触碰 quarantine 后重建的原路径，或把 `not_observed` 表述为 Unity 确定未运行。
 
 ## M4 Package Plan/Apply 权限
 

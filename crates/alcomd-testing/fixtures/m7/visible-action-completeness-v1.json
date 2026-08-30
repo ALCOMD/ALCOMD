@@ -1,5 +1,5 @@
 {
-    "status": "proposal-gate-production-not-yet-complete",
+    "status": "p7-implemented-p8-not-yet-complete",
     "allowedVisibleClassifications": [
         "implemented",
         "conditional-disabled",
@@ -24,10 +24,10 @@
         {"id": "projects.backups", "classification": "implemented"},
         {"id": "projects.unregister", "classification": "conditional-disabled"},
         {"id": "projects.open-directory", "classification": "implemented"},
-        {"id": "projects.copy", "classification": "implemented"}
+        {"id": "projects.copy", "classification": "implemented"},
+        {"id": "projects.delete-directory", "classification": "implemented"}
     ],
     "knownParityGaps": [
-        "remove-directory",
         "vcc-import-migrate"
     ],
     "contractFirstProposals": [
@@ -43,8 +43,8 @@
         },
         {
             "id": "remove-directory",
-            "status": "proposal-only-owner-approval-required",
-            "productionImplemented": false
+            "status": "implemented-local-remote-pending",
+            "productionImplemented": true
         }
     ],
     "expectedCurrentPermanentFakeCount": 0,

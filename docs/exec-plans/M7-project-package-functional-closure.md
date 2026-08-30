@@ -4,8 +4,9 @@
 P5-A Create / Restore existing-Core GUI wiring 与 P5-B Favorite / Clear Unity Preference 均已通过本地完整验收、三平台
 Hosted CI 与 CodeQL。P6-A、P6-B 与 P6-C 已完成获批合同和 production implementation，并通过适用的本地门禁、
 同一最终候选的三平台 Hosted CI 与 CodeQL；P6 remote checkpoint 为 PASS。
-P7 Delete Project Directory 已完成 proposal-only contract-first Stop A 草案，正在等待项目所有者人工审批；没有 active
-RPC、State migration、Permission 或 production implementation。H2 visual WIP 继续暂停，P8、M8/M9 未开始。
+P7 Delete Project Directory 已按项目所有者批准及实施修正形成 local production candidate：active RPC/Permission、State v13、
+mount-safe filesystem primitive、Plan/Apply/Operation/recovery、CLI/GUI与真实 fault tests 均已接线，正在等待同一提交的三平台
+Hosted CI 与 CodeQL。H2 visual WIP 继续暂停，P8、M8/M9 未开始。
 
 ## 目标与边界
 
@@ -219,8 +220,8 @@ fixture `visible-action-completeness-v1.json` 冻结每个用户可见业务 act
 
 禁止 permanent-disabled fake action、empty handler、no-op success、local fake mutation 与 placeholder production button。已承诺的
 v3 release-blocker 不能通过删除按钮或改成 `unavailable-non-blocker` 隐藏；metadata 必须保持 in_progress/blocked。P1/P4 已把
-Open Directory、native Register chooser 与 Copy 标为真实 implemented；P5/P6 已完成真实入口，P7 仍是未获批 proposal，
-完整 visible-action gate 因 Delete Project Directory 与 M11 VCC Import/Migrate 缺口保持未通过。
+Open Directory、native Register chooser 与 Copy 标为真实 implemented；P5/P6 已完成真实入口，P7 Delete Project Directory
+也已成为真实入口。完整 visible-action gate 仍因 M11 VCC Import/Migrate 缺口保持未通过。
 
 ## 验收与停止
 
@@ -549,7 +550,7 @@ ResourceKey或Operation kind。该批准不包含P7；P8、H2、M8、M9与M11仍
 - 未新增 production dependency、Permission、ResourceKey、Operation kind、unsafe 文件或平台 API；P7当时尚未开始，
   P8/H2/M8/M9/M11继续停止。
 
-## P7 Stop A：Delete Project Directory proposal
+## P7：Delete Project Directory production candidate
 
 P7 的精确审计、策略比较、合同与测试矩阵位于：
 
@@ -558,7 +559,7 @@ P7 的精确审计、策略比较、合同与测试矩阵位于：
 - `specs/storage/state-v13-project-delete.proposal.contract.json`；
 - `specs/security/m7-project-delete-path-vectors.json`。
 
-该切片保持 proposal-only，等待项目所有者批准后才能进入 production：
+该切片已按项目所有者批准合同进入 production，并保持以下冻结边界：
 
 - v3 的 `Remove Project` 是单一对话框，提供 `Remove from the List` 与 `Remove the Directory` 两个结果；目录删除先调用
   OS Trash，再移除 registry。v4 保持现有 `projects.unregister` 独立，不改变它的仅移出列表语义。
@@ -570,16 +571,16 @@ P7 的精确审计、策略比较、合同与测试矩阵位于：
   声称 Unity 确定未运行。
 - `quarantine_intent` 是 cancel 与 forward-only recovery 边界。root rename 到 sibling owned quarantine 并复验 identity 后，
   recovery 永远不再触碰 original path；这样原路径被外部重建时也必须存活。
-- State v13 proposal 只新增 `project_delete_plans` 与 append-only `project_delete_filesystem_journal`，并要求精确重建当前
+- State v13 只新增 `project_delete_plans` 与 append-only `project_delete_filesystem_journal`，并精确重建此前
   仍以 `projects(project_id)` 为外键的 durable history 表，使 Plan/Journal/Operation/幂等证据可在 registry row 删除后继续存在；
   不新增 generic deleter、workflow、tombstone framework 或 recursive inventory 表。
-- `std::fs::remove_dir_all` 在当前 Windows/Linux/macOS 实现上具备不跟随 symlink 的保护，但它不能单独证明 Unix mount/
-  bind-mount 不被跨越。production 前仍需项目所有者批准一个 Project-Delete-private、mount-safe 的窄 Unix cleanup primitive；
-  本 Stop A 不新增 dependency、unsafe 或平台 API。
+- Windows继续使用pinned Rust std的no-follow删除；Linux使用已批准的safe rustix `openat2`/`NO_XDEV`，macOS使用fd-relative
+  traversal和`st_dev + f_mntonname` mount token。guard不可用或遇到mount boundary均fail closed；没有新增dependency、unsafe
+  或Windows API。
 - 单一成功 Event 是 `project.directory_deleted`；不得同时写 `project.unregistered`。GUI 必须清楚区分“Remove from list”和
   “Delete Project Directory”，展示永久删除、无 Trash、无自动备份、完整目标路径与 writer 状态，并要求输入 exact project
   leaf 解锁 Apply；输入确认不是后端 authority。
 
-P7 Stop A 的唯一当前停止点是人工审批上述 RPC/Permission/State v13/quarantine/recovery 合同和 Unix cleanup 审批点。
-在批准前不得新增 production Rust/TypeScript、migration、Permission、dependency、unsafe、平台 API 或可见删除入口，
-也不得进入 P8/H2/M8/M9/M11。
+P7 已实现 active RPC/Permission、State v13 migration、Linux `openat2` `NO_XDEV`/macOS mount token/Windows std no-follow、
+sibling quarantine、durable forward recovery、CLI/GUI入口及真实 subprocess kill/restart矩阵。当前停止点是同一候选的三平台
+Hosted CI 与 CodeQL；通过前不得将P7标记PASS，也不得进入 P8/H2/M8/M9/M11。

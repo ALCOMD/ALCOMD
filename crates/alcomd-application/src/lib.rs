@@ -23,6 +23,7 @@ mod m5_template;
 mod m6;
 mod m7;
 mod m7_copy;
+mod m7_delete;
 mod m7_official;
 mod m7_user_packages;
 
@@ -33,6 +34,7 @@ pub use m5_template::*;
 pub use m6::*;
 pub use m7::*;
 pub use m7_copy::*;
+pub use m7_delete::*;
 pub use m7_official::*;
 pub use m7_user_packages::*;
 
@@ -790,6 +792,7 @@ impl AccessContext {
                 Permission::UnityManage,
                 Permission::UnityLaunch,
                 Permission::ProjectsCreate,
+                Permission::ProjectsDelete,
                 Permission::TemplatesRead,
                 Permission::TemplatesManage,
                 Permission::BackupsRead,

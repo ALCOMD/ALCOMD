@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::{CURRENT_DATA_SCHEMA, StoreOpenError};
 
-const DATA_SCHEMA_VERSION: i64 = 12;
+const DATA_SCHEMA_VERSION: i64 = 13;
 const BUSY_TIMEOUT: Duration = Duration::from_millis(5_000);
 const CHECK_ROW_LIMIT: usize = 100;
 const CHECK_BYTE_LIMIT: usize = 65_536;
@@ -28,6 +28,7 @@ const MIGRATION_V9: &str = include_str!("../migrations/0009_portable_extension_u
 const MIGRATION_V10: &str = include_str!("../migrations/0010_project_copy.sql");
 const MIGRATION_V11: &str = include_str!("../migrations/0011_project_preferences.sql");
 const MIGRATION_V12: &str = include_str!("../migrations/0012_package_functional_closure.sql");
+const MIGRATION_V13: &str = include_str!("../migrations/0013_project_directory_delete.sql");
 
 pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpenError> {
     let connection = Connection::open(path).map_err(|_| StoreOpenError::Unavailable)?;
@@ -125,6 +126,11 @@ pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpen
     if version <= 11 {
         connection
             .execute_batch(MIGRATION_V12)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+    }
+    if version <= 12 {
+        connection
+            .execute_batch(MIGRATION_V13)
             .map_err(|_| StoreOpenError::Unavailable)?;
     }
     let final_version: i64 = connection
@@ -290,6 +296,22 @@ pub(super) fn cancel_operation(
                     | FilesystemPhase::TargetPublished
                     | FilesystemPhase::ProjectRegistryCommitIntent
                     | FilesystemPhase::StateCommitted
+                    | FilesystemPhase::CleanupComplete
+                    | FilesystemPhase::RecoveryRequired
+            )
+        )
+    {
+        return Err(StoreError::new(StoreErrorKind::OperationNotCancellable));
+    }
+    if operation.kind == "projects.delete-directory"
+        && matches!(
+            operation.progress_phase,
+            Some(
+                FilesystemPhase::QuarantineIntent
+                    | FilesystemPhase::RootQuarantined
+                    | FilesystemPhase::RegistryCommitIntent
+                    | FilesystemPhase::StateCommitted
+                    | FilesystemPhase::Deleting
                     | FilesystemPhase::CleanupComplete
                     | FilesystemPhase::RecoveryRequired
             )
@@ -565,7 +587,7 @@ pub(super) fn recover(
             || kind.starts_with("templates.")
             || matches!(kind.as_str(), "backups.create" | "backups.restore")
             || matches!(kind.as_str(), "extensions.install" | "extensions.uninstall")
-            || kind == "projects.copy"
+            || matches!(kind.as_str(), "projects.copy" | "projects.delete-directory")
         {
             continue;
         }
@@ -717,6 +739,8 @@ pub(super) fn load_owned_operation(
              WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
              (SELECT phase FROM project_copy_filesystem_journal j
               WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
+             (SELECT phase FROM project_delete_filesystem_journal j
+              WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
              (SELECT phase FROM backup_restore_filesystem_journal j
               WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
              (SELECT json_extract(payload_json,'$.phase') FROM operation_journal j
@@ -739,6 +763,8 @@ fn load_operation(
             coalesce((SELECT phase FROM package_filesystem_journal j
              WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
              (SELECT phase FROM project_copy_filesystem_journal j
+              WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
+             (SELECT phase FROM project_delete_filesystem_journal j
               WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
              (SELECT phase FROM backup_restore_filesystem_journal j
               WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
@@ -820,6 +846,8 @@ pub(super) fn list_operations(
                  WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
                  (SELECT phase FROM project_copy_filesystem_journal j
                   WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
+                 (SELECT phase FROM project_delete_filesystem_journal j
+                  WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
                  (SELECT phase FROM backup_restore_filesystem_journal j
                   WHERE j.operation_id=operations.operation_id ORDER BY step DESC LIMIT 1),
                  (SELECT json_extract(payload_json,'$.phase') FROM operation_journal j
@@ -853,6 +881,10 @@ fn parse_filesystem_phase(value: &str) -> Result<FilesystemPhase, ()> {
     use FilesystemPhase as Phase;
     match value {
         "accepted" => Ok(Phase::Accepted),
+        "preflight_complete" => Ok(Phase::PreflightComplete),
+        "quarantine_intent" => Ok(Phase::QuarantineIntent),
+        "root_quarantined" => Ok(Phase::RootQuarantined),
+        "registry_commit_intent" => Ok(Phase::RegistryCommitIntent),
         "inventory_ready" => Ok(Phase::InventoryReady),
         "archiving" => Ok(Phase::Archiving),
         "archive_ready" => Ok(Phase::ArchiveReady),
@@ -870,6 +902,7 @@ fn parse_filesystem_phase(value: &str) -> Result<FilesystemPhase, ()> {
         "vpm_manifest_committed" => Ok(Phase::VpmManifestCommitted),
         "filesystem_committed" => Ok(Phase::FilesystemCommitted),
         "state_committed" => Ok(Phase::StateCommitted),
+        "deleting" => Ok(Phase::Deleting),
         "cleanup_complete" => Ok(Phase::CleanupComplete),
         "rolling_back" => Ok(Phase::RollingBack),
         "rolled_back" => Ok(Phase::RolledBack),

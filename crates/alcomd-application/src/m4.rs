@@ -348,6 +348,10 @@ pub struct ApplyPlanOutcome {
 #[serde(rename_all = "snake_case")]
 pub enum FilesystemPhase {
     Accepted,
+    PreflightComplete,
+    QuarantineIntent,
+    RootQuarantined,
+    RegistryCommitIntent,
     InventoryReady,
     Archiving,
     ArchiveReady,
@@ -365,6 +369,7 @@ pub enum FilesystemPhase {
     VpmManifestCommitted,
     FilesystemCommitted,
     StateCommitted,
+    Deleting,
     CleanupComplete,
     RollingBack,
     RolledBack,
@@ -376,6 +381,10 @@ impl FilesystemPhase {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Accepted => "accepted",
+            Self::PreflightComplete => "preflight_complete",
+            Self::QuarantineIntent => "quarantine_intent",
+            Self::RootQuarantined => "root_quarantined",
+            Self::RegistryCommitIntent => "registry_commit_intent",
             Self::InventoryReady => "inventory_ready",
             Self::Archiving => "archiving",
             Self::ArchiveReady => "archive_ready",
@@ -393,6 +402,7 @@ impl FilesystemPhase {
             Self::VpmManifestCommitted => "vpm_manifest_committed",
             Self::FilesystemCommitted => "filesystem_committed",
             Self::StateCommitted => "state_committed",
+            Self::Deleting => "deleting",
             Self::CleanupComplete => "cleanup_complete",
             Self::RollingBack => "rolling_back",
             Self::RolledBack => "rolled_back",

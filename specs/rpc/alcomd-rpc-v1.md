@@ -719,3 +719,31 @@ installation ID 的 fingerprint v2，并在 registry 解析前优先 replay 已�
 fingerprint 由 `m3-project-repository.schema.json`、`m5-unity.schema.json` 和
 `m7-project-preferences.proposal.schema.json` 的 implemented contract evidence 冻结。State v11 完整接线后 hello 广告
 `dataSchema: 11`。
+
+## 27. M7 兼容增加：Project Directory Delete
+
+M7 在 RPC major 1 上实现并广告 `projects.delete.v1`：
+
+| method | params | result | permission |
+|---|---|---|---|
+| `projects.planDeleteDirectory` | ProjectId、expected Project revision、idempotency key | immutable bounded Delete Plan、`replayed` | `projects.read + projects.delete` |
+| `projects.applyDeleteDirectory` | PlanId、expected Project revision、idempotency key | durable OperationId、ProjectId、`replayed` | `projects.delete` |
+
+调用只接受 `ProjectId`，不接受路径。外部 filesystem writer 只允许 `builtin:local-owner`；Permission
+`projects.delete` 不授予 extension。Plan 有效期固定为 900000ms，只冻结 canonical root/parent、filesystem identity、
+leaf、ProjectVersion marker、writer evidence、profile 与 fingerprint，不保存 recursive inventory。Apply 必须 fresh
+revalidate，并返回 `projects.delete-directory` Operation。
+
+Operation phase 固定为 `accepted`、`preflight_complete`、`quarantine_intent`、`root_quarantined`、
+`registry_commit_intent`、`state_committed`、`deleting`、`cleanup_complete` 与 `recovery_required`。
+`quarantine_intent` 是最后取消边界；进入后只允许 forward recovery。root 只可 rename 到同一 parent 下
+`.alcomd-delete-<operation-id>.quarantine/payload/`，成功只写一个 `project.directory_deleted` Event，不同时写
+`project.unregistered`。quarantine 后重建的 original path 永远不得被 recovery 触碰。
+
+新增的 delete 专用稳定错误只有 `project_delete_plan_not_found`、`project_delete_plan_stale`、
+`project_delete_source_missing`、`project_delete_source_unsafe`、`project_delete_source_changed` 与
+`project_delete_recovery_required`；既有通用 `project_not_registered`、`revision_conflict`、
+`unity_project_running`、`idempotency_conflict`、`permission_denied` 与 `internal_error` 继续复用。
+完整 DTO、phases、path/link/mount 与 recovery vectors 由 `m7-project-delete.proposal.schema.json`、
+`../security/m7-project-delete-path-vectors.json` 与 `../storage/state-v13.md` 冻结。State v13 完整接线后 hello
+广告 `dataSchema: 13`；新增 method/capability/字段是 RPC v1 兼容增加，不改变 unregister 的 registry-only 语义。
