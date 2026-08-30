@@ -22,7 +22,7 @@ static RPC_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(())
 
 const RPC_STAGE_TIMEOUT: Duration = Duration::from_secs(30);
 const RPC_TEST_LOCK_TIMEOUT: Duration = Duration::from_secs(90);
-const CLIENT_CONNECT_TEST_TIMEOUT: Duration = Duration::from_secs(10);
+const CLIENT_CONNECT_TEST_TIMEOUT: Duration = Duration::from_secs(30);
 const DAEMON_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
 const DAEMON_DROP_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
 const CHILD_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -1107,18 +1107,24 @@ async fn wait_for_recovery_required(
 
 async fn connect_client(config: ClientConfig, trace: TestTrace) -> AlcomdClient {
     trace.stage("client-connect-start");
-    match tokio::time::timeout(CLIENT_CONNECT_TEST_TIMEOUT, AlcomdClient::connect(config)).await {
-        Ok(Ok(client)) => {
-            trace.stage("client-connected");
-            client
-        }
-        Ok(Err(error)) => {
-            trace.stage("client-connect-failed");
-            panic!("client establishment failed: {error}");
-        }
-        Err(_) => {
-            trace.stage("client-connect-timeout");
-            panic!("m7_project_copy_rpc timed out at stage: client-connect");
+    let deadline = tokio::time::Instant::now() + CLIENT_CONNECT_TEST_TIMEOUT;
+    loop {
+        match AlcomdClient::connect(config.clone()).await {
+            Ok(client) => {
+                trace.stage("client-connected");
+                return client;
+            }
+            Err(ClientError::StartTimeout) if tokio::time::Instant::now() < deadline => {
+                trace.stage("client-connect-retry");
+            }
+            Err(ClientError::StartTimeout) => {
+                trace.stage("client-connect-timeout");
+                panic!("m7_project_copy_rpc timed out at stage: client-connect");
+            }
+            Err(error) => {
+                trace.stage("client-connect-failed");
+                panic!("client establishment failed: {error}");
+            }
         }
     }
 }

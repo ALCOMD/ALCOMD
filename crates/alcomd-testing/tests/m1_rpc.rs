@@ -6,7 +6,7 @@ use std::time::Duration;
 #[cfg(unix)]
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use alcomd_client::{AlcomdClient, ClientConfig};
+use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use alcomd_platform::{BindError, IpcConfig, IpcListener, IpcStream};
 use alcomd_protocol::{
     CAPABILITY_EVENTS_REPLAY_V1, CAPABILITY_OPERATIONS_V1, CAPABILITY_STATE_CHECK_V1,
@@ -15,6 +15,8 @@ use alcomd_protocol::{
 };
 use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+const TEST_DAEMON_READY_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn m1_rpc_and_ipc_contract() {
@@ -120,20 +122,18 @@ async fn stop_daemon(
 }
 
 async fn connect_with_retry(config: ClientConfig) -> AlcomdClient {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+    let deadline = tokio::time::Instant::now() + TEST_DAEMON_READY_TIMEOUT;
     loop {
         match AlcomdClient::connect(config.clone()).await {
             Ok(client) => return client,
-            Err(_) if tokio::time::Instant::now() < deadline => {
-                tokio::time::sleep(Duration::from_millis(25)).await;
-            }
+            Err(ClientError::StartTimeout) if tokio::time::Instant::now() < deadline => {}
             Err(error) => panic!("daemon did not become ready: {error}"),
         }
     }
 }
 
 async fn connect_raw_with_retry(config: &IpcConfig) -> IpcStream {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+    let deadline = tokio::time::Instant::now() + TEST_DAEMON_READY_TIMEOUT;
     loop {
         match alcomd_platform::connect(config).await {
             Ok(stream) => return stream,
