@@ -9,8 +9,8 @@
 空间模式，状态为 `rejected_for_visual_direction`。reference-driven wide desktop Projects prototype 已由项目所有者通过
 Visual Gate 1，检查点为 `7bb325b78a74518881fb65e03de7f79902e72cd3`。项目所有者随后确认 Project/Package 用户入口存在
 超出两个 permanent-disabled menu item 的真实功能缺口，H2 visual implementation 已暂停；当前只执行
-`M7 Project / Package Functional Closure` Stop A P0-P4 已形成 production local candidate，正在完成完整本地 gate；H2 visual、
-P5-P8、M8/M9 均未开始或继续暂停。M7仍未完成。
+`M7 Project / Package Functional Closure` P0-P6 已通过远端验收；P7 Delete Project Directory 仅完成 proposal-only
+contract-first Stop A 草案，正在等待项目所有者人工审批。H2 visual、P8、M8/M9 均未开始或继续暂停。M7仍未完成。
 
 ## 目标与完成定义
 
@@ -591,8 +591,14 @@ Activity、Diagnostics 或 Portable UI authority。
   ProjectId opener/native picker、active Project Copy RPC/State v10、durable inventory/two-pass content verification、forward
   recovery、CLI 与 list/grid/workspace GUI flow 已形成 local candidate；每个 durable Copy phase 的真实 kill/restart matrix 已通过。
   H2 visual 与 P5-P8 继续暂停，完整聚合 feature 状态未提升。
+- 2026-08-30：P6 remote checkpoint 已由项目所有者验收为 PASS，sealed HEAD
+  `0f83536bdeb74116e4f8d533c9fc3bf5bea529fb`。随后只创建 P7 Delete Project Directory proposal-only Stop A：完成 v3
+  exact behavior、现有 v4 primitive、Windows/Linux/macOS delete primitive 与 Rust `remove_dir_all` 审计，提出 ProjectId-only
+  Plan/Apply、独立 `projects.delete`、sibling quarantine permanent-delete、State v13 durable evidence 与 recovery/path vectors；
+  active RPC、State、Permission、production source、dependency、unsafe 与平台 API 均未改变。
 
 ## 下一停止点
 
-当前停止点是 Project / Package Functional Closure P0-P4 完整本地 gate 与提交。完成后不得 push、不得自动进入 P5-P8、
-不得恢复 H2 visual、不得进入 M8/M9；等待项目所有者决定下一条 vertical slice。
+当前停止点是 P7 Delete Project Directory contract-first Stop A 人工审批。不得开始 P7 production，不得进入 P8、恢复 H2
+visual 或进入 M8/M9/M11；等待项目所有者审阅 proposal schema、State v13、path/recovery vectors 与 Unix mount-safe cleanup
+审批点。

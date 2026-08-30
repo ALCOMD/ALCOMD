@@ -27,28 +27,23 @@
         {"id": "projects.copy", "classification": "implemented"}
     ],
     "knownParityGaps": [
-        "favorite",
-        "clear-unity-preference",
-        "package-refresh",
-        "package-reinstall",
-        "package-bulk-actions",
-        "package-source-filters",
-        "local-user-package",
-        "prerelease-control",
-        "hidden-source-control",
-        "package-docs-changelog",
         "remove-directory",
         "vcc-import-migrate"
     ],
     "contractFirstProposals": [
         {
             "id": "favorite",
-            "status": "approved-production-in-progress",
-            "productionImplemented": false
+            "status": "implemented-remote-green",
+            "productionImplemented": true
         },
         {
             "id": "clear-unity-preference",
-            "status": "approved-production-in-progress",
+            "status": "implemented-remote-green",
+            "productionImplemented": true
+        },
+        {
+            "id": "remove-directory",
+            "status": "proposal-only-owner-approval-required",
             "productionImplemented": false
         }
     ],

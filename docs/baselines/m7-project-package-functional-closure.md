@@ -1,9 +1,9 @@
 # M7 Project / Package Functional Closure matrix
 
 状态：P0-P4 remote checkpoint、P5-A Create/Restore production wiring 与 P5-B Favorite/Clear Unity Preference
-均已通过本地与远端验收。P6-A Package refresh/source filter 已通过本地完整验收、三平台 Hosted CI 与 CodeQL。
-v3 只作行为参考；没有复制、移植或改写其源码。P6-B/P6-C 已形成尚待最终三平台Hosted CI的本地production candidate；P7-P8 仍未完成，
-因此聚合 feature 继续 `in_progress`。
+均已通过本地与远端验收。P6-A/P6-B/P6-C 已通过本地完整验收、三平台 Hosted CI 与 CodeQL。
+v3 只作行为参考；没有复制、移植或改写其源码。P7 Delete Project Directory 已形成 proposal-only Stop A，尚待项目所有者
+人工审批；P8 仍未完成，因此聚合 feature 继续 `in_progress`。
 
 | 用户入口 | 当前 Core 是否足够 | 最小合同 / 实现归属 | Permission 复用 | State / Config 影响 | dependency / platform | slice |
 |---|---|---|---|---|---|---|
@@ -16,16 +16,16 @@ v3 只作行为参考；没有复制、移植或改写其源码。P6-B/P6-C 已�
 | Clear/Forget Unity preference | active automatic/explicit state 与 legacy view 已实现 | `unity.projectEditor.selection.get` + `unity.projectEditor.clear`；tagged automatic/explicit selection；既有 set 保持 non-null | `unity.read` / `unity.manage` | active State v11重建 existing preference table；clear保留 arguments；无新表 | 无 | P5-B / implemented + remote green |
 | Open Unity / Backup | 已有真实 RPC/Operation | 保持 existing wiring；不是新合同 | existing | 无 | existing | 已实现证据保持 |
 | Remove registry row | `projects.unregister` 足够 | GUI confirmation + existing RPC；不删除目录 | `projects.manage` | existing | 无 | P3 / S |
-| Remove directory | 不足且是高影响删除 | 独立 Plan/Apply/Operation、writer gate、Project lock、trash/delete/recovery contract，另行人工审批 | 待定；不得从 `projects.manage` 隐式获得任意删除 | 后续 schema | 可能需平台 trash/删除评估 | P7 / XL |
+| Delete Project Directory | 不足且是高影响删除 | proposal-only `projects.delete.v1`、ProjectId-only Plan/Apply、sibling quarantine permanent-delete、writer/protected-root/path gate 与 forward recovery | 新 `projects.delete`；local-owner only；4.0.0 不授予 extension | State v13 proposal：两张专用表 + durable Project FK correction | 不新增依赖；Unix mount-safe cleanup 尚待窄审批 | P7 Stop A / awaiting owner approval |
 | Package workspace refresh | 单 repo `repositories.refresh` 足够 | GUI 完整分页 list，顺序逐 registered repo refresh，逐项记录 partial failure，`revision_conflict` 仅 fresh retry 一次，最后 reload；不声称 atomic refresh-all | `repositories.manage/read` | 无 | existing HTTP/local | P6-A / implemented + remote green |
 | Package source filter | registered local/remote repository DTO 足够做展示过滤 | GUI-only All/Remote/Local filter，source identity只来自 daemon `RepositorySource.kind`；GUI不做 resolver | read only | 不持久化；无 authority state | 无 | P6-A / implemented + remote green |
-| Show prerelease | resolver已有 `includePrerelease`，read DTO已有 Core-classified optional bool | implemented `RepositoryPackageVersion.prerelease: bool?`；strict Core parse返回bool，legacy/unparseable absent且不可当stable；默认false | settings read/manage | Config v2，不是State | 无 | P6-B local candidate |
-| Hidden repositories | Config v2 已实现字段 | max 256 canonical unique `hiddenRepositoryIds`；stale ID保留，只影响official GUI展示/source chooser，不修改resolver authority | settings read/manage | Config v2 | 无 | P6-B local candidate |
-| User Packages | v3 是 `userPackageFolders` loose directory，不是local repository | implemented directory-only enrollment、opaque file identity、deterministic owned cache archive、v2 source pin、refresh/remove CAS；不接受archive input | packages.read/manage + local-owner | State v12专用 `user_package_sources` | 复用现有semver/sha2/zip/platform；无新依赖 | P6-C local candidate |
-| Reinstall one/all | existing Plan action没有 reinstall；install same version保持no-op | implemented `packages.planReinstall`，plan.v2、`packages|all` tagged selection、max 256，locked exact version重新解析source并force replace | existing packages read/manage + projects/repositories read | State v12 action=`reinstall` | 无新依赖 | P6-C local candidate |
-| Bulk selected install/upgrade/remove/reinstall | ChangeSet可多 mutation，new request表达显式混合集合 | implemented `packages.planBulk`，plan.v2、max 256 unique typed intents，单 durable Plan/Apply；禁止客户端拼接多个 Plan | existing package permissions | State v12 action=`bulk` | 无 | P6-C local candidate |
+| Show prerelease | resolver已有 `includePrerelease`，read DTO已有 Core-classified optional bool | implemented `RepositoryPackageVersion.prerelease: bool?`；strict Core parse返回bool，legacy/unparseable absent且不可当stable；默认false | settings read/manage | Config v2，不是State | 无 | P6-B / implemented + remote green |
+| Hidden repositories | Config v2 已实现字段 | max 256 canonical unique `hiddenRepositoryIds`；stale ID保留，只影响official GUI展示/source chooser，不修改resolver authority | settings read/manage | Config v2 | 无 | P6-B / implemented + remote green |
+| User Packages | v3 是 `userPackageFolders` loose directory，不是local repository | implemented directory-only enrollment、opaque file identity、deterministic owned cache archive、v2 source pin、refresh/remove CAS；不接受archive input | packages.read/manage + local-owner | State v12专用 `user_package_sources` | 复用现有semver/sha2/zip/platform；无新依赖 | P6-C / implemented + remote green |
+| Reinstall one/all | existing Plan action没有 reinstall；install same version保持no-op | implemented `packages.planReinstall`，plan.v2、`packages|all` tagged selection、max 256，locked exact version重新解析source并force replace | existing packages read/manage + projects/repositories read | State v12 action=`reinstall` | 无新依赖 | P6-C / implemented + remote green |
+| Bulk selected install/upgrade/remove/reinstall | ChangeSet可多 mutation，new request表达显式混合集合 | implemented `packages.planBulk`，plan.v2、max 256 unique typed intents，单 durable Plan/Apply；禁止客户端拼接多个 Plan | existing package permissions | State v12 action=`bulk` | 无 | P6-C / implemented + remote green |
 | Hidden package section | Core 能返回 yanked/source，但 visibility policy不完整 | 由 Config v2 + daemon-provided prerelease/source class驱动；yanked保持不可新选 | settings/read | Config v2 | 无 | P4/P6 |
-| Docs / changelog | normalized read DTO已保留验证后的真实 `documentationUrl`/`changelogUrl` | implemented 2,048-byte validated optional descriptors；GUI closed command只接受 `(repositoryId,packageId,version,linkKind)`，daemon re-fetch current link，拒绝非 http/https/userinfo | repositories/packages read | State v12 nullable URL columns | 复用reqwest URL与open；无新依赖 | P6-B local candidate |
+| Docs / changelog | normalized read DTO已保留验证后的真实 `documentationUrl`/`changelogUrl` | implemented 2,048-byte validated optional descriptors；GUI closed command只接受 `(repositoryId,packageId,version,linkKind)`，daemon re-fetch current link，拒绝非 http/https/userinfo | repositories/packages read | State v12 nullable URL columns | 复用reqwest URL与open；无新依赖 | P6-B / implemented + remote green |
 | VCC Import / Migrate | 不足 | M11 migration-only implementation +真实脱敏 Fixture | M11决定 | M11 | M11 | M11 / blocked |
 
 ## 关键判断
@@ -50,5 +50,7 @@ v3 只作行为参考；没有复制、移植或改写其源码。P6-B/P6-C 已�
 - 除明确属于 M11 的 migration/differential parity 外，已知 Project/Package 缺口均属于 M7 functional closure；未完成前
   `projects.management` / `packages.vpm` 不得提升为 implemented。
 - P7 Remove Directory 是 M7 内独立 high-impact approval slice；没有批准前保留缺口，不显示永久 disabled production fake action。
+- P7 proposal 选择永久 sibling quarantine，而不是 OS Trash 或直接就地 `remove_dir_all`；完整合同见
+  `docs/baselines/m7-p7-project-directory-delete.md`。这只是设计输入，不代表 Permission、RPC、State v13 或 production 已存在。
 - VCC import/migrate 与真实 v3 differential evidence属于 M11，保持 blocked。
 - Win10/Win11完整客户端安装/运行/WebView2/更新/卸载仍属于 M12。

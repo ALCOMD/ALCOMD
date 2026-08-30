@@ -1,0 +1,96 @@
+{
+    "status": "proposal-only",
+    "approval": "owner-approval-required",
+    "from": 12,
+    "to": 13,
+    "productionMigration": null,
+    "productionWiringCreated": false,
+    "transaction": "BEGIN IMMEDIATE",
+    "operationKindsAdded": ["projects.delete-directory"],
+    "tablesAdded": ["project_delete_plans", "project_delete_filesystem_journal"],
+    "genericTablesAdded": [],
+    "plan": {
+        "table": "project_delete_plans",
+        "states": ["unapplied", "applied"],
+        "expiryMs": 900000,
+        "recursiveInventoryStored": false,
+        "immutableAuthority": true,
+        "deleteForbidden": true,
+        "projectIdReferencesCurrentRegistry": false,
+        "onlyTransition": "unapplied-without-operation-to-applied-with-exact-projects-delete-directory-operation"
+    },
+    "journal": {
+        "table": "project_delete_filesystem_journal",
+        "appendOnly": true,
+        "updateForbidden": true,
+        "deleteForbidden": true,
+        "projectIdReferencesCurrentRegistry": false,
+        "recoveryIndex": ["operation_id", "step DESC"],
+        "phases": [
+            "accepted",
+            "preflight_complete",
+            "quarantine_intent",
+            "root_quarantined",
+            "registry_commit_intent",
+            "state_committed",
+            "deleting",
+            "cleanup_complete",
+            "recovery_required"
+        ],
+        "states": ["intent", "completed"],
+        "stores": [
+            "operation_id", "plan_id", "project_id", "root_identity", "parent_identity",
+            "quarantine_locator", "quarantine_identity", "phase", "state", "safe_evidence",
+            "updated_at_ms"
+        ],
+        "forbidden": ["caller_path_authority", "directory_contents", "public_recovery_path", "full_inventory"]
+    },
+    "registryCommit": {
+        "physicalProjectRowDelete": true,
+        "event": "project.directory_deleted",
+        "eventCount": 1,
+        "projectUnregisteredEventAlsoWritten": false,
+        "applyIdempotencyRemainsAfterProjectRowDelete": true,
+        "deletePlanAndJournalRemainAfterProjectRowDelete": true
+    },
+    "durableProjectReferenceCorrection": {
+        "required": true,
+        "reason": "existing immutable plans and journals must outlive the mutable project registry row",
+        "strategy": "rebuild exact existing durable tables so historical project_id is a checked canonical UUID scalar rather than a foreign key to projects",
+        "tablesToRebuild": [
+            "package_plans",
+            "package_filesystem_journal",
+            "project_copy_plans",
+            "project_copy_filesystem_journal"
+        ],
+        "columns": {
+            "package_plans": "project_id",
+            "package_filesystem_journal": "project_id",
+            "project_copy_plans": "source_project_id",
+            "project_copy_filesystem_journal": "source_project_id"
+        },
+        "cascadeHistoricalAuthority": false,
+        "addProjectTombstoneTable": false,
+        "ephemeralCurrentProjectRowsRetainingCascade": [
+            "project_editor_preferences"
+        ],
+        "schemaMustBeReauditedForNewProjectReferencesBeforeProductionMigration": true
+    },
+    "reuses": ["projects", "operations", "events", "idempotency_records", "revision"],
+    "forbiddenAdditions": [
+        "generic_deletion_table", "generic_filesystem_jobs", "generic_tombstone_framework",
+        "recursive_inventory_table", "trash_registry"
+    ],
+    "invariants": [
+        "all-v12-rows-preserved",
+        "all-existing-operation-plan-journal-and-idempotency-authority-preserved",
+        "revision-and-event-sequence-preserved",
+        "foreign-key-check-empty",
+        "migration-failure-rolls-back-to-v12-authority",
+        "future-schema-fails-closed",
+        "quarantine-intent-is-forward-only-boundary",
+        "original-path-is-never-touched-after-root-quarantined",
+        "project-row-is-deleted-only-after-quarantine-identity-verification",
+        "operation-succeeds-only-after-cleanup-complete"
+    ]
+}

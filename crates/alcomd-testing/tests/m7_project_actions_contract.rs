@@ -29,6 +29,13 @@ const GUI_RUST_ADAPTER: &str = include_str!("../../../apps/alcomd-gui/src-tauri/
 const GUI_RPC_ADAPTER: &str = include_str!("../../../apps/alcomd-gui/src/rpc.ts");
 const GUI_CAPABILITY: &str =
     include_str!("../../../apps/alcomd-gui/src-tauri/capabilities/main.json");
+const P7_DELETE_SCHEMA: &str =
+    include_str!("../../../specs/rpc/m7-project-delete.proposal.schema.json");
+const P7_STATE_V13: &str =
+    include_str!("../../../specs/storage/state-v13-project-delete.proposal.contract.json");
+const P7_DELETE_VECTORS: &str =
+    include_str!("../../../specs/security/m7-project-delete-path-vectors.json");
+const ACTIVE_PERMISSIONS: &str = include_str!("../../../specs/extensions/permissions-v1.md");
 
 #[test]
 fn implemented_project_copy_contract_is_bounded_and_active() {
@@ -234,12 +241,9 @@ fn visible_action_gate_records_real_current_gaps_instead_of_hiding_them() {
     assert!(CURRENT_PROJECTS_UI.contains(
         "label={selectingCopyTarget ? \"Choosing Copy Destination…\" : \"Copy Project\"}"
     ));
-    assert!(
-        gate["knownParityGaps"]
-            .as_array()
-            .expect("known gaps")
-            .len()
-            > 2
+    assert_eq!(
+        gate["knownParityGaps"],
+        json!(["remove-directory", "vcc-import-migrate"])
     );
     assert!(
         !gate["knownParityGaps"]
@@ -248,18 +252,208 @@ fn visible_action_gate_records_real_current_gaps_instead_of_hiding_them() {
             .iter()
             .any(|gap| gap == "create-entry" || gap == "restore-entry")
     );
-    for proposal in ["favorite", "clear-unity-preference"] {
+    for implemented in ["favorite", "clear-unity-preference"] {
         assert!(
             gate["contractFirstProposals"]
                 .as_array()
                 .expect("contract-first proposals")
                 .iter()
                 .any(|entry| {
-                    entry["id"] == proposal
-                        && entry["status"] == "approved-production-in-progress"
-                        && entry["productionImplemented"] == false
+                    entry["id"] == implemented
+                        && entry["status"] == "implemented-remote-green"
+                        && entry["productionImplemented"] == true
                 })
         );
+    }
+    assert!(
+        gate["contractFirstProposals"]
+            .as_array()
+            .expect("contract-first proposals")
+            .iter()
+            .any(|entry| {
+                entry["id"] == "remove-directory"
+                    && entry["status"] == "proposal-only-owner-approval-required"
+                    && entry["productionImplemented"] == false
+            })
+    );
+}
+
+#[test]
+fn p7_delete_directory_contract_is_proposal_only_and_not_active() {
+    let schema: Value = serde_json::from_str(P7_DELETE_SCHEMA).expect("P7 delete proposal schema");
+    let state: Value = serde_json::from_str(P7_STATE_V13).expect("P7 State v13 proposal");
+
+    assert_eq!(schema["x-alcomd-publication"], "proposal-only");
+    assert_eq!(schema["x-alcomd-approval"], "owner-approval-required");
+    assert_eq!(schema["x-alcomd-active-rpc-modified"], false);
+    assert_eq!(schema["x-alcomd-capability"], "projects.delete.v1");
+    assert_eq!(
+        schema["x-alcomd-operation-kind"],
+        "projects.delete-directory"
+    );
+    assert_eq!(schema["x-alcomd-plan-expiry-ms"], 900_000);
+    assert_eq!(schema["x-alcomd-filesystem-writer"], "builtin:local-owner");
+    assert_eq!(schema["x-alcomd-extension-grantable"], false);
+    assert_eq!(
+        schema["x-alcomd-method-permissions"]["projects.planDeleteDirectory"],
+        json!(["projects.read", "projects.delete"])
+    );
+    assert_eq!(
+        schema["x-alcomd-method-permissions"]["projects.applyDeleteDirectory"],
+        json!(["projects.delete"])
+    );
+
+    let plan_required = schema["$defs"]["projectDeletePlan"]["required"]
+        .as_array()
+        .expect("P7 plan required fields")
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<BTreeSet<_>>();
+    for field in [
+        "planId",
+        "ownerPrincipalId",
+        "projectId",
+        "projectRevision",
+        "canonicalRootPath",
+        "rootFilesystemIdentity",
+        "canonicalParentPath",
+        "parentFilesystemIdentity",
+        "parentIdentitySha256",
+        "normalizedLeaf",
+        "projectMarkerSha256",
+        "writerEvidence",
+        "profile",
+        "planFingerprint",
+        "idempotencyKey",
+        "createdAtMs",
+        "expiresAtMs",
+    ] {
+        assert!(
+            plan_required.contains(field),
+            "missing P7 Plan field {field}"
+        );
+    }
+    assert!(!plan_required.contains("recursiveInventory"));
+
+    assert_eq!(state["status"], "proposal-only");
+    assert_eq!(state["approval"], "owner-approval-required");
+    assert_eq!(state["from"], 12);
+    assert_eq!(state["to"], 13);
+    assert_eq!(state["productionMigration"], Value::Null);
+    assert_eq!(state["productionWiringCreated"], false);
+    assert_eq!(
+        state["tablesAdded"],
+        json!(["project_delete_plans", "project_delete_filesystem_journal"])
+    );
+    assert_eq!(state["journal"]["appendOnly"], true);
+    assert_eq!(
+        state["registryCommit"]["event"],
+        "project.directory_deleted"
+    );
+    assert_eq!(state["registryCommit"]["eventCount"], 1);
+    assert_eq!(
+        state["registryCommit"]["projectUnregisteredEventAlsoWritten"],
+        false
+    );
+    assert_eq!(state["durableProjectReferenceCorrection"]["required"], true);
+    assert_eq!(
+        state["durableProjectReferenceCorrection"]["tablesToRebuild"],
+        json!([
+            "package_plans",
+            "package_filesystem_journal",
+            "project_copy_plans",
+            "project_copy_filesystem_journal"
+        ])
+    );
+    assert_eq!(
+        state["durableProjectReferenceCorrection"]["ephemeralCurrentProjectRowsRetainingCascade"],
+        json!(["project_editor_preferences"])
+    );
+
+    assert!(!ACTIVE_RPC.contains("projects.planDeleteDirectory"));
+    assert!(!ACTIVE_RPC.contains("projects.applyDeleteDirectory"));
+    assert!(!ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_PLAN_DELETE_DIRECTORY"));
+    assert!(!ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_APPLY_DELETE_DIRECTORY"));
+    assert!(!ACTIVE_PROTOCOL.contains("CAPABILITY_PROJECTS_DELETE_V1"));
+    assert!(!ACTIVE_STORE.contains("project_delete_plans"));
+    assert!(!ACTIVE_STORE.contains("project_delete_filesystem_journal"));
+    assert!(!ACTIVE_PERMISSIONS.contains("`projects.delete`"));
+    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 12;"));
+}
+
+#[test]
+fn p7_delete_directory_vectors_freeze_fail_closed_recovery_boundaries() {
+    let vectors: Value = serde_json::from_str(P7_DELETE_VECTORS).expect("P7 delete path vectors");
+    assert_eq!(vectors["status"], "proposal-only");
+    assert_eq!(vectors["approval"], "owner-approval-required");
+    assert_eq!(vectors["mode"], "sibling-quarantine-permanent-v1");
+    assert_eq!(vectors["planExpiryMs"], 900_000);
+    assert_eq!(vectors["cancelBefore"], "quarantine_intent");
+    assert_eq!(vectors["afterBoundary"], "forward-recovery-only");
+    assert_eq!(vectors["progress"], "phase-only");
+    assert_eq!(
+        vectors["writerPolicy"]["running_confirmed"],
+        "reject:unity_project_running"
+    );
+    assert_eq!(
+        vectors["writerPolicy"]["not_observed"],
+        "allow-with-all-other-revalidation"
+    );
+    assert_eq!(
+        vectors["entryPolicy"]["nested-symlink"],
+        "unlink-entry-never-follow"
+    );
+    assert_eq!(
+        vectors["entryPolicy"]["unix-mount-or-bind-mount"],
+        "reject-never-cross"
+    );
+
+    let cases = vectors["vectors"]
+        .as_array()
+        .expect("P7 delete vectors")
+        .iter()
+        .filter_map(|entry| entry["id"].as_str())
+        .collect::<BTreeSet<_>>();
+    for required in [
+        "normal-delete",
+        "unregister-only",
+        "root-replaced-same-path",
+        "writer-confirmed",
+        "writer-suspected",
+        "writer-unknown",
+        "nested-symlink-to-external",
+        "windows-junction-to-external",
+        "regular-hardlink-in-and-out",
+        "unix-cross-device-mount",
+        "unix-same-device-bind-mount",
+        "kill-after-quarantine-intent-before-rename",
+        "kill-after-root-quarantined",
+        "kill-after-state-committed",
+        "kill-during-deleting",
+        "original-path-recreated-after-quarantine",
+        "idempotency-apply-replay-after-registry-delete",
+        "success-owned-quarantine",
+        "recovery-required-owned-quarantine",
+    ] {
+        assert!(
+            cases.contains(required),
+            "missing P7 delete vector {required}"
+        );
+    }
+
+    let forbidden = vectors["forbiddenImplementationClaims"]
+        .as_array()
+        .expect("forbidden P7 claims")
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<BTreeSet<_>>();
+    for claim in [
+        "pre-scan-proves-remove-dir-all-safe",
+        "trash-is-portably-recoverable",
+        "not-observed-means-unity-definitely-not-running",
+        "original-path-may-be-touched-after-quarantine",
+    ] {
+        assert!(forbidden.contains(claim), "missing forbidden claim {claim}");
     }
 }
 

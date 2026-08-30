@@ -1,0 +1,153 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m7-project-delete-proposal.json",
+    "title": "ALCOMD M7 P7 Project Directory Delete proposal",
+    "x-alcomd-publication": "proposal-only",
+    "x-alcomd-approval": "owner-approval-required",
+    "x-alcomd-active-rpc-modified": false,
+    "x-alcomd-capability": "projects.delete.v1",
+    "x-alcomd-method-permissions": {
+        "projects.planDeleteDirectory": ["projects.read", "projects.delete"],
+        "projects.applyDeleteDirectory": ["projects.delete"]
+    },
+    "x-alcomd-filesystem-writer": "builtin:local-owner",
+    "x-alcomd-extension-grantable": false,
+    "x-alcomd-operation-kind": "projects.delete-directory",
+    "x-alcomd-plan-expiry-ms": 900000,
+    "x-alcomd-resource-locks": [
+        "Project(projectId)",
+        "ProjectCreate(parentIdentitySha256,normalizedLeaf)"
+    ],
+    "$defs": {
+        "uuid": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "revision": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "timestamp": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "opaqueIdentity": {"type": "string", "minLength": 1, "maxLength": 256},
+        "canonicalPath": {"type": "string", "minLength": 1, "maxLength": 32768},
+        "normalizedLeaf": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "pattern": "^[^/\\\\]+$"
+        },
+        "writerEvidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["state", "observedAtMs"],
+            "properties": {
+                "state": {
+                    "enum": ["running_confirmed", "running_suspected", "not_observed", "unknown"]
+                },
+                "observedAtMs": {"$ref": "#/$defs/timestamp"},
+                "safeEvidence": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "items": {"type": "string", "minLength": 1, "maxLength": 128}
+                }
+            }
+        },
+        "deleteProfile": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "version", "mode", "protectedRootProfileVersion", "progress"],
+            "properties": {
+                "id": {"const": "alcomd-project-delete"},
+                "version": {"const": 1},
+                "mode": {"const": "sibling-quarantine-permanent-v1"},
+                "protectedRootProfileVersion": {"const": 1},
+                "progress": {"const": "phase-only"}
+            }
+        },
+        "projectDeletePlan": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "planId", "ownerPrincipalId", "projectId", "projectRevision",
+                "canonicalRootPath", "rootFilesystemIdentity", "canonicalParentPath",
+                "parentFilesystemIdentity", "parentIdentitySha256", "normalizedLeaf",
+                "projectMarkerSha256", "expectedUnityVersion", "writerEvidence",
+                "profile", "planFingerprint", "idempotencyKey", "createdAtMs", "expiresAtMs"
+            ],
+            "properties": {
+                "planId": {"$ref": "#/$defs/uuid"},
+                "ownerPrincipalId": {"type": "string", "minLength": 1, "maxLength": 128},
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "projectRevision": {"$ref": "#/$defs/revision"},
+                "canonicalRootPath": {"$ref": "#/$defs/canonicalPath"},
+                "rootFilesystemIdentity": {"$ref": "#/$defs/opaqueIdentity"},
+                "canonicalParentPath": {"$ref": "#/$defs/canonicalPath"},
+                "parentFilesystemIdentity": {"$ref": "#/$defs/opaqueIdentity"},
+                "parentIdentitySha256": {"$ref": "#/$defs/sha256"},
+                "normalizedLeaf": {"$ref": "#/$defs/normalizedLeaf"},
+                "projectMarkerSha256": {"$ref": "#/$defs/sha256"},
+                "expectedUnityVersion": {"type": "string", "minLength": 1, "maxLength": 128},
+                "expectedUnityRevision": {"type": "string", "minLength": 1, "maxLength": 128},
+                "writerEvidence": {"$ref": "#/$defs/writerEvidence"},
+                "profile": {"$ref": "#/$defs/deleteProfile"},
+                "planFingerprint": {"$ref": "#/$defs/sha256"},
+                "idempotencyKey": {"type": "string", "minLength": 1, "maxLength": 128},
+                "createdAtMs": {"$ref": "#/$defs/timestamp"},
+                "expiresAtMs": {"$ref": "#/$defs/timestamp"}
+            }
+        },
+        "planDeleteDirectoryParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["projectId", "expectedRevision", "idempotencyKey"],
+            "properties": {
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "idempotencyKey": {"type": "string", "minLength": 1, "maxLength": 128}
+            }
+        },
+        "planDeleteDirectoryResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["plan", "replayed"],
+            "properties": {
+                "plan": {"$ref": "#/$defs/projectDeletePlan"},
+                "replayed": {"type": "boolean"}
+            }
+        },
+        "applyDeleteDirectoryParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["planId", "expectedRevision", "idempotencyKey"],
+            "properties": {
+                "planId": {"$ref": "#/$defs/uuid"},
+                "expectedRevision": {"$ref": "#/$defs/revision"},
+                "idempotencyKey": {"type": "string", "minLength": 1, "maxLength": 128}
+            }
+        },
+        "applyDeleteDirectoryResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["operationId", "projectId", "replayed"],
+            "properties": {
+                "operationId": {"$ref": "#/$defs/uuid"},
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "replayed": {"type": "boolean"}
+            }
+        },
+        "operationPhase": {
+            "enum": [
+                "accepted", "preflight_complete", "quarantine_intent", "root_quarantined",
+                "registry_commit_intent", "state_committed", "deleting", "cleanup_complete",
+                "recovery_required"
+            ]
+        },
+        "errorCode": {
+            "enum": [
+                "project_delete_plan_not_found", "project_delete_plan_stale",
+                "project_delete_source_missing", "project_delete_source_unsafe",
+                "project_delete_source_changed", "project_delete_recovery_required",
+                "project_not_registered", "revision_conflict", "unity_project_running",
+                "idempotency_conflict", "permission_denied", "internal_error"
+            ]
+        }
+    }
+}

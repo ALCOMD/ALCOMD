@@ -63,9 +63,9 @@ implementation = "alcomd-application"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "in_progress"
-evidence = ["docs/baselines/alcomd3-v3-audit.md::项目", "docs/baselines/vrc-get-audit.md::项目", "docs/baselines/m7-project-package-functional-closure.md", "docs/baselines/m7-p5-favorite-unity-clear.md", "docs/adr/0016-project-repository-read-model.md", "crates/alcomd-vpm/src/lib.rs", "crates/alcomd-store/src/m3.rs"]
+evidence = ["docs/baselines/alcomd3-v3-audit.md::项目", "docs/baselines/vrc-get-audit.md::项目", "docs/baselines/m7-project-package-functional-closure.md", "docs/baselines/m7-p5-favorite-unity-clear.md", "docs/baselines/m7-p7-project-directory-delete.md", "docs/adr/0016-project-repository-read-model.md", "crates/alcomd-vpm/src/lib.rs", "crates/alcomd-store/src/m3.rs"]
 coverage = ["GUI", "CLI -p", "MCP", "invalid/missing project"]
-tests = ["projects.v3-parity", "projects.m3-readonly-registry", "projects.m7-copy-transaction", "packages.vpm-format", "gui.m7-project-action-contract", "gui.m7-visible-action-completeness"]
+tests = ["projects.v3-parity", "projects.m3-readonly-registry", "projects.m7-copy-transaction", "projects.m7-delete-directory-transaction", "packages.vpm-format", "gui.m7-project-action-contract", "gui.m7-visible-action-completeness"]
 
 [[feature]]
 id = "projects.read-only-contract"
