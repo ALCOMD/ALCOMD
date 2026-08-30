@@ -43,19 +43,26 @@
                 "unsupported_or_unsafe"
             ]
         },
+        "projectUnityMigrationClassification": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "supportedForApply"],
+            "properties": {
+                "kind": {"$ref": "#/$defs/classification"},
+                "supportedForApply": {"type": "boolean"}
+            }
+        },
         "planUnityMigrationParams": {
             "type": "object",
             "additionalProperties": false,
             "required": [
                 "projectId",
-                "targetUnityVersion",
                 "targetInstallationId",
                 "expectedProjectRevision",
                 "idempotencyKey"
             ],
             "properties": {
                 "projectId": {"$ref": "#/$defs/uuid"},
-                "targetUnityVersion": {"$ref": "#/$defs/canonicalUnityVersion"},
                 "targetInstallationId": {"$ref": "#/$defs/uuid"},
                 "expectedProjectRevision": {"$ref": "#/$defs/revision"},
                 "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
@@ -96,7 +103,7 @@
                                 "sourceUnityVersion": {"$ref": "#/$defs/canonicalUnityVersion"},
                                 "targetUnityVersion": {"$ref": "#/$defs/canonicalUnityVersion"},
                                 "targetInstallationId": {"$ref": "#/$defs/uuid"},
-                                "classification": {"$ref": "#/$defs/classification"},
+                                "classification": {"$ref": "#/$defs/projectUnityMigrationClassification"},
                                 "expiresAtMs": {"type": "integer", "minimum": 0}
                             }
                         }
@@ -122,17 +129,74 @@
                 "replayed": {"type": "boolean"}
             }
         },
-        "launchParamsCompatibilityAddition": {
+        "launchOptionsParams": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["projectId", "expectedProjectRevision", "idempotencyKey"],
+            "required": ["projectId", "expectedProjectRevision"],
+            "properties": {
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "expectedProjectRevision": {"$ref": "#/$defs/revision"}
+            }
+        },
+        "launchOptionsResult": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+                "projectId",
+                "projectRevision",
+                "projectUnityVersion",
+                "exactMatchingInstallations"
+            ],
+            "properties": {
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "projectRevision": {"$ref": "#/$defs/revision"},
+                "projectUnityVersion": {"$ref": "#/$defs/canonicalUnityVersion"},
+                "exactMatchingInstallations": {
+                    "type": "array",
+                    "maxItems": 1000,
+                    "items": {
+                        "type": "object",
+                        "description": "Existing UnityInstallation safe DTO with Core-canonicalized unityVersion."
+                    }
+                }
+            }
+        },
+        "launchParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["projectId", "installationId", "expectedProjectRevision", "idempotencyKey"],
             "properties": {
                 "projectId": {"$ref": "#/$defs/uuid"},
                 "installationId": {"$ref": "#/$defs/uuid"},
                 "expectedProjectRevision": {"$ref": "#/$defs/revision"},
                 "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
             },
-            "description": "installationId is an optional one-shot exact-version choice and is never persisted."
+            "description": "installationId is required one-shot exact-version authority and is never persisted."
+        },
+        "launchConfigState": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["projectId", "arguments", "revision", "updatedAtMs"],
+            "properties": {
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "arguments": {"$ref": "#/$defs/boundedArguments"},
+                "revision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9223372036854775807
+                },
+                "updatedAtMs": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9223372036854775807
+                }
+            }
+        },
+        "launchConfigGetParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["projectId"],
+            "properties": {"projectId": {"$ref": "#/$defs/uuid"}}
         },
         "launchConfigSetParams": {
             "type": "object",
@@ -148,6 +212,30 @@
                 },
                 "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
             }
+        },
+        "launchConfigClearParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["projectId", "expectedRevision", "idempotencyKey"],
+            "properties": {
+                "projectId": {"$ref": "#/$defs/uuid"},
+                "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9223372036854775807
+                },
+                "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
+            }
+        },
+        "launchConfigMutationResult": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["config", "changed", "replayed"],
+            "properties": {
+                "config": {"$ref": "#/$defs/launchConfigState"},
+                "changed": {"type": "boolean"},
+                "replayed": {"type": "boolean"}
+            }
         }
     },
     "type": "object",
@@ -160,6 +248,12 @@
         "operationKind",
         "removedSurface",
         "launchCardinality",
+        "launchConfigSemantics",
+        "launchOptionsAuthority",
+        "migrationPlanAuthority",
+        "classificationSupport",
+        "platformMigrationProcess",
+        "secondaryPreparation",
         "stableErrors"
     ],
     "properties": {
@@ -169,6 +263,12 @@
                 "projects.unity-migration.v1": [
                     "projects.planUnityMigration",
                     "projects.applyUnityMigration"
+                ],
+                "unity.launch.v1": ["unity.launchOptions", "unity.launch"],
+                "unity.read.v1": ["unity.projectLaunchConfig.get"],
+                "unity.manage.v1": [
+                    "unity.projectLaunchConfig.set",
+                    "unity.projectLaunchConfig.clear"
                 ]
             }
         },
@@ -178,6 +278,8 @@
                 "projects.applyUnityMigration",
                 "unity.projectLaunchConfig.get",
                 "unity.projectLaunchConfig.set",
+                "unity.projectLaunchConfig.clear",
+                "unity.launchOptions",
                 "unity.launch"
             ]
         },
@@ -187,6 +289,8 @@
                 "projects.applyUnityMigration": ["projects.unity-migrate"],
                 "unity.projectLaunchConfig.get": ["unity.read"],
                 "unity.projectLaunchConfig.set": ["unity.manage"],
+                "unity.projectLaunchConfig.clear": ["unity.manage"],
+                "unity.launchOptions": ["projects.read", "unity.read", "unity.launch"],
                 "unity.launch": ["unity.launch"]
             }
         },
@@ -204,26 +308,109 @@
         },
         "launchCardinality": {
             "const": {
-                "zero": "unity_exact_installation_not_found",
-                "one": "launch-directly",
-                "many": "unity_editor_selection_required",
+                "zero": "launch-options-empty-no-launch-call",
+                "one": "launch-with-sole-installation-id",
+                "many": "one-shot-installation-id-required",
                 "selectionPersistence": "none"
+            }
+        },
+        "launchConfigSemantics": {
+            "const": {
+                "missing": {"arguments": [], "revision": 0, "updatedAtMs": 0},
+                "storedRevisionMinimum": 1,
+                "sameValueSet": "no-op-no-revision-no-event",
+                "clearMissing": "no-op-no-revision-no-event",
+                "realChange": "exactly-plus-one-config-revision-and-one-event",
+                "event": "unity.project_launch_config_changed",
+                "migrationReadsLaunchConfig": false,
+                "installationIdStored": false
+            }
+        },
+        "launchOptionsAuthority": {
+            "const": {
+                "coreCanonicalizesProjectVersion": true,
+                "corePerformsExactComparison": true,
+                "candidateDto": "existing-UnityInstallation-safe-DTO",
+                "candidateOrder": [
+                    "canonical-version-bytes",
+                    "source-kind-closed-order",
+                    "installation-id-bytes"
+                ],
+                "guiVersionParsingForbidden": true
+            }
+        },
+        "migrationPlanAuthority": {
+            "const": {
+                "publicInput": [
+                    "projectId",
+                    "expectedProjectRevision",
+                    "targetInstallationId",
+                    "idempotencyKey"
+                ],
+                "targetVersionInputForbidden": true,
+                "targetVersionDerivedByCore": true,
+                "expiryMs": 900000,
+                "expiredError": "project_unity_migration_plan_stale",
+                "expiredSafeReason": "expired",
+                "sameIdempotencyKeyPermanentlyReplays": true,
+                "replanRequiresNewKey": true
+            }
+        },
+        "classificationSupport": {
+            "const": {
+                "patch_or_minor_upgrade": true,
+                "major_upgrade": "true-except-vrchat-2019-to-2022-until-preparation-owner-seal",
+                "patch_or_minor_downgrade": false,
+                "major_downgrade": false,
+                "china_variant_change": "true-only-same-base-release-with-exact-verified-target",
+                "unsupported_or_unsafe": false,
+                "vrchat_unsupported_unity_version": false
+            }
+        },
+        "platformMigrationProcess": {
+            "const": {
+                "surface": "spawn_unity_editor_migration(validated_executable, authoritative_project_root) -> UnityMigrationProcess",
+                "onlyMethod": "wait(self) -> UnityMigrationExit",
+                "exitValues": ["success", "non_zero"],
+                "argv": ["-quit", "-batchmode", "-projectPath", "authoritative-project-root"],
+                "readsLaunchConfig": false,
+                "killOrSignalExposed": false,
+                "productionImplemented": false
+            }
+        },
+        "secondaryPreparation": {
+            "const": {
+                "status": "bounded-private-profile-feasible-owner-seal-required",
+                "publicP6Expansion": false,
+                "classA": [
+                    "resolver",
+                    "cache-integrity",
+                    "package-tree-and-vpm-manifest-transaction"
+                ],
+                "classB": [
+                    "two-fixed-xr-upm-dependencies",
+                    "four-fixed-vrchat-package-ids",
+                    "legacy-packages",
+                    "unlocked-package-conflicts",
+                    "legacy-files-and-folders"
+                ],
+                "classC": [],
+                "stopError": "UNITY_MIGRATION_SECONDARY_CONTRACT_NEEDS_OWNER"
             }
         },
         "stableErrors": {
             "const": [
-                "unity_exact_installation_not_found",
+                "invalid_request",
+                "project_not_registered",
                 "unity_editor_selection_required",
                 "unity_installation_not_found",
-                "unity_installation_invalid",
-                "unity_version_unverified",
                 "unity_version_mismatch",
-                "unity_migration_unsupported",
-                "unity_migration_plan_expired",
-                "unity_migration_plan_stale",
-                "unity_migration_recovery_required",
+                "project_unity_migration_plan_not_found",
+                "project_unity_migration_plan_stale",
+                "project_unity_migration_unsupported",
+                "project_unity_migration_source_changed",
+                "project_unity_migration_recovery_required",
                 "unity_project_running",
-                "unity_launch_state_uncertain",
                 "revision_conflict",
                 "idempotency_conflict",
                 "permission_denied",

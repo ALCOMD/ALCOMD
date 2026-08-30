@@ -606,6 +606,10 @@ Activity、Diagnostics 或 Portable UI authority。
   installation chooser、独立 migration Plan/Apply/Operation、State v14 preference removal/launch-config split 与 crash recovery。
   VRChat 2019 -> 2022 明确为 `UNITY_MIGRATION_REQUIRES_SECONDARY_PACKAGE_CONTRACT`，未扩展 P6。P8 historical PASS
   保留，但当前 completeness 为 `REOPENED_BY_PRODUCT_MODEL_CHANGE`；H2-A 暂停而非拒绝。
+- 2026-08-31：Unity model checkpoint `a3faa7b…` 的 owner review 为 `PASS WITH REQUIRED CONTRACT AMENDMENTS`，production
+  仍未获批准。amendment 只补齐 Launch Config/launchOptions/required one-shot launch、single-authority migration Plan、
+  downgrade fail-closed、VRChat 2019→2022 bounded private preparation A/B/C mapping、provisional phases 与窄
+  UnityMigrationProcess platform proposal；H2/P8/global 状态不变。
 
 ## 下一停止点
 

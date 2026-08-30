@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI B0-D 与 Project / Package Functional Closure P0-P8 technical checkpoint 已通过，sealed functional HEAD 为 d314b155374d31a8d7c0449c62efdea5dd745e72。Visual Gate 2 期间项目所有者重新冻结 Project Unity Version / Open Unity 产品模型，M7-owned visible-action completeness 当前为 REOPENED_BY_PRODUCT_MODEL_CHANGE；global release completeness 仍为 BLOCKED_BY_M11。H2-A 为 PAUSED_FOR_UNITY_MODEL_CLOSURE，24b03916bd6d958c921b4039bd62bec00afe25d4 visual candidate 不是 rejected。projects.management、packages.vpm 与 repositories.management 保持 in_progress，M8/M9 未开始。`
+`M6 已正式完成；M7 Portable UI B0-D 与 Project / Package Functional Closure P0-P8 technical checkpoint 已通过，sealed functional HEAD 为 d314b155374d31a8d7c0449c62efdea5dd745e72。Visual Gate 2 期间项目所有者重新冻结 Project Unity Version / Open Unity 产品模型；Stop A checkpoint a3faa7b362dbcaa1fccbcd4f84bcc55989a4a68b 获 PASS WITH REQUIRED CONTRACT AMENDMENTS，当前只形成 proposal-only amendment candidate，production 未获批准。M7-owned visible-action completeness 为 REOPENED_BY_PRODUCT_MODEL_CHANGE；global release completeness 仍为 BLOCKED_BY_M11。H2-A 为 PAUSED_FOR_UNITY_MODEL_CLOSURE，24b03916bd6d958c921b4039bd62bec00afe25d4 visual candidate 不是 rejected。projects.management、packages.vpm 与 repositories.management 保持 in_progress，M8/M9 未开始。`
 
 ## 已完成
 

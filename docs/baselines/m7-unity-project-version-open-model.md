@@ -73,6 +73,44 @@ v3 没有在成功前重新观察 `ProjectVersion.txt` 并证明它已经变为�
 
 本 Stop A 不扩展 P6、不实现 secondary package contract，也不把 VRChat 2019 -> 2022 误标为可执行。
 
+### Exact mutation inventory
+
+`migrate_unity_2022.rs` 与它实际调用的 `add_package_request`/`apply_pending_changes` 形成以下完整 mutation inventory：
+
+1. source Unity major 必须为 2019；未发现 VPM VRCSDK 只记录 warning，不直接修改项目。
+2. 从 UPM `Packages/manifest.json.dependencies` 删除
+   `com.unity.xr.oculus.standalone` 与 `com.unity.xr.openvr.standalone`。
+3. 在四个固定 package ID 中，仅对当前 locked 的 package 处理：`com.vrchat.base`、`com.vrchat.avatars`、
+   `com.vrchat.worlds`、`com.vrchat.core.vpm-resolver`。
+4. 对上述已安装 package 选择与 VRChat recommended Unity 2022 compatible 的 latest non-prerelease candidate；缺少任一必要
+   candidate 时失败。`InstallToDependencies` 会把需要升级的 package 写入 direct dependencies，但不会把已锁定的更新版本
+   降级到较旧 candidate。
+5. resolver 补齐 transitive dependencies、替换旧 package tree、移除不再使用的 locked transitive packages，并更新
+   `Packages/vpm-manifest.json` 的 `dependencies`/`locked`。
+6. 如果新 package metadata 声明 `legacyPackages`，移除对应已锁定旧 package。
+7. 对与待安装 package ID 冲突的 unlocked package directory 执行移除。
+8. 对新 package metadata 新增、旧安装版本未声明的 `legacyFiles`/`legacyFolders`，先限制在 `Assets`/`Packages` 下并按
+   path/GUID 查找，再在 package transaction 成功后删除。
+9. package extraction/install/manifest write 失败时尝试回滚 package tree；legacy asset removal 位于成功后的 cleanup，v3 不提供
+   M2/M4 级 durable crash journal。
+
+新的 v4 proposal 只复用行为需求，不复制 v3 的 partial-failure 或非 durable cleanup 实现。
+
+### v4 A/B/C feasibility mapping
+
+| v3 requirement | 分类 | v4 proposal |
+| --- | --- | --- |
+| target-compatible latest stable resolve、transitive graph、unused locked removal | A | 复用现有 resolver，以 Plan target canonical major/minor 作为 internal compatibility input |
+| pinned download/cache/SHA-256、package replace/remove、VPM manifest transaction | A | 复用 M4/P6 engine 与 recovery；不增加 public RPC |
+| 删除两个固定 XR UPM dependencies | B | Unity-migration-private bounded preparation profile |
+| 只处理四个固定已安装 SDK/resolver package | B | private profile 生成 existing resolver requests；不建立通用 migration DSL |
+| `legacyPackages`、unlocked package conflict | B | 仅消费本次 pinned candidates 的 bounded metadata，validated quarantine 后随同一 journal推进 |
+| `legacyFiles`/`legacyFolders` path/GUID cleanup | B | private bounded metadata parser + 既有 path/link/identity/quarantine 原语；不暴露 P6 surface |
+| 新 generic package semantic | C | 未发现 |
+
+结论：当前不需要修改 `packages.plan.v2` 或 P6 public contract。若 production 审计证明上述 B 类无法在既有 M4 transaction/
+journal primitives 内安全表达，必须停止并报告 `UNITY_MIGRATION_SECONDARY_CONTRACT_NEEDS_OWNER`。
+
 ## v3 Open Unity
 
 Open Unity 与 migration 的核心区别是：它只需要为当前项目版本选择一个可执行 installation，不改变项目版本。

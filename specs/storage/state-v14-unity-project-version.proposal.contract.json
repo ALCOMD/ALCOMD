@@ -1,5 +1,5 @@
 {
-    "status": "proposal-only-not-approved-for-production",
+    "status": "proposal-only-secondary-preparation-owner-seal-required",
     "from": 13,
     "to": 14,
     "activeSchemaModified": false,
@@ -25,6 +25,29 @@
             "project_editor_preferences.revision",
             "project_editor_preferences.updated_at_ms"
         ],
+        "rowMigration": {
+            "canonicalDefaultArgumentsJson": "[]",
+            "defaultOrEmptyCreatesRow": false,
+            "nonEmptyValidCreatesRow": true,
+            "preserveRevision": true,
+            "preserveUpdatedAtMs": true,
+            "selectionModeDiscarded": true,
+            "installationIdDiscarded": true,
+            "malformedOrOutOfBounds": "rollback-entire-v14-migration"
+        },
+        "missingState": {
+            "arguments": [],
+            "revision": 0,
+            "updatedAtMs": 0
+        },
+        "mutationSemantics": {
+            "sameValueSet": "no-op-no-revision-no-event",
+            "clearMissing": "no-op-no-revision-no-event",
+            "realSetOrClear": "exactly-plus-one-config-revision-and-one-event",
+            "event": "unity.project_launch_config_changed",
+            "eventSafeFields": ["project_id", "config_revision", "change_kind"],
+            "eventForbiddenFields": ["arguments", "path", "installation_id"]
+        },
         "forbiddenColumns": ["selection_mode", "installation_id", "executable_path", "project_path"],
         "argumentBoundsUnchanged": true
     },
@@ -48,6 +71,15 @@
         "table": "project_unity_migration_plans",
         "states": ["unapplied", "applied"],
         "expiryMs": 900000,
+        "expiredApply": {
+            "error": "project_unity_migration_plan_stale",
+            "safeReason": "expired"
+        },
+        "idempotency": {
+            "sameKeyPermanentlyReplaysOriginalPlan": true,
+            "expiredPlanStillReplays": true,
+            "replanRequiresNewKey": true
+        },
         "immutableAuthority": true,
         "onlyTransition": "unapplied-without-operation-to-applied-with-exact-projects-unity-migration-operation",
         "stores": [
@@ -87,6 +119,8 @@
         "phases": [
             "accepted",
             "preflight_complete",
+            "preparation_intent",
+            "preparation_complete",
             "launch_intent",
             "unity_started",
             "unity_exited",
@@ -96,6 +130,13 @@
             "recovery_required"
         ],
         "privateProcessEvidenceAllowed": ["pid", "observed_start_time", "evidence_digest"],
+        "privatePreparationEvidence": {
+            "operationOwnedArtifactAllowed": true,
+            "thirdBusinessTableForbidden": true,
+            "storesBoundedIntentCompleteRollbackOrRecoveryEvidence": true,
+            "retainedAfterLaunchIntentUntilCleanupOrRecoveryDecision": true
+        },
+        "phaseFinality": "provisional-until-secondary-preparation-owner-seal",
         "publicProcessEvidenceForbidden": true,
         "automaticRespawnAfterLaunchIntentForbidden": true,
         "killOnCancelForbidden": true
@@ -130,6 +171,45 @@
         "idempotency_records",
         "revision"
     ],
+    "platformProcessProposal": {
+        "productionWiringCreated": false,
+        "surface": "spawn_unity_editor_migration(validated_executable, authoritative_project_root) -> UnityMigrationProcess",
+        "onlyMethod": "wait(self) -> UnityMigrationExit",
+        "exitValues": ["success", "non_zero"],
+        "forbidden": [
+            "kill",
+            "signal",
+            "shell",
+            "arbitrary_executable",
+            "arbitrary_argv",
+            "public_pid_authority",
+            "generic_process_supervisor"
+        ],
+        "newDependency": false,
+        "newUnsafe": false,
+        "newPlatformApi": false
+    },
+    "secondaryPreparation": {
+        "status": "bounded-private-profile-feasible-owner-seal-required",
+        "publicP6ContractExpansion": false,
+        "genericPackageSemanticRequired": false,
+        "classAReused": [
+            "target-compatible-resolver",
+            "transitive-graph",
+            "unused-locked-removal",
+            "content-addressed-cache-and-integrity",
+            "package-tree-and-vpm-manifest-transaction"
+        ],
+        "classBPrivate": [
+            "remove-two-fixed-xr-upm-dependencies",
+            "prepare-four-fixed-installed-vrchat-package-ids",
+            "bounded-legacy-packages-cleanup",
+            "bounded-unlocked-package-conflict-cleanup",
+            "bounded-legacy-files-and-folders-cleanup"
+        ],
+        "classCGeneric": [],
+        "stopErrorIfClassBNotSafelyReusable": "UNITY_MIGRATION_SECONDARY_CONTRACT_NEEDS_OWNER"
+    },
     "forbiddenAdditions": [
         "third_migration_business_table",
         "generic_workflow_table",
@@ -139,7 +219,8 @@
     ],
     "invariants": [
         "all-v13-authority-preserved-except-explicitly-removed-editor-preferences",
-        "all-bounded-launch-arguments-migrated",
+        "all-non-empty-valid-bounded-launch-arguments-migrated",
+        "empty-launch-arguments-create-no-row",
         "no-installation-preference-persists",
         "plan-is-immutable",
         "apply-never-replans",
