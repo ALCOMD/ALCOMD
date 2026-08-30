@@ -2,7 +2,8 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://alcomd.cqmhv.com/schema/proposals/m7-unity-project-version.json",
     "title": "ALCOMD M7 Unity project version and exact launch proposal",
-    "x-alcomd-publication": "proposal-only-not-active-contract",
+    "x-alcomd-publication": "owner-sealed-contract-not-yet-active",
+    "x-alcomd-owner-review": "PASS WITH IMPLEMENTATION AMENDMENTS",
     "x-alcomd-active-rpc-modified": false,
     "x-alcomd-state-schema-proposed": 14,
     "x-alcomd-filesystem-writer": "builtin:local-owner",
@@ -39,8 +40,7 @@
                 "major_upgrade",
                 "patch_or_minor_downgrade",
                 "major_downgrade",
-                "china_variant_change",
-                "unsupported_or_unsafe"
+                "china_variant_change"
             ]
         },
         "projectUnityMigrationClassification": {
@@ -287,9 +287,9 @@
             "const": {
                 "projects.planUnityMigration": ["projects.read", "unity.read", "projects.unity-migrate"],
                 "projects.applyUnityMigration": ["projects.unity-migrate"],
-                "unity.projectLaunchConfig.get": ["unity.read"],
-                "unity.projectLaunchConfig.set": ["unity.manage"],
-                "unity.projectLaunchConfig.clear": ["unity.manage"],
+                "unity.projectLaunchConfig.get": ["projects.read", "unity.read"],
+                "unity.projectLaunchConfig.set": ["projects.read", "unity.manage"],
+                "unity.projectLaunchConfig.clear": ["projects.read", "unity.manage"],
                 "unity.launchOptions": ["projects.read", "unity.read", "unity.launch"],
                 "unity.launch": ["unity.launch"]
             }
@@ -330,6 +330,8 @@
             "const": {
                 "coreCanonicalizesProjectVersion": true,
                 "corePerformsExactComparison": true,
+                "knownRevisionMismatchExcluded": true,
+                "unknownRevisionMayMatchCanonicalVersionWithoutVerifiedBuildClaim": true,
                 "candidateDto": "existing-UnityInstallation-safe-DTO",
                 "candidateOrder": [
                     "canonical-version-bytes",
@@ -359,11 +361,11 @@
         "classificationSupport": {
             "const": {
                 "patch_or_minor_upgrade": true,
-                "major_upgrade": "true-except-vrchat-2019-to-2022-until-preparation-owner-seal",
+                "major_upgrade": true,
                 "patch_or_minor_downgrade": false,
                 "major_downgrade": false,
                 "china_variant_change": "true-only-same-base-release-with-exact-verified-target",
-                "unsupported_or_unsafe": false,
+                "unclassified_transition": "reject-as-unsupported-without-creating-another-classification-kind",
                 "vrchat_unsupported_unity_version": false
             }
         },
@@ -375,12 +377,15 @@
                 "argv": ["-quit", "-batchmode", "-projectPath", "authoritative-project-root"],
                 "readsLaunchConfig": false,
                 "killOrSignalExposed": false,
+                "ownerApprovedForProduction": true,
                 "productionImplemented": false
             }
         },
         "secondaryPreparation": {
             "const": {
-                "status": "bounded-private-profile-feasible-owner-seal-required",
+                "status": "owner-sealed-bounded-private-profile",
+                "profileId": "vrchat-2019-to-2022-v1",
+                "activation": "recognized-vrchat-project-and-approved-2019-to-2022-transition",
                 "publicP6Expansion": false,
                 "classA": [
                     "resolver",
@@ -395,6 +400,8 @@
                     "legacy-files-and-folders"
                 ],
                 "classC": [],
+                "publicPackageApplyChildWorkflowForbidden": true,
+                "singleMigrationOperation": true,
                 "stopError": "UNITY_MIGRATION_SECONDARY_CONTRACT_NEEDS_OWNER"
             }
         },

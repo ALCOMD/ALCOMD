@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI B0-D 与 Project / Package Functional Closure P0-P8 technical checkpoint 已通过，sealed functional HEAD 为 d314b155374d31a8d7c0449c62efdea5dd745e72。Visual Gate 2 期间项目所有者重新冻结 Project Unity Version / Open Unity 产品模型；Stop A checkpoint a3faa7b362dbcaa1fccbcd4f84bcc55989a4a68b 获 PASS WITH REQUIRED CONTRACT AMENDMENTS，当前只形成 proposal-only amendment candidate，production 未获批准。M7-owned visible-action completeness 为 REOPENED_BY_PRODUCT_MODEL_CHANGE；global release completeness 仍为 BLOCKED_BY_M11。H2-A 为 PAUSED_FOR_UNITY_MODEL_CLOSURE，24b03916bd6d958c921b4039bd62bec00afe25d4 visual candidate 不是 rejected。projects.management、packages.vpm 与 repositories.management 保持 in_progress，M8/M9 未开始。`
+`M6 已正式完成；M7 Portable UI B0-D 与 Project / Package Functional Closure P0-P8 technical checkpoint 已通过，sealed functional HEAD 为 d314b155374d31a8d7c0449c62efdea5dd745e72。Visual Gate 2 期间项目所有者重新冻结 Project Unity Version / Open Unity 产品模型；proposal chain a3faa7b362dbcaa1fccbcd4f84bcc55989a4a68b、baa47682914e58609f30fc1de482c29b12c5fba5 获最终 PASS WITH IMPLEMENTATION AMENDMENTS，当前正在形成 final contract-only remote checkpoint；远端 Hosted CI/CodeQL 全绿后 production 自动获准开始。M7-owned visible-action completeness 为 REOPENED_BY_PRODUCT_MODEL_CHANGE；global release completeness 仍为 BLOCKED_BY_M11。H2-A 为 PAUSED_FOR_UNITY_MODEL_CLOSURE，24b03916bd6d958c921b4039bd62bec00afe25d4 visual candidate 不是 rejected。projects.management、packages.vpm 与 repositories.management 保持 in_progress，M8/M9 未开始。`
 
 ## 已完成
 
@@ -402,8 +402,9 @@ functional candidate `192672…` 保留技术证据但已被拒绝 visual/IA acc
 Project / Package Functional Closure P0-P4 remote checkpoint、P5-A Create/Restore 与 P5-B Favorite/Clear Unity Preference
 均已远端通过。P6-A/P6-B/P6-C 也已通过同一最终候选的三平台 Hosted CI 与 CodeQL；P6 remote checkpoint 为 PASS。
 P7 Delete Project Directory 已通过 sealed HEAD 的三平台 Hosted CI 与 CodeQL，remote checkpoint 为 PASS。
-当前唯一获准工作是 M7 Unity Project Version / Open Unity Model proposal-only Stop A 合同审阅。P8 historical technical
-checkpoint 保留 PASS，但 M7-owned completeness 因新产品模型改为 `REOPENED_BY_PRODUCT_MODEL_CHANGE`。M11 VCC
+当前唯一获准工作是 M7 Unity Project Version / Open Unity Model final contract remote checkpoint；该 checkpoint 全绿后只进入
+已 seal 的 Unity production closure。P8 historical technical checkpoint 保留 PASS，但 M7-owned completeness 因新产品模型改为
+`REOPENED_BY_PRODUCT_MODEL_CHANGE`。M11 VCC
 Import/Migrate、legacy entry 与真实 v3 differential parity 继续是 `BLOCKED_BY_M11`，不计入 M7-owned completeness 分母。
 H2 visual、M8、M9 与 M11 production 不得开始。
 M4 完整

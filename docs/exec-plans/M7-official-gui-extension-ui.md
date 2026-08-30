@@ -604,15 +604,17 @@ Activity、Diagnostics 或 Portable UI authority。
 - 2026-08-31：Visual Gate 2 期间重新冻结 Project Unity Version / Open Unity 产品模型。v3 exact behavior 与当前 v4
   Automatic/Explicit preference model 已完成源码审计；Stop A 提出 canonical exact version、0/1/>1 Open Unity、one-shot
   installation chooser、独立 migration Plan/Apply/Operation、State v14 preference removal/launch-config split 与 crash recovery。
-  VRChat 2019 -> 2022 明确为 `UNITY_MIGRATION_REQUIRES_SECONDARY_PACKAGE_CONTRACT`，未扩展 P6。P8 historical PASS
+  VRChat 2019 -> 2022 当时识别为 secondary preparation 缺口，未扩展 P6。P8 historical PASS
   保留，但当前 completeness 为 `REOPENED_BY_PRODUCT_MODEL_CHANGE`；H2-A 暂停而非拒绝。
-- 2026-08-31：Unity model checkpoint `a3faa7b…` 的 owner review 为 `PASS WITH REQUIRED CONTRACT AMENDMENTS`，production
-  仍未获批准。amendment 只补齐 Launch Config/launchOptions/required one-shot launch、single-authority migration Plan、
-  downgrade fail-closed、VRChat 2019→2022 bounded private preparation A/B/C mapping、provisional phases 与窄
-  UnityMigrationProcess platform proposal；H2/P8/global 状态不变。
+- 2026-08-31：Unity model proposal chain `a3faa7b…`、`baa4768…` 的最终 owner review 为
+  `PASS WITH IMPLEMENTATION AMENDMENTS`；State v14、exact launch、migration Plan/Operation、private preparation 与窄平台进程
+  合同已 seal。contract-only remote checkpoint 全绿后 production 自动获准开始；H2 visual 仍暂停。final amendment 补齐
+  Launch Config/launchOptions/required one-shot launch、single-authority migration Plan、downgrade fail-closed、
+  `vrchat-2019-to-2022-v1` bounded private preparation、final phases 与窄 UnityMigrationProcess platform contract；
+  H2/P8/global 状态不变。
 
 ## 下一停止点
 
-当前停止点是 M7 Unity Project Version / Open Unity Model Stop A 项目所有者合同审阅。P8 historical technical checkpoint
-保留 PASS，但因产品模型变化而重新打开；H2-A 保持 `PAUSED_FOR_UNITY_MODEL_CLOSURE`。不得 production implement、恢复
+当前停止点是 M7 Unity Project Version / Open Unity Model final contract remote checkpoint。P8 historical technical checkpoint
+保留 PASS，但因产品模型变化而重新打开；H2-A 保持 `PAUSED_FOR_UNITY_MODEL_CLOSURE`。远端合同 gate 全绿前不得 production implement、恢复
 Visual Gate 2 或进入 H2-B/H3-H7/M8/M9/M11。

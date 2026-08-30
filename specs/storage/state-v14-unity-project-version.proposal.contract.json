@@ -1,5 +1,5 @@
 {
-    "status": "proposal-only-secondary-preparation-owner-seal-required",
+    "status": "owner-sealed-final-contract-not-yet-active",
     "from": 13,
     "to": 14,
     "activeSchemaModified": false,
@@ -84,17 +84,22 @@
         "onlyTransition": "unapplied-without-operation-to-applied-with-exact-projects-unity-migration-operation",
         "stores": [
             "plan_id",
+            "owner",
             "project_id",
             "project_revision",
             "source_unity_version",
+            "source_revision_metadata_if_known",
             "project_root_identity",
             "project_version_marker_sha256",
             "target_unity_version",
+            "target_revision_metadata_if_known",
             "target_installation_id",
             "target_installation_revision",
             "target_installation_identity",
             "writer_evidence_revision",
             "classification",
+            "preparation_profile",
+            "plan_fingerprint",
             "request_fingerprint",
             "created_at_ms",
             "expires_at_ms",
@@ -136,7 +141,14 @@
             "storesBoundedIntentCompleteRollbackOrRecoveryEvidence": true,
             "retainedAfterLaunchIntentUntilCleanupOrRecoveryDecision": true
         },
-        "phaseFinality": "provisional-until-secondary-preparation-owner-seal",
+        "phaseFinality": "owner-sealed",
+        "preparationNoneStillWritesIntentAndComplete": true,
+        "cancelBoundary": {
+            "preparationKindNotNone": "before-preparation_intent-only",
+            "preparationKindNone": "before-launch_intent-only",
+            "afterBoundary": "forward-only-never-kill-unity"
+        },
+        "exitObservationAfterRestart": "unavailable_after_restart-never-fabricate-success",
         "publicProcessEvidenceForbidden": true,
         "automaticRespawnAfterLaunchIntentForbidden": true,
         "killOnCancelForbidden": true
@@ -190,7 +202,9 @@
         "newPlatformApi": false
     },
     "secondaryPreparation": {
-        "status": "bounded-private-profile-feasible-owner-seal-required",
+        "status": "owner-sealed-bounded-private-profile",
+        "profileId": "vrchat-2019-to-2022-v1",
+        "activation": "recognized-vrchat-project-and-approved-2019-to-2022-transition",
         "publicP6ContractExpansion": false,
         "genericPackageSemanticRequired": false,
         "classAReused": [
@@ -208,6 +222,8 @@
             "bounded-legacy-files-and-folders-cleanup"
         ],
         "classCGeneric": [],
+        "publicPackageApplyChildWorkflowForbidden": true,
+        "singleMigrationOperation": true,
         "stopErrorIfClassBNotSafelyReusable": "UNITY_MIGRATION_SECONDARY_CONTRACT_NEEDS_OWNER"
     },
     "forbiddenAdditions": [

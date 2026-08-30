@@ -1,5 +1,5 @@
 {
-    "status": "proposal-only-not-production-test-authority",
+    "status": "owner-sealed-contract-vectors-not-yet-active-production-tests",
     "version": 1,
     "canonicalVersionVectors": [
         {"input": "2022.3.22f1", "result": "2022.3.22f1"},
@@ -20,8 +20,18 @@
             "leftRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "right": "2022.3.22f1",
             "rightRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            "equal": true,
-            "installationIdentityEqual": false
+            "canonicalVersionEqual": true,
+            "exactLaunchMatch": false,
+            "reason": "known-revision-mismatch"
+        },
+        {
+            "left": "2022.3.22f1",
+            "leftRevision": null,
+            "right": "2022.3.22f1",
+            "rightRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "canonicalVersionEqual": true,
+            "exactLaunchMatch": true,
+            "verifiedIdenticalBuildClaimAllowed": false
         }
     ],
     "launchCardinalityVectors": [
@@ -96,11 +106,11 @@
     "classificationVectors": [
         {"from": "2022.3.21f1", "to": "2022.3.22f1", "classification": "patch_or_minor_upgrade", "supportedForApply": true},
         {"from": "2021.3.45f1", "to": "2022.3.22f1", "classification": "major_upgrade", "supportedForApply": true},
-        {"from": "2019.4.31f1", "to": "2022.3.22f1", "projectKind": "vrchat", "classification": "major_upgrade", "supportedForApply": false},
+        {"from": "2019.4.31f1", "to": "2022.3.22f1", "projectKind": "vrchat", "classification": "major_upgrade", "preparationProfile": "vrchat-2019-to-2022-v1", "supportedForApply": true},
         {"from": "2022.3.22f1", "to": "2022.3.21f1", "classification": "patch_or_minor_downgrade", "supportedForApply": false},
         {"from": "2022.3.22f1", "to": "2019.4.31f1", "classification": "major_downgrade", "supportedForApply": false},
         {"from": "2022.3.22f1", "to": "2022.3.22f1c1", "classification": "china_variant_change", "supportedForApply": true},
-        {"from": "2022.3.22x1", "to": "2022.3.22f1", "classification": "unsupported_or_unsafe", "supportedForApply": false}
+        {"from": "2022.3.22x1", "to": "2022.3.22f1", "result": "project_unity_migration_unsupported", "classificationCreated": false}
     ],
     "writerVectors": [
         {"state": "not_observed", "planAllowed": true, "applyAllowed": true},
@@ -120,11 +130,12 @@
     "processRecoveryVectors": [
         {"checkpoint": "preflight_complete", "crash": true, "automaticRespawnAllowed": true},
         {"checkpoint": "preparation_intent", "crash": true, "automaticRespawnAllowed": false, "result": "rollback-or-recovery-required"},
-        {"checkpoint": "preparation_complete", "cancel": true, "result": "verified-rollback-before-launch-intent"},
+        {"checkpoint": "preparation_complete", "cancel": true, "result": "cancel-rejected-forward-only"},
         {"checkpoint": "launch_intent", "crash": true, "automaticRespawnAllowed": false, "result": "recovery_required"},
         {"checkpoint": "unity_started", "crash": true, "automaticRespawnAllowed": false, "result": "recovery_required"},
-        {"checkpoint": "unity_exited", "exitCode": 0, "reobservedVersion": "unchanged", "result": "recovery_required"},
-        {"checkpoint": "unity_exited", "exitCode": 1, "result": "recovery_required"},
+        {"checkpoint": "unity_exited", "exitCode": 0, "reobservedVersion": "unchanged", "projectState": "safe-unchanged", "result": "failed"},
+        {"checkpoint": "unity_exited", "exitCode": 1, "reobservedVersion": "exact-target", "result": "state-commit-allowed"},
+        {"checkpoint": "unity_started", "daemonRestarted": true, "exitObservation": "unavailable_after_restart", "fabricatedUnityExitedSuccess": false},
         {
             "checkpoint": "project_reobserved",
             "exitCode": 0,
@@ -139,7 +150,8 @@
         {"flow": "copy-then-migrate", "copySucceeded": true, "migrationFailed": true, "copyRetained": true},
         {
             "flow": "vrc-2019-to-2022",
-            "result": "UNITY_MIGRATION_REQUIRES_SECONDARY_PACKAGE_CONTRACT",
+            "result": "owner-sealed-private-preparation",
+            "profileId": "vrchat-2019-to-2022-v1",
             "p6ExpansionAllowed": false,
             "classA": ["resolver", "cache-integrity", "package-tree", "vpm-manifest"],
             "classB": ["two-xr-upm-dependencies", "four-fixed-vrchat-packages", "legacy-packages", "unlocked-conflicts", "legacy-files-folders"],

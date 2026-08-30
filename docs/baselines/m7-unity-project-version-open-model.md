@@ -1,6 +1,7 @@
 # M7 Unity 项目版本与 Open Unity 行为审计
 
-状态：Stop A proposal-only 审计；不修改 active RPC、State Schema、Permission 或 production implementation。
+状态：Stop A contract-only 审计与 owner seal 已完成；本文件不修改 active RPC、State Schema、Permission 或 production
+implementation。最终合同通过远端 checkpoint 后方可进入已批准的 production implementation。
 
 ## 审计基线
 
@@ -66,12 +67,10 @@ v3 没有在成功前重新观察 `ProjectVersion.txt` 并证明它已经变为�
 2. 将 VRChat base/avatars/worlds/VPM resolver 等已安装 package 提升到与推荐 Unity 2022 兼容的版本；
 3. 然后才调用目标 Unity。
 
-当前 M4/P6 package transaction 保证 `Packages/manifest.json` 不被该 slice 修改，resolver 又以项目当前 Unity 版本为兼容性
-输入。因此现有合同不能完整表达上述预处理。结论固定为：
-
-`UNITY_MIGRATION_REQUIRES_SECONDARY_PACKAGE_CONTRACT`
-
-本 Stop A 不扩展 P6、不实现 secondary package contract，也不把 VRChat 2019 -> 2022 误标为可执行。
+当前 M4/P6 public package contract 不直接表达上述预处理。owner seal 已采用 migration-private
+`vrchat-2019-to-2022-v1` preparation profile：复用现有 resolver/cache/integrity/package transaction primitives，并把两个固定
+XR UPM dependency、四个固定 VRChat package ID 与有界 legacy/unlocked cleanup 收敛在唯一
+`projects.unity-migration` Operation 内，不扩展 P6 public contract。
 
 ### Exact mutation inventory
 
@@ -108,8 +107,9 @@ v3 没有在成功前重新观察 `ProjectVersion.txt` 并证明它已经变为�
 | `legacyFiles`/`legacyFolders` path/GUID cleanup | B | private bounded metadata parser + 既有 path/link/identity/quarantine 原语；不暴露 P6 surface |
 | 新 generic package semantic | C | 未发现 |
 
-结论：当前不需要修改 `packages.plan.v2` 或 P6 public contract。若 production 审计证明上述 B 类无法在既有 M4 transaction/
-journal primitives 内安全表达，必须停止并报告 `UNITY_MIGRATION_SECONDARY_CONTRACT_NEEDS_OWNER`。
+结论：当前不需要修改 `packages.plan.v2` 或 P6 public contract。上述 A/B 复用规则已获 owner seal；若 production 审计证明
+B 类无法在既有 M4 transaction/journal primitives 内安全表达，必须停止并报告
+`UNITY_MIGRATION_SECONDARY_CONTRACT_NEEDS_OWNER`。
 
 ## v3 Open Unity
 
@@ -169,4 +169,5 @@ bounded arguments，不传路径、executable 或完整 command line；普通日
 5. one-shot installation ID 只绑定当前 launch/idempotency，不持久保存。
 6. migration success 必须由 target Unity exit 与 project reobservation 共同证明。
 7. Backup/Copy 是 migration 前置 composition，不是一个跨外部进程的 ACID transaction。
-8. VRChat 2019 -> 2022 仍因 secondary package contract 缺失而 blocked。
+8. VRChat 2019 -> 2022 使用 owner-sealed、migration-private `vrchat-2019-to-2022-v1` preparation profile；不得调用
+   public package Apply 形成 child workflow，也不得扩展为通用 migration DSL。
