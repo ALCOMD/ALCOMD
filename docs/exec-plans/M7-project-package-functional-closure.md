@@ -7,8 +7,9 @@ Hosted CI 与 CodeQL。P6-A、P6-B 与 P6-C 已完成获批合同和 production 
 P7 Delete Project Directory 已按项目所有者批准及实施修正完成 active RPC/Permission、State v13、mount-safe filesystem
 primitive、Plan/Apply/Operation/recovery、CLI/GUI 与真实 fault tests，并在 sealed HEAD
 `2ee11066c07a0994f3aebe6a9ce3f84ab2c8acd9` 通过 Hosted CI run `33298022030` 的 Windows、Ubuntu、macOS
-及 CodeQL run `33298021806`。P7 remote checkpoint 为 PASS。P8 正在执行 M7-owned 可见 action 完整性审计；H2 visual WIP
-继续暂停，M8/M9 未开始。
+及 CodeQL run `33298021806`。P7 remote checkpoint 为 PASS。P8 technical checkpoint 已由项目所有者在 sealed functional HEAD
+`d314b155374d31a8d7c0449c62efdea5dd745e72` 验收为 PASS：M7-owned completeness 为 PASS，global release completeness 继续
+`BLOCKED_BY_M11`。当前仅恢复 H2-A Project Workspace / Packages Visual Gate 2；M8/M9 未开始。
 
 ## 目标与边界
 
@@ -615,4 +616,7 @@ user-entry 仍包含 M11 differential parity、M8 MCP 或其他后续里程碑�
 `conditional-disabled`，4 个 M11-owned action 保持 `blocked-future-milestone`，永久 fake 数为 0。GUI 现在从
 `system.status.capabilities` 消费实际协商结果，页面和 action 在 capability 缺失时不调用受保护 method；已有公开 M6 capability
 常量经 typed SDK 复用，未增加 RPC、Permission、State、dependency、unsafe 或平台 API。Rust 完整 locked Workspace tests、
-strict Clippy、34 项 Playwright、npm check/build 与 Tauri release no-bundle 已通过；最终提交仍需取得三平台 Hosted CI 与 CodeQL。
+strict Clippy、34 项 Playwright、npm check/build 与 Tauri release no-bundle 已通过。sealed functional HEAD
+`d314b155374d31a8d7c0449c62efdea5dd745e72` 的 Hosted CI run `33305438539` 在 Windows Server 2025、Ubuntu 22.04 与
+macOS 15 arm64 全部成功；CodeQL run `33305438212` 的四个 required job 全部成功。该结果关闭 P8 technical checkpoint，
+但不关闭 M7，也不解除 M11 的四项全局 release blocker。

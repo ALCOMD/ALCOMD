@@ -11,8 +11,10 @@ Visual Gate 1，检查点为 `7bb325b78a74518881fb65e03de7f79902e72cd3`。项目
 超出两个 permanent-disabled menu item 的真实功能缺口，H2 visual implementation 已暂停；当前只执行
 `M7 Project / Package Functional Closure` P0-P7 已通过远端验收；P7 sealed HEAD
 `2ee11066c07a0994f3aebe6a9ce3f84ab2c8acd9` 的 Hosted CI run `33298022030` 与 CodeQL run `33298021806`
-均通过。P8 M7-owned visible-action completeness 本地候选为 PASS，正在等待最终提交的 Hosted CI 与 CodeQL；global gate
-因 M11 保持 blocked。H2 visual 继续暂停，M8/M9 未开始。M7仍未完成。
+均通过。P8 M7-owned visible-action completeness 已在 sealed functional HEAD
+`d314b155374d31a8d7c0449c62efdea5dd745e72` 通过 Hosted CI run `33305438539` 与 CodeQL run `33305438212`；
+M7-owned completeness 为 PASS，global gate 因 M11 保持 blocked。当前只恢复 H2-A Project Workspace / Packages，进入
+Visual Gate 2；M8/M9 未开始，M7 仍为 `IN_PROGRESS`。
 
 ## 目标与完成定义
 
@@ -598,8 +600,23 @@ Activity、Diagnostics 或 Portable UI authority。
   exact behavior、现有 v4 primitive、Windows/Linux/macOS delete primitive 与 Rust `remove_dir_all` 审计，提出 ProjectId-only
   Plan/Apply、独立 `projects.delete`、sibling quarantine permanent-delete、State v13 durable evidence 与 recovery/path vectors；
   active RPC、State、Permission、production source、dependency、unsafe 与平台 API 均未改变。
+- 2026-08-30：P8 technical checkpoint 已由项目所有者在 sealed functional HEAD
+  `d314b155374d31a8d7c0449c62efdea5dd745e72` 验收为 PASS。Hosted CI run `33305438539` 的 Windows Server 2025、
+  Ubuntu 22.04、macOS 15 arm64 与 CodeQL run `33305438212` 的四个 required job 均成功；唯一 inventory 的 90 个 action
+  仍为 86 个 M7-owned（33 implemented、53 conditional-disabled）和 4 个 M11 blocker，fake 为 0。项目所有者仅批准从该
+  sealed HEAD 恢复 H2-A Project Workspace / Packages Visual Gate 2，旧 H2 WIP 只可作历史视觉证据，不可恢复。
+- 2026-08-30：H2-A 本地 Visual Gate 2 候选已从 sealed functional HEAD 直接完成，未恢复旧 H2 WIP。Project workspace
+  采用紧凑 project context、Unity/Open Unity/Backup 与项目 overflow；Packages 保持主视觉面积，wide toolbar 为单行、原生
+  Tauri 默认宽度最多两行，dense table 只显示 state-relevant primary action，其余动作进入 Material menu。Remove from list 与
+  Delete Project Directory 已分离并保持后者的 Plan/typed confirmation/Operation 合同；bulk、source ambiguity、Plan Review 与
+  Operation progress 均留在 package workflow 上下文。官方 GUI Playwright 37 项、npm check/build、Tauri release no-bundle、
+  xtask、metadata、baseline freeze 与 diff check 均通过；真实 Tauri Projects/workspace/menu 及 deterministic mixed/Plan/
+  Operation/source evidence 已生成。未增加 RPC、State、Permission、Capability、dependency、unsafe 或平台 API。该候选尚未
+  push，也不得视为 Visual Gate 2 或 M7 已通过。
 
 ## 下一停止点
 
-当前停止点是 P8 M7-owned visible-action completeness 最终远端验收。P7 的 proposal schema、State v13、path/recovery
-vectors 与 Unix mount-safe cleanup 已实施并通过远端验收。不得恢复 H2 visual 或进入 M8/M9/M11。
+当前获准工作仅为 H2-A Project Workspace / Packages 的本地 Visual Gate 2 候选。必须保持 Visual Gate 1 的 wide shell 与
+Projects geometry，复用 P0-P8 已通过的 typed client/closed adapter，并在真实 Tauri GUI 中准备可审阅状态。H2-A 完成后只创建
+不推送的本地提交并停止。当前候选已经形成并等待项目所有者 Visual Gate 2；不得进入 H2-B、H3-H7、M8、M9 或 M11，也不得
+自行把 Visual Gate 2 或 M7 标记为通过。

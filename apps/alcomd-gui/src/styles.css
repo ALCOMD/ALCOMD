@@ -466,7 +466,8 @@ md-linear-progress {
 }
 
 .project-workspace-header,
-.package-workspace-toolbar {
+.package-workspace-toolbar,
+.project-workspace-action-cluster {
     display: flex;
     align-items: center;
     gap: 8px;
@@ -517,12 +518,21 @@ md-linear-progress {
     white-space: nowrap;
 }
 
-.project-workspace-actions {
+.project-workspace-action-cluster {
     display: flex;
     align-items: center;
     gap: 4px;
     margin-left: auto;
 }
+
+.project-workspace-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.project-workspace-actions .project-open-unity-action { min-width: 132px; }
+.project-workspace-actions .project-more-actions { margin-left: 2px; }
 
 .project-unity-version {
     max-width: 180px;
@@ -531,6 +541,18 @@ md-linear-progress {
     color: var(--on-surface-variant);
     font-size: 0.84rem;
     font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.project-workspace-feedback {
+    flex: 0 0 auto;
+    overflow: hidden;
+    padding: 6px 12px;
+    border-radius: 10px;
+    color: var(--md-sys-color-on-secondary-container);
+    background: var(--md-sys-color-secondary-container);
+    font-size: 0.78rem;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -548,6 +570,7 @@ md-linear-progress {
 
 .package-workspace-toolbar {
     flex: 0 0 auto;
+    flex-wrap: wrap;
     min-height: 56px;
     padding: 6px 8px;
     background: var(--md-sys-color-surface-container-low);
@@ -561,14 +584,27 @@ md-linear-progress {
 }
 
 .package-refresh-action { flex: 0 0 auto; }
-.package-workspace-search { min-width: 220px; flex: 1 1 360px; }
+.package-resolve-action { margin-left: auto; }
+.package-workspace-search { min-width: 220px; flex: 1 1 260px; }
 .package-workspace-filter { width: 170px; }
-.package-workspace-source-filter { width: 130px; }
+.package-workspace-source-filter { width: 150px; }
 .package-workspace-count { flex: 0 0 auto; color: var(--on-surface-variant); font-size: 0.8rem; }
 .package-refresh-status { margin: 0; padding: 6px 14px; color: var(--on-surface-variant); font-size: 0.78rem; }
 .package-refresh-status--failed { color: var(--error); }
+.package-bulk-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 48px;
+    padding: 4px 12px;
+    border-top: 1px solid color-mix(in srgb, var(--outline) 16%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--outline) 16%, transparent);
+    background: var(--md-sys-color-secondary-container);
+}
+.package-bulk-bar strong { margin-right: auto; font-size: 0.84rem; }
 .package-workspace-table-scroll { min-height: 0; flex: 1; overflow: hidden; }
 .package-workspace-table td { padding: 8px 12px; }
+.package-workspace-table .material-toggle > span { display: none; }
 .package-workspace-table td:first-child { max-width: 300px; }
 .package-workspace-table td:first-child strong,
 .package-workspace-table td small { display: block; }
@@ -580,11 +616,22 @@ md-linear-progress {
 .package-column-installed { width: 140px; }
 .package-column-latest { width: 100px; }
 .package-column-source { width: 180px; }
-.package-column-actions { width: 312px; }
+.package-column-actions { width: 164px; }
 .package-row-actions { position: relative; z-index: 1; display: flex; justify-content: flex-end; gap: 2px; }
 .package-row-actions > * { flex: 0 0 auto; }
+.package-row-actions > md-filled-tonal-button,
+.package-row-actions > md-text-button { min-width: 104px; }
 .package-row-source-menu { max-width: 100%; }
 .package-source-missing { color: var(--error); font-size: 0.8rem; }
+.package-actions-menu-item--danger,
+.project-actions-menu-item--danger {
+    color: var(--error);
+}
+.package-actions-menu-item--danger,
+.project-actions-menu-item--danger-group {
+    margin-top: 4px;
+    border-top: 1px solid color-mix(in srgb, var(--outline) 20%, transparent);
+}
 
 .package-action-form {
     display: grid;
@@ -1289,11 +1336,11 @@ code {
     }
 
     .project-workspace-context,
-    .project-workspace-actions {
+    .project-workspace-action-cluster {
         width: 100%;
     }
 
-    .project-workspace-actions { justify-content: flex-end; }
+    .project-workspace-action-cluster { justify-content: flex-end; }
     .project-workspace-title p { max-width: calc(100vw - 190px); }
 }
 
@@ -1352,6 +1399,7 @@ code {
     .project-workspace-context { align-items: flex-start; flex-direction: column; }
     .project-workspace-title { width: 100%; padding: 4px 0 0; }
     .project-workspace-title p { max-width: 100%; }
+    .project-workspace-action-cluster,
     .project-workspace-actions { justify-content: flex-start; flex-wrap: wrap; }
     .package-workspace-search,
     .package-workspace-filter,

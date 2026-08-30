@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。H2 visual implementation 继续暂停；M7 Project / Package Functional Closure P0-P7 均已远端通过。P7 sealed HEAD 2ee11066c07a0994f3aebe6a9ce3f84ab2c8acd9 的三平台 Hosted CI run 33298022030 与 CodeQL run 33298021806 均通过。P8 M7-owned visible-action completeness 本地候选为 PASS，正在等待同一提交的 Hosted CI；global release completeness 仍为 BLOCKED_BY_M11。projects.management、packages.vpm 与 repositories.management 保持 in_progress，M8/M9 未开始。`
+`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。M7 Project / Package Functional Closure P0-P8 均已通过远端技术验收；P8 sealed functional HEAD d314b155374d31a8d7c0449c62efdea5dd745e72 的 Hosted CI run 33305438539 与 CodeQL run 33305438212 均通过，M7-owned completeness 为 PASS，global release completeness 仍为 BLOCKED_BY_M11。H2-A Project Workspace / Packages 本地 Visual Gate 2 候选已准备并通过本地技术门禁，尚未 push、尚未通过项目所有者视觉验收；M7 仍为 IN_PROGRESS，projects.management、packages.vpm 与 repositories.management 保持 in_progress，M8/M9 未开始。`
 
 ## 已完成
 
@@ -331,7 +331,9 @@
   `implemented`、53 个只按可观察状态或未协商 capability 条件禁用，永久 fake/placeholder 为 0；4 个 M11-owned
   VCC/legacy/differential parity action 继续作为全局 blocker。GUI 已消费 `system.status.capabilities`，缺失 capability 时不下发
   对应受保护 RPC；typed client/closed adapter、Delete/Remove 双动作及键盘确认边界均通过本地 Rust、34 项 Playwright、npm
-  build 与 Tauri release no-bundle 验收。P8 仍等待最终提交自身的三平台 Hosted CI 与 CodeQL，H2 未恢复。
+  build 与 Tauri release no-bundle 验收。sealed functional HEAD `d314b155374d31a8d7c0449c62efdea5dd745e72` 的三平台
+  Hosted CI run `33305438539` 与 CodeQL run `33305438212` 已全部成功，项目所有者已通过 P8 technical checkpoint。
+  该结果只关闭 M7-owned action 完整性，不解除 M11 blocker，也不关闭 M7。
 
 ## 后续里程碑尚未完成
 
@@ -399,9 +401,10 @@ functional candidate `192672…` 保留技术证据但已被拒绝 visual/IA acc
 Project / Package Functional Closure P0-P4 remote checkpoint、P5-A Create/Restore 与 P5-B Favorite/Clear Unity Preference
 均已远端通过。P6-A/P6-B/P6-C 也已通过同一最终候选的三平台 Hosted CI 与 CodeQL；P6 remote checkpoint 为 PASS。
 P7 Delete Project Directory 已通过 sealed HEAD 的三平台 Hosted CI 与 CodeQL，remote checkpoint 为 PASS。
-当前唯一获准工作是完成 P8 M7-owned visible-action completeness 最终远端验收。M11 VCC
-Import/Migrate、legacy entry 与真实 v3 differential parity 必须继续显示为全局 release blocker，但不计入 M7-owned completeness
-分母。H2 visual、M8、M9 与 M11 production 不得开始。
+当前唯一获准工作是从 sealed functional HEAD `d314b155374d31a8d7c0449c62efdea5dd745e72` 完成 H2-A Project Workspace /
+Packages 的本地 Visual Gate 2 候选。M11 VCC Import/Migrate、legacy entry 与真实 v3 differential parity 必须继续显示为全局
+release blocker，但不计入 M7-owned completeness 分母。H2-A 完成后必须停止等待项目所有者人工视觉验收；H2-B、H3-H7、
+M8、M9 与 M11 production 均不得开始。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential

@@ -303,7 +303,9 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
 test("Project workspace Copy completes through Plan Apply and navigates to the copied Project", async ({ page }) => {
     await openHarness(page, "/projects/00000000-0000-4000-8000-000000000101");
     const main = page.getByRole("main");
-    await main.getByRole("button", { name: "Copy project" }).click();
+    const projectActions = main.getByRole("navigation", { name: "Project actions" });
+    await projectActions.getByRole("button", { name: /More actions for/ }).click();
+    await projectActions.getByRole("menuitem", { name: "Copy Project" }).click();
     const dialog = page.getByRole("dialog", { name: "Copy project" });
     await expect(dialog).toBeVisible();
     await page.getByRole("button", { name: "Review copy" }).click();
