@@ -44,7 +44,9 @@ import type {
     ProjectEditorClearResult,
     ProjectResult,
     ProjectsApplyCopyResult,
+    ProjectsApplyDeleteDirectoryResult,
     ProjectsPlanCopyResult,
+    ProjectsPlanDeleteDirectoryResult,
     ProjectUnregisterResult,
     ProjectWriteResult,
     ProjectsListResult,
@@ -98,6 +100,8 @@ export interface GuiRpcClient {
     projectUnregister(projectId: string, expectedRevision: number): Promise<ProjectUnregisterResult>;
     projectPlanCopy(sourceProjectId: string, expectedRevision: number, targetParentPath: string, targetLeaf: string): Promise<ProjectsPlanCopyResult>;
     projectApplyCopy(planId: string, expectedRevision: number): Promise<ProjectsApplyCopyResult>;
+    projectPlanDeleteDirectory(projectId: string, expectedRevision: number): Promise<ProjectsPlanDeleteDirectoryResult>;
+    projectApplyDeleteDirectory(planId: string, expectedRevision: number): Promise<ProjectsApplyDeleteDirectoryResult>;
     repositoriesInspect(source: RepositorySource): Promise<RepositoryResult>;
     repositoriesList(cursor?: RegistryCursor): Promise<RepositoriesListResult>;
     repositoryGet(repositoryId: string): Promise<RepositoryResult>;
@@ -243,6 +247,14 @@ class TauriGuiRpcClient implements GuiRpcClient {
 
     projectApplyCopy(planId: string, expectedRevision: number): Promise<ProjectsApplyCopyResult> {
         return invokeTyped("gui_project_apply_copy", { params: { planId, expectedRevision, idempotencyKey: crypto.randomUUID() } });
+    }
+
+    projectPlanDeleteDirectory(projectId: string, expectedRevision: number): Promise<ProjectsPlanDeleteDirectoryResult> {
+        return invokeTyped("gui_project_plan_delete_directory", { params: { projectId, expectedRevision, idempotencyKey: crypto.randomUUID() } });
+    }
+
+    projectApplyDeleteDirectory(planId: string, expectedRevision: number): Promise<ProjectsApplyDeleteDirectoryResult> {
+        return invokeTyped("gui_project_apply_delete_directory", { params: { planId, expectedRevision, idempotencyKey: crypto.randomUUID() } });
     }
 
     repositoriesInspect(source: RepositorySource): Promise<RepositoryResult> {

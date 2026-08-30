@@ -181,6 +181,21 @@ export interface ProjectCopyPlan {
 export interface ProjectsPlanCopyResult { plan: ProjectCopyPlan; replayed: boolean }
 export interface ProjectsApplyCopyResult { operationId: string; targetProjectId: string; replayed: boolean }
 
+export interface ProjectDeletePlan {
+    planId: string;
+    projectId: string;
+    projectRevision: number;
+    canonicalRootPath: string;
+    normalizedLeaf: string;
+    writerEvidence: { state: string; observedAtMs: number; safeEvidence: string[] };
+    profile: { id: string; version: number; mode: string; protectedRootProfileVersion: number; progress: string };
+    createdAtMs: number;
+    expiresAtMs: number;
+}
+
+export interface ProjectsPlanDeleteDirectoryResult { plan: ProjectDeletePlan; replayed: boolean }
+export interface ProjectsApplyDeleteDirectoryResult { operationId: string; projectId: string; replayed: boolean }
+
 export interface RegistryCursor {
     registeredAtMs: number;
     id: string;

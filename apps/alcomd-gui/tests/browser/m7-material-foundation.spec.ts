@@ -231,8 +231,18 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     await removeProject.click();
     const removeDialog = page.getByRole("dialog", { name: "Remove this project?" });
     await expect(removeDialog).toBeVisible();
+    await page.getByRole("button", { name: "Delete Project Directory…" }).click();
+    const deleteDialog = page.getByRole("dialog", { name: "Permanently delete project directory?" });
+    await expect(page.getByText(/does not use the Recycle Bin or Trash/)).toBeVisible();
+    await expect(page.getByText(/No automatic backup will be created/)).toBeVisible();
+    await expect(page.getByText("C:\\Projects\\Sample", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Unity writer observation:.*not_observed/)).toBeVisible();
+    const permanentDelete = page.getByRole("button", { name: "Permanently delete" });
+    await expect(permanentDelete).toBeDisabled();
+    await page.getByRole("textbox", { name: "Confirm project directory name" }).fill("Sample");
+    await expect(permanentDelete).toBeEnabled();
     await page.keyboard.press("Escape");
-    await expect(removeDialog).not.toBeVisible();
+    await expect(deleteDialog).not.toBeVisible();
     const observedButton = observedHeader.getByRole("button", { name: "Last observed" });
     const observedControl = observedHeader.locator("md-text-button");
     const observedLabel = observedControl.locator(".material-data-table-sort-label");
@@ -294,6 +304,27 @@ test("Project workspace Copy completes through Plan Apply and navigates to the c
     await page.getByRole("button", { name: "Review copy" }).click();
     await page.getByRole("button", { name: "Start copy" }).click();
     await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000061$/);
+});
+
+test("Project directory deletion requires exact leaf confirmation and follows the durable Operation", async ({ page }) => {
+    await openHarness(page, "/");
+    const main = page.getByRole("main");
+    const actions = main.locator(".project-row-actions");
+    await actions.getByRole("button", { name: "More actions for <private-project>" }).click();
+    await actions.getByRole("menuitem", { name: "Remove Project" }).click();
+    const removeDialog = page.getByRole("dialog", { name: "Remove this project?" });
+    await page.getByRole("button", { name: "Delete Project Directory…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Permanently delete project directory?" });
+    await expect(page.getByText(/does not use the Recycle Bin or Trash/)).toBeVisible();
+    await expect(page.getByText(/No automatic backup will be created/)).toBeVisible();
+    const apply = page.getByRole("button", { name: "Permanently delete" });
+    await expect(apply).toBeDisabled();
+    await page.getByRole("textbox", { name: "Confirm project directory name" }).fill("Sample");
+    await expect(apply).toBeEnabled();
+    await apply.click();
+    await expect(page.locator('[role="status"]').filter({ hasText: "Project directory permanently deleted." })).toBeVisible({ timeout: 3_000 });
+    await expect(dialog).not.toBeVisible();
+    await expect(main.getByText("No registered projects")).toBeVisible();
 });
 
 async function openHarness(page: Page, route: string) {

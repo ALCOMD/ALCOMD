@@ -46,6 +46,8 @@ class DeterministicGuiClient implements GuiRpcClient {
     };
     private operationReads = 0;
     private pendingProject?: ReturnType<typeof project>;
+    private pendingDeleteProjectId?: string;
+    private deletedProjectIds = new Set<string>();
     private createdProjects: ReturnType<typeof project>[] = [];
     private favoriteConflictPending = true;
     private selectionCleared = false;
@@ -84,6 +86,10 @@ class DeterministicGuiClient implements GuiRpcClient {
         const state = this.mode === "failed" ? "failed" : this.mode === "cancelled" ? "cancelled" : terminal ? "succeeded" : "running";
         if (state === "succeeded" && this.pendingProject !== undefined && !this.createdProjects.some((candidate) => candidate.projectId === this.pendingProject?.projectId)) {
             this.createdProjects.push(this.pendingProject);
+        }
+        if (state === "succeeded" && this.pendingDeleteProjectId !== undefined) {
+            this.deletedProjectIds.add(this.pendingDeleteProjectId);
+            this.pendingDeleteProjectId = undefined;
         }
         return this.value({
             ...runningOperation(),
@@ -132,7 +138,8 @@ class DeterministicGuiClient implements GuiRpcClient {
                 ? this.value({ projects: [project(PROJECT_ID, "Alpha")], nextCursor: { registeredAtMs: 1_690_000_000_000, id: PROJECT_ID } })
                 : this.value({ projects: [project("00000000-0000-4000-8000-000000000110", "Zulu Favorite", true)] });
         }
-        return this.value({ projects: this.mode === "empty" ? [] : [project(), ...this.createdProjects] });
+        const projects = [project(), ...this.createdProjects].filter((candidate) => candidate.projectId === undefined || !this.deletedProjectIds.has(candidate.projectId));
+        return this.value({ projects: this.mode === "empty" ? [] : projects });
     }
     projectGet(projectId: string): ReturnType<GuiRpcClient["projectGet"]> { return this.value({ project: this.createdProjects.find((candidate) => candidate.projectId === projectId) ?? project(projectId) }); }
     openProjectDirectory(): ReturnType<GuiRpcClient["openProjectDirectory"]> { return this.value(undefined); }
@@ -172,6 +179,26 @@ class DeterministicGuiClient implements GuiRpcClient {
         });
     }
     projectApplyCopy(): ReturnType<GuiRpcClient["projectApplyCopy"]> { return this.value({ operationId: "00000000-0000-4000-8000-000000000062", targetProjectId: "00000000-0000-4000-8000-000000000061", replayed: false }); }
+    projectPlanDeleteDirectory(_projectId: string, expectedRevision: number): ReturnType<GuiRpcClient["projectPlanDeleteDirectory"]> {
+        return this.value({
+            plan: {
+                planId: "00000000-0000-4000-8000-000000000063",
+                projectId: PROJECT_ID,
+                projectRevision: expectedRevision,
+                canonicalRootPath: "C:\\Projects\\Sample",
+                normalizedLeaf: "Sample",
+                writerEvidence: { state: "not_observed", observedAtMs: 1, safeEvidence: [] },
+                profile: { id: "alcomd-project-delete", version: 1, mode: "sibling-quarantine-permanent-v1", protectedRootProfileVersion: 1, progress: "phase-only" },
+                createdAtMs: 1,
+                expiresAtMs: 900001
+            },
+            replayed: false
+        });
+    }
+    projectApplyDeleteDirectory(): ReturnType<GuiRpcClient["projectApplyDeleteDirectory"]> {
+        this.pendingDeleteProjectId = PROJECT_ID;
+        return this.value({ operationId: "00000000-0000-4000-8000-000000000064", projectId: PROJECT_ID, replayed: false });
+    }
 
     repositoriesInspect(): ReturnType<GuiRpcClient["repositoriesInspect"]> { return this.value({ repository: repository() }); }
     repositoriesList(cursor?: { registeredAtMs: number; id: string }): ReturnType<GuiRpcClient["repositoriesList"]> {

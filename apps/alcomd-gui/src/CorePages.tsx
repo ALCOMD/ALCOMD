@@ -31,6 +31,7 @@ import type {
     PackageCursor,
     PackageSourceSelector,
     ProjectCopyPlan,
+    ProjectDeletePlan,
     ProjectEditorSelectionState,
     ProjectSnapshot,
     RegistryCursor,
@@ -431,9 +432,36 @@ function ProjectRowActions({ client, navigate, onChanged, onFeedback, onProjectC
     const [menuOpen, setMenuOpen] = useState(false);
     const [unregistering, setUnregistering] = useState(false);
     const [confirmUnregister, setConfirmUnregister] = useState(false);
+    const [deletePlan, setDeletePlan] = useState<ProjectDeletePlan>();
+    const [deleteConfirmation, setDeleteConfirmation] = useState("");
+    const [deleting, setDeleting] = useState(false);
+    const [deleteOperation, setDeleteOperation] = useState<Operation>();
     const menuAnchorRef = useRef<HTMLElement>(null);
     const projectId = project.projectId;
     const revision = project.revision;
+
+    useEffect(() => {
+        if (deleteOperation === undefined || !["queued", "running", "recovering", "cancelling", "interrupted"].includes(deleteOperation.state)) return;
+        let active = true;
+        const timer = window.setTimeout(() => {
+            void client.operationGet(deleteOperation.operationId).then((next) => {
+                if (!active) return;
+                setDeleteOperation(next);
+                if (next.state === "succeeded") {
+                    setConfirmUnregister(false);
+                    setDeletePlan(undefined);
+                    onFeedback("Project directory permanently deleted.");
+                    onChanged();
+                } else if (["failed", "cancelled"].includes(next.state)) {
+                    setDeleting(false);
+                    onFeedback(`Unable to delete project directory: ${next.errorCode ?? next.state}`);
+                }
+            }).catch((caught: unknown) => {
+                if (active) onFeedback(`Unable to follow project deletion: ${safeError(caught).code}`);
+            });
+        }, 250);
+        return () => { active = false; window.clearTimeout(timer); };
+    }, [client, deleteOperation, onChanged, onFeedback]);
     if (projectId === undefined) return null;
 
     const openUnity = async () => {
@@ -493,6 +521,34 @@ function ProjectRowActions({ client, navigate, onChanged, onFeedback, onProjectC
         }
     };
 
+    const planDelete = async () => {
+        if (revision === undefined) return;
+        setDeleting(true);
+        try {
+            const result = await client.projectPlanDeleteDirectory(projectId, revision);
+            setDeletePlan(result.plan);
+            setDeleteConfirmation("");
+        } catch (caught: unknown) {
+            onFeedback(`Unable to plan project deletion: ${safeError(caught).code}`);
+        } finally {
+            setDeleting(false);
+        }
+    };
+
+    const applyDelete = async () => {
+        if (revision === undefined || deletePlan === undefined || deleteConfirmation !== deletePlan.normalizedLeaf) return;
+        setDeleting(true);
+        try {
+            const result = await client.projectApplyDeleteDirectory(deletePlan.planId, revision);
+            const operation = await client.operationGet(result.operationId);
+            setDeleteOperation(operation);
+            onFeedback("Project directory deletion started.");
+        } catch (caught: unknown) {
+            setDeleting(false);
+            onFeedback(`Unable to delete project directory: ${safeError(caught).code}`);
+        }
+    };
+
     return (
         <>
             <div className="project-row-actions">
@@ -512,14 +568,31 @@ function ProjectRowActions({ client, navigate, onChanged, onFeedback, onProjectC
                     <MenuItem className="project-actions-menu-item project-actions-menu-item--danger" disabled={revision === undefined} label="Remove Project" onClick={() => setConfirmUnregister(true)} />
                 </Menu>
             </div>
-            <Dialog onClose={() => setConfirmUnregister(false)} open={confirmUnregister} title="Remove this project?">
-                <p>This removes the project from ALCOMD. It does not delete the Unity project directory.</p>
-                <div className="dialog-actions">
-                    <Button disabled={unregistering} onClick={() => setConfirmUnregister(false)} type="button" variant="text">Cancel</Button>
-                    <Button className="material-button--danger" disabled={unregistering || revision === undefined} onClick={() => void unregister()} type="button" variant="text">
-                        <StateSizedLabel current={unregistering ? "Removing…" : "Remove"} labels={["Remove", "Removing…"]} />
-                    </Button>
-                </div>
+            <Dialog onClose={() => { if (!deleting) { setConfirmUnregister(false); setDeletePlan(undefined); } }} open={confirmUnregister} title={deletePlan === undefined ? "Remove this project?" : "Permanently delete project directory?"}>
+                {deletePlan === undefined ? <>
+                    <p>Choose whether to remove only the ALCOMD registration or permanently delete the local Unity project directory.</p>
+                    <p>Removing from the list does not delete files.</p>
+                    <div className="dialog-actions dialog-actions--split">
+                        <Button disabled={unregistering || deleting} onClick={() => setConfirmUnregister(false)} type="button" variant="text">Cancel</Button>
+                        <Button disabled={unregistering || deleting || revision === undefined} onClick={() => void unregister()} type="button" variant="tonal">
+                            <StateSizedLabel current={unregistering ? "Removing…" : "Remove from list"} labels={["Remove from list", "Removing…"]} />
+                        </Button>
+                        <Button className="material-button--danger" disabled={unregistering || deleting || revision === undefined} onClick={() => void planDelete()} type="button" variant="text">Delete Project Directory…</Button>
+                    </div>
+                </> : <>
+                    <p><strong>This permanently deletes local files and does not use the Recycle Bin or Trash.</strong></p>
+                    <p>No automatic backup will be created. This is different from removing the project from the list.</p>
+                    <p className="project-delete-path"><code>{deletePlan.canonicalRootPath}</code></p>
+                    <p>Unity writer observation: <strong>{deletePlan.writerEvidence.state}</strong>.</p>
+                    <TextField aria-label="Confirm project directory name" label={`Type ${deletePlan.normalizedLeaf} to confirm`} onInput={setDeleteConfirmation} required value={deleteConfirmation} />
+                    {deleteOperation === undefined ? null : <p>Operation: <code>{deleteOperation.operationId}</code> · {deleteOperation.state}</p>}
+                    <div className="dialog-actions">
+                        <Button disabled={deleting} onClick={() => { setDeletePlan(undefined); setDeleteConfirmation(""); }} type="button" variant="text">Back</Button>
+                        <Button className="material-button--danger" disabled={deleting || deleteConfirmation !== deletePlan.normalizedLeaf} onClick={() => void applyDelete()} type="button" variant="text">
+                            <StateSizedLabel current={deleting ? "Deleting…" : "Permanently delete"} labels={["Permanently delete", "Deleting…"]} />
+                        </Button>
+                    </div>
+                </>}
             </Dialog>
             <CopyProjectDialog
                 client={client}

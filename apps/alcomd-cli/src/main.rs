@@ -196,6 +196,10 @@ enum ProjectCommand {
         #[arg(long)]
         idempotency_key: String,
     },
+    DeleteDirectory {
+        #[arg(long)]
+        project_id: String,
+    },
     Inspect {
         path: PathBuf,
         #[arg(long)]
@@ -693,6 +697,47 @@ async fn execute(
                             plan_id: plan.plan_id,
                             idempotency_key,
                         })
+                        .await?;
+                    if options.no_wait {
+                        serde_json::to_value(accepted)
+                    } else {
+                        serde_json::to_value(
+                            wait_for_operation(
+                                &mut client,
+                                accepted.operation_id,
+                                options.output_mode,
+                            )
+                            .await?,
+                        )
+                    }
+                }
+            }
+            ProjectCommand::DeleteDirectory { project_id } => {
+                let project = client.project_get(project_id.clone()).await?.project;
+                let expected_revision = project
+                    .revision
+                    .ok_or(alcomd_client::ClientError::InvalidResponse)?;
+                let plan = client
+                    .project_plan_delete_directory(
+                        alcomd_protocol::ProjectsPlanDeleteDirectoryParams {
+                            project_id,
+                            expected_revision,
+                            idempotency_key: generated_idempotency_key("project-delete-plan"),
+                        },
+                    )
+                    .await?;
+                if options.dry_run {
+                    serde_json::to_value(plan)
+                } else {
+                    confirm_project_directory_delete(&plan.plan, options)?;
+                    let accepted = client
+                        .project_apply_delete_directory(
+                            alcomd_protocol::ProjectsApplyDeleteDirectoryParams {
+                                plan_id: plan.plan.plan_id,
+                                expected_revision,
+                                idempotency_key: generated_idempotency_key("project-delete-apply"),
+                            },
+                        )
                         .await?;
                     if options.no_wait {
                         serde_json::to_value(accepted)
@@ -1309,6 +1354,7 @@ impl Command {
             Self::Project { command } => match command {
                 ProjectCommand::Copy { .. } => "project copy",
                 ProjectCommand::Create { .. } => "project create",
+                ProjectCommand::DeleteDirectory { .. } => "project delete-directory",
                 ProjectCommand::Inspect { .. } => "project inspect",
                 ProjectCommand::List { .. } => "project list",
                 ProjectCommand::Get { .. } => "project get",
@@ -1466,6 +1512,31 @@ fn confirm_high_impact(options: ExecutionOptions) -> Result<(), CliError> {
         return Err(CliError::ConfirmationRequired);
     }
     Ok(())
+}
+
+fn confirm_project_directory_delete(
+    plan: &alcomd_protocol::ProjectDeletePlan,
+    options: ExecutionOptions,
+) -> Result<(), CliError> {
+    if !options.yes && options.output_mode == OutputMode::Human {
+        eprintln!("Delete Project Directory");
+        eprintln!("Project: {}", plan.normalized_leaf);
+        eprintln!("Location: {}", plan.canonical_root_path);
+        eprintln!("Writer observation: {}", plan.writer_evidence.state);
+        eprintln!("Files will be permanently deleted.");
+        eprintln!("They will not be moved to Trash or Recycle Bin.");
+        eprintln!("No automatic Backup will be created.");
+        eprintln!("Use Remove from list to keep the project directory.");
+    }
+    confirm_high_impact(options)
+}
+
+fn generated_idempotency_key(prefix: &str) -> String {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|value| value.as_nanos())
+        .unwrap_or_default();
+    format!("{prefix}-{}-{timestamp}", std::process::id())
 }
 
 async fn wait_for_operation(
@@ -1746,5 +1817,39 @@ mod tests {
         );
         assert!(Arguments::try_parse_from(["alcomd-cli", "unity", "list"]).is_ok());
         assert!(Arguments::try_parse_from(["alcomd-cli", "completion", "powershell"]).is_ok());
+    }
+
+    #[test]
+    fn project_delete_directory_accepts_only_project_identity_and_global_execution_controls() {
+        let arguments = Arguments::try_parse_from([
+            "alcomd-cli",
+            "project",
+            "delete-directory",
+            "--project-id",
+            "00000000-0000-4000-8000-000000000001",
+            "--dry-run",
+            "--no-wait",
+        ])
+        .expect("Project Delete CLI");
+        assert!(matches!(
+            arguments.command,
+            Command::Project {
+                command: ProjectCommand::DeleteDirectory { .. }
+            }
+        ));
+        assert!(arguments.dry_run);
+        assert!(arguments.no_wait);
+        assert!(
+            Arguments::try_parse_from([
+                "alcomd-cli",
+                "project",
+                "delete-directory",
+                "--project-id",
+                "00000000-0000-4000-8000-000000000001",
+                "--path",
+                "C:/arbitrary",
+            ])
+            .is_err()
+        );
     }
 }

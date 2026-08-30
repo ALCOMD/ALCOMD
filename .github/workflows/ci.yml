@@ -109,6 +109,8 @@ jobs:
         run: ./scripts/check.sh
       - name: Test repository contracts
         run: ./scripts/test.sh
+      - name: Test Project Delete same-filesystem bind-mount boundary
+        run: ./scripts/run-m7-project-delete-mount-fixture.sh
       - name: Build release executables
         run: cargo build --locked --workspace --bins --release
       - name: Build Tauri GUI without a bundle
@@ -160,6 +162,8 @@ jobs:
         run: ./scripts/check.sh
       - name: Test repository contracts
         run: ./scripts/test.sh
+      - name: Test Project Delete nested filesystem mount boundary
+        run: ./scripts/run-m7-project-delete-mount-fixture.sh
       - name: Build release executables
         run: cargo build --locked --workspace --bins --release
       - name: Build Tauri GUI without a bundle
