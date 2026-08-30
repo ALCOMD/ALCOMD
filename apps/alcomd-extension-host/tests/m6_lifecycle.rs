@@ -1038,13 +1038,11 @@ async fn wait_for_runtime_state(
 }
 
 async fn connect_with_retry(config: ClientConfig) -> AlcomdClient {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
     loop {
         match AlcomdClient::connect(config.clone()).await {
             Ok(client) => return client,
-            Err(_) if tokio::time::Instant::now() < deadline => {
-                tokio::time::sleep(Duration::from_millis(25)).await;
-            }
+            Err(ClientError::StartTimeout) if tokio::time::Instant::now() < deadline => {}
             Err(error) => panic!("daemon not ready: {error}"),
         }
     }

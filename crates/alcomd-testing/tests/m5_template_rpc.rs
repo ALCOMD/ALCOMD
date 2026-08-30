@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use alcomd_application::StateStore;
-use alcomd_client::{AlcomdClient, ClientConfig};
+use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use alcomd_domain::{OperationId, PrincipalId};
 use alcomd_platform::{DataConfig, IpcConfig};
 use alcomd_protocol::{
@@ -361,13 +361,11 @@ async fn wait_for_operation(
 }
 
 async fn connect_with_retry(config: ClientConfig) -> AlcomdClient {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
     loop {
         match AlcomdClient::connect(config.clone()).await {
             Ok(client) => return client,
-            Err(_) if tokio::time::Instant::now() < deadline => {
-                tokio::time::sleep(Duration::from_millis(25)).await;
-            }
+            Err(ClientError::StartTimeout) if tokio::time::Instant::now() < deadline => {}
             Err(error) => panic!("daemon did not become ready: {error}"),
         }
     }

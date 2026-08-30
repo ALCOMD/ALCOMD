@@ -165,13 +165,14 @@ fn isolated_ipc(_runtime: PathBuf) -> (IpcConfig, ClientConfig) {
 }
 
 async fn connect_with_retry(config: ClientConfig) -> AlcomdClient {
-    for _ in 0..100 {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+    loop {
         match AlcomdClient::connect(config.clone()).await {
             Ok(client) => return client,
-            Err(_) => tokio::time::sleep(Duration::from_millis(10)).await,
+            Err(ClientError::StartTimeout) if tokio::time::Instant::now() < deadline => {}
+            Err(error) => panic!("daemon did not bind: {error}"),
         }
     }
-    panic!("daemon did not bind")
 }
 
 async fn wait_for_shutdown(shutdown: Arc<AtomicBool>) {
