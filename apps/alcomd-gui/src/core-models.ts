@@ -358,30 +358,15 @@ export interface UnityInstallationsListResult {
 export interface UnityInstallationResult { installation: UnityInstallation; replayed: boolean }
 export interface UnityInstallationRemoveResult { installationId: string; removed: boolean; replayed: boolean }
 
-export interface ProjectEditorPreference {
+export interface ProjectUnityLaunchConfig {
     projectId: string;
-    installationId: string;
     arguments: string[];
     revision: number;
     updatedAtMs: number;
 }
 
-export interface ProjectEditorResult { preference: ProjectEditorPreference; replayed: boolean }
-
-export type ProjectEditorSelection =
-    | { mode: "automatic" }
-    | { mode: "explicit"; installationId: string };
-
-export interface ProjectEditorSelectionState {
-    projectId: string;
-    selection: ProjectEditorSelection;
-    arguments: string[];
-    revision: number;
-    updatedAtMs: number;
-}
-
-export interface ProjectEditorSelectionResult { preference: ProjectEditorSelectionState }
-export interface ProjectEditorClearResult { preference: ProjectEditorSelectionState; replayed: boolean }
+export interface ProjectUnityLaunchConfigResult { config: ProjectUnityLaunchConfig }
+export interface ProjectUnityLaunchConfigMutationResult { config: ProjectUnityLaunchConfig; changed: boolean; replayed: boolean }
 
 export interface UnityWriterState {
     projectId: string;
@@ -400,6 +385,39 @@ export interface UnityLaunchRecord {
 }
 
 export interface UnityLaunchResult { launch: UnityLaunchRecord; replayed: boolean }
+
+export interface UnityLaunchOptionsResult {
+    projectId: string;
+    projectRevision: number;
+    projectUnityVersion: string;
+    exactMatchingInstallations: UnityInstallation[];
+}
+
+export type ProjectUnityMigrationClassificationKind =
+    | "patch_or_minor_upgrade"
+    | "major_upgrade"
+    | "patch_or_minor_downgrade"
+    | "major_downgrade"
+    | "china_variant_change";
+
+export interface ProjectUnityMigrationPlan {
+    planId: string;
+    projectId: string;
+    sourceUnityVersion: string;
+    targetUnityVersion: string;
+    targetInstallationId: string;
+    classification: {
+        kind: ProjectUnityMigrationClassificationKind;
+        supportedForApply: boolean;
+    };
+    expiresAtMs: number;
+}
+
+export type ProjectsPlanUnityMigrationResult =
+    | { kind: "no_change"; currentVersion: string }
+    | { kind: "planned"; plan: ProjectUnityMigrationPlan; replayed: boolean };
+
+export interface ProjectsApplyUnityMigrationResult { operationId: string; replayed: boolean }
 
 export interface TemplatePlan {
     planId: string;

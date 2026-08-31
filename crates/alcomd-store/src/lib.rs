@@ -19,23 +19,25 @@ use alcomd_application::{
     ExtensionUninstallPlanDraft, FilesystemJournalEntry, IdempotencyKey, M3Error, M3RegistryStore,
     M4Error, M4Store, M5BackupError, M5BackupStore, M5TemplateError, M5TemplateStore, M5UnityError,
     M5UnityStore, M6Error, M6Store, M7CopyError, M7CopyStore, M7DeleteError, M7DeleteStore,
-    OperationCursor, OperationId, OperationPage, OperationRecord, PackageApplyCompletion,
-    PackageCursor, PackagePage, PackagePlanDraft, PackagePlanRecord, PlanId, PrincipalId,
-    ProjectCopyApplyOutcome, ProjectCopyInventoryEvidence, ProjectCopyOperationRecord,
-    ProjectCopyPhase, ProjectCopyPlanDraft, ProjectCopyPlanOutcome, ProjectCopyPlanRecord,
-    ProjectDeleteApplyOutcome, ProjectDeleteFilesystemEvidence, ProjectDeleteOperationRecord,
-    ProjectDeletePhase, ProjectDeletePlanDraft, ProjectDeletePlanOutcome, ProjectDeletePlanRecord,
-    ProjectEditorPreference, ProjectEditorSelectionState, ProjectId, ProjectObservation,
-    ProjectPage, ProjectRecord, PublishedProjectCopy, PublishedTemplate, RegistryCursor,
-    RepositoryId, RepositoryObservation, RepositoryPage, RepositoryRecord, RepositoryValidators,
-    ResolverCatalog, RestoredProject, Revision, StateCheckResult, StateStore, StoreError,
-    StoredBackupRecord, StoredTemplateRecord, SyncWrite, TemplateApplyOutcome, TemplateCursor,
-    TemplateId, TemplatePlanDraft, TemplatePlanRecord, UnityInstallationCursor,
+    M7UnityMigrationError, M7UnityMigrationStore, OperationCursor, OperationId, OperationPage,
+    OperationRecord, PackageApplyCompletion, PackageCursor, PackagePage, PackagePlanDraft,
+    PackagePlanRecord, PlanId, PrincipalId, ProjectCopyApplyOutcome, ProjectCopyInventoryEvidence,
+    ProjectCopyOperationRecord, ProjectCopyPhase, ProjectCopyPlanDraft, ProjectCopyPlanOutcome,
+    ProjectCopyPlanRecord, ProjectDeleteApplyOutcome, ProjectDeleteFilesystemEvidence,
+    ProjectDeleteOperationRecord, ProjectDeletePhase, ProjectDeletePlanDraft,
+    ProjectDeletePlanOutcome, ProjectDeletePlanRecord, ProjectId, ProjectObservation, ProjectPage,
+    ProjectRecord, ProjectUnityLaunchConfig, PublishedProjectCopy, PublishedTemplate,
+    RegistryCursor, RepositoryId, RepositoryObservation, RepositoryPage, RepositoryRecord,
+    RepositoryValidators, ResolverCatalog, RestoredProject, Revision, StateCheckResult, StateStore,
+    StoreError, StoredBackupRecord, StoredTemplateRecord, SyncWrite, TemplateApplyOutcome,
+    TemplateCursor, TemplateId, TemplatePlanDraft, TemplatePlanRecord, UnityInstallationCursor,
     UnityInstallationId, UnityInstallationObservation, UnityInstallationPage,
-    UnityInstallationRecord, UnityLaunchId, UnityLaunchRecord, UnityLaunchState, UnregisterResult,
-    UserPackageCursor, UserPackageError, UserPackageErrorCode, UserPackageId, UserPackagePage,
-    UserPackageRecord, UserPackageRemoveResult, UserPackageSnapshot, UserPackageStore,
-    UserPackageWriteResult,
+    UnityInstallationRecord, UnityLaunchId, UnityLaunchRecord, UnityLaunchState,
+    UnityMigrationApplyOutcome, UnityMigrationEvidence, UnityMigrationOperationRecord,
+    UnityMigrationPhase, UnityMigrationPlanDraft, UnityMigrationPlanOutcome,
+    UnityMigrationPlanRecord, UnregisterResult, UserPackageCursor, UserPackageError,
+    UserPackageErrorCode, UserPackageId, UserPackagePage, UserPackageRecord,
+    UserPackageRemoveResult, UserPackageSnapshot, UserPackageStore, UserPackageWriteResult,
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -49,6 +51,7 @@ mod m6;
 mod m7_copy;
 mod m7_delete;
 mod m7_official;
+mod m7_unity_migration;
 mod m7_user_packages;
 mod sqlite;
 
@@ -56,7 +59,7 @@ mod sqlite;
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 13;
+pub const CURRENT_DATA_SCHEMA: u32 = 14;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]
@@ -1119,51 +1122,31 @@ impl M5UnityStore for StateStoreHandle {
         .await
     }
 
-    async fn get_project_editor(
+    async fn get_project_launch_config(
         &self,
         owner: PrincipalId,
         project_id: ProjectId,
-    ) -> Result<ProjectEditorPreference, M5UnityError> {
+    ) -> Result<ProjectUnityLaunchConfig, M5UnityError> {
         self.request_worker(
-            move |connection| m5::get_project_editor(connection, &owner, project_id),
+            move |connection| m5::get_project_launch_config(connection, &owner, project_id),
             m5::unavailable,
         )
         .await
     }
 
-    async fn get_project_editor_selection(
+    async fn set_project_launch_config(
         &self,
         owner: PrincipalId,
         project_id: ProjectId,
-    ) -> Result<ProjectEditorSelectionState, M5UnityError> {
-        self.request_worker(
-            move |connection| m5::get_project_editor_selection(connection, &owner, project_id),
-            m5::unavailable,
-        )
-        .await
-    }
-
-    async fn set_project_editor(
-        &self,
-        owner: PrincipalId,
-        project_id: ProjectId,
-        installation_id: UnityInstallationId,
         arguments: Vec<String>,
         expected: Option<Revision>,
         key: IdempotencyKey,
         now_ms: u64,
-    ) -> Result<(ProjectEditorPreference, bool), M5UnityError> {
+    ) -> Result<(ProjectUnityLaunchConfig, bool, bool), M5UnityError> {
         self.request_worker(
             move |connection| {
-                m5::set_project_editor(
-                    connection,
-                    &owner,
-                    project_id,
-                    installation_id,
-                    arguments,
-                    expected,
-                    &key,
-                    now_ms,
+                m5::set_project_launch_config(
+                    connection, &owner, project_id, arguments, expected, &key, now_ms,
                 )
             },
             m5::unavailable,
@@ -1171,17 +1154,19 @@ impl M5UnityStore for StateStoreHandle {
         .await
     }
 
-    async fn clear_project_editor(
+    async fn clear_project_launch_config(
         &self,
         owner: PrincipalId,
         project_id: ProjectId,
         expected: Option<Revision>,
         key: IdempotencyKey,
         now_ms: u64,
-    ) -> Result<(ProjectEditorSelectionState, bool), M5UnityError> {
+    ) -> Result<(ProjectUnityLaunchConfig, bool, bool), M5UnityError> {
         self.request_worker(
             move |connection| {
-                m5::clear_project_editor(connection, &owner, project_id, expected, &key, now_ms)
+                m5::clear_project_launch_config(
+                    connection, &owner, project_id, expected, &key, now_ms,
+                )
             },
             m5::unavailable,
         )
@@ -1192,8 +1177,8 @@ impl M5UnityStore for StateStoreHandle {
         &self,
         owner: PrincipalId,
         project: ProjectRecord,
-        selection: ProjectEditorSelectionState,
-        resolved_installation_id: UnityInstallationId,
+        config: ProjectUnityLaunchConfig,
+        installation_id: UnityInstallationId,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<(UnityLaunchRecord, bool), M5UnityError> {
@@ -1203,8 +1188,8 @@ impl M5UnityStore for StateStoreHandle {
                     connection,
                     &owner,
                     project,
-                    selection,
-                    resolved_installation_id,
+                    config,
+                    installation_id,
                     &key,
                     now_ms,
                 )
@@ -1218,11 +1203,14 @@ impl M5UnityStore for StateStoreHandle {
         &self,
         owner: PrincipalId,
         project: ProjectRecord,
-        selection: ProjectEditorSelectionState,
+        config: ProjectUnityLaunchConfig,
+        installation_id: UnityInstallationId,
         key: IdempotencyKey,
     ) -> Result<Option<UnityLaunchRecord>, M5UnityError> {
         self.request_worker(
-            move |connection| m5::replay_launch(connection, &owner, &project, &selection, &key),
+            move |connection| {
+                m5::replay_launch(connection, &owner, &project, &config, installation_id, &key)
+            },
             m5::unavailable,
         )
         .await
@@ -1867,6 +1855,166 @@ impl M7DeleteStore for StateStoreHandle {
         self.request_worker(
             move |connection| m7_delete::finish_cancelled(connection, operation_id, now_ms),
             m7_delete::unavailable,
+        )
+        .await
+    }
+}
+
+impl M7UnityMigrationStore for StateStoreHandle {
+    async fn create_unity_migration_plan(
+        &self,
+        owner: PrincipalId,
+        draft: UnityMigrationPlanDraft,
+    ) -> Result<UnityMigrationPlanOutcome, M7UnityMigrationError> {
+        self.request_worker(
+            move |connection| m7_unity_migration::create_plan(connection, &owner, draft),
+            m7_unity_migration::unavailable,
+        )
+        .await
+    }
+
+    async fn get_unity_migration_plan(
+        &self,
+        owner: PrincipalId,
+        plan_id: PlanId,
+    ) -> Result<UnityMigrationPlanRecord, M7UnityMigrationError> {
+        self.request_worker(
+            move |connection| m7_unity_migration::get_plan(connection, &owner, plan_id),
+            m7_unity_migration::unavailable,
+        )
+        .await
+    }
+
+    async fn replay_unity_migration_apply(
+        &self,
+        owner: PrincipalId,
+        plan_id: PlanId,
+        key: IdempotencyKey,
+    ) -> Result<Option<UnityMigrationApplyOutcome>, M7UnityMigrationError> {
+        self.request_worker(
+            move |connection| m7_unity_migration::replay_apply(connection, &owner, plan_id, &key),
+            m7_unity_migration::unavailable,
+        )
+        .await
+    }
+
+    async fn accept_unity_migration(
+        &self,
+        owner: PrincipalId,
+        plan_id: PlanId,
+        key: IdempotencyKey,
+        now_ms: u64,
+    ) -> Result<UnityMigrationApplyOutcome, M7UnityMigrationError> {
+        self.request_worker(
+            move |connection| m7_unity_migration::accept(connection, &owner, plan_id, &key, now_ms),
+            m7_unity_migration::unavailable,
+        )
+        .await
+    }
+
+    async fn begin_unity_migration(
+        &self,
+        operation_id: OperationId,
+        now_ms: u64,
+    ) -> Result<UnityMigrationOperationRecord, M7UnityMigrationError> {
+        self.request_worker(
+            move |connection| m7_unity_migration::begin_operation(connection, operation_id, now_ms),
+            m7_unity_migration::unavailable,
+        )
+        .await
+    }
+
+    async fn record_unity_migration_checkpoint(
+        &self,
+        operation_id: OperationId,
+        phase: UnityMigrationPhase,
+        evidence: UnityMigrationEvidence,
+        now_ms: u64,
+    ) -> Result<(), M7UnityMigrationError> {
+        self.request_worker(
+            move |connection| {
+                m7_unity_migration::checkpoint(connection, operation_id, phase, evidence, now_ms)
+            },
+            m7_unity_migration::unavailable,
+        )
+        .await
+    }
+
+    async fn commit_unity_migration_project(
+        &self,
+        operation_id: OperationId,
+        observation: ProjectObservation,
+        now_ms: u64,
+    ) -> Result<(), M7UnityMigrationError> {
+        self.request_worker(
+            move |connection| {
+                m7_unity_migration::commit_project(connection, operation_id, observation, now_ms)
+            },
+            m7_unity_migration::unavailable,
+        )
+        .await
+    }
+
+    async fn finish_unity_migration_success(
+        &self,
+        operation_id: OperationId,
+        now_ms: u64,
+    ) -> Result<(), M7UnityMigrationError> {
+        self.request_worker(
+            move |connection| m7_unity_migration::finish_success(connection, operation_id, now_ms),
+            m7_unity_migration::unavailable,
+        )
+        .await
+    }
+
+    async fn fail_unity_migration(
+        &self,
+        operation_id: OperationId,
+        code: String,
+        diagnostic_id: String,
+        now_ms: u64,
+    ) -> Result<(), M7UnityMigrationError> {
+        self.request_worker(
+            move |connection| {
+                m7_unity_migration::fail(connection, operation_id, &code, &diagnostic_id, now_ms)
+            },
+            m7_unity_migration::unavailable,
+        )
+        .await
+    }
+
+    async fn recover_unity_migrations(
+        &self,
+        now_ms: u64,
+    ) -> Result<Vec<OperationId>, M7UnityMigrationError> {
+        self.request_worker(
+            move |connection| m7_unity_migration::recover(connection, now_ms),
+            m7_unity_migration::unavailable,
+        )
+        .await
+    }
+
+    async fn unity_migration_cancel_requested(
+        &self,
+        operation_id: OperationId,
+    ) -> Result<bool, M7UnityMigrationError> {
+        self.request_worker(
+            move |connection| m7_unity_migration::cancellation_requested(connection, operation_id),
+            m7_unity_migration::unavailable,
+        )
+        .await
+    }
+
+    async fn finish_unity_migration_cancelled(
+        &self,
+        operation_id: OperationId,
+        now_ms: u64,
+    ) -> Result<(), M7UnityMigrationError> {
+        self.request_worker(
+            move |connection| {
+                m7_unity_migration::finish_cancelled(connection, operation_id, now_ms)
+            },
+            m7_unity_migration::unavailable,
         )
         .await
     }

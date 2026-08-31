@@ -16,7 +16,8 @@ pub use project_delete::{
     project_delete_preflight,
 };
 pub use unity::{
-    UnityArchitecture, ValidatedUnityExecutable, discover_unity_executables, launch_unity_editor,
+    UnityArchitecture, UnityMigrationExit, UnityMigrationProcess, ValidatedUnityExecutable,
+    discover_unity_executables, launch_unity_editor, spawn_unity_editor_migration,
     validate_unity_executable,
 };
 

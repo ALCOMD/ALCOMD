@@ -7,13 +7,13 @@ use std::time::Duration;
 use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use alcomd_platform::{DataConfig, IpcConfig};
 use alcomd_protocol::{
-    ProjectEditorClearParams, ProjectEditorSelection, ProjectEditorSetParams,
-    UnityInstallationRegisterParams, UnityInstallationsListParams, UnityLaunchParams,
-    UnityWriterStateKind,
+    ProjectUnityLaunchConfigClearParams, ProjectUnityLaunchConfigSetParams,
+    UnityInstallationRegisterParams, UnityInstallationsListParams, UnityLaunchOptionsParams,
+    UnityLaunchParams, UnityWriterStateKind,
 };
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn unity_registry_writer_gate_preference_and_launch_round_trip_over_rpc() {
+async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_over_rpc() {
     let fixture = TestDirectory::new();
     let runtime = fixture.path().join("runtime");
     let data = fixture.path().join("data");
@@ -57,29 +57,20 @@ async fn unity_registry_writer_gate_preference_and_launch_round_trip_over_rpc() 
         .expect("register project");
     let project_id = project.project.project_id.expect("project ID");
     let implicit = client
-        .project_editor_selection_get(project_id.clone())
+        .unity_project_launch_config_get(project_id.clone())
         .await
-        .expect("read implicit automatic selection");
-    assert_eq!(
-        implicit.preference.selection,
-        ProjectEditorSelection::Automatic
-    );
-    assert_eq!(implicit.preference.revision, 0);
-    assert_eq!(implicit.preference.updated_at_ms, 0);
-    assert!(implicit.preference.arguments.is_empty());
+        .expect("read implicit launch config");
+    assert_eq!(implicit.config.revision, 0);
+    assert_eq!(implicit.config.updated_at_ms, 0);
+    assert!(implicit.config.arguments.is_empty());
     let no_candidate = client
-        .unity_launch(UnityLaunchParams {
+        .unity_launch_options(UnityLaunchOptionsParams {
             project_id: project_id.clone(),
             expected_project_revision: project.project.revision.expect("project revision"),
-            idempotency_key: "m7-unity-launch-zero-candidate".to_owned(),
         })
         .await
-        .expect_err("automatic launch without candidates fails");
-    assert!(matches!(
-        no_candidate,
-        alcomd_client::ClientError::Remote(ref remote)
-            if remote.code == "unity_installation_not_found"
-    ));
+        .expect("read launch options without candidates");
+    assert!(no_candidate.exact_matching_installations.is_empty());
     let installation = client
         .unity_installation_register(UnityInstallationRegisterParams {
             executable_path: editor.to_string_lossy().into_owned(),
@@ -87,7 +78,7 @@ async fn unity_registry_writer_gate_preference_and_launch_round_trip_over_rpc() 
         })
         .await
         .expect("register Editor");
-    assert_eq!(installation.installation.unity_version, "2022.3.40f1");
+    assert_eq!(installation.installation.unity_version, "2022.3.22f1");
     assert!(
         client
             .unity_installation_register(UnityInstallationRegisterParams {
@@ -107,54 +98,31 @@ async fn unity_registry_writer_gate_preference_and_launch_round_trip_over_rpc() 
             .len(),
         1
     );
-    let preference = client
-        .unity_project_editor_set(ProjectEditorSetParams {
+    let config = client
+        .unity_project_launch_config_set(ProjectUnityLaunchConfigSetParams {
             project_id: project_id.clone(),
-            installation_id: installation.installation.installation_id.clone(),
             arguments: vec!["-logFile".to_owned(), "-".to_owned()],
             expected_revision: 0,
-            idempotency_key: "m5-editor-preference".to_owned(),
+            idempotency_key: "m7-unity-launch-config".to_owned(),
         })
         .await
-        .expect("set Editor preference");
-    assert_eq!(preference.preference.revision, 1);
-    let explicit = client
-        .project_editor_selection_get(project_id.clone())
+        .expect("set launch config");
+    assert_eq!(config.config.revision, 1);
+    let stored = client
+        .unity_project_launch_config_get(project_id.clone())
         .await
-        .expect("read explicit selection");
-    assert_eq!(
-        explicit.preference.selection,
-        ProjectEditorSelection::Explicit {
-            installation_id: installation.installation.installation_id.clone(),
-        }
-    );
-    assert_eq!(explicit.preference.revision, 1);
+        .expect("read stored launch config");
+    assert_eq!(stored.config.arguments, vec!["-logFile", "-"]);
     let cleared = client
-        .project_editor_clear(ProjectEditorClearParams {
+        .unity_project_launch_config_clear(ProjectUnityLaunchConfigClearParams {
             project_id: project_id.clone(),
-            expected_revision: explicit.preference.revision,
-            idempotency_key: "m7-editor-clear".to_owned(),
+            expected_revision: stored.config.revision,
+            idempotency_key: "m7-unity-launch-config-clear".to_owned(),
         })
         .await
-        .expect("clear explicit Editor selection");
-    assert_eq!(
-        cleared.preference.selection,
-        ProjectEditorSelection::Automatic
-    );
-    assert_eq!(cleared.preference.revision, 2);
-    assert_eq!(
-        cleared.preference.arguments,
-        vec!["-logFile".to_owned(), "-".to_owned()]
-    );
-    let legacy_get = client
-        .unity_project_editor_get(project_id.clone())
-        .await
-        .expect_err("legacy explicit view hides automatic selection");
-    assert!(matches!(
-        legacy_get,
-        alcomd_client::ClientError::Remote(ref remote)
-            if remote.code == "unity_installation_not_found"
-    ));
+        .expect("clear launch config");
+    assert_eq!(cleared.config.revision, 2);
+    assert!(cleared.config.arguments.is_empty());
     let writer = client
         .unity_writer_state(project_id.clone())
         .await
@@ -169,6 +137,7 @@ async fn unity_registry_writer_gate_preference_and_launch_round_trip_over_rpc() 
             let error = client
                 .unity_launch(UnityLaunchParams {
                     project_id,
+                    installation_id: installation.installation.installation_id.clone(),
                     expected_project_revision: project.project.revision.expect("project revision"),
                     idempotency_key: "m5-unity-launch-suspected".to_owned(),
                 })
@@ -192,6 +161,7 @@ async fn unity_registry_writer_gate_preference_and_launch_round_trip_over_rpc() 
     let launch = client
         .unity_launch(UnityLaunchParams {
             project_id,
+            installation_id: installation.installation.installation_id.clone(),
             expected_project_revision: project.project.revision.expect("project revision"),
             idempotency_key: "m5-unity-launch".to_owned(),
         })
@@ -209,6 +179,7 @@ async fn unity_registry_writer_gate_preference_and_launch_round_trip_over_rpc() 
     let replay = client
         .unity_launch(UnityLaunchParams {
             project_id: launch.launch.project_id.clone(),
+            installation_id: installation.installation.installation_id.clone(),
             expected_project_revision: project.project.revision.expect("project revision"),
             idempotency_key: "m5-unity-launch".to_owned(),
         })
@@ -217,18 +188,13 @@ async fn unity_registry_writer_gate_preference_and_launch_round_trip_over_rpc() 
     assert!(replay.replayed);
     assert_eq!(replay.launch.launch_id, launch.launch.launch_id);
     let multiple = client
-        .unity_launch(UnityLaunchParams {
-            project_id: launch.launch.project_id.clone(),
+        .unity_launch_options(UnityLaunchOptionsParams {
+            project_id: launch.launch.project_id,
             expected_project_revision: project.project.revision.expect("project revision"),
-            idempotency_key: "m7-unity-launch-multiple".to_owned(),
         })
         .await
-        .expect_err("new automatic launch key sees multiple candidates");
-    assert!(matches!(
-        multiple,
-        alcomd_client::ClientError::Remote(ref remote)
-            if remote.code == "unity_editor_selection_required"
-    ));
+        .expect("read all exact launch candidates");
+    assert_eq!(multiple.exact_matching_installations.len(), 2);
 
     shutdown.store(true, Ordering::Release);
     let result = tokio::time::timeout(Duration::from_secs(3), daemon)
@@ -252,7 +218,7 @@ fn create_fake_editor(root: &Path, directory: &str) -> PathBuf {
         &executable,
     )
     .expect("copy executable fixture");
-    fs::write(manifest, r#"{"version":"2022.3.40f1"}"#).expect("write Editor manifest");
+    fs::write(manifest, r#"{"version":"2022.3.22f1"}"#).expect("write Editor manifest");
     executable
 }
 

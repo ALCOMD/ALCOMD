@@ -32,13 +32,13 @@ import type {
     PackageSourceSelector,
     ProjectCopyPlan,
     ProjectDeletePlan,
-    ProjectEditorSelectionState,
     ProjectSnapshot,
     RegistryCursor,
     RepositoryPackageVersion,
     RepositorySnapshot,
     TemplateRecord,
     UnityInstallation,
+    UnityLaunchOptionsResult,
     UserPackageRecord,
     SettingsGetResult,
     SettingsLocale
@@ -53,6 +53,7 @@ import {
     PackageActions,
     type PackageActionSelection,
     ProjectUnityActions,
+    ProjectUnityWorkspaceActions,
     RegisterRepositoryPanel,
     RepositoryActions,
     TemplateActions,
@@ -479,7 +480,15 @@ function ProjectRowActions({ client, navigate, onChanged, onFeedback, onProjectC
         setOpening(true);
         onFeedback("Opening Unity…");
         try {
-            const result = await client.unityLaunch(projectId, revision);
+            const options = await client.unityLaunchOptions(projectId, revision);
+            if (options.exactMatchingInstallations.length !== 1) {
+                navigate(`/projects/${projectId}/unity`);
+                onFeedback(options.exactMatchingInstallations.length === 0
+                    ? `Unity ${options.projectUnityVersion} is required. Choose a migration target.`
+                    : "Choose the Unity installation for this launch.");
+                return;
+            }
+            const result = await client.unityLaunch(projectId, options.exactMatchingInstallations[0]!.installationId, revision);
             onFeedback(`Unity launch ${result.launch.state}.`);
         } catch (caught: unknown) {
             onFeedback(`Unable to open Unity: ${safeError(caught).code}`);
@@ -933,6 +942,8 @@ function PackageSourceMenu({ label, onChange, options, value }: { label: string;
 
 interface PackageWorkspaceValue {
     catalog: WorkspaceCatalogVersion[];
+    installations: UnityInstallation[];
+    launchOptions: UnityLaunchOptionsResult;
     project: ProjectSnapshot;
 }
 
@@ -968,11 +979,14 @@ async function listAllRepositoryPackages(client: GuiRpcClient, repositoryId: str
 }
 
 async function loadPackageWorkspace(client: GuiRpcClient, projectId: string, includeUserPackages: boolean): Promise<PackageWorkspaceValue> {
-    const [project, repositories, settings, userPackages] = await Promise.all([
-        client.projectGet(projectId),
+    const project = (await client.projectGet(projectId)).project;
+    if (project.revision === undefined) throw { code: "project_not_registered" };
+    const [repositories, settings, userPackages, installations, launchOptions] = await Promise.all([
         listAllRepositories(client),
         client.settingsGet(),
-        includeUserPackages ? listAllUserPackages(client) : Promise.resolve([])
+        includeUserPackages ? listAllUserPackages(client) : Promise.resolve([]),
+        loadAllUnityInstallations(client),
+        client.unityLaunchOptions(projectId, project.revision)
     ]);
     const hidden = new Set(settings.settings.packages.hiddenRepositoryIds);
     const catalogs = await Promise.all(repositories.filter((repository) => repository.repositoryId === undefined || !hidden.has(repository.repositoryId)).map(async (repository) => {
@@ -993,7 +1007,7 @@ async function loadPackageWorkspace(client: GuiRpcClient, projectId: string, inc
         sourceKind: "user-package",
         sourceSelector: { kind: "user_package", userPackageId: item.userPackageId }
     }));
-    return { project: project.project, catalog: [...catalogs.flat(), ...local] };
+    return { project, catalog: [...catalogs.flat(), ...local], installations, launchOptions };
 }
 
 function ProjectWorkspaceCopyAction({ client, navigate, project }: { client: GuiRpcClient; navigate(path: string): void; project: ProjectSnapshot }) {
@@ -1038,7 +1052,6 @@ function ProjectWorkspaceCopyAction({ client, navigate, project }: { client: Gui
 
 function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { projectId: string }) {
     const canReadBackups = useCapability(capabilities.backupsRead);
-    const canLaunchUnity = useCapability(capabilities.unityRead);
     const canManageRepositories = useCapability(capabilities.repositoriesRegistry);
     const canPlanPackagesV1 = useCapability(capabilities.packagesPlanV1);
     const canPlanPackagesV2 = useCapability(capabilities.packagesPlanV2);
@@ -1119,7 +1132,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
         reload();
     };
     return (
-        <ResourcePage load={load} showRefreshBar={false}>{({ project, catalog }, refresh, refreshing, refreshError) => {
+        <ResourcePage load={load} showRefreshBar={false}>{({ project, catalog, installations, launchOptions }, refresh, refreshing, refreshError) => {
             const rows = packageWorkspaceRows(project, catalog).filter((row) => {
                 const query = search.toLocaleLowerCase();
                 const matchesSearch = query.length === 0 || [row.displayName, row.packageId, ...row.sources].some((value) => value.toLocaleLowerCase().includes(query));
@@ -1142,8 +1155,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                         </div>
                         <nav aria-label="Project actions" className="project-workspace-actions">
                             {refreshError === undefined ? null : <span className="inline-error" role="alert">Refresh failed: {refreshError.code}</span>}
-                            <span className="project-unity-version">Unity {project.unityVersion}</span>
-                            <Button disabled={!canLaunchUnity} onClick={() => navigate(`/projects/${projectId}/unity`)} title={capabilityUnavailableTitle(canLaunchUnity, capabilities.unityRead)} type="button"><Icon asset={playArrowIcon} slot="icon" />Open Unity</Button>
+                            <ProjectUnityWorkspaceActions client={client} installations={installations} launchOptions={launchOptions} navigate={navigate} project={project} />
                             <Button disabled={!canReadBackups} onClick={() => navigate(`/projects/${projectId}/backups`)} title={capabilityUnavailableTitle(canReadBackups, capabilities.backupsRead)} type="button" variant="text"><Icon asset={backupIcon} slot="icon" />Backups</Button>
                             <ProjectWorkspaceCopyAction client={client} navigate={navigate} project={project} />
                         </nav>
@@ -1387,17 +1399,19 @@ function UnityCard({ installation }: { installation: UnityInstallation }) {
     return <article className="resource-card"><h2>Unity {installation.unityVersion}</h2><p>{installation.architecture} · {installation.sourceKind}</p><p className="private-value" title="Private path hidden">Executable path is stored by the daemon</p></article>;
 }
 
-export function ProjectUnityPage({ client, projectId }: PageProps & { projectId: string }) {
+export function ProjectUnityPage({ afterMigrationOpen = false, client, projectId }: PageProps & { afterMigrationOpen?: boolean; projectId: string }) {
     const load = useCallback(async () => {
-        const [project, installations, selection, writer] = await Promise.all([
-            client.projectGet(projectId),
+        const project = (await client.projectGet(projectId)).project;
+        if (project.revision === undefined) throw { code: "project_not_registered" };
+        const [installations, launchConfig, launchOptions, writer] = await Promise.all([
             loadAllUnityInstallations(client),
-            client.unityProjectEditorSelectionGet(projectId),
+            client.unityProjectLaunchConfigGet(projectId),
+            client.unityLaunchOptions(projectId, project.revision),
             client.unityWriterState(projectId).catch(() => undefined)
         ]);
-        return { project: project.project, installations, selection: selection.preference, writer };
+        return { project, installations, launchConfig: launchConfig.config, launchOptions, writer };
     }, [client, projectId]);
-    return <Page title="Project Unity" eyebrow={projectId}><ResourcePage load={load}>{({ project, installations, selection, writer }, refresh) => <><dl className="detail-grid"><Detail label="Selected editor" value={editorSelectionLabel(selection, installations)} /><Detail label="Writer observation" value={writer?.state ?? "Unknown"} /><Detail label="Arguments" value={selection.arguments.length === 0 ? "Default" : `${selection.arguments.length} configured arguments`} /><Detail label="Observed" value={writer === undefined ? "—" : formatTime(writer.checkedAtMs)} /></dl><ProjectUnityActions client={client} installations={installations} onChanged={refresh} project={project} selection={selection} /></>}</ResourcePage></Page>;
+    return <Page title="Project Unity" eyebrow={projectId}><ResourcePage load={load}>{({ project, installations, launchConfig, launchOptions, writer }, refresh) => <><dl className="detail-grid"><Detail label="Project Unity version" value={project.unityVersion} /><Detail label="Exact installations" value={String(launchOptions.exactMatchingInstallations.length)} /><Detail label="Writer observation" value={writer?.state ?? "Unknown"} /><Detail label="Arguments" value={launchConfig.arguments.length === 0 ? "Default" : `${launchConfig.arguments.length} configured arguments`} /><Detail label="Observed" value={writer === undefined ? "—" : formatTime(writer.checkedAtMs)} /></dl><ProjectUnityActions afterMigrationOpen={afterMigrationOpen} client={client} installations={installations} launchConfig={launchConfig} launchOptions={launchOptions} onChanged={refresh} project={project} /></>}</ResourcePage></Page>;
 }
 
 async function loadAllUnityInstallations(client: GuiRpcClient): Promise<UnityInstallation[]> {
@@ -1409,13 +1423,6 @@ async function loadAllUnityInstallations(client: GuiRpcClient): Promise<UnityIns
         cursor = page.nextCursor;
     } while (cursor !== undefined);
     return installations;
-}
-
-function editorSelectionLabel(selection: ProjectEditorSelectionState, installations: UnityInstallation[]): string {
-    if (selection.selection.mode === "automatic") return "Automatic";
-    const installationId = selection.selection.installationId;
-    const installation = installations.find((item) => item.installationId === installationId);
-    return installation === undefined ? "Selected editor unavailable" : `Unity ${installation.unityVersion} (${installation.architecture})`;
 }
 
 export function ProjectBackupsPage({ client, navigate, projectId }: PageProps & { projectId: string }) {

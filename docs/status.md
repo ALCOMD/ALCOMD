@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI B0-D 与 Project / Package Functional Closure P0-P8 technical checkpoint 已通过，sealed functional HEAD 为 d314b155374d31a8d7c0449c62efdea5dd745e72。Visual Gate 2 期间项目所有者重新冻结 Project Unity Version / Open Unity 产品模型；proposal chain a3faa7b362dbcaa1fccbcd4f84bcc55989a4a68b、baa47682914e58609f30fc1de482c29b12c5fba5 获最终 PASS WITH IMPLEMENTATION AMENDMENTS，当前正在形成 final contract-only remote checkpoint；远端 Hosted CI/CodeQL 全绿后 production 自动获准开始。M7-owned visible-action completeness 为 REOPENED_BY_PRODUCT_MODEL_CHANGE；global release completeness 仍为 BLOCKED_BY_M11。H2-A 为 PAUSED_FOR_UNITY_MODEL_CLOSURE，24b03916bd6d958c921b4039bd62bec00afe25d4 visual candidate 不是 rejected。projects.management、packages.vpm 与 repositories.management 保持 in_progress，M8/M9 未开始。`
+`M6 已正式完成；M7 Portable UI B0-D 与 Project / Package Functional Closure P0-P8 historical technical checkpoint 已通过。新的 Project Unity Version / exact Open Unity U1-U7 production local candidate 已形成：State v14、Launch Config、one-shot exact launch、migration Plan/Apply/Operation、private preparation/recovery 与 official GUI flow 均已接线。focused automated evidence 与独立本地门禁通过；本机完整 Workspace 测试仅因真实用户 Unity 使既有 Project Copy fixture 正确观察为 running_suspected 而记为 LOCAL_ENVIRONMENT_CONDITIONED_TEST_BLOCKER，等待同一最终 SHA 的 clean Hosted CI 权威验证。更新后的 P8 M7-owned visible-action completeness 本地为 PASS，global release completeness 仍为 BLOCKED_BY_M11。H2-A 保持 PAUSED_FOR_UNITY_MODEL_CLOSURE，24b03916bd6d958c921b4039bd62bec00afe25d4 visual candidate 不是 rejected。projects.management、packages.vpm 与 repositories.management 保持 in_progress，M8/M9 未开始。`
 
 ## 已完成
 
@@ -327,13 +327,14 @@
   CLI/GUI入口及 accepted 到 cleanup_complete 的真实 kill/restart矩阵均已接线。未新增dependency、unsafe或Windows API；
   sealed HEAD `2ee11066c07a0994f3aebe6a9ce3f84ab2c8acd9` 已通过 Hosted CI run `33298022030` 的 Windows、
   Ubuntu、macOS 与 CodeQL run `33298021806`；P7 remote checkpoint 为 PASS。`projects.management`仍保持`in_progress`。
-- P8 使用唯一 `visible-action-completeness-v1.json` 清单核对 90 个 action：86 个 M7-owned action 中 33 个为
-  `implemented`、53 个只按可观察状态或未协商 capability 条件禁用，永久 fake/placeholder 为 0；4 个 M11-owned
+- P8 使用唯一 `visible-action-completeness-v1.json` 清单核对 92 个 action：88 个 M7-owned action 中 33 个为
+  `implemented`、55 个只按可观察状态或未协商 capability 条件禁用，永久 fake/placeholder 为 0；4 个 M11-owned
   VCC/legacy/differential parity action 继续作为全局 blocker。GUI 已消费 `system.status.capabilities`，缺失 capability 时不下发
   对应受保护 RPC；typed client/closed adapter、Delete/Remove 双动作及键盘确认边界均通过本地 Rust、34 项 Playwright、npm
   build 与 Tauri release no-bundle 验收。P8 historical technical checkpoint 已在 sealed functional HEAD `d314b155…`
-  通过；由于后来冻结的 Unity product model 改变了可见 user actions，当前状态为
-  `REOPENED_BY_PRODUCT_MODEL_CHANGE`，H2 未恢复。
+  通过。新的 Unity product model 已移除 Automatic/Preferred/Clear Editor Preference，并加入独立 Launch Config、Project
+  Unity migration selector、exact Open Unity 0/1/>1、one-shot selection、Plan/Apply/Operation 与 migrate-and-open；更新后的
+  P8 本地 verdict 为 `M7-owned PASS`，global 继续 `BLOCKED_BY_M11`。H2 未恢复。
 
 ## 后续里程碑尚未完成
 

@@ -101,11 +101,11 @@ pub const METHOD_UNITY_INSTALLATIONS_GET: &str = "unity.installations.get";
 pub const METHOD_UNITY_INSTALLATIONS_REGISTER: &str = "unity.installations.register";
 pub const METHOD_UNITY_INSTALLATIONS_REMOVE: &str = "unity.installations.remove";
 pub const METHOD_UNITY_INSTALLATIONS_REFRESH: &str = "unity.installations.refresh";
-pub const METHOD_UNITY_PROJECT_EDITOR_GET: &str = "unity.projectEditor.get";
-pub const METHOD_UNITY_PROJECT_EDITOR_SET: &str = "unity.projectEditor.set";
-pub const METHOD_UNITY_PROJECT_EDITOR_SELECTION_GET: &str = "unity.projectEditor.selection.get";
-pub const METHOD_UNITY_PROJECT_EDITOR_CLEAR: &str = "unity.projectEditor.clear";
+pub const METHOD_UNITY_PROJECT_LAUNCH_CONFIG_GET: &str = "unity.projectLaunchConfig.get";
+pub const METHOD_UNITY_PROJECT_LAUNCH_CONFIG_SET: &str = "unity.projectLaunchConfig.set";
+pub const METHOD_UNITY_PROJECT_LAUNCH_CONFIG_CLEAR: &str = "unity.projectLaunchConfig.clear";
 pub const METHOD_UNITY_WRITER_STATE: &str = "unity.writerState";
+pub const METHOD_UNITY_LAUNCH_OPTIONS: &str = "unity.launchOptions";
 pub const METHOD_UNITY_LAUNCH: &str = "unity.launch";
 pub const METHOD_UNITY_LAUNCH_STATUS: &str = "unity.launchStatus";
 pub const METHOD_TEMPLATES_LIST: &str = "templates.list";
@@ -129,6 +129,8 @@ pub const METHOD_PROJECTS_PLAN_COPY: &str = "projects.planCopy";
 pub const METHOD_PROJECTS_APPLY_COPY: &str = "projects.applyCopy";
 pub const METHOD_PROJECTS_PLAN_DELETE_DIRECTORY: &str = "projects.planDeleteDirectory";
 pub const METHOD_PROJECTS_APPLY_DELETE_DIRECTORY: &str = "projects.applyDeleteDirectory";
+pub const METHOD_PROJECTS_PLAN_UNITY_MIGRATION: &str = "projects.planUnityMigration";
+pub const METHOD_PROJECTS_APPLY_UNITY_MIGRATION: &str = "projects.applyUnityMigration";
 pub const METHOD_EXTENSIONS_LIST: &str = "extensions.list";
 pub const METHOD_EXTENSIONS_GET: &str = "extensions.get";
 pub const METHOD_EXTENSIONS_PLAN_INSTALL: &str = "extensions.planInstall";
@@ -160,6 +162,7 @@ pub const CAPABILITY_PROJECTS_READ_V1: &str = "projects.read.v1";
 pub const CAPABILITY_PROJECTS_REGISTRY_V1: &str = "projects.registry.v1";
 pub const CAPABILITY_PROJECTS_COPY_V1: &str = "projects.copy.v1";
 pub const CAPABILITY_PROJECTS_DELETE_V1: &str = "projects.delete.v1";
+pub const CAPABILITY_PROJECTS_UNITY_MIGRATION_V1: &str = "projects.unity-migration.v1";
 pub const CAPABILITY_REPOSITORIES_READ_V1: &str = "repositories.read.v1";
 pub const CAPABILITY_REPOSITORIES_REGISTRY_V1: &str = "repositories.registry.v1";
 pub const CAPABILITY_PACKAGES_PLAN_V1: &str = "packages.plan.v1";
@@ -269,6 +272,14 @@ pub mod error_code {
     pub const UNITY_PROJECT_RUNNING: &str = "unity_project_running";
     pub const UNITY_LAUNCH_STATE_UNCERTAIN: &str = "unity_launch_state_uncertain";
     pub const UNITY_PROJECT_SELECTOR_FORBIDDEN: &str = "unity_project_selector_forbidden";
+    pub const PROJECT_UNITY_MIGRATION_PLAN_NOT_FOUND: &str =
+        "project_unity_migration_plan_not_found";
+    pub const PROJECT_UNITY_MIGRATION_PLAN_STALE: &str = "project_unity_migration_plan_stale";
+    pub const PROJECT_UNITY_MIGRATION_UNSUPPORTED: &str = "project_unity_migration_unsupported";
+    pub const PROJECT_UNITY_MIGRATION_SOURCE_CHANGED: &str =
+        "project_unity_migration_source_changed";
+    pub const PROJECT_UNITY_MIGRATION_RECOVERY_REQUIRED: &str =
+        "project_unity_migration_recovery_required";
     pub const BACKUP_NOT_FOUND: &str = "backup_not_found";
     pub const BACKUP_UNAVAILABLE: &str = "backup_unavailable";
     pub const BACKUP_SOURCE_UNSAFE: &str = "backup_source_unsafe";
@@ -613,6 +624,12 @@ impl RpcError {
             code,
             "The Project Directory Delete request could not be completed.",
         )
+    }
+
+    /// Creates a stable, non-sensitive M7 Project Unity migration error.
+    #[must_use]
+    pub fn unity_migration(code: &str) -> Self {
+        Self::simple(code, "The Project Unity migration could not be completed.")
     }
 
     /// Creates a stable, non-sensitive M6 Extension Runtime error.
@@ -1736,9 +1753,8 @@ pub struct UnityInstallationRemoveResult {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProjectEditorPreference {
+pub struct ProjectUnityLaunchConfig {
     pub project_id: String,
-    pub installation_id: String,
     pub arguments: Vec<String>,
     pub revision: u64,
     pub updated_at_ms: u64,
@@ -1752,9 +1768,8 @@ pub struct UnityProjectIdParams {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ProjectEditorSetParams {
+pub struct ProjectUnityLaunchConfigSetParams {
     pub project_id: String,
-    pub installation_id: String,
     pub arguments: Vec<String>,
     pub expected_revision: u64,
     pub idempotency_key: String,
@@ -1762,37 +1777,13 @@ pub struct ProjectEditorSetParams {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProjectEditorResult {
-    pub preference: ProjectEditorPreference,
-    pub replayed: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
-pub enum ProjectEditorSelection {
-    Automatic,
-    Explicit { installation_id: String },
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProjectEditorSelectionState {
-    pub project_id: String,
-    pub selection: ProjectEditorSelection,
-    pub arguments: Vec<String>,
-    pub revision: u64,
-    pub updated_at_ms: u64,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProjectEditorSelectionResult {
-    pub preference: ProjectEditorSelectionState,
+pub struct ProjectUnityLaunchConfigResult {
+    pub config: ProjectUnityLaunchConfig,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ProjectEditorClearParams {
+pub struct ProjectUnityLaunchConfigClearParams {
     pub project_id: String,
     pub expected_revision: u64,
     pub idempotency_key: String,
@@ -1800,8 +1791,9 @@ pub struct ProjectEditorClearParams {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProjectEditorClearResult {
-    pub preference: ProjectEditorSelectionState,
+pub struct ProjectUnityLaunchConfigMutationResult {
+    pub config: ProjectUnityLaunchConfig,
+    pub changed: bool,
     pub replayed: bool,
 }
 
@@ -1860,8 +1852,25 @@ pub struct UnityLaunchRecord {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UnityLaunchParams {
     pub project_id: String,
+    pub installation_id: String,
     pub expected_project_revision: u64,
     pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UnityLaunchOptionsParams {
+    pub project_id: String,
+    pub expected_project_revision: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnityLaunchOptionsResult {
+    pub project_id: String,
+    pub project_revision: u64,
+    pub project_unity_version: String,
+    pub exact_matching_installations: Vec<UnityInstallation>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2323,6 +2332,70 @@ pub struct ProjectsApplyDeleteDirectoryParams {
 pub struct ProjectsApplyDeleteDirectoryResult {
     pub operation_id: String,
     pub project_id: String,
+    pub replayed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectsPlanUnityMigrationParams {
+    pub project_id: String,
+    pub target_installation_id: String,
+    pub expected_project_revision: u64,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectUnityMigrationClassificationKind {
+    PatchOrMinorUpgrade,
+    MajorUpgrade,
+    PatchOrMinorDowngrade,
+    MajorDowngrade,
+    ChinaVariantChange,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectUnityMigrationClassification {
+    pub kind: ProjectUnityMigrationClassificationKind,
+    pub supported_for_apply: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectUnityMigrationPlan {
+    pub plan_id: String,
+    pub project_id: String,
+    pub source_unity_version: String,
+    pub target_unity_version: String,
+    pub target_installation_id: String,
+    pub classification: ProjectUnityMigrationClassification,
+    pub expires_at_ms: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum ProjectsPlanUnityMigrationResult {
+    NoChange {
+        current_version: String,
+    },
+    Planned {
+        plan: ProjectUnityMigrationPlan,
+        replayed: bool,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectsApplyUnityMigrationParams {
+    pub plan_id: String,
+    pub idempotency_key: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectsApplyUnityMigrationResult {
+    pub operation_id: String,
     pub replayed: bool,
 }
 

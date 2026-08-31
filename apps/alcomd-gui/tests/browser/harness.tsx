@@ -23,7 +23,7 @@ import type { GuiRpcClient } from "../../src/rpc";
 import "../../src/styles.css";
 import { MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
 
-type HarnessMode = "ready" | "empty" | "error" | "disconnected" | "loading" | "stale" | "failed" | "cancelled" | "create-error" | "restore-error" | "favorite-pages" | "favorite-error" | "favorite-conflict" | "unity-automatic" | "unity-zero" | "unity-multiple" | "package-no-repositories" | "package-multiple" | "package-user-source" | "package-partial-failure" | "package-revision-conflict" | "capabilities-missing";
+type HarnessMode = "ready" | "empty" | "error" | "disconnected" | "loading" | "stale" | "failed" | "cancelled" | "create-error" | "restore-error" | "favorite-pages" | "favorite-error" | "favorite-conflict" | "unity-automatic" | "unity-zero" | "unity-multiple" | "unity-migration" | "package-no-repositories" | "package-multiple" | "package-user-source" | "package-partial-failure" | "package-revision-conflict" | "capabilities-missing";
 
 const SUPPORTED_CAPABILITIES = [
     "backups.create.v1",
@@ -41,6 +41,7 @@ const SUPPORTED_CAPABILITIES = [
     "projects.delete.v1",
     "projects.read.v1",
     "projects.registry.v1",
+    "projects.unity-migration.v1",
     "repositories.read.v1",
     "repositories.registry.v1",
     "state.check.v1",
@@ -84,11 +85,14 @@ class DeterministicGuiClient implements GuiRpcClient {
     private operationReads = 0;
     private pendingProject?: ReturnType<typeof project>;
     private pendingDeleteProjectId?: string;
+    private pendingMigrationTarget?: string;
     private deletedProjectIds = new Set<string>();
     private createdProjects: ReturnType<typeof project>[] = [];
     private favoriteConflictPending = true;
-    private selectionCleared = false;
-    private selectionExplicit = false;
+    private currentProjectRevision = 2;
+    private currentUnityVersion = "2022.3.22f1";
+    private launchArguments = ["-logFile"];
+    private launchConfigRevision = 2;
     private snapshotRevision = 1;
     private repositoryRefreshCompleted = false;
     private repositoryRefreshAttempts = new Map<string, number>();
@@ -135,6 +139,11 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (state === "succeeded" && this.pendingDeleteProjectId !== undefined) {
             this.deletedProjectIds.add(this.pendingDeleteProjectId);
             this.pendingDeleteProjectId = undefined;
+        }
+        if (state === "succeeded" && this.pendingMigrationTarget !== undefined) {
+            this.currentUnityVersion = this.pendingMigrationTarget;
+            this.currentProjectRevision += 1;
+            this.pendingMigrationTarget = undefined;
         }
         return this.value({
             ...runningOperation(),
@@ -186,7 +195,7 @@ class DeterministicGuiClient implements GuiRpcClient {
         const projects = [project(), ...this.createdProjects].filter((candidate) => candidate.projectId === undefined || !this.deletedProjectIds.has(candidate.projectId));
         return this.value({ projects: this.mode === "empty" ? [] : projects });
     }
-    projectGet(projectId: string): ReturnType<GuiRpcClient["projectGet"]> { return this.value({ project: this.createdProjects.find((candidate) => candidate.projectId === projectId) ?? project(projectId) }); }
+    projectGet(projectId: string): ReturnType<GuiRpcClient["projectGet"]> { return this.value({ project: this.createdProjects.find((candidate) => candidate.projectId === projectId) ?? { ...project(projectId), unityVersion: this.currentUnityVersion, revision: this.currentProjectRevision } }); }
     openProjectDirectory(): ReturnType<GuiRpcClient["openProjectDirectory"]> { return this.value(undefined); }
     selectDirectory(): ReturnType<GuiRpcClient["selectDirectory"]> { return this.value("C:\\Fixture\\Avatar"); }
     projectRegister(): ReturnType<GuiRpcClient["projectRegister"]> { return this.value({ project: project(), replayed: false }); }
@@ -318,6 +327,8 @@ class DeterministicGuiClient implements GuiRpcClient {
             ? []
             : this.mode === "unity-multiple"
                 ? [installation(), { ...installation(), installationId: "00000000-0000-4000-8000-000000000111", filesystemIdentity: "opaque-two", executablePath: "<private-editor-two>" }]
+                : this.mode === "unity-migration"
+                    ? [installation(), migrationInstallation()]
                 : [installation()];
         return this.value({ installations, replayed: false });
     }
@@ -325,26 +336,43 @@ class DeterministicGuiClient implements GuiRpcClient {
     unityInstallationRegister(): ReturnType<GuiRpcClient["unityInstallationRegister"]> { return this.value({ installation: installation(), replayed: false }); }
     unityInstallationRemove(): ReturnType<GuiRpcClient["unityInstallationRemove"]> { return this.value({ installationId: INSTALLATION_ID, removed: true, replayed: false }); }
     unityInstallationsRefresh(): ReturnType<GuiRpcClient["unityInstallationsRefresh"]> { return this.value({ installations: [installation()], replayed: false }); }
-    unityProjectEditorGet(): ReturnType<GuiRpcClient["unityProjectEditorGet"]> { return this.value({ preference: editorPreference(), replayed: false }); }
-    unityProjectEditorSet(_projectId: string, installationId: string, arguments_: string[]): ReturnType<GuiRpcClient["unityProjectEditorSet"]> {
-        this.selectionExplicit = true;
-        return this.value({ preference: { ...editorPreference(), installationId, arguments: arguments_, revision: 3 }, replayed: false });
+    unityProjectLaunchConfigGet(): ReturnType<GuiRpcClient["unityProjectLaunchConfigGet"]> {
+        return this.value({ config: launchConfig(this.launchArguments, this.launchConfigRevision) });
     }
-    unityProjectEditorSelectionGet(): ReturnType<GuiRpcClient["unityProjectEditorSelectionGet"]> {
-        const automatic = this.selectionCleared || (!this.selectionExplicit && ["unity-automatic", "unity-zero", "unity-multiple"].includes(this.mode));
-        return this.value({ preference: automatic ? { ...editorSelection(), selection: { mode: "automatic" }, arguments: ["-logFile"], revision: this.selectionCleared ? 3 : 0, updatedAtMs: this.selectionCleared ? 1_700_000_000_001 : 0 } : editorSelection() });
+    unityProjectLaunchConfigSet(_projectId: string, arguments_: string[]): ReturnType<GuiRpcClient["unityProjectLaunchConfigSet"]> {
+        this.launchArguments = arguments_;
+        this.launchConfigRevision += 1;
+        return this.value({ config: launchConfig(this.launchArguments, this.launchConfigRevision), changed: true, replayed: false });
     }
-    unityProjectEditorClear(): ReturnType<GuiRpcClient["unityProjectEditorClear"]> {
-        this.selectionCleared = true;
-        return this.value({ preference: { ...editorSelection(), selection: { mode: "automatic" }, arguments: ["-logFile"], revision: 3 }, replayed: false });
+    unityProjectLaunchConfigClear(): ReturnType<GuiRpcClient["unityProjectLaunchConfigClear"]> {
+        this.launchArguments = [];
+        this.launchConfigRevision += 1;
+        return this.value({ config: launchConfig(this.launchArguments, this.launchConfigRevision), changed: true, replayed: false });
     }
     unityWriterState(): ReturnType<GuiRpcClient["unityWriterState"]> { return this.value({ projectId: PROJECT_ID, state: "not_observed", evidence: [], checkedAtMs: 1_700_000_000_000 }); }
+    unityLaunchOptions(): ReturnType<GuiRpcClient["unityLaunchOptions"]> {
+        const exactMatchingInstallations = this.mode === "unity-zero"
+            ? []
+            : this.mode === "unity-multiple"
+                ? [installation(), { ...installation(), installationId: "00000000-0000-4000-8000-000000000111", filesystemIdentity: "opaque-two", executablePath: "<private-editor-two>" }]
+                : this.currentUnityVersion === migrationInstallation().unityVersion
+                    ? [migrationInstallation()]
+                    : [installation()];
+        return this.value({ projectId: PROJECT_ID, projectRevision: this.currentProjectRevision, projectUnityVersion: this.currentUnityVersion, exactMatchingInstallations });
+    }
     unityLaunch(): ReturnType<GuiRpcClient["unityLaunch"]> {
-        if (this.mode === "unity-zero") return Promise.reject({ code: "unity_installation_not_found" });
-        if (this.mode === "unity-multiple" && !this.selectionExplicit) return Promise.reject({ code: "unity_editor_selection_required" });
         return new Promise((resolve) => window.setTimeout(() => resolve({ launch: launch(), replayed: false }), 100));
     }
     unityLaunchStatus(): ReturnType<GuiRpcClient["unityLaunchStatus"]> { return this.value({ launch: launch(), replayed: false }); }
+    projectPlanUnityMigration(_projectId: string, targetInstallationId: string): ReturnType<GuiRpcClient["projectPlanUnityMigration"]> {
+        const targetUnityVersion = targetInstallationId === MIGRATION_INSTALLATION_ID ? "2022.3.23f1" : "2022.3.22f1";
+        return this.value({ kind: "planned", replayed: false, plan: { planId: PLAN_ID, projectId: PROJECT_ID, sourceUnityVersion: "2022.3.22f1", targetUnityVersion, targetInstallationId, classification: { kind: "patch_or_minor_upgrade", supportedForApply: true }, expiresAtMs: 1_800_000_000_000 } });
+    }
+    projectApplyUnityMigration(): ReturnType<GuiRpcClient["projectApplyUnityMigration"]> {
+        this.pendingMigrationTarget = "2022.3.23f1";
+        this.operationReads = 0;
+        return this.value({ operationId: OPERATION_ID, replayed: false });
+    }
 
     templatesList(): ReturnType<GuiRpcClient["templatesList"]> { return this.value({ templates: this.mode === "empty" ? [] : [template()] }); }
     templateGet(): ReturnType<GuiRpcClient["templateGet"]> { return this.value({ template: template(), replayed: false }); }
@@ -420,6 +448,7 @@ const REPOSITORY_ID = "00000000-0000-4000-8000-000000000102";
 const LOCAL_REPOSITORY_ID = "00000000-0000-4000-8000-000000000112";
 const USER_PACKAGE_ID = "00000000-0000-4000-8000-000000000113";
 const INSTALLATION_ID = "00000000-0000-4000-8000-000000000103";
+const MIGRATION_INSTALLATION_ID = "00000000-0000-4000-8000-000000000114";
 const TEMPLATE_ID = "com.cqmhv.template.avatar";
 const BACKUP_ID = "00000000-0000-4000-8000-000000000104";
 const OPERATION_ID = "00000000-0000-4000-8000-000000000105";
@@ -436,8 +465,8 @@ function repository() { return { repositoryId: REPOSITORY_ID, source: { kind: "r
 function localRepository() { return { repositoryId: LOCAL_REPOSITORY_ID, source: { kind: "local" as const, path: "<private-local-repository>" }, declaredId: "local-example", name: "Local packages", issues: [], revision: 2, refreshedAtMs: 1_700_000_000_000 }; }
 function userPackage(revision = 1) { return { userPackageId: USER_PACKAGE_ID, sourceRootPath: "<private-user-package>", packageId: "com.example.avatar", version: "1.2.3", displayName: "Local avatar tools", revision, archiveSha256: HASH, createdAtMs: 1_700_000_000_000, updatedAtMs: revision === 1 ? 1_700_000_000_000 : 1_700_000_001_000 }; }
 function installation() { return { installationId: INSTALLATION_ID, executablePath: "<private-editor>", filesystemIdentity: "opaque", unityVersion: "2022.3.22f1", architecture: "x86_64", sourceKind: "manual", revision: 2, observedAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_000_000 }; }
-function editorPreference() { return { projectId: PROJECT_ID, installationId: INSTALLATION_ID, arguments: [], revision: 2, updatedAtMs: 1_700_000_000_000 }; }
-function editorSelection() { return { projectId: PROJECT_ID, selection: { mode: "explicit" as const, installationId: INSTALLATION_ID }, arguments: ["-logFile"], revision: 2, updatedAtMs: 1_700_000_000_000 }; }
+function migrationInstallation() { return { ...installation(), installationId: MIGRATION_INSTALLATION_ID, executablePath: "<private-editor-migration>", filesystemIdentity: "opaque-migration", unityVersion: "2022.3.23f1" }; }
+function launchConfig(arguments_: string[], revision: number) { return { projectId: PROJECT_ID, arguments: arguments_, revision, updatedAtMs: 1_700_000_000_000 }; }
 function launch() { return { launchId: "00000000-0000-4000-8000-000000000107", projectId: PROJECT_ID, installationId: INSTALLATION_ID, state: "spawned", spawnAccepted: true, createdAtMs: 1_700_000_000_000 }; }
 function template() { return { templateId: TEMPLATE_ID, sourceKind: "built-in", templateVersion: "1.0.0", displayName: "Avatar starter", description: "A deterministic public fixture.", provenance: "built-in", favorite: false, bundleSha256: HASH, manifestFingerprint: HASH, revision: 2, createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_000_000 }; }
 function backup() { return { backupId: BACKUP_ID, sourceProjectId: PROJECT_ID, archiveSha256: HASH, archiveBytes: 4096, formatVersion: 1, createdAtMs: 1_700_000_000_000, compressionMode: "fast", excludeVpmPackages: true }; }

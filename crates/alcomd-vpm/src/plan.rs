@@ -630,7 +630,7 @@ fn read_regular_component(
     Ok(bytes)
 }
 
-fn tree_fingerprint(root: &Path) -> Result<[u8; 32], M4Error> {
+pub(super) fn tree_fingerprint(root: &Path) -> Result<[u8; 32], M4Error> {
     let metadata = match std::fs::symlink_metadata(root) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {

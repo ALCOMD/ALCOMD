@@ -68,7 +68,7 @@ type Route =
     | { kind: "projects" }
     | { kind: "project-detail"; projectId: string }
     | { kind: "project-packages"; projectId: string }
-    | { kind: "project-unity"; projectId: string }
+    | { kind: "project-unity"; projectId: string; afterMigrationOpen: boolean }
     | { kind: "project-backups"; projectId: string }
     | { kind: "repositories" }
     | { kind: "repository-detail"; repositoryId: string }
@@ -93,7 +93,7 @@ interface AppProps {
 }
 
 export function App({ client = guiRpcClient }: AppProps) {
-    const [route, setRoute] = useState<Route>(() => readRoute(window.location.pathname));
+    const [route, setRoute] = useState<Route>(() => readRoute(window.location.pathname, window.location.search));
     const [pendingRoute, setPendingRoute] = useState<Route>();
     const [appearance, setAppearance] = useState<AppearanceSettings>(defaultAppearance);
     const [locale, setLocale] = useState(() => preferredLocale(navigator.language));
@@ -145,7 +145,7 @@ export function App({ client = guiRpcClient }: AppProps) {
 
     useEffect(() => {
         const onPopState = () => {
-            const next = readRoute(window.location.pathname);
+            const next = readRoute(window.location.pathname, window.location.search);
             if (dirtyRef.current) {
                 window.history.pushState(null, "", routePath(route));
                 setPendingRoute(next);
@@ -192,7 +192,10 @@ export function App({ client = guiRpcClient }: AppProps) {
         setPendingRoute(undefined);
     };
 
-    const navigate = (path: string) => navigateRoute(readRoute(path));
+    const navigate = (path: string) => {
+        const target = new URL(path, window.location.origin);
+        navigateRoute(readRoute(target.pathname, target.search));
+    };
 
     return (
         <CapabilityProvider value={negotiatedCapabilities}>
@@ -350,7 +353,7 @@ function RouteContent({
         case "projects": return <CapabilityRoute required={[capabilities.projectsRead]}><ProjectsPage {...props} /></CapabilityRoute>;
         case "project-detail": return <CapabilityRoute required={[capabilities.projectsRead, capabilities.repositoriesRead]}><ProjectDetailPage {...props} projectId={route.projectId} /></CapabilityRoute>;
         case "project-packages": return <CapabilityRoute required={[capabilities.projectsRead, capabilities.repositoriesRead]}><ProjectPackagesPage {...props} projectId={route.projectId} /></CapabilityRoute>;
-        case "project-unity": return <CapabilityRoute required={[capabilities.projectsRead, capabilities.unityRead]}><ProjectUnityPage {...props} projectId={route.projectId} /></CapabilityRoute>;
+        case "project-unity": return <CapabilityRoute required={[capabilities.projectsRead, capabilities.unityRead]}><ProjectUnityPage {...props} afterMigrationOpen={route.afterMigrationOpen} projectId={route.projectId} /></CapabilityRoute>;
         case "project-backups": return <CapabilityRoute required={[capabilities.projectsRead, capabilities.backupsRead]}><ProjectBackupsPage {...props} projectId={route.projectId} /></CapabilityRoute>;
         case "repositories": return <CapabilityRoute required={[capabilities.repositoriesRead]}><RepositoriesPage {...props} /></CapabilityRoute>;
         case "repository-detail": return <CapabilityRoute required={[capabilities.repositoriesRead]}><RepositoryDetailPage {...props} repositoryId={route.repositoryId} /></CapabilityRoute>;
@@ -703,7 +706,7 @@ function sourceColorName(value: string | null): AppearanceSettings["sourceColor"
     }
 }
 
-function readRoute(pathname: string): Route {
+function readRoute(pathname: string, search = ""): Route {
     const segments = pathname.split("/").filter(Boolean).map((segment) => decodeURIComponent(segment));
     if (segments.length === 0) return { kind: "projects" };
     if (segments.length === 1) {
@@ -725,7 +728,7 @@ function readRoute(pathname: string): Route {
     if (segments[0] === "projects" && segments[1] !== undefined) {
         if (segments.length === 2) return { kind: "project-detail", projectId: segments[1] };
         if (segments.length === 3 && segments[2] === "packages") return { kind: "project-packages", projectId: segments[1] };
-        if (segments.length === 3 && segments[2] === "unity") return { kind: "project-unity", projectId: segments[1] };
+        if (segments.length === 3 && segments[2] === "unity") return { kind: "project-unity", projectId: segments[1], afterMigrationOpen: new URLSearchParams(search).get("afterMigration") === "open" };
         if (segments.length === 3 && segments[2] === "backups") return { kind: "project-backups", projectId: segments[1] };
     }
     if (segments[0] === "repositories" && segments.length === 2 && segments[1] !== undefined) return { kind: "repository-detail", repositoryId: segments[1] };
@@ -744,7 +747,7 @@ function routePath(route: Route): string {
         case "projects": return "/projects";
         case "project-detail": return `/projects/${encodeURIComponent(route.projectId)}`;
         case "project-packages": return `/projects/${encodeURIComponent(route.projectId)}/packages`;
-        case "project-unity": return `/projects/${encodeURIComponent(route.projectId)}/unity`;
+        case "project-unity": return `/projects/${encodeURIComponent(route.projectId)}/unity${route.afterMigrationOpen ? "?afterMigration=open" : ""}`;
         case "project-backups": return `/projects/${encodeURIComponent(route.projectId)}/backups`;
         case "repositories": return "/repositories";
         case "repository-detail": return `/repositories/${encodeURIComponent(route.repositoryId)}`;

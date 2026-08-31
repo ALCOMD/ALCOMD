@@ -2,8 +2,11 @@
 
 状态：proposal chain `a3faa7b362dbcaa1fccbcd4f84bcc55989a4a68b`、
 `baa47682914e58609f30fc1de482c29b12c5fba5` 的最终 owner review 为
-`PASS WITH IMPLEMENTATION AMENDMENTS`。本文件已落盘最终 contract-only seal；该 seal 的远端 Hosted CI 与 CodeQL 全绿后，
-M7 Unity production implementation 自动获准开始。H2-A 继续为 `PAUSED_FOR_UNITY_MODEL_CLOSURE`。
+`PASS WITH IMPLEMENTATION AMENDMENTS`。U1-U7 production local candidate 已形成，focused State/Resolver/Preparation/
+Recovery/RPC/GUI/P8 tests 与除 live Unity 条件影响外的本地门禁已通过；`cargo test --locked --workspace` 因真实用户
+Unity 使既有 Project Copy fixture 正确观察为 `running_suspected`，记录为
+`LOCAL_ENVIRONMENT_CONDITIONED_TEST_BLOCKER`，等待同一最终 SHA 的 clean Hosted CI 权威验证。H2-A 继续为
+`PAUSED_FOR_UNITY_MODEL_CLOSURE`。
 
 ## 目标
 
@@ -384,6 +387,16 @@ Hosted CI 与 CodeQL。完成后停止等待 owner technical review，不自动�
 - owner 批准 narrow `UnityMigrationProcess` safe surface；本 contract-only commit 仍没有 production wiring、dependency、unsafe
   或 platform API 变化。
 - State v14、Operation phases、cancel/recovery、A/B reuse 与 preparation profile 已 final seal。
+- 2026-08-31：U1-U7 local production candidate 已接线；State v14 四种 legacy preference/arguments migration、malformed
+  rollback、immutable Plan、normal resolver differential、migration-only legacy obligations、private preparation、spawn 后先 durable
+  `unity_started` 再 wait、restart recovery、never-auto-respawn、单次 Project revision/Event、Launch Config、exact Open Unity
+  0/1/>1、migration selector 与 migrate-and-open 均有 focused automated evidence。
+- P8 visible-action inventory 已移除 Automatic/Preferred/Clear Editor Preference，加入独立 Launch Config、Project Unity
+  migration selector、exact one-shot launch 与 migrate-and-open；本地 verdict 为 `M7-owned PASS`，global 继续
+  `BLOCKED_BY_M11`。本机 full Workspace 仅受真实 Unity 环境条件阻塞，不作为 production regression。
+- owner 已撤销“本地技术日志不得包含完整私密路径”的旧规则；本地 technical diagnostic 允许准确绝对路径和 OS I/O
+  上下文，secret 从源头禁止记录，RPC/Activity/Event/普通 GUI error 继续保持有界稳定合同。项目所有者随后明确批准
+  `AGENTS.md` 最小同步，旧规则已替换且未扩大其他日志实现或公开合同。
 
 ## Stop conditions
 

@@ -289,6 +289,34 @@ async fn gui_project_apply_delete_directory(
     finish_call(&mut client, result)
 }
 
+#[tauri::command]
+async fn gui_project_plan_unity_migration(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::ProjectsPlanUnityMigrationParams,
+) -> Result<alcomd_protocol::ProjectsPlanUnityMigrationResult, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.project_plan_unity_migration(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_project_apply_unity_migration(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::ProjectsApplyUnityMigrationParams,
+) -> Result<alcomd_protocol::ProjectsApplyUnityMigrationResult, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.project_apply_unity_migration(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
 fn validated_registered_project_root(root_path: &str) -> Result<std::path::PathBuf, RpcError> {
     let registered = std::path::Path::new(root_path);
     if !registered.is_absolute() {
@@ -862,56 +890,56 @@ async fn gui_unity_installations_refresh(
 }
 
 #[tauri::command]
-async fn gui_unity_project_editor_get(
+async fn gui_unity_project_launch_config_get(
     state: State<'_, GuiClientState>,
     project_id: String,
-) -> Result<alcomd_protocol::ProjectEditorResult, RpcError> {
+) -> Result<alcomd_protocol::ProjectUnityLaunchConfigResult, RpcError> {
     let mut client = state.client.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
-        Some(client) => client.unity_project_editor_get(project_id).await,
+        Some(client) => client.unity_project_launch_config_get(project_id).await,
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)
 }
 
 #[tauri::command]
-async fn gui_unity_project_editor_set(
+async fn gui_unity_project_launch_config_set(
     state: State<'_, GuiClientState>,
-    params: alcomd_protocol::ProjectEditorSetParams,
-) -> Result<alcomd_protocol::ProjectEditorResult, RpcError> {
+    params: alcomd_protocol::ProjectUnityLaunchConfigSetParams,
+) -> Result<alcomd_protocol::ProjectUnityLaunchConfigMutationResult, RpcError> {
     let mut client = state.client.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
-        Some(client) => client.unity_project_editor_set(params).await,
+        Some(client) => client.unity_project_launch_config_set(params).await,
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)
 }
 
 #[tauri::command]
-async fn gui_unity_project_editor_selection_get(
+async fn gui_unity_project_launch_config_clear(
     state: State<'_, GuiClientState>,
-    project_id: String,
-) -> Result<alcomd_protocol::ProjectEditorSelectionResult, RpcError> {
+    params: alcomd_protocol::ProjectUnityLaunchConfigClearParams,
+) -> Result<alcomd_protocol::ProjectUnityLaunchConfigMutationResult, RpcError> {
     let mut client = state.client.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
-        Some(client) => client.project_editor_selection_get(project_id).await,
+        Some(client) => client.unity_project_launch_config_clear(params).await,
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)
 }
 
 #[tauri::command]
-async fn gui_unity_project_editor_clear(
+async fn gui_unity_launch_options(
     state: State<'_, GuiClientState>,
-    params: alcomd_protocol::ProjectEditorClearParams,
-) -> Result<alcomd_protocol::ProjectEditorClearResult, RpcError> {
+    params: alcomd_protocol::UnityLaunchOptionsParams,
+) -> Result<alcomd_protocol::UnityLaunchOptionsResult, RpcError> {
     let mut client = state.client.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
-        Some(client) => client.project_editor_clear(params).await,
+        Some(client) => client.unity_launch_options(params).await,
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)
@@ -1459,6 +1487,8 @@ pub fn run() {
             gui_project_apply_copy,
             gui_project_plan_delete_directory,
             gui_project_apply_delete_directory,
+            gui_project_plan_unity_migration,
+            gui_project_apply_unity_migration,
             gui_project_register,
             gui_project_refresh,
             gui_project_set_favorite,
@@ -1489,11 +1519,11 @@ pub fn run() {
             gui_unity_installation_register,
             gui_unity_installation_remove,
             gui_unity_installations_refresh,
-            gui_unity_project_editor_get,
-            gui_unity_project_editor_set,
-            gui_unity_project_editor_selection_get,
-            gui_unity_project_editor_clear,
+            gui_unity_project_launch_config_get,
+            gui_unity_project_launch_config_set,
+            gui_unity_project_launch_config_clear,
             gui_unity_writer_state,
+            gui_unity_launch_options,
             gui_unity_launch,
             gui_unity_launch_status,
             gui_templates_list,

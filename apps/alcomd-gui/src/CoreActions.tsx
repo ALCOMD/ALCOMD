@@ -8,15 +8,18 @@ import type {
     Operation,
     PackagePlan,
     PackageSourceSelector,
-    ProjectEditorSelectionState,
     ProjectSnapshot,
+    ProjectUnityLaunchConfig,
+    ProjectUnityMigrationPlan,
     RepositorySnapshot,
     TemplatePlan,
     TemplateRecord,
-    UnityInstallation
+    UnityInstallation,
+    UnityLaunchOptionsResult
 } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
-import { Button, Checkbox, Dialog as MaterialDialog, Progress, Select, TextField } from "./Material";
+import { playArrowIcon } from "@alcomd/ui/icons";
+import { Button, Checkbox, Dialog as MaterialDialog, Icon, Progress, Select, TextField } from "./Material";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 
 interface ActionProps {
@@ -286,81 +289,284 @@ export function UnityRegistryActions({ client, installations, onChanged }: Actio
     );
 }
 
-export function ProjectUnityActions({ client, installations, project, selection, onChanged }: ActionProps & { installations: UnityInstallation[]; project: ProjectSnapshot; selection: ProjectEditorSelectionState }) {
+export function ProjectUnityActions({ afterMigrationOpen = false, client, installations, launchConfig, launchOptions, project, onChanged }: ActionProps & { afterMigrationOpen?: boolean; installations: UnityInstallation[]; launchConfig: ProjectUnityLaunchConfig; launchOptions: UnityLaunchOptionsResult; project: ProjectSnapshot }) {
     const canLaunch = useCapability(capabilities.unityLaunch);
     const canManage = useCapability(capabilities.unityManage);
-    const [installationId, setInstallationId] = useState(selection.selection.mode === "explicit" ? selection.selection.installationId : "");
-    const [argumentsText, setArgumentsText] = useState(selection.arguments.join("\n"));
-    const [confirmLaunch, setConfirmLaunch] = useState(false);
-    const [selectionRequired, setSelectionRequired] = useState(false);
+    const canMigrate = useCapability(capabilities.projectsUnityMigration);
+    const [argumentsText, setArgumentsText] = useState(launchConfig.arguments.join("\n"));
+    const [launchInstallationId, setLaunchInstallationId] = useState("");
+    const [postMigrationLaunchOptions, setPostMigrationLaunchOptions] = useState<UnityLaunchOptionsResult>();
+    const [targetVersion, setTargetVersion] = useState("");
+    const [targetInstallationId, setTargetInstallationId] = useState("");
+    const [migrationPlan, setMigrationPlan] = useState<ProjectUnityMigrationPlan>();
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const projectId = project.projectId;
     const projectRevision = project.revision;
-    const compatibleInstallations = installations.filter((installation) => compatibleUnityMajorMinor(project.unityVersion, installation.unityVersion));
+    const handledMigrationOperation = useRef<string | undefined>(undefined);
     useEffect(() => {
-        setInstallationId(selection.selection.mode === "explicit" ? selection.selection.installationId : "");
-        setArgumentsText(selection.arguments.join("\n"));
-    }, [selection]);
-    const setEditor = async (event: FormEvent) => {
+        setArgumentsText(launchConfig.arguments.join("\n"));
+    }, [launchConfig]);
+    const migrationVersions = [...new Set(installations.map((installation) => installation.unityVersion))]
+        .filter((version) => version !== project.unityVersion)
+        .sort((left, right) => left.localeCompare(right));
+    const targetInstallations = installations.filter((installation) => installation.unityVersion === targetVersion);
+    const setLaunchConfig = async (event: FormEvent) => {
         event.preventDefault();
         if (projectId === undefined) return;
         const arguments_ = argumentsText.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
         setFeedback({ busy: true });
         try {
-            await client.unityProjectEditorSet(projectId, installationId, arguments_, selection.revision);
-            if (selectionRequired && projectRevision !== undefined) {
-                const result = await client.unityLaunch(projectId, projectRevision);
-                setFeedback({ busy: false, message: `Unity launch ${result.launch.state}.` });
-                setSelectionRequired(false);
-            } else {
-                setFeedback({ busy: false, message: "Project editor preference updated." });
-            }
+            await client.unityProjectLaunchConfigSet(projectId, arguments_, launchConfig.revision);
+            setFeedback({ busy: false, message: "Unity launch arguments updated." });
             onChanged?.();
         } catch (caught: unknown) {
             setFeedback({ busy: false, error: safeError(caught) });
         }
     };
-    const clearEditor = async () => {
-        if (projectId === undefined || selection.selection.mode !== "explicit") return;
-        await runSimple(setFeedback, () => client.unityProjectEditorClear(projectId, selection.revision), "Editor selection returned to Automatic. Arguments were preserved.", onChanged);
+    const clearLaunchConfig = async () => {
+        if (projectId === undefined) return;
+        await runSimple(setFeedback, () => client.unityProjectLaunchConfigClear(projectId, launchConfig.revision), "Unity launch arguments cleared.", onChanged);
     };
     const launch = async () => {
-        if (projectId === undefined || projectRevision === undefined) return;
+        if (projectId === undefined) return;
+        const effectiveOptions = postMigrationLaunchOptions ?? launchOptions;
+        const candidates = effectiveOptions.exactMatchingInstallations;
+        const installationId = candidates.length === 1 ? candidates[0]?.installationId : launchInstallationId;
+        if (installationId === undefined || installationId.length === 0) {
+            setFeedback({ busy: false, message: candidates.length === 0
+                ? `This project requires Unity ${launchOptions.projectUnityVersion}. No exact matching Unity installation was found.`
+                : "Choose the Unity installation to use for this launch." });
+            return;
+        }
         setFeedback({ busy: true });
         try {
-            const result = await client.unityLaunch(projectId, projectRevision);
+            const result = await client.unityLaunch(projectId, installationId, effectiveOptions.projectRevision);
             setFeedback({ busy: false, message: `Unity launch ${result.launch.state}.` });
         } catch (caught: unknown) {
-            const error = safeError(caught);
-            if (error.code === "unity_editor_selection_required") {
-                setSelectionRequired(true);
-                setFeedback({ busy: false, message: "Choose a compatible Unity editor to continue launching." });
-                onChanged?.();
-            } else {
-                setFeedback({ busy: false, error });
-            }
+            setFeedback({ busy: false, error: safeError(caught) });
         }
     };
+    const chooseTargetVersion = (version: string) => {
+        setTargetVersion(version);
+        const matches = installations.filter((installation) => installation.unityVersion === version);
+        setTargetInstallationId(matches.length === 1 ? matches[0]?.installationId ?? "" : "");
+        setMigrationPlan(undefined);
+    };
+    const planMigration = async () => {
+        if (projectId === undefined || projectRevision === undefined || targetInstallationId.length === 0) return;
+        setFeedback({ busy: true });
+        try {
+            const result = await client.projectPlanUnityMigration(projectId, targetInstallationId, projectRevision);
+            if (result.kind === "no_change") {
+                setFeedback({ busy: false, message: `Project already uses Unity ${result.currentVersion}.` });
+                return;
+            }
+            setMigrationPlan(result.plan);
+            setFeedback({ busy: false });
+        } catch (caught: unknown) {
+            setFeedback({ busy: false, error: safeError(caught) });
+        }
+    };
+    const applyMigration = async () => {
+        if (migrationPlan === undefined || !migrationPlan.classification.supportedForApply) return;
+        setFeedback({ busy: true });
+        try {
+            const result = await client.projectApplyUnityMigration(migrationPlan.planId);
+            setMigrationPlan(undefined);
+            setFeedback({ busy: false, message: "Unity migration accepted.", operationId: result.operationId });
+        } catch (caught: unknown) {
+            setFeedback({ busy: false, error: safeError(caught) });
+        }
+    };
+    const migrationFinished = useCallback(async (operation: Operation) => {
+        if (!afterMigrationOpen || handledMigrationOperation.current === operation.operationId) return;
+        handledMigrationOperation.current = operation.operationId;
+        if (operation.state !== "succeeded") {
+            setFeedback({ busy: false, error: { code: operation.errorCode ?? "internal_error", message: "The Unity migration did not complete." } });
+            return;
+        }
+        if (projectId === undefined) return;
+        setFeedback({ busy: true });
+        try {
+            const freshProject = (await client.projectGet(projectId)).project;
+            if (freshProject.revision === undefined) throw { code: "project_not_registered" };
+            const options = await client.unityLaunchOptions(projectId, freshProject.revision);
+            setPostMigrationLaunchOptions(options);
+            onChanged?.();
+            if (options.exactMatchingInstallations.length === 0) {
+                setFeedback({ busy: false, message: `Migration completed, but no exact Unity ${options.projectUnityVersion} installation is available.` });
+                return;
+            }
+            if (options.exactMatchingInstallations.length > 1) {
+                setLaunchInstallationId("");
+                setFeedback({ busy: false, message: "Migration completed. Choose the Unity installation for this launch." });
+                return;
+            }
+            const result = await client.unityLaunch(projectId, options.exactMatchingInstallations[0]!.installationId, freshProject.revision);
+            setFeedback({ busy: false, message: `Migration completed. Unity launch ${result.launch.state}.` });
+        } catch (caught: unknown) {
+            setFeedback({ busy: false, error: safeError(caught) });
+        }
+    }, [afterMigrationOpen, client, onChanged, projectId]);
+    const effectiveLaunchOptions = postMigrationLaunchOptions ?? launchOptions;
     return (
         <ActionSection title="Unity actions">
-            <p>Selection: <strong>{selection.selection.mode === "automatic" ? "Automatic" : "Explicit"}</strong></p>
-            <form onSubmit={(event) => void setEditor(event)}>
-                <Select id="project-editor" label={selectionRequired ? "Choose a compatible editor" : "Selected editor"} onChange={setInstallationId} options={[{ label: "Choose an editor", value: "" }, ...(selectionRequired ? compatibleInstallations : installations).map((item) => ({ label: `Unity ${item.unityVersion} (${item.architecture})`, value: item.installationId }))]} required value={installationId} />
+            <p>Project Unity version: <strong>{project.unityVersion}</strong></p>
+            {effectiveLaunchOptions.exactMatchingInstallations.length > 1 ? <Select id="launch-installation" label="Unity installation for this launch" onChange={setLaunchInstallationId} options={[{ label: "Choose an installation", value: "" }, ...effectiveLaunchOptions.exactMatchingInstallations.map((item) => ({ label: `Unity ${item.unityVersion} · ${item.architecture}`, value: item.installationId }))]} value={launchInstallationId} /> : null}
+            <Button disabled={!canLaunch || feedback.busy || projectRevision === undefined} onClick={() => void launch()} title={capabilityUnavailableTitle(canLaunch, capabilities.unityLaunch)} type="button">Open Unity</Button>
+            {effectiveLaunchOptions.exactMatchingInstallations.length === 0 ? <p>This project requires Unity {effectiveLaunchOptions.projectUnityVersion}. No exact matching Unity installation was found.</p> : null}
+            <form onSubmit={(event) => void setLaunchConfig(event)}>
                 <TextField aria-describedby="unity-arguments-hint" id="unity-arguments" label="Additional arguments" maxLength={4096} onInput={setArgumentsText} rows={4} supportingText="One argument per line. The daemon validates forbidden arguments." type="textarea" value={argumentsText} />
-                <Button disabled={!canManage || feedback.busy || projectId === undefined || installationId.length === 0} title={capabilityUnavailableTitle(canManage, capabilities.unityManage)} type="submit" variant="tonal">{selectionRequired ? "Select and launch" : "Save editor preference"}</Button>
+                <div className="action-row">
+                    <Button disabled={!canManage || feedback.busy || projectId === undefined} title={capabilityUnavailableTitle(canManage, capabilities.unityManage)} type="submit" variant="tonal">Save launch arguments</Button>
+                    <Button disabled={!canManage || feedback.busy || projectId === undefined || launchConfig.revision === 0} onClick={() => void clearLaunchConfig()} title={capabilityUnavailableTitle(canManage, capabilities.unityManage)} type="button" variant="text">Clear launch arguments</Button>
+                </div>
             </form>
-            {selection.selection.mode === "explicit" ? <Button disabled={!canManage || feedback.busy} onClick={() => void clearEditor()} title={capabilityUnavailableTitle(canManage, capabilities.unityManage)} type="button" variant="text">Forget selected editor</Button> : null}
-            <Button disabled={!canLaunch || feedback.busy || projectRevision === undefined} onClick={() => setConfirmLaunch(true)} title={capabilityUnavailableTitle(canLaunch, capabilities.unityLaunch)} type="button">Launch Unity</Button>
-            <ConfirmDialog busy={feedback.busy} open={confirmLaunch} title="Launch this project in Unity?" detail="ALCOMD will revalidate the selected editor, project revision, and writer observation." onClose={() => setConfirmLaunch(false)} onConfirm={launch} />
-            <MutationFeedback client={client} feedback={feedback} />
+            <h3>Migrate Project Unity version</h3>
+            <Select id="project-unity-version" label="Target Unity version" onChange={chooseTargetVersion} options={[{ label: `Current · ${project.unityVersion}`, value: "" }, ...migrationVersions.map((version) => ({ label: version, value: version }))]} value={targetVersion} />
+            {targetInstallations.length > 1 ? <Select id="migration-installation" label="Target Unity installation" onChange={setTargetInstallationId} options={[{ label: "Choose an installation", value: "" }, ...targetInstallations.map((item) => ({ label: `${item.unityVersion} · ${item.architecture}`, value: item.installationId }))]} value={targetInstallationId} /> : null}
+            <Button disabled={!canMigrate || feedback.busy || targetInstallationId.length === 0 || projectRevision === undefined} onClick={() => void planMigration()} title={capabilityUnavailableTitle(canMigrate, capabilities.projectsUnityMigration)} type="button" variant="tonal">Review migration</Button>
+            <PlanDialog applyDisabled={migrationPlan?.classification.supportedForApply === false} busy={feedback.busy} onApply={applyMigration} onClose={() => setMigrationPlan(undefined)} open={migrationPlan !== undefined} title="Review Unity migration">
+                {migrationPlan === undefined ? null : <dl className="dialog-summary"><div><dt>From</dt><dd>{migrationPlan.sourceUnityVersion}</dd></div><div><dt>To</dt><dd>{migrationPlan.targetUnityVersion}</dd></div><div><dt>Classification</dt><dd>{humanize(migrationPlan.classification.kind)}</dd></div><div><dt>Supported</dt><dd>{migrationPlan.classification.supportedForApply ? "Yes" : "No"}</dd></div></dl>}
+            </PlanDialog>
+            <MutationFeedback client={client} feedback={feedback} onOperationTerminal={migrationFinished} />
         </ActionSection>
     );
 }
 
-function compatibleUnityMajorMinor(projectVersion: string, installationVersion: string): boolean {
-    const project = projectVersion.match(/^(\d+)\.(\d+)/);
-    const installation = installationVersion.match(/^(\d+)\.(\d+)/);
-    return project !== null && installation !== null && project[1] === installation[1] && project[2] === installation[2];
+export function ProjectUnityWorkspaceActions({ client, installations, launchOptions, navigate, project }: {
+    client: GuiRpcClient;
+    installations: UnityInstallation[];
+    launchOptions: UnityLaunchOptionsResult;
+    navigate(path: string): void;
+    project: ProjectSnapshot;
+}) {
+    const canLaunch = useCapability(capabilities.unityLaunch);
+    const canMigrate = useCapability(capabilities.projectsUnityMigration);
+    const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
+    const [launchChooserOpen, setLaunchChooserOpen] = useState(false);
+    const [launchInstallationId, setLaunchInstallationId] = useState("");
+    const [missingExactOpen, setMissingExactOpen] = useState(false);
+    const [migrationVersion, setMigrationVersion] = useState(project.unityVersion);
+    const [migrationInstallationId, setMigrationInstallationId] = useState("");
+    const [migrationChooserOpen, setMigrationChooserOpen] = useState(false);
+    const [migrationPlan, setMigrationPlan] = useState<ProjectUnityMigrationPlan>();
+    const projectId = project.projectId;
+    const projectRevision = project.revision;
+    const migrationVersions = [...new Set(installations.map((installation) => installation.unityVersion))]
+        .filter((version) => version !== project.unityVersion)
+        .sort((left, right) => left.localeCompare(right));
+    const migrationInstallations = installations.filter((installation) => installation.unityVersion === migrationVersion);
+
+    const launch = async (installationId: string) => {
+        if (projectId === undefined || projectRevision === undefined) return;
+        setFeedback({ busy: true });
+        try {
+            const result = await client.unityLaunch(projectId, installationId, projectRevision);
+            setLaunchChooserOpen(false);
+            setLaunchInstallationId("");
+            setFeedback({ busy: false, message: `Unity launch ${result.launch.state}.` });
+        } catch (caught: unknown) {
+            setFeedback({ busy: false, error: safeError(caught) });
+        }
+    };
+    const openUnity = async () => {
+        const candidates = launchOptions.exactMatchingInstallations;
+        if (candidates.length === 0) {
+            setMissingExactOpen(true);
+            return;
+        }
+        if (candidates.length === 1) {
+            await launch(candidates[0]!.installationId);
+            return;
+        }
+        setLaunchInstallationId("");
+        setLaunchChooserOpen(true);
+    };
+    const planMigration = async (installationId: string) => {
+        if (projectId === undefined || projectRevision === undefined) return;
+        setFeedback({ busy: true });
+        try {
+            const result = await client.projectPlanUnityMigration(projectId, installationId, projectRevision);
+            setMigrationChooserOpen(false);
+            if (result.kind === "no_change") {
+                setMigrationVersion(project.unityVersion);
+                setFeedback({ busy: false, message: `Project already uses Unity ${result.currentVersion}.` });
+                return;
+            }
+            setMigrationPlan(result.plan);
+            setFeedback({ busy: false });
+        } catch (caught: unknown) {
+            setMigrationVersion(project.unityVersion);
+            setFeedback({ busy: false, error: safeError(caught) });
+        }
+    };
+    const chooseMigrationVersion = (version: string) => {
+        setMigrationVersion(version);
+        setMigrationPlan(undefined);
+        if (version === project.unityVersion) return;
+        const matches = installations.filter((installation) => installation.unityVersion === version);
+        if (matches.length === 1) {
+            void planMigration(matches[0]!.installationId);
+            return;
+        }
+        setMigrationInstallationId("");
+        setMigrationChooserOpen(true);
+    };
+    const applyMigration = async () => {
+        if (migrationPlan === undefined || !migrationPlan.classification.supportedForApply) return;
+        setFeedback({ busy: true });
+        try {
+            const result = await client.projectApplyUnityMigration(migrationPlan.planId);
+            setMigrationPlan(undefined);
+            navigate(`/operations/${result.operationId}`);
+        } catch (caught: unknown) {
+            setFeedback({ busy: false, error: safeError(caught) });
+        }
+    };
+
+    return (
+        <>
+            <Select
+                className="project-unity-version"
+                disabled={!canMigrate || feedback.busy || projectRevision === undefined}
+                label="Unity version"
+                onChange={chooseMigrationVersion}
+                options={[
+                    { label: `Unity ${project.unityVersion}`, value: project.unityVersion },
+                    ...migrationVersions.map((version) => ({ label: `Unity ${version}`, value: version }))
+                ]}
+                value={migrationVersion}
+            />
+            <Button disabled={!canLaunch || feedback.busy || projectRevision === undefined} onClick={() => void openUnity()} title={capabilityUnavailableTitle(canLaunch, capabilities.unityLaunch)} type="button"><Icon asset={playArrowIcon} slot="icon" />Open Unity</Button>
+            <ModalDialog onClose={() => setMissingExactOpen(false)} open={missingExactOpen} title="Unity installation required">
+                <p>This project requires Unity {launchOptions.projectUnityVersion}. No exact matching Unity installation was found.</p>
+                <div className="dialog-actions">
+                    <Button onClick={() => setMissingExactOpen(false)} type="button" variant="tonal">Cancel</Button>
+                    <Button onClick={() => { setMissingExactOpen(false); navigate(`/projects/${projectId}/unity?afterMigration=open`); }} type="button">Migrate Project…</Button>
+                </div>
+            </ModalDialog>
+            <ModalDialog onClose={() => setLaunchChooserOpen(false)} open={launchChooserOpen} title="Choose Unity for this launch">
+                <Select label="Unity installation for this launch" onChange={setLaunchInstallationId} options={[{ label: "Choose an installation", value: "" }, ...launchOptions.exactMatchingInstallations.map((item) => ({ label: `Unity ${item.unityVersion} · ${item.architecture}`, value: item.installationId }))]} value={launchInstallationId} />
+                <div className="dialog-actions">
+                    <Button onClick={() => setLaunchChooserOpen(false)} type="button" variant="tonal">Cancel</Button>
+                    <Button disabled={launchInstallationId.length === 0 || feedback.busy} onClick={() => void launch(launchInstallationId)} type="button">Open Unity</Button>
+                </div>
+            </ModalDialog>
+            <ModalDialog onClose={() => { setMigrationChooserOpen(false); setMigrationVersion(project.unityVersion); }} open={migrationChooserOpen} title={`Choose Unity ${migrationVersion} installation`}>
+                <Select label="Target Unity installation" onChange={setMigrationInstallationId} options={[{ label: "Choose an installation", value: "" }, ...migrationInstallations.map((item) => ({ label: `${item.unityVersion} · ${item.architecture}`, value: item.installationId }))]} value={migrationInstallationId} />
+                <div className="dialog-actions">
+                    <Button onClick={() => { setMigrationChooserOpen(false); setMigrationVersion(project.unityVersion); }} type="button" variant="tonal">Cancel</Button>
+                    <Button disabled={migrationInstallationId.length === 0 || feedback.busy} onClick={() => void planMigration(migrationInstallationId)} type="button">Review migration</Button>
+                </div>
+            </ModalDialog>
+            <PlanDialog applyDisabled={migrationPlan?.classification.supportedForApply === false} busy={feedback.busy} onApply={applyMigration} onClose={() => { setMigrationPlan(undefined); setMigrationVersion(project.unityVersion); }} open={migrationPlan !== undefined} title="Review Unity migration">
+                {migrationPlan === undefined ? null : <dl className="dialog-summary"><div><dt>From</dt><dd>{migrationPlan.sourceUnityVersion}</dd></div><div><dt>To</dt><dd>{migrationPlan.targetUnityVersion}</dd></div><div><dt>Classification</dt><dd>{humanize(migrationPlan.classification.kind)}</dd></div><div><dt>Supported</dt><dd>{migrationPlan.classification.supportedForApply ? "Yes" : "No"}</dd></div></dl>}
+            </PlanDialog>
+            {feedback.error === undefined ? null : <span className="inline-error" role="alert">Unity action failed: {feedback.error.code}</span>}
+            {feedback.message === undefined ? null : <span aria-live="polite" role="status">{feedback.message}</span>}
+        </>
+    );
 }
 
 export function TemplateImportPanel({ client, onChanged }: ActionProps) {
@@ -484,8 +690,8 @@ function ConfirmDialog({ busy, detail, onClose, onConfirm, open, title }: { busy
     return <ModalDialog open={open} title={title} onClose={onClose}><p>{detail}</p><div className="dialog-actions"><Button disabled={busy} onClick={onClose} type="button" variant="tonal">Go back</Button><Button data-dialog-initial-focus disabled={busy} onClick={() => void onConfirm().finally(onClose)} type="button">{busy ? "Working…" : "Confirm"}</Button></div></ModalDialog>;
 }
 
-function PlanDialog({ busy, children, onApply, onClose, open, title }: { busy: boolean; children: ReactNode; onApply(): Promise<void>; onClose(): void; open: boolean; title: string }) {
-    return <ModalDialog open={open} title={title} onClose={onClose}>{children}<p className="risk-summary">The daemon will revalidate this frozen plan. A stale plan fails instead of being silently replaced.</p><div className="dialog-actions"><Button disabled={busy} onClick={onClose} type="button" variant="tonal">Discard plan</Button><Button data-dialog-initial-focus disabled={busy} onClick={() => void onApply()} type="button">{busy ? "Applying…" : "Apply reviewed plan"}</Button></div></ModalDialog>;
+function PlanDialog({ applyDisabled = false, busy, children, onApply, onClose, open, title }: { applyDisabled?: boolean; busy: boolean; children: ReactNode; onApply(): Promise<void>; onClose(): void; open: boolean; title: string }) {
+    return <ModalDialog open={open} title={title} onClose={onClose}>{children}<p className="risk-summary">The daemon will revalidate this frozen plan. A stale plan fails instead of being silently replaced.</p><div className="dialog-actions"><Button disabled={busy} onClick={onClose} type="button" variant="tonal">Discard plan</Button><Button data-dialog-initial-focus disabled={busy || applyDisabled} onClick={() => void onApply()} type="button">{busy ? "Applying…" : "Apply reviewed plan"}</Button></div></ModalDialog>;
 }
 
 function TemplatePlanDialog(props: { busy: boolean; onApply(): Promise<void>; onClose(): void; plan?: TemplatePlan; title: string }) {
@@ -500,16 +706,17 @@ function ModalDialog({ children, onClose, open, title }: { children: ReactNode; 
     return <MaterialDialog onClose={onClose} open={open} title={title}><div className="modal-dialog-content">{children}</div></MaterialDialog>;
 }
 
-function MutationFeedback({ client, feedback }: { client: GuiRpcClient; feedback: FeedbackState }) {
+function MutationFeedback({ client, feedback, onOperationTerminal }: { client: GuiRpcClient; feedback: FeedbackState; onOperationTerminal?(operation: Operation): void }) {
     if (feedback.error !== undefined) return <div className="mutation-feedback mutation-feedback--error" role="alert"><strong>Request failed</strong><span><code>{feedback.error.code}</code>{feedback.error.diagnosticId === undefined ? "" : ` · Diagnostic ID ${feedback.error.diagnosticId}`}</span></div>;
-    if (feedback.operationId !== undefined) return <OperationFollow client={client} operationId={feedback.operationId} />;
+    if (feedback.operationId !== undefined) return <OperationFollow client={client} onTerminal={onOperationTerminal} operationId={feedback.operationId} />;
     if (feedback.message !== undefined) return <div className="mutation-feedback" role="status" aria-live="polite">{feedback.message}</div>;
     return null;
 }
 
-export function OperationFollow({ client, operationId, title = "Operation" }: { client: GuiRpcClient; operationId: string; title?: string }) {
+export function OperationFollow({ client, onTerminal, operationId, title = "Operation" }: { client: GuiRpcClient; onTerminal?(operation: Operation): void; operationId: string; title?: string }) {
     const [operation, setOperation] = useState<Operation>();
     const [error, setError] = useState<RpcError>();
+    const terminalNotification = useRef<string | undefined>(undefined);
     const load = useCallback(async () => {
         try { setOperation(await client.operationGet(operationId)); setError(undefined); }
         catch (caught: unknown) { setError(safeError(caught)); }
@@ -520,6 +727,13 @@ export function OperationFollow({ client, operationId, title = "Operation" }: { 
         const timer = window.setTimeout(() => void load(), 750);
         return () => window.clearTimeout(timer);
     }, [load, operation]);
+    useEffect(() => {
+        if (operation === undefined || !isTerminal(operation.state)) return;
+        const notification = `${operation.operationId}:${operation.revision}:${operation.state}`;
+        if (terminalNotification.current === notification) return;
+        terminalNotification.current = notification;
+        onTerminal?.(operation);
+    }, [onTerminal, operation]);
     return <section className="operation-follow" aria-live="polite" aria-atomic="true" role="status"><h3>{title}</h3>{operation === undefined ? <p>Reading progress…</p> : <><p><strong>{humanize(operation.state)}</strong>{operation.progress?.phase === undefined ? "" : ` · ${humanize(operation.progress.phase)}`}</p><Progress label={`${title} progress`} value={isTerminal(operation.state) ? 1 : undefined} /></>}{error === undefined ? null : <p className="inline-error">Progress is temporarily unavailable. ALCOMD will keep following the same task.</p>}</section>;
 }
 

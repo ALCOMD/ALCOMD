@@ -5,9 +5,9 @@ use std::time::Duration;
 
 use alcomd_application::{
     DependencyIdentity, IdempotencyKey, M3ErrorCode, M3RegistryStore, M5UnityStore, ManifestState,
-    PrincipalId, ProjectEditorPreference, ProjectId, ProjectObservation, ProjectRecord,
-    ProjectType, RepositoryObservation, RepositoryPackageLinks, RepositoryPackageVersion,
-    RepositorySource, RepositoryValidators, Revision, StateStore, SyncWrite, UnityInstallationId,
+    PrincipalId, ProjectId, ProjectObservation, ProjectRecord, ProjectType, RepositoryObservation,
+    RepositoryPackageLinks, RepositoryPackageVersion, RepositorySource, RepositoryValidators,
+    Revision, StateStore, SyncWrite, UnityInstallationId,
 };
 use alcomd_store::StateStoreHandle;
 use rusqlite::{Connection, params};
@@ -396,7 +396,7 @@ fn legacy_durable_project_record_json_defaults_favorite_to_false() {
 }
 
 #[tokio::test]
-async fn v10_project_and_unity_idempotency_responses_replay_after_v11_migration() {
+async fn v10_project_idempotency_and_unity_arguments_survive_current_migration() {
     let directory = TestDirectory::new();
     let database = directory.database();
     let owner = PrincipalId::local_owner();
@@ -499,31 +499,6 @@ async fn v10_project_and_unity_idempotency_responses_replay_after_v11_migration(
                 )
                 .expect("insert legacy project response");
         }
-        let preference = ProjectEditorPreference {
-            project_id,
-            installation_id,
-            arguments: vec!["-logFile".to_owned(), "-".to_owned()],
-            revision: Revision::INITIAL,
-            updated_at_ms: 10,
-        };
-        let set_fingerprint = format!(
-            r#"{{"expectedRevision":0,"installationId":"{}","projectId":"{}","version":1}}"#,
-            installation_id, project_id
-        );
-        connection
-            .execute(
-                "INSERT INTO idempotency_records (
-                    principal_id, method, idempotency_key, request_fingerprint, state,
-                    operation_id, response_json, created_at_ms
-                 ) VALUES (?1, 'unity.projectEditor.set', 'legacy-unity-set', ?2,
-                           'completed', NULL, ?3, 10)",
-                params![
-                    owner.as_str(),
-                    set_fingerprint,
-                    serde_json::to_string(&preference).expect("serialize v10 preference"),
-                ],
-            )
-            .expect("insert legacy Unity set response");
     }
 
     let store = StateStoreHandle::open(database).expect("open and migrate v10 fixture");
@@ -551,20 +526,12 @@ async fn v10_project_and_unity_idempotency_responses_replay_after_v11_migration(
         .expect("replay v10 project refresh");
     assert!(refresh.replayed);
     assert!(!refresh.value.favorite);
-    let (preference, replayed) = store
-        .set_project_editor(
-            owner,
-            project_id,
-            installation_id,
-            vec!["-logFile".to_owned(), "-".to_owned()],
-            None,
-            key("legacy-unity-set"),
-            22,
-        )
+    let config = store
+        .get_project_launch_config(owner, project_id)
         .await
-        .expect("replay v10 Unity set response");
-    assert!(replayed);
-    assert_eq!(preference.revision, Revision::INITIAL);
+        .expect("read migrated launch arguments");
+    assert_eq!(config.arguments, ["-logFile", "-"]);
+    assert_eq!(config.revision, Some(Revision::INITIAL));
 }
 
 #[tokio::test]

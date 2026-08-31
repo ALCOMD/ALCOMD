@@ -569,6 +569,9 @@ pub enum Permission {
     /// Permanently delete one registered project directory through a durable Plan/Apply workflow.
     #[serde(rename = "projects.delete")]
     ProjectsDelete,
+    /// Migrate a registered project's authoritative Unity version through the bounded workflow.
+    #[serde(rename = "projects.unity-migrate")]
+    ProjectsUnityMigrate,
     /// Read Template registry records and inspect/export bundles.
     #[serde(rename = "templates.read")]
     TemplatesRead,
@@ -622,6 +625,7 @@ impl Permission {
             Self::UnityLaunch => "unity.launch",
             Self::ProjectsCreate => "projects.create",
             Self::ProjectsDelete => "projects.delete",
+            Self::ProjectsUnityMigrate => "projects.unity-migrate",
             Self::TemplatesRead => "templates.read",
             Self::TemplatesManage => "templates.manage",
             Self::BackupsRead => "backups.read",
@@ -881,6 +885,10 @@ mod tests {
         assert_eq!(Permission::UnityLaunch.as_str(), "unity.launch");
         assert_eq!(Permission::ProjectsCreate.as_str(), "projects.create");
         assert_eq!(Permission::ProjectsDelete.as_str(), "projects.delete");
+        assert_eq!(
+            Permission::ProjectsUnityMigrate.as_str(),
+            "projects.unity-migrate"
+        );
         assert!(IdempotencyKey::parse("check-once").is_ok());
         assert_eq!(
             IdempotencyKey::parse("界"),

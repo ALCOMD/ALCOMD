@@ -15,6 +15,7 @@ export const capabilities = {
     packagesUserPackages: "packages.user-packages.v1",
     projectsCopy: "projects.copy.v1",
     projectsDelete: "projects.delete.v1",
+    projectsUnityMigration: "projects.unity-migration.v1",
     projectsRead: "projects.read.v1",
     projectsRegistry: "projects.registry.v1",
     repositoriesRead: "repositories.read.v1",

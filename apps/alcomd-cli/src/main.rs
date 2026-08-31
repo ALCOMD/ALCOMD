@@ -200,6 +200,16 @@ enum ProjectCommand {
         #[arg(long)]
         project_id: String,
     },
+    MigrateUnity {
+        project_id: String,
+        target_installation_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        plan_idempotency_key: String,
+        #[arg(long)]
+        idempotency_key: String,
+    },
     Inspect {
         path: PathBuf,
         #[arg(long)]
@@ -376,21 +386,20 @@ enum UnityCommand {
         #[arg(long)]
         idempotency_key: String,
     },
-    ProjectGet {
+    ProjectLaunchConfigGet {
         project_id: String,
     },
-    ProjectSetEditor {
+    ProjectLaunchConfigSet {
         project_id: String,
-        installation_id: String,
-        #[arg(long, default_value_t = 0)]
+        #[arg(long = "argument", allow_hyphen_values = true)]
+        arguments: Vec<String>,
+        #[arg(long)]
         expected_revision: u64,
         #[arg(long)]
         idempotency_key: String,
     },
-    ProjectSetArgs {
+    ProjectLaunchConfigClear {
         project_id: String,
-        #[arg(long = "argument", allow_hyphen_values = true)]
-        arguments: Vec<String>,
         #[arg(long)]
         expected_revision: u64,
         #[arg(long)]
@@ -401,10 +410,16 @@ enum UnityCommand {
     },
     Launch {
         project_id: String,
+        installation_id: String,
         #[arg(long)]
         expected_project_revision: u64,
         #[arg(long)]
         idempotency_key: String,
+    },
+    LaunchOptions {
+        project_id: String,
+        #[arg(long)]
+        expected_project_revision: u64,
     },
     LaunchStatus {
         launch_id: String,
@@ -753,6 +768,65 @@ async fn execute(
                     }
                 }
             }
+            ProjectCommand::MigrateUnity {
+                project_id,
+                target_installation_id,
+                expected_revision,
+                plan_idempotency_key,
+                idempotency_key,
+            } => {
+                let planned = client
+                    .project_plan_unity_migration(
+                        alcomd_protocol::ProjectsPlanUnityMigrationParams {
+                            project_id,
+                            target_installation_id,
+                            expected_project_revision: expected_revision,
+                            idempotency_key: plan_idempotency_key,
+                        },
+                    )
+                    .await?;
+                match planned {
+                    alcomd_protocol::ProjectsPlanUnityMigrationResult::NoChange {
+                        current_version,
+                    } => serde_json::to_value(
+                        alcomd_protocol::ProjectsPlanUnityMigrationResult::NoChange {
+                            current_version,
+                        },
+                    ),
+                    alcomd_protocol::ProjectsPlanUnityMigrationResult::Planned {
+                        plan,
+                        replayed,
+                    } if options.dry_run => serde_json::to_value(
+                        alcomd_protocol::ProjectsPlanUnityMigrationResult::Planned {
+                            plan,
+                            replayed,
+                        },
+                    ),
+                    alcomd_protocol::ProjectsPlanUnityMigrationResult::Planned { plan, .. } => {
+                        confirm_high_impact(options)?;
+                        let accepted = client
+                            .project_apply_unity_migration(
+                                alcomd_protocol::ProjectsApplyUnityMigrationParams {
+                                    plan_id: plan.plan_id,
+                                    idempotency_key,
+                                },
+                            )
+                            .await?;
+                        if options.no_wait {
+                            serde_json::to_value(accepted)
+                        } else {
+                            serde_json::to_value(
+                                wait_for_operation(
+                                    &mut client,
+                                    accepted.operation_id,
+                                    options.output_mode,
+                                )
+                                .await?,
+                            )
+                        }
+                    }
+                }
+            }
             ProjectCommand::Inspect {
                 path,
                 search_parents,
@@ -1043,55 +1117,54 @@ async fn execute(
                     })
                     .await?,
             ),
-            UnityCommand::ProjectGet { project_id } => {
-                serde_json::to_value(client.unity_project_editor_get(project_id).await?)
+            UnityCommand::ProjectLaunchConfigGet { project_id } => {
+                serde_json::to_value(client.unity_project_launch_config_get(project_id).await?)
             }
-            UnityCommand::ProjectSetEditor {
-                project_id,
-                installation_id,
-                expected_revision,
-                idempotency_key,
-            } => serde_json::to_value(
-                client
-                    .unity_project_editor_set(alcomd_protocol::ProjectEditorSetParams {
-                        project_id,
-                        installation_id,
-                        arguments: Vec::new(),
-                        expected_revision,
-                        idempotency_key,
-                    })
-                    .await?,
-            ),
-            UnityCommand::ProjectSetArgs {
+            UnityCommand::ProjectLaunchConfigSet {
                 project_id,
                 arguments,
                 expected_revision,
                 idempotency_key,
-            } => {
-                let current = client.unity_project_editor_get(project_id.clone()).await?;
-                serde_json::to_value(
-                    client
-                        .unity_project_editor_set(alcomd_protocol::ProjectEditorSetParams {
+            } => serde_json::to_value(
+                client
+                    .unity_project_launch_config_set(
+                        alcomd_protocol::ProjectUnityLaunchConfigSetParams {
                             project_id,
-                            installation_id: current.preference.installation_id,
                             arguments,
                             expected_revision,
                             idempotency_key,
-                        })
-                        .await?,
-                )
-            }
+                        },
+                    )
+                    .await?,
+            ),
+            UnityCommand::ProjectLaunchConfigClear {
+                project_id,
+                expected_revision,
+                idempotency_key,
+            } => serde_json::to_value(
+                client
+                    .unity_project_launch_config_clear(
+                        alcomd_protocol::ProjectUnityLaunchConfigClearParams {
+                            project_id,
+                            expected_revision,
+                            idempotency_key,
+                        },
+                    )
+                    .await?,
+            ),
             UnityCommand::WriterState { project_id } => {
                 serde_json::to_value(client.unity_writer_state(project_id).await?)
             }
             UnityCommand::Launch {
                 project_id,
+                installation_id,
                 expected_project_revision,
                 idempotency_key,
             } => serde_json::to_value(
                 client
                     .unity_launch(alcomd_protocol::UnityLaunchParams {
                         project_id,
+                        installation_id,
                         expected_project_revision,
                         idempotency_key,
                     })
@@ -1100,6 +1173,17 @@ async fn execute(
             UnityCommand::LaunchStatus { launch_id } => {
                 serde_json::to_value(client.unity_launch_status(launch_id).await?)
             }
+            UnityCommand::LaunchOptions {
+                project_id,
+                expected_project_revision,
+            } => serde_json::to_value(
+                client
+                    .unity_launch_options(alcomd_protocol::UnityLaunchOptionsParams {
+                        project_id,
+                        expected_project_revision,
+                    })
+                    .await?,
+            ),
         },
         Command::Template { command } => match command {
             TemplateCommand::List { limit } => serde_json::to_value(
@@ -1355,6 +1439,7 @@ impl Command {
                 ProjectCommand::Copy { .. } => "project copy",
                 ProjectCommand::Create { .. } => "project create",
                 ProjectCommand::DeleteDirectory { .. } => "project delete-directory",
+                ProjectCommand::MigrateUnity { .. } => "project migrate-unity",
                 ProjectCommand::Inspect { .. } => "project inspect",
                 ProjectCommand::List { .. } => "project list",
                 ProjectCommand::Get { .. } => "project get",
@@ -1385,11 +1470,14 @@ impl Command {
                 UnityCommand::Refresh { .. } => "unity refresh",
                 UnityCommand::Register { .. } => "unity register",
                 UnityCommand::Remove { .. } => "unity remove",
-                UnityCommand::ProjectGet { .. } => "unity project-get",
-                UnityCommand::ProjectSetEditor { .. } => "unity project-set-editor",
-                UnityCommand::ProjectSetArgs { .. } => "unity project-set-args",
+                UnityCommand::ProjectLaunchConfigGet { .. } => "unity project-launch-config-get",
+                UnityCommand::ProjectLaunchConfigSet { .. } => "unity project-launch-config-set",
+                UnityCommand::ProjectLaunchConfigClear { .. } => {
+                    "unity project-launch-config-clear"
+                }
                 UnityCommand::WriterState { .. } => "unity writer-state",
                 UnityCommand::Launch { .. } => "unity launch",
+                UnityCommand::LaunchOptions { .. } => "unity launch-options",
                 UnityCommand::LaunchStatus { .. } => "unity launch-status",
             },
             Self::Template { command } => match command {

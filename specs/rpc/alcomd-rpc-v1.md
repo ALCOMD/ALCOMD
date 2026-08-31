@@ -501,18 +501,19 @@ M5 在 RPC major 1 上兼容增加并实现三项 capability：
 
 | capability | method | permission |
 |---|---|---|
-| `unity.read.v1` | `unity.installations.list/get`、`unity.projectEditor.get`、`unity.writerState` | `unity.read` |
-| `unity.manage.v1` | `unity.installations.register/remove/refresh`、`unity.projectEditor.set` | `unity.manage` |
-| `unity.launch.v1` | `unity.launch`、`unity.launchStatus` | `unity.launch` |
+| `unity.read.v1` | `unity.installations.list/get`、`unity.projectLaunchConfig.get`、`unity.writerState` | `unity.read` |
+| `unity.manage.v1` | `unity.installations.register/remove/refresh`、`unity.projectLaunchConfig.set/clear` | `unity.manage` |
+| `unity.launch.v1` | `unity.launchOptions`、`unity.launch`、`unity.launchStatus` | `unity.launch` |
 
 manual register 与 discovery candidate 必须经同一 executable validator。`unity.installations.register`
 只接受绝对 executable path 与 idempotencyKey；path、Hub/CLI 声明或显示版本本身不能证明 identity。
 `refresh` 是 bounded registry synchronization，可返回显式 partial diagnostics，但 malformed/不存在的
 candidate 不得注册为有效 installation。Hub CLI 不成为权威依赖。
 
-project Editor preference 保存 InstallationId 与 bounded argv array。`expectedRevision=0` 表示调用方
-要求 preference 尚不存在，正整数要求精确 revision。参数不得包含 `-projectPath` 或等价重复 project
-selector；daemon 固定把已验证 absolute project root 作为独立 `-projectPath` argv 传给已验证 Editor，
+Project launch config 只保存 bounded argv array，不保存 InstallationId 或选择状态。缺失 config 规范化为
+`arguments=[]`、`revision=0`、`updatedAtMs=0`；`expectedRevision=0` 要求 config 尚不存在，正整数要求精确
+stored revision。same-value set 与 clear-missing 是 semantic no-op。参数不得包含 `-projectPath` 或等价重复
+project selector；daemon 固定把已验证 absolute project root 作为独立 `-projectPath` argv 传给已验证 Editor，
 不得经 shell。
 
 `unity.writerState` 返回 `running_confirmed`、`running_suspected`、`not_observed` 或 `unknown` 及有界、
@@ -521,7 +522,9 @@ package/template/backup mutation 对 confirmed 返回 `unity_project_running`，
 并继续 live fingerprint gate。Unity launch 对 confirmed 拒绝第二实例，对 suspected/unknown 返回
 `unity_launch_state_uncertain`，只有 not_observed 允许 spawn。
 
-`unity.launch` 复验 project/installation identity、project revision、permission 与永久 idempotency；成功
+`unity.launchOptions` 由 Core 按 canonical exact Unity version 返回确定排序的匹配 installation。`unity.launch`
+要求调用方提供 one-shot InstallationId；该选择不持久化，并在启动前复验 project/installation identity、
+project revision、canonical exact version、permission 与永久 idempotency。成功
 只返回 opaque launch record 且 `state=opening`/`spawnAccepted=true`，不宣称 Unity 已完全打开。
 `unity.launchStatus` 后续只能观察为 opening/open/failed。客户端断开不终止 Unity；M5 不建立通用
 supervisor。foreground/activation 不在本合同中。
@@ -532,8 +535,8 @@ supervisor。foreground/activation 不在本合同中。
 `unity_launch_state_uncertain`、`unity_project_selector_forbidden`、`unity_launch_failed` 与
 `unity_launch_not_found`。普通 error 不包含完整进程命令行、私密路径、PID 列表或 OS debug。
 
-完整 DTO、enum 与上限由 `m5-unity.schema.json` 冻结。State Schema v5 已接入自动 migration；daemon
-在 store 成功初始化后通过 hello 广告当前 `dataSchema: 7` 和客户端实际协商的已实现 M5 capability。此兼容增加不
+完整 DTO、enum 与上限由 `m5-unity.schema.json` 冻结。State v14 删除旧 editor preference 并保留独立 launch config；daemon
+在 store 成功初始化后通过 hello 广告当前 `dataSchema: 14` 和客户端实际协商的已实现 capability。此兼容增加不
 改变 M1-M4 方法语义，也不表示 Template、Backup 或完整 CLI 已实现。
 
 ## 20. M5 contract-only 兼容增加：Template Bundle v1
@@ -693,32 +696,22 @@ Resource Lock 与稳定错误由 `m7-project-copy.proposal.schema.json` 和 `../
 `project_copy_plans`、`project_copy_filesystem_journal` 与 `operations.kind='projects.copy'`；完整 wiring 后 hello 广告
 `dataSchema: 10`。新增 method/capability/字段是 RPC v1 兼容增加，既有 Project/Package 方法语义不变。
 
-## 26. M7 兼容增加：Project Favorite 与 Unity Editor Selection
+## 26. M7 兼容增加：Project Favorite 与 Unity product-model replacement
 
-M7 在 RPC major 1 上兼容增加三个 method，不增加 capability 或 permission：
+Project Favorite 继续使用既有 compatible addition：
 
 | method | params | result | capability / permission |
 |---|---|---|---|
 | `projects.setFavorite` | ProjectId、boolean Favorite、positive exact Project revision、idempotency key | 既有 `ProjectWriteResult` | `projects.registry.v1` / `projects.manage` |
-| `unity.projectEditor.selection.get` | ProjectId | `ProjectEditorSelectionState`，不含 `replayed` | `unity.read.v1` / `unity.read` |
-| `unity.projectEditor.clear` | ProjectId、preference expected revision、idempotency key | automatic selection state、`replayed` | `unity.manage.v1` / `unity.manage` |
 
 注册 Project 的 `ProjectSnapshot` 兼容增加 `favorite: boolean`；anonymous `projects.inspect` snapshot 省略该字段。
 Favorite 是 registry metadata，不进入 filesystem observation 或 `snapshot_json`。Core list ordering/cursor 不变；真实 mutation
 增加 Project revision并写 `project.favorite_changed`，精确 same-value request 是保存幂等结果的 semantic no-op。
 
-现有 `ProjectEditorPreference` 及 `unity.projectEditor.get/set` 保持 explicit-only 成功 shape。新 selection state 使用 closed
-`automatic | explicit { installationId }` union；缺失 preference row 规范化为 automatic、empty arguments、revision 0、
-updatedAtMs 0。`clear` 保留 arguments，只把 explicit selection 改为 automatic，并写
-`unity.project-editor.selection_cleared`；它不增加 Project revision。
-
-automatic `unity.launch` 复用既有 Unity major.minor compatibility：零候选返回
-`unity_installation_not_found`，一个候选启动，多个候选返回唯一新增错误
-`unity_editor_selection_required`。explicit launch 保持既有 fingerprint v1；automatic authority 使用不含解析后
-installation ID 的 fingerprint v2，并在 registry 解析前优先 replay 已接受结果。完整 DTO、legacy compatibility、CAS 与
-fingerprint 由 `m3-project-repository.schema.json`、`m5-unity.schema.json` 和
-`m7-project-preferences.proposal.schema.json` 的 implemented contract evidence 冻结。State v11 完整接线后 hello 广告
-`dataSchema: 11`。
+早期 P5-B 的 Automatic/Explicit Editor preference 是历史实现证据，不再是当前产品合同。公开发布前的 State v14
+直接删除 `ProjectEditorPreference`、`ProjectEditorSelection*` 与 `unity.projectEditor.*`，把非空 argv 迁移到
+`project_unity_launch_config`；Project Unity Version 成为唯一用户级版本真相。当前 active DTO、CAS、one-shot launch 与
+exact candidate resolution 由 `m5-unity.schema.json` 和 `m7-unity-project-version.proposal.schema.json` 冻结。
 
 ## 27. M7 兼容增加：Project Directory Delete
 
@@ -747,3 +740,26 @@ Operation phase 固定为 `accepted`、`preflight_complete`、`quarantine_intent
 完整 DTO、phases、path/link/mount 与 recovery vectors 由 `m7-project-delete.proposal.schema.json`、
 `../security/m7-project-delete-path-vectors.json` 与 `../storage/state-v13.md` 冻结。State v13 完整接线后 hello
 广告 `dataSchema: 13`；新增 method/capability/字段是 RPC v1 兼容增加，不改变 unregister 的 registry-only 语义。
+
+## 28. M7 兼容增加：Project Unity Version migration
+
+M7 在 RPC major 1 上实现并广告 `projects.unity-migration.v1`：
+
+| method | params | result | permission |
+|---|---|---|---|
+| `projects.planUnityMigration` | ProjectId、target InstallationId、expected Project revision、idempotency key | no-change 或 immutable bounded Plan | `projects.read + unity.read + projects.unity-migrate` |
+| `projects.applyUnityMigration` | PlanId、idempotency key | durable OperationId、`replayed` | `projects.unity-migrate` |
+
+Plan 只接受 verified InstallationId，target canonical version 由 Core 推导；TTL 固定 900000ms。Apply 不重新
+Plan，不创建 public package child Operation，并且只允许 `builtin:local-owner` 执行外部 filesystem mutation。
+版本降级默认 `supportedForApply=false`；writer state 只有 `not_observed` 可进入 Plan/Apply。
+
+`projects.unity-migration` Operation 复用既有 Project Resource Lock，并使用 State v14 的 immutable Plan 与 append-only
+journal。`preparation_intent` 或 `launch_intent` 后禁止普通取消；daemon restart 不自动 respawn、不得 kill Unity。最终成功必须
+重新观察同一 Project root identity 且 canonical version exact target，随后只提交一次 Project revision `+1` 和一个
+`project.unity_version_migrated` Event；Unity exit status 本身不是成功 authority。
+
+公开 Plan/Event/error 不包含 project/executable 完整路径、argv、PID、stdout/stderr 或 private recovery locator。受控本地技术
+日志可以保留诊断所需的准确绝对路径，但不得改变 RPC、Activity、Event 或普通 diagnostics 的脱敏合同。完整 DTO、phase、
+permission 与稳定错误由 `m7-unity-project-version.proposal.schema.json`、`state-v14-unity-project-version.proposal.contract.json`
+和 M7 Unity ExecPlan 冻结。State v14 完整接线后 hello 广告 `dataSchema: 14`。

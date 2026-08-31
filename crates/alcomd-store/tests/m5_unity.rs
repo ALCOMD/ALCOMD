@@ -3,14 +3,14 @@ use std::path::PathBuf;
 
 use alcomd_application::{
     IdempotencyKey, M3RegistryStore, M5UnityErrorCode, M5UnityStore, ManifestState, PrincipalId,
-    ProjectEditorSelection, ProjectObservation, ProjectType, Revision, StateStore,
-    UnityArchitecture, UnityInstallationObservation, UnitySourceKind,
+    ProjectObservation, ProjectType, Revision, StateStore, UnityArchitecture,
+    UnityInstallationObservation, UnitySourceKind,
 };
 use alcomd_store::StateStoreHandle;
 use uuid::Uuid;
 
 #[tokio::test]
-async fn unity_registry_preference_and_launch_are_revisioned_evented_and_idempotent() {
+async fn unity_registry_launch_config_and_launch_are_revisioned_evented_and_idempotent() {
     let directory = TestDirectory::new();
     let store = StateStoreHandle::open(directory.0.join("state.db")).expect("open store");
     let owner = PrincipalId::local_owner();
@@ -44,44 +44,41 @@ async fn unity_registry_preference_and_launch_are_revisioned_evented_and_idempot
         installation_record.installation_id
     );
 
-    let (preference, replayed) = store
-        .set_project_editor(
+    let arguments = vec!["-logFile".to_owned(), "Project.log".to_owned()];
+    let (config, changed, replayed) = store
+        .set_project_launch_config(
             owner.clone(),
             project.project_id,
-            installation_record.installation_id,
-            vec!["-logFile".to_owned(), "-".to_owned()],
+            arguments.clone(),
             None,
-            key("preference"),
+            key("launch-config"),
             4,
         )
         .await
-        .expect("set preference");
+        .expect("set launch config");
+    assert!(changed);
     assert!(!replayed);
-    assert_eq!(preference.revision, Revision::INITIAL);
+    assert_eq!(config.revision, Some(Revision::INITIAL));
+    assert_eq!(config.arguments, arguments);
     let conflict = store
-        .set_project_editor(
+        .set_project_launch_config(
             owner.clone(),
             project.project_id,
-            installation_record.installation_id,
             Vec::new(),
             Some(Revision::INITIAL),
-            key("preference"),
+            key("launch-config"),
             5,
         )
         .await
         .expect_err("idempotency fingerprint includes arguments");
     assert_eq!(conflict.code(), M5UnityErrorCode::IdempotencyConflict);
 
-    let selection = store
-        .get_project_editor_selection(owner.clone(), project.project_id)
-        .await
-        .expect("selection");
     let (launch, replayed) = store
         .accept_launch(
             owner.clone(),
             project.clone(),
-            selection.clone(),
-            preference.installation_id,
+            config.clone(),
+            installation_record.installation_id,
             key("launch"),
             6,
         )
@@ -89,10 +86,16 @@ async fn unity_registry_preference_and_launch_are_revisioned_evented_and_idempot
         .expect("accept launch");
     assert!(!replayed);
     let idempotent_launch = store
-        .replay_launch(owner.clone(), project, selection, key("launch"))
+        .replay_launch(
+            owner.clone(),
+            project,
+            config,
+            installation_record.installation_id,
+            key("launch"),
+        )
         .await
-        .expect("replay explicit v1 launch")
-        .expect("stored explicit launch");
+        .expect("replay one-shot launch")
+        .expect("stored launch");
     assert_eq!(idempotent_launch, launch);
     let replay = store
         .get_launch(owner.clone(), launch.launch_id)
@@ -100,17 +103,6 @@ async fn unity_registry_preference_and_launch_are_revisioned_evented_and_idempot
         .expect("read launch");
     assert_eq!(replay, launch);
 
-    let remove = store
-        .remove_installation(
-            owner.clone(),
-            installation_record.installation_id,
-            installation_record.revision,
-            key("remove-in-use"),
-            7,
-        )
-        .await
-        .expect_err("preference protects installation");
-    assert_eq!(remove.code(), M5UnityErrorCode::InstallationInUse);
     let events = store.list_events(owner, 0, 100).await.expect("events");
     assert!(
         events
@@ -122,12 +114,12 @@ async fn unity_registry_preference_and_launch_are_revisioned_evented_and_idempot
         events
             .events
             .iter()
-            .any(|event| event.kind == "unity.project-editor.updated")
+            .any(|event| event.kind == "unity.project_launch_config_changed")
     );
 }
 
 #[tokio::test]
-async fn automatic_selection_clear_preserves_arguments_and_releases_installation() {
+async fn missing_set_same_value_clear_and_one_shot_installation_are_explicit() {
     let directory = TestDirectory::new();
     let store = StateStoreHandle::open(directory.0.join("state.db")).expect("open store");
     let owner = PrincipalId::local_owner();
@@ -136,7 +128,7 @@ async fn automatic_selection_clear_preserves_arguments_and_releases_installation
         .await
         .expect("register project")
         .value;
-    let (installation, _) = store
+    let (first, _) = store
         .register_installation(
             owner.clone(),
             installation_observation(),
@@ -147,24 +139,15 @@ async fn automatic_selection_clear_preserves_arguments_and_releases_installation
         .expect("register installation");
 
     let missing = store
-        .get_project_editor_selection(owner.clone(), project.project_id)
+        .get_project_launch_config(owner.clone(), project.project_id)
         .await
-        .expect("implicit automatic selection");
-    assert_eq!(missing.selection, ProjectEditorSelection::Automatic);
+        .expect("missing launch config sentinel");
     assert!(missing.arguments.is_empty());
     assert!(missing.revision.is_none());
     assert_eq!(missing.updated_at_ms, 0);
-    assert_eq!(
-        store
-            .get_project_editor(owner.clone(), project.project_id)
-            .await
-            .expect_err("legacy get has no explicit preference")
-            .code(),
-        M5UnityErrorCode::InstallationNotFound
-    );
 
-    let (missing_clear, replayed) = store
-        .clear_project_editor(
+    let (missing_clear, changed, replayed) = store
+        .clear_project_launch_config(
             owner.clone(),
             project.project_id,
             None,
@@ -172,11 +155,12 @@ async fn automatic_selection_clear_preserves_arguments_and_releases_installation
             3,
         )
         .await
-        .expect("clear implicit automatic");
+        .expect("clear missing config");
+    assert!(!changed);
     assert!(!replayed);
     assert!(missing_clear.revision.is_none());
-    let (_, replayed) = store
-        .clear_project_editor(
+    let (_, changed, replayed) = store
+        .clear_project_launch_config(
             owner.clone(),
             project.project_id,
             None,
@@ -185,82 +169,61 @@ async fn automatic_selection_clear_preserves_arguments_and_releases_installation
         )
         .await
         .expect("replay missing clear");
+    assert!(!changed);
     assert!(replayed);
 
     let arguments = vec!["-logFile".to_owned(), "-".to_owned()];
-    let (explicit, _) = store
-        .set_project_editor(
+    let (configured, changed, replayed) = store
+        .set_project_launch_config(
             owner.clone(),
             project.project_id,
-            installation.installation_id,
             arguments.clone(),
             None,
-            key("selection-explicit"),
+            key("launch-config-set"),
             5,
         )
         .await
-        .expect("set explicit preference");
-    let in_use = store
-        .remove_installation(
+        .expect("set launch config");
+    assert!(changed);
+    assert!(!replayed);
+    assert_eq!(configured.arguments, arguments);
+    assert_eq!(configured.revision, Some(Revision::INITIAL));
+
+    let (same, changed, replayed) = store
+        .set_project_launch_config(
             owner.clone(),
-            installation.installation_id,
-            installation.revision,
-            key("selection-remove-in-use"),
+            project.project_id,
+            arguments.clone(),
+            Some(Revision::INITIAL),
+            key("launch-config-same"),
             6,
         )
         .await
-        .expect_err("explicit preference protects installation");
-    assert_eq!(in_use.code(), M5UnityErrorCode::InstallationInUse);
-
-    let (automatic, replayed) = store
-        .clear_project_editor(
-            owner.clone(),
-            project.project_id,
-            Some(explicit.revision),
-            key("selection-clear"),
-            7,
-        )
-        .await
-        .expect("clear explicit preference");
+        .expect("same-value set");
+    assert!(!changed);
     assert!(!replayed);
-    assert_eq!(automatic.selection, ProjectEditorSelection::Automatic);
-    assert_eq!(automatic.arguments, arguments);
-    assert_eq!(
-        automatic.revision.expect("stored automatic revision").get(),
-        2
-    );
-    let (clear_replay, replayed) = store
-        .clear_project_editor(
-            owner.clone(),
-            project.project_id,
-            Some(explicit.revision),
-            key("selection-clear"),
-            8,
-        )
-        .await
-        .expect("replay explicit clear");
-    assert!(replayed);
-    assert_eq!(clear_replay, automatic);
-    let (automatic_launch, replayed) = store
+    assert_eq!(same, configured);
+
+    let (first_launch, replayed) = store
         .accept_launch(
             owner.clone(),
             project.clone(),
-            automatic.clone(),
-            installation.installation_id,
-            key("selection-automatic-launch"),
-            8,
+            configured.clone(),
+            first.installation_id,
+            key("one-shot-launch"),
+            7,
         )
         .await
-        .expect("accept automatic launch authority");
+        .expect("accept explicit one-shot launch authority");
     assert!(!replayed);
     let mut second_observation = installation_observation();
     second_observation.executable_path = "C:/fixture/UnityB.exe".to_owned();
     second_observation.filesystem_identity = vec![3; 24];
-    store
+    let (second, _) = store
         .register_installation(
             owner.clone(),
             second_observation,
-            key("selection-second-installation"),
+            key("second-installation"),
             8,
         )
         .await
@@ -269,157 +232,66 @@ async fn automatic_selection_clear_preserves_arguments_and_releases_installation
         .replay_launch(
             owner.clone(),
             project.clone(),
-            automatic.clone(),
-            key("selection-automatic-launch"),
+            configured.clone(),
+            first.installation_id,
+            key("one-shot-launch"),
         )
         .await
-        .expect("replay automatic authority after registry change")
-        .expect("stored automatic launch");
-    assert_eq!(replay_after_registry_change, automatic_launch);
-    assert_eq!(
-        store
-            .get_project(owner.clone(), project.project_id)
-            .await
-            .expect("project after preference clear")
-            .revision,
-        project.revision
-    );
-
-    let automatic_revision = automatic.revision.expect("automatic revision");
-    let (no_op, replayed) = store
-        .clear_project_editor(
-            owner.clone(),
-            project.project_id,
-            Some(automatic_revision),
-            key("selection-clear-no-op"),
-            9,
-        )
-        .await
-        .expect("stored automatic no-op");
-    assert!(!replayed);
-    assert_eq!(no_op.revision, Some(automatic_revision));
-    let stale_zero = store
-        .clear_project_editor(
-            owner.clone(),
-            project.project_id,
-            None,
-            key("selection-clear-stale-zero"),
-            10,
-        )
-        .await
-        .expect_err("stored automatic rejects revision zero");
-    assert_eq!(stale_zero.code(), M5UnityErrorCode::RevisionConflict);
-
+        .expect("replay launch after registry change")
+        .expect("stored launch");
+    assert_eq!(replay_after_registry_change, first_launch);
     let idempotency_conflict = store
-        .clear_project_editor(
+        .replay_launch(
             owner.clone(),
-            project.project_id,
-            None,
-            key("selection-clear-no-op"),
-            11,
+            project.clone(),
+            configured.clone(),
+            second.installation_id,
+            key("one-shot-launch"),
         )
         .await
-        .expect_err("changed clear fingerprint conflicts");
+        .expect_err("same key cannot select another installation");
     assert_eq!(
         idempotency_conflict.code(),
         M5UnityErrorCode::IdempotencyConflict
     );
 
-    let (legacy_explicit, replayed) = store
-        .set_project_editor(
+    let stale = store
+        .clear_project_launch_config(
             owner.clone(),
             project.project_id,
-            installation.installation_id,
-            arguments.clone(),
             None,
-            key("selection-legacy-set-from-automatic"),
-            12,
+            key("launch-config-clear-stale"),
+            9,
         )
         .await
-        .expect("legacy revision zero sets stored automatic");
+        .expect_err("stored config rejects revision-zero clear");
+    assert_eq!(stale.code(), M5UnityErrorCode::RevisionConflict);
+
+    let (cleared, changed, replayed) = store
+        .clear_project_launch_config(
+            owner.clone(),
+            project.project_id,
+            Some(Revision::INITIAL),
+            key("launch-config-clear"),
+            10,
+        )
+        .await
+        .expect("clear launch config");
+    assert!(changed);
     assert!(!replayed);
-    assert_eq!(legacy_explicit.revision.get(), 3);
-    let changed_selection = store
-        .get_project_editor_selection(owner.clone(), project.project_id)
-        .await
-        .expect("read changed selection authority");
-    let old_authority = store
-        .replay_launch(
-            owner.clone(),
-            project.clone(),
-            changed_selection,
-            key("selection-automatic-launch"),
-        )
-        .await
-        .expect_err("changed selection authority conflicts with old key");
-    assert_eq!(old_authority.code(), M5UnityErrorCode::IdempotencyConflict);
-    let stale_explicit = store
-        .set_project_editor(
-            owner.clone(),
-            project.project_id,
-            installation.installation_id,
-            arguments.clone(),
-            Some(automatic_revision),
-            key("selection-stale-explicit"),
-            13,
-        )
-        .await
-        .expect_err("explicit stale revision conflicts");
-    assert_eq!(stale_explicit.code(), M5UnityErrorCode::RevisionConflict);
-    let (automatic_again, _) = store
-        .clear_project_editor(
-            owner.clone(),
-            project.project_id,
-            Some(legacy_explicit.revision),
-            key("selection-clear-again"),
-            14,
-        )
-        .await
-        .expect("clear legacy explicit selection");
-    assert_eq!(automatic_again.arguments, arguments);
-    assert_eq!(
-        automatic_again.revision.expect("automatic revision").get(),
-        4
-    );
-    let (modern_explicit, _) = store
-        .set_project_editor(
-            owner.clone(),
-            project.project_id,
-            installation.installation_id,
-            arguments.clone(),
-            automatic_again.revision,
-            key("selection-modern-set-from-automatic"),
-            15,
-        )
-        .await
-        .expect("modern exact revision sets stored automatic");
-    assert_eq!(modern_explicit.revision.get(), 5);
-    let (final_automatic, _) = store
-        .clear_project_editor(
-            owner.clone(),
-            project.project_id,
-            Some(modern_explicit.revision),
-            key("selection-final-clear"),
-            16,
-        )
-        .await
-        .expect("clear modern explicit selection");
-    assert_eq!(final_automatic.arguments, arguments);
-    assert_eq!(
-        final_automatic.revision.expect("automatic revision").get(),
-        6
-    );
+    assert!(cleared.arguments.is_empty());
+    assert_eq!(cleared.revision.expect("clear revision").get(), 2);
 
     let removed = store
         .remove_installation(
             owner.clone(),
-            installation.installation_id,
-            installation.revision,
-            key("selection-remove-after-clear"),
-            17,
+            first.installation_id,
+            first.revision,
+            key("remove-after-one-shot-launch"),
+            11,
         )
         .await
-        .expect("automatic preference releases installation");
+        .expect("one-shot selection is not a persisted preference");
     assert!(removed.0);
     assert!(!removed.1);
     let events = store.list_events(owner, 0, 100).await.expect("events");
@@ -427,9 +299,9 @@ async fn automatic_selection_clear_preserves_arguments_and_releases_installation
         events
             .events
             .iter()
-            .filter(|event| event.kind == "unity.project-editor.selection_cleared")
+            .filter(|event| event.kind == "unity.project_launch_config_changed")
             .count(),
-        3
+        2
     );
 }
 
