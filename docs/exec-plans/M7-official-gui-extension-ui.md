@@ -13,9 +13,11 @@ Visual Gate 1，检查点为 `7bb325b78a74518881fb65e03de7f79902e72cd3`。项目
 `2ee11066c07a0994f3aebe6a9ce3f84ab2c8acd9` 的 Hosted CI run `33298022030` 与 CodeQL run `33298021806`
 均通过。P8 technical checkpoint 已在 sealed functional HEAD
 `d314b155374d31a8d7c0449c62efdea5dd745e72` 通过；但 Visual Gate 2 期间项目所有者重新冻结 Project Unity
-Version / Open Unity 产品模型，M7-owned visible-action completeness 当前为 `REOPENED_BY_PRODUCT_MODEL_CHANGE`，global
-gate 因 M11 保持 `BLOCKED_BY_M11`。H2-A 状态为 `PAUSED_FOR_UNITY_MODEL_CLOSURE`；visual candidate
-`24b03916bd6d958c921b4039bd62bec00afe25d4` 不是 rejected。M8/M9 未开始，M7仍未完成。
+Version / Open Unity 产品模型；该 production closure 已在 sealed HEAD
+`e9349fd0f4cc9c18d9174dfc5826d48654aeb6f5` 通过 Hosted CI run `33352406804` 与 CodeQL run
+`33352406214`。M7-owned visible-action completeness 为 `PASS`，global gate 因 M11 保持 `BLOCKED_BY_M11`。
+H2-A 已恢复为 `ACTIVE / VISUAL_GATE_2`；visual candidate `24b03916bd6d958c921b4039bd62bec00afe25d4`
+保留为 pre-Unity-model local checkpoint，不是 rejected，也不是当前候选。M8/M9 未开始，M7仍未完成。
 
 ## 目标与完成定义
 
@@ -612,9 +614,14 @@ Activity、Diagnostics 或 Portable UI authority。
   Launch Config/launchOptions/required one-shot launch、single-authority migration Plan、downgrade fail-closed、
   `vrchat-2019-to-2022-v1` bounded private preparation、final phases 与窄 UnityMigrationProcess platform contract；
   H2/P8/global 状态不变。
+- 2026-08-31：Unity production sealed HEAD `e9349fd0f4cc9c18d9174dfc5826d48654aeb6f5` 已通过
+  Hosted CI run `33352406804` 与 CodeQL run `33352406214`，更新后的 P8 M7-owned completeness 为 PASS；
+  global 仍为 `BLOCKED_BY_M11`。H2-A 从该 sealed HEAD 恢复 Visual Gate 2；`24b03916…` 只保留为
+  pre-Unity-model local checkpoint。
 
 ## 下一停止点
 
-当前停止点是 M7 Unity Project Version / Open Unity Model final contract remote checkpoint。P8 historical technical checkpoint
-保留 PASS，但因产品模型变化而重新打开；H2-A 保持 `PAUSED_FOR_UNITY_MODEL_CLOSURE`。远端合同 gate 全绿前不得 production implement、恢复
-Visual Gate 2 或进入 H2-B/H3-H7/M8/M9/M11。
+当前停止点是 H2-A Project Workspace / Packages Visual Gate 2。Unity technical closure 与更新后的 P8 M7-owned
+completeness 已通过；只允许从 sealed Unity HEAD 重新实现仍有效的 H2 视觉/Material 结构，不恢复旧的 Automatic/Explicit
+Editor preference UI。形成新的 real Tauri Visual Gate 2 候选后必须停止等待项目所有者人工视觉验收，不得进入
+H2-B/H3-H7/M8/M9/M11。

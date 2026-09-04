@@ -2,11 +2,10 @@
 
 状态：proposal chain `a3faa7b362dbcaa1fccbcd4f84bcc55989a4a68b`、
 `baa47682914e58609f30fc1de482c29b12c5fba5` 的最终 owner review 为
-`PASS WITH IMPLEMENTATION AMENDMENTS`。U1-U7 production local candidate 已形成，focused State/Resolver/Preparation/
-Recovery/RPC/GUI/P8 tests 与除 live Unity 条件影响外的本地门禁已通过；`cargo test --locked --workspace` 因真实用户
-Unity 使既有 Project Copy fixture 正确观察为 `running_suspected`，记录为
-`LOCAL_ENVIRONMENT_CONDITIONED_TEST_BLOCKER`，等待同一最终 SHA 的 clean Hosted CI 权威验证。H2-A 继续为
-`PAUSED_FOR_UNITY_MODEL_CLOSURE`。
+`PASS WITH IMPLEMENTATION AMENDMENTS`。U1-U7 production closure 已在 sealed HEAD
+`e9349fd0f4cc9c18d9174dfc5826d48654aeb6f5` 通过 Hosted CI run `33352406804` 与 CodeQL run
+`33352406214`；更新后的 P8 M7-owned visible-action completeness 为 `PASS`，global 继续
+`BLOCKED_BY_M11`。H2-A 的 Unity-model pause 已解除并恢复为 `ACTIVE / VISUAL_GATE_2`。
 
 ## 目标
 
@@ -370,11 +369,11 @@ Hosted CI 与 CodeQL。完成后停止等待 owner technical review，不自动�
 ## P8 / H2 reconciliation
 
 - P8 historical technical checkpoint 保留 `PASS`，不改写既有证据。
-- 因用户可见 Unity product model 已改变，M7-owned visible-action completeness 当前为
-  `REOPENED_BY_PRODUCT_MODEL_CHANGE`。
+- 更新后的 M7-owned visible-action completeness 为 `PASS`。
 - global release completeness 继续 `BLOCKED_BY_M11`。
-- H2-A 状态为 `PAUSED_FOR_UNITY_MODEL_CLOSURE`；`24b03916…` visual candidate 不是 rejected。
-- production model 完成后从新的 main 重新对齐 H2 candidate，再恢复 Visual Gate 2。
+- H2-A 状态为 `ACTIVE / VISUAL_GATE_2`；`24b03916…` 仅保留为 pre-Unity-model local checkpoint，
+  不是 rejected，也不是当前 candidate。
+- 新 H2 candidate 从 sealed Unity production HEAD 重新对齐，不整体 cherry-pick 旧 visual diff。
 
 ## Amendment progress
 
@@ -397,6 +396,8 @@ Hosted CI 与 CodeQL。完成后停止等待 owner technical review，不自动�
 - owner 已撤销“本地技术日志不得包含完整私密路径”的旧规则；本地 technical diagnostic 允许准确绝对路径和 OS I/O
   上下文，secret 从源头禁止记录，RPC/Activity/Event/普通 GUI error 继续保持有界稳定合同。项目所有者随后明确批准
   `AGENTS.md` 最小同步，旧规则已替换且未扩大其他日志实现或公开合同。
+- 2026-08-31：sealed production HEAD `e9349fd0f4cc9c18d9174dfc5826d48654aeb6f5` 已通过 Hosted CI run
+  `33352406804` 与 CodeQL run `33352406214`，项目所有者 technical review 为 PASS；H2-A pause 解除。
 
 ## Stop conditions
 

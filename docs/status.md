@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI B0-D 与 Project / Package Functional Closure P0-P8 historical technical checkpoint 已通过。新的 Project Unity Version / exact Open Unity U1-U7 production local candidate 已形成：State v14、Launch Config、one-shot exact launch、migration Plan/Apply/Operation、private preparation/recovery 与 official GUI flow 均已接线。focused automated evidence 与独立本地门禁通过；本机完整 Workspace 测试仅因真实用户 Unity 使既有 Project Copy fixture 正确观察为 running_suspected 而记为 LOCAL_ENVIRONMENT_CONDITIONED_TEST_BLOCKER，等待同一最终 SHA 的 clean Hosted CI 权威验证。更新后的 P8 M7-owned visible-action completeness 本地为 PASS，global release completeness 仍为 BLOCKED_BY_M11。H2-A 保持 PAUSED_FOR_UNITY_MODEL_CLOSURE，24b03916bd6d958c921b4039bd62bec00afe25d4 visual candidate 不是 rejected。projects.management、packages.vpm 与 repositories.management 保持 in_progress，M8/M9 未开始。`
+`M6 已正式完成；M7 Portable UI B0-D、Project / Package Functional Closure P0-P8 与 Project Unity Version / exact Open Unity U1-U7 technical closure 已通过。Unity production sealed HEAD e9349fd0f4cc9c18d9174dfc5826d48654aeb6f5 对应 Hosted CI run 33352406804 与 CodeQL run 33352406214 均通过；更新后的 P8 M7-owned visible-action completeness 为 PASS，global release completeness 仍为 BLOCKED_BY_M11。H2-A 已恢复为 ACTIVE，并停在 Project Workspace / Packages Visual Gate 2 候选制作；24b03916bd6d958c921b4039bd62bec00afe25d4 保留为 pre-Unity-model local checkpoint，不是 rejected，也不是当前候选。M7 仍为 IN_PROGRESS，projects.management、packages.vpm 与 repositories.management 保持 in_progress，M8/M9 未开始。`
 
 ## 已完成
 
@@ -334,7 +334,12 @@
   build 与 Tauri release no-bundle 验收。P8 historical technical checkpoint 已在 sealed functional HEAD `d314b155…`
   通过。新的 Unity product model 已移除 Automatic/Preferred/Clear Editor Preference，并加入独立 Launch Config、Project
   Unity migration selector、exact Open Unity 0/1/>1、one-shot selection、Plan/Apply/Operation 与 migrate-and-open；更新后的
-  P8 本地 verdict 为 `M7-owned PASS`，global 继续 `BLOCKED_BY_M11`。H2 未恢复。
+  P8 verdict 为 `M7-owned PASS`，global 继续 `BLOCKED_BY_M11`。
+- Project Unity Version / exact Open Unity U1-U7 production closure 已通过项目所有者技术验收：sealed HEAD
+  `e9349fd0f4cc9c18d9174dfc5826d48654aeb6f5` 的 Hosted CI run `33352406804` 在 Windows Server 2025、
+  Ubuntu 22.04 与 macOS 15 arm64 全部成功，CodeQL run `33352406214` 成功。State v14、Launch Config、
+  one-shot exact launch、migration Plan/Apply/Operation、private preparation/recovery 与 official GUI flow 均已接线；
+  H2-A 的 Unity-model pause 已解除并恢复 Visual Gate 2，M7 仍未完成。
 
 ## 后续里程碑尚未完成
 
@@ -363,9 +368,11 @@
   scheme/CSP 或三平台 WebView isolation matrix 作为产品 blocker。Portable UI production 已获批准且 B0/B1 已完成；
   Slice C official renderer、Slice D headless/security/fault conformance 与 Hosted CI 已通过；restored Official GUI Core
   surfaces/flows、Settings/Activity/Diagnostics contracts 与 Chromium browser-level accessibility 已完成本地实现和验收。
-  当前 H2-A Projects 列表与导航的本地视觉迭代已获项目所有者局部认可；H2-A 当前为
-  `PAUSED_FOR_UNITY_MODEL_CLOSURE`，`24b03916…` candidate 不是 rejected。Project Copy
-  P0-P4 remote checkpoint、P5-A Create/Restore、P5-B Favorite/Clear Unity preference 与 P6 package closure 已通过本地及远端验收。Delete Directory Stop A 尚待人工审批；完整 Visual Gate 2、
+  当前 H2-A Projects 列表与导航的本地视觉迭代已获项目所有者局部认可；Unity production closure 通过后，
+  H2-A 已恢复为 `ACTIVE / VISUAL_GATE_2`。`24b03916…` 只保留为 pre-Unity-model local checkpoint，
+  不是 rejected，也不是当前候选。Project Copy P0-P4 remote checkpoint、P5-A Create/Restore、P5-B historical
+  preference closure、P6 package closure、P7 Delete Project Directory 与更新后的 P8 M7-owned completeness
+  均已通过对应验收；完整 Visual Gate 2、
   后续 H2-H7、最终候选三平台 Hosted CI 与项目所有者最终人工验收仍是实际缺口。
 
 - 真实安装快照和迁移 Fixture 尚未建立；因此 artifact 模板继续保持 `confirmed = false`，
@@ -403,11 +410,10 @@ functional candidate `192672…` 保留技术证据但已被拒绝 visual/IA acc
 Project / Package Functional Closure P0-P4 remote checkpoint、P5-A Create/Restore 与 P5-B Favorite/Clear Unity Preference
 均已远端通过。P6-A/P6-B/P6-C 也已通过同一最终候选的三平台 Hosted CI 与 CodeQL；P6 remote checkpoint 为 PASS。
 P7 Delete Project Directory 已通过 sealed HEAD 的三平台 Hosted CI 与 CodeQL，remote checkpoint 为 PASS。
-当前唯一获准工作是 M7 Unity Project Version / Open Unity Model final contract remote checkpoint；该 checkpoint 全绿后只进入
-已 seal 的 Unity production closure。P8 historical technical checkpoint 保留 PASS，但 M7-owned completeness 因新产品模型改为
-`REOPENED_BY_PRODUCT_MODEL_CHANGE`。M11 VCC
+当前唯一获准工作是 H2-A Project Workspace / Packages Visual Gate 2；Unity technical closure 已在 sealed HEAD
+`e9349fd0f4cc9c18d9174dfc5826d48654aeb6f5` 通过。P8 M7-owned completeness 为 `PASS`。M11 VCC
 Import/Migrate、legacy entry 与真实 v3 differential parity 继续是 `BLOCKED_BY_M11`，不计入 M7-owned completeness 分母。
-H2 visual、M8、M9 与 M11 production 不得开始。
+H2-B、H3-H7、M8、M9 与 M11 production 不得开始；H2-A 形成新的 real Tauri Visual Gate 2 候选后必须停止等待人工视觉验收。
 M4 完整
 VPM 产品功能以外的未完成范围继续按 feature/test 元数据推进，不因里程碑验收而虚构为 implemented。
 `projects.v3-parity` 与真实 credential
