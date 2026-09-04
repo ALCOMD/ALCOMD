@@ -274,8 +274,8 @@ export type PackageSourceSelector =
 export interface PackageMutation {
     kind: "install" | "remove" | "replace";
     packageId: string;
-    fromVersion?: string;
-    toVersion?: string;
+    fromVersion?: string | null;
+    toVersion?: string | null;
     source?: PackageSourcePin;
 }
 

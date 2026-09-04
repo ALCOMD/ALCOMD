@@ -49,6 +49,11 @@ test("Create and Restore expose cancel, empty, and structured planning failure s
     await openHarness(page, "/projects", "empty");
     await page.getByRole("button", { name: "Restore project" }).click();
     await expect(page.getByText("No managed backups available")).toBeVisible();
+    const restoreDialogBox = await page.getByRole("dialog", { name: "Restore project" }).boundingBox();
+    const closeBox = await page.getByRole("button", { name: "Close", exact: true }).boundingBox();
+    expect(restoreDialogBox).not.toBeNull();
+    expect(closeBox).not.toBeNull();
+    expect(closeBox!.x + closeBox!.width).toBeLessThanOrEqual(restoreDialogBox!.x + restoreDialogBox!.width);
 
     await openHarness(page, "/projects", "create-error");
     await page.getByRole("button", { name: "Create project" }).click();

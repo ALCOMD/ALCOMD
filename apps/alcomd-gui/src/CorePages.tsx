@@ -5,7 +5,6 @@ import {
     arrowDownwardIcon,
     arrowUpwardIcon,
     backupIcon,
-    deleteIcon,
     downloadIcon,
     historyIcon,
     helpIcon,
@@ -428,19 +427,28 @@ function ProjectsTable({
     );
 }
 
-function ProjectRowActions({ client, navigate, onChanged, onFeedback, onProjectChanged, project }: { client: GuiRpcClient; navigate(path: string): void; onChanged(): void; onFeedback(message: string): void; onProjectChanged(project: ProjectSnapshot): void; project: ProjectSnapshot }) {
+function ProjectRowActions({ client, context = "row", navigate, onChanged, onCopyCompleted, onFeedback, onProjectChanged, onRemoved, project }: {
+    client: GuiRpcClient;
+    context?: "row" | "workspace";
+    navigate(path: string): void;
+    onChanged(): void;
+    onCopyCompleted?(projectId: string): void;
+    onFeedback(message: string): void;
+    onProjectChanged(project: ProjectSnapshot): void;
+    onRemoved?(): void;
+    project: ProjectSnapshot;
+}) {
     const canReadProjects = useCapability(capabilities.projectsRead);
     const canManageProjects = useCapability(capabilities.projectsRegistry);
     const canCopyProjects = useCapability(capabilities.projectsCopy);
     const canDeleteProjects = useCapability(capabilities.projectsDelete);
     const canReadBackups = useCapability(capabilities.backupsRead);
     const canLaunchUnity = useCapability(capabilities.unityLaunch);
-    const [copyParent, setCopyParent] = useState("");
     const [copyOpen, setCopyOpen] = useState(false);
-    const [selectingCopyTarget, setSelectingCopyTarget] = useState(false);
     const [openingDirectory, setOpeningDirectory] = useState(false);
     const [opening, setOpening] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
+    const [removalIntent, setRemovalIntent] = useState<"unregister" | "delete">("unregister");
     const [unregistering, setUnregistering] = useState(false);
     const [confirmUnregister, setConfirmUnregister] = useState(false);
     const [deletePlan, setDeletePlan] = useState<ProjectDeletePlan>();
@@ -450,6 +458,7 @@ function ProjectRowActions({ client, navigate, onChanged, onFeedback, onProjectC
     const menuAnchorRef = useRef<HTMLElement>(null);
     const projectId = project.projectId;
     const revision = project.revision;
+    const workspace = context === "workspace";
 
     useEffect(() => {
         if (deleteOperation === undefined || !["queued", "running", "recovering", "cancelling", "interrupted"].includes(deleteOperation.state)) return;
@@ -462,7 +471,8 @@ function ProjectRowActions({ client, navigate, onChanged, onFeedback, onProjectC
                     setConfirmUnregister(false);
                     setDeletePlan(undefined);
                     onFeedback("Project directory permanently deleted.");
-                    onChanged();
+                    if (onRemoved !== undefined) onRemoved();
+                    else onChanged();
                 } else if (["failed", "cancelled"].includes(next.state)) {
                     setDeleting(false);
                     onFeedback(`Unable to delete project directory: ${next.errorCode ?? next.state}`);
@@ -472,7 +482,7 @@ function ProjectRowActions({ client, navigate, onChanged, onFeedback, onProjectC
             });
         }, 250);
         return () => { active = false; window.clearTimeout(timer); };
-    }, [client, deleteOperation, onChanged, onFeedback]);
+    }, [client, deleteOperation, onChanged, onFeedback, onRemoved]);
     if (projectId === undefined) return null;
 
     const openUnity = async () => {
@@ -504,7 +514,8 @@ function ProjectRowActions({ client, navigate, onChanged, onFeedback, onProjectC
             await client.projectUnregister(projectId, revision);
             setConfirmUnregister(false);
             onFeedback("Project unregistered. Files were not deleted.");
-            onChanged();
+            if (onRemoved !== undefined) onRemoved();
+            else onChanged();
         } catch (caught: unknown) {
             onFeedback(`Unable to unregister project: ${safeError(caught).code}`);
         } finally {
@@ -525,19 +536,9 @@ function ProjectRowActions({ client, navigate, onChanged, onFeedback, onProjectC
         }
     };
 
-    const beginCopy = async () => {
+    const beginCopy = () => {
         setMenuOpen(false);
-        setSelectingCopyTarget(true);
-        try {
-            const selected = await client.selectDirectory();
-            if (selected === undefined) return;
-            setCopyParent(selected);
-            setCopyOpen(true);
-        } catch (caught: unknown) {
-            onFeedback(`Unable to select copy destination: ${safeError(caught).code}`);
-        } finally {
-            setSelectingCopyTarget(false);
-        }
+        setCopyOpen(true);
     };
 
     const planDelete = async () => {
@@ -552,6 +553,21 @@ function ProjectRowActions({ client, navigate, onChanged, onFeedback, onProjectC
         } finally {
             setDeleting(false);
         }
+    };
+
+    const beginUnregister = () => {
+        setMenuOpen(false);
+        setRemovalIntent("unregister");
+        setDeletePlan(undefined);
+        setConfirmUnregister(true);
+    };
+
+    const beginDeleteDirectory = () => {
+        setMenuOpen(false);
+        setRemovalIntent("delete");
+        setDeletePlan(undefined);
+        setConfirmUnregister(true);
+        void planDelete();
     };
 
     const applyDelete = async () => {
@@ -570,34 +586,40 @@ function ProjectRowActions({ client, navigate, onChanged, onFeedback, onProjectC
 
     return (
         <>
-            <div className="project-row-actions">
-                <ProjectFavoriteButton client={client} onChanged={onProjectChanged} onFeedback={onFeedback} onRefresh={onChanged} project={project} />
-                <Button className="project-open-unity-action" disabled={!canLaunchUnity || opening || revision === undefined} onClick={() => void openUnity()} title={capabilityUnavailableTitle(canLaunchUnity, capabilities.unityLaunch)} type="button">
+            <div className={workspace ? "project-row-actions project-workspace-more-actions" : "project-row-actions"}>
+                {workspace ? null : <ProjectFavoriteButton client={client} onChanged={onProjectChanged} onFeedback={onFeedback} onRefresh={onChanged} project={project} />}
+                {workspace ? null : <Button className="project-open-unity-action" disabled={!canLaunchUnity || opening || revision === undefined} onClick={() => void openUnity()} title={capabilityUnavailableTitle(canLaunchUnity, capabilities.unityLaunch)} type="button">
                     <Icon asset={playArrowIcon} slot="icon" />
                     <StateSizedLabel current={opening ? "Opening…" : "Open Unity"} labels={["Open Unity", "Opening…"]} />
-                </Button>
-                <Button disabled={!canReadProjects} onClick={() => navigate(`/projects/${projectId}`)} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead)} type="button" variant="tonal">Manage</Button>
-                <Button disabled={!canReadBackups} onClick={() => navigate(`/projects/${projectId}/backups`)} title={capabilityUnavailableTitle(canReadBackups, capabilities.backupsRead)} type="button" variant="tonal">Backups</Button>
+                </Button>}
+                {workspace ? null : <Button disabled={!canReadProjects} onClick={() => navigate(`/projects/${projectId}`)} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead)} type="button" variant="tonal">Manage</Button>}
+                {workspace ? null : <Button disabled={!canReadBackups} onClick={() => navigate(`/projects/${projectId}/backups`)} title={capabilityUnavailableTitle(canReadBackups, capabilities.backupsRead)} type="button" variant="tonal">Backups</Button>}
                 <IconButton className="project-more-actions" label={`More actions for ${projectName(project)}`} onClick={() => setMenuOpen(true)} ref={menuAnchorRef} type="button">
                     <Icon asset={moreVertIcon} size={24} />
                 </IconButton>
                 <Menu anchorRef={menuAnchorRef} className="project-actions-menu" onClose={() => setMenuOpen(false)} open={menuOpen}>
                     <MenuItem className="project-actions-menu-item" disabled={!canReadProjects || openingDirectory} label={openingDirectory ? "Opening Project Directory…" : "Open Project Directory"} onClick={() => void openDirectory()} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead)} />
-                    <MenuItem className="project-actions-menu-item" disabled={!canCopyProjects || revision === undefined || selectingCopyTarget} label={selectingCopyTarget ? "Choosing Copy Destination…" : "Copy Project"} onClick={() => void beginCopy()} title={capabilityUnavailableTitle(canCopyProjects, capabilities.projectsCopy)} />
-                    <MenuItem className="project-actions-menu-item project-actions-menu-item--danger" disabled={!canManageProjects || revision === undefined} label="Remove Project" onClick={() => setConfirmUnregister(true)} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry)} />
+                    <MenuItem className="project-actions-menu-item" disabled={!canCopyProjects || revision === undefined} label="Copy Project" onClick={beginCopy} title={capabilityUnavailableTitle(canCopyProjects, capabilities.projectsCopy)} />
+                    {workspace ? <>
+                        <MenuItem className="project-actions-menu-item project-actions-menu-item--danger project-actions-menu-item--danger-group" disabled={!canManageProjects || revision === undefined} label="Remove from list" onClick={beginUnregister} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry)} />
+                        <MenuItem className="project-actions-menu-item project-actions-menu-item--danger" disabled={!canDeleteProjects || revision === undefined} label="Delete Project Directory…" onClick={beginDeleteDirectory} title={capabilityUnavailableTitle(canDeleteProjects, capabilities.projectsDelete)} />
+                    </> : <MenuItem className="project-actions-menu-item project-actions-menu-item--danger" disabled={!canManageProjects || revision === undefined} label="Remove Project" onClick={beginUnregister} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry)} />}
                 </Menu>
             </div>
-            <Dialog onClose={() => { if (!deleting) { setConfirmUnregister(false); setDeletePlan(undefined); } }} open={confirmUnregister} title={deletePlan === undefined ? "Remove this project?" : "Permanently delete project directory?"}>
-                {deletePlan === undefined ? <>
-                    <p>Choose whether to remove only the ALCOMD registration or permanently delete the local Unity project directory.</p>
+            <Dialog onClose={() => { if (!deleting) { setConfirmUnregister(false); setDeletePlan(undefined); setRemovalIntent("unregister"); } }} open={confirmUnregister} title={deletePlan === undefined ? removalIntent === "delete" ? "Preparing permanent deletion…" : workspace ? "Remove this project from the list?" : "Remove this project?" : "Permanently delete project directory?"}>
+                {deletePlan === undefined && removalIntent === "unregister" ? <>
+                    <p>{workspace ? "Remove the ALCOMD registration for this project?" : "Choose whether to remove only the ALCOMD registration or permanently delete the local Unity project directory."}</p>
                     <p>Removing from the list does not delete files.</p>
-                    <div className="dialog-actions dialog-actions--split">
+                    <div className={workspace ? "dialog-actions" : "dialog-actions dialog-actions--split"}>
                         <Button disabled={unregistering || deleting} onClick={() => setConfirmUnregister(false)} type="button" variant="text">Cancel</Button>
                         <Button disabled={!canManageProjects || unregistering || deleting || revision === undefined} onClick={() => void unregister()} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry)} type="button" variant="tonal">
                             <StateSizedLabel current={unregistering ? "Removing…" : "Remove from list"} labels={["Remove from list", "Removing…"]} />
                         </Button>
-                        <Button className="material-button--danger" disabled={!canDeleteProjects || unregistering || deleting || revision === undefined} onClick={() => void planDelete()} title={capabilityUnavailableTitle(canDeleteProjects, capabilities.projectsDelete)} type="button" variant="text">Delete Project Directory…</Button>
+                        {workspace ? null : <Button className="material-button--danger" disabled={!canDeleteProjects || unregistering || deleting || revision === undefined} onClick={() => { setRemovalIntent("delete"); void planDelete(); }} title={capabilityUnavailableTitle(canDeleteProjects, capabilities.projectsDelete)} type="button" variant="text">Delete Project Directory…</Button>}
                     </div>
+                </> : deletePlan === undefined ? <>
+                    <p>Loading the destructive review. No files have been changed.</p>
+                    <div className="dialog-actions"><Button disabled={deleting} onClick={() => setConfirmUnregister(false)} type="button" variant="text">Cancel</Button></div>
                 </> : <>
                     <p><strong>This permanently deletes local files and does not use the Recycle Bin or Trash.</strong></p>
                     <p>No automatic backup will be created. This is different from removing the project from the list.</p>
@@ -615,20 +637,23 @@ function ProjectRowActions({ client, navigate, onChanged, onFeedback, onProjectC
             </Dialog>
             <CopyProjectDialog
                 client={client}
-                onCompleted={() => {
-                    onFeedback("Project copy completed.");
-                    onChanged();
+                onCompleted={(targetProjectId) => {
+                    if (onCopyCompleted !== undefined) onCopyCompleted(targetProjectId);
+                    else {
+                        onFeedback("Project copy completed.");
+                        onChanged();
+                    }
                 }}
                 onClose={() => setCopyOpen(false)}
                 open={copyOpen}
                 project={project}
-                targetParent={copyParent}
             />
         </>
     );
 }
 
-function CopyProjectDialog({ client, onCompleted, onClose, open, project, targetParent }: { client: GuiRpcClient; onCompleted(targetProjectId: string): void; onClose(): void; open: boolean; project: ProjectSnapshot; targetParent: string }) {
+function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { client: GuiRpcClient; onCompleted(targetProjectId: string): void; onClose(): void; open: boolean; project: ProjectSnapshot }) {
+    const [targetParent, setTargetParent] = useState("");
     const [targetLeaf, setTargetLeaf] = useState("");
     const [plan, setPlan] = useState<ProjectCopyPlan>();
     const [operation, setOperation] = useState<Operation>();
@@ -643,6 +668,7 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project, target
             setError(undefined);
             return;
         }
+        setTargetParent(projectParentPath(project.rootPath));
         setTargetLeaf(`${projectName(project)} Copy`);
     }, [open, project]);
 
@@ -663,6 +689,19 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project, target
             window.clearTimeout(timer);
         };
     }, [client, onCompleted, operation, plan]);
+
+    const chooseTargetParent = async () => {
+        setBusy(true);
+        setError(undefined);
+        try {
+            const selected = await client.selectDirectory();
+            if (selected !== undefined) setTargetParent(selected);
+        } catch (caught: unknown) {
+            setError(safeError(caught));
+        } finally {
+            setBusy(false);
+        }
+    };
 
     const createPlan = async () => {
         if (project.projectId === undefined || project.revision === undefined) return;
@@ -711,12 +750,15 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project, target
             <div className="project-copy-review">
                 {plan === undefined ? (
                     <>
-                        <p>Choose the new project name. ALCOMD will copy the registered project into the selected directory without overwriting an existing target.</p>
-                        <code>{targetParent}</code>
+                        <p>Choose the new project name. By default, ALCOMD creates the copy beside the original project without overwriting an existing target.</p>
                         <TextField aria-label="Copied project name" label="Project name" onInput={setTargetLeaf} value={targetLeaf} />
+                        <div className="project-copy-location">
+                            <TextField aria-label="Copy project location" label="Project location" readOnly value={targetParent} />
+                            <Button disabled={busy} onClick={() => void chooseTargetParent()} type="button" variant="tonal">Choose…</Button>
+                        </div>
                         <div className="dialog-actions">
                             <Button disabled={busy} onClick={onClose} type="button" variant="text">Cancel</Button>
-                            <Button disabled={busy || targetLeaf.trim().length === 0} onClick={() => void createPlan()} type="button">{busy ? "Planning…" : "Review copy"}</Button>
+                            <Button disabled={busy || targetParent.length === 0 || targetLeaf.trim().length === 0} onClick={() => void createPlan()} type="button">{busy ? "Planning…" : "Review copy"}</Button>
                         </div>
                     </>
                 ) : operation === undefined ? (
@@ -840,6 +882,15 @@ function projectName(project: ProjectSnapshot): string {
     return displayProjectPath(project.rootPath).split(/[\\/]/).at(-1) ?? "Unity project";
 }
 
+function projectParentPath(rootPath: string): string {
+    const normalized = rootPath.replace(/[\\/]+$/, "");
+    const separatorIndex = Math.max(normalized.lastIndexOf("\\"), normalized.lastIndexOf("/"));
+    if (separatorIndex < 0) return "";
+    if (separatorIndex === 0) return normalized.slice(0, 1);
+    if (separatorIndex === 2 && /^[A-Za-z]:[\\/]/.test(normalized)) return normalized.slice(0, 3);
+    return normalized.slice(0, separatorIndex);
+}
+
 function formatObserved(value: number): string {
     const elapsed = Date.now() - value;
     const absoluteElapsed = Math.abs(elapsed);
@@ -940,6 +991,60 @@ function PackageSourceMenu({ label, onChange, options, value }: { label: string;
     );
 }
 
+function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
+    canPlanV1: boolean;
+    canPlanV2: boolean;
+    client: GuiRpcClient;
+    onAction(action: PackageActionSelection["action"]): void;
+    row: PackageWorkspaceRow;
+}) {
+    const [error, setError] = useState<string>();
+    const [open, setOpen] = useState(false);
+    const anchorRef = useRef<HTMLElement>(null);
+    const hasMenuActions = row.installedVersion !== undefined || row.linkTarget?.documentation === true || row.linkTarget?.changelog === true;
+    const openLink = async (kind: "documentation" | "changelog") => {
+        if (row.linkTarget === undefined) return;
+        setOpen(false);
+        setError(undefined);
+        try {
+            await client.openPackageLink(row.linkTarget.repositoryId, row.packageId, row.linkTarget.version, kind);
+        } catch (caught: unknown) {
+            setError(safeError(caught).code);
+        }
+    };
+    if (!hasMenuActions) return null;
+    return (
+        <>
+            <IconButton className="package-more-actions" label={`More actions for ${row.displayName}`} onClick={() => setOpen(true)} ref={anchorRef} type="button">
+                <Icon asset={moreVertIcon} size={24} />
+            </IconButton>
+            <Menu anchorRef={anchorRef} className="package-actions-menu" onClose={() => setOpen(false)} open={open}>
+                {row.installedVersion === undefined ? null : <MenuItem disabled={!canPlanV2} label="Reinstall" onClick={() => { setOpen(false); onAction("reinstall"); }} title={capabilityUnavailableTitle(canPlanV2, capabilities.packagesPlanV2)} />}
+                {row.installedVersion === undefined ? null : <MenuItem disabled={!canPlanV1} label="Choose Version…" onClick={() => { setOpen(false); onAction("downgrade"); }} title={capabilityUnavailableTitle(canPlanV1, capabilities.packagesPlanV1)} />}
+                {row.linkTarget?.documentation === true ? <MenuItem label="Documentation" onClick={() => void openLink("documentation")} /> : null}
+                {row.linkTarget?.changelog === true ? <MenuItem label="Changelog" onClick={() => void openLink("changelog")} /> : null}
+                {row.installedVersion === undefined ? null : <MenuItem className="package-actions-menu-item--danger" disabled={!canPlanV1} label="Remove" onClick={() => { setOpen(false); onAction("remove"); }} title={capabilityUnavailableTitle(canPlanV1, capabilities.packagesPlanV1)} />}
+            </Menu>
+            {error === undefined ? null : <span className="visually-hidden" role="alert">Package link unavailable: {error}</span>}
+        </>
+    );
+}
+
+function PackageWorkspaceMoreMenu({ canPlanV2, onReinstallAll }: { canPlanV2: boolean; onReinstallAll(): void }) {
+    const [open, setOpen] = useState(false);
+    const anchorRef = useRef<HTMLElement>(null);
+    return (
+        <>
+            <IconButton label="More package actions" onClick={() => setOpen(true)} ref={anchorRef} type="button">
+                <Icon asset={moreVertIcon} size={24} />
+            </IconButton>
+            <Menu anchorRef={anchorRef} onClose={() => setOpen(false)} open={open}>
+                <MenuItem disabled={!canPlanV2} label="Reinstall All Installed Packages…" onClick={() => { setOpen(false); onReinstallAll(); }} title={capabilityUnavailableTitle(canPlanV2, capabilities.packagesPlanV2)} />
+            </Menu>
+        </>
+    );
+}
+
 interface PackageWorkspaceValue {
     catalog: WorkspaceCatalogVersion[];
     installations: UnityInstallation[];
@@ -1010,46 +1115,6 @@ async function loadPackageWorkspace(client: GuiRpcClient, projectId: string, inc
     return { project, catalog: [...catalogs.flat(), ...local], installations, launchOptions };
 }
 
-function ProjectWorkspaceCopyAction({ client, navigate, project }: { client: GuiRpcClient; navigate(path: string): void; project: ProjectSnapshot }) {
-    const canCopyProjects = useCapability(capabilities.projectsCopy);
-    const [copyParent, setCopyParent] = useState("");
-    const [copyOpen, setCopyOpen] = useState(false);
-    const [selecting, setSelecting] = useState(false);
-    const [error, setError] = useState<RpcError>();
-
-    const beginCopy = async () => {
-        setSelecting(true);
-        setError(undefined);
-        try {
-            const selected = await client.selectDirectory();
-            if (selected === undefined) return;
-            setCopyParent(selected);
-            setCopyOpen(true);
-        } catch (caught: unknown) {
-            setError(safeError(caught));
-        } finally {
-            setSelecting(false);
-        }
-    };
-
-    return (
-        <>
-            {error === undefined ? null : <span className="inline-error" role="alert">Copy unavailable: {error.code}</span>}
-            <Button disabled={!canCopyProjects || selecting || project.revision === undefined} onClick={() => void beginCopy()} title={capabilityUnavailableTitle(canCopyProjects, capabilities.projectsCopy)} type="button" variant="text">
-                {selecting ? "Choosing destination…" : "Copy project"}
-            </Button>
-            <CopyProjectDialog
-                client={client}
-                onCompleted={(targetProjectId) => navigate(`/projects/${targetProjectId}`)}
-                onClose={() => setCopyOpen(false)}
-                open={copyOpen}
-                project={project}
-                targetParent={copyParent}
-            />
-        </>
-    );
-}
-
 function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { projectId: string }) {
     const canReadBackups = useCapability(capabilities.backupsRead);
     const canManageRepositories = useCapability(capabilities.repositoriesRegistry);
@@ -1064,6 +1129,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
     const [bulkSelection, setBulkSelection] = useState<string[]>([]);
     const [repositoryRefresh, setRepositoryRefresh] = useState<RepositoryRefreshProgress>();
     const [selection, setSelection] = useState<PackageActionSelection>();
+    const [workspaceFeedback, setWorkspaceFeedback] = useState<string>();
     const selectedSource = (row: PackageWorkspaceRow): PackageSourceSelector | undefined => {
         const selectedKey = sourceSelections[row.packageId];
         return row.sourceOptions.find((option) => option.key === selectedKey)?.selector ?? (row.sourceOptions.length === 1 ? row.sourceOptions[0]?.selector : undefined);
@@ -1133,7 +1199,8 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
     };
     return (
         <ResourcePage load={load} showRefreshBar={false}>{({ project, catalog, installations, launchOptions }, refresh, refreshing, refreshError) => {
-            const rows = packageWorkspaceRows(project, catalog).filter((row) => {
+            const workspaceRows = packageWorkspaceRows(project, catalog);
+            const rows = workspaceRows.filter((row) => {
                 const query = search.toLocaleLowerCase();
                 const matchesSearch = query.length === 0 || [row.displayName, row.packageId, ...row.sources].some((value) => value.toLocaleLowerCase().includes(query));
                 const matchesFilter = filter === "all"
@@ -1150,19 +1217,30 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                             <Button className="project-back-action" onClick={() => navigate("/projects")} type="button" variant="text"><Icon asset={arrowBackIcon} slot="icon" />Back</Button>
                             <div className="project-workspace-title">
                                 <h1 id="route-title" tabIndex={-1}>{projectName(project)}</h1>
-                                <p title={project.rootPath}>{project.rootPath}</p>
+                                <p title={displayProjectPath(project.rootPath)}>{displayProjectPath(project.rootPath)}</p>
                             </div>
                         </div>
-                        <nav aria-label="Project actions" className="project-workspace-actions">
+                        <nav aria-label="Project actions" className="project-workspace-action-cluster">
                             {refreshError === undefined ? null : <span className="inline-error" role="alert">Refresh failed: {refreshError.code}</span>}
                             <ProjectUnityWorkspaceActions client={client} installations={installations} launchOptions={launchOptions} navigate={navigate} project={project} />
                             <Button disabled={!canReadBackups} onClick={() => navigate(`/projects/${projectId}/backups`)} title={capabilityUnavailableTitle(canReadBackups, capabilities.backupsRead)} type="button" variant="text"><Icon asset={backupIcon} slot="icon" />Backups</Button>
-                            <ProjectWorkspaceCopyAction client={client} navigate={navigate} project={project} />
+                            <ProjectRowActions
+                                client={client}
+                                context="workspace"
+                                navigate={navigate}
+                                onChanged={refresh}
+                                onCopyCompleted={(targetProjectId) => navigate(`/projects/${targetProjectId}`)}
+                                onFeedback={setWorkspaceFeedback}
+                                onProjectChanged={() => refresh()}
+                                onRemoved={() => navigate("/projects")}
+                                project={project}
+                            />
                         </nav>
                     </header>
+                    {workspaceFeedback === undefined ? null : <div className="project-workspace-feedback" role="status" aria-live="polite">{workspaceFeedback}</div>}
                     <section aria-labelledby="packages-heading" className="package-workspace-surface">
                         <header className="package-workspace-toolbar">
-                            <h2 id="packages-heading">Manage packages</h2>
+                            <h2 id="packages-heading">Packages</h2>
                             <Button className="package-refresh-action" disabled={!canManageRepositories || refreshing || repositoryRefresh?.running === true} onClick={() => void refreshRepositories(refresh)} title={capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry)} type="button" variant="text"><Icon asset={refreshIcon} slot="icon" />{repositoryRefresh?.running === true ? "Refreshing…" : "Refresh"}</Button>
                             <TextField className="package-workspace-search" label="Search packages" leadingIcon={<Icon asset={searchIcon} slot="leading-icon" />} onInput={setSearch} value={search} />
                             <Select
@@ -1189,10 +1267,11 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                 ]}
                                 value={sourceFilter}
                             />
-                            <Button disabled={!canPlanPackagesV1} onClick={() => selectAction("resolve")} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button" variant="text"><Icon asset={syncIcon} slot="icon" />Resolve</Button>
-                            <Button disabled={!canPlanPackagesV2} onClick={() => selectAction("reinstall-all")} title={capabilityUnavailableTitle(canPlanPackagesV2, capabilities.packagesPlanV2)} type="button" variant="text">Reinstall all</Button>
-                            <Button disabled={!canPlanPackagesV2 || bulkSelection.length === 0} onClick={() => selectBulkReinstall(rows)} title={capabilityUnavailableTitle(canPlanPackagesV2, capabilities.packagesPlanV2)} type="button" variant="text">Reinstall selected</Button>
-                            <span className="package-workspace-count" role="status" aria-live="polite">{rows.length} packages</span>
+                            <div className="package-workspace-secondary-actions">
+                                <Button className="package-resolve-action" disabled={!canPlanPackagesV1} onClick={() => selectAction("resolve")} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button" variant="text"><Icon asset={syncIcon} slot="icon" />Resolve</Button>
+                                <span className="package-workspace-count" role="status" aria-live="polite">{rows.length} {rows.length === 1 ? "package" : "packages"}</span>
+                                <PackageWorkspaceMoreMenu canPlanV2={canPlanPackagesV2} onReinstallAll={() => selectAction("reinstall-all")} />
+                            </div>
                         </header>
                         {repositoryRefresh === undefined ? null : (
                             <div className={repositoryRefresh.failures.length > 0 ? "package-refresh-status package-refresh-status--failed" : "package-refresh-status"} role={repositoryRefresh.failures.length > 0 ? "alert" : "status"} aria-live="polite">
@@ -1202,11 +1281,18 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                 <ul className="visually-hidden">{repositoryRefresh.results.map((result) => <li key={result.repositoryId}>{result.repositoryId}: {result.status}{result.code === undefined ? "" : ` (${result.code})`}</li>)}</ul>
                             </div>
                         )}
+                        {bulkSelection.length === 0 ? null : (
+                            <div aria-label="Selected package actions" className="package-bulk-bar" role="region">
+                                <strong>{bulkSelection.length} selected</strong>
+                                <Button disabled={!canPlanPackagesV2} onClick={() => selectBulkReinstall(rows)} title={capabilityUnavailableTitle(canPlanPackagesV2, capabilities.packagesPlanV2)} type="button" variant="tonal">Reinstall selected</Button>
+                                <Button onClick={() => setBulkSelection([])} type="button" variant="text">Clear selection</Button>
+                            </div>
+                        )}
                         <div className="package-workspace-table-scroll">
-                            {rows.length === 0 ? <section className="projects-empty" role="status"><h3>No matching packages</h3><p>Change the search or package filter.</p></section> : (
-                                <MaterialDataTable className="package-workspace-table" label="Packages" minWidth={920}>
+                            {rows.length === 0 ? <section className="projects-empty" role="status"><h3>{workspaceRows.length === 0 ? "No packages" : "No matching packages"}</h3><p>{workspaceRows.length === 0 ? "This project has no packages to manage." : "Change the search or package filter."}</p></section> : (
+                                <MaterialDataTable className="package-workspace-table" label="Packages" minWidth={840}>
                                     <colgroup><col className="package-column-select" /><col className="package-column-name" /><col className="package-column-installed" /><col className="package-column-latest" /><col className="package-column-source" /><col className="package-column-actions" /></colgroup>
-                                    <thead><tr><DataTableHeader><span className="visually-hidden">Select</span></DataTableHeader><DataTableHeader>Package</DataTableHeader><DataTableHeader>Installed</DataTableHeader><DataTableHeader>Latest</DataTableHeader><DataTableHeader>Source</DataTableHeader><DataTableHeader><span className="visually-hidden">Actions</span></DataTableHeader></tr></thead>
+                                    <thead><tr><DataTableHeader><Checkbox checked={rows.some((row) => row.installedVersion !== undefined) && rows.filter((row) => row.installedVersion !== undefined).every((row) => bulkSelection.includes(row.packageId))} label="Select all installed packages" onChange={(checked) => setBulkSelection(checked ? rows.filter((row) => row.installedVersion !== undefined).map((row) => row.packageId) : [])} /></DataTableHeader><DataTableHeader>Package</DataTableHeader><DataTableHeader>Installed</DataTableHeader><DataTableHeader>Latest</DataTableHeader><DataTableHeader>Source</DataTableHeader><DataTableHeader><span className="visually-hidden">Actions</span></DataTableHeader></tr></thead>
                                     <tbody>{rows.map((row) => {
                                         const latest = row.availableVersions.at(-1);
                                         const canUpgrade = row.installedVersion !== undefined && latest !== undefined && latest !== row.installedVersion;
@@ -1215,9 +1301,16 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                                 <td><Checkbox checked={bulkSelection.includes(row.packageId)} disabled={row.installedVersion === undefined} label={`Select ${row.displayName}`} onChange={(checked) => setBulkSelection((current) => checked ? [...new Set([...current, row.packageId])] : current.filter((packageId) => packageId !== row.packageId))} /></td>
                                                 <td><strong>{row.displayName}</strong><small>{row.packageId}</small></td>
                                                 <td>{row.installedVersion ?? "—"}{row.requestedRange === undefined ? null : <small>Requested {row.requestedRange}</small>}</td>
-                                                <td>{canUpgrade ? <Button disabled={!canPlanPackagesV1} onClick={() => selectAction("upgrade", row, latest)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button" variant="tonal"><Icon asset={upgradeIcon} slot="icon" />{latest}</Button> : latest ?? "—"}</td>
+                                                <td>{latest ?? "—"}</td>
                                                 <td>{row.sourceOptions.length === 0 ? <span className="package-source-missing">No configured source</span> : row.sourceOptions.length === 1 ? row.sourceOptions[0]?.label : <PackageSourceMenu label={`Source for ${row.displayName}`} onChange={(key) => setSourceSelections((current) => ({ ...current, [row.packageId]: key }))} options={row.sourceOptions} value={sourceSelections[row.packageId] ?? ""} />}</td>
-                                                <td><div className="package-row-actions"><PackageLinkActions client={client} packageId={row.packageId} target={row.linkTarget} />{row.installedVersion === undefined ? <Button disabled={!canPlanPackagesV1 || latest === undefined} onClick={() => selectAction("install", row, latest)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button" variant="tonal"><Icon asset={downloadIcon} slot="icon" />Install</Button> : <><Button disabled={!canPlanPackagesV2} onClick={() => selectAction("reinstall", row)} title={capabilityUnavailableTitle(canPlanPackagesV2, capabilities.packagesPlanV2)} type="button" variant="text">Reinstall</Button><Button disabled={!canPlanPackagesV1} onClick={() => selectAction("downgrade", row)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button" variant="text"><Icon asset={historyIcon} slot="icon" />Versions</Button><Button disabled={!canPlanPackagesV1} onClick={() => selectAction("remove", row)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button" variant="text"><Icon asset={deleteIcon} slot="icon" />Remove</Button></>}</div></td>
+                                                <td><div className="package-row-actions">
+                                                    {row.installedVersion === undefined
+                                                        ? <Button disabled={!canPlanPackagesV1 || latest === undefined} onClick={() => selectAction("install", row, latest)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button" variant="tonal"><Icon asset={downloadIcon} slot="icon" />Install</Button>
+                                                        : canUpgrade
+                                                            ? <Button disabled={!canPlanPackagesV1} onClick={() => selectAction("upgrade", row, latest)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button" variant="tonal"><Icon asset={upgradeIcon} slot="icon" />Update</Button>
+                                                            : <Button disabled={!canPlanPackagesV1} onClick={() => selectAction("downgrade", row)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button" variant="text"><Icon asset={historyIcon} slot="icon" />Versions</Button>}
+                                                    <PackageRowMoreMenu canPlanV1={canPlanPackagesV1} canPlanV2={canPlanPackagesV2} client={client} onAction={(action) => selectAction(action, row)} row={row} />
+                                                </div></td>
                                             </tr>
                                         );
                                     })}</tbody>
@@ -1273,24 +1366,6 @@ function packageWorkspaceRows(project: ProjectSnapshot, catalog: WorkspaceCatalo
             status: installedVersion !== undefined ? "installed" : availableVersions.length > 0 ? "available" : "missing-source"
         };
     });
-}
-
-function PackageLinkActions({ client, packageId, target }: {
-    client: GuiRpcClient;
-    packageId: string;
-    target?: PackageWorkspaceRow["linkTarget"];
-}) {
-    const [error, setError] = useState<string>();
-    if (target === undefined) return null;
-    const open = async (kind: "documentation" | "changelog") => {
-        setError(undefined);
-        try {
-            await client.openPackageLink(target.repositoryId, packageId, target.version, kind);
-        } catch (caught: unknown) {
-            setError(safeError(caught).code);
-        }
-    };
-    return <>{target.documentation ? <Button onClick={() => void open("documentation")} type="button" variant="text">Docs</Button> : null}{target.changelog ? <Button onClick={() => void open("changelog")} type="button" variant="text">Changelog</Button> : null}{error === undefined ? null : <span className="visually-hidden" role="alert">Package link unavailable: {error}</span>}</>;
 }
 
 export function RepositoriesPage({ client, navigate }: PageProps) {
@@ -1681,7 +1756,12 @@ function Detail({ label, value }: { label: string; value: string }) { return <di
 
 function DataTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
     if (rows.length === 0) return <RouteState kind="empty" title="No matching items" />;
-    return <div className="table-scroll"><table><thead><tr>{headers.map((header) => <th key={header} scope="col">{header}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={`${rowIndex}-${row[0]}`}>{row.map((cell, index) => <td key={`${headers[index]}-${index}`}>{cell}</td>)}</tr>)}</tbody></table></div>;
+    return (
+        <MaterialDataTable label="Repository packages" minWidth={480}>
+            <thead><tr>{headers.map((header) => <DataTableHeader key={header}>{header}</DataTableHeader>)}</tr></thead>
+            <tbody>{rows.map((row, rowIndex) => <tr key={`${rowIndex}-${row[0]}`}>{row.map((cell, index) => <td key={`${headers[index]}-${index}`}>{cell}</td>)}</tr>)}</tbody>
+        </MaterialDataTable>
+    );
 }
 
 function sourceText(repository: RepositorySnapshot): string { return repository.source.kind === "local" ? "Local repository" : repository.source.url; }

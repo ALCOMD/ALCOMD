@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { projectsIcon } from "@alcomd/ui/icons";
 
+import { DataTableHeader, MaterialDataTable } from "../../src/DataTable";
 import { Button, Checkbox, Dialog, Icon, IconButton, Progress, Select, Switch, TextField } from "../../src/Material";
 
 export function MaterialFoundationEvidence() {
@@ -23,10 +24,17 @@ export function MaterialFoundationEvidence() {
             <Switch label="Enable integration" onChange={setEnabled} selected={enabled} />
             <Checkbox checked={confirmed} label="I reviewed the plan" onChange={setConfirmed} />
             <Progress label="Material progress" value={0.62} />
-            <Dialog onClose={() => setDialogOpen(false)} open={dialogOpen} title="Material dialog">
-                <p>The dialog is hosted by the shared Material foundation.</p>
-                <Button onClick={() => setDialogOpen(false)} variant="text">Close</Button>
-            </Dialog>
+            <MaterialDataTable label="Material table foundation" minWidth={240}>
+                <thead><tr><DataTableHeader>Project</DataTableHeader><DataTableHeader>State</DataTableHeader></tr></thead>
+                <tbody><tr><td>Foundation fixture</td><td>Ready</td></tr></tbody>
+            </MaterialDataTable>
+            <div style={{ whiteSpace: "nowrap" }}>
+                <Dialog onClose={() => setDialogOpen(false)} open={dialogOpen} title="Material dialog">
+                    <p>The dialog is hosted by the shared Material foundation.</p>
+                    <p data-testid="dialog-width-evidence">Shared dialog content must wrap within the Material surface instead of being measured wider and clipped by the internal container.</p>
+                    <Button onClick={() => setDialogOpen(false)} variant="text">Close</Button>
+                </Dialog>
+            </div>
         </main>
     );
 }

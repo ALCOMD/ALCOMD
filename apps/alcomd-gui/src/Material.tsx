@@ -9,9 +9,11 @@ import {
     type CSSProperties,
     type FormEvent,
     type HTMLAttributes,
+    type MouseEvent as ReactMouseEvent,
     type ReactNode,
     type Ref
 } from "react";
+import { createPortal } from "react-dom";
 
 type MaterialElement = HTMLElement & {
     anchorElement?: HTMLElement | null;
@@ -130,10 +132,19 @@ export function Menu({ anchorRef, children, className, onClose, open }: { anchor
 }
 
 export function MenuItem({ className, disabled, label, onClick, title }: { className?: string; disabled?: boolean; label: string; onClick?(): void; title?: string }) {
+    const activate = (event: ReactMouseEvent<MaterialElement>) => {
+        if (onClick === undefined) return;
+        const menu = event.currentTarget.closest("md-menu");
+        if (menu === null) {
+            onClick();
+            return;
+        }
+        menu.addEventListener("closed", onClick, { once: true });
+    };
     return createElement(materialElements.menuItem, {
         className,
         disabled,
-        onClick,
+        onClick: activate,
         title,
         type: "button"
     } as MaterialProps, label);
@@ -330,11 +341,14 @@ export function Dialog({ children, onClose, open, title }: { children: ReactNode
         element.addEventListener("closed", close);
         return () => element.removeEventListener("closed", close);
     }, [onClose]);
-    return createElement(
-        materialElements.dialog,
-        { open, ref } as MaterialProps,
-        createElement("div", { slot: "headline" }, title),
-        createElement("div", { slot: "content" }, children)
+    return createPortal(
+        createElement(
+            materialElements.dialog,
+            { open, ref } as MaterialProps,
+            createElement("div", { slot: "headline" }, title),
+            createElement("div", { className: "material-dialog-content", slot: "content" }, children)
+        ),
+        document.body
     );
 }
 

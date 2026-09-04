@@ -239,7 +239,7 @@ export function PackageActions({ client, project, onChanged, selection }: Action
                 {plan === undefined ? null : hasChanges ? (
                     <div className="package-plan-review">
                         <p>Review the changes ALCOMD will make to this project.</p>
-                        <ul className="change-list">{plan.changeSet.mutations.map((mutation) => <li key={`${mutation.kind}-${mutation.packageId}`}><strong>{packageChangeLabel(mutation.kind)}</strong><span>{mutation.packageId}</span>{mutation.fromVersion === undefined && mutation.toVersion === undefined ? null : <small>{packageVersionChange(mutation.fromVersion, mutation.toVersion)}</small>}</li>)}</ul>
+                        <ul className="change-list">{plan.changeSet.mutations.map((mutation) => <li key={`${mutation.kind}-${mutation.packageId}`}><strong>{packageChangeLabel(mutation.kind)}</strong><span>{mutation.packageId}</span>{mutation.fromVersion == null && mutation.toVersion == null ? null : <small>{packageVersionChange(mutation.fromVersion, mutation.toVersion)}</small>}</li>)}</ul>
                         <div className="dialog-actions">
                             <Button disabled={feedback.busy} onClick={closeChanges} type="button" variant="text">Cancel</Button>
                             <Button disabled={!canApply || feedback.busy} onClick={() => void apply()} title={capabilityUnavailableTitle(canApply, capabilities.packagesApply)} type="button">{feedback.busy ? "Applying…" : "Apply changes"}</Button>
@@ -703,7 +703,7 @@ function ExtensionPlanDialog(props: { busy: boolean; onApply(): Promise<void>; o
 }
 
 function ModalDialog({ children, onClose, open, title }: { children: ReactNode; onClose(): void; open: boolean; title: string }) {
-    return <MaterialDialog onClose={onClose} open={open} title={title}><div className="modal-dialog-content">{children}</div></MaterialDialog>;
+    return <MaterialDialog onClose={onClose} open={open} title={title}>{children}</MaterialDialog>;
 }
 
 function MutationFeedback({ client, feedback, onOperationTerminal }: { client: GuiRpcClient; feedback: FeedbackState; onOperationTerminal?(operation: Operation): void }) {
@@ -757,10 +757,10 @@ function packageChangeLabel(kind: string): string {
     if (kind === "replace") return "Change version";
     return "Update";
 }
-function packageVersionChange(fromVersion: string | undefined, toVersion: string | undefined): string {
-    if (fromVersion !== undefined && toVersion !== undefined) return `${fromVersion} → ${toVersion}`;
-    if (toVersion !== undefined) return `Version ${toVersion}`;
-    return `Version ${fromVersion}`;
+function packageVersionChange(fromVersion: string | null | undefined, toVersion: string | null | undefined): string {
+    if (fromVersion != null && toVersion != null) return `${fromVersion} → ${toVersion}`;
+    if (toVersion != null) return `Version ${toVersion}`;
+    return `${fromVersion} → Removed`;
 }
 function packageErrorMessage(error: RpcError): string {
     if (["plan_stale", "project_revision_conflict", "resource_revision_conflict", "revision_conflict"].includes(error.code)) {
