@@ -1,10 +1,24 @@
 # 项目状态
 
-最后更新：2026-08-31
+最后更新：2026-09-06
 
 ## 当前阶段
 
 `M6 已正式完成；M7 Portable UI B0-D、Project / Package Functional Closure P0-P8 与 Project Unity Version / exact Open Unity U1-U7 technical closure 已通过。Unity production sealed HEAD e9349fd0f4cc9c18d9174dfc5826d48654aeb6f5 对应 Hosted CI run 33352406804 与 CodeQL run 33352406214 均通过；更新后的 P8 M7-owned visible-action completeness 为 PASS，global release completeness 仍为 BLOCKED_BY_M11。H2-A 已恢复为 ACTIVE，并停在 Project Workspace / Packages Visual Gate 2 候选制作；24b03916bd6d958c921b4039bd62bec00afe25d4 保留为 pre-Unity-model local checkpoint，不是 rejected，也不是当前候选。M7 仍为 IN_PROGRESS，projects.management、packages.vpm 与 repositories.management 保持 in_progress，M8/M9 未开始。`
+
+H2-A 最新本地补充：shared icon integration 与 reconnect 修正已通过 44 项 GUI browser tests 和
+Tauri no-bundle build；真实 Windows GUI 的 package / Copy review 已完成局部检查。
+项目所有者明确不要求窄窗口适配；撤销未经批准的 Open Unity 图标/位置替换，保留原播放图标。
+项目所有者已接受 18px button icon；临时双图标比较已撤下，完整 44 项 browser tests 和 debug
+no-bundle build 再次通过。隔离测试项目的真实 GUI Copy 已成功，源文件未变且副本 5 文件摘要一致；
+副本包管理页与缺失精确 Editor 提示已检查。未执行真实 Unity launch 或 migration。
+Visual Gate 2 不关闭，也不据此重排操作菜单或隐藏数据列。
+证据与未验证边界见 `docs/testing/m7-icon-reconnect-local-acceptance.md`；本轮无新 Hosted CI 或人工验收结论。
+
+后续 v3 源码对照已落实包管理工具栏与筛选入口的一轮补齐，完整 browser suite 为 48/48 PASS，
+frontend check/build、debug no-bundle build、xtask 与 metadata 检查通过。新筛选的真实桌面交互仍待验证；
+版本选择、条件更新、完整批量操作仍未完成，不提升 feature 状态。
+详见 `docs/testing/m7-h2-a-package-workspace-continuity.md`。
 
 ## 已完成
 

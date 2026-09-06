@@ -619,6 +619,30 @@ Activity、Diagnostics 或 Portable UI authority。
   global 仍为 `BLOCKED_BY_M11`。H2-A 从该 sealed HEAD 恢复 Visual Gate 2；`24b03916…` 只保留为
   pre-Unity-model local checkpoint。
 
+- 2026-09-06：H2-A local candidate 的 shared icon renderer 改为官方支持的 `md-icon` + SVG，
+  继续使用 pinned Google Rounded 400 资源；移除 mask 与 wrapper 的 button icon size 特例。
+  真实 Windows GUI 操作发现并修复同路由 reconnect 后 capability snapshot 未刷新的问题；
+  final browser suite 44/44 与 Tauri no-bundle build 通过。真实 package review / Copy review 的
+  布局和 Escape 取消已检查，未执行复制或包移除。窄窗口 sticky action 遮盖数据列仍是未通过项，
+  不以自动测试通过替代视觉验收；详见 `docs/testing/m7-icon-reconnect-local-acceptance.md`。
+
+- 2026-09-06：项目所有者纠正 icon integration 范围：不要求窄窗口适配，不授权更换按钮图标。
+  撤销 Open Unity 的 `open_in_new`/trailing 替换，恢复原 `play_arrow`/leading；仅保留 `md-icon`
+  与官方 SVG 接入修正，不引入响应式菜单或其他布局改变。
+
+- 2026-09-06：项目所有者接受普通 Material Web button 的 18px icon；移除临时双图标比较，
+  保持单个原始 leading play。最终前端 check、44/44 browser tests 与 debug no-bundle build 通过。
+  computer-use 在隔离 synthetic fixture 中完成真实 Copy 的 review/Apply/成功反馈/列表刷新与
+  副本 Manage；源文件未变，副本 5 文件 SHA-256 全部一致。缺失精确 Editor 提示与 Escape 通过。
+  本轮没有真实 Unity launch、migration、Hosted CI 或 Visual Gate 2 人工通过结论。
+
+- 2026-09-06：按项目所有者要求继续对照 v3 实际源码，补齐 H2-A 包管理工具栏与筛选入口：
+  shared Material search、icon Refresh、maintenance overflow、repository/local/prerelease filters，
+  复用既有 settings revision/RPC。48/48 browser tests、frontend check/build、debug no-bundle build、
+  xtask 与 metadata 检查通过。桌面新筛选交互尚未完成验收（电脑控制检测到用户输入，已暂停点击）；
+  不把浏览器测试冒充 real Tauri evidence。版本选择器、条件更新与批量入口仍是未完成项，详见
+  `docs/testing/m7-h2-a-package-workspace-continuity.md`。Visual Gate 2 保持开放。
+
 ## 下一停止点
 
 当前停止点是 H2-A Project Workspace / Packages Visual Gate 2。Unity technical closure 与更新后的 P8 M7-owned
