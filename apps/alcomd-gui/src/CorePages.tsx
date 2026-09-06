@@ -12,9 +12,7 @@ import {
     playArrowIcon,
     publicIcon,
     refreshIcon,
-    searchIcon,
     starIcon,
-    syncIcon,
     upgradeIcon,
     viewGridIcon,
     viewListIcon
@@ -61,9 +59,9 @@ import {
 } from "./CoreActions";
 import { DataTableHeader, MaterialDataTable } from "./DataTable";
 import type { GuiRpcClient } from "./rpc";
-import { Button, Checkbox, Dialog, Icon, IconButton, Menu, MenuItem, Select, TextField } from "./Material";
+import { Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, SearchField, Select, TextField } from "./Material";
 import { CreateProjectDialog, RestoreProjectDialog } from "./ProjectCreationDialogs";
-import { capabilities, capabilityUnavailableTitle, useCapability, useCapabilityState } from "./capabilities";
+import { capabilities, capabilityUnavailableTitle, useCapability, useCapabilityState, useReconnect } from "./capabilities";
 
 interface PageProps {
     client: GuiRpcClient;
@@ -160,13 +158,14 @@ export function RouteState({ kind, title, detail }: { kind: "loading" | "empty" 
 }
 
 function ErrorState({ error, retry }: { error: RpcError; retry(): void }) {
+    const reconnect = useReconnect();
     const disconnected = error.code === "daemon_unavailable";
     return (
         <section className={`route-state route-state--${disconnected ? "disconnected" : "error"}`} role="alert">
             <h2>{disconnected ? "ALCOMD core disconnected" : "Request failed"}</h2>
             <p><code>{error.code}</code></p>
             {error.diagnosticId === undefined ? null : <p>Diagnostic ID: <code>{error.diagnosticId}</code></p>}
-            <Button onClick={retry} type="button">Reconnect and retry</Button>
+            <Button onClick={() => { if (disconnected) reconnect?.(); retry(); }} type="button">Reconnect and retry</Button>
         </section>
     );
 }
@@ -287,7 +286,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                 <IconButton disabled={state.refreshing} label={state.refreshing ? "Refreshing projects" : "Refresh projects"} onClick={() => void refresh()} type="button">
                     <Icon asset={refreshIcon} />
                 </IconButton>
-                <TextField aria-label="Search projects" className="projects-search" label="" leadingIcon={<Icon asset={searchIcon} slot="leading-icon" />} onInput={setSearch} placeholder="Search..." type="search" value={search} variant="filled" />
+                <SearchField className="projects-search" label="Search projects" onInput={setSearch} placeholder="Search..." value={search} />
                 <Button onClick={() => setView((current) => current === "list" ? "grid" : "list")} type="button" variant="text">
                     <Icon asset={view === "list" ? viewGridIcon : viewListIcon} slot="icon" />
                     <StateSizedLabel current={view === "list" ? "Grid view" : "List view"} labels={["Grid view", "List view"]} />
@@ -1030,7 +1029,7 @@ function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
     );
 }
 
-function PackageWorkspaceMoreMenu({ canPlanV2, onReinstallAll }: { canPlanV2: boolean; onReinstallAll(): void }) {
+function PackageWorkspaceMoreMenu({ canPlanV1, canPlanV2, onResolve, onReinstallAll }: { canPlanV1: boolean; canPlanV2: boolean; onResolve(): void; onReinstallAll(): void }) {
     const [open, setOpen] = useState(false);
     const anchorRef = useRef<HTMLElement>(null);
     return (
@@ -1039,6 +1038,7 @@ function PackageWorkspaceMoreMenu({ canPlanV2, onReinstallAll }: { canPlanV2: bo
                 <Icon asset={moreVertIcon} size={24} />
             </IconButton>
             <Menu anchorRef={anchorRef} onClose={() => setOpen(false)} open={open}>
+                <MenuItem disabled={!canPlanV1} label="Resolve Dependencies…" onClick={() => { setOpen(false); onResolve(); }} title={capabilityUnavailableTitle(canPlanV1, capabilities.packagesPlanV1)} />
                 <MenuItem disabled={!canPlanV2} label="Reinstall All Installed Packages…" onClick={() => { setOpen(false); onReinstallAll(); }} title={capabilityUnavailableTitle(canPlanV2, capabilities.packagesPlanV2)} />
             </Menu>
         </>
@@ -1050,6 +1050,78 @@ interface PackageWorkspaceValue {
     installations: UnityInstallation[];
     launchOptions: UnityLaunchOptionsResult;
     project: ProjectSnapshot;
+    repositories: RepositorySnapshot[];
+    settings: SettingsGetResult;
+}
+
+function PackageFilters({ client, settings, repositories, onChanged, filter, setFilter, sourceFilter, setSourceFilter, canUseUserPackages }: {
+    client: GuiRpcClient;
+    settings: SettingsGetResult;
+    repositories: RepositorySnapshot[];
+    onChanged(): void;
+    filter: string;
+    setFilter(value: string): void;
+    sourceFilter: string;
+    setSourceFilter(value: "all" | "local" | "remote" | "user-package"): void;
+    canUseUserPackages: boolean;
+}) {
+    const [open, setOpen] = useState(false);
+    const [confirmPrerelease, setConfirmPrerelease] = useState(false);
+    const [snapshot, setSnapshot] = useState(settings);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<RpcError>();
+    const anchorRef = useRef<HTMLElement>(null);
+    const saving = useRef(false);
+    useEffect(() => setSnapshot(settings), [settings]);
+    const save = async (update: Partial<OfficialSettings["packages"]>) => {
+        if (saving.current) return;
+        saving.current = true;
+        setBusy(true);
+        setError(undefined);
+        try {
+            const next = await client.settingsUpdate(snapshot.revision, { packages: update });
+            setSnapshot(next);
+            onChanged();
+        } catch (caught: unknown) {
+            setError(safeError(caught));
+        } finally {
+            saving.current = false;
+            setBusy(false);
+        }
+    };
+    return <>
+        <Button aria-expanded={open} aria-haspopup="dialog" className="package-filter-trigger" onClick={() => setOpen(!open)} ref={anchorRef} type="button" variant="tonal">Filter packages</Button>
+        <FilterPopover anchorRef={anchorRef} label="Package filters" onClose={() => setOpen(false)} open={open}>
+            <fieldset disabled={busy}>
+                <legend>Repositories</legend>
+                {repositories.map((repository) => repository.repositoryId === undefined ? null : <Checkbox
+                    checked={!snapshot.settings.packages.hiddenRepositoryIds.includes(repository.repositoryId)}
+                    disabled={busy}
+                    key={repository.repositoryId}
+                    label={repository.name ?? repository.declaredId ?? sourceText(repository)}
+                    onChange={(checked) => {
+                        const hidden = new Set(snapshot.settings.packages.hiddenRepositoryIds);
+                        if (checked) hidden.delete(repository.repositoryId as string);
+                        else hidden.add(repository.repositoryId as string);
+                        void save({ hiddenRepositoryIds: [...hidden].sort() });
+                    }}
+                />)}
+                {canUseUserPackages ? <Checkbox checked={!snapshot.settings.packages.hideLocalUserPackages} disabled={busy} label="Local User Packages" onChange={(checked) => void save({ hideLocalUserPackages: !checked })} /> : null}
+            </fieldset>
+            <fieldset disabled={busy}>
+                <legend>Other filters</legend>
+                <Checkbox checked={snapshot.settings.packages.showPrerelease} disabled={busy} label="Show prerelease versions" onChange={(checked) => { if (checked) { setOpen(false); setConfirmPrerelease(true); } else void save({ showPrerelease: false }); }} />
+                <Select label="Status" onChange={setFilter} options={[{ label: "All packages", value: "all" }, { label: "Installed", value: "installed" }, { label: "Available", value: "available" }, { label: "Missing source", value: "missing" }]} value={filter} />
+                <Select label="Source" onChange={(value) => setSourceFilter(value as "all" | "local" | "remote" | "user-package")} options={[{ label: "All", value: "all" }, { label: "Remote", value: "remote" }, { label: "Local repository", value: "local" }, ...(canUseUserPackages ? [{ label: "User Packages", value: "user-package" }] : [])]} value={sourceFilter} />
+            </fieldset>
+            {busy ? <p role="status">Saving filters…</p> : null}
+            {error === undefined ? null : <div role="alert"><p>{error.code === "revision_conflict" ? "Settings changed elsewhere. Reload filters before trying again." : `Could not save filters: ${error.code}`}</p><Button onClick={() => { setError(undefined); onChanged(); }} type="button" variant="text">Reload filters</Button></div>}
+        </FilterPopover>
+        <Dialog onClose={() => { setConfirmPrerelease(false); setOpen(true); }} open={confirmPrerelease} title="Show prerelease versions?">
+            <p>Prerelease packages may be unstable. Showing them does not install or update any package.</p>
+            <div className="dialog-actions"><Button onClick={() => setConfirmPrerelease(false)} type="button" variant="text">Cancel</Button><Button onClick={() => { setConfirmPrerelease(false); void save({ showPrerelease: true }); }} type="button">Show prerelease versions</Button></div>
+        </Dialog>
+    </>;
 }
 
 interface RepositoryRefreshProgress {
@@ -1112,7 +1184,7 @@ async function loadPackageWorkspace(client: GuiRpcClient, projectId: string, inc
         sourceKind: "user-package",
         sourceSelector: { kind: "user_package", userPackageId: item.userPackageId }
     }));
-    return { project, catalog: [...catalogs.flat(), ...local], installations, launchOptions };
+    return { project, catalog: [...catalogs.flat(), ...local], installations, launchOptions, repositories, settings };
 }
 
 function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { projectId: string }) {
@@ -1198,7 +1270,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
         reload();
     };
     return (
-        <ResourcePage load={load} showRefreshBar={false}>{({ project, catalog, installations, launchOptions }, refresh, refreshing, refreshError) => {
+        <ResourcePage load={load} showRefreshBar={false}>{({ project, catalog, installations, launchOptions, repositories, settings }, refresh, refreshing, refreshError) => {
             const workspaceRows = packageWorkspaceRows(project, catalog);
             const rows = workspaceRows.filter((row) => {
                 const query = search.toLocaleLowerCase();
@@ -1240,37 +1312,13 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                     {workspaceFeedback === undefined ? null : <div className="project-workspace-feedback" role="status" aria-live="polite">{workspaceFeedback}</div>}
                     <section aria-labelledby="packages-heading" className="package-workspace-surface">
                         <header className="package-workspace-toolbar">
-                            <h2 id="packages-heading">Packages</h2>
-                            <Button className="package-refresh-action" disabled={!canManageRepositories || refreshing || repositoryRefresh?.running === true} onClick={() => void refreshRepositories(refresh)} title={capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry)} type="button" variant="text"><Icon asset={refreshIcon} slot="icon" />{repositoryRefresh?.running === true ? "Refreshing…" : "Refresh"}</Button>
-                            <TextField className="package-workspace-search" label="Search packages" leadingIcon={<Icon asset={searchIcon} slot="leading-icon" />} onInput={setSearch} value={search} />
-                            <Select
-                                className="package-workspace-filter"
-                                label="Filter"
-                                onChange={setFilter}
-                                options={[
-                                    { label: "All packages", value: "all" },
-                                    { label: "Installed", value: "installed" },
-                                    { label: "Available", value: "available" },
-                                    { label: "Missing source", value: "missing" }
-                                ]}
-                                value={filter}
-                            />
-                            <Select
-                                className="package-workspace-source-filter"
-                                label="Source"
-                                onChange={(value) => setSourceFilter(value as typeof sourceFilter)}
-                                options={[
-                                    { label: "All", value: "all" },
-                                    { label: "Remote", value: "remote" },
-                                    { label: "Local repository", value: "local" },
-                                    ...(canUseUserPackages ? [{ label: "User Packages", value: "user-package" }] : [])
-                                ]}
-                                value={sourceFilter}
-                            />
+                            <h2 id="packages-heading">Manage packages</h2>
+                            <IconButton className="package-refresh-action" disabled={!canManageRepositories || refreshing || repositoryRefresh?.running === true} label={repositoryRefresh?.running === true ? "Refreshing packages" : "Refresh"} onClick={() => void refreshRepositories(refresh)} title={capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry) ?? "Refresh packages"} type="button"><Icon asset={refreshIcon} /></IconButton>
+                            <SearchField className="package-workspace-search" label="Search packages" onInput={setSearch} placeholder="Search..." value={search} />
                             <div className="package-workspace-secondary-actions">
-                                <Button className="package-resolve-action" disabled={!canPlanPackagesV1} onClick={() => selectAction("resolve")} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button" variant="text"><Icon asset={syncIcon} slot="icon" />Resolve</Button>
-                                <span className="package-workspace-count" role="status" aria-live="polite">{rows.length} {rows.length === 1 ? "package" : "packages"}</span>
-                                <PackageWorkspaceMoreMenu canPlanV2={canPlanPackagesV2} onReinstallAll={() => selectAction("reinstall-all")} />
+                                <span className="visually-hidden" role="status" aria-live="polite">{rows.length} {rows.length === 1 ? "package" : "packages"}</span>
+                                <PackageWorkspaceMoreMenu canPlanV1={canPlanPackagesV1} canPlanV2={canPlanPackagesV2} onResolve={() => selectAction("resolve")} onReinstallAll={() => selectAction("reinstall-all")} />
+                                <PackageFilters canUseUserPackages={canUseUserPackages} client={client} filter={filter} onChanged={refresh} repositories={repositories} setFilter={setFilter} setSourceFilter={setSourceFilter} settings={settings} sourceFilter={sourceFilter} />
                             </div>
                         </header>
                         {repositoryRefresh === undefined ? null : (

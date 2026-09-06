@@ -2,6 +2,70 @@ import { expect, test, type Page } from "@playwright/test";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000101";
 
+test("Package toolbar uses the shared search preset and keeps maintenance in overflow", async ({ page }) => {
+    await openHarness(page, "ready");
+    const toolbar = page.locator(".package-workspace-toolbar");
+    await expect(toolbar.getByRole("heading", { name: "Manage packages" })).toBeVisible();
+    await expect(toolbar.locator("md-icon-button").filter({ has: page.locator('[data-icon-name="refresh"]') })).toBeVisible();
+    await expect(toolbar.locator("md-filled-text-field.alcomd-search-field")).toBeVisible();
+    await expect(toolbar.getByRole("combobox")).toHaveCount(0);
+    await expect(toolbar.getByRole("button", { name: "Resolve", exact: true })).toHaveCount(0);
+    await toolbar.getByRole("button", { name: "More package actions" }).click();
+    await page.getByRole("menuitem", { name: "Resolve Dependencies…" }).click();
+    await expect(page.getByRole("dialog", { name: "Apply package changes?" })).toBeVisible();
+});
+
+test("Package filters stay anchored, save repository visibility and return keyboard focus", async ({ page }) => {
+    await openHarness(page, "package-multiple");
+    const trigger = page.getByRole("button", { name: "Filter packages" });
+    await trigger.click();
+    const panel = page.getByRole("dialog", { name: "Package filters", exact: true });
+    await expect(panel).toBeVisible();
+    expect(await panel.evaluate((element) => element.matches(":popover-open") && element.parentElement === document.body)).toBe(true);
+    const remote = panel.getByRole("checkbox").first();
+    await expect(remote).toBeChecked();
+    await remote.click();
+    await expect(remote).not.toBeChecked();
+    await expect(packageName(page, "Remote tools")).toHaveCount(0);
+    await expect(packageName(page, "Local tools")).toBeVisible();
+    await remote.click();
+    await expect(packageName(page, "Remote tools")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(panel).toBeHidden();
+    await expect(trigger).toBeFocused();
+    await expect(page.getByRole("dialog", { name: "Apply package changes?" })).toHaveCount(0);
+});
+
+test("Failed filter persistence keeps the last confirmed visibility and exposes recovery", async ({ page }) => {
+    for (const state of ["package-filter-conflict", "package-filter-denied"]) {
+        await openHarness(page, state);
+        await page.getByRole("button", { name: "Filter packages" }).click();
+        const panel = page.getByRole("dialog", { name: "Package filters", exact: true });
+        const repository = panel.getByRole("checkbox").first();
+        await repository.click();
+        await expect(panel.getByRole("alert")).toContainText(state.endsWith("conflict") ? "Settings changed elsewhere" : "permission_denied");
+        await expect(repository).toBeChecked();
+        await expect(packageName(page, "Remote tools")).toBeVisible();
+        await expect(panel.getByRole("button", { name: "Reload filters" })).toBeVisible();
+    }
+});
+
+test("Showing prereleases requires confirmation and only updates package visibility", async ({ page }) => {
+    await openHarness(page, "ready");
+    await page.getByRole("button", { name: "Filter packages" }).click();
+    const panel = page.getByRole("dialog", { name: "Package filters", exact: true });
+    await panel.getByRole("checkbox", { name: "Show prerelease versions" }).click();
+    const confirmation = page.getByRole("dialog", { name: "Show prerelease versions?", exact: true });
+    await expect(confirmation).toBeVisible();
+    const confirmationHost = page.locator("md-dialog").filter({ hasText: "Show prerelease versions?" });
+    await confirmationHost.getByRole("button", { name: "Cancel" }).click();
+    await expect(panel.getByRole("checkbox", { name: "Show prerelease versions" })).not.toBeChecked();
+    await panel.getByRole("checkbox", { name: "Show prerelease versions" }).click();
+    await confirmationHost.getByRole("button", { name: "Show prerelease versions", exact: true }).click();
+    await expect(panel.getByRole("checkbox", { name: "Show prerelease versions" })).toBeChecked();
+    await expect(page.getByRole("dialog", { name: "Apply package changes?" })).toHaveCount(0);
+});
+
 function packageName(page: Page, name: string) {
     return page.getByRole("table", { name: "Packages" }).getByText(name, { exact: true });
 }
@@ -45,6 +109,7 @@ test("Package source filter uses daemon source kinds and only changes presentati
     await expect(packageName(page, "Remote tools")).toBeVisible();
     await expect(packageName(page, "Local tools")).toBeVisible();
 
+    await page.getByRole("button", { name: "Filter packages" }).click();
     await page.getByRole("combobox", { name: "Source" }).click();
     await page.getByRole("option", { name: "Remote", exact: true }).click();
     await expect(packageName(page, "Remote tools")).toBeVisible();
@@ -52,6 +117,7 @@ test("Package source filter uses daemon source kinds and only changes presentati
     await expect(page.getByText("2 packages")).toBeVisible();
 
     await openHarness(page, "package-multiple");
+    await page.getByRole("button", { name: "Filter packages" }).click();
     await page.getByRole("combobox", { name: "Source" }).click();
     await page.getByRole("option", { name: "Local repository", exact: true }).click();
     await expect(packageName(page, "Local tools")).toBeVisible();

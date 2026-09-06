@@ -46,19 +46,20 @@ test("shared Material foundation renders real controls with React 19 interaction
     await expect(icon).toHaveAttribute("data-filled", "false");
     const lightColors = await icon.evaluate((element) => {
         const style = getComputedStyle(element);
-        return { background: style.backgroundColor, foreground: style.color };
+        return { fill: getComputedStyle(element.querySelector("svg")!).fill, foreground: style.color };
     });
-    expect(lightColors.background).toBe(lightColors.foreground);
-    expect(await icon.evaluate((element) => getComputedStyle(element).webkitMaskImage)).not.toBe("none");
-    expect(await icon.evaluate((element) => getComputedStyle(element).webkitMaskSize)).toBe("100%");
+    expect(lightColors.fill).toBe(lightColors.foreground);
+    await expect(icon).toHaveJSProperty("tagName", "MD-ICON");
+    await expect(icon.locator("svg > path")).toHaveCount(1);
+    expect(await icon.evaluate((element) => getComputedStyle(element).webkitMaskImage)).toBe("none");
     await expect(icon).toHaveAttribute("data-optical-size", "24");
     await page.locator("html").evaluate((element) => { element.dataset.appearance = "dark"; });
     const darkColors = await icon.evaluate((element) => {
         const style = getComputedStyle(element);
-        return { background: style.backgroundColor, foreground: style.color };
+        return { fill: getComputedStyle(element.querySelector("svg")!).fill, foreground: style.color };
     });
-    expect(darkColors.background).toBe(darkColors.foreground);
-    expect(darkColors.background).not.toBe(lightColors.background);
+    expect(darkColors.fill).toBe(darkColors.foreground);
+    expect(darkColors.fill).not.toBe(lightColors.fill);
     await expect(page.locator("md-outlined-text-field")).toHaveJSProperty("label", "Project name");
     await expect(page.locator("md-outlined-select")).toHaveJSProperty("label", "Project type");
     await expect(page.locator("md-switch")).toHaveJSProperty("selected", true);
@@ -102,10 +103,10 @@ test("v3-density Material navigation keeps one offline Rounded icon across selec
     await expect(projects.locator(".alcomd-icon")).toHaveAttribute("aria-hidden", "true");
     await expect(projects.locator(".alcomd-icon")).toHaveAttribute("data-filled", "false");
     await expect(packages.locator(".alcomd-icon")).toHaveAttribute("data-filled", "false");
-    const selectedIconUrl = await projects.locator(".alcomd-icon").evaluate((element) => getComputedStyle(element).getPropertyValue("--alcomd-icon-url"));
+    const selectedIconUrl = await projects.locator(".alcomd-icon").evaluate((element) => element.querySelector("path")?.getAttribute("d"));
     await packages.click();
     await projects.click();
-    expect(await projects.locator(".alcomd-icon").evaluate((element) => getComputedStyle(element).getPropertyValue("--alcomd-icon-url"))).toBe(selectedIconUrl);
+    expect(await projects.locator(".alcomd-icon").evaluate((element) => element.querySelector("path")?.getAttribute("d"))).toBe(selectedIconUrl);
     const projectsBox = await projects.boundingBox();
     const projectsIconBox = await projects.locator(".alcomd-icon").boundingBox();
     const projectsLabel = projects.locator(".navigation-item-label");
@@ -117,7 +118,7 @@ test("v3-density Material navigation keeps one offline Rounded icon across selec
     expect(navigationBox).not.toBeNull();
     expect(projectsBox?.height).toBe(48);
     expect(projectsIconBox?.width).toBe(24);
-    await expect(projects.locator(".alcomd-icon")).toHaveCSS("-webkit-mask-size", "100%");
+    await expect(projects.locator(".alcomd-icon")).toHaveJSProperty("tagName", "MD-ICON");
     await expect(projects.locator(".alcomd-icon")).toHaveAttribute("data-optical-size", "24");
     expect((projectsBox?.x ?? 0) - (navigationBox?.x ?? 0)).toBe(12);
     expect((projectsIconBox?.x ?? 0) - (navigationBox?.x ?? 0)).toBe(28);
@@ -204,6 +205,28 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     for (const action of [favorite, openUnity, manage, backups, moreActions]) {
         await expect(action).toHaveCSS("height", "40px");
     }
+    await expect(rowActions).toHaveCSS("gap", "4px");
+    await expect(openUnity).toHaveCSS("padding-inline-start", "16px");
+    await expect(openUnity).toHaveCSS("padding-inline-end", "24px");
+    await expect(openUnity).toHaveJSProperty("trailingIcon", false);
+    const openUnityIcon = openUnity.locator('.alcomd-icon[data-icon-name="play_arrow"][slot="icon"]');
+    await expect(openUnity.locator('.alcomd-icon[slot="icon"]')).toHaveCount(1);
+    await expect(openUnityIcon).toHaveCSS("width", "18px");
+    await expect(openUnityIcon).toHaveCSS("height", "18px");
+    await expect(openUnityIcon).toHaveAttribute("data-icon-name", "play_arrow");
+    await expect(openUnityIcon).toHaveAttribute("data-optical-size", "24");
+    await expect(openUnityIcon.locator("svg")).toHaveCSS("width", "18px");
+    await expect(openUnityIcon.locator("svg")).toHaveAttribute("viewBox", "0 -960 960 960");
+    // The official component token, not a facade slot special case, controls icon size.
+    await openUnity.evaluate((element) => (element as HTMLElement).style.setProperty("--md-filled-button-icon-size", "22px"));
+    await expect(openUnityIcon).toHaveCSS("width", "22px");
+    await expect(openUnityIcon.locator("svg")).toHaveCSS("width", "22px");
+    await openUnity.evaluate((element) => (element as HTMLElement).style.removeProperty("--md-filled-button-icon-size"));
+    await expect(openUnityIcon).toHaveCSS("width", "18px");
+    for (const action of [manage, backups]) {
+        await expect(action).toHaveCSS("padding-inline-start", "24px");
+        await expect(action).toHaveCSS("padding-inline-end", "24px");
+    }
     await expect(favorite).toHaveCSS("width", "40px");
     await expect(moreActions).toHaveCSS("width", "40px");
     const actionsWidth = (await rowActions.boundingBox())?.width;
@@ -232,7 +255,7 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     await expect(moreIcon).toHaveCSS("height", "24px");
     await expect(moreIcon).toHaveAttribute("data-icon-name", "more_vert");
     await expect(moreIcon).toHaveAttribute("data-optical-size", "24");
-    await expect(moreIcon).toHaveCSS("-webkit-mask-size", "100%");
+    await expect(moreIcon).toHaveJSProperty("tagName", "MD-ICON");
     await moreActions.click();
     const projectMenu = rowActions.locator("md-menu");
     await expect(projectMenu).toHaveJSProperty("open", true);

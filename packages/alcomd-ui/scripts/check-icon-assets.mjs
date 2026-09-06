@@ -9,6 +9,8 @@ const manifest = readFileSync(join(assetRoot, "manifest.toml"), "utf8");
 const iconSource = readFileSync(join(packageRoot, "src", "icons.ts"), "utf8");
 const themeSource = readFileSync(join(packageRoot, "src", "theme.css"), "utf8");
 const packageManifest = readFileSync(join(packageRoot, "package.json"), "utf8");
+const materialSource = readFileSync(join(packageRoot, "..", "..", "apps", "alcomd-gui", "src", "Material.tsx"), "utf8");
+const registrationSource = readFileSync(join(packageRoot, "src", "index.ts"), "utf8");
 
 assertContains(manifest, 'upstream_repository = "https://github.com/google/material-design-icons"');
 assertContains(manifest, 'upstream_commit = "e083cc60a0828fdd3b404cea0cb8a5b900e9c23e"');
@@ -46,7 +48,7 @@ for (const entry of entries) {
     assertContains(canonicalSvg, `height="${entry.opticalSize}"`);
     assertContains(canonicalSvg, `width="${entry.opticalSize}"`);
     assertContains(canonicalSvg, 'viewBox="0 -960 960 960"');
-    if (!iconSource.includes(`../assets/material-symbols/${entry.path}?url`)) {
+    if (!iconSource.includes(`../assets/material-symbols/${entry.path}?raw`)) {
         fail(`${entry.name}: asset is not exposed by the closed @alcomd/ui icon source`);
     }
 }
@@ -58,9 +60,14 @@ if (!setsEqual(expectedFiles, actualFiles)) fail("vendored SVG set differs from 
 if (/@material-symbols\/(?:svg|font|svg-\d+|font-\d+)/.test(packageManifest + iconSource)) {
     fail("static Material Symbols npm package must not be used");
 }
-assertContains(themeSource, "mask-size: 100%");
-assertContains(themeSource, "-webkit-mask-size: 100%");
-if (/mask-size:\s*1(?:0[1-9]|[1-9]\d)%|transform:\s*scale|clip-path/.test(themeSource)) {
+
+assertContains(registrationSource, 'import "@material/web/icon/icon.js"');
+assertContains(materialSource, "createElement(materialElements.icon");
+assertContains(materialSource, "<svg viewBox={geometry.viewBox}");
+if (/--alcomd-icon-url|--alcomd-icon-size|renderedSize|dangerouslySetInnerHTML/.test(materialSource)) {
+    fail("icons must use Material sizing and explicit SVG geometry, not masks or injected markup");
+}
+if (/mask-image|mask-size|transform:\s*scale|clip-path/.test(themeSource)) {
     fail("icon geometry must not crop or scale the upstream asset");
 }
 if (/more_vert(?:Scale|Padding|Weight)|moreVert(?:Scale|Padding|Weight)|icon\s*===\s*["']more_vert["']/.test(iconSource + themeSource)) {

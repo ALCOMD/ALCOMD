@@ -23,7 +23,7 @@ import type { GuiRpcClient } from "../../src/rpc";
 import "../../src/styles.css";
 import { MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
 
-type HarnessMode = "ready" | "empty" | "error" | "disconnected" | "loading" | "stale" | "failed" | "cancelled" | "create-error" | "restore-error" | "favorite-pages" | "favorite-error" | "favorite-conflict" | "unity-automatic" | "unity-zero" | "unity-multiple" | "unity-migration" | "package-no-repositories" | "package-multiple" | "package-user-source" | "package-partial-failure" | "package-revision-conflict" | "capabilities-missing";
+type HarnessMode = "ready" | "empty" | "error" | "disconnected" | "loading" | "stale" | "failed" | "cancelled" | "create-error" | "restore-error" | "favorite-pages" | "favorite-error" | "favorite-conflict" | "unity-automatic" | "unity-zero" | "unity-multiple" | "unity-migration" | "package-no-repositories" | "package-multiple" | "package-user-source" | "package-partial-failure" | "package-revision-conflict" | "package-filter-conflict" | "package-filter-denied" | "capabilities-missing";
 
 const SUPPORTED_CAPABILITIES = [
     "backups.create.v1",
@@ -99,12 +99,18 @@ class DeterministicGuiClient implements GuiRpcClient {
     private userPackageRemoved = false;
     private userPackageRevision = 1;
 
-    constructor(private readonly mode: HarnessMode) {}
+    private connectionRestored = false;
+
+    constructor(private readonly mode: HarnessMode) {
+        if (mode === "disconnected") {
+            window.addEventListener("test-daemon-online", () => { this.connectionRestored = true; }, { once: true });
+        }
+    }
 
     private async value<T>(value: T): Promise<T> {
         if (this.mode === "loading") return new Promise<T>(() => undefined);
         if (this.mode === "error") throw { code: "internal_error", diagnosticId: "00000000-0000-4000-8000-000000000999" };
-        if (this.mode === "disconnected") throw { code: "daemon_unavailable" };
+        if (this.mode === "disconnected" && !this.connectionRestored) throw { code: "daemon_unavailable" };
         return structuredClone(value);
     }
 
@@ -164,6 +170,8 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
 
     settingsUpdate(expectedRevision: number, update: Partial<OfficialSettings>): ReturnType<GuiRpcClient["settingsUpdate"]> {
+        if (this.mode === "package-filter-conflict") return Promise.reject({ code: "revision_conflict" });
+        if (this.mode === "package-filter-denied") return Promise.reject({ code: "permission_denied" });
         if (expectedRevision !== this.settings.revision) return Promise.reject({ code: "revision_conflict" });
         this.settings = {
             configSchema: 2,

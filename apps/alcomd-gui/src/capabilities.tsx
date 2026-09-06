@@ -34,9 +34,14 @@ export type CapabilitySnapshot =
     | { readonly kind: "status-unavailable" };
 
 const CapabilityContext = createContext<CapabilitySnapshot | undefined>(undefined);
+const ReconnectContext = createContext<(() => void) | undefined>(undefined);
 
-export function CapabilityProvider({ children, value }: { children: ReactNode; value?: CapabilitySnapshot }) {
-    return <CapabilityContext.Provider value={value}>{children}</CapabilityContext.Provider>;
+export function CapabilityProvider({ children, value, reconnect }: { children: ReactNode; value?: CapabilitySnapshot; reconnect(): void }) {
+    return <ReconnectContext.Provider value={reconnect}><CapabilityContext.Provider value={value}>{children}</CapabilityContext.Provider></ReconnectContext.Provider>;
+}
+
+export function useReconnect(): (() => void) | undefined {
+    return useContext(ReconnectContext);
 }
 
 export function useCapability(capability: string): boolean {

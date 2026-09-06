@@ -98,6 +98,8 @@ export function App({ client = guiRpcClient }: AppProps) {
     const [appearance, setAppearance] = useState<AppearanceSettings>(defaultAppearance);
     const [locale, setLocale] = useState(() => preferredLocale(navigator.language));
     const [negotiatedCapabilities, setNegotiatedCapabilities] = useState<CapabilitySnapshot>();
+    const [connectionGeneration, setConnectionGeneration] = useState(0);
+    const reconnect = useCallback(() => setConnectionGeneration((generation) => generation + 1), []);
     const dirtyRef = useRef(false);
     const handleDirtyChange = useCallback((dirty: boolean) => {
         dirtyRef.current = dirty;
@@ -130,7 +132,7 @@ export function App({ client = guiRpcClient }: AppProps) {
             // The durable Settings page exposes reconnect/error state; shell defaults remain safe.
         });
         return () => { active = false; };
-    }, [applySettings, client]);
+    }, [applySettings, client, connectionGeneration]);
 
     useEffect(() => {
         let active = true;
@@ -141,7 +143,7 @@ export function App({ client = guiRpcClient }: AppProps) {
             if (active) setNegotiatedCapabilities({ kind: "status-unavailable" });
         });
         return () => { active = false; };
-    }, [client, route.kind]);
+    }, [client, route.kind, connectionGeneration]);
 
     useEffect(() => {
         const onPopState = () => {
@@ -198,7 +200,7 @@ export function App({ client = guiRpcClient }: AppProps) {
     };
 
     return (
-        <CapabilityProvider value={negotiatedCapabilities}>
+        <CapabilityProvider reconnect={reconnect} value={negotiatedCapabilities}>
             <div className="app-shell">
                 <div className="app-body">
                     <PrimaryNavigation

@@ -8,6 +8,7 @@ import "@material/web/button/text-button.js";
 import "@material/web/checkbox/checkbox.js";
 import "@material/web/dialog/dialog.js";
 import "@material/web/focus/md-focus-ring.js";
+import "@material/web/icon/icon.js";
 import "@material/web/iconbutton/icon-button.js";
 import "@material/web/list/list-item.js";
 import "@material/web/list/list.js";
@@ -32,6 +33,7 @@ export const materialElements = {
     checkbox: "md-checkbox",
     dialog: "md-dialog",
     focusRing: "md-focus-ring",
+    icon: "md-icon",
     iconButton: "md-icon-button",
     list: "md-list",
     listItem: "md-list-item",

@@ -246,14 +246,6 @@ md-linear-progress {
 .projects-search {
     min-width: 220px;
     flex: 1 1 360px;
-    --md-filled-text-field-active-indicator-height: 0px;
-    --md-filled-text-field-bottom-space: 8px;
-    --md-filled-text-field-container-color: var(--md-sys-color-surface-container-highest);
-    --md-filled-text-field-container-shape: var(--md-sys-shape-corner-full);
-    --md-filled-text-field-focus-active-indicator-height: 0px;
-    --md-filled-text-field-hover-active-indicator-height: 0px;
-    --md-filled-text-field-input-text-size: 0.875rem;
-    --md-filled-text-field-top-space: 8px;
 }
 .projects-secondary-toolbar { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 8px 12px; border-radius: 28px; background: var(--surface-container); }
 .projects-sort-label { flex: 0 0 auto; color: var(--on-surface); font-size: 0.875rem; font-weight: 500; }
@@ -418,14 +410,6 @@ md-linear-progress {
     min-width: max-content;
 }
 .project-row-actions > :is(md-filled-button, md-filled-tonal-button, md-text-button, md-icon-button) { flex: 0 0 auto; }
-.project-row-actions > md-filled-button {
-    --md-filled-button-with-leading-icon-leading-space: 12px;
-    --md-filled-button-with-leading-icon-trailing-space: 12px;
-}
-.project-row-actions > md-filled-tonal-button {
-    --md-filled-tonal-button-leading-space: 12px;
-    --md-filled-tonal-button-trailing-space: 12px;
-}
 .project-favorite-action[aria-pressed="true"] { color: var(--md-sys-color-primary); }
 .project-row-actions > md-menu {
     text-align: left;
@@ -595,8 +579,7 @@ md-linear-progress {
 
 .package-refresh-action { flex: 0 0 auto; }
 .package-workspace-search { min-width: 180px; flex: 1 1 240px; }
-.package-workspace-filter { width: 176px; min-width: 0; flex: 0 0 176px; }
-.package-workspace-source-filter { width: 140px; min-width: 0; flex: 0 0 140px; }
+.package-filter-trigger { flex: 0 0 auto; }
 .package-workspace-secondary-actions {
     display: flex;
     align-items: center;
@@ -1391,9 +1374,7 @@ code {
     .project-workspace-title p { max-width: 100%; }
     .project-workspace-action-cluster,
     .project-workspace-more-actions { justify-content: flex-start; flex-wrap: wrap; }
-    .package-workspace-search,
-    .package-workspace-filter,
-    .package-workspace-source-filter { width: 100%; min-width: 0; flex-basis: 100%; }
+    .package-workspace-search { width: 100%; min-width: 0; flex-basis: 100%; }
     .package-action-form { align-items: stretch; flex-direction: column; }
     .package-action-kind,
     .package-action-id,
