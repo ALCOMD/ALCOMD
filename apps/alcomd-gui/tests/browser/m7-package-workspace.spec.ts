@@ -156,7 +156,7 @@ test("Package rows keep one primary action and move secondary actions into Mater
 
     await installedRow.getByRole("button", { name: "More actions for Avatar tools" }).click();
     await expect(page.getByRole("menuitem", { name: "Reinstall", exact: true })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: "Choose Version…", exact: true })).toBeVisible();
+    await expect(installedRow.getByRole("button", { name: "Version for Avatar tools: 1.2.3" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "Remove", exact: true })).toBeVisible();
 });
 
@@ -214,3 +214,80 @@ test("User Package management lists, refreshes and removes only the enrollment",
 async function openHarness(page: Page, state: string) {
     await page.goto(`/browser-harness.html?route=${encodeURIComponent(`/projects/${PROJECT_ID}`)}&state=${state}`);
 }
+
+test("Inline version selection pins the chosen source and preserves installed state until Apply", async ({ page }) => {
+    await openHarness(page, "package-multiple&versions=1");
+    const trigger = page.getByRole("button", { name: "Version for Avatar tools: 1.2.3" });
+    await trigger.click();
+    await expect(page.locator("md-menu-item").filter({ hasText: "1.2.3 · Local packages · Installed" })).toHaveJSProperty("disabled", true);
+    for (const version of ["legacy", "9.0.0", "2.0.0-beta.1"]) await expect(page.locator("md-menu-item").filter({ hasText: version }).first()).toHaveJSProperty("disabled", true);
+    await page.keyboard.press("Escape");
+    await expect(trigger).toBeFocused();
+    expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+
+    await trigger.click();
+    await page.getByRole("menuitem", { name: "1.1.0 · Local packages", exact: true }).click();
+    const review = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
+    await expect(review).toContainText("1.2.3 → 1.1.0");
+    const requests = await page.evaluate(() => window.packageRequests);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ method: "downgrade", params: { projectId: PROJECT_ID, expectedRevision: 2, packageId: "com.example.avatar", version: "1.1.0", source: { kind: "repository", repositoryId: "00000000-0000-4000-8000-000000000112" } } });
+    await review.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+    await page.getByRole("menuitem", { name: "1.10.0 · Example packages", exact: true }).click();
+    await expect(review).toContainText("1.2.3 → 1.10.0");
+    expect(await page.evaluate(() => window.packageRequests.map((request) => request.method))).toEqual(["downgrade", "upgrade"]);
+    expect(await page.evaluate(() => window.packageRequests[1]?.params)).toMatchObject({ versionRange: "=1.10.0" });
+});
+
+test("Inline prerelease selection uses daemon classification and surfaces plan failure", async ({ page }) => {
+    await openHarness(page, "ready&versions=1&planError=1");
+    await page.getByRole("button", { name: "Filter packages" }).click();
+    await page.getByRole("checkbox", { name: "Show prerelease versions" }).click();
+    await page.locator("md-dialog").filter({ hasText: "Show prerelease versions?" }).getByRole("button", { name: "Show prerelease versions", exact: true }).click();
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Version for Avatar tools: 1.2.3" }).click();
+    await page.getByRole("menuitem", { name: "2.0.0-beta.1 · Example packages · Prerelease", exact: true }).click();
+    await expect(page.getByRole("alert")).toContainText("Package changes were not applied");
+    expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "upgrade", params: { versionRange: "=2.0.0-beta.1", includePrerelease: true } }]);
+    await expect(page.getByRole("button", { name: "Version for Avatar tools: 1.2.3" })).toBeVisible();
+});
+
+test("Selected installed packages remain in one bulk request when hidden by search", async ({ page }) => {
+    await openHarness(page, "package-user-source&twoInstalled=1");
+    await page.getByRole("button", { name: "Source for Avatar tools" }).click();
+    await page.getByRole("menuitem", { name: "Local avatar tools", exact: true }).click();
+    await page.getByRole("button", { name: "Source for Remote tools" }).click();
+    await page.getByRole("menuitem", { name: "Example packages", exact: true }).click();
+    await page.getByRole("checkbox", { name: "Select Avatar tools", exact: true }).check();
+    await page.getByRole("checkbox", { name: "Select Remote tools", exact: true }).check();
+    await page.getByRole("searchbox", { name: "Search packages" }).fill("Remote tools");
+    await expect(packageName(page, "Avatar tools")).toHaveCount(0);
+    await page.getByRole("button", { name: "Reinstall selected", exact: true }).click();
+    const review = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
+    await expect(review).toContainText("com.example.avatar");
+    await review.getByRole("button", { name: "Cancel", exact: true }).click();
+    await page.getByRole("button", { name: "Remove selected", exact: true }).click();
+    await expect(review).toContainText("1.2.3 → Removed");
+    expect(await page.evaluate(() => window.packageRequests)).toMatchObject([
+        { method: "bulk", params: { intents: [{ kind: "reinstall", packageId: "com.example.avatar", source: { kind: "user_package", userPackageId: "00000000-0000-4000-8000-000000000113" } }, { kind: "reinstall", packageId: "com.example.remote", source: { kind: "repository", repositoryId: "00000000-0000-4000-8000-000000000102" } }] } },
+        { method: "bulk", params: { intents: [{ kind: "remove", packageId: "com.example.avatar" }, { kind: "remove", packageId: "com.example.remote" }] } }
+    ]);
+    await review.getByRole("button", { name: "Cancel", exact: true }).click();
+    await page.getByRole("button", { name: "Clear selection", exact: true }).click();
+    await expect(page.getByRole("region", { name: "Selected package actions" })).toHaveCount(0);
+});
+
+test("User Package inline downgrade uses authoritative classification and pins its selected source", async ({ page }) => {
+    await openHarness(page, "package-user-source");
+    await expect(page.getByRole("button", { name: "Source for Avatar tools" })).toBeEnabled();
+    await page.getByRole("button", { name: "Source for Avatar tools" }).click();
+    await page.getByRole("menuitem", { name: "Local avatar tools", exact: true }).click();
+    await expect(page.locator("md-outlined-button").filter({ has: page.getByRole("button", { name: "Source for Avatar tools" }) })).toHaveText("Local avatar tools");
+    await expect(page.getByRole("button", { name: "Version for Avatar tools: 1.2.3" })).toBeEnabled();
+    await page.getByRole("button", { name: "Version for Avatar tools: 1.2.3" }).click();
+    await page.getByRole("menuitem", { name: "1.1.0 · Local avatar tools", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Apply package changes?" })).toBeVisible();
+    expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "downgrade", params: { projectId: PROJECT_ID, expectedRevision: 2, packageId: "com.example.avatar", version: "1.1.0", source: { kind: "user_package" } } }]);
+});

@@ -280,9 +280,10 @@ fn visible_action_gate_separates_m7_completeness_from_m11_release_blockers() {
         ])
     );
     assert!(!CURRENT_PROJECTS_UI.contains("disabled label=\"Open Project Directory\""));
-    assert!(CURRENT_PROJECTS_UI.contains(
-        "label={selectingCopyTarget ? \"Choosing Copy Destination…\" : \"Copy Project\"}"
-    ));
+    assert!(CURRENT_PROJECTS_UI.contains("label=\"Copy Project\" onClick={beginCopy}"));
+    assert!(CURRENT_PROJECTS_UI.contains("setCopyOpen(true)"));
+    assert!(CURRENT_PROJECTS_UI.contains("<CopyProjectDialog"));
+    assert!(CURRENT_PROJECTS_UI.contains("onClose={() => setCopyOpen(false)}"));
     for implemented in ["favorite", "remove-directory"] {
         assert!(
             gate["contractFirstProposals"]

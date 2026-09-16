@@ -1,4 +1,5 @@
-import type { ExtensionRecord, RpcError } from "@alcomd/sdk";
+import type { CandidateCursor, PackageCandidateEvidence, PackageCandidateSummary, ExtensionRecord, RpcError } from "@alcomd/sdk";
+import { actionableVersion, candidateSource, candidateSourceKey, choiceText, intentForSummary, queryCandidates, readCandidateSummary, uncertainUpdate, updateReason, validateVersionPage, type CandidateSummarySet } from "./package-candidates";
 import {
     accountCircleIcon,
     arrowBackIcon,
@@ -6,7 +7,6 @@ import {
     arrowUpwardIcon,
     backupIcon,
     downloadIcon,
-    historyIcon,
     helpIcon,
     moreVertIcon,
     playArrowIcon,
@@ -25,7 +25,6 @@ import type {
     DiagnosticItem,
     OfficialSettings,
     Operation,
-    PackageCursor,
     PackageSourceSelector,
     ProjectCopyPlan,
     ProjectDeletePlan,
@@ -958,6 +957,7 @@ interface WorkspaceCatalogVersion extends RepositoryPackageVersion {
 
 interface PackageWorkspaceRow {
     availableVersions: string[];
+    evidence?: PackageCandidateSummary;
     displayName: string;
     installedVersion?: string;
     linkTarget?: {
@@ -974,16 +974,67 @@ interface PackageWorkspaceRow {
     status: "available" | "installed" | "missing-source";
 }
 
-function PackageSourceMenu({ label, onChange, options, value }: { label: string; onChange(value: string): void; options: PackageWorkspaceRow["sourceOptions"]; value: string }) {
+function PackageVersionMenu({ client, project, snapshot, disabled, canPlan, onSelect, onStale, row }: { client: GuiRpcClient; project: ProjectSnapshot; snapshot?: string; disabled: boolean; canPlan: boolean; onSelect(version: PackageCandidateEvidence): void; onStale(): void; row: PackageWorkspaceRow }) {
+    const [open, setOpen] = useState(false);
+    const [items, setItems] = useState<PackageCandidateEvidence[]>([]);
+    const [cursor, setCursor] = useState<CandidateCursor | null>();
+    const [error, setError] = useState<string>();
+    const [busy, setBusy] = useState(false);
+    const pending = useRef(false);
+    const generation = useRef(0);
+    const traversal = useRef({ pages: 0, count: 0 });
+    const anchorRef = useRef<HTMLElement>(null);
+    useEffect(() => { generation.current += 1; traversal.current = { pages: 0, count: 0 }; setOpen(false); setItems([]); setCursor(undefined); setError(undefined); }, [snapshot]);
+    const load = async (next?: CandidateCursor) => {
+        if (pending.current || !snapshot || project.revision === undefined || project.projectId === undefined) return;
+        pending.current = true;
+        setBusy(true);
+        setError(undefined);
+        const current = generation.current;
+        try {
+            const page = await queryCandidates(client, { projectId: project.projectId, expectedRevision: project.revision, expectedSnapshot: snapshot, view: { kind: "versions", packageId: row.packageId }, limit: 64, ...(next ? { cursor: next } : {}) });
+            if (current !== generation.current) return;
+            validateVersionPage(page, { projectId: project.projectId, projectRevision: project.revision, packageId: row.packageId, fingerprint: snapshot, ...traversal.current, offset: next?.offset ?? 0 });
+            traversal.current = { pages: traversal.current.pages + 1, count: traversal.current.count + page.items.length };
+            setItems((existing) => next ? [...existing, ...page.items] : page.items);
+            setCursor(page.nextCursor);
+        } catch (caught) {
+            if (current !== generation.current) return;
+            const code = safeError(caught).code;
+            setItems([]); setCursor(undefined); setError(code);
+            if (code === "package_candidate_evidence_stale") onStale();
+        } finally { pending.current = false; setBusy(false); }
+    };
+    return <>
+        <Button aria-expanded={open} aria-haspopup="menu" aria-label={`Version for ${row.displayName}: ${row.installedVersion ?? "Not installed"}`} disabled={disabled || !snapshot} onClick={() => { setOpen(true); if (cursor === undefined) void load(); }} ref={anchorRef} type="button" variant="text">
+            {row.installedVersion ?? "Not installed"}
+        </Button>
+        <Menu anchorRef={anchorRef} onClose={() => setOpen(false)} open={open}>
+            {items.map((option) => <MenuItem
+                disabled={disabled || !canPlan || busy || !actionableVersion(option)}
+                key={`${candidateSourceKey(option.source)}:${option.version}`}
+                label={`${option.version} · ${row.sourceOptions.find((source) => source.key === candidateSourceKey(option.source))?.label ?? candidateSourceKey(option.source)}${option.classification === "prerelease" ? " · Prerelease" : ""}${option.relation === "same_precedence" ? " · Installed precedence" : ""}${option.reasons.length ? ` · ${option.reasons.join(", ").replaceAll("_", " ")}` : ""}${canPlan ? "" : " · Planning unavailable"}`}
+                onClick={() => { setOpen(false); onSelect(option); }}
+            />)}
+            {busy ? <MenuItem disabled label="Loading versions…" /> : null}
+            {error ? <MenuItem disabled label={`Versions unavailable: ${error}`} /> : null}
+            {!busy && !error && cursor === null && items.length === 0 ? <MenuItem disabled label="No recorded versions" /> : null}
+            {cursor ? <MenuItem disabled={busy} label="Load more versions" onClick={() => void load(cursor)} /> : null}
+        </Menu>
+    </>;
+}
+
+function PackageSourceMenu({ label, onChange, options, value, disabled }: { label: string; onChange(value: string): void; options: PackageWorkspaceRow["sourceOptions"]; value: string; disabled: boolean }) {
     const [open, setOpen] = useState(false);
     const anchorRef = useRef<HTMLElement>(null);
-    const selected = options.find((option) => option.key === value) ?? options[0];
+    const selected = options.find((option) => option.key === value);
     return (
         <>
-            <Button aria-expanded={open} aria-label={label} className="package-row-source-menu" onClick={() => setOpen(true)} ref={anchorRef} type="button" variant="outlined">
-                {selected?.label ?? "Choose source"}
+            <Button aria-expanded={open} aria-label={label} className="package-row-source-menu" disabled={disabled} onClick={() => setOpen(true)} ref={anchorRef} type="button" variant="outlined">
+                {selected?.label ?? (value ? "Selected source unavailable" : "Automatic source selection")}
             </Button>
             <Menu anchorRef={anchorRef} onClose={() => setOpen(false)} open={open}>
+                <MenuItem label="Automatic source selection" onClick={() => { onChange(""); setOpen(false); }} />
                 {options.map((option) => <MenuItem key={option.key} label={option.label} onClick={() => { onChange(option.key); setOpen(false); }} />)}
             </Menu>
         </>
@@ -1019,7 +1070,6 @@ function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
             </IconButton>
             <Menu anchorRef={anchorRef} className="package-actions-menu" onClose={() => setOpen(false)} open={open}>
                 {row.installedVersion === undefined ? null : <MenuItem disabled={!canPlanV2} label="Reinstall" onClick={() => { setOpen(false); onAction("reinstall"); }} title={capabilityUnavailableTitle(canPlanV2, capabilities.packagesPlanV2)} />}
-                {row.installedVersion === undefined ? null : <MenuItem disabled={!canPlanV1} label="Choose Version…" onClick={() => { setOpen(false); onAction("downgrade"); }} title={capabilityUnavailableTitle(canPlanV1, capabilities.packagesPlanV1)} />}
                 {row.linkTarget?.documentation === true ? <MenuItem label="Documentation" onClick={() => void openLink("documentation")} /> : null}
                 {row.linkTarget?.changelog === true ? <MenuItem label="Changelog" onClick={() => void openLink("changelog")} /> : null}
                 {row.installedVersion === undefined ? null : <MenuItem className="package-actions-menu-item--danger" disabled={!canPlanV1} label="Remove" onClick={() => { setOpen(false); onAction("remove"); }} title={capabilityUnavailableTitle(canPlanV1, capabilities.packagesPlanV1)} />}
@@ -1046,6 +1096,10 @@ function PackageWorkspaceMoreMenu({ canPlanV1, canPlanV2, onResolve, onReinstall
 }
 
 interface PackageWorkspaceValue {
+    sourceSelectionKey: string;
+    sourceRegistry: Record<string, { label: string; kind: "local" | "remote" | "user-package" }>;
+    candidates?: CandidateSummarySet;
+    candidateError?: string;
     catalog: WorkspaceCatalogVersion[];
     installations: UnityInstallation[];
     launchOptions: UnityLaunchOptionsResult;
@@ -1144,18 +1198,7 @@ async function listAllRepositories(client: GuiRpcClient): Promise<RepositorySnap
     return repositories;
 }
 
-async function listAllRepositoryPackages(client: GuiRpcClient, repositoryId: string): Promise<RepositoryPackageVersion[]> {
-    const packages: RepositoryPackageVersion[] = [];
-    let cursor: PackageCursor | undefined;
-    do {
-        const page = await client.repositoryPackages(repositoryId, cursor);
-        packages.push(...page.packages);
-        cursor = page.nextCursor;
-    } while (cursor !== undefined);
-    return packages;
-}
-
-async function loadPackageWorkspace(client: GuiRpcClient, projectId: string, includeUserPackages: boolean): Promise<PackageWorkspaceValue> {
+async function loadPackageWorkspace(client: GuiRpcClient, projectId: string, includeUserPackages: boolean, canQuery: boolean, sourceSelections: Record<string, string>): Promise<PackageWorkspaceValue> {
     const project = (await client.projectGet(projectId)).project;
     if (project.revision === undefined) throw { code: "project_not_registered" };
     const [repositories, settings, userPackages, installations, launchOptions] = await Promise.all([
@@ -1165,26 +1208,57 @@ async function loadPackageWorkspace(client: GuiRpcClient, projectId: string, inc
         loadAllUnityInstallations(client),
         client.unityLaunchOptions(projectId, project.revision)
     ]);
-    const hidden = new Set(settings.settings.packages.hiddenRepositoryIds);
-    const catalogs = await Promise.all(repositories.filter((repository) => repository.repositoryId === undefined || !hidden.has(repository.repositoryId)).map(async (repository) => {
-        if (repository.repositoryId === undefined) return [] as WorkspaceCatalogVersion[];
-        const packages = await listAllRepositoryPackages(client, repository.repositoryId);
-        const source = repository.name ?? repository.declaredId ?? sourceText(repository);
-        return packages
-            .filter((item) => settings.settings.packages.showPrerelease || item.prerelease !== true)
-            .map((item) => ({ ...item, repositoryId: repository.repositoryId as string, source, sourceKey: `repository:${repository.repositoryId}`, sourceKind: repository.source.kind, sourceSelector: { kind: "repository" as const, repositoryId: repository.repositoryId as string } }));
-    }));
-    const local = settings.settings.packages.hideLocalUserPackages ? [] : userPackages.map((item): WorkspaceCatalogVersion => ({
-        packageId: item.packageId,
-        version: item.version,
-        ...(item.displayName === undefined ? {} : { displayName: item.displayName }),
-        yanked: false,
-        source: item.displayName ?? "Local / User Package",
-        sourceKey: `user-package:${item.userPackageId}`,
-        sourceKind: "user-package",
-        sourceSelector: { kind: "user_package", userPackageId: item.userPackageId }
-    }));
-    return { project, catalog: [...catalogs.flat(), ...local], installations, launchOptions, repositories, settings };
+    let candidates: CandidateSummarySet | undefined;
+    let candidateError: string | undefined = canQuery ? undefined : "Candidate evidence unavailable: packages.candidates.v1 was not negotiated.";
+    try {
+        if (canQuery) {
+            const sources = Object.entries(sourceSelections).filter(([, key]) => key.length > 0).map(([packageId, key]) => ({ packageId, source: key.startsWith("repository:") ? { kind: "repository" as const, repository_id: key.slice(11) } : { kind: "user_package" as const, user_package_id: key.slice(13) } }));
+            if (sources.length > 256) throw { code: "package_candidate_limit_exceeded" };
+            candidates = await readCandidateSummary(client, { projectId, expectedRevision: project.revision, view: { kind: "summary", sources } });
+            if (candidates.snapshot.configRevision !== settings.revision) throw { code: "package_candidate_evidence_stale" };
+            const lockedIds = project.lockedDependencies.map((item) => item.packageId);
+            if (lockedIds.length > 100000) throw { code: "package_candidate_limit_exceeded" };
+            const lockedRows: PackageCandidateSummary[] = [];
+            for (let offset = 0; offset < lockedIds.length; offset += 256) {
+                const packageIds = lockedIds.slice(offset, offset + 256);
+                const batch = await readCandidateSummary(client, { projectId, expectedRevision: project.revision, expectedSnapshot: candidates.snapshot.fingerprint, view: { kind: "summary", packageIds, sources: sources.filter((source) => packageIds.includes(source.packageId)) } });
+                if (batch.snapshot.fingerprint !== candidates.snapshot.fingerprint || batch.items.length !== packageIds.length || packageIds.some((id) => !batch.items.some((item) => item.packageId === id))) throw { code: "package_candidate_evidence_stale" };
+                candidates.catalogComplete &&= batch.catalogComplete;
+                lockedRows.push(...batch.items);
+            }
+            const lockedById = new Map(lockedRows.map((row) => [row.packageId, row]));
+            candidates.items = candidates.items.map((row) => lockedById.get(row.packageId) ?? row);
+        }
+    } catch (caught) { candidates = undefined; candidateError = safeError(caught).code; }
+    const catalog: WorkspaceCatalogVersion[] = [];
+    // One existing bounded page per source supplies optional names/links only.
+    // Never drain catalog versions or use their order/classification as evidence.
+    if (repositories.length > 4096) throw { code: "package_candidate_limit_exceeded" };
+    for (const repository of repositories) {
+        if (!repository.repositoryId || settings.settings.packages.hiddenRepositoryIds.includes(repository.repositoryId)) continue;
+        let page: Awaited<ReturnType<GuiRpcClient["repositoryPackages"]>>;
+        try { page = await client.repositoryPackages(repository.repositoryId); }
+        catch { continue; }
+        for (const item of page.packages) catalog.push({ ...item, repositoryId: repository.repositoryId, source: repository.name ?? repository.declaredId ?? sourceText(repository), sourceKey: `repository:${repository.repositoryId}`, sourceKind: repository.source.kind, sourceSelector: { kind: "repository", repositoryId: repository.repositoryId } });
+    }
+    if (!settings.settings.packages.hideLocalUserPackages) for (const item of userPackages) catalog.push({ packageId: item.packageId, version: item.version, ...(item.displayName ? { displayName: item.displayName } : {}), yanked: false, source: item.displayName ?? "Local / User Package", sourceKey: `user-package:${item.userPackageId}`, sourceKind: "user-package", sourceSelector: { kind: "user_package", userPackageId: item.userPackageId } });
+    for (const row of candidates?.items ?? []) {
+        const choices = [row.latest, row.latestStable, row.projectLatest, row.projectLatestStable];
+        for (const choice of choices) {
+            if (choice.kind !== "candidate") continue;
+            const value = choice.candidate;
+            const sourceKey = candidateSourceKey(value.source);
+            if (catalog.some((entry) => entry.packageId === row.packageId && entry.sourceKey === sourceKey && entry.version === value.version)) continue;
+            const source = value.source;
+            const repository = source.kind === "repository" ? repositories.find((entry) => entry.repositoryId === source.repository_id) : undefined;
+            const local = source.kind === "user_package" ? userPackages.find((entry) => entry.userPackageId === source.user_package_id) : undefined;
+            catalog.push({ packageId: row.packageId, version: value.version, yanked: false, prerelease: value.classification === "prerelease", ...(local?.displayName ? { displayName: local.displayName } : {}), ...(repository?.repositoryId ? { repositoryId: repository.repositoryId } : {}), source: repository?.name ?? repository?.declaredId ?? local?.displayName ?? sourceKey, sourceKey, sourceKind: repository?.source.kind ?? "user-package", sourceSelector: candidateSource(value.source) });
+        }
+    }
+    const sourceRegistry: PackageWorkspaceValue["sourceRegistry"] = {};
+    for (const repository of repositories) if (repository.repositoryId) sourceRegistry[`repository:${repository.repositoryId}`] = { label: repository.name ?? repository.declaredId ?? sourceText(repository), kind: repository.source.kind };
+    for (const local of userPackages) sourceRegistry[`user-package:${local.userPackageId}`] = { label: local.displayName ?? "Local / User Package", kind: "user-package" };
+    return { project, catalog, installations, launchOptions, repositories, settings, sourceRegistry, sourceSelectionKey: JSON.stringify(sourceSelections), ...(candidates ? { candidates } : {}), ...(candidateError ? { candidateError } : {}) };
 }
 
 function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { projectId: string }) {
@@ -1193,31 +1267,38 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
     const canPlanPackagesV1 = useCapability(capabilities.packagesPlanV1);
     const canPlanPackagesV2 = useCapability(capabilities.packagesPlanV2);
     const canUseUserPackages = useCapability(capabilities.packagesUserPackages);
-    const load = useCallback(() => loadPackageWorkspace(client, projectId, canUseUserPackages), [canUseUserPackages, client, projectId]);
+    const canQueryCandidates = useCapability(capabilities.packagesCandidates);
     const [search, setSearch] = useState("");
     const [filter, setFilter] = useState("all");
     const [sourceFilter, setSourceFilter] = useState<"all" | "local" | "remote" | "user-package">("all");
     const [sourceSelections, setSourceSelections] = useState<Record<string, string>>({});
+    const load = useCallback(() => loadPackageWorkspace(client, projectId, canUseUserPackages, canQueryCandidates, sourceSelections), [canUseUserPackages, canQueryCandidates, client, projectId, sourceSelections]);
+    const [evidenceInvalid, setEvidenceInvalid] = useState(false);
+    const [packageMutationBusy, setPackageMutationBusy] = useState(false);
+    useEffect(() => setEvidenceInvalid(false), [load]);
     const [bulkSelection, setBulkSelection] = useState<string[]>([]);
     const [repositoryRefresh, setRepositoryRefresh] = useState<RepositoryRefreshProgress>();
     const [selection, setSelection] = useState<PackageActionSelection>();
     const [workspaceFeedback, setWorkspaceFeedback] = useState<string>();
     const selectedSource = (row: PackageWorkspaceRow): PackageSourceSelector | undefined => {
         const selectedKey = sourceSelections[row.packageId];
-        return row.sourceOptions.find((option) => option.key === selectedKey)?.selector ?? (row.sourceOptions.length === 1 ? row.sourceOptions[0]?.selector : undefined);
+        if (selectedKey?.startsWith("repository:")) return { kind: "repository", repositoryId: selectedKey.slice(11) };
+        if (selectedKey?.startsWith("user-package:")) return { kind: "user_package", userPackageId: selectedKey.slice(13) };
+        return undefined;
     };
     const selectAction = (action: PackageActionSelection["action"], row?: PackageWorkspaceRow, version?: string) => {
         const packageId = row?.packageId ?? "";
         const source = row === undefined ? undefined : selectedSource(row);
         setSelection({ action, key: (selection?.key ?? 0) + 1, packageId, ...(version === undefined ? {} : { version }), ...(source === undefined ? {} : { source }) });
     };
-    const selectBulkReinstall = (rows: PackageWorkspaceRow[]) => {
-        const selectedRows = rows.filter((row) => bulkSelection.includes(row.packageId) && row.installedVersion !== undefined);
+    const selectBulkInstalled = (rows: PackageWorkspaceRow[], action: "bulk-reinstall" | "bulk-remove") => {
+        const selectedRows = rows.filter((row) => bulkSelection.includes(row.packageId) && (action === "bulk-remove" ? row.evidence?.direct === true : row.evidence?.installed.kind === "locked"));
         const sources = selectedRows.flatMap((row) => {
             const source = selectedSource(row);
             return source === undefined ? [] : [{ packageId: row.packageId, source }];
         });
-        setSelection({ action: "bulk-reinstall", key: (selection?.key ?? 0) + 1, packageId: "", packageIds: selectedRows.map((row) => row.packageId), sources });
+        if (selectedRows.length === 0 || selectedRows.length !== bulkSelection.length || selectedRows.length > 256) return;
+        setSelection({ action, key: (selection?.key ?? 0) + 1, packageId: "", packageIds: selectedRows.map((row) => row.packageId), sources });
     };
     const refreshRepositories = async (reload: () => void) => {
         setRepositoryRefresh({ completed: 0, failures: [], results: [], running: true, successes: 0, total: 0 });
@@ -1270,8 +1351,42 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
         reload();
     };
     return (
-        <ResourcePage load={load} showRefreshBar={false}>{({ project, catalog, installations, launchOptions, repositories, settings }, refresh, refreshing, refreshError) => {
-            const workspaceRows = packageWorkspaceRows(project, catalog);
+        <ResourcePage load={load} showRefreshBar={false}>{({ project, catalog, installations, launchOptions, repositories, settings, candidates, candidateError, sourceRegistry, sourceSelectionKey }, refresh, refreshing, refreshError) => {
+            const workspaceRows = packageWorkspaceRows(project, catalog, candidates?.items, sourceRegistry);
+            const currentEvidence = candidates !== undefined && sourceSelectionKey === JSON.stringify(sourceSelections) && !evidenceInvalid && !refreshing && refreshError === undefined;
+            const catalogReady = currentEvidence && candidates.catalogComplete && !packageMutationBusy;
+            const reloadEvidence = () => { setEvidenceInvalid(false); refresh(); };
+            const chooseCandidate = (row: PackageWorkspaceRow, option: PackageCandidateEvidence) => {
+                if (!catalogReady || !canPlanPackagesV1 || !canPlanPackagesV2 || !actionableVersion(option)) return;
+                setSourceSelections((current) => ({ ...current, [row.packageId]: candidateSourceKey(option.source) }));
+                setSelection({ action: option.relation === "older" ? "downgrade" : option.relation === "newer" ? "upgrade" : "install", key: (selection?.key ?? 0) + 1, packageId: row.packageId, version: option.relation === "older" ? option.version : `=${option.version}`, source: candidateSource(option.source), includePrerelease: option.classification === "prerelease", candidateSnapshot: candidates.snapshot.fingerprint });
+            };
+            const selectedRows = workspaceRows.filter((row) => bulkSelection.includes(row.packageId));
+            const completeSelection = selectedRows.length > 0 && selectedRows.length === bulkSelection.length && selectedRows.length <= 256;
+            const canBulkInstalled = catalogReady && completeSelection && selectedRows.every((row) => row.evidence?.installed.kind === "locked");
+            const canBulkRemove = catalogReady && completeSelection && selectedRows.every((row) => row.evidence?.direct === true);
+            const selectedIntents = (stable: boolean) => selectedRows.flatMap((row) => row.evidence ? [intentForSummary(row.evidence, stable)].filter((intent) => intent !== undefined) : []);
+            const selectedLatest = selectedIntents(false);
+            const selectedStable = selectedIntents(true);
+            const canSelected = catalogReady && completeSelection && selectedLatest.length === selectedRows.length;
+            const canSelectedStable = catalogReady && completeSelection && selectedStable.length === selectedRows.length;
+            const stableSelectionDiffers = JSON.stringify(selectedLatest) !== JSON.stringify(selectedStable);
+            const lockedRows = workspaceRows.filter((row) => project.lockedDependencies.some((locked) => locked.packageId === row.packageId));
+            const allUpdate = (stable: boolean) => {
+                const intents = lockedRows.flatMap((row) => row.evidence ? [intentForSummary(row.evidence, stable)].filter((intent) => intent?.kind === "upgrade") : []);
+                const blocked = lockedRows.some((row) => !row.evidence || uncertainUpdate(row.evidence, stable));
+                const exclusions = lockedRows.flatMap((row) => {
+                    const update = stable ? row.evidence?.stableUpdate : row.evidence?.update;
+                    return update && update.kind !== "target" ? [`${row.displayName}: ${updateReason(update)}`] : [];
+                });
+                return { intents, exclusions, enabled: catalogReady && !blocked && intents.length > 0 && intents.length <= 256 };
+            };
+            const allLatest = allUpdate(false);
+            const allStable = allUpdate(true);
+            const submitBulk = (intents: import("./core-models").PackageBulkIntent[], exclusions: string[] = []) => {
+                if (!catalogReady || !intents.length || intents.length > 256) return;
+                setSelection({ action: "bulk-candidates", key: (selection?.key ?? 0) + 1, packageId: "", intents, exclusions, candidateSnapshot: candidates.snapshot.fingerprint });
+            };
             const rows = workspaceRows.filter((row) => {
                 const query = search.toLocaleLowerCase();
                 const matchesSearch = query.length === 0 || [row.displayName, row.packageId, ...row.sources].some((value) => value.toLocaleLowerCase().includes(query));
@@ -1317,10 +1432,17 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                             <SearchField className="package-workspace-search" label="Search packages" onInput={setSearch} placeholder="Search..." value={search} />
                             <div className="package-workspace-secondary-actions">
                                 <span className="visually-hidden" role="status" aria-live="polite">{rows.length} {rows.length === 1 ? "package" : "packages"}</span>
-                                <PackageWorkspaceMoreMenu canPlanV1={canPlanPackagesV1} canPlanV2={canPlanPackagesV2} onResolve={() => selectAction("resolve")} onReinstallAll={() => selectAction("reinstall-all")} />
+                                <PackageWorkspaceMoreMenu canPlanV1={canPlanPackagesV1 && catalogReady} canPlanV2={canPlanPackagesV2 && catalogReady} onResolve={() => selectAction("resolve")} onReinstallAll={() => selectAction("reinstall-all")} />
                                 <PackageFilters canUseUserPackages={canUseUserPackages} client={client} filter={filter} onChanged={refresh} repositories={repositories} setFilter={setFilter} setSourceFilter={setSourceFilter} settings={settings} sourceFilter={sourceFilter} />
                             </div>
                         </header>
+                        {candidateError || evidenceInvalid || !currentEvidence ? <div role="status">{candidateError ?? (evidenceInvalid ? "Candidate evidence is stale." : "Loading candidate evidence…")} <Button onClick={reloadEvidence} type="button" variant="text">Reload package evidence</Button></div> : null}
+                        {currentEvidence && !candidates.catalogComplete ? <p role="status">Package catalog is incomplete. Refresh the affected sources before planning changes.</p> : null}
+                        {currentEvidence ? <div className="package-workspace-secondary-actions">
+                            <Button disabled={!canPlanPackagesV2 || !allLatest.enabled} onClick={() => submitBulk(allLatest.intents, allLatest.exclusions)} type="button" variant="tonal">Update All ({allLatest.intents.length})</Button>
+                            {JSON.stringify(allLatest.intents) !== JSON.stringify(allStable.intents) ? <Button disabled={!canPlanPackagesV2 || !allStable.enabled} onClick={() => submitBulk(allStable.intents, allStable.exclusions)} type="button" variant="text">Update All Stable ({allStable.intents.length})</Button> : null}
+                            {!allLatest.enabled ? <span role="status">{allLatest.intents.length > 256 ? "More than 256 updates; explicitly select a smaller batch." : lockedRows.some((row) => !row.evidence || uncertainUpdate(row.evidence, false)) ? "Resolve unknown or ambiguous package evidence before Update All." : "No actionable updates."}</span> : null}
+                        </div> : null}
                         {repositoryRefresh === undefined ? null : (
                             <div className={repositoryRefresh.failures.length > 0 ? "package-refresh-status package-refresh-status--failed" : "package-refresh-status"} role={repositoryRefresh.failures.length > 0 ? "alert" : "status"} aria-live="polite">
                                 <span>{repositoryRefresh.running
@@ -1332,7 +1454,11 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                         {bulkSelection.length === 0 ? null : (
                             <div aria-label="Selected package actions" className="package-bulk-bar" role="region">
                                 <strong>{bulkSelection.length} selected</strong>
-                                <Button disabled={!canPlanPackagesV2} onClick={() => selectBulkReinstall(rows)} title={capabilityUnavailableTitle(canPlanPackagesV2, capabilities.packagesPlanV2)} type="button" variant="tonal">Reinstall selected</Button>
+                                <Button disabled={!canPlanPackagesV2 || !canSelected} onClick={() => submitBulk(selectedLatest)} type="button" variant="tonal">Install / Update selected</Button>
+                                {stableSelectionDiffers ? <Button disabled={!canPlanPackagesV2 || !canSelectedStable} onClick={() => submitBulk(selectedStable)} type="button" variant="text">Install / Update selected stable</Button> : null}
+                                <Button disabled={!canPlanPackagesV2 || !canBulkInstalled} onClick={() => selectBulkInstalled(workspaceRows, "bulk-reinstall")} title={capabilityUnavailableTitle(canPlanPackagesV2, capabilities.packagesPlanV2)} type="button" variant="tonal">Reinstall selected</Button>
+                                <Button disabled={!canPlanPackagesV2 || !canBulkRemove} onClick={() => selectBulkInstalled(workspaceRows, "bulk-remove")} title={capabilityUnavailableTitle(canPlanPackagesV2, capabilities.packagesPlanV2)} type="button" variant="text">Remove selected</Button>
+                                {!canSelected || !canBulkInstalled || !canBulkRemove ? <span role="status">Actions require every selected package, including hidden rows: install/update needs eligible targets; reinstall needs locks; remove needs direct requirements. Limits: 1–256 packages.</span> : null}
                                 <Button onClick={() => setBulkSelection([])} type="button" variant="text">Clear selection</Button>
                             </div>
                         )}
@@ -1340,24 +1466,25 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                             {rows.length === 0 ? <section className="projects-empty" role="status"><h3>{workspaceRows.length === 0 ? "No packages" : "No matching packages"}</h3><p>{workspaceRows.length === 0 ? "This project has no packages to manage." : "Change the search or package filter."}</p></section> : (
                                 <MaterialDataTable className="package-workspace-table" label="Packages" minWidth={840}>
                                     <colgroup><col className="package-column-select" /><col className="package-column-name" /><col className="package-column-installed" /><col className="package-column-latest" /><col className="package-column-source" /><col className="package-column-actions" /></colgroup>
-                                    <thead><tr><DataTableHeader><Checkbox checked={rows.some((row) => row.installedVersion !== undefined) && rows.filter((row) => row.installedVersion !== undefined).every((row) => bulkSelection.includes(row.packageId))} label="Select all installed packages" onChange={(checked) => setBulkSelection(checked ? rows.filter((row) => row.installedVersion !== undefined).map((row) => row.packageId) : [])} /></DataTableHeader><DataTableHeader>Package</DataTableHeader><DataTableHeader>Installed</DataTableHeader><DataTableHeader>Latest</DataTableHeader><DataTableHeader>Source</DataTableHeader><DataTableHeader><span className="visually-hidden">Actions</span></DataTableHeader></tr></thead>
+                                    <thead><tr><DataTableHeader><Checkbox checked={rows.length > 0 && rows.every((row) => bulkSelection.includes(row.packageId))} label="Select all visible packages" onChange={(checked) => setBulkSelection((current) => checked ? [...new Set([...current, ...rows.map((row) => row.packageId)])] : current.filter((id) => !rows.some((row) => row.packageId === id)))} /></DataTableHeader><DataTableHeader>Package</DataTableHeader><DataTableHeader>Installed</DataTableHeader><DataTableHeader>Latest</DataTableHeader><DataTableHeader>Source</DataTableHeader><DataTableHeader><span className="visually-hidden">Actions</span></DataTableHeader></tr></thead>
                                     <tbody>{rows.map((row) => {
-                                        const latest = row.availableVersions.at(-1);
-                                        const canUpgrade = row.installedVersion !== undefined && latest !== undefined && latest !== row.installedVersion;
+                                        const evidence = currentEvidence ? row.evidence : undefined;
+                                        const installChoice = evidence?.projectLatest;
+                                        const update = evidence?.update;
                                         return (
                                             <tr key={row.packageId}>
-                                                <td><Checkbox checked={bulkSelection.includes(row.packageId)} disabled={row.installedVersion === undefined} label={`Select ${row.displayName}`} onChange={(checked) => setBulkSelection((current) => checked ? [...new Set([...current, row.packageId])] : current.filter((packageId) => packageId !== row.packageId))} /></td>
+                                                <td><Checkbox checked={bulkSelection.includes(row.packageId)} label={`Select ${row.displayName}`} onChange={(checked) => setBulkSelection((current) => checked ? [...new Set([...current, row.packageId])] : current.filter((packageId) => packageId !== row.packageId))} /></td>
                                                 <td><strong>{row.displayName}</strong><small>{row.packageId}</small></td>
-                                                <td>{row.installedVersion ?? "—"}{row.requestedRange === undefined ? null : <small>Requested {row.requestedRange}</small>}</td>
-                                                <td>{latest ?? "—"}</td>
-                                                <td>{row.sourceOptions.length === 0 ? <span className="package-source-missing">No configured source</span> : row.sourceOptions.length === 1 ? row.sourceOptions[0]?.label : <PackageSourceMenu label={`Source for ${row.displayName}`} onChange={(key) => setSourceSelections((current) => ({ ...current, [row.packageId]: key }))} options={row.sourceOptions} value={sourceSelections[row.packageId] ?? ""} />}</td>
+                                                <td><PackageVersionMenu client={client} project={project} snapshot={currentEvidence ? candidates.snapshot.fingerprint : undefined} disabled={!canQueryCandidates} canPlan={catalogReady && canPlanPackagesV1 && canPlanPackagesV2} onStale={() => setEvidenceInvalid(true)} onSelect={(option) => chooseCandidate(row, option)} row={row} />{row.requestedRange === undefined ? null : <small>Requested {row.requestedRange}</small>}</td>
+                                                <td>{evidence ? choiceText(evidence.latest) : "Evidence unavailable"}{evidence && update?.kind !== "target" ? <small>{update ? updateReason(update) : ""}</small> : null}</td>
+                                                <td>{row.sourceOptions.length === 1 && !sourceSelections[row.packageId] ? row.sourceOptions[0]?.label : <PackageSourceMenu disabled={!currentEvidence} label={`Source for ${row.displayName}`} onChange={(key) => setSourceSelections((current) => ({ ...current, [row.packageId]: key }))} options={row.sourceOptions} value={sourceSelections[row.packageId] ?? ""} />}</td>
                                                 <td><div className="package-row-actions">
                                                     {row.installedVersion === undefined
-                                                        ? <Button disabled={!canPlanPackagesV1 || latest === undefined} onClick={() => selectAction("install", row, latest)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button" variant="tonal"><Icon asset={downloadIcon} slot="icon" />Install</Button>
-                                                        : canUpgrade
-                                                            ? <Button disabled={!canPlanPackagesV1} onClick={() => selectAction("upgrade", row, latest)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button" variant="tonal"><Icon asset={upgradeIcon} slot="icon" />Update</Button>
-                                                            : <Button disabled={!canPlanPackagesV1} onClick={() => selectAction("downgrade", row)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button" variant="text"><Icon asset={historyIcon} slot="icon" />Versions</Button>}
-                                                    <PackageRowMoreMenu canPlanV1={canPlanPackagesV1} canPlanV2={canPlanPackagesV2} client={client} onAction={(action) => selectAction(action, row)} row={row} />
+                                                        ? <Button disabled={!canPlanPackagesV1 || !canPlanPackagesV2 || !catalogReady || installChoice?.kind !== "candidate" || installChoice.candidate.eligibility !== "eligible"} onClick={() => { if (installChoice?.kind === "candidate") chooseCandidate(row, installChoice.candidate); }} title={capabilityUnavailableTitle(canPlanPackagesV1 && canPlanPackagesV2, capabilities.packagesPlanV2)} type="button" variant="tonal"><Icon asset={downloadIcon} slot="icon" />Install</Button>
+                                                        : update?.kind === "target"
+                                                            ? <Button disabled={!canPlanPackagesV1 || !canPlanPackagesV2 || !catalogReady} onClick={() => chooseCandidate(row, update.candidate)} title={capabilityUnavailableTitle(canPlanPackagesV1 && canPlanPackagesV2, capabilities.packagesPlanV2)} type="button" variant="tonal"><Icon asset={upgradeIcon} slot="icon" />Update</Button>
+                                                            : null}
+                                                    <PackageRowMoreMenu canPlanV1={canPlanPackagesV1 && !packageMutationBusy && !refreshing && !evidenceInvalid} canPlanV2={canPlanPackagesV2 && catalogReady} client={client} onAction={(action) => selectAction(action, row)} row={row} />
                                                 </div></td>
                                             </tr>
                                         );
@@ -1366,14 +1493,14 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                             )}
                         </div>
                     </section>
-                    <PackageActions client={client} onChanged={refresh} project={project} selection={selection} />
+                    <PackageActions client={client} onChanged={reloadEvidence} onBusyChanged={setPackageMutationBusy} onEvidenceStale={() => setEvidenceInvalid(true)} project={project} selection={selection === undefined ? undefined : { ...selection, candidateSnapshot: selection.candidateSnapshot ?? candidates?.snapshot.fingerprint }} />
                 </section>
             );
         }}</ResourcePage>
     );
 }
 
-function packageWorkspaceRows(project: ProjectSnapshot, catalog: WorkspaceCatalogVersion[]): PackageWorkspaceRow[] {
+function packageWorkspaceRows(project: ProjectSnapshot, catalog: WorkspaceCatalogVersion[], summaries: PackageCandidateSummary[] = [], sourceRegistry: PackageWorkspaceValue["sourceRegistry"] = {}): PackageWorkspaceRow[] {
     const catalogByPackage = new Map<string, WorkspaceCatalogVersion[]>();
     for (const item of catalog) {
         const versions = catalogByPackage.get(item.packageId) ?? [];
@@ -1382,20 +1509,22 @@ function packageWorkspaceRows(project: ProjectSnapshot, catalog: WorkspaceCatalo
     }
     const installed = new Map(project.lockedDependencies.map((item) => [item.packageId, item.value]));
     const requested = new Map(project.directDependencies.map((item) => [item.packageId, item.value]));
-    const packageIds = new Set([...installed.keys(), ...requested.keys(), ...catalogByPackage.keys()]);
+    const packageIds = new Set([...installed.keys(), ...requested.keys(), ...catalogByPackage.keys(), ...summaries.map((item) => item.packageId)]);
     return [...packageIds].sort((left, right) => left.localeCompare(right)).map((packageId) => {
         const versions = catalogByPackage.get(packageId) ?? [];
-        const availableVersions = [...new Set(versions.filter((item) => !item.yanked).map((item) => item.version))].sort((left, right) => left.localeCompare(right));
-        const sources = [...new Set(versions.map((item) => item.source))].sort((left, right) => left.localeCompare(right));
-        const sourceKinds = [...new Set(versions.map((item) => item.sourceKind))].sort();
-        const sourceOptions = [...new Map(versions.map((item) => [item.sourceKey, { key: item.sourceKey, label: item.source, selector: item.sourceSelector }])).values()].sort((left, right) => left.label.localeCompare(right.label));
+        const availableVersions = [...new Set(versions.filter((item) => !item.yanked).map((item) => item.version))];
         const installedVersion = installed.get(packageId);
-        const preferredVersion = installedVersion ?? availableVersions.at(-1);
+        const evidence = summaries.find((item) => item.packageId === packageId);
+        const sourceOptions = (evidence?.providers ?? []).map((provider) => { const key = candidateSourceKey(provider.source); return { key, label: sourceRegistry[key]?.label ?? key, selector: candidateSource(provider.source) }; });
+        const sources = sourceOptions.map((source) => source.label);
+        const sourceKinds = [...new Set((evidence?.providers ?? []).flatMap((provider) => { const key = candidateSourceKey(provider.source); const kind = sourceRegistry[key]?.kind; return kind ? [kind] : provider.source.kind === "user_package" ? ["user-package" as const] : []; }))];
+        const preferredVersion = installedVersion;
         const linkVersion = versions
             .filter((item): item is WorkspaceCatalogVersion & { repositoryId: string } => item.version === preferredVersion && item.links !== undefined && item.repositoryId !== undefined)
             .sort((left, right) => left.repositoryId.localeCompare(right.repositoryId))[0];
         return {
             availableVersions,
+            ...(evidence ? { evidence } : {}),
             displayName: versions.find((item) => item.displayName !== undefined)?.displayName ?? packageId,
             ...(installedVersion === undefined ? {} : { installedVersion }),
             ...(linkVersion === undefined ? {} : {

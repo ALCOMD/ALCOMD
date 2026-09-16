@@ -126,20 +126,23 @@
         "stage": "M7 H2-A",
         "status": "IN_PROGRESS",
         "visualGate2": "PENDING",
-        "historicalVerdictsScope": "P6/P8 checkpoints only; not current package-page closure",
+        "historicalVerdictsScope": "P6/P8 checkpoints only; current candidate closure requires its own implementation evidence and Visual Gate 2",
         "contract": "docs/exec-plans/M7-package-candidate-evidence-stop-a.md",
-        "contractApproval": "PENDING",
-        "productionCandidateQuery": false,
-        "openItems": [
+        "contractApproval": "APPROVED_FOR_IMPLEMENTATION",
+        "productionCandidateQuery": true,
+        "implementedItems": [
             "authoritative-candidate-read",
             "conditional-update-stable-update-all",
             "full-selected-install-upgrade",
             "user-package-inline-versions",
-            "manual-version-fallback-unification",
+            "manual-version-fallback-unification"
+        ],
+        "openItems": [
             "screen-reader-disabled-announcement",
             "real-desktop-evidence"
         ],
-        "browserCheckpoint": "52/52 historical local WIP regression, not full closure",
-        "desktopEvidence": "computer-use authorization timeout; not obtained; owner manual acceptance allowed"
+        "browserCheckpoint": "69/69 current local browser regression; not desktop or screen-reader acceptance",
+        "desktopEvidence": "computer-use authorization timeout; not obtained; owner manual acceptance allowed",
+        "implementationValidation": "LOCAL_FUNCTIONAL_CANDIDATE_WITH_EXISTING_UNITY_ENVIRONMENT_LIMIT"
     }
 }

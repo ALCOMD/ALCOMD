@@ -48,6 +48,7 @@ mod m5_backup;
 mod m5_backup_restore;
 mod m5_template;
 mod m6;
+mod m7_candidates;
 mod m7_copy;
 mod m7_delete;
 mod m7_official;
@@ -358,6 +359,22 @@ impl M3RegistryStore for StateStoreHandle {
         self.request_m3(move |connection| {
             m3::unregister_repository(connection, &owner, id, expected, &key, now_ms)
         })
+        .await
+    }
+}
+
+impl alcomd_application::CandidateStore for StateStoreHandle {
+    async fn candidate_snapshot(
+        &self,
+        owner: PrincipalId,
+        project: ProjectId,
+        package_ids: Option<Vec<String>>,
+    ) -> Result<alcomd_application::CandidateStoreSnapshot, alcomd_application::CandidateQueryError>
+    {
+        self.request_worker(
+            move |connection| m7_candidates::snapshot(connection, &owner, project, package_ids),
+            || alcomd_application::CandidateQueryError::Unavailable,
+        )
         .await
     }
 }

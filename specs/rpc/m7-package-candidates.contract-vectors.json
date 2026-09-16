@@ -1,5 +1,5 @@
 {
-    "status": "proposal-only-not-runtime-evidence",
+    "status": "semantic-test-reference-inventory-not-execution-results",
     "schema": "m7-package-candidates.proposal.schema.json",
     "shapeCases": [
         {
@@ -155,7 +155,16 @@
                                 "eligibility": "eligible",
                                 "reasons": []
                             }
-                        }
+                        },
+                        "providers": [
+                            {
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12
+                            }
+                        ]
                     }
                 ]
             }
@@ -284,7 +293,16 @@
                             "reasons": [
                                 "project_unity_unknown"
                             ]
-                        }
+                        },
+                        "providers": [
+                            {
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12
+                            }
+                        ]
                     }
                 ]
             }
@@ -339,7 +357,23 @@
                             "reasons": [
                                 "source_ambiguous"
                             ]
-                        }
+                        },
+                        "providers": [
+                            {
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12
+                            },
+                            {
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "33333333-3333-4333-8333-333333333333"
+                                },
+                                "sourceRevision": 12
+                            }
+                        ]
                     }
                 ]
             }
@@ -890,7 +924,16 @@
                                 "eligibility": "eligible",
                                 "reasons": []
                             }
-                        }
+                        },
+                        "providers": [
+                            {
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12
+                            }
+                        ]
                     }
                 ]
             }
@@ -1150,7 +1193,16 @@
                                 "eligibility": "eligible",
                                 "reasons": []
                             }
-                        }
+                        },
+                        "providers": [
+                            {
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12
+                            }
+                        ]
                     }
                 ],
                 "unboundedCatalog": []
@@ -1162,235 +1214,701 @@
             "id": "semver-order",
             "given": "1.9.0, 1.10.0",
             "expected": "Latest 1.10.0, never lexical maximum",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "semver_order_and_upgrade_direction_are_core_authoritative"
+                }
+            ]
         },
         {
             "id": "build-only",
             "given": "installed 1.2.3+a, candidate 1.2.3+b",
             "expected": "same_precedence; no update",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "build_only_is_same_precedence_not_update"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/engine.rs",
+                    "symbol": "upgrade_and_downgrade_validate_semver_precedence_not_build_metadata"
+                }
+            ]
         },
         {
             "id": "same-source-build",
             "given": "same source provides 1.2.3+a and +b",
             "expected": "ambiguous; display tie order is not selection; =version cannot pin build",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "same_source_build_ambiguity_is_computed_before_paging"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "legacy_build_alternative_still_prevents_exact_source_submission"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/range.rs",
+                    "symbol": "build_metadata_never_changes_range_precedence"
+                }
+            ]
         },
         {
             "id": "source-priority",
             "given": "repo priority0 has1.0; priority9 has2.0",
             "expected": "2.0 wins; priority only within precedence group",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "precedence_precedes_source_priority_and_equal_priority_is_ambiguous"
+                }
+            ],
+            "coverageNote": "The runtime fixture uses valid registered priorities 1 and 99. The original illustrative priority0 input is retained; zero is not accepted by the existing resolver authority validator."
         },
         {
             "id": "equal-priority",
             "given": "two repos same preferred priority and precedence",
             "expected": "source_ambiguous until explicit selector",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "precedence_precedes_source_priority_and_equal_priority_is_ambiguous"
+                }
+            ]
         },
         {
             "id": "repo-user",
             "given": "repo and user same precedence without selector",
             "expected": "source_ambiguous regardless of repository priority",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "repository_user_tie_requires_source_selector"
+                }
+            ]
         },
         {
             "id": "source-pin",
             "given": "repo/user ambiguity with explicit user selector",
             "expected": "unique user choice if no same-source ambiguity",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "repository_user_tie_requires_source_selector"
+                },
+                {
+                    "kind": "playwright-test",
+                    "file": "apps/alcomd-gui/tests/browser/m7-package-candidates.spec.ts",
+                    "symbol": "Unknown or ambiguous evidence blocks updates without probing Plans; explicit source resolves ambiguity"
+                }
+            ]
         },
         {
             "id": "stable",
             "given": "visible 2.0-beta,1.9 stable; showPrerelease true",
             "expected": "Latest2.0-beta; LatestStable1.9",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "stable_and_prerelease_policy_are_separate_sets"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "stable_older_than_installed_prerelease_is_not_stable_update"
+                },
+                {
+                    "kind": "playwright-test",
+                    "file": "apps/alcomd-gui/tests/browser/m7-package-candidates.spec.ts",
+                    "symbol": "Stable bulk actions use the distinct Core stable target and one explicit Apply"
+                }
+            ]
         },
         {
             "id": "prerelease-off",
             "given": "same entries; showPrerelease false",
             "expected": "Latest1.9; beta version retained disabled",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "stable_and_prerelease_policy_are_separate_sets"
+                }
+            ]
         },
         {
             "id": "missing-classification",
             "given": "normalization cannot establish prerelease classification",
             "expected": "classification_unknown; not stable; no automatic target",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "unknown_classification_never_becomes_stable"
+                }
+            ]
         },
         {
             "id": "unity-fallback",
             "given": "2.0 requires newer Unity,1.9 compatible,installed1.8",
             "expected": "Latest2.0; projectLatest/update1.9",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "unity_incompatible_latest_does_not_displace_compatible_target"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-testing/tests/m7_candidates_rpc.rs",
+                    "symbol": "candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authority"
+                }
+            ]
         },
         {
             "id": "unity-unknown-min",
             "given": "project Unity unknown; potentially winning candidate has minimum",
             "expected": "project choice unknown; no positive lower fallback claim",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "unknown_unity_blocks_only_potential_winners_with_minimum"
+                }
+            ]
         },
         {
             "id": "unity-unknown-no-min",
             "given": "project Unity unknown; candidate has no minimum",
             "expected": "unity not_required; direct Unity eligibility passes",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "unknown_unity_blocks_only_potential_winners_with_minimum"
+                }
+            ]
         },
         {
             "id": "yanked-only",
             "given": "all visible candidates yanked",
             "expected": "none/all_yanked; versions disabled; no update",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "yanked_and_legacy_remain_explanatory_disabled_entries"
+                }
+            ]
         },
         {
             "id": "installed-unknown",
             "given": "invalid installed version with known candidate",
             "expected": "display maxima possible; relation unknown, unavailable update",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "installed_unknown_absent_and_newer_are_not_upgrades"
+                }
+            ]
         },
         {
             "id": "uninstalled",
             "given": "direct range exists but no lock",
             "expected": "installed absent; never use range as version; install intent only",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "installed_unknown_absent_and_newer_are_not_upgrades"
+                }
+            ]
         },
         {
             "id": "installed-newer",
             "given": "installed2.0, candidate1.9",
             "expected": "older; no_update installed_newer; explicit downgrade only",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "installed_unknown_absent_and_newer_are_not_upgrades"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "stable_older_than_installed_prerelease_is_not_stable_update"
+                }
+            ]
         },
         {
             "id": "hidden",
             "given": "hidden source has highest version",
             "expected": "not in display choice; resolver dependency source policy unchanged",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "hidden_sources_and_stale_explicit_source_never_fall_back"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "providers_preserve_nonwinners_ambiguity_and_unfiltered_source_switching"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/resolver.rs",
+                    "symbol": "repository_and_user_package_require_explicit_source_without_hidden_priority"
+                }
+            ]
         },
         {
             "id": "user-snapshot",
             "given": "mutable enrolled folder changes without refresh",
             "expected": "same enrolled snapshot result; zero directory reads",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-store/src/m7_candidates.rs",
+                    "symbol": "registered_user_snapshot_is_read_without_source_files_or_effects"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-testing/tests/m7_candidates_rpc.rs",
+                    "symbol": "candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authority"
+                }
+            ],
+            "coverageNote": "The store fixture uses an enrolled source path that does not exist, proving no mutable directory read is required. Real RPC separately proves an unrefreshed external repository edit does not alter registered evidence."
         },
         {
             "id": "unrelated-incomplete",
             "given": "unrelated repo resolver_ready false",
             "expected": "local evidence retained; catalogComplete false gates non-remove; Plan still fails repository_refresh_required",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "relevant_incomplete_is_unknown_but_unrelated_does_not_erase_evidence"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-store/src/m7_candidates.rs",
+                    "symbol": "raw_unready_evidence_and_global_readiness_are_not_silently_omitted"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-testing/tests/m7_candidates_rpc.rs",
+                    "symbol": "candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authority"
+                }
+            ]
         },
         {
             "id": "relevant-incomplete",
             "given": "relevant repo normalization incomplete",
             "expected": "choice unknown/catalog_incomplete; never known empty",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "relevant_incomplete_is_unknown_but_unrelated_does_not_erase_evidence"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-store/src/m7_candidates.rs",
+                    "symbol": "raw_unready_evidence_and_global_readiness_are_not_silently_omitted"
+                }
+            ]
         },
         {
             "id": "legacy-metadata",
             "given": "otherwise usable candidate has legacy metadata",
             "expected": "blocked legacy_metadata; existing Plan error unchanged",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "yanked_and_legacy_remain_explanatory_disabled_entries"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/resolver.rs",
+                    "symbol": "normal_resolution_rejects_direct_and_transitive_legacy_candidates"
+                }
+            ]
         },
         {
             "id": "snapshot-source-add",
             "given": "provider added/deleted between pages",
             "expected": "package_candidate_evidence_stale; discard all accumulated pages",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-testing/tests/m7_candidates_rpc.rs",
+                    "symbol": "candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authority"
+                },
+                {
+                    "kind": "playwright-test",
+                    "file": "apps/alcomd-gui/tests/browser/m7-package-candidates.spec.ts",
+                    "symbol": "Stale versions and stale pre-Plan evidence discard eligibility without automatic mutation retry"
+                }
+            ]
         },
         {
             "id": "snapshot-settings",
             "given": "Config revision changes during read",
             "expected": "stale; no mixed config/database observation",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-testing/tests/m7_candidate_snapshot_race.rs",
+                    "symbol": "config_change_during_candidate_store_read_fails_stale_without_query_writes"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-testing/tests/m7_candidates_rpc.rs",
+                    "symbol": "candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authority"
+                }
+            ]
         },
         {
             "id": "cursor-query-change",
             "given": "cursor reused for changed IDs/source/view",
             "expected": "existing invalid params; reauthorize every page",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-application/src/m7_candidates.rs",
+                    "symbol": "canonical_query_ignores_order_and_page_size_but_binds_view_and_sources"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-application/src/m7_candidates.rs",
+                    "symbol": "changed_cursor_ids_source_and_view_are_rejected_before_snapshot_reads"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-application/src/m7_candidates.rs",
+                    "symbol": "all_four_permissions_and_exact_project_scope_are_required_before_reads"
+                }
+            ]
         },
         {
             "id": "limits",
             "given": "4097 sources or100001 relevant rows or result>1MiB",
             "expected": "package_candidate_limit_exceeded; no truncation",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-store/src/m7_candidates.rs",
+                    "symbol": "real_source_and_record_work_caps_fail_without_partial_results"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-testing/tests/m7_candidates_rpc.rs",
+                    "symbol": "candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authority"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "apps/alcomd/src/m7_candidates_rpc.rs",
+                    "symbol": "actual_response_envelope_and_json_escaping_count_toward_limit"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "apps/alcomd/src/m7_candidates_rpc.rs",
+                    "symbol": "raw_whitespace_and_escape_bytes_cannot_bypass_candidate_request_cap"
+                }
+            ]
         },
         {
             "id": "permission",
             "given": "each proper subset of four read permissions; other principal project",
             "expected": "existing permission denial/isolation, no evidence leakage",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-application/src/m7_candidates.rs",
+                    "symbol": "all_four_permissions_and_exact_project_scope_are_required_before_reads"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-store/src/m7_candidates.rs",
+                    "symbol": "registered_user_snapshot_is_read_without_source_files_or_effects"
+                }
+            ]
         },
         {
             "id": "zero-effects",
             "given": "successful/failed/cancelled/page query",
             "expected": "no refresh/network/package downloads/cache writes/state/config/project writes/Plan/Operation/Event",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-testing/tests/m7_candidates_rpc.rs",
+                    "symbol": "candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authority"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-testing/tests/m7_candidate_snapshot_race.rs",
+                    "symbol": "config_change_during_candidate_store_read_fails_stale_without_query_writes"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-store/src/m7_candidates.rs",
+                    "symbol": "registered_user_snapshot_is_read_without_source_files_or_effects"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-testing/tests/m7_candidate_snapshot_race.rs",
+                    "symbol": "cancelled_candidate_read_creates_no_files_or_business_writes"
+                }
+            ],
+            "coverageNote": "Combined evidence: real RPC success/paging checks persistent files, Events/Operations and a network tripwire; a Config-race failure and task cancellation use a read-only paused store port and verify unchanged Config bytes/cache and no added files. These are distinct execution paths, not a new RPC cancellation protocol."
         },
         {
             "id": "dependency-conflict",
             "given": "direct eligible target conflicts with dependency graph",
             "expected": "existing Plan rejection; eligibility never proves Apply",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/candidates.rs",
+                    "symbol": "eligible_candidate_does_not_prove_dependency_graph_resolution"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-testing/tests/m7_candidates_rpc.rs",
+                    "symbol": "candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authority"
+                }
+            ]
         },
         {
             "id": "stale-plan",
             "given": "source/project changes after candidate read",
             "expected": "existing Plan/Apply revalidation unchanged; fingerprint not execution authority",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-testing/tests/m7_candidates_rpc.rs",
+                    "symbol": "candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authority"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-testing/tests/m4_package_rpc.rs",
+                    "symbol": "user_package_plan_uses_owned_cache_after_source_mutation_and_registry_removal"
+                },
+                {
+                    "kind": "playwright-test",
+                    "file": "apps/alcomd-gui/tests/browser/m7-package-candidates.spec.ts",
+                    "symbol": "Stale versions and stale pre-Plan evidence discard eligibility without automatic mutation retry"
+                }
+            ],
+            "coverageNote": "Combined executable scenarios: candidate read -> explicit existing remove Plan -> Project refresh -> old Apply returns plan_stale without Project writes or network access; a new Plan using the old Project revision returns revision_conflict. GUI rejects stale pre-Plan evidence. The existing User Package Apply regression deliberately succeeds using immutable owned-cache pins after source mutation/removal; no blanket assertion that every source change invalidates Apply is made."
         },
         {
             "id": "selection-search",
             "given": "selected A,B; search shows only A",
             "expected": "bulk submits A,B or disables whole action; never A alone",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "playwright-test",
+                    "file": "apps/alcomd-gui/tests/browser/m7-package-candidates.spec.ts",
+                    "symbol": "Mixed selected install and upgrade keeps search-hidden selected IDs in one Bulk Plan"
+                },
+                {
+                    "kind": "playwright-test",
+                    "file": "apps/alcomd-gui/tests/browser/m7-package-workspace.spec.ts",
+                    "symbol": "Selected installed packages remain in one bulk request when hidden by search"
+                }
+            ]
         },
         {
             "id": "selection-mixed-invalid",
             "given": "selected newer A and same/unknown B",
             "expected": "whole selected upgrade disabled; no partial subset",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "playwright-test",
+                    "file": "apps/alcomd-gui/tests/browser/m7-package-candidates.spec.ts",
+                    "symbol": "One invalid selected row blocks the whole mixed action, including a search-hidden row"
+                }
+            ]
         },
         {
             "id": "bulk-remove",
             "given": "selected direct A and transitive-only B",
             "expected": "disabled; remove desired direct dependencies only",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "playwright-test",
+                    "file": "apps/alcomd-gui/tests/browser/m7-package-candidates.spec.ts",
+                    "symbol": "Transitive selection cannot be silently removed but can be reinstalled"
+                }
+            ]
         },
         {
             "id": "bulk-reinstall",
             "given": "all selected have locks, some search-hidden",
             "expected": "one planBulk with complete selected IDs/sources",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "playwright-test",
+                    "file": "apps/alcomd-gui/tests/browser/m7-package-workspace.spec.ts",
+                    "symbol": "Selected installed packages remain in one bulk request when hidden by search"
+                },
+                {
+                    "kind": "playwright-test",
+                    "file": "apps/alcomd-gui/tests/browser/m7-package-workspace.spec.ts",
+                    "symbol": "User Packages are a visible source choice and reinstall uses one plan review"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/engine.rs",
+                    "symbol": "bulk_supports_all_four_intents_in_one_canonical_atomic_plan"
+                }
+            ],
+            "coverageNote": "The browser fixture submits both selected installed IDs in one Bulk request after search hides one row, asserting the exact User Package and Repository source identities. The Core regression checks all four intents in one canonical atomic Plan."
         },
         {
             "id": "update-all",
             "given": "full locked set differs from visible/selected rows",
             "expected": "all full-set targets; known exclusions listed; unknown/ambiguous blocks",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "playwright-test",
+                    "file": "apps/alcomd-gui/tests/browser/m7-package-candidates.spec.ts",
+                    "symbol": "Core candidate order and relation drive update; all locked IDs ignore search and selection"
+                },
+                {
+                    "kind": "playwright-test",
+                    "file": "apps/alcomd-gui/tests/browser/m7-package-candidates.spec.ts",
+                    "symbol": "Unknown or ambiguous evidence blocks updates without probing Plans; explicit source resolves ambiguity"
+                }
+            ],
+            "coverageNote": "The browser fixture asserts all locked IDs independent of selection/search, excludes a known installed-newer row with its reason displayed in review, and separately blocks unknown/ambiguous evidence without creating Plans."
         },
         {
             "id": "bulk-limit",
             "given": "257 targets",
             "expected": "disabled, no splitting into pseudo-atomic child plans",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "playwright-test",
+                    "file": "apps/alcomd-gui/tests/browser/m7-package-candidates.spec.ts",
+                    "symbol": "257 targets and selected rows are disabled without splitting the batch"
+                },
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-vpm/src/engine.rs",
+                    "symbol": "bulk_rejects_duplicate_intents_and_257_but_accepts_256"
+                }
+            ]
         },
         {
             "id": "no-ui-probe",
             "given": "open list/inline menu/update count",
             "expected": "only bounded read query; no durable plans",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "playwright-test",
+                    "file": "apps/alcomd-gui/tests/browser/m7-package-candidates.spec.ts",
+                    "symbol": "Summary pages share the first fingerprint while versions are read only after opening a row"
+                },
+                {
+                    "kind": "playwright-test",
+                    "file": "apps/alcomd-gui/tests/browser/m7-package-candidates.spec.ts",
+                    "symbol": "Candidate reads share a two-request bound across independent menu/traversal callers"
+                },
+                {
+                    "kind": "playwright-test",
+                    "file": "apps/alcomd-gui/tests/browser/m7-package-candidates.spec.ts",
+                    "symbol": "No-update and empty selection create no Plan"
+                }
+            ]
         },
         {
             "id": "screen-reader",
             "given": "host disabled and click guard browser PASS",
             "expected": "not evidence of internal Material menuitem announcement",
-            "status": "planned-production-test"
+            "status": "evidence-limit",
+            "testReferences": [
+                {
+                    "kind": "playwright-test",
+                    "file": "apps/alcomd-gui/tests/browser/m7-package-candidates.spec.ts",
+                    "symbol": "Incomplete catalog keeps versions readable and disables Plan actions including bulk remove"
+                }
+            ],
+            "evidenceLimit": "The referenced browser test verifies the Material host disabled property and click guard only. No screen-reader announcement test or manual assistive-technology evidence has been obtained; this vector remains open."
         },
         {
             "id": "bulk-remove-incomplete",
             "given": "all selected IDs direct; principal catalog incomplete",
             "expected": "existing planBulk remains blocked even when all intents remove; do not change to multiple single planRemove calls",
-            "status": "planned-production-test"
+            "status": "implemented-test-reference",
+            "testReferences": [
+                {
+                    "kind": "rust-test",
+                    "file": "crates/alcomd-testing/tests/m7_candidates_rpc.rs",
+                    "symbol": "candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authority"
+                },
+                {
+                    "kind": "playwright-test",
+                    "file": "apps/alcomd-gui/tests/browser/m7-package-candidates.spec.ts",
+                    "symbol": "Incomplete catalog keeps versions readable and disables Plan actions including bulk remove"
+                }
+            ]
         }
-    ]
+    ],
+    "validationScope": "The validation script checks DTO shapes and the existence of referenced executable test declarations. It does not execute the semantic tests, assert their current PASS status, or close manual/evidence-limit items."
 }

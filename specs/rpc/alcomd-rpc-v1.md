@@ -763,3 +763,32 @@ journal。`preparation_intent` 或 `launch_intent` 后禁止普通取消；daemo
 日志可以保留诊断所需的准确绝对路径，但不得改变 RPC、Activity、Event 或普通 diagnostics 的脱敏合同。完整 DTO、phase、
 permission 与稳定错误由 `m7-unity-project-version.proposal.schema.json`、`state-v14-unity-project-version.proposal.contract.json`
 和 M7 Unity ExecPlan 冻结。State v14 完整接线后 hello 广告 `dataSchema: 14`。
+
+
+## 29. M7 H2-A 兼容增加：Project package candidate evidence
+
+项目所有者批准单个只读 `packages.queryProjectCandidates`，协商 capability
+`packages.candidates.v1`；RPC major 仍为 1，不新增权限或持久 Schema。
+所有调用必须同时满足 `projects.read + repositories.read + packages.read + settings.read`
+及既有 Principal / Project / source scope。此查询与后续 Package Plan 使用同一应用层。
+
+请求有 summary / versions 两种视图；closed DTO、排序、选择集合和额度见
+`m7-package-candidates.proposal.schema.json` 与已批准的
+`../../docs/exec-plans/M7-package-candidate-evidence-stop-a.md`。历史 proposal 文件名保留。
+Latest 在确认展示来源集合中按 Core precedence 选择，Project Latest 额外检查直接 Unity 条件；
+只有明确较新的项目候选产生 update.target。依赖图及实际 Apply 可行性仍由原 Plan/Apply 验证。
+版本和来源身份不可分离，同 source 同 precedence build 变体在分页前判歧义。
+
+使用已登记 Project/source/Config 快照；不得网络访问、刷新可变源、下载、写业务状态或创建
+Plan/Operation/Event。无持久 snapshot/session/catalog revision。指纹和 cursor 绑定快照及查询，
+每页重新鉴权；快照变化返回 `package_candidate_evidence_stale`，额度失败返回
+`package_candidate_limit_exceeded`。其余权限、参数、项目/revision 错误复用已有 code。
+请求最多 64 KiB、响应最多 1 MiB（实际编码且符合 envelope 后 RPC frame 边界），每页默认64/最大128，
+显式 IDs 最多256，最多4096来源/100000相关版本；完整小页和 cursor 可替代超大页，禁止静默截断。
+
+这是兼容增加：既有 repository lexical cursor、source selector、版本范围、来源优先级、resolver、
+Plan/Apply DTO/结果/错误及 permissions 全部保留。候选 capability 缺失时 GUI 不自行推导 Latest。
+
+摘要的 `providers` 只增加必要的完整来源归属证据（现有 source selector + sourceRevision，
+最多4096、遵守已有响应字节上限），避免用获胜来源冒充完整来源集合或为来源筛选拉取全版本。
+它包含确认可见的非获胜/未知来源，不受单行显式来源选择缩窄；不改变 resolver 来源策略。

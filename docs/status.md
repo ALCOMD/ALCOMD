@@ -10,13 +10,41 @@
 - **当前阶段**：M7 H2-A Project Workspace / Packages，`IN_PROGRESS / VISUAL_GATE_2`；尚未通过完整人工视觉验收。
 - **当前代码来源**：Unity 技术验收 `e9349fd` 加 GUI 本地提交链至 `9307572`；整合提交 `9d0ddbb` 的代码树与 `9307572` 完全相同。
 - **旧修改保留**：原标准目录 9 个未提交文件完整保存在 `b4547d5`，作为历史恢复快照，不复活已被替代的 Automatic Editor 产品模型。
-- **下一步**：验证新筛选在真实 Tauri 中的交互，继续行内版本选择、正确的条件更新与完整批量操作。具体缺口见 `testing/m7-h2-a-package-workspace-continuity.md`。
-- **边界**：不扩展已冻结的 RPC/State/Permission/依赖；不开始 H2-B、H3-H7、M8、M9、M11；不把技术检查当成人工视觉通过。
-- **远端**：本次只做本地整合，没有 push、force-push 或历史重写。此前 CI 只证明其对应旧 SHA，不证明本次整合提交。
+- **下一步**：已按项目所有者 2026-09-17 的实施批准完成候选查询与 H2-A 包交互本地实现；停止在 Visual Gate 2，交由所有者验收真实 Tauri 页面，不进入后续阶段。
+- **边界**：仅本次批准的 method/capability/两个错误增量；复用权限并检查 Principal/Project/source scope；不新增 State/Config migration、依赖或平台 API，不改变 resolver/Plan/Apply，不改已确认图标/布局，不开始后续阶段，不自动 push。
+- **远端**：本次只有本地整合与获批实现，没有 push、force-push 或历史重写。此前 CI 只证明其对应旧 SHA，不证明本次候选。
 
 整合审计、恢复位置和本轮验证结果见 [工作目录整合记录](testing/workspace-consolidation-20260917.md)。
 标准目录的 check/build/xtask/metadata/diff 检查通过；浏览器首轮 47/48（navigation 超时），
 保持代码及断言不变、按先前单 worker 配置复跑为 48/48。首轮原因未确认，不隐去失败记录。
+
+2026-09-17 GUI 补充（批准候选查询前的历史记录）：已实现 Installed 列精确仓库版本/来源选择、prerelease 标记传递、
+单 Bulk Plan 批量移除，并修复搜索隐藏选中行时批量重装只提交可见子集的问题。
+用户包缺分类时保留窄手动降级入口，修复其已选来源丢失；不伪造分类。
+完整 52 项 browser tests、frontend check/build、最终 debug Tauri no-bundle、xtask 与 metadata 检查通过。
+**旧 Latest/Update 的字符串排序与比较尚未修正，不构成条件更新验收证据。**
+本轮未改生产 Rust/公共合同/依赖/图标/布局 CSS，未提交或推送，Visual Gate 2 仍开放。
+详细证据、失败记录与桌面验证边界见 `testing/m7-h2-a-inline-version-20260917.md`。
+computer-use 读取 v3 / 启动最终 v4 GUI 均返回应用授权超时；新真实桌面交互未执行。
+已核对真实隔离 daemon/CLI 和 5 个源样例文件摘要，停止本轮测试 daemon，保留测试资料。
+
+2026-09-17 Stop A 合同提交记录（历史，后已获实施批准）：当时仅文档、提案 Schema/vector 和合同校验；没有新查询生产实现。
+P6/P8 原 PASS 保留为历史 checkpoint，当前 completeness fixture 的 `currentH2AAssessment`
+明确为 IN_PROGRESS，不能由历史 PASS 或 52/52 推导整个包管理页完成。
+Material host disabled/click guard 不证明屏幕阅读器内部菜单项禁用播报；该证据仍缺失。
+桌面授权超时仅表示证据未取得；后续允许所有者手动启动指定构建、执行检查并提供截图，
+无需强制 computer-use，Visual Gate 2 仍 PENDING。本轮不再尝试桌面授权。
+合同与验证审阅记录见 `testing/m7-package-candidates-stop-a-review.md`。
+
+2026-09-17 批准后实现：`packages.queryProjectCandidates` / `packages.candidates.v1`
+已接入 Core/Application/Store/RPC/SDK/Tauri。行内 Repository/User Package 版本、Core Latest/Stable、
+条件更新、Update All 与完整选择集批量动作已实现，过渡手填入口已统一移除。
+当前浏览器全套 **69/69 PASS**，Rust fmt/全 workspace Clippy 通过；真实候选 RPC、Config
+竞态/取消、DTO、Core 排序与既有包 Plan/Apply 回归通过。全 workspace 测试仍有既有 Project Copy
+用例因真实 Unity 导致 `running_suspected` 的环境限制，未关闭用户进程、未放宽 writer gate。
+39 向量逐项映射测试（38 项实现测试引用、1 项屏幕阅读器证据限制），结构检查不冒充语义执行。
+`currentH2AAssessment` 保留 IN_PROGRESS：真实桌面和屏幕阅读器证据仍开放，**Visual Gate 2 PENDING**。
+完整验证、构建、失败经过与验收说明见 `testing/m7-package-candidates-implementation-20260917.md`。
 
 ### 已有验收基线与 H2-A 局部证据（历史）
 

@@ -1,10 +1,10 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://alcomd.cqmhv.com/schema/proposals/m7-package-candidates.json",
-    "title": "M7 H2-A Project package candidate evidence (unapproved proposal)",
-    "x-alcomd-publication": "proposal-only",
-    "x-alcomd-approval": "pending",
-    "x-alcomd-active-rpc-modified": false,
+    "title": "M7 H2-A Project package candidate evidence",
+    "x-alcomd-publication": "implemented-local-candidate",
+    "x-alcomd-approval": "owner-approved",
+    "x-alcomd-active-rpc-modified": true,
     "x-alcomd-method": "packages.queryProjectCandidates",
     "x-alcomd-capability": "packages.candidates.v1",
     "x-alcomd-method-permissions": {
@@ -557,6 +557,13 @@
                 },
                 "stableUpdate": {
                     "$ref": "#/$defs/Update"
+                },
+                "providers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/Provider"
+                    },
+                    "maxItems": 4096
                 }
             },
             "required": [
@@ -568,7 +575,8 @@
                 "projectLatest",
                 "projectLatestStable",
                 "update",
-                "stableUpdate"
+                "stableUpdate",
+                "providers"
             ],
             "additionalProperties": false
         },
@@ -712,6 +720,24 @@
                     "$ref": "#/$defs/VersionsPage"
                 }
             ]
+        },
+        "Provider": {
+            "type": "object",
+            "properties": {
+                "source": {
+                    "$ref": "#/$defs/SourceSelector"
+                },
+                "sourceRevision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 18446744073709551615
+                }
+            },
+            "required": [
+                "source",
+                "sourceRevision"
+            ],
+            "additionalProperties": false
         }
     },
     "oneOf": [
@@ -721,5 +747,17 @@
         {
             "$ref": "#/$defs/Result"
         }
-    ]
+    ],
+    "x-alcomd-breaking-change": false,
+    "x-alcomd-quotas": {
+        "requestUtf8Bytes": 65536,
+        "responseUtf8Bytes": 1048576,
+        "defaultPage": 64,
+        "maxPage": 128,
+        "explicitPackageIds": 256,
+        "sourceDescriptors": 4096,
+        "relatedVersionRecords": 100000,
+        "guiConcurrentRequests": 2,
+        "rpcFrameEnvelopeIncluded": true
+    }
 }

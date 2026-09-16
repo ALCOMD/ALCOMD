@@ -39,6 +39,7 @@ mod m5_rpc;
 mod m5_template_rpc;
 mod m6_rpc;
 mod m6_runtime;
+mod m7_candidates_rpc;
 mod m7_copy_rpc;
 mod m7_delete_rpc;
 mod m7_official_rpc;
@@ -69,6 +70,10 @@ type M7ExtensionApplication = M7Application<
     m7_rpc::ProtocolUiValidator,
 >;
 type M7OfficialGuiApplication = M7OfficialApplication<StateStoreHandle>;
+type ProjectCandidateApplication = alcomd_application::ProjectCandidateApplication<
+    StateStoreHandle,
+    alcomd_vpm::ProjectCandidateEngine,
+>;
 type ProjectCopyApplication =
     ProjectCopyService<StateStoreHandle, alcomd_vpm::ProjectCopyEngine, M5UnityApplication>;
 type ProjectDeleteApplication =
@@ -90,6 +95,7 @@ struct Applications {
     m6: M6ExtensionApplication,
     m7: M7ExtensionApplication,
     official_gui: M7OfficialGuiApplication,
+    candidates: ProjectCandidateApplication,
     project_copy: ProjectCopyApplication,
     project_delete: ProjectDeleteApplication,
     user_packages: UserPackageApplication,
@@ -258,6 +264,11 @@ where
         .initialize_settings()
         .await
         .map_err(|_| BindError::Io(io::Error::other("Config initialization failed")))?;
+    let candidates = ProjectCandidateApplication::new(
+        store.clone(),
+        alcomd_vpm::ProjectCandidateEngine,
+        official_gui.clone(),
+    );
     let applications = Arc::new(Applications {
         m2,
         m3: M3ReadApplication::new(store.clone(), reader),
@@ -268,6 +279,7 @@ where
         m6,
         m7,
         official_gui,
+        candidates,
         project_copy,
         project_delete,
         user_packages,
@@ -418,6 +430,12 @@ async fn dispatch_payload(
     if !state.handshake_complete {
         return error_action(Some(request.id), RpcError::handshake_required(), false);
     }
+    if m7_candidates_rpc::oversized_candidate_frame(&request.method, payload) {
+        return m7_candidates_rpc::failure(
+            request.id,
+            alcomd_application::CandidateQueryError::LimitExceeded,
+        );
+    }
     if request.method == METHOD_SYSTEM_STATUS {
         return dispatch_status(request, state);
     }
@@ -461,6 +479,7 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         alcomd_protocol::CAPABILITY_REPOSITORIES_REGISTRY_V1,
         alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V1,
         alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V2,
+        alcomd_protocol::CAPABILITY_PACKAGES_CANDIDATES_V1,
         alcomd_protocol::CAPABILITY_PACKAGES_APPLY_V1,
         alcomd_protocol::CAPABILITY_PACKAGES_USER_PACKAGES_V1,
         alcomd_protocol::CAPABILITY_UNITY_READ_V1,
@@ -689,6 +708,9 @@ async fn dispatch_m2(
         ) =>
         {
             m7_official_rpc::dispatch(request, &applications.official_gui, access).await
+        }
+        alcomd_protocol::METHOD_PACKAGES_QUERY_PROJECT_CANDIDATES => {
+            m7_candidates_rpc::dispatch(request, state, &applications.candidates, access).await
         }
         _ if request.method.starts_with("packages.userPackages.") => {
             m7_user_packages_rpc::dispatch(request, state, &applications.user_packages, access)

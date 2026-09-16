@@ -1,4 +1,7 @@
 import type {
+    CandidateChoice,
+    PackageCandidateEvidence,
+    PackageCandidateSummary,
     ExtensionRecord,
     ExtensionResult,
     ExtensionUiCloseResult,
@@ -23,6 +26,16 @@ import type { GuiRpcClient } from "../../src/rpc";
 import "../../src/styles.css";
 import { MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
 
+declare global {
+    interface Window {
+        packageRequests: Array<{ method: string; params: unknown }>;
+        candidateRequests: Array<Parameters<GuiRpcClient["packageQueryProjectCandidates"]>[0]>;
+        resumeCandidateSource?: () => void;
+    }
+}
+window.packageRequests = [];
+window.candidateRequests = [];
+
 type HarnessMode = "ready" | "empty" | "error" | "disconnected" | "loading" | "stale" | "failed" | "cancelled" | "create-error" | "restore-error" | "favorite-pages" | "favorite-error" | "favorite-conflict" | "unity-automatic" | "unity-zero" | "unity-multiple" | "unity-migration" | "package-no-repositories" | "package-multiple" | "package-user-source" | "package-partial-failure" | "package-revision-conflict" | "package-filter-conflict" | "package-filter-denied" | "capabilities-missing";
 
 const SUPPORTED_CAPABILITIES = [
@@ -34,6 +47,7 @@ const SUPPORTED_CAPABILITIES = [
     "extensions.ui.portable.v1",
     "operations.v1",
     "packages.apply.v1",
+    "packages.candidates.v1",
     "packages.plan.v1",
     "packages.plan.v2",
     "packages.user-packages.v1",
@@ -69,6 +83,7 @@ const materialEvidence = query.get("material") === "1";
 if (!materialEvidence) window.history.replaceState(null, "", initialRoute);
 
 class DeterministicGuiClient implements GuiRpcClient {
+    private candidateSourceWasDelayed = false;
     private settings: SettingsGetResult = {
         configSchema: 2,
         revision: 7,
@@ -122,7 +137,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             state: "ready",
             capabilities: this.mode === "capabilities-missing"
                 ? [...CAPABILITIES_WITH_OPTIONAL_ACTIONS_MISSING]
-                : [...SUPPORTED_CAPABILITIES]
+                : [...SUPPORTED_CAPABILITIES].filter((capability) => !(query.get("noPlanV2") && capability === "packages.plan.v2"))
         });
     }
 
@@ -203,7 +218,19 @@ class DeterministicGuiClient implements GuiRpcClient {
         const projects = [project(), ...this.createdProjects].filter((candidate) => candidate.projectId === undefined || !this.deletedProjectIds.has(candidate.projectId));
         return this.value({ projects: this.mode === "empty" ? [] : projects });
     }
-    projectGet(projectId: string): ReturnType<GuiRpcClient["projectGet"]> { return this.value({ project: this.createdProjects.find((candidate) => candidate.projectId === projectId) ?? { ...project(projectId), unityVersion: this.currentUnityVersion, revision: this.currentProjectRevision } }); }
+    projectGet(projectId: string): ReturnType<GuiRpcClient["projectGet"]> {
+        const value = this.createdProjects.find((candidate) => candidate.projectId === projectId) ?? { ...project(projectId), unityVersion: this.currentUnityVersion, revision: this.currentProjectRevision };
+        if (query.get("twoInstalled")) {
+            value.lockedDependencies = [...value.lockedDependencies, { packageId: "com.example.remote", value: "1.2.3" }];
+            value.directDependencies = [...value.directDependencies, { packageId: "com.example.remote", value: "^1.2.0" }];
+        }
+        if (query.get("bulk257")) {
+            const dependencies = Array.from({ length: 257 }, (_, index) => ({ packageId: `com.example.batch${String(index).padStart(3, "0")}`, value: "1.2.3" }));
+            value.lockedDependencies = dependencies;
+            value.directDependencies = dependencies;
+        }
+        return this.value({ project: value });
+    }
     openProjectDirectory(): ReturnType<GuiRpcClient["openProjectDirectory"]> { return this.value(undefined); }
     selectDirectory(): ReturnType<GuiRpcClient["selectDirectory"]> { return this.value("C:\\Fixture\\Avatar"); }
     projectRegister(): ReturnType<GuiRpcClient["projectRegister"]> { return this.value({ project: project(), replayed: false }); }
@@ -265,7 +292,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     repositoriesInspect(): ReturnType<GuiRpcClient["repositoriesInspect"]> { return this.value({ repository: repository() }); }
     repositoriesList(cursor?: { registeredAtMs: number; id: string }): ReturnType<GuiRpcClient["repositoriesList"]> {
         if (this.mode === "empty" || this.mode === "package-no-repositories") return this.value({ repositories: [] });
-        if (["package-multiple", "package-partial-failure"].includes(this.mode)) {
+        if (["package-multiple", "package-partial-failure"].includes(this.mode) || query.get("twoInstalled")) {
             return cursor === undefined
                 ? this.value({ repositories: [repository()], nextCursor: { registeredAtMs: 1_690_000_000_000, id: REPOSITORY_ID } })
                 : this.value({ repositories: [localRepository()] });
@@ -277,6 +304,14 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ repository: this.mode === "package-revision-conflict" ? { ...value, revision: 3 } : value });
     }
     repositoryPackages(repositoryId: string): ReturnType<GuiRpcClient["repositoryPackages"]> {
+        if (query.get("versions") === "1") return this.value({ packages: [
+            { packageId: "com.example.avatar", version: "1.2.3", displayName: "Avatar tools", yanked: false, prerelease: false },
+            { packageId: "com.example.avatar", version: "1.1.0", displayName: "Avatar tools", yanked: false, prerelease: false },
+            { packageId: "com.example.avatar", version: "1.10.0", displayName: "Avatar tools", yanked: false, prerelease: false },
+            { packageId: "com.example.avatar", version: "2.0.0-beta.1", displayName: "Avatar tools", yanked: false, prerelease: true },
+            { packageId: "com.example.avatar", version: "9.0.0", displayName: "Avatar tools", yanked: true, prerelease: false },
+            { packageId: "com.example.avatar", version: "legacy", displayName: "Avatar tools", yanked: false }
+        ] });
         const packages = repositoryId === LOCAL_REPOSITORY_ID
             ? [{ packageId: "com.example.local", version: "2.0.0", displayName: "Local tools", yanked: false }]
             : [
@@ -285,7 +320,7 @@ class DeterministicGuiClient implements GuiRpcClient {
                 { packageId: "com.example.remote", version: "1.0.0", displayName: "Remote tools", yanked: false },
                 ...(this.repositoryRefreshCompleted ? [{ packageId: "com.example.refreshed", version: "1.0.0", displayName: "Refreshed package", yanked: false }] : [])
             ];
-        return this.value({ packages });
+        return this.value({ packages: packages.map((item) => ({ ...item, prerelease: false })) });
     }
 
     openPackageLink(): ReturnType<GuiRpcClient["openPackageLink"]> {
@@ -303,14 +338,93 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
     repositoryUnregister(): ReturnType<GuiRpcClient["repositoryUnregister"]> { return this.value({ repositoryId: REPOSITORY_ID, revision: 3, unregistered: true, replayed: false }); }
 
-    packagePlanInstall(): ReturnType<GuiRpcClient["packagePlanInstall"]> { return this.value(packagePlan("install")); }
+    async packageQueryProjectCandidates(params: Parameters<GuiRpcClient["packageQueryProjectCandidates"]>[0]): ReturnType<GuiRpcClient["packageQueryProjectCandidates"]> {
+        window.candidateRequests.push(params);
+        if (query.get("delaySource") && !this.candidateSourceWasDelayed && params.view.kind === "summary" && params.view.sources?.length) {
+            this.candidateSourceWasDelayed = true;
+            await new Promise<void>((resolve) => { window.resumeCandidateSource = resolve; });
+        }
+        const fingerprint = String(this.settings.revision).padStart(64, "0");
+        if (query.get("candidateError")) throw { code: query.get("candidateError") };
+        if (params.expectedSnapshot && params.expectedSnapshot !== fingerprint) throw { code: "package_candidate_evidence_stale" };
+        if (query.get("versionsStale") && params.view.kind === "versions") throw { code: "package_candidate_evidence_stale" };
+        if (query.get("intentStale") && params.limit === 1) throw { code: "package_candidate_evidence_stale" };
+        const base = { projectId: params.projectId, snapshot: { fingerprint, projectRevision: params.expectedRevision, configRevision: this.settings.revision }, showPrerelease: this.settings.settings.packages.showPrerelease, catalogComplete: query.get("catalogIncomplete") !== "1", nextCursor: null };
+        const candidate = (version: string, relation: PackageCandidateEvidence["relation"], sourceId = REPOSITORY_ID, reasons: PackageCandidateEvidence["reasons"] = [], classification: PackageCandidateEvidence["classification"] = "stable"): PackageCandidateEvidence => ({ version, relation, source: sourceId === USER_PACKAGE_ID ? { kind: "user_package", user_package_id: sourceId } : { kind: "repository", repository_id: sourceId }, sourceRevision: 2, classification, unity: "compatible", eligibility: reasons.length ? "blocked" : "eligible", reasons });
+        if (params.view.kind === "versions") {
+            const providers = this.mode === "package-user-source" ? [REPOSITORY_ID, USER_PACKAGE_ID] : this.mode === "package-multiple" ? [REPOSITORY_ID, LOCAL_REPOSITORY_ID] : [REPOSITORY_ID];
+            const items = providers.flatMap((id) => [
+                candidate("9.0.0", "newer", id, ["all_yanked"]),
+                candidate("2.0.0-beta.1", "newer", id, this.settings.settings.packages.showPrerelease ? [] : ["prerelease_excluded"], "prerelease"),
+                candidate("1.10.0", "newer", id),
+                candidate("1.2.3", "same_precedence", id),
+                candidate("1.1.0", "older", id),
+                candidate("legacy", "unknown", id, ["classification_unknown", "metadata_invalid"], "unknown")
+            ]);
+            const offset = params.cursor?.offset ?? 0;
+            const count = query.get("paged") ? 3 : items.length;
+            return this.value({ ...base, nextCursor: offset + count < items.length ? { snapshotFingerprint: fingerprint, queryFingerprint: HASH, offset: offset + count } : null, view: "versions", packageId: params.view.packageId, items: items.slice(offset, offset + count) });
+        }
+        const visibleRemote = !this.settings.settings.packages.hiddenRepositoryIds.includes(REPOSITORY_ID) && this.mode !== "package-no-repositories";
+        const visibleLocal = (["package-multiple", "package-partial-failure"].includes(this.mode) || Boolean(query.get("twoInstalled"))) && !this.settings.settings.packages.hiddenRepositoryIds.includes(LOCAL_REPOSITORY_ID);
+        const ids = params.view.packageIds ?? (query.get("bulk257") ? Array.from({ length: 257 }, (_, index) => `com.example.batch${String(index).padStart(3, "0")}`) : ["com.example.avatar", ...(visibleRemote ? ["com.example.remote", ...(this.repositoryRefreshCompleted ? ["com.example.refreshed"] : [])] : []), ...(visibleLocal ? ["com.example.local"] : [])]);
+        const items: PackageCandidateSummary[] = ids.map((packageId) => {
+            const installed = packageId === "com.example.avatar" || packageId.startsWith("com.example.batch") || (Boolean(query.get("twoInstalled")) && packageId === "com.example.remote");
+            const override = params.view.kind === "summary" ? params.view.sources?.find((item) => item.packageId === packageId)?.source : undefined;
+            const target = candidate(installed ? "1.10.0" : "1.0.0", installed ? "newer" : "not_installed", packageId === "com.example.local" ? LOCAL_REPOSITORY_ID : REPOSITORY_ID);
+            if (override) target.source = override;
+            let choice: CandidateChoice = !visibleRemote && packageId !== "com.example.local" && !override ? { kind: "none", reasons: ["no_visible_candidate"] } : { kind: "candidate", candidate: target };
+            if (query.get("ambiguous") && installed && !override) choice = { kind: "ambiguous", reason: "source_ambiguous" };
+            if (query.get("unknown") && installed) choice = { kind: "unknown", reasons: ["project_unity_unknown"] };
+            if (query.get("mixedInvalid") && packageId === "com.example.remote") choice = { kind: "unknown", reasons: ["classification_unknown"] };
+            if (query.get("noUpdate") && installed) target.relation = "same_precedence";
+            const providers: PackageCandidateSummary["providers"] = [];
+            if (visibleRemote && packageId !== "com.example.local") providers.push({ source: { kind: "repository", repository_id: REPOSITORY_ID }, sourceRevision: 2 });
+            if (visibleLocal && (packageId === "com.example.local" || (packageId === "com.example.remote" && query.get("twoInstalled")) || (installed && (query.get("versions") || query.get("ambiguous"))))) providers.push({ source: { kind: "repository", repository_id: LOCAL_REPOSITORY_ID }, sourceRevision: 2 });
+            if (packageId === "com.example.avatar" && this.mode === "package-user-source" && !this.settings.settings.packages.hideLocalUserPackages) providers.push({ source: { kind: "user_package", user_package_id: USER_PACKAGE_ID }, sourceRevision: 2 });
+            let update: PackageCandidateSummary["update"] = choice.kind === "candidate" ? installed ? query.get("noUpdate") ? { kind: "no_update", reason: "same_precedence" } : { kind: "target", candidate: target } : { kind: "no_update", reason: "not_installed" } : { kind: "unavailable", reasons: choice.kind === "ambiguous" ? [choice.reason] : choice.reasons };
+            if (query.get("knownExclusion") && packageId === "com.example.remote") { target.relation = "older"; update = { kind: "no_update", reason: "installed_newer" }; }
+            const stableCandidate = { ...target };
+            if (query.get("stableAlternate") && installed) { target.version = "2.0.0-beta.1"; target.classification = "prerelease"; }
+            const stableChoice: CandidateChoice = query.get("stableAlternate") && installed ? { kind: "candidate", candidate: stableCandidate } : choice;
+            const stableUpdate: PackageCandidateSummary["update"] = query.get("stableAlternate") && installed ? { kind: "target", candidate: stableCandidate } : update;
+            return { packageId, providers, direct: installed && query.get("transitive") !== "1", installed: installed ? { kind: "locked", version: "1.2.3" } : { kind: "absent" }, latest: choice, latestStable: stableChoice, projectLatest: choice, projectLatestStable: stableChoice, update, stableUpdate };
+        });
+        const offset = params.cursor?.offset ?? 0;
+        const count = query.get("paged") ? 1 : params.limit ?? 64;
+        return this.value({ ...base, nextCursor: offset + count < items.length ? { snapshotFingerprint: fingerprint, queryFingerprint: HASH, offset: offset + count } : null, view: "summary", items: items.slice(offset, offset + count) });
+    }
+    packagePlanInstall(params: Parameters<GuiRpcClient["packagePlanInstall"]>[0]): ReturnType<GuiRpcClient["packagePlanInstall"]> {
+        window.packageRequests.push({ method: "install", params });
+        if (query.get("planError") === "1") return Promise.reject({ code: "package_source_ambiguous" });
+        const plan = packagePlan("install");
+        plan.changeSet.mutations = [{ kind: "replace", packageId: params.packageId, fromVersion: "1.2.3", toVersion: params.versionRange ?? "1.3.0" }];
+        return this.value(plan);
+    }
     packagePlanRemove(): ReturnType<GuiRpcClient["packagePlanRemove"]> { return this.value(packagePlan("remove")); }
-    packagePlanUpgrade(): ReturnType<GuiRpcClient["packagePlanUpgrade"]> { return this.value(packagePlan("upgrade")); }
-    packagePlanDowngrade(): ReturnType<GuiRpcClient["packagePlanDowngrade"]> { return this.value(packagePlan("downgrade")); }
+    packagePlanUpgrade(params: Parameters<GuiRpcClient["packagePlanUpgrade"]>[0]): ReturnType<GuiRpcClient["packagePlanUpgrade"]> {
+        window.packageRequests.push({ method: "upgrade", params });
+        if (query.get("planError") === "1") return Promise.reject({ code: "package_source_ambiguous" });
+        const plan = packagePlan("upgrade");
+        plan.changeSet.mutations = [{ kind: "replace", packageId: params.packageId, fromVersion: "1.2.3", toVersion: params.versionRange?.replace(/^=/, "") ?? "1.10.0" }];
+        return this.value(plan);
+    }
+    packagePlanDowngrade(params: Parameters<GuiRpcClient["packagePlanDowngrade"]>[0]): ReturnType<GuiRpcClient["packagePlanDowngrade"]> {
+        window.packageRequests.push({ method: "downgrade", params });
+        const plan = packagePlan("downgrade");
+        plan.changeSet.mutations = [{ kind: "replace", packageId: params.packageId, fromVersion: "1.2.3", toVersion: params.version }];
+        return this.value(plan);
+    }
     packagePlanResolve(): ReturnType<GuiRpcClient["packagePlanResolve"]> { return this.value(packagePlan("resolve")); }
-    packagePlanReinstall(): ReturnType<GuiRpcClient["packagePlanReinstall"]> { return this.value(packagePlan("reinstall")); }
-    packagePlanBulk(): ReturnType<GuiRpcClient["packagePlanBulk"]> { return this.value(packagePlan("bulk")); }
+    packagePlanReinstall(params: Parameters<GuiRpcClient["packagePlanReinstall"]>[0]): ReturnType<GuiRpcClient["packagePlanReinstall"]> { window.packageRequests.push({ method: "reinstall", params }); return this.value(packagePlan("reinstall")); }
+    packagePlanBulk(params: Parameters<GuiRpcClient["packagePlanBulk"]>[0]): ReturnType<GuiRpcClient["packagePlanBulk"]> {
+        window.packageRequests.push({ method: "bulk", params });
+        const plan = packagePlan("bulk");
+        plan.changeSet.mutations = params.intents.map((intent) => ({ kind: intent.kind === "remove" ? "remove" : "replace", packageId: intent.packageId, fromVersion: "1.2.3", toVersion: intent.kind === "remove" ? null : "1.2.3" }));
+        return this.value(plan);
+    }
     packageApplyPlan(): ReturnType<GuiRpcClient["packageApplyPlan"]> {
+        window.packageRequests.push({ method: "apply", params: {} });
         if (this.mode === "stale") return Promise.reject({ code: "plan_stale" });
         this.operationReads = 0;
         return this.value({ operationId: OPERATION_ID, replayed: false });

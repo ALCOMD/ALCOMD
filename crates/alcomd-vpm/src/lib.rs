@@ -3,6 +3,7 @@
 mod archive;
 mod backup;
 mod cache;
+mod candidates;
 mod engine;
 mod package;
 mod plan;
@@ -26,6 +27,9 @@ pub use archive::{
 };
 pub use backup::BackupEngine;
 pub use cache::{CacheError, CacheErrorCode, PackageCache};
+pub use candidates::{
+    ProjectCandidateEngine, evaluate_candidate_summary, evaluate_candidate_versions,
+};
 pub use engine::PackageEngine;
 pub use package::{
     PackageManifestError, PackageManifestErrorCode, RepositoryPackageContext, ResolverReadyPackage,

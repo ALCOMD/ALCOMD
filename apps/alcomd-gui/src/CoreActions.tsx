@@ -1,4 +1,5 @@
 import type { ExtensionRecord, RpcError } from "@alcomd/sdk";
+import { queryCandidates } from "./package-candidates";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import type {
@@ -135,75 +136,78 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
 }
 
 export interface PackageActionSelection {
-    action: "install" | "remove" | "upgrade" | "downgrade" | "resolve" | "reinstall" | "reinstall-all" | "bulk-reinstall";
+    action: "install" | "remove" | "upgrade" | "downgrade" | "resolve" | "reinstall" | "reinstall-all" | "bulk-reinstall" | "bulk-remove" | "bulk-candidates";
     key: number;
     packageId: string;
     packageIds?: string[];
     source?: PackageSourceSelector;
     sources?: Array<{ packageId: string; source: PackageSourceSelector }>;
     version?: string;
+    includePrerelease?: boolean;
+    intents?: import("./core-models").PackageBulkIntent[];
+    exclusions?: string[];
+    candidateSnapshot?: string;
 }
 
-export function PackageActions({ client, project, onChanged, selection }: ActionProps & { project: ProjectSnapshot; selection?: PackageActionSelection }) {
+export function PackageActions({ client, project, onChanged, selection, onEvidenceStale, onBusyChanged }: ActionProps & { project: ProjectSnapshot; selection?: PackageActionSelection; onEvidenceStale?(): void; onBusyChanged?(busy: boolean): void }) {
     const canApply = useCapability(capabilities.packagesApply);
     const canPlanV1 = useCapability(capabilities.packagesPlanV1);
     const canPlanV2 = useCapability(capabilities.packagesPlanV2);
-    const [packageId, setPackageId] = useState("");
-    const [version, setVersion] = useState("");
     const [plan, setPlan] = useState<PackagePlan>();
-    const [versionDialogOpen, setVersionDialogOpen] = useState(false);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
+    const [operationFinished, setOperationFinished] = useState(false);
+    useEffect(() => onBusyChanged?.(feedback.busy || plan !== undefined || (feedback.operationId !== undefined && !operationFinished)), [feedback.busy, feedback.operationId, onBusyChanged, operationFinished, plan]);
     const handledSelectionKey = useRef<number | undefined>(undefined);
     const revision = project.revision;
     const projectId = project.projectId;
-    const prepareChanges = useCallback(async (action: PackageActionSelection["action"], selectedPackageId: string, selectedVersion = "", selectedSource?: PackageSourceSelector, packageIds?: string[], sources?: Array<{ packageId: string; source: PackageSourceSelector }>) => {
+    const prepareChanges = useCallback(async (action: PackageActionSelection["action"], selectedPackageId: string, selectedVersion = "", selectedSource?: PackageSourceSelector, packageIds?: string[], sources?: Array<{ packageId: string; source: PackageSourceSelector }>, includePrerelease = false) => {
         if (revision === undefined || projectId === undefined) return;
-        const requiresV2 = action === "reinstall" || action === "reinstall-all" || action === "bulk-reinstall" || action === "downgrade";
+        const requiresV2 = ((action === "install" || action === "upgrade") && selectedSource !== undefined) || action === "reinstall" || action === "reinstall-all" || action === "bulk-reinstall" || action === "bulk-remove" || action === "bulk-candidates" || action === "downgrade";
         if ((requiresV2 && !canPlanV2) || (!requiresV2 && !canPlanV1)) {
             setFeedback({ busy: false, error: { code: "capability_required", message: `The connected daemon did not negotiate ${requiresV2 ? capabilities.packagesPlanV2 : capabilities.packagesPlanV1}.` } });
             return;
         }
         setPlan(undefined);
         setFeedback({ busy: true });
+        setOperationFinished(false);
         try {
+            if (selection?.candidateSnapshot && action !== "remove") {
+                const ids = selection.intents?.map((intent) => intent.packageId) ?? packageIds ?? (selectedPackageId ? [selectedPackageId] : undefined);
+                const evidence = await queryCandidates(client, { projectId, expectedRevision: revision, expectedSnapshot: selection.candidateSnapshot, view: { kind: "summary", ...(ids ? { packageIds: ids } : {}) }, limit: 1 });
+                if (!evidence.catalogComplete) throw { code: "package_catalog_incomplete" };
+            }
             let result: PackagePlan;
-            if (action === "remove") result = await client.packagePlanRemove({ projectId, expectedRevision: revision, packageId: selectedPackageId });
+            if ((action === "bulk-reinstall" || action === "bulk-remove") && (packageIds === undefined || packageIds.length === 0 || packageIds.length > 256)) throw { code: "invalid_input" };
+            if (action === "bulk-candidates") {
+                if (!selection?.intents?.length || selection.intents.length > 256) throw { code: "invalid_input" };
+                result = await client.packagePlanBulk({ projectId, expectedRevision: revision, intents: selection.intents });
+            }
+            else if (action === "remove") result = await client.packagePlanRemove({ projectId, expectedRevision: revision, packageId: selectedPackageId });
             else if (action === "resolve") result = await client.packagePlanResolve({ projectId, expectedRevision: revision, includePrerelease: false });
             else if (action === "reinstall-all") result = await client.packagePlanReinstall({ projectId, expectedRevision: revision, selection: { kind: "all" } });
             else if (action === "reinstall") result = await client.packagePlanReinstall({ projectId, expectedRevision: revision, selection: { kind: "packages", packageIds: [selectedPackageId] }, ...(selectedSource === undefined ? {} : { sources: [{ packageId: selectedPackageId, source: selectedSource }] }) });
             else if (action === "bulk-reinstall") result = await client.packagePlanBulk({ projectId, expectedRevision: revision, intents: (packageIds ?? []).map((packageId) => ({ kind: "reinstall" as const, packageId, ...(sources?.find((item) => item.packageId === packageId)?.source === undefined ? {} : { source: sources.find((item) => item.packageId === packageId)?.source }) })) });
+            else if (action === "bulk-remove") result = await client.packagePlanBulk({ projectId, expectedRevision: revision, intents: (packageIds ?? []).map((packageId) => ({ kind: "remove" as const, packageId })) });
             else if (action === "downgrade") result = await client.packagePlanDowngrade({ projectId, expectedRevision: revision, packageId: selectedPackageId, version: selectedVersion, ...(selectedSource === undefined ? {} : { source: selectedSource }) });
             else {
-                const params = { projectId, expectedRevision: revision, packageId: selectedPackageId, includePrerelease: false, ...(selectedVersion.length === 0 ? {} : { versionRange: selectedVersion }), ...(selectedSource === undefined ? {} : { source: selectedSource }) };
+                const params = { projectId, expectedRevision: revision, packageId: selectedPackageId, includePrerelease, ...(selectedVersion.length === 0 ? {} : { versionRange: selectedVersion }), ...(selectedSource === undefined ? {} : { source: selectedSource }) };
                 result = action === "upgrade" ? await client.packagePlanUpgrade(params) : await client.packagePlanInstall(params);
             }
             setPlan(result);
-            setVersionDialogOpen(false);
             setFeedback({ busy: false });
         } catch (caught: unknown) {
-            setVersionDialogOpen(false);
+            if (safeError(caught).code === "package_candidate_evidence_stale") onEvidenceStale?.();
             setFeedback({ busy: false, error: safeError(caught) });
         }
-    }, [canPlanV1, canPlanV2, client, projectId, revision]);
+    }, [canPlanV1, canPlanV2, client, projectId, revision, selection]);
     useEffect(() => {
         if (selection === undefined) return;
         if (handledSelectionKey.current === selection.key) return;
         handledSelectionKey.current = selection.key;
-        setPackageId(selection.packageId);
-        setVersion(selection.version ?? "");
         setPlan(undefined);
         setFeedback(INITIAL_FEEDBACK);
-        if (selection.action === "downgrade" && selection.version === undefined) {
-            setVersionDialogOpen(true);
-            return;
-        }
-        setVersionDialogOpen(false);
-        void prepareChanges(selection.action, selection.packageId, selection.version, selection.source, selection.packageIds, selection.sources);
+        void prepareChanges(selection.action, selection.packageId, selection.version, selection.source, selection.packageIds, selection.sources, selection.includePrerelease);
     }, [prepareChanges, selection]);
-    const chooseVersion = (event: FormEvent) => {
-        event.preventDefault();
-        void prepareChanges("downgrade", packageId, version);
-    };
     const apply = async () => {
         if (plan === undefined) return;
         setFeedback({ busy: true });
@@ -217,25 +221,12 @@ export function PackageActions({ client, project, onChanged, selection }: Action
             setFeedback({ busy: false, error: safeError(caught) });
         }
     };
-    const closeVersionDialog = () => {
-        if (feedback.busy) return;
-        setVersionDialogOpen(false);
-    };
     const closeChanges = () => { if (!feedback.busy) setPlan(undefined); };
     const hasChanges = (plan?.changeSet.mutations.length ?? 0) > 0;
     return (
         <>
-            <MaterialDialog onClose={closeVersionDialog} open={versionDialogOpen} title="Choose package version">
-                <form className="package-action-form" onSubmit={chooseVersion}>
-                    <p>Enter the version you want to use for <strong>{packageId}</strong>.</p>
-                    <TextField className="package-action-version" label="Version" maxLength={128} onInput={setVersion} required value={version} />
-                    <div className="dialog-actions">
-                        <Button disabled={feedback.busy} onClick={closeVersionDialog} type="button" variant="text">Cancel</Button>
-                        <Button disabled={feedback.busy || version.length === 0} type="submit">{feedback.busy ? "Checking…" : "Continue"}</Button>
-                    </div>
-                </form>
-            </MaterialDialog>
             <MaterialDialog onClose={closeChanges} open={plan !== undefined} title={hasChanges ? "Apply package changes?" : "Packages are up to date"}>
+                {selection?.exclusions?.length ? <div role="status"><p>Not included in this update:</p><ul>{selection.exclusions.map((reason) => <li key={reason}>{reason}</li>)}</ul></div> : null}
                 {plan === undefined ? null : hasChanges ? (
                     <div className="package-plan-review">
                         <p>Review the changes ALCOMD will make to this project.</p>
@@ -249,9 +240,9 @@ export function PackageActions({ client, project, onChanged, selection }: Action
                     <div className="package-plan-review"><p>No package changes are required for this project.</p><div className="dialog-actions"><Button onClick={closeChanges} type="button">Close</Button></div></div>
                 )}
             </MaterialDialog>
-            {feedback.busy && plan === undefined && !versionDialogOpen ? <div className="mutation-feedback" role="status" aria-live="polite">Checking package changes…</div> : null}
+            {feedback.busy && plan === undefined ? <div className="mutation-feedback" role="status" aria-live="polite">Checking package changes…</div> : null}
             {feedback.error === undefined ? null : <div className="mutation-feedback mutation-feedback--error" role="alert"><strong>Package changes were not applied</strong><span>{packageErrorMessage(feedback.error)}</span></div>}
-            {feedback.operationId === undefined ? null : <OperationFollow client={client} operationId={feedback.operationId} title="Package changes" />}
+            {feedback.operationId === undefined ? null : <OperationFollow client={client} operationId={feedback.operationId} onTerminal={() => { setOperationFinished(true); onChanged?.(); }} title="Package changes" />}
         </>
     );
 }

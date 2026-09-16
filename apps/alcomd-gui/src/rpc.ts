@@ -1,4 +1,6 @@
 import type {
+    ProjectCandidateRequest,
+    ProjectCandidatePage,
     ExtensionResult,
     ExtensionUiCloseParams,
     ExtensionUiCloseResult,
@@ -82,6 +84,7 @@ import type {
 } from "./core-models";
 
 export interface GuiRpcClient {
+    packageQueryProjectCandidates(params: ProjectCandidateRequest): Promise<ProjectCandidatePage>;
     systemStatus(): Promise<SystemStatus>;
     stateCheck(): Promise<OperationAccepted>;
     operationsList(): Promise<OperationsListResult>;
@@ -173,6 +176,9 @@ export interface GuiRpcClient {
 }
 
 class TauriGuiRpcClient implements GuiRpcClient {
+    packageQueryProjectCandidates(params: ProjectCandidateRequest): Promise<ProjectCandidatePage> {
+        return invokeTyped("gui_package_query_project_candidates", { params });
+    }
     systemStatus(): Promise<SystemStatus> {
         return invokeTyped("gui_system_status", {});
     }

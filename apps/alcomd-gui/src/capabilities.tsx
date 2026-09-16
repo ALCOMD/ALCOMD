@@ -10,6 +10,7 @@ export const capabilities = {
     extensionsPortableUi: "extensions.ui.portable.v1",
     operations: "operations.v1",
     packagesApply: "packages.apply.v1",
+    packagesCandidates: RPC_CAPABILITIES.packagesCandidates,
     packagesPlanV1: "packages.plan.v1",
     packagesPlanV2: "packages.plan.v2",
     packagesUserPackages: "packages.user-packages.v1",

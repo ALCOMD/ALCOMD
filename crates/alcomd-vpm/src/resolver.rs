@@ -524,13 +524,12 @@ fn solve<'a>(
         let source_is_explicit = package_requirements
             .iter()
             .any(|requirement| requirement.source.is_some());
-        if !source_is_explicit && has_repository && has_user_package {
-            return Err(ResolveError::SourceAmbiguous {
-                package_id: package_id.clone(),
-                version: candidates[index].version.to_string(),
-            });
-        }
-        if preferred.len() > 1 {
+        if source_group_is_ambiguous(
+            source_is_explicit,
+            has_repository,
+            has_user_package,
+            preferred.len(),
+        ) {
             return Err(ResolveError::SourceAmbiguous {
                 package_id: package_id.clone(),
                 version: candidates[index].version.to_string(),
@@ -681,6 +680,16 @@ fn candidate_order(left: &&PackageCandidate, right: &&PackageCandidate) -> Order
         .then_with(|| left.package_id.as_bytes().cmp(right.package_id.as_bytes()))
 }
 
+/// Shared source selection rule; display ordering must never decide ambiguity.
+pub(crate) fn source_group_is_ambiguous(
+    explicit: bool,
+    has_repository: bool,
+    has_user_package: bool,
+    preferred_count: usize,
+) -> bool {
+    (!explicit && has_repository && has_user_package) || preferred_count > 1
+}
+
 fn validate_candidate(candidate: &PackageCandidate) -> Result<(), ResolveError> {
     validate_package_id(&candidate.package_id)?;
     let authority_valid = match &candidate.source.authority {
@@ -725,7 +734,7 @@ fn validate_package_id(value: &str) -> Result<(), ResolveError> {
     Ok(())
 }
 
-fn parse_unity(value: &str) -> Result<(u64, u64), ResolveError> {
+pub(crate) fn parse_unity(value: &str) -> Result<(u64, u64), ResolveError> {
     let (major, minor) = value.split_once('.').ok_or(ResolveError::InvalidRange)?;
     if major.is_empty()
         || minor.is_empty()

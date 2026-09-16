@@ -1061,7 +1061,7 @@ fn validate_action_direction(
         .ok_or_else(|| M4Error::new(M4ErrorCode::InvalidInput))
 }
 
-fn parse_unity_editor_version(value: &str) -> Result<Option<(u64, u64)>, M4Error> {
+pub(crate) fn parse_unity_editor_version(value: &str) -> Result<Option<(u64, u64)>, M4Error> {
     let mut parts = value.split('.');
     let major = parts
         .next()

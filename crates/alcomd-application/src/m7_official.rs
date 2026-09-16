@@ -168,7 +168,7 @@ pub trait OfficialGuiStore: Clone + Send + Sync + 'static {
 pub struct M7OfficialApplication<S> {
     store: S,
     settings_path: Arc<PathBuf>,
-    settings_lock: Arc<Mutex<()>>,
+    settings_lock: Arc<Mutex<Option<ConfigSnapshot>>>,
 }
 
 impl<S: OfficialGuiStore> M7OfficialApplication<S> {
@@ -177,7 +177,7 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
         Self {
             store,
             settings_path: Arc::new(settings_path),
-            settings_lock: Arc::new(Mutex::new(())),
+            settings_lock: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -188,19 +188,38 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
         access
             .require(Permission::SettingsRead)
             .map_err(|_| OfficialGuiError::PermissionDenied)?;
-        let _guard = self.settings_lock.lock().await;
+        let mut guard = Arc::clone(&self.settings_lock).lock_owned().await;
         let path = Arc::clone(&self.settings_path);
-        tokio::task::spawn_blocking(move || read_settings(&path))
-            .await
-            .map_err(|_| OfficialGuiError::Unavailable)?
+        tokio::task::spawn_blocking(move || {
+            *guard = None;
+            let snapshot = read_settings(&path)?;
+            *guard = Some(snapshot.clone());
+            Ok(snapshot)
+        })
+        .await
+        .map_err(|_| OfficialGuiError::Unavailable)?
     }
 
     pub async fn initialize_settings(&self) -> Result<(), OfficialGuiError> {
-        let _guard = self.settings_lock.lock().await;
+        let mut guard = Arc::clone(&self.settings_lock).lock_owned().await;
         let path = Arc::clone(&self.settings_path);
-        tokio::task::spawn_blocking(move || initialize_settings_file(&path))
+        tokio::task::spawn_blocking(move || {
+            *guard = None;
+            initialize_settings_file(&path)?;
+            *guard = Some(read_settings(&path)?);
+            Ok(())
+        })
+        .await
+        .map_err(|_| OfficialGuiError::Unavailable)?
+    }
+
+    /// Immutable initialized configuration for read-only evidence; never opens a file.
+    pub async fn candidate_settings(&self) -> Result<ConfigSnapshot, OfficialGuiError> {
+        self.settings_lock
+            .lock()
             .await
-            .map_err(|_| OfficialGuiError::Unavailable)?
+            .clone()
+            .ok_or(OfficialGuiError::Unavailable)
     }
 
     pub async fn update_settings(
@@ -215,11 +234,20 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
         if expected_revision == 0 || update_is_empty(&update) {
             return Err(OfficialGuiError::InvalidInput);
         }
-        let _guard = self.settings_lock.lock().await;
+        // Move the owned guard into the disk task: cancellation cannot publish a new
+        // file revision while leaving the candidate snapshot at the old revision.
+        let mut guard = Arc::clone(&self.settings_lock).lock_owned().await;
         let path = Arc::clone(&self.settings_path);
-        tokio::task::spawn_blocking(move || update_settings_file(&path, expected_revision, update))
-            .await
-            .map_err(|_| OfficialGuiError::Unavailable)?
+        tokio::task::spawn_blocking(move || {
+            // A publication failure can occur after rename. Never retain an older
+            // confirmed snapshot when the resulting disk revision is uncertain.
+            *guard = None;
+            let snapshot = update_settings_file(&path, expected_revision, update)?;
+            *guard = Some(snapshot.clone());
+            Ok(snapshot)
+        })
+        .await
+        .map_err(|_| OfficialGuiError::Unavailable)?
     }
 
     pub async fn list_activity(
@@ -885,6 +913,62 @@ mod tests {
             fs::read_to_string(&path)
                 .expect("read file")
                 .starts_with("schema = 2\n")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn failed_config_read_or_update_invalidates_candidate_cache_until_confirmed_read() {
+        let root = temporary_path("candidate-cache-failure");
+        let path = root.join("settings.toml");
+        let _ = fs::remove_dir_all(&root);
+        let app = M7OfficialApplication::new(NoStore, path.clone());
+        let access = AccessContext::local_owner();
+        app.initialize_settings().await.expect("initialize");
+        let confirmed = app.candidate_settings().await.expect("cached snapshot");
+        let original = fs::read(&path).expect("settings bytes");
+        fs::write(&path, "not valid settings").expect("inject unreadable Config");
+        assert!(app.get_settings(&access).await.is_err());
+        assert_eq!(
+            app.candidate_settings().await,
+            Err(OfficialGuiError::Unavailable)
+        );
+        fs::write(&path, &original).expect("restore Config");
+        assert_eq!(
+            app.get_settings(&access).await.expect("confirm restored"),
+            confirmed
+        );
+        // An observed newer disk revision makes a failed update unsuitable as
+        // authority for retaining the old cached revision.
+        let mut newer = confirmed.clone();
+        newer.revision += 1;
+        fs::write(&path, serialize_settings(&newer)).expect("new disk revision");
+        assert_eq!(
+            app.update_settings(
+                &access,
+                confirmed.revision,
+                ConfigUpdate {
+                    appearance: None,
+                    locale: Some(ConfigLocale::EnUs),
+                    packages: None,
+                }
+            )
+            .await,
+            Err(OfficialGuiError::RevisionConflict)
+        );
+        assert_eq!(
+            app.candidate_settings().await,
+            Err(OfficialGuiError::Unavailable)
+        );
+        assert_eq!(
+            app.get_settings(&access).await.expect("confirm newer"),
+            newer
+        );
+        assert_eq!(
+            app.candidate_settings()
+                .await
+                .expect("new cached authority"),
+            newer
         );
         let _ = fs::remove_dir_all(root);
     }

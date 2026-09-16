@@ -10,8 +10,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 mod m7;
+mod m7_candidates;
 
 pub use m7::*;
+pub use m7_candidates::*;
+
+pub const METHOD_PACKAGES_QUERY_PROJECT_CANDIDATES: &str = "packages.queryProjectCandidates";
+pub const CAPABILITY_PACKAGES_CANDIDATES_V1: &str = "packages.candidates.v1";
 
 /// Current ALCOMD RPC major version.
 pub const RPC_VERSION: u32 = 1;
@@ -184,6 +189,8 @@ pub const CAPABILITY_EXTENSIONS_UI_PORTABLE_V1: &str = "extensions.ui.portable.v
 
 /// Stable RPC v1 error codes implemented through M2.
 pub mod error_code {
+    pub const PACKAGE_CANDIDATE_EVIDENCE_STALE: &str = "package_candidate_evidence_stale";
+    pub const PACKAGE_CANDIDATE_LIMIT_EXCEEDED: &str = "package_candidate_limit_exceeded";
     /// A complete payload could not be parsed or validated as an RPC request.
     pub const INVALID_REQUEST: &str = "invalid_request";
     /// The requested method is unavailable.

@@ -128,16 +128,20 @@ export function Menu({ anchorRef, children, className, onClose, open }: { anchor
 }
 
 export function MenuItem({ className, disabled, label, onClick, title }: { className?: string; disabled?: boolean; label: string; onClick?(): void; title?: string }) {
+    const activating = useRef(false);
     const activate = (event: ReactMouseEvent<MaterialElement>) => {
-        if (onClick === undefined) return;
-        const menu = event.currentTarget.closest("md-menu");
+        if (disabled || onClick === undefined || activating.current) return;
+        const menu = event.currentTarget.closest("md-menu") as MaterialElement | null;
         if (menu === null) {
             onClick();
             return;
         }
-        menu.addEventListener("closed", onClick, { once: true });
+        activating.current = true;
+        menu.addEventListener("closed", () => { activating.current = false; onClick(); }, { once: true });
+        menu.close?.();
     };
     return createElement(materialElements.menuItem, {
+        "aria-disabled": disabled ? "true" : undefined,
         className,
         disabled,
         onClick: activate,

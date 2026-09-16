@@ -1,10 +1,43 @@
-# M7 package candidate evidence — Stop A proposal
+# M7 package candidate evidence — approved Stop A contract
 
-Status: **DRAFT / NOT APPROVED — contract review only**, 2026-09-17.
-The owner authorized completion of this proposal, proposed Schema/vectors and current
-completeness records. This is not authorization for production wiring. `docs/status.md`
-remains the sole current-stage entrypoint; this supplements the existing H2-A contract,
-not a new M7 plan. Visual Gate 2 remains **PENDING**.
+Status: **APPROVED FOR IMPLEMENTATION**, owner approval 2026-09-17, after contract
+review commit `c9b1d162e01d1fc6ec911dbfaa2f535618cade54`. No further proposal-only gate.
+This is the approved H2-A implementation contract; `docs/status.md` remains the sole
+current-stage entrypoint. Implement, test and build a local functional/visual candidate,
+then stop for owner Visual Gate 2 acceptance. Visual Gate 2 remains **PENDING**.
+No push, extra worktree, new permission, migration, dependency, unsafe or platform API;
+no changed resolver/Plan/Apply behavior, accepted icons/layout, narrow adaptation or later stage.
+Preserve the existing GUI/test/status WIP; relevant local implementation commits are authorized.
+
+### Owner implementation constraints (binding clarification)
+
+- Every request must enforce existing Principal and Project/source scope, not only permission
+  names. Cursor is never a credential. Only registered snapshots are read; normal technical
+  logging is allowed, but business State/Config/Project/cache/Plan/Operation/Event writes,
+  repository refresh, user source scanning and network/download calls are forbidden.
+- Direct Unity compatible/eligible never proves dependency-graph feasibility. A stable
+  candidate older than an installed prerelease is not an automatic stable update.
+  Unknown, unavailable, ambiguous and no-update remain distinguishable.
+- Same-source equal-precedence build ambiguity is computed over the complete relevant set
+  before pagination; preserve existing source-selector structure and source identity in Plans.
+- Snapshot plus query-bound cursor cover Project, view/conditions, source inventory/revisions,
+  settings and sorting semantics. `catalogComplete` describes underlying catalog completeness,
+  never page completion. Mixed snapshots must fail stale and be discarded by GUI.
+- Byte quotas use actual encoded bytes and must also fit the existing RPC frame including
+  envelope. A smaller complete page with cursor is permitted, otherwise return explicit limit;
+  never scan a truncated catalog to fabricate Latest.
+- Update All covers every locked package independent of search/selection. Selected actions
+  use all selected IDs, never silently filtered subsets; Bulk stays one Plan/Apply/Operation.
+- Remove the metadata-gap manual version fallback once unified candidate reads replace it;
+  retain another manual use case only if an actual prior commitment is demonstrated.
+- Verify disabled mouse and keyboard activation protection and focus restoration. Screen-reader
+  announcement and real Tauri visual evidence remain separate. Do not repeat or bypass prior
+  computer-use authorization timeouts; owner manual isolated-fixture acceptance is valid.
+- Execute frontend check/build, full GUI regressions, applicable Rust fmt/Clippy/workspace and
+  resolver/Plan/Apply tests, xtask, metadata, baseline, diff/dependency checks and Tauri no-bundle
+  build. Map all 39 semantic vectors to executable tests or explicit corresponding evidence.
+  If real Unity affects existing tests, report the approved environment limitation without
+  killing user processes or weakening writer gates.
 
 ## 1. Decision and existing evidence
 
@@ -24,7 +57,7 @@ RPC envelope/protocol version bump. Require **all four existing permissions**:
 `projects.read`, `repositories.read`, `packages.read`, `settings.read`, on the current
 principal. No new permission, `packages.manage`, owner-only bypass or GUI-only route.
 An old daemon lacking the capability yields unavailable evidence; clients must not invent
-Latest or fall back to string comparison. Active capability registries are not changed here.
+Latest or fall back to string comparison. Active capability registration is authorized by this approval.
 
 Audited existing code: protocol `RepositoryPackageVersion`, `UserPackageRecord`,
 `ProjectSnapshot`, `PackageSourceSelector`; store `m3.rs::list_repository_packages` and
@@ -42,7 +75,7 @@ full-list Update All and full-selection bulk checks. It deduplicates bare versio
 implementation must NOT be copied because it loses source identity. v3-specific Unity/SDK
 exceptions are not adopted. No v3 or vrc-get source is copied, rewritten or ported.
 
-## 2. Closed DTO proposal
+## 2. Closed DTO contract
 
 Normative machine shape: `specs/rpc/m7-package-candidates.proposal.schema.json`.
 Objects reject unknown fields. Core validation of existing project/package/source IDs,
@@ -76,8 +109,18 @@ Versions view also echoes packageId. All rows in all accumulated pages must shar
 unrelated repositories. False is a known Plan blocker, NOT proof a given package has no
 candidate; do not call Plan simply to rediscover this blocker.
 
-`PackageCandidateSummary`: packageId, `direct` boolean, `installed`,
+`PackageCandidateSummary`: packageId, `direct` boolean, `installed`, `providers`,
 `latest`, `latestStable`, `projectLatest`, `projectLatestStable`, `update`, `stableUpdate`.
+`providers` is a bounded array of `{source: existing PackageSourceSelector, sourceRevision}`,
+unique by source identity and sorted by source kind/ID bytes. It contains **all visible recorded
+providers for this package**, including non-winning/unknown candidates, before any per-row explicit
+source override; confirmed hidden settings still exclude providers. Maximum4096 under the existing
+source and response-byte caps, empty for an absent package. GUI joins these identities with existing
+repository registration metadata to preserve Local/Remote/User source filtering. Winner-only fields
+cannot establish complete source membership; draining all version pages is forbidden. This narrow
+summary evidence completion was identified during implementation, remains inside the approved single
+query/source-evidence scope and adds no method/capability/error/permission/quota expansion.
+
 Installed is `{kind:"absent"}`, `{kind:"locked",version}`, or
 `{kind:"unknown",reason:"installed_evidence_unknown"}`. Never infer a locked version from
 a direct range. An absent lock is not automatically an absent direct requirement (`direct`
@@ -278,7 +321,10 @@ position, not authority. Reauthorize and recompute both fingerprints every page;
 query/invalid offset with existing invalid-params behavior, changed snapshot with
 `package_candidate_evidence_stale`. If expectedSnapshot and cursor disagree, invalid params.
 First page may omit expectedSnapshot; every later page or related request uses the first token.
-Events, reconnect and stale errors discard the whole accumulated set. No durable cursor state.
+Observed source/settings/Operation change callbacks, reconnect and stale errors discard the whole
+accumulated set. The current GUI has no daemon event subscription bridge; this work does not add
+an event polling/scheduling system. External changes are detected on the next page, explicit reload
+or read-only snapshot precheck at user Plan intent, then by existing Plan/Apply validation. No durable cursor state.
 
 Frozen proposed limits: request JSON <=64 KiB UTF-8; response result <=1 MiB UTF-8 (below
 existing 4 MiB frame); page default64/max128; explicit summary IDs/source overrides max256;
@@ -299,16 +345,17 @@ are reused, without introducing aliases. The only proposed new stable errors are
 `package_candidate_evidence_stale` and `package_candidate_limit_exceeded`; error details expose
 no paths or metadata. Size failure is not `none`; missing metadata is not an empty response.
 
-## 6. Required future production work and proof boundary
+## 6. Approved production work and proof boundary
 
-Only after this precise contract is approved: add protocol DTO/method/capability/error entries,
+Approved production scope: add protocol DTO/method/capability/error entries,
 application read use case, read-only store projection, reuse/refactor existing pure VPM
 ordering/classification helpers without changing their behavior, daemon dispatcher/permission
 mapping, public SDK types/method and thin GUI query adapter/candidate actions. No new
 production dependency, unsafe, platform API, State/Config migration, persistent table or
 capability/permission grant shortcut. CLI/MCP/Local API, where exposed, use this same use case.
 
-Future tests in the contract-vector file are **planned expectations, not runtime PASS**.
+The 39 semantic vectors must acquire real test/evidence mappings before functional closure;
+shape validation alone is not runtime PASS.
 Prove zero writes using DB/files/cache fingerprints and Plan/Operation/Event counts before/
 after query, denial, paging and failure. Assert zero network/downloader/refresh calls. Repeat
 unchanged resolver/Plan/Apply regression vectors, including source priority and exact-build
@@ -318,14 +365,14 @@ subsets, principal isolation, negative DTO shapes, real page sizes, work caps an
 GUI fixtures must consume Core responses, not manufacture a second comparator. Confirm full
 selection vs search-visible subset, direct-only removal and one Bulk request/Apply/Operation.
 
-## 7. Current WIP, completion and acceptance
+## 7. Approval-time WIP baseline and acceptance boundaries
 
 Preserve current inline repository/source entry, complete selection across search, single
 Bulk remove, user-source downgrade fix and 52/52 browser evidence. Manual version entry is a
 **transitional fallback**, not final inline closure. Conditional Update/Stable/Update All,
 full selected install/upgrade and User Package inline remain unfinished; existing lexical
-Latest/different-version logic is not acceptable authoritative evidence. Production proposal
-wiring is absent. Historical P6/P8 PASS remains historical, not current H2-A completion.
+Latest/different-version logic is not acceptable authoritative evidence. At the approval baseline, production proposal
+wiring was absent. Historical P6/P8 PASS remains historical, not current H2-A completion.
 
 Actual CSS audit: current `styles.css` has zero diff against f86937b; both Git blob hashes
 are `1d9298767cb9074cae033893fdb7730a98f37d19`. Earlier transient editing removed the
@@ -341,7 +388,7 @@ failure nor acceptance. Do not retry authorization for contract review. The owne
 launch a specified accepted build, run the checklist and provide screenshots; computer-use
 is not mandatory and its authorization must not be bypassed. Visual Gate 2 remains PENDING.
 
-Contract validation only: proposal shape/positive and negative vectors, metadata, xtask,
-baseline freeze and diff checks. No production/GUI or desktop execution claim is derived
-from these checks. Results are recorded in `docs/testing/m7-package-candidates-stop-a-review.md`.
-Stop after these materials for human approval; no production implementation or push.
+The original contract-only validation record remains historical in
+`docs/testing/m7-package-candidates-stop-a-review.md`. The owner now authorizes the production
+scope above and its complete checks; stop after producing the local candidate for Visual Gate 2,
+not another proposal review. No push or automatic visual acceptance.

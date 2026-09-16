@@ -1,11 +1,13 @@
 export const RPC_VERSION = 1 as const;
 
 export const RPC_CAPABILITIES = {
+    packagesCandidates: "packages.candidates.v1",
     extensionsLifecycle: "extensions.lifecycle.v1",
     extensionsPermissions: "extensions.permissions.v1"
 } as const;
 
 export * from "./portable-ui";
+export * from "./package-candidates";
 
 export interface ClientInfo {
     name: string;

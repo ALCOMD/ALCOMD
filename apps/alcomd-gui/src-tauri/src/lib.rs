@@ -672,6 +672,20 @@ async fn gui_package_plan_reinstall(
 }
 
 #[tauri::command]
+async fn gui_package_query_project_candidates(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::ProjectCandidateRequest,
+) -> Result<alcomd_protocol::ProjectCandidatePage, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.package_query_project_candidates(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
 async fn gui_package_plan_bulk(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::PackagePlanBulkParams,
@@ -1508,6 +1522,7 @@ pub fn run() {
             gui_package_plan_resolve,
             gui_package_plan_reinstall,
             gui_package_plan_bulk,
+            gui_package_query_project_candidates,
             gui_package_apply_plan,
             gui_user_packages_list,
             gui_user_package_get,

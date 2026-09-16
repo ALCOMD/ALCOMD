@@ -652,6 +652,19 @@ Activity、Diagnostics 或 Portable UI authority。
 
 ## 下一停止点
 
+2026-09-17 bounded H2-A follow-up (historical, before candidate implementation approval): Installed-column exact repository version/source selection,
+single Bulk removal, full-selection preservation across presentation filters, and the
+classification-unavailable manual downgrade fallback are implemented locally. The fallback
+retains the chosen source. Full GUI browser suite: 52/52; frontend and final debug no-bundle
+builds passed. Evidence: `docs/testing/m7-h2-a-inline-version-20260917.md`.
+Latest/conditional updates and mixed bulk remain unfinished: the current raw read contract
+cannot provide authoritative candidate ordering/compatibility/upgrade evidence. The separate
+`M7-package-candidate-evidence-stop-a.md` was proposal-only at that checkpoint. The owner has
+subsequently approved its production implementation with the binding constraints recorded there.
+The approved candidate query now replaces raw version decisions and the transitional manual
+version fallback; current validation is recorded in
+`docs/testing/m7-package-candidates-implementation-20260917.md`. This does not grant Visual Gate 2.
+
 当前停止点是 H2-A Project Workspace / Packages Visual Gate 2。Unity technical closure 与更新后的 P8 M7-owned
 completeness 已通过；只允许从 sealed Unity HEAD 重新实现仍有效的 H2 视觉/Material 结构，不恢复旧的 Automatic/Explicit
 Editor preference UI。形成新的 real Tauri Visual Gate 2 候选后必须停止等待项目所有者人工视觉验收，不得进入

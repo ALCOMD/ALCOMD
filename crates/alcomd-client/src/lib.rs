@@ -124,6 +124,7 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_REPOSITORIES_REGISTRY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V2.to_owned(),
+                alcomd_protocol::CAPABILITY_PACKAGES_CANDIDATES_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_APPLY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_USER_PACKAGES_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_UNITY_READ_V1.to_owned(),
@@ -406,6 +407,17 @@ impl AlcomdClient {
     ) -> Result<alcomd_protocol::PackagePlan, ClientError> {
         self.call(alcomd_protocol::METHOD_PACKAGES_PLAN_REINSTALL, params)
             .await
+    }
+
+    pub async fn package_query_project_candidates(
+        &mut self,
+        params: alcomd_protocol::ProjectCandidateRequest,
+    ) -> Result<alcomd_protocol::ProjectCandidatePage, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_PACKAGES_QUERY_PROJECT_CANDIDATES,
+            params,
+        )
+        .await
     }
 
     pub async fn package_plan_bulk(
