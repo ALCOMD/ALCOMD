@@ -1,5 +1,7 @@
 # M7：官方 GUI 与 Portable Extension UI
 
+当前活动阶段与唯一工作目录统一以 `docs/status.md` 为准。本文件保留实施合同与历史日志，不授权重建旧工作树；2026-09-17 起仅在标准 `ALCOMD` 目录的 `main` 继续 H2-A。
+
 状态：Portable UI B0-D production candidate `aa1323430252ed21995284a7b36dd36e45a15e0a` 已通过 Hosted CI
 `32877438910`。Official GUI functional candidate `19267230507071dc61ba306b98c8cfdd113e9ea2` 完成 E1-G1/G3
 生产实现与本地自动化验收，但项目所有者在正式 checklist 开始前拒绝其 visual/information architecture acceptance：其宏观
@@ -642,6 +644,11 @@ Activity、Diagnostics 或 Portable UI authority。
   xtask 与 metadata 检查通过。桌面新筛选交互尚未完成验收（电脑控制检测到用户输入，已暂停点击）；
   不把浏览器测试冒充 real Tauri evidence。版本选择器、条件更新与批量入口仍是未完成项，详见
   `docs/testing/m7-h2-a-package-workspace-continuity.md`。Visual Gate 2 保持开放。
+
+- 2026-09-17：按项目所有者要求收敛为标准目录单工作树。原 main 的 9 个未提交文件保存为历史快照
+  `b4547d5`；整合提交 `9d0ddbb` 保留双方历史且采用 `9307572` 精确代码树，不复活 Automatic Editor。
+  两个额外 worktree 已移除，本地材料保存在标准目录恢复归档，旧分支统一归为 `codex/archive/*`。
+  本次只做工作空间与记录整合，没有 GUI 新功能、合同调整、push 或视觉验收结论。
 
 ## 下一停止点
 

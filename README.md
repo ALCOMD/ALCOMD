@@ -4,7 +4,7 @@ ALCOMD3 v4 是 ALCOMD 产品家族中具有独立 Git 历史与代码库的全�
 品牌和功能定位上继承 ALCOMD3 v3，但不是对 v3 的增量补丁，也不复用 v3 或
 vrc-get 的源码。
 
-当前状态：**M0 仓库骨架、身份与 CI（完成；停止在 M1 之前）**。M-1 审计与合同基线已经完成；仓库中的程序仍是可编译占位，正式 Schema、业务实现、迁移和发行测试属于后续里程碑。
+当前阶段及唯一工作目录以 [docs/status.md](docs/status.md) 为准。README 不维护第二份阶段状态；后续开发前先检查该记录和对应 ExecPlan。
 
 ## 永久身份
 
@@ -31,7 +31,7 @@ MCP 协议由独立的 `alcomd-mcp` 提供。MCP 管理 GUI 与 Discord Rich Pre
 1. 阅读 `AGENTS.md`。
 2. 阅读 `docs/architecture/ALCOMD-V4.md`。
 3. 阅读 `docs/decisions/open.md`。
-4. 阅读 `docs/exec-plans/M0-bootstrap.md` 与 `docs/status.md`，一次只执行当前里程碑。
+4. 阅读 `docs/status.md` 指定的当前 ExecPlan，一次只执行当前获批切片；不要从历史 M0 初始化说明推断当前阶段。
 5. 将旧仓库放在并列的只读目录，例如 `../ALCOMD3-v3-readonly`。
 6. 运行 `scripts/freeze-baselines.ps1` 生成 v3 审计源、v3.4.0 迁移入口版本与发行资产、vrc-get 功能行为及 MCP 规范锁，并用 `-Check` 对远端引用和 GitHub Release 摘要执行校验。
 7. 遵守洁净实现边界：不得复制、移植或改写 v3、vrc-get 或 vrc-get-vpm 源码。

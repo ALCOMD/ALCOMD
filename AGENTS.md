@@ -1,5 +1,12 @@
 # AGENTS.md
 
+## 工作目录与当前状态入口
+
+- 本地开发、检查、构建与提交统一在项目所有者创建的 `C:\Users\M2922\MyProjects\Rust\ALCOMD` 进行，当前工作分支为 `main`。
+- 未经项目所有者另行批准，不创建或切换到额外 worktree，不在同级临时目录继续产品开发。
+- `docs/status.md` 是唯一当前阶段入口；ExecPlan 定义实施合同，testing 文档和 `codex/archive/*` 分支只保存历史证据，不另立当前阶段。
+- 2026-09-17 整合的保留与恢复记录见 `docs/testing/workspace-consolidation-20260917.md`。
+
 ## 必读顺序
 
 开始任何任务前，按顺序阅读：

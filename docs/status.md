@@ -1,8 +1,24 @@
 # 项目状态
 
-最后更新：2026-09-06
+最后更新：2026-09-17
 
 ## 当前阶段
+
+本节是唯一当前阶段记录；下文“已完成”、旧 ExecPlan 日志、testing 报告及归档分支均是历史证据，不构成另一条活动开发线。
+
+- **唯一工作目录**：`C:\Users\M2922\MyProjects\Rust\ALCOMD`；活动分支 `main`。两个额外工作树已经移除，后续不自行创建 worktree。
+- **当前阶段**：M7 H2-A Project Workspace / Packages，`IN_PROGRESS / VISUAL_GATE_2`；尚未通过完整人工视觉验收。
+- **当前代码来源**：Unity 技术验收 `e9349fd` 加 GUI 本地提交链至 `9307572`；整合提交 `9d0ddbb` 的代码树与 `9307572` 完全相同。
+- **旧修改保留**：原标准目录 9 个未提交文件完整保存在 `b4547d5`，作为历史恢复快照，不复活已被替代的 Automatic Editor 产品模型。
+- **下一步**：验证新筛选在真实 Tauri 中的交互，继续行内版本选择、正确的条件更新与完整批量操作。具体缺口见 `testing/m7-h2-a-package-workspace-continuity.md`。
+- **边界**：不扩展已冻结的 RPC/State/Permission/依赖；不开始 H2-B、H3-H7、M8、M9、M11；不把技术检查当成人工视觉通过。
+- **远端**：本次只做本地整合，没有 push、force-push 或历史重写。此前 CI 只证明其对应旧 SHA，不证明本次整合提交。
+
+整合审计、恢复位置和本轮验证结果见 [工作目录整合记录](testing/workspace-consolidation-20260917.md)。
+标准目录的 check/build/xtask/metadata/diff 检查通过；浏览器首轮 47/48（navigation 超时），
+保持代码及断言不变、按先前单 worker 配置复跑为 48/48。首轮原因未确认，不隐去失败记录。
+
+### 已有验收基线与 H2-A 局部证据（历史）
 
 `M6 已正式完成；M7 Portable UI B0-D、Project / Package Functional Closure P0-P8 与 Project Unity Version / exact Open Unity U1-U7 technical closure 已通过。Unity production sealed HEAD e9349fd0f4cc9c18d9174dfc5826d48654aeb6f5 对应 Hosted CI run 33352406804 与 CodeQL run 33352406214 均通过；更新后的 P8 M7-owned visible-action completeness 为 PASS，global release completeness 仍为 BLOCKED_BY_M11。H2-A 已恢复为 ACTIVE，并停在 Project Workspace / Packages Visual Gate 2 候选制作；24b03916bd6d958c921b4039bd62bec00afe25d4 保留为 pre-Unity-model local checkpoint，不是 rejected，也不是当前候选。M7 仍为 IN_PROGRESS，projects.management、packages.vpm 与 repositories.management 保持 in_progress，M8/M9 未开始。`
 
