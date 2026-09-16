@@ -14,7 +14,6 @@ import {
     refreshIcon,
     searchIcon,
     starIcon,
-    syncIcon,
     upgradeIcon,
     viewGridIcon,
     viewListIcon
@@ -617,13 +616,14 @@ function ProjectRowActions({ client, context = "row", navigate, onChanged, onCop
                     <StateSizedLabel current={opening ? "Opening…" : "Open Unity"} labels={["Open Unity", "Opening…"]} />
                 </Button>
                 {workspace ? null : <Button disabled={!canReadProjects} onClick={() => navigate(`/projects/${projectId}`)} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead)} type="button" variant="tonal">Manage</Button>}
-                <Button disabled={!canReadBackups} onClick={() => navigate(`/projects/${projectId}/backups`)} title={capabilityUnavailableTitle(canReadBackups, capabilities.backupsRead)} type="button" variant={workspace ? "text" : "tonal"}><Icon asset={backupIcon} slot="icon" />Backups</Button>
+                {workspace ? null : <Button disabled={!canReadBackups} onClick={() => navigate(`/projects/${projectId}/backups`)} title={capabilityUnavailableTitle(canReadBackups, capabilities.backupsRead)} type="button" variant="tonal"><Icon asset={backupIcon} slot="icon" />Backups</Button>}
                 <IconButton className="project-more-actions" label={`More actions for ${projectName(project)}`} onClick={() => setMenuOpen(true)} ref={menuAnchorRef} type="button">
                     <Icon asset={moreVertIcon} size={24} />
                 </IconButton>
                 <Menu anchorRef={menuAnchorRef} className="project-actions-menu" onClose={() => setMenuOpen(false)} open={menuOpen}>
                     <MenuItem className="project-actions-menu-item" disabled={!canReadProjects || openingDirectory} label={openingDirectory ? "Opening Project Directory…" : "Open Project Directory"} onClick={() => void openDirectory()} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead)} />
                     <MenuItem className="project-actions-menu-item" disabled={!canCopyProjects || revision === undefined || selectingCopyTarget} label={selectingCopyTarget ? "Choosing Copy Destination…" : "Copy Project"} onClick={() => void beginCopy()} title={capabilityUnavailableTitle(canCopyProjects, capabilities.projectsCopy)} />
+                    {workspace ? <MenuItem className="project-actions-menu-item" disabled={!canReadBackups} label="Backups" onClick={() => { setMenuOpen(false); navigate(`/projects/${projectId}/backups`); }} title={capabilityUnavailableTitle(canReadBackups, capabilities.backupsRead)} /> : null}
                     {workspace ? <MenuItem className="project-actions-menu-item" disabled={!canManageUnity || clearingEditor} label={clearingEditor ? "Clearing Unity Editor…" : "Use Automatic Unity Editor"} onClick={() => void clearEditor()} title={capabilityUnavailableTitle(canManageUnity, capabilities.unityManage)} /> : null}
                     {workspace ? <>
                         <MenuItem className="project-actions-menu-item project-actions-menu-item--danger project-actions-menu-item--danger-group" disabled={!canManageProjects || revision === undefined} label="Remove from list" onClick={beginUnregister} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry)} />
@@ -1029,7 +1029,12 @@ function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
     );
 }
 
-function PackageWorkspaceMoreMenu({ canPlanV2, onReinstallAll }: { canPlanV2: boolean; onReinstallAll(): void }) {
+function PackageWorkspaceMoreMenu({ canPlanV1, canPlanV2, onReinstallAll, onResolve }: {
+    canPlanV1: boolean;
+    canPlanV2: boolean;
+    onReinstallAll(): void;
+    onResolve(): void;
+}) {
     const [open, setOpen] = useState(false);
     const anchorRef = useRef<HTMLElement>(null);
     return (
@@ -1038,7 +1043,46 @@ function PackageWorkspaceMoreMenu({ canPlanV2, onReinstallAll }: { canPlanV2: bo
                 <Icon asset={moreVertIcon} size={24} />
             </IconButton>
             <Menu anchorRef={anchorRef} onClose={() => setOpen(false)} open={open}>
+                <MenuItem disabled={!canPlanV1} label="Resolve Dependencies…" onClick={() => { setOpen(false); onResolve(); }} title={capabilityUnavailableTitle(canPlanV1, capabilities.packagesPlanV1)} />
                 <MenuItem disabled={!canPlanV2} label="Reinstall All Installed Packages…" onClick={() => { setOpen(false); onReinstallAll(); }} title={capabilityUnavailableTitle(canPlanV2, capabilities.packagesPlanV2)} />
+            </Menu>
+        </>
+    );
+}
+
+function PackageFilterMenu({
+    canUseUserPackages,
+    filter,
+    onFilterChange,
+    onSourceChange,
+    source
+}: {
+    canUseUserPackages: boolean;
+    filter: string;
+    onFilterChange(value: string): void;
+    onSourceChange(value: "all" | "local" | "remote" | "user-package"): void;
+    source: "all" | "local" | "remote" | "user-package";
+}) {
+    const [open, setOpen] = useState(false);
+    const anchorRef = useRef<HTMLElement>(null);
+    const filters = [
+        { label: "All packages", value: "all" },
+        { label: "Installed", value: "installed" },
+        { label: "Available", value: "available" },
+        { label: "Missing source", value: "missing" }
+    ];
+    const sources: Array<{ label: string; value: "all" | "local" | "remote" | "user-package" }> = [
+        { label: "All sources", value: "all" },
+        { label: "Remote", value: "remote" },
+        { label: "Local repository", value: "local" },
+        ...(canUseUserPackages ? [{ label: "User Packages", value: "user-package" as const }] : [])
+    ];
+    return (
+        <>
+            <Button aria-expanded={open} className="package-filter-action" onClick={() => setOpen(true)} ref={anchorRef} title="Filter package status and source" type="button" variant="tonal">Package filters</Button>
+            <Menu anchorRef={anchorRef} className="package-filter-menu" onClose={() => setOpen(false)} open={open}>
+                {filters.map((option) => <MenuItem className="package-filter-menu-item" key={`filter:${option.value}`} label={option.label} onClick={() => { onFilterChange(option.value); setOpen(false); }} selected={filter === option.value} />)}
+                {sources.map((option, index) => <MenuItem className={index === 0 ? "package-filter-menu-item package-filter-menu-item--source" : "package-filter-menu-item"} key={`source:${option.value}`} label={`Source: ${option.label}`} onClick={() => { onSourceChange(option.value); setOpen(false); }} selected={source === option.value} />)}
             </Menu>
         </>
     );
@@ -1206,15 +1250,15 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                 <section className="project-workspace">
                     <header className="project-workspace-header">
                         <div className="project-workspace-context">
-                            <Button className="project-back-action" onClick={() => navigate("/projects")} type="button" variant="text"><Icon asset={arrowBackIcon} slot="icon" />Back</Button>
+                            <IconButton className="project-back-action" label="Back to Projects" onClick={() => navigate("/projects")} title="Back to Projects" type="button"><Icon asset={arrowBackIcon} /></IconButton>
                             <div className="project-workspace-title">
                                 <h1 id="route-title" tabIndex={-1}>{projectName(project)}</h1>
-                                <p title={project.rootPath}>{project.rootPath}</p>
+                                <p title={displayProjectPath(project.rootPath)}><span>Location:</span> {displayProjectPath(project.rootPath)}</p>
                             </div>
                         </div>
                         <nav aria-label="Project actions" className="project-workspace-action-cluster">
                             {refreshError === undefined ? null : <span className="inline-error" role="alert">Refresh failed: {refreshError.code}</span>}
-                            <span className="project-unity-version">Unity {project.unityVersion}</span>
+                            <span className="project-unity-version"><span>Unity version</span><strong>{project.unityVersion}</strong></span>
                             <ProjectRowActions
                                 client={client}
                                 context="workspace"
@@ -1231,36 +1275,11 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                     {workspaceFeedback === undefined ? null : <div className="project-workspace-feedback" role="status" aria-live="polite">{workspaceFeedback}</div>}
                     <section aria-labelledby="packages-heading" className="package-workspace-surface">
                         <header className="package-workspace-toolbar">
-                            <h2 id="packages-heading">Packages</h2>
-                            <Button className="package-refresh-action" disabled={!canManageRepositories || refreshing || repositoryRefresh?.running === true} onClick={() => void refreshRepositories(refresh)} title={capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry)} type="button" variant="text"><Icon asset={refreshIcon} slot="icon" />{repositoryRefresh?.running === true ? "Refreshing…" : "Refresh"}</Button>
-                            <TextField className="package-workspace-search" label="Search packages" leadingIcon={<Icon asset={searchIcon} slot="leading-icon" />} onInput={setSearch} value={search} />
-                            <Select
-                                className="package-workspace-filter"
-                                label="Filter"
-                                onChange={setFilter}
-                                options={[
-                                    { label: "All packages", value: "all" },
-                                    { label: "Installed", value: "installed" },
-                                    { label: "Available", value: "available" },
-                                    { label: "Missing source", value: "missing" }
-                                ]}
-                                value={filter}
-                            />
-                            <Select
-                                className="package-workspace-source-filter"
-                                label="Source"
-                                onChange={(value) => setSourceFilter(value as typeof sourceFilter)}
-                                options={[
-                                    { label: "All", value: "all" },
-                                    { label: "Remote", value: "remote" },
-                                    { label: "Local repository", value: "local" },
-                                    ...(canUseUserPackages ? [{ label: "User Packages", value: "user-package" }] : [])
-                                ]}
-                                value={sourceFilter}
-                            />
-                            <Button className="package-resolve-action" disabled={!canPlanPackagesV1} onClick={() => selectAction("resolve")} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button" variant="text"><Icon asset={syncIcon} slot="icon" />Resolve</Button>
-                            <span className="package-workspace-count" role="status" aria-live="polite">{rows.length} {rows.length === 1 ? "package" : "packages"}</span>
-                            <PackageWorkspaceMoreMenu canPlanV2={canPlanPackagesV2} onReinstallAll={() => selectAction("reinstall-all")} />
+                            <h2 id="packages-heading">Package management</h2>
+                            <IconButton className="package-refresh-action" disabled={!canManageRepositories || refreshing || repositoryRefresh?.running === true} label="Refresh" onClick={() => void refreshRepositories(refresh)} title={capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry)} type="button"><Icon asset={refreshIcon} /></IconButton>
+                            <TextField className="package-workspace-search" label="Search packages" leadingIcon={<Icon asset={searchIcon} slot="leading-icon" />} onInput={setSearch} value={search} variant="filled" />
+                            <PackageWorkspaceMoreMenu canPlanV1={canPlanPackagesV1} canPlanV2={canPlanPackagesV2} onReinstallAll={() => selectAction("reinstall-all")} onResolve={() => selectAction("resolve")} />
+                            <PackageFilterMenu canUseUserPackages={canUseUserPackages} filter={filter} onFilterChange={setFilter} onSourceChange={setSourceFilter} source={sourceFilter} />
                         </header>
                         {repositoryRefresh === undefined ? null : (
                             <div className={repositoryRefresh.failures.length > 0 ? "package-refresh-status package-refresh-status--failed" : "package-refresh-status"} role={repositoryRefresh.failures.length > 0 ? "alert" : "status"} aria-live="polite">
@@ -1281,7 +1300,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                             {rows.length === 0 ? <section className="projects-empty" role="status"><h3>No matching packages</h3><p>Change the search or package filter.</p></section> : (
                                 <MaterialDataTable className="package-workspace-table" label="Packages" minWidth={840}>
                                     <colgroup><col className="package-column-select" /><col className="package-column-name" /><col className="package-column-installed" /><col className="package-column-latest" /><col className="package-column-source" /><col className="package-column-actions" /></colgroup>
-                                    <thead><tr><DataTableHeader><Checkbox checked={rows.some((row) => row.installedVersion !== undefined) && rows.filter((row) => row.installedVersion !== undefined).every((row) => bulkSelection.includes(row.packageId))} label="Select all installed packages" onChange={(checked) => setBulkSelection(checked ? rows.filter((row) => row.installedVersion !== undefined).map((row) => row.packageId) : [])} /></DataTableHeader><DataTableHeader>Package</DataTableHeader><DataTableHeader>Installed</DataTableHeader><DataTableHeader>Latest</DataTableHeader><DataTableHeader>Source</DataTableHeader><DataTableHeader><span className="visually-hidden">Actions</span></DataTableHeader></tr></thead>
+                                    <thead><tr><DataTableHeader><span className="visually-hidden">Selection</span></DataTableHeader><DataTableHeader>Package</DataTableHeader><DataTableHeader>Installed</DataTableHeader><DataTableHeader>Latest</DataTableHeader><DataTableHeader>Source</DataTableHeader><DataTableHeader><span className="visually-hidden">Actions</span></DataTableHeader></tr></thead>
                                     <tbody>{rows.map((row) => {
                                         const latest = row.availableVersions.at(-1);
                                         const canUpgrade = row.installedVersion !== undefined && latest !== undefined && latest !== row.installedVersion;
@@ -1294,10 +1313,10 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                                 <td>{row.sourceOptions.length === 0 ? <span className="package-source-missing">No configured source</span> : row.sourceOptions.length === 1 ? row.sourceOptions[0]?.label : <PackageSourceMenu label={`Source for ${row.displayName}`} onChange={(key) => setSourceSelections((current) => ({ ...current, [row.packageId]: key }))} options={row.sourceOptions} value={sourceSelections[row.packageId] ?? ""} />}</td>
                                                 <td><div className="package-row-actions">
                                                     {row.installedVersion === undefined
-                                                        ? <Button disabled={!canPlanPackagesV1 || latest === undefined} onClick={() => selectAction("install", row, latest)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button" variant="tonal"><Icon asset={downloadIcon} slot="icon" />Install</Button>
+                                                        ? <IconButton className="package-primary-action" disabled={!canPlanPackagesV1 || latest === undefined} label="Install" onClick={() => selectAction("install", row, latest)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button"><Icon asset={downloadIcon} /></IconButton>
                                                         : canUpgrade
-                                                            ? <Button disabled={!canPlanPackagesV1} onClick={() => selectAction("upgrade", row, latest)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button" variant="tonal"><Icon asset={upgradeIcon} slot="icon" />Update</Button>
-                                                            : <Button disabled={!canPlanPackagesV1} onClick={() => selectAction("downgrade", row)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button" variant="text"><Icon asset={historyIcon} slot="icon" />Versions</Button>}
+                                                            ? <IconButton className="package-primary-action" disabled={!canPlanPackagesV1} label="Update" onClick={() => selectAction("upgrade", row, latest)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button"><Icon asset={upgradeIcon} /></IconButton>
+                                                            : <IconButton className="package-primary-action" disabled={!canPlanPackagesV1} label="Versions" onClick={() => selectAction("downgrade", row)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button"><Icon asset={historyIcon} /></IconButton>}
                                                     <PackageRowMoreMenu canPlanV1={canPlanPackagesV1} canPlanV2={canPlanPackagesV2} client={client} onAction={(action) => selectAction(action, row)} row={row} />
                                                 </div></td>
                                             </tr>

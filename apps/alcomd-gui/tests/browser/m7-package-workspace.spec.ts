@@ -45,18 +45,17 @@ test("Package source filter uses daemon source kinds and only changes presentati
     await expect(packageName(page, "Remote tools")).toBeVisible();
     await expect(packageName(page, "Local tools")).toBeVisible();
 
-    await page.getByRole("combobox", { name: "Source" }).click();
-    await page.getByRole("option", { name: "Remote", exact: true }).click();
+    await page.getByRole("button", { name: "Package filters" }).click();
+    await page.getByRole("menuitem", { name: "Source: Remote", exact: true }).click();
     await expect(packageName(page, "Remote tools")).toBeVisible();
     await expect(packageName(page, "Local tools")).toHaveCount(0);
-    await expect(page.getByText("2 packages")).toBeVisible();
+    await expect(packageName(page, "Remote tools")).toBeVisible();
 
     await openHarness(page, "package-multiple");
-    await page.getByRole("combobox", { name: "Source" }).click();
-    await page.getByRole("option", { name: "Local repository", exact: true }).click();
+    await page.getByRole("button", { name: "Package filters" }).click();
+    await page.getByRole("menuitem", { name: "Source: Local repository", exact: true }).click();
     await expect(packageName(page, "Local tools")).toBeVisible();
     await expect(packageName(page, "Remote tools")).toHaveCount(0);
-    await expect(page.getByText("1 package")).toBeVisible();
     await expect(page.getByText(/refreshed, .* failed/)).toHaveCount(0);
 });
 
@@ -96,18 +95,47 @@ test("Package rows keep one primary action and move secondary actions into Mater
 
 test("Project workspace keeps high-frequency actions in context and complete project actions in overflow", async ({ page }) => {
     await openHarness(page, "ready");
+    await expect(page.getByRole("button", { name: "Back to Projects" })).toBeVisible();
     const actions = page.getByRole("navigation", { name: "Project actions" });
     await expect(actions.getByRole("button", { name: "Open Unity" })).toBeVisible();
-    await expect(actions.getByRole("button", { name: "Backups" })).toBeVisible();
+    await expect(actions.getByRole("button", { name: "Backups" })).toHaveCount(0);
     await actions.getByRole("button", { name: /More actions for/ }).click();
     await expect(page.getByRole("menuitem", { name: "Open Project Directory" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "Copy Project" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Backups" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "Use Automatic Unity Editor" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "Remove from list" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "Delete Project Directory…" })).toBeVisible();
 
     await page.getByRole("menuitem", { name: "Use Automatic Unity Editor" }).click();
     await expect(page.locator(".project-workspace-feedback")).toContainText("Unity editor selection returned to Automatic");
+});
+
+test("Native desktop width keeps the v3-reference package toolbar on one compact row", async ({ page }) => {
+    await page.setViewportSize({ width: 1180, height: 760 });
+    await openHarness(page, "ready");
+
+    const toolbar = page.locator(".package-workspace-toolbar");
+    const toolbarBox = await toolbar.boundingBox();
+    const searchBox = await toolbar.locator(".package-workspace-search").boundingBox();
+    const filterBox = await toolbar.getByRole("button", { name: "Package filters" }).boundingBox();
+    expect(toolbarBox?.height).toBeLessThanOrEqual(70);
+    const searchCenter = (searchBox?.y ?? 0) + (searchBox?.height ?? 0) / 2;
+    const filterCenter = (filterBox?.y ?? 0) + (filterBox?.height ?? 0) / 2;
+    expect(Math.abs(searchCenter - filterCenter)).toBeLessThanOrEqual(2);
+
+    await toolbar.getByRole("button", { name: "Package filters" }).click();
+    await expect(page.locator("md-menu-item").filter({ hasText: "All packages" })).toHaveJSProperty("selected", true);
+    await expect(page.locator("md-menu-item").filter({ hasText: "Source: All sources" })).toHaveJSProperty("selected", true);
+});
+
+test("Resolve remains available without becoming a permanent toolbar button", async ({ page }) => {
+    await openHarness(page, "ready");
+
+    await expect(page.getByRole("button", { name: "Resolve", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "More package actions" }).click();
+    await page.getByRole("menuitem", { name: "Resolve Dependencies…" }).click();
+    await expect(page.getByRole("dialog", { name: "Apply package changes?" })).toBeVisible();
 });
 
 test("Project workspace keeps permanent deletion behind its destructive review", async ({ page }) => {

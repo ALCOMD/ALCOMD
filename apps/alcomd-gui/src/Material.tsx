@@ -129,11 +129,12 @@ export function Menu({ anchorRef, children, className, onClose, open }: { anchor
     } as MaterialProps, children);
 }
 
-export function MenuItem({ className, disabled, label, onClick, title }: { className?: string; disabled?: boolean; label: string; onClick?(): void; title?: string }) {
+export function MenuItem({ className, disabled, label, onClick, selected, title }: { className?: string; disabled?: boolean; label: string; onClick?(): void; selected?: boolean; title?: string }) {
     return createElement(materialElements.menuItem, {
         className,
         disabled,
         onClick,
+        selected,
         title,
         type: "button"
     } as MaterialProps, label);

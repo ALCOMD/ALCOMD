@@ -1,10 +1,10 @@
 # 项目状态
 
-最后更新：2026-08-30
+最后更新：2026-08-31
 
 ## 当前阶段
 
-`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。M7 Project / Package Functional Closure P0-P8 均已通过远端技术验收；P8 sealed functional HEAD d314b155374d31a8d7c0449c62efdea5dd745e72 的 Hosted CI run 33305438539 与 CodeQL run 33305438212 均通过，M7-owned completeness 为 PASS，global release completeness 仍为 BLOCKED_BY_M11。H2-A Project Workspace / Packages 本地 Visual Gate 2 候选已准备并通过本地技术门禁，尚未 push、尚未通过项目所有者视觉验收；M7 仍为 IN_PROGRESS，projects.management、packages.vpm 与 repositories.management 保持 in_progress，M8/M9 未开始。`
+`M6 已正式完成；M7 Portable UI B0-D 已通过三平台 Hosted CI。reference-driven wide Projects shell 已通过 Visual Gate 1。M7 Project / Package Functional Closure P0-P8 均已通过远端技术验收；P8 sealed functional HEAD d314b155374d31a8d7c0449c62efdea5dd745e72 的 Hosted CI run 33305438539 与 CodeQL run 33305438212 均通过，M7-owned completeness 为 PASS，global release completeness 仍为 BLOCKED_BY_M11。H2-A Project Workspace / Packages 本地 Visual Gate 2 候选已按 v3 Project Manage 层级复核：默认 Tauri 宽度的 project context 与 package toolbar 均保持单行，Backups 等 project utility 留在 overflow，package status/source 通过单一 Material filter menu 呈现；38 项 GUI Playwright、本地 build 与 repository gates 已通过。候选尚未 push、尚未通过项目所有者视觉验收；M7 仍为 IN_PROGRESS，projects.management、packages.vpm 与 repositories.management 保持 in_progress，M8/M9 未开始。`
 
 ## 已完成
 

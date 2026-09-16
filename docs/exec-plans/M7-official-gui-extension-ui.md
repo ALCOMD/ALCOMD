@@ -606,12 +606,14 @@ Activity、Diagnostics 或 Portable UI authority。
   仍为 86 个 M7-owned（33 implemented、53 conditional-disabled）和 4 个 M11 blocker，fake 为 0。项目所有者仅批准从该
   sealed HEAD 恢复 H2-A Project Workspace / Packages Visual Gate 2，旧 H2 WIP 只可作历史视觉证据，不可恢复。
 - 2026-08-30：H2-A 本地 Visual Gate 2 候选已从 sealed functional HEAD 直接完成，未恢复旧 H2 WIP。Project workspace
-  采用紧凑 project context、Unity/Open Unity/Backup 与项目 overflow；Packages 保持主视觉面积，wide toolbar 为单行、原生
-  Tauri 默认宽度最多两行，dense table 只显示 state-relevant primary action，其余动作进入 Material menu。Remove from list 与
+  采用紧凑 project context、Unity/Open Unity 与项目 overflow；Backups 等 project utility 留在 overflow。Packages 保持主视觉面积，
+  原生 Tauri 默认宽度仍为单行工具栏，status/source 筛选收进同一个 Material menu；dense table 只显示 state-relevant primary action，
+  其余动作进入 Material menu。Remove from list 与
   Delete Project Directory 已分离并保持后者的 Plan/typed confirmation/Operation 合同；bulk、source ambiguity、Plan Review 与
-  Operation progress 均留在 package workflow 上下文。官方 GUI Playwright 37 项、npm check/build、Tauri release no-bundle、
+  Operation progress 均留在 package workflow 上下文。官方 GUI Playwright 38 项、npm check/build、Tauri release build、
   xtask、metadata、baseline freeze 与 diff check 均通过；真实 Tauri Projects/workspace/menu 及 deterministic mixed/Plan/
-  Operation/source evidence 已生成。未增加 RPC、State、Permission、Capability、dependency、unsafe 或平台 API。该候选尚未
+  Operation/source evidence 已生成；v3 复核后的单行 toolbar 与 filter menu 证据也已生成。未增加 RPC、State、Permission、
+  Capability、dependency、unsafe 或平台 API。该候选尚未
   push，也不得视为 Visual Gate 2 或 M7 已通过。
 
 ## 下一停止点

@@ -16,7 +16,7 @@ test("Projects Create uses the typed Template Plan Apply Operation flow and open
     await page.locator("md-dialog[open]").getByRole("button", { name: "Create project" }).click();
 
     await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000108$/, { timeout: 5_000 });
-    await page.getByRole("button", { name: "Back", exact: true }).click();
+    await page.getByRole("button", { name: "Back to Projects", exact: true }).click();
     await expect(page.getByRole("row").filter({ hasText: "Created Project" })).toBeVisible();
 });
 
@@ -36,7 +36,7 @@ test("Projects Restore uses a managed Backup Plan Apply Operation and opens the 
     await page.locator("md-dialog[open]").getByRole("button", { name: "Restore project" }).click();
 
     await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000109$/, { timeout: 5_000 });
-    await page.getByRole("button", { name: "Back", exact: true }).click();
+    await page.getByRole("button", { name: "Back to Projects", exact: true }).click();
     await expect(page.getByRole("row").filter({ hasText: "Restored Project" })).toBeVisible();
 });
 

@@ -105,9 +105,8 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
 test("project workspace keeps package discovery and user actions in project context", async ({ page }) => {
     await openHarness(page, "/projects/00000000-0000-4000-8000-000000000101");
     await expect(page.getByRole("heading", { level: 1, name: "<private-project>" })).toBeVisible();
-    await expect(page.getByRole("heading", { level: 2, name: "Packages" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Package management" })).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Project actions" }).getByRole("button", { name: "Open Unity" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Backups" })).toBeVisible();
     const row = page.getByRole("row").filter({ hasText: "Avatar tools" });
     await expect(row).toContainText("com.example.avatar");
     await expect(row).toContainText("1.2.3");
