@@ -1,0 +1,725 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/proposals/m7-package-candidates.json",
+    "title": "M7 H2-A Project package candidate evidence (unapproved proposal)",
+    "x-alcomd-publication": "proposal-only",
+    "x-alcomd-approval": "pending",
+    "x-alcomd-active-rpc-modified": false,
+    "x-alcomd-method": "packages.queryProjectCandidates",
+    "x-alcomd-capability": "packages.candidates.v1",
+    "x-alcomd-method-permissions": {
+        "packages.queryProjectCandidates": [
+            "projects.read",
+            "repositories.read",
+            "packages.read",
+            "settings.read"
+        ]
+    },
+    "x-alcomd-new-errors": [
+        "package_candidate_evidence_stale",
+        "package_candidate_limit_exceeded"
+    ],
+    "$defs": {
+        "SourceSelector": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "const": "repository"
+                        },
+                        "repository_id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "repository_id"
+                    ],
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "const": "user_package"
+                        },
+                        "user_package_id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "user_package_id"
+                    ],
+                    "additionalProperties": false
+                }
+            ]
+        },
+        "Reasons": {
+            "type": "array",
+            "items": {
+                "enum": [
+                    "no_visible_candidate",
+                    "source_unavailable",
+                    "all_yanked",
+                    "prerelease_excluded",
+                    "stable_unavailable",
+                    "unity_incompatible",
+                    "project_unity_unknown",
+                    "catalog_incomplete",
+                    "metadata_invalid",
+                    "classification_unknown",
+                    "installed_evidence_unknown",
+                    "legacy_metadata",
+                    "source_ambiguous"
+                ]
+            },
+            "minItems": 1,
+            "maxItems": 13,
+            "uniqueItems": true
+        },
+        "Cursor": {
+            "type": "object",
+            "properties": {
+                "snapshotFingerprint": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                },
+                "queryFingerprint": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                },
+                "offset": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100000
+                }
+            },
+            "required": [
+                "snapshotFingerprint",
+                "queryFingerprint",
+                "offset"
+            ],
+            "additionalProperties": false
+        },
+        "SummaryView": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "const": "summary"
+                },
+                "packageIds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                    },
+                    "minItems": 1,
+                    "maxItems": 256,
+                    "uniqueItems": true
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "packageId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                            },
+                            "source": {
+                                "$ref": "#/$defs/SourceSelector"
+                            }
+                        },
+                        "required": [
+                            "packageId",
+                            "source"
+                        ],
+                        "additionalProperties": false
+                    },
+                    "minItems": 0,
+                    "maxItems": 256
+                }
+            },
+            "required": [
+                "kind"
+            ],
+            "additionalProperties": false
+        },
+        "VersionsView": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "const": "versions"
+                },
+                "packageId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "source": {
+                    "$ref": "#/$defs/SourceSelector"
+                }
+            },
+            "required": [
+                "kind",
+                "packageId"
+            ],
+            "additionalProperties": false
+        },
+        "Request": {
+            "type": "object",
+            "properties": {
+                "projectId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 18446744073709551615
+                },
+                "view": {
+                    "oneOf": [
+                        {
+                            "$ref": "#/$defs/SummaryView"
+                        },
+                        {
+                            "$ref": "#/$defs/VersionsView"
+                        }
+                    ]
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 128,
+                    "default": 64
+                },
+                "expectedSnapshot": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                },
+                "cursor": {
+                    "$ref": "#/$defs/Cursor"
+                }
+            },
+            "required": [
+                "projectId",
+                "expectedRevision",
+                "view"
+            ],
+            "additionalProperties": false
+        },
+        "Installed": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "const": "absent"
+                        }
+                    },
+                    "required": [
+                        "kind"
+                    ],
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "const": "locked"
+                        },
+                        "version": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 256
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "version"
+                    ],
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "const": "unknown"
+                        },
+                        "reason": {
+                            "const": "installed_evidence_unknown"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "reason"
+                    ],
+                    "additionalProperties": false
+                }
+            ]
+        },
+        "Candidate": {
+            "type": "object",
+            "properties": {
+                "version": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                },
+                "source": {
+                    "$ref": "#/$defs/SourceSelector"
+                },
+                "sourceRevision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 18446744073709551615
+                },
+                "classification": {
+                    "enum": [
+                        "stable",
+                        "prerelease",
+                        "unknown"
+                    ]
+                },
+                "relation": {
+                    "enum": [
+                        "not_installed",
+                        "newer",
+                        "same_precedence",
+                        "older",
+                        "unknown"
+                    ]
+                },
+                "unity": {
+                    "enum": [
+                        "not_required",
+                        "compatible",
+                        "incompatible",
+                        "unknown"
+                    ]
+                },
+                "eligibility": {
+                    "enum": [
+                        "eligible",
+                        "blocked",
+                        "unknown"
+                    ]
+                },
+                "reasons": {
+                    "type": "array",
+                    "items": {
+                        "enum": [
+                            "no_visible_candidate",
+                            "source_unavailable",
+                            "all_yanked",
+                            "prerelease_excluded",
+                            "stable_unavailable",
+                            "unity_incompatible",
+                            "project_unity_unknown",
+                            "catalog_incomplete",
+                            "metadata_invalid",
+                            "classification_unknown",
+                            "installed_evidence_unknown",
+                            "legacy_metadata",
+                            "source_ambiguous"
+                        ]
+                    },
+                    "minItems": 0,
+                    "maxItems": 13,
+                    "uniqueItems": true
+                }
+            },
+            "required": [
+                "version",
+                "source",
+                "sourceRevision",
+                "classification",
+                "relation",
+                "unity",
+                "eligibility",
+                "reasons"
+            ],
+            "additionalProperties": false,
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "eligibility": {
+                                "const": "eligible"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "classification": {
+                                "enum": [
+                                    "stable",
+                                    "prerelease"
+                                ]
+                            },
+                            "unity": {
+                                "enum": [
+                                    "not_required",
+                                    "compatible"
+                                ]
+                            },
+                            "reasons": {
+                                "maxItems": 0
+                            }
+                        }
+                    },
+                    "else": {
+                        "properties": {
+                            "reasons": {
+                                "minItems": 1
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        "Choice": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "const": "candidate"
+                        },
+                        "candidate": {
+                            "$ref": "#/$defs/Candidate"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "candidate"
+                    ],
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "const": "none"
+                        },
+                        "reasons": {
+                            "$ref": "#/$defs/Reasons"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "reasons"
+                    ],
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "const": "unknown"
+                        },
+                        "reasons": {
+                            "$ref": "#/$defs/Reasons"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "reasons"
+                    ],
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "const": "ambiguous"
+                        },
+                        "reason": {
+                            "const": "source_ambiguous"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "reason"
+                    ],
+                    "additionalProperties": false
+                }
+            ]
+        },
+        "Update": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "const": "target"
+                        },
+                        "candidate": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/$defs/Candidate"
+                                },
+                                {
+                                    "properties": {
+                                        "eligibility": {
+                                            "const": "eligible"
+                                        },
+                                        "relation": {
+                                            "const": "newer"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "candidate"
+                    ],
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "const": "no_update"
+                        },
+                        "reason": {
+                            "enum": [
+                                "same_precedence",
+                                "installed_newer",
+                                "not_installed"
+                            ]
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "reason"
+                    ],
+                    "additionalProperties": false
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "const": "unavailable"
+                        },
+                        "reasons": {
+                            "$ref": "#/$defs/Reasons"
+                        }
+                    },
+                    "required": [
+                        "kind",
+                        "reasons"
+                    ],
+                    "additionalProperties": false
+                }
+            ]
+        },
+        "Summary": {
+            "type": "object",
+            "properties": {
+                "packageId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "direct": {
+                    "type": "boolean"
+                },
+                "installed": {
+                    "$ref": "#/$defs/Installed"
+                },
+                "latest": {
+                    "$ref": "#/$defs/Choice"
+                },
+                "latestStable": {
+                    "$ref": "#/$defs/Choice"
+                },
+                "projectLatest": {
+                    "$ref": "#/$defs/Choice"
+                },
+                "projectLatestStable": {
+                    "$ref": "#/$defs/Choice"
+                },
+                "update": {
+                    "$ref": "#/$defs/Update"
+                },
+                "stableUpdate": {
+                    "$ref": "#/$defs/Update"
+                }
+            },
+            "required": [
+                "packageId",
+                "direct",
+                "installed",
+                "latest",
+                "latestStable",
+                "projectLatest",
+                "projectLatestStable",
+                "update",
+                "stableUpdate"
+            ],
+            "additionalProperties": false
+        },
+        "Snapshot": {
+            "type": "object",
+            "properties": {
+                "fingerprint": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                },
+                "projectRevision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 18446744073709551615
+                },
+                "configRevision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 18446744073709551615
+                }
+            },
+            "required": [
+                "fingerprint",
+                "projectRevision",
+                "configRevision"
+            ],
+            "additionalProperties": false
+        },
+        "SummaryPage": {
+            "type": "object",
+            "properties": {
+                "projectId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "snapshot": {
+                    "$ref": "#/$defs/Snapshot"
+                },
+                "showPrerelease": {
+                    "type": "boolean"
+                },
+                "catalogComplete": {
+                    "type": "boolean"
+                },
+                "nextCursor": {
+                    "oneOf": [
+                        {
+                            "type": "null"
+                        },
+                        {
+                            "$ref": "#/$defs/Cursor"
+                        }
+                    ]
+                },
+                "view": {
+                    "const": "summary"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/Summary"
+                    },
+                    "minItems": 0,
+                    "maxItems": 128
+                }
+            },
+            "required": [
+                "projectId",
+                "snapshot",
+                "showPrerelease",
+                "catalogComplete",
+                "nextCursor",
+                "view",
+                "items"
+            ],
+            "additionalProperties": false
+        },
+        "VersionsPage": {
+            "type": "object",
+            "properties": {
+                "projectId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "snapshot": {
+                    "$ref": "#/$defs/Snapshot"
+                },
+                "showPrerelease": {
+                    "type": "boolean"
+                },
+                "catalogComplete": {
+                    "type": "boolean"
+                },
+                "nextCursor": {
+                    "oneOf": [
+                        {
+                            "type": "null"
+                        },
+                        {
+                            "$ref": "#/$defs/Cursor"
+                        }
+                    ]
+                },
+                "view": {
+                    "const": "versions"
+                },
+                "packageId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/Candidate"
+                    },
+                    "minItems": 0,
+                    "maxItems": 128
+                }
+            },
+            "required": [
+                "projectId",
+                "snapshot",
+                "showPrerelease",
+                "catalogComplete",
+                "nextCursor",
+                "view",
+                "packageId",
+                "items"
+            ],
+            "additionalProperties": false
+        },
+        "Result": {
+            "oneOf": [
+                {
+                    "$ref": "#/$defs/SummaryPage"
+                },
+                {
+                    "$ref": "#/$defs/VersionsPage"
+                }
+            ]
+        }
+    },
+    "oneOf": [
+        {
+            "$ref": "#/$defs/Request"
+        },
+        {
+            "$ref": "#/$defs/Result"
+        }
+    ]
+}

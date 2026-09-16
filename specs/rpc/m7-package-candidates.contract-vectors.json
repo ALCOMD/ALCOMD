@@ -1,0 +1,1396 @@
+{
+    "status": "proposal-only-not-runtime-evidence",
+    "schema": "m7-package-candidates.proposal.schema.json",
+    "shapeCases": [
+        {
+            "id": "summary-request",
+            "definition": "Request",
+            "valid": true,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "expectedRevision": 7,
+                "view": {
+                    "kind": "summary",
+                    "packageIds": [
+                        "com.example.package"
+                    ]
+                },
+                "limit": 64
+            }
+        },
+        {
+            "id": "versions-request",
+            "definition": "Request",
+            "valid": true,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "expectedRevision": 7,
+                "view": {
+                    "kind": "versions",
+                    "packageId": "com.example.package",
+                    "source": {
+                        "kind": "repository",
+                        "repository_id": "22222222-2222-4222-8222-222222222222"
+                    }
+                },
+                "limit": 64,
+                "expectedSnapshot": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+        },
+        {
+            "id": "summary-target",
+            "definition": "Result",
+            "valid": true,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "snapshot": {
+                    "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "projectRevision": 7,
+                    "configRevision": 3
+                },
+                "showPrerelease": false,
+                "catalogComplete": true,
+                "nextCursor": null,
+                "view": "summary",
+                "items": [
+                    {
+                        "packageId": "com.example.package",
+                        "direct": true,
+                        "installed": {
+                            "kind": "locked",
+                            "version": "1.9.0"
+                        },
+                        "latest": {
+                            "kind": "candidate",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
+                        "latestStable": {
+                            "kind": "candidate",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
+                        "projectLatest": {
+                            "kind": "candidate",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
+                        "projectLatestStable": {
+                            "kind": "candidate",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
+                        "update": {
+                            "kind": "target",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
+                        "stableUpdate": {
+                            "kind": "target",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "versions-preserve-source",
+            "definition": "Result",
+            "valid": true,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "snapshot": {
+                    "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "projectRevision": 7,
+                    "configRevision": 3
+                },
+                "showPrerelease": false,
+                "catalogComplete": true,
+                "nextCursor": null,
+                "view": "versions",
+                "packageId": "com.example.package",
+                "items": [
+                    {
+                        "version": "1.10.0",
+                        "source": {
+                            "kind": "repository",
+                            "repository_id": "22222222-2222-4222-8222-222222222222"
+                        },
+                        "sourceRevision": 12,
+                        "classification": "stable",
+                        "relation": "newer",
+                        "unity": "compatible",
+                        "eligibility": "eligible",
+                        "reasons": []
+                    },
+                    {
+                        "version": "1.10.0",
+                        "source": {
+                            "kind": "user_package",
+                            "user_package_id": "33333333-3333-4333-8333-333333333333"
+                        },
+                        "sourceRevision": 4,
+                        "classification": "stable",
+                        "relation": "newer",
+                        "unity": "compatible",
+                        "eligibility": "eligible",
+                        "reasons": []
+                    }
+                ]
+            }
+        },
+        {
+            "id": "unknown-project-unity",
+            "definition": "Result",
+            "valid": true,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "snapshot": {
+                    "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "projectRevision": 7,
+                    "configRevision": 3
+                },
+                "showPrerelease": false,
+                "catalogComplete": true,
+                "nextCursor": null,
+                "view": "summary",
+                "items": [
+                    {
+                        "packageId": "com.example.package",
+                        "direct": true,
+                        "installed": {
+                            "kind": "locked",
+                            "version": "1.9.0"
+                        },
+                        "latest": {
+                            "kind": "candidate",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
+                        "latestStable": {
+                            "kind": "candidate",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
+                        "projectLatest": {
+                            "kind": "unknown",
+                            "reasons": [
+                                "project_unity_unknown"
+                            ]
+                        },
+                        "projectLatestStable": {
+                            "kind": "unknown",
+                            "reasons": [
+                                "project_unity_unknown"
+                            ]
+                        },
+                        "update": {
+                            "kind": "unavailable",
+                            "reasons": [
+                                "project_unity_unknown"
+                            ]
+                        },
+                        "stableUpdate": {
+                            "kind": "unavailable",
+                            "reasons": [
+                                "project_unity_unknown"
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "ambiguity",
+            "definition": "Result",
+            "valid": true,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "snapshot": {
+                    "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "projectRevision": 7,
+                    "configRevision": 3
+                },
+                "showPrerelease": false,
+                "catalogComplete": true,
+                "nextCursor": null,
+                "view": "summary",
+                "items": [
+                    {
+                        "packageId": "com.example.package",
+                        "direct": true,
+                        "installed": {
+                            "kind": "locked",
+                            "version": "1.9.0"
+                        },
+                        "latest": {
+                            "kind": "ambiguous",
+                            "reason": "source_ambiguous"
+                        },
+                        "latestStable": {
+                            "kind": "ambiguous",
+                            "reason": "source_ambiguous"
+                        },
+                        "projectLatest": {
+                            "kind": "ambiguous",
+                            "reason": "source_ambiguous"
+                        },
+                        "projectLatestStable": {
+                            "kind": "ambiguous",
+                            "reason": "source_ambiguous"
+                        },
+                        "update": {
+                            "kind": "unavailable",
+                            "reasons": [
+                                "source_ambiguous"
+                            ]
+                        },
+                        "stableUpdate": {
+                            "kind": "unavailable",
+                            "reasons": [
+                                "source_ambiguous"
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "cursor-request",
+            "definition": "Request",
+            "valid": true,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "expectedRevision": 7,
+                "view": {
+                    "kind": "summary",
+                    "packageIds": [
+                        "com.example.package"
+                    ]
+                },
+                "limit": 64,
+                "cursor": {
+                    "snapshotFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "queryFingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "offset": 64
+                },
+                "expectedSnapshot": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+        },
+        {
+            "id": "extra-request-field",
+            "definition": "Request",
+            "valid": false,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "expectedRevision": 7,
+                "view": {
+                    "kind": "summary",
+                    "packageIds": [
+                        "com.example.package"
+                    ]
+                },
+                "limit": 64,
+                "refresh": true
+            }
+        },
+        {
+            "id": "zero-limit",
+            "definition": "Request",
+            "valid": false,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "expectedRevision": 7,
+                "view": {
+                    "kind": "summary",
+                    "packageIds": [
+                        "com.example.package"
+                    ]
+                },
+                "limit": 0
+            }
+        },
+        {
+            "id": "over-page-limit",
+            "definition": "Request",
+            "valid": false,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "expectedRevision": 7,
+                "view": {
+                    "kind": "summary",
+                    "packageIds": [
+                        "com.example.package"
+                    ]
+                },
+                "limit": 129
+            }
+        },
+        {
+            "id": "empty-ids",
+            "definition": "Request",
+            "valid": false,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "expectedRevision": 7,
+                "view": {
+                    "kind": "summary",
+                    "packageIds": []
+                },
+                "limit": 64
+            }
+        },
+        {
+            "id": "duplicate-ids",
+            "definition": "Request",
+            "valid": false,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "expectedRevision": 7,
+                "view": {
+                    "kind": "summary",
+                    "packageIds": [
+                        "com.x",
+                        "com.x"
+                    ]
+                },
+                "limit": 64
+            }
+        },
+        {
+            "id": "over-id-limit",
+            "definition": "Request",
+            "valid": false,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "expectedRevision": 7,
+                "view": {
+                    "kind": "summary",
+                    "packageIds": [
+                        "com.x.p0",
+                        "com.x.p1",
+                        "com.x.p2",
+                        "com.x.p3",
+                        "com.x.p4",
+                        "com.x.p5",
+                        "com.x.p6",
+                        "com.x.p7",
+                        "com.x.p8",
+                        "com.x.p9",
+                        "com.x.p10",
+                        "com.x.p11",
+                        "com.x.p12",
+                        "com.x.p13",
+                        "com.x.p14",
+                        "com.x.p15",
+                        "com.x.p16",
+                        "com.x.p17",
+                        "com.x.p18",
+                        "com.x.p19",
+                        "com.x.p20",
+                        "com.x.p21",
+                        "com.x.p22",
+                        "com.x.p23",
+                        "com.x.p24",
+                        "com.x.p25",
+                        "com.x.p26",
+                        "com.x.p27",
+                        "com.x.p28",
+                        "com.x.p29",
+                        "com.x.p30",
+                        "com.x.p31",
+                        "com.x.p32",
+                        "com.x.p33",
+                        "com.x.p34",
+                        "com.x.p35",
+                        "com.x.p36",
+                        "com.x.p37",
+                        "com.x.p38",
+                        "com.x.p39",
+                        "com.x.p40",
+                        "com.x.p41",
+                        "com.x.p42",
+                        "com.x.p43",
+                        "com.x.p44",
+                        "com.x.p45",
+                        "com.x.p46",
+                        "com.x.p47",
+                        "com.x.p48",
+                        "com.x.p49",
+                        "com.x.p50",
+                        "com.x.p51",
+                        "com.x.p52",
+                        "com.x.p53",
+                        "com.x.p54",
+                        "com.x.p55",
+                        "com.x.p56",
+                        "com.x.p57",
+                        "com.x.p58",
+                        "com.x.p59",
+                        "com.x.p60",
+                        "com.x.p61",
+                        "com.x.p62",
+                        "com.x.p63",
+                        "com.x.p64",
+                        "com.x.p65",
+                        "com.x.p66",
+                        "com.x.p67",
+                        "com.x.p68",
+                        "com.x.p69",
+                        "com.x.p70",
+                        "com.x.p71",
+                        "com.x.p72",
+                        "com.x.p73",
+                        "com.x.p74",
+                        "com.x.p75",
+                        "com.x.p76",
+                        "com.x.p77",
+                        "com.x.p78",
+                        "com.x.p79",
+                        "com.x.p80",
+                        "com.x.p81",
+                        "com.x.p82",
+                        "com.x.p83",
+                        "com.x.p84",
+                        "com.x.p85",
+                        "com.x.p86",
+                        "com.x.p87",
+                        "com.x.p88",
+                        "com.x.p89",
+                        "com.x.p90",
+                        "com.x.p91",
+                        "com.x.p92",
+                        "com.x.p93",
+                        "com.x.p94",
+                        "com.x.p95",
+                        "com.x.p96",
+                        "com.x.p97",
+                        "com.x.p98",
+                        "com.x.p99",
+                        "com.x.p100",
+                        "com.x.p101",
+                        "com.x.p102",
+                        "com.x.p103",
+                        "com.x.p104",
+                        "com.x.p105",
+                        "com.x.p106",
+                        "com.x.p107",
+                        "com.x.p108",
+                        "com.x.p109",
+                        "com.x.p110",
+                        "com.x.p111",
+                        "com.x.p112",
+                        "com.x.p113",
+                        "com.x.p114",
+                        "com.x.p115",
+                        "com.x.p116",
+                        "com.x.p117",
+                        "com.x.p118",
+                        "com.x.p119",
+                        "com.x.p120",
+                        "com.x.p121",
+                        "com.x.p122",
+                        "com.x.p123",
+                        "com.x.p124",
+                        "com.x.p125",
+                        "com.x.p126",
+                        "com.x.p127",
+                        "com.x.p128",
+                        "com.x.p129",
+                        "com.x.p130",
+                        "com.x.p131",
+                        "com.x.p132",
+                        "com.x.p133",
+                        "com.x.p134",
+                        "com.x.p135",
+                        "com.x.p136",
+                        "com.x.p137",
+                        "com.x.p138",
+                        "com.x.p139",
+                        "com.x.p140",
+                        "com.x.p141",
+                        "com.x.p142",
+                        "com.x.p143",
+                        "com.x.p144",
+                        "com.x.p145",
+                        "com.x.p146",
+                        "com.x.p147",
+                        "com.x.p148",
+                        "com.x.p149",
+                        "com.x.p150",
+                        "com.x.p151",
+                        "com.x.p152",
+                        "com.x.p153",
+                        "com.x.p154",
+                        "com.x.p155",
+                        "com.x.p156",
+                        "com.x.p157",
+                        "com.x.p158",
+                        "com.x.p159",
+                        "com.x.p160",
+                        "com.x.p161",
+                        "com.x.p162",
+                        "com.x.p163",
+                        "com.x.p164",
+                        "com.x.p165",
+                        "com.x.p166",
+                        "com.x.p167",
+                        "com.x.p168",
+                        "com.x.p169",
+                        "com.x.p170",
+                        "com.x.p171",
+                        "com.x.p172",
+                        "com.x.p173",
+                        "com.x.p174",
+                        "com.x.p175",
+                        "com.x.p176",
+                        "com.x.p177",
+                        "com.x.p178",
+                        "com.x.p179",
+                        "com.x.p180",
+                        "com.x.p181",
+                        "com.x.p182",
+                        "com.x.p183",
+                        "com.x.p184",
+                        "com.x.p185",
+                        "com.x.p186",
+                        "com.x.p187",
+                        "com.x.p188",
+                        "com.x.p189",
+                        "com.x.p190",
+                        "com.x.p191",
+                        "com.x.p192",
+                        "com.x.p193",
+                        "com.x.p194",
+                        "com.x.p195",
+                        "com.x.p196",
+                        "com.x.p197",
+                        "com.x.p198",
+                        "com.x.p199",
+                        "com.x.p200",
+                        "com.x.p201",
+                        "com.x.p202",
+                        "com.x.p203",
+                        "com.x.p204",
+                        "com.x.p205",
+                        "com.x.p206",
+                        "com.x.p207",
+                        "com.x.p208",
+                        "com.x.p209",
+                        "com.x.p210",
+                        "com.x.p211",
+                        "com.x.p212",
+                        "com.x.p213",
+                        "com.x.p214",
+                        "com.x.p215",
+                        "com.x.p216",
+                        "com.x.p217",
+                        "com.x.p218",
+                        "com.x.p219",
+                        "com.x.p220",
+                        "com.x.p221",
+                        "com.x.p222",
+                        "com.x.p223",
+                        "com.x.p224",
+                        "com.x.p225",
+                        "com.x.p226",
+                        "com.x.p227",
+                        "com.x.p228",
+                        "com.x.p229",
+                        "com.x.p230",
+                        "com.x.p231",
+                        "com.x.p232",
+                        "com.x.p233",
+                        "com.x.p234",
+                        "com.x.p235",
+                        "com.x.p236",
+                        "com.x.p237",
+                        "com.x.p238",
+                        "com.x.p239",
+                        "com.x.p240",
+                        "com.x.p241",
+                        "com.x.p242",
+                        "com.x.p243",
+                        "com.x.p244",
+                        "com.x.p245",
+                        "com.x.p246",
+                        "com.x.p247",
+                        "com.x.p248",
+                        "com.x.p249",
+                        "com.x.p250",
+                        "com.x.p251",
+                        "com.x.p252",
+                        "com.x.p253",
+                        "com.x.p254",
+                        "com.x.p255",
+                        "com.x.p256"
+                    ]
+                },
+                "limit": 64
+            }
+        },
+        {
+            "id": "path-source",
+            "definition": "Request",
+            "valid": false,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "expectedRevision": 7,
+                "view": {
+                    "kind": "versions",
+                    "packageId": "com.x",
+                    "source": {
+                        "kind": "user_package",
+                        "path": "C:/private"
+                    }
+                },
+                "limit": 64
+            }
+        },
+        {
+            "id": "negative-cursor",
+            "definition": "Request",
+            "valid": false,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "expectedRevision": 7,
+                "view": {
+                    "kind": "summary",
+                    "packageIds": [
+                        "com.example.package"
+                    ]
+                },
+                "limit": 64,
+                "cursor": {
+                    "snapshotFingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "queryFingerprint": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "offset": -1
+                }
+            }
+        },
+        {
+            "id": "missing-revision",
+            "definition": "Request",
+            "valid": false,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "view": {
+                    "kind": "summary",
+                    "packageIds": [
+                        "com.example.package"
+                    ]
+                },
+                "limit": 64
+            }
+        },
+        {
+            "id": "same-is-not-update",
+            "definition": "Result",
+            "valid": false,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "snapshot": {
+                    "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "projectRevision": 7,
+                    "configRevision": 3
+                },
+                "showPrerelease": false,
+                "catalogComplete": true,
+                "nextCursor": null,
+                "view": "summary",
+                "items": [
+                    {
+                        "packageId": "com.example.package",
+                        "direct": true,
+                        "installed": {
+                            "kind": "locked",
+                            "version": "1.9.0"
+                        },
+                        "latest": {
+                            "kind": "candidate",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
+                        "latestStable": {
+                            "kind": "candidate",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
+                        "projectLatest": {
+                            "kind": "candidate",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
+                        "projectLatestStable": {
+                            "kind": "candidate",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
+                        "update": {
+                            "kind": "target",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "same_precedence",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
+                        "stableUpdate": {
+                            "kind": "target",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "classification-required",
+            "definition": "Result",
+            "valid": false,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "snapshot": {
+                    "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "projectRevision": 7,
+                    "configRevision": 3
+                },
+                "showPrerelease": false,
+                "catalogComplete": true,
+                "nextCursor": null,
+                "view": "versions",
+                "packageId": "com.example.package",
+                "items": [
+                    {
+                        "version": "1.10.0",
+                        "source": {
+                            "kind": "repository",
+                            "repository_id": "22222222-2222-4222-8222-222222222222"
+                        },
+                        "sourceRevision": 12,
+                        "relation": "newer",
+                        "unity": "compatible",
+                        "eligibility": "eligible",
+                        "reasons": []
+                    },
+                    {
+                        "version": "1.10.0",
+                        "source": {
+                            "kind": "user_package",
+                            "user_package_id": "33333333-3333-4333-8333-333333333333"
+                        },
+                        "sourceRevision": 4,
+                        "classification": "stable",
+                        "relation": "newer",
+                        "unity": "compatible",
+                        "eligibility": "eligible",
+                        "reasons": []
+                    }
+                ]
+            }
+        },
+        {
+            "id": "unknown-not-eligible",
+            "definition": "Result",
+            "valid": false,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "snapshot": {
+                    "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "projectRevision": 7,
+                    "configRevision": 3
+                },
+                "showPrerelease": false,
+                "catalogComplete": true,
+                "nextCursor": null,
+                "view": "versions",
+                "packageId": "com.example.package",
+                "items": [
+                    {
+                        "version": "1.10.0",
+                        "source": {
+                            "kind": "repository",
+                            "repository_id": "22222222-2222-4222-8222-222222222222"
+                        },
+                        "sourceRevision": 12,
+                        "classification": "unknown",
+                        "relation": "newer",
+                        "unity": "compatible",
+                        "eligibility": "eligible",
+                        "reasons": []
+                    },
+                    {
+                        "version": "1.10.0",
+                        "source": {
+                            "kind": "user_package",
+                            "user_package_id": "33333333-3333-4333-8333-333333333333"
+                        },
+                        "sourceRevision": 4,
+                        "classification": "stable",
+                        "relation": "newer",
+                        "unity": "compatible",
+                        "eligibility": "eligible",
+                        "reasons": []
+                    }
+                ]
+            }
+        },
+        {
+            "id": "incompatible-not-eligible",
+            "definition": "Result",
+            "valid": false,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "snapshot": {
+                    "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "projectRevision": 7,
+                    "configRevision": 3
+                },
+                "showPrerelease": false,
+                "catalogComplete": true,
+                "nextCursor": null,
+                "view": "versions",
+                "packageId": "com.example.package",
+                "items": [
+                    {
+                        "version": "1.10.0",
+                        "source": {
+                            "kind": "repository",
+                            "repository_id": "22222222-2222-4222-8222-222222222222"
+                        },
+                        "sourceRevision": 12,
+                        "classification": "stable",
+                        "relation": "newer",
+                        "unity": "incompatible",
+                        "eligibility": "eligible",
+                        "reasons": []
+                    },
+                    {
+                        "version": "1.10.0",
+                        "source": {
+                            "kind": "user_package",
+                            "user_package_id": "33333333-3333-4333-8333-333333333333"
+                        },
+                        "sourceRevision": 4,
+                        "classification": "stable",
+                        "relation": "newer",
+                        "unity": "compatible",
+                        "eligibility": "eligible",
+                        "reasons": []
+                    }
+                ]
+            }
+        },
+        {
+            "id": "closed-page",
+            "definition": "Result",
+            "valid": false,
+            "value": {
+                "projectId": "11111111-1111-4111-8111-111111111111",
+                "snapshot": {
+                    "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "projectRevision": 7,
+                    "configRevision": 3
+                },
+                "showPrerelease": false,
+                "catalogComplete": true,
+                "nextCursor": null,
+                "view": "summary",
+                "items": [
+                    {
+                        "packageId": "com.example.package",
+                        "direct": true,
+                        "installed": {
+                            "kind": "locked",
+                            "version": "1.9.0"
+                        },
+                        "latest": {
+                            "kind": "candidate",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
+                        "latestStable": {
+                            "kind": "candidate",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
+                        "projectLatest": {
+                            "kind": "candidate",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
+                        "projectLatestStable": {
+                            "kind": "candidate",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
+                        "update": {
+                            "kind": "target",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        },
+                        "stableUpdate": {
+                            "kind": "target",
+                            "candidate": {
+                                "version": "1.10.0",
+                                "source": {
+                                    "kind": "repository",
+                                    "repository_id": "22222222-2222-4222-8222-222222222222"
+                                },
+                                "sourceRevision": 12,
+                                "classification": "stable",
+                                "relation": "newer",
+                                "unity": "compatible",
+                                "eligibility": "eligible",
+                                "reasons": []
+                            }
+                        }
+                    }
+                ],
+                "unboundedCatalog": []
+            }
+        }
+    ],
+    "semanticVectors": [
+        {
+            "id": "semver-order",
+            "given": "1.9.0, 1.10.0",
+            "expected": "Latest 1.10.0, never lexical maximum",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "build-only",
+            "given": "installed 1.2.3+a, candidate 1.2.3+b",
+            "expected": "same_precedence; no update",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "same-source-build",
+            "given": "same source provides 1.2.3+a and +b",
+            "expected": "ambiguous; display tie order is not selection; =version cannot pin build",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "source-priority",
+            "given": "repo priority0 has1.0; priority9 has2.0",
+            "expected": "2.0 wins; priority only within precedence group",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "equal-priority",
+            "given": "two repos same preferred priority and precedence",
+            "expected": "source_ambiguous until explicit selector",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "repo-user",
+            "given": "repo and user same precedence without selector",
+            "expected": "source_ambiguous regardless of repository priority",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "source-pin",
+            "given": "repo/user ambiguity with explicit user selector",
+            "expected": "unique user choice if no same-source ambiguity",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "stable",
+            "given": "visible 2.0-beta,1.9 stable; showPrerelease true",
+            "expected": "Latest2.0-beta; LatestStable1.9",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "prerelease-off",
+            "given": "same entries; showPrerelease false",
+            "expected": "Latest1.9; beta version retained disabled",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "missing-classification",
+            "given": "normalization cannot establish prerelease classification",
+            "expected": "classification_unknown; not stable; no automatic target",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "unity-fallback",
+            "given": "2.0 requires newer Unity,1.9 compatible,installed1.8",
+            "expected": "Latest2.0; projectLatest/update1.9",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "unity-unknown-min",
+            "given": "project Unity unknown; potentially winning candidate has minimum",
+            "expected": "project choice unknown; no positive lower fallback claim",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "unity-unknown-no-min",
+            "given": "project Unity unknown; candidate has no minimum",
+            "expected": "unity not_required; direct Unity eligibility passes",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "yanked-only",
+            "given": "all visible candidates yanked",
+            "expected": "none/all_yanked; versions disabled; no update",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "installed-unknown",
+            "given": "invalid installed version with known candidate",
+            "expected": "display maxima possible; relation unknown, unavailable update",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "uninstalled",
+            "given": "direct range exists but no lock",
+            "expected": "installed absent; never use range as version; install intent only",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "installed-newer",
+            "given": "installed2.0, candidate1.9",
+            "expected": "older; no_update installed_newer; explicit downgrade only",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "hidden",
+            "given": "hidden source has highest version",
+            "expected": "not in display choice; resolver dependency source policy unchanged",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "user-snapshot",
+            "given": "mutable enrolled folder changes without refresh",
+            "expected": "same enrolled snapshot result; zero directory reads",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "unrelated-incomplete",
+            "given": "unrelated repo resolver_ready false",
+            "expected": "local evidence retained; catalogComplete false gates non-remove; Plan still fails repository_refresh_required",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "relevant-incomplete",
+            "given": "relevant repo normalization incomplete",
+            "expected": "choice unknown/catalog_incomplete; never known empty",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "legacy-metadata",
+            "given": "otherwise usable candidate has legacy metadata",
+            "expected": "blocked legacy_metadata; existing Plan error unchanged",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "snapshot-source-add",
+            "given": "provider added/deleted between pages",
+            "expected": "package_candidate_evidence_stale; discard all accumulated pages",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "snapshot-settings",
+            "given": "Config revision changes during read",
+            "expected": "stale; no mixed config/database observation",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "cursor-query-change",
+            "given": "cursor reused for changed IDs/source/view",
+            "expected": "existing invalid params; reauthorize every page",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "limits",
+            "given": "4097 sources or100001 relevant rows or result>1MiB",
+            "expected": "package_candidate_limit_exceeded; no truncation",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "permission",
+            "given": "each proper subset of four read permissions; other principal project",
+            "expected": "existing permission denial/isolation, no evidence leakage",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "zero-effects",
+            "given": "successful/failed/cancelled/page query",
+            "expected": "no refresh/network/package downloads/cache writes/state/config/project writes/Plan/Operation/Event",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "dependency-conflict",
+            "given": "direct eligible target conflicts with dependency graph",
+            "expected": "existing Plan rejection; eligibility never proves Apply",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "stale-plan",
+            "given": "source/project changes after candidate read",
+            "expected": "existing Plan/Apply revalidation unchanged; fingerprint not execution authority",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "selection-search",
+            "given": "selected A,B; search shows only A",
+            "expected": "bulk submits A,B or disables whole action; never A alone",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "selection-mixed-invalid",
+            "given": "selected newer A and same/unknown B",
+            "expected": "whole selected upgrade disabled; no partial subset",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "bulk-remove",
+            "given": "selected direct A and transitive-only B",
+            "expected": "disabled; remove desired direct dependencies only",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "bulk-reinstall",
+            "given": "all selected have locks, some search-hidden",
+            "expected": "one planBulk with complete selected IDs/sources",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "update-all",
+            "given": "full locked set differs from visible/selected rows",
+            "expected": "all full-set targets; known exclusions listed; unknown/ambiguous blocks",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "bulk-limit",
+            "given": "257 targets",
+            "expected": "disabled, no splitting into pseudo-atomic child plans",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "no-ui-probe",
+            "given": "open list/inline menu/update count",
+            "expected": "only bounded read query; no durable plans",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "screen-reader",
+            "given": "host disabled and click guard browser PASS",
+            "expected": "not evidence of internal Material menuitem announcement",
+            "status": "planned-production-test"
+        },
+        {
+            "id": "bulk-remove-incomplete",
+            "given": "all selected IDs direct; principal catalog incomplete",
+            "expected": "existing planBulk remains blocked even when all intents remove; do not change to multiple single planRemove calls",
+            "status": "planned-production-test"
+        }
+    ]
+}
