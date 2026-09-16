@@ -403,7 +403,7 @@ fn m4_operation_and_data_schema_are_compatible_additions() {
     let hello = schema("system-hello.response");
     assert_eq!(
         hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
-        json!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
+        json!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
     );
 }
 
@@ -419,11 +419,11 @@ fn m5_unity_schema_freezes_methods_capabilities_and_honest_writer_states() {
             "unity.installations.register",
             "unity.installations.remove",
             "unity.installations.refresh",
-            "unity.projectEditor.get",
-            "unity.projectEditor.set",
-            "unity.projectEditor.selection.get",
-            "unity.projectEditor.clear",
+            "unity.projectLaunchConfig.get",
+            "unity.projectLaunchConfig.set",
+            "unity.projectLaunchConfig.clear",
             "unity.writerState",
+            "unity.launchOptions",
             "unity.launch",
             "unity.launchStatus"
         ])
@@ -456,10 +456,9 @@ fn m5_unity_schema_keeps_launch_and_management_separate() {
         .expect("M5 Unity definitions")
         .clone();
     assert_eq!(
-        definitions["projectEditorSetParams"]["required"],
+        definitions["projectUnityLaunchConfigSetParams"]["required"],
         json!([
             "projectId",
-            "installationId",
             "arguments",
             "expectedRevision",
             "idempotencyKey"
@@ -467,7 +466,12 @@ fn m5_unity_schema_keeps_launch_and_management_separate() {
     );
     assert_eq!(
         definitions["launchParams"]["required"],
-        json!(["projectId", "expectedProjectRevision", "idempotencyKey"])
+        json!([
+            "projectId",
+            "installationId",
+            "expectedProjectRevision",
+            "idempotencyKey"
+        ])
     );
     assert_eq!(
         definitions["launchState"]["enum"],
@@ -477,11 +481,11 @@ fn m5_unity_schema_keeps_launch_and_management_separate() {
 }
 
 #[test]
-fn hello_schema_accepts_the_implemented_v13_store() {
+fn hello_schema_accepts_the_implemented_v14_store() {
     let hello = schema("system-hello.response");
     assert_eq!(
         hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
-        json!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
+        json!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
     );
 }
 
@@ -511,7 +515,7 @@ fn m5_cli_and_unity_errors_are_stable_machine_codes() {
 }
 
 #[test]
-fn m7_project_preferences_are_active_compatible_additions() {
+fn m7_project_favorite_and_unity_launch_config_are_active_contracts() {
     let projects = schema("m3-project-repository");
     assert_eq!(
         projects["$defs"]["projectSnapshot"]["properties"]["favorite"]["type"],
@@ -529,22 +533,20 @@ fn m7_project_preferences_are_active_compatible_additions() {
 
     let unity = schema("m5-unity");
     assert_eq!(
-        unity["$defs"]["projectEditorSelectionState"]["required"],
-        json!([
-            "projectId",
-            "selection",
-            "arguments",
-            "revision",
-            "updatedAtMs"
-        ])
+        unity["$defs"]["projectUnityLaunchConfig"]["required"],
+        json!(["projectId", "arguments", "revision", "updatedAtMs"])
     );
     assert_eq!(
-        unity["$defs"]["projectEditorSelectionState"]["properties"]["revision"]["minimum"],
+        unity["$defs"]["projectUnityLaunchConfig"]["properties"]["revision"]["minimum"],
         0
     );
     assert_eq!(
-        unity["$defs"]["projectEditorClearParams"]["required"],
+        unity["$defs"]["projectUnityLaunchConfigClearParams"]["required"],
         json!(["projectId", "expectedRevision", "idempotencyKey"])
+    );
+    assert_eq!(
+        unity["$defs"]["launchOptionsParams"]["required"],
+        json!(["projectId", "expectedProjectRevision"])
     );
 }
 

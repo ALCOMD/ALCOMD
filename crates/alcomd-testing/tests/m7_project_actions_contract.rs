@@ -17,6 +17,9 @@ const STATE_V11_MIGRATION: &str =
 const ACTIVE_RPC: &str = include_str!("../../../specs/rpc/alcomd-rpc-v1.md");
 const ACTIVE_STORE: &str = include_str!("../../alcomd-store/src/sqlite.rs");
 const ACTIVE_PROTOCOL: &str = include_str!("../../alcomd-protocol/src/lib.rs");
+const ACTIVE_UNITY_SCHEMA: &str = include_str!("../../../specs/rpc/m5-unity.schema.json");
+const ACTIVE_UNITY_MIGRATION: &str =
+    include_str!("../../alcomd-store/migrations/0014_unity_project_version.sql");
 const ACTIVE_COPY_MIGRATION: &str =
     include_str!("../../alcomd-store/migrations/0010_project_copy.sql");
 const ACTIVE_DELETE_MIGRATION: &str =
@@ -97,7 +100,7 @@ fn implemented_project_copy_contract_is_bounded_and_active() {
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_PLAN_COPY"));
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_APPLY_COPY"));
     assert!(ACTIVE_PROTOCOL.contains("CAPABILITY_PROJECTS_COPY_V1"));
-    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 13;"));
+    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 14;"));
 }
 
 #[test]
@@ -280,7 +283,7 @@ fn visible_action_gate_separates_m7_completeness_from_m11_release_blockers() {
     assert!(CURRENT_PROJECTS_UI.contains(
         "label={selectingCopyTarget ? \"Choosing Copy Destination…\" : \"Copy Project\"}"
     ));
-    for implemented in ["favorite", "clear-unity-preference", "remove-directory"] {
+    for implemented in ["favorite", "remove-directory"] {
         assert!(
             gate["contractFirstProposals"]
                 .as_array()
@@ -291,6 +294,50 @@ fn visible_action_gate_separates_m7_completeness_from_m11_release_blockers() {
                         && entry["status"] == "implemented-remote-green"
                         && entry["productionImplemented"] == true
                 })
+        );
+    }
+    assert!(
+        gate["contractFirstProposals"]
+            .as_array()
+            .expect("contract-first proposals")
+            .iter()
+            .any(|entry| {
+                entry["id"] == "unity-product-model"
+                    && entry["status"] == "implemented-local-candidate"
+                    && entry["productionImplemented"] == true
+            })
+    );
+    let unity = &gate["unityProductModel"];
+    assert_eq!(unity["automaticEditorSelection"], false);
+    assert_eq!(unity["preferredEditorSelection"], false);
+    assert_eq!(unity["clearEditorPreference"], false);
+    assert_eq!(unity["projectUnitySelector"], "migration");
+    assert_eq!(unity["openUnity"], "canonical-exact-match");
+    assert_eq!(
+        unity["exactMatchCardinality"],
+        json!([
+            "zero-migrate-or-cancel",
+            "one-direct",
+            "many-one-shot-chooser"
+        ])
+    );
+    assert_eq!(unity["installationChoicePersistence"], "none");
+    assert_eq!(unity["migrationAuthority"], "plan-apply-operation");
+    assert_eq!(
+        unity["migrateAndOpen"],
+        "requery-project-and-launch-options"
+    );
+    assert_eq!(unity["launchConfig"], "separate-arguments-only");
+    for removed in [
+        "unity.save-project-editor",
+        "unity.clear-project-editor",
+        "unity.launch-project",
+        "projects.open-unity",
+        "projects.detail-unity",
+    ] {
+        assert!(
+            visible.iter().all(|entry| entry["id"] != removed),
+            "superseded Unity action remains visible: {removed}"
         );
     }
 
@@ -415,7 +462,7 @@ fn p7_delete_directory_contract_is_implemented_and_active() {
     assert!(ACTIVE_DELETE_MIGRATION.contains("project_delete_plans"));
     assert!(ACTIVE_DELETE_MIGRATION.contains("project_delete_filesystem_journal"));
     assert!(ACTIVE_PERMISSIONS.contains("`projects.delete`"));
-    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 13;"));
+    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 14;"));
 }
 
 #[test]
@@ -509,60 +556,16 @@ fn official_gui_local_project_affordances_remain_closed() {
 }
 
 #[test]
-fn p5_b_project_preferences_are_exact_active_contracts() {
-    let schema: Value =
-        serde_json::from_str(P5_PREFERENCE_SCHEMA).expect("P5 preference proposal schema");
+fn p5_b_preferences_remain_historical_while_state_v14_replaces_editor_selection() {
+    let _schema: Value =
+        serde_json::from_str(P5_PREFERENCE_SCHEMA).expect("P5 preference historical schema");
     let vectors: Value =
         serde_json::from_str(P5_PREFERENCE_VECTORS).expect("P5 preference vectors");
     let migration: Value = serde_json::from_str(STATE_V11_MIGRATION).expect("State v11 proposal");
+    let active_unity: Value =
+        serde_json::from_str(ACTIVE_UNITY_SCHEMA).expect("active Unity schema");
 
     assert_eq!(vectors["status"], "implemented-active-contract-evidence");
-    assert_eq!(vectors["activeProductionModified"], true);
-    assert_eq!(
-        schema["x-alcomd-publication"],
-        "implemented-active-contract-evidence"
-    );
-    assert_eq!(schema["x-alcomd-active-rpc-modified"], true);
-    assert_eq!(schema["x-alcomd-state-schema"], 11);
-    assert_eq!(
-        schema["properties"]["methods"]["const"],
-        json!([
-            "projects.setFavorite",
-            "unity.projectEditor.selection.get",
-            "unity.projectEditor.clear"
-        ])
-    );
-    assert_eq!(
-        schema["properties"]["permissions"]["const"],
-        json!({
-            "projects.setFavorite": ["projects.manage"],
-            "unity.projectEditor.selection.get": ["unity.read"],
-            "unity.projectEditor.clear": ["unity.manage"]
-        })
-    );
-    assert_eq!(
-        schema["properties"]["capabilities"]["const"]["projects.setFavorite"],
-        "projects.registry.v1"
-    );
-    assert_eq!(
-        schema["$defs"]["projectEditorSelectionResult"]["required"],
-        json!(["preference"])
-    );
-    assert!(
-        schema["$defs"]["registeredProjectFavoriteExtension"]["required"]
-            .as_array()
-            .expect("registered project favorite fields")
-            .iter()
-            .any(|field| field == "favorite")
-    );
-    assert_eq!(
-        schema["properties"]["stableErrors"]["const"]["automaticLaunchResolution"],
-        json!([
-            "unity_installation_not_found",
-            "unity_editor_selection_required"
-        ])
-    );
-
     assert_eq!(vectors["v3Favorite"]["favoriteOnlyFilter"], false);
     assert_eq!(vectors["v3Favorite"]["survivesUnregister"], false);
     assert_eq!(
@@ -582,26 +585,6 @@ fn p5_b_project_preferences_are_exact_active_contracts() {
         vectors["favoriteProposal"]["compareRevisionBeforeState"],
         true
     );
-    assert_eq!(vectors["v3UnityClear"]["preservesArguments"], true);
-    assert_eq!(
-        vectors["unityProposal"]["clearMethod"],
-        "unity.projectEditor.clear"
-    );
-    assert_eq!(vectors["unityProposal"]["projectRevisionChanges"], false);
-    assert_eq!(vectors["unityProposal"]["selectionReadHasReplayed"], false);
-    assert_eq!(
-        vectors["unityProposal"]["automaticLaunchFingerprintVersion"],
-        2
-    );
-    assert_eq!(
-        vectors["unityProposal"]["automaticReplayBeforeRegistryResolution"],
-        true
-    );
-    assert_eq!(
-        vectors["unityProposal"]["automaticMultipleMatchError"],
-        "unity_editor_selection_required"
-    );
-
     assert_eq!(migration["status"], "implemented-active-contract-evidence");
     assert_eq!(migration["from"], 10);
     assert_eq!(migration["to"], 11);
@@ -613,21 +596,29 @@ fn p5_b_project_preferences_are_exact_active_contracts() {
     assert_eq!(migration["userVersionSetLast"], true);
     assert_eq!(migration["rollbackAuthorityOnFailure"], 10);
     assert_eq!(migration["tablesAdded"], json!([]));
-    assert_eq!(
-        migration["projectEditorPreference"]["argumentsPreservedOnClear"],
-        true
-    );
     assert!(STATE_V11.contains("`dataSchema: 11`"));
 
     assert!(ACTIVE_RPC.contains("projects.setFavorite"));
-    assert!(ACTIVE_RPC.contains("unity.projectEditor.selection.get"));
-    assert!(ACTIVE_RPC.contains("unity.projectEditor.clear"));
+    assert!(ACTIVE_RPC.contains("unity.projectLaunchConfig.get"));
+    assert!(ACTIVE_RPC.contains("unity.launchOptions"));
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_SET_FAVORITE"));
-    assert!(ACTIVE_PROTOCOL.contains("METHOD_UNITY_PROJECT_EDITOR_CLEAR"));
-    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 13;"));
-    assert!(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../alcomd-store/migrations/0011_project_preferences.sql")
-            .exists()
+    assert!(ACTIVE_PROTOCOL.contains("METHOD_UNITY_PROJECT_LAUNCH_CONFIG_CLEAR"));
+    assert!(!ACTIVE_PROTOCOL.contains("METHOD_UNITY_PROJECT_EDITOR_CLEAR"));
+    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 14;"));
+    assert!(ACTIVE_UNITY_MIGRATION.contains("DROP TABLE project_editor_preferences"));
+    assert_eq!(
+        active_unity["$defs"]["projectUnityLaunchConfig"]["required"],
+        json!(["projectId", "arguments", "revision", "updatedAtMs"])
     );
+    let active_methods = active_unity["$defs"]["methodName"]["enum"]
+        .as_array()
+        .expect("active Unity methods");
+    for method in [
+        "unity.projectLaunchConfig.get",
+        "unity.projectLaunchConfig.set",
+        "unity.projectLaunchConfig.clear",
+        "unity.launchOptions",
+    ] {
+        assert!(active_methods.iter().any(|candidate| candidate == method));
+    }
 }

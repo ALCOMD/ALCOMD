@@ -11,8 +11,9 @@ use alcomd_application::{
     M3Application, M4Application, M5BackupApplication as BackupService,
     M5TemplateApplication as TemplateService, M5UnityApplication as M5Application, M6Application,
     M7Application, M7CopyApplication as ProjectCopyService,
-    M7DeleteApplication as ProjectDeleteService, M7OfficialApplication, OperationCursor,
-    OperationId, OperationRecord, OperationState as DomainState, ResourceLockCoordinator, Revision,
+    M7DeleteApplication as ProjectDeleteService, M7OfficialApplication,
+    M7UnityMigrationApplication as UnityMigrationService, OperationCursor, OperationId,
+    OperationRecord, OperationState as DomainState, ResourceLockCoordinator, Revision,
     StoreErrorKind, UserPackageApplication as UserPackageService,
 };
 use alcomd_platform::{BindError, DaemonInstance, DataConfig, IpcConfig, IpcListener, IpcStream};
@@ -42,6 +43,7 @@ mod m7_copy_rpc;
 mod m7_delete_rpc;
 mod m7_official_rpc;
 mod m7_rpc;
+mod m7_unity_migration_rpc;
 mod m7_user_packages_rpc;
 
 static TEST_DATA_SEQUENCE: AtomicU64 = AtomicU64::new(1);
@@ -72,6 +74,11 @@ type ProjectCopyApplication =
 type ProjectDeleteApplication =
     ProjectDeleteService<StateStoreHandle, alcomd_vpm::ProjectDeleteEngine, M5UnityApplication>;
 type UserPackageApplication = UserPackageService<StateStoreHandle, alcomd_vpm::UserPackageEngine>;
+type UnityMigrationApplication = UnityMigrationService<
+    StateStoreHandle,
+    alcomd_vpm::UnityMigrationEngine<StateStoreHandle>,
+    M5UnityApplication,
+>;
 
 struct Applications {
     m2: M2Application,
@@ -86,6 +93,7 @@ struct Applications {
     project_copy: ProjectCopyApplication,
     project_delete: ProjectDeleteApplication,
     user_packages: UserPackageApplication,
+    unity_migration: UnityMigrationApplication,
 }
 
 /// Runs the daemon with an ephemeral isolated data directory.
@@ -147,6 +155,23 @@ where
         .await
         .map_err(|_| BindError::Io(io::Error::other("package transaction recovery failed")))?;
     let unity = M5Application::new(store.clone(), m5_platform::PlatformUnityAdapter);
+    let unity_migration_engine = alcomd_vpm::UnityMigrationEngine::new(
+        store.clone(),
+        reader.clone(),
+        cache_root.clone(),
+        data_root.join("unity-migration-recovery"),
+    )
+    .map_err(|_| BindError::Io(io::Error::other("Unity migration initialization failed")))?;
+    let unity_migration = UnityMigrationService::with_locks(
+        store.clone(),
+        unity_migration_engine,
+        unity.clone(),
+        Arc::clone(&locks),
+    );
+    unity_migration
+        .recover()
+        .await
+        .map_err(|_| BindError::Io(io::Error::other("Unity migration recovery failed")))?;
     let template_engine = alcomd_vpm::TemplateEngine::with_package_cache(
         data_root.join("template-store"),
         cache_root.clone(),
@@ -246,6 +271,7 @@ where
         project_copy,
         project_delete,
         user_packages,
+        unity_migration,
     });
     let listener = instance.bind()?;
     run_listener(listener, applications, shutdown)
@@ -430,6 +456,7 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         alcomd_protocol::CAPABILITY_PROJECTS_REGISTRY_V1,
         alcomd_protocol::CAPABILITY_PROJECTS_COPY_V1,
         alcomd_protocol::CAPABILITY_PROJECTS_DELETE_V1,
+        alcomd_protocol::CAPABILITY_PROJECTS_UNITY_MIGRATION_V1,
         alcomd_protocol::CAPABILITY_REPOSITORIES_READ_V1,
         alcomd_protocol::CAPABILITY_REPOSITORIES_REGISTRY_V1,
         alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V1,
@@ -685,6 +712,15 @@ async fn dispatch_m2(
         ) =>
         {
             m7_delete_rpc::dispatch(request, state, &applications.project_delete, access).await
+        }
+        _ if matches!(
+            request.method.as_str(),
+            alcomd_protocol::METHOD_PROJECTS_PLAN_UNITY_MIGRATION
+                | alcomd_protocol::METHOD_PROJECTS_APPLY_UNITY_MIGRATION
+        ) =>
+        {
+            m7_unity_migration_rpc::dispatch(request, state, &applications.unity_migration, access)
+                .await
         }
         _ if request.method.starts_with("unity.") => {
             m5_rpc::dispatch(request, state, &applications.m5, access).await

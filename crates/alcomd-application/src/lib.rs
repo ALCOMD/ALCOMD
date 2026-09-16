@@ -25,6 +25,7 @@ mod m7;
 mod m7_copy;
 mod m7_delete;
 mod m7_official;
+mod m7_unity_migration;
 mod m7_user_packages;
 
 pub use m4::*;
@@ -36,6 +37,7 @@ pub use m7::*;
 pub use m7_copy::*;
 pub use m7_delete::*;
 pub use m7_official::*;
+pub use m7_unity_migration::*;
 pub use m7_user_packages::*;
 
 /// Minimal truthful daemon status for the M1 read-only vertical slice.
@@ -793,6 +795,7 @@ impl AccessContext {
                 Permission::UnityLaunch,
                 Permission::ProjectsCreate,
                 Permission::ProjectsDelete,
+                Permission::ProjectsUnityMigrate,
                 Permission::TemplatesRead,
                 Permission::TemplatesManage,
                 Permission::BackupsRead,

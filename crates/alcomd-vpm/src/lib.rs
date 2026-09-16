@@ -17,6 +17,7 @@ mod template_create;
 mod template_derive;
 mod template_engine;
 mod template_object;
+mod unity_migration;
 mod user_package;
 
 pub use archive::{
@@ -56,6 +57,7 @@ pub use template_engine::TemplateEngine;
 pub use template_object::{
     TemplateObject, TemplateObjectError, TemplateObjectErrorCode, TemplateObjectStore,
 };
+pub use unity_migration::UnityMigrationEngine;
 pub use user_package::UserPackageEngine;
 
 use std::path::{Path, PathBuf};

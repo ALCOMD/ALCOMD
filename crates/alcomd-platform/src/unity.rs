@@ -25,6 +25,33 @@ pub struct ValidatedUnityExecutable {
     architecture: UnityArchitecture,
 }
 
+/// One migration-owned Unity process. The child handle never leaves this safe adapter.
+pub struct UnityMigrationProcess {
+    child: std::process::Child,
+}
+
+/// Bounded migration exit classification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnityMigrationExit {
+    /// Unity exited with a successful status.
+    Success,
+    /// Unity exited with a non-zero status.
+    NonZero,
+}
+
+impl UnityMigrationProcess {
+    /// Waits for the owned Unity child and consumes the only process handle.
+    pub fn wait(mut self) -> io::Result<UnityMigrationExit> {
+        self.child.wait().map(|status| {
+            if status.success() {
+                UnityMigrationExit::Success
+            } else {
+                UnityMigrationExit::NonZero
+            }
+        })
+    }
+}
+
 impl ValidatedUnityExecutable {
     #[must_use]
     pub fn executable_path(&self) -> &Path {
@@ -163,6 +190,29 @@ pub fn launch_unity_editor(
         .stderr(Stdio::null());
     let _ = command.spawn()?;
     Ok(())
+}
+
+/// Spawns a validated Unity executable with the fixed migration invocation profile.
+pub fn spawn_unity_editor_migration(
+    executable: &ValidatedUnityExecutable,
+    authoritative_project_root: &Path,
+) -> io::Result<UnityMigrationProcess> {
+    if !authoritative_project_root.is_absolute() || !authoritative_project_root.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "authoritative project root is invalid",
+        ));
+    }
+    let child = Command::new(executable.executable_path())
+        .arg("-quit")
+        .arg("-batchmode")
+        .arg("-projectPath")
+        .arg(authoritative_project_root)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+    Ok(UnityMigrationProcess { child })
 }
 
 fn locate_editor_manifest(executable: &Path) -> Option<PathBuf> {

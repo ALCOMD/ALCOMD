@@ -1,0 +1,176 @@
+{
+    "status": "owner-sealed-contract-vectors-not-yet-active-production-tests",
+    "version": 1,
+    "canonicalVersionVectors": [
+        {"input": "2022.3.22f1", "result": "2022.3.22f1"},
+        {"input": "2022.3.22F1", "result": "2022.3.22f1"},
+        {"input": "2022.3.22f1c1", "result": "2022.3.22f1c1"},
+        {"input": "02022.3.22f1", "error": "unity_version_unverified"},
+        {"input": "2022.3.22", "error": "unity_version_unverified"},
+        {"input": "2022.3.22f0", "error": "unity_version_unverified"},
+        {"input": "2022.3.22f1c0", "error": "unity_version_unverified"},
+        {"input": "2022.3.22f1 extra", "error": "unity_version_unverified"}
+    ],
+    "exactEqualityVectors": [
+        {"left": "2022.3.22f1", "right": "2022.3.22f1", "equal": true},
+        {"left": "2022.3.22f1", "right": "2022.3.22f1c1", "equal": false},
+        {"left": "2022.3.22f1c1", "right": "2022.3.22f1c2", "equal": false},
+        {
+            "left": "2022.3.22f1",
+            "leftRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "right": "2022.3.22f1",
+            "rightRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "canonicalVersionEqual": true,
+            "exactLaunchMatch": false,
+            "reason": "known-revision-mismatch"
+        },
+        {
+            "left": "2022.3.22f1",
+            "leftRevision": null,
+            "right": "2022.3.22f1",
+            "rightRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "canonicalVersionEqual": true,
+            "exactLaunchMatch": true,
+            "verifiedIdenticalBuildClaimAllowed": false
+        }
+    ],
+    "launchCardinalityVectors": [
+        {"exactVerifiedCandidates": 0, "launchOptionsResult": [], "launchCalled": false},
+        {"exactVerifiedCandidates": 1, "result": "launch-with-sole-installation-id", "spawn": true},
+        {"exactVerifiedCandidates": 2, "result": "one-shot-selection-required", "spawn": false},
+        {
+            "exactVerifiedCandidates": 2,
+            "oneShotInstallationProvided": true,
+            "result": "launch-selected-once",
+            "persistedSelection": false
+        }
+    ],
+    "launchConfigVectors": [
+        {"oldArguments": [], "oldMode": "automatic", "v14RowCreated": false},
+        {"oldArguments": [], "oldMode": "explicit", "v14RowCreated": false, "installationIdMigrated": false},
+        {
+            "oldArguments": ["-force-vulkan"],
+            "oldMode": "explicit",
+            "oldRevision": 7,
+            "oldUpdatedAtMs": 1234,
+            "v14RowCreated": true,
+            "newRevision": 7,
+            "newUpdatedAtMs": 1234,
+            "installationIdMigrated": false
+        },
+        {"oldArgumentsJson": "malformed", "result": "rollback-entire-v14-migration"},
+        {"stored": false, "getArguments": [], "getRevision": 0, "getUpdatedAtMs": 0},
+        {"storedArguments": ["-force-vulkan"], "setArguments": ["-force-vulkan"], "changed": false, "eventCount": 0},
+        {"stored": false, "clear": true, "changed": false, "eventCount": 0},
+        {"storedRevision": 4, "clear": true, "changed": true, "resultRevision": 5, "eventCount": 1},
+        {"arguments": ["-projectPath", "other"], "result": "invalid_request"},
+        {"useCase": "project-unity-migration", "launchConfigRead": false}
+    ],
+    "launchOptionsVectors": [
+        {
+            "request": ["projectId", "expectedProjectRevision"],
+            "response": ["projectId", "projectRevision", "projectUnityVersion", "exactMatchingInstallations"],
+            "corePerformsCanonicalExactComparison": true
+        },
+        {
+            "candidateOrder": ["canonical-version-bytes", "source-kind-closed-order", "installation-id-bytes"],
+            "deterministic": true
+        },
+        {"interactiveCandidateCount": 2, "behavior": "prompt-one-shot"},
+        {"nonInteractiveCandidateCount": 2, "installationIdProvided": false, "result": "unity_editor_selection_required"}
+    ],
+    "migrationPlanRequestVectors": [
+        {
+            "publicInput": ["projectId", "expectedProjectRevision", "targetInstallationId", "idempotencyKey"],
+            "targetVersionPublicInputForbidden": true,
+            "targetVersionDerivedByCore": true
+        },
+        {
+            "expiryMs": 900000,
+            "expiredApplyError": "project_unity_migration_plan_stale",
+            "safeReason": "expired",
+            "sameIdempotencyKeyReplaysExpiredPlan": true,
+            "replanRequiresNewKey": true
+        }
+    ],
+    "selectorVectors": [
+        {"current": "2022.3.22f1", "installed": [], "displayCurrent": true, "targets": []},
+        {
+            "current": "2022.3.22f1",
+            "installed": ["2022.3.22f1", "2022.3.22f1", "2022.3.21f1"],
+            "targets": ["2022.3.22f1", "2022.3.21f1"],
+            "dedupeByCanonicalVersion": true
+        },
+        {"current": "2022.3.22f1", "selected": "2022.3.22f1", "result": "no_change"}
+    ],
+    "classificationVectors": [
+        {"from": "2022.3.21f1", "to": "2022.3.22f1", "classification": "patch_or_minor_upgrade", "supportedForApply": true},
+        {"from": "2021.3.45f1", "to": "2022.3.22f1", "classification": "major_upgrade", "supportedForApply": true},
+        {"from": "2019.4.31f1", "to": "2022.3.22f1", "projectKind": "vrchat", "classification": "major_upgrade", "preparationProfile": "vrchat-2019-to-2022-v1", "supportedForApply": true},
+        {"from": "2022.3.22f1", "to": "2022.3.21f1", "classification": "patch_or_minor_downgrade", "supportedForApply": false},
+        {"from": "2022.3.22f1", "to": "2019.4.31f1", "classification": "major_downgrade", "supportedForApply": false},
+        {"from": "2022.3.22f1", "to": "2022.3.22f1c1", "classification": "china_variant_change", "supportedForApply": true},
+        {"from": "2022.3.22x1", "to": "2022.3.22f1", "result": "project_unity_migration_unsupported", "classificationCreated": false}
+    ],
+    "writerVectors": [
+        {"state": "not_observed", "planAllowed": true, "applyAllowed": true},
+        {"state": "running_confirmed", "planAllowed": false, "applyAllowed": false},
+        {"state": "running_suspected", "planAllowed": false, "applyAllowed": false},
+        {"state": "unknown", "planAllowed": false, "applyAllowed": false}
+    ],
+    "staleAndIdentityVectors": [
+        {"mutation": "project_revision_changed", "result": "project_unity_migration_source_changed"},
+        {"mutation": "project_root_identity_changed", "result": "project_unity_migration_source_changed"},
+        {"mutation": "project_version_marker_changed", "result": "project_unity_migration_source_changed"},
+        {"mutation": "installation_revision_changed", "result": "project_unity_migration_source_changed"},
+        {"mutation": "installation_identity_changed", "result": "project_unity_migration_source_changed"},
+        {"mutation": "plan_expired", "result": "project_unity_migration_plan_stale", "safeReason": "expired"},
+        {"mutation": "target_is_symlink_swap", "result": "project_unity_migration_source_changed"}
+    ],
+    "processRecoveryVectors": [
+        {"checkpoint": "preflight_complete", "crash": true, "automaticRespawnAllowed": true},
+        {"checkpoint": "preparation_intent", "crash": true, "automaticRespawnAllowed": false, "result": "rollback-or-recovery-required"},
+        {"checkpoint": "preparation_complete", "cancel": true, "result": "cancel-rejected-forward-only"},
+        {"checkpoint": "launch_intent", "crash": true, "automaticRespawnAllowed": false, "result": "recovery_required"},
+        {"checkpoint": "unity_started", "crash": true, "automaticRespawnAllowed": false, "result": "recovery_required"},
+        {"checkpoint": "unity_exited", "exitCode": 0, "reobservedVersion": "unchanged", "projectState": "safe-unchanged", "result": "failed"},
+        {"checkpoint": "unity_exited", "exitCode": 1, "reobservedVersion": "exact-target", "result": "state-commit-allowed"},
+        {"checkpoint": "unity_started", "daemonRestarted": true, "exitObservation": "unavailable_after_restart", "fabricatedUnityExitedSuccess": false},
+        {
+            "checkpoint": "project_reobserved",
+            "exitCode": 0,
+            "rootIdentity": "same",
+            "reobservedVersion": "exact-target",
+            "result": "state_commit_allowed"
+        },
+        {"checkpoint": "launch_intent", "cancelRequested": true, "killUnity": false, "result": "cancel_rejected"}
+    ],
+    "compositionVectors": [
+        {"flow": "backup-then-migrate", "backupSucceeded": true, "migrationFailed": true, "backupRetained": true},
+        {"flow": "copy-then-migrate", "copySucceeded": true, "migrationFailed": true, "copyRetained": true},
+        {
+            "flow": "vrc-2019-to-2022",
+            "result": "owner-sealed-private-preparation",
+            "profileId": "vrchat-2019-to-2022-v1",
+            "p6ExpansionAllowed": false,
+            "classA": ["resolver", "cache-integrity", "package-tree", "vpm-manifest"],
+            "classB": ["two-xr-upm-dependencies", "four-fixed-vrchat-packages", "legacy-packages", "unlocked-conflicts", "legacy-files-folders"],
+            "classC": []
+        }
+    ],
+    "platformProcessVectors": [
+        {
+            "surface": "spawn_unity_editor_migration(validated_executable, authoritative_project_root)",
+            "returns": "UnityMigrationProcess"
+        },
+        {"operation": "wait(self)", "returns": ["success", "non_zero"]},
+        {"forbidden": ["kill", "signal", "shell", "arbitrary-executable", "arbitrary-argv", "public-pid"]},
+        {"launchIntentDurableBeforeSpawn": true, "unityStartedDurableAfterSpawn": true}
+    ],
+    "privacyVectors": [
+        {"surface": "rpc", "forbidden": ["projectPath", "executablePath", "argv", "pid", "stdout", "stderr"]},
+        {"surface": "event", "forbidden": ["projectPath", "executablePath", "argv", "pid", "stdout", "stderr"]},
+        {"surface": "activity", "forbidden": ["projectPath", "executablePath", "argv", "pid", "stdout", "stderr"]},
+        {"surface": "ordinaryLog", "forbidden": ["fullPrivatePath", "argv", "stdout", "stderr"]}
+    ]
+}

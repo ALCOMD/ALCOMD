@@ -11,10 +11,13 @@ Visual Gate 1，检查点为 `7bb325b78a74518881fb65e03de7f79902e72cd3`。项目
 超出两个 permanent-disabled menu item 的真实功能缺口，H2 visual implementation 已暂停；当前只执行
 `M7 Project / Package Functional Closure` P0-P7 已通过远端验收；P7 sealed HEAD
 `2ee11066c07a0994f3aebe6a9ce3f84ab2c8acd9` 的 Hosted CI run `33298022030` 与 CodeQL run `33298021806`
-均通过。P8 M7-owned visible-action completeness 已在 sealed functional HEAD
-`d314b155374d31a8d7c0449c62efdea5dd745e72` 通过 Hosted CI run `33305438539` 与 CodeQL run `33305438212`；
-M7-owned completeness 为 PASS，global gate 因 M11 保持 blocked。当前只恢复 H2-A Project Workspace / Packages，进入
-Visual Gate 2；M8/M9 未开始，M7 仍为 `IN_PROGRESS`。
+均通过。P8 technical checkpoint 已在 sealed functional HEAD
+`d314b155374d31a8d7c0449c62efdea5dd745e72` 通过；但 Visual Gate 2 期间项目所有者重新冻结 Project Unity
+Version / Open Unity 产品模型；该 production closure 已在 sealed HEAD
+`e9349fd0f4cc9c18d9174dfc5826d48654aeb6f5` 通过 Hosted CI run `33352406804` 与 CodeQL run
+`33352406214`。M7-owned visible-action completeness 为 `PASS`，global gate 因 M11 保持 `BLOCKED_BY_M11`。
+H2-A 已恢复为 `ACTIVE / VISUAL_GATE_2`；visual candidate `24b03916bd6d958c921b4039bd62bec00afe25d4`
+保留为 pre-Unity-model local checkpoint，不是 rejected，也不是当前候选。M8/M9 未开始，M7仍未完成。
 
 ## 目标与完成定义
 
@@ -600,25 +603,49 @@ Activity、Diagnostics 或 Portable UI authority。
   exact behavior、现有 v4 primitive、Windows/Linux/macOS delete primitive 与 Rust `remove_dir_all` 审计，提出 ProjectId-only
   Plan/Apply、独立 `projects.delete`、sibling quarantine permanent-delete、State v13 durable evidence 与 recovery/path vectors；
   active RPC、State、Permission、production source、dependency、unsafe 与平台 API 均未改变。
-- 2026-08-30：P8 technical checkpoint 已由项目所有者在 sealed functional HEAD
-  `d314b155374d31a8d7c0449c62efdea5dd745e72` 验收为 PASS。Hosted CI run `33305438539` 的 Windows Server 2025、
-  Ubuntu 22.04、macOS 15 arm64 与 CodeQL run `33305438212` 的四个 required job 均成功；唯一 inventory 的 90 个 action
-  仍为 86 个 M7-owned（33 implemented、53 conditional-disabled）和 4 个 M11 blocker，fake 为 0。项目所有者仅批准从该
-  sealed HEAD 恢复 H2-A Project Workspace / Packages Visual Gate 2，旧 H2 WIP 只可作历史视觉证据，不可恢复。
-- 2026-08-30：H2-A 本地 Visual Gate 2 候选已从 sealed functional HEAD 直接完成，未恢复旧 H2 WIP。Project workspace
-  采用紧凑 project context、Unity/Open Unity 与项目 overflow；Backups 等 project utility 留在 overflow。Packages 保持主视觉面积，
-  原生 Tauri 默认宽度仍为单行工具栏，status/source 筛选收进同一个 Material menu；dense table 只显示 state-relevant primary action，
-  其余动作进入 Material menu。Remove from list 与
-  Delete Project Directory 已分离并保持后者的 Plan/typed confirmation/Operation 合同；bulk、source ambiguity、Plan Review 与
-  Operation progress 均留在 package workflow 上下文。官方 GUI Playwright 38 项、npm check/build、Tauri release build、
-  xtask、metadata、baseline freeze 与 diff check 均通过；真实 Tauri Projects/workspace/menu 及 deterministic mixed/Plan/
-  Operation/source evidence 已生成；v3 复核后的单行 toolbar 与 filter menu 证据也已生成。未增加 RPC、State、Permission、
-  Capability、dependency、unsafe 或平台 API。该候选尚未
-  push，也不得视为 Visual Gate 2 或 M7 已通过。
+- 2026-08-31：Visual Gate 2 期间重新冻结 Project Unity Version / Open Unity 产品模型。v3 exact behavior 与当前 v4
+  Automatic/Explicit preference model 已完成源码审计；Stop A 提出 canonical exact version、0/1/>1 Open Unity、one-shot
+  installation chooser、独立 migration Plan/Apply/Operation、State v14 preference removal/launch-config split 与 crash recovery。
+  VRChat 2019 -> 2022 当时识别为 secondary preparation 缺口，未扩展 P6。P8 historical PASS
+  保留，但当前 completeness 为 `REOPENED_BY_PRODUCT_MODEL_CHANGE`；H2-A 暂停而非拒绝。
+- 2026-08-31：Unity model proposal chain `a3faa7b…`、`baa4768…` 的最终 owner review 为
+  `PASS WITH IMPLEMENTATION AMENDMENTS`；State v14、exact launch、migration Plan/Operation、private preparation 与窄平台进程
+  合同已 seal。contract-only remote checkpoint 全绿后 production 自动获准开始；H2 visual 仍暂停。final amendment 补齐
+  Launch Config/launchOptions/required one-shot launch、single-authority migration Plan、downgrade fail-closed、
+  `vrchat-2019-to-2022-v1` bounded private preparation、final phases 与窄 UnityMigrationProcess platform contract；
+  H2/P8/global 状态不变。
+- 2026-08-31：Unity production sealed HEAD `e9349fd0f4cc9c18d9174dfc5826d48654aeb6f5` 已通过
+  Hosted CI run `33352406804` 与 CodeQL run `33352406214`，更新后的 P8 M7-owned completeness 为 PASS；
+  global 仍为 `BLOCKED_BY_M11`。H2-A 从该 sealed HEAD 恢复 Visual Gate 2；`24b03916…` 只保留为
+  pre-Unity-model local checkpoint。
+
+- 2026-09-06：H2-A local candidate 的 shared icon renderer 改为官方支持的 `md-icon` + SVG，
+  继续使用 pinned Google Rounded 400 资源；移除 mask 与 wrapper 的 button icon size 特例。
+  真实 Windows GUI 操作发现并修复同路由 reconnect 后 capability snapshot 未刷新的问题；
+  final browser suite 44/44 与 Tauri no-bundle build 通过。真实 package review / Copy review 的
+  布局和 Escape 取消已检查，未执行复制或包移除。窄窗口 sticky action 遮盖数据列仍是未通过项，
+  不以自动测试通过替代视觉验收；详见 `docs/testing/m7-icon-reconnect-local-acceptance.md`。
+
+- 2026-09-06：项目所有者纠正 icon integration 范围：不要求窄窗口适配，不授权更换按钮图标。
+  撤销 Open Unity 的 `open_in_new`/trailing 替换，恢复原 `play_arrow`/leading；仅保留 `md-icon`
+  与官方 SVG 接入修正，不引入响应式菜单或其他布局改变。
+
+- 2026-09-06：项目所有者接受普通 Material Web button 的 18px icon；移除临时双图标比较，
+  保持单个原始 leading play。最终前端 check、44/44 browser tests 与 debug no-bundle build 通过。
+  computer-use 在隔离 synthetic fixture 中完成真实 Copy 的 review/Apply/成功反馈/列表刷新与
+  副本 Manage；源文件未变，副本 5 文件 SHA-256 全部一致。缺失精确 Editor 提示与 Escape 通过。
+  本轮没有真实 Unity launch、migration、Hosted CI 或 Visual Gate 2 人工通过结论。
+
+- 2026-09-06：按项目所有者要求继续对照 v3 实际源码，补齐 H2-A 包管理工具栏与筛选入口：
+  shared Material search、icon Refresh、maintenance overflow、repository/local/prerelease filters，
+  复用既有 settings revision/RPC。48/48 browser tests、frontend check/build、debug no-bundle build、
+  xtask 与 metadata 检查通过。桌面新筛选交互尚未完成验收（电脑控制检测到用户输入，已暂停点击）；
+  不把浏览器测试冒充 real Tauri evidence。版本选择器、条件更新与批量入口仍是未完成项，详见
+  `docs/testing/m7-h2-a-package-workspace-continuity.md`。Visual Gate 2 保持开放。
 
 ## 下一停止点
 
-当前获准工作仅为 H2-A Project Workspace / Packages 的本地 Visual Gate 2 候选。必须保持 Visual Gate 1 的 wide shell 与
-Projects geometry，复用 P0-P8 已通过的 typed client/closed adapter，并在真实 Tauri GUI 中准备可审阅状态。H2-A 完成后只创建
-不推送的本地提交并停止。当前候选已经形成并等待项目所有者 Visual Gate 2；不得进入 H2-B、H3-H7、M8、M9 或 M11，也不得
-自行把 Visual Gate 2 或 M7 标记为通过。
+当前停止点是 H2-A Project Workspace / Packages Visual Gate 2。Unity technical closure 与更新后的 P8 M7-owned
+completeness 已通过；只允许从 sealed Unity HEAD 重新实现仍有效的 H2 视觉/Material 结构，不恢复旧的 Automatic/Explicit
+Editor preference UI。形成新的 real Tauri Visual Gate 2 候选后必须停止等待项目所有者人工视觉验收，不得进入
+H2-B/H3-H7/M8/M9/M11。

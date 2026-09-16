@@ -119,6 +119,7 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_PROJECTS_REGISTRY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_COPY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_DELETE_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_PROJECTS_UNITY_MIGRATION_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_REPOSITORIES_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_REPOSITORIES_REGISTRY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V1.to_owned(),
@@ -518,42 +519,37 @@ impl AlcomdClient {
         .await
     }
 
-    pub async fn unity_project_editor_get(
+    pub async fn unity_project_launch_config_get(
         &mut self,
         project_id: String,
-    ) -> Result<alcomd_protocol::ProjectEditorResult, ClientError> {
+    ) -> Result<alcomd_protocol::ProjectUnityLaunchConfigResult, ClientError> {
         self.call(
-            alcomd_protocol::METHOD_UNITY_PROJECT_EDITOR_GET,
+            alcomd_protocol::METHOD_UNITY_PROJECT_LAUNCH_CONFIG_GET,
             alcomd_protocol::UnityProjectIdParams { project_id },
         )
         .await
     }
 
-    pub async fn unity_project_editor_set(
+    pub async fn unity_project_launch_config_set(
         &mut self,
-        params: alcomd_protocol::ProjectEditorSetParams,
-    ) -> Result<alcomd_protocol::ProjectEditorResult, ClientError> {
-        self.call(alcomd_protocol::METHOD_UNITY_PROJECT_EDITOR_SET, params)
-            .await
-    }
-
-    pub async fn project_editor_selection_get(
-        &mut self,
-        project_id: String,
-    ) -> Result<alcomd_protocol::ProjectEditorSelectionResult, ClientError> {
+        params: alcomd_protocol::ProjectUnityLaunchConfigSetParams,
+    ) -> Result<alcomd_protocol::ProjectUnityLaunchConfigMutationResult, ClientError> {
         self.call(
-            alcomd_protocol::METHOD_UNITY_PROJECT_EDITOR_SELECTION_GET,
-            alcomd_protocol::UnityProjectIdParams { project_id },
+            alcomd_protocol::METHOD_UNITY_PROJECT_LAUNCH_CONFIG_SET,
+            params,
         )
         .await
     }
 
-    pub async fn project_editor_clear(
+    pub async fn unity_project_launch_config_clear(
         &mut self,
-        params: alcomd_protocol::ProjectEditorClearParams,
-    ) -> Result<alcomd_protocol::ProjectEditorClearResult, ClientError> {
-        self.call(alcomd_protocol::METHOD_UNITY_PROJECT_EDITOR_CLEAR, params)
-            .await
+        params: alcomd_protocol::ProjectUnityLaunchConfigClearParams,
+    ) -> Result<alcomd_protocol::ProjectUnityLaunchConfigMutationResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_UNITY_PROJECT_LAUNCH_CONFIG_CLEAR,
+            params,
+        )
+        .await
     }
 
     pub async fn unity_writer_state(
@@ -572,6 +568,14 @@ impl AlcomdClient {
         params: alcomd_protocol::UnityLaunchParams,
     ) -> Result<alcomd_protocol::UnityLaunchResult, ClientError> {
         self.call(alcomd_protocol::METHOD_UNITY_LAUNCH, params)
+            .await
+    }
+
+    pub async fn unity_launch_options(
+        &mut self,
+        params: alcomd_protocol::UnityLaunchOptionsParams,
+    ) -> Result<alcomd_protocol::UnityLaunchOptionsResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_UNITY_LAUNCH_OPTIONS, params)
             .await
     }
 
@@ -785,6 +789,28 @@ impl AlcomdClient {
     ) -> Result<alcomd_protocol::ProjectsApplyDeleteDirectoryResult, ClientError> {
         self.call(
             alcomd_protocol::METHOD_PROJECTS_APPLY_DELETE_DIRECTORY,
+            params,
+        )
+        .await
+    }
+
+    pub async fn project_plan_unity_migration(
+        &mut self,
+        params: alcomd_protocol::ProjectsPlanUnityMigrationParams,
+    ) -> Result<alcomd_protocol::ProjectsPlanUnityMigrationResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_PROJECTS_PLAN_UNITY_MIGRATION,
+            params,
+        )
+        .await
+    }
+
+    pub async fn project_apply_unity_migration(
+        &mut self,
+        params: alcomd_protocol::ProjectsApplyUnityMigrationParams,
+    ) -> Result<alcomd_protocol::ProjectsApplyUnityMigrationResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_PROJECTS_APPLY_UNITY_MIGRATION,
             params,
         )
         .await

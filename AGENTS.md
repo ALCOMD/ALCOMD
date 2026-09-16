@@ -47,7 +47,8 @@ vrc-get / vrc-get-vpm 不是代码上游，不得复制、Fork、包装、移植
 - 公共 DTO 与领域对象分离。
 - 不在 `alcomd-domain` 中依赖 Tauri、SQLite、HTTP、MCP 或操作系统 API。
 - 禁止未经说明的 `unsafe`。
-- 日志不得包含 token、Authorization 头、完整私密路径或项目敏感信息。
+- 本地技术日志可记录排障所需的完整绝对路径和准确技术细节；secret 永不记录；RPC、Activity、
+  Event 和普通 GUI 错误继续保持有界稳定合同。
 
 ## 验证
 

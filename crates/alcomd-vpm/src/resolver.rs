@@ -292,10 +292,49 @@ struct Solved<'a> {
     requirements: BTreeMap<String, Vec<Requirement>>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LegacyCandidateHandling {
+    Reject,
+    CollectCleanupObligations,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct LegacyCleanupObligation {
+    pub package_id: String,
+    pub version: Version,
+    pub source: PackageSource,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct UnityMigrationResolution {
+    pub resolution: Resolution,
+    pub legacy_cleanup_obligations: Vec<LegacyCleanupObligation>,
+}
+
 pub fn resolve_packages(
     catalog: &[PackageCandidate],
     requests: &[ResolveRequest],
 ) -> Result<Resolution, ResolveError> {
+    resolve_packages_internal(catalog, requests, LegacyCandidateHandling::Reject)
+        .map(|resolved| resolved.resolution)
+}
+
+pub(super) fn resolve_unity_migration_packages(
+    catalog: &[PackageCandidate],
+    requests: &[ResolveRequest],
+) -> Result<UnityMigrationResolution, ResolveError> {
+    resolve_packages_internal(
+        catalog,
+        requests,
+        LegacyCandidateHandling::CollectCleanupObligations,
+    )
+}
+
+fn resolve_packages_internal(
+    catalog: &[PackageCandidate],
+    requests: &[ResolveRequest],
+    legacy_handling: LegacyCandidateHandling,
+) -> Result<UnityMigrationResolution, ResolveError> {
     if requests.is_empty() || requests.len() > MAX_REQUIREMENTS {
         return Err(ResolveError::TooManyRequirements);
     }
@@ -340,11 +379,22 @@ pub fn resolve_packages(
         BTreeMap::new(),
         include_prerelease,
         unity_version,
+        legacy_handling,
     )?;
     let direct_ids = requests
         .iter()
         .map(|request| request.package_id.as_str())
         .collect::<BTreeSet<_>>();
+    let legacy_cleanup_obligations = solved
+        .selected
+        .values()
+        .filter(|candidate| candidate.legacy_metadata_present)
+        .map(|candidate| LegacyCleanupObligation {
+            package_id: candidate.package_id.clone(),
+            version: candidate.version.clone(),
+            source: candidate.source.clone(),
+        })
+        .collect();
     let packages = solved
         .selected
         .into_values()
@@ -371,9 +421,12 @@ pub fn resolve_packages(
         .collect::<Vec<_>>();
     dependency_edges.sort();
     dependency_edges.dedup();
-    Ok(Resolution {
-        packages,
-        dependency_edges,
+    Ok(UnityMigrationResolution {
+        resolution: Resolution {
+            packages,
+            dependency_edges,
+        },
+        legacy_cleanup_obligations,
     })
 }
 
@@ -383,6 +436,7 @@ fn solve<'a>(
     selected: BTreeMap<String, &'a PackageCandidate>,
     include_prerelease: bool,
     unity_version: Option<(u64, u64)>,
+    legacy_handling: LegacyCandidateHandling,
 ) -> Result<Solved<'a>, ResolveError> {
     for (package_id, package_requirements) in &requirements {
         if let Some(candidate) = selected.get(package_id)
@@ -483,7 +537,7 @@ fn solve<'a>(
             });
         }
         let candidate = preferred[0];
-        if candidate.legacy_metadata_present {
+        if candidate.legacy_metadata_present && legacy_handling == LegacyCandidateHandling::Reject {
             return Err(ResolveError::LegacyCleanupRequired {
                 package_id: package_id.clone(),
             });
@@ -520,6 +574,7 @@ fn solve<'a>(
             next_selected,
             include_prerelease,
             unity_version,
+            legacy_handling,
         ) {
             Ok(solution) => return Ok(solution),
             Err(error @ ResolveError::SourceAmbiguous { .. })
@@ -893,5 +948,95 @@ mod tests {
             resolve_packages(&[blocked, incompatible], &[pinned]),
             Err(ResolveError::PackageNotFound { .. })
         ));
+    }
+
+    #[test]
+    fn normal_resolution_rejects_direct_and_transitive_legacy_candidates() {
+        let mut direct = candidate("com.example.legacy", "1.0.0", 1, "repo-a", &[]);
+        direct.legacy_metadata_present = true;
+        assert_eq!(
+            resolve_packages(&[direct], &[request("com.example.legacy", "=1.0.0")]),
+            Err(ResolveError::LegacyCleanupRequired {
+                package_id: "com.example.legacy".to_owned(),
+            })
+        );
+
+        let root = candidate(
+            "com.example.root",
+            "1.0.0",
+            1,
+            "repo-a",
+            &[("com.example.legacy", "=1.0.0")],
+        );
+        let mut transitive = candidate("com.example.legacy", "1.0.0", 1, "repo-a", &[]);
+        transitive.legacy_metadata_present = true;
+        assert_eq!(
+            resolve_packages(
+                &[root, transitive],
+                &[request("com.example.root", "=1.0.0")],
+            ),
+            Err(ResolveError::LegacyCleanupRequired {
+                package_id: "com.example.legacy".to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn migration_resolution_collects_exact_deterministic_legacy_obligations() {
+        let root = candidate(
+            "com.example.root",
+            "1.0.0",
+            1,
+            "repo-a",
+            &[("com.example.legacy", "=2.0.0")],
+        );
+        let mut legacy = candidate("com.example.legacy", "2.0.0", 7, "repo-b", &[]);
+        legacy.legacy_metadata_present = true;
+        let expected_source = legacy.source.clone();
+        let catalog = vec![root, legacy];
+        let mut reversed = catalog.clone();
+        reversed.reverse();
+
+        let left =
+            resolve_unity_migration_packages(&catalog, &[request("com.example.root", "=1.0.0")])
+                .expect("migration resolution");
+        let right =
+            resolve_unity_migration_packages(&reversed, &[request("com.example.root", "=1.0.0")])
+                .expect("migration resolution from reversed input");
+
+        assert_eq!(left, right);
+        assert_eq!(
+            left.legacy_cleanup_obligations,
+            [LegacyCleanupObligation {
+                package_id: "com.example.legacy".to_owned(),
+                version: Version::parse("2.0.0").expect("version"),
+                source: expected_source,
+            }]
+        );
+        assert_eq!(left.resolution.packages.len(), 2);
+    }
+
+    #[test]
+    fn migration_mode_preserves_ambiguity_and_requirement_limits() {
+        let ambiguous = [
+            candidate("com.example.pkg", "1.0.0+left", 1, "repo-a", &[]),
+            candidate("com.example.pkg", "1.0.0+right", 1, "repo-b", &[]),
+        ];
+        assert!(matches!(
+            resolve_unity_migration_packages(&ambiguous, &[request("com.example.pkg", ">=1.0.0")],),
+            Err(ResolveError::SourceAmbiguous { .. })
+        ));
+
+        let requests = (0..=MAX_REQUIREMENTS)
+            .map(|index| request(&format!("com.example.package{index}"), "=1.0.0"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            resolve_packages(&[], &requests),
+            Err(ResolveError::TooManyRequirements)
+        );
+        assert_eq!(
+            resolve_unity_migration_packages(&[], &requests),
+            Err(ResolveError::TooManyRequirements)
+        );
     }
 }

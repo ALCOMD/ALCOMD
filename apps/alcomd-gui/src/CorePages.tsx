@@ -12,7 +12,6 @@ import {
     playArrowIcon,
     publicIcon,
     refreshIcon,
-    searchIcon,
     starIcon,
     upgradeIcon,
     viewGridIcon,
@@ -30,13 +29,13 @@ import type {
     PackageSourceSelector,
     ProjectCopyPlan,
     ProjectDeletePlan,
-    ProjectEditorSelectionState,
     ProjectSnapshot,
     RegistryCursor,
     RepositoryPackageVersion,
     RepositorySnapshot,
     TemplateRecord,
     UnityInstallation,
+    UnityLaunchOptionsResult,
     UserPackageRecord,
     SettingsGetResult,
     SettingsLocale
@@ -51,6 +50,7 @@ import {
     PackageActions,
     type PackageActionSelection,
     ProjectUnityActions,
+    ProjectUnityWorkspaceActions,
     RegisterRepositoryPanel,
     RepositoryActions,
     TemplateActions,
@@ -59,9 +59,9 @@ import {
 } from "./CoreActions";
 import { DataTableHeader, MaterialDataTable } from "./DataTable";
 import type { GuiRpcClient } from "./rpc";
-import { Button, Checkbox, Dialog, Icon, IconButton, Menu, MenuItem, Select, TextField } from "./Material";
+import { Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, SearchField, Select, TextField } from "./Material";
 import { CreateProjectDialog, RestoreProjectDialog } from "./ProjectCreationDialogs";
-import { capabilities, capabilityUnavailableTitle, useCapability, useCapabilityState } from "./capabilities";
+import { capabilities, capabilityUnavailableTitle, useCapability, useCapabilityState, useReconnect } from "./capabilities";
 
 interface PageProps {
     client: GuiRpcClient;
@@ -158,13 +158,14 @@ export function RouteState({ kind, title, detail }: { kind: "loading" | "empty" 
 }
 
 function ErrorState({ error, retry }: { error: RpcError; retry(): void }) {
+    const reconnect = useReconnect();
     const disconnected = error.code === "daemon_unavailable";
     return (
         <section className={`route-state route-state--${disconnected ? "disconnected" : "error"}`} role="alert">
             <h2>{disconnected ? "ALCOMD core disconnected" : "Request failed"}</h2>
             <p><code>{error.code}</code></p>
             {error.diagnosticId === undefined ? null : <p>Diagnostic ID: <code>{error.diagnosticId}</code></p>}
-            <Button onClick={retry} type="button">Reconnect and retry</Button>
+            <Button onClick={() => { if (disconnected) reconnect?.(); retry(); }} type="button">Reconnect and retry</Button>
         </section>
     );
 }
@@ -285,7 +286,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                 <IconButton disabled={state.refreshing} label={state.refreshing ? "Refreshing projects" : "Refresh projects"} onClick={() => void refresh()} type="button">
                     <Icon asset={refreshIcon} />
                 </IconButton>
-                <TextField aria-label="Search projects" className="projects-search" label="" leadingIcon={<Icon asset={searchIcon} slot="leading-icon" />} onInput={setSearch} placeholder="Search..." type="search" value={search} variant="filled" />
+                <SearchField className="projects-search" label="Search projects" onInput={setSearch} placeholder="Search..." value={search} />
                 <Button onClick={() => setView((current) => current === "list" ? "grid" : "list")} type="button" variant="text">
                     <Icon asset={view === "list" ? viewGridIcon : viewListIcon} slot="icon" />
                     <StateSizedLabel current={view === "list" ? "Grid view" : "List view"} labels={["Grid view", "List view"]} />
@@ -442,13 +443,9 @@ function ProjectRowActions({ client, context = "row", navigate, onChanged, onCop
     const canDeleteProjects = useCapability(capabilities.projectsDelete);
     const canReadBackups = useCapability(capabilities.backupsRead);
     const canLaunchUnity = useCapability(capabilities.unityLaunch);
-    const canManageUnity = useCapability(capabilities.unityManage);
-    const [copyParent, setCopyParent] = useState("");
     const [copyOpen, setCopyOpen] = useState(false);
-    const [selectingCopyTarget, setSelectingCopyTarget] = useState(false);
     const [openingDirectory, setOpeningDirectory] = useState(false);
     const [opening, setOpening] = useState(false);
-    const [clearingEditor, setClearingEditor] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
     const [removalIntent, setRemovalIntent] = useState<"unregister" | "delete">("unregister");
     const [unregistering, setUnregistering] = useState(false);
@@ -492,7 +489,15 @@ function ProjectRowActions({ client, context = "row", navigate, onChanged, onCop
         setOpening(true);
         onFeedback("Opening Unity…");
         try {
-            const result = await client.unityLaunch(projectId, revision);
+            const options = await client.unityLaunchOptions(projectId, revision);
+            if (options.exactMatchingInstallations.length !== 1) {
+                navigate(`/projects/${projectId}/unity`);
+                onFeedback(options.exactMatchingInstallations.length === 0
+                    ? `Unity ${options.projectUnityVersion} is required. Choose a migration target.`
+                    : "Choose the Unity installation for this launch.");
+                return;
+            }
+            const result = await client.unityLaunch(projectId, options.exactMatchingInstallations[0]!.installationId, revision);
             onFeedback(`Unity launch ${result.launch.state}.`);
         } catch (caught: unknown) {
             onFeedback(`Unable to open Unity: ${safeError(caught).code}`);
@@ -530,38 +535,9 @@ function ProjectRowActions({ client, context = "row", navigate, onChanged, onCop
         }
     };
 
-    const beginCopy = async () => {
+    const beginCopy = () => {
         setMenuOpen(false);
-        setSelectingCopyTarget(true);
-        try {
-            const selected = await client.selectDirectory();
-            if (selected === undefined) return;
-            setCopyParent(selected);
-            setCopyOpen(true);
-        } catch (caught: unknown) {
-            onFeedback(`Unable to select copy destination: ${safeError(caught).code}`);
-        } finally {
-            setSelectingCopyTarget(false);
-        }
-    };
-
-    const clearEditor = async () => {
-        setMenuOpen(false);
-        setClearingEditor(true);
-        try {
-            const result = await client.unityProjectEditorSelectionGet(projectId);
-            if (result.preference.selection.mode !== "explicit") {
-                onFeedback("Unity editor selection is already Automatic.");
-                return;
-            }
-            await client.unityProjectEditorClear(projectId, result.preference.revision);
-            onFeedback("Unity editor selection returned to Automatic. Launch arguments were preserved.");
-            onChanged();
-        } catch (caught: unknown) {
-            onFeedback(`Unable to clear Unity editor selection: ${safeError(caught).code}`);
-        } finally {
-            setClearingEditor(false);
-        }
+        setCopyOpen(true);
     };
 
     const planDelete = async () => {
@@ -609,22 +585,20 @@ function ProjectRowActions({ client, context = "row", navigate, onChanged, onCop
 
     return (
         <>
-            <div className={workspace ? "project-row-actions project-workspace-actions" : "project-row-actions"}>
+            <div className={workspace ? "project-row-actions project-workspace-more-actions" : "project-row-actions"}>
                 {workspace ? null : <ProjectFavoriteButton client={client} onChanged={onProjectChanged} onFeedback={onFeedback} onRefresh={onChanged} project={project} />}
-                <Button className="project-open-unity-action" disabled={!canLaunchUnity || opening || revision === undefined} onClick={() => void openUnity()} title={capabilityUnavailableTitle(canLaunchUnity, capabilities.unityLaunch)} type="button">
+                {workspace ? null : <Button className="project-open-unity-action" disabled={!canLaunchUnity || opening || revision === undefined} onClick={() => void openUnity()} title={capabilityUnavailableTitle(canLaunchUnity, capabilities.unityLaunch)} type="button">
                     <Icon asset={playArrowIcon} slot="icon" />
                     <StateSizedLabel current={opening ? "Opening…" : "Open Unity"} labels={["Open Unity", "Opening…"]} />
-                </Button>
+                </Button>}
                 {workspace ? null : <Button disabled={!canReadProjects} onClick={() => navigate(`/projects/${projectId}`)} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead)} type="button" variant="tonal">Manage</Button>}
-                {workspace ? null : <Button disabled={!canReadBackups} onClick={() => navigate(`/projects/${projectId}/backups`)} title={capabilityUnavailableTitle(canReadBackups, capabilities.backupsRead)} type="button" variant="tonal"><Icon asset={backupIcon} slot="icon" />Backups</Button>}
+                {workspace ? null : <Button disabled={!canReadBackups} onClick={() => navigate(`/projects/${projectId}/backups`)} title={capabilityUnavailableTitle(canReadBackups, capabilities.backupsRead)} type="button" variant="tonal">Backups</Button>}
                 <IconButton className="project-more-actions" label={`More actions for ${projectName(project)}`} onClick={() => setMenuOpen(true)} ref={menuAnchorRef} type="button">
                     <Icon asset={moreVertIcon} size={24} />
                 </IconButton>
                 <Menu anchorRef={menuAnchorRef} className="project-actions-menu" onClose={() => setMenuOpen(false)} open={menuOpen}>
                     <MenuItem className="project-actions-menu-item" disabled={!canReadProjects || openingDirectory} label={openingDirectory ? "Opening Project Directory…" : "Open Project Directory"} onClick={() => void openDirectory()} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead)} />
-                    <MenuItem className="project-actions-menu-item" disabled={!canCopyProjects || revision === undefined || selectingCopyTarget} label={selectingCopyTarget ? "Choosing Copy Destination…" : "Copy Project"} onClick={() => void beginCopy()} title={capabilityUnavailableTitle(canCopyProjects, capabilities.projectsCopy)} />
-                    {workspace ? <MenuItem className="project-actions-menu-item" disabled={!canReadBackups} label="Backups" onClick={() => { setMenuOpen(false); navigate(`/projects/${projectId}/backups`); }} title={capabilityUnavailableTitle(canReadBackups, capabilities.backupsRead)} /> : null}
-                    {workspace ? <MenuItem className="project-actions-menu-item" disabled={!canManageUnity || clearingEditor} label={clearingEditor ? "Clearing Unity Editor…" : "Use Automatic Unity Editor"} onClick={() => void clearEditor()} title={capabilityUnavailableTitle(canManageUnity, capabilities.unityManage)} /> : null}
+                    <MenuItem className="project-actions-menu-item" disabled={!canCopyProjects || revision === undefined} label="Copy Project" onClick={beginCopy} title={capabilityUnavailableTitle(canCopyProjects, capabilities.projectsCopy)} />
                     {workspace ? <>
                         <MenuItem className="project-actions-menu-item project-actions-menu-item--danger project-actions-menu-item--danger-group" disabled={!canManageProjects || revision === undefined} label="Remove from list" onClick={beginUnregister} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry)} />
                         <MenuItem className="project-actions-menu-item project-actions-menu-item--danger" disabled={!canDeleteProjects || revision === undefined} label="Delete Project Directory…" onClick={beginDeleteDirectory} title={capabilityUnavailableTitle(canDeleteProjects, capabilities.projectsDelete)} />
@@ -633,9 +607,9 @@ function ProjectRowActions({ client, context = "row", navigate, onChanged, onCop
             </div>
             <Dialog onClose={() => { if (!deleting) { setConfirmUnregister(false); setDeletePlan(undefined); setRemovalIntent("unregister"); } }} open={confirmUnregister} title={deletePlan === undefined ? removalIntent === "delete" ? "Preparing permanent deletion…" : workspace ? "Remove this project from the list?" : "Remove this project?" : "Permanently delete project directory?"}>
                 {deletePlan === undefined && removalIntent === "unregister" ? <>
-                    <p>Choose whether to remove only the ALCOMD registration or permanently delete the local Unity project directory.</p>
+                    <p>{workspace ? "Remove the ALCOMD registration for this project?" : "Choose whether to remove only the ALCOMD registration or permanently delete the local Unity project directory."}</p>
                     <p>Removing from the list does not delete files.</p>
-                    <div className="dialog-actions">
+                    <div className={workspace ? "dialog-actions" : "dialog-actions dialog-actions--split"}>
                         <Button disabled={unregistering || deleting} onClick={() => setConfirmUnregister(false)} type="button" variant="text">Cancel</Button>
                         <Button disabled={!canManageProjects || unregistering || deleting || revision === undefined} onClick={() => void unregister()} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry)} type="button" variant="tonal">
                             <StateSizedLabel current={unregistering ? "Removing…" : "Remove from list"} labels={["Remove from list", "Removing…"]} />
@@ -672,13 +646,13 @@ function ProjectRowActions({ client, context = "row", navigate, onChanged, onCop
                 onClose={() => setCopyOpen(false)}
                 open={copyOpen}
                 project={project}
-                targetParent={copyParent}
             />
         </>
     );
 }
 
-function CopyProjectDialog({ client, onCompleted, onClose, open, project, targetParent }: { client: GuiRpcClient; onCompleted(targetProjectId: string): void; onClose(): void; open: boolean; project: ProjectSnapshot; targetParent: string }) {
+function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { client: GuiRpcClient; onCompleted(targetProjectId: string): void; onClose(): void; open: boolean; project: ProjectSnapshot }) {
+    const [targetParent, setTargetParent] = useState("");
     const [targetLeaf, setTargetLeaf] = useState("");
     const [plan, setPlan] = useState<ProjectCopyPlan>();
     const [operation, setOperation] = useState<Operation>();
@@ -693,6 +667,7 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project, target
             setError(undefined);
             return;
         }
+        setTargetParent(projectParentPath(project.rootPath));
         setTargetLeaf(`${projectName(project)} Copy`);
     }, [open, project]);
 
@@ -713,6 +688,19 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project, target
             window.clearTimeout(timer);
         };
     }, [client, onCompleted, operation, plan]);
+
+    const chooseTargetParent = async () => {
+        setBusy(true);
+        setError(undefined);
+        try {
+            const selected = await client.selectDirectory();
+            if (selected !== undefined) setTargetParent(selected);
+        } catch (caught: unknown) {
+            setError(safeError(caught));
+        } finally {
+            setBusy(false);
+        }
+    };
 
     const createPlan = async () => {
         if (project.projectId === undefined || project.revision === undefined) return;
@@ -761,12 +749,15 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project, target
             <div className="project-copy-review">
                 {plan === undefined ? (
                     <>
-                        <p>Choose the new project name. ALCOMD will copy the registered project into the selected directory without overwriting an existing target.</p>
-                        <code>{targetParent}</code>
+                        <p>Choose the new project name. By default, ALCOMD creates the copy beside the original project without overwriting an existing target.</p>
                         <TextField aria-label="Copied project name" label="Project name" onInput={setTargetLeaf} value={targetLeaf} />
+                        <div className="project-copy-location">
+                            <TextField aria-label="Copy project location" label="Project location" readOnly value={targetParent} />
+                            <Button disabled={busy} onClick={() => void chooseTargetParent()} type="button" variant="tonal">Choose…</Button>
+                        </div>
                         <div className="dialog-actions">
                             <Button disabled={busy} onClick={onClose} type="button" variant="text">Cancel</Button>
-                            <Button disabled={busy || targetLeaf.trim().length === 0} onClick={() => void createPlan()} type="button">{busy ? "Planning…" : "Review copy"}</Button>
+                            <Button disabled={busy || targetParent.length === 0 || targetLeaf.trim().length === 0} onClick={() => void createPlan()} type="button">{busy ? "Planning…" : "Review copy"}</Button>
                         </div>
                     </>
                 ) : operation === undefined ? (
@@ -888,6 +879,15 @@ function RegisterProjectDialog({ client, onChanged, onClose, open, path }: { cli
 
 function projectName(project: ProjectSnapshot): string {
     return displayProjectPath(project.rootPath).split(/[\\/]/).at(-1) ?? "Unity project";
+}
+
+function projectParentPath(rootPath: string): string {
+    const normalized = rootPath.replace(/[\\/]+$/, "");
+    const separatorIndex = Math.max(normalized.lastIndexOf("\\"), normalized.lastIndexOf("/"));
+    if (separatorIndex < 0) return "";
+    if (separatorIndex === 0) return normalized.slice(0, 1);
+    if (separatorIndex === 2 && /^[A-Za-z]:[\\/]/.test(normalized)) return normalized.slice(0, 3);
+    return normalized.slice(0, separatorIndex);
 }
 
 function formatObserved(value: number): string {
@@ -1029,12 +1029,7 @@ function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
     );
 }
 
-function PackageWorkspaceMoreMenu({ canPlanV1, canPlanV2, onReinstallAll, onResolve }: {
-    canPlanV1: boolean;
-    canPlanV2: boolean;
-    onReinstallAll(): void;
-    onResolve(): void;
-}) {
+function PackageWorkspaceMoreMenu({ canPlanV1, canPlanV2, onResolve, onReinstallAll }: { canPlanV1: boolean; canPlanV2: boolean; onResolve(): void; onReinstallAll(): void }) {
     const [open, setOpen] = useState(false);
     const anchorRef = useRef<HTMLElement>(null);
     return (
@@ -1050,47 +1045,83 @@ function PackageWorkspaceMoreMenu({ canPlanV1, canPlanV2, onReinstallAll, onReso
     );
 }
 
-function PackageFilterMenu({
-    canUseUserPackages,
-    filter,
-    onFilterChange,
-    onSourceChange,
-    source
-}: {
-    canUseUserPackages: boolean;
-    filter: string;
-    onFilterChange(value: string): void;
-    onSourceChange(value: "all" | "local" | "remote" | "user-package"): void;
-    source: "all" | "local" | "remote" | "user-package";
-}) {
-    const [open, setOpen] = useState(false);
-    const anchorRef = useRef<HTMLElement>(null);
-    const filters = [
-        { label: "All packages", value: "all" },
-        { label: "Installed", value: "installed" },
-        { label: "Available", value: "available" },
-        { label: "Missing source", value: "missing" }
-    ];
-    const sources: Array<{ label: string; value: "all" | "local" | "remote" | "user-package" }> = [
-        { label: "All sources", value: "all" },
-        { label: "Remote", value: "remote" },
-        { label: "Local repository", value: "local" },
-        ...(canUseUserPackages ? [{ label: "User Packages", value: "user-package" as const }] : [])
-    ];
-    return (
-        <>
-            <Button aria-expanded={open} className="package-filter-action" onClick={() => setOpen(true)} ref={anchorRef} title="Filter package status and source" type="button" variant="tonal">Package filters</Button>
-            <Menu anchorRef={anchorRef} className="package-filter-menu" onClose={() => setOpen(false)} open={open}>
-                {filters.map((option) => <MenuItem className="package-filter-menu-item" key={`filter:${option.value}`} label={option.label} onClick={() => { onFilterChange(option.value); setOpen(false); }} selected={filter === option.value} />)}
-                {sources.map((option, index) => <MenuItem className={index === 0 ? "package-filter-menu-item package-filter-menu-item--source" : "package-filter-menu-item"} key={`source:${option.value}`} label={`Source: ${option.label}`} onClick={() => { onSourceChange(option.value); setOpen(false); }} selected={source === option.value} />)}
-            </Menu>
-        </>
-    );
-}
-
 interface PackageWorkspaceValue {
     catalog: WorkspaceCatalogVersion[];
+    installations: UnityInstallation[];
+    launchOptions: UnityLaunchOptionsResult;
     project: ProjectSnapshot;
+    repositories: RepositorySnapshot[];
+    settings: SettingsGetResult;
+}
+
+function PackageFilters({ client, settings, repositories, onChanged, filter, setFilter, sourceFilter, setSourceFilter, canUseUserPackages }: {
+    client: GuiRpcClient;
+    settings: SettingsGetResult;
+    repositories: RepositorySnapshot[];
+    onChanged(): void;
+    filter: string;
+    setFilter(value: string): void;
+    sourceFilter: string;
+    setSourceFilter(value: "all" | "local" | "remote" | "user-package"): void;
+    canUseUserPackages: boolean;
+}) {
+    const [open, setOpen] = useState(false);
+    const [confirmPrerelease, setConfirmPrerelease] = useState(false);
+    const [snapshot, setSnapshot] = useState(settings);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<RpcError>();
+    const anchorRef = useRef<HTMLElement>(null);
+    const saving = useRef(false);
+    useEffect(() => setSnapshot(settings), [settings]);
+    const save = async (update: Partial<OfficialSettings["packages"]>) => {
+        if (saving.current) return;
+        saving.current = true;
+        setBusy(true);
+        setError(undefined);
+        try {
+            const next = await client.settingsUpdate(snapshot.revision, { packages: update });
+            setSnapshot(next);
+            onChanged();
+        } catch (caught: unknown) {
+            setError(safeError(caught));
+        } finally {
+            saving.current = false;
+            setBusy(false);
+        }
+    };
+    return <>
+        <Button aria-expanded={open} aria-haspopup="dialog" className="package-filter-trigger" onClick={() => setOpen(!open)} ref={anchorRef} type="button" variant="tonal">Filter packages</Button>
+        <FilterPopover anchorRef={anchorRef} label="Package filters" onClose={() => setOpen(false)} open={open}>
+            <fieldset disabled={busy}>
+                <legend>Repositories</legend>
+                {repositories.map((repository) => repository.repositoryId === undefined ? null : <Checkbox
+                    checked={!snapshot.settings.packages.hiddenRepositoryIds.includes(repository.repositoryId)}
+                    disabled={busy}
+                    key={repository.repositoryId}
+                    label={repository.name ?? repository.declaredId ?? sourceText(repository)}
+                    onChange={(checked) => {
+                        const hidden = new Set(snapshot.settings.packages.hiddenRepositoryIds);
+                        if (checked) hidden.delete(repository.repositoryId as string);
+                        else hidden.add(repository.repositoryId as string);
+                        void save({ hiddenRepositoryIds: [...hidden].sort() });
+                    }}
+                />)}
+                {canUseUserPackages ? <Checkbox checked={!snapshot.settings.packages.hideLocalUserPackages} disabled={busy} label="Local User Packages" onChange={(checked) => void save({ hideLocalUserPackages: !checked })} /> : null}
+            </fieldset>
+            <fieldset disabled={busy}>
+                <legend>Other filters</legend>
+                <Checkbox checked={snapshot.settings.packages.showPrerelease} disabled={busy} label="Show prerelease versions" onChange={(checked) => { if (checked) { setOpen(false); setConfirmPrerelease(true); } else void save({ showPrerelease: false }); }} />
+                <Select label="Status" onChange={setFilter} options={[{ label: "All packages", value: "all" }, { label: "Installed", value: "installed" }, { label: "Available", value: "available" }, { label: "Missing source", value: "missing" }]} value={filter} />
+                <Select label="Source" onChange={(value) => setSourceFilter(value as "all" | "local" | "remote" | "user-package")} options={[{ label: "All", value: "all" }, { label: "Remote", value: "remote" }, { label: "Local repository", value: "local" }, ...(canUseUserPackages ? [{ label: "User Packages", value: "user-package" }] : [])]} value={sourceFilter} />
+            </fieldset>
+            {busy ? <p role="status">Saving filters…</p> : null}
+            {error === undefined ? null : <div role="alert"><p>{error.code === "revision_conflict" ? "Settings changed elsewhere. Reload filters before trying again." : `Could not save filters: ${error.code}`}</p><Button onClick={() => { setError(undefined); onChanged(); }} type="button" variant="text">Reload filters</Button></div>}
+        </FilterPopover>
+        <Dialog onClose={() => { setConfirmPrerelease(false); setOpen(true); }} open={confirmPrerelease} title="Show prerelease versions?">
+            <p>Prerelease packages may be unstable. Showing them does not install or update any package.</p>
+            <div className="dialog-actions"><Button onClick={() => setConfirmPrerelease(false)} type="button" variant="text">Cancel</Button><Button onClick={() => { setConfirmPrerelease(false); void save({ showPrerelease: true }); }} type="button">Show prerelease versions</Button></div>
+        </Dialog>
+    </>;
 }
 
 interface RepositoryRefreshProgress {
@@ -1125,11 +1156,14 @@ async function listAllRepositoryPackages(client: GuiRpcClient, repositoryId: str
 }
 
 async function loadPackageWorkspace(client: GuiRpcClient, projectId: string, includeUserPackages: boolean): Promise<PackageWorkspaceValue> {
-    const [project, repositories, settings, userPackages] = await Promise.all([
-        client.projectGet(projectId),
+    const project = (await client.projectGet(projectId)).project;
+    if (project.revision === undefined) throw { code: "project_not_registered" };
+    const [repositories, settings, userPackages, installations, launchOptions] = await Promise.all([
         listAllRepositories(client),
         client.settingsGet(),
-        includeUserPackages ? listAllUserPackages(client) : Promise.resolve([])
+        includeUserPackages ? listAllUserPackages(client) : Promise.resolve([]),
+        loadAllUnityInstallations(client),
+        client.unityLaunchOptions(projectId, project.revision)
     ]);
     const hidden = new Set(settings.settings.packages.hiddenRepositoryIds);
     const catalogs = await Promise.all(repositories.filter((repository) => repository.repositoryId === undefined || !hidden.has(repository.repositoryId)).map(async (repository) => {
@@ -1150,10 +1184,11 @@ async function loadPackageWorkspace(client: GuiRpcClient, projectId: string, inc
         sourceKind: "user-package",
         sourceSelector: { kind: "user_package", userPackageId: item.userPackageId }
     }));
-    return { project: project.project, catalog: [...catalogs.flat(), ...local] };
+    return { project, catalog: [...catalogs.flat(), ...local], installations, launchOptions, repositories, settings };
 }
 
 function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { projectId: string }) {
+    const canReadBackups = useCapability(capabilities.backupsRead);
     const canManageRepositories = useCapability(capabilities.repositoriesRegistry);
     const canPlanPackagesV1 = useCapability(capabilities.packagesPlanV1);
     const canPlanPackagesV2 = useCapability(capabilities.packagesPlanV2);
@@ -1235,8 +1270,9 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
         reload();
     };
     return (
-        <ResourcePage load={load} showRefreshBar={false}>{({ project, catalog }, refresh, refreshing, refreshError) => {
-            const rows = packageWorkspaceRows(project, catalog).filter((row) => {
+        <ResourcePage load={load} showRefreshBar={false}>{({ project, catalog, installations, launchOptions, repositories, settings }, refresh, refreshing, refreshError) => {
+            const workspaceRows = packageWorkspaceRows(project, catalog);
+            const rows = workspaceRows.filter((row) => {
                 const query = search.toLocaleLowerCase();
                 const matchesSearch = query.length === 0 || [row.displayName, row.packageId, ...row.sources].some((value) => value.toLocaleLowerCase().includes(query));
                 const matchesFilter = filter === "all"
@@ -1250,15 +1286,16 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                 <section className="project-workspace">
                     <header className="project-workspace-header">
                         <div className="project-workspace-context">
-                            <IconButton className="project-back-action" label="Back to Projects" onClick={() => navigate("/projects")} title="Back to Projects" type="button"><Icon asset={arrowBackIcon} /></IconButton>
+                            <Button className="project-back-action" onClick={() => navigate("/projects")} type="button" variant="text"><Icon asset={arrowBackIcon} slot="icon" />Back</Button>
                             <div className="project-workspace-title">
                                 <h1 id="route-title" tabIndex={-1}>{projectName(project)}</h1>
-                                <p title={displayProjectPath(project.rootPath)}><span>Location:</span> {displayProjectPath(project.rootPath)}</p>
+                                <p title={displayProjectPath(project.rootPath)}>{displayProjectPath(project.rootPath)}</p>
                             </div>
                         </div>
                         <nav aria-label="Project actions" className="project-workspace-action-cluster">
                             {refreshError === undefined ? null : <span className="inline-error" role="alert">Refresh failed: {refreshError.code}</span>}
-                            <span className="project-unity-version"><span>Unity version</span><strong>{project.unityVersion}</strong></span>
+                            <ProjectUnityWorkspaceActions client={client} installations={installations} launchOptions={launchOptions} navigate={navigate} project={project} />
+                            <Button disabled={!canReadBackups} onClick={() => navigate(`/projects/${projectId}/backups`)} title={capabilityUnavailableTitle(canReadBackups, capabilities.backupsRead)} type="button" variant="text"><Icon asset={backupIcon} slot="icon" />Backups</Button>
                             <ProjectRowActions
                                 client={client}
                                 context="workspace"
@@ -1275,11 +1312,14 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                     {workspaceFeedback === undefined ? null : <div className="project-workspace-feedback" role="status" aria-live="polite">{workspaceFeedback}</div>}
                     <section aria-labelledby="packages-heading" className="package-workspace-surface">
                         <header className="package-workspace-toolbar">
-                            <h2 id="packages-heading">Package management</h2>
-                            <IconButton className="package-refresh-action" disabled={!canManageRepositories || refreshing || repositoryRefresh?.running === true} label="Refresh" onClick={() => void refreshRepositories(refresh)} title={capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry)} type="button"><Icon asset={refreshIcon} /></IconButton>
-                            <TextField className="package-workspace-search" label="Search packages" leadingIcon={<Icon asset={searchIcon} slot="leading-icon" />} onInput={setSearch} value={search} variant="filled" />
-                            <PackageWorkspaceMoreMenu canPlanV1={canPlanPackagesV1} canPlanV2={canPlanPackagesV2} onReinstallAll={() => selectAction("reinstall-all")} onResolve={() => selectAction("resolve")} />
-                            <PackageFilterMenu canUseUserPackages={canUseUserPackages} filter={filter} onFilterChange={setFilter} onSourceChange={setSourceFilter} source={sourceFilter} />
+                            <h2 id="packages-heading">Manage packages</h2>
+                            <IconButton className="package-refresh-action" disabled={!canManageRepositories || refreshing || repositoryRefresh?.running === true} label={repositoryRefresh?.running === true ? "Refreshing packages" : "Refresh"} onClick={() => void refreshRepositories(refresh)} title={capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry) ?? "Refresh packages"} type="button"><Icon asset={refreshIcon} /></IconButton>
+                            <SearchField className="package-workspace-search" label="Search packages" onInput={setSearch} placeholder="Search..." value={search} />
+                            <div className="package-workspace-secondary-actions">
+                                <span className="visually-hidden" role="status" aria-live="polite">{rows.length} {rows.length === 1 ? "package" : "packages"}</span>
+                                <PackageWorkspaceMoreMenu canPlanV1={canPlanPackagesV1} canPlanV2={canPlanPackagesV2} onResolve={() => selectAction("resolve")} onReinstallAll={() => selectAction("reinstall-all")} />
+                                <PackageFilters canUseUserPackages={canUseUserPackages} client={client} filter={filter} onChanged={refresh} repositories={repositories} setFilter={setFilter} setSourceFilter={setSourceFilter} settings={settings} sourceFilter={sourceFilter} />
+                            </div>
                         </header>
                         {repositoryRefresh === undefined ? null : (
                             <div className={repositoryRefresh.failures.length > 0 ? "package-refresh-status package-refresh-status--failed" : "package-refresh-status"} role={repositoryRefresh.failures.length > 0 ? "alert" : "status"} aria-live="polite">
@@ -1297,10 +1337,10 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                             </div>
                         )}
                         <div className="package-workspace-table-scroll">
-                            {rows.length === 0 ? <section className="projects-empty" role="status"><h3>No matching packages</h3><p>Change the search or package filter.</p></section> : (
+                            {rows.length === 0 ? <section className="projects-empty" role="status"><h3>{workspaceRows.length === 0 ? "No packages" : "No matching packages"}</h3><p>{workspaceRows.length === 0 ? "This project has no packages to manage." : "Change the search or package filter."}</p></section> : (
                                 <MaterialDataTable className="package-workspace-table" label="Packages" minWidth={840}>
                                     <colgroup><col className="package-column-select" /><col className="package-column-name" /><col className="package-column-installed" /><col className="package-column-latest" /><col className="package-column-source" /><col className="package-column-actions" /></colgroup>
-                                    <thead><tr><DataTableHeader><span className="visually-hidden">Selection</span></DataTableHeader><DataTableHeader>Package</DataTableHeader><DataTableHeader>Installed</DataTableHeader><DataTableHeader>Latest</DataTableHeader><DataTableHeader>Source</DataTableHeader><DataTableHeader><span className="visually-hidden">Actions</span></DataTableHeader></tr></thead>
+                                    <thead><tr><DataTableHeader><Checkbox checked={rows.some((row) => row.installedVersion !== undefined) && rows.filter((row) => row.installedVersion !== undefined).every((row) => bulkSelection.includes(row.packageId))} label="Select all installed packages" onChange={(checked) => setBulkSelection(checked ? rows.filter((row) => row.installedVersion !== undefined).map((row) => row.packageId) : [])} /></DataTableHeader><DataTableHeader>Package</DataTableHeader><DataTableHeader>Installed</DataTableHeader><DataTableHeader>Latest</DataTableHeader><DataTableHeader>Source</DataTableHeader><DataTableHeader><span className="visually-hidden">Actions</span></DataTableHeader></tr></thead>
                                     <tbody>{rows.map((row) => {
                                         const latest = row.availableVersions.at(-1);
                                         const canUpgrade = row.installedVersion !== undefined && latest !== undefined && latest !== row.installedVersion;
@@ -1313,10 +1353,10 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                                 <td>{row.sourceOptions.length === 0 ? <span className="package-source-missing">No configured source</span> : row.sourceOptions.length === 1 ? row.sourceOptions[0]?.label : <PackageSourceMenu label={`Source for ${row.displayName}`} onChange={(key) => setSourceSelections((current) => ({ ...current, [row.packageId]: key }))} options={row.sourceOptions} value={sourceSelections[row.packageId] ?? ""} />}</td>
                                                 <td><div className="package-row-actions">
                                                     {row.installedVersion === undefined
-                                                        ? <IconButton className="package-primary-action" disabled={!canPlanPackagesV1 || latest === undefined} label="Install" onClick={() => selectAction("install", row, latest)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button"><Icon asset={downloadIcon} /></IconButton>
+                                                        ? <Button disabled={!canPlanPackagesV1 || latest === undefined} onClick={() => selectAction("install", row, latest)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button" variant="tonal"><Icon asset={downloadIcon} slot="icon" />Install</Button>
                                                         : canUpgrade
-                                                            ? <IconButton className="package-primary-action" disabled={!canPlanPackagesV1} label="Update" onClick={() => selectAction("upgrade", row, latest)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button"><Icon asset={upgradeIcon} /></IconButton>
-                                                            : <IconButton className="package-primary-action" disabled={!canPlanPackagesV1} label="Versions" onClick={() => selectAction("downgrade", row)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button"><Icon asset={historyIcon} /></IconButton>}
+                                                            ? <Button disabled={!canPlanPackagesV1} onClick={() => selectAction("upgrade", row, latest)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button" variant="tonal"><Icon asset={upgradeIcon} slot="icon" />Update</Button>
+                                                            : <Button disabled={!canPlanPackagesV1} onClick={() => selectAction("downgrade", row)} title={capabilityUnavailableTitle(canPlanPackagesV1, capabilities.packagesPlanV1)} type="button" variant="text"><Icon asset={historyIcon} slot="icon" />Versions</Button>}
                                                     <PackageRowMoreMenu canPlanV1={canPlanPackagesV1} canPlanV2={canPlanPackagesV2} client={client} onAction={(action) => selectAction(action, row)} row={row} />
                                                 </div></td>
                                             </tr>
@@ -1482,17 +1522,19 @@ function UnityCard({ installation }: { installation: UnityInstallation }) {
     return <article className="resource-card"><h2>Unity {installation.unityVersion}</h2><p>{installation.architecture} · {installation.sourceKind}</p><p className="private-value" title="Private path hidden">Executable path is stored by the daemon</p></article>;
 }
 
-export function ProjectUnityPage({ client, projectId }: PageProps & { projectId: string }) {
+export function ProjectUnityPage({ afterMigrationOpen = false, client, projectId }: PageProps & { afterMigrationOpen?: boolean; projectId: string }) {
     const load = useCallback(async () => {
-        const [project, installations, selection, writer] = await Promise.all([
-            client.projectGet(projectId),
+        const project = (await client.projectGet(projectId)).project;
+        if (project.revision === undefined) throw { code: "project_not_registered" };
+        const [installations, launchConfig, launchOptions, writer] = await Promise.all([
             loadAllUnityInstallations(client),
-            client.unityProjectEditorSelectionGet(projectId),
+            client.unityProjectLaunchConfigGet(projectId),
+            client.unityLaunchOptions(projectId, project.revision),
             client.unityWriterState(projectId).catch(() => undefined)
         ]);
-        return { project: project.project, installations, selection: selection.preference, writer };
+        return { project, installations, launchConfig: launchConfig.config, launchOptions, writer };
     }, [client, projectId]);
-    return <Page title="Project Unity" eyebrow={projectId}><ResourcePage load={load}>{({ project, installations, selection, writer }, refresh) => <><dl className="detail-grid"><Detail label="Selected editor" value={editorSelectionLabel(selection, installations)} /><Detail label="Writer observation" value={writer?.state ?? "Unknown"} /><Detail label="Arguments" value={selection.arguments.length === 0 ? "Default" : `${selection.arguments.length} configured arguments`} /><Detail label="Observed" value={writer === undefined ? "—" : formatTime(writer.checkedAtMs)} /></dl><ProjectUnityActions client={client} installations={installations} onChanged={refresh} project={project} selection={selection} /></>}</ResourcePage></Page>;
+    return <Page title="Project Unity" eyebrow={projectId}><ResourcePage load={load}>{({ project, installations, launchConfig, launchOptions, writer }, refresh) => <><dl className="detail-grid"><Detail label="Project Unity version" value={project.unityVersion} /><Detail label="Exact installations" value={String(launchOptions.exactMatchingInstallations.length)} /><Detail label="Writer observation" value={writer?.state ?? "Unknown"} /><Detail label="Arguments" value={launchConfig.arguments.length === 0 ? "Default" : `${launchConfig.arguments.length} configured arguments`} /><Detail label="Observed" value={writer === undefined ? "—" : formatTime(writer.checkedAtMs)} /></dl><ProjectUnityActions afterMigrationOpen={afterMigrationOpen} client={client} installations={installations} launchConfig={launchConfig} launchOptions={launchOptions} onChanged={refresh} project={project} /></>}</ResourcePage></Page>;
 }
 
 async function loadAllUnityInstallations(client: GuiRpcClient): Promise<UnityInstallation[]> {
@@ -1504,13 +1546,6 @@ async function loadAllUnityInstallations(client: GuiRpcClient): Promise<UnityIns
         cursor = page.nextCursor;
     } while (cursor !== undefined);
     return installations;
-}
-
-function editorSelectionLabel(selection: ProjectEditorSelectionState, installations: UnityInstallation[]): string {
-    if (selection.selection.mode === "automatic") return "Automatic";
-    const installationId = selection.selection.installationId;
-    const installation = installations.find((item) => item.installationId === installationId);
-    return installation === undefined ? "Selected editor unavailable" : `Unity ${installation.unityVersion} (${installation.architecture})`;
 }
 
 export function ProjectBackupsPage({ client, navigate, projectId }: PageProps & { projectId: string }) {
@@ -1769,7 +1804,12 @@ function Detail({ label, value }: { label: string; value: string }) { return <di
 
 function DataTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
     if (rows.length === 0) return <RouteState kind="empty" title="No matching items" />;
-    return <div className="table-scroll"><table><thead><tr>{headers.map((header) => <th key={header} scope="col">{header}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={`${rowIndex}-${row[0]}`}>{row.map((cell, index) => <td key={`${headers[index]}-${index}`}>{cell}</td>)}</tr>)}</tbody></table></div>;
+    return (
+        <MaterialDataTable label="Repository packages" minWidth={480}>
+            <thead><tr>{headers.map((header) => <DataTableHeader key={header}>{header}</DataTableHeader>)}</tr></thead>
+            <tbody>{rows.map((row, rowIndex) => <tr key={`${rowIndex}-${row[0]}`}>{row.map((cell, index) => <td key={`${headers[index]}-${index}`}>{cell}</td>)}</tr>)}</tbody>
+        </MaterialDataTable>
+    );
 }
 
 function sourceText(repository: RepositorySnapshot): string { return repository.source.kind === "local" ? "Local repository" : repository.source.url; }

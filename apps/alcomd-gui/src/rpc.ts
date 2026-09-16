@@ -39,14 +39,15 @@ import type {
     PackagePlanRemoveParams,
     PackagePlanResolveParams,
     PackagePlanReinstallParams,
-    ProjectEditorResult,
-    ProjectEditorSelectionResult,
-    ProjectEditorClearResult,
+    ProjectUnityLaunchConfigMutationResult,
+    ProjectUnityLaunchConfigResult,
     ProjectResult,
     ProjectsApplyCopyResult,
     ProjectsApplyDeleteDirectoryResult,
     ProjectsPlanCopyResult,
     ProjectsPlanDeleteDirectoryResult,
+    ProjectsApplyUnityMigrationResult,
+    ProjectsPlanUnityMigrationResult,
     ProjectUnregisterResult,
     ProjectWriteResult,
     ProjectsListResult,
@@ -71,6 +72,7 @@ import type {
     UnityInstallationRemoveResult,
     UnityInstallationsListResult,
     UnityLaunchResult,
+    UnityLaunchOptionsResult,
     UnityWriterState,
     UserPackageCursor,
     UserPackageRemoveResult,
@@ -128,13 +130,15 @@ export interface GuiRpcClient {
     unityInstallationRegister(executablePath: string): Promise<UnityInstallationResult>;
     unityInstallationRemove(installationId: string, expectedRevision: number): Promise<UnityInstallationRemoveResult>;
     unityInstallationsRefresh(): Promise<UnityInstallationsListResult>;
-    unityProjectEditorGet(projectId: string): Promise<ProjectEditorResult>;
-    unityProjectEditorSet(projectId: string, installationId: string, arguments_: string[], expectedRevision: number): Promise<ProjectEditorResult>;
-    unityProjectEditorSelectionGet(projectId: string): Promise<ProjectEditorSelectionResult>;
-    unityProjectEditorClear(projectId: string, expectedRevision: number): Promise<ProjectEditorClearResult>;
+    unityProjectLaunchConfigGet(projectId: string): Promise<ProjectUnityLaunchConfigResult>;
+    unityProjectLaunchConfigSet(projectId: string, arguments_: string[], expectedRevision: number): Promise<ProjectUnityLaunchConfigMutationResult>;
+    unityProjectLaunchConfigClear(projectId: string, expectedRevision: number): Promise<ProjectUnityLaunchConfigMutationResult>;
     unityWriterState(projectId: string): Promise<UnityWriterState>;
-    unityLaunch(projectId: string, expectedProjectRevision: number): Promise<UnityLaunchResult>;
+    unityLaunchOptions(projectId: string, expectedProjectRevision: number): Promise<UnityLaunchOptionsResult>;
+    unityLaunch(projectId: string, installationId: string, expectedProjectRevision: number): Promise<UnityLaunchResult>;
     unityLaunchStatus(launchId: string): Promise<UnityLaunchResult>;
+    projectPlanUnityMigration(projectId: string, targetInstallationId: string, expectedProjectRevision: number): Promise<ProjectsPlanUnityMigrationResult>;
+    projectApplyUnityMigration(planId: string): Promise<ProjectsApplyUnityMigrationResult>;
     templatesList(): Promise<TemplatesListResult>;
     templateGet(templateId: string): Promise<TemplateRecordResult>;
     templateInspectBundle(bundlePath: string): Promise<TemplateBundleInspection>;
@@ -361,32 +365,40 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_unity_installations_refresh", { idempotencyKey: crypto.randomUUID() });
     }
 
-    unityProjectEditorGet(projectId: string): Promise<ProjectEditorResult> {
-        return invokeTyped("gui_unity_project_editor_get", { projectId });
+    unityProjectLaunchConfigGet(projectId: string): Promise<ProjectUnityLaunchConfigResult> {
+        return invokeTyped("gui_unity_project_launch_config_get", { projectId });
     }
 
-    unityProjectEditorSet(projectId: string, installationId: string, arguments_: string[], expectedRevision: number): Promise<ProjectEditorResult> {
-        return invokeTyped("gui_unity_project_editor_set", { params: { projectId, installationId, arguments: arguments_, expectedRevision, idempotencyKey: crypto.randomUUID() } });
+    unityProjectLaunchConfigSet(projectId: string, arguments_: string[], expectedRevision: number): Promise<ProjectUnityLaunchConfigMutationResult> {
+        return invokeTyped("gui_unity_project_launch_config_set", { params: { projectId, arguments: arguments_, expectedRevision, idempotencyKey: crypto.randomUUID() } });
     }
 
-    unityProjectEditorSelectionGet(projectId: string): Promise<ProjectEditorSelectionResult> {
-        return invokeTyped("gui_unity_project_editor_selection_get", { projectId });
-    }
-
-    unityProjectEditorClear(projectId: string, expectedRevision: number): Promise<ProjectEditorClearResult> {
-        return invokeTyped("gui_unity_project_editor_clear", { params: { projectId, expectedRevision, idempotencyKey: crypto.randomUUID() } });
+    unityProjectLaunchConfigClear(projectId: string, expectedRevision: number): Promise<ProjectUnityLaunchConfigMutationResult> {
+        return invokeTyped("gui_unity_project_launch_config_clear", { params: { projectId, expectedRevision, idempotencyKey: crypto.randomUUID() } });
     }
 
     unityWriterState(projectId: string): Promise<UnityWriterState> {
         return invokeTyped("gui_unity_writer_state", { projectId });
     }
 
-    unityLaunch(projectId: string, expectedProjectRevision: number): Promise<UnityLaunchResult> {
-        return invokeTyped("gui_unity_launch", { params: { projectId, expectedProjectRevision, idempotencyKey: crypto.randomUUID() } });
+    unityLaunchOptions(projectId: string, expectedProjectRevision: number): Promise<UnityLaunchOptionsResult> {
+        return invokeTyped("gui_unity_launch_options", { params: { projectId, expectedProjectRevision } });
+    }
+
+    unityLaunch(projectId: string, installationId: string, expectedProjectRevision: number): Promise<UnityLaunchResult> {
+        return invokeTyped("gui_unity_launch", { params: { projectId, installationId, expectedProjectRevision, idempotencyKey: crypto.randomUUID() } });
     }
 
     unityLaunchStatus(launchId: string): Promise<UnityLaunchResult> {
         return invokeTyped("gui_unity_launch_status", { launchId });
+    }
+
+    projectPlanUnityMigration(projectId: string, targetInstallationId: string, expectedProjectRevision: number): Promise<ProjectsPlanUnityMigrationResult> {
+        return invokeTyped("gui_project_plan_unity_migration", { params: { projectId, targetInstallationId, expectedProjectRevision, idempotencyKey: crypto.randomUUID() } });
+    }
+
+    projectApplyUnityMigration(planId: string): Promise<ProjectsApplyUnityMigrationResult> {
+        return invokeTyped("gui_project_apply_unity_migration", { params: { planId, idempotencyKey: crypto.randomUUID() } });
     }
 
     templatesList(): Promise<TemplatesListResult> {

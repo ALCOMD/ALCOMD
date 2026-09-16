@@ -6,10 +6,37 @@ test("shared Material foundation renders real controls with React 19 interaction
     const disabled = page.locator("md-filled-tonal-button").filter({ hasText: "Disabled action" });
     await expect(open).toBeVisible();
     await expect(disabled).toHaveAttribute("disabled");
+    const tableScroll = page.locator(".material-data-table-scroll");
+    await expect(tableScroll).toHaveCSS("isolation", "isolate");
+    await expect(tableScroll.locator("thead")).toHaveCSS("position", "sticky");
     await open.focus();
     await page.keyboard.press("Enter");
     await expect(page.getByText("The dialog is hosted by the shared Material foundation.")).toBeVisible();
-    await page.locator("md-text-button").filter({ hasText: "Close" }).click();
+    const dialog = page.getByRole("dialog");
+    const dialogBox = await dialog.boundingBox();
+    const close = page.locator("md-text-button").filter({ hasText: "Close" });
+    const closeBox = await close.boundingBox();
+    expect(dialogBox).not.toBeNull();
+    expect(closeBox).not.toBeNull();
+    expect(closeBox!.x + closeBox!.width).toBeLessThanOrEqual(dialogBox!.x + dialogBox!.width);
+    const dialogHost = page.locator("md-dialog[open]");
+    expect(await dialogHost.evaluate((element) => element.parentElement === document.body)).toBe(true);
+    await expect(dialogHost).toHaveCSS("white-space", "normal");
+    const dialogContent = dialogHost.locator(":scope > .material-dialog-content");
+    await expect(dialogContent).toHaveCSS("box-sizing", "content-box");
+    const contentBox = await dialogContent.boundingBox();
+    expect(contentBox).not.toBeNull();
+    expect(Math.abs(contentBox!.x - dialogBox!.x)).toBeLessThanOrEqual(1);
+    expect(Math.abs((contentBox!.x + contentBox!.width) - (dialogBox!.x + dialogBox!.width))).toBeLessThanOrEqual(1);
+    const contentWidth = await dialogContent.evaluate((element) => ({ client: element.clientWidth, scroll: element.scrollWidth }));
+    expect(contentWidth.scroll).toBeLessThanOrEqual(contentWidth.client);
+    const widthEvidence = page.getByTestId("dialog-width-evidence");
+    const evidenceBox = await widthEvidence.boundingBox();
+    expect(evidenceBox).not.toBeNull();
+    expect(evidenceBox!.x).toBeGreaterThanOrEqual(dialogBox!.x + 23);
+    expect(evidenceBox!.x + evidenceBox!.width).toBeLessThanOrEqual(dialogBox!.x + dialogBox!.width - 23);
+    expect(evidenceBox!.height).toBeGreaterThan(20);
+    await close.click();
     await expect(page.getByText("The dialog is hosted by the shared Material foundation.")).toBeHidden();
 
     await expect(page.getByRole("button", { name: "Project evidence" })).toBeVisible();
@@ -19,19 +46,20 @@ test("shared Material foundation renders real controls with React 19 interaction
     await expect(icon).toHaveAttribute("data-filled", "false");
     const lightColors = await icon.evaluate((element) => {
         const style = getComputedStyle(element);
-        return { background: style.backgroundColor, foreground: style.color };
+        return { fill: getComputedStyle(element.querySelector("svg")!).fill, foreground: style.color };
     });
-    expect(lightColors.background).toBe(lightColors.foreground);
-    expect(await icon.evaluate((element) => getComputedStyle(element).webkitMaskImage)).not.toBe("none");
-    expect(await icon.evaluate((element) => getComputedStyle(element).webkitMaskSize)).toBe("100%");
+    expect(lightColors.fill).toBe(lightColors.foreground);
+    await expect(icon).toHaveJSProperty("tagName", "MD-ICON");
+    await expect(icon.locator("svg > path")).toHaveCount(1);
+    expect(await icon.evaluate((element) => getComputedStyle(element).webkitMaskImage)).toBe("none");
     await expect(icon).toHaveAttribute("data-optical-size", "24");
     await page.locator("html").evaluate((element) => { element.dataset.appearance = "dark"; });
     const darkColors = await icon.evaluate((element) => {
         const style = getComputedStyle(element);
-        return { background: style.backgroundColor, foreground: style.color };
+        return { fill: getComputedStyle(element.querySelector("svg")!).fill, foreground: style.color };
     });
-    expect(darkColors.background).toBe(darkColors.foreground);
-    expect(darkColors.background).not.toBe(lightColors.background);
+    expect(darkColors.fill).toBe(darkColors.foreground);
+    expect(darkColors.fill).not.toBe(lightColors.fill);
     await expect(page.locator("md-outlined-text-field")).toHaveJSProperty("label", "Project name");
     await expect(page.locator("md-outlined-select")).toHaveJSProperty("label", "Project type");
     await expect(page.locator("md-switch")).toHaveJSProperty("selected", true);
@@ -75,10 +103,10 @@ test("v3-density Material navigation keeps one offline Rounded icon across selec
     await expect(projects.locator(".alcomd-icon")).toHaveAttribute("aria-hidden", "true");
     await expect(projects.locator(".alcomd-icon")).toHaveAttribute("data-filled", "false");
     await expect(packages.locator(".alcomd-icon")).toHaveAttribute("data-filled", "false");
-    const selectedIconUrl = await projects.locator(".alcomd-icon").evaluate((element) => getComputedStyle(element).getPropertyValue("--alcomd-icon-url"));
+    const selectedIconUrl = await projects.locator(".alcomd-icon").evaluate((element) => element.querySelector("path")?.getAttribute("d"));
     await packages.click();
     await projects.click();
-    expect(await projects.locator(".alcomd-icon").evaluate((element) => getComputedStyle(element).getPropertyValue("--alcomd-icon-url"))).toBe(selectedIconUrl);
+    expect(await projects.locator(".alcomd-icon").evaluate((element) => element.querySelector("path")?.getAttribute("d"))).toBe(selectedIconUrl);
     const projectsBox = await projects.boundingBox();
     const projectsIconBox = await projects.locator(".alcomd-icon").boundingBox();
     const projectsLabel = projects.locator(".navigation-item-label");
@@ -90,7 +118,7 @@ test("v3-density Material navigation keeps one offline Rounded icon across selec
     expect(navigationBox).not.toBeNull();
     expect(projectsBox?.height).toBe(48);
     expect(projectsIconBox?.width).toBe(24);
-    await expect(projects.locator(".alcomd-icon")).toHaveCSS("-webkit-mask-size", "100%");
+    await expect(projects.locator(".alcomd-icon")).toHaveJSProperty("tagName", "MD-ICON");
     await expect(projects.locator(".alcomd-icon")).toHaveAttribute("data-optical-size", "24");
     expect((projectsBox?.x ?? 0) - (navigationBox?.x ?? 0)).toBe(12);
     expect((projectsIconBox?.x ?? 0) - (navigationBox?.x ?? 0)).toBe(28);
@@ -177,6 +205,28 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     for (const action of [favorite, openUnity, manage, backups, moreActions]) {
         await expect(action).toHaveCSS("height", "40px");
     }
+    await expect(rowActions).toHaveCSS("gap", "4px");
+    await expect(openUnity).toHaveCSS("padding-inline-start", "16px");
+    await expect(openUnity).toHaveCSS("padding-inline-end", "24px");
+    await expect(openUnity).toHaveJSProperty("trailingIcon", false);
+    const openUnityIcon = openUnity.locator('.alcomd-icon[data-icon-name="play_arrow"][slot="icon"]');
+    await expect(openUnity.locator('.alcomd-icon[slot="icon"]')).toHaveCount(1);
+    await expect(openUnityIcon).toHaveCSS("width", "18px");
+    await expect(openUnityIcon).toHaveCSS("height", "18px");
+    await expect(openUnityIcon).toHaveAttribute("data-icon-name", "play_arrow");
+    await expect(openUnityIcon).toHaveAttribute("data-optical-size", "24");
+    await expect(openUnityIcon.locator("svg")).toHaveCSS("width", "18px");
+    await expect(openUnityIcon.locator("svg")).toHaveAttribute("viewBox", "0 -960 960 960");
+    // The official component token, not a facade slot special case, controls icon size.
+    await openUnity.evaluate((element) => (element as HTMLElement).style.setProperty("--md-filled-button-icon-size", "22px"));
+    await expect(openUnityIcon).toHaveCSS("width", "22px");
+    await expect(openUnityIcon.locator("svg")).toHaveCSS("width", "22px");
+    await openUnity.evaluate((element) => (element as HTMLElement).style.removeProperty("--md-filled-button-icon-size"));
+    await expect(openUnityIcon).toHaveCSS("width", "18px");
+    for (const action of [manage, backups]) {
+        await expect(action).toHaveCSS("padding-inline-start", "24px");
+        await expect(action).toHaveCSS("padding-inline-end", "24px");
+    }
     await expect(favorite).toHaveCSS("width", "40px");
     await expect(moreActions).toHaveCSS("width", "40px");
     const actionsWidth = (await rowActions.boundingBox())?.width;
@@ -205,7 +255,7 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     await expect(moreIcon).toHaveCSS("height", "24px");
     await expect(moreIcon).toHaveAttribute("data-icon-name", "more_vert");
     await expect(moreIcon).toHaveAttribute("data-optical-size", "24");
-    await expect(moreIcon).toHaveCSS("-webkit-mask-size", "100%");
+    await expect(moreIcon).toHaveJSProperty("tagName", "MD-ICON");
     await moreActions.click();
     const projectMenu = rowActions.locator("md-menu");
     await expect(projectMenu).toHaveJSProperty("open", true);
@@ -217,7 +267,15 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     await expect(copyProject.getByRole("menuitem", { name: "Copy Project" })).toBeVisible();
     await copyProject.getByRole("menuitem", { name: "Copy Project" }).click();
     const copyDialog = page.getByRole("dialog", { name: "Copy project" });
+    const copyDialogHost = page.locator("md-dialog[open]");
     await expect(copyDialog).toBeVisible();
+    await expect(projectMenu).toHaveJSProperty("open", false);
+    expect(await copyDialogHost.evaluate((element) => element.parentElement === document.body)).toBe(true);
+    await expect(copyDialogHost).toHaveCSS("white-space", "normal");
+    const copyReviewWidth = await copyDialogHost.locator(".project-copy-review").evaluate((element) => ({ client: element.clientWidth, scroll: element.scrollWidth }));
+    expect(copyReviewWidth.scroll).toBeLessThanOrEqual(copyReviewWidth.client);
+    await copyDialogHost.getByRole("button", { name: /Choose/ }).click();
+    await expect(copyDialogHost.locator("md-outlined-text-field").nth(1)).toHaveJSProperty("value", "C:\\Fixture\\Avatar");
     await page.getByRole("button", { name: "Review copy" }).click();
     await expect(page.getByText(/C:\\Fixture\\Avatar/)).toBeVisible();
     await page.getByRole("button", { name: "Start copy" }).click();
@@ -307,10 +365,74 @@ test("Project workspace Copy completes through Plan Apply and navigates to the c
     await projectActions.getByRole("button", { name: /More actions for/ }).click();
     await projectActions.getByRole("menuitem", { name: "Copy Project" }).click();
     const dialog = page.getByRole("dialog", { name: "Copy project" });
+    const dialogHost = page.locator("md-dialog[open]");
     await expect(dialog).toBeVisible();
+    await dialogHost.getByRole("button", { name: /Choose/ }).click();
     await page.getByRole("button", { name: "Review copy" }).click();
     await page.getByRole("button", { name: "Start copy" }).click();
     await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000061$/);
+});
+
+test("Project Copy opens the in-app form with the source parent and copy name as defaults", async ({ page }) => {
+    await openHarness(page, "/projects/00000000-0000-4000-8000-000000000110");
+    const projectActions = page.getByRole("main").getByRole("navigation", { name: "Project actions" });
+    await projectActions.getByRole("button", { name: /More actions for/ }).click();
+    await projectActions.getByRole("menuitem", { name: "Copy Project" }).click();
+
+    const dialog = page.getByRole("dialog", { name: "Copy project" });
+    const dialogHost = page.locator("md-dialog[open]");
+    await expect(dialog).toBeVisible();
+    const nameField = dialogHost.locator("md-outlined-text-field").nth(0);
+    const locationField = dialogHost.locator("md-outlined-text-field").nth(1);
+    const choose = dialogHost.getByRole("button", { name: /Choose/ });
+    const review = dialogHost.getByRole("button", { name: "Review copy" });
+    await expect(nameField).toHaveJSProperty("value", "Sample Copy");
+    await expect(locationField).toHaveJSProperty("value", "C:\\Fixture");
+    await expect(review).toBeEnabled();
+    const dialogBox = await dialog.boundingBox();
+    expect(dialogBox).not.toBeNull();
+    for (const element of [
+        page.getByText(/Choose the new project name/),
+        nameField,
+        locationField,
+        choose,
+        review
+    ]) {
+        const elementBox = await element.boundingBox();
+        expect(elementBox).not.toBeNull();
+        expect(elementBox!.x).toBeGreaterThanOrEqual(dialogBox!.x + 23);
+        expect(elementBox!.x + elementBox!.width).toBeLessThanOrEqual(dialogBox!.x + dialogBox!.width - 23);
+    }
+});
+
+test("Project Copy dialog contains long paths and actions without clipping", async ({ page }) => {
+    await page.setViewportSize({ width: 640, height: 720 });
+    await openHarness(page, "/projects/00000000-0000-4000-8000-000000000110");
+    const projectActions = page.getByRole("main").getByRole("navigation", { name: "Project actions" });
+    await projectActions.getByRole("button", { name: /More actions for/ }).click();
+    await projectActions.getByRole("menuitem", { name: "Copy Project" }).click();
+
+    const dialogHost = page.locator("md-dialog[open]");
+    const nameField = dialogHost.locator("md-outlined-text-field").nth(0);
+    await nameField.evaluate((element, value) => {
+        const field = element as HTMLElement & { value: string };
+        field.value = value;
+        field.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, data: value, inputType: "insertText" }));
+    }, "A-very-long-copy-name-that-forces-the-full-destination-path-to-wrap-within-the-dialog-boundary");
+    await dialogHost.getByRole("button", { name: "Review copy" }).click();
+
+    const dialog = page.getByRole("dialog", { name: "Copy project" });
+    const action = dialogHost.getByRole("button", { name: "Start copy" });
+    const dialogBox = await dialog.boundingBox();
+    const actionBox = await action.boundingBox();
+    expect(dialogBox).not.toBeNull();
+    expect(actionBox).not.toBeNull();
+    expect(actionBox!.x + actionBox!.width).toBeLessThanOrEqual(dialogBox!.x + dialogBox!.width);
+    const contentWidth = await dialogHost.locator(".material-dialog-content").evaluate((element) => ({
+        client: element.clientWidth,
+        scroll: element.scrollWidth
+    }));
+    expect(contentWidth.scroll).toBeLessThanOrEqual(contentWidth.client);
 });
 
 test("Project directory deletion requires exact leaf confirmation and follows the durable Operation", async ({ page }) => {

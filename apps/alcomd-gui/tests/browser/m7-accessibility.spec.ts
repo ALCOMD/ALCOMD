@@ -70,6 +70,21 @@ test("loading, empty, error, and disconnected states have stable live semantics"
     await expect(page.getByRole("button", { name: "Reconnect and retry" })).toBeVisible();
 });
 
+test("same-route reconnect refreshes negotiated capabilities before restoring actions", async ({ page }) => {
+    await openHarness(page, "/projects", "disconnected");
+    await expect(page.getByRole("alert").filter({ hasText: "ALCOMD core disconnected" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Create project", exact: true })).toBeDisabled();
+    await page.getByRole("button", { name: "Reconnect and retry" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "ALCOMD core disconnected" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Create project", exact: true })).toBeDisabled();
+    await page.evaluate(() => window.dispatchEvent(new Event("test-daemon-online")));
+    await page.getByRole("button", { name: "Reconnect and retry" }).click();
+    await expect(page.getByRole("button", { name: "Create project", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Manage", exact: true })).toBeEnabled();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    expect(new URL(page.url()).pathname).toBe("/projects");
+});
+
 test("every M1-M7 official GUI route resolves through the typed client", async ({ page }) => {
     const routes = [
         ["/", "Projects"],
@@ -105,8 +120,9 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
 test("project workspace keeps package discovery and user actions in project context", async ({ page }) => {
     await openHarness(page, "/projects/00000000-0000-4000-8000-000000000101");
     await expect(page.getByRole("heading", { level: 1, name: "<private-project>" })).toBeVisible();
-    await expect(page.getByRole("heading", { level: 2, name: "Package management" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Packages" })).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Project actions" }).getByRole("button", { name: "Open Unity" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Backups" })).toBeVisible();
     const row = page.getByRole("row").filter({ hasText: "Avatar tools" });
     await expect(row).toContainText("com.example.avatar");
     await expect(row).toContainText("1.2.3");

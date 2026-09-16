@@ -1,5 +1,5 @@
 import { materialElements } from "@alcomd/ui";
-import { resolveIconUrl, type IconAsset, type IconSize } from "@alcomd/ui/icons";
+import { resolveIconGeometry, searchIcon, type IconAsset, type IconSize } from "@alcomd/ui/icons";
 import {
     createElement,
     forwardRef,
@@ -9,9 +9,11 @@ import {
     type CSSProperties,
     type FormEvent,
     type HTMLAttributes,
+    type MouseEvent as ReactMouseEvent,
     type ReactNode,
     type Ref
 } from "react";
+import { createPortal } from "react-dom";
 
 type MaterialElement = HTMLElement & {
     anchorElement?: HTMLElement | null;
@@ -28,21 +30,17 @@ type MaterialElement = HTMLElement & {
 type MaterialProps = HTMLAttributes<HTMLElement> & Record<string, unknown>;
 
 export function Icon({ asset, className, size = 24, slot }: { asset: IconAsset; className?: string; size?: IconSize; slot?: string }) {
-    const style = {
-        "--alcomd-icon-size": `${size}px`,
-        "--alcomd-icon-url": `url("${resolveIconUrl(asset, size)}")`
-    } as CSSProperties;
-    return (
-        <span
-            aria-hidden="true"
-            className={["alcomd-icon", className].filter(Boolean).join(" ")}
-            data-filled={asset.filled ? "true" : "false"}
-            data-icon-name={asset.name}
-            data-optical-size={size}
-            slot={slot}
-            style={style}
-        />
-    );
+    const geometry = resolveIconGeometry(asset, size);
+    // Material owns slotted sizing; this token only supplies the standalone icon size.
+    return createElement(materialElements.icon, {
+        "aria-hidden": "true",
+        className: ["alcomd-icon", className].filter(Boolean).join(" "),
+        "data-filled": asset.filled ? "true" : "false",
+        "data-icon-name": asset.name,
+        "data-optical-size": size,
+        slot,
+        style: { "--md-icon-size": size + "px" } as CSSProperties
+    }, <svg viewBox={geometry.viewBox} aria-hidden="true" focusable="false"><path d={geometry.path} /></svg>);
 }
 
 export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "ref"> {
@@ -129,15 +127,68 @@ export function Menu({ anchorRef, children, className, onClose, open }: { anchor
     } as MaterialProps, children);
 }
 
-export function MenuItem({ className, disabled, label, onClick, selected, title }: { className?: string; disabled?: boolean; label: string; onClick?(): void; selected?: boolean; title?: string }) {
+export function MenuItem({ className, disabled, label, onClick, title }: { className?: string; disabled?: boolean; label: string; onClick?(): void; title?: string }) {
+    const activate = (event: ReactMouseEvent<MaterialElement>) => {
+        if (onClick === undefined) return;
+        const menu = event.currentTarget.closest("md-menu");
+        if (menu === null) {
+            onClick();
+            return;
+        }
+        menu.addEventListener("closed", onClick, { once: true });
+    };
     return createElement(materialElements.menuItem, {
         className,
         disabled,
-        onClick,
-        selected,
+        onClick: activate,
         title,
         type: "button"
     } as MaterialProps, label);
+}
+
+// Material Web 2.5.0 menus only support menuitem/option/button/link, not a form
+// of independently focusable filters. Use a non-modal top-layer container; all
+// interactive children remain real Material controls.
+export function FilterPopover({ anchorRef, children, onClose, open, label }: {
+    anchorRef: { current: HTMLElement | null };
+    children: ReactNode;
+    onClose(): void;
+    open: boolean;
+    label: string;
+}) {
+    const ref = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const panel = ref.current;
+        const anchor = anchorRef.current;
+        if (panel === null || anchor === null) return;
+        if (!open) { panel.hidePopover(); return; }
+        panel.showPopover();
+        const place = () => {
+            const bounds = anchor.getBoundingClientRect();
+            panel.style.left = `${Math.max(8, Math.min(bounds.right - panel.offsetWidth, window.innerWidth - panel.offsetWidth - 8))}px`;
+            panel.style.top = `${Math.max(8, Math.min(bounds.bottom + 4, window.innerHeight - panel.offsetHeight - 8))}px`;
+        };
+        place();
+        panel.focus();
+        const observer = new ResizeObserver(place);
+        observer.observe(panel);
+        window.addEventListener("resize", place);
+        return () => { observer.disconnect(); window.removeEventListener("resize", place); };
+    }, [anchorRef, open]);
+    return createPortal(<div
+        aria-label={label}
+        className="alcomd-filter-popover"
+        onToggle={(event) => {
+            if ((event.nativeEvent as ToggleEvent).newState === "closed") {
+                onClose();
+                if (document.activeElement === document.body || event.currentTarget.contains(document.activeElement)) anchorRef.current?.focus();
+            }
+        }}
+        popover="auto"
+        ref={ref}
+        role="dialog"
+        tabIndex={-1}
+    >{children}</div>, document.body);
 }
 
 export interface TextFieldProps {
@@ -214,6 +265,10 @@ export function TextField({
         type,
         value
     } as MaterialProps, leadingIcon);
+}
+
+export function SearchField({ className, label, ...props }: Omit<TextFieldProps, "type" | "variant" | "leadingIcon" | "aria-label">) {
+    return <TextField {...props} aria-label={label} className={["alcomd-search-field", className].filter(Boolean).join(" ")} label="" type="search" variant="filled" leadingIcon={<Icon asset={searchIcon} slot="leading-icon" />} />;
 }
 
 export interface SelectOption {
@@ -309,12 +364,17 @@ export function Switch({
 }
 
 export function Checkbox({ checked, disabled, label, onChange }: { checked: boolean; disabled?: boolean; label: string; onChange?(checked: boolean): void }) {
+    const ref = useRef<MaterialElement>(null);
+    // A Material checkbox changes its own property before dispatching change.
+    // Reconcile even when the owner rejects the change (e.g. confirmation cancelled).
+    useEffect(() => { if (ref.current !== null) ref.current.checked = checked; });
     return (
         <label className="material-toggle">
             {createElement(materialElements.checkbox, {
                 ariaLabel: label,
                 checked,
                 disabled,
+                ref,
                 onChange: (event: FormEvent<MaterialElement>) => onChange?.(Boolean(event.currentTarget.checked))
             } as MaterialProps)}
             <span>{label}</span>
@@ -331,11 +391,14 @@ export function Dialog({ children, onClose, open, title }: { children: ReactNode
         element.addEventListener("closed", close);
         return () => element.removeEventListener("closed", close);
     }, [onClose]);
-    return createElement(
-        materialElements.dialog,
-        { open, ref } as MaterialProps,
-        createElement("div", { slot: "headline" }, title),
-        createElement("div", { slot: "content" }, children)
+    return createPortal(
+        createElement(
+            materialElements.dialog,
+            { ariaLabel: title, open, ref } as MaterialProps,
+            createElement("div", { slot: "headline" }, title),
+            createElement("div", { className: "material-dialog-content", slot: "content" }, children)
+        ),
+        document.body
     );
 }
 

@@ -63,34 +63,23 @@ pub struct UnityInstallationPage {
     pub next_cursor: Option<UnityInstallationCursor>,
 }
 
-/// Project-selected Editor and safe argv array.
+/// Per-project safe Unity launch arguments. A missing row is represented by a
+/// revision-zero sentinel and never selects an Editor installation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ProjectEditorPreference {
+pub struct ProjectUnityLaunchConfig {
     pub project_id: ProjectId,
-    pub installation_id: UnityInstallationId,
-    pub arguments: Vec<String>,
-    pub revision: Revision,
-    pub updated_at_ms: u64,
-}
-
-/// Authoritative editor selection without weakening the legacy explicit DTO.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "mode", rename_all = "snake_case")]
-pub enum ProjectEditorSelection {
-    Automatic,
-    Explicit {
-        installation_id: UnityInstallationId,
-    },
-}
-
-/// Editor selection state. `None` is the implicit automatic revision-zero sentinel.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ProjectEditorSelectionState {
-    pub project_id: ProjectId,
-    pub selection: ProjectEditorSelection,
     pub arguments: Vec<String>,
     pub revision: Option<Revision>,
     pub updated_at_ms: u64,
+}
+
+/// Exact one-shot launch candidates for the project's observed Unity version.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct UnityLaunchOptions {
+    pub project_id: ProjectId,
+    pub project_revision: Revision,
+    pub project_unity_version: String,
+    pub exact_matching_installations: Vec<UnityInstallationRecord>,
 }
 
 /// One short-lived, non-persisted process observation.
@@ -235,41 +224,34 @@ pub trait M5UnityStore: Clone + Send + Sync + 'static {
         key: IdempotencyKey,
         now_ms: u64,
     ) -> impl Future<Output = Result<(UnityInstallationPage, bool), M5UnityError>> + Send;
-    fn get_project_editor(
+    fn get_project_launch_config(
         &self,
         owner: PrincipalId,
         project_id: ProjectId,
-    ) -> impl Future<Output = Result<ProjectEditorPreference, M5UnityError>> + Send;
-    fn get_project_editor_selection(
+    ) -> impl Future<Output = Result<ProjectUnityLaunchConfig, M5UnityError>> + Send;
+    fn set_project_launch_config(
         &self,
         owner: PrincipalId,
         project_id: ProjectId,
-    ) -> impl Future<Output = Result<ProjectEditorSelectionState, M5UnityError>> + Send;
-    #[allow(clippy::too_many_arguments)]
-    fn set_project_editor(
-        &self,
-        owner: PrincipalId,
-        project_id: ProjectId,
-        installation_id: UnityInstallationId,
         arguments: Vec<String>,
         expected: Option<Revision>,
         key: IdempotencyKey,
         now_ms: u64,
-    ) -> impl Future<Output = Result<(ProjectEditorPreference, bool), M5UnityError>> + Send;
-    fn clear_project_editor(
+    ) -> impl Future<Output = Result<(ProjectUnityLaunchConfig, bool, bool), M5UnityError>> + Send;
+    fn clear_project_launch_config(
         &self,
         owner: PrincipalId,
         project_id: ProjectId,
         expected: Option<Revision>,
         key: IdempotencyKey,
         now_ms: u64,
-    ) -> impl Future<Output = Result<(ProjectEditorSelectionState, bool), M5UnityError>> + Send;
+    ) -> impl Future<Output = Result<(ProjectUnityLaunchConfig, bool, bool), M5UnityError>> + Send;
     fn accept_launch(
         &self,
         owner: PrincipalId,
         project: ProjectRecord,
-        selection: ProjectEditorSelectionState,
-        resolved_installation_id: UnityInstallationId,
+        config: ProjectUnityLaunchConfig,
+        installation_id: UnityInstallationId,
         key: IdempotencyKey,
         now_ms: u64,
     ) -> impl Future<Output = Result<(UnityLaunchRecord, bool), M5UnityError>> + Send;
@@ -277,7 +259,8 @@ pub trait M5UnityStore: Clone + Send + Sync + 'static {
         &self,
         owner: PrincipalId,
         project: ProjectRecord,
-        selection: ProjectEditorSelectionState,
+        config: ProjectUnityLaunchConfig,
+        installation_id: UnityInstallationId,
         key: IdempotencyKey,
     ) -> impl Future<Output = Result<Option<UnityLaunchRecord>, M5UnityError>> + Send;
     fn get_launch(
@@ -399,44 +382,33 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
             .await
     }
 
-    pub async fn get_project_editor(
+    pub async fn get_project_launch_config(
         &self,
         access: &AccessContext,
         project_id: ProjectId,
-    ) -> Result<ProjectEditorPreference, M5UnityError> {
+    ) -> Result<ProjectUnityLaunchConfig, M5UnityError> {
+        require(access, Permission::ProjectsRead)?;
         require(access, Permission::UnityRead)?;
         self.store
-            .get_project_editor(access.principal().clone(), project_id)
+            .get_project_launch_config(access.principal().clone(), project_id)
             .await
     }
 
-    pub async fn get_project_editor_selection(
+    pub async fn set_project_launch_config(
         &self,
         access: &AccessContext,
         project_id: ProjectId,
-    ) -> Result<ProjectEditorSelectionState, M5UnityError> {
-        require(access, Permission::UnityRead)?;
-        self.store
-            .get_project_editor_selection(access.principal().clone(), project_id)
-            .await
-    }
-
-    pub async fn set_project_editor(
-        &self,
-        access: &AccessContext,
-        project_id: ProjectId,
-        installation_id: UnityInstallationId,
         arguments: Vec<String>,
         expected: Option<Revision>,
         key: IdempotencyKey,
-    ) -> Result<(ProjectEditorPreference, bool), M5UnityError> {
+    ) -> Result<(ProjectUnityLaunchConfig, bool, bool), M5UnityError> {
+        require(access, Permission::ProjectsRead)?;
         require(access, Permission::UnityManage)?;
         validate_arguments(&arguments)?;
         self.store
-            .set_project_editor(
+            .set_project_launch_config(
                 access.principal().clone(),
                 project_id,
-                installation_id,
                 arguments,
                 expected,
                 key,
@@ -445,16 +417,17 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
             .await
     }
 
-    pub async fn clear_project_editor(
+    pub async fn clear_project_launch_config(
         &self,
         access: &AccessContext,
         project_id: ProjectId,
         expected: Option<Revision>,
         key: IdempotencyKey,
-    ) -> Result<(ProjectEditorSelectionState, bool), M5UnityError> {
+    ) -> Result<(ProjectUnityLaunchConfig, bool, bool), M5UnityError> {
+        require(access, Permission::ProjectsRead)?;
         require(access, Permission::UnityManage)?;
         self.store
-            .clear_project_editor(
+            .clear_project_launch_config(
                 access.principal().clone(),
                 project_id,
                 expected,
@@ -502,10 +475,67 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
         .await
     }
 
+    pub async fn launch_options(
+        &self,
+        access: &AccessContext,
+        project_id: ProjectId,
+        expected_project_revision: Revision,
+    ) -> Result<UnityLaunchOptions, M5UnityError> {
+        require(access, Permission::ProjectsRead)?;
+        require(access, Permission::UnityRead)?;
+        require(access, Permission::UnityLaunch)?;
+        let project = self
+            .store
+            .get_project(access.principal().clone(), project_id)
+            .await
+            .map_err(|_| M5UnityError::new(M5UnityErrorCode::ProjectNotRegistered))?;
+        if project.revision != expected_project_revision {
+            return Err(M5UnityError::new(M5UnityErrorCode::RevisionConflict));
+        }
+        let canonical = canonical_unity_version(&project.observation.unity_version)?;
+        let mut cursor = None;
+        let mut matches = Vec::new();
+        loop {
+            let page = self
+                .store
+                .list_installations(access.principal().clone(), cursor, 1_000)
+                .await?;
+            matches.extend(page.installations.into_iter().filter(|installation| {
+                exact_unity_version(&canonical, &installation.observation.unity_version)
+            }));
+            let Some(next) = page.next_cursor else {
+                break;
+            };
+            cursor = Some(next);
+        }
+        matches.sort_by(|left, right| {
+            left.observation
+                .unity_version
+                .as_bytes()
+                .cmp(right.observation.unity_version.as_bytes())
+                .then_with(|| {
+                    source_order(left.observation.source_kind)
+                        .cmp(&source_order(right.observation.source_kind))
+                })
+                .then_with(|| {
+                    left.installation_id
+                        .to_string()
+                        .cmp(&right.installation_id.to_string())
+                })
+        });
+        Ok(UnityLaunchOptions {
+            project_id,
+            project_revision: project.revision,
+            project_unity_version: canonical,
+            exact_matching_installations: matches,
+        })
+    }
+
     pub async fn launch(
         &self,
         access: &AccessContext,
         project_id: ProjectId,
+        installation_id: UnityInstallationId,
         expected_project_revision: Revision,
         key: IdempotencyKey,
     ) -> Result<(UnityLaunchRecord, bool), M5UnityError> {
@@ -518,16 +548,17 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
         if project.revision != expected_project_revision {
             return Err(M5UnityError::new(M5UnityErrorCode::RevisionConflict));
         }
-        let selection = self
+        let config = self
             .store
-            .get_project_editor_selection(access.principal().clone(), project_id)
+            .get_project_launch_config(access.principal().clone(), project_id)
             .await?;
         if let Some(record) = self
             .store
             .replay_launch(
                 access.principal().clone(),
                 project.clone(),
-                selection.clone(),
+                config.clone(),
+                installation_id,
                 key.clone(),
             )
             .await?
@@ -538,44 +569,12 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
                 Ok((record, true))
             };
         }
-        let installation_id = match selection.selection {
-            ProjectEditorSelection::Explicit { installation_id } => installation_id,
-            ProjectEditorSelection::Automatic => {
-                let mut cursor = None;
-                let mut compatible = Vec::new();
-                loop {
-                    let page = self
-                        .store
-                        .list_installations(access.principal().clone(), cursor, 1_000)
-                        .await?;
-                    compatible.extend(page.installations.into_iter().filter(|installation| {
-                        compatible_unity_versions(
-                            &project.observation.unity_version,
-                            &installation.observation.unity_version,
-                        )
-                    }));
-                    let Some(next) = page.next_cursor else {
-                        break;
-                    };
-                    cursor = Some(next);
-                }
-                match compatible.as_slice() {
-                    [] => return Err(M5UnityError::new(M5UnityErrorCode::InstallationNotFound)),
-                    [installation] => installation.installation_id,
-                    _ => {
-                        return Err(M5UnityError::new(M5UnityErrorCode::EditorSelectionRequired));
-                    }
-                }
-            }
-        };
         let installation = self
             .store
             .get_installation(access.principal().clone(), installation_id)
             .await?;
-        if !compatible_unity_versions(
-            &project.observation.unity_version,
-            &installation.observation.unity_version,
-        ) {
+        let project_version = canonical_unity_version(&project.observation.unity_version)?;
+        if !exact_unity_version(&project_version, &installation.observation.unity_version) {
             return Err(M5UnityError::new(M5UnityErrorCode::VersionMismatch));
         }
         let writer = self.writer_state_unchecked(access, project_id).await?;
@@ -593,7 +592,7 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
             .accept_launch(
                 access.principal().clone(),
                 project.clone(),
-                selection.clone(),
+                config.clone(),
                 installation_id,
                 key,
                 now_ms()?,
@@ -610,7 +609,7 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
             .launch(
                 installation.observation.executable_path,
                 project.observation.root_path,
-                selection.arguments,
+                config.arguments,
             )
             .await
             .is_err()
@@ -788,11 +787,71 @@ fn json_arguments_size(arguments: &[String]) -> Option<usize> {
     Some(size)
 }
 
-fn compatible_unity_versions(project: &str, installation: &str) -> bool {
-    project
-        .split('.')
-        .take(2)
-        .eq(installation.split('.').take(2))
+pub(crate) fn canonical_unity_version(value: &str) -> Result<String, M5UnityError> {
+    if value.len() < 8 || value.len() > 64 || !value.is_ascii() {
+        return Err(M5UnityError::new(M5UnityErrorCode::VersionUnverified));
+    }
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    for component in 0..3 {
+        index = parse_decimal(bytes, index, true)?;
+        if component < 2 {
+            if index >= bytes.len() || bytes[index] != b'.' {
+                return Err(M5UnityError::new(M5UnityErrorCode::VersionUnverified));
+            }
+            index += 1;
+        } else if !bytes
+            .get(index)
+            .is_some_and(|value| matches!(value, b'a' | b'b' | b'f' | b'p' | b'x'))
+        {
+            return Err(M5UnityError::new(M5UnityErrorCode::VersionUnverified));
+        }
+    }
+    if index >= bytes.len() || !matches!(bytes[index], b'a' | b'b' | b'f' | b'p' | b'x') {
+        return Err(M5UnityError::new(M5UnityErrorCode::VersionUnverified));
+    }
+    index += 1;
+    index = parse_decimal(bytes, index, false)?;
+    if index < bytes.len() {
+        if bytes[index] != b'c' {
+            return Err(M5UnityError::new(M5UnityErrorCode::VersionUnverified));
+        }
+        index = parse_decimal(bytes, index + 1, false)?;
+    }
+    if index != bytes.len() {
+        return Err(M5UnityError::new(M5UnityErrorCode::VersionUnverified));
+    }
+    Ok(value.to_owned())
+}
+
+fn parse_decimal(bytes: &[u8], start: usize, allow_zero: bool) -> Result<usize, M5UnityError> {
+    let Some(first) = bytes.get(start).copied() else {
+        return Err(M5UnityError::new(M5UnityErrorCode::VersionUnverified));
+    };
+    if !first.is_ascii_digit() || (!allow_zero && first == b'0') {
+        return Err(M5UnityError::new(M5UnityErrorCode::VersionUnverified));
+    }
+    let mut end = start + 1;
+    while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+        end += 1;
+    }
+    if first == b'0' && end > start + 1 {
+        return Err(M5UnityError::new(M5UnityErrorCode::VersionUnverified));
+    }
+    Ok(end)
+}
+
+fn exact_unity_version(project: &str, installation: &str) -> bool {
+    canonical_unity_version(installation).is_ok_and(|value| value == project)
+}
+
+const fn source_order(source: UnitySourceKind) -> u8 {
+    match source {
+        UnitySourceKind::Manual => 0,
+        UnitySourceKind::HubConfig => 1,
+        UnitySourceKind::KnownInstallRoot => 2,
+        UnitySourceKind::UnityCliHint => 3,
+    }
 }
 
 fn require(access: &AccessContext, permission: Permission) -> Result<(), M5UnityError> {
@@ -876,9 +935,25 @@ mod tests {
     }
 
     #[test]
-    fn unity_compatibility_uses_verified_major_minor() {
-        assert!(compatible_unity_versions("2022.3.22f1", "2022.3.40f1"));
-        assert!(!compatible_unity_versions("2019.4.31f1", "2022.3.40f1"));
+    fn unity_launch_uses_canonical_exact_versions() {
+        assert!(exact_unity_version("2022.3.22f1", "2022.3.22f1"));
+        assert!(exact_unity_version("2022.3.22f1c1", "2022.3.22f1c1"));
+        assert!(!exact_unity_version("2022.3.22f1", "2022.3.40f1"));
+        assert!(!exact_unity_version("2022.3.22f1", "2022.3.22f1c1"));
+        for invalid in [
+            "2022.3",
+            "2022.3.22",
+            "2022.3.22f0",
+            "2022.3.22f1c0",
+            "02022.3.22f1",
+        ] {
+            assert_eq!(
+                canonical_unity_version(invalid)
+                    .expect_err("invalid Unity version")
+                    .code(),
+                M5UnityErrorCode::VersionUnverified
+            );
+        }
     }
 
     #[tokio::test]

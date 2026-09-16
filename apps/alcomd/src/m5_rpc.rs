@@ -126,86 +126,27 @@ pub(super) async fn dispatch(
                 Err(error) => m5_error(request.id, error),
             }
         }
-        rpc::METHOD_UNITY_PROJECT_EDITOR_GET => {
+        rpc::METHOD_UNITY_PROJECT_LAUNCH_CONFIG_GET => {
             require!(request, state, rpc::CAPABILITY_UNITY_READ_V1);
             let params = parse!(request, rpc::UnityProjectIdParams);
             let id = match app::ProjectId::parse(&params.project_id) {
                 Ok(value) => value,
                 Err(_) => return invalid(request.id),
             };
-            match application.get_project_editor(access, id).await {
+            match application.get_project_launch_config(access, id).await {
                 Ok(value) => success_action(
                     request.id,
-                    rpc::ProjectEditorResult {
-                        preference: preference(value),
-                        replayed: false,
+                    rpc::ProjectUnityLaunchConfigResult {
+                        config: launch_config(value),
                     },
                     None,
                 ),
                 Err(error) => m5_error(request.id, error),
             }
         }
-        rpc::METHOD_UNITY_PROJECT_EDITOR_SET => {
+        rpc::METHOD_UNITY_PROJECT_LAUNCH_CONFIG_SET => {
             require!(request, state, rpc::CAPABILITY_UNITY_MANAGE_V1);
-            let params = parse!(request, rpc::ProjectEditorSetParams);
-            let parsed = app::ProjectId::parse(&params.project_id)
-                .ok()
-                .zip(app::UnityInstallationId::parse(&params.installation_id).ok())
-                .zip(IdempotencyKey::parse(params.idempotency_key).ok());
-            let Some(((project_id, installation_id), key)) = parsed else {
-                return invalid(request.id);
-            };
-            let expected = if params.expected_revision == 0 {
-                None
-            } else {
-                Revision::new(params.expected_revision)
-            };
-            if params.expected_revision != 0 && expected.is_none() {
-                return invalid(request.id);
-            }
-            match application
-                .set_project_editor(
-                    access,
-                    project_id,
-                    installation_id,
-                    params.arguments,
-                    expected,
-                    key,
-                )
-                .await
-            {
-                Ok((value, replayed)) => success_action(
-                    request.id,
-                    rpc::ProjectEditorResult {
-                        preference: preference(value),
-                        replayed,
-                    },
-                    None,
-                ),
-                Err(error) => m5_error(request.id, error),
-            }
-        }
-        rpc::METHOD_UNITY_PROJECT_EDITOR_SELECTION_GET => {
-            require!(request, state, rpc::CAPABILITY_UNITY_READ_V1);
-            let params = parse!(request, rpc::UnityProjectIdParams);
-            let id = match app::ProjectId::parse(&params.project_id) {
-                Ok(value) => value,
-                Err(_) => return invalid(request.id),
-            };
-            match application.get_project_editor_selection(access, id).await {
-                Ok(value) => success_action(
-                    request.id,
-                    rpc::ProjectEditorSelectionResult {
-                        preference: selection_state(value),
-                    },
-                    None,
-                ),
-                Err(error) => m5_error(request.id, error),
-            }
-        }
-        rpc::METHOD_UNITY_PROJECT_EDITOR_CLEAR => {
-            require!(request, state, rpc::CAPABILITY_UNITY_MANAGE_V1);
-            let params = parse!(request, rpc::ProjectEditorClearParams);
+            let params = parse!(request, rpc::ProjectUnityLaunchConfigSetParams);
             let parsed = app::ProjectId::parse(&params.project_id)
                 .ok()
                 .zip(IdempotencyKey::parse(params.idempotency_key).ok());
@@ -221,13 +162,47 @@ pub(super) async fn dispatch(
                 return invalid(request.id);
             }
             match application
-                .clear_project_editor(access, project_id, expected, key)
+                .set_project_launch_config(access, project_id, params.arguments, expected, key)
                 .await
             {
-                Ok((value, replayed)) => success_action(
+                Ok((value, changed, replayed)) => success_action(
                     request.id,
-                    rpc::ProjectEditorClearResult {
-                        preference: selection_state(value),
+                    rpc::ProjectUnityLaunchConfigMutationResult {
+                        config: launch_config(value),
+                        changed,
+                        replayed,
+                    },
+                    None,
+                ),
+                Err(error) => m5_error(request.id, error),
+            }
+        }
+        rpc::METHOD_UNITY_PROJECT_LAUNCH_CONFIG_CLEAR => {
+            require!(request, state, rpc::CAPABILITY_UNITY_MANAGE_V1);
+            let params = parse!(request, rpc::ProjectUnityLaunchConfigClearParams);
+            let parsed = app::ProjectId::parse(&params.project_id)
+                .ok()
+                .zip(IdempotencyKey::parse(params.idempotency_key).ok());
+            let Some((project_id, key)) = parsed else {
+                return invalid(request.id);
+            };
+            let expected = if params.expected_revision == 0 {
+                None
+            } else {
+                Revision::new(params.expected_revision)
+            };
+            if params.expected_revision != 0 && expected.is_none() {
+                return invalid(request.id);
+            }
+            match application
+                .clear_project_launch_config(access, project_id, expected, key)
+                .await
+            {
+                Ok((value, changed, replayed)) => success_action(
+                    request.id,
+                    rpc::ProjectUnityLaunchConfigMutationResult {
+                        config: launch_config(value),
+                        changed,
                         replayed,
                     },
                     None,
@@ -247,17 +222,51 @@ pub(super) async fn dispatch(
                 Err(error) => m5_error(request.id, error),
             }
         }
+        rpc::METHOD_UNITY_LAUNCH_OPTIONS => {
+            require!(request, state, rpc::CAPABILITY_UNITY_LAUNCH_V1);
+            let params = parse!(request, rpc::UnityLaunchOptionsParams);
+            let values = app::ProjectId::parse(&params.project_id)
+                .ok()
+                .zip(Revision::new(params.expected_project_revision));
+            let Some((project_id, revision)) = values else {
+                return invalid(request.id);
+            };
+            match application
+                .launch_options(access, project_id, revision)
+                .await
+            {
+                Ok(value) => success_action(
+                    request.id,
+                    rpc::UnityLaunchOptionsResult {
+                        project_id: value.project_id.to_string(),
+                        project_revision: value.project_revision.get(),
+                        project_unity_version: value.project_unity_version,
+                        exact_matching_installations: value
+                            .exact_matching_installations
+                            .into_iter()
+                            .map(installation)
+                            .collect(),
+                    },
+                    None,
+                ),
+                Err(error) => m5_error(request.id, error),
+            }
+        }
         rpc::METHOD_UNITY_LAUNCH => {
             require!(request, state, rpc::CAPABILITY_UNITY_LAUNCH_V1);
             let params = parse!(request, rpc::UnityLaunchParams);
             let parsed = app::ProjectId::parse(&params.project_id)
                 .ok()
+                .zip(app::UnityInstallationId::parse(&params.installation_id).ok())
                 .zip(Revision::new(params.expected_project_revision))
                 .zip(IdempotencyKey::parse(params.idempotency_key).ok());
-            let Some(((project_id, revision), key)) = parsed else {
+            let Some((((project_id, installation_id), revision), key)) = parsed else {
                 return invalid(request.id);
             };
-            match application.launch(access, project_id, revision, key).await {
+            match application
+                .launch(access, project_id, installation_id, revision, key)
+                .await
+            {
                 Ok((value, replayed)) => success_action(
                     request.id,
                     rpc::UnityLaunchResult {
@@ -327,27 +336,9 @@ fn installation(value: app::UnityInstallationRecord) -> rpc::UnityInstallation {
     }
 }
 
-fn preference(value: app::ProjectEditorPreference) -> rpc::ProjectEditorPreference {
-    rpc::ProjectEditorPreference {
+fn launch_config(value: app::ProjectUnityLaunchConfig) -> rpc::ProjectUnityLaunchConfig {
+    rpc::ProjectUnityLaunchConfig {
         project_id: value.project_id.to_string(),
-        installation_id: value.installation_id.to_string(),
-        arguments: value.arguments,
-        revision: value.revision.get(),
-        updated_at_ms: value.updated_at_ms,
-    }
-}
-
-fn selection_state(value: app::ProjectEditorSelectionState) -> rpc::ProjectEditorSelectionState {
-    rpc::ProjectEditorSelectionState {
-        project_id: value.project_id.to_string(),
-        selection: match value.selection {
-            app::ProjectEditorSelection::Automatic => rpc::ProjectEditorSelection::Automatic,
-            app::ProjectEditorSelection::Explicit { installation_id } => {
-                rpc::ProjectEditorSelection::Explicit {
-                    installation_id: installation_id.to_string(),
-                }
-            }
-        },
         arguments: value.arguments,
         revision: value.revision.map_or(0, Revision::get),
         updated_at_ms: value.updated_at_ms,

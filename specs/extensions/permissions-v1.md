@@ -9,6 +9,7 @@ projects.read
 projects.manage
 projects.create
 projects.delete
+projects.unity-migrate
 packages.read
 packages.manage
 repositories.read
@@ -87,6 +88,17 @@ mcp.configuration.manage
 - `quarantine_intent` 之后只能 forward recovery。权限不允许跳过 sibling quarantine、跨 mount、跟随 link、
   触碰 quarantine 后重建的原路径，或把 `not_observed` 表述为 Unity 确定未运行。
 
+## M7 Project Unity Migration 权限
+
+- `projects.unity-migrate` 只授权 `projects.planUnityMigration` / `projects.applyUnityMigration` 的 sealed
+  Project Unity Version workflow；不接受 caller path、target version 双 authority、任意 package ChangeSet 或 public child Operation。
+- Plan 同时要求 `projects.read + unity.read`；Apply 再次要求 `projects.unity-migrate`，并 fresh revalidate immutable
+  Plan、Project revision/root/marker、target installation identity/version 与 writer state。
+- 外部 filesystem mutation 只允许 `builtin:local-owner`。`projects.unity-migrate` 在 4.0.0 不授予 Extension，第一方
+  Extension 也没有隐藏 privileged API。
+- `preparation_intent` / `launch_intent` 之后只能按同一 Operation forward recovery，不允许普通 cancel、自动 respawn、
+  kill Unity、跳过 exact Project reobservation 或产生中间 Project/package public revision/Event。
+
 ## M4 Package Plan/Apply 权限
 
 - `packages.planInstall/planRemove/planUpgrade/planDowngrade/planResolve` 必须同时具备
@@ -102,11 +114,12 @@ mcp.configuration.manage
 
 ## M5 CLI、Unity、Template 与 Backup 权限
 
-- `unity.read`：查询 installation registry、project Editor preference、writer state 与 launch status；
+- `unity.read`：查询 installation registry、project launch config、exact launch options、writer state 与 launch status；
   不允许修改 registry、启动 Editor 或读取任意进程技术信息。
-- `unity.manage`：manual installation add/remove、受限 discovery refresh 与 project Editor preference
-  修改；不包含 `unity.launch`、package mutation 或任意 settings 写入。
-- `unity.launch`：只允许通过 application 启动/观察已验证 Editor 与显式 ProjectId；不允许 registry
+- `unity.manage`：manual installation add/remove、受限 discovery refresh 与 project launch arguments
+  修改；不包含 `unity.launch`、Installation preference、package mutation 或任意 settings 写入。
+- `unity.launch`：只允许通过 application 启动/观察与 Project canonical exact version 匹配的已验证 Editor，
+  且 InstallationId 只作为 one-shot request authority；不允许 registry
   修改、shell command、任意 executable 或绕过 writer gate。
 - `projects.create`：只允许在显式、不存在的 destination 创建一个全新 Project；不允许删除、覆盖、
   merge 或修改既有 Project，也不扩大 `projects.manage` 的 M3 registry 语义。

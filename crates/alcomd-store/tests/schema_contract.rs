@@ -13,6 +13,161 @@ const MIGRATION_V10: &str = include_str!("../migrations/0010_project_copy.sql");
 const MIGRATION_V11: &str = include_str!("../migrations/0011_project_preferences.sql");
 const MIGRATION_V12: &str = include_str!("../migrations/0012_package_functional_closure.sql");
 const MIGRATION_V13: &str = include_str!("../migrations/0013_project_directory_delete.sql");
+const MIGRATION_V14: &str = include_str!("../migrations/0014_unity_project_version.sql");
+
+#[test]
+fn schema_v14_migrates_only_non_empty_launch_arguments_for_both_legacy_modes() {
+    for (selection_mode, arguments_json, expect_config) in [
+        ("automatic", "[]", false),
+        ("automatic", r#"["-logFile","Project.log"]"#, true),
+        ("explicit", "[]", false),
+        ("explicit", r#"["-logFile","Project.log"]"#, true),
+    ] {
+        let connection = migrated_v13_connection();
+        insert_project(&connection);
+        connection
+            .execute(
+                "INSERT INTO unity_installations (
+                    installation_id,owner_principal_id,executable_path,filesystem_identity_key,
+                    unity_version,architecture,source_kind,revision,observed_at_ms,updated_at_ms
+                 ) VALUES ('00000000-0000-4000-8000-000000000801','builtin:local-owner',
+                           'X:/Unity/Editor/Unity.exe',x'0102','2022.3.22f1','x86_64',
+                           'manual',1,1,1)",
+                [],
+            )
+            .expect("insert legacy Unity installation");
+        let installation_id =
+            (selection_mode == "explicit").then_some("00000000-0000-4000-8000-000000000801");
+        connection
+            .execute(
+                "INSERT INTO project_editor_preferences (
+                    project_id,selection_mode,installation_id,arguments_json,revision,updated_at_ms
+                 ) VALUES ('00000000-0000-4000-8000-000000000201',?1,?2,?3,7,99)",
+                params![selection_mode, installation_id, arguments_json],
+            )
+            .expect("insert legacy editor preference");
+
+        connection
+            .execute_batch(MIGRATION_V14)
+            .expect("apply migration v14");
+
+        assert_eq!(user_version(&connection), 14);
+        assert!(!table_names(&connection).contains(&"project_editor_preferences".to_owned()));
+        let config_count: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM project_unity_launch_config",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count launch config");
+        assert_eq!(
+            config_count,
+            i64::from(expect_config),
+            "{selection_mode} {arguments_json}"
+        );
+        if expect_config {
+            let stored: (String, i64, i64) = connection
+                .query_row(
+                    "SELECT arguments_json,revision,updated_at_ms
+                     FROM project_unity_launch_config WHERE project_id=?1",
+                    ["00000000-0000-4000-8000-000000000201"],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .expect("read migrated launch config");
+            assert_eq!(stored, (arguments_json.to_owned(), 7, 99));
+        }
+    }
+}
+
+#[test]
+fn schema_v14_adds_only_sealed_unity_authority_and_rolls_back_malformed_input() {
+    let connection = migrated_v13_connection();
+    insert_project(&connection);
+    insert_historical_project_authority(&connection);
+    connection
+        .execute_batch(MIGRATION_V14)
+        .expect("apply migration v14");
+    let tables = table_names(&connection);
+    for table in [
+        "project_unity_launch_config",
+        "project_unity_migration_plans",
+        "project_unity_migration_journal",
+    ] {
+        assert!(tables.contains(&table.to_owned()), "missing {table}");
+    }
+    assert!(!tables.contains(&"project_editor_preferences".to_owned()));
+    let operation_sql: String = connection
+        .query_row(
+            "SELECT sql FROM sqlite_schema WHERE type='table' AND name='operations'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read v14 operation schema");
+    assert!(operation_sql.contains("'projects.unity-migration'"));
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM operations", [], |row| row
+                .get::<_, i64>(0))
+            .expect("historical operations survive the v14 constraint rebuild"),
+        2
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT count(*) FROM package_filesystem_journal",
+                [],
+                |row| { row.get::<_, i64>(0) }
+            )
+            .expect("package journal survives the v14 constraint rebuild"),
+        1
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT count(*) FROM project_copy_filesystem_journal",
+                [],
+                |row| { row.get::<_, i64>(0) }
+            )
+            .expect("Project copy journal survives the v14 constraint rebuild"),
+        1
+    );
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("v14 foreign key check"),
+        0
+    );
+    assert!(MIGRATION_V14.starts_with("BEGIN IMMEDIATE;"));
+    assert!(MIGRATION_V14.ends_with("COMMIT;\n"));
+    assert!(!MIGRATION_V14.contains("CREATE TABLE migration_package"));
+    assert!(!MIGRATION_V14.contains("CREATE TABLE workflow"));
+
+    let rollback = migrated_v13_connection();
+    insert_project(&rollback);
+    rollback
+        .execute_batch("PRAGMA ignore_check_constraints=ON;")
+        .expect("disable fixture checks");
+    rollback
+        .execute(
+            "INSERT INTO project_editor_preferences (
+                project_id,selection_mode,installation_id,arguments_json,revision,updated_at_ms
+             ) VALUES ('00000000-0000-4000-8000-000000000201','automatic',NULL,'{}',1,1)",
+            [],
+        )
+        .expect("insert malformed legacy arguments fixture");
+    rollback
+        .execute_batch("PRAGMA ignore_check_constraints=OFF;")
+        .expect("restore fixture checks");
+    assert!(rollback.execute_batch(MIGRATION_V14).is_err());
+    rollback
+        .execute_batch("ROLLBACK;")
+        .expect("rollback failed v14 migration");
+    assert_eq!(user_version(&rollback), 13);
+    assert!(table_names(&rollback).contains(&"project_editor_preferences".to_owned()));
+    assert!(!table_names(&rollback).contains(&"project_unity_launch_config".to_owned()));
+}
 
 #[test]
 fn schema_v13_adds_exact_delete_authority_and_corrects_durable_project_references() {
@@ -2679,6 +2834,14 @@ fn migrated_v12_connection() -> Connection {
     connection
         .execute_batch(MIGRATION_V12)
         .expect("apply migration v12");
+    connection
+}
+
+fn migrated_v13_connection() -> Connection {
+    let connection = migrated_v12_connection();
+    connection
+        .execute_batch(MIGRATION_V13)
+        .expect("apply migration v13");
     connection
 }
 
