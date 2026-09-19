@@ -290,6 +290,7 @@ export interface SelectProps {
     label: string;
     onChange?(value: string): void;
     options: readonly SelectOption[];
+    quick?: boolean;
     required?: boolean;
     supportingText?: string;
     value: string;
@@ -306,6 +307,7 @@ export function Select({
     label,
     onChange,
     options,
+    quick = false,
     required,
     supportingText,
     value,
@@ -322,6 +324,7 @@ export function Select({
             id,
             label,
             onChange: (event: FormEvent<MaterialElement>) => onChange?.(event.currentTarget.value as string),
+            quick,
             required,
             supportingText,
             value
@@ -386,21 +389,23 @@ export function Checkbox({ checked, disabled, label, onChange }: { checked: bool
     );
 }
 
-export function Dialog({ children, onClose, open, title }: { children: ReactNode; onClose(): void; open: boolean; title: string }) {
+export function Dialog({ children, onClose, open, title, wide = false, dismissible = true }: { children: ReactNode; onClose(): void; open: boolean; title: string; wide?: boolean; dismissible?: boolean }) {
     const ref = useRef<MaterialElement>(null);
     useEffect(() => {
         const element = ref.current;
         if (element === null) return;
         const close = () => onClose();
+        const cancel = (event: Event) => { if (!dismissible) event.preventDefault(); };
         element.addEventListener("closed", close);
-        return () => element.removeEventListener("closed", close);
-    }, [onClose]);
+        element.addEventListener("cancel", cancel);
+        return () => { element.removeEventListener("closed", close); element.removeEventListener("cancel", cancel); };
+    }, [onClose, dismissible]);
     return createPortal(
         createElement(
             materialElements.dialog,
-            { ariaLabel: title, open, ref } as MaterialProps,
+            { ariaLabel: title, open, ref, style: wide ? { maxWidth: "min(848px, calc(100vw - 48px))" } : undefined } as MaterialProps,
             createElement("div", { slot: "headline" }, title),
-            createElement("div", { className: "material-dialog-content", slot: "content" }, children)
+            createElement("div", { className: wide ? "material-dialog-content material-dialog-content--wide" : "material-dialog-content", slot: "content" }, children)
         ),
         document.body
     );
