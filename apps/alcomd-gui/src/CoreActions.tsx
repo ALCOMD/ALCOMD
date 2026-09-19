@@ -1,5 +1,6 @@
 import type { ExtensionRecord, RpcError } from "@alcomd/sdk";
 import { queryCandidates } from "./package-candidates";
+import { useUtilityDialogBusy, UtilityDialogCancel } from "./UtilityActionDialog";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import type {
@@ -19,8 +20,8 @@ import type {
     UnityLaunchOptionsResult
 } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
-import { playArrowIcon } from "@alcomd/ui/icons";
-import { Button, Checkbox, Dialog as MaterialDialog, Icon, Progress, Select, TextField } from "./Material";
+import { moreVertIcon, playArrowIcon, starIcon } from "@alcomd/ui/icons";
+import { Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, Menu, MenuItem, Progress, Select, TextField } from "./Material";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 
 interface ActionProps {
@@ -94,45 +95,72 @@ export function RegisterRepositoryPanel({ client, onChanged }: ActionProps) {
     const available = useCapability(capabilities.repositoriesRegistry);
     const [kind, setKind] = useState<"remote" | "local">("remote");
     const [value, setValue] = useState("");
-    const [confirm, setConfirm] = useState(false);
+    const [preview, setPreview] = useState<RepositorySnapshot>();
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
-    const run = async () => {
-        const source = kind === "remote" ? { kind, url: value } as const : { kind, path: value } as const;
-        await runSimple(setFeedback, () => client.repositoryRegister(source), "Repository registered.", onChanged);
+    useUtilityDialogBusy(feedback.busy);
+    const pending = useRef(false);
+    const source = () => kind === "remote" ? { kind, url: value } as const : { kind, path: value } as const;
+    const inspect = async (event: FormEvent) => {
+        event.preventDefault();
+        if (pending.current || !available) return;
+        pending.current = true;
+        setFeedback({ busy: true });
+        try { setPreview((await client.repositoriesInspect(source())).repository); setFeedback({ busy: false }); }
+        catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+        finally { pending.current = false; }
     };
-    return (
-        <ActionSection title="Add repository">
-            <form onSubmit={(event) => { event.preventDefault(); setConfirm(true); }}>
-                <Select id="repository-kind" label="Source type" onChange={(next) => setKind(next as "remote" | "local")} options={[{ label: "Remote URL", value: "remote" }, { label: "Local manifest", value: "local" }]} value={kind} />
-                <TextField id="repository-source" label={kind === "remote" ? "Repository URL" : "Local manifest path"} maxLength={2048} onInput={setValue} required type={kind === "remote" ? "url" : "text"} value={value} />
-                <Button disabled={!available || feedback.busy || value.length === 0} title={capabilityUnavailableTitle(available, capabilities.repositoriesRegistry)} type="submit">Review repository</Button>
-            </form>
-            <ConfirmDialog busy={feedback.busy} open={confirm} title="Register this repository?" detail="The daemon will validate the source and store its normalized read model." onClose={() => setConfirm(false)} onConfirm={run} />
-            <MutationFeedback client={client} feedback={feedback} />
-        </ActionSection>
-    );
+    const register = async () => {
+        if (pending.current || !available || preview === undefined) return;
+        pending.current = true;
+        setFeedback({ busy: true });
+        try {
+            await client.repositoryRegister(preview.source);
+            setPreview(undefined); setValue("");
+            setFeedback({ busy: false, message: "Repository added." }); onChanged?.();
+        } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+        finally { pending.current = false; }
+    };
+    return <ActionSection title="Add repository">
+        {preview === undefined ? <form onSubmit={(event) => void inspect(event)}>
+            <Select disabled={feedback.busy} id="repository-kind" label="Source type" onChange={(next) => setKind(next as "remote" | "local")} options={[{ label: "Remote URL", value: "remote" }, { label: "Local manifest", value: "local" }]} value={kind} />
+            <TextField disabled={feedback.busy} id="repository-source" label={kind === "remote" ? "Repository URL" : "Local manifest path"} maxLength={2048} onInput={setValue} required type={kind === "remote" ? "url" : "text"} value={value} />
+            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || value.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.repositoriesRegistry)} type="submit">{feedback.busy ? "Loading repository…" : "Review repository"}</Button></div>
+        </form> : <>
+            <dl className="dialog-summary"><div><dt>Name</dt><dd>{preview.name ?? "Unnamed repository"}</dd></div><div><dt>Source</dt><dd>{preview.source.kind === "remote" ? preview.source.url : preview.source.path}</dd></div></dl>
+            {preview.issues.length === 0 ? null : <p role="status">This repository has {preview.issues.length} reported issues. Registration will validate the source again.</p>}
+            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setPreview(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">Back</Button><Button disabled={!available || feedback.busy} onClick={() => void register()} type="button">{feedback.busy ? "Adding…" : "Add repository"}</Button></div>
+        </>}
+        <MutationFeedback client={client} feedback={feedback} />
+    </ActionSection>;
 }
 
 export function RepositoryActions({ client, onChanged, repository }: ActionProps & { repository: RepositorySnapshot }) {
     const available = useCapability(capabilities.repositoriesRegistry);
     const [confirmRemove, setConfirmRemove] = useState(false);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
+    const pending = useRef(false);
     const ready = repository.repositoryId !== undefined && repository.revision !== undefined;
-    const refresh = async () => {
-        if (!ready) return;
-        await runSimple(setFeedback, () => client.repositoryRefresh(repository.repositoryId!, repository.revision!), "Repository refreshed.", onChanged);
+    const run = async (remove: boolean) => {
+        if (!ready || !available || pending.current) return;
+        pending.current = true; setFeedback({ busy: true });
+        try {
+            if (remove) await client.repositoryUnregister(repository.repositoryId!, repository.revision!);
+            else await client.repositoryRefresh(repository.repositoryId!, repository.revision!);
+            setFeedback({ busy: false, message: remove ? "Repository removed." : "Repository refreshed." });
+            setConfirmRemove(false); onChanged?.();
+        } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+        finally { pending.current = false; }
     };
-    const remove = async () => {
-        if (!ready) return;
-        await runSimple(setFeedback, () => client.repositoryUnregister(repository.repositoryId!, repository.revision!), "Repository removed from the registry.", onChanged);
-    };
-    return (
-        <ActionSection title="Repository actions">
-            <div className="action-row"><Button disabled={!available || !ready || feedback.busy} onClick={() => void refresh()} title={capabilityUnavailableTitle(available, capabilities.repositoriesRegistry)} type="button" variant="tonal">Refresh</Button><Button className="material-button--danger" disabled={!available || !ready || feedback.busy} onClick={() => setConfirmRemove(true)} title={capabilityUnavailableTitle(available, capabilities.repositoriesRegistry)} type="button" variant="text">Remove</Button></div>
-            <ConfirmDialog busy={feedback.busy} open={confirmRemove} title="Remove this repository?" detail="Packages already installed in projects are not silently changed." onClose={() => setConfirmRemove(false)} onConfirm={remove} />
+    return <div className="repository-row-actions">
+        <Button disabled={!available || !ready || feedback.busy} onClick={() => void run(false)} type="button" variant="text">Refresh repository</Button>
+        <Button disabled={!available || !ready || feedback.busy} onClick={() => setConfirmRemove(true)} type="button" variant="text">Remove</Button>
+        <MaterialDialog open={confirmRemove} title="Remove this repository?" dismissible={!feedback.busy} onClose={() => setConfirmRemove(false)}>
+            <p>Remove <strong>{repository.name ?? repository.declaredId ?? "this repository"}</strong> from your sources?</p><p>Packages already installed in projects stay installed.</p>
             <MutationFeedback client={client} feedback={feedback} />
-        </ActionSection>
-    );
+            <div className="dialog-actions"><Button disabled={feedback.busy} onClick={() => setConfirmRemove(false)} type="button" variant="text">Cancel</Button><Button disabled={feedback.busy || !available} onClick={() => void run(true)} type="button">Remove repository</Button></div>
+        </MaterialDialog>
+        {confirmRemove ? null : <MutationFeedback client={client} feedback={feedback} />}
+    </div>;
 }
 
 export interface PackageActionSelection {
@@ -253,31 +281,35 @@ export function UnityRegistryActions({ client, installations, onChanged }: Actio
     const [remove, setRemove] = useState<UnityInstallation>();
     const [confirmRemove, setConfirmRemove] = useState(false);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
-    const register = async (event: FormEvent) => {
-        event.preventDefault();
-        await runSimple(setFeedback, () => client.unityInstallationRegister(path), "Unity installation registered.", onChanged);
+    const pending = useRef(false);
+    useUtilityDialogBusy(feedback.busy);
+    const mutate = async (action: "register" | "refresh" | "remove") => {
+        if (!available || pending.current || (action === "remove" && remove === undefined)) return;
+        pending.current = true; setFeedback({ busy: true });
+        try {
+            if (action === "register") { await client.unityInstallationRegister(path); setPath(""); }
+            else if (action === "refresh") await client.unityInstallationsRefresh();
+            else { await client.unityInstallationRemove(remove!.installationId, remove!.revision); setRemove(undefined); setConfirmRemove(false); }
+            setFeedback({ busy: false, message: action === "register" ? "Unity installation registered." : action === "refresh" ? "Unity installations refreshed." : "Unity installation removed from the list." });
+            onChanged?.();
+        } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+        finally { pending.current = false; }
     };
-    const removeInstallation = async () => {
-        if (remove === undefined) return;
-        await runSimple(setFeedback, () => client.unityInstallationRemove(remove.installationId, remove.revision), "Unity installation removed.", onChanged);
-        setRemove(undefined);
-        setConfirmRemove(false);
-    };
-    return (
-        <ActionSection title="Installation registry">
-            <form onSubmit={(event) => void register(event)}>
-                <TextField id="unity-executable" label="Unity executable" maxLength={1024} onInput={setPath} required value={path} />
-                <div className="action-row">
-                    <Button disabled={!available || feedback.busy} title={capabilityUnavailableTitle(available, capabilities.unityManage)} type="submit">Register</Button>
-                    <Button disabled={!available || feedback.busy} onClick={() => void runSimple(setFeedback, () => client.unityInstallationsRefresh(), "Unity registry refreshed.", onChanged)} title={capabilityUnavailableTitle(available, capabilities.unityManage)} type="button" variant="tonal">Discover and refresh</Button>
-                </div>
+    return <ActionSection title={confirmRemove ? "Remove Unity installation" : "Manage Unity installations"}>
+        {confirmRemove && remove !== undefined ? <>
+            <p>Remove <strong>Unity {remove.unityVersion}</strong> from the list?</p>
+            <p>Only the ALCOMD registry entry is removed. The editor remains installed.</p>
+            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setConfirmRemove(false); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">Back</Button><Button className="material-button--danger" disabled={!available || feedback.busy} onClick={() => void mutate("remove")} type="button">Remove installation</Button></div>
+        </> : <>
+            <form onSubmit={(event) => { event.preventDefault(); void mutate("register"); }}>
+                <TextField disabled={feedback.busy} id="unity-executable" label="Unity executable" maxLength={1024} onInput={setPath} required value={path} />
+                <div className="action-row"><Button disabled={!available || feedback.busy || path.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.unityManage)} type="submit">Register</Button><Button disabled={!available || feedback.busy} onClick={() => void mutate("refresh")} title={capabilityUnavailableTitle(available, capabilities.unityManage)} type="button" variant="tonal">Discover and refresh</Button></div>
             </form>
-            {installations.length === 0 ? null : <Select aria-label="Installation to remove" label="Remove installation" onChange={(next) => setRemove(installations.find((item) => item.installationId === next))} options={[{ label: "Select an installation", value: "" }, ...installations.map((item) => ({ label: `Unity ${item.unityVersion}`, value: item.installationId }))]} value={remove?.installationId ?? ""} />}
-            <Button className="material-button--danger" disabled={!available || remove === undefined || feedback.busy} onClick={() => setConfirmRemove(true)} title={capabilityUnavailableTitle(available, capabilities.unityManage)} type="button" variant="text">Review removal</Button>
-            <ConfirmDialog busy={feedback.busy} open={confirmRemove} title="Remove this Unity installation?" detail="Only the ALCOMD registry entry is removed. The editor remains installed." onClose={() => setConfirmRemove(false)} onConfirm={removeInstallation} />
-            <MutationFeedback client={client} feedback={feedback} />
-        </ActionSection>
-    );
+            {installations.length === 0 ? null : <Select aria-label="Installation to remove" disabled={feedback.busy} label="Remove installation" onChange={(next) => setRemove(installations.find((item) => item.installationId === next))} options={[{ label: "Select an installation", value: "" }, ...installations.map((item) => ({ label: "Unity " + item.unityVersion + " · " + item.architecture, value: item.installationId }))]} value={remove?.installationId ?? ""} />}
+            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button className="material-button--danger" disabled={!available || remove === undefined || feedback.busy} onClick={() => { setConfirmRemove(true); setFeedback(INITIAL_FEEDBACK); }} title={capabilityUnavailableTitle(available, capabilities.unityManage)} type="button" variant="text">Review removal</Button></div>
+        </>}
+        <MutationFeedback client={client} feedback={feedback} />
+    </ActionSection>;
 }
 
 export function ProjectUnityActions({ afterMigrationOpen = false, client, installations, launchConfig, launchOptions, project, onChanged }: ActionProps & { afterMigrationOpen?: boolean; installations: UnityInstallation[]; launchConfig: ProjectUnityLaunchConfig; launchOptions: UnityLaunchOptionsResult; project: ProjectSnapshot }) {
@@ -285,6 +317,10 @@ export function ProjectUnityActions({ afterMigrationOpen = false, client, instal
     const canManage = useCapability(capabilities.unityManage);
     const canMigrate = useCapability(capabilities.projectsUnityMigration);
     const [argumentsText, setArgumentsText] = useState(launchConfig.arguments.join("\n"));
+    const [argumentsOpen, setArgumentsOpen] = useState(false);
+    const [argumentsRevision, setArgumentsRevision] = useState(launchConfig.revision);
+    const [argumentsFeedback, setArgumentsFeedback] = useState(INITIAL_FEEDBACK);
+    const argumentsPending = useRef(false);
     const [launchInstallationId, setLaunchInstallationId] = useState("");
     const [postMigrationLaunchOptions, setPostMigrationLaunchOptions] = useState<UnityLaunchOptionsResult>();
     const [targetVersion, setTargetVersion] = useState("");
@@ -295,28 +331,27 @@ export function ProjectUnityActions({ afterMigrationOpen = false, client, instal
     const projectRevision = project.revision;
     const handledMigrationOperation = useRef<string | undefined>(undefined);
     useEffect(() => {
-        setArgumentsText(launchConfig.arguments.join("\n"));
-    }, [launchConfig]);
+        if (!argumentsOpen) setArgumentsText(launchConfig.arguments.join("\n"));
+    }, [argumentsOpen, launchConfig]);
     const migrationVersions = [...new Set(installations.map((installation) => installation.unityVersion))]
         .filter((version) => version !== project.unityVersion)
         .sort((left, right) => left.localeCompare(right));
     const targetInstallations = installations.filter((installation) => installation.unityVersion === targetVersion);
-    const setLaunchConfig = async (event: FormEvent) => {
-        event.preventDefault();
-        if (projectId === undefined) return;
-        const arguments_ = argumentsText.split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
-        setFeedback({ busy: true });
-        try {
-            await client.unityProjectLaunchConfigSet(projectId, arguments_, launchConfig.revision);
-            setFeedback({ busy: false, message: "Unity launch arguments updated." });
-            onChanged?.();
-        } catch (caught: unknown) {
-            setFeedback({ busy: false, error: safeError(caught) });
-        }
+    const closeArguments = () => {
+        if (argumentsPending.current) return;
+        setArgumentsOpen(false); setArgumentsText(launchConfig.arguments.join("\n")); setArgumentsFeedback(INITIAL_FEEDBACK);
     };
-    const clearLaunchConfig = async () => {
-        if (projectId === undefined) return;
-        await runSimple(setFeedback, () => client.unityProjectLaunchConfigClear(projectId, launchConfig.revision), "Unity launch arguments cleared.", onChanged);
+    const saveArguments = async (clear: boolean) => {
+        if (projectId === undefined || !canManage || argumentsPending.current) return;
+        argumentsPending.current = true; setArgumentsFeedback({ busy: true });
+        try {
+            if (clear) await client.unityProjectLaunchConfigClear(projectId, argumentsRevision);
+            else await client.unityProjectLaunchConfigSet(projectId, argumentsText.split(/\r?\n/).map((value) => value.trim()).filter(Boolean), argumentsRevision);
+            setArgumentsOpen(false); setArgumentsFeedback(INITIAL_FEEDBACK);
+            setFeedback({ busy: false, message: clear ? "Unity launch arguments cleared." : "Unity launch arguments updated." });
+            onChanged?.();
+        } catch (caught: unknown) { setArgumentsFeedback({ busy: false, error: safeError(caught) }); }
+        finally { argumentsPending.current = false; }
     };
     const launch = async () => {
         if (projectId === undefined) return;
@@ -406,13 +441,18 @@ export function ProjectUnityActions({ afterMigrationOpen = false, client, instal
             {effectiveLaunchOptions.exactMatchingInstallations.length > 1 ? <Select id="launch-installation" label="Unity installation for this launch" onChange={setLaunchInstallationId} options={[{ label: "Choose an installation", value: "" }, ...effectiveLaunchOptions.exactMatchingInstallations.map((item) => ({ label: `Unity ${item.unityVersion} · ${item.architecture}`, value: item.installationId }))]} value={launchInstallationId} /> : null}
             <Button disabled={!canLaunch || feedback.busy || projectRevision === undefined} onClick={() => void launch()} title={capabilityUnavailableTitle(canLaunch, capabilities.unityLaunch)} type="button">Open Unity</Button>
             {effectiveLaunchOptions.exactMatchingInstallations.length === 0 ? <p>This project requires Unity {effectiveLaunchOptions.projectUnityVersion}. No exact matching Unity installation was found.</p> : null}
-            <form onSubmit={(event) => void setLaunchConfig(event)}>
-                <TextField aria-describedby="unity-arguments-hint" id="unity-arguments" label="Additional arguments" maxLength={4096} onInput={setArgumentsText} rows={4} supportingText="One argument per line. The daemon validates forbidden arguments." type="textarea" value={argumentsText} />
-                <div className="action-row">
-                    <Button disabled={!canManage || feedback.busy || projectId === undefined} title={capabilityUnavailableTitle(canManage, capabilities.unityManage)} type="submit" variant="tonal">Save launch arguments</Button>
-                    <Button disabled={!canManage || feedback.busy || projectId === undefined || launchConfig.revision === 0} onClick={() => void clearLaunchConfig()} title={capabilityUnavailableTitle(canManage, capabilities.unityManage)} type="button" variant="text">Clear launch arguments</Button>
-                </div>
-            </form>
+            <Button disabled={!canManage || feedback.busy || projectId === undefined} onClick={() => { setArgumentsText(launchConfig.arguments.join("\n")); setArgumentsFeedback(INITIAL_FEEDBACK); setArgumentsRevision(launchConfig.revision); setArgumentsOpen(true); }} title={capabilityUnavailableTitle(canManage, capabilities.unityManage)} type="button" variant="tonal">Edit launch arguments</Button>
+            <MaterialDialog dismissible={!argumentsFeedback.busy} open={argumentsOpen} onClose={closeArguments} title="Unity launch arguments">
+                <form onSubmit={(event) => { event.preventDefault(); void saveArguments(false); }}>
+                    <TextField aria-describedby="unity-arguments-hint" disabled={argumentsFeedback.busy} id="unity-arguments" label="Additional arguments" maxLength={4096} onInput={setArgumentsText} rows={4} supportingText="One argument per line. The daemon validates forbidden arguments." type="textarea" value={argumentsText} />
+                    <div className="dialog-actions">
+                        <Button disabled={argumentsFeedback.busy} onClick={closeArguments} type="button" variant="text">Cancel</Button>
+                        <Button disabled={!canManage || argumentsFeedback.busy || projectId === undefined || launchConfig.revision === 0} onClick={() => void saveArguments(true)} type="button" variant="text">Clear launch arguments</Button>
+                        <Button disabled={!canManage || argumentsFeedback.busy || projectId === undefined} type="submit">Save launch arguments</Button>
+                    </div>
+                </form>
+                <MutationFeedback client={client} feedback={argumentsFeedback} />
+            </MaterialDialog>
             <h3>Migrate Project Unity version</h3>
             <Select id="project-unity-version" label="Target Unity version" onChange={chooseTargetVersion} options={[{ label: `Current · ${project.unityVersion}`, value: "" }, ...migrationVersions.map((version) => ({ label: version, value: version }))]} value={targetVersion} />
             {targetInstallations.length > 1 ? <Select id="migration-installation" label="Target Unity installation" onChange={setTargetInstallationId} options={[{ label: "Choose an installation", value: "" }, ...targetInstallations.map((item) => ({ label: `${item.unityVersion} · ${item.architecture}`, value: item.installationId }))]} value={targetInstallationId} /> : null}
@@ -563,67 +603,206 @@ export function ProjectUnityWorkspaceActions({ client, installations, launchOpti
 export function TemplateImportPanel({ client, onChanged }: ActionProps) {
     const available = useCapability(capabilities.templatesManage);
     const [bundlePath, setBundlePath] = useState("");
-    const [expectedRevision, setExpectedRevision] = useState(0);
     const [overrideExisting, setOverrideExisting] = useState(false);
     const [plan, setPlan] = useState<TemplatePlan>();
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
+    useUtilityDialogBusy(feedback.busy);
+    const pending = useRef(false);
     const create = async (event: FormEvent) => {
-        event.preventDefault(); setFeedback({ busy: true });
-        try { setPlan(await client.templatePlanImport(bundlePath, overrideExisting, expectedRevision)); setFeedback({ busy: false }); }
-        catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+        event.preventDefault();
+        if (!available || pending.current) return;
+        pending.current = true; setFeedback({ busy: true });
+        try {
+            const inspected = await client.templateInspectBundle(bundlePath);
+            let revision = 0;
+            try { revision = (await client.templateGet(inspected.templateId)).template.revision; }
+            catch (caught: unknown) { if (safeError(caught).code !== "template_not_found") throw caught; }
+            setPlan(await client.templatePlanImport(bundlePath, overrideExisting, revision));
+            setFeedback({ busy: false });
+        } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+        finally { pending.current = false; }
     };
     const apply = async () => {
-        if (plan === undefined) return;
-        setFeedback({ busy: true });
-        try { const result = await client.templateApplyImport(plan.planId); setPlan(undefined); setFeedback({ busy: false, operationId: result.operationId, message: "Template import accepted." }); onChanged?.(); }
-        catch (caught: unknown) { setPlan(undefined); setFeedback({ busy: false, error: safeError(caught) }); }
+        if (plan === undefined || !available || pending.current) return;
+        pending.current = true; setFeedback({ busy: true });
+        try {
+            const result = await client.templateApplyImport(plan.planId);
+            setPlan(undefined); setBundlePath("");
+            setFeedback({ busy: false, operationId: result.operationId, message: "Template import accepted." }); onChanged?.();
+        } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+        finally { pending.current = false; }
     };
-    return <ActionSection title="Import template"><form onSubmit={(event) => void create(event)}><TextField id="template-bundle" label="Template bundle" maxLength={1024} onInput={setBundlePath} required value={bundlePath} /><TextField id="template-registry-revision" label="Expected registry revision" min={0} onInput={(next) => setExpectedRevision(Number(next))} required type="number" value={expectedRevision} /><Checkbox checked={overrideExisting} label="Replace an existing matching template" onChange={setOverrideExisting} /><Button disabled={!available || feedback.busy} title={capabilityUnavailableTitle(available, capabilities.templatesManage)} type="submit">Create import plan</Button></form><TemplatePlanDialog busy={feedback.busy || !available} plan={plan} title="Review template import" onApply={apply} onClose={() => setPlan(undefined)} /><MutationFeedback client={client} feedback={feedback} /></ActionSection>;
+    return <ActionSection title={plan === undefined ? "Import template" : "Review template import"}>
+        {plan === undefined ? <form onSubmit={(event) => void create(event)}>
+            <TextField disabled={feedback.busy} id="template-bundle" label="Template bundle" maxLength={1024} onInput={setBundlePath} required value={bundlePath} />
+            <Checkbox checked={overrideExisting} disabled={feedback.busy} label="Replace an existing matching template" onChange={setOverrideExisting} />
+            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || bundlePath.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.templatesManage)} type="submit">{feedback.busy ? "Preparing review…" : "Review import"}</Button></div>
+        </form> : <>
+            <p>Action: <strong>{humanize(plan.action)}</strong></p>
+            <p>Plan fingerprint: <code>{shortValue(plan.planFingerprint)}</code></p>
+            <p className="risk-summary">The daemon will revalidate this frozen plan before importing.</p>
+            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setPlan(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">Discard plan</Button><Button disabled={!available || feedback.busy} onClick={() => void apply()} type="button">{feedback.busy ? "Applying…" : "Apply reviewed plan"}</Button></div>
+        </>}
+        <MutationFeedback client={client} feedback={feedback} />
+    </ActionSection>;
 }
 
-export function TemplateActions({ client, onChanged, template }: ActionProps & { template: TemplateRecord }) {
+export function TemplateActions({ client, compact = false, onChanged, onView, template }: ActionProps & { compact?: boolean; onView?(): void; template: TemplateRecord }) {
     const canCreateProject = useCapability(capabilities.templatesCreateProject);
     const canManage = useCapability(capabilities.templatesManage);
-    const [mode, setMode] = useState<"none" | "derive" | "create">("none");
+    const [mode, setMode] = useState<"none" | "derive" | "create" | "export" | "remove">("none");
     const [plan, setPlan] = useState<TemplatePlan>();
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
-    const [fields, setFields] = useState({ projectId: "", projectRevision: 0, templateId: "", templateVersion: "1.0.0", displayName: "", description: "", parent: "", leaf: "", exportPath: "" });
-    const update = (key: keyof typeof fields, value: string | number) => setFields((current) => ({ ...current, [key]: value }));
-    const createPlan = async (event: FormEvent) => {
-        event.preventDefault(); setFeedback({ busy: true });
+    const [projects, setProjects] = useState<ProjectSnapshot[]>([]);
+    const [projectPage, setProjectPage] = useState<Awaited<ReturnType<GuiRpcClient["projectsList"]>>>();
+    const [projectsLoading, setProjectsLoading] = useState(false);
+    const [fields, setFields] = useState({ projectId: "", templateId: "", templateVersion: "1.0.0", displayName: "", description: "", parent: "", leaf: "", exportPath: "" });
+    const [menuOpen, setMenuOpen] = useState(false);
+    const menuAnchorRef = useRef<HTMLElement>(null);
+    const pending = useRef(false);
+    const projectLoad = useRef(0);
+    const update = (key: keyof typeof fields, value: string) => setFields((current) => ({ ...current, [key]: value }));
+    const close = () => {
+        if (pending.current) return;
+        projectLoad.current += 1;
+        setMode("none"); setPlan(undefined); setProjectsLoading(false);
+    };
+    const loadProjects = async (append: boolean) => {
+        const generation = ++projectLoad.current;
+        setProjectsLoading(true);
         try {
-            const next = mode === "derive"
-                ? await client.templatePlanDerive({ projectId: fields.projectId, expectedProjectRevision: fields.projectRevision, templateId: fields.templateId, templateVersion: fields.templateVersion, displayName: fields.displayName, ...(fields.description.length === 0 ? {} : { description: fields.description }) })
-                : await client.templatePlanCreateProject(template.templateId, template.revision, fields.parent, fields.leaf);
+            const page = await client.projectsList(append ? projectPage?.nextCursor : undefined);
+            if (generation !== projectLoad.current) return;
+            setProjectPage(page);
+            setProjects((current) => append ? [...current, ...page.projects] : page.projects);
+        } catch (caught: unknown) {
+            if (generation === projectLoad.current) setFeedback({ busy: false, error: safeError(caught) });
+        } finally { if (generation === projectLoad.current) setProjectsLoading(false); }
+    };
+    const open = (next: typeof mode) => {
+        if (pending.current) return;
+        setMenuOpen(false); setPlan(undefined); setFeedback(INITIAL_FEEDBACK); setMode(next);
+        setFields({ projectId: "", templateId: "", templateVersion: "1.0.0", displayName: "", description: "", parent: "", leaf: "", exportPath: "" });
+        if (next === "derive") { setProjects([]); setProjectPage(undefined); void loadProjects(false); }
+    };
+    const createPlan = async (event: FormEvent) => {
+        event.preventDefault();
+        if (pending.current || (mode === "derive" ? !canManage : !canCreateProject)) return;
+        pending.current = true; setFeedback({ busy: true });
+        try {
+            let next: TemplatePlan;
+            if (mode === "derive") {
+                const source = (await client.projectGet(fields.projectId)).project;
+                if (source.projectId === undefined || source.revision === undefined) throw { code: "project_revision_unavailable" };
+                next = await client.templatePlanDerive({ projectId: source.projectId, expectedProjectRevision: source.revision, templateId: fields.templateId, templateVersion: fields.templateVersion, displayName: fields.displayName, ...(fields.description.length === 0 ? {} : { description: fields.description }) });
+            } else {
+                next = await client.templatePlanCreateProject(template.templateId, template.revision, fields.parent, fields.leaf);
+            }
             setPlan(next); setFeedback({ busy: false });
         } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+        finally { pending.current = false; }
     };
     const apply = async () => {
-        if (plan === undefined) return; setFeedback({ busy: true });
-        try { const result = mode === "derive" ? await client.templateApplyDerive(plan.planId) : await client.templateApplyCreateProject(plan.planId); setPlan(undefined); setFeedback({ busy: false, operationId: result.operationId, message: `Template ${mode} operation accepted.` }); onChanged?.(); }
-        catch (caught: unknown) { setPlan(undefined); setFeedback({ busy: false, error: safeError(caught) }); }
+        if (plan === undefined || pending.current || (mode === "derive" ? !canManage : !canCreateProject)) return;
+        pending.current = true; setFeedback({ busy: true });
+        try {
+            const result = mode === "derive" ? await client.templateApplyDerive(plan.planId) : await client.templateApplyCreateProject(plan.planId);
+            setPlan(undefined); setMode("none");
+            setFeedback({ busy: false, operationId: result.operationId, message: "Template operation accepted." }); onChanged?.();
+        } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+        finally { pending.current = false; }
     };
-    const simple = async (kind: "favorite" | "export" | "remove") => {
-        if (kind === "favorite") await runSimple(setFeedback, () => client.templateSetFavorite(template.templateId, !template.favorite, template.revision), "Favorite state updated.", onChanged);
-        if (kind === "export") await runSimple(setFeedback, () => client.templateExport(template.templateId, template.revision, fields.exportPath), "Template exported.");
-        if (kind === "remove") await runSimple(setFeedback, () => client.templateRemove(template.templateId, template.revision), "Template removed.", onChanged);
+    const simple = async (action: "favorite" | "export" | "remove") => {
+        if (pending.current || !canManage) return;
+        pending.current = true; setFeedback({ busy: true });
+        try {
+            if (action === "favorite") await client.templateSetFavorite(template.templateId, !template.favorite, template.revision);
+            else if (action === "export") await client.templateExport(template.templateId, template.revision, fields.exportPath);
+            else await client.templateRemove(template.templateId, template.revision);
+            setMode("none");
+            setFeedback({ busy: false, message: action === "favorite" ? "Favorite updated." : action === "export" ? "Template exported." : "Template removed." });
+            if (action !== "export") onChanged?.();
+        } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+        finally { pending.current = false; }
     };
-    return <ActionSection title="Template workflows"><div className="action-row"><Button disabled={!canManage} onClick={() => setMode("derive")} title={capabilityUnavailableTitle(canManage, capabilities.templatesManage)} type="button" variant="tonal">Derive from project</Button><Button disabled={!canCreateProject} onClick={() => setMode("create")} title={capabilityUnavailableTitle(canCreateProject, capabilities.templatesCreateProject)} type="button" variant="tonal">Create project</Button><Button disabled={!canManage} onClick={() => void simple("favorite")} title={capabilityUnavailableTitle(canManage, capabilities.templatesManage)} type="button" variant="tonal">{template.favorite ? "Remove favorite" : "Favorite"}</Button></div>{mode === "none" ? null : <form onSubmit={(event) => void createPlan(event)}>{mode === "derive" ? <><TextField id="derive-project" label="Source project ID" onInput={(next) => update("projectId", next)} required value={fields.projectId} /><TextField id="derive-project-revision" label="Expected project revision" min={0} onInput={(next) => update("projectRevision", Number(next))} required type="number" value={fields.projectRevision} /><TextField id="derive-template-id" label="New template ID" onInput={(next) => update("templateId", next)} required value={fields.templateId} /><TextField id="derive-version" label="Template version" onInput={(next) => update("templateVersion", next)} required value={fields.templateVersion} /><TextField id="derive-name" label="Display name" onInput={(next) => update("displayName", next)} required value={fields.displayName} /></> : <><TextField id="create-parent" label="Target parent" onInput={(next) => update("parent", next)} required value={fields.parent} /><TextField id="create-leaf" label="Target directory name" onInput={(next) => update("leaf", next)} required value={fields.leaf} /></>}<Button disabled={(mode === "derive" ? !canManage : !canCreateProject) || feedback.busy} type="submit">Create {mode} plan</Button></form>}<form onSubmit={(event) => { event.preventDefault(); void simple("export"); }}><TextField id="template-export" label="Export target" onInput={(next) => update("exportPath", next)} required value={fields.exportPath} /><Button disabled={!canManage || feedback.busy} type="submit" variant="tonal">Export</Button></form>{template.sourceKind === "builtin" ? null : <Button className="material-button--danger" disabled={!canManage || feedback.busy} onClick={() => void simple("remove")} type="button" variant="text">Remove template</Button>}<TemplatePlanDialog busy={feedback.busy || (mode === "derive" ? !canManage : !canCreateProject)} plan={plan} title={`Review template ${mode}`} onApply={apply} onClose={() => setPlan(undefined)} /><MutationFeedback client={client} feedback={feedback} /></ActionSection>;
+    const pickParent = async () => {
+        try { const path = await client.selectDirectory(); if (path !== undefined) update("parent", path); }
+        catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+    };
+    const title = plan !== undefined ? mode === "derive" ? "Review new template" : "Review project creation" : mode === "derive" ? "Create template from project" : mode === "create" ? "Create project" : mode === "export" ? "Export template" : "Remove template";
+    return <section className={compact ? "template-row-actions" : "action-section"}>
+        {compact ? <div className="card-actions">
+            <IconButton aria-pressed={template.favorite} className="project-favorite-action" disabled={!canManage || feedback.busy} label={template.favorite ? "Remove " + template.displayName + " from favorites" : "Favorite " + template.displayName} onClick={() => void simple("favorite")} type="button"><Icon asset={starIcon} /></IconButton>
+            <IconButton aria-expanded={menuOpen} disabled={feedback.busy} label={"More actions for " + template.displayName} onClick={() => setMenuOpen(true)} ref={menuAnchorRef} type="button"><Icon asset={moreVertIcon} size={24} /></IconButton>
+            <Menu anchorRef={menuAnchorRef} onClose={() => setMenuOpen(false)} open={menuOpen}>
+                <MenuItem disabled={!canCreateProject} label="Create project" onClick={() => open("create")} />
+                {onView === undefined ? null : <MenuItem label="View template" onClick={() => { setMenuOpen(false); onView(); }} />}
+                <MenuItem disabled={!canManage} label="Derive from project" onClick={() => open("derive")} />
+                <MenuItem disabled={!canManage} label="Export template" onClick={() => open("export")} />
+                <MenuItem disabled={!canManage || template.sourceKind === "builtin"} label="Remove template" onClick={() => open("remove")} title={template.sourceKind === "builtin" ? "Built-in templates cannot be removed." : undefined} />
+            </Menu>
+        </div> : <><h2>Template actions</h2><div className="action-row">
+            <Button disabled={!canCreateProject || feedback.busy} onClick={() => open("create")} title={capabilityUnavailableTitle(canCreateProject, capabilities.templatesCreateProject)} type="button">Create project</Button>
+            <Button disabled={!canManage || feedback.busy} onClick={() => open("derive")} title={capabilityUnavailableTitle(canManage, capabilities.templatesManage)} type="button" variant="tonal">Derive from project</Button>
+            <Button disabled={!canManage || feedback.busy} onClick={() => void simple("favorite")} type="button" variant="text">{template.favorite ? "Remove favorite" : "Favorite"}</Button>
+            <Button disabled={!canManage || feedback.busy} onClick={() => open("export")} type="button" variant="text">Export</Button>
+            {template.sourceKind === "builtin" ? null : <Button className="material-button--danger" disabled={!canManage || feedback.busy} onClick={() => open("remove")} type="button" variant="text">Remove template</Button>}
+        </div></>}
+        <MaterialDialog dismissible={!feedback.busy} open={mode !== "none"} onClose={close} title={title}>
+            {plan !== undefined ? <>
+                <p>Action: <strong>{humanize(plan.action)}</strong></p>
+                <p>Plan fingerprint: <code>{shortValue(plan.planFingerprint)}</code></p>
+                <p className="risk-summary">The daemon will revalidate this frozen plan before applying it.</p>
+                <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">Discard plan</Button><Button disabled={feedback.busy || (mode === "derive" ? !canManage : !canCreateProject)} onClick={() => void apply()} type="button">Apply reviewed plan</Button></div>
+            </> : mode === "derive" || mode === "create" ? <form onSubmit={(event) => void createPlan(event)}>
+                {mode === "derive" ? <>
+                    <Select id="derive-project" label="Source project" disabled={feedback.busy || projectsLoading} onChange={(next) => update("projectId", next)} options={[{ label: "Choose a project", value: "" }, ...projects.filter((project) => project.projectId !== undefined).map((project) => ({ label: project.rootPath, value: project.projectId! }))]} value={fields.projectId} />
+                    {projectsLoading ? <p role="status">Loading projects…</p> : projects.length === 0 ? <p>No registered projects available.</p> : null}
+                    {projectPage?.nextCursor === undefined ? null : <Button disabled={projectsLoading || feedback.busy} onClick={() => void loadProjects(true)} type="button" variant="text">Load more projects</Button>}
+                    <TextField disabled={feedback.busy} id="derive-name" label="Display name" onInput={(next) => update("displayName", next)} required value={fields.displayName} />
+                    <TextField disabled={feedback.busy} id="derive-template-id" label="New template ID" onInput={(next) => update("templateId", next)} required value={fields.templateId} />
+                    <TextField disabled={feedback.busy} id="derive-version" label="Template version" onInput={(next) => update("templateVersion", next)} required value={fields.templateVersion} />
+                    <TextField disabled={feedback.busy} id="derive-description" label="Description" onInput={(next) => update("description", next)} value={fields.description} />
+                </> : <>
+                    <p>Template: <strong>{template.displayName}</strong></p>
+                    <TextField disabled={feedback.busy} id="create-parent" label="Target parent" onInput={(next) => update("parent", next)} required value={fields.parent} />
+                    <Button disabled={feedback.busy} onClick={() => void pickParent()} type="button" variant="text">Browse…</Button>
+                    <TextField disabled={feedback.busy} id="create-leaf" label="Project folder name" onInput={(next) => update("leaf", next)} required value={fields.leaf} />
+                </>}
+                <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">Cancel</Button><Button disabled={feedback.busy || (mode === "derive" ? !canManage || fields.projectId.length === 0 : !canCreateProject)} type="submit">{feedback.busy ? "Preparing review…" : "Review"}</Button></div>
+            </form> : mode === "export" ? <form onSubmit={(event) => { event.preventDefault(); void simple("export"); }}>
+                <p>Export <strong>{template.displayName}</strong> as a template bundle.</p>
+                <TextField disabled={feedback.busy} id="template-export" label="Export target" onInput={(next) => update("exportPath", next)} required value={fields.exportPath} />
+                <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">Cancel</Button><Button disabled={!canManage || feedback.busy} type="submit">Export</Button></div>
+            </form> : mode === "remove" ? <>
+                <p>Remove <strong>{template.displayName}</strong> from your templates?</p>
+                <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">Cancel</Button><Button className="material-button--danger" disabled={!canManage || feedback.busy} onClick={() => void simple("remove")} type="button">Remove template</Button></div>
+            </> : null}
+            <MutationFeedback client={client} feedback={feedback} />
+        </MaterialDialog>
+        {mode === "none" ? <MutationFeedback client={client} feedback={feedback} /> : null}
+    </section>;
 }
 
 export function BackupCreatePanel({ client, onChanged, project }: ActionProps & { project: ProjectSnapshot }) {
     const available = useCapability(capabilities.backupsCreate);
     const [compression, setCompression] = useState<"store" | "fast" | "maximum">("fast");
     const [exclude, setExclude] = useState(true);
-    const [confirm, setConfirm] = useState(false);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
+    const pending = useRef(false);
+    useUtilityDialogBusy(feedback.busy);
     const create = async () => {
-        if (project.projectId === undefined || project.revision === undefined) return;
-        setFeedback({ busy: true });
-        try { const result = await client.backupCreate(project.projectId, project.revision, compression, exclude); setFeedback({ busy: false, operationId: result.operationId, message: "Backup operation accepted." }); onChanged?.(); }
+        if (!available || pending.current || project.projectId === undefined || project.revision === undefined) return;
+        pending.current = true; setFeedback({ busy: true });
+        try { const result = await client.backupCreate(project.projectId, project.revision, compression, exclude); setFeedback({ busy: false, operationId: result.operationId }); onChanged?.(); }
         catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+        finally { pending.current = false; }
     };
-    return <ActionSection title="Create backup"><Select id="backup-compression" label="Compression" onChange={(next) => setCompression(next as typeof compression)} options={[{ label: "Store", value: "store" }, { label: "Fast", value: "fast" }, { label: "Maximum", value: "maximum" }]} value={compression} /><Checkbox checked={exclude} label="Exclude VPM packages" onChange={setExclude} /><Button disabled={!available || feedback.busy || project.revision === undefined} onClick={() => setConfirm(true)} title={capabilityUnavailableTitle(available, capabilities.backupsCreate)} type="button">Review backup</Button><ConfirmDialog busy={feedback.busy || !available} open={confirm} title="Create this backup?" detail={`Compression: ${compression}. ${exclude ? "VPM packages will be excluded." : "VPM packages will be included."}`} onClose={() => setConfirm(false)} onConfirm={create} /><MutationFeedback client={client} feedback={feedback} /></ActionSection>;
+    return <ActionSection title="Create backup">
+        <p>Back up <strong>{project.rootPath.split(/[\\/]/).filter(Boolean).at(-1) ?? project.projectId}</strong>.</p>
+        {feedback.operationId === undefined ? <><Select disabled={feedback.busy} id="backup-compression" label="Compression" onChange={(next) => setCompression(next as typeof compression)} options={[{ label: "Store", value: "store" }, { label: "Fast", value: "fast" }, { label: "Maximum", value: "maximum" }]} value={compression} /><Checkbox disabled={feedback.busy} checked={exclude} label="Exclude VPM packages" onChange={setExclude} /><div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || project.revision === undefined} onClick={() => void create()} type="button">Create backup</Button></div></> : <p>Closing this dialog does not cancel the backup task.</p>}
+        <MutationFeedback client={client} feedback={feedback} />
+    </ActionSection>;
 }
 
 export function BackupRestorePanel({ backup, client }: ActionProps & { backup: BackupRecord }) {
@@ -632,9 +811,30 @@ export function BackupRestorePanel({ backup, client }: ActionProps & { backup: B
     const [leaf, setLeaf] = useState("");
     const [plan, setPlan] = useState<BackupRestorePlan>();
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
-    const makePlan = async (event: FormEvent) => { event.preventDefault(); setFeedback({ busy: true }); try { setPlan(await client.backupPlanRestore(backup.backupId, parent, leaf)); setFeedback({ busy: false }); } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); } };
-    const apply = async () => { if (plan === undefined) return; setFeedback({ busy: true }); try { const result = await client.backupApplyRestore(plan.planId); setPlan(undefined); setFeedback({ busy: false, operationId: result.operationId, message: "Restore operation accepted." }); } catch (caught: unknown) { setPlan(undefined); setFeedback({ busy: false, error: safeError(caught) }); } };
-    return <ActionSection title="Restore backup"><form onSubmit={(event) => void makePlan(event)}><TextField id="restore-parent" label="Target parent" maxLength={1024} onInput={setParent} required value={parent} /><TextField id="restore-leaf" label="New directory name" maxLength={255} onInput={setLeaf} required value={leaf} /><Button disabled={!available || feedback.busy} title={capabilityUnavailableTitle(available, capabilities.backupsRestore)} type="submit">Create restore plan</Button></form><PlanDialog busy={feedback.busy || !available} open={plan !== undefined} title="Review backup restore" onClose={() => setPlan(undefined)} onApply={apply}>{plan === undefined ? null : <><p>Restore to <strong>{plan.target.leaf}</strong> in the selected parent directory.</p><p>The target must be absent: {plan.target.mustBeAbsent ? "yes" : "no"}</p><p>{plan.packagesRequireResolve ? "VPM packages require a separate resolve after restoration." : "No package resolve is required."}</p><p>Archive: <code>{shortValue(plan.archiveSha256)}</code></p></>}</PlanDialog><MutationFeedback client={client} feedback={feedback} /></ActionSection>;
+    const pending = useRef(false);
+    useUtilityDialogBusy(feedback.busy);
+    const run = async (apply: boolean) => {
+        if (!available || pending.current || (apply && plan === undefined)) return;
+        pending.current = true; setFeedback({ busy: true });
+        try {
+            if (apply) { const result = await client.backupApplyRestore(plan!.planId); setPlan(undefined); setFeedback({ busy: false, operationId: result.operationId }); }
+            else { setPlan(await client.backupPlanRestore(backup.backupId, parent, leaf)); setFeedback({ busy: false }); }
+        } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+        finally { pending.current = false; }
+    };
+    return <ActionSection title="Restore backup">
+        {feedback.operationId !== undefined ? <p>Closing this dialog does not cancel the restore task.</p> : plan === undefined ? <form onSubmit={(event) => { event.preventDefault(); void run(false); }}>
+            <TextField disabled={feedback.busy} id="restore-parent" label="Target parent" maxLength={1024} onInput={setParent} required value={parent} />
+            <Button disabled={feedback.busy} onClick={() => void client.selectDirectory().then((path) => { if (path !== undefined) setParent(path); }).catch((caught: unknown) => setFeedback({ busy: false, error: safeError(caught) }))} type="button" variant="text">Browse…</Button>
+            <TextField disabled={feedback.busy} id="restore-leaf" label="New directory name" maxLength={255} onInput={setLeaf} required value={leaf} />
+            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy} type="submit">Review backup restore</Button></div>
+        </form> : <>
+            <h3>Review backup restore</h3><dl className="dialog-summary"><div><dt>Target parent</dt><dd>{plan.target.parent}</dd></div><div><dt>New directory</dt><dd>{plan.target.leaf}</dd></div><div><dt>Target must be absent</dt><dd>{plan.target.mustBeAbsent ? "Yes" : "No"}</dd></div></dl>
+            <p>{plan.packagesRequireResolve ? "VPM packages require a separate resolve after restoration." : "No package resolve is required."}</p>
+            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => setPlan(undefined)} type="button" variant="text">Back</Button><Button disabled={!available || feedback.busy} onClick={() => void run(true)} type="button">Apply reviewed plan</Button></div>
+        </>}
+        <MutationFeedback client={client} feedback={feedback} />
+    </ActionSection>;
 }
 
 export function OperationActions({ client, operation, onChanged }: ActionProps & { operation: Operation }) {
@@ -650,27 +850,111 @@ export function ExtensionInstallPanel({ client, onChanged }: ActionProps) {
     const available = useCapability(capabilities.extensionsLifecycle);
     const [path, setPath] = useState("");
     const [approvePublisher, setApprovePublisher] = useState(false);
-    const [expectedRevision, setExpectedRevision] = useState(0);
+    const [expectedRevision, setExpectedRevision] = useState("");
     const [plan, setPlan] = useState<ExtensionPlan>();
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
-    const makePlan = async (event: FormEvent) => { event.preventDefault(); setFeedback({ busy: true }); try { const result = await client.extensionPlanInstall(path, expectedRevision, approvePublisher ? "approve_for_extension" : "none"); setPlan(result.plan); setFeedback({ busy: false }); } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); } };
-    const apply = async () => { if (plan === undefined) return; setFeedback({ busy: true }); try { const result = await client.extensionApplyInstall(plan.planId); setPlan(undefined); setFeedback({ busy: false, operationId: result.operationId, message: "Extension install accepted." }); onChanged?.(); } catch (caught: unknown) { setPlan(undefined); setFeedback({ busy: false, error: safeError(caught) }); } };
-    return <ActionSection title="Install extension"><form onSubmit={(event) => void makePlan(event)}><TextField id="extension-package" label="Extension package" maxLength={1024} onInput={setPath} required value={path} /><TextField id="extension-registry-revision" label="Expected registry revision" min={0} onInput={(next) => setExpectedRevision(Number(next))} required type="number" value={expectedRevision} /><Checkbox checked={approvePublisher} label="Approve this publisher for this extension" onChange={setApprovePublisher} /><Button disabled={!available || feedback.busy} title={capabilityUnavailableTitle(available, capabilities.extensionsLifecycle)} type="submit">Create install plan</Button></form><ExtensionPlanDialog busy={feedback.busy || !available} plan={plan} title="Review extension install" onApply={apply} onClose={() => setPlan(undefined)} /><MutationFeedback client={client} feedback={feedback} /></ActionSection>;
+    useUtilityDialogBusy(feedback.busy);
+    const pending = useRef(false);
+    const revisionValid = /^\d+$/.test(expectedRevision) && Number.isSafeInteger(Number(expectedRevision));
+    const run = async (apply: boolean) => {
+        if (!available || pending.current || (apply ? plan === undefined : !revisionValid || path.trim().length === 0)) return;
+        pending.current = true;
+        setFeedback({ busy: true });
+
+        try {
+            if (apply && plan !== undefined) {
+                const result = await client.extensionApplyInstall(plan.planId);
+                setPlan(undefined);
+                setFeedback({ busy: false, operationId: result.operationId, message: "Extension install accepted." });
+                onChanged?.();
+            } else {
+                const result = await client.extensionPlanInstall(path, Number(expectedRevision), approvePublisher ? "approve_for_extension" : "none");
+                setPlan(result.plan);
+                setFeedback({ busy: false });
+            }
+        } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+        finally { pending.current = false; }
+    };
+    return <section aria-label={plan === undefined ? "Extension install input" : "Review extension install"} aria-busy={feedback.busy}>
+        {plan === undefined ? <form onSubmit={(event) => { event.preventDefault(); void run(false); }}>
+            <TextField disabled={feedback.busy} id="extension-package" label="Extension package" maxLength={1024} onInput={setPath} required value={path} />
+            <p className="risk-summary">Transitional input: the current registry read interface does not provide its revision. Enter the verified registry revision; it is never inferred from installed extensions.</p>
+            <TextField disabled={feedback.busy} id="extension-registry-revision" label="Expected registry revision" min={0} onInput={setExpectedRevision} required type="number" value={expectedRevision} />
+            <Checkbox disabled={feedback.busy} checked={approvePublisher} label="Approve this publisher for this extension" onChange={setApprovePublisher} />
+            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || !revisionValid} title={capabilityUnavailableTitle(available, capabilities.extensionsLifecycle)} type="submit">Create install plan</Button></div>
+        </form> : <>
+            <h2>Review extension install</h2>
+            <dl className="dialog-summary"><div><dt>Extension</dt><dd>{plan.extensionId}</dd></div><div><dt>Version</dt><dd>{plan.version}</dd></div><div><dt>Publisher</dt><dd><code>{plan.publisherFingerprint}</code></dd></div><div><dt>Trust</dt><dd>{humanize(plan.trustDecision)}</dd></div></dl>
+            <p>The daemon will revalidate this install plan before applying it.</p>
+            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setPlan(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">Discard plan</Button><Button disabled={!available || feedback.busy} onClick={() => void run(true)} type="button">Apply reviewed plan</Button></div>
+        </>}
+        <MutationFeedback client={client} feedback={feedback} />
+    </section>;
 }
 
 export function ExtensionActions({ client, extension, onChanged }: ActionProps & { extension: ExtensionRecord }) {
     const canManageLifecycle = useCapability(capabilities.extensionsLifecycle);
     const canManagePermissions = useCapability(capabilities.extensionsPermissions);
+    const [mode, setMode] = useState<"none" | "permissions" | "uninstall">("none");
     const [plan, setPlan] = useState<ExtensionPlan>();
     const [deleteData, setDeleteData] = useState(false);
     const [grant, setGrant] = useState({ permission: "", resourceKind: "Project", resourceId: "" });
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
-    const lifecycle = async (enable: boolean) => runSimple(setFeedback, () => enable ? client.extensionEnable(extension.extensionId, extension.revision) : client.extensionDisable(extension.extensionId, extension.revision), `Extension ${enable ? "enabled" : "disabled"}.`, onChanged);
-    const planUninstall = async () => { setFeedback({ busy: true }); try { const result = await client.extensionPlanUninstall(extension.extensionId, extension.revision, deleteData ? "delete_data" : "retain_data"); setPlan(result.plan); setFeedback({ busy: false }); } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); } };
-    const applyUninstall = async () => { if (plan === undefined) return; setFeedback({ busy: true }); try { const result = await client.extensionApplyUninstall(plan.planId); setPlan(undefined); setFeedback({ busy: false, operationId: result.operationId, message: "Extension uninstall accepted." }); onChanged?.(); } catch (caught: unknown) { setPlan(undefined); setFeedback({ busy: false, error: safeError(caught) }); } };
-    const changeGrant = async (revoke: boolean) => runSimple(setFeedback, () => revoke ? client.extensionRevokeGrant(extension.extensionId, grant.permission, grant.resourceKind, grant.resourceId, extension.grantRevision) : client.extensionSetGrant(extension.extensionId, grant.permission, grant.resourceKind, grant.resourceId, extension.grantRevision), `Permission ${revoke ? "revoked" : "granted"}.`, onChanged);
-    const updateGrant = (key: keyof typeof grant, value: string) => setGrant((current) => ({ ...current, [key]: value }));
-    return <ActionSection title="Extension management"><div className="action-row"><Button disabled={!canManageLifecycle || feedback.busy || extension.desiredState === "enabled"} onClick={() => void lifecycle(true)} title={capabilityUnavailableTitle(canManageLifecycle, capabilities.extensionsLifecycle)} type="button" variant="tonal">Enable</Button><Button disabled={!canManageLifecycle || feedback.busy || extension.desiredState !== "enabled"} onClick={() => void lifecycle(false)} title={capabilityUnavailableTitle(canManageLifecycle, capabilities.extensionsLifecycle)} type="button" variant="tonal">Disable</Button></div><fieldset><legend>Permission scope</legend><TextField id="grant-permission" label="Permission" onInput={(next) => updateGrant("permission", next)} required value={grant.permission} /><Select id="grant-kind" label="Resource kind" onChange={(next) => updateGrant("resourceKind", next)} options={[{ label: "Project", value: "Project" }, { label: "Extension", value: "Extension" }]} value={grant.resourceKind} /><TextField id="grant-resource" label="Resource ID" onInput={(next) => updateGrant("resourceId", next)} required value={grant.resourceId} /><div className="action-row"><Button disabled={!canManagePermissions || feedback.busy || grant.permission.length === 0 || grant.resourceId.length === 0} onClick={() => void changeGrant(false)} title={capabilityUnavailableTitle(canManagePermissions, capabilities.extensionsPermissions)} type="button" variant="tonal">Grant</Button><Button className="material-button--danger" disabled={!canManagePermissions || feedback.busy || grant.permission.length === 0 || grant.resourceId.length === 0} onClick={() => void changeGrant(true)} title={capabilityUnavailableTitle(canManagePermissions, capabilities.extensionsPermissions)} type="button" variant="text">Revoke</Button></div></fieldset><Checkbox checked={deleteData} label="Delete extension-owned data during uninstall" onChange={setDeleteData} /><Button className="material-button--danger" disabled={!canManageLifecycle || feedback.busy} onClick={() => void planUninstall()} title={capabilityUnavailableTitle(canManageLifecycle, capabilities.extensionsLifecycle)} type="button" variant="text">Create uninstall plan</Button><ExtensionPlanDialog busy={feedback.busy || !canManageLifecycle} plan={plan} title="Review extension uninstall" onApply={applyUninstall} onClose={() => setPlan(undefined)} /><MutationFeedback client={client} feedback={feedback} /></ActionSection>;
+    const pending = useRef(false);
+    const close = () => { if (!pending.current) { setMode("none"); setPlan(undefined); setFeedback(INITIAL_FEEDBACK); } };
+    const open = (next: "permissions" | "uninstall") => { if (!pending.current) { setMode(next); setPlan(undefined); setDeleteData(false); setGrant({ permission: "", resourceKind: "Project", resourceId: "" }); setFeedback(INITIAL_FEEDBACK); } };
+    const run = async (kind: "enable" | "disable" | "plan" | "apply" | "grant" | "revoke") => {
+        if (pending.current || ((kind === "grant" || kind === "revoke") ? !canManagePermissions : !canManageLifecycle)) return;
+        if (kind === "apply" && plan === undefined) return;
+        pending.current = true;
+        setFeedback({ busy: true });
+        try {
+            if (kind === "plan") {
+                const result = await client.extensionPlanUninstall(extension.extensionId, extension.revision, deleteData ? "delete_data" : "retain_data");
+                setPlan(result.plan);
+                setFeedback({ busy: false });
+            } else if (kind === "apply" && plan !== undefined) {
+                const result = await client.extensionApplyUninstall(plan.planId);
+                setPlan(undefined);
+                setMode("none");
+                setFeedback({ busy: false, operationId: result.operationId, message: "Extension uninstall accepted." });
+                onChanged?.();
+            } else if (kind === "grant" || kind === "revoke") {
+                await (kind === "grant" ? client.extensionSetGrant(extension.extensionId, grant.permission, grant.resourceKind, grant.resourceId, extension.grantRevision) : client.extensionRevokeGrant(extension.extensionId, grant.permission, grant.resourceKind, grant.resourceId, extension.grantRevision));
+                setFeedback({ busy: false, message: kind === "grant" ? "Permission granted." : "Permission revoked." });
+                onChanged?.();
+            } else if (kind === "enable" || kind === "disable") {
+                await (kind === "enable" ? client.extensionEnable(extension.extensionId, extension.revision) : client.extensionDisable(extension.extensionId, extension.revision));
+                setFeedback({ busy: false, message: kind === "enable" ? "Extension enabled." : "Extension disabled." });
+                onChanged?.();
+            }
+        } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+        finally { pending.current = false; }
+    };
+    const blocked = extension.desiredState === "uninstalling" || extension.quarantineState === "quarantined";
+    return <ActionSection title="Extension management">
+        <div className="action-row"><Button disabled={!canManageLifecycle || feedback.busy || blocked || extension.desiredState === "enabled"} onClick={() => void run("enable")} type="button" variant="tonal">Enable</Button><Button disabled={!canManageLifecycle || feedback.busy || blocked || extension.desiredState !== "enabled"} onClick={() => void run("disable")} type="button" variant="tonal">Disable</Button><Button disabled={feedback.busy} onClick={() => open("permissions")} type="button" variant="text">Manage permissions</Button><Button className="material-button--danger" disabled={!canManageLifecycle || feedback.busy || extension.desiredState === "uninstalling"} onClick={() => open("uninstall")} type="button" variant="text">Uninstall extension</Button></div>
+        <MaterialDialog dismissible={!feedback.busy} open={mode !== "none"} onClose={close} title={mode === "permissions" ? "Extension permissions" : plan === undefined ? "Uninstall extension" : "Review extension uninstall"}>
+            <p><strong>{extension.extensionId}</strong></p>
+            {mode === "permissions" ? <>
+                <p>Specify the exact permission and resource scope. Changes take effect only after Grant or Revoke.</p>
+                <TextField disabled={feedback.busy} id="grant-permission" label="Permission" onInput={(permission) => setGrant((current) => ({ ...current, permission }))} required value={grant.permission} />
+                <Select disabled={feedback.busy} id="grant-kind" label="Resource kind" onChange={(resourceKind) => setGrant((current) => ({ ...current, resourceKind }))} options={[{ label: "Project", value: "Project" }, { label: "Extension", value: "Extension" }]} value={grant.resourceKind} />
+                <TextField disabled={feedback.busy} id="grant-resource" label="Resource ID" onInput={(resourceId) => setGrant((current) => ({ ...current, resourceId }))} required value={grant.resourceId} />
+                <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">Close</Button><Button disabled={!canManagePermissions || feedback.busy || !grant.permission.trim() || !grant.resourceId.trim()} onClick={() => void run("revoke")} type="button" variant="text">Revoke</Button><Button disabled={!canManagePermissions || feedback.busy || !grant.permission.trim() || !grant.resourceId.trim()} onClick={() => void run("grant")} type="button">Grant</Button></div>
+            </> : plan === undefined ? <>
+                <p>Review the removal before applying it.</p>
+                <Checkbox disabled={feedback.busy} checked={deleteData} label="Delete extension-owned data during uninstall" onChange={setDeleteData} />
+                <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">Cancel</Button><Button disabled={!canManageLifecycle || feedback.busy} onClick={() => void run("plan")} type="button">Create uninstall plan</Button></div>
+            </> : <>
+                <dl className="dialog-summary"><div><dt>Extension</dt><dd>{plan.extensionId}</dd></div><div><dt>Version</dt><dd>{plan.version}</dd></div><div><dt>Data</dt><dd>{humanize(plan.dataDisposition)}</dd></div><div><dt>Publisher</dt><dd><code>{plan.publisherFingerprint}</code></dd></div></dl>
+                <p>The daemon will revalidate this uninstall plan before applying it.</p>
+                <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">Discard plan</Button><Button disabled={!canManageLifecycle || feedback.busy} onClick={() => void run("apply")} type="button">Apply reviewed plan</Button></div>
+            </>}
+            <MutationFeedback client={client} feedback={feedback} />
+        </MaterialDialog>
+        {mode === "none" ? <MutationFeedback client={client} feedback={feedback} /> : null}
+    </ActionSection>;
 }
 
 function ActionSection({ children, title }: { children: ReactNode; title: string }) {
@@ -683,14 +967,6 @@ function ConfirmDialog({ busy, detail, onClose, onConfirm, open, title }: { busy
 
 function PlanDialog({ applyDisabled = false, busy, children, onApply, onClose, open, title }: { applyDisabled?: boolean; busy: boolean; children: ReactNode; onApply(): Promise<void>; onClose(): void; open: boolean; title: string }) {
     return <ModalDialog open={open} title={title} onClose={onClose}>{children}<p className="risk-summary">The daemon will revalidate this frozen plan. A stale plan fails instead of being silently replaced.</p><div className="dialog-actions"><Button disabled={busy} onClick={onClose} type="button" variant="tonal">Discard plan</Button><Button data-dialog-initial-focus disabled={busy || applyDisabled} onClick={() => void onApply()} type="button">{busy ? "Applying…" : "Apply reviewed plan"}</Button></div></ModalDialog>;
-}
-
-function TemplatePlanDialog(props: { busy: boolean; onApply(): Promise<void>; onClose(): void; plan?: TemplatePlan; title: string }) {
-    return <PlanDialog busy={props.busy} open={props.plan !== undefined} title={props.title} onApply={props.onApply} onClose={props.onClose}>{props.plan === undefined ? null : <><p>Action: <strong>{humanize(props.plan.action)}</strong></p><p>Plan fingerprint: <code>{shortValue(props.plan.planFingerprint)}</code></p></>}</PlanDialog>;
-}
-
-function ExtensionPlanDialog(props: { busy: boolean; onApply(): Promise<void>; onClose(): void; plan?: ExtensionPlan; title: string }) {
-    return <PlanDialog busy={props.busy} open={props.plan !== undefined} title={props.title} onApply={props.onApply} onClose={props.onClose}>{props.plan === undefined ? null : <dl className="dialog-summary"><div><dt>Extension</dt><dd>{props.plan.extensionId}</dd></div><div><dt>Version</dt><dd>{props.plan.version}</dd></div><div><dt>Publisher</dt><dd><code>{shortValue(props.plan.publisherFingerprint)}</code></dd></div><div><dt>Trust</dt><dd>{humanize(props.plan.trustDecision)}</dd></div><div><dt>Data</dt><dd>{humanize(props.plan.dataDisposition)}</dd></div></dl>}</PlanDialog>;
 }
 
 function ModalDialog({ children, onClose, open, title }: { children: ReactNode; onClose(): void; open: boolean; title: string }) {

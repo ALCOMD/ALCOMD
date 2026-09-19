@@ -99,7 +99,7 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         ["/templates/com.cqmhv.template.avatar", "Template detail"],
         ["/unity", "Unity"],
         ["/backups/00000000-0000-4000-8000-000000000104", "Backup detail"],
-        ["/operations", "Operations"],
+        ["/operations", "Task Center"],
         ["/operations/00000000-0000-4000-8000-000000000105", "Operation detail"],
         ["/extensions", "Extensions"],
         ["/extensions/com.cqmhv.discord", "Extension detail"],
@@ -139,7 +139,7 @@ test("project workspace keeps package discovery and user actions in project cont
 test("settings are labeled, revisioned, dirty-aware, and applied through the typed client", async ({ page }) => {
     await openHarness(page, "/settings");
     const color = page.locator("md-outlined-select#settings-color");
-    await expect(page.getByRole("combobox", { name: "Source color" })).toHaveAccessibleDescription("Saved as a canonical #RRGGBB value; extensions never receive this preference.");
+    await expect(page.getByRole("combobox", { name: "Source color" })).toHaveAccessibleDescription("Choose the accent color used throughout the app.");
     await selectMaterialOption(color, "#315DA8");
     await selectMaterialOption(page.locator("md-outlined-select#settings-locale"), "zh-CN");
     await page.getByRole("checkbox", { name: "Show prerelease package versions" }).check();
@@ -153,7 +153,8 @@ test("settings are labeled, revisioned, dirty-aware, and applied through the typ
     await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
 
     await page.getByRole("button", { name: "Save settings" }).click();
-    await expect(page.getByText("Config Schema 2 · revision 8")).toBeVisible();
+    await expect(page.getByText("All changes saved", { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => window.settingsWrites)).toEqual([{ expectedRevision: 7, revision: 8 }]);
     await expect(page.getByRole("checkbox", { name: "Show prerelease package versions" })).toBeChecked();
     await expect(page.getByRole("checkbox", { name: "Hide local User Packages" })).toBeChecked();
     await expect(page.getByRole("checkbox", { name: "Hide Example packages" })).toBeChecked();
@@ -192,34 +193,39 @@ test("direct writes and the remaining high-impact workflows retain confirmation 
     await expect(page.getByRole("status").filter({ hasText: "Project registered" })).toBeVisible();
 
     await openHarness(page, "/repositories");
+    await page.getByRole("button", { name: "Add repository", exact: true }).click();
     await page.getByLabel("Repository URL").fill("https://packages.example.invalid/index.json");
     await page.getByRole("button", { name: "Review repository" }).click();
-    await expect(page.getByRole("dialog", { name: "Register this repository?" })).toBeVisible();
-    await page.getByRole("button", { name: "Confirm" }).click();
-    await expect(page.getByRole("status").filter({ hasText: "Repository registered" })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Add repository", exact: true })).toBeVisible();
+    await page.locator("md-dialog[open]").getByRole("button", { name: "Add repository", exact: true }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Repository added." })).toBeVisible();
 
     await openHarness(page, "/templates");
+    await page.getByRole("button", { name: "Import template", exact: true }).click();
     await page.getByLabel("Template bundle").fill("C:\\Fixture\\avatar.alcomdtemplate");
-    await page.getByRole("button", { name: "Create import plan" }).click();
-    await clickDialogAction(page, "Review template import", "Apply reviewed plan");
+    await page.getByRole("button", { name: "Review import" }).click();
+    await clickDialogAction(page, "Import template", "Apply reviewed plan");
     await expect(page.getByRole("status").filter({ hasText: "Operation" })).toBeVisible();
 
     await openHarness(page, "/projects/00000000-0000-4000-8000-000000000101/backups");
-    await page.getByRole("button", { name: "Review backup" }).click();
-    await clickDialogAction(page, "Create this backup?", "Confirm");
+    await page.getByRole("button", { name: "Create backup", exact: true }).click();
+    await clickDialogAction(page, "Create backup", "Create backup");
     await expect(page.getByRole("status").filter({ hasText: "Operation" })).toBeVisible();
 
     await openHarness(page, "/backups/00000000-0000-4000-8000-000000000104");
+    await page.getByRole("button", { name: "Restore backup", exact: true }).click();
     await page.getByLabel("Target parent").fill("C:\\Fixture");
     await page.getByLabel("New directory name").fill("Restored");
-    await page.getByRole("button", { name: "Create restore plan" }).click();
-    await clickDialogAction(page, "Review backup restore", "Apply reviewed plan");
+    await page.getByRole("button", { name: "Review backup restore" }).click();
+    await clickDialogAction(page, "Restore backup", "Apply reviewed plan");
     await expect(page.getByRole("status").filter({ hasText: "Operation" })).toBeVisible();
 
     await openHarness(page, "/extensions");
+    await page.getByRole("button", { name: "Install extension", exact: true }).click();
     await page.getByLabel("Extension package").fill("C:\\Fixture\\extension.alcomdext");
+    await page.getByLabel("Expected registry revision", { exact: true }).fill("0");
     await page.getByRole("button", { name: "Create install plan" }).click();
-    await clickDialogAction(page, "Review extension install", "Apply reviewed plan");
+    await clickDialogAction(page, "Install extension", "Apply reviewed plan");
     await expect(page.getByRole("status").filter({ hasText: "Operation" })).toBeVisible();
 
     await openHarness(page, "/operations/00000000-0000-4000-8000-000000000105");
@@ -347,7 +353,7 @@ async function selectMaterialOption(select: ReturnType<Page["locator"]>, value: 
 
 async function clickDialogAction(page: Page, title: string, action: string) {
     await expect(page.getByRole("dialog", { name: title })).toBeVisible();
-    await page.getByRole("button", { name: action }).click();
+    await page.locator("md-dialog[open]").filter({ has: page.getByRole("heading", { name: title, exact: true }) }).getByRole("button", { name: action, exact: true }).click();
 }
 
 async function hasHorizontalOverflow(page: Page): Promise<boolean> {

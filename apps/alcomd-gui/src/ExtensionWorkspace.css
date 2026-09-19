@@ -1,0 +1,76 @@
+.extension-management {
+    padding: 20px;
+    border-radius: 16px;
+    background: var(--md-sys-color-surface-container-low);
+}
+
+.extension-management-heading h2,
+.extension-section-heading h3,
+.extension-card h4 {
+    margin: 0;
+}
+
+.extension-management-heading p,
+.extension-card-heading p,
+.extension-card-status {
+    margin: 6px 0 0;
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 13px;
+}
+
+.extension-section-heading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 24px 0 14px;
+}
+
+.extension-section-heading span {
+    border-radius: 20px;
+    padding: 2px 9px;
+    background: var(--md-sys-color-secondary-container);
+    font-size: 12px;
+}
+
+.extension-cards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(320px, 1fr));
+    gap: 16px;
+}
+
+.extension-card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-height: 160px;
+    padding: 18px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: 14px;
+    background: var(--md-sys-color-surface);
+}
+
+.extension-card-heading,
+.extension-card-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.extension-card-heading > div {
+    min-width: 0;
+}
+
+.extension-card h4 {
+    overflow-wrap: anywhere;
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.extension-card-actions {
+    margin-top: auto;
+}
+
+.extension-card-actions .material-toggle {
+    font-size: 12px;
+}

@@ -37,10 +37,43 @@ test("Favorite mutation updates list and grid and exposes retryable errors", asy
 
 test("Unity launch arguments are independent from the one-shot installation choice", async ({ page }) => {
     await openHarness(page, `/projects/${PROJECT_ID}/unity`);
+    const open = page.getByRole("button", { name: "Edit launch arguments", exact: true });
+    const dialog = page.getByRole("dialog", { name: "Unity launch arguments", exact: true });
+    await expect(page.getByLabel("Additional arguments")).toBeHidden();
+    await open.click();
+    await expect(dialog).toBeVisible();
     await expect(page.getByLabel("Additional arguments")).toHaveValue("-logFile");
-    await page.getByRole("button", { name: "Clear launch arguments" }).click();
+    await page.getByRole("button", { name: "Clear launch arguments", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    // Clearing closes the editor and refreshes the authoritative page. Wait for
+    // that refresh before opening a new draft, which belongs to the new snapshot.
+    await expect(page.getByRole("button", { name: "Refresh", exact: true })).toBeEnabled();
+    await expect(page.getByText("Arguments", { exact: true }).locator("..")).toContainText("Default");
+    await open.click();
+    await expect(dialog).toBeVisible();
     await expect(page.getByLabel("Additional arguments")).toHaveValue("");
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(dialog).toBeHidden();
     await expect(page.getByText("Exact installations").locator("..")).toContainText("1");
+});
+
+test("Unity launch arguments discard drafts on Cancel and Escape", async ({ page }) => {
+    await openHarness(page, `/projects/${PROJECT_ID}/unity`);
+    const open = page.getByRole("button", { name: "Edit launch arguments", exact: true });
+    const dialog = page.getByRole("dialog", { name: "Unity launch arguments", exact: true });
+    await open.click();
+    await expect(dialog).toBeVisible();
+    await page.getByLabel("Additional arguments").fill("-draft-not-saved");
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await open.click();
+    await expect(page.getByLabel("Additional arguments")).toHaveValue("-logFile");
+    await page.getByLabel("Additional arguments").fill("-second-draft");
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await open.click();
+    await expect(page.getByLabel("Additional arguments")).toHaveValue("-logFile");
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
 });
 
 test("Unity exact launch handles zero, one, and multiple matching installations", async ({ page }) => {

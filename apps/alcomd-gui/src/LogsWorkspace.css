@@ -1,0 +1,88 @@
+.logs-search {
+    width: clamp(220px, 24vw, 380px);
+    --md-outlined-text-field-container-shape: 24px;
+}
+
+.logs-workspace {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.logs-filter-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-radius: 12px;
+    background: var(--md-sys-color-surface-container-low);
+}
+
+.logs-filter {
+    width: 180px;
+    flex-shrink: 0;
+}
+
+.logs-result-count {
+    margin: 0 0 0 auto;
+    max-width: 300px;
+    font-size: 12px;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.logs-workspace td {
+    vertical-align: top;
+}
+
+.logs-workspace .logs-time {
+    width: 170px;
+}
+
+.logs-summary {
+    overflow-wrap: anywhere;
+    min-width: 260px;
+}
+
+.logs-summary p {
+    margin: 4px 0;
+    white-space: pre-wrap;
+}
+
+.logs-workspace small {
+    display: block;
+    margin-top: 4px;
+    color: var(--md-sys-color-on-surface-variant);
+    overflow-wrap: anywhere;
+}
+
+.logs-details, .logs-operation-details {
+    display: grid;
+    gap: 10px;
+    margin: 12px 0;
+    overflow-wrap: anywhere;
+}
+
+.logs-details dt, .logs-operation-details dt {
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 12px;
+}
+
+.logs-details dd, .logs-operation-details dd {
+    margin: 2px 0 0;
+}
+
+.logs-severity--error {
+    color: var(--md-sys-color-error);
+}
+
+.logs-severity--warning {
+    color: var(--md-sys-color-on-surface);
+}
+
+.page-surface--utility .logs-workspace .material-data-table th:first-child { width: 200px; }
+.page-surface--utility .logs-workspace .material-data-table th:nth-child(2) { width: 110px; }
+.page-surface--utility .logs-workspace .material-data-table th:last-child { width: 150px; }
+.logs-workspace .material-data-table[aria-label="Activity"] th:nth-child(4) { width: 150px; }
+.logs-workspace .material-data-table[aria-label="Diagnostics"] th:nth-child(3) { width: 130px; }
+.page-surface--utility .logs-workspace .material-data-table td { vertical-align: top; }

@@ -1,4 +1,5 @@
-import type { CandidateCursor, PackageCandidateEvidence, PackageCandidateSummary, ExtensionRecord, RpcError } from "@alcomd/sdk";
+import type { CandidateCursor, PackageCandidateEvidence, PackageCandidateSummary, RpcError } from "@alcomd/sdk";
+import "./LogsWorkspace.css";
 import { actionableVersion, candidateSource, candidateSourceKey, choiceText, intentForSummary, queryCandidates, readCandidateSummary, uncertainUpdate, updateReason, validateVersionPage, type CandidateSummarySet } from "./package-candidates";
 import {
     accountCircleIcon,
@@ -17,12 +18,9 @@ import {
     viewGridIcon,
     viewListIcon
 } from "@alcomd/ui/icons";
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import type {
-    ActivityItem,
-    BackupRecord,
-    DiagnosticItem,
     OfficialSettings,
     Operation,
     PackageSourceSelector,
@@ -32,12 +30,10 @@ import type {
     RegistryCursor,
     RepositoryPackageVersion,
     RepositorySnapshot,
-    TemplateRecord,
     UnityInstallation,
     UnityLaunchOptionsResult,
     UserPackageRecord,
-    SettingsGetResult,
-    SettingsLocale
+    SettingsGetResult
 } from "./core-models";
 import {
     BackupCreatePanel,
@@ -57,8 +53,13 @@ import {
     UnityRegistryActions
 } from "./CoreActions";
 import { DataTableHeader, MaterialDataTable } from "./DataTable";
+import { UtilityActionDialog } from "./UtilityActionDialog";
+import { UtilityWorkspace } from "./UtilityWorkspace";
+import "./ExtensionWorkspace.css";
+import { SettingsWorkspace } from "./SettingsWorkspace";
+import { PagedItems } from "./PagedItems";
 import type { GuiRpcClient } from "./rpc";
-import { Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, SearchField, Select, TextField } from "./Material";
+import { Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, SearchField, Select, Switch, TextField } from "./Material";
 import { CreateProjectDialog, RestoreProjectDialog } from "./ProjectCreationDialogs";
 import { capabilities, capabilityUnavailableTitle, useCapability, useCapabilityState, useReconnect } from "./capabilities";
 
@@ -1546,13 +1547,51 @@ function packageWorkspaceRows(project: ProjectSnapshot, catalog: WorkspaceCatalo
 }
 
 export function RepositoriesPage({ client, navigate }: PageProps) {
-    const load = useCallback(() => client.repositoriesList(), [client]);
-    return <Page title="Repositories" eyebrow="VPM sources"><ResourceNavigation navigate={navigate} /><ResourcePage load={load}>{(value, refresh) => <>{value.repositories.length === 0 ? <RouteState kind="empty" title="No repositories registered" /> : <CardList>{value.repositories.map((repository) => <RepositoryCard key={repository.repositoryId ?? sourceText(repository)} repository={repository} navigate={navigate} />)}</CardList>}<RegisterRepositoryPanel client={client} onChanged={refresh} /></>}</ResourcePage></Page>;
+    const load = useCallback(() => listAllRepositories(client), [client]);
+    const [selected, setSelected] = useState<RepositorySnapshot>();
+    return <UtilityWorkspace title="Repositories" load={load} navigation={<ResourceNavigation current="/repositories" navigate={navigate} />} action={{ label: "Add repository", render: (_, refresh) => <RegisterRepositoryPanel client={client} onChanged={refresh} /> }}>
+        {(repositories, refresh) => <>
+            {repositories.length === 0 ? <RouteState kind="empty" title="No repositories registered" /> : <MaterialDataTable label="Repositories" minWidth={640}>
+                <thead><tr>{["Repository", "Source", "Actions"].map((label) => <DataTableHeader key={label}>{label}</DataTableHeader>)}</tr></thead>
+                <tbody>{repositories.map((repository) => <tr key={repository.repositoryId ?? sourceText(repository)}>
+                    <td><strong>{repository.name ?? repository.declaredId ?? "Repository"}</strong></td>
+                    <td title={sourceText(repository)}>{sourceText(repository)}</td>
+                    <td><div className="card-actions"><Button disabled={repository.repositoryId === undefined} onClick={() => setSelected(repository)} type="button" variant="text">Browse packages</Button><RepositoryActions client={client} onChanged={refresh} repository={repository} /></div></td>
+                </tr>)}</tbody>
+            </MaterialDataTable>}
+            {selected?.repositoryId === undefined ? null : <Dialog wide open title={selected.name ?? "Repository packages"} onClose={() => setSelected(undefined)}>
+                <RepositoryPackageList client={client} repositoryId={selected.repositoryId} />
+                <div className="dialog-actions"><Button onClick={() => setSelected(undefined)} type="button" variant="text">Close</Button></div>
+            </Dialog>}
+        </>}
+    </UtilityWorkspace>;
 }
 
-function ResourceNavigation({ navigate }: { navigate(path: string): void }) {
+function RepositoryPackageList({ client, repositoryId }: { client: GuiRpcClient; repositoryId: string }) {
+    const load = useCallback(() => client.repositoryPackages(repositoryId), [client, repositoryId]);
+    return <ResourcePage load={load} showRefreshBar={false}>{(catalog) => <PagedItems initialItems={catalog.packages} initialCursor={catalog.nextCursor} loadMore={async (cursor) => { const next = await client.repositoryPackages(repositoryId, cursor); return { items: next.packages, nextCursor: next.nextCursor }; }}>
+        {(items) => <DataTable headers={["Package", "Version", "Status"]} rows={items.map((item) => [item.displayName ?? item.packageId, item.version, item.yanked ? "Yanked" : "Available"])} />}
+    </PagedItems>}</ResourcePage>;
+}
+
+function ResourceNavigation({ current, navigate }: { current: string; navigate(path: string): void }) {
     const canUseUserPackages = useCapability(capabilities.packagesUserPackages);
-    return <nav aria-label="Resources" className="resource-navigation"><Button onClick={() => navigate("/repositories")} type="button" variant="text">Repositories</Button><Button disabled={!canUseUserPackages} onClick={() => navigate("/user-packages")} title={capabilityUnavailableTitle(canUseUserPackages, capabilities.packagesUserPackages)} type="button" variant="text">User Packages</Button><Button onClick={() => navigate("/templates")} type="button" variant="text">Templates</Button></nav>;
+    return <nav aria-label="Resources" className="resource-navigation">{[{ path: "/repositories", label: "Repositories" }, { path: "/user-packages", label: "User Packages" }, { path: "/templates", label: "Templates" }].map(({ path, label }) => <Button aria-current={current === path ? "page" : undefined} disabled={path === "/user-packages" && !canUseUserPackages} key={path} onClick={() => navigate(path)} title={path === "/user-packages" ? capabilityUnavailableTitle(canUseUserPackages, capabilities.packagesUserPackages) : undefined} type="button" variant={current === path ? "tonal" : "text"}>{label}</Button>)}</nav>;
+}
+
+function UtilityNavigation({ current, kind, navigate }: { current: string; kind: "settings" | "logs"; navigate(path: string): void }) {
+    const unity = useCapability(capabilities.unityRead);
+    const items = kind === "settings" ? [{ path: "/settings", label: "Preferences" }, { path: "/unity", label: "Unity installations" }] : [{ path: "/activity", label: "Activity" }, { path: "/diagnostics", label: "Diagnostics" }];
+    return <nav aria-label={kind === "settings" ? "Settings sections" : "Logs"} className="resource-navigation">{items.map(({ path, label }) => <Button aria-current={current === path ? "page" : undefined} disabled={path === "/unity" && !unity} key={path} onClick={() => navigate(path)} type="button" variant={current === path ? "tonal" : "text"}>{label}</Button>)}</nav>;
+}
+
+function ActionDisclosure({ children, title }: { children: ReactNode; title: string }) {
+    const [open, setOpen] = useState(false);
+    return <section className="utility-disclosure"><Button aria-haspopup="dialog" onClick={() => setOpen(true)} type="button" variant="tonal">{title}</Button>{open ? <UtilityActionDialog title={title} onClose={() => setOpen(false)}>{children}</UtilityActionDialog> : null}</section>;
+}
+
+function BackTo({ label, navigate, path }: { label: string; navigate(path: string): void; path: string }) {
+    return <Button onClick={() => navigate(path)} type="button" variant="text"><Icon asset={arrowBackIcon} size={24} />{label}</Button>;
 }
 
 async function listAllUserPackages(client: GuiRpcClient): Promise<UserPackageRecord[]> {
@@ -1569,12 +1608,12 @@ async function listAllUserPackages(client: GuiRpcClient): Promise<UserPackageRec
 export function UserPackagesPage({ client, navigate }: PageProps) {
     const capabilityState = useCapabilityState(capabilities.packagesUserPackages);
     const load = useCallback(() => listAllUserPackages(client), [client]);
-    if (capabilityState === "checking") return <Page title="User Packages" eyebrow="Local package sources"><ResourceNavigation navigate={navigate} /><RouteState kind="loading" title="Checking capability" /></Page>;
-    if (capabilityState === "unavailable") return <Page title="User Packages" eyebrow="Local package sources"><ResourceNavigation navigate={navigate} /><RouteState kind="error" title="Feature unavailable" detail={`${capabilities.packagesUserPackages} was not negotiated by the connected daemon.`} /></Page>;
-    return <Page title="User Packages" eyebrow="Local package sources"><ResourceNavigation navigate={navigate} /><ResourcePage load={load}>{(packages, refresh) => <UserPackageManager client={client} onChanged={refresh} packages={packages} />}</ResourcePage></Page>;
+    if (capabilityState === "checking") return <Page title="User Packages" eyebrow="Local package sources"><ResourceNavigation current="/user-packages" navigate={navigate} /><RouteState kind="loading" title="Checking capability" /></Page>;
+    if (capabilityState === "unavailable") return <Page title="User Packages" eyebrow="Local package sources"><ResourceNavigation current="/user-packages" navigate={navigate} /><RouteState kind="error" title="Feature unavailable" detail={`${capabilities.packagesUserPackages} was not negotiated by the connected daemon.`} /></Page>;
+    return <UtilityWorkspace title="User Packages" load={load} navigation={<ResourceNavigation current="/user-packages" navigate={navigate} />} tools={(_, refresh) => <UserPackageEnroll client={client} onChanged={refresh} />}>{(packages, refresh) => <UserPackageManager client={client} onChanged={refresh} packages={packages} />}</UtilityWorkspace>;
 }
 
-function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcClient; onChanged(): void; packages: UserPackageRecord[] }) {
+function UserPackageEnroll({ client, onChanged }: { client: GuiRpcClient; onChanged(): void }) {
     const [busy, setBusy] = useState<string>();
     const [error, setError] = useState<RpcError>();
     const enroll = async () => {
@@ -1592,7 +1631,17 @@ function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcCli
             setBusy(undefined);
         }
     };
+    return <><Button disabled={busy !== undefined} onClick={() => void enroll()} type="button">{busy === "enroll" ? "Enrolling…" : "Enroll folder"}</Button>{error === undefined ? null : <span role="alert">Enrollment failed: {error.code}</span>}</>;
+}
+
+function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcClient; onChanged(): void; packages: UserPackageRecord[] }) {
+    const [busy, setBusy] = useState<string>();
+    const pending = useRef(false);
+    const [removing, setRemoving] = useState<UserPackageRecord>();
+    const [error, setError] = useState<RpcError>();
     const refresh = async (item: UserPackageRecord) => {
+        if (pending.current) return;
+        pending.current = true;
         setBusy(`refresh:${item.userPackageId}`);
         setError(undefined);
         try {
@@ -1602,56 +1651,68 @@ function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcCli
             setError(safeError(caught));
         } finally {
             setBusy(undefined);
+            pending.current = false;
         }
     };
     const remove = async (item: UserPackageRecord) => {
+        if (pending.current) return;
+        pending.current = true;
         setBusy(`remove:${item.userPackageId}`);
         setError(undefined);
         try {
             await client.userPackageRemove(item.userPackageId, item.revision);
+            setRemoving(undefined);
             onChanged();
         } catch (caught: unknown) {
             setError(safeError(caught));
         } finally {
             setBusy(undefined);
+            pending.current = false;
         }
     };
-    return <section className="user-packages"><div className="action-section"><h2>Enrolled folders</h2><p>ALCOMD validates a package folder and creates an immutable cache snapshot. The source folder is never deleted.</p><Button disabled={busy !== undefined} onClick={() => void enroll()} type="button">{busy === "enroll" ? "Enrolling…" : "Enroll folder"}</Button>{error === undefined ? null : <p className="inline-error" role="alert">User Package request failed: {error.code}</p>}</div>{packages.length === 0 ? <RouteState kind="empty" title="No User Packages enrolled" detail="Enroll a loose package directory to make it available as a package source." /> : <CardList>{packages.map((item) => <article className="resource-card" key={item.userPackageId}><h2>{item.displayName ?? item.packageId}</h2><p>{item.packageId} · {item.version}</p><p>Local / User Package · revision {item.revision}</p><p>Archive {item.archiveSha256.slice(0, 12)}…</p><div className="card-actions"><Button disabled={busy !== undefined} onClick={() => void refresh(item)} type="button" variant="text">{busy === `refresh:${item.userPackageId}` ? "Refreshing…" : "Refresh"}</Button><Button disabled={busy !== undefined} onClick={() => void remove(item)} type="button" variant="text">{busy === `remove:${item.userPackageId}` ? "Removing…" : "Remove enrollment"}</Button></div></article>)}</CardList>}</section>;
+    return <section className="user-packages">{error === undefined ? null : <p className="inline-error" role="alert">User Package request failed: {error.code}</p>}{packages.length === 0 ? <RouteState kind="empty" title="No User Packages enrolled" detail="Enroll a package folder to make it available as a source. Removing enrollment never deletes the source folder." /> : <UtilityTable label="User Packages" headers={["Package", "Version", "Source", "Actions"]} rows={packages.map((item) => ({ key: item.userPackageId, cells: [<><strong>{item.displayName ?? item.packageId}</strong><small>{item.packageId}</small></>, item.version, <span title={item.userPackageId}>Local / User Package<small>revision {item.revision}</small></span>, <div className="card-actions"><Button disabled={busy !== undefined} onClick={() => void refresh(item)} type="button" variant="text">{busy === "refresh:" + item.userPackageId ? "Refreshing…" : "Refresh"}</Button><Button disabled={busy !== undefined} onClick={() => setRemoving(item)} type="button" variant="text">{busy === "remove:" + item.userPackageId ? "Removing…" : "Remove enrollment"}</Button></div>] }))} />}{removing === undefined ? null : <Dialog open dismissible={busy === undefined} title="Remove User Package?" onClose={() => { if (busy === undefined) setRemoving(undefined); }}>
+        <p>Remove <strong>{removing.displayName ?? removing.packageId}</strong> ({removing.version}) from your package sources?</p><p>The source folder will stay on disk.</p>
+        {error === undefined ? null : <p role="alert">Removal failed: {error.code}</p>}
+        <div className="dialog-actions"><Button disabled={busy !== undefined} onClick={() => setRemoving(undefined)} type="button" variant="text">Cancel</Button><Button disabled={busy !== undefined} onClick={() => void remove(removing)} type="button">Remove enrollment</Button></div>
+    </Dialog>}</section>;
 }
 
-function RepositoryCard({ repository, navigate }: { repository: RepositorySnapshot; navigate(path: string): void }) {
-    return <article className="resource-card"><h2>{repository.name ?? repository.declaredId ?? "Repository"}</h2><p>{sourceText(repository)}</p><p>Revision {repository.revision ?? "unregistered"}</p>{repository.repositoryId === undefined ? null : <Button onClick={() => navigate(`/repositories/${repository.repositoryId}`)} type="button" variant="text">Browse packages</Button>}</article>;
-}
-
-export function RepositoryDetailPage({ client, repositoryId }: PageProps & { repositoryId: string }) {
+export function RepositoryDetailPage({ client, navigate, repositoryId }: PageProps & { repositoryId: string }) {
     const load = useCallback(async () => Promise.all([client.repositoryGet(repositoryId), client.repositoryPackages(repositoryId)]), [client, repositoryId]);
-    return <Page title="Repository" eyebrow={repositoryId}><ResourcePage load={load}>{([detail, catalog], refresh) => <><dl className="detail-grid"><Detail label="Name" value={detail.repository.name ?? "Unnamed"} /><Detail label="Source" value={sourceText(detail.repository)} /><Detail label="Revision" value={String(detail.repository.revision ?? "—")} /><Detail label="Issues" value={String(detail.repository.issues.length)} /></dl><h2>Packages</h2><DataTable headers={["Package", "Version", "Status"]} rows={catalog.packages.map((item) => [item.displayName ?? item.packageId, item.version, item.yanked ? "Yanked" : "Available"])} /><RepositoryActions client={client} onChanged={refresh} repository={detail.repository} /></>}</ResourcePage></Page>;
+    return <UtilityWorkspace title="Repository" back={<BackTo label="Repositories" navigate={navigate} path="/repositories" />} load={load}>{([detail, catalog], refresh) => <><dl className="detail-grid"><Detail label="Name" value={detail.repository.name ?? "Unnamed"} /><Detail label="Source" value={sourceText(detail.repository)} /><Detail label="Revision" value={String(detail.repository.revision ?? "—")} /><Detail label="Issues" value={String(detail.repository.issues.length)} /></dl><h2>Packages</h2><PagedItems initialItems={catalog.packages} initialCursor={catalog.nextCursor} loadMore={async (cursor) => { const next = await client.repositoryPackages(repositoryId, cursor); return { items: next.packages, nextCursor: next.nextCursor }; }}>{(items) => <DataTable headers={["Package", "Version", "Status"]} rows={items.map((item) => [item.displayName ?? item.packageId, item.version, item.yanked ? "Yanked" : "Available"])} />}</PagedItems><ActionDisclosure title="Manage repository"><RepositoryActions client={client} onChanged={refresh} repository={detail.repository} /></ActionDisclosure></>}</UtilityWorkspace>;
 }
 
 export function TemplatesPage({ client, navigate }: PageProps) {
     const load = useCallback(() => client.templatesList(), [client]);
-    return <Page title="Templates" eyebrow="Project starters"><ResourceNavigation navigate={navigate} /><ResourcePage load={load}>{(value, refresh) => <>{value.templates.length === 0 ? <RouteState kind="empty" title="No templates available" /> : <CardList>{value.templates.map((template) => <TemplateCard key={template.templateId} template={template} navigate={navigate} />)}</CardList>}<TemplateImportPanel client={client} onChanged={refresh} /></>}</ResourcePage></Page>;
+    return <UtilityWorkspace title="Templates" load={load} navigation={<ResourceNavigation current="/templates" navigate={navigate} />} action={{ label: "Import template", render: (_, refresh) => <TemplateImportPanel client={client} onChanged={refresh} /> }}>
+        {(value, refresh) => value.templates.length === 0 ? <RouteState kind="empty" title="No templates available" /> : <UtilityTable
+            label="Templates"
+            headers={["Template", "ID", "Last modified", "Source", "Actions"]}
+            rows={value.templates.map((template) => ({
+                key: template.templateId,
+                cells: [
+                    <><strong>{template.displayName}</strong><small>{template.description ?? template.templateVersion}</small></>,
+                    template.templateId,
+                    formatTime(template.updatedAtMs),
+                    humanize(template.sourceKind),
+                    <TemplateActions client={client} compact onChanged={refresh} onView={() => navigate("/templates/" + template.templateId)} template={template} />
+                ]
+            }))}
+        />}
+    </UtilityWorkspace>;
 }
 
-function TemplateCard({ template, navigate }: { template: TemplateRecord; navigate(path: string): void }) {
-    return <article className="resource-card"><h2>{template.displayName}</h2><p>{template.description ?? "No description"}</p><p>{template.sourceKind} · v{template.templateVersion}{template.favorite ? " · Favorite" : ""}</p><Button onClick={() => navigate(`/templates/${template.templateId}`)} type="button" variant="text">View template</Button></article>;
-}
-
-export function TemplateDetailPage({ client, templateId }: PageProps & { templateId: string }) {
+export function TemplateDetailPage({ client, navigate, templateId }: PageProps & { templateId: string }) {
     const load = useCallback(() => client.templateGet(templateId), [client, templateId]);
-    return <Page title="Template detail" eyebrow={templateId}><ResourcePage load={load}>{({ template }, refresh) => <><dl className="detail-grid"><Detail label="Name" value={template.displayName} /><Detail label="Version" value={template.templateVersion} /><Detail label="Source" value={template.sourceKind} /><Detail label="Revision" value={String(template.revision)} /><Detail label="Provenance" value={template.provenance} /><Detail label="Favorite" value={template.favorite ? "Yes" : "No"} /></dl><TemplateActions client={client} onChanged={refresh} template={template} /></>}</ResourcePage></Page>;
+    return <UtilityWorkspace title="Template detail" back={<BackTo label="Templates" navigate={navigate} path="/templates" />} load={load}>{({ template }, refresh) => <><dl className="detail-grid"><Detail label="Name" value={template.displayName} /><Detail label="Version" value={template.templateVersion} /><Detail label="Source" value={template.sourceKind} /><Detail label="Revision" value={String(template.revision)} /><Detail label="Provenance" value={template.provenance} /><Detail label="Favorite" value={template.favorite ? "Yes" : "No"} /></dl><TemplateActions client={client} onChanged={refresh} template={template} /></>}</UtilityWorkspace>;
 }
 
-export function UnityPage({ client }: PageProps) {
-    const load = useCallback(() => client.unityInstallationsList(), [client]);
-    return <Page title="Unity" eyebrow="Editor installations"><ResourcePage load={load}>{(value, refresh) => <>{value.installations.length === 0 ? <RouteState kind="empty" title="No Unity installations registered" /> : <CardList>{value.installations.map((item) => <UnityCard installation={item} key={item.installationId} />)}</CardList>}<UnityRegistryActions client={client} installations={value.installations} onChanged={refresh} /></>}</ResourcePage></Page>;
+export function UnityPage({ client, navigate }: PageProps) {
+    const load = useCallback(() => loadAllUnityInstallations(client), [client]);
+    return <UtilityWorkspace title="Unity" load={load} navigation={<UtilityNavigation current="/unity" kind="settings" navigate={navigate} />} action={{ label: "Manage installations", render: (installations, refresh) => <UnityRegistryActions client={client} installations={installations} onChanged={refresh} /> }}>{(installations) => <>{installations.length === 0 ? <RouteState kind="empty" title="No Unity installations registered" /> : <UtilityTable label="Unity installations" headers={["Version", "Architecture", "Source", "Installation"]} rows={installations.map((item) => ({ key: item.installationId, cells: [item.unityVersion, item.architecture, humanize(item.sourceKind), item.installationId] }))} />}</>}</UtilityWorkspace>;
 }
 
-function UnityCard({ installation }: { installation: UnityInstallation }) {
-    return <article className="resource-card"><h2>Unity {installation.unityVersion}</h2><p>{installation.architecture} · {installation.sourceKind}</p><p className="private-value" title="Private path hidden">Executable path is stored by the daemon</p></article>;
-}
-
-export function ProjectUnityPage({ afterMigrationOpen = false, client, projectId }: PageProps & { afterMigrationOpen?: boolean; projectId: string }) {
+export function ProjectUnityPage({ afterMigrationOpen = false, client, navigate, projectId }: PageProps & { afterMigrationOpen?: boolean; projectId: string }) {
     const load = useCallback(async () => {
         const project = (await client.projectGet(projectId)).project;
         if (project.revision === undefined) throw { code: "project_not_registered" };
@@ -1663,7 +1724,7 @@ export function ProjectUnityPage({ afterMigrationOpen = false, client, projectId
         ]);
         return { project, installations, launchConfig: launchConfig.config, launchOptions, writer };
     }, [client, projectId]);
-    return <Page title="Project Unity" eyebrow={projectId}><ResourcePage load={load}>{({ project, installations, launchConfig, launchOptions, writer }, refresh) => <><dl className="detail-grid"><Detail label="Project Unity version" value={project.unityVersion} /><Detail label="Exact installations" value={String(launchOptions.exactMatchingInstallations.length)} /><Detail label="Writer observation" value={writer?.state ?? "Unknown"} /><Detail label="Arguments" value={launchConfig.arguments.length === 0 ? "Default" : `${launchConfig.arguments.length} configured arguments`} /><Detail label="Observed" value={writer === undefined ? "—" : formatTime(writer.checkedAtMs)} /></dl><ProjectUnityActions afterMigrationOpen={afterMigrationOpen} client={client} installations={installations} launchConfig={launchConfig} launchOptions={launchOptions} onChanged={refresh} project={project} /></>}</ResourcePage></Page>;
+    return <UtilityWorkspace title="Project Unity" back={<BackTo label="Project packages" navigate={navigate} path={`/projects/${projectId}/packages`} />} load={load}>{({ project, installations, launchConfig, launchOptions, writer }, refresh) => <><dl className="detail-grid"><Detail label="Project Unity version" value={project.unityVersion} /><Detail label="Exact installations" value={String(launchOptions.exactMatchingInstallations.length)} /><Detail label="Writer observation" value={writer?.state ?? "Unknown"} /><Detail label="Arguments" value={launchConfig.arguments.length === 0 ? "Default" : `${launchConfig.arguments.length} configured arguments`} /><Detail label="Observed" value={writer === undefined ? "—" : formatTime(writer.checkedAtMs)} /></dl><ProjectUnityActions afterMigrationOpen={afterMigrationOpen} client={client} installations={installations} launchConfig={launchConfig} launchOptions={launchOptions} onChanged={refresh} project={project} /></>}</UtilityWorkspace>;
 }
 
 async function loadAllUnityInstallations(client: GuiRpcClient): Promise<UnityInstallation[]> {
@@ -1679,81 +1740,181 @@ async function loadAllUnityInstallations(client: GuiRpcClient): Promise<UnityIns
 
 export function ProjectBackupsPage({ client, navigate, projectId }: PageProps & { projectId: string }) {
     const load = useCallback(async () => ({ backups: await client.backupsList(projectId), project: (await client.projectGet(projectId)).project }), [client, projectId]);
-    return <Page title="Backups" eyebrow={`Project ${projectId}`}><ResourcePage load={load}>{(value, refresh) => <>{value.backups.backups.length === 0 ? <RouteState kind="empty" title="No backups for this project" /> : <CardList>{value.backups.backups.map((backup) => <BackupCard backup={backup} key={backup.backupId} navigate={navigate} />)}</CardList>}<BackupCreatePanel client={client} onChanged={refresh} project={value.project} /></>}</ResourcePage></Page>;
+    return <UtilityWorkspace title="Backups" back={<BackTo label="Project packages" navigate={navigate} path={"/projects/" + projectId + "/packages"} />} load={load}>{(value, refresh) => <><p>{projectName(value.project)}</p><ActionDisclosure title="Create backup"><BackupCreatePanel client={client} onChanged={refresh} project={value.project} /></ActionDisclosure>{value.backups.backups.length === 0 ? <RouteState kind="empty" title="No backups for this project" /> : <UtilityTable label="Backups" headers={["Created", "Size", "Packages", "Actions"]} rows={value.backups.backups.map((backup) => ({ key: backup.backupId, cells: [formatTime(backup.createdAtMs), formatBytes(backup.archiveBytes), backup.excludeVpmPackages ? "VPM packages excluded" : "VPM packages included", <Button onClick={() => navigate("/backups/" + backup.backupId)} type="button" variant="text">View backup</Button>] }))} />}</>}</UtilityWorkspace>;
 }
 
-function BackupCard({ backup, navigate }: { backup: BackupRecord; navigate(path: string): void }) {
-    return <article className="resource-card"><h2>{formatTime(backup.createdAtMs)}</h2><p>{formatBytes(backup.archiveBytes)} · {backup.compressionMode}</p><p>{backup.excludeVpmPackages ? "VPM packages excluded" : "VPM packages included"}</p><Button onClick={() => navigate(`/backups/${backup.backupId}`)} type="button" variant="text">View backup</Button></article>;
-}
-
-export function BackupDetailPage({ client, backupId }: PageProps & { backupId: string }) {
+export function BackupDetailPage({ client, navigate, backupId }: PageProps & { backupId: string }) {
     const load = useCallback(() => client.backupGet(backupId), [client, backupId]);
-    return <Page title="Backup detail" eyebrow={backupId}><ResourcePage load={load}>{(backup) => <><dl className="detail-grid"><Detail label="Source project" value={backup.sourceProjectId} /><Detail label="Created" value={formatTime(backup.createdAtMs)} /><Detail label="Archive size" value={formatBytes(backup.archiveBytes)} /><Detail label="Format" value={`v${backup.formatVersion}`} /><Detail label="Compression" value={backup.compressionMode} /><Detail label="Integrity" value={shortHash(backup.archiveSha256)} /></dl><BackupRestorePanel backup={backup} client={client} /></>}</ResourcePage></Page>;
+    return <UtilityWorkspace title="Backup detail" load={load}>{(backup) => <><BackTo label="Project backups" navigate={navigate} path={`/projects/${backup.sourceProjectId}/backups`} /><dl className="detail-grid"><Detail label="Source project" value={backup.sourceProjectId} /><Detail label="Created" value={formatTime(backup.createdAtMs)} /><Detail label="Archive size" value={formatBytes(backup.archiveBytes)} /><Detail label="Format" value={`v${backup.formatVersion}`} /><Detail label="Compression" value={backup.compressionMode} /><Detail label="Integrity" value={shortHash(backup.archiveSha256)} /></dl><ActionDisclosure title="Restore backup"><BackupRestorePanel backup={backup} client={client} /></ActionDisclosure></>}</UtilityWorkspace>;
 }
 
 export function OperationsPage({ client, navigate }: PageProps) {
     const load = useCallback(() => client.operationsList(), [client]);
-    return <Page title="Operations" eyebrow="Durable work"><ResourcePage load={load} empty={(value) => value.operations.length === 0} emptyTitle="No operations yet">{(value) => <CardList>{value.operations.map((operation) => <OperationCard key={operation.operationId} operation={operation} navigate={navigate} />)}</CardList>}</ResourcePage></Page>;
+    return <UtilityWorkspace title="Task Center" load={load}>{(value) => value.operations.length === 0 ? <RouteState kind="empty" title="No operations yet" /> : <UtilityTable label="Tasks" headers={["Task", "Status", "Updated", "Actions"]} rows={value.operations.map((operation) => ({ key: operation.operationId, cells: [humanize(operation.kind), <span className={"state-chip state-chip--" + operation.state}>{humanize(operation.state)}</span>, formatTime(operation.updatedAtMs), <Button onClick={() => navigate("/operations/" + operation.operationId)} type="button" variant="text">View operation</Button>] }))} />}</UtilityWorkspace>;
 }
 
-function OperationCard({ operation, navigate }: { operation: Operation; navigate(path: string): void }) {
-    return <article className="resource-card"><h2>{humanize(operation.kind)}</h2><p className={`state-chip state-chip--${operation.state}`}>{humanize(operation.state)}</p><p>{operation.progress?.phase === undefined ? "No phase reported" : humanize(operation.progress.phase)}</p><Button onClick={() => navigate(`/operations/${operation.operationId}`)} type="button" variant="text">View operation</Button></article>;
-}
-
-export function OperationDetailPage({ client, operationId }: PageProps & { operationId: string }) {
+export function OperationDetailPage({ client, navigate, operationId }: PageProps & { operationId: string }) {
     const load = useCallback(() => client.operationGet(operationId), [client, operationId]);
-    return <Page title="Operation detail" eyebrow={operationId}><ResourcePage load={load}>{(operation, refresh) => <><dl className="detail-grid"><Detail label="Kind" value={operation.kind} /><Detail label="State" value={operation.state} /><Detail label="Phase" value={operation.progress?.phase ?? "—"} /><Detail label="Revision" value={String(operation.revision)} /><Detail label="Updated" value={formatTime(operation.updatedAtMs)} /><Detail label="Error" value={operation.errorCode ?? "None"} /></dl>{operation.diagnosticId === undefined ? null : <p>Diagnostic ID: <code>{operation.diagnosticId}</code></p>}<OperationActions client={client} onChanged={refresh} operation={operation} /></>}</ResourcePage></Page>;
+    return <UtilityWorkspace title="Operation detail" back={<BackTo label="Task Center" navigate={navigate} path="/operations" />} load={load}>{(operation, refresh) => <><dl className="detail-grid"><Detail label="Kind" value={operation.kind} /><Detail label="State" value={operation.state} /><Detail label="Phase" value={operation.progress?.phase ?? "—"} /><Detail label="Revision" value={String(operation.revision)} /><Detail label="Updated" value={formatTime(operation.updatedAtMs)} /><Detail label="Error" value={operation.errorCode ?? "None"} /></dl>{operation.diagnosticId === undefined ? null : <p>Diagnostic ID: <code>{operation.diagnosticId}</code></p>}<OperationActions client={client} onChanged={refresh} operation={operation} /></>}</UtilityWorkspace>;
 }
 
 export function ExtensionsPage({ client, navigate }: PageProps) {
     const load = useCallback(() => client.extensionsList(), [client]);
-    return <Page title="Extensions" eyebrow="First-party and third-party use the same contract"><ResourcePage load={load}>{(value, refresh) => <>{value.extensions.length === 0 ? <RouteState kind="empty" title="No extensions installed" /> : <CardList>{value.extensions.map((extension) => <ExtensionCard extension={extension} key={extension.extensionId} navigate={navigate} />)}</CardList>}<ExtensionInstallPanel client={client} onChanged={refresh} /></>}</ResourcePage></Page>;
-}
-
-function ExtensionCard({ extension, navigate }: { extension: ExtensionRecord; navigate(path: string): void }) {
-    return <article className="resource-card"><h2>{extension.extensionId}</h2><p>v{extension.version} · {humanize(extension.trustDecision)}</p><p>{humanize(extension.desiredState)} · {humanize(extension.runtimeState)}</p><Button onClick={() => navigate(`/extensions/${extension.extensionId}`)} type="button" variant="text">Manage extension</Button></article>;
+    const canManage = useCapability(capabilities.extensionsLifecycle);
+    const canOpen = useCapability(capabilities.extensionsPortableUi);
+    const pending = useRef(false);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<string>();
+    const [message, setMessage] = useState<string>();
+    const toggle = async (id: string, revision: number, enabled: boolean, refresh: () => void) => {
+        if (!canManage || pending.current) return;
+        pending.current = true;
+        setBusy(true);
+        setError(undefined);
+        setMessage(undefined);
+        try {
+            const result = await (enabled ? client.extensionEnable(id, revision) : client.extensionDisable(id, revision));
+            setMessage(`${result.extension.extensionId}: ${result.extension.desiredState === "enabled" ? "enabled" : "disabled"}.`);
+            refresh();
+        } catch (caught: unknown) {
+            setError(safeError(caught).code);
+        } finally {
+            pending.current = false;
+            setBusy(false);
+        }
+    };
+    return <UtilityWorkspace title="Extensions" load={load} action={{ label: "Install extension", render: (_, refresh) => <ExtensionInstallPanel client={client} onChanged={refresh} /> }}>{(value, refresh) => (
+        <section className="extension-management" aria-labelledby="extension-management-title">
+            <header className="extension-management-heading"><h2 id="extension-management-title">Manage extensions</h2><p>Open an extension or change whether it is enabled.</p></header>
+            {error === undefined ? null : <p className="inline-error" role="alert">Extension action failed: {error}</p>}
+            {message === undefined ? null : <p role="status">{message}</p>}
+            <div className="extension-section-heading"><h3>Installed</h3><span>{value.extensions.length}</span></div>
+            {value.extensions.length === 0 ? <RouteState kind="empty" title="No extensions installed" /> : <div className="extension-cards">{value.extensions.map((extension) => {
+                const enabled = extension.desiredState === "enabled";
+                const unavailable = extension.desiredState === "uninstalling" || extension.quarantineState === "quarantined";
+                return <article className="extension-card" key={extension.extensionId} aria-label={extension.extensionId}>
+                    <div className="extension-card-heading"><div><h4>{extension.extensionId}</h4><p>Version {extension.version}</p></div>{extension.ui?.protocol !== "portable-v1" ? null : <Button disabled={!canOpen || !enabled || unavailable || busy} onClick={() => navigate(`/extensions/${extension.extensionId}/ui`)} title={capabilityUnavailableTitle(canOpen, capabilities.extensionsPortableUi)} type="button" variant="tonal">Open</Button>}</div>
+                    <p className="extension-card-status">{humanize(extension.runtimeState)} · {humanize(extension.trustDecision)}{extension.quarantineState === "clear" ? "" : ` · ${humanize(extension.quarantineState)}`}</p>
+                    <div className="extension-card-actions"><Button onClick={() => navigate(`/extensions/${extension.extensionId}`)} type="button" variant="text">Manage extension</Button><Switch disabled={!canManage || busy || unavailable} label="Enabled" selected={enabled} onChange={(next) => void toggle(extension.extensionId, extension.revision, next, refresh)} /></div>
+                </article>;
+            })}</div>}
+            {value.nextCursor === undefined ? null : <p role="status">More installed extensions exist. This view contains the first page.</p>}
+        </section>
+    )}</UtilityWorkspace>;
 }
 
 export function ExtensionDetailPage({ client, navigate, extensionId }: PageProps & { extensionId: string }) {
     const canUsePortableUi = useCapability(capabilities.extensionsPortableUi);
     const load = useCallback(() => client.extensionGet(extensionId), [client, extensionId]);
-    return <Page title="Extension detail" eyebrow={extensionId}><ResourcePage load={load}>{({ extension }, refresh) => <><dl className="detail-grid"><Detail label="Version" value={extension.version} /><Detail label="Publisher" value={shortHash(extension.publisherFingerprint)} /><Detail label="Trust" value={humanize(extension.trustDecision)} /><Detail label="Desired state" value={humanize(extension.desiredState)} /><Detail label="Runtime" value={humanize(extension.runtimeState)} /><Detail label="Quarantine" value={humanize(extension.quarantineState)} /><Detail label="Grant revision" value={String(extension.grantRevision)} /><Detail label="Record revision" value={String(extension.revision)} /></dl>{extension.ui?.protocol === "portable-v1" ? <Button disabled={!canUsePortableUi} onClick={() => navigate(`/extensions/${extensionId}/ui`)} title={capabilityUnavailableTitle(canUsePortableUi, capabilities.extensionsPortableUi)} type="button">Open Portable UI</Button> : <RouteState kind="empty" title="This extension has no Portable UI" />}<ExtensionActions client={client} extension={extension} onChanged={refresh} /></>}</ResourcePage></Page>;
+    return <UtilityWorkspace title="Extension detail" back={<BackTo label="Extensions" navigate={navigate} path="/extensions" />} load={load}>{({ extension }, refresh) => <><dl className="detail-grid"><Detail label="Version" value={extension.version} /><Detail label="Publisher" value={shortHash(extension.publisherFingerprint)} /><Detail label="Trust" value={humanize(extension.trustDecision)} /><Detail label="Desired state" value={humanize(extension.desiredState)} /><Detail label="Runtime" value={humanize(extension.runtimeState)} /><Detail label="Quarantine" value={humanize(extension.quarantineState)} /><Detail label="Grant revision" value={String(extension.grantRevision)} /><Detail label="Record revision" value={String(extension.revision)} /></dl>{extension.ui?.protocol === "portable-v1" ? <Button disabled={!canUsePortableUi} onClick={() => navigate(`/extensions/${extensionId}/ui`)} title={capabilityUnavailableTitle(canUsePortableUi, capabilities.extensionsPortableUi)} type="button">Open Portable UI</Button> : <RouteState kind="empty" title="This extension has no Portable UI" />}<ExtensionActions client={client} extension={extension} onChanged={refresh} /></>}</UtilityWorkspace>;
 }
 
 export function AboutPage({ client }: PageProps) {
     const load = useCallback(() => client.systemStatus(), [client]);
-    return <Page title="About" eyebrow="ALCOMD platform"><ResourcePage load={load}>{(status) => <><dl className="detail-grid"><Detail label="Product" value={status.product} /><Detail label="Daemon" value={status.daemonVersion} /><Detail label="RPC" value={`v${status.rpcVersion}`} /><Detail label="State" value={status.state} /></dl><section className="notice-card"><h2>Licenses</h2><p>ALCOMD source is licensed under AGPL-3.0-only.</p><p>The canonical third-party dependency notice source is <code>THIRD_PARTY_NOTICES.md</code> in the product distribution.</p></section></>}</ResourcePage></Page>;
+    return <UtilityWorkspace title="About" load={load}>{(status) => <><dl className="detail-grid"><Detail label="Product" value={status.product} /><Detail label="Daemon" value={status.daemonVersion} /><Detail label="RPC" value={`v${status.rpcVersion}`} /><Detail label="State" value={status.state} /></dl><section className="notice-card"><h2>Licenses</h2><p>ALCOMD source is licensed under AGPL-3.0-only.</p><p>The canonical third-party dependency notice source is <code>THIRD_PARTY_NOTICES.md</code> in the product distribution.</p></section></>}</UtilityWorkspace>;
 }
 
 export function ActivityPage({ client, navigate }: PageProps) {
     const load = useCallback(() => client.activityList(), [client]);
-    return (
-        <Page title="Activity" eyebrow="Redacted history">
-            <ResourcePage load={load} empty={(value) => value.items.length === 0} emptyTitle="No activity yet">
-                {(value) => <CardList>{value.items.map((item) => <ActivityCard item={item} key={`${item.type}-${item.operationId ?? item.eventSequence ?? item.occurredAtMs}`} navigate={navigate} />)}</CardList>}
-            </ResourcePage>
-        </Page>
-    );
+    const [search, setSearch] = useState("");
+    return <UtilityWorkspace title="Activity" navigation={<UtilityNavigation current="/activity" kind="logs" navigate={navigate} />} load={load}
+        tools={() => <SearchField className="logs-search" label="Search activity" value={search} onInput={setSearch} />}>
+        {(value) => <PagedItems initialItems={value.items} initialCursor={value.nextCursor} loadMore={(cursor) => client.activityList(cursor)}>
+            {(items) => <ActivityLogRows client={client} items={items} search={search} />}
+        </PagedItems>}
+    </UtilityWorkspace>;
 }
 
-function ActivityCard({ item, navigate }: { item: ActivityItem; navigate(path: string): void }) {
-    return (
-        <article className="resource-card">
-            <h2>{humanize(item.summaryCode)}</h2>
-            <p>{humanize(item.type)} · {formatTime(item.occurredAtMs)}</p>
-            {item.state === undefined ? null : <p className={`state-chip state-chip--${item.state}`}>{humanize(item.state)}</p>}
-            {item.operationId === undefined ? null : <Button onClick={() => navigate(`/operations/${item.operationId}`)} type="button" variant="text">View operation</Button>}
-        </article>
-    );
+type LoadedActivityItem = Awaited<ReturnType<GuiRpcClient["activityList"]>>["items"][number];
+type LoadedDiagnosticItem = Awaited<ReturnType<GuiRpcClient["diagnosticsList"]>>["items"][number];
+
+function LogFilter({ label, value, values, onChange }: { label: string; value: string; values: string[]; onChange(value: string): void }) {
+    const options = [...new Set(values)].sort().map((item) => ({ label: item === "unknown" ? "Unknown" : humanize(item), value: item }));
+    if (value !== "" && !options.some((item) => item.value === value)) options.push({ label: humanize(value), value });
+    // Rapid filter changes must not be overwritten by the previous menu's closing animation.
+    return <Select className="logs-filter" quick label={label} value={value} onChange={onChange} options={[{ label: `All ${label.toLowerCase()}`, value: "" }, ...options]} />;
 }
 
-export function DiagnosticsPage({ client }: PageProps) {
+function ActivityLogRows({ client, items, search }: { client: GuiRpcClient; items: LoadedActivityItem[]; search: string }) {
+    const [status, setStatus] = useState("");
+    const [kind, setKind] = useState("");
+    const [details, setDetails] = useState(false);
+    const [selected, setSelected] = useState<string>();
+    const query = search.trim().toLowerCase();
+    const shown = items.filter((item) => (status === "" || (item.state ?? "unknown") === status)
+        && (kind === "" || item.type === kind)
+        && [item.summaryCode, humanize(item.summaryCode), item.state, item.resourceKind, item.resourceId, item.operationId].some((value) => value?.toLowerCase().includes(query)));
+    return <div className="logs-workspace">
+        <div className="logs-filter-toolbar" aria-label="Activity filters">
+            <LogFilter label="Status" value={status} values={items.map((item) => item.state ?? "unknown")} onChange={setStatus} />
+            <LogFilter label="Record type" value={kind} values={items.map((item) => item.type)} onChange={setKind} />
+            <Checkbox checked={details} label="Show details" onChange={setDetails} />
+            <p className="logs-result-count" role="status">{shown.length} of {items.length} loaded entries · Search and filters apply to loaded entries only.</p>
+        </div>
+        <MaterialDataTable label="Activity" minWidth={720}>
+            <thead><tr>{["Time", "Status", "Activity", "Target", "Actions"].map((label) => <DataTableHeader key={label}>{label}</DataTableHeader>)}</tr></thead>
+            <tbody>{shown.map((item, index) => <tr key={`${item.type}-${item.eventSequence ?? item.operationId}-${item.occurredAtMs}-${index}`}>
+                <td className="logs-time">{formatTime(item.occurredAtMs)}</td>
+                <td><span className={`state-chip state-chip--${item.state ?? "unknown"}`}>{item.state === undefined ? "Unknown" : humanize(item.state)}</span></td>
+                <td className="logs-summary"><span title={item.summaryCode}>{humanize(item.summaryCode)}</span><small>{humanize(item.type)}</small>{details ? <dl className="logs-details"><Detail label="Summary code" value={item.summaryCode} />{item.operationId === undefined ? null : <Detail label="Operation" value={item.operationId} />}{item.eventSequence === undefined ? null : <Detail label="Event sequence" value={String(item.eventSequence)} />}</dl> : null}</td>
+                <td>{item.resourceKind === undefined ? "—" : humanize(item.resourceKind)}{item.resourceId === undefined ? null : <small>{item.resourceId}</small>}</td>
+                <td>{item.operationId === undefined ? null : <Button onClick={() => setSelected(item.operationId)} type="button" variant="text">View operation</Button>}</td>
+            </tr>)}{shown.length === 0 ? <tr><td colSpan={5}>{items.length === 0 ? "No activity yet" : "No matching loaded activity. Change the filters or load more entries."}</td></tr> : null}</tbody>
+        </MaterialDataTable>
+        {selected === undefined ? null : <LogOperationDialog client={client} operationId={selected} onClose={() => setSelected(undefined)} />}
+    </div>;
+}
+
+function LogOperationDialog({ client, operationId, onClose }: { client: GuiRpcClient; operationId: string; onClose(): void }) {
+    const load = useCallback(() => client.operationGet(operationId), [client, operationId]);
+    return <Dialog wide open title="Operation detail" onClose={onClose}>
+        <ResourcePage load={load} showRefreshBar={false}>{(operation) => <dl className="logs-operation-details">
+            <Detail label="Operation" value={operation.operationId} /><Detail label="Kind" value={humanize(operation.kind)} />
+            <Detail label="State" value={humanize(operation.state)} /><Detail label="Phase" value={operation.progress?.phase ?? "—"} />
+            <Detail label="Updated" value={formatTime(operation.updatedAtMs)} /><Detail label="Error" value={operation.errorCode ?? "None"} />
+            {operation.diagnosticId === undefined ? null : <Detail label="Diagnostic ID" value={operation.diagnosticId} />}
+        </dl>}</ResourcePage>
+        <div className="dialog-actions"><Button onClick={onClose} type="button" variant="text">Close</Button></div>
+    </Dialog>;
+}
+
+function DiagnosticLogRows({ client, items, search }: { client: GuiRpcClient; items: LoadedDiagnosticItem[]; search: string }) {
+    const [severity, setSeverity] = useState("");
+    const [subsystem, setSubsystem] = useState("");
+    const [selected, setSelected] = useState<string>();
+    const query = search.trim().toLowerCase();
+    const shown = items.filter((item) => (severity === "" || item.severity === severity)
+        && (subsystem === "" || item.subsystem === subsystem)
+        && [item.code, item.summary, item.subsystem, item.diagnosticId, item.operationId].some((value) => value?.toLowerCase().includes(query)));
+    return <div className="logs-workspace">
+        <div className="logs-filter-toolbar" aria-label="Diagnostic filters">
+            <LogFilter label="Severity" value={severity} values={["warning", "error"]} onChange={setSeverity} />
+            <LogFilter label="Subsystem" value={subsystem} values={items.map((item) => item.subsystem)} onChange={setSubsystem} />
+            <p className="logs-result-count" role="status">{shown.length} of {items.length} loaded entries · Search and filters apply to loaded entries only.</p>
+        </div>
+        <MaterialDataTable label="Diagnostics" minWidth={720}>
+            <thead><tr>{["Time", "Severity", "Subsystem", "Diagnostic", "Actions"].map((label) => <DataTableHeader key={label}>{label}</DataTableHeader>)}</tr></thead>
+            <tbody>{shown.map((item, index) => <tr key={`${item.operationId}-${item.occurredAtMs}-${index}`}>
+                <td className="logs-time">{formatTime(item.occurredAtMs)}</td><td><span className={`logs-severity logs-severity--${item.severity}`}>{humanize(item.severity)}</span></td><td>{item.subsystem}</td>
+                <td className="logs-summary"><strong>{item.code}</strong><p>{item.summary}</p>{item.diagnosticId === undefined ? null : <small>Diagnostic ID: {item.diagnosticId}</small>}</td>
+                <td>{item.operationId === undefined ? null : <Button onClick={() => setSelected(item.operationId)} type="button" variant="text">View operation</Button>}</td>
+            </tr>)}{shown.length === 0 ? <tr><td colSpan={5}>{items.length === 0 ? "No diagnostics reported" : "No matching loaded diagnostics. Change the filters or load more entries."}</td></tr> : null}</tbody>
+        </MaterialDataTable>
+        {selected === undefined ? null : <LogOperationDialog client={client} operationId={selected} onClose={() => setSelected(undefined)} />}
+    </div>;
+}
+
+export function DiagnosticsPage({ client, navigate }: PageProps) {
     const canCheckState = useCapability(capabilities.stateCheck);
     const load = useCallback(() => client.diagnosticsList(), [client]);
     const [operationId, setOperationId] = useState<string>();
     const [checkError, setCheckError] = useState<RpcError>();
     const [checking, setChecking] = useState(false);
+    const checkingRef = useRef(false);
+    const [search, setSearch] = useState("");
     const runStateCheck = async () => {
+        if (!canCheckState || checkingRef.current) return;
+        checkingRef.current = true;
         setChecking(true);
         setCheckError(undefined);
         try {
@@ -1762,174 +1923,31 @@ export function DiagnosticsPage({ client }: PageProps) {
         } catch (caught: unknown) {
             setCheckError(safeError(caught));
         } finally {
+            checkingRef.current = false;
             setChecking(false);
         }
     };
-    return (
-        <Page title="Diagnostics" eyebrow="Redacted technical status">
-            <p className="supporting-copy">This view excludes raw logs, stack traces, process details, credentials, and private paths.</p>
-            <section className="action-section">
-                <h2>State integrity</h2>
-                <p>Start the daemon-owned read-only integrity check and follow its durable Operation.</p>
-                <Button disabled={!canCheckState || checking} onClick={() => void runStateCheck()} title={capabilityUnavailableTitle(canCheckState, capabilities.stateCheck)} type="button">{checking ? "Starting…" : "Run state check"}</Button>
-                {checkError === undefined ? null : <p className="inline-error" role="alert"><code>{checkError.code}</code> — the state check could not be started.</p>}
-                {operationId === undefined ? null : <OperationFollow client={client} operationId={operationId} />}
-            </section>
-            <ResourcePage load={load} empty={(value) => value.items.length === 0} emptyTitle="No diagnostics reported">
-                {(value) => <CardList>{value.items.map((item) => <DiagnosticCard item={item} key={`${item.operationId ?? "diagnostic"}-${item.occurredAtMs}`} />)}</CardList>}
-            </ResourcePage>
-        </Page>
-    );
+    return <UtilityWorkspace title="Diagnostics" load={load} navigation={<UtilityNavigation current="/diagnostics" kind="logs" navigate={navigate} />}
+        tools={() => <><SearchField className="logs-search" label="Search diagnostics" value={search} onInput={setSearch} /><Button disabled={!canCheckState || checking} onClick={() => void runStateCheck()} title={capabilityUnavailableTitle(canCheckState, capabilities.stateCheck)} type="button" variant="tonal">{checking ? "Starting…" : "Run state check"}</Button></>}>
+        {(value) => <>{checkError === undefined ? null : <p className="inline-error" role="alert">State check failed: {checkError.code}</p>}{operationId === undefined ? null : <OperationFollow client={client} operationId={operationId} />}
+            <PagedItems initialItems={value.items} initialCursor={value.nextCursor} loadMore={(cursor) => client.diagnosticsList(cursor)}>{(items) => <DiagnosticLogRows client={client} items={items} search={search} />}</PagedItems>
+        </>}
+    </UtilityWorkspace>;
 }
 
-function DiagnosticCard({ item }: { item: DiagnosticItem }) {
-    return (
-        <article className="resource-card">
-            <h2>{humanize(item.code)}</h2>
-            <p>{item.summary}</p>
-            <dl className="detail-grid">
-                <Detail label="Subsystem" value={item.subsystem} />
-                <Detail label="Severity" value={humanize(item.severity)} />
-                <Detail label="Occurred" value={formatTime(item.occurredAtMs)} />
-                <Detail label="Diagnostic ID" value={item.diagnosticId ?? "Not available"} />
-            </dl>
-        </article>
-    );
+export function SettingsPage(props: PageProps & { onApplied(value: SettingsGetResult): void; onDirtyChange(dirty: boolean): void }) {
+    return <SettingsWorkspace {...props} />;
 }
 
-export function SettingsPage({
-    client,
-    onApplied,
-    onDirtyChange
-}: PageProps & {
-    onApplied(value: SettingsGetResult): void;
-    onDirtyChange(dirty: boolean): void;
-}) {
-    const load = useCallback(() => client.settingsGet(), [client]);
-    return (
-        <Page title="Settings" eyebrow="Appearance and language">
-            <ResourcePage load={load}>
-                {(value, refresh) => (
-                    <SettingsForm
-                        client={client}
-                        key={value.revision}
-                        onApplied={(next) => { onApplied(next); refresh(); }}
-                        onDirtyChange={onDirtyChange}
-                        snapshot={value}
-                    />
-                )}
-            </ResourcePage>
-        </Page>
-    );
+export function Page({ actions, children, eyebrow, title }: { actions?: ReactNode; children: ReactNode; eyebrow: string; title: string }) {
+    return <section className="page-surface page-surface--utility" aria-labelledby="route-title"><header className="page-header"><div><p className="eyebrow">{eyebrow}</p><h1 id="route-title" tabIndex={-1}>{title}</h1></div>{actions}</header>{children}</section>;
 }
-
-function SettingsForm({
-    client,
-    onApplied,
-    onDirtyChange,
-    snapshot
-}: {
-    client: GuiRpcClient;
-    onApplied(value: SettingsGetResult): void;
-    onDirtyChange(dirty: boolean): void;
-    snapshot: SettingsGetResult;
-}) {
-    const [settings, setSettings] = useState<OfficialSettings>(snapshot.settings);
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState<RpcError>();
-    const [repositories, setRepositories] = useState<RepositorySnapshot[]>([]);
-    const dirty = JSON.stringify(settings) !== JSON.stringify(snapshot.settings);
-
-    useEffect(() => {
-        onDirtyChange(dirty);
-        return () => onDirtyChange(false);
-    }, [dirty, onDirtyChange]);
-
-    useEffect(() => {
-        let active = true;
-        void listAllRepositories(client).then((value) => {
-            if (active) setRepositories(value);
-        }).catch(() => undefined);
-        return () => { active = false; };
-    }, [client]);
-
-    const updateAppearance = <Key extends keyof OfficialSettings["appearance"]>(
-        key: Key,
-        value: OfficialSettings["appearance"][Key]
-    ) => setSettings((current) => ({
-        ...current,
-        appearance: { ...current.appearance, [key]: value }
-    }));
-    const updatePackages = <Key extends keyof OfficialSettings["packages"]>(
-        key: Key,
-        value: OfficialSettings["packages"][Key]
-    ) => setSettings((current) => ({
-        ...current,
-        packages: { ...current.packages, [key]: value }
-    }));
-    const setRepositoryHidden = (repositoryId: string, hidden: boolean) => {
-        const values = new Set(settings.packages.hiddenRepositoryIds);
-        if (hidden) values.add(repositoryId);
-        else values.delete(repositoryId);
-        updatePackages("hiddenRepositoryIds", [...values].sort());
-    };
-
-    const save = async (event: FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
-        if (!dirty || busy) return;
-        setBusy(true);
-        setError(undefined);
-        try {
-            const updated = await client.settingsUpdate(snapshot.revision, settings);
-            onDirtyChange(false);
-            onApplied(updated);
-        } catch (caught: unknown) {
-            setError(safeError(caught));
-        } finally {
-            setBusy(false);
-        }
-    };
-
-    return (
-        <form className="action-panel settings-form" onSubmit={(event) => void save(event)}>
-            <Select id="settings-theme" label="Theme" onChange={(next) => updateAppearance("mode", next as OfficialSettings["appearance"]["mode"])} options={[{ label: "System", value: "system" }, { label: "Light", value: "light" }, { label: "Dark", value: "dark" }]} value={settings.appearance.mode} />
-            <Select id="settings-color" label="Source color" onChange={(next) => updateAppearance("sourceColor", next || null)} options={[{ label: "Product default", value: "" }, { label: "Violet", value: "#6750A4" }, { label: "Blue", value: "#315DA8" }, { label: "Teal", value: "#006A60" }]} supportingText="Saved as a canonical #RRGGBB value; extensions never receive this preference." value={settings.appearance.sourceColor ?? ""} />
-            <Select id="settings-density" label="Density" onChange={(next) => updateAppearance("density", next as OfficialSettings["appearance"]["density"])} options={[{ label: "Default", value: "default" }, { label: "Compact", value: "compact" }]} value={settings.appearance.density} />
-            <Select id="settings-motion" label="Motion" onChange={(next) => updateAppearance("motion", next as OfficialSettings["appearance"]["motion"])} options={[{ label: "System preference", value: "system" }, { label: "Reduce motion", value: "reduced" }]} value={settings.appearance.motion} />
-            <Select id="settings-locale" label="Language" onChange={(next) => {
-                const locale = next as SettingsLocale;
-                setSettings((current) => ({ ...current, locale }));
-            }} options={[{ label: "System language", value: "system" }, { label: "English", value: "en-US" }, { label: "简体中文", value: "zh-CN" }, { label: "日本語", value: "ja-JP" }]} value={settings.locale} />
-            <fieldset className="settings-package-options">
-                <legend>Packages</legend>
-                <Checkbox checked={settings.packages.showPrerelease} label="Show prerelease package versions" onChange={(checked) => updatePackages("showPrerelease", checked)} />
-                <Checkbox checked={settings.packages.hideLocalUserPackages} label="Hide local User Packages" onChange={(checked) => updatePackages("hideLocalUserPackages", checked)} />
-                {repositories.map((repository) => repository.repositoryId === undefined ? null : (
-                    <Checkbox
-                        checked={settings.packages.hiddenRepositoryIds.includes(repository.repositoryId)}
-                        key={repository.repositoryId}
-                        label={`Hide ${repository.name ?? repository.declaredId ?? repository.repositoryId}`}
-                        onChange={(checked) => setRepositoryHidden(repository.repositoryId as string, checked)}
-                    />
-                ))}
-            </fieldset>
-            {error === undefined ? null : <p className="form-error" role="alert">{error.code === "revision_conflict" ? "Settings changed elsewhere. Reload and try again." : "Settings could not be saved."}</p>}
-            <div className="action-row">
-                <Button disabled={!dirty || busy} type="submit">{busy ? "Saving…" : "Save settings"}</Button>
-                <Button disabled={!dirty || busy} onClick={() => setSettings(snapshot.settings)} type="button" variant="tonal">Discard changes</Button>
-            </div>
-            <p aria-live="polite" className="field-hint">Config Schema {snapshot.configSchema} · revision {snapshot.revision}</p>
-        </form>
-    );
-}
-
-export function Page({ children, eyebrow, title }: { children: ReactNode; eyebrow: string; title: string }) {
-    return <section className="page-surface" aria-labelledby="route-title"><header className="page-header"><p className="eyebrow">{eyebrow}</p><h1 id="route-title" tabIndex={-1}>{title}</h1></header>{children}</section>;
-}
-
-function CardList({ children }: { children: ReactNode }) { return <div className="card-list">{children}</div>; }
 
 function Detail({ label, value }: { label: string; value: string }) { return <div><dt>{label}</dt><dd>{value}</dd></div>; }
+
+function UtilityTable({ headers, label, rows }: { headers: string[]; label: string; rows: { key: string; cells: ReactNode[] }[] }) {
+    return <MaterialDataTable label={label} minWidth={640}><thead><tr>{headers.map((header) => <DataTableHeader key={header}>{header}</DataTableHeader>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.key}>{row.cells.map((cell, index) => <td key={headers[index]}>{cell}</td>)}</tr>)}</tbody></MaterialDataTable>;
+}
 
 function DataTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
     if (rows.length === 0) return <RouteState kind="empty" title="No matching items" />;
@@ -1942,10 +1960,10 @@ function DataTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
 }
 
 function sourceText(repository: RepositorySnapshot): string { return repository.source.kind === "local" ? "Local repository" : repository.source.url; }
-function formatTime(value: number): string { return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(value)); }
+function formatTime(value: number): string { return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(value)) + " UTC"; }
 function formatBytes(value: number): string { return value < 1024 * 1024 ? `${Math.ceil(value / 1024)} KiB` : `${(value / (1024 * 1024)).toFixed(1)} MiB`; }
 function shortHash(value: string): string { return value.length <= 24 ? value : `${value.slice(0, 16)}…${value.slice(-8)}`; }
-function humanize(value: string): string { return value.replaceAll("_", " "); }
+function humanize(value: string): string { return value.replaceAll("_", " ").replaceAll(".", " "); }
 
 function safeError(caught: unknown): RpcError {
     if (typeof caught === "object" && caught !== null && "code" in caught && typeof caught.code === "string") {

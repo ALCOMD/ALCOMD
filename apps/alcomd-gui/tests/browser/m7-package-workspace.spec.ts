@@ -204,10 +204,13 @@ test("Project workspace keeps permanent deletion behind its destructive review",
 
 test("User Package management lists, refreshes and removes only the enrollment", async ({ page }) => {
     await page.goto("/browser-harness.html?route=%2Fuser-packages&state=package-user-source");
-    await expect(page.getByRole("heading", { name: "Local avatar tools" })).toBeVisible();
-    await page.getByRole("article").getByRole("button", { name: "Refresh", exact: true }).click();
+    const row = page.getByRole("table", { name: "User Packages", exact: true }).getByRole("row").filter({ hasText: "Local avatar tools" });
+    await expect(row.getByRole("cell").first()).toHaveText("Local avatar toolscom.example.avatar");
+    await row.getByRole("button", { name: "Refresh", exact: true }).click();
     await expect(page.getByText("revision 2")).toBeVisible();
     await page.getByRole("button", { name: "Remove enrollment" }).click();
+    await expect(page.getByRole("dialog", { name: "Remove User Package?" })).toBeVisible();
+    await page.locator("md-dialog[open]").getByRole("button", { name: "Remove enrollment", exact: true }).click();
     await expect(page.getByText("No User Packages enrolled")).toBeVisible();
 });
 
