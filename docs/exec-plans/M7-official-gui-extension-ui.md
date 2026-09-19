@@ -437,6 +437,16 @@ WebView2/update/uninstall，以及 Narrator/VoiceOver/Linux screen-reader 和真
 
 ## Visual realignment slices
 
+2026-09-19 owner-authorized supplement: before Visual Gate 2 acceptance, correct basic layout and usability
+of the other existing GUI pages, referencing frozen v3 design to the same degree as Projects. This explicitly
+allows resource tables/segmented navigation, grouped Settings with its Unity entry, Logs Activity/Diagnostics,
+existing task/extension/about/backup/detail presentation and normal return paths. Reuse current Material
+components and RPC contracts; do not copy v3 source. Preserve Projects/package workspace and confirmed icons,
+avoid narrow-window adaptation, new dependencies, contracts, migrations and production platform APIs. This is
+not blanket approval of the remaining H2/H3-H7 roadmap or visual signoff. Browser fixtures may establish frontend
+evidence; Computer Use interruption or missing Tauri evidence must remain separate. Continue straightforward
+fixes and defer uncertain contract-dependent work without blocking unrelated corrections.
+
 1. **H0 Material foundation（已批准）**：`@alcomd/ui` 封装审计中真实需要的 Material Web components；接通真实 MD3 color/type/shape/
    elevation/state tokens；验证 React 19 integration、interaction/ripple、component accessibility 和Core/Portable共用层。
 2. **H1 v3-reference Projects shell/navigation（Visual Gate 1 已通过）**：首次实现因 global top app bar、admin-style sidebar grouping、
@@ -669,3 +679,8 @@ version fallback; current validation is recorded in
 completeness 已通过；只允许从 sealed Unity HEAD 重新实现仍有效的 H2 视觉/Material 结构，不恢复旧的 Automatic/Explicit
 Editor preference UI。形成新的 real Tauri Visual Gate 2 候选后必须停止等待项目所有者人工视觉验收，不得进入
 H2-B/H3-H7/M8/M9/M11。
+
+
+- 2026-09-19 owner correction: the initial utility-page rework was rejected, not accepted as v3 parity. Re-audit and frontend-only reconstruction now cover actual modal flows, supported Settings group structure, extension cards and bounded Logs filtering. No RPC/DTO/state/dependency changes or later-stage authorization. See `docs/testing/m7-v3-recheck-implementation-20260919.md`; Visual Gate 2 remains PENDING.
+
+- 2026-09-19 owner-requested local checkpoint: accumulated GUI changes split into `c67dca1` (shared primitives/tests), `ce443ec` (pages/workflows/regressions), and a separate audit/status documentation commit. No push or Visual Gate approval; prior validation evidence remains unchanged.

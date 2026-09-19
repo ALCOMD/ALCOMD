@@ -1,6 +1,6 @@
 # 项目状态
 
-最后更新：2026-09-17
+最后更新：2026-09-19
 
 ## 当前阶段
 
@@ -10,11 +10,19 @@
 - **当前阶段**：M7 H2-A Project Workspace / Packages，`IN_PROGRESS / VISUAL_GATE_2`；尚未通过完整人工视觉验收。
 - **当前代码来源**：Unity 技术验收 `e9349fd` 加 GUI 本地提交链至 `9307572`；整合提交 `9d0ddbb` 的代码树与 `9307572` 完全相同。
 - **旧修改保留**：原标准目录 9 个未提交文件完整保存在 `b4547d5`，作为历史恢复快照，不复活已被替代的 Automatic Editor 产品模型。
-- **下一步**：已按项目所有者 2026-09-17 的实施批准完成候选查询与 H2-A 包交互本地实现；停止在 Visual Gate 2，交由所有者验收真实 Tauri 页面，不进入后续阶段。
-- **边界**：仅本次批准的 method/capability/两个错误增量；复用权限并检查 Principal/Project/source scope；不新增 State/Config migration、依赖或平台 API，不改变 resolver/Plan/Apply，不改已确认图标/布局，不开始后续阶段，不自动 push。
+- **下一步**：`a41c915106ed647b14d7eef0b89b24c065c3e17d` 为已提交的 H2-A 本地候选。项目所有者 2026-09-19 追加批准在验收前修正其他现有 GUI 页面的基础布局与可用性，要求按 Projects 的参考程度复现 v3 设计；该前端补充已整理为下述本地提交，下一步为审阅和视觉验收；不代表 H2-B/H3-H7 全量获批或任一 Visual Gate 通过。
+- **边界**：候选查询沿用已批准合同；本次其他页面修正只复用现有读写接口与 Material 组件，不新增 State/Config migration、依赖或平台 API，不改变 resolver/Plan/Apply，保留已确认 Projects/package workspace 的图标与布局，不做窄窗口适配，不自动 push。
 - **远端**：本次只有本地整合与获批实现，没有 push、force-push 或历史重写。此前 CI 只证明其对应旧 SHA，不证明本次候选。
 
 整合审计、恢复位置和本轮验证结果见 [工作目录整合记录](testing/workspace-consolidation-20260917.md)。
+
+2026-09-19 当前补充：项目所有者已明确拒绝上一版其他页面重做，指出其没有按 v3 的弹窗与页面结构执行。
+上一版 78/79、局部 26/26 和 17 张截图仅保留为历史技术证据，**不能作为设计符合性或验收通过证据**。
+本轮重新读取冻结 v3 并逐流程核对：Settings 按支持组重建、资源/模板/扩展/备份及启动参数改为对应模态流程，
+扩展恢复卡片/启用/Open，日志增加有界搜索筛选与真实 Operation 详情。已认可 Projects/package workspace 保留。
+完整差异、现有合同缺口、当前验证与浏览器证据见 [v3 重新核对与修正](testing/m7-v3-recheck-implementation-20260919.md)。
+当前 GUI 修正已按所有者要求整理为本地提交：`c67dca1`（公共组件与独立回归）、`ce443ec`（页面/交互与页面回归）；本记录与审计资料单独提交。仍待视觉验收，未推送。完整 browser 首轮 85/91；修正后受影响组 43/44，最后一个旧文本断言修正复测 1/1；额外宽弹窗几何修复后 utility 6/6。最终 frontend check/build、xtask 与 diff check 通过。真实 Tauri 与屏幕阅读器证据未取得；**Visual Gate 2 PENDING**。
+
 标准目录的 check/build/xtask/metadata/diff 检查通过；浏览器首轮 47/48（navigation 超时），
 保持代码及断言不变、按先前单 worker 配置复跑为 48/48。首轮原因未确认，不隐去失败记录。
 
