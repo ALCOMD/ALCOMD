@@ -2,7 +2,7 @@ import { useState } from "react";
 import { projectsIcon } from "@alcomd/ui/icons";
 
 import { DataTableHeader, MaterialDataTable } from "../../src/DataTable";
-import { Button, Checkbox, Dialog, Icon, IconButton, Progress, Select, Switch, TextField } from "../../src/Material";
+import { Button, Checkbox, Dialog, Icon, IconButton, Progress, SegmentedButtons, Select, Switch, TextField } from "../../src/Material";
 
 export function MaterialFoundationEvidence() {
     const [dialogOpen, setDialogOpen] = useState(false);
@@ -11,9 +11,18 @@ export function MaterialFoundationEvidence() {
     const [enabled, setEnabled] = useState(true);
     const [confirmed, setConfirmed] = useState(false);
     const [longLabel, setLongLabel] = useState(false);
+    const [segment, setSegment] = useState("first");
+    const [selections, setSelections] = useState(0);
     return (
         <main className="material-evidence" aria-labelledby="material-evidence-title">
             <h1 id="material-evidence-title">Material foundation evidence</h1>
+            <SegmentedButtons label="Selection evidence" value={segment} onChange={(next) => { setSelections((count) => count + 1); if (next !== "blocked") setSegment(next); }} options={[
+                { value: "first", label: "First section" },
+                { value: "disabled", label: "Unavailable section", disabled: true },
+                { value: "last", label: "Last section" },
+                { value: "blocked", label: "Guarded section" }
+            ]} />
+            <output data-testid="selection-count">{selections}</output>
             <section aria-label="Button width evidence" style={{ display: "flex", gap: 8 }}>
                 {(["filled", "tonal", "outlined", "text"] as const).map((variant) => <Button key={variant} data-testid={"width-" + variant} variant={variant}>Repositories</Button>)}
             </section>

@@ -7,9 +7,7 @@ test("Resources sections and detail return controls work through ordinary clicks
     await navigationItem(page, "Resources").click();
     await expectHeading(page, "Repositories");
     const resources = page.getByRole("navigation", { name: "Resources", exact: true });
-    // This checks the host's selected-page marker, not screen-reader announcement
-    // of aria-current on Material's internal shadow button.
-    await expect(resources.locator("md-filled-tonal-button").filter({ hasText: "Repositories" })).toHaveJSProperty("ariaCurrent", "page");
+    await expect(resources.getByRole("button", { name: "Repositories", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("table", { name: "Repositories", exact: true }).getByRole("columnheader")).toHaveText(["Repository", "Source", "Actions"]);
     await page.getByRole("button", { name: "Browse packages" }).click();
     const repositoryDialog = page.getByRole("dialog", { name: "Example packages", exact: true });
@@ -30,11 +28,11 @@ test("Resources sections and detail return controls work through ordinary clicks
     await expectHeading(page, "Repositories");
     await resources.getByRole("button", { name: "User Packages", exact: true }).click();
     await expectHeading(page, "User Packages");
-    await expect(resources.locator("md-filled-tonal-button").filter({ hasText: "User Packages" })).toHaveJSProperty("ariaCurrent", "page");
+    await expect(resources.getByRole("button", { name: "User Packages", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("button", { name: "Enroll folder" })).toBeVisible();
     await resources.getByRole("button", { name: "Templates", exact: true }).click();
     await expectHeading(page, "Templates");
-    await expect(resources.locator("md-filled-tonal-button").filter({ hasText: "Templates" })).toHaveJSProperty("ariaCurrent", "page");
+    await expect(resources.getByRole("button", { name: "Templates", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("table", { name: "Templates" }).getByRole("columnheader")).toHaveText(["Template", "ID", "Last modified", "Source", "Actions"]);
     await page.getByRole("button", { name: /^More actions for / }).click();
     await page.getByRole("menuitem", { name: "View template", exact: true }).click();
@@ -65,7 +63,7 @@ test("Settings follows supported v3 group order while Logs retains its two real 
     await expect(page.getByRole("table", { name: "Activity", exact: true }).getByRole("columnheader")).toHaveText(["Time", "Status", "Activity", "Target", "Actions"]);
     await logs.getByRole("button", { name: "Diagnostics" }).click();
     await expectHeading(page, "Diagnostics");
-    await expect(logs.locator("md-filled-tonal-button").filter({ hasText: "Diagnostics" })).toHaveJSProperty("ariaCurrent", "page");
+    await expect(logs.getByRole("button", { name: "Diagnostics", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("table", { name: "Diagnostics", exact: true }).getByRole("columnheader")).toHaveText(["Time", "Severity", "Subsystem", "Diagnostic", "Actions"]);
     await logs.getByRole("button", { name: "Activity", exact: true }).click();
     await expectHeading(page, "Activity");

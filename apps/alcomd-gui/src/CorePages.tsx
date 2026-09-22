@@ -59,7 +59,7 @@ import "./ExtensionWorkspace.css";
 import { SettingsWorkspace } from "./SettingsWorkspace";
 import { PagedItems } from "./PagedItems";
 import type { GuiRpcClient } from "./rpc";
-import { Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, SearchField, Select, Switch, TextField } from "./Material";
+import { Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, SearchField, SegmentedButtons, Select, Switch, TextField } from "./Material";
 import { CreateProjectDialog, RestoreProjectDialog } from "./ProjectCreationDialogs";
 import { capabilities, capabilityUnavailableTitle, useCapability, useCapabilityState, useReconnect } from "./capabilities";
 
@@ -1576,13 +1576,13 @@ function RepositoryPackageList({ client, repositoryId }: { client: GuiRpcClient;
 
 function ResourceNavigation({ current, navigate }: { current: string; navigate(path: string): void }) {
     const canUseUserPackages = useCapability(capabilities.packagesUserPackages);
-    return <nav aria-label="Resources" className="resource-navigation">{[{ path: "/repositories", label: "Repositories" }, { path: "/user-packages", label: "User Packages" }, { path: "/templates", label: "Templates" }].map(({ path, label }) => <Button aria-current={current === path ? "page" : undefined} disabled={path === "/user-packages" && !canUseUserPackages} key={path} onClick={() => navigate(path)} title={path === "/user-packages" ? capabilityUnavailableTitle(canUseUserPackages, capabilities.packagesUserPackages) : undefined} type="button" variant={current === path ? "tonal" : "text"}>{label}</Button>)}</nav>;
+    return <nav aria-label="Resources" className="resource-navigation"><SegmentedButtons label="Resource sections" value={current} onChange={navigate} options={[{ value: "/repositories", label: "Repositories" }, { value: "/user-packages", label: "User Packages", disabled: !canUseUserPackages, title: capabilityUnavailableTitle(canUseUserPackages, capabilities.packagesUserPackages) }, { value: "/templates", label: "Templates" }]} /></nav>;
 }
 
 function UtilityNavigation({ current, kind, navigate }: { current: string; kind: "settings" | "logs"; navigate(path: string): void }) {
     const unity = useCapability(capabilities.unityRead);
     const items = kind === "settings" ? [{ path: "/settings", label: "Preferences" }, { path: "/unity", label: "Unity installations" }] : [{ path: "/activity", label: "Activity" }, { path: "/diagnostics", label: "Diagnostics" }];
-    return <nav aria-label={kind === "settings" ? "Settings sections" : "Logs"} className="resource-navigation">{items.map(({ path, label }) => <Button aria-current={current === path ? "page" : undefined} disabled={path === "/unity" && !unity} key={path} onClick={() => navigate(path)} type="button" variant={current === path ? "tonal" : "text"}>{label}</Button>)}</nav>;
+    return <nav aria-label={kind === "settings" ? "Settings sections" : "Logs"} className="resource-navigation"><SegmentedButtons label={kind === "settings" ? "Settings sections" : "Log sections"} value={current} onChange={navigate} options={items.map(({ path, label }) => ({ value: path, label, disabled: path === "/unity" && !unity }))} /></nav>;
 }
 
 function ActionDisclosure({ children, title }: { children: ReactNode; title: string }) {

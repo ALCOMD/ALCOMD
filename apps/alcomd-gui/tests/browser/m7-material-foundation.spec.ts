@@ -520,9 +520,37 @@ test("shared buttons preserve width across variants and changing labels", async 
 test("resource navigation keeps each button width when selection changes", async ({ page }) => {
     await page.goto("/browser-harness.html?route=%2Frepositories&state=ready");
     const nav = page.locator(".resource-navigation");
-    const before = await nav.locator(".alcomd-button--standard").evaluateAll(elements => elements.map(element => ({ label: element.textContent, width: element.getBoundingClientRect().width })));
+    await expect(nav.locator("md-outlined-segmented-button")).toHaveCount(3);
+    const before = await nav.locator("md-outlined-segmented-button").evaluateAll(elements => elements.map(element => ({ label: element.getAttribute("label"), width: element.getBoundingClientRect().width })));
     await nav.getByRole("button", { name: "Templates", exact: true }).click();
     await expect(page).toHaveURL(/\/templates$/);
-    const after = await nav.locator(".alcomd-button--standard").evaluateAll(elements => elements.map(element => ({ label: element.textContent, width: element.getBoundingClientRect().width })));
+    const after = await nav.locator("md-outlined-segmented-button").evaluateAll(elements => elements.map(element => ({ label: element.getAttribute("label"), width: element.getBoundingClientRect().width })));
     expect(after).toEqual(before);
+});
+
+test("segmented controls support keyboard selection, disabled items and rejected navigation", async ({ page }) => {
+    await page.goto("/browser-harness.html?material=1");
+    await expect(page.getByRole("group", { name: "Selection evidence" })).toBeVisible();
+    const group = page.locator("md-outlined-segmented-button-set").filter({ has: page.getByRole("button", { name: "First section" }) });
+    const first = group.getByRole("button", { name: "First section" });
+    const last = group.getByRole("button", { name: "Last section" });
+    const disabled = group.getByRole("button", { name: "Unavailable section" });
+    await expect(first).toHaveAttribute("aria-pressed", "true");
+    await expect(disabled).toBeDisabled();
+    await first.click();
+    await expect(page.getByTestId("selection-count")).toHaveText("0");
+    await page.keyboard.press("Tab");
+    await expect(last).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(last).toHaveAttribute("aria-pressed", "true");
+    await expect(first).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTestId("selection-count")).toHaveText("1");
+    await page.keyboard.press("Shift+Tab");
+    await expect(first).toBeFocused();
+    await page.keyboard.press("Space");
+    await expect(first).toHaveAttribute("aria-pressed", "true");
+    await group.getByRole("button", { name: "Guarded section" }).click();
+    await expect(first).toHaveAttribute("aria-pressed", "true");
+    await expect(group.getByRole("button", { name: "Guarded section" })).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByTestId("selection-count")).toHaveText("3");
 });

@@ -1,8 +1,10 @@
 # 项目状态
 
-最后更新：2026-09-19
+最后更新：2026-09-22
 
 ## 当前阶段
+
+2026-09-22：所有者明确选定 MD3 Segmented buttons。Resources 与 Logs/Settings 同类切换入口已复用现有 Material Web 2.5.0 labs 的 outlined segmented button/set，使用单选、文字式无勾选图标配置，保留禁用条件与路由权威状态；移除旧普通按钮拼接底板。原按钮宽度 WIP 保留，无新增依赖或 RPC。组件/页面回归 17/17，键盘、禁用跳过及拒绝导航恢复专项 1/1；专项首轮因 Shadow DOM slotted 子元素定位失败，修正测试定位后通过。check/build 与 diff check 通过，构建保留既有大 chunk 警告。浏览器完整窗口证据在 `target/m7-v3-recheck-20260919/browser/`；未取得新的真实 Tauri 或屏幕阅读器证据。所有者随后授权将按钮宽度与分段按钮改动分别提交，并将本地 main 累积提交正常推送至 origin/main；该授权不代表视觉验收通过。**Visual Gate 2 PENDING**。
 
 本节是唯一当前阶段记录；下文“已完成”、旧 ExecPlan 日志、testing 报告及归档分支均是历史证据，不构成另一条活动开发线。
 
@@ -22,6 +24,8 @@
 扩展恢复卡片/启用/Open，日志增加有界搜索筛选与真实 Operation 详情。已认可 Projects/package workspace 保留。
 完整差异、现有合同缺口、当前验证与浏览器证据见 [v3 重新核对与修正](testing/m7-v3-recheck-implementation-20260919.md)。
 当前 GUI 修正已按所有者要求整理为本地提交：`c67dca1`（公共组件与独立回归）、`ce443ec`（页面/交互与页面回归）；本记录与审计资料单独提交。仍待视觉验收，未推送。完整 browser 首轮 85/91；修正后受影响组 43/44，最后一个旧文本断言修正复测 1/1；额外宽弹窗几何修复后 utility 6/6。最终 frontend check/build、xtask 与 diff check 通过。真实 Tauri 与屏幕阅读器证据未取得；**Visual Gate 2 PENDING**。
+
+2026-09-19 按钮补充：在 `a531e56` 上统一共享按钮各 variant 的水平留白，修复选中切换时宽度变化；状态文案按钮按已知最长文案预留宽度。组件/页面浏览器回归 17/17、分页 3/3，frontend check/build 通过。该修正按所有者要求独立提交，并纳入本次获准推送；真实桌面与屏幕阅读器验收未增加。见 [按钮宽度修正记录](testing/m7-button-width-20260919.md)。Visual Gate 2 仍为 **PENDING**。
 
 标准目录的 check/build/xtask/metadata/diff 检查通过；浏览器首轮 47/48（navigation 超时），
 保持代码及断言不变、按先前单 worker 配置复跑为 48/48。首轮原因未确认，不隐去失败记录。

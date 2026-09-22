@@ -76,6 +76,43 @@ export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonEle
     label: string;
 }
 
+export function SegmentedButtons({ label, options, value, onChange }: {
+    label: string;
+    options: readonly { value: string; label: string; disabled?: boolean; title?: string }[];
+    value: string;
+    onChange(value: string): void;
+}) {
+    const ref = useRef<HTMLElement>(null);
+    const current = useRef(value);
+    current.current = value;
+    useEffect(() => {
+        const element = ref.current;
+        if (element === null) return;
+        const select = (event: Event) => {
+            const detail = (event as CustomEvent<{ index: number; selected: boolean }>).detail;
+            const option = options[detail.index];
+            if (option !== undefined && !option.disabled && detail.selected && option.value !== current.current) onChange(option.value);
+            // The route remains authoritative, including a cancelled dirty-form navigation.
+            queueMicrotask(() => {
+                Array.from(element.children).forEach((button, index) => {
+                    (button as MaterialElement).selected = options[index]?.value === current.current;
+                });
+            });
+        };
+        element.addEventListener("segmented-button-set-selection", select);
+        return () => element.removeEventListener("segmented-button-set-selection", select);
+    }, [onChange, options]);
+    return createElement(materialElements.segmentedButtonSet, { ariaLabel: label, ref } as MaterialProps,
+        options.map((option) => createElement(materialElements.segmentedButton, {
+            key: option.value,
+            disabled: option.disabled ?? false,
+            label: option.label,
+            noCheckmark: true,
+            selected: option.value === value,
+            title: option.title
+        } as MaterialProps)));
+}
+
 export const IconButton = forwardRef(function IconButton(
     { "aria-controls": ariaControls, "aria-expanded": ariaExpanded, children, className, label, ...props }: IconButtonProps,
     ref: Ref<HTMLElement>

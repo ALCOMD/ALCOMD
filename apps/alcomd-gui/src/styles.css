@@ -717,10 +717,8 @@ md-linear-progress {
 
 .page-surface--utility .utility-workspace-toolbar .resource-navigation {
     margin: 0;
-    padding: 4px;
+    padding: 0;
     border: 0;
-    border-radius: 12px;
-    background: var(--md-sys-color-surface-container);
 }
 
 .utility-workspace-actions {
@@ -815,11 +813,6 @@ md-linear-progress {
     border-bottom: 1px solid var(--md-sys-color-outline-variant);
 }
 
-.page-surface--utility .resource-navigation [aria-current="page"] {
-    --md-text-button-label-text-color: var(--md-sys-color-on-secondary-container);
-    background: var(--md-sys-color-secondary-container);
-    border-radius: 20px;
-}
 
 .page-surface--utility .refresh-bar {
     min-height: 40px;

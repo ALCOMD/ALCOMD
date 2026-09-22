@@ -2,6 +2,8 @@
 
 当前活动阶段与唯一工作目录统一以 `docs/status.md` 为准。本文件保留实施合同与历史日志，不授权重建旧工作树；2026-09-17 起仅在标准 `ALCOMD` 目录的 `main` 继续 H2-A。
 
+2026-09-22 所有者指定的局部 UI 修正：资源及同类分组切换采用 MD3 Segmented buttons，复用已安装 `@material/web` 的 labs outlined segmented button/set，不引入新依赖。通过共享 React 适配层封装实验性组件路径与 selection event；后续库升级需回归单选、disabled、键盘、拒绝导航恢复及宽度。保留已有按钮宽度修正，未采用被否决的 Secondary Tabs。使用文字式无勾选图标配置保持尺寸稳定，不改变业务和路由合同，Visual Gate 2 仍待人工验收。
+
 状态：Portable UI B0-D production candidate `aa1323430252ed21995284a7b36dd36e45a15e0a` 已通过 Hosted CI
 `32877438910`。Official GUI functional candidate `19267230507071dc61ba306b98c8cfdd113e9ea2` 完成 E1-G1/G3
 生产实现与本地自动化验收，但项目所有者在正式 checklist 开始前拒绝其 visual/information architecture acceptance：其宏观

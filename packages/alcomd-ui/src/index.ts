@@ -12,6 +12,8 @@ import "@material/web/icon/icon.js";
 import "@material/web/iconbutton/icon-button.js";
 import "@material/web/list/list-item.js";
 import "@material/web/list/list.js";
+import "@material/web/labs/segmentedbutton/outlined-segmented-button.js";
+import "@material/web/labs/segmentedbuttonset/outlined-segmented-button-set.js";
 import "@material/web/menu/menu-item.js";
 import "@material/web/menu/menu.js";
 import "@material/web/progress/linear-progress.js";
@@ -46,6 +48,8 @@ export const materialElements = {
         outlined: "md-outlined-select"
     },
     selectOption: "md-select-option",
+    segmentedButton: "md-outlined-segmented-button",
+    segmentedButtonSet: "md-outlined-segmented-button-set",
     switch: "md-switch",
     textField: {
         filled: "md-filled-text-field",
