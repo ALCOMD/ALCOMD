@@ -563,7 +563,7 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
                     <h1 id="extension-ui-title" ref={headingRef} tabIndex={-1}>Extension UI</h1>
                     <p className="extension-id"><code>{extensionId}</code></p>
                 </div>
-                <Button disabled={busy || snapshot === undefined} onClick={() => void refresh()} type="button" variant="tonal">
+                <Button widthLabels={["Working…", "Refresh"]} disabled={busy || snapshot === undefined} onClick={() => void refresh()} type="button" variant="tonal">
                     {busy && snapshot !== undefined ? "Working…" : "Refresh"}
                 </Button>
             </header>

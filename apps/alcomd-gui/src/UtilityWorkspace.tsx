@@ -98,7 +98,7 @@ export function UtilityWorkspace<T>({
                 {navigation}
                 <div className="utility-workspace-actions">
                     {value === undefined ? null : tools?.(value, refresh)}
-                    <Button disabled={pending || refreshDisabled} onClick={refresh} type="button" variant="tonal">
+                    <Button widthLabels={["Refreshing…", "Refresh"]} disabled={pending || refreshDisabled} onClick={refresh} type="button" variant="tonal">
                         {pending ? "Refreshing…" : "Refresh"}
                     </Button>
                     {action === undefined ? null : (

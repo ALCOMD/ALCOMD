@@ -65,7 +65,7 @@ function PageSession<T, C>({ initialItems, initialCursor, loadMore, children }: 
             {cursor === undefined ? null : (
                 <div className="pagination-controls">
                     {failed ? <p className="inline-error" role="alert">Could not load more items. Your loaded items are still available.</p> : null}
-                    <Button disabled={loading} onClick={() => { void next(); }} type="button" variant="tonal">
+                    <Button widthLabels={["Loading…", "Retry loading more", "Load more"]} disabled={loading} onClick={() => { void next(); }} type="button" variant="tonal">
                         {loading ? "Loading…" : failed ? "Retry loading more" : "Load more"}
                     </Button>
                     {loading ? <span role="status">Loading more items…</span> : null}

@@ -124,11 +124,11 @@ export function RegisterRepositoryPanel({ client, onChanged }: ActionProps) {
         {preview === undefined ? <form onSubmit={(event) => void inspect(event)}>
             <Select disabled={feedback.busy} id="repository-kind" label="Source type" onChange={(next) => setKind(next as "remote" | "local")} options={[{ label: "Remote URL", value: "remote" }, { label: "Local manifest", value: "local" }]} value={kind} />
             <TextField disabled={feedback.busy} id="repository-source" label={kind === "remote" ? "Repository URL" : "Local manifest path"} maxLength={2048} onInput={setValue} required type={kind === "remote" ? "url" : "text"} value={value} />
-            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || value.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.repositoriesRegistry)} type="submit">{feedback.busy ? "Loading repository…" : "Review repository"}</Button></div>
+            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button widthLabels={["Loading repository…", "Review repository"]} disabled={!available || feedback.busy || value.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.repositoriesRegistry)} type="submit">{feedback.busy ? "Loading repository…" : "Review repository"}</Button></div>
         </form> : <>
             <dl className="dialog-summary"><div><dt>Name</dt><dd>{preview.name ?? "Unnamed repository"}</dd></div><div><dt>Source</dt><dd>{preview.source.kind === "remote" ? preview.source.url : preview.source.path}</dd></div></dl>
             {preview.issues.length === 0 ? null : <p role="status">This repository has {preview.issues.length} reported issues. Registration will validate the source again.</p>}
-            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setPreview(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">Back</Button><Button disabled={!available || feedback.busy} onClick={() => void register()} type="button">{feedback.busy ? "Adding…" : "Add repository"}</Button></div>
+            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setPreview(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">Back</Button><Button widthLabels={["Adding…", "Add repository"]} disabled={!available || feedback.busy} onClick={() => void register()} type="button">{feedback.busy ? "Adding…" : "Add repository"}</Button></div>
         </>}
         <MutationFeedback client={client} feedback={feedback} />
     </ActionSection>;
@@ -261,7 +261,7 @@ export function PackageActions({ client, project, onChanged, selection, onEviden
                         <ul className="change-list">{plan.changeSet.mutations.map((mutation) => <li key={`${mutation.kind}-${mutation.packageId}`}><strong>{packageChangeLabel(mutation.kind)}</strong><span>{mutation.packageId}</span>{mutation.fromVersion == null && mutation.toVersion == null ? null : <small>{packageVersionChange(mutation.fromVersion, mutation.toVersion)}</small>}</li>)}</ul>
                         <div className="dialog-actions">
                             <Button disabled={feedback.busy} onClick={closeChanges} type="button" variant="text">Cancel</Button>
-                            <Button disabled={!canApply || feedback.busy} onClick={() => void apply()} title={capabilityUnavailableTitle(canApply, capabilities.packagesApply)} type="button">{feedback.busy ? "Applying…" : "Apply changes"}</Button>
+                            <Button widthLabels={["Applying…", "Apply changes"]} disabled={!canApply || feedback.busy} onClick={() => void apply()} title={capabilityUnavailableTitle(canApply, capabilities.packagesApply)} type="button">{feedback.busy ? "Applying…" : "Apply changes"}</Button>
                         </div>
                     </div>
                 ) : (
@@ -636,12 +636,12 @@ export function TemplateImportPanel({ client, onChanged }: ActionProps) {
         {plan === undefined ? <form onSubmit={(event) => void create(event)}>
             <TextField disabled={feedback.busy} id="template-bundle" label="Template bundle" maxLength={1024} onInput={setBundlePath} required value={bundlePath} />
             <Checkbox checked={overrideExisting} disabled={feedback.busy} label="Replace an existing matching template" onChange={setOverrideExisting} />
-            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || bundlePath.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.templatesManage)} type="submit">{feedback.busy ? "Preparing review…" : "Review import"}</Button></div>
+            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button widthLabels={["Preparing review…", "Review import"]} disabled={!available || feedback.busy || bundlePath.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.templatesManage)} type="submit">{feedback.busy ? "Preparing review…" : "Review import"}</Button></div>
         </form> : <>
             <p>Action: <strong>{humanize(plan.action)}</strong></p>
             <p>Plan fingerprint: <code>{shortValue(plan.planFingerprint)}</code></p>
             <p className="risk-summary">The daemon will revalidate this frozen plan before importing.</p>
-            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setPlan(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">Discard plan</Button><Button disabled={!available || feedback.busy} onClick={() => void apply()} type="button">{feedback.busy ? "Applying…" : "Apply reviewed plan"}</Button></div>
+            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setPlan(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">Discard plan</Button><Button widthLabels={["Applying…", "Apply reviewed plan"]} disabled={!available || feedback.busy} onClick={() => void apply()} type="button">{feedback.busy ? "Applying…" : "Apply reviewed plan"}</Button></div>
         </>}
         <MutationFeedback client={client} feedback={feedback} />
     </ActionSection>;
@@ -744,7 +744,7 @@ export function TemplateActions({ client, compact = false, onChanged, onView, te
         </div> : <><h2>Template actions</h2><div className="action-row">
             <Button disabled={!canCreateProject || feedback.busy} onClick={() => open("create")} title={capabilityUnavailableTitle(canCreateProject, capabilities.templatesCreateProject)} type="button">Create project</Button>
             <Button disabled={!canManage || feedback.busy} onClick={() => open("derive")} title={capabilityUnavailableTitle(canManage, capabilities.templatesManage)} type="button" variant="tonal">Derive from project</Button>
-            <Button disabled={!canManage || feedback.busy} onClick={() => void simple("favorite")} type="button" variant="text">{template.favorite ? "Remove favorite" : "Favorite"}</Button>
+            <Button widthLabels={["Remove favorite", "Favorite"]} disabled={!canManage || feedback.busy} onClick={() => void simple("favorite")} type="button" variant="text">{template.favorite ? "Remove favorite" : "Favorite"}</Button>
             <Button disabled={!canManage || feedback.busy} onClick={() => open("export")} type="button" variant="text">Export</Button>
             {template.sourceKind === "builtin" ? null : <Button className="material-button--danger" disabled={!canManage || feedback.busy} onClick={() => open("remove")} type="button" variant="text">Remove template</Button>}
         </div></>}
@@ -769,7 +769,7 @@ export function TemplateActions({ client, compact = false, onChanged, onView, te
                     <Button disabled={feedback.busy} onClick={() => void pickParent()} type="button" variant="text">Browse…</Button>
                     <TextField disabled={feedback.busy} id="create-leaf" label="Project folder name" onInput={(next) => update("leaf", next)} required value={fields.leaf} />
                 </>}
-                <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">Cancel</Button><Button disabled={feedback.busy || (mode === "derive" ? !canManage || fields.projectId.length === 0 : !canCreateProject)} type="submit">{feedback.busy ? "Preparing review…" : "Review"}</Button></div>
+                <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">Cancel</Button><Button widthLabels={["Preparing review…", "Review"]} disabled={feedback.busy || (mode === "derive" ? !canManage || fields.projectId.length === 0 : !canCreateProject)} type="submit">{feedback.busy ? "Preparing review…" : "Review"}</Button></div>
             </form> : mode === "export" ? <form onSubmit={(event) => { event.preventDefault(); void simple("export"); }}>
                 <p>Export <strong>{template.displayName}</strong> as a template bundle.</p>
                 <TextField disabled={feedback.busy} id="template-export" label="Export target" onInput={(next) => update("exportPath", next)} required value={fields.exportPath} />
@@ -962,11 +962,11 @@ function ActionSection({ children, title }: { children: ReactNode; title: string
 }
 
 function ConfirmDialog({ busy, detail, onClose, onConfirm, open, title }: { busy: boolean; detail: string; onClose(): void; onConfirm(): Promise<void>; open: boolean; title: string }) {
-    return <ModalDialog open={open} title={title} onClose={onClose}><p>{detail}</p><div className="dialog-actions"><Button disabled={busy} onClick={onClose} type="button" variant="tonal">Go back</Button><Button data-dialog-initial-focus disabled={busy} onClick={() => void onConfirm().finally(onClose)} type="button">{busy ? "Working…" : "Confirm"}</Button></div></ModalDialog>;
+    return <ModalDialog open={open} title={title} onClose={onClose}><p>{detail}</p><div className="dialog-actions"><Button disabled={busy} onClick={onClose} type="button" variant="tonal">Go back</Button><Button widthLabels={["Working…", "Confirm"]} data-dialog-initial-focus disabled={busy} onClick={() => void onConfirm().finally(onClose)} type="button">{busy ? "Working…" : "Confirm"}</Button></div></ModalDialog>;
 }
 
 function PlanDialog({ applyDisabled = false, busy, children, onApply, onClose, open, title }: { applyDisabled?: boolean; busy: boolean; children: ReactNode; onApply(): Promise<void>; onClose(): void; open: boolean; title: string }) {
-    return <ModalDialog open={open} title={title} onClose={onClose}>{children}<p className="risk-summary">The daemon will revalidate this frozen plan. A stale plan fails instead of being silently replaced.</p><div className="dialog-actions"><Button disabled={busy} onClick={onClose} type="button" variant="tonal">Discard plan</Button><Button data-dialog-initial-focus disabled={busy || applyDisabled} onClick={() => void onApply()} type="button">{busy ? "Applying…" : "Apply reviewed plan"}</Button></div></ModalDialog>;
+    return <ModalDialog open={open} title={title} onClose={onClose}>{children}<p className="risk-summary">The daemon will revalidate this frozen plan. A stale plan fails instead of being silently replaced.</p><div className="dialog-actions"><Button disabled={busy} onClick={onClose} type="button" variant="tonal">Discard plan</Button><Button widthLabels={["Applying…", "Apply reviewed plan"]} data-dialog-initial-focus disabled={busy || applyDisabled} onClick={() => void onApply()} type="button">{busy ? "Applying…" : "Apply reviewed plan"}</Button></div></ModalDialog>;
 }
 
 function ModalDialog({ children, onClose, open, title }: { children: ReactNode; onClose(): void; open: boolean; title: string }) {

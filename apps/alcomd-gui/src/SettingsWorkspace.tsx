@@ -225,7 +225,7 @@ function SettingsEditor({ client, snapshot, onApplied, onDirtyChange }: Omit<Set
             <div className="settings-save-bar">
                 {error === undefined ? null : <p className="form-error" role="alert">{error}</p>}
                 <div className="action-row">
-                    <Button disabled={!dirty || busy} type="submit">{busy ? "Saving…" : "Save settings"}</Button>
+                    <Button widthLabels={["Saving…", "Save settings"]} disabled={!dirty || busy} type="submit">{busy ? "Saving…" : "Save settings"}</Button>
                     <Button disabled={!dirty || busy} onClick={() => { setSettings(snapshot.settings); setError(undefined); }} type="button" variant="tonal">Discard changes</Button>
                     <span className="field-hint" role="status">{dirty ? "Unsaved changes" : "All changes saved"}</span>
                 </div>

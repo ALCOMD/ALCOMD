@@ -492,3 +492,37 @@ function navigationItem(page: Page, label: string) {
 function escapeRegex(value: string) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+test("shared buttons preserve width across variants and changing labels", async ({ page }) => {
+    await page.goto("/browser-harness.html?material=1");
+    await page.evaluate(() => document.fonts.ready);
+    for (const prefix of ["width-", "icon-width-"]) {
+        const widths = [];
+        for (const variant of ["filled", "tonal", "outlined", "text"]) {
+            widths.push((await page.getByTestId(prefix + variant).boundingBox())!.width);
+        }
+        expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(0.5);
+    }
+    const changing = page.getByTestId("changing-label");
+    const neighbor = page.getByTestId("stable-neighbor");
+    const initial = await changing.boundingBox();
+    const neighborInitial = await neighbor.boundingBox();
+    await expect(changing.getByRole("button")).toHaveAccessibleName("Refresh");
+    await expect(changing.locator(':scope > md-icon[slot="icon"]')).toHaveCount(1);
+    for (const label of ["Refreshing…", "Refresh", "Refreshing…"]) {
+        await changing.click();
+        await expect(changing.getByRole("button")).toHaveAccessibleName(label);
+        expect((await changing.boundingBox())!.width).toBe(initial!.width);
+        expect((await neighbor.boundingBox())!.x).toBe(neighborInitial!.x);
+    }
+});
+
+test("resource navigation keeps each button width when selection changes", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=%2Frepositories&state=ready");
+    const nav = page.locator(".resource-navigation");
+    const before = await nav.locator(".alcomd-button--standard").evaluateAll(elements => elements.map(element => ({ label: element.textContent, width: element.getBoundingClientRect().width })));
+    await nav.getByRole("button", { name: "Templates", exact: true }).click();
+    await expect(page).toHaveURL(/\/templates$/);
+    const after = await nav.locator(".alcomd-button--standard").evaluateAll(elements => elements.map(element => ({ label: element.textContent, width: element.getBoundingClientRect().width })));
+    expect(after).toEqual(before);
+});

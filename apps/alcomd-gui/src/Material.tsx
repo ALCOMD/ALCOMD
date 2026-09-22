@@ -1,8 +1,10 @@
 import { materialElements } from "@alcomd/ui";
 import { resolveIconGeometry, searchIcon, type IconAsset, type IconSize } from "@alcomd/ui/icons";
 import {
+    Children,
     createElement,
     forwardRef,
+    isValidElement,
     useEffect,
     useRef,
     type ButtonHTMLAttributes,
@@ -45,18 +47,29 @@ export function Icon({ asset, className, size = 24, slot }: { asset: IconAsset; 
 
 export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "ref"> {
     variant?: "filled" | "tonal" | "outlined" | "text";
+    /** Reserve the widest known label before the first state transition. */
+    widthLabels?: readonly string[];
 }
 
 export const Button = forwardRef(function Button(
-    { "aria-expanded": ariaExpanded, children, className, variant = "filled", ...props }: ButtonProps,
+    { "aria-expanded": ariaExpanded, children, className, variant = "filled", widthLabels, ...props }: ButtonProps,
     ref: Ref<HTMLElement>
 ) {
+    const nodes = Children.toArray(children);
+    const isSlotted = (node: ReactNode) => isValidElement<{ slot?: string }>(node) && node.props.slot !== undefined;
+    const content = widthLabels === undefined ? children : <>
+        {nodes.filter(isSlotted)}
+        <span className="alcomd-button-label">
+            {widthLabels.map((label) => <span aria-hidden="true" className="alcomd-button-label-measure" key={label}>{label}</span>)}
+            <span>{nodes.filter((node) => !isSlotted(node))}</span>
+        </span>
+    </>;
     return createElement(materialElements.button[variant], {
         ...props,
         ariaExpanded,
         className: ["alcomd-button--standard", className].filter(Boolean).join(" "),
         ref
-    } as MaterialProps, children);
+    } as MaterialProps, content);
 });
 
 export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "ref"> {

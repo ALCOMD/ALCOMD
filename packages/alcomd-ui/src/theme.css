@@ -47,11 +47,49 @@
 }
 
 .alcomd-button--standard {
+    --md-filled-button-leading-space: 24px;
+    --md-filled-button-trailing-space: 24px;
+    --md-filled-button-with-leading-icon-leading-space: 16px;
+    --md-filled-button-with-leading-icon-trailing-space: 24px;
+    --md-filled-button-with-trailing-icon-leading-space: 24px;
+    --md-filled-button-with-trailing-icon-trailing-space: 16px;
+    --md-filled-tonal-button-leading-space: 24px;
+    --md-filled-tonal-button-trailing-space: 24px;
+    --md-filled-tonal-button-with-leading-icon-leading-space: 16px;
+    --md-filled-tonal-button-with-leading-icon-trailing-space: 24px;
+    --md-filled-tonal-button-with-trailing-icon-leading-space: 24px;
+    --md-filled-tonal-button-with-trailing-icon-trailing-space: 16px;
+    --md-outlined-button-leading-space: 24px;
+    --md-outlined-button-trailing-space: 24px;
+    --md-outlined-button-with-leading-icon-leading-space: 16px;
+    --md-outlined-button-with-leading-icon-trailing-space: 24px;
+    --md-outlined-button-with-trailing-icon-leading-space: 24px;
+    --md-outlined-button-with-trailing-icon-trailing-space: 16px;
+    --md-text-button-leading-space: 24px;
+    --md-text-button-trailing-space: 24px;
+    --md-text-button-with-leading-icon-leading-space: 16px;
+    --md-text-button-with-leading-icon-trailing-space: 24px;
+    --md-text-button-with-trailing-icon-leading-space: 24px;
+    --md-text-button-with-trailing-icon-trailing-space: 16px;
     height: var(--alcomd-button-height);
     --md-filled-button-container-height: var(--alcomd-button-height);
     --md-filled-tonal-button-container-height: var(--alcomd-button-height);
     --md-outlined-button-container-height: var(--alcomd-button-height);
     --md-text-button-container-height: var(--alcomd-button-height);
+}
+
+.alcomd-button-label {
+    display: inline-grid;
+    white-space: nowrap;
+}
+
+.alcomd-button-label > span {
+    grid-area: 1 / 1;
+}
+
+.alcomd-button-label-measure {
+    visibility: hidden;
+    pointer-events: none;
 }
 
 .alcomd-icon-button--standard {

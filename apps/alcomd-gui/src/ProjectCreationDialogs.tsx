@@ -175,7 +175,7 @@ export function CreateProjectDialog({ client, onClose, onCompleted, open }: Proj
                         <TextField aria-label="Create project name" label="Project name" onInput={setTargetLeaf} value={targetLeaf} />
                         <div className="dialog-actions">
                             <Button disabled={busy} onClick={onClose} type="button" variant="text">Cancel</Button>
-                            <Button disabled={busy || templateId.length === 0 || targetParent.length === 0 || targetLeaf.trim().length === 0} onClick={() => void review()} type="button">{busy ? "Planning…" : "Review creation"}</Button>
+                            <Button widthLabels={["Planning…", "Review creation"]} disabled={busy || templateId.length === 0 || targetParent.length === 0 || targetLeaf.trim().length === 0} onClick={() => void review()} type="button">{busy ? "Planning…" : "Review creation"}</Button>
                         </div>
                     </>
                 ) : operation === undefined ? (
@@ -189,7 +189,7 @@ export function CreateProjectDialog({ client, onClose, onCompleted, open }: Proj
                         <p>ALCOMD Core will validate the frozen template, create the project transactionally, and register the completed project.</p>
                         <div className="dialog-actions">
                             <Button disabled={busy} onClick={() => setPlan(undefined)} type="button" variant="text">Back</Button>
-                            <Button disabled={busy} onClick={() => void apply()} type="button">{busy ? "Starting…" : "Create project"}</Button>
+                            <Button widthLabels={["Starting…", "Create project"]} disabled={busy} onClick={() => void apply()} type="button">{busy ? "Starting…" : "Create project"}</Button>
                         </div>
                     </>
                 ) : (
@@ -351,7 +351,7 @@ export function RestoreProjectDialog({ client, onClose, onCompleted, open }: Pro
                         <TextField aria-label="Restore project name" label="Project name" onInput={setTargetLeaf} value={targetLeaf} />
                         <div className="dialog-actions">
                             <Button disabled={busy} onClick={onClose} type="button" variant="text">Cancel</Button>
-                            <Button disabled={busy || backupId.length === 0 || targetParent.length === 0 || targetLeaf.trim().length === 0} onClick={() => void review()} type="button">{busy ? "Planning…" : "Review restore"}</Button>
+                            <Button widthLabels={["Planning…", "Review restore"]} disabled={busy || backupId.length === 0 || targetParent.length === 0 || targetLeaf.trim().length === 0} onClick={() => void review()} type="button">{busy ? "Planning…" : "Review restore"}</Button>
                         </div>
                     </>
                 ) : operation === undefined ? (
@@ -365,7 +365,7 @@ export function RestoreProjectDialog({ client, onClose, onCompleted, open }: Pro
                         <p>ALCOMD Core will validate the managed archive, restore transactionally, and register the completed project.</p>
                         <div className="dialog-actions">
                             <Button disabled={busy} onClick={() => setPlan(undefined)} type="button" variant="text">Back</Button>
-                            <Button disabled={busy} onClick={() => void apply()} type="button">{busy ? "Starting…" : "Restore project"}</Button>
+                            <Button widthLabels={["Starting…", "Restore project"]} disabled={busy} onClick={() => void apply()} type="button">{busy ? "Starting…" : "Restore project"}</Button>
                         </div>
                     </>
                 ) : (

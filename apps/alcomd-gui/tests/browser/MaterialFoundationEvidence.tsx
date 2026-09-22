@@ -10,9 +10,20 @@ export function MaterialFoundationEvidence() {
     const [kind, setKind] = useState("avatar");
     const [enabled, setEnabled] = useState(true);
     const [confirmed, setConfirmed] = useState(false);
+    const [longLabel, setLongLabel] = useState(false);
     return (
         <main className="material-evidence" aria-labelledby="material-evidence-title">
             <h1 id="material-evidence-title">Material foundation evidence</h1>
+            <section aria-label="Button width evidence" style={{ display: "flex", gap: 8 }}>
+                {(["filled", "tonal", "outlined", "text"] as const).map((variant) => <Button key={variant} data-testid={"width-" + variant} variant={variant}>Repositories</Button>)}
+            </section>
+            <section aria-label="Icon button width evidence" style={{ display: "flex", gap: 8 }}>
+                {(["filled", "tonal", "outlined", "text"] as const).map((variant) => <Button key={variant} data-testid={"icon-width-" + variant} variant={variant}><Icon asset={projectsIcon} slot="icon" />Repositories</Button>)}
+            </section>
+            <section style={{ display: "flex", gap: 8 }}>
+                <Button data-testid="changing-label" onClick={() => setLongLabel(!longLabel)} widthLabels={["Refresh", "Refreshing…"]}><Icon asset={projectsIcon} slot="icon" />{longLabel ? "Refreshing…" : "Refresh"}</Button>
+                <Button data-testid="stable-neighbor">Neighbor</Button>
+            </section>
             <Button onClick={() => setDialogOpen(true)}>Open dialog</Button>
             <Button disabled variant="tonal">Disabled action</Button>
             <IconButton label="Project evidence"><Icon asset={projectsIcon} size={24} /></IconButton>

@@ -141,7 +141,7 @@ function RefreshBar({ error, refresh, refreshing }: { error?: RpcError; refresh(
         <div className="refresh-bar" role="status" aria-live="polite">
             <span>{refreshing ? "Refreshing while keeping the last result…" : "Current daemon state"}</span>
             {error === undefined ? null : <span className="inline-error">Refresh failed: {error.code}</span>}
-            <Button disabled={refreshing} onClick={refresh} type="button" variant="tonal">
+            <Button widthLabels={["Refreshing…", "Refresh"]} disabled={refreshing} onClick={refresh} type="button" variant="tonal">
                 {refreshing ? "Refreshing…" : "Refresh"}
             </Button>
         </div>
@@ -757,7 +757,7 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
                         </div>
                         <div className="dialog-actions">
                             <Button disabled={busy} onClick={onClose} type="button" variant="text">Cancel</Button>
-                            <Button disabled={busy || targetParent.length === 0 || targetLeaf.trim().length === 0} onClick={() => void createPlan()} type="button">{busy ? "Planning…" : "Review copy"}</Button>
+                            <Button widthLabels={["Planning…", "Review copy"]} disabled={busy || targetParent.length === 0 || targetLeaf.trim().length === 0} onClick={() => void createPlan()} type="button">{busy ? "Planning…" : "Review copy"}</Button>
                         </div>
                     </>
                 ) : operation === undefined ? (
@@ -768,7 +768,7 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
                         <p><strong>Copy profile:</strong> v{plan.profile.version}; excludes Logs, Obj, Temp and .git.</p>
                         <div className="dialog-actions">
                             <Button disabled={busy} onClick={() => setPlan(undefined)} type="button" variant="text">Back</Button>
-                            <Button disabled={busy} onClick={() => void apply()} type="button">{busy ? "Starting…" : "Start copy"}</Button>
+                            <Button widthLabels={["Starting…", "Start copy"]} disabled={busy} onClick={() => void apply()} type="button">{busy ? "Starting…" : "Start copy"}</Button>
                         </div>
                     </>
                 ) : (
@@ -869,7 +869,7 @@ function RegisterProjectDialog({ client, onChanged, onClose, open, path }: { cli
                 <code>{path}</code>
                 <div className="dialog-actions">
                     <Button disabled={busy} onClick={onClose} type="button" variant="text">Cancel</Button>
-                    <Button disabled={busy || path.length === 0} onClick={() => void register()} ref={confirmRef} type="button">{busy ? "Registering…" : "Confirm"}</Button>
+                    <Button widthLabels={["Registering…", "Confirm"]} disabled={busy || path.length === 0} onClick={() => void register()} ref={confirmRef} type="button">{busy ? "Registering…" : "Confirm"}</Button>
                 </div>
             </div>
             {error === undefined ? null : <p className="inline-error" role="alert">Registration failed: {error.code}</p>}
@@ -1631,7 +1631,7 @@ function UserPackageEnroll({ client, onChanged }: { client: GuiRpcClient; onChan
             setBusy(undefined);
         }
     };
-    return <><Button disabled={busy !== undefined} onClick={() => void enroll()} type="button">{busy === "enroll" ? "Enrolling…" : "Enroll folder"}</Button>{error === undefined ? null : <span role="alert">Enrollment failed: {error.code}</span>}</>;
+    return <><Button widthLabels={["Enrolling…", "Enroll folder"]} disabled={busy !== undefined} onClick={() => void enroll()} type="button">{busy === "enroll" ? "Enrolling…" : "Enroll folder"}</Button>{error === undefined ? null : <span role="alert">Enrollment failed: {error.code}</span>}</>;
 }
 
 function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcClient; onChanged(): void; packages: UserPackageRecord[] }) {
@@ -1670,7 +1670,7 @@ function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcCli
             pending.current = false;
         }
     };
-    return <section className="user-packages">{error === undefined ? null : <p className="inline-error" role="alert">User Package request failed: {error.code}</p>}{packages.length === 0 ? <RouteState kind="empty" title="No User Packages enrolled" detail="Enroll a package folder to make it available as a source. Removing enrollment never deletes the source folder." /> : <UtilityTable label="User Packages" headers={["Package", "Version", "Source", "Actions"]} rows={packages.map((item) => ({ key: item.userPackageId, cells: [<><strong>{item.displayName ?? item.packageId}</strong><small>{item.packageId}</small></>, item.version, <span title={item.userPackageId}>Local / User Package<small>revision {item.revision}</small></span>, <div className="card-actions"><Button disabled={busy !== undefined} onClick={() => void refresh(item)} type="button" variant="text">{busy === "refresh:" + item.userPackageId ? "Refreshing…" : "Refresh"}</Button><Button disabled={busy !== undefined} onClick={() => setRemoving(item)} type="button" variant="text">{busy === "remove:" + item.userPackageId ? "Removing…" : "Remove enrollment"}</Button></div>] }))} />}{removing === undefined ? null : <Dialog open dismissible={busy === undefined} title="Remove User Package?" onClose={() => { if (busy === undefined) setRemoving(undefined); }}>
+    return <section className="user-packages">{error === undefined ? null : <p className="inline-error" role="alert">User Package request failed: {error.code}</p>}{packages.length === 0 ? <RouteState kind="empty" title="No User Packages enrolled" detail="Enroll a package folder to make it available as a source. Removing enrollment never deletes the source folder." /> : <UtilityTable label="User Packages" headers={["Package", "Version", "Source", "Actions"]} rows={packages.map((item) => ({ key: item.userPackageId, cells: [<><strong>{item.displayName ?? item.packageId}</strong><small>{item.packageId}</small></>, item.version, <span title={item.userPackageId}>Local / User Package<small>revision {item.revision}</small></span>, <div className="card-actions"><Button widthLabels={["Refreshing…", "Refresh"]} disabled={busy !== undefined} onClick={() => void refresh(item)} type="button" variant="text">{busy === "refresh:" + item.userPackageId ? "Refreshing…" : "Refresh"}</Button><Button widthLabels={["Removing…", "Remove enrollment"]} disabled={busy !== undefined} onClick={() => setRemoving(item)} type="button" variant="text">{busy === "remove:" + item.userPackageId ? "Removing…" : "Remove enrollment"}</Button></div>] }))} />}{removing === undefined ? null : <Dialog open dismissible={busy === undefined} title="Remove User Package?" onClose={() => { if (busy === undefined) setRemoving(undefined); }}>
         <p>Remove <strong>{removing.displayName ?? removing.packageId}</strong> ({removing.version}) from your package sources?</p><p>The source folder will stay on disk.</p>
         {error === undefined ? null : <p role="alert">Removal failed: {error.code}</p>}
         <div className="dialog-actions"><Button disabled={busy !== undefined} onClick={() => setRemoving(undefined)} type="button" variant="text">Cancel</Button><Button disabled={busy !== undefined} onClick={() => void remove(removing)} type="button">Remove enrollment</Button></div>
@@ -1928,7 +1928,7 @@ export function DiagnosticsPage({ client, navigate }: PageProps) {
         }
     };
     return <UtilityWorkspace title="Diagnostics" load={load} navigation={<UtilityNavigation current="/diagnostics" kind="logs" navigate={navigate} />}
-        tools={() => <><SearchField className="logs-search" label="Search diagnostics" value={search} onInput={setSearch} /><Button disabled={!canCheckState || checking} onClick={() => void runStateCheck()} title={capabilityUnavailableTitle(canCheckState, capabilities.stateCheck)} type="button" variant="tonal">{checking ? "Starting…" : "Run state check"}</Button></>}>
+        tools={() => <><SearchField className="logs-search" label="Search diagnostics" value={search} onInput={setSearch} /><Button widthLabels={["Starting…", "Run state check"]} disabled={!canCheckState || checking} onClick={() => void runStateCheck()} title={capabilityUnavailableTitle(canCheckState, capabilities.stateCheck)} type="button" variant="tonal">{checking ? "Starting…" : "Run state check"}</Button></>}>
         {(value) => <>{checkError === undefined ? null : <p className="inline-error" role="alert">State check failed: {checkError.code}</p>}{operationId === undefined ? null : <OperationFollow client={client} operationId={operationId} />}
             <PagedItems initialItems={value.items} initialCursor={value.nextCursor} loadMore={(cursor) => client.diagnosticsList(cursor)}>{(items) => <DiagnosticLogRows client={client} items={items} search={search} />}</PagedItems>
         </>}
