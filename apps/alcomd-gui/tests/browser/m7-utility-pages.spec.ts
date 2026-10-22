@@ -148,7 +148,7 @@ test("surfaces share the accepted Projects shape hierarchy beyond lists", async 
 test("Resources sections and detail return controls work through ordinary clicks", async ({ page }) => {
     await openHarness(page, "/projects");
     await navigationItem(page, "Resources").click();
-    await expectHeading(page, "Repositories");
+    await expectHeading(page, "Resources");
     const resources = page.getByRole("navigation", { name: "Resources", exact: true });
     await expect(resources.getByRole("button", { name: "Repositories", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("table", { name: "Repositories", exact: true }).getByRole("columnheader")).toHaveText(["Repository", "Source", "Actions"]);
@@ -168,13 +168,13 @@ test("Resources sections and detail return controls work through ordinary clicks
     await page.screenshot({ path: "../../target/m7-v3-recheck-20260919/browser/repository-packages-dialog.png", fullPage: false, animations: "disabled" });
     await repositoryHost.getByRole("button", { name: "Close", exact: true }).click();
     await expect(repositoryDialog).not.toBeVisible();
-    await expectHeading(page, "Repositories");
+    await expectHeading(page, "Resources");
     await resources.getByRole("button", { name: "User Packages", exact: true }).click();
-    await expectHeading(page, "User Packages");
+    await expectHeading(page, "Resources");
     await expect(resources.getByRole("button", { name: "User Packages", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("button", { name: "Enroll folder" })).toBeVisible();
     await resources.getByRole("button", { name: "Templates", exact: true }).click();
-    await expectHeading(page, "Templates");
+    await expectHeading(page, "Resources");
     await expect(resources.getByRole("button", { name: "Templates", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("table", { name: "Templates" }).getByRole("columnheader")).toHaveText(["Template", "ID", "Last modified", "Source", "Actions"]);
     await page.getByRole("button", { name: /^More actions for / }).click();
@@ -183,9 +183,9 @@ test("Resources sections and detail return controls work through ordinary clicks
     await expect(page.getByRole("button", { name: "Favorite", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Remove template", exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "Templates", exact: true }).click();
-    await expectHeading(page, "Templates");
+    await expectHeading(page, "Resources");
     await resources.getByRole("button", { name: "Repositories", exact: true }).click();
-    await expectHeading(page, "Repositories");
+    await expectHeading(page, "Resources");
 });
 
 test("Settings follows supported v3 group order while Logs retains its two real read surfaces", async ({ page }) => {
@@ -201,7 +201,7 @@ test("Settings follows supported v3 group order while Logs retains its two real 
     await expect(dialogHost(page, "Manage Unity installations").getByLabel("Unity executable", { exact: true })).toBeVisible();
     await dialogHost(page, "Manage Unity installations").getByRole("button", { name: "Cancel", exact: true }).click();
     await navigationItem(page, "Logs").click();
-    await expectHeading(page, "Activity");
+    await expectHeading(page, "Logs");
     const logs = page.getByRole("navigation", { name: "Logs", exact: true });
     const activity = page.getByRole("table", { name: "Activity", exact: true });
     await expect(activity.getByRole("columnheader")).toHaveText(["Time", "Status", "Activity", "Target", "Actions"]);
@@ -209,14 +209,14 @@ test("Settings follows supported v3 group order while Logs retains its two real 
     await expect(activity.locator("tbody td[data-cell-flow=\"truncate\"]").first()).toHaveCSS("white-space", "nowrap");
     await expect(activity.locator(".logs-summary small")).toHaveCSS("white-space", "nowrap");
     await logs.getByRole("button", { name: "Diagnostics" }).click();
-    await expectHeading(page, "Diagnostics");
+    await expectHeading(page, "Logs");
     await expect(logs.getByRole("button", { name: "Diagnostics", exact: true })).toHaveAttribute("aria-pressed", "true");
     const diagnostics = page.getByRole("table", { name: "Diagnostics", exact: true });
     await expect(diagnostics.getByRole("columnheader")).toHaveText(["Time", "Severity", "Subsystem", "Diagnostic", "Actions"]);
     await expect(diagnostics).toHaveCSS("table-layout", "fixed");
     await expect(diagnostics.locator(".logs-summary p")).toHaveCSS("white-space", "nowrap");
     await logs.getByRole("button", { name: "Activity", exact: true }).click();
-    await expectHeading(page, "Activity");
+    await expectHeading(page, "Logs");
 });
 
 test("utility actions use modal dialogs and cancel clears drafts and returns focus", async ({ page }) => {
@@ -308,13 +308,13 @@ test("utility desktop evidence includes the full application window", async ({ p
     const routes = [
         ["project-packages", "/projects/00000000-0000-4000-8000-000000000101/packages", "<private-project>"],
         ["project-unity", "/projects/00000000-0000-4000-8000-000000000101/unity", "Project Unity"],
-        ["repositories", "/repositories", "Repositories"],
+        ["repositories", "/repositories", "Resources"],
         ["repository", "/repositories/00000000-0000-4000-8000-000000000102", "Repository"],
-        ["user-packages", "/user-packages", "User Packages"],
-        ["templates", "/templates", "Templates"],
+        ["user-packages", "/user-packages", "Resources"],
+        ["templates", "/templates", "Resources"],
         ["template", "/templates/com.cqmhv.template.avatar", "Template detail"],
         ["settings", "/settings", "Settings"],
-        ["unity", "/unity", "Unity"],
+        ["unity", "/unity", "Settings"],
         ["backups", "/projects/00000000-0000-4000-8000-000000000101/backups", "Backups"],
         ["backup", "/backups/00000000-0000-4000-8000-000000000104", "Backup detail"],
         ["tasks", "/operations", "Task Center"],
@@ -322,8 +322,8 @@ test("utility desktop evidence includes the full application window", async ({ p
         ["extensions", "/extensions", "Extensions"],
         ["extension", "/extensions/com.cqmhv.discord", "Extension detail"],
         ["extension-ui", "/extensions/com.cqmhv.discord/ui", "Extension UI"],
-        ["activity", "/activity", "Activity"],
-        ["diagnostics", "/diagnostics", "Diagnostics"],
+        ["activity", "/activity", "Logs"],
+        ["diagnostics", "/diagnostics", "Logs"],
         ["about", "/about", "About"]
     ] as const;
     for (const [name, route, heading] of routes) {
@@ -335,7 +335,7 @@ test("utility desktop evidence includes the full application window", async ({ p
         await page.screenshot({ path: `${directory}/${name}.png`, fullPage: false, animations: "disabled" });
     }
     await page.goto("/browser-harness.html?route=%2Fuser-packages&state=package-user-source");
-    await expectHeading(page, "User Packages");
+    await expectHeading(page, "Resources");
     const userPackages = page.getByRole("table", { name: "User Packages", exact: true });
     await expect(userPackages.getByRole("row").filter({ hasText: "Local avatar tools" })).toBeVisible();
     await expect(userPackages).toHaveAttribute("data-sizing", "content");

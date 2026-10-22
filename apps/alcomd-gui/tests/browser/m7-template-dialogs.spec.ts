@@ -36,7 +36,7 @@ test("template create stays in one modal for the real plan review", async ({ pag
     await expect(page.getByText("Plan fingerprint:")).toBeVisible();
     await page.getByRole("button", { name: "Discard plan", exact: true }).click();
     await expect(review).toBeHidden();
-    await expect(page.getByRole("heading", { level: 1, name: "Templates", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Resources", exact: true })).toBeVisible();
 });
 
 test("built-in template removal cannot be activated and derive reads a project choice", async ({ page }) => {
@@ -64,5 +64,5 @@ test("built-in template removal cannot be activated and derive reads a project c
 
 async function templates(page: Page) {
     await page.goto("/browser-harness.html?route=%2Ftemplates&state=ready");
-    await expect(page.getByRole("heading", { level: 1, name: "Templates", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Resources", exact: true })).toBeVisible();
 }

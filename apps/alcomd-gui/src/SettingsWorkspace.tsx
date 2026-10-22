@@ -8,6 +8,7 @@ import { DesktopList } from "./DesktopList";
 import { Button, Checkbox, Select } from "./Material";
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { UtilityWorkspace } from "./UtilityWorkspace";
+import { navigationLabels } from "./navigation-labels";
 
 interface SettingsWorkspaceProps {
     client: GuiRpcClient;
@@ -21,7 +22,7 @@ export function SettingsWorkspace({ client, navigate, onApplied, onDirtyChange }
     const [dirty, setDirty] = useState(false);
     const dirtyChanged = useCallback((value: boolean) => { setDirty(value); onDirtyChange(value); }, [onDirtyChange]);
     return (
-        <UtilityWorkspace title="Settings" load={load} refreshDisabled={dirty}>
+        <UtilityWorkspace title={navigationLabels.settings} load={load} refreshDisabled={dirty}>
             {(snapshot, refresh) => (
                 <div className="settings-workspace">
                     <UnitySettingsSection client={client} />

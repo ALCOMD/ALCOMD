@@ -48,6 +48,7 @@ import {
 } from "./CorePages";
 import { PortableUiRenderer } from "./PortableUiRenderer";
 import { PageTitle } from "./PageTitle";
+import { navigationLabels } from "./navigation-labels";
 import {
     PortableUiConsumerError,
     acceptSnapshot
@@ -235,10 +236,10 @@ export function App({ client = guiRpcClient }: AppProps) {
 
 function PrimaryNavigation({ client, current, navigate }: { client: GuiRpcClient; current: Route; navigate(path: string): void }) {
     const items: readonly NavigationItem[] = [
-        { icon: projectsIcon, label: "Projects", path: "/projects", section: "projects" },
-        { icon: packagesIcon, label: "Resources", path: "/repositories", section: "packages" },
-        { icon: settingsIcon, label: "Settings", path: "/settings", section: "settings" },
-        { icon: logIcon, label: "Logs", path: "/activity", section: "log" }
+        { icon: projectsIcon, label: navigationLabels.projects, path: "/projects", section: "projects" },
+        { icon: packagesIcon, label: navigationLabels.resources, path: "/repositories", section: "packages" },
+        { icon: settingsIcon, label: navigationLabels.settings, path: "/settings", section: "settings" },
+        { icon: logIcon, label: navigationLabels.logs, path: "/activity", section: "log" }
     ];
     return (
         <aside className="primary-navigation" id="primary-navigation">
@@ -305,10 +306,10 @@ function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient;
                         selected={routeSection(current) === "extensions"}
                     >
                         <Icon asset={extensionIcon} size={24} slot="start" />
-                        <span className="navigation-item-label" slot="headline">Extensions</span>
+                        <span className="navigation-item-label" slot="headline">{navigationLabels.extensions}</span>
                     </NavigationListItem>
                     <NavigationListItem
-                        aria-label={summary.activeTasks === 0 ? "Task Center" : `Task Center ${summary.activeTasks} active`}
+                        aria-label={summary.activeTasks === 0 ? navigationLabels.taskCenter : `${navigationLabels.taskCenter} ${summary.activeTasks} active`}
                         aria-current={routeSection(current) === "tasks" ? "page" : undefined}
                         className="navigation-item"
                         disabled={operationsCapability !== "available"}
@@ -317,18 +318,18 @@ function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient;
                         title={operationsCapability === "unavailable" ? `${capabilities.operations} was not negotiated by the connected daemon.` : undefined}
                     >
                         <Icon asset={taskCenterIcon} size={24} slot="start" />
-                        <span className="navigation-item-label" slot="headline">Task Center</span>
+                        <span className="navigation-item-label" slot="headline">{navigationLabels.taskCenter}</span>
                         {summary.activeTasks === 0 ? null : <span aria-hidden="true" className="navigation-item-meta" slot="end">{summary.activeTasks}</span>}
                     </NavigationListItem>
                     <NavigationListItem
-                        aria-label={summary.daemonVersion === undefined ? "About" : `About ${summary.daemonVersion}`}
+                        aria-label={summary.daemonVersion === undefined ? navigationLabels.about : `${navigationLabels.about} ${summary.daemonVersion}`}
                         aria-current={routeSection(current) === "about" ? "page" : undefined}
                         className="navigation-item"
                         onClick={() => navigate("/about")}
                         selected={routeSection(current) === "about"}
                     >
                         <Icon asset={infoIcon} size={24} slot="start" />
-                    <span className="navigation-item-label" slot="headline">About</span>
+                    <span className="navigation-item-label" slot="headline">{navigationLabels.about}</span>
                     {summary.daemonVersion === undefined ? null : <span aria-hidden="true" className="navigation-item-meta" slot="end">{summary.daemonVersion}</span>}
                     </NavigationListItem>
                 </NavigationList>

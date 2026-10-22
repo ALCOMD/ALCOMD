@@ -34,7 +34,7 @@ test("H1 shell exposes the approved user areas without promoting internal routes
     await expect(navigationItem(page, "About")).toBeVisible();
 
     await navigationItem(page, "Resources").click();
-    await expect(page.getByRole("heading", { level: 1, name: "Repositories" })).toBeFocused();
+    await expect(page.getByRole("heading", { level: 1, name: "Resources" })).toBeFocused();
     expect(await navigationItem(page, "Resources").evaluate((element) => element.getAttribute("aria-current"))).toBe("page");
 });
 
@@ -72,7 +72,7 @@ test("ordinary route changes never replace content with capability negotiation",
         });
         observer.observe(document.getElementById("main-content")!, { childList: true, subtree: true });
     });
-    for (const [item, heading] of [["Resources", "Repositories"], ["Settings", "Settings"], ["Logs", "Activity"], ["Projects", "Projects"]] as const) {
+    for (const [item, heading] of [["Resources", "Resources"], ["Settings", "Settings"], ["Logs", "Logs"], ["Projects", "Projects"]] as const) {
         await navigationItem(page, item).click();
         await expect(page.getByRole("heading", { level: 1, name: heading, exact: true })).toBeVisible();
     }
@@ -80,7 +80,7 @@ test("ordinary route changes never replace content with capability negotiation",
     await page.keyboard.press("Enter");
     await expect(page.getByRole("table", { name: "Repositories", exact: true })).toBeVisible();
     expect(await page.evaluate(() => window.capabilityLoadingScreens)).toEqual([]);
-    await expect(page.getByRole("heading", { level: 1, name: "Repositories", exact: true })).toBeFocused();
+    await expect(page.getByRole("heading", { level: 1, name: "Resources", exact: true })).toBeFocused();
 });
 
 test("loading, empty, error, and disconnected states have stable live semantics", async ({ page }) => {
@@ -120,6 +120,7 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         return { fontSize: style.fontSize, fontWeight: style.fontWeight, lineHeight: style.lineHeight, color: style.color };
     };
     const projectsTitleStyle = await page.getByRole("heading", { level: 1, name: "Projects", exact: true }).evaluate(titleStyle);
+    const sidebarRoutes = new Set(["/", "/projects", "/repositories", "/user-packages", "/templates", "/unity", "/operations", "/extensions", "/activity", "/diagnostics", "/settings", "/about"]);
     const routes = [
         ["/", "Projects"],
         ["/projects", "Projects"],
@@ -127,20 +128,20 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         ["/projects/00000000-0000-4000-8000-000000000101/packages", "<private-project>"],
         ["/projects/00000000-0000-4000-8000-000000000101/unity", "Project Unity"],
         ["/projects/00000000-0000-4000-8000-000000000101/backups", "Backups"],
-        ["/repositories", "Repositories"],
-        ["/user-packages", "User Packages"],
+        ["/repositories", "Resources"],
+        ["/user-packages", "Resources"],
         ["/repositories/00000000-0000-4000-8000-000000000102", "Repository"],
-        ["/templates", "Templates"],
+        ["/templates", "Resources"],
         ["/templates/com.cqmhv.template.avatar", "Template detail"],
-        ["/unity", "Unity"],
+        ["/unity", "Settings"],
         ["/backups/00000000-0000-4000-8000-000000000104", "Backup detail"],
         ["/operations", "Task Center"],
         ["/operations/00000000-0000-4000-8000-000000000105", "Operation detail"],
         ["/extensions", "Extensions"],
         ["/extensions/com.cqmhv.discord", "Extension detail"],
         ["/extensions/com.cqmhv.discord/ui", "Extension UI"],
-        ["/activity", "Activity"],
-        ["/diagnostics", "Diagnostics"],
+        ["/activity", "Logs"],
+        ["/diagnostics", "Logs"],
         ["/settings", "Settings"],
         ["/about", "About"]
     ] as const;
@@ -149,6 +150,11 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         const main = page.getByRole("main");
         const heading = main.getByRole("heading", { level: 1, name: title, exact: true });
         await expect(heading).toBeVisible();
+        if (sidebarRoutes.has(route)) {
+            const sidebarLabel = page.locator('#primary-navigation .navigation-item[selected] .navigation-item-label');
+            await expect(sidebarLabel).toHaveCount(1);
+            await expect(heading).toHaveText(await sidebarLabel.innerText());
+        }
         expect(await heading.evaluate(titleStyle)).toEqual(projectsTitleStyle);
         // A clipped 1px heading is technically visible to Playwright, but not to the owner.
         expect(await heading.evaluate((element) => {

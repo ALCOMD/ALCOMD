@@ -24,7 +24,7 @@ test("activity search and record filters preserve the loaded snapshot and open r
     await expect(dialogHost.getByText("00000000-0000-4000-8000-000000000105", { exact: true })).toBeVisible();
     await dialogHost.getByRole("button", { name: "Close", exact: true }).click();
     await expect(dialog).not.toBeVisible();
-    await expect(page.getByRole("heading", { name: "Activity", exact: true, level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Logs", exact: true, level: 1 })).toBeVisible();
     await expect(search).toHaveValue("PACKAGES");
 });
 

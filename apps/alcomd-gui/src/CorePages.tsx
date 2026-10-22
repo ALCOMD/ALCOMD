@@ -54,6 +54,7 @@ import {
 } from "./CoreActions";
 import { DesktopList, type DesktopListColumn } from "./DesktopList";
 import { PageTitle } from "./PageTitle";
+import { navigationLabels } from "./navigation-labels";
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { UtilityWorkspace } from "./UtilityWorkspace";
 import "./ExtensionWorkspace.css";
@@ -283,7 +284,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     return (
         <section className="projects-page">
             <header className="projects-toolbar">
-                <PageTitle>Projects</PageTitle>
+                <PageTitle>{navigationLabels.projects}</PageTitle>
                 <IconButton disabled={state.refreshing} label={state.refreshing ? "Refreshing projects" : "Refresh projects"} onClick={() => void refresh()} type="button">
                     <Icon asset={refreshIcon} />
                 </IconButton>
@@ -1547,7 +1548,7 @@ function packageWorkspaceRows(project: ProjectSnapshot, catalog: WorkspaceCatalo
 export function RepositoriesPage({ client, navigate }: PageProps) {
     const load = useCallback(() => listAllRepositories(client), [client]);
     const [selected, setSelected] = useState<RepositorySnapshot>();
-    return <UtilityWorkspace title="Repositories" load={load} navigation={<ResourceNavigation current="/repositories" navigate={navigate} />} action={{ label: "Add repository", render: (_, refresh) => <RegisterRepositoryPanel client={client} onChanged={refresh} /> }}>
+    return <UtilityWorkspace title={navigationLabels.resources} load={load} navigation={<ResourceNavigation current="/repositories" navigate={navigate} />} action={{ label: "Add repository", render: (_, refresh) => <RegisterRepositoryPanel client={client} onChanged={refresh} /> }}>
         {(repositories, refresh) => <>
             {repositories.length === 0 ? <RouteState kind="empty" title="No repositories registered" /> : <DesktopList columns={[{ key: "repository", header: "Repository", width: "34%" }, { key: "source", header: "Source" }, { key: "actions", header: "Actions", width: 280 }]} label="Repositories" minWidth={640} rows={repositories.map((repository) => ({ key: repository.repositoryId ?? sourceText(repository), cells: [<strong>{repository.name ?? repository.declaredId ?? "Repository"}</strong>, <span title={sourceText(repository)}>{sourceText(repository)}</span>, <div className="card-actions"><Button disabled={repository.repositoryId === undefined} onClick={() => setSelected(repository)} type="button" variant="text">Browse packages</Button><RepositoryActions client={client} onChanged={refresh} repository={repository} /></div>] }))} />}
             {selected?.repositoryId === undefined ? null : <Dialog wide open title={selected.name ?? "Repository packages"} onClose={() => setSelected(undefined)}>
@@ -1599,9 +1600,9 @@ async function listAllUserPackages(client: GuiRpcClient): Promise<UserPackageRec
 export function UserPackagesPage({ client, navigate }: PageProps) {
     const capabilityState = useCapabilityState(capabilities.packagesUserPackages);
     const load = useCallback(() => listAllUserPackages(client), [client]);
-    if (capabilityState === "checking") return <Page title="User Packages"><ResourceNavigation current="/user-packages" navigate={navigate} /><RouteState kind="loading" title="Checking capability" /></Page>;
-    if (capabilityState === "unavailable") return <Page title="User Packages"><ResourceNavigation current="/user-packages" navigate={navigate} /><RouteState kind="error" title="Feature unavailable" detail={`${capabilities.packagesUserPackages} was not negotiated by the connected daemon.`} /></Page>;
-    return <UtilityWorkspace title="User Packages" load={load} navigation={<ResourceNavigation current="/user-packages" navigate={navigate} />} tools={(_, refresh) => <UserPackageEnroll client={client} onChanged={refresh} />}>{(packages, refresh) => <UserPackageManager client={client} onChanged={refresh} packages={packages} />}</UtilityWorkspace>;
+    if (capabilityState === "checking") return <Page title={navigationLabels.resources}><ResourceNavigation current="/user-packages" navigate={navigate} /><RouteState kind="loading" title="Checking capability" /></Page>;
+    if (capabilityState === "unavailable") return <Page title={navigationLabels.resources}><ResourceNavigation current="/user-packages" navigate={navigate} /><RouteState kind="error" title="Feature unavailable" detail={`${capabilities.packagesUserPackages} was not negotiated by the connected daemon.`} /></Page>;
+    return <UtilityWorkspace title={navigationLabels.resources} load={load} navigation={<ResourceNavigation current="/user-packages" navigate={navigate} />} tools={(_, refresh) => <UserPackageEnroll client={client} onChanged={refresh} />}>{(packages, refresh) => <UserPackageManager client={client} onChanged={refresh} packages={packages} />}</UtilityWorkspace>;
 }
 
 function UserPackageEnroll({ client, onChanged }: { client: GuiRpcClient; onChanged(): void }) {
@@ -1675,7 +1676,7 @@ export function RepositoryDetailPage({ client, navigate, repositoryId }: PagePro
 
 export function TemplatesPage({ client, navigate }: PageProps) {
     const load = useCallback(() => client.templatesList(), [client]);
-    return <UtilityWorkspace title="Templates" load={load} navigation={<ResourceNavigation current="/templates" navigate={navigate} />} action={{ label: "Import template", render: (_, refresh) => <TemplateImportPanel client={client} onChanged={refresh} /> }}>
+    return <UtilityWorkspace title={navigationLabels.resources} load={load} navigation={<ResourceNavigation current="/templates" navigate={navigate} />} action={{ label: "Import template", render: (_, refresh) => <TemplateImportPanel client={client} onChanged={refresh} /> }}>
         {(value, refresh) => value.templates.length === 0 ? <RouteState kind="empty" title="No templates available" /> : <UtilityTable
             label="Templates"
             headers={["Template", "ID", "Last modified", "Source", "Actions"]}
@@ -1700,7 +1701,7 @@ export function TemplateDetailPage({ client, navigate, templateId }: PageProps &
 
 export function UnityPage({ client, navigate }: PageProps) {
     const load = useCallback(() => loadAllUnityInstallations(client), [client]);
-    return <UtilityWorkspace title="Unity" load={load} navigation={<UtilityNavigation current="/unity" kind="settings" navigate={navigate} />} action={{ label: "Manage installations", render: (installations, refresh) => <UnityRegistryActions client={client} installations={installations} onChanged={refresh} /> }}>{(installations) => <>{installations.length === 0 ? <RouteState kind="empty" title="No Unity installations registered" /> : <UtilityTable label="Unity installations" headers={["Version", "Architecture", "Source", "Installation"]} rows={installations.map((item) => ({ key: item.installationId, cells: [item.unityVersion, item.architecture, humanize(item.sourceKind), item.installationId] }))} />}</>}</UtilityWorkspace>;
+    return <UtilityWorkspace title={navigationLabels.settings} load={load} navigation={<UtilityNavigation current="/unity" kind="settings" navigate={navigate} />} action={{ label: "Manage installations", render: (installations, refresh) => <UnityRegistryActions client={client} installations={installations} onChanged={refresh} /> }}>{(installations) => <>{installations.length === 0 ? <RouteState kind="empty" title="No Unity installations registered" /> : <UtilityTable label="Unity installations" headers={["Version", "Architecture", "Source", "Installation"]} rows={installations.map((item) => ({ key: item.installationId, cells: [item.unityVersion, item.architecture, humanize(item.sourceKind), item.installationId] }))} />}</>}</UtilityWorkspace>;
 }
 
 export function ProjectUnityPage({ afterMigrationOpen = false, client, navigate, projectId }: PageProps & { afterMigrationOpen?: boolean; projectId: string }) {
@@ -1741,7 +1742,7 @@ export function BackupDetailPage({ client, navigate, backupId }: PageProps & { b
 
 export function OperationsPage({ client, navigate }: PageProps) {
     const load = useCallback(() => client.operationsList(), [client]);
-    return <UtilityWorkspace title="Task Center" load={load}>{(value) => value.operations.length === 0 ? <RouteState kind="empty" title="No operations yet" /> : <UtilityTable label="Tasks" headers={["Task", "Status", "Updated", "Actions"]} rows={value.operations.map((operation) => ({ key: operation.operationId, cells: [humanize(operation.kind), <span className={"state-chip state-chip--" + operation.state}>{humanize(operation.state)}</span>, formatTime(operation.updatedAtMs), <Button onClick={() => navigate("/operations/" + operation.operationId)} type="button" variant="text">View operation</Button>] }))} />}</UtilityWorkspace>;
+    return <UtilityWorkspace title={navigationLabels.taskCenter} load={load}>{(value) => value.operations.length === 0 ? <RouteState kind="empty" title="No operations yet" /> : <UtilityTable label="Tasks" headers={["Task", "Status", "Updated", "Actions"]} rows={value.operations.map((operation) => ({ key: operation.operationId, cells: [humanize(operation.kind), <span className={"state-chip state-chip--" + operation.state}>{humanize(operation.state)}</span>, formatTime(operation.updatedAtMs), <Button onClick={() => navigate("/operations/" + operation.operationId)} type="button" variant="text">View operation</Button>] }))} />}</UtilityWorkspace>;
 }
 
 export function OperationDetailPage({ client, navigate, operationId }: PageProps & { operationId: string }) {
@@ -1774,7 +1775,7 @@ export function ExtensionsPage({ client, navigate }: PageProps) {
             setBusy(false);
         }
     };
-    return <UtilityWorkspace title="Extensions" load={load} action={{ label: "Install extension", render: (_, refresh) => <ExtensionInstallPanel client={client} onChanged={refresh} /> }}>{(value, refresh) => (
+    return <UtilityWorkspace title={navigationLabels.extensions} load={load} action={{ label: "Install extension", render: (_, refresh) => <ExtensionInstallPanel client={client} onChanged={refresh} /> }}>{(value, refresh) => (
         <section className="extension-management" aria-labelledby="extension-management-title">
             <header className="extension-management-heading"><h2 id="extension-management-title">Manage extensions</h2><p>Open an extension or change whether it is enabled.</p></header>
             {error === undefined ? null : <p className="inline-error" role="alert">Extension action failed: {error}</p>}
@@ -1802,13 +1803,13 @@ export function ExtensionDetailPage({ client, navigate, extensionId }: PageProps
 
 export function AboutPage({ client }: PageProps) {
     const load = useCallback(() => client.systemStatus(), [client]);
-    return <UtilityWorkspace title="About" load={load}>{(status) => <><dl className="detail-grid"><Detail label="Product" value={status.product} /><Detail label="Daemon" value={status.daemonVersion} /><Detail label="RPC" value={`v${status.rpcVersion}`} /><Detail label="State" value={status.state} /></dl><section className="notice-card"><h2>Licenses</h2><p>ALCOMD source is licensed under AGPL-3.0-only.</p><p>The canonical third-party dependency notice source is <code>THIRD_PARTY_NOTICES.md</code> in the product distribution.</p></section></>}</UtilityWorkspace>;
+    return <UtilityWorkspace title={navigationLabels.about} load={load}>{(status) => <><dl className="detail-grid"><Detail label="Product" value={status.product} /><Detail label="Daemon" value={status.daemonVersion} /><Detail label="RPC" value={`v${status.rpcVersion}`} /><Detail label="State" value={status.state} /></dl><section className="notice-card"><h2>Licenses</h2><p>ALCOMD source is licensed under AGPL-3.0-only.</p><p>The canonical third-party dependency notice source is <code>THIRD_PARTY_NOTICES.md</code> in the product distribution.</p></section></>}</UtilityWorkspace>;
 }
 
 export function ActivityPage({ client, navigate }: PageProps) {
     const load = useCallback(() => client.activityList(), [client]);
     const [search, setSearch] = useState("");
-    return <UtilityWorkspace title="Activity" navigation={<UtilityNavigation current="/activity" kind="logs" navigate={navigate} />} load={load}
+    return <UtilityWorkspace title={navigationLabels.logs} navigation={<UtilityNavigation current="/activity" kind="logs" navigate={navigate} />} load={load}
         tools={() => <SearchField className="logs-search" label="Search activity" value={search} onInput={setSearch} />}>
         {(value) => <PagedItems initialItems={value.items} initialCursor={value.nextCursor} loadMore={(cursor) => client.activityList(cursor)}>
             {(items) => <ActivityLogRows client={client} items={items} search={search} />}
@@ -1914,7 +1915,7 @@ export function DiagnosticsPage({ client, navigate }: PageProps) {
             setChecking(false);
         }
     };
-    return <UtilityWorkspace title="Diagnostics" load={load} navigation={<UtilityNavigation current="/diagnostics" kind="logs" navigate={navigate} />}
+    return <UtilityWorkspace title={navigationLabels.logs} load={load} navigation={<UtilityNavigation current="/diagnostics" kind="logs" navigate={navigate} />}
         tools={() => <><SearchField className="logs-search" label="Search diagnostics" value={search} onInput={setSearch} /><Button widthLabels={["Starting…", "Run state check"]} disabled={!canCheckState || checking} onClick={() => void runStateCheck()} title={capabilityUnavailableTitle(canCheckState, capabilities.stateCheck)} type="button" variant="tonal">{checking ? "Starting…" : "Run state check"}</Button></>}>
         {(value) => <>{checkError === undefined ? null : <p className="inline-error" role="alert">State check failed: {checkError.code}</p>}{operationId === undefined ? null : <OperationFollow client={client} operationId={operationId} />}
             <PagedItems initialItems={value.items} initialCursor={value.nextCursor} loadMore={(cursor) => client.diagnosticsList(cursor)}>{(items) => <DiagnosticLogRows client={client} items={items} search={search} />}</PagedItems>
