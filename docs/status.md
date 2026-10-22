@@ -12,13 +12,19 @@
 
 卡片式列表完整 GUI browser suite（单 worker）首轮 96/97：一项在 `browserContext.newPage` 阶段 `Target crashed`，未进入用例；代码及断言不变单独复跑 1/1 通过。最终首尾圆角增量的逐页/截图专项 3/3、GUI 与共享 UI check、frontend build、debug Tauri no-bundle、diff check 通过。12 个列表入口在 1280px / 1440px 下统一验证长内容、按钮边界、真实行间空隙、无条纹/边线、首尾及内部圆角、圆角命中裁切，另有非列表层级回归。该列表样式候选的 debug GUI 摘要为 `A8EBCFC7C90ECD2C9615D6B1108C0B5EF37435048B08E309E926B05C746C0222`，其历史验证结果不因后续标题修正而扩大。
 
-当前标题修正：所有官方页面的一级标题统一复用 `PageTitle`，沿用 Projects 的 24px / 500 / 1.2 行高与 primary 色；Projects 原有标题位置与工具栏保持不变。Resources、Unity、Activity / Diagnostics 不再因存在分组导航而将标题裁切为 1px；普通工作区标题栏采用相同 56px 高度与 12px 内容间距，详情页、能力不可用状态和 Extension UI 同步复用标题组件。保留既有路由焦点 ID / ref、导航、操作及列表规则，不修改业务合同。
+当前标题规则：一级页面标题对应侧栏页面名称，由 `navigation-labels.ts` 同时供侧栏及页面引用。Resources 的 Repositories / User Packages / Templates 分段均显示 Resources；Logs 的 Activity / Diagnostics 分段均显示 Logs；Settings 所属 Unity installations 页面显示 Settings。分段按钮和表格继续表达具体内容，详情页及项目工作区保留上下文标题。所有官方页面的一级标题统一复用 `PageTitle`，沿用 Projects 的 24px / 500 / 1.2 行高与 primary 色；Projects 原有标题位置与工具栏保持不变。普通工作区标题栏采用相同 56px 高度与 12px 内容间距，保留既有路由焦点 ID / ref、导航、操作及列表规则，不修改业务合同。
 
 标题增量的 `npm run check`、`npm run build`、debug Tauri no-bundle 与 diff check 通过。相关 accessibility / utility / package / extension browser suite 46/46，通过既有路由用例检查 22 个入口的标题实际可见性及与 Projects 一致的计算样式；同时保留 1280px / 1440px 列表回归。首轮因沙箱默认浏览器缓存路径不存在，未进入用例；指定现有已安装 Chromium 缓存后运行通过。测试服务退出收尾需清理本轮残留的 Vite 进程，产生服务终止日志；Playwright 最终退出码为 0。浏览器完整窗口截图已更新至 `target/m7-v3-recheck-20260919/browser/`，这些是 fixture 证据，不是 Tauri 操作截图。
 
+标题文字专项 11/11（退出码 0）：在既有路由回归中直接比较一级页主标题与侧栏当前选中项的可见文字，并验证资源/日志分段切换、模板/日志返回、焦点及瞬时灰层回归。专项首轮因测试在 Material host 上定位委托的 `aria-current` 而失败；改为页面实际绘制选中状态的 `[selected]` 定位后通过，未修改产品选中行为或验收要求。前述 46/46 是标题样式与可见性增量的历史证据，不代表当时已验证正确的标题语义。本轮 `npm run check`、`npm run build`、debug Tauri no-bundle 与 diff check 通过，完整窗口 fixture 截图沿用上述目录；真实桌面文字仍待所有者复看。
+
 切页瞬时灰层修正：App 的能力快照生命周期不再依赖 `route.kind`，普通切页复用当前连接已确认的能力；首次获取、client 更换及明确重连仍清空并重新获取，缺失能力仍禁用。修复前在既有 harness 中将状态响应延迟 120ms，鼠标/键盘切页记录到 3 次能力检查加载层挂载，并发现标题焦点丢失。修复后相同瞬时挂载监测为零，目标标题焦点恢复；没有通过隐藏灰色背景、关闭动画或保留其他页面数据掩盖状态问题。修复前 trace/context 在 `target/m7-route-switch-20261022/before/`。相关 accessibility / Material foundation / utility 回归 37/37（退出码 0），`npm run check`、`npm run build`、debug Tauri no-bundle 通过。此证据验证已定位的挂载链，真实 Tauri 偶发帧是否完全消失仍待所有者复验。
 
-当前 `target/debug/alcomd-gui.exe` 为 dev profile（unoptimized + debuginfo），SHA-256 `51FC5CAD3F2048B702159662C177689B0055008804BED698236DCF7160E8BB48`，已重开，沿用原 `target/m7-icon-acceptance-20260906/data` 隔离 daemon。窗口启动不代表标题、切页的真实桌面交互或人工视觉验收通过，屏幕阅读器证据仍未取得。构建保留既有大 chunk 警告，**Visual Gate 2 PENDING**。
+按钮内容按冻结 v3 的 Projects/package/repository/user-package/template/log/extension 实际入口核对：官方原生刷新入口统一使用公共 `RefreshButton` 和既有刷新图标，覆盖页面工具栏、Settings 的 Unity 区域、Extension UI 宿主和行内刷新；保留可访问名称、提示、busy/disabled 与原请求保护。仓库行 Browse packages 改用既有包图标，仓库及用户包移除入口改用既有关闭图标，原确认弹窗和操作语义不变。新增、导入、保存、确认及菜单文字按动作保留；扩展提供的 Portable UI 声明按钮不扩展图标合同。没有新增图标资产、CSS、RPC 或依赖。
+
+标题/刷新/资源行按钮专项 16/16（退出码 0），覆盖 22 个入口的侧栏标题对应和原生工具栏刷新图标、12 个列表入口的桌面几何、刷新请求合并/过时响应/错误、用户包移除确认及焦点等既有行为。`npm run check`、`npm run build`、debug Tauri no-bundle 与 diff check 通过。完整窗口 fixture 截图已更新至 `target/m7-v3-recheck-20260919/browser/`；该专项不代表完整 GUI suite、屏幕阅读器或真实 Tauri 交互通过。没有修改 Rust，未重复完整 Rust Workspace 测试；既有环境限制仍保留，未推送也未运行当前 Hosted CI。
+
+当前 `target/debug/alcomd-gui.exe` 为 dev profile（unoptimized + debuginfo），SHA-256 `56350826C2AEEE7CB79CEBFC907CCBC9E42F11633400C0931E66C48D2A871CEE`，已重开，沿用原 `target/m7-icon-acceptance-20260906/data` 隔离 daemon，启动前已核对 daemon 的 executable 和 data-dir。窗口启动不代表标题、按钮、切页的真实桌面交互或人工视觉验收通过，屏幕阅读器证据仍未取得。构建保留既有大 chunk 警告，**Visual Gate 2 PENDING**。
 
 2026-09-22：所有者明确选定 MD3 Segmented buttons。Resources 与 Logs/Settings 同类切换入口已复用现有 Material Web 2.5.0 labs 的 outlined segmented button/set，使用单选、文字式无勾选图标配置，保留禁用条件与路由权威状态；移除旧普通按钮拼接底板。原按钮宽度 WIP 保留，无新增依赖或 RPC。组件/页面回归 17/17，键盘、禁用跳过及拒绝导航恢复专项 1/1；专项首轮因 Shadow DOM slotted 子元素定位失败，修正测试定位后通过。check/build 与 diff check 通过，构建保留既有大 chunk 警告。浏览器完整窗口证据在 `target/m7-v3-recheck-20260919/browser/`；未取得新的真实 Tauri 或屏幕阅读器证据。所有者随后授权将按钮宽度与分段按钮改动分别提交，并将本地 main 累积提交正常推送至 origin/main；该授权不代表视觉验收通过。**Visual Gate 2 PENDING**。
 
@@ -26,11 +32,11 @@
 
 - **唯一工作目录**：`C:\Users\M2922\MyProjects\Rust\ALCOMD`；活动分支 `main`。两个额外工作树已经移除，后续不自行创建 worktree。
 - **当前阶段**：M7 H2-A Project Workspace / Packages，`IN_PROGRESS / VISUAL_GATE_2`；尚未通过完整人工视觉验收。
-- **当前代码来源**：`main` 的公共列表及 GUI 修正为 `ce99bee`，跨页面列表与圆角回归为 `aac9c30`；公共标题与对应回归已独立提交为 `131c84f`，连接能力快照生命周期与瞬时灰层回归已独立提交为 `b69e9b5`。验收及状态记录单独提交，此前整合和功能 checkpoint 保留为历史证据。
+- **当前代码来源**：`main` 的公共列表及 GUI 修正为 `ce99bee`，跨页面列表与圆角回归为 `aac9c30`；公共标题样式与对应回归为 `131c84f`，连接能力快照生命周期与瞬时灰层回归为 `b69e9b5`，记录提交为 `0ddf7e7`。侧栏/标题名称统一及对应回归已独立提交为 `385ed18`，公共刷新及资源行按钮内容修正和对应回归已独立提交为 `d00da14`；验收及状态记录单独提交，此前整合和功能 checkpoint 保留为历史证据。
 - **旧修改保留**：原标准目录 9 个未提交文件完整保存在 `b4547d5`，作为历史恢复快照，不复活已被替代的 Automatic Editor 产品模型。
 - **下一步**：当前列表样式已获所有者认可，仍需完成 H2-A 真实桌面交互和完整视觉验收；项目所有者批准的其他既有页面基础可用性修正属于当前 H2-A，不代表 H2-B/H3-H7 全量获批或任一 Visual Gate 通过。
 - **边界**：候选查询沿用已批准合同；本次其他页面修正只复用现有读写接口与 Material 组件，不新增 State/Config migration、依赖或平台 API，不改变 resolver/Plan/Apply，保留已确认 Projects/package workspace 的图标与布局，不做窄窗口适配，不自动 push。
-- **远端**：公共列表、标题、切页修正及对应回归、验收记录均已整理为本地提交，未推送。没有 push、force-push 或历史重写；此前 CI 只证明其对应 SHA，不证明本轮本地提交。
+- **远端**：公共列表、标题样式/名称、切页、刷新及资源行按钮修正和对应回归、验收记录均已整理为本地提交，未推送。没有 push、force-push 或历史重写；此前 CI 只证明其对应 SHA，不证明本轮本地提交。
 
 整合审计、恢复位置和本轮验证结果见 [工作目录整合记录](testing/workspace-consolidation-20260917.md)。
 
