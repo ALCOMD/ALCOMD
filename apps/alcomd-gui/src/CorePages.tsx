@@ -54,6 +54,7 @@ import {
     UnityRegistryActions
 } from "./CoreActions";
 import { DesktopList, type DesktopListColumn } from "./DesktopList";
+import { ScrollArea } from "./ScrollArea";
 import { PageTitle } from "./PageTitle";
 import { navigationLabels } from "./navigation-labels";
 import { UtilityActionDialog } from "./UtilityActionDialog";
@@ -332,7 +333,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                     </section>
                 ) : null}
                 {projects.length > 0 && view === "list" ? <ProjectsTable client={client} descending={descending} navigate={navigate} onChanged={() => void refresh()} onFeedback={setRegistrationMessage} onProjectChanged={updateProject} onSort={updateSort} projects={projects} sort={sort} /> : null}
-                {projects.length > 0 && view === "grid" ? <div className="projects-grid">{projects.map((project) => <ProjectCard client={client} key={project.projectId ?? project.rootPath} onChanged={updateProject} onFeedback={setRegistrationMessage} onRefresh={() => void refresh()} project={project} navigate={navigate} />)}</div> : null}
+                {projects.length > 0 && view === "grid" ? <ScrollArea className="projects-grid">{projects.map((project) => <ProjectCard client={client} key={project.projectId ?? project.rootPath} onChanged={updateProject} onFeedback={setRegistrationMessage} onRefresh={() => void refresh()} project={project} navigate={navigate} />)}</ScrollArea> : null}
             </div>
             {registrationMessage === undefined ? null : <p className="operation-feedback" role="status">{registrationMessage}</p>}
             <RegisterProjectDialog

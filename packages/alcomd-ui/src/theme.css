@@ -1,3 +1,6 @@
+@import "overlayscrollbars/overlayscrollbars.css";
+@import "./scrollbars.css";
+
 :root {
     color-scheme: light;
     --md-ref-typeface-brand: Inter, "Noto Sans SC", "Microsoft YaHei UI", system-ui, sans-serif;

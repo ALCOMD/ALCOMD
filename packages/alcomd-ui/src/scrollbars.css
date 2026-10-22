@@ -1,0 +1,24 @@
+.alcomd-scroll-area {
+    position: relative;
+}
+
+.alcomd-scrollbars {
+    z-index: 4;
+    --os-size: 10px;
+    --os-padding-perpendicular: 2px;
+    --os-padding-axis: 10px;
+    --os-track-border-radius: 999px;
+    --os-handle-border-radius: 999px;
+    --os-handle-bg: var(--md-sys-color-outline);
+    --os-handle-bg-hover: var(--md-sys-color-on-surface-variant);
+    --os-handle-bg-active: var(--md-sys-color-primary);
+    --os-handle-min-size: 28px;
+}
+
+@media (forced-colors: active) {
+    .alcomd-scrollbars {
+        --os-handle-bg: CanvasText;
+        --os-handle-bg-hover: Highlight;
+        --os-handle-bg-active: Highlight;
+    }
+}

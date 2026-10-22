@@ -2,6 +2,8 @@
 
 当前活动阶段与唯一工作目录统一以 `docs/status.md` 为准。本文件保留实施合同与历史日志，不授权重建旧工作树；2026-09-17 起仅在标准 `ALCOMD` 目录的 `main` 继续 H2-A。
 
+2026-10-22 所有者要求重做真正的自绘滚动条并评估库。本轮采用 `overlayscrollbars = 2.17.0`（MIT，registry exact metadata 无 runtime dependencies、native addon 或 install script）作为 `@alcomd/ui` 唯一滚动条运行时。依据官方文档比较：Radix React Scroll Area 与 v3 同库，但 React Root/Viewport 组合不适合直接管理 Material Web 的 Shadow DOM；SimpleBar 同样绘制 DOM 滑块，但需要更多包装结构；自行重写滑块拖拽/测量/键盘逻辑成本更高。OverlayScrollbars 可使用现有 viewport，并提供显式 destroy、更新和轨道/滑块 DOM。只借鉴 v3 的使用语义，不复制源码；不安装 React adapter 或第二套库。普通容器及 Material dialog/menu 通过同一共享 adapter/theme 接入；保持原滚动 viewport、焦点、滚轮和原生滚动语义，原生滚动条仅被隐藏，不作换肤。原换肤 CSS/controller 和对应断言直接替换，不保留双实现。textarea 内部编辑滚动不在库支持范围，不声称已替换。维护风险是第三方 DOM/尺寸观察器与 React/Lit 生命周期、Shadow DOM CSS 边界、粘性列及嵌套容器配合；须验证动态内容、卸载清理、滚动/拖拽/键盘、无溢出不显示、主题、菜单焦点和既有列表几何。新增 lock 记录实际仅此包，Cargo/协议不变。React 首次测量移到子元素首轮更新后的帧，Material 只为打开的弹层建实例；关闭/卸载销毁，避免数百个关闭菜单提前解析 CSS/建立观察器。本机最终 Vite 产物相对前轮换肤构建：JS minified +47.73 kB（gzip +18.26 kB）、CSS +14.19 kB（gzip +2.29 kB），包括共享适配及 Shadow DOM 样式字符串成本，不将 npm unpacked size 冒充 bundle；既有大 chunk 警告保留。实际三平台 WebView 和屏幕阅读器证据继续待人工取得，不提升 Visual Gate 2。参考：https://github.com/KingSora/OverlayScrollbars 、https://www.radix-ui.com/primitives/docs/components/scroll-area 、https://github.com/Grsmto/simplebar 。
+
 2026-09-22 所有者指定的局部 UI 修正：资源及同类分组切换采用 MD3 Segmented buttons，复用已安装 `@material/web` 的 labs outlined segmented button/set，不引入新依赖。通过共享 React 适配层封装实验性组件路径与 selection event；后续库升级需回归单选、disabled、键盘、拒绝导航恢复及宽度。保留已有按钮宽度修正，未采用被否决的 Secondary Tabs。使用文字式无勾选图标配置保持尺寸稳定，不改变业务和路由合同，Visual Gate 2 仍待人工验收。
 
 状态：Portable UI B0-D production candidate `aa1323430252ed21995284a7b36dd36e45a15e0a` 已通过 Hosted CI

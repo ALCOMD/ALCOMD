@@ -736,7 +736,7 @@ md-linear-progress {
     height: auto;
 }
 
-.utility-workspace-body > .desktop-list-viewport:only-child {
+.utility-workspace-body:not(:has(> :not(.desktop-list-viewport, .os-scrollbar))) > .desktop-list-viewport {
     min-height: 100%;
 }
 

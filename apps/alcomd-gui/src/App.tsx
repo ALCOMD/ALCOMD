@@ -48,6 +48,7 @@ import {
 } from "./CorePages";
 import { PortableUiRenderer } from "./PortableUiRenderer";
 import { PageTitle } from "./PageTitle";
+import { useScrollArea } from "./ScrollArea";
 import { navigationLabels } from "./navigation-labels";
 import {
     PortableUiConsumerError,
@@ -235,6 +236,7 @@ export function App({ client = guiRpcClient }: AppProps) {
 }
 
 function PrimaryNavigation({ client, current, navigate }: { client: GuiRpcClient; current: Route; navigate(path: string): void }) {
+    const scrollRef = useScrollArea<HTMLElement>();
     const items: readonly NavigationItem[] = [
         { icon: projectsIcon, label: navigationLabels.projects, path: "/projects", section: "projects" },
         { icon: packagesIcon, label: navigationLabels.resources, path: "/repositories", section: "packages" },
@@ -242,7 +244,7 @@ function PrimaryNavigation({ client, current, navigate }: { client: GuiRpcClient
         { icon: logIcon, label: navigationLabels.logs, path: "/activity", section: "log" }
     ];
     return (
-        <aside className="primary-navigation" id="primary-navigation">
+        <aside className="primary-navigation" id="primary-navigation" ref={scrollRef}>
             <a className="skip-link" href="#main-content">Skip to content</a>
             <nav aria-label="Primary">
                 <NavigationList className="navigation-list">

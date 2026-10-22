@@ -1,4 +1,4 @@
-import { materialElements } from "@alcomd/ui";
+import { createScrollArea, materialElements } from "@alcomd/ui";
 import { refreshIcon, resolveIconGeometry, searchIcon, type IconAsset, type IconSize } from "@alcomd/ui/icons";
 import {
     Children,
@@ -219,6 +219,11 @@ export function FilterPopover({ anchorRef, children, onClose, open, label }: {
     label: string;
 }) {
     const ref = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (ref.current === null) return;
+        const instance = createScrollArea(ref.current);
+        return () => instance.destroy();
+    }, []);
     useEffect(() => {
         const panel = ref.current;
         const anchor = anchorRef.current;

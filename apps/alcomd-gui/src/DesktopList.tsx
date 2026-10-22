@@ -2,6 +2,7 @@ import { keyboardArrowDownIcon, keyboardArrowUpIcon } from "@alcomd/ui/icons";
 import type { CSSProperties, ReactNode } from "react";
 
 import { Button, Icon } from "./Material";
+import { ScrollArea } from "./ScrollArea";
 
 export type DesktopListSortDirection = "ascending" | "descending";
 
@@ -44,7 +45,7 @@ export function DesktopList({
     }
     const style = minWidth === undefined ? undefined : { "--desktop-list-min-width": `${minWidth}px` } as CSSProperties;
     return (
-        <div className="desktop-list-viewport">
+        <ScrollArea className="desktop-list-viewport">
             <table
                 aria-label={label}
                 className={["desktop-list", className].filter(Boolean).join(" ")}
@@ -61,7 +62,7 @@ export function DesktopList({
                     {rows.length === 0 && emptyMessage !== undefined ? <tr><td className="desktop-list-empty" colSpan={columns.length}>{emptyMessage}</td></tr> : null}
                 </tbody>
             </table>
-        </div>
+        </ScrollArea>
     );
 }
 

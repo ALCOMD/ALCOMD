@@ -24,6 +24,8 @@ import "@material/web/select/select-option.js";
 import "@material/web/switch/switch.js";
 import "@material/web/textfield/outlined-text-field.js";
 import "@material/web/textfield/filled-text-field.js";
+import { installMaterialScrollbars } from "./scrollbars";
+export { createScrollArea } from "./scrollbars";
 
 export const materialElements = {
     button: {
@@ -56,6 +58,11 @@ export const materialElements = {
         outlined: "md-outlined-text-field"
     }
 } as const;
+
+installMaterialScrollbars([
+    { name: materialElements.dialog, viewport: ".scroller" },
+    { name: materialElements.menu, viewport: ".items" }
+]);
 
 export const spacing = {
     compact: "8px",

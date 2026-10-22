@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { Button, RefreshButton } from "./Material";
 import { PageTitle } from "./PageTitle";
+import { ScrollArea } from "./ScrollArea";
 
 interface UtilityWorkspaceProps<T> {
     title: string;
@@ -112,7 +113,7 @@ export function UtilityWorkspace<T>({
                     )}
                 </div>
             </header>
-            <div className="utility-workspace-body">
+            <ScrollArea className="utility-workspace-body">
                 {error === undefined ? null : (
                     <div className="inline-error" role="alert">
                         <p>{value === undefined ? "This page could not be loaded." : "Refresh failed. The last loaded result is still shown."} <code>{error}</code></p>
@@ -131,7 +132,7 @@ export function UtilityWorkspace<T>({
                         {children(value, refresh)}
                     </>
                 )}
-            </div>
+            </ScrollArea>
         </section>
     );
 }
