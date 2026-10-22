@@ -10,7 +10,15 @@
 
 项目所有者认可当前列表样式并授权分批本地提交，暂不推送；该认可仅覆盖当前列表样式，不代表完整 H2-A 交互或 Visual Gate 2 通过。
 
-卡片式列表完整 GUI browser suite（单 worker）首轮 96/97：一项在 `browserContext.newPage` 阶段 `Target crashed`，未进入用例；代码及断言不变单独复跑 1/1 通过。最终首尾圆角增量的逐页/截图专项 3/3、GUI 与共享 UI check、frontend build、debug Tauri no-bundle、diff check 通过。12 个列表入口在 1280px / 1440px 下统一验证长内容、按钮边界、真实行间空隙、无条纹/边线、首尾及内部圆角、圆角命中裁切，另有非列表层级回归。浏览器完整窗口证据位于 `target/m7-v3-recheck-20260919/browser/`。当前 debug GUI 摘要 `A8EBCFC7C90ECD2C9615D6B1108C0B5EF37435048B08E309E926B05C746C0222`，已打开并使用原隔离 daemon 供所有者复验；窗口启动不代表真实交互或人工视觉验收通过，屏幕阅读器证据仍未取得。构建保留既有大 chunk 警告，**Visual Gate 2 PENDING**。
+卡片式列表完整 GUI browser suite（单 worker）首轮 96/97：一项在 `browserContext.newPage` 阶段 `Target crashed`，未进入用例；代码及断言不变单独复跑 1/1 通过。最终首尾圆角增量的逐页/截图专项 3/3、GUI 与共享 UI check、frontend build、debug Tauri no-bundle、diff check 通过。12 个列表入口在 1280px / 1440px 下统一验证长内容、按钮边界、真实行间空隙、无条纹/边线、首尾及内部圆角、圆角命中裁切，另有非列表层级回归。该列表样式候选的 debug GUI 摘要为 `A8EBCFC7C90ECD2C9615D6B1108C0B5EF37435048B08E309E926B05C746C0222`，其历史验证结果不因后续标题修正而扩大。
+
+当前标题修正：所有官方页面的一级标题统一复用 `PageTitle`，沿用 Projects 的 24px / 500 / 1.2 行高与 primary 色；Projects 原有标题位置与工具栏保持不变。Resources、Unity、Activity / Diagnostics 不再因存在分组导航而将标题裁切为 1px；普通工作区标题栏采用相同 56px 高度与 12px 内容间距，详情页、能力不可用状态和 Extension UI 同步复用标题组件。保留既有路由焦点 ID / ref、导航、操作及列表规则，不修改业务合同。
+
+标题增量的 `npm run check`、`npm run build`、debug Tauri no-bundle 与 diff check 通过。相关 accessibility / utility / package / extension browser suite 46/46，通过既有路由用例检查 22 个入口的标题实际可见性及与 Projects 一致的计算样式；同时保留 1280px / 1440px 列表回归。首轮因沙箱默认浏览器缓存路径不存在，未进入用例；指定现有已安装 Chromium 缓存后运行通过。测试服务退出收尾需清理本轮残留的 Vite 进程，产生服务终止日志；Playwright 最终退出码为 0。浏览器完整窗口截图已更新至 `target/m7-v3-recheck-20260919/browser/`，这些是 fixture 证据，不是 Tauri 操作截图。
+
+切页瞬时灰层修正：App 的能力快照生命周期不再依赖 `route.kind`，普通切页复用当前连接已确认的能力；首次获取、client 更换及明确重连仍清空并重新获取，缺失能力仍禁用。修复前在既有 harness 中将状态响应延迟 120ms，鼠标/键盘切页记录到 3 次能力检查加载层挂载，并发现标题焦点丢失。修复后相同瞬时挂载监测为零，目标标题焦点恢复；没有通过隐藏灰色背景、关闭动画或保留其他页面数据掩盖状态问题。修复前 trace/context 在 `target/m7-route-switch-20261022/before/`。相关 accessibility / Material foundation / utility 回归 37/37（退出码 0），`npm run check`、`npm run build`、debug Tauri no-bundle 通过。此证据验证已定位的挂载链，真实 Tauri 偶发帧是否完全消失仍待所有者复验。
+
+当前 `target/debug/alcomd-gui.exe` 为 dev profile（unoptimized + debuginfo），SHA-256 `51FC5CAD3F2048B702159662C177689B0055008804BED698236DCF7160E8BB48`，已重开，沿用原 `target/m7-icon-acceptance-20260906/data` 隔离 daemon。窗口启动不代表标题、切页的真实桌面交互或人工视觉验收通过，屏幕阅读器证据仍未取得。构建保留既有大 chunk 警告，**Visual Gate 2 PENDING**。
 
 2026-09-22：所有者明确选定 MD3 Segmented buttons。Resources 与 Logs/Settings 同类切换入口已复用现有 Material Web 2.5.0 labs 的 outlined segmented button/set，使用单选、文字式无勾选图标配置，保留禁用条件与路由权威状态；移除旧普通按钮拼接底板。原按钮宽度 WIP 保留，无新增依赖或 RPC。组件/页面回归 17/17，键盘、禁用跳过及拒绝导航恢复专项 1/1；专项首轮因 Shadow DOM slotted 子元素定位失败，修正测试定位后通过。check/build 与 diff check 通过，构建保留既有大 chunk 警告。浏览器完整窗口证据在 `target/m7-v3-recheck-20260919/browser/`；未取得新的真实 Tauri 或屏幕阅读器证据。所有者随后授权将按钮宽度与分段按钮改动分别提交，并将本地 main 累积提交正常推送至 origin/main；该授权不代表视觉验收通过。**Visual Gate 2 PENDING**。
 
@@ -18,11 +26,11 @@
 
 - **唯一工作目录**：`C:\Users\M2922\MyProjects\Rust\ALCOMD`；活动分支 `main`。两个额外工作树已经移除，后续不自行创建 worktree。
 - **当前阶段**：M7 H2-A Project Workspace / Packages，`IN_PROGRESS / VISUAL_GATE_2`；尚未通过完整人工视觉验收。
-- **当前代码来源**：`main` 基线 `2d8dbacd5e0167c05d6413046c0c10041d993898`，公共列表及 GUI 修正已提交为 `ce99bee`，跨页面列表与圆角回归已提交为 `aac9c30`；此前整合和功能 checkpoint 保留为历史证据。
+- **当前代码来源**：`main` 的公共列表及 GUI 修正为 `ce99bee`，跨页面列表与圆角回归为 `aac9c30`；公共标题与对应回归已独立提交为 `131c84f`，连接能力快照生命周期与瞬时灰层回归已独立提交为 `b69e9b5`。验收及状态记录单独提交，此前整合和功能 checkpoint 保留为历史证据。
 - **旧修改保留**：原标准目录 9 个未提交文件完整保存在 `b4547d5`，作为历史恢复快照，不复活已被替代的 Automatic Editor 产品模型。
 - **下一步**：当前列表样式已获所有者认可，仍需完成 H2-A 真实桌面交互和完整视觉验收；项目所有者批准的其他既有页面基础可用性修正属于当前 H2-A，不代表 H2-B/H3-H7 全量获批或任一 Visual Gate 通过。
 - **边界**：候选查询沿用已批准合同；本次其他页面修正只复用现有读写接口与 Material 组件，不新增 State/Config migration、依赖或平台 API，不改变 resolver/Plan/Apply，保留已确认 Projects/package workspace 的图标与布局，不做窄窗口适配，不自动 push。
-- **远端**：本轮按公共实现、回归测试及验收记录分批创建本地提交，没有 push、force-push 或历史重写；此前 CI 只证明其对应 SHA，不证明本轮本地提交。
+- **远端**：公共列表、标题、切页修正及对应回归、验收记录均已整理为本地提交，未推送。没有 push、force-push 或历史重写；此前 CI 只证明其对应 SHA，不证明本轮本地提交。
 
 整合审计、恢复位置和本轮验证结果见 [工作目录整合记录](testing/workspace-consolidation-20260917.md)。
 
