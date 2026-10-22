@@ -19,7 +19,7 @@ import {
     viewGridIcon,
     viewListIcon
 } from "@alcomd/ui/icons";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { use, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import type {
     OfficialSettings,
@@ -56,6 +56,8 @@ import {
 import { DesktopList, type DesktopListColumn } from "./DesktopList";
 import { ScrollArea } from "./ScrollArea";
 import { PageTitle } from "./PageTitle";
+import { LoadingState } from "./LoadingState";
+import { useInitialPageRead, usePageReadPromise } from "./PageRead";
 import { navigationLabels } from "./navigation-labels";
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { UtilityWorkspace } from "./UtilityWorkspace";
@@ -81,15 +83,19 @@ interface ResourcePageProps<T> {
 }
 
 function ResourcePage<T>({ load, children, empty, emptyTitle = "Nothing here yet", showRefreshBar = true }: ResourcePageProps<T>) {
+    const initial = useInitialPageRead(load);
+    const initialLoader = useRef(load).current;
     const [state, setState] = useState<{
         value?: T;
         error?: RpcError;
         loading: boolean;
         refreshing: boolean;
         generation: number;
-    }>({ loading: true, refreshing: false, generation: 0 });
+    }>(() => ({ loading: initial === undefined, refreshing: false, generation: 0,
+        ...(initial?.kind === "ready" ? { value: initial.value } : initial?.kind === "error" ? { error: safeError(initial.error) } : {}) }));
 
     useEffect(() => {
+        if (initial !== undefined && state.generation === 0 && load === initialLoader) return;
         let active = true;
         setState((current) => ({
             ...current,
@@ -112,7 +118,7 @@ function ResourcePage<T>({ load, children, empty, emptyTitle = "Nothing here yet
             }
         });
         return () => { active = false; };
-    }, [load, state.generation]);
+    }, [load, state.generation, initialLoader, initial]);
 
     const refresh = () => setState((current) => ({ ...current, generation: current.generation + 1 }));
     if (state.loading) {
@@ -151,6 +157,7 @@ function RefreshBar({ error, refresh, refreshing }: { error?: RpcError; refresh(
 }
 
 export function RouteState({ kind, title, detail }: { kind: "loading" | "empty" | "error" | "disconnected"; title: string; detail?: string }) {
+    if (kind === "loading") return <LoadingState title={title} detail={detail} />;
     return (
         <section className={`route-state route-state--${kind}`} role={kind === "error" ? "alert" : "status"} aria-live="polite">
             <h2>{title}</h2>
@@ -191,12 +198,24 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     const canRegister = useCapability(capabilities.projectsRegistry);
     const canCreate = useCapability(capabilities.templatesCreateProject);
     const canRestore = useCapability(capabilities.backupsRestore);
+    const load = useCallback(async () => {
+        const projects: ProjectSnapshot[] = [];
+        let cursor: RegistryCursor | undefined;
+        do {
+            const value = await client.projectsList(cursor);
+            projects.push(...value.projects);
+            cursor = value.nextCursor;
+        } while (cursor !== undefined);
+        return projects;
+    }, [client]);
+    const initial = use(usePageReadPromise("primary", load));
     const [state, setState] = useState<{
         error?: RpcError;
         loading: boolean;
         projects: ProjectSnapshot[];
         refreshing: boolean;
-    }>({ loading: true, projects: [], refreshing: false });
+    }>(() => ({ loading: false, projects: initial.kind === "ready" ? initial.value : [], refreshing: false,
+        error: initial.kind === "error" ? safeError(initial.error) : undefined }));
     const [search, setSearch] = useState("");
     const [sort, setSort] = useState("observed");
     const [descending, setDescending] = useState(true);
@@ -214,22 +233,12 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     const refresh = useCallback(async () => {
         setState((current) => ({ ...current, error: undefined, refreshing: current.projects.length > 0 }));
         try {
-            const projects: ProjectSnapshot[] = [];
-            let cursor: RegistryCursor | undefined;
-            do {
-                const value = await client.projectsList(cursor);
-                projects.push(...value.projects);
-                cursor = value.nextCursor;
-            } while (cursor !== undefined);
+            const projects = await load();
             setState({ loading: false, projects, refreshing: false });
         } catch (caught: unknown) {
             setState((current) => ({ ...current, error: safeError(caught), loading: false, refreshing: false }));
         }
-    }, [client]);
-
-    useEffect(() => {
-        void refresh();
-    }, [refresh]);
+    }, [load]);
 
     const projects = [...state.projects]
         .filter((project) => projectName(project).toLocaleLowerCase().includes(search.toLocaleLowerCase()))
@@ -282,7 +291,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     };
 
     return (
-        <section className="projects-page">
+        <section className="projects-page" aria-busy={state.loading}>
             <header className="projects-toolbar">
                 <PageTitle>{navigationLabels.projects}</PageTitle>
                 <RefreshButton label="Refresh projects" onClick={() => void refresh()} refreshing={state.refreshing} refreshingLabel="Refreshing projects" />

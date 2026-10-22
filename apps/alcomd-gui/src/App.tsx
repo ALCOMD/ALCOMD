@@ -21,7 +21,7 @@ import {
     type IconAsset
 } from "@alcomd/ui/icons";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
 
 import {
     AboutPage,
@@ -48,7 +48,8 @@ import {
 } from "./CorePages";
 import { PortableUiRenderer } from "./PortableUiRenderer";
 import { PageTitle } from "./PageTitle";
-import { PageTransition } from "./PageTransition";
+import { LoadingState } from "./LoadingState";
+import { createPageRead, PageReadContext } from "./PageRead";
 import { useScrollArea } from "./ScrollArea";
 import { navigationLabels } from "./navigation-labels";
 import {
@@ -97,12 +98,29 @@ interface AppProps {
 }
 
 export function App({ client = guiRpcClient }: AppProps) {
-    const [route, setRoute] = useState<Route>(() => readRoute(window.location.pathname, window.location.search));
+    const [connectionGeneration, setConnectionGeneration] = useState(0);
+    const [navigation, setNavigation] = useState(() => ({
+        route: readRoute(window.location.pathname, window.location.search),
+        read: createPageRead(), client, connectionGeneration
+    }));
+    // A new connection must not reuse an initial result read from the previous daemon/client.
+    if (navigation.client !== client || navigation.connectionGeneration !== connectionGeneration) {
+        setNavigation({ ...navigation, client, connectionGeneration, read: createPageRead() });
+    }
+    const visibleNavigation = useDeferredValue(navigation);
+    const navigating = navigation !== visibleNavigation;
+    const route = navigation.route;
+    const setRoute = (next: Route) => {
+        if (routePath(route) === routePath(next)) {
+            if (!navigating) window.requestAnimationFrame(focusRouteTitle);
+            return;
+        }
+        setNavigation({ route: next, client, connectionGeneration, read: createPageRead() });
+    };
     const [pendingRoute, setPendingRoute] = useState<Route>();
     const [appearance, setAppearance] = useState<AppearanceSettings>(defaultAppearance);
     const [locale, setLocale] = useState(() => preferredLocale(navigator.language));
     const [negotiatedCapabilities, setNegotiatedCapabilities] = useState<CapabilitySnapshot>();
-    const [connectionGeneration, setConnectionGeneration] = useState(0);
     const reconnect = useCallback(() => setConnectionGeneration((generation) => generation + 1), []);
     const dirtyRef = useRef(false);
     const handleDirtyChange = useCallback((dirty: boolean) => {
@@ -175,12 +193,6 @@ export function App({ client = guiRpcClient }: AppProps) {
         return () => window.removeEventListener("beforeunload", beforeUnload);
     }, []);
 
-    useEffect(() => {
-        window.requestAnimationFrame(() => {
-            document.querySelector<HTMLElement>("#route-title, #extension-ui-title")?.focus();
-        });
-    }, [route]);
-
     const navigateRoute = (next: Route) => {
         if (dirtyRef.current) {
             setPendingRoute(next);
@@ -213,17 +225,22 @@ export function App({ client = guiRpcClient }: AppProps) {
                         current={route}
                         navigate={navigate}
                     />
-                    <main className="main-content" id="main-content">
-                        <PageTransition routeKey={routePath(route)}>
-                            <RouteContent
-                                client={client}
-                                locale={locale}
-                                navigate={navigate}
-                                onDirtyChange={handleDirtyChange}
-                                onSettingsApplied={applySettings}
-                                route={route}
-                            />
-                        </PageTransition>
+                    <main className="main-content" id="main-content" aria-busy={navigating}>
+                        {navigating ? <div className="page-navigation-progress"><LoadingState title="Opening page…" /></div> : null}
+                        <div className="route-content" inert={navigating}>
+                            <Suspense fallback={<LoadingState title="Loading page…" />}>
+                                <PageReadContext.Provider value={visibleNavigation.read}>
+                                    <RouteContent key={visibleNavigation.read.visit}
+                                        client={client}
+                                        locale={locale}
+                                        navigate={navigate}
+                                        onDirtyChange={handleDirtyChange}
+                                        onSettingsApplied={applySettings}
+                                        route={visibleNavigation.route}
+                                    />
+                                </PageReadContext.Provider>
+                            </Suspense>
+                        </div>
                     </main>
                 </div>
                 <MaterialDialog onClose={() => setPendingRoute(undefined)} open={pendingRoute !== undefined} title="Discard unsaved changes?">
@@ -358,6 +375,11 @@ function RouteContent({
     onSettingsApplied(value: SettingsGetResult): void;
     route: Route;
 }) {
+    // This effect commits with the populated route, including an initially suspended page.
+    useEffect(() => {
+        const frame = window.requestAnimationFrame(focusRouteTitle);
+        return () => window.cancelAnimationFrame(frame);
+    }, [route]);
     const props = { client, navigate };
     switch (route.kind) {
         case "projects": return <CapabilityRoute required={[capabilities.projectsRead]}><ProjectsPage {...props} /></CapabilityRoute>;
@@ -379,10 +401,14 @@ function RouteContent({
         case "extension-ui": return <CapabilityRoute required={[capabilities.extensionsLifecycle, capabilities.extensionsPortableUi]}><ExtensionUiPage client={client} extensionId={route.extensionId} locale={locale} onDirtyChange={onDirtyChange} /></CapabilityRoute>;
         case "activity": return <ActivityPage {...props} />;
         case "diagnostics": return <DiagnosticsPage {...props} />;
-        case "settings": return <SettingsPage {...props} onApplied={onSettingsApplied} onDirtyChange={onDirtyChange} />;
+        case "settings": return <CapabilityRoute required={[]}><SettingsPage {...props} onApplied={onSettingsApplied} onDirtyChange={onDirtyChange} /></CapabilityRoute>;
         case "about": return <AboutPage {...props} />;
         case "not-found": return <RouteState kind="error" title="Page not found" detail="Use the primary navigation to continue." />;
     }
+}
+
+function focusRouteTitle() {
+    document.querySelector<HTMLElement>("#route-title, #extension-ui-title")?.focus();
 }
 
 function CapabilityRoute({ required, children }: { required: readonly string[]; children: ReactNode }) {
@@ -625,6 +651,7 @@ interface StatePanelProps {
 }
 
 function StatePanel({ kind, title, detail, action }: StatePanelProps) {
+    if (kind === "loading") return <LoadingState title={title} detail={detail} />;
     return (
         <section className={`state-panel state-panel--${kind}`} aria-live="polite" role={kind === "error" ? "alert" : "status"}>
             <h2>{title}</h2>

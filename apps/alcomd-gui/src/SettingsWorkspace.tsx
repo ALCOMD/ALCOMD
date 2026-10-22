@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { use, useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import type { OfficialSettings, RepositorySnapshot, SettingsGetResult, SettingsLocale, UnityInstallation } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
@@ -8,6 +8,8 @@ import { DesktopList } from "./DesktopList";
 import { Button, Checkbox, RefreshButton, Select } from "./Material";
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { UtilityWorkspace } from "./UtilityWorkspace";
+import { LoadingState } from "./LoadingState";
+import { usePageReadPromise, type PageReadResult } from "./PageRead";
 import { navigationLabels } from "./navigation-labels";
 
 interface SettingsWorkspaceProps {
@@ -19,15 +21,19 @@ interface SettingsWorkspaceProps {
 
 export function SettingsWorkspace({ client, navigate, onApplied, onDirtyChange }: SettingsWorkspaceProps) {
     const load = useCallback(() => client.settingsGet(), [client]);
+    const canReadUnity = useCapability(capabilities.unityRead);
+    const canReadRepositories = useCapability(capabilities.repositoriesRead);
+    const initialUnity = usePageReadPromise("settings.unity", () => canReadUnity ? client.unityInstallationsList() : Promise.resolve(undefined));
+    const initialRepositories = usePageReadPromise("settings.repositories", () => canReadRepositories ? client.repositoriesList() : Promise.resolve(undefined));
     const [dirty, setDirty] = useState(false);
     const dirtyChanged = useCallback((value: boolean) => { setDirty(value); onDirtyChange(value); }, [onDirtyChange]);
     return (
         <UtilityWorkspace title={navigationLabels.settings} load={load} refreshDisabled={dirty}>
             {(snapshot, refresh) => (
                 <div className="settings-workspace">
-                    <UnitySettingsSection client={client} />
+                    <UnitySettingsSection client={client} initialRead={initialUnity} />
                     <SettingsEditor client={client} key={snapshot.revision} snapshot={snapshot}
-                        onApplied={(next) => { onApplied(next); refresh(); }} onDirtyChange={dirtyChanged} />
+                        initialRepositories={initialRepositories} onApplied={(next) => { onApplied(next); refresh(); }} onDirtyChange={dirtyChanged} />
                     <SettingsSection title="System information">
                         <div className="action-row">
                             <Button onClick={() => navigate("/about")} type="button" variant="tonal">About ALCOMD</Button>
@@ -49,13 +55,14 @@ function SettingsSection({ title, children, actions }: { title: string; children
     );
 }
 
-function UnitySettingsSection({ client }: { client: GuiRpcClient }) {
+function UnitySettingsSection({ client, initialRead }: { client: GuiRpcClient; initialRead: Promise<PageReadResult<Awaited<ReturnType<GuiRpcClient["unityInstallationsList"]>> | undefined>> }) {
     const available = useCapability(capabilities.unityRead);
     const manage = useCapability(capabilities.unityManage);
-    const [items, setItems] = useState<UnityInstallation[]>([]);
-    const [cursor, setCursor] = useState<string>();
+    const initial = use(initialRead);
+    const [items, setItems] = useState<UnityInstallation[]>(initial.kind === "ready" ? initial.value?.installations ?? [] : []);
+    const [cursor, setCursor] = useState<string | undefined>(initial.kind === "ready" ? initial.value?.nextCursor : undefined);
     const [busy, setBusy] = useState(false);
-    const [error, setError] = useState<string>();
+    const [error, setError] = useState<string | undefined>(initial.kind === "error" ? "Unity installations could not be loaded." : undefined);
     const [open, setOpen] = useState(false);
     const [generation, setGeneration] = useState(0);
     const requestRef = useRef(0);
@@ -80,7 +87,7 @@ function UnitySettingsSection({ client }: { client: GuiRpcClient }) {
     }, [client]);
 
     useEffect(() => {
-        if (available) void read();
+        if (available && generation > 0) void read();
         return () => { requestRef.current += 1; busyRef.current = false; };
     }, [available, read, generation]);
 
@@ -95,7 +102,7 @@ function UnitySettingsSection({ client }: { client: GuiRpcClient }) {
                 <>
                     {error === undefined ? null : <p className="form-error" role="alert">{error}</p>}
                     <DesktopList columns={[{ key: "version", header: "Version", width: "20%" }, { key: "path", header: "Path", className: "settings-path" }, { key: "source", header: "Source", width: 160 }]} label="Unity installations" minWidth={600} rows={items.map((item) => ({ key: item.installationId, cells: [item.unityVersion, item.executablePath, item.sourceKind.replaceAll("_", " ")] }))} />
-                    {items.length === 0 && error === undefined ? <p role="status">{busy ? "Loading Unity installations…" : "No Unity installations found."}</p> : null}
+                    {items.length === 0 && error === undefined ? busy ? <LoadingState title="Loading Unity installations…" /> : <p role="status">No Unity installations found.</p> : null}
                     {cursor === undefined ? null : <Button disabled={busy} onClick={() => void read(cursor)} type="button" variant="text">Load more installations</Button>}
                 </>
             )}
@@ -106,14 +113,15 @@ function UnitySettingsSection({ client }: { client: GuiRpcClient }) {
     );
 }
 
-function SettingsEditor({ client, snapshot, onApplied, onDirtyChange }: Omit<SettingsWorkspaceProps, "navigate"> & { snapshot: SettingsGetResult }) {
+function SettingsEditor({ client, snapshot, initialRepositories, onApplied, onDirtyChange }: Omit<SettingsWorkspaceProps, "navigate"> & { snapshot: SettingsGetResult; initialRepositories: Promise<PageReadResult<Awaited<ReturnType<GuiRpcClient["repositoriesList"]>> | undefined>> }) {
+    const initial = use(initialRepositories);
     const [settings, setSettings] = useState<OfficialSettings>(snapshot.settings);
     const [busy, setBusy] = useState(false);
     const busyRef = useRef(false);
     const [error, setError] = useState<string>();
-    const [repositories, setRepositories] = useState<RepositorySnapshot[]>([]);
-    const [repositoryCursor, setRepositoryCursor] = useState<Parameters<GuiRpcClient["repositoriesList"]>[0]>();
-    const [repositoryError, setRepositoryError] = useState(false);
+    const [repositories, setRepositories] = useState<RepositorySnapshot[]>(initial.kind === "ready" ? initial.value?.repositories ?? [] : []);
+    const [repositoryCursor, setRepositoryCursor] = useState<Parameters<GuiRpcClient["repositoriesList"]>[0]>(initial.kind === "ready" ? initial.value?.nextCursor : undefined);
+    const [repositoryError, setRepositoryError] = useState(initial.kind === "error");
     const [repositoryBusy, setRepositoryBusy] = useState(false);
     const repositoryBusyRef = useRef(false);
     const repositoryRequestRef = useRef(0);
@@ -144,9 +152,8 @@ function SettingsEditor({ client, snapshot, onApplied, onDirtyChange }: Omit<Set
     }, [client]);
 
     useEffect(() => {
-        if (canReadRepositories) void readRepositories();
         return () => { repositoryRequestRef.current += 1; repositoryBusyRef.current = false; };
-    }, [canReadRepositories, readRepositories]);
+    }, [client]);
 
     const appearance = <K extends keyof OfficialSettings["appearance"]>(key: K, value: OfficialSettings["appearance"][K]) => {
         setSettings((current) => ({ ...current, appearance: { ...current.appearance, [key]: value } }));

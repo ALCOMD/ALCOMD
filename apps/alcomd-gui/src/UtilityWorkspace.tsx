@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { Button, RefreshButton } from "./Material";
 import { PageTitle } from "./PageTitle";
+import { LoadingState } from "./LoadingState";
+import { useInitialPageRead } from "./PageRead";
 import { ScrollArea } from "./ScrollArea";
 
 interface UtilityWorkspaceProps<T> {
@@ -36,13 +38,19 @@ export function UtilityWorkspace<T>({
     action,
     tools
 }: UtilityWorkspaceProps<T>) {
-    const [state, setState] = useState<WorkspaceState<T>>({ loader: load, pending: true });
+    const initial = useInitialPageRead(load);
+    const initialLoader = useRef(load).current;
+    const [state, setState] = useState<WorkspaceState<T>>(() => ({
+        loader: load, pending: initial === undefined,
+        ...(initial?.kind === "ready" ? { value: initial.value } : initial?.kind === "error" ? { error: errorCode(initial.error) } : {})
+    }));
     const [generation, setGeneration] = useState(0);
     const [actionOpen, setActionOpen] = useState(false);
-    const pendingRef = useRef(true);
+    const pendingRef = useRef(initial === undefined);
     const queuedRefreshRef = useRef(false);
 
     useEffect(() => {
+        if (initial !== undefined && generation === 0 && load === initialLoader) return;
         let active = true;
         pendingRef.current = true;
         queuedRefreshRef.current = false;
@@ -57,10 +65,7 @@ export function UtilityWorkspace<T>({
             setState({ loader: load, value, pending: queuedRefreshRef.current });
         }).catch((caught: unknown) => {
             if (!active) return;
-            const code = typeof caught === "object" && caught !== null
-                && "code" in caught && typeof caught.code === "string"
-                ? caught.code
-                : "internal_error";
+            const code = errorCode(caught);
             setState((current) => ({ ...current, pending: queuedRefreshRef.current, error: code }));
         }).finally(() => {
             if (!active) return;
@@ -73,7 +78,7 @@ export function UtilityWorkspace<T>({
         });
 
         return () => { active = false; };
-    }, [load, generation]);
+    }, [load, generation, initialLoader, initial]);
 
     const refresh = useCallback(() => {
         if (pendingRef.current) {
@@ -93,7 +98,7 @@ export function UtilityWorkspace<T>({
     const pending = state.loader !== load || state.pending;
 
     return (
-        <section className="utility-workspace page-surface--utility" aria-labelledby="route-title">
+        <section className="utility-workspace page-surface--utility" aria-busy={value === undefined && pending} aria-labelledby="route-title">
             <header className="utility-workspace-toolbar">
                 {back}
                 <PageTitle>{title}</PageTitle>
@@ -121,7 +126,7 @@ export function UtilityWorkspace<T>({
                     </div>
                 )}
                 {value === undefined ? (
-                    pending ? <p role="status">Loading…</p> : null
+                    pending ? <LoadingState title="Loading…" /> : null
                 ) : (
                     <>
                         {action === undefined || !actionOpen ? null : (
@@ -135,4 +140,9 @@ export function UtilityWorkspace<T>({
             </ScrollArea>
         </section>
     );
+}
+
+function errorCode(caught: unknown): string {
+    return typeof caught === "object" && caught !== null && "code" in caught && typeof caught.code === "string"
+        ? caught.code : "internal_error";
 }

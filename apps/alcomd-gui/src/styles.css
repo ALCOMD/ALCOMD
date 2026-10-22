@@ -221,6 +221,7 @@ md-linear-progress {
 }
 
 .main-content {
+    position: relative;
     min-width: 0;
     min-height: 0;
     margin: 12px 12px 12px 0;
@@ -232,17 +233,10 @@ md-linear-progress {
 
 .route-content { height: 100%; min-width: 0; min-height: 0; }
 
-:root[data-input-modality="pointer"] .navigation-item {
-    transition: background-color 120ms cubic-bezier(0.2, 0, 0, 1);
-}
-
-:root[data-input-modality="pointer"] .operation-feedback {
-    transition: opacity 140ms cubic-bezier(0.2, 0, 0, 1);
-}
-
-@starting-style {
-    :root[data-input-modality="pointer"] .operation-feedback { opacity: 0.65; }
-}
+.page-navigation-progress { position: absolute; top: 8px; left: 24px; right: 24px; pointer-events: none; }
+.page-navigation-progress .loading-state { min-height: 0; padding: 0; }
+.page-navigation-progress .loading-state-indicator { max-width: none; }
+.page-navigation-progress h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 
 .projects-page { display: flex; flex-direction: column; gap: 12px; height: 100%; min-height: 0; }
 
@@ -1025,6 +1019,25 @@ md-linear-progress {
     border-radius: var(--alcomd-shape-container);
     background: var(--surface-container-high);
     text-align: center;
+}
+
+.loading-state {
+    min-height: 56px;
+    padding: 16px 8px;
+}
+
+.loading-state-indicator:not([hidden]) {
+    display: grid;
+    gap: 8px;
+    max-width: 320px;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
+.loading-state h2,
+.loading-state p {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 400;
 }
 
 .route-state--error {

@@ -16,6 +16,7 @@ import {
     type Ref
 } from "react";
 import { createPortal } from "react-dom";
+import { LocalPageReadContext } from "./PageRead";
 
 type MaterialElement = HTMLElement & {
     anchorElement?: HTMLElement | null;
@@ -468,7 +469,7 @@ export function Dialog({ children, onClose, open, title, wide = false, dismissib
             materialElements.dialog,
             { ariaLabel: title, open, ref, style: wide ? { maxWidth: "min(848px, calc(100vw - 48px))" } : undefined } as MaterialProps,
             createElement("div", { slot: "headline" }, title),
-            createElement("div", { className: wide ? "material-dialog-content material-dialog-content--wide" : "material-dialog-content", slot: "content" }, children)
+            createElement("div", { className: wide ? "material-dialog-content material-dialog-content--wide" : "material-dialog-content", slot: "content" }, <LocalPageReadContext.Provider value={true}>{children}</LocalPageReadContext.Provider>)
         ),
         document.body
     );
