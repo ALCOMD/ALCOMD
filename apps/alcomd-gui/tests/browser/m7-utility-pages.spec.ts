@@ -2,6 +2,149 @@ import { expect, test, type Page } from "@playwright/test";
 
 test.use({ viewport: { width: 1440, height: 900 } });
 
+// Every production DesktopList caller, including the shared UtilityTable callers.
+const listRoutes = [
+    ["Projects", "/projects", "ready"],
+    ["Packages", "/projects/00000000-0000-4000-8000-000000000101/packages", "package-multiple"],
+    ["Repositories", "/repositories", "ready"],
+    ["Repository packages", "/repositories/00000000-0000-4000-8000-000000000102", "ready"],
+    ["User Packages", "/user-packages", "package-user-source"],
+    ["Templates", "/templates", "ready"],
+    ["Unity installations", "/unity", "ready"],
+    ["Unity installations", "/settings", "ready"],
+    ["Backups", "/projects/00000000-0000-4000-8000-000000000101/backups", "ready"],
+    ["Tasks", "/operations", "ready"],
+    ["Activity", "/activity", "ready"],
+    ["Diagnostics", "/diagnostics", "ready"]
+] as const;
+
+for (const width of [1280, 1440]) {
+    test(`all shared list pages keep long text and controls on their existing lines at ${width}px`, async ({ page }) => {
+        test.setTimeout(60_000);
+        await page.setViewportSize({ width, height: 900 });
+        for (const [label, route, state] of listRoutes) {
+            await test.step(`${label} ${route}`, async () => {
+                await page.goto(`/browser-harness.html?route=${encodeURIComponent(route)}&state=${state}`);
+                await page.mouse.move(0, 0);
+                const table = page.getByRole("table", { name: label, exact: true });
+                await expect(table.locator("tbody tr").first()).toBeVisible();
+                const viewport = table.locator("..");
+                await viewport.scrollIntoViewIfNeeded();
+                for (const corner of ["top-left", "top-right", "bottom-left", "bottom-right"]) {
+                    await expect(viewport).toHaveCSS(`border-${corner}-radius`, "20px");
+                }
+                expect(await viewport.evaluate((element) => {
+                    const box = element.getBoundingClientRect();
+                    const atCorner = document.elementFromPoint(box.left + 1, box.top + 1);
+                    const atHeader = document.elementFromPoint(box.left + 24, box.top + 3);
+                    return atCorner !== null && !element.contains(atCorner) && atHeader !== null && element.contains(atHeader);
+                })).toBe(true);
+                await page.evaluate(() => document.fonts.ready);
+                const cards = await table.evaluate((element) => {
+                    const rows = Array.from(element.querySelectorAll("tr"));
+                    const cells = Array.from(element.querySelectorAll("th, td"));
+                    return {
+                        rowGaps: rows.slice(1).map((row, index) => row.getBoundingClientRect().top - rows[index]!.getBoundingClientRect().bottom),
+                        backgrounds: cells.map((cell) => getComputedStyle(cell).backgroundColor),
+                        borders: cells.map((cell) => getComputedStyle(cell).borderBottomWidth),
+                        corners: rows.map((row) => [
+                            getComputedStyle(row.firstElementChild!).borderTopLeftRadius,
+                            getComputedStyle(row.firstElementChild!).borderBottomLeftRadius,
+                            getComputedStyle(row.lastElementChild!).borderTopRightRadius,
+                            getComputedStyle(row.lastElementChild!).borderBottomRightRadius
+                        ])
+                    };
+                });
+                expect(cards.rowGaps.every((gap) => Math.abs(gap - 2) <= 1)).toBe(true);
+                expect(new Set(cards.backgrounds).size).toBe(1);
+                expect(cards.borders.every((border) => border === "0px")).toBe(true);
+                expect(cards.corners).toEqual(cards.corners.map((_, index) => [
+                    index === 0 ? "20px" : "8px",
+                    index === cards.corners.length - 1 ? "20px" : "8px",
+                    index === 0 ? "20px" : "8px",
+                    index === cards.corners.length - 1 ? "20px" : "8px"
+                ]));
+                const result = await table.evaluate((element) => {
+                    const rows = Array.from(element.querySelectorAll("tbody tr"));
+                    const heights = rows.map((row) => row.getBoundingClientRect().height);
+                    const probeNodes: Text[] = [];
+                    for (const cell of element.querySelectorAll("tbody td")) {
+                        const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+                        while (walker.nextNode()) {
+                            const node = walker.currentNode as Text;
+                            const parent = node.parentElement;
+                            if (!node.textContent?.trim() || parent === null || parent.closest("button, input, select, md-menu, md-text-button, md-filled-button, md-filled-tonal-button, md-outlined-button, md-icon-button, md-checkbox, md-icon, .material-toggle, .visually-hidden") !== null) continue;
+                            node.textContent += " Long label 中文路径 C:/Projects/very-long-folder/package-without-breaks\n".repeat(8);
+                            probeNodes.push(node);
+                            break;
+                        }
+                    }
+                    const wrappedText = probeNodes.filter((node) => {
+                        const range = document.createRange();
+                        range.selectNodeContents(node);
+                        return new Set(Array.from(range.getClientRects(), (rect) => Math.round(rect.top))).size > 1;
+                    }).length;
+                    const wrappingContainers = Array.from(element.querySelectorAll("th, th *, tbody td, tbody td *")).filter((node) => {
+                        if (node.closest("md-menu, svg") !== null) return false;
+                        const style = getComputedStyle(node);
+                        return style.whiteSpace !== "nowrap" || ((style.display === "flex" || style.display === "inline-flex") && style.flexWrap !== "nowrap");
+                    }).map((node) => node.tagName + "." + node.className);
+                    const clippedControls = Array.from(element.querySelectorAll("tbody :is(md-text-button, md-filled-button, md-filled-tonal-button, md-outlined-button, md-icon-button, md-checkbox)")).filter((control) => {
+                        if (control.closest("md-menu") !== null || control.getClientRects().length === 0) return false;
+                        const cell = control.closest("td")!;
+                        const controlBox = control.getBoundingClientRect();
+                        const cellBox = cell.getBoundingClientRect();
+                        return controlBox.left < cellBox.left - 1 || controlBox.right > cellBox.right + 1;
+                    }).map((control) => control.getAttribute("aria-label") ?? control.textContent?.trim());
+                    return {
+                        probes: probeNodes.length,
+                        wrappedText,
+                        wrappingContainers,
+                        clippedControls,
+                        rowHeightChanges: rows.map((row, index) => Math.abs(row.getBoundingClientRect().height - heights[index]!)),
+                        pageOverflows: document.documentElement.scrollWidth > window.innerWidth,
+                        defaults: Array.from(element.querySelectorAll("tbody td"), (cell) => cell.getAttribute("data-cell-flow"))
+                    };
+                });
+                expect(result.probes).toBeGreaterThan(0);
+                expect(result.defaults.every((flow) => flow === "truncate")).toBe(true);
+                expect(result.wrappedText).toBe(0);
+                expect(result.wrappingContainers).toEqual([]);
+                expect(result.clippedControls).toEqual([]);
+                expect(result.rowHeightChanges.every((change) => change <= 1)).toBe(true);
+                expect(result.pageOverflows).toBe(false);
+            });
+        }
+    });
+}
+
+test("surfaces share the accepted Projects shape hierarchy beyond lists", async ({ page }) => {
+    await openHarness(page, "/projects");
+    await expect(page.locator(".main-content")).toHaveCSS("border-radius", "28px");
+    await expect(page.locator(".projects-content")).toHaveCSS("border-radius", "20px");
+    await page.getByRole("button", { name: "Grid view", exact: true }).click();
+    await expect(page.locator(".projects-secondary-toolbar")).toHaveCSS("border-radius", "28px");
+    await expect(page.locator(".project-card").first()).toHaveCSS("border-radius", "18px");
+    const cases = [
+        ["/settings", ".settings-section", "20px"],
+        ["/extensions", ".extension-management", "20px"],
+        ["/extensions", ".extension-card", "18px"],
+        ["/about", ".notice-card", "18px"],
+        ["/activity", ".logs-filter-toolbar", "28px"],
+        ["/diagnostics", ".logs-filter-toolbar", "28px"],
+        ["/projects/00000000-0000-4000-8000-000000000101/packages", ".package-workspace-surface", "20px"]
+    ] as const;
+    for (const [route, selector, radius] of cases) {
+        await openHarness(page, route);
+        await expect(page.locator(".main-content")).toHaveCSS("border-radius", "28px");
+        const surfaces = page.locator(selector);
+        await expect(surfaces.first()).toBeVisible();
+        for (const surface of await surfaces.all()) await expect(surface).toHaveCSS("border-radius", radius);
+    }
+    await page.goto("/browser-harness.html?route=%2Foperations&state=empty");
+    await expect(page.locator(".route-state")).toHaveCSS("border-radius", "20px");
+});
+
 test("Resources sections and detail return controls work through ordinary clicks", async ({ page }) => {
     await openHarness(page, "/projects");
     await navigationItem(page, "Resources").click();
@@ -60,11 +203,18 @@ test("Settings follows supported v3 group order while Logs retains its two real 
     await navigationItem(page, "Logs").click();
     await expectHeading(page, "Activity");
     const logs = page.getByRole("navigation", { name: "Logs", exact: true });
-    await expect(page.getByRole("table", { name: "Activity", exact: true }).getByRole("columnheader")).toHaveText(["Time", "Status", "Activity", "Target", "Actions"]);
+    const activity = page.getByRole("table", { name: "Activity", exact: true });
+    await expect(activity.getByRole("columnheader")).toHaveText(["Time", "Status", "Activity", "Target", "Actions"]);
+    await expect(activity).toHaveCSS("table-layout", "fixed");
+    await expect(activity.locator("tbody td[data-cell-flow=\"truncate\"]").first()).toHaveCSS("white-space", "nowrap");
+    await expect(activity.locator(".logs-summary small")).toHaveCSS("white-space", "nowrap");
     await logs.getByRole("button", { name: "Diagnostics" }).click();
     await expectHeading(page, "Diagnostics");
     await expect(logs.getByRole("button", { name: "Diagnostics", exact: true })).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByRole("table", { name: "Diagnostics", exact: true }).getByRole("columnheader")).toHaveText(["Time", "Severity", "Subsystem", "Diagnostic", "Actions"]);
+    const diagnostics = page.getByRole("table", { name: "Diagnostics", exact: true });
+    await expect(diagnostics.getByRole("columnheader")).toHaveText(["Time", "Severity", "Subsystem", "Diagnostic", "Actions"]);
+    await expect(diagnostics).toHaveCSS("table-layout", "fixed");
+    await expect(diagnostics.locator(".logs-summary p")).toHaveCSS("white-space", "nowrap");
     await logs.getByRole("button", { name: "Activity", exact: true }).click();
     await expectHeading(page, "Activity");
 });
@@ -183,7 +333,16 @@ test("utility desktop evidence includes the full application window", async ({ p
     }
     await page.goto("/browser-harness.html?route=%2Fuser-packages&state=package-user-source");
     await expectHeading(page, "User Packages");
-    await expect(page.getByRole("table", { name: "User Packages", exact: true }).getByRole("row").filter({ hasText: "Local avatar tools" })).toBeVisible();
+    const userPackages = page.getByRole("table", { name: "User Packages", exact: true });
+    await expect(userPackages.getByRole("row").filter({ hasText: "Local avatar tools" })).toBeVisible();
+    await expect(userPackages).toHaveAttribute("data-sizing", "content");
+    await expect(userPackages).toHaveCSS("table-layout", "auto");
+    const removeEnrollment = page.getByRole("button", { name: "Remove enrollment", exact: true });
+    await expect(removeEnrollment).toBeVisible();
+    const [tableBox, removeBox] = await Promise.all([userPackages.boundingBox(), removeEnrollment.boundingBox()]);
+    expect(tableBox).not.toBeNull();
+    expect(removeBox).not.toBeNull();
+    expect((removeBox?.x ?? 0) + (removeBox?.width ?? 0)).toBeLessThanOrEqual((tableBox?.x ?? 0) + (tableBox?.width ?? 0));
     await page.screenshot({ path: `${directory}/user-packages-populated.png`, fullPage: false, animations: "disabled" });
 });
 
