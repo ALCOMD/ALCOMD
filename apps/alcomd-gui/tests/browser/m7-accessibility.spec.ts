@@ -64,7 +64,7 @@ test("ordinary route changes never replace content with capability negotiation",
         const observer = new MutationObserver((records) => {
             for (const record of records) for (const node of record.addedNodes) {
                 if (!(node instanceof Element)) continue;
-                const loading = node.matches(".route-state--loading") ? [node] : node.querySelectorAll(".route-state--loading");
+                const loading = node.matches(".loading-state") ? [node] : node.querySelectorAll(".loading-state");
                 for (const state of loading) {
                     if (state.textContent?.includes("Checking daemon capabilities.")) window.capabilityLoadingScreens.push(state.textContent);
                 }

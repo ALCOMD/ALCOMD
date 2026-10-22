@@ -333,7 +333,7 @@ test("utility desktop evidence includes the full application window", async ({ p
     for (const [name, route, heading] of routes) {
         await openHarness(page, route);
         await expectHeading(page, heading);
-        await expect(page.getByRole("main").locator(".route-state--loading")).toHaveCount(0);
+        await expect(page.getByRole("main").locator(".loading-state")).toHaveCount(0);
         await expect(page.getByRole("main").locator(".route-state--error")).toHaveCount(0);
         await page.evaluate(() => document.fonts.ready);
         await page.screenshot({ path: `${directory}/${name}.png`, fullPage: false, animations: "disabled" });

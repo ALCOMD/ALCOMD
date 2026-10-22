@@ -87,6 +87,9 @@ if (!materialEvidence) window.history.replaceState(null, "", initialRoute);
 
 class DeterministicGuiClient implements GuiRpcClient {
     private candidateSourceWasDelayed = false;
+    private repositoriesReady: Promise<void> | undefined;
+    private settingsReady: Promise<void> | undefined;
+    private unityReady: Promise<void> | undefined;
     private settings: SettingsGetResult = {
         configSchema: 2,
         revision: 7,
@@ -184,7 +187,11 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ operation: { ...runningOperation(), operationId, state: "cancelling", revision: 4 }, replayed: false });
     }
 
-    settingsGet(): ReturnType<GuiRpcClient["settingsGet"]> {
+    async settingsGet(): ReturnType<GuiRpcClient["settingsGet"]> {
+        if (query.has("holdSettings")) {
+            this.settingsReady ??= new Promise<void>((resolve) => window.addEventListener("test-settings-ready", () => resolve(), { once: true }));
+            await this.settingsReady;
+        }
         return this.value(this.settings);
     }
 
@@ -295,7 +302,14 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
 
     repositoriesInspect(): ReturnType<GuiRpcClient["repositoriesInspect"]> { return this.value({ repository: repository() }); }
-    repositoriesList(cursor?: { registeredAtMs: number; id: string }): ReturnType<GuiRpcClient["repositoriesList"]> {
+    async repositoriesList(cursor?: { registeredAtMs: number; id: string }): ReturnType<GuiRpcClient["repositoriesList"]> {
+        if (query.has("holdRepositories")) {
+            this.repositoriesReady ??= new Promise<void>((resolve, reject) => window.addEventListener("test-repositories-ready", (event) => {
+                if (event instanceof CustomEvent && event.detail === "error") reject({ code: "daemon_unavailable" });
+                else resolve();
+            }, { once: true }));
+            await this.repositoriesReady;
+        }
         if (this.mode === "empty" || this.mode === "package-no-repositories") return this.value({ repositories: [] });
         if (["package-multiple", "package-partial-failure"].includes(this.mode) || query.get("twoInstalled")) {
             return cursor === undefined
@@ -449,7 +463,11 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ userPackageId: USER_PACKAGE_ID, revision: 2, removed: true, replayed: false });
     }
 
-    unityInstallationsList(): ReturnType<GuiRpcClient["unityInstallationsList"]> {
+    async unityInstallationsList(): ReturnType<GuiRpcClient["unityInstallationsList"]> {
+        if (query.has("holdUnity")) {
+            this.unityReady ??= new Promise<void>((resolve) => window.addEventListener("test-unity-ready", () => resolve(), { once: true }));
+            await this.unityReady;
+        }
         const installations = this.mode === "empty" || this.mode === "unity-zero"
             ? []
             : this.mode === "unity-multiple"
