@@ -48,6 +48,7 @@ import {
 } from "./CorePages";
 import { PortableUiRenderer } from "./PortableUiRenderer";
 import { PageTitle } from "./PageTitle";
+import { PageTransition } from "./PageTransition";
 import { useScrollArea } from "./ScrollArea";
 import { navigationLabels } from "./navigation-labels";
 import {
@@ -213,14 +214,16 @@ export function App({ client = guiRpcClient }: AppProps) {
                         navigate={navigate}
                     />
                     <main className="main-content" id="main-content">
-                        <RouteContent
-                            client={client}
-                            locale={locale}
-                            navigate={navigate}
-                            onDirtyChange={handleDirtyChange}
-                            onSettingsApplied={applySettings}
-                            route={route}
-                        />
+                        <PageTransition routeKey={routePath(route)}>
+                            <RouteContent
+                                client={client}
+                                locale={locale}
+                                navigate={navigate}
+                                onDirtyChange={handleDirtyChange}
+                                onSettingsApplied={applySettings}
+                                route={route}
+                            />
+                        </PageTransition>
                     </main>
                 </div>
                 <MaterialDialog onClose={() => setPendingRoute(undefined)} open={pendingRoute !== undefined} title="Discard unsaved changes?">
