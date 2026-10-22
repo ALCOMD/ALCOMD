@@ -1,8 +1,16 @@
 # 项目状态
 
-最后更新：2026-09-22
+最后更新：2026-10-22
 
 ## 当前阶段
+
+2026-10-22：公共列表由 `DesktopList` 统一持有列定义、表头、行、滚动和排序。默认列禁止文字软换行及 flex 操作控件折行，包含嵌套内容；主副文本等显式分行保留。`UtilityTable` 不再隐式放开所有列换行，全部生产调用方使用组件默认值；标准按钮宽度受单元格限制，长标签沿用 Material 自身省略行为。已审计 Projects、Project Packages、Repositories、Repository Packages（独立页和浏览弹窗）、User Packages、Templates、Unity、Settings 内 Unity installations、Backups、Task Center、Activity 和 Diagnostics。包页保留同列主操作及逐行更多菜单、单一工具栏内 Update All；Activity / Diagnostics 保留固定列布局、完整 UTC 时间和列内摘要截断。
+
+圆角沿用已认可的 Projects 层级：共享 `--alcomd-shape-canvas/container/card` 分别为 28px / 20px / 18px，公共列表滚动容器统一负责内容裁切。Settings、Extensions、空/错误状态、反馈及 Portable UI 容器复用相同层级，Material 按钮、导航和弹窗保留其控件形状。列表项采用所有者提供参考图所明确的卡片样式：无双色条纹、无分割线、统一底色，行间为真实 2px 空隙；行内连接处 8px 微圆角，首项上圆角及尾项下圆角保留原 20px，表头视为首个列表项。粘性操作列沿用同一行底色及 hover 状态，不再单独绘制条纹。
+
+项目所有者认可当前列表样式并授权分批本地提交，暂不推送；该认可仅覆盖当前列表样式，不代表完整 H2-A 交互或 Visual Gate 2 通过。
+
+卡片式列表完整 GUI browser suite（单 worker）首轮 96/97：一项在 `browserContext.newPage` 阶段 `Target crashed`，未进入用例；代码及断言不变单独复跑 1/1 通过。最终首尾圆角增量的逐页/截图专项 3/3、GUI 与共享 UI check、frontend build、debug Tauri no-bundle、diff check 通过。12 个列表入口在 1280px / 1440px 下统一验证长内容、按钮边界、真实行间空隙、无条纹/边线、首尾及内部圆角、圆角命中裁切，另有非列表层级回归。浏览器完整窗口证据位于 `target/m7-v3-recheck-20260919/browser/`。当前 debug GUI 摘要 `A8EBCFC7C90ECD2C9615D6B1108C0B5EF37435048B08E309E926B05C746C0222`，已打开并使用原隔离 daemon 供所有者复验；窗口启动不代表真实交互或人工视觉验收通过，屏幕阅读器证据仍未取得。构建保留既有大 chunk 警告，**Visual Gate 2 PENDING**。
 
 2026-09-22：所有者明确选定 MD3 Segmented buttons。Resources 与 Logs/Settings 同类切换入口已复用现有 Material Web 2.5.0 labs 的 outlined segmented button/set，使用单选、文字式无勾选图标配置，保留禁用条件与路由权威状态；移除旧普通按钮拼接底板。原按钮宽度 WIP 保留，无新增依赖或 RPC。组件/页面回归 17/17，键盘、禁用跳过及拒绝导航恢复专项 1/1；专项首轮因 Shadow DOM slotted 子元素定位失败，修正测试定位后通过。check/build 与 diff check 通过，构建保留既有大 chunk 警告。浏览器完整窗口证据在 `target/m7-v3-recheck-20260919/browser/`；未取得新的真实 Tauri 或屏幕阅读器证据。所有者随后授权将按钮宽度与分段按钮改动分别提交，并将本地 main 累积提交正常推送至 origin/main；该授权不代表视觉验收通过。**Visual Gate 2 PENDING**。
 
@@ -10,11 +18,11 @@
 
 - **唯一工作目录**：`C:\Users\M2922\MyProjects\Rust\ALCOMD`；活动分支 `main`。两个额外工作树已经移除，后续不自行创建 worktree。
 - **当前阶段**：M7 H2-A Project Workspace / Packages，`IN_PROGRESS / VISUAL_GATE_2`；尚未通过完整人工视觉验收。
-- **当前代码来源**：Unity 技术验收 `e9349fd` 加 GUI 本地提交链至 `9307572`；整合提交 `9d0ddbb` 的代码树与 `9307572` 完全相同。
+- **当前代码来源**：`main` 基线 `2d8dbacd5e0167c05d6413046c0c10041d993898`，公共列表及 GUI 修正已提交为 `ce99bee`，跨页面列表与圆角回归已提交为 `aac9c30`；此前整合和功能 checkpoint 保留为历史证据。
 - **旧修改保留**：原标准目录 9 个未提交文件完整保存在 `b4547d5`，作为历史恢复快照，不复活已被替代的 Automatic Editor 产品模型。
-- **下一步**：`a41c915106ed647b14d7eef0b89b24c065c3e17d` 为已提交的 H2-A 本地候选。项目所有者 2026-09-19 追加批准在验收前修正其他现有 GUI 页面的基础布局与可用性，要求按 Projects 的参考程度复现 v3 设计；该前端补充已整理为下述本地提交，下一步为审阅和视觉验收；不代表 H2-B/H3-H7 全量获批或任一 Visual Gate 通过。
+- **下一步**：当前列表样式已获所有者认可，仍需完成 H2-A 真实桌面交互和完整视觉验收；项目所有者批准的其他既有页面基础可用性修正属于当前 H2-A，不代表 H2-B/H3-H7 全量获批或任一 Visual Gate 通过。
 - **边界**：候选查询沿用已批准合同；本次其他页面修正只复用现有读写接口与 Material 组件，不新增 State/Config migration、依赖或平台 API，不改变 resolver/Plan/Apply，保留已确认 Projects/package workspace 的图标与布局，不做窄窗口适配，不自动 push。
-- **远端**：本次只有本地整合与获批实现，没有 push、force-push 或历史重写。此前 CI 只证明其对应旧 SHA，不证明本次候选。
+- **远端**：本轮按公共实现、回归测试及验收记录分批创建本地提交，没有 push、force-push 或历史重写；此前 CI 只证明其对应 SHA，不证明本轮本地提交。
 
 整合审计、恢复位置和本轮验证结果见 [工作目录整合记录](testing/workspace-consolidation-20260917.md)。
 
