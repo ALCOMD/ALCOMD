@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { Button } from "./Material";
+import { PageTitle } from "./PageTitle";
 
 interface UtilityWorkspaceProps<T> {
     title: string;
@@ -94,7 +95,7 @@ export function UtilityWorkspace<T>({
         <section className="utility-workspace page-surface--utility" aria-labelledby="route-title">
             <header className="utility-workspace-toolbar">
                 {back}
-                <h1 className={navigation === undefined ? undefined : "sr-only"} id="route-title" tabIndex={-1}>{title}</h1>
+                <PageTitle>{title}</PageTitle>
                 {navigation}
                 <div className="utility-workspace-actions">
                     {value === undefined ? null : tools?.(value, refresh)}

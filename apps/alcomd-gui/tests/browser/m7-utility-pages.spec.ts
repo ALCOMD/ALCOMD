@@ -306,6 +306,8 @@ test("unsaved Settings blocks snapshot refresh and cancelling navigation preserv
 test("utility desktop evidence includes the full application window", async ({ page }) => {
     const directory = "../../target/m7-v3-recheck-20260919/browser";
     const routes = [
+        ["project-packages", "/projects/00000000-0000-4000-8000-000000000101/packages", "<private-project>"],
+        ["project-unity", "/projects/00000000-0000-4000-8000-000000000101/unity", "Project Unity"],
         ["repositories", "/repositories", "Repositories"],
         ["repository", "/repositories/00000000-0000-4000-8000-000000000102", "Repository"],
         ["user-packages", "/user-packages", "User Packages"],
@@ -319,6 +321,7 @@ test("utility desktop evidence includes the full application window", async ({ p
         ["task", "/operations/00000000-0000-4000-8000-000000000105", "Operation detail"],
         ["extensions", "/extensions", "Extensions"],
         ["extension", "/extensions/com.cqmhv.discord", "Extension detail"],
+        ["extension-ui", "/extensions/com.cqmhv.discord/ui", "Extension UI"],
         ["activity", "/activity", "Activity"],
         ["diagnostics", "/diagnostics", "Diagnostics"],
         ["about", "/about", "About"]

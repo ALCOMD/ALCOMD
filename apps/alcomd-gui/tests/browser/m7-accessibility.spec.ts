@@ -86,6 +86,12 @@ test("same-route reconnect refreshes negotiated capabilities before restoring ac
 });
 
 test("every M1-M7 official GUI route resolves through the typed client", async ({ page }) => {
+    await openHarness(page, "/projects");
+    const titleStyle = (element: Element) => {
+        const style = getComputedStyle(element);
+        return { fontSize: style.fontSize, fontWeight: style.fontWeight, lineHeight: style.lineHeight, color: style.color };
+    };
+    const projectsTitleStyle = await page.getByRole("heading", { level: 1, name: "Projects", exact: true }).evaluate(titleStyle);
     const routes = [
         ["/", "Projects"],
         ["/projects", "Projects"],
@@ -94,6 +100,7 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         ["/projects/00000000-0000-4000-8000-000000000101/unity", "Project Unity"],
         ["/projects/00000000-0000-4000-8000-000000000101/backups", "Backups"],
         ["/repositories", "Repositories"],
+        ["/user-packages", "User Packages"],
         ["/repositories/00000000-0000-4000-8000-000000000102", "Repository"],
         ["/templates", "Templates"],
         ["/templates/com.cqmhv.template.avatar", "Template detail"],
@@ -112,7 +119,15 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
     for (const [route, title] of routes) {
         await openHarness(page, route);
         const main = page.getByRole("main");
-        await expect(main.getByRole("heading", { level: 1, name: title })).toBeVisible();
+        const heading = main.getByRole("heading", { level: 1, name: title, exact: true });
+        await expect(heading).toBeVisible();
+        expect(await heading.evaluate(titleStyle)).toEqual(projectsTitleStyle);
+        // A clipped 1px heading is technically visible to Playwright, but not to the owner.
+        expect(await heading.evaluate((element) => {
+            const bounds = element.getBoundingClientRect();
+            const atCenter = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+            return bounds.width > 20 && bounds.height > 20 && atCenter !== null && element.contains(atCenter);
+        })).toBe(true);
         await expect(main.locator('.route-state[role="alert"]')).toHaveCount(0);
     }
 });

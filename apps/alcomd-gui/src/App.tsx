@@ -47,6 +47,7 @@ import {
     UserPackagesPage
 } from "./CorePages";
 import { PortableUiRenderer } from "./PortableUiRenderer";
+import { PageTitle } from "./PageTitle";
 import {
     PortableUiConsumerError,
     acceptSnapshot
@@ -559,8 +560,8 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
         <section className="extension-surface" aria-labelledby="extension-ui-title">
             <header className="extension-chrome">
                 <div>
+                    <PageTitle id="extension-ui-title" ref={headingRef}>Extension UI</PageTitle>
                     <p className="eyebrow">Extension-provided content</p>
-                    <h1 id="extension-ui-title" ref={headingRef} tabIndex={-1}>Extension UI</h1>
                     <p className="extension-id"><code>{extensionId}</code></p>
                 </div>
                 <Button widthLabels={["Working…", "Refresh"]} disabled={busy || snapshot === undefined} onClick={() => void refresh()} type="button" variant="tonal">

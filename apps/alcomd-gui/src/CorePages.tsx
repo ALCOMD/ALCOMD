@@ -53,6 +53,7 @@ import {
     UnityRegistryActions
 } from "./CoreActions";
 import { DesktopList, type DesktopListColumn } from "./DesktopList";
+import { PageTitle } from "./PageTitle";
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { UtilityWorkspace } from "./UtilityWorkspace";
 import "./ExtensionWorkspace.css";
@@ -173,7 +174,7 @@ function ErrorState({ error, retry }: { error: RpcError; retry(): void }) {
 export function HomePage({ client, navigate }: PageProps) {
     const load = useCallback(() => client.systemStatus(), [client]);
     return (
-        <Page title="Home" eyebrow="Official desktop client">
+        <Page title="Home">
             <ResourcePage load={load}>{(status) => (
                 <div className="dashboard-grid">
                     <article className="summary-card"><h2>ALCOMD core</h2><p className="status-value">{status.state}</p><p>Daemon {status.daemonVersion}</p></article>
@@ -282,7 +283,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     return (
         <section className="projects-page">
             <header className="projects-toolbar">
-                <h1 id="route-title" tabIndex={-1}>Projects</h1>
+                <PageTitle>Projects</PageTitle>
                 <IconButton disabled={state.refreshing} label={state.refreshing ? "Refreshing projects" : "Refresh projects"} onClick={() => void refresh()} type="button">
                     <Icon asset={refreshIcon} />
                 </IconButton>
@@ -1398,7 +1399,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                         <div className="project-workspace-context">
                             <Button className="project-back-action" onClick={() => navigate("/projects")} type="button" variant="text"><Icon asset={arrowBackIcon} slot="icon" />Back</Button>
                             <div className="project-workspace-title">
-                                <h1 id="route-title" tabIndex={-1}>{projectName(project)}</h1>
+                                <PageTitle>{projectName(project)}</PageTitle>
                                 <p title={displayProjectPath(project.rootPath)}>{displayProjectPath(project.rootPath)}</p>
                             </div>
                         </div>
@@ -1598,8 +1599,8 @@ async function listAllUserPackages(client: GuiRpcClient): Promise<UserPackageRec
 export function UserPackagesPage({ client, navigate }: PageProps) {
     const capabilityState = useCapabilityState(capabilities.packagesUserPackages);
     const load = useCallback(() => listAllUserPackages(client), [client]);
-    if (capabilityState === "checking") return <Page title="User Packages" eyebrow="Local package sources"><ResourceNavigation current="/user-packages" navigate={navigate} /><RouteState kind="loading" title="Checking capability" /></Page>;
-    if (capabilityState === "unavailable") return <Page title="User Packages" eyebrow="Local package sources"><ResourceNavigation current="/user-packages" navigate={navigate} /><RouteState kind="error" title="Feature unavailable" detail={`${capabilities.packagesUserPackages} was not negotiated by the connected daemon.`} /></Page>;
+    if (capabilityState === "checking") return <Page title="User Packages"><ResourceNavigation current="/user-packages" navigate={navigate} /><RouteState kind="loading" title="Checking capability" /></Page>;
+    if (capabilityState === "unavailable") return <Page title="User Packages"><ResourceNavigation current="/user-packages" navigate={navigate} /><RouteState kind="error" title="Feature unavailable" detail={`${capabilities.packagesUserPackages} was not negotiated by the connected daemon.`} /></Page>;
     return <UtilityWorkspace title="User Packages" load={load} navigation={<ResourceNavigation current="/user-packages" navigate={navigate} />} tools={(_, refresh) => <UserPackageEnroll client={client} onChanged={refresh} />}>{(packages, refresh) => <UserPackageManager client={client} onChanged={refresh} packages={packages} />}</UtilityWorkspace>;
 }
 
@@ -1925,8 +1926,8 @@ export function SettingsPage(props: PageProps & { onApplied(value: SettingsGetRe
     return <SettingsWorkspace {...props} />;
 }
 
-export function Page({ actions, children, eyebrow, title }: { actions?: ReactNode; children: ReactNode; eyebrow: string; title: string }) {
-    return <section className="page-surface page-surface--utility" aria-labelledby="route-title"><header className="page-header"><div><p className="eyebrow">{eyebrow}</p><h1 id="route-title" tabIndex={-1}>{title}</h1></div>{actions}</header>{children}</section>;
+export function Page({ actions, children, title }: { actions?: ReactNode; children: ReactNode; title: string }) {
+    return <section className="page-surface page-surface--utility" aria-labelledby="route-title"><header className="page-header"><PageTitle>{title}</PageTitle>{actions}</header>{children}</section>;
 }
 
 function Detail({ label, value }: { label: string; value: string }) { return <div><dt>{label}</dt><dd>{value}</dd></div>; }
