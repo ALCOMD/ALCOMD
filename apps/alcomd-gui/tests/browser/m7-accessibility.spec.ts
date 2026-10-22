@@ -55,6 +55,34 @@ test("modal traps focus, closes on Escape, and restores the invoking control", a
     await expect(invoke).toBeFocused();
 });
 
+test("ordinary route changes never replace content with capability negotiation", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=%2Fprojects&state=ready&slowStatus=1");
+    await expect(page.getByRole("table", { name: "Projects", exact: true })).toBeVisible();
+    await page.evaluate(() => {
+        window.capabilityLoadingScreens = [];
+        // Record transient mounts as well as stable states; retrying assertions can miss a single frame.
+        const observer = new MutationObserver((records) => {
+            for (const record of records) for (const node of record.addedNodes) {
+                if (!(node instanceof Element)) continue;
+                const loading = node.matches(".route-state--loading") ? [node] : node.querySelectorAll(".route-state--loading");
+                for (const state of loading) {
+                    if (state.textContent?.includes("Checking daemon capabilities.")) window.capabilityLoadingScreens.push(state.textContent);
+                }
+            }
+        });
+        observer.observe(document.getElementById("main-content")!, { childList: true, subtree: true });
+    });
+    for (const [item, heading] of [["Resources", "Repositories"], ["Settings", "Settings"], ["Logs", "Activity"], ["Projects", "Projects"]] as const) {
+        await navigationItem(page, item).click();
+        await expect(page.getByRole("heading", { level: 1, name: heading, exact: true })).toBeVisible();
+    }
+    await navigationItem(page, "Resources").focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("table", { name: "Repositories", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => window.capabilityLoadingScreens)).toEqual([]);
+    await expect(page.getByRole("heading", { level: 1, name: "Repositories", exact: true })).toBeFocused();
+});
+
 test("loading, empty, error, and disconnected states have stable live semantics", async ({ page }) => {
     await openHarness(page, "/projects", "loading");
     await expect(page.getByRole("status").filter({ hasText: "Loading" })).toBeVisible();

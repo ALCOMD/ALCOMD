@@ -138,13 +138,14 @@ export function App({ client = guiRpcClient }: AppProps) {
     useEffect(() => {
         let active = true;
         setNegotiatedCapabilities(undefined);
+        // Capabilities belong to the connection; navigation must not discard them and unmount the page.
         void client.systemStatus().then((status) => {
             if (active) setNegotiatedCapabilities({ kind: "ready", values: new Set(status.capabilities) });
         }).catch(() => {
             if (active) setNegotiatedCapabilities({ kind: "status-unavailable" });
         });
         return () => { active = false; };
-    }, [client, route.kind, connectionGeneration]);
+    }, [client, connectionGeneration]);
 
     useEffect(() => {
         const onPopState = () => {

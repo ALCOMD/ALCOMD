@@ -32,6 +32,7 @@ declare global {
         candidateRequests: Array<Parameters<GuiRpcClient["packageQueryProjectCandidates"]>[0]>;
         resumeCandidateSource?: () => void;
         settingsWrites: Array<{ expectedRevision: number; revision: number }>;
+        capabilityLoadingScreens: string[];
     }
 }
 window.packageRequests = [];
@@ -131,7 +132,8 @@ class DeterministicGuiClient implements GuiRpcClient {
         return structuredClone(value);
     }
 
-    systemStatus(): ReturnType<GuiRpcClient["systemStatus"]> {
+    async systemStatus(): ReturnType<GuiRpcClient["systemStatus"]> {
+        if (query.has("slowStatus")) await new Promise<void>((resolve) => setTimeout(resolve, 120));
         return this.value({
             product: "ALCOMD",
             daemonVersion: "4.0.0-alpha.0",
