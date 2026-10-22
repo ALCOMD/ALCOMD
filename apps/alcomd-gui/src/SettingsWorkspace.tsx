@@ -5,7 +5,7 @@ import type { GuiRpcClient } from "./rpc";
 import { UnityRegistryActions } from "./CoreActions";
 import { capabilities, useCapability } from "./capabilities";
 import { DesktopList } from "./DesktopList";
-import { Button, Checkbox, Select } from "./Material";
+import { Button, Checkbox, RefreshButton, Select } from "./Material";
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { UtilityWorkspace } from "./UtilityWorkspace";
 import { navigationLabels } from "./navigation-labels";
@@ -87,7 +87,7 @@ function UnitySettingsSection({ client }: { client: GuiRpcClient }) {
     return (
         <SettingsSection title="Unity installations" actions={
             <div className="action-row">
-                <Button disabled={!available || busy} onClick={() => setGeneration((current) => current + 1)} type="button" variant="tonal">Refresh</Button>
+                <RefreshButton disabled={!available} label="Refresh Unity installations" onClick={() => setGeneration((current) => current + 1)} refreshing={busy} refreshingLabel="Refreshing Unity installations" />
                 <Button disabled={!manage} onClick={() => setOpen(true)} type="button">Manage installations</Button>
             </div>
         }>

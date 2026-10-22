@@ -20,8 +20,8 @@ import type {
     UnityLaunchOptionsResult
 } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
-import { moreVertIcon, playArrowIcon, starIcon } from "@alcomd/ui/icons";
-import { Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, Menu, MenuItem, Progress, Select, TextField } from "./Material";
+import { closeIcon, moreVertIcon, playArrowIcon, starIcon } from "@alcomd/ui/icons";
+import { Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, Menu, MenuItem, Progress, RefreshButton, Select, TextField } from "./Material";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 
 interface ActionProps {
@@ -82,7 +82,7 @@ export function ProjectActions({ client, onChanged, project }: ActionProps & { p
     return (
         <ActionSection title="Project actions">
             <div className="action-row">
-                <Button disabled={!available || feedback.busy || revision === undefined} onClick={() => void refresh()} title={capabilityUnavailableTitle(available, capabilities.projectsRegistry)} type="button" variant="tonal">Refresh</Button>
+                <RefreshButton disabled={!available || feedback.busy || revision === undefined} onClick={() => void refresh()} title={capabilityUnavailableTitle(available, capabilities.projectsRegistry)} />
                 <Button className="material-button--danger" disabled={!available || feedback.busy || revision === undefined} onClick={() => setConfirmUnregister(true)} title={capabilityUnavailableTitle(available, capabilities.projectsRegistry)} type="button" variant="text">Unregister</Button>
             </div>
             <ConfirmDialog busy={feedback.busy} open={confirmUnregister} title="Unregister this project?" detail="This removes only the ALCOMD registry entry. It does not delete the Unity project." onClose={() => setConfirmUnregister(false)} onConfirm={unregister} />
@@ -152,8 +152,8 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
         finally { pending.current = false; }
     };
     return <div className="repository-row-actions">
-        <Button disabled={!available || !ready || feedback.busy} onClick={() => void run(false)} type="button" variant="text">Refresh repository</Button>
-        <Button disabled={!available || !ready || feedback.busy} onClick={() => setConfirmRemove(true)} type="button" variant="text">Remove</Button>
+        <RefreshButton disabled={!available || !ready || feedback.busy} label="Refresh repository" onClick={() => void run(false)} refreshing={feedback.busy && !confirmRemove} refreshingLabel="Refreshing repository" />
+        <IconButton disabled={!available || !ready || feedback.busy} label="Remove" onClick={() => setConfirmRemove(true)} title="Remove repository" type="button"><Icon asset={closeIcon} /></IconButton>
         <MaterialDialog open={confirmRemove} title="Remove this repository?" dismissible={!feedback.busy} onClose={() => setConfirmRemove(false)}>
             <p>Remove <strong>{repository.name ?? repository.declaredId ?? "this repository"}</strong> from your sources?</p><p>Packages already installed in projects stay installed.</p>
             <MutationFeedback client={client} feedback={feedback} />

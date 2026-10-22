@@ -152,6 +152,10 @@ test("Resources sections and detail return controls work through ordinary clicks
     const resources = page.getByRole("navigation", { name: "Resources", exact: true });
     await expect(resources.getByRole("button", { name: "Repositories", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByRole("table", { name: "Repositories", exact: true }).getByRole("columnheader")).toHaveText(["Repository", "Source", "Actions"]);
+    const repositoryActions = page.getByRole("table", { name: "Repositories", exact: true }).locator("md-icon-button");
+    for (const name of ["package_2", "refresh", "close"]) {
+        await expect(repositoryActions.filter({ has: page.locator(`[data-icon-name="${name}"]`) })).toHaveCount(1);
+    }
     await page.getByRole("button", { name: "Browse packages" }).click();
     const repositoryDialog = page.getByRole("dialog", { name: "Example packages", exact: true });
     const repositoryHost = dialogHost(page, "Example packages");
@@ -342,6 +346,8 @@ test("utility desktop evidence includes the full application window", async ({ p
     await expect(userPackages).toHaveCSS("table-layout", "auto");
     const removeEnrollment = page.getByRole("button", { name: "Remove enrollment", exact: true });
     await expect(removeEnrollment).toBeVisible();
+    await expect(userPackages.locator('md-icon-button').filter({ has: page.locator('[data-icon-name="close"]') })).toHaveCount(1);
+    await expect(userPackages.locator('md-icon-button').filter({ has: page.locator('[data-icon-name="refresh"]') })).toHaveCount(1);
     const [tableBox, removeBox] = await Promise.all([userPackages.boundingBox(), removeEnrollment.boundingBox()]);
     expect(tableBox).not.toBeNull();
     expect(removeBox).not.toBeNull();

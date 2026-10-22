@@ -1,5 +1,5 @@
 import { materialElements } from "@alcomd/ui";
-import { resolveIconGeometry, searchIcon, type IconAsset, type IconSize } from "@alcomd/ui/icons";
+import { refreshIcon, resolveIconGeometry, searchIcon, type IconAsset, type IconSize } from "@alcomd/ui/icons";
 import {
     Children,
     createElement,
@@ -126,6 +126,14 @@ export const IconButton = forwardRef(function IconButton(
         ref
     } as MaterialProps, children);
 });
+
+export function RefreshButton({ label = "Refresh", refreshing = false, refreshingLabel = "Refreshing…", disabled, title, type = "button", ...props }: Omit<IconButtonProps, "children" | "label"> & {
+    label?: string;
+    refreshing?: boolean;
+    refreshingLabel?: string;
+}) {
+    return <IconButton {...props} aria-busy={refreshing} disabled={disabled || refreshing} label={refreshing ? refreshingLabel : label} title={title ?? label} type={type}><Icon asset={refreshIcon} /></IconButton>;
+}
 
 export function NavigationList({ children, ...props }: HTMLAttributes<HTMLElement>) {
     return createElement(materialElements.list, props as MaterialProps, children);

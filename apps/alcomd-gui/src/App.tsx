@@ -53,7 +53,7 @@ import {
     PortableUiConsumerError,
     acceptSnapshot
 } from "./portable-ui";
-import { Button, Dialog as MaterialDialog, Icon, NavigationList, NavigationListItem } from "./Material";
+import { Button, Dialog as MaterialDialog, Icon, NavigationList, NavigationListItem, RefreshButton } from "./Material";
 import { guiRpcClient, type GuiRpcClient } from "./rpc";
 import type { SettingsGetResult } from "./core-models";
 import {
@@ -566,9 +566,7 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
                     <p className="eyebrow">Extension-provided content</p>
                     <p className="extension-id"><code>{extensionId}</code></p>
                 </div>
-                <Button widthLabels={["Working…", "Refresh"]} disabled={busy || snapshot === undefined} onClick={() => void refresh()} type="button" variant="tonal">
-                    {busy && snapshot !== undefined ? "Working…" : "Refresh"}
-                </Button>
+                <RefreshButton disabled={busy || snapshot === undefined} onClick={() => void refresh()} refreshing={busy && snapshot !== undefined} refreshingLabel="Working…" />
             </header>
             {extension === undefined ? null : <ExtensionIdentity extension={extension} />}
             {busy && snapshot === undefined ? (

@@ -7,12 +7,13 @@ import {
     arrowDownwardIcon,
     arrowUpwardIcon,
     backupIcon,
+    closeIcon,
     downloadIcon,
     helpIcon,
     moreVertIcon,
     playArrowIcon,
+    packagesIcon,
     publicIcon,
-    refreshIcon,
     starIcon,
     upgradeIcon,
     viewGridIcon,
@@ -61,7 +62,7 @@ import "./ExtensionWorkspace.css";
 import { SettingsWorkspace } from "./SettingsWorkspace";
 import { PagedItems } from "./PagedItems";
 import type { GuiRpcClient } from "./rpc";
-import { Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, SearchField, SegmentedButtons, Select, Switch, TextField } from "./Material";
+import { Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, RefreshButton, SearchField, SegmentedButtons, Select, Switch, TextField } from "./Material";
 import { CreateProjectDialog, RestoreProjectDialog } from "./ProjectCreationDialogs";
 import { capabilities, capabilityUnavailableTitle, useCapability, useCapabilityState, useReconnect } from "./capabilities";
 
@@ -143,9 +144,7 @@ function RefreshBar({ error, refresh, refreshing }: { error?: RpcError; refresh(
         <div className="refresh-bar" role="status" aria-live="polite">
             <span>{refreshing ? "Refreshing while keeping the last result…" : "Current daemon state"}</span>
             {error === undefined ? null : <span className="inline-error">Refresh failed: {error.code}</span>}
-            <Button widthLabels={["Refreshing…", "Refresh"]} disabled={refreshing} onClick={refresh} type="button" variant="tonal">
-                {refreshing ? "Refreshing…" : "Refresh"}
-            </Button>
+            <RefreshButton onClick={refresh} refreshing={refreshing} />
         </div>
     );
 }
@@ -285,9 +284,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
         <section className="projects-page">
             <header className="projects-toolbar">
                 <PageTitle>{navigationLabels.projects}</PageTitle>
-                <IconButton disabled={state.refreshing} label={state.refreshing ? "Refreshing projects" : "Refresh projects"} onClick={() => void refresh()} type="button">
-                    <Icon asset={refreshIcon} />
-                </IconButton>
+                <RefreshButton label="Refresh projects" onClick={() => void refresh()} refreshing={state.refreshing} refreshingLabel="Refreshing projects" />
                 <SearchField className="projects-search" label="Search projects" onInput={setSearch} placeholder="Search..." value={search} />
                 <Button onClick={() => setView((current) => current === "list" ? "grid" : "list")} type="button" variant="text">
                     <Icon asset={view === "list" ? viewGridIcon : viewListIcon} slot="icon" />
@@ -1425,7 +1422,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                     <section aria-labelledby="packages-heading" className="package-workspace-surface">
                         <header className="package-workspace-toolbar">
                             <h2 id="packages-heading">Manage packages</h2>
-                             <IconButton className="package-refresh-action" disabled={!canManageRepositories || refreshing || repositoryRefresh?.running === true} label={repositoryRefresh?.running === true ? "Refreshing packages" : "Refresh"} onClick={() => void refreshRepositories(refresh)} title={capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry) ?? "Refresh packages"} type="button"><Icon asset={refreshIcon} /></IconButton>
+                             <RefreshButton className="package-refresh-action" disabled={!canManageRepositories || refreshing || repositoryRefresh?.running === true} onClick={() => void refreshRepositories(refresh)} refreshing={repositoryRefresh?.running === true} refreshingLabel="Refreshing packages" title={capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry) ?? "Refresh packages"} />
                              <SearchField className="package-workspace-search" label="Search packages" onInput={setSearch} placeholder="Search..." value={search} />
                              {currentEvidence ? <>
                                  <Button disabled={!canPlanPackagesV2 || !allLatest.enabled} onClick={() => submitBulk(allLatest.intents, allLatest.exclusions)} type="button" variant="tonal">Update All ({allLatest.intents.length})</Button>
@@ -1550,7 +1547,7 @@ export function RepositoriesPage({ client, navigate }: PageProps) {
     const [selected, setSelected] = useState<RepositorySnapshot>();
     return <UtilityWorkspace title={navigationLabels.resources} load={load} navigation={<ResourceNavigation current="/repositories" navigate={navigate} />} action={{ label: "Add repository", render: (_, refresh) => <RegisterRepositoryPanel client={client} onChanged={refresh} /> }}>
         {(repositories, refresh) => <>
-            {repositories.length === 0 ? <RouteState kind="empty" title="No repositories registered" /> : <DesktopList columns={[{ key: "repository", header: "Repository", width: "34%" }, { key: "source", header: "Source" }, { key: "actions", header: "Actions", width: 280 }]} label="Repositories" minWidth={640} rows={repositories.map((repository) => ({ key: repository.repositoryId ?? sourceText(repository), cells: [<strong>{repository.name ?? repository.declaredId ?? "Repository"}</strong>, <span title={sourceText(repository)}>{sourceText(repository)}</span>, <div className="card-actions"><Button disabled={repository.repositoryId === undefined} onClick={() => setSelected(repository)} type="button" variant="text">Browse packages</Button><RepositoryActions client={client} onChanged={refresh} repository={repository} /></div>] }))} />}
+            {repositories.length === 0 ? <RouteState kind="empty" title="No repositories registered" /> : <DesktopList columns={[{ key: "repository", header: "Repository", width: "34%" }, { key: "source", header: "Source" }, { key: "actions", header: "Actions", width: 280 }]} label="Repositories" minWidth={640} rows={repositories.map((repository) => ({ key: repository.repositoryId ?? sourceText(repository), cells: [<strong>{repository.name ?? repository.declaredId ?? "Repository"}</strong>, <span title={sourceText(repository)}>{sourceText(repository)}</span>, <div className="card-actions"><IconButton disabled={repository.repositoryId === undefined} label="Browse packages" onClick={() => setSelected(repository)} title="Browse packages" type="button"><Icon asset={packagesIcon} /></IconButton><RepositoryActions client={client} onChanged={refresh} repository={repository} /></div>] }))} />}
             {selected?.repositoryId === undefined ? null : <Dialog wide open title={selected.name ?? "Repository packages"} onClose={() => setSelected(undefined)}>
                 <RepositoryPackageList client={client} repositoryId={selected.repositoryId} />
                 <div className="dialog-actions"><Button onClick={() => setSelected(undefined)} type="button" variant="text">Close</Button></div>
@@ -1662,7 +1659,7 @@ function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcCli
             pending.current = false;
         }
     };
-    return <section className="user-packages">{error === undefined ? null : <p className="inline-error" role="alert">User Package request failed: {error.code}</p>}{packages.length === 0 ? <RouteState kind="empty" title="No User Packages enrolled" detail="Enroll a package folder to make it available as a source. Removing enrollment never deletes the source folder." /> : <UtilityTable label="User Packages" headers={["Package", "Version", "Source", "Actions"]} rows={packages.map((item) => ({ key: item.userPackageId, cells: [<><strong>{item.displayName ?? item.packageId}</strong><small>{item.packageId}</small></>, item.version, <span title={item.userPackageId}>Local / User Package<small>revision {item.revision}</small></span>, <div className="card-actions"><Button widthLabels={["Refreshing…", "Refresh"]} disabled={busy !== undefined} onClick={() => void refresh(item)} type="button" variant="text">{busy === "refresh:" + item.userPackageId ? "Refreshing…" : "Refresh"}</Button><Button widthLabels={["Removing…", "Remove enrollment"]} disabled={busy !== undefined} onClick={() => setRemoving(item)} type="button" variant="text">{busy === "remove:" + item.userPackageId ? "Removing…" : "Remove enrollment"}</Button></div>] }))} />}{removing === undefined ? null : <Dialog open dismissible={busy === undefined} title="Remove User Package?" onClose={() => { if (busy === undefined) setRemoving(undefined); }}>
+    return <section className="user-packages">{error === undefined ? null : <p className="inline-error" role="alert">User Package request failed: {error.code}</p>}{packages.length === 0 ? <RouteState kind="empty" title="No User Packages enrolled" detail="Enroll a package folder to make it available as a source. Removing enrollment never deletes the source folder." /> : <UtilityTable label="User Packages" headers={["Package", "Version", "Source", "Actions"]} rows={packages.map((item) => ({ key: item.userPackageId, cells: [<><strong>{item.displayName ?? item.packageId}</strong><small>{item.packageId}</small></>, item.version, <span title={item.userPackageId}>Local / User Package<small>revision {item.revision}</small></span>, <div className="card-actions"><RefreshButton disabled={busy !== undefined} onClick={() => void refresh(item)} refreshing={busy === "refresh:" + item.userPackageId} /><IconButton disabled={busy !== undefined} label={busy === "remove:" + item.userPackageId ? "Removing…" : "Remove enrollment"} onClick={() => setRemoving(item)} title="Remove enrollment" type="button"><Icon asset={closeIcon} /></IconButton></div>] }))} />}{removing === undefined ? null : <Dialog open dismissible={busy === undefined} title="Remove User Package?" onClose={() => { if (busy === undefined) setRemoving(undefined); }}>
         <p>Remove <strong>{removing.displayName ?? removing.packageId}</strong> ({removing.version}) from your package sources?</p><p>The source folder will stay on disk.</p>
         {error === undefined ? null : <p role="alert">Removal failed: {error.code}</p>}
         <div className="dialog-actions"><Button disabled={busy !== undefined} onClick={() => setRemoving(undefined)} type="button" variant="text">Cancel</Button><Button disabled={busy !== undefined} onClick={() => void remove(removing)} type="button">Remove enrollment</Button></div>

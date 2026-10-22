@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { UtilityActionDialog } from "./UtilityActionDialog";
-import { Button } from "./Material";
+import { Button, RefreshButton } from "./Material";
 import { PageTitle } from "./PageTitle";
 
 interface UtilityWorkspaceProps<T> {
@@ -99,9 +99,7 @@ export function UtilityWorkspace<T>({
                 {navigation}
                 <div className="utility-workspace-actions">
                     {value === undefined ? null : tools?.(value, refresh)}
-                    <Button widthLabels={["Refreshing…", "Refresh"]} disabled={pending || refreshDisabled} onClick={refresh} type="button" variant="tonal">
-                        {pending ? "Refreshing…" : "Refresh"}
-                    </Button>
+                    <RefreshButton disabled={refreshDisabled} onClick={refresh} refreshing={pending} />
                     {action === undefined ? null : (
                         <Button
                             aria-haspopup="dialog"

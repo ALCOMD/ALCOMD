@@ -150,6 +150,11 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         const main = page.getByRole("main");
         const heading = main.getByRole("heading", { level: 1, name: title, exact: true });
         await expect(heading).toBeVisible();
+        const refresh = main.locator(".projects-toolbar md-icon-button, .package-workspace-toolbar md-icon-button, .utility-workspace-toolbar md-icon-button, .extension-chrome md-icon-button")
+            .filter({ has: page.locator('[data-icon-name="refresh"]') });
+        await expect(refresh).toHaveCount(1);
+        await expect(refresh.getByRole("button")).toHaveAccessibleName(/^(Refresh|Working)/);
+        await expect(refresh).toHaveText("");
         if (sidebarRoutes.has(route)) {
             const sidebarLabel = page.locator('#primary-navigation .navigation-item[selected] .navigation-item-label');
             await expect(sidebarLabel).toHaveCount(1);
