@@ -24,7 +24,13 @@
 
 标题/刷新/资源行按钮专项 16/16（退出码 0），覆盖 22 个入口的侧栏标题对应和原生工具栏刷新图标、12 个列表入口的桌面几何、刷新请求合并/过时响应/错误、用户包移除确认及焦点等既有行为。`npm run check`、`npm run build`、debug Tauri no-bundle 与 diff check 通过。完整窗口 fixture 截图已更新至 `target/m7-v3-recheck-20260919/browser/`；该专项不代表完整 GUI suite、屏幕阅读器或真实 Tauri 交互通过。没有修改 Rust，未重复完整 Rust Workspace 测试；既有环境限制仍保留，未推送也未运行当前 Hosted CI。
 
-当前 `target/debug/alcomd-gui.exe` 为 dev profile（unoptimized + debuginfo），SHA-256 `56350826C2AEEE7CB79CEBFC907CCBC9E42F11633400C0931E66C48D2A871CEE`，已重开，沿用原 `target/m7-icon-acceptance-20260906/data` 隔离 daemon，启动前已核对 daemon 的 executable 和 data-dir。窗口启动不代表标题、按钮、切页的真实桌面交互或人工视觉验收通过，屏幕阅读器证据仍未取得。构建保留既有大 chunk 警告，**Visual Gate 2 PENDING**。
+自绘滚动条使用 `overlayscrollbars = 2.17.0`（MIT，无额外 runtime dependencies），通过共享 `@alcomd/ui` adapter/theme 和 GUI `ScrollArea` 接入公共列表、工作区、Projects 网格、侧栏及筛选弹层；Material dialog/menu（含 Select 内部菜单）通过 Lit 公开生命周期接入。冻结 v3 使用 Radix React ScrollArea；本轮选择可绑定现有 viewport 的 OverlayScrollbars，不复制 v3 源码，也不引入 React adapter 或第二套库。真实轨道/滑块由库生成 DOM，原生滚动条只隐藏，不保留原生换肤实现；沿用 10px 透明轨道、细圆角滑块及共享主题/高对比度颜色。滚轮、触控、键盘及内容滚动保持浏览器原生语义。React 首次测量在子元素更新后的帧执行，并用库的 initialize 属性避免原生滚动条闪现；关闭的 Material 弹层不建实例，关闭/卸载时销毁观察器和生成节点。滑块层级高于列表粘性列；公共工作区原有“唯一内容列表”高度规则排除生成的滚动控件。库不支持 textarea 内部编辑滚动，该部分保持原生编辑行为，明确不计作自绘覆盖。没有修改业务合同、列定义、已认可圆角或图标、Rust 或原生平台 API。依赖比较/风险记于当前 ExecPlan，完整 MIT 文本记于 `THIRD_PARTY_NOTICES.md`，lockfile 仅新增该 exact package。
+
+自绘重做完整 browser 首轮 99/101：257 包加载和模板强制点击禁用项的后续重开失败。修正关闭菜单的无效初始化开销、首次尺寸测量时机后，大包量仍保留原 5 秒标题断言；受控跳过库初始化的诊断对照已执行并自动恢复源码，没有交付旁路或测试开关。模板事件记录证实 `force` 在展开动画期间绕过 actionability、命中当时菜单外部而触发关闭；仅等待展开完成再执行原鼠标/键盘禁用和重开断言，产品 Menu 状态/动作时序不改，临时诊断代码已移除。最终受影响回归 **12/12 PASS**（退出码 0），覆盖两个失败、模板流程、重复菜单激活、焦点、12 个列表在 1280px / 1440px 的既有几何及三个自绘专项；不把它写成最终完整 101/101。专项验证真实滑块 DOM、原生 gutter 为零、纵横滚轮、拖拽命中、内容收缩后隐藏、卸载清理、Material 弹窗/Select、主题/高对比度和 textarea 编辑保持；初轮发现并修正滑块被粘性列遮挡，测试按库实际属性及标准/兼容隐藏路径核对。无头测试取消 `--hide-scrollbars`，截图不禁用库用来定位滑块的滚动动画。前期另有一次测试进程在进入用例前异常退出 `3221226505`，不计作功能失败或通过。完整窗口 fixture 截图为 `target/m7-v3-recheck-20260919/browser/custom-scrollbars.png`，首轮两项失败证据保留于 `target/m7-overlayscrollbars-20261022/before/`，均不冒充 Tauri 操作证据。最终 `npm run check`、frontend build、xtask 与 diff check 通过；没有改 Rust，未重复完整 Rust Workspace 或宣称三平台运行通过。
+
+滑块自动隐藏统一由共享 adapter 配置 `autoHide: "leave"`、`autoHideDelay: 600`：鼠标移入或滚动时显示，移出且停止操作后延迟 600ms 隐藏，拖拽期间保持显示；公共列表、页面及 Material 弹层共用同一配置。该增量的 `npm run check`、frontend build、debug Tauri no-bundle 与 diff check 通过；滚动条专项 **3/3 PASS**（退出码 0），保留原纵横滚轮、拖拽、卸载和主题断言，并补充移入、移出、滚动重新显示与拖拽可见性断言；不扩大为完整 GUI 或真实桌面验收通过。
+
+当前 `target/debug/alcomd-gui.exe` 为 dev profile（unoptimized + debuginfo），最终 debug Tauri no-bundle 构建通过，SHA-256 `DD88124EE6AFC5D7D59BD8151D15C4AC82D719466916879C92C315111558E711`，已重开，沿用原 `target/m7-icon-acceptance-20260906/data` 隔离 daemon，启动前已核对 daemon 的 executable 和 data-dir。窗口启动不代表标题、按钮、切页、自绘滚动条的真实桌面交互或人工视觉验收通过，屏幕阅读器证据仍未取得。构建保留既有大 chunk 警告，**Visual Gate 2 PENDING**。
 
 2026-09-22：所有者明确选定 MD3 Segmented buttons。Resources 与 Logs/Settings 同类切换入口已复用现有 Material Web 2.5.0 labs 的 outlined segmented button/set，使用单选、文字式无勾选图标配置，保留禁用条件与路由权威状态；移除旧普通按钮拼接底板。原按钮宽度 WIP 保留，无新增依赖或 RPC。组件/页面回归 17/17，键盘、禁用跳过及拒绝导航恢复专项 1/1；专项首轮因 Shadow DOM slotted 子元素定位失败，修正测试定位后通过。check/build 与 diff check 通过，构建保留既有大 chunk 警告。浏览器完整窗口证据在 `target/m7-v3-recheck-20260919/browser/`；未取得新的真实 Tauri 或屏幕阅读器证据。所有者随后授权将按钮宽度与分段按钮改动分别提交，并将本地 main 累积提交正常推送至 origin/main；该授权不代表视觉验收通过。**Visual Gate 2 PENDING**。
 
@@ -32,11 +38,11 @@
 
 - **唯一工作目录**：`C:\Users\M2922\MyProjects\Rust\ALCOMD`；活动分支 `main`。两个额外工作树已经移除，后续不自行创建 worktree。
 - **当前阶段**：M7 H2-A Project Workspace / Packages，`IN_PROGRESS / VISUAL_GATE_2`；尚未通过完整人工视觉验收。
-- **当前代码来源**：`main` 的公共列表及 GUI 修正为 `ce99bee`，跨页面列表与圆角回归为 `aac9c30`；公共标题样式与对应回归为 `131c84f`，连接能力快照生命周期与瞬时灰层回归为 `b69e9b5`，记录提交为 `0ddf7e7`。侧栏/标题名称统一及对应回归已独立提交为 `385ed18`，公共刷新及资源行按钮内容修正和对应回归已独立提交为 `d00da14`；验收及状态记录单独提交，此前整合和功能 checkpoint 保留为历史证据。
+- **当前代码来源**：`main` 的公共列表及 GUI 修正为 `ce99bee`，跨页面列表与圆角回归为 `aac9c30`；公共标题样式与对应回归为 `131c84f`，连接能力快照生命周期与瞬时灰层回归为 `b69e9b5`，记录提交为 `0ddf7e7`。侧栏/标题名称统一及对应回归为 `385ed18`，公共刷新及资源行按钮内容修正和对应回归为 `d00da14`，验收及状态记录为 `50a067e`。OverlayScrollbars 共享自绘组件、Material 生命周期及自动隐藏、exact 依赖与许可记录为 `579a502`，专项回归为 `83e4360`；验收及状态记录单独提交；此前整合和功能 checkpoint 保留为历史证据。
 - **旧修改保留**：原标准目录 9 个未提交文件完整保存在 `b4547d5`，作为历史恢复快照，不复活已被替代的 Automatic Editor 产品模型。
 - **下一步**：当前列表样式已获所有者认可，仍需完成 H2-A 真实桌面交互和完整视觉验收；项目所有者批准的其他既有页面基础可用性修正属于当前 H2-A，不代表 H2-B/H3-H7 全量获批或任一 Visual Gate 通过。
-- **边界**：候选查询沿用已批准合同；本次其他页面修正只复用现有读写接口与 Material 组件，不新增 State/Config migration、依赖或平台 API，不改变 resolver/Plan/Apply，保留已确认 Projects/package workspace 的图标与布局，不做窄窗口适配，不自动 push。
-- **远端**：公共列表、标题样式/名称、切页、刷新及资源行按钮修正和对应回归、验收记录均已整理为本地提交，未推送。没有 push、force-push 或历史重写；此前 CI 只证明其对应 SHA，不证明本轮本地提交。
+- **边界**：候选查询沿用已批准合同；本次其他页面修正复用现有读写接口与 Material 组件；滚动条仅新增本轮获准的 OverlayScrollbars exact 依赖，不新增 State/Config migration 或平台 API，不改变 resolver/Plan/Apply，保留已确认 Projects/package workspace 的图标与布局，不做窄窗口适配，不自动 push。
+- **远端**：公共列表、标题样式/名称、切页、刷新及资源行按钮修正和对应回归、验收记录均已整理为本地提交，未推送；共享滚动条实现与回归已分别整理为本地提交，验收状态记录独立提交，均未推送。没有 push、force-push 或历史重写；此前 CI 只证明其对应 SHA，不证明本轮本地修改。
 
 整合审计、恢复位置和本轮验证结果见 [工作目录整合记录](testing/workspace-consolidation-20260917.md)。
 
