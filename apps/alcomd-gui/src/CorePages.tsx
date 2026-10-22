@@ -55,7 +55,7 @@ import {
 } from "./CoreActions";
 import { DesktopList, type DesktopListColumn } from "./DesktopList";
 import { ScrollArea } from "./ScrollArea";
-import { PageTitle } from "./PageTitle";
+import { PageHeader } from "./PageHeader";
 import { LoadingState } from "./LoadingState";
 import { useInitialPageRead, usePageReadPromise } from "./PageRead";
 import { navigationLabels } from "./navigation-labels";
@@ -292,8 +292,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
 
     return (
         <section className="projects-page" aria-busy={state.loading}>
-            <header className="projects-toolbar">
-                <PageTitle>{navigationLabels.projects}</PageTitle>
+            <PageHeader className="projects-toolbar" title={navigationLabels.projects}>
                 <RefreshButton label="Refresh projects" onClick={() => void refresh()} refreshing={state.refreshing} refreshingLabel="Refreshing projects" />
                 <SearchField className="projects-search" label="Search projects" onInput={setSearch} placeholder="Search..." value={search} />
                 <Button onClick={() => setView((current) => current === "list" ? "grid" : "list")} type="button" variant="text">
@@ -305,7 +304,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                     <StateSizedLabel current={selectingDirectory ? "Choosing…" : "Register project"} labels={["Register project", "Choosing…"]} />
                 </Button>
                 <Button disabled={!canCreate} onClick={() => setCreateOpen(true)} ref={createButtonRef} title={capabilityUnavailableTitle(canCreate, capabilities.templatesCreateProject)} type="button">Create project</Button>
-            </header>
+            </PageHeader>
             {view === "grid" ? (
                 <div className="projects-secondary-toolbar">
                     <span className="projects-sort-label">Sort by:</span>
@@ -1403,14 +1402,12 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
             });
             return (
                 <section className="project-workspace">
-                    <header className="project-workspace-header">
-                        <div className="project-workspace-context">
-                            <Button className="project-back-action" onClick={() => navigate("/projects")} type="button" variant="text"><Icon asset={arrowBackIcon} slot="icon" />Back</Button>
-                            <div className="project-workspace-title">
-                                <PageTitle>{projectName(project)}</PageTitle>
-                                <p title={displayProjectPath(project.rootPath)}>{displayProjectPath(project.rootPath)}</p>
-                            </div>
-                        </div>
+                    <PageHeader
+                        className="project-workspace-header"
+                        leading={<Button className="project-back-action" onClick={() => navigate("/projects")} type="button" variant="text"><Icon asset={arrowBackIcon} slot="icon" />Back</Button>}
+                        subtitle={<span title={displayProjectPath(project.rootPath)}>{displayProjectPath(project.rootPath)}</span>}
+                        title={projectName(project)}
+                    >
                         <nav aria-label="Project actions" className="project-workspace-action-cluster">
                             {refreshError === undefined ? null : <span className="inline-error" role="alert">Refresh failed: {refreshError.code}</span>}
                             <ProjectUnityWorkspaceActions client={client} installations={installations} launchOptions={launchOptions} navigate={navigate} project={project} />
@@ -1427,7 +1424,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                 project={project}
                             />
                         </nav>
-                    </header>
+                    </PageHeader>
                     {workspaceFeedback === undefined ? null : <div className="project-workspace-feedback" role="status" aria-live="polite">{workspaceFeedback}</div>}
                     <section aria-labelledby="packages-heading" className="package-workspace-surface">
                         <header className="package-workspace-toolbar">
@@ -1935,7 +1932,7 @@ export function SettingsPage(props: PageProps & { onApplied(value: SettingsGetRe
 }
 
 export function Page({ actions, children, title }: { actions?: ReactNode; children: ReactNode; title: string }) {
-    return <section className="page-surface page-surface--utility" aria-labelledby="route-title"><header className="page-header"><PageTitle>{title}</PageTitle>{actions}</header>{children}</section>;
+    return <section className="page-surface page-surface--utility" aria-labelledby="route-title"><PageHeader title={title}><div className="page-header-actions">{actions}</div></PageHeader>{children}</section>;
 }
 
 function Detail({ label, value }: { label: string; value: string }) { return <div><dt>{label}</dt><dd>{value}</dd></div>; }

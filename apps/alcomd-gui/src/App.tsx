@@ -47,7 +47,7 @@ import {
     UserPackagesPage
 } from "./CorePages";
 import { PortableUiRenderer } from "./PortableUiRenderer";
-import { PageTitle } from "./PageTitle";
+import { PageHeader } from "./PageHeader";
 import { LoadingState } from "./LoadingState";
 import { createPageRead, PageReadContext } from "./PageRead";
 import { useScrollArea } from "./ScrollArea";
@@ -591,14 +591,15 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
 
     return (
         <section className="extension-surface" aria-labelledby="extension-ui-title">
-            <header className="extension-chrome">
-                <div>
-                    <PageTitle id="extension-ui-title" ref={headingRef}>Extension UI</PageTitle>
-                    <p className="eyebrow">Extension-provided content</p>
-                    <p className="extension-id"><code>{extensionId}</code></p>
+            <PageHeader className="extension-chrome" title="Extension UI" titleId="extension-ui-title" titleRef={headingRef}>
+                <div className="page-header-actions">
+                    <RefreshButton disabled={busy || snapshot === undefined} onClick={() => void refresh()} refreshing={busy && snapshot !== undefined} refreshingLabel="Working…" />
                 </div>
-                <RefreshButton disabled={busy || snapshot === undefined} onClick={() => void refresh()} refreshing={busy && snapshot !== undefined} refreshingLabel="Working…" />
-            </header>
+            </PageHeader>
+            <div className="extension-context">
+                <p className="eyebrow">Extension-provided content</p>
+                <p className="extension-id"><code>{extensionId}</code></p>
+            </div>
             {extension === undefined ? null : <ExtensionIdentity extension={extension} />}
             {busy && snapshot === undefined ? (
                 <StatePanel kind="loading" title="Opening extension UI" detail="Connecting to the ALCOMD core and extension host…" />

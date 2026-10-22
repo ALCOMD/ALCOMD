@@ -240,18 +240,22 @@ md-linear-progress {
 
 .projects-page { display: flex; flex-direction: column; gap: 12px; height: 100%; min-height: 0; }
 
-.projects-toolbar {
+.page-header {
     display: flex;
     align-items: center;
     gap: 8px;
+    flex: 0 0 auto;
     min-height: 56px;
     padding: 0 8px;
     background: var(--md-sys-color-surface-container-lowest);
 }
 
 .page-title { min-width: 0; margin: 0; color: var(--primary); font-size: 1.5rem; font-weight: 500; line-height: 1.2; }
-.projects-toolbar .page-title { flex: 0 0 auto; margin: 0 2px 0 4px; }
-.projects-toolbar md-icon-button { flex: 0 0 40px; }
+.page-header .page-title { flex: 0 0 auto; margin: 0 4px; white-space: nowrap; }
+.page-header > md-icon-button { flex: 0 0 40px; }
+.page-header-heading { flex: 1 1 auto; min-width: 0; }
+.page-header-heading .page-title { overflow: hidden; text-overflow: ellipsis; }
+.page-header-subtitle { margin: 0 4px; overflow: hidden; color: var(--on-surface-variant); font-size: 0.78rem; text-overflow: ellipsis; white-space: nowrap; }
 .projects-search {
     min-width: 220px;
     flex: 1 1 360px;
@@ -490,7 +494,6 @@ md-linear-progress {
     min-height: 0;
 }
 
-.project-workspace-header,
 .package-workspace-toolbar,
 .project-workspace-action-cluster {
     display: flex;
@@ -498,45 +501,11 @@ md-linear-progress {
     gap: 8px;
 }
 
-.project-workspace-header {
-    min-height: 56px;
-    padding: 2px 0;
-}
-
-.project-workspace-context {
-    display: flex;
-    align-items: center;
-    flex: 1 1 auto;
-    min-width: 0;
-}
-
 .project-back-action { flex: 0 0 auto; }
 
-.project-workspace-title {
-    min-width: 0;
-    padding-left: 8px;
-}
-
-.project-workspace-title h1,
-.project-workspace-title p,
 .package-workspace-toolbar h2,
 .package-action-panel h2 {
     margin: 0;
-}
-
-.project-workspace-title h1 {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.project-workspace-title p {
-    max-width: min(44vw, 640px);
-    overflow: hidden;
-    color: var(--on-surface-variant);
-    font-size: 0.78rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 .project-workspace-action-cluster {
@@ -693,13 +662,7 @@ md-linear-progress {
     padding: clamp(20px, 4vw, 40px);
 }
 
-.page-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    min-height: 56px;
-    padding: 0 8px;
+.page-surface > .page-header {
     margin-bottom: 12px;
 }
 
@@ -712,21 +675,13 @@ md-linear-progress {
     height: 100%;
 }
 
-.utility-workspace-toolbar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex: 0 0 auto;
-    min-height: 56px;
-    padding: 0 8px;
-}
-
 .page-surface--utility .utility-workspace-toolbar .resource-navigation {
     margin: 0;
     padding: 0;
     border: 0;
 }
 
+.page-header-actions,
 .utility-workspace-actions {
     display: flex;
     align-items: center;
@@ -1368,14 +1323,12 @@ md-linear-progress {
 }
 
 .extension-surface {
-    padding: clamp(18px, 4vw, 40px);
+    padding: 0;
+    box-shadow: none;
 }
 
-.extension-chrome {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 20px;
+.extension-context {
+    margin: 12px;
 }
 
 .extension-id {
@@ -1637,21 +1590,14 @@ code {
         flex-wrap: wrap;
     }
 
-    .project-workspace-context,
     .project-workspace-action-cluster {
         width: 100%;
     }
 
     .project-workspace-action-cluster { justify-content: flex-end; }
-    .project-workspace-title p { max-width: calc(100vw - 190px); }
 }
 
 @media (max-width: 620px) {
-    .extension-chrome {
-        align-items: stretch;
-        flex-direction: column;
-    }
-
     .top-app-bar {
         position: static;
         flex-wrap: wrap;
@@ -1697,10 +1643,6 @@ code {
         padding-top: 12px;
     }
 
-    .project-workspace-header { padding-top: 48px; }
-    .project-workspace-context { align-items: flex-start; flex-direction: column; }
-    .project-workspace-title { width: 100%; padding: 4px 0 0; }
-    .project-workspace-title p { max-width: 100%; }
     .project-workspace-action-cluster,
     .project-workspace-more-actions { justify-content: flex-start; flex-wrap: wrap; }
     .package-workspace-search { width: 100%; min-width: 0; flex-basis: 100%; }

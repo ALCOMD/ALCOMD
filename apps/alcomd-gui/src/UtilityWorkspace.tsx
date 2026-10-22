@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { Button, RefreshButton } from "./Material";
-import { PageTitle } from "./PageTitle";
+import { PageHeader } from "./PageHeader";
 import { LoadingState } from "./LoadingState";
 import { useInitialPageRead } from "./PageRead";
 import { ScrollArea } from "./ScrollArea";
@@ -99,9 +99,7 @@ export function UtilityWorkspace<T>({
 
     return (
         <section className="utility-workspace page-surface--utility" aria-busy={value === undefined && pending} aria-labelledby="route-title">
-            <header className="utility-workspace-toolbar">
-                {back}
-                <PageTitle>{title}</PageTitle>
+            <PageHeader className="utility-workspace-toolbar" leading={back} title={title}>
                 {navigation}
                 <div className="utility-workspace-actions">
                     {value === undefined ? null : tools?.(value, refresh)}
@@ -117,7 +115,7 @@ export function UtilityWorkspace<T>({
                         </Button>
                     )}
                 </div>
-            </header>
+            </PageHeader>
             <ScrollArea className="utility-workspace-body">
                 {error === undefined ? null : (
                     <div className="inline-error" role="alert">
