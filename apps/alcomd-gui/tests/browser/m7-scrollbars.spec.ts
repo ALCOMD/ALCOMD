@@ -66,18 +66,34 @@ test("painted scrollbars retain wheel, horizontal scrolling and thumb dragging",
     const vertical = viewport.locator(":scope > .os-scrollbar-vertical");
     const horizontal = viewport.locator(":scope > .os-scrollbar-horizontal");
     await page.mouse.move(1439, 899);
-    await expect(vertical).not.toBeVisible();
+    await expect(vertical).toHaveCSS("opacity", "0");
     const box = (await viewport.boundingBox())!;
-    await page.mouse.move(box.x + box.width / 2, box.y + 100);
-    await expect(vertical).toBeVisible();
-    await expect(horizontal).toBeVisible();
+    // Sample during movement: an eventual hidden assertion would miss a transient reveal.
+    const movementOpacity: string[][] = [];
+    for (let index = 0; index < 6; index++) {
+        await page.mouse.move(box.x + box.width / 2 + index * 10, box.y + 100 + index * 5, { steps: 4 });
+        movementOpacity.push(await viewport.evaluate(async (element) => {
+            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+            return Array.from(element.querySelectorAll(":scope > .os-scrollbar"), (bar) => getComputedStyle(bar).opacity);
+        }));
+    }
+    expect(movementOpacity).toEqual(Array.from({ length: 6 }, () => ["0", "0"]));
+    // Both hidden tracks must be discoverable without scrolling or clicking.
+    for (const bar of [vertical, horizontal]) {
+        const track = (await bar.locator(".os-scrollbar-track").boundingBox())!;
+        await page.mouse.move(track.x + track.width / 2, track.y + track.height / 2);
+        await expect(bar).toHaveCSS("opacity", "1");
+        expect(await viewport.evaluate((element) => [element.scrollLeft, element.scrollTop])).toEqual([0, 0]);
+        await page.mouse.move(box.x + box.width / 2, box.y + 100);
+        await expect(bar).toHaveCSS("opacity", "0");
+    }
     await page.mouse.move(1439, 899);
-    await expect(vertical).not.toBeVisible();
-    await expect(horizontal).not.toBeVisible();
+    await expect(vertical).toHaveCSS("opacity", "0");
+    await expect(horizontal).toHaveCSS("opacity", "0");
     // A scroll also reveals the controls when the pointer is outside the viewport.
     await viewport.evaluate((element) => { element.scrollTop = 50; });
-    await expect(vertical).toBeVisible();
-    await expect(vertical).not.toBeVisible();
+    await expect(vertical).toHaveCSS("opacity", "1");
+    await expect(vertical).toHaveCSS("opacity", "0");
     expect(await viewport.evaluate((element) => {
         if (!(element instanceof HTMLElement)) throw new Error("Expected an HTML scroll viewport");
         return { x: element.offsetHeight - element.clientHeight, y: element.offsetWidth - element.clientWidth };
@@ -91,11 +107,21 @@ test("painted scrollbars retain wheel, horizontal scrolling and thumb dragging",
     const handle = vertical.locator(".os-scrollbar-handle");
     await expect(handle).toHaveCSS("pointer-events", "auto");
     await handle.hover();
+    // The idle timer may expire, but hovering the scrollbar itself keeps it visible.
+    await expect(vertical).toHaveClass(/os-scrollbar-auto-hide-hidden/);
+    await expect(vertical).toHaveCSS("opacity", "1");
+    await page.mouse.move(box.x + box.width / 2, box.y + 100);
+    await expect(vertical).toHaveCSS("opacity", "0");
+    await viewport.evaluate((element) => { element.scrollTop = 1; });
+    await expect(vertical).toHaveCSS("opacity", "1");
+    await handle.hover();
     const thumbBox = (await handle.boundingBox())!;
     await page.mouse.move(thumbBox.x + thumbBox.width / 2, thumbBox.y + thumbBox.height / 2);
     await page.mouse.down();
     await page.mouse.move(thumbBox.x + thumbBox.width / 2, thumbBox.y + 180, { steps: 12 });
-    await expect(vertical).toBeVisible();
+    await page.mouse.move(box.x + box.width / 2, thumbBox.y + 180);
+    await expect(vertical).toHaveClass(/os-scrollbar-auto-hide-hidden/);
+    await expect(vertical).toHaveCSS("opacity", "1");
     await page.mouse.up();
     await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBeGreaterThan(300);
     await page.mouse.move(1439, 899);
@@ -103,7 +129,7 @@ test("painted scrollbars retain wheel, horizontal scrolling and thumb dragging",
     await viewport.locator("tbody").evaluate((element) => {
         while (element.children.length > 1) element.lastElementChild!.remove();
     });
-    await expect(vertical).not.toBeVisible();
+    await expect(vertical).toHaveCSS("opacity", "0");
     const detached = await viewport.elementHandle();
     await page.locator("#primary-navigation .navigation-item").filter({ hasText: "Resources" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Resources", exact: true })).toBeVisible();

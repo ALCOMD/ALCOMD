@@ -10,7 +10,7 @@ export function createScrollArea(viewport: HTMLElement, overflowX: OverflowBehav
         elements: { viewport, padding: false, content: false }
     }, {
         overflow: { x: overflowX, y: "scroll" },
-        scrollbars: { theme: "alcomd-scrollbars", autoHide: "leave", autoHideDelay: 600, visibility: "auto", clickScroll: "instant" }
+        scrollbars: { theme: "alcomd-scrollbars", autoHide: "scroll", autoHideDelay: 600, visibility: "auto", clickScroll: "instant" }
     });
 }
 

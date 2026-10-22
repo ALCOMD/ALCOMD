@@ -15,6 +15,11 @@
     --os-handle-min-size: 28px;
 }
 
+/* Keep the existing track hit area while faded out; the library owns hover and drag. */
+.alcomd-scrollbars.os-scrollbar-visible.os-scrollbar-auto-hide-hidden {
+    visibility: visible;
+}
+
 @media (forced-colors: active) {
     .alcomd-scrollbars {
         --os-handle-bg: CanvasText;
