@@ -129,6 +129,7 @@ test("Source filter includes nonwinning and ambiguous providers beyond display m
 
 test("257 targets and selected rows are disabled without splitting the batch", async ({ page }) => {
     await open(page, "bulk257=1");
+    await expect(page.locator("md-menu .os-scrollbar")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Update All (257)", exact: true })).toBeDisabled();
     await page.getByRole("checkbox", { name: "Select all visible packages", exact: true }).check();
     await expect(page.getByRole("button", { name: "Install / Update selected", exact: true })).toBeDisabled();

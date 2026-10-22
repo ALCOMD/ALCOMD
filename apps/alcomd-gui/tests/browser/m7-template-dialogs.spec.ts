@@ -45,6 +45,8 @@ test("built-in template removal cannot be activated and derive reads a project c
     const remove = page.getByRole("menuitem", { name: "Remove template", exact: true });
     const removeHost = page.locator("md-menu-item").filter({ hasText: "Remove template" });
     await expect(removeHost).toHaveJSProperty("disabled", true);
+    // force bypasses actionability; wait until its target is actually inside the menu.
+    await expect(page.locator("md-menu .menu")).not.toHaveClass(/animating/);
     await remove.click({ force: true });
     await expect(page.getByRole("dialog", { name: "Remove template", exact: true })).toBeHidden();
     // Disabled metadata and keyboard protection are not screen-reader evidence.
