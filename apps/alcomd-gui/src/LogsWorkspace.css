@@ -15,7 +15,7 @@
     align-items: center;
     gap: 12px;
     padding: 8px 12px;
-    border-radius: 12px;
+    border-radius: var(--alcomd-shape-canvas);
     background: var(--md-sys-color-surface-container-low);
 }
 
@@ -36,24 +36,21 @@
 }
 
 .logs-workspace .logs-time {
-    width: 170px;
+    width: 250px;
 }
 
 .logs-summary {
-    overflow-wrap: anywhere;
     min-width: 260px;
 }
 
 .logs-summary p {
     margin: 4px 0;
-    white-space: pre-wrap;
 }
 
 .logs-workspace small {
     display: block;
     margin-top: 4px;
     color: var(--md-sys-color-on-surface-variant);
-    overflow-wrap: anywhere;
 }
 
 .logs-details, .logs-operation-details {
@@ -80,9 +77,4 @@
     color: var(--md-sys-color-on-surface);
 }
 
-.page-surface--utility .logs-workspace .material-data-table th:first-child { width: 200px; }
-.page-surface--utility .logs-workspace .material-data-table th:nth-child(2) { width: 110px; }
-.page-surface--utility .logs-workspace .material-data-table th:last-child { width: 150px; }
-.logs-workspace .material-data-table[aria-label="Activity"] th:nth-child(4) { width: 150px; }
-.logs-workspace .material-data-table[aria-label="Diagnostics"] th:nth-child(3) { width: 130px; }
-.page-surface--utility .logs-workspace .material-data-table td { vertical-align: top; }
+.page-surface--utility .logs-workspace .desktop-list td { vertical-align: top; }

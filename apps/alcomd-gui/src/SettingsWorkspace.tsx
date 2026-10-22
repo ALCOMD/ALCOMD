@@ -4,7 +4,7 @@ import type { OfficialSettings, RepositorySnapshot, SettingsGetResult, SettingsL
 import type { GuiRpcClient } from "./rpc";
 import { UnityRegistryActions } from "./CoreActions";
 import { capabilities, useCapability } from "./capabilities";
-import { DataTableHeader, MaterialDataTable } from "./DataTable";
+import { DesktopList } from "./DesktopList";
 import { Button, Checkbox, Select } from "./Material";
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { UtilityWorkspace } from "./UtilityWorkspace";
@@ -93,10 +93,7 @@ function UnitySettingsSection({ client }: { client: GuiRpcClient }) {
             {!available ? <p className="field-hint">Unity installations are unavailable on this connection.</p> : (
                 <>
                     {error === undefined ? null : <p className="form-error" role="alert">{error}</p>}
-                    <MaterialDataTable label="Unity installations" minWidth={600}>
-                        <thead><tr><DataTableHeader>Version</DataTableHeader><DataTableHeader>Path</DataTableHeader><DataTableHeader>Source</DataTableHeader></tr></thead>
-                        <tbody>{items.map((item) => <tr key={item.installationId}><td>{item.unityVersion}</td><td className="settings-path">{item.executablePath}</td><td>{item.sourceKind.replaceAll("_", " ")}</td></tr>)}</tbody>
-                    </MaterialDataTable>
+                    <DesktopList columns={[{ key: "version", header: "Version", width: "20%" }, { key: "path", header: "Path", className: "settings-path" }, { key: "source", header: "Source", width: 160 }]} label="Unity installations" minWidth={600} rows={items.map((item) => ({ key: item.installationId, cells: [item.unityVersion, item.executablePath, item.sourceKind.replaceAll("_", " ")] }))} />
                     {items.length === 0 && error === undefined ? <p role="status">{busy ? "Loading Unity installations…" : "No Unity installations found."}</p> : null}
                     {cursor === undefined ? null : <Button disabled={busy} onClick={() => void read(cursor)} type="button" variant="text">Load more installations</Button>}
                 </>

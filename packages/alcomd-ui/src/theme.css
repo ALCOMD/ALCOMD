@@ -40,6 +40,11 @@
     --md-sys-shape-corner-large: 16px;
     --md-sys-shape-corner-extra-large: 28px;
     --md-sys-shape-corner-full: 9999px;
+    --alcomd-shape-canvas: var(--md-sys-shape-corner-extra-large);
+    --alcomd-shape-container: 20px;
+    --alcomd-shape-card: 18px;
+    --alcomd-shape-list-item: var(--md-sys-shape-corner-small);
+    --alcomd-list-row-gap: 2px;
     --alcomd-button-height: 40px;
     --alcomd-icon-button-size: 40px;
     --alcomd-control-height: 48px;

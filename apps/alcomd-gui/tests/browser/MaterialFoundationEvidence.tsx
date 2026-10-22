@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { projectsIcon } from "@alcomd/ui/icons";
 
-import { DataTableHeader, MaterialDataTable } from "../../src/DataTable";
+import { DesktopList } from "../../src/DesktopList";
 import { Button, Checkbox, Dialog, Icon, IconButton, Progress, SegmentedButtons, Select, Switch, TextField } from "../../src/Material";
 
 export function MaterialFoundationEvidence() {
@@ -44,10 +44,7 @@ export function MaterialFoundationEvidence() {
             <Switch label="Enable integration" onChange={setEnabled} selected={enabled} />
             <Checkbox checked={confirmed} label="I reviewed the plan" onChange={setConfirmed} />
             <Progress label="Material progress" value={0.62} />
-            <MaterialDataTable label="Material table foundation" minWidth={240}>
-                <thead><tr><DataTableHeader>Project</DataTableHeader><DataTableHeader>State</DataTableHeader></tr></thead>
-                <tbody><tr><td>Foundation fixture</td><td>Ready</td></tr></tbody>
-            </MaterialDataTable>
+            <DesktopList columns={[{ key: "project", header: "Project" }, { key: "state", header: "State" }]} label="Material table foundation" minWidth={240} rows={[{ key: "foundation", cells: ["Foundation fixture", "Ready"] }]} />
             <div style={{ whiteSpace: "nowrap" }}>
                 <Dialog onClose={() => setDialogOpen(false)} open={dialogOpen} title="Material dialog">
                     <p>The dialog is hosted by the shared Material foundation.</p>

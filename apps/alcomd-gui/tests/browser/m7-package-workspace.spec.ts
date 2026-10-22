@@ -8,8 +8,30 @@ test("Package toolbar uses the shared search preset and keeps maintenance in ove
     await expect(toolbar.getByRole("heading", { name: "Manage packages" })).toBeVisible();
     await expect(toolbar.locator("md-icon-button").filter({ has: page.locator('[data-icon-name="refresh"]') })).toBeVisible();
     await expect(toolbar.locator("md-filled-text-field.alcomd-search-field")).toBeVisible();
+    const packages = page.getByRole("table", { name: "Packages", exact: true });
+    await expect(packages).toHaveAttribute("data-sizing", "fixed");
+    await expect(packages).toHaveCSS("table-layout", "fixed");
+    await expect(toolbar.getByRole("button", { name: "Update All (1)", exact: true })).toBeVisible();
+    expect(await toolbar.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(68);
+    const listViewport = page.locator(".package-workspace-list-region > .desktop-list-viewport");
+    expect(await listViewport.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    expect(await packages.locator("tbody .package-column-actions").evaluateAll((cells) => cells.every((cell) => {
+        const bounds = cell.getBoundingClientRect();
+        return Array.from(cell.children).every((child) => {
+            const childBounds = child.getBoundingClientRect();
+            return childBounds.left >= bounds.left && childBounds.right <= bounds.right;
+        });
+    }))).toBe(true);
+    const updatePosition = await packages.getByRole("button", { name: "Update", exact: true }).boundingBox();
+    const installPosition = await packages.getByRole("button", { name: "Install", exact: true }).boundingBox();
+    expect(updatePosition).not.toBeNull();
+    expect(installPosition).not.toBeNull();
+    expect(installPosition?.x).toBe(updatePosition?.x);
+    await expect(packages.getByRole("button", { name: "More actions for Avatar tools", exact: true })).toBeVisible();
+    await expect(packages.getByRole("button", { name: "More actions for Remote tools", exact: true })).toBeVisible();
     await expect(toolbar.getByRole("combobox")).toHaveCount(0);
     await expect(toolbar.getByRole("button", { name: "Resolve", exact: true })).toHaveCount(0);
+    await page.screenshot({ path: "../../target/m7-list-rebuild/browser/package-workspace.png", fullPage: false, animations: "disabled" });
     await toolbar.getByRole("button", { name: "More package actions" }).click();
     await page.getByRole("menuitem", { name: "Resolve Dependencies…" }).click();
     await expect(page.getByRole("dialog", { name: "Apply package changes?" })).toBeVisible();
@@ -153,11 +175,20 @@ test("Package rows keep one primary action and move secondary actions into Mater
     await expect(installedRow.getByRole("button", { name: "Update", exact: true })).toBeVisible();
     await expect(installedRow.getByRole("button", { name: "Reinstall", exact: true })).toHaveCount(0);
     await expect(availableRow.getByRole("button", { name: "Install", exact: true })).toBeVisible();
+    await expect(availableRow.getByRole("button", { name: "More actions for Remote tools", exact: true })).toBeVisible();
 
     await installedRow.getByRole("button", { name: "More actions for Avatar tools" }).click();
     await expect(page.getByRole("menuitem", { name: "Reinstall", exact: true })).toBeVisible();
     await expect(installedRow.getByRole("button", { name: "Version for Avatar tools: 1.2.3" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "Remove", exact: true })).toBeVisible();
+    await openHarness(page, "package-multiple");
+    const reloadedAvailableRow = page.getByRole("table", { name: "Packages" }).getByRole("row").filter({ hasText: "Remote tools" });
+    await reloadedAvailableRow.getByRole("button", { name: "More actions for Remote tools", exact: true }).click();
+    const availableMenu = reloadedAvailableRow.locator("md-menu");
+    await expect(availableMenu.locator("md-menu-item").filter({ hasText: "Reinstall" })).toHaveJSProperty("disabled", true);
+    await expect(page.getByRole("menuitem", { name: "Documentation", exact: true })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Changelog", exact: true })).toBeVisible();
+    await expect(availableMenu.locator("md-menu-item").filter({ hasText: "Remove" })).toHaveJSProperty("disabled", true);
 });
 
 test("Package removal review presents nullable wire versions as user-facing state", async ({ page }) => {
@@ -169,7 +200,7 @@ test("Package removal review presents nullable wire versions as user-facing stat
     const host = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
     await expect(host).toContainText("1.2.3 → Removed");
     await expect(host).not.toContainText("null");
-    await expect(page.locator(".material-data-table-scroll")).toHaveCSS("isolation", "isolate");
+    await expect(page.locator(".desktop-list-viewport")).toHaveCSS("isolation", "isolate");
     const dialogBox = await page.getByRole("dialog", { name: "Apply package changes?" }).boundingBox();
     const applyBox = await host.getByRole("button", { name: "Apply changes" }).boundingBox();
     expect(dialogBox).not.toBeNull();

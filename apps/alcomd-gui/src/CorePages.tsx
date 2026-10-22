@@ -52,7 +52,7 @@ import {
     TemplateImportPanel,
     UnityRegistryActions
 } from "./CoreActions";
-import { DataTableHeader, MaterialDataTable } from "./DataTable";
+import { DesktopList, type DesktopListColumn } from "./DesktopList";
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { UtilityWorkspace } from "./UtilityWorkspace";
 import "./ExtensionWorkspace.css";
@@ -397,33 +397,29 @@ function ProjectsTable({
     projects: ProjectSnapshot[];
     sort: string;
 }) {
-    const sortableHeader = (label: string, key: string) => {
+    const sortableColumn = (header: string, key: string, width?: DesktopListColumn["width"]): DesktopListColumn => {
         const active = sort === key;
-        return (
-            <DataTableHeader onSort={() => onSort(key)} sortDirection={active ? (descending ? "descending" : "ascending") : undefined}>
-                {label}
-            </DataTableHeader>
-        );
+        return { key, header, width, onSort: () => onSort(key), sortDirection: active ? (descending ? "descending" : "ascending") : undefined };
     };
-    return (
-        <MaterialDataTable className="projects-table" label="Projects" minWidth={720}>
-                <colgroup><col className="projects-column-project" /><col className="projects-column-type" /><col className="projects-column-unity" /><col className="projects-column-added" /><col className="projects-column-observed" /><col className="projects-column-actions" /></colgroup>
-                <thead><tr>{sortableHeader("Project", "name")}{sortableHeader("Type", "type")}{sortableHeader("Unity", "unity")}{sortableHeader("Added", "added")}{sortableHeader("Last observed", "observed")}<DataTableHeader><span className="visually-hidden">Actions</span></DataTableHeader></tr></thead>
-                <tbody>{projects.map((project) => {
-                    const id = project.projectId;
-                    return (
-                        <tr key={id ?? project.rootPath}>
-                            <td><strong>{projectName(project)}</strong><small title={displayProjectPath(project.rootPath)}>{displayProjectPath(project.rootPath)}</small></td>
-                            <td><span className="project-type project-type--table"><Icon asset={projectTypeIcon(project.projectType)} /><span>{projectTypeLabel(project.projectType)}</span></span></td>
-                            <td>{project.unityVersion || "Unknown"}</td>
-                            <td>{formatRegistered(project.registeredAtMs)}</td>
-                            <td>{formatObserved(project.observedAtMs)}</td>
-                            <td>{id === undefined ? <span className="project-unregistered">Unregistered</span> : <ProjectRowActions client={client} navigate={navigate} onChanged={onChanged} onFeedback={onFeedback} onProjectChanged={onProjectChanged} project={project} />}</td>
-                        </tr>
-                    );
-                })}</tbody>
-        </MaterialDataTable>
-    );
+    const columns: DesktopListColumn[] = [
+        sortableColumn("Project", "name", "100%"),
+        sortableColumn("Type", "type", 0),
+        sortableColumn("Unity", "unity", 0),
+        sortableColumn("Added", "added", 0),
+        sortableColumn("Last observed", "observed", 0),
+        { key: "actions", header: <span className="visually-hidden">Actions</span>, width: 0, className: "projects-column-actions" }
+    ];
+    return <DesktopList className="projects-list" columns={columns} label="Projects" minWidth={720} rows={projects.map((project) => {
+        const id = project.projectId;
+        return { key: id ?? project.rootPath, cells: [
+            <><strong>{projectName(project)}</strong><small title={displayProjectPath(project.rootPath)}>{displayProjectPath(project.rootPath)}</small></>,
+            <span className="project-type project-type--table"><Icon asset={projectTypeIcon(project.projectType)} /><span>{projectTypeLabel(project.projectType)}</span></span>,
+            project.unityVersion || "Unknown",
+            formatRegistered(project.registeredAtMs),
+            formatObserved(project.observedAtMs),
+            id === undefined ? <span className="project-unregistered">Unregistered</span> : <ProjectRowActions client={client} navigate={navigate} onChanged={onChanged} onFeedback={onFeedback} onProjectChanged={onProjectChanged} project={project} />
+        ] };
+    })} />;
 }
 
 function ProjectRowActions({ client, context = "row", navigate, onChanged, onCopyCompleted, onFeedback, onProjectChanged, onRemoved, project }: {
@@ -1052,7 +1048,6 @@ function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
     const [error, setError] = useState<string>();
     const [open, setOpen] = useState(false);
     const anchorRef = useRef<HTMLElement>(null);
-    const hasMenuActions = row.installedVersion !== undefined || row.linkTarget?.documentation === true || row.linkTarget?.changelog === true;
     const openLink = async (kind: "documentation" | "changelog") => {
         if (row.linkTarget === undefined) return;
         setOpen(false);
@@ -1063,17 +1058,16 @@ function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
             setError(safeError(caught).code);
         }
     };
-    if (!hasMenuActions) return null;
     return (
         <>
             <IconButton className="package-more-actions" label={`More actions for ${row.displayName}`} onClick={() => setOpen(true)} ref={anchorRef} type="button">
                 <Icon asset={moreVertIcon} size={24} />
             </IconButton>
             <Menu anchorRef={anchorRef} className="package-actions-menu" onClose={() => setOpen(false)} open={open}>
-                {row.installedVersion === undefined ? null : <MenuItem disabled={!canPlanV2} label="Reinstall" onClick={() => { setOpen(false); onAction("reinstall"); }} title={capabilityUnavailableTitle(canPlanV2, capabilities.packagesPlanV2)} />}
-                {row.linkTarget?.documentation === true ? <MenuItem label="Documentation" onClick={() => void openLink("documentation")} /> : null}
-                {row.linkTarget?.changelog === true ? <MenuItem label="Changelog" onClick={() => void openLink("changelog")} /> : null}
-                {row.installedVersion === undefined ? null : <MenuItem className="package-actions-menu-item--danger" disabled={!canPlanV1} label="Remove" onClick={() => { setOpen(false); onAction("remove"); }} title={capabilityUnavailableTitle(canPlanV1, capabilities.packagesPlanV1)} />}
+                <MenuItem disabled={row.installedVersion === undefined || !canPlanV2} label="Reinstall" onClick={() => { setOpen(false); onAction("reinstall"); }} title={capabilityUnavailableTitle(canPlanV2, capabilities.packagesPlanV2)} />
+                <MenuItem disabled={row.linkTarget?.documentation !== true} label="Documentation" onClick={() => void openLink("documentation")} />
+                <MenuItem disabled={row.linkTarget?.changelog !== true} label="Changelog" onClick={() => void openLink("changelog")} />
+                <MenuItem className="package-actions-menu-item--danger" disabled={row.installedVersion === undefined || !canPlanV1} label="Remove" onClick={() => { setOpen(false); onAction("remove"); }} title={capabilityUnavailableTitle(canPlanV1, capabilities.packagesPlanV1)} />
             </Menu>
             {error === undefined ? null : <span className="visually-hidden" role="alert">Package link unavailable: {error}</span>}
         </>
@@ -1429,21 +1423,21 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                     <section aria-labelledby="packages-heading" className="package-workspace-surface">
                         <header className="package-workspace-toolbar">
                             <h2 id="packages-heading">Manage packages</h2>
-                            <IconButton className="package-refresh-action" disabled={!canManageRepositories || refreshing || repositoryRefresh?.running === true} label={repositoryRefresh?.running === true ? "Refreshing packages" : "Refresh"} onClick={() => void refreshRepositories(refresh)} title={capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry) ?? "Refresh packages"} type="button"><Icon asset={refreshIcon} /></IconButton>
-                            <SearchField className="package-workspace-search" label="Search packages" onInput={setSearch} placeholder="Search..." value={search} />
-                            <div className="package-workspace-secondary-actions">
+                             <IconButton className="package-refresh-action" disabled={!canManageRepositories || refreshing || repositoryRefresh?.running === true} label={repositoryRefresh?.running === true ? "Refreshing packages" : "Refresh"} onClick={() => void refreshRepositories(refresh)} title={capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry) ?? "Refresh packages"} type="button"><Icon asset={refreshIcon} /></IconButton>
+                             <SearchField className="package-workspace-search" label="Search packages" onInput={setSearch} placeholder="Search..." value={search} />
+                             {currentEvidence ? <>
+                                 <Button disabled={!canPlanPackagesV2 || !allLatest.enabled} onClick={() => submitBulk(allLatest.intents, allLatest.exclusions)} type="button" variant="tonal">Update All ({allLatest.intents.length})</Button>
+                                 {JSON.stringify(allLatest.intents) !== JSON.stringify(allStable.intents) ? <Button disabled={!canPlanPackagesV2 || !allStable.enabled} onClick={() => submitBulk(allStable.intents, allStable.exclusions)} type="button" variant="text">Update All Stable ({allStable.intents.length})</Button> : null}
+                             </> : null}
+                             <div className="package-workspace-secondary-actions">
                                 <span className="visually-hidden" role="status" aria-live="polite">{rows.length} {rows.length === 1 ? "package" : "packages"}</span>
                                 <PackageWorkspaceMoreMenu canPlanV1={canPlanPackagesV1 && catalogReady} canPlanV2={canPlanPackagesV2 && catalogReady} onResolve={() => selectAction("resolve")} onReinstallAll={() => selectAction("reinstall-all")} />
                                 <PackageFilters canUseUserPackages={canUseUserPackages} client={client} filter={filter} onChanged={refresh} repositories={repositories} setFilter={setFilter} setSourceFilter={setSourceFilter} settings={settings} sourceFilter={sourceFilter} />
                             </div>
-                        </header>
-                        {candidateError || evidenceInvalid || !currentEvidence ? <div role="status">{candidateError ?? (evidenceInvalid ? "Candidate evidence is stale." : "Loading candidate evidence…")} <Button onClick={reloadEvidence} type="button" variant="text">Reload package evidence</Button></div> : null}
-                        {currentEvidence && !candidates.catalogComplete ? <p role="status">Package catalog is incomplete. Refresh the affected sources before planning changes.</p> : null}
-                        {currentEvidence ? <div className="package-workspace-secondary-actions">
-                            <Button disabled={!canPlanPackagesV2 || !allLatest.enabled} onClick={() => submitBulk(allLatest.intents, allLatest.exclusions)} type="button" variant="tonal">Update All ({allLatest.intents.length})</Button>
-                            {JSON.stringify(allLatest.intents) !== JSON.stringify(allStable.intents) ? <Button disabled={!canPlanPackagesV2 || !allStable.enabled} onClick={() => submitBulk(allStable.intents, allStable.exclusions)} type="button" variant="text">Update All Stable ({allStable.intents.length})</Button> : null}
-                            {!allLatest.enabled ? <span role="status">{allLatest.intents.length > 256 ? "More than 256 updates; explicitly select a smaller batch." : lockedRows.some((row) => !row.evidence || uncertainUpdate(row.evidence, false)) ? "Resolve unknown or ambiguous package evidence before Update All." : "No actionable updates."}</span> : null}
-                        </div> : null}
+                         </header>
+                         {candidateError || evidenceInvalid || !currentEvidence ? <div role="status">{candidateError ?? (evidenceInvalid ? "Candidate evidence is stale." : "Loading candidate evidence…")} <Button onClick={reloadEvidence} type="button" variant="text">Reload package evidence</Button></div> : null}
+                         {currentEvidence && !candidates.catalogComplete ? <p role="status">Package catalog is incomplete. Refresh the affected sources before planning changes.</p> : null}
+                         {currentEvidence && !allLatest.enabled ? <p className="package-update-status" role="status">{allLatest.intents.length > 256 ? "More than 256 updates; explicitly select a smaller batch." : lockedRows.some((row) => !row.evidence || uncertainUpdate(row.evidence, false)) ? "Resolve unknown or ambiguous package evidence before Update All." : "No actionable updates."}</p> : null}
                         {repositoryRefresh === undefined ? null : (
                             <div className={repositoryRefresh.failures.length > 0 ? "package-refresh-status package-refresh-status--failed" : "package-refresh-status"} role={repositoryRefresh.failures.length > 0 ? "alert" : "status"} aria-live="polite">
                                 <span>{repositoryRefresh.running
@@ -1463,34 +1457,37 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                 <Button onClick={() => setBulkSelection([])} type="button" variant="text">Clear selection</Button>
                             </div>
                         )}
-                        <div className="package-workspace-table-scroll">
+                        <div className="package-workspace-list-region">
                             {rows.length === 0 ? <section className="projects-empty" role="status"><h3>{workspaceRows.length === 0 ? "No packages" : "No matching packages"}</h3><p>{workspaceRows.length === 0 ? "This project has no packages to manage." : "Change the search or package filter."}</p></section> : (
-                                <MaterialDataTable className="package-workspace-table" label="Packages" minWidth={840}>
-                                    <colgroup><col className="package-column-select" /><col className="package-column-name" /><col className="package-column-installed" /><col className="package-column-latest" /><col className="package-column-source" /><col className="package-column-actions" /></colgroup>
-                                    <thead><tr><DataTableHeader><Checkbox checked={rows.length > 0 && rows.every((row) => bulkSelection.includes(row.packageId))} label="Select all visible packages" onChange={(checked) => setBulkSelection((current) => checked ? [...new Set([...current, ...rows.map((row) => row.packageId)])] : current.filter((id) => !rows.some((row) => row.packageId === id)))} /></DataTableHeader><DataTableHeader>Package</DataTableHeader><DataTableHeader>Installed</DataTableHeader><DataTableHeader>Latest</DataTableHeader><DataTableHeader>Source</DataTableHeader><DataTableHeader><span className="visually-hidden">Actions</span></DataTableHeader></tr></thead>
-                                    <tbody>{rows.map((row) => {
-                                        const evidence = currentEvidence ? row.evidence : undefined;
-                                        const installChoice = evidence?.projectLatest;
-                                        const update = evidence?.update;
-                                        return (
-                                            <tr key={row.packageId}>
-                                                <td><Checkbox checked={bulkSelection.includes(row.packageId)} label={`Select ${row.displayName}`} onChange={(checked) => setBulkSelection((current) => checked ? [...new Set([...current, row.packageId])] : current.filter((packageId) => packageId !== row.packageId))} /></td>
-                                                <td><strong>{row.displayName}</strong><small>{row.packageId}</small></td>
-                                                <td><PackageVersionMenu client={client} project={project} snapshot={currentEvidence ? candidates.snapshot.fingerprint : undefined} disabled={!canQueryCandidates} canPlan={catalogReady && canPlanPackagesV1 && canPlanPackagesV2} onStale={() => setEvidenceInvalid(true)} onSelect={(option) => chooseCandidate(row, option)} row={row} />{row.requestedRange === undefined ? null : <small>Requested {row.requestedRange}</small>}</td>
-                                                <td>{evidence ? choiceText(evidence.latest) : "Evidence unavailable"}{evidence && update?.kind !== "target" ? <small>{update ? updateReason(update) : ""}</small> : null}</td>
-                                                <td>{row.sourceOptions.length === 1 && !sourceSelections[row.packageId] ? row.sourceOptions[0]?.label : <PackageSourceMenu disabled={!currentEvidence} label={`Source for ${row.displayName}`} onChange={(key) => setSourceSelections((current) => ({ ...current, [row.packageId]: key }))} options={row.sourceOptions} value={sourceSelections[row.packageId] ?? ""} />}</td>
-                                                <td><div className="package-row-actions">
-                                                    {row.installedVersion === undefined
-                                                        ? <Button disabled={!canPlanPackagesV1 || !canPlanPackagesV2 || !catalogReady || installChoice?.kind !== "candidate" || installChoice.candidate.eligibility !== "eligible"} onClick={() => { if (installChoice?.kind === "candidate") chooseCandidate(row, installChoice.candidate); }} title={capabilityUnavailableTitle(canPlanPackagesV1 && canPlanPackagesV2, capabilities.packagesPlanV2)} type="button" variant="tonal"><Icon asset={downloadIcon} slot="icon" />Install</Button>
-                                                        : update?.kind === "target"
-                                                            ? <Button disabled={!canPlanPackagesV1 || !canPlanPackagesV2 || !catalogReady} onClick={() => chooseCandidate(row, update.candidate)} title={capabilityUnavailableTitle(canPlanPackagesV1 && canPlanPackagesV2, capabilities.packagesPlanV2)} type="button" variant="tonal"><Icon asset={upgradeIcon} slot="icon" />Update</Button>
-                                                            : null}
-                                                    <PackageRowMoreMenu canPlanV1={canPlanPackagesV1 && !packageMutationBusy && !refreshing && !evidenceInvalid} canPlanV2={canPlanPackagesV2 && catalogReady} client={client} onAction={(action) => selectAction(action, row)} row={row} />
-                                                </div></td>
-                                            </tr>
-                                        );
-                                    })}</tbody>
-                                </MaterialDataTable>
+                                 <DesktopList
+                                     className="package-workspace-list"
+                                     columns={[
+                                         { key: "select", header: <Checkbox checked={rows.length > 0 && rows.every((row) => bulkSelection.includes(row.packageId))} label="Select all visible packages" onChange={(checked) => setBulkSelection((current) => checked ? [...new Set([...current, ...rows.map((row) => row.packageId)])] : current.filter((id) => !rows.some((row) => row.packageId === id)))} />, width: 48, className: "package-column-select" },
+                                         { key: "package", header: "Package", width: "100%", className: "package-column-name" },
+                                         { key: "installed", header: "Installed", width: 140, className: "package-column-installed" },
+                                         { key: "latest", header: "Latest", width: 120, className: "package-column-latest" },
+                                         { key: "source", header: "Source", width: 210, className: "package-column-source" },
+                                         { key: "actions", header: <span className="visually-hidden">Actions</span>, width: 112, className: "package-column-actions" }
+                                     ]}
+                                     label="Packages"
+                                     minWidth={880}
+                                     sizing="fixed"
+                                     rows={rows.map((row) => {
+                                         const evidence = currentEvidence ? row.evidence : undefined;
+                                         const installChoice = evidence?.projectLatest;
+                                         const update = evidence?.update;
+                                         return { key: row.packageId, cells: [
+                                             <Checkbox checked={bulkSelection.includes(row.packageId)} label={`Select ${row.displayName}`} onChange={(checked) => setBulkSelection((current) => checked ? [...new Set([...current, row.packageId])] : current.filter((packageId) => packageId !== row.packageId))} />,
+                                             <><strong>{row.displayName}</strong><small>{row.packageId}</small></>,
+                                             <><PackageVersionMenu client={client} project={project} snapshot={currentEvidence ? candidates.snapshot.fingerprint : undefined} disabled={!canQueryCandidates} canPlan={catalogReady && canPlanPackagesV1 && canPlanPackagesV2} onStale={() => setEvidenceInvalid(true)} onSelect={(option) => chooseCandidate(row, option)} row={row} />{row.requestedRange === undefined ? null : <small>Requested {row.requestedRange}</small>}</>,
+                                             <>{evidence ? choiceText(evidence.latest) : "Evidence unavailable"}{evidence && update?.kind !== "target" ? <small>{update ? updateReason(update) : ""}</small> : null}</>,
+                                             row.sourceOptions.length === 1 && !sourceSelections[row.packageId] ? row.sourceOptions[0]?.label : <PackageSourceMenu disabled={!currentEvidence} label={`Source for ${row.displayName}`} onChange={(key) => setSourceSelections((current) => ({ ...current, [row.packageId]: key }))} options={row.sourceOptions} value={sourceSelections[row.packageId] ?? ""} />,
+                                             <div className="package-row-actions">{row.installedVersion === undefined
+                                                 ? <IconButton className="package-primary-action" disabled={!canPlanPackagesV1 || !canPlanPackagesV2 || !catalogReady || installChoice?.kind !== "candidate" || installChoice.candidate.eligibility !== "eligible"} label="Install" onClick={() => { if (installChoice?.kind === "candidate") chooseCandidate(row, installChoice.candidate); }} title={capabilityUnavailableTitle(canPlanPackagesV1 && canPlanPackagesV2, capabilities.packagesPlanV2) ?? `Install ${row.displayName}`} type="button"><Icon asset={downloadIcon} /></IconButton>
+                                                 : update?.kind === "target" ? <IconButton className="package-primary-action" disabled={!canPlanPackagesV1 || !canPlanPackagesV2 || !catalogReady} label="Update" onClick={() => chooseCandidate(row, update.candidate)} title={capabilityUnavailableTitle(canPlanPackagesV1 && canPlanPackagesV2, capabilities.packagesPlanV2) ?? `Update ${row.displayName}`} type="button"><Icon asset={upgradeIcon} /></IconButton> : null}<PackageRowMoreMenu canPlanV1={canPlanPackagesV1 && !packageMutationBusy && !refreshing && !evidenceInvalid} canPlanV2={canPlanPackagesV2 && catalogReady} client={client} onAction={(action) => selectAction(action, row)} row={row} /></div>
+                                         ] };
+                                     })}
+                                 />
                             )}
                         </div>
                     </section>
@@ -1551,14 +1548,7 @@ export function RepositoriesPage({ client, navigate }: PageProps) {
     const [selected, setSelected] = useState<RepositorySnapshot>();
     return <UtilityWorkspace title="Repositories" load={load} navigation={<ResourceNavigation current="/repositories" navigate={navigate} />} action={{ label: "Add repository", render: (_, refresh) => <RegisterRepositoryPanel client={client} onChanged={refresh} /> }}>
         {(repositories, refresh) => <>
-            {repositories.length === 0 ? <RouteState kind="empty" title="No repositories registered" /> : <MaterialDataTable label="Repositories" minWidth={640}>
-                <thead><tr>{["Repository", "Source", "Actions"].map((label) => <DataTableHeader key={label}>{label}</DataTableHeader>)}</tr></thead>
-                <tbody>{repositories.map((repository) => <tr key={repository.repositoryId ?? sourceText(repository)}>
-                    <td><strong>{repository.name ?? repository.declaredId ?? "Repository"}</strong></td>
-                    <td title={sourceText(repository)}>{sourceText(repository)}</td>
-                    <td><div className="card-actions"><Button disabled={repository.repositoryId === undefined} onClick={() => setSelected(repository)} type="button" variant="text">Browse packages</Button><RepositoryActions client={client} onChanged={refresh} repository={repository} /></div></td>
-                </tr>)}</tbody>
-            </MaterialDataTable>}
+            {repositories.length === 0 ? <RouteState kind="empty" title="No repositories registered" /> : <DesktopList columns={[{ key: "repository", header: "Repository", width: "34%" }, { key: "source", header: "Source" }, { key: "actions", header: "Actions", width: 280 }]} label="Repositories" minWidth={640} rows={repositories.map((repository) => ({ key: repository.repositoryId ?? sourceText(repository), cells: [<strong>{repository.name ?? repository.declaredId ?? "Repository"}</strong>, <span title={sourceText(repository)}>{sourceText(repository)}</span>, <div className="card-actions"><Button disabled={repository.repositoryId === undefined} onClick={() => setSelected(repository)} type="button" variant="text">Browse packages</Button><RepositoryActions client={client} onChanged={refresh} repository={repository} /></div>] }))} />}
             {selected?.repositoryId === undefined ? null : <Dialog wide open title={selected.name ?? "Repository packages"} onClose={() => setSelected(undefined)}>
                 <RepositoryPackageList client={client} repositoryId={selected.repositoryId} />
                 <div className="dialog-actions"><Button onClick={() => setSelected(undefined)} type="button" variant="text">Close</Button></div>
@@ -1851,16 +1841,13 @@ function ActivityLogRows({ client, items, search }: { client: GuiRpcClient; item
             <Checkbox checked={details} label="Show details" onChange={setDetails} />
             <p className="logs-result-count" role="status">{shown.length} of {items.length} loaded entries · Search and filters apply to loaded entries only.</p>
         </div>
-        <MaterialDataTable label="Activity" minWidth={720}>
-            <thead><tr>{["Time", "Status", "Activity", "Target", "Actions"].map((label) => <DataTableHeader key={label}>{label}</DataTableHeader>)}</tr></thead>
-            <tbody>{shown.map((item, index) => <tr key={`${item.type}-${item.eventSequence ?? item.operationId}-${item.occurredAtMs}-${index}`}>
-                <td className="logs-time">{formatTime(item.occurredAtMs)}</td>
-                <td><span className={`state-chip state-chip--${item.state ?? "unknown"}`}>{item.state === undefined ? "Unknown" : humanize(item.state)}</span></td>
-                <td className="logs-summary"><span title={item.summaryCode}>{humanize(item.summaryCode)}</span><small>{humanize(item.type)}</small>{details ? <dl className="logs-details"><Detail label="Summary code" value={item.summaryCode} />{item.operationId === undefined ? null : <Detail label="Operation" value={item.operationId} />}{item.eventSequence === undefined ? null : <Detail label="Event sequence" value={String(item.eventSequence)} />}</dl> : null}</td>
-                <td>{item.resourceKind === undefined ? "—" : humanize(item.resourceKind)}{item.resourceId === undefined ? null : <small>{item.resourceId}</small>}</td>
-                <td>{item.operationId === undefined ? null : <Button onClick={() => setSelected(item.operationId)} type="button" variant="text">View operation</Button>}</td>
-            </tr>)}{shown.length === 0 ? <tr><td colSpan={5}>{items.length === 0 ? "No activity yet" : "No matching loaded activity. Change the filters or load more entries."}</td></tr> : null}</tbody>
-        </MaterialDataTable>
+        <DesktopList columns={[{ key: "time", header: "Time", width: 250, className: "logs-time" }, { key: "status", header: "Status", width: 110 }, { key: "activity", header: "Activity" }, { key: "target", header: "Target", width: 150 }, { key: "actions", header: "Actions", width: 140 }]} emptyMessage={items.length === 0 ? "No activity yet" : "No matching loaded activity. Change the filters or load more entries."} label="Activity" minWidth={760} rows={shown.map((item, index) => ({ key: `${item.type}-${item.eventSequence ?? item.operationId}-${item.occurredAtMs}-${index}`, cells: [
+            formatTime(item.occurredAtMs),
+            <span className={`state-chip state-chip--${item.state ?? "unknown"}`}>{item.state === undefined ? "Unknown" : humanize(item.state)}</span>,
+            <span className="logs-summary"><span title={item.summaryCode}>{humanize(item.summaryCode)}</span><small>{humanize(item.type)}</small>{details ? <dl className="logs-details"><Detail label="Summary code" value={item.summaryCode} />{item.operationId === undefined ? null : <Detail label="Operation" value={item.operationId} />}{item.eventSequence === undefined ? null : <Detail label="Event sequence" value={String(item.eventSequence)} />}</dl> : null}</span>,
+            <>{item.resourceKind === undefined ? "—" : humanize(item.resourceKind)}{item.resourceId === undefined ? null : <small>{item.resourceId}</small>}</>,
+            item.operationId === undefined ? null : <Button onClick={() => setSelected(item.operationId)} type="button" variant="text">View operation</Button>
+        ] }))} sizing="fixed" />
         {selected === undefined ? null : <LogOperationDialog client={client} operationId={selected} onClose={() => setSelected(undefined)} />}
     </div>;
 }
@@ -1892,14 +1879,13 @@ function DiagnosticLogRows({ client, items, search }: { client: GuiRpcClient; it
             <LogFilter label="Subsystem" value={subsystem} values={items.map((item) => item.subsystem)} onChange={setSubsystem} />
             <p className="logs-result-count" role="status">{shown.length} of {items.length} loaded entries · Search and filters apply to loaded entries only.</p>
         </div>
-        <MaterialDataTable label="Diagnostics" minWidth={720}>
-            <thead><tr>{["Time", "Severity", "Subsystem", "Diagnostic", "Actions"].map((label) => <DataTableHeader key={label}>{label}</DataTableHeader>)}</tr></thead>
-            <tbody>{shown.map((item, index) => <tr key={`${item.operationId}-${item.occurredAtMs}-${index}`}>
-                <td className="logs-time">{formatTime(item.occurredAtMs)}</td><td><span className={`logs-severity logs-severity--${item.severity}`}>{humanize(item.severity)}</span></td><td>{item.subsystem}</td>
-                <td className="logs-summary"><strong>{item.code}</strong><p>{item.summary}</p>{item.diagnosticId === undefined ? null : <small>Diagnostic ID: {item.diagnosticId}</small>}</td>
-                <td>{item.operationId === undefined ? null : <Button onClick={() => setSelected(item.operationId)} type="button" variant="text">View operation</Button>}</td>
-            </tr>)}{shown.length === 0 ? <tr><td colSpan={5}>{items.length === 0 ? "No diagnostics reported" : "No matching loaded diagnostics. Change the filters or load more entries."}</td></tr> : null}</tbody>
-        </MaterialDataTable>
+        <DesktopList columns={[{ key: "time", header: "Time", width: 250, className: "logs-time" }, { key: "severity", header: "Severity", width: 110 }, { key: "subsystem", header: "Subsystem", width: 150 }, { key: "diagnostic", header: "Diagnostic" }, { key: "actions", header: "Actions", width: 140 }]} emptyMessage={items.length === 0 ? "No diagnostics reported" : "No matching loaded diagnostics. Change the filters or load more entries."} label="Diagnostics" minWidth={760} rows={shown.map((item, index) => ({ key: `${item.operationId}-${item.occurredAtMs}-${index}`, cells: [
+            formatTime(item.occurredAtMs),
+            <span className={`logs-severity logs-severity--${item.severity}`}>{humanize(item.severity)}</span>,
+            item.subsystem,
+            <span className="logs-summary"><strong>{item.code}</strong><p>{item.summary}</p>{item.diagnosticId === undefined ? null : <small>Diagnostic ID: {item.diagnosticId}</small>}</span>,
+            item.operationId === undefined ? null : <Button onClick={() => setSelected(item.operationId)} type="button" variant="text">View operation</Button>
+        ] }))} sizing="fixed" />
         {selected === undefined ? null : <LogOperationDialog client={client} operationId={selected} onClose={() => setSelected(undefined)} />}
     </div>;
 }
@@ -1946,17 +1932,12 @@ export function Page({ actions, children, eyebrow, title }: { actions?: ReactNod
 function Detail({ label, value }: { label: string; value: string }) { return <div><dt>{label}</dt><dd>{value}</dd></div>; }
 
 function UtilityTable({ headers, label, rows }: { headers: string[]; label: string; rows: { key: string; cells: ReactNode[] }[] }) {
-    return <MaterialDataTable label={label} minWidth={640}><thead><tr>{headers.map((header) => <DataTableHeader key={header}>{header}</DataTableHeader>)}</tr></thead><tbody>{rows.map((row) => <tr key={row.key}>{row.cells.map((cell, index) => <td key={headers[index]}>{cell}</td>)}</tr>)}</tbody></MaterialDataTable>;
+    return <DesktopList columns={headers.map((header, index) => ({ key: `${index}-${header}`, header }))} label={label} minWidth={640} rows={rows} />;
 }
 
 function DataTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
     if (rows.length === 0) return <RouteState kind="empty" title="No matching items" />;
-    return (
-        <MaterialDataTable label="Repository packages" minWidth={480}>
-            <thead><tr>{headers.map((header) => <DataTableHeader key={header}>{header}</DataTableHeader>)}</tr></thead>
-            <tbody>{rows.map((row, rowIndex) => <tr key={`${rowIndex}-${row[0]}`}>{row.map((cell, index) => <td key={`${headers[index]}-${index}`}>{cell}</td>)}</tr>)}</tbody>
-        </MaterialDataTable>
-    );
+    return <DesktopList columns={headers.map((header, index) => ({ key: `${index}-${header}`, header }))} label="Repository packages" minWidth={480} rows={rows.map((cells, rowIndex) => ({ key: `${rowIndex}-${cells[0]}`, cells }))} />;
 }
 
 function sourceText(repository: RepositorySnapshot): string { return repository.source.kind === "local" ? "Local repository" : repository.source.url; }

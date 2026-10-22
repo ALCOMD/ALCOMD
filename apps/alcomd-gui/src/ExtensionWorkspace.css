@@ -1,6 +1,6 @@
 .extension-management {
     padding: 20px;
-    border-radius: 16px;
+    border-radius: var(--alcomd-shape-container);
     background: var(--md-sys-color-surface-container-low);
 }
 
@@ -45,7 +45,7 @@
     min-height: 160px;
     padding: 18px;
     border: 1px solid var(--md-sys-color-outline-variant);
-    border-radius: 14px;
+    border-radius: var(--alcomd-shape-card);
     background: var(--md-sys-color-surface);
 }
 
