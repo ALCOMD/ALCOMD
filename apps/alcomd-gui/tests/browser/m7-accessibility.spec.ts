@@ -117,9 +117,30 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
     await openHarness(page, "/projects");
     const titleStyle = (element: Element) => {
         const style = getComputedStyle(element);
-        return { fontSize: style.fontSize, fontWeight: style.fontWeight, lineHeight: style.lineHeight, color: style.color };
+        return {
+            fontSize: style.fontSize, fontWeight: style.fontWeight, lineHeight: style.lineHeight, color: style.color,
+            margin: style.margin, flex: style.flex, whiteSpace: style.whiteSpace
+        };
+    };
+    const headerGeometry = (element: Element) => {
+        const header = element.closest("header")!;
+        const style = getComputedStyle(header);
+        const bounds = header.getBoundingClientRect();
+        const canvas = document.getElementById("main-content")!.getBoundingClientRect();
+        return {
+            shared: header.classList.contains("page-header"),
+            left: bounds.left - canvas.left, top: bounds.top - canvas.top,
+            width: bounds.width, height: bounds.height,
+            padding: style.padding, gap: style.gap, alignItems: style.alignItems, flexWrap: style.flexWrap
+        };
     };
     const projectsTitleStyle = await page.getByRole("heading", { level: 1, name: "Projects", exact: true }).evaluate(titleStyle);
+    const projectsHeaderGeometry = await page.getByRole("heading", { level: 1, name: "Projects", exact: true }).evaluate(headerGeometry);
+    const projectsTitlePosition = await page.getByRole("heading", { level: 1, name: "Projects", exact: true }).evaluate((element) => {
+        const bounds = element.getBoundingClientRect();
+        const canvas = document.getElementById("main-content")!.getBoundingClientRect();
+        return { left: bounds.left - canvas.left, top: bounds.top - canvas.top };
+    });
     const sidebarRoutes = new Set(["/", "/projects", "/repositories", "/user-packages", "/templates", "/unity", "/operations", "/extensions", "/activity", "/diagnostics", "/settings", "/about"]);
     const routes = [
         ["/", "Projects"],
@@ -161,6 +182,16 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
             await expect(heading).toHaveText(await sidebarLabel.innerText());
         }
         expect(await heading.evaluate(titleStyle)).toEqual(projectsTitleStyle);
+        expect(await heading.evaluate(headerGeometry), route).toEqual(projectsHeaderGeometry);
+        // Contextual detail headers may lead with Back or carry a project path.
+        // Sidebar destinations must place the heading at exactly the Projects position.
+        if (sidebarRoutes.has(route)) {
+            expect(await heading.evaluate((element) => {
+                const bounds = element.getBoundingClientRect();
+                const canvas = document.getElementById("main-content")!.getBoundingClientRect();
+                return { left: bounds.left - canvas.left, top: bounds.top - canvas.top };
+            }), route).toEqual(projectsTitlePosition);
+        }
         // A clipped 1px heading is technically visible to Playwright, but not to the owner.
         expect(await heading.evaluate((element) => {
             const bounds = element.getBoundingClientRect();
