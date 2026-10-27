@@ -1,8 +1,12 @@
 # 项目状态
 
-最后更新：2026-10-22
+最后更新：2026-10-27
 
 ## 当前阶段
+
+2026-10-27：Dependabot #22–27 的本地安全修复仅涉及开发／构建依赖。`package-lock.json` 将 `source-map-js 1.2.1 → 1.2.2`、`vite 7.3.6 → 7.3.7`，只更新 version/resolved/integrity。现有依赖范围允许这些补丁；Vite 同步修复内嵌 launch-editor，不新增依赖、override、安装脚本许可、配置或产品代码。对应 GHSA 为 `68fv-2mgg-jv7q`、`698v-4r3x-3vcv`、`587h-7wmj-h5pm`、`r825-w8mm-5pxw`、`9jrq-w75r-8gcw`、`rq7h-c2jc-7f22`。Node engines、依赖集合、MIT／BSD-3-Clause 许可保持。未改变 RPC、权限、State 或 Plan/Apply。
+
+`npm ci --no-audit --no-fund`、`npm run check`、`npm run build`、diff check 通过；`npm audit --json` 为 0 漏洞，实际依赖树确认修复版本且不进入 omit-dev 图（空集合的 npm ls 返回 1）。source-map 临时回归 12/12：升级前确认 PostCSS 对象／字符串／两种 inline 编码接受越界偏移、深层 SourceNode lookup 在 2 秒预算下超时；升级后拒绝直接／累计越界及非法类型，正常 CSS 和映射控制保留。Vite 临时回归 11/11：公共 HTML 转换及 import-analysis 的升级前缺陷已不能复现，正常 HTML 保留；编辑器参数在禁止 fs/child_process 的 VM 中验证百分号／换行、Windows 路径规范化与模拟 WSL flag 前缀，未启动真实编辑器或 shell。既有 GUI 冒烟 3/3（退出码 0），覆盖键盘、22 个路由与 Material 控件。临时样例／输出由安全技能管理，不纳入产品。构建保留大 chunk 警告；npm ci 提示现有 esbuild postinstall 未获本机 allowScripts 许可，未改许可，构建正常。WSL／非 Windows 实机完整 exploit 未验证；未操作真实工程、重建桌面程序或重复 Rust Workspace。所有者已授权分批提交和推送；远端告警关闭以默认分支重新扫描结果为准，Visual Gate 2 保持 PENDING。
 
 2026-10-22：公共列表由 `DesktopList` 统一持有列定义、表头、行、滚动和排序。默认列禁止文字软换行及 flex 操作控件折行，包含嵌套内容；主副文本等显式分行保留。`UtilityTable` 不再隐式放开所有列换行，全部生产调用方使用组件默认值；标准按钮宽度受单元格限制，长标签沿用 Material 自身省略行为。已审计 Projects、Project Packages、Repositories、Repository Packages（独立页和浏览弹窗）、User Packages、Templates、Unity、Settings 内 Unity installations、Backups、Task Center、Activity 和 Diagnostics。包页保留同列主操作及逐行更多菜单、单一工具栏内 Update All；Activity / Diagnostics 保留固定列布局、完整 UTC 时间和列内摘要截断。
 
