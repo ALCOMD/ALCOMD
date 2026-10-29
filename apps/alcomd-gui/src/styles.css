@@ -260,13 +260,6 @@ md-linear-progress {
     min-width: 220px;
     flex: 1 1 360px;
 }
-.projects-secondary-toolbar { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 8px 12px; border-radius: var(--alcomd-shape-container); background: var(--surface-container); }
-.projects-sort-label { flex: 0 0 auto; color: var(--on-surface); font-size: 0.875rem; font-weight: 500; }
-.projects-sort {
-    width: 200px;
-    --md-filled-select-text-field-input-text-size: 0.875rem;
-}
-.projects-result-count { margin-left: auto; padding-right: 8px; color: var(--on-surface-variant); font-size: 0.875rem; }
 .projects-content { min-height: 0; flex: 1; overflow: hidden; border-radius: var(--alcomd-shape-container); background: var(--surface); }
 .projects-empty { display: grid; gap: 6px; align-content: start; min-height: 100%; padding: 32px; }
 .projects-empty h2, .projects-empty p { margin: 0; }

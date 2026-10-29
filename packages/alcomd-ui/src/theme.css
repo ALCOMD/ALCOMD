@@ -175,6 +175,42 @@
     --md-sys-color-on-primary-container: #74f8e5;
 }
 
+.alcomd-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 56px;
+    padding: 8px 12px;
+    border-radius: var(--alcomd-shape-container);
+    background: var(--md-sys-color-surface-container);
+    color: var(--md-sys-color-on-surface);
+    font-size: 0.875rem;
+    line-height: 20px;
+}
+
+.alcomd-filter-bar .alcomd-select {
+    flex: 0 0 auto;
+    width: 200px;
+    min-width: 0;
+    --md-filled-select-text-field-input-text-size: 0.875rem;
+}
+
+.alcomd-filter-bar .material-toggle {
+    min-height: var(--alcomd-button-height);
+}
+
+.alcomd-filter-bar-label {
+    flex: 0 0 auto;
+    font-weight: 500;
+}
+
+.alcomd-filter-bar-status {
+    min-width: 0;
+    max-width: 300px;
+    margin: 0 0 0 auto;
+    color: var(--md-sys-color-on-surface-variant);
+}
+
 .alcomd-select {
     --md-filled-field-bottom-space: 8px;
     --md-filled-field-top-space: 8px;

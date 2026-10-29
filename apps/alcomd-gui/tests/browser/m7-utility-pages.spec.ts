@@ -120,6 +120,24 @@ for (const width of [1280, 1440]) {
 
 test("card surfaces share one 28px shape across workspaces", async ({ page }) => {
     test.setTimeout(60_000);
+    const filterBarStyle = () => page.locator(".alcomd-filter-bar").evaluate((element) => {
+        const style = getComputedStyle(element);
+        const select = element.querySelector("md-filled-select")!;
+        const selectedText = select.shadowRoot!.querySelector("#label")!;
+        const status = element.querySelector(".alcomd-filter-bar-status")!;
+        return {
+            height: element.getBoundingClientRect().height,
+            gap: style.gap,
+            padding: style.padding,
+            radius: style.borderRadius,
+            background: style.backgroundColor,
+            font: style.fontSize,
+            selectWidth: select.getBoundingClientRect().width,
+            selectHeight: select.getBoundingClientRect().height,
+            selectFont: getComputedStyle(selectedText).fontSize,
+            statusFont: getComputedStyle(status).fontSize
+        };
+    });
     await openHarness(page, "/projects");
     await expect(page.locator(".main-content")).toHaveCSS("border-radius", "28px");
     await expect(page.locator(".projects-content")).toHaveCSS("border-radius", "28px");
@@ -137,6 +155,11 @@ test("card surfaces share one 28px shape across workspaces", async ({ page }) =>
         ["/projects/00000000-0000-4000-8000-000000000101/packages", ".package-workspace-surface"]
     ] as const;
     for (const mode of ["light", "dark"]) {
+        await openHarness(page, "/projects");
+        await page.getByRole("button", { name: "Grid view", exact: true }).click();
+        await page.evaluate((value) => { document.documentElement.dataset.appearance = value; }, mode);
+        const sharedFilterStyle = await filterBarStyle();
+        expect(sharedFilterStyle).toMatchObject({ height: 56, gap: "8px", padding: "8px 12px", font: "14px", selectWidth: 200, selectHeight: 40, selectFont: "14px", statusFont: "14px" });
         for (const [route, selector] of cases) {
             await openHarness(page, route);
             await page.evaluate((value) => { document.documentElement.dataset.appearance = value; }, mode);
@@ -146,6 +169,7 @@ test("card surfaces share one 28px shape across workspaces", async ({ page }) =>
                 await expect(surfaces.first()).toBeVisible();
                 for (const surface of await surfaces.all()) await expect(surface).toHaveCSS("border-radius", "28px");
             }
+            if (route === "/activity" || route === "/diagnostics") expect(await filterBarStyle()).toEqual(sharedFilterStyle);
             if (route === "/about") {
                 // These are transparent definition rows with divider lines, not card surfaces.
                 for (const row of await page.locator(".detail-grid > div").all()) {

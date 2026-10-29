@@ -306,8 +306,8 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                 <Button disabled={!canCreate} onClick={() => setCreateOpen(true)} ref={createButtonRef} title={capabilityUnavailableTitle(canCreate, capabilities.templatesCreateProject)} type="button">Create project</Button>
             </PageHeader>
             {view === "grid" ? (
-                <div className="projects-secondary-toolbar">
-                    <span className="projects-sort-label">Sort by:</span>
+                <div className="alcomd-filter-bar projects-secondary-toolbar">
+                    <span className="alcomd-filter-bar-label">Sort by:</span>
                     <Select
                         aria-label="Sort by"
                         className="projects-sort"
@@ -325,7 +325,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                     <IconButton label={descending ? "Sort descending" : "Sort ascending"} onClick={() => setDescending((current) => !current)} type="button">
                         <Icon asset={descending ? arrowDownwardIcon : arrowUpwardIcon} />
                     </IconButton>
-                    <span className="projects-result-count" role="status" aria-live="polite">
+                    <span className="alcomd-filter-bar-status" role="status" aria-live="polite">
                         {projects.length} {projects.length === 1 ? "project" : "projects"}
                     </span>
                 </div>
@@ -1827,7 +1827,7 @@ function LogFilter({ label, value, values, onChange }: { label: string; value: s
     const options = [...new Set(values)].sort().map((item) => ({ label: item === "unknown" ? "Unknown" : humanize(item), value: item }));
     if (value !== "" && !options.some((item) => item.value === value)) options.push({ label: humanize(value), value });
     // Rapid filter changes must not be overwritten by the previous menu's closing animation.
-    return <Select className="logs-filter" quick label={label} value={value} onChange={onChange} options={[{ label: `All ${label.toLowerCase()}`, value: "" }, ...options]} />;
+    return <Select quick label={label} value={value} onChange={onChange} options={[{ label: `All ${label.toLowerCase()}`, value: "" }, ...options]} />;
 }
 
 function ActivityLogRows({ client, items, search }: { client: GuiRpcClient; items: LoadedActivityItem[]; search: string }) {
@@ -1840,11 +1840,11 @@ function ActivityLogRows({ client, items, search }: { client: GuiRpcClient; item
         && (kind === "" || item.type === kind)
         && [item.summaryCode, humanize(item.summaryCode), item.state, item.resourceKind, item.resourceId, item.operationId].some((value) => value?.toLowerCase().includes(query)));
     return <div className="logs-workspace">
-        <div className="logs-filter-toolbar" aria-label="Activity filters">
+        <div className="alcomd-filter-bar logs-filter-toolbar" aria-label="Activity filters">
             <LogFilter label="Status" value={status} values={items.map((item) => item.state ?? "unknown")} onChange={setStatus} />
             <LogFilter label="Record type" value={kind} values={items.map((item) => item.type)} onChange={setKind} />
             <Checkbox checked={details} label="Show details" onChange={setDetails} />
-            <p className="logs-result-count" role="status">{shown.length} of {items.length} loaded entries · Search and filters apply to loaded entries only.</p>
+            <p className="alcomd-filter-bar-status" role="status">{shown.length} of {items.length} loaded entries · Search and filters apply to loaded entries only.</p>
         </div>
         <DesktopList columns={[{ key: "time", header: "Time", width: 250, className: "logs-time" }, { key: "status", header: "Status", width: 110 }, { key: "activity", header: "Activity" }, { key: "target", header: "Target", width: 150 }, { key: "actions", header: "Actions", width: 140 }]} emptyMessage={items.length === 0 ? "No activity yet" : "No matching loaded activity. Change the filters or load more entries."} label="Activity" minWidth={760} rows={shown.map((item, index) => ({ key: `${item.type}-${item.eventSequence ?? item.operationId}-${item.occurredAtMs}-${index}`, cells: [
             formatTime(item.occurredAtMs),
@@ -1879,10 +1879,10 @@ function DiagnosticLogRows({ client, items, search }: { client: GuiRpcClient; it
         && (subsystem === "" || item.subsystem === subsystem)
         && [item.code, item.summary, item.subsystem, item.diagnosticId, item.operationId].some((value) => value?.toLowerCase().includes(query)));
     return <div className="logs-workspace">
-        <div className="logs-filter-toolbar" aria-label="Diagnostic filters">
+        <div className="alcomd-filter-bar logs-filter-toolbar" aria-label="Diagnostic filters">
             <LogFilter label="Severity" value={severity} values={["warning", "error"]} onChange={setSeverity} />
             <LogFilter label="Subsystem" value={subsystem} values={items.map((item) => item.subsystem)} onChange={setSubsystem} />
-            <p className="logs-result-count" role="status">{shown.length} of {items.length} loaded entries · Search and filters apply to loaded entries only.</p>
+            <p className="alcomd-filter-bar-status" role="status">{shown.length} of {items.length} loaded entries · Search and filters apply to loaded entries only.</p>
         </div>
         <DesktopList columns={[{ key: "time", header: "Time", width: 250, className: "logs-time" }, { key: "severity", header: "Severity", width: 110 }, { key: "subsystem", header: "Subsystem", width: 150 }, { key: "diagnostic", header: "Diagnostic" }, { key: "actions", header: "Actions", width: 140 }]} emptyMessage={items.length === 0 ? "No diagnostics reported" : "No matching loaded diagnostics. Change the filters or load more entries."} label="Diagnostics" minWidth={760} rows={shown.map((item, index) => ({ key: `${item.operationId}-${item.occurredAtMs}-${index}`, cells: [
             formatTime(item.occurredAtMs),
