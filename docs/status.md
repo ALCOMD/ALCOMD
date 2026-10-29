@@ -1,6 +1,6 @@
 # 项目状态
 
-最后更新：2026-10-27
+最后更新：2026-10-30
 
 ## 当前阶段
 
@@ -10,9 +10,11 @@
 
 2026-10-22：公共列表由 `DesktopList` 统一持有列定义、表头、行、滚动和排序。默认列禁止文字软换行及 flex 操作控件折行，包含嵌套内容；主副文本等显式分行保留。`UtilityTable` 不再隐式放开所有列换行，全部生产调用方使用组件默认值；标准按钮宽度受单元格限制，长标签沿用 Material 自身省略行为。已审计 Projects、Project Packages、Repositories、Repository Packages（独立页和浏览弹窗）、User Packages、Templates、Unity、Settings 内 Unity installations、Backups、Task Center、Activity 和 Diagnostics。包页保留同列主操作及逐行更多菜单、单一工具栏内 Update All；Activity / Diagnostics 保留固定列布局、完整 UTC 时间和列内摘要截断。
 
-圆角沿用已认可的 Projects 层级：共享 `--alcomd-shape-canvas/container/card` 分别为 28px / 20px / 18px，公共列表滚动容器统一负责内容裁切。Settings、Extensions、空/错误状态、反馈及 Portable UI 容器复用相同层级，Material 按钮、导航和弹窗保留其控件形状。列表项采用所有者提供参考图所明确的卡片样式：无双色条纹、无分割线、统一底色，行间为真实 2px 空隙；行内连接处 8px 微圆角，首项上圆角及尾项下圆角保留原 20px，表头视为首个列表项。粘性操作列沿用同一行底色及 hover 状态，不再单独绘制条纹。
+圆角按所有者 2026-10-30 的确认统一：主画布、内容容器、卡片、操作／筛选条、反馈和 Portable UI 卡片共用 `--alcomd-shape-container`，映射 Material extra-large 的 28px，移除原 canvas/card 两档 token 及其引用。Settings 保存条和分组、Projects 网格卡片／次工具栏、Logs 筛选条、Extensions、风险／操作反馈、空／错误状态及自有筛选弹层均遵循此值；Material 按钮、输入框、导航、弹窗及滚动条保留各自控件形状。纯布局包装、透明分隔信息行及分段面板内部接缝保持平直，未改成卡片。公共列表滚动容器继续负责内容裁切；列表项仍无双色条纹／分割线、统一底色，行间为真实 2px 空隙，行内连接处为 8px 微圆角，首项上圆角及尾项下圆角为 28px，表头视为首个列表项。粘性操作列沿用同一行底色及 hover 状态。
 
-项目所有者认可当前列表样式并授权分批本地提交，暂不推送；该认可仅覆盖当前列表样式，不代表完整 H2-A 交互或 Visual Gate 2 通过。
+28px 增量的前端 check/build 与 diff check 通过；调整前先核对共享 Material 和多个业务模态对话框，2/2 通过，原有实际绘制表面均为 28px，没有另设不同的对话框圆角。最终浏览器专项 **7/7 PASS，退出码 0**，覆盖 1280px／1440px 全部列表几何、亮／暗主题的画布／设置保存条／分组／Projects／Extensions／Logs／About／Portable UI 卡片、自有筛选浮层 28px、模态对话框 28px 及取消／焦点恢复，并更新完整窗口 fixture 截图。项目行更多菜单的 12px 属于现有菜单控件规则，不当作卡片或模态对话框统一；其他 Material 控件形状同样保留。结果在 `target/m7-shapes28-20261030/`，截图沿用 `target/m7-v3-recheck-20260919/browser/`。此前 20px 候选的失败诊断保留在 `target/m7-shapes-20261030/`，不作为当前圆角规范。正在运行的 `npm run gui:dev` 已收到 HMR，真实窗口 PID 96964 响应正常；热更新和 browser fixture 不代表人工视觉或屏幕阅读器验收通过。未改依赖、Rust、图标、布局或进行窄窗口适配，未重新构建桌面产物，Visual Gate 2 保持 PENDING。
+
+项目所有者认可列表卡片式样式；该认可仅覆盖列表样式，不代表完整 H2-A 交互或 Visual Gate 2 通过。28px 统一已整理为独立本地提交，未推送。
 
 卡片式列表完整 GUI browser suite（单 worker）首轮 96/97：一项在 `browserContext.newPage` 阶段 `Target crashed`，未进入用例；代码及断言不变单独复跑 1/1 通过。最终首尾圆角增量的逐页/截图专项 3/3、GUI 与共享 UI check、frontend build、debug Tauri no-bundle、diff check 通过。12 个列表入口在 1280px / 1440px 下统一验证长内容、按钮边界、真实行间空隙、无条纹/边线、首尾及内部圆角、圆角命中裁切，另有非列表层级回归。该列表样式候选的 debug GUI 摘要为 `A8EBCFC7C90ECD2C9615D6B1108C0B5EF37435048B08E309E926B05C746C0222`，其历史验证结果不因后续标题修正而扩大。
 

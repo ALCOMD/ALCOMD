@@ -20,6 +20,11 @@ test("shared Material foundation renders real controls with React 19 interaction
     expect(closeBox).not.toBeNull();
     expect(closeBox!.x + closeBox!.width).toBeLessThanOrEqual(dialogBox!.x + dialogBox!.width);
     const dialogHost = page.locator("md-dialog[open]");
+    await expect(dialog).toHaveCSS("border-radius", "28px");
+    expect(await dialogHost.evaluate((element) => {
+        const surface = element.shadowRoot?.querySelector(".container");
+        return surface === null || surface === undefined ? null : getComputedStyle(surface).borderRadius;
+    })).toBe("28px");
     expect(await dialogHost.evaluate((element) => element.parentElement === document.body)).toBe(true);
     await expect(dialogHost).toHaveCSS("white-space", "normal");
     const dialogContent = dialogHost.locator(":scope > .material-dialog-content");

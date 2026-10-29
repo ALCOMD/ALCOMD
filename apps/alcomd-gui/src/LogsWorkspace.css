@@ -15,7 +15,7 @@
     align-items: center;
     gap: 12px;
     padding: 8px 12px;
-    border-radius: var(--alcomd-shape-canvas);
+    border-radius: var(--alcomd-shape-container);
     background: var(--md-sys-color-surface-container-low);
 }
 

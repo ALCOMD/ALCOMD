@@ -100,7 +100,7 @@ md-linear-progress {
     width: min(720px, calc(100% - 40px));
     margin: 40px auto;
     padding: 32px;
-    border-radius: var(--md-sys-shape-corner-extra-large);
+    border-radius: var(--alcomd-shape-container);
     background: var(--md-sys-color-surface-container-low);
 }
 
@@ -227,7 +227,7 @@ md-linear-progress {
     margin: 12px 12px 12px 0;
     padding: 24px;
     overflow: hidden;
-    border-radius: var(--alcomd-shape-canvas);
+    border-radius: var(--alcomd-shape-container);
     background: var(--md-sys-color-surface-container-lowest);
 }
 
@@ -260,7 +260,7 @@ md-linear-progress {
     min-width: 220px;
     flex: 1 1 360px;
 }
-.projects-secondary-toolbar { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 8px 12px; border-radius: var(--alcomd-shape-canvas); background: var(--surface-container); }
+.projects-secondary-toolbar { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 8px 12px; border-radius: var(--alcomd-shape-container); background: var(--surface-container); }
 .projects-sort-label { flex: 0 0 auto; color: var(--on-surface); font-size: 0.875rem; font-weight: 500; }
 .projects-sort {
     width: 200px;
@@ -466,7 +466,7 @@ md-linear-progress {
 .state-sized-label-reserve { visibility: hidden; }
 .state-sized-label-current { justify-self: center; }
 .projects-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; height: 100%; padding: 4px 12px 12px 4px; overflow-y: auto; }
-.project-card { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 16px; border-radius: var(--alcomd-shape-card); background: var(--surface-container); }
+.project-card { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 16px; border-radius: var(--alcomd-shape-container); background: var(--surface-container); }
 .project-card h2, .project-card p { margin: 0; }
 .project-card h2, .project-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .project-card-actions { margin-top: auto; padding-top: 8px; }
@@ -533,7 +533,7 @@ md-linear-progress {
     flex: 0 0 auto;
     overflow: hidden;
     padding: 6px 12px;
-    border-radius: 10px;
+    border-radius: var(--alcomd-shape-container);
     color: var(--md-sys-color-on-secondary-container);
     background: var(--md-sys-color-secondary-container);
     font-size: 0.78rem;
@@ -648,7 +648,7 @@ md-linear-progress {
 .extension-surface,
 .page-surface {
     overflow-wrap: anywhere;
-    border-radius: var(--alcomd-shape-canvas);
+    border-radius: var(--alcomd-shape-container);
     background: var(--md-sys-color-surface-container-lowest);
     box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
 }
@@ -719,7 +719,7 @@ md-linear-progress {
 .settings-toggle-row .field-hint { margin: 0 0 0 40px; }
 .settings-source-options { display: flex; flex-direction: column; gap: 4px; }
 .settings-path { overflow-wrap: anywhere; }
-.settings-save-bar { padding: 12px 20px; background: var(--md-sys-color-surface-container); border-radius: var(--alcomd-shape-canvas); }
+.settings-save-bar { padding: 12px 20px; background: var(--md-sys-color-surface-container); border-radius: var(--alcomd-shape-container); }
 .settings-section .action-row { margin: 0; }
 .repository-row-actions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .repository-row-actions .mutation-feedback { flex-basis: 100%; }
@@ -1016,7 +1016,7 @@ md-linear-progress {
 .notice-card {
     min-width: 0;
     padding: 20px;
-    border-radius: var(--alcomd-shape-card);
+    border-radius: var(--alcomd-shape-container);
     background: var(--surface);
 }
 
@@ -1177,7 +1177,7 @@ md-linear-progress {
 
 .risk-summary {
     padding: 12px 14px;
-    border-radius: var(--alcomd-shape-card);
+    border-radius: var(--alcomd-shape-container);
     color: var(--on-surface-variant);
     background: var(--surface);
 }
@@ -1207,7 +1207,7 @@ md-linear-progress {
     display: grid;
     gap: 8px;
     padding: 16px;
-    border-radius: var(--alcomd-shape-card);
+    border-radius: var(--alcomd-shape-container);
     background: var(--primary-container);
 }
 
@@ -1306,7 +1306,7 @@ md-linear-progress {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
-    border-radius: 18px 18px 0 0;
+    border-radius: var(--alcomd-shape-container) var(--alcomd-shape-container) 0 0;
 }
 
 .appearance-grid label {
@@ -1319,7 +1319,7 @@ md-linear-progress {
 .appearance-menu[open] .field-hint {
     top: calc(100% + 188px);
     border-top: 0;
-    border-radius: 0 0 18px 18px;
+    border-radius: 0 0 var(--alcomd-shape-container) var(--alcomd-shape-container);
 }
 
 .extension-surface {
@@ -1433,7 +1433,7 @@ code {
 .portable-group {
     flex: 1 1 240px;
     padding: 16px;
-    border-radius: var(--alcomd-shape-card);
+    border-radius: var(--alcomd-shape-container);
     background: var(--surface-container-high);
 }
 
@@ -1458,7 +1458,7 @@ code {
     display: grid;
     gap: 8px;
     padding: 14px 16px;
-    border-radius: var(--alcomd-shape-card);
+    border-radius: var(--alcomd-shape-container);
     background: var(--surface-container-high);
 }
 
@@ -1625,7 +1625,7 @@ code {
     .appearance-menu[open] .field-hint {
         position: static;
         width: 100%;
-        border-radius: 16px;
+        border-radius: var(--alcomd-shape-container);
     }
 
     .appearance-grid {
@@ -1651,12 +1651,6 @@ code {
     .package-action-id,
     .package-action-version,
     .package-action-form > md-filled-button { width: 100%; }
-
-    .home-card,
-    .extension-surface,
-    .page-surface {
-        border-radius: 20px;
-    }
 
     .extension-chrome :is(md-filled-button, md-filled-tonal-button, md-outlined-button, md-text-button) {
         width: 100%;

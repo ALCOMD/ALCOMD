@@ -31,7 +31,7 @@ for (const width of [1280, 1440]) {
                 const viewport = table.locator("..");
                 await viewport.scrollIntoViewIfNeeded();
                 for (const corner of ["top-left", "top-right", "bottom-left", "bottom-right"]) {
-                    await expect(viewport).toHaveCSS(`border-${corner}-radius`, "20px");
+                    await expect(viewport).toHaveCSS(`border-${corner}-radius`, "28px");
                 }
                 expect(await viewport.evaluate((element) => {
                     const box = element.getBoundingClientRect();
@@ -59,10 +59,10 @@ for (const width of [1280, 1440]) {
                 expect(new Set(cards.backgrounds).size).toBe(1);
                 expect(cards.borders.every((border) => border === "0px")).toBe(true);
                 expect(cards.corners).toEqual(cards.corners.map((_, index) => [
-                    index === 0 ? "20px" : "8px",
-                    index === cards.corners.length - 1 ? "20px" : "8px",
-                    index === 0 ? "20px" : "8px",
-                    index === cards.corners.length - 1 ? "20px" : "8px"
+                    index === 0 ? "28px" : "8px",
+                    index === cards.corners.length - 1 ? "28px" : "8px",
+                    index === 0 ? "28px" : "8px",
+                    index === cards.corners.length - 1 ? "28px" : "8px"
                 ]));
                 const result = await table.evaluate((element) => {
                     const rows = Array.from(element.querySelectorAll("tbody tr"));
@@ -118,31 +118,45 @@ for (const width of [1280, 1440]) {
     });
 }
 
-test("surfaces share the accepted Projects shape hierarchy beyond lists", async ({ page }) => {
+test("card surfaces share one 28px shape across workspaces", async ({ page }) => {
+    test.setTimeout(60_000);
     await openHarness(page, "/projects");
     await expect(page.locator(".main-content")).toHaveCSS("border-radius", "28px");
-    await expect(page.locator(".projects-content")).toHaveCSS("border-radius", "20px");
+    await expect(page.locator(".projects-content")).toHaveCSS("border-radius", "28px");
     await page.getByRole("button", { name: "Grid view", exact: true }).click();
     await expect(page.locator(".projects-secondary-toolbar")).toHaveCSS("border-radius", "28px");
-    await expect(page.locator(".project-card").first()).toHaveCSS("border-radius", "18px");
+    await expect(page.locator(".project-card").first()).toHaveCSS("border-radius", "28px");
     const cases = [
-        ["/settings", ".settings-section", "20px"],
-        ["/extensions", ".extension-management", "20px"],
-        ["/extensions", ".extension-card", "18px"],
-        ["/about", ".notice-card", "18px"],
-        ["/activity", ".logs-filter-toolbar", "28px"],
-        ["/diagnostics", ".logs-filter-toolbar", "28px"],
-        ["/projects/00000000-0000-4000-8000-000000000101/packages", ".package-workspace-surface", "20px"]
+        ["/settings", ".settings-section, .settings-save-bar"],
+        ["/extensions", ".extension-management, .extension-card"],
+        ["/about", ".notice-card"],
+        ["/activity", ".logs-filter-toolbar"],
+        ["/diagnostics", ".logs-filter-toolbar"],
+        ["/extensions/com.cqmhv.discord/ui", ".extension-identity > div, .portable-section, .portable-group"],
+        ["/extensions/com.cqmhv.mcp-management/ui", ".portable-list-item"],
+        ["/projects/00000000-0000-4000-8000-000000000101/packages", ".package-workspace-surface"]
     ] as const;
-    for (const [route, selector, radius] of cases) {
-        await openHarness(page, route);
-        await expect(page.locator(".main-content")).toHaveCSS("border-radius", "28px");
-        const surfaces = page.locator(selector);
-        await expect(surfaces.first()).toBeVisible();
-        for (const surface of await surfaces.all()) await expect(surface).toHaveCSS("border-radius", radius);
+    for (const mode of ["light", "dark"]) {
+        for (const [route, selector] of cases) {
+            await openHarness(page, route);
+            await page.evaluate((value) => { document.documentElement.dataset.appearance = value; }, mode);
+            await expect(page.locator(".main-content")).toHaveCSS("border-radius", "28px");
+            for (const part of selector.split(", ")) {
+                const surfaces = page.locator(part);
+                await expect(surfaces.first()).toBeVisible();
+                for (const surface of await surfaces.all()) await expect(surface).toHaveCSS("border-radius", "28px");
+            }
+            if (route === "/about") {
+                // These are transparent definition rows with divider lines, not card surfaces.
+                for (const row of await page.locator(".detail-grid > div").all()) {
+                    await expect(row).toHaveCSS("border-radius", "0px");
+                    await expect(row).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+                }
+            }
+        }
     }
     await page.goto("/browser-harness.html?route=%2Foperations&state=empty");
-    await expect(page.locator(".route-state")).toHaveCSS("border-radius", "20px");
+    await expect(page.locator(".route-state")).toHaveCSS("border-radius", "28px");
 });
 
 test("Resources sections and detail return controls work through ordinary clicks", async ({ page }) => {
@@ -239,6 +253,7 @@ test("utility actions use modal dialogs and cancel clears drafts and returns foc
         const dialog = page.getByRole("dialog", { name: title, exact: true });
         await expect(dialog).toBeVisible();
         await expect(dialogHost(page, title).getByLabel(field, { exact: true })).toBeVisible();
+        await expect(dialog).toHaveCSS("border-radius", "28px");
         await control.fill(value);
         await page.screenshot({ path: `../../target/m7-v3-recheck-20260919/browser/${route.slice(1)}-action-dialog.png`, fullPage: false, animations: "disabled" });
         await dialogHost(page, title).getByRole("button", { name: "Cancel", exact: true }).click();

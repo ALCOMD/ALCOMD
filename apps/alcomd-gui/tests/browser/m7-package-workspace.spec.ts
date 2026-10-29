@@ -43,6 +43,7 @@ test("Package filters stay anchored, save repository visibility and return keybo
     await trigger.click();
     const panel = page.getByRole("dialog", { name: "Package filters", exact: true });
     await expect(panel).toBeVisible();
+    await expect(panel).toHaveCSS("border-radius", "28px");
     expect(await panel.evaluate((element) => element.matches(":popover-open") && element.parentElement === document.body)).toBe(true);
     const remote = panel.getByRole("checkbox").first();
     await expect(remote).toBeChecked();
