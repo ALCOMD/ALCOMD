@@ -3,6 +3,46 @@ import { expect, test, type Page } from "@playwright/test";
 const PROJECT_ID = "00000000-0000-4000-8000-000000000101";
 const OPERATION_ID = "00000000-0000-4000-8000-000000000105";
 
+test("Projects view survives navigation, reload and reopening the page in both modes", async ({ page, context }) => {
+    await openHarness(page, "/projects");
+    await expect(page.getByRole("table", { name: "Projects", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Grid view", exact: true }).click();
+    await expect(page.locator(".projects-grid")).toBeVisible();
+    await page.locator("#primary-navigation md-list-item").filter({ hasText: "Resources" }).click();
+    await expect(page.getByRole("heading", { name: "Resources", exact: true })).toBeVisible();
+    await page.locator("#primary-navigation md-list-item").filter({ hasText: "Projects" }).click();
+    await expect(page.locator(".projects-grid")).toBeVisible();
+    await reloadProjectsHarness(page);
+    await expect(page.locator(".projects-grid")).toBeVisible();
+
+    const reopened = await context.newPage();
+    await openHarness(reopened, "/projects");
+    await expect(reopened.locator(".projects-grid")).toBeVisible();
+    await reopened.getByRole("button", { name: "List view", exact: true }).click();
+    await expect(reopened.getByRole("table", { name: "Projects", exact: true })).toBeVisible();
+    await reloadProjectsHarness(reopened);
+    await expect(reopened.getByRole("table", { name: "Projects", exact: true })).toBeVisible();
+    await reopened.close();
+    await reloadProjectsHarness(page);
+    await expect(page.getByRole("table", { name: "Projects", exact: true })).toBeVisible();
+});
+
+test("Projects view remains usable with invalid or unavailable local storage", async ({ page }) => {
+    await openHarness(page, "/projects");
+    await page.evaluate(() => localStorage.setItem("alcomd.gui.projects.view", "invalid"));
+    await reloadProjectsHarness(page);
+    await expect(page.getByRole("table", { name: "Projects", exact: true })).toBeVisible();
+    await page.addInitScript(() => {
+        Object.defineProperty(window, "localStorage", { get() { throw new DOMException("Storage unavailable", "SecurityError"); } });
+    });
+    await reloadProjectsHarness(page);
+    await expect(page.getByRole("table", { name: "Projects", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Grid view", exact: true }).click();
+    await expect(page.locator(".projects-grid")).toBeVisible();
+    await page.getByRole("button", { name: "List view", exact: true }).click();
+    await expect(page.getByRole("table", { name: "Projects", exact: true })).toBeVisible();
+});
+
 test("Favorite loads every page and remains globally first after secondary sorting", async ({ page }) => {
     await openHarness(page, "/projects", "favorite-pages");
     const rows = page.getByRole("row");
@@ -144,4 +184,10 @@ async function launch(page: Page) {
 
 async function openHarness(page: Page, route: string, state = "ready") {
     await page.goto(`/browser-harness.html?route=${encodeURIComponent(route)}&state=${state}`);
+}
+
+async function reloadProjectsHarness(page: Page) {
+    // The fixture replaces its URL with the app route; restore its entry before a real reload.
+    await page.evaluate(() => history.replaceState(null, "", "/browser-harness.html?route=%2Fprojects&state=ready"));
+    await page.reload();
 }

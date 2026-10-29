@@ -194,6 +194,8 @@ export function HomePage({ client, navigate }: PageProps) {
     );
 }
 
+const projectsViewStorageKey = "alcomd.gui.projects.view";
+
 export function ProjectsPage({ client, navigate }: PageProps) {
     const canRegister = useCapability(capabilities.projectsRegistry);
     const canCreate = useCapability(capabilities.templatesCreateProject);
@@ -219,7 +221,13 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     const [search, setSearch] = useState("");
     const [sort, setSort] = useState("observed");
     const [descending, setDescending] = useState(true);
-    const [view, setView] = useState<"list" | "grid">("list");
+    const [view, setView] = useState<"list" | "grid">(() => {
+        try {
+            return window.localStorage.getItem(projectsViewStorageKey) === "grid" ? "grid" : "list";
+        } catch {
+            return "list";
+        }
+    });
     const [registerOpen, setRegisterOpen] = useState(false);
     const [createOpen, setCreateOpen] = useState(false);
     const [restoreOpen, setRestoreOpen] = useState(false);
@@ -229,6 +237,16 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     const registerButtonRef = useRef<HTMLElement>(null);
     const createButtonRef = useRef<HTMLElement>(null);
     const restoreButtonRef = useRef<HTMLElement>(null);
+
+    const toggleView = () => {
+        const next = view === "list" ? "grid" : "list";
+        setView(next);
+        try {
+            window.localStorage.setItem(projectsViewStorageKey, next);
+        } catch {
+            // This disposable preference must not prevent switching views.
+        }
+    };
 
     const refresh = useCallback(async () => {
         setState((current) => ({ ...current, error: undefined, refreshing: current.projects.length > 0 }));
@@ -295,7 +313,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
             <PageHeader className="projects-toolbar" title={navigationLabels.projects}>
                 <RefreshButton label="Refresh projects" onClick={() => void refresh()} refreshing={state.refreshing} refreshingLabel="Refreshing projects" />
                 <SearchField className="projects-search" label="Search projects" onInput={setSearch} placeholder="Search..." value={search} />
-                <Button onClick={() => setView((current) => current === "list" ? "grid" : "list")} type="button" variant="text">
+                <Button onClick={toggleView} type="button" variant="text">
                     <Icon asset={view === "list" ? viewGridIcon : viewListIcon} slot="icon" />
                     <StateSizedLabel current={view === "list" ? "Grid view" : "List view"} labels={["Grid view", "List view"]} />
                 </Button>

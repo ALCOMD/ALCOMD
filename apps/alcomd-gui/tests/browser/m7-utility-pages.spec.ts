@@ -156,7 +156,9 @@ test("card surfaces share one 28px shape across workspaces", async ({ page }) =>
     ] as const;
     for (const mode of ["light", "dark"]) {
         await openHarness(page, "/projects");
-        await page.getByRole("button", { name: "Grid view", exact: true }).click();
+        if (await page.getByRole("button", { name: "Grid view", exact: true }).isVisible()) {
+            await page.getByRole("button", { name: "Grid view", exact: true }).click();
+        }
         await page.evaluate((value) => { document.documentElement.dataset.appearance = value; }, mode);
         const sharedFilterStyle = await filterBarStyle();
         expect(sharedFilterStyle).toMatchObject({ height: 56, gap: "8px", padding: "8px 12px", font: "14px", selectWidth: 200, selectHeight: 40, selectFont: "14px", statusFont: "14px" });
