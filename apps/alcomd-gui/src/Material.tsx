@@ -358,7 +358,6 @@ export interface SelectProps {
     required?: boolean;
     supportingText?: string;
     value: string;
-    variant?: "filled" | "outlined";
 }
 
 export function Select({
@@ -374,19 +373,18 @@ export function Select({
     quick = false,
     required,
     supportingText,
-    value,
-    variant = "outlined"
+    value
 }: SelectProps) {
     return createElement(
-        materialElements.select[variant],
+        materialElements.select.filled,
         {
             ariaDescribedBy,
             ariaInvalid,
-            ariaLabel,
-            className,
+            ariaLabel: ariaLabel ?? label,
+            className: ["alcomd-select", className].filter(Boolean).join(" "),
             disabled,
             id,
-            label,
+            label: "",
             onChange: (event: FormEvent<MaterialElement>) => onChange?.(event.currentTarget.value as string),
             quick,
             required,

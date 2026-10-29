@@ -175,6 +175,16 @@
     --md-sys-color-on-primary-container: #74f8e5;
 }
 
+.alcomd-select {
+    --md-filled-field-bottom-space: 8px;
+    --md-filled-field-top-space: 8px;
+    --md-filled-select-text-field-active-indicator-height: 0px;
+    --md-filled-select-text-field-container-color: var(--md-sys-color-surface-container-highest);
+    --md-filled-select-text-field-container-shape: var(--md-sys-shape-corner-full);
+    --md-filled-select-text-field-focus-active-indicator-height: 0px;
+    --md-filled-select-text-field-hover-active-indicator-height: 0px;
+}
+
 .alcomd-search-field {
     --md-filled-text-field-active-indicator-height: 0px;
     --md-filled-text-field-bottom-space: 8px;

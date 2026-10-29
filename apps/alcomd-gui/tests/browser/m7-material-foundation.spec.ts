@@ -66,7 +66,13 @@ test("shared Material foundation renders real controls with React 19 interaction
     expect(darkColors.fill).toBe(darkColors.foreground);
     expect(darkColors.fill).not.toBe(lightColors.fill);
     await expect(page.locator("md-outlined-text-field")).toHaveJSProperty("label", "Project name");
-    await expect(page.locator("md-outlined-select")).toHaveJSProperty("label", "Project type");
+    await expect(page.locator("md-filled-select")).toHaveJSProperty("label", "");
+    await expect(page.getByRole("combobox", { name: "Project type", exact: true })).toBeVisible();
+    await expect(page.locator("md-filled-select")).toHaveCSS("height", "40px");
+    const selectField = page.locator("md-filled-select md-filled-field");
+    await expect(selectField.locator(".container-overflow")).toHaveCSS("border-radius", "9999px");
+    await expect(selectField.locator(".background")).toHaveCSS("border-radius", "9999px");
+    await expect(selectField.locator(".label.floating")).toBeHidden();
     await expect(page.locator("md-switch")).toHaveJSProperty("selected", true);
     await expect(page.locator("md-checkbox")).toHaveJSProperty("checked", false);
     await page.locator("md-checkbox").click();

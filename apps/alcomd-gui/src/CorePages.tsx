@@ -321,7 +321,6 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                             { label: "Added", value: "added" }
                         ]}
                         value={sort}
-                        variant="filled"
                     />
                     <IconButton label={descending ? "Sort descending" : "Sort ascending"} onClick={() => setDescending((current) => !current)} type="button">
                         <Icon asset={descending ? arrowDownwardIcon : arrowUpwardIcon} />

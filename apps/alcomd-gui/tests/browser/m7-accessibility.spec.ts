@@ -18,7 +18,7 @@ test("keyboard navigation moves routes and focuses the destination heading", asy
     await page.keyboard.press("Enter");
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
-    await expect(page.locator("md-outlined-select#settings-theme")).toHaveJSProperty("value", "light");
+    await expect(page.locator("md-filled-select#settings-theme")).toHaveJSProperty("value", "light");
 });
 
 test("H1 shell exposes the approved user areas without promoting internal routes", async ({ page }) => {
@@ -223,10 +223,10 @@ test("project workspace keeps package discovery and user actions in project cont
 
 test("settings are labeled, revisioned, dirty-aware, and applied through the typed client", async ({ page }) => {
     await openHarness(page, "/settings");
-    const color = page.locator("md-outlined-select#settings-color");
+    const color = page.locator("md-filled-select#settings-color");
     await expect(page.getByRole("combobox", { name: "Source color" })).toHaveAccessibleDescription("Choose the accent color used throughout the app.");
     await selectMaterialOption(color, "#315DA8");
-    await selectMaterialOption(page.locator("md-outlined-select#settings-locale"), "zh-CN");
+    await selectMaterialOption(page.locator("md-filled-select#settings-locale"), "zh-CN");
     await page.getByRole("checkbox", { name: "Show prerelease package versions" }).check();
     await page.getByRole("checkbox", { name: "Hide local User Packages" }).check();
     await page.getByRole("checkbox", { name: "Hide Example packages" }).check();
@@ -341,7 +341,7 @@ test("Portable UI renders all 17 node kinds with host-owned chrome and safe form
     await expect(page.getByRole("progressbar")).toBeVisible();
     await expect(page.getByRole("group").filter({ has: page.getByLabel("Enable presence") })).toBeVisible();
     await expect(page.getByLabel("Enable presence")).toBeChecked();
-    await expect(page.locator("md-outlined-select#presence-mode")).toHaveJSProperty("value", "project");
+    await expect(page.locator("md-filled-select#presence-mode")).toHaveJSProperty("value", "project");
     await expect(page.getByLabel("Refresh interval seconds")).toHaveValue("15");
     const readOnly = page.getByLabel("Custom detail");
     await expect(readOnly).toHaveAttribute("readonly", "");

@@ -161,7 +161,7 @@ test("Material dialog and select use real handles while native text editing stay
     await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
     await page.keyboard.press("Escape");
     await expect(host).toHaveCount(0);
-    const select = page.locator("md-outlined-select");
+    const select = page.locator("md-filled-select");
     await select.evaluate((element) => {
         const option = element.querySelector("md-select-option")!;
         for (let index = 0; index < 24; index++) {

@@ -271,7 +271,7 @@ test("utility actions use modal dialogs and cancel clears drafts and returns foc
 test("desktop Settings uses language and theme rows with separate animation and compact controls", async ({ page }) => {
     await openHarness(page, "/settings");
     await expectHeading(page, "Settings");
-    const fields = page.locator(".settings-editor md-outlined-select");
+    const fields = page.locator(".settings-editor md-filled-select");
     await expect(fields).toHaveCount(3);
     await expect(page.getByRole("checkbox", { name: "GUI animation", exact: true })).toBeVisible();
     await expect(page.getByRole("checkbox", { name: "Compact GUI", exact: true })).toBeVisible();

@@ -66,7 +66,7 @@ md-outlined-button,
 md-text-button,
 md-icon-button,
 md-outlined-text-field,
-md-outlined-select,
+md-filled-select,
 md-switch,
 md-checkbox,
 md-dialog,
@@ -105,7 +105,7 @@ md-linear-progress {
 }
 
 .material-evidence md-outlined-text-field,
-.material-evidence md-outlined-select,
+.material-evidence md-filled-select,
 .material-evidence md-linear-progress {
     width: 100%;
 }
@@ -264,13 +264,6 @@ md-linear-progress {
 .projects-sort-label { flex: 0 0 auto; color: var(--on-surface); font-size: 0.875rem; font-weight: 500; }
 .projects-sort {
     width: 200px;
-    --md-filled-field-bottom-space: 8px;
-    --md-filled-field-top-space: 8px;
-    --md-filled-select-text-field-active-indicator-height: 0px;
-    --md-filled-select-text-field-container-color: var(--md-sys-color-surface-container-highest);
-    --md-filled-select-text-field-container-shape: var(--md-sys-shape-corner-full);
-    --md-filled-select-text-field-focus-active-indicator-height: 0px;
-    --md-filled-select-text-field-hover-active-indicator-height: 0px;
     --md-filled-select-text-field-input-text-size: 0.875rem;
 }
 .projects-result-count { margin-left: auto; padding-right: 8px; color: var(--on-surface-variant); font-size: 0.875rem; }
@@ -474,7 +467,6 @@ md-linear-progress {
 .project-register-form, .project-register-review { display: grid; width: 100%; min-width: 0; gap: 18px; }
 .project-register-form md-outlined-text-field { width: 100%; }
 .project-create-flow { display: grid; width: 100%; min-width: 0; gap: 16px; }
-.project-create-flow > md-outlined-select,
 .project-create-flow > md-filled-select,
 .project-create-flow > md-outlined-text-field { width: 100%; }
 .project-target-picker { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; }
@@ -715,7 +707,7 @@ md-linear-progress {
 .settings-section-heading h2 { margin: 0; font-size: 18px; line-height: 28px; font-weight: 600; }
 .settings-section-content { display: flex; flex-direction: column; gap: 8px; }
 .settings-row { display: flex; align-items: center; min-height: 56px; }
-.settings-row md-outlined-select { width: 280px; flex: none; }
+.settings-row md-filled-select { width: 280px; flex: none; }
 .settings-toggle-row .field-hint { margin: 0 0 0 40px; }
 .settings-source-options { display: flex; flex-direction: column; gap: 4px; }
 .settings-path { overflow-wrap: anywhere; }
@@ -877,7 +869,7 @@ md-linear-progress {
     width: fit-content;
 }
 
-.page-surface--utility .action-section :is(md-outlined-text-field, md-filled-text-field, md-outlined-select, md-filled-select) {
+.page-surface--utility .action-section :is(md-outlined-text-field, md-filled-text-field, md-filled-select) {
     width: 100%;
     max-width: 640px;
 }
@@ -906,7 +898,7 @@ md-linear-progress {
     font-weight: 600;
 }
 
-.page-surface--utility .settings-form :is(md-outlined-select, md-filled-select) {
+.page-surface--utility .settings-form md-filled-select {
     width: 100%;
     max-width: 480px;
 }
