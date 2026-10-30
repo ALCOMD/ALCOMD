@@ -23,6 +23,7 @@ import type { GuiRpcClient } from "./rpc";
 import { closeIcon, moreVertIcon, starIcon } from "@alcomd/ui/icons";
 import { Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, Menu, MenuItem, Progress, RefreshButton, Select, TextField } from "./Material";
 import { SplitButton } from "./SplitButton";
+import { useProjectUnityLaunch } from "./ProjectUnityLaunch";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 
 interface ActionProps {
@@ -485,12 +486,9 @@ export function ProjectUnityWorkspaceActions({ client, installations, launchOpti
     project: ProjectSnapshot;
     renderLaunch(action: { disabled: boolean; onClick(): void; title?: string }): ReactNode;
 }) {
-    const canLaunch = useCapability(capabilities.unityLaunch);
     const canMigrate = useCapability(capabilities.projectsUnityMigration);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
-    const [launchChooserOpen, setLaunchChooserOpen] = useState(false);
-    const [launchInstallationId, setLaunchInstallationId] = useState("");
-    const [missingExactOpen, setMissingExactOpen] = useState(false);
+    const unityLaunch = useProjectUnityLaunch({ client, initialOptions: launchOptions, navigate, onFeedback: setFeedback, project });
     const [migrationVersion, setMigrationVersion] = useState(project.unityVersion);
     const [migrationInstallationId, setMigrationInstallationId] = useState("");
     const [migrationChooserOpen, setMigrationChooserOpen] = useState(false);
@@ -502,31 +500,6 @@ export function ProjectUnityWorkspaceActions({ client, installations, launchOpti
         .sort((left, right) => left.localeCompare(right));
     const migrationInstallations = installations.filter((installation) => installation.unityVersion === migrationVersion);
 
-    const launch = async (installationId: string) => {
-        if (projectId === undefined || projectRevision === undefined) return;
-        setFeedback({ busy: true });
-        try {
-            const result = await client.unityLaunch(projectId, installationId, projectRevision);
-            setLaunchChooserOpen(false);
-            setLaunchInstallationId("");
-            setFeedback({ busy: false, message: `Unity launch ${result.launch.state}.` });
-        } catch (caught: unknown) {
-            setFeedback({ busy: false, error: safeError(caught) });
-        }
-    };
-    const openUnity = async () => {
-        const candidates = launchOptions.exactMatchingInstallations;
-        if (candidates.length === 0) {
-            setMissingExactOpen(true);
-            return;
-        }
-        if (candidates.length === 1) {
-            await launch(candidates[0]!.installationId);
-            return;
-        }
-        setLaunchInstallationId("");
-        setLaunchChooserOpen(true);
-    };
     const planMigration = async (installationId: string) => {
         if (projectId === undefined || projectRevision === undefined) return;
         setFeedback({ busy: true });
@@ -582,21 +555,8 @@ export function ProjectUnityWorkspaceActions({ client, installations, launchOpti
                 ]}
                 value={migrationVersion}
             />
-            {renderLaunch({ disabled: !canLaunch || feedback.busy || projectRevision === undefined, onClick: () => void openUnity(), title: capabilityUnavailableTitle(canLaunch, capabilities.unityLaunch) })}
-            <ModalDialog onClose={() => setMissingExactOpen(false)} open={missingExactOpen} title="Unity installation required">
-                <p>This project requires Unity {launchOptions.projectUnityVersion}. No exact matching Unity installation was found.</p>
-                <div className="dialog-actions">
-                    <Button onClick={() => setMissingExactOpen(false)} type="button" variant="tonal">Cancel</Button>
-                    <Button onClick={() => { setMissingExactOpen(false); navigate(`/projects/${projectId}/unity?afterMigration=open`); }} type="button">Migrate Project…</Button>
-                </div>
-            </ModalDialog>
-            <ModalDialog onClose={() => setLaunchChooserOpen(false)} open={launchChooserOpen} title="Choose Unity for this launch">
-                <Select label="Unity installation for this launch" onChange={setLaunchInstallationId} options={[{ label: "Choose an installation", value: "" }, ...launchOptions.exactMatchingInstallations.map((item) => ({ label: `Unity ${item.unityVersion} · ${item.architecture}`, value: item.installationId }))]} value={launchInstallationId} />
-                <div className="dialog-actions">
-                    <Button onClick={() => setLaunchChooserOpen(false)} type="button" variant="tonal">Cancel</Button>
-                    <Button disabled={launchInstallationId.length === 0 || feedback.busy} onClick={() => void launch(launchInstallationId)} type="button">Open Unity</Button>
-                </div>
-            </ModalDialog>
+            {renderLaunch({ ...unityLaunch.action, disabled: unityLaunch.action.disabled || feedback.busy })}
+            {unityLaunch.dialogs}
             <ModalDialog onClose={() => { setMigrationChooserOpen(false); setMigrationVersion(project.unityVersion); }} open={migrationChooserOpen} title={`Choose Unity ${migrationVersion} installation`}>
                 <Select label="Target Unity installation" onChange={setMigrationInstallationId} options={[{ label: "Choose an installation", value: "" }, ...migrationInstallations.map((item) => ({ label: `${item.unityVersion} · ${item.architecture}`, value: item.installationId }))]} value={migrationInstallationId} />
                 <div className="dialog-actions">

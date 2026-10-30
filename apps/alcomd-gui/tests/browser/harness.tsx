@@ -29,6 +29,7 @@ import { MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
 declare global {
     interface Window {
         packageRequests: Array<{ method: string; params: unknown }>;
+        unityRequests: Array<{ method: string; params: unknown }>;
         candidateRequests: Array<Parameters<GuiRpcClient["packageQueryProjectCandidates"]>[0]>;
         resumeCandidateSource?: () => void;
         settingsWrites: Array<{ expectedRevision: number; revision: number }>;
@@ -36,6 +37,7 @@ declare global {
     }
 }
 window.packageRequests = [];
+window.unityRequests = [];
 window.candidateRequests = [];
 window.settingsWrites = [];
 
@@ -506,7 +508,9 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ config: launchConfig(this.launchArguments, this.launchConfigRevision), changed: true, replayed: false });
     }
     unityWriterState(): ReturnType<GuiRpcClient["unityWriterState"]> { return this.value({ projectId: PROJECT_ID, state: "not_observed", evidence: [], checkedAtMs: 1_700_000_000_000 }); }
-    unityLaunchOptions(): ReturnType<GuiRpcClient["unityLaunchOptions"]> {
+    unityLaunchOptions(projectId: string, expectedProjectRevision: number): ReturnType<GuiRpcClient["unityLaunchOptions"]> {
+        window.unityRequests.push({ method: "unity.launchOptions", params: { projectId, expectedProjectRevision } });
+        if (query.has("unityOptionsError")) return Promise.reject({ code: "revision_conflict" });
         const exactMatchingInstallations = this.mode === "unity-zero"
             ? []
             : this.mode === "unity-multiple"
@@ -516,11 +520,14 @@ class DeterministicGuiClient implements GuiRpcClient {
                     : [installation()];
         return this.value({ projectId: PROJECT_ID, projectRevision: this.currentProjectRevision, projectUnityVersion: this.currentUnityVersion, exactMatchingInstallations });
     }
-    unityLaunch(): ReturnType<GuiRpcClient["unityLaunch"]> {
+    unityLaunch(projectId: string, installationId: string, expectedProjectRevision: number): ReturnType<GuiRpcClient["unityLaunch"]> {
+        window.unityRequests.push({ method: "unity.launch", params: { projectId, installationId, expectedProjectRevision } });
+        if (query.has("unityLaunchError")) return Promise.reject({ code: "launch_failed" });
         return new Promise((resolve) => window.setTimeout(() => resolve({ launch: launch(), replayed: false }), 100));
     }
     unityLaunchStatus(): ReturnType<GuiRpcClient["unityLaunchStatus"]> { return this.value({ launch: launch(), replayed: false }); }
     projectPlanUnityMigration(_projectId: string, targetInstallationId: string): ReturnType<GuiRpcClient["projectPlanUnityMigration"]> {
+        window.unityRequests.push({ method: "projects.planUnityMigration", params: { projectId: _projectId, targetInstallationId } });
         const targetUnityVersion = targetInstallationId === MIGRATION_INSTALLATION_ID ? "2022.3.23f1" : "2022.3.22f1";
         return this.value({ kind: "planned", replayed: false, plan: { planId: PLAN_ID, projectId: PROJECT_ID, sourceUnityVersion: "2022.3.22f1", targetUnityVersion, targetInstallationId, classification: { kind: "patch_or_minor_upgrade", supportedForApply: true }, expiresAtMs: 1_800_000_000_000 } });
     }
@@ -623,7 +630,7 @@ function userPackage(revision = 1) { return { userPackageId: USER_PACKAGE_ID, so
 function installation() { return { installationId: INSTALLATION_ID, executablePath: "<private-editor>", filesystemIdentity: "opaque", unityVersion: "2022.3.22f1", architecture: "x86_64", sourceKind: "manual", revision: 2, observedAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_000_000 }; }
 function migrationInstallation() { return { ...installation(), installationId: MIGRATION_INSTALLATION_ID, executablePath: "<private-editor-migration>", filesystemIdentity: "opaque-migration", unityVersion: "2022.3.23f1" }; }
 function launchConfig(arguments_: string[], revision: number) { return { projectId: PROJECT_ID, arguments: arguments_, revision, updatedAtMs: 1_700_000_000_000 }; }
-function launch() { return { launchId: "00000000-0000-4000-8000-000000000107", projectId: PROJECT_ID, installationId: INSTALLATION_ID, state: "spawned", spawnAccepted: true, createdAtMs: 1_700_000_000_000 }; }
+function launch() { return { launchId: "00000000-0000-4000-8000-000000000107", projectId: PROJECT_ID, installationId: INSTALLATION_ID, state: "opening", spawnAccepted: true, createdAtMs: 1_700_000_000_000 }; }
 function template() { return { templateId: TEMPLATE_ID, sourceKind: "builtin", templateVersion: "1.0.0", displayName: "Avatar starter", description: "A deterministic public fixture.", provenance: "built-in", favorite: false, bundleSha256: HASH, manifestFingerprint: HASH, revision: 2, createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_000_000 }; }
 function backup() { return { backupId: BACKUP_ID, sourceProjectId: PROJECT_ID, archiveSha256: HASH, archiveBytes: 4096, formatVersion: 1, createdAtMs: 1_700_000_000_000, compressionMode: "fast", excludeVpmPackages: true }; }
 function runningOperation(): Operation { return { operationId: OPERATION_ID, kind: "packages.apply", state: "running", revision: 3, createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_001_000, progress: { phase: "extracting" } }; }

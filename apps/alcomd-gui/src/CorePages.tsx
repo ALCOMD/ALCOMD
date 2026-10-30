@@ -67,6 +67,7 @@ import { PagedItems } from "./PagedItems";
 import type { GuiRpcClient } from "./rpc";
 import { Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, RefreshButton, SearchField, SegmentedButtons, Select, Switch, TextField } from "./Material";
 import { SplitButton } from "./SplitButton";
+import { useProjectUnityLaunch } from "./ProjectUnityLaunch";
 import { CreateProjectDialog, RestoreProjectDialog } from "./ProjectCreationDialogs";
 import { capabilities, capabilityUnavailableTitle, useCapability, useCapabilityState, useReconnect } from "./capabilities";
 
@@ -463,12 +464,10 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
     const canCopyProjects = useCapability(capabilities.projectsCopy);
     const canDeleteProjects = useCapability(capabilities.projectsDelete);
     const canReadBackups = useCapability(capabilities.backupsRead);
-    const canLaunchUnity = useCapability(capabilities.unityLaunch);
     const canManageUnity = useCapability(capabilities.unityManage);
     const [argumentsOpen, setArgumentsOpen] = useState(false);
     const [copyOpen, setCopyOpen] = useState(false);
     const [openingDirectory, setOpeningDirectory] = useState(false);
-    const [opening, setOpening] = useState(false);
     const [menuOpen, setMenuOpen] = useState(false);
     const [removalIntent, setRemovalIntent] = useState<"unregister" | "delete">("unregister");
     const [unregistering, setUnregistering] = useState(false);
@@ -481,6 +480,10 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
     const projectId = project.projectId;
     const revision = project.revision;
     const workspace = context === "workspace";
+    const unityLaunch = useProjectUnityLaunch({ client, navigate, project, onFeedback: (feedback) => {
+        if (feedback.error !== undefined) onFeedback(`Unable to open Unity: ${feedback.error.code}`);
+        else if (feedback.message !== undefined) onFeedback(feedback.message);
+    } });
 
     useEffect(() => {
         if (deleteOperation === undefined || !["queued", "running", "recovering", "cancelling", "interrupted"].includes(deleteOperation.state)) return;
@@ -506,28 +509,6 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
         return () => { active = false; window.clearTimeout(timer); };
     }, [client, deleteOperation, onChanged, onFeedback, onRemoved]);
     if (projectId === undefined) return null;
-
-    const openUnity = async () => {
-        if (revision === undefined) return;
-        setOpening(true);
-        onFeedback("Opening Unity…");
-        try {
-            const options = await client.unityLaunchOptions(projectId, revision);
-            if (options.exactMatchingInstallations.length !== 1) {
-                navigate(`/projects/${projectId}/unity`);
-                onFeedback(options.exactMatchingInstallations.length === 0
-                    ? `Unity ${options.projectUnityVersion} is required. Choose a migration target.`
-                    : "Choose the Unity installation for this launch.");
-                return;
-            }
-            const result = await client.unityLaunch(projectId, options.exactMatchingInstallations[0]!.installationId, revision);
-            onFeedback(`Unity launch ${result.launch.state}.`);
-        } catch (caught: unknown) {
-            onFeedback(`Unable to open Unity: ${safeError(caught).code}`);
-        } finally {
-            setOpening(false);
-        }
-    };
 
     const unregister = async () => {
         if (revision === undefined) return;
@@ -620,9 +601,9 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
         <>
             <div className={workspace ? "project-row-actions project-workspace-more-actions" : context === "card" ? "project-row-actions project-row-actions--card" : "project-row-actions"}>
                 {workspace ? null : <ProjectFavoriteButton client={client} onChanged={onProjectChanged} onFeedback={onFeedback} onRefresh={onChanged} project={project} />}
-                {workspace ? null : <Button className="project-open-unity-action" disabled={!canLaunchUnity || opening || revision === undefined} onClick={() => void openUnity()} title={capabilityUnavailableTitle(canLaunchUnity, capabilities.unityLaunch)} type="button">
+                {workspace ? null : <Button {...unityLaunch.action} className="project-open-unity-action" type="button">
                     {context === "card" ? null : <Icon asset={playArrowIcon} slot="icon" />}
-                    <StateSizedLabel current={opening ? "Opening…" : "Open Unity"} labels={["Open Unity", "Opening…"]} />
+                    <StateSizedLabel current={unityLaunch.busy ? "Opening…" : "Open Unity"} labels={["Open Unity", "Opening…"]} />
                 </Button>}
                 {workspace ? null : <Button disabled={!canReadProjects} onClick={() => navigate(`/projects/${projectId}`)} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead)} type="button" variant="tonal">Manage</Button>}
                 {workspace ? null : <Button disabled={!canReadBackups} onClick={() => navigate(`/projects/${projectId}/backups`)} title={capabilityUnavailableTitle(canReadBackups, capabilities.backupsRead)} type="button" variant="tonal">Backups</Button>}
@@ -634,6 +615,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
                 </Menu>
                 </> : <SplitButton {...launchAction} icon={<Icon asset={playArrowIcon} slot="icon" />} label="Open Unity" menuButtonRef={menuAnchorRef} menuLabel={`More actions for ${projectName(project)}`}>{menuItems}</SplitButton>}
             </div>
+            {workspace ? null : unityLaunch.dialogs}
             {workspace && argumentsOpen ? <ProjectLaunchArgumentsDialog client={client} onChanged={onChanged} onClose={() => { setArgumentsOpen(false); window.requestAnimationFrame(() => menuAnchorRef.current?.focus()); }} onSaved={onFeedback} projectId={projectId} /> : null}
             <Dialog onClose={() => { if (!deleting) { setConfirmUnregister(false); setDeletePlan(undefined); setRemovalIntent("unregister"); } }} open={confirmUnregister} title={deletePlan === undefined ? removalIntent === "delete" ? "Preparing permanent deletion…" : workspace ? "Remove this project from the list?" : "Remove this project?" : "Permanently delete project directory?"}>
                 {deletePlan === undefined && removalIntent === "unregister" ? <>

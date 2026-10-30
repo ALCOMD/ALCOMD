@@ -4,6 +4,12 @@
 
 ## 当前阶段
 
+2026-10-30 Open Unity 行为修正：Projects 列表／网格此前将精确安装数量不为 1 的点击直接导航到 Project Unity，未在原处完成启动选择。现在列表、网格及 Project workspace 共用 `useProjectUnityLaunch`，点击时重新读取现有 launch-options：唯一精确匹配直接调用既有 launch；多个匹配原地选择本次安装；没有匹配原地提示，仅显式 Migrate Project 操作进入迁移页。选择项显示版本、架构及路径，不保存默认安装；重复点击保护、取消／Escape 焦点恢复和明确错误状态由共享流程持有。对照冻结 v3 的点击启动及多安装选择语义，保留已批准的 v4 exact-version／one-shot 合同，不引入 v3 缓存 Editor 或跨版本回退。未改 Rust、RPC、权限、配置、迁移或 Plan/Apply。
+
+本次 frontend check/build 与 diff check 通过，保留既有大 chunk 警告。最终受影响组 7/8，通过列表／网格 0/1/many、重复点击、选择重置、焦点恢复、错误、workspace 和迁移后重读；唯一失败为既有网格 More 菜单 Escape 焦点检查，保持实现与断言不变单独复测 1/1，通过记录见 `target/m7-open-unity-in-place-20261030/grid-focus-check/.last-run.json`。不记作全套同轮通过。初轮测试 ID 误写及浏览器 target crash、取消焦点缺陷的失败证据保留在同目录；取消焦点缺陷已修复。fixture 启动状态由不属于真实合同的 `spawned` 校正为 `opening`，RPC 参数与调用次数另外断言，不以提示文案冒充真实启动。
+
+已重新运行 `npm run gui:dev`，当前真实 Tauri PID 31300 响应正常，profile 为 dev（unoptimized + debuginfo）；开发前端来自当前工作区，GUI 路径 `target/debug/alcomd-gui.exe`，SHA-256 `5BD568B882E60B8016DEE227A0614B16CFB72A6EC2BE16DD9F5249AA78BBB93B`。匹配的本工作区 daemon PID 42628 使用原获准的 `target/m7-icon-acceptance-20260906/data`，未改 Rust，复用 daemon 摘要 `982D77AAA55B85ED030760290257DCBC21E80F03661C3A492BC1D5F3D5CFE95C`；CLI 只读确认 ready、隔离项目 revision 1 和 Unity 2022.3.22f1。其安装列表及精确匹配集合均为空，没有真实 Unity 启动证据；未注册安装或操作真实工程。启动日志与最终 check/build 在 `target/m7-open-unity-dev-20261030/`。本次修改已获所有者授权整理为本地提交，未推送，修复前基线为 `b03aa62`；真实交互及屏幕阅读器仍待验收，Visual Gate 2 保持 PENDING。
+
 2026-10-30 公共表头字体补充：普通 DesktopList 表头原为 12px／normal 行高，可排序表头则使用 Material 文字按钮的 14px／20px；连同 Projects 的非排序 Actions 列也存在混用。现在字体族、字号、字重和行高由 DesktopList 同一组 header token 持有，普通表头和排序按钮显式引用，默认沿用 MD3 Label Large 的 14px／20px／500；通用按钮字号、是否显示箭头及升降序状态均不改变表头字体。保留排序高亮、箭头、表头内边距、圆角、粘性列和复选框原有触控高度，没有页面单独覆盖。
 
 新增回归在修复前复现普通表头 12px 与排序标签 14px 不一致；主题回归进一步复现通用文字按钮字号改为 28px 时排序表头也被带大，均退出码 1。中间四项回归 2/4：两个逐页用例误将包表格复选框原有 48px 表头要求为 40px；修正测试为同行高度一致且至少 40px，保留字体等值要求，没有为测试缩小控件触控区。最终专项 4/4 PASS（退出码 0），覆盖 12 个列表入口在 1280／1440px 的字体、长内容／控件／圆角边界，仓库浏览弹窗，以及通用按钮 28px 时普通／排序表头仍为 14px 和升降序切换。既有 Projects 排序／工具栏回归此前亦通过。check/build、diff check 通过，保留大 chunk 警告；证据在 target/m7-list-header-consistency-20261030/，仓库弹窗完整窗口截图已目视核对。1420 dev 已收到 HMR，各轮本任务 4173 Vite 测试服务已清理；没有原生桌面或屏幕阅读器新证据，未重建原生程序、操作真实工程或重复 Rust Workspace。所有者已授权提交此增量，并将其与前五笔本地提交一起正常推送；该授权不代表视觉验收通过，Visual Gate 2 仍 PENDING。

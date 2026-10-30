@@ -76,7 +76,7 @@ test("Projects grid retains shared launch, directory, copy review and removal ca
     const card = page.getByRole("article", { name: "Avatar Studio", exact: true });
     await card.getByRole("button", { name: "Open Unity", exact: true }).focus();
     await page.keyboard.press("Enter");
-    await expect(page.getByText("Unity launch spawned.", { exact: true })).toBeVisible();
+    await expect(page.getByText("Unity launch opening.", { exact: true })).toBeVisible();
     const more = card.getByRole("button", { name: "More actions for Avatar Studio", exact: true });
     await more.click();
     await expect(card.getByRole("menuitem", { name: "Open Project Directory", exact: true })).toBeVisible();
@@ -124,7 +124,10 @@ test("Projects grid keeps shared capability restrictions and missing-Editor hand
     await openHarness(page, "/projects", "unity-zero");
     await expect(page.locator(".project-card").first()).toBeVisible();
     await page.locator(".project-card").first().getByRole("button", { name: "Open Unity", exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/projects/${PROJECT_ID}/unity$`));
+    await expect(page.getByRole("dialog", { name: "Unity installation required", exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/projects$/);
+    await page.locator("md-dialog[open]").getByRole("button", { name: "Migrate Project…", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/projects/${PROJECT_ID}/unity\\?afterMigration=open$`));
     await expect(page.getByRole("heading", { name: "Project Unity", exact: true })).toBeVisible();
     await expect(page.getByText(/No exact matching Unity installation was found/).first()).toBeVisible();
 });
@@ -245,7 +248,7 @@ test("Unity launch arguments discard drafts on Cancel and Escape", async ({ page
 test("Unity exact launch handles zero, one, and multiple matching installations", async ({ page }) => {
     await openHarness(page, `/projects/${PROJECT_ID}/unity`, "unity-automatic");
     await launch(page);
-    await expect(page.getByText("Unity launch spawned.")).toBeVisible();
+    await expect(page.getByText("Unity launch opening.")).toBeVisible();
 
     await openHarness(page, `/projects/${PROJECT_ID}/unity`, "unity-zero");
     await launch(page);
@@ -257,13 +260,13 @@ test("Unity exact launch handles zero, one, and multiple matching installations"
     await chooser.click();
     await page.getByRole("option", { name: "Unity 2022.3.22f1 · x86_64" }).nth(1).click();
     await launch(page);
-    await expect(page.getByText("Unity launch spawned.")).toBeVisible();
+    await expect(page.getByText("Unity launch opening.")).toBeVisible();
 });
 
 test("Project workspace Open Unity uses the exact 0/1/many flow", async ({ page }) => {
     await openHarness(page, `/projects/${PROJECT_ID}/packages`);
     await page.getByRole("navigation", { name: "Project actions" }).getByRole("button", { name: "Open Unity" }).click();
-    await expect(page.getByText("Unity launch spawned.")).toBeVisible();
+    await expect(page.getByText("Unity launch opening.")).toBeVisible();
 
     await openHarness(page, `/projects/${PROJECT_ID}/packages`, "unity-zero");
     await page.getByRole("navigation", { name: "Project actions" }).getByRole("button", { name: "Open Unity" }).click();
@@ -278,7 +281,73 @@ test("Project workspace Open Unity uses the exact 0/1/many flow", async ({ page 
     await chooser.getByRole("combobox", { name: "Unity installation for this launch" }).click();
     await page.getByRole("option", { name: "Unity 2022.3.22f1 · x86_64" }).nth(1).click();
     await chooser.getByRole("button", { name: "Open Unity" }).click();
-    await expect(page.getByText("Unity launch spawned.")).toBeVisible();
+    await expect(page.getByText("Unity launch opening.")).toBeVisible();
+});
+
+for (const view of ["list", "grid"] as const) {
+    test(`Projects ${view} Open Unity launches directly or asks in place without routing to Project Unity`, async ({ page }) => {
+        const openProjects = async (state: string) => {
+            await openHarness(page, "/projects", state);
+            await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
+            const switchView = page.getByRole("button", { name: view === "grid" ? "Grid view" : "List view", exact: true });
+            if (await switchView.isVisible()) await switchView.click();
+            return page.locator(view === "grid" ? ".project-card" : ".projects-list tbody tr").first().getByRole("button", { name: "Open Unity", exact: true });
+        };
+        const launches = () => page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.launch"));
+        const single = await openProjects("unity-automatic");
+        await single.click({ clickCount: 2 });
+        await expect(page.getByRole("status").filter({ hasText: "Unity launch opening." })).toBeVisible();
+        expect(await launches()).toEqual([{ method: "unity.launch", params: { projectId: PROJECT_ID, installationId: "00000000-0000-4000-8000-000000000103", expectedProjectRevision: 2 } }]);
+        await expect(page).toHaveURL(/\/projects$/);
+
+        const missing = await openProjects("unity-zero");
+        await missing.click();
+        await expect(page.getByRole("dialog", { name: "Unity installation required", exact: true })).toBeVisible();
+        await expect(page.locator("md-dialog[open]")).toContainText("Unity 2022.3.22f1");
+        expect(await launches()).toEqual([]);
+        expect(await page.evaluate(() => window.unityRequests.some((request) => request.method === "projects.planUnityMigration"))).toBe(false);
+        await expect(page).toHaveURL(/\/projects$/);
+        await page.locator("md-dialog[open]").getByRole("button", { name: "Cancel", exact: true }).click();
+        await expect(missing).toBeFocused();
+
+        const multiple = await openProjects("unity-multiple");
+        await multiple.click();
+        const chooser = page.locator("md-dialog[open]");
+        await expect(page.getByRole("dialog", { name: "Choose Unity for this launch", exact: true })).toBeVisible();
+        expect(await launches()).toEqual([]);
+        await expect(chooser.getByRole("button", { name: "Open Unity", exact: true })).toBeDisabled();
+        await chooser.getByRole("combobox", { name: "Unity installation for this launch", exact: true }).click();
+        await page.getByRole("option", { name: /<private-editor-two>/ }).click();
+        await chooser.getByRole("button", { name: "Open Unity", exact: true }).click({ clickCount: 2 });
+        await expect(page.getByRole("dialog", { name: "Choose Unity for this launch", exact: true })).toBeHidden();
+        expect(await launches()).toEqual([{ method: "unity.launch", params: { projectId: PROJECT_ID, installationId: "00000000-0000-4000-8000-000000000111", expectedProjectRevision: 2 } }]);
+        await expect(page).toHaveURL(/\/projects$/);
+        await expect(multiple).toBeFocused();
+        await multiple.click();
+        await expect(chooser.getByRole("combobox", { name: "Unity installation for this launch", exact: true })).toContainText("Choose an installation");
+        await expect(chooser.getByRole("button", { name: "Open Unity", exact: true })).toBeDisabled();
+        await page.keyboard.press("Escape");
+        await expect(multiple).toBeFocused();
+        expect(await launches()).toHaveLength(1);
+    });
+}
+
+test("Open Unity keeps launch and options failures explicit without navigation or migration", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=%2Fprojects&state=unity-multiple&unityLaunchError=1");
+    await page.locator(".project-row-actions").first().getByRole("button", { name: "Open Unity", exact: true }).click();
+    const chooser = page.locator("md-dialog[open]");
+    await chooser.getByRole("combobox", { name: "Unity installation for this launch", exact: true }).click();
+    await page.getByRole("option", { name: /<private-editor-two>/ }).click();
+    await chooser.getByRole("button", { name: "Open Unity", exact: true }).click();
+    await expect(chooser.getByRole("alert")).toContainText("launch_failed");
+    await expect(chooser.getByRole("button", { name: "Open Unity", exact: true })).toBeEnabled();
+    await expect(page).toHaveURL(/\/projects$/);
+    await chooser.getByRole("button", { name: "Cancel", exact: true }).click();
+    await page.goto("/browser-harness.html?route=%2Fprojects&state=ready&unityOptionsError=1");
+    await page.locator(".project-row-actions").first().getByRole("button", { name: "Open Unity", exact: true }).click();
+    await expect(page.getByRole("status").filter({ hasText: "revision_conflict" })).toBeVisible();
+    expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method !== "unity.launchOptions"))).toEqual([]);
+    await expect(page).toHaveURL(/\/projects$/);
 });
 
 test("Project workspace launch split menu retains launch arguments, backup navigation and focus", async ({ page }, testInfo) => {
@@ -351,7 +420,7 @@ test("Open Unity migration composition revalidates options before the exact laun
     await page.getByRole("button", { name: "Review migration" }).click();
     const review = page.locator("md-dialog[open]");
     await review.getByRole("button", { name: "Apply reviewed plan" }).click();
-    await expect(page.getByText("Migration completed. Unity launch spawned.")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText("Migration completed. Unity launch opening.")).toBeVisible({ timeout: 10_000 });
 });
 
 async function launch(page: Page) {
