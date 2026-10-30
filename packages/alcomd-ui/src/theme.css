@@ -84,6 +84,36 @@
     --md-text-button-container-height: var(--alcomd-button-height);
 }
 
+.alcomd-split-button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: var(--alcomd-list-row-gap); }
+.alcomd-split-button-primary,
+.alcomd-split-button-menu {
+    /* An oversized full radius would proportionally shrink the 8px inner corners. */
+    --md-filled-button-container-shape: calc(var(--alcomd-button-height) / 2);
+}
+.alcomd-split-button-primary {
+    --md-filled-button-container-shape-start-end: var(--alcomd-shape-list-item);
+    --md-filled-button-container-shape-end-end: var(--alcomd-shape-list-item);
+}
+.alcomd-split-button-menu {
+    width: var(--alcomd-button-height);
+    min-width: var(--alcomd-button-height);
+    padding: 0;
+    --md-filled-button-leading-space: 0px;
+    --md-filled-button-trailing-space: 0px;
+    --md-filled-button-container-shape-start-start: var(--alcomd-shape-list-item);
+    --md-filled-button-container-shape-end-start: var(--alcomd-shape-list-item);
+}
+.alcomd-split-button-options {
+    --md-menu-container-shape: var(--md-sys-shape-corner-medium);
+    --md-menu-top-space: 4px;
+    --md-menu-bottom-space: 4px;
+    --md-menu-item-one-line-container-height: 40px;
+    --md-menu-item-top-space: 0px;
+    --md-menu-item-bottom-space: 0px;
+    --md-menu-item-label-text-size: 0.875rem;
+    --md-menu-item-label-text-line-height: 20px;
+}
+
 .alcomd-button-label {
     display: inline-grid;
     white-space: nowrap;
