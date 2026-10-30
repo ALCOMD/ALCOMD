@@ -61,6 +61,64 @@ dismissibility; Select gains optional `quick`, with existing defaults preserved.
 Task Center/About and secondary deep links remain v4 surfaces. They are not claimed
 to have an identical v3 counterpart. The existing page-loading/paging fixes remain.
 
+## 2026-10-30 composite-button audit
+
+The frozen sibling `ALCOMD3-v3-readonly/vrc-get-gui` was searched for split-button
+containers and every application `DropdownMenuTrigger`. Four split groups were found;
+the other triggers belong to ordinary row, filter or version menus. This is a behavior
+audit, with no source copied or ported.
+
+| Surface / v3 source | Before | After |
+| --- | --- | --- |
+| Projects, `app/_main/projects/index.tsx:345` | Separate Create/Register/Restore toolbar buttons | Shared Create project split button; Add existing project and Restore from backup in its menu |
+| Templates, `app/_main/packages/templates/index.tsx:90` | Import in the toolbar; deriving a template only reachable through an existing template | Create template primary opens the existing derive workflow, including an empty catalog; Import template is in its menu |
+| Project management, `app/_main/projects/manage/index.tsx:771` | Open Unity, Backups and more actions separate | Open Unity split button; launch arguments, directory, copy, backups and removal in its menu |
+| Repositories, `app/_main/packages/repositories/index.tsx:504` | Add repository only | Existing Add repository remains functional; v3 import/export cannot be grouped until the missing public contract is approved and implemented |
+
+All implemented groups use the standalone GUI `SplitButton.tsx`, composed from existing
+Material Button/Menu primitives, and shared theme rules. Installed Material Web 2.5.0
+does not expose a split-button component. The two halves reuse the list's 8px inner
+corner and 2px gap tokens, with capsule outer corners and no separator border. Outer
+radii use half the actual button height (currently 20px), so CSS overlapping-radius
+normalization cannot scale the 8px inner corners down to almost zero. Template
+derivation and launch-argument dialogs were extracted from the current v4 implementation
+for reuse; their typed client methods, authoritative revisions, explicit errors and
+Plan/Apply boundaries remain. Project workspace launch still owns the exact 0/1/many
+installation flow. Projects table/grid actions are retained. v3's conditional cached
+Unity-path reset has no equivalent in the accepted v4 launch model and is not restored.
+Repository import/export is the pre-existing contract gap below, not a disabled mock
+menu or an implicit authorization to add public RPC. No dependency, Rust, schema,
+permission, persistence, resolver or Plan/Apply changes are included.
+
+The first scoped browser run was 13/17. One real regression, return focus after template
+import, was fixed. Two geometry checks measured Material's internal button instead of
+the joined component hosts, and one old menu selector became ambiguous after adding a
+second menu. Corrected host/scoped locators retain the original requirements. Recheck
+was 6/6, including all 12 shared list routes at 1280/1440px; stable-menu screenshot and
+workflow recheck was 2/2. Passing runs exited 0, initial run exited 1. Each completed
+run required cleanup of its verified workspace-owned port-4173 Vite server; the existing
+port-1420 dev and GUI were retained. This is not a full-suite result. Final frontend
+check/build and diff check pass; the existing large-chunk build warning remains.
+Evidence is under `target/m7-composite-buttons-20261030/`, with settled full-window menu
+screenshots in `stable/`. Browser fixtures do not establish native desktop or screen-reader
+acceptance. No real project was launched, copied, deleted or otherwise mutated.
+Visual Gate 2 remains **PENDING**. The owner-requested local commits are `aa88d01` (shared rounded SplitButton) and `acd1061` (composite workflows and regression tests). Related MD3 spacing is `b3542d0`; this audit/status record is committed separately. No push or history rewrite. The source/test tree was preserved byte-for-byte during splitting, with staged diff checks instead of repeating the already completed tests.
+
+Standalone-component/shape follow-up: the initial 3/3 at
+`target/m7-split-button-shape-20261030/` checked computed radii, not their effective
+painted size, and did not catch the owner-reported straight inner corners. Both host
+and background computed styles still reported 8px while the inherited 9999px outer
+radii forced all radii to shrink together. A screenshot pixel regression reproduced
+the failure before the fix (exit 1): an inner cutout pixel was purple instead of the
+gap's white background. With height-relative outer radii, both inner corner pixels
+match the gap while the button body remains filled. Final check/build and diff check
+pass, and all three existing split workflows pass 3/3 (exit 0), retaining menu actions
+and dialog focus. Before/after crops and full-window screenshots are in
+`target/m7-split-painted-corners-20261030/`; the painted crop was inspected. Existing
+port-1420 dev received HMR; only owned port-4173 browser test servers were stopped after
+completion. This adds browser evidence only, without a native rebuild or Visual Gate
+acceptance.
+
 ## Explicit gaps (not implemented or accepted)
 
 The existing contracts do not support the complete v3 Settings (Hub path, global
