@@ -1,3 +1,4 @@
+import { useTranslation } from "./i18n";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { UtilityActionDialog } from "./UtilityActionDialog";
@@ -38,6 +39,7 @@ export function UtilityWorkspace<T>({
     action,
     tools
 }: UtilityWorkspaceProps<T>) {
+    const { t } = useTranslation();
     const initial = useInitialPageRead(load);
     const initialLoader = useRef(load).current;
     const [state, setState] = useState<WorkspaceState<T>>(() => ({
@@ -119,12 +121,12 @@ export function UtilityWorkspace<T>({
             <ScrollArea className="utility-workspace-body">
                 {error === undefined ? null : (
                     <div className="inline-error" role="alert">
-                        <p>{value === undefined ? "This page could not be loaded." : "Refresh failed. The last loaded result is still shown."} <code>{error}</code></p>
-                        <Button disabled={pending} onClick={refresh} type="button" variant="text">Retry</Button>
+                        <p>{value === undefined ? t("This page could not be loaded.") : t("Refresh failed. The last loaded result is still shown.")} <code>{error}</code></p>
+                        <Button disabled={pending} onClick={refresh} type="button" variant="text">{t("Retry")}</Button>
                     </div>
                 )}
                 {value === undefined ? (
-                    pending ? <LoadingState title="Loading…" /> : null
+                    pending ? <LoadingState title={t("Loading…")} /> : null
                 ) : (
                     <>
                         {action === undefined || !actionOpen ? null : (

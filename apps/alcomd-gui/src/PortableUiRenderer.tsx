@@ -11,6 +11,7 @@ import {
     type FormDraft,
     type UiTreeNode
 } from "./portable-ui";
+import { useTranslation, type Translate } from "./i18n";
 import { Button, Progress, Select, Switch, TextField } from "./Material";
 
 interface PortableUiRendererProps {
@@ -26,6 +27,7 @@ export function PortableUiRenderer({
     onAction,
     onDirtyChange
 }: PortableUiRendererProps) {
+    const { t } = useTranslation();
     const [drafts, setDrafts] = useState<Record<string, FormDraft>>(
         () => createFormDrafts(snapshot)
     );
@@ -63,7 +65,7 @@ export function PortableUiRenderer({
         if (draft === undefined) {
             setFormError({
                 formId,
-                message: "The form is no longer current. Refresh the extension page."
+                message: t("The form is no longer current. Refresh the extension page.")
             });
             return;
         }
@@ -74,7 +76,7 @@ export function PortableUiRenderer({
             if (error instanceof PortableUiConsumerError) {
                 setFormError({
                     formId,
-                    message: "Check the editable fields before submitting."
+                    message: t("Check the editable fields before submitting.")
                 });
                 return;
             }
@@ -199,7 +201,7 @@ export function PortableUiRenderer({
             case "integer-field":
                 return renderIntegerField(node, entry.formId, drafts, inheritedDisabled || busy, changeField);
             case "select":
-                return renderSelect(node, entry.formId, drafts, inheritedDisabled || busy, changeField);
+                return renderSelect(node, entry.formId, drafts, inheritedDisabled || busy, changeField, t);
             default:
                 return assertNever(node);
         }
@@ -334,7 +336,8 @@ function renderSelect(
     formId: string | undefined,
     drafts: Record<string, FormDraft>,
     inheritedDisabled: boolean,
-    changeField: ChangeField
+    changeField: ChangeField,
+    t: Translate
 ): ReactNode {
     const current = fieldValue(drafts, formId, node.payload.fieldId);
     const value = current?.kind === "selection" ? current.value : (node.payload.initialOptionId ?? "");
@@ -356,7 +359,7 @@ function renderSelect(
                     }
                 }}
                 options={[
-                    ...(node.payload.initialOptionId === undefined ? [{ label: "Select…", value: "" }] : []),
+                    ...(node.payload.initialOptionId === undefined ? [{ label: t("Select…"), value: "" }] : []),
                     ...node.payload.options.map((option) => ({ label: option.label, value: option.optionId }))
                 ]}
                 required={node.payload.required}

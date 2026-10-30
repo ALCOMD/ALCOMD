@@ -1,6 +1,7 @@
 import type { CandidateChoice, CandidateSnapshot, CandidateSource, PackageCandidateEvidence, PackageCandidateSummary, ProjectCandidatePage, ProjectCandidateRequest, PackageUpdateEvidence } from "@alcomd/sdk";
 import type { PackageBulkIntent, PackageSourceSelector } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
+import type { Translate } from "./i18n-types";
 
 export function candidateSource(source: CandidateSource): PackageSourceSelector {
     return source.kind === "repository" ? { kind: source.kind, repositoryId: source.repository_id } : { kind: source.kind, userPackageId: source.user_package_id };
@@ -11,11 +12,15 @@ export function wireSource(source: PackageSourceSelector): CandidateSource {
 export function candidateSourceKey(source: CandidateSource): string {
     return source.kind === "repository" ? `repository:${source.repository_id}` : `user-package:${source.user_package_id}`;
 }
-export function choiceText(choice: CandidateChoice): string {
-    return choice.kind === "candidate" ? choice.candidate.version : choice.kind === "ambiguous" ? "Choose a source" : choice.reasons.join(", ").replaceAll("_", " ");
+export function reasonText(reason: string, t: Translate): string {
+    const known = ["no_visible_candidate", "source_unavailable", "all_yanked", "prerelease_excluded", "stable_unavailable", "unity_incompatible", "project_unity_unknown", "catalog_incomplete", "metadata_invalid", "classification_unknown", "installed_evidence_unknown", "legacy_metadata", "source_ambiguous", "same_precedence", "installed_newer", "not_installed"];
+    return known.includes(reason) ? t(reason.replaceAll("_", " ")) : reason;
 }
-export function updateReason(update: PackageUpdateEvidence): string {
-    return update.kind === "target" ? "" : (update.kind === "no_update" ? update.reason : update.reasons.join(", ")).replaceAll("_", " ");
+export function choiceText(choice: CandidateChoice, t: Translate = (message) => message): string {
+    return choice.kind === "candidate" ? choice.candidate.version : choice.kind === "ambiguous" ? t("Choose a source") : choice.reasons.map((reason) => reasonText(reason, t)).join(", ");
+}
+export function updateReason(update: PackageUpdateEvidence, t: Translate = (message) => message): string {
+    return update.kind === "target" ? "" : (update.kind === "no_update" ? [update.reason] : update.reasons).map((reason) => reasonText(reason, t)).join(", ");
 }
 export function intentForSummary(row: PackageCandidateSummary, stable: boolean): PackageBulkIntent | undefined {
     const update = stable ? row.stableUpdate : row.update;

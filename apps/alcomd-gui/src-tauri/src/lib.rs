@@ -208,6 +208,69 @@ async fn gui_open_project_directory(
     open::that(root).map_err(|_| RpcError::extension("project_directory_open_failed"))
 }
 
+/// Closed UI adapter: no caller-supplied URL, executable path or arguments.
+#[tauri::command]
+async fn gui_open_unity_hub_download() -> Result<(), RpcError> {
+    open::that("https://unity.com/download")
+        .map_err(|_| RpcError::extension("unity_hub_download_open_failed"))
+}
+
+#[tauri::command]
+async fn gui_unity_hub_open(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::UnityHubOpenParams,
+) -> Result<alcomd_protocol::UnityHubOpenResult, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.unity_hub_open(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+/// Native selection only. Core validates and persists the returned path.
+#[tauri::command]
+async fn gui_select_unity_hub(
+    app: tauri::AppHandle,
+    current_path: Option<String>,
+) -> Result<Option<String>, RpcError> {
+    let mut picker = app.dialog().file();
+    if let Some(path) = current_path {
+        let path = std::path::PathBuf::from(path);
+        #[cfg(target_os = "macos")]
+        let path = if path.ends_with("Contents/MacOS/Unity Hub") {
+            path.ancestors().nth(3).unwrap_or(&path).to_path_buf()
+        } else {
+            path
+        };
+        if let Some(parent) = path.parent() {
+            picker = picker.set_directory(parent);
+        }
+        if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+            picker = picker.set_file_name(name);
+        }
+    }
+    #[cfg(windows)]
+    {
+        picker = picker.add_filter("Executable", &["exe"]);
+    }
+    #[cfg(target_os = "macos")]
+    {
+        picker = picker.add_filter("Application", &["app"]);
+    }
+    picker
+        .blocking_pick_file()
+        .map(|selected| {
+            selected
+                .into_path()
+                .ok()
+                .and_then(|path| path.into_os_string().into_string().ok())
+                .ok_or_else(|| RpcError::extension("file_selection_failed"))
+        })
+        .transpose()
+}
+
 #[tauri::command]
 async fn gui_select_directory(app: tauri::AppHandle) -> Result<Option<String>, RpcError> {
     let selected = app.dialog().file().blocking_pick_folder();
@@ -1497,6 +1560,9 @@ pub fn run() {
             gui_project_get,
             gui_open_project_directory,
             gui_select_directory,
+            gui_select_unity_hub,
+            gui_unity_hub_open,
+            gui_open_unity_hub_download,
             gui_project_plan_copy,
             gui_project_apply_copy,
             gui_project_plan_delete_directory,

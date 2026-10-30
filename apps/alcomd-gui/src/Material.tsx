@@ -1,4 +1,4 @@
-import { createScrollArea, materialElements } from "@alcomd/ui";
+import { createScrollArea, materialElements, reducedMotion, subscribeMotion } from "@alcomd/ui";
 import { refreshIcon, resolveIconGeometry, searchIcon, type IconAsset, type IconSize } from "@alcomd/ui/icons";
 import {
     Children,
@@ -7,15 +7,19 @@ import {
     isValidElement,
     useEffect,
     useRef,
+    useSyncExternalStore,
     type ButtonHTMLAttributes,
     type CSSProperties,
     type FormEvent,
+    type FocusEvent as ReactFocusEvent,
     type HTMLAttributes,
     type MouseEvent as ReactMouseEvent,
+    type KeyboardEvent as ReactKeyboardEvent,
     type ReactNode,
     type Ref
 } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "./i18n";
 import { LocalPageReadContext } from "./PageRead";
 
 type MaterialElement = HTMLElement & {
@@ -48,6 +52,8 @@ export function Icon({ asset, className, size = 24, slot }: { asset: IconAsset; 
 
 export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "ref"> {
     variant?: "filled" | "tonal" | "outlined" | "text";
+    /** Material's disabled state that keeps the current keyboard focus. */
+    softDisabled?: boolean;
     /** Reserve the widest known label before the first state transition. */
     widthLabels?: readonly string[];
 }
@@ -77,9 +83,11 @@ export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonEle
     label: string;
 }
 
-export function SegmentedButtons({ label, options, value, onChange }: {
+export function SegmentedButtons({ id, label, options, showCheckmark = false, value, onChange }: {
+    id?: string;
     label: string;
     options: readonly { value: string; label: string; disabled?: boolean; title?: string }[];
+    showCheckmark?: boolean;
     value: string;
     onChange(value: string): void;
 }) {
@@ -103,15 +111,49 @@ export function SegmentedButtons({ label, options, value, onChange }: {
         element.addEventListener("segmented-button-set-selection", select);
         return () => element.removeEventListener("segmented-button-set-selection", select);
     }, [onChange, options]);
-    return createElement(materialElements.segmentedButtonSet, { ariaLabel: label, ref } as MaterialProps,
-        options.map((option) => createElement(materialElements.segmentedButton, {
-            key: option.value,
-            disabled: option.disabled ?? false,
-            label: option.label,
-            noCheckmark: true,
-            selected: option.value === value,
-            title: option.title
-        } as MaterialProps)));
+    return <div className="alcomd-segmented-control">
+        <div aria-hidden="true" className="alcomd-segmented-sizer" data-checkmark={showCheckmark} inert>
+            {options.map((option) => <span key={option.value}>{option.label}</span>)}
+        </div>
+        {createElement(materialElements.segmentedButtonSet, { ariaLabel: label, id, ref } as MaterialProps,
+            options.map((option) => createElement(materialElements.segmentedButton, {
+                key: option.value,
+                disabled: option.disabled ?? false,
+                label: option.label,
+                noCheckmark: !showCheckmark,
+                selected: option.value === value,
+                title: option.title
+            } as MaterialProps)))}
+    </div>;
+}
+
+export function RadioGroup({ disabled, id, label, options, value, onChange }: {
+    disabled?: boolean;
+    id: string;
+    label: string;
+    options: readonly { value: string; label: string }[];
+    value: string;
+    onChange(value: string): void;
+}) {
+    return <fieldset className="alcomd-radio-group" disabled={disabled} id={id}>
+        <legend>{label}</legend>
+        <div className="alcomd-radio-options">
+            {options.map((option) => <label className="material-toggle" key={option.value}>
+                {createElement(materialElements.radio, {
+                    ariaLabel: option.label,
+                    checked: value === option.value,
+                    disabled,
+                    id: `${id}-${option.value}`,
+                    name: id,
+                    value: option.value,
+                    onChange: (event: FormEvent<MaterialElement>) => {
+                        if (!disabled && event.currentTarget.checked) onChange(option.value);
+                    }
+                } as MaterialProps)}
+                <span>{option.label}</span>
+            </label>)}
+        </div>
+    </fieldset>;
 }
 
 export const IconButton = forwardRef(function IconButton(
@@ -128,12 +170,13 @@ export const IconButton = forwardRef(function IconButton(
     } as MaterialProps, children);
 });
 
-export function RefreshButton({ label = "Refresh", refreshing = false, refreshingLabel = "Refreshing…", disabled, title, type = "button", ...props }: Omit<IconButtonProps, "children" | "label"> & {
+export function RefreshButton({ label, refreshing = false, refreshingLabel, disabled, title, type = "button", ...props }: Omit<IconButtonProps, "children" | "label"> & {
     label?: string;
     refreshing?: boolean;
     refreshingLabel?: string;
 }) {
-    return <IconButton {...props} aria-busy={refreshing} disabled={disabled || refreshing} label={refreshing ? refreshingLabel : label} title={title ?? label} type={type}><Icon asset={refreshIcon} /></IconButton>;
+    const { t } = useTranslation();
+    return <IconButton {...props} aria-busy={refreshing} disabled={disabled || refreshing} label={refreshing ? refreshingLabel ?? t("Refreshing…") : label ?? t("Refresh")} title={title ?? label ?? t("Refresh")} type={type}><Icon asset={refreshIcon} /></IconButton>;
 }
 
 export function NavigationList({ children, ...props }: HTMLAttributes<HTMLElement>) {
@@ -162,6 +205,7 @@ export const NavigationListItem = forwardRef(function NavigationListItem(
 });
 
 export function Menu({ anchorRef, children, className, onClose, open }: { anchorRef: { current: HTMLElement | null }; children: ReactNode; className?: string; onClose(): void; open: boolean }) {
+    const quick = useSyncExternalStore(subscribeMotion, reducedMotion);
     const ref = useRef<MaterialElement>(null);
     useEffect(() => {
         const element = ref.current;
@@ -182,6 +226,7 @@ export function Menu({ anchorRef, children, className, onClose, open }: { anchor
         className,
         menuCorner: "start-end",
         positioning: "popover",
+        quick,
         ref
     } as MaterialProps, children);
 }
@@ -274,6 +319,9 @@ export interface TextFieldProps {
     maxLength?: number;
     min?: number;
     minLength?: number;
+    onBlur?(): void;
+    onFocus?(event: ReactFocusEvent<HTMLElement>): void;
+    onKeyDown?(event: ReactKeyboardEvent<HTMLElement>): void;
     onInput?(value: string): void;
     placeholder?: string;
     readOnly?: boolean;
@@ -300,6 +348,9 @@ export function TextField({
     maxLength,
     min,
     minLength,
+    onBlur,
+    onFocus,
+    onKeyDown,
     onInput,
     placeholder,
     readOnly,
@@ -324,6 +375,9 @@ export function TextField({
         maxLength,
         min,
         minLength,
+        onBlur: () => onBlur?.(),
+        onFocus,
+        onKeyDown,
         onInput: (event: FormEvent<MaterialElement>) => onInput?.(event.currentTarget.value as string),
         placeholder,
         required,
@@ -333,6 +387,48 @@ export function TextField({
         type,
         value
     } as MaterialProps, leadingIcon);
+}
+
+export function Slider({ id, label, min, max, value, onInput, disabled, labeled = false }: {
+    id: string;
+    label: string;
+    min: number;
+    max: number;
+    value: number;
+    onInput(value: number): void;
+    disabled?: boolean;
+    labeled?: boolean;
+}) {
+    return createElement(materialElements.slider, {
+        id,
+        ariaLabel: label,
+        labeled,
+        min,
+        max,
+        value,
+        disabled,
+        onInput: (event: FormEvent<MaterialElement>) => onInput(Number(event.currentTarget.value))
+    } as MaterialProps);
+}
+
+// Material Web has no color picker. This approved adapter opens the browser's
+// color dialog; pages use the shared control rather than native form inputs.
+export function ColorPicker({ id, label, value, onInput, disabled }: {
+    id: string;
+    label: string;
+    value: string;
+    onInput(value: string): void;
+    disabled?: boolean;
+}) {
+    return createElement("input", {
+        type: "color",
+        id,
+        "aria-label": label,
+        className: "alcomd-color-picker",
+        value,
+        disabled,
+        onInput: (event: FormEvent<HTMLInputElement>) => onInput(event.currentTarget.value)
+    });
 }
 
 export function SearchField({ className, label, ...props }: Omit<TextFieldProps, "type" | "variant" | "leadingIcon" | "aria-label">) {
@@ -375,6 +471,7 @@ export function Select({
     supportingText,
     value
 }: SelectProps) {
+    const reduce = useSyncExternalStore(subscribeMotion, reducedMotion);
     return createElement(
         materialElements.select.filled,
         {
@@ -386,7 +483,7 @@ export function Select({
             id,
             label: "",
             onChange: (event: FormEvent<MaterialElement>) => onChange?.(event.currentTarget.value as string),
-            quick,
+            quick: quick || reduce,
             required,
             supportingText,
             value
@@ -452,6 +549,7 @@ export function Checkbox({ checked, disabled, label, onChange }: { checked: bool
 }
 
 export function Dialog({ children, onClose, open, title, wide = false, dismissible = true }: { children: ReactNode; onClose(): void; open: boolean; title: string; wide?: boolean; dismissible?: boolean }) {
+    const quick = useSyncExternalStore(subscribeMotion, reducedMotion);
     const ref = useRef<MaterialElement>(null);
     useEffect(() => {
         const element = ref.current;
@@ -465,7 +563,7 @@ export function Dialog({ children, onClose, open, title, wide = false, dismissib
     return createPortal(
         createElement(
             materialElements.dialog,
-            { ariaLabel: title, open, ref, style: wide ? { maxWidth: "min(848px, calc(100vw - 48px))" } : undefined } as MaterialProps,
+            { ariaLabel: title, open, quick, ref, style: wide ? { maxWidth: "min(848px, calc(100vw - 48px))" } : undefined } as MaterialProps,
             createElement("div", { slot: "headline" }, title),
             createElement("div", { className: wide ? "material-dialog-content material-dialog-content--wide" : "material-dialog-content", slot: "content" }, <LocalPageReadContext.Provider value={true}>{children}</LocalPageReadContext.Provider>)
         ),

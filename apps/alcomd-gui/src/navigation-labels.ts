@@ -5,6 +5,6 @@ export const navigationLabels = {
     settings: "Settings",
     logs: "Logs",
     extensions: "Extensions",
-    taskCenter: "Task Center",
+    taskCenter: "Tasks",
     about: "About"
 } as const;

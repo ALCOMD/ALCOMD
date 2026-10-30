@@ -6,7 +6,7 @@
     "type": "module",
     "scripts": {
         "dev": "vite",
-        "check": "tsc --noEmit && node scripts/check-material-controls.mjs",
+        "check": "tsc --noEmit && node scripts/check-material-controls.mjs && node scripts/check-locales.mjs",
         "build": "npm run check && vite build",
         "test:browser": "playwright test",
         "tauri": "tauri"

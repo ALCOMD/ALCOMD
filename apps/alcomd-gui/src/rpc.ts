@@ -12,6 +12,7 @@ import type {
     ExtensionUiSnapshotResult,
     RpcError
 } from "@alcomd/sdk";
+import type { UnityHubOpenResult } from "@alcomd/sdk";
 import { invoke } from "@tauri-apps/api/core";
 
 import type {
@@ -99,6 +100,9 @@ export interface GuiRpcClient {
     projectGet(projectId: string): Promise<ProjectResult>;
     openProjectDirectory(projectId: string): Promise<void>;
     selectDirectory(): Promise<string | undefined>;
+    selectUnityHub(currentPath: string | null): Promise<string | undefined>;
+    unityHubOpen(expectedRevision: number, expectedPath: string | null): Promise<UnityHubOpenResult>;
+    openUnityHubDownload(): Promise<void>;
     projectRegister(path: string): Promise<ProjectWriteResult>;
     projectRefresh(projectId: string, expectedRevision: number): Promise<ProjectWriteResult>;
     projectSetFavorite(projectId: string, favorite: boolean, expectedRevision: number): Promise<ProjectWriteResult>;
@@ -233,6 +237,18 @@ class TauriGuiRpcClient implements GuiRpcClient {
 
     selectDirectory(): Promise<string | undefined> {
         return invokeTyped<string | null>("gui_select_directory", {}).then((path) => path ?? undefined);
+    }
+
+    selectUnityHub(currentPath: string | null): Promise<string | undefined> {
+        return invokeTyped<string | null>("gui_select_unity_hub", { currentPath }).then((path) => path ?? undefined);
+    }
+
+    unityHubOpen(expectedRevision: number, expectedPath: string | null): Promise<UnityHubOpenResult> {
+        return invokeTyped("gui_unity_hub_open", { params: { expectedRevision, expectedPath } });
+    }
+
+    openUnityHubDownload(): Promise<void> {
+        return invokeTyped("gui_open_unity_hub_download", {});
     }
 
     projectRegister(path: string): Promise<ProjectWriteResult> {

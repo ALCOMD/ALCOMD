@@ -21,7 +21,7 @@ import ReactDOM from "react-dom/client";
 import discordDocumentJson from "../../../../crates/alcomd-testing/fixtures/m7/discord-presence-snapshot.json" with { type: "json" };
 import mcpDocumentJson from "../../../../crates/alcomd-testing/fixtures/m7/mcp-management-snapshot.json" with { type: "json" };
 import { App } from "../../src/App";
-import type { OfficialSettings, Operation, PackagePlan, SettingsGetResult } from "../../src/core-models";
+import type { Operation, PackagePlan, ProjectSnapshot, SettingsGetResult } from "../../src/core-models";
 import type { GuiRpcClient } from "../../src/rpc";
 import "../../src/styles.css";
 import { MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
@@ -29,17 +29,27 @@ import { MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
 declare global {
     interface Window {
         packageRequests: Array<{ method: string; params: unknown }>;
+        projectSnapshots: ProjectSnapshot[][];
         unityRequests: Array<{ method: string; params: unknown }>;
         candidateRequests: Array<Parameters<GuiRpcClient["packageQueryProjectCandidates"]>[0]>;
         resumeCandidateSource?: () => void;
         settingsWrites: Array<{ expectedRevision: number; revision: number }>;
+        settingsRequests: Array<{ expectedRevision: number; update: Parameters<GuiRpcClient["settingsUpdate"]>[1] }>;
+        settingsReads: number;
+        heldInitialSettingsReads: number;
+        releasedInitialSettingsReads: number;
         capabilityLoadingScreens: string[];
     }
 }
 window.packageRequests = [];
+window.projectSnapshots = [];
 window.unityRequests = [];
 window.candidateRequests = [];
 window.settingsWrites = [];
+window.settingsRequests = [];
+window.settingsReads = 0;
+window.heldInitialSettingsReads = 0;
+window.releasedInitialSettingsReads = 0;
 
 type HarnessMode = "ready" | "empty" | "error" | "disconnected" | "loading" | "stale" | "failed" | "cancelled" | "create-error" | "restore-error" | "favorite-pages" | "favorite-error" | "favorite-conflict" | "unity-automatic" | "unity-zero" | "unity-multiple" | "unity-migration" | "package-no-repositories" | "package-multiple" | "package-user-source" | "package-partial-failure" | "package-revision-conflict" | "package-filter-conflict" | "package-filter-denied" | "capabilities-missing";
 
@@ -67,6 +77,7 @@ const SUPPORTED_CAPABILITIES = [
     "templates.create-project.v1",
     "templates.manage.v1",
     "templates.read.v1",
+    "unity.hub.open.v1",
     "unity.launch.v1",
     "unity.manage.v1",
     "unity.read.v1"
@@ -89,14 +100,19 @@ if (!materialEvidence) window.history.replaceState(null, "", initialRoute);
 
 class DeterministicGuiClient implements GuiRpcClient {
     private candidateSourceWasDelayed = false;
+    private hubDefaultReady = query.has("hub-default");
+    private hubReadFailurePending = false;
     private repositoriesReady: Promise<void> | undefined;
     private settingsReady: Promise<void> | undefined;
+    private themeSaveRejected = false;
     private unityReady: Promise<void> | undefined;
     private settings: SettingsGetResult = {
-        configSchema: 2,
+        configSchema: 3,
+        unityHub: { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" },
         revision: 7,
         settings: {
-            appearance: { mode: "system", sourceColor: null, density: "default", motion: "system" },
+            unity: { hubPath: null },
+            appearance: { mode: "system", sourceColor: null, scheme: "vibrant", density: "default", motion: "system" },
             locale: "en-US",
             packages: {
                 showPrerelease: false,
@@ -106,6 +122,7 @@ class DeterministicGuiClient implements GuiRpcClient {
         }
     };
     private operationReads = 0;
+    private projectLaunchTimes = new Map<string, number>();
     private pendingProject?: ReturnType<typeof project>;
     private pendingDeleteProjectId?: string;
     private pendingMigrationTarget?: string;
@@ -125,6 +142,28 @@ class DeterministicGuiClient implements GuiRpcClient {
     private connectionRestored = false;
 
     constructor(private readonly mode: HarnessMode) {
+        window.addEventListener("test-hub-default-ready", () => { this.hubDefaultReady = true; });
+        window.addEventListener("test-hub-read-error", () => { this.hubReadFailurePending = true; });
+        const hubPath = query.get("hub-path");
+        if (hubPath !== null) {
+            this.settings.settings.unity.hubPath = hubPath;
+            this.settings.unityHub = { status: "available", source: "configured", path: hubPath, configuredPathStatus: "available" };
+        }
+        const motion = query.get("motion");
+        if (motion === "system" || motion === "full" || motion === "reduced") this.settings.settings.appearance.motion = motion;
+        const themeSource = query.get("theme-source");
+        if (themeSource !== null && /^#[0-9a-f]{6}$/i.test(themeSource)) {
+            this.settings.settings.appearance.sourceColor = themeSource;
+        }
+        const themeMode = query.get("theme-mode");
+        if (themeMode === "light" || themeMode === "dark" || themeMode === "system") {
+            this.settings.settings.appearance.mode = themeMode;
+        }
+        const themeScheme = query.get("theme-scheme");
+        const schemes = ["tonal-spot", "fidelity", "monochrome", "neutral", "vibrant", "expressive", "content", "rainbow", "fruit-salad"];
+        if (themeScheme !== null && schemes.includes(themeScheme)) {
+            this.settings.settings.appearance.scheme = themeScheme as SettingsGetResult["settings"]["appearance"]["scheme"];
+        }
         if (mode === "disconnected") {
             window.addEventListener("test-daemon-online", () => { this.connectionRestored = true; }, { once: true });
         }
@@ -146,7 +185,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             state: "ready",
             capabilities: this.mode === "capabilities-missing"
                 ? [...CAPABILITIES_WITH_OPTIONAL_ACTIONS_MISSING]
-                : [...SUPPORTED_CAPABILITIES].filter((capability) => !(query.get("noPlanV2") && capability === "packages.plan.v2"))
+                : [...SUPPORTED_CAPABILITIES].filter((capability) => !(query.get("noPlanV2") && capability === "packages.plan.v2") && !(query.has("noUnityManage") && capability === "unity.manage.v1") && !(query.has("noHubOpen") && capability === "unity.hub.open.v1"))
         });
     }
 
@@ -189,7 +228,27 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ operation: { ...runningOperation(), operationId, state: "cancelling", revision: 4 }, replayed: false });
     }
 
+    private hubLocation(hubPath: string | null): SettingsGetResult["unityHub"] {
+        if (query.has("hub-unavailable")) return { status: "unavailable", source: "none", path: null, configuredPathStatus: hubPath === null ? "unset" : "unavailable" };
+        if (query.has("hub-missing") && hubPath === query.get("hub-path")) return { status: "not_found", source: "none", path: null, configuredPathStatus: "invalid" };
+        return hubPath !== null ? { status: "available", source: "configured", path: hubPath, configuredPathStatus: "available" }
+            : this.hubDefaultReady ? { status: "available", source: "discovered", path: "C:\\Program Files\\Unity Hub\\Unity Hub.exe", configuredPathStatus: "unset" }
+                : { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" };
+    }
+
     async settingsGet(): ReturnType<GuiRpcClient["settingsGet"]> {
+        window.settingsReads += 1;
+        if (this.hubReadFailurePending) { this.hubReadFailurePending = false; throw { code: "internal_error" }; }
+        this.settings.unityHub = this.hubLocation(this.settings.settings.unity.hubPath);
+        // Projects has no settings.get page consumer, so these are the shell's initial reads.
+        // Capture the old snapshot before delaying, rather than returning a newer value on release.
+        if (query.get("theme-delay-initial-read") === "1" && window.location.pathname === "/projects") {
+            const snapshot = structuredClone(this.settings);
+            window.heldInitialSettingsReads += 1;
+            await new Promise<void>((resolve) => window.addEventListener("test-theme-initial-read-ready", () => resolve(), { once: true }));
+            window.releasedInitialSettingsReads += 1;
+            return this.value(snapshot);
+        }
         if (query.has("holdSettings")) {
             this.settingsReady ??= new Promise<void>((resolve) => window.addEventListener("test-settings-ready", () => resolve(), { once: true }));
             await this.settingsReady;
@@ -197,20 +256,46 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value(this.settings);
     }
 
-    settingsUpdate(expectedRevision: number, update: Partial<OfficialSettings>): ReturnType<GuiRpcClient["settingsUpdate"]> {
+    async settingsUpdate(expectedRevision: number, update: Parameters<GuiRpcClient["settingsUpdate"]>[1]): ReturnType<GuiRpcClient["settingsUpdate"]> {
+        window.settingsRequests.push({ expectedRevision, update: structuredClone(update) });
+        if (query.has("hub-reject-invalid") && update.unity?.hubPath?.includes("Invalid")) throw { code: "invalid_request" };
+        if (query.get("theme-save") === "error") throw { code: "internal_error" };
+        if (query.get("theme-save") === "error-once" && !this.themeSaveRejected) {
+            this.themeSaveRejected = true;
+            throw { code: "internal_error" };
+        }
+        if (query.get("theme-save") === "conflict-once" && !this.themeSaveRejected) {
+            this.themeSaveRejected = true;
+            this.settings.revision += 1;
+            this.settings.settings.appearance.density = "compact";
+            this.settings.settings.appearance.mode = "dark";
+            this.settings.settings.appearance.scheme = "neutral";
+            this.settings.settings.packages.showPrerelease = true;
+            throw { code: "revision_conflict" };
+        }
+        if (query.get("theme-save") === "hold") {
+            await new Promise<void>((resolve) => window.addEventListener("test-theme-save-ready", () => resolve(), { once: true }));
+        }
         if (this.mode === "package-filter-conflict") return Promise.reject({ code: "revision_conflict" });
         if (this.mode === "package-filter-denied") return Promise.reject({ code: "permission_denied" });
         if (expectedRevision !== this.settings.revision) return Promise.reject({ code: "revision_conflict" });
+        if (update.unity?.hubPath && query.has("hub-normalize")) update = { ...update, unity: { hubPath: "C:\\Normalized\\Unity Hub.exe" } };
         this.settings = {
-            configSchema: 2,
+            configSchema: 3,
+            unityHub: this.hubLocation(update.unity?.hubPath === undefined ? this.settings.settings.unity.hubPath : update.unity.hubPath),
             revision: expectedRevision + 1,
             settings: {
+                unity: { ...this.settings.settings.unity, ...update.unity },
                 appearance: { ...this.settings.settings.appearance, ...update.appearance },
                 locale: update.locale ?? this.settings.settings.locale,
                 packages: { ...this.settings.settings.packages, ...update.packages }
             }
         };
         window.settingsWrites.push({ expectedRevision, revision: this.settings.revision });
+        if (query.get("theme-save") === "commit-error-once" && !this.themeSaveRejected) {
+            this.themeSaveRejected = true;
+            throw { code: "internal_error" };
+        }
         return this.value(this.settings);
     }
 
@@ -224,6 +309,18 @@ class DeterministicGuiClient implements GuiRpcClient {
 
     projectsInspect(): ReturnType<GuiRpcClient["projectsInspect"]> { return this.value({ project: project() }); }
     projectsList(cursor?: { registeredAtMs: number; id: string }): ReturnType<GuiRpcClient["projectsList"]> {
+        if (query.has("projectModified")) {
+            const { lastModifiedAtMs: _unknown, ...unknown } = project("00000000-0000-4000-8000-000000000104", "Unknown history");
+            const projects = [
+                { ...project("00000000-0000-4000-8000-000000000102", "Equal B"), lastModifiedAtMs: 1_700_086_400_000 },
+                unknown,
+                { ...project("00000000-0000-4000-8000-000000000103", "Newest"), lastModifiedAtMs: 1_700_172_800_000 },
+                { ...project("00000000-0000-4000-8000-000000000101", "Equal A"), lastModifiedAtMs: 1_700_086_400_000 },
+                { ...project("00000000-0000-4000-8000-000000000105", "Favorite", true), lastModifiedAtMs: 1_700_000_000_000 }
+            ].map((item) => ({ ...item, ...(this.projectLaunchTimes.has(item.projectId) ? { lastModifiedAtMs: this.projectLaunchTimes.get(item.projectId) } : {}) }));
+            window.projectSnapshots.push(structuredClone(projects));
+            return this.value({ projects });
+        }
         if (query.has("projectGrid")) {
             const names = ["Avatar Studio", "World Workshop", "非常长的项目名称用于检查卡片信息与操作是否保持整齐 Long Project Name", "Package Sandbox", "Unknown Editor", "Avatar Preview", "Archive"];
             return this.value({ projects: names.map((name, index) => ({
@@ -231,8 +328,7 @@ class DeterministicGuiClient implements GuiRpcClient {
                 rootPath: `C:\\Projects\\Workspace with a long directory name\\${name}`,
                 projectType: index === 1 ? "worlds" : index === 3 ? "Unknown project type with long text" : "avatars",
                 unityVersion: index === 4 ? "" : index === 1 ? "6000.0.40f1" : "2022.3.22f1",
-                registeredAtMs: index === 4 ? undefined : 1_690_000_000_000,
-                observedAtMs: 1_700_000_000_000 - index * 86_400_000
+                registeredAtMs: index === 4 ? undefined : 1_690_000_000_000
             })) });
         }
         if (this.mode === "favorite-pages") {
@@ -245,6 +341,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
     projectGet(projectId: string): ReturnType<GuiRpcClient["projectGet"]> {
         const value = this.createdProjects.find((candidate) => candidate.projectId === projectId) ?? { ...project(projectId), unityVersion: this.currentUnityVersion, revision: this.currentProjectRevision };
+        if (this.projectLaunchTimes.has(projectId)) value.lastModifiedAtMs = this.projectLaunchTimes.get(projectId)!;
         if (query.get("twoInstalled")) {
             value.lockedDependencies = [...value.lockedDependencies, { packageId: "com.example.remote", value: "1.2.3" }];
             value.directDependencies = [...value.directDependencies, { packageId: "com.example.remote", value: "^1.2.0" }];
@@ -257,6 +354,34 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ project: value });
     }
     openProjectDirectory(): ReturnType<GuiRpcClient["openProjectDirectory"]> { return this.value(undefined); }
+    async unityHubOpen(expectedRevision: number, expectedPath: string | null): ReturnType<GuiRpcClient["unityHubOpen"]> {
+        window.unityRequests.push({ method: "unityHubOpen", params: { expectedRevision, expectedPath } });
+        if (query.get("hub-open") === "hold") await new Promise<void>((resolve) => window.addEventListener("test-hub-open-ready", () => resolve(), { once: true }));
+        if (query.get("hub-open") === "stale") {
+            this.settings.revision += 1;
+            this.settings.settings.unity.hubPath = "C:\\Changed\\Unity Hub.exe";
+            this.settings.unityHub = this.hubLocation(this.settings.settings.unity.hubPath);
+            throw { code: "hub_path_changed" };
+        }
+        if (query.get("hub-open") === "gone") {
+            this.hubDefaultReady = false;
+            this.settings.unityHub = this.hubLocation(this.settings.settings.unity.hubPath);
+            throw { code: "hub_path_changed" };
+        }
+        if (query.get("hub-open") === "failed") throw { code: "hub_open_failed" };
+        if (query.get("hub-open") === "unknown") throw { code: "daemon_unavailable" };
+        if (query.get("hub-open") === "denied") throw { code: "permission_denied" };
+        return this.value({ outcome: this.settings.unityHub.status === "available" ? "spawned" : "download_required" });
+    }
+    async openUnityHubDownload(): ReturnType<GuiRpcClient["openUnityHubDownload"]> {
+        window.unityRequests.push({ method: "openUnityHubDownload", params: {} });
+        if (query.has("hub-download-error")) throw { code: "unity_hub_download_open_failed" };
+    }
+    async selectUnityHub(currentPath: string | null): ReturnType<GuiRpcClient["selectUnityHub"]> {
+        window.unityRequests.push({ method: "selectUnityHub", params: { currentPath } });
+        if (query.get("hub-picker") === "hold") await new Promise<void>((resolve) => window.addEventListener("test-hub-picker-ready", () => resolve(), { once: true }));
+        return query.get("hub-picker") === "cancel" ? undefined : "C:\\Tools\\Unity Hub\\Unity Hub.exe";
+    }
     selectDirectory(): ReturnType<GuiRpcClient["selectDirectory"]> { return this.value("C:\\Fixture\\Avatar"); }
     projectRegister(): ReturnType<GuiRpcClient["projectRegister"]> { return this.value({ project: project(), replayed: false }); }
     projectRefresh(): ReturnType<GuiRpcClient["projectRefresh"]> { return this.value({ project: project(), replayed: false }); }
@@ -493,7 +618,11 @@ class DeterministicGuiClient implements GuiRpcClient {
     unityInstallationGet(): ReturnType<GuiRpcClient["unityInstallationGet"]> { return this.value({ installation: installation(), replayed: false }); }
     unityInstallationRegister(): ReturnType<GuiRpcClient["unityInstallationRegister"]> { return this.value({ installation: installation(), replayed: false }); }
     unityInstallationRemove(): ReturnType<GuiRpcClient["unityInstallationRemove"]> { return this.value({ installationId: INSTALLATION_ID, removed: true, replayed: false }); }
-    unityInstallationsRefresh(): ReturnType<GuiRpcClient["unityInstallationsRefresh"]> { return this.value({ installations: [installation()], replayed: false }); }
+    unityInstallationsRefresh(): ReturnType<GuiRpcClient["unityInstallationsRefresh"]> {
+        window.unityRequests.push({ method: "unityInstallationsRefresh", params: {} });
+        if (query.get("hub-refresh") === "error") return Promise.reject({ code: "internal_error" });
+        return this.value({ installations: [installation()], replayed: false });
+    }
     unityProjectLaunchConfigGet(): ReturnType<GuiRpcClient["unityProjectLaunchConfigGet"]> {
         return this.value({ config: launchConfig(this.launchArguments, this.launchConfigRevision) });
     }
@@ -518,10 +647,11 @@ class DeterministicGuiClient implements GuiRpcClient {
                 : this.currentUnityVersion === migrationInstallation().unityVersion
                     ? [migrationInstallation()]
                     : [installation()];
-        return this.value({ projectId: PROJECT_ID, projectRevision: this.currentProjectRevision, projectUnityVersion: this.currentUnityVersion, exactMatchingInstallations });
+        return this.value({ projectId, projectRevision: this.currentProjectRevision, projectUnityVersion: this.currentUnityVersion, exactMatchingInstallations });
     }
     unityLaunch(projectId: string, installationId: string, expectedProjectRevision: number): ReturnType<GuiRpcClient["unityLaunch"]> {
         window.unityRequests.push({ method: "unity.launch", params: { projectId, installationId, expectedProjectRevision } });
+        if (query.has("projectModified")) this.projectLaunchTimes.set(projectId, 1_700_216_000_000);
         if (query.has("unityLaunchError")) return Promise.reject({ code: "launch_failed" });
         return new Promise((resolve) => window.setTimeout(() => resolve({ launch: launch(), replayed: false }), 100));
     }
@@ -537,7 +667,10 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ operationId: OPERATION_ID, replayed: false });
     }
 
-    templatesList(): ReturnType<GuiRpcClient["templatesList"]> { return this.value({ templates: this.mode === "empty" ? [] : [template()] }); }
+    async templatesList(): ReturnType<GuiRpcClient["templatesList"]> {
+        if (query.has("holdTemplates")) await new Promise<void>((resolve) => window.addEventListener("test-templates-ready", () => resolve(), { once: true }));
+        return this.value({ templates: this.mode === "empty" ? [] : [template()] });
+    }
     templateGet(): ReturnType<GuiRpcClient["templateGet"]> { return this.value({ template: template(), replayed: false }); }
     templateInspectBundle(): ReturnType<GuiRpcClient["templateInspectBundle"]> { return this.value({ formatVersion: 1, templateId: TEMPLATE_ID, templateVersion: "1.0.0", displayName: "Avatar starter", provenance: "public-fixture", bundleSha256: HASH, manifestFingerprint: HASH, payloadTreeSha256: HASH, entryCount: 4, totalBytes: 4096 }); }
     templatePlanImport(): ReturnType<GuiRpcClient["templatePlanImport"]> { return this.value(templatePlan("import")); }
@@ -547,14 +680,18 @@ class DeterministicGuiClient implements GuiRpcClient {
     templateExport(): ReturnType<GuiRpcClient["templateExport"]> { return this.value({ exported: true }); }
     templateSetFavorite(): ReturnType<GuiRpcClient["templateSetFavorite"]> { return this.value({ template: { ...template(), favorite: true }, replayed: false }); }
     templateRemove(): ReturnType<GuiRpcClient["templateRemove"]> { return this.value({ templateId: TEMPLATE_ID, removed: true, replayed: false }); }
-    templatePlanCreateProject(_templateId: string, _expectedTemplateRevision: number, _targetParent: string, targetLeaf: string): ReturnType<GuiRpcClient["templatePlanCreateProject"]> {
+    async templatePlanCreateProject(_templateId: string, _expectedTemplateRevision: number, _targetParent: string, targetLeaf: string): ReturnType<GuiRpcClient["templatePlanCreateProject"]> {
+        if (query.has("holdCreatePlan")) await new Promise<void>((resolve) => window.addEventListener("test-create-plan-ready", () => resolve(), { once: true }));
         if (this.mode === "create-error") return Promise.reject({ code: "template_plan_stale" });
         this.pendingProject = project(CREATED_PROJECT_ID, targetLeaf);
         return this.value({ ...templatePlan("create-project"), targetLeaf });
     }
     templateApplyCreateProject(): ReturnType<GuiRpcClient["templateApplyCreateProject"]> { this.operationReads = 0; return this.value({ operationId: OPERATION_ID, replayed: false }); }
 
-    backupsList(): ReturnType<GuiRpcClient["backupsList"]> { return this.value({ backups: this.mode === "empty" ? [] : [backup()] }); }
+    async backupsList(): ReturnType<GuiRpcClient["backupsList"]> {
+        if (query.has("holdBackups")) await new Promise<void>((resolve) => window.addEventListener("test-backups-ready", () => resolve(), { once: true }));
+        return this.value({ backups: this.mode === "empty" ? [] : [backup()] });
+    }
     backupGet(): ReturnType<GuiRpcClient["backupGet"]> { return this.value(backup()); }
     backupCreate(): ReturnType<GuiRpcClient["backupCreate"]> { return this.value({ operationId: OPERATION_ID, backupId: BACKUP_ID, replayed: false }); }
     backupPlanRestore(_backupId: string, targetParent: string, targetLeaf: string): ReturnType<GuiRpcClient["backupPlanRestore"]> {
@@ -622,7 +759,7 @@ const HASH = "a".repeat(64);
 
 function project(projectId = PROJECT_ID, name = "Sample", favorite = false) {
     const rootPath = projectId === PROJECT_ID && name === "Sample" ? "<private-project>" : `C:\\Fixture\\${name}`;
-    return { projectId, registeredAtMs: 1_690_000_000_000, favorite, rootPath, projectType: "avatars", unityVersion: "2022.3.22f1", vpmManifest: "valid", upmManifest: "valid", directDependencies: [{ packageId: "com.example.avatar", value: "^1.2.0" }], lockedDependencies: [{ packageId: "com.example.avatar", value: "1.2.3" }], issues: [], observedAtMs: 1_700_000_000_000, revision: 2 };
+    return { projectId, registeredAtMs: 1_690_000_000_000, lastModifiedAtMs: 1_700_000_000_000, favorite, rootPath, projectType: "avatars", unityVersion: "2022.3.22f1", vpmManifest: "valid", upmManifest: "valid", directDependencies: [{ packageId: "com.example.avatar", value: "^1.2.0" }], lockedDependencies: [{ packageId: "com.example.avatar", value: "1.2.3" }], issues: [], revision: 2 };
 }
 function repository() { return { repositoryId: REPOSITORY_ID, source: { kind: "remote" as const, url: "https://packages.example.invalid/index.json" }, declaredId: "example", name: "Example packages", declaredUrl: "https://packages.example.invalid/index.json", issues: [], revision: 2, refreshedAtMs: 1_700_000_000_000 }; }
 function localRepository() { return { repositoryId: LOCAL_REPOSITORY_ID, source: { kind: "local" as const, path: "<private-local-repository>" }, declaredId: "local-example", name: "Local packages", issues: [], revision: 2, refreshedAtMs: 1_700_000_000_000 }; }

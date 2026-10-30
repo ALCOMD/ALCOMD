@@ -9,8 +9,8 @@ test("Projects grid keeps compact aligned cards with long names and scrollable r
         await page.setViewportSize({ width, height: width === 1180 ? 760 : 900 });
         await page.goto("/browser-harness.html?route=%2Fprojects&state=favorite-pages");
         await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
-        if (await page.getByRole("button", { name: "Grid view", exact: true }).isVisible()) {
-            await page.getByRole("button", { name: "Grid view", exact: true }).click();
+        if (await page.getByRole("button", { name: "List view", exact: true }).isVisible()) {
+            await page.getByRole("button", { name: "List view", exact: true }).click();
         }
         const grid = page.locator(".projects-grid");
         await expect(grid.locator(".project-card")).toHaveCount(2);
@@ -72,7 +72,7 @@ test("Projects grid retains shared launch, directory, copy review and removal ca
     await page.setViewportSize({ width: 1180, height: 760 });
     await page.goto("/browser-harness.html?route=%2Fprojects&projectGrid=1");
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Grid view", exact: true }).click();
+    await page.getByRole("button", { name: "List view", exact: true }).click();
     const card = page.getByRole("article", { name: "Avatar Studio", exact: true });
     await card.getByRole("button", { name: "Open Unity", exact: true }).focus();
     await page.keyboard.press("Enter");
@@ -111,7 +111,7 @@ test("Projects grid retains shared launch, directory, copy review and removal ca
 
 test("Projects grid keeps shared capability restrictions and missing-Editor handling", async ({ page }) => {
     await openHarness(page, "/projects", "capabilities-missing");
-    await page.getByRole("button", { name: "Grid view", exact: true }).click();
+    await page.getByRole("button", { name: "List view", exact: true }).click();
     const card = page.locator(".project-card").first();
     await expect(card.getByRole("button", { name: "Open Unity", exact: true })).toBeDisabled();
     await expect(card.getByRole("button", { name: "Add to favorites", exact: true })).toBeDisabled();
@@ -135,7 +135,7 @@ test("Projects grid keeps shared capability restrictions and missing-Editor hand
 test("Projects view survives navigation, reload and reopening the page in both modes", async ({ page, context }) => {
     await openHarness(page, "/projects");
     await expect(page.getByRole("table", { name: "Projects", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Grid view", exact: true }).click();
+    await page.getByRole("button", { name: "List view", exact: true }).click();
     await expect(page.locator(".projects-grid")).toBeVisible();
     await page.locator("#primary-navigation md-list-item").filter({ hasText: "Resources" }).click();
     await expect(page.getByRole("heading", { name: "Resources", exact: true })).toBeVisible();
@@ -147,7 +147,7 @@ test("Projects view survives navigation, reload and reopening the page in both m
     const reopened = await context.newPage();
     await openHarness(reopened, "/projects");
     await expect(reopened.locator(".projects-grid")).toBeVisible();
-    await reopened.getByRole("button", { name: "List view", exact: true }).click();
+    await reopened.getByRole("button", { name: "Grid view", exact: true }).click();
     await expect(reopened.getByRole("table", { name: "Projects", exact: true })).toBeVisible();
     await reloadProjectsHarness(reopened);
     await expect(reopened.getByRole("table", { name: "Projects", exact: true })).toBeVisible();
@@ -166,9 +166,9 @@ test("Projects view remains usable with invalid or unavailable local storage", a
     });
     await reloadProjectsHarness(page);
     await expect(page.getByRole("table", { name: "Projects", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Grid view", exact: true }).click();
-    await expect(page.locator(".projects-grid")).toBeVisible();
     await page.getByRole("button", { name: "List view", exact: true }).click();
+    await expect(page.locator(".projects-grid")).toBeVisible();
+    await page.getByRole("button", { name: "Grid view", exact: true }).click();
     await expect(page.getByRole("table", { name: "Projects", exact: true })).toBeVisible();
 });
 
@@ -180,7 +180,7 @@ test("Favorite loads every page and remains globally first after secondary sorti
 
     await page.getByRole("button", { name: "Project", exact: true }).click();
     await expect(rows.nth(1)).toContainText("Zulu Favorite");
-    await page.getByRole("button", { name: "Grid view" }).click();
+    await page.getByRole("button", { name: "List view" }).click();
     await expect(page.locator(".project-card").first()).toContainText("Zulu Favorite");
 });
 
@@ -190,7 +190,7 @@ test("Favorite mutation updates list and grid and exposes retryable errors", asy
     await toggle.click();
     await expect(page.getByRole("button", { name: "Remove from favorites" })).toBeVisible();
 
-    await page.getByRole("button", { name: "Grid view" }).click();
+    await page.getByRole("button", { name: "List view" }).click();
     await expect(page.locator(".project-card").getByRole("button", { name: "Remove from favorites" })).toBeVisible();
 
     await openHarness(page, "/projects", "favorite-error");
@@ -289,7 +289,7 @@ for (const view of ["list", "grid"] as const) {
         const openProjects = async (state: string) => {
             await openHarness(page, "/projects", state);
             await expect(page.getByRole("heading", { name: "Projects", exact: true })).toBeVisible();
-            const switchView = page.getByRole("button", { name: view === "grid" ? "Grid view" : "List view", exact: true });
+            const switchView = page.getByRole("button", { name: view === "grid" ? "List view" : "Grid view", exact: true });
             if (await switchView.isVisible()) await switchView.click();
             return page.locator(view === "grid" ? ".project-card" : ".projects-list tbody tr").first().getByRole("button", { name: "Open Unity", exact: true });
         };

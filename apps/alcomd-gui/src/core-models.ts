@@ -37,13 +37,22 @@ export interface OperationsListResult {
 
 export type AppearanceMode = "system" | "light" | "dark";
 export type AppearanceDensity = "default" | "compact";
-export type AppearanceMotion = "system" | "reduced";
+export type AppearanceMotion = "system" | "full" | "reduced";
 export type SettingsLocale = "system" | "en-US" | "zh-CN" | "ja-JP";
 
+export interface UnityHubLocation {
+    status: "available" | "not_found" | "unavailable";
+    source: "configured" | "discovered" | "none";
+    path: string | null;
+    configuredPathStatus: "unset" | "available" | "invalid" | "unavailable";
+}
+
 export interface OfficialSettings {
+    unity: { hubPath: string | null };
     appearance: {
         mode: AppearanceMode;
         sourceColor: string | null;
+        scheme: import("@alcomd/ui").ThemeScheme;
         density: AppearanceDensity;
         motion: AppearanceMotion;
     };
@@ -56,15 +65,18 @@ export interface OfficialSettings {
 }
 
 export interface SettingsGetResult {
-    configSchema: 2;
+    unityHub: UnityHubLocation;
+    configSchema: 3;
     revision: number;
     settings: OfficialSettings;
 }
 
 export interface SettingsUpdate {
+    unity?: { hubPath?: string | null };
     appearance?: {
         mode?: AppearanceMode;
         sourceColor?: string | null;
+        scheme?: import("@alcomd/ui").ThemeScheme;
         density?: AppearanceDensity;
         motion?: AppearanceMotion;
     };
@@ -144,7 +156,7 @@ export interface ProjectSnapshot {
     directDependencies: DependencyIdentity[];
     lockedDependencies: DependencyIdentity[];
     issues: ReadIssue[];
-    observedAtMs: number;
+    lastModifiedAtMs?: number;
     revision?: number;
 }
 

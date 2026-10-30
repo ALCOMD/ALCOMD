@@ -1,3 +1,4 @@
+import { useTranslation } from "./i18n";
 import type { RpcError } from "@alcomd/sdk";
 import { useEffect, useRef, useState } from "react";
 
@@ -12,13 +13,15 @@ interface LaunchFeedback {
     message?: string;
 }
 
-export function useProjectUnityLaunch({ client, initialOptions, navigate, onFeedback, project }: {
+export function useProjectUnityLaunch({ client, initialOptions, navigate, onFeedback, onLaunchSettled, project }: {
     client: GuiRpcClient;
     initialOptions?: UnityLaunchOptionsResult;
     navigate(path: string): void;
     onFeedback(feedback: LaunchFeedback): void;
+    onLaunchSettled?(): void;
     project: ProjectSnapshot;
 }) {
+    const { t } = useTranslation();
     const canLaunch = useCapability(capabilities.unityLaunch);
     const canMigrate = useCapability(capabilities.projectsUnityMigration);
     const [busy, setBusy] = useState(false);
@@ -41,7 +44,7 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onFeed
         if (!canLaunch || projectId === undefined || revision === undefined || pending.current) return;
         const current = generation.current;
         pending.current = true; setBusy(true); setError(undefined);
-        onFeedback({ busy: true, message: "Opening Unity…" });
+        onFeedback({ busy: true });
         try { await task(current); }
         catch (caught: unknown) {
             if (current !== generation.current) return;
@@ -53,10 +56,14 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onFeed
     };
     const launch = async (snapshot: UnityLaunchOptionsResult, selected: string, current: number) => {
         if (projectId === undefined) return;
-        const result = await client.unityLaunch(projectId, selected, snapshot.projectRevision);
-        if (current !== generation.current) return;
-        setDialog(undefined); setInstallationId("");
-        onFeedback({ busy: false, message: `Unity launch ${result.launch.state}.` });
+        try {
+            const result = await client.unityLaunch(projectId, selected, snapshot.projectRevision);
+            if (current !== generation.current) return;
+            setDialog(undefined); setInstallationId("");
+            onFeedback({ busy: false, message: t("Unity launch {state}.", { state: t(result.launch.state) }) });
+        } finally {
+            if (current === generation.current) onLaunchSettled?.();
+        }
     };
     const open = () => {
         if (document.activeElement instanceof HTMLElement) trigger.current = document.activeElement;
@@ -69,10 +76,10 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onFeed
                 await launch(snapshot, snapshot.exactMatchingInstallations[0]!.installationId, current);
             } else if (snapshot.exactMatchingInstallations.length === 0) {
                 setDialog("missing");
-                onFeedback({ busy: false, message: `Unity ${snapshot.projectUnityVersion} is required. No exact matching Unity installation was found.` });
+                onFeedback({ busy: false, message: t("Unity {version} is required. No exact matching Unity installation was found.", { version: snapshot.projectUnityVersion }) });
             } else {
                 setDialog("choose");
-                onFeedback({ busy: false, message: "Choose the Unity installation for this launch." });
+                onFeedback({ busy: false, message: t("Choose the Unity installation for this launch.") });
             }
         });
     };
@@ -91,22 +98,22 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onFeed
         action: {
             disabled: !canLaunch || busy || projectId === undefined || revision === undefined,
             onClick: open,
-            title: capabilityUnavailableTitle(canLaunch, capabilities.unityLaunch)
+            title: capabilityUnavailableTitle(canLaunch, capabilities.unityLaunch, t)
         },
         dialogs: <>
-            <Dialog onClose={closed} open={dialog === "missing"} title="Unity installation required">
-                <p>This project requires Unity {options?.projectUnityVersion ?? project.unityVersion}. No exact matching Unity installation was found.</p>
+            <Dialog onClose={closed} open={dialog === "missing"} title={t("Unity installation required")}>
+                <p>{t("This project requires Unity {version}. No exact matching Unity installation was found.", { version: options?.projectUnityVersion ?? project.unityVersion })}</p>
                 <div className="dialog-actions">
-                    <Button onClick={close} type="button" variant="tonal">Cancel</Button>
-                    <Button disabled={!canMigrate} onClick={() => { close(); navigate(`/projects/${projectId}/unity?afterMigration=open`); }} title={capabilityUnavailableTitle(canMigrate, capabilities.projectsUnityMigration)} type="button">Migrate Project…</Button>
+                    <Button onClick={close} type="button" variant="tonal">{t("Cancel")}</Button>
+                    <Button disabled={!canMigrate} onClick={() => { close(); navigate(`/projects/${projectId}/unity?afterMigration=open`); }} title={capabilityUnavailableTitle(canMigrate, capabilities.projectsUnityMigration, t)} type="button">{t("Migrate Project…")}</Button>
                 </div>
             </Dialog>
-            <Dialog dismissible={!busy} onClose={closed} open={dialog === "choose"} title="Choose Unity for this launch">
-                <Select disabled={busy} label="Unity installation for this launch" onChange={setInstallationId} options={[{ label: "Choose an installation", value: "" }, ...(options?.exactMatchingInstallations ?? []).map((item) => ({ label: `Unity ${item.unityVersion} · ${item.architecture} · ${item.executablePath}`, value: item.installationId }))]} value={installationId} />
-                {error === undefined ? null : <p className="inline-error" role="alert">Unable to open Unity: {error.code}</p>}
+            <Dialog dismissible={!busy} onClose={closed} open={dialog === "choose"} title={t("Choose Unity for this launch")}>
+                <Select disabled={busy} label={t("Unity installation for this launch")} onChange={setInstallationId} options={[{ label: t("Choose an installation"), value: "" }, ...(options?.exactMatchingInstallations ?? []).map((item) => ({ label: `Unity ${item.unityVersion} · ${item.architecture} · ${item.executablePath}`, value: item.installationId }))]} value={installationId} />
+                {error === undefined ? null : <p className="inline-error" role="alert">{t("Unable to open Unity: {code}", { code: error.code })}</p>}
                 <div className="dialog-actions">
-                    <Button disabled={busy} onClick={close} type="button" variant="tonal">Cancel</Button>
-                    <Button disabled={!canLaunch || installationId.length === 0 || busy} onClick={confirm} type="button">Open Unity</Button>
+                    <Button disabled={busy} onClick={close} type="button" variant="tonal">{t("Cancel")}</Button>
+                    <Button disabled={!canLaunch || installationId.length === 0 || busy} onClick={confirm} type="button">{t("Open Unity")}</Button>
                 </div>
             </Dialog>
         </>

@@ -1,3 +1,4 @@
+import { createTranslator, LocaleProvider, preferredLocale, useTranslation } from "./i18n";
 import type {
     ExtensionRecord,
     RpcError,
@@ -6,9 +7,12 @@ import type {
 } from "@alcomd/sdk";
 import {
     applyAppearance,
+    applyMotion,
     defaultAppearance,
     productFamily,
-    type AppearanceSettings
+    resolveThemeSourceColor,
+    type AppearanceSettings,
+    type ThemePreferences
 } from "@alcomd/ui";
 import {
     extensionIcon,
@@ -21,7 +25,8 @@ import {
     type IconAsset
 } from "@alcomd/ui/icons";
 import type { ReactNode } from "react";
-import { Suspense, useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { SettingsAutosave } from "./settings-autosave";
 
 import {
     AboutPage,
@@ -99,6 +104,16 @@ interface AppProps {
 
 export function App({ client = guiRpcClient }: AppProps) {
     const [connectionGeneration, setConnectionGeneration] = useState(0);
+    const settingsConnection = useRef({ client, generation: connectionGeneration });
+    const settingsAuthority = useRef<SettingsGetResult | undefined>(undefined);
+    const settingsWriterRef = useRef<SettingsAutosave | undefined>(undefined);
+    const themePreview = useRef<ThemePreferences | undefined>(undefined);
+    const themeExit = useRef<(() => void) | undefined>(undefined);
+    if (settingsConnection.current.client !== client || settingsConnection.current.generation !== connectionGeneration) {
+        settingsConnection.current = { client, generation: connectionGeneration };
+        settingsAuthority.current = undefined;
+        themePreview.current = undefined;
+    }
     const [navigation, setNavigation] = useState(() => ({
         route: readRoute(window.location.pathname, window.location.search),
         read: createPageRead(), client, connectionGeneration
@@ -115,13 +130,18 @@ export function App({ client = guiRpcClient }: AppProps) {
             if (!navigating) window.requestAnimationFrame(focusRouteTitle);
             return;
         }
+        themeExit.current?.();
         setNavigation({ route: next, client, connectionGeneration, read: createPageRead() });
     };
     const [pendingRoute, setPendingRoute] = useState<Route>();
     const [appearance, setAppearance] = useState<AppearanceSettings>(defaultAppearance);
     const [locale, setLocale] = useState(() => preferredLocale(navigator.language));
+    const t = createTranslator(locale);
     const [negotiatedCapabilities, setNegotiatedCapabilities] = useState<CapabilitySnapshot>();
-    const reconnect = useCallback(() => setConnectionGeneration((generation) => generation + 1), []);
+    const reconnect = useCallback(() => {
+        themeExit.current?.();
+        setConnectionGeneration((generation) => generation + 1);
+    }, []);
     const dirtyRef = useRef(false);
     const handleDirtyChange = useCallback((dirty: boolean) => {
         dirtyRef.current = dirty;
@@ -132,19 +152,41 @@ export function App({ client = guiRpcClient }: AppProps) {
     }, [appearance]);
 
     const applySettings = useCallback((value: SettingsGetResult) => {
-        const sourceColor = sourceColorName(value.settings.appearance.sourceColor);
+        if (settingsConnection.current.client !== client || settingsConnection.current.generation !== connectionGeneration) return;
+        if (settingsAuthority.current !== undefined && value.revision < settingsAuthority.current.revision) return;
+        settingsAuthority.current = value;
+        settingsWriterRef.current?.seed(value);
+        const visibleTheme = themePreview.current ?? value.settings.appearance;
+        const sourceColor = resolveThemeSourceColor(visibleTheme.sourceColor);
         setAppearance({
-            mode: value.settings.appearance.mode,
+            mode: visibleTheme.mode,
             sourceColor,
+            scheme: visibleTheme.scheme,
             density: value.settings.appearance.density === "compact" ? "compact" : "comfortable"
         });
         const nextLocale = value.settings.locale === "system"
             ? preferredLocale(navigator.language)
             : value.settings.locale;
         setLocale(nextLocale);
-        document.documentElement.lang = nextLocale;
-        document.documentElement.dataset.motion = value.settings.appearance.motion;
-    }, []);
+        applyMotion(value.settings.appearance.motion);
+    }, [client, connectionGeneration]);
+
+    const settingsWriter = useMemo(() => new SettingsAutosave(client, applySettings), [client, applySettings]);
+    if (settingsWriterRef.current !== settingsWriter) {
+        settingsWriterRef.current?.stop();
+        settingsWriterRef.current = settingsWriter;
+    }
+    const settingsSave = useSyncExternalStore(settingsWriter.subscribe, settingsWriter.getSnapshot);
+
+    const previewTheme = useCallback((theme: ThemePreferences | undefined) => {
+        if (settingsConnection.current.client !== client || settingsConnection.current.generation !== connectionGeneration) return;
+        themePreview.current = theme;
+        const visible = theme ?? settingsAuthority.current?.settings.appearance;
+        if (visible !== undefined) setAppearance((current) => ({ ...current, mode: visible.mode, scheme: visible.scheme, sourceColor: resolveThemeSourceColor(visible.sourceColor) }));
+    }, [client, connectionGeneration]);
+    const registerThemeExit = useCallback((cancel: (() => void) | undefined) => { themeExit.current = cancel; }, []);
+
+    useEffect(() => { document.documentElement.lang = locale; }, [locale]);
 
     useEffect(() => {
         let active = true;
@@ -217,7 +259,7 @@ export function App({ client = guiRpcClient }: AppProps) {
     };
 
     return (
-        <CapabilityProvider reconnect={reconnect} value={negotiatedCapabilities}>
+        <LocaleProvider locale={locale}><CapabilityProvider reconnect={reconnect} value={negotiatedCapabilities}>
             <div className="app-shell">
                 <div className="app-body">
                     <PrimaryNavigation
@@ -226,9 +268,13 @@ export function App({ client = guiRpcClient }: AppProps) {
                         navigate={navigate}
                     />
                     <main className="main-content" id="main-content" aria-busy={navigating}>
-                        {navigating ? <div className="page-navigation-progress"><LoadingState title="Opening page…" /></div> : null}
+                        {settingsSave.failed ? <div className="settings-save-error" role="alert">
+                            <p>{t("Settings could not be saved. Retry to save your changes.")}</p>
+                            <Button disabled={settingsSave.saving} type="button" variant="text" onClick={() => void settingsWriter.retry()}>{t("Retry")}</Button>
+                        </div> : null}
+                        {navigating ? <div className="page-navigation-progress"><LoadingState title={t("Opening page…")} /></div> : null}
                         <div className="route-content" inert={navigating}>
-                            <Suspense fallback={<LoadingState title="Loading page…" />}>
+                            <Suspense fallback={<LoadingState title={t("Loading page…")} />}>
                                 <PageReadContext.Provider value={visibleNavigation.read}>
                                     <RouteContent key={visibleNavigation.read.visit}
                                         client={client}
@@ -236,6 +282,9 @@ export function App({ client = guiRpcClient }: AppProps) {
                                         navigate={navigate}
                                         onDirtyChange={handleDirtyChange}
                                         onSettingsApplied={applySettings}
+                                        settingsWriter={settingsWriter}
+                                        onThemePreview={previewTheme}
+                                        onThemeSession={registerThemeExit}
                                         route={visibleNavigation.route}
                                     />
                                 </PageReadContext.Provider>
@@ -243,19 +292,20 @@ export function App({ client = guiRpcClient }: AppProps) {
                         </div>
                     </main>
                 </div>
-                <MaterialDialog onClose={() => setPendingRoute(undefined)} open={pendingRoute !== undefined} title="Discard unsaved changes?">
-                    <p>{DISCARD_MESSAGE}</p>
+                <MaterialDialog onClose={() => setPendingRoute(undefined)} open={pendingRoute !== undefined} title={t("Discard unsaved changes?")}>
+                    <p>{t(DISCARD_MESSAGE)}</p>
                     <div className="dialog-actions">
-                        <Button onClick={() => setPendingRoute(undefined)} type="button" variant="text">Keep editing</Button>
-                        <Button onClick={discardAndNavigate} type="button">Discard changes</Button>
+                        <Button onClick={() => setPendingRoute(undefined)} type="button" variant="text">{t("Keep editing")}</Button>
+                        <Button onClick={discardAndNavigate} type="button">{t("Discard changes")}</Button>
                     </div>
                 </MaterialDialog>
             </div>
-        </CapabilityProvider>
+        </CapabilityProvider></LocaleProvider>
     );
 }
 
 function PrimaryNavigation({ client, current, navigate }: { client: GuiRpcClient; current: Route; navigate(path: string): void }) {
+    const { t } = useTranslation();
     const scrollRef = useScrollArea<HTMLElement>();
     const items: readonly NavigationItem[] = [
         { icon: projectsIcon, label: navigationLabels.projects, path: "/projects", section: "projects" },
@@ -265,8 +315,8 @@ function PrimaryNavigation({ client, current, navigate }: { client: GuiRpcClient
     ];
     return (
         <aside className="primary-navigation" id="primary-navigation" ref={scrollRef}>
-            <a className="skip-link" href="#main-content">Skip to content</a>
-            <nav aria-label="Primary">
+            <a className="skip-link" href="#main-content">{t("Skip to content")}</a>
+            <nav aria-label={t("Primary")}>
                 <NavigationList className="navigation-list">
                     {items.map((item) => {
                         const selected = routeSection(current) === item.section;
@@ -279,7 +329,7 @@ function PrimaryNavigation({ client, current, navigate }: { client: GuiRpcClient
                                 selected={selected}
                             >
                                 <Icon asset={item.icon} size={24} slot="start" />
-                                <span className="navigation-item-label" slot="headline">{item.label}</span>
+                                <span className="navigation-item-label" slot="headline">{t(item.label)}</span>
                             </NavigationListItem>
                         );
                     })}
@@ -299,6 +349,7 @@ interface NavigationItem {
 }
 
 function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient; current: Route; navigate(path: string): void }) {
+    const { t } = useTranslation();
     const operationsCapability = useCapabilityState(capabilities.operations);
     const [summary, setSummary] = useState<{ activeTasks: number; daemonVersion?: string }>({ activeTasks: 0 });
     useEffect(() => {
@@ -319,7 +370,7 @@ function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient;
     }, [client, current.kind, operationsCapability]);
     return (
         <footer className="navigation-footer">
-            <nav aria-label="Utilities">
+            <nav aria-label={t("Utilities")}>
                 <NavigationList className="navigation-list navigation-list--footer">
                     <NavigationListItem
                         aria-current={routeSection(current) === "extensions" ? "page" : undefined}
@@ -328,30 +379,30 @@ function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient;
                         selected={routeSection(current) === "extensions"}
                     >
                         <Icon asset={extensionIcon} size={24} slot="start" />
-                        <span className="navigation-item-label" slot="headline">{navigationLabels.extensions}</span>
+                        <span className="navigation-item-label" slot="headline">{t(navigationLabels.extensions)}</span>
                     </NavigationListItem>
                     <NavigationListItem
-                        aria-label={summary.activeTasks === 0 ? navigationLabels.taskCenter : `${navigationLabels.taskCenter} ${summary.activeTasks} active`}
+                        aria-label={summary.activeTasks === 0 ? t(navigationLabels.taskCenter) : t("Tasks {count} active", { count: summary.activeTasks })}
                         aria-current={routeSection(current) === "tasks" ? "page" : undefined}
                         className="navigation-item"
                         disabled={operationsCapability !== "available"}
                         onClick={() => navigate("/operations")}
                         selected={routeSection(current) === "tasks"}
-                        title={operationsCapability === "unavailable" ? `${capabilities.operations} was not negotiated by the connected daemon.` : undefined}
+                        title={operationsCapability === "unavailable" ? t("{capability} was not negotiated by the connected daemon.", { capability: capabilities.operations }) : undefined}
                     >
                         <Icon asset={taskCenterIcon} size={24} slot="start" />
-                        <span className="navigation-item-label" slot="headline">{navigationLabels.taskCenter}</span>
+                        <span className="navigation-item-label" slot="headline">{t(navigationLabels.taskCenter)}</span>
                         {summary.activeTasks === 0 ? null : <span aria-hidden="true" className="navigation-item-meta" slot="end">{summary.activeTasks}</span>}
                     </NavigationListItem>
                     <NavigationListItem
-                        aria-label={summary.daemonVersion === undefined ? navigationLabels.about : `${navigationLabels.about} ${summary.daemonVersion}`}
+                        aria-label={summary.daemonVersion === undefined ? t(navigationLabels.about) : `${t(navigationLabels.about)} ${summary.daemonVersion}`}
                         aria-current={routeSection(current) === "about" ? "page" : undefined}
                         className="navigation-item"
                         onClick={() => navigate("/about")}
                         selected={routeSection(current) === "about"}
                     >
                         <Icon asset={infoIcon} size={24} slot="start" />
-                    <span className="navigation-item-label" slot="headline">{navigationLabels.about}</span>
+                    <span className="navigation-item-label" slot="headline">{t(navigationLabels.about)}</span>
                     {summary.daemonVersion === undefined ? null : <span aria-hidden="true" className="navigation-item-meta" slot="end">{summary.daemonVersion}</span>}
                     </NavigationListItem>
                 </NavigationList>
@@ -366,6 +417,9 @@ function RouteContent({
     navigate,
     onDirtyChange,
     onSettingsApplied,
+    settingsWriter,
+    onThemePreview,
+    onThemeSession,
     route
 }: {
     client: GuiRpcClient;
@@ -373,8 +427,12 @@ function RouteContent({
     navigate(path: string): void;
     onDirtyChange(dirty: boolean): void;
     onSettingsApplied(value: SettingsGetResult): void;
+    settingsWriter: SettingsAutosave;
+    onThemePreview(value: ThemePreferences | undefined): void;
+    onThemeSession(cancel: (() => void) | undefined): void;
     route: Route;
 }) {
+    const { t } = useTranslation();
     // This effect commits with the populated route, including an initially suspended page.
     useEffect(() => {
         const frame = window.requestAnimationFrame(focusRouteTitle);
@@ -401,9 +459,9 @@ function RouteContent({
         case "extension-ui": return <CapabilityRoute required={[capabilities.extensionsLifecycle, capabilities.extensionsPortableUi]}><ExtensionUiPage client={client} extensionId={route.extensionId} locale={locale} onDirtyChange={onDirtyChange} /></CapabilityRoute>;
         case "activity": return <ActivityPage {...props} />;
         case "diagnostics": return <DiagnosticsPage {...props} />;
-        case "settings": return <CapabilityRoute required={[]}><SettingsPage {...props} onApplied={onSettingsApplied} onDirtyChange={onDirtyChange} /></CapabilityRoute>;
+        case "settings": return <CapabilityRoute required={[]}><SettingsPage {...props} settingsWriter={settingsWriter} onApplied={onSettingsApplied} onThemePreview={onThemePreview} onThemeSession={onThemeSession} onDirtyChange={onDirtyChange} /></CapabilityRoute>;
         case "about": return <AboutPage {...props} />;
-        case "not-found": return <RouteState kind="error" title="Page not found" detail="Use the primary navigation to continue." />;
+        case "not-found": return <RouteState kind="error" title={t("Page not found")} detail={t("Use the primary navigation to continue.")} />;
     }
 }
 
@@ -412,18 +470,19 @@ function focusRouteTitle() {
 }
 
 function CapabilityRoute({ required, children }: { required: readonly string[]; children: ReactNode }) {
+    const { t } = useTranslation();
     const { missing, state } = useCapabilityCheck(required);
     if (state === "checking") {
-        return <RouteState kind="loading" title="Loading" detail="Checking daemon capabilities." />;
+        return <RouteState kind="loading" title={t("Loading")} detail={t("Checking daemon capabilities.")} />;
     }
     if (state === "status-unavailable") {
         return children;
     }
     if (state === "unavailable") {
         const detail = missing.length === 1
-            ? `${missing[0]} was not negotiated by the connected daemon.`
-            : `${missing.join(", ")} were not negotiated by the connected daemon.`;
-        return <RouteState kind="error" title="Feature unavailable" detail={detail} />;
+            ? t("{capability} was not negotiated by the connected daemon.", { capability: missing[0]! })
+            : t("{capabilities} were not negotiated by the connected daemon.", { capabilities: missing.join(", ") });
+        return <RouteState kind="error" title={t("Feature unavailable")} detail={detail} />;
     }
     return children;
 }
@@ -436,6 +495,7 @@ interface ExtensionUiPageProps {
 }
 
 function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: ExtensionUiPageProps) {
+    const { t } = useTranslation();
     const [extension, setExtension] = useState<ExtensionRecord>();
     const [snapshot, setSnapshot] = useState<UiSnapshot>();
     const [error, setError] = useState<RpcError>();
@@ -591,32 +651,32 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
 
     return (
         <section className="extension-surface" aria-labelledby="extension-ui-title">
-            <PageHeader className="extension-chrome" title="Extension UI" titleId="extension-ui-title" titleRef={headingRef}>
+            <PageHeader className="extension-chrome" title={t("Extension UI")} titleId="extension-ui-title" titleRef={headingRef}>
                 <div className="page-header-actions">
-                    <RefreshButton disabled={busy || snapshot === undefined} onClick={() => void refresh()} refreshing={busy && snapshot !== undefined} refreshingLabel="Working…" />
+                    <RefreshButton disabled={busy || snapshot === undefined} onClick={() => void refresh()} refreshing={busy && snapshot !== undefined} refreshingLabel={t("Working…")} />
                 </div>
             </PageHeader>
             <div className="extension-context">
-                <p className="eyebrow">Extension-provided content</p>
+                <p className="eyebrow">{t("Extension-provided content")}</p>
                 <p className="extension-id"><code>{extensionId}</code></p>
             </div>
             {extension === undefined ? null : <ExtensionIdentity extension={extension} />}
             {busy && snapshot === undefined ? (
-                <StatePanel kind="loading" title="Opening extension UI" detail="Connecting to the ALCOMD core and extension host…" />
+                <StatePanel kind="loading" title={t("Opening extension UI")} detail={t("Connecting to the ALCOMD core and extension host…")} />
             ) : null}
             {error === undefined ? null : (
                 <StatePanel
-                    action={<Button onClick={reconnect} type="button">Reconnect</Button>}
-                    detail={error.diagnosticId === undefined ? undefined : `Diagnostic ID: ${error.diagnosticId}`}
+                    action={<Button onClick={reconnect} type="button">{t("Reconnect")}</Button>}
+                    detail={error.diagnosticId === undefined ? undefined : t("Diagnostic ID: {id}", { id: error.diagnosticId })}
                     kind={error.code === "daemon_unavailable" ? "disconnected" : "error"}
-                    title={errorTitle(error.code)}
+                    title={t(errorTitle(error.code))}
                 />
             )}
-            <MaterialDialog onClose={() => setPendingDiscardAction(undefined)} open={pendingDiscardAction !== undefined} title="Discard unsaved changes?">
-                <p>{DISCARD_MESSAGE}</p>
+            <MaterialDialog onClose={() => setPendingDiscardAction(undefined)} open={pendingDiscardAction !== undefined} title={t("Discard unsaved changes?")}>
+                <p>{t(DISCARD_MESSAGE)}</p>
                 <div className="dialog-actions">
-                    <Button onClick={() => setPendingDiscardAction(undefined)} type="button" variant="text">Keep editing</Button>
-                    <Button onClick={() => void discardAndContinue()} type="button">Discard changes</Button>
+                    <Button onClick={() => setPendingDiscardAction(undefined)} type="button" variant="text">{t("Keep editing")}</Button>
+                    <Button onClick={() => void discardAndContinue()} type="button">{t("Discard changes")}</Button>
                 </div>
             </MaterialDialog>
             {snapshot === undefined ? null : (
@@ -632,14 +692,15 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
 }
 
 function ExtensionIdentity({ extension }: { extension: ExtensionRecord }) {
+    const { t } = useTranslation();
     return (
-        <dl className="extension-identity" aria-label="Host-verified extension identity">
-            <div><dt>Version</dt><dd>{extension.version}</dd></div>
-            <div><dt>Publisher</dt><dd><code>{shortFingerprint(extension.publisherFingerprint)}</code></dd></div>
-            <div><dt>Trust</dt><dd>{humanize(extension.trustDecision)}</dd></div>
-            <div><dt>Desired state</dt><dd>{humanize(extension.desiredState)}</dd></div>
-            <div><dt>Runtime</dt><dd>{humanize(extension.runtimeState)}</dd></div>
-            <div><dt>Quarantine</dt><dd>{humanize(extension.quarantineState)}</dd></div>
+        <dl className="extension-identity" aria-label={t("Host-verified extension identity")}>
+            <div><dt>{t("Version")}</dt><dd>{extension.version}</dd></div>
+            <div><dt>{t("Publisher")}</dt><dd><code>{shortFingerprint(extension.publisherFingerprint)}</code></dd></div>
+            <div><dt>{t("Trust")}</dt><dd>{t(humanize(extension.trustDecision))}</dd></div>
+            <div><dt>{t("Desired state")}</dt><dd>{t(humanize(extension.desiredState))}</dd></div>
+            <div><dt>{t("Runtime")}</dt><dd>{t(humanize(extension.runtimeState))}</dd></div>
+            <div><dt>{t("Quarantine")}</dt><dd>{t(humanize(extension.quarantineState))}</dd></div>
         </dl>
     );
 }
@@ -727,19 +788,6 @@ function shortFingerprint(value: string): string {
 
 function humanize(value: string): string {
     return value.replaceAll("_", " ");
-}
-
-function preferredLocale(value: string): string {
-    const canonical = value.replace("_", "-");
-    return /^(?:en-US|zh-CN|ja-JP)$/.test(canonical) ? canonical : "en-US";
-}
-
-function sourceColorName(value: string | null): AppearanceSettings["sourceColor"] {
-    switch (value) {
-        case "#315DA8": return "blue";
-        case "#006A60": return "teal";
-        default: return "violet";
-    }
 }
 
 function readRoute(pathname: string, search = ""): Route {
@@ -837,7 +885,7 @@ function sectionLabel(section: string): string {
         case "extensions": return "Extensions";
         case "settings": return "Settings";
         case "log": return "Logs";
-        case "tasks": return "Task Center";
+        case "tasks": return navigationLabels.taskCenter;
         case "about": return "About";
         default: return productFamily;
     }

@@ -27,7 +27,7 @@ test("Projects Restore uses a managed Backup Plan Apply Operation and opens the 
     await page.getByRole("menuitem", { name: "Restore from backup", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Restore project" });
     await expect(dialog).toBeVisible();
-    await expect(page.getByRole("combobox", { name: "Project backup", exact: true })).toContainText("2023-11-14");
+    await expect(page.getByRole("combobox", { name: "Project backup", exact: true })).toContainText("11/14/2023");
     await page.getByRole("button", { name: "Choose directory" }).click();
     await expect(page.getByLabel("Restore target parent")).toHaveValue("C:\\Fixture\\Avatar");
     await page.getByLabel("Restore project name").fill("Restored Project");

@@ -1,3 +1,4 @@
+import { useTranslation } from "./i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "./Material";
@@ -24,6 +25,7 @@ export function PagedItems<T, C>(props: PagedItemsProps<T, C>) {
 }
 
 function PageSession<T, C>({ initialItems, initialCursor, loadMore, children }: PagedItemsProps<T, C>) {
+    const { t } = useTranslation();
     const [items, setItems] = useState(initialItems);
     const [cursor, setCursor] = useState(initialCursor);
     const [loading, setLoading] = useState(false);
@@ -39,7 +41,6 @@ function PageSession<T, C>({ initialItems, initialCursor, loadMore, children }: 
         const token = {};
         request.current = token;
         setLoading(true);
-        setFailed(false);
         try {
             const page = await loadMore(cursor);
             if (request.current !== token) {
@@ -47,6 +48,7 @@ function PageSession<T, C>({ initialItems, initialCursor, loadMore, children }: 
             }
             setItems((current) => [...current, ...page.items]);
             setCursor(page.nextCursor);
+            setFailed(false);
         } catch {
             if (request.current === token) {
                 setFailed(true);
@@ -63,12 +65,11 @@ function PageSession<T, C>({ initialItems, initialCursor, loadMore, children }: 
         <>
             {children(items)}
             {cursor === undefined ? null : (
-                <div className="pagination-controls">
-                    {failed ? <p className="inline-error" role="alert">Could not load more items. Your loaded items are still available.</p> : null}
-                    <Button widthLabels={["Loading…", "Retry loading more", "Load more"]} disabled={loading} onClick={() => { void next(); }} type="button" variant="tonal">
-                        {loading ? "Loading…" : failed ? "Retry loading more" : "Load more"}
+                <div className="pagination-controls" aria-busy={loading}>
+                    {failed ? <p className="inline-error" role="alert">{t("Could not load more items. Your loaded items are still available.")}</p> : null}
+                    <Button disabled={loading} onClick={() => { void next(); }} type="button" variant="tonal">
+                        {failed ? t("Retry loading more") : t("Load more")}
                     </Button>
-                    {loading ? <span role="status">Loading more items…</span> : null}
                 </div>
             )}
         </>

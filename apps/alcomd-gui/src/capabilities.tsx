@@ -1,5 +1,6 @@
 import { RPC_CAPABILITIES } from "@alcomd/sdk";
 import { createContext, useContext, type ReactNode } from "react";
+import type { Translate } from "./i18n";
 
 export const capabilities = {
     backupsCreate: "backups.create.v1",
@@ -26,6 +27,7 @@ export const capabilities = {
     templatesManage: "templates.manage.v1",
     templatesRead: "templates.read.v1",
     unityLaunch: "unity.launch.v1",
+    unityHubOpen: "unity.hub.open.v1",
     unityManage: "unity.manage.v1",
     unityRead: "unity.read.v1"
 } as const;
@@ -68,6 +70,7 @@ export function useCapabilityCheck(required: readonly string[]): { readonly miss
     return { missing, state: missing.length === 0 ? "available" : "unavailable" };
 }
 
-export function capabilityUnavailableTitle(available: boolean, capability: string): string | undefined {
-    return available ? undefined : `Unavailable because ${capability} was not negotiated.`;
+export function capabilityUnavailableTitle(available: boolean, capability: string, t?: Translate): string | undefined {
+    return available ? undefined : t === undefined ? `Unavailable because ${capability} was not negotiated.`
+        : t("Unavailable because {capability} was not negotiated.", { capability });
 }

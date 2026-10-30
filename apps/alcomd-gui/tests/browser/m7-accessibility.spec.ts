@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 test("keyboard navigation moves routes and focuses the destination heading", async ({ page }) => {
     await openHarness(page, "/");
+    await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeFocused();
     const projects = navigationItem(page, "Projects");
     await projects.focus();
     await expect(projects).toBeFocused();
@@ -13,12 +14,18 @@ test("keyboard navigation moves routes and focuses the destination heading", asy
     await settings.focus();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeFocused();
-    const theme = page.getByRole("combobox", { name: "Theme" });
-    await theme.focus();
+    await page.locator("#settings-theme-button").focus();
     await page.keyboard.press("Enter");
-    await page.keyboard.press("ArrowDown");
+    await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeVisible();
+    const light = page.locator("#theme-mode").getByRole("button", { name: "Light", exact: true });
+    await light.focus();
+    await expect(light).toBeFocused();
     await page.keyboard.press("Enter");
-    await expect(page.locator("md-filled-select#settings-theme")).toHaveJSProperty("value", "light");
+    await expect(light).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Space");
+    await expect(light).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#theme-mode").getByRole("button", { pressed: true })).toHaveCount(1);
+    expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
 });
 
 test("H1 shell exposes the approved user areas without promoting internal routes", async ({ page }) => {
@@ -30,7 +37,7 @@ test("H1 shell exposes the approved user areas without promoting internal routes
     for (const hiddenRoute of ["Home", "Repositories", "Templates", "Unity", "Operations", "Activity", "Diagnostics"]) {
         await expect(navigationItem(page, hiddenRoute)).toHaveCount(0);
     }
-    await expect(navigationItem(page, "Task Center")).toBeVisible();
+    await expect(navigationItem(page, "Tasks")).toBeVisible();
     await expect(navigationItem(page, "About")).toBeVisible();
 
     await navigationItem(page, "Resources").click();
@@ -157,7 +164,7 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         ["/templates/com.cqmhv.template.avatar", "Template detail"],
         ["/unity", "Settings"],
         ["/backups/00000000-0000-4000-8000-000000000104", "Backup detail"],
-        ["/operations", "Task Center"],
+        ["/operations", "Tasks"],
         ["/operations/00000000-0000-4000-8000-000000000105", "Operation detail"],
         ["/extensions", "Extensions"],
         ["/extensions/com.cqmhv.discord", "Extension detail"],
@@ -208,44 +215,58 @@ test("project workspace keeps package discovery and user actions in project cont
     await expect(page.getByRole("heading", { level: 1, name: "<private-project>" })).toBeVisible();
     await expect(page.getByRole("heading", { level: 2, name: "Packages" })).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Project actions" }).getByRole("button", { name: "Open Unity" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Backups" })).toBeVisible();
+    await page.getByRole("button", { name: "More actions for <private-project>", exact: true }).click();
+    await expect(page.getByRole("menuitem", { name: "Backups", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: "More actions for <private-project>", exact: true })).toBeFocused();
     const row = page.getByRole("row").filter({ hasText: "Avatar tools" });
     await expect(row).toContainText("com.example.avatar");
     await expect(row).toContainText("1.2.3");
     await expect(row).toContainText("Example packages");
-    await page.getByLabel("Search packages").fill("not present");
+    const search = page.getByRole("searchbox", { name: "Search packages", exact: true });
+    await search.fill("not present");
+    await expect(search).toHaveValue("not present");
     await expect(page.getByRole("status").filter({ hasText: "No matching packages" })).toBeVisible();
-    await page.getByLabel("Search packages").fill("");
+    await search.fill("");
     await row.getByRole("button", { name: "Update" }).click();
     const dialog = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
     await expect(dialog).toContainText("com.example.avatar");
     await expect(dialog).not.toContainText(/plan|revision|fingerprint/i);
 });
 
-test("settings are labeled, revisioned, dirty-aware, and applied through the typed client", async ({ page }) => {
+test("settings are labeled, revisioned, and ordinary preferences save through the typed client", async ({ page }) => {
     await openHarness(page, "/settings");
-    const color = page.locator("md-filled-select#settings-color");
-    await expect(page.getByRole("combobox", { name: "Source color" })).toHaveAccessibleDescription("Choose the accent color used throughout the app.");
-    await selectMaterialOption(color, "#315DA8");
-    await selectMaterialOption(page.locator("md-filled-select#settings-locale"), "zh-CN");
+    await page.locator("#settings-theme-button").click();
+    await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeVisible();
+    const color = page.locator("#theme-source").getByRole("textbox");
+    await expect(color).toHaveAccessibleName("Source color");
+    await expect(color).toHaveAccessibleDescription("");
+    await color.fill("#315DA8");
+    await expect(page.locator("html")).toHaveAttribute("data-source-color", "#315DA8");
+    expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
+    await page.locator("md-dialog[open]").filter({ has: page.getByRole("heading", { name: "Theme", exact: true }) }).getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeHidden();
+    await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
     await page.getByRole("checkbox", { name: "Show prerelease package versions" }).check();
+    await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(2);
     await page.getByRole("checkbox", { name: "Hide local User Packages" }).check();
+    await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(3);
     await page.getByRole("checkbox", { name: "Hide Example packages" }).check();
-
-    await navigationItem(page, "Projects").click();
-    const dialog = page.getByRole("dialog", { name: "Discard unsaved changes?" });
-    await expect(dialog).toBeVisible();
-    await page.getByRole("button", { name: "Keep editing" }).click();
-    await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
-
-    await page.getByRole("button", { name: "Save settings" }).click();
-    await expect(page.getByText("All changes saved", { exact: true })).toBeVisible();
-    expect(await page.evaluate(() => window.settingsWrites)).toEqual([{ expectedRevision: 7, revision: 8 }]);
-    await expect(page.getByRole("checkbox", { name: "Show prerelease package versions" })).toBeChecked();
-    await expect(page.getByRole("checkbox", { name: "Hide local User Packages" })).toBeChecked();
-    await expect(page.getByRole("checkbox", { name: "Hide Example packages" })).toBeChecked();
+    await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(4);
+    await selectMaterialOption(page.locator("md-filled-select#settings-locale"), "zh-CN");
     await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
-    await expect(page.locator("html")).toHaveAttribute("data-source-color", "blue");
+    await navigationItem(page, "项目").click();
+    await expect(page.getByRole("heading", { level: 1, name: "项目" })).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await navigationItem(page, "设置").click();
+    await expect(page.getByRole("checkbox", { name: "显示预发布软件包" })).toBeChecked();
+    await expect(page.getByRole("checkbox", { name: "隐藏本地用户软件包" })).toBeChecked();
+    await expect(page.getByRole("checkbox", { name: "隐藏 Example packages" })).toBeChecked();
+    expect(await page.evaluate(() => window.settingsWrites)).toEqual([
+        { expectedRevision: 7, revision: 8 }, { expectedRevision: 8, revision: 9 },
+        { expectedRevision: 9, revision: 10 }, { expectedRevision: 10, revision: 11 }, { expectedRevision: 11, revision: 12 }
+    ]);
+    await expect(page.locator("html")).toHaveAttribute("data-source-color", "#315DA8");
 });
 
 test("package changes use a v3-style confirmation while the durable Plan stays internal", async ({ page }) => {

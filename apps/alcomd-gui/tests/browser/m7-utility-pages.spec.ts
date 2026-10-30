@@ -158,11 +158,11 @@ test("card surfaces share one 28px shape across workspaces", async ({ page }) =>
     await openHarness(page, "/projects");
     await expect(page.locator(".main-content")).toHaveCSS("border-radius", "28px");
     await expect(page.locator(".projects-content")).toHaveCSS("border-radius", "28px");
-    await page.getByRole("button", { name: "Grid view", exact: true }).click();
+    await page.getByRole("button", { name: "List view", exact: true }).click();
     await expect(page.locator(".projects-secondary-toolbar")).toHaveCSS("border-radius", "28px");
     await expect(page.locator(".project-card").first()).toHaveCSS("border-radius", "28px");
     const cases = [
-        ["/settings", ".settings-section, .settings-save-bar"],
+        ["/settings", ".settings-section"],
         ["/extensions", ".extension-management, .extension-card"],
         ["/about", ".notice-card"],
         ["/activity", ".logs-filter-toolbar"],
@@ -173,8 +173,8 @@ test("card surfaces share one 28px shape across workspaces", async ({ page }) =>
     ] as const;
     for (const mode of ["light", "dark"]) {
         await openHarness(page, "/projects");
-        if (await page.getByRole("button", { name: "Grid view", exact: true }).isVisible()) {
-            await page.getByRole("button", { name: "Grid view", exact: true }).click();
+        if (await page.getByRole("button", { name: "List view", exact: true }).isVisible()) {
+            await page.getByRole("button", { name: "List view", exact: true }).click();
         }
         await page.evaluate((value) => { document.documentElement.dataset.appearance = value; }, mode);
         const sharedFilterStyle = await filterBarStyle();
@@ -260,7 +260,8 @@ test("Settings follows supported v3 group order while Logs retains its two real 
     await navigationItem(page, "Settings").click();
     await expectHeading(page, "Settings");
     await expect(page.getByRole("navigation", { name: "Settings sections" })).toHaveCount(0);
-    await expect(page.locator(".settings-section-heading h2")).toHaveText(["Unity installations", "Packages", "Appearance", "Theme", "System information"]);
+    await expect(page.locator(".settings-section-heading h2")).toHaveText(["Unity installations", "Packages", "Appearance", "System information"]);
+    await expect(page.getByRole("region", { name: "Appearance", exact: true }).getByRole("button", { name: "Theme", exact: true })).toBeVisible();
     await expect(page.getByRole("table", { name: "Unity installations" }).getByRole("columnheader")).toHaveText(["Version", "Path", "Source"]);
     await page.getByRole("button", { name: "Manage installations", exact: true }).click();
     const unityDialog = page.getByRole("dialog", { name: "Manage Unity installations" });
@@ -321,14 +322,15 @@ test("utility actions use modal dialogs and cancel clears drafts and returns foc
     }
 });
 
-test("desktop Settings uses language and theme rows with separate animation and compact controls", async ({ page }) => {
+test("desktop Settings uses labeled language and animation rows with Theme in its header and a compact control", async ({ page }) => {
     await openHarness(page, "/settings");
     await expectHeading(page, "Settings");
     const fields = page.locator(".settings-editor md-filled-select");
-    await expect(fields).toHaveCount(3);
-    await expect(page.getByRole("checkbox", { name: "GUI animation", exact: true })).toBeVisible();
+    await expect(fields).toHaveCount(2);
+    await expect(page.getByRole("region", { name: "Appearance", exact: true }).getByRole("button", { name: "Theme", exact: true })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "GUI animation", exact: true })).toBeVisible();
     await expect(page.getByRole("checkbox", { name: "Compact GUI", exact: true })).toBeVisible();
-    await expect(page.locator("#settings-density, #settings-motion")).toHaveCount(0);
+    await expect(page.locator("#settings-density")).toHaveCount(0);
     const bounds = await fields.evaluateAll((elements) => elements.map((element) => {
         const rect = element.getBoundingClientRect();
         return { id: element.id, left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
@@ -353,26 +355,23 @@ test("desktop Settings uses language and theme rows with separate animation and 
     expect(rows[1]!.bottom).toBeLessThanOrEqual(rows[2]!.top);
 });
 
-test("unsaved Settings blocks snapshot refresh and cancelling navigation preserves the draft", async ({ page }) => {
+test("ordinary Settings save before refresh and remain accepted across navigation", async ({ page }) => {
     await openHarness(page, "/settings");
     const compact = page.getByRole("checkbox", { name: "Compact GUI", exact: true });
     await expect(compact).not.toBeChecked();
     await compact.check();
+    await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
+    await expect(page.locator("html")).toHaveAttribute("data-density", "compact");
     const refresh = page.locator(".utility-workspace-toolbar").getByRole("button", { name: "Refresh", exact: true });
-    await expect(refresh).toBeDisabled();
-    await navigationItem(page, "Projects").click();
-    const discard = page.getByRole("dialog", { name: "Discard unsaved changes?", exact: true });
-    await expect(discard).toBeVisible();
-    await dialogHost(page, "Discard unsaved changes?").getByRole("button", { name: "Keep editing", exact: true }).click();
-    await expect(discard).not.toBeVisible();
-    await expectHeading(page, "Settings");
-    await expect(compact).toBeChecked();
-    await expect(refresh).toBeDisabled();
-    await page.getByRole("button", { name: "Discard changes", exact: true }).click();
-    await expect(compact).not.toBeChecked();
     await expect(refresh).toBeEnabled();
+    await refresh.click();
+    await expect(compact).toBeChecked();
     await navigationItem(page, "Projects").click();
     await expectHeading(page, "Projects");
+    await expect(page.getByRole("dialog", { name: "Discard unsaved changes?", exact: true })).toHaveCount(0);
+    await navigationItem(page, "Settings").click();
+    await expect(compact).toBeChecked();
+    expect(await page.evaluate(() => window.settingsWrites)).toEqual([{ expectedRevision: 7, revision: 8 }]);
 });
 
 test("utility desktop evidence includes the full application window", async ({ page }) => {
@@ -389,7 +388,7 @@ test("utility desktop evidence includes the full application window", async ({ p
         ["unity", "/unity", "Settings"],
         ["backups", "/projects/00000000-0000-4000-8000-000000000101/backups", "Backups"],
         ["backup", "/backups/00000000-0000-4000-8000-000000000104", "Backup detail"],
-        ["tasks", "/operations", "Task Center"],
+        ["tasks", "/operations", "Tasks"],
         ["task", "/operations/00000000-0000-4000-8000-000000000105", "Operation detail"],
         ["extensions", "/extensions", "Extensions"],
         ["extension", "/extensions/com.cqmhv.discord", "Extension detail"],
