@@ -71,12 +71,12 @@
     --md-outlined-button-with-leading-icon-trailing-space: 24px;
     --md-outlined-button-with-trailing-icon-leading-space: 24px;
     --md-outlined-button-with-trailing-icon-trailing-space: 16px;
-    --md-text-button-leading-space: 24px;
-    --md-text-button-trailing-space: 24px;
-    --md-text-button-with-leading-icon-leading-space: 16px;
-    --md-text-button-with-leading-icon-trailing-space: 24px;
-    --md-text-button-with-trailing-icon-leading-space: 24px;
-    --md-text-button-with-trailing-icon-trailing-space: 16px;
+    --md-text-button-leading-space: 12px;
+    --md-text-button-trailing-space: 12px;
+    --md-text-button-with-leading-icon-leading-space: 12px;
+    --md-text-button-with-leading-icon-trailing-space: 16px;
+    --md-text-button-with-trailing-icon-leading-space: 16px;
+    --md-text-button-with-trailing-icon-trailing-space: 12px;
     height: var(--alcomd-button-height);
     --md-filled-button-container-height: var(--alcomd-button-height);
     --md-filled-tonal-button-container-height: var(--alcomd-button-height);

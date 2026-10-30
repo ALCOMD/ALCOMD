@@ -585,15 +585,22 @@ function escapeRegex(value: string) {
     return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-test("shared buttons preserve width across variants and changing labels", async ({ page }) => {
+test("shared buttons use MD3 spacing by variant and preserve changing-label width", async ({ page }) => {
     await page.goto("/browser-harness.html?material=1");
     await page.evaluate(() => document.fonts.ready);
     for (const prefix of ["width-", "icon-width-"]) {
         const widths = [];
-        for (const variant of ["filled", "tonal", "outlined", "text"]) {
-            widths.push((await page.getByTestId(prefix + variant).boundingBox())!.width);
+        for (const variant of ["filled", "tonal", "outlined"]) {
+            const button = page.getByTestId(prefix + variant);
+            await expect(button).toHaveCSS("padding-inline-start", prefix === "width-" ? "24px" : "16px");
+            await expect(button).toHaveCSS("padding-inline-end", "24px");
+            widths.push((await button.boundingBox())!.width);
         }
         expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(0.5);
+        const text = page.getByTestId(prefix + "text");
+        await expect(text).toHaveCSS("padding-inline-start", "12px");
+        await expect(text).toHaveCSS("padding-inline-end", prefix === "width-" ? "12px" : "16px");
+        expect(widths[0]! - (await text.boundingBox())!.width).toBeCloseTo(prefix === "width-" ? 24 : 12, 1);
     }
     const changing = page.getByTestId("changing-label");
     const neighbor = page.getByTestId("stable-neighbor");

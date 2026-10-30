@@ -5,7 +5,7 @@ const OPERATION_ID = "00000000-0000-4000-8000-000000000105";
 
 test("Projects grid keeps compact aligned cards with long names and scrollable rows", async ({ page }, testInfo) => {
     await page.addInitScript(() => { Date.now = () => 1_700_000_120_000; });
-    for (const width of [1180, 1280, 1440]) {
+    for (const width of [1180, 1280, 1440, 1600]) {
         await page.setViewportSize({ width, height: width === 1180 ? 760 : 900 });
         await page.goto("/browser-harness.html?route=%2Fprojects&state=favorite-pages");
         await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
@@ -21,6 +21,10 @@ test("Projects grid keeps compact aligned cards with long names and scrollable r
         await page.goto("/browser-harness.html?route=%2Fprojects&projectGrid=1");
         const cards = page.locator(".projects-grid .project-card");
         await expect(cards).toHaveCount(7);
+        for (const button of await cards.first().locator(".project-row-actions--card > md-filled-button, .project-row-actions--card > md-filled-tonal-button").all()) {
+            await expect(button).toHaveCSS("padding-inline-start", "24px");
+            await expect(button).toHaveCSS("padding-inline-end", "24px");
+        }
         for (const appearance of ["light", "dark"]) {
             await page.evaluate((mode) => { document.documentElement.dataset.appearance = mode; }, appearance);
             await page.evaluate(() => document.fonts.ready);
@@ -30,7 +34,7 @@ test("Projects grid keeps compact aligned cards with long names and scrollable r
                 return {
                     x: bounds.x, y: bounds.y, height: bounds.height, width: bounds.width,
                     footer: footer.y - bounds.y,
-                    controlsInside: Array.from(card.querySelectorAll("md-icon-button, md-filled-tonal-button, md-text-button")).every((control) => {
+                    controlsInside: Array.from(card.querySelectorAll("md-icon-button, md-filled-button, md-filled-tonal-button, md-text-button")).every((control) => {
                         const box = control.getBoundingClientRect();
                         const inset = control.tagName === "MD-ICON-BUTTON" ? 7 : 15;
                         return box.left >= bounds.left + inset && box.right <= bounds.right - inset && box.top >= bounds.top + inset && box.bottom <= bounds.bottom - inset;
@@ -44,7 +48,7 @@ test("Projects grid keeps compact aligned cards with long names and scrollable r
             expect(geometry.every((card) => card.height < 220 && card.controlsInside && card.contentFits && card.actionRows === 1 && card.titleHeight === 24 && card.pathHeight === 20)).toBe(true);
             expect(new Set(geometry.map((card) => card.height)).size).toBe(1);
             expect(new Set(geometry.map((card) => card.footer)).size).toBe(1);
-            expect(geometry.filter((card) => card.y === geometry[0]!.y)).toHaveLength(width === 1440 ? 3 : 2);
+            expect(geometry.filter((card) => card.y === geometry[0]!.y)).toHaveLength(width === 1600 ? 3 : 2);
             expect(await grid.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
             await expect(cards.first().getByRole("button", { name: "Remove from favorites", exact: true })).toBeVisible();
             await expect(cards.getByRole("button", { name: "Manage", exact: true })).toHaveCount(7);

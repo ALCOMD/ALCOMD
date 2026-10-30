@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "src");
 const nativeControl = /<\s*(button|input|select|textarea|progress|dialog)\b/g;
 const createdNativeControl = /(?:createElement|React\.createElement)\(\s*["'](button|input|select|textarea|progress|dialog)["']/g;
+const buttonSpacingOverride = /--md-(?:filled|filled-tonal|outlined|text)-button-(?:(?:with-leading-icon|with-trailing-icon)-)?(?:leading|trailing)-space["']?\s*:/g;
 const failures = [];
 
 for (const path of await sourceFiles(root)) {
@@ -12,6 +13,9 @@ for (const path of await sourceFiles(root)) {
     const displayPath = relative(root, path).replaceAll("\\", "/");
     const matches = [...source.matchAll(nativeControl), ...source.matchAll(createdNativeControl)];
     for (const match of matches) failures.push(`${displayPath}: unapproved native ${match[1]} control`);
+    for (const _match of source.matchAll(buttonSpacingOverride)) {
+        failures.push(`${displayPath}: button spacing belongs in the shared @alcomd/ui theme`);
+    }
 }
 
 if (failures.length > 0) {
@@ -27,7 +31,7 @@ async function sourceFiles(directory) {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
         const path = join(directory, entry.name);
         if (entry.isDirectory()) files.push(...await sourceFiles(path));
-        else if (entry.isFile() && path.endsWith(".tsx")) files.push(path);
+        else if (entry.isFile() && (path.endsWith(".tsx") || path.endsWith(".css"))) files.push(path);
     }
     return files;
 }

@@ -330,9 +330,7 @@ md-linear-progress {
     --md-text-button-focus-label-text-color: currentColor;
     --md-text-button-hover-label-text-color: currentColor;
     --md-text-button-label-text-color: currentColor;
-    --md-text-button-leading-space: 12px;
     --md-text-button-pressed-label-text-color: currentColor;
-    --md-text-button-trailing-space: 12px;
 }
 .desktop-list-sort--active {
     color: var(--md-sys-color-on-primary-container);
@@ -455,7 +453,7 @@ md-linear-progress {
 .state-sized-label-current { justify-self: center; }
 .projects-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(376px, 1fr));
     align-content: start;
     gap: 12px;
     height: 100%;
@@ -489,12 +487,6 @@ md-linear-progress {
 .project-row-actions--card > .project-favorite-action { position: absolute; top: 8px; right: 48px; }
 .project-row-actions--card > .project-more-actions { position: absolute; top: 8px; right: 8px; }
 .project-row-actions--card > :is(md-filled-button, md-filled-tonal-button, md-text-button, md-icon-button) { min-width: 0; max-width: 100%; }
-.project-row-actions--card > :is(md-filled-button, md-filled-tonal-button) {
-    --md-filled-button-leading-space: 16px;
-    --md-filled-button-trailing-space: 16px;
-    --md-filled-tonal-button-leading-space: 16px;
-    --md-filled-tonal-button-trailing-space: 16px;
-}
 .project-unregistered { color: var(--on-surface-variant); font-size: 0.8rem; }
 .project-register-form, .project-register-review { display: grid; width: 100%; min-width: 0; gap: 18px; }
 .project-register-form md-outlined-text-field { width: 100%; }
