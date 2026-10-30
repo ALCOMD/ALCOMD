@@ -29,7 +29,7 @@ dependency, resolver, Plan/Apply, icon asset or persistence changes.
   padding reduction, without removing actions, clipping labels or adding a narrow
   window layout.
 - Shared React `Button.widthLabels` reserves the intrinsic width of all known state labels using overlapping grid cells. Measurement labels are hidden and `aria-hidden`; the visible label remains the accessible name. Slotted icons remain direct children of the Material host.
-- Existing refresh, save, confirmation, planning/apply, favorite and pagination state labels supply their alternatives. Pagination includes loading, retry and normal labels. This is intrinsic text sizing, not a hardcoded pixel width; unknown/unbounded future labels require the caller to supply suitable alternatives or a separate bounded-width design.
+- Current short requests keep static action labels: save, confirmation, planning/apply, launch and pagination do not expose instantaneous busy labels. Shared width reservation remains for lasting label alternatives such as Favorite/Remove favorite. Pagination keeps its real failure and explicit Retry until success; loading only disables the existing action. See m7-quiet-feedback-20261030.md for the current audit; evidence below preserves the historical width checkpoints.
 - Button action handlers, disabled conditions and backend calls are unchanged.
 
 ## Evidence
