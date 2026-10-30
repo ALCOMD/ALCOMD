@@ -14,6 +14,11 @@ ALCOMD v4 自有代码统一使用 `AGPL-3.0-only`，但第三方依赖与资产
   Rounded / weight 400 / grade 0 / fill 0 / opsz 20 或 24 资产，采用 Apache License 2.0；完整文件清单、
   upstream path 与 SHA-256 见 `packages/alcomd-ui/assets/material-symbols/manifest.toml`。
 
+共享主题色引擎使用 Google 的 `@material/material-color-utilities 0.4.0`（Apache License 2.0），
+来源为 `https://github.com/material-foundation/material-color-utilities`；算法文件的 Google LLC
+版权和许可证声明随上游包保留。版本与完整性摘要固定在 `package-lock.json`。
+此依赖用于从种子色生成 Material 语义色板，不包含 v3 或 VRCLearn 的主题源码。
+
 构建依赖的许可证记录由 Cargo 与 npm lockfile 保留，发行前必须生成完整依赖清单。
 
 Official GUI 容器自绘滚动条使用 `overlayscrollbars 2.17.0`（MIT），来源为

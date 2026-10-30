@@ -215,3 +215,10 @@ optical_size = 24
 path = "24/view_list.svg"
 upstream_path = "symbols/web/view_list/materialsymbolsrounded/view_list_24px.svg"
 sha256 = "a5625312a42a6c7cd67265c4324ed8ce8037baa65d88a0fe76d5b236a1404081"
+
+[[asset]]
+name = "palette"
+optical_size = 24
+path = "24/palette.svg"
+upstream_path = "symbols/web/palette/materialsymbolsrounded/palette_24px.svg"
+sha256 = "0b847ea803e92b6e1c792103c89e7448659cb001032ffd5699c1f956ca74f656"

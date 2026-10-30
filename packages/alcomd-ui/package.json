@@ -14,6 +14,7 @@
         "check": "tsc --noEmit && node scripts/check-icon-assets.mjs"
     },
     "dependencies": {
+        "@material/material-color-utilities": "0.4.0",
         "@material/web": "2.5.0",
         "overlayscrollbars": "2.17.0"
     },

@@ -18,14 +18,18 @@ import "@material/web/menu/menu-item.js";
 import "@material/web/menu/menu.js";
 import "@material/web/progress/linear-progress.js";
 import "@material/web/ripple/ripple.js";
+import "@material/web/radio/radio.js";
 import "@material/web/select/outlined-select.js";
 import "@material/web/select/filled-select.js";
 import "@material/web/select/select-option.js";
+import "@material/web/slider/slider.js";
 import "@material/web/switch/switch.js";
 import "@material/web/textfield/outlined-text-field.js";
 import "@material/web/textfield/filled-text-field.js";
 import { installMaterialScrollbars } from "./scrollbars";
+import { installMaterialMotion } from "./motion";
 export { createScrollArea } from "./scrollbars";
+export { applyMotion, reducedMotion, subscribeMotion, type MotionPreference } from "./motion";
 
 export const materialElements = {
     button: {
@@ -45,6 +49,7 @@ export const materialElements = {
     menuItem: "md-menu-item",
     progress: "md-linear-progress",
     ripple: "md-ripple",
+    radio: "md-radio",
     select: {
         filled: "md-filled-select",
         outlined: "md-outlined-select"
@@ -52,12 +57,17 @@ export const materialElements = {
     selectOption: "md-select-option",
     segmentedButton: "md-outlined-segmented-button",
     segmentedButtonSet: "md-outlined-segmented-button-set",
+    slider: "md-slider",
     switch: "md-switch",
     textField: {
         filled: "md-filled-text-field",
         outlined: "md-outlined-text-field"
     }
 } as const;
+
+installMaterialMotion([...new Set([
+    ...Object.values(materialElements).flatMap((value) => typeof value === "string" ? [value] : Object.values(value))
+])]);
 
 installMaterialScrollbars([
     { name: materialElements.dialog, viewport: ".scroller" },
@@ -70,24 +80,17 @@ export const spacing = {
     spacious: "24px"
 } as const;
 
-export type AppearanceMode = "system" | "light" | "dark";
-export type InterfaceDensity = "comfortable" | "compact";
-export type SourceColor = "violet" | "blue" | "teal";
-
-export interface AppearanceSettings {
-    mode: AppearanceMode;
-    density: InterfaceDensity;
-    sourceColor: SourceColor;
-}
-
-export const defaultAppearance: AppearanceSettings = {
-    mode: "system",
-    density: "comfortable",
-    sourceColor: "violet"
-};
-
-export function applyAppearance(root: HTMLElement, settings: AppearanceSettings): void {
-    root.dataset.appearance = settings.mode;
-    root.dataset.density = settings.density;
-    root.dataset.sourceColor = settings.sourceColor;
-}
+export {
+    applyAppearance,
+    defaultAppearance,
+    defaultThemeSourceColor,
+    resolveThemeSourceColor,
+    themeHct,
+    sourceColorFromHct,
+    type AppearanceMode,
+    type AppearanceSettings,
+    type InterfaceDensity,
+    type SourceColor,
+    type ThemePreferences,
+    type ThemeScheme
+} from "./theme";
