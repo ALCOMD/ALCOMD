@@ -6,11 +6,11 @@ use std::path::{Component, Path, PathBuf};
 use alcomd_application::{
     IdempotencyKey, M3ErrorCode, M3ReadAdapter, M4Store, M7UnityMigrationAdapter,
     M7UnityMigrationError, M7UnityMigrationErrorCode, OperationId, PackageChangeSet,
-    PackageMutationKind, PackageSourcePin, PlanId, ProjectDiscoveryMode, ProjectObservation,
-    ProjectRecord, UNITY_MIGRATION_PLAN_EXPIRY_MS, UnityInstallationRecord, UnityMigrationEvidence,
-    UnityMigrationPlanAuthority, UnityMigrationPlanDraft, UnityMigrationPlanRecord,
-    UnityMigrationRecoveryDisposition, UnityMigrationReobservation, UnityWriterState,
-    UnityWriterStateKind,
+    PackageMutationKind, PackageSourcePin, PlanId, ProjectAuthorityFingerprint,
+    ProjectDiscoveryMode, ProjectObservation, ProjectRecord, UNITY_MIGRATION_PLAN_EXPIRY_MS,
+    UnityInstallationRecord, UnityMigrationEvidence, UnityMigrationPlanAuthority,
+    UnityMigrationPlanDraft, UnityMigrationPlanRecord, UnityMigrationRecoveryDisposition,
+    UnityMigrationReobservation, UnityWriterState, UnityWriterStateKind,
 };
 use alcomd_platform::{
     UnityMigrationExit, UnityMigrationProcess, spawn_unity_editor_migration,
@@ -129,7 +129,7 @@ where
         })?;
         let plan_fingerprint = fingerprint(&PlanAuthorityFingerprint {
             version: 1,
-            project: &project,
+            project: ProjectAuthorityFingerprint::from(&project),
             source_unity_version: &authority.source_unity_version,
             project_root_identity: &identity,
             project_version_marker_sha256: marker_sha256,
@@ -496,7 +496,6 @@ where
         evidence.reobserved_root_identity = Some(observation.path_identity_key.clone());
         evidence.reobserved_marker_sha256 = Some(marker_sha256);
         evidence.writer_inactive_checked_at_ms = Some(writer.checked_at_ms);
-        evidence.reobserved_at_ms = Some(observation.observed_at_ms);
         evidence
             .safe_evidence
             .push("target_project_reobserved".to_owned());
@@ -504,6 +503,8 @@ where
         {
             return Err(error(M7UnityMigrationErrorCode::RecoveryRequired));
         }
+        evidence.reobserved_at_ms =
+            Some(crate::unix_time_ms().map_err(|_| error(M7UnityMigrationErrorCode::Internal))?);
         Ok(UnityMigrationReobservation {
             observation,
             evidence,
@@ -839,7 +840,7 @@ struct PlanRequestFingerprint<'a> {
 #[serde(rename_all = "camelCase")]
 struct PlanAuthorityFingerprint<'a> {
     version: u32,
-    project: &'a ProjectRecord,
+    project: ProjectAuthorityFingerprint<'a>,
     source_unity_version: &'a str,
     project_root_identity: &'a [u8],
     project_version_marker_sha256: [u8; 32],
@@ -1763,6 +1764,117 @@ mod tests {
     use std::fs;
 
     use super::*;
+
+    #[test]
+    fn migration_authority_projection_preserves_frozen_bytes_and_hash() {
+        // These are the complete pre-projection authority bytes, not an object-map re-encoding.
+        const FROZEN: &str = r#"{"version":1,"project":{"project_id":"00000000-0000-4000-8000-000000000101","observation":{"root_path":"unopened-project","path_identity_key":[1],"project_type":"unknown","unity_version":"2022.3.22f1","unity_revision":null,"vpm_manifest":"valid","upm_manifest":"missing","direct_dependencies":[],"locked_dependencies":[],"issues":[]},"revision":1,"registered_at_ms":11,"favorite":true},"sourceUnityVersion":"2022.3.22f1","projectRootIdentity":[1],"projectVersionMarkerSha256":[3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3],"target":{"installation_id":"00000000-0000-4000-8000-000000000102","observation":{"executable_path":"unopened-editor","filesystem_identity":[2],"unity_version":"2022.3.23f1","architecture":"x86_64","source_kind":"manual","observed_at_ms":1},"revision":1,"updated_at_ms":1},"writer":{"project_id":"00000000-0000-4000-8000-000000000101","state":"not_observed","evidence":[],"checked_at_ms":1},"classification":"patch_or_minor_upgrade","preparationProfile":null}"#;
+        const FROZEN_HASH: &str =
+            "c3fd587292c757f21ab0faf1f4c012522b5bc717864eb9412d4c9a9cc254c8bb";
+        let fixture: Value = serde_json::from_str(FROZEN).expect("frozen authority JSON");
+        let mut project: ProjectRecord =
+            serde_json::from_value(fixture["project"].clone()).expect("frozen project");
+        let target: UnityInstallationRecord =
+            serde_json::from_value(fixture["target"].clone()).expect("frozen target");
+        let writer: UnityWriterState =
+            serde_json::from_value(fixture["writer"].clone()).expect("frozen writer");
+        for activity in [None, Some(0), Some(99)] {
+            project.last_modified_at_ms = activity;
+            let authority = PlanAuthorityFingerprint {
+                version: 1,
+                project: ProjectAuthorityFingerprint::from(&project),
+                source_unity_version: "2022.3.22f1",
+                project_root_identity: &[1],
+                project_version_marker_sha256: [3; 32],
+                target: &target,
+                writer: &writer,
+                classification: "patch_or_minor_upgrade",
+                preparation_profile: None,
+            };
+            assert_eq!(
+                serde_json::to_vec(&authority).expect("production authority bytes"),
+                FROZEN.as_bytes()
+            );
+            assert_eq!(
+                fingerprint(&authority).expect("production authority hash"),
+                FROZEN_HASH
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn migration_authority_survives_reinspection_but_tracks_project_evidence() {
+        use alcomd_application::{
+            ProjectId, Revision, UnityArchitecture, UnityInstallationId,
+            UnityInstallationObservation, UnitySourceKind,
+        };
+
+        let fixture = TestDirectory::new("authority-reinspection");
+        fs::create_dir(fixture.path().join("ProjectSettings")).expect("project settings");
+        let marker = fixture.path().join("ProjectSettings/ProjectVersion.txt");
+        fs::write(&marker, b"m_EditorVersion: 2022.3.22f1\n").expect("project version");
+        let reader = VpmReader::new().expect("reader");
+        let inspect = || {
+            reader.inspect_project(
+                fixture.path().to_string_lossy().into_owned(),
+                ProjectDiscoveryMode::ExactRoot,
+            )
+        };
+        let mut project = ProjectRecord {
+            project_id: ProjectId::new(),
+            observation: inspect().await.expect("inspect actual project"),
+            revision: Revision::INITIAL,
+            registered_at_ms: 1,
+            last_modified_at_ms: Some(10),
+            favorite: false,
+        };
+        let target = UnityInstallationRecord {
+            installation_id: UnityInstallationId::new(),
+            observation: UnityInstallationObservation {
+                executable_path: "unopened-editor".to_owned(),
+                filesystem_identity: vec![2],
+                unity_version: "2022.3.23f1".to_owned(),
+                architecture: UnityArchitecture::X86_64,
+                source_kind: UnitySourceKind::Manual,
+                observed_at_ms: 1,
+            },
+            revision: Revision::INITIAL,
+            updated_at_ms: 1,
+        };
+        let writer = UnityWriterState {
+            project_id: project.project_id,
+            state: UnityWriterStateKind::NotObserved,
+            evidence: Vec::new(),
+            checked_at_ms: 1,
+        };
+        let hash = |project: &ProjectRecord| {
+            fingerprint(&PlanAuthorityFingerprint {
+                version: 1,
+                project: ProjectAuthorityFingerprint::from(project),
+                source_unity_version: "2022.3.22f1",
+                project_root_identity: &[1],
+                project_version_marker_sha256: [3; 32],
+                target: &target,
+                writer: &writer,
+                classification: "patch_or_minor_upgrade",
+                preparation_profile: None,
+            })
+            .expect("hash production migration authority")
+        };
+        let before = hash(&project);
+        project.observation = inspect().await.expect("reinspect unchanged project");
+        assert_eq!(hash(&project), before);
+        project.last_modified_at_ms = Some(20);
+        assert_eq!(hash(&project), before);
+        project.last_modified_at_ms = None;
+        assert_eq!(hash(&project), before);
+        project.revision = project.revision.checked_next().expect("next revision");
+        assert_ne!(hash(&project), before);
+        project.revision = Revision::INITIAL;
+        fs::write(&marker, b"m_EditorVersion: 2022.3.23f1\n").expect("change project version");
+        project.observation = inspect().await.expect("reinspect changed project");
+        assert_ne!(hash(&project), before);
+    }
 
     #[test]
     fn sealed_profile_removes_only_the_two_fixed_xr_dependencies() {

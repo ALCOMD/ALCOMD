@@ -107,6 +107,15 @@ async fn template_registry_derive_export_remove_and_import_are_durable() {
         .await
         .expect("export derived bundle");
     assert!(exported.is_file());
+    assert_eq!(
+        store
+            .get_project(PrincipalId::local_owner(), project.project_id)
+            .await
+            .expect("source after derive and export")
+            .last_modified_at_ms,
+        project.last_modified_at_ms,
+        "deriving and exporting a template do not modify its source project"
+    );
 
     let (removed, replayed) = application
         .remove(
@@ -194,6 +203,16 @@ async fn template_create_project_publishes_then_registers_one_durable_project() 
         .await
         .expect("apply create project");
     wait_for_success(&store, accepted.operation_id).await;
+    let before_replay = store
+        .list_projects(PrincipalId::local_owner(), None, 10)
+        .await
+        .expect("new project before replay");
+    assert_eq!(before_replay.projects.len(), 1);
+    let initialized_time = before_replay.projects[0].last_modified_at_ms;
+    assert_eq!(
+        initialized_time,
+        Some(before_replay.projects[0].registered_at_ms)
+    );
     let replay = application
         .apply_create_project(&access, plan.plan_id, key("create-project"))
         .await
@@ -208,6 +227,10 @@ async fn template_create_project_publishes_then_registers_one_durable_project() 
         .expect("list projects");
     assert_eq!(projects.projects.len(), 1);
     let created = &projects.projects[0];
+    assert_eq!(
+        created.last_modified_at_ms, initialized_time,
+        "create replay preserves first registration activity"
+    );
     assert!(Path::new(&created.observation.root_path).ends_with(Path::new("CreatedFromTemplate")));
     let target = PathBuf::from(&created.observation.root_path);
     assert!(target.join("Packages/vpm-manifest.json").is_file());
@@ -351,7 +374,6 @@ fn project_observation(root: &Path) -> ProjectObservation {
         direct_dependencies: Vec::new(),
         locked_dependencies: Vec::new(),
         issues: Vec::new(),
-        observed_at_ms: 1,
     }
 }
 

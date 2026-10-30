@@ -39,11 +39,12 @@
             "required": [
                 "projectId", "rootPath", "projectType", "unityVersion", "unityRevision",
                 "vpmManifest", "upmManifest", "directDependencies", "lockedDependencies",
-                "issues", "observedAtMs", "revision"
+                "issues", "revision"
             ],
             "properties": {
                 "projectId": {"oneOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
                 "registeredAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+                "lastModifiedAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
                 "favorite": {"type": "boolean"},
                 "rootPath": {"$ref": "#/$defs/absolutePath"},
                 "projectType": {
@@ -59,7 +60,6 @@
                 "directDependencies": {"type": "array", "items": {"$ref": "#/$defs/dependency"}, "maxItems": 4096},
                 "lockedDependencies": {"type": "array", "items": {"$ref": "#/$defs/dependency"}, "maxItems": 4096},
                 "issues": {"type": "array", "items": {"$ref": "#/$defs/issue"}, "maxItems": 1024},
-                "observedAtMs": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
                 "revision": {"oneOf": [{"$ref": "#/$defs/revision"}, {"type": "null"}]}
             }
         },

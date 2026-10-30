@@ -475,15 +475,14 @@ pub(super) fn complete_package_apply(
         .checked_add(1)
         .ok_or_else(|| M4Error::new(M4ErrorCode::Internal))?;
     let observation = completion.project_observation;
-    let mut semantic = observation.clone();
-    semantic.observed_at_ms = 0;
-    let snapshot_json = serde_json::to_string(&semantic).map_err(|_| internal())?;
+    let snapshot_json = serde_json::to_string(&observation).map_err(|_| internal())?;
     transaction
         .execute(
             "UPDATE projects SET root_path=?1, path_identity_key=?2, project_type=?3,
                     unity_version=?4, unity_revision=?5, snapshot_json=?6, revision=?7,
-                    observed_at_ms=?8, updated_at_ms=?9
-             WHERE project_id=?10 AND owner_principal_id=?11",
+                    updated_at_ms=?8,
+                    last_modified_at_ms=MAX(COALESCE(last_modified_at_ms,0),?8)
+             WHERE project_id=?9 AND owner_principal_id=?10",
             params![
                 observation.root_path,
                 observation.path_identity_key,
@@ -492,7 +491,6 @@ pub(super) fn complete_package_apply(
                 observation.unity_revision,
                 snapshot_json,
                 next_project_revision,
-                sqlite_integer(observation.observed_at_ms)?,
                 completed_at_ms,
                 plan.project_id.to_string(),
                 context.owner.as_str(),

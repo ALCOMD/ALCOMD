@@ -31,6 +31,7 @@ use alcomd_store::StateStoreHandle;
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+mod hub_platform;
 mod m3_rpc;
 mod m4_rpc;
 mod m5_backup_rpc;
@@ -258,7 +259,11 @@ where
     let m7 = M7Application::new(m6.clone(), m7_rpc::ProtocolUiValidator);
     let official_gui = M7OfficialApplication::new(
         store.clone(),
-        data_root.join("config").join("settings.toml"),
+        Arc::new(alcomd_store::FileConfigStore::new(
+            data_root.join("config").join("settings.toml"),
+        )),
+        Arc::new(hub_platform::PlatformUnityHubAdapter),
+        Arc::new(hub_platform::PlatformUnityHubLauncher::default()),
     );
     official_gui
         .initialize_settings()
@@ -485,6 +490,7 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         alcomd_protocol::CAPABILITY_UNITY_READ_V1,
         alcomd_protocol::CAPABILITY_UNITY_MANAGE_V1,
         alcomd_protocol::CAPABILITY_UNITY_LAUNCH_V1,
+        alcomd_protocol::CAPABILITY_UNITY_HUB_OPEN_V1,
         alcomd_protocol::CAPABILITY_TEMPLATES_READ_V1,
         alcomd_protocol::CAPABILITY_TEMPLATES_MANAGE_V1,
         alcomd_protocol::CAPABILITY_TEMPLATES_CREATE_PROJECT_V1,
@@ -703,11 +709,12 @@ async fn dispatch_m2(
             request.method.as_str(),
             alcomd_protocol::METHOD_SETTINGS_GET
                 | alcomd_protocol::METHOD_SETTINGS_UPDATE
+                | alcomd_protocol::METHOD_UNITY_HUB_OPEN
                 | alcomd_protocol::METHOD_ACTIVITY_LIST
                 | alcomd_protocol::METHOD_DIAGNOSTICS_LIST
         ) =>
         {
-            m7_official_rpc::dispatch(request, &applications.official_gui, access).await
+            m7_official_rpc::dispatch(request, state, &applications.official_gui, access).await
         }
         alcomd_protocol::METHOD_PACKAGES_QUERY_PROJECT_CANDIDATES => {
             m7_candidates_rpc::dispatch(request, state, &applications.candidates, access).await

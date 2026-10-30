@@ -149,11 +149,6 @@ fn aggregate_fingerprint<I: ToString>(id: I, expected: Revision) -> Result<Strin
     }))
 }
 
-pub(super) fn semantic_project(mut observation: ProjectObservation) -> ProjectObservation {
-    observation.observed_at_ms = 0;
-    observation
-}
-
 pub(super) fn project_type(value: alcomd_application::ProjectType) -> &'static str {
     use alcomd_application::ProjectType;
     match value {
@@ -177,7 +172,7 @@ fn load_project(
 ) -> Result<ProjectRecord, M3Error> {
     let row = connection
         .query_row(
-            "SELECT snapshot_json, revision, registered_at_ms, observed_at_ms, favorite
+            "SELECT snapshot_json, revision, registered_at_ms, favorite, last_modified_at_ms
              FROM projects WHERE owner_principal_id=?1 AND project_id=?2",
             params![owner.as_str(), id.to_string()],
             |row| {
@@ -186,21 +181,25 @@ fn load_project(
                     row.get::<_, i64>(1)?,
                     row.get::<_, i64>(2)?,
                     row.get::<_, i64>(3)?,
-                    row.get::<_, i64>(4)?,
+                    row.get::<_, Option<i64>>(4)?,
                 ))
             },
         )
         .optional()
         .map_err(|_| unavailable())?
         .ok_or_else(|| M3Error::new(M3ErrorCode::ProjectNotRegistered))?;
-    let mut observation: ProjectObservation = parse_json(&row.0)?;
-    observation.observed_at_ms = u64::try_from(row.3).map_err(|_| internal())?;
+    let observation: ProjectObservation = parse_json(&row.0)?;
     Ok(ProjectRecord {
         project_id: id,
         observation,
         revision: revision(row.1)?,
         registered_at_ms: u64::try_from(row.2).map_err(|_| internal())?,
-        favorite: row.4 != 0,
+        last_modified_at_ms: row
+            .4
+            .map(u64::try_from)
+            .transpose()
+            .map_err(|_| internal())?,
+        favorite: row.3 != 0,
     })
 }
 
@@ -237,14 +236,13 @@ pub(super) fn register_project(
         return Err(M3Error::new(M3ErrorCode::ProjectAlreadyRegistered));
     }
     let id = ProjectId::new();
-    let semantic = semantic_project(observation.clone());
     transaction
         .execute(
             "INSERT INTO projects (
                 project_id, owner_principal_id, root_path, path_identity_key, project_type,
                 unity_version, unity_revision, snapshot_json, revision, registered_at_ms,
-                observed_at_ms, updated_at_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?10, ?9)",
+                updated_at_ms, last_modified_at_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?9, ?9)",
             params![
                 id.to_string(),
                 owner.as_str(),
@@ -253,9 +251,8 @@ pub(super) fn register_project(
                 project_type(observation.project_type),
                 observation.unity_version,
                 observation.unity_revision,
-                json(&semantic)?,
-                integer(now_ms)?,
-                integer(observation.observed_at_ms)?
+                json(&observation)?,
+                integer(now_ms)?
             ],
         )
         .map_err(|_| unavailable())?;
@@ -264,6 +261,7 @@ pub(super) fn register_project(
         observation,
         revision: Revision::INITIAL,
         registered_at_ms: now_ms,
+        last_modified_at_ms: Some(now_ms),
         favorite: false,
     };
     insert_event(
@@ -377,8 +375,7 @@ pub(super) fn refresh_project(
     if current.observation.path_identity_key != observation.path_identity_key {
         return Err(M3Error::new(M3ErrorCode::ProjectNotFound));
     }
-    let changed =
-        semantic_project(current.observation.clone()) != semantic_project(observation.clone());
+    let changed = current.observation != observation;
     let next_revision = if changed {
         current.revision.checked_next().ok_or_else(internal)?
     } else {
@@ -387,16 +384,15 @@ pub(super) fn refresh_project(
     transaction
         .execute(
             "UPDATE projects SET root_path=?1, project_type=?2, unity_version=?3,
-                unity_revision=?4, snapshot_json=?5, revision=?6, observed_at_ms=?7,
-                updated_at_ms=?8 WHERE owner_principal_id=?9 AND project_id=?10",
+                unity_revision=?4, snapshot_json=?5, revision=?6,
+                updated_at_ms=?7 WHERE owner_principal_id=?8 AND project_id=?9",
             params![
                 observation.root_path,
                 project_type(observation.project_type),
                 observation.unity_version,
                 observation.unity_revision,
-                json(&semantic_project(observation.clone()))?,
+                json(&observation)?,
                 integer(next_revision.get())?,
-                integer(observation.observed_at_ms)?,
                 integer(now_ms)?,
                 owner.as_str(),
                 id.to_string()
@@ -419,6 +415,7 @@ pub(super) fn refresh_project(
         observation,
         revision: next_revision,
         registered_at_ms: current.registered_at_ms,
+        last_modified_at_ms: current.last_modified_at_ms,
         favorite: current.favorite,
     };
     let response = SyncWrite {

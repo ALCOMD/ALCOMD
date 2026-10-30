@@ -130,6 +130,7 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_UNITY_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_UNITY_MANAGE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_UNITY_LAUNCH_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_UNITY_HUB_OPEN_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_TEMPLATES_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_TEMPLATES_MANAGE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_TEMPLATES_CREATE_PROJECT_V1.to_owned(),
@@ -225,6 +226,15 @@ impl AlcomdClient {
         params: alcomd_protocol::SettingsUpdateParams,
     ) -> Result<alcomd_protocol::SettingsGetResult, ClientError> {
         self.call(alcomd_protocol::METHOD_SETTINGS_UPDATE, params)
+            .await
+    }
+
+    /// Opens the Core-resolved local Unity Hub, guarded by accepted settings evidence.
+    pub async fn unity_hub_open(
+        &mut self,
+        params: alcomd_protocol::UnityHubOpenParams,
+    ) -> Result<alcomd_protocol::UnityHubOpenResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_UNITY_HUB_OPEN, params)
             .await
     }
 

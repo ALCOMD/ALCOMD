@@ -146,7 +146,6 @@ impl VpmReader {
         &self,
         root: PathBuf,
         path_identity_key: Vec<u8>,
-        observed_at_ms: u64,
     ) -> Result<ProjectObservation, M3Error> {
         let root_text = root
             .to_str()
@@ -212,7 +211,6 @@ impl VpmReader {
             direct_dependencies,
             locked_dependencies,
             issues: Vec::new(),
-            observed_at_ms,
         })
     }
 
@@ -316,8 +314,7 @@ impl M3ReadAdapter for VpmReader {
                 .await
                 .map_err(|_| M3Error::new(M3ErrorCode::Internal))?
                 .map_err(platform_project_error)?;
-        self.inspect_project_root(root, identity, unix_time_ms()?)
-            .await
+        self.inspect_project_root(root, identity).await
     }
 
     async fn inspect_repository(

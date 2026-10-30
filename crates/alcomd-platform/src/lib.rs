@@ -9,6 +9,15 @@ use std::path::PathBuf;
 mod process;
 mod project_delete;
 mod unity;
+mod unity_hub;
+mod unity_hub_open;
+
+pub use unity_hub_open::{UnityHubLaunchError, UnityHubProcessLauncher};
+
+pub use unity_hub::{
+    ConfiguredUnityHubStatus, UnityHubAvailability, UnityHubInspection, UnityHubOrigin,
+    UnityHubPathError, inspect_unity_hub, normalize_unity_hub_path,
+};
 
 pub use process::{ProcessEvidence, ProcessSnapshot, observe_processes};
 pub use project_delete::{

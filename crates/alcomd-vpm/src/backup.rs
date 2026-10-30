@@ -639,7 +639,7 @@ fn validate_restore_project(
         alcomd_platform::resolve_directory_identity(root).map_err(|_| recovery())?;
     let reader = crate::VpmReader::new().map_err(|_| internal())?;
     tokio::runtime::Handle::current()
-        .block_on(reader.inspect_project_root(root, identity, current_time_ms()?))
+        .block_on(reader.inspect_project_root(root, identity))
         .map_err(|_| error(M5BackupErrorCode::BackupIntegrityMismatch))
 }
 
@@ -853,16 +853,6 @@ fn parse_digest(value: &str) -> Result<[u8; 32], M5BackupError> {
 
 fn digest(bytes: &[u8]) -> [u8; 32] {
     Sha256::digest(bytes).into()
-}
-
-fn current_time_ms() -> Result<u64, M5BackupError> {
-    u64::try_from(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|_| internal())?
-            .as_millis(),
-    )
-    .map_err(|_| internal())
 }
 
 const fn integrity() -> M5BackupError {
@@ -1571,10 +1561,10 @@ mod tests {
                     value: "1.0.0".to_owned(),
                 }],
                 issues: Vec::new(),
-                observed_at_ms: 1,
             },
             revision: Revision::INITIAL,
             registered_at_ms: 1,
+            last_modified_at_ms: None,
             favorite: false,
         };
         (root, record)

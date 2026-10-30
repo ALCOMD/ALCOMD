@@ -1037,10 +1037,10 @@ mod tests {
                 direct_dependencies: Vec::new(),
                 locked_dependencies: Vec::new(),
                 issues: Vec::new(),
-                observed_at_ms: 1,
             },
             revision: Revision::INITIAL,
             registered_at_ms: 1,
+            last_modified_at_ms: None,
             favorite: false,
         }
     }

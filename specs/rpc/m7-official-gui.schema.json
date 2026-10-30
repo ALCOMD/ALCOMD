@@ -6,33 +6,198 @@
     "x-alcomd-method-permissions": {
         "settings.get": ["settings.read"],
         "settings.update": ["settings.manage"],
+        "unity.hub.open": ["settings.read", "unity.hub.open"],
         "activity.list": ["activity.read"],
         "diagnostics.list": ["diagnostics.read"]
     },
     "x-alcomd-capability": null,
+    "x-alcomd-method-capabilities": {"unity.hub.open": "unity.hub.open.v1"},
     "x-alcomd-redaction": {
         "forbidden": [
             "token", "authorization", "raw-argv", "environment", "full-private-path",
             "raw-sql", "rust-debug", "backtrace", "extension-owned-value", "portable-ui-payload",
             "raw-request-json", "raw-result-json"
         ],
-        "rawDiagnosticExport": false
+        "rawDiagnosticExport": false,
+        "authorizedSettingsPathException": ["settings.unity.hubPath", "unityHub.path"]
     },
     "$defs": {
-        "methodName": {"enum": ["settings.get", "settings.update", "activity.list", "diagnostics.list"]},
+        "methodName": {"enum": ["settings.get", "settings.update", "unity.hub.open", "activity.list", "diagnostics.list"]},
         "revision": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615},
         "timestamp": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
         "safeCode": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-z0-9][a-z0-9._-]*$"},
         "safeIdentity": {"type": "string", "minLength": 1, "maxLength": 255, "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$"},
         "pageLimit": {"type": "integer", "minimum": 1, "maximum": 200},
+        "hubOpenParams": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "expectedRevision",
+                "expectedPath"
+            ],
+            "properties": {
+                "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 18446744073709551615
+                },
+                "expectedPath": {
+                    "type": [
+                        "string",
+                        "null"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 4096,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+                }
+            }
+        },
+        "hubOpenResult": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "outcome"
+            ],
+            "properties": {
+                "outcome": {
+                    "enum": [
+                        "spawned",
+                        "download_required"
+                    ]
+                }
+            }
+        },
         "settingsGetParams": {"type": "object", "additionalProperties": false},
+        "unityHubLocation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "status",
+                "source",
+                "path",
+                "configuredPathStatus"
+            ],
+            "properties": {
+                "status": {
+                    "enum": [
+                        "available",
+                        "not_found",
+                        "unavailable"
+                    ]
+                },
+                "source": {
+                    "enum": [
+                        "configured",
+                        "discovered",
+                        "none"
+                    ]
+                },
+                "path": {
+                    "$ref": "https://alcomd.cqmhv.com/schema/config/settings-v3.json#/$defs/hubPath"
+                },
+                "configuredPathStatus": {
+                    "enum": [
+                        "unset",
+                        "available",
+                        "invalid",
+                        "unavailable"
+                    ]
+                }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "status": {
+                                "const": "available"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "source": {
+                                "enum": [
+                                    "configured",
+                                    "discovered"
+                                ]
+                            },
+                            "path": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "else": {
+                        "properties": {
+                            "source": {
+                                "const": "none"
+                            },
+                            "path": {
+                                "type": "null"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "source": {
+                                "const": "configured"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "configuredPathStatus": {
+                                "const": "available"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "configuredPathStatus": {
+                                "const": "available"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "source": {
+                                "const": "configured"
+                            },
+                            "status": {
+                                "const": "available"
+                            }
+                        }
+                    }
+                },
+                {
+                    "if": {
+                        "properties": {
+                            "configuredPathStatus": {
+                                "const": "unavailable"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "status": {
+                                "const": "unavailable"
+                            }
+                        }
+                    }
+                }
+            ]
+        },
         "settingsGetResult": {
             "type": "object", "additionalProperties": false,
-            "required": ["configSchema", "revision", "settings"],
+            "required": ["configSchema", "revision", "settings", "unityHub"],
             "properties": {
-                "configSchema": {"const": 2},
+                "configSchema": {"const": 3},
                 "revision": {"$ref": "#/$defs/revision"},
-                "settings": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v2.json#/$defs/settings"}
+                "settings": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v3.json#/$defs/settings"},
+                "unityHub": {"$ref": "#/$defs/unityHubLocation"}
             }
         },
         "settingsUpdateParams": {
@@ -40,7 +205,7 @@
             "required": ["expectedRevision", "update"],
             "properties": {
                 "expectedRevision": {"$ref": "#/$defs/revision"},
-                "update": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v2.json#/$defs/partialUpdate"}
+                "update": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v3.json#/$defs/partialUpdate"}
             }
         },
         "settingsUpdateResult": {"$ref": "#/$defs/settingsGetResult"},

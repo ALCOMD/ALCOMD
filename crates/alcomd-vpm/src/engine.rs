@@ -1936,10 +1936,10 @@ mod tests {
                     value: version.to_owned(),
                 }],
                 issues: Vec::new(),
-                observed_at_ms: 1,
             },
             revision: Revision::INITIAL,
             registered_at_ms: 1,
+            last_modified_at_ms: None,
             favorite: false,
         }
     }
@@ -2044,10 +2044,10 @@ mod tests {
                     })
                     .collect(),
                 issues: Vec::new(),
-                observed_at_ms: 1,
             },
             revision: Revision::INITIAL,
             registered_at_ms: 1,
+            last_modified_at_ms: None,
             favorite: false,
         };
         let snapshot = inspect_package_project(&project).expect("inspect package project");

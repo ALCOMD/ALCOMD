@@ -100,7 +100,7 @@ fn implemented_project_copy_contract_is_bounded_and_active() {
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_PLAN_COPY"));
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_APPLY_COPY"));
     assert!(ACTIVE_PROTOCOL.contains("CAPABILITY_PROJECTS_COPY_V1"));
-    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 14;"));
+    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 16;"));
 }
 
 #[test]
@@ -279,8 +279,8 @@ fn visible_action_gate_separates_m7_completeness_from_m11_release_blockers() {
             "migration.v3-differential-parity-entry"
         ])
     );
-    assert!(!CURRENT_PROJECTS_UI.contains("disabled label=\"Open Project Directory\""));
-    assert!(CURRENT_PROJECTS_UI.contains("label=\"Copy Project\" onClick={beginCopy}"));
+    assert!(!CURRENT_PROJECTS_UI.contains("disabled label={t(\"Open Project Directory\")}"));
+    assert!(CURRENT_PROJECTS_UI.contains("label={t(\"Copy Project\")} onClick={beginCopy}"));
     assert!(CURRENT_PROJECTS_UI.contains("setCopyOpen(true)"));
     assert!(CURRENT_PROJECTS_UI.contains("<CopyProjectDialog"));
     assert!(CURRENT_PROJECTS_UI.contains("onClose={() => setCopyOpen(false)}"));
@@ -463,7 +463,7 @@ fn p7_delete_directory_contract_is_implemented_and_active() {
     assert!(ACTIVE_DELETE_MIGRATION.contains("project_delete_plans"));
     assert!(ACTIVE_DELETE_MIGRATION.contains("project_delete_filesystem_journal"));
     assert!(ACTIVE_PERMISSIONS.contains("`projects.delete`"));
-    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 14;"));
+    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 16;"));
 }
 
 #[test]
@@ -605,7 +605,7 @@ fn p5_b_preferences_remain_historical_while_state_v14_replaces_editor_selection(
     assert!(ACTIVE_PROTOCOL.contains("METHOD_PROJECTS_SET_FAVORITE"));
     assert!(ACTIVE_PROTOCOL.contains("METHOD_UNITY_PROJECT_LAUNCH_CONFIG_CLEAR"));
     assert!(!ACTIVE_PROTOCOL.contains("METHOD_UNITY_PROJECT_EDITOR_CLEAR"));
-    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 14;"));
+    assert!(ACTIVE_STORE.contains("const DATA_SCHEMA_VERSION: i64 = 16;"));
     assert!(ACTIVE_UNITY_MIGRATION.contains("DROP TABLE project_editor_preferences"));
     assert_eq!(
         active_unity["$defs"]["projectUnityLaunchConfig"]["required"],

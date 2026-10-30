@@ -420,7 +420,6 @@ impl RecordingAdapter {
         let mut observation = plan.draft.project.observation.clone();
         observation.unity_version = plan.draft.target_unity_version.clone();
         observation.unity_revision = plan.draft.target_revision_metadata.clone();
-        observation.observed_at_ms = 200;
         evidence.reobserved_version = Some(plan.draft.target_unity_version.clone());
         evidence.reobserved_root_identity = Some(plan.draft.project_root_identity.clone());
         evidence.reobserved_marker_sha256 = Some([8; 32]);
@@ -619,7 +618,6 @@ fn project() -> ProjectObservation {
         direct_dependencies: Vec::new(),
         locked_dependencies: Vec::new(),
         issues: Vec::new(),
-        observed_at_ms: 1,
     }
 }
 
@@ -675,7 +673,6 @@ fn target_observation(draft: &UnityMigrationPlanDraft) -> ProjectObservation {
     let mut observation = draft.project.observation.clone();
     observation.unity_version = draft.target_unity_version.clone();
     observation.unity_revision = draft.target_revision_metadata.clone();
-    observation.observed_at_ms = 200;
     observation
 }
 

@@ -418,6 +418,8 @@ fn validate_request(request: &ProjectCandidateRequest) -> Result<Vec<String>, Ca
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{ConfigSnapshot, ConfigStore, ConfigStoreError};
+    use std::sync::Arc;
     fn request() -> ProjectCandidateRequest {
         ProjectCandidateRequest {
             project_id: "11111111-1111-4111-8111-111111111111".into(),
@@ -549,12 +551,41 @@ mod tests {
             panic!()
         }
     }
+    impl crate::UnityHubLauncher for NeverRead {
+        fn launch(&self, _: &str) -> Result<(), crate::UnityHubOpenError> {
+            panic!("candidate reads must not launch Hub")
+        }
+    }
+    impl crate::UnityHubPlatform for NeverRead {
+        fn normalize_path(&self, _: &str) -> Result<String, crate::OfficialGuiError> {
+            panic!("candidate reads must not validate Hub")
+        }
+        fn inspect(&self, _: Option<&str>) -> crate::UnityHubLocation {
+            panic!("candidate reads must not inspect Hub")
+        }
+    }
+    impl ConfigStore for NeverRead {
+        fn initialize(&self) -> Result<ConfigSnapshot, ConfigStoreError> {
+            panic!("must not initialize config")
+        }
+        fn load(&self) -> Result<ConfigSnapshot, ConfigStoreError> {
+            panic!("must not load config")
+        }
+        fn publish(&self, _: &ConfigSnapshot) -> Result<(), ConfigStoreError> {
+            panic!("must not publish config")
+        }
+    }
     #[tokio::test]
     async fn all_four_permissions_and_exact_project_scope_are_required_before_reads() {
         let application = ProjectCandidateApplication::new(
             NeverRead,
             NeverRead,
-            M7OfficialApplication::new(NeverRead, "must-not-open".into()),
+            M7OfficialApplication::new(
+                NeverRead,
+                Arc::new(NeverRead),
+                Arc::new(NeverRead),
+                Arc::new(NeverRead),
+            ),
         );
         let permissions = [
             Permission::ProjectsRead,
@@ -633,7 +664,12 @@ mod tests {
         let application = ProjectCandidateApplication::new(
             NeverRead,
             engine,
-            M7OfficialApplication::new(NeverRead, "must-not-open".into()),
+            M7OfficialApplication::new(
+                NeverRead,
+                Arc::new(NeverRead),
+                Arc::new(NeverRead),
+                Arc::new(NeverRead),
+            ),
         );
         let mut continued = baseline.clone();
         continued.cursor = Some(CandidateCursor {

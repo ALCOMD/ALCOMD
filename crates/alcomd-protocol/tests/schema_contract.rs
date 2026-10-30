@@ -144,6 +144,7 @@ fn m7_official_gui_contract_freezes_only_the_approved_additions() {
         json!([
             "settings.get",
             "settings.update",
+            "unity.hub.open",
             "activity.list",
             "diagnostics.list"
         ])
@@ -153,6 +154,7 @@ fn m7_official_gui_contract_freezes_only_the_approved_additions() {
         json!({
             "settings.get": ["settings.read"],
             "settings.update": ["settings.manage"],
+            "unity.hub.open": ["settings.read", "unity.hub.open"],
             "activity.list": ["activity.read"],
             "diagnostics.list": ["diagnostics.read"]
         })
@@ -160,9 +162,9 @@ fn m7_official_gui_contract_freezes_only_the_approved_additions() {
     assert_eq!(contract["x-alcomd-redaction"]["rawDiagnosticExport"], false);
 
     let settings: Value = serde_json::from_str(include_str!(
-        "../../../specs/config/settings-v1.schema.json"
+        "../../../specs/config/settings-v3.schema.json"
     ))
-    .expect("Config Schema 1 must be valid JSON");
+    .expect("Config Schema 3 must be valid JSON");
     assert_eq!(
         settings["$schema"],
         "https://json-schema.org/draft/2020-12/schema"
@@ -172,6 +174,345 @@ fn m7_official_gui_contract_freezes_only_the_approved_additions() {
         settings["$defs"]["partialUpdate"]["additionalProperties"],
         false
     );
+    assert_eq!(settings["properties"]["schema"]["const"], 3);
+    assert_eq!(
+        contract["$defs"]["settingsGetResult"]["properties"]["configSchema"]["const"],
+        3
+    );
+    assert_eq!(
+        contract["$defs"]["settingsGetResult"]["properties"]["settings"]["$ref"],
+        "https://alcomd.cqmhv.com/schema/config/settings-v3.json#/$defs/settings"
+    );
+    for historical in [
+        include_str!("../../../specs/config/settings-v1.schema.json"),
+        include_str!("../../../specs/config/settings-v2.schema.json"),
+    ] {
+        let historical: Value =
+            serde_json::from_str(historical).expect("historical migration input");
+        assert!(
+            historical["$defs"]["appearance"]["properties"]
+                .get("scheme")
+                .is_none()
+        );
+    }
+}
+
+#[test]
+fn unity_hub_open_has_separate_authority_and_closed_guarded_payloads() {
+    use alcomd_protocol::{
+        RpcError, UnityHubOpenOutcome, UnityHubOpenParams, UnityHubOpenResult, error_code,
+    };
+    assert_eq!(alcomd_protocol::METHOD_UNITY_HUB_OPEN, "unity.hub.open");
+    assert_eq!(
+        alcomd_protocol::CAPABILITY_UNITY_HUB_OPEN_V1,
+        "unity.hub.open.v1"
+    );
+    let contract = schema("m7-official-gui");
+    assert_eq!(
+        contract["x-alcomd-method-capabilities"],
+        json!({"unity.hub.open":"unity.hub.open.v1"})
+    );
+    let proposal: Value = serde_json::from_str(include_str!(
+        "../../../specs/config/unity-hub-location.proposal.contract.json"
+    ))
+    .expect("Hub proposal");
+    assert_eq!(
+        contract["$defs"]["hubOpenParams"],
+        proposal["openActionProposal"]["schemaFragments"]["$defs"]["openParams"]
+    );
+    assert_eq!(
+        contract["$defs"]["hubOpenResult"],
+        proposal["openActionProposal"]["schemaFragments"]["$defs"]["openResult"]
+    );
+    for expected_path in [Value::Null, json!("C:\\Tools\\Unity Hub.exe")] {
+        let wire = json!({"expectedRevision": 7, "expectedPath": expected_path});
+        let parsed: UnityHubOpenParams =
+            serde_json::from_value(wire.clone()).expect("guarded request");
+        assert_eq!(
+            serde_json::to_value(parsed).expect("request roundtrip"),
+            wire
+        );
+    }
+    for invalid in [
+        json!({"expectedRevision":1}),
+        json!({"expectedPath":null}),
+        json!({"expectedRevision":0,"expectedPath":null}),
+        json!({"expectedRevision":1,"expectedPath":""}),
+        json!({"expectedRevision":1,"expectedPath":"line\nbreak"}),
+        json!({"expectedRevision":1,"expectedPath":"界".repeat(1366)}),
+        json!({"expectedRevision":1,"expectedPath":null,"arguments":["--projectPath","other"]}),
+        json!({"expectedRevision":1,"expectedPath":null,"url":"https://example.invalid"}),
+    ] {
+        assert!(serde_json::from_value::<UnityHubOpenParams>(invalid).is_err());
+    }
+    assert_eq!(
+        serde_json::to_value(UnityHubOpenResult {
+            outcome: UnityHubOpenOutcome::Spawned
+        })
+        .expect("spawn result"),
+        json!({"outcome":"spawned"})
+    );
+    assert_eq!(
+        serde_json::to_value(UnityHubOpenResult {
+            outcome: UnityHubOpenOutcome::DownloadRequired
+        })
+        .expect("download result"),
+        json!({"outcome":"download_required"})
+    );
+    assert!(serde_json::from_value::<UnityHubOpenResult>(json!({"outcome":"ready"})).is_err());
+    assert!(
+        serde_json::from_value::<UnityHubOpenResult>(json!({"outcome":"spawned","pid":1})).is_err()
+    );
+    for (code, message) in [
+        (
+            error_code::HUB_PATH_CHANGED,
+            "The Unity Hub location changed. Read the current settings before trying again.",
+        ),
+        (
+            error_code::HUB_PATH_INVALID,
+            "The configured Unity Hub executable is not usable.",
+        ),
+        (
+            error_code::HUB_UNAVAILABLE,
+            "The Unity Hub location could not be verified.",
+        ),
+        (
+            error_code::HUB_OPEN_BUSY,
+            "Unity Hub launch capacity is temporarily unavailable.",
+        ),
+        (
+            error_code::HUB_OPEN_FAILED,
+            "Unity Hub could not be started.",
+        ),
+    ] {
+        let error = RpcError::unity_hub(code);
+        assert_eq!(error.code, code);
+        assert_eq!(error.message, message);
+        assert_eq!(error.data, None);
+        assert_eq!(error.diagnostic_id, None);
+        assert!(
+            schema("rpc-error")["properties"]["code"]["enum"]
+                .as_array()
+                .expect("error codes")
+                .contains(&json!(code))
+        );
+    }
+}
+
+#[test]
+fn theme_scheme_contract_matches_typed_rpc_and_rejects_unknown_or_null_values() {
+    use alcomd_protocol::{AppearanceScheme, AppearanceSettingsUpdate};
+
+    let settings: Value = serde_json::from_str(include_str!(
+        "../../../specs/config/settings-v3.schema.json"
+    ))
+    .expect("current Config schema");
+    let schemes = settings["$defs"]["scheme"]["enum"]
+        .as_array()
+        .expect("nine schemes");
+    assert_eq!(schemes.len(), 9);
+    for scheme in schemes {
+        let typed: AppearanceScheme = serde_json::from_value(scheme.clone()).expect("typed scheme");
+        assert_eq!(
+            serde_json::to_value(typed).expect("serialize scheme"),
+            *scheme
+        );
+        let update: AppearanceSettingsUpdate =
+            serde_json::from_value(json!({"scheme": scheme})).expect("scheme-only update");
+        assert_eq!(update.scheme, Some(typed));
+        assert_eq!(
+            serde_json::to_value(update).expect("serialize update"),
+            json!({"scheme": scheme})
+        );
+    }
+    let unchanged: AppearanceSettingsUpdate =
+        serde_json::from_value(json!({"mode": "dark"})).expect("scheme is optional");
+    assert!(unchanged.scheme.is_none());
+    for invalid in [
+        json!("unknown"),
+        json!("tonal_spot"),
+        Value::Null,
+        json!(true),
+    ] {
+        assert!(
+            serde_json::from_value::<AppearanceSettingsUpdate>(json!({
+                "mode": "dark", "scheme": invalid
+            }))
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn motion_contract_and_typed_updates_roundtrip_three_values_and_reject_unknown_input() {
+    use alcomd_protocol::{AppearanceMotion, AppearanceSettingsUpdate};
+    let omitted: AppearanceSettingsUpdate =
+        serde_json::from_value(json!({})).expect("omitted motion is unchanged");
+    assert_eq!(omitted.motion, None);
+    assert!(
+        serde_json::to_value(omitted)
+            .expect("serialize omitted motion")
+            .get("motion")
+            .is_none()
+    );
+    let settings: Value = serde_json::from_str(include_str!(
+        "../../../specs/config/settings-v3.schema.json"
+    ))
+    .expect("current Config schema");
+    assert_eq!(
+        settings["$defs"]["motion"]["enum"],
+        json!(["system", "full", "reduced"])
+    );
+    for (text, expected) in [
+        ("system", AppearanceMotion::System),
+        ("full", AppearanceMotion::Full),
+        ("reduced", AppearanceMotion::Reduced),
+    ] {
+        let motion: AppearanceMotion = serde_json::from_value(json!(text)).expect("typed motion");
+        assert_eq!(motion, expected);
+        assert_eq!(
+            serde_json::to_value(motion).expect("serialize motion"),
+            json!(text)
+        );
+        let update: AppearanceSettingsUpdate =
+            serde_json::from_value(json!({"motion": text})).expect("motion-only update");
+        assert_eq!(update.motion, Some(expected));
+        assert_eq!(
+            serde_json::to_value(update).expect("serialize motion-only update"),
+            json!({"motion": text})
+        );
+    }
+    for invalid in [
+        json!("Full"),
+        json!("enabled"),
+        json!("disabled"),
+        json!("auto"),
+        json!("unknown"),
+        json!(true),
+        Value::Null,
+    ] {
+        assert!(serde_json::from_value::<AppearanceMotion>(invalid.clone()).is_err());
+        assert!(
+            serde_json::from_value::<AppearanceSettingsUpdate>(json!({"motion": invalid})).is_err()
+        );
+    }
+    for historical in [
+        include_str!("../../../specs/config/settings-v1.schema.json"),
+        include_str!("../../../specs/config/settings-v2.schema.json"),
+    ] {
+        let historical: Value = serde_json::from_str(historical).expect("historical Config schema");
+        assert_eq!(
+            historical["$defs"]["motion"]["enum"],
+            json!(["system", "reduced"])
+        );
+    }
+}
+
+#[test]
+fn settings_partial_updates_reject_explicit_null_except_nullable_values() {
+    use alcomd_protocol::{NullableUpdate, SettingsUpdate, SettingsUpdateParams};
+
+    let empty: SettingsUpdate =
+        serde_json::from_value(json!({})).expect("omitted fields stay unchanged");
+    assert_eq!(empty, SettingsUpdate::default());
+    assert_eq!(
+        serde_json::to_value(empty).expect("serialize omissions"),
+        json!({})
+    );
+    for invalid_update in [
+        json!({"appearance": null, "locale": "ja-JP"}),
+        json!({"locale": null, "appearance": {"mode": "light"}}),
+        json!({"packages": null, "locale": "ja-JP"}),
+        json!({"appearance": {"mode": null, "sourceColor": null}, "locale": "ja-JP"}),
+        json!({"appearance": {"scheme": null}, "locale": "ja-JP"}),
+        json!({"appearance": {"density": null}, "locale": "ja-JP"}),
+        json!({"appearance": {"motion": null}, "locale": "ja-JP"}),
+        json!({"packages": {"showPrerelease": null}, "locale": "ja-JP"}),
+        json!({"packages": {"hiddenRepositoryIds": null}, "locale": "ja-JP"}),
+        json!({"packages": {"hideLocalUserPackages": null}, "locale": "ja-JP"}),
+        json!({"unity": null, "locale": "ja-JP"}),
+        json!({"unity": {}, "locale": "ja-JP"}),
+        json!({"unity": {"hubPath": null, "launch": true}, "locale": "ja-JP"}),
+    ] {
+        assert!(
+            serde_json::from_value::<SettingsUpdateParams>(json!({
+                "expectedRevision": 1, "update": invalid_update
+            }))
+            .is_err(),
+            "explicit null must reject the whole mixed update: {invalid_update}"
+        );
+    }
+    let clear: SettingsUpdate =
+        serde_json::from_value(json!({"appearance": {"sourceColor": null}}))
+            .expect("sourceColor retains its explicit clear state");
+    assert_eq!(
+        clear.appearance.as_ref().expect("appearance").source_color,
+        NullableUpdate::Clear
+    );
+    assert_eq!(
+        serde_json::to_value(clear).expect("serialize clear"),
+        json!({"appearance": {"sourceColor": null}})
+    );
+}
+
+#[test]
+fn unity_hub_contract_preserves_nullable_preference_and_separate_evidence() {
+    use alcomd_protocol::{NullableUpdate, SettingsUpdate, UnityHubLocation, UnitySettings};
+
+    for path in [Value::Null, json!("C:\\Tools\\Unity Hub\\Unity Hub.exe")] {
+        let wire = json!({"unity": {"hubPath": path}});
+        let update: SettingsUpdate = serde_json::from_value(wire.clone()).expect("Hub update");
+        let value = &update.unity.as_ref().expect("unity").hub_path;
+        assert_eq!(matches!(value, NullableUpdate::Clear), path.is_null());
+        assert_eq!(serde_json::to_value(update).expect("Hub roundtrip"), wire);
+    }
+    assert!(serde_json::from_value::<UnitySettings>(json!({})).is_err());
+    assert!(serde_json::from_value::<UnitySettings>(json!({"hubPath": 1})).is_err());
+    let location = json!({
+        "status": "available", "source": "discovered",
+        "path": "/opt/unityhub/unityhub", "configuredPathStatus": "invalid"
+    });
+    let parsed: UnityHubLocation =
+        serde_json::from_value(location.clone()).expect("derived evidence");
+    assert_eq!(
+        serde_json::to_value(parsed).expect("evidence roundtrip"),
+        location
+    );
+    for invalid in [
+        json!({"status":"unknown", "source":"none", "path":null, "configuredPathStatus":"unset"}),
+        json!({"status":"not_found", "source":"none", "configuredPathStatus":"unset"}),
+        json!({"status":"not_found", "source":"none", "path":null, "configuredPathStatus":"unset", "launch":true}),
+    ] {
+        assert!(serde_json::from_value::<UnityHubLocation>(invalid).is_err());
+    }
+
+    let contract = schema("m7-official-gui");
+    let settings: Value = serde_json::from_str(include_str!(
+        "../../../specs/config/settings-v3.schema.json"
+    ))
+    .expect("Config3");
+    assert_eq!(
+        contract["$defs"]["settingsGetResult"]["required"],
+        json!(["configSchema", "revision", "settings", "unityHub"])
+    );
+    assert_eq!(
+        contract["x-alcomd-redaction"]["authorizedSettingsPathException"],
+        json!(["settings.unity.hubPath", "unityHub.path"])
+    );
+    assert_eq!(
+        settings["$defs"]["settings"]["required"],
+        json!(["appearance", "packages", "locale", "unity"])
+    );
+    assert_eq!(settings["$defs"]["hubPath"]["x-alcomd-maxUtf8Bytes"], 4096);
+    assert_eq!(settings["$defs"]["partialUnityUpdate"]["minProperties"], 1);
+    let proposal: Value = serde_json::from_str(include_str!(
+        "../../../specs/config/unity-hub-location.proposal.contract.json"
+    ))
+    .expect("approved proposal");
+    let mut expected = proposal["schemaFragments"]["$defs"]["hubLocation"].clone();
+    expected["properties"]["path"] =
+        json!({"$ref":"https://alcomd.cqmhv.com/schema/config/settings-v3.json#/$defs/hubPath"});
+    assert_eq!(contract["$defs"]["unityHubLocation"], expected);
 }
 
 #[test]
@@ -226,6 +567,17 @@ fn m3_schema_freezes_project_repository_contract() {
             .expect("project snapshot required fields")
             .iter()
             .any(|field| field.as_str() == Some("registeredAtMs"))
+    );
+    assert_eq!(
+        definitions["projectSnapshot"]["properties"]["lastModifiedAtMs"],
+        json!({"type": "integer", "minimum": 0, "maximum": 9_223_372_036_854_775_807_i64})
+    );
+    assert!(
+        !definitions["projectSnapshot"]["required"]
+            .as_array()
+            .expect("project snapshot required fields")
+            .iter()
+            .any(|field| field.as_str() == Some("lastModifiedAtMs"))
     );
     assert_eq!(definitions["pageLimit"]["maximum"], 1_000);
     assert_eq!(definitions["absolutePath"]["maxLength"], 32_768);
@@ -403,7 +755,7 @@ fn m4_operation_and_data_schema_are_compatible_additions() {
     let hello = schema("system-hello.response");
     assert_eq!(
         hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
-        json!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
+        json!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])
     );
 }
 
@@ -483,10 +835,61 @@ fn m5_unity_schema_keeps_launch_and_management_separate() {
 #[test]
 fn hello_schema_accepts_the_implemented_v14_store() {
     let hello = schema("system-hello.response");
+    assert!(
+        hello["properties"]["result"]["properties"]["dataSchema"]["enum"]
+            .as_array()
+            .expect("supported historical data schemas")
+            .contains(&json!(14))
+    );
+}
+
+#[test]
+fn hello_schema_accepts_the_project_observation_removal_v16_store() {
+    let hello = schema("system-hello.response");
     assert_eq!(
         hello["properties"]["result"]["properties"]["dataSchema"]["enum"],
-        json!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
+        json!([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16])
     );
+}
+
+#[test]
+fn project_snapshot_has_optional_modified_time_without_observation_time() {
+    let project_schema = &schema("m3-project-repository")["$defs"]["projectSnapshot"];
+    assert!(project_schema["properties"].get("observedAtMs").is_none());
+    assert!(
+        !project_schema["required"]
+            .as_array()
+            .expect("project required fields")
+            .contains(&json!("observedAtMs"))
+    );
+    let original = json!({
+        "projectId": "00000000-0000-4000-8000-000000000101",
+        "registeredAtMs": 100,
+        "rootPath": "<private-project>",
+        "projectType": "avatars",
+        "unityVersion": "2022.3.22f1",
+        "unityRevision": null,
+        "vpmManifest": "valid",
+        "upmManifest": "valid",
+        "directDependencies": [],
+        "lockedDependencies": [],
+        "issues": [],
+        "revision": 2
+    });
+    let unknown: alcomd_protocol::ProjectSnapshot = serde_json::from_value(original.clone())
+        .expect("read a snapshot without modified evidence");
+    assert_eq!(unknown.last_modified_at_ms, None);
+    let unknown_json = serde_json::to_value(&unknown).expect("serialize unknown modified time");
+    assert!(unknown_json.get("lastModifiedAtMs").is_none());
+    assert!(unknown_json.get("observedAtMs").is_none());
+    let mut updated = original;
+    updated["lastModifiedAtMs"] = json!(500);
+    let current: alcomd_protocol::ProjectSnapshot =
+        serde_json::from_value(updated).expect("read authoritative modified time");
+    assert_eq!(current.last_modified_at_ms, Some(500));
+    let current_json = serde_json::to_value(&current).expect("serialize known modified time");
+    assert_eq!(current_json["lastModifiedAtMs"], 500);
+    assert!(current_json.get("observedAtMs").is_none());
 }
 
 #[test]
@@ -664,7 +1067,7 @@ fn hello_schema_adds_extension_api_and_config_schema_as_optional() {
     );
     assert_eq!(
         response["properties"]["result"]["properties"]["configSchema"]["const"],
-        2
+        3
     );
     assert_eq!(
         response["properties"]["result"]["additionalProperties"],

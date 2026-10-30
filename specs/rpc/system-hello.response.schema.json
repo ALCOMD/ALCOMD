@@ -45,11 +45,11 @@
                 },
                 "dataSchema": {
                     "type": "integer",
-                    "enum": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+                    "enum": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
                 },
                 "configSchema": {
                     "type": "integer",
-                    "const": 2
+                    "const": 3
                 },
                 "extensionApi": {
                     "type": "object",

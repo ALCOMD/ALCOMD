@@ -61,6 +61,10 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
         .await
         .expect("register project");
     let project_id = registered_project.project.project_id.expect("project ID");
+    let registered_time = registered_project
+        .project
+        .last_modified_at_ms
+        .expect("registration initializes last modified");
     let source = RepositorySource::Local {
         path: repository.to_string_lossy().into_owned(),
     };
@@ -94,9 +98,19 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
         .await
         .expect("plan install");
     assert_eq!(install.change_set.mutations.len(), 1);
+    assert_eq!(
+        client
+            .project_get(project_id.clone())
+            .await
+            .expect("project after Plan")
+            .project
+            .last_modified_at_ms,
+        Some(registered_time),
+        "preparing a Plan must not mark the project modified"
+    );
     let accepted = client
         .package_apply_plan(alcomd_protocol::PackageApplyPlanParams {
-            plan_id: install.plan_id,
+            plan_id: install.plan_id.clone(),
             expected_revision: 1,
             idempotency_key: "m4-apply-install".to_owned(),
         })
@@ -104,6 +118,34 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
         .expect("apply install");
     let completed = wait_for_terminal(&mut client, &accepted.operation_id, &project).await;
     assert_eq!(completed.state, OperationState::Succeeded);
+    let installed_time = client
+        .project_get(project_id.clone())
+        .await
+        .expect("project after successful Apply")
+        .project
+        .last_modified_at_ms;
+    assert_eq!(installed_time, completed.completed_at_ms);
+    assert!(installed_time.expect("successful Apply records activity") >= registered_time);
+    let replay = client
+        .package_apply_plan(alcomd_protocol::PackageApplyPlanParams {
+            plan_id: install.plan_id,
+            expected_revision: 1,
+            idempotency_key: "m4-apply-install".to_owned(),
+        })
+        .await
+        .expect("replay completed package Apply");
+    assert!(replay.replayed);
+    assert_eq!(replay.operation_id, accepted.operation_id);
+    assert_eq!(
+        client
+            .project_get(project_id.clone())
+            .await
+            .expect("project after Apply replay")
+            .project
+            .last_modified_at_ms,
+        installed_time,
+        "Apply replay must not advance last modified"
+    );
     assert_eq!(
         completed.progress.expect("package progress").phase,
         PackageOperationPhase::StateCommitted
@@ -360,6 +402,13 @@ async fn user_package_plan_does_not_fall_back_to_mutable_source_when_cache_is_mi
         .project
         .project_id
         .expect("project ID");
+    let unchanged_time = client
+        .project_get(project_id.clone())
+        .await
+        .expect("registered project before failed Apply")
+        .project
+        .last_modified_at_ms;
+    assert!(unchanged_time.is_some());
     let enrolled = client
         .user_package_enroll(alcomd_protocol::UserPackageEnrollParams {
             source_path: source.to_string_lossy().into_owned(),
@@ -370,7 +419,7 @@ async fn user_package_plan_does_not_fall_back_to_mutable_source_when_cache_is_mi
         .user_package;
     let plan = client
         .package_plan_install(alcomd_protocol::PackagePlanInstallParams {
-            project_id,
+            project_id: project_id.clone(),
             expected_revision: 1,
             package_id: "com.example.local-missing".to_owned(),
             version_range: Some("=1.0.0".to_owned()),
@@ -405,6 +454,16 @@ async fn user_package_plan_does_not_fall_back_to_mutable_source_when_cache_is_mi
     assert_eq!(completed.state, OperationState::Failed);
     assert_eq!(completed.error_code.as_deref(), Some("offline_cache_miss"));
     assert!(!project.join("Packages/com.example.local-missing").exists());
+    assert_eq!(
+        client
+            .project_get(project_id)
+            .await
+            .expect("project after failed Apply")
+            .project
+            .last_modified_at_ms,
+        unchanged_time,
+        "a failed package Apply must not update project activity"
+    );
 
     shutdown.store(true, Ordering::Release);
     let result = tokio::time::timeout(Duration::from_secs(3), daemon)

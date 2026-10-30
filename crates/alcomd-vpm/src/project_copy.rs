@@ -554,7 +554,6 @@ fn published(
     let mut observation = plan.draft.source_project.observation.clone();
     observation.root_path = target.to_string_lossy().into_owned();
     observation.path_identity_key = identity.clone();
-    observation.observed_at_ms = now_ms()?;
     Ok(PublishedProjectCopy {
         observation,
         target_identity: identity,
@@ -905,11 +904,11 @@ mod tests {
                 direct_dependencies: Vec::new(),
                 locked_dependencies: Vec::new(),
                 issues: Vec::new(),
-                observed_at_ms: 1,
             },
             revision: Revision::INITIAL,
             favorite: false,
             registered_at_ms: 1,
+            last_modified_at_ms: None,
         };
         let writer = UnityWriterState {
             project_id,

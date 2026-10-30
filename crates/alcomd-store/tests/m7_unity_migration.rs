@@ -109,11 +109,16 @@ async fn unity_migration_succeeds_only_after_cleanup_and_commits_one_project_eve
     let mut target_observation = draft.project.observation.clone();
     target_observation.unity_version = draft.target_unity_version.clone();
     target_observation.unity_revision = draft.target_revision_metadata.clone();
-    target_observation.observed_at_ms = 30;
     store
         .commit_unity_migration_project(accepted.operation_id, target_observation, 31)
         .await
         .expect("commit final Project revision");
+    let committed_project = store
+        .get_project(owner.clone(), draft.project.project_id)
+        .await
+        .expect("read committed migration activity time");
+    assert_eq!(committed_project.last_modified_at_ms, Some(31));
+    assert_eq!(committed_project.revision.get(), 2);
 
     let premature = store
         .finish_unity_migration_success(accepted.operation_id, 32)
@@ -137,6 +142,11 @@ async fn unity_migration_succeeds_only_after_cleanup_and_commits_one_project_eve
         .finish_unity_migration_success(accepted.operation_id, 34)
         .await
         .expect("finish successful migration");
+    let completed_project = store
+        .get_project(owner.clone(), draft.project.project_id)
+        .await
+        .expect("cleanup does not touch project activity time");
+    assert_eq!(completed_project, committed_project);
 
     let events = store.list_events(owner, 0, 100).await.expect("list events");
     let project_events = events
@@ -223,7 +233,6 @@ fn project() -> ProjectObservation {
         direct_dependencies: Vec::new(),
         locked_dependencies: Vec::new(),
         issues: Vec::new(),
-        observed_at_ms: 1,
     }
 }
 

@@ -246,12 +246,14 @@ async fn project_copy_plan_apply_registers_an_exact_independent_copy() {
     )
     .await
     .expect("register source");
+    let source_time = registered.project.last_modified_at_ms;
+    assert!(source_time.is_some());
     let source_id = registered.project.project_id.expect("source ID");
     let plan = await_rpc(
         trace,
         "project-copy-plan-rpc",
         client.project_plan_copy(alcomd_protocol::ProjectsPlanCopyParams {
-            source_project_id: source_id,
+            source_project_id: source_id.clone(),
             expected_revision: 1,
             target_parent_path: destination.to_string_lossy().into_owned(),
             target_leaf: "CopiedProject".to_owned(),
@@ -266,14 +268,14 @@ async fn project_copy_plan_apply_registers_an_exact_independent_copy() {
         trace,
         "project-copy-apply-rpc",
         client.project_apply_copy(alcomd_protocol::ProjectsApplyCopyParams {
-            plan_id: plan.plan.plan_id,
+            plan_id: plan.plan.plan_id.clone(),
             expected_revision: 1,
             idempotency_key: "m7-copy-apply".to_owned(),
         }),
     )
     .await
     .expect("apply copy");
-    let operation = wait_for_terminal(&mut client, accepted.operation_id, trace).await;
+    let operation = wait_for_terminal(&mut client, accepted.operation_id.clone(), trace).await;
     assert_eq!(operation.state, alcomd_protocol::OperationState::Succeeded);
     let target = destination.join("CopiedProject");
     assert_eq!(
@@ -295,7 +297,7 @@ async fn project_copy_plan_apply_registers_an_exact_independent_copy() {
     let copied = await_rpc(
         trace,
         "project-get-rpc",
-        client.project_get(accepted.target_project_id),
+        client.project_get(accepted.target_project_id.clone()),
     )
     .await
     .expect("copied project registered");
@@ -304,6 +306,41 @@ async fn project_copy_plan_apply_registers_an_exact_independent_copy() {
         fs::canonicalize(target).expect("canonical copied project")
     );
     assert_eq!(copied.project.favorite, Some(false));
+    assert_eq!(
+        copied.project.last_modified_at_ms,
+        copied.project.registered_at_ms
+    );
+    assert!(copied.project.last_modified_at_ms.is_some());
+    assert_eq!(
+        client
+            .project_get(source_id)
+            .await
+            .expect("source after copy")
+            .project
+            .last_modified_at_ms,
+        source_time,
+        "copying must not update its source project"
+    );
+    let replay = client
+        .project_apply_copy(alcomd_protocol::ProjectsApplyCopyParams {
+            plan_id: plan.plan.plan_id,
+            expected_revision: 1,
+            idempotency_key: "m7-copy-apply".to_owned(),
+        })
+        .await
+        .expect("replay completed copy");
+    assert!(replay.replayed);
+    assert_eq!(replay.operation_id, accepted.operation_id);
+    assert_eq!(
+        client
+            .project_get(accepted.target_project_id)
+            .await
+            .expect("copied project after replay")
+            .project
+            .last_modified_at_ms,
+        copied.project.last_modified_at_ms,
+        "copy replay preserves target initialization time"
+    );
 
     daemon.shutdown().await;
 }
@@ -726,6 +763,39 @@ async fn run_kill_restart_case(checkpoint: &str, trace: TestTrace) {
     .await
     .expect("recovered Project registration");
     assert_eq!(
+        copied.project.last_modified_at_ms, copied.project.registered_at_ms,
+        "{checkpoint}"
+    );
+    assert!(copied.project.last_modified_at_ms.is_some(), "{checkpoint}");
+    let target_id = copied
+        .project
+        .project_id
+        .clone()
+        .expect("recovered target ID");
+    let unchanged_time = copied.project.last_modified_at_ms;
+    let replay = await_rpc(
+        trace,
+        "project-copy-post-recovery-replay-rpc",
+        client.project_apply_copy(alcomd_protocol::ProjectsApplyCopyParams {
+            plan_id: signal.plan_id,
+            expected_revision: 1,
+            idempotency_key: "m7-copy-kill-apply".to_owned(),
+        }),
+    )
+    .await
+    .expect("replay fully recovered copy");
+    assert!(replay.replayed, "{checkpoint}");
+    assert_eq!(
+        client
+            .project_get(target_id)
+            .await
+            .expect("target after recovered Apply replay")
+            .project
+            .last_modified_at_ms,
+        unchanged_time,
+        "{checkpoint}: recovery replay must not reinitialize the target"
+    );
+    assert_eq!(
         Path::new(&copied.project.root_path),
         fs::canonicalize(&target).expect("canonical recovered target"),
         "{checkpoint}"
@@ -1041,7 +1111,6 @@ fn project_observation(root: &Path) -> ProjectObservation {
         direct_dependencies: Vec::new(),
         locked_dependencies: Vec::new(),
         issues: Vec::new(),
-        observed_at_ms: 1,
     }
 }
 

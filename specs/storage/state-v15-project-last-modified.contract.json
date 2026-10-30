@@ -1,0 +1,38 @@
+{
+    "status": "owner-authorized-implementation",
+    "from": 14,
+    "to": 15,
+    "transaction": "BEGIN IMMEDIATE",
+    "migration": "crates/alcomd-store/migrations/0015_project_last_modified.sql",
+    "tablesAdded": [],
+    "columnsAdded": {
+        "projects.last_modified_at_ms": {
+            "type": "nullable INTEGER",
+            "minimum": 0,
+            "maximum": 9223372036854775807,
+            "legacyValue": null,
+            "backfillFromObservationOrDatabaseTime": false
+        }
+    },
+    "publicField": "ProjectSnapshot.lastModifiedAtMs",
+    "missingPublicValue": "unknown-or-unregistered-omit-field",
+    "initialization": "first-successful-new-project-registration-transaction-time",
+    "updateBoundaries": [
+        "first-accepted-unity-launch-before-process-spawn",
+        "successful-package-apply-project-commit",
+        "unity-migration-project-commit"
+    ],
+    "newTargetInitialization": ["copy", "template-create-project", "backup-restore"],
+    "neverTouchFor": [
+        "inspect-or-refresh-even-if-observed-content-changes",
+        "favorite-or-launch-config-changes",
+        "read-candidate-query-plan-review-or-cancel",
+        "repository-refresh-backup-or-template-export",
+        "launch-state-polling-idempotent-replay-or-recovery-scheduling"
+    ],
+    "clockPolicy": "max(existing-or-zero, accepted-or-commit-time)",
+    "incrementProjectRevisionForTimeAlone": false,
+    "includeTimeInCandidateOrPlanAuthorityFingerprint": false,
+    "newMethodCapabilityPermissionOrDependency": false,
+    "resolverPlanApplySemanticsChanged": false
+}

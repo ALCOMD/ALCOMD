@@ -8,6 +8,21 @@ use alcomd_application::*;
 use alcomd_vpm::ProjectCandidateEngine;
 use tokio::sync::Notify;
 
+struct NoHubInspection;
+impl UnityHubLauncher for NoHubInspection {
+    fn launch(&self, _: &str) -> Result<(), UnityHubOpenError> {
+        panic!("candidate query must not launch Hub")
+    }
+}
+impl UnityHubPlatform for NoHubInspection {
+    fn normalize_path(&self, _: &str) -> Result<String, OfficialGuiError> {
+        panic!("candidate query must not validate Hub paths")
+    }
+    fn inspect(&self, _: Option<&str>) -> UnityHubLocation {
+        panic!("candidate query must not inspect Hub paths")
+    }
+}
+
 #[derive(Clone)]
 struct PausedReadStore {
     entered: Arc<Notify>,
@@ -101,14 +116,19 @@ async fn config_change_during_candidate_store_read_fails_stale_without_query_wri
                 direct_dependencies: vec![],
                 locked_dependencies: vec![],
                 issues: vec![],
-                observed_at_ms: 1,
             },
             revision: Revision::INITIAL,
             registered_at_ms: 1,
+            last_modified_at_ms: None,
             favorite: false,
         },
     };
-    let config = M7OfficialApplication::new(store.clone(), settings_path.clone());
+    let config = M7OfficialApplication::new(
+        store.clone(),
+        Arc::new(alcomd_store::FileConfigStore::new(settings_path.clone())),
+        Arc::new(NoHubInspection),
+        Arc::new(NoHubInspection),
+    );
     config
         .initialize_settings()
         .await
@@ -141,6 +161,7 @@ async fn config_change_during_candidate_store_read_fails_stale_without_query_wri
             &AccessContext::local_owner(),
             initial.revision,
             ConfigUpdate {
+                unity: None,
                 appearance: None,
                 locale: None,
                 packages: Some(ConfigPackageSettingsUpdate {
@@ -197,10 +218,10 @@ async fn wider_legacy_project_observations_fail_query_dto_bounds_without_changin
                 direct_dependencies: vec![],
                 locked_dependencies: vec![],
                 issues: vec![],
-                observed_at_ms: 1,
             },
             revision: Revision::INITIAL,
             registered_at_ms: 1,
+            last_modified_at_ms: None,
             favorite: false,
         };
         let dependency = DependencyIdentity {
@@ -227,7 +248,14 @@ async fn wider_legacy_project_observations_fail_query_dto_bounds_without_changin
             reads: Arc::new(AtomicUsize::new(0)),
             project,
         };
-        let config = M7OfficialApplication::new(store.clone(), fixture.0.join("settings.toml"));
+        let config = M7OfficialApplication::new(
+            store.clone(),
+            Arc::new(alcomd_store::FileConfigStore::new(
+                fixture.0.join("settings.toml"),
+            )),
+            Arc::new(NoHubInspection),
+            Arc::new(NoHubInspection),
+        );
         config
             .initialize_settings()
             .await
@@ -285,14 +313,19 @@ async fn cancelled_candidate_read_creates_no_files_or_business_writes() {
                 direct_dependencies: vec![],
                 locked_dependencies: vec![],
                 issues: vec![],
-                observed_at_ms: 1,
             },
             revision: Revision::INITIAL,
             registered_at_ms: 1,
+            last_modified_at_ms: None,
             favorite: false,
         },
     };
-    let config = M7OfficialApplication::new(store.clone(), path.clone());
+    let config = M7OfficialApplication::new(
+        store.clone(),
+        Arc::new(alcomd_store::FileConfigStore::new(path.clone())),
+        Arc::new(NoHubInspection),
+        Arc::new(NoHubInspection),
+    );
     config
         .initialize_settings()
         .await

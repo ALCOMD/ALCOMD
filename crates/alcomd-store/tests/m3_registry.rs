@@ -56,7 +56,7 @@ fn key(value: &str) -> IdempotencyKey {
     IdempotencyKey::parse(value).expect("valid key")
 }
 
-fn project(identity: u8, observed_at_ms: u64) -> ProjectObservation {
+fn project(identity: u8) -> ProjectObservation {
     ProjectObservation {
         root_path: format!("C:/fixture/{identity}"),
         path_identity_key: vec![identity; 24],
@@ -71,7 +71,6 @@ fn project(identity: u8, observed_at_ms: u64) -> ProjectObservation {
         }],
         locked_dependencies: Vec::new(),
         issues: Vec::new(),
-        observed_at_ms,
     }
 }
 
@@ -112,30 +111,53 @@ async fn project_registry_is_revisioned_evented_and_idempotent() {
     let store = StateStoreHandle::open(directory.database()).expect("open store");
     let owner = PrincipalId::local_owner();
     let first = store
-        .register_project(owner.clone(), project(1, 10), key("project-register"), 10)
+        .register_project(owner.clone(), project(1), key("project-register"), 10)
         .await
         .expect("register project");
     assert_eq!(first.value.revision.get(), 1);
+    assert_eq!(first.value.last_modified_at_ms, Some(10));
     let replay = store
-        .register_project(owner.clone(), project(1, 20), key("project-register"), 20)
+        .register_project(owner.clone(), project(1), key("project-register"), 20)
         .await
         .expect("replay registration");
     assert!(replay.replayed);
-    assert_eq!(replay.value.observation.observed_at_ms, 10);
+    assert_eq!(replay.value, first.value);
+    assert_eq!(replay.value.last_modified_at_ms, Some(10));
 
     let no_op = store
         .refresh_project(
             owner.clone(),
             first.value.project_id,
             first.value.revision,
-            project(1, 30),
+            project(1),
             key("project-refresh-noop"),
             30,
         )
         .await
         .expect("no-op refresh");
     assert_eq!(no_op.value.revision.get(), 1);
-    let mut changed = project(1, 40);
+    assert_eq!(no_op.value, first.value);
+    assert!(
+        serde_json::to_value(&no_op.value.observation)
+            .expect("serialize refreshed project")
+            .get("observed_at_ms")
+            .is_none()
+    );
+    assert_eq!(no_op.value.last_modified_at_ms, Some(10));
+    let no_op_replay = store
+        .refresh_project(
+            owner.clone(),
+            first.value.project_id,
+            first.value.revision,
+            project(1),
+            key("project-refresh-noop"),
+            35,
+        )
+        .await
+        .expect("refresh replay returns the original successful observation");
+    assert!(no_op_replay.replayed);
+    assert_eq!(no_op_replay.value, no_op.value);
+    let mut changed = project(1);
     changed.project_type = ProjectType::Worlds;
     let refreshed = store
         .refresh_project(
@@ -149,6 +171,13 @@ async fn project_registry_is_revisioned_evented_and_idempotent() {
         .await
         .expect("changed refresh");
     assert_eq!(refreshed.value.revision.get(), 2);
+    assert_eq!(refreshed.value.last_modified_at_ms, Some(10));
+    let read_back = store
+        .get_project(owner.clone(), first.value.project_id)
+        .await
+        .expect("read current project");
+    assert_eq!(read_back.last_modified_at_ms, Some(10));
+    assert_eq!(read_back, refreshed.value);
     let events = store
         .list_events(owner.clone(), 0, 100)
         .await
@@ -185,15 +214,16 @@ async fn project_favorite_is_revisioned_idempotent_and_preserved_by_refresh() {
     let store = StateStoreHandle::open(directory.database()).expect("open store");
     let owner = PrincipalId::local_owner();
     let registered = store
-        .register_project(owner.clone(), project(7, 10), key("favorite-register"), 10)
+        .register_project(owner.clone(), project(7), key("favorite-register"), 10)
         .await
         .expect("register project")
         .value;
     assert!(!registered.favorite);
+    assert_eq!(registered.last_modified_at_ms, Some(10));
     let later = store
         .register_project(
             owner.clone(),
-            project(8, 15),
+            project(8),
             key("favorite-order-register"),
             15,
         )
@@ -220,6 +250,7 @@ async fn project_favorite_is_revisioned_idempotent_and_preserved_by_refresh() {
         .expect("favorite project");
     assert!(favorite.value.favorite);
     assert_eq!(favorite.value.revision.get(), 2);
+    assert_eq!(favorite.value.last_modified_at_ms, Some(10));
     let after = store
         .list_projects(owner.clone(), None, 1)
         .await
@@ -289,13 +320,14 @@ async fn project_favorite_is_revisioned_idempotent_and_preserved_by_refresh() {
             owner.clone(),
             registered.project_id,
             favorite.value.revision,
-            project(7, 40),
+            project(7),
             key("favorite-refresh"),
             40,
         )
         .await
         .expect("refresh project");
     assert!(refreshed.value.favorite);
+    assert_eq!(refreshed.value.last_modified_at_ms, Some(10));
     let events = store
         .list_events(owner.clone(), 0, 100)
         .await
@@ -320,7 +352,7 @@ async fn project_favorite_is_revisioned_idempotent_and_preserved_by_refresh() {
         .await
         .expect("unregister favorite project");
     let registered_again = store
-        .register_project(owner, project(7, 60), key("favorite-register-again"), 60)
+        .register_project(owner, project(7), key("favorite-register-again"), 60)
         .await
         .expect("re-register same identity");
     assert_ne!(registered_again.value.project_id, removed.id);
@@ -333,12 +365,7 @@ async fn concurrent_favorite_mutations_use_exact_project_revision_cas() {
     let store = StateStoreHandle::open(directory.database()).expect("open store");
     let owner = PrincipalId::local_owner();
     let registered = store
-        .register_project(
-            owner.clone(),
-            project(9, 10),
-            key("favorite-cas-register"),
-            10,
-        )
+        .register_project(owner.clone(), project(9), key("favorite-cas-register"), 10)
         .await
         .expect("register project")
         .value;
@@ -381,9 +408,10 @@ async fn concurrent_favorite_mutations_use_exact_project_revision_cas() {
 fn legacy_durable_project_record_json_defaults_favorite_to_false() {
     let record = ProjectRecord {
         project_id: alcomd_application::ProjectId::new(),
-        observation: project(10, 10),
+        observation: project(10),
         revision: alcomd_application::Revision::INITIAL,
         registered_at_ms: 10,
+        last_modified_at_ms: None,
         favorite: true,
     };
     let mut legacy = serde_json::to_value(record).expect("serialize record");
@@ -403,7 +431,7 @@ async fn v10_project_idempotency_and_unity_arguments_survive_current_migration()
     let project_id = ProjectId::parse("00000000-0000-4000-8000-000000000711").expect("project ID");
     let installation_id = UnityInstallationId::parse("00000000-0000-4000-8000-000000000712")
         .expect("installation ID");
-    let observation = project(11, 10);
+    let observation = project(11);
     {
         let connection = Connection::open(&database).expect("open v10 fixture");
         for migration in MIGRATIONS_V1_TO_V10 {
@@ -411,8 +439,9 @@ async fn v10_project_idempotency_and_unity_arguments_survive_current_migration()
                 .execute_batch(migration)
                 .expect("apply v10 chain");
         }
-        let mut semantic = observation.clone();
-        semantic.observed_at_ms = 0;
+        let mut semantic =
+            serde_json::to_value(&observation).expect("serialize historical snapshot");
+        semantic["observed_at_ms"] = serde_json::json!(0);
         connection
             .execute(
                 "INSERT INTO projects (
@@ -455,6 +484,7 @@ async fn v10_project_idempotency_and_unity_arguments_survive_current_migration()
             observation: observation.clone(),
             revision: Revision::INITIAL,
             registered_at_ms: 10,
+            last_modified_at_ms: None,
             favorite: false,
         };
         let mut project_response = serde_json::to_value(SyncWrite {
@@ -462,6 +492,7 @@ async fn v10_project_idempotency_and_unity_arguments_survive_current_migration()
             replayed: false,
         })
         .expect("serialize project response");
+        project_response["value"]["observation"]["observed_at_ms"] = serde_json::json!(10);
         project_response["value"]
             .as_object_mut()
             .expect("project record")
@@ -501,7 +532,39 @@ async fn v10_project_idempotency_and_unity_arguments_survive_current_migration()
         }
     }
 
-    let store = StateStoreHandle::open(database).expect("open and migrate v10 fixture");
+    let store = StateStoreHandle::open(database.clone()).expect("open and migrate v10 fixture");
+    {
+        let connection = Connection::open(&database).expect("inspect migrated raw JSON");
+        let snapshot_json: String = connection
+            .query_row(
+                "SELECT snapshot_json FROM projects WHERE project_id=?1",
+                [project_id.to_string()],
+                |row| row.get(0),
+            )
+            .expect("read persisted project snapshot");
+        let snapshot: serde_json::Value =
+            serde_json::from_str(&snapshot_json).expect("parse persisted project snapshot");
+        assert!(snapshot.get("observed_at_ms").is_none());
+        let mut responses = connection
+            .prepare("SELECT response_json FROM idempotency_records WHERE method IN ('projects.register', 'projects.refresh') ORDER BY method")
+            .expect("prepare persisted project responses");
+        let response_json = responses
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("read persisted project responses")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect persisted project responses");
+        assert_eq!(response_json.len(), 2);
+        for encoded in response_json {
+            let response: serde_json::Value =
+                serde_json::from_str(&encoded).expect("parse persisted project response");
+            assert!(response["value"]["observation"].is_object());
+            assert!(
+                response["value"]["observation"]
+                    .get("observed_at_ms")
+                    .is_none()
+            );
+        }
+    }
     let register = store
         .register_project(
             owner.clone(),

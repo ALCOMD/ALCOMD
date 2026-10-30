@@ -1,7 +1,7 @@
 use alcomd_application::{
     CandidateCatalogEntry, CandidateQueryError as Error, CandidateStoreSnapshot, M3ErrorCode,
-    MAX_CANDIDATE_RECORDS, MAX_CANDIDATE_SOURCES, PackageSourceSelector, PrincipalId, ProjectId,
-    UserPackageId,
+    MAX_CANDIDATE_RECORDS, MAX_CANDIDATE_SOURCES, PackageSourceSelector, PrincipalId,
+    ProjectAuthorityFingerprint, ProjectId, UserPackageId,
 };
 use rusqlite::{Connection, params};
 
@@ -21,7 +21,8 @@ pub(super) fn snapshot(
         })?;
     let mut fingerprint_records = vec![
         "project-candidates-snapshot-v1".to_owned(),
-        serde_json::to_string(&project).map_err(|_| Error::Unavailable)?,
+        serde_json::to_string(&ProjectAuthorityFingerprint::from(&project))
+            .map_err(|_| Error::Unavailable)?,
     ];
     let mut statement = transaction.prepare(
         "SELECT json_array('repository',repository_id,revision,priority,hex(source_identity_key)) FROM repositories WHERE owner_principal_id=?1
@@ -121,7 +122,102 @@ pub(super) fn snapshot(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alcomd_application::{IdempotencyKey, ManifestState, ProjectObservation, ProjectType};
+    use alcomd_application::{
+        DependencyIdentity, IdempotencyKey, ManifestState, ProjectObservation, ProjectRecord,
+        ProjectType, ReadIssue, Revision,
+    };
+
+    fn authority_project() -> ProjectRecord {
+        ProjectRecord {
+            project_id: ProjectId::parse("00000000-0000-4000-8000-000000000101")
+                .expect("project ID"),
+            observation: ProjectObservation {
+                root_path: "C:\\Projects\\日本語".into(),
+                path_identity_key: vec![0, 255],
+                project_type: ProjectType::Avatars,
+                unity_version: "2022.3.22f1".into(),
+                unity_revision: Some("abcdef".into()),
+                vpm_manifest: ManifestState::Valid,
+                upm_manifest: ManifestState::Missing,
+                direct_dependencies: vec![DependencyIdentity {
+                    package_id: "com.example.direct".into(),
+                    value: "1.0.0".into(),
+                }],
+                locked_dependencies: vec![DependencyIdentity {
+                    package_id: "com.example.locked".into(),
+                    value: "2.0.0".into(),
+                }],
+                issues: vec![ReadIssue {
+                    code: "bounded-issue".into(),
+                    component: "manifest".into(),
+                    item: "com.example.direct".into(),
+                    line: Some(2),
+                    column: None,
+                }],
+            },
+            revision: Revision::INITIAL,
+            registered_at_ms: 11,
+            last_modified_at_ms: Some(99),
+            favorite: true,
+        }
+    }
+
+    #[test]
+    fn project_authority_projection_preserves_frozen_bytes_and_existing_field_policy() {
+        // Frozen pre-projection bytes, including struct field order and non-ASCII escaping.
+        const FROZEN: &str = r#"{"project_id":"00000000-0000-4000-8000-000000000101","observation":{"root_path":"C:\\Projects\\日本語","path_identity_key":[0,255],"project_type":"avatars","unity_version":"2022.3.22f1","unity_revision":"abcdef","vpm_manifest":"valid","upm_manifest":"missing","direct_dependencies":[{"package_id":"com.example.direct","value":"1.0.0"}],"locked_dependencies":[{"package_id":"com.example.locked","value":"2.0.0"}],"issues":[{"code":"bounded-issue","component":"manifest","item":"com.example.direct","line":2,"column":null}]},"revision":1,"registered_at_ms":11,"favorite":true}"#;
+        let project = authority_project();
+        let encode = |project: &ProjectRecord| {
+            serde_json::to_string(&ProjectAuthorityFingerprint::from(project))
+                .expect("serialize project authority")
+        };
+        assert_eq!(encode(&project).as_bytes(), FROZEN.as_bytes());
+        let mut previous_representation = project.clone();
+        previous_representation.last_modified_at_ms = None;
+        assert_eq!(
+            serde_json::to_string(&previous_representation).expect("serialize previous authority"),
+            FROZEN
+        );
+        for activity in [None, Some(0), Some(1_000)] {
+            let mut changed = project.clone();
+            changed.last_modified_at_ms = activity;
+            assert_eq!(encode(&changed), FROZEN);
+        }
+        type Mutation = (&'static str, fn(&mut ProjectRecord));
+        let mutations: [Mutation; 14] = [
+            ("project ID", |p| p.project_id = ProjectId::new()),
+            ("revision", |p| {
+                p.revision = p.revision.checked_next().expect("next revision")
+            }),
+            ("registration", |p| p.registered_at_ms += 1),
+            ("favorite", |p| p.favorite = !p.favorite),
+            ("root", |p| p.observation.root_path.push('x')),
+            ("identity", |p| p.observation.path_identity_key.push(1)),
+            ("project type", |p| {
+                p.observation.project_type = ProjectType::Worlds
+            }),
+            ("Unity version", |p| p.observation.unity_version.push('x')),
+            ("Unity revision", |p| p.observation.unity_revision = None),
+            ("VPM state", |p| {
+                p.observation.vpm_manifest = ManifestState::Missing
+            }),
+            ("UPM state", |p| {
+                p.observation.upm_manifest = ManifestState::Valid
+            }),
+            ("direct dependencies", |p| {
+                p.observation.direct_dependencies.clear()
+            }),
+            ("locked dependencies", |p| {
+                p.observation.locked_dependencies.clear()
+            }),
+            ("issues", |p| p.observation.issues.clear()),
+        ];
+        for (name, mutate) in mutations {
+            let mut changed = project.clone();
+            mutate(&mut changed);
+            assert_ne!(encode(&changed), FROZEN, "{name} must remain in authority");
+        }
+    }
 
     struct Fixture {
         connection: Connection,
@@ -147,7 +243,6 @@ mod tests {
                 direct_dependencies: vec![],
                 locked_dependencies: vec![],
                 issues: vec![],
-                observed_at_ms: 1,
             };
             let record = crate::m3::register_project(
                 &mut connection,
@@ -173,6 +268,45 @@ mod tests {
             let _ = std::fs::remove_file(&self.path);
         }
     }
+    #[test]
+    fn project_activity_time_is_returned_without_changing_candidate_evidence() {
+        let mut f = Fixture::new();
+        let before = snapshot(
+            &mut f.connection,
+            &PrincipalId::local_owner(),
+            f.project,
+            None,
+        )
+        .expect("read original candidate authority");
+        assert_eq!(before.project.last_modified_at_ms, Some(1));
+        let mut previous_project_authority = before.project.clone();
+        previous_project_authority.last_modified_at_ms = None;
+        assert_eq!(
+            before.fingerprint_records[1],
+            serde_json::to_string(&previous_project_authority)
+                .expect("serialize established candidate record")
+        );
+        f.connection
+            .execute(
+                "UPDATE projects SET last_modified_at_ms=20 WHERE project_id=?1",
+                [f.project.to_string()],
+            )
+            .expect("record project activity without changing its contents");
+        let changes = f.connection.total_changes();
+        let after = snapshot(
+            &mut f.connection,
+            &PrincipalId::local_owner(),
+            f.project,
+            None,
+        )
+        .expect("read candidate authority after project activity");
+        assert_eq!(after.project.last_modified_at_ms, Some(20));
+        assert_eq!(after.project.revision, before.project.revision);
+        assert_eq!(after.project.observation, before.project.observation);
+        assert_eq!(after.fingerprint_records, before.fingerprint_records);
+        assert_eq!(changes, f.connection.total_changes());
+    }
+
     #[test]
     fn registered_user_snapshot_is_read_without_source_files_or_effects() {
         let mut f = Fixture::new();

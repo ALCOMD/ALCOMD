@@ -29,6 +29,7 @@ mod m7_delete;
 mod m7_official;
 mod m7_unity_migration;
 mod m7_user_packages;
+mod project_authority;
 
 pub use m4::*;
 pub use m5::*;
@@ -43,6 +44,7 @@ pub use m7_delete::*;
 pub use m7_official::*;
 pub use m7_unity_migration::*;
 pub use m7_user_packages::*;
+pub use project_authority::*;
 
 /// Minimal truthful daemon status for the M1 read-only vertical slice.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -144,7 +146,6 @@ pub struct ProjectObservation {
     pub direct_dependencies: Vec<DependencyIdentity>,
     pub locked_dependencies: Vec<DependencyIdentity>,
     pub issues: Vec<ReadIssue>,
-    pub observed_at_ms: u64,
 }
 
 /// Durable registered project record.
@@ -154,6 +155,10 @@ pub struct ProjectRecord {
     pub observation: ProjectObservation,
     pub revision: Revision,
     pub registered_at_ms: u64,
+    /// Core-maintained user activity time, independent of observation and semantic revision.
+    /// Historical records without reliable activity evidence remain unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_modified_at_ms: Option<u64>,
     /// User-controlled registry metadata; absent in durable v10 JSON means false.
     #[serde(default)]
     pub favorite: bool,
@@ -797,6 +802,7 @@ impl AccessContext {
                 Permission::UnityRead,
                 Permission::UnityManage,
                 Permission::UnityLaunch,
+                Permission::UnityHubOpen,
                 Permission::ProjectsCreate,
                 Permission::ProjectsDelete,
                 Permission::ProjectsUnityMigrate,

@@ -332,14 +332,13 @@ pub(super) fn complete(
     }
     let plan = load_plan(&transaction, &owner, plan_id)?;
     let observation = published.observation.clone();
-    let semantic = super::m3::semantic_project(observation.clone());
     transaction
         .execute(
             "INSERT INTO projects (
                 project_id,owner_principal_id,root_path,path_identity_key,project_type,
                 unity_version,unity_revision,snapshot_json,revision,registered_at_ms,
-                observed_at_ms,updated_at_ms
-             ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,1,?9,?10,?9)",
+                updated_at_ms,last_modified_at_ms
+             ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,1,?9,?9,?9)",
             params![
                 plan.draft.target_project_id.to_string(),
                 owner.as_str(),
@@ -348,9 +347,8 @@ pub(super) fn complete(
                 super::m3::project_type(observation.project_type),
                 observation.unity_version,
                 observation.unity_revision,
-                json(&semantic)?,
+                json(&observation)?,
                 integer(now_ms)?,
-                integer(observation.observed_at_ms)?,
             ],
         )
         .map_err(failure)?;

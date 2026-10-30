@@ -415,7 +415,21 @@ M3 在 RPC major 1 上增加四项 capability：`projects.read.v1`、`projects.r
 `(registeredAtMs DESC, id DESC)`，package page 按 `(packageId ASC, version ASC)`，cursor exclusive。
 注册项目的 `ProjectSnapshot` 以兼容可选字段返回 `registeredAtMs`（Unix epoch
 milliseconds）；`projects.inspect` 产生的未注册 snapshot 不返回该字段。客户端必须继续接受字段缺失，
-不得使用 `observedAtMs` 推断或伪造注册时间。
+不得使用检查时间推断或伪造注册时间。
+
+`ProjectSnapshot.lastModifiedAtMs` 为兼容增加的可选 Unix epoch milliseconds 字段，由 Core
+维护对应 v3 用户语义的项目最近活动／修改时间。已注册项目只有
+存在权威记录时才返回；未注册 inspect 和旧记录没有可靠依据时省略，客户端显示未知，不得以
+检查时间、`registeredAtMs` 或数据库 `updatedAtMs` 替代。该字段不新增 method、capability、
+permission 或请求参数，不改变 registry 分页顺序／cursor、Plan/Apply 或项目内容 revision 语义。
+
+项目 `observedAtMs` 已按所有者批准从 `ProjectSnapshot`／内部项目观察模型移除，属于发布前
+RPC v1 的破坏性字段删除；不提供别名、fallback、双版本模型或新 method/capability/permission。
+State v15→v16 物理删除项目观察列并清理项目快照与永久幂等响应中的旧字段；旧未 Apply 的
+Unity migration Plan 失效，须重新生成 Plan，不重签旧 authority hash。已执行的 Plan／journal
+保留原 fingerprint 和迁移专有重检证据。Unity 安装扫描时间与 copy/delete writer evidence
+的同名字段属于不同合同，继续保留。普通项目重新检查只产生项目内容，no-op refresh 不改变
+revision、最后修改时间或候选权威指纹；内容变化仍按现有 revision／Plan 验证处理。
 
 同步写命令使用 M2 永久幂等 scope，但成功响应不需要 OperationId。`register` 返回注册后的
 aggregate 与 `replayed`；`refresh` 返回最新 aggregate 与 `replayed`；`unregister` 返回资源 ID、
@@ -536,7 +550,7 @@ supervisor。foreground/activation 不在本合同中。
 `unity_launch_not_found`。普通 error 不包含完整进程命令行、私密路径、PID 列表或 OS debug。
 
 完整 DTO、enum 与上限由 `m5-unity.schema.json` 冻结。State v14 删除旧 editor preference 并保留独立 launch config；daemon
-在 store 成功初始化后通过 hello 广告当前 `dataSchema: 14` 和客户端实际协商的已实现 capability。此兼容增加不
+在 store 成功初始化后通过 hello 广告当前 `dataSchema: 16` 和客户端实际协商的已实现 capability。此兼容增加不
 改变 M1-M4 方法语义，也不表示 Template、Backup 或完整 CLI 已实现。
 
 ## 20. M5 contract-only 兼容增加：Template Bundle v1
@@ -662,20 +676,61 @@ M7 在 RPC major 1 上兼容增加四个 base method；不增加 capability：
 
 | method | params | result | permission |
 |---|---|---|---|
-| `settings.get` | `{}` | `configSchema`, `revision`, full normalized `settings` | `settings.read` |
-| `settings.update` | `expectedRevision`, closed partial `update` | new `revision`, full normalized `settings` | `settings.manage` |
+| `settings.get` | `{}` | `configSchema`, `revision`, full normalized `settings`, derived `unityHub` | `settings.read` |
+| `settings.update` | `expectedRevision`, closed partial `update` | new `revision`, full normalized `settings`, derived `unityHub` | `settings.manage` |
+| `unity.hub.open` | `expectedRevision`, required nullable `expectedPath` | `outcome: spawned \| download_required` | `settings.read` + `unity.hub.open`, local owner only |
 | `activity.list` | optional tuple `cursor`, optional `limit` | closed Event/Operation projection and next cursor | `activity.read` |
 | `diagnostics.list` | optional tuple `cursor`, optional `limit` | closed redacted diagnostics and next cursor | `diagnostics.read` |
 
-`settings.update` 不接受 idempotency key、generic key/value、路径或 extension setting；revision conflict 使用现有
+`settings.update` 不接受 idempotency key、generic key/value、任意文件路径写入或 extension setting；revision conflict 使用现有
 `revision_conflict`。只有 `config/settings.toml` production storage 和四个 RPC 全部接线后，hello 才以兼容
-optional field 广告当前 production `configSchema: 2`。Schema 2 只兼容增加 package presentation
-settings；Schema 1 仅作为启动迁移输入保留。
+optional field 广告当前 production `configSchema: 3`。Schema 3 增加完整归一化
+`settings.appearance.scheme` 九值枚举与可选 partial update 字段；默认 `vibrant`。Config Schema 1／2
+仅作为启动迁移输入保留，迁移保留 revision 与其他设置；未知枚举拒绝，不改变既有 methods、capabilities 或 permissions。
+
+已批准的 Unity Hub 位置合同增加 `settings.unity.hubPath: string | null`；它只保存 Hub 可执行文件
+偏好，不修改该可执行文件或项目。省略保持原值，null 清除显式路径，unity 容器 null／空对象及
+未知字段拒绝；无效显式路径与同行更新整次拒绝。Core 校验绝对路径、实际文件及可执行性，
+不执行所选程序或验证厂商身份。公开 `unityHub` 证据包含 status、source、path、
+configuredPathStatus；读取使用该响应的准确 ConfigSnapshot，派生状态不持久化、不推进 revision。
+已成功提交后的证据检测失败返回 unavailable 证据，不将提交改报失败。具体枚举、4096 UTF-8
+字节路径界限、三平台发现顺序、16 KiB 配置上限及尚未覆盖的 Hub 行为见
+`../config/unity-hub-location.proposal.contract.json` 和 `../config/settings-v3.md`。
+
+settings.read/manage 明确授权的设置响应可返回所请求的 Hub 绝对路径，这是通用 redaction
+denylist 的窄例外；Activity、Event、普通错误和诊断投影不得因此泄露路径。位置偏好本身不新增
+method、capability、permission、Config version 或 State migration；严格旧客户端须更新新增的发布前响应字段。
+
+已另行批准的 `unity.hub.open` 使用独立 capability `unity.hub.open.v1` 和权限
+`unity.hub.open`；它不扩大 Project／Editor 的 `unity.launch` 或 registry 的 `unity.manage`。
+仅认证的 `builtin:local-owner` 可调用，且同时要求 `settings.read`，在配置／文件／进程访问前
+完成 Principal 与权限校验。closed params 的 `expectedRevision` 至少为 1；`expectedPath` 必须
+提供，可为 null，否则为无控制字符的非空字符串，最多 4096 UTF-8 字节。它是当前 Core
+effective path 的相等性防护，不是 executable／argv／URL 指令。
+
+Core 在现有 settings 协调下读取当前配置、验证 revision 并重新检测 Hub，目标与 guard 不同
+返回 `hub_path_changed`，不能自动打开另一个目标。可用的 configured 或 discovered 目标均可
+打开，包括无效手工偏好但默认位置可用的既有 fallback。仅配置路径为 null 且当前确实未发现
+Hub、expectedPath 也为 null 时返回 `download_required`，不启动进程；坏的显式路径无 fallback
+返回 `hub_path_invalid`，I/O 无法验证返回 `hub_unavailable`。GUI 只在 download_required 后
+通过封闭系统适配器打开固定官网 `https://unity.com/download`，Core 不联网或安装程序。
+
+`spawned` 只证明 OS 接受创建进程，不证明 Hub 窗口就绪。实际程序仅使用 Core 解析且派发前
+再次校验的路径、零参数、null 标准流，不经 shell、不接受环境覆盖。只证明当时文件可执行，
+不证明 Unity 厂商身份、签名或抵御二进制替换；这是打开所有者选择的本地程序的权限。
+独立 launcher port 预留最多 4 个 reaper，先成功建立 worker 再 spawn；worker 即使响应接收者
+消失也负责 wait 自己的 Child，不等待无关进程，不因 GUI 断开主动 kill Hub，也不阻塞 daemon
+退出。容量不足返回 `hub_open_busy`，OS 启动失败返回 `hub_open_failed`，意外内部故障使用现有
+`internal_error` 和 diagnosticId。所有错误文案固定且不含路径、argv、原始 I/O 或进程详情。
+
+此方法不写配置／项目／State，不创建 Plan、Apply、Operation 或 Event。没有持久幂等承诺；
+传输结果不明不能自动重试，GUI 保留明确错误并要求确认 Hub 是否已经打开，再由所有者再次
+点击形成新意图。完整请求、结果及新增错误枚举由当前 RPC Schema 冻结。
 
 Activity/Diagnostics page size 默认 100、最大 200，使用确定性 tuple keyset cursor。Activity 不返回 Event payload
 或 Operation request/result；Diagnostics v1 只投影已有 Operation failure 与 safe Event evidence，不新建 durable log
 table，也不提供 raw export。完整 DTO、redaction denylist 与 bounds 由 `m7-official-gui.schema.json`、
-`../config/settings-v2.schema.json` 和 `../security/official-gui-read-model-threat-model.md` 冻结。
+`../config/settings-v3.schema.json` 和 `../security/official-gui-read-model-threat-model.md` 冻结。
 
 ## 25. M7 兼容增加：Project Copy
 
@@ -762,7 +817,7 @@ journal。`preparation_intent` 或 `launch_intent` 后禁止普通取消；daemo
 公开 Plan/Event/error 不包含 project/executable 完整路径、argv、PID、stdout/stderr 或 private recovery locator。受控本地技术
 日志可以保留诊断所需的准确绝对路径，但不得改变 RPC、Activity、Event 或普通 diagnostics 的脱敏合同。完整 DTO、phase、
 permission 与稳定错误由 `m7-unity-project-version.proposal.schema.json`、`state-v14-unity-project-version.proposal.contract.json`
-和 M7 Unity ExecPlan 冻结。State v14 完整接线后 hello 广告 `dataSchema: 14`。
+和 M7 Unity ExecPlan 冻结。当前 Store 初始化至 State v16 后，hello 广告 `dataSchema: 16`。
 
 
 ## 29. M7 H2-A 兼容增加：Project package candidate evidence

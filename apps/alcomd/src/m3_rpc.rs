@@ -397,13 +397,14 @@ fn registry_cursor<I: ToString>(value: app::RegistryCursor<I>) -> rpc::RegistryC
 }
 
 fn project_observation(value: app::ProjectObservation) -> rpc::ProjectSnapshot {
-    project_snapshot(None, None, value, None, None)
+    project_snapshot(None, None, None, value, None, None)
 }
 
 fn project_record(value: app::ProjectRecord) -> rpc::ProjectSnapshot {
     project_snapshot(
         Some(value.project_id.to_string()),
         Some(value.registered_at_ms),
+        value.last_modified_at_ms,
         value.observation,
         Some(value.revision.get()),
         Some(value.favorite),
@@ -413,6 +414,7 @@ fn project_record(value: app::ProjectRecord) -> rpc::ProjectSnapshot {
 fn project_snapshot(
     project_id: Option<String>,
     registered_at_ms: Option<u64>,
+    last_modified_at_ms: Option<u64>,
     value: app::ProjectObservation,
     revision: Option<u64>,
     favorite: Option<bool>,
@@ -420,6 +422,7 @@ fn project_snapshot(
     rpc::ProjectSnapshot {
         project_id,
         registered_at_ms,
+        last_modified_at_ms,
         root_path: value.root_path,
         project_type: project_type(value.project_type),
         unity_version: value.unity_version,
@@ -437,7 +440,6 @@ fn project_snapshot(
             .map(dependency)
             .collect(),
         issues: value.issues.into_iter().map(issue).collect(),
-        observed_at_ms: value.observed_at_ms,
         revision,
         favorite,
     }

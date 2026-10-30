@@ -5,6 +5,7 @@ const RENDERER: &str = include_str!("../../../apps/alcomd-gui/src/PortableUiRend
 const APP: &str = include_str!("../../../apps/alcomd-gui/src/App.tsx");
 const RPC: &str = include_str!("../../../apps/alcomd-gui/src/rpc.ts");
 const STYLE: &str = include_str!("../../../apps/alcomd-gui/src/styles.css");
+const MOTION: &str = include_str!("../../../packages/alcomd-ui/src/motion.ts");
 const TAURI_CONFIG: &str = include_str!("../../../apps/alcomd-gui/src-tauri/tauri.conf.json");
 
 #[test]
@@ -88,11 +89,14 @@ fn official_shell_preserves_host_owned_accessibility_and_responsive_boundaries()
     assert!(APP.contains("Discard changes"));
     assert!(APP.contains("applyAppearance"));
     assert!(APP.contains("client.settingsGet()"));
-    assert!(APP.contains("sourceColorName"));
+    assert!(APP.contains("resolveThemeSourceColor"));
+    assert!(!APP.contains("sourceColorName"));
     assert!(!RENDERER.contains("@alcomd/ui"));
     assert!(!RENDERER.contains("applyAppearance"));
     assert!(STYLE.contains("min-width: 320px"));
-    assert!(STYLE.contains("prefers-reduced-motion: reduce"));
+    assert!(APP.contains("applyMotion(value.settings.appearance.motion)"));
+    assert!(MOTION.contains("prefers-reduced-motion: reduce"));
+    assert!(STYLE.contains("data-reduced-motion=\"true\""));
     assert!(STYLE.contains(":focus-visible"));
     assert!(STYLE.contains("prefers-color-scheme: dark"));
     assert!(TAURI_CONFIG.contains("\"minWidth\": 320"));

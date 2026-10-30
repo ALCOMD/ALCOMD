@@ -553,7 +553,6 @@ fn observation(root: &Path) -> ProjectObservation {
         direct_dependencies: Vec::new(),
         locked_dependencies: Vec::new(),
         issues: Vec::new(),
-        observed_at_ms: 1,
     }
 }
 

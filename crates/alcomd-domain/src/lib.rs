@@ -563,6 +563,9 @@ pub enum Permission {
     /// Launch and observe a validated Unity Editor.
     #[serde(rename = "unity.launch")]
     UnityLaunch,
+    /// Open the local owner's configured or discovered Unity Hub executable.
+    #[serde(rename = "unity.hub.open")]
+    UnityHubOpen,
     /// Create a new project at an explicit nonexistent destination.
     #[serde(rename = "projects.create")]
     ProjectsCreate,
@@ -623,6 +626,7 @@ impl Permission {
             Self::UnityRead => "unity.read",
             Self::UnityManage => "unity.manage",
             Self::UnityLaunch => "unity.launch",
+            Self::UnityHubOpen => "unity.hub.open",
             Self::ProjectsCreate => "projects.create",
             Self::ProjectsDelete => "projects.delete",
             Self::ProjectsUnityMigrate => "projects.unity-migrate",
@@ -883,6 +887,7 @@ mod tests {
         assert_eq!(Permission::UnityRead.as_str(), "unity.read");
         assert_eq!(Permission::UnityManage.as_str(), "unity.manage");
         assert_eq!(Permission::UnityLaunch.as_str(), "unity.launch");
+        assert_eq!(Permission::UnityHubOpen.as_str(), "unity.hub.open");
         assert_eq!(Permission::ProjectsCreate.as_str(), "projects.create");
         assert_eq!(Permission::ProjectsDelete.as_str(), "projects.delete");
         assert_eq!(

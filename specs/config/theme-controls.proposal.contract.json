@@ -1,0 +1,158 @@
+{
+    "status": "owner-approved-implemented-local-validation",
+    "scope": "M7-H2-A-ordinary-immediate-settings-and-explicit-theme-dialog-save",
+    "references": [
+        "https://www.vrclearn.com/",
+        "readonly-v3/vrc-get-gui/lib/material-theme.ts"
+    ],
+    "reuse": {
+        "readMethod": "settings.get",
+        "writeMethod": "settings.update",
+        "permissions": [
+            "settings.read",
+            "settings.manage"
+        ],
+        "newMethod": false,
+        "newCapability": false,
+        "newPermission": false,
+        "stateDbSchemaChange": false
+    },
+    "configMigration": {
+        "from": 2,
+        "to": 3,
+        "newTomlField": "appearance.scheme",
+        "newPublicField": "settings.appearance.scheme",
+        "default": "vibrant",
+        "preserveRevision": true,
+        "preserveExistingSourceColorModeDensityMotionLocalePackages": true,
+        "v1Input": "existing-v1-to-v2-then-v3",
+        "unknownEnums": "reject",
+        "replacement": "existing-bounded-atomic-config-writer",
+        "publication": "owner-approved-pre-release-breaking-configSchema-3-response-change"
+    },
+    "schemeEnum": [
+        "tonal-spot",
+        "fidelity",
+        "monochrome",
+        "neutral",
+        "vibrant",
+        "expressive",
+        "content",
+        "rainbow",
+        "fruit-salad"
+    ],
+    "defaults": {
+        "sourceColor": null,
+        "effectiveSourceColor": "#6CB6FF",
+        "scheme": "vibrant",
+        "mode": "system",
+        "contrastLevel": 0
+    },
+    "motionPreference": {
+        "ownerRequest": "跟随系统/启用动画/关闭动画",
+        "enum": ["full", "reduced", "system"],
+        "default": "system",
+        "full": "enable-existing-motion-independent-of-system-reduced-motion",
+        "reduced": "disable-existing-motion-through-shared-UI-adapter",
+        "system": "track-prefers-reduced-motion-live-without-config-write",
+        "save": "ordinary-setting-change-immediate-existing-CAS-RPC",
+        "failure": "keep-accepted-runtime-preference-retain-latest-intent-explicit-Retry-after-reread",
+        "contract": "extend-unreleased-Config3-motion-enum-no-new-method-capability-permission-or-version",
+        "historicalInput": "Config1-and-Config2-only-accept-original-system-and-reduced",
+        "unknownOrNull": "reject",
+        "pageTransitions": "remain-removed",
+        "validationEvidence": "docs/testing/m7-motion-20261030.md"
+    },
+    "controls": {
+        "hex": "trim-six-digit-HEX-normalize-uppercase-invalid-blur-returns-last-valid-no-write",
+        "picker": "same-sourceColor",
+        "hct": {
+            "hue": [
+                0,
+                360
+            ],
+            "chroma": [
+                0,
+                150
+            ],
+            "tone": [
+                0,
+                100
+            ],
+            "derivedFromHex": true,
+            "persistHct": false,
+            "outOfGamut": "upstream-HCT-achievable-sRGB"
+        }
+    },
+    "interaction": {
+        "preview": "dialog-only-immediate-valid-theme-input-no-write",
+        "save": "explicit-Save-button-existing-settings.update-only-three-theme-fields",
+        "writes": "one-request-per-confirmation-busy-guard-no-auto-save-or-background-queue",
+        "busyPresentation": "static-Save-label-disabled-during-request-form-aria-busy-no-transient-visible-text-or-status-row",
+        "failure": "explicit-unsaved-error-keep-editable-preview-no-false-saved-state",
+        "conflict": "do-not-overwrite-other-client-fetch-and-reconcile-before-explicit-retry",
+        "otherSettings": "ordinary-settings-save-immediately-and-independently-shared-serial-CAS-queue-theme-write-does-not-overwrite-them",
+        "reset": "edit-theme-draft-to-sourceColor-null-mode-system-scheme-vibrant-save-only-after-confirmation",
+        "presentation": "Appearance-heading-actions.Filled-Theme-button-with-palette-icon-opens-Material-dialog-visible-language-label",
+        "dialogLayout": {
+            "left": "source-swatch-and-standard-outlined-HEX-field-then-vertical-standard-Material-HCT-sliders",
+            "right": "standard-outlined-light-system-dark-text-segments-with-selected-checkmark-then-nine-visible-Material-radio-options-in-two-columns",
+            "footer": "Restore-defaults-Cancel-Save",
+            "shape": "existing-owner-confirmed-28px-panel-token-standard-Material-control-shapes",
+            "referenceScope": "expanded-information-layout-only-not-pixel-or-control-style-cloning",
+            "segmentSizing": "shared-intrinsic-longest-selected-label-and-checkmark-space-single-line-no-page-or-locale-width-constants",
+            "saveContract": "unchanged-explicit-three-theme-fields"
+        },
+        "cancel": "restore-latest-accepted-theme-without-writing-on-Cancel-Escape-dismiss-or-navigation"
+    },
+    "requestExample": {
+        "method": "settings.update",
+        "params": {
+            "expectedRevision": 7,
+            "update": {
+                "appearance": {
+                    "sourceColor": "#6CB6FF",
+                    "mode": "system",
+                    "scheme": "vibrant"
+                }
+            }
+        }
+    },
+    "renderer": "official-Material-Color-Utilities-0.4.0-shared-theme-provider-no-v3-or-site-source-copy",
+    "ordinarySettings": {
+        "trigger": "each-user-change-immediate-no-global-save-discard-or-saved-status-bar",
+        "fields": ["locale", "appearance.density", "appearance.motion", "packages.showPrerelease", "packages.hideLocalUserPackages", "packages.hiddenRepositoryIds"],
+        "transport": "existing-settings.get-update-only-changed-fields-serialized-expectedRevision-CAS",
+        "rapidChanges": "bounded-per-field-latest-intent-coalescing-during-inflight-write-no-parallel-writes",
+        "navigation": "pending-and-errors-live-in-current-App-connection-scope-not-page-scope-no-ordinary-discard-prompt",
+        "failure": "explicit-error-with-Retry-retained-intent-no-false-runtime-apply",
+        "retry": "read-current-authority-before-difference-skip-already-committed-intent-preserve-unrelated-fields",
+        "connectionChange": "stop-old-queue-no-new-RPC-after-stop-no-replay-into-new-connection",
+        "independentEditors": "Theme-and-other-editors-with-own-Save-Cancel-retain-explicit-confirmation",
+        "persistence": "daemon-only-no-new-localStorage-config-schema-method-capability-or-permission",
+        "validationEvidence": "docs/testing/m7-settings-autosave-20261030.md"
+    },
+    "notIncluded": [
+        "window-remember-preference",
+        "other-GUI-layout-or-icons",
+        "additional-theme-extension-runtime",
+        "cookie-or-localStorage-authoritative-settings"
+    ],
+    "validation": [
+        "config2-to3-preserve-user-choice-and-revision",
+        "missing-default-unknown-invalid-atomic-rollback",
+        "typed-RPC-SDK-schema-round-trip",
+        "9-schemes-multiple-seeds-light-dark-system",
+        "HEX-picker-HCT-bidirectional-and-gamut",
+        "invalid-hex-no-write",
+        "save-failure-conflict-explicit-error",
+        "ordinary-autosave-preserved-through-independent-theme-confirmation",
+        "three-language-labels",
+        "static-default-palette-equals-runtime",
+        "dialog-entry-within-Appearance-no-inline-theme-panel",
+        "preview-and-reset-no-RPC-before-explicit-Save",
+        "Save-single-theme-update-busy-duplicate-and-dismiss-guards",
+        "Cancel-Escape-dismiss-restore-accepted-and-entry-focus"
+    ],
+    "validationEvidence": "docs/testing/m7-theme-dialog-20261030.md"
+}

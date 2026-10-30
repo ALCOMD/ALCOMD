@@ -524,14 +524,13 @@ pub(super) fn complete_template_project_create(
                 && identity == project.observation.path_identity_key => {}
         Some(_) => return Err(error(M5TemplateErrorCode::TemplateConflict)),
         None => {
-            let semantic = super::m3::semantic_project(project.observation.clone());
             transaction
                 .execute(
                     "INSERT INTO projects (
                         project_id,owner_principal_id,root_path,path_identity_key,project_type,
                         unity_version,unity_revision,snapshot_json,revision,registered_at_ms,
-                        observed_at_ms,updated_at_ms
-                     ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,1,?9,?10,?9)",
+                        updated_at_ms,last_modified_at_ms
+                     ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,1,?9,?9,?9)",
                     params![
                         project.project_id.to_string(),
                         owner.as_str(),
@@ -540,9 +539,8 @@ pub(super) fn complete_template_project_create(
                         super::m3::project_type(project.observation.project_type),
                         project.observation.unity_version,
                         project.observation.unity_revision,
-                        serde_json::to_string(&semantic).map_err(|_| internal())?,
+                        serde_json::to_string(&project.observation).map_err(|_| internal())?,
                         integer(completed_at_ms)?,
-                        integer(project.observation.observed_at_ms)?,
                     ],
                 )
                 .map_err(failure)?;

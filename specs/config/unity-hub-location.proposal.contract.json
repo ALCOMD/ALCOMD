@@ -1,0 +1,219 @@
+{
+    "status": "owner-approved-for-implementation",
+    "approval": {"date": "2026-10-31", "ownerResponse": "是", "scope": "Exact reviewed minimum contract and explicit parity boundaries", "followup": "Owner requested removal of the Windows internal prefix, a clickable Auto detect button and direct path editing; reuse existing path-set/null-clear and settings read contracts"},
+    "scope": "M7 H2-A: Unity Hub location selection and approved Open/Download action in Settings",
+    "authority": "alcomd-application; daemon-only configuration writer",
+    "interfaces": {
+        "methods": ["settings.get", "settings.update", "unity.hub.open"],
+        "permissions": {"settings.get": ["settings.read"], "settings.update": ["settings.manage"], "unity.hub.open": ["settings.read", "unity.hub.open"]},
+        "newMethod": "unity.hub.open",
+        "newCapability": "unity.hub.open.v1",
+        "newPermission": "unity.hub.open",
+        "newConfigVersion": null,
+        "configSchema": 3,
+        "newStateMigration": null,
+        "configField": "settings.unity.hubPath",
+        "responseEvidence": "settingsGetResult.unityHub; also returned by settings.update",
+        "compatibility": "Pre-release strict clients must update for new result fields; no aliases or parallel response model. Existing Config3 files without [unity] read as hubPath=null; v1/v2 retain existing migrations."
+    },
+    "storage": {
+        "file": "config/settings.toml",
+        "key": "unity.hub_path",
+        "default": null,
+        "nullEncoding": "Omit hub_path and empty unity section",
+        "pathEncoding": "TOML basic string with reversible escaping for quotes and backslashes; Unicode round-trips",
+        "limits": {"pathUtf8Bytes": 4096, "fileUtf8Bytes": 16384},
+        "writer": "existing ConfigStore adapter; existing lock/CAS/recoverable publication",
+        "discoveryWritesConfiguration": false,
+        "migrationOrDiscoveryAdvancesRevision": false,
+        "successfulUpdate": "Existing checked revision increment; only supplied fields change"
+    },
+    "pathRules": {
+        "input": "Absolute UTF-8 path, nonempty, no NUL/control characters; byte limit in addition to JSON Schema character bound",
+        "windows": "Existing regular .exe file; canonicalize; do not execute or claim vendor/signature verification",
+        "windowsPresentation": "Ordinary DOS/UNC notation without the internal verbatim prefix only if it resolves back to the same canonical file; preserve device/volume or verbatim-dependent paths",
+        "macos": "Accept .app bundle by resolving Contents/MacOS/Unity Hub, or direct executable; existing regular executable file; canonicalize",
+        "linux": "Existing regular executable file, including AppImage or executable launcher; canonicalize; no filename restriction",
+        "persist": "Normalized executable path; only validate explicit hubPath changes, not unrelated settings updates",
+        "invalidSelection": "Invalid path rejects the whole settings.update as invalid_request; filesystem I/O inability uses existing unavailable error mapping, never a false invalid-path verdict; file, revision and accepted UI value remain unchanged",
+        "identityGuarantee": "Filesystem usability at observation time only; not proof that the file is genuine Unity Hub or remains unchanged"
+    },
+    "discovery": {
+        "precedence": ["usable configured executable", "first usable platform default candidate"],
+        "maxDefaultCandidates": 8,
+        "windows": ["ProgramFiles/Unity Hub/Unity Hub.exe", "ProgramFiles(x86)/Unity Hub/Unity Hub.exe", "LOCALAPPDATA/Programs/Unity Hub/Unity Hub.exe"],
+        "macos": ["/Applications/Unity Hub.app/Contents/MacOS/Unity Hub", "HOME/Applications/Unity Hub.app/Contents/MacOS/Unity Hub"],
+        "linux": ["HOME/Applications/Unity Hub.AppImage", "/usr/bin/unity-hub", "/opt/unityhub/unityhub", "XDG_DATA_HOME-or-HOME/.local/share/flatpak/exports/bin/com.unity.UnityHub", "/var/lib/flatpak/exports/bin/com.unity.UnityHub"],
+        "environment": "Daemon environment only; ignore missing or nonabsolute roots; deduplicate in listed order",
+        "invalidConfiguredPath": "Retain saved preference, try default candidates, report configuredPathStatus=invalid",
+        "inspectionFailure": "Permission or other I/O failure reports unavailable, without silently replacing configuration",
+        "constraints": ["No recursive scan", "No PATH-wide scan", "No registry API or dependency", "No Hub process or shell execution", "No writes"],
+        "v3Difference": "The v3 Windows registry install-location probe is not restored in this narrow increment; custom locations remain selectable. Discovery does not silently persist fallback paths."
+    },
+    "ui": {
+        "position": "Unity Hub Path section before Unity installations, using existing Settings section and MD3 controls",
+        "translations": {"en-US": "Unity Hub Path", "zh-CN": "Unity Hub 路径", "ja-JP": "Unity Hubの場所"},
+        "contents": "Editable path draft initialized from accepted effective path; not-found/unavailable text is a placeholder, never the input value. Auto detect and Select buttons remain; no Open location button",
+        "directEdit": "No RPC while typing. Enter or leaving the entire setting action group commits through existing serial settings writer and Core path validation; Escape restores latest accepted value. Unchanged automatic evidence is not converted into a manual preference. Moving focus to the local action buttons must not first save unfinished text. IME composition Enter is not a commit. Empty edited text is a local required-style error without RPC; Auto detect explicitly clears the preference. Validation failure retains the draft with explicit error/retry; successful commit adopts Core-normalized path. Concurrent reads cannot overwrite an active draft, and old connection results cannot submit to a replacement client.",
+        "autoDetect": "Explicit action switches to automatic discovery with existing hubPath:null in the serial CAS queue. Already-null preference forces settings.get for fresh same-revision evidence with no write or Editor refresh. Lost replies reconcile before retry; concurrent unseen manual preference is not silently overwritten.",
+        "picker": "Existing Tauri dialog plugin, new thin file-picker adapter only; .exe Windows, .app macOS, unrestricted files Linux; seed previous effective selection",
+        "cancel": "No configuration update, revision change or Editor discovery",
+        "save": "Selected path immediately uses existing SettingsAutosave serial CAS queue; no page Save/Discard or transient success text",
+        "failure": "Keep explicit save error and previous accepted effective path; retry reconciles current settings before resubmission",
+        "guard": "One picker/save in flight; connection change discards old results; no duplicate writes from double-click",
+        "refresh": "After confirmed save, invoke existing unity.installations.refresh once if unity.manage is granted, then reread installations; refresh failure is separate from saved-path success",
+        "permissionBoundary": "settings.manage authorizes location save; unity.manage separately authorizes Editor discovery. Missing unity.manage does not reject a successful path save.",
+        "evidence": "Display only evidence paired with accepted settings revision; optimistic pending path does not become an effective usable path",
+        "editorDiscoveryLimitation": "Existing refresh scans known Editor roots. This increment does not claim to restore Hub config/CLI discovery, custom Editor-root import, legacy Hub loading or missing-Editor installation links."
+    },
+    "architecture": {
+        "application": "Own permissions, validation, CAS and settings snapshot. Add a narrow injected Hub-location inspection port; no filesystem/path parsing in application.",
+        "platform": "Own normalization, bounded candidate paths and filesystem inspection; no new dependency, unsafe or native API",
+        "store": "Own optional unity section, escaped path encoding/decoding, existing recovery and size bounds",
+        "daemon": "Construct adapter and map typed DTO/evidence; evidence failure after commit must not report the successful update as failed",
+        "gui": "Only system picker, presentation and RPC intents; no settings file access or authoritative localStorage",
+        "snapshot": "Observe from the exact ConfigSnapshot used for the response; do not store evidence in ConfigSnapshot or candidate settings authority; configured path status may change without revision",
+        "redaction": "Absolute paths only in explicitly authorized settings payloads and native picker; never in Activity/Event or ordinary errors. Document the explicit settings-payload exception to the generic redaction list.",
+        "packageEvidence": "Existing config revision already participates in package fingerprints. Path save can invalidate old candidate cursors exactly like any settings update; do not change that policy. Discovery alone cannot invalidate them.",
+        "unchanged": ["resolver", "source priority", "package Plan/Apply", "Unity launch", "Unity registry ownership", "project files", "ConfigStore publication discipline"]
+    },
+    "schemaFragments": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+            "hubPath": {"type": ["string", "null"], "minLength": 1, "maxLength": 4096, "pattern": "^[^\\u0000-\\u001F\\u007F]+$"},
+            "unitySettings": {"type": "object", "additionalProperties": false, "required": ["hubPath"], "properties": {"hubPath": {"$ref": "#/$defs/hubPath"}}},
+            "partialUnityUpdate": {"type": "object", "additionalProperties": false, "minProperties": 1, "properties": {"hubPath": {"$ref": "#/$defs/hubPath"}}},
+            "hubLocation": {
+                "type": "object", "additionalProperties": false,
+                "required": ["status", "source", "path", "configuredPathStatus"],
+                "properties": {
+                    "status": {"enum": ["available", "not_found", "unavailable"]},
+                    "source": {"enum": ["configured", "discovered", "none"]},
+                    "path": {"$ref": "#/$defs/hubPath"},
+                    "configuredPathStatus": {"enum": ["unset", "available", "invalid", "unavailable"]}
+                },
+                "allOf": [
+                    {"if": {"properties": {"status": {"const": "available"}}}, "then": {"properties": {"source": {"enum": ["configured", "discovered"]}, "path": {"type": "string"}}}, "else": {"properties": {"source": {"const": "none"}, "path": {"type": "null"}}}},
+                    {"if": {"properties": {"source": {"const": "configured"}}}, "then": {"properties": {"configuredPathStatus": {"const": "available"}}}},
+                    {"if": {"properties": {"configuredPathStatus": {"const": "available"}}}, "then": {"properties": {"source": {"const": "configured"}, "status": {"const": "available"}}}},
+                    {"if": {"properties": {"configuredPathStatus": {"const": "unavailable"}}}, "then": {"properties": {"status": {"const": "unavailable"}}}}
+                ]
+            }
+        }
+    },
+    "shapeVectors": [
+        {"id": "path", "definition": "unitySettings", "value": {"hubPath": "C:\\Tools\\Unity Hub\\Unity Hub.exe"}, "valid": true},
+        {"id": "clear", "definition": "partialUnityUpdate", "value": {"hubPath": null}, "valid": true},
+        {"id": "empty-path", "definition": "unitySettings", "value": {"hubPath": ""}, "valid": false},
+        {"id": "control", "definition": "unitySettings", "value": {"hubPath": "/tmp/a\nb"}, "valid": false},
+        {"id": "null-container", "definition": "partialUnityUpdate", "value": null, "valid": false},
+        {"id": "empty-container", "definition": "partialUnityUpdate", "value": {}, "valid": false},
+        {"id": "unknown-field", "definition": "partialUnityUpdate", "value": {"hubPath": null, "launch": true}, "valid": false},
+        {"id": "manual", "definition": "hubLocation", "value": {"status": "available", "source": "configured", "path": "C:\\Tools\\Unity Hub.exe", "configuredPathStatus": "available"}, "valid": true},
+        {"id": "automatic", "definition": "hubLocation", "value": {"status": "available", "source": "discovered", "path": "/opt/unityhub/unityhub", "configuredPathStatus": "unset"}, "valid": true},
+        {"id": "stale-fallback", "definition": "hubLocation", "value": {"status": "available", "source": "discovered", "path": "/opt/unityhub/unityhub", "configuredPathStatus": "invalid"}, "valid": true},
+        {"id": "absent", "definition": "hubLocation", "value": {"status": "not_found", "source": "none", "path": null, "configuredPathStatus": "unset"}, "valid": true},
+        {"id": "io-error", "definition": "hubLocation", "value": {"status": "unavailable", "source": "none", "path": null, "configuredPathStatus": "unavailable"}, "valid": true},
+        {"id": "false-available", "definition": "hubLocation", "value": {"status": "available", "source": "none", "path": null, "configuredPathStatus": "unset"}, "valid": false},
+        {"id": "false-source", "definition": "hubLocation", "value": {"status": "not_found", "source": "configured", "path": "C:\\Tools\\Unity Hub.exe", "configuredPathStatus": "invalid"}, "valid": false},
+        {"id": "contradictory-config", "definition": "hubLocation", "value": {"status": "available", "source": "discovered", "path": "/opt/unityhub/unityhub", "configuredPathStatus": "available"}, "valid": false}
+    ],
+    "implementationTestPlan": [
+        "platform: valid file, missing file, directory, relative path, permissions, macOS bundle, Windows exe, Linux executable, Unicode, normalized symlink, candidate ordering and bounds",
+        "store: existing Config3 with no unity section; v1/v2 migration; quoted/backslash/Unicode roundtrip; invalid control and oversized path; 16KiB limit; recovery preserves path and revision",
+        "application: permission before inspection; CAS conflict before inspection; explicit path validation before any publish; mixed invalid update atomic rejection; clear; unrelated update does not revalidate missing Hub",
+        "application: observation never writes or executes; response evidence uses accepted revision; observation failure after publish returns successful commit with unavailable evidence; cancellation/cache discipline unchanged",
+        "RPC: all schema shape vectors, settings read/manage permission separation, omission/null semantics, strict unknown fields and response snapshots",
+        "GUI: picker cancel no RPC; rapid repeat once; save and reopen; failure/retry/CAS conflict; connection switch ignores old picker/read; refresh permission and refresh failure separate from save",
+        "GUI: three locales, readonly path overflow, no transient success label/layout shift, keyboard focus, real Tauri picker and restart persistence manually verified",
+        "regression: package candidate revisions retain existing policy; Unity launch and manual installation management unchanged"
+    ],
+    "openActionProposal": {
+        "status": "owner-approved-for-implementation",
+        "approval": {"date": "2026-10-31", "ownerResponse": "批准，按合同实现", "scope": "Exact method/capability/permission and fixed official download fallback; initial local-owner only"},
+        "ownerRequest": "Move Auto detect into card header and add Open Unity Hub, or Download Unity Hub if no Hub is specified",
+        "layout": "Card header actions at the right: existing Auto detect plus new Open/Download; Select remains beside the editable path. Header, input and Retry share the existing focus group.",
+        "method": "unity.hub.open",
+        "capability": "unity.hub.open.v1",
+        "permissions": ["settings.read", "unity.hub.open"],
+        "principal": "Authenticated builtin:local-owner only; check principal and permissions before configuration/filesystem/process access. No new third-party/extension grants.",
+        "whyExistingAuthorityCannotBeReused": "unity.launch and unity.launch.v1 are Project/exact-Editor launch authority; settings.manage and unity.manage explicitly exclude process launch. Do not widen their meanings or execute the Hub inside Tauri.",
+        "input": "expectedRevision is the accepted settings revision; expectedPath is the accepted Core effective path or null. It is an equality/race guard only, never an executable/argv/URL instruction.",
+        "authority": [
+            "Core reads the current authoritative settings under its existing settings coordination, verifies expectedRevision, then inspects the Hub through the existing read-only port.",
+            "If current effective path differs from expectedPath, reject hub_path_changed with no process/browser action; do not auto-launch a different target.",
+            "available/configured and available/discovered both use the Core effective target, including the existing invalid-manual-path plus usable-default fallback. Do not alter preference or discovery precedence.",
+            "Only not_found with configured hubPath=null and expectedPath=null returns download_required. A broken explicit preference without a usable fallback returns hub_path_invalid; I/O inability returns hub_unavailable, never a fabricated missing-install diagnosis.",
+            "Revalidate the resolved executable just before dispatch; use only the Core-resolved path, zero arguments and null standard streams. No shell, user URL, project target or environment override.",
+            "Existing checks prove a usable executable at inspection time, not vendor identity, signature or immutable binary identity. expectedPath does not eliminate executable replacement races. This local-owner-only action can execute the file the owner selected as Hub."
+        ],
+        "result": "spawned means OS process creation accepted, not Hub window readiness. download_required means no process was started; GUI may open only the fixed official page.",
+        "errors": ["invalid_request", "permission_denied", "revision_conflict", "hub_path_changed", "hub_path_invalid", "hub_unavailable", "hub_open_busy", "hub_open_failed", "internal_error with diagnosticId"],
+        "processLifetime": {
+            "newPort": "Separate UnityHubLauncher command port; keep UnityHubPlatform strictly read-only. Daemon wires both; application owns the decision.",
+            "maxActiveReapers": 4,
+            "worker": "Reserve bounded capacity and successfully establish a reaper worker before any process creation. The worker spawns, reports OS acceptance, then waits the owned Child even if the request/response receiver is dropped. Worker creation failure cannot occur after spawning an untracked child.",
+            "shutdown": "ALCOMD does not intentionally kill Hub when GUI disconnects or daemon exits; detached reaping must not block daemon shutdown. No polling of unrelated Hub/Unity processes.",
+            "retry": "No automatic retry after transport failure or unknown reply. No durable at-most-once or cross-request idempotency guarantee; single in-flight GUI guard prevents duplicate submission within one action. Explicit later clicks are separate intents."
+        },
+        "download": {
+            "url": "https://unity.com/download",
+            "source": "https://docs.unity.com/en-us/hub/install-hub-win-mac links Download Unity to this page; checked 2026-10-31",
+            "adapter": "Thin closed GUI system adapter using the existing open dependency, accepts no URL/path/argv parameters. Called only after download_required; do not add a generic URL opener or a Core networking dependency.",
+            "meaning": "Open official landing page only; no installer download, installation, OAuth automation or tracking parameter. A browser-open failure is a separate visible UI error."
+        },
+        "gui": {
+            "available": "Open Unity Hub; use accepted Core evidence, including automatic detection",
+            "notFoundAutomatic": "Download Unity Hub",
+            "unknownOrBrokenWithoutFallback": "Open action disabled with existing error/reason, not relabeled Download",
+            "dirtyOrBusy": "Open/Download disabled while path draft is dirty, settings are unconfirmed or another action is in flight. Header belongs to the same focus group, so clicking it cannot first save and then accidentally open the old target.",
+            "unsupported": "No open capability means no claim of launch support; show disabled/unavailable action according to existing capability convention",
+            "feedback": "No fleeting success label/status line. Keep explicit errors; unknown launch outcome instructs checking Hub before another intentional click."
+        },
+        "persistence": "No Config/State schema change, durable table, Plan, Apply, Operation or Event. Existing resolver, Editor launch, source rules and project files unchanged.",
+        "dependencies": "No new dependency, unsafe or native API; std process/thread facilities in platform and existing GUI open crate",
+        "schemaFragments": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$defs": {
+                "openParams": {
+                    "type": "object", "additionalProperties": false,
+                    "required": ["expectedRevision", "expectedPath"],
+                    "properties": {
+                        "expectedRevision": {"type": "integer", "minimum": 1, "maximum": 18446744073709551615},
+                        "expectedPath": {"type": ["string", "null"], "minLength": 1, "maxLength": 4096, "pattern": "^[^\\u0000-\\u001F\\u007F]+$"}
+                    }
+                },
+                "openResult": {
+                    "type": "object", "additionalProperties": false, "required": ["outcome"],
+                    "properties": {"outcome": {"enum": ["spawned", "download_required"]}}
+                }
+            }
+        },
+        "shapeVectors": [
+            {"id": "resolved-path", "definition": "openParams", "value": {"expectedRevision": 153, "expectedPath": "C:\\Program Files\\Unity Hub\\Unity Hub.exe"}, "valid": true},
+            {"id": "no-path", "definition": "openParams", "value": {"expectedRevision": 153, "expectedPath": null}, "valid": true},
+            {"id": "missing-revision", "definition": "openParams", "value": {"expectedPath": null}, "valid": false},
+            {"id": "missing-path", "definition": "openParams", "value": {"expectedRevision": 153}, "valid": false},
+            {"id": "zero-revision", "definition": "openParams", "value": {"expectedRevision": 0, "expectedPath": null}, "valid": false},
+            {"id": "empty-path", "definition": "openParams", "value": {"expectedRevision": 153, "expectedPath": ""}, "valid": false},
+            {"id": "argv-injection", "definition": "openParams", "value": {"expectedRevision": 153, "expectedPath": null, "arguments": ["--projectPath", "other"]}, "valid": false},
+            {"id": "url-injection", "definition": "openParams", "value": {"expectedRevision": 153, "expectedPath": null, "url": "https://example.invalid"}, "valid": false},
+            {"id": "spawned", "definition": "openResult", "value": {"outcome": "spawned"}, "valid": true},
+            {"id": "download", "definition": "openResult", "value": {"outcome": "download_required"}, "valid": true},
+            {"id": "false-ready", "definition": "openResult", "value": {"outcome": "window_ready"}, "valid": false},
+            {"id": "returned-url", "definition": "openResult", "value": {"outcome": "download_required", "url": "https://example.invalid"}, "valid": false}
+        ],
+        "implementationVectors": [
+            "principal/permission rejection before all IO, including local-owner missing permission and non-owner possessing named permissions",
+            "stale config revision or effective path creates no child and no download fallback",
+            "configured and discovered usable paths, including invalid manual plus available fallback, dispatch exactly the Core target without argv",
+            "automatic not-found returns download_required; explicit missing path without fallback and inaccessible evidence fail closed",
+            "reaper capacity and worker-creation failure occur before spawn; successful spawn always waited despite response cancellation; spawn failure releases capacity; daemon shutdown does not wait for Hub lifetime",
+            "no config revision/file, package cache, project, Plan, Operation or Event mutation; the existing in-memory accepted-settings cache may be refreshed from the same authoritative config read",
+            "GUI header geometry and composed focus; dirty draft blocks open; busy/repeated mouse/keyboard actions submit once; lost replies never auto-retry",
+            "download opens only fixed official URL through closed adapter; custom URL input cannot redirect it; opener errors remain visible",
+            "capability absent, three locales, manual real Hub/browser/desktop evidence recorded separately from mocks"
+        ]
+    },
+    "excluded": ["Hub installation or installer download", "Hub config/CLI Editor discovery", "Windows registry detection", "new dependencies", "unsafe", "new platform API", "project Apply or writes", "new worktree", "commit", "push", "Visual Gate 2 signoff"]
+}

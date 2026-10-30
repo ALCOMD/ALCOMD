@@ -518,6 +518,23 @@ pub(super) fn accept_launch(
         spawn_accepted: false,
         created_at_ms: now_ms,
     };
+    // v3 records project activity once launch is accepted, before spawning the Editor.
+    // Keep it in the same transaction as the durable launch key; replays never touch it.
+    let changed = transaction
+        .execute(
+            "UPDATE projects SET last_modified_at_ms=MAX(COALESCE(last_modified_at_ms,0),?1)
+         WHERE project_id=?2 AND owner_principal_id=?3 AND revision=?4",
+            params![
+                integer(now_ms)?,
+                project.project_id.to_string(),
+                owner.as_str(),
+                integer(project.revision.get())?
+            ],
+        )
+        .map_err(failure)?;
+    if changed != 1 {
+        return Err(error(M5UnityErrorCode::RevisionConflict));
+    }
     save_response(
         &transaction,
         owner,

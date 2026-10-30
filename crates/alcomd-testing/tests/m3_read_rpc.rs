@@ -45,6 +45,7 @@ async fn project_and_repository_read_slice_round_trips_without_source_writes() {
     assert_eq!(inspected.project.project_type, ProjectType::Avatars);
     assert!(inspected.project.project_id.is_none());
     assert!(inspected.project.registered_at_ms.is_none());
+    assert!(inspected.project.last_modified_at_ms.is_none());
     assert!(inspected.project.favorite.is_none());
     assert!(
         serde_json::to_value(&inspected.project)
@@ -65,13 +66,32 @@ async fn project_and_repository_read_slice_round_trips_without_source_writes() {
         .project
         .registered_at_ms
         .expect("registered project timestamp");
-    let project_id = registered.project.project_id.expect("registered ID");
+    let last_modified_at_ms = registered
+        .project
+        .last_modified_at_ms
+        .expect("newly registered project has authoritative modified time");
+    assert_eq!(last_modified_at_ms, registered_at_ms);
+    let project_id = registered
+        .project
+        .project_id
+        .clone()
+        .expect("registered ID");
     let no_op = client
         .project_refresh(project_id.clone(), 1, "m3-project-refresh".to_owned())
         .await
         .expect("refresh project");
     assert_eq!(no_op.project.revision, Some(1));
     assert_eq!(no_op.project.registered_at_ms, Some(registered_at_ms));
+    assert_eq!(no_op.project.last_modified_at_ms, Some(last_modified_at_ms));
+    assert_eq!(no_op.project, registered.project);
+    for snapshot in [&inspected.project, &registered.project, &no_op.project] {
+        assert!(
+            serde_json::to_value(snapshot)
+                .expect("serialize project snapshot")
+                .get("observedAtMs")
+                .is_none()
+        );
+    }
     let projects = client
         .projects_list(None, Some(100))
         .await
@@ -79,6 +99,7 @@ async fn project_and_repository_read_slice_round_trips_without_source_writes() {
         .projects;
     assert_eq!(projects.len(), 1);
     assert_eq!(projects[0].registered_at_ms, Some(registered_at_ms));
+    assert_eq!(projects[0].last_modified_at_ms, Some(last_modified_at_ms));
     assert_eq!(projects[0].favorite, Some(false));
     let favorite = client
         .project_set_favorite(ProjectSetFavoriteParams {
@@ -91,6 +112,19 @@ async fn project_and_repository_read_slice_round_trips_without_source_writes() {
         .expect("favorite project over RPC");
     assert_eq!(favorite.project.revision, Some(2));
     assert_eq!(favorite.project.favorite, Some(true));
+    assert_eq!(
+        favorite.project.last_modified_at_ms,
+        Some(last_modified_at_ms)
+    );
+    let read_back = client
+        .project_get(project_id.clone())
+        .await
+        .expect("get registered project metadata");
+    assert_eq!(
+        read_back.project.last_modified_at_ms,
+        Some(last_modified_at_ms)
+    );
+    assert_eq!(read_back.project, favorite.project);
     assert_eq!(
         client
             .projects_list(None, Some(100))

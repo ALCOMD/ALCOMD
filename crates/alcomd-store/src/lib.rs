@@ -41,6 +41,7 @@ use alcomd_application::{
 };
 use tokio::sync::{mpsc, oneshot};
 
+mod config;
 mod m3;
 mod m4;
 mod m5;
@@ -56,11 +57,13 @@ mod m7_unity_migration;
 mod m7_user_packages;
 mod sqlite;
 
+pub use config::FileConfigStore;
+
 /// Stable crate identifier used by repository checks.
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 14;
+pub const CURRENT_DATA_SCHEMA: u32 = 16;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]

@@ -1,0 +1,101 @@
+{
+    "status": "owner-authorized-implementation",
+    "from": 15,
+    "to": 16,
+    "transaction": "BEGIN IMMEDIATE",
+    "migration": "crates/alcomd-store/migrations/0016_remove_project_observed.sql",
+    "tablesAdded": [],
+    "columnsAdded": [],
+    "columnsRemoved": [
+        "projects.observed_at_ms"
+    ],
+    "publicFieldRemoved": "ProjectSnapshot.observedAtMs",
+    "breakingChange": "owner-approved-pre-release-response-field-removal",
+    "projectObservationClock": "removed-no-replacement",
+    "projectJsonRemovals": [
+        {
+            "table": "projects",
+            "column": "snapshot_json",
+            "path": "$.observed_at_ms"
+        },
+        {
+            "table": "idempotency_records",
+            "column": "response_json",
+            "methods": [
+                "projects.register",
+                "projects.refresh",
+                "projects.setFavorite"
+            ],
+            "path": "$.value.observation.observed_at_ms"
+        },
+        {
+            "table": "project_copy_plans",
+            "column": "source_snapshot_json",
+            "path": "$.observation.observed_at_ms"
+        },
+        {
+            "table": "idempotency_records",
+            "column": "response_json",
+            "methods": [
+                "projects.planCopy"
+            ],
+            "path": "$.plan.sourceProject.observation.observed_at_ms"
+        },
+        {
+            "table": "project_delete_plans",
+            "column": "project_snapshot_json",
+            "path": "$.observation.observed_at_ms"
+        },
+        {
+            "table": "project_unity_migration_plans",
+            "column": "project_snapshot_json",
+            "path": "$.observation.observed_at_ms"
+        },
+        {
+            "table": "idempotency_records",
+            "column": "response_json",
+            "methods": [
+                "projects.planDeleteDirectory",
+                "projects.planUnityMigration"
+            ],
+            "path": "$.plan.project.observation.observed_at_ms"
+        },
+        {
+            "table": "project_copy_filesystem_journal",
+            "column": "evidence_json",
+            "path": "$.published.observation.observed_at_ms"
+        }
+    ],
+    "unappliedUnityMigrationPlans": {
+        "expiresAtMs": 0,
+        "updateIdempotentPlanExpiry": true,
+        "authorityFingerprint": "preserve-never-re-sign"
+    },
+    "appliedUnityMigrationPlans": "preserve-original-fingerprint-operation-and-recovery-evidence",
+    "immutableGuards": "restore-original-trigger-definitions-in-same-transaction",
+    "oldCandidateCursor": "existing-evidence-stale-requires-new-query",
+    "preserved": [
+        "ProjectRecord.last_modified_at_ms",
+        "ProjectSnapshot.lastModifiedAtMs",
+        "unity_installations.observed_at_ms",
+        "UnityInstallationSnapshot.observedAtMs",
+        "copy-delete-writer-evidence.observedAtMs",
+        "UnityWriterState.checked_at_ms",
+        "UnityMigrationEvidence.reobserved_at_ms",
+        "historical-migration-SQL"
+    ],
+    "compatibilityAliasesOrFallbacks": false,
+    "newMethodCapabilityPermissionOrDependency": false,
+    "resolverPlanApplySemanticsChanged": false,
+    "validation": [
+        "state-15-upgrade-project-json-removal",
+        "migration-rollback",
+        "immutable-guard-identity",
+        "unrelated-evidence-preserved",
+        "old-plan-expiry-without-resigning",
+        "historical-permanent-idempotency-replay",
+        "project-no-op-refresh-equality",
+        "candidate-and-migration-authority-stability",
+        "public-schema-and-GUI-payload-absence"
+    ]
+}

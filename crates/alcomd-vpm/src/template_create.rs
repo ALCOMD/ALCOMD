@@ -98,7 +98,7 @@ pub(super) async fn plan_create_project(
             .map_err(|_| error(M5TemplateErrorCode::Internal))?;
         let reader = VpmReader::new().map_err(|_| error(M5TemplateErrorCode::Internal))?;
         let observation = reader
-            .inspect_project_root(scratch.clone(), scratch_identity, 0)
+            .inspect_project_root(scratch.clone(), scratch_identity)
             .await
             .map_err(|_| error(M5TemplateErrorCode::TemplateBundleInvalid))?;
         let project = ProjectRecord {
@@ -106,6 +106,7 @@ pub(super) async fn plan_create_project(
             observation,
             revision: Revision::INITIAL,
             registered_at_ms: 0,
+            last_modified_at_ms: None,
             favorite: false,
         };
         let snapshot = inspect_package_project(&project)
@@ -402,7 +403,7 @@ async fn validate_published_target(
         .map_err(|_| error(M5TemplateErrorCode::ProjectChangedDuringTemplateCreate))?;
     let reader = VpmReader::new().map_err(|_| error(M5TemplateErrorCode::Internal))?;
     let observation = reader
-        .inspect_project_root(root, identity, now_ms()?)
+        .inspect_project_root(root, identity)
         .await
         .map_err(|_| error(M5TemplateErrorCode::ProjectChangedDuringTemplateCreate))?;
     if hex(&digest(&read_bounded(
@@ -717,15 +718,6 @@ fn parse_digest(value: &str) -> Result<[u8; 32], M5TemplateError> {
     Ok(digest)
 }
 
-fn now_ms() -> Result<u64, M5TemplateError> {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|_| error(M5TemplateErrorCode::Internal))
-        .and_then(|duration| {
-            u64::try_from(duration.as_millis()).map_err(|_| error(M5TemplateErrorCode::Internal))
-        })
-}
-
 fn map_m4_error(_: alcomd_application::M4Error) -> M5TemplateError {
     error(M5TemplateErrorCode::TemplatePlanStale)
 }
@@ -869,10 +861,9 @@ mod tests {
             .await
             .expect("recover published target");
         assert!(recovered_stage.already_published);
-        let mut recovered = publish_create_project(recovered_stage)
+        let recovered = publish_create_project(recovered_stage)
             .await
             .expect("recovered publish");
-        recovered.observation.observed_at_ms = created.observation.observed_at_ms;
         assert_eq!(recovered, created);
         std::fs::remove_dir_all(root).expect("remove root");
         std::fs::remove_dir_all(parent).expect("remove parent");

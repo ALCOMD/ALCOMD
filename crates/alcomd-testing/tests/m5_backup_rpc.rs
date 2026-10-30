@@ -143,10 +143,12 @@ async fn backup_restore_plans_applies_and_registers_one_new_project() {
         )
         .await
         .expect("register source");
+    let source_time = registered.project.last_modified_at_ms;
+    assert!(source_time.is_some());
     let source_id = registered.project.project_id.expect("source id");
     let created = client
         .backup_create(BackupCreateParams {
-            project_id: source_id,
+            project_id: source_id.clone(),
             expected_revision: 1,
             compression_mode: BackupCompression::Fast,
             exclude_vpm_packages: true,
@@ -212,6 +214,21 @@ async fn backup_restore_plans_applies_and_registers_one_new_project() {
         Some(plan.project_id.as_str())
     );
     assert_eq!(project.project.favorite, Some(false));
+    assert_eq!(
+        project.project.last_modified_at_ms,
+        project.project.registered_at_ms
+    );
+    assert!(project.project.last_modified_at_ms.is_some());
+    assert_eq!(
+        client
+            .project_get(source_id)
+            .await
+            .expect("source after backup and restore")
+            .project
+            .last_modified_at_ms,
+        source_time,
+        "backup and restore must not change source activity"
+    );
     let replay = client
         .backup_apply_restore(BackupApplyRestoreParams {
             plan_id: plan.plan_id,
@@ -221,6 +238,16 @@ async fn backup_restore_plans_applies_and_registers_one_new_project() {
         .expect("restore replay");
     assert!(replay.replayed);
     assert_eq!(replay.operation_id, accepted.operation_id);
+    assert_eq!(
+        client
+            .project_get(plan.project_id)
+            .await
+            .expect("restored target after replay")
+            .project
+            .last_modified_at_ms,
+        project.project.last_modified_at_ms,
+        "restore replay must preserve the first registration time"
+    );
     shutdown.store(true, Ordering::Release);
     daemon.await.expect("join").expect("daemon");
 }
@@ -802,6 +829,32 @@ async fn run_restore_kill_restart_case(checkpoint: &str) {
         .project_get(signal.project_id.clone())
         .await
         .expect("project");
+    assert_eq!(
+        project.project.last_modified_at_ms, project.project.registered_at_ms,
+        "{checkpoint}"
+    );
+    assert!(
+        project.project.last_modified_at_ms.is_some(),
+        "{checkpoint}"
+    );
+    let replay = client
+        .backup_apply_restore(BackupApplyRestoreParams {
+            plan_id: signal.plan_id,
+            idempotency_key: "restore-kill-apply".to_owned(),
+        })
+        .await
+        .expect("replay completed recovered restore");
+    assert!(replay.replayed, "{checkpoint}");
+    assert_eq!(
+        client
+            .project_get(signal.project_id.clone())
+            .await
+            .expect("recovered target after replay")
+            .project
+            .last_modified_at_ms,
+        project.project.last_modified_at_ms,
+        "{checkpoint}: recovery replay preserves target activity"
+    );
     assert_eq!(
         project.project.project_id.as_deref(),
         Some(signal.project_id.as_str())

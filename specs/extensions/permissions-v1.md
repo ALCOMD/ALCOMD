@@ -28,6 +28,7 @@ activity.read
 diagnostics.read
 settings.read
 settings.manage
+unity.hub.open
 access.read
 access.manage
 extensions.read
@@ -35,6 +36,12 @@ extensions.manage
 extensions.permissions.manage
 extensions.ui.use
 ```
+
+`unity.hub.open` 在当前实现中仅允许经过认证的 `builtin:local-owner`，并同时要求
+`settings.read`；它只允许打开与已接受设置 revision／effective path 一致的 Core 解析目标。
+这不是 `unity.launch` 的别名，也不授予外部客户端或扩展；不允许调用方传入 executable、
+argv、URL、项目目标或环境变量。未发现 Hub 且未设置显式位置时仅返回 `download_required`，
+不在 Core 内打开网站或下载／安装程序。此权限不包含任何项目、数据库、配置写入。
 
 ## 扩展专用权限
 
@@ -189,10 +196,12 @@ M6 第一条生产 slice 冻结并仅使用以下权限：
 
 ## M7 Official GUI settings/activity/diagnostics
 
-- `settings.read` 只允许读取 Config Schema 1 的规范化公开设置；不允许直接读取文件、extension-owned
+- `settings.read` 只允许读取 当前 Config Schema 3 的规范化公开设置；不允许直接读取文件、extension-owned
   data 或未来 updater/MCP/Discord/migration setting。
-- `settings.manage` 只允许以 `expectedRevision` 更新同一 closed partial settings DTO；它不授权通用
-  key/value config、路径写入或 State DB 修改。
+- `settings.manage` 只允许以 `expectedRevision` 更新同一 closed partial settings DTO，包括 Core
+  校验后的 `unity.hubPath` 程序位置偏好；它不授权通用 key/value config、向所选路径写文件、执行
+  该程序或 State DB 修改。`settings.read` 的公开配置与派生 `unityHub` 结果可以返回该授权路径，
+  但不授权读取该程序内容或任意文件。Editor 发现仍单独要求 `unity.manage`。
 - `activity.read` 只允许读取现有 durable Event/Operation 的 closed user-facing projection；不返回 payload、
   request/result JSON、技术日志、路径、credential 或 extension value。
 - `diagnostics.read` 只允许读取 Operation failure 与 safe Event evidence 的 bounded redacted projection；不

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use alcomd_application::{
     IdempotencyKey, M3RegistryStore, M5UnityErrorCode, M5UnityStore, ManifestState, PrincipalId,
     ProjectObservation, ProjectType, Revision, StateStore, UnityArchitecture,
-    UnityInstallationObservation, UnitySourceKind,
+    UnityInstallationObservation, UnityLaunchState, UnitySourceKind,
 };
 use alcomd_store::StateStoreHandle;
 use uuid::Uuid;
@@ -115,6 +115,194 @@ async fn unity_registry_launch_config_and_launch_are_revisioned_evented_and_idem
             .events
             .iter()
             .any(|event| event.kind == "unity.project_launch_config_changed")
+    );
+}
+
+#[tokio::test]
+async fn project_modified_time_tracks_first_launch_acceptance_without_changing_content_revision() {
+    let directory = TestDirectory::new();
+    let store = StateStoreHandle::open(directory.0.join("state.db")).expect("open store");
+    let owner = PrincipalId::local_owner();
+    let registered = store
+        .register_project(owner.clone(), project(), key("modified-project"), 100)
+        .await
+        .expect("register project")
+        .value;
+    let (installation, _) = store
+        .register_installation(
+            owner.clone(),
+            installation_observation(),
+            key("modified-editor"),
+            110,
+        )
+        .await
+        .expect("register installation");
+    let (configured, _, _) = store
+        .set_project_launch_config(
+            owner.clone(),
+            registered.project_id,
+            vec!["-logFile".to_owned()],
+            None,
+            key("modified-config"),
+            200,
+        )
+        .await
+        .expect("configure launch arguments");
+    let (cleared, _, _) = store
+        .clear_project_launch_config(
+            owner.clone(),
+            registered.project_id,
+            configured.revision,
+            key("modified-config-clear"),
+            230,
+        )
+        .await
+        .expect("clear launch arguments");
+    assert_eq!(
+        store
+            .get_project(owner.clone(), registered.project_id)
+            .await
+            .expect("read configured project"),
+        registered,
+        "launch settings do not modify the project time or snapshot"
+    );
+
+    let (launch, replayed) = store
+        .accept_launch(
+            owner.clone(),
+            registered.clone(),
+            cleared.clone(),
+            installation.installation_id,
+            key("modified-launch"),
+            300,
+        )
+        .await
+        .expect("accept launch before any platform spawn");
+    assert!(!replayed);
+    assert!(!launch.spawn_accepted);
+    let accepted = store
+        .get_project(owner.clone(), registered.project_id)
+        .await
+        .expect("read accepted launch time");
+    assert_eq!(accepted.last_modified_at_ms, Some(300));
+    assert_eq!(accepted.revision, registered.revision);
+    assert_eq!(accepted.observation, registered.observation);
+    assert_eq!(accepted.registered_at_ms, 100);
+    store
+        .set_launch_state(
+            owner.clone(),
+            launch.launch_id,
+            UnityLaunchState::Failed,
+            false,
+        )
+        .await
+        .expect("record subsequent spawn failure");
+    let (replayed_launch, replayed) = store
+        .accept_launch(
+            owner.clone(),
+            accepted.clone(),
+            cleared.clone(),
+            installation.installation_id,
+            key("modified-launch"),
+            1_000,
+        )
+        .await
+        .expect("retry the same durable launch after failure");
+    assert!(replayed);
+    assert_eq!(replayed_launch.launch_id, launch.launch_id);
+    assert_eq!(replayed_launch.state, UnityLaunchState::Failed);
+    assert_eq!(
+        store
+            .get_project(owner.clone(), registered.project_id)
+            .await
+            .expect("read after replay"),
+        accepted
+    );
+    store
+        .get_launch(owner.clone(), launch.launch_id)
+        .await
+        .expect("poll failed launch");
+    assert_eq!(
+        store
+            .get_project(owner.clone(), registered.project_id)
+            .await
+            .expect("read after poll"),
+        accepted
+    );
+
+    store
+        .accept_launch(
+            owner.clone(),
+            accepted.clone(),
+            cleared.clone(),
+            installation.installation_id,
+            key("modified-backward-clock"),
+            250,
+        )
+        .await
+        .expect("new launch with a clock earlier than the recorded project time");
+    assert_eq!(
+        store
+            .get_project(owner.clone(), registered.project_id)
+            .await
+            .expect("read monotonic project time"),
+        accepted
+    );
+    store
+        .accept_launch(
+            owner.clone(),
+            accepted,
+            cleared.clone(),
+            installation.installation_id,
+            key("modified-forward-clock"),
+            500,
+        )
+        .await
+        .expect("accept a later distinct launch");
+    let later = store
+        .get_project(owner.clone(), registered.project_id)
+        .await
+        .expect("read later launch time");
+    assert_eq!(later.last_modified_at_ms, Some(500));
+    assert_eq!(later.revision, registered.revision);
+    let failed = store
+        .accept_launch(
+            owner.clone(),
+            later.clone(),
+            cleared.clone(),
+            installation.installation_id,
+            key("modified-invalid-clock"),
+            u64::MAX,
+        )
+        .await
+        .expect_err("out-of-range time must not partially accept the launch");
+    assert_eq!(failed.code(), M5UnityErrorCode::Internal);
+    assert_eq!(
+        store
+            .get_project(owner.clone(), registered.project_id)
+            .await
+            .expect("read after failed transaction"),
+        later
+    );
+    let (_, replayed) = store
+        .accept_launch(
+            owner.clone(),
+            later,
+            cleared,
+            installation.installation_id,
+            key("modified-invalid-clock"),
+            600,
+        )
+        .await
+        .expect("failed transaction did not consume the durable key");
+    assert!(!replayed);
+    assert_eq!(
+        store
+            .get_project(owner, registered.project_id)
+            .await
+            .expect("read recovered request time")
+            .last_modified_at_ms,
+        Some(600)
     );
 }
 
@@ -321,7 +509,6 @@ fn project() -> ProjectObservation {
         direct_dependencies: Vec::new(),
         locked_dependencies: Vec::new(),
         issues: Vec::new(),
-        observed_at_ms: 1,
     }
 }
 

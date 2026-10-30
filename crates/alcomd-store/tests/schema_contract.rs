@@ -14,6 +14,108 @@ const MIGRATION_V11: &str = include_str!("../migrations/0011_project_preferences
 const MIGRATION_V12: &str = include_str!("../migrations/0012_package_functional_closure.sql");
 const MIGRATION_V13: &str = include_str!("../migrations/0013_project_directory_delete.sql");
 const MIGRATION_V14: &str = include_str!("../migrations/0014_unity_project_version.sql");
+const MIGRATION_V15: &str = include_str!("../migrations/0015_project_last_modified.sql");
+
+#[test]
+fn schema_v15_adds_only_nullable_modified_time_without_fabricating_legacy_evidence() {
+    let connection = migrated_v14_connection();
+    insert_project(&connection);
+    connection
+        .execute_batch("UPDATE projects SET registered_at_ms=101,observed_at_ms=202,updated_at_ms=303,revision=9,favorite=1;")
+        .expect("different historical registration, observation, and database times");
+    let tables = table_names(&connection);
+    let before = schema_snapshot(&connection);
+    let project_before: (String, String, i64, i64, i64, i64, i64) = connection
+        .query_row("SELECT root_path,snapshot_json,revision,registered_at_ms,observed_at_ms,updated_at_ms,favorite FROM projects", [], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?))
+        })
+        .expect("read complete legacy row");
+    connection.execute_batch(MIGRATION_V15).expect("apply v15");
+    assert_eq!(user_version(&connection), 15);
+    assert_eq!(table_names(&connection), tables);
+    assert_eq!(
+        before
+            .into_iter()
+            .filter(|(_, name, _)| name != "projects")
+            .collect::<Vec<_>>(),
+        schema_snapshot(&connection)
+            .into_iter()
+            .filter(|(_, name, _)| name != "projects")
+            .collect::<Vec<_>>()
+    );
+    let project_after: (String, String, i64, i64, i64, i64, i64) = connection
+        .query_row("SELECT root_path,snapshot_json,revision,registered_at_ms,observed_at_ms,updated_at_ms,favorite FROM projects", [], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?))
+        })
+        .expect("read preserved legacy row");
+    assert_eq!(project_after, project_before);
+    let unknown: Option<i64> = connection
+        .query_row("SELECT last_modified_at_ms FROM projects", [], |row| {
+            row.get(0)
+        })
+        .expect("read unknown evidence");
+    assert_eq!(unknown, None);
+    for value in [0_i64, i64::MAX] {
+        connection
+            .execute("UPDATE projects SET last_modified_at_ms=?1", [value])
+            .expect("accept bounded timestamp including epoch zero");
+        let stored: i64 = connection
+            .query_row("SELECT last_modified_at_ms FROM projects", [], |row| {
+                row.get(0)
+            })
+            .expect("read bounded timestamp");
+        assert_eq!(stored, value);
+    }
+    assert!(
+        connection
+            .execute("UPDATE projects SET last_modified_at_ms=-1", [])
+            .is_err()
+    );
+    assert!(
+        connection
+            .execute(
+                "UPDATE projects SET last_modified_at_ms=9223372036854775808",
+                []
+            )
+            .is_err()
+    );
+    connection
+        .execute("UPDATE projects SET last_modified_at_ms=NULL", [])
+        .expect("unknown remains nullable");
+    let unknown: Option<i64> = connection
+        .query_row("SELECT last_modified_at_ms FROM projects", [], |row| {
+            row.get(0)
+        })
+        .expect("read restored unknown");
+    assert_eq!(unknown, None);
+}
+
+#[test]
+fn failed_v15_transaction_rolls_back_column_and_version_together() {
+    let connection = migrated_v14_connection();
+    insert_project(&connection);
+    let before = schema_snapshot(&connection);
+    assert!(MIGRATION_V15.starts_with("BEGIN IMMEDIATE;"));
+    assert!(MIGRATION_V15.ends_with("COMMIT;\n"));
+    // Inject failure after ALTER and version assignment to exercise SQLite's transactional DDL.
+    let interrupted = MIGRATION_V15.replace(
+        "COMMIT;",
+        "SELECT * FROM unavailable_migration_probe;\nCOMMIT;",
+    );
+    assert!(connection.execute_batch(&interrupted).is_err());
+    connection
+        .execute_batch("ROLLBACK;")
+        .expect("roll back interrupted v15");
+    assert_eq!(user_version(&connection), 14);
+    assert_eq!(schema_snapshot(&connection), before);
+    assert_eq!(
+        connection
+            .query_row("SELECT count(*) FROM projects", [], |row| row
+                .get::<_, i64>(0))
+            .expect("preserved project"),
+        1
+    );
+}
 
 #[test]
 fn schema_v14_migrates_only_non_empty_launch_arguments_for_both_legacy_modes() {
@@ -2842,6 +2944,14 @@ fn migrated_v13_connection() -> Connection {
     connection
         .execute_batch(MIGRATION_V13)
         .expect("apply migration v13");
+    connection
+}
+
+fn migrated_v14_connection() -> Connection {
+    let connection = migrated_v13_connection();
+    connection
+        .execute_batch(MIGRATION_V14)
+        .expect("apply migration v14");
     connection
 }
 

@@ -177,6 +177,8 @@ pub const CAPABILITY_PACKAGES_USER_PACKAGES_V1: &str = "packages.user-packages.v
 pub const CAPABILITY_UNITY_READ_V1: &str = "unity.read.v1";
 pub const CAPABILITY_UNITY_MANAGE_V1: &str = "unity.manage.v1";
 pub const CAPABILITY_UNITY_LAUNCH_V1: &str = "unity.launch.v1";
+pub const METHOD_UNITY_HUB_OPEN: &str = "unity.hub.open";
+pub const CAPABILITY_UNITY_HUB_OPEN_V1: &str = "unity.hub.open.v1";
 pub const CAPABILITY_TEMPLATES_READ_V1: &str = "templates.read.v1";
 pub const CAPABILITY_TEMPLATES_MANAGE_V1: &str = "templates.manage.v1";
 pub const CAPABILITY_TEMPLATES_CREATE_PROJECT_V1: &str = "templates.create-project.v1";
@@ -189,6 +191,11 @@ pub const CAPABILITY_EXTENSIONS_UI_PORTABLE_V1: &str = "extensions.ui.portable.v
 
 /// Stable RPC v1 error codes implemented through M2.
 pub mod error_code {
+    pub const HUB_PATH_CHANGED: &str = "hub_path_changed";
+    pub const HUB_PATH_INVALID: &str = "hub_path_invalid";
+    pub const HUB_UNAVAILABLE: &str = "hub_unavailable";
+    pub const HUB_OPEN_BUSY: &str = "hub_open_busy";
+    pub const HUB_OPEN_FAILED: &str = "hub_open_failed";
     pub const PACKAGE_CANDIDATE_EVIDENCE_STALE: &str = "package_candidate_evidence_stale";
     pub const PACKAGE_CANDIDATE_LIMIT_EXCEEDED: &str = "package_candidate_limit_exceeded";
     /// A complete payload could not be parsed or validated as an RPC request.
@@ -606,6 +613,22 @@ impl RpcError {
         Self::simple(code, "The Unity request could not be completed.")
     }
 
+    /// Creates a fixed-message Unity Hub error without paths or process details.
+    #[must_use]
+    pub fn unity_hub(code: &str) -> Self {
+        let message = match code {
+            error_code::HUB_PATH_CHANGED => {
+                "The Unity Hub location changed. Read the current settings before trying again."
+            }
+            error_code::HUB_PATH_INVALID => "The configured Unity Hub executable is not usable.",
+            error_code::HUB_UNAVAILABLE => "The Unity Hub location could not be verified.",
+            error_code::HUB_OPEN_BUSY => "Unity Hub launch capacity is temporarily unavailable.",
+            error_code::HUB_OPEN_FAILED => "Unity Hub could not be started.",
+            _ => "The Unity Hub request could not be completed.",
+        };
+        Self::simple(code, message)
+    }
+
     /// Creates a stable, non-sensitive M5 Template error.
     #[must_use]
     pub fn template(code: &str) -> Self {
@@ -822,12 +845,12 @@ impl HelloResult {
         }
     }
 
-    /// Creates the current M7 hello result after State Schema 13 and Config Schema 2 are ready.
+    /// Creates the current M7 hello result after State Schema 13 and Config Schema 3 are ready.
     #[must_use]
     pub fn m7_official_gui(capabilities: Vec<String>) -> Self {
         let mut result = Self::m7(capabilities);
         result.data_schema = Some(13);
-        result.config_schema = Some(2);
+        result.config_schema = Some(CONFIG_SCHEMA_VERSION);
         result
     }
 }
@@ -1121,6 +1144,9 @@ pub struct ProjectSnapshot {
     pub project_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub registered_at_ms: Option<u64>,
+    /// Registry-maintained project activity time; absent when no authoritative value is known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_modified_at_ms: Option<u64>,
     pub root_path: String,
     pub project_type: ProjectType,
     pub unity_version: String,
@@ -1130,7 +1156,6 @@ pub struct ProjectSnapshot {
     pub direct_dependencies: Vec<DependencyIdentity>,
     pub locked_dependencies: Vec<DependencyIdentity>,
     pub issues: Vec<ReadIssue>,
-    pub observed_at_ms: u64,
     pub revision: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub favorite: Option<bool>,
@@ -2406,7 +2431,7 @@ pub struct ProjectsApplyUnityMigrationResult {
     pub replayed: bool,
 }
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 2;
+pub const CONFIG_SCHEMA_VERSION: u32 = 3;
 pub const MAX_OFFICIAL_GUI_PAGE_LIMIT: u32 = 200;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2415,6 +2440,20 @@ pub enum AppearanceMode {
     System,
     Light,
     Dark,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AppearanceScheme {
+    TonalSpot,
+    Fidelity,
+    Monochrome,
+    Neutral,
+    Vibrant,
+    Expressive,
+    Content,
+    Rainbow,
+    FruitSalad,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2428,6 +2467,7 @@ pub enum AppearanceDensity {
 #[serde(rename_all = "snake_case")]
 pub enum AppearanceMotion {
     System,
+    Full,
     Reduced,
 }
 
@@ -2447,6 +2487,7 @@ pub enum SettingsLocale {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AppearanceSettings {
     pub mode: AppearanceMode,
+    pub scheme: AppearanceScheme,
     pub source_color: Option<String>,
     pub density: AppearanceDensity,
     pub motion: AppearanceMotion,
@@ -2458,6 +2499,97 @@ pub struct Settings {
     pub appearance: AppearanceSettings,
     pub locale: SettingsLocale,
     pub packages: PackageSettings,
+    pub unity: UnitySettings,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UnitySettings {
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub hub_path: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnityHubStatus {
+    Available,
+    NotFound,
+    Unavailable,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnityHubSource {
+    Configured,
+    Discovered,
+    None,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnityHubConfiguredPathStatus {
+    Unset,
+    Available,
+    Invalid,
+    Unavailable,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UnityHubLocation {
+    pub status: UnityHubStatus,
+    pub source: UnityHubSource,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub path: Option<String>,
+    pub configured_path_status: UnityHubConfiguredPathStatus,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UnityHubOpenParams {
+    pub expected_revision: u64,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub expected_path: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for UnityHubOpenParams {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct Fields {
+            expected_revision: u64,
+            #[serde(deserialize_with = "Option::deserialize")]
+            expected_path: Option<String>,
+        }
+        let value = Fields::deserialize(deserializer)?;
+        if value.expected_revision == 0
+            || value.expected_path.as_ref().is_some_and(|path| {
+                path.is_empty() || path.len() > 4096 || path.chars().any(char::is_control)
+            })
+        {
+            return Err(serde::de::Error::custom("invalid Unity Hub evidence guard"));
+        }
+        Ok(Self {
+            expected_revision: value.expected_revision,
+            expected_path: value.expected_path,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UnityHubOpenOutcome {
+    Spawned,
+    DownloadRequired,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UnityHubOpenResult {
+    pub outcome: UnityHubOpenOutcome,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2510,35 +2642,121 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for NullableUpdate<T> {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AppearanceSettingsUpdate {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub scheme: Option<AppearanceScheme>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub mode: Option<AppearanceMode>,
     #[serde(default, skip_serializing_if = "NullableUpdate::is_unchanged")]
     pub source_color: NullableUpdate<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub density: Option<AppearanceDensity>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub motion: Option<AppearanceMotion>,
+}
+
+fn deserialize_optional_non_null<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SettingsUpdate {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub appearance: Option<AppearanceSettingsUpdate>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub locale: Option<SettingsLocale>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub packages: Option<PackageSettingsUpdate>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub unity: Option<UnitySettingsUpdate>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UnitySettingsUpdate {
+    #[serde(default, skip_serializing_if = "NullableUpdate::is_unchanged")]
+    pub hub_path: NullableUpdate<String>,
+}
+
+impl<'de> Deserialize<'de> for UnitySettingsUpdate {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct Fields {
+            #[serde(default)]
+            hub_path: NullableUpdate<String>,
+        }
+        let value = Fields::deserialize(deserializer)?;
+        if value.hub_path.is_unchanged() {
+            return Err(serde::de::Error::custom(
+                "unity update must contain hubPath",
+            ));
+        }
+        Ok(Self {
+            hub_path: value.hub_path,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PackageSettingsUpdate {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub show_prerelease: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub hidden_repository_ids: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub hide_local_user_packages: Option<bool>,
 }
 
@@ -2548,6 +2766,7 @@ pub struct SettingsGetResult {
     pub config_schema: u32,
     pub revision: u64,
     pub settings: Settings,
+    pub unity_hub: UnityHubLocation,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -3085,7 +3304,7 @@ mod tests {
     fn m7_official_gui_hello_advertises_current_schemas() {
         let hello = HelloResult::m7_official_gui(Vec::new());
         assert_eq!(hello.data_schema, Some(13));
-        assert_eq!(hello.config_schema, Some(2));
+        assert_eq!(hello.config_schema, Some(3));
     }
 
     #[test]

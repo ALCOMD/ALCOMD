@@ -652,7 +652,6 @@ mod tests {
                     })
                     .collect(),
                 issues: vec![],
-                observed_at_ms: 0,
             },
             entries: versions.iter().map(|version| entry(version)).collect(),
             settings: ConfigPackageSettings {
