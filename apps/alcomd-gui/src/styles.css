@@ -400,7 +400,7 @@ md-linear-progress {
 .projects-list td:first-child { min-width: 180px; }
 .projects-list td:first-child { max-width: 0; }
 .projects-list td:first-child strong, .projects-list td:first-child small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.projects-list td:first-child small, .project-path, .project-meta { color: var(--on-surface-variant); font-size: 0.8rem; }
+.projects-list td:first-child small { color: var(--on-surface-variant); font-size: 0.8rem; }
 .projects-list th:last-child,
 .projects-list td:last-child {
     position: sticky;
@@ -418,9 +418,11 @@ md-linear-progress {
 .project-type--table,
 .project-type--table > span:last-child { line-height: 24px; }
 .project-type--table { height: 24px; vertical-align: top; }
-.project-row-actions, .project-card-actions { display: flex; justify-content: flex-end; gap: 4px; }
 .project-row-actions {
+    display: flex;
+    justify-content: flex-end;
     align-items: center;
+    gap: 4px;
     width: max-content;
     min-width: max-content;
 }
@@ -451,11 +453,48 @@ md-linear-progress {
 .state-sized-label > span { grid-area: 1 / 1; }
 .state-sized-label-reserve { visibility: hidden; }
 .state-sized-label-current { justify-self: center; }
-.projects-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; height: 100%; padding: 4px 12px 12px 4px; overflow-y: auto; }
-.project-card { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 16px; border-radius: var(--alcomd-shape-container); background: var(--surface-container); }
-.project-card h2, .project-card p { margin: 0; }
-.project-card h2, .project-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.project-card-actions { margin-top: auto; padding-top: 8px; }
+.projects-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    align-content: start;
+    gap: 12px;
+    height: 100%;
+    padding: 4px 12px 12px 4px;
+    overflow-y: auto;
+}
+.project-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    padding: 16px;
+    border-radius: var(--alcomd-shape-container);
+    background: var(--surface-container);
+}
+.project-card-heading { display: flex; align-items: start; gap: 12px; }
+.project-card-identity { flex: 1; min-width: 0; }
+.project-card h2 { margin: 0; padding-right: 80px; font-size: 16px; font-weight: 400; line-height: 24px; }
+.project-path { margin: 2px 0 0; color: var(--on-surface-variant); font-size: 14px; line-height: 20px; }
+.project-card h2, .project-path, .project-card-unity, .project-card-dates { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-card-properties { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; line-height: 24px; }
+.project-card-properties .project-type { flex: 0 1 auto; }
+.project-card-properties .project-type > .alcomd-icon { flex: 0 0 auto; }
+.project-card-unity { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; color: var(--on-surface-variant); }
+.project-card-unity::before { content: "·"; }
+.project-card-dates { margin: 0; color: var(--on-surface-variant); font-size: 12px; line-height: 18px; }
+.project-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-height: var(--alcomd-button-height); margin-top: auto; }
+.project-card-actions > .project-unregistered { margin-right: auto; }
+.project-row-actions--card { display: flex; width: 100%; min-width: 0; gap: 8px; }
+.project-row-actions--card > .project-favorite-action { position: absolute; top: 8px; right: 48px; }
+.project-row-actions--card > .project-more-actions { position: absolute; top: 8px; right: 8px; }
+.project-row-actions--card > :is(md-filled-button, md-filled-tonal-button, md-text-button, md-icon-button) { min-width: 0; max-width: 100%; }
+.project-row-actions--card > :is(md-filled-button, md-filled-tonal-button) {
+    --md-filled-button-leading-space: 16px;
+    --md-filled-button-trailing-space: 16px;
+    --md-filled-tonal-button-leading-space: 16px;
+    --md-filled-tonal-button-trailing-space: 16px;
+}
 .project-unregistered { color: var(--on-surface-variant); font-size: 0.8rem; }
 .project-register-form, .project-register-review { display: grid; width: 100%; min-width: 0; gap: 18px; }
 .project-register-form md-outlined-text-field { width: 100%; }

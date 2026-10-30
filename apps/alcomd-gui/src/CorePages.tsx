@@ -449,7 +449,7 @@ function ProjectsTable({
 
 function ProjectRowActions({ client, context = "row", navigate, onChanged, onCopyCompleted, onFeedback, onProjectChanged, onRemoved, project }: {
     client: GuiRpcClient;
-    context?: "row" | "workspace";
+    context?: "row" | "workspace" | "card";
     navigate(path: string): void;
     onChanged(): void;
     onCopyCompleted?(projectId: string): void;
@@ -606,10 +606,10 @@ function ProjectRowActions({ client, context = "row", navigate, onChanged, onCop
 
     return (
         <>
-            <div className={workspace ? "project-row-actions project-workspace-more-actions" : "project-row-actions"}>
+            <div className={workspace ? "project-row-actions project-workspace-more-actions" : context === "card" ? "project-row-actions project-row-actions--card" : "project-row-actions"}>
                 {workspace ? null : <ProjectFavoriteButton client={client} onChanged={onProjectChanged} onFeedback={onFeedback} onRefresh={onChanged} project={project} />}
                 {workspace ? null : <Button className="project-open-unity-action" disabled={!canLaunchUnity || opening || revision === undefined} onClick={() => void openUnity()} title={capabilityUnavailableTitle(canLaunchUnity, capabilities.unityLaunch)} type="button">
-                    <Icon asset={playArrowIcon} slot="icon" />
+                    {context === "card" ? null : <Icon asset={playArrowIcon} slot="icon" />}
                     <StateSizedLabel current={opening ? "Opening…" : "Open Unity"} labels={["Open Unity", "Opening…"]} />
                 </Button>}
                 {workspace ? null : <Button disabled={!canReadProjects} onClick={() => navigate(`/projects/${projectId}`)} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead)} type="button" variant="tonal">Manage</Button>}
@@ -818,13 +818,27 @@ function StateSizedLabel({ current, labels }: { current: string; labels: readonl
 
 function ProjectCard({ client, onChanged, onFeedback, onRefresh, project, navigate }: { client: GuiRpcClient; onChanged(project: ProjectSnapshot): void; onFeedback(message: string): void; onRefresh(): void; project: ProjectSnapshot; navigate(path: string): void }) {
     const id = project.projectId;
+    const name = projectName(project);
+    const path = displayProjectPath(project.rootPath);
+    const type = projectTypeLabel(project.projectType);
+    const unity = `Unity ${project.unityVersion || "unknown"}`;
+    const dates = `Added ${formatRegistered(project.registeredAtMs)} / Last observed ${formatObserved(project.observedAtMs)}`;
     return (
-        <article className="project-card">
-            <h2>{projectName(project)}</h2>
-            <p className="project-path" title={displayProjectPath(project.rootPath)}>{displayProjectPath(project.rootPath)}</p>
-            <p><span className="project-type"><Icon asset={projectTypeIcon(project.projectType)} /><span>{projectTypeLabel(project.projectType)}</span></span> · Unity {project.unityVersion || "unknown"}</p>
-            <p className="project-meta">Added {formatRegistered(project.registeredAtMs)} · observed {formatObserved(project.observedAtMs)}</p>
-            {id === undefined ? <span className="project-unregistered">Unregistered</span> : <div className="project-card-actions"><ProjectFavoriteButton client={client} onChanged={onChanged} onFeedback={onFeedback} onRefresh={onRefresh} project={project} /><Button onClick={() => navigate(`/projects/${id}`)} variant="tonal">Manage</Button><Button onClick={() => navigate(`/projects/${id}/backups`)} variant="text">Backups</Button></div>}
+        <article aria-label={name} className="project-card">
+            <header className="project-card-heading">
+                <div className="project-card-identity">
+                    <h2 title={name}>{name}</h2>
+                    <p className="project-path" title={path}>{path}</p>
+                </div>
+            </header>
+            <div className="project-card-properties">
+                <span className="project-type" title={type}><Icon asset={projectTypeIcon(project.projectType)} /><span>{type}</span></span>
+                <span className="project-card-unity" title={unity}>{project.unityVersion || "Unity unknown"}</span>
+            </div>
+            <p className="project-card-dates" title={dates}>{dates}</p>
+            <footer className="project-card-actions">
+                {id === undefined ? <span className="project-unregistered">Unregistered</span> : <ProjectRowActions client={client} context="card" navigate={navigate} onChanged={onRefresh} onFeedback={onFeedback} onProjectChanged={onChanged} project={project} />}
+            </footer>
         </article>
     );
 }

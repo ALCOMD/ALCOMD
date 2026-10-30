@@ -222,6 +222,17 @@ class DeterministicGuiClient implements GuiRpcClient {
 
     projectsInspect(): ReturnType<GuiRpcClient["projectsInspect"]> { return this.value({ project: project() }); }
     projectsList(cursor?: { registeredAtMs: number; id: string }): ReturnType<GuiRpcClient["projectsList"]> {
+        if (query.has("projectGrid")) {
+            const names = ["Avatar Studio", "World Workshop", "非常长的项目名称用于检查卡片信息与操作是否保持整齐 Long Project Name", "Package Sandbox", "Unknown Editor", "Avatar Preview", "Archive"];
+            return this.value({ projects: names.map((name, index) => ({
+                ...project(`00000000-0000-4000-8000-${String(101 + index).padStart(12, "0")}`, name, index === 0),
+                rootPath: `C:\\Projects\\Workspace with a long directory name\\${name}`,
+                projectType: index === 1 ? "worlds" : index === 3 ? "Unknown project type with long text" : "avatars",
+                unityVersion: index === 4 ? "" : index === 1 ? "6000.0.40f1" : "2022.3.22f1",
+                registeredAtMs: index === 4 ? undefined : 1_690_000_000_000,
+                observedAtMs: 1_700_000_000_000 - index * 86_400_000
+            })) });
+        }
         if (this.mode === "favorite-pages") {
             return cursor === undefined
                 ? this.value({ projects: [project(PROJECT_ID, "Alpha")], nextCursor: { registeredAtMs: 1_690_000_000_000, id: PROJECT_ID } })

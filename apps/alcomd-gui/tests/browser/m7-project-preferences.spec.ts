@@ -3,6 +3,128 @@ import { expect, test, type Page } from "@playwright/test";
 const PROJECT_ID = "00000000-0000-4000-8000-000000000101";
 const OPERATION_ID = "00000000-0000-4000-8000-000000000105";
 
+test("Projects grid keeps compact aligned cards with long names and scrollable rows", async ({ page }, testInfo) => {
+    await page.addInitScript(() => { Date.now = () => 1_700_000_120_000; });
+    for (const width of [1180, 1280, 1440]) {
+        await page.setViewportSize({ width, height: width === 1180 ? 760 : 900 });
+        await page.goto("/browser-harness.html?route=%2Fprojects&state=favorite-pages");
+        await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
+        if (await page.getByRole("button", { name: "Grid view", exact: true }).isVisible()) {
+            await page.getByRole("button", { name: "Grid view", exact: true }).click();
+        }
+        const grid = page.locator(".projects-grid");
+        await expect(grid.locator(".project-card")).toHaveCount(2);
+        await page.screenshot({ path: testInfo.outputPath(`grid-sparse-${width}.png`), animations: "disabled" });
+        const sparse = await grid.locator(".project-card").evaluateAll((cards) => cards.map((card) => card.getBoundingClientRect().height));
+        expect(sparse.every((height) => height < 220)).toBe(true);
+
+        await page.goto("/browser-harness.html?route=%2Fprojects&projectGrid=1");
+        const cards = page.locator(".projects-grid .project-card");
+        await expect(cards).toHaveCount(7);
+        for (const appearance of ["light", "dark"]) {
+            await page.evaluate((mode) => { document.documentElement.dataset.appearance = mode; }, appearance);
+            await page.evaluate(() => document.fonts.ready);
+            const geometry = await cards.evaluateAll((elements) => elements.map((card) => {
+                const bounds = card.getBoundingClientRect();
+                const footer = card.querySelector(".project-card-actions")!.getBoundingClientRect();
+                return {
+                    x: bounds.x, y: bounds.y, height: bounds.height, width: bounds.width,
+                    footer: footer.y - bounds.y,
+                    controlsInside: Array.from(card.querySelectorAll("md-icon-button, md-filled-tonal-button, md-text-button")).every((control) => {
+                        const box = control.getBoundingClientRect();
+                        const inset = control.tagName === "MD-ICON-BUTTON" ? 7 : 15;
+                        return box.left >= bounds.left + inset && box.right <= bounds.right - inset && box.top >= bounds.top + inset && box.bottom <= bounds.bottom - inset;
+                    }),
+                    actionRows: new Set(Array.from(card.querySelectorAll(".project-row-actions--card > md-filled-button, .project-row-actions--card > md-filled-tonal-button")).map((control) => control.getBoundingClientRect().y)).size,
+                    contentFits: card.scrollWidth <= card.clientWidth,
+                    titleHeight: card.querySelector("h2")!.getBoundingClientRect().height,
+                    pathHeight: card.querySelector(".project-path")!.getBoundingClientRect().height
+                };
+            }));
+            expect(geometry.every((card) => card.height < 220 && card.controlsInside && card.contentFits && card.actionRows === 1 && card.titleHeight === 24 && card.pathHeight === 20)).toBe(true);
+            expect(new Set(geometry.map((card) => card.height)).size).toBe(1);
+            expect(new Set(geometry.map((card) => card.footer)).size).toBe(1);
+            expect(geometry.filter((card) => card.y === geometry[0]!.y)).toHaveLength(width === 1440 ? 3 : 2);
+            expect(await grid.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+            await expect(cards.first().getByRole("button", { name: "Remove from favorites", exact: true })).toBeVisible();
+            await expect(cards.getByRole("button", { name: "Manage", exact: true })).toHaveCount(7);
+            await expect(cards.getByRole("button", { name: "Backups", exact: true })).toHaveCount(7);
+            await expect(cards.getByRole("button", { name: "Open Unity", exact: true })).toHaveCount(7);
+            await expect(cards.getByRole("button", { name: /^More actions for/ })).toHaveCount(7);
+            await page.screenshot({ path: testInfo.outputPath(`grid-${width}-${appearance}.png`), animations: "disabled" });
+        }
+        const overflows = await grid.evaluate((element) => element.scrollHeight > element.clientHeight);
+        await cards.last().scrollIntoViewIfNeeded();
+        if (overflows) expect(await grid.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+        else expect(await grid.evaluate((element) => element.scrollTop)).toBe(0);
+        const last = cards.last();
+        await last.getByRole("button", { name: "Backups", exact: true }).click();
+        await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000107\/backups$/);
+        await expect(page.getByRole("heading", { name: "Backups", exact: true })).toBeVisible();
+    }
+});
+
+test("Projects grid retains shared launch, directory, copy review and removal cancellation", async ({ page }) => {
+    await page.setViewportSize({ width: 1180, height: 760 });
+    await page.goto("/browser-harness.html?route=%2Fprojects&projectGrid=1");
+    await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Grid view", exact: true }).click();
+    const card = page.getByRole("article", { name: "Avatar Studio", exact: true });
+    await card.getByRole("button", { name: "Open Unity", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByText("Unity launch spawned.", { exact: true })).toBeVisible();
+    const more = card.getByRole("button", { name: "More actions for Avatar Studio", exact: true });
+    await more.click();
+    await expect(card.getByRole("menuitem", { name: "Open Project Directory", exact: true })).toBeVisible();
+    await expect(card.getByRole("menuitem", { name: "Copy Project", exact: true })).toBeVisible();
+    await expect(card.getByRole("menuitem", { name: "Remove Project", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(more).toBeFocused();
+    await more.click();
+    await card.getByRole("menuitem", { name: "Open Project Directory", exact: true }).click();
+    await expect(page.getByText("Project directory opened.", { exact: true })).toBeVisible();
+    await more.click();
+    await card.getByRole("menuitem", { name: "Copy Project", exact: true }).click();
+    const copy = page.locator("md-dialog[open]");
+    await expect(page.getByRole("dialog", { name: "Copy project", exact: true })).toBeVisible();
+    await copy.getByRole("button", { name: "Review copy", exact: true }).click();
+    await expect(copy.getByRole("button", { name: "Start copy", exact: true })).toBeEnabled();
+    await copy.getByRole("button", { name: "Back", exact: true }).click();
+    await copy.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(page.locator("md-dialog[open]")).toHaveCount(0);
+    await more.click();
+    await card.getByRole("menuitem", { name: "Remove Project", exact: true }).click();
+    const removal = page.getByRole("dialog", { name: "Remove this project?", exact: true });
+    await expect(removal).toBeVisible();
+    await expect(page.locator("md-dialog[open]").getByRole("button", { name: "Remove from list", exact: true })).toBeEnabled();
+    await page.locator("md-dialog[open]").getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(removal).toBeHidden();
+    await expect(card).toBeVisible();
+    await card.getByRole("button", { name: "Manage", exact: true }).focus();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(new RegExp(`/projects/${PROJECT_ID}$`));
+});
+
+test("Projects grid keeps shared capability restrictions and missing-Editor handling", async ({ page }) => {
+    await openHarness(page, "/projects", "capabilities-missing");
+    await page.getByRole("button", { name: "Grid view", exact: true }).click();
+    const card = page.locator(".project-card").first();
+    await expect(card.getByRole("button", { name: "Open Unity", exact: true })).toBeDisabled();
+    await expect(card.getByRole("button", { name: "Add to favorites", exact: true })).toBeDisabled();
+    // This fixture retains backups.read.v1; the grid must match the table's enabled action.
+    await expect(card.getByRole("button", { name: "Backups", exact: true })).toBeEnabled();
+    await card.getByRole("button", { name: /^More actions for/ }).click();
+    await expect(card.locator("md-menu-item").filter({ hasText: "Copy Project" })).toHaveJSProperty("disabled", true);
+    await expect(card.locator("md-menu-item").filter({ hasText: "Remove Project" })).toHaveJSProperty("disabled", true);
+    await page.keyboard.press("Escape");
+    await openHarness(page, "/projects", "unity-zero");
+    await expect(page.locator(".project-card").first()).toBeVisible();
+    await page.locator(".project-card").first().getByRole("button", { name: "Open Unity", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/projects/${PROJECT_ID}/unity$`));
+    await expect(page.getByRole("heading", { name: "Project Unity", exact: true })).toBeVisible();
+    await expect(page.getByText(/No exact matching Unity installation was found/).first()).toBeVisible();
+});
+
 test("Projects view survives navigation, reload and reopening the page in both modes", async ({ page, context }) => {
     await openHarness(page, "/projects");
     await expect(page.getByRole("table", { name: "Projects", exact: true })).toBeVisible();
