@@ -213,8 +213,11 @@ test("Project workspace keeps high-frequency actions in context and complete pro
     await openHarness(page, "ready");
     const actions = page.getByRole("navigation", { name: "Project actions" });
     await expect(actions.getByRole("button", { name: "Open Unity" })).toBeVisible();
-    await expect(actions.getByRole("button", { name: "Backups" })).toBeVisible();
+    await expect(actions.getByRole("group", { name: "Open Unity", exact: true })).toBeVisible();
+    await expect(actions.getByRole("button", { name: "Backups" })).toHaveCount(0);
     await actions.getByRole("button", { name: /More actions for/ }).click();
+    await expect(page.getByRole("menuitem", { name: "Edit launch arguments" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Backups" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "Open Project Directory" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "Copy Project" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "Remove from list" })).toBeVisible();

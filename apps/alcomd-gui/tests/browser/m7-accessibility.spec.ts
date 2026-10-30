@@ -40,8 +40,9 @@ test("H1 shell exposes the approved user areas without promoting internal routes
 
 test("modal traps focus, closes on Escape, and restores the invoking control", async ({ page }) => {
     await openHarness(page, "/projects");
-    const invoke = page.getByRole("button", { name: "Register project" });
+    const invoke = page.getByRole("button", { name: "More project creation options" });
     await invoke.click();
+    await page.getByRole("menuitem", { name: "Add existing project", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Register this project?" });
     await expect(dialog).toBeVisible();
     await expect(page.locator(".project-register-review code")).toHaveText("C:\\Fixture\\Avatar");
@@ -272,7 +273,8 @@ test("a changed project is explained without exposing stale Plan internals", asy
 
 test("direct writes and the remaining high-impact workflows retain confirmation and Operation boundaries", async ({ page }) => {
     await openHarness(page, "/projects");
-    await page.getByRole("button", { name: "Register project" }).click();
+    await page.getByRole("button", { name: "More project creation options" }).click();
+    await page.getByRole("menuitem", { name: "Add existing project", exact: true }).click();
     await expect(page.locator(".project-register-review code")).toHaveText("C:\\Fixture\\Avatar");
     await page.getByRole("button", { name: "Confirm" }).click();
     await expect(page.getByRole("status").filter({ hasText: "Project registered" })).toBeVisible();
@@ -286,7 +288,8 @@ test("direct writes and the remaining high-impact workflows retain confirmation 
     await expect(page.getByRole("status").filter({ hasText: "Repository added." })).toBeVisible();
 
     await openHarness(page, "/templates");
-    await page.getByRole("button", { name: "Import template", exact: true }).click();
+    await page.getByRole("button", { name: "More template creation options", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Import template", exact: true }).click();
     await page.getByLabel("Template bundle").fill("C:\\Fixture\\avatar.alcomdtemplate");
     await page.getByRole("button", { name: "Review import" }).click();
     await clickDialogAction(page, "Import template", "Apply reviewed plan");
@@ -391,7 +394,8 @@ test("fixed desktop navigation, deterministic 200 percent layout, reduced motion
     expect(await hasHorizontalOverflow(page)).toBe(false);
     await expect(page.getByRole("combobox", { name: "Language" })).toBeVisible();
     await navigationItem(page, "Projects").click();
-    await page.getByRole("button", { name: "Register project" }).click();
+    await page.getByRole("button", { name: "More project creation options" }).click();
+    await page.getByRole("menuitem", { name: "Add existing project", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "Register this project?" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Confirm" })).toBeVisible();
     expect(await hasHorizontalOverflow(page)).toBe(false);

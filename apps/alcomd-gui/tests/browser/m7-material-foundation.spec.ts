@@ -150,6 +150,85 @@ test("v3-density Material navigation keeps one offline Rounded icon across selec
     expect(remoteFontRequests).toEqual([]);
 });
 
+test("Projects creation split button groups add and restore with distinct actions and focus", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1180, height: 760 });
+    await openHarness(page, "/projects");
+    const primary = page.getByRole("button", { name: "Create project", exact: true });
+    const toggle = page.getByRole("button", { name: "More project creation options", exact: true });
+    await expect(primary).toBeVisible();
+    await expect(toggle).toBeVisible();
+    const first = await page.locator(".alcomd-split-button-primary").boundingBox();
+    const second = await page.locator(".alcomd-split-button-menu").boundingBox();
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    expect(second!.x - first!.x - first!.width).toBeCloseTo(2, 1);
+    expect(first!.y).toBe(second!.y);
+    expect(first!.height).toBe(40);
+    expect(second!.width).toBe(40);
+    expect(second!.x + second!.width).toBeLessThanOrEqual(1180);
+    await expect(page.locator(".alcomd-split-button-primary")).toHaveCSS("border-start-end-radius", "8px");
+    await expect(page.locator(".alcomd-split-button-primary")).toHaveCSS("border-end-end-radius", "8px");
+    await expect(page.locator(".alcomd-split-button-menu")).toHaveCSS("border-start-start-radius", "8px");
+    await expect(page.locator(".alcomd-split-button-menu")).toHaveCSS("border-end-start-radius", "8px");
+    await expect(page.locator(".alcomd-split-button-primary")).toHaveCSS("border-start-start-radius", "20px");
+    await expect(page.locator(".alcomd-split-button-menu")).toHaveCSS("border-start-end-radius", "20px");
+    await expect(page.locator(".alcomd-split-button-menu")).toHaveCSS("border-inline-start-width", "0px");
+    const primaryBackground = page.locator(".alcomd-split-button-primary .background");
+    const menuBackground = page.locator(".alcomd-split-button-menu .background");
+    await page.mouse.move(0, 0);
+    const painted = await page.locator(".alcomd-split-button").screenshot({ path: testInfo.outputPath("split-button-painted-background.png") });
+    const colors = await page.evaluate(async ({ png, primaryWidth, menuLeft }) => {
+        const image = new Image();
+        image.src = `data:image/png;base64,${png}`;
+        await image.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = image.width; canvas.height = image.height;
+        const context = canvas.getContext("2d")!;
+        context.drawImage(image, 0, 0);
+        const color = (x: number, y: number) => [...context.getImageData(Math.round(x), y, 1, 1).data];
+        return {
+            primaryCorner: color(primaryWidth - 2, 1),
+            menuCorner: color(menuLeft + 1, 1),
+            gap: color(primaryWidth + 1, 20),
+            body: color(primaryWidth - 10, 20)
+        };
+    }, { png: painted.toString("base64"), primaryWidth: first!.width, menuLeft: second!.x - first!.x });
+    // Used radii can be scaled down even while getComputedStyle still reports 8px.
+    // Both inner corner cutouts must actually paint the same background as the gap.
+    expect(colors.primaryCorner).toEqual(colors.gap);
+    expect(colors.menuCorner).toEqual(colors.gap);
+    expect(colors.body).not.toEqual(colors.gap);
+    await expect(primaryBackground).toHaveCSS("border-top-right-radius", "8px");
+    await expect(primaryBackground).toHaveCSS("border-bottom-right-radius", "8px");
+    await expect(menuBackground).toHaveCSS("border-top-left-radius", "8px");
+    await expect(menuBackground).toHaveCSS("border-bottom-left-radius", "8px");
+    await expect(page.locator(".projects-toolbar").getByRole("button", { name: "Register project", exact: true })).toHaveCount(0);
+    await expect(page.locator(".projects-toolbar").getByRole("button", { name: "Restore project", exact: true })).toHaveCount(0);
+    await primary.click();
+    await expect(page.getByRole("dialog", { name: "Create project", exact: true })).toBeVisible();
+    await page.locator("md-dialog[open]").getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(primary).toBeFocused();
+    await toggle.focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByRole("menuitem")).toHaveCount(2);
+    await expect(page.getByRole("menuitem").nth(0)).toHaveAccessibleName("Add existing project");
+    await expect(page.getByRole("menuitem").nth(1)).toHaveAccessibleName("Restore from backup");
+    await expect(page.locator(".alcomd-split-button-options .menu.open")).not.toHaveClass(/animating/);
+    for (const item of await page.locator(".alcomd-split-button-options > md-menu-item").all()) {
+        expect((await item.boundingBox())!.height).toBe(40);
+    }
+    await page.screenshot({ path: testInfo.outputPath("projects-creation-menu.png"), animations: "disabled" });
+    await page.keyboard.press("Escape");
+    await expect(toggle).toBeFocused();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await toggle.click();
+    await page.getByRole("menuitem", { name: "Restore from backup", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Restore project", exact: true })).toBeVisible();
+    await page.locator("md-dialog[open]").getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(toggle).toBeFocused();
+});
+
 test("Projects toolbar uses semantic Material icons without replacing clear action labels", async ({ page }) => {
     await page.addInitScript(() => {
         Date.now = () => 1_700_000_120_000;
@@ -161,8 +240,8 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     await expect(main.locator(".projects-toolbar md-icon-button > .alcomd-icon")).toHaveAttribute("data-optical-size", "24");
     const refreshProjects = main.locator(".projects-toolbar md-icon-button");
     const viewToggle = main.locator(".projects-toolbar md-text-button").filter({ hasText: "Grid view" });
-    const registerProject = main.locator(".projects-toolbar md-filled-button").filter({ hasText: "Register project" });
-    for (const action of [refreshProjects, viewToggle, registerProject]) {
+    const createProject = main.locator(".projects-toolbar .alcomd-split-button-primary");
+    for (const action of [refreshProjects, viewToggle, createProject]) {
         await expect(action).toHaveCSS("height", "40px");
     }
     await expect(refreshProjects).toHaveCSS("width", "40px");
@@ -359,7 +438,7 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     await expect(sort).toHaveJSProperty("value", "observed");
     await expect(main.getByRole("combobox", { name: "Sort by" })).toContainText("Last observed");
     await expect(main.locator(".projects-secondary-toolbar md-icon-button > .alcomd-icon")).toBeVisible();
-    await expect(main.getByRole("button", { name: "Register project" })).toBeVisible();
+    await expect(main.getByRole("button", { name: "Create project", exact: true })).toBeVisible();
     expect((await search.boundingBox())?.height).toBe(40);
     expect((await sort.boundingBox())?.height).toBe(40);
     await main.getByRole("button", { name: "List view" }).click();
@@ -469,11 +548,13 @@ test("Project directory deletion requires exact leaf confirmation and follows th
 
 test("missing negotiated capabilities remain visibly unavailable without dispatching their actions", async ({ page }) => {
     await openHarness(page, "/projects", "capabilities-missing");
-    const register = page.getByRole("button", { name: "Register project" });
-    await expect(register).toBeDisabled();
-    await expect(page.locator("md-filled-button", { has: register })).toHaveAttribute("title", /projects\.registry\.v1 was not negotiated/);
     await expect(page.getByRole("button", { name: "Create project" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Restore project" })).toBeDisabled();
+    await page.getByRole("button", { name: "More project creation options" }).click();
+    const register = page.locator(".alcomd-split-button md-menu-item").filter({ hasText: "Add existing project" });
+    await expect(register).toHaveJSProperty("disabled", true);
+    await expect(register).toHaveAttribute("title", /projects\.registry\.v1 was not negotiated/);
+    await expect(page.locator(".alcomd-split-button md-menu-item").filter({ hasText: "Restore from backup" })).toHaveJSProperty("disabled", true);
+    await page.keyboard.press("Escape");
     await expect(page.getByRole("button", { name: "Open Unity" })).toBeDisabled();
 
     const actions = page.locator(".project-row-actions");

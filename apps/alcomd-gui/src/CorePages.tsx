@@ -6,7 +6,6 @@ import {
     arrowBackIcon,
     arrowDownwardIcon,
     arrowUpwardIcon,
-    backupIcon,
     closeIcon,
     downloadIcon,
     helpIcon,
@@ -45,12 +44,13 @@ import {
     OperationFollow,
     PackageActions,
     type PackageActionSelection,
+    ProjectLaunchArgumentsDialog,
     ProjectUnityActions,
     ProjectUnityWorkspaceActions,
     RegisterRepositoryPanel,
     RepositoryActions,
     TemplateActions,
-    TemplateImportPanel,
+    TemplateCreateActions,
     UnityRegistryActions
 } from "./CoreActions";
 import { DesktopList, type DesktopListColumn } from "./DesktopList";
@@ -66,6 +66,7 @@ import { SettingsWorkspace } from "./SettingsWorkspace";
 import { PagedItems } from "./PagedItems";
 import type { GuiRpcClient } from "./rpc";
 import { Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, RefreshButton, SearchField, SegmentedButtons, Select, Switch, TextField } from "./Material";
+import { SplitButton } from "./SplitButton";
 import { CreateProjectDialog, RestoreProjectDialog } from "./ProjectCreationDialogs";
 import { capabilities, capabilityUnavailableTitle, useCapability, useCapabilityState, useReconnect } from "./capabilities";
 
@@ -234,9 +235,8 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     const [registerPath, setRegisterPath] = useState("");
     const [selectingDirectory, setSelectingDirectory] = useState(false);
     const [registrationMessage, setRegistrationMessage] = useState<string>();
-    const registerButtonRef = useRef<HTMLElement>(null);
+    const addProjectMenuRef = useRef<HTMLElement>(null);
     const createButtonRef = useRef<HTMLElement>(null);
-    const restoreButtonRef = useRef<HTMLElement>(null);
 
     const toggleView = () => {
         const next = view === "list" ? "grid" : "list";
@@ -305,7 +305,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
 
     const closeRegisterDialog = () => {
         setRegisterOpen(false);
-        window.requestAnimationFrame(() => registerButtonRef.current?.focus());
+        window.requestAnimationFrame(() => addProjectMenuRef.current?.focus());
     };
 
     return (
@@ -317,11 +317,10 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                     <Icon asset={view === "list" ? viewGridIcon : viewListIcon} slot="icon" />
                     <StateSizedLabel current={view === "list" ? "Grid view" : "List view"} labels={["Grid view", "List view"]} />
                 </Button>
-                <Button disabled={!canRestore} onClick={() => setRestoreOpen(true)} ref={restoreButtonRef} title={capabilityUnavailableTitle(canRestore, capabilities.backupsRestore)} type="button" variant="tonal">Restore project</Button>
-                <Button disabled={!canRegister || selectingDirectory} onClick={() => void chooseProjectDirectory()} ref={registerButtonRef} title={capabilityUnavailableTitle(canRegister, capabilities.projectsRegistry)} type="button">
-                    <StateSizedLabel current={selectingDirectory ? "Choosing…" : "Register project"} labels={["Register project", "Choosing…"]} />
-                </Button>
-                <Button disabled={!canCreate} onClick={() => setCreateOpen(true)} ref={createButtonRef} title={capabilityUnavailableTitle(canCreate, capabilities.templatesCreateProject)} type="button">Create project</Button>
+                <SplitButton disabled={!canCreate} label="Create project" menuButtonRef={addProjectMenuRef} menuLabel="More project creation options" onClick={() => setCreateOpen(true)} primaryRef={createButtonRef} title={capabilityUnavailableTitle(canCreate, capabilities.templatesCreateProject)}>
+                    <MenuItem disabled={!canRegister || selectingDirectory} label={selectingDirectory ? "Choosing…" : "Add existing project"} onClick={() => void chooseProjectDirectory()} title={capabilityUnavailableTitle(canRegister, capabilities.projectsRegistry)} />
+                    <MenuItem disabled={!canRestore} label="Restore from backup" onClick={() => setRestoreOpen(true)} title={capabilityUnavailableTitle(canRestore, capabilities.backupsRestore)} />
+                </SplitButton>
             </PageHeader>
             {view === "grid" ? (
                 <div className="alcomd-filter-bar projects-secondary-toolbar">
@@ -393,7 +392,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                 }}
                 onClose={() => {
                     setRestoreOpen(false);
-                    window.requestAnimationFrame(() => restoreButtonRef.current?.focus());
+                    window.requestAnimationFrame(() => addProjectMenuRef.current?.focus());
                 }}
                 open={restoreOpen}
             />
@@ -447,9 +446,10 @@ function ProjectsTable({
     })} />;
 }
 
-function ProjectRowActions({ client, context = "row", navigate, onChanged, onCopyCompleted, onFeedback, onProjectChanged, onRemoved, project }: {
+function ProjectRowActions({ client, context = "row", launchAction, navigate, onChanged, onCopyCompleted, onFeedback, onProjectChanged, onRemoved, project }: {
     client: GuiRpcClient;
     context?: "row" | "workspace" | "card";
+    launchAction?: { disabled: boolean; onClick(): void; title?: string };
     navigate(path: string): void;
     onChanged(): void;
     onCopyCompleted?(projectId: string): void;
@@ -464,6 +464,8 @@ function ProjectRowActions({ client, context = "row", navigate, onChanged, onCop
     const canDeleteProjects = useCapability(capabilities.projectsDelete);
     const canReadBackups = useCapability(capabilities.backupsRead);
     const canLaunchUnity = useCapability(capabilities.unityLaunch);
+    const canManageUnity = useCapability(capabilities.unityManage);
+    const [argumentsOpen, setArgumentsOpen] = useState(false);
     const [copyOpen, setCopyOpen] = useState(false);
     const [openingDirectory, setOpeningDirectory] = useState(false);
     const [opening, setOpening] = useState(false);
@@ -604,6 +606,16 @@ function ProjectRowActions({ client, context = "row", navigate, onChanged, onCop
         }
     };
 
+    const menuItems = <>
+        {workspace ? <MenuItem disabled={!canManageUnity} label="Edit launch arguments" onClick={() => setArgumentsOpen(true)} title={capabilityUnavailableTitle(canManageUnity, capabilities.unityManage)} /> : null}
+        <MenuItem className="project-actions-menu-item" disabled={!canReadProjects || openingDirectory} label={openingDirectory ? "Opening Project Directory…" : "Open Project Directory"} onClick={() => void openDirectory()} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead)} />
+        <MenuItem className="project-actions-menu-item" disabled={!canCopyProjects || revision === undefined} label="Copy Project" onClick={beginCopy} title={capabilityUnavailableTitle(canCopyProjects, capabilities.projectsCopy)} />
+        {workspace ? <>
+            <MenuItem disabled={!canReadBackups} label="Backups" onClick={() => navigate(`/projects/${projectId}/backups`)} title={capabilityUnavailableTitle(canReadBackups, capabilities.backupsRead)} />
+            <MenuItem className="project-actions-menu-item project-actions-menu-item--danger project-actions-menu-item--danger-group" disabled={!canManageProjects || revision === undefined} label="Remove from list" onClick={beginUnregister} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry)} />
+            <MenuItem className="project-actions-menu-item project-actions-menu-item--danger" disabled={!canDeleteProjects || revision === undefined} label="Delete Project Directory…" onClick={beginDeleteDirectory} title={capabilityUnavailableTitle(canDeleteProjects, capabilities.projectsDelete)} />
+        </> : <MenuItem className="project-actions-menu-item project-actions-menu-item--danger" disabled={!canManageProjects || revision === undefined} label="Remove Project" onClick={beginUnregister} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry)} />}
+    </>;
     return (
         <>
             <div className={workspace ? "project-row-actions project-workspace-more-actions" : context === "card" ? "project-row-actions project-row-actions--card" : "project-row-actions"}>
@@ -614,18 +626,15 @@ function ProjectRowActions({ client, context = "row", navigate, onChanged, onCop
                 </Button>}
                 {workspace ? null : <Button disabled={!canReadProjects} onClick={() => navigate(`/projects/${projectId}`)} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead)} type="button" variant="tonal">Manage</Button>}
                 {workspace ? null : <Button disabled={!canReadBackups} onClick={() => navigate(`/projects/${projectId}/backups`)} title={capabilityUnavailableTitle(canReadBackups, capabilities.backupsRead)} type="button" variant="tonal">Backups</Button>}
-                <IconButton className="project-more-actions" label={`More actions for ${projectName(project)}`} onClick={() => setMenuOpen(true)} ref={menuAnchorRef} type="button">
+                {launchAction === undefined ? <><IconButton className="project-more-actions" label={`More actions for ${projectName(project)}`} onClick={() => setMenuOpen(true)} ref={menuAnchorRef} type="button">
                     <Icon asset={moreVertIcon} size={24} />
                 </IconButton>
                 <Menu anchorRef={menuAnchorRef} className="project-actions-menu" onClose={() => setMenuOpen(false)} open={menuOpen}>
-                    <MenuItem className="project-actions-menu-item" disabled={!canReadProjects || openingDirectory} label={openingDirectory ? "Opening Project Directory…" : "Open Project Directory"} onClick={() => void openDirectory()} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead)} />
-                    <MenuItem className="project-actions-menu-item" disabled={!canCopyProjects || revision === undefined} label="Copy Project" onClick={beginCopy} title={capabilityUnavailableTitle(canCopyProjects, capabilities.projectsCopy)} />
-                    {workspace ? <>
-                        <MenuItem className="project-actions-menu-item project-actions-menu-item--danger project-actions-menu-item--danger-group" disabled={!canManageProjects || revision === undefined} label="Remove from list" onClick={beginUnregister} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry)} />
-                        <MenuItem className="project-actions-menu-item project-actions-menu-item--danger" disabled={!canDeleteProjects || revision === undefined} label="Delete Project Directory…" onClick={beginDeleteDirectory} title={capabilityUnavailableTitle(canDeleteProjects, capabilities.projectsDelete)} />
-                    </> : <MenuItem className="project-actions-menu-item project-actions-menu-item--danger" disabled={!canManageProjects || revision === undefined} label="Remove Project" onClick={beginUnregister} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry)} />}
+                    {menuItems}
                 </Menu>
+                </> : <SplitButton {...launchAction} icon={<Icon asset={playArrowIcon} slot="icon" />} label="Open Unity" menuButtonRef={menuAnchorRef} menuLabel={`More actions for ${projectName(project)}`}>{menuItems}</SplitButton>}
             </div>
+            {workspace && argumentsOpen ? <ProjectLaunchArgumentsDialog client={client} onChanged={onChanged} onClose={() => { setArgumentsOpen(false); window.requestAnimationFrame(() => menuAnchorRef.current?.focus()); }} onSaved={onFeedback} projectId={projectId} /> : null}
             <Dialog onClose={() => { if (!deleting) { setConfirmUnregister(false); setDeletePlan(undefined); setRemovalIntent("unregister"); } }} open={confirmUnregister} title={deletePlan === undefined ? removalIntent === "delete" ? "Preparing permanent deletion…" : workspace ? "Remove this project from the list?" : "Remove this project?" : "Permanently delete project directory?"}>
                 {deletePlan === undefined && removalIntent === "unregister" ? <>
                     <p>{workspace ? "Remove the ALCOMD registration for this project?" : "Choose whether to remove only the ALCOMD registration or permanently delete the local Unity project directory."}</p>
@@ -1296,7 +1305,6 @@ async function loadPackageWorkspace(client: GuiRpcClient, projectId: string, inc
 }
 
 function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { projectId: string }) {
-    const canReadBackups = useCapability(capabilities.backupsRead);
     const canManageRepositories = useCapability(capabilities.repositoriesRegistry);
     const canPlanPackagesV1 = useCapability(capabilities.packagesPlanV1);
     const canPlanPackagesV2 = useCapability(capabilities.packagesPlanV2);
@@ -1441,11 +1449,10 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                     >
                         <nav aria-label="Project actions" className="project-workspace-action-cluster">
                             {refreshError === undefined ? null : <span className="inline-error" role="alert">Refresh failed: {refreshError.code}</span>}
-                            <ProjectUnityWorkspaceActions client={client} installations={installations} launchOptions={launchOptions} navigate={navigate} project={project} />
-                            <Button disabled={!canReadBackups} onClick={() => navigate(`/projects/${projectId}/backups`)} title={capabilityUnavailableTitle(canReadBackups, capabilities.backupsRead)} type="button" variant="text"><Icon asset={backupIcon} slot="icon" />Backups</Button>
-                            <ProjectRowActions
+                            <ProjectUnityWorkspaceActions client={client} installations={installations} launchOptions={launchOptions} navigate={navigate} project={project} renderLaunch={(launchAction) => <ProjectRowActions
                                 client={client}
                                 context="workspace"
+                                launchAction={launchAction}
                                 navigate={navigate}
                                 onChanged={refresh}
                                 onCopyCompleted={(targetProjectId) => navigate(`/projects/${targetProjectId}`)}
@@ -1453,7 +1460,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                 onProjectChanged={() => refresh()}
                                 onRemoved={() => navigate("/projects")}
                                 project={project}
-                            />
+                            />} />
                         </nav>
                     </PageHeader>
                     {workspaceFeedback === undefined ? null : <div className="project-workspace-feedback" role="status" aria-live="polite">{workspaceFeedback}</div>}
@@ -1711,7 +1718,7 @@ export function RepositoryDetailPage({ client, navigate, repositoryId }: PagePro
 
 export function TemplatesPage({ client, navigate }: PageProps) {
     const load = useCallback(() => client.templatesList(), [client]);
-    return <UtilityWorkspace title={navigationLabels.resources} load={load} navigation={<ResourceNavigation current="/templates" navigate={navigate} />} action={{ label: "Import template", render: (_, refresh) => <TemplateImportPanel client={client} onChanged={refresh} /> }}>
+    return <UtilityWorkspace title={navigationLabels.resources} load={load} navigation={<ResourceNavigation current="/templates" navigate={navigate} />} tools={(_, refresh) => <TemplateCreateActions client={client} onChanged={refresh} />}>
         {(value, refresh) => value.templates.length === 0 ? <RouteState kind="empty" title="No templates available" /> : <UtilityTable
             label="Templates"
             headers={["Template", "ID", "Last modified", "Source", "Actions"]}

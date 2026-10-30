@@ -277,6 +277,56 @@ test("Project workspace Open Unity uses the exact 0/1/many flow", async ({ page 
     await expect(page.getByText("Unity launch spawned.")).toBeVisible();
 });
 
+test("Project workspace launch split menu retains launch arguments, backup navigation and focus", async ({ page }, testInfo) => {
+    await openHarness(page, `/projects/${PROJECT_ID}/packages`);
+    const group = page.getByRole("group", { name: "Open Unity", exact: true });
+    const primary = group.getByRole("button", { name: "Open Unity", exact: true });
+    const arrow = group.getByRole("button", { name: /^More actions for/ });
+    const primaryBox = await group.locator(".alcomd-split-button-primary").boundingBox();
+    const arrowBox = await group.locator(".alcomd-split-button-menu").boundingBox();
+    expect(primaryBox).not.toBeNull(); expect(arrowBox).not.toBeNull();
+    expect(arrowBox!.x - primaryBox!.x - primaryBox!.width).toBeCloseTo(2, 1);
+    await expect(group.locator(".alcomd-split-button-primary")).toHaveCSS("border-start-end-radius", "8px");
+    await expect(group.locator(".alcomd-split-button-menu")).toHaveCSS("border-start-start-radius", "8px");
+    expect(arrowBox!.height).toBe(primaryBox!.height);
+    await arrow.click();
+    await expect(page.getByRole("menuitem")).toHaveCount(6);
+    await expect(group.locator("md-menu .menu.open")).not.toHaveClass(/animating/);
+    await page.screenshot({ path: testInfo.outputPath("project-launch-menu.png"), fullPage: false });
+    await page.getByRole("menuitem", { name: "Edit launch arguments", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Unity launch arguments", exact: true })).toBeVisible();
+    await expect(page.getByRole("menu")).toBeHidden();
+    await expect(page.getByLabel("Additional arguments")).toHaveValue("-logFile");
+    await page.getByLabel("Additional arguments").fill("-discard-this-draft");
+    await page.keyboard.press("Escape");
+    await expect(arrow).toBeFocused();
+    await arrow.click();
+    await page.getByRole("menuitem", { name: "Edit launch arguments", exact: true }).click();
+    await expect(page.getByLabel("Additional arguments")).toHaveValue("-logFile");
+    await page.getByLabel("Additional arguments").fill("-saved-from-workspace");
+    await page.getByRole("button", { name: "Save launch arguments", exact: true }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Unity launch arguments updated." })).toBeVisible();
+    await expect(arrow).toBeFocused();
+    await arrow.click();
+    await page.getByRole("menuitem", { name: "Edit launch arguments", exact: true }).click();
+    await expect(page.getByLabel("Additional arguments")).toHaveValue("-saved-from-workspace");
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await arrow.click();
+    await page.getByRole("menuitem", { name: "Backups", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/projects/${PROJECT_ID}/backups$`));
+});
+
+test("Project workspace split button keeps unavailable launch and maintenance actions disabled", async ({ page }) => {
+    await openHarness(page, `/projects/${PROJECT_ID}/packages`, "capabilities-missing");
+    const group = page.getByRole("group", { name: "Open Unity", exact: true });
+    await expect(group.getByRole("button", { name: "Open Unity", exact: true })).toBeDisabled();
+    await group.getByRole("button", { name: /^More actions for/ }).click();
+    await expect(page.locator("md-menu-item").filter({ hasText: "Edit launch arguments" })).toHaveJSProperty("disabled", true);
+    await expect(page.locator("md-menu-item").filter({ hasText: "Copy Project" })).toHaveJSProperty("disabled", true);
+    await page.keyboard.press("Escape");
+    await expect(group.getByRole("button", { name: /^More actions for/ })).toBeFocused();
+});
+
 test("Project workspace Unity version selector creates one reviewed migration Operation", async ({ page }) => {
     await openHarness(page, `/projects/${PROJECT_ID}/packages`, "unity-migration");
     const selector = page.getByRole("navigation", { name: "Project actions" }).getByRole("combobox", { name: "Unity version" });

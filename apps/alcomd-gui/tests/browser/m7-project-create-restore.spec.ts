@@ -6,7 +6,7 @@ test("Projects Create uses the typed Template Plan Apply Operation flow and open
     await page.getByRole("button", { name: "Create project" }).click();
     const dialog = page.getByRole("dialog", { name: "Create project" });
     await expect(dialog).toBeVisible();
-    await expect(page.getByLabel("Project template")).toContainText("Avatar starter");
+    await expect(page.getByRole("combobox", { name: "Project template", exact: true })).toContainText("Avatar starter");
     await page.getByRole("button", { name: "Choose directory" }).click();
     await expect(page.getByLabel("Create target parent")).toHaveValue("C:\\Fixture\\Avatar");
     await page.getByLabel("Create project name").fill("Created Project");
@@ -23,10 +23,11 @@ test("Projects Create uses the typed Template Plan Apply Operation flow and open
 test("Projects Restore uses a managed Backup Plan Apply Operation and opens the registered result", async ({ page }) => {
     await openHarness(page, "/projects");
 
-    await page.getByRole("button", { name: "Restore project" }).click();
+    await page.getByRole("button", { name: "More project creation options" }).click();
+    await page.getByRole("menuitem", { name: "Restore from backup", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Restore project" });
     await expect(dialog).toBeVisible();
-    await expect(page.getByLabel("Project backup")).toContainText("2023-11-14");
+    await expect(page.getByRole("combobox", { name: "Project backup", exact: true })).toContainText("2023-11-14");
     await page.getByRole("button", { name: "Choose directory" }).click();
     await expect(page.getByLabel("Restore target parent")).toHaveValue("C:\\Fixture\\Avatar");
     await page.getByLabel("Restore project name").fill("Restored Project");
@@ -47,7 +48,8 @@ test("Create and Restore expose cancel, empty, and structured planning failure s
     await expect(page.getByRole("dialog", { name: "Create project" })).toHaveCount(0);
 
     await openHarness(page, "/projects", "empty");
-    await page.getByRole("button", { name: "Restore project" }).click();
+    await page.getByRole("button", { name: "More project creation options" }).click();
+    await page.getByRole("menuitem", { name: "Restore from backup", exact: true }).click();
     await expect(page.getByText("No managed backups available")).toBeVisible();
     const restoreDialogBox = await page.getByRole("dialog", { name: "Restore project" }).boundingBox();
     const closeBox = await page.getByRole("button", { name: "Close", exact: true }).boundingBox();
@@ -63,7 +65,8 @@ test("Create and Restore expose cancel, empty, and structured planning failure s
     await expect(page.getByRole("alert")).toContainText("template_plan_stale");
 
     await openHarness(page, "/projects", "restore-error");
-    await page.getByRole("button", { name: "Restore project" }).click();
+    await page.getByRole("button", { name: "More project creation options" }).click();
+    await page.getByRole("menuitem", { name: "Restore from backup", exact: true }).click();
     await page.getByRole("button", { name: "Choose directory" }).click();
     await page.getByLabel("Restore project name").fill("Conflict");
     await page.getByRole("button", { name: "Review restore" }).click();

@@ -274,8 +274,12 @@ test("utility actions use modal dialogs and cancel clears drafts and returns foc
         await openHarness(page, route);
         const control = page.getByLabel(field, { exact: true });
         await expect(control).toHaveCount(0);
-        const trigger = page.getByRole("button", { name: title, exact: true });
-        await trigger.click();
+        const trigger = page.getByRole("button", { name: route === "/templates" ? "More template creation options" : title, exact: true });
+        const openAction = async () => {
+            await trigger.click();
+            if (route === "/templates") await page.getByRole("menuitem", { name: title, exact: true }).click();
+        };
+        await openAction();
         const dialog = page.getByRole("dialog", { name: title, exact: true });
         await expect(dialog).toBeVisible();
         await expect(dialogHost(page, title).getByLabel(field, { exact: true })).toBeVisible();
@@ -286,7 +290,7 @@ test("utility actions use modal dialogs and cancel clears drafts and returns foc
         await expect(dialog).not.toBeVisible();
         await expect(control).toHaveCount(0);
         await expect(trigger).toBeFocused();
-        await trigger.click();
+        await openAction();
         await expect(control).toHaveValue("");
         await page.keyboard.press("Escape");
         await expect(dialog).not.toBeVisible();

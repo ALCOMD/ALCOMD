@@ -1,6 +1,6 @@
 import type { ExtensionRecord, RpcError } from "@alcomd/sdk";
 import { queryCandidates } from "./package-candidates";
-import { useUtilityDialogBusy, UtilityDialogCancel } from "./UtilityActionDialog";
+import { useUtilityDialogBusy, UtilityActionDialog, UtilityDialogCancel } from "./UtilityActionDialog";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import type {
@@ -20,8 +20,9 @@ import type {
     UnityLaunchOptionsResult
 } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
-import { closeIcon, moreVertIcon, playArrowIcon, starIcon } from "@alcomd/ui/icons";
+import { closeIcon, moreVertIcon, starIcon } from "@alcomd/ui/icons";
 import { Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, Menu, MenuItem, Progress, RefreshButton, Select, TextField } from "./Material";
+import { SplitButton } from "./SplitButton";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 
 interface ActionProps {
@@ -312,15 +313,55 @@ export function UnityRegistryActions({ client, installations, onChanged }: Actio
     </ActionSection>;
 }
 
+export function ProjectLaunchArgumentsDialog({ client, launchConfig, onChanged, onClose, onSaved, projectId }: ActionProps & { launchConfig?: ProjectUnityLaunchConfig; onClose(): void; onSaved?(message: string): void; projectId: string }) {
+    const canManage = useCapability(capabilities.unityManage);
+    const [open, setOpen] = useState(true);
+    const initialConfig = useRef(launchConfig).current;
+    const [config, setConfig] = useState<ProjectUnityLaunchConfig>();
+    const [argumentsText, setArgumentsText] = useState("");
+    const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
+    const pending = useRef(false);
+    useEffect(() => {
+        let active = true;
+        setConfig(undefined);
+        setFeedback(INITIAL_FEEDBACK);
+        const read = initialConfig === undefined ? client.unityProjectLaunchConfigGet(projectId).then((result) => result.config) : Promise.resolve(initialConfig);
+        void read.then((value) => {
+            if (!active) return;
+            setConfig(value); setArgumentsText(value.arguments.join("\n"));
+        }).catch((caught: unknown) => { if (active) setFeedback({ busy: false, error: safeError(caught) }); });
+        return () => { active = false; };
+    }, [client, initialConfig, projectId]);
+    const close = () => { if (!pending.current) setOpen(false); };
+    const save = async (clear: boolean) => {
+        if (!canManage || config === undefined || pending.current) return;
+        pending.current = true; setFeedback({ busy: true });
+        try {
+            if (clear) await client.unityProjectLaunchConfigClear(projectId, config.revision);
+            else await client.unityProjectLaunchConfigSet(projectId, argumentsText.split(/\r?\n/).map((value) => value.trim()).filter(Boolean), config.revision);
+            setFeedback(INITIAL_FEEDBACK); setOpen(false); onSaved?.(clear ? "Unity launch arguments cleared." : "Unity launch arguments updated."); onChanged?.();
+        } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+        finally { pending.current = false; }
+    };
+    return <MaterialDialog dismissible={!feedback.busy} open={open} onClose={onClose} title="Unity launch arguments">
+        {config === undefined ? feedback.error === undefined ? <p role="status">Loading launch arguments…</p> : null : <form onSubmit={(event) => { event.preventDefault(); void save(false); }}>
+            <TextField aria-describedby="unity-arguments-hint" disabled={feedback.busy} id="unity-arguments" label="Additional arguments" maxLength={4096} onInput={setArgumentsText} rows={4} supportingText="One argument per line. The daemon validates forbidden arguments." type="textarea" value={argumentsText} />
+            <div className="dialog-actions">
+                <Button disabled={feedback.busy} onClick={close} type="button" variant="text">Cancel</Button>
+                <Button disabled={!canManage || feedback.busy || config.revision === 0} onClick={() => void save(true)} type="button" variant="text">Clear launch arguments</Button>
+                <Button disabled={!canManage || feedback.busy} type="submit">Save launch arguments</Button>
+            </div>
+        </form>}
+        {config === undefined ? <div className="dialog-actions"><Button onClick={close} type="button" variant="text">Cancel</Button></div> : null}
+        <MutationFeedback client={client} feedback={feedback} />
+    </MaterialDialog>;
+}
+
 export function ProjectUnityActions({ afterMigrationOpen = false, client, installations, launchConfig, launchOptions, project, onChanged }: ActionProps & { afterMigrationOpen?: boolean; installations: UnityInstallation[]; launchConfig: ProjectUnityLaunchConfig; launchOptions: UnityLaunchOptionsResult; project: ProjectSnapshot }) {
     const canLaunch = useCapability(capabilities.unityLaunch);
     const canManage = useCapability(capabilities.unityManage);
     const canMigrate = useCapability(capabilities.projectsUnityMigration);
-    const [argumentsText, setArgumentsText] = useState(launchConfig.arguments.join("\n"));
     const [argumentsOpen, setArgumentsOpen] = useState(false);
-    const [argumentsRevision, setArgumentsRevision] = useState(launchConfig.revision);
-    const [argumentsFeedback, setArgumentsFeedback] = useState(INITIAL_FEEDBACK);
-    const argumentsPending = useRef(false);
     const [launchInstallationId, setLaunchInstallationId] = useState("");
     const [postMigrationLaunchOptions, setPostMigrationLaunchOptions] = useState<UnityLaunchOptionsResult>();
     const [targetVersion, setTargetVersion] = useState("");
@@ -330,29 +371,10 @@ export function ProjectUnityActions({ afterMigrationOpen = false, client, instal
     const projectId = project.projectId;
     const projectRevision = project.revision;
     const handledMigrationOperation = useRef<string | undefined>(undefined);
-    useEffect(() => {
-        if (!argumentsOpen) setArgumentsText(launchConfig.arguments.join("\n"));
-    }, [argumentsOpen, launchConfig]);
     const migrationVersions = [...new Set(installations.map((installation) => installation.unityVersion))]
         .filter((version) => version !== project.unityVersion)
         .sort((left, right) => left.localeCompare(right));
     const targetInstallations = installations.filter((installation) => installation.unityVersion === targetVersion);
-    const closeArguments = () => {
-        if (argumentsPending.current) return;
-        setArgumentsOpen(false); setArgumentsText(launchConfig.arguments.join("\n")); setArgumentsFeedback(INITIAL_FEEDBACK);
-    };
-    const saveArguments = async (clear: boolean) => {
-        if (projectId === undefined || !canManage || argumentsPending.current) return;
-        argumentsPending.current = true; setArgumentsFeedback({ busy: true });
-        try {
-            if (clear) await client.unityProjectLaunchConfigClear(projectId, argumentsRevision);
-            else await client.unityProjectLaunchConfigSet(projectId, argumentsText.split(/\r?\n/).map((value) => value.trim()).filter(Boolean), argumentsRevision);
-            setArgumentsOpen(false); setArgumentsFeedback(INITIAL_FEEDBACK);
-            setFeedback({ busy: false, message: clear ? "Unity launch arguments cleared." : "Unity launch arguments updated." });
-            onChanged?.();
-        } catch (caught: unknown) { setArgumentsFeedback({ busy: false, error: safeError(caught) }); }
-        finally { argumentsPending.current = false; }
-    };
     const launch = async () => {
         if (projectId === undefined) return;
         const effectiveOptions = postMigrationLaunchOptions ?? launchOptions;
@@ -441,18 +463,8 @@ export function ProjectUnityActions({ afterMigrationOpen = false, client, instal
             {effectiveLaunchOptions.exactMatchingInstallations.length > 1 ? <Select id="launch-installation" label="Unity installation for this launch" onChange={setLaunchInstallationId} options={[{ label: "Choose an installation", value: "" }, ...effectiveLaunchOptions.exactMatchingInstallations.map((item) => ({ label: `Unity ${item.unityVersion} · ${item.architecture}`, value: item.installationId }))]} value={launchInstallationId} /> : null}
             <Button disabled={!canLaunch || feedback.busy || projectRevision === undefined} onClick={() => void launch()} title={capabilityUnavailableTitle(canLaunch, capabilities.unityLaunch)} type="button">Open Unity</Button>
             {effectiveLaunchOptions.exactMatchingInstallations.length === 0 ? <p>This project requires Unity {effectiveLaunchOptions.projectUnityVersion}. No exact matching Unity installation was found.</p> : null}
-            <Button disabled={!canManage || feedback.busy || projectId === undefined} onClick={() => { setArgumentsText(launchConfig.arguments.join("\n")); setArgumentsFeedback(INITIAL_FEEDBACK); setArgumentsRevision(launchConfig.revision); setArgumentsOpen(true); }} title={capabilityUnavailableTitle(canManage, capabilities.unityManage)} type="button" variant="tonal">Edit launch arguments</Button>
-            <MaterialDialog dismissible={!argumentsFeedback.busy} open={argumentsOpen} onClose={closeArguments} title="Unity launch arguments">
-                <form onSubmit={(event) => { event.preventDefault(); void saveArguments(false); }}>
-                    <TextField aria-describedby="unity-arguments-hint" disabled={argumentsFeedback.busy} id="unity-arguments" label="Additional arguments" maxLength={4096} onInput={setArgumentsText} rows={4} supportingText="One argument per line. The daemon validates forbidden arguments." type="textarea" value={argumentsText} />
-                    <div className="dialog-actions">
-                        <Button disabled={argumentsFeedback.busy} onClick={closeArguments} type="button" variant="text">Cancel</Button>
-                        <Button disabled={!canManage || argumentsFeedback.busy || projectId === undefined || launchConfig.revision === 0} onClick={() => void saveArguments(true)} type="button" variant="text">Clear launch arguments</Button>
-                        <Button disabled={!canManage || argumentsFeedback.busy || projectId === undefined} type="submit">Save launch arguments</Button>
-                    </div>
-                </form>
-                <MutationFeedback client={client} feedback={argumentsFeedback} />
-            </MaterialDialog>
+            <Button disabled={!canManage || feedback.busy || projectId === undefined} onClick={() => setArgumentsOpen(true)} title={capabilityUnavailableTitle(canManage, capabilities.unityManage)} type="button" variant="tonal">Edit launch arguments</Button>
+            {!argumentsOpen || projectId === undefined ? null : <ProjectLaunchArgumentsDialog client={client} launchConfig={launchConfig} onChanged={onChanged} onClose={() => setArgumentsOpen(false)} onSaved={(message) => setFeedback({ busy: false, message })} projectId={projectId} />}
             <h3>Migrate Project Unity version</h3>
             <Select id="project-unity-version" label="Target Unity version" onChange={chooseTargetVersion} options={[{ label: `Current · ${project.unityVersion}`, value: "" }, ...migrationVersions.map((version) => ({ label: version, value: version }))]} value={targetVersion} />
             {targetInstallations.length > 1 ? <Select id="migration-installation" label="Target Unity installation" onChange={setTargetInstallationId} options={[{ label: "Choose an installation", value: "" }, ...targetInstallations.map((item) => ({ label: `${item.unityVersion} · ${item.architecture}`, value: item.installationId }))]} value={targetInstallationId} /> : null}
@@ -465,12 +477,13 @@ export function ProjectUnityActions({ afterMigrationOpen = false, client, instal
     );
 }
 
-export function ProjectUnityWorkspaceActions({ client, installations, launchOptions, navigate, project }: {
+export function ProjectUnityWorkspaceActions({ client, installations, launchOptions, navigate, project, renderLaunch }: {
     client: GuiRpcClient;
     installations: UnityInstallation[];
     launchOptions: UnityLaunchOptionsResult;
     navigate(path: string): void;
     project: ProjectSnapshot;
+    renderLaunch(action: { disabled: boolean; onClick(): void; title?: string }): ReactNode;
 }) {
     const canLaunch = useCapability(capabilities.unityLaunch);
     const canMigrate = useCapability(capabilities.projectsUnityMigration);
@@ -569,7 +582,7 @@ export function ProjectUnityWorkspaceActions({ client, installations, launchOpti
                 ]}
                 value={migrationVersion}
             />
-            <Button disabled={!canLaunch || feedback.busy || projectRevision === undefined} onClick={() => void openUnity()} title={capabilityUnavailableTitle(canLaunch, capabilities.unityLaunch)} type="button"><Icon asset={playArrowIcon} slot="icon" />Open Unity</Button>
+            {renderLaunch({ disabled: !canLaunch || feedback.busy || projectRevision === undefined, onClick: () => void openUnity(), title: capabilityUnavailableTitle(canLaunch, capabilities.unityLaunch) })}
             <ModalDialog onClose={() => setMissingExactOpen(false)} open={missingExactOpen} title="Unity installation required">
                 <p>This project requires Unity {launchOptions.projectUnityVersion}. No exact matching Unity installation was found.</p>
                 <div className="dialog-actions">
@@ -647,66 +660,129 @@ export function TemplateImportPanel({ client, onChanged }: ActionProps) {
     </ActionSection>;
 }
 
+export function TemplateCreateActions({ client, onChanged }: ActionProps) {
+    const canManage = useCapability(capabilities.templatesManage);
+    const [creating, setCreating] = useState(false);
+    const [importing, setImporting] = useState(false);
+    const menuAnchorRef = useRef<HTMLElement>(null);
+    const primaryRef = useRef<HTMLElement>(null);
+    return <>
+        <SplitButton disabled={!canManage} label="Create template" menuButtonRef={menuAnchorRef} menuLabel="More template creation options" onClick={() => setCreating(true)} primaryRef={primaryRef} title={capabilityUnavailableTitle(canManage, capabilities.templatesManage)}>
+            <MenuItem disabled={!canManage} label="Import template" onClick={() => setImporting(true)} title={capabilityUnavailableTitle(canManage, capabilities.templatesManage)} />
+        </SplitButton>
+        {creating ? <TemplateDeriveDialog client={client} onChanged={onChanged} onClose={() => { setCreating(false); window.requestAnimationFrame(() => primaryRef.current?.focus()); }} /> : null}
+        {importing ? <UtilityActionDialog title="Import template" onClose={() => { setImporting(false); window.requestAnimationFrame(() => menuAnchorRef.current?.focus()); }}><TemplateImportPanel client={client} onChanged={onChanged} /></UtilityActionDialog> : null}
+    </>;
+}
+
+function TemplateDeriveDialog({ client, onChanged, onClose }: ActionProps & { onClose(): void }) {
+    const canManage = useCapability(capabilities.templatesManage);
+    const [open, setOpen] = useState(true);
+    const [plan, setPlan] = useState<TemplatePlan>();
+    const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
+    const [projects, setProjects] = useState<ProjectSnapshot[]>([]);
+    const [projectPage, setProjectPage] = useState<Awaited<ReturnType<GuiRpcClient["projectsList"]>>>();
+    const [projectsLoading, setProjectsLoading] = useState(true);
+    const [fields, setFields] = useState({ projectId: "", templateId: "", templateVersion: "1.0.0", displayName: "", description: "" });
+    const pending = useRef(false);
+    const projectLoad = useRef(0);
+    const update = (key: keyof typeof fields, value: string) => setFields((current) => ({ ...current, [key]: value }));
+    useEffect(() => {
+        const generation = ++projectLoad.current;
+        void client.projectsList().then((page) => {
+            if (generation !== projectLoad.current) return;
+            setProjectPage(page); setProjects(page.projects); setProjectsLoading(false);
+        }).catch((caught: unknown) => { if (generation === projectLoad.current) { setProjectsLoading(false); setFeedback({ busy: false, error: safeError(caught) }); } });
+        return () => { projectLoad.current += 1; };
+    }, [client]);
+    const loadMore = async () => {
+        if (projectPage?.nextCursor === undefined || projectsLoading) return;
+        const generation = ++projectLoad.current;
+        setProjectsLoading(true);
+        try {
+            const page = await client.projectsList(projectPage.nextCursor);
+            if (generation !== projectLoad.current) return;
+            setProjectPage(page); setProjects((current) => [...current, ...page.projects]);
+        } catch (caught: unknown) { if (generation === projectLoad.current) setFeedback({ busy: false, error: safeError(caught) }); }
+        finally { if (generation === projectLoad.current) setProjectsLoading(false); }
+    };
+    const createPlan = async (event: FormEvent) => {
+        event.preventDefault();
+        if (pending.current || !canManage) return;
+        pending.current = true; setFeedback({ busy: true });
+        try {
+            const source = (await client.projectGet(fields.projectId)).project;
+            if (source.projectId === undefined || source.revision === undefined) throw { code: "project_revision_unavailable" };
+            setPlan(await client.templatePlanDerive({ projectId: source.projectId, expectedProjectRevision: source.revision, templateId: fields.templateId, templateVersion: fields.templateVersion, displayName: fields.displayName, ...(fields.description.length === 0 ? {} : { description: fields.description }) }));
+            setFeedback({ busy: false });
+        } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+        finally { pending.current = false; }
+    };
+    const apply = async () => {
+        if (plan === undefined || pending.current || !canManage) return;
+        pending.current = true; setFeedback({ busy: true });
+        try {
+            const result = await client.templateApplyDerive(plan.planId);
+            setPlan(undefined); setFeedback({ busy: false, operationId: result.operationId, message: "Template operation accepted." }); onChanged?.();
+        } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+        finally { pending.current = false; }
+    };
+    const close = () => { if (!pending.current) setOpen(false); };
+    return <MaterialDialog dismissible={!feedback.busy} open={open} onClose={onClose} title={plan === undefined ? "Create template from project" : "Review new template"}>
+        {feedback.operationId !== undefined ? <div className="dialog-actions"><Button onClick={close} type="button" variant="text">Close</Button></div> : plan !== undefined ? <>
+            <p>Action: <strong>{humanize(plan.action)}</strong></p>
+            <p>Plan fingerprint: <code>{shortValue(plan.planFingerprint)}</code></p>
+            <p className="risk-summary">The daemon will revalidate this frozen plan before applying it.</p>
+            <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">Discard plan</Button><Button disabled={feedback.busy || !canManage} onClick={() => void apply()} type="button">Apply reviewed plan</Button></div>
+        </> : <form onSubmit={(event) => void createPlan(event)}>
+            <Select id="derive-project" label="Source project" disabled={feedback.busy || projectsLoading} onChange={(next) => update("projectId", next)} options={[{ label: "Choose a project", value: "" }, ...projects.filter((project) => project.projectId !== undefined).map((project) => ({ label: project.rootPath, value: project.projectId! }))]} value={fields.projectId} />
+            {projectsLoading ? <p role="status">Loading projects…</p> : projects.length === 0 ? <p>No registered projects available.</p> : null}
+            {projectPage?.nextCursor === undefined ? null : <Button disabled={projectsLoading || feedback.busy} onClick={() => void loadMore()} type="button" variant="text">Load more projects</Button>}
+            <TextField disabled={feedback.busy} id="derive-name" label="Display name" onInput={(next) => update("displayName", next)} required value={fields.displayName} />
+            <TextField disabled={feedback.busy} id="derive-template-id" label="New template ID" onInput={(next) => update("templateId", next)} required value={fields.templateId} />
+            <TextField disabled={feedback.busy} id="derive-version" label="Template version" onInput={(next) => update("templateVersion", next)} required value={fields.templateVersion} />
+            <TextField disabled={feedback.busy} id="derive-description" label="Description" onInput={(next) => update("description", next)} value={fields.description} />
+            <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">Cancel</Button><Button widthLabels={["Preparing review…", "Review"]} disabled={feedback.busy || !canManage || fields.projectId.length === 0} type="submit">{feedback.busy ? "Preparing review…" : "Review"}</Button></div>
+        </form>}
+        <MutationFeedback client={client} feedback={feedback} />
+    </MaterialDialog>;
+}
+
 export function TemplateActions({ client, compact = false, onChanged, onView, template }: ActionProps & { compact?: boolean; onView?(): void; template: TemplateRecord }) {
     const canCreateProject = useCapability(capabilities.templatesCreateProject);
     const canManage = useCapability(capabilities.templatesManage);
     const [mode, setMode] = useState<"none" | "derive" | "create" | "export" | "remove">("none");
     const [plan, setPlan] = useState<TemplatePlan>();
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
-    const [projects, setProjects] = useState<ProjectSnapshot[]>([]);
-    const [projectPage, setProjectPage] = useState<Awaited<ReturnType<GuiRpcClient["projectsList"]>>>();
-    const [projectsLoading, setProjectsLoading] = useState(false);
-    const [fields, setFields] = useState({ projectId: "", templateId: "", templateVersion: "1.0.0", displayName: "", description: "", parent: "", leaf: "", exportPath: "" });
+    const [fields, setFields] = useState({ parent: "", leaf: "", exportPath: "" });
     const [menuOpen, setMenuOpen] = useState(false);
     const menuAnchorRef = useRef<HTMLElement>(null);
     const pending = useRef(false);
-    const projectLoad = useRef(0);
     const update = (key: keyof typeof fields, value: string) => setFields((current) => ({ ...current, [key]: value }));
     const close = () => {
         if (pending.current) return;
-        projectLoad.current += 1;
-        setMode("none"); setPlan(undefined); setProjectsLoading(false);
-    };
-    const loadProjects = async (append: boolean) => {
-        const generation = ++projectLoad.current;
-        setProjectsLoading(true);
-        try {
-            const page = await client.projectsList(append ? projectPage?.nextCursor : undefined);
-            if (generation !== projectLoad.current) return;
-            setProjectPage(page);
-            setProjects((current) => append ? [...current, ...page.projects] : page.projects);
-        } catch (caught: unknown) {
-            if (generation === projectLoad.current) setFeedback({ busy: false, error: safeError(caught) });
-        } finally { if (generation === projectLoad.current) setProjectsLoading(false); }
+        setMode("none"); setPlan(undefined);
     };
     const open = (next: typeof mode) => {
         if (pending.current) return;
         setMenuOpen(false); setPlan(undefined); setFeedback(INITIAL_FEEDBACK); setMode(next);
-        setFields({ projectId: "", templateId: "", templateVersion: "1.0.0", displayName: "", description: "", parent: "", leaf: "", exportPath: "" });
-        if (next === "derive") { setProjects([]); setProjectPage(undefined); void loadProjects(false); }
+        setFields({ parent: "", leaf: "", exportPath: "" });
     };
     const createPlan = async (event: FormEvent) => {
         event.preventDefault();
-        if (pending.current || (mode === "derive" ? !canManage : !canCreateProject)) return;
+        if (pending.current || !canCreateProject) return;
         pending.current = true; setFeedback({ busy: true });
         try {
-            let next: TemplatePlan;
-            if (mode === "derive") {
-                const source = (await client.projectGet(fields.projectId)).project;
-                if (source.projectId === undefined || source.revision === undefined) throw { code: "project_revision_unavailable" };
-                next = await client.templatePlanDerive({ projectId: source.projectId, expectedProjectRevision: source.revision, templateId: fields.templateId, templateVersion: fields.templateVersion, displayName: fields.displayName, ...(fields.description.length === 0 ? {} : { description: fields.description }) });
-            } else {
-                next = await client.templatePlanCreateProject(template.templateId, template.revision, fields.parent, fields.leaf);
-            }
+            const next = await client.templatePlanCreateProject(template.templateId, template.revision, fields.parent, fields.leaf);
             setPlan(next); setFeedback({ busy: false });
         } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
         finally { pending.current = false; }
     };
     const apply = async () => {
-        if (plan === undefined || pending.current || (mode === "derive" ? !canManage : !canCreateProject)) return;
+        if (plan === undefined || pending.current || !canCreateProject) return;
         pending.current = true; setFeedback({ busy: true });
         try {
-            const result = mode === "derive" ? await client.templateApplyDerive(plan.planId) : await client.templateApplyCreateProject(plan.planId);
+            const result = await client.templateApplyCreateProject(plan.planId);
             setPlan(undefined); setMode("none");
             setFeedback({ busy: false, operationId: result.operationId, message: "Template operation accepted." }); onChanged?.();
         } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
@@ -729,7 +805,7 @@ export function TemplateActions({ client, compact = false, onChanged, onView, te
         try { const path = await client.selectDirectory(); if (path !== undefined) update("parent", path); }
         catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
     };
-    const title = plan !== undefined ? mode === "derive" ? "Review new template" : "Review project creation" : mode === "derive" ? "Create template from project" : mode === "create" ? "Create project" : mode === "export" ? "Export template" : "Remove template";
+    const title = plan !== undefined ? "Review project creation" : mode === "create" ? "Create project" : mode === "export" ? "Export template" : "Remove template";
     return <section className={compact ? "template-row-actions" : "action-section"}>
         {compact ? <div className="card-actions">
             <IconButton aria-pressed={template.favorite} className="project-favorite-action" disabled={!canManage || feedback.busy} label={template.favorite ? "Remove " + template.displayName + " from favorites" : "Favorite " + template.displayName} onClick={() => void simple("favorite")} type="button"><Icon asset={starIcon} /></IconButton>
@@ -748,28 +824,19 @@ export function TemplateActions({ client, compact = false, onChanged, onView, te
             <Button disabled={!canManage || feedback.busy} onClick={() => open("export")} type="button" variant="text">Export</Button>
             {template.sourceKind === "builtin" ? null : <Button className="material-button--danger" disabled={!canManage || feedback.busy} onClick={() => open("remove")} type="button" variant="text">Remove template</Button>}
         </div></>}
-        <MaterialDialog dismissible={!feedback.busy} open={mode !== "none"} onClose={close} title={title}>
+        {mode === "derive" ? <TemplateDeriveDialog client={client} onChanged={onChanged} onClose={close} /> : null}
+        <MaterialDialog dismissible={!feedback.busy} open={mode !== "none" && mode !== "derive"} onClose={close} title={title}>
             {plan !== undefined ? <>
                 <p>Action: <strong>{humanize(plan.action)}</strong></p>
                 <p>Plan fingerprint: <code>{shortValue(plan.planFingerprint)}</code></p>
                 <p className="risk-summary">The daemon will revalidate this frozen plan before applying it.</p>
-                <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">Discard plan</Button><Button disabled={feedback.busy || (mode === "derive" ? !canManage : !canCreateProject)} onClick={() => void apply()} type="button">Apply reviewed plan</Button></div>
-            </> : mode === "derive" || mode === "create" ? <form onSubmit={(event) => void createPlan(event)}>
-                {mode === "derive" ? <>
-                    <Select id="derive-project" label="Source project" disabled={feedback.busy || projectsLoading} onChange={(next) => update("projectId", next)} options={[{ label: "Choose a project", value: "" }, ...projects.filter((project) => project.projectId !== undefined).map((project) => ({ label: project.rootPath, value: project.projectId! }))]} value={fields.projectId} />
-                    {projectsLoading ? <p role="status">Loading projects…</p> : projects.length === 0 ? <p>No registered projects available.</p> : null}
-                    {projectPage?.nextCursor === undefined ? null : <Button disabled={projectsLoading || feedback.busy} onClick={() => void loadProjects(true)} type="button" variant="text">Load more projects</Button>}
-                    <TextField disabled={feedback.busy} id="derive-name" label="Display name" onInput={(next) => update("displayName", next)} required value={fields.displayName} />
-                    <TextField disabled={feedback.busy} id="derive-template-id" label="New template ID" onInput={(next) => update("templateId", next)} required value={fields.templateId} />
-                    <TextField disabled={feedback.busy} id="derive-version" label="Template version" onInput={(next) => update("templateVersion", next)} required value={fields.templateVersion} />
-                    <TextField disabled={feedback.busy} id="derive-description" label="Description" onInput={(next) => update("description", next)} value={fields.description} />
-                </> : <>
-                    <p>Template: <strong>{template.displayName}</strong></p>
-                    <TextField disabled={feedback.busy} id="create-parent" label="Target parent" onInput={(next) => update("parent", next)} required value={fields.parent} />
-                    <Button disabled={feedback.busy} onClick={() => void pickParent()} type="button" variant="text">Browse…</Button>
-                    <TextField disabled={feedback.busy} id="create-leaf" label="Project folder name" onInput={(next) => update("leaf", next)} required value={fields.leaf} />
-                </>}
-                <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">Cancel</Button><Button widthLabels={["Preparing review…", "Review"]} disabled={feedback.busy || (mode === "derive" ? !canManage || fields.projectId.length === 0 : !canCreateProject)} type="submit">{feedback.busy ? "Preparing review…" : "Review"}</Button></div>
+                <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">Discard plan</Button><Button disabled={feedback.busy || !canCreateProject} onClick={() => void apply()} type="button">Apply reviewed plan</Button></div>
+            </> : mode === "create" ? <form onSubmit={(event) => void createPlan(event)}>
+                <p>Template: <strong>{template.displayName}</strong></p>
+                <TextField disabled={feedback.busy} id="create-parent" label="Target parent" onInput={(next) => update("parent", next)} required value={fields.parent} />
+                <Button disabled={feedback.busy} onClick={() => void pickParent()} type="button" variant="text">Browse…</Button>
+                <TextField disabled={feedback.busy} id="create-leaf" label="Project folder name" onInput={(next) => update("leaf", next)} required value={fields.leaf} />
+                <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">Cancel</Button><Button widthLabels={["Preparing review…", "Review"]} disabled={feedback.busy || !canCreateProject} type="submit">{feedback.busy ? "Preparing review…" : "Review"}</Button></div>
             </form> : mode === "export" ? <form onSubmit={(event) => { event.preventDefault(); void simple("export"); }}>
                 <p>Export <strong>{template.displayName}</strong> as a template bundle.</p>
                 <TextField disabled={feedback.busy} id="template-export" label="Export target" onInput={(next) => update("exportPath", next)} required value={fields.exportPath} />
