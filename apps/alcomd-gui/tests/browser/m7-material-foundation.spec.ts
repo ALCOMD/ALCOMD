@@ -229,6 +229,30 @@ test("Projects creation split button groups add and restore with distinct action
     await expect(toggle).toBeFocused();
 });
 
+test("DesktopList sorting and button themes do not change header typography", async ({ page }) => {
+    await openHarness(page, "/projects");
+    await page.evaluate(() => document.documentElement.style.setProperty("--md-text-button-label-text-size", "28px"));
+    await expect(page.locator(".projects-toolbar md-text-button")).toHaveCSS("font-size", "28px");
+    const table = page.getByRole("table", { name: "Projects", exact: true });
+    for (const header of await table.getByRole("columnheader").all()) {
+        await expect(header).toHaveCSS("font-size", "14px");
+        await expect(header).toHaveCSS("line-height", "20px");
+        const sort = header.locator("md-text-button");
+        if (await sort.count() > 0) {
+            await expect(sort).toHaveCSS("font-size", "14px");
+            await expect(sort).toHaveCSS("line-height", "20px");
+        }
+    }
+    const type = table.getByRole("columnheader", { name: "Type", exact: true });
+    for (const direction of ["ascending", "descending"]) {
+        await type.getByRole("button", { name: "Type", exact: true }).click();
+        await expect(type).toHaveAttribute("aria-sort", direction);
+        await expect(type.locator(".desktop-list-sort-icon")).toHaveCSS("visibility", "visible");
+        await expect(type.locator("md-text-button")).toHaveCSS("font-size", "14px");
+        await expect(type.locator("md-text-button")).toHaveCSS("font-weight", "500");
+    }
+});
+
 test("Projects toolbar uses semantic Material icons without replacing clear action labels", async ({ page }) => {
     await page.addInitScript(() => {
         Date.now = () => 1_700_000_120_000;

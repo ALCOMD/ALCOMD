@@ -4,6 +4,10 @@
 
 ## 当前阶段
 
+2026-10-30 公共表头字体补充：普通 DesktopList 表头原为 12px／normal 行高，可排序表头则使用 Material 文字按钮的 14px／20px；连同 Projects 的非排序 Actions 列也存在混用。现在字体族、字号、字重和行高由 DesktopList 同一组 header token 持有，普通表头和排序按钮显式引用，默认沿用 MD3 Label Large 的 14px／20px／500；通用按钮字号、是否显示箭头及升降序状态均不改变表头字体。保留排序高亮、箭头、表头内边距、圆角、粘性列和复选框原有触控高度，没有页面单独覆盖。
+
+新增回归在修复前复现普通表头 12px 与排序标签 14px 不一致；主题回归进一步复现通用文字按钮字号改为 28px 时排序表头也被带大，均退出码 1。中间四项回归 2/4：两个逐页用例误将包表格复选框原有 48px 表头要求为 40px；修正测试为同行高度一致且至少 40px，保留字体等值要求，没有为测试缩小控件触控区。最终专项 4/4 PASS（退出码 0），覆盖 12 个列表入口在 1280／1440px 的字体、长内容／控件／圆角边界，仓库浏览弹窗，以及通用按钮 28px 时普通／排序表头仍为 14px 和升降序切换。既有 Projects 排序／工具栏回归此前亦通过。check/build、diff check 通过，保留大 chunk 警告；证据在 target/m7-list-header-consistency-20261030/，仓库弹窗完整窗口截图已目视核对。1420 dev 已收到 HMR，各轮本任务 4173 Vite 测试服务已清理；没有原生桌面或屏幕阅读器新证据，未重建原生程序、操作真实工程或重复 Rust Workspace。所有者已授权提交此增量，并将其与前五笔本地提交一起正常推送；该授权不代表视觉验收通过，Visual Gate 2 仍 PENDING。
+
 2026-10-27：Dependabot #22–27 的本地安全修复仅涉及开发／构建依赖。`package-lock.json` 将 `source-map-js 1.2.1 → 1.2.2`、`vite 7.3.6 → 7.3.7`，只更新 version/resolved/integrity。现有依赖范围允许这些补丁；Vite 同步修复内嵌 launch-editor，不新增依赖、override、安装脚本许可、配置或产品代码。对应 GHSA 为 `68fv-2mgg-jv7q`、`698v-4r3x-3vcv`、`587h-7wmj-h5pm`、`r825-w8mm-5pxw`、`9jrq-w75r-8gcw`、`rq7h-c2jc-7f22`。Node engines、依赖集合、MIT／BSD-3-Clause 许可保持。未改变 RPC、权限、State 或 Plan/Apply。
 
 `npm ci --no-audit --no-fund`、`npm run check`、`npm run build`、diff check 通过；`npm audit --json` 为 0 漏洞，实际依赖树确认修复版本且不进入 omit-dev 图（空集合的 npm ls 返回 1）。source-map 临时回归 12/12：升级前确认 PostCSS 对象／字符串／两种 inline 编码接受越界偏移、深层 SourceNode lookup 在 2 秒预算下超时；升级后拒绝直接／累计越界及非法类型，正常 CSS 和映射控制保留。Vite 临时回归 11/11：公共 HTML 转换及 import-analysis 的升级前缺陷已不能复现，正常 HTML 保留；编辑器参数在禁止 fs/child_process 的 VM 中验证百分号／换行、Windows 路径规范化与模拟 WSL flag 前缀，未启动真实编辑器或 shell。既有 GUI 冒烟 3/3（退出码 0），覆盖键盘、22 个路由与 Material 控件。临时样例／输出由安全技能管理，不纳入产品。构建保留大 chunk 警告；npm ci 提示现有 esbuild postinstall 未获本机 allowScripts 许可，未改许可，构建正常。WSL／非 Windows 实机完整 exploit 未验证；未操作真实工程、重建桌面程序或重复 Rust Workspace。所有者已授权分批提交和推送；远端告警关闭以默认分支重新扫描结果为准，Visual Gate 2 保持 PENDING。

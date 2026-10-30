@@ -267,6 +267,10 @@ md-linear-progress {
 .projects-empty p { color: var(--on-surface-variant); }
 .desktop-list-viewport { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: auto; border-radius: var(--alcomd-shape-container); background: var(--md-sys-color-surface-container-lowest); isolation: isolate; }
 .desktop-list {
+    --desktop-list-header-font: var(--md-sys-typescale-label-large-font, var(--md-ref-typeface-plain));
+    --desktop-list-header-font-size: var(--md-sys-typescale-label-large-size, 0.875rem);
+    --desktop-list-header-font-weight: var(--md-sys-typescale-label-large-weight, 500);
+    --desktop-list-header-line-height: var(--md-sys-typescale-label-large-line-height, 1.25rem);
     width: 100%;
     min-width: var(--desktop-list-min-width, 100%);
     border-collapse: separate;
@@ -289,8 +293,10 @@ md-linear-progress {
     overflow: hidden;
     border: 0;
     color: var(--on-surface-variant);
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-family: var(--desktop-list-header-font);
+    font-size: var(--desktop-list-header-font-size);
+    font-weight: var(--desktop-list-header-font-weight);
+    line-height: var(--desktop-list-header-line-height);
     text-align: left;
     vertical-align: middle;
     overflow-wrap: normal;
@@ -327,6 +333,10 @@ md-linear-progress {
     color: inherit;
     --md-text-button-container-height: 40px;
     --md-text-button-container-shape: 0px;
+    --md-text-button-label-text-font: var(--desktop-list-header-font);
+    --md-text-button-label-text-size: var(--desktop-list-header-font-size);
+    --md-text-button-label-text-weight: var(--desktop-list-header-font-weight);
+    --md-text-button-label-text-line-height: var(--desktop-list-header-line-height);
     --md-text-button-focus-label-text-color: currentColor;
     --md-text-button-hover-label-text-color: currentColor;
     --md-text-button-label-text-color: currentColor;

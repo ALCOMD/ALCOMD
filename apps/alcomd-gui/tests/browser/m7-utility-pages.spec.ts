@@ -47,6 +47,16 @@ for (const width of [1280, 1440]) {
                         rowGaps: rows.slice(1).map((row, index) => row.getBoundingClientRect().top - rows[index]!.getBoundingClientRect().bottom),
                         backgrounds: cells.map((cell) => getComputedStyle(cell).backgroundColor),
                         borders: cells.map((cell) => getComputedStyle(cell).borderBottomWidth),
+                        headers: Array.from(element.querySelectorAll("thead th")).map((cell) => {
+                            const style = getComputedStyle(cell);
+                            const label = cell.querySelector("md-text-button");
+                            const labelStyle = label === null ? style : getComputedStyle(label);
+                            return {
+                                height: cell.getBoundingClientRect().height,
+                                fontSize: style.fontSize, lineHeight: style.lineHeight, fontWeight: style.fontWeight,
+                                labelSize: labelStyle.fontSize, labelLineHeight: labelStyle.lineHeight, labelWeight: labelStyle.fontWeight
+                            };
+                        }),
                         corners: rows.map((row) => [
                             getComputedStyle(row.firstElementChild!).borderTopLeftRadius,
                             getComputedStyle(row.firstElementChild!).borderBottomLeftRadius,
@@ -58,6 +68,13 @@ for (const width of [1280, 1440]) {
                 expect(cards.rowGaps.every((gap) => Math.abs(gap - 2) <= 1)).toBe(true);
                 expect(new Set(cards.backgrounds).size).toBe(1);
                 expect(cards.borders.every((border) => border === "0px")).toBe(true);
+                // Selection controls retain their existing 48px target; plain headers are 40px.
+                expect(new Set(cards.headers.map((header) => header.height)).size).toBe(1);
+                expect(cards.headers[0]!.height).toBeGreaterThanOrEqual(40);
+                expect(cards.headers.map(({ height: _height, ...typography }) => typography)).toEqual(cards.headers.map(() => ({
+                    fontSize: "14px", lineHeight: "20px", fontWeight: "500",
+                    labelSize: "14px", labelLineHeight: "20px", labelWeight: "500"
+                })));
                 expect(cards.corners).toEqual(cards.corners.map((_, index) => [
                     index === 0 ? "28px" : "8px",
                     index === cards.corners.length - 1 ? "28px" : "8px",
@@ -201,6 +218,12 @@ test("Resources sections and detail return controls work through ordinary clicks
     const repositoryHost = dialogHost(page, "Example packages");
     await expect(repositoryDialog).toBeVisible();
     await expect(repositoryHost.getByRole("table", { name: "Repository packages" }).getByRole("columnheader")).toHaveText(["Package", "Version", "Status"]);
+    for (const header of await repositoryHost.getByRole("columnheader").all()) {
+        await expect(header).toHaveCSS("font-size", "14px");
+        await expect(header).toHaveCSS("line-height", "20px");
+        await expect(header).toHaveCSS("font-weight", "500");
+        expect((await header.boundingBox())!.height).toBe(40);
+    }
     const modalBounds = await repositoryDialog.boundingBox();
     const firstColumn = await repositoryHost.getByRole("columnheader", { name: "Package", exact: true }).boundingBox();
     const closeBounds = await repositoryHost.getByRole("button", { name: "Close", exact: true }).boundingBox();
