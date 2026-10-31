@@ -483,7 +483,52 @@ hash；后者保存逐动作的预算内/迟到/未达分类、网络与帧，36
 
 541 项输入与完整 Rust 491/0/8 的基线对比，新增差异仅上述两个 GUI 文件及候选 browser spec；
 此前 `02b6f0c` 的 CSS 与 Material 测试差异另有原门禁，Rust、锁文件和公共合同没有再变化，
-记录为 row-render-input-delta.json。本机完整门禁仍失败；既有失败门禁推送例外只覆盖精确的
-`73f465b` 和 `02b6f0c`，新技术候选需要其实际 SHA 的单独批准，不能自行扩展例外。仍须该最终
-技术 SHA 三平台完整 required jobs 与 CodeQL 成功，才能开始 H2-B。各轮失败与输入身份独立
+记录为 row-render-input-delta.json。本机完整门禁仍失败；项目所有者在审阅实际结果后另行明确
+批准仅 `1932140a815dd12712cd00108d70acebe51a3560` 的普通快进推送，保留 247/2，以该 SHA
+三平台完整 required jobs 与 CodeQL 全绿验证技术收尾。推送后已核实本机 HEAD、tracking ref 与
+实际 `origin/main` 均为该 SHA，没有强推、改历史或推送标签，见 push-1932140-confirmed.json。
+[CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/41221092450) 已全部结束，四种语言均成功，
+记录为 codeql-1932140-final.json；[CI](https://github.com/ALCOMD/ALCOMD/actions/runs/41221092743)
+已全部结束：Ubuntu 完整成功、browser **249/0（5.5 分钟）**，macOS 完整成功、browser
+**249/0（9.2 分钟）**；Windows browser **248/1（6.9 分钟）**，唯一失败是 system/no-preference
+动画用例的 scrollbar transitionDuration 为 0 秒，原断言要求大于 0.01 秒。日志和最终状态分别
+保存在 ci-1932140-final.json、ci-1932140-{ubuntu,macos}-job-api.log 和 ci-1932140-windows-job.log。
+该 run 的 artifacts API 返回 0 项，无法取得其失败截图和 trace，不把推测写成远端根因。
+仍须同一最终技术 SHA 三平台完整 required jobs 成功，才能开始 H2-B。各轮失败与输入身份独立
 保留，不将定向结果拼接为全套通过。H2-B 尚未开始。
+
+## 动画样式等待的后续测试候选（2026-11-01）
+
+既有 ScrollArea 的初始化位于后续 rendering opportunity；控件偏好已同步不代表滚动条样式
+已经可作为最终结果读取。原测试对样式仅 evaluate 一次，其余控件检查使用自动等待断言。
+本地六组合观测分别覆盖 system/full/reduced 与系统 reduce/no-preference；第一次 DOM
+出现及随后八帧都读到相符的 0.15 秒或 0.001 毫秒、已连接的 light DOM 元素，网络和 pageError
+均无失败。该观测没有复现远端的 0 秒，也不能确定远端唯一原因；原始观测保存在
+gui-motion-followup/probe.{mjs,json,log,exit}。
+
+候选仅把该测试的最终样式检查改成现有 expect.poll，在默认断言时限内重新读取当前 locator，
+保持正常分支 >0.01 秒、减弱分支 <0.001 秒；另增加既有六个 transition property 的精确校验，
+避免样式未加载的零时长让减弱分支误通过。生产代码、样式、依赖、5 秒/30 秒预算与零重试均未改。
+动画专项为 **9/0（27.6 秒）**，根 npm check/build、metadata 与 diff check 通过，分别保存为
+gui-motion-followup/targeted-corrected、check 和 build 的 log/exit。541 项基线核对再次确认
+Rust、公共合同与锁文件未变，完整 Rust 491/0/8 的证据保持；release GUI 仍为上述
+`283F06EE…3DD400`，没有因测试变更重建或启动新的 release GUI，详见 rust-and-release-inputs.json。
+
+之后的独立完整 Chromium 为 **248 passed / 1 failed（12.6 分钟）**，exit 1，249 项、单 worker、
+零重试；150 个输入前后完全一致。动画九项、257 目标、Missing source 和四宽度/双主题 Projects
+网格均通过；这些不能替代完整门禁通过。唯一失败为 Hub direct-typing 用例打开 Settings 时
+Select 的 5 秒可见性检查：HTML 返回 200，实际静态 import 的 PagedItems JS GET 为 status -1 /
+ERR_ADDRESS_IN_USE，trace 中 React rootChildren=0。输入、Enter 保存、blur 和焦点业务均未到达，
+没有将其归为 Hub 保存或焦点回归，也没有仅凭网络错误名判断全局端口耗尽。完整资源 URL、
+UTC、空 root、真实入口 import、bundle/trace hash 及未覆盖边界见 full-failure-evidence.json。
+本轮没有重跑整套、增加超时/重试、裁减用例、改系统/浏览器配置或修改 Hub 实现。
+
+日志与结果为 gui-motion-followup/full.{log,json,exit}、full-results 和
+full-inputs-before/after.json。原样例五项正式 RPC 再次完全一致、settings revision 155，
+harness 4173 无监听，见 sample-comparison.json。官方 RustSec HEAD 仍相同，GitHub 11 条 open
+告警的编号、GHSA、影响范围、修复版本、scope、状态与更新时间均与 `02b6f0c` 后的读取相同，
+没有人工修改告警状态，见 dependabot-comparison.json。
+
+本机完整门禁仍失败；仅此前 `73f465b`、`02b6f0c` 与 `1932140` 有各自精确 SHA 的失败门禁
+推送例外，新候选不能自行继承。仍待同一最终技术 SHA 三平台完整 required jobs 与 CodeQL
+成功，不开始 H2-B。

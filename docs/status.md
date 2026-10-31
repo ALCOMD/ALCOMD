@@ -45,9 +45,18 @@ M0-M6 已正式通过人工验收，M7 尚未完成。
   初始化滚动容器。相关包管理、滚动条及导航 63/0，前端 check/build、release no-bundle、xtask
   与 metadata 通过；独立完整本地 Chromium 为 **247/2（18.4 分钟）**、150 个输入未变，
   257 目标与新增菜单回归通过。两项失败分别为必需 JS 的 ERR_NO_BUFFER_SPACE 和四宽度网格
-  累计 30 秒预算耗尽，未覆盖部分保持未通过。该新候选需要对其实际 SHA 的单独失败门禁推送
-  批准；既有例外只覆盖 `73f465b` 与 `02b6f0c`。仍待同一最终 SHA 的三平台完整 required jobs
-  与 CodeQL 成功，不宣称整体远端 PASS，不开始 H2-B。
+  累计 30 秒预算耗尽，未覆盖部分保持未通过。所有者已另行明确批准精确技术 SHA
+  `1932140a815dd12712cd00108d70acebe51a3560` 保留本机失败后普通快进推送，已核实该 SHA
+  位于 `origin/main`。[CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/41221092450) 四语言已全部
+  成功；[该 SHA CI](https://github.com/ALCOMD/ALCOMD/actions/runs/41221092743) 已结束：Ubuntu 与
+  macOS 完整成功、browser 均为 249/0；Windows browser 为 248/1，唯一失败是正常动画分支
+  的一次性滚动条样式读取为 0 秒。六组合本地观测符合原阈值，没有远端 trace 可确定唯一原因；
+  后续测试候选在默认断言时限内等待实际样式并增加 property 校验，保留数值阈值与全部业务检查。
+  动画专项 9/0、前端 check/build 与 metadata 通过；独立完整 Chromium 为 **248/1（12.6 分钟）**，
+  150 个输入未变。唯一失败是必需静态 JS 的 ERR_ADDRESS_IN_USE，Hub 页面根为空，输入/保存/
+  焦点业务均未到达。未重跑或改 Hub；原样例五项 RPC 再次完全一致、revision 155。
+  本机完整门禁仍失败，新候选若推送需其实际 SHA 的单独批准；仍待同一最终 SHA 三平台完整
+  required jobs 成功，不宣称整体远端 PASS，不开始 H2-B。
   GitHub 仍 open 的 11 条告警与任务开始时集合相同，当前锁定版本已不匹配其影响范围；
   告警状态未人工修改，完整 RustSec 及维护判断仍见技术记录。
 - [H2-B 既有方案](exec-plans/M7-official-gui-extension-ui.md)现为

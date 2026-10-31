@@ -12,9 +12,11 @@ for (const preference of ["system", "full", "reduced"] as const) {
             await expect(page.locator("#settings-motion")).toHaveJSProperty("quick", reduced);
             // Use real existing elements in light and shadow DOM, without injected test CSS.
             const scrollbar = page.locator(".main-content .os-scrollbar").first();
-            const durations = await scrollbar.evaluate((element) => getComputedStyle(element).transitionDuration);
-            if (reduced) expect(maxDuration(durations)).toBeLessThan(0.001);
-            else expect(maxDuration(durations)).toBeGreaterThan(0.01);
+            // Scrollbars initialize after a rendering opportunity, independently of the controls above.
+            await expect(scrollbar).toHaveCSS("transition-property", "opacity, visibility, top, right, bottom, left");
+            const duration = expect.poll(async () => maxDuration(await scrollbar.evaluate((element) => getComputedStyle(element).transitionDuration)));
+            if (reduced) await duration.toBeLessThan(0.001);
+            else await duration.toBeGreaterThan(0.01);
             const checkbox = page.locator("md-checkbox").first();
             expect(await checkbox.evaluate((element) => {
                 const sheet = element.shadowRoot!.querySelector<HTMLStyleElement>("style[data-alcomd-motion]")!;
