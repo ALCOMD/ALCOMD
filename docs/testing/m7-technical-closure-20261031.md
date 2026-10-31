@@ -1,7 +1,8 @@
 # M7 技术收尾证据（2026-10-31）
 
 本记录保存跨平台测试修复与依赖安全维护证据；当前阶段唯一入口仍是 `../status.md`。
-H2-A / Visual Gate 2 已签收，H2-B 等待同一技术 SHA 三平台 required jobs、CodeQL 与安全问题收口。
+H2-A / Visual Gate 2 已签收；技术 SHA `97c761f76613ea68ebc7a93e4695940dabb969dd` 已完成
+三平台 required jobs、CodeQL 与本轮安全适用性处置，满足 H2-B 自动开始的前提。
 基线为 main `736f55a9eea504442fa8d95e6c26cfc5559a40b7`，不是回退目标。
 
 ## 实施范围与当前依赖
@@ -529,6 +530,15 @@ harness 4173 无监听，见 sample-comparison.json。官方 RustSec HEAD 仍相
 告警的编号、GHSA、影响范围、修复版本、scope、状态与更新时间均与 `02b6f0c` 后的读取相同，
 没有人工修改告警状态，见 dependabot-comparison.json。
 
-本机完整门禁仍失败；仅此前 `73f465b`、`02b6f0c` 与 `1932140` 有各自精确 SHA 的失败门禁
-推送例外，新候选不能自行继承。仍待同一最终技术 SHA 三平台完整 required jobs 与 CodeQL
-成功，不开始 H2-B。
+本机完整门禁仍失败；项目所有者已另行明确批准精确技术 SHA
+`97c761f76613ea68ebc7a93e4695940dabb969dd` 保留本轮失败后普通快进推送，以该 SHA 三平台
+完整 required jobs 与 CodeQL 全绿验证技术收尾。已核实本地 HEAD、tracking ref 与实际
+`origin/main` 均为该 SHA，没有推送标签或改写历史。
+[CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/41228566315) 已四语言全部成功，工作流路径为
+`dynamic/github-code-scanning/codeql`；[CI](https://github.com/ALCOMD/ALCOMD/actions/runs/41228566567)
+三平台完整 required jobs 已全部成功：Windows/Ubuntu browser 各为 **249/0（4.8 分钟）**，
+macOS 为 **249/0（9.3 分钟）**，实际日志为 gui-motion-followup/ci-{windows,ubuntu,macos}-job.log。
+CI 与 CodeQL 最终结果分别保存为 gui-motion-followup/ci-final.json 和 codeql-final.json，并已
+核对同为精确 SHA `97c761f76613ea68ebc7a93e4695940dabb969dd`、CI 3/3 与 CodeQL 4/4 成功。
+本轮适用漏洞已修复、其余公告有逐项可检查结论；未人工改变 GitHub 告警状态，原本机失败
+和各 SHA/轮次记录保留。技术收尾前提已满足，H2-B 按既有授权开始；这不代表 H2-B 或 M7 人工验收通过。
