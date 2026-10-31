@@ -1,6 +1,6 @@
 # 项目状态
 
-最后更新：2026-10-31
+最后更新：2026-11-01
 
 ## 当前阶段
 
@@ -16,9 +16,9 @@ M0-M6 已正式通过人工验收，M7 尚未完成。
   tracked 工作树在本轮开始时为空，原有 `output/playwright/` 两张截图保留。
 - 项目所有者已批准依次完成技术收尾、H2-B 实施、真实桌面候选。当前先修跨平台测试并逐项评估
   Wasmtime/rustls/ZIP 的当前官方安全公告，允许同维护线内必要补丁；跨不兼容版本等须单独审批。
-  技术提交独立于 H2-B。所有者已另行明确批准仅技术 SHA
-  `73f465b4cd0ab28b90794fcaac94e21db5be0e72` 在保留本机 GUI 失败记录的前提下快进推送，
-  以同一 SHA 三平台完整 required jobs 与 CodeQL 全绿验证本轮技术收尾；适用漏洞已修复且
+  技术提交独立于 H2-B。所有者已先后明确批准技术 SHA `73f465b` 与后续
+  `02b6f0c3e81b8eedb711123ef9de2edc228792ab` 在保留各自本机 GUI 失败记录的前提下快进推送，
+  以同一最终 SHA 三平台完整 required jobs 与 CodeQL 全绿验证本轮技术收尾；适用漏洞已修复且
   其他公告完成适用性判断后，H2-B 自动获准实施。
 - 本轮已选定并锁定 Wasmtime 48.0.8、rustls 0.23.46、rustls-webpki 0.103.16；项目所有者另行
   明确批准 ZIP 精确 9.1.3、必要传递闭包与 API 适配，保留既有归档格式、安全和事务。当前
@@ -37,8 +37,19 @@ M0-M6 已正式通过人工验收，M7 尚未完成。
   Select 仅改已有内容宽度规则，表格保留全部原断言，相关定向 3/3。后续候选根 npm check/build、
   release no-bundle 通过；独立完整 Chromium 为 **246/2（15.5 分钟）**、150 个输入未变：一项
   跨越 30 秒 test budget，另一项标题检查失败后才有完整页面帧，批量业务未到达，不能计为通过。
-  未改系统 TCP、浏览器 flags、超时、重试或包管理实现。后续候选尚未推送，原样例再次读回一致；
-  修复仍待同一新 SHA 三平台/CodeQL 核验，不宣称整体远端 PASS，不开始 H2-B。
+  未改系统 TCP、浏览器 flags、超时、重试或包管理实现。后续技术 SHA `02b6f0c` 已经按明确批准
+  快进推送，原样例再次读回一致；[该 SHA 三平台 CI](https://github.com/ALCOMD/ALCOMD/actions/runs/41209763063)
+  已结束：Windows 与 macOS 完整成功、browser 均为 248/0；Ubuntu 为 247/1，唯一失败是
+  257 目标用例的 5 秒包管理标题检查。[CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/41209762434)
+  已四语言成功。大列表后续候选将未打开的行菜单延至首次使用，并在内容获得一次绘制机会后
+  初始化滚动容器。相关包管理、滚动条及导航 63/0，前端 check/build、release no-bundle、xtask
+  与 metadata 通过；独立完整本地 Chromium 为 **247/2（18.4 分钟）**、150 个输入未变，
+  257 目标与新增菜单回归通过。两项失败分别为必需 JS 的 ERR_NO_BUFFER_SPACE 和四宽度网格
+  累计 30 秒预算耗尽，未覆盖部分保持未通过。该新候选需要对其实际 SHA 的单独失败门禁推送
+  批准；既有例外只覆盖 `73f465b` 与 `02b6f0c`。仍待同一最终 SHA 的三平台完整 required jobs
+  与 CodeQL 成功，不宣称整体远端 PASS，不开始 H2-B。
+  GitHub 仍 open 的 11 条告警与任务开始时集合相同，当前锁定版本已不匹配其影响范围；
+  告警状态未人工修改，完整 RustSec 及维护判断仍见技术记录。
 - [H2-B 既有方案](exec-plans/M7-official-gui-extension-ui.md)现为
   **APPROVED_AFTER_TECHNICAL_CLOSURE / NOT_STARTED**，没有开始产品实现。H2-B 只允许本地候选
   提交，不自动推送；真实桌面材料完成后停止等待项目所有者验收。

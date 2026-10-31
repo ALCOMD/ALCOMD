@@ -1023,6 +1023,7 @@ interface PackageWorkspaceRow {
 function PackageVersionMenu({ client, project, snapshot, disabled, canPlan, onSelect, onStale, row }: { client: GuiRpcClient; project: ProjectSnapshot; snapshot?: string; disabled: boolean; canPlan: boolean; onSelect(version: PackageCandidateEvidence, origin: DialogOrigin): void; onStale(): void; row: PackageWorkspaceRow }) {
     const { t, locale } = useTranslation();
     const [open, setOpen] = useState(false);
+    const [menuMounted, setMenuMounted] = useState(false);
     const [items, setItems] = useState<PackageCandidateEvidence[]>([]);
     const [cursor, setCursor] = useState<CandidateCursor | null>();
     const [error, setError] = useState<string>();
@@ -1054,10 +1055,10 @@ function PackageVersionMenu({ client, project, snapshot, disabled, canPlan, onSe
         } finally { pending.current = false; setBusy(false); }
     };
     return <>
-        <Button aria-expanded={open} aria-haspopup="menu" aria-label={t("Version for {value0}: {value1}", { value0: row.displayName, value1: row.installedVersion ?? t("Not installed") })} disabled={disabled || !snapshot} onClick={() => { setOpen(true); if (cursor === undefined) void load(); }} ref={anchorRef} type="button" variant="text">
+        <Button aria-expanded={open} aria-haspopup="menu" aria-label={t("Version for {value0}: {value1}", { value0: row.displayName, value1: row.installedVersion ?? t("Not installed") })} disabled={disabled || !snapshot} onClick={() => { setMenuMounted(true); setOpen(true); if (cursor === undefined) void load(); }} ref={anchorRef} type="button" variant="text">
             {row.installedVersion ?? t("Not installed")}
         </Button>
-        <Menu anchorRef={anchorRef} onClose={() => setOpen(false)} open={open}>
+        {menuMounted ? <Menu anchorRef={anchorRef} className="package-version-menu" onClose={() => setOpen(false)} open={open}>
             {items.map((option) => <MenuItem
                 disabled={disabled || !canPlan || busy || !actionableVersion(option)}
                 key={`${candidateSourceKey(option.source)}:${option.version}`}
@@ -1068,7 +1069,7 @@ function PackageVersionMenu({ client, project, snapshot, disabled, canPlan, onSe
             {error ? <MenuItem disabled label={t("Versions unavailable: {value0}", { value0: error })} /> : null}
             {!busy && !error && cursor === null && items.length === 0 ? <MenuItem disabled label={t("No recorded versions")} /> : null}
             {cursor ? <MenuItem disabled={busy} label={t("Load more versions")} onClick={() => void load(cursor)} /> : null}
-        </Menu>
+        </Menu> : null}
     </>;
 }
 
@@ -1110,6 +1111,8 @@ function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
     const { t, locale } = useTranslation();
     const [error, setError] = useState<string>();
     const [open, setOpen] = useState(false);
+    // Keep a first-opened menu connected through Material's closed callbacks.
+    const [contentMounted, setContentMounted] = useState(false);
     const anchorRef = useRef<HTMLElement>(null);
     const openLink = async (kind: "documentation" | "changelog") => {
         if (row.linkTarget === undefined) return;
@@ -1123,15 +1126,15 @@ function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
     };
     return (
         <>
-            <IconButton className="package-more-actions" label={t("More actions for {value0}", { value0: row.displayName })} onClick={() => setOpen(true)} ref={anchorRef} type="button">
+            <IconButton className="package-more-actions" label={t("More actions for {value0}", { value0: row.displayName })} onClick={() => { setContentMounted(true); setOpen(true); }} ref={anchorRef} type="button">
                 <Icon asset={moreVertIcon} size={24} />
             </IconButton>
-            <Menu anchorRef={anchorRef} className="package-actions-menu" onClose={() => setOpen(false)} open={open}>
+            {contentMounted ? <Menu anchorRef={anchorRef} className="package-actions-menu" onClose={() => setOpen(false)} open={open}>
                 <MenuItem disabled={row.installedVersion === undefined || !canPlanV2} label={t("Reinstall")} onClick={() => { setOpen(false); onAction("reinstall", anchorRef); }} title={capabilityUnavailableTitle(canPlanV2, capabilities.packagesPlanV2, t)} />
                 <MenuItem disabled={row.linkTarget?.documentation !== true} label={t("Documentation")} onClick={() => void openLink("documentation")} />
                 <MenuItem disabled={row.linkTarget?.changelog !== true} label={t("Changelog")} onClick={() => void openLink("changelog")} />
                 <MenuItem className="package-actions-menu-item--danger" disabled={row.installedVersion === undefined || !canPlanV1} label={t("Remove")} onClick={() => { setOpen(false); onAction("remove", anchorRef); }} title={capabilityUnavailableTitle(canPlanV1, capabilities.packagesPlanV1, t)} />
-            </Menu>
+            </Menu> : null}
             {error === undefined ? null : <span className="visually-hidden" role="alert">{t("Package link unavailable: ")}{error}</span>}
         </>
     );

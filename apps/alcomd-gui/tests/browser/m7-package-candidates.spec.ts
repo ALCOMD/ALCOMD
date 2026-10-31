@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Request, type Response } from "@playwright/test";
+import { expect, test, type Locator, type Page, type Request, type Response } from "@playwright/test";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000101";
 
@@ -58,6 +58,20 @@ async function open(page: Page, params = "") {
     }
 }
 
+async function packageMenuLifecycle(row: Locator, selector: string) {
+    return row.evaluateHandle((element, selector) => {
+        const once = (type: string) => new Promise<void>((resolve) => {
+            const listener = (event: Event) => {
+                if (!(event.target instanceof Element) || !event.target.matches(selector)) return;
+                element.removeEventListener(type, listener, true);
+                resolve();
+            };
+            element.addEventListener(type, listener, true);
+        });
+        return { opened: once("opened"), closed: once("closed") };
+    }, selector);
+}
+
 for (const entry of ["primary Install", "primary Update", "version menu"]) {
     test(`Package review restores the ${entry} origin after asynchronous planning and Escape`, async ({ page }) => {
         await open(page, "versions=1&delaySource=1&delayPackagePlan=1");
@@ -68,10 +82,10 @@ for (const entry of ["primary Install", "primary Update", "version menu"]) {
         const menu = row.locator("md-menu").first();
         const review = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
         if (entry === "version menu") {
-            const opened = await menu.evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })) }));
+            const opened = await packageMenuLifecycle(row, ".package-version-menu");
             await trigger.focus();
             await page.keyboard.press("Enter");
-            await opened.evaluate(({ event }) => event);
+            await opened.evaluate((events) => events.opened);
             await opened.dispose();
             await menu.getByRole("menuitem", { name: "1.1.0 · Example packages", exact: true }).click();
         } else {
@@ -124,10 +138,10 @@ for (const key of ["Enter", "Space", "Escape"]) {
         const row = page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: "Select com.example.remote", exact: true }) });
         const trigger = row.getByRole("button", { name: "Version for com.example.remote: Not installed", exact: true });
         const menu = row.locator("md-menu").first();
-        const opened = await menu.evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })) }));
+        const opened = await packageMenuLifecycle(row, ".package-version-menu");
         await trigger.focus();
         await page.keyboard.press("Enter");
-        await opened.evaluate(({ event }) => event);
+        await opened.evaluate((events) => events.opened);
         await opened.dispose();
         const option = menu.getByRole("menuitem", { name: "1.1.0 · Example packages", exact: true });
         await option.focus();
@@ -150,9 +164,9 @@ test("Disabled package menu items reject pointer and Material keyboard activatio
     await open(page, "versions=1");
     const row = page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: "Select com.example.remote", exact: true }) });
     const menu = row.locator("md-menu").first();
-    const opened = await menu.evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })) }));
+    const opened = await packageMenuLifecycle(row, ".package-version-menu");
     await row.getByRole("button", { name: "Version for com.example.remote: Not installed", exact: true }).click();
-    await opened.evaluate(({ event }) => event);
+    await opened.evaluate((events) => events.opened);
     await opened.dispose();
     const blocked = menu.locator("md-menu-item").filter({ hasText: "9.0.0 · Example packages" });
     await expect(blocked).toHaveJSProperty("disabled", true);
@@ -333,6 +347,43 @@ test("Missing source requires affirmative Core evidence rather than unavailable 
         await expect(unknown).toBeVisible();
         expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
     }
+});
+
+test("Package row actions support the first keyboard selection and later Escape", async ({ page }) => {
+    await open(page, "versions=1");
+    const row = page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: "Select Avatar tools", exact: true }) });
+    const trigger = row.getByRole("button", { name: "More actions for Avatar tools", exact: true });
+    const menu = row.locator(".package-actions-menu");
+    const first = await packageMenuLifecycle(row, ".package-actions-menu");
+    try {
+        await trigger.focus();
+        await page.keyboard.press("Enter");
+        await first.evaluate((events) => events.opened);
+        const reinstall = menu.getByRole("menuitem", { name: "Reinstall", exact: true });
+        await expect(reinstall).toBeEnabled();
+        await reinstall.focus();
+        await page.keyboard.press("Space");
+        await first.evaluate((events) => events.closed);
+    } finally {
+        await first.dispose();
+    }
+    const review = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
+    await expect(page.getByRole("dialog", { name: "Apply package changes?", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => window.packageRequests.map((request) => request.method))).toEqual(["reinstall"]);
+    await review.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(trigger).toBeFocused();
+    const next = await packageMenuLifecycle(row, ".package-actions-menu");
+    try {
+        await page.keyboard.press("Enter");
+        await next.evaluate((events) => events.opened);
+        await expect(menu.getByRole("menuitem", { name: "Remove", exact: true })).toBeEnabled();
+        await page.keyboard.press("Escape");
+        await next.evaluate((events) => events.closed);
+    } finally {
+        await next.dispose();
+    }
+    await expect(trigger).toBeFocused();
+    expect(await page.evaluate(() => window.packageRequests.map((request) => request.method))).toEqual(["reinstall"]);
 });
 
 test("257 targets and selected rows are disabled without splitting the batch", async ({ page }) => {

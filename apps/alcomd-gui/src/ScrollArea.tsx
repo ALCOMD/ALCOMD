@@ -7,8 +7,10 @@ export function useScrollArea<T extends HTMLElement>() {
         if (element === null) return;
         element.setAttribute("data-overlayscrollbars-initialize", "");
         let instance: ReturnType<typeof createScrollArea> | undefined;
-        // Let the row's Material elements finish their first update before measuring.
-        const frame = requestAnimationFrame(() => { instance = createScrollArea(element); });
+        // Allow a rendering opportunity before synchronous scrollbar measurements.
+        let frame = requestAnimationFrame(() => {
+            frame = requestAnimationFrame(() => { instance = createScrollArea(element); });
+        });
         return () => {
             cancelAnimationFrame(frame);
             instance?.destroy();

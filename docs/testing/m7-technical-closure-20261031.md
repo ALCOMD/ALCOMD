@@ -393,13 +393,97 @@ React 开发诊断另外记录，不与 pageError 混淆。当前时段无新增
 gui-ubuntu-final-inputs-before/after.json；目录名表示本轮修复来源，实际运行平台仍为 Windows。
 离线时间线另存 gui-ubuntu-offline/README.md。原样例五项正式 RPC 再次完全一致，revision 155，
 没有遗留的 harness server，证据为 sample-layout-comparison.json 和 gui-ubuntu-final-tcp-events.json。
-后续候选尚未推送；此前保留本机失败并用 CI 验证的额外批准仅覆盖 `73f465b`，不能自动延伸到
-后续 SHA。H2-B 仍未开始，仍需同一最终技术 SHA 的三平台完整 required jobs 与 CodeQL。
+项目所有者已另行明确批准精确后续技术 SHA `02b6f0c3e81b8eedb711123ef9de2edc228792ab` 普通
+快进推送，保留本轮 246/2 失败，以该 SHA 三平台完整 required jobs 与 CodeQL 全绿验证技术收尾。
+实际推送后已核实 `origin/main` 为该 SHA；
+[CI](https://github.com/ALCOMD/ALCOMD/actions/runs/41209763063) 已全部结束：Windows 与 macOS 完整
+required job 成功，完整 Chromium 分别为 **248/0（6.9 分钟）**和 **248/0（8.7 分钟）**；Ubuntu
+完整 Chromium 为 **247/1（6.6 分钟）**，唯一失败是 257 目标用例的 5 秒标题检查。此前两项
+Ubuntu 布局失败及 macOS socket 长路径失败已不再出现，但本 SHA 仍不是三平台 PASS。
+[CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/41209762434) 已四语言成功。完整各平台日志与
+实际 job 结果保存为 ci-02b6f0c-{windows,macos,ubuntu}-job.log 和 ci-02b6f0c-final.json。H2-B 仍未开始，
+不能将前一 SHA 的 Windows/CodeQL 成功继承给本轮。
+
+推送时 GitHub 提示仍有 11 条 open Dependabot 告警。本轮重新通过官方 API 获取，告警编号与
+GHSA 集合与任务开始时完全相同，没有新增或移除；zip 五条、Wasmtime 两条、rustls 四条均已在
+上表逐项评估，
+当前 9.1.3/48.0.8/0.23.46 不在这些版本影响范围。未将 GitHub open 状态谎称为 resolved，未
+人工变更告警。证据为 dependabot-open-after-02b6f0c.json 与
+dependabot-after-02b6f0c-comparison.json；RustSec 实际剩余
+6 项未启用 QUIC/wasm32 匹配与 informational/yanked 仍分别保留，不拿 GitHub 数量替代 audit。
 
 本轮没有真实受影响证书链或上游 TLS handshake PoC 验证；使用官方维护补丁、
 既有证书验证路径检查及网络回归验证产品兼容，不以 HTTP mock 代替 TLS 漏洞复现。
 前一兼容补丁检查在用户将 ZIP 目标改为 9.1.3 后
 主动取消，日志保留，不将部分编译视为完整门禁通过。metadata 同步后已通过。
 
-基线 Windows/Ubuntu 的 browser 失败独立诊断；不得只凭本机定向通过关闭远端问题。最终报告
-须写实际完整测试数量和每轮输入身份，不将定向结果拼接为全套通过。H2-B 尚未开始。
+## 大列表初始化的后续技术候选（2026-11-01）
+
+`02b6f0c` 的唯一远端失败和本机相同标题失败均保留。最新原始 trace 的主区在 t0.861 秒为空，
+t4.190 秒已绘制标题和 260 行表；标题断言从 t0.669 秒开始，t5.831 秒报错。迟到 DOM 中的
+`H2#packages-heading` 具有原 role/name、没有 hidden/inert/aria-hidden；不能据此倒推原断言按时通过。
+Playwright 首次未匹配时生成整页 ARIA 诊断确有额外成本，但同一个 5 秒总预算的可见性等待和
+已有 ID 等待诊断仍分别失败，因此没有修改正式标题等待方式，也不把 ARIA 归为唯一根因。
+
+同一有界剖析中，原 260 行初始有 525 个菜单 host、1051 个菜单项，其中 1040 个是未打开的行
+More 项，DOM counter 为 220726。按需创建两类行菜单后，该轮初始为 5 个 host、11 个项及
+84980 个 DOM 节点；这些是诊断 counter，不是可见行数。仅延迟子项、仅延迟 More host、
+同时延迟两类菜单的候选都没有单独闭合标题门槛；仅使用按需菜单的两文件回归为 **50/1（3.3 分钟）**。
+仅增加绘制机会的独立候选虽有原用例 1/1，其原菜单剖析仍失败。所有这些
+轮次独立保存在 gui-batch-load、gui-row-menus、gui-present-targeted 与 gui-present-only，不能
+挑选通过轮次拼成修复结论。
+
+浏览器样式失效时间线进一步记录到 desktop-list-viewport 的 19 次全子树失效，来自既有
+OverlayScrollbars 的 `noContent` 直接子项通配选择器；viewport 属性的其他 token 变化同样会
+触发保守失效，每轮约 19835 个元素。CSS 读取的耗时落在同一 viewport 的 direction、width、
+display 测量。只阻止两个 overflow 变量继承的诊断没有取得收益；正式代码没有修改 vendor、
+依赖或 CSS 规则，也未修改浏览器 flags、系统配置、超时或批量数据来规避它。原始 timeline、CPU profile、帧和
+API 摘要保存在 gui-batch-load；重算总成本未被宣称消除。
+
+当前组合候选只修改两个已有生产文件：PackageVersionMenu/PackageRowMoreMenu 首次打开时
+创建整个 Material Menu，随后持续连接以完成原 closed/焦点回调；ScrollArea 在同步测量前给
+内容一次 rendering opportunity，卸载继续取消当前待执行帧并销毁实例。它不保证浏览器已实际
+绘制或全部 Material 更新已完成。260 行、原数据、来源与权限、批量上限和 Plan/Apply 保持。
+原版本菜单测试将公开 opened/closed 监听放在稳定的 row capture 上，以适配 host 的首次创建；
+新增一项 More 首次键盘 Space 选择、重新打开/Escape、返回焦点和单次 intent 回归。
+
+两份包管理测试、滚动条和导航四文件的组合候选回归为 **63 passed / 0 failed（5.2 分钟）**，
+单 worker、零重试。原 257 目标用例实际 **12286 ms / 30000 ms**，原 5 秒标题检查和全部业务
+断言保留；Missing source 原三组场景为 13848 ms，未拆分或扩大预算。该轮还覆盖滚轮、横向
+滚动、thumb 拖动、卸载清理、Material 键盘/焦点与导航。日志及逐项时长为
+gui-present-menus.log/.json/.exit。根 npm check/build、Tauri release no-bundle、xtask 与 metadata
+全部通过，日志为 row-render-{check,build,tauri,xtask}；release 构建用时 3 分 08 秒。
+当前 GUI SHA-256 为 `283F06EEC69D51F55BB27419090EB0D7A80C2F1C8A0E8C7E0BF7758E4A3DD400`。
+
+全部构建结束后，独立完整 Chromium 为 **247 passed / 2 failed（18.4 分钟）**，exit 1；249 项、
+单 worker、零重试，150 个输入前后完全一致，GUI hash 未变。原 257 目标实际 12756 ms，
+Missing source 三组场景 12452 ms，新增 More 首次键盘回归 4393 ms，均通过；这些不能拼接
+为完整 GUI PASS。完整结果为 gui-row-render-final.log/.json/.exit、对应 results 和
+gui-row-render-final-inputs-before/after.json。
+
+| 本轮完整失败 | 已确认的覆盖与未覆盖 |
+| --- | --- |
+| same-route reconnect | HTML 已取得，但入口实际静态 import 的 PagedItems JS GET 为 status -1 / ERR_NO_BUFFER_SPACE，rootChildren=0。初始断线提示的 5 秒断言失败，恢复事件与能力恢复业务均未到达；没有把它归为事件订阅竞态或 rAF 回归。 |
+| Projects grid 四宽度/双主题 | 累计 30 秒预算耗尽。已记录 42 个网络请求为 32×200 / 10×304，无失败请求或 pageError；browser trace 在 1440 滚动处结束，不覆盖后续网络。1180、1280 的两主题/滚动/Backups 和 1440 两主题在预算内完成，1440 dark PNG 在 29.833 秒完成。30.022 秒已进入 After Hooks；1440 滚动/Backups、1600 sparse 和 7 卡/padding 的随后成功均为迟到，不计通过；1600 双主题几何、两张 dense 截图及后续滚动/Backups未到达。不能仅凭该 trace 判断环境或新 rAF 的性能因果。 |
+
+两项分别在 gui-row-render-final-offline 的 cd7ae-reconnect-readonly.md 和
+cacf1-grid-readonly.md 记录。前者保留完整资源 URL、UTC、空 root、真实入口 import 和文件
+hash；后者保存逐动作的预算内/迟到/未达分类、网络与帧，36 条 React ARIA 诊断和 pageError
+分开，不称 console 干净。没有扩大 5 秒/30 秒、拆分测试、裁减四宽度或截图、重复全套直到
+绿色、改系统/浏览器配置或关闭用户进程。有效事件核对窗口为本地 00:10:51.303673 至
+00:29:35.563048，Tcpip 4227/4231 为 0；这不证明系统或瞬态资源问题不存在，也不将错误名
+等同于端口耗尽。
+
+原样例五项正式 RPC 再次完全一致，settings revision 155；没有暂停原 Core/dev、写入其数据或
+遗留 harness 监听，证据为 sample-row-render-comparison.json。RustSec 官方 HEAD 仍为
+`2295466c4e9df26647fd67d8fa1c705ac2fc7f81`；GitHub 当前 11 条 open 告警的编号、GHSA、
+影响范围、修复版本、scope、状态与更新时间均与 `02b6f0c` 后的读取相同，当前 pins 的逐项
+适用性结论保持。证据为 rustsec-head-row-render.json 与 dependabot-row-render-comparison.json；
+没有人工修改告警状态。
+
+541 项输入与完整 Rust 491/0/8 的基线对比，新增差异仅上述两个 GUI 文件及候选 browser spec；
+此前 `02b6f0c` 的 CSS 与 Material 测试差异另有原门禁，Rust、锁文件和公共合同没有再变化，
+记录为 row-render-input-delta.json。本机完整门禁仍失败；既有失败门禁推送例外只覆盖精确的
+`73f465b` 和 `02b6f0c`，新技术候选需要其实际 SHA 的单独批准，不能自行扩展例外。仍须该最终
+技术 SHA 三平台完整 required jobs 与 CodeQL 成功，才能开始 H2-B。各轮失败与输入身份独立
+保留，不将定向结果拼接为全套通过。H2-B 尚未开始。
