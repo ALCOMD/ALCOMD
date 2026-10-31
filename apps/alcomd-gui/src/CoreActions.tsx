@@ -23,7 +23,7 @@ import type {
 } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
 import { closeIcon, moreVertIcon, starIcon } from "@alcomd/ui/icons";
-import { Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, Menu, MenuItem, Progress, RefreshButton, Select, TextField } from "./Material";
+import { Button, Checkbox, Dialog as MaterialDialog, Icon, IconButton, Menu, MenuItem, Progress, RefreshButton, Select, TextField, type DialogOrigin } from "./Material";
 import { SplitButton } from "./SplitButton";
 import { LoadingState, useDelayedPending } from "./LoadingState";
 import { useProjectUnityLaunch } from "./ProjectUnityLaunch";
@@ -175,6 +175,7 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
 export interface PackageActionSelection {
     action: "install" | "remove" | "upgrade" | "downgrade" | "resolve" | "reinstall" | "reinstall-all" | "bulk-reinstall" | "bulk-remove" | "bulk-candidates";
     key: number;
+    origin: DialogOrigin;
     packageId: string;
     packageIds?: string[];
     source?: PackageSourceSelector;
@@ -186,7 +187,7 @@ export interface PackageActionSelection {
     candidateSnapshot?: string;
 }
 
-export function PackageActions({ client, project, onChanged, selection, onEvidenceStale, onBusyChanged }: ActionProps & { project: ProjectSnapshot; selection?: PackageActionSelection; onEvidenceStale?(): void; onBusyChanged?(busy: boolean): void }) {
+export function PackageActions({ client, project, onChanged, selection, onEvidenceStale, onBusyChanged, returnFocusReady }: ActionProps & { project: ProjectSnapshot; selection?: PackageActionSelection; onEvidenceStale?(): void; onBusyChanged?(busy: boolean): void; returnFocusReady: boolean }) {
     const { t } = useTranslation();
     const canApply = useCapability(capabilities.packagesApply);
     const canPlanV1 = useCapability(capabilities.packagesPlanV1);
@@ -263,7 +264,7 @@ export function PackageActions({ client, project, onChanged, selection, onEviden
     const hasChanges = (plan?.changeSet.mutations.length ?? 0) > 0;
     return (
         <>
-            <MaterialDialog onClose={closeChanges} open={plan !== undefined} title={hasChanges ? t("Apply package changes?") : t("Packages are up to date")}>
+            <MaterialDialog onClose={closeChanges} open={plan !== undefined} returnFocus={selection?.origin} returnFocusReady={returnFocusReady && feedback.operationId === undefined} title={hasChanges ? t("Apply package changes?") : t("Packages are up to date")}>
                 {selection?.exclusions?.length ? <div role="status"><p>{t("Not included in this update:")}</p><ul>{selection.exclusions.map((reason) => <li key={reason}>{reason}</li>)}</ul></div> : null}
                 {plan === undefined ? null : hasChanges ? (
                     <div className="package-plan-review">

@@ -1,6 +1,18 @@
 //! Approved M7 project candidate read DTOs.
-use crate::PackageSourceSelector;
 use serde::{Deserialize, Serialize};
+
+/// Source identity in the candidate query's frozen snake_case wire format.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "snake_case",
+    deny_unknown_fields
+)]
+pub enum CandidateSource {
+    Repository { repository_id: String },
+    UserPackage { user_package_id: String },
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -68,7 +80,7 @@ pub enum CandidateInstalled {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CandidateEvidence {
     pub version: String,
-    pub source: PackageSourceSelector,
+    pub source: CandidateSource,
     pub source_revision: u64,
     pub classification: CandidateClassification,
     pub relation: CandidateRelation,
@@ -105,7 +117,7 @@ pub enum CandidateUpdate {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CandidateProvider {
-    pub source: PackageSourceSelector,
+    pub source: CandidateSource,
     pub source_revision: u64,
 }
 
@@ -128,7 +140,7 @@ pub struct CandidateSummary {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CandidateSourceOverride {
     pub package_id: String,
-    pub source: PackageSourceSelector,
+    pub source: CandidateSource,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -182,7 +194,7 @@ pub enum CandidateView {
             default,
             deserialize_with = "nonnull_optional"
         )]
-        source: Option<PackageSourceSelector>,
+        source: Option<CandidateSource>,
     },
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

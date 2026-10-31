@@ -135,14 +135,17 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
     let shutdown = Arc::new(AtomicBool::new(false));
     let stop = shutdown.clone();
     let daemon_data = data.clone();
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(ipc, DataConfig::isolated(daemon_data), async move {
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(daemon_data),
+        async move {
             while !stop.load(Ordering::Acquire) {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
-        })
-        .await
-    });
+        },
+    )
+    .await
+    .expect("start owned test daemon");
     let mut client = connect(config).await;
     let status = wire(client.system_status().await.expect("status"));
     assert!(

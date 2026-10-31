@@ -7,6 +7,7 @@ import { PageHeader } from "./PageHeader";
 import { LoadingState } from "./LoadingState";
 import { useInitialPageRead } from "./PageRead";
 import { ScrollArea } from "./ScrollArea";
+import { useReconnect } from "./capabilities";
 
 interface UtilityWorkspaceProps<T> {
     title: string;
@@ -40,6 +41,7 @@ export function UtilityWorkspace<T>({
     tools
 }: UtilityWorkspaceProps<T>) {
     const { t } = useTranslation();
+    const reconnect = useReconnect();
     const initial = useInitialPageRead(load);
     const initialLoader = useRef(load).current;
     const [state, setState] = useState<WorkspaceState<T>>(() => ({
@@ -98,6 +100,10 @@ export function UtilityWorkspace<T>({
     const value = state.loader === load ? state.value : undefined;
     const error = state.loader === load ? state.error : undefined;
     const pending = state.loader !== load || state.pending;
+    const retry = () => {
+        if (error === "daemon_unavailable") reconnect?.();
+        refresh();
+    };
 
     return (
         <section className="utility-workspace page-surface--utility" aria-busy={value === undefined && pending} aria-labelledby="route-title">
@@ -105,7 +111,7 @@ export function UtilityWorkspace<T>({
                 {navigation}
                 <div className="utility-workspace-actions">
                     {value === undefined ? null : tools?.(value, refresh)}
-                    <RefreshButton disabled={refreshDisabled} onClick={refresh} refreshing={pending} />
+                    <RefreshButton disabled={refreshDisabled} onClick={retry} refreshing={pending} />
                     {action === undefined ? null : (
                         <Button
                             aria-haspopup="dialog"
@@ -122,7 +128,7 @@ export function UtilityWorkspace<T>({
                 {error === undefined ? null : (
                     <div className="inline-error" role="alert">
                         <p>{value === undefined ? t("This page could not be loaded.") : t("Refresh failed. The last loaded result is still shown.")} <code>{error}</code></p>
-                        <Button disabled={pending} onClick={refresh} type="button" variant="text">{t("Retry")}</Button>
+                        <Button disabled={pending} onClick={retry} type="button" variant="text">{t("Retry")}</Button>
                     </div>
                 )}
                 {value === undefined ? (

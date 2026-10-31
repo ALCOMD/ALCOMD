@@ -38,14 +38,13 @@ async fn backup_create_round_trips_with_exact_exclusions_and_idempotency() {
     let (ipc, config) = isolated_ipc(runtime);
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(
-            ipc,
-            DataConfig::isolated(data),
-            wait_for_shutdown(server_shutdown),
-        )
-        .await
-    });
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(data),
+        wait_for_shutdown(server_shutdown),
+    )
+    .await
+    .expect("start owned test daemon");
     let mut client = connect_with_retry(config).await;
     let status = client.system_status().await.expect("status");
     assert!(
@@ -127,14 +126,13 @@ async fn backup_restore_plans_applies_and_registers_one_new_project() {
     let (ipc, config) = isolated_ipc(runtime);
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(
-            ipc,
-            DataConfig::isolated(data),
-            wait_for_shutdown(server_shutdown),
-        )
-        .await
-    });
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(data),
+        wait_for_shutdown(server_shutdown),
+    )
+    .await
+    .expect("start owned test daemon");
     let mut client = connect_with_retry(config).await;
     let registered = client
         .project_register(
@@ -265,14 +263,13 @@ async fn backup_restore_fails_closed_for_artifact_and_target_races() {
     let (ipc, config) = isolated_ipc(runtime);
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(
-            ipc,
-            DataConfig::isolated(data),
-            wait_for_shutdown(server_shutdown),
-        )
-        .await
-    });
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(data),
+        wait_for_shutdown(server_shutdown),
+    )
+    .await
+    .expect("start owned test daemon");
     let mut client = connect_with_retry(config).await;
     let registered = client
         .project_register(
@@ -421,14 +418,13 @@ async fn backup_restore_same_target_is_serialized_by_project_create_lock() {
     let (ipc, config) = isolated_ipc(runtime);
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(
-            ipc,
-            DataConfig::isolated(data),
-            wait_for_shutdown(server_shutdown),
-        )
-        .await
-    });
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(data),
+        wait_for_shutdown(server_shutdown),
+    )
+    .await
+    .expect("start owned test daemon");
     let mut client = connect_with_retry(config.clone()).await;
     let registered = client
         .project_register(
@@ -644,14 +640,13 @@ async fn backup_restore_post_publish_external_change_requires_manual_recovery() 
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
     let data = fixture.path().join("data");
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(
-            ipc,
-            DataConfig::isolated(data),
-            wait_for_shutdown(server_shutdown),
-        )
-        .await
-    });
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(data),
+        wait_for_shutdown(server_shutdown),
+    )
+    .await
+    .expect("start owned test daemon");
     let mut client = connect_with_retry(config).await;
     let replay = client
         .backup_apply_restore(BackupApplyRestoreParams {
@@ -703,14 +698,13 @@ fn subprocess_runs_backup_restore_until_parent_kills_it() {
         let (ipc, config) = isolated_ipc(runtime_root);
         let shutdown = Arc::new(AtomicBool::new(false));
         let server_shutdown = Arc::clone(&shutdown);
-        let _daemon = tokio::spawn(async move {
-            alcomd_daemon::serve_with_data_until(
-                ipc,
-                DataConfig::isolated(data),
-                wait_for_shutdown(server_shutdown),
-            )
-            .await
-        });
+        let _daemon = alcomd_daemon::test_support::start_with_data_until(
+            ipc,
+            DataConfig::isolated(data),
+            wait_for_shutdown(server_shutdown),
+        )
+        .await
+        .expect("start owned test daemon");
         let mut client = connect_with_retry(config).await;
         let registered = client
             .project_register(
@@ -800,14 +794,13 @@ async fn run_restore_kill_restart_case(checkpoint: &str) {
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
     let data = fixture.path().join("data");
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(
-            ipc,
-            DataConfig::isolated(data),
-            wait_for_shutdown(server_shutdown),
-        )
-        .await
-    });
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(data),
+        wait_for_shutdown(server_shutdown),
+    )
+    .await
+    .expect("start owned test daemon");
     let mut client = connect_with_retry(config).await;
     let replay = client
         .backup_apply_restore(BackupApplyRestoreParams {
@@ -891,14 +884,13 @@ fn subprocess_runs_backup_until_parent_kills_it() {
         let (ipc, config) = isolated_ipc(runtime_root);
         let shutdown = Arc::new(AtomicBool::new(false));
         let server_shutdown = Arc::clone(&shutdown);
-        let _daemon = tokio::spawn(async move {
-            alcomd_daemon::serve_with_data_until(
-                ipc,
-                DataConfig::isolated(data),
-                wait_for_shutdown(server_shutdown),
-            )
-            .await
-        });
+        let _daemon = alcomd_daemon::test_support::start_with_data_until(
+            ipc,
+            DataConfig::isolated(data),
+            wait_for_shutdown(server_shutdown),
+        )
+        .await
+        .expect("start owned test daemon");
         let mut client = connect_with_retry(config).await;
         let registered = client
             .project_register(
@@ -958,14 +950,13 @@ async fn run_kill_restart_case(checkpoint: &str) {
     let (ipc, config) = isolated_ipc(runtime);
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(
-            ipc,
-            DataConfig::isolated(data),
-            wait_for_shutdown(server_shutdown),
-        )
-        .await
-    });
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(data),
+        wait_for_shutdown(server_shutdown),
+    )
+    .await
+    .expect("start owned test daemon");
     let mut client = connect_with_retry(config).await;
     let projects = client
         .projects_list(None, Some(10))

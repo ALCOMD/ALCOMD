@@ -401,6 +401,13 @@ DTO/settings DTO 的兼容字段、Config Schema 2 以及 State v12 的两个 nu
 
 本节记录已获批准并已实施的 contract-first 基线；method、migration、resolver、cache 与 official GUI 均已按冻结边界接线。
 
+P6 的 source selector 使用 `repositoryId`/`userPackageId`，reinstall selection 使用
+`packageIds`，bulk intent 使用 `packageId`/`versionRange`/`includePrerelease`；kind 保持
+`repository`/`user_package` 等原值。项目所有者于 2026-10-31 批准将 Rust enum variant
+fields 修正为这些冻结的 camelCase 字段，并将候选查询 source DTO 分离，保留该只读查询的
+`repository_id`/`user_package_id`。实际 P6 wire 的旧 snake_case 字段被直接替换，不提供
+别名或双格式支持；State/Config、权限、Plan/Apply 业务和恢复策略不变。
+
 ### Reinstall
 
 当前 `packages.planInstall` 经过 `build_resolution_plan` 后，目标 exact version 与 installed lock 相同时可以得到空
@@ -442,7 +449,7 @@ ChangeSet，因此不能冒充 reinstall；remove+install 或多个 Plan 也不�
     "projectId": "uuid",
     "expectedRevision": 1,
     "intents": [
-        {"kind": "install", "packageId": "a", "versionRange": "^1.0.0", "repositoryId": "uuid", "includePrerelease": false},
+        {"kind": "install", "packageId": "a", "versionRange": "^1.0.0", "source": {"kind": "repository", "repositoryId": "uuid"}, "includePrerelease": false},
         {"kind": "upgrade", "packageId": "b", "versionRange": "^2.0.0", "includePrerelease": false},
         {"kind": "remove", "packageId": "c"},
         {"kind": "reinstall", "packageId": "d"}

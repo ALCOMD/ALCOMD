@@ -649,11 +649,15 @@ test("shared buttons use MD3 spacing by variant and preserve changing-label widt
 
 test("resource navigation keeps each button width when selection changes", async ({ page }) => {
     await page.goto("/browser-harness.html?route=%2Frepositories&state=ready");
+    await expect(page.getByRole("table", { name: "Repositories", exact: true })).toBeVisible();
     const nav = page.locator(".resource-navigation");
     await expect(nav.locator("md-outlined-segmented-button")).toHaveCount(3);
+    await expect(nav.getByRole("button", { name: "Repositories", exact: true })).toHaveAttribute("aria-pressed", "true");
     const before = await nav.locator("md-outlined-segmented-button").evaluateAll(elements => elements.map(element => ({ label: element.getAttribute("label"), width: element.getBoundingClientRect().width })));
     await nav.getByRole("button", { name: "Templates", exact: true }).click();
     await expect(page).toHaveURL(/\/templates$/);
+    await expect(page.getByRole("table", { name: "Templates", exact: true })).toBeVisible();
+    await expect(nav.getByRole("button", { name: "Templates", exact: true })).toHaveAttribute("aria-pressed", "true");
     const after = await nav.locator("md-outlined-segmented-button").evaluateAll(elements => elements.map(element => ({ label: element.getAttribute("label"), width: element.getBoundingClientRect().width })));
     expect(after).toEqual(before);
 });

@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use alcomd_application::{OfficialGuiStore, StateCheckResult, StateStore, StoreErrorKind};
 use alcomd_domain::{IdempotencyKey, OperationId, OperationState, PrincipalId, Revision};
-use alcomd_store::{StateStoreHandle, StoreOpenError};
+use alcomd_store::{CURRENT_DATA_SCHEMA, StateStoreHandle, StoreOpenError};
 use rusqlite::Connection;
 use uuid::Uuid;
 
@@ -37,6 +37,23 @@ impl Drop for TestDirectory {
 
 fn key(value: &str) -> IdempotencyKey {
     IdempotencyKey::parse(value).expect("valid idempotency key")
+}
+
+#[test]
+fn initialized_store_schema_matches_the_version_used_by_daemon_handshakes() {
+    let directory = TestDirectory::new();
+    let store = StateStoreHandle::open(directory.database()).expect("initialize isolated store");
+    let connection = Connection::open_with_flags(
+        directory.database(),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .expect("inspect initialized store without changing it");
+    let actual: u32 = connection
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .expect("read initialized schema version");
+    assert_eq!(actual, CURRENT_DATA_SCHEMA);
+    drop(connection);
+    drop(store);
 }
 
 #[tokio::test]

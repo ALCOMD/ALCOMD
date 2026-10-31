@@ -845,11 +845,11 @@ impl HelloResult {
         }
     }
 
-    /// Creates the current M7 hello result after State Schema 13 and Config Schema 3 are ready.
+    /// Creates the current M7 hello result with the data schema supplied by the ready daemon.
     #[must_use]
-    pub fn m7_official_gui(capabilities: Vec<String>) -> Self {
+    pub fn m7_official_gui(capabilities: Vec<String>, data_schema: u32) -> Self {
         let mut result = Self::m7(capabilities);
-        result.data_schema = Some(13);
+        result.data_schema = Some(data_schema);
         result.config_schema = Some(CONFIG_SCHEMA_VERSION);
         result
     }
@@ -1519,14 +1519,24 @@ pub struct PackagePlanResolveParams {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
 pub enum PackageSourceSelector {
     Repository { repository_id: String },
     UserPackage { user_package_id: String },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
 pub enum PackageReinstallSelection {
     Packages { package_ids: Vec<String> },
     All,
@@ -1550,7 +1560,12 @@ pub struct PackagePlanReinstallParams {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
 pub enum PackageBulkIntent {
     Install {
         package_id: String,
@@ -3301,10 +3316,12 @@ mod tests {
     }
 
     #[test]
-    fn m7_official_gui_hello_advertises_current_schemas() {
-        let hello = HelloResult::m7_official_gui(Vec::new());
-        assert_eq!(hello.data_schema, Some(13));
-        assert_eq!(hello.config_schema, Some(3));
+    fn m7_official_gui_hello_preserves_the_daemons_ready_data_schema() {
+        for data_schema in [15, 16] {
+            let hello = HelloResult::m7_official_gui(Vec::new(), data_schema);
+            assert_eq!(hello.data_schema, Some(data_schema));
+            assert_eq!(hello.config_schema, Some(CONFIG_SCHEMA_VERSION));
+        }
     }
 
     #[test]

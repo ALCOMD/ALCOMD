@@ -43,14 +43,13 @@ async fn install_and_remove_round_trip_through_rpc_without_network() {
     let (ipc, config) = isolated_ipc(runtime);
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(
-            ipc,
-            DataConfig::isolated(data),
-            wait_for_shutdown(server_shutdown),
-        )
-        .await
-    });
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(data),
+        wait_for_shutdown(server_shutdown),
+    )
+    .await
+    .expect("start owned test daemon");
     let mut client = connect_with_retry(config).await;
 
     let registered_project = client
@@ -262,14 +261,13 @@ async fn user_package_plan_uses_owned_cache_after_source_mutation_and_registry_r
     let (ipc, config) = isolated_ipc(runtime);
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(
-            ipc,
-            DataConfig::isolated(data),
-            wait_for_shutdown(server_shutdown),
-        )
-        .await
-    });
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(data),
+        wait_for_shutdown(server_shutdown),
+    )
+    .await
+    .expect("start owned test daemon");
     let mut client = connect_with_retry(config).await;
     let project_result = client
         .project_register(
@@ -383,14 +381,13 @@ async fn user_package_plan_does_not_fall_back_to_mutable_source_when_cache_is_mi
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
     let daemon_data = data.clone();
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(
-            ipc,
-            DataConfig::isolated(daemon_data),
-            wait_for_shutdown(server_shutdown),
-        )
-        .await
-    });
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(daemon_data),
+        wait_for_shutdown(server_shutdown),
+    )
+    .await
+    .expect("start owned test daemon");
     let mut client = connect_with_retry(config).await;
     let project_id = client
         .project_register(
@@ -522,14 +519,13 @@ fn subprocess_runs_package_apply_until_killed() {
         let (ipc, config) = isolated_ipc(runtime_root);
         let shutdown = Arc::new(AtomicBool::new(false));
         let daemon_shutdown = Arc::clone(&shutdown);
-        let _daemon = tokio::spawn(async move {
-            alcomd_daemon::serve_with_data_until(
-                ipc,
-                DataConfig::isolated(data),
-                wait_for_shutdown(daemon_shutdown),
-            )
-            .await
-        });
+        let _daemon = alcomd_daemon::test_support::start_with_data_until(
+            ipc,
+            DataConfig::isolated(data),
+            wait_for_shutdown(daemon_shutdown),
+        )
+        .await
+        .expect("start owned test daemon");
         let mut client = connect_with_retry(config).await;
         let project_result = client
             .project_register(
@@ -761,14 +757,13 @@ async fn run_kill_restart_case(checkpoint: KillCheckpoint) {
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
     let daemon_data = data.clone();
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(
-            ipc,
-            DataConfig::isolated(daemon_data),
-            wait_for_shutdown(server_shutdown),
-        )
-        .await
-    });
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(daemon_data),
+        wait_for_shutdown(server_shutdown),
+    )
+    .await
+    .expect("start owned test daemon");
     let mut client = connect_with_retry(config).await;
     let completed = wait_for_terminal(&mut client, &signal.operation_id, &project).await;
     assert_eq!(completed.state, OperationState::Succeeded);

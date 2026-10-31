@@ -25,6 +25,115 @@ async function open(page: Page, params = "") {
     await expect(page.getByRole("heading", { name: "Manage packages" })).toBeVisible();
 }
 
+for (const entry of ["primary Install", "primary Update", "version menu"]) {
+    test(`Package review restores the ${entry} origin after asynchronous planning and Escape`, async ({ page }) => {
+        await open(page, "versions=1&delaySource=1&delayPackagePlan=1");
+        const method = entry === "primary Update" ? "upgrade" : "install";
+        const packageName = entry === "primary Update" ? "Avatar tools" : "com.example.remote";
+        const row = page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: `Select ${packageName}`, exact: true }) });
+        const trigger = row.getByRole("button", { name: entry === "version menu" ? "Version for com.example.remote: Not installed" : entry === "primary Update" ? "Update" : "Install", exact: true });
+        const menu = row.locator("md-menu").first();
+        const review = page.locator("md-dialog").filter({ hasText: "Apply package changes?" });
+        if (entry === "version menu") {
+            const opened = await menu.evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })) }));
+            await trigger.focus();
+            await page.keyboard.press("Enter");
+            await opened.evaluate(({ event }) => event);
+            await opened.dispose();
+            await menu.getByRole("menuitem", { name: "1.1.0 · Example packages", exact: true }).click();
+        } else {
+            await trigger.focus();
+            await page.keyboard.press("Enter");
+        }
+        await expect.poll(() => page.evaluate(() => typeof window.resumePackagePlan)).toBe("function");
+        await expect.poll(() => page.evaluate(() => typeof window.resumeCandidateSource)).toBe("function");
+        if (entry === "primary Update") await expect(trigger).toHaveCount(0);
+        else await expect(trigger).toBeDisabled();
+        expect(await page.evaluate(() => window.packageRequests.map((request) => request.method))).toEqual([method]);
+        await page.evaluate(() => window.resumeCandidateSource?.());
+        await expect(row).not.toContainText("Evidence unavailable");
+        const opened = await page.locator("md-dialog").filter({ hasText: "Packages are up to date" }).evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })) }));
+        await page.evaluate(() => window.resumePackagePlan?.());
+        await opened.evaluate(({ event }) => event);
+        await opened.dispose();
+        await expect(review).toBeVisible();
+        const cancel = review.getByRole("button", { name: "Cancel", exact: true });
+        const apply = review.getByRole("button", { name: "Apply changes", exact: true });
+        await apply.focus();
+        await page.keyboard.press("Tab");
+        await expect(cancel).toBeFocused();
+        await page.keyboard.press("Shift+Tab");
+        await expect(apply).toBeFocused();
+        const closed = await review.evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true })) }));
+        await page.keyboard.press("Escape");
+        await closed.evaluate(({ event }) => event);
+        await closed.dispose();
+        await expect(review).toBeHidden();
+        await expect(trigger).toBeFocused();
+        if (entry === "version menu") {
+            const reopened = await menu.evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })) }));
+            await page.keyboard.press("Enter");
+            await reopened.evaluate(({ event }) => event);
+            await reopened.dispose();
+            await expect(menu.getByRole("menuitem", { name: "1.1.0 · Example packages", exact: true })).toBeVisible();
+            expect(await page.evaluate(() => window.packageRequests.map((request) => request.method))).toEqual([method]);
+        } else {
+            await page.keyboard.press("Enter");
+            await expect.poll(() => page.evaluate(() => window.packageRequests.map((request) => request.method))).toEqual([method, method]);
+        }
+        expect(await page.evaluate(() => window.packageRequests.some((request) => request.method === "apply"))).toBe(false);
+    });
+}
+
+for (const key of ["Enter", "Space", "Escape"]) {
+    test(`Package version menu ${key} preserves one explicit activation`, async ({ page }) => {
+        await open(page, "versions=1");
+        const row = page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: "Select com.example.remote", exact: true }) });
+        const trigger = row.getByRole("button", { name: "Version for com.example.remote: Not installed", exact: true });
+        const menu = row.locator("md-menu").first();
+        const opened = await menu.evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })) }));
+        await trigger.focus();
+        await page.keyboard.press("Enter");
+        await opened.evaluate(({ event }) => event);
+        await opened.dispose();
+        const option = menu.getByRole("menuitem", { name: "1.1.0 · Example packages", exact: true });
+        await option.focus();
+        await expect(option).toBeFocused();
+        const closed = await menu.evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true })) }));
+        await page.keyboard.press(key);
+        await closed.evaluate(({ event }) => event);
+        await closed.dispose();
+        if (key === "Escape") {
+            await expect(trigger).toBeFocused();
+            expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+        } else {
+            await expect(page.getByRole("dialog", { name: "Apply package changes?", exact: true })).toBeVisible();
+            expect(await page.evaluate(() => window.packageRequests.map((request) => request.method))).toEqual(["install"]);
+        }
+    });
+}
+
+test("Disabled package menu items reject pointer and Material keyboard activation events", async ({ page }) => {
+    await open(page, "versions=1");
+    const row = page.getByRole("row").filter({ has: page.getByRole("checkbox", { name: "Select com.example.remote", exact: true }) });
+    const menu = row.locator("md-menu").first();
+    const opened = await menu.evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })) }));
+    await row.getByRole("button", { name: "Version for com.example.remote: Not installed", exact: true }).click();
+    await opened.evaluate(({ event }) => event);
+    await opened.dispose();
+    const blocked = menu.locator("md-menu-item").filter({ hasText: "9.0.0 · Example packages" });
+    await expect(blocked).toHaveJSProperty("disabled", true);
+    await blocked.evaluate((element) => {
+        element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        for (const key of ["Enter", "Space"]) element.dispatchEvent(new CustomEvent("close-menu", {
+            bubbles: true, composed: true,
+            detail: { initiator: element, itemPath: [element], reason: { kind: "keydown", key } }
+        }));
+    });
+    await expect(page.getByRole("dialog", { name: "Apply package changes?", exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+});
+
 test("Core candidate order and relation drive update; all locked IDs ignore search and selection", async ({ page }) => {
     await open(page, "twoInstalled=1&knownExclusion=1");
     await expect(page.getByRole("row").filter({ hasText: "Avatar tools" })).toContainText("1.10.0");
@@ -127,6 +236,72 @@ test("Source filter includes nonwinning and ambiguous providers beyond display m
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
 });
 
+async function choosePackageStatus(page: Page, label: string) {
+    const select = page.locator("md-filled-select").filter({ has: page.getByRole("combobox", { name: "Status", exact: true }) });
+    const lifecycle = await select.evaluateHandle((element) => ({
+        opened: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })),
+        closed: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true }))
+    }));
+    try {
+        await select.getByRole("combobox").click();
+        await lifecycle.evaluate((events) => events.opened);
+        await page.getByRole("option", { name: label, exact: true }).click();
+        await lifecycle.evaluate((events) => events.closed);
+    } finally {
+        await lifecycle.dispose();
+    }
+}
+
+for (const metadata of ["paged", "error"]) {
+    for (const evidence of ["ambiguous", "unknown", "blocked"]) {
+        test(`Available and missing-source filters use Core providers with ${evidence} candidates and ${metadata} metadata`, async ({ page }) => {
+            await open(page, `metadata=${metadata}&remoteEvidence=${evidence}`);
+            const remote = page.getByRole("checkbox", { name: "Select com.example.remote", exact: true });
+            await expect(remote).toBeVisible();
+            const row = page.getByRole("row").filter({ has: remote });
+            await expect(row.getByRole("button", { name: "Install", exact: true })).toBeDisabled();
+
+            await page.getByRole("button", { name: "Filter packages", exact: true }).click();
+            await choosePackageStatus(page, "Available");
+            await expect(remote).toBeVisible();
+            await choosePackageStatus(page, "Missing source");
+            await expect(remote).toHaveCount(0);
+            await choosePackageStatus(page, "All packages");
+            await expect(remote).toBeVisible();
+
+            expect(await page.evaluate(() => window.repositoryPackageRequests.every((request) => request.cursor === undefined))).toBe(true);
+            expect(await page.evaluate(() => window.candidateRequests.some((request) => request.view.kind === "versions"))).toBe(false);
+            expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+        });
+    }
+}
+
+test("Missing source requires affirmative Core evidence rather than unavailable metadata or candidate reads", async ({ page }) => {
+    await open(page, "metadata=error&remoteEvidence=missing");
+    const missing = page.getByRole("checkbox", { name: "Select com.example.remote", exact: true });
+    await expect(missing).toBeVisible();
+    await page.getByRole("button", { name: "Filter packages", exact: true }).click();
+    await choosePackageStatus(page, "Available");
+    await expect(missing).toHaveCount(0);
+    await choosePackageStatus(page, "Missing source");
+    await expect(missing).toBeVisible();
+    expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+
+    for (const state of ["remoteEvidence=unavailable", "remoteEvidence=missing&candidateError=internal_error"]) {
+        await open(page, `metadata=error&${state}`);
+        const unknown = page.getByRole("checkbox", { name: "Select com.example.remote", exact: true });
+        await expect(unknown).toBeVisible();
+        await page.getByRole("button", { name: "Filter packages", exact: true }).click();
+        await choosePackageStatus(page, "Missing source");
+        await expect(unknown).toHaveCount(0);
+        await choosePackageStatus(page, "Available");
+        await expect(unknown).toHaveCount(0);
+        await choosePackageStatus(page, "All packages");
+        await expect(unknown).toBeVisible();
+        expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+    }
+});
+
 test("257 targets and selected rows are disabled without splitting the batch", async ({ page }) => {
     await open(page, "bulk257=1");
     await expect(page.locator("md-menu .os-scrollbar")).toHaveCount(0);
@@ -168,15 +343,21 @@ test("Stable bulk actions use the distinct Core stable target and one explicit A
 
 test("Candidate reads share a two-request bound across independent menu/traversal callers", async ({ page }) => {
     await open(page);
-    const maximum = await page.evaluate(async () => {
-        const modulePath = "/src/package-candidates.ts";
-        const module = await import(modulePath);
+    const maximum = await page.evaluate(async (projectId) => {
         let active = 0;
         let maximum = 0;
-        const client = { packageQueryProjectCandidates: async () => { active += 1; maximum = Math.max(maximum, active); await new Promise((resolve) => setTimeout(resolve, 5)); active -= 1; return {}; } };
-        await Promise.all(Array.from({ length: 7 }, () => module.queryCandidates(client, {})));
+        const client: Parameters<typeof window.queryCandidates>[0] = {
+            packageQueryProjectCandidates: async (request) => {
+                active += 1;
+                maximum = Math.max(maximum, active);
+                await new Promise((resolve) => setTimeout(resolve, 5));
+                active -= 1;
+                return { projectId: request.projectId, snapshot: { fingerprint: "0".repeat(64), projectRevision: request.expectedRevision, configRevision: 1 }, showPrerelease: false, catalogComplete: true, nextCursor: null, view: "summary", items: [] };
+            }
+        };
+        await Promise.all(Array.from({ length: 7 }, () => window.queryCandidates(client, { projectId, expectedRevision: 1, view: { kind: "summary" } })));
         return maximum;
-    });
+    }, PROJECT_ID);
     expect(maximum).toBe(2);
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
 });

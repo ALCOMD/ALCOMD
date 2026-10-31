@@ -67,7 +67,7 @@ import "./ExtensionWorkspace.css";
 import { SettingsWorkspace } from "./SettingsWorkspace";
 import { PagedItems } from "./PagedItems";
 import type { GuiRpcClient } from "./rpc";
-import { Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, RefreshButton, SearchField, SegmentedButtons, Select, Switch, TextField } from "./Material";
+import { Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, RefreshButton, SearchField, SegmentedButtons, Select, Switch, TextField, type DialogOrigin } from "./Material";
 import { SplitButton } from "./SplitButton";
 import { useProjectUnityLaunch } from "./ProjectUnityLaunch";
 import { CreateProjectDialog, RestoreProjectDialog } from "./ProjectCreationDialogs";
@@ -1004,7 +1004,6 @@ interface WorkspaceCatalogVersion extends RepositoryPackageVersion {
 }
 
 interface PackageWorkspaceRow {
-    availableVersions: string[];
     evidence?: PackageCandidateSummary;
     displayName: string;
     installedVersion?: string;
@@ -1019,10 +1018,9 @@ interface PackageWorkspaceRow {
     sourceKinds: Array<RepositorySnapshot["source"]["kind"] | "user-package">;
     sourceOptions: Array<{ key: string; label: string; selector: PackageSourceSelector }>;
     sources: string[];
-    status: "available" | "installed" | "missing-source";
 }
 
-function PackageVersionMenu({ client, project, snapshot, disabled, canPlan, onSelect, onStale, row }: { client: GuiRpcClient; project: ProjectSnapshot; snapshot?: string; disabled: boolean; canPlan: boolean; onSelect(version: PackageCandidateEvidence): void; onStale(): void; row: PackageWorkspaceRow }) {
+function PackageVersionMenu({ client, project, snapshot, disabled, canPlan, onSelect, onStale, row }: { client: GuiRpcClient; project: ProjectSnapshot; snapshot?: string; disabled: boolean; canPlan: boolean; onSelect(version: PackageCandidateEvidence, origin: DialogOrigin): void; onStale(): void; row: PackageWorkspaceRow }) {
     const { t, locale } = useTranslation();
     const [open, setOpen] = useState(false);
     const [items, setItems] = useState<PackageCandidateEvidence[]>([]);
@@ -1064,7 +1062,7 @@ function PackageVersionMenu({ client, project, snapshot, disabled, canPlan, onSe
                 disabled={disabled || !canPlan || busy || !actionableVersion(option)}
                 key={`${candidateSourceKey(option.source)}:${option.version}`}
                 label={`${option.version} · ${row.sourceOptions.find((source) => source.key === candidateSourceKey(option.source))?.label ?? candidateSourceKey(option.source)}${option.classification === "prerelease" ? t(" · Prerelease") : ""}${option.relation === "same_precedence" ? t(" · Installed precedence") : ""}${option.reasons.length ? ` · ${option.reasons.map((reason) => reasonText(reason, t)).join(t(", "))}` : ""}${canPlan ? "" : t(" · Planning unavailable")}`}
-                onClick={() => { setOpen(false); onSelect(option); }}
+                onClick={() => { setOpen(false); onSelect(option, anchorRef); }}
             />)}
             {showLoading ? <MenuItem disabled label={t("Loading versions…")} /> : null}
             {error ? <MenuItem disabled label={t("Versions unavailable: {value0}", { value0: error })} /> : null}
@@ -1072,6 +1070,16 @@ function PackageVersionMenu({ client, project, snapshot, disabled, canPlan, onSe
             {cursor ? <MenuItem disabled={busy} label={t("Load more versions")} onClick={() => void load(cursor)} /> : null}
         </Menu>
     </>;
+}
+
+function PackagePrimaryAction({ canPlanV1, canPlanV2, catalogReady, evidence, onSelect, row }: { canPlanV1: boolean; canPlanV2: boolean; catalogReady: boolean; evidence?: PackageCandidateSummary; onSelect(version: PackageCandidateEvidence, origin: DialogOrigin): void; row: PackageWorkspaceRow }) {
+    const { t } = useTranslation();
+    // Keep the origin ref when a source refresh temporarily removes the Update control.
+    const origin = useRef<HTMLElement>(null);
+    const installChoice = evidence?.projectLatest;
+    const update = evidence?.update;
+    if (row.installedVersion === undefined) return <IconButton className="package-primary-action" disabled={!canPlanV1 || !canPlanV2 || !catalogReady || installChoice?.kind !== "candidate" || installChoice.candidate.eligibility !== "eligible"} label={t("Install")} onClick={() => { if (installChoice?.kind === "candidate") onSelect(installChoice.candidate, origin); }} ref={origin} title={capabilityUnavailableTitle(canPlanV1 && canPlanV2, capabilities.packagesPlanV2, t) ?? t("Install {value0}", { value0: row.displayName })} type="button"><Icon asset={downloadIcon} /></IconButton>;
+    return update?.kind === "target" ? <IconButton className="package-primary-action" disabled={!canPlanV1 || !canPlanV2 || !catalogReady} label={t("Update")} onClick={() => onSelect(update.candidate, origin)} ref={origin} title={capabilityUnavailableTitle(canPlanV1 && canPlanV2, capabilities.packagesPlanV2, t) ?? t("Update {value0}", { value0: row.displayName })} type="button"><Icon asset={upgradeIcon} /></IconButton> : null;
 }
 
 function PackageSourceMenu({ label, onChange, options, value, disabled }: { label: string; onChange(value: string): void; options: PackageWorkspaceRow["sourceOptions"]; value: string; disabled: boolean }) {
@@ -1096,7 +1104,7 @@ function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
     canPlanV1: boolean;
     canPlanV2: boolean;
     client: GuiRpcClient;
-    onAction(action: PackageActionSelection["action"]): void;
+    onAction(action: PackageActionSelection["action"], origin: DialogOrigin): void;
     row: PackageWorkspaceRow;
 }) {
     const { t, locale } = useTranslation();
@@ -1119,17 +1127,17 @@ function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
                 <Icon asset={moreVertIcon} size={24} />
             </IconButton>
             <Menu anchorRef={anchorRef} className="package-actions-menu" onClose={() => setOpen(false)} open={open}>
-                <MenuItem disabled={row.installedVersion === undefined || !canPlanV2} label={t("Reinstall")} onClick={() => { setOpen(false); onAction("reinstall"); }} title={capabilityUnavailableTitle(canPlanV2, capabilities.packagesPlanV2, t)} />
+                <MenuItem disabled={row.installedVersion === undefined || !canPlanV2} label={t("Reinstall")} onClick={() => { setOpen(false); onAction("reinstall", anchorRef); }} title={capabilityUnavailableTitle(canPlanV2, capabilities.packagesPlanV2, t)} />
                 <MenuItem disabled={row.linkTarget?.documentation !== true} label={t("Documentation")} onClick={() => void openLink("documentation")} />
                 <MenuItem disabled={row.linkTarget?.changelog !== true} label={t("Changelog")} onClick={() => void openLink("changelog")} />
-                <MenuItem className="package-actions-menu-item--danger" disabled={row.installedVersion === undefined || !canPlanV1} label={t("Remove")} onClick={() => { setOpen(false); onAction("remove"); }} title={capabilityUnavailableTitle(canPlanV1, capabilities.packagesPlanV1, t)} />
+                <MenuItem className="package-actions-menu-item--danger" disabled={row.installedVersion === undefined || !canPlanV1} label={t("Remove")} onClick={() => { setOpen(false); onAction("remove", anchorRef); }} title={capabilityUnavailableTitle(canPlanV1, capabilities.packagesPlanV1, t)} />
             </Menu>
             {error === undefined ? null : <span className="visually-hidden" role="alert">{t("Package link unavailable: ")}{error}</span>}
         </>
     );
 }
 
-function PackageWorkspaceMoreMenu({ canPlanV1, canPlanV2, onResolve, onReinstallAll }: { canPlanV1: boolean; canPlanV2: boolean; onResolve(): void; onReinstallAll(): void }) {
+function PackageWorkspaceMoreMenu({ canPlanV1, canPlanV2, onResolve, onReinstallAll }: { canPlanV1: boolean; canPlanV2: boolean; onResolve(origin: DialogOrigin): void; onReinstallAll(origin: DialogOrigin): void }) {
     const { t, locale } = useTranslation();
     const [open, setOpen] = useState(false);
     const anchorRef = useRef<HTMLElement>(null);
@@ -1139,8 +1147,8 @@ function PackageWorkspaceMoreMenu({ canPlanV1, canPlanV2, onResolve, onReinstall
                 <Icon asset={moreVertIcon} size={24} />
             </IconButton>
             <Menu anchorRef={anchorRef} onClose={() => setOpen(false)} open={open}>
-                <MenuItem disabled={!canPlanV1} label={t("Resolve Dependencies…")} onClick={() => { setOpen(false); onResolve(); }} title={capabilityUnavailableTitle(canPlanV1, capabilities.packagesPlanV1, t)} />
-                <MenuItem disabled={!canPlanV2} label={t("Reinstall All Installed Packages…")} onClick={() => { setOpen(false); onReinstallAll(); }} title={capabilityUnavailableTitle(canPlanV2, capabilities.packagesPlanV2, t)} />
+                <MenuItem disabled={!canPlanV1} label={t("Resolve Dependencies…")} onClick={() => { setOpen(false); onResolve(anchorRef); }} title={capabilityUnavailableTitle(canPlanV1, capabilities.packagesPlanV1, t)} />
+                <MenuItem disabled={!canPlanV2} label={t("Reinstall All Installed Packages…")} onClick={() => { setOpen(false); onReinstallAll(anchorRef); }} title={capabilityUnavailableTitle(canPlanV2, capabilities.packagesPlanV2, t)} />
             </Menu>
         </>
     );
@@ -1217,8 +1225,8 @@ function PackageFilters({ client, settings, repositories, onChanged, filter, set
             <fieldset disabled={busy} aria-busy={busy}>
                 <legend>{t("Other filters")}</legend>
                 <Checkbox checked={snapshot.settings.packages.showPrerelease} disabled={busy} label={t("Show prerelease versions")} onChange={(checked) => { if (checked) { setOpen(false); setConfirmPrerelease(true); } else void save({ showPrerelease: false }); }} />
-                <Select label={t("Status")} onChange={setFilter} options={[{ label: t("All packages"), value: "all" }, { label: t("Installed"), value: "installed" }, { label: t("Available"), value: "available" }, { label: t("Missing source"), value: "missing" }]} value={filter} />
-                <Select label={t("Source")} onChange={(value) => setSourceFilter(value as "all" | "local" | "remote" | "user-package")} options={[{ label: t("All"), value: "all" }, { label: t("Remote"), value: "remote" }, { label: t("Local repository"), value: "local" }, ...(canUseUserPackages ? [{ label: t("User Packages"), value: "user-package" }] : [])]} value={sourceFilter} />
+                <Select disabled={busy} label={t("Status")} onChange={setFilter} options={[{ label: t("All packages"), value: "all" }, { label: t("Installed"), value: "installed" }, { label: t("Available"), value: "available" }, { label: t("Missing source"), value: "missing" }]} value={filter} />
+                <Select disabled={busy} label={t("Source")} onChange={(value) => setSourceFilter(value as "all" | "local" | "remote" | "user-package")} options={[{ label: t("All"), value: "all" }, { label: t("Remote"), value: "remote" }, { label: t("Local repository"), value: "local" }, ...(canUseUserPackages ? [{ label: t("User Packages"), value: "user-package" }] : [])]} value={sourceFilter} />
             </fieldset>
             {error === undefined ? null : <div role="alert"><p>{error.code === "revision_conflict" ? t("Settings changed elsewhere. Reload filters before trying again.") : t("Could not save filters: {value0}", { value0: error.code })}</p><Button onClick={() => { setError(undefined); onChanged(); }} type="button" variant="text">{t("Reload filters")}</Button></div>}
         </FilterPopover>
@@ -1344,19 +1352,19 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
         if (selectedKey?.startsWith("user-package:")) return { kind: "user_package", userPackageId: selectedKey.slice(13) };
         return undefined;
     };
-    const selectAction = (action: PackageActionSelection["action"], row?: PackageWorkspaceRow, version?: string) => {
+    const selectAction = (action: PackageActionSelection["action"], origin: DialogOrigin, row?: PackageWorkspaceRow, version?: string) => {
         const packageId = row?.packageId ?? "";
         const source = row === undefined ? undefined : selectedSource(row);
-        setSelection({ action, key: (selection?.key ?? 0) + 1, packageId, ...(version === undefined ? {} : { version }), ...(source === undefined ? {} : { source }) });
+        setSelection({ action, key: (selection?.key ?? 0) + 1, origin, packageId, ...(version === undefined ? {} : { version }), ...(source === undefined ? {} : { source }) });
     };
-    const selectBulkInstalled = (rows: PackageWorkspaceRow[], action: "bulk-reinstall" | "bulk-remove") => {
+    const selectBulkInstalled = (rows: PackageWorkspaceRow[], action: "bulk-reinstall" | "bulk-remove", origin: DialogOrigin) => {
         const selectedRows = rows.filter((row) => bulkSelection.includes(row.packageId) && (action === "bulk-remove" ? row.evidence?.direct === true : row.evidence?.installed.kind === "locked"));
         const sources = selectedRows.flatMap((row) => {
             const source = selectedSource(row);
             return source === undefined ? [] : [{ packageId: row.packageId, source }];
         });
         if (selectedRows.length === 0 || selectedRows.length !== bulkSelection.length || selectedRows.length > 256) return;
-        setSelection({ action, key: (selection?.key ?? 0) + 1, packageId: "", packageIds: selectedRows.map((row) => row.packageId), sources });
+        setSelection({ action, key: (selection?.key ?? 0) + 1, origin, packageId: "", packageIds: selectedRows.map((row) => row.packageId), sources });
     };
     const refreshRepositories = async (reload: () => void) => {
         setRepositoryRefresh({ completed: 0, failures: [], results: [], running: true, successes: 0, total: 0 });
@@ -1414,10 +1422,10 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
             const currentEvidence = candidates !== undefined && sourceSelectionKey === JSON.stringify(sourceSelections) && !evidenceInvalid && !refreshing && refreshError === undefined;
             const catalogReady = currentEvidence && candidates.catalogComplete && !packageMutationBusy;
             const reloadEvidence = () => { setEvidenceInvalid(false); refresh(); };
-            const chooseCandidate = (row: PackageWorkspaceRow, option: PackageCandidateEvidence) => {
+            const chooseCandidate = (row: PackageWorkspaceRow, option: PackageCandidateEvidence, origin: DialogOrigin) => {
                 if (!catalogReady || !canPlanPackagesV1 || !canPlanPackagesV2 || !actionableVersion(option)) return;
                 setSourceSelections((current) => ({ ...current, [row.packageId]: candidateSourceKey(option.source) }));
-                setSelection({ action: option.relation === "older" ? "downgrade" : option.relation === "newer" ? "upgrade" : "install", key: (selection?.key ?? 0) + 1, packageId: row.packageId, version: option.relation === "older" ? option.version : `=${option.version}`, source: candidateSource(option.source), includePrerelease: option.classification === "prerelease", candidateSnapshot: candidates.snapshot.fingerprint });
+                setSelection({ action: option.relation === "older" ? "downgrade" : option.relation === "newer" ? "upgrade" : "install", key: (selection?.key ?? 0) + 1, origin, packageId: row.packageId, version: option.relation === "older" ? option.version : `=${option.version}`, source: candidateSource(option.source), includePrerelease: option.classification === "prerelease", candidateSnapshot: candidates.snapshot.fingerprint });
             };
             const selectedRows = workspaceRows.filter((row) => bulkSelection.includes(row.packageId));
             const completeSelection = selectedRows.length > 0 && selectedRows.length === bulkSelection.length && selectedRows.length <= 256;
@@ -1441,17 +1449,17 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
             };
             const allLatest = allUpdate(false);
             const allStable = allUpdate(true);
-            const submitBulk = (intents: import("./core-models").PackageBulkIntent[], exclusions: string[] = []) => {
+            const submitBulk = (intents: import("./core-models").PackageBulkIntent[], origin: DialogOrigin, exclusions: string[] = []) => {
                 if (!catalogReady || !intents.length || intents.length > 256) return;
-                setSelection({ action: "bulk-candidates", key: (selection?.key ?? 0) + 1, packageId: "", intents, exclusions, candidateSnapshot: candidates.snapshot.fingerprint });
+                setSelection({ action: "bulk-candidates", key: (selection?.key ?? 0) + 1, origin, packageId: "", intents, exclusions, candidateSnapshot: candidates.snapshot.fingerprint });
             };
             const rows = workspaceRows.filter((row) => {
                 const query = search.toLocaleLowerCase();
                 const matchesSearch = query.length === 0 || [row.displayName, row.packageId, ...row.sources].some((value) => value.toLocaleLowerCase().includes(query));
                 const matchesFilter = filter === "all"
                     || (filter === "installed" && row.installedVersion !== undefined)
-                    || (filter === "available" && row.installedVersion === undefined && row.availableVersions.length > 0)
-                    || (filter === "missing" && row.status === "missing-source");
+                    || (filter === "available" && row.installedVersion === undefined && row.evidence !== undefined && row.evidence.providers.length > 0)
+                    || (filter === "missing" && row.installedVersion === undefined && row.evidence !== undefined && row.evidence.providers.length === 0 && row.evidence.latest.kind === "none");
                 const matchesSource = sourceFilter === "all" || row.sourceKinds.includes(sourceFilter);
                 return matchesSearch && matchesFilter && matchesSource;
             });
@@ -1486,12 +1494,12 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                              <RefreshButton className="package-refresh-action" disabled={!canManageRepositories || refreshing || repositoryRefresh?.running === true} onClick={() => void refreshRepositories(refresh)} refreshing={repositoryRefresh?.running === true} refreshingLabel={t("Refreshing packages")} title={capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry, t) ?? t("Refresh packages")} />
                              <SearchField className="package-workspace-search" label={t("Search packages")} onInput={setSearch} placeholder={t("Search...")} value={search} />
                              {currentEvidence ? <>
-                                 <Button disabled={!canPlanPackagesV2 || !allLatest.enabled} onClick={() => submitBulk(allLatest.intents, allLatest.exclusions)} type="button" variant="tonal">{t("Update All ({count})", { count: allLatest.intents.length })}</Button>
-                                 {JSON.stringify(allLatest.intents) !== JSON.stringify(allStable.intents) ? <Button disabled={!canPlanPackagesV2 || !allStable.enabled} onClick={() => submitBulk(allStable.intents, allStable.exclusions)} type="button" variant="text">{t("Update All Stable ({count})", { count: allStable.intents.length })}</Button> : null}
+                                 <Button disabled={!canPlanPackagesV2 || !allLatest.enabled} onClick={(event) => submitBulk(allLatest.intents, { current: event.currentTarget }, allLatest.exclusions)} type="button" variant="tonal">{t("Update All ({count})", { count: allLatest.intents.length })}</Button>
+                                 {JSON.stringify(allLatest.intents) !== JSON.stringify(allStable.intents) ? <Button disabled={!canPlanPackagesV2 || !allStable.enabled} onClick={(event) => submitBulk(allStable.intents, { current: event.currentTarget }, allStable.exclusions)} type="button" variant="text">{t("Update All Stable ({count})", { count: allStable.intents.length })}</Button> : null}
                              </> : null}
                              <div className="package-workspace-secondary-actions">
                                 <span className="visually-hidden" role="status" aria-live="polite">{t(rows.length === 1 ? "{count} package" : "{count} packages", { count: rows.length })}</span>
-                                <PackageWorkspaceMoreMenu canPlanV1={canPlanPackagesV1 && catalogReady} canPlanV2={canPlanPackagesV2 && catalogReady} onResolve={() => selectAction("resolve")} onReinstallAll={() => selectAction("reinstall-all")} />
+                                <PackageWorkspaceMoreMenu canPlanV1={canPlanPackagesV1 && catalogReady} canPlanV2={canPlanPackagesV2 && catalogReady} onResolve={(origin) => selectAction("resolve", origin)} onReinstallAll={(origin) => selectAction("reinstall-all", origin)} />
                                 <PackageFilters canUseUserPackages={canUseUserPackages} client={client} filter={filter} onChanged={refresh} repositories={repositories} setFilter={setFilter} setSourceFilter={setSourceFilter} settings={settings} sourceFilter={sourceFilter} />
                             </div>
                          </header>
@@ -1509,10 +1517,10 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                         {bulkSelection.length === 0 ? null : (
                             <div aria-label={t("Selected package actions")} className="package-bulk-bar" role="region">
                                 <strong>{t("{count} selected", { count: bulkSelection.length })}</strong>
-                                <Button disabled={!canPlanPackagesV2 || !canSelected} onClick={() => submitBulk(selectedLatest)} type="button" variant="tonal">{t("Install / Update selected")}</Button>
-                                {stableSelectionDiffers ? <Button disabled={!canPlanPackagesV2 || !canSelectedStable} onClick={() => submitBulk(selectedStable)} type="button" variant="text">{t("Install / Update selected stable")}</Button> : null}
-                                <Button disabled={!canPlanPackagesV2 || !canBulkInstalled} onClick={() => selectBulkInstalled(workspaceRows, "bulk-reinstall")} title={capabilityUnavailableTitle(canPlanPackagesV2, capabilities.packagesPlanV2, t)} type="button" variant="tonal">{t("Reinstall selected")}</Button>
-                                <Button disabled={!canPlanPackagesV2 || !canBulkRemove} onClick={() => selectBulkInstalled(workspaceRows, "bulk-remove")} title={capabilityUnavailableTitle(canPlanPackagesV2, capabilities.packagesPlanV2, t)} type="button" variant="text">{t("Remove selected")}</Button>
+                                <Button disabled={!canPlanPackagesV2 || !canSelected} onClick={(event) => submitBulk(selectedLatest, { current: event.currentTarget })} type="button" variant="tonal">{t("Install / Update selected")}</Button>
+                                {stableSelectionDiffers ? <Button disabled={!canPlanPackagesV2 || !canSelectedStable} onClick={(event) => submitBulk(selectedStable, { current: event.currentTarget })} type="button" variant="text">{t("Install / Update selected stable")}</Button> : null}
+                                <Button disabled={!canPlanPackagesV2 || !canBulkInstalled} onClick={(event) => selectBulkInstalled(workspaceRows, "bulk-reinstall", { current: event.currentTarget })} title={capabilityUnavailableTitle(canPlanPackagesV2, capabilities.packagesPlanV2, t)} type="button" variant="tonal">{t("Reinstall selected")}</Button>
+                                <Button disabled={!canPlanPackagesV2 || !canBulkRemove} onClick={(event) => selectBulkInstalled(workspaceRows, "bulk-remove", { current: event.currentTarget })} title={capabilityUnavailableTitle(canPlanPackagesV2, capabilities.packagesPlanV2, t)} type="button" variant="text">{t("Remove selected")}</Button>
                                 {!canSelected || !canBulkInstalled || !canBulkRemove ? <span role="status">{t("Actions require every selected package, including hidden rows: install/update needs eligible targets; reinstall needs locks; remove needs direct requirements. Limits: 1–256 packages.")}</span> : null}
                                 <Button onClick={() => setBulkSelection([])} type="button" variant="text">{t("Clear selection")}</Button>
                             </div>
@@ -1534,24 +1542,21 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                      sizing="fixed"
                                      rows={rows.map((row) => {
                                          const evidence = currentEvidence ? row.evidence : undefined;
-                                         const installChoice = evidence?.projectLatest;
                                          const update = evidence?.update;
                                          return { key: row.packageId, cells: [
                                              <Checkbox checked={bulkSelection.includes(row.packageId)} label={t("Select {value0}", { value0: row.displayName })} onChange={(checked) => setBulkSelection((current) => checked ? [...new Set([...current, row.packageId])] : current.filter((packageId) => packageId !== row.packageId))} />,
                                              <><strong>{row.displayName}</strong><small>{row.packageId}</small></>,
-                                             <><PackageVersionMenu client={client} project={project} snapshot={currentEvidence ? candidates.snapshot.fingerprint : undefined} disabled={!canQueryCandidates} canPlan={catalogReady && canPlanPackagesV1 && canPlanPackagesV2} onStale={() => setEvidenceInvalid(true)} onSelect={(option) => chooseCandidate(row, option)} row={row} />{row.requestedRange === undefined ? null : <small>{t("Requested ")}{row.requestedRange}</small>}</>,
+                                             <><PackageVersionMenu client={client} project={project} snapshot={currentEvidence ? candidates.snapshot.fingerprint : undefined} disabled={!canQueryCandidates} canPlan={catalogReady && canPlanPackagesV1 && canPlanPackagesV2} onStale={() => setEvidenceInvalid(true)} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} />{row.requestedRange === undefined ? null : <small>{t("Requested ")}{row.requestedRange}</small>}</>,
                                              <>{evidence ? choiceText(evidence.latest, t) : t("Evidence unavailable")}{evidence && update?.kind !== "target" ? <small>{update ? updateReason(update, t) : ""}</small> : null}</>,
                                              row.sourceOptions.length === 1 && !sourceSelections[row.packageId] ? row.sourceOptions[0]?.label : <PackageSourceMenu disabled={!currentEvidence} label={t("Source for {value0}", { value0: row.displayName })} onChange={(key) => setSourceSelections((current) => ({ ...current, [row.packageId]: key }))} options={row.sourceOptions} value={sourceSelections[row.packageId] ?? ""} />,
-                                             <div className="package-row-actions">{row.installedVersion === undefined
-                                                 ? <IconButton className="package-primary-action" disabled={!canPlanPackagesV1 || !canPlanPackagesV2 || !catalogReady || installChoice?.kind !== "candidate" || installChoice.candidate.eligibility !== "eligible"} label={t("Install")} onClick={() => { if (installChoice?.kind === "candidate") chooseCandidate(row, installChoice.candidate); }} title={capabilityUnavailableTitle(canPlanPackagesV1 && canPlanPackagesV2, capabilities.packagesPlanV2, t) ?? t("Install {value0}", { value0: row.displayName })} type="button"><Icon asset={downloadIcon} /></IconButton>
-                                                 : update?.kind === "target" ? <IconButton className="package-primary-action" disabled={!canPlanPackagesV1 || !canPlanPackagesV2 || !catalogReady} label={t("Update")} onClick={() => chooseCandidate(row, update.candidate)} title={capabilityUnavailableTitle(canPlanPackagesV1 && canPlanPackagesV2, capabilities.packagesPlanV2, t) ?? t("Update {value0}", { value0: row.displayName })} type="button"><Icon asset={upgradeIcon} /></IconButton> : null}<PackageRowMoreMenu canPlanV1={canPlanPackagesV1 && !packageMutationBusy && !refreshing && !evidenceInvalid} canPlanV2={canPlanPackagesV2 && catalogReady} client={client} onAction={(action) => selectAction(action, row)} row={row} /></div>
+                                             <div className="package-row-actions"><PackagePrimaryAction canPlanV1={canPlanPackagesV1} canPlanV2={canPlanPackagesV2} catalogReady={catalogReady} evidence={evidence} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} /><PackageRowMoreMenu canPlanV1={canPlanPackagesV1 && !packageMutationBusy && !refreshing && !evidenceInvalid} canPlanV2={canPlanPackagesV2 && catalogReady} client={client} onAction={(action, origin) => selectAction(action, origin, row)} row={row} /></div>
                                          ] };
                                      })}
                                  />
                             )}
                         </div>
                     </section>
-                    <PackageActions client={client} onChanged={reloadEvidence} onBusyChanged={setPackageMutationBusy} onEvidenceStale={() => setEvidenceInvalid(true)} project={project} selection={selection === undefined ? undefined : { ...selection, candidateSnapshot: selection.candidateSnapshot ?? candidates?.snapshot.fingerprint }} />
+                    <PackageActions client={client} onChanged={reloadEvidence} onBusyChanged={setPackageMutationBusy} onEvidenceStale={() => setEvidenceInvalid(true)} project={project} returnFocusReady={catalogReady} selection={selection === undefined ? undefined : { ...selection, candidateSnapshot: selection.candidateSnapshot ?? candidates?.snapshot.fingerprint }} />
                 </section>
             );
         }}</ResourcePage>
@@ -1570,7 +1575,6 @@ function packageWorkspaceRows(project: ProjectSnapshot, catalog: WorkspaceCatalo
     const packageIds = new Set([...installed.keys(), ...requested.keys(), ...catalogByPackage.keys(), ...summaries.map((item) => item.packageId)]);
     return [...packageIds].sort((left, right) => left.localeCompare(right)).map((packageId) => {
         const versions = catalogByPackage.get(packageId) ?? [];
-        const availableVersions = [...new Set(versions.filter((item) => !item.yanked).map((item) => item.version))];
         const installedVersion = installed.get(packageId);
         const evidence = summaries.find((item) => item.packageId === packageId);
         const sourceOptions = (evidence?.providers ?? []).map((provider) => { const key = candidateSourceKey(provider.source); return { key, label: sourceRegistry[key]?.label ?? key, selector: candidateSource(provider.source) }; });
@@ -1581,7 +1585,6 @@ function packageWorkspaceRows(project: ProjectSnapshot, catalog: WorkspaceCatalo
             .filter((item): item is WorkspaceCatalogVersion & { repositoryId: string } => item.version === preferredVersion && item.links !== undefined && item.repositoryId !== undefined)
             .sort((left, right) => left.repositoryId.localeCompare(right.repositoryId))[0];
         return {
-            availableVersions,
             ...(evidence ? { evidence } : {}),
             displayName: versions.find((item) => item.displayName !== undefined)?.displayName ?? packageId,
             ...(installedVersion === undefined ? {} : { installedVersion }),
@@ -1597,8 +1600,7 @@ function packageWorkspaceRows(project: ProjectSnapshot, catalog: WorkspaceCatalo
             ...(requested.has(packageId) ? { requestedRange: requested.get(packageId) } : {}),
             sourceKinds,
             sourceOptions,
-            sources,
-            status: installedVersion !== undefined ? "installed" : availableVersions.length > 0 ? "available" : "missing-source"
+            sources
         };
     });
 }

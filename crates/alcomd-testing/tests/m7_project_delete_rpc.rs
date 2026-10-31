@@ -295,14 +295,13 @@ fn subprocess_runs_project_delete_until_parent_kills_it() {
         let shutdown = Arc::new(AtomicBool::new(false));
         let server_shutdown = Arc::clone(&shutdown);
         let data = fixture.join("data");
-        let _daemon = tokio::spawn(async move {
-            alcomd_daemon::serve_with_data_until(
-                ipc,
-                DataConfig::isolated(data),
-                wait_for_shutdown(server_shutdown),
-            )
-            .await
-        });
+        let _daemon = alcomd_daemon::test_support::start_with_data_until(
+            ipc,
+            DataConfig::isolated(data),
+            wait_for_shutdown(server_shutdown),
+        )
+        .await
+        .expect("start owned test daemon");
         let mut client = connect_client(config).await;
         let registered = client
             .project_register(
@@ -394,7 +393,8 @@ async fn run_kill_restart_case(checkpoint: &str) {
     }
 
     let (ipc, config) = isolated_ipc(fixture.path().join("runtime"));
-    let mut daemon = TestDaemon::spawn(ipc, DataConfig::isolated(fixture.path().join("data")));
+    let mut daemon =
+        TestDaemon::spawn(ipc, DataConfig::isolated(fixture.path().join("data"))).await;
     let mut client = connect_client(config).await;
     let replay = client
         .project_apply_delete_directory(alcomd_protocol::ProjectsApplyDeleteDirectoryParams {
@@ -623,17 +623,20 @@ fn isolated_ipc(_runtime: PathBuf) -> (IpcConfig, ClientConfig) {
 
 struct TestDaemon {
     shutdown: Arc<AtomicBool>,
-    task: Option<tokio::task::JoinHandle<Result<(), alcomd_platform::BindError>>>,
+    task: Option<alcomd_daemon::test_support::TestDaemon>,
 }
 
 impl TestDaemon {
-    fn spawn(ipc: IpcConfig, data: DataConfig) -> Self {
+    async fn spawn(ipc: IpcConfig, data: DataConfig) -> Self {
         let shutdown = Arc::new(AtomicBool::new(false));
         let server_shutdown = Arc::clone(&shutdown);
-        let task = tokio::spawn(async move {
-            alcomd_daemon::serve_with_data_until(ipc, data, wait_for_shutdown(server_shutdown))
-                .await
-        });
+        let task = alcomd_daemon::test_support::start_with_data_until(
+            ipc,
+            data,
+            wait_for_shutdown(server_shutdown),
+        )
+        .await
+        .expect("start owned test daemon");
         Self {
             shutdown,
             task: Some(task),

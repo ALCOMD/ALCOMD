@@ -25,14 +25,13 @@ async fn project_and_repository_read_slice_round_trips_without_source_writes() {
     let (ipc, config) = isolated_ipc(runtime);
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(
-            ipc,
-            DataConfig::isolated(data),
-            wait_for_shutdown(server_shutdown),
-        )
-        .await
-    });
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(data),
+        wait_for_shutdown(server_shutdown),
+    )
+    .await
+    .expect("start owned test daemon");
     let mut client = connect_with_retry(config).await;
 
     let inspected = client

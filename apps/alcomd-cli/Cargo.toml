@@ -19,7 +19,7 @@ alcomd-protocol.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
-alcomd-daemon = { package = "alcomd", path = "../alcomd" }
+alcomd-daemon = { package = "alcomd", path = "../alcomd", features = ["test-kill-gates"] }
 alcomd-platform.workspace = true
 
 [lints]

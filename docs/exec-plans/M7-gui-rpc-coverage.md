@@ -1,7 +1,8 @@
 # M7 Official GUI RPC coverage matrix
 
-状态：2026-08-26 planning baseline。来源是 `crates/alcomd-protocol` 的 public method constants 与
-`crates/alcomd-client` 的 typed methods；实现过程中必须保持两者与本矩阵可机械核对。
+状态：2026-10-31 当前已批准 RPC 覆盖矩阵。来源是 `crates/alcomd-protocol` 的 public method
+constants 与 `crates/alcomd-client` 的 typed methods；实现过程中必须保持两者与本矩阵可机械核对。
+本矩阵记录方法归属，不表示 M7、Visual Gate 2 或聚合功能已验收通过；当前阶段见 `../status.md`。
 
 统一状态 `data` 表示 initial-loading、refreshing/last-known-good、empty、error、disconnected；`mutation` 另含
 confirmation-required、operation-running、success、failed、cancelled。`Plan review` 必须展示 daemon 返回的 typed
@@ -9,7 +10,7 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 
 | RPC method | capability | page / route | user action | R/W | confirmation | Operation | state handling | test owner |
 |---|---|---|---|---|---|---|---|---|
-| `system.hello` | RPC v1 handshake | app shell | connect/reconnect（client-owned） | R | no | no | disconnected/reconnecting | `gui.m7-core-surfaces` |
+| `system.hello` | RPC v1 handshake | app shell | connect/reconnect; ready Store dataSchema, Config3 | R | no | no | disconnected/reconnecting/capability refresh | `gui.m7-core-surfaces` |
 | `system.status` | base | Home, About | load daemon/product status | R | no | no | data | `gui.m7-core-surfaces` |
 | `state.check` | `state.check.v1` | Diagnostics | start integrity check | W | explicit action | yes | mutation | `gui.m7-operation-flows` |
 | `operations.get` | `operations.v1` | Operation detail | load/follow one Operation | R | no | no | data/reconnect | `gui.m7-operation-flows` |
@@ -21,7 +22,14 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `projects.get` | `projects.read.v1` | Project detail | load project | R | no | no | data | `gui.m7-core-surfaces` |
 | `projects.register` | `projects.registry.v1` | Projects add dialog | register inspected project | W | yes | no | mutation/idempotency | `gui.m7-operation-flows` |
 | `projects.refresh` | `projects.registry.v1` | Project detail | refresh registered model | W | no | no | refreshing/stale | `gui.m7-operation-flows` |
+| `projects.setFavorite` | `projects.registry.v1` | Projects | toggle favorite | W | no | no | mutation/revision/idempotency | `gui.m7-project-action-contract` |
 | `projects.unregister` | `projects.registry.v1` | Project detail | remove registry entry | W | yes | no | mutation/stale | `gui.m7-operation-flows` |
+| `projects.planCopy` | `projects.copy.v1` | Project Copy dialog | plan copy to new directory | R/Plan | review follows | no | data/writer/stale | `gui.m7-project-action-contract` |
+| `projects.applyCopy` | `projects.copy.v1` | Project Copy dialog | apply reviewed Copy Plan | W | required | yes | mutation/recovery | `gui.m7-project-action-contract` |
+| `projects.planDeleteDirectory` | `projects.delete.v1` | Project remove dialog | plan directory deletion | R/Plan | review follows | no | data/writer/stale | `gui.m7-project-action-contract` |
+| `projects.applyDeleteDirectory` | `projects.delete.v1` | Project remove dialog | apply reviewed Delete Plan | W | required | yes | mutation/recovery | `gui.m7-project-action-contract` |
+| `projects.planUnityMigration` | `projects.unity-migration.v1` | Project Unity migration | plan supported Unity migration | R/Plan | review follows | no | data/writer/stale | `gui.m7-project-action-contract` |
+| `projects.applyUnityMigration` | `projects.unity-migration.v1` | Project Unity migration | apply reviewed migration Plan | W | required | yes | mutation/recovery | `gui.m7-project-action-contract` |
 | `repositories.inspect` | `repositories.read.v1` | Repositories add dialog | validate source | R | no | no | dialog data | `gui.m7-core-surfaces` |
 | `repositories.list` | `repositories.read.v1` | Repositories | page repositories | R | no | no | data/keyset | `gui.m7-core-surfaces` |
 | `repositories.get` | `repositories.read.v1` | Repository detail | load repository | R | no | no | data | `gui.m7-core-surfaces` |
@@ -34,17 +42,28 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `packages.planUpgrade` | `packages.plan.v1` | Project Packages | plan upgrade | R/Plan | review follows | no | data/stale | `gui.m7-operation-flows` |
 | `packages.planDowngrade` | `packages.plan.v1` | Project Packages | plan downgrade | R/Plan | review follows | no | data/stale | `gui.m7-operation-flows` |
 | `packages.planResolve` | `packages.plan.v1` | Project Packages | plan deterministic resolve | R/Plan | review follows | no | data/stale | `gui.m7-operation-flows` |
+| `packages.planReinstall` | `packages.plan.v2` | Project Packages | plan reinstall locked packages | R/Plan | review follows | no | data/stale/source ambiguity | `gui.m7-package-workspace` |
+| `packages.planBulk` | `packages.plan.v2` | Project Packages | one Plan for full selected set or Update All | R/Plan | review follows | no | data/complete evidence/256 limit/stale | `gui.m7-package-workspace` |
+| `packages.queryProjectCandidates` | `packages.candidates.v1` | Project Packages | read Core summaries and lazy version pages | R | no | no | data/snapshot/paging/quota/stale | `gui.m7-package-workspace` |
 | `packages.applyPlan` | `packages.apply.v1` | Project Packages | apply reviewed Plan | W | required | yes | mutation/stale/recovery | `gui.m7-operation-flows` |
+| `packages.userPackages.list` | `packages.user-packages.v1` | Resources / User Packages | page enrolled packages | R | no | no | data/keyset | `gui.m7-package-workspace` |
+| `packages.userPackages.get` | `packages.user-packages.v1` | User Package detail | load enrolled package | R | no | no | data | `gui.m7-package-workspace` |
+| `packages.userPackages.enroll` | `packages.user-packages.v1` | Resources / User Packages | enroll explicit folder | W | explicit action | no | mutation/idempotency | `gui.m7-package-workspace` |
+| `packages.userPackages.refresh` | `packages.user-packages.v1` | User Package detail | refresh enrolled source | W | no | no | refreshing/revision/idempotency | `gui.m7-package-workspace` |
+| `packages.userPackages.remove` | `packages.user-packages.v1` | User Package detail | remove enrollment | W | yes | no | mutation/revision/idempotency | `gui.m7-package-workspace` |
 | `unity.installations.list` | `unity.read.v1` | Unity | page installations | R | no | no | data/keyset | `gui.m7-core-surfaces` |
 | `unity.installations.get` | `unity.read.v1` | Unity installation detail | load installation | R | no | no | data | `gui.m7-core-surfaces` |
 | `unity.installations.register` | `unity.manage.v1` | Unity add dialog | register validated editor | W | yes | no | mutation/idempotency | `gui.m7-operation-flows` |
 | `unity.installations.remove` | `unity.manage.v1` | Unity installation detail | remove registry entry | W | yes | no | mutation/stale | `gui.m7-operation-flows` |
 | `unity.installations.refresh` | `unity.manage.v1` | Unity | refresh discoveries | W | no | no | refreshing/idempotency | `gui.m7-operation-flows` |
-| `unity.projectEditor.get` | `unity.read.v1` | Project Unity | load editor preference | R | no | no | data | `gui.m7-core-surfaces` |
-| `unity.projectEditor.set` | `unity.manage.v1` | Project Unity | select editor | W | yes | no | mutation/stale | `gui.m7-operation-flows` |
+| `unity.projectLaunchConfig.get` | `unity.read.v1` | Project Unity | load launch arguments | R | no | no | data/revision | `gui.m7-core-surfaces` |
+| `unity.projectLaunchConfig.set` | `unity.manage.v1` | Project Unity | save launch arguments | W | explicit save | no | mutation/revision/idempotency | `gui.m7-project-action-contract` |
+| `unity.projectLaunchConfig.clear` | `unity.manage.v1` | Project Unity | restore default launch arguments | W | yes | no | mutation/revision/idempotency | `gui.m7-project-action-contract` |
 | `unity.writerState` | `unity.read.v1` | Project Unity | observe writer evidence | R | no | no | refreshing/unknown | `gui.m7-core-surfaces` |
-| `unity.launch` | `unity.launch.v1` | Project Unity | launch selected editor | W | yes | launch record | mutation/writer gate | `gui.m7-operation-flows` |
+| `unity.launchOptions` | `unity.launch.v1` | Projects / Open Unity | resolve exact-version 0/1/many installations | R | no | no | data/unknown | `gui.m7-project-action-contract` |
+| `unity.launch` | `unity.launch.v1` | Projects / Open Unity | launch explicit one-shot installation | W | explicit action/selection | launch record | mutation/writer gate | `gui.m7-operation-flows` |
 | `unity.launchStatus` | `unity.launch.v1` | Project Unity | follow launch | R | no | launch record | refreshing/terminal | `gui.m7-operation-flows` |
+| `unity.hub.open` | `unity.hub.open.v1` | Settings / Unity | open revalidated Hub or return download_required | W | explicit action | no | revision/path/local-owner/unknown result | `gui.m7-core-surfaces` |
 | `templates.list` | `templates.read.v1` | Templates | page templates | R | no | no | data/keyset | `gui.m7-core-surfaces` |
 | `templates.get` | `templates.read.v1` | Template detail | load template | R | no | no | data | `gui.m7-core-surfaces` |
 | `templates.inspectBundle` | `templates.read.v1` | Template import dialog | validate bundle | R | no | no | dialog data | `gui.m7-core-surfaces` |
@@ -76,14 +95,15 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `extensions.ui.refresh` | `extensions.ui.portable.v1` | Extension Portable UI | explicit refresh | W/session | discard if dirty | no | refreshing/stale | `gui.m7-portable-ui-renderer` |
 | `extensions.ui.dispatch` | `extensions.ui.portable.v1` | Extension Portable UI | activate/submit action | W/session | host-owned where required | no | progress/error/replay | `gui.m7-portable-ui-security` |
 | `extensions.ui.close` | `extensions.ui.portable.v1` | Extension Portable UI | close route/session | W/session | discard if dirty | no | best-effort | `gui.m7-portable-ui-production` |
-| `settings.get` | base RPC v1; no new capability approved | Settings, shell | load Config v1 | R | no | no | data/revision | `settings.authoritative-storage` |
-| `settings.update` | base RPC v1; no new capability approved | Settings | update closed partial settings | W | explicit save | no | mutation/stale | `settings.authoritative-storage` |
+| `settings.get` | base RPC v1; no new capability approved | Settings, shell | load Config3 and Hub location evidence | R | no | no | data/revision | `settings.authoritative-storage` |
+| `settings.update` | base RPC v1; no new capability approved | Settings | serial CAS narrow PATCH; theme Save/Cancel | W | immediate ordinary changes; explicit theme save | no | mutation/stale/intent retained/unknown commit | `settings.authoritative-storage` |
 | `activity.list` | base RPC v1; no new capability approved | Activity | page safe Event/Operation projection | R | no | no | data/keyset | `activity.log-redaction` |
 | `diagnostics.list` | base RPC v1; no new capability approved | Diagnostics | page redacted diagnostics | R | no | no | data/keyset | `diagnostics.redacted-list` |
 
 ## Coverage rules
 
-- New method beyond the four approved M7 additions or any new public capability requires owner approval.
+- New methods, public capabilities and breaking DTO changes require owner approval. The methods above include the later approved Project/Package, exact Unity, candidate evidence and Hub contracts; the original four M7 utility additions are not the full current set.
+- `packages.plan.v2` also supports the original package Plan methods; `planReinstall` and `planBulk` require v2. GUI candidate/source filters use complete Core evidence; optional display metadata does not determine business state.
 - A method is complete only when typed Rust and TypeScript adapters, real page/action behavior, common states and its test owner all exist.
 - `events.list` remains a daemon projection source; Activity UI must call `activity.list`, not join raw Events and Operations in JavaScript.
 - Direct registry/lifecycle writes that do not have a Core Plan method receive explicit confirmation but must not invent a GUI Plan.

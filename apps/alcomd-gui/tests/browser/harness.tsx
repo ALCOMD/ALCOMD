@@ -22,17 +22,23 @@ import discordDocumentJson from "../../../../crates/alcomd-testing/fixtures/m7/d
 import mcpDocumentJson from "../../../../crates/alcomd-testing/fixtures/m7/mcp-management-snapshot.json" with { type: "json" };
 import { App } from "../../src/App";
 import type { Operation, PackagePlan, ProjectSnapshot, SettingsGetResult } from "../../src/core-models";
+import { queryCandidates } from "../../src/package-candidates";
 import type { GuiRpcClient } from "../../src/rpc";
 import "../../src/styles.css";
 import { MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
 
+type CandidateQuery = (client: Pick<GuiRpcClient, "packageQueryProjectCandidates">, request: Parameters<typeof queryCandidates>[1]) => ReturnType<typeof queryCandidates>;
+
 declare global {
     interface Window {
+        queryCandidates: CandidateQuery;
         packageRequests: Array<{ method: string; params: unknown }>;
         projectSnapshots: ProjectSnapshot[][];
         unityRequests: Array<{ method: string; params: unknown }>;
         candidateRequests: Array<Parameters<GuiRpcClient["packageQueryProjectCandidates"]>[0]>;
+        repositoryPackageRequests: Array<{ repositoryId: string; cursor?: Parameters<GuiRpcClient["repositoryPackages"]>[1] }>;
         resumeCandidateSource?: () => void;
+        resumePackagePlan?: () => void;
         settingsWrites: Array<{ expectedRevision: number; revision: number }>;
         settingsRequests: Array<{ expectedRevision: number; update: Parameters<GuiRpcClient["settingsUpdate"]>[1] }>;
         settingsReads: number;
@@ -41,10 +47,13 @@ declare global {
         capabilityLoadingScreens: string[];
     }
 }
+// The concurrency probe supplies only the read method used by the shared function.
+window.queryCandidates = queryCandidates as CandidateQuery;
 window.packageRequests = [];
 window.projectSnapshots = [];
 window.unityRequests = [];
 window.candidateRequests = [];
+window.repositoryPackageRequests = [];
 window.settingsWrites = [];
 window.settingsRequests = [];
 window.settingsReads = 0;
@@ -346,6 +355,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             value.lockedDependencies = [...value.lockedDependencies, { packageId: "com.example.remote", value: "1.2.3" }];
             value.directDependencies = [...value.directDependencies, { packageId: "com.example.remote", value: "^1.2.0" }];
         }
+        if (["missing", "unavailable"].includes(query.get("remoteEvidence") ?? "")) value.directDependencies = [...value.directDependencies, { packageId: "com.example.remote", value: "^1.0.0" }];
         if (query.get("bulk257")) {
             const dependencies = Array.from({ length: 257 }, (_, index) => ({ packageId: `com.example.batch${String(index).padStart(3, "0")}`, value: "1.2.3" }));
             value.lockedDependencies = dependencies;
@@ -460,7 +470,9 @@ class DeterministicGuiClient implements GuiRpcClient {
         const value = repositoryId === LOCAL_REPOSITORY_ID ? localRepository() : repository();
         return this.value({ repository: this.mode === "package-revision-conflict" ? { ...value, revision: 3 } : value });
     }
-    repositoryPackages(repositoryId: string): ReturnType<GuiRpcClient["repositoryPackages"]> {
+    repositoryPackages(repositoryId: string, cursor?: Parameters<GuiRpcClient["repositoryPackages"]>[1]): ReturnType<GuiRpcClient["repositoryPackages"]> {
+        window.repositoryPackageRequests.push({ repositoryId, ...(cursor === undefined ? {} : { cursor }) });
+        if (query.get("metadata") === "error") return Promise.reject({ code: "repository_unavailable" });
         if (query.get("versions") === "1") return this.value({ packages: [
             { packageId: "com.example.avatar", version: "1.2.3", displayName: "Avatar tools", yanked: false, prerelease: false },
             { packageId: "com.example.avatar", version: "1.1.0", displayName: "Avatar tools", yanked: false, prerelease: false },
@@ -477,6 +489,12 @@ class DeterministicGuiClient implements GuiRpcClient {
                 { packageId: "com.example.remote", version: "1.0.0", displayName: "Remote tools", yanked: false },
                 ...(this.repositoryRefreshCompleted ? [{ packageId: "com.example.refreshed", version: "1.0.0", displayName: "Refreshed package", yanked: false }] : [])
             ];
+        if (query.get("metadata") === "paged" && repositoryId === REPOSITORY_ID) {
+            return this.value({
+                packages: packages.filter((item) => cursor === undefined ? item.packageId !== "com.example.remote" : item.packageId === "com.example.remote").map((item) => ({ ...item, prerelease: false })),
+                ...(cursor === undefined ? { nextCursor: { packageId: "com.example.avatar", version: "1.3.0" } } : {})
+            });
+        }
         return this.value({ packages: packages.map((item) => ({ ...item, prerelease: false })) });
     }
 
@@ -510,12 +528,14 @@ class DeterministicGuiClient implements GuiRpcClient {
         const candidate = (version: string, relation: PackageCandidateEvidence["relation"], sourceId = REPOSITORY_ID, reasons: PackageCandidateEvidence["reasons"] = [], classification: PackageCandidateEvidence["classification"] = "stable"): PackageCandidateEvidence => ({ version, relation, source: sourceId === USER_PACKAGE_ID ? { kind: "user_package", user_package_id: sourceId } : { kind: "repository", repository_id: sourceId }, sourceRevision: 2, classification, unity: "compatible", eligibility: reasons.length ? "blocked" : "eligible", reasons });
         if (params.view.kind === "versions") {
             const providers = this.mode === "package-user-source" ? [REPOSITORY_ID, USER_PACKAGE_ID] : this.mode === "package-multiple" ? [REPOSITORY_ID, LOCAL_REPOSITORY_ID] : [REPOSITORY_ID];
+            const installed = params.view.packageId === "com.example.avatar" || (Boolean(query.get("twoInstalled")) && params.view.packageId === "com.example.remote");
+            const relation = (value: PackageCandidateEvidence["relation"]): PackageCandidateEvidence["relation"] => installed ? value : "not_installed";
             const items = providers.flatMap((id) => [
-                candidate("9.0.0", "newer", id, ["all_yanked"]),
-                candidate("2.0.0-beta.1", "newer", id, this.settings.settings.packages.showPrerelease ? [] : ["prerelease_excluded"], "prerelease"),
-                candidate("1.10.0", "newer", id),
-                candidate("1.2.3", "same_precedence", id),
-                candidate("1.1.0", "older", id),
+                candidate("9.0.0", relation("newer"), id, ["all_yanked"]),
+                candidate("2.0.0-beta.1", relation("newer"), id, this.settings.settings.packages.showPrerelease ? [] : ["prerelease_excluded"], "prerelease"),
+                candidate("1.10.0", relation("newer"), id),
+                candidate("1.2.3", relation("same_precedence"), id),
+                candidate("1.1.0", relation("older"), id),
                 candidate("legacy", "unknown", id, ["classification_unknown", "metadata_invalid"], "unknown")
             ]);
             const offset = params.cursor?.offset ?? 0;
@@ -534,9 +554,16 @@ class DeterministicGuiClient implements GuiRpcClient {
             if (query.get("ambiguous") && installed && !override) choice = { kind: "ambiguous", reason: "source_ambiguous" };
             if (query.get("unknown") && installed) choice = { kind: "unknown", reasons: ["project_unity_unknown"] };
             if (query.get("mixedInvalid") && packageId === "com.example.remote") choice = { kind: "unknown", reasons: ["classification_unknown"] };
+            if (packageId === "com.example.remote") {
+                if (query.get("remoteEvidence") === "ambiguous") choice = { kind: "ambiguous", reason: "source_ambiguous" };
+                if (query.get("remoteEvidence") === "unknown") choice = { kind: "unknown", reasons: ["classification_unknown"] };
+                if (query.get("remoteEvidence") === "blocked") choice = { kind: "none", reasons: ["all_yanked"] };
+                if (query.get("remoteEvidence") === "missing") choice = { kind: "none", reasons: ["no_visible_candidate"] };
+                if (query.get("remoteEvidence") === "unavailable") choice = { kind: "unknown", reasons: ["catalog_incomplete"] };
+            }
             if (query.get("noUpdate") && installed) target.relation = "same_precedence";
             const providers: PackageCandidateSummary["providers"] = [];
-            if (visibleRemote && packageId !== "com.example.local") providers.push({ source: { kind: "repository", repository_id: REPOSITORY_ID }, sourceRevision: 2 });
+            if (visibleRemote && packageId !== "com.example.local" && !(packageId === "com.example.remote" && ["missing", "unavailable"].includes(query.get("remoteEvidence") ?? ""))) providers.push({ source: { kind: "repository", repository_id: REPOSITORY_ID }, sourceRevision: 2 });
             if (visibleLocal && (packageId === "com.example.local" || (packageId === "com.example.remote" && query.get("twoInstalled")) || (installed && (query.get("versions") || query.get("ambiguous"))))) providers.push({ source: { kind: "repository", repository_id: LOCAL_REPOSITORY_ID }, sourceRevision: 2 });
             if (packageId === "com.example.avatar" && this.mode === "package-user-source" && !this.settings.settings.packages.hideLocalUserPackages) providers.push({ source: { kind: "user_package", user_package_id: USER_PACKAGE_ID }, sourceRevision: 2 });
             let update: PackageCandidateSummary["update"] = choice.kind === "candidate" ? installed ? query.get("noUpdate") ? { kind: "no_update", reason: "same_precedence" } : { kind: "target", candidate: target } : { kind: "no_update", reason: "not_installed" } : { kind: "unavailable", reasons: choice.kind === "ambiguous" ? [choice.reason] : choice.reasons };
@@ -545,22 +572,24 @@ class DeterministicGuiClient implements GuiRpcClient {
             if (query.get("stableAlternate") && installed) { target.version = "2.0.0-beta.1"; target.classification = "prerelease"; }
             const stableChoice: CandidateChoice = query.get("stableAlternate") && installed ? { kind: "candidate", candidate: stableCandidate } : choice;
             const stableUpdate: PackageCandidateSummary["update"] = query.get("stableAlternate") && installed ? { kind: "target", candidate: stableCandidate } : update;
-            return { packageId, providers, direct: installed && query.get("transitive") !== "1", installed: installed ? { kind: "locked", version: "1.2.3" } : { kind: "absent" }, latest: choice, latestStable: stableChoice, projectLatest: choice, projectLatestStable: stableChoice, update, stableUpdate };
+            return { packageId, providers, direct: (installed && query.get("transitive") !== "1") || (packageId === "com.example.remote" && ["missing", "unavailable"].includes(query.get("remoteEvidence") ?? "")), installed: installed ? { kind: "locked", version: "1.2.3" } : { kind: "absent" }, latest: choice, latestStable: stableChoice, projectLatest: choice, projectLatestStable: stableChoice, update, stableUpdate };
         });
         const offset = params.cursor?.offset ?? 0;
         const count = query.get("paged") ? 1 : params.limit ?? 64;
         return this.value({ ...base, nextCursor: offset + count < items.length ? { snapshotFingerprint: fingerprint, queryFingerprint: HASH, offset: offset + count } : null, view: "summary", items: items.slice(offset, offset + count) });
     }
-    packagePlanInstall(params: Parameters<GuiRpcClient["packagePlanInstall"]>[0]): ReturnType<GuiRpcClient["packagePlanInstall"]> {
+    async packagePlanInstall(params: Parameters<GuiRpcClient["packagePlanInstall"]>[0]): ReturnType<GuiRpcClient["packagePlanInstall"]> {
         window.packageRequests.push({ method: "install", params });
+        if (query.get("delayPackagePlan") === "1") await new Promise<void>((resolve) => { window.resumePackagePlan = resolve; });
         if (query.get("planError") === "1") return Promise.reject({ code: "package_source_ambiguous" });
         const plan = packagePlan("install");
         plan.changeSet.mutations = [{ kind: "replace", packageId: params.packageId, fromVersion: "1.2.3", toVersion: params.versionRange ?? "1.3.0" }];
         return this.value(plan);
     }
     packagePlanRemove(): ReturnType<GuiRpcClient["packagePlanRemove"]> { return this.value(packagePlan("remove")); }
-    packagePlanUpgrade(params: Parameters<GuiRpcClient["packagePlanUpgrade"]>[0]): ReturnType<GuiRpcClient["packagePlanUpgrade"]> {
+    async packagePlanUpgrade(params: Parameters<GuiRpcClient["packagePlanUpgrade"]>[0]): ReturnType<GuiRpcClient["packagePlanUpgrade"]> {
         window.packageRequests.push({ method: "upgrade", params });
+        if (query.get("delayPackagePlan") === "1") await new Promise<void>((resolve) => { window.resumePackagePlan = resolve; });
         if (query.get("planError") === "1") return Promise.reject({ code: "package_source_ambiguous" });
         const plan = packagePlan("upgrade");
         plan.changeSet.mutations = [{ kind: "replace", packageId: params.packageId, fromVersion: "1.2.3", toVersion: params.versionRange?.replace(/^=/, "") ?? "1.10.0" }];

@@ -7,6 +7,7 @@ import {
     isValidElement,
     useEffect,
     useRef,
+    useState,
     useSyncExternalStore,
     type ButtonHTMLAttributes,
     type CSSProperties,
@@ -30,11 +31,17 @@ type MaterialElement = HTMLElement & {
     indeterminate?: boolean;
     open?: boolean;
     selected?: boolean;
+    select?(value: string): void;
     show?(): void;
+    updateComplete?: Promise<boolean>;
     value?: number | string;
 };
 
 type MaterialProps = HTMLAttributes<HTMLElement> & Record<string, unknown>;
+
+export interface DialogOrigin {
+    readonly current: HTMLElement | null;
+}
 
 export function Icon({ asset, className, size = 24, slot }: { asset: IconAsset; className?: string; size?: IconSize; slot?: string }) {
     const geometry = resolveIconGeometry(asset, size);
@@ -232,23 +239,42 @@ export function Menu({ anchorRef, children, className, onClose, open }: { anchor
 }
 
 export function MenuItem({ className, disabled, label, onClick, title }: { className?: string; disabled?: boolean; label: string; onClick?(): void; title?: string }) {
+    const ref = useRef<MaterialElement>(null);
     const activating = useRef(false);
-    const activate = (event: ReactMouseEvent<MaterialElement>) => {
+    const activate = (element: MaterialElement) => {
         if (disabled || onClick === undefined || activating.current) return;
-        const menu = event.currentTarget.closest("md-menu") as MaterialElement | null;
+        const menu = element.closest("md-menu") as MaterialElement | null;
         if (menu === null) {
             onClick();
             return;
         }
+        if (!menu.open) return;
         activating.current = true;
-        menu.addEventListener("closed", () => { activating.current = false; onClick(); }, { once: true });
+        menu.addEventListener("closed", () => {
+            activating.current = false;
+            if (element.isConnected && !element.disabled) onClick();
+        }, { once: true });
         menu.close?.();
     };
+    useEffect(() => {
+        const element = ref.current;
+        if (element === null) return;
+        const select = (event: Event) => {
+            const detail = (event as CustomEvent<{ initiator?: EventTarget; reason?: { kind?: string; key?: string } }>).detail;
+            if (detail?.initiator !== element) return;
+            const reason = detail.reason;
+            if (reason?.kind === "click-selection" || (reason?.kind === "keydown" && (reason.key === "Enter" || reason.key === "Space"))) activate(element);
+        };
+        // Material prevents the native Enter/Space click and publishes this event instead.
+        element.addEventListener("close-menu", select);
+        return () => element.removeEventListener("close-menu", select);
+    }, [disabled, onClick]);
     return createElement(materialElements.menuItem, {
         "aria-disabled": disabled ? "true" : undefined,
         className,
         disabled,
-        onClick: activate,
+        onClick: (event: ReactMouseEvent<MaterialElement>) => activate(event.currentTarget),
+        ref,
         title,
         type: "button"
     } as MaterialProps, label);
@@ -472,6 +498,18 @@ export function Select({
     value
 }: SelectProps) {
     const reduce = useSyncExternalStore(subscribeMotion, reducedMotion);
+    const ref = useRef<MaterialElement>(null);
+    const selectedLabel = options.find((option) => option.value === value)?.label;
+    useEffect(() => {
+        const element = ref.current;
+        if (element === null) return;
+        let active = true;
+        // Option text changes do not invalidate Material's selected-text cache.
+        void Promise.resolve(element.updateComplete).then(() => {
+            if (active) element.select?.(value);
+        });
+        return () => { active = false; };
+    }, [selectedLabel, value]);
     return createElement(
         materialElements.select.filled,
         {
@@ -484,6 +522,7 @@ export function Select({
             label: "",
             onChange: (event: FormEvent<MaterialElement>) => onChange?.(event.currentTarget.value as string),
             quick: quick || reduce,
+            ref,
             required,
             supportingText,
             value
@@ -548,18 +587,42 @@ export function Checkbox({ checked, disabled, label, onChange }: { checked: bool
     );
 }
 
-export function Dialog({ children, onClose, open, title, wide = false, dismissible = true }: { children: ReactNode; onClose(): void; open: boolean; title: string; wide?: boolean; dismissible?: boolean }) {
+export function Dialog({ children, onClose, open, title, wide = false, dismissible = true, returnFocus, returnFocusReady = true }: { children: ReactNode; onClose(): void; open: boolean; title: string; wide?: boolean; dismissible?: boolean; returnFocus?: DialogOrigin; returnFocusReady?: boolean }) {
     const quick = useSyncExternalStore(subscribeMotion, reducedMotion);
     const ref = useRef<MaterialElement>(null);
+    const [restoreFocus, setRestoreFocus] = useState(false);
     useEffect(() => {
         const element = ref.current;
         if (element === null) return;
-        const close = () => onClose();
+        const close = () => {
+            if (returnFocus !== undefined) setRestoreFocus(true);
+            onClose();
+        };
         const cancel = (event: Event) => { if (!dismissible) event.preventDefault(); };
         element.addEventListener("closed", close);
         element.addEventListener("cancel", cancel);
         return () => { element.removeEventListener("closed", close); element.removeEventListener("cancel", cancel); };
-    }, [onClose, dismissible]);
+    }, [onClose, dismissible, returnFocus]);
+    useEffect(() => {
+        if (open) {
+            if (restoreFocus) setRestoreFocus(false);
+            return;
+        }
+        if (!restoreFocus || !returnFocusReady) return;
+        const target = returnFocus?.current as MaterialElement | null | undefined;
+        if (target == null) {
+            setRestoreFocus(false);
+            return;
+        }
+        let active = true;
+        // Owner state and Material's native button must both finish enabling first.
+        void Promise.resolve(target.updateComplete).then(() => {
+            if (!active) return;
+            if (target.isConnected && !target.disabled) target.focus();
+            setRestoreFocus(false);
+        });
+        return () => { active = false; };
+    }, [open, restoreFocus, returnFocus, returnFocusReady]);
     return createPortal(
         createElement(
             materialElements.dialog,

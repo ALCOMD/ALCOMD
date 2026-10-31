@@ -33,14 +33,13 @@ async fn template_builtin_create_project_round_trips_over_rpc() {
     let (ipc, config) = isolated_ipc(runtime);
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(
-            ipc,
-            DataConfig::isolated(data),
-            wait_for_shutdown(server_shutdown),
-        )
-        .await
-    });
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(data),
+        wait_for_shutdown(server_shutdown),
+    )
+    .await
+    .expect("start owned test daemon");
     let mut client = connect_with_retry(config).await;
     let capabilities = client.system_status().await.expect("status").capabilities;
     for capability in [
@@ -150,14 +149,13 @@ fn subprocess_runs_template_create_until_killed() {
         let (ipc, config) = isolated_ipc(runtime_root);
         let shutdown = Arc::new(AtomicBool::new(false));
         let server_shutdown = Arc::clone(&shutdown);
-        let _daemon = tokio::spawn(async move {
-            alcomd_daemon::serve_with_data_until(
-                ipc,
-                DataConfig::isolated(data),
-                wait_for_shutdown(server_shutdown),
-            )
-            .await
-        });
+        let _daemon = alcomd_daemon::test_support::start_with_data_until(
+            ipc,
+            DataConfig::isolated(data),
+            wait_for_shutdown(server_shutdown),
+        )
+        .await
+        .expect("start owned test daemon");
         let mut client = connect_with_retry(config).await;
         let templates = client
             .templates_list(TemplatesListParams {
@@ -281,14 +279,13 @@ async fn run_kill_restart_case(checkpoint: &str) {
     let (ipc, config) = isolated_ipc(runtime);
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(
-            ipc,
-            DataConfig::isolated(data),
-            wait_for_shutdown(server_shutdown),
-        )
-        .await
-    });
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(data),
+        wait_for_shutdown(server_shutdown),
+    )
+    .await
+    .expect("start owned test daemon");
     let mut client = connect_with_retry(config).await;
     let operation = wait_for_operation(&mut client, &signal.operation_id).await;
     assert_eq!(

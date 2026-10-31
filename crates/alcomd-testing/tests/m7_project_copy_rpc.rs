@@ -10,8 +10,8 @@ use std::time::{Duration, Instant};
 use alcomd_application::{
     AccessContext, IdempotencyKey, M3RegistryStore, M5BackupError, M5BackupWriterGate,
     M7CopyAdapter, M7CopyApplication, M7CopyErrorCode, M7CopyStore, ManifestState, PrincipalId,
-    ProjectId, ProjectObservation, ProjectType, ResourceLockCoordinator, UnityWriterState,
-    UnityWriterStateKind,
+    ProjectId, ProjectObservation, ProjectType, ResourceLockCoordinator, StateStore,
+    UnityWriterState, UnityWriterStateKind,
 };
 use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use alcomd_platform::{DataConfig, IpcConfig};
@@ -219,6 +219,80 @@ async fn project_copy_plan_expiry_and_all_writer_states_are_fail_closed() {
     assert_eq!(expired.code(), M7CopyErrorCode::ProjectCopyPlanStale);
 }
 
+#[tokio::test]
+async fn project_copy_apply_rechecks_confirmed_writer_without_publishing_or_accepting_operation() {
+    let trace = TestTrace::new("project-copy-apply-writer-recheck");
+    let fixture = TestDirectory::new(trace);
+    let source = fixture.path().join("SourceProject");
+    let destination = fixture.path().join("Copies");
+    create_project(&source);
+    fs::create_dir(&destination).expect("destination");
+    let store = StateStoreHandle::open(fixture.path().join("state.db")).expect("store");
+    let project = store
+        .register_project(
+            PrincipalId::local_owner(),
+            project_observation(&source),
+            key("copy-writer-recheck-register"),
+            1,
+        )
+        .await
+        .expect("register source")
+        .value;
+    let access = AccessContext::local_owner();
+    let locks = Arc::new(ResourceLockCoordinator::default());
+    let plan = M7CopyApplication::with_locks(
+        store.clone(),
+        ProjectCopyEngine,
+        FixedWriter(UnityWriterStateKind::NotObserved),
+        Arc::clone(&locks),
+    )
+    .plan_copy(
+        &access,
+        project.project_id,
+        project.revision,
+        destination.clone(),
+        "MustNotPublish".into(),
+        key("copy-writer-recheck-plan"),
+    )
+    .await
+    .expect("plan before writer starts")
+    .plan;
+    let before = store
+        .list_operations(PrincipalId::local_owner(), None, 100)
+        .await
+        .expect("operations before Apply");
+    assert!(before.operations.is_empty());
+    let rejected = M7CopyApplication::with_locks(
+        store.clone(),
+        ProjectCopyEngine,
+        FixedWriter(UnityWriterStateKind::RunningConfirmed),
+        locks,
+    )
+    .apply_copy(
+        &access,
+        plan.draft.plan_id,
+        project.revision,
+        key("copy-writer-recheck-apply"),
+    )
+    .await
+    .expect_err("fresh confirmed writer blocks Apply");
+    assert_eq!(rejected.code(), M7CopyErrorCode::UnityProjectRunning);
+    assert!(
+        store
+            .list_operations(PrincipalId::local_owner(), None, 100)
+            .await
+            .expect("operations after rejection")
+            .operations
+            .is_empty()
+    );
+    assert!(
+        fs::read_dir(&destination)
+            .expect("destination after rejection")
+            .next()
+            .is_none()
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn project_copy_plan_apply_registers_an_exact_independent_copy() {
     let trace = TestTrace::new("project-copy-plan-apply");
@@ -234,7 +308,7 @@ async fn project_copy_plan_apply_registers_an_exact_independent_copy() {
     create_project(&source);
 
     let (ipc, config) = isolated_ipc(runtime);
-    let mut daemon = spawn_test_daemon(ipc, DataConfig::isolated(data), trace);
+    let mut daemon = spawn_test_daemon(ipc, DataConfig::isolated(data), trace).await;
     let mut client = connect_client(config, trace).await;
     let registered = await_rpc(
         trace,
@@ -249,6 +323,34 @@ async fn project_copy_plan_apply_registers_an_exact_independent_copy() {
     let source_time = registered.project.last_modified_at_ms;
     assert!(source_time.is_some());
     let source_id = registered.project.project_id.expect("source ID");
+    let writer = await_rpc(
+        trace,
+        "unity-writer-oracle-rpc",
+        client.unity_writer_state(source_id.clone()),
+    )
+    .await
+    .expect("observe real writer evidence independently of Copy");
+    assert_eq!(writer.project_id, source_id);
+    assert!(writer.checked_at_ms > 0);
+    let expected_writer_state = match writer.state {
+        alcomd_protocol::UnityWriterStateKind::NotObserved => {
+            assert!(writer.evidence.is_empty());
+            "not_observed"
+        }
+        alcomd_protocol::UnityWriterStateKind::RunningSuspected => {
+            assert!(writer.evidence.iter().any(|evidence| evidence.kind
+                == alcomd_protocol::UnityWriterEvidenceKind::ProcessUnreadable));
+            "running_suspected"
+        }
+        alcomd_protocol::UnityWriterStateKind::Unknown => {
+            assert!(writer.evidence.iter().any(|evidence| evidence.kind
+                == alcomd_protocol::UnityWriterEvidenceKind::InspectionError));
+            "unknown"
+        }
+        alcomd_protocol::UnityWriterStateKind::RunningConfirmed => panic!(
+            "fresh fixture has no registered Unity installation capable of confirming its writer"
+        ),
+    };
     let plan = await_rpc(
         trace,
         "project-copy-plan-rpc",
@@ -263,7 +365,8 @@ async fn project_copy_plan_apply_registers_an_exact_independent_copy() {
     .await
     .expect("plan copy");
     assert_eq!(plan.plan.profile.version, 1);
-    assert_eq!(plan.plan.writer_evidence.state, "not_observed");
+    assert_eq!(plan.plan.writer_evidence.state, expected_writer_state);
+    assert!(plan.plan.writer_evidence.observed_at_ms > 0);
     let accepted = await_rpc(
         trace,
         "project-copy-apply-rpc",
@@ -356,14 +459,15 @@ async fn test_daemon_guard_drop_releases_endpoint_for_the_next_daemon() {
     fs::create_dir(&data).expect("data");
 
     let (first_ipc, first_config) = isolated_ipc(runtime.clone());
-    let first_daemon = spawn_test_daemon(first_ipc, DataConfig::isolated(data.clone()), trace);
+    let first_daemon =
+        spawn_test_daemon(first_ipc, DataConfig::isolated(data.clone()), trace).await;
     let first_client = connect_client(first_config, trace).await;
     drop(first_client);
     trace.stage("daemon-guard-fallback-triggered");
     drop(first_daemon);
 
     let (second_ipc, second_config) = isolated_ipc(runtime);
-    let mut second_daemon = spawn_test_daemon(second_ipc, DataConfig::isolated(data), trace);
+    let mut second_daemon = spawn_test_daemon(second_ipc, DataConfig::isolated(data), trace).await;
     let second_client = connect_client(second_config, trace).await;
     drop(second_client);
     second_daemon.shutdown().await;
@@ -384,7 +488,7 @@ async fn concurrent_copy_plans_for_the_same_target_publish_exactly_once() {
     create_project(&source);
 
     let (ipc, config) = isolated_ipc(runtime);
-    let mut daemon = spawn_test_daemon(ipc, DataConfig::isolated(data), trace);
+    let mut daemon = spawn_test_daemon(ipc, DataConfig::isolated(data), trace).await;
     let mut first = connect_client(config.clone(), trace).await;
     let mut second = connect_client(config, trace).await;
     let registered = await_rpc(
@@ -573,7 +677,7 @@ async fn project_copy_preserves_externally_modified_published_target_for_manual_
 
     let (ipc, config) = isolated_ipc(fixture.path().join("runtime"));
     let data = fixture.path().join("data");
-    let mut daemon = spawn_test_daemon(ipc, DataConfig::isolated(data), trace);
+    let mut daemon = spawn_test_daemon(ipc, DataConfig::isolated(data), trace).await;
     let mut client = connect_client(config, trace).await;
     let operation = wait_for_recovery_required(&mut client, &signal.operation_id, trace).await;
     assert_eq!(operation.state, alcomd_protocol::OperationState::Recovering);
@@ -626,14 +730,13 @@ fn subprocess_runs_project_copy_until_parent_kills_it() {
         let shutdown = Arc::new(AtomicBool::new(false));
         let server_shutdown = Arc::clone(&shutdown);
         let data = fixture.join("data");
-        let _daemon = tokio::spawn(async move {
-            alcomd_daemon::serve_with_data_until(
-                ipc,
-                DataConfig::isolated(data),
-                wait_for_shutdown(server_shutdown),
-            )
-            .await
-        });
+        let _daemon = alcomd_daemon::test_support::start_with_data_until(
+            ipc,
+            DataConfig::isolated(data),
+            wait_for_shutdown(server_shutdown),
+        )
+        .await
+        .expect("initialize owned test daemon before connecting");
         trace.stage("daemon-task-spawned");
         let mut client = connect_client(config, trace).await;
         let registered = await_rpc(
@@ -724,7 +827,7 @@ async fn run_kill_restart_case(checkpoint: &str, trace: TestTrace) {
 
     let (ipc, config) = isolated_ipc(fixture.path().join("runtime"));
     let data = fixture.path().join("data");
-    let mut daemon = spawn_test_daemon(ipc, DataConfig::isolated(data), trace);
+    let mut daemon = spawn_test_daemon(ipc, DataConfig::isolated(data), trace).await;
     let mut client = connect_client(config, trace).await;
     let replay = await_rpc(
         trace,
@@ -950,7 +1053,7 @@ fn wait_for_file(
 
 struct TestDaemonGuard {
     shutdown: Arc<AtomicBool>,
-    daemon: Option<tokio::task::JoinHandle<Result<(), alcomd_platform::BindError>>>,
+    daemon: Option<alcomd_daemon::test_support::TestDaemon>,
     trace: TestTrace,
     completed: bool,
 }
@@ -958,7 +1061,7 @@ struct TestDaemonGuard {
 impl TestDaemonGuard {
     fn new(
         shutdown: Arc<AtomicBool>,
-        daemon: tokio::task::JoinHandle<Result<(), alcomd_platform::BindError>>,
+        daemon: alcomd_daemon::test_support::TestDaemon,
         trace: TestTrace,
     ) -> Self {
         Self {
@@ -1198,13 +1301,17 @@ async fn connect_client(config: ClientConfig, trace: TestTrace) -> AlcomdClient 
     }
 }
 
-fn spawn_test_daemon(ipc: IpcConfig, data: DataConfig, trace: TestTrace) -> TestDaemonGuard {
+async fn spawn_test_daemon(ipc: IpcConfig, data: DataConfig, trace: TestTrace) -> TestDaemonGuard {
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(ipc, data, wait_for_shutdown(server_shutdown)).await
-    });
-    trace.stage("daemon-task-spawned");
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        data,
+        wait_for_shutdown(server_shutdown),
+    )
+    .await
+    .expect("initialize owned test daemon before connecting");
+    trace.stage("daemon-ready");
     TestDaemonGuard::new(shutdown, daemon, trace)
 }
 

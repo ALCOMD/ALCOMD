@@ -260,7 +260,7 @@ test("Settings follows supported v3 group order while Logs retains its two real 
     await navigationItem(page, "Settings").click();
     await expectHeading(page, "Settings");
     await expect(page.getByRole("navigation", { name: "Settings sections" })).toHaveCount(0);
-    await expect(page.locator(".settings-section-heading h2")).toHaveText(["Unity installations", "Packages", "Appearance", "System information"]);
+    await expect(page.locator(".settings-section-heading h2")).toHaveText(["Unity Hub Path", "Unity installations", "Packages", "Appearance", "System information"]);
     await expect(page.getByRole("region", { name: "Appearance", exact: true }).getByRole("button", { name: "Theme", exact: true })).toBeVisible();
     await expect(page.getByRole("table", { name: "Unity installations" }).getByRole("columnheader")).toHaveText(["Version", "Path", "Source"]);
     await page.getByRole("button", { name: "Manage installations", exact: true }).click();

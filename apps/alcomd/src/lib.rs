@@ -4,7 +4,6 @@ use std::collections::HashSet;
 use std::future::Future;
 use std::io;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use alcomd_application::{
     AccessContext, Application, ApplicationError, EventRecord as ApplicationEvent, IdempotencyKey,
@@ -48,7 +47,8 @@ mod m7_rpc;
 mod m7_unity_migration_rpc;
 mod m7_user_packages_rpc;
 
-static TEST_DATA_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+#[cfg(feature = "test-kill-gates")]
+pub mod test_support;
 
 type M2Application = Application<StateStoreHandle>;
 type M3ReadApplication = M3Application<StateStoreHandle, alcomd_vpm::VpmReader>;
@@ -103,30 +103,6 @@ struct Applications {
     unity_migration: UnityMigrationApplication,
 }
 
-/// Runs the daemon with an ephemeral isolated data directory.
-///
-/// This compatibility entry point exists for M1 integration tests. Production
-/// callers must use [`serve_with_data_until`] with the formal platform config.
-pub async fn serve_until<F>(ipc: IpcConfig, shutdown: F) -> Result<(), BindError>
-where
-    F: Future<Output = ()>,
-{
-    let sequence = TEST_DATA_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    let directory = std::env::temp_dir().join(format!(
-        "alcomd-daemon-test-{}-{sequence}",
-        std::process::id()
-    ));
-    let result =
-        serve_with_data_until(ipc, DataConfig::isolated(directory.clone()), shutdown).await;
-    for _ in 0..20 {
-        if std::fs::remove_dir_all(&directory).is_ok() || !directory.exists() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    result
-}
-
 /// Initializes the authoritative store, recovers Operations, then binds IPC.
 pub async fn serve_with_data_until<F>(
     ipc: IpcConfig,
@@ -136,6 +112,16 @@ pub async fn serve_with_data_until<F>(
 where
     F: Future<Output = ()>,
 {
+    let (mut listener, applications) = initialize_daemon(ipc, data).await?;
+    run_listener(&mut listener, applications, shutdown)
+        .await
+        .map_err(BindError::Io)
+}
+
+async fn initialize_daemon(
+    ipc: IpcConfig,
+    data: DataConfig,
+) -> Result<(IpcListener, Arc<Applications>), BindError> {
     let instance = DaemonInstance::acquire(&ipc)?;
     let database = alcomd_platform::state_database_path(&data)?;
     let data_root = database
@@ -291,9 +277,7 @@ where
         unity_migration,
     });
     let listener = instance.bind()?;
-    run_listener(listener, applications, shutdown)
-        .await
-        .map_err(BindError::Io)
+    Ok((listener, applications))
 }
 
 fn current_time_ms() -> Result<u64, BindError> {
@@ -305,7 +289,7 @@ fn current_time_ms() -> Result<u64, BindError> {
 }
 
 async fn run_listener<F>(
-    mut listener: IpcListener,
+    listener: &mut IpcListener,
     applications: Arc<Applications>,
     shutdown: F,
 ) -> io::Result<()>
@@ -511,7 +495,7 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
     result_capabilities.sort();
     let mut action = success_action(
         request.id,
-        HelloResult::m7_official_gui(result_capabilities),
+        HelloResult::m7_official_gui(result_capabilities, alcomd_store::CURRENT_DATA_SCHEMA),
         Some(capabilities),
     );
     action.client_instance_id = Some(client_instance_id);
@@ -998,4 +982,57 @@ async fn write_json_frame(stream: &mut IpcStream, value: &Value) -> io::Result<(
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     stream.write_all(&frame).await?;
     stream.flush().await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hello_dispatch_advertises_the_current_store_schema_and_negotiated_capabilities() {
+        let state = ConnectionState {
+            connection_id: "schema-handshake-test".to_owned(),
+            client_instance_id: None,
+            handshake_complete: false,
+            capabilities: HashSet::new(),
+        };
+        let requested = [CAPABILITY_STATE_CHECK_V1, "unsupported.test-capability"];
+        let action = dispatch_hello(
+            RequestEnvelope {
+                id: "schema-handshake".to_owned(),
+                method: METHOD_SYSTEM_HELLO.to_owned(),
+                params: serde_json::json!({
+                    "rpcVersion": RPC_VERSION,
+                    "client": {
+                        "name": "schema-handshake-test",
+                        "version": "1.0.0",
+                        "instanceId": "schema-handshake-instance"
+                    },
+                    "capabilities": requested
+                }),
+            },
+            &state,
+        );
+        let response: SuccessResponse<HelloResult> =
+            serde_json::from_value(action.response).expect("successful typed hello response");
+        assert_eq!(response.id, "schema-handshake");
+        assert_eq!(
+            response.result.data_schema,
+            Some(alcomd_store::CURRENT_DATA_SCHEMA)
+        );
+        assert_eq!(
+            response.result.config_schema,
+            Some(alcomd_protocol::CONFIG_SCHEMA_VERSION)
+        );
+        assert_eq!(response.result.capabilities, [CAPABILITY_STATE_CHECK_V1]);
+        assert_eq!(
+            action.complete_handshake,
+            Some(HashSet::from([CAPABILITY_STATE_CHECK_V1.to_owned()]))
+        );
+        assert_eq!(
+            action.client_instance_id.as_deref(),
+            Some("schema-handshake-instance")
+        );
+        assert!(!action.close_after_response);
+    }
 }

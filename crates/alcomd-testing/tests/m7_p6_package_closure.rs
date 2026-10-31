@@ -1,3 +1,8 @@
+use alcomd_protocol::{
+    PackageBulkIntent, PackagePlanBulkParams, PackagePlanReinstallParams,
+    PackageReinstallSelection, PackageReinstallSource, PackageSourceSelector,
+};
+use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
 const CONTRACT: &str =
@@ -9,6 +14,56 @@ const STATE: &str =
 
 fn document(text: &str) -> Value {
     serde_json::from_str(text).expect("valid contract JSON")
+}
+
+fn assert_wire_shape<T: DeserializeOwned + Serialize>(case: &Value) {
+    let value = case["value"].clone();
+    let decoded = serde_json::from_value::<T>(value.clone());
+    if case["valid"] == true {
+        let decoded = decoded.unwrap_or_else(|error| panic!("{}: {error}", case["id"]));
+        assert_eq!(
+            serde_json::to_value(decoded).expect("wire encoding"),
+            case.get("serialized").unwrap_or(&value).clone(),
+            "{}",
+            case["id"]
+        );
+    } else {
+        assert!(decoded.is_err(), "{} accepted an invalid shape", case["id"]);
+    }
+}
+
+#[test]
+fn p6_approved_wire_shapes_use_camel_case_through_production_dtos() {
+    let vectors = document(VECTORS);
+    let cases = vectors["shapeCases"].as_array().expect("P6 shape cases");
+    for definition in [
+        "sourceSelector",
+        "reinstallSelection",
+        "reinstallSource",
+        "planReinstallParams",
+        "bulkIntent",
+        "planBulkParams",
+    ] {
+        for valid in [true, false] {
+            assert!(
+                cases
+                    .iter()
+                    .any(|case| case["definition"] == definition && case["valid"] == valid),
+                "missing {definition} shape with valid={valid}"
+            );
+        }
+    }
+    for case in cases {
+        match case["definition"].as_str().expect("definition") {
+            "sourceSelector" => assert_wire_shape::<PackageSourceSelector>(case),
+            "reinstallSelection" => assert_wire_shape::<PackageReinstallSelection>(case),
+            "reinstallSource" => assert_wire_shape::<PackageReinstallSource>(case),
+            "planReinstallParams" => assert_wire_shape::<PackagePlanReinstallParams>(case),
+            "bulkIntent" => assert_wire_shape::<PackageBulkIntent>(case),
+            "planBulkParams" => assert_wire_shape::<PackagePlanBulkParams>(case),
+            other => panic!("unexpected definition {other}"),
+        }
+    }
 }
 
 #[test]

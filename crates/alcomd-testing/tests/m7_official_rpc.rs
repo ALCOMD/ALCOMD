@@ -27,20 +27,14 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
     let shutdown = Arc::new(AtomicBool::new(false));
     let daemon_shutdown = Arc::clone(&shutdown);
     let daemon_data = data.clone();
-    let mut daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_with_data_until(
-            ipc,
-            DataConfig::isolated(daemon_data),
-            wait_for_shutdown(daemon_shutdown),
-        )
-        .await
-    });
-    let connect = connect_with_retry(config);
-    tokio::pin!(connect);
-    let mut client = tokio::select! {
-        client = &mut connect => client,
-        result = &mut daemon => panic!("daemon stopped before bind: {result:?}"),
-    };
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(daemon_data),
+        wait_for_shutdown(daemon_shutdown),
+    )
+    .await
+    .expect("start owned test daemon");
+    let mut client = connect_with_retry(config).await;
 
     let defaults = client.settings_get().await.expect("read default settings");
     assert_eq!(defaults.config_schema, 3);

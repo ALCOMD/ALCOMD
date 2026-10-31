@@ -89,6 +89,60 @@ test("Showing prereleases requires confirmation and only updates package visibil
     await expect(page.getByRole("dialog", { name: "Apply package changes?" })).toHaveCount(0);
 });
 
+test("Package filter selects disable during saving and recover after prerelease confirmation", async ({ page }) => {
+    await openHarness(page, "package-multiple&theme-save=hold");
+    await page.getByRole("button", { name: "Filter packages", exact: true }).click();
+    const panel = page.getByRole("dialog", { name: "Package filters", exact: true });
+    const prerelease = panel.getByRole("checkbox", { name: "Show prerelease versions", exact: true });
+    const status = panel.getByRole("combobox", { name: "Status", exact: true });
+    const source = panel.getByRole("combobox", { name: "Source", exact: true });
+    const statusHost = panel.locator("md-filled-select").filter({ has: page.getByRole("combobox", { name: "Status", exact: true }) });
+    const sourceHost = panel.locator("md-filled-select").filter({ has: page.getByRole("combobox", { name: "Source", exact: true }) });
+    await expect(statusHost).toHaveJSProperty("disabled", false);
+    await expect(sourceHost).toHaveJSProperty("disabled", false);
+    await prerelease.click();
+    const confirmation = page.getByRole("dialog", { name: "Show prerelease versions?", exact: true });
+    await expect(confirmation).toBeVisible();
+    await page.locator("md-dialog").filter({ hasText: "Show prerelease versions?" }).getByRole("button", { name: "Show prerelease versions", exact: true }).click();
+    await expect(confirmation).toBeHidden();
+    await expect(panel).toBeVisible();
+    await expect(panel.locator("fieldset[disabled]")).toHaveCount(2);
+    await expect(prerelease).toBeDisabled();
+    await expect(statusHost).toHaveJSProperty("disabled", true);
+    await expect(sourceHost).toHaveJSProperty("disabled", true);
+    await expect(status).toHaveAttribute("aria-expanded", "false");
+    await expect(source).toHaveAttribute("aria-expanded", "false");
+    expect(await page.evaluate(() => window.settingsRequests)).toMatchObject([{ update: { packages: { showPrerelease: true } } }]);
+    expect(await page.evaluate(() => window.settingsWrites)).toEqual([]);
+
+    await page.evaluate(() => window.dispatchEvent(new Event("test-theme-save-ready")));
+    await expect(prerelease).toBeChecked();
+    await expect(prerelease).toBeEnabled();
+    await expect(panel.locator("fieldset[disabled]")).toHaveCount(0);
+    await expect(statusHost).toHaveJSProperty("disabled", false);
+    await expect(sourceHost).toHaveJSProperty("disabled", false);
+
+    for (const [control, label] of [["Source", "Remote"], ["Status", "Installed"]]) {
+        const select = panel.locator("md-filled-select").filter({ has: page.getByRole("combobox", { name: control, exact: true }) });
+        const lifecycle = await select.evaluateHandle((element) => ({
+            opened: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })),
+            closed: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true }))
+        }));
+        await select.getByRole("combobox").click();
+        await lifecycle.evaluate((events) => events.opened);
+        await select.getByRole("option", { name: label, exact: true }).click();
+        await lifecycle.evaluate((events) => events.closed);
+        await lifecycle.dispose();
+        await expect(packageName(page, "Avatar tools")).toBeVisible();
+        await expect(packageName(page, "Local tools")).toHaveCount(0);
+        if (control === "Source") await expect(packageName(page, "Remote tools")).toBeVisible();
+        else await expect(packageName(page, "Remote tools")).toHaveCount(0);
+    }
+    expect(await page.evaluate(() => window.settingsRequests)).toHaveLength(1);
+    expect(await page.evaluate(() => window.settingsWrites)).toEqual([{ expectedRevision: 7, revision: 8 }]);
+    expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+});
+
 function packageName(page: Page, name: string) {
     return page.getByRole("table", { name: "Packages" }).getByText(name, { exact: true });
 }

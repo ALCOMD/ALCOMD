@@ -57,6 +57,51 @@ const englishRoutes: RouteExpectation[] = [
     { path: "/about", title: "About", role: "heading", control: "Licenses" }
 ];
 
+test("Shared Select refreshes translated selected text without changing value, focus or settings", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=%2Fsettings&theme-save=hold");
+    const motion = page.locator("#settings-motion");
+    await expect(motion).toHaveJSProperty("value", "system");
+    await expect(motion.getByRole("combobox")).toContainText("System");
+    const observed = await motion.evaluateHandle((element) => {
+        const events: string[] = [];
+        element.addEventListener("input", () => events.push("input"));
+        element.addEventListener("change", () => events.push("change"));
+        return { element, events };
+    });
+    for (const [index, language] of [
+        { name: "简体中文", locale: "zh-CN", selected: "跟随系统", options: ["跟随系统", "启用动画", "关闭动画"] },
+        { name: "English", locale: "en-US", selected: "System", options: ["System", "Enable animations", "Disable animations"] }
+    ].entries()) {
+        const locale = page.locator("#settings-locale");
+        const lifecycle = await locale.evaluateHandle((element) => ({
+            opened: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })),
+            closed: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true }))
+        }));
+        await locale.getByRole("combobox").click();
+        await lifecycle.evaluate((events) => events.opened);
+        await page.getByRole("option", { name: language.name, exact: true }).click();
+        await lifecycle.evaluate((events) => events.closed);
+        await lifecycle.dispose();
+        await expect.poll(() => page.evaluate(() => window.settingsRequests.length)).toBe(index + 1);
+        await motion.getByRole("combobox").focus();
+        await expect(motion.getByRole("combobox")).toBeFocused();
+        await page.evaluate(() => window.dispatchEvent(new Event("test-theme-save-ready")));
+        await expect(page.locator("html")).toHaveAttribute("lang", language.locale);
+        await expect(motion.locator("md-select-option")).toHaveText(language.options);
+        await expect(motion.getByRole("combobox")).toContainText(language.selected);
+        await expect(motion.getByRole("combobox")).toBeFocused();
+        await expect(motion).toHaveJSProperty("value", "system");
+        await expect(motion).toHaveJSProperty("disabled", false);
+        expect(await motion.evaluate((element, state) => element === state.element, observed)).toBe(true);
+        expect(await observed.evaluate((state) => state.events)).toEqual([]);
+        expect(await page.evaluate(() => window.settingsWrites)).toHaveLength(index + 1);
+    }
+    await observed.dispose();
+    expect(await page.evaluate(() => window.settingsRequests.map((request) => request.update))).toEqual([{ locale: "zh-CN" }, { locale: "en-US" }]);
+    expect(await page.evaluate(() => window.settingsWrites)).toEqual([{ expectedRevision: 7, revision: 8 }, { expectedRevision: 8, revision: 9 }]);
+    expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+});
+
 for (const language of languages) {
     test(`${language.locale} covers the existing utility routes and switches back to English without translating external data`, async ({ page }) => {
         test.setTimeout(60_000);
@@ -99,8 +144,19 @@ for (const language of languages) {
 }
 
 async function saveLanguage(page: Page, name: string, locale: string) {
-    await page.locator("#settings-locale").getByRole("combobox").click();
-    await page.getByRole("option", { name, exact: true }).click();
+    const select = page.locator("#settings-locale");
+    const lifecycle = await select.evaluateHandle((element) => ({
+        opened: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })),
+        closed: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true }))
+    }));
+    try {
+        await select.getByRole("combobox").click();
+        await lifecycle.evaluate((events) => events.opened);
+        await page.getByRole("option", { name, exact: true }).click();
+        await lifecycle.evaluate((events) => events.closed);
+    } finally {
+        await lifecycle.dispose();
+    }
     await expect(page.locator("html")).toHaveAttribute("lang", locale);
 }
 

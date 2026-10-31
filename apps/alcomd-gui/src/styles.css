@@ -307,6 +307,8 @@ md-linear-progress {
     padding: 10px 12px;
     overflow: hidden;
     text-overflow: ellipsis;
+    /* A unitless default also gives stacked secondary text a stable CJK line box. */
+    line-height: var(--md-sys-typescale-body-large-line-height, 1.5);
     vertical-align: middle;
     overflow-wrap: normal;
     white-space: nowrap;

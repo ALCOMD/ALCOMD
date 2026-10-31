@@ -111,7 +111,7 @@ candidate; do not call Plan simply to rediscover this blocker.
 
 `PackageCandidateSummary`: packageId, `direct` boolean, `installed`, `providers`,
 `latest`, `latestStable`, `projectLatest`, `projectLatestStable`, `update`, `stableUpdate`.
-`providers` is a bounded array of `{source: existing PackageSourceSelector, sourceRevision}`,
+`providers` is a bounded array of `{source: CandidateSource, sourceRevision}`,
 unique by source identity and sorted by source kind/ID bytes. It contains **all visible recorded
 providers for this package**, including non-winning/unknown candidates, before any per-row explicit
 source override; confirmed hidden settings still exclude providers. Maximum4096 under the existing
@@ -120,6 +120,11 @@ repository registration metadata to preserve Local/Remote/User source filtering.
 cannot establish complete source membership; draining all version pages is forbidden. This narrow
 summary evidence completion was identified during implementation, remains inside the approved single
 query/source-evidence scope and adds no method/capability/error/permission/quota expansion.
+
+The public `CandidateSource` DTO preserves the frozen snake_case fields above independently of
+P6's camelCase mutation selector. The two public representations share the existing internal source
+model, not a serialized public DTO; separating their Rust types does not change this query's wire,
+Schema, vectors, authority or quotas.
 
 Installed is `{kind:"absent"}`, `{kind:"locked",version}`, or
 `{kind:"unknown",reason:"installed_evidence_unknown"}`. Never infer a locked version from

@@ -14,9 +14,9 @@ async fn cli_reports_human_and_json_status_over_real_ipc() {
     let (ipc, client, runtime) = isolated_configuration();
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_until(ipc, wait_for_shutdown(server_shutdown)).await
-    });
+    let daemon = alcomd_daemon::test_support::start_until(ipc, wait_for_shutdown(server_shutdown))
+        .await
+        .expect("start owned test daemon");
     wait_until_ready(client).await;
 
     let human_runtime = runtime.clone();

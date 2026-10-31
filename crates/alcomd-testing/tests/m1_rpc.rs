@@ -29,9 +29,10 @@ async fn real_daemon_client_and_single_instance_contract() {
     let server_config = ipc.clone();
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_until(server_config, wait_for_shutdown(server_shutdown)).await
-    });
+    let daemon =
+        alcomd_daemon::test_support::start_until(server_config, wait_for_shutdown(server_shutdown))
+            .await
+            .expect("start owned test daemon");
 
     let mut client = connect_with_retry(client_config.clone()).await;
     let status = client.system_status().await.expect("query system status");
@@ -67,9 +68,10 @@ async fn wire_errors_are_structured_but_framing_errors_close() {
     let server_config = ipc.clone();
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_until(server_config, wait_for_shutdown(server_shutdown)).await
-    });
+    let daemon =
+        alcomd_daemon::test_support::start_until(server_config, wait_for_shutdown(server_shutdown))
+            .await
+            .expect("start owned test daemon");
 
     let mut stream = connect_raw_with_retry(&ipc).await;
     let request = RequestEnvelope {
@@ -107,10 +109,7 @@ async fn wait_for_shutdown(shutdown: Arc<AtomicBool>) {
     }
 }
 
-async fn stop_daemon(
-    shutdown: Arc<AtomicBool>,
-    daemon: tokio::task::JoinHandle<Result<(), BindError>>,
-) {
+async fn stop_daemon(shutdown: Arc<AtomicBool>, daemon: alcomd_daemon::test_support::TestDaemon) {
     shutdown.store(true, Ordering::Release);
     let result = tokio::time::timeout(Duration::from_secs(2), daemon)
         .await

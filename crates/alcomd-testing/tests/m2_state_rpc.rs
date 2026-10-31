@@ -20,9 +20,10 @@ async fn m2_state_check_round_trips_through_real_ipc_and_durable_store() {
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
     let server_ipc = ipc.clone();
-    let daemon = tokio::spawn(async move {
-        alcomd_daemon::serve_until(server_ipc, wait_for_shutdown(server_shutdown)).await
-    });
+    let daemon =
+        alcomd_daemon::test_support::start_until(server_ipc, wait_for_shutdown(server_shutdown))
+            .await
+            .expect("start owned test daemon");
 
     let mut raw = connect_raw_with_retry(&ipc).await;
     write_request(

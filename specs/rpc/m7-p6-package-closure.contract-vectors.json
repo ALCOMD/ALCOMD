@@ -1,5 +1,678 @@
 {
     "status": "approved-contract-first",
+    "shapeCases": [
+        {
+            "id": "source-repository-camel-case",
+            "definition": "sourceSelector",
+            "valid": true,
+            "value": {
+                "kind": "repository",
+                "repositoryId": "11111111-1111-4111-8111-111111111111"
+            }
+        },
+        {
+            "id": "source-user-package-camel-case",
+            "definition": "sourceSelector",
+            "valid": true,
+            "value": {
+                "kind": "user_package",
+                "userPackageId": "22222222-2222-4222-8222-222222222222"
+            }
+        },
+        {
+            "id": "source-repository-snake-case-rejected",
+            "definition": "sourceSelector",
+            "valid": false,
+            "value": {
+                "kind": "repository",
+                "repository_id": "11111111-1111-4111-8111-111111111111"
+            }
+        },
+        {
+            "id": "source-repository-mixed-case-rejected",
+            "definition": "sourceSelector",
+            "valid": false,
+            "value": {
+                "kind": "repository",
+                "repositoryId": "11111111-1111-4111-8111-111111111111",
+                "repository_id": "11111111-1111-4111-8111-111111111111"
+            }
+        },
+        {
+            "id": "source-user-package-snake-case-rejected",
+            "definition": "sourceSelector",
+            "valid": false,
+            "value": {
+                "kind": "user_package",
+                "user_package_id": "22222222-2222-4222-8222-222222222222"
+            }
+        },
+        {
+            "id": "source-user-package-mixed-case-rejected",
+            "definition": "sourceSelector",
+            "valid": false,
+            "value": {
+                "kind": "user_package",
+                "userPackageId": "22222222-2222-4222-8222-222222222222",
+                "user_package_id": "22222222-2222-4222-8222-222222222222"
+            }
+        },
+        {
+            "id": "source-kind-remains-snake-case",
+            "definition": "sourceSelector",
+            "valid": false,
+            "value": {
+                "kind": "userPackage",
+                "userPackageId": "22222222-2222-4222-8222-222222222222"
+            }
+        },
+        {
+            "id": "reinstall-selection-packages-camel-case",
+            "definition": "reinstallSelection",
+            "valid": true,
+            "value": {
+                "kind": "packages",
+                "packageIds": [
+                    "com.example.alpha",
+                    "com.example.beta"
+                ]
+            }
+        },
+        {
+            "id": "reinstall-selection-all",
+            "definition": "reinstallSelection",
+            "valid": true,
+            "value": {
+                "kind": "all"
+            }
+        },
+        {
+            "id": "reinstall-selection-snake-case-rejected",
+            "definition": "reinstallSelection",
+            "valid": false,
+            "value": {
+                "kind": "packages",
+                "package_ids": [
+                    "com.example.alpha"
+                ]
+            }
+        },
+        {
+            "id": "reinstall-selection-mixed-case-rejected",
+            "definition": "reinstallSelection",
+            "valid": false,
+            "value": {
+                "kind": "packages",
+                "packageIds": [
+                    "com.example.alpha",
+                    "com.example.beta"
+                ],
+                "package_ids": [
+                    "com.example.alpha"
+                ]
+            }
+        },
+        {
+            "id": "reinstall-source-repository",
+            "definition": "reinstallSource",
+            "valid": true,
+            "value": {
+                "packageId": "com.example.alpha",
+                "source": {
+                    "kind": "repository",
+                    "repositoryId": "11111111-1111-4111-8111-111111111111"
+                }
+            }
+        },
+        {
+            "id": "reinstall-source-user-package",
+            "definition": "reinstallSource",
+            "valid": true,
+            "value": {
+                "packageId": "com.example.beta",
+                "source": {
+                    "kind": "user_package",
+                    "userPackageId": "22222222-2222-4222-8222-222222222222"
+                }
+            }
+        },
+        {
+            "id": "reinstall-source-package-id-snake-case-rejected",
+            "definition": "reinstallSource",
+            "valid": false,
+            "value": {
+                "package_id": "com.example.alpha",
+                "source": {
+                    "kind": "repository",
+                    "repositoryId": "11111111-1111-4111-8111-111111111111"
+                }
+            }
+        },
+        {
+            "id": "reinstall-source-nested-snake-case-rejected",
+            "definition": "reinstallSource",
+            "valid": false,
+            "value": {
+                "packageId": "com.example.alpha",
+                "source": {
+                    "kind": "repository",
+                    "repository_id": "11111111-1111-4111-8111-111111111111"
+                }
+            }
+        },
+        {
+            "id": "reinstall-params-nested-packages-and-both-sources",
+            "definition": "planReinstallParams",
+            "valid": true,
+            "value": {
+                "projectId": "00000000-0000-4000-8000-000000000001",
+                "expectedRevision": 7,
+                "selection": {
+                    "kind": "packages",
+                    "packageIds": [
+                        "com.example.alpha",
+                        "com.example.beta"
+                    ]
+                },
+                "sources": [
+                    {
+                        "packageId": "com.example.alpha",
+                        "source": {
+                            "kind": "repository",
+                            "repositoryId": "11111111-1111-4111-8111-111111111111"
+                        }
+                    },
+                    {
+                        "packageId": "com.example.beta",
+                        "source": {
+                            "kind": "user_package",
+                            "userPackageId": "22222222-2222-4222-8222-222222222222"
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "reinstall-params-all-defaults-empty-sources",
+            "definition": "planReinstallParams",
+            "valid": true,
+            "value": {
+                "projectId": "00000000-0000-4000-8000-000000000001",
+                "expectedRevision": 7,
+                "selection": {
+                    "kind": "all"
+                }
+            },
+            "serialized": {
+                "projectId": "00000000-0000-4000-8000-000000000001",
+                "expectedRevision": 7,
+                "selection": {
+                    "kind": "all"
+                },
+                "sources": []
+            }
+        },
+        {
+            "id": "reinstall-params-project-id-snake-case-rejected",
+            "definition": "planReinstallParams",
+            "valid": false,
+            "value": {
+                "project_id": "00000000-0000-4000-8000-000000000001",
+                "expectedRevision": 7,
+                "selection": {
+                    "kind": "all"
+                },
+                "sources": []
+            }
+        },
+        {
+            "id": "reinstall-params-nested-selection-snake-case-rejected",
+            "definition": "planReinstallParams",
+            "valid": false,
+            "value": {
+                "projectId": "00000000-0000-4000-8000-000000000001",
+                "expectedRevision": 7,
+                "selection": {
+                    "kind": "packages",
+                    "package_ids": [
+                        "com.example.alpha"
+                    ]
+                },
+                "sources": [
+                    {
+                        "packageId": "com.example.alpha",
+                        "source": {
+                            "kind": "repository",
+                            "repositoryId": "11111111-1111-4111-8111-111111111111"
+                        }
+                    },
+                    {
+                        "packageId": "com.example.beta",
+                        "source": {
+                            "kind": "user_package",
+                            "userPackageId": "22222222-2222-4222-8222-222222222222"
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "reinstall-params-nested-source-snake-case-rejected",
+            "definition": "planReinstallParams",
+            "valid": false,
+            "value": {
+                "projectId": "00000000-0000-4000-8000-000000000001",
+                "expectedRevision": 7,
+                "selection": {
+                    "kind": "packages",
+                    "packageIds": [
+                        "com.example.alpha",
+                        "com.example.beta"
+                    ]
+                },
+                "sources": [
+                    {
+                        "packageId": "com.example.beta",
+                        "source": {
+                            "kind": "user_package",
+                            "user_package_id": "22222222-2222-4222-8222-222222222222"
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "bulk-install-camel-case",
+            "definition": "bulkIntent",
+            "valid": true,
+            "value": {
+                "kind": "install",
+                "packageId": "com.example.alpha",
+                "versionRange": "^1.0.0",
+                "source": {
+                    "kind": "repository",
+                    "repositoryId": "11111111-1111-4111-8111-111111111111"
+                },
+                "includePrerelease": false
+            }
+        },
+        {
+            "id": "bulk-upgrade-camel-case",
+            "definition": "bulkIntent",
+            "valid": true,
+            "value": {
+                "kind": "upgrade",
+                "packageId": "com.example.beta",
+                "versionRange": "^2.0.0-beta.1",
+                "source": {
+                    "kind": "user_package",
+                    "userPackageId": "22222222-2222-4222-8222-222222222222"
+                },
+                "includePrerelease": true
+            }
+        },
+        {
+            "id": "bulk-remove-camel-case",
+            "definition": "bulkIntent",
+            "valid": true,
+            "value": {
+                "kind": "remove",
+                "packageId": "com.example.gamma"
+            }
+        },
+        {
+            "id": "bulk-reinstall-camel-case",
+            "definition": "bulkIntent",
+            "valid": true,
+            "value": {
+                "kind": "reinstall",
+                "packageId": "com.example.delta",
+                "source": {
+                    "kind": "repository",
+                    "repositoryId": "11111111-1111-4111-8111-111111111111"
+                }
+            }
+        },
+        {
+            "id": "bulk-install-omitted-options-remain-null-on-serialization",
+            "definition": "bulkIntent",
+            "valid": true,
+            "value": {
+                "kind": "install",
+                "packageId": "com.example.alpha",
+                "includePrerelease": false
+            },
+            "serialized": {
+                "kind": "install",
+                "packageId": "com.example.alpha",
+                "includePrerelease": false,
+                "versionRange": null,
+                "source": null
+            }
+        },
+        {
+            "id": "bulk-reinstall-omitted-source-remains-null-on-serialization",
+            "definition": "bulkIntent",
+            "valid": true,
+            "value": {
+                "kind": "reinstall",
+                "packageId": "com.example.delta"
+            },
+            "serialized": {
+                "kind": "reinstall",
+                "packageId": "com.example.delta",
+                "source": null
+            }
+        },
+        {
+            "id": "bulk-install-package_id-rejected",
+            "definition": "bulkIntent",
+            "valid": false,
+            "value": {
+                "kind": "install",
+                "versionRange": "^1.0.0",
+                "source": {
+                    "kind": "repository",
+                    "repositoryId": "11111111-1111-4111-8111-111111111111"
+                },
+                "includePrerelease": false,
+                "package_id": "com.example.alpha"
+            }
+        },
+        {
+            "id": "bulk-install-version_range-rejected",
+            "definition": "bulkIntent",
+            "valid": false,
+            "value": {
+                "kind": "install",
+                "packageId": "com.example.alpha",
+                "source": {
+                    "kind": "repository",
+                    "repositoryId": "11111111-1111-4111-8111-111111111111"
+                },
+                "includePrerelease": false,
+                "version_range": "^1.0.0"
+            }
+        },
+        {
+            "id": "bulk-install-include_prerelease-rejected",
+            "definition": "bulkIntent",
+            "valid": false,
+            "value": {
+                "kind": "install",
+                "packageId": "com.example.alpha",
+                "versionRange": "^1.0.0",
+                "source": {
+                    "kind": "repository",
+                    "repositoryId": "11111111-1111-4111-8111-111111111111"
+                },
+                "include_prerelease": false
+            }
+        },
+        {
+            "id": "bulk-install-mixed-case-rejected",
+            "definition": "bulkIntent",
+            "valid": false,
+            "value": {
+                "kind": "install",
+                "packageId": "com.example.alpha",
+                "versionRange": "^1.0.0",
+                "source": {
+                    "kind": "repository",
+                    "repositoryId": "11111111-1111-4111-8111-111111111111"
+                },
+                "includePrerelease": false,
+                "version_range": "^1.0.0"
+            }
+        },
+        {
+            "id": "bulk-upgrade-package_id-rejected",
+            "definition": "bulkIntent",
+            "valid": false,
+            "value": {
+                "kind": "upgrade",
+                "versionRange": "^2.0.0-beta.1",
+                "source": {
+                    "kind": "user_package",
+                    "userPackageId": "22222222-2222-4222-8222-222222222222"
+                },
+                "includePrerelease": true,
+                "package_id": "com.example.beta"
+            }
+        },
+        {
+            "id": "bulk-upgrade-version_range-rejected",
+            "definition": "bulkIntent",
+            "valid": false,
+            "value": {
+                "kind": "upgrade",
+                "packageId": "com.example.beta",
+                "source": {
+                    "kind": "user_package",
+                    "userPackageId": "22222222-2222-4222-8222-222222222222"
+                },
+                "includePrerelease": true,
+                "version_range": "^2.0.0-beta.1"
+            }
+        },
+        {
+            "id": "bulk-upgrade-include_prerelease-rejected",
+            "definition": "bulkIntent",
+            "valid": false,
+            "value": {
+                "kind": "upgrade",
+                "packageId": "com.example.beta",
+                "versionRange": "^2.0.0-beta.1",
+                "source": {
+                    "kind": "user_package",
+                    "userPackageId": "22222222-2222-4222-8222-222222222222"
+                },
+                "include_prerelease": true
+            }
+        },
+        {
+            "id": "bulk-upgrade-mixed-case-rejected",
+            "definition": "bulkIntent",
+            "valid": false,
+            "value": {
+                "kind": "upgrade",
+                "packageId": "com.example.beta",
+                "versionRange": "^2.0.0-beta.1",
+                "source": {
+                    "kind": "user_package",
+                    "userPackageId": "22222222-2222-4222-8222-222222222222"
+                },
+                "includePrerelease": true,
+                "version_range": "^2.0.0-beta.1"
+            }
+        },
+        {
+            "id": "bulk-remove-package-id-snake-case-rejected",
+            "definition": "bulkIntent",
+            "valid": false,
+            "value": {
+                "kind": "remove",
+                "package_id": "com.example.gamma"
+            }
+        },
+        {
+            "id": "bulk-reinstall-package-id-snake-case-rejected",
+            "definition": "bulkIntent",
+            "valid": false,
+            "value": {
+                "kind": "reinstall",
+                "package_id": "com.example.delta",
+                "source": {
+                    "kind": "repository",
+                    "repositoryId": "11111111-1111-4111-8111-111111111111"
+                }
+            }
+        },
+        {
+            "id": "bulk-install-nested-source-snake-case-rejected",
+            "definition": "bulkIntent",
+            "valid": false,
+            "value": {
+                "kind": "install",
+                "packageId": "com.example.alpha",
+                "versionRange": "^1.0.0",
+                "source": {
+                    "kind": "repository",
+                    "repository_id": "11111111-1111-4111-8111-111111111111"
+                },
+                "includePrerelease": false
+            }
+        },
+        {
+            "id": "bulk-reinstall-nested-source-snake-case-rejected",
+            "definition": "bulkIntent",
+            "valid": false,
+            "value": {
+                "kind": "reinstall",
+                "packageId": "com.example.delta",
+                "source": {
+                    "kind": "user_package",
+                    "user_package_id": "22222222-2222-4222-8222-222222222222"
+                }
+            }
+        },
+        {
+            "id": "bulk-install-include-prerelease-remains-required",
+            "definition": "bulkIntent",
+            "valid": false,
+            "value": {
+                "kind": "install",
+                "packageId": "com.example.alpha",
+                "versionRange": "^1.0.0",
+                "source": {
+                    "kind": "repository",
+                    "repositoryId": "11111111-1111-4111-8111-111111111111"
+                }
+            }
+        },
+        {
+            "id": "bulk-params-four-intents-and-both-sources",
+            "definition": "planBulkParams",
+            "valid": true,
+            "value": {
+                "projectId": "00000000-0000-4000-8000-000000000001",
+                "expectedRevision": 7,
+                "intents": [
+                    {
+                        "kind": "install",
+                        "packageId": "com.example.alpha",
+                        "versionRange": "^1.0.0",
+                        "source": {
+                            "kind": "repository",
+                            "repositoryId": "11111111-1111-4111-8111-111111111111"
+                        },
+                        "includePrerelease": false
+                    },
+                    {
+                        "kind": "upgrade",
+                        "packageId": "com.example.beta",
+                        "versionRange": "^2.0.0-beta.1",
+                        "source": {
+                            "kind": "user_package",
+                            "userPackageId": "22222222-2222-4222-8222-222222222222"
+                        },
+                        "includePrerelease": true
+                    },
+                    {
+                        "kind": "remove",
+                        "packageId": "com.example.gamma"
+                    },
+                    {
+                        "kind": "reinstall",
+                        "packageId": "com.example.delta",
+                        "source": {
+                            "kind": "repository",
+                            "repositoryId": "11111111-1111-4111-8111-111111111111"
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "id": "bulk-params-project-id-snake-case-rejected",
+            "definition": "planBulkParams",
+            "valid": false,
+            "value": {
+                "project_id": "00000000-0000-4000-8000-000000000001",
+                "expectedRevision": 7,
+                "intents": [
+                    {
+                        "kind": "install",
+                        "packageId": "com.example.alpha",
+                        "versionRange": "^1.0.0",
+                        "source": {
+                            "kind": "repository",
+                            "repositoryId": "11111111-1111-4111-8111-111111111111"
+                        },
+                        "includePrerelease": false
+                    }
+                ]
+            }
+        },
+        {
+            "id": "bulk-params-nested-intent-snake-case-rejected",
+            "definition": "planBulkParams",
+            "valid": false,
+            "value": {
+                "projectId": "00000000-0000-4000-8000-000000000001",
+                "expectedRevision": 7,
+                "intents": [
+                    {
+                        "kind": "remove",
+                        "package_id": "com.example.gamma"
+                    }
+                ]
+            }
+        },
+        {
+            "id": "bulk-params-nested-source-snake-case-rejected",
+            "definition": "planBulkParams",
+            "valid": false,
+            "value": {
+                "projectId": "00000000-0000-4000-8000-000000000001",
+                "expectedRevision": 7,
+                "intents": [
+                    {
+                        "kind": "upgrade",
+                        "packageId": "com.example.beta",
+                        "versionRange": "^2.0.0-beta.1",
+                        "source": {
+                            "kind": "user_package",
+                            "user_package_id": "22222222-2222-4222-8222-222222222222"
+                        },
+                        "includePrerelease": true
+                    }
+                ]
+            }
+        },
+        {
+            "id": "bulk-params-nested-mixed-case-rejected",
+            "definition": "planBulkParams",
+            "valid": false,
+            "value": {
+                "projectId": "00000000-0000-4000-8000-000000000001",
+                "expectedRevision": 7,
+                "intents": [
+                    {
+                        "kind": "install",
+                        "packageId": "com.example.alpha",
+                        "versionRange": "^1.0.0",
+                        "source": {
+                            "kind": "repository",
+                            "repositoryId": "11111111-1111-4111-8111-111111111111"
+                        },
+                        "includePrerelease": false,
+                        "include_prerelease": false
+                    }
+                ]
+            }
+        }
+    ],
     "prerelease": ["stable-false", "prerelease-true", "unparseable-absent", "typescript-does-not-parse-semver"],
     "configV2": ["v1-migrates-before-ready", "revision-preserved", "cas-update", "256-hidden-ids", "257-hidden-ids-rejected", "duplicate-hidden-id-rejected", "stale-id-retained-ignored", "reregister-new-id-visible", "defaults-false", "maximum-config-fits-16k"],
     "links": ["valid-docs", "valid-changelog", "malformed-omitted", "non-http-omitted", "userinfo-omitted", "invalid-link-does-not-invalidate-package", "migration-null-columns", "closed-gui-opener", "frontend-url-rejected"],

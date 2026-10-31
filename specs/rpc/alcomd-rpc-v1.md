@@ -1,6 +1,6 @@
 # ALCOMD RPC v1
 
-状态：M1-M4 已完成并通过人工验收；M5 CLI/Unity/Template 已实现，Backup Create 合同已冻结但未实现
+状态：M1-M6 已完成人工验收；当前活动合同含 M7 Portable UI、候选读取、Config3 设置和 Unity Hub 打开。M7 仍在 H2-A / Visual Gate 2，完整验收状态以 `docs/status.md` 为准。
 
 ## 1. M1 合同范围
 
@@ -108,7 +108,9 @@ payload_length bytes UTF-8 JSON payload
 
 客户端必须忽略响应中的未知可选字段和未知 capability。兼容增加新 method、capability 或可选
 响应字段不提升 RPC major；删除字段、改变既有字段类型/语义或改变既有方法语义属于破坏性
-变化，必须提升 major 或经过批准提供明确兼容路径。
+变化。已发布合同必须提升 major 或经过批准提供明确兼容路径；未发布合同的直接修订同样
+必须经过项目所有者明确批准，并同步 Schema、调用方和测试，不自动增加别名或回退。
+A-034 的数据库开发兼容策略本身不授权 RPC、Extension API 或权限变更。
 
 权威 Schema：
 
@@ -261,7 +263,13 @@ store 成功初始化且 daemon ready 后，hello result 兼容增加可选 `dat
 }
 ```
 
-`dataSchema` 不替代 RPC version/capability 协商。M2 不增加 `configSchema` 或 `extensionApi`。旧 M1
+`dataSchema` 表示 daemon 成功初始化后的实际数据库结构版本；当前 State v16 由 daemon 的存储
+组合处提供，protocol 只序列化该事实，不能独立硬编码旧版本。当前 `configSchema` 为 3，
+`extensionApi.major` 为 1。这些内部格式版本不等于产品发布版本。
+按 A-034，未发布开发库不承诺长期兼容；当前保留 v16 及既有迁移，发布前 Schema 整理另行审计，
+不因此自动清空数据。首次正式发布后维护正式升级与恢复链。
+
+`dataSchema` 不替代 RPC version/capability 协商。M2 本身不增加 `configSchema` 或 `extensionApi`。旧 M1
 client 必须忽略该字段并继续工作。
 
 ## 10. M2 Principal 与 permission
@@ -643,8 +651,8 @@ catalog 或任意网络 fetch。retained data namespace 绑定 ExtensionId + pub
 `extension_data_owner_mismatch`。uninstall 总是撤销全部 grants/lease/session/handle，reinstall 不恢复旧 grant。
 
 `system.hello.result.extensionApi` 是兼容 optional field；daemon 在 data Schema v8 migration、Host/WIT/runtime 与
-对应 capability 全部生产可用后返回 `{major:1,world:"alcomd:extension/extension-v1@1.0.0"}`，并广告
-`dataSchema: 8`。旧 client 必须忽略未知 optional field。
+对应 capability 全部生产可用后返回 `{major:1,world:"alcomd:extension/extension-v1@1.0.0"}`。
+State v8 是该功能的引入版本；当前 hello 报告 ready Store 的实际 State v16。旧 client 必须忽略未知 optional field。
 
 M6 stable errors 由 `rpc-error.schema.json` 冻结。普通 error 只返回安全 code、opaque ID/revision 与必要 subreason，
 不返回 package/source/data 完整路径、public key material 以外的 credential、Host protocol、trap、WIT parser debug、
@@ -667,12 +675,13 @@ M7 在 RPC major 1 上兼容增加 `extensions.ui.portable.v1` 与四个 method�
 lease secret、InvocationContextId、private Principal metadata 或 raw Wasmtime error。
 
 State v9 只为 `extensions` 与 immutable `extension_plans` 增加 nullable checked `ui_protocol`；UI Session、Snapshot、
-action、replay 与 renderer state 都不持久化。B1 daemon/Host/RPC wiring 完成后，hello 广告 `dataSchema: 9`，并只在
-client 请求时回显已实现的 `extensions.ui.portable.v1` capability。
+action、replay 与 renderer state 都不持久化。State v9 是该功能的引入版本；当前 hello 报告 ready Store 的实际
+State v16，并只在 client 请求时回显已实现的 `extensions.ui.portable.v1` capability。
 
 ## 24. M7 兼容增加：Official GUI settings/activity/diagnostics
 
-M7 在 RPC major 1 上兼容增加四个 base method；不增加 capability：
+M7 在 RPC major 1 上提供四个 utility base method，无独立 capability；另有已批准的
+`unity.hub.open`，使用独立 `unity.hub.open.v1` capability：
 
 | method | params | result | permission |
 |---|---|---|---|
@@ -683,8 +692,8 @@ M7 在 RPC major 1 上兼容增加四个 base method；不增加 capability：
 | `diagnostics.list` | optional tuple `cursor`, optional `limit` | closed redacted diagnostics and next cursor | `diagnostics.read` |
 
 `settings.update` 不接受 idempotency key、generic key/value、任意文件路径写入或 extension setting；revision conflict 使用现有
-`revision_conflict`。只有 `config/settings.toml` production storage 和四个 RPC 全部接线后，hello 才以兼容
-optional field 广告当前 production `configSchema: 3`。Schema 3 增加完整归一化
+`revision_conflict`。hello 只在 `config/settings.toml` production storage 成功初始化后，以兼容
+optional field 广告当前 production `configSchema: 3`；Hub 打开能力按其独立就绪和协商条件广告。Schema 3 增加完整归一化
 `settings.appearance.scheme` 九值枚举与可选 partial update 字段；默认 `vibrant`。Config Schema 1／2
 仅作为启动迁移输入保留，迁移保留 revision 与其他设置；未知枚举拒绝，不改变既有 methods、capabilities 或 permissions。
 
@@ -748,8 +757,8 @@ SQLite inventory table。
 
 Operation phase、Copy Profile v1、quota、source 两遍 SHA-256 一致性、sibling staging、forward recovery、取消边界、
 Resource Lock 与稳定错误由 `m7-project-copy.proposal.schema.json` 和 `../storage/state-v10.md` 冻结。State v10 只增加
-`project_copy_plans`、`project_copy_filesystem_journal` 与 `operations.kind='projects.copy'`；完整 wiring 后 hello 广告
-`dataSchema: 10`。新增 method/capability/字段是 RPC v1 兼容增加，既有 Project/Package 方法语义不变。
+`project_copy_plans`、`project_copy_filesystem_journal` 与 `operations.kind='projects.copy'`；State v10 是该功能的
+引入版本，当前 hello 报告 ready Store 的实际 State v16。新增 method/capability/字段是 RPC v1 兼容增加，既有 Project/Package 方法语义不变。
 
 ## 26. M7 兼容增加：Project Favorite 与 Unity product-model replacement
 
@@ -793,8 +802,9 @@ Operation phase 固定为 `accepted`、`preflight_complete`、`quarantine_intent
 `project_delete_recovery_required`；既有通用 `project_not_registered`、`revision_conflict`、
 `unity_project_running`、`idempotency_conflict`、`permission_denied` 与 `internal_error` 继续复用。
 完整 DTO、phases、path/link/mount 与 recovery vectors 由 `m7-project-delete.proposal.schema.json`、
-`../security/m7-project-delete-path-vectors.json` 与 `../storage/state-v13.md` 冻结。State v13 完整接线后 hello
-广告 `dataSchema: 13`；新增 method/capability/字段是 RPC v1 兼容增加，不改变 unregister 的 registry-only 语义。
+`../security/m7-project-delete-path-vectors.json` 与 `../storage/state-v13.md` 冻结。删除事务始于 State v13；
+当前 Store 初始化至 State v16 后，hello 广告 `dataSchema: 16`。新增 method/capability/字段是 RPC v1
+兼容增加，不改变 unregister 的 registry-only 语义。
 
 ## 28. M7 兼容增加：Project Unity Version migration
 
@@ -847,3 +857,11 @@ Plan/Apply DTO/结果/错误及 permissions 全部保留。候选 capability 缺
 摘要的 `providers` 只增加必要的完整来源归属证据（现有 source selector + sourceRevision，
 最多4096、遵守已有响应字节上限），避免用获胜来源冒充完整来源集合或为来源筛选拉取全版本。
 它包含确认可见的非获胜/未知来源，不受单行显式来源选择缩窄；不改变 resolver 来源策略。
+
+Package mutation 与候选查询的 source DTO 分别遵守各自冻结 Schema。P6
+`m7-p6-package-closure.proposal.schema.json` 的 source selector 使用
+`repositoryId`/`userPackageId`，reinstall selection 使用 `packageIds`，bulk intent 使用
+`packageId`/`versionRange`/`includePrerelease`；kind 值不变。候选查询使用独立
+`CandidateSource`，保持 `repository_id`/`user_package_id`，请求和响应均如此。
+2026-10-31 项目所有者批准将 P6 Rust 序列化修正为其冻结 camelCase 合同；这是对当前实际
+P6 snake_case wire 的直接替换，不接受旧字段或混合格式，不增加别名、capability 或 RPC major。

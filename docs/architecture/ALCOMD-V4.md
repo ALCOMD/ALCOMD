@@ -258,11 +258,14 @@ ExternalConfig(provider_id)
 }
 ```
 
-M2 在 state store 成功初始化并完成恢复后，兼容增加可选 `dataSchema: 1`；它不是 RPC
-capability，也不属于 M1 客户端必读字段。`configSchema` 与 `extensionApi` 仍未实现，未来只有
-对应子系统真实存在后才可按照 RPC v1 的兼容增加规则作为可选字段加入。
+核心在 state store 成功初始化并完成恢复后，兼容返回可选 `dataSchema`；当前开发基线为
+State v16，实际版本由 daemon 提供。Config3 已实现并返回可选 `configSchema: 3`；
+`extensionApi` 返回已实现的 ABI v1 major 与版本化 WIT world。
+这些可选字段按 RPC v1 的兼容增加规则提供，不是 capability，也不属于 M1 客户端必读字段。
 
-公共 DTO 与内部领域对象必须分离。破坏性变化提升对应协议大版本，而不是仅提升应用版本。
+公共 DTO 与内部领域对象必须分离。已发布公共合同的破坏性变化提升对应协议大版本，
+而不是仅提升应用版本。未发布合同的直接修订仍须项目所有者明确批准；数据库的开发兼容
+策略不自动授权 RPC、Extension API 或权限变更。
 
 ## 12. 第三方应用通信
 
@@ -515,6 +518,16 @@ macOS 与 Linux 分别遵循 Application Support 和 XDG 规范，但稳定目�
 `~/.local/bin/alcomd-cli`，但不能假设 AppImage 本体路径固定。
 
 `settings.toml` 保存可理解的公开设置。`state.db` 是内部权威状态，不是第三方 API。凭据进入 OS Credential Store / Keychain / Secret Service。
+
+数据库结构版本按 A-034 管理。当前开发基线为 State v16；daemon 在 store 成功初始化后，将实际
+存储版本传给 hello DTO，protocol 不依赖 store，也不独立维护一份“当前数据版本”常量。
+`dataSchema` 只说明存储结构，不替代应用版本、RPC major 或 capability 协商。
+
+未公开发布的开发库不承诺长期兼容。仅对明确需要保留的开发数据维护迁移，可重建的测试库
+通过重建 fixture 适配；布局有变化时仍须如实识别版本，不能把不兼容布局冒充同一版本。
+不得因“不保证开发兼容”自动删除现有数据库、Plan、Operation 或恢复证据。首次正式发布前
+单独审计并收敛当时有效的初始 Schema，清除无保留需要的开发迁移和旧格式支持；此后严格维护
+正式用户的数据升级和恢复。当前 v16 及已有迁移保持，清理不随本轮修复执行。
 
 版本独立：
 

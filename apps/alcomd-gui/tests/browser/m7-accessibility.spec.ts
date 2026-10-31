@@ -121,6 +121,25 @@ test("same-route reconnect refreshes negotiated capabilities before restoring ac
     expect(new URL(page.url()).pathname).toBe("/projects");
 });
 
+test("Settings retry reconnects shared capabilities before restoring utility and project actions", async ({ page }) => {
+    await openHarness(page, "/settings", "disconnected");
+    await expect(page.getByRole("alert")).toContainText("daemon_unavailable");
+    await page.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect(page.getByRole("alert")).toContainText("daemon_unavailable");
+
+    await page.evaluate(() => window.dispatchEvent(new Event("test-daemon-online")));
+    await page.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Manage installations", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Download Unity Hub", exact: true })).toBeEnabled();
+    await expect(page.getByText("Unity installations are unavailable on this connection.", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("table", { name: "Unity installations", exact: true }).locator("tbody tr")).toHaveCount(1);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+
+    await navigationItem(page, "Projects").click();
+    await expect(page.getByRole("button", { name: "Create project", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Manage", exact: true })).toBeEnabled();
+});
+
 test("every M1-M7 official GUI route resolves through the typed client", async ({ page }) => {
     await openHarness(page, "/projects");
     const titleStyle = (element: Element) => {
@@ -215,9 +234,20 @@ test("project workspace keeps package discovery and user actions in project cont
     await expect(page.getByRole("heading", { level: 1, name: "<private-project>" })).toBeVisible();
     await expect(page.getByRole("heading", { level: 2, name: "Packages" })).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Project actions" }).getByRole("button", { name: "Open Unity" })).toBeVisible();
-    await page.getByRole("button", { name: "More actions for <private-project>", exact: true }).click();
-    await expect(page.getByRole("menuitem", { name: "Backups", exact: true })).toBeVisible();
-    await page.keyboard.press("Escape");
+    const menu = page.locator(".project-workspace-header .alcomd-split-button-options");
+    const lifecycle = await menu.evaluateHandle((element) => ({
+        opened: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })),
+        closed: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true }))
+    }));
+    try {
+        await page.getByRole("button", { name: "More actions for <private-project>", exact: true }).click();
+        await lifecycle.evaluate((events) => events.opened);
+        await expect(page.getByRole("menuitem", { name: "Backups", exact: true })).toBeVisible();
+        await page.keyboard.press("Escape");
+        await lifecycle.evaluate((events) => events.closed);
+    } finally {
+        await lifecycle.dispose();
+    }
     await expect(page.getByRole("button", { name: "More actions for <private-project>", exact: true })).toBeFocused();
     const row = page.getByRole("row").filter({ hasText: "Avatar tools" });
     await expect(row).toContainText("com.example.avatar");

@@ -1,69 +1,78 @@
 # M7：官方 GUI 与 Portable Extension UI
 
-2026-10-31 所有者以“批准，按合同实现”批准 Hub 打开精确增量。Auto detect 与 Open/Download 位于卡片标题栏右侧，Select 留在编辑行，共用原 section 焦点边界。生产接线为 unity.hub.open + unity.hub.open.v1 + settings.read/独立 unity.hub.open 窄权限，初期仅认证的 local-owner；application 持有 settings 协调直到最新 revision/有效路径复核和平台 spawn 应答，独立 UnityHubLauncher 与只读 UnityHubPlatform 分离，平台预先建立有界 worker 并回收自己创建的 Child。仅无显式偏好且确实未找到时 download_required，GUI 闭合无参数 adapter 使用既有 open 依赖打开固定官网页。不将草稿隐式保存后启动、不自动重试未知结果；可用不证明厂商身份或整个窗口已就绪。active Schema/DTO/SDK/capability/权限文档与十二形状向量同步，现有 unity.launch、resolver、Plan/Apply、来源策略不变；无新依赖/unsafe/native API/Config 或 State migration/持久表。check/build（844 词条）、Workspace Clippy/fmt/xtask/metadata、活动 Schema 12/12 通过，浏览器首轮 43/45，测试宿主定位纠正后针对 3/3 通过；完整 Workspace 474 passed / 0 failed / 8 既有 subprocess-helper ignored。匹配当前源码的 debug daemon/dev 已恢复，Core ready 且公布新 capability，配置摘要保持。实际构建摘要、原始失败日志及未取得的真实 Hub/网页/屏幕阅读器证据见 `docs/testing/m7-unity-hub-location-20261031.md`。本轮按所有者最新指令分组提交并推送，Visual Gate 2 PENDING。
+状态：**M7 IN_PROGRESS / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
+活动分支为 `main`；当前阶段与验证结果统一见 `docs/status.md`。已通过的 M6、Portable UI B0-D、
+Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据，不替代本轮 GUI 人工验收。
 
-2026-10-31 所有者要求 Hub 路径可直接编辑。本地草稿在 Enter/离开操作组时提交既有 saveUnityHub 串行 CAS，经原 Core 权威校验；Esc 撤销、IME/无修改/同组焦点切换不写，失败保留输入和错误，显式重试先核对权威。保留 Auto/Select，空状态为 placeholder，损坏的已保存路径可修正；不逐字发 RPC。共用 TextField 增加标准 focus/keydown 回调，原 blur 语义保持；Hub 等待按钮使用 Material 已有 softDisabled 保持焦点且禁止激活，消除硬禁用引发的误保存。复用原内容间距，无后端/公开 DTO/Schema/依赖/CSS/native Rust 增量。33/33 前端回归、HEX/HCT 兼容单例 1/1、check/build 通过；初轮失败与最终结果分别记录，不降低断言。详见 `docs/testing/m7-unity-hub-location-20261031.md`；原 dev 命令供人工检查，未提交/推送，Visual Gate 2 PENDING。
+## 当前有效合同
 
-2026-10-31 所有者进一步明确去掉 Hub 路径内部前缀并增加“自动查找”按钮。本次只修正平台路径呈现并增加既有 null-clear/read 的显式 UI 动作：DOS/UNC 普通形式须解析回同一 canonical 文件，特殊设备/卷语义保持；自动模式仅重读 Core，手动覆盖通过原串行 CAS 清除，保留未知提交/并发修改保护和现有 Select。无新 RPC/字段/Schema/权限/依赖/unsafe/平台 API/迁移，不扩展注册表或 Hub loader。平台 7/7、真实 RPC 1/1、Workspace Clippy/fmt、check/build、队列 15/15、功能浏览器 22/22 及最终字面本地化 2/2 分别通过；先前完整 457/0/8 检查点保留，不改称本次整轮结果。匹配新源码的 debug daemon 和 dev 窗口已恢复，隔离配置保持。详见 `docs/testing/m7-unity-hub-location-20261031.md`；未提交/推送，Visual Gate 2 PENDING。
+- GUI 继承 A-033 的 v3 用户模型，使用真实 Material Web 控件和共享组件。Projects、包管理及
+  已获准的其他既有页面基础可用性修正已在 H2-A 验收；不做窄窗口适配、不自行进入后续里程碑。
+  Open Unity 保留单个 leading play 图标和 Material 按钮的 18px 图标尺寸。Projects 的视图入口
+  显示当前模式并保留视图偏好；内容包装透明，卡片和表格使用自己的表面。
+- `packages.queryProjectCandidates` / `packages.candidates.v1` 按已批准的
+  `M7-package-candidate-evidence-stop-a.md` 提供完整、来源保真的候选证据。GUI 不解析
+  SemVer/Unity，不以可选元数据首页推断来源缺失或可操作性；行内版本、条件更新与批量操作仍
+  复用原有单次 Plan、显式 Apply 和一个 Operation，不更改普通 resolver/来源/恢复策略。
+- 当前数据基线为 **State v16**。v15 引入独立的 `lastModifiedAtMs`；v16 移除项目观察时间，
+  保留安装扫描、writer 检查及迁移专有恢复证据。候选/迁移的权威投影显式白名单排除展示时间，
+  保持原冻结字节与 hash；旧未 Apply 的 Unity 迁移计划按合同过期，不重签原审批。
+- 按 A-034 保留 Schema 识别机制，hello 报告成功初始化后的真实存储版本。未发布开发库不
+  承诺长期兼容，仅为明确需要保留的数据维护迁移；当前不降回 v1、不新增版本、不删除现有迁移。
+  发布前初始 Schema 整理是独立审计任务，不自动清空数据库、Plan、Operation 或恢复证据。
+  本轮 hello 修复只纠正已有 `dataSchema` 事实值与内部构造参数，不改 wire DTO/Schema 形状、
+  RPC major 或 capability，属于非破坏性修正；由 dispatcher、兼容形状和实际 SQLite 回归验证。
+- 当前设置合同为 **Config3**。application 持有权限、CAS、字段校验、候选缓存和取消一致性；
+  `ConfigStore` 窄 port 的文件适配器位于 store，负责 strict 16 KiB TOML、Config1/2→3 和
+  原子替换/恢复。普通设置修改即保存，以当前连接内的串行窄 PATCH 协调；失败保留意图、
+  显式 Retry 先重读，未知已提交不重复写，换连接停止旧队列，不保留全局 Save/Discard 栏。
+- 主题编辑器保持独立 Save/Cancel、实时预览和冲突三方合并；仅明确保存 sourceColor/mode/scheme。
+  默认种子 `#6CB6FF`、Vibrant、系统明暗及九方案不变。共享 Material HEX/拾色器/HCT/分段/
+  Radio 使用标准控件；主题表单填满公共内容盒、卡片四周 24px，弹窗 padding 由 Material 提供。
+  HCT 数值使用 Slider 自带 labeled 提示；短请求保持动作名称，不插入瞬时状态行。
+- 字体只引用本机 Noto Sans/Mono 及中日 CJK fallback，不打包或联网加载字体。三语言为
+  en-US/zh-CN/ja-JP，使用静态词条和 React 文本插值；外部内容不翻译、不解释 HTML。
+  动画三态为 system/full/reduced，默认 system；共享适配器处理 CSS/Shadow DOM/弹层及滚动条，
+  不恢复已撤除的切页动画。
+- 公共 DesktopList 统一列、排序、截断和稳定正文行盒；PageHeader、SplitButton、Dialog、
+  ScrollArea 和 SegmentedButtons 统一持有布局/生命周期。分段控件按真实字体预留最长选中态，
+  不写死文案宽度。滚动条只在实际滚动或轨道悬停时唤出，沿用库计时和销毁语义；textarea
+  内部编辑滚动保持原生。离线页面恢复同时重新协商当前连接能力，不依赖切页刷新能力。
+- 异步 Plan 的触发控件通过稳定本地 origin ref 返回焦点；共享 Dialog 等待公开 closed、
+  业务控件恢复可用及 Material updateComplete，不因修复焦点而放宽 disabled/eligibility。
+  MenuItem 统一消费公开 click/Enter/Space 选择并只在 closed 后派发一次；Escape 不派发。
+  Select 由真实 busy 状态控制禁用，选中标签按公开生命周期同步，不增加输入/设置写入。
+- Unity Hub 位置复用 settings.get/update、settings.read/manage 与 Config3 `unity.hubPath`；
+  有界只读发现和路径规范化由 platform 提供，不加注册表/PATH/Hub CLI 扫描。路径草稿 Enter
+  或离开操作组保存，Esc 撤销，IME/同组焦点切换/无修改不写；选择和自动查找共享串行 CAS。
+- `unity.hub.open` / `unity.hub.open.v1` 要求 settings.read 和独立 unity.hub.open，
+  初期仅认证 local-owner；application 在协调锁内重验 revision/有效路径，独立 Launcher
+  预建有界 worker 后 spawn 并回收自己的 Child，最多四个，不 kill 用户进程或自动重试未知结果。
+  仅无显式偏好且确实未找到时返回 download_required，由闭合无参数 Tauri adapter 打开固定
+  官方下载页。Auto detect/Open 位于卡片右上角、Select 留在编辑行；未确认草稿阻止启动。
+  可用文件和 spawn 成功不代表厂商身份或整个 Hub 窗口就绪。
+- 正式合同与证据分别见 `specs/config/settings-v3.*`、
+  `specs/config/theme-controls.proposal.contract.json`、
+  `specs/config/unity-hub-location.proposal.contract.json`、
+  `specs/storage/state-v15-project-last-modified.contract.json`、
+  `specs/storage/state-v16-remove-project-observed.contract.json` 和对应 testing 文档。
+  名为 proposal 的已批准合同仍由这些既有文件直接维护，不建立第二份有效合同。
 
-2026-10-31 所有者明确批准按已审阅精确合同补齐 Unity Hub 位置选择，合同为 `specs/config/unity-hub-location.proposal.contract.json`。现已复用 settings.get/update、settings.read/manage、未发布 Config3 与 ConfigStore/CAS，增加 unity.hubPath 配置及独立的派生 unityHub 证据；应用层持有权限/CAS/原子更新，平台窄 port 负责有界只读发现和路径规范化，store 负责转义、16 KiB 文件界限及既有恢复。GUI 位于 Editor 安装卡片前，以薄系统选择器返回路径；选中串行保存，取消不变，确认保存后按 unity.manage 调用既有刷新，明确分离保存/刷新错误，旧连接和重复选择不得提交。普通设置/主题继续共用原队列；相同 revision 可以刷新派生证据，不据此修改配置。无新 method/capability/permission/State migration/依赖/unsafe/平台 API；Windows 注册表探测和 Hub 配置/CLI Editor 发现仍在窄合同之外，不能冒充已完成。完整 Workspace 最终 457 passed / 0 failed / 8 既有 subprocess-helper ignored，含新增真实 RPC；首轮测试旧文件预期遗漏已修正并增强 revision 断言，失败日志与最终整轮重跑分别保留。此前 Application 10/10、Windows platform 5/5、protocol 30/30、活动 Schema 15/15、autosave 10 场景、浏览器 17/17、frontend check/build 及 Workspace Clippy/fmt/xtask/metadata 通过。所有者批准临停并恢复已确认的工作区 dev/隔离 daemon，匹配源码的 debug 窗口已打开、Core ready，原配置摘要及两个样例保持；不操作已安装 v3。真实 Tauri picker/重开持久化及屏幕阅读器仍待验收，精确证据见 `docs/testing/m7-unity-hub-location-20261031.md`。未提交/推送，Visual Gate 2 PENDING。
+本轮 Schema 策略与架构审查修复的逐轮证据见
+[修复验证记录](../testing/m7-architecture-review-fixes-20261031.md)；当前阶段仍统一见 `docs/status.md`。
+测试门禁使用 ready 且由测试 handle 持有端点的 daemon，Windows 占用时在创建客户端前失败；
+生产初始化顺序和每用户唯一端点保持。Chromium suite 将三个现有 fixture 静态预构建，保留
+development React/StrictMode、原断言、零重试与 30 秒门槛；不改变生产 Vite 配置、依赖版本、
+浏览器 feature flags 或系统 TCP 参数。完整结果和真实桌面范围见
+[测试门禁与桌面验证](../testing/m7-test-gate-closure-20261031.md)。
+H2-A 本轮真实 Apply、失效 Plan、焦点、筛选、偏好重启及签收图集见
+[Visual Gate 2 材料](../testing/m7-visual-gate-2-20261031.md)。
 
-当前活动阶段与唯一工作目录统一以 `docs/status.md` 为准。本文件保留实施合同与历史日志，不授权重建旧工作树；2026-09-17 起仅在标准 `ALCOMD` 目录的 `main` 继续 H2-A。
-
-项目所有者于 2026-10-30 明确批准修正本轮架构审查的三项：settings.update 所有非 nullable partial 字段显式 null 整次拒绝，仅 sourceColor:null 保留清除语义；application 定义窄 ConfigStore port，文件解析、Config1/2→3、原子替换与恢复由 alcomd-store 适配器实现，application 保留权限、CAS、revision 计算、更新校验、缓存权威及取消一致性；候选和 Unity migration 的项目权威采用显式字段白名单，不再复制完整记录后删展示字段。投影必须保持当前序列化字节、hash、cursor、Plan 重验及恢复证据一致，不静默改变 favorite／注册时间等现有参与字段。移除原 Path 构造／文件实现入口，同步调用方和测试，无额外兼容层；不增加依赖、RPC／权限／Schema 版本、迁移或 resolver／Plan／Apply 策略。三项完成后运行适用 Rust 及架构合同回归，证据与限制见 docs/testing/m7-core-architecture-fixes-20261030.md，Visual Gate 2 继续 PENDING。
-
-Projects 视图入口的图标与文字表示当前视图：list 显示 List view／列表视图及列表图标，grid 显示 Grid view／网格视图及网格图标；点击切换到另一种视图。保留既有 view preference、刷新／重新打开持久化、两种标签的固有宽度预留，不改配置合同或列表／网格布局。项目内容容器保持透明，列表和网格不再共用一层额外区域底色，卡片及表格自身表面色保持。
-
-普通设置依所有者最新要求即时经 settings.update 保存，不再有页面总 Save／Discard／已保存栏。只提交用户改变的字段；App 当前连接内临时协调串行 CAS 和有界的按字段最新意图，跨页面完成，失败明确 Retry 并先重读，未知提交已生效时不重复写。连接变化停止旧队列，跨 await 不得继续发旧连接 RPC。主题及其他自带 Save／Cancel 的编辑器保留独立确认，与普通写入按顺序使用 Core authority，普通值不由主题整份覆盖；不新增持久模型、权限、方法、依赖或窗口关闭机制，不改包筛选既有 CAS。测试与当前两个未闭合的列表长文本断言见 docs/testing/m7-settings-autosave-20261030.md；不得据专项通过关闭 Visual Gate 2。
-
-公共 SegmentedButtons 负责所有标签及可选勾选的最大选中态尺寸预留，保持单行并由 CSS 使用真实字体自动重算；调用方不按具体标签设置宽度，父布局须尊重最小内容尺寸。不可见尺寸层不新增可访问或交互入口，保留原 Material 可见控件、标准内边距、字体、边框及焦点。验证覆盖三语逐项切换的文本行数／边界／组尺寸及共用资源／日志导航，见主题 testing 文档；升级 Material 需复核当前库的尺寸 token 与预留模型，无新依赖或公共 RPC 变化。
-
-短请求不切换可见动作名称，也不插入瞬时状态行。主题保存始终显示 Save，仅保留 disabled、form aria-busy、错误及忙时防重入；分页、计划检查、筛选保存及启动请求同样保持原动作文字，真实长任务进度和持久结果继续显示。首次读取复用既有 160ms 延迟提示，不延迟真实结果或强制保留加载画面；成功重试不先折叠错误区再关闭。保存期间实际 dialog 与 footer 的位置／尺寸按几何回归验证，不依赖“窗口打开”或静态截图判断稳定性。保存仍只写既有三个主题字段，无 RPC／Config／依赖变化。
-
-2026-10-30 主题弹窗的图片仅作展开信息布局参考，不授权像素或控件样式复刻。左侧源色标准描边输入框不附加描述，纵向 HCT 仅显示标签，数值使用 Material 内置 labeled 提示并由库处理显隐，不保留常驻 output，右侧标准描边“明亮／跟随系统／暗黑”文字分段与九方案双列 Material Radio。按所有者分段参考，主题分段启用 Material 自带的选中勾选标记，不使用三个模式图标；共享 showCheckmark 可选项默认保持其他分段原行为。移除临时 tonal 胶囊变体、HEX 胶囊字段、额外色带和弹窗底色覆盖。使用已安装 Material Web 自身的轨道、描边、选中色及焦点；保持所有者既已确认的全局 28px 卡片、Noto 字体和主题种子，不将这些产品定制描述成 MD3 默认。卡片使用现有低容器表面色，保留完整标准滑块轨道。主题表单填满公共弹窗内容盒，整体留白由 Material 默认 padding 提供，不另设较窄固定宽度或重复扣除内边距。Restore defaults／Cancel／Save、实时预览及三字段显式保存不变，不改 RPC、Config、resolver 或页面结构，不新增依赖。仅桌面布局验收；证据见 docs/testing/m7-theme-dialog-20261030.md，Visual Gate 2 仍 PENDING。
-
-2026-10-30 所有者明确要求动画偏好按“跟随系统／启用动画／关闭动画”排列，默认跟随系统，已有用户选择保持。复用既有 settings.get/update、权限、revision CAS 与当前未发布 Config3，appearance.motion 增加 full，保留 reduced/system 原意和 system 默认；不新建 Config4、方法、capability、权限或 State migration。三态含义与严格未知/null 拒绝见 settings-v3 及现有主题机器合同的 motionPreference；这是发布前公开枚举扩展，严格旧客户端可能拒绝 full，不加旧别名或兼容模型。GUI 与 Language 同类设置行，普通设置在修改时立即保存，取消全局 Save／Discard 栏；主题弹窗仍独立确认三字段。共享 UI 统一解析系统动态偏好、Shadow DOM CSS、Material quick 菜单/弹窗及静态按压状态层，保留库原有滚动条显隐计时与轨道悬停；关闭时只压缩淡出时长，不改触发规则。原切页动画继续撤除，不为新增选择恢复动画效果。验证及 dev 对应关系见 docs/testing/m7-motion-20261030.md，Visual Gate 2 保持 PENDING。
-
-2026-10-30 当前主题采用与 v3／VRCLearn 官网一致的配色算法和默认种子 `#6CB6FF`，保存交互按所有者最新指令使用外观入口与弹窗 Save／Cancel。已实现的底层增量为：共享 `@alcomd/ui` 采用官方 `@material/material-color-utilities = 0.4.0`（Apache-2.0、纯 TypeScript、无 runtime dependencies/native addon）从默认或现有合法 HEX 生成完整明暗语义角色，替换三色名映射及零散覆盖；默认 Vibrant、标准对比度 0，保留已有用户颜色。静态默认 CSS 与运行时默认一致，系统明暗切换走共享 CSS，不设页面主题补丁。单独的配色引擎不新增公开字段，Config3 的方案字段见下文；完整配色已实现，人工视觉验收仍待完成。
-
-完整主题所需最小合同已获项目所有者明确批准并实施，见 `specs/config/theme-controls.proposal.contract.json`：复用 `settings.get/update` 与原权限；Config 2→3 仅增加 `appearance.scheme`（公开同名字段），枚举为 tonal-spot/fidelity/monochrome/neutral/vibrant/expressive/content/rainbow/fruit-salad，缺省 vibrant；保留既有 sourceColor/mode/density/motion/locale/packages 与 revision，旧 v1 经既有 v2 迁移后继续升级。不新建 method、capability、permission 或 State 表。HEX／拾色器／HCT 联动，HCT 仅派生、不持久化；按所有者最新修正，外观标题栏右侧放“主题”入口，与标题同行，采用公共 Filled 主按钮及固定上游的 palette 调色盘图标，语言选择器保留清晰可见标签；完整控件进入 Material 弹窗；合法输入只实时预览，点击 Save 才按 revision CAS 写三字段，Cancel／Escape／关闭恢复已接受主题；失败／冲突显示未保存，重试先重读三方合并，不覆盖其他客户端的无关字段或普通设置已保存值；重置仅将主题三字段恢复 sourceColor=null（有效 #6CB6FF）、mode=system、scheme=vibrant。生产 Config/RPC、九方案控件和主题弹窗均已接通；HEX／拾色器／HCT 使用共享 Material 适配器，唯一原生颜色对话框入口集中在 ColorPicker 中，不放宽其他原生控件边界。App 按连接与 revision 接受设置，活动预览独立于持久基线；显式保存期间禁用编辑／重复提交／关闭，冲突重试三方合并，确认离开时丢弃未保存预览，普通设置即时保存，与主题确认共用串行 CAS 通道。配色及后端验收见 `docs/testing/m7-theme-controls-20261030.md`，最新弹窗保存交互见 `docs/testing/m7-theme-dialog-20261030.md`，不将自动化结果当作 Visual Gate 2 通过。 对依赖 Config2／严格 `configSchema:2` 响应的旧客户端，这是已获批准的发布前破坏性配置／响应变更；当前只写 Config3，旧文件经启动迁移进入新模型，不增加旧客户端别名、双模型或新的 RPC version。
-
-依赖目的为复用标准 HCT／DynamicScheme／对比度算法；替代方案为固定预生成三色（无法覆盖已有任意 HEX 合同与九种方案）或自研色彩算法（正确性和维护成本不合理）。风险为官方算法版本／角色变化和包体增长，固定精确版本并验证明暗／自定义源色／对比度及实际 bundle；0.4.0 包的部分 ESM import 不适用于 Node 直接加载，产品由现有 Vite 打包验证，不新增 Node loader 或运行时补丁。没有复制 v3/网站源码；未新增窗口持久化字段。官方算法来源：https://github.com/material-foundation/material-color-utilities ，默认与交互证据：https://www.vrclearn.com/ 当前主题模块及只读 v3 `lib/material-theme.ts`。主题增量未提交／推送，Visual Gate 2 仍 PENDING。
-
-2026-10-30 所有者进一步明确批准彻底删除项目 `observedAtMs`。删除范围为 `ProjectObservation`、`ProjectSnapshot`、GUI 类型／fixture、项目 SQL 列、持久项目 JSON、调用方及时间清零比较逻辑；复用现有 reader 直接返回项目内容。State v15→v16 在一个事务内物理删除 `projects.observed_at_ms` 并定点清理永久幂等响应、copy/delete/migration Plan 快照和 copy journal 发布项目；事务内暂撤并按原定义恢复相关不可变触发器。旧未 Apply 的 Unity migration Plan 过期并同步幂等响应，保留原 authority hash，不将旧审批重新签名；已执行恢复链继续使用原 fingerprint 及迁移专有 `reobserved_at_ms`。候选旧 fingerprint/cursor 自然失效，重新读取，不增加持久全局版本、兼容入口、依赖或新 RPC。UnityInstallation 扫描时间及 copy/delete writer 检查时间不属于项目字段，保留。公共响应字段删除为明确批准的发布前破坏性变化，不扩大为所有 DTO 的未知字段策略调整。历史升级 SQL 保持原样，供旧库依序迁移；当前有效模型／存储不再支持旧项目字段。最后修改时间、resolver、来源和 Plan/Apply 验证边界保持。精确合同见 `specs/storage/state-v16-remove-project-observed.contract.json`；本轮验证与限制见 `docs/testing/m7-remove-project-observed-20261030.md`。Visual Gate 2 保持 PENDING，未授权提交／推送。
-
-2026-10-30 项目所有者明确要求按 v3 语义恢复真正的最后修改时间，并同步列表／网格／排序，不只改翻译。本次实施合同限定：现有 `ProjectSnapshot` 兼容增加可选 `lastModifiedAtMs`（未知及未注册 inspect 省略），`ProjectRecord` 保存独立 `Option<u64>`；State v14→v15 只给 `projects` 增加 nullable `last_modified_at_ms`。旧记录保持未知，不以检查时间、数据库更新时间或注册日期补造历史；既有持久 Plan／永久幂等 JSON 缺字段按未知读取，None 不序列化以保留原格式，不新增旧方法别名或双模型。
-
-v3 对应语义为 registry 维护的最近使用／成功变更时间，不是递归文件 mtime：新注册／创建／复制／恢复的目标在首次成功注册事务初始化；成功包 Apply 和 Unity 迁移的项目提交事务更新；通过当前前置校验后首次接受 Unity launch 的事务、实际 spawn 前更新，所以接受后的 spawn 失败仍保留时间。前置拒绝、幂等重放、launch 状态轮询、普通检查／刷新（即使观察内容变了）、收藏／启动参数、候选读取、Plan／Review／取消、备份／导出／仓库刷新均不更新。新目标恢复发现已注册时保留首次提交时间，恢复调度／成功收尾不另行 touch。采用 `MAX(existing, boundaryTime)` 防时钟回退与迟到事务，不让该元数据独立推进 Project revision；候选快照及 Unity migration authority hash 排除新字段，既有 resolver／Plan／Apply 的其他证据不变。没有新 method、capability、permission、依赖或平台 API。
-
-GUI 的列表时间列、网格元信息及排序统一使用权威新字段，英／中／日采用 v3 对应“最后修改”词条；未知显示未知日期，升降序均排在已知时间之后，收藏优先级保留，同值按稳定 ProjectId／路径决胜。内部排序键替换 observed，不保留旧别名。启动 RPC 成功或失败结束后通过明确回调重读项目权威快照，保留错误反馈，不以 GUI 时钟估计时间。验收需证明重新检查不污染修改时间、失败／重放／恢复边界、旧库未知、hash／revision 不变，以及列表／网格／排序一致；不触碰布局、图标、窄窗口或后续阶段。精确存储合同见 `specs/storage/state-v15-project-last-modified.contract.json`。
-
-2026-10-30 所有者指定全 GUI 优先使用本机 Noto 字体，不随包携带字体文件，缺失时自然回退系统。字体栈统一由公共主题持有：正文／Material brand/plain 使用 Noto Sans，代码／等宽文本使用 Noto Sans Mono；中日文分别选择 SC／JP 及其桌面 CJK 字体族，末尾使用 system-ui／sans-serif 或 ui-monospace／monospace。移除 GUI 重复的 Inter／微软雅黑及 Cascadia 指定，不在页面另设字体栈，不加 @font-face、在线字体请求、下载或字体安装。字体族名称参考 [Noto 官方文档](https://notofonts.github.io/noto-docs/website/use/)。不改变字号、字重、行高、间距、图标或依赖。
-
-2026-10-30 所有者要求按冻结 v3 翻译落实官方 GUI，并明确本轮只完成现有 `en-US`、`zh-CN`、`ja-JP`，不扩展七语言设置枚举。任务入口及页面统一为 Tasks／任务／タスク，活动数量及详情返回入口同步；语言、动画和主题模式的系统选项共用 System／跟随系统／システム設定 词条，不保留 Follow system／System language 两套标签。继续复用现有 `settings.get/update`、daemon 持久化与扩展 UI locale；官方 GUI 使用自有 React locale context、显式消息调用及静态词条，不新增生产依赖。既有文案／用户术语以只读 `vrc-get-gui/locales/{en,zh_hans,ja}.json5` 为参考，按 v4 现有用例选择对应译文，v4 专属候选证据、Plan Review、权限与错误文案独立补译；不复制 v3 翻译实现、不在构建或运行时读取 v3、不加载其旧解析器。语言只在设置成功保存后应用；跟随系统识别英语／中文／日语语言及区域标记，其他语言回退英语。标题、控件与无障碍名称、空／错／进度及日期／相对时间统一使用当前 locale；UTC 技术时间边界不变。富文本仅插入 React 节点，不解释词条中的 HTML。项目／软件包／来源名称、路径、版本、ID、机器错误码与扩展提供的内容不作为宿主翻译词条。check 校验双语词条、占位符与显式 JSX 文案边界。公共 RPC、Config/State Schema、权限、resolver、Plan/Apply 和当前视觉门禁均不改变。
-
-2026-10-22 所有者要求重做真正的自绘滚动条并评估库。本轮采用 `overlayscrollbars = 2.17.0`（MIT，registry exact metadata 无 runtime dependencies、native addon 或 install script）作为 `@alcomd/ui` 唯一滚动条运行时。依据官方文档比较：Radix React Scroll Area 与 v3 同库，但 React Root/Viewport 组合不适合直接管理 Material Web 的 Shadow DOM；SimpleBar 同样绘制 DOM 滑块，但需要更多包装结构；自行重写滑块拖拽/测量/键盘逻辑成本更高。OverlayScrollbars 可使用现有 viewport，并提供显式 destroy、更新和轨道/滑块 DOM。只借鉴 v3 的使用语义，不复制源码；不安装 React adapter 或第二套库。普通容器及 Material dialog/menu 通过同一共享 adapter/theme 接入；保持原滚动 viewport、焦点、滚轮和原生滚动语义，原生滚动条仅被隐藏，不作换肤。原换肤 CSS/controller 和对应断言直接替换，不保留双实现。textarea 内部编辑滚动不在库支持范围，不声称已替换。维护风险是第三方 DOM/尺寸观察器与 React/Lit 生命周期、Shadow DOM CSS 边界、粘性列及嵌套容器配合；须验证动态内容、卸载清理、滚动/拖拽/键盘、无溢出不显示、主题、菜单焦点和既有列表几何。新增 lock 记录实际仅此包，Cargo/协议不变。React 首次测量移到子元素首轮更新后的帧，Material 只为打开的弹层建实例；关闭/卸载销毁，避免数百个关闭菜单提前解析 CSS/建立观察器。本机最终 Vite 产物相对前轮换肤构建：JS minified +47.73 kB（gzip +18.26 kB）、CSS +14.19 kB（gzip +2.29 kB），包括共享适配及 Shadow DOM 样式字符串成本，不将 npm unpacked size 冒充 bundle；既有大 chunk 警告保留。实际三平台 WebView 和屏幕阅读器证据继续待人工取得，不提升 Visual Gate 2。参考：https://github.com/KingSora/OverlayScrollbars 、https://www.radix-ui.com/primitives/docs/components/scroll-area 、https://github.com/Grsmto/simplebar 。
-
-2026-09-22 所有者指定的局部 UI 修正：资源及同类分组切换采用 MD3 Segmented buttons，复用已安装 `@material/web` 的 labs outlined segmented button/set，不引入新依赖。通过共享 React 适配层封装实验性组件路径与 selection event；后续库升级需回归单选、disabled、键盘、拒绝导航恢复及宽度。保留已有按钮宽度修正，未采用被否决的 Secondary Tabs。使用文字式无勾选图标配置保持尺寸稳定，不改变业务和路由合同，Visual Gate 2 仍待人工验收。
-
-状态：Portable UI B0-D production candidate `aa1323430252ed21995284a7b36dd36e45a15e0a` 已通过 Hosted CI
-`32877438910`。Official GUI functional candidate `19267230507071dc61ba306b98c8cfdd113e9ea2` 完成 E1-G1/G3
-生产实现与本地自动化验收，但项目所有者在正式 checklist 开始前拒绝其 visual/information architecture acceptance：其宏观
-布局缺少与 v3 可识别的产品连续性，且 `@material/web` dependency 存在但 component system 未被采用。前两轮 A/B/C IA
-探索已降为 historical；以 v3 用户模型为默认的 minimum-change proposal 已通过项目所有者审批。H0 Material foundation
-已形成独立本地提交；首次 H1 shell/navigation 虽通过前端自动化验收，但项目所有者判定其采用 Web dashboard/admin panel
-空间模式，状态为 `rejected_for_visual_direction`。reference-driven wide desktop Projects prototype 已由项目所有者通过
-Visual Gate 1，检查点为 `7bb325b78a74518881fb65e03de7f79902e72cd3`。项目所有者随后确认 Project/Package 用户入口存在
-超出两个 permanent-disabled menu item 的真实功能缺口，H2 visual implementation 已暂停；当前只执行
-`M7 Project / Package Functional Closure` P0-P7 已通过远端验收；P7 sealed HEAD
-`2ee11066c07a0994f3aebe6a9ce3f84ab2c8acd9` 的 Hosted CI run `33298022030` 与 CodeQL run `33298021806`
-均通过。P8 technical checkpoint 已在 sealed functional HEAD
-`d314b155374d31a8d7c0449c62efdea5dd745e72` 通过；但 Visual Gate 2 期间项目所有者重新冻结 Project Unity
-Version / Open Unity 产品模型；该 production closure 已在 sealed HEAD
-`e9349fd0f4cc9c18d9174dfc5826d48654aeb6f5` 通过 Hosted CI run `33352406804` 与 CodeQL run
-`33352406214`。M7-owned visible-action completeness 为 `PASS`，global gate 因 M11 保持 `BLOCKED_BY_M11`。
-H2-A 已恢复为 `ACTIVE / VISUAL_GATE_2`；visual candidate `24b03916bd6d958c921b4039bd62bec00afe25d4`
-保留为 pre-Unity-model local checkpoint，不是 rejected，也不是当前候选。M8/M9 未开始，M7仍未完成。
+项目所有者于 2026-10-31 明确批准 P6 wire 修复：P6 source selector、reinstall selection 和
+bulk intent 的 Rust enum variant fields 使用已冻结的 camelCase；候选查询使用独立公开
+source DTO，保持已冻结的 snake_case Schema/vectors 不变。该修复会替换当前错误接受的
+P6 snake_case 字段，属于实际 wire 的破坏性纠正；按此次未发布合同审批直接修复，RPC v1、
+State16、Config3、权限和依赖保持。不添加旧字段别名、双格式支持或 GUI 回退。
 
 ## 目标与完成定义
 
@@ -90,7 +99,7 @@ M7 完成需要：
    security/fault evidence；
 2. official GUI 完整覆盖 M1-M7 已真实发布的 GUI-relevant application/RPC use case；
 3. 统一实现 navigation、route、responsive shell、typed adapter、页面状态、Plan review、Apply、Operation follow 与恢复；
-4. 实现获批的 Config Schema v1、`settings.get`/`settings.update`、`activity.list` 与 `diagnostics.list`；
+4. 实现获批的 Config3、settings/activity/diagnostics、候选读取与 Unity Hub 窄合同，并保持各自权限和版本边界；
 5. Chromium browser-level DOM/component accessibility automation，以及 A-033 所要求的 v3 user-model continuity、Material component
    behavior、分阶段截图和一次真实交互桌面的视觉/流程/键盘焦点签收完成；
 6. 本地完整 gate 和最终提交自身的 Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 Hosted CI 通过；
@@ -235,12 +244,12 @@ RPC compatible addition只有 capability 与 open/refresh/dispatch/close。DTO c
 `m7-portable-ui.schema.json`冻结，删除 `extension_ui_surface_not_found`，不创建宽泛
 `extension_ui_failed`，也不公开 Host PID/pipe/lease/path/identity/context。
 
-### State v9 与 renderer
+### Portable UI 存储与 renderer
 
-M6 曾广告 v8；active v9 只为 extensions 和 immutable extension_plans 各增 nullable `ui_protocol`，合法值 NULL 或
+M6 的 v8 后，Portable UI 在 v9 为 extensions 和 immutable extension_plans 各增 nullable `ui_protocol`，合法值 NULL 或
 `portable-v1`。不保存页面常量，不建session/Snapshot/replay/action/draft/renderer/browser/cache/workflow table。v8->v9
 单事务 migration 已保留 rows/FK/revision/Event sequence，existing 默认 NULL，future schema fail closed；B1 完整接线后
-hello 已广告 dataSchema 9 与 `extensions.ui.portable.v1`。
+当前 hello 广告实际 State v16 与 `extensions.ui.portable.v1`；v9 是该字段的历史引入版本。
 
 官方 React/MD3 renderer与non-Tauri headless consumer使用同一 public DTO/fixtures。官方 contract冻结 host-owned
 name/ExtensionId/publisher-trust/version/desired/runtime/quarantine/extension-provided chrome、exhaustive match、
@@ -279,7 +288,7 @@ completion audit 后恢复以下批准切片：
 
 1. Slice E1：Core read surfaces、stable route identity、wide rail/drawer、narrow modal drawer 与统一 data-route state；
 2. Slice E2：当前既有 mutation、typed Plan review、explicit Apply、Operation progress/cancel/reconnect；
-3. Slice F1：Config Schema v1、`settings.toml` 单 writer durability、settings permission/RPC；
+3. Slice F1：当前 Config3、`settings.toml` 单 writer durability、ConfigStore port、settings permission/RPC；
 4. Slice F2：Event/Operation 的 safe Activity projection 与 redacted Diagnostics projection；
 5. Slice F3：Settings、Activity、Diagnostics 与 About GUI；
 6. Slice G1：Chromium browser-level DOM/component accessibility automation；
@@ -382,21 +391,22 @@ route 另实现 `confirmation-required`、`operation-running`、`success`、`fai
 高影响写入保持 `Plan -> review daemon ChangeSet/safe risk summary -> explicit Apply -> OperationId -> progress -> terminal
 result`。stale/revision conflict 回到明确 review，不静默重新 Plan；route/window close 不等于取消 Operation。
 
-### Settings Config Schema v1
+### Settings Config3 与存储权威
 
-M7 获准使用 `config/settings.toml`，由 daemon 单写；不建立 State Schema v10。公开 permission 只有 `settings.read`、
-`settings.manage`，公开 RPC 只有 `settings.get`、`settings.update`。Config v1 的 closed fields 为：
+当前活动格式为 `specs/config/settings-v3.md` / `.schema.json`。closed 字段为：
+appearance mode/sourceColor/scheme/density/motion、locale、packages 三项偏好及可清除的 unity.hubPath；
+精确枚举、边界和 null 语义以现有机器合同为准。所有非 nullable PATCH 字段显式 null 整次拒绝，
+sourceColor:null 和 hubPath:null 分别表示清除颜色和恢复 Hub 默认发现。
 
-- `appearance.mode = system|light|dark`；
-- `appearance.sourceColor = null|canonical #RRGGBB`；
-- `appearance.density = default|compact`；
-- `appearance.motion = system|reduced`；
-- `locale = system|canonical supported locale`。
+settings.get/update 要求原 settings.read/manage，返回 Config3、revision、完整归一化设置及
+派生 unityHub 证据；revision checked monotonic u64，文件 strict UTF-8/unknown-field fail closed，
+最多 16 KiB，确定性序列化、可恢复原子替换。派生文件状态不推进 revision，保存后状态读取
+失败不把已提交设置伪报为失败。application 只经 ConfigStore port 保存归一化快照，Store
+负责文件格式和恢复，不增加配置数据库表、通用 key/value、GUI 直写或第二套权威。
 
-`settings.get` 返回 `configSchema`、revision、full settings；`settings.update` 接收 expectedRevision 与 closed partial update，
-返回新 revision 和 normalized full settings。revision 为 checked monotonic u64，stale 复用既有 revision-conflict family。
-文件必须 strict/unknown-field fail closed、bounded UTF-8、deterministic serialization、crash-safe replacement。只有 storage/RPC
-完整接线后 hello 才广告 `configSchema: 1`。不得新增 updater/MCP/Discord/migration/extension arbitrary key/value 设置。
+主题确认、普通即时设置和 Hub 配置共用 UI 串行 CAS；状态读取、能力协商和故障恢复仍通过
+typed client/RPC。当前 hello.configSchema=3。Config1/2 只作为已有迁移输入，不是当前写入或
+返回格式；开发兼容策略按 A-034，发布前另行审计这些历史输入的保留需求。
 
 ### Activity and Diagnostics
 
@@ -438,6 +448,9 @@ apps/alcomd/
 apps/alcomd-extension-host/
 apps/alcomd-gui/
 crates/alcomd-application/
+crates/alcomd-domain/
+crates/alcomd-platform/
+crates/alcomd-vpm/
 crates/alcomd-client/
 crates/alcomd-extensions/
 crates/alcomd-protocol/
@@ -451,25 +464,40 @@ feature-parity.toml
 specs/config/ specs/extensions/ specs/gui/ specs/rpc/ specs/security/ specs/storage/
 ```
 
-manifest/lock 例外只有获批的 `apps/alcomd-gui/package.json` exact devDependency `@playwright/test = 1.62.1`
-及根 `package-lock.json` 的正常 Playwright closure。Material Symbols 改为固定 Google upstream commit 的 only-used
-vendored SVG，不再存在 Material Symbols npm dependency。其余 Cargo/npm manifest/lock、dependency graph、unsafe whitelist、platform API、
-Tauri unstable/capability、iframe/child WebView/WebviewWindow 以及任何 M8/M9 production wiring 仍禁止。
+当前获批依赖/资产范围：
+
+- 唯一前端浏览器测试依赖 `@playwright/test = 1.62.1`，不进入 production 图。
+- `@alcomd/ui` 直接 production 依赖为原有 `@material/web = 2.5.0`、配色引擎
+  `@material/material-color-utilities = 0.4.0`（Apache-2.0）和
+  `overlayscrollbars = 2.17.0`（MIT）；两项新增库均无额外 runtime dependency/native addon。
+- Material Symbols 为固定 Google upstream commit 的 only-used vendored SVG；新增 palette
+  只使用同一 upstream/样式并登记 path/hash，不存在 Material Symbols npm 包或第二图标库。
+- npm lock 的已批准开发安全补丁为 Vite 7.3.7 和 source-map-js 1.2.2，不加新库/override。
+  许可和维护风险见 THIRD_PARTY_NOTICES.md、当前合同及依赖评估记录。
+
+上述限定支持相应 `packages/alcomd-ui/package.json`、GUI check script 与根 package-lock
+改动；不构成后续依赖升级许可。候选读取允许窄 VPM primitive、domain/Store read snapshot
+及 typed DTO 接线；已批准的 Hub 发现/启动在现有 platform adapter 内使用既有 std API。
+不新增 production crate、Cargo 依赖、unsafe 文件或未批准 native API；不扩大 Tauri
+capability、不启用 unstable、不创建 iframe/child WebView/WebviewWindow 或 M8/M9 接线。
 
 ## 明确排除
 
 - M8 MCP backend/management product logic、M9 Discord IPC/Presence product logic；fixtures只证明UI表达能力；
 - custom Web UI、iframe/child WebView/WebviewWindow、asset/origin/CSP/Tauri capability；
 - Local API、migration/import/bootstrap/updater/installer/signing/dist、update channel 与 full external-client credential pairing；
-- WASI 0.3、component-model-async、wasmtime-wasi、guest thread、新 dependency；
+- WASI 0.3、component-model-async、wasmtime-wasi、guest thread，以及下述清单外的新 dependency；
 - M8/M9 production wiring，以及 Portable UI 合同外的新 public RPC/Permission/error/node/action/surface。
 
 ## 验证与 release blockers
 
-每个 production slice 运行 targeted tests；最终候选运行 format/clippy/workspace tests、xtask、metadata、baseline freeze、
-npm check/build、Playwright Chromium browser suite、Tauri no-bundle 与 diff check。必须证明除获批 Playwright dev-only closure
-和 Material Symbols 单一零传递 production asset record 外 Cargo/npm manifests与三份 lockfile依赖图不变、production Vite
-bundle不含 Playwright或完整 icon corpus、unsafe/platform API 不变。
+每个修复运行对应回归；最终候选运行 format/Clippy/Workspace tests、xtask、metadata、
+baseline freeze、npm check/build、完整 Playwright suite、Tauri no-bundle 及 diff check。
+依赖变化仅允许上一节精确清单，三份 lockfile 不得产生无法解释的增量；production Vite 图
+不含 Playwright 或完整 icon corpus，Cargo/unsafe/native API 边界保持。各轮失败、定向重试和
+完整 suite 分别记录，不能拼接成同轮全绿；运行中的真实环境未经授权不为测试而停止。
+Schema 的机器形状检查与 daemon 实际版本一致性、页面完整来源证据、离线恢复和公共列表
+混排行盒须有执行回归，不能以静态门禁通过替代。
 
 后续 first-party private node/page/command/permission、partial v1 renderer、GUI-to-Host direct channel、renderer作为business
 authority均是M7 blocker。
@@ -498,15 +526,15 @@ fixes and defer uncertain contract-dependent work without blocking unrelated cor
    `rejected_for_visual_direction`。重新执行必须先完成 `docs/gui/alcomd3-v3-layout-baseline.md` 的直接视觉拆解，再只实现
    wide desktop 的 recognizable sidebar/content canvas、Projects page toolbar、sort/filter 与 dense content。narrow adaptive
    不能反向决定本 gate 的宽屏结构；完成 first runnable prototype 后立即停止 Visual Gate 1。
-3. **H2 Projects/Packages & Templates（仅 H2-A 获批）**：当前只实现 Project package-centric workspace 的 Packages 默认主内容、
-   dense package table、project-context Plan/Apply/Operation 与真实 Unity/Backup secondary actions；repository/template 页面和
-   其他 H2 内容仍未批准。H2-A 完成后停止 Visual Gate 2。
+3. **H2 Projects/Packages & Templates（H2-A 与上述既有页面修正已验收）**：完成 package-centric workspace、
+   候选读取/行内版本/批量、统一公共组件及已批准的资源/模板/设置/日志/扩展/备份基础交互。
+   只实现本文件列明的窄公开合同。项目所有者于 2026-10-31 签收 Visual Gate 2；H2-B 及其他产品范围仍未批准。
 4. **H3 contextual v4 enhancements（未批准）**：把global/project Unity、Backups 与 Operations增强嵌入既有Settings/Project/progress workflow，不改
    Plan/Apply/Operation；完成 Visual Gate 3 的第一部分。
 5. **H4 Extensions/Portable UI（未批准）**：保留Extensions既有用户概念和utility归属；permission/quarantine/Portable UI位于detail，host
    chrome与renderer全部使用共同Material components；不改 Portable UI protocol；完成 Visual Gate 4 的第一部分。
 6. **H5 utilities/observability（未批准）**：实现 grouped Settings、Log内Activity/Diagnostics与footer About/version，保留
-   Config v1/A-026权限分离；
+   当前 Config3/A-026权限分离；
    完成 Visual Gate 3/4。
 7. **H6 responsive/a11y/Playwright regression（未批准）**：覆盖已批准 minimum-change user model 的 structural continuity、grouping/workspace/
    action placement、Material element presence和observable interaction、theme propagation、wide/narrow/200%/reduced motion；
@@ -706,25 +734,13 @@ Activity、Diagnostics 或 Portable UI authority。
 
 ## 下一停止点
 
-2026-09-17 bounded H2-A follow-up (historical, before candidate implementation approval): Installed-column exact repository version/source selection,
-single Bulk removal, full-selection preservation across presentation filters, and the
-classification-unavailable manual downgrade fallback are implemented locally. The fallback
-retains the chosen source. Full GUI browser suite: 52/52; frontend and final debug no-bundle
-builds passed. Evidence: `docs/testing/m7-h2-a-inline-version-20260917.md`.
-Latest/conditional updates and mixed bulk remain unfinished: the current raw read contract
-cannot provide authoritative candidate ordering/compatibility/upgrade evidence. The separate
-`M7-package-candidate-evidence-stop-a.md` was proposal-only at that checkpoint. The owner has
-subsequently approved its production implementation with the binding constraints recorded there.
-The approved candidate query now replaces raw version decisions and the transitional manual
-version fallback; current validation is recorded in
-`docs/testing/m7-package-candidates-implementation-20260917.md`. This does not grant Visual Gate 2.
-
-当前停止点是 H2-A Project Workspace / Packages Visual Gate 2。Unity technical closure 与更新后的 P8 M7-owned
-completeness 已通过；只允许从 sealed Unity HEAD 重新实现仍有效的 H2 视觉/Material 结构，不恢复旧的 Automatic/Explicit
-Editor preference UI。形成新的 real Tauri Visual Gate 2 候选后必须停止等待项目所有者人工视觉验收，不得进入
-H2-B/H3-H7/M8/M9/M11。
-
-
-- 2026-09-19 owner correction: the initial utility-page rework was rejected, not accepted as v3 parity. Re-audit and frontend-only reconstruction now cover actual modal flows, supported Settings group structure, extension cards and bounded Logs filtering. No RPC/DTO/state/dependency changes or later-stage authorization. See `docs/testing/m7-v3-recheck-implementation-20260919.md`; Visual Gate 2 remains PENDING.
-
-- 2026-09-19 owner-requested local checkpoint: accumulated GUI changes split into `c67dca1` (shared primitives/tests), `ce443ec` (pages/workflows/regressions), and a separate audit/status documentation commit. No push or Visual Gate approval; prior validation evidence remains unchanged.
+P6 实际 wire 字段修复与候选 DTO 分离已按项目所有者批准落实，其完整 Rust 483/0/8、公开
+RPC 8/8 和六种 Plan review 证据保持。本轮 H2-A 已形成真实桌面签收候选，完成 GUI
+Apply/同一 Operation、失效 Plan 拒绝、焦点、筛选、语言/主题持久化及环境恢复。
+最终完整 Chromium 在同一输入下独立通过 247/0，零重试；首轮 246/1 网络加载失败及各构建
+截图身份独立记录于 `docs/testing/m7-visual-gate-2-20261031.md`，不拼接定向结果。
+本地门禁与材料已收口，项目所有者于 2026-10-31 以“可以，接下来做什么”确认签收 Visual Gate 2。
+当前停止于 H2-A 收口；下一 slice 须先明确范围、验收点和停止点并取得批准，不自动进入
+H2-B、H3-H7、M8、M9 或 M11。
+已有候选读取、exact Unity、Config3、Hub 和 State16 的合同继续有效。完整 GUI/Rust/三平台
+技术门禁与人工视觉结果分别记录，不把旧 SHA 或定向通过冒充当前候选全绿。

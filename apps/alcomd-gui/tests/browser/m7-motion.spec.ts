@@ -84,10 +84,21 @@ async function openSettings(page: Page, suffix = "") {
 }
 
 async function selectOption(page: Page, value: string) {
-    await page.getByRole("combobox", { name: "GUI animation", exact: true }).click();
-    const label = { full: "Enable animations", reduced: "Disable animations", system: "System" }[value]!;
-    await page.locator("#settings-motion").getByRole("option", { name: label, exact: true }).click();
-    await expect(page.locator("#settings-motion")).toHaveJSProperty("value", value);
+    const select = page.locator("#settings-motion");
+    const lifecycle = await select.evaluateHandle((element) => ({
+        opened: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })),
+        closed: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true }))
+    }));
+    try {
+        await select.getByRole("combobox", { name: "GUI animation", exact: true }).click();
+        await lifecycle.evaluate((events) => events.opened);
+        const label = { full: "Enable animations", reduced: "Disable animations", system: "System" }[value]!;
+        await select.getByRole("option", { name: label, exact: true }).click();
+        await lifecycle.evaluate((events) => events.closed);
+    } finally {
+        await lifecycle.dispose();
+    }
+    await expect(select).toHaveJSProperty("value", value);
 }
 
 function maxDuration(value: string) {
