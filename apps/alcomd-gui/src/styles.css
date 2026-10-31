@@ -552,9 +552,9 @@ md-linear-progress {
 .project-workspace-more-actions .project-more-actions { margin-left: 2px; }
 
 .project-unity-version {
-    width: 204px;
-    min-width: 0;
-    flex: 0 0 204px;
+    width: max-content;
+    min-width: 204px;
+    flex: 0 0 auto;
 }
 
 .project-workspace-feedback {

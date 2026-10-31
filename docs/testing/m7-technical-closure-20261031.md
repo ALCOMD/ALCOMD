@@ -221,9 +221,21 @@ Foundation/Security/Security_Authorization/Storage_FileSystem feature 在原 pla
 关闭。仅测试改为预注册、等待公开 opened/closed，再检查原禁用和焦点条件；生产组件保持。
 原五项 Windows 本地基线 5/5，修正后两项定向 2/2，独立记录，不拼为完整通过。
 
-Ubuntu header 56→64、resize 后 Project 列仍 180，以及 Windows candidate harness heading
-缺失未在本机复现。保留原几何和可见性断言，加入有界字体/布局及仅失败时的加载诊断，等待
-同 SHA 远端证据；不改系统 TCP、浏览器参数、30 秒门槛、重试数或生产 CSS。
+`73f465b` 的 Windows 完整 required job 成功，Chromium 为 **247/0（5.8 分钟）**；原 candidate
+harness heading 缺失在这一轮未出现，不据此补造旧失败根因。Ubuntu 完整构建和 Rust 检查通过，
+Chromium 为 **245/2（6.0 分钟）**，仍是 header 56→64 与 resize 后 Project 列保持 180。
+本轮有界诊断确认实际字体为 DejaVu Sans：固定 204px 的 Unity Select 成为 64px，撑高 header；
+1440px 窗口的列表 viewport 为 1120px，但六列固有总宽为 1143.984375px，没有可分配剩余空间。
+
+本机诊断仅在测试页加载现有 Poppler 随附 DejaVuSans，精确复现同一两行 label、64px header、
+1143.984375px 表格及六列宽度；没有安装或新增产品字体。现仅将既有 Unity Select 宽度由固定
+204 改为 max-content、保留 204 下界与不可压缩布局；该字体下变为 212.375×40，header 恢复
+56，其他共享 Select 不变。表格测试按实际 overflow 加原 160px 增量建立“存在剩余空间”的
+前提，继续精确要求四个信息列与 Actions 不变、Project 增宽；DejaVu 对照在 1624px 窗口下
+Project 为 340.015625，其余五列完全相同。新增仅对该 Select 使用公开 monospace 字体 token
+的回归，同时检查单行高度、完整选中内容、无横溢及不遮挡 Open Unity。相关三项定向 **3/3**。
+证据为 gui-ubuntu-font/probe-widthonly.json、ci-73f-ubuntu-job.log 和 gui-ubuntu-targeted.log；
+完整候选套件单独执行，不将定向结果拼接为通过。系统 TCP、浏览器参数、30 秒门槛及零重试保持。
 
 平台与精确输入、probe/反例及命令保存在 `target/m7-technical-closure-20261031/gui-summary.md`
 和各 gui-* 子目录。本机为 Windows 11 Pro 10.0.26300、Node 24.22.1、Playwright 1.62.1、
@@ -310,9 +322,9 @@ UTC、快照和最后 API 保存在 gui-verified-offline 的 report.md/classific
 [Chromium Windows 错误映射](https://chromium.googlesource.com/chromium/src/+/be46c60078d52078152906df781aea0728978390/net/base/net_errors_win.cc)
 将 WSAENOBUFS 映射为此错误；具体 Windows 根因尚未确定，不能将错误名直接等同于端口耗尽。
 [Microsoft 端口排障说明](https://learn.microsoft.com/en-us/troubleshoot/windows-client/networking/tcp-ip-port-exhaustion-troubleshooting)
-要求结合事件与连接等证据。当前完整 GUI 门禁仍失败，不推送，不进入 H2-B。
+要求结合事件与连接等证据。当前本机完整 GUI 门禁仍失败，其记录保留，不拼接为通过。
 
-| 最终本地验证 | 已取得结果 | 日志 |
+| 首个技术提交 `73f465b` 的本地验证 | 已取得结果 | 日志 |
 | --- | --- | --- |
 | 完整 Rust/前端门禁 | PASS；Workspace 491/0/8 | local-check-final.log |
 | 冻结基线只读核验 | PASS；未重写 source-lock 或旧只读仓库 | baselines-final.log |
@@ -322,7 +334,7 @@ UTC、快照和最后 API 保存在 gui-verified-offline 的 report.md/classific
 | Tauri release no-bundle | PASS | tauri-release-final.log |
 | 完整 Chromium，最后独立轮次 | FAIL；237/10，10 项均未到达业务 | gui-verified.log |
 
-全部构建后再次核对，三个 lockfile 与最终门禁的 541 个源码/测试输入保持。最终 GUI SHA-256 为
+该提交全部构建后再次核对，三个 lockfile 与最终门禁的 541 个源码/测试输入保持。其 GUI SHA-256 为
 `E74AD19BFE00BDA405AF71D40AD2D401ABDCC62CBEF28D760621FDCBC8729685`，其余 daemon/CLI/Host
 hash 保存在 production-binary-hashes.json。没有以构建替代真实桌面产品验收。
 
@@ -333,6 +345,57 @@ hash 保存在 production-binary-hashes.json。没有以构建替代真实桌面
 restored-dev-accessibility.txt 与 restored-dev-window.json。
 
 本地结果不继承基线 Hosted CI/CodeQL；必须另核对本轮实际技术提交 SHA 的全部远端结果。
+项目所有者已明确批准仅 `73f465b4cd0ab28b90794fcaac94e21db5be0e72` 普通快进推送到
+`origin/main`，保留上述本机失败记录，以该 SHA 三平台完整 required jobs 与 CodeQL 全绿验证
+本轮技术收尾。推送后已核实远端与本机 HEAD 一致；没有强推、改历史或发布。
+[三平台 CI](https://github.com/ALCOMD/ALCOMD/actions/runs/41204615658) 已全部结束：Windows 成功，
+macOS 在 Check 失败，Ubuntu 在上述两项 Chromium 布局断言失败；同 SHA 的
+[Push CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/41204615683)
+和 [Scheduled CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/41204687960) 均已成功，四种语言
+检查全部通过。没有三平台完整 PASS 结论，H2-B 尚未开始。
+
+macOS 的 Hub 8 项（含确定同步拒绝、非零 child 退出、接收方取消和回收）实际全部通过。
+后续候选 RPC 在 `m7_candidates_rpc.rs:148` 因 fixture 的长 TMPDIR 加描述性目录/完整 UUID/
+runtime/socket 后缀超过 portable sockaddr_un 103 字节而失败。原 job 日志为
+ci-73f-macos-job.log，下载自已完成 job 124547054483；未重跑这个已知会失败的原 SHA。
+
+该 fixture 现沿用 M4/M5/M7 其他 RPC 测试已有的 macOS `/private/tmp` 私有临时根，其他平台
+继续使用原 temp_dir，保留完整 UUID、目录层级、Drop 与所有业务断言。最终 socket 为 91 字节，
+生产 103 字节检查、owner/NOFOLLOW/0700/0600 和通常运行时路径保持。没有新增临时目录框架、
+生产回退或测试跳过。候选 RPC 定向实际 **1/1**；修复后完整 scripts/check.ps1 另为
+**491/0/8**、exit 0，541 个输入前后不变，日志为 macos-fixture-targeted.log 和
+macos-fixture-check.log。该修改只有测试夹具；macOS 的修复效果仍等待包含它的新 SHA 三平台检查。
+本轮再次暂停/恢复原样例，五项正式 RPC 结果全部一致，settings revision 155，证据为
+sample-followup-restored-comparison.json。后续 CSS 与测试修复没有再次暂停或修改原 Core 数据。
+
+## 后续技术候选的本地结果
+
+候选 RPC 短临时根修复后的 Workspace Rust 输入已由 macos-fixture-check.log 完整覆盖，
+结果 **491 passed / 0 failed / 8 既有 helper ignored**。此后只有 CSS 和 browser spec 两个验证
+输入变化；541 项快照核对没有额外 Rust/合同变化。根 npm check/build、Tauri release no-bundle、
+metadata 均通过，三个 lockfile 未变。当前 release GUI SHA-256 为
+`F049B03D117F8FD964496BC334597679084516DE10EDF164390B01037C71EBC4`。
+
+独立完整 Chromium 为 **246 passed / 2 failed（15.5 分钟）**，exit 1，150 个输入全程未变。
+这不是完整 GUI PASS，不能由布局专项 3/3 或前一 SHA 的 Windows 247/0 代替。
+
+| 失败用例 | 原始时间线与实际覆盖 |
+| --- | --- |
+| Missing source requires affirmative Core evidence | 唯一正式失败为 30 秒 test budget。前两组流程在 16.175/26.508 秒完成；第三组在 29.133 秒通过 Missing source 计数，下一次 Available click 于 29.866 秒开始并跨越预算。trace 中 30 秒以后的动作不能计为按时通过。 |
+| 257 targets and selected rows are disabled | `open` 的标题可见断言失败；该调用从 1.406 秒开始，标称 5 秒，ExpectError 记录于 8.020 秒。1.585 秒的录屏主区仍空，7.111 秒的帧已有标题与表格，首次渲染只能界定在两帧之间；不能以迟到截图声称可见性断言通过。257 项批量业务断言均未到达。 |
+
+两份 trace 各自的 21/7 个网络记录全部为 200，没有 pageError 或明确阻塞网络证据；既有
+React 开发诊断另外记录，不与 pageError 混淆。当前时段无新增 Tcpip 4227/4231，也不能据此
+证明本机系统或调度因素不存在。没有将本轮失败归为 ERR_NO_BUFFER_SPACE，没有改超时、
+拆分用例、重试、浏览器 flags、系统配置或包管理实现，也没有无诊断重跑整套。
+
+本轮日志、trace 和输入分别为 gui-ubuntu-final.log、gui-ubuntu-final-results、
+gui-ubuntu-final-inputs-before/after.json；目录名表示本轮修复来源，实际运行平台仍为 Windows。
+离线时间线另存 gui-ubuntu-offline/README.md。原样例五项正式 RPC 再次完全一致，revision 155，
+没有遗留的 harness server，证据为 sample-layout-comparison.json 和 gui-ubuntu-final-tcp-events.json。
+后续候选尚未推送；此前保留本机失败并用 CI 验证的额外批准仅覆盖 `73f465b`，不能自动延伸到
+后续 SHA。H2-B 仍未开始，仍需同一最终技术 SHA 的三平台完整 required jobs 与 CodeQL。
+
 本轮没有真实受影响证书链或上游 TLS handshake PoC 验证；使用官方维护补丁、
 既有证书验证路径检查及网络回归验证产品兼容，不以 HTTP mock 代替 TLS 漏洞复现。
 前一兼容补丁检查在用户将 ZIP 目标改为 9.1.3 后

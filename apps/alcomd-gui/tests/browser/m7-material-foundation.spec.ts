@@ -308,7 +308,16 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     const projectWidth = (await projectHeader.boundingBox())?.width ?? 0;
     const actionsColumnWidth = (await actionsHeader.boundingBox())?.width ?? 0;
     await logProjectTableDiagnostics(page, "before-resize", { projectWidth, intrinsicColumnWidths, actionsColumnWidth });
-    await page.setViewportSize({ width: 1440, height: 720 });
+    const initialLayout = await main.locator(".projects-list").evaluate((table) => ({
+        windowWidth: innerWidth,
+        tableWidth: table.getBoundingClientRect().width,
+        viewportWidth: table.closest(".desktop-list-viewport")!.getBoundingClientRect().width
+    }));
+    // Installed fallback fonts can keep the table wider than a 1440px window.
+    // Add the overflow first so this comparison actually has space to distribute.
+    const wideWindowWidth = Math.ceil(initialLayout.windowWidth + Math.max(0, initialLayout.tableWidth - initialLayout.viewportWidth)) + 160;
+    await page.setViewportSize({ width: wideWindowWidth, height: 720 });
+    expect(await main.locator(".desktop-list-viewport").evaluate((viewport) => viewport.getBoundingClientRect().width)).toBeGreaterThan(initialLayout.tableWidth);
     const wideColumnWidths = await Promise.all([typeHeader, unityHeader, addedHeader, modifiedHeader].map(async (header) => (await header.boundingBox())?.width));
     const wideProjectWidth = (await projectHeader.boundingBox())?.width ?? 0;
     const wideActionsColumnWidth = (await actionsHeader.boundingBox())?.width ?? 0;
@@ -484,6 +493,21 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     await expect(main.getByRole("columnheader", { name: "Last modified" })).toHaveAttribute("aria-sort", "ascending");
     await addedHeader.getByRole("button", { name: "Added" }).click();
     await expect(addedHeader).toHaveAttribute("aria-sort", "descending");
+});
+
+test("Project Unity selector preserves the header row with wider font metrics", async ({ page }) => {
+    await openHarness(page, "/projects/00000000-0000-4000-8000-000000000101");
+    const selector = page.locator(".project-unity-version");
+    await selector.evaluate((element) => (element as HTMLElement).style.setProperty("--md-filled-select-text-field-input-text-font", "monospace"));
+    await expect(page.getByRole("combobox", { name: "Unity version", exact: true })).toBeVisible();
+    await expect(selector).toHaveJSProperty("displayText", "Unity 2022.3.22f1");
+    await expect(selector).toHaveCSS("height", "40px");
+    await expect(page.locator(".project-workspace-header")).toHaveCSS("height", "56px");
+    const bounds = (await selector.boundingBox())!;
+    expect(bounds.width).toBeGreaterThan(204);
+    expect(await selector.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    const openUnity = page.getByRole("navigation", { name: "Project actions" }).getByRole("button", { name: "Open Unity", exact: true });
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual((await openUnity.boundingBox())!.x);
 });
 
 test("Project workspace Copy completes through Plan Apply and navigates to the copied Project", async ({ page }) => {

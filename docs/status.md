@@ -16,18 +16,29 @@ M0-M6 已正式通过人工验收，M7 尚未完成。
   tracked 工作树在本轮开始时为空，原有 `output/playwright/` 两张截图保留。
 - 项目所有者已批准依次完成技术收尾、H2-B 实施、真实桌面候选。当前先修跨平台测试并逐项评估
   Wasmtime/rustls/ZIP 的当前官方安全公告，允许同维护线内必要补丁；跨不兼容版本等须单独审批。
-  技术提交独立于 H2-B，适用本地门禁后允许正常快进推送；同一最终 SHA 三平台 required jobs
-  与 CodeQL 全部成功、适用漏洞已修复且其他公告完成适用性判断后，H2-B 自动获准实施。
+  技术提交独立于 H2-B。所有者已另行明确批准仅技术 SHA
+  `73f465b4cd0ab28b90794fcaac94e21db5be0e72` 在保留本机 GUI 失败记录的前提下快进推送，
+  以同一 SHA 三平台完整 required jobs 与 CodeQL 全绿验证本轮技术收尾；适用漏洞已修复且
+  其他公告完成适用性判断后，H2-B 自动获准实施。
 - 本轮已选定并锁定 Wasmtime 48.0.8、rustls 0.23.46、rustls-webpki 0.103.16；项目所有者另行
   明确批准 ZIP 精确 9.1.3、必要传递闭包与 API 适配，保留既有归档格式、安全和事务。当前
   RustSec 版本匹配为 6 项未启用的 QUIC/wasm32 证书包链，维护/unsound/yanked 另逐项记录。
   [技术收尾证据](testing/m7-technical-closure-20261031.md)保存完整公告、锁图与每轮实际结果；
   归档安全与双向格式回归、完整 Rust 491/0/8、前端检查/构建、冻结基线、并发 CLI 启动、
-  release bins 和 Tauri no-bundle 已通过。最新完整 Chromium 为 **237/10**；10 项分别在文档或
-  必需静态 JS 加载时遇到 ERR_NO_BUFFER_SPACE，业务场景未到达，尚无完整 GUI PASS。
-  未更改系统 TCP、浏览器 flags、30 秒门槛或重试数，原样例 Core/开发窗口已恢复，完整
-  Projects/Editors/Operations/Settings 与任务前一致，settings revision 155。当前保留本地
-  技术候选，不满足原推送门槛；尚无新技术 SHA 的三平台/CodeQL 结果，不开始 H2-B。
+  release bins 和 Tauri no-bundle 已通过。首个技术提交的完整 Chromium 为 237/10，10 项在文档或
+  必需静态 JS 加载时遇到 ERR_NO_BUFFER_SPACE、业务未到达，该失败及其额外推送批准保持。
+  原样例 Core/开发窗口已恢复，Projects/Editors/Operations/Settings 与任务前一致，revision 155。
+  获批技术 SHA 已在 `origin/main` 核实；
+  [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/41204615683) 四语言成功。
+  [三平台 CI](https://github.com/ALCOMD/ALCOMD/actions/runs/41204615658) 已结束：Windows 完整成功，
+  browser 247/0；macOS 的 Hub 8 项通过，后续候选 RPC fixture 超出 103 字节 socket 限制失败；
+  Ubuntu browser 245/2，固定宽 Select 的字体换行与表格测试缺少剩余空间已由诊断复现。
+  macOS 现沿用已有短临时根规则，保留 UUID 与原断言，定向 1/1、完整本地 491/0/8 通过；
+  Select 仅改已有内容宽度规则，表格保留全部原断言，相关定向 3/3。后续候选根 npm check/build、
+  release no-bundle 通过；独立完整 Chromium 为 **246/2（15.5 分钟）**、150 个输入未变：一项
+  跨越 30 秒 test budget，另一项标题检查失败后才有完整页面帧，批量业务未到达，不能计为通过。
+  未改系统 TCP、浏览器 flags、超时、重试或包管理实现。后续候选尚未推送，原样例再次读回一致；
+  修复仍待同一新 SHA 三平台/CodeQL 核验，不宣称整体远端 PASS，不开始 H2-B。
 - [H2-B 既有方案](exec-plans/M7-official-gui-extension-ui.md)现为
   **APPROVED_AFTER_TECHNICAL_CLOSURE / NOT_STARTED**，没有开始产品实现。H2-B 只允许本地候选
   提交，不自动推送；真实桌面材料完成后停止等待项目所有者验收。

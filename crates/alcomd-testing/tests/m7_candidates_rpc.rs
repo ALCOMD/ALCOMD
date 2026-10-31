@@ -613,8 +613,11 @@ fn isolated_ipc(_runtime: PathBuf) -> (IpcConfig, ClientConfig) {
 struct Fixture(PathBuf);
 impl Fixture {
     fn new() -> Self {
-        let root =
-            std::env::temp_dir().join(format!("alcomd-candidates-rpc-{}", uuid::Uuid::new_v4()));
+        #[cfg(target_os = "macos")]
+        let base = PathBuf::from("/private/tmp");
+        #[cfg(not(target_os = "macos"))]
+        let base = std::env::temp_dir();
+        let root = base.join(format!("alcomd-candidates-rpc-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&root).expect("fixture");
         Self(root)
     }

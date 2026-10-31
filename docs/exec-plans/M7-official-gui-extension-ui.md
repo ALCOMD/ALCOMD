@@ -567,9 +567,17 @@ CI `41191370985` 和 CodeQL `41191370892` 仅为审阅基线，不要求回退�
 - 同一最终技术 SHA 必须取得 Windows、Ubuntu、macOS 完整 required jobs 及 CodeQL 成功，
   且适用安全问题已修、其他公告有可检查结论。未满足时不宣称 PASS，也不提前改 H2-B 产品。
 - 本轮已完成所选 Wasmtime/rustls/webpki/ZIP 维护及 ZIP 类型防御，完整 Rust 491/0/8、前端、
-  冻结基线、CLI 并发启动与 release/no-bundle 通过。最新完整 Chromium 237/10 的每项均在
+  冻结基线、CLI 并发启动与 release/no-bundle 通过。首个技术提交 Chromium 237/10 的每项均在
   文档或必需静态 JS 请求遇到 ERR_NO_BUFFER_SPACE、业务未到达；该门禁仍失败，不能拼接
-  前轮或定向结果作为通过。当前仅保留本地技术候选，未推送、未进入 H2-B；详细证据见
+  前轮或定向结果作为通过。项目所有者已明确批准仅 SHA
+  `73f465b4cd0ab28b90794fcaac94e21db5be0e72` 在保留本机失败记录时普通快进推送，并以同 SHA
+  三平台完整 required jobs 与 CodeQL 全绿作为本轮技术收尾通过条件。该 SHA 已核实位于
+  `origin/main`，CodeQL 四语言已成功；Windows 完整成功、browser 247/0，macOS Hub 已通过但后续
+  候选 RPC fixture 长路径失败，Ubuntu browser 245/2。后续修复沿用既有 macOS 短临时根、修正
+  Select 内容宽度及表格测试的剩余空间前提，保留全部原断言；完整本地 Rust 491/0/8、布局专项
+  3/3、根前端检查/构建与 release no-bundle 通过。后续候选完整 Chromium 为 246/2，分别为
+  30 秒预算与标题等待失败，150 个输入未变，不能拼为 PASS；后续 SHA 尚未推送，原额外批准
+  不自动延伸。仍待最终技术 SHA 三平台检查，未进入 H2-B；详细证据见
   `../testing/m7-technical-closure-20261031.md`。
 - 满足前提后 H2-B 自动获准开始，无需再询问。H2-B 允许本地候选提交，禁止自动推送；
   当前 release GUI、匹配 daemon 和隔离样例必须走实际写入闭环，最后交截图/清单等待人工验收。
