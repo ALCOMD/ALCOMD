@@ -57,7 +57,7 @@ test("Templates primary action uses the existing derive Plan and explicit Apply"
     await page.getByRole("combobox", { name: "Source project", exact: true }).click();
     await page.getByRole("option", { name: "<private-project>", exact: true }).click();
     await page.getByLabel("Display name", { exact: true }).fill("Derived fixture");
-    await page.getByLabel("New template ID", { exact: true }).fill("com.example.derived");
+    await page.getByLabel("New template ID", { exact: true }).fill("00000000-0000-4000-8000-000000000303");
     await page.getByRole("button", { name: "Review", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "Review new template", exact: true })).toBeVisible();
     await expect(page.getByText("Plan fingerprint:")).toBeVisible();

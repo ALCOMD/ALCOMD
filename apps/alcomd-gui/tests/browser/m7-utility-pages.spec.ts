@@ -383,7 +383,7 @@ test("utility desktop evidence includes the full application window", async ({ p
         ["repository", "/repositories/00000000-0000-4000-8000-000000000102", "Repository"],
         ["user-packages", "/user-packages", "Resources"],
         ["templates", "/templates", "Resources"],
-        ["template", "/templates/com.cqmhv.template.avatar", "Template detail"],
+        ["template", "/templates/00000000-0000-4000-8000-000000000301", "Template detail"],
         ["settings", "/settings", "Settings"],
         ["unity", "/unity", "Settings"],
         ["backups", "/projects/00000000-0000-4000-8000-000000000101/backups", "Backups"],

@@ -1,6 +1,6 @@
 # M7：官方 GUI 与 Portable Extension UI
 
-状态：**M7 IN_PROGRESS / TECHNICAL_CLOSURE / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
+状态：**M7 IN_PROGRESS / H2-B IMPLEMENTING / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
 活动分支为 `main`；当前阶段与验证结果统一见 `docs/status.md`。已通过的 M6、Portable UI B0-D、
 Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据，不替代本轮 GUI 人工验收。
 
@@ -493,11 +493,31 @@ capability、不启用 unstable、不创建 iframe/child WebView/WebviewWindow �
 
 ## 验证与 release blockers
 
-每个修复运行对应回归；最终候选运行 format/Clippy/Workspace tests、xtask、metadata、
-baseline freeze、npm check/build、完整 Playwright suite、Tauri no-bundle 及 diff check。
+验证按风险和开发阶段安排，不以小修改或独立提交为完整门禁的触发点：
+
+| 时机 | 验证安排 |
+| --- | --- |
+| 日常修改 | 受影响模块的定向测试及必要的 fmt/Clippy、前端 check；仅文档修改执行 metadata、引用与 diff check |
+| 功能模块完成 | 集中覆盖该模块及相关回归路径；H2-B 按模板分页/创建、Plan review/终态刷新、资源生命周期分组，涉及共享组件时覆盖 H2-A 对应的焦点、权限、重连和包管理路径 |
+| 稳定候选与阶段收尾 | 合并相关修改后集中运行适用完整门禁；跨平台、安全、依赖和重要架构变更覆盖相应平台与安全回归，避免反复编译同一批依赖 |
+
+高风险问题或回归失败及时执行必要的额外测试，不机械等待模块或阶段结束。最终候选基于其实际
+SHA 运行 format/Clippy/Workspace tests、xtask、metadata、baseline freeze、npm check/build、
+完整 Playwright suite、Tauri release no-bundle 及 diff check；不逐项或逐提交重复完整测试与构建。
+三平台 Hosted CI 和 CodeQL 集中用于获准的重要技术检查点、阶段收尾及最终验收候选；
+在已有授权范围内批量提交、集中推送，不新增推送授权，不仅因本次流程调整取消运行中的 CI。
+当前跨平台与依赖安全收尾仍需同一最终技术 SHA 的三平台完整 required jobs 和 CodeQL 成功；
+H2-B 保持仅本地候选、不自动推送的停止点。
+
+本地完整验证优先复用 `scripts/check.ps1` / `scripts/check.sh`，其已包含 fmt、Clippy、
+Workspace tests、xtask、前端 check/build 与 metadata；不在其后逐项重跑，也不叠加另一个
+包含相同完整检查的聚合入口。CLI auto-start、冻结基线、浏览器及 release 构建等未覆盖部分
+按现有独立入口补齐，保留各自实际结果与锁文件校验。
+
 依赖变化仅允许上一节精确清单，三份 lockfile 不得产生无法解释的增量；production Vite 图
 不含 Playwright 或完整 icon corpus，Cargo/unsafe/native API 边界保持。各轮失败、定向重试和
-完整 suite 分别记录，不能拼接成同轮全绿；运行中的真实环境未经授权不为测试而停止。
+完整 suite 分别记录，不拼接不同提交的通过结果，不将未执行标记为 PASS；保留全部测试、
+断言和安全门禁。运行中的真实环境未经授权不为测试而停止。
 Schema 的机器形状检查与 daemon 实际版本一致性、页面完整来源证据、离线恢复和公共列表
 混排行盒须有执行回归，不能以静态门禁通过替代。
 
@@ -589,19 +609,22 @@ CI `41191370985` 和 CodeQL `41191370892` 仅为审阅基线，不要求回退�
   唯一失败是正常动画分支的一次性滚动条样式读取。后续测试候选在默认断言时限内等待实际样式，
   增加 property 校验并保留原阈值；动画专项 9/0、前端与 metadata 通过，独立完整本地 Chromium
   248/1（12.6 分钟），150 个输入未变。唯一失败为必需 JS 的 ERR_ADDRESS_IN_USE，Hub 业务
-  未到达；未重跑、改 Hub 或扩大预算。新候选推送需实际 SHA 的单独失败门禁批准，仍待同一
-  最终 SHA 三平台完整检查，未进入 H2-B；详细证据见
+  未到达；未重跑、改 Hub 或扩大预算。所有者已明确批准精确 SHA
+  `97c761f76613ea68ebc7a93e4695940dabb969dd` 保留本机失败后普通快进推送，已核实位于
+  `origin/main`；CodeQL `41228566315` 四语言成功，CI `41228566567` 三平台完整 required jobs
+  全部成功、browser 各 249/0。同一最终技术 SHA 的集中收尾检查点已通过，H2-B 按既有授权
+  开始实施；前述本机失败记录保持。详细证据见
   `../testing/m7-technical-closure-20261031.md`。
 - 满足前提后 H2-B 自动获准开始，无需再询问。H2-B 允许本地候选提交，禁止自动推送；
   当前 release GUI、匹配 daemon 和隔离样例必须走实际写入闭环，最后交截图/清单等待人工验收。
 
 ## H2-B 资源与模板范围及验收方案（条件批准）
 
-状态：**APPROVED_AFTER_TECHNICAL_CLOSURE / NOT_STARTED**，2026-10-31。
+状态：**APPROVED / IN_PROGRESS**，2026-11-01。
 实施前提与推送边界以上节为准；H2-A 检查点为
 `23f545245f613f47f8def1e16418c4d12303404e`，Visual Gate 2 已签收。
 本节直接细化原 H2 的剩余范围，不新建产品里程碑，不重复实现已存在的入口。
-当前阶段仍以 `../status.md` 为唯一入口；技术收尾前不开始 H2-B production 修改。
+当前阶段仍以 `../status.md` 为唯一入口；技术收尾已在 `97c761f` 完成同 SHA 三平台 CI/CodeQL 检查点。
 
 ### 目标与现状证据
 
@@ -612,16 +635,16 @@ CI `41191370985` 和 CodeQL `41191370892` 仅为审阅基线，不要求回退�
 | 现状 | 已核对证据 | H2-B 处理 |
 | --- | --- | --- |
 | 仓库 inspect/register/refresh/unregister、包预览与分页已接线 | `CorePages.tsx` 的 RepositoriesPage/RepositoryPackageList；`CoreActions.tsx` 的 RegisterRepositoryPanel/RepositoryActions | 复用现有功能，补齐异常、并发 revision 与真实桌面闭环证据 |
-| 用户包登记、刷新、取消登记已接线；get 只有 adapter，没有页面调用 | `CorePages.tsx` 的 UserPackageEnroll/UserPackageManager；`rpc.ts` 的 userPackageGet | 在既有资源行内提供有用户价值的来源/版本详情，消费现有 get；不增加独立导航或公共方法 |
+| 用户包登记、刷新、取消登记及行内详情已接线 | `CorePages.tsx` 的 UserPackageEnroll/UserPackageManager/UserPackageDetails；`rpc.ts` 的既有 userPackageGet | 详情读取当前 Core 记录，关闭隔离旧响应；资源与相关包来源 18/0，真实目录和持久化仍待 native 验收 |
 | 模板导入、派生、收藏、导出、移除、创建项目都已有入口 | `CoreActions.tsx` 的 TemplateImportPanel/TemplateDeriveDialog/TemplateActions；`ProjectCreationDialogs.tsx` | 修正当前流程缺口，不把这些功能重新列为“从零实现” |
-| 模板读取确实被截为首 100 项 | `rpc.ts` 的 templatesList 固定 limit=100 且不接 cursor；TemplatesPage 与 CreateProjectDialog 均未消费 nextCursor。现有 Rust DTO、Tauri adapter 和 Core 已支持 cursor | 接通已有 opaque cursor；列表与项目模板选择器均可到达后页 |
-| 模板完成后可能保留旧列表，尚须延迟场景复现 | import/derive/create 的 onChanged 在 Apply 接受时触发；对应 MutationFeedback 未传 onOperationTerminal | 先用可控延迟证明竞态，再将结果刷新接到同一 Operation 的终态；不在 GUI 猜测完成时间 |
-| 模板 review 主要显示 action 和 fingerprint | 当前三类 review；Core 已返回不同 action 的白名单 evidence | 用既有证据说明具体对象、来源和覆盖/创建条件，不以技术摘要替代用户确认 |
-| 现有浏览器覆盖不是完整资源生命周期证据 | `m7-template-dialogs.spec.ts`、`m7-project-create-restore.spec.ts`、`m7-package-workspace.spec.ts`、`m7-accessibility.spec.ts`；harness 的模板列表只有一项、Plan helper 省略大部分实际 evidence | 保留已有断言，增加真实 wire 形状、多页、延迟、冲突与结果断言；本次未执行新测试 |
+| 模板列表与创建选择器已接通后页 | `rpc.ts` 保持 limit=100 并透传 cursor；TemplatesPage 复用 PagedItems，CreateProjectDialog 保留后页失败时的数据/选择并隔离关闭后的响应 | 101 项、创建导航、失败重试、旧响应隔离和延迟 Retry 的模块回归 14/0；证据见 `../testing/m7-h2-b-20261101.md`，不替代最终候选或 native 验收 |
+| 模板任务由当前页面持有并在成功终态刷新 | 可控延迟已复现关闭失去跟踪/初读错误停止等缺口；复用 OperationFollow，行 controller 位于 PagedItems 外 | 保留多个显式接受 ID；成功才刷新，旧任务不覆盖新草稿；完整整轮与定向结果分别见 testing 记录 |
+| 三类模板 review 已使用现有白名单 evidence | `TemplatePlanReview.tsx` 校验顶层字段并绑定读取/请求上下文；两个创建入口共享规则 | 缺失、错误类型、身份/digest 不匹配不开放 Apply；不显示 filesystem identity，不扩充公共字段 |
+| 浏览器已补真实 wire、分页、任务交错及资源生命周期 | 新模板/资源/shared-follow specs 和原 harness；规范 UUID、顶层 Plan、受控 Running/terminal 和有状态 CAS fixture | 保留全部既有断言；模块 14/0、资源 18/0、普通模板 6/0 分别记录；34 项扩展组的 30/4 不合并为完整通过 |
 | H2-A 真实桌面材料没有这些资源写入闭环 | `../testing/m7-visual-gate-2-20261031.md` 的实际范围 | 新建 H2-B 独立证据，不用 H2-A 的 GUI Apply 或 CLI backend 测试冒充 |
 
-上述“首 100 项”和“get 无页面调用”为静态确认；完成刷新是可从实现识别的竞态风险，
-没有在本方案中伪报为已复现的 native 故障。v3 行为仅使用冻结审计和布局对照，不复制源码。
+上述 GUI 缺口以浏览器受控场景复现和验证，尚不作为 native 故障或真实写入通过证据。
+v3 行为仅使用冻结审计和布局对照，不复制源码。
 
 ### 建议实施范围与顺序
 
@@ -655,7 +678,7 @@ setFavorite/remove/planCreateProject/applyCreateProject。Operation 查询/取�
 低影响 command 不创造 GUI Plan 或新 Operation。
 
 预计 production 改动仅为 `apps/alcomd-gui/src/CorePages.tsx`、`CoreActions.tsx`、
-`ProjectCreationDialogs.tsx`、`rpc.ts`、必要的本地 `core-models.ts` 与三语言词条；
+`ProjectCreationDialogs.tsx`、`TemplatePlanReview.tsx`、`rpc.ts`、必要的本地 `core-models.ts` 与三语言词条；
 tests/browser 的现有 harness/spec 同步。`UtilityWorkspace.tsx`、`Material.tsx` 等共享层只允许
 为上述可复现问题作必要修正。已有 Tauri templates adapter 已接收完整参数，无需新增平台 command。
 本方案不提出新依赖、public DTO/wire、RPC、权限、Schema、migration 或 native API。
@@ -678,10 +701,12 @@ tests/browser 的现有 harness/spec 同步。`UtilityWorkspace.tsx`、`Material
 同一测试场景的请求序列和数据结果均须可检查；使用公开 Material 生命周期，不访问私有 shadow DOM。
 测试先补足能证明缺口的失败用例再修实现，不放宽 30 秒、单 worker、零重试或原断言。
 
-最终候选执行主 ExecPlan 的完整本地门禁：fmt、Clippy、Workspace tests、xtask、metadata、
-冻结基线、npm check/build、完整 Chromium、Tauri release no-bundle 与 diff check。
-日志逐轮保存；旧 SHA 的通过、定向复核与完整运行不得拼接。本方案阶段只运行文档检查，
-不重复执行或宣称取得 H2-B 的 Rust/browser/native 验收结果。
+开发中按本文件“验证与 release blockers”的风险分级安排定向及模块回归；相关修改稳定后，
+在实际本地候选 SHA 上集中完成主 ExecPlan 的完整本地门禁：fmt、Clippy、Workspace tests、
+xtask、metadata、冻结基线、npm check/build、完整 Chromium、Tauri release no-bundle 与 diff check。
+该清单不按单个修改或提交重复触发，H2-B 也不自动触发 Hosted CI/CodeQL 或推送。
+日志逐轮保存；旧 SHA 的通过、定向复核与完整运行不得拼接，未执行项保持未执行。
+仅修改本方案或验证安排时运行文档检查，不重复执行或宣称取得 H2-B 的 Rust/browser/native 验收结果。
 
 ### 真实桌面验收方案与停止点
 

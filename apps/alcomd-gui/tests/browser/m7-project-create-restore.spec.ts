@@ -11,7 +11,7 @@ test("Projects Create uses the typed Template Plan Apply Operation flow and open
     await expect(page.getByLabel("Create target parent")).toHaveValue("C:\\Fixture\\Avatar");
     await page.getByLabel("Create project name").fill("Created Project");
     await page.getByRole("button", { name: "Review creation" }).click();
-    await expect(page.getByText(/Destination/).locator("..")).toContainText("Created Project");
+    await expect(page.getByText("Destination", { exact: true }).locator("..")).toContainText("Created Project");
     await expect(page.getByText(/ALCOMD Core will validate the frozen template/)).toBeVisible();
     await page.locator("md-dialog[open]").getByRole("button", { name: "Create project" }).click();
 

@@ -35,7 +35,8 @@ import type {
     UnityInstallation,
     UnityLaunchOptionsResult,
     UserPackageRecord,
-    SettingsGetResult
+    SettingsGetResult,
+    TemplateRecord
 } from "./core-models";
 import {
     BackupCreatePanel,
@@ -52,7 +53,10 @@ import {
     RegisterRepositoryPanel,
     RepositoryActions,
     TemplateActions,
+    TemplateActionDialog,
+    type TemplateActionSelection,
     TemplateCreateActions,
+    useTemplateOperations,
     UnityRegistryActions
 } from "./CoreActions";
 import { DesktopList, type DesktopListColumn } from "./DesktopList";
@@ -388,10 +392,11 @@ export function ProjectsPage({ client, navigate }: PageProps) {
             />
             <CreateProjectDialog
                 client={client}
+                onChanged={refresh}
                 onCompleted={(projectId) => {
                     setRegistrationMessage(t("Project created"));
                     setCreateOpen(false);
-                    void refresh().then(() => navigate(`/projects/${projectId}`));
+                    navigate(`/projects/${projectId}`);
                 }}
                 onClose={() => {
                     setCreateOpen(false);
@@ -1700,6 +1705,8 @@ function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcCli
     const [busy, setBusy] = useState<string>();
     const pending = useRef(false);
     const [removing, setRemoving] = useState<UserPackageRecord>();
+    const [selected, setSelected] = useState<string>();
+    const detailsOrigin = useRef<HTMLElement>(null);
     const [error, setError] = useState<RpcError>();
     const refresh = async (item: UserPackageRecord) => {
         if (pending.current) return;
@@ -1732,11 +1739,29 @@ function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcCli
             pending.current = false;
         }
     };
-    return <section className="user-packages">{error === undefined ? null : <p className="inline-error" role="alert">{t("User Package request failed: ")}{error.code}</p>}{packages.length === 0 ? <RouteState kind="empty" title={t("No User Packages enrolled")} detail={t("Enroll a package folder to make it available as a source. Removing enrollment never deletes the source folder.")} /> : <UtilityTable label={t("User Packages")} headers={[t("Package"), t("Version"), t("Source"), t("Actions")]} rows={packages.map((item) => ({ key: item.userPackageId, cells: [<><strong>{item.displayName ?? item.packageId}</strong><small>{item.packageId}</small></>, item.version, <span title={item.userPackageId}>{t("Local / User Package")}<small>{t("revision ")}{item.revision}</small></span>, <div className="card-actions"><RefreshButton disabled={busy !== undefined} onClick={() => void refresh(item)} refreshing={busy === "refresh:" + item.userPackageId} /><IconButton disabled={busy !== undefined} label={busy === "remove:" + item.userPackageId ? t("Removing…") : t("Remove enrollment")} onClick={() => setRemoving(item)} title={t("Remove enrollment")} type="button"><Icon asset={closeIcon} /></IconButton></div>] }))} />}{removing === undefined ? null : <Dialog open dismissible={busy === undefined} title={t("Remove User Package?")} onClose={() => { if (busy === undefined) setRemoving(undefined); }}>
+    return <section className="user-packages">{error === undefined ? null : <p className="inline-error" role="alert">{t("User Package request failed: ")}{error.code}</p>}{packages.length === 0 ? <RouteState kind="empty" title={t("No User Packages enrolled")} detail={t("Enroll a package folder to make it available as a source. Removing enrollment never deletes the source folder.")} /> : <UtilityTable label={t("User Packages")} headers={[t("Package"), t("Version"), t("Source"), t("Actions")]} rows={packages.map((item) => ({ key: item.userPackageId, cells: [<><strong>{item.displayName ?? item.packageId}</strong><small>{item.packageId}</small></>, item.version, <span title={item.userPackageId}>{t("Local / User Package")}<small>{t("revision ")}{item.revision}</small></span>, <div className="card-actions"><Button disabled={busy !== undefined} onClick={() => { detailsOrigin.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setSelected(item.userPackageId); }} type="button" variant="text">{t("Details")}</Button><RefreshButton disabled={busy !== undefined} onClick={() => void refresh(item)} refreshing={busy === "refresh:" + item.userPackageId} /><IconButton disabled={busy !== undefined} label={busy === "remove:" + item.userPackageId ? t("Removing…") : t("Remove enrollment")} onClick={() => setRemoving(item)} title={t("Remove enrollment")} type="button"><Icon asset={closeIcon} /></IconButton></div>] }))} />}
+        <Dialog onClose={() => setSelected(undefined)} open={selected !== undefined} returnFocus={detailsOrigin} title={t("User Package details")}>
+            {selected === undefined ? null : <UserPackageDetails client={client} userPackageId={selected} />}
+            <div className="dialog-actions"><Button onClick={() => setSelected(undefined)} type="button" variant="text">{t("Close")}</Button></div>
+        </Dialog>
+        {removing === undefined ? null : <Dialog open dismissible={busy === undefined} title={t("Remove User Package?")} onClose={() => { if (busy === undefined) setRemoving(undefined); }}>
         <p><Translated message="Remove {name} ({version}) from your package sources?" values={{ name: <strong>{removing.displayName ?? removing.packageId}</strong>, version: removing.version }} /></p><p>{t("The source folder will stay on disk.")}</p>
         {error === undefined ? null : <p role="alert">{t("Removal failed: ")}{error.code}</p>}
         <div className="dialog-actions"><Button disabled={busy !== undefined} onClick={() => setRemoving(undefined)} type="button" variant="text">{t("Cancel")}</Button><Button disabled={busy !== undefined} onClick={() => void remove(removing)} type="button">{t("Remove enrollment")}</Button></div>
     </Dialog>}</section>;
+}
+
+function UserPackageDetails({ client, userPackageId }: { client: GuiRpcClient; userPackageId: string }) {
+    const { t } = useTranslation();
+    const load = useCallback(() => client.userPackageGet(userPackageId), [client, userPackageId]);
+    return <ResourcePage load={load}>{({ userPackage }) => <dl className="dialog-summary">
+        <Detail label={t("Name")} value={userPackage.displayName ?? userPackage.packageId} />
+        <Detail label={t("Package")} value={userPackage.packageId} />
+        <Detail label={t("Version")} value={userPackage.version} />
+        <Detail label={t("Source folder")} value={userPackage.sourceRootPath} />
+        <Detail label={t("Revision")} value={String(userPackage.revision)} />
+        <Detail label={t("Archive SHA-256")} value={shortHash(userPackage.archiveSha256)} />
+    </dl>}</ResourcePage>;
 }
 
 export function RepositoryDetailPage({ client, navigate, repositoryId }: PageProps & { repositoryId: string }) {
@@ -1747,29 +1772,48 @@ export function RepositoryDetailPage({ client, navigate, repositoryId }: PagePro
 
 export function TemplatesPage({ client, navigate }: PageProps) {
     const { t, locale } = useTranslation();
+    const operations = useTemplateOperations(client);
+    const [selection, setSelection] = useState<TemplateActionSelection>();
+    const session = useRef(0);
+    const createButtonRef = useRef<HTMLElement>(null);
+    useEffect(() => { setSelection(undefined); }, [client]);
+    const selectAction = (template: TemplateRecord, action: TemplateActionSelection["action"], origin: DialogOrigin) => {
+        const fallbackOrigin = { get current() { return origin.current?.isConnected ? origin.current : createButtonRef.current; } };
+        setSelection({ action, key: ++session.current, template, origin: fallbackOrigin });
+    };
     const load = useCallback(() => client.templatesList(), [client]);
-    return <UtilityWorkspace title={t(navigationLabels.resources)} load={load} navigation={<ResourceNavigation current="/templates" navigate={navigate} />} tools={(_, refresh) => <TemplateCreateActions client={client} onChanged={refresh} />}>
-        {(value, refresh) => value.templates.length === 0 ? <RouteState kind="empty" title={t("No templates available")} /> : <UtilityTable
+    return <UtilityWorkspace title={t(navigationLabels.resources)} load={load} navigation={<ResourceNavigation current="/templates" navigate={navigate} />} tools={() => <TemplateCreateActions client={client} operations={operations} primaryRef={createButtonRef} />}>
+        {(value, refresh) => <><PagedItems initialItems={value.templates} initialCursor={value.nextCursor} loadMore={async (cursor) => {
+            const next = await client.templatesList(cursor);
+            return { items: next.templates, nextCursor: next.nextCursor };
+        }}>{(templates) => templates.length === 0 ? <RouteState kind="empty" title={t("No templates available")} /> : <UtilityTable
             label={t("Templates")}
             headers={[t("Template"), "ID", t("Last modified"), t("Source"), t("Actions")]}
-            rows={value.templates.map((template) => ({
+            rows={templates.map((template) => ({
                 key: template.templateId,
                 cells: [
                     <><strong>{template.displayName}</strong><small>{template.description ?? template.templateVersion}</small></>,
                     template.templateId,
                     formatTime(t, locale, template.updatedAtMs),
                     humanize(t, template.sourceKind),
-                    <TemplateActions client={client} compact onChanged={refresh} onView={() => navigate("/templates/" + template.templateId)} template={template} />
+                    <TemplateActions client={client} compact onAction={(action, origin) => selectAction(template, action, origin)} onChanged={refresh} onView={() => navigate("/templates/" + template.templateId)} template={template} />
                 ]
             }))}
-        />}
+        />}</PagedItems>
+            {selection === undefined ? null : <TemplateActionDialog client={client} key={selection.key} onChanged={refresh} onClose={() => setSelection((current) => current?.key === selection.key ? { ...current, closed: true } : current)} operations={operations} selection={selection} />}
+            {operations.follow(refresh, (projectId) => navigate(`/projects/${projectId}`))}
+        </>}
     </UtilityWorkspace>;
 }
 
 export function TemplateDetailPage({ client, navigate, templateId }: PageProps & { templateId: string }) {
     const { t, locale } = useTranslation();
+    const operations = useTemplateOperations(client);
+    const [selection, setSelection] = useState<TemplateActionSelection>();
+    const session = useRef(0);
+    useEffect(() => { setSelection(undefined); }, [client]);
     const load = useCallback(() => client.templateGet(templateId), [client, templateId]);
-    return <UtilityWorkspace title={t("Template detail")} back={<BackTo label={t("Templates")} navigate={navigate} path="/templates" />} load={load}>{({ template }, refresh) => <><dl className="detail-grid"><Detail label={t("Name")} value={template.displayName} /><Detail label={t("Version")} value={template.templateVersion} /><Detail label={t("Source")} value={humanize(t, template.sourceKind)} /><Detail label={t("Revision")} value={String(template.revision)} /><Detail label={t("Provenance")} value={template.provenance} /><Detail label={t("Favorite")} value={template.favorite ? t("Yes") : t("No")} /></dl><TemplateActions client={client} onChanged={refresh} template={template} /></>}</UtilityWorkspace>;
+    return <UtilityWorkspace title={t("Template detail")} back={<BackTo label={t("Templates")} navigate={navigate} path="/templates" />} load={load}>{({ template }, refresh) => <><dl className="detail-grid"><Detail label={t("Name")} value={template.displayName} /><Detail label={t("Version")} value={template.templateVersion} /><Detail label={t("Source")} value={humanize(t, template.sourceKind)} /><Detail label={t("Revision")} value={String(template.revision)} /><Detail label={t("Provenance")} value={template.provenance} /><Detail label={t("Favorite")} value={template.favorite ? t("Yes") : t("No")} /></dl><TemplateActions client={client} onAction={(action, origin) => setSelection({ action, key: ++session.current, template, origin })} onChanged={refresh} template={template} />{selection === undefined ? null : <TemplateActionDialog client={client} key={selection.key} onChanged={refresh} onClose={() => setSelection((current) => current?.key === selection.key ? { ...current, closed: true } : current)} operations={operations} selection={selection} />}{operations.follow(refresh, (projectId) => navigate(`/projects/${projectId}`))}</>}</UtilityWorkspace>;
 }
 
 export function UnityPage({ client, navigate }: PageProps) {

@@ -146,7 +146,7 @@ export interface GuiRpcClient {
     unityLaunchStatus(launchId: string): Promise<UnityLaunchResult>;
     projectPlanUnityMigration(projectId: string, targetInstallationId: string, expectedProjectRevision: number): Promise<ProjectsPlanUnityMigrationResult>;
     projectApplyUnityMigration(planId: string): Promise<ProjectsApplyUnityMigrationResult>;
-    templatesList(): Promise<TemplatesListResult>;
+    templatesList(cursor?: string): Promise<TemplatesListResult>;
     templateGet(templateId: string): Promise<TemplateRecordResult>;
     templateInspectBundle(bundlePath: string): Promise<TemplateBundleInspection>;
     templatePlanImport(bundlePath: string, overrideExisting: boolean, expectedRevision: number): Promise<TemplatePlan>;
@@ -423,8 +423,8 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_project_apply_unity_migration", { params: { planId, idempotencyKey: crypto.randomUUID() } });
     }
 
-    templatesList(): Promise<TemplatesListResult> {
-        return invokeTyped("gui_templates_list", { params: { limit: 100 } });
+    templatesList(cursor?: string): Promise<TemplatesListResult> {
+        return invokeTyped("gui_templates_list", { params: { limit: 100, ...(cursor === undefined ? {} : { cursor }) } });
     }
 
     templateGet(templateId: string): Promise<TemplateRecordResult> {

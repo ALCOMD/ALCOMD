@@ -2,6 +2,66 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const formMessages: TranslationTable = {
+    "Details": {
+        "zh-CN": "详情",
+        "ja-JP": "詳細"
+    },
+    "User Package details": {
+        "zh-CN": "用户包详情",
+        "ja-JP": "ユーザーパッケージの詳細"
+    },
+    "Source folder": {
+        "zh-CN": "源目录",
+        "ja-JP": "ソースフォルダー"
+    },
+    "Archive SHA-256": {
+        "zh-CN": "归档 SHA-256",
+        "ja-JP": "アーカイブ SHA-256"
+    },
+    "The result of this request is unknown. Check Tasks and refresh before reviewing it again.": {
+        "zh-CN": "无法确认此次请求的结果。请先检查任务并刷新，再重新审查。",
+        "ja-JP": "このリクエストの結果を確認できません。タスクを確認して更新してから、再度確認してください。"
+    },
+    "Project creation request failed: {code}": {
+        "zh-CN": "项目创建请求失败：{code}",
+        "ja-JP": "プロジェクト作成リクエストに失敗しました: {code}"
+    },
+    "Template ID": {
+        "zh-CN": "模板 ID",
+        "ja-JP": "テンプレート ID"
+    },
+    "Expected revision": {
+        "zh-CN": "预期修订号",
+        "ja-JP": "想定リビジョン"
+    },
+    "Replace existing template": {
+        "zh-CN": "替换现有模板",
+        "ja-JP": "既存のテンプレートを置換"
+    },
+    "Source project revision": {
+        "zh-CN": "源项目修订号",
+        "ja-JP": "元プロジェクトのリビジョン"
+    },
+    "Template revision": {
+        "zh-CN": "模板修订号",
+        "ja-JP": "テンプレートのリビジョン"
+    },
+    "Destination must be absent": {
+        "zh-CN": "目标目录必须不存在",
+        "ja-JP": "作成先が存在しないこと"
+    },
+    "Open created project": {
+        "zh-CN": "查看已创建的项目",
+        "ja-JP": "作成したプロジェクトを表示"
+    },
+    "Load more templates": {
+        "zh-CN": "加载更多模板",
+        "ja-JP": "テンプレートをさらに読み込む"
+    },
+    "Templates could not be loaded.": {
+        "zh-CN": "无法加载模板。",
+        "ja-JP": "テンプレートを読み込めませんでした。"
+    },
     "The result of opening Unity Hub is unknown. Check Unity Hub before trying again.": {
         "zh-CN": "无法确认 Unity Hub 的打开结果。请先检查 Unity Hub，再决定是否重试。",
         "ja-JP": "Unity Hubの起動結果を確認できません。Unity Hubを確認してから再試行してください。"
@@ -281,18 +341,6 @@ export const formMessages: TranslationTable = {
     "Project backup": {
         "zh-CN": "项目备份",
         "ja-JP": "プロジェクトのバックアップ"
-    },
-    "Project creation {state}: {phase}.": {
-        "zh-CN": "项目创建：{state}，阶段：{phase}。",
-        "ja-JP": "プロジェクトの作成: {state}、段階: {phase}。"
-    },
-    "Project creation {state}.": {
-        "zh-CN": "项目创建：{state}。",
-        "ja-JP": "プロジェクトの作成: {state}。"
-    },
-    "Project creation failed: {code}": {
-        "zh-CN": "创建项目失败：{code}",
-        "ja-JP": "プロジェクトの作成に失敗しました: {code}"
     },
     "Project restore {state}: {phase}.": {
         "zh-CN": "项目恢复：{state}，阶段：{phase}。",

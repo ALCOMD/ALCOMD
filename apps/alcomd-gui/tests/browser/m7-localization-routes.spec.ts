@@ -181,7 +181,7 @@ async function assertExternalFixtureText(page: Page, path: string) {
         await expect(table).toContainText("1.2.3");
     } else if (path === "/templates") {
         await expect(page.getByRole("table")).toContainText("Avatar starter");
-        await expect(page.getByRole("table")).toContainText("com.cqmhv.template.avatar");
+        await expect(page.getByRole("table")).toContainText("00000000-0000-4000-8000-000000000301");
     } else if (path === "/unity") {
         await expect(page.getByRole("table")).toContainText("2022.3.22f1");
         await expect(page.getByRole("table")).toContainText("x86_64");

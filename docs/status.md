@@ -4,18 +4,22 @@
 
 ## 当前阶段
 
-**M7 IN_PROGRESS / TECHNICAL_CLOSURE / H2-A ACCEPTED / Visual Gate 2 PASS**。项目所有者于 2026-10-31 签收本轮 H2-A；
+**M7 IN_PROGRESS / H2-B IMPLEMENTING / H2-A ACCEPTED / Visual Gate 2 PASS**。项目所有者于 2026-10-31 签收本轮 H2-A；
 M0-M6 已正式通过人工验收，M7 尚未完成。
 本文件是唯一当前阶段入口；ExecPlan 定义实施合同，testing 文档保存各自 SHA/场景的证据。
 
 - 唯一工作目录：`C:\Users\M2922\MyProjects\Rust\ALCOMD`，活动分支 `main`；不另建工作树。
+- 验证按风险分级：日常定向测试及必要检查，模块完成后覆盖相关回归，稳定候选再集中执行完整
+  门禁。三平台 Hosted CI/CodeQL 用于重要技术检查点、阶段收尾及最终验收候选；不逐小修改或
+  提交重复运行。已运行 CI 不因此取消，推送仍按原授权；最终结果必须对应实际候选 SHA。
+  具体安排见 [M7 验证计划](exec-plans/M7-official-gui-extension-ui.md#验证与-release-blockers)。
 - H2-A 验收检查点：`23f545245f613f47f8def1e16418c4d12303404e`，包含本轮架构、P6 wire、
   测试门禁、真实桌面交互修正及 Visual Gate 2 签收记录。其前置检查点 `4eae1d4` 包含
   Core `626ec35`、共享 UI `fbb4213`、GUI `7357d80` 和对应验收记录。
 - 本轮开始时本机 HEAD 与远端 `main` 均为 `736f55a9eea504442fa8d95e6c26cfc5559a40b7`；暂存区与
   tracked 工作树在本轮开始时为空，原有 `output/playwright/` 两张截图保留。
-- 项目所有者已批准依次完成技术收尾、H2-B 实施、真实桌面候选。当前先修跨平台测试并逐项评估
-  Wasmtime/rustls/ZIP 的当前官方安全公告，允许同维护线内必要补丁；跨不兼容版本等须单独审批。
+- 项目所有者已批准依次完成技术收尾、H2-B 实施、真实桌面候选。技术收尾已完成跨平台测试与
+  Wasmtime/rustls/ZIP 官方安全公告的逐项评估及获准补丁；跨不兼容版本等仍按独立审批边界执行。
   技术提交独立于 H2-B。所有者已先后明确批准技术 SHA `73f465b` 与后续
   `02b6f0c3e81b8eedb711123ef9de2edc228792ab` 在保留各自本机 GUI 失败记录的前提下快进推送，
   以同一最终 SHA 三平台完整 required jobs 与 CodeQL 全绿验证本轮技术收尾；适用漏洞已修复且
@@ -55,12 +59,20 @@ M0-M6 已正式通过人工验收，M7 尚未完成。
   动画专项 9/0、前端 check/build 与 metadata 通过；独立完整 Chromium 为 **248/1（12.6 分钟）**，
   150 个输入未变。唯一失败是必需静态 JS 的 ERR_ADDRESS_IN_USE，Hub 页面根为空，输入/保存/
   焦点业务均未到达。未重跑或改 Hub；原样例五项 RPC 再次完全一致、revision 155。
-  本机完整门禁仍失败，新候选若推送需其实际 SHA 的单独批准；仍待同一最终 SHA 三平台完整
-  required jobs 成功，不宣称整体远端 PASS，不开始 H2-B。
+  本机完整门禁仍失败；所有者已明确批准精确 SHA `97c761f76613ea68ebc7a93e4695940dabb969dd`
+  保留该记录后普通快进推送，已核实位于 `origin/main`。
+  [CodeQL](https://github.com/ALCOMD/ALCOMD/actions/runs/41228566315) 四语言已全部成功；
+  [该 SHA CI](https://github.com/ALCOMD/ALCOMD/actions/runs/41228566567) 三平台完整 required jobs
+  已全部成功，browser 各 249/0，Windows/Ubuntu 为 4.8 分钟、macOS 为 9.3 分钟。
+  同一最终技术 SHA 的集中检查点已通过，前述本机失败记录保持；H2-B 按既有授权开始实施。
   GitHub 仍 open 的 11 条告警与任务开始时集合相同，当前锁定版本已不匹配其影响范围；
   告警状态未人工修改，完整 RustSec 及维护判断仍见技术记录。
 - [H2-B 既有方案](exec-plans/M7-official-gui-extension-ui.md)现为
-  **APPROVED_AFTER_TECHNICAL_CLOSURE / NOT_STARTED**，没有开始产品实现。H2-B 只允许本地候选
+  **APPROVED / IN_PROGRESS**。模板分页、三类 review、页面任务持有与成功刷新、用户包详情已接线。
+  分页/创建 14/0、资源与相关来源回归 18/0、普通模板动作 6/0 分别通过；扩展任务组为 30/4，
+  含一项导航 ERR_NO_BUFFER_SPACE 及三项后续修正的测试定位；其后任务专项为 18/1，唯一失败为
+  必需 JS 的 ERR_NO_BUFFER_SPACE、业务未到达，不能拼接为完整通过。当前准备稳定
+  候选的集中验证与隔离 native 闭环，详见 [H2-B 开发验证](testing/m7-h2-b-20261101.md)。H2-B 只允许本地候选
   提交，不自动推送；真实桌面材料完成后停止等待项目所有者验收。
 - 已验收范围：Project/Packages 和已获准的其他既有页面基础交互修正、统一公共组件及验收。
   H2-B 按上述前提顺序推进；H3-H7、M8、M9、M11 未获准开始；本次签收不代表 M7 完成。
@@ -161,7 +173,7 @@ Visual Gate 2，没有 M7 或 Hosted CI 通过结论，原未跟踪 `output/` �
 ## 剩余边界与下一停止点
 
 - P6 修复的契约、自动化与真实 Plan 证据保持；本轮 H2-A 与 Visual Gate 2 已获项目所有者签收。
-  当前先进行技术收尾，达成同一 SHA 的完整远端技术检查点后实施既有 H2-B；下载、native
+  技术收尾已达成同一 SHA 的完整远端检查点，当前实施既有 H2-B；下载、native
   Portable UI 等旧未覆盖范围保持，不由 browser fixture 或窗口存在替代真实动作。
 - 窗口记忆、仓库 credential enrollment/revocation、完整用户入口缺口保持真实状态；聚合
   projects.management/packages.vpm/repositories.management 等继续 in_progress，不批量提升。

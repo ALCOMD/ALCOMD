@@ -21,7 +21,7 @@ import ReactDOM from "react-dom/client";
 import discordDocumentJson from "../../../../crates/alcomd-testing/fixtures/m7/discord-presence-snapshot.json" with { type: "json" };
 import mcpDocumentJson from "../../../../crates/alcomd-testing/fixtures/m7/mcp-management-snapshot.json" with { type: "json" };
 import { App } from "../../src/App";
-import type { Operation, PackagePlan, ProjectSnapshot, SettingsGetResult } from "../../src/core-models";
+import type { Operation, PackagePlan, ProjectSnapshot, RepositorySnapshot, SettingsGetResult, TemplatePlan, TemplateRecord } from "../../src/core-models";
 import { queryCandidates } from "../../src/package-candidates";
 import type { GuiRpcClient } from "../../src/rpc";
 import "../../src/styles.css";
@@ -37,6 +37,10 @@ declare global {
         unityRequests: Array<{ method: string; params: unknown }>;
         candidateRequests: Array<Parameters<GuiRpcClient["packageQueryProjectCandidates"]>[0]>;
         repositoryPackageRequests: Array<{ repositoryId: string; cursor?: Parameters<GuiRpcClient["repositoryPackages"]>[1] }>;
+        templateRequests: Array<{ method: string; params: unknown }>;
+        resourceRequests: Array<{ method: string; params: unknown }>;
+        templatePageCompletions: number;
+        heldTemplateReads: number;
         resumeCandidateSource?: () => void;
         resumePackagePlan?: () => void;
         settingsWrites: Array<{ expectedRevision: number; revision: number }>;
@@ -54,6 +58,10 @@ window.projectSnapshots = [];
 window.unityRequests = [];
 window.candidateRequests = [];
 window.repositoryPackageRequests = [];
+window.templateRequests = [];
+window.resourceRequests = [];
+window.templatePageCompletions = 0;
+window.heldTemplateReads = 0;
 window.settingsWrites = [];
 window.settingsRequests = [];
 window.settingsReads = 0;
@@ -147,10 +155,37 @@ class DeterministicGuiClient implements GuiRpcClient {
     private repositoryRefreshAttempts = new Map<string, number>();
     private userPackageRemoved = false;
     private userPackageRevision = 1;
+    private userPackageEnrolled = false;
+    private userPackagePath = "<private-user-package>";
+    private userDetailsUnavailable = query.has("user-details-error");
+    private lifecycleRepositories = new Map<string, RepositorySnapshot>();
+    private templatePageReads = 0;
+    private templatesUnavailable = query.has("template-list-error");
+    private templateTasks = new Map<string, { operation: Operation; result: object; template?: TemplateRecord; project?: ReturnType<typeof project> }>();
+    private templatePlans = new Map<string, TemplatePlan>();
+    private builtinTemplate: TemplateRecord = template();
+    private importedTemplates: TemplateRecord[] = query.has("template-existing") ? [{ ...template(), templateId: USER_TEMPLATE_ID, sourceKind: "user", displayName: "Existing fixture" }] : [];
+    private templateOperationReads = 0;
 
     private connectionRestored = false;
 
     constructor(private readonly mode: HarnessMode) {
+        this.userPackageEnrolled = mode === "package-user-source";
+        window.addEventListener("test-user-details-readable", () => { this.userDetailsUnavailable = false; });
+        window.addEventListener("test-user-package-advance", () => { this.userPackageRevision += 1; });
+        window.addEventListener("test-resource-repository-advance", () => {
+            for (const [id, record] of this.lifecycleRepositories) this.lifecycleRepositories.set(id, { ...record, revision: (record.revision ?? 0) + 1 });
+        });
+        window.addEventListener("test-template-finish", ((event: CustomEvent<{ operationId: string; state?: string }>) => {
+            const task = this.templateTasks.get(event.detail.operationId);
+            if (task === undefined) return;
+            const state = event.detail.state ?? "succeeded";
+            task.operation = { ...task.operation, state, revision: 4, ...(state === "succeeded" ? { result: task.result } : {}) };
+            if (task.operation.state !== "succeeded") return;
+            if (task.template !== undefined) this.importedTemplates = [...this.importedTemplates.filter((item) => item.templateId !== task.template!.templateId), task.template];
+            if (task.project !== undefined) this.createdProjects.push(task.project);
+        }) as EventListener);
+        window.addEventListener("test-template-list-readable", () => { this.templatesUnavailable = false; });
         window.addEventListener("test-hub-default-ready", () => { this.hubDefaultReady = true; });
         window.addEventListener("test-hub-read-error", () => { this.hubReadFailurePending = true; });
         const hubPath = query.get("hub-path");
@@ -204,10 +239,18 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
 
     operationsList(): ReturnType<GuiRpcClient["operationsList"]> {
+        if (query.has("template-tasks")) return this.value({ operations: [...this.templateTasks.values()].map((task) => task.operation) });
         return this.value({ operations: this.mode === "empty" ? [] : [runningOperation()] });
     }
 
     operationGet(operationId: string): ReturnType<GuiRpcClient["operationGet"]> {
+        const task = this.templateTasks.get(operationId);
+        if (task !== undefined) {
+            window.templateRequests.push({ method: "operations.get", params: { operationId } });
+            this.templateOperationReads += 1;
+            if (query.has("template-first-read-error") && this.templateOperationReads <= 2) return Promise.reject({ code: "daemon_unavailable" });
+            return this.value(task.operation);
+        }
         this.operationReads += 1;
         const terminal = this.operationReads > 2;
         const state = this.mode === "failed" ? "failed" : this.mode === "cancelled" ? "cancelled" : terminal ? "succeeded" : "running";
@@ -318,6 +361,13 @@ class DeterministicGuiClient implements GuiRpcClient {
 
     projectsInspect(): ReturnType<GuiRpcClient["projectsInspect"]> { return this.value({ project: project() }); }
     projectsList(cursor?: { registeredAtMs: number; id: string }): ReturnType<GuiRpcClient["projectsList"]> {
+        if (query.has("template-tasks")) window.templateRequests.push({ method: "projects.list", params: cursor ?? {} });
+        if (query.has("template-project-pages")) {
+            const source = (index: number) => ({ ...project(`00000000-0000-4000-8000-${String(2000 + index).padStart(12, "0")}`, `Source ${String(index).padStart(3, "0")}`), revision: 7 });
+            return cursor === undefined
+                ? this.value({ projects: Array.from({ length: 100 }, (_, index) => source(index + 1)), nextCursor: { registeredAtMs: 1_690_000_000_000, id: source(100).projectId } })
+                : this.value({ projects: [source(101)] });
+        }
         if (query.has("projectModified")) {
             const { lastModifiedAtMs: _unknown, ...unknown } = project("00000000-0000-4000-8000-000000000104", "Unknown history");
             const projects = [
@@ -346,10 +396,12 @@ class DeterministicGuiClient implements GuiRpcClient {
                 : this.value({ projects: [project("00000000-0000-4000-8000-000000000110", "Zulu Favorite", true)] });
         }
         const projects = [project(), ...this.createdProjects].filter((candidate) => candidate.projectId === undefined || !this.deletedProjectIds.has(candidate.projectId));
+        if (query.has("hold-project-refresh") && this.createdProjects.length > 0) return new Promise((resolve) => window.addEventListener("test-project-refresh-ready", () => resolve({ projects }), { once: true }));
         return this.value({ projects: this.mode === "empty" ? [] : projects });
     }
     projectGet(projectId: string): ReturnType<GuiRpcClient["projectGet"]> {
         const value = this.createdProjects.find((candidate) => candidate.projectId === projectId) ?? { ...project(projectId), unityVersion: this.currentUnityVersion, revision: this.currentProjectRevision };
+        if (query.has("template-project-pages")) value.revision = 7;
         if (this.projectLaunchTimes.has(projectId)) value.lastModifiedAtMs = this.projectLaunchTimes.get(projectId)!;
         if (query.get("twoInstalled")) {
             value.lockedDependencies = [...value.lockedDependencies, { packageId: "com.example.remote", value: "1.2.3" }];
@@ -392,7 +444,10 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (query.get("hub-picker") === "hold") await new Promise<void>((resolve) => window.addEventListener("test-hub-picker-ready", () => resolve(), { once: true }));
         return query.get("hub-picker") === "cancel" ? undefined : "C:\\Tools\\Unity Hub\\Unity Hub.exe";
     }
-    selectDirectory(): ReturnType<GuiRpcClient["selectDirectory"]> { return this.value("C:\\Fixture\\Avatar"); }
+    selectDirectory(): ReturnType<GuiRpcClient["selectDirectory"]> {
+        if (query.has("resource-lifecycle")) window.resourceRequests.push({ method: "selectDirectory", params: {} });
+        return this.value(query.has("cancel-directory") ? undefined : "C:\\Fixture\\Avatar");
+    }
     projectRegister(): ReturnType<GuiRpcClient["projectRegister"]> { return this.value({ project: project(), replayed: false }); }
     projectRefresh(): ReturnType<GuiRpcClient["projectRefresh"]> { return this.value({ project: project(), replayed: false }); }
     projectSetFavorite(_projectId: string, favorite: boolean): ReturnType<GuiRpcClient["projectSetFavorite"]> {
@@ -449,8 +504,18 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ operationId: "00000000-0000-4000-8000-000000000064", projectId: PROJECT_ID, replayed: false });
     }
 
-    repositoriesInspect(): ReturnType<GuiRpcClient["repositoriesInspect"]> { return this.value({ repository: repository() }); }
+    repositoriesInspect(source: Parameters<GuiRpcClient["repositoriesInspect"]>[0]): ReturnType<GuiRpcClient["repositoriesInspect"]> {
+        window.resourceRequests.push({ method: "repositories.inspect", params: { source } });
+        if (!query.has("resource-lifecycle")) return this.value({ repository: repository() });
+        if (query.has("resource-invalid-source")) return Promise.reject({ code: "repository_document_invalid" });
+        const { repositoryId: _id, revision: _revision, ...preview } = this.resourceRepository(source);
+        return this.value({ repository: preview });
+    }
     async repositoriesList(cursor?: { registeredAtMs: number; id: string }): ReturnType<GuiRpcClient["repositoriesList"]> {
+        if (query.has("resource-lifecycle")) {
+            window.resourceRequests.push({ method: "repositories.list", params: cursor ?? {} });
+            return this.value({ repositories: [...this.lifecycleRepositories.values()] });
+        }
         if (query.has("holdRepositories")) {
             this.repositoriesReady ??= new Promise<void>((resolve, reject) => window.addEventListener("test-repositories-ready", (event) => {
                 if (event instanceof CustomEvent && event.detail === "error") reject({ code: "daemon_unavailable" });
@@ -467,11 +532,17 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ repositories: [repository()] });
     }
     repositoryGet(repositoryId: string): ReturnType<GuiRpcClient["repositoryGet"]> {
+        if (query.has("resource-lifecycle")) {
+            window.resourceRequests.push({ method: "repositories.get", params: { repositoryId } });
+            const record = this.lifecycleRepositories.get(repositoryId);
+            return record === undefined ? Promise.reject({ code: "repository_not_registered" }) : this.value({ repository: record });
+        }
         const value = repositoryId === LOCAL_REPOSITORY_ID ? localRepository() : repository();
         return this.value({ repository: this.mode === "package-revision-conflict" ? { ...value, revision: 3 } : value });
     }
     repositoryPackages(repositoryId: string, cursor?: Parameters<GuiRpcClient["repositoryPackages"]>[1]): ReturnType<GuiRpcClient["repositoryPackages"]> {
         window.repositoryPackageRequests.push({ repositoryId, ...(cursor === undefined ? {} : { cursor }) });
+        if (query.has("resource-lifecycle")) return this.value({ packages: [{ packageId: cursor === undefined ? "com.example.first" : "com.example.second", version: "1.0.0", displayName: cursor === undefined ? (this.lifecycleRepositories.get(repositoryId)?.revision ?? 0) > 1 ? "Updated catalog package" : "First catalog package" : "Second catalog package", yanked: false, prerelease: false }], ...(cursor === undefined ? { nextCursor: { packageId: "com.example.first", version: "1.0.0" } } : {}) });
         if (query.get("metadata") === "error") return Promise.reject({ code: "repository_unavailable" });
         if (query.get("versions") === "1") return this.value({ packages: [
             { packageId: "com.example.avatar", version: "1.2.3", displayName: "Avatar tools", yanked: false, prerelease: false },
@@ -501,17 +572,45 @@ class DeterministicGuiClient implements GuiRpcClient {
     openPackageLink(): ReturnType<GuiRpcClient["openPackageLink"]> {
         return this.value(undefined);
     }
-    repositoryRegister(): ReturnType<GuiRpcClient["repositoryRegister"]> { return this.value({ repository: repository(), replayed: false }); }
-    repositoryRefresh(repositoryId: string): ReturnType<GuiRpcClient["repositoryRefresh"]> {
+    repositoryRegister(source: Parameters<GuiRpcClient["repositoryRegister"]>[0]): ReturnType<GuiRpcClient["repositoryRegister"]> {
+        window.resourceRequests.push({ method: "repositories.register", params: { source } });
+        if (!query.has("resource-lifecycle")) return this.value({ repository: repository(), replayed: false });
+        const record = this.resourceRepository(source);
+        if (this.lifecycleRepositories.has(record.repositoryId!)) return Promise.reject({ code: "repository_already_registered" });
+        this.lifecycleRepositories.set(record.repositoryId!, record);
+        return this.value({ repository: record, replayed: false });
+    }
+    repositoryRefresh(repositoryId: string, expectedRevision: number): ReturnType<GuiRpcClient["repositoryRefresh"]> {
+        window.resourceRequests.push({ method: "repositories.refresh", params: { repositoryId, expectedRevision } });
         const attempts = (this.repositoryRefreshAttempts.get(repositoryId) ?? 0) + 1;
         this.repositoryRefreshAttempts.set(repositoryId, attempts);
+        if (query.has("resource-lifecycle")) {
+            const record = this.lifecycleRepositories.get(repositoryId);
+            if (record === undefined) return Promise.reject({ code: "repository_not_registered" });
+            if (record.revision !== expectedRevision) return Promise.reject({ code: "revision_conflict" });
+            if (query.has("resource-refresh-error") && attempts === 1) return Promise.reject({ code: "repository_unavailable" });
+            const next = { ...record, revision: expectedRevision + 1 };
+            this.lifecycleRepositories.set(repositoryId, next);
+            return this.value({ repository: next, replayed: false });
+        }
         if (this.mode === "package-partial-failure" && repositoryId === LOCAL_REPOSITORY_ID) return Promise.reject({ code: "repository_unavailable" });
         if (this.mode === "package-revision-conflict" && repositoryId === REPOSITORY_ID && attempts === 1) return Promise.reject({ code: "revision_conflict" });
         if (this.mode === "package-revision-conflict" && repositoryId === REPOSITORY_ID && attempts > 2) return Promise.reject({ code: "unexpected_retry" });
         this.repositoryRefreshCompleted = true;
         return this.value({ repository: repositoryId === LOCAL_REPOSITORY_ID ? localRepository() : repository(), replayed: false });
     }
-    repositoryUnregister(): ReturnType<GuiRpcClient["repositoryUnregister"]> { return this.value({ repositoryId: REPOSITORY_ID, revision: 3, unregistered: true, replayed: false }); }
+    repositoryUnregister(repositoryId: string, expectedRevision: number): ReturnType<GuiRpcClient["repositoryUnregister"]> {
+        window.resourceRequests.push({ method: "repositories.unregister", params: { repositoryId, expectedRevision } });
+        if (query.has("resource-lifecycle")) {
+            if (this.lifecycleRepositories.get(repositoryId)?.revision !== expectedRevision) return Promise.reject({ code: "revision_conflict" });
+            this.lifecycleRepositories.delete(repositoryId);
+        }
+        return this.value({ repositoryId, revision: expectedRevision + 1, unregistered: true, replayed: false });
+    }
+
+    private resourceRepository(source: Parameters<GuiRpcClient["repositoryRegister"]>[0]): RepositorySnapshot {
+        return { repositoryId: source.kind === "local" ? LOCAL_REPOSITORY_ID : REPOSITORY_ID, source, declaredId: source.kind === "local" ? "local-example" : "example", name: source.kind === "local" ? "Local packages" : "Example packages", issues: [], revision: 1, refreshedAtMs: 1_700_000_000_000 };
+    }
 
     async packageQueryProjectCandidates(params: Parameters<GuiRpcClient["packageQueryProjectCandidates"]>[0]): ReturnType<GuiRpcClient["packageQueryProjectCandidates"]> {
         window.candidateRequests.push(params);
@@ -617,17 +716,37 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
 
     userPackagesList(): ReturnType<GuiRpcClient["userPackagesList"]> {
-        return this.value({ userPackages: this.mode === "package-user-source" && !this.userPackageRemoved ? [userPackage(this.userPackageRevision)] : [] });
+        window.resourceRequests.push({ method: "packages.userPackages.list", params: {} });
+        return this.value({ userPackages: this.userPackageEnrolled && !this.userPackageRemoved ? [this.currentUserPackage()] : [] });
     }
-    userPackageGet(): ReturnType<GuiRpcClient["userPackageGet"]> { return this.value({ userPackage: userPackage() }); }
-    userPackageEnroll(): ReturnType<GuiRpcClient["userPackageEnroll"]> { return this.value({ userPackage: userPackage(), replayed: false }); }
-    userPackageRefresh(): ReturnType<GuiRpcClient["userPackageRefresh"]> {
-        this.userPackageRevision = 2;
-        return this.value({ userPackage: userPackage(2), replayed: false });
+    async userPackageGet(userPackageId: string): ReturnType<GuiRpcClient["userPackageGet"]> {
+        window.resourceRequests.push({ method: "packages.userPackages.get", params: { userPackageId } });
+        if (!this.userPackageEnrolled || this.userPackageRemoved) throw { code: "user_package_not_found" };
+        if (this.userDetailsUnavailable) throw { code: "store_unavailable" };
+        const userPackage = this.currentUserPackage();
+        if (query.has("hold-user-details")) await new Promise<void>((resolve) => window.addEventListener("test-user-details-ready", () => resolve(), { once: true }));
+        return this.value({ userPackage });
     }
-    userPackageRemove(): ReturnType<GuiRpcClient["userPackageRemove"]> {
+    userPackageEnroll(sourcePath: string): ReturnType<GuiRpcClient["userPackageEnroll"]> {
+        window.resourceRequests.push({ method: "packages.userPackages.enroll", params: { sourcePath } });
+        if (this.userPackageEnrolled && !this.userPackageRemoved) return Promise.reject({ code: "user_package_already_enrolled" });
+        this.userPackageEnrolled = true; this.userPackageRemoved = false; this.userPackagePath = sourcePath; this.userPackageRevision = 1;
+        return this.value({ userPackage: this.currentUserPackage(), replayed: false });
+    }
+    userPackageRefresh(userPackageId: string, expectedRevision: number): ReturnType<GuiRpcClient["userPackageRefresh"]> {
+        window.resourceRequests.push({ method: "packages.userPackages.refresh", params: { userPackageId, expectedRevision } });
+        if (expectedRevision !== this.userPackageRevision) return Promise.reject({ code: "revision_conflict" });
+        this.userPackageRevision += 1;
+        return this.value({ userPackage: this.currentUserPackage(), replayed: false });
+    }
+    userPackageRemove(userPackageId: string, expectedRevision: number): ReturnType<GuiRpcClient["userPackageRemove"]> {
+        window.resourceRequests.push({ method: "packages.userPackages.remove", params: { userPackageId, expectedRevision } });
+        if (expectedRevision !== this.userPackageRevision) return Promise.reject({ code: "revision_conflict" });
         this.userPackageRemoved = true;
-        return this.value({ userPackageId: USER_PACKAGE_ID, revision: 2, removed: true, replayed: false });
+        return this.value({ userPackageId, revision: expectedRevision + 1, removed: true, replayed: false });
+    }
+    private currentUserPackage() {
+        return { ...userPackage(this.userPackageRevision), sourceRootPath: this.userPackagePath, ...(query.has("resource-lifecycle") && this.userPackageRevision > 1 ? { version: "1.3.0", archiveSha256: NEW_HASH } : {}) };
     }
 
     async unityInstallationsList(): ReturnType<GuiRpcClient["unityInstallationsList"]> {
@@ -696,26 +815,99 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ operationId: OPERATION_ID, replayed: false });
     }
 
-    async templatesList(): ReturnType<GuiRpcClient["templatesList"]> {
-        if (query.has("holdTemplates")) await new Promise<void>((resolve) => window.addEventListener("test-templates-ready", () => resolve(), { once: true }));
-        return this.value({ templates: this.mode === "empty" ? [] : [template()] });
+    async templatesList(cursor?: string): ReturnType<GuiRpcClient["templatesList"]> {
+        window.templateRequests.push({ method: "templates.list", params: cursor === undefined ? {} : { cursor } });
+        if (this.templatesUnavailable) throw { code: "internal_error" };
+        if (query.has("holdTemplates")) {
+            window.heldTemplateReads += 1;
+            await new Promise<void>((resolve) => window.addEventListener("test-templates-ready", () => resolve(), { once: true }));
+        }
+        if (query.has("template-pages")) {
+            if (cursor === undefined) return this.value({ templates: Array.from({ length: 100 }, (_, index) => catalogTemplate(index + 1)), nextCursor: TEMPLATE_PAGE_CURSOR });
+            if (cursor !== TEMPLATE_PAGE_CURSOR) throw { code: "invalid_params" };
+            this.templatePageReads += 1;
+            if (query.has("template-page-error") && this.templatePageReads === 1) throw { code: "daemon_unavailable" };
+            if (query.has("hold-template-page")) await new Promise<void>((resolve) => window.addEventListener("test-template-page-ready", () => resolve(), { once: true }));
+            const next = await this.value({ templates: [catalogTemplate(101)] });
+            window.templatePageCompletions += 1;
+            return next;
+        }
+        return this.value({ templates: this.mode === "empty" ? [] : [this.builtinTemplate, ...this.importedTemplates] });
     }
-    templateGet(): ReturnType<GuiRpcClient["templateGet"]> { return this.value({ template: template(), replayed: false }); }
-    templateInspectBundle(): ReturnType<GuiRpcClient["templateInspectBundle"]> { return this.value({ formatVersion: 1, templateId: TEMPLATE_ID, templateVersion: "1.0.0", displayName: "Avatar starter", provenance: "public-fixture", bundleSha256: HASH, manifestFingerprint: HASH, payloadTreeSha256: HASH, entryCount: 4, totalBytes: 4096 }); }
-    templatePlanImport(): ReturnType<GuiRpcClient["templatePlanImport"]> { return this.value(templatePlan("import")); }
-    templateApplyImport(): ReturnType<GuiRpcClient["templateApplyImport"]> { return this.value({ operationId: OPERATION_ID, replayed: false }); }
-    templatePlanDerive(): ReturnType<GuiRpcClient["templatePlanDerive"]> { return this.value(templatePlan("derive")); }
-    templateApplyDerive(): ReturnType<GuiRpcClient["templateApplyDerive"]> { return this.value({ operationId: OPERATION_ID, replayed: false }); }
-    templateExport(): ReturnType<GuiRpcClient["templateExport"]> { return this.value({ exported: true }); }
-    templateSetFavorite(): ReturnType<GuiRpcClient["templateSetFavorite"]> { return this.value({ template: { ...template(), favorite: true }, replayed: false }); }
-    templateRemove(): ReturnType<GuiRpcClient["templateRemove"]> { return this.value({ templateId: TEMPLATE_ID, removed: true, replayed: false }); }
+    templateGet(templateId: string): ReturnType<GuiRpcClient["templateGet"]> {
+        const result = [this.builtinTemplate, ...this.importedTemplates].find((item) => item.templateId === templateId);
+        return result === undefined ? Promise.reject({ code: "template_not_found" }) : this.value({ template: result, replayed: false });
+    }
+    templateInspectBundle(): ReturnType<GuiRpcClient["templateInspectBundle"]> {
+        const same = query.has("template-same-digest");
+        return this.value({ formatVersion: 1, templateId: query.has("template-builtin-import") ? TEMPLATE_ID : USER_TEMPLATE_ID, templateVersion: same ? "1.0.0" : "1.1.0", displayName: same ? "Existing fixture" : "Imported fixture", provenance: "authored", bundleSha256: same ? HASH : NEW_HASH, manifestFingerprint: same ? HASH : NEW_HASH, payloadTreeSha256: HASH, entryCount: 4, totalBytes: 4096 });
+    }
+    templatePlanImport(bundlePath: string, override: boolean, expectedRevision: number): ReturnType<GuiRpcClient["templatePlanImport"]> {
+        window.templateRequests.push({ method: "templates.planImport", params: { bundlePath, override, expectedRevision } });
+        if (query.has("template-builtin-import")) return Promise.reject({ code: "template_builtin_immutable" });
+        const existing = this.importedTemplates.find((item) => item.templateId === USER_TEMPLATE_ID);
+        const same = query.has("template-same-digest");
+        if ((existing === undefined && override) || (existing !== undefined && !same && !override)) return Promise.reject({ code: "template_conflict" });
+        return this.saveTemplatePlan({ ...templatePlan(existing === undefined ? "import" : "override"), templateId: USER_TEMPLATE_ID, expectedRevision, sourceFilesystemIdentity: "opaque-selected-bundle", oldBundleSha256: existing?.bundleSha256 ?? null, newBundleSha256: same ? HASH : NEW_HASH, manifestFingerprint: same ? HASH : NEW_HASH });
+    }
+    templateApplyImport(planId: string): ReturnType<GuiRpcClient["templateApplyImport"]> { return this.acceptTemplatePlan(planId, "import"); }
+    async templatePlanDerive(params: Parameters<GuiRpcClient["templatePlanDerive"]>[0]): ReturnType<GuiRpcClient["templatePlanDerive"]> {
+        window.templateRequests.push({ method: "templates.planDerive", params });
+        const plan = await this.saveTemplatePlan({ ...templatePlan("derive"), templateId: params.templateId, sourceProjectId: params.projectId, sourceProjectRevision: params.expectedProjectRevision, sourceProjectFingerprint: HASH, includePolicyVersion: 1 });
+        if (query.has("hold-template-derive-plan")) await new Promise<void>((resolve) => window.addEventListener("test-template-derive-plan-ready", () => resolve(), { once: true }));
+        return plan;
+    }
+    templateApplyDerive(planId: string): ReturnType<GuiRpcClient["templateApplyDerive"]> { return this.acceptTemplatePlan(planId, "derive"); }
+    templateExport(templateId: string, expectedRevision: number, targetPath: string): ReturnType<GuiRpcClient["templateExport"]> {
+        window.templateRequests.push({ method: "templates.export", params: { templateId, expectedRevision, targetPath } });
+        return this.value({ exported: true });
+    }
+    templateSetFavorite(templateId: string, favorite: boolean, expectedRevision: number): ReturnType<GuiRpcClient["templateSetFavorite"]> {
+        window.templateRequests.push({ method: "templates.setFavorite", params: { templateId, favorite, expectedRevision } });
+        const existing = [this.builtinTemplate, ...this.importedTemplates].find((item) => item.templateId === templateId);
+        if (existing === undefined) return Promise.reject({ code: "template_not_found" });
+        if (existing.revision !== expectedRevision) return Promise.reject({ code: "revision_conflict" });
+        const next = { ...existing, favorite, revision: expectedRevision + 1 };
+        if (templateId === TEMPLATE_ID) this.builtinTemplate = next;
+        else this.importedTemplates = this.importedTemplates.map((item) => item.templateId === templateId ? next : item);
+        return this.value({ template: next, replayed: false });
+    }
+    templateRemove(templateId: string, expectedRevision: number): ReturnType<GuiRpcClient["templateRemove"]> {
+        window.templateRequests.push({ method: "templates.remove", params: { templateId, expectedRevision } });
+        if (templateId === TEMPLATE_ID) return Promise.reject({ code: "template_builtin_immutable" });
+        this.importedTemplates = this.importedTemplates.filter((item) => item.templateId !== templateId);
+        return this.value({ templateId, removed: true, replayed: false });
+    }
     async templatePlanCreateProject(_templateId: string, _expectedTemplateRevision: number, _targetParent: string, targetLeaf: string): ReturnType<GuiRpcClient["templatePlanCreateProject"]> {
+        window.templateRequests.push({ method: "templates.planCreateProject", params: { templateId: _templateId, expectedTemplateRevision: _expectedTemplateRevision, targetParent: _targetParent, targetLeaf } });
         if (query.has("holdCreatePlan")) await new Promise<void>((resolve) => window.addEventListener("test-create-plan-ready", () => resolve(), { once: true }));
         if (this.mode === "create-error") return Promise.reject({ code: "template_plan_stale" });
-        this.pendingProject = project(CREATED_PROJECT_ID, targetLeaf);
-        return this.value({ ...templatePlan("create-project"), targetLeaf });
+        this.pendingProject = project(query.has("template-tasks") ? `00000000-0000-4000-8000-${String(7000 + this.templatePlans.size).padStart(12, "0")}` : CREATED_PROJECT_ID, targetLeaf);
+        return this.saveTemplatePlan({ ...templatePlan("create_project"), templateId: _templateId, templateRevision: _expectedTemplateRevision, bundleSha256: HASH, manifestFingerprint: HASH, payloadTreeSha256: HASH, parentFilesystemIdentity: "opaque-parent", targetLeaf, targetMustBeAbsent: true, packageChangeSetFingerprint: HASH, resourceDigests: [], projectSummaryFingerprint: HASH });
     }
-    templateApplyCreateProject(): ReturnType<GuiRpcClient["templateApplyCreateProject"]> { this.operationReads = 0; return this.value({ operationId: OPERATION_ID, replayed: false }); }
+    templateApplyCreateProject(planId: string): ReturnType<GuiRpcClient["templateApplyCreateProject"]> { return this.acceptTemplatePlan(planId, "create_project"); }
+
+    private saveTemplatePlan(plan: TemplatePlan): Promise<TemplatePlan> {
+        const next: TemplatePlan = { ...plan, planId: `00000000-0000-4000-8000-${String(4000 + this.templatePlans.size).padStart(12, "0")}` };
+        if (query.get("template-invalid-plan") === "import-hash") next.newBundleSha256 = HASH;
+        else if (query.get("template-invalid-plan") === "derive-revision") next.sourceProjectRevision = "2";
+        else if (query.has("template-invalid-plan")) delete next.targetMustBeAbsent;
+        this.templatePlans.set(next.planId, next);
+        return this.value(next);
+    }
+
+    private async acceptTemplatePlan(planId: string, action: string) {
+        window.templateRequests.push({ method: `templates.apply${action === "create_project" ? "CreateProject" : action === "derive" ? "Derive" : "Import"}`, params: { planId } });
+        if (query.has("template-apply-error")) throw { code: "template_plan_stale" };
+        if (!query.has("template-tasks")) { this.operationReads = 0; return this.value({ operationId: OPERATION_ID, replayed: false }); }
+        const plan = this.templatePlans.get(planId)!;
+        const operationId = `00000000-0000-4000-8000-${String(5000 + this.templateTasks.size).padStart(12, "0")}`;
+        const resultTemplate = { ...template(), templateId: String(plan.templateId), sourceKind: "user", displayName: action === "derive" ? "Derived fixture" : "Imported fixture", provenance: action === "derive" ? "derived" : "authored", templateVersion: "1.1.0", bundleSha256: NEW_HASH, manifestFingerprint: NEW_HASH, revision: typeof plan.expectedRevision === "number" ? plan.expectedRevision + 1 : 1 };
+        this.templateTasks.set(operationId, { operation: { ...runningOperation(), operationId, kind: `templates.${action === "create_project" ? "create-project" : action}` }, result: action === "create_project" ? { projectId: this.pendingProject!.projectId, revision: 1 } : { templateId: resultTemplate.templateId, revision: resultTemplate.revision }, ...(action === "create_project" ? { project: this.pendingProject } : { template: resultTemplate }) });
+        if (query.has("template-apply-unknown")) throw { code: "daemon_unavailable" };
+        if (query.has("hold-template-apply")) await new Promise<void>((resolve) => window.addEventListener("test-template-apply-ready", () => resolve(), { once: true }));
+        return this.value({ operationId, replayed: false });
+    }
 
     async backupsList(): ReturnType<GuiRpcClient["backupsList"]> {
         if (query.has("holdBackups")) await new Promise<void>((resolve) => window.addEventListener("test-backups-ready", () => resolve(), { once: true }));
@@ -778,7 +970,10 @@ const LOCAL_REPOSITORY_ID = "00000000-0000-4000-8000-000000000112";
 const USER_PACKAGE_ID = "00000000-0000-4000-8000-000000000113";
 const INSTALLATION_ID = "00000000-0000-4000-8000-000000000103";
 const MIGRATION_INSTALLATION_ID = "00000000-0000-4000-8000-000000000114";
-const TEMPLATE_ID = "com.cqmhv.template.avatar";
+const TEMPLATE_ID = "00000000-0000-4000-8000-000000000301";
+const USER_TEMPLATE_ID = "00000000-0000-4000-8000-000000000302";
+const NEW_HASH = "b".repeat(64);
+const TEMPLATE_PAGE_CURSOR = "opaque template cursor:100/+=";
 const BACKUP_ID = "00000000-0000-4000-8000-000000000104";
 const OPERATION_ID = "00000000-0000-4000-8000-000000000105";
 const PLAN_ID = "00000000-0000-4000-8000-000000000106";
@@ -797,7 +992,8 @@ function installation() { return { installationId: INSTALLATION_ID, executablePa
 function migrationInstallation() { return { ...installation(), installationId: MIGRATION_INSTALLATION_ID, executablePath: "<private-editor-migration>", filesystemIdentity: "opaque-migration", unityVersion: "2022.3.23f1" }; }
 function launchConfig(arguments_: string[], revision: number) { return { projectId: PROJECT_ID, arguments: arguments_, revision, updatedAtMs: 1_700_000_000_000 }; }
 function launch() { return { launchId: "00000000-0000-4000-8000-000000000107", projectId: PROJECT_ID, installationId: INSTALLATION_ID, state: "opening", spawnAccepted: true, createdAtMs: 1_700_000_000_000 }; }
-function template() { return { templateId: TEMPLATE_ID, sourceKind: "builtin", templateVersion: "1.0.0", displayName: "Avatar starter", description: "A deterministic public fixture.", provenance: "built-in", favorite: false, bundleSha256: HASH, manifestFingerprint: HASH, revision: 2, createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_000_000 }; }
+function template() { return { templateId: TEMPLATE_ID, sourceKind: "builtin", templateVersion: "1.0.0", displayName: "Avatar starter", description: "A deterministic public fixture.", provenance: "authored", favorite: false, bundleSha256: HASH, manifestFingerprint: HASH, revision: 2, createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_000_000 }; }
+function catalogTemplate(index: number) { return { ...template(), templateId: `00000000-0000-4000-8000-${String(1000 + index).padStart(12, "0")}`, sourceKind: "user", provenance: "authored", displayName: `Catalog template ${String(index).padStart(3, "0")}` }; }
 function backup() { return { backupId: BACKUP_ID, sourceProjectId: PROJECT_ID, archiveSha256: HASH, archiveBytes: 4096, formatVersion: 1, createdAtMs: 1_700_000_000_000, compressionMode: "fast", excludeVpmPackages: true }; }
 function runningOperation(): Operation { return { operationId: OPERATION_ID, kind: "packages.apply", state: "running", revision: 3, createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_001_000, progress: { phase: "extracting" } }; }
 function packagePlan(action: PackagePlan["action"]): PackagePlan { return { planId: PLAN_ID, action, state: "unapplied", projectId: PROJECT_ID, projectRevision: 2, changeSetFingerprint: HASH, changeSet: { formatVersion: 1, mutations: [{ kind: action === "remove" ? "remove" : "install", packageId: "com.example.avatar", ...(action === "remove" ? { fromVersion: "1.2.3", toVersion: null } : { fromVersion: null, toVersion: "1.2.3" }) }], dependencyEdges: [], vpmManifestSha256: HASH } }; }

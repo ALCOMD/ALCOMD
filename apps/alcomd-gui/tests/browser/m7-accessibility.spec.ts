@@ -181,7 +181,7 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         ["/user-packages", "Resources"],
         ["/repositories/00000000-0000-4000-8000-000000000102", "Repository"],
         ["/templates", "Resources"],
-        ["/templates/com.cqmhv.template.avatar", "Template detail"],
+        ["/templates/00000000-0000-4000-8000-000000000301", "Template detail"],
         ["/unity", "Settings"],
         ["/backups/00000000-0000-4000-8000-000000000104", "Backup detail"],
         ["/operations", "Tasks"],

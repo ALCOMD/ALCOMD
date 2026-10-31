@@ -1,8 +1,10 @@
 import type { RpcError } from "@alcomd/sdk";
 import { useEffect, useRef, useState } from "react";
 
-import type { BackupRecord, BackupRestorePlan, Operation, TemplatePlan, TemplateRecord } from "./core-models";
+import type { BackupRecord, BackupRestorePlan, Operation, TemplateRecord } from "./core-models";
 import { Button, Dialog, Select, TextField } from "./Material";
+import { TemplateOperationProgress, templateApplyResultUnknown, templateOperationProjectId, useTemplateDraft, useTemplateOperations } from "./CoreActions";
+import { reviewTemplateCreation, TemplatePlanReview, type TemplateReview } from "./TemplatePlanReview";
 import { LoadingState, useDelayedPending } from "./LoadingState";
 import type { GuiRpcClient } from "./rpc";
 import { useTranslation } from "./i18n";
@@ -25,190 +27,230 @@ const ACTIVE_OPERATION_STATES = new Set([
     "interrupted"
 ]);
 
-export function CreateProjectDialog({ client, onClose, onCompleted, open }: ProjectDialogProps) {
+export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, open }: ProjectDialogProps & { onChanged(): Promise<void> }) {
     const { t } = useTranslation();
     const [templates, setTemplates] = useState<TemplateRecord[]>([]);
+    const [templateCursor, setTemplateCursor] = useState<string>();
+    const [templateLoadError, setTemplateLoadError] = useState<RpcError>();
+    const [templateReadVersion, setTemplateReadVersion] = useState(0);
+    const [moreTemplatesLoading, setMoreTemplatesLoading] = useState(false);
+    const [moreTemplatesFailed, setMoreTemplatesFailed] = useState(false);
+    const templateSession = useRef(0);
+    const templatePageRequest = useRef<object | undefined>(undefined);
     const [templateId, setTemplateId] = useState("");
     const [targetParent, setTargetParent] = useState("");
     const [targetLeaf, setTargetLeaf] = useState("");
-    const [plan, setPlan] = useState<TemplatePlan>();
-    const [operation, setOperation] = useState<Operation>();
+    const [reviewed, setReviewed] = useState<TemplateReview>();
+    const [submitted, setSubmitted] = useState(false);
+    const [operationId, setOperationId] = useState<string>();
+    const operations = useTemplateOperations(client);
+    const operation = operations.snapshot(operationId ?? "")?.operation;
+    const current = useTemplateDraft(client);
+    const draftRequest = useRef<object | undefined>(undefined);
+    const callbacks = useRef({ onChanged, onCompleted, open });
+    callbacks.current = { onChanged, onCompleted, open };
     const [loading, setLoading] = useState(true);
     const delayedLoading = useDelayedPending(open && loading);
+    const [dialogShown, setDialogShown] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<RpcError>();
-    const completionReported = useRef(false);
 
     useEffect(() => {
+        if (!open) setDialogShown(false);
+        else if (!loading || delayedLoading) setDialogShown(true);
+    }, [open, loading, delayedLoading]);
+
+    useEffect(() => {
+        const generation = ++templateSession.current;
+        draftRequest.current = undefined;
+        setReviewed(undefined);
+        setSubmitted(false);
+        setOperationId(undefined);
+        setBusy(false);
+        setTargetParent("");
+        setTargetLeaf("");
+        templatePageRequest.current = undefined;
+        setTemplateCursor(undefined);
+        setTemplateLoadError(undefined);
+        setMoreTemplatesLoading(false);
+        setMoreTemplatesFailed(false);
         if (!open) {
             setTemplates([]);
             setTemplateId("");
-            setTargetParent("");
-            setTargetLeaf("");
-            setPlan(undefined);
-            setOperation(undefined);
             setLoading(true);
-            setBusy(false);
             setError(undefined);
-            completionReported.current = false;
             return;
         }
         let active = true;
         setLoading(true);
         setError(undefined);
         void client.templatesList().then((result) => {
-            if (!active) return;
+            if (!active || generation !== templateSession.current) return;
             setTemplates(result.templates);
+            setTemplateCursor(result.nextCursor);
             setTemplateId(result.templates[0]?.templateId ?? "");
         }).catch((caught: unknown) => {
-            if (active) setError(safeError(caught));
+            if (active && generation === templateSession.current) setTemplateLoadError(safeError(caught));
         }).finally(() => {
-            if (active) setLoading(false);
+            if (active && generation === templateSession.current) setLoading(false);
         });
-        return () => { active = false; };
-    }, [client, open]);
-
-    useEffect(() => {
-        if (operation === undefined || !ACTIVE_OPERATION_STATES.has(operation.state)) return;
-        let active = true;
-        const timer = window.setTimeout(() => {
-            void client.operationGet(operation.operationId).then((next) => {
-                if (!active) return;
-                setOperation(next);
-                if (next.state !== "succeeded" || completionReported.current) return;
-                const projectId = operationProjectId(next);
-                if (projectId === undefined) {
-                    setError({ code: "internal_error", message: "The request could not be completed." });
-                    return;
-                }
-                completionReported.current = true;
-                onCompleted(projectId);
-            }).catch((caught: unknown) => {
-                if (active) setError(safeError(caught));
-            });
-        }, 300);
         return () => {
             active = false;
-            window.clearTimeout(timer);
+            if (generation === templateSession.current) templateSession.current += 1;
+            templatePageRequest.current = undefined;
         };
-    }, [client, onCompleted, operation]);
+    }, [client, open, templateReadVersion]);
+
+    const loadMoreTemplates = async () => {
+        if (templateCursor === undefined || loading || templatePageRequest.current !== undefined) return;
+        const generation = templateSession.current;
+        const request = {};
+        templatePageRequest.current = request;
+        setMoreTemplatesLoading(true);
+        try {
+            const next = await client.templatesList(templateCursor);
+            if (generation !== templateSession.current || templatePageRequest.current !== request) return;
+            setTemplates((current) => [...current, ...next.templates]);
+            setTemplateCursor(next.nextCursor);
+            setMoreTemplatesFailed(false);
+        } catch {
+            if (generation === templateSession.current && templatePageRequest.current === request) setMoreTemplatesFailed(true);
+        } finally {
+            if (generation === templateSession.current && templatePageRequest.current === request) {
+                templatePageRequest.current = undefined;
+                setMoreTemplatesLoading(false);
+            }
+        }
+    };
+
+    const close = () => {
+        if (draftRequest.current !== undefined) return;
+        templateSession.current += 1;
+        templatePageRequest.current = undefined;
+        onClose();
+    };
 
     const chooseParent = async () => {
-        setBusy(true);
-        setError(undefined);
+        if (draftRequest.current !== undefined) return;
+        const generation = templateSession.current;
+        const request = {};
+        draftRequest.current = request;
+        const ownsDraft = () => current() && generation === templateSession.current && draftRequest.current === request;
+        setBusy(true); setError(undefined);
         try {
             const selected = await client.selectDirectory();
-            if (selected !== undefined) setTargetParent(selected);
-        } catch (caught: unknown) {
-            setError(safeError(caught));
-        } finally {
-            setBusy(false);
-        }
+            if (ownsDraft() && selected !== undefined) setTargetParent(selected);
+        } catch (caught: unknown) { if (ownsDraft()) setError(safeError(caught)); }
+        finally { if (ownsDraft()) { draftRequest.current = undefined; setBusy(false); } }
     };
 
     const review = async () => {
         const template = templates.find((candidate) => candidate.templateId === templateId);
-        if (template === undefined) return;
-        setBusy(true);
-        setError(undefined);
+        if (template === undefined || draftRequest.current !== undefined) return;
+        const generation = templateSession.current;
+        const request = {};
+        draftRequest.current = request;
+        const ownsDraft = () => current() && generation === templateSession.current && draftRequest.current === request;
+        setBusy(true); setError(undefined);
         try {
-            setPlan(await client.templatePlanCreateProject(template.templateId, template.revision, targetParent, targetLeaf.trim()));
-        } catch (caught: unknown) {
-            setError(safeError(caught));
-        } finally {
-            setBusy(false);
-        }
+            const plan = await client.templatePlanCreateProject(template.templateId, template.revision, targetParent, targetLeaf.trim());
+            if (!ownsDraft()) return;
+            setReviewed(reviewTemplateCreation(plan, template, targetParent, targetLeaf.trim()));
+            setSubmitted(false);
+        } catch (caught: unknown) { if (ownsDraft()) setError(safeError(caught)); }
+        finally { if (ownsDraft()) { draftRequest.current = undefined; setBusy(false); } }
     };
 
     const apply = async () => {
-        if (plan === undefined) return;
-        setBusy(true);
-        setError(undefined);
+        if (reviewed === undefined || submitted || draftRequest.current !== undefined) return;
+        const generation = templateSession.current;
+        const request = {};
+        draftRequest.current = request;
+        const ownsDraft = () => current() && generation === templateSession.current && draftRequest.current === request;
+        setSubmitted(true); setBusy(true); setError(undefined);
         try {
-            const accepted = await client.templateApplyCreateProject(plan.planId);
-            const next = await client.operationGet(accepted.operationId);
-            setOperation(next);
-            if (next.state === "succeeded" && !completionReported.current) {
-                const projectId = operationProjectId(next);
-                if (projectId === undefined) {
-                    setError({ code: "internal_error", message: "The request could not be completed." });
-                } else {
-                    completionReported.current = true;
-                    onCompleted(projectId);
-                }
-            }
-        } catch (caught: unknown) {
-            setError(safeError(caught));
-        } finally {
-            setBusy(false);
-        }
+            const accepted = await client.templateApplyCreateProject(reviewed.plan.planId);
+            operations.accept(accepted.operationId, async (next) => {
+                if (!current()) return;
+                const projectId = templateOperationProjectId(next);
+                if (projectId === undefined) throw { code: "internal_error" };
+                await callbacks.current.onChanged();
+                if (current() && generation === templateSession.current && callbacks.current.open) callbacks.current.onCompleted(projectId);
+            });
+            if (ownsDraft()) setOperationId(accepted.operationId);
+        } catch (caught: unknown) { if (ownsDraft()) setError(safeError(caught)); }
+        finally { if (ownsDraft()) { draftRequest.current = undefined; setBusy(false); } }
     };
 
     const cancelOperation = async () => {
-        if (operation === undefined) return;
-        setBusy(true);
-        setError(undefined);
+        if (operation === undefined || draftRequest.current !== undefined) return;
+        const generation = templateSession.current;
+        const request = {};
+        draftRequest.current = request;
+        const ownsDraft = () => current() && generation === templateSession.current && draftRequest.current === request;
+        setBusy(true); setError(undefined);
         try {
             const result = await client.operationCancel(operation.operationId, operation.revision);
-            setOperation(result.operation);
-        } catch (caught: unknown) {
-            setError(safeError(caught));
-        } finally {
-            setBusy(false);
-        }
+            if (result.operation.operationId !== operation.operationId) throw { code: "internal_error" };
+        } catch (caught: unknown) { if (ownsDraft()) setError(safeError(caught)); }
+        finally { if (ownsDraft()) { draftRequest.current = undefined; setBusy(false); } }
     };
 
-    const selectedTemplate = templates.find((candidate) => candidate.templateId === templateId);
     const terminal = operation !== undefined && !ACTIVE_OPERATION_STATES.has(operation.state);
     return (
-        <Dialog onClose={onClose} open={open && (!loading || delayedLoading)} title={t("Create project")}>
+        <><Dialog dismissible={!busy} onClose={close} open={open && (dialogShown || !loading || delayedLoading)} title={t("Create project")}>
             <div className="project-create-flow">
                 {loading ? <LoadingState title={t("Loading templates…")} /> : null}
-                {loading ? null : templates.length === 0 ? (
+                {loading ? null : templateLoadError !== undefined ? (
+                    <div className="dialog-empty" role="alert">
+                        <strong>{t("Templates could not be loaded.")}</strong>
+                        <code>{templateLoadError.code}</code>
+                        <div className="dialog-actions"><Button onClick={close} type="button" variant="text">{t("Close")}</Button><Button onClick={() => setTemplateReadVersion((current) => current + 1)} type="button">{t("Retry")}</Button></div>
+                    </div>
+                ) : templates.length === 0 ? (
                     <div className="dialog-empty" role="status">
                         <strong>{t("No templates available")}</strong>
                         <span>{t("Import or create a template before creating a project.")}</span>
-                        <div className="dialog-actions"><Button onClick={onClose} type="button">{t("Close")}</Button></div>
+                        <div className="dialog-actions"><Button onClick={close} type="button">{t("Close")}</Button></div>
                     </div>
-                ) : plan === undefined ? (
+                ) : reviewed === undefined ? (
                     <>
-                        <Select aria-label={t("Project template")} label={t("Template")} onChange={setTemplateId} options={templates.map((template) => ({ label: `${template.displayName} · ${template.templateVersion}`, value: template.templateId }))} value={templateId} />
+                        <Select disabled={busy} aria-label={t("Project template")} id="project-create-template" label={t("Template")} onChange={setTemplateId} options={templates.map((template) => ({ label: `${template.displayName} · ${template.templateVersion}`, value: template.templateId }))} value={templateId} />
+                        {templateCursor === undefined ? null : <div className="pagination-controls" aria-busy={moreTemplatesLoading}>
+                            {moreTemplatesFailed ? <p className="inline-error" role="alert">{t("Could not load more items. Your loaded items are still available.")}</p> : null}
+                            <Button disabled={busy || moreTemplatesLoading} onClick={() => void loadMoreTemplates()} type="button" variant="text">{moreTemplatesFailed ? t("Retry loading more") : t("Load more templates")}</Button>
+                        </div>}
                         <div className="project-target-picker">
-                            <TextField aria-label={t("Create target parent")} label={t("Parent directory")} onInput={setTargetParent} value={targetParent} />
+                            <TextField disabled={busy} aria-label={t("Create target parent")} label={t("Parent directory")} onInput={setTargetParent} value={targetParent} />
                             <Button disabled={busy} onClick={() => void chooseParent()} type="button" variant="tonal">{t("Choose directory")}</Button>
                         </div>
-                        <TextField aria-label={t("Create project name")} label={t("Project name")} onInput={setTargetLeaf} value={targetLeaf} />
+                        <TextField disabled={busy} aria-label={t("Create project name")} label={t("Project name")} onInput={setTargetLeaf} value={targetLeaf} />
                         <div className="dialog-actions">
-                            <Button disabled={busy} onClick={onClose} type="button" variant="text">{t("Cancel")}</Button>
+                            <Button disabled={busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button>
                             <Button disabled={busy || templateId.length === 0 || targetParent.length === 0 || targetLeaf.trim().length === 0} onClick={() => void review()} type="button">{t("Review creation")}</Button>
                         </div>
                     </>
-                ) : operation === undefined ? (
+                ) : operationId === undefined ? (
                     <>
-                        <div className="dialog-summary">
-                            <div><span>{t("Template")}</span><strong>{selectedTemplate?.displayName ?? templateId}</strong></div>
-                            <div><span>{t("Version")}</span><strong>{selectedTemplate?.templateVersion ?? t("Unknown")}</strong></div>
-                            <div><span>{t("Destination")}</span><code>{targetParent}\{targetLeaf.trim()}</code></div>
-                            <div><span>{t("Plan")}</span><code>{plan.planFingerprint.slice(0, 12)}</code></div>
-                        </div>
+                        <TemplatePlanReview review={reviewed} />
                         <p>{t("ALCOMD Core will validate the frozen template, create the project transactionally, and register the completed project.")}</p>
                         <div className="dialog-actions">
-                            <Button disabled={busy} onClick={() => setPlan(undefined)} type="button" variant="text">{t("Back")}</Button>
-                            <Button disabled={busy} onClick={() => void apply()} type="button">{t("Create project")}</Button>
+                            <Button disabled={busy} onClick={() => { setReviewed(undefined); setSubmitted(false); setError(undefined); }} type="button" variant="text">{t("Back")}</Button>
+                            <Button disabled={busy || submitted} onClick={() => void apply()} type="button">{t("Create project")}</Button>
                         </div>
                     </>
                 ) : (
                     <>
-                        <p role="status">{operationFeedback(operation, "creation", t)}</p>
+                        <TemplateOperationProgress operationId={operationId} operations={operations} />
                         <div className="dialog-actions">
-                            {!terminal ? <Button disabled={busy} onClick={() => void cancelOperation()} type="button" variant="text">{t("Cancel creation")}</Button> : null}
-                            <Button disabled={!terminal} onClick={onClose} type="button">{t("Close")}</Button>
+                            {!terminal ? <Button disabled={busy || operation === undefined} onClick={() => void cancelOperation()} type="button" variant="text">{t("Cancel creation")}</Button> : null}
+                            <Button disabled={busy} onClick={close} type="button">{t("Close")}</Button>
                         </div>
                     </>
                 )}
-                {error === undefined ? null : <p className="inline-error" role="alert">{t("Project creation failed: {code}", { code: error.code })}</p>}
+                {error === undefined ? null : <div className="inline-error" role="alert"><p>{t("Project creation request failed: {code}", { code: error.code })}</p>{submitted && templateApplyResultUnknown(error) ? <p>{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</p> : null}</div>}
             </div>
-        </Dialog>
+        </Dialog>{operations.follow()}</>
     );
 }
 
@@ -377,7 +419,7 @@ export function RestoreProjectDialog({ client, onClose, onCompleted, open }: Pro
                     </>
                 ) : (
                     <>
-                        <p role="status">{operationFeedback(operation, "restore", t)}</p>
+                        <p role="status">{operationFeedback(operation, t)}</p>
                         <div className="dialog-actions">
                             {!terminal ? <Button disabled={busy} onClick={() => void cancelOperation()} type="button" variant="text">{t("Cancel restore")}</Button> : null}
                             <Button disabled={!terminal} onClick={onClose} type="button">{t("Close")}</Button>
@@ -388,12 +430,6 @@ export function RestoreProjectDialog({ client, onClose, onCompleted, open }: Pro
             </div>
         </Dialog>
     );
-}
-
-function operationProjectId(operation: Operation): string | undefined {
-    if (typeof operation.result !== "object" || operation.result === null) return undefined;
-    const projectId = (operation.result as { projectId?: unknown }).projectId;
-    return typeof projectId === "string" && projectId.length > 0 ? projectId : undefined;
 }
 
 function backupLabel(backup: BackupRecord, locale: SupportedLocale): string {
@@ -408,7 +444,7 @@ function safeError(caught: unknown): RpcError {
     return { code: "internal_error", message: "The request could not be completed." };
 }
 
-function operationFeedback(operation: Operation, kind: "creation" | "restore", t: Translate): string {
+function operationFeedback(operation: Operation, t: Translate): string {
     const states: Record<string, string> = {
         queued: t("Queued"), planning: t("Planning"), waiting_for_input: t("Waiting for input"),
         running: t("Running"), cancelling: t("Cancelling"), recovering: t("Recovering"),
@@ -416,9 +452,6 @@ function operationFeedback(operation: Operation, kind: "creation" | "restore", t
     };
     const state = states[operation.state] ?? operation.state;
     const phase = operation.progress?.phase;
-    if (kind === "creation") return phase === undefined
-        ? t("Project creation {state}.", { state })
-        : t("Project creation {state}: {phase}.", { state, phase });
     return phase === undefined
         ? t("Project restore {state}.", { state })
         : t("Project restore {state}: {phase}.", { state, phase });
