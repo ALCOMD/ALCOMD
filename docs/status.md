@@ -71,8 +71,14 @@ M0-M6 已正式通过人工验收，M7 尚未完成。
   **APPROVED / IN_PROGRESS**。模板分页、三类 review、页面任务持有与成功刷新、用户包详情已接线。
   分页/创建 14/0、资源与相关来源回归 18/0、普通模板动作 6/0 分别通过；扩展任务组为 30/4，
   含一项导航 ERR_NO_BUFFER_SPACE 及三项后续修正的测试定位；其后任务专项为 18/1，唯一失败为
-  必需 JS 的 ERR_NO_BUFFER_SPACE、业务未到达，不能拼接为完整通过。当前准备稳定
-  候选的集中验证与隔离 native 闭环，详见 [H2-B 开发验证](testing/m7-h2-b-20261101.md)。H2-B 只允许本地候选
+  必需 JS 的 ERR_NO_BUFFER_SPACE、业务未到达，不能拼接为完整通过。首个本地候选 `6988bc6`
+  的完整 Rust 491/0/8、根 check/build、冻结基线、release bins、Tauri release no-bundle 及独立
+  完整 Chromium **292/0（14.8 分钟）**通过，前后 651 项输入未变。隔离 native 的仓库、用户包、
+  模板导入/导出/覆盖/builtin 边界、派生和两个创建入口已执行；stale Apply 暴露 Core 在接受后才
+  重验登记状态、留下失败 Operation 和目标文件，首轮 native 未通过。当前修正原有 Store 接受
+  事务并保留最终重验；三类模板、真实 RPC 和 kill/restart 模块为 6/0/1 既有 helper ignored。
+  修复后的最终候选门禁、native 复核、持久化/断线/模板移除及原样例恢复仍待完成，详见
+  [H2-B 开发验证](testing/m7-h2-b-20261101.md)。H2-B 只允许本地候选
   提交，不自动推送；真实桌面材料完成后停止等待项目所有者验收。
 - 已验收范围：Project/Packages 和已获准的其他既有页面基础交互修正、统一公共组件及验收。
   H2-B 按上述前提顺序推进；H3-H7、M8、M9、M11 未获准开始；本次签收不代表 M7 完成。

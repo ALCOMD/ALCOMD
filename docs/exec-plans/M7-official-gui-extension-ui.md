@@ -677,10 +677,16 @@ inspect/list/get/packages/register/refresh/unregister，用户包既有五项 li
 setFavorite/remove/planCreateProject/applyCreateProject。Operation 查询/取消仍用原合同；
 低影响 command 不创造 GUI Plan 或新 Operation。
 
-预计 production 改动仅为 `apps/alcomd-gui/src/CorePages.tsx`、`CoreActions.tsx`、
+GUI production 改动为 `apps/alcomd-gui/src/CorePages.tsx`、`CoreActions.tsx`、
 `ProjectCreationDialogs.tsx`、`TemplatePlanReview.tsx`、`rpc.ts`、必要的本地 `core-models.ts` 与三语言词条；
 tests/browser 的现有 harness/spec 同步。`UtilityWorkspace.tsx`、`Material.tsx` 等共享层只允许
 为上述可复现问题作必要修正。已有 Tauri templates adapter 已接收完整参数，无需新增平台 command。
+本轮同时收口真实桌面已复现的模板 Apply 接受边界：`crates/alcomd-store/src/m5_template.rs`
+在原有接受事务内重验 import/derive/create-project 的登记 revision、digest 和对象存在性，
+先处理已接受请求的幂等重放，再拒绝已知失效且尚未接受的 Plan；最终提交继续复用同一重验。
+`crates/alcomd-testing/tests/m5_template.rs` 证明拒绝不产生 Operation/Event/目标目录，不消耗
+幂等键，显式新 Plan 仍可创建，已完成任务在模板 revision 改变后仍按原 ID 重放。
+这项修复不改变冻结字段、错误码或恢复格式，不删除旧失败任务、目标目录或恢复证据。
 本方案不提出新依赖、public DTO/wire、RPC、权限、Schema、migration 或 native API。
 
 ### 自动化验收矩阵

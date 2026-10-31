@@ -175,6 +175,7 @@ pub(super) fn accept_template_plan(
     if plan.state != TemplatePlanState::Unapplied {
         return Err(error(M5TemplateErrorCode::TemplatePlanStale));
     }
+    validate_plan_registry(&transaction, owner, &plan)?;
     let operation_id = OperationId::new();
     let request_json = format!(r#"{{"planId":"{plan_id}","version":1}}"#);
     transaction
@@ -245,6 +246,107 @@ pub(super) fn accept_template_plan(
     Ok(outcome)
 }
 
+fn validate_plan_registry(
+    connection: &Connection,
+    owner: &PrincipalId,
+    plan: &TemplatePlanRecord,
+) -> Result<(), M5TemplateError> {
+    match plan.kind {
+        TemplatePlanKind::Import => {
+            let authority: ImportAuthority =
+                serde_json::from_str(&plan.plan_json).map_err(|_| internal())?;
+            validate_import_registry(connection, owner, &authority)?;
+        }
+        TemplatePlanKind::Derive => {
+            let authority: DeriveAuthority =
+                serde_json::from_str(&plan.plan_json).map_err(|_| internal())?;
+            validate_derive_registry(connection, owner, &authority)?;
+        }
+        TemplatePlanKind::CreateProject => {
+            let authority: CreateProjectAuthority =
+                serde_json::from_str(&plan.plan_json).map_err(|_| internal())?;
+            validate_create_registry(connection, owner, &authority)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_import_registry(
+    connection: &Connection,
+    owner: &PrincipalId,
+    authority: &ImportAuthority,
+) -> Result<Option<StoredTemplateRecord>, M5TemplateError> {
+    if authority.version != 1 || authority.kind != "import" {
+        return Err(error(M5TemplateErrorCode::TemplatePlanStale));
+    }
+    let template_id = TemplateId::parse(&authority.template_id).map_err(|_| internal())?;
+    let existing = load_template_optional(connection, owner, template_id)?;
+    match existing.as_ref() {
+        None if authority.expected_revision == 0 && authority.old_bundle_sha256.is_none() => {}
+        Some(existing)
+            if existing.source_kind == TemplateSourceKind::User
+                && authority.expected_revision == existing.revision.get()
+                && authority.old_bundle_sha256.as_deref()
+                    == Some(&hex(&existing.bundle_sha256)) => {}
+        _ => return Err(error(M5TemplateErrorCode::TemplatePlanStale)),
+    }
+    Ok(existing)
+}
+
+fn validate_derive_registry(
+    connection: &Connection,
+    owner: &PrincipalId,
+    authority: &DeriveAuthority,
+) -> Result<(), M5TemplateError> {
+    let template_id = TemplateId::parse(&authority.template_id).map_err(|_| internal())?;
+    if authority.version != 1
+        || authority.kind != "derive"
+        || load_template_optional(connection, owner, template_id)?.is_some()
+    {
+        return Err(error(M5TemplateErrorCode::TemplatePlanStale));
+    }
+    let project_revision = connection
+        .query_row(
+            "SELECT revision FROM projects WHERE project_id=?1 AND owner_principal_id=?2",
+            params![authority.source_project_id, owner.as_str()],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()
+        .map_err(failure)?;
+    if project_revision != Some(integer(authority.source_project_revision)?) {
+        return Err(error(M5TemplateErrorCode::TemplatePlanStale));
+    }
+    Ok(())
+}
+
+fn validate_create_registry(
+    connection: &Connection,
+    owner: &PrincipalId,
+    authority: &CreateProjectAuthority,
+) -> Result<(), M5TemplateError> {
+    if authority.version != 1 || authority.kind != "create-project" {
+        return Err(error(M5TemplateErrorCode::TemplatePlanStale));
+    }
+    let template_revision = connection
+        .query_row(
+            "SELECT revision,payload_sha256 FROM templates
+             WHERE template_id=?1 AND owner_principal_id=?2",
+            params![authority.template_id, owner.as_str()],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
+        )
+        .optional()
+        .map_err(failure)?;
+    if template_revision
+        != Some((
+            integer(authority.template_revision)?,
+            parse_hex_digest(&authority.bundle_sha256)?.to_vec(),
+        ))
+    {
+        return Err(error(M5TemplateErrorCode::TemplatePlanStale));
+    }
+    Ok(())
+}
+
 pub(super) fn begin_template_apply(
     connection: &mut Connection,
     operation_id: OperationId,
@@ -293,28 +395,18 @@ pub(super) fn complete_template_apply(
         TemplatePlanKind::Import => {
             let authority: ImportAuthority =
                 serde_json::from_str(&plan.plan_json).map_err(|_| internal())?;
-            if authority.version != 1
-                || authority.kind != "import"
-                || authority.template_id != published.record.template_id.to_string()
+            if authority.template_id != published.record.template_id.to_string()
                 || authority.new_bundle_sha256 != hex(&published.record.bundle_sha256)
             {
                 return Err(error(M5TemplateErrorCode::TemplatePlanStale));
             }
-            let existing =
-                load_template_optional(&transaction, &owner, published.record.template_id)?;
+            let existing = validate_import_registry(&transaction, &owner, &authority)?;
             let revision = match existing {
-                None if authority.expected_revision == 0
-                    && authority.old_bundle_sha256.is_none() =>
-                {
+                None => {
                     insert_user_template(&transaction, &owner, &published.record, completed_at_ms)?;
                     Revision::INITIAL
                 }
-                Some(existing)
-                    if existing.source_kind == TemplateSourceKind::User
-                        && authority.expected_revision == existing.revision.get()
-                        && authority.old_bundle_sha256.as_deref()
-                            == Some(&hex(&existing.bundle_sha256)) =>
-                {
+                Some(existing) => {
                     if existing.bundle_sha256 == published.record.bundle_sha256 {
                         existing.revision
                     } else {
@@ -340,32 +432,16 @@ pub(super) fn complete_template_apply(
                         next
                     }
                 }
-                _ => return Err(error(M5TemplateErrorCode::TemplatePlanStale)),
             };
             (revision, "template.imported")
         }
         TemplatePlanKind::Derive => {
             let authority: DeriveAuthority =
                 serde_json::from_str(&plan.plan_json).map_err(|_| internal())?;
-            if authority.version != 1
-                || authority.kind != "derive"
-                || authority.template_id != published.record.template_id.to_string()
-                || load_template_optional(&transaction, &owner, published.record.template_id)?
-                    .is_some()
-            {
+            if authority.template_id != published.record.template_id.to_string() {
                 return Err(error(M5TemplateErrorCode::TemplatePlanStale));
             }
-            let project_revision = transaction
-                .query_row(
-                    "SELECT revision FROM projects WHERE project_id=?1 AND owner_principal_id=?2",
-                    params![authority.source_project_id, owner.as_str()],
-                    |row| row.get::<_, i64>(0),
-                )
-                .optional()
-                .map_err(failure)?;
-            if project_revision != Some(integer(authority.source_project_revision)?) {
-                return Err(error(M5TemplateErrorCode::TemplatePlanStale));
-            }
+            validate_derive_registry(&transaction, &owner, &authority)?;
             insert_user_template(&transaction, &owner, &published.record, completed_at_ms)?;
             (Revision::INITIAL, "template.derived")
         }
@@ -475,30 +551,12 @@ pub(super) fn complete_template_project_create(
     }
     let authority: CreateProjectAuthority =
         serde_json::from_str(&plan.plan_json).map_err(|_| internal())?;
-    if authority.version != 1
-        || authority.kind != "create-project"
-        || authority.project_id != project.project_id.to_string()
+    if authority.project_id != project.project_id.to_string()
         || authority.target_path != project.observation.root_path
     {
         return Err(error(M5TemplateErrorCode::TemplatePlanStale));
     }
-    let template_revision = transaction
-        .query_row(
-            "SELECT revision,payload_sha256 FROM templates
-             WHERE template_id=?1 AND owner_principal_id=?2",
-            params![authority.template_id, owner.as_str()],
-            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?)),
-        )
-        .optional()
-        .map_err(failure)?;
-    if template_revision
-        != Some((
-            integer(authority.template_revision)?,
-            parse_hex_digest(&authority.bundle_sha256)?.to_vec(),
-        ))
-    {
-        return Err(error(M5TemplateErrorCode::TemplatePlanStale));
-    }
+    validate_create_registry(&transaction, &owner, &authority)?;
     let existing = transaction
         .query_row(
             "SELECT project_id,root_path,path_identity_key FROM projects

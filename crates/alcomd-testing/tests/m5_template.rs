@@ -4,9 +4,9 @@ use std::time::Duration;
 
 use alcomd_application::{
     AccessContext, IdempotencyKey, M3RegistryStore, M5TemplateApplication, M5TemplateError,
-    M5TemplateWriterGate, ManifestState, OperationState, PrincipalId, ProjectId,
-    ProjectObservation, ProjectType, StateStore, TemplateId, TemplateSourceKind, UnityWriterState,
-    UnityWriterStateKind,
+    M5TemplateErrorCode, M5TemplateStore, M5TemplateWriterGate, ManifestState, OperationState,
+    PrincipalId, ProjectId, ProjectObservation, ProjectType, StateStore, TemplateId,
+    TemplatePlanState, TemplateSourceKind, UnityWriterState, UnityWriterStateKind,
 };
 use alcomd_store::StateStoreHandle;
 use alcomd_vpm::TemplateEngine;
@@ -213,6 +213,16 @@ async fn template_create_project_publishes_then_registers_one_durable_project() 
         initialized_time,
         Some(before_replay.projects[0].registered_at_ms)
     );
+    application
+        .set_favorite(
+            &access,
+            blank.template_id,
+            true,
+            blank.revision,
+            key("favorite-before-create-replay"),
+        )
+        .await
+        .expect("advance template revision after completed creation");
     let replay = application
         .apply_create_project(&access, plan.plan_id, key("create-project"))
         .await
@@ -243,6 +253,195 @@ async fn template_create_project_publishes_then_registers_one_durable_project() 
         fs::read_to_string(target.join("Packages/manifest.json")).expect("UPM manifest"),
         "{\n    \"dependencies\": {}\n}\n"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn template_registry_drift_rejects_unapplied_plans_without_acceptance_side_effects() {
+    let fixture = TestDirectory::new();
+    let source = fixture.path().join("Source");
+    create_project(&source);
+    let store = StateStoreHandle::open(fixture.path().join("state.db")).expect("open store");
+    let engine = TemplateEngine::new(fixture.path().join("template-store")).expect("engine");
+    let application = M5TemplateApplication::new(
+        store.clone(),
+        engine,
+        FixedWriter(UnityWriterStateKind::NotObserved),
+    );
+    let access = AccessContext::local_owner();
+    let owner = PrincipalId::local_owner();
+    let project = store
+        .register_project(
+            owner.clone(),
+            project_observation(&source),
+            key("registry-drift-source"),
+            1,
+        )
+        .await
+        .expect("register source")
+        .value;
+    let template_id = TemplateId::new();
+    let derive = application
+        .plan_derive(
+            &access,
+            project.project_id,
+            project.revision,
+            template_id,
+            "1.0.0".to_owned(),
+            "Registry drift fixture".to_owned(),
+            None,
+        )
+        .await
+        .expect("plan initial template");
+    let accepted = application
+        .apply_derive(&access, derive.plan_id, key("registry-drift-initial"))
+        .await
+        .expect("derive initial template");
+    wait_for_success(&store, accepted.operation_id).await;
+    let template = application
+        .get(&access, template_id)
+        .await
+        .expect("template");
+    let exported = fixture.path().join("registry-drift.alcomdtemplate");
+    application
+        .export(
+            &access,
+            template_id,
+            template.revision,
+            exported.to_string_lossy().into_owned(),
+        )
+        .await
+        .expect("export import input");
+    let import = application
+        .plan_import(
+            &access,
+            exported.to_string_lossy().into_owned(),
+            false,
+            Some(template.revision),
+        )
+        .await
+        .expect("plan same-digest import");
+    let derive = application
+        .plan_derive(
+            &access,
+            project.project_id,
+            project.revision,
+            TemplateId::new(),
+            "1.0.0".to_owned(),
+            "Unaccepted derive".to_owned(),
+            None,
+        )
+        .await
+        .expect("plan another derive");
+    let create = application
+        .plan_create_project(
+            &access,
+            template_id,
+            template.revision,
+            fixture.path().to_string_lossy().into_owned(),
+            "UnacceptedCreate".to_owned(),
+        )
+        .await
+        .expect("plan create project");
+    let (current_template, _) = application
+        .set_favorite(
+            &access,
+            template_id,
+            true,
+            template.revision,
+            key("registry-drift-template-revision"),
+        )
+        .await
+        .expect("advance template revision");
+    store
+        .set_project_favorite(
+            owner.clone(),
+            project.project_id,
+            true,
+            project.revision,
+            key("registry-drift-project-revision"),
+            2,
+        )
+        .await
+        .expect("advance source revision");
+    let operations_before = store
+        .list_operations(owner.clone(), None, 100)
+        .await
+        .expect("operations before rejection");
+    let events_before = store
+        .list_events(owner.clone(), 0, 100)
+        .await
+        .expect("events before rejection");
+    let outcomes = [
+        store
+            .accept_template_plan(owner.clone(), import.plan_id, key("unaccepted-import"), 3)
+            .await,
+        store
+            .accept_template_plan(owner.clone(), derive.plan_id, key("unaccepted-derive"), 3)
+            .await,
+        store
+            .accept_template_plan(owner.clone(), create.plan_id, key("unaccepted-create"), 3)
+            .await,
+    ];
+    for outcome in outcomes {
+        assert_eq!(
+            outcome
+                .expect_err("known registry drift must reject before accepting a task")
+                .code(),
+            M5TemplateErrorCode::TemplatePlanStale
+        );
+    }
+    for plan_id in [import.plan_id, derive.plan_id, create.plan_id] {
+        assert_eq!(
+            store
+                .get_template_plan(owner.clone(), plan_id)
+                .await
+                .expect("unapplied plan")
+                .state,
+            TemplatePlanState::Unapplied
+        );
+    }
+    assert_eq!(
+        store
+            .list_operations(owner.clone(), None, 100)
+            .await
+            .expect("operations after rejection")
+            .operations,
+        operations_before.operations
+    );
+    assert_eq!(
+        store
+            .list_events(owner.clone(), 0, 100)
+            .await
+            .expect("events after rejection")
+            .next_sequence,
+        events_before.next_sequence
+    );
+    assert_eq!(
+        store
+            .list_projects(owner.clone(), None, 100)
+            .await
+            .expect("source registry")
+            .projects
+            .len(),
+        1
+    );
+    assert!(!fixture.path().join("UnacceptedCreate").exists());
+
+    let corrected = application
+        .plan_create_project(
+            &access,
+            template_id,
+            current_template.revision,
+            fixture.path().to_string_lossy().into_owned(),
+            "UnacceptedCreate".to_owned(),
+        )
+        .await
+        .expect("explicit corrected plan");
+    let accepted = application
+        .apply_create_project(&access, corrected.plan_id, key("unaccepted-create"))
+        .await
+        .expect("rejected Apply did not consume its idempotency key");
+    wait_for_success(&store, accepted.operation_id).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
