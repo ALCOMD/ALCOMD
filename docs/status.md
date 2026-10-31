@@ -9,10 +9,12 @@ M0-M6 已正式通过人工验收，M7 尚未完成。
 本文件是唯一当前阶段入口；ExecPlan 定义实施合同，testing 文档保存各自 SHA/场景的证据。
 
 - 唯一工作目录：`C:\Users\M2922\MyProjects\Rust\ALCOMD`，活动分支 `main`；不另建工作树。
-- 最近已提交并推送的检查点：`4eae1d4619b4534cf6bd4916e9c282b87be0eec4`，
-  包含 Core `626ec35`、共享 UI `fbb4213`、GUI `7357d80` 和验收记录。
-- 本地 H2-A 验收检查点：本轮架构、P6 wire、测试门禁、真实桌面交互修正及 Visual Gate 2
-  签收记录，基于上述远端检查点完成验证；本地提交身份见 `main` 日志，尚未推送。
+- H2-A 验收检查点：`23f545245f613f47f8def1e16418c4d12303404e`，包含本轮架构、P6 wire、
+  测试门禁、真实桌面交互修正及 Visual Gate 2 签收记录。其前置检查点 `4eae1d4` 包含
+  Core `626ec35`、共享 UI `fbb4213`、GUI `7357d80` 和对应验收记录。
+- H2-B 只获准梳理范围和验收方案，已在 [M7 ExecPlan](exec-plans/M7-official-gui-extension-ui.md)
+  形成 **PROPOSAL_READY / IMPLEMENTATION_NOT_APPROVED**：优先修正模板首 100 项截断、终态刷新，
+  完善既有 review 与资源生命周期验证；方案随 `main` 维护，没有开始 H2-B 产品实现。
 - 已验收范围：Project/Packages 和已获准的其他既有页面基础交互修正、统一公共组件及验收。
   H2-B、H3-H7、M8、M9、M11 未获准开始；本次签收不代表 M7 完成。
 - 当前格式：State v16、Config3、RPC v1、Extension ABI v1。按 A-034 保留 Schema 识别，
@@ -112,8 +114,8 @@ Visual Gate 2，没有 M7 或 Hosted CI 通过结论，原未跟踪 `output/` �
 ## 剩余边界与下一停止点
 
 - P6 修复的契约、自动化与真实 Plan 证据保持；本轮 H2-A 与 Visual Gate 2 已获项目所有者签收。
-  当前停止于 H2-A 收口，下一 slice 须先明确范围与验收点并取得批准；下载、native Portable UI
-  等未覆盖范围保持明确，不由 browser fixture 或窗口存在替代真实动作。
+  当前停在 H2-B 范围及验收提案，等待具体实施批准；下载、native Portable UI 等未覆盖范围
+  保持明确，不由 browser fixture 或窗口存在替代真实动作。
 - 窗口记忆、仓库 credential enrollment/revocation、完整用户入口缺口保持真实状态；聚合
   projects.management/packages.vpm/repositories.management 等继续 in_progress，不批量提升。
 - projects/templates/backups 的 v3 parity 和 unity.v3-vrc-parity 仍等待 M11 真实脱敏 Fixture；

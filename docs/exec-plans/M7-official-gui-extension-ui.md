@@ -544,6 +544,142 @@ fixes and defer uncertain contract-dependent work without blocking unrelated cor
 H0-H7 只重组 shell、composition、component rendering 和 visual hierarchy；不得重新设计 RPC、Plan/Apply、Operation、Settings、
 Activity、Diagnostics 或 Portable UI authority。
 
+## H2-B 资源与模板范围及验收方案（待批准）
+
+状态：**PROPOSAL_READY / IMPLEMENTATION_NOT_APPROVED**，2026-10-31。
+本方案仅为范围与验收提案；H2-A 检查点为
+`23f545245f613f47f8def1e16418c4d12303404e`，Visual Gate 2 已签收。
+本节直接细化原 H2 的剩余范围，不新建产品里程碑，不重复实现已存在的入口。
+当前阶段仍以 `../status.md` 为唯一入口；本方案不批准 H2-B production 修改。
+
+### 目标与现状证据
+
+建议 H2-B 收口 Resources 内 Repositories、User Packages、Templates 三个既有分区，以及它们
+连接到 Projects 的模板创建流程。保持现有导航、1400×800 桌面基线、已签收密度与共享 Material
+组件，不重做 Projects/Packages，也不以资源子系统划分新的一级工作区。
+
+| 现状 | 已核对证据 | H2-B 处理 |
+| --- | --- | --- |
+| 仓库 inspect/register/refresh/unregister、包预览与分页已接线 | `CorePages.tsx` 的 RepositoriesPage/RepositoryPackageList；`CoreActions.tsx` 的 RegisterRepositoryPanel/RepositoryActions | 复用现有功能，补齐异常、并发 revision 与真实桌面闭环证据 |
+| 用户包登记、刷新、取消登记已接线；get 只有 adapter，没有页面调用 | `CorePages.tsx` 的 UserPackageEnroll/UserPackageManager；`rpc.ts` 的 userPackageGet | 在既有资源行内提供有用户价值的来源/版本详情，消费现有 get；不增加独立导航或公共方法 |
+| 模板导入、派生、收藏、导出、移除、创建项目都已有入口 | `CoreActions.tsx` 的 TemplateImportPanel/TemplateDeriveDialog/TemplateActions；`ProjectCreationDialogs.tsx` | 修正当前流程缺口，不把这些功能重新列为“从零实现” |
+| 模板读取确实被截为首 100 项 | `rpc.ts` 的 templatesList 固定 limit=100 且不接 cursor；TemplatesPage 与 CreateProjectDialog 均未消费 nextCursor。现有 Rust DTO、Tauri adapter 和 Core 已支持 cursor | 接通已有 opaque cursor；列表与项目模板选择器均可到达后页 |
+| 模板完成后可能保留旧列表，尚须延迟场景复现 | import/derive/create 的 onChanged 在 Apply 接受时触发；对应 MutationFeedback 未传 onOperationTerminal | 先用可控延迟证明竞态，再将结果刷新接到同一 Operation 的终态；不在 GUI 猜测完成时间 |
+| 模板 review 主要显示 action 和 fingerprint | 当前三类 review；Core 已返回不同 action 的白名单 evidence | 用既有证据说明具体对象、来源和覆盖/创建条件，不以技术摘要替代用户确认 |
+| 现有浏览器覆盖不是完整资源生命周期证据 | `m7-template-dialogs.spec.ts`、`m7-project-create-restore.spec.ts`、`m7-package-workspace.spec.ts`、`m7-accessibility.spec.ts`；harness 的模板列表只有一项、Plan helper 省略大部分实际 evidence | 保留已有断言，增加真实 wire 形状、多页、延迟、冲突与结果断言；本次未执行新测试 |
+| H2-A 真实桌面材料没有这些资源写入闭环 | `../testing/m7-visual-gate-2-20261031.md` 的实际范围 | 新建 H2-B 独立证据，不用 H2-A 的 GUI Apply 或 CLI backend 测试冒充 |
+
+上述“首 100 项”和“get 无页面调用”为静态确认；完成刷新是可从实现识别的竞态风险，
+没有在本方案中伪报为已复现的 native 故障。v3 行为仅使用冻结审计和布局对照，不复制源码。
+
+### 建议实施范围与顺序
+
+1. **模板读取与页面状态**。只为 existing `templates.list` 接通 cursor，使用既有 PagedItems
+   或等价的现有分页交互，覆盖 Templates 列表和 Projects 的模板选择器；保留 Core 顺序与
+   opaque cursor，不解析游标、不提高 limit 规避分页，也不静默把未加载项当作不存在。
+   失败保留已取得的数据与选择，明确提供再次读取；切页/关闭后不接受旧请求结果。
+   TemplateDeriveDialog 已有项目分页，验证它能选择后页项目即可，不另建项目列表。
+2. **模板确认、任务与结果**。复用当前 import/derive/create Plan/Apply、OperationFollow 和
+   shared Dialog。review 至少展示 action、TemplateId；import/override 显示 expectedRevision
+   与是否替换；derive 显示源 ProjectId/revision；create 显示 templateRevision、targetLeaf
+   与 targetMustBeAbsent。都从该 Plan 现有 evidence 读取，不显示 filesystem identity 的原始字节。
+   名称/版本只可使用与 Plan digest/identity 对齐的读取快照作为上下文，不能伪造为 Plan 返回字段。
+   TS 对已知 evidence 做窄类型校验，不增加任意 JSON viewer；关键证据缺失时给有界错误并阻止 Apply。
+   Apply 后跟随同一个 OperationId，成功终态再刷新实际列表/项目；失败、取消、断线不能报成功。
+   stale/conflict 明确显示，不自动重新 Plan 或重发 Apply。两个创建入口保持同一 Core 用例与结果身份，
+   用户可定位 Core 注册的新项目，不建立第二套项目创建/Operation engine。
+3. **资源动作闭环**。仓库继续使用既有 URL/local manifest 输入、inspect→确认→register、
+   refresh、unregister 与包预览分页；用户包继续使用既有目录选择器、enroll、refresh 和确认后 remove。
+   用户包详情在同一 Resources 工作区的行内弹窗内读取 get，显示名称、packageId/version 和来源目录，
+   revision/hash 只作次要详情；不暴露 object-store/cache 路径或改成新一级导航。
+   取消选择/确认不写入；并发变化要求显式重读，删除仅取消登记，不删除源文件或已安装包。
+4. **验收与材料**。完成下面的自动化及真实桌面矩阵，沿用共享 loading/last-known-good/error/
+   reconnect/capability、focus/menu/select 规则。只有因范围内失败而需要的共享组件窄修正可进入本 slice，
+   并回归已签收的 Project/Package 路径；不借此重构全部页面。
+
+资源 URI、RPC capability、权限和存储版本保持。相关 method 分组为：仓库既有七项
+inspect/list/get/packages/register/refresh/unregister，用户包既有五项 list/get/enroll/refresh/remove，
+模板既有十二项 list/get/inspectBundle/planImport/applyImport/planDerive/applyDerive/export/
+setFavorite/remove/planCreateProject/applyCreateProject。Operation 查询/取消仍用原合同；
+低影响 command 不创造 GUI Plan 或新 Operation。
+
+预计 production 改动仅为 `apps/alcomd-gui/src/CorePages.tsx`、`CoreActions.tsx`、
+`ProjectCreationDialogs.tsx`、`rpc.ts`、必要的本地 `core-models.ts` 与三语言词条；
+tests/browser 的现有 harness/spec 同步。`UtilityWorkspace.tsx`、`Material.tsx` 等共享层只允许
+为上述可复现问题作必要修正。已有 Tauri templates adapter 已接收完整参数，无需新增平台 command。
+本方案不提出新依赖、public DTO/wire、RPC、权限、Schema、migration 或 native API。
+
+### 自动化验收矩阵
+
+| 场景 | 必须证明的结果 |
+| --- | --- |
+| 模板分页与完整选择 | 至少 101 项、两页不同数据；后页模板可见且可用于创建。请求沿用真实 cursor/limit；翻页不创建 Plan。后页失败保留前页及选择，重读不重复项；空列表与读取失败分开 |
+| 模板派生项目分页 | 从源项目后页选择，Plan 使用该 ProjectId 与重读的 revision；关闭/重新打开不继承前次草稿或迟到响应 |
+| 三类 Plan review | import/override、derive、create 各使用 Core 实际投影的 evidence 形状；展示与返回对象一致。非法/缺失关键证据不开放 Apply，不读未经批准的字段；不加大公共合同 |
+| 模板任务终态 | 可控 Running→Succeeded 后才核对新增/替换对象与版本；失败/取消不显示成功；同一 OperationId、一次显式 Apply。接受阶段的早读不能覆盖终态重读 |
+| stale 与未知结果 | Plan 后推进模板或项目 revision；原 Apply 明确拒绝，前后无额外 Operation/文件变化。断线重连跟随原任务，未知提交结果不自动重试 |
+| 模板普通动作与边界 | favorite 双向持久化；真实 export 返回成功并有外部 artifact；remove 用户模板及 builtin remove/override 拒绝。导入相同 digest、不同 digest 和明确 override 分别按已有合同处理 |
+| 仓库生命周期 | inspect 不登记，确认后 register；重复/无效源有稳定错误。refresh 失败保留 last-known-good，成功后展示当前包；预览后页可达。取消 unregister 无写入，确认只取消 registry |
+| 用户包生命周期 | 选择取消不 enroll；有效目录登记、get 当前详情、源变更后显式 refresh；revision conflict 不覆写；remove 只取消登记，源文件不变。缺 capability 不调用业务 RPC |
+| 页面与交互 | 各分区 loading/empty/refreshing/error/disconnected；Retry 恢复数据和能力。键盘分段、弹窗 Tab/Shift+Tab/Escape/返回原控件、三语言/明暗及既有 reduced-motion 行为保持 |
+
+现有 browser helper 不得用提前 succeeded、固定一项返回或 synthetic 错误码跳过真实竞态。
+同一测试场景的请求序列和数据结果均须可检查；使用公开 Material 生命周期，不访问私有 shadow DOM。
+测试先补足能证明缺口的失败用例再修实现，不放宽 30 秒、单 worker、零重试或原断言。
+
+最终候选执行主 ExecPlan 的完整本地门禁：fmt、Clippy、Workspace tests、xtask、metadata、
+冻结基线、npm check/build、完整 Chromium、Tauri release no-bundle 与 diff check。
+日志逐轮保存；旧 SHA 的通过、定向复核与完整运行不得拼接。本方案阶段只运行文档检查，
+不重复执行或宣称取得 H2-B 的 Rust/browser/native 验收结果。
+
+### 真实桌面验收方案与停止点
+
+真实验收使用嵌入 production 前端的 release GUI、独立临时 Core 数据目录及 WebView2 profile，
+在正式应用用例层内操作。准备只含 JSON、文本和最小项目结构的合成 source、两个有效的同 ID
+不同 digest 用户模板 bundle、一个 local 和一个仅监听 loopback 的 anonymous remote 仓库。
+它们必须与用户样例、正式仓库、Unity/Hub 安装隔离；模板只用 native `.alcomdtemplate`。
+外部输入可在登记前构造，登记后只经正式 CLI/GUI/RPC 修改；不直接写数据库、cache 或已注册项目。
+
+真实 GUI 至少走完：
+
+1. 仓库 preview/确认添加→包预览→refresh 成功与失败的 last-known-good→取消/确认移除；
+2. 用户包 chooser 取消与选中→详情→外部合成 source 改动后 refresh→取消/确认 remove，
+   用只读 hash 核对 source 未被删除或改写；
+3. 用户模板 import→Running/terminal→列表出现，favorite→刷新与重启仍保持；
+4. 用户模板 export 到全新路径→Core inspect 验证，直接 export 的 bundle bytes/digest 与已验证对象一致；
+5. 同 ID 不同 digest 的导入先拒绝未确认覆盖，再显式 override；builtin 的覆盖/移除仍拒绝；
+6. 从合成项目 derive→成功后列表更新，从 Projects 及模板行分别创建两个新项目，
+   跟随各自 Operation 并核对 Core 注册的 ProjectId、目标文件与排除项；不启动 Unity；
+7. GUI review 后由另一正式客户端推进临时 revision，原 Apply 拒绝；保留前后 Project/Template、
+   Operation 列表及文件摘要，证明没有额外副作用；
+8. 代表性的深浅色、键盘/focus、断线/Retry 与重启持久化。native 未覆盖的场景逐项记未执行，
+   browser 多页/错误注入不得冒充 native 动作。
+
+共享 Windows endpoint 必须先核对归属与可用性，不能误连原样例 Core；占用/初始化失败即停止。
+需要暂停既有样例进程时按已有授权核实身份及无活动 Operation，并记录、恢复完整原状态；
+不停止用户 Unity/Hub。临时运行时最后关闭，原 Projects/Editors/Operations/Settings 与 revision
+前后比对；截图仓库外保存，逐张记实际 GUI hash/构建，技术日志留在 ignored target。
+
+完成后停止在 **H2-B 本地候选与真实桌面签收**，交付修改摘要、逐项矩阵、日志/输入 hash、
+截图和未覆盖项，等待项目所有者验收。这些是 Visual Gate 3 remaining core pages 的资源/模板证据，
+不自动签收整个 Visual Gate 3，不重开已通过的 Visual Gate 2，也不自动开始 H3-H7 或 Hosted CI/push。
+
+### 排除项与必须停止审批的条件
+
+- 仓库凭据 enrollment/revocation、header/proxy、仓库列表 import/export/deep link、reorder/cleanup/cache
+  等尚无完整当前公开入口的产品缺口另行立合同任务，不由 H2-B 静默加入，也不标记为已完成。
+- v3 `.alcomtemplate`/tar.gz、v3 模板编辑/依赖与 UnityPackage parity、真实脱敏 differential fixture
+  保持 M11 归属；不在正常 runtime 加回旧解析器。H2-B 只验收现有 native Template Bundle v1。
+- 不新增 template 文件打开/保存选择器。现有导入/导出路径输入仍可完成流程；新增 native picker、
+  文件关联或系统 opener 是独立方案与审批点，不因已依赖 dialog plugin 就自动获批。
+- 不新增 source renderer、workflow engine、通用数据表框架；不扩大窄窗口/窗口记忆、H3 Unity/Backups/
+  Operations 增强、H4 Portable UI、H5 utilities、M8/M9、安装更新或三平台辅助技术范围。
+- 若现有 evidence/Operation 结果不足以安全完成上述确认或定位，或实现需要 public DTO/Schema、RPC、
+  capability/permission、持久格式、依赖或 native API 变更，先停止对应步骤并提交具体补充方案；
+  不能根据表单内容伪造 Core 证据、直接读项目文件、加别名/双格式或放宽权限来绕过。
+- 聚合 feature 仍保持实际 in_progress；M11/M12 未完成项与 Hub 下载/native Portable UI 的旧未覆盖
+  范围不被本次提案或资源验收提升为通过。提交、推送、Hosted CI 和发布仍按各自授权执行。
+
 ## Progress log
 
 - 2026-08-24：M6完成；M7最初研究WebView-based UI。
@@ -740,7 +876,8 @@ Apply/同一 Operation、失效 Plan 拒绝、焦点、筛选、语言/主题持
 最终完整 Chromium 在同一输入下独立通过 247/0，零重试；首轮 246/1 网络加载失败及各构建
 截图身份独立记录于 `docs/testing/m7-visual-gate-2-20261031.md`，不拼接定向结果。
 本地门禁与材料已收口，项目所有者于 2026-10-31 以“可以，接下来做什么”确认签收 Visual Gate 2。
-当前停止于 H2-A 收口；下一 slice 须先明确范围、验收点和停止点并取得批准，不自动进入
-H2-B、H3-H7、M8、M9 或 M11。
+H2-A 验收检查点为 `23f545245f613f47f8def1e16418c4d12303404e`。
+H2-B 资源与模板范围及验收提案已按授权梳理于本文件；当前只完成提案，等待实施范围批准，
+不自动进入 H2-B production、H3-H7、M8、M9 或 M11。
 已有候选读取、exact Unity、Config3、Hub 和 State16 的合同继续有效。完整 GUI/Rust/三平台
 技术门禁与人工视觉结果分别记录，不把旧 SHA 或定向通过冒充当前候选全绿。
