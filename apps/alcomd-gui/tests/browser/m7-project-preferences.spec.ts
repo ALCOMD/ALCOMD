@@ -78,11 +78,21 @@ test("Projects grid retains shared launch, directory, copy review and removal ca
     await page.keyboard.press("Enter");
     await expect(page.getByText("Unity launch opening.", { exact: true })).toBeVisible();
     const more = card.getByRole("button", { name: "More actions for Avatar Studio", exact: true });
-    await more.click();
-    await expect(card.getByRole("menuitem", { name: "Open Project Directory", exact: true })).toBeVisible();
-    await expect(card.getByRole("menuitem", { name: "Copy Project", exact: true })).toBeVisible();
-    await expect(card.getByRole("menuitem", { name: "Remove Project", exact: true })).toBeVisible();
-    await page.keyboard.press("Escape");
+    const lifecycle = await card.locator("md-menu.project-actions-menu").evaluateHandle((element) => ({
+        opened: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })),
+        closed: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true }))
+    }));
+    try {
+        await more.click();
+        await lifecycle.evaluate((events) => events.opened);
+        await expect(card.getByRole("menuitem", { name: "Open Project Directory", exact: true })).toBeVisible();
+        await expect(card.getByRole("menuitem", { name: "Copy Project", exact: true })).toBeVisible();
+        await expect(card.getByRole("menuitem", { name: "Remove Project", exact: true })).toBeVisible();
+        await page.keyboard.press("Escape");
+        await lifecycle.evaluate((events) => events.closed);
+    } finally {
+        await lifecycle.dispose();
+    }
     await expect(more).toBeFocused();
     await more.click();
     await card.getByRole("menuitem", { name: "Open Project Directory", exact: true }).click();
@@ -393,10 +403,20 @@ test("Project workspace split button keeps unavailable launch and maintenance ac
     await openHarness(page, `/projects/${PROJECT_ID}/packages`, "capabilities-missing");
     const group = page.getByRole("group", { name: "Open Unity", exact: true });
     await expect(group.getByRole("button", { name: "Open Unity", exact: true })).toBeDisabled();
-    await group.getByRole("button", { name: /^More actions for/ }).click();
-    await expect(page.locator("md-menu-item").filter({ hasText: "Edit launch arguments" })).toHaveJSProperty("disabled", true);
-    await expect(page.locator("md-menu-item").filter({ hasText: "Copy Project" })).toHaveJSProperty("disabled", true);
-    await page.keyboard.press("Escape");
+    const lifecycle = await group.locator(".alcomd-split-button-options").evaluateHandle((element) => ({
+        opened: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })),
+        closed: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true }))
+    }));
+    try {
+        await group.getByRole("button", { name: /^More actions for/ }).click();
+        await lifecycle.evaluate((events) => events.opened);
+        await expect(page.locator("md-menu-item").filter({ hasText: "Edit launch arguments" })).toHaveJSProperty("disabled", true);
+        await expect(page.locator("md-menu-item").filter({ hasText: "Copy Project" })).toHaveJSProperty("disabled", true);
+        await page.keyboard.press("Escape");
+        await lifecycle.evaluate((events) => events.closed);
+    } finally {
+        await lifecycle.dispose();
+    }
     await expect(group.getByRole("button", { name: /^More actions for/ })).toBeFocused();
 });
 

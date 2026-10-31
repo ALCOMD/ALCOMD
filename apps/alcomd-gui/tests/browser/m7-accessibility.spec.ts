@@ -168,6 +168,7 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         const canvas = document.getElementById("main-content")!.getBoundingClientRect();
         return { left: bounds.left - canvas.left, top: bounds.top - canvas.top };
     });
+    await logHeaderGeometryDiagnostics(page, "projects-baseline", projectsHeaderGeometry);
     const sidebarRoutes = new Set(["/", "/projects", "/repositories", "/user-packages", "/templates", "/unity", "/operations", "/extensions", "/activity", "/diagnostics", "/settings", "/about"]);
     const routes = [
         ["/", "Projects"],
@@ -209,7 +210,14 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
             await expect(heading).toHaveText(await sidebarLabel.innerText());
         }
         expect(await heading.evaluate(titleStyle)).toEqual(projectsTitleStyle);
-        expect(await heading.evaluate(headerGeometry), route).toEqual(projectsHeaderGeometry);
+        const observedHeaderGeometry = await heading.evaluate(headerGeometry);
+        try {
+            expect(observedHeaderGeometry, route).toEqual(projectsHeaderGeometry);
+        } finally {
+            if (route === "/projects/00000000-0000-4000-8000-000000000101") {
+                await logHeaderGeometryDiagnostics(page, "project-detail", observedHeaderGeometry);
+            }
+        }
         // Contextual detail headers may lead with Back or carry a project path.
         // Sidebar destinations must place the heading at exactly the Projects position.
         if (sidebarRoutes.has(route)) {
@@ -228,6 +236,61 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         await expect(main.locator('.route-state[role="alert"]')).toHaveCount(0);
     }
 });
+
+async function logHeaderGeometryDiagnostics(page: Page, phase: string, original: unknown) {
+    try {
+        const samples = await page.evaluate(async () => {
+            const header = document.getElementById("route-title")?.closest("header");
+            if (header === null || header === undefined) return { missingHeader: true };
+            const inspect = (element: Element) => {
+                const bounds = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                return {
+                    tag: element.tagName, class: element.className.slice(0, 120), text: element.textContent?.trim().slice(0, 64),
+                    x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height,
+                    clientWidth: element.clientWidth, scrollWidth: element.scrollWidth,
+                    fontFamily: style.fontFamily.slice(0, 160), fontSize: style.fontSize, lineHeight: style.lineHeight,
+                    display: style.display, minHeight: style.minHeight, padding: style.padding, flex: style.flex
+                };
+            };
+            const controls = Array.from(header.querySelectorAll<HTMLElement & { updateComplete?: Promise<unknown> }>("md-filled-select, md-filled-button, md-filled-tonal-button, md-text-button, md-icon-button")).slice(0, 8);
+            const snapshot = () => ({
+                atMs: performance.now(), viewport: { width: innerWidth, height: innerHeight, scale: devicePixelRatio },
+                fonts: { status: document.fonts.status, faces: Array.from(document.fonts).slice(0, 6).map((font) => ({ family: font.family.slice(0, 80), status: font.status })) },
+                header: inspect(header), children: Array.from(header.children).slice(0, 6).map(inspect), controls: controls.map(inspect)
+            });
+            const before = snapshot();
+            let timer = 0;
+            const completion = Promise.all([document.fonts.ready, ...controls.map((element) => element.updateComplete)]).then(async () => {
+                await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+                await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+                return "complete";
+            });
+            const wait = await Promise.race([completion, new Promise<string>((resolve) => { timer = window.setTimeout(() => resolve("diagnostic_budget_exhausted"), 300); })]);
+            clearTimeout(timer);
+            return { before, wait, after: snapshot() };
+        });
+        const session = await page.context().newCDPSession(page);
+        const platformFonts = [];
+        try {
+            await session.send("DOM.enable");
+            await session.send("CSS.enable");
+            const { root } = await session.send("DOM.getDocument");
+            for (const selector of ["#route-title", ".page-header-subtitle span"]) {
+                const { nodeId } = await session.send("DOM.querySelector", { nodeId: root.nodeId, selector });
+                if (nodeId !== 0) {
+                    const { fonts } = await session.send("CSS.getPlatformFontsForNode", { nodeId });
+                    platformFonts.push({ selector, fonts: fonts.slice(0, 6).map((font) => ({ familyName: font.familyName.slice(0, 120), postScriptName: font.postScriptName.slice(0, 120), isCustomFont: font.isCustomFont, glyphCount: font.glyphCount })) });
+                }
+            }
+        } finally {
+            await session.detach();
+        }
+        console.log("M7_HEADER_GEOMETRY " + JSON.stringify({ phase, original, samples, platformFonts }));
+    } catch (error) {
+        console.log("M7_HEADER_GEOMETRY " + JSON.stringify({ phase, original, diagnosticError: String(error).slice(0, 240) }));
+    }
+}
 
 test("project workspace keeps package discovery and user actions in project context", async ({ page }) => {
     await openHarness(page, "/projects/00000000-0000-4000-8000-000000000101");

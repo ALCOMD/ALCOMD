@@ -10,7 +10,7 @@ manifest。隔离 probe 不属于 Workspace，评估结束后删除。
 
 ```toml
 wasmtime = {
-    version = "=48.0.0",
+    version = "=48.0.8",
     default-features = false,
     features = ["async", "component-model", "cranelift", "runtime", "std"],
 }
@@ -25,7 +25,7 @@ placement：`wasmtime` 只作为 `apps/alcomd-extension-host` 的直接 producti
 `crates/alcomd-extensions` 的直接 production dependency。其他 crate 不直接依赖；Wasmtime/Ed25519 类型不泄露到
 domain/application/protocol 或公共 RPC。
 
-### Wasmtime 48.0.0
+### Wasmtime 48 LTS / 当前选择 48.0.8
 
 - 发布：2026-08-20；48 是 divisible-by-12 LTS line，官方支持 24 个月并保证 supported line 的 security fix
   backport。ALCOMD 固定 major 48，允许并要求升级兼容 security/critical-correctness patch。
@@ -35,6 +35,15 @@ domain/application/protocol 或公共 RPC。
   用于安装后本机 compile；`runtime/std` 是执行基础。
 - 明确不启用 cache、wat、parallel-compilation/rayon、profiling、pooling-allocator、threads、GC、coredump、
   debug-builtins、all-arch、Winch、WASI p1/p3。
+- 2026-10-31 安全维护选择 `48.0.8`，在现有 48 LTS 内修正 10 月公告；依据
+  [上游 48.0.8 release](https://github.com/bytecodealliance/wasmtime/releases/tag/v48.0.8) 与
+  RustSec 当前数据库。`48.0.7` 修复 aarch64 Cranelift 大 br_table 后，10 月 29 日又发布
+  borrowed-resource 内存、typed i31/nullref 和跨 Engine 类型混淆修复，不能只升到 48.0.7。
+  ALCOMD 的 Component/Cranelift 编译链对不可信扩展可达，不能以既有沙箱为由忽略。
+  `48.0.8` license/MSRV 仍为 `Apache-2.0 WITH LLVM-exception` / Rust 1.95.0；保持原 exact
+  features、Host-only placement、ABI/WIT 与 runtime limits，不进入 50.x、WASI 或 async Component API。
+  项目所有者已授权此兼容安全维护；本条选择在修改 manifest/lock 前记录。实际传递锁图变化与
+  公告适用性见 M7 dependency evaluation 的本轮表，不将原隔离 probe 冒充新版结果。
 - fuel 与 epoch interruption 是 runtime config，不需要额外 Cargo feature；exact combined policy 已冻结在
   `runtime-limits-v1.json`。
 
@@ -44,7 +53,7 @@ domain/application/protocol 或公共 RPC。
   cli 等任何 ambient WASI 0.2 interface。若未来批准一个 exact WASI interface，再单独评估
   `wasmtime-wasi = 48.x`、defaults off、只启用 `p2`。
 - direct `wit-component`/`wit-parser` dependency 不需要。Wasmtime 48 component macro 的 active locked closure 已包含
-  `wit-component 0.254.0` 与 `wit-parser 0.254.0`；production 使用 versioned WIT +
+  `wit-component 0.254.2` 与 `wit-parser 0.254.2`；production 使用 versioned WIT +
   `wasmtime::component::bindgen!`/Component validation，不另加 0.257.x，避免两套 tooling version。
 - guest language 不冻结；只要求输出 exact Component world。ALCOMD 不为第一方提供 privileged SDK。
 
@@ -70,7 +79,7 @@ compile/run/resource-limit tests。
 
 ## Isolated size/time probe
 
-Windows x86_64、Rust 1.97.1、release profile、cold dependency compile：
+初始 `48.0.0` 的 Windows x86_64、Rust 1.97.1、release profile、cold dependency compile：
 
 | probe | result |
 |---|---:|
@@ -82,9 +91,11 @@ Windows x86_64、Rust 1.97.1、release profile、cold dependency compile：
 这是只实例化 Engine/Config 并引用 verifier 的 isolated probe，不是最终 `alcomd-extension-host` 发行体积。最终产品
 delta 仍必须在生产候选三平台测量；该结果证明 compile-time/size cost 显著，不能启用 Wasmtime defaults。
 
-## Isolated Cargo.lock delta
+## 初次评估的 isolated Cargo.lock delta
 
-相对当前根 lock，排除 evaluation root package 后新增 68 个 exact `(name, version)`：
+以下是 2026-08-24 初次 `48.0.0` probe 相对当时根 lock 的证据：排除 evaluation root package 后
+新增 68 个 exact `(name, version)`。本轮 `48.0.8` 的实际维护差异见 M7 dependency evaluation，
+不将此历史 probe 的版本或体积冒充当前候选：
 
 ```text
 addr2line 0.26.1
@@ -171,7 +182,9 @@ wit-parser 0.254.0
 
 ## Stop A approval outcome
 
-项目所有者已批准上面的 exact `wasmtime 48.0.0` 与 `ed25519-dalek 3.0.0` 配置、预期锁定闭包及第三方
+项目所有者最初批准 `wasmtime 48.0.0` 与 `ed25519-dalek 3.0.0` 配置、预期锁定闭包及第三方
 unsafe/native/build-script cost。实际 Workspace 已按上述 placement 落盘；没有直接 `wasmtime-wasi` 或
 `wit-component` dependency，没有扩大 ALCOMD unsafe whitelist。最终三平台 active graph 与 runtime/resource-limit
 行为仍由 M6 最终提交对应的 Hosted CI 验收。
+当前 `48.0.8` 安全维护按 2026-10-31 授权执行，其新候选必须取得自身三平台与 CodeQL 结果；
+原 M6 的历史通过不替代本轮维护验证。

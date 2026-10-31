@@ -460,6 +460,10 @@ application 定义 `ProjectInspector`、`RepositoryDocumentSource`/catalog port 
 `reqwest::Url`，不增加 `url` 直接依赖。HTTP client 固定 no-proxy、no-cookie、no-referer、15 秒总
 timeout、5 次 redirect、逐跳 scheme/userinfo 校验与 16 MiB 实际 body 累计限制。
 
+当前兼容安全维护锁定 `rustls 0.23.46` 与 `rustls-webpki 0.103.16`；仍经既有 reqwest
+配置使用平台证书验证，不增加直接 TLS 库、HTTP3 或其他 feature。逐公告适用性、锁图与
+验证见 M7 dependency evaluation；HTTP mock 不能替代真实 TLS 握手证据。
+
 生成 Cargo.lock 后必须检查精确新增 package；出现批准依赖解析之外的意外 production package、
 另一 HTTP/TLS stack 或新增直接依赖时停止审批。不得引入通用 RPC/HTTP server、ORM、SemVer/
 resolver、watcher、credential、cache framework 或 async SQL crate。

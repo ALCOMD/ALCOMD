@@ -1061,7 +1061,14 @@ fn assert_archive_profile(path: &Path) {
     let file = fs::File::open(path).expect("archive");
     let mut archive = zip::ZipArchive::new(file).expect("zip");
     let names = (0..archive.len())
-        .map(|index| archive.by_index(index).expect("entry").name().to_owned())
+        .map(|index| {
+            archive
+                .by_index(index)
+                .expect("entry")
+                .name()
+                .expect("entry name")
+                .into_owned()
+        })
         .collect::<Vec<_>>();
     assert!(names.contains(&"backup.json".to_owned()));
     assert!(names.contains(&"project/ProjectSettings/ProjectVersion.txt".to_owned()));

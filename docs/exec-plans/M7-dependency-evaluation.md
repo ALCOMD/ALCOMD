@@ -1,5 +1,70 @@
 # M7 Stop A dependency candidate evaluation
 
+## 当前生产依赖安全维护（2026-10-31）
+
+本节依据项目所有者本轮授权，维护已有依赖，不引入新的直接生产库。先记录选定版本再改
+manifest/lock，逐项核对官方上游与 RustSec、实际 features/目标及调用链；CodeQL 与旧告警计数
+不能替代适用性结论。当前原始证据位于 `target/m7-technical-closure-20261031/`。
+
+### 同维护线内的版本选择
+
+| 项目 | 基线锁定 | 选定版本 | 理由与保持的边界 |
+| --- | --- | --- | --- |
+| Wasmtime | 48.0.0 | **48.0.8** | 已授权的 48 LTS 兼容安全补丁；48.0.7 后有新增官方修复。仍仅 Extension Host，原 async/component-model/cranelift/runtime/std，见 M6 runtime dependency evaluation |
+| rustls | 0.23.43 | **0.23.46** | 0.23 维护线修复 TLS 1.3 record/key-change 边界与后续安全公告；仍经 reqwest，保留原证书校验与 feature 图，不加无用 direct dependency |
+| rustls-webpki | 0.103.14 | **0.103.16** | RustSec RUSTSEC-2026-0382 / CVE-2026-111943；Linux native verifier 使用其 chain 路径。仅 transitive 精确锁定，不改变系统信任根配置 |
+| zip | 8.6.0 | **9.1.3** | 项目所有者明确批准跨 major，保持 defaults off 和 deflate-flate2-zlib-rs；适配现有 reader/writer API，保留格式、安全和文件事务 |
+
+Wasmtime 的 [48.0.8 release](https://github.com/bytecodealliance/wasmtime/releases/tag/v48.0.8)、
+rustls 的 [0.23.46 release](https://github.com/rustls/rustls/releases/tag/v/0.23.46) 和 RustSec
+当前条目是本次选择依据。上述版本元数据已核对；逐公告适用性、每个锁包变化的必要性与
+实际验证见 [技术收尾记录](../testing/m7-technical-closure-20261031.md)。未调查的条目不写为
+“不适用”；其余锁包/维护状态告警均保留具体调用链结论和局限。
+
+### ZIP 9.1.3 安全升级（跨 major，已批准）
+
+基线 `zip =8.6.0` 的 EOCD 解析 CPU/内存 DoS 对现有调用链可达：
+
+- [GHSA-2vxq-ffpp-66cq](https://github.com/zip-rs/zip2/security/advisories/GHSA-2vxq-ffpp-66cq)
+  明确实测 8.6.0，约 1.1 MB 恶意输入在 `ZipArchive::new` 阶段消耗超线性 CPU；
+  [GHSA-x2cq-c87r-5mfx](https://github.com/zip-rs/zip2/security/advisories/GHSA-x2cq-c87r-5mfx)
+  报告同阶段的 decoy EOCD/central-directory 重复处理。修复范围自 9.0.4 开始。
+- `crates/alcomd-vpm/src/archive.rs` 在 ZipArchive::new 后才检查 entry 数量和逐项配额；
+  `crates/alcomd-extensions/src/package.rs` 同样先 new，再 preflight、读 manifest 与验签。
+  1 GiB/64 MiB 的输入大小界限不能排除上述小输入；签名在解析后，不能作为前置防御。
+- upstream 另有 EOCD fallback/双 reader 差异条目，逐项保留其实际适用边界；不能将未调用
+  extract 当作所有 ZIP 公告的统一豁免。
+
+既有 direct pin 改为项目所有者指定的 `zip =9.1.3`，保留 defaults off 和唯一
+`deflate-flate2-zlib-rs`；不增加 AES、legacy decoder、其他 codec 或直接生产库。
+[9.1.3 release](https://github.com/zip-rs/zip2/releases/tag/v9.1.3) 包含
+[PR 1142](https://github.com/zip-rs/zip2/pull/1142) 的反复扫描/分配修复，并修正 ZIP64 的
+32-bit EOCD offset、writer comment 的假 EOCD 尾部和 Windows reparse-point 提取处理。
+MSRV 仍为 1.88，license 仍为 MIT。9.1.3 官方 crate 元数据已经核对；AES 等额外 feature
+继续关闭，不把上游具备但本产品未使用的 extract API 当成自有提取防御。
+
+明确迁移范围与成本：
+
+1. `ZipFile::name()` 从 `&str` 改为 `ZipResult<Cow<'_, str>>`。适配现有 archive、backup、
+   template 与 extension package 的 reader/writer 调用，显式映射错误并保留 raw UTF-8 与
+   decoded 一致性、路径和类型拒绝规则。类型同时检查 central-directory 原始属性声明和 reader
+   推导类型，避免 DOS creator 的权限投影隐藏链接或特殊文件声明。允许由实际 API 变化驱动的必要重构，不添加旧入口
+   或双格式兼容层；包、模板、备份和扩展的既有归档格式及 Plan/Apply 语义保持。
+2. 必要第三方闭包：getrandom `^0.4`（可复用现有 0.4.3）；typed-path 从 0.12.3 到 `^0.13`；
+   macOS 增加 nix `^0.31.3` / defaults off / fs；Windows 复用 windows-sys 0.61.2，但其 feature
+   新增 Foundation/Security/Security_Authorization/Storage_FileSystem。逐项审计实际锁定与目标图，
+   不把这些变化描述为零 native 成本；不增加 ALCOMD 自身的 unsafe 或 native API 调用。
+3. 保留 package/template/backup/extension 的路径、链接、配额、digest、签名、恢复及内置模板
+   限制。补小规模 EOCD 重扫的确定性 work/seek 回归，执行现有恶意 archive 与全部相关契约，
+   再取得同一技术 SHA 的三平台 CI/CodeQL；不靠危险大输入、延长超时或放宽校验求绿。
+
+项目所有者于 2026-10-31 明确批准精确 9.1.3、上述必要闭包和现有 ZIP API 适配，并允许
+内部版本按实际需要作必要重构；正常编译、测试与格式兼容修复无需再次审批。该授权不允许
+未经验证清除已有数据或恢复证据。完成后执行归档安全回归和三平台构建测试；其他独立技术
+工作继续，不能把已确认可达问题写为不适用，也不能在此问题未闭合时提前开始 H2-B。
+
+## 原 Stop A 候选评估
+
 状态：原 Stop A 候选审计；本报告摘要中的 production/component 候选均未批准或安装。唯一后续例外是文末已获批并落盘的
 `@playwright/test = 1.62.1` GUI test-only devDependency 及其正常 lock closure。
 

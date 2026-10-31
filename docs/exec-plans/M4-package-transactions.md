@@ -427,7 +427,7 @@ M4 合同阶段必须冻结 Schema v3 和 filesystem journal：
 
 | crate | 精确配置 | 许可证记录 | MSRV | M4 唯一用途 |
 | --- | --- | --- | --- | --- |
-| `zip 8.6.0` | defaults off；仅 `deflate-flate2-zlib-rs` | `MIT` | Rust 1.88 | ZIP metadata/preflight、Stored/Deflate 与逐 entry bounded extraction |
+| `zip 9.1.3` | defaults off；仅 `deflate-flate2-zlib-rs` | `MIT` | Rust 1.88 | ZIP metadata/preflight、Stored/Deflate 与逐 entry bounded extraction |
 | `sha2 0.11.0` | defaults off | `MIT OR Apache-2.0` | Rust 1.85 | SHA-256 digest、download/cache verification 与获批 fingerprint |
 | `unicode-normalization 0.1.25` | defaults off；仅 `std` | `(MIT OR Apache-2.0) AND Unicode-3.0` | Rust 1.36 | Unicode path normalization 与 collision detection |
 
@@ -436,10 +436,12 @@ manifest 中的代码许可证。三个 crate 的上游实现可以包含第三�
 unsafe allowlist。`zip` 不得调用 convenience extract 绕过 path/link/collision/quota gate，`sha2`
 不得扩展到其他算法/签名框架，normalization 不得演变成通用文本层。
 
-实际 Workspace resolver 只新增批准的 9 个 package：三个直接 crate，以及 `zlib-rs 0.6.7`、
-`typed-path 0.12.3`、`block-buffer 0.12.1`、`crypto-common 0.2.2`、`digest 0.11.3`、
-`hybrid-array 0.4.14`。active feature graph 证明 `zip` 仅走 `deflate-flate2-zlib-rs -> flate2/zlib-rs`，
-`unicode-normalization` 仅启用 `std`，`sha2` 无默认 feature；没有额外 production package。
+当前批准的 ZIP 安全维护版本为 `9.1.3`，`typed-path` 为 `0.13.0`；ZIP 增加已锁定的
+`getrandom 0.4.3` 依赖边、macOS 的 `nix 0.31.3`（defaults off，仅 fs）及 Windows 文件
+权限相关 feature，详见 M7 dependency evaluation。原有 `zlib-rs 0.6.7`、`block-buffer 0.12.1`、
+`crypto-common 0.2.2`、`digest 0.11.3`、`hybrid-array 0.4.14` 保持。ZIP 仍仅走
+`deflate-flate2-zlib-rs -> flate2/zlib-rs`，`unicode-normalization` 仅启用 `std`，`sha2`
+无默认 feature；不增加 ALCOMD 的直接依赖或原生 API。
 
 ### Range crate 筛选结论
 

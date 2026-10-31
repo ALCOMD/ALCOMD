@@ -187,13 +187,15 @@ test("Projects creation split button groups add and restore with distinct action
         context.drawImage(image, 0, 0);
         const color = (x: number, y: number) => [...context.getImageData(Math.round(x), y, 1, 1).data];
         return {
-            primaryCorner: color(primaryWidth - 2, 1),
-            menuCorner: color(menuLeft + 1, 1),
+            primaryCorner: color(primaryWidth - 1, 0),
+            menuCorner: color(menuLeft + 1, 0),
             gap: color(primaryWidth + 1, 20),
             body: color(primaryWidth - 10, 20)
         };
     }, { png: painted.toString("base64"), primaryWidth: first!.width, menuLeft: second!.x - first!.x });
     // Used radii can be scaled down even while getComputedStyle still reports 8px.
+    // Sample the top corner cutouts outside the anti-aliased curve; fractional
+    // button widths depend on the installed font and can move that edge by a pixel.
     // Both inner corner cutouts must actually paint the same background as the gap.
     expect(colors.primaryCorner).toEqual(colors.gap);
     expect(colors.menuCorner).toEqual(colors.gap);
@@ -305,13 +307,18 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     const intrinsicColumnWidths = await Promise.all([typeHeader, unityHeader, addedHeader, modifiedHeader].map(async (header) => (await header.boundingBox())?.width));
     const projectWidth = (await projectHeader.boundingBox())?.width ?? 0;
     const actionsColumnWidth = (await actionsHeader.boundingBox())?.width ?? 0;
+    await logProjectTableDiagnostics(page, "before-resize", { projectWidth, intrinsicColumnWidths, actionsColumnWidth });
     await page.setViewportSize({ width: 1440, height: 720 });
     const wideColumnWidths = await Promise.all([typeHeader, unityHeader, addedHeader, modifiedHeader].map(async (header) => (await header.boundingBox())?.width));
     const wideProjectWidth = (await projectHeader.boundingBox())?.width ?? 0;
     const wideActionsColumnWidth = (await actionsHeader.boundingBox())?.width ?? 0;
-    expect(wideColumnWidths).toEqual(intrinsicColumnWidths);
-    expect(wideActionsColumnWidth).toBe(actionsColumnWidth);
-    expect(wideProjectWidth).toBeGreaterThan(projectWidth);
+    try {
+        expect(wideColumnWidths).toEqual(intrinsicColumnWidths);
+        expect(wideActionsColumnWidth).toBe(actionsColumnWidth);
+        expect(wideProjectWidth).toBeGreaterThan(projectWidth);
+    } finally {
+        await logProjectTableDiagnostics(page, "after-resize", { projectWidth, intrinsicColumnWidths, actionsColumnWidth, wideProjectWidth, wideColumnWidths, wideActionsColumnWidth });
+    }
     const rowActions = main.locator(".project-row-actions");
     const openUnity = rowActions.locator("md-filled-button.project-open-unity-action");
     const favorite = rowActions.locator("md-icon-button.project-favorite-action");
@@ -601,6 +608,67 @@ test("missing negotiated capabilities remain visibly unavailable without dispatc
     await expect(page.getByRole("heading", { name: "Feature unavailable" })).toBeVisible();
     await expect(page.getByText(/extensions\.ui\.portable\.v1 was not negotiated/)).toBeVisible();
 });
+
+async function logProjectTableDiagnostics(page: Page, phase: string, original: unknown) {
+    try {
+        const samples = await page.evaluate(async (settle) => {
+            const table = document.querySelector<HTMLTableElement>(".projects-list");
+            if (table === null) return { missingTable: true };
+            const inspect = (element: Element) => {
+                const bounds = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                return {
+                    tag: element.tagName, class: element.className.slice(0, 100), text: element.textContent?.trim().slice(0, 32),
+                    x: bounds.x, width: bounds.width, height: bounds.height, clientWidth: element.clientWidth, scrollWidth: element.scrollWidth,
+                    minWidth: style.minWidth, maxWidth: style.maxWidth, tableLayout: style.tableLayout,
+                    fontFamily: style.fontFamily.slice(0, 160), fontSize: style.fontSize, lineHeight: style.lineHeight
+                };
+            };
+            const viewport = document.querySelector(".desktop-list-viewport");
+            const actions = table.querySelector(".project-row-actions");
+            const snapshot = () => ({
+                atMs: performance.now(), viewport: { width: innerWidth, height: innerHeight, scale: devicePixelRatio }, fonts: document.fonts.status,
+                main: inspect(document.getElementById("main-content")!), table: inspect(table), scrollViewport: viewport === null ? null : inspect(viewport),
+                columns: Array.from(table.querySelectorAll("thead th")).slice(0, 8).map(inspect),
+                firstCells: Array.from(table.querySelectorAll("tbody tr:first-child td")).slice(0, 8).map((cell) => ({ width: cell.getBoundingClientRect().width, clientWidth: cell.clientWidth, scrollWidth: cell.scrollWidth })),
+                actions: actions === null ? null : { ...inspect(actions), children: Array.from(actions.children).slice(0, 8).map(inspect) }
+            });
+            const before = snapshot();
+            if (!settle) return { before };
+            const controls = Array.from(table.querySelectorAll<HTMLElement & { updateComplete?: Promise<unknown> }>("md-filled-button, md-filled-tonal-button, md-text-button, md-icon-button")).slice(0, 16);
+            let timer = 0;
+            const completion = Promise.all([document.fonts.ready, ...controls.map((element) => element.updateComplete)]).then(async () => {
+                await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+                await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+                return "complete";
+            });
+            const wait = await Promise.race([completion, new Promise<string>((resolve) => { timer = window.setTimeout(() => resolve("diagnostic_budget_exhausted"), 300); })]);
+            clearTimeout(timer);
+            return { before, wait, after: snapshot() };
+        }, phase === "after-resize");
+        const platformFonts = [];
+        if (phase === "after-resize") {
+            const session = await page.context().newCDPSession(page);
+            try {
+                await session.send("DOM.enable");
+                await session.send("CSS.enable");
+                const { root } = await session.send("DOM.getDocument");
+                for (const selector of [".projects-list thead th:first-child .desktop-list-sort-label", ".projects-list tbody tr:first-child td:first-child strong"]) {
+                    const { nodeId } = await session.send("DOM.querySelector", { nodeId: root.nodeId, selector });
+                    if (nodeId !== 0) {
+                        const { fonts } = await session.send("CSS.getPlatformFontsForNode", { nodeId });
+                        platformFonts.push({ selector, fonts: fonts.slice(0, 6).map((font) => ({ familyName: font.familyName.slice(0, 120), postScriptName: font.postScriptName.slice(0, 120), isCustomFont: font.isCustomFont, glyphCount: font.glyphCount })) });
+                    }
+                }
+            } finally {
+                await session.detach();
+            }
+        }
+        console.log("M7_PROJECT_TABLE_GEOMETRY " + JSON.stringify({ phase, original, samples, platformFonts }));
+    } catch (error) {
+        console.log("M7_PROJECT_TABLE_GEOMETRY " + JSON.stringify({ phase, original, diagnosticError: String(error).slice(0, 240) }));
+    }
+}
 
 async function openHarness(page: Page, route: string, state = "ready") {
     await page.goto(`/browser-harness.html?route=${encodeURIComponent(route)}&state=${state}`);

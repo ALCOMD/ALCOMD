@@ -1,6 +1,6 @@
 # M7：官方 GUI 与 Portable Extension UI
 
-状态：**M7 IN_PROGRESS / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
+状态：**M7 IN_PROGRESS / TECHNICAL_CLOSURE / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
 活动分支为 `main`；当前阶段与验证结果统一见 `docs/status.md`。已通过的 M6、Portable UI B0-D、
 Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据，不替代本轮 GUI 人工验收。
 
@@ -50,7 +50,9 @@ Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据�
   预建有界 worker 后 spawn 并回收自己的 Child，最多四个，不 kill 用户进程或自动重试未知结果。
   仅无显式偏好且确实未找到时返回 download_required，由闭合无参数 Tauri adapter 打开固定
   官方下载页。Auto detect/Open 位于卡片右上角、Select 留在编辑行；未确认草稿阻止启动。
-  可用文件和 spawn 成功不代表厂商身份或整个 Hub 窗口就绪。
+  No shell 指应用不构造、调用或通过 shell 执行命令，不拼接/解释 shell 参数；保留标准库与
+  OS 的 ENOEXEC/解释器回退语义。spawn 成功仅为 OS 接受，不代表 Hub 已正常运行、厂商
+  身份、退出成功或窗口就绪；同步拒绝、后续退出与资源回收分别验证。
 - 正式合同与证据分别见 `specs/config/settings-v3.*`、
   `specs/config/theme-controls.proposal.contract.json`、
   `specs/config/unity-hub-location.proposal.contract.json`、
@@ -528,7 +530,7 @@ fixes and defer uncertain contract-dependent work without blocking unrelated cor
    不能反向决定本 gate 的宽屏结构；完成 first runnable prototype 后立即停止 Visual Gate 1。
 3. **H2 Projects/Packages & Templates（H2-A 与上述既有页面修正已验收）**：完成 package-centric workspace、
    候选读取/行内版本/批量、统一公共组件及已批准的资源/模板/设置/日志/扩展/备份基础交互。
-   只实现本文件列明的窄公开合同。项目所有者于 2026-10-31 签收 Visual Gate 2；H2-B 及其他产品范围仍未批准。
+   只实现本文件列明的窄公开合同。项目所有者于 2026-10-31 签收 Visual Gate 2；H2-B 已获下述技术收尾通过后的条件批准，其他产品范围仍未批准。
 4. **H3 contextual v4 enhancements（未批准）**：把global/project Unity、Backups 与 Operations增强嵌入既有Settings/Project/progress workflow，不改
    Plan/Apply/Operation；完成 Visual Gate 3 的第一部分。
 5. **H4 Extensions/Portable UI（未批准）**：保留Extensions既有用户概念和utility归属；permission/quarantine/Portable UI位于detail，host
@@ -544,13 +546,41 @@ fixes and defer uncertain contract-dependent work without blocking unrelated cor
 H0-H7 只重组 shell、composition、component rendering 和 visual hierarchy；不得重新设计 RPC、Plan/Apply、Operation、Settings、
 Activity、Diagnostics 或 Portable UI authority。
 
-## H2-B 资源与模板范围及验收方案（待批准）
+## 技术收尾与 H2-B 顺序授权（2026-10-31）
 
-状态：**PROPOSAL_READY / IMPLEMENTATION_NOT_APPROVED**，2026-10-31。
-本方案仅为范围与验收提案；H2-A 检查点为
+项目所有者批准先处理当前跨平台测试/启动缺陷与依赖安全问题，再实施既有 H2-B，最后形成
+真实桌面候选并停止人工验收；不重开 H2-A/Visual Gate 2，不重规划 M7 或重做 Projects/Packages。
+开始时现场核对唯一工作区、实际 Git 状态与当前 HEAD 的 CI/CodeQL；`736f55a`、
+CI `41191370985` 和 CodeQL `41191370892` 仅为审阅基线，不要求回退或重复修复。
+
+- Hub 先区分 OS 同步 spawn 错误、OS 已接受和 child 随后退出，证明容量、owned child 回收与
+  接收方取消/断线边界；按证据选择 fixture-only 或窄生产修复，保持 shell/参数、权限和进程边界。
+- 安全评估基于实际 Cargo.lock、features、平台与调用链，逐项核对上游和 RustSec。先在既有
+  依赖评估写明选定版本与理由，再升级当前兼容维护线内必要补丁及精确约束/锁文件；传递变化
+  逐项解释。保持 Wasmtime Host-only、ABI/WIT、TLS 校验、ZIP 防御与 Plan/Apply 语义。
+  跨不兼容版本、新直接生产依赖、feature 扩大、unsafe 或 native API 变更必须先停受影响项审批。
+- 范围内 CI 后续失败可诊断并窄修；不得跳平台/测试、放宽断言、单纯延长超时、无诊断重跑或
+  干扰用户进程来取得绿色。逐轮保留失败与修复证据。
+- 技术收尾单独本地提交，通过适用本地门禁后明确允许普通 fast-forward 推送 `origin/main`，
+  仅覆盖上述修复、获准安全补丁与对应证据。不得强推、改历史、改仓库设置或绕过工具审批；
+  工具若仍要求具体 SHA 额外授权，报告 SHA 与范围后停止该推送。
+- 同一最终技术 SHA 必须取得 Windows、Ubuntu、macOS 完整 required jobs 及 CodeQL 成功，
+  且适用安全问题已修、其他公告有可检查结论。未满足时不宣称 PASS，也不提前改 H2-B 产品。
+- 本轮已完成所选 Wasmtime/rustls/webpki/ZIP 维护及 ZIP 类型防御，完整 Rust 491/0/8、前端、
+  冻结基线、CLI 并发启动与 release/no-bundle 通过。最新完整 Chromium 237/10 的每项均在
+  文档或必需静态 JS 请求遇到 ERR_NO_BUFFER_SPACE、业务未到达；该门禁仍失败，不能拼接
+  前轮或定向结果作为通过。当前仅保留本地技术候选，未推送、未进入 H2-B；详细证据见
+  `../testing/m7-technical-closure-20261031.md`。
+- 满足前提后 H2-B 自动获准开始，无需再询问。H2-B 允许本地候选提交，禁止自动推送；
+  当前 release GUI、匹配 daemon 和隔离样例必须走实际写入闭环，最后交截图/清单等待人工验收。
+
+## H2-B 资源与模板范围及验收方案（条件批准）
+
+状态：**APPROVED_AFTER_TECHNICAL_CLOSURE / NOT_STARTED**，2026-10-31。
+实施前提与推送边界以上节为准；H2-A 检查点为
 `23f545245f613f47f8def1e16418c4d12303404e`，Visual Gate 2 已签收。
 本节直接细化原 H2 的剩余范围，不新建产品里程碑，不重复实现已存在的入口。
-当前阶段仍以 `../status.md` 为唯一入口；本方案不批准 H2-B production 修改。
+当前阶段仍以 `../status.md` 为唯一入口；技术收尾前不开始 H2-B production 修改。
 
 ### 目标与现状证据
 
@@ -877,7 +907,8 @@ Apply/同一 Operation、失效 Plan 拒绝、焦点、筛选、语言/主题持
 截图身份独立记录于 `docs/testing/m7-visual-gate-2-20261031.md`，不拼接定向结果。
 本地门禁与材料已收口，项目所有者于 2026-10-31 以“可以，接下来做什么”确认签收 Visual Gate 2。
 H2-A 验收检查点为 `23f545245f613f47f8def1e16418c4d12303404e`。
-H2-B 资源与模板范围及验收提案已按授权梳理于本文件；当前只完成提案，等待实施范围批准，
-不自动进入 H2-B production、H3-H7、M8、M9 或 M11。
+先完成当前跨平台阻塞与依赖安全收尾，独立技术提交通过适用本地门禁后正常快进推送。
+同一最终技术 SHA 三平台 CI/CodeQL 全部成功并完成安全问题处置后，自动实施本文件既有 H2-B；
+H2-B 只形成不自动推送的本地候选与真实桌面材料，随后停止人工验收，不进入 H3-H7、M8、M9 或 M11。
 已有候选读取、exact Unity、Config3、Hub 和 State16 的合同继续有效。完整 GUI/Rust/三平台
 技术门禁与人工视觉结果分别记录，不把旧 SHA 或定向通过冒充当前候选全绿。

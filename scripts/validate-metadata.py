@@ -683,7 +683,7 @@ def main() -> int:
             "features": ["std"],
         },
         "zip": {
-            "version": "=8.6.0",
+            "version": "=9.1.3",
             "default-features": False,
             "features": ["deflate-flate2-zlib-rs"],
         },
@@ -720,9 +720,9 @@ def main() -> int:
         ("hybrid-array", "0.4.14"),
         ("semver", "1.0.28"),
         ("sha2", "0.11.0"),
-        ("typed-path", "0.12.3"),
+        ("typed-path", "0.13.0"),
         ("unicode-normalization", "0.1.25"),
-        ("zip", "8.6.0"),
+        ("zip", "9.1.3"),
         ("zlib-rs", "0.6.7"),
     }
     require(
@@ -746,7 +746,7 @@ def main() -> int:
         "ed25519-dalek defaults must be disabled",
     )
     wasmtime = cargo_workspace["workspace"]["dependencies"]["wasmtime"]
-    require(wasmtime["version"] == "=48.0.0", "Unexpected Wasmtime version")
+    require(wasmtime["version"] == "=48.0.8", "Unexpected Wasmtime version")
     require(
         wasmtime["default-features"] is False,
         "Wasmtime defaults must be disabled",
@@ -774,7 +774,7 @@ def main() -> int:
             f"Wasmtime escaped the Extension Host graph: {relative}",
         )
     require(
-        {("ed25519-dalek", "3.0.0"), ("wasmtime", "48.0.0")}
+        {("ed25519-dalek", "3.0.0"), ("wasmtime", "48.0.8")}
         <= locked_packages,
         "Approved M6 runtime dependencies are not locked",
     )

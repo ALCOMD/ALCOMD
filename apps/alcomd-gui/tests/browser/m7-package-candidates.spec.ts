@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type Request, type Response } from "@playwright/test";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000101";
 
@@ -21,8 +21,41 @@ test("Repeated menu activation closes once and creates one reviewed package inte
     expect(await page.evaluate(() => window.packageRequests)).toHaveLength(1);
 });
 async function open(page: Page, params = "") {
-    await page.goto(`/browser-harness.html?route=${encodeURIComponent(`/projects/${PROJECT_ID}`)}&state=package-multiple&${params}`);
-    await expect(page.getByRole("heading", { name: "Manage packages" })).toBeVisible();
+    const pageErrors: string[] = [];
+    const failedRequests: Array<{ path: string; error: string }> = [];
+    const errorResponses: Array<{ path: string; status: number }> = [];
+    const path = (url: string) => new URL(url).pathname.slice(0, 160);
+    const onPageError = (error: Error) => { if (pageErrors.length < 8) pageErrors.push(error.message.slice(0, 240)); };
+    const onRequestFailed = (request: Request) => {
+        if (failedRequests.length < 8) failedRequests.push({ path: path(request.url()), error: (request.failure()?.errorText ?? "unknown").slice(0, 160) });
+    };
+    const onResponse = (response: Response) => {
+        if (response.status() >= 400 && errorResponses.length < 8) errorResponses.push({ path: path(response.url()), status: response.status() });
+    };
+    page.on("pageerror", onPageError);
+    page.on("requestfailed", onRequestFailed);
+    page.on("response", onResponse);
+    try {
+        await page.goto(`/browser-harness.html?route=${encodeURIComponent(`/projects/${PROJECT_ID}`)}&state=package-multiple&${params}`);
+        await expect(page.getByRole("heading", { name: "Manage packages" })).toBeVisible();
+    } catch (error) {
+        try {
+            const document = await page.evaluate(() => ({
+                readyState: window.document.readyState,
+                rootChildren: window.document.getElementById("root")?.childElementCount ?? null,
+                scripts: Array.from(window.document.scripts).slice(0, 8).map((script) => new URL(script.src, location.href).pathname.slice(0, 160)),
+                resources: performance.getEntriesByType("resource").slice(0, 12).map((entry) => ({ path: new URL(entry.name, location.href).pathname.slice(0, 160), durationMs: Math.round(entry.duration) }))
+            }));
+            console.log("M7_CANDIDATE_HARNESS_LOAD " + JSON.stringify({ pageErrors, failedRequests, errorResponses, document }));
+        } catch (diagnosticError) {
+            console.log("M7_CANDIDATE_HARNESS_LOAD " + JSON.stringify({ pageErrors, failedRequests, errorResponses, diagnosticError: String(diagnosticError).slice(0, 240) }));
+        }
+        throw error;
+    } finally {
+        page.off("pageerror", onPageError);
+        page.off("requestfailed", onRequestFailed);
+        page.off("response", onResponse);
+    }
 }
 
 for (const entry of ["primary Install", "primary Update", "version menu"]) {

@@ -36,7 +36,9 @@ impl Drop for ReaperPermit {
 
 impl UnityHubProcessLauncher {
     /// Returns after OS acceptance, not after Hub closes or creates a window.
-    /// No shell, arguments, project target, or inherited standard streams are used.
+    /// The application directly supplies only the resolved program path, with no
+    /// shell command, arguments, project target, or inherited standard streams.
+    /// Operating-system executable/interpreter semantics still apply.
     pub fn launch(&self, resolved_path: &str) -> Result<(), UnityHubLaunchError> {
         self.launch_with_worker(resolved_path, |work| {
             thread::Builder::new()
@@ -148,16 +150,27 @@ mod tests {
             ));
             fs::create_dir_all(&root).expect("private fixture");
             let path = root.join("not-a-program.exe");
+            #[cfg(windows)]
             fs::write(&path, b"not an executable image").expect("invalid executable fixture");
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
+                let interpreter = root.join("missing-interpreter");
+                assert!(!interpreter.exists(), "fixture interpreter must be absent");
+                // A plain executable text file can be accepted through libc's
+                // ENOEXEC shell fallback on macOS. A recognized shebang whose
+                // interpreter is missing instead fails synchronously with ENOENT.
+                fs::write(
+                    &path,
+                    format!("#!{}\n", interpreter.to_str().expect("UTF-8 interpreter")),
+                )
+                .expect("missing-interpreter fixture");
                 fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
                     .expect("fixture execute bit");
             }
             Self {
                 path: normalize_unity_hub_path(path.to_str().expect("UTF-8 fixture"))
-                    .expect("usable file, intentionally not a valid image"),
+                    .expect("usable file with an intentional spawn failure"),
                 root,
             }
         }
@@ -177,6 +190,16 @@ mod tests {
         let path = PathBuf::from("/usr/bin/true");
         normalize_unity_hub_path(path.to_str().expect("UTF-8 system utility"))
             .expect("read-only system utility")
+    }
+
+    fn unsuccessful_executable() -> String {
+        #[cfg(windows)]
+        let path = PathBuf::from(std::env::var_os("SystemRoot").expect("Windows SystemRoot"))
+            .join("System32/find.exe");
+        #[cfg(unix)]
+        let path = PathBuf::from("/usr/bin/false");
+        normalize_unity_hub_path(path.to_str().expect("UTF-8 system utility"))
+            .expect("read-only utility that exits unsuccessfully without arguments")
     }
 
     fn wait_for_idle(launcher: &UnityHubProcessLauncher) {
@@ -254,11 +277,34 @@ mod tests {
     #[test]
     fn failed_os_spawn_releases_its_reserved_slot() {
         let fixture = InvalidExecutable::new();
+        let error = hub_command(&fixture.path)
+            .spawn()
+            .map(|mut child| child.wait().expect("reap an unexpectedly accepted fixture"))
+            .expect_err("fixture must fail synchronously at spawn");
+        assert!(error.raw_os_error().is_some(), "OS spawn error: {error}");
+        #[cfg(unix)]
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
         let launcher = UnityHubProcessLauncher::default();
         assert_eq!(
             launcher.launch(&fixture.path),
             Err(UnityHubLaunchError::OpenFailed)
         );
+        wait_for_idle(&launcher);
+    }
+
+    #[test]
+    fn nonzero_child_exit_is_still_an_accepted_and_reaped_launch() {
+        let path = unsuccessful_executable();
+        let mut child = hub_command(&path).spawn().expect("OS accepts the utility");
+        assert!(
+            !child
+                .wait()
+                .expect("reap the unsuccessful utility")
+                .success(),
+            "fixture exits unsuccessfully after OS acceptance"
+        );
+        let launcher = UnityHubProcessLauncher::default();
+        assert_eq!(launcher.launch(&path), Ok(()));
         wait_for_idle(&launcher);
     }
 

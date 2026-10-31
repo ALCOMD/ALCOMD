@@ -225,7 +225,10 @@ fn preflight_reader<R: Read + Seek>(
         validate_entry_type(&entry)?;
         let raw_name = std::str::from_utf8(entry.name_raw())
             .map_err(|_| archive_error(ArchiveErrorCode::UnsafePath))?;
-        if raw_name != entry.name() {
+        let decoded_name = entry
+            .name()
+            .map_err(|_| archive_error(ArchiveErrorCode::UnsafePath))?;
+        if raw_name != decoded_name.as_ref() {
             return Err(archive_error(ArchiveErrorCode::UnsafePath));
         }
         let (relative_path, collision_key) = normalize_path(raw_name, limits)?;
@@ -272,7 +275,12 @@ fn validate_entry_type<R: Read>(entry: &zip::read::ZipFile<'_, R>) -> Result<(),
     ) {
         return Err(archive_error(ArchiveErrorCode::UnsupportedCompression));
     }
-    if let Some(mode) = entry.unix_mode() {
+    // DOS mode projection ignores the encoded Unix type in ZIP 9. Preserve
+    // rejection of declared links and special files as well as interpreted types.
+    for mode in [Some(entry.external_attributes() >> 16), entry.unix_mode()]
+        .into_iter()
+        .flatten()
+    {
         let file_type = mode & 0o170000;
         let valid = file_type == 0 || file_type == 0o040000 || file_type == 0o100000;
         if !valid || (entry.is_dir() && file_type == 0o100000) {
@@ -481,6 +489,7 @@ const fn archive_error(code: ArchiveErrorCode) -> ArchiveError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Cursor, SeekFrom};
     use std::sync::atomic::{AtomicU64, Ordering};
     use zip::write::SimpleFileOptions;
 
@@ -515,6 +524,216 @@ mod tests {
         writer.finish().expect("finish archive");
         std::fs::create_dir(&destination).expect("destination");
         (archive_path, destination)
+    }
+
+    struct CountedReader<'a> {
+        inner: Cursor<&'a [u8]>,
+        bytes_read: usize,
+        seeks: usize,
+    }
+
+    impl Read for CountedReader<'_> {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            let read = self.inner.read(buffer)?;
+            self.bytes_read += read;
+            Ok(read)
+        }
+    }
+
+    impl Seek for CountedReader<'_> {
+        fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+            self.seeks += 1;
+            self.inner.seek(position)
+        }
+    }
+
+    fn archive_with_false_end_records(headers: usize, distinct_offsets: bool) -> Vec<u8> {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        for index in 0..headers {
+            writer
+                .start_file(
+                    format!("entry-{index:02}"),
+                    SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+                )
+                .expect("valid central directory entry");
+        }
+        let mut bytes = writer
+            .finish()
+            .expect("complete source archive")
+            .into_inner();
+        let end = bytes.len() - 22;
+        assert_eq!(&bytes[end..end + 4], b"PK\x05\x06");
+        let directory_start =
+            u32::from_le_bytes(bytes[end + 16..end + 20].try_into().expect("CD offset")) as usize;
+        let mut positions = Vec::with_capacity(headers);
+        let mut position = directory_start;
+        for _ in 0..headers {
+            assert_eq!(&bytes[position..position + 4], b"PK\x01\x02");
+            positions.push(position);
+            let variable_bytes = [28, 30, 32]
+                .into_iter()
+                .map(|field| {
+                    usize::from(u16::from_le_bytes(
+                        bytes[position + field..position + field + 2]
+                            .try_into()
+                            .expect("central variable length"),
+                    ))
+                })
+                .sum::<usize>();
+            position += 46 + variable_bytes;
+        }
+        assert_eq!(position, end);
+        bytes.truncate(end);
+        // Every candidate has a non-abutting directory and claims one header
+        // beyond a valid chain, so parsing must consider the earlier records.
+        bytes.extend_from_slice(&[0xff; 16]);
+        for candidate in 0..headers {
+            let first = if distinct_offsets { candidate } else { 0 };
+            let entries = u16::try_from(headers - first + 1).expect("small entry count");
+            let directory_bytes = u32::try_from(end - positions[first]).expect("small directory");
+            let directory_offset = u32::try_from(positions[first]).expect("small offset");
+            bytes.extend_from_slice(b"PK\x05\x06");
+            bytes.extend_from_slice(&0_u16.to_le_bytes());
+            bytes.extend_from_slice(&0_u16.to_le_bytes());
+            bytes.extend_from_slice(&entries.to_le_bytes());
+            bytes.extend_from_slice(&entries.to_le_bytes());
+            bytes.extend_from_slice(&directory_bytes.to_le_bytes());
+            bytes.extend_from_slice(&directory_offset.to_le_bytes());
+            bytes.extend_from_slice(&0_u16.to_le_bytes());
+        }
+        bytes
+    }
+
+    fn assert_end_record_work_is_bounded(distinct_offsets: bool) {
+        for headers in [16, 32, 64] {
+            let bytes = archive_with_false_end_records(headers, distinct_offsets);
+            assert!(
+                bytes.len() < 12 * 1024,
+                "the regression fixture stays small"
+            );
+            let mut reader = CountedReader {
+                inner: Cursor::new(&bytes),
+                bytes_read: 0,
+                seeks: 0,
+            };
+            assert_eq!(
+                preflight_reader(&mut reader, ArchiveLimits::package())
+                    .expect_err("all EOCD candidates have a truncated directory")
+                    .code(),
+                ArchiveErrorCode::Invalid
+            );
+            eprintln!(
+                "EOCD work: distinct_offsets={distinct_offsets} headers={headers} input={} read={} seeks={}",
+                bytes.len(),
+                reader.bytes_read,
+                reader.seeks
+            );
+            // Count actual work rather than elapsed time. Both bounds scale
+            // with the input and reject repeatedly walking an O(n^2) chain.
+            assert!(reader.bytes_read <= 8 * bytes.len() + 1024);
+            assert!(reader.seeks <= 32 * headers + 64);
+        }
+    }
+
+    #[test]
+    fn repeated_eocd_shared_directory_has_bounded_preflight_work() {
+        assert_end_record_work_is_bounded(false);
+    }
+
+    #[test]
+    fn repeated_eocd_overlapping_directories_have_bounded_preflight_work() {
+        assert_end_record_work_is_bounded(true);
+    }
+
+    #[test]
+    fn non_utf8_member_names_are_rejected_without_decoding_fallback() {
+        let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        writer
+            .start_file(
+                "a",
+                SimpleFileOptions::default().compression_method(CompressionMethod::Stored),
+            )
+            .expect("fixture entry");
+        writer.write_all(b"content").expect("fixture content");
+        let mut bytes = writer.finish().expect("fixture ZIP").into_inner();
+        let (local_name, central_name) = {
+            let mut archive = ZipArchive::new(Cursor::new(&bytes)).expect("source archive");
+            let entry = archive.by_index(0).expect("source entry");
+            (
+                usize::try_from(entry.header_start()).expect("local offset") + 30,
+                usize::try_from(entry.central_header_start()).expect("central offset") + 46,
+            )
+        };
+        for position in [local_name, central_name] {
+            assert_eq!(bytes[position], b'a');
+            bytes[position] = 0x82; // CP437 e-acute is not a valid UTF-8 byte.
+        }
+        let mut archive = ZipArchive::new(Cursor::new(&bytes)).expect("CP437 archive is readable");
+        assert_eq!(
+            archive
+                .by_index(0)
+                .expect("CP437 entry")
+                .name()
+                .expect("decoded name"),
+            "é"
+        );
+        assert_eq!(
+            preflight_reader(Cursor::new(&bytes), ArchiveLimits::package())
+                .expect_err("only raw UTF-8 names are accepted")
+                .code(),
+            ArchiveErrorCode::UnsafePath
+        );
+    }
+
+    #[test]
+    fn dos_member_type_declarations_cannot_hide_links_or_special_files() {
+        for mode in [0o120777_u32, 0o010600] {
+            let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            writer
+                .start_file(
+                    "Runtime/member",
+                    SimpleFileOptions::default()
+                        .compression_method(CompressionMethod::Stored)
+                        .system(zip::System::Dos)
+                        .external_attributes(mode << 16),
+                )
+                .expect("DOS member with an encoded special type");
+            writer.write_all(b"target").expect("fixture content");
+            let bytes = writer.finish().expect("fixture ZIP").into_inner();
+            let mut archive = ZipArchive::new(Cursor::new(&bytes)).expect("DOS archive");
+            let entry = archive.by_index(0).expect("DOS member");
+            assert_eq!(entry.external_attributes() >> 16, mode);
+            assert_eq!(entry.unix_mode(), Some(0o100664));
+            assert_eq!(
+                preflight_reader(Cursor::new(&bytes), ArchiveLimits::package())
+                    .expect_err("declared links and special files must remain forbidden")
+                    .code(),
+                ArchiveErrorCode::LinkOrSpecialFile
+            );
+        }
+    }
+
+    #[test]
+    fn dos_member_type_declarations_preserve_valid_regular_files() {
+        for attributes in [0, 0x20, 0o100644_u32 << 16] {
+            let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            writer
+                .start_file(
+                    "Runtime/member",
+                    SimpleFileOptions::default()
+                        .compression_method(CompressionMethod::Stored)
+                        .system(zip::System::Dos)
+                        .external_attributes(attributes),
+                )
+                .expect("valid DOS regular member");
+            writer.write_all(b"content").expect("fixture content");
+            let bytes = writer.finish().expect("fixture ZIP").into_inner();
+            let preflight = preflight_reader(Cursor::new(&bytes), ArchiveLimits::package())
+                .expect("ordinary DOS metadata remains supported");
+            assert_eq!(preflight.entries.len(), 1);
+            assert!(!preflight.entries[0].directory);
+            assert_eq!(preflight.total_uncompressed_bytes, 7);
+        }
     }
 
     #[test]

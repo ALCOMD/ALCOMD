@@ -370,7 +370,12 @@ fn preflight<R: Read + Seek>(archive: &mut ZipArchive<R>) -> Result<Vec<EntryPla
         {
             return Err(error(PackageErrorCode::UnsupportedEntry));
         }
-        if let Some(mode) = entry.unix_mode() {
+        // DOS mode projection ignores the encoded Unix type in ZIP 9. Preserve
+        // rejection of declared links and special files as well as interpreted types.
+        for mode in [Some(entry.external_attributes() >> 16), entry.unix_mode()]
+            .into_iter()
+            .flatten()
+        {
             let kind = mode & 0o170000;
             if !matches!(kind, 0 | 0o040000 | 0o100000) {
                 return Err(error(PackageErrorCode::UnsupportedEntry));
@@ -378,7 +383,10 @@ fn preflight<R: Read + Seek>(archive: &mut ZipArchive<R>) -> Result<Vec<EntryPla
         }
         let raw = std::str::from_utf8(entry.name_raw())
             .map_err(|_| error(PackageErrorCode::UnsafePath))?;
-        if raw != entry.name() {
+        let decoded_name = entry
+            .name()
+            .map_err(|_| error(PackageErrorCode::UnsafePath))?;
+        if raw != decoded_name.as_ref() {
             return Err(error(PackageErrorCode::UnsafePath));
         }
         let (path, collision) = normalize_path(raw)?;
@@ -833,6 +841,74 @@ mod tests {
         assert_eq!(package.manifest.api, 1);
         assert_eq!(package.publisher_fingerprint.len(), 79);
         std::fs::remove_file(path).expect("remove package");
+    }
+
+    #[test]
+    fn non_utf8_member_name_fails_before_signature_verification() {
+        let name = "component/a";
+        let path = signed_package(&[(name, b"fixture")], None);
+        let mut bytes = std::fs::read(&path).expect("signed package bytes");
+        let (local_name, central_name) = {
+            let mut archive =
+                ZipArchive::new(std::io::Cursor::new(&bytes)).expect("signed archive");
+            let entry = archive.by_name(name).expect("extra fixture entry");
+            (
+                usize::try_from(entry.header_start()).expect("local offset") + 30,
+                usize::try_from(entry.central_header_start()).expect("central offset") + 46,
+            )
+        };
+        for position in [local_name, central_name] {
+            assert_eq!(&bytes[position..position + name.len()], name.as_bytes());
+            bytes[position + name.len() - 1] = 0x82;
+        }
+        std::fs::write(&path, bytes).expect("non-UTF-8 member name");
+        assert_eq!(
+            inspect_extension_package(&path)
+                .expect_err("raw names must remain UTF-8 before signature verification")
+                .code(),
+            PackageErrorCode::UnsafePath
+        );
+        std::fs::remove_file(path).expect("remove fixture package");
+    }
+
+    #[test]
+    fn dos_member_type_declarations_keep_regular_files_and_reject_special_files() {
+        for (mode, expected_error) in [
+            (0, None),
+            (0o100644_u32, None),
+            (0o120777, Some(PackageErrorCode::UnsupportedEntry)),
+            (0o010600, Some(PackageErrorCode::UnsupportedEntry)),
+        ] {
+            let name = "component/member";
+            let path = signed_package(&[(name, b"fixture")], None);
+            let mut bytes = std::fs::read(&path).expect("signed package bytes");
+            let central = {
+                let mut archive =
+                    ZipArchive::new(std::io::Cursor::new(&bytes)).expect("signed archive");
+                usize::try_from(
+                    archive
+                        .by_name(name)
+                        .expect("extra fixture entry")
+                        .central_header_start(),
+                )
+                .expect("central offset")
+            };
+            bytes[central + 5] = 0; // MS-DOS creator system.
+            bytes[central + 38..central + 42].copy_from_slice(&(mode << 16).to_le_bytes());
+            std::fs::write(&path, bytes).expect("DOS member type declaration");
+            let result = inspect_extension_package(&path);
+            if let Some(expected) = expected_error {
+                assert_eq!(
+                    result
+                        .expect_err("declared links and special files must remain forbidden")
+                        .code(),
+                    expected
+                );
+            } else {
+                result.expect("ordinary DOS metadata remains supported and signed");
+            }
+            std::fs::remove_file(path).expect("remove fixture package");
+        }
     }
 
     #[test]

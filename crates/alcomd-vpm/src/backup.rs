@@ -434,7 +434,7 @@ fn archive_project_fingerprint(archive: &mut ZipArchive<File>) -> Result<[u8; 32
     let mut buffer = [0_u8; 64 * 1024];
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).map_err(|_| integrity())?;
-        let name = entry.name().to_owned();
+        let name = entry.name().map_err(|_| integrity())?.into_owned();
         if name == "project/" || !name.starts_with("project/") {
             continue;
         }
@@ -1181,7 +1181,8 @@ fn validate_v1(path: &Path, limits: ArchiveLimits) -> Result<(), M5BackupError> 
             .by_index(index)
             .map_err(|_| internal())?
             .name()
-            .to_owned();
+            .map_err(|_| error(M5BackupErrorCode::BackupIntegrityMismatch))?
+            .into_owned();
         roots.insert(name.split('/').next().unwrap_or_default().to_owned());
     }
     if roots != BTreeSet::from(["backup.json".to_owned(), "project".to_owned()]) {

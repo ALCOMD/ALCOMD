@@ -144,10 +144,10 @@
             "If current effective path differs from expectedPath, reject hub_path_changed with no process/browser action; do not auto-launch a different target.",
             "available/configured and available/discovered both use the Core effective target, including the existing invalid-manual-path plus usable-default fallback. Do not alter preference or discovery precedence.",
             "Only not_found with configured hubPath=null and expectedPath=null returns download_required. A broken explicit preference without a usable fallback returns hub_path_invalid; I/O inability returns hub_unavailable, never a fabricated missing-install diagnosis.",
-            "Revalidate the resolved executable just before dispatch; use only the Core-resolved path, zero arguments and null standard streams. No shell, user URL, project target or environment override.",
+            "Revalidate the resolved executable just before dispatch; use only the Core-resolved path with std::process::Command, zero arguments and null standard streams, without user URL, project target or environment override. No shell means the application does not construct, invoke or execute through a shell, concatenate shell arguments or interpret shell syntax; operating-system ENOEXEC/interpreter fallback semantics are permitted.",
             "Existing checks prove a usable executable at inspection time, not vendor identity, signature or immutable binary identity. expectedPath does not eliminate executable replacement races. This local-owner-only action can execute the file the owner selected as Hub."
         ],
-        "result": "spawned means OS process creation accepted, not Hub window readiness. download_required means no process was started; GUI may open only the fixed official page.",
+        "result": "spawned means only that OS process creation was accepted; it does not prove successful child exit, a normally running Unity Hub or Hub window readiness. Synchronous OS rejection, subsequent child exit and owned-child reaping are separate outcomes. download_required means no process was started; GUI may open only the fixed official page.",
         "errors": ["invalid_request", "permission_denied", "revision_conflict", "hub_path_changed", "hub_path_invalid", "hub_unavailable", "hub_open_busy", "hub_open_failed", "internal_error with diagnosticId"],
         "processLifetime": {
             "newPort": "Separate UnityHubLauncher command port; keep UnityHubPlatform strictly read-only. Daemon wires both; application owns the decision.",

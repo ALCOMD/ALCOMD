@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-**M7 IN_PROGRESS / H2-A ACCEPTED / Visual Gate 2 PASS**。项目所有者于 2026-10-31 签收本轮 H2-A；
+**M7 IN_PROGRESS / TECHNICAL_CLOSURE / H2-A ACCEPTED / Visual Gate 2 PASS**。项目所有者于 2026-10-31 签收本轮 H2-A；
 M0-M6 已正式通过人工验收，M7 尚未完成。
 本文件是唯一当前阶段入口；ExecPlan 定义实施合同，testing 文档保存各自 SHA/场景的证据。
 
@@ -12,11 +12,27 @@ M0-M6 已正式通过人工验收，M7 尚未完成。
 - H2-A 验收检查点：`23f545245f613f47f8def1e16418c4d12303404e`，包含本轮架构、P6 wire、
   测试门禁、真实桌面交互修正及 Visual Gate 2 签收记录。其前置检查点 `4eae1d4` 包含
   Core `626ec35`、共享 UI `fbb4213`、GUI `7357d80` 和对应验收记录。
-- H2-B 只获准梳理范围和验收方案，已在 [M7 ExecPlan](exec-plans/M7-official-gui-extension-ui.md)
-  形成 **PROPOSAL_READY / IMPLEMENTATION_NOT_APPROVED**：优先修正模板首 100 项截断、终态刷新，
-  完善既有 review 与资源生命周期验证；方案随 `main` 维护，没有开始 H2-B 产品实现。
+- 本轮开始时本机 HEAD 与远端 `main` 均为 `736f55a9eea504442fa8d95e6c26cfc5559a40b7`；暂存区与
+  tracked 工作树在本轮开始时为空，原有 `output/playwright/` 两张截图保留。
+- 项目所有者已批准依次完成技术收尾、H2-B 实施、真实桌面候选。当前先修跨平台测试并逐项评估
+  Wasmtime/rustls/ZIP 的当前官方安全公告，允许同维护线内必要补丁；跨不兼容版本等须单独审批。
+  技术提交独立于 H2-B，适用本地门禁后允许正常快进推送；同一最终 SHA 三平台 required jobs
+  与 CodeQL 全部成功、适用漏洞已修复且其他公告完成适用性判断后，H2-B 自动获准实施。
+- 本轮已选定并锁定 Wasmtime 48.0.8、rustls 0.23.46、rustls-webpki 0.103.16；项目所有者另行
+  明确批准 ZIP 精确 9.1.3、必要传递闭包与 API 适配，保留既有归档格式、安全和事务。当前
+  RustSec 版本匹配为 6 项未启用的 QUIC/wasm32 证书包链，维护/unsound/yanked 另逐项记录。
+  [技术收尾证据](testing/m7-technical-closure-20261031.md)保存完整公告、锁图与每轮实际结果；
+  归档安全与双向格式回归、完整 Rust 491/0/8、前端检查/构建、冻结基线、并发 CLI 启动、
+  release bins 和 Tauri no-bundle 已通过。最新完整 Chromium 为 **237/10**；10 项分别在文档或
+  必需静态 JS 加载时遇到 ERR_NO_BUFFER_SPACE，业务场景未到达，尚无完整 GUI PASS。
+  未更改系统 TCP、浏览器 flags、30 秒门槛或重试数，原样例 Core/开发窗口已恢复，完整
+  Projects/Editors/Operations/Settings 与任务前一致，settings revision 155。当前保留本地
+  技术候选，不满足原推送门槛；尚无新技术 SHA 的三平台/CodeQL 结果，不开始 H2-B。
+- [H2-B 既有方案](exec-plans/M7-official-gui-extension-ui.md)现为
+  **APPROVED_AFTER_TECHNICAL_CLOSURE / NOT_STARTED**，没有开始产品实现。H2-B 只允许本地候选
+  提交，不自动推送；真实桌面材料完成后停止等待项目所有者验收。
 - 已验收范围：Project/Packages 和已获准的其他既有页面基础交互修正、统一公共组件及验收。
-  H2-B、H3-H7、M8、M9、M11 未获准开始；本次签收不代表 M7 完成。
+  H2-B 按上述前提顺序推进；H3-H7、M8、M9、M11 未获准开始；本次签收不代表 M7 完成。
 - 当前格式：State v16、Config3、RPC v1、Extension ABI v1。按 A-034 保留 Schema 识别，
   未发布开发库不承诺长期兼容；不自动清空现有数据库、Plan、Operation 或恢复证据，
   首次发布前的初始 Schema 整理是独立审计任务，当前版本与迁移保持。
@@ -114,8 +130,8 @@ Visual Gate 2，没有 M7 或 Hosted CI 通过结论，原未跟踪 `output/` �
 ## 剩余边界与下一停止点
 
 - P6 修复的契约、自动化与真实 Plan 证据保持；本轮 H2-A 与 Visual Gate 2 已获项目所有者签收。
-  当前停在 H2-B 范围及验收提案，等待具体实施批准；下载、native Portable UI 等未覆盖范围
-  保持明确，不由 browser fixture 或窗口存在替代真实动作。
+  当前先进行技术收尾，达成同一 SHA 的完整远端技术检查点后实施既有 H2-B；下载、native
+  Portable UI 等旧未覆盖范围保持，不由 browser fixture 或窗口存在替代真实动作。
 - 窗口记忆、仓库 credential enrollment/revocation、完整用户入口缺口保持真实状态；聚合
   projects.management/packages.vpm/repositories.management 等继续 in_progress，不批量提升。
 - projects/templates/backups 的 v3 parity 和 unity.v3-vrc-parity 仍等待 M11 真实脱敏 Fixture；

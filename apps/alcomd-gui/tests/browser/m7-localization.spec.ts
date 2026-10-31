@@ -107,6 +107,17 @@ function navigationItem(page: Page, label: string) {
 }
 
 async function chooseLanguage(page: Page, name: string) {
-    await page.locator("#settings-locale").getByRole("combobox").click();
-    await page.getByRole("option", { name, exact: true }).click();
+    const select = page.locator("#settings-locale");
+    const lifecycle = await select.evaluateHandle((element) => ({
+        opened: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })),
+        closed: new Promise<void>((resolve) => element.addEventListener("closed", () => resolve(), { once: true }))
+    }));
+    try {
+        await select.getByRole("combobox").click();
+        await lifecycle.evaluate((events) => events.opened);
+        await page.getByRole("option", { name, exact: true }).click();
+        await lifecycle.evaluate((events) => events.closed);
+    } finally {
+        await lifecycle.dispose();
+    }
 }
