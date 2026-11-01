@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { chromiumLaunchOptions } from "./tests/browser/chromium-launch-options";
 
 export default defineConfig({
     testDir: "./tests/browser",
@@ -9,6 +10,7 @@ export default defineConfig({
         baseURL: "http://127.0.0.1:4173",
         locale: "en-US",
         timezoneId: "UTC",
+        launchOptions: chromiumLaunchOptions,
         trace: "retain-on-failure",
         screenshot: "only-on-failure",
         video: "off"

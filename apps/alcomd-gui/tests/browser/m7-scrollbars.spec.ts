@@ -1,9 +1,10 @@
 import { expect, test, type Locator } from "@playwright/test";
+import { chromiumLaunchOptions } from "./chromium-launch-options";
 
 test.use({
     viewport: { width: 1440, height: 900 },
     // Headless Chromium otherwise hides the actual hit area we must drag.
-    launchOptions: { ignoreDefaultArgs: ["--hide-scrollbars"] }
+    launchOptions: { ...chromiumLaunchOptions, ignoreDefaultArgs: ["--hide-scrollbars"] }
 });
 
 async function expectScrollbarTheme(scroller: Locator) {

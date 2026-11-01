@@ -77,6 +77,11 @@ const server = await preview({
     build: { outDir },
     preview: { host: "127.0.0.1", port: 4173, strictPort: true }
 });
+// Each test disposes its browser context. Finish connections on the fixture
+// side so disposal does not accumulate TIME_WAIT on browser ephemeral ports.
+server.httpServer.prependListener("request", (_request, response) => {
+    response.setHeader("Connection", "close");
+});
 console.info(`Browser fixture ready after ${Math.round(performance.now() - startedAt)} ms: http://127.0.0.1:4173/browser-harness.html`);
 
 let stopping = false;

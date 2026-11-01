@@ -1,6 +1,6 @@
 # M7：官方 GUI 与 Portable Extension UI
 
-状态：**M7 IN_PROGRESS / H2-B IMPLEMENTING / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
+状态：**M7 IN_PROGRESS / H2-B LOCAL_CANDIDATE / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
 活动分支为 `main`；当前阶段与验证结果统一见 `docs/status.md`。已通过的 M6、Portable UI B0-D、
 Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据，不替代本轮 GUI 人工验收。
 
@@ -64,8 +64,13 @@ Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据�
 [修复验证记录](../testing/m7-architecture-review-fixes-20261031.md)；当前阶段仍统一见 `docs/status.md`。
 测试门禁使用 ready 且由测试 handle 持有端点的 daemon，Windows 占用时在创建客户端前失败；
 生产初始化顺序和每用户唯一端点保持。Chromium suite 将三个现有 fixture 静态预构建，保留
-development React/StrictMode、原断言、零重试与 30 秒门槛；不改变生产 Vite 配置、依赖版本、
-浏览器 feature flags 或系统 TCP 参数。完整结果和真实桌面范围见
+development React/StrictMode、原断言、零重试与 30 秒门槛；不改变生产 Vite 配置、依赖版本
+或系统 TCP 参数。H2-B 资源加载专项仅在测试浏览器回移 Playwright 官方的
+`TcpPortRandomizationWin` 修正，完整保留原 16 项默认禁用列表及其他参数，并用版本 guard
+要求升级时复核。fixture 以 `Connection: close` 在响应完成后关闭连接，减少 context 销毁
+留下的客户端 TIME_WAIT；所有资源继续通过同一 Vite fixture 的真实 HTTP 加载。专项的
+原失败轮、连接对照与该候选独立完整 292/0 结果见
+[H2-B 验证记录](../testing/m7-h2-b-20261101.md#chromium-资源加载专项)。前置完整结果和真实桌面范围见
 [测试门禁与桌面验证](../testing/m7-test-gate-closure-20261031.md)。
 H2-A 本轮真实 Apply、失效 Plan、焦点、筛选、偏好重启及签收图集见
 [Visual Gate 2 材料](../testing/m7-visual-gate-2-20261031.md)。
@@ -617,20 +622,26 @@ CI `41191370985` 和 CodeQL `41191370892` 仅为审阅基线，不要求回退�
   `../testing/m7-technical-closure-20261031.md`。
 - 满足前提后 H2-B 自动获准开始，无需再询问。H2-B 允许本地候选提交，禁止自动推送；
   当前 release GUI、匹配 daemon 和隔离样例必须走实际写入闭环，最后交截图/清单等待人工验收。
+- 项目所有者于 2026-11-01 明确要求将本轮 Chromium 门禁修复与相关文档用真实 Windows
+  用户环境提交并推送；允许将包含既有 H2-B 基线的当前候选普通快进更新到 `origin/main`。
+  该显式授权只覆盖本轮候选，H2-B 与 M7 人工验收仍待定。
 
 ## H2-B 资源与模板范围及验收方案（条件批准）
 
-状态：**APPROVED / LOCAL_CANDIDATE；完整 browser gate FAILED，人工验收待定**，2026-11-01。
+状态：**APPROVED / LOCAL_CANDIDATE；本地完整 browser gate PASS，人工验收待定**，2026-11-01。
 实施前提与推送边界以上节为准；H2-A 检查点为
 `23f545245f613f47f8def1e16418c4d12303404e`，Visual Gate 2 已签收。
 本节直接细化原 H2 的剩余范围，不新建产品里程碑，不重复实现已存在的入口。
 当前阶段仍以 `../status.md` 为唯一入口；技术收尾已在 `97c761f` 完成同 SHA 三平台 CI/CodeQL 检查点。
 H2-B 最终运行时代码候选为 `cbb4c4198a21519efb24d8f0a04a509664e83b50`，完整 Rust 492/0/8、
-前端/冻结基线/release 构建通过；两轮完整 Chromium 为 290/2 与 283/9，必需资源加载失败均保留，
-不拼接成通过。隔离 native 已核对 stale 零接受副作用、资源/模板写入、两入口创建、持久化、
+前端/冻结基线/release 构建通过。原两轮完整 Chromium 290/2、283/9 与仅上游缓解的 291/1
+独立保留；fixture 连接关闭修正经有界对照后，工作区独立完整 Chromium 为 292/0，11.2 分钟、
+652 项输入前后相同，不拼接不同轮次。专项验证基于 `173c956`，测试基础设施修复与相关
+文档纳入本轮获准提交、普通快进推送的候选。
+隔离 native 已核对 stale 零接受副作用、资源/模板写入、两入口创建、持久化、
 Retry 与原环境恢复；builtin confirmed CLI remove 因自动审批拒绝未执行等未覆盖项逐项记明。
-完整矩阵与截图身份见 `../testing/m7-h2-b-20261101.md`。该本地候选没有推送或 Hosted CI，
-不自动签收 H2-B、Visual Gate 3 或 M7。
+完整矩阵与截图身份见 `../testing/m7-h2-b-20261101.md`。本次候选 SHA 的三平台 Hosted
+CI/CodeQL 结果尚未纳入验收；不自动签收 H2-B、Visual Gate 3 或 M7。
 
 ### 目标与现状证据
 
@@ -966,9 +977,12 @@ Apply/同一 Operation、失效 Plan 拒绝、焦点、筛选、语言/主题持
 本地门禁与材料已收口，项目所有者于 2026-10-31 以“可以，接下来做什么”确认签收 Visual Gate 2。
 H2-A 验收检查点为 `23f545245f613f47f8def1e16418c4d12303404e`。
 技术收尾已在 `97c761f` 取得同一 SHA 三平台完整 CI/CodeQL 成功，H2-B 已按既有授权实施。
-当前 H2-B 代码候选为 `cbb4c41`：完整 Rust/构建通过，两个完整 Chromium 运行仍失败，原始
-网络/root 证据保留；隔离桌面矩阵、构建/截图 hash、未覆盖项与原环境恢复已记录。
-H2-B 仅本地候选、没有推送，停止在项目所有者检查与人工验收；不把材料完成称作全部门禁通过，
+当前 H2-B 运行时代码候选为 `cbb4c41`：完整 Rust/构建通过。资源加载专项只改测试基础设施，
+独立完整 Chromium 已通过 292/0，修复与相关文档纳入本轮候选提交；原失败轮与网络/root/NetLog
+证据保持。
+隔离桌面矩阵、构建/截图 hash、未覆盖项与原环境恢复已记录。
+本轮候选已获真实 Windows 用户环境提交及普通快进推送授权，停止在项目所有者检查与人工验收；
+不把材料完成称作全部门禁通过，
 不进入 H3-H7、M8、M9 或 M11。
 已有候选读取、exact Unity、Config3、Hub 和 State16 的合同继续有效。完整 GUI/Rust/三平台
 技术门禁与人工视觉结果分别记录，不把旧 SHA 或定向通过冒充当前候选全绿。

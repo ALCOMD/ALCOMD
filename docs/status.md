@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-**M7 IN_PROGRESS / H2-B LOCAL_CANDIDATE / BROWSER_GATE_FAILED / H2-A ACCEPTED / Visual Gate 2 PASS**。项目所有者于 2026-10-31 签收本轮 H2-A；
+**M7 IN_PROGRESS / H2-B LOCAL_CANDIDATE / BROWSER_GATE_PASS / H2-A ACCEPTED / Visual Gate 2 PASS**。项目所有者于 2026-10-31 签收本轮 H2-A；
 M0-M6 已正式通过人工验收，M7 尚未完成。
 本文件是唯一当前阶段入口；ExecPlan 定义实施合同，testing 文档保存各自 SHA/场景的证据。
 
@@ -68,7 +68,7 @@ M0-M6 已正式通过人工验收，M7 尚未完成。
   GitHub 仍 open 的 11 条告警与任务开始时集合相同，当前锁定版本已不匹配其影响范围；
   告警状态未人工修改，完整 RustSec 及维护判断仍见技术记录。
 - [H2-B 既有方案](exec-plans/M7-official-gui-extension-ui.md)已形成本地候选与桌面材料，
-  **APPROVED / LOCAL_CANDIDATE，完整 browser gate FAILED，人工验收待定**。模板分页、
+  **APPROVED / LOCAL_CANDIDATE，本地完整 browser gate PASS，人工验收待定**。模板分页、
   三类 review、页面任务持有与成功刷新、用户包详情已接线。首个候选 `6988bc6` 的完整
   Chromium 292/0 保持独立；该轮 native stale Apply 暴露 Core 接受后才重验、留下失败
   Operation 和目标文件，不能称作该候选 native 通过。最终代码候选
@@ -77,15 +77,25 @@ M0-M6 已正式通过人工验收，M7 尚未完成。
   Tauri release no-bundle 通过。两轮独立完整 Chromium 为 **290/2（12.1 分钟）**和
   **283/9（12.5 分钟）**，各轮前后 651 项输入未变；全部失败有必需 JS/HTML 的
   ERR_ADDRESS_IN_USE 或 ERR_NO_BUFFER_SPACE、业务未到达的 trace，仍按整轮失败记录。
-  未改断言、超时、重试、浏览器 flags 或系统 TCP，未盲目第三轮重跑，不能确定唯一系统根因。
+  上述两轮未改断言、超时、重试、浏览器 flags 或系统 TCP。随后资源加载专项捕获 WinSock
+  10048；仅回移 Playwright 官方端口随机化修正的完整门禁为 **291/1（10.8 分钟）**，残余
+  失败另由带 NetLog 的有界采样复现，不能称作修复通过。fixture 随后改由服务端在响应完成后
+  关闭 HTTP 连接，客户端 TIME_WAIT 明显减少；583 个上下文/4,081 个 200 响应未发生
+  fixture 请求失败、同端口重绑通过后，独立完整 Chromium 为 **292/0（11.2 分钟）**，
+  652 项输入前后相同。测试启动配置完整保留原 16 项浏览器默认禁用列表，仅增加上游一项；
+  原断言、30 秒超时、单 worker、零重试、系统配置和生产代码保持。专项基于 `173c956`
+  工作区，四个测试文件与三份相关文档纳入本轮候选提交，完整输入摘要见验证记录。
+  各失败轮独立保留，不宣称消除 Windows 全局端点限制或确定所有错误的唯一系统原因。
   当前 release GUI/Core 的隔离 native 已复核 stale 零接受副作用、两入口创建及文件/ProjectId、
   import/override/export/derive、两类仓库、用户包详情/显式刷新/移除、收藏及偏好重启持久化、
   断线 Retry、代表性深浅色/键盘焦点和用户模板移除。builtin GUI 删除禁用、Plan 替换拒绝；
   最终 CLI confirmed remove 被自动审批拒绝而未执行，保持未覆盖，不绕过。
   原样例五项完整公开结果与本轮开始时相同、revision 155，原开发窗口已恢复并实际查看；
   旧失败任务和残留五文件保留。逐项矩阵、构建 hash、截图索引、全部失败与未覆盖项见
-  [H2-B 开发验证](testing/m7-h2-b-20261101.md)。仅本地提交，未推送、未触发 H2-B
-  Hosted CI；停止在项目所有者检查与验收，不将这份材料称作 H2-B 全门禁或 M7 完成。
+  [H2-B 开发验证](testing/m7-h2-b-20261101.md)。项目所有者已明确授权用真实 Windows 用户
+  环境提交本轮修复与文档，并将包含既有 H2-B 基线的候选普通快进推送 `origin/main`。
+  本次候选 SHA 的三平台 Hosted CI/CodeQL 结果尚未纳入验收；停止在项目所有者检查与
+  人工验收，不将这份材料称作 H2-B 全门禁或 M7 完成。
 - 已验收范围：Project/Packages 和已获准的其他既有页面基础交互修正、统一公共组件及验收。
   H2-B 按上述前提顺序推进；H3-H7、M8、M9、M11 未获准开始；本次签收不代表 M7 完成。
 - 当前格式：State v16、Config3、RPC v1、Extension ABI v1。按 A-034 保留 Schema 识别，
@@ -186,7 +196,7 @@ Visual Gate 2，没有 M7 或 Hosted CI 通过结论，原未跟踪 `output/` �
 
 - P6 修复的契约、自动化与真实 Plan 证据保持；本轮 H2-A 与 Visual Gate 2 已获项目所有者签收。
   技术收尾已达成同一 SHA 的完整远端检查点；H2-B 本地代码候选与桌面材料已交付检查，
-  完整 browser gate 仍失败且人工验收待定；下载、native
+  本地完整 browser gate 已通过，本轮候选已获提交推送授权且人工验收待定；下载、native
   Portable UI 等旧未覆盖范围保持，不由 browser fixture 或窗口存在替代真实动作。
 - 窗口记忆、仓库 credential enrollment/revocation、完整用户入口缺口保持真实状态；聚合
   projects.management/packages.vpm/repositories.management 等继续 in_progress，不批量提升。
