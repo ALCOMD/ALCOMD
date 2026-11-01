@@ -1,6 +1,6 @@
 # M7：官方 GUI 与 Portable Extension UI
 
-状态：**M7 IN_PROGRESS / H2-B REMOTE_CANDIDATE / OWNER_SIGNOFF_PENDING / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
+状态：**M7 IN_PROGRESS / H2-B REMEDIATION_REQUIRED / OWNER_NOT_ACCEPTED / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
 活动分支为 `main`；当前阶段与验证结果统一见 `docs/status.md`。已通过的 M6、Portable UI B0-D、
 Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据，不替代本轮 GUI 人工验收。
 
@@ -629,7 +629,7 @@ CI `41191370985` 和 CodeQL `41191370892` 仅为审阅基线，不要求回退�
 
 ## H2-B 资源与模板范围及验收方案（条件批准）
 
-状态：**APPROVED / REMOTE_CANDIDATE；当前三平台 CI/CodeQL PASS，人工验收待定**，2026-11-01。
+状态：**APPROVED / REMEDIATION_REQUIRED；人工体验未通过，既有技术证据保留**，2026-11-01。
 实施前提与推送边界以上节为准；H2-A 检查点为
 `23f545245f613f47f8def1e16418c4d12303404e`，Visual Gate 2 已签收。
 本节直接细化原 H2 的剩余范围，不新建产品里程碑，不重复实现已存在的入口。
@@ -654,6 +654,61 @@ attempt 1 四语言成功。只收集已有运行；运行时、测试与构建�
 不提前记作本次已恢复。先前仅做语法检查的 review-candidate.ps1 未用于本次启动，也未提升为已验证。
 项目所有者已批准三份必要文档一次性本地提交，不推送；等待 Resources 操作体验人工签收，
 不自动签收 H2-B、Visual Gate 3 或 M7。
+
+### 本轮人工反馈整改与仓库列表窄合同
+
+项目所有者实际查看后确认：流程可用，但 Resources 提示挤动布局、提醒位置混乱，体验未通过；
+仓库列表导入/导出是冻结 v3 用户能力的实际缺口，本轮补齐，不另立 M7 规划或进入后续阶段。
+先在真实 release 窗口保存完整正常/成功/失败状态截图，再修共享提醒框与调用位置。
+短暂成功使用不占布局的轻提示；字段错误靠近字段，操作错误留在弹窗/对应上下文，风险与部分
+失败持久显示；进度仍由既有机制负责。关闭、取消、重试清理旧状态，长内容可换行/展开/滚动。
+共享组件影响其他页面时补关联定向回归，不重做已签收的 H2-A。
+
+实施前复用审计：冻结 v3 `4aa98ae` 的仓库列表规范为 UTF-8 文本、每行 URL、`#` 注释、空白忽略，
+支持 http(s) 与 `vcc://vpm/addRepo?url=...&headers[]=...`。当时 Core/client 已有 inspect、分页
+list、register、refresh、unregister，尚无列表文件读写合同。GUI 已依赖 dialog 插件，已有目录
+选择与 Hub 文件打开，可复用为薄打开/保存适配器，不在 Tauri 或 GUI 中实现仓库登记权威。
+
+公共差异（**项目所有者已批准以下修订合同，已在本地实现；人工体验仍未签收**）：
+
+| RPC | 输入 / 输出 | 权限及边界 |
+| --- | --- | --- |
+| repositories.inspectListFile | `{path}` → 有界条目 `{line, source?, status, reason?}` 与忽略行数 | local-owner + 既有 repositories.read；只读 UTF-8，最多 1 MiB / 4096 条，超限整体拒绝，不写 registry，不自动下载 |
+| repositories.previewListExport | `{}` → 全量登记快照的可导出数量、排除项及 fingerprint | 既有 repositories.read；Core 从一致只读快照取得全量，不受 GUI 当前页限制；返回排除原因，不返回认证秘密 |
+| repositories.exportListFile | `{targetPath, expectedFingerprint}` → 实际导出数量及摘要 | 认证 local-owner + 既有 repositories.read；重验预览内容与范围的全量快照，变化则在创建文件前拒绝；仅创建全新文件，拒绝 Core 数据/已登记项目内目标，取消选择不调用 |
+
+新增 capability `repositories.list-files.v1`，沿用既有权限；补 RPC Schema/SDK/兼容快照，
+不改 State Schema，不引入新生产依赖、批量事务或通用工作流引擎。错误用有界稳定 code，
+不将原始无效行、headers 或 URL 凭据写入日志/普通错误。
+
+最小用户行为与文件边界：
+
+- 工具栏 Add repository 的 split menu 提供添加、导入列表、导出列表，不新增导航。
+- 复用 v3 普通 UTF-8 URL 列表，支持 CRLF/LF、可选 UTF-8 BOM、注释及不带 headers 的 vcc 添加链接；
+  不是 repository manifest、package 导入或旧数据库迁移。带 headers/userinfo 的条目明确列为不支持，
+  不降级为匿名条目，不显示其秘密；其他 scheme、无效行都给行号和原因，不静默忽略。
+- 导入先预览并选择，再调用既有 repositories.inspect 检查可访问性和现有来源规则；重复 URL/ID、
+  无效或不可访问项留在结果中。显式确认后按所选项逐条调用既有 register，默认追加，不清空或替换。
+  不是原子事务；取消停止调度新条目，在途请求的实际完成仍计入，分别展示成功/失败/未处理/未知。
+- 导出预览和实际文件覆盖 Core 全量登记快照，不能只导出 GUI 已加载的一页。保留 Core 已验证的
+  完整 http(s) URL，包括 query 的字节顺序与内容，不删除、重排或因存在 query 而排除。
+  预览明确提示文件包含完整地址，地址自身可能携带凭据、分享前需检查，显式确认后才导出。
+  不读取凭据库、不附带 headers/密码/token，不承诺 URL 已被认证为无秘密，不建立按参数名猜测
+  所有秘密的系统。当前无法表达的认证来源和本地来源明确排除，逐项说明，不称作完整备份。
+- 当前 Core 没有内置仓库记录类型或预置仓库注入；导出当前实际登记的远程来源，不按 URL 猜测
+  builtin，也不凭空加入 v3 官方/精选默认仓库。本地来源不伪装为 URL。
+- 原生打开/保存只选择路径，Core 负责格式、全量查询和文件写入。保存只创建新文件，已有文件
+  明确报冲突并允许另选路径，保存弹窗不承诺覆盖。失败不留下可被当作成功的半成品，且不能清理
+  非本次创建的文件。普通成功轻提示，排除项/部分失败持续保留供用户处理。
+
+实现为 application 的 RepositoryListApplication、Store 的一致只读投影与独立 VPM 文件适配器；
+通过现有 RPC/client/SDK 接入 GUI。当前 dialog 插件不能关闭系统保存框的覆盖确认，保存界面因此
+使用新文件名字段和已有原生目录选择器，Tauri 仅组合用户选定路径；打开复用原生文件选择器。
+保存不显示系统的替换文件承诺，最终目标、冲突及路径保护仍由 Core 判断。列表和错误正文滚动，
+操作按钮使用 Material Dialog 公开 actions slot。未增加生产依赖或持久任务。
+
+该修订合同已明确获准，先同步本节及 RPC Schema，再实施，不再追加纯文档审批。
+独立共享提醒框组件同样已批准；各信息性质使用合适承载，避免一律浮动或重复反馈。
 
 ### 目标与现状证据
 
@@ -777,8 +832,9 @@ xtask、metadata、冻结基线、npm check/build、完整 Chromium、Tauri rele
 
 ### 排除项与必须停止审批的条件
 
-- 仓库凭据 enrollment/revocation、header/proxy、仓库列表 import/export/deep link、reorder/cleanup/cache
-  等尚无完整当前公开入口的产品缺口另行立合同任务，不由 H2-B 静默加入，也不标记为已完成。
+- 仓库列表 import/export 已由本轮人工反馈明确纳入 H2-B，新增窄公共合同按上节审批。
+  仓库凭据 enrollment/revocation、header/proxy、deep link handler、reorder/cleanup/cache
+  等其他缺口保持原边界，不静默加入，也不标记为已完成。
 - v3 `.alcomtemplate`/tar.gz、v3 模板编辑/依赖与 UnityPackage parity、真实脱敏 differential fixture
   保持 M11 归属；不在正常 runtime 加回旧解析器。H2-B 只验收现有 native Template Bundle v1。
 - 不新增 template 文件打开/保存选择器。现有导入/导出路径输入仍可完成流程；新增 native picker、
@@ -989,15 +1045,20 @@ Apply/同一 Operation、失效 Plan 拒绝、焦点、筛选、语言/主题持
 本地门禁与材料已收口，项目所有者于 2026-10-31 以“可以，接下来做什么”确认签收 Visual Gate 2。
 H2-A 验收检查点为 `23f545245f613f47f8def1e16418c4d12303404e`。
 技术收尾已在 `97c761f` 取得同一 SHA 三平台完整 CI/CodeQL 成功，H2-B 已按既有授权实施。
-当前 H2-B 运行时代码候选为 `cbb4c41`：完整 Rust/构建通过。资源加载专项只改测试基础设施，
+前次 H2-B 运行时代码候选为 `cbb4c41`：完整 Rust/构建通过。资源加载专项只改测试基础设施，
 独立完整 Chromium 已通过 292/0，修复与相关文档已用真实 Windows 用户环境提交并普通快进
 推送为 `0ef5b088dfdb7a8eb2b7a88ebef94ae436c90f50`；原失败轮与网络/root/NetLog 证据保持。
 该 SHA 的 CI `41287607183` 三平台及 CodeQL `41287607108` 四语言均在 attempt 1 完整成功。
 隔离桌面的结果链接精确导航、既有键盘合同、构建/截图 hash、未覆盖项与原环境恢复已记录。
 只补明确缺口并收集既有运行，没有重复完整本地测试或触发 workflow。先前被审批拒绝的 builtin
 confirmed CLI remove 已在新明确授权后通过正式 CLI 补齐，Core 拒绝及零副作用证据独立保存，
-历史未执行记录保留。真实隔离窗口保持打开，四项人工清单仅覆盖 Resources；原环境恢复守候
-等待窗口关闭。当前三份文档获准一次性本地提交，未经新的推送授权不推送。停止在项目所有者
-实际查看后的 H2-B 人工签收，保持 pending；H2-A 已签收保持，不进入 H3-H7、M8、M9 或 M11。
+历史未执行记录保留。项目所有者随后实际查看并拒绝 H2-B 体验签收，指出提示布局和列表交换缺口。
+本轮按上述批准合同整改，本地提示提交为 `348dbef`、列表功能为 `ceef00f`；`2a163b0` 只修测试
+类型检查，不改变运行时代码。旧 release 构建已独立保留，新候选已在同一隔离数据环境启动。
+该候选集中定向浏览器 47/0，相关 Rust/协议/Clippy 及 release 构建通过；未复跑旧完整门禁。
+Computer Use 被 Esc 停止且本轮观察仍未恢复，新 GUI 的原生交互与整改后截图保持未验证，
+不以浏览器或旧 release 截图替代。原环境恢复守候等待窗口关闭，未来分支未执行。
+未经新的推送授权不推送。停止在项目所有者重新查看后的 H2-B 人工签收；H2-A 已签收保持，
+不进入 H3-H7、M8、M9 或 M11。最新构建、定向结果和桌面身份见现有 H2-B testing 文档。
 已有候选读取、exact Unity、Config3、Hub 和 State16 的合同继续有效。完整 GUI/Rust/三平台
 技术门禁与人工视觉结果分别记录，不把旧 SHA 或定向通过冒充当前候选全绿。

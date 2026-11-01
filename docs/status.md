@@ -4,9 +4,20 @@
 
 ## 当前阶段
 
-**M7 IN_PROGRESS / H2-B REMOTE_CANDIDATE / CI_CODEQL_PASS / OWNER_SIGNOFF_PENDING / H2-A ACCEPTED / Visual Gate 2 PASS**。项目所有者于 2026-10-31 签收本轮 H2-A；
+**M7 IN_PROGRESS / H2-B REMEDIATION_REQUIRED / OWNER_NOT_ACCEPTED / H2-A ACCEPTED / Visual Gate 2 PASS**。项目所有者于 2026-10-31 签收本轮 H2-A；
 M0-M6 已正式通过人工验收，M7 尚未完成。
 本文件是唯一当前阶段入口；ExecPlan 定义实施合同，testing 文档保存各自 SHA/场景的证据。
+
+本轮 Resources 体验整改与仓库列表交换已在标准目录/main 本地实现，提交为 `348dbef`、
+`ceef00f`；`2a163b0` 仅修正测试类型检查，生产输入与 `ceef00f` 一致。尚未推送。
+共享 Reminder 将短成功反馈移出正文流，错误/风险/部分结果保留在字段或对应弹窗；新增列表
+预览、选择、显式追加与 Core 全量导出，包含 query 保真、过期预览及新建文件保护。
+当前本地技术候选 `2a163b0` 的定向浏览器 **47/0**、相关 Rust/协议/Clippy/metadata 与 release
+构建已通过；没有重跑完整 Rust Workspace、292 项浏览器或三平台 CI。匹配 release GUI/Core
+已在既有隔离数据目录启动并保持打开，GUI PID 116600、Core PID 103472；原环境仍暂停。
+Computer Use 本轮被 Esc 停止，后续只读观察也仍返回停止状态；整改后原生截图及新 GUI 交互
+尚未验证，不能据浏览器通过冒充真实桌面通过。人工体验继续 **OWNER_NOT_ACCEPTED**。
+远端仍为 `0ef5b08`，原同 SHA 三平台 CI/CodeQL 成功保持有效，不能代替本轮新增代码的验证。
 
 - 唯一工作目录：`C:\Users\M2922\MyProjects\Rust\ALCOMD`，活动分支 `main`；不另建工作树。
 - 验证按风险分级：日常定向测试及必要检查，模块完成后覆盖相关回归，稳定候选再集中执行完整
@@ -67,8 +78,15 @@ M0-M6 已正式通过人工验收，M7 尚未完成。
   同一最终技术 SHA 的集中检查点已通过，前述本机失败记录保持；H2-B 按既有授权开始实施。
   GitHub 仍 open 的 11 条告警与任务开始时集合相同，当前锁定版本已不匹配其影响范围；
   告警状态未人工修改，完整 RustSec 及维护判断仍见技术记录。
-- [H2-B 既有方案](exec-plans/M7-official-gui-extension-ui.md)已形成远端候选与桌面材料，
-  **APPROVED / REMOTE_CANDIDATE，当前三平台 CI/CodeQL PASS，人工验收待定**。模板分页、
+- 最新 H2-B 人工反馈：既有流程可用，但提示放置挤动/破坏 Resources 布局，且仓库列表导入/导出
+  尚未实现，**体验未通过，继续本轮整改**。真实窗口已复现成功与失败提示挤入仓库行操作区，
+  完整窗口截图保存在 h2b-resources-remediation；先修 Resources 及直接共享提醒组件，保持侧栏、
+  画布、图标和桌面密度，再补仓库列表能力。新公共文件 RPC/capability 的修订窄合同和共享提醒框
+  已获明确批准，先同步 ExecPlan/Schema 后实施；参数化 URL 完整保留、显式确认导出，不改 State Schema。
+  日常只做受影响检查；稳定本地候选再集中验证，不自动推送或进入后续阶段。
+- [H2-B 既有方案](exec-plans/M7-official-gui-extension-ui.md)此前已形成远端候选与桌面材料。
+  `0ef5b08` 的三平台 CI/CodeQL 技术检查通过保持有效，不能证明本次发现的遗漏功能已实现。
+  模板分页、
   三类 review、页面任务持有与成功刷新、用户包详情已接线。首个候选 `6988bc6` 的完整
   Chromium 292/0 保持独立；该轮 native stale Apply 暴露 Core 接受后才重验、留下失败
   Operation 和目标文件，不能称作该候选 native 通过。最终代码候选
@@ -106,12 +124,15 @@ M0-M6 已正式通过人工验收，M7 尚未完成。
   四语言全部成功。只收集已有运行，没有重跑 workflow 或为状态整理重复完整本地门禁。
   逐项矩阵、证据复用绑定、候选入口、代表性截图与 Resources 人工检查清单见
   [H2-B 开发验证](testing/m7-h2-b-20261101.md)。最终验收准备复用此前实际成功的启动步骤，
-  当前 release GUI PID 104572、Core PID 77432 使用既有 H2-B 隔离目录与 profile；窗口保持打开于
-  Resources / Repositories，已准备两个合成仓库、用户包 1.2.0/rev1 和原五个模板。
+  前次 release GUI PID 104572、Core PID 77432 使用既有 H2-B 隔离目录与 profile，曾保持打开于
+  Resources / Repositories，包含两个合成仓库、用户包 1.2.0/rev1 和原五个模板。
   原开发环境再次按授权暂停，暂停前五组完整公开结果已保存，无活动任务；未停止 Unity/未知进程。
-  关闭验收 GUI 后的恢复守候已启动，当前仍 waiting-for-gui-close，不能称作本次恢复已完成。
-  本轮只补该负向请求和人工样例准备，不重复全量验证；三份文档获准一次性本地提交，不推送。
-  停止在项目所有者 Resources 体验签收，保持 OWNER_SIGNOFF_PENDING，不自动签收 H2-B、Visual Gate 3 或 M7。
+  所有者反馈后，旧恢复守候及本轮开发窗口经身份核对已停止，曾暂停隔离 Core 完成定向 IPC
+  与新构建；当前已换为上述新 release 候选。恢复守候 PID 98936 当前 waiting-for-gui-close，
+  复用既有恢复办法和五组暂停前快照；未来恢复分支尚未执行，不能描述为已恢复。负向请求证据
+  对应未改变的 builtin guard 输入，保持有效且不重复执行。
+  本轮新增技术/桌面结果与最终保持打开的进程身份见 testing 文档，不复跑旧完整门禁或三平台 CI。
+  停止在项目所有者 Resources 体验重新签收，不自动签收 H2-B、Visual Gate 3 或 M7。
 - 已验收范围：Project/Packages 和已获准的其他既有页面基础交互修正、统一公共组件及验收。
   H2-B 按上述前提顺序推进；H3-H7、M8、M9、M11 未获准开始；本次签收不代表 M7 完成。
 - 当前格式：State v16、Config3、RPC v1、Extension ABI v1。按 A-034 保留 Schema 识别，
