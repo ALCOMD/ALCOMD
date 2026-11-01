@@ -191,6 +191,67 @@ test("a successful Unity launch keeps the project row unchanged and closing an e
     expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method !== "unity.launchOptions"))).toEqual([]);
 });
 
+for (const route of ["/projects", `/projects/${projectId}/packages`]) {
+    test(`Unity launch status is an explicit same-record read with retry and focus return in ${route}`, async ({ page }) => {
+        await page.goto(`/browser-harness.html?route=${encodeURIComponent(route)}&state=unity-automatic&unityStatusError=1`);
+        const controls = route === "/projects" ? page.locator(".project-row-actions").first() : page.getByRole("navigation", { name: "Project actions" });
+        const more = controls.getByRole("button", { name: /^More actions for/ });
+        await more.click();
+        await expect(page.getByRole("menuitem", { name: "Unity launch status", exact: true })).toHaveCount(0);
+        await page.keyboard.press("Escape");
+        await controls.getByRole("button", { name: "Open Unity", exact: true }).click();
+        await expect(page.locator(".reminder-floating")).toContainText("Unity launch opening.");
+        expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.launchStatus"))).toEqual([]);
+        await more.click();
+        await page.getByRole("menuitem", { name: "Unity launch status", exact: true }).click();
+        const dialog = page.locator("md-dialog[open]");
+        await expect(dialog.getByRole("alert")).toContainText("daemon_unavailable");
+        await dialog.getByRole("button", { name: "Refresh", exact: true }).click();
+        await expect(dialog.getByRole("status")).toContainText("Last observed launch state: open");
+        const reads = await page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.launchStatus"));
+        expect(reads).toHaveLength(2);
+        expect(reads[0]!.params).toEqual(reads[1]!.params);
+        expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.launch"))).toHaveLength(1);
+        await dialog.getByRole("button", { name: "Close", exact: true }).click();
+        await expect(dialog).toHaveCount(0);
+        await expect(more).toBeFocused();
+    });
+}
+
+test("Unity status preserves Core failure and rejects another launch's DTO", async ({ page }) => {
+    for (const [params, expected] of [["unityStatusState=failed", "Last observed launch state: failed"], ["unityStatusMismatch=1", "internal_error"]]) {
+        await page.goto(`/browser-harness.html?route=/projects&state=unity-automatic&${params}`);
+        const controls = page.locator(".project-row-actions").first();
+        await controls.getByRole("button", { name: "Open Unity", exact: true }).click();
+        await expect(page.locator(".reminder-floating")).toContainText("Unity launch opening.");
+        await controls.getByRole("button", { name: /^More actions for/ }).click();
+        await page.getByRole("menuitem", { name: "Unity launch status", exact: true }).click();
+        const dialog = page.locator("md-dialog[open]");
+        await expect(dialog.getByRole("alert")).toContainText(expected!);
+        expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.launch"))).toHaveLength(1);
+        await dialog.getByRole("button", { name: "Close", exact: true }).click();
+        await expect(dialog).toHaveCount(0);
+        await expect(page.getByRole("alert")).toHaveCount(0);
+    }
+});
+
+test("a late Unity status response cannot reopen its dialog after leaving the project", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/projects&state=unity-automatic&hold-unity-status=1");
+    const controls = page.locator(".project-row-actions").first();
+    await controls.getByRole("button", { name: "Open Unity", exact: true }).click();
+    await expect(page.locator(".reminder-floating")).toContainText("Unity launch opening.");
+    await controls.getByRole("button", { name: /^More actions for/ }).click();
+    await page.getByRole("menuitem", { name: "Unity launch status", exact: true }).click();
+    const dialog = page.locator("md-dialog[open]");
+    await expect(dialog.getByRole("button", { name: "Close", exact: true })).toBeDisabled();
+    await page.evaluate(() => { history.pushState(null, "", "/operations"); dispatchEvent(new PopStateEvent("popstate")); });
+    await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
+    await page.evaluate(() => dispatchEvent(new Event("test-unity-status-ready")));
+    await expect(page.locator("md-dialog[open]")).toHaveCount(0);
+    await expect(page.locator(".reminder-floating")).toHaveCount(0);
+    expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.launch"))).toHaveLength(1);
+});
+
 async function open(page: Page, route: string, params = "") {
     await page.goto(`/browser-harness.html?route=${encodeURIComponent(route)}&h3=1&${params}`);
 }

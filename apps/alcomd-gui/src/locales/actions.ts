@@ -2,6 +2,8 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const actionMessages: TranslationTable = {
+    "Unity launch status": { "zh-CN": "Unity 启动状态", "ja-JP": "Unity の起動状態" },
+    "Last observed launch state: {state}": { "zh-CN": "最近观察到的启动状态：{state}", "ja-JP": "最後に確認した起動状態：{state}" },
     "Operation failed": { "zh-CN": "任务失败", "ja-JP": "操作に失敗しました" },
     "Open project": { "zh-CN": "打开项目", "ja-JP": "プロジェクトを開く" },
     "New list file name": { "zh-CN": "新列表文件名", "ja-JP": "新しい一覧ファイル名" },
