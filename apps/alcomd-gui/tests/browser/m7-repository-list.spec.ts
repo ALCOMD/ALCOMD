@@ -172,6 +172,6 @@ for (const code of ["repository_list_target_exists", "repository_list_changed", 
         await expect(host.getByText("Saved 230 repositories (12000 bytes).", { exact: true })).toBeVisible();
         const calls = await requests(page, "repositories.exportListFile");
         expect(calls).toHaveLength(2);
-        if (code === "repository_list_changed") expect(calls[1].params).toEqual({ targetPath: "C:/fixture/repositories.txt", expectedFingerprint: "2".repeat(64) });
+        if (code === "repository_list_changed") expect(calls[1]?.params).toEqual({ targetPath: "C:/fixture/repositories.txt", expectedFingerprint: "2".repeat(64) });
     });
 }
