@@ -10,6 +10,7 @@ mod plan;
 mod project_copy;
 mod project_delete;
 mod range;
+mod repository_list;
 mod resolver;
 mod staging_package;
 mod template;
@@ -41,6 +42,7 @@ pub use plan::{
 };
 pub use project_copy::ProjectCopyEngine;
 pub use project_delete::ProjectDeleteEngine;
+pub use repository_list::RepositoryListFileAdapter;
 pub use resolver::{
     PackageCandidate, PackageDependency, PackageDependencyEdge, PackageSource,
     PackageSourceAuthority, Resolution, ResolveError, ResolveRequest, ResolvedPackage,

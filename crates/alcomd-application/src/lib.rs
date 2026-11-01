@@ -30,6 +30,7 @@ mod m7_official;
 mod m7_unity_migration;
 mod m7_user_packages;
 mod project_authority;
+mod repository_list;
 
 pub use m4::*;
 pub use m5::*;
@@ -45,6 +46,7 @@ pub use m7_official::*;
 pub use m7_unity_migration::*;
 pub use m7_user_packages::*;
 pub use project_authority::*;
+pub use repository_list::*;
 
 /// Minimal truthful daemon status for the M1 read-only vertical slice.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

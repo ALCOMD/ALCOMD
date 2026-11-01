@@ -297,6 +297,94 @@ async fn gui_select_directory(app: tauri::AppHandle) -> Result<Option<String>, R
 }
 
 #[tauri::command]
+async fn gui_select_repository_list_file(
+    app: tauri::AppHandle,
+    mode: String,
+    file_name: Option<String>,
+) -> Result<Option<String>, RpcError> {
+    // The existing save dialog cannot suppress its overwrite promise. Pick a parent
+    // folder instead; the GUI supplies the reviewed new name and Core creates the file.
+    let selected = match mode.as_str() {
+        "open" => app
+            .dialog()
+            .file()
+            .add_filter("Repository list (*.txt)", &["txt"])
+            .blocking_pick_file(),
+        "save" => app.dialog().file().blocking_pick_folder(),
+        _ => return Err(RpcError::invalid_request()),
+    };
+    selected
+        .map(|path| {
+            path.into_path()
+                .ok()
+                .and_then(|path| {
+                    if mode == "save" {
+                        let name = file_name.as_deref()?;
+                        if name.is_empty()
+                            || name.chars().count() > 255
+                            || name == "."
+                            || name == ".."
+                            || name.contains(['/', '\\', ':'])
+                        {
+                            return None;
+                        }
+                        path.join(name).into_os_string().into_string().ok()
+                    } else {
+                        path.into_os_string().into_string().ok()
+                    }
+                })
+                .ok_or_else(|| RpcError::extension("file_selection_failed"))
+        })
+        .transpose()
+}
+
+#[tauri::command]
+async fn gui_repository_list_inspect_file(
+    state: State<'_, GuiClientState>,
+    path: String,
+) -> Result<alcomd_protocol::RepositoryListInspection, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.repository_list_inspect_file(path).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_repository_list_preview_export(
+    state: State<'_, GuiClientState>,
+) -> Result<alcomd_protocol::RepositoryListPreview, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.repository_list_preview_export().await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
+async fn gui_repository_list_export_file(
+    state: State<'_, GuiClientState>,
+    target_path: String,
+    expected_fingerprint: String,
+) -> Result<alcomd_protocol::RepositoryListExportResult, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => {
+            client
+                .repository_list_export_file(target_path, expected_fingerprint)
+                .await
+        }
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
 async fn gui_project_plan_copy(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ProjectsPlanCopyParams,
@@ -1560,6 +1648,10 @@ pub fn run() {
             gui_project_get,
             gui_open_project_directory,
             gui_select_directory,
+            gui_select_repository_list_file,
+            gui_repository_list_inspect_file,
+            gui_repository_list_preview_export,
+            gui_repository_list_export_file,
             gui_select_unity_hub,
             gui_unity_hub_open,
             gui_open_unity_hub_download,

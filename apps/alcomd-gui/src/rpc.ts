@@ -13,6 +13,7 @@ import type {
     RpcError
 } from "@alcomd/sdk";
 import type { UnityHubOpenResult } from "@alcomd/sdk";
+import type { RepositoryListInspection, RepositoryListPreview, RepositoryListExportResult } from "@alcomd/sdk";
 import { invoke } from "@tauri-apps/api/core";
 
 import type {
@@ -112,6 +113,10 @@ export interface GuiRpcClient {
     projectPlanDeleteDirectory(projectId: string, expectedRevision: number): Promise<ProjectsPlanDeleteDirectoryResult>;
     projectApplyDeleteDirectory(planId: string, expectedRevision: number): Promise<ProjectsApplyDeleteDirectoryResult>;
     repositoriesInspect(source: RepositorySource): Promise<RepositoryResult>;
+    selectRepositoryListFile(mode: "open" | "save", fileName?: string): Promise<string | undefined>;
+    repositoryListInspectFile(path: string): Promise<RepositoryListInspection>;
+    repositoryListPreviewExport(): Promise<RepositoryListPreview>;
+    repositoryListExportFile(targetPath: string, expectedFingerprint: string): Promise<RepositoryListExportResult>;
     repositoriesList(cursor?: RegistryCursor): Promise<RepositoriesListResult>;
     repositoryGet(repositoryId: string): Promise<RepositoryResult>;
     repositoryPackages(repositoryId: string, cursor?: PackageCursor): Promise<RepositoryPackagesResult>;
@@ -180,6 +185,18 @@ export interface GuiRpcClient {
 }
 
 class TauriGuiRpcClient implements GuiRpcClient {
+    selectRepositoryListFile(mode: "open" | "save", fileName?: string): Promise<string | undefined> {
+        return invokeTyped<string | null>("gui_select_repository_list_file", { mode, fileName }).then((path) => path ?? undefined);
+    }
+    repositoryListInspectFile(path: string): Promise<RepositoryListInspection> {
+        return invokeTyped("gui_repository_list_inspect_file", { path });
+    }
+    repositoryListPreviewExport(): Promise<RepositoryListPreview> {
+        return invokeTyped("gui_repository_list_preview_export", {});
+    }
+    repositoryListExportFile(targetPath: string, expectedFingerprint: string): Promise<RepositoryListExportResult> {
+        return invokeTyped("gui_repository_list_export_file", { targetPath, expectedFingerprint });
+    }
     packageQueryProjectCandidates(params: ProjectCandidateRequest): Promise<ProjectCandidatePage> {
         return invokeTyped("gui_package_query_project_candidates", { params });
     }

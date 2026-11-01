@@ -587,7 +587,7 @@ export function Checkbox({ checked, disabled, label, onChange }: { checked: bool
     );
 }
 
-export function Dialog({ children, onClose, open, title, wide = false, dismissible = true, returnFocus, returnFocusReady = true }: { children: ReactNode; onClose(): void; open: boolean; title: string; wide?: boolean; dismissible?: boolean; returnFocus?: DialogOrigin; returnFocusReady?: boolean }) {
+export function Dialog({ actions, children, onClose, open, title, wide = false, dismissible = true, returnFocus, returnFocusReady = true }: { actions?: ReactNode; children: ReactNode; onClose(): void; open: boolean; title: string; wide?: boolean; dismissible?: boolean; returnFocus?: DialogOrigin; returnFocusReady?: boolean }) {
     const quick = useSyncExternalStore(subscribeMotion, reducedMotion);
     const ref = useRef<MaterialElement>(null);
     const [restoreFocus, setRestoreFocus] = useState(false);
@@ -628,7 +628,8 @@ export function Dialog({ children, onClose, open, title, wide = false, dismissib
             materialElements.dialog,
             { ariaLabel: title, open, quick, ref, style: wide ? { maxWidth: "min(848px, calc(100vw - 48px))" } : undefined } as MaterialProps,
             createElement("div", { slot: "headline" }, title),
-            createElement("div", { className: wide ? "material-dialog-content material-dialog-content--wide" : "material-dialog-content", slot: "content" }, <LocalPageReadContext.Provider value={true}>{children}</LocalPageReadContext.Provider>)
+            createElement("div", { className: wide ? "material-dialog-content material-dialog-content--wide" : "material-dialog-content", slot: "content" }, <LocalPageReadContext.Provider value={true}>{children}</LocalPageReadContext.Provider>),
+            actions === undefined ? null : createElement("div", { className: "material-dialog-actions", slot: "actions" }, actions)
         ),
         document.body
     );

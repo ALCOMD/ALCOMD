@@ -11,9 +11,11 @@ use serde_json::{Value, json};
 
 mod m7;
 mod m7_candidates;
+mod repository_list;
 
 pub use m7::*;
 pub use m7_candidates::*;
+pub use repository_list::*;
 
 pub const METHOD_PACKAGES_QUERY_PROJECT_CANDIDATES: &str = "packages.queryProjectCandidates";
 pub const CAPABILITY_PACKAGES_CANDIDATES_V1: &str = "packages.candidates.v1";

@@ -18,6 +18,60 @@ const REPOSITORY_REGISTER: &str = "repositories.register";
 const REPOSITORY_REFRESH: &str = "repositories.refresh";
 const REPOSITORY_UNREGISTER: &str = "repositories.unregister";
 
+pub(super) fn repository_list_snapshot(
+    connection: &mut Connection,
+    owner: &PrincipalId,
+) -> Result<alcomd_application::RepositoryListSnapshot, M3Error> {
+    let transaction = connection.transaction().map_err(|_| unavailable())?;
+    let mut statement = transaction
+        .prepare(
+            "SELECT repository_id, revision, source_kind, source_locator FROM repositories
+         WHERE owner_principal_id=?1 ORDER BY repository_id",
+        )
+        .map_err(|_| unavailable())?;
+    let rows = statement
+        .query_map([owner.as_str()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
+        .map_err(|_| unavailable())?;
+    let mut repositories = Vec::new();
+    for row in rows {
+        let (repository_id, rev, kind, locator) = row.map_err(|_| unavailable())?;
+        let source = match kind.as_str() {
+            "local" => RepositorySource::Local { path: locator },
+            "remote" => RepositorySource::Remote { url: locator },
+            _ => return Err(internal()),
+        };
+        repositories.push(alcomd_application::RepositoryListRecord {
+            repository_id,
+            revision: revision(rev)?.get(),
+            source,
+        });
+        // One overflow item lets the application reject instead of silently truncating.
+        if repositories.len() > alcomd_application::REPOSITORY_LIST_MAX_ENTRIES {
+            break;
+        }
+    }
+    drop(statement);
+    let mut statement = transaction
+        .prepare("SELECT root_path FROM projects ORDER BY project_id")
+        .map_err(|_| unavailable())?;
+    let project_roots = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|_| unavailable())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| unavailable())?;
+    Ok(alcomd_application::RepositoryListSnapshot {
+        repositories,
+        project_roots,
+    })
+}
+
 pub(super) fn unavailable() -> M3Error {
     M3Error::new(M3ErrorCode::StoreUnavailable)
 }

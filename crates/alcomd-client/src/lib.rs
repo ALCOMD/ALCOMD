@@ -122,6 +122,7 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_PROJECTS_UNITY_MIGRATION_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_REPOSITORIES_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_REPOSITORIES_REGISTRY_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_REPOSITORIES_LIST_FILES_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V2.to_owned(),
                 alcomd_protocol::CAPABILITY_PACKAGES_CANDIDATES_V1.to_owned(),
@@ -925,6 +926,42 @@ impl AlcomdClient {
         self.call(
             alcomd_protocol::METHOD_REPOSITORIES_INSPECT,
             alcomd_protocol::RepositoryInspectParams { source },
+        )
+        .await
+    }
+
+    pub async fn repository_list_inspect_file(
+        &mut self,
+        path: String,
+    ) -> Result<alcomd_protocol::RepositoryListInspection, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_REPOSITORIES_INSPECT_LIST_FILE,
+            alcomd_protocol::RepositoryListInspectParams { path },
+        )
+        .await
+    }
+
+    pub async fn repository_list_preview_export(
+        &mut self,
+    ) -> Result<alcomd_protocol::RepositoryListPreview, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_REPOSITORIES_PREVIEW_LIST_EXPORT,
+            alcomd_protocol::RepositoryListPreviewParams {},
+        )
+        .await
+    }
+
+    pub async fn repository_list_export_file(
+        &mut self,
+        target_path: String,
+        expected_fingerprint: String,
+    ) -> Result<alcomd_protocol::RepositoryListExportResult, ClientError> {
+        self.call(
+            alcomd_protocol::METHOD_REPOSITORIES_EXPORT_LIST_FILE,
+            alcomd_protocol::RepositoryListExportParams {
+                target_path,
+                expected_fingerprint,
+            },
         )
         .await
     }

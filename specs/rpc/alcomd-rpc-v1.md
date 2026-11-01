@@ -865,3 +865,34 @@ Package mutation 与候选查询的 source DTO 分别遵守各自冻结 Schema�
 `CandidateSource`，保持 `repository_id`/`user_package_id`，请求和响应均如此。
 2026-10-31 项目所有者批准将 P6 Rust 序列化修正为其冻结 camelCase 合同；这是对当前实际
 P6 snake_case wire 的直接替换，不接受旧字段或混合格式，不增加别名、capability 或 RPC major。
+
+## 30. M7 H2-B：仓库列表文件交换
+
+项目所有者批准在 RPC major 1 增加 `repositories.list-files.v1`，使用
+`m7-repository-list.schema.json` 的独立公开 DTO；不改 State Schema，不增加持久任务。
+
+| Method | Params / Result | Access |
+| --- | --- | --- |
+| repositories.inspectListFile | inspectListFileParams / inspectListFileResult | 已认证 local-owner + repositories.read |
+| repositories.previewListExport | previewListExportParams / previewListExportResult | repositories.read |
+| repositories.exportListFile | exportListFileParams / exportListFileResult | 已认证 local-owner + repositories.read |
+
+输入为最多 1 MiB、4096 个非空条目的 UTF-8 文本，接受可选 BOM、LF/CRLF、trim 与 `#` 行内注释。
+普通 http(s) URL 和无 headers 的 `vcc://vpm/addRepo?url=...` 可以成为 candidate；重复来源标为
+duplicate，无效或不支持条目保留行号/稳定原因。带 headers、userinfo 等不能完整表达的来源
+不降级为匿名 URL；不返回或记录原始无效行和认证秘密。inspectListFile 只读解析、不登记、不下载。
+GUI 在预览、选择及显式确认后复用既有 inspect/register，逐条追加；取消不调度新登记，在途请求
+实际完成仍计入，成功/失败/未处理/未知分开显示，不自动重试未知写入，不清空或回滚已完成登记。
+
+导出预览基于 Core 一致的全量登记快照，不能只取 GUI 当前页。fingerprint 绑定输出内容、登记
+范围和排除项；执行时变化即在创建文件前返回 repository_list_changed，要求重新预览。
+输出复用 v3 普通 URL 列表，保留 Core 已验证完整 URL，包含 query 的原内容与顺序；不因存在
+query 排除，也不删除或重排参数。GUI 必须说明地址本身可能包含凭据、分享前需检查，显式确认
+后才能导出。不会读取凭据存储或自动附带 headers/密码/token，不声称文件绝无秘密，不自动上传。
+本地或当前格式/权限不能表达的认证来源逐项列出排除原因；不称作完整备份。当前 Core 没有
+内置仓库类型或预置注入，不按 URL 猜测 builtin，不构造 v3 默认仓库。
+
+仅允许新建输出文件：已存在目标返回 repository_list_target_exists 并保持原文件；Core 数据和
+已登记项目内目标拒绝。写入失败只清理本次创建且身份匹配的半成品，不删除其他文件；保存选择
+取消不调用写 RPC。稳定错误另包括 repository_list_invalid、repository_list_target_invalid、
+repository_list_io_error；普通错误与日志均不包含原始秘密。

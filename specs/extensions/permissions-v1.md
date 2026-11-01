@@ -75,7 +75,10 @@ mcp.configuration.manage
   修改项目文件。
 - `projects.manage`：允许在 ALCOMD registry 中 register/refresh/unregister 项目；它不隐含
   `packages.manage`，也不允许创建、删除或修改项目目录。
-- `repositories.read`：允许 `repositories.inspect/list/get/packages` 的 normalized metadata 查询。
+- `repositories.read`：允许 `repositories.inspect/list/get/packages` 的 normalized metadata 查询及
+  `repositories.previewListExport` 的有界全量导出范围预览。`repositories.inspectListFile/exportListFile`
+  额外限制为经过认证的 local-owner，扩展获得此权限也不能读取或写入本机列表文件；列表登记仍需
+  既有 `repositories.manage` 权限并经过相同的 inspect/register 用例。
 - `repositories.manage`：允许 register/refresh/unregister local 或匿名 HTTP(S) source 及
   last-known-good cache；不允许 credential、自定义 header、package payload 下载或项目写入。
 - M3 `builtin:local-owner` 获得上述四项权限。capability、client metadata、路径、URL 与资源 ID

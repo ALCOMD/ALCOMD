@@ -1,0 +1,73 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m7-repository-list.json",
+    "title": "ALCOMD RPC v1 repository list file exchange",
+    "$defs": {
+        "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "absolutePath": {"type": "string", "minLength": 1, "maxLength": 32768},
+        "uuid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"},
+        "inspectListFileParams": {
+            "type": "object", "additionalProperties": false, "required": ["path"],
+            "properties": {"path": {"$ref": "#/$defs/absolutePath"}}
+        },
+        "remoteSource": {
+            "type": "object", "additionalProperties": false, "required": ["kind", "url"],
+            "properties": {"kind": {"const": "remote"}, "url": {"type": "string", "minLength": 1, "maxLength": 2048}}
+        },
+        "entry": {
+            "type": "object", "additionalProperties": false, "required": ["line", "status"],
+            "properties": {
+                "line": {"type": "integer", "minimum": 1, "maximum": 1048576},
+                "status": {"enum": ["candidate", "duplicate", "invalid", "unsupported"]},
+                "source": {"$ref": "#/$defs/remoteSource"},
+                "reason": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 128}
+            },
+            "allOf": [
+                {"if": {"properties": {"status": {"enum": ["candidate", "duplicate"]}}}, "then": {"required": ["source"]}},
+                {"if": {"properties": {"status": {"enum": ["invalid", "unsupported"]}}}, "then": {"required": ["reason"], "not": {"required": ["source"]}}}
+            ]
+        },
+        "inspectListFileResult": {
+            "type": "object", "additionalProperties": false, "required": ["entries", "ignoredLines"],
+            "properties": {
+                "entries": {"type": "array", "maxItems": 4096, "items": {"$ref": "#/$defs/entry"}},
+                "ignoredLines": {"type": "integer", "minimum": 0, "maximum": 1048576}
+            }
+        },
+        "previewListExportParams": {"type": "object", "additionalProperties": false},
+        "exclusion": {
+            "type": "object", "additionalProperties": false, "required": ["repositoryId", "reason"],
+            "properties": {
+                "repositoryId": {"$ref": "#/$defs/uuid"},
+                "reason": {"enum": ["local_source", "authentication_not_supported", "unsupported_source"]}
+            }
+        },
+        "previewListExportResult": {
+            "type": "object", "additionalProperties": false,
+            "required": ["exportableCount", "excluded", "byteCount", "fingerprint"],
+            "properties": {
+                "exportableCount": {"type": "integer", "minimum": 0, "maximum": 4096},
+                "excluded": {"type": "array", "maxItems": 4096, "items": {"$ref": "#/$defs/exclusion"}},
+                "byteCount": {"type": "integer", "minimum": 0, "maximum": 1048576},
+                "fingerprint": {"$ref": "#/$defs/fingerprint"}
+            }
+        },
+        "exportListFileParams": {
+            "type": "object", "additionalProperties": false, "required": ["targetPath", "expectedFingerprint"],
+            "properties": {
+                "targetPath": {"$ref": "#/$defs/absolutePath"},
+                "expectedFingerprint": {"$ref": "#/$defs/fingerprint"}
+            }
+        },
+        "exportListFileResult": {
+            "type": "object", "additionalProperties": false, "required": ["exportedCount", "byteCount", "sha256"],
+            "properties": {
+                "exportedCount": {"type": "integer", "minimum": 0, "maximum": 4096},
+                "byteCount": {"type": "integer", "minimum": 0, "maximum": 1048576},
+                "sha256": {"$ref": "#/$defs/fingerprint"}
+            }
+        }
+    },
+    "type": "object",
+    "additionalProperties": true
+}

@@ -90,6 +90,7 @@ const SUPPORTED_CAPABILITIES = [
     "projects.unity-migration.v1",
     "repositories.read.v1",
     "repositories.registry.v1",
+    RPC_CAPABILITIES.repositoriesListFiles,
     "state.check.v1",
     "templates.create-project.v1",
     "templates.manage.v1",
@@ -116,6 +117,32 @@ const materialEvidence = query.get("material") === "1";
 if (!materialEvidence) window.history.replaceState(null, "", initialRoute);
 
 class DeterministicGuiClient implements GuiRpcClient {
+    private listExportAttempts = 0;
+    private listPreviewReads = 0;
+    selectRepositoryListFile(mode: "open" | "save", fileName?: string): ReturnType<GuiRpcClient["selectRepositoryListFile"]> {
+        window.resourceRequests.push({ method: "selectRepositoryListFile", params: { mode, fileName } });
+        return this.value(query.get("list-picker") === "cancel" ? undefined : mode === "open" ? "C:/fixture/repositories.txt" : `C:/fixture/${fileName}`);
+    }
+    repositoryListInspectFile(path: string): ReturnType<GuiRpcClient["repositoryListInspectFile"]> {
+        window.resourceRequests.push({ method: "repositories.inspectListFile", params: { path } });
+        return this.value({ ignoredLines: 2, entries: [
+            ...[1, 2, 3].map((line) => ({ line, status: "candidate" as const, source: { kind: "remote" as const, url: `https://list.example/${line}.json?z=2&a=1` } })),
+            { line: 4, status: "duplicate", source: { kind: "remote", url: "https://list.example/1.json?z=2&a=1" }, reason: "duplicate_source" },
+            { line: 5, status: "invalid", reason: "source_invalid" },
+            { line: 6, status: "unsupported", reason: "authentication_not_supported" }
+        ] });
+    }
+    repositoryListPreviewExport(): ReturnType<GuiRpcClient["repositoryListPreviewExport"]> {
+        window.resourceRequests.push({ method: "repositories.previewListExport", params: {} });
+        this.listPreviewReads += 1;
+        return this.value({ exportableCount: 230, excluded: [{ repositoryId: LOCAL_REPOSITORY_ID, reason: "local_source" }], byteCount: 12000, fingerprint: String(this.listPreviewReads).repeat(64) });
+    }
+    repositoryListExportFile(targetPath: string, expectedFingerprint: string): ReturnType<GuiRpcClient["repositoryListExportFile"]> {
+        window.resourceRequests.push({ method: "repositories.exportListFile", params: { targetPath, expectedFingerprint } });
+        this.listExportAttempts += 1;
+        if (this.listExportAttempts === 1 && query.get("list-export-error")) return Promise.reject({ code: query.get("list-export-error") });
+        return this.value({ exportedCount: 230, byteCount: 12000, sha256: HASH });
+    }
     private candidateSourceWasDelayed = false;
     private hubDefaultReady = query.has("hub-default");
     private hubReadFailurePending = false;
@@ -504,8 +531,10 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ operationId: "00000000-0000-4000-8000-000000000064", projectId: PROJECT_ID, replayed: false });
     }
 
-    repositoriesInspect(source: Parameters<GuiRpcClient["repositoriesInspect"]>[0]): ReturnType<GuiRpcClient["repositoriesInspect"]> {
+    async repositoriesInspect(source: Parameters<GuiRpcClient["repositoriesInspect"]>[0]): ReturnType<GuiRpcClient["repositoriesInspect"]> {
         window.resourceRequests.push({ method: "repositories.inspect", params: { source } });
+        if (query.get("list-check") === "hold" && source.kind === "remote" && source.url.includes("/1.json")) await new Promise<void>((resolve) => window.addEventListener("test-list-check-ready", () => resolve(), { once: true }));
+        if (query.get("list-check") === "partial" && source.kind === "remote" && source.url.includes("/2.json")) throw { code: "repository_unavailable" };
         if (!query.has("resource-lifecycle")) return this.value({ repository: repository() });
         if (query.has("resource-invalid-source")) return Promise.reject({ code: "repository_document_invalid" });
         const { repositoryId: _id, revision: _revision, ...preview } = this.resourceRepository(source);
@@ -572,9 +601,15 @@ class DeterministicGuiClient implements GuiRpcClient {
     openPackageLink(): ReturnType<GuiRpcClient["openPackageLink"]> {
         return this.value(undefined);
     }
-    repositoryRegister(source: Parameters<GuiRpcClient["repositoryRegister"]>[0]): ReturnType<GuiRpcClient["repositoryRegister"]> {
+    async repositoryRegister(source: Parameters<GuiRpcClient["repositoryRegister"]>[0]): ReturnType<GuiRpcClient["repositoryRegister"]> {
         window.resourceRequests.push({ method: "repositories.register", params: { source } });
-        if (query.has("resource-register-invalid")) return Promise.reject({ code: "repository_document_invalid" });
+        if (query.has("resource-register-invalid")) throw { code: "repository_document_invalid" };
+        if (query.has("list-import") && source.kind === "remote") {
+            if (query.get("list-import") === "hold" && source.url.includes("/1.json")) await new Promise<void>((resolve) => window.addEventListener("test-list-register-ready", () => resolve(), { once: true }));
+            if (source.url.includes("/2.json") && query.get("list-import") === "partial") throw { code: "repository_unavailable" };
+            if (source.url.includes("/2.json") && query.get("list-import") === "unknown") throw { code: "daemon_unavailable" };
+            return this.value({ repository: { ...repository(), source }, replayed: false });
+        }
         if (!query.has("resource-lifecycle")) return this.value({ repository: repository(), replayed: false });
         const record = this.resourceRepository(source);
         if (this.lifecycleRepositories.has(record.repositoryId!)) return Promise.reject({ code: "repository_already_registered" });

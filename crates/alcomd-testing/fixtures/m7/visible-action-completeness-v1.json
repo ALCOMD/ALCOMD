@@ -33,6 +33,8 @@
         {"id":"projects.detail-backups","ownerMilestone":"M7","classification":"conditional-disabled","releaseBlocker":false},
         {"id":"repositories.list","ownerMilestone":"M7","classification":"implemented","releaseBlocker":false},
         {"id":"repositories.register","ownerMilestone":"M7","classification":"conditional-disabled","releaseBlocker":false},
+        {"id":"repositories.import-list","ownerMilestone":"M7","classification":"conditional-disabled","releaseBlocker":false},
+        {"id":"repositories.export-list","ownerMilestone":"M7","classification":"conditional-disabled","releaseBlocker":false},
         {"id":"repositories.view-packages","ownerMilestone":"M7","classification":"implemented","releaseBlocker":false},
         {"id":"repositories.refresh","ownerMilestone":"M7","classification":"conditional-disabled","releaseBlocker":false},
         {"id":"repositories.remove","ownerMilestone":"M7","classification":"conditional-disabled","releaseBlocker":false},

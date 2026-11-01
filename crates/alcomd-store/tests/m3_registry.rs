@@ -56,6 +56,60 @@ fn key(value: &str) -> IdempotencyKey {
     IdempotencyKey::parse(value).expect("valid key")
 }
 
+#[tokio::test]
+async fn repository_list_snapshot_covers_all_pages_and_registered_project_roots() {
+    use alcomd_application::RepositoryListStore;
+    let directory = TestDirectory::new();
+    let store =
+        StateStoreHandle::open(directory.database()).expect("repository list snapshot fixture");
+    let owner = PrincipalId::local_owner();
+    for index in 0..230_u8 {
+        store
+            .register_repository(
+                owner.clone(),
+                repository(index, 1),
+                key(&format!("list-{index}")),
+                10,
+            )
+            .await
+            .expect("repository list snapshot fixture");
+    }
+    store
+        .register_project(owner.clone(), project(1), key("list-project"), 10)
+        .await
+        .expect("repository list snapshot fixture");
+    let first_page = store
+        .list_repositories(owner.clone(), None, 100)
+        .await
+        .expect("repository list snapshot fixture");
+    assert_eq!(first_page.repositories.len(), 100);
+    assert!(first_page.next_cursor.is_some());
+    let snapshot = store
+        .repository_list_snapshot(owner.clone())
+        .await
+        .expect("repository list snapshot fixture");
+    assert_eq!(snapshot.repositories.len(), 230);
+    assert_eq!(snapshot.project_roots, ["C:/fixture/1"]);
+    assert!(
+        snapshot
+            .repositories
+            .iter()
+            .all(|record| record.revision == 1)
+    );
+    assert_eq!(
+        store
+            .repository_list_snapshot(
+                PrincipalId::parse("extension:fixture").expect("repository list snapshot fixture")
+            )
+            .await
+            .expect("repository list snapshot fixture")
+            .repositories
+            .len(),
+        0
+    );
+    drop(store);
+}
+
 fn project(identity: u8) -> ProjectObservation {
     ProjectObservation {
         root_path: format!("C:/fixture/{identity}"),

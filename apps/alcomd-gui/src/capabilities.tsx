@@ -21,6 +21,7 @@ export const capabilities = {
     projectsRead: "projects.read.v1",
     projectsRegistry: "projects.registry.v1",
     repositoriesRead: "repositories.read.v1",
+    repositoriesListFiles: RPC_CAPABILITIES.repositoriesListFiles,
     repositoriesRegistry: "repositories.registry.v1",
     stateCheck: "state.check.v1",
     templatesCreateProject: "templates.create-project.v1",

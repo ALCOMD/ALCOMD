@@ -9,7 +9,7 @@ use alcomd_protocol::{
     RequestEnvelope, StateCheckParams, SuccessResponse, SystemStatusResult,
 };
 
-const SCHEMAS: [(&str, &str); 26] = [
+const SCHEMAS: [(&str, &str); 27] = [
     (
         "request-envelope",
         include_str!("../../../specs/rpc/request-envelope.schema.json"),
@@ -113,6 +113,10 @@ const SCHEMAS: [(&str, &str); 26] = [
     (
         "m7-official-gui",
         include_str!("../../../specs/rpc/m7-official-gui.schema.json"),
+    ),
+    (
+        "m7-repository-list",
+        include_str!("../../../specs/rpc/m7-repository-list.schema.json"),
     ),
 ];
 
@@ -1240,4 +1244,55 @@ fn schema(name: &str) -> Value {
         .find_map(|(candidate, source)| (*candidate == name).then_some(*source))
         .expect("known schema");
     serde_json::from_str(source).expect("schema JSON")
+}
+
+#[test]
+fn repository_list_approved_wire_shapes_are_closed_and_preserve_query_text() {
+    use alcomd_protocol::*;
+    let contract = schema("m7-repository-list");
+    for definition in [
+        "inspectListFileParams",
+        "previewListExportParams",
+        "exportListFileParams",
+        "inspectListFileResult",
+        "previewListExportResult",
+        "exportListFileResult",
+    ] {
+        assert_eq!(contract["$defs"][definition]["additionalProperties"], false);
+    }
+    assert_eq!(
+        CAPABILITY_REPOSITORIES_LIST_FILES_V1,
+        "repositories.list-files.v1"
+    );
+    assert_eq!(
+        METHOD_REPOSITORIES_INSPECT_LIST_FILE,
+        "repositories.inspectListFile"
+    );
+    assert_eq!(
+        METHOD_REPOSITORIES_PREVIEW_LIST_EXPORT,
+        "repositories.previewListExport"
+    );
+    assert_eq!(
+        METHOD_REPOSITORIES_EXPORT_LIST_FILE,
+        "repositories.exportListFile"
+    );
+    assert!(serde_json::from_value::<RepositoryListExportParams>(json!({"targetPath":"C:/list.txt", "expectedFingerprint":"a".repeat(64), "overwrite":true})).is_err());
+    assert!(
+        serde_json::from_value::<RepositoryListInspectParams>(
+            json!({"path":"C:/list.txt", "register":true})
+        )
+        .is_err()
+    );
+    let entry = RepositoryListEntry {
+        line: 1,
+        status: RepositoryListEntryStatus::Candidate,
+        source: Some(RepositoryListSource::Remote {
+            url: "https://example.test/repo?z=2&a=1&a=3".into(),
+        }),
+        reason: None,
+    };
+    assert_eq!(
+        serde_json::to_value(entry).expect("repository list entry wire"),
+        json!({"line":1,"status":"candidate","source":{"kind":"remote","url":"https://example.test/repo?z=2&a=1&a=3"}})
+    );
 }

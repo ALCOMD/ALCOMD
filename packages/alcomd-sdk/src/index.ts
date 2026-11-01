@@ -1,6 +1,7 @@
 export const RPC_VERSION = 1 as const;
 
 export const RPC_CAPABILITIES = {
+    repositoriesListFiles: "repositories.list-files.v1",
     unityHubOpen: "unity.hub.open.v1",
     packagesCandidates: "packages.candidates.v1",
     extensionsLifecycle: "extensions.lifecycle.v1",
@@ -10,6 +11,7 @@ export const RPC_CAPABILITIES = {
 export * from "./portable-ui";
 export * from "./package-candidates";
 export * from "./unity-hub";
+export * from "./repository-list";
 
 export interface ClientInfo {
     name: string;

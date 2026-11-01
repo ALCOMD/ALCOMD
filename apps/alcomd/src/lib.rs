@@ -46,12 +46,17 @@ mod m7_official_rpc;
 mod m7_rpc;
 mod m7_unity_migration_rpc;
 mod m7_user_packages_rpc;
+mod repository_list_rpc;
 
 #[cfg(feature = "test-kill-gates")]
 pub mod test_support;
 
 type M2Application = Application<StateStoreHandle>;
 type M3ReadApplication = M3Application<StateStoreHandle, alcomd_vpm::VpmReader>;
+type RepositoryListApplication = alcomd_application::RepositoryListApplication<
+    StateStoreHandle,
+    alcomd_vpm::RepositoryListFileAdapter,
+>;
 type M4PackageApplication =
     M4Application<StateStoreHandle, alcomd_vpm::PackageEngine<StateStoreHandle>>;
 type M5UnityApplication = M5Application<StateStoreHandle, m5_platform::PlatformUnityAdapter>;
@@ -89,6 +94,7 @@ type UnityMigrationApplication = UnityMigrationService<
 struct Applications {
     m2: M2Application,
     m3: M3ReadApplication,
+    repository_lists: RepositoryListApplication,
     m4: M4PackageApplication,
     m5: M5UnityApplication,
     templates: TemplateApplication,
@@ -263,6 +269,10 @@ async fn initialize_daemon(
     let applications = Arc::new(Applications {
         m2,
         m3: M3ReadApplication::new(store.clone(), reader),
+        repository_lists: RepositoryListApplication::new(
+            store.clone(),
+            alcomd_vpm::RepositoryListFileAdapter::new(data_root.clone()),
+        ),
         m4,
         m5: unity,
         templates,
@@ -466,6 +476,7 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         alcomd_protocol::CAPABILITY_PROJECTS_UNITY_MIGRATION_V1,
         alcomd_protocol::CAPABILITY_REPOSITORIES_READ_V1,
         alcomd_protocol::CAPABILITY_REPOSITORIES_REGISTRY_V1,
+        alcomd_protocol::CAPABILITY_REPOSITORIES_LIST_FILES_V1,
         alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V1,
         alcomd_protocol::CAPABILITY_PACKAGES_PLAN_V2,
         alcomd_protocol::CAPABILITY_PACKAGES_CANDIDATES_V1,
@@ -756,6 +767,16 @@ async fn dispatch_m2(
             } else {
                 m6_rpc::dispatch(request, state, &applications.m6, access).await
             }
+        }
+        _ if matches!(
+            request.method.as_str(),
+            alcomd_protocol::METHOD_REPOSITORIES_INSPECT_LIST_FILE
+                | alcomd_protocol::METHOD_REPOSITORIES_PREVIEW_LIST_EXPORT
+                | alcomd_protocol::METHOD_REPOSITORIES_EXPORT_LIST_FILE
+        ) =>
+        {
+            repository_list_rpc::dispatch(request, state, &applications.repository_lists, access)
+                .await
         }
         _ => m3_rpc::dispatch(request, state, &applications.m3, access).await,
     }

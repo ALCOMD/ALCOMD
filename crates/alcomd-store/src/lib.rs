@@ -197,6 +197,16 @@ impl StateStoreHandle {
     }
 }
 
+impl alcomd_application::RepositoryListStore for StateStoreHandle {
+    async fn repository_list_snapshot(
+        &self,
+        owner: PrincipalId,
+    ) -> Result<alcomd_application::RepositoryListSnapshot, M3Error> {
+        self.request_m3(move |connection| m3::repository_list_snapshot(connection, &owner))
+            .await
+    }
+}
+
 impl M3RegistryStore for StateStoreHandle {
     async fn register_project(
         &self,

@@ -50,7 +50,6 @@ import {
     ProjectLaunchArgumentsDialog,
     ProjectUnityActions,
     ProjectUnityWorkspaceActions,
-    RegisterRepositoryPanel,
     RepositoryActions,
     TemplateActions,
     TemplateActionDialog,
@@ -75,6 +74,7 @@ import type { GuiRpcClient } from "./rpc";
 import { Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, RefreshButton, SearchField, SegmentedButtons, Select, Switch, TextField, type DialogOrigin } from "./Material";
 import { SplitButton } from "./SplitButton";
 import { RequestReminder, useReminder } from "./Reminder";
+import { RepositoryToolbar } from "./RepositoryListDialog";
 import { useProjectUnityLaunch } from "./ProjectUnityLaunch";
 import { CreateProjectDialog, RestoreProjectDialog } from "./ProjectCreationDialogs";
 import { capabilities, capabilityUnavailableTitle, useCapability, useCapabilityState, useReconnect } from "./capabilities";
@@ -1619,7 +1619,7 @@ export function RepositoriesPage({ client, navigate }: PageProps) {
     const { t, locale } = useTranslation();
     const load = useCallback(() => listAllRepositories(client), [client]);
     const [selected, setSelected] = useState<RepositorySnapshot>();
-    return <UtilityWorkspace title={t(navigationLabels.resources)} load={load} navigation={<ResourceNavigation current="/repositories" navigate={navigate} />} action={{ label: t("Add repository"), render: (_, refresh) => <RegisterRepositoryPanel client={client} onChanged={refresh} /> }}>
+    return <UtilityWorkspace title={t(navigationLabels.resources)} load={load} navigation={<ResourceNavigation current="/repositories" navigate={navigate} />} tools={(_, refresh) => <RepositoryToolbar client={client} onChanged={refresh} />}>
         {(repositories, refresh) => <>
             {repositories.length === 0 ? <RouteState kind="empty" title={t("No repositories registered")} /> : <DesktopList columns={[{ key: "repository", header: t("Repository"), width: "34%" }, { key: "source", header: t("Source") }, { key: "actions", header: t("Actions"), width: 280 }]} label={t("Repositories")} minWidth={640} rows={repositories.map((repository) => ({ key: repository.repositoryId ?? sourceText(t, locale, repository), cells: [<strong>{repository.name ?? repository.declaredId ?? t("Repository")}</strong>, <span title={sourceText(t, locale, repository)}>{sourceText(t, locale, repository)}</span>, <div className="card-actions"><IconButton disabled={repository.repositoryId === undefined} label={t("Browse packages")} onClick={() => setSelected(repository)} title={t("Browse packages")} type="button"><Icon asset={packagesIcon} /></IconButton><RepositoryActions client={client} onChanged={refresh} repository={repository} /></div>] }))} />}
             {selected?.repositoryId === undefined ? null : <Dialog wide open title={selected.name ?? t("Repository packages")} onClose={() => setSelected(undefined)}>
