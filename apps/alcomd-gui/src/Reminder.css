@@ -1,0 +1,56 @@
+.reminder {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 12px;
+    min-width: 0;
+    padding: 12px 16px;
+    border-radius: 16px;
+    color: var(--md-sys-color-on-secondary-container);
+    background: var(--md-sys-color-secondary-container);
+    overflow-wrap: anywhere;
+}
+
+.reminder--error {
+    color: var(--md-sys-color-on-error-container);
+    background: var(--md-sys-color-error-container);
+}
+
+.reminder--warning {
+    color: var(--md-sys-color-on-tertiary-container);
+    background: var(--md-sys-color-tertiary-container);
+}
+
+.reminder-body {
+    min-width: 0;
+    align-self: center;
+}
+
+.reminder-title { display: block; margin-bottom: 4px; }
+.reminder p { margin: 0; }
+.reminder-code { display: block; margin-top: 8px; font-size: 0.8rem; }
+.reminder-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.reminder-details { max-height: 180px; overflow: auto; margin-top: 8px; white-space: pre-wrap; }
+.reminder-details code { display: block; }
+.reminder > .alcomd-icon-button--standard { margin: -8px -8px -8px 0; }
+
+.reminder-floating {
+    position: fixed;
+    z-index: 30;
+    right: 24px;
+    bottom: 24px;
+    width: min(448px, calc(100vw - 48px));
+    max-height: calc(100vh - 48px);
+    overflow: auto;
+    border-radius: 16px;
+    box-shadow: 0 4px 16px #0003;
+}
+
+.reminder-floating .reminder {
+    color: var(--md-sys-color-inverse-on-surface);
+    background: var(--md-sys-color-inverse-surface);
+}
+
+.reminder-floating .alcomd-icon-button--standard {
+    --md-icon-button-icon-color: var(--md-sys-color-inverse-on-surface);
+}

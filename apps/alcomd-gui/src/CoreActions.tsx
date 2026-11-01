@@ -2,7 +2,7 @@ import { Translated, useTranslation } from "./i18n";
 import type { Translate } from "./i18n-types";
 import type { ExtensionRecord, RpcError } from "@alcomd/sdk";
 import { queryCandidates } from "./package-candidates";
-import { useUtilityDialogBusy, UtilityActionDialog, UtilityDialogCancel } from "./UtilityActionDialog";
+import { useUtilityDialogBusy, useUtilityDialogClose, UtilityActionDialog, UtilityDialogCancel } from "./UtilityActionDialog";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from "react";
 
 import type {
@@ -28,6 +28,7 @@ import { LoadingState, useDelayedPending } from "./LoadingState";
 import { useProjectUnityLaunch } from "./ProjectUnityLaunch";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 import { reviewTemplateCreation, reviewTemplateDerive, reviewTemplateImport, TemplatePlanReview, type TemplateReview } from "./TemplatePlanReview";
+import { Reminder, RequestReminder, useReminder } from "./Reminder";
 
 interface ActionProps {
     client: GuiRpcClient;
@@ -38,6 +39,7 @@ interface FeedbackState {
     busy: boolean;
     error?: RpcError;
     message?: string;
+    messageTone?: "success" | "warning";
     operationId?: string;
 }
 
@@ -100,6 +102,9 @@ export function ProjectActions({ client, onChanged, project }: ActionProps & { p
 
 export function RegisterRepositoryPanel({ client, onChanged }: ActionProps) {
     const { t } = useTranslation();
+    const reminder = useReminder();
+    const close = useUtilityDialogClose();
+    const current = useActionScope(client);
     const available = useCapability(capabilities.repositoriesRegistry);
     const [kind, setKind] = useState<"remote" | "local">("remote");
     const [value, setValue] = useState("");
@@ -112,9 +117,12 @@ export function RegisterRepositoryPanel({ client, onChanged }: ActionProps) {
         event.preventDefault();
         if (pending.current || !available) return;
         pending.current = true;
-        setFeedback({ busy: true });
-        try { setPreview((await client.repositoriesInspect(source())).repository); setFeedback({ busy: false }); }
-        catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+        reminder.clear(); setFeedback({ busy: true });
+        try {
+            const result = await client.repositoriesInspect(source());
+            if (current()) { setPreview(result.repository); setFeedback({ busy: false }); }
+        }
+        catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
         finally { pending.current = false; }
     };
     const register = async () => {
@@ -123,52 +131,64 @@ export function RegisterRepositoryPanel({ client, onChanged }: ActionProps) {
         setFeedback({ busy: true });
         try {
             await client.repositoryRegister(preview.source);
+            if (!current()) return;
             setPreview(undefined); setValue("");
-            setFeedback({ busy: false, message: t("Repository added.") }); onChanged?.();
-        } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+            setFeedback(INITIAL_FEEDBACK); reminder.success(t("Repository added.")); close(); onChanged?.();
+        } catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
         finally { pending.current = false; }
     };
+    const fieldError = preview === undefined && feedback.error !== undefined && ["repository_source_invalid", "repository_document_invalid", "invalid_params"].includes(feedback.error.code) ? feedback.error : undefined;
+    const error = feedback.error === undefined || fieldError !== undefined ? null : <RequestReminder error={feedback.error} />;
     return <ActionSection title={t("Add repository")}>
         {preview === undefined ? <form onSubmit={(event) => void inspect(event)}>
-            <Select disabled={feedback.busy} id="repository-kind" label={t("Source type")} onChange={(next) => setKind(next as "remote" | "local")} options={[{ label: t("Remote URL"), value: "remote" }, { label: t("Local manifest"), value: "local" }]} value={kind} />
-            <TextField disabled={feedback.busy} id="repository-source" label={kind === "remote" ? t("Repository URL") : t("Local manifest path")} maxLength={2048} onInput={setValue} required type={kind === "remote" ? "url" : "text"} value={value} />
+            <Select disabled={feedback.busy} id="repository-kind" label={t("Source type")} onChange={(next) => { setKind(next as "remote" | "local"); setFeedback(INITIAL_FEEDBACK); }} options={[{ label: t("Remote URL"), value: "remote" }, { label: t("Local manifest"), value: "local" }]} value={kind} />
+            <TextField disabled={feedback.busy} error={fieldError !== undefined} errorText={fieldError === undefined ? undefined : `${t("Check the repository URL or manifest path.")} (${fieldError.code})`} id="repository-source" label={kind === "remote" ? t("Repository URL") : t("Local manifest path")} maxLength={2048} onInput={(next) => { setValue(next); setFeedback(INITIAL_FEEDBACK); }} required type={kind === "remote" ? "url" : "text"} value={value} />
+            {error}
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || value.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.repositoriesRegistry, t)} type="submit">{t("Review repository")}</Button></div>
         </form> : <>
             <dl className="dialog-summary"><div><dt>{t("Name")}</dt><dd>{preview.name ?? t("Unnamed repository")}</dd></div><div><dt>{t("Source")}</dt><dd>{preview.source.kind === "remote" ? preview.source.url : preview.source.path}</dd></div></dl>
-            {preview.issues.length === 0 ? null : <p role="status">{t("This repository has {count} reported issues. Registration will validate the source again.", { count: preview.issues.length })}</p>}
+            {preview.issues.length === 0 ? null : <Reminder tone="warning">{t("This repository has {count} reported issues. Registration will validate the source again.", { count: preview.issues.length })}</Reminder>}
+            {error}
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setPreview(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Back")}</Button><Button disabled={!available || feedback.busy} onClick={() => void register()} type="button">{t("Add repository")}</Button></div>
         </>}
-        <MutationFeedback client={client} feedback={feedback} />
     </ActionSection>;
 }
 
 export function RepositoryActions({ client, onChanged, repository }: ActionProps & { repository: RepositorySnapshot }) {
     const { t } = useTranslation();
+    const reminder = useReminder();
+    const current = useActionScope(client);
     const available = useCapability(capabilities.repositoriesRegistry);
     const [confirmRemove, setConfirmRemove] = useState(false);
+    const [refreshFailed, setRefreshFailed] = useState(false);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const pending = useRef(false);
     const ready = repository.repositoryId !== undefined && repository.revision !== undefined;
     const run = async (remove: boolean) => {
         if (!ready || !available || pending.current) return;
-        pending.current = true; setFeedback({ busy: true });
+        pending.current = true; reminder.clear(); setFeedback({ busy: true });
         try {
             if (remove) await client.repositoryUnregister(repository.repositoryId!, repository.revision!);
             else await client.repositoryRefresh(repository.repositoryId!, repository.revision!);
-            setFeedback({ busy: false, message: remove ? t("Repository removed.") : t("Repository refreshed.") });
-            setConfirmRemove(false); onChanged?.();
-        } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+            if (!current()) return;
+            setFeedback(INITIAL_FEEDBACK); reminder.success(remove ? t("Repository removed.") : t("Repository refreshed."));
+            setConfirmRemove(false); setRefreshFailed(false); onChanged?.();
+        } catch (caught: unknown) { if (current()) { setFeedback({ busy: false, error: safeError(caught) }); if (!remove) setRefreshFailed(true); } }
         finally { pending.current = false; }
     };
     return <div className="repository-row-actions">
         <RefreshButton disabled={!available || !ready || feedback.busy} label={t("Refresh repository")} onClick={() => void run(false)} refreshing={feedback.busy && !confirmRemove} refreshingLabel={t("Refreshing repository")} />
-        <IconButton disabled={!available || !ready || feedback.busy} label={t("Remove")} onClick={() => setConfirmRemove(true)} title={t("Remove repository")} type="button"><Icon asset={closeIcon} /></IconButton>
-        <MaterialDialog open={confirmRemove} title={t("Remove this repository?")} dismissible={!feedback.busy} onClose={() => setConfirmRemove(false)}>
+        <IconButton disabled={!available || !ready || feedback.busy} label={t("Remove")} onClick={() => { reminder.clear(); setFeedback(INITIAL_FEEDBACK); setConfirmRemove(true); }} title={t("Remove repository")} type="button"><Icon asset={closeIcon} /></IconButton>
+        <MaterialDialog open={confirmRemove} title={t("Remove this repository?")} dismissible={!feedback.busy} onClose={() => { setConfirmRemove(false); setFeedback(INITIAL_FEEDBACK); }}>
             <p><Translated message="Remove {name} from your sources?" values={{ name: <strong>{repository.name ?? repository.declaredId ?? t("this repository")}</strong> }} /></p><p>{t("Packages already installed in projects stay installed.")}</p>
             <MutationFeedback client={client} feedback={feedback} />
-            <div className="dialog-actions"><Button disabled={feedback.busy} onClick={() => setConfirmRemove(false)} type="button" variant="text">{t("Cancel")}</Button><Button disabled={feedback.busy || !available} onClick={() => void run(true)} type="button">{t("Remove repository")}</Button></div>
+            <div className="dialog-actions"><Button disabled={feedback.busy} onClick={() => { setConfirmRemove(false); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Cancel")}</Button><Button disabled={feedback.busy || !available} onClick={() => void run(true)} type="button">{t("Remove repository")}</Button></div>
         </MaterialDialog>
-        {confirmRemove ? null : <MutationFeedback client={client} feedback={feedback} />}
+        <MaterialDialog open={refreshFailed} title={t("Repository refresh failed")} dismissible={!feedback.busy} onClose={() => { setRefreshFailed(false); setFeedback(INITIAL_FEEDBACK); }}>
+            <p>{repository.name ?? repository.declaredId ?? t("Repository")}</p>
+            {feedback.error === undefined ? feedback.busy ? <LoadingState title={t("Refreshing repository")} /> : null : <RequestReminder error={feedback.error}>{t("The last available packages are still shown. Check the source and retry.")}</RequestReminder>}
+            <div className="dialog-actions"><Button disabled={feedback.busy} onClick={() => { setRefreshFailed(false); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Close")}</Button>{feedback.error?.code === "revision_conflict" ? <Button disabled={feedback.busy} onClick={() => { setRefreshFailed(false); setFeedback(INITIAL_FEEDBACK); onChanged?.(); }} type="button">{t("Refresh list")}</Button> : <Button disabled={feedback.busy} onClick={() => void run(false)} type="button">{t("Retry")}</Button>}</div>
+        </MaterialDialog>
     </div>;
 }
 
@@ -586,7 +606,7 @@ export function ProjectUnityWorkspaceActions({ client, installations, launchOpti
     );
 }
 
-export function useTemplateDraft(client: GuiRpcClient, active = true) {
+export function useActionScope(client: GuiRpcClient, active = true) {
     const holder = useRef({ client, active: true });
     if (holder.current.client !== client) {
         holder.current.active = false;
@@ -609,7 +629,7 @@ export function TemplateImportPanel({ client, operations }: { client: GuiRpcClie
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     useUtilityDialogBusy(feedback.busy);
     const pending = useRef(false);
-    const current = useTemplateDraft(client);
+    const current = useActionScope(client);
     const create = async (event: FormEvent) => {
         event.preventDefault();
         if (!available || pending.current) return;
@@ -684,7 +704,7 @@ function TemplateDeriveDialog({ client, operations, onClose, origin, closed = fa
     const [fields, setFields] = useState({ projectId: "", templateId: "", templateVersion: "1.0.0", displayName: "", description: "" });
     const pending = useRef(false);
     const projectLoad = useRef(0);
-    const current = useTemplateDraft(client, open && !closed);
+    const current = useActionScope(client, open && !closed);
     const update = (key: keyof typeof fields, value: string) => setFields((current) => ({ ...current, [key]: value }));
     useEffect(() => {
         const generation = ++projectLoad.current;
@@ -760,25 +780,27 @@ export interface TemplateActionSelection {
 
 export function TemplateActions({ client, compact = false, onAction, onChanged, onView, template }: ActionProps & { compact?: boolean; onAction(action: TemplateActionSelection["action"], origin: DialogOrigin): void; onView?(): void; template: TemplateRecord }) {
     const { t } = useTranslation();
+    const reminder = useReminder();
     const canCreateProject = useCapability(capabilities.templatesCreateProject);
     const canManage = useCapability(capabilities.templatesManage);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const [menuOpen, setMenuOpen] = useState(false);
     const menuAnchorRef = useRef<HTMLElement>(null);
     const pending = useRef(false);
-    const current = useTemplateDraft(client);
+    const current = useActionScope(client);
     const open = (action: TemplateActionSelection["action"]) => {
         if (pending.current) return;
+        reminder.clear(); setFeedback(INITIAL_FEEDBACK);
         setMenuOpen(false);
         onAction(action, compact ? menuAnchorRef : { current: document.activeElement instanceof HTMLElement ? document.activeElement : null });
     };
     const favorite = async () => {
         if (pending.current || !canManage) return;
-        pending.current = true; setFeedback({ busy: true });
+        pending.current = true; reminder.clear(); setFeedback({ busy: true });
         try {
             await client.templateSetFavorite(template.templateId, !template.favorite, template.revision);
             if (!current()) return;
-            setFeedback({ busy: false, message: t("Favorite updated.") }); onChanged?.();
+            setFeedback(INITIAL_FEEDBACK); reminder.success(t("Favorite updated.")); onChanged?.();
         } catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
         finally { if (current()) pending.current = false; }
     };
@@ -800,7 +822,11 @@ export function TemplateActions({ client, compact = false, onAction, onChanged, 
             <Button disabled={!canManage || feedback.busy} onClick={() => open("export")} title={capabilityUnavailableTitle(canManage, capabilities.templatesManage, t)} type="button" variant="text">{t("Export template")}</Button>
             {template.sourceKind === "builtin" ? null : <Button className="material-button--danger" disabled={!canManage || feedback.busy} onClick={() => open("remove")} type="button" variant="text">{t("Remove template")}</Button>}
         </div></>}
-        <MutationFeedback client={client} feedback={feedback} />
+        <MaterialDialog dismissible={!feedback.busy} open={feedback.error !== undefined} onClose={() => setFeedback(INITIAL_FEEDBACK)} title={t("Favorite could not be updated")}>
+            <p>{template.displayName}</p>
+            {feedback.error === undefined ? null : <RequestReminder error={feedback.error} />}
+            <div className="dialog-actions"><Button onClick={() => setFeedback(INITIAL_FEEDBACK)} type="button" variant="text">{t("Close")}</Button></div>
+        </MaterialDialog>
     </section>;
 }
 
@@ -812,19 +838,19 @@ export function TemplateActionDialog({ client, onChanged, onClose, operations, s
 
 function TemplateObjectDialog({ client, onChanged, onClose, operations, selection }: ActionProps & { onClose(): void; operations: TemplateOperations; selection: TemplateActionSelection }) {
     const { t } = useTranslation();
+    const reminder = useReminder();
     const canCreateProject = useCapability(capabilities.templatesCreateProject);
     const canManage = useCapability(capabilities.templatesManage);
     const { template, action } = selection;
     const [open, setOpen] = useState(true);
     const [review, setReview] = useState<TemplateReview>();
     const [submitted, setSubmitted] = useState(false);
-    const [completed, setCompleted] = useState(false);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const [fields, setFields] = useState({ parent: "", leaf: "", exportPath: "" });
     const pending = useRef(false);
-    const current = useTemplateDraft(client, open && !selection.closed);
-    const update = (key: keyof typeof fields, value: string) => setFields((current) => ({ ...current, [key]: value }));
-    const close = () => { if (!pending.current) setOpen(false); };
+    const current = useActionScope(client, open && !selection.closed);
+    const update = (key: keyof typeof fields, value: string) => { setFields((current) => ({ ...current, [key]: value })); setFeedback(INITIAL_FEEDBACK); };
+    const close = () => { if (!pending.current) { reminder.clear(); setFeedback(INITIAL_FEEDBACK); setOpen(false); } };
     const createPlan = async (event: FormEvent) => {
         event.preventDefault();
         if (pending.current || !canCreateProject) return;
@@ -855,8 +881,8 @@ function TemplateObjectDialog({ client, onChanged, onClose, operations, selectio
             else if (action === "remove") await client.templateRemove(template.templateId, template.revision);
             else return;
             if (!current()) return;
-            setFeedback({ busy: false, message: action === "export" ? t("Template exported.") : t("Template removed.") }); setCompleted(true);
-            if (action === "remove") { onChanged?.(); setOpen(false); }
+            setFeedback(INITIAL_FEEDBACK); reminder.success(action === "export" ? t("Template exported.") : t("Template removed.")); setOpen(false);
+            if (action === "remove") onChanged?.();
         } catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
         finally { if (current()) pending.current = false; }
     };
@@ -869,7 +895,7 @@ function TemplateObjectDialog({ client, onChanged, onClose, operations, selectio
     };
     const title = review !== undefined ? t("Review project creation") : action === "create" ? t("Create project") : action === "export" ? t("Export template") : t("Remove template");
     return <MaterialDialog dismissible={!feedback.busy} open={open && !selection.closed} onClose={onClose} returnFocus={selection.origin} title={title}>
-        {completed ? <div className="dialog-actions"><Button onClick={close} type="button" variant="text">{t("Close")}</Button></div> : review !== undefined ? <>
+        {review !== undefined ? <>
             <TemplatePlanReview review={review} />
             <p className="risk-summary">{t("The daemon will revalidate this frozen plan before applying it.")}</p>
             <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Discard plan")}</Button><Button disabled={feedback.busy || submitted || !canCreateProject} onClick={() => void apply()} type="button">{t("Apply reviewed plan")}</Button></div>
@@ -1088,10 +1114,14 @@ function ModalDialog({ children, onClose, open, title }: { children: ReactNode; 
 }
 
 function MutationFeedback({ client, feedback, onOperationTerminal }: { client: GuiRpcClient; feedback: FeedbackState; onOperationTerminal?(operation: Operation): void }) {
-    const { t } = useTranslation();
-    if (feedback.error !== undefined) return <div className="mutation-feedback mutation-feedback--error" role="alert"><strong>{t("Request failed")}</strong><span><code>{feedback.error.code}</code>{feedback.error.diagnosticId === undefined ? "" : t(" · Diagnostic ID {id}", { id: feedback.error.diagnosticId })}</span></div>;
+    const { success, clear } = useReminder();
+    useEffect(() => {
+        if (feedback.busy) clear();
+        else if (feedback.messageTone === "success" && feedback.error === undefined && feedback.operationId === undefined && feedback.message !== undefined) success(feedback.message);
+    }, [feedback.busy, feedback.error, feedback.operationId, feedback.message, feedback.messageTone, success, clear]);
+    if (feedback.error !== undefined) return <RequestReminder error={feedback.error} />;
     if (feedback.operationId !== undefined) return <OperationFollow client={client} onTerminal={onOperationTerminal} operationId={feedback.operationId} />;
-    if (feedback.message !== undefined) return <div className="mutation-feedback" role="status" aria-live="polite">{feedback.message}</div>;
+    if (feedback.message !== undefined && feedback.messageTone !== "success") return <Reminder tone={feedback.messageTone ?? "info"}>{feedback.message}</Reminder>;
     return null;
 }
 
@@ -1241,7 +1271,7 @@ export function OperationProgress({ error, operation, title = "Operation" }: { e
 
 async function runSimple<T>(setFeedback: (value: FeedbackState) => void, run: () => Promise<T>, message: string, onChanged?: () => void): Promise<void> {
     setFeedback({ busy: true });
-    try { await run(); setFeedback({ busy: false, message }); onChanged?.(); }
+    try { await run(); setFeedback({ busy: false, message, messageTone: "success" }); onChanged?.(); }
     catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
 }
 

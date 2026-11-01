@@ -24,7 +24,7 @@ test("template export sends the selected identity, revision and destination thro
     await page.getByRole("button", { name: "Export", exact: true }).click();
     await expect(page.getByRole("status")).toContainText("Template exported.");
     expect(await requests(page, "templates.export")).toEqual([{ method: "templates.export", params: { templateId, expectedRevision: 2, targetPath: "C:\\Fixture\\exported.alcomdtemplate" } }]);
-    await page.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Export template", exact: true })).toBeHidden();
     await expect(page.getByRole("table", { name: "Templates", exact: true })).toContainText("Existing fixture");
 });
 

@@ -574,14 +574,16 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
     repositoryRegister(source: Parameters<GuiRpcClient["repositoryRegister"]>[0]): ReturnType<GuiRpcClient["repositoryRegister"]> {
         window.resourceRequests.push({ method: "repositories.register", params: { source } });
+        if (query.has("resource-register-invalid")) return Promise.reject({ code: "repository_document_invalid" });
         if (!query.has("resource-lifecycle")) return this.value({ repository: repository(), replayed: false });
         const record = this.resourceRepository(source);
         if (this.lifecycleRepositories.has(record.repositoryId!)) return Promise.reject({ code: "repository_already_registered" });
         this.lifecycleRepositories.set(record.repositoryId!, record);
         return this.value({ repository: record, replayed: false });
     }
-    repositoryRefresh(repositoryId: string, expectedRevision: number): ReturnType<GuiRpcClient["repositoryRefresh"]> {
+    async repositoryRefresh(repositoryId: string, expectedRevision: number): ReturnType<GuiRpcClient["repositoryRefresh"]> {
         window.resourceRequests.push({ method: "repositories.refresh", params: { repositoryId, expectedRevision } });
+        if (query.has("hold-resource-refresh")) await new Promise<void>((resolve) => window.addEventListener("test-resource-refresh-ready", () => resolve(), { once: true }));
         const attempts = (this.repositoryRefreshAttempts.get(repositoryId) ?? 0) + 1;
         this.repositoryRefreshAttempts.set(repositoryId, attempts);
         if (query.has("resource-lifecycle")) {

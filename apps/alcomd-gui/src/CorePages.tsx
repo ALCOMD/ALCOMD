@@ -57,6 +57,7 @@ import {
     type TemplateActionSelection,
     TemplateCreateActions,
     useTemplateOperations,
+    useActionScope,
     UnityRegistryActions
 } from "./CoreActions";
 import { DesktopList, type DesktopListColumn } from "./DesktopList";
@@ -73,6 +74,7 @@ import { PagedItems } from "./PagedItems";
 import type { GuiRpcClient } from "./rpc";
 import { Button, Checkbox, Dialog, FilterPopover, Icon, IconButton, Menu, MenuItem, RefreshButton, SearchField, SegmentedButtons, Select, Switch, TextField, type DialogOrigin } from "./Material";
 import { SplitButton } from "./SplitButton";
+import { RequestReminder, useReminder } from "./Reminder";
 import { useProjectUnityLaunch } from "./ProjectUnityLaunch";
 import { CreateProjectDialog, RestoreProjectDialog } from "./ProjectCreationDialogs";
 import { capabilities, capabilityUnavailableTitle, useCapability, useCapabilityState, useReconnect } from "./capabilities";
@@ -1680,44 +1682,65 @@ export function UserPackagesPage({ client, navigate }: PageProps) {
 
 function UserPackageEnroll({ client, onChanged }: { client: GuiRpcClient; onChanged(): void }) {
     const { t, locale } = useTranslation();
+    const reminder = useReminder();
+    const current = useActionScope(client);
+    const pending = useRef(false);
     const [busy, setBusy] = useState<string>();
     const [error, setError] = useState<RpcError>();
     const enroll = async () => {
+        if (pending.current) return;
+        pending.current = true;
+        reminder.clear();
         setBusy("enroll");
         setError(undefined);
         try {
             const sourcePath = await client.selectDirectory();
-            if (sourcePath !== undefined) {
+            if (current() && sourcePath !== undefined) {
                 await client.userPackageEnroll(sourcePath);
+                if (!current()) return;
+                reminder.success(t("User Package enrolled."));
                 onChanged();
             }
         } catch (caught: unknown) {
-            setError(safeError(t, locale, caught));
+            if (current()) setError(safeError(t, locale, caught));
         } finally {
-            setBusy(undefined);
+            if (current()) setBusy(undefined);
+            pending.current = false;
         }
     };
-    return <><Button disabled={busy !== undefined} onClick={() => void enroll()} type="button">{t("Enroll folder")}</Button>{error === undefined ? null : <span role="alert">{t("Enrollment failed: ")}{error.code}</span>}</>;
+    return <><Button aria-busy={busy !== undefined} disabled={busy !== undefined} onClick={() => void enroll()} type="button">{t("Enroll folder")}</Button>
+        <Dialog open={error !== undefined} onClose={() => setError(undefined)} title={t("User Package enrollment failed")}>
+            {error === undefined ? null : <RequestReminder error={error} />}
+            <div className="dialog-actions"><Button onClick={() => setError(undefined)} type="button" variant="text">{t("Close")}</Button><Button onClick={() => void enroll()} type="button">{t("Retry")}</Button></div>
+        </Dialog>
+    </>;
 }
 
 function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcClient; onChanged(): void; packages: UserPackageRecord[] }) {
     const { t, locale } = useTranslation();
+    const reminder = useReminder();
+    const current = useActionScope(client);
     const [busy, setBusy] = useState<string>();
     const pending = useRef(false);
     const [removing, setRemoving] = useState<UserPackageRecord>();
     const [selected, setSelected] = useState<string>();
     const detailsOrigin = useRef<HTMLElement>(null);
     const [error, setError] = useState<RpcError>();
+    const [refreshFailed, setRefreshFailed] = useState<UserPackageRecord>();
     const refresh = async (item: UserPackageRecord) => {
         if (pending.current) return;
         pending.current = true;
+        reminder.clear();
         setBusy(`refresh:${item.userPackageId}`);
         setError(undefined);
         try {
             await client.userPackageRefresh(item.userPackageId, item.revision);
+            if (!current()) return;
+            setRefreshFailed(undefined);
+            reminder.success(t("User Package refreshed."));
             onChanged();
         } catch (caught: unknown) {
-            setError(safeError(t, locale, caught));
+            if (current()) { setError(safeError(t, locale, caught)); setRefreshFailed(item); }
         } finally {
             setBusy(undefined);
             pending.current = false;
@@ -1726,35 +1749,43 @@ function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcCli
     const remove = async (item: UserPackageRecord) => {
         if (pending.current) return;
         pending.current = true;
+        reminder.clear();
         setBusy(`remove:${item.userPackageId}`);
         setError(undefined);
         try {
             await client.userPackageRemove(item.userPackageId, item.revision);
+            if (!current()) return;
             setRemoving(undefined);
+            reminder.success(t("Enrollment removed. The source folder was not deleted."));
             onChanged();
         } catch (caught: unknown) {
-            setError(safeError(t, locale, caught));
+            if (current()) setError(safeError(t, locale, caught));
         } finally {
             setBusy(undefined);
             pending.current = false;
         }
     };
-    return <section className="user-packages">{error === undefined ? null : <p className="inline-error" role="alert">{t("User Package request failed: ")}{error.code}</p>}{packages.length === 0 ? <RouteState kind="empty" title={t("No User Packages enrolled")} detail={t("Enroll a package folder to make it available as a source. Removing enrollment never deletes the source folder.")} /> : <UtilityTable label={t("User Packages")} headers={[t("Package"), t("Version"), t("Source"), t("Actions")]} rows={packages.map((item) => ({ key: item.userPackageId, cells: [<><strong>{item.displayName ?? item.packageId}</strong><small>{item.packageId}</small></>, item.version, <span title={item.userPackageId}>{t("Local / User Package")}<small>{t("revision ")}{item.revision}</small></span>, <div className="card-actions"><Button disabled={busy !== undefined} onClick={() => { detailsOrigin.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setSelected(item.userPackageId); }} type="button" variant="text">{t("Details")}</Button><RefreshButton disabled={busy !== undefined} onClick={() => void refresh(item)} refreshing={busy === "refresh:" + item.userPackageId} /><IconButton disabled={busy !== undefined} label={busy === "remove:" + item.userPackageId ? t("Removing…") : t("Remove enrollment")} onClick={() => setRemoving(item)} title={t("Remove enrollment")} type="button"><Icon asset={closeIcon} /></IconButton></div>] }))} />}
+    return <section className="user-packages">{packages.length === 0 ? <RouteState kind="empty" title={t("No User Packages enrolled")} detail={t("Enroll a package folder to make it available as a source. Removing enrollment never deletes the source folder.")} /> : <UtilityTable label={t("User Packages")} headers={[t("Package"), t("Version"), t("Source"), t("Actions")]} rows={packages.map((item) => ({ key: item.userPackageId, cells: [<><strong>{item.displayName ?? item.packageId}</strong><small>{item.packageId}</small></>, item.version, <span title={item.userPackageId}>{t("Local / User Package")}<small>{t("revision ")}{item.revision}</small></span>, <div className="card-actions"><Button disabled={busy !== undefined} onClick={() => { reminder.clear(); detailsOrigin.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setSelected(item.userPackageId); }} type="button" variant="text">{t("Details")}</Button><RefreshButton disabled={busy !== undefined} onClick={() => void refresh(item)} refreshing={busy === "refresh:" + item.userPackageId} /><IconButton disabled={busy !== undefined} label={busy === "remove:" + item.userPackageId ? t("Removing…") : t("Remove enrollment")} onClick={() => { reminder.clear(); setError(undefined); setRemoving(item); }} title={t("Remove enrollment")} type="button"><Icon asset={closeIcon} /></IconButton></div>] }))} />}
         <Dialog onClose={() => setSelected(undefined)} open={selected !== undefined} returnFocus={detailsOrigin} title={t("User Package details")}>
             {selected === undefined ? null : <UserPackageDetails client={client} userPackageId={selected} />}
             <div className="dialog-actions"><Button onClick={() => setSelected(undefined)} type="button" variant="text">{t("Close")}</Button></div>
         </Dialog>
-        {removing === undefined ? null : <Dialog open dismissible={busy === undefined} title={t("Remove User Package?")} onClose={() => { if (busy === undefined) setRemoving(undefined); }}>
+        {refreshFailed === undefined ? null : <Dialog open dismissible={busy === undefined} title={t("User Package refresh failed")} onClose={() => { setRefreshFailed(undefined); setError(undefined); }}>
+            <p>{refreshFailed.displayName ?? refreshFailed.packageId}</p>
+            {error === undefined ? busy === undefined ? null : <LoadingState title={t("Refreshing…")} /> : <RequestReminder error={error} />}
+            <div className="dialog-actions"><Button disabled={busy !== undefined} onClick={() => { setRefreshFailed(undefined); setError(undefined); }} type="button" variant="text">{t("Close")}</Button>{error?.code === "revision_conflict" ? <Button disabled={busy !== undefined} onClick={() => { setRefreshFailed(undefined); setError(undefined); onChanged(); }} type="button">{t("Refresh list")}</Button> : <Button disabled={busy !== undefined} onClick={() => void refresh(refreshFailed)} type="button">{t("Retry")}</Button>}</div>
+        </Dialog>}
+        {removing === undefined ? null : <Dialog open dismissible={busy === undefined} title={t("Remove User Package?")} onClose={() => { if (busy === undefined) { setRemoving(undefined); setError(undefined); } }}>
         <p><Translated message="Remove {name} ({version}) from your package sources?" values={{ name: <strong>{removing.displayName ?? removing.packageId}</strong>, version: removing.version }} /></p><p>{t("The source folder will stay on disk.")}</p>
-        {error === undefined ? null : <p role="alert">{t("Removal failed: ")}{error.code}</p>}
-        <div className="dialog-actions"><Button disabled={busy !== undefined} onClick={() => setRemoving(undefined)} type="button" variant="text">{t("Cancel")}</Button><Button disabled={busy !== undefined} onClick={() => void remove(removing)} type="button">{t("Remove enrollment")}</Button></div>
+        {error === undefined ? null : <RequestReminder error={error} />}
+        <div className="dialog-actions"><Button disabled={busy !== undefined} onClick={() => { setRemoving(undefined); setError(undefined); }} type="button" variant="text">{t("Cancel")}</Button><Button disabled={busy !== undefined} onClick={() => void remove(removing)} type="button">{t("Remove enrollment")}</Button></div>
     </Dialog>}</section>;
 }
 
 function UserPackageDetails({ client, userPackageId }: { client: GuiRpcClient; userPackageId: string }) {
     const { t } = useTranslation();
     const load = useCallback(() => client.userPackageGet(userPackageId), [client, userPackageId]);
-    return <ResourcePage load={load}>{({ userPackage }) => <dl className="dialog-summary">
+    return <ResourcePage load={load} showRefreshBar={false}>{({ userPackage }) => <dl className="dialog-summary">
         <Detail label={t("Name")} value={userPackage.displayName ?? userPackage.packageId} />
         <Detail label={t("Package")} value={userPackage.packageId} />
         <Detail label={t("Version")} value={userPackage.version} />

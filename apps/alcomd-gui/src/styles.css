@@ -753,8 +753,7 @@ md-linear-progress {
 .settings-save-error { position: absolute; z-index: 8; top: 12px; right: 24px; max-width: 520px; display: flex; align-items: center; gap: 12px; padding: 8px 16px; border-radius: var(--alcomd-shape-container); background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); box-shadow: 0 2px 6px #0003; }
 .settings-save-error p { margin: 0; }
 .settings-section .action-row { margin: 0; }
-.repository-row-actions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-.repository-row-actions .mutation-feedback { flex-basis: 100%; }
+.repository-row-actions { display: flex; align-items: center; gap: 4px; flex: none; }
 
 .page-surface.page-surface--utility {
     min-height: 0;
@@ -1205,6 +1204,7 @@ md-linear-progress {
 .dialog-summary dd {
     min-width: 0;
     margin: 0;
+    overflow-wrap: anywhere;
 }
 
 .risk-summary {

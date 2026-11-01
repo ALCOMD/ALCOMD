@@ -2,6 +2,58 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const actionMessages: TranslationTable = {
+    "Check the repository URL or manifest path.": {
+        "zh-CN": "请检查存储库网址或清单路径。",
+        "ja-JP": "リポジトリのURLまたはマニフェストのパスを確認してください。"
+    },
+    "Repository refresh failed": {
+        "zh-CN": "存储库刷新失败",
+        "ja-JP": "リポジトリの更新に失敗しました"
+    },
+    "The last available packages are still shown. Check the source and retry.": {
+        "zh-CN": "仍保留上次可用的软件包。请检查来源后重试。",
+        "ja-JP": "前回取得したパッケージを引き続き表示しています。取得元を確認して再試行してください。"
+    },
+    "Refresh list": {
+        "zh-CN": "刷新列表",
+        "ja-JP": "一覧を更新"
+    },
+    "Favorite could not be updated": {
+        "zh-CN": "无法更新收藏",
+        "ja-JP": "お気に入りを更新できませんでした"
+    },
+    "User Package enrolled.": {
+        "zh-CN": "已登记用户软件包。",
+        "ja-JP": "ユーザーパッケージを登録しました。"
+    },
+    "User Package enrollment failed": {
+        "zh-CN": "用户软件包登记失败",
+        "ja-JP": "ユーザーパッケージの登録に失敗しました"
+    },
+    "User Package refreshed.": {
+        "zh-CN": "已刷新用户软件包。",
+        "ja-JP": "ユーザーパッケージを更新しました。"
+    },
+    "Enrollment removed. The source folder was not deleted.": {
+        "zh-CN": "已取消登记，源目录未删除。",
+        "ja-JP": "登録を解除しました。元のフォルダーは削除されていません。"
+    },
+    "User Package refresh failed": {
+        "zh-CN": "用户软件包刷新失败",
+        "ja-JP": "ユーザーパッケージの更新に失敗しました"
+    },
+    "Dismiss notification": {
+        "zh-CN": "关闭提醒",
+        "ja-JP": "通知を閉じる"
+    },
+    "Hide details": {
+        "zh-CN": "收起详情",
+        "ja-JP": "詳細を隠す"
+    },
+    "The request could not be completed. Review the details before trying again.": {
+        "zh-CN": "未能完成请求。请查看详情后重试。",
+        "ja-JP": "リクエストを完了できませんでした。詳細を確認して再試行してください。"
+    },
     " · Diagnostic ID {id}": {
         "zh-CN": " · 诊断 ID {id}",
         "ja-JP": " · 診断ID {id}"

@@ -94,7 +94,7 @@ test("User Package revision conflicts require an explicit list read before a new
     await expect(page.getByRole("alert")).toContainText("revision_conflict");
     expect(await requests(page, "packages.userPackages.refresh")).toHaveLength(1);
     await expect(row).toContainText("revision 1");
-    await page.locator(".utility-workspace-actions").getByRole("button", { name: "Refresh", exact: true }).click();
+    await page.locator("md-dialog[open]").getByRole("button", { name: "Refresh list", exact: true }).click();
     await expect(row).toContainText("revision 2");
     await row.getByRole("button", { name: "Refresh", exact: true }).click();
     await expect(row).toContainText("revision 3");
@@ -144,6 +144,7 @@ test("repository refresh failure retains the last catalog until a successful exp
     await row.getByRole("button", { name: "Refresh repository", exact: true }).click();
     await expect(page.getByRole("alert")).toContainText("repository_unavailable");
     await expect(row).toBeVisible();
+    await page.locator("md-dialog[open]").getByRole("button", { name: "Close", exact: true }).click();
     await row.getByRole("button", { name: "Browse packages", exact: true }).click();
     await expect(page.locator("md-dialog[open]").getByText("First catalog package", { exact: true })).toBeVisible();
     await page.locator("md-dialog[open]").getByRole("button", { name: "Close", exact: true }).click();
@@ -161,17 +162,32 @@ test("repository CAS conflicts do not auto-retry or replace a stale revision", a
     await row.getByRole("button", { name: "Refresh repository", exact: true }).click();
     await expect(page.getByRole("alert")).toContainText("revision_conflict");
     expect(await requests(page, "repositories.refresh")).toHaveLength(1);
-    await page.locator(".utility-workspace-actions").getByRole("button", { name: "Refresh", exact: true }).click();
+    await page.locator("md-dialog[open]").getByRole("button", { name: "Refresh list", exact: true }).click();
     await expect(page.locator(".utility-workspace-actions").getByRole("button", { name: "Refresh", exact: true })).toBeEnabled();
     await row.getByRole("button", { name: "Refresh repository", exact: true }).click();
-    await expect(row.getByRole("status")).toContainText("Repository refreshed.");
+    await expect(page.getByRole("status").filter({ hasText: "Repository refreshed." })).toBeVisible();
+    await expect(row.getByRole("status")).toHaveCount(0);
     expect((await requests(page, "repositories.refresh")).map((request) => (request.params as { expectedRevision: number }).expectedRevision)).toEqual([1, 2]);
+});
+
+test("a failed registration stays in review context and Back clears its previous error", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/repositories&resource-lifecycle=1&resource-register-invalid=1");
+    await reviewRepository(page, "remote");
+    const host = page.locator("md-dialog[open]");
+    await host.getByRole("button", { name: "Add repository", exact: true }).click();
+    await expect(host.getByRole("alert")).toContainText("repository_document_invalid");
+    await expect(host.locator(".dialog-summary")).toBeVisible();
+    await host.getByRole("button", { name: "Back", exact: true }).click();
+    await expect(host.getByRole("alert")).toHaveCount(0);
+    await expect(host.getByLabel("Repository URL", { exact: true })).toBeVisible();
+    expect(await requests(page, "repositories.register")).toHaveLength(1);
 });
 
 test("invalid repository inspection and duplicate registration preserve the registered list", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&resource-lifecycle=1&resource-invalid-source=1");
     await reviewRepository(page, "remote", true);
-    await expect(page.getByRole("alert")).toContainText("repository_document_invalid");
+    await expect(page.locator("#repository-source")).toHaveJSProperty("error", true);
+    await expect.poll(() => page.locator("#repository-source").evaluate((field) => (field as HTMLElement & { errorText: string }).errorText)).toContain("repository_document_invalid");
     expect(await requests(page, "repositories.register")).toEqual([]);
     await page.goto("/browser-harness.html?route=/repositories&resource-lifecycle=1");
     await registerRepository(page, "remote");
@@ -203,8 +219,7 @@ async function registerRepository(page: Page, kind: "remote" | "local") {
     await reviewRepository(page, kind);
     const host = page.locator("md-dialog[open]");
     await host.getByRole("button", { name: "Add repository", exact: true }).click();
-    await expect(host.getByRole("status")).toContainText("Repository added.");
-    await host.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Repository added." })).toBeVisible();
     await expect(page.getByRole("dialog", { name: "Add repository", exact: true })).toBeHidden();
     await expect(repositoryRow(page, kind)).toBeVisible();
 }

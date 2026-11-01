@@ -27,6 +27,7 @@ import {
 import type { ReactNode } from "react";
 import { Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { SettingsAutosave } from "./settings-autosave";
+import { ReminderProvider } from "./Reminder";
 
 import {
     AboutPage,
@@ -276,7 +277,7 @@ export function App({ client = guiRpcClient }: AppProps) {
                         <div className="route-content" inert={navigating}>
                             <Suspense fallback={<LoadingState title={t("Loading page…")} />}>
                                 <PageReadContext.Provider value={visibleNavigation.read}>
-                                    <RouteContent key={visibleNavigation.read.visit}
+                                    <ReminderProvider key={visibleNavigation.read.visit}><RouteContent
                                         client={client}
                                         locale={locale}
                                         navigate={navigate}
@@ -286,7 +287,7 @@ export function App({ client = guiRpcClient }: AppProps) {
                                         onThemePreview={previewTheme}
                                         onThemeSession={registerThemeExit}
                                         route={visibleNavigation.route}
-                                    />
+                                    /></ReminderProvider>
                                 </PageReadContext.Provider>
                             </Suspense>
                         </div>

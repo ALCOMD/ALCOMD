@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { BackupRecord, BackupRestorePlan, Operation, TemplateRecord } from "./core-models";
 import { Button, Dialog, Select, TextField } from "./Material";
-import { TemplateOperationProgress, templateApplyResultUnknown, templateOperationProjectId, useTemplateDraft, useTemplateOperations } from "./CoreActions";
+import { TemplateOperationProgress, templateApplyResultUnknown, templateOperationProjectId, useActionScope, useTemplateOperations } from "./CoreActions";
 import { reviewTemplateCreation, TemplatePlanReview, type TemplateReview } from "./TemplatePlanReview";
 import { LoadingState, useDelayedPending } from "./LoadingState";
 import type { GuiRpcClient } from "./rpc";
@@ -45,7 +45,7 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
     const [operationId, setOperationId] = useState<string>();
     const operations = useTemplateOperations(client);
     const operation = operations.snapshot(operationId ?? "")?.operation;
-    const current = useTemplateDraft(client);
+    const current = useActionScope(client);
     const draftRequest = useRef<object | undefined>(undefined);
     const callbacks = useRef({ onChanged, onCompleted, open });
     callbacks.current = { onChanged, onCompleted, open };
