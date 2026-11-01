@@ -620,11 +620,17 @@ CI `41191370985` 和 CodeQL `41191370892` 仅为审阅基线，不要求回退�
 
 ## H2-B 资源与模板范围及验收方案（条件批准）
 
-状态：**APPROVED / IN_PROGRESS**，2026-11-01。
+状态：**APPROVED / LOCAL_CANDIDATE；完整 browser gate FAILED，人工验收待定**，2026-11-01。
 实施前提与推送边界以上节为准；H2-A 检查点为
 `23f545245f613f47f8def1e16418c4d12303404e`，Visual Gate 2 已签收。
 本节直接细化原 H2 的剩余范围，不新建产品里程碑，不重复实现已存在的入口。
 当前阶段仍以 `../status.md` 为唯一入口；技术收尾已在 `97c761f` 完成同 SHA 三平台 CI/CodeQL 检查点。
+H2-B 最终运行时代码候选为 `cbb4c4198a21519efb24d8f0a04a509664e83b50`，完整 Rust 492/0/8、
+前端/冻结基线/release 构建通过；两轮完整 Chromium 为 290/2 与 283/9，必需资源加载失败均保留，
+不拼接成通过。隔离 native 已核对 stale 零接受副作用、资源/模板写入、两入口创建、持久化、
+Retry 与原环境恢复；builtin confirmed CLI remove 因自动审批拒绝未执行等未覆盖项逐项记明。
+完整矩阵与截图身份见 `../testing/m7-h2-b-20261101.md`。该本地候选没有推送或 Hosted CI，
+不自动签收 H2-B、Visual Gate 3 或 M7。
 
 ### 目标与现状证据
 
@@ -635,7 +641,7 @@ CI `41191370985` 和 CodeQL `41191370892` 仅为审阅基线，不要求回退�
 | 现状 | 已核对证据 | H2-B 处理 |
 | --- | --- | --- |
 | 仓库 inspect/register/refresh/unregister、包预览与分页已接线 | `CorePages.tsx` 的 RepositoriesPage/RepositoryPackageList；`CoreActions.tsx` 的 RegisterRepositoryPanel/RepositoryActions | 复用现有功能，补齐异常、并发 revision 与真实桌面闭环证据 |
-| 用户包登记、刷新、取消登记及行内详情已接线 | `CorePages.tsx` 的 UserPackageEnroll/UserPackageManager/UserPackageDetails；`rpc.ts` 的既有 userPackageGet | 详情读取当前 Core 记录，关闭隔离旧响应；资源与相关包来源 18/0，真实目录和持久化仍待 native 验收 |
+| 用户包登记、刷新、取消登记及行内详情已接线 | `CorePages.tsx` 的 UserPackageEnroll/UserPackageManager/UserPackageDetails；`rpc.ts` 的既有 userPackageGet | 详情读取当前 Core 记录，关闭隔离旧响应；资源与相关包来源 18/0；当前 release 的真实 chooser、详情、显式刷新、取消/确认移除与重启持久化已记录 |
 | 模板导入、派生、收藏、导出、移除、创建项目都已有入口 | `CoreActions.tsx` 的 TemplateImportPanel/TemplateDeriveDialog/TemplateActions；`ProjectCreationDialogs.tsx` | 修正当前流程缺口，不把这些功能重新列为“从零实现” |
 | 模板列表与创建选择器已接通后页 | `rpc.ts` 保持 limit=100 并透传 cursor；TemplatesPage 复用 PagedItems，CreateProjectDialog 保留后页失败时的数据/选择并隔离关闭后的响应 | 101 项、创建导航、失败重试、旧响应隔离和延迟 Retry 的模块回归 14/0；证据见 `../testing/m7-h2-b-20261101.md`，不替代最终候选或 native 验收 |
 | 模板任务由当前页面持有并在成功终态刷新 | 可控延迟已复现关闭失去跟踪/初读错误停止等缺口；复用 OperationFollow，行 controller 位于 PagedItems 外 | 保留多个显式接受 ID；成功才刷新，旧任务不覆盖新草稿；完整整轮与定向结果分别见 testing 记录 |
@@ -959,8 +965,10 @@ Apply/同一 Operation、失效 Plan 拒绝、焦点、筛选、语言/主题持
 截图身份独立记录于 `docs/testing/m7-visual-gate-2-20261031.md`，不拼接定向结果。
 本地门禁与材料已收口，项目所有者于 2026-10-31 以“可以，接下来做什么”确认签收 Visual Gate 2。
 H2-A 验收检查点为 `23f545245f613f47f8def1e16418c4d12303404e`。
-先完成当前跨平台阻塞与依赖安全收尾，独立技术提交通过适用本地门禁后正常快进推送。
-同一最终技术 SHA 三平台 CI/CodeQL 全部成功并完成安全问题处置后，自动实施本文件既有 H2-B；
-H2-B 只形成不自动推送的本地候选与真实桌面材料，随后停止人工验收，不进入 H3-H7、M8、M9 或 M11。
+技术收尾已在 `97c761f` 取得同一 SHA 三平台完整 CI/CodeQL 成功，H2-B 已按既有授权实施。
+当前 H2-B 代码候选为 `cbb4c41`：完整 Rust/构建通过，两个完整 Chromium 运行仍失败，原始
+网络/root 证据保留；隔离桌面矩阵、构建/截图 hash、未覆盖项与原环境恢复已记录。
+H2-B 仅本地候选、没有推送，停止在项目所有者检查与人工验收；不把材料完成称作全部门禁通过，
+不进入 H3-H7、M8、M9 或 M11。
 已有候选读取、exact Unity、Config3、Hub 和 State16 的合同继续有效。完整 GUI/Rust/三平台
 技术门禁与人工视觉结果分别记录，不把旧 SHA 或定向通过冒充当前候选全绿。
