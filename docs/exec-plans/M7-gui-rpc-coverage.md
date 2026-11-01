@@ -1,6 +1,6 @@
 # M7 Official GUI RPC coverage matrix
 
-状态：2026-10-31 当前已批准 RPC 覆盖矩阵。来源是 `crates/alcomd-protocol` 的 public method
+状态：2026-11-01 当前已批准 RPC 覆盖矩阵，包含本轮仓库列表文件交换。来源是 `crates/alcomd-protocol` 的 public method
 constants 与 `crates/alcomd-client` 的 typed methods；实现过程中必须保持两者与本矩阵可机械核对。
 本矩阵记录方法归属，不表示 M7、Visual Gate 2 或聚合功能已验收通过；当前阶段见 `../status.md`。
 
@@ -31,6 +31,9 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `projects.planUnityMigration` | `projects.unity-migration.v1` | Project Unity migration | plan supported Unity migration | R/Plan | review follows | no | data/writer/stale | `gui.m7-project-action-contract` |
 | `projects.applyUnityMigration` | `projects.unity-migration.v1` | Project Unity migration | apply reviewed migration Plan | W | required | yes | mutation/recovery | `gui.m7-project-action-contract` |
 | `repositories.inspect` | `repositories.read.v1` | Repositories add dialog | validate source | R | no | no | dialog data | `gui.m7-core-surfaces` |
+| `repositories.inspectListFile` | `repositories.list-files.v1` | Resources / Import list | select and parse a bounded list file; local-owner only | R/file | explicit native file selection | no | loading/classification/duplicate/invalid/unsupported/read error | `gui.m7-core-surfaces` |
+| `repositories.previewListExport` | `repositories.list-files.v1` | Resources / Export list | preview full Core snapshot, exclusions and fingerprint | R | no | no | loading/scope/exclusions/credential-sharing warning | `gui.m7-core-surfaces` |
+| `repositories.exportListFile` | `repositories.list-files.v1` | Resources / Export list | create a new list file from confirmed preview; local-owner only | W/file | reviewed scope/address risk and explicit new name/folder | no | changed snapshot/existing target/write failure/saved result | `gui.m7-operation-flows` |
 | `repositories.list` | `repositories.read.v1` | Repositories | page repositories | R | no | no | data/keyset | `gui.m7-core-surfaces` |
 | `repositories.get` | `repositories.read.v1` | Repository detail | load repository | R | no | no | data | `gui.m7-core-surfaces` |
 | `repositories.packages` | `repositories.read.v1` | Repository detail, Project Packages | browse catalog | R | no | no | data/keyset | `gui.m7-core-surfaces` |
@@ -108,3 +111,8 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 - `events.list` remains a daemon projection source; Activity UI must call `activity.list`, not join raw Events and Operations in JavaScript.
 - Direct registry/lifecycle writes that do not have a Core Plan method receive explicit confirmation but must not invent a GUI Plan.
 - Any Apply returning an Operation follows the same Operation detail model and survives route/window close and reconnect.
+- List import reuses `repositories.inspect/register` sequentially after selection and confirmation; it appends without clearing existing sources, has no atomic-transaction claim, and keeps cancellation, partial and unknown results distinct. Export preserves validated query text and requires a new file. Tests: `m7-repository-list.spec.ts`, repository-list Core/RPC cases.
+
+2026-11-01 完成度复核：枚举 protocol 各源码模块的公开 method 常量（排除 error_code 下的
+`METHOD_NOT_FOUND` 错误码）共 92 个，与矩阵逐项匹配；Rust typed client 和 Tauri/GUI 列表接线
+保持已验证输入。这里只补方法归属记录，不把矩阵完整性提升为 M7 或新代码远端验收通过。

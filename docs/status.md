@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-**M7 IN_PROGRESS / H2-B REMEDIATION_REQUIRED / OWNER_NOT_ACCEPTED / H2-A ACCEPTED / Visual Gate 2 PASS**。项目所有者于 2026-10-31 签收本轮 H2-A；
+**M7 IN_PROGRESS / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。项目所有者于 2026-10-31 签收本轮 H2-A；
 M0-M6 已正式通过人工验收，M7 尚未完成。
 本文件是唯一当前阶段入口；ExecPlan 定义实施合同，testing 文档保存各自 SHA/场景的证据。
 
@@ -13,11 +13,16 @@ M0-M6 已正式通过人工验收，M7 尚未完成。
 共享 Reminder 将短成功反馈移出正文流，错误/风险/部分结果保留在字段或对应弹窗；新增列表
 预览、选择、显式追加与 Core 全量导出，包含 query 保真、过期预览及新建文件保护。
 当前本地技术候选 `2a163b0` 的定向浏览器 **47/0**、相关 Rust/协议/Clippy/metadata 与 release
-构建已通过；没有重跑完整 Rust Workspace、292 项浏览器或三平台 CI。匹配 release GUI/Core
-已在既有隔离数据目录启动并保持打开，GUI PID 116600、Core PID 103472；原环境仍暂停。
-Computer Use 本轮被 Esc 停止，后续只读观察也仍返回停止状态；整改后原生截图及新 GUI 交互
-尚未验证，不能据浏览器通过冒充真实桌面通过。人工体验继续 **OWNER_NOT_ACCEPTED**。
-远端仍为 `0ef5b08`，原同 SHA 三平台 CI/CodeQL 成功保持有效，不能代替本轮新增代码的验证。
+构建已通过；没有重跑完整 Rust Workspace、292 项浏览器或三平台 CI。项目所有者于 2026-11-01
+确认 H2-B **阶段性人工验收通过，保留体验改进项**，允许结束本轮体验整改。范围为 Resources
+的仓库（含列表导入/导出）、用户包、模板与相关键盘/弹窗体验；不表示体验完善、所有问题解决、
+整个 Visual Gate 3 或 M7 完成。Agent 此前因 Computer Use 中断未取得整改后原生截图的记录保留，
+不追写为已执行；本次签收依据项目所有者的人工确认，H2-A 原签收保持。
+原开发环境已于本轮签收后实际恢复：Core PID 118832、开发 GUI PID 121112 有窗口且可响应，
+Projects/Editors/Operations/Settings/Status 五组公开结果与暂停前完全一致，settings revision 155。
+隔离任务完整分页确认 11 项全终态，本轮隔离 GUI/Core/两个样例服务均已停止。
+远端仍为 `0ef5b08`，原同 SHA 三平台 CI/CodeQL 成功保持有效；本轮新增代码尚未取得远端验证，
+不借用旧结果替代，且本次没有新增推送授权。
 
 - 唯一工作目录：`C:\Users\M2922\MyProjects\Rust\ALCOMD`，活动分支 `main`；不另建工作树。
 - 验证按风险分级：日常定向测试及必要检查，模块完成后覆盖相关回归，稳定候选再集中执行完整
@@ -78,12 +83,12 @@ Computer Use 本轮被 Esc 停止，后续只读观察也仍返回停止状态�
   同一最终技术 SHA 的集中检查点已通过，前述本机失败记录保持；H2-B 按既有授权开始实施。
   GitHub 仍 open 的 11 条告警与任务开始时集合相同，当前锁定版本已不匹配其影响范围；
   告警状态未人工修改，完整 RustSec 及维护判断仍见技术记录。
-- 最新 H2-B 人工反馈：既有流程可用，但提示放置挤动/破坏 Resources 布局，且仓库列表导入/导出
-  尚未实现，**体验未通过，继续本轮整改**。真实窗口已复现成功与失败提示挤入仓库行操作区，
+- H2-B 整改起因（历史反馈）：既有流程可用，但提示放置挤动/破坏 Resources 布局，且仓库列表
+  导入/导出缺失，当时体验未通过。真实窗口已复现成功与失败提示挤入仓库行操作区，
   完整窗口截图保存在 h2b-resources-remediation；先修 Resources 及直接共享提醒组件，保持侧栏、
   画布、图标和桌面密度，再补仓库列表能力。新公共文件 RPC/capability 的修订窄合同和共享提醒框
   已获明确批准，先同步 ExecPlan/Schema 后实施；参数化 URL 完整保留、显式确认导出，不改 State Schema。
-  日常只做受影响检查；稳定本地候选再集中验证，不自动推送或进入后续阶段。
+  已按获批合同完成并取得本次阶段签收；其余提示细节作为下方非阻塞待办，不在本轮继续扩修。
 - [H2-B 既有方案](exec-plans/M7-official-gui-extension-ui.md)此前已形成远端候选与桌面材料。
   `0ef5b08` 的三平台 CI/CodeQL 技术检查通过保持有效，不能证明本次发现的遗漏功能已实现。
   模板分页、
@@ -128,13 +133,13 @@ Computer Use 本轮被 Esc 停止，后续只读观察也仍返回停止状态�
   Resources / Repositories，包含两个合成仓库、用户包 1.2.0/rev1 和原五个模板。
   原开发环境再次按授权暂停，暂停前五组完整公开结果已保存，无活动任务；未停止 Unity/未知进程。
   所有者反馈后，旧恢复守候及本轮开发窗口经身份核对已停止，曾暂停隔离 Core 完成定向 IPC
-  与新构建；当前已换为上述新 release 候选。恢复守候 PID 98936 当前 waiting-for-gui-close，
-  复用既有恢复办法和五组暂停前快照；未来恢复分支尚未执行，不能描述为已恢复。负向请求证据
-  对应未改变的 builtin guard 输入，保持有效且不重复执行。
+  与新构建。本次阶段签收后按既有授权关闭本轮窗口，守候已实际完成原环境恢复，随后独立核对
+  五组公开状态与原 GUI 响应；见 acceptance-restoration-verification.json。负向请求证据对应
+  未改变的 builtin guard 输入，保持有效且不重复执行。
   本轮新增技术/桌面结果与最终保持打开的进程身份见 testing 文档，不复跑旧完整门禁或三平台 CI。
-  停止在项目所有者 Resources 体验重新签收，不自动签收 H2-B、Visual Gate 3 或 M7。
+  H2-B 按本消息记阶段性人工验收通过并保留体验待办，不扩大为 Visual Gate 3 或 M7 整体验收。
 - 已验收范围：Project/Packages 和已获准的其他既有页面基础交互修正、统一公共组件及验收。
-  H2-B 按上述前提顺序推进；H3-H7、M8、M9、M11 未获准开始；本次签收不代表 M7 完成。
+  H2-B 本轮体验整改已结束；H3-H7 仍按现有 ExecPlan 的独立审批边界，M8、M9、M11 不在本次范围。
 - 当前格式：State v16、Config3、RPC v1、Extension ABI v1。按 A-034 保留 Schema 识别，
   未发布开发库不承诺长期兼容；不自动清空现有数据库、Plan、Operation 或恢复证据，
   首次发布前的初始 Schema 整理是独立审计任务，当前版本与迁移保持。
@@ -233,8 +238,11 @@ Visual Gate 2，没有 M7 或 Hosted CI 通过结论，原未跟踪 `output/` �
 
 - P6 修复的契约、自动化与真实 Plan 证据保持；本轮 H2-A 与 Visual Gate 2 已获项目所有者签收。
   技术收尾已达成同一 SHA 的完整远端检查点；H2-B 远端候选 `0ef5b08` 的三平台 CI/CodeQL
-  已全部成功，真实桌面材料与 Resources 人工清单已交付，H2-B 人工验收仍待定；下载、native
-  Portable UI 等旧未覆盖范围保持，不由 browser fixture 或窗口存在替代真实动作。
+  已全部成功；本地后续代码 `2a163b0` 已获 H2-B 阶段性人工签收，仍保留体验改进项及新增代码
+  远端验证缺口。下载、native Portable UI 等旧未覆盖范围保持，不由本次签收批量关闭。
+- 已继续执行获批 G3 中的本轮完成度核对，补齐三个列表 RPC 的现有覆盖矩阵；公开 method
+  常量与矩阵 **92/92** 对齐、列表 typed 接线一致，不重新实施已完成页面，也不代表 G3 整体完成。
+  下一实现切片 H3 在现有计划中仍为“未批准”，仅待该既定范围的明确授权；不重开整个 M7 规划。
 - 窗口记忆、仓库 credential enrollment/revocation、完整用户入口缺口保持真实状态；聚合
   projects.management/packages.vpm/repositories.management 等继续 in_progress，不批量提升。
 - projects/templates/backups 的 v3 parity 和 unity.v3-vrc-parity 仍等待 M11 真实脱敏 Fixture；
@@ -242,3 +250,16 @@ Visual Gate 2，没有 M7 或 Hosted CI 通过结论，原未跟踪 `output/` �
 - M12 继续承担 Windows 10/11 安装、运行、WebView2、更新/卸载、三平台真实辅助技术与完整发行验收。
 - MCP、Discord 产品逻辑、Local API、v3 migration、bootstrap/updater/installer/dist 属于后续范围。
   已有开放依赖告警仍需独立适用性评估，不因这轮 GUI/握手修复关闭。
+
+### 非阻塞体验待办（H2-B 阶段签收保留）
+
+| 页面 | 触发条件 | 实际问题 |
+| --- | --- | --- |
+| Resources / 添加仓库 | URL 或本地清单检查失败 | 同一字段提示同时要求检查网址或清单路径，未贴合当前输入种类。 |
+| Resources / 导入列表 | 检查、确认追加及部分结果 | 流程说明、汇总和逐条状态叠加；“失败”未清楚区分检查与登记阶段，信息层次偏重。 |
+| Resources / 导出列表 | 打开预览并选择新文件 | 地址分享、新建文件、非完整备份等说明分散且重复，确认文字和保存引导挤占主要操作关注点。 |
+| Resources / 用户包与模板 | 刷新、收藏、导出及重试 | 泛化的反馈文案和技术说明仍偏多，部分结果信息位置需要简化。 |
+
+后续集中优先删除、合并、改写冗余提示，减少无必要步骤与机制，不增加提示解释过度设计。
+真实错误、操作结果与必要的破坏性确认保持准确；误导危险操作、误报成功、数据损坏或其他实际
+功能缺陷不属暂缓范围，发现后及时处理。
