@@ -1,6 +1,6 @@
 # M7：官方 GUI 与 Portable Extension UI
 
-状态：**M7 IN_PROGRESS / H2-B LOCAL_CANDIDATE / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
+状态：**M7 IN_PROGRESS / H2-B REMOTE_CANDIDATE / OWNER_SIGNOFF_PENDING / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
 活动分支为 `main`；当前阶段与验证结果统一见 `docs/status.md`。已通过的 M6、Portable UI B0-D、
 Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据，不替代本轮 GUI 人工验收。
 
@@ -511,8 +511,9 @@ SHA 运行 format/Clippy/Workspace tests、xtask、metadata、baseline freeze、
 完整 Playwright suite、Tauri release no-bundle 及 diff check；不逐项或逐提交重复完整测试与构建。
 三平台 Hosted CI 和 CodeQL 集中用于获准的重要技术检查点、阶段收尾及最终验收候选；
 在已有授权范围内批量提交、集中推送，不新增推送授权，不仅因本次流程调整取消运行中的 CI。
-当前跨平台与依赖安全收尾仍需同一最终技术 SHA 的三平台完整 required jobs 和 CodeQL 成功；
-H2-B 保持仅本地候选、不自动推送的停止点。
+跨平台与依赖安全技术检查点已在 `97c761f` 取得同一 SHA 三平台完整 required jobs 和 CodeQL 成功。
+H2-B `0ef5b08` 已按项目所有者本轮明确授权推送，当前三平台 CI/CodeQL 成功；停止在 Resources
+人工验收。未经新的推送授权不推送额外提交，不因状态文档整理重跑既有完整验证。
 
 本地完整验证优先复用 `scripts/check.ps1` / `scripts/check.sh`，其已包含 fmt、Clippy、
 Workspace tests、xtask、前端 check/build 与 metadata；不在其后逐项重跑，也不叠加另一个
@@ -628,7 +629,7 @@ CI `41191370985` 和 CodeQL `41191370892` 仅为审阅基线，不要求回退�
 
 ## H2-B 资源与模板范围及验收方案（条件批准）
 
-状态：**APPROVED / LOCAL_CANDIDATE；本地完整 browser gate PASS，人工验收待定**，2026-11-01。
+状态：**APPROVED / REMOTE_CANDIDATE；当前三平台 CI/CodeQL PASS，人工验收待定**，2026-11-01。
 实施前提与推送边界以上节为准；H2-A 检查点为
 `23f545245f613f47f8def1e16418c4d12303404e`，Visual Gate 2 已签收。
 本节直接细化原 H2 的剩余范围，不新建产品里程碑，不重复实现已存在的入口。
@@ -637,11 +638,22 @@ H2-B 最终运行时代码候选为 `cbb4c4198a21519efb24d8f0a04a509664e83b50`�
 前端/冻结基线/release 构建通过。原两轮完整 Chromium 290/2、283/9 与仅上游缓解的 291/1
 独立保留；fixture 连接关闭修正经有界对照后，工作区独立完整 Chromium 为 292/0，11.2 分钟、
 652 项输入前后相同，不拼接不同轮次。专项验证基于 `173c956`，测试基础设施修复与相关
-文档纳入本轮获准提交、普通快进推送的候选。
+文档已提交为 `0ef5b088dfdb7a8eb2b7a88ebef94ae436c90f50` 并普通快进推送 `origin/main`。
 隔离 native 已核对 stale 零接受副作用、资源/模板写入、两入口创建、持久化、
-Retry 与原环境恢复；builtin confirmed CLI remove 因自动审批拒绝未执行等未覆盖项逐项记明。
-完整矩阵与截图身份见 `../testing/m7-h2-b-20261101.md`。本次候选 SHA 的三平台 Hosted
-CI/CodeQL 结果尚未纳入验收；不自动签收 H2-B、Visual Gate 3 或 M7。
+Retry 与原环境恢复。builtin confirmed CLI remove 先前自动审批拒绝的历史保持；项目所有者随后
+明确授权在既有可丢弃隔离环境补齐：正式 CLI 带 --yes 的唯一请求返回 template_builtin_immutable，
+exit 1，七组公开状态与 63 个文件的路径/大小/hash 完全一致，无新增 Operation。
+收尾仅补新建项目结果链接与既有键盘合同：真实窗口 `/projects/d138da13-ad72-4de8-b438-d99b70c43f66`
+与 Operation 返回 ProjectId、公开查询一致；Tab/Shift+Tab、Enter/Space 符合分组按钮合同，
+方向键未改变焦点或路由，无须增加新的交互模式。前次收尾已读回五组原样例状态一致并恢复开发窗口。
+完整矩阵与截图身份见 `../testing/m7-h2-b-20261101.md`。同一远端 SHA `0ef5b08` 的
+CI `41287607183` attempt 1 三平台完整成功、Chromium 各 292/0；CodeQL `41287607108`
+attempt 1 四语言成功。只收集已有运行；运行时、测试与构建输入未改，不重复完整本地门禁。
+当前真实 release GUI/Core 已沿用此前成功方式启动，使用既有隔离样例，保持 Resources 窗口打开。
+原开发环境按授权暂停且无活动任务，五组暂停前快照保留；恢复守候尚在等待验收 GUI 关闭，
+不提前记作本次已恢复。先前仅做语法检查的 review-candidate.ps1 未用于本次启动，也未提升为已验证。
+项目所有者已批准三份必要文档一次性本地提交，不推送；等待 Resources 操作体验人工签收，
+不自动签收 H2-B、Visual Gate 3 或 M7。
 
 ### 目标与现状证据
 
@@ -759,7 +771,7 @@ xtask、metadata、冻结基线、npm check/build、完整 Chromium、Tauri rele
 不停止用户 Unity/Hub。临时运行时最后关闭，原 Projects/Editors/Operations/Settings 与 revision
 前后比对；截图仓库外保存，逐张记实际 GUI hash/构建，技术日志留在 ignored target。
 
-完成后停止在 **H2-B 本地候选与真实桌面签收**，交付修改摘要、逐项矩阵、日志/输入 hash、
+完成后停止在 **H2-B 候选与真实桌面签收**，交付修改摘要、逐项矩阵、日志/输入 hash、
 截图和未覆盖项，等待项目所有者验收。这些是 Visual Gate 3 remaining core pages 的资源/模板证据，
 不自动签收整个 Visual Gate 3，不重开已通过的 Visual Gate 2，也不自动开始 H3-H7 或 Hosted CI/push。
 
@@ -978,11 +990,14 @@ Apply/同一 Operation、失效 Plan 拒绝、焦点、筛选、语言/主题持
 H2-A 验收检查点为 `23f545245f613f47f8def1e16418c4d12303404e`。
 技术收尾已在 `97c761f` 取得同一 SHA 三平台完整 CI/CodeQL 成功，H2-B 已按既有授权实施。
 当前 H2-B 运行时代码候选为 `cbb4c41`：完整 Rust/构建通过。资源加载专项只改测试基础设施，
-独立完整 Chromium 已通过 292/0，修复与相关文档纳入本轮候选提交；原失败轮与网络/root/NetLog
-证据保持。
-隔离桌面矩阵、构建/截图 hash、未覆盖项与原环境恢复已记录。
-本轮候选已获真实 Windows 用户环境提交及普通快进推送授权，停止在项目所有者检查与人工验收；
-不把材料完成称作全部门禁通过，
-不进入 H3-H7、M8、M9 或 M11。
+独立完整 Chromium 已通过 292/0，修复与相关文档已用真实 Windows 用户环境提交并普通快进
+推送为 `0ef5b088dfdb7a8eb2b7a88ebef94ae436c90f50`；原失败轮与网络/root/NetLog 证据保持。
+该 SHA 的 CI `41287607183` 三平台及 CodeQL `41287607108` 四语言均在 attempt 1 完整成功。
+隔离桌面的结果链接精确导航、既有键盘合同、构建/截图 hash、未覆盖项与原环境恢复已记录。
+只补明确缺口并收集既有运行，没有重复完整本地测试或触发 workflow。先前被审批拒绝的 builtin
+confirmed CLI remove 已在新明确授权后通过正式 CLI 补齐，Core 拒绝及零副作用证据独立保存，
+历史未执行记录保留。真实隔离窗口保持打开，四项人工清单仅覆盖 Resources；原环境恢复守候
+等待窗口关闭。当前三份文档获准一次性本地提交，未经新的推送授权不推送。停止在项目所有者
+实际查看后的 H2-B 人工签收，保持 pending；H2-A 已签收保持，不进入 H3-H7、M8、M9 或 M11。
 已有候选读取、exact Unity、Config3、Hub 和 State16 的合同继续有效。完整 GUI/Rust/三平台
 技术门禁与人工视觉结果分别记录，不把旧 SHA 或定向通过冒充当前候选全绿。
