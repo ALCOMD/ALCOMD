@@ -1,6 +1,6 @@
 # M7：官方 GUI 与 Portable Extension UI
 
-状态：**M7 IN_PROGRESS / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
+状态：**M7 IN_PROGRESS / H3 OWNER_REVIEW_PENDING / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
 活动分支为 `main`；当前阶段与验证结果统一见 `docs/status.md`。已通过的 M6、Portable UI B0-D、
 Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据，不替代本轮 GUI 人工验收。
 
@@ -557,8 +557,8 @@ fixes and defer uncertain contract-dependent work without blocking unrelated cor
 3. **H2 Projects/Packages & Templates（H2-A 与上述既有页面修正已验收）**：完成 package-centric workspace、
    候选读取/行内版本/批量、统一公共组件及已批准的资源/模板/设置/日志/扩展/备份基础交互。
    只实现本文件列明的窄公开合同。项目所有者于 2026-10-31 签收 Visual Gate 2；H2-B 已获下述技术收尾通过后的条件批准，其他产品范围仍未批准。
-4. **H3 contextual v4 enhancements（未批准）**：把global/project Unity、Backups 与 Operations增强嵌入既有Settings/Project/progress workflow，不改
-   Plan/Apply/Operation；完成 Visual Gate 3 的第一部分。
+4. **H3 contextual v4 enhancements（已批准，本地候选待人工验收）**：把 global/project Unity、Backups 与 Operations 增强嵌入既有 Settings/Project/progress workflow，不改
+   Plan/Apply/Operation；完成 Visual Gate 3 的第一部分。项目所有者于 H2-B 阶段签收后明确批准本切片直接实施：先核对已有接线，只补缺失流程，复用共享提醒框与现有任务跟踪；项目操作留在项目上下文，全局设置留在 Settings，不新增无必要导航、常驻卡片或另一套启动/备份/恢复机制。H4-H7 与推送仍未授权。
 5. **H4 Extensions/Portable UI（未批准）**：保留Extensions既有用户概念和utility归属；permission/quarantine/Portable UI位于detail，host
    chrome与renderer全部使用共同Material components；不改 Portable UI protocol；完成 Visual Gate 4 的第一部分。
 6. **H5 utilities/observability（未批准）**：实现 grouped Settings、Log内Activity/Diagnostics与footer About/version，保留
@@ -849,6 +849,28 @@ xtask、metadata、冻结基线、npm check/build、完整 Chromium、Tauri rele
 - 聚合 feature 仍保持实际 in_progress；M11/M12 未完成项与 Hub 下载/native Portable UI 的旧未覆盖
   范围不被本次提案或资源验收提升为通过。提交、推送、Hosted CI 和发布仍按各自授权执行。
 
+### H3 已批准切片：已有能力复核与直接接线
+
+项目所有者在 H2-B 阶段签收后明确批准现有 H3 直接实施；上节 H2-B 的范围排除不再阻止本切片。
+交接已完成：原开发 Core/GUI 已实际恢复，Projects/Editors/Operations/Settings/Status 五组完整公开结果一致；
+仓库列表三个 RPC 已补入既有 GUI 矩阵，公开方法 92/92 对齐。无需另设纯规划或交接人工停止点。
+
+| 已有流程 | 本轮只补的缺口 |
+| --- | --- |
+| Settings 已有 Unity Hub、安装列表、登记/发现/移除；项目已有精确启动、启动参数、Unity 迁移 Plan/Apply | 接入共享成功轻提示、上下文错误与请求生命周期；本页接受启动后从现有更多菜单按需读取/刷新该启动记录，校验 ID/项目/安装身份，清理迟到结果；不重做启动或 Hub |
+| 项目已有备份创建、备份详情与恢复入口 | 创建接受后将同一 Operation 留在项目备份上下文，终态刷新历史；接通现有备份 cursor；详情复用 Projects 恢复弹窗与所选备份，移除重复恢复面板 |
+| 已有 OperationFollow、任务中心、任务详情、协作取消 | 任务列表接通现有 cursor；详情复用同一跟踪组件持续读取、明确失败/取消状态及 Core 结果入口；取消错误留在确认上下文 |
+| Projects 已有托管备份恢复 Plan/Apply | 复用已有 OperationFollow，已知 ID 读取失败持续跟踪，不能再次 Apply；未知写入结果保留未知、禁止重复提交；补全备份选择分页 |
+
+不新增公共 RPC、Schema、权限、依赖、持久任务或通用工作流；GUI 不读写数据库或项目文件。
+先运行受影响 GUI 检查与定向回归，稳定候选再集中验证和真实隔离桌面查看。主体 `ef47c25` 已取得
+30/0 与真实隔离备份/恢复/反馈证据；启动状态补齐后的最终代码 `ab5d183` 已取得独立 **34/0**、
+GUI check（918 条翻译）与更新后的 release GUI。备份/任务等 16 个相关函数不变的比对证据保留，
+原生截图仍绑定实际 `ef47c25` 构建；Esc 后新增启动状态弹窗未做原生操作/截图。原环境已实际恢复，
+五组完整公开状态一致、revision 155。详见 [H3 候选与桌面证据](../testing/m7-h3-contextual-20261101.md)。H2-B 新增代码及 H3
+仍没有对应远端 CI/CodeQL，旧 `0ef5b08` 的通过只对应旧输入。H3 的停止点是本地候选、证据、真实窗口
+和简短清单交由项目所有者验收；H4-H7、推送与 M7 整体完成均未授权。
+
 ## Progress log
 
 - 2026-08-24：M6完成；M7最初研究WebView-based UI。
@@ -1062,8 +1084,11 @@ confirmed CLI remove 已在新明确授权后通过正式 CLI 补齐，Core 拒�
 项目所有者明确确认“阶段性人工验收通过，保留体验改进项”，允许结束 H2-B 本轮体验整改。
 未将该签收提升为体验完善、整个 Visual Gate 3 或 M7 完成。按授权实际恢复原 Core/开发窗口，
 五组公开状态与暂停前一致、revision 155，不再仅记录守候等待。
-已继续执行获批 G3 的本轮完成度核对，现有 RPC 覆盖矩阵与公开方法 92/92 对齐；H3 仍单独标为未批准，
-等待其既定范围明确授权，不重规划 M7，不重做已完成内容。H2-A 原签收保持；未经新的推送授权
-不推送，H4-H7、M8、M9、M11 不由本次签收自动授权。详细结果与待办见现有 status/testing 文档。
+获批 G3 的本轮完成度核对已完成，现有 RPC 覆盖矩阵与公开方法 92/92 对齐；方法归属不冒充独立 GUI 动作全部完成。
+项目所有者随后明确批准既有 H3，现已形成 `ab5d183` 本地代码候选：同 SHA 定向回归 34/0、GUI check
+与 release 构建通过，主体备份/恢复的原生证据仍绑定实际 `ef47c25` 构建，新增启动状态弹窗未完成原生查看。
+原开发环境再次实际恢复，五组完整公开状态一致、revision 155。下一停止点是项目所有者 H3 人工验收，
+不重规划 M7，不重做已完成内容。H2-A、H2-B 阶段签收保持；H2-B 新增代码和 H3 仍无对应远端验证。
+未经新的推送授权不推送，H4-H7、M8、M9、M11 未由本次授权开放。详细结果与待办见现有 status/testing 文档。
 已有候选读取、exact Unity、Config3、Hub 和 State16 的合同继续有效。完整 GUI/Rust/三平台
 技术门禁与人工视觉结果分别记录，不把旧 SHA 或定向通过冒充当前候选全绿。

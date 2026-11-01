@@ -1,8 +1,8 @@
 # M7 Official GUI RPC coverage matrix
 
-状态：2026-11-01 当前已批准 RPC 覆盖矩阵，包含本轮仓库列表文件交换。来源是 `crates/alcomd-protocol` 的 public method
+状态：2026-11-02 当前已批准 RPC 覆盖矩阵，包含本轮仓库列表文件交换与 H3 接线。来源是 `crates/alcomd-protocol` 的 public method
 constants 与 `crates/alcomd-client` 的 typed methods；实现过程中必须保持两者与本矩阵可机械核对。
-本矩阵记录方法归属，不表示 M7、Visual Gate 2 或聚合功能已验收通过；当前阶段见 `../status.md`。
+本矩阵记录方法归属，不表示 M7、Visual Gate 2 或聚合功能已验收通过；92/92 是方法清单一致性，不代表所有方法已有独立 GUI 动作。当前阶段见 `../status.md`；H3 定向证据见 `../testing/m7-h3-contextual-20261101.md`。
 
 统一状态 `data` 表示 initial-loading、refreshing/last-known-good、empty、error、disconnected；`mutation` 另含
 confirmation-required、operation-running、success、failed、cancelled。`Plan review` 必须展示 daemon 返回的 typed
@@ -13,7 +13,7 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `system.hello` | RPC v1 handshake | app shell | connect/reconnect; ready Store dataSchema, Config3 | R | no | no | disconnected/reconnecting/capability refresh | `gui.m7-core-surfaces` |
 | `system.status` | base | Home, About | load daemon/product status | R | no | no | data | `gui.m7-core-surfaces` |
 | `state.check` | `state.check.v1` | Diagnostics | start integrity check | W | explicit action | yes | mutation | `gui.m7-operation-flows` |
-| `operations.get` | `operations.v1` | Operation detail | load/follow one Operation | R | no | no | data/reconnect | `gui.m7-operation-flows` |
+| `operations.get` | `operations.v1` | Project backup progress / Restore / Operation detail | follow the same accepted ID and open Core results | R | no | existing Operation | polling/read retry/terminal/client cleanup | `gui.m7-operation-flows` |
 | `operations.list` | `operations.v1` | Operations | page Operations | R | no | no | data/keyset | `gui.m7-core-surfaces` |
 | `operations.cancel` | `operations.v1` | Operation detail | cooperative cancel | W | yes | existing Operation | mutation/stale | `gui.m7-operation-flows` |
 | `events.list` | `events.replay.v1` | N/A direct | daemon-side Activity source/cursor recovery only | R | no | no | N/A | `activity.log-redaction` |
@@ -55,7 +55,7 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `packages.userPackages.refresh` | `packages.user-packages.v1` | User Package detail | refresh enrolled source | W | no | no | refreshing/revision/idempotency | `gui.m7-package-workspace` |
 | `packages.userPackages.remove` | `packages.user-packages.v1` | User Package detail | remove enrollment | W | yes | no | mutation/revision/idempotency | `gui.m7-package-workspace` |
 | `unity.installations.list` | `unity.read.v1` | Unity | page installations | R | no | no | data/keyset | `gui.m7-core-surfaces` |
-| `unity.installations.get` | `unity.read.v1` | Unity installation detail | load installation | R | no | no | data | `gui.m7-core-surfaces` |
+| `unity.installations.get` | `unity.read.v1` | typed adapter only; Settings currently uses list snapshots | no separate GUI detail action | R | no | no | adapter available, standalone UI not implemented | `gui.m7-core-surfaces` |
 | `unity.installations.register` | `unity.manage.v1` | Unity add dialog | register validated editor | W | yes | no | mutation/idempotency | `gui.m7-operation-flows` |
 | `unity.installations.remove` | `unity.manage.v1` | Unity installation detail | remove registry entry | W | yes | no | mutation/stale | `gui.m7-operation-flows` |
 | `unity.installations.refresh` | `unity.manage.v1` | Unity | refresh discoveries | W | no | no | refreshing/idempotency | `gui.m7-operation-flows` |
@@ -65,7 +65,7 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `unity.writerState` | `unity.read.v1` | Project Unity | observe writer evidence | R | no | no | refreshing/unknown | `gui.m7-core-surfaces` |
 | `unity.launchOptions` | `unity.launch.v1` | Projects / Open Unity | resolve exact-version 0/1/many installations | R | no | no | data/unknown | `gui.m7-project-action-contract` |
 | `unity.launch` | `unity.launch.v1` | Projects / Open Unity | launch explicit one-shot installation | W | explicit action/selection | launch record | mutation/writer gate | `gui.m7-operation-flows` |
-| `unity.launchStatus` | `unity.launch.v1` | Project Unity | follow launch | R | no | launch record | refreshing/terminal | `gui.m7-operation-flows` |
+| `unity.launchStatus` | `unity.launch.v1` | Projects / Project workspace more actions after a launch accepted on this page | inspect/refresh the same launch record, without another launch | R | explicit inspect/refresh | launch record | known-ID retry/identity validation/late response cleanup/focus return; no automatic polling or cross-page launch history | `gui.m7-operation-flows` |
 | `unity.hub.open` | `unity.hub.open.v1` | Settings / Unity | open revalidated Hub or return download_required | W | explicit action | no | revision/path/local-owner/unknown result | `gui.m7-core-surfaces` |
 | `templates.list` | `templates.read.v1` | Templates | page templates | R | no | no | data/keyset | `gui.m7-core-surfaces` |
 | `templates.get` | `templates.read.v1` | Template detail | load template | R | no | no | data | `gui.m7-core-surfaces` |
@@ -82,8 +82,8 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `backups.list` | `backups.read.v1` | Project Backups | page backups | R | no | no | data/keyset | `gui.m7-core-surfaces` |
 | `backups.get` | `backups.read.v1` | Backup detail | load backup | R | no | no | data | `gui.m7-core-surfaces` |
 | `backups.create` | `backups.create.v1` | Project Backups | create backup | W | yes | yes | mutation/recovery | `gui.m7-operation-flows` |
-| `backups.planRestore` | `backups.restore.v1` | Backup detail | plan restore | R/Plan | review follows | no | data/stale | `gui.m7-operation-flows` |
-| `backups.applyRestore` | `backups.restore.v1` | Backup detail | apply reviewed restore | W | required | yes | mutation/recovery | `gui.m7-operation-flows` |
+| `backups.planRestore` | `backups.restore.v1` | Projects / Backup detail shared restore dialog | select managed backup or use current backup, review target | R/Plan | review follows | no | loading/list retry/keyset/invalid target/stale | `gui.m7-operation-flows` |
+| `backups.applyRestore` | `backups.restore.v1` | Projects / Backup detail shared restore dialog | apply once and open Core-registered result | W | required | yes | same-ID follow/unknown result/no automatic retry/failed/cancelled | `gui.m7-operation-flows` |
 | `extensions.list` | `extensions.lifecycle.v1` | Extensions | page extensions | R | no | no | data/keyset | `gui.m7-core-surfaces` |
 | `extensions.get` | `extensions.lifecycle.v1` | Extension detail | load trust/runtime/permissions/UI | R | no | no | data | `gui.m7-core-surfaces` |
 | `extensions.planInstall` | `extensions.lifecycle.v1` | Extensions install dialog | plan install | R/Plan | review follows | no | data/stale | `gui.m7-operation-flows` |
