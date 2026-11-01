@@ -1,4 +1,5 @@
 import type { ThemePreferences } from "@alcomd/ui";
+import type { RpcError } from "@alcomd/sdk";
 import { use, useCallback, useEffect, useRef, useState, useSyncExternalStore, type FocusEventHandler, type ReactNode, type Ref } from "react";
 import { UnityHubConflictError, type SettingsAutosave } from "./settings-autosave";
 
@@ -15,6 +16,7 @@ import { LoadingState } from "./LoadingState";
 import { usePageReadPromise, type PageReadResult } from "./PageRead";
 import { navigationLabels } from "./navigation-labels";
 import { ThemeControls, themePreferences } from "./ThemeControls";
+import { RequestReminder } from "./Reminder";
 
 interface SettingsWorkspaceProps {
     client: GuiRpcClient;
@@ -298,7 +300,7 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
     const [items, setItems] = useState<UnityInstallation[]>(initial.kind === "ready" ? initial.value?.installations ?? [] : []);
     const [cursor, setCursor] = useState<string | undefined>(initial.kind === "ready" ? initial.value?.nextCursor : undefined);
     const [busy, setBusy] = useState(false);
-    const [error, setError] = useState<string | undefined>(initial.kind === "error" ? "Unity installations could not be loaded." : undefined);
+    const [error, setError] = useState<RpcError | undefined>(initial.kind === "error" ? normalizeRpcError(initial.error) : undefined);
     const [open, setOpen] = useState(false);
     const [generation, setGeneration] = useState(0);
     const requestRef = useRef(0);
@@ -315,8 +317,8 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
             if (request !== requestRef.current) return;
             setItems((current) => next === undefined ? page.installations : [...current, ...page.installations]);
             setCursor(page.nextCursor);
-        } catch {
-            if (request === requestRef.current) setError("Unity installations could not be loaded.");
+        } catch (caught: unknown) {
+            if (request === requestRef.current) setError(normalizeRpcError(caught));
         } finally {
             if (request === requestRef.current) { busyRef.current = false; setBusy(false); }
         }
@@ -336,7 +338,7 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
         }>
             {!available ? <p className="field-hint">{t("Unity installations are unavailable on this connection.")}</p> : (
                 <>
-                    {error === undefined ? null : <p className="form-error" role="alert">{t(error)}</p>}
+                    {error === undefined ? null : <RequestReminder error={error} title={t("Unity installations could not be loaded.")} />}
                     <DesktopList columns={[{ key: "version", header: t("Version"), width: "20%" }, { key: "path", header: t("Path"), className: "settings-path" }, { key: "source", header: t("Source"), width: 160 }]} label={t("Unity installations")} minWidth={600} rows={items.map((item) => ({ key: item.installationId, cells: [item.unityVersion, item.executablePath, item.sourceKind === "manual" ? t("Manual") : item.sourceKind === "unity_hub" ? t("Unity Hub") : item.sourceKind.replaceAll("_", " ")] }))} />
                     {items.length === 0 && error === undefined ? busy ? <LoadingState title={t("Loading Unity installations…")} /> : <p role="status">{t("No Unity installations found.")}</p> : null}
                     {cursor === undefined ? null : <Button disabled={busy} onClick={() => void read(cursor)} type="button" variant="text">{t("Load more installations")}</Button>}

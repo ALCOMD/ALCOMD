@@ -1,14 +1,16 @@
 import type { RpcError } from "@alcomd/sdk";
 import { useEffect, useRef, useState } from "react";
 
-import type { BackupRecord, BackupRestorePlan, Operation, TemplateRecord } from "./core-models";
+import type { BackupApplyRestoreResult, BackupRecord, BackupRestorePlan, Operation, TemplateRecord } from "./core-models";
 import { Button, Dialog, Select, TextField } from "./Material";
-import { TemplateOperationProgress, templateApplyResultUnknown, templateOperationProjectId, useActionScope, useTemplateOperations } from "./CoreActions";
+import { OperationFollow, TemplateOperationProgress, templateApplyResultUnknown, templateOperationProjectId, useActionScope, useTemplateOperations } from "./CoreActions";
+import { Reminder, RequestReminder } from "./Reminder";
+import { capabilities, useCapability } from "./capabilities";
 import { reviewTemplateCreation, TemplatePlanReview, type TemplateReview } from "./TemplatePlanReview";
 import { LoadingState, useDelayedPending } from "./LoadingState";
 import type { GuiRpcClient } from "./rpc";
 import { useTranslation } from "./i18n";
-import type { SupportedLocale, Translate } from "./i18n-types";
+import type { SupportedLocale } from "./i18n-types";
 
 interface ProjectDialogProps {
     client: GuiRpcClient;
@@ -254,7 +256,7 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
     );
 }
 
-export function RestoreProjectDialog({ client, onClose, onCompleted, open }: ProjectDialogProps) {
+export function RestoreProjectDialog({ backup, client, onClose, onCompleted, onViewOperation, open }: ProjectDialogProps & { backup?: BackupRecord; onViewOperation?(operationId: string): void }) {
     const { t, locale } = useTranslation();
     const [backups, setBackups] = useState<BackupRecord[]>([]);
     const [backupId, setBackupId] = useState("");
@@ -262,12 +264,25 @@ export function RestoreProjectDialog({ client, onClose, onCompleted, open }: Pro
     const [targetLeaf, setTargetLeaf] = useState("");
     const [plan, setPlan] = useState<BackupRestorePlan>();
     const [operation, setOperation] = useState<Operation>();
-    const [restoredProjectId, setRestoredProjectId] = useState<string>();
+    const [accepted, setAccepted] = useState<BackupApplyRestoreResult>();
+    const [submitted, setSubmitted] = useState(false);
+    const [cursor, setCursor] = useState<string>();
+    const [readVersion, setReadVersion] = useState(0);
+    const [readFailed, setReadFailed] = useState(false);
     const [loading, setLoading] = useState(true);
     const delayedLoading = useDelayedPending(open && loading);
+    const [visible, setVisible] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<RpcError>();
     const completionReported = useRef(false);
+    const pending = useRef(false);
+    const isCurrent = useActionScope(client, open);
+    const canRestore = useCapability(capabilities.backupsRestore);
+
+    useEffect(() => {
+        if (!open) setVisible(false);
+        else if (!loading || delayedLoading) setVisible(true);
+    }, [delayedLoading, loading, open]);
 
     useEffect(() => {
         if (!open) {
@@ -277,7 +292,8 @@ export function RestoreProjectDialog({ client, onClose, onCompleted, open }: Pro
             setTargetLeaf("");
             setPlan(undefined);
             setOperation(undefined);
-            setRestoredProjectId(undefined);
+            setAccepted(undefined);
+            setSubmitted(false);
             setLoading(true);
             setBusy(false);
             setError(undefined);
@@ -286,124 +302,129 @@ export function RestoreProjectDialog({ client, onClose, onCompleted, open }: Pro
         }
         let active = true;
         setLoading(true);
+        setReadFailed(false);
         setError(undefined);
-        void client.backupsList().then((result) => {
+        void (backup === undefined ? client.backupsList() : Promise.resolve({ backups: [backup], nextCursor: undefined })).then((result) => {
             if (!active) return;
             setBackups(result.backups);
             setBackupId(result.backups[0]?.backupId ?? "");
+            setCursor(result.nextCursor);
         }).catch((caught: unknown) => {
-            if (active) setError(safeError(caught));
+            if (active) { setError(safeError(caught)); setReadFailed(true); }
         }).finally(() => {
             if (active) setLoading(false);
         });
         return () => { active = false; };
-    }, [client, open]);
+    }, [backup, client, open, readVersion]);
 
-    useEffect(() => {
-        if (operation === undefined || !ACTIVE_OPERATION_STATES.has(operation.state)) return;
-        let active = true;
-        const timer = window.setTimeout(() => {
-            void client.operationGet(operation.operationId).then((next) => {
-                if (!active) return;
-                setOperation(next);
-                if (next.state !== "succeeded" || restoredProjectId === undefined || completionReported.current) return;
-                completionReported.current = true;
-                onCompleted(restoredProjectId);
-            }).catch((caught: unknown) => {
-                if (active) setError(safeError(caught));
-            });
-        }, 300);
-        return () => {
-            active = false;
-            window.clearTimeout(timer);
-        };
-    }, [client, onCompleted, operation, restoredProjectId]);
+    const loadMore = async () => {
+        if (cursor === undefined || pending.current) return;
+        pending.current = true; setBusy(true); setError(undefined);
+        try {
+            const page = await client.backupsList(undefined, cursor);
+            if (!isCurrent()) return;
+            setBackups((current) => [...current, ...page.backups]); setCursor(page.nextCursor);
+        } catch (caught: unknown) { if (isCurrent()) setError(safeError(caught)); }
+        finally { pending.current = false; if (isCurrent()) setBusy(false); }
+    };
 
     const chooseParent = async () => {
+        if (pending.current) return;
+        pending.current = true;
         setBusy(true);
         setError(undefined);
         try {
             const selected = await client.selectDirectory();
-            if (selected !== undefined) setTargetParent(selected);
+            if (isCurrent() && selected !== undefined) setTargetParent(selected);
         } catch (caught: unknown) {
-            setError(safeError(caught));
+            if (isCurrent()) setError(safeError(caught));
         } finally {
-            setBusy(false);
+            pending.current = false; if (isCurrent()) setBusy(false);
         }
     };
 
     const review = async () => {
+        if (!canRestore || pending.current) return;
+        pending.current = true;
         setBusy(true);
         setError(undefined);
         try {
-            setPlan(await client.backupPlanRestore(backupId, targetParent, targetLeaf.trim()));
+            const next = await client.backupPlanRestore(backupId, targetParent, targetLeaf.trim());
+            if (isCurrent()) { setPlan(next); setSubmitted(false); }
         } catch (caught: unknown) {
-            setError(safeError(caught));
+            if (isCurrent()) setError(safeError(caught));
         } finally {
-            setBusy(false);
+            pending.current = false; if (isCurrent()) setBusy(false);
         }
     };
 
     const apply = async () => {
-        if (plan === undefined) return;
+        if (!canRestore || pending.current || submitted || plan === undefined) return;
+        pending.current = true; setSubmitted(true);
         setBusy(true);
         setError(undefined);
         try {
-            const accepted = await client.backupApplyRestore(plan.planId);
-            setRestoredProjectId(accepted.projectId);
-            const next = await client.operationGet(accepted.operationId);
-            setOperation(next);
-            if (next.state === "succeeded" && !completionReported.current) {
-                completionReported.current = true;
-                onCompleted(accepted.projectId);
-            }
+            const result = await client.backupApplyRestore(plan.planId);
+            if (isCurrent()) setAccepted(result);
         } catch (caught: unknown) {
-            setError(safeError(caught));
+            if (isCurrent()) setError(safeError(caught));
         } finally {
-            setBusy(false);
+            pending.current = false; if (isCurrent()) setBusy(false);
         }
     };
 
     const cancelOperation = async () => {
-        if (operation === undefined) return;
+        if (operation === undefined || pending.current || operation.state === "cancelling") return;
+        pending.current = true;
         setBusy(true);
         setError(undefined);
         try {
             const result = await client.operationCancel(operation.operationId, operation.revision);
-            setOperation(result.operation);
+            if (isCurrent()) setOperation(result.operation);
         } catch (caught: unknown) {
-            setError(safeError(caught));
+            if (isCurrent()) setError(safeError(caught));
         } finally {
-            setBusy(false);
+            pending.current = false; if (isCurrent()) setBusy(false);
         }
     };
 
     const selectedBackup = backups.find((candidate) => candidate.backupId === backupId);
     const terminal = operation !== undefined && !ACTIVE_OPERATION_STATES.has(operation.state);
     return (
-        <Dialog onClose={onClose} open={open && (!loading || delayedLoading)} title={t("Restore project")}>
+        <Dialog dismissible={!busy} onClose={onClose} open={open && visible} title={t("Restore project")}>
             <div className="project-create-flow">
                 {loading ? <LoadingState title={t("Loading backups…")} /> : null}
-                {loading ? null : backups.length === 0 ? (
+                {loading ? null : readFailed ? <div className="dialog-actions"><Button onClick={onClose} type="button" variant="text">{t("Close")}</Button><Button onClick={() => setReadVersion((value) => value + 1)} type="button">{t("Retry")}</Button></div> : backups.length === 0 ? (
                     <div className="dialog-empty" role="status">
                         <strong>{t("No managed backups available")}</strong>
                         <span>{t("Create a project backup before restoring a project.")}</span>
                         <div className="dialog-actions"><Button onClick={onClose} type="button">{t("Close")}</Button></div>
                     </div>
-                ) : plan === undefined ? (
+                ) : accepted !== undefined ? <>
+                    <OperationFollow client={client} onSnapshot={setOperation} onTerminal={(next) => {
+                        if (next.state !== "succeeded" || completionReported.current) return;
+                        completionReported.current = true; onCompleted(accepted.projectId);
+                    }} operationId={accepted.operationId} title={t("Restore project")} />
+                    <div className="dialog-actions">
+                        {operation === undefined || terminal ? null : <Button disabled={busy || operation.state === "cancelling"} onClick={() => void cancelOperation()} type="button" variant="text">{t("Cancel restore")}</Button>}
+                        {onViewOperation === undefined ? null : <Button disabled={busy} onClick={() => onViewOperation(accepted.operationId)} type="button" variant="text">{t("View operation")}</Button>}
+                        <Button disabled={busy} onClick={onClose} type="button">{t("Close")}</Button>
+                    </div>
+                </> : plan === undefined ? (
                     <>
-                        <Select aria-label={t("Project backup")} label={t("Backup")} onChange={setBackupId} options={backups.map((backup) => ({ label: backupLabel(backup, locale), value: backup.backupId }))} value={backupId} />
+                        {backup === undefined ? <Select aria-label={t("Project backup")} disabled={busy} label={t("Backup")} onChange={(value) => { setBackupId(value); setError(undefined); }} options={backups.map((backup) => ({ label: backupLabel(backup, locale), value: backup.backupId }))} value={backupId} /> : <p>{backupLabel(backup, locale)}</p>}
+                        {cursor === undefined ? null : <Button disabled={busy} onClick={() => void loadMore()} type="button" variant="text">{t("Load more")}</Button>}
                         <div className="project-target-picker">
-                            <TextField aria-label={t("Restore target parent")} label={t("Parent directory")} onInput={setTargetParent} value={targetParent} />
+                            <TextField aria-label={t("Restore target parent")} disabled={busy} label={t("Parent directory")} onInput={(value) => { setTargetParent(value); setError(undefined); }} value={targetParent} />
                             <Button disabled={busy} onClick={() => void chooseParent()} type="button" variant="tonal">{t("Choose directory")}</Button>
                         </div>
-                        <TextField aria-label={t("Restore project name")} label={t("Project name")} onInput={setTargetLeaf} value={targetLeaf} />
+                        <TextField aria-label={t("Restore project name")} disabled={busy} label={t("Project name")} onInput={(value) => { setTargetLeaf(value); setError(undefined); }} value={targetLeaf} />
                         <div className="dialog-actions">
                             <Button disabled={busy} onClick={onClose} type="button" variant="text">{t("Cancel")}</Button>
-                            <Button disabled={busy || backupId.length === 0 || targetParent.length === 0 || targetLeaf.trim().length === 0} onClick={() => void review()} type="button">{t("Review restore")}</Button>
+                            <Button disabled={!canRestore || busy || backupId.length === 0 || targetParent.length === 0 || targetLeaf.trim().length === 0} onClick={() => void review()} type="button">{t("Review restore")}</Button>
                         </div>
                     </>
-                ) : operation === undefined ? (
+                ) : (
                     <>
                         <div className="dialog-summary">
                             <div><span>{t("Backup")}</span><strong>{selectedBackup === undefined ? backupId : backupLabel(selectedBackup, locale)}</strong></div>
@@ -412,21 +433,15 @@ export function RestoreProjectDialog({ client, onClose, onCompleted, open }: Pro
                             <div><span>{t("Plan")}</span><code>{plan.planFingerprint.slice(0, 12)}</code></div>
                         </div>
                         <p>{t("ALCOMD Core will validate the managed archive, restore transactionally, and register the completed project.")}</p>
+                        {plan.packagesRequireResolve ? <Reminder tone="warning">{t("VPM packages require a separate resolve after restoration.")}</Reminder> : null}
                         <div className="dialog-actions">
-                            <Button disabled={busy} onClick={() => setPlan(undefined)} type="button" variant="text">{t("Back")}</Button>
-                            <Button disabled={busy} onClick={() => void apply()} type="button">{t("Restore project")}</Button>
-                        </div>
-                    </>
-                ) : (
-                    <>
-                        <p role="status">{operationFeedback(operation, t)}</p>
-                        <div className="dialog-actions">
-                            {!terminal ? <Button disabled={busy} onClick={() => void cancelOperation()} type="button" variant="text">{t("Cancel restore")}</Button> : null}
-                            <Button disabled={!terminal} onClick={onClose} type="button">{t("Close")}</Button>
+                            <Button disabled={busy || (submitted && templateApplyResultUnknown(error))} onClick={() => { setPlan(undefined); setSubmitted(false); setError(undefined); }} type="button" variant="text">{t("Back")}</Button>
+                            <Button disabled={!canRestore || busy || submitted} onClick={() => void apply()} type="button">{t("Restore project")}</Button>
+                            {submitted ? <Button onClick={onClose} type="button" variant="text">{t("Close")}</Button> : null}
                         </div>
                     </>
                 )}
-                {error === undefined ? null : <p className="inline-error" role="alert">{t("Project restore failed: {code}", { code: error.code })}</p>}
+                {error === undefined ? null : <RequestReminder error={error} title={t("Restore project")}>{submitted && templateApplyResultUnknown(error) ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</RequestReminder>}
             </div>
         </Dialog>
     );
@@ -442,17 +457,4 @@ function safeError(caught: unknown): RpcError {
         return { code: caught.code, message: "The request could not be completed.", ...("diagnosticId" in caught && typeof caught.diagnosticId === "string" ? { diagnosticId: caught.diagnosticId } : {}) };
     }
     return { code: "internal_error", message: "The request could not be completed." };
-}
-
-function operationFeedback(operation: Operation, t: Translate): string {
-    const states: Record<string, string> = {
-        queued: t("Queued"), planning: t("Planning"), waiting_for_input: t("Waiting for input"),
-        running: t("Running"), cancelling: t("Cancelling"), recovering: t("Recovering"),
-        interrupted: t("Interrupted"), succeeded: t("Succeeded"), failed: t("Failed"), cancelled: t("Cancelled")
-    };
-    const state = states[operation.state] ?? operation.state;
-    const phase = operation.progress?.phase;
-    return phase === undefined
-        ? t("Project restore {state}.", { state })
-        : t("Project restore {state}: {phase}.", { state, phase });
 }

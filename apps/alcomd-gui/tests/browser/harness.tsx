@@ -39,6 +39,8 @@ declare global {
         repositoryPackageRequests: Array<{ repositoryId: string; cursor?: Parameters<GuiRpcClient["repositoryPackages"]>[1] }>;
         templateRequests: Array<{ method: string; params: unknown }>;
         resourceRequests: Array<{ method: string; params: unknown }>;
+        h3Requests: Array<{ method: string; params: Record<string, unknown> }>;
+        h3Operation: Operation;
         templatePageCompletions: number;
         heldTemplateReads: number;
         resumeCandidateSource?: () => void;
@@ -60,6 +62,8 @@ window.candidateRequests = [];
 window.repositoryPackageRequests = [];
 window.templateRequests = [];
 window.resourceRequests = [];
+window.h3Requests = [];
+window.h3Operation = { operationId: "00000000-0000-4000-8000-000000000105", kind: "backups.create", state: "running", revision: 3, createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_001_000, progress: { phase: "archiving" } };
 window.templatePageCompletions = 0;
 window.heldTemplateReads = 0;
 window.settingsWrites = [];
@@ -265,12 +269,23 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ operationId: OPERATION_ID, replayed: false });
     }
 
-    operationsList(): ReturnType<GuiRpcClient["operationsList"]> {
+    operationsList(cursor?: Parameters<GuiRpcClient["operationsList"]>[0]): ReturnType<GuiRpcClient["operationsList"]> {
+        if (query.has("h3")) {
+            window.h3Requests.push({ method: "operations.list", params: { cursor } });
+            return this.value({ operations: [{ ...window.h3Operation, operationId: cursor === undefined ? OPERATION_ID : "00000000-0000-4000-8000-000000000612" }], ...(cursor === undefined && query.has("h3-pages") ? { nextCursor: { createdAtMs: 1_700_000_000_000, operationId: OPERATION_ID } } : {}) });
+        }
         if (query.has("template-tasks")) return this.value({ operations: [...this.templateTasks.values()].map((task) => task.operation) });
         return this.value({ operations: this.mode === "empty" ? [] : [runningOperation()] });
     }
 
     operationGet(operationId: string): ReturnType<GuiRpcClient["operationGet"]> {
+        if (query.has("h3")) {
+            window.h3Requests.push({ method: "operations.get", params: { operationId } });
+            const reads = window.h3Requests.filter((request) => request.method === "operations.get").length;
+            if (String(reads) === query.get("h3-read-error-at") || reads <= Number(query.get("h3-read-error-until") ?? "0")) return Promise.reject({ code: "daemon_unavailable" });
+            if (window.h3Operation.state === "succeeded" && this.pendingProject !== undefined && !this.createdProjects.some((item) => item.projectId === this.pendingProject?.projectId)) this.createdProjects.push(this.pendingProject);
+            return this.value({ ...window.h3Operation, operationId, ...(window.h3Operation.state === "succeeded" ? { result: this.pendingProject === undefined ? { backupId: BACKUP_ID } : { projectId: this.pendingProject.projectId } } : {}) });
+        }
         const task = this.templateTasks.get(operationId);
         if (task !== undefined) {
             window.templateRequests.push({ method: "operations.get", params: { operationId } });
@@ -303,7 +318,13 @@ class DeterministicGuiClient implements GuiRpcClient {
         });
     }
 
-    operationCancel(operationId: string): ReturnType<GuiRpcClient["operationCancel"]> {
+    operationCancel(operationId: string, expectedRevision: number): ReturnType<GuiRpcClient["operationCancel"]> {
+        if (query.has("h3")) {
+            window.h3Requests.push({ method: "operations.cancel", params: { operationId, expectedRevision } });
+            if (query.has("h3-cancel-conflict") && window.h3Requests.filter((request) => request.method === "operations.cancel").length === 1) return Promise.reject({ code: "resource_revision_conflict" });
+            window.h3Operation = { ...window.h3Operation, state: "cancelling", revision: expectedRevision + 1 };
+            return this.value({ operation: window.h3Operation, replayed: false });
+        }
         return this.value({ operation: { ...runningOperation(), operationId, state: "cancelling", revision: 4 }, replayed: false });
     }
 
@@ -801,7 +822,11 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ installations, replayed: false });
     }
     unityInstallationGet(): ReturnType<GuiRpcClient["unityInstallationGet"]> { return this.value({ installation: installation(), replayed: false }); }
-    unityInstallationRegister(): ReturnType<GuiRpcClient["unityInstallationRegister"]> { return this.value({ installation: installation(), replayed: false }); }
+    unityInstallationRegister(executablePath: string): ReturnType<GuiRpcClient["unityInstallationRegister"]> {
+        window.h3Requests.push({ method: "unity.installations.register", params: { executablePath } });
+        if (query.has("h3-unity-register-error") && window.h3Requests.filter((request) => request.method === "unity.installations.register").length === 1) return Promise.reject({ code: "unity_installation_invalid" });
+        return this.value({ installation: installation(), replayed: false });
+    }
     unityInstallationRemove(): ReturnType<GuiRpcClient["unityInstallationRemove"]> { return this.value({ installationId: INSTALLATION_ID, removed: true, replayed: false }); }
     unityInstallationsRefresh(): ReturnType<GuiRpcClient["unityInstallationsRefresh"]> {
         window.unityRequests.push({ method: "unityInstallationsRefresh", params: {} });
@@ -946,18 +971,32 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ operationId, replayed: false });
     }
 
-    async backupsList(): ReturnType<GuiRpcClient["backupsList"]> {
+    async backupsList(projectId?: string, cursor?: string): ReturnType<GuiRpcClient["backupsList"]> {
+        if (query.has("h3")) {
+            window.h3Requests.push({ method: "backups.list", params: { projectId, cursor } });
+            if (query.has("h3-list-error") && window.h3Requests.filter((request) => request.method === "backups.list").length <= 2) throw { code: "daemon_unavailable" };
+            return this.value({ backups: query.has("h3-create") && window.h3Operation.state !== "succeeded" ? [] : [{ ...backup(), backupId: cursor === undefined ? BACKUP_ID : "00000000-0000-4000-8000-000000000611" }], ...(cursor === undefined && query.has("h3-pages") ? { nextCursor: "older-backups" } : {}) });
+        }
         if (query.has("holdBackups")) await new Promise<void>((resolve) => window.addEventListener("test-backups-ready", () => resolve(), { once: true }));
         return this.value({ backups: this.mode === "empty" ? [] : [backup()] });
     }
-    backupGet(): ReturnType<GuiRpcClient["backupGet"]> { return this.value(backup()); }
-    backupCreate(): ReturnType<GuiRpcClient["backupCreate"]> { return this.value({ operationId: OPERATION_ID, backupId: BACKUP_ID, replayed: false }); }
-    backupPlanRestore(_backupId: string, targetParent: string, targetLeaf: string): ReturnType<GuiRpcClient["backupPlanRestore"]> {
+    backupGet(backupId: string): ReturnType<GuiRpcClient["backupGet"]> { return this.value({ ...backup(), backupId }); }
+    backupCreate(projectId: string, expectedRevision: number, compressionMode: string, excludeVpmPackages: boolean): ReturnType<GuiRpcClient["backupCreate"]> {
+        window.h3Requests.push({ method: "backups.create", params: { projectId, expectedRevision, compressionMode, excludeVpmPackages } });
+        if (query.has("h3-backup-create-error")) return Promise.reject({ code: query.get("h3-backup-create-error") });
+        return this.value({ operationId: OPERATION_ID, backupId: BACKUP_ID, replayed: false });
+    }
+    backupPlanRestore(backupId: string, targetParent: string, targetLeaf: string): ReturnType<GuiRpcClient["backupPlanRestore"]> {
+        window.h3Requests.push({ method: "backups.planRestore", params: { backupId, targetParent, targetLeaf } });
         if (this.mode === "restore-error") return Promise.reject({ code: "backup_target_conflict" });
         this.pendingProject = project(RESTORED_PROJECT_ID, targetLeaf);
-        return this.value({ planId: PLAN_ID, projectId: RESTORED_PROJECT_ID, backupId: BACKUP_ID, target: { parent: targetParent, leaf: targetLeaf, mustBeAbsent: true }, archiveSha256: HASH, packagesRequireResolve: false, excludedPackages: [], planFingerprint: HASH });
+        return this.value({ planId: PLAN_ID, projectId: RESTORED_PROJECT_ID, backupId, target: { parent: targetParent, leaf: targetLeaf, mustBeAbsent: true }, archiveSha256: HASH, packagesRequireResolve: query.has("h3-excluded-packages"), excludedPackages: [], planFingerprint: HASH });
     }
-    backupApplyRestore(): ReturnType<GuiRpcClient["backupApplyRestore"]> { this.operationReads = 0; return this.value({ operationId: OPERATION_ID, projectId: RESTORED_PROJECT_ID, replayed: false }); }
+    backupApplyRestore(planId: string): ReturnType<GuiRpcClient["backupApplyRestore"]> {
+        window.h3Requests.push({ method: "backups.applyRestore", params: { planId } });
+        if (query.has("h3-restore-unknown")) return Promise.reject({ code: "daemon_unavailable" });
+        this.operationReads = 0; return this.value({ operationId: OPERATION_ID, projectId: RESTORED_PROJECT_ID, replayed: false });
+    }
 
     extensionsList(): ReturnType<GuiRpcClient["extensionsList"]> { return this.value({ extensions: this.mode === "empty" ? [] : [extension(DISCORD_ID), extension(MCP_ID)] }); }
     extensionGet(extensionId: string): ReturnType<GuiRpcClient["extensionGet"]> { return this.value({ extension: extension(extensionId) }); }

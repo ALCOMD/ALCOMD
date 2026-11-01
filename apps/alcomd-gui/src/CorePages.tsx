@@ -24,6 +24,7 @@ import { use, useCallback, useEffect, useRef, useState, type ReactNode } from "r
 
 import type {
     OfficialSettings,
+    BackupCreateResult,
     Operation,
     PackageSourceSelector,
     ProjectCopyPlan,
@@ -40,11 +41,11 @@ import type {
 } from "./core-models";
 import {
     BackupCreatePanel,
-    BackupRestorePanel,
     ExtensionActions,
     ExtensionInstallPanel,
     OperationActions,
     OperationFollow,
+    OperationProgress,
     PackageActions,
     type PackageActionSelection,
     ProjectLaunchArgumentsDialog,
@@ -406,8 +407,9 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                 }}
                 open={createOpen}
             />
-            <RestoreProjectDialog
+            {restoreOpen ? <RestoreProjectDialog
                 client={client}
+                onViewOperation={(operationId) => navigate(`/operations/${operationId}`)}
                 onCompleted={(projectId) => {
                     setRegistrationMessage(t("Project restored"));
                     setRestoreOpen(false);
@@ -417,8 +419,8 @@ export function ProjectsPage({ client, navigate }: PageProps) {
                     setRestoreOpen(false);
                     window.requestAnimationFrame(() => addProjectMenuRef.current?.focus());
                 }}
-                open={restoreOpen}
-            />
+                open
+            /> : null}
         </section>
     );
 }
@@ -504,10 +506,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
     const projectId = project.projectId;
     const revision = project.revision;
     const workspace = context === "workspace";
-    const unityLaunch = useProjectUnityLaunch({ client, navigate, onLaunchSettled: onChanged, project, onFeedback: (feedback) => {
-        if (feedback.error !== undefined) onFeedback(t("Unable to open Unity: {value0}", { value0: feedback.error.code }));
-        else if (feedback.message !== undefined) onFeedback(feedback.message);
-    } });
+    const unityLaunch = useProjectUnityLaunch({ client, navigate, onLaunchSettled: onChanged, project });
 
     useEffect(() => {
         if (deleteOperation === undefined || !["queued", "running", "recovering", "cancelling", "interrupted"].includes(deleteOperation.state)) return;
@@ -1882,26 +1881,67 @@ async function loadAllUnityInstallations(client: GuiRpcClient): Promise<UnityIns
 
 export function ProjectBackupsPage({ client, navigate, projectId }: PageProps & { projectId: string }) {
     const { t, locale } = useTranslation();
+    const [accepted, setAccepted] = useState<BackupCreateResult>();
     const load = useCallback(async () => ({ backups: await client.backupsList(projectId), project: (await client.projectGet(projectId)).project }), [client, projectId]);
-    return <UtilityWorkspace title={t("Backups")} back={<BackTo label={t("Project packages")} navigate={navigate} path={"/projects/" + projectId + "/packages"} />} load={load}>{(value, refresh) => <><p>{projectName(t, locale, value.project)}</p><ActionDisclosure title={t("Create backup")}><BackupCreatePanel client={client} onChanged={refresh} project={value.project} /></ActionDisclosure>{value.backups.backups.length === 0 ? <RouteState kind="empty" title={t("No backups for this project")} /> : <UtilityTable label={t("Backups")} headers={[t("Created"), t("Size"), t("Packages"), t("Actions")]} rows={value.backups.backups.map((backup) => ({ key: backup.backupId, cells: [formatTime(t, locale, backup.createdAtMs), formatBytes(t, locale, backup.archiveBytes), backup.excludeVpmPackages ? t("VPM packages excluded") : t("VPM packages included"), <Button onClick={() => navigate("/backups/" + backup.backupId)} type="button" variant="text">{t("View backup")}</Button>] }))} />}</>}</UtilityWorkspace>;
+    return <UtilityWorkspace title={t("Backups")} back={<BackTo label={t("Project packages")} navigate={navigate} path={"/projects/" + projectId + "/packages"} />} load={load}
+        action={{ label: t("Create backup"), render: (value) => <BackupCreatePanel client={client} onAccepted={setAccepted} project={value.project} /> }}>
+        {(value, refresh) => <>
+            <p>{projectName(t, locale, value.project)}</p>
+            {accepted === undefined ? null : <OperationFollow client={client} key={accepted.operationId} onTerminal={refresh} operationId={accepted.operationId}>
+                {(operation, error) => <>
+                    <OperationProgress error={error} operation={operation} title={t("Create backup")} />
+                    <div className="action-row"><Button onClick={() => navigate(`/operations/${accepted.operationId}`)} type="button" variant="text">{t("View operation")}</Button>{operation?.state !== "succeeded" ? null : <Button onClick={() => navigate(`/backups/${accepted.backupId}`)} type="button" variant="tonal">{t("View backup")}</Button>}</div>
+                </>}
+            </OperationFollow>}
+            <PagedItems initialItems={value.backups.backups} initialCursor={value.backups.nextCursor} loadMore={async (cursor) => { const page = await client.backupsList(projectId, cursor); return { items: page.backups, nextCursor: page.nextCursor }; }}>
+                {(backups) => backups.length === 0 ? <RouteState kind="empty" title={t("No backups for this project")} /> : <UtilityTable label={t("Backups")} headers={[t("Created"), t("Size"), t("Packages"), t("Actions")]} rows={backups.map((backup) => ({ key: backup.backupId, cells: [formatTime(t, locale, backup.createdAtMs), formatBytes(t, locale, backup.archiveBytes), backup.excludeVpmPackages ? t("VPM packages excluded") : t("VPM packages included"), <Button onClick={() => navigate("/backups/" + backup.backupId)} type="button" variant="text">{t("View backup")}</Button>] }))} />}
+            </PagedItems>
+        </>}
+    </UtilityWorkspace>;
 }
 
 export function BackupDetailPage({ client, navigate, backupId }: PageProps & { backupId: string }) {
     const { t, locale } = useTranslation();
+    const canRestore = useCapability(capabilities.backupsRestore);
+    const [restoreOpen, setRestoreOpen] = useState(false);
     const load = useCallback(() => client.backupGet(backupId), [client, backupId]);
-    return <UtilityWorkspace title={t("Backup detail")} load={load}>{(backup) => <><BackTo label={t("Project backups")} navigate={navigate} path={`/projects/${backup.sourceProjectId}/backups`} /><dl className="detail-grid"><Detail label={t("Source project")} value={backup.sourceProjectId} /><Detail label={t("Created")} value={formatTime(t, locale, backup.createdAtMs)} /><Detail label={t("Archive size")} value={formatBytes(t, locale, backup.archiveBytes)} /><Detail label={t("Format")} value={`v${backup.formatVersion}`} /><Detail label={t("Compression")} value={backup.compressionMode} /><Detail label={t("Integrity")} value={shortHash(backup.archiveSha256)} /></dl><ActionDisclosure title={t("Restore backup")}><BackupRestorePanel backup={backup} client={client} /></ActionDisclosure></>}</UtilityWorkspace>;
+    return <UtilityWorkspace title={t("Backup detail")} load={load} tools={() => <Button disabled={!canRestore} onClick={() => setRestoreOpen(true)} title={capabilityUnavailableTitle(canRestore, capabilities.backupsRestore, t)} type="button">{t("Restore backup")}</Button>}>
+        {(backup) => <><BackTo label={t("Project backups")} navigate={navigate} path={`/projects/${backup.sourceProjectId}/backups`} /><dl className="detail-grid"><Detail label={t("Source project")} value={backup.sourceProjectId} /><Detail label={t("Created")} value={formatTime(t, locale, backup.createdAtMs)} /><Detail label={t("Archive size")} value={formatBytes(t, locale, backup.archiveBytes)} /><Detail label={t("Format")} value={`v${backup.formatVersion}`} /><Detail label={t("Compression")} value={backup.compressionMode} /><Detail label={t("Integrity")} value={shortHash(backup.archiveSha256)} /></dl>
+            {restoreOpen ? <RestoreProjectDialog backup={backup} client={client} onClose={() => setRestoreOpen(false)} onCompleted={(projectId) => navigate(`/projects/${projectId}`)} onViewOperation={(operationId) => navigate(`/operations/${operationId}`)} open /> : null}
+        </>}
+    </UtilityWorkspace>;
 }
 
 export function OperationsPage({ client, navigate }: PageProps) {
     const { t, locale } = useTranslation();
     const load = useCallback(() => client.operationsList(), [client]);
-    return <UtilityWorkspace title={t(navigationLabels.taskCenter)} load={load}>{(value) => value.operations.length === 0 ? <RouteState kind="empty" title={t("No operations yet")} /> : <UtilityTable label={t("Tasks")} headers={[t("Task"), t("Status"), t("Updated"), t("Actions")]} rows={value.operations.map((operation) => ({ key: operation.operationId, cells: [humanize(t, operation.kind), <span className={"state-chip state-chip--" + operation.state}>{humanize(t, operation.state)}</span>, formatTime(t, locale, operation.updatedAtMs), <Button onClick={() => navigate("/operations/" + operation.operationId)} type="button" variant="text">{t("View operation")}</Button>] }))} />}</UtilityWorkspace>;
+    return <UtilityWorkspace title={t(navigationLabels.taskCenter)} load={load}>{(value) => <PagedItems initialItems={value.operations} initialCursor={value.nextCursor} loadMore={async (cursor) => { const page = await client.operationsList(cursor); return { items: page.operations, nextCursor: page.nextCursor }; }}>
+        {(operations) => operations.length === 0 ? <RouteState kind="empty" title={t("No operations yet")} /> : <UtilityTable label={t("Tasks")} headers={[t("Task"), t("Status"), t("Updated"), t("Actions")]} rows={operations.map((operation) => ({ key: operation.operationId, cells: [humanize(t, operation.kind), <span className={"state-chip state-chip--" + operation.state}>{humanize(t, operation.state)}</span>, formatTime(t, locale, operation.updatedAtMs), <Button onClick={() => navigate("/operations/" + operation.operationId)} type="button" variant="text">{t("View operation")}</Button>] }))} />}
+    </PagedItems>}</UtilityWorkspace>;
 }
 
 export function OperationDetailPage({ client, navigate, operationId }: PageProps & { operationId: string }) {
     const { t, locale } = useTranslation();
     const load = useCallback(() => client.operationGet(operationId), [client, operationId]);
-    return <UtilityWorkspace title={t("Operation detail")} back={<BackTo label={t(navigationLabels.taskCenter)} navigate={navigate} path="/operations" />} load={load}>{(operation, refresh) => <><dl className="detail-grid"><Detail label={t("Kind")} value={humanize(t, operation.kind)} /><Detail label={t("State")} value={humanize(t, operation.state)} /><Detail label={t("Phase")} value={operation.progress?.phase ?? "—"} /><Detail label={t("Revision")} value={String(operation.revision)} /><Detail label={t("Updated")} value={formatTime(t, locale, operation.updatedAtMs)} /><Detail label={t("Error")} value={operation.errorCode ?? t("None")} /></dl>{operation.diagnosticId === undefined ? null : <p>{t("Diagnostic ID: ")}<code>{operation.diagnosticId}</code></p>}<OperationActions client={client} onChanged={refresh} operation={operation} /></>}</UtilityWorkspace>;
+    return <UtilityWorkspace title={t("Operation detail")} back={<BackTo label={t(navigationLabels.taskCenter)} navigate={navigate} path="/operations" />} load={load}>{(initialOperation, refresh) => <OperationFollow client={client} initialOperation={initialOperation} operationId={operationId}>
+        {(operation, error) => operation === undefined ? <OperationProgress error={error} /> : <>
+            <OperationProgress error={error} operation={operation} />
+            <dl className="detail-grid"><Detail label={t("Kind")} value={humanize(t, operation.kind)} /><Detail label={t("Updated")} value={formatTime(t, locale, operation.updatedAtMs)} /></dl>
+            <OperationResultLinks navigate={navigate} operation={operation} />
+            <OperationActions client={client} key={operation.operationId} onChanged={refresh} operation={operation} />
+        </>}
+    </OperationFollow>}</UtilityWorkspace>;
+}
+
+function OperationResultLinks({ navigate, operation }: { navigate(path: string): void; operation: Operation }) {
+    const { t } = useTranslation();
+    if (operation.state !== "succeeded" || typeof operation.result !== "object" || operation.result === null) return null;
+    const result = operation.result as Record<string, unknown>;
+    const id = (value: unknown): value is string => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value);
+    return <div className="action-row">
+        {!id(result.projectId) ? null : <Button onClick={() => navigate(`/projects/${result.projectId}`)} type="button" variant="tonal">{t("Open project")}</Button>}
+        {!id(result.backupId) ? null : <Button onClick={() => navigate(`/backups/${result.backupId}`)} type="button" variant="tonal">{t("View backup")}</Button>}
+    </div>;
 }
 
 export function ExtensionsPage({ client, navigate }: PageProps) {

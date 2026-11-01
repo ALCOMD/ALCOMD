@@ -6,26 +6,21 @@ import { Button, Dialog, Select } from "./Material";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 import type { ProjectSnapshot, UnityLaunchOptionsResult } from "./core-models";
 import { normalizeRpcError, type GuiRpcClient } from "./rpc";
+import { RequestReminder, useReminder } from "./Reminder";
 
-interface LaunchFeedback {
-    busy: boolean;
-    error?: RpcError;
-    message?: string;
-}
-
-export function useProjectUnityLaunch({ client, initialOptions, navigate, onFeedback, onLaunchSettled, project }: {
+export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaunchSettled, project }: {
     client: GuiRpcClient;
     initialOptions?: UnityLaunchOptionsResult;
     navigate(path: string): void;
-    onFeedback(feedback: LaunchFeedback): void;
     onLaunchSettled?(): void;
     project: ProjectSnapshot;
 }) {
     const { t } = useTranslation();
+    const { success, clear } = useReminder();
     const canLaunch = useCapability(capabilities.unityLaunch);
     const canMigrate = useCapability(capabilities.projectsUnityMigration);
     const [busy, setBusy] = useState(false);
-    const [dialog, setDialog] = useState<"missing" | "choose">();
+    const [dialog, setDialog] = useState<"missing" | "choose" | "error">();
     const [options, setOptions] = useState(initialOptions);
     const [installationId, setInstallationId] = useState("");
     const [error, setError] = useState<RpcError>();
@@ -38,18 +33,18 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onFeed
     useEffect(() => {
         setBusy(false); setDialog(undefined); setInstallationId(""); setError(undefined);
         return () => { generation.current += 1; pending.current = false; };
-    }, [projectId, revision]);
+    }, [client, projectId, revision]);
 
     const run = async (task: (current: number) => Promise<void>) => {
         if (!canLaunch || projectId === undefined || revision === undefined || pending.current) return;
         const current = generation.current;
         pending.current = true; setBusy(true); setError(undefined);
-        onFeedback({ busy: true });
+        clear();
         try { await task(current); }
         catch (caught: unknown) {
             if (current !== generation.current) return;
             const failure = normalizeRpcError(caught);
-            setError(failure); onFeedback({ busy: false, error: failure });
+            setError(failure); setDialog((current) => current === "choose" ? current : "error");
         } finally {
             if (current === generation.current) { pending.current = false; setBusy(false); }
         }
@@ -60,7 +55,7 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onFeed
             const result = await client.unityLaunch(projectId, selected, snapshot.projectRevision);
             if (current !== generation.current) return;
             setDialog(undefined); setInstallationId("");
-            onFeedback({ busy: false, message: t("Unity launch {state}.", { state: t(result.launch.state) }) });
+            success(t("Unity launch {state}.", { state: t(result.launch.state) }));
         } finally {
             if (current === generation.current) onLaunchSettled?.();
         }
@@ -76,10 +71,8 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onFeed
                 await launch(snapshot, snapshot.exactMatchingInstallations[0]!.installationId, current);
             } else if (snapshot.exactMatchingInstallations.length === 0) {
                 setDialog("missing");
-                onFeedback({ busy: false, message: t("Unity {version} is required. No exact matching Unity installation was found.", { version: snapshot.projectUnityVersion }) });
             } else {
                 setDialog("choose");
-                onFeedback({ busy: false, message: t("Choose the Unity installation for this launch.") });
             }
         });
     };
@@ -87,7 +80,7 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onFeed
         if (options === undefined || !options.exactMatchingInstallations.some((item) => item.installationId === installationId)) return;
         void run((current) => launch(options, installationId, current));
     };
-    const close = () => { if (!pending.current) { setDialog(undefined); setInstallationId(""); setError(undefined); } };
+    const close = () => { if (!pending.current) { setDialog(undefined); setInstallationId(""); setError(undefined); if (dialog !== undefined) clear(); } };
     const closed = () => {
         close();
         window.requestAnimationFrame(() => { if (trigger.current?.isConnected) trigger.current.focus(); });
@@ -109,12 +102,16 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onFeed
                 </div>
             </Dialog>
             <Dialog dismissible={!busy} onClose={closed} open={dialog === "choose"} title={t("Choose Unity for this launch")}>
-                <Select disabled={busy} label={t("Unity installation for this launch")} onChange={setInstallationId} options={[{ label: t("Choose an installation"), value: "" }, ...(options?.exactMatchingInstallations ?? []).map((item) => ({ label: `Unity ${item.unityVersion} · ${item.architecture} · ${item.executablePath}`, value: item.installationId }))]} value={installationId} />
-                {error === undefined ? null : <p className="inline-error" role="alert">{t("Unable to open Unity: {code}", { code: error.code })}</p>}
+                <Select disabled={busy} label={t("Unity installation for this launch")} onChange={(value) => { setInstallationId(value); setError(undefined); }} options={[{ label: t("Choose an installation"), value: "" }, ...(options?.exactMatchingInstallations ?? []).map((item) => ({ label: `Unity ${item.unityVersion} · ${item.architecture} · ${item.executablePath}`, value: item.installationId }))]} value={installationId} />
+                {error === undefined ? null : <RequestReminder error={error} />}
                 <div className="dialog-actions">
                     <Button disabled={busy} onClick={close} type="button" variant="tonal">{t("Cancel")}</Button>
                     <Button disabled={!canLaunch || installationId.length === 0 || busy} onClick={confirm} type="button">{t("Open Unity")}</Button>
                 </div>
+            </Dialog>
+            <Dialog onClose={closed} open={dialog === "error"} title={t("Open Unity")}>
+                {error === undefined ? null : <RequestReminder error={error} />}
+                <div className="dialog-actions"><Button onClick={close} type="button" variant="text">{t("Close")}</Button></div>
             </Dialog>
         </>
     };

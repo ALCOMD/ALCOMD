@@ -355,7 +355,7 @@ test("Open Unity keeps launch and options failures explicit without navigation o
     await chooser.getByRole("button", { name: "Cancel", exact: true }).click();
     await page.goto("/browser-harness.html?route=%2Fprojects&state=ready&unityOptionsError=1");
     await page.locator(".project-row-actions").first().getByRole("button", { name: "Open Unity", exact: true }).click();
-    await expect(page.getByRole("status").filter({ hasText: "revision_conflict" })).toBeVisible();
+    await expect(page.locator("md-dialog[open]").getByRole("alert")).toContainText("revision_conflict");
     expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method !== "unity.launchOptions"))).toEqual([]);
     await expect(page).toHaveURL(/\/projects$/);
 });

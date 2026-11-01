@@ -89,7 +89,7 @@ export interface GuiRpcClient {
     packageQueryProjectCandidates(params: ProjectCandidateRequest): Promise<ProjectCandidatePage>;
     systemStatus(): Promise<SystemStatus>;
     stateCheck(): Promise<OperationAccepted>;
-    operationsList(): Promise<OperationsListResult>;
+    operationsList(cursor?: OperationsListResult["nextCursor"]): Promise<OperationsListResult>;
     operationGet(operationId: string): Promise<Operation>;
     operationCancel(operationId: string, expectedRevision: number): Promise<OperationWriteResult>;
     settingsGet(): Promise<SettingsGetResult>;
@@ -163,7 +163,7 @@ export interface GuiRpcClient {
     templateRemove(templateId: string, expectedRevision: number): Promise<TemplateRemoveResult>;
     templatePlanCreateProject(templateId: string, expectedTemplateRevision: number, targetParent: string, targetLeaf: string): Promise<TemplatePlan>;
     templateApplyCreateProject(planId: string): Promise<TemplateApplyResult>;
-    backupsList(projectId?: string): Promise<BackupsListResult>;
+    backupsList(projectId?: string, cursor?: string): Promise<BackupsListResult>;
     backupGet(backupId: string): Promise<BackupRecord>;
     backupCreate(projectId: string, expectedRevision: number, compressionMode: "store" | "fast" | "maximum", excludeVpmPackages: boolean): Promise<BackupCreateResult>;
     backupPlanRestore(backupId: string, targetParent: string, targetLeaf: string): Promise<BackupRestorePlan>;
@@ -208,8 +208,8 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_state_check", { idempotencyKey: crypto.randomUUID() });
     }
 
-    operationsList(): Promise<OperationsListResult> {
-        return invokeTyped("gui_operations_list", { params: { limit: 100 } });
+    operationsList(cursor?: OperationsListResult["nextCursor"]): Promise<OperationsListResult> {
+        return invokeTyped("gui_operations_list", { params: { cursor, limit: 100 } });
     }
 
     operationGet(operationId: string): Promise<Operation> {
@@ -488,8 +488,8 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_template_apply_create_project", { params: { planId, idempotencyKey: crypto.randomUUID() } });
     }
 
-    backupsList(projectId?: string): Promise<BackupsListResult> {
-        return invokeTyped("gui_backups_list", { params: { projectId, limit: 100 } });
+    backupsList(projectId?: string, cursor?: string): Promise<BackupsListResult> {
+        return invokeTyped("gui_backups_list", { params: { projectId, cursor, limit: 100 } });
     }
 
     backupGet(backupId: string): Promise<BackupRecord> {

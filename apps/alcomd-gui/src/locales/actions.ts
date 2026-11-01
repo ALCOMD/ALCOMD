@@ -2,6 +2,8 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const actionMessages: TranslationTable = {
+    "Operation failed": { "zh-CN": "任务失败", "ja-JP": "操作に失敗しました" },
+    "Open project": { "zh-CN": "打开项目", "ja-JP": "プロジェクトを開く" },
     "New list file name": { "zh-CN": "新列表文件名", "ja-JP": "新しい一覧ファイル名" },
     "Enter a file name without path separators or reserved characters.": { "zh-CN": "请输入文件名，不含路径分隔符或保留字符。", "ja-JP": "パス区切りや予約文字を含まないファイル名を入力してください。" },
     "Choose the destination folder. A new file with this name will be created there.": { "zh-CN": "请选择保存文件夹，应用会在其中创建上述新文件。", "ja-JP": "保存先フォルダーを選んでください。その中に指定した名前で新規ファイルを作成します。" },

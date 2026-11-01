@@ -412,15 +412,16 @@ test("direct writes and the remaining high-impact workflows retain confirmation 
     await openHarness(page, "/projects/00000000-0000-4000-8000-000000000101/backups");
     await page.getByRole("button", { name: "Create backup", exact: true }).click();
     await clickDialogAction(page, "Create backup", "Create backup");
-    await expect(page.getByRole("status").filter({ hasText: "Operation" })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Create backup", exact: true })).toHaveCount(0);
+    await expect(page.locator(".operation-follow")).toContainText("Create backup");
 
     await openHarness(page, "/backups/00000000-0000-4000-8000-000000000104");
     await page.getByRole("button", { name: "Restore backup", exact: true }).click();
-    await page.getByLabel("Target parent").fill("C:\\Fixture");
-    await page.getByLabel("New directory name").fill("Restored");
-    await page.getByRole("button", { name: "Review backup restore" }).click();
-    await clickDialogAction(page, "Restore backup", "Apply reviewed plan");
-    await expect(page.getByRole("status").filter({ hasText: "Operation" })).toBeVisible();
+    await page.getByLabel("Restore target parent").fill("C:\\Fixture");
+    await page.getByLabel("Restore project name").fill("Restored");
+    await page.getByRole("button", { name: "Review restore" }).click();
+    await clickDialogAction(page, "Restore project", "Restore project");
+    await expect(page.locator(".operation-follow")).toContainText("Restore project");
 
     await openHarness(page, "/extensions");
     await page.getByRole("button", { name: "Install extension", exact: true }).click();
