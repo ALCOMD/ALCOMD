@@ -787,7 +787,8 @@ fn json_arguments_size(arguments: &[String]) -> Option<usize> {
     Some(size)
 }
 
-pub(crate) fn canonical_unity_version(value: &str) -> Result<String, M5UnityError> {
+/// Validates the exact canonical Editor version used by registration and launch.
+pub fn canonical_unity_version(value: &str) -> Result<String, M5UnityError> {
     if value.len() < 8 || value.len() > 64 || !value.is_ascii() {
         return Err(M5UnityError::new(M5UnityErrorCode::VersionUnverified));
     }

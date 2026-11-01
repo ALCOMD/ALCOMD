@@ -306,10 +306,6 @@ export const formMessages: TranslationTable = {
         "zh-CN": "没有可用的已管理备份",
         "ja-JP": "利用可能な管理対象のバックアップがありません"
     },
-    "No Unity installations found.": {
-        "zh-CN": "未找到已安装的 Unity。",
-        "ja-JP": "インストール済みの Unity が見つかりません。"
-    },
     "Not required": {
         "zh-CN": "不需要",
         "ja-JP": "不要"

@@ -154,6 +154,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     private settingsReady: Promise<void> | undefined;
     private themeSaveRejected = false;
     private unityReady: Promise<void> | undefined;
+    private unityDiscoveryComplete = false;
     private settings: SettingsGetResult = {
         configSchema: 3,
         unityHub: { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" },
@@ -812,7 +813,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             this.unityReady ??= new Promise<void>((resolve) => window.addEventListener("test-unity-ready", () => resolve(), { once: true }));
             await this.unityReady;
         }
-        const installations = this.mode === "empty" || this.mode === "unity-zero"
+        const installations = (query.has("h3-unity-discovery") && !this.unityDiscoveryComplete) || this.mode === "empty" || this.mode === "unity-zero"
             ? []
             : this.mode === "unity-multiple"
                 ? [installation(), { ...installation(), installationId: "00000000-0000-4000-8000-000000000111", filesystemIdentity: "opaque-two", executablePath: "<private-editor-two>" }]
@@ -830,7 +831,9 @@ class DeterministicGuiClient implements GuiRpcClient {
     unityInstallationRemove(): ReturnType<GuiRpcClient["unityInstallationRemove"]> { return this.value({ installationId: INSTALLATION_ID, removed: true, replayed: false }); }
     unityInstallationsRefresh(): ReturnType<GuiRpcClient["unityInstallationsRefresh"]> {
         window.unityRequests.push({ method: "unityInstallationsRefresh", params: {} });
+        if (query.has("h3-unity-discovery-error") && window.unityRequests.filter((request) => request.method === "unityInstallationsRefresh").length === 1) return Promise.reject({ code: "unity_version_unverified" });
         if (query.get("hub-refresh") === "error") return Promise.reject({ code: "internal_error" });
+        this.unityDiscoveryComplete = true;
         return this.value({ installations: [installation()], replayed: false });
     }
     unityProjectLaunchConfigGet(): ReturnType<GuiRpcClient["unityProjectLaunchConfigGet"]> {

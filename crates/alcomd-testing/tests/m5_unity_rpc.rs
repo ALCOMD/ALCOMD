@@ -12,6 +12,10 @@ use alcomd_protocol::{
     UnityLaunchParams, UnityWriterStateKind,
 };
 
+#[cfg(windows)]
+#[path = "../../alcomd-platform/test-support/windows_unity_editor.rs"]
+mod windows_editor_fixture;
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_over_rpc() {
     let fixture = TestDirectory::new();
@@ -212,12 +216,20 @@ fn create_fake_editor(root: &Path, directory: &str) -> PathBuf {
         .join(directory)
         .join("Data/Resources/PackageManager/Editor/manifest.json");
     fs::create_dir_all(manifest.parent().expect("manifest parent")).expect("create Editor layout");
+    #[cfg(not(windows))]
     fs::copy(
         std::env::current_exe().expect("current test executable"),
         &executable,
     )
     .expect("copy executable fixture");
-    fs::write(manifest, r#"{"version":"2022.3.22f1"}"#).expect("write Editor manifest");
+    #[cfg(windows)]
+    windows_editor_fixture::write_editor_fixture(&executable, "Unity", "2022.3.22f1_887be4894c44")
+        .expect("write native Editor version resource");
+    #[cfg(not(windows))]
+    let catalog = r#"{"version":"2022.3.22f1"}"#;
+    #[cfg(windows)]
+    let catalog = r#"{"schemaVersion":4,"packages":{"com.unity.collections":{"version":"1.2.4"}}}"#;
+    fs::write(manifest, catalog).expect("write Editor package catalog");
     executable
 }
 

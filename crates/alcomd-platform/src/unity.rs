@@ -9,6 +9,10 @@ use std::process::{Command, Stdio};
 const MANIFEST_BYTE_LIMIT: u64 = 65_536;
 const DISCOVERY_ENTRY_LIMIT: usize = 256;
 
+#[cfg(windows)]
+#[path = "windows_unity_version.rs"]
+mod windows_version;
+
 /// Architecture reported without guessing the executable's binary format.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UnityArchitecture {
@@ -21,7 +25,10 @@ pub enum UnityArchitecture {
 pub struct ValidatedUnityExecutable {
     executable_path: PathBuf,
     filesystem_identity: Vec<u8>,
+    #[cfg(not(windows))]
     version_manifest: Vec<u8>,
+    #[cfg(windows)]
+    product_version: String,
     architecture: UnityArchitecture,
 }
 
@@ -63,9 +70,16 @@ impl ValidatedUnityExecutable {
         &self.filesystem_identity
     }
 
+    #[cfg(not(windows))]
     #[must_use]
     pub fn version_manifest(&self) -> &[u8] {
         &self.version_manifest
+    }
+
+    #[cfg(windows)]
+    #[must_use]
+    pub fn product_version(&self) -> &str {
+        &self.product_version
     }
 
     #[must_use]
@@ -74,7 +88,7 @@ impl ValidatedUnityExecutable {
     }
 }
 
-/// Validates an actual executable and the adjacent Unity PackageManager Editor manifest.
+/// Validates the Editor layout and executable metadata without executing the Editor.
 pub fn validate_unity_executable(path: &Path) -> io::Result<ValidatedUnityExecutable> {
     if !path.is_absolute() {
         return Err(io::Error::new(
@@ -90,6 +104,7 @@ pub fn validate_unity_executable(path: &Path) -> io::Result<ValidatedUnityExecut
             "Unity executable is not a file",
         ));
     }
+    let filesystem_identity = crate::file_identity_key(&executable_path)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -131,47 +146,84 @@ pub fn validate_unity_executable(path: &Path) -> io::Result<ValidatedUnityExecut
             "Unity version manifest is too large",
         ));
     }
+    #[cfg(windows)]
+    let product_version =
+        windows_version::read_unity_product_version(&executable_path).map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Unity Editor version resource could not be read: {error}"),
+            )
+        })?;
+    if crate::file_identity_key(&executable_path)? != filesystem_identity {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Unity executable identity changed during inspection",
+        ));
+    }
     Ok(ValidatedUnityExecutable {
-        filesystem_identity: crate::file_identity_key(&executable_path)?,
+        filesystem_identity,
         executable_path,
+        #[cfg(not(windows))]
         version_manifest: bytes,
+        #[cfg(windows)]
+        product_version,
         architecture: UnityArchitecture::Unknown,
     })
 }
 
 /// Returns validated candidates from bounded, conventional Unity Hub install roots.
-pub fn discover_unity_executables() -> Vec<ValidatedUnityExecutable> {
+/// An existing candidate that cannot be verified is an error, never an empty success.
+pub fn discover_unity_executables() -> io::Result<Vec<ValidatedUnityExecutable>> {
+    discover_from_roots(known_install_roots())
+}
+
+fn discover_from_roots(roots: Vec<PathBuf>) -> io::Result<Vec<ValidatedUnityExecutable>> {
     let mut installations = Vec::new();
-    for root in known_install_roots() {
-        let Ok(entries) = fs::read_dir(root) else {
-            continue;
+    for root in roots {
+        let entries = match fs::read_dir(&root) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(discovery_error(&root, error)),
         };
         let mut entries = entries
-            .filter_map(Result::ok)
             .take(DISCOVERY_ENTRY_LIMIT)
-            .collect::<Vec<_>>();
+            .collect::<io::Result<Vec<_>>>()
+            .map_err(|error| discovery_error(&root, error))?;
         entries.sort_by_key(fs::DirEntry::file_name);
         for entry in entries {
-            let Ok(file_type) = entry.file_type() else {
-                continue;
-            };
-            if file_type.is_symlink() {
+            let file_type = entry
+                .file_type()
+                .map_err(|error| discovery_error(&entry.path(), error))?;
+            if file_type.is_symlink() || !file_type.is_dir() {
                 continue;
             }
             let path = editor_executable(&entry.path());
-            if let Ok(installation) = validate_unity_executable(&path)
-                && !installations
-                    .iter()
-                    .any(|existing: &ValidatedUnityExecutable| {
-                        existing.filesystem_identity == installation.filesystem_identity
-                    })
+            match fs::symlink_metadata(&path) {
+                Ok(_) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(discovery_error(&path, error)),
+            }
+            let installation =
+                validate_unity_executable(&path).map_err(|error| discovery_error(&path, error))?;
+            if !installations
+                .iter()
+                .any(|existing: &ValidatedUnityExecutable| {
+                    existing.filesystem_identity == installation.filesystem_identity
+                })
             {
                 installations.push(installation);
             }
         }
     }
     installations.sort_by(|left, right| left.executable_path.cmp(&right.executable_path));
-    installations
+    Ok(installations)
+}
+
+fn discovery_error(path: &Path, error: io::Error) -> io::Error {
+    io::Error::new(
+        error.kind(),
+        format!("Unity Editor discovery at {}: {error}", path.display()),
+    )
 }
 
 /// Spawns one validated Unity executable with an exact project selector and argv array.
@@ -255,5 +307,119 @@ fn known_install_roots() -> Vec<PathBuf> {
             .into_iter()
             .map(|path| path.join("Unity/Hub/Editor"))
             .collect()
+    }
+}
+
+#[cfg(all(test, windows))]
+#[path = "../test-support/windows_unity_editor.rs"]
+mod windows_editor_fixture;
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::{discover_from_roots, windows_editor_fixture};
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
+
+    struct DiscoveryFixture(PathBuf);
+
+    impl DiscoveryFixture {
+        fn new() -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "alcomd-editor-discovery-{}-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .expect("clock")
+                    .as_nanos(),
+                NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed)
+            ));
+            std::fs::create_dir_all(&root).expect("fixture root");
+            Self(root)
+        }
+
+        fn editor(&self, directory: &str, product: &str) -> PathBuf {
+            let executable = super::editor_executable(&self.0.join(directory));
+            let catalog = executable
+                .parent()
+                .expect("Editor directory")
+                .join("Data/Resources/PackageManager/Editor/manifest.json");
+            std::fs::create_dir_all(catalog.parent().expect("catalog parent"))
+                .expect("Editor layout");
+            windows_editor_fixture::write_editor_fixture(
+                &executable,
+                product,
+                "2022.3.22f1_887be4894c44",
+            )
+            .expect("native Editor resource");
+            std::fs::write(
+                catalog,
+                r#"{"schemaVersion":4,"packages":{"com.unity.collections":{"version":"1.2.4"}}}"#,
+            )
+            .expect("real-shaped package catalog");
+            executable
+        }
+
+        fn root(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for DiscoveryFixture {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).expect("remove owned discovery fixture");
+        }
+    }
+
+    #[test]
+    fn discovery_reads_editor_binary_and_deduplicates_root_identity() {
+        let fixture = DiscoveryFixture::new();
+        let executable = fixture.editor("directory-name-is-not-version", "Unity");
+        let installations =
+            discover_from_roots(vec![fixture.root().to_owned(), fixture.root().to_owned()])
+                .expect("discover native metadata");
+        assert_eq!(installations.len(), 1);
+        assert_eq!(
+            installations[0].executable_path(),
+            std::fs::canonicalize(executable).expect("canonical executable")
+        );
+        assert_eq!(
+            installations[0].product_version(),
+            "2022.3.22f1_887be4894c44"
+        );
+    }
+
+    #[test]
+    fn discovery_does_not_silently_drop_an_existing_rejected_editor() {
+        let fixture = DiscoveryFixture::new();
+        fixture.editor("a-valid", "Unity");
+        let rejected = fixture.editor("b-rejected", "Unity Hub");
+        let error = discover_from_roots(vec![fixture.root().to_owned()])
+            .expect_err("report rejected candidate");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(
+            error
+                .to_string()
+                .contains(&rejected.to_string_lossy().to_string())
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("ProductName is not Unity Editor")
+        );
+    }
+
+    #[test]
+    fn discovery_distinguishes_absent_roots_and_non_editor_directories() {
+        let fixture = DiscoveryFixture::new();
+        std::fs::create_dir(fixture.root().join("unrelated-directory"))
+            .expect("unrelated directory");
+        let installations = discover_from_roots(vec![
+            fixture.root().join("missing"),
+            fixture.root().to_owned(),
+        ])
+        .expect("no Editor candidates");
+        assert!(installations.is_empty());
     }
 }

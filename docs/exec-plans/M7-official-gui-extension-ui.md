@@ -871,6 +871,16 @@ GUI check（918 条翻译）与更新后的 release GUI。备份/任务等 16 �
 仍没有对应远端 CI/CodeQL，旧 `0ef5b08` 的通过只对应旧输入。H3 的停止点是本地候选、证据、真实窗口
 和简短清单交由项目所有者验收；H4-H7、推送与 M7 整体完成均未授权。
 
+2026-11-02 所有者暂不签收 H3，要求优先修复当前 Windows Editor 检测。现场原开发数据的登记为空，
+但默认 Hub 安装根存在 `2022.3.22f1`；真实 Package Manager 清单不含 Editor 顶层版本，旧验证却依赖人造
+`{"version":...}` 形状并静默丢弃失败。此轮只修现有验证/发现链与直接误报：Windows 从 Editor 本身的
+ProductName/ProductVersion 资源读取，复用现有 `windows-sys` FileSystem 功能，不执行 Editor 获取版本，
+不以目录名推断、不新增依赖或公开合同。窄 version.dll FFI 只在 platform 私有模块局部允许 unsafe，
+每处说明指针、缓冲区、对齐与生命周期，输出仍经 Core canonical version 校验。发现失败明确返回既有错误，
+技术日志保留完整路径和原因，GUI 不把版本无法验证说成未安装；先补真实元数据形状的失败回归。
+Hub 自定义根尚未覆盖的能力不作为本机故障原因，也不借此扩大实现。既有 exact launch、Plan/Apply、
+无持久 Editor 偏好与不干扰用户 Unity 的边界不变，其他非阻塞体验只保留现有待办。
+
 ## Progress log
 
 - 2026-08-24：M6完成；M7最初研究WebView-based UI。

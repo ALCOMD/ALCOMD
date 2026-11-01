@@ -340,7 +340,7 @@ export function UnityRegistryActions({ client, installations, onChanged }: Actio
             {installations.length === 0 ? null : <Select aria-label={t("Installation to remove")} disabled={feedback.busy} label={t("Remove installation")} onChange={(next) => setRemove(installations.find((item) => item.installationId === next))} options={[{ label: t("Select an installation"), value: "" }, ...installations.map((item) => ({ label: "Unity " + item.unityVersion + " · " + item.architecture, value: item.installationId }))]} value={remove?.installationId ?? ""} />}
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button className="material-button--danger" disabled={!available || remove === undefined || feedback.busy} onClick={() => { setConfirmRemove(true); setFeedback(INITIAL_FEEDBACK); }} title={capabilityUnavailableTitle(available, capabilities.unityManage, t)} type="button" variant="text">{t("Review removal")}</Button></div>
         </>}
-        <MutationFeedback client={client} feedback={feedback} />
+        <MutationFeedback client={client} errorTitle={feedback.error?.code === "unity_version_unverified" ? t("Unity Editor version could not be verified.") : feedback.error?.code === "unity_installation_invalid" ? t("Unity installation could not be validated.") : undefined} feedback={feedback} />
     </ActionSection>;
 }
 
@@ -1123,13 +1123,13 @@ function ModalDialog({ children, dismissible = true, onClose, open, title }: { c
     return <MaterialDialog dismissible={dismissible} onClose={onClose} open={open} title={title}>{children}</MaterialDialog>;
 }
 
-function MutationFeedback({ client, feedback, onOperationTerminal }: { client: GuiRpcClient; feedback: FeedbackState; onOperationTerminal?(operation: Operation): void }) {
+function MutationFeedback({ client, errorTitle, feedback, onOperationTerminal }: { client: GuiRpcClient; errorTitle?: string; feedback: FeedbackState; onOperationTerminal?(operation: Operation): void }) {
     const { success, clear } = useReminder();
     useEffect(() => {
         if (feedback.busy) clear();
         else if (feedback.messageTone === "success" && feedback.error === undefined && feedback.operationId === undefined && feedback.message !== undefined) success(feedback.message);
     }, [feedback.busy, feedback.error, feedback.operationId, feedback.message, feedback.messageTone, success, clear]);
-    if (feedback.error !== undefined) return <RequestReminder error={feedback.error} />;
+    if (feedback.error !== undefined) return <RequestReminder error={feedback.error} title={errorTitle} />;
     if (feedback.operationId !== undefined) return <OperationFollow client={client} onTerminal={onOperationTerminal} operationId={feedback.operationId} />;
     if (feedback.message !== undefined && feedback.messageTone !== "success") return <Reminder tone={feedback.messageTone ?? "info"}>{feedback.message}</Reminder>;
     return null;

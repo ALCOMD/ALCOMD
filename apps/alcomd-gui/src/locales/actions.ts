@@ -964,6 +964,14 @@ export const actionMessages: TranslationTable = {
         "zh-CN": "需要安装 Unity",
         "ja-JP": "Unityのインストールが必要です"
     },
+    "Unity Editor version could not be verified.": {
+        "zh-CN": "无法验证 Unity Editor 版本。",
+        "ja-JP": "Unity Editor のバージョンを確認できませんでした。"
+    },
+    "Unity installation could not be validated.": {
+        "zh-CN": "无法验证 Unity 安装。",
+        "ja-JP": "Unity のインストールを検証できませんでした。"
+    },
     "Unity installations refreshed.": {
         "zh-CN": "已刷新 Unity 安装列表。",
         "ja-JP": "Unityのインストール一覧を更新しました。"

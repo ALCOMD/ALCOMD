@@ -14,26 +14,36 @@ impl app::M5UnityPlatform for PlatformUnityAdapter {
         source_kind: app::UnitySourceKind,
     ) -> Result<app::UnityInstallationObservation, app::M5UnityError> {
         let executable_path = PathBuf::from(executable_path);
-        std::fs::metadata(&executable_path).map_err(|_| invalid_installation())?;
+        std::fs::metadata(&executable_path).map_err(|error| {
+            tracing::warn!(path = %executable_path.display(), reason = %error, "Unity Editor executable is unavailable");
+            invalid_installation()
+        })?;
         let value =
             alcomd_platform::validate_unity_executable(&executable_path).map_err(|error| {
-                match error.kind() {
-                    std::io::ErrorKind::InvalidData | std::io::ErrorKind::NotFound => {
-                        app::M5UnityError::new(app::M5UnityErrorCode::VersionUnverified)
-                    }
-                    _ => invalid_installation(),
-                }
+                tracing::warn!(path = %executable_path.display(), reason = %error, "Unity Editor installation could not be verified");
+                installation_validation_error(error.kind())
             })?;
-        observation(value, source_kind)
+        observation(value, source_kind).inspect_err(|error| {
+            tracing::warn!(path = %executable_path.display(), reason = %error, "Unity Editor version could not be verified");
+        })
     }
 
     async fn discover_installations(
         &self,
     ) -> Result<Vec<app::UnityInstallationObservation>, app::M5UnityError> {
-        Ok(alcomd_platform::discover_unity_executables()
+        alcomd_platform::discover_unity_executables()
+            .map_err(|error| {
+                tracing::warn!(reason = %error, "Unity Editor discovery failed");
+                installation_validation_error(error.kind())
+            })?
             .into_iter()
-            .filter_map(|value| observation(value, app::UnitySourceKind::KnownInstallRoot).ok())
-            .collect())
+            .map(|value| {
+                let path = value.executable_path().to_path_buf();
+                observation(value, app::UnitySourceKind::KnownInstallRoot).inspect_err(|error| {
+                    tracing::warn!(path = %path.display(), reason = %error, "Discovered Unity Editor version could not be verified");
+                })
+            })
+            .collect()
     }
 
     async fn observe_processes(
@@ -89,14 +99,17 @@ fn observation(
     value: alcomd_platform::ValidatedUnityExecutable,
     source_kind: app::UnitySourceKind,
 ) -> Result<app::UnityInstallationObservation, app::M5UnityError> {
+    #[cfg(not(windows))]
     let document: serde_json::Value = serde_json::from_slice(value.version_manifest())
         .map_err(|_| app::M5UnityError::new(app::M5UnityErrorCode::VersionUnverified))?;
+    #[cfg(not(windows))]
     let unity_version = document
         .get("version")
         .and_then(serde_json::Value::as_str)
-        .filter(|version| valid_unity_version(version))
-        .ok_or_else(|| app::M5UnityError::new(app::M5UnityErrorCode::VersionUnverified))?
-        .to_owned();
+        .ok_or_else(|| app::M5UnityError::new(app::M5UnityErrorCode::VersionUnverified))?;
+    #[cfg(windows)]
+    let unity_version = editor_product_version(value.product_version())?;
+    let unity_version = app::canonical_unity_version(unity_version)?;
     Ok(app::UnityInstallationObservation {
         executable_path: value
             .executable_path()
@@ -113,14 +126,30 @@ fn observation(
     })
 }
 
-fn valid_unity_version(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 128
-        && value.is_ascii()
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'.' || byte == b'-')
-        && value.contains('.')
+#[cfg(windows)]
+fn editor_product_version(value: &str) -> Result<&str, app::M5UnityError> {
+    let version = if let Some((version, revision)) = value.split_once('_') {
+        if !matches!(revision.len(), 12 | 40)
+            || !revision.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err(app::M5UnityError::new(
+                app::M5UnityErrorCode::VersionUnverified,
+            ));
+        }
+        version
+    } else {
+        value
+    };
+    Ok(version)
+}
+
+fn installation_validation_error(kind: std::io::ErrorKind) -> app::M5UnityError {
+    match kind {
+        std::io::ErrorKind::InvalidData | std::io::ErrorKind::NotFound => {
+            app::M5UnityError::new(app::M5UnityErrorCode::VersionUnverified)
+        }
+        _ => invalid_installation(),
+    }
 }
 
 fn now_ms() -> Result<u64, app::M5UnityError> {
@@ -133,4 +162,115 @@ fn now_ms() -> Result<u64, app::M5UnityError> {
 
 fn invalid_installation() -> app::M5UnityError {
     app::M5UnityError::new(app::M5UnityErrorCode::InstallationInvalid)
+}
+
+#[cfg(all(test, windows))]
+#[path = "../../../crates/alcomd-platform/test-support/windows_unity_editor.rs"]
+mod windows_editor_fixture;
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::{PlatformUnityAdapter, app, windows_editor_fixture};
+    use alcomd_application::M5UnityPlatform;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
+
+    struct EditorFixture(PathBuf);
+
+    impl EditorFixture {
+        fn new(product: &str, version: &str, catalog: &str) -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "alcomd-editor-version-{}-{}-{}",
+                std::process::id(),
+                super::now_ms().expect("clock"),
+                NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed)
+            ));
+            let editor = root.join("2019.4.31f1/Editor");
+            let catalog_path = editor.join("Data/Resources/PackageManager/Editor/manifest.json");
+            std::fs::create_dir_all(catalog_path.parent().expect("catalog parent"))
+                .expect("fixture directories");
+            windows_editor_fixture::write_editor_fixture(
+                &editor.join("Unity.exe"),
+                product,
+                version,
+            )
+            .expect("owned executable version resource");
+            std::fs::write(catalog_path, catalog).expect("package catalog");
+            Self(root)
+        }
+
+        fn executable(&self) -> &Path {
+            &self.0
+        }
+
+        async fn inspect(&self) -> Result<app::UnityInstallationObservation, app::M5UnityError> {
+            PlatformUnityAdapter
+                .validate_installation(
+                    self.executable()
+                        .join("2019.4.31f1/Editor/Unity.exe")
+                        .to_string_lossy()
+                        .into_owned(),
+                    app::UnitySourceKind::KnownInstallRoot,
+                )
+                .await
+        }
+    }
+
+    impl Drop for EditorFixture {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).expect("remove owned Editor fixture");
+        }
+    }
+
+    #[tokio::test]
+    async fn windows_editor_version_is_not_read_from_package_catalog() {
+        let fixture = EditorFixture::new(
+            "Unity",
+            "2022.3.22f1_887be4894c44",
+            r#"{"schemaVersion":4,"packages":{"com.unity.collections":{"version":"1.2.4"}},"metadataPackageName":"com.unity.package-manager.metadata-2022.3"}"#,
+        );
+        let observed = fixture
+            .inspect()
+            .await
+            .expect("verify Editor binary version");
+        assert_eq!(observed.unity_version, "2022.3.22f1");
+    }
+
+    #[tokio::test]
+    async fn windows_editor_version_ignores_catalog_and_directory_versions() {
+        let fixture = EditorFixture::new(
+            "Unity",
+            "2022.3.22f1_887be4894c44",
+            r#"{"version":"2019.4.31f1"}"#,
+        );
+        assert_eq!(
+            fixture
+                .inspect()
+                .await
+                .expect("binary metadata")
+                .unity_version,
+            "2022.3.22f1"
+        );
+    }
+
+    #[tokio::test]
+    async fn windows_editor_version_rejects_non_unity_and_unverified_metadata() {
+        for (product, version) in [
+            ("Unity Hub", "2022.3.22f1"),
+            ("Unity", "2022.3.22"),
+            ("Unity", "2022.3.22f1_bad"),
+        ] {
+            let fixture = EditorFixture::new(product, version, r#"{"version":"2022.3.22f1"}"#);
+            assert_eq!(
+                fixture
+                    .inspect()
+                    .await
+                    .expect_err("reject unverified Editor")
+                    .code(),
+                app::M5UnityErrorCode::VersionUnverified
+            );
+        }
+    }
 }
