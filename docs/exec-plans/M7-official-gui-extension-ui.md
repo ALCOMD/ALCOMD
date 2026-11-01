@@ -881,6 +881,13 @@ ProductName/ProductVersion 资源读取，复用现有 `windows-sys` FileSystem 
 Hub 自定义根尚未覆盖的能力不作为本机故障原因，也不借此扩大实现。既有 exact launch、Plan/Apply、
 无持久 Editor 偏好与不干扰用户 Unity 的边界不变，其他非阻塞体验只保留现有待办。
 
+该修复已本地提交为 `efdb133`：platform 8/0、daemon 3/0、exact version 1/0、RPC 1/0、Unity 浏览器
+6/0 与受影响 Clippy、GUI check、Core/GUI release 构建通过。真实原环境的正式 CLI 自动发现及再次刷新
+均得到同一 verified `2022.3.22f1`，两个样例的 exact candidates 匹配；没有手动登记、启动或迁移实际工程。
+原数据 Core 已恢复，更新前后五组公开状态一致；发现后 Editor 登记按预期从 0 到 1，其他四组保持、revision 155。
+physical Escape 后未再进行桌面输入/原生截图，新 GUI 已启动可响应，真实安装页显示仍待所有者确认。
+本轮停止点只核对这一项，不重新验收所有 H3 页面，不以 CLI 成功替代原生 GUI 验证或 H3 签收。
+
 ## Progress log
 
 - 2026-08-24：M6完成；M7最初研究WebView-based UI。
@@ -1095,9 +1102,11 @@ confirmed CLI remove 已在新明确授权后通过正式 CLI 补齐，Core 拒�
 未将该签收提升为体验完善、整个 Visual Gate 3 或 M7 完成。按授权实际恢复原 Core/开发窗口，
 五组公开状态与暂停前一致、revision 155，不再仅记录守候等待。
 获批 G3 的本轮完成度核对已完成，现有 RPC 覆盖矩阵与公开方法 92/92 对齐；方法归属不冒充独立 GUI 动作全部完成。
-项目所有者随后明确批准既有 H3，现已形成 `ab5d183` 本地代码候选：同 SHA 定向回归 34/0、GUI check
+项目所有者随后明确批准既有 H3，上轮形成 `ab5d183` 本地代码候选：同 SHA 定向回归 34/0、GUI check
 与 release 构建通过，主体备份/恢复的原生证据仍绑定实际 `ef47c25` 构建，新增启动状态弹窗未完成原生查看。
-原开发环境再次实际恢复，五组完整公开状态一致、revision 155。下一停止点是项目所有者 H3 人工验收，
+原开发环境再次实际恢复，五组完整公开状态一致、revision 155。本轮人工反馈暂不签收 H3，现以 `efdb133`
+修复 Windows Editor 版本读取，并实际确认自动发现、重复刷新与项目 exact candidates；新窗口已打开，
+Esc 后安装页原生查看未执行，下一停止点仅由项目所有者确认本轮检测项，其他 H3 页面不重验。
 不重规划 M7，不重做已完成内容。H2-A、H2-B 阶段签收保持；H2-B 新增代码和 H3 仍无对应远端验证。
 未经新的推送授权不推送，H4-H7、M8、M9、M11 未由本次授权开放。详细结果与待办见现有 status/testing 文档。
 已有候选读取、exact Unity、Config3、Hub 和 State16 的合同继续有效。完整 GUI/Rust/三平台
