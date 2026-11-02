@@ -26,6 +26,8 @@ import { queryCandidates } from "../../src/package-candidates";
 import type { GuiRpcClient } from "../../src/rpc";
 import "../../src/styles.css";
 import { MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
+import { withH4PortableClient } from "./h4-portable-client";
+import { withH4ManagementClient } from "./h4-management-client";
 
 type CandidateQuery = (client: Pick<GuiRpcClient, "packageQueryProjectCandidates">, request: Parameters<typeof queryCandidates>[1]) => ReturnType<typeof queryCandidates>;
 
@@ -80,6 +82,7 @@ const SUPPORTED_CAPABILITIES = [
     "backups.restore.v1",
     RPC_CAPABILITIES.extensionsLifecycle,
     RPC_CAPABILITIES.extensionsPermissions,
+    RPC_CAPABILITIES.extensionsPermissionsRead,
     "extensions.ui.portable.v1",
     "operations.v1",
     "packages.apply.v1",
@@ -1012,6 +1015,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
 
     extensionsList(): ReturnType<GuiRpcClient["extensionsList"]> { return this.value({ extensions: this.mode === "empty" ? [] : [extension(DISCORD_ID), extension(MCP_ID)] }); }
+    extensionPermissionsList(extensionId: string): ReturnType<GuiRpcClient["extensionPermissionsList"]> { return this.value({ extensionId, grantRevision: 3, requiredPermissions: ["projects.read"], optionalPermissions: ["background.run"], grants: [] }); }
     extensionGet(extensionId: string): ReturnType<GuiRpcClient["extensionGet"]> { return this.value({ extension: extension(extensionId) }); }
     extensionPlanInstall(): ReturnType<GuiRpcClient["extensionPlanInstall"]> { return this.value({ plan: extensionPlan("install") }); }
     extensionApplyInstall(): ReturnType<GuiRpcClient["extensionApplyInstall"]> { return this.value({ operationId: OPERATION_ID, replayed: false }); }
@@ -1088,14 +1092,17 @@ function runningOperation(): Operation { return { operationId: OPERATION_ID, kin
 function packagePlan(action: PackagePlan["action"]): PackagePlan { return { planId: PLAN_ID, action, state: "unapplied", projectId: PROJECT_ID, projectRevision: 2, changeSetFingerprint: HASH, changeSet: { formatVersion: 1, mutations: [{ kind: action === "remove" ? "remove" : "install", packageId: "com.example.avatar", ...(action === "remove" ? { fromVersion: "1.2.3", toVersion: null } : { fromVersion: null, toVersion: "1.2.3" }) }], dependencyEdges: [], vpmManifestSha256: HASH } }; }
 function templatePlan(action: string) { return { planId: PLAN_ID, action, state: "unapplied", planFingerprint: HASH }; }
 function extension(extensionId: string): ExtensionRecord { return { extensionId, version: "1.0.0", apiMajor: 1, packageDigest: HASH, publisherFingerprint: `ed25519-sha256:${HASH}`, trustDecision: "official", desiredState: "enabled", quarantineState: "clear", runtimeState: "running", grantRevision: 3, lifecycleGeneration: 2, revision: 4, ui: { protocol: "portable-v1" } }; }
-function extensionPlan(action: string) { return { planId: PLAN_ID, action, state: "unapplied", sourceKind: "local_owner_selected", extensionId: DISCORD_ID, version: "1.0.0", apiMajor: 1, profileVersion: 1, packageDigest: HASH, publisherFingerprint: `ed25519-sha256:${HASH}`, trustDecision: "official", dataDisposition: "retain_data", planFingerprint: HASH, uiProtocol: "portable-v1" }; }
+function extensionPlan(action: string) { return { planId: PLAN_ID, action, state: "unapplied", sourceKind: "local_owner_selected", extensionId: DISCORD_ID, version: "1.0.0", apiMajor: 1, profileVersion: 1, packageDigest: HASH, publisherFingerprint: `ed25519-sha256:${HASH}`, trustDecision: "official", dataDisposition: "retain_data", planFingerprint: HASH, uiProtocol: "portable-v1", requiredPermissions: ["projects.read"], optionalPermissions: ["background.run"] }; }
 
 const root = document.getElementById("root");
 if (root === null) throw new Error("Missing #root element");
+const baseClient = new DeterministicGuiClient(mode);
+const managementClient = query.has("h4-management") ? withH4ManagementClient(baseClient, query) : baseClient;
+const browserClient = query.has("h4-portable") ? withH4PortableClient(managementClient, query) : managementClient;
 ReactDOM.createRoot(root).render(
     <React.StrictMode>
         {materialEvidence
             ? <MaterialFoundationEvidence />
-            : <App client={new DeterministicGuiClient(mode)} />}
+            : <App client={browserClient} />}
     </React.StrictMode>
 );

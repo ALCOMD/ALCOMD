@@ -8,6 +8,7 @@ export const capabilities = {
     backupsRestore: "backups.restore.v1",
     extensionsLifecycle: RPC_CAPABILITIES.extensionsLifecycle,
     extensionsPermissions: RPC_CAPABILITIES.extensionsPermissions,
+    extensionsPermissionsRead: RPC_CAPABILITIES.extensionsPermissionsRead,
     extensionsPortableUi: "extensions.ui.portable.v1",
     operations: "operations.v1",
     packagesApply: "packages.apply.v1",

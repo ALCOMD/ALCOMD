@@ -426,7 +426,7 @@ test("direct writes and the remaining high-impact workflows retain confirmation 
     await openHarness(page, "/extensions");
     await page.getByRole("button", { name: "Install extension", exact: true }).click();
     await page.getByLabel("Extension package").fill("C:\\Fixture\\extension.alcomdext");
-    await page.getByLabel("Expected registry revision", { exact: true }).fill("0");
+    await expect(page.getByLabel("Expected registry revision", { exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "Create install plan" }).click();
     await clickDialogAction(page, "Install extension", "Apply reviewed plan");
     await expect(page.getByRole("status").filter({ hasText: "Operation" })).toBeVisible();

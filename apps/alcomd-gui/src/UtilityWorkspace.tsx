@@ -8,6 +8,7 @@ import { LoadingState } from "./LoadingState";
 import { useInitialPageRead } from "./PageRead";
 import { ScrollArea } from "./ScrollArea";
 import { useReconnect } from "./capabilities";
+import { Reminder } from "./Reminder";
 
 interface UtilityWorkspaceProps<T> {
     title: string;
@@ -18,6 +19,7 @@ interface UtilityWorkspaceProps<T> {
     children(value: T, refresh: () => void): ReactNode;
     action?: {
         label: string;
+        disabled?: boolean;
         render(value: T, refresh: () => void): ReactNode;
     };
     tools?(value: T, refresh: () => void): ReactNode;
@@ -115,7 +117,7 @@ export function UtilityWorkspace<T>({
                     {action === undefined ? null : (
                         <Button
                             aria-haspopup="dialog"
-                            disabled={value === undefined}
+                            disabled={value === undefined || action.disabled}
                             onClick={() => setActionOpen(true)}
                             type="button"
                         >
@@ -126,10 +128,10 @@ export function UtilityWorkspace<T>({
             </PageHeader>
             <ScrollArea className="utility-workspace-body">
                 {error === undefined ? null : (
-                    <div className="inline-error" role="alert">
+                    <Reminder tone="error">
                         <p>{value === undefined ? t("This page could not be loaded.") : t("Refresh failed. The last loaded result is still shown.")} <code>{error}</code></p>
                         <Button disabled={pending} onClick={retry} type="button" variant="text">{t("Retry")}</Button>
-                    </div>
+                    </Reminder>
                 )}
                 {value === undefined ? (
                     pending ? <LoadingState title={t("Loading…")} /> : null

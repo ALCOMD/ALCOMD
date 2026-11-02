@@ -13,6 +13,7 @@ import {
 } from "./portable-ui";
 import { useTranslation, type Translate } from "./i18n";
 import { Button, Progress, Select, Switch, TextField } from "./Material";
+import { Reminder } from "./Reminder";
 
 interface PortableUiRendererProps {
     snapshot: UiSnapshot;
@@ -134,7 +135,7 @@ export function PortableUiRenderer({
                             </Button>
                         </fieldset>
                         {formError?.formId !== node.nodeId ? null : (
-                            <p className="field-error" role="alert">{formError.message}</p>
+                            <Reminder tone="error">{formError.message}</Reminder>
                         )}
                     </form>
                 );

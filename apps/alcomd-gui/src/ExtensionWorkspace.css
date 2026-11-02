@@ -74,3 +74,38 @@
 .extension-card-actions .material-toggle {
     font-size: 12px;
 }
+
+.extension-detail-identity {
+    overflow-wrap: anywhere;
+}
+
+.extension-permissions {
+    display: grid;
+    gap: 16px;
+}
+
+.extension-permissions h3 {
+    margin: 0 0 10px;
+}
+
+.extension-grants {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.extension-grants li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.extension-grants li > div {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+    overflow-wrap: anywhere;
+}

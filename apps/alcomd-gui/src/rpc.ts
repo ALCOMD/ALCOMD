@@ -2,6 +2,7 @@ import type {
     ProjectCandidateRequest,
     ProjectCandidatePage,
     ExtensionResult,
+    ExtensionPermissionsListResult,
     ExtensionUiCloseParams,
     ExtensionUiCloseResult,
     ExtensionUiDispatchParams,
@@ -168,8 +169,9 @@ export interface GuiRpcClient {
     backupCreate(projectId: string, expectedRevision: number, compressionMode: "store" | "fast" | "maximum", excludeVpmPackages: boolean): Promise<BackupCreateResult>;
     backupPlanRestore(backupId: string, targetParent: string, targetLeaf: string): Promise<BackupRestorePlan>;
     backupApplyRestore(planId: string): Promise<BackupApplyRestoreResult>;
-    extensionsList(): Promise<ExtensionsListResult>;
+    extensionsList(cursor?: string): Promise<ExtensionsListResult>;
     extensionGet(extensionId: string): Promise<ExtensionResult>;
+    extensionPermissionsList(extensionId: string, cursor?: string): Promise<ExtensionPermissionsListResult>;
     extensionPlanInstall(packagePath: string, expectedRevision: number, publisherApproval: "none" | "approve_for_extension"): Promise<ExtensionPlanResult>;
     extensionApplyInstall(planId: string): Promise<ExtensionOperationResult>;
     extensionEnable(extensionId: string, expectedRevision: number): Promise<ExtensionResult>;
@@ -508,12 +510,16 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_backup_apply_restore", { params: { planId, idempotencyKey: crypto.randomUUID() } });
     }
 
-    extensionsList(): Promise<ExtensionsListResult> {
-        return invokeTyped("gui_extensions_list", { params: { limit: 100 } });
+    extensionsList(cursor?: string): Promise<ExtensionsListResult> {
+        return invokeTyped("gui_extensions_list", { params: { limit: 100, ...(cursor === undefined ? {} : { cursor }) } });
     }
 
     extensionGet(extensionId: string): Promise<ExtensionResult> {
         return invokeTyped("gui_extension_get", { extensionId });
+    }
+
+    extensionPermissionsList(extensionId: string, cursor?: string): Promise<ExtensionPermissionsListResult> {
+        return invokeTyped("gui_extension_permissions_list", { params: { extensionId, limit: 100, ...(cursor === undefined ? {} : { cursor }) } });
     }
 
     extensionPlanInstall(packagePath: string, expectedRevision: number, publisherApproval: "none" | "approve_for_extension"): Promise<ExtensionPlanResult> {

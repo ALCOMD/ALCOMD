@@ -2,6 +2,7 @@ import { useTranslation } from "./i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "./Material";
+import { Reminder } from "./Reminder";
 
 export interface ItemPage<T, C> {
     items: T[];
@@ -66,7 +67,7 @@ function PageSession<T, C>({ initialItems, initialCursor, loadMore, children }: 
             {children(items)}
             {cursor === undefined ? null : (
                 <div className="pagination-controls" aria-busy={loading}>
-                    {failed ? <p className="inline-error" role="alert">{t("Could not load more items. Your loaded items are still available.")}</p> : null}
+                    {failed ? <Reminder tone="error">{t("Could not load more items. Your loaded items are still available.")}</Reminder> : null}
                     <Button disabled={loading} onClick={() => { void next(); }} type="button" variant="tonal">
                         {failed ? t("Retry loading more") : t("Load more")}
                     </Button>

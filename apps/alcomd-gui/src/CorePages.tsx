@@ -1948,52 +1948,66 @@ export function ExtensionsPage({ client, navigate }: PageProps) {
     const load = useCallback(() => client.extensionsList(), [client]);
     const canManage = useCapability(capabilities.extensionsLifecycle);
     const canOpen = useCapability(capabilities.extensionsPortableUi);
+    const reminder = useReminder();
+    const current = useActionScope(client);
     const pending = useRef(false);
     const [busy, setBusy] = useState(false);
-    const [error, setError] = useState<string>();
-    const [message, setMessage] = useState<string>();
+    const [error, setError] = useState<{ extensionId: string; error: RpcError }>();
+    const [operationId, setOperationId] = useState<string>();
+    const [operationTerminal, setOperationTerminal] = useState(false);
     const toggle = async (id: string, revision: number, enabled: boolean, refresh: () => void) => {
         if (!canManage || pending.current) return;
         pending.current = true;
         setBusy(true);
         setError(undefined);
-        setMessage(undefined);
+        reminder.clear();
         try {
-            const result = await (enabled ? client.extensionEnable(id, revision) : client.extensionDisable(id, revision));
-            setMessage(`${result.extension.extensionId}: ${result.extension.desiredState === "enabled" ? "enabled" : "disabled"}.`);
+            await (enabled ? client.extensionEnable(id, revision) : client.extensionDisable(id, revision));
+            if (!current()) return;
+            reminder.success(enabled ? t("Extension enabled.") : t("Extension disabled."));
             refresh();
         } catch (caught: unknown) {
-            setError(safeError(t, locale, caught).code);
+            if (current()) setError({ extensionId: id, error: safeError(t, locale, caught) });
         } finally {
             pending.current = false;
-            setBusy(false);
+            if (current()) setBusy(false);
         }
     };
-    return <UtilityWorkspace title={t(navigationLabels.extensions)} load={load} action={{ label: t("Install extension"), render: (_, refresh) => <ExtensionInstallPanel client={client} onChanged={refresh} /> }}>{(value, refresh) => (
+    return <UtilityWorkspace title={t(navigationLabels.extensions)} load={load} action={{ label: t("Install extension"), disabled: operationId !== undefined && !operationTerminal, render: () => <ExtensionInstallPanel client={client} onAccepted={(id) => { setOperationId(id); setOperationTerminal(false); }} /> }}>{(value, refresh) => <>
+        {operationId === undefined ? null : <OperationFollow client={client} key={operationId} onTerminal={() => { setOperationTerminal(true); refresh(); }} operationId={operationId} />}
+        <PagedItems initialItems={value.extensions} initialCursor={value.nextCursor} loadMore={async (cursor) => { const page = await client.extensionsList(cursor); return { items: page.extensions, nextCursor: page.nextCursor }; }}>{(extensions) => (
         <section className="extension-management" aria-labelledby="extension-management-title">
-            <header className="extension-management-heading"><h2 id="extension-management-title">{t("Manage extensions")}</h2><p>{t("Open an extension or change whether it is enabled.")}</p></header>
-            {error === undefined ? null : <p className="inline-error" role="alert">{t("Extension action failed: ")}{error}</p>}
-            {message === undefined ? null : <p role="status">{message}</p>}
-            <div className="extension-section-heading"><h3>{t("Installed")}</h3><span>{value.extensions.length}</span></div>
-            {value.extensions.length === 0 ? <RouteState kind="empty" title={t("No extensions installed")} /> : <div className="extension-cards">{value.extensions.map((extension) => {
+            <header className="extension-management-heading"><h2 id="extension-management-title">{t("Manage extensions")}</h2></header>
+            <div className="extension-section-heading"><h3>{t("Installed")}</h3><span>{extensions.length}</span></div>
+            {extensions.length === 0 ? <RouteState kind="empty" title={t("No extensions installed")} /> : <div className="extension-cards">{extensions.map((extension) => {
                 const enabled = extension.desiredState === "enabled";
-                const unavailable = extension.desiredState === "uninstalling" || extension.quarantineState === "quarantined";
+                const uninstalling = extension.desiredState === "uninstalling";
+                const quarantined = extension.quarantineState === "quarantined";
                 return <article className="extension-card" key={extension.extensionId} aria-label={extension.extensionId}>
-                    <div className="extension-card-heading"><div><h4>{extension.extensionId}</h4><p>{t("Version ")}{extension.version}</p></div>{extension.ui?.protocol !== "portable-v1" ? null : <Button disabled={!canOpen || !enabled || unavailable || busy} onClick={() => navigate(`/extensions/${extension.extensionId}/ui`)} title={capabilityUnavailableTitle(canOpen, capabilities.extensionsPortableUi, t)} type="button" variant="tonal">{t("Open")}</Button>}</div>
+                    <div className="extension-card-heading"><div><h4>{extension.extensionId}</h4><p>{t("Version ")}{extension.version}</p></div>{extension.ui?.protocol !== "portable-v1" ? null : <Button disabled={!canOpen || !enabled || uninstalling || quarantined || busy} onClick={() => navigate(`/extensions/${encodeURIComponent(extension.extensionId)}/ui`)} title={capabilityUnavailableTitle(canOpen, capabilities.extensionsPortableUi, t)} type="button" variant="tonal">{t("Open")}</Button>}</div>
                     <p className="extension-card-status">{humanize(t, extension.runtimeState)} · {humanize(t, extension.trustDecision)}{extension.quarantineState === "clear" ? "" : ` · ${humanize(t, extension.quarantineState)}`}</p>
-                    <div className="extension-card-actions"><Button onClick={() => navigate(`/extensions/${extension.extensionId}`)} type="button" variant="text">{t("Manage extension")}</Button><Switch disabled={!canManage || busy || unavailable} label={t("Enabled")} selected={enabled} onChange={(next) => void toggle(extension.extensionId, extension.revision, next, refresh)} /></div>
+                    <div className="extension-card-actions"><Button onClick={() => navigate(`/extensions/${encodeURIComponent(extension.extensionId)}`)} type="button" variant="text">{t("Manage extension")}</Button><Switch disabled={!canManage || busy || uninstalling || quarantined} label={t("Enabled")} selected={enabled} onChange={(next) => void toggle(extension.extensionId, extension.revision, next, refresh)} /></div>
+                    {error?.extensionId !== extension.extensionId ? null : <RequestReminder error={error.error} />}
                 </article>;
             })}</div>}
-            {value.nextCursor === undefined ? null : <p role="status">{t("More installed extensions exist. This view contains the first page.")}</p>}
         </section>
-    )}</UtilityWorkspace>;
+        )}</PagedItems>
+    </>}</UtilityWorkspace>;
 }
 
 export function ExtensionDetailPage({ client, navigate, extensionId }: PageProps & { extensionId: string }) {
-    const { t, locale } = useTranslation();
+    const { t } = useTranslation();
     const canUsePortableUi = useCapability(capabilities.extensionsPortableUi);
+    const [operationId, setOperationId] = useState<string>();
+    const [operationTerminal, setOperationTerminal] = useState(false);
     const load = useCallback(() => client.extensionGet(extensionId), [client, extensionId]);
-    return <UtilityWorkspace title={t("Extension detail")} back={<BackTo label={t("Extensions")} navigate={navigate} path="/extensions" />} load={load}>{({ extension }, refresh) => <><dl className="detail-grid"><Detail label={t("Version")} value={extension.version} /><Detail label={t("Publisher")} value={shortHash(extension.publisherFingerprint)} /><Detail label={t("Trust")} value={humanize(t, extension.trustDecision)} /><Detail label={t("Desired state")} value={humanize(t, extension.desiredState)} /><Detail label={t("Runtime")} value={humanize(t, extension.runtimeState)} /><Detail label={t("Quarantine")} value={humanize(t, extension.quarantineState)} /><Detail label={t("Grant revision")} value={String(extension.grantRevision)} /><Detail label={t("Record revision")} value={String(extension.revision)} /></dl>{extension.ui?.protocol === "portable-v1" ? <Button disabled={!canUsePortableUi} onClick={() => navigate(`/extensions/${extensionId}/ui`)} title={capabilityUnavailableTitle(canUsePortableUi, capabilities.extensionsPortableUi, t)} type="button">{t("Open Portable UI")}</Button> : <RouteState kind="empty" title={t("This extension has no Portable UI")} />}<ExtensionActions client={client} extension={extension} onChanged={refresh} /></>}</UtilityWorkspace>;
+    return <UtilityWorkspace title={t("Extension detail")} back={<BackTo label={t("Extensions")} navigate={navigate} path="/extensions" />} load={load}>{({ extension }, refresh) => <>
+        <h2 className="extension-detail-identity">{extension.extensionId}</h2>
+        <dl className="detail-grid"><Detail label={t("Version")} value={extension.version} /><Detail label={t("Publisher")} value={shortHash(extension.publisherFingerprint)} /><Detail label={t("Trust")} value={humanize(t, extension.trustDecision)} /><Detail label={t("Desired state")} value={humanize(t, extension.desiredState)} /><Detail label={t("Runtime")} value={humanize(t, extension.runtimeState)} /><Detail label={t("Quarantine")} value={humanize(t, extension.quarantineState)} /></dl>
+        {extension.ui?.protocol === "portable-v1" ? <Button disabled={!canUsePortableUi || extension.desiredState !== "enabled" || extension.quarantineState === "quarantined" || (operationId !== undefined && !operationTerminal)} onClick={() => navigate(`/extensions/${encodeURIComponent(extensionId)}/ui`)} title={capabilityUnavailableTitle(canUsePortableUi, capabilities.extensionsPortableUi, t)} type="button">{t("Open Portable UI")}</Button> : null}
+        <ExtensionActions client={client} extension={extension} onChanged={refresh} onAccepted={(id) => { setOperationId(id); setOperationTerminal(false); }} operationActive={operationId !== undefined && !operationTerminal} />
+        {operationId === undefined ? null : <OperationFollow client={client} key={operationId} onTerminal={(operation) => { if (operation.state === "succeeded") navigate("/extensions"); else { setOperationTerminal(true); refresh(); } }} operationId={operationId} />}
+    </>}</UtilityWorkspace>;
 }
 
 export function AboutPage({ client }: PageProps) {

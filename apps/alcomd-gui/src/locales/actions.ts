@@ -2,6 +2,22 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const actionMessages: TranslationTable = {
+    "Requested permissions": { "zh-CN": "申请的权限", "ja-JP": "要求する権限" },
+    "Required permissions": { "zh-CN": "必需权限", "ja-JP": "必須の権限" },
+    "Optional permissions": { "zh-CN": "可选权限", "ja-JP": "任意の権限" },
+    "Allowed permissions": { "zh-CN": "已允许的权限", "ja-JP": "許可済みの権限" },
+    "No permissions requested": { "zh-CN": "未申请权限", "ja-JP": "要求する権限はありません" },
+    "No permissions granted": { "zh-CN": "尚未授予权限", "ja-JP": "許可済みの権限はありません" },
+    "Run in background": { "zh-CN": "后台运行", "ja-JP": "バックグラウンドで実行" },
+    "Read projects": { "zh-CN": "读取项目", "ja-JP": "プロジェクトの読み取り" },
+    "Unknown permission: {permission}": { "zh-CN": "未知权限：{permission}", "ja-JP": "不明な権限：{permission}" },
+    "This extension": { "zh-CN": "此扩展", "ja-JP": "この拡張機能" },
+    "Select project": { "zh-CN": "选择项目", "ja-JP": "プロジェクトを選択" },
+    "Project {id}": { "zh-CN": "项目 {id}", "ja-JP": "プロジェクト {id}" },
+    "Permission details are unavailable from this Core.": { "zh-CN": "当前 Core 无法提供权限详情。", "ja-JP": "現在のCoreから権限の詳細を取得できません。" },
+    "The permission change may have completed. Refresh permissions before trying again.": { "zh-CN": "权限变更可能已完成。请先刷新权限，再决定是否重试。", "ja-JP": "権限の変更は完了している可能性があります。再試行の前に権限を更新してください。" },
+    "Recover extension": { "zh-CN": "恢复扩展", "ja-JP": "拡張機能を復旧" },
+    "This extension is quarantined. Recovery rechecks its package and permissions before enabling it.": { "zh-CN": "此扩展已被隔离。恢复时会重新验证扩展包与权限，然后启用。", "ja-JP": "この拡張機能は隔離されています。復旧時にパッケージと権限を再検証してから有効にします。" },
     "Unity launch status": { "zh-CN": "Unity 启动状态", "ja-JP": "Unity の起動状態" },
     "Last observed launch state: {state}": { "zh-CN": "最近观察到的启动状态：{state}", "ja-JP": "最後に確認した起動状態：{state}" },
     "Operation failed": { "zh-CN": "任务失败", "ja-JP": "操作に失敗しました" },
@@ -307,10 +323,6 @@ export const actionMessages: TranslationTable = {
     "Exclude VPM packages": {
         "zh-CN": "排除 VPM 软件包",
         "ja-JP": "VPMパッケージを除外"
-    },
-    "Expected registry revision": {
-        "zh-CN": "预期注册表修订号",
-        "ja-JP": "想定するレジストリのリビジョン"
     },
     "Export": {
         "zh-CN": "导出",
@@ -919,10 +931,6 @@ export const actionMessages: TranslationTable = {
     "To": {
         "zh-CN": "到",
         "ja-JP": "変更後"
-    },
-    "Transitional input: the current registry read interface does not provide its revision. Enter the verified registry revision; it is never inferred from installed extensions.": {
-        "zh-CN": "过渡输入：当前注册表读取接口不提供修订号。请填写已验证的注册表修订号，不会根据已安装扩展推测。",
-        "ja-JP": "暫定入力：現在のレジストリ読み取りインターフェースはリビジョンを返しません。確認済みのリビジョンを入力してください。インストール済みの拡張機能から推測することはありません。"
     },
     "Unable to open Unity: {code}": {
         "zh-CN": "无法打开 Unity：{code}",

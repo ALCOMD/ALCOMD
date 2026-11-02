@@ -27,7 +27,7 @@ import {
 import type { ReactNode } from "react";
 import { Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { SettingsAutosave } from "./settings-autosave";
-import { ReminderProvider } from "./Reminder";
+import { ReminderProvider, RequestReminder } from "./Reminder";
 
 import {
     AboutPage,
@@ -70,7 +70,8 @@ import {
     CapabilityProvider,
     type CapabilitySnapshot,
     useCapabilityCheck,
-    useCapabilityState
+    useCapabilityState,
+    useReconnect
 } from "./capabilities";
 
 const DISCARD_MESSAGE = "Discard the unsaved changes?";
@@ -495,8 +496,17 @@ interface ExtensionUiPageProps {
     onDirtyChange(dirty: boolean): void;
 }
 
+interface ExtensionUiSessionScope {
+    readonly client: GuiRpcClient;
+    active: boolean;
+    busy: boolean;
+    sessionId?: string;
+    sequence: number;
+}
+
 function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: ExtensionUiPageProps) {
     const { t } = useTranslation();
+    const reconnectConnection = useReconnect();
     const [extension, setExtension] = useState<ExtensionRecord>();
     const [snapshot, setSnapshot] = useState<UiSnapshot>();
     const [error, setError] = useState<RpcError>();
@@ -504,9 +514,9 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
     const [busy, setBusy] = useState(false);
     const [dirty, setDirty] = useState(false);
     const [generation, setGeneration] = useState(0);
-    const sessionIdRef = useRef<string | undefined>(undefined);
-    const sequenceRef = useRef(1);
+    const scopeRef = useRef<ExtensionUiSessionScope | undefined>(undefined);
     const headingRef = useRef<HTMLHeadingElement>(null);
+    const isCurrent = useCallback((scope: ExtensionUiSessionScope) => scope.active && scopeRef.current === scope, []);
 
     const updateDirty = useCallback((next: boolean) => {
         setDirty(next);
@@ -514,86 +524,116 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
     }, [onDirtyChange]);
 
     useEffect(() => {
-        let active = true;
-        let openedSessionId: string | undefined;
+        // Every effect owns one connection/session generation. Late results cannot
+        // update a replacement session or its page-level dirty state.
+        const scope: ExtensionUiSessionScope = { client, active: true, busy: true, sequence: 1 };
+        scopeRef.current = scope;
         setExtension(undefined);
         setSnapshot(undefined);
         setError(undefined);
+        setPendingDiscardAction(undefined);
         setBusy(true);
         updateDirty(false);
-        sequenceRef.current = 1;
 
         const open = async () => {
             try {
                 const extensionResult = await client.extensionGet(extensionId);
+                if (!isCurrent(scope)) return;
                 if (extensionResult.extension.ui?.protocol !== "portable-v1") {
                     throw rpcError("extension_ui_not_available", "This extension does not expose Portable UI v1.");
                 }
                 const opened = await client.extensionUiOpen({ extensionId, locale });
-                openedSessionId = opened.session.sessionId;
+                scope.sessionId = opened.session.sessionId;
+                if (!isCurrent(scope)) {
+                    await closeUiScope(scope);
+                    return;
+                }
                 if (opened.session.extensionId !== extensionId
                     || opened.session.locale !== locale
                     || opened.snapshot.sessionId !== opened.session.sessionId) {
                     throw rpcError("extension_ui_document_invalid", "The extension UI session was invalid.");
                 }
                 const accepted = acceptSnapshot(undefined, opened.snapshot, false);
-                if (!active) {
-                    await closeBestEffort(client, opened.session.sessionId);
-                    return;
-                }
-                sessionIdRef.current = opened.session.sessionId;
                 let currentExtension = extensionResult.extension;
                 try {
                     currentExtension = (await client.extensionGet(extensionId)).extension;
                 } catch {
                     // Identity remains the verified record read immediately before opening.
                 }
+                if (!isCurrent(scope)) return;
+                if (currentExtension.extensionId !== extensionId) {
+                    throw rpcError("extension_ui_document_invalid", "The extension UI session was invalid.");
+                }
+                if (currentExtension.desiredState !== "enabled") {
+                    throw rpcError("extension_not_enabled", "The extension is disabled.");
+                }
+                if (currentExtension.quarantineState !== "clear") {
+                    throw rpcError("extension_quarantined", "The extension is quarantined.");
+                }
+                if (currentExtension.ui?.protocol !== "portable-v1") {
+                    throw rpcError("extension_ui_not_available", "This extension does not expose Portable UI v1.");
+                }
                 setExtension(currentExtension);
                 setSnapshot(accepted);
-                setBusy(false);
-                window.requestAnimationFrame(() => headingRef.current?.focus());
+                window.requestAnimationFrame(() => {
+                    if (isCurrent(scope)) headingRef.current?.focus();
+                });
             } catch (caught: unknown) {
-                if (active) {
-                    if (openedSessionId !== undefined) {
-                        await closeBestEffort(client, openedSessionId);
-                        openedSessionId = undefined;
-                    }
+                void closeUiScope(scope);
+                if (isCurrent(scope)) setError(safeError(caught));
+            } finally {
+                if (isCurrent(scope)) {
+                    scope.busy = false;
                     setBusy(false);
-                    setError(safeError(caught));
                 }
             }
         };
         void open();
 
         return () => {
-            active = false;
+            scope.active = false;
             updateDirty(false);
-            if (sessionIdRef.current === openedSessionId) {
-                sessionIdRef.current = undefined;
-            }
-            if (openedSessionId !== undefined) {
-                void closeBestEffort(client, openedSessionId);
-            }
+            if (scopeRef.current === scope) scopeRef.current = undefined;
+            void closeUiScope(scope);
         };
-    }, [client, extensionId, generation, locale, updateDirty]);
+    }, [client, extensionId, generation, isCurrent, locale, updateDirty]);
+
+    const handleSessionError = (scope: ExtensionUiSessionScope, caught: unknown) => {
+        if (!isCurrent(scope)) return;
+        const nextError = safeError(caught);
+        setError(nextError);
+        if (mustCloseUiSession(nextError.code)) {
+            void closeUiScope(scope);
+            setExtension(undefined);
+            setSnapshot(undefined);
+            updateDirty(false);
+        }
+    };
 
     const performRefresh = async () => {
-        if (snapshot === undefined || sessionIdRef.current === undefined || busy) {
+        const scope = scopeRef.current;
+        if (scope === undefined || !isCurrent(scope) || scope.busy
+            || snapshot === undefined || scope.sessionId !== snapshot.sessionId) {
             return;
         }
+        scope.busy = true;
         setBusy(true);
         setError(undefined);
         try {
-            const result = await client.extensionUiRefresh({
-                sessionId: sessionIdRef.current,
+            const result = await scope.client.extensionUiRefresh({
+                sessionId: snapshot.sessionId,
                 expectedSnapshotRevision: snapshot.snapshotRevision
             });
+            if (!isCurrent(scope)) return;
             setSnapshot(acceptSnapshot(snapshot, result.snapshot, false));
             updateDirty(false);
         } catch (caught: unknown) {
-            handleSessionError(caught, setError, setSnapshot, updateDirty);
+            handleSessionError(scope, caught);
         } finally {
-            setBusy(false);
+            if (isCurrent(scope)) {
+                scope.busy = false;
+                setBusy(false);
+            }
         }
     };
 
@@ -606,27 +646,43 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
     };
 
     const dispatch = async (action: UiAction) => {
-        if (snapshot === undefined || sessionIdRef.current === undefined || busy) {
+        const scope = scopeRef.current;
+        if (scope === undefined || !isCurrent(scope) || scope.busy
+            || snapshot === undefined || scope.sessionId !== snapshot.sessionId) {
             return;
         }
-        const sequence = sequenceRef.current;
+        const sequence = scope.sequence;
+        scope.busy = true;
         setBusy(true);
         setError(undefined);
         try {
-            const result = await client.extensionUiDispatch({
-                sessionId: sessionIdRef.current,
+            const result = await scope.client.extensionUiDispatch({
+                sessionId: snapshot.sessionId,
                 expectedSnapshotRevision: snapshot.snapshotRevision,
                 sequence,
                 requestId: crypto.randomUUID(),
                 action
             });
+            if (!isCurrent(scope)) return;
             setSnapshot(acceptSnapshot(snapshot, result.snapshot, result.replayed));
-            sequenceRef.current = sequence + 1;
+            scope.sequence = sequence + 1;
             updateDirty(false);
         } catch (caught: unknown) {
-            handleSessionError(caught, setError, setSnapshot, updateDirty);
+            handleSessionError(scope, caught);
         } finally {
-            setBusy(false);
+            if (isCurrent(scope)) {
+                scope.busy = false;
+                setBusy(false);
+            }
+        }
+    };
+
+    const performReconnect = () => {
+        updateDirty(false);
+        if (error?.code === "daemon_unavailable" && reconnectConnection !== undefined) {
+            reconnectConnection();
+        } else {
+            setGeneration((current) => current + 1);
         }
     };
 
@@ -635,8 +691,7 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
             setPendingDiscardAction("reconnect");
             return;
         }
-        updateDirty(false);
-        setGeneration((current) => current + 1);
+        performReconnect();
     };
 
     const discardAndContinue = async () => {
@@ -646,7 +701,7 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
         if (action === "refresh") {
             await performRefresh();
         } else if (action === "reconnect") {
-            setGeneration((current) => current + 1);
+            performReconnect();
         }
     };
 
@@ -663,15 +718,12 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
             </div>
             {extension === undefined ? null : <ExtensionIdentity extension={extension} />}
             {busy && snapshot === undefined ? (
-                <StatePanel kind="loading" title={t("Opening extension UI")} detail={t("Connecting to the ALCOMD core and extension host…")} />
+                <LoadingState title={t("Opening extension UI")} />
             ) : null}
             {error === undefined ? null : (
-                <StatePanel
-                    action={<Button onClick={reconnect} type="button">{t("Reconnect")}</Button>}
-                    detail={error.diagnosticId === undefined ? undefined : t("Diagnostic ID: {id}", { id: error.diagnosticId })}
-                    kind={error.code === "daemon_unavailable" ? "disconnected" : "error"}
-                    title={t(errorTitle(error.code))}
-                />
+                <RequestReminder error={error} title={t(errorTitle(error.code))}>
+                    <Button disabled={busy} onClick={reconnect} type="button" variant="text">{t("Reconnect")}</Button>
+                </RequestReminder>
             )}
             <MaterialDialog onClose={() => setPendingDiscardAction(undefined)} open={pendingDiscardAction !== undefined} title={t("Discard unsaved changes?")}>
                 <p>{t(DISCARD_MESSAGE)}</p>
@@ -706,39 +758,31 @@ function ExtensionIdentity({ extension }: { extension: ExtensionRecord }) {
     );
 }
 
-interface StatePanelProps {
-    kind: "loading" | "error" | "disconnected";
-    title: string;
-    detail?: string;
-    action?: ReactNode;
+function mustCloseUiSession(code: string): boolean {
+    return code === "daemon_unavailable"
+        || code === "extension_not_enabled"
+        || code === "extension_ui_not_available"
+        || code === "extension_ui_protocol_unsupported"
+        || code === "extension_ui_session_not_found"
+        || code === "extension_ui_session_stale"
+        || code === "extension_ui_snapshot_stale"
+        || code === "extension_ui_document_invalid"
+        // A quota error can also mean the guest document ended the session.
+        // Retire this local session instead of reusing an uncertain document.
+        || code === "extension_ui_limit_exceeded"
+        || code === "permission_denied"
+        || code === "extension_permission_denied"
+        || code === "extension_scope_denied"
+        || code === "extension_instance_stale"
+        || code === "extension_quarantined"
+        || code === "extension_crashed"
+        || code === "extension_resource_limit";
 }
 
-function StatePanel({ kind, title, detail, action }: StatePanelProps) {
-    if (kind === "loading") return <LoadingState title={title} detail={detail} />;
-    return (
-        <section className={`state-panel state-panel--${kind}`} aria-live="polite" role={kind === "error" ? "alert" : "status"}>
-            <h2>{title}</h2>
-            {detail === undefined ? null : <p>{detail}</p>}
-            {action}
-        </section>
-    );
-}
-
-function handleSessionError(
-    caught: unknown,
-    setError: (error: RpcError) => void,
-    setSnapshot: (snapshot: UiSnapshot | undefined) => void,
-    updateDirty: (dirty: boolean) => void
-): void {
-    const error = safeError(caught);
-    setError(error);
-    if (error.code === "daemon_unavailable"
-        || error.code === "extension_ui_session_not_found"
-        || error.code === "extension_ui_session_stale"
-        || error.code === "extension_ui_snapshot_stale") {
-        setSnapshot(undefined);
-        updateDirty(false);
-    }
+function closeUiScope(scope: ExtensionUiSessionScope): Promise<void> {
+    const sessionId = scope.sessionId;
+    scope.sessionId = undefined;
+    return sessionId === undefined ? Promise.resolve() : closeBestEffort(scope.client, sessionId);
 }
 
 async function closeBestEffort(client: GuiRpcClient, sessionId: string): Promise<void> {
@@ -775,7 +819,10 @@ function errorTitle(code: string): string {
         case "extension_not_enabled": return "Extension is disabled";
         case "extension_quarantined": return "Extension is quarantined";
         case "extension_ui_not_available": return "Portable UI is unavailable";
-        case "extension_permission_denied": return "Extension UI access denied";
+        case "permission_denied":
+        case "extension_permission_denied":
+        case "extension_scope_denied": return "Extension UI access denied";
+        case "extension_instance_stale":
         case "extension_ui_session_stale":
         case "extension_ui_session_not_found":
         case "extension_ui_snapshot_stale": return "Extension UI session ended";

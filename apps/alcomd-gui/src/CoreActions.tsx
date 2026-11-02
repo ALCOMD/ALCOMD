@@ -29,6 +29,7 @@ import { capabilities, capabilityUnavailableTitle, useCapability } from "./capab
 import { reviewTemplateCreation, reviewTemplateDerive, reviewTemplateImport, TemplatePlanReview, type TemplateReview } from "./TemplatePlanReview";
 import { Reminder, RequestReminder, useReminder } from "./Reminder";
 import { displayPath } from "./display-path";
+import { ExtensionPermissions, ExtensionPermissionRequests, hasPermissionRequests } from "./ExtensionPermissions";
 
 interface ActionProps {
     client: GuiRpcClient;
@@ -993,116 +994,120 @@ export function OperationActions({ client, operation, onChanged }: ActionProps &
     </ActionSection>;
 }
 
-export function ExtensionInstallPanel({ client, onChanged }: ActionProps) {
+export function ExtensionInstallPanel({ client, onChanged, onAccepted }: ActionProps & { onAccepted?(operationId: string): void }) {
     const { t } = useTranslation();
     const available = useCapability(capabilities.extensionsLifecycle);
     const [path, setPath] = useState("");
     const [approvePublisher, setApprovePublisher] = useState(false);
-    const [expectedRevision, setExpectedRevision] = useState("");
     const [plan, setPlan] = useState<ExtensionPlan>();
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
+    const [submitted, setSubmitted] = useState(false);
     useUtilityDialogBusy(feedback.busy);
+    const close = useUtilityDialogClose();
+    const current = useActionScope(client);
     const pending = useRef(false);
-    const revisionValid = /^\d+$/.test(expectedRevision) && Number.isSafeInteger(Number(expectedRevision));
+    useEffect(() => { if (onAccepted !== undefined && feedback.operationId !== undefined && !feedback.busy) close(); }, [close, feedback.busy, feedback.operationId, onAccepted]);
     const run = async (apply: boolean) => {
-        if (!available || pending.current || (apply ? plan === undefined : !revisionValid || path.trim().length === 0)) return;
+        if (!available || pending.current || submitted || (apply ? plan === undefined || !hasPermissionRequests(plan) : path.trim().length === 0)) return;
         pending.current = true;
         setFeedback({ busy: true });
 
         try {
             if (apply && plan !== undefined) {
+                setSubmitted(true);
                 const result = await client.extensionApplyInstall(plan.planId);
-                setPlan(undefined);
-                setFeedback({ busy: false, operationId: result.operationId, message: t("Extension install accepted.") });
-                onChanged?.();
+                if (!current()) return;
+                setFeedback({ busy: false, operationId: result.operationId });
+                onAccepted?.(result.operationId);
             } else {
-                const result = await client.extensionPlanInstall(path, Number(expectedRevision), approvePublisher ? "approve_for_extension" : "none");
+                // Core accepts new installs only; zero binds the plan to expected absence.
+                const result = await client.extensionPlanInstall(path, 0, approvePublisher ? "approve_for_extension" : "none");
+                if (!current()) return;
                 setPlan(result.plan);
                 setFeedback({ busy: false });
             }
-        } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+        } catch (caught: unknown) {
+            if (!current()) return;
+            const error = safeError(caught);
+            if (!templateApplyResultUnknown(error)) setSubmitted(false);
+            setFeedback({ busy: false, error });
+        }
         finally { pending.current = false; }
     };
     return <section aria-label={plan === undefined ? t("Extension install input") : t("Review extension install")} aria-busy={feedback.busy}>
         {plan === undefined ? <form onSubmit={(event) => { event.preventDefault(); void run(false); }}>
-            <TextField disabled={feedback.busy} id="extension-package" label={t("Extension package")} maxLength={1024} onInput={setPath} required value={path} />
-            <p className="risk-summary">{t("Transitional input: the current registry read interface does not provide its revision. Enter the verified registry revision; it is never inferred from installed extensions.")}</p>
-            <TextField disabled={feedback.busy} id="extension-registry-revision" label={t("Expected registry revision")} min={0} onInput={setExpectedRevision} required type="number" value={expectedRevision} />
-            <Checkbox disabled={feedback.busy} checked={approvePublisher} label={t("Approve this publisher for this extension")} onChange={setApprovePublisher} />
-            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || !revisionValid} title={capabilityUnavailableTitle(available, capabilities.extensionsLifecycle, t)} type="submit">{t("Create install plan")}</Button></div>
+            <TextField disabled={feedback.busy} id="extension-package" label={t("Extension package")} maxLength={32768} onInput={(value) => { setPath(value); setFeedback(INITIAL_FEEDBACK); }} required value={path} />
+            <Checkbox disabled={feedback.busy} checked={approvePublisher} label={t("Approve this publisher for this extension")} onChange={(value) => { setApprovePublisher(value); setFeedback(INITIAL_FEEDBACK); }} />
+            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || path.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.extensionsLifecycle, t)} type="submit">{t("Create install plan")}</Button></div>
         </form> : <>
             <h2>{t("Review extension install")}</h2>
             <dl className="dialog-summary"><div><dt>{t("Extension")}</dt><dd>{plan.extensionId}</dd></div><div><dt>{t("Version")}</dt><dd>{plan.version}</dd></div><div><dt>{t("Publisher")}</dt><dd><code>{plan.publisherFingerprint}</code></dd></div><div><dt>{t("Trust")}</dt><dd>{t(humanize(plan.trustDecision))}</dd></div></dl>
-            <p>{t("The daemon will revalidate this install plan before applying it.")}</p>
-            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setPlan(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Discard plan")}</Button><Button disabled={!available || feedback.busy} onClick={() => void run(true)} type="button">{t("Apply reviewed plan")}</Button></div>
+            {hasPermissionRequests(plan) ? <ExtensionPermissionRequests required={plan.requiredPermissions} optional={plan.optionalPermissions} /> : <Reminder tone="warning">{t("Permission details are unavailable from this Core.")}</Reminder>}
+            <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy || submitted} onClick={() => { setPlan(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Discard plan")}</Button><Button disabled={!available || feedback.busy || submitted || !hasPermissionRequests(plan)} onClick={() => void run(true)} type="button">{t("Apply reviewed plan")}</Button></div>
         </>}
-        <MutationFeedback client={client} feedback={feedback} />
+        {submitted && templateApplyResultUnknown(feedback.error) ? <RequestReminder error={feedback.error!}>{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</RequestReminder> : <MutationFeedback client={client} feedback={onAccepted === undefined ? feedback : { ...feedback, operationId: undefined }} onOperationTerminal={() => onChanged?.()} />}
     </section>;
 }
 
-export function ExtensionActions({ client, extension, onChanged }: ActionProps & { extension: ExtensionRecord }) {
+export function ExtensionActions({ client, extension, onChanged, onAccepted, operationActive = false }: ActionProps & { extension: ExtensionRecord; onAccepted?(operationId: string): void; operationActive?: boolean }) {
     const { t } = useTranslation();
     const canManageLifecycle = useCapability(capabilities.extensionsLifecycle);
-    const canManagePermissions = useCapability(capabilities.extensionsPermissions);
     const [mode, setMode] = useState<"none" | "permissions" | "uninstall">("none");
     const [plan, setPlan] = useState<ExtensionPlan>();
     const [deleteData, setDeleteData] = useState(false);
-    const [grant, setGrant] = useState({ permission: "", resourceKind: "Project", resourceId: "" });
+    const [permissionsBusy, setPermissionsBusy] = useState(false);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
+    const [submitted, setSubmitted] = useState(false);
+    const current = useActionScope(client);
     const pending = useRef(false);
-    const close = () => { if (!pending.current) { setMode("none"); setPlan(undefined); setFeedback(INITIAL_FEEDBACK); } };
-    const open = (next: "permissions" | "uninstall") => { if (!pending.current) { setMode(next); setPlan(undefined); setDeleteData(false); setGrant({ permission: "", resourceKind: "Project", resourceId: "" }); setFeedback(INITIAL_FEEDBACK); } };
-    const run = async (kind: "enable" | "disable" | "plan" | "apply" | "grant" | "revoke") => {
-        if (pending.current || ((kind === "grant" || kind === "revoke") ? !canManagePermissions : !canManageLifecycle)) return;
-        if (kind === "apply" && plan === undefined) return;
+    const close = () => { if (!pending.current && !permissionsBusy) { setMode("none"); setPlan(undefined); setFeedback(INITIAL_FEEDBACK); } };
+    const open = (next: "permissions" | "uninstall") => { if (!pending.current && !permissionsBusy && !operationActive) { setMode(next); setPlan(undefined); setSubmitted(false); setDeleteData(false); setFeedback(INITIAL_FEEDBACK); } };
+    const run = async (kind: "enable" | "disable" | "plan" | "apply") => {
+        if (pending.current || operationActive || !canManageLifecycle) return;
+        if (kind === "apply" && (plan === undefined || submitted)) return;
         pending.current = true;
         setFeedback({ busy: true });
         try {
             if (kind === "plan") {
                 const result = await client.extensionPlanUninstall(extension.extensionId, extension.revision, deleteData ? "delete_data" : "retain_data");
+                if (!current()) return;
                 setPlan(result.plan);
                 setFeedback({ busy: false });
             } else if (kind === "apply" && plan !== undefined) {
+                setSubmitted(true);
                 const result = await client.extensionApplyUninstall(plan.planId);
+                if (!current()) return;
                 setPlan(undefined);
                 setMode("none");
-                setFeedback({ busy: false, operationId: result.operationId, message: t("Extension uninstall accepted.") });
-                onChanged?.();
-            } else if (kind === "grant" || kind === "revoke") {
-                await (kind === "grant" ? client.extensionSetGrant(extension.extensionId, grant.permission, grant.resourceKind, grant.resourceId, extension.grantRevision) : client.extensionRevokeGrant(extension.extensionId, grant.permission, grant.resourceKind, grant.resourceId, extension.grantRevision));
-                setFeedback({ busy: false, message: kind === "grant" ? t("Permission granted.") : t("Permission revoked.") });
-                onChanged?.();
+                setFeedback({ busy: false, operationId: result.operationId });
+                onAccepted?.(result.operationId);
             } else if (kind === "enable" || kind === "disable") {
                 await (kind === "enable" ? client.extensionEnable(extension.extensionId, extension.revision) : client.extensionDisable(extension.extensionId, extension.revision));
-                setFeedback({ busy: false, message: kind === "enable" ? t("Extension enabled.") : t("Extension disabled.") });
+                if (!current()) return;
+                setFeedback({ busy: false, messageTone: "success", message: kind === "enable" ? t("Extension enabled.") : t("Extension disabled.") });
                 onChanged?.();
             }
-        } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+        } catch (caught: unknown) { if (current()) { const error = safeError(caught); if (!templateApplyResultUnknown(error)) setSubmitted(false); setFeedback({ busy: false, error }); } }
         finally { pending.current = false; }
     };
-    const blocked = extension.desiredState === "uninstalling" || extension.quarantineState === "quarantined";
+    const blocked = extension.desiredState === "uninstalling" || operationActive;
+    const quarantined = extension.quarantineState === "quarantined";
     return <ActionSection title={t("Extension management")}>
-        <div className="action-row"><Button disabled={!canManageLifecycle || feedback.busy || blocked || extension.desiredState === "enabled"} onClick={() => void run("enable")} type="button" variant="tonal">{t("Enable")}</Button><Button disabled={!canManageLifecycle || feedback.busy || blocked || extension.desiredState !== "enabled"} onClick={() => void run("disable")} type="button" variant="tonal">{t("Disable")}</Button><Button disabled={feedback.busy} onClick={() => open("permissions")} type="button" variant="text">{t("Manage permissions")}</Button><Button className="material-button--danger" disabled={!canManageLifecycle || feedback.busy || extension.desiredState === "uninstalling"} onClick={() => open("uninstall")} type="button" variant="text">{t("Uninstall extension")}</Button></div>
-        <MaterialDialog dismissible={!feedback.busy} open={mode !== "none"} onClose={close} title={mode === "permissions" ? t("Extension permissions") : plan === undefined ? t("Uninstall extension") : t("Review extension uninstall")}>
+        {quarantined ? <Reminder tone="warning">{t("This extension is quarantined. Recovery rechecks its package and permissions before enabling it.")}</Reminder> : null}
+        <div className="action-row"><Button disabled={!canManageLifecycle || feedback.busy || blocked || (extension.desiredState === "enabled" && !quarantined)} onClick={() => void run("enable")} type="button" variant="tonal">{quarantined ? t("Recover extension") : t("Enable")}</Button><Button disabled={!canManageLifecycle || feedback.busy || blocked || extension.desiredState !== "enabled"} onClick={() => void run("disable")} type="button" variant="tonal">{t("Disable")}</Button><Button disabled={feedback.busy || blocked} onClick={() => open("permissions")} type="button" variant="text">{t("Manage permissions")}</Button><Button className="material-button--danger" disabled={!canManageLifecycle || feedback.busy || blocked} onClick={() => open("uninstall")} type="button" variant="text">{t("Uninstall extension")}</Button></div>
+        <MaterialDialog dismissible={!feedback.busy && !permissionsBusy} open={mode !== "none"} onClose={close} title={mode === "permissions" ? t("Extension permissions") : plan === undefined ? t("Uninstall extension") : t("Review extension uninstall")}>
             <p><strong>{extension.extensionId}</strong></p>
-            {mode === "permissions" ? <>
-                <p>{t("Specify the exact permission and resource scope. Changes take effect only after Grant or Revoke.")}</p>
-                <TextField disabled={feedback.busy} id="grant-permission" label={t("Permission")} onInput={(permission) => setGrant((current) => ({ ...current, permission }))} required value={grant.permission} />
-                <Select disabled={feedback.busy} id="grant-kind" label={t("Resource kind")} onChange={(resourceKind) => setGrant((current) => ({ ...current, resourceKind }))} options={[{ label: t("Project"), value: "Project" }, { label: t("Extension"), value: "Extension" }]} value={grant.resourceKind} />
-                <TextField disabled={feedback.busy} id="grant-resource" label={t("Resource ID")} onInput={(resourceId) => setGrant((current) => ({ ...current, resourceId }))} required value={grant.resourceId} />
-                <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Close")}</Button><Button disabled={!canManagePermissions || feedback.busy || !grant.permission.trim() || !grant.resourceId.trim()} onClick={() => void run("revoke")} type="button" variant="text">{t("Revoke")}</Button><Button disabled={!canManagePermissions || feedback.busy || !grant.permission.trim() || !grant.resourceId.trim()} onClick={() => void run("grant")} type="button">{t("Grant")}</Button></div>
-            </> : plan === undefined ? <>
+            {mode === "permissions" ? <ExtensionPermissions client={client} extensionId={extension.extensionId} onBusyChange={setPermissionsBusy} onChanged={onChanged} onClose={close} /> : plan === undefined ? <>
                 <p>{t("Review the removal before applying it.")}</p>
                 <Checkbox disabled={feedback.busy} checked={deleteData} label={t("Delete extension-owned data during uninstall")} onChange={setDeleteData} />
                 <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button><Button disabled={!canManageLifecycle || feedback.busy} onClick={() => void run("plan")} type="button">{t("Create uninstall plan")}</Button></div>
             </> : <>
                 <dl className="dialog-summary"><div><dt>{t("Extension")}</dt><dd>{plan.extensionId}</dd></div><div><dt>{t("Version")}</dt><dd>{plan.version}</dd></div><div><dt>{t("Data")}</dt><dd>{t(humanize(plan.dataDisposition))}</dd></div><div><dt>{t("Publisher")}</dt><dd><code>{plan.publisherFingerprint}</code></dd></div></dl>
-                <p>{t("The daemon will revalidate this uninstall plan before applying it.")}</p>
-                <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Discard plan")}</Button><Button disabled={!canManageLifecycle || feedback.busy} onClick={() => void run("apply")} type="button">{t("Apply reviewed plan")}</Button></div>
+                <div className="dialog-actions"><Button disabled={feedback.busy || submitted} onClick={close} type="button" variant="text">{t("Discard plan")}</Button><Button disabled={!canManageLifecycle || feedback.busy || submitted} onClick={() => void run("apply")} type="button">{t("Apply reviewed plan")}</Button></div>
             </>}
-            <MutationFeedback client={client} feedback={feedback} />
+            {mode === "none" ? null : submitted && templateApplyResultUnknown(feedback.error) ? <><RequestReminder error={feedback.error!}>{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</RequestReminder><div className="dialog-actions"><Button onClick={close} type="button" variant="text">{t("Close")}</Button></div></> : <MutationFeedback client={client} feedback={feedback} />}
         </MaterialDialog>
-        {mode === "none" ? <MutationFeedback client={client} feedback={feedback} /> : null}
+        {mode === "none" ? <MutationFeedback client={client} feedback={onAccepted === undefined ? feedback : { ...feedback, operationId: undefined }} onOperationTerminal={() => onChanged?.()} /> : null}
     </ActionSection>;
 }
 

@@ -502,6 +502,8 @@ export interface BackupApplyRestoreResult { operationId: string; projectId: stri
 export interface ExtensionsListResult { extensions: ExtensionRecord[]; nextCursor?: string }
 
 export interface ExtensionPlan {
+    requiredPermissions: string[];
+    optionalPermissions: string[];
     planId: string;
     action: string;
     state: string;

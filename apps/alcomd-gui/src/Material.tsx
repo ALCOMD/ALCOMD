@@ -552,6 +552,29 @@ export function Switch({
     onChange?(selected: boolean): void;
     selected: boolean;
 }) {
+    const ref = useRef<MaterialElement>(null);
+    const observed = useRef(selected);
+    const instance = useRef(0);
+    const restoreFocus = useRef(false);
+    const [, recordInput] = useState(0);
+    // Material 2.5 binds a checked attribute, so changing its public selected
+    // property cannot reset a user-dirtied native input. A controlled reset uses
+    // a fresh real Material instance; ordinary user draft changes keep theirs.
+    if (!disabled && observed.current !== selected) {
+        observed.current = selected;
+        instance.current += 1;
+    }
+    useEffect(() => {
+        const element = ref.current;
+        if (disabled || element === null || !restoreFocus.current) return;
+        restoreFocus.current = false;
+        let active = true;
+        void Promise.resolve(element.updateComplete).then(() => {
+            if (active && element.isConnected && !element.disabled
+                && (document.activeElement === document.body || element.matches(":focus-within"))) element.focus();
+        });
+        return () => { active = false; };
+    });
     return (
         <label className="material-toggle">
             {createElement(materialElements.switch, {
@@ -560,7 +583,14 @@ export function Switch({
                 ariaLabel: label,
                 ariaReadOnly,
                 disabled,
-                onChange: (event: FormEvent<MaterialElement>) => onChange?.(Boolean(event.currentTarget.selected)),
+                key: instance.current,
+                onChange: (event: FormEvent<MaterialElement>) => {
+                    observed.current = Boolean(event.currentTarget.selected);
+                    restoreFocus.current = event.currentTarget.matches(":focus-within");
+                    recordInput((version) => version + 1);
+                    onChange?.(observed.current);
+                },
+                ref,
                 selected
             } as MaterialProps)}
             <span>{label}</span>
