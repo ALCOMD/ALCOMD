@@ -3,7 +3,8 @@
 当前阶段以 [status](../status.md) 为准。H3 已获项目所有者明确批准；本记录只覆盖已有 Unity、
 Backups、Operations 在 Settings、项目及进度流程中的接线。**H3 人工验收待确认，M7 仍进行中**。
 H2-A 签收及 H2-B“阶段性人工验收通过，保留体验改进项”保持有效，H4-H7 与推送未授权。
-项目所有者随后反馈 Unity 检测失败、暂不签收 H3；当前修复代码为 `efdb133`，结果与唯一待确认项见文末。
+项目所有者曾反馈 Unity 检测失败、暂不签收 H3；`efdb133` 修复后，所有者已确认检测、显示与重复刷新。
+当前代码 `fec8117` 继续修正其随后指出的路径前缀显示，结果与当前待确认项见文末；H3 整体仍未签收。
 
 ## 上轮候选与适用范围
 
@@ -136,12 +137,12 @@ GUI 用既有错误合同保留版本验证/安装不可用的上下文错误；
 Windows 专用测试 helper 只给自有测试程序新副本添加资源，不复制真实 Unity 二进制，不新增依赖或生产兼容分支。
 macOS/Linux 未在本轮运行；非 Windows 原有元数据读取未在本轮修复或证明可用。Hub 自定义安装根不作为本机根因，未扩大扫描范围。
 
-| 当前产物（`efdb133`） | SHA-256 |
+| 该轮产物（`efdb133`） | SHA-256 |
 | --- | --- |
 | `target/release/alcomd.exe` | `ef371a609eaa428e44a97881c108ed4b3656dd5740d34f8d2602269ca921b5ca` |
-| `target/release/alcomd-gui.exe` | `1bf3716ded0b97408d848b2c48bcde5f1b251c99cca4277662193bea903a7fc8` |
+| 已保留至 `target/m7-h3-path-display-20261102/previous-runtime/alcomd-gui.exe` | `1bf3716ded0b97408d848b2c48bcde5f1b251c99cca4277662193bea903a7fc8` |
 
-### 当前真实环境与唯一待确认项
+### 该轮真实环境与当时待确认项
 
 关闭/暂停前核对旧 GUI/Core 的路径、创建时间、命令行与 hash，完整遍历任务确认全终态。
 仅更新这轮自有 GUI/Core，RPC 用例用完后在 finally 中实际恢复原数据；更新前后五组公开状态全一致。
@@ -154,12 +155,54 @@ macOS/Linux 未在本轮运行；非 Windows 原有元数据读取未在本轮�
 没有启动或迁移实际工程。登记从 0 到 1 是本轮授权验证的预期结果，保留该有效记录；其余 Projects/Operations/Settings/Status
 公开结果保持一致，见 `actual-discovery-verification.json`。不宣称整个数据库零变化。
 
-新 GUI PID **104600**、窗口 **530566** 已启动且 Responding=true，匹配上述 Core/代码，保持打开。
+该轮 GUI PID **104600**、窗口 **530566** 当时已启动且 Responding=true，匹配上述 Core/代码；本轮开始时已不在运行。
 physical Escape 后停止桌面输入，没有安装页修复后原生截图/点击证据；只完成进程启动与公开结果核对。
 修复前完整窗口截图为仓库外
 `C:/Users/M2922/.codex/visualizations/2026/08/17/01a00f12-6751-7d50-9346-7b58e94f2eea/h3-unity-discovery/before-empty-installations.jpg`；
 没有把接口/浏览器结果称为原生 GUI 通过。
 
-本轮仅请所有者确认：**设置 → 已安装的 Unity** 能显示 `2022.3.22f1` 与上述真实路径，刷新后仍为同一条；
+该轮仅请所有者确认：**设置 → 已安装的 Unity** 能显示 `2022.3.22f1` 与上述真实路径，刷新后仍为同一条；
 若使用“管理安装 → 查找并刷新”，应成功保留该记录。其余 H3 页面不重验。
 H3 继续未签收，M7 进行中。H2-A、H2-B 原阶段签收有效，旧 `0ef5b08` 远端成功不覆盖本轮代码；未推送或进入 H4-H7。
+
+## 2026-11-02：路径显示整改与检测功能确认
+
+项目所有者确认“Unity 已能正常检测并显示，刷新后仍是同一条”，检测功能项通过；同时指出路径显示仍有问题。
+这不构成 H3 整体签收。代码 `fec8117b289fb696cd193c3a52d8afad99e10d50` 已在标准目录/main 由真实 Windows 用户
+本地提交，未推送。证据目录为 `target/m7-h3-path-display-20261102/`。
+
+根因为 Settings 直接展示 Core 的 Windows 扩展路径，而项目列表已有的格式化仍是私有函数，其他只读标签没有复用。
+现共用 `displayPath`：`\\?\C:\…` 显示为 `C:\…`，扩展 UNC 显示为普通 UNC；Volume GUID、设备和不完整命名空间
+保持原样。安装列表及完整路径 tooltip、启动选择、项目/复制/恢复/模板审阅与本地来源标签复用同一规则。
+RPC、可编辑状态、文件操作参数和安装 ID 保留原值，远程 URL 不经文件路径格式化。
+未修改 Core、Rust、Schema、权限、依赖、导航或页面布局；GUI AGENTS 补充复用约定，避免再各自实现路径裁剪。
+
+| 范围 | 本轮实际结果 |
+| --- | --- |
+| 独立定向浏览器 | `browser-candidate-final.log`：**10/0，26.3s**，1 worker、0 retries。含格式化 15 组输入、盘符/UNC/特殊命名空间/长文本、Unity 列表与 tooltip/刷新、启动 ID、复制及恢复原始请求参数、用户包来源、既有发现和反馈关联回归 |
+| GUI check | `gui-check.log`：TypeScript、Material、三语言 **919 条**通过 |
+| GUI release | `gui-release.log`：通过，**1m54s**；只更新 GUI，未重建或重启 Core |
+| 历史失败 | `browser-directed.log` **8/2**（详情操作位置、恢复标签定位错误）；`browser-final.log` **9/1**（fixture 未登记用户包）。修正测试/fixture 后独立取得上述 10/0，不合并各轮通过项；失败 trace/截图分别保留 |
+| 未执行 | Rust、浏览器全套、三平台 CI/CodeQL；相对 `efdb133`，crates、Cargo、Schema、共享包及 GUI Rust 输入无差异，旧证据只保留原范围 |
+
+| 当前产物与来源 | SHA-256 |
+| --- | --- |
+| GUI `target/release/alcomd-gui.exe`，代码 `fec8117` | `cc4f89f3641501508f7038d5cf5bc882f5529519306973868ff237513429808a` |
+| Core `target/release/alcomd.exe`，仍为 `efdb133` | `ef371a609eaa428e44a97881c108ed4b3656dd5740d34f8d2602269ca921b5ca` |
+
+真实原生窗口先复现 `1bf3…7fc8` 的内部前缀，再打开新 GUI 验证同一 Settings 页面及点击“刷新已安装的 Unity”。
+`2022.3.22f1` 始终为一条，完整显示 `C:\Program Files\Unity\Hub\Editor\2022.3.22f1\Editor\Unity.exe`，
+未挤坏表格操作区。前后完整 `unity.installations.list` 结果完全相同，installationId 仍为
+`fcb37996-8fda-459e-885f-16271e568135`、revision 1，Core 返回的扩展路径保留原值。
+当前 GUI PID **132564**、窗口 **7868742** 保持打开；Core 仍为原进程 **96504**、创建时间未变，
+使用原 `target/m7-icon-acceptance-20260906/data`。本轮未暂停 Core、登记/移除安装或启动/停止 Unity；
+只在核对身份后关闭本轮自有的旧 GUI 查看进程。
+
+完整窗口截图在仓库外
+`C:/Users/M2922/.codex/visualizations/2026/08/17/01a00f12-6751-7d50-9346-7b58e94f2eea/h3-path-display/`：
+`before-unity-path.jpg`、`after-unity-path.jpg`，各有对应可访问性文本。
+`actual-path-display-verification.json` 绑定代码、GUI/Core 摘要、RPC 前后快照、截图及测试日志 hash。
+
+当前仅请所有者查看 **设置 → 已安装的 Unity** 的路径显示，刷新后应保持同一条；其他页面不重验。
+其他路径场景为定向浏览器证据，不冒充全部做过原生操作。H3 仍为 OWNER_REVIEW_PENDING，M7 进行中；
+H2-A、H2-B 阶段签收保持。当前新代码尚无远端 CI/CodeQL；未触发 workflow、推送或进入 H4-H7。

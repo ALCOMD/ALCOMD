@@ -8,21 +8,28 @@
 M0-M6 已正式通过人工验收，M7 尚未完成。
 本文件是唯一当前阶段入口；ExecPlan 定义实施合同，testing 文档保存各自 SHA/场景的证据。
 
-当前 H3 本地代码候选为 `efdb133a82f6ead7b0436919dddd7cab939e94c4`。项目所有者本轮暂不签收 H3，
-要求优先解决 Unity 检测，其余体验问题只记非阻塞待办。本轮已修复 Windows Editor 版本读取：
-原数据目录及默认安装根均正确，真实 `2022.3.22f1` 的 Package Manager 包清单没有旧实现所需的顶层
-`version`，候选被静默丢弃。现从 Editor 自身版本资源读取，保留 Core canonical/exact 校验；发现验证失败
-返回既有错误并记录具体路径/原因，空登记不再误称本机没有安装。
+当前 H3 本地代码候选为 `fec8117b289fb696cd193c3a52d8afad99e10d50`。项目所有者已确认 Unity 正常
+检测并显示、刷新后仍是同一条，检测功能项通过；**H3 整体仍未签收**，其余体验问题保留非阻塞待办。
+本次新反馈是安装路径直接显示 Windows 内部 `\\?\` 前缀。现将项目列表已有的路径显示规则收束为共享
+`displayPath`，覆盖安装列表/完整路径 tooltip、启动选择及相关项目、来源和目标审阅；只格式化盘符与 UNC
+标签，特殊命名空间保持原样，RPC、编辑状态、文件操作与安装身份继续使用原值，URL 不参与路径格式化。
 
-本轮定向检查分别通过：platform **8/0**、daemon **3/0**、exact version **1/0**、RPC **1/0**、浏览器
-**6/0**，GUI check（919 条翻译）、受影响 Clippy、Core/GUI release 构建通过。未运行完整 Rust、浏览器全套或三平台 CI。
-真实原环境通过正式 CLI 的自动发现得到 **1 条 `2022.3.22f1`**，再次刷新身份和 revision 不变；两个样例项目的
-只读 exact launch candidates 均匹配，未手动登记或启动/迁移实际工程。Core 更新前后五组完整公开状态一致，
-自动发现后仅保留预期的 Editor 登记；项目、任务、设置、状态仍一致，settings revision **155**。
-当前 release Core PID **96504** 与 GUI PID **104600**（窗口 **530566**）匹配同一修复代码，连接原
-`target/m7-icon-acceptance-20260906/data`，窗口已启动且可响应。原 Core/GUI 均按身份核对后更新，没有处理用户 Unity 或不明进程。
-本轮桌面操作被 physical Escape 中断，修复后的安装页原生显示/点击及截图未执行；浏览器与真实 Core 结果分别记录，
-不据接口成功宣称 GUI 原生通过。当前只交给所有者确认 **设置 → 已安装的 Unity → 刷新** 这一项，不重验其他 H3 页面。
+本次独立定向浏览器 **10/0**（1 worker、0 retries），GUI check（919 条翻译）及 GUI release 构建通过。
+两轮早期失败 **8/2**、**9/1** 分别保留，不拼接通过项。未重跑 Rust、浏览器全套、Core 构建或三平台 CI。
+真实窗口已核对 **设置 → 已安装的 Unity → 刷新**：`2022.3.22f1` 仍为一条，路径显示
+`C:\Program Files\Unity\Hub\Editor\2022.3.22f1\Editor\Unity.exe`；完整窗口整改前后截图已保存。
+前后完整 `unity.installations.list` 结果相同，Core 内部路径与 installationId/revision 未变。
+当前 release GUI PID **132564**（窗口 **7868742**，SHA-256 `cc4f…9808a`）保持打开且可响应；
+Core 仍为 `efdb133` 的原进程 **96504**、产物 `ef371…1b5ca`，连接原
+`target/m7-icon-acceptance-20260906/data`，本次未暂停/重启 Core，没有处理用户 Unity 或不明进程。
+
+此前 Windows 检测修复 `efdb133a82f6ead7b0436919dddd7cab939e94c4` 的 platform **8/0**、daemon **3/0**、
+exact version **1/0**、RPC **1/0**、浏览器 **6/0**、Clippy 与 Core/GUI 构建继续绑定该轮输入。
+根因为 Package Manager 清单没有 Editor `version`，旧发现链静默丢弃候选；现读取 Editor 自身版本资源并保留
+canonical/exact 校验。真实自动发现及重复刷新、两个样例只读 exact candidates 已验证；当时 Core 更新前后
+五组公开状态一致，登记后仅 Editor 从 0 到 1，其他四组保持、settings revision **155**。
+当时 Esc 后未取得安装页原生证据的历史记录保留；本次所有者反馈及上述真实窗口核对分别补齐当前检测与显示证据。
+没有手动登记或启动/迁移实际工程。本轮仅请所有者查看路径显示，不重验其他 H3 页面。
 
 上轮 `ab5d183` 的 **34/0** 与主体 `ef47c25` 的备份、恢复、结果 ProjectId 和反馈原生证据保持各自原提交/构建范围，
 不替代本轮代码的验证。范围、逐轮失败、产物摘要和当前窗口见 [H3 候选与桌面证据](testing/m7-h3-contextual-20261101.md)。
@@ -262,7 +269,7 @@ Visual Gate 2，没有 M7 或 Hosted CI 通过结论，原未跟踪 `output/` �
   远端验证缺口。下载、native Portable UI 等旧未覆盖范围保持，不由本次签收批量关闭。
 - 已继续执行获批 G3 中的本轮完成度核对，补齐三个列表 RPC 的现有覆盖矩阵；公开 method
   常量与矩阵 **92/92** 对齐、列表 typed 接线一致，不重新实施已完成页面，也不代表 G3 整体完成。
-  项目所有者随后明确批准现有 H3；上轮候选 `ab5d183` 经人工反馈后，现以 `efdb133` 修复 Windows 检测并保留其他证据。下一停止点仅为所有者确认本轮 Unity 安装页，不重验其他页面；不重开 M7 规划，不进入 H4-H7 或自动推送。
+  项目所有者随后明确批准现有 H3；`efdb133` 的 Windows 检测/显示/重复刷新已获所有者确认，当前 `fec8117` 只补共享路径显示及相关定向回归。下一停止点仅请查看这次路径显示整改，H3 整体仍待签收；不重验其他页面，不重开 M7 规划，不进入 H4-H7 或自动推送。
 - 窗口记忆、仓库 credential enrollment/revocation、完整用户入口缺口保持真实状态；聚合
   projects.management/packages.vpm/repositories.management 等继续 in_progress，不批量提升。
 - projects/templates/backups 的 v3 parity 和 unity.v3-vrc-parity 仍等待 M11 真实脱敏 Fixture；
