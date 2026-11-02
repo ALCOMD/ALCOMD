@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
+import { createTranslator } from "../../src/i18n";
+import { requestErrorMessage } from "../../src/request-errors";
 
 type RouteExpectation = {
     path: string;
@@ -190,9 +192,8 @@ async function assertExternalFixtureText(page: Page, path: string) {
     } else if (path === "/diagnostics") {
         await expect(page.getByRole("table")).toContainText("package_archive_invalid");
         const locale = await page.locator("html").getAttribute("lang");
-        const summary = locale === "zh-CN" ? "操作失败。请求支持时请提供诊断 ID。"
-            : locale === "ja-JP" ? "処理に失敗しました。サポートに問い合わせる際は診断 ID をお知らせください。"
-            : "The operation failed. Use the diagnostic ID when requesting support.";
+        const t = createTranslator(locale === "zh-CN" || locale === "ja-JP" ? locale : "en-US");
+        const summary = t(requestErrorMessage("package_archive_invalid"));
         await expect(page.getByRole("table")).toContainText(summary);
     } else if (path === "/about") {
         await expect(page.locator(".detail-grid dd").filter({ hasText: /^ALCOMD$/ })).toBeVisible();

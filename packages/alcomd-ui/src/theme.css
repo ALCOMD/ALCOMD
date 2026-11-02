@@ -80,8 +80,6 @@ samp {
     width: var(--alcomd-button-height);
     min-width: var(--alcomd-button-height);
     padding: 0;
-    --md-filled-button-leading-space: 0px;
-    --md-filled-button-trailing-space: 0px;
     --md-filled-button-container-shape-start-start: var(--alcomd-shape-list-item);
     --md-filled-button-container-shape-end-start: var(--alcomd-shape-list-item);
 }

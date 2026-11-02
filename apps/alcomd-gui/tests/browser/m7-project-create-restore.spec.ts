@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { expectRequestError } from "./request-error-assertions";
 
 test("Projects Create uses the typed Template Plan Apply Operation flow and opens the Core-created project", async ({ page }) => {
     await openHarness(page, "/projects");
@@ -62,7 +63,7 @@ test("Create and Restore expose cancel, empty, and structured planning failure s
     await page.getByRole("button", { name: "Choose directory" }).click();
     await page.getByLabel("Create project name").fill("Conflict");
     await page.getByRole("button", { name: "Review creation" }).click();
-    await expect(page.getByRole("alert")).toContainText("template_plan_stale");
+    await expectRequestError(page.getByRole("alert"), "template_plan_stale");
 
     await openHarness(page, "/projects", "restore-error");
     await page.getByRole("button", { name: "More project creation options" }).click();
@@ -70,7 +71,7 @@ test("Create and Restore expose cancel, empty, and structured planning failure s
     await page.getByRole("button", { name: "Choose directory" }).click();
     await page.getByLabel("Restore project name").fill("Conflict");
     await page.getByRole("button", { name: "Review restore" }).click();
-    await expect(page.getByRole("alert")).toContainText("backup_target_conflict");
+    await expectRequestError(page.getByRole("alert"), "backup_target_exists");
 });
 
 async function openHarness(page: import("@playwright/test").Page, route: string, state = "ready") {

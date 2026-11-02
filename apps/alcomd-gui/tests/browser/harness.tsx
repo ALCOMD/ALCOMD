@@ -874,7 +874,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     unityLaunch(projectId: string, installationId: string, expectedProjectRevision: number): ReturnType<GuiRpcClient["unityLaunch"]> {
         window.unityRequests.push({ method: "unity.launch", params: { projectId, installationId, expectedProjectRevision } });
         if (query.has("projectModified")) this.projectLaunchTimes.set(projectId, 1_700_216_000_000);
-        if (query.has("unityLaunchError")) return Promise.reject({ code: "launch_failed" });
+        if (query.has("unityLaunchError")) return Promise.reject({ code: "unity_launch_failed" });
         this.lastUnityLaunch = { ...launch(), projectId, installationId };
         return new Promise((resolve) => window.setTimeout(() => resolve({ launch: this.lastUnityLaunch, replayed: false }), 100));
     }
@@ -1007,7 +1007,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
     backupPlanRestore(backupId: string, targetParent: string, targetLeaf: string): ReturnType<GuiRpcClient["backupPlanRestore"]> {
         window.h3Requests.push({ method: "backups.planRestore", params: { backupId, targetParent, targetLeaf } });
-        if (this.mode === "restore-error") return Promise.reject({ code: "backup_target_conflict" });
+        if (this.mode === "restore-error") return Promise.reject({ code: "backup_target_exists" });
         this.pendingProject = project(RESTORED_PROJECT_ID, targetLeaf);
         return this.value({ planId: PLAN_ID, projectId: RESTORED_PROJECT_ID, backupId, target: { parent: targetParent, leaf: targetLeaf, mustBeAbsent: true }, archiveSha256: HASH, packagesRequireResolve: query.has("h3-excluded-packages"), excludedPackages: [], planFingerprint: HASH });
     }

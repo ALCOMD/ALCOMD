@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { expectRequestError } from "./request-error-assertions";
 
 async function open(page: Page, error = false) {
     await page.goto(`/browser-harness.html?route=/settings&h3-unity-discovery=1${error ? "&h3-unity-discovery-error=1" : ""}`);
@@ -29,7 +30,7 @@ test("Unity version verification refusal stays in its dialog and an explicit dis
     const dialog = await open(page, true);
     await dialog.getByRole("button", { name: "Discover and refresh", exact: true }).click();
     await expect(dialog.getByRole("alert")).toContainText("Unity Editor version could not be verified.");
-    await expect(dialog.getByRole("alert")).toContainText("unity_version_unverified");
+    await expectRequestError(dialog.getByRole("alert"), "unity_version_unverified");
     await expect(page.locator(".reminder-floating")).toHaveCount(0);
     expect(await discoveryRequests(page)).toBe(1);
     await dialog.getByRole("button", { name: "Discover and refresh", exact: true }).click();

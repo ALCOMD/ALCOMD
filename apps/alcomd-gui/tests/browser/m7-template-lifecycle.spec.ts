@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { expectRequestError } from "./request-error-assertions";
 
 const templateId = "00000000-0000-4000-8000-000000000302";
 
@@ -45,7 +46,7 @@ test("user template removal requires confirmation and preserves the built-in row
 test("different-digest import requires explicit replacement and reviews Core's existing revision", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/templates&template-existing=1&template-tasks=1");
     await importPlan(page);
-    await expect(page.getByRole("alert")).toContainText("template_conflict");
+    await expectRequestError(page.getByRole("alert"), "template_conflict");
     expect(await requests(page, "templates.planImport")).toHaveLength(1);
     expect(await requests(page, "templates.applyImport")).toEqual([]);
     await page.getByRole("checkbox", { name: "Replace an existing matching template", exact: true }).check();
@@ -70,7 +71,7 @@ test("built-in bundle replacement remains rejected even with explicit replacemen
     await page.getByLabel("Template bundle", { exact: true }).fill("C:\\Fixture\\builtin.alcomdtemplate");
     await page.getByRole("checkbox", { name: "Replace an existing matching template", exact: true }).check();
     await page.getByRole("button", { name: "Review import", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("template_builtin_immutable");
+    await expectRequestError(page.getByRole("alert"), "template_builtin_immutable");
     await expect(page.getByRole("button", { name: "Apply reviewed plan", exact: true })).toHaveCount(0);
     expect(await requests(page, "templates.applyImport")).toEqual([]);
 });
@@ -79,7 +80,7 @@ test("a stale template Apply is displayed once without a new Plan, task or autom
     await page.goto("/browser-harness.html?route=/templates&template-apply-error=1&template-tasks=1");
     await importPlan(page);
     await page.getByRole("button", { name: "Apply reviewed plan", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("template_plan_stale");
+    await expectRequestError(page.getByRole("alert"), "template_plan_stale");
     await expect(page.getByRole("button", { name: "Apply reviewed plan", exact: true })).toBeDisabled();
     await page.keyboard.press("Enter");
     expect(await requests(page, "templates.planImport")).toHaveLength(1);

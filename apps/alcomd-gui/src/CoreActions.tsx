@@ -66,7 +66,7 @@ export function RegisterProjectPanel({ client, onChanged }: ActionProps) {
     return (
         <ActionSection title={t("Register project")}>
             <form onSubmit={(event) => { event.preventDefault(); setConfirm(true); }}>
-                <TextField aria-describedby="project-root-hint" id="project-root" label={t("Project root")} maxLength={1024} onInput={setPath} required supportingText={t("The daemon validates and owns this path.")} value={path} />
+                <TextField id="project-root" label={t("Project root")} maxLength={1024} onInput={setPath} required supportingText={t("The daemon validates and owns this path.")} value={path} />
                 <Button disabled={!available || feedback.busy || path.length === 0} title={capabilityUnavailableTitle(available, capabilities.projectsRegistry, t)} type="submit">{t("Review registration")}</Button>
             </form>
             <ConfirmDialog busy={feedback.busy} open={confirm} title={t("Register this project?")} detail={t("ALCOMD will inspect the selected root and add it to the per-user registry.")} onClose={() => setConfirm(false)} onConfirm={run} />
@@ -379,7 +379,7 @@ export function ProjectLaunchArgumentsDialog({ client, launchConfig, onChanged, 
     };
     return <MaterialDialog dismissible={!feedback.busy} open={open} onClose={onClose} title={t("Unity launch arguments")}>
         {config === undefined ? feedback.error === undefined ? <LoadingState title={t("Loading launch arguments…")} /> : null : <form onSubmit={(event) => { event.preventDefault(); void save(false); }}>
-            <TextField aria-describedby="unity-arguments-hint" disabled={feedback.busy} id="unity-arguments" label={t("Additional arguments")} maxLength={4096} onInput={setArgumentsText} rows={4} supportingText={t("One argument per line. The daemon validates forbidden arguments.")} type="textarea" value={argumentsText} />
+            <TextField disabled={feedback.busy} id="unity-arguments" label={t("Additional arguments")} maxLength={4096} onInput={setArgumentsText} rows={4} supportingText={t("One argument per line. The daemon validates forbidden arguments.")} type="textarea" value={argumentsText} />
             <div className="dialog-actions">
                 <Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button>
                 <Button disabled={!canManage || feedback.busy || config.revision === 0} onClick={() => void save(true)} type="button" variant="text">{t("Clear launch arguments")}</Button>

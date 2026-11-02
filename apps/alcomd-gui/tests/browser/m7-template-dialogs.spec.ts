@@ -23,9 +23,10 @@ test("Templates creation split button exposes derive and import with independent
     await expect(page.getByLabel("Display name", { exact: true })).toHaveValue("");
     await page.keyboard.press("Escape");
     await expect(primary).toBeFocused();
-    await arrow.focus(); await page.keyboard.press("ArrowDown");
+    await afterMaterialEvent(page, "md-menu", "opened", async () => {
+        await arrow.focus(); await page.keyboard.press("ArrowDown");
+    });
     await expect(page.getByRole("menuitem", { name: "Import template", exact: true })).toBeVisible();
-    await expect(group.locator("md-menu .menu.open")).not.toHaveClass(/animating/);
     await page.screenshot({ path: testInfo.outputPath("templates-creation-menu.png"), fullPage: false });
     await page.getByRole("menuitem", { name: "Import template", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "Import template", exact: true })).toBeVisible();
@@ -107,28 +108,49 @@ test("template create stays in one modal for the real plan review", async ({ pag
 
 test("built-in template removal cannot be activated and derive reads a project choice", async ({ page }) => {
     await templates(page);
-    await page.getByRole("button", { name: "More actions for Avatar starter", exact: true }).click();
+    const more = page.getByRole("button", { name: "More actions for Avatar starter", exact: true });
+    await afterMaterialEvent(page, "md-menu", "opened", () => more.click());
     const remove = page.getByRole("menuitem", { name: "Remove template", exact: true });
     const removeHost = page.locator("md-menu-item").filter({ hasText: "Remove template" });
     await expect(removeHost).toHaveJSProperty("disabled", true);
-    // force bypasses actionability; wait until its target is actually inside the menu.
-    await expect(page.locator("md-menu .menu.open")).not.toHaveClass(/animating/);
-    await remove.click({ force: true });
+    // A forced disabled-item click can dismiss Material's menu without activating the action.
+    await afterMaterialEvent(page, "md-menu", "closed", () => remove.click({ force: true }));
     await expect(page.getByRole("dialog", { name: "Remove template", exact: true })).toBeHidden();
-    // Disabled metadata and keyboard protection are not screen-reader evidence.
+    expect(await page.evaluate(() => window.templateRequests.filter((request) => /templates\.(plan|apply)/.test(request.method)))).toEqual([]);
+    await afterMaterialEvent(page, "md-menu", "opened", () => more.click());
+    await page.getByRole("menuitem", { name: "Create project", exact: true }).focus();
+    // End skips the disabled final item; keyboard activation opens Export, never Remove.
     await page.keyboard.press("End");
-    await page.keyboard.press("Enter");
+    await expect(page.getByRole("menuitem", { name: "Export template", exact: true })).toBeFocused();
+    await afterMaterialEvent(page, "md-dialog", "opened", () => page.keyboard.press("Enter"));
+    await expect(page.getByRole("dialog", { name: "Export template", exact: true })).toBeVisible();
     await expect(page.getByRole("dialog", { name: "Remove template", exact: true })).toBeHidden();
-    await page.keyboard.press("Escape");
-    await page.getByRole("button", { name: "More actions for Avatar starter", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Derive from project", exact: true }).click();
+    await afterMaterialEvent(page, "md-dialog", "closed", () => page.keyboard.press("Escape"));
+    await expect(more).toBeFocused();
+    await afterMaterialEvent(page, "md-menu", "opened", () => more.click());
+    await afterMaterialEvent(page, "md-dialog", "opened", () => page.getByRole("menuitem", { name: "Derive from project", exact: true }).click());
     const dialog = page.getByRole("dialog", { name: "Create template from project", exact: true });
     await expect(dialog).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Source project", exact: true })).toBeVisible();
     await expect(page.getByLabel("Expected project revision", { exact: true })).toHaveCount(0);
     await expect(page.getByLabel("Source project ID", { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => window.templateRequests.filter((request) => /templates\.(plan|apply)/.test(request.method)))).toEqual([]);
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
 });
+
+async function afterMaterialEvent(page: Page, tag: "md-menu" | "md-dialog", event: "opened" | "closed", action: () => Promise<unknown>) {
+    const lifecycle = await page.evaluateHandle(({ tag, event }) => ({ finished: new Promise<void>((resolve) => {
+        const listener = (change: Event) => {
+            if (!(change.target instanceof HTMLElement) || change.target.localName !== tag) return;
+            document.removeEventListener(event, listener, true);
+            resolve();
+        };
+        document.addEventListener(event, listener, true);
+    }) }), { tag, event });
+    await action();
+    await lifecycle.evaluate((state) => state.finished);
+    await lifecycle.dispose();
+}
 
 async function templates(page: Page) {
     await page.goto("/browser-harness.html?route=%2Ftemplates&state=ready");

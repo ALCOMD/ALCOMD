@@ -109,3 +109,9 @@
     gap: 4px;
     overflow-wrap: anywhere;
 }
+
+@media (max-width: 1100px) {
+    .extension-cards {
+        grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+    }
+}

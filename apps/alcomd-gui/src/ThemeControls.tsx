@@ -9,6 +9,7 @@ import { UtilityActionDialog, UtilityDialogCancel, useUtilityDialogBusy, useUtil
 import type { RpcError } from "@alcomd/sdk";
 import { normalizeRequestError } from "./request-errors";
 import { RequestReminder, useReminder } from "./Reminder";
+import { ScrollArea } from "./ScrollArea";
 
 export const themeSchemeLabels = {
     "tonal-spot": "Tonal spot", fidelity: "Fidelity", monochrome: "Monochrome", neutral: "Neutral",
@@ -205,9 +206,11 @@ function ThemeEditor({ value, disabled, onSave, onReload, onPreview, onSession, 
                 </div>
             </div>
             <div className="theme-options-column">
-                <SegmentedButtons id="theme-mode" label={t("Theme")} showCheckmark value={draft.mode}
-                    options={[{ label: t("Light"), value: "light" }, { label: t("System"), value: "system" }, { label: t("Dark"), value: "dark" }].map((option) => ({ ...option, disabled: disabled || saving }))}
-                    onChange={(mode) => change({ ...desired.current, mode: mode as ThemePreferences["mode"] })} />
+                <ScrollArea className="theme-mode-scroll">
+                    <SegmentedButtons id="theme-mode" label={t("Theme")} showCheckmark value={draft.mode}
+                        options={[{ label: t("Light"), value: "light" }, { label: t("System"), value: "system" }, { label: t("Dark"), value: "dark" }].map((option) => ({ ...option, disabled: disabled || saving }))}
+                        onChange={(mode) => change({ ...desired.current, mode: mode as ThemePreferences["mode"] })} />
+                </ScrollArea>
                 <div className="theme-panel">
                     <RadioGroup disabled={disabled || saving} id="theme-scheme" label={t("Color scheme")} value={draft.scheme}
                     options={Object.entries(themeSchemeLabels).map(([key, label]) => ({ value: key, label: t(label) }))}

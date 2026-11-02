@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
+import { expectRequestError } from "./request-error-assertions";
+import { requestErrorMessage } from "../../src/request-errors";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000101";
 const OPERATION_ID = "00000000-0000-4000-8000-000000000105";
@@ -205,11 +207,11 @@ test("Favorite mutation updates list and grid and exposes retryable errors", asy
 
     await openHarness(page, "/projects", "favorite-error");
     await page.getByRole("button", { name: "Add to favorites", exact: true }).click();
-    await expect(page.getByText("Unable to update favorite: internal_error")).toBeVisible();
+    await expect(page.getByText(`Unable to update favorite: ${requestErrorMessage("internal_error")}`)).toBeVisible();
 
     await openHarness(page, "/projects", "favorite-conflict");
     await page.getByRole("button", { name: "Add to favorites", exact: true }).click();
-    await expect(page.getByText("Unable to update favorite: revision_conflict")).toBeVisible();
+    await expect(page.getByText(`Unable to update favorite: ${requestErrorMessage("revision_conflict")}`)).toBeVisible();
     await page.getByRole("button", { name: "Add to favorites", exact: true }).click();
     await expect(page.getByRole("button", { name: "Remove from favorites" })).toBeVisible();
 });
@@ -349,13 +351,13 @@ test("Open Unity keeps launch and options failures explicit without navigation o
     await chooser.getByRole("combobox", { name: "Unity installation for this launch", exact: true }).click();
     await page.getByRole("option", { name: /<private-editor-two>/ }).click();
     await chooser.getByRole("button", { name: "Open Unity", exact: true }).click();
-    await expect(chooser.getByRole("alert")).toContainText("launch_failed");
+    await expectRequestError(chooser.getByRole("alert"), "unity_launch_failed");
     await expect(chooser.getByRole("button", { name: "Open Unity", exact: true })).toBeEnabled();
     await expect(page).toHaveURL(/\/projects$/);
     await chooser.getByRole("button", { name: "Cancel", exact: true }).click();
     await page.goto("/browser-harness.html?route=%2Fprojects&state=ready&unityOptionsError=1");
     await page.locator(".project-row-actions").first().getByRole("button", { name: "Open Unity", exact: true }).click();
-    await expect(page.locator("md-dialog[open]").getByRole("alert")).toContainText("revision_conflict");
+    await expectRequestError(page.locator("md-dialog[open]").getByRole("alert"), "revision_conflict");
     expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method !== "unity.launchOptions"))).toEqual([]);
     await expect(page).toHaveURL(/\/projects$/);
 });

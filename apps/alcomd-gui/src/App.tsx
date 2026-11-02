@@ -57,7 +57,7 @@ import { PortableUiRenderer } from "./PortableUiRenderer";
 import { PageHeader } from "./PageHeader";
 import { LoadingState } from "./LoadingState";
 import { createPageRead, PageReadContext } from "./PageRead";
-import { useScrollArea } from "./ScrollArea";
+import { ScrollArea, useScrollArea } from "./ScrollArea";
 import { navigationLabels } from "./navigation-labels";
 import {
     PortableUiConsumerError,
@@ -215,6 +215,8 @@ export function App({ client = guiRpcClient }: AppProps) {
     useEffect(() => {
         const onPopState = () => {
             const next = readRoute(window.location.pathname, window.location.search);
+            // In-page anchors keep their native focus and must not start route navigation.
+            if (routePath(next) === routePath(route)) return;
             if (dirtyRef.current) {
                 window.history.pushState(null, "", routePath(route));
                 setPendingRoute(next);
@@ -269,7 +271,7 @@ export function App({ client = guiRpcClient }: AppProps) {
                         current={route}
                         navigate={navigate}
                     />
-                    <main className="main-content" id="main-content" aria-busy={navigating}>
+                    <main className="main-content" id="main-content" aria-busy={navigating} tabIndex={-1}>
                         {settingsSave.failed ? <div className="settings-save-error">
                             <RequestReminder error={settingsSave.error ?? { code: "internal_error", message: "" }} title={t(["daemon_unavailable", "internal_error"].includes(settingsSave.error?.code ?? "internal_error") ? "Settings save result is unknown" : "Settings could not be saved.")}
                                 message={["daemon_unavailable", "internal_error"].includes(settingsSave.error?.code ?? "internal_error") ? "Retry checks the current settings before writing again." : undefined}>
@@ -326,11 +328,13 @@ function PrimaryNavigation({ client, current, navigate }: { client: GuiRpcClient
                         const selected = routeSection(current) === item.section;
                         return (
                             <NavigationListItem
+                                aria-label={t(item.label)}
                                 aria-current={selected ? "page" : undefined}
                                 className="navigation-item"
                                 key={item.path}
                                 onClick={() => navigate(item.path)}
                                 selected={selected}
+                                title={t(item.label)}
                             >
                                 <Icon asset={item.icon} size={24} slot="start" />
                                 <span className="navigation-item-label" slot="headline">{t(item.label)}</span>
@@ -373,10 +377,12 @@ function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient;
             <nav aria-label={t("Utilities")}>
                 <NavigationList className="navigation-list navigation-list--footer">
                     <NavigationListItem
+                        aria-label={t(navigationLabels.extensions)}
                         aria-current={routeSection(current) === "extensions" ? "page" : undefined}
                         className="navigation-item"
                         onClick={() => navigate("/extensions")}
                         selected={routeSection(current) === "extensions"}
+                        title={t(navigationLabels.extensions)}
                     >
                         <Icon asset={extensionIcon} size={24} slot="start" />
                         <span className="navigation-item-label" slot="headline">{t(navigationLabels.extensions)}</span>
@@ -388,7 +394,7 @@ function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient;
                         disabled={operationsCapability !== "available"}
                         onClick={() => navigate("/operations")}
                         selected={routeSection(current) === "tasks"}
-                        title={operationsCapability === "unavailable" ? t("{capability} was not negotiated by the connected daemon.", { capability: capabilities.operations }) : undefined}
+                        title={operationsCapability === "unavailable" ? t("{capability} was not negotiated by the connected daemon.", { capability: capabilities.operations }) : t(navigationLabels.taskCenter)}
                     >
                         <Icon asset={taskCenterIcon} size={24} slot="start" />
                         <span className="navigation-item-label" slot="headline">{t(navigationLabels.taskCenter)}</span>
@@ -400,6 +406,7 @@ function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient;
                         className="navigation-item"
                         onClick={() => navigate("/about")}
                         selected={routeSection(current) === "about"}
+                        title={`${t(navigationLabels.about)} ${guiVersion}`}
                     >
                         <Icon asset={infoIcon} size={24} slot="start" />
                     <span className="navigation-item-label" slot="headline">{t(navigationLabels.about)}</span>
@@ -710,34 +717,36 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
                     <RefreshButton disabled={busy || snapshot === undefined} onClick={() => void refresh()} refreshing={busy && snapshot !== undefined} refreshingLabel={t("Working…")} />
                 </div>
             </PageHeader>
-            <div className="extension-context">
-                <p className="eyebrow">{t("Extension-provided content")}</p>
-                <p className="extension-id"><code>{extensionId}</code></p>
-            </div>
-            {extension === undefined ? null : <ExtensionIdentity extension={extension} />}
-            {busy && snapshot === undefined ? (
-                <LoadingState title={t("Opening extension UI")} />
-            ) : null}
-            {error === undefined ? null : (
-                <RequestReminder error={error} title={t(errorTitle(error.code))}>
-                    <Button disabled={busy} onClick={reconnect} type="button" variant="text">{t("Reconnect")}</Button>
-                </RequestReminder>
-            )}
-            <MaterialDialog onClose={() => setPendingDiscardAction(undefined)} open={pendingDiscardAction !== undefined} title={t("Discard unsaved changes?")}>
-                <p>{t(DISCARD_MESSAGE)}</p>
-                <div className="dialog-actions">
-                    <Button onClick={() => setPendingDiscardAction(undefined)} type="button" variant="text">{t("Keep editing")}</Button>
-                    <Button onClick={() => void discardAndContinue()} type="button">{t("Discard changes")}</Button>
+            <ScrollArea className="extension-body">
+                <div className="extension-context">
+                    <p className="eyebrow">{t("Extension-provided content")}</p>
+                    <p className="extension-id"><code>{extensionId}</code></p>
                 </div>
-            </MaterialDialog>
-            {snapshot === undefined ? null : (
-                <PortableUiRenderer
-                    busy={busy}
-                    onAction={dispatch}
-                    onDirtyChange={updateDirty}
-                    snapshot={snapshot}
-                />
-            )}
+                {extension === undefined ? null : <ExtensionIdentity extension={extension} />}
+                {busy && snapshot === undefined ? (
+                    <LoadingState title={t("Opening extension UI")} />
+                ) : null}
+                {error === undefined ? null : (
+                    <RequestReminder error={error} title={t(errorTitle(error.code))}>
+                        <Button disabled={busy} onClick={reconnect} type="button" variant="text">{t("Reconnect")}</Button>
+                    </RequestReminder>
+                )}
+                <MaterialDialog onClose={() => setPendingDiscardAction(undefined)} open={pendingDiscardAction !== undefined} title={t("Discard unsaved changes?")}>
+                    <p>{t(DISCARD_MESSAGE)}</p>
+                    <div className="dialog-actions">
+                        <Button onClick={() => setPendingDiscardAction(undefined)} type="button" variant="text">{t("Keep editing")}</Button>
+                        <Button onClick={() => void discardAndContinue()} type="button">{t("Discard changes")}</Button>
+                    </div>
+                </MaterialDialog>
+                {snapshot === undefined ? null : (
+                    <PortableUiRenderer
+                        busy={busy}
+                        onAction={dispatch}
+                        onDirtyChange={updateDirty}
+                        snapshot={snapshot}
+                    />
+                )}
+            </ScrollArea>
         </section>
     );
 }

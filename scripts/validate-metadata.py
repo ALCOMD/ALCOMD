@@ -129,6 +129,13 @@ def main() -> int:
     require(product["binaries"] == expected_binaries, "Unexpected product binary identity")
 
     tauri = load_json("apps/alcomd-gui/src-tauri/tauri.conf.json")
+    require(tauri["app"]["windows"][0].get("zoomHotkeysEnabled") is True,
+            "The official GUI must keep native page zoom available")
+    gui_capability = load_json("apps/alcomd-gui/src-tauri/capabilities/main.json")
+    require(gui_capability["windows"] == ["main"] and "remote" not in gui_capability,
+            "GUI zoom permission must remain local to the main window")
+    require(gui_capability["permissions"] == ["core:default", "core:webview:allow-set-webview-zoom"],
+            "GUI native capabilities must remain limited to the reviewed UI permissions")
     require(
         tauri["productName"] == product["product"]["display_name"],
         "Tauri productName does not match the user brand",

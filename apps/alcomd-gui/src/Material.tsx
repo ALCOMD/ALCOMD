@@ -115,8 +115,17 @@ export function SegmentedButtons({ id, label, options, showCheckmark = false, va
                 });
             });
         };
+        const revealFocusedSegment = (event: FocusEvent) => {
+            const button = event.composedPath().find((target): target is HTMLElement =>
+                target instanceof HTMLElement && target.parentElement === element);
+            button?.scrollIntoView({ block: "nearest", inline: "nearest" });
+        };
         element.addEventListener("segmented-button-set-selection", select);
-        return () => element.removeEventListener("segmented-button-set-selection", select);
+        element.addEventListener("focusin", revealFocusedSegment);
+        return () => {
+            element.removeEventListener("segmented-button-set-selection", select);
+            element.removeEventListener("focusin", revealFocusedSegment);
+        };
     }, [onChange, options]);
     return <div className="alcomd-segmented-control">
         <div aria-hidden="true" className="alcomd-segmented-sizer" data-checkmark={showCheckmark} inert>
@@ -197,11 +206,12 @@ export interface NavigationListItemProps extends Omit<HTMLAttributes<HTMLElement
 }
 
 export const NavigationListItem = forwardRef(function NavigationListItem(
-    { children, disabled = false, onClick, selected = false, ...props }: NavigationListItemProps,
+    { "aria-label": ariaLabel, children, disabled = false, onClick, selected = false, ...props }: NavigationListItemProps,
     ref: Ref<HTMLElement>
 ) {
     return createElement(materialElements.listItem, {
         ...props,
+        ariaLabel,
         ariaSelected: selected ? "true" : "false",
         disabled,
         onClick,

@@ -94,6 +94,9 @@ md-linear-progress {
     min-height: var(--control-height);
 }
 
+.material-toggle > :is(md-checkbox, md-switch, md-radio) { flex-shrink: 0; }
+.material-toggle > span { min-width: 0; overflow-wrap: anywhere; }
+
 .material-evidence {
     display: grid;
     gap: 20px;
@@ -132,7 +135,7 @@ md-linear-progress {
     display: grid;
     grid-template-columns: 260px minmax(0, 1fr);
     height: 100vh;
-    min-height: 640px;
+    min-height: 0;
     background: var(--md-sys-color-surface-container-low);
 }
 
@@ -1354,9 +1357,15 @@ md-linear-progress {
 }
 
 .extension-surface {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
     padding: 0;
     box-shadow: none;
 }
+
+.extension-body { flex: 1; min-height: 0; overflow: auto; }
 
 .extension-context {
     margin: 12px;
@@ -1648,11 +1657,6 @@ code {
         border: 1px solid color-mix(in srgb, var(--outline) 35%, transparent);
     }
 
-    .main-content {
-        width: min(100% - 16px, 1120px);
-        padding-top: 12px;
-    }
-
     .project-workspace-action-cluster,
     .project-workspace-more-actions { justify-content: flex-start; flex-wrap: wrap; }
     .package-workspace-search { width: 100%; min-width: 0; flex-basis: 100%; }
@@ -1732,3 +1736,49 @@ md-dialog:has(.theme-editor) {
 .theme-editor-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; }
 .theme-editor-footer .dialog-actions { margin: 0; }
 .theme-feedback:empty { display: none; }
+
+.theme-mode-scroll { min-width: min-content; max-width: 100%; overflow: auto; }
+
+/* Preserve the desktop canvas; the same navigation becomes an icon rail when it no longer fits. */
+@media (max-width: 1100px) {
+    .app-body { grid-template-columns: 80px minmax(0, 1fr); }
+    .navigation-list { margin-inline: 8px; }
+    .navigation-item {
+        gap: 0;
+        --md-list-item-leading-space: 20px;
+        --md-list-item-trailing-space: 20px;
+    }
+    .navigation-item-label, .navigation-item-meta { display: none; }
+    .main-content { width: auto; margin: 8px 8px 8px 0; padding: 12px; }
+    .page-header { flex-wrap: wrap; padding-block: 8px; }
+    .page-header .page-title { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+    .page-header-actions, .utility-workspace-actions { flex-wrap: wrap; max-width: 100%; }
+    .page-surface--utility .resource-navigation { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: auto; }
+    .projects-search { flex-basis: 100%; min-width: 0; }
+    .settings-section-heading { flex-wrap: wrap; }
+    .settings-row { flex-wrap: wrap; }
+    .settings-row md-filled-select { width: min(280px, 100%); min-width: 0; flex: 0 1 auto; }
+    .logs-search { width: min(380px, 100%); }
+    .extension-card-heading, .extension-card-actions, .extension-grants li { flex-wrap: wrap; }
+}
+
+@media (max-width: 860px) {
+    .theme-editor-columns { grid-template-columns: minmax(0, 1fr); }
+    .theme-mode-scroll { min-width: 0; }
+}
+
+@media (max-width: 620px) {
+    .main-content { padding: 8px; }
+    .page-header { padding-inline: 4px; }
+    .page-header-actions, .utility-workspace-actions { flex: 1 1 100%; justify-content: flex-end; }
+    .page-surface--utility .resource-navigation { flex-basis: 100%; }
+    .settings-section { padding: 16px 12px; }
+    .settings-path-row { flex-wrap: wrap; }
+    .settings-path-row md-outlined-text-field { flex-basis: 100%; }
+    .settings-row md-filled-select { width: 100%; }
+    .theme-editor .alcomd-radio-options { grid-template-columns: minmax(0, 1fr); }
+    .theme-editor-footer { flex-wrap: wrap; }
+    .theme-editor-footer .dialog-actions { width: 100%; flex-direction: row; }
+    .theme-editor-footer .dialog-actions > .alcomd-button--standard { width: auto; flex: 1; }
+    .dialog-summary div { grid-template-columns: minmax(0, 1fr); }
+}

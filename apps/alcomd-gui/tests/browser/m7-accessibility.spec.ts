@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { expectRequestError } from "./request-error-assertions";
 
 test("keyboard navigation moves routes and focuses the destination heading", async ({ page }) => {
     await openHarness(page, "/");
@@ -99,19 +100,23 @@ test("loading, empty, error, and disconnected states have stable live semantics"
     await expect(page.getByRole("status").filter({ hasText: "No registered projects" })).toBeVisible();
 
     await openHarness(page, "/projects", "error");
-    await expect(page.getByRole("alert").filter({ hasText: "Request failed" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Request failed", exact: true })).toBeVisible();
+    await expectRequestError(page.getByRole("alert"), "internal_error");
 
     await openHarness(page, "/projects", "disconnected");
-    await expect(page.getByRole("alert").filter({ hasText: "ALCOMD core disconnected" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "ALCOMD core disconnected", exact: true })).toBeVisible();
+    await expectRequestError(page.getByRole("alert"), "daemon_unavailable");
     await expect(page.getByRole("button", { name: "Reconnect and retry" })).toBeVisible();
 });
 
 test("same-route reconnect refreshes negotiated capabilities before restoring actions", async ({ page }) => {
     await openHarness(page, "/projects", "disconnected");
-    await expect(page.getByRole("alert").filter({ hasText: "ALCOMD core disconnected" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "ALCOMD core disconnected", exact: true })).toBeVisible();
+    await expectRequestError(page.getByRole("alert"), "daemon_unavailable");
     await expect(page.getByRole("button", { name: "Create project", exact: true })).toBeDisabled();
     await page.getByRole("button", { name: "Reconnect and retry" }).click();
-    await expect(page.getByRole("alert").filter({ hasText: "ALCOMD core disconnected" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "ALCOMD core disconnected", exact: true })).toBeVisible();
+    await expectRequestError(page.getByRole("alert"), "daemon_unavailable");
     await expect(page.getByRole("button", { name: "Create project", exact: true })).toBeDisabled();
     await page.evaluate(() => window.dispatchEvent(new Event("test-daemon-online")));
     await page.getByRole("button", { name: "Reconnect and retry" }).click();
@@ -123,9 +128,9 @@ test("same-route reconnect refreshes negotiated capabilities before restoring ac
 
 test("Settings retry reconnects shared capabilities before restoring utility and project actions", async ({ page }) => {
     await openHarness(page, "/settings", "disconnected");
-    await expect(page.getByRole("alert")).toContainText("daemon_unavailable");
+    await expectRequestError(page.getByRole("alert"), "daemon_unavailable");
     await page.getByRole("button", { name: "Retry", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("daemon_unavailable");
+    await expectRequestError(page.getByRole("alert"), "daemon_unavailable");
 
     await page.evaluate(() => window.dispatchEvent(new Event("test-daemon-online")));
     await page.getByRole("button", { name: "Retry", exact: true }).click();
@@ -199,7 +204,9 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         const main = page.getByRole("main");
         const heading = main.getByRole("heading", { level: 1, name: title, exact: true });
         await expect(heading).toBeVisible();
-        const refresh = main.locator(".projects-toolbar md-icon-button, .package-workspace-toolbar md-icon-button, .utility-workspace-toolbar md-icon-button, .extension-chrome md-icon-button")
+        const refresh = main.locator(route === "/about"
+            ? ".utility-workspace-body .refresh-bar md-icon-button"
+            : ".projects-toolbar md-icon-button, .package-workspace-toolbar md-icon-button, .utility-workspace-toolbar md-icon-button, .extension-chrome md-icon-button")
             .filter({ has: page.locator('[data-icon-name="refresh"]') });
         await expect(refresh).toHaveCount(1);
         await expect(refresh.getByRole("button")).toHaveAccessibleName(/^(Refresh|Working)/);
@@ -493,19 +500,19 @@ test("dirty Portable UI form requires host-owned discard confirmation", async ({
     await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
 });
 
-test("fixed desktop navigation, deterministic 200 percent layout, reduced motion, and light/dark contrast remain usable", async ({ page }) => {
+test("narrow navigation, dialogs, reduced motion, and light/dark contrast remain usable", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 720 });
     await openHarness(page, "/settings");
     await expect(page.getByRole("button", { name: "Menu" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Close navigation" })).toHaveCount(0);
     const navigation = page.locator("#primary-navigation");
     await expect(navigation).toBeVisible();
-    expect((await navigation.boundingBox())?.width).toBe(260);
+    expect((await navigation.boundingBox())?.width).toBe(80);
+    expect((await page.locator(".main-content").boundingBox())?.width).toBeGreaterThan(200);
     expect(await hasHorizontalOverflow(page)).toBe(false);
     await expect(page.locator(".main-content")).toHaveCSS("overflow", "hidden");
 
     await page.setViewportSize({ width: 640, height: 800 });
-    await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
     expect(await hasHorizontalOverflow(page)).toBe(false);
     await expect(page.getByRole("combobox", { name: "Language" })).toBeVisible();
     await navigationItem(page, "Projects").click();
@@ -520,7 +527,6 @@ test("fixed desktop navigation, deterministic 200 percent layout, reduced motion
     const duration = await page.locator("#primary-navigation").evaluate((element) => getComputedStyle(element).transitionDuration);
     expect(seconds(duration)).toBeLessThanOrEqual(0.001);
 
-    await page.evaluate(() => { document.documentElement.style.fontSize = ""; });
     for (const theme of ["light", "dark"] as const) {
         await page.emulateMedia({ colorScheme: theme });
         await openHarness(page, "/diagnostics");

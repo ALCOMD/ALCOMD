@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { expectRequestError } from "./request-error-assertions";
 
 const descending = ["Favorite", "Newest", "Equal A", "Equal B", "Unknown history"];
 const ascending = ["Favorite", "Equal A", "Equal B", "Newest", "Unknown history"];
@@ -37,7 +38,7 @@ test("Project grid and list share last-modified sorting and never substitute che
     const unknown = page.getByRole("article", { name: "Unknown history", exact: true });
     await expect(unknown.locator(".project-card-dates")).toContainText("Last modified Unknown Date");
     await expect(page.getByRole("article", { name: "Newest", exact: true }).locator(".project-card-dates")).toContainText("Last modified 1 day ago");
-    await expect(page.getByText(/Last observed/)).toHaveCount(0);
+    await expect(page.locator(".project-card-dates").filter({ hasText: /Last observed/ })).toHaveCount(0);
     await page.getByRole("button", { name: "Sort descending", exact: true }).click();
     await expect(page.locator(".project-card h2")).toHaveText(ascending);
     await page.getByRole("button", { name: "Grid view", exact: true }).click();
@@ -72,7 +73,7 @@ for (const view of ["list", "grid"] as const) {
             await expect(date).toContainText("2 days ago");
             await target.getByRole("button", { name: "Open Unity", exact: true }).click();
             await expect(date).toContainText("12 hours ago");
-            if (failed) await expect(page.getByRole("status").filter({ hasText: "launch_failed" })).toBeVisible();
+            if (failed) await expectRequestError(page.locator("md-dialog[open]").getByRole("alert"), "unity_launch_failed");
             else await expect(page.getByRole("status").filter({ hasText: "Unity launch opening." })).toBeVisible();
             const names = view === "grid" ? page.locator(".project-card h2") : listNames(page);
             await expect(names).toHaveText(["Favorite", "Equal B", "Newest", "Equal A", "Unknown history"]);
@@ -88,7 +89,7 @@ for (const view of ["list", "grid"] as const) {
         const count = await page.evaluate(() => window.projectSnapshots.length);
         const target = view === "grid" ? page.getByRole("article", { name: "Equal B", exact: true }) : page.locator(".projects-list tbody tr").filter({ hasText: "Equal B" });
         await target.getByRole("button", { name: "Open Unity", exact: true }).click();
-        await expect(page.getByRole("status").filter({ hasText: "revision_conflict" })).toBeVisible();
+        await expectRequestError(page.locator("md-dialog[open]").getByRole("alert"), "revision_conflict");
         const date = view === "grid" ? target.locator(".project-card-dates") : target.locator("td").nth(4);
         await expect(date).toContainText("2 days ago");
         expect(await page.evaluate(() => window.projectSnapshots.length)).toBe(count);

@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page, type Request, type Response } from "@playwright/test";
+import { requestErrorMessage } from "../../src/request-errors";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000101";
 
@@ -250,7 +251,7 @@ test("Stale versions and stale pre-Plan evidence discard eligibility without aut
 
 test("Candidate quota failure is unavailable evidence, never empty/latest or a Plan probe", async ({ page }) => {
     await open(page, "candidateError=package_candidate_limit_exceeded");
-    await expect(page.getByText(/package_candidate_limit_exceeded/)).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: requestErrorMessage("package_candidate_limit_exceeded") })).toBeVisible();
     await expect(page.getByRole("button", { name: "Reload package evidence", exact: true })).toBeVisible();
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
 });

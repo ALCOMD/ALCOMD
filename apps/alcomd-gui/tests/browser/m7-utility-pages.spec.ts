@@ -282,7 +282,7 @@ test("Settings follows supported v3 group order while Logs retains its two real 
     const diagnostics = page.getByRole("table", { name: "Diagnostics", exact: true });
     await expect(diagnostics.getByRole("columnheader")).toHaveText(["Time", "Severity", "Subsystem", "Diagnostic", "Actions"]);
     await expect(diagnostics).toHaveCSS("table-layout", "fixed");
-    await expect(diagnostics.locator(".logs-summary p")).toHaveCSS("white-space", "nowrap");
+    await expect(diagnostics.locator(".logs-summary strong")).toHaveCSS("white-space", "nowrap");
     await logs.getByRole("button", { name: "Activity", exact: true }).click();
     await expectHeading(page, "Logs");
 });

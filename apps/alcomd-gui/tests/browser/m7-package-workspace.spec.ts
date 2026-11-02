@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { requestErrorMessage } from "../../src/request-errors";
 
 const PROJECT_ID = "00000000-0000-4000-8000-000000000101";
 
@@ -66,7 +67,7 @@ test("Failed filter persistence keeps the last confirmed visibility and exposes 
         const panel = page.getByRole("dialog", { name: "Package filters", exact: true });
         const repository = panel.getByRole("checkbox").first();
         await repository.click();
-        await expect(panel.getByRole("alert")).toContainText(state.endsWith("conflict") ? "Settings changed elsewhere" : "permission_denied");
+        await expect(panel.getByRole("alert")).toContainText(state.endsWith("conflict") ? "Settings changed elsewhere" : requestErrorMessage("permission_denied"));
         await expect(repository).toBeChecked();
         await expect(packageName(page, "Remote tools")).toBeVisible();
         await expect(panel.getByRole("button", { name: "Reload filters" })).toBeVisible();
