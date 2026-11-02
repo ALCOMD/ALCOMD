@@ -80,6 +80,7 @@ import { RepositoryToolbar } from "./RepositoryListDialog";
 import { useProjectUnityLaunch } from "./ProjectUnityLaunch";
 import { CreateProjectDialog, RestoreProjectDialog } from "./ProjectCreationDialogs";
 import { capabilities, capabilityUnavailableTitle, useCapability, useCapabilityState, useReconnect } from "./capabilities";
+import { requestErrorMessage } from "./request-errors";
 
 interface PageProps {
     client: GuiRpcClient;
@@ -164,7 +165,7 @@ function RefreshBar({ error, refresh, refreshing }: { error?: RpcError; refresh(
     return (
         <div className="refresh-bar" role="status" aria-live="polite" aria-busy={refreshing}>
             <span>{t("Current daemon state")}</span>
-            {error === undefined ? null : <span className="inline-error">{t("Refresh failed: ")}{error.code}</span>}
+            {error === undefined ? null : <span className="inline-error">{t("Refresh failed: ")}{t(requestErrorMessage(error.code))}</span>}
             <RefreshButton onClick={refresh} refreshing={refreshing} />
         </div>
     );
@@ -185,10 +186,9 @@ function ErrorState({ error, retry }: { error: RpcError; retry(): void }) {
     const reconnect = useReconnect();
     const disconnected = error.code === "daemon_unavailable";
     return (
-        <section className={`route-state route-state--${disconnected ? "disconnected" : "error"}`} role="alert">
+        <section className={`route-state route-state--${disconnected ? "disconnected" : "error"}`}>
             <h2>{disconnected ? t("ALCOMD core disconnected") : t("Request failed")}</h2>
-            <p><code>{error.code}</code></p>
-            {error.diagnosticId === undefined ? null : <p>{t("Diagnostic ID: ")}<code>{error.diagnosticId}</code></p>}
+            <RequestReminder error={error} title={null} />
             <Button onClick={() => { if (disconnected) reconnect?.(); retry(); }} type="button">{t("Reconnect and retry")}</Button>
         </section>
     );
@@ -321,7 +321,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
             setRegisterPath(selected);
             setRegisterOpen(true);
         } catch (caught: unknown) {
-            setRegistrationMessage(t("Unable to select directory: {value0}", { value0: safeError(t, locale, caught).code }));
+            setRegistrationMessage(t("Unable to select directory: {value0}", { value0: t(requestErrorMessage(safeError(t, locale, caught).code)) }));
         } finally {
             setSelectingDirectory(false);
         }
@@ -526,10 +526,10 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
                     else onChanged();
                 } else if (["failed", "cancelled"].includes(next.state)) {
                     setDeleting(false);
-                    onFeedback(t("Unable to delete project directory: {value0}", { value0: next.errorCode ?? next.state }));
+                    onFeedback(t("Unable to delete project directory: {value0}", { value0: next.errorCode === undefined ? humanize(t, next.state) : t(requestErrorMessage(next.errorCode)) }));
                 }
             }).catch((caught: unknown) => {
-                if (active) onFeedback(t("Unable to follow project deletion: {value0}", { value0: safeError(t, locale, caught).code }));
+                if (active) onFeedback(t("Unable to follow project deletion: {value0}", { value0: t(requestErrorMessage(safeError(t, locale, caught).code)) }));
             });
         }, 250);
         return () => { active = false; window.clearTimeout(timer); };
@@ -546,7 +546,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
             if (onRemoved !== undefined) onRemoved();
             else onChanged();
         } catch (caught: unknown) {
-            onFeedback(t("Unable to unregister project: {value0}", { value0: safeError(t, locale, caught).code }));
+            onFeedback(t("Unable to unregister project: {value0}", { value0: t(requestErrorMessage(safeError(t, locale, caught).code)) }));
         } finally {
             setUnregistering(false);
         }
@@ -559,7 +559,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
             await client.openProjectDirectory(projectId);
             onFeedback(t("Project directory opened."));
         } catch (caught: unknown) {
-            onFeedback(t("Unable to open project directory: {value0}", { value0: safeError(t, locale, caught).code }));
+            onFeedback(t("Unable to open project directory: {value0}", { value0: t(requestErrorMessage(safeError(t, locale, caught).code)) }));
         } finally {
             setOpeningDirectory(false);
         }
@@ -578,7 +578,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
             setDeletePlan(result.plan);
             setDeleteConfirmation("");
         } catch (caught: unknown) {
-            onFeedback(t("Unable to plan project deletion: {value0}", { value0: safeError(t, locale, caught).code }));
+            onFeedback(t("Unable to plan project deletion: {value0}", { value0: t(requestErrorMessage(safeError(t, locale, caught).code)) }));
         } finally {
             setDeleting(false);
         }
@@ -609,7 +609,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
             onFeedback(t("Project directory deletion started."));
         } catch (caught: unknown) {
             setDeleting(false);
-            onFeedback(t("Unable to delete project directory: {value0}", { value0: safeError(t, locale, caught).code }));
+            onFeedback(t("Unable to delete project directory: {value0}", { value0: t(requestErrorMessage(safeError(t, locale, caught).code)) }));
         }
     };
 
@@ -820,7 +820,7 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
                         </div>
                     </>
                 )}
-                {error === undefined ? null : <p className="inline-error" role="alert">{t("Copy failed: ")}{error.code}</p>}
+                {error === undefined ? null : <p className="inline-error" role="alert">{t("Copy failed: ")}{t(requestErrorMessage(error.code))}</p>}
             </div>
         </Dialog>
     );
@@ -879,7 +879,7 @@ function ProjectFavoriteButton({ client, onChanged, onFeedback, onRefresh, proje
             onFeedback(result.project.favorite === true ? t("Project added to favorites.") : t("Project removed from favorites."));
         } catch (caught: unknown) {
             const error = safeError(t, locale, caught);
-            onFeedback(t("Unable to update favorite: {value0}", { value0: error.code }));
+            onFeedback(t("Unable to update favorite: {value0}", { value0: t(requestErrorMessage(error.code)) }));
             if (error.code === "revision_conflict") onRefresh();
         } finally {
             setBusy(false);
@@ -929,7 +929,7 @@ function RegisterProjectDialog({ client, onChanged, onClose, open, path }: { cli
                     <Button disabled={busy || path.length === 0} onClick={() => void register()} ref={confirmRef} type="button">{t("Confirm")}</Button>
                 </div>
             </div>
-            {error === undefined ? null : <p className="inline-error" role="alert">{t("Registration failed: ")}{error.code}</p>}
+            {error === undefined ? null : <p className="inline-error" role="alert">{t("Registration failed: ")}{t(requestErrorMessage(error.code))}</p>}
         </Dialog>
     );
 }
@@ -1070,7 +1070,7 @@ function PackageVersionMenu({ client, project, snapshot, disabled, canPlan, onSe
                 onClick={() => { setOpen(false); onSelect(option, anchorRef); }}
             />)}
             {showLoading ? <MenuItem disabled label={t("Loading versions…")} /> : null}
-            {error ? <MenuItem disabled label={t("Versions unavailable: {value0}", { value0: error })} /> : null}
+            {error ? <MenuItem disabled label={t("Versions unavailable: {value0}", { value0: t(requestErrorMessage(error)) })} /> : null}
             {!busy && !error && cursor === null && items.length === 0 ? <MenuItem disabled label={t("No recorded versions")} /> : null}
             {cursor ? <MenuItem disabled={busy} label={t("Load more versions")} onClick={() => void load(cursor)} /> : null}
         </Menu> : null}
@@ -1139,7 +1139,7 @@ function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
                 <MenuItem disabled={row.linkTarget?.changelog !== true} label={t("Changelog")} onClick={() => void openLink("changelog")} />
                 <MenuItem className="package-actions-menu-item--danger" disabled={row.installedVersion === undefined || !canPlanV1} label={t("Remove")} onClick={() => { setOpen(false); onAction("remove", anchorRef); }} title={capabilityUnavailableTitle(canPlanV1, capabilities.packagesPlanV1, t)} />
             </Menu> : null}
-            {error === undefined ? null : <span className="visually-hidden" role="alert">{t("Package link unavailable: ")}{error}</span>}
+            {error === undefined ? null : <span className="visually-hidden" role="alert">{t("Package link unavailable: ")}{t(requestErrorMessage(error))}</span>}
         </>
     );
 }
@@ -1235,7 +1235,7 @@ function PackageFilters({ client, settings, repositories, onChanged, filter, set
                 <Select disabled={busy} label={t("Status")} onChange={setFilter} options={[{ label: t("All packages"), value: "all" }, { label: t("Installed"), value: "installed" }, { label: t("Available"), value: "available" }, { label: t("Missing source"), value: "missing" }]} value={filter} />
                 <Select disabled={busy} label={t("Source")} onChange={(value) => setSourceFilter(value as "all" | "local" | "remote" | "user-package")} options={[{ label: t("All"), value: "all" }, { label: t("Remote"), value: "remote" }, { label: t("Local repository"), value: "local" }, ...(canUseUserPackages ? [{ label: t("User Packages"), value: "user-package" }] : [])]} value={sourceFilter} />
             </fieldset>
-            {error === undefined ? null : <div role="alert"><p>{error.code === "revision_conflict" ? t("Settings changed elsewhere. Reload filters before trying again.") : t("Could not save filters: {value0}", { value0: error.code })}</p><Button onClick={() => { setError(undefined); onChanged(); }} type="button" variant="text">{t("Reload filters")}</Button></div>}
+            {error === undefined ? null : <div role="alert"><p>{error.code === "revision_conflict" ? t("Settings changed elsewhere. Reload filters before trying again.") : t("Could not save filters: {value0}", { value0: t(requestErrorMessage(error.code)) })}</p><Button onClick={() => { setError(undefined); onChanged(); }} type="button" variant="text">{t("Reload filters")}</Button></div>}
         </FilterPopover>
         <Dialog onClose={() => { setConfirmPrerelease(false); setOpen(true); }} open={confirmPrerelease} title={t("Show prerelease versions?")}>
             <p>{t("Prerelease packages may be unstable. Showing them does not install or update any package.")}</p>
@@ -1275,7 +1275,7 @@ async function loadPackageWorkspace(t: Translate, locale: SupportedLocale, clien
         client.unityLaunchOptions(projectId, project.revision)
     ]);
     let candidates: CandidateSummarySet | undefined;
-    let candidateError: string | undefined = canQuery ? undefined : t("Candidate evidence unavailable: packages.candidates.v1 was not negotiated.");
+    let candidateError: string | undefined = canQuery ? undefined : "capability_required";
     try {
         if (canQuery) {
             const sources = Object.entries(sourceSelections).filter(([, key]) => key.length > 0).map(([packageId, key]) => ({ packageId, source: key.startsWith("repository:") ? { kind: "repository" as const, repository_id: key.slice(11) } : { kind: "user_package" as const, user_package_id: key.slice(13) } }));
@@ -1331,7 +1331,7 @@ function CandidateEvidenceStatus({ error, invalid, current, reload }: { error?: 
     const { t } = useTranslation();
     const showLoading = useDelayedPending(!error && !invalid && !current);
     if (!error && !invalid && !showLoading) return null;
-    return <div role="status">{error ?? (invalid ? t("Candidate evidence is stale.") : t("Loading candidate evidence…"))} <Button onClick={reload} type="button" variant="text">{t("Reload package evidence")}</Button></div>;
+    return <div role="status">{error === undefined ? invalid ? t("Candidate evidence is stale.") : t("Loading candidate evidence…") : t(requestErrorMessage(error))} <Button onClick={reload} type="button" variant="text">{t("Reload package evidence")}</Button></div>;
 }
 
 function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { projectId: string }) {
@@ -1479,7 +1479,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                         title={projectName(t, locale, project)}
                     >
                         <nav aria-label={t("Project actions")} className="project-workspace-action-cluster">
-                            {refreshError === undefined ? null : <span className="inline-error" role="alert">{t("Refresh failed: ")}{refreshError.code}</span>}
+                            {refreshError === undefined ? null : <span className="inline-error" role="alert">{t("Refresh failed: ")}{t(requestErrorMessage(refreshError.code))}</span>}
                             <ProjectUnityWorkspaceActions client={client} installations={installations} launchOptions={launchOptions} navigate={navigate} onChanged={refresh} project={project} renderLaunch={(launchAction, onViewLaunchStatus) => <ProjectRowActions
                                 client={client}
                                 context="workspace"
@@ -1519,7 +1519,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                 <span>{repositoryRefresh.running
                                     ? t("Refreshing repositories: {value0} of {value1}.", { value0: repositoryRefresh.completed, value1: repositoryRefresh.total })
                                     : `${repositoryRefresh.successes} refreshed, ${repositoryRefresh.failures.length} failed.`}</span>
-                                <ul className="visually-hidden">{repositoryRefresh.results.map((result) => <li key={result.repositoryId}>{result.repositoryId}: {result.status}{result.code === undefined ? "" : ` (${result.code})`}</li>)}</ul>
+                                {repositoryRefresh.failures.length === 0 ? null : <details><summary>{t("Show details")}</summary><ul>{repositoryRefresh.results.map((result) => result.code === undefined ? null : <li key={result.repositoryId}>{result.repositoryId}: {t(requestErrorMessage(result.code))}</li>)}</ul></details>}
                             </div>
                         )}
                         {bulkSelection.length === 0 ? null : (
@@ -2074,7 +2074,7 @@ function LogOperationDialog({ client, operationId, onClose }: { client: GuiRpcCl
         <ResourcePage load={load} showRefreshBar={false}>{(operation) => <dl className="logs-operation-details">
             <Detail label={t("Operation")} value={operation.operationId} /><Detail label={t("Kind")} value={humanize(t, operation.kind)} />
             <Detail label={t("State")} value={humanize(t, operation.state)} /><Detail label={t("Phase")} value={operation.progress?.phase ?? "—"} />
-            <Detail label={t("Updated")} value={formatTime(t, locale, operation.updatedAtMs)} /><Detail label={t("Error")} value={operation.errorCode ?? t("None")} />
+            <Detail label={t("Updated")} value={formatTime(t, locale, operation.updatedAtMs)} /><Detail label={t("Error")} value={operation.errorCode === undefined ? t("None") : t(requestErrorMessage(operation.errorCode))} />
             {operation.diagnosticId === undefined ? null : <Detail label={t("Diagnostic ID")} value={operation.diagnosticId} />}
         </dl>}</ResourcePage>
         <div className="dialog-actions"><Button onClick={onClose} type="button" variant="text">{t("Close")}</Button></div>
@@ -2133,7 +2133,7 @@ export function DiagnosticsPage({ client, navigate }: PageProps) {
     };
     return <UtilityWorkspace title={t(navigationLabels.logs)} load={load} navigation={<UtilityNavigation current="/diagnostics" kind="logs" navigate={navigate} />}
         tools={() => <><SearchField className="logs-search" label={t("Search diagnostics")} value={search} onInput={setSearch} /><Button disabled={!canCheckState || checking} onClick={() => void runStateCheck()} title={capabilityUnavailableTitle(canCheckState, capabilities.stateCheck, t)} type="button" variant="tonal">{t("Run state check")}</Button></>}>
-        {(value) => <>{checkError === undefined ? null : <p className="inline-error" role="alert">{t("State check failed: ")}{checkError.code}</p>}{operationId === undefined ? null : <OperationFollow client={client} operationId={operationId} />}
+        {(value) => <>{checkError === undefined ? null : <p className="inline-error" role="alert">{t("State check failed: ")}{t(requestErrorMessage(checkError.code))}</p>}{operationId === undefined ? null : <OperationFollow client={client} operationId={operationId} />}
             <PagedItems initialItems={value.items} initialCursor={value.nextCursor} loadMore={(cursor) => client.diagnosticsList(cursor)}>{(items) => <DiagnosticLogRows client={client} items={items} search={search} />}</PagedItems>
         </>}
     </UtilityWorkspace>;

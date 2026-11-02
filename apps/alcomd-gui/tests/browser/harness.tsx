@@ -28,6 +28,7 @@ import "../../src/styles.css";
 import { MaterialFoundationEvidence } from "./MaterialFoundationEvidence";
 import { withH4PortableClient } from "./h4-portable-client";
 import { withH4ManagementClient } from "./h4-management-client";
+import { RequestReminderEvidence } from "./RequestReminderEvidence";
 
 type CandidateQuery = (client: Pick<GuiRpcClient, "packageQueryProjectCandidates">, request: Parameters<typeof queryCandidates>[1]) => ReturnType<typeof queryCandidates>;
 
@@ -1101,7 +1102,7 @@ const managementClient = query.has("h4-management") ? withH4ManagementClient(bas
 const browserClient = query.has("h4-portable") ? withH4PortableClient(managementClient, query) : managementClient;
 ReactDOM.createRoot(root).render(
     <React.StrictMode>
-        {materialEvidence
+        {query.has("request-reminder") ? <RequestReminderEvidence locale={query.get("locale") === "zh-CN" ? "zh-CN" : query.get("locale") === "ja-JP" ? "ja-JP" : "en-US"} /> : materialEvidence
             ? <MaterialFoundationEvidence />
             : <App client={browserClient} />}
     </React.StrictMode>

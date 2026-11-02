@@ -251,7 +251,7 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
                         </div>
                     </>
                 )}
-                {error === undefined ? null : <div className="inline-error" role="alert"><p>{t("Project creation request failed: {code}", { code: error.code })}</p>{submitted && templateApplyResultUnknown(error) ? <p>{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</p> : null}</div>}
+                {error === undefined ? null : <RequestReminder error={error}>{submitted && templateApplyResultUnknown(error) ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</RequestReminder>}
             </div>
         </Dialog>{operations.follow()}</>
     );

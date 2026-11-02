@@ -9,6 +9,7 @@ import { Reminder, RequestReminder } from "./Reminder";
 import { ScrollArea } from "./ScrollArea";
 import { useTranslation } from "./i18n";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
+import { requestErrorMessage } from "./request-errors";
 import "./RepositoryListDialog.css";
 
 export function RepositoryToolbar({ client, onChanged }: { client: GuiRpcClient; onChanged(): void }) {
@@ -134,12 +135,15 @@ function ImportRepositoryList({ client, onChanged, onClose }: { client: GuiRpcCl
             </Reminder>}
             {stage === "review" ? <Reminder tone={failures || unprocessed ? "warning" : "info"}>{t("Ready: {ready} · Check failed: {failed} · Not processed: {pending}", { ready, failed: failures, pending: Object.values(results).filter((item) => item.phase === "pending").length })}</Reminder> : null}
             {cancelled ? <Reminder tone="warning">{t("Cancellation stopped new requests. Completed additions remain; an in-flight request is allowed to finish.")}</Reminder> : null}
-            <ScrollArea className="repository-list-entries"><ul>{entries.map((entry) => <li key={entry.line}>
-                <div>{stage === "select" && entry.status === "candidate" ? <Checkbox checked={selected.has(entry.line)} disabled={busy} label={t("Select line {line}", { line: entry.line })} onChange={(checked) => setSelected((before) => { const next = new Set(before); if (checked) next.add(entry.line); else next.delete(entry.line); return next; })} /> : <strong>{t("Line {line}", { line: entry.line })}</strong>}<span>{phaseText(entry)}</span></div>
-                {entry.source ? <code>{entry.source.url}</code> : null}
-                {entry.reason ? <code>{entry.reason}</code> : null}
-                {results[entry.line]?.error ? <code className="repository-list-error">{results[entry.line]?.error?.code}</code> : null}
-            </li>)}</ul></ScrollArea>
+            <ScrollArea className="repository-list-entries"><ul>{entries.map((entry) => {
+                const failure = results[entry.line]?.error;
+                return <li key={entry.line}>
+                    <div>{stage === "select" && entry.status === "candidate" ? <Checkbox checked={selected.has(entry.line)} disabled={busy} label={t("Select line {line}", { line: entry.line })} onChange={(checked) => setSelected((before) => { const next = new Set(before); if (checked) next.add(entry.line); else next.delete(entry.line); return next; })} /> : <strong>{t("Line {line}", { line: entry.line })}</strong>}<span>{phaseText(entry)}</span></div>
+                    {entry.source ? <code>{entry.source.url}</code> : null}
+                    {entry.reason ? <span>{t(requestErrorMessage(entry.reason))}</span> : null}
+                    {failure === undefined ? null : <span className="repository-list-error">{t(requestErrorMessage(failure.code))}</span>}
+                </li>;
+            })}</ul></ScrollArea>
         </> : null}
         {busy ? <div className="repository-list-progress" aria-live="polite"><Progress label={t("Repository list progress")} /><span>{busyAction === "reading" ? t("Loading…") : busyAction === "checking" ? t("Checking repositories: {count} completed", { count: completed }) : t("Adding repositories: {count} completed", { count: completed })}</span></div> : null}
     </Dialog>;
@@ -177,7 +181,7 @@ function ExportRepositoryList({ client, onClose }: { client: GuiRpcClient; onClo
     };
     const reasonText = { local_source: "Local source cannot be represented by this URL list.", authentication_not_supported: "Authentication settings cannot be represented by this URL list.", unsupported_source: "This source cannot be represented by this URL list." };
     return <Dialog wide open dismissible={!busy} title={t("Export list")} onClose={onClose} actions={<><Button disabled={busy} onClick={onClose} type="button" variant="text">{t("Close")}</Button><Button disabled={busy} onClick={() => void load()} type="button" variant="text">{t("Preview again")}</Button>{saved ? null : <Button disabled={busy || !confirmed || !preview || preview.exportableCount === 0 || !nameValid} onClick={() => void save()} type="button">{t("Save new list file")}</Button>}</>}>
-        {error ? <RequestReminder error={error}>{error.code === "repository_list_target_exists" ? t("The file already exists and was preserved. Choose another file name.") : error.code === "repository_list_changed" ? t("The repository snapshot changed. Preview again before saving.") : undefined}</RequestReminder> : null}
+        {error ? <RequestReminder error={error} /> : null}
         {preview ? <>
             <p>{t("{count} repositories can be exported · {excluded} excluded · {bytes} bytes", { count: preview.exportableCount, excluded: preview.excluded.length, bytes: preview.byteCount })}</p>
             <Reminder tone="warning">{t("This file contains complete repository addresses, which may contain credentials. Check it before sharing. Authentication headers and stored credentials are not included. This is not a complete backup.")}</Reminder>

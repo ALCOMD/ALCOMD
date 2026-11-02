@@ -143,7 +143,7 @@ export function RegisterRepositoryPanel({ client, onChanged }: ActionProps) {
     return <ActionSection title={t("Add repository")}>
         {preview === undefined ? <form onSubmit={(event) => void inspect(event)}>
             <Select disabled={feedback.busy} id="repository-kind" label={t("Source type")} onChange={(next) => { setKind(next as "remote" | "local"); setFeedback(INITIAL_FEEDBACK); }} options={[{ label: t("Remote URL"), value: "remote" }, { label: t("Local manifest"), value: "local" }]} value={kind} />
-            <TextField disabled={feedback.busy} error={fieldError !== undefined} errorText={fieldError === undefined ? undefined : `${t("Check the repository URL or manifest path.")} (${fieldError.code})`} id="repository-source" label={kind === "remote" ? t("Repository URL") : t("Local manifest path")} maxLength={2048} onInput={(next) => { setValue(next); setFeedback(INITIAL_FEEDBACK); }} required type={kind === "remote" ? "url" : "text"} value={value} />
+            <TextField disabled={feedback.busy} error={fieldError !== undefined} errorText={fieldError === undefined ? undefined : t("Check the repository URL or manifest path.")} id="repository-source" label={kind === "remote" ? t("Repository URL") : t("Local manifest path")} maxLength={2048} onInput={(next) => { setValue(next); setFeedback(INITIAL_FEEDBACK); }} required type={kind === "remote" ? "url" : "text"} value={value} />
             {error}
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || value.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.repositoriesRegistry, t)} type="submit">{t("Review repository")}</Button></div>
         </form> : <>
@@ -1202,7 +1202,7 @@ export function useTemplateOperations(client: GuiRpcClient) {
                 if (owner.current !== scope || !scope.active) return;
                 setAccepted((current) => current.map((entry) => entry.operationId === item.operationId && entry.progressError?.code !== progressError?.code ? { ...entry, progressError } : entry));
             }} onSnapshot={update} onTerminal={finish} operationId={item.operationId} />
-            {item.error === undefined ? null : <p className="inline-error" role="alert"><code>{item.error.code}</code></p>}
+            {item.error === undefined ? null : <RequestReminder error={item.error} />}
             {projectId === undefined || onOpenProject === undefined ? null : <TemplateProjectLink onOpen={() => onOpenProject(projectId)} />}
         </div>;
     });
@@ -1239,7 +1239,7 @@ export function TemplateOperationProgress({ operationId, operations }: { operati
         return () => present(operationId, false);
     }, [operationId, present]);
     const item = operations.snapshot(operationId);
-    return <><OperationProgress error={item?.progressError} operation={item?.operation} />{item?.error === undefined ? null : <p className="inline-error" role="alert"><code>{item.error.code}</code></p>}</>;
+    return <><OperationProgress error={item?.progressError} operation={item?.operation} />{item?.error === undefined ? null : <RequestReminder error={item.error} />}</>;
 }
 
 export function OperationFollow({ children, client, initialOperation, onReadError, onSnapshot, onTerminal, operationId, title = "Operation" }: {

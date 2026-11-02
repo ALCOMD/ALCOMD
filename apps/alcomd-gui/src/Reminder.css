@@ -28,6 +28,7 @@
 
 .reminder-title { display: block; margin-bottom: 4px; }
 .reminder p { margin: 0; }
+.reminder-context { margin-top: 8px; }
 .reminder-code { display: block; margin-top: 8px; font-size: 0.8rem; }
 .reminder-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .reminder-details { max-height: 180px; overflow: auto; margin-top: 8px; white-space: pre-wrap; }

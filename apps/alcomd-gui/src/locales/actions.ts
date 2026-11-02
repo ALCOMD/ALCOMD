@@ -2,6 +2,8 @@ import type { TranslationTable } from "../i18n-types";
 
 // Existing terms follow the frozen v3 resources; v4-only text is authored for this GUI.
 export const actionMessages: TranslationTable = {
+    "Publisher confirmation required": { "zh-CN": "请确认扩展发布者", "ja-JP": "拡張機能の発行元を確認してください" },
+    "Error code": { "zh-CN": "错误标识", "ja-JP": "エラーコード" },
     "Requested permissions": { "zh-CN": "申请的权限", "ja-JP": "要求する権限" },
     "Required permissions": { "zh-CN": "必需权限", "ja-JP": "必須の権限" },
     "Optional permissions": { "zh-CN": "可选权限", "ja-JP": "任意の権限" },

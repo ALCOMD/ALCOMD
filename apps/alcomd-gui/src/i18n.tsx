@@ -5,11 +5,12 @@ import { shellMessages } from "./locales/shell";
 import { pageMessages } from "./locales/pages";
 import { actionMessages } from "./locales/actions";
 import { formMessages } from "./locales/forms";
+import { errorMessages } from "./locales/errors";
 
 export type { SupportedLocale, Translate } from "./i18n-types";
 
 // English messages are the source keys. External package/project/extension text never enters this catalog.
-export const messages: TranslationTable = { ...shellMessages, ...pageMessages, ...actionMessages, ...formMessages };
+export const messages: TranslationTable = { ...shellMessages, ...pageMessages, ...actionMessages, ...formMessages, ...errorMessages };
 const LocaleContext = createContext<SupportedLocale>("en-US");
 
 export function preferredLocale(value: string): SupportedLocale {

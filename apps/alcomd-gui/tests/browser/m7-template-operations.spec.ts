@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { expectRequestError } from "./request-error-assertions";
 
 const importedId = "00000000-0000-4000-8000-000000000302";
 const builtinId = "00000000-0000-4000-8000-000000000301";
@@ -63,7 +64,7 @@ test("a create plan missing its destination safety evidence cannot be applied", 
     await page.getByLabel("Target parent", { exact: true }).fill("C:\\Fixture");
     await page.getByLabel("Project folder name", { exact: true }).fill("Unsafe evidence");
     await page.getByRole("button", { name: "Review", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("internal_error");
+    await expectRequestError(page.getByRole("alert"), "internal_error");
     await expect(page.getByRole("button", { name: "Apply reviewed plan", exact: true })).toHaveCount(0);
     expect(await applies(page)).toEqual([]);
 });
@@ -179,7 +180,7 @@ test("an unknown Apply response is not retried or treated as a rejected task", a
     await page.goto("/browser-harness.html?route=/templates&template-tasks=1&template-apply-unknown=1");
     await importReview(page);
     await page.getByRole("button", { name: "Apply reviewed plan", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("daemon_unavailable");
+    await expectRequestError(page.getByRole("alert"), "daemon_unavailable");
     await expect(page.getByText("The result of this request is unknown. Check Tasks and refresh before reviewing it again.", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Apply reviewed plan", exact: true })).toBeDisabled();
     await page.keyboard.press("Enter");
@@ -226,7 +227,7 @@ test("a late derive Plan cannot replace a newly opened draft", async ({ page }) 
 test("import metadata must match the inspected digest before Apply becomes available", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/templates&template-invalid-plan=import-hash");
     await importPlan(page);
-    await expect(page.getByRole("alert")).toContainText("internal_error");
+    await expectRequestError(page.getByRole("alert"), "internal_error");
     await expect(page.getByRole("button", { name: "Apply reviewed plan", exact: true })).toHaveCount(0);
     expect(await applies(page)).toEqual([]);
 });
@@ -234,7 +235,7 @@ test("import metadata must match the inspected digest before Apply becomes avail
 test("derive rejects a Plan whose source revision has the wrong wire type", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/templates&template-invalid-plan=derive-revision");
     await deriveReview(page, "Invalid revision");
-    await expect(page.getByRole("alert")).toContainText("internal_error");
+    await expectRequestError(page.getByRole("alert"), "internal_error");
     await expect(page.getByRole("button", { name: "Apply reviewed plan", exact: true })).toHaveCount(0);
     expect(await applies(page)).toEqual([]);
 });

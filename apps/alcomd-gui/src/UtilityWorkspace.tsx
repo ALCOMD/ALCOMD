@@ -8,7 +8,9 @@ import { LoadingState } from "./LoadingState";
 import { useInitialPageRead } from "./PageRead";
 import { ScrollArea } from "./ScrollArea";
 import { useReconnect } from "./capabilities";
-import { Reminder } from "./Reminder";
+import type { RpcError } from "@alcomd/sdk";
+import { RequestReminder } from "./Reminder";
+import { normalizeRequestError } from "./request-errors";
 
 interface UtilityWorkspaceProps<T> {
     title: string;
@@ -29,7 +31,7 @@ interface WorkspaceState<T> {
     loader: () => Promise<T>;
     value?: T;
     pending: boolean;
-    error?: string;
+    error?: RpcError;
 }
 
 export function UtilityWorkspace<T>({
@@ -48,7 +50,7 @@ export function UtilityWorkspace<T>({
     const initialLoader = useRef(load).current;
     const [state, setState] = useState<WorkspaceState<T>>(() => ({
         loader: load, pending: initial === undefined,
-        ...(initial?.kind === "ready" ? { value: initial.value } : initial?.kind === "error" ? { error: errorCode(initial.error) } : {})
+        ...(initial?.kind === "ready" ? { value: initial.value } : initial?.kind === "error" ? { error: normalizeRequestError(initial.error) } : {})
     }));
     const [generation, setGeneration] = useState(0);
     const [actionOpen, setActionOpen] = useState(false);
@@ -71,8 +73,7 @@ export function UtilityWorkspace<T>({
             setState({ loader: load, value, pending: queuedRefreshRef.current });
         }).catch((caught: unknown) => {
             if (!active) return;
-            const code = errorCode(caught);
-            setState((current) => ({ ...current, pending: queuedRefreshRef.current, error: code }));
+            setState((current) => ({ ...current, pending: queuedRefreshRef.current, error: normalizeRequestError(caught) }));
         }).finally(() => {
             if (!active) return;
             if (queuedRefreshRef.current) {
@@ -103,7 +104,7 @@ export function UtilityWorkspace<T>({
     const error = state.loader === load ? state.error : undefined;
     const pending = state.loader !== load || state.pending;
     const retry = () => {
-        if (error === "daemon_unavailable") reconnect?.();
+        if (error?.code === "daemon_unavailable") reconnect?.();
         refresh();
     };
 
@@ -128,10 +129,10 @@ export function UtilityWorkspace<T>({
             </PageHeader>
             <ScrollArea className="utility-workspace-body">
                 {error === undefined ? null : (
-                    <Reminder tone="error">
-                        <p>{value === undefined ? t("This page could not be loaded.") : t("Refresh failed. The last loaded result is still shown.")} <code>{error}</code></p>
+                    <RequestReminder error={error}>
+                        <p>{value === undefined ? t("This page could not be loaded.") : t("Refresh failed. The last loaded result is still shown.")}</p>
                         <Button disabled={pending} onClick={retry} type="button" variant="text">{t("Retry")}</Button>
-                    </Reminder>
+                    </RequestReminder>
                 )}
                 {value === undefined ? (
                     pending ? <LoadingState title={t("Loading…")} /> : null
@@ -148,9 +149,4 @@ export function UtilityWorkspace<T>({
             </ScrollArea>
         </section>
     );
-}
-
-function errorCode(caught: unknown): string {
-    return typeof caught === "object" && caught !== null && "code" in caught && typeof caught.code === "string"
-        ? caught.code : "internal_error";
 }

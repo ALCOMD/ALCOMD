@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
+import { requestErrorMessage } from "../../src/request-errors";
+import { expectRequestError } from "./request-error-assertions";
 
 async function openList(page: Page, action: "Import list" | "Export list") {
     await page.getByRole("button", { name: "Repository list actions", exact: true }).click();
@@ -54,7 +56,7 @@ test("list import keeps partial failures visible without retrying or claiming ro
     await host.getByRole("button", { name: "Add 3 repositories", exact: true }).click();
     await expect(host.getByText("Added: 2 · Failed: 1 · Unknown: 0 · Not processed: 0", { exact: true })).toBeVisible();
     await page.clock.fastForward(10_000);
-    await expect(host.getByText("repository_unavailable", { exact: true })).toBeVisible();
+    await expect(host.getByText(requestErrorMessage("repository_unavailable"), { exact: true })).toBeVisible();
     expect(await requests(page, "repositories.register")).toHaveLength(3);
     await expect(host.getByRole("button", { name: "Close", exact: true })).toBeVisible();
 });
@@ -160,7 +162,7 @@ for (const code of ["repository_list_target_exists", "repository_list_changed", 
         const consent = host.getByRole("checkbox", { name: "I have reviewed the export scope and the address-sharing risk.", exact: true });
         await consent.check();
         await host.getByRole("button", { name: "Save new list file", exact: true }).click();
-        await expect(host.getByRole("alert").filter({ hasText: code })).toBeVisible();
+        await expectRequestError(host.locator(".reminder--error"), code);
         expect(await requests(page, "repositories.exportListFile")).toHaveLength(1);
         if (code === "repository_list_changed") {
             await expect(host.getByRole("button", { name: "Save new list file", exact: true })).toBeDisabled();

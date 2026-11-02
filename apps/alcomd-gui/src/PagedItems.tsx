@@ -2,7 +2,9 @@ import { useTranslation } from "./i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "./Material";
-import { Reminder } from "./Reminder";
+import type { RpcError } from "@alcomd/sdk";
+import { RequestReminder } from "./Reminder";
+import { normalizeRequestError } from "./request-errors";
 
 export interface ItemPage<T, C> {
     items: T[];
@@ -30,7 +32,7 @@ function PageSession<T, C>({ initialItems, initialCursor, loadMore, children }: 
     const [items, setItems] = useState(initialItems);
     const [cursor, setCursor] = useState(initialCursor);
     const [loading, setLoading] = useState(false);
-    const [failed, setFailed] = useState(false);
+    const [failure, setFailure] = useState<RpcError>();
     const request = useRef<object | undefined>(undefined);
 
     useEffect(() => () => { request.current = undefined; }, []);
@@ -49,10 +51,10 @@ function PageSession<T, C>({ initialItems, initialCursor, loadMore, children }: 
             }
             setItems((current) => [...current, ...page.items]);
             setCursor(page.nextCursor);
-            setFailed(false);
-        } catch {
+            setFailure(undefined);
+        } catch (caught: unknown) {
             if (request.current === token) {
-                setFailed(true);
+                setFailure(normalizeRequestError(caught));
             }
         } finally {
             if (request.current === token) {
@@ -67,9 +69,9 @@ function PageSession<T, C>({ initialItems, initialCursor, loadMore, children }: 
             {children(items)}
             {cursor === undefined ? null : (
                 <div className="pagination-controls" aria-busy={loading}>
-                    {failed ? <Reminder tone="error">{t("Could not load more items. Your loaded items are still available.")}</Reminder> : null}
+                    {failure === undefined ? null : <RequestReminder error={failure}>{t("Could not load more items. Your loaded items are still available.")}</RequestReminder>}
                     <Button disabled={loading} onClick={() => { void next(); }} type="button" variant="tonal">
-                        {failed ? t("Retry loading more") : t("Load more")}
+                        {failure !== undefined ? t("Retry loading more") : t("Load more")}
                     </Button>
                 </div>
             )}

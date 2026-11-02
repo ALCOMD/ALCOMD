@@ -1,3 +1,4 @@
+import { expectRequestError } from "./request-error-assertions";
 import { expect, test, type Page } from "@playwright/test";
 import type { ExtensionUiDispatchParams } from "@alcomd/sdk";
 import "./h4-portable-client";
@@ -115,7 +116,7 @@ for (const code of ["extension_permission_denied", "extension_quarantined", "ext
         await page.getByLabel("Enable presence", { exact: true }).uncheck();
         await page.evaluate((errorCode) => window.h4Portable.failNext("dispatch", errorCode), code);
         await page.getByRole("button", { name: "Save", exact: true }).click();
-        await expect(page.locator(".reminder[role=alert]")).toContainText(code);
+        await expectRequestError(page.locator(".reminder[role=alert]"), code);
         await expect(page.locator(".portable-document")).toHaveCount(0);
         expect(await requests(page, "extensions.ui.dispatch")).toHaveLength(1);
         await expect.poll(async () => (await requests(page, "extensions.ui.close")).some((request) => (request.params as { sessionId: string }).sessionId === "h4-session-1")).toBe(true);
@@ -136,7 +137,7 @@ test("H4 Portable UI keeps a refused action's draft and only retries on an expli
     await page.getByLabel("Enable presence", { exact: true }).uncheck();
     await page.evaluate(() => window.h4Portable.failNext("dispatch", "extension_ui_action_invalid"));
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.locator(".reminder[role=alert]")).toContainText("extension_ui_action_invalid");
+    await expectRequestError(page.locator(".reminder[role=alert]"), "extension_ui_action_invalid");
     await expect(page.getByLabel("Enable presence", { exact: true })).not.toBeChecked();
     expect(await requests(page, "extensions.ui.dispatch")).toHaveLength(1);
     expect(await requests(page, "extensions.ui.close")).toHaveLength(0);
@@ -154,7 +155,7 @@ test("H4 Portable UI reconnect negotiates changed capabilities and never repeats
     const initialStatusReads = (await requests(page, "system.status")).length;
     await page.evaluate(() => window.h4Portable.failNext("dispatch", "daemon_unavailable"));
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.locator(".reminder[role=alert]")).toContainText("daemon_unavailable");
+    await expectRequestError(page.locator(".reminder[role=alert]"), "daemon_unavailable");
     await expect(page.locator(".portable-document")).toHaveCount(0);
     await page.evaluate(() => { window.h4Portable.removeUiCapability = true; });
     await page.getByRole("button", { name: "Reconnect", exact: true }).click();

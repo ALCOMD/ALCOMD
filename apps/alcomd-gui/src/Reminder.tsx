@@ -5,6 +5,7 @@ import { closeIcon, infoIcon } from "@alcomd/ui/icons";
 import { Button, Icon, IconButton } from "./Material";
 import { ScrollArea } from "./ScrollArea";
 import { useTranslation } from "./i18n";
+import { normalizeRequestError, requestErrorMessage } from "./request-errors";
 import "./Reminder.css";
 
 interface ReminderActions {
@@ -73,10 +74,15 @@ export function Reminder({ actions, children, details, onDismiss, title, tone = 
     </section>;
 }
 
-export function RequestReminder({ children, error, title }: { children?: ReactNode; error: RpcError; title?: string }) {
+export function RequestReminder({ children, error, title }: { children?: ReactNode; error: RpcError; title?: string | null }) {
     const { t } = useTranslation();
-    return <Reminder tone="error" title={title ?? t("Request failed")} details={error.diagnosticId === undefined ? undefined : <><strong>{t("Diagnostic ID")}</strong><code>{error.diagnosticId}</code></>}>
-        <p>{children ?? t("The request could not be completed. Review the details before trying again.")}</p>
-        <code className="reminder-code">{error.code}</code>
+    const safe = normalizeRequestError(error);
+    const confirmation = safe.code === "extension_publisher_confirmation_required";
+    return <Reminder key={`${safe.code}:${safe.diagnosticId ?? ""}`} tone={confirmation ? "warning" : "error"} title={title === null ? undefined : title ?? t(confirmation ? "Publisher confirmation required" : "Request failed")} details={<>
+        <strong>{t("Error code")}</strong><code>{safe.code}</code>
+        {safe.diagnosticId === undefined ? null : <><strong>{t("Diagnostic ID")}</strong><code>{safe.diagnosticId}</code></>}
+    </>}>
+        <p>{t(requestErrorMessage(safe.code))}</p>
+        {children === undefined ? null : <div className="reminder-context">{children}</div>}
     </Reminder>;
 }

@@ -1,3 +1,5 @@
+import { expectRequestError } from "./request-error-assertions";
+import { requestErrorMessage } from "../../src/request-errors";
 import { expect, test, type Page } from "@playwright/test";
 import { H4_ADDED, H4_ALPHA, H4_BETA, H4_GAMMA } from "./h4-management-client";
 
@@ -60,9 +62,9 @@ test("H4 extension toggle errors stay with the card and successful retry does no
     const before = await card.boundingBox();
     await page.evaluate(() => window.h4Management.failNext("extensions.disable", "permission_denied"));
     await toggle.click();
-    await expect(card.getByRole("alert")).toContainText("permission_denied");
     await expect(toggle).toBeChecked();
     await expect(toggle).toBeFocused();
+    await expectRequestError(card.getByRole("alert"), "permission_denied");
     await toggle.click();
     await expect(toggle).not.toBeChecked();
     await expect(card.getByRole("alert")).toHaveCount(0);
@@ -119,7 +121,7 @@ test("H4 quarantined extension recovery uses explicit enable and preserves a ref
     await expect(page.getByRole("alert")).toContainText("This extension is quarantined");
     await page.evaluate(() => window.h4Management.failNext("extensions.enable", "extension_package_untrusted"));
     await page.getByRole("button", { name: "Recover extension", exact: true }).click();
-    await expect(page.locator(".reminder[role=alert]").filter({ hasText: "extension_package_untrusted" })).toBeVisible();
+    await expectRequestError(page.locator(".reminder[role=alert]").filter({ hasText: requestErrorMessage("extension_package_untrusted") }), "extension_package_untrusted");
     await expect(page.getByRole("button", { name: "Open Portable UI", exact: true })).toBeDisabled();
     await page.getByRole("button", { name: "Recover extension", exact: true }).click();
     await expect(page.getByRole("button", { name: "Recover extension", exact: true })).toHaveCount(0);
@@ -143,7 +145,7 @@ test("H4 uninstall defaults to retaining data and keeps a failed delete-data ope
     await expect(page.locator(".operation-follow")).toContainText(/running/i);
     await expect(page.getByRole("button", { name: "Uninstall extension", exact: true })).toBeDisabled();
     await page.evaluate(() => window.h4Management.complete("failed", "extension_recovery_required"));
-    await expect(page.getByRole("alert")).toContainText("extension_recovery_required");
+    await expectRequestError(page.getByRole("alert"), "extension_recovery_required");
     await expect(page.locator(".operation-follow")).toContainText(/failed/i);
     await expect(page.getByRole("heading", { name: "Extension detail", exact: true })).toBeVisible();
     expect(await requests(page, "extensions.applyUninstall")).toHaveLength(1);
@@ -230,7 +232,7 @@ test("H4 permission read failure stays visible until an explicit refresh and nev
         // React StrictMode may have abandoned an earlier read; fail all outstanding reads.
         while (window.h4Management.release("extensions.permissions.list", "store_unavailable")) { /* Drain only the reads already held. */ }
     });
-    await expect(modal(page).getByRole("alert")).toContainText("store_unavailable");
+    await expectRequestError(modal(page).getByRole("alert"), "store_unavailable");
     await expect(allowed(page)).toHaveCount(0);
     await expect(modal(page).getByText("No permissions granted", { exact: true })).toHaveCount(0);
     await modal(page).getByRole("button", { name: "Refresh", exact: true }).click();
@@ -262,7 +264,7 @@ test("H4 grant pagination rejects a changed revision without mixing old scopes a
     // Another management client revokes the project scope between these pages.
     await page.evaluate((extensionId) => window.h4Management.setGrants(extensionId, [{ permission: "background.run", resourceKind: "Extension", resourceId: extensionId }]), H4_ALPHA);
     await allowed(page).getByRole("button", { name: "Load more", exact: true }).click();
-    await expect(modal(page).getByRole("alert")).toContainText("revision_conflict");
+    await expectRequestError(modal(page).getByRole("alert"), "revision_conflict");
     await expect(allowed(page)).toHaveCount(0);
     await expect(modal(page).locator(".extension-grants li")).toHaveCount(0);
     await modal(page).getByRole("button", { name: "Refresh", exact: true }).click();
@@ -319,7 +321,7 @@ test("H4 project choice read failure preserves grants and explicit refresh resto
         window.h4Management.hold("projects.list", false);
         while (window.h4Management.release("projects.list", "store_unavailable")) { /* Fail every initial StrictMode read still pending. */ }
     });
-    const fieldError = modal(page).getByRole("alert").filter({ hasText: "store_unavailable" });
+    const fieldError = modal(page).getByRole("alert").filter({ hasText: requestErrorMessage("store_unavailable") });
     await expect(fieldError).toBeVisible();
     await expect(allowed(page).locator("li")).toHaveCount(1);
     await expect(allowed(page)).toContainText("This extension");

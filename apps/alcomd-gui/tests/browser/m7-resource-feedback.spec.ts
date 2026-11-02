@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { expectRequestError } from "./request-error-assertions";
 
 test("repository success feedback never changes table or toolbar geometry", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories");
@@ -27,7 +28,7 @@ test("repository failure stays in its dialog and closing clears the previous ope
     const host = page.locator("md-dialog[open]");
     await expect(dialog).toBeVisible();
     await expect(row.getByRole("alert")).toHaveCount(0);
-    await expect(host.getByRole("alert")).toBeVisible();
+    await expectRequestError(host.getByRole("alert"), "repository_unavailable");
     await page.clock.install();
     await page.clock.fastForward(10_000);
     await expect(host.getByRole("alert")).toBeVisible();

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { expectRequestError } from "./request-error-assertions";
 
 const projectId = "00000000-0000-4000-8000-000000000101";
 const backupId = "00000000-0000-4000-8000-000000000104";
@@ -55,8 +56,7 @@ test("operation detail retries a failed progress read on the same ID and keeps t
     await expect(page.locator(".operation-follow")).not.toContainText("temporarily unavailable");
     await page.evaluate(() => { window.h3Operation = { ...window.h3Operation, state: "failed", errorCode: "backup_archive_invalid", diagnosticId: "d".repeat(500) }; });
     const error = page.getByRole("alert");
-    await expect(error).toContainText("backup_archive_invalid");
-    await error.getByRole("button", { name: "Show details", exact: true }).click();
+    await expectRequestError(error, "backup_archive_invalid");
     await expect(error).toContainText("d".repeat(500));
     await expect(page.getByRole("button", { name: "Cancel operation", exact: true })).toBeDisabled();
     expect((await requests(page, "operations.get")).every((request) => request.params.operationId === operationId)).toBe(true);
@@ -71,7 +71,7 @@ test("cancellation failure stays in its dialog and a retry uses the latest revis
     const dialog = page.locator("md-dialog[open]");
     await expect(dialog.getByRole("heading", { name: "Request cancellation?", exact: true })).toBeVisible();
     await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
-    await expect(dialog.getByRole("alert")).toContainText("resource_revision_conflict");
+    await expectRequestError(dialog.getByRole("alert"), "resource_revision_conflict");
     await page.evaluate(() => { window.h3Operation.revision = 10; });
     const prior = (await requests(page, "operations.get")).length;
     await expect.poll(async () => (await requests(page, "operations.get")).length).toBeGreaterThan(prior);
@@ -126,7 +126,7 @@ test("restore can retry a failed list read and select a backup beyond its first 
     await page.getByRole("button", { name: "More project creation options", exact: true }).click();
     await page.getByRole("menuitem", { name: "Restore from backup", exact: true }).click();
     const dialog = page.locator("md-dialog[open]");
-    await expect(dialog.getByRole("alert")).toContainText("daemon_unavailable");
+    await expectRequestError(dialog.getByRole("alert"), "daemon_unavailable");
     await expect(dialog.getByText("No managed backups available")).toHaveCount(0);
     await dialog.getByRole("button", { name: "Retry", exact: true }).click();
     await dialog.getByRole("button", { name: "Load more", exact: true }).click();
@@ -157,7 +157,7 @@ test("Settings Unity errors stay with the action and a corrected registration us
     const dialog = page.locator("md-dialog[open]");
     await dialog.getByLabel("Unity executable", { exact: true }).fill("C:/invalid-editor.exe");
     await dialog.getByRole("button", { name: "Register", exact: true }).click();
-    await expect(dialog.getByRole("alert")).toContainText("unity_installation_invalid");
+    await expectRequestError(dialog.getByRole("alert"), "unity_installation_invalid");
     await dialog.getByLabel("Unity executable", { exact: true }).fill("C:/Editors/Unity.exe");
     await expect(dialog.getByRole("alert")).toHaveCount(0);
     const before = await dialog.getByRole("button", { name: "Register", exact: true }).boundingBox();
@@ -183,7 +183,7 @@ test("a successful Unity launch keeps the project row unchanged and closing an e
     const launch = page.locator(".project-row-actions").first().getByRole("button", { name: "Open Unity", exact: true });
     await launch.click();
     const dialog = page.locator("md-dialog[open]");
-    await expect(dialog.getByRole("alert")).toContainText("revision_conflict");
+    await expectRequestError(dialog.getByRole("alert"), "revision_conflict");
     await dialog.getByRole("button", { name: "Close", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(launch).toBeFocused();
@@ -205,7 +205,7 @@ for (const route of ["/projects", `/projects/${projectId}/packages`]) {
         await more.click();
         await page.getByRole("menuitem", { name: "Unity launch status", exact: true }).click();
         const dialog = page.locator("md-dialog[open]");
-        await expect(dialog.getByRole("alert")).toContainText("daemon_unavailable");
+        await expectRequestError(dialog.getByRole("alert"), "daemon_unavailable");
         await dialog.getByRole("button", { name: "Refresh", exact: true }).click();
         await expect(dialog.getByRole("status")).toContainText("Last observed launch state: open");
         const reads = await page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.launchStatus"));
@@ -227,7 +227,8 @@ test("Unity status preserves Core failure and rejects another launch's DTO", asy
         await controls.getByRole("button", { name: /^More actions for/ }).click();
         await page.getByRole("menuitem", { name: "Unity launch status", exact: true }).click();
         const dialog = page.locator("md-dialog[open]");
-        await expect(dialog.getByRole("alert")).toContainText(expected!);
+        if (params === "unityStatusMismatch=1") await expectRequestError(dialog.getByRole("alert"), expected!);
+        else await expect(dialog.getByRole("alert")).toContainText(expected!);
         expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.launch"))).toHaveLength(1);
         await dialog.getByRole("button", { name: "Close", exact: true }).click();
         await expect(dialog).toHaveCount(0);
