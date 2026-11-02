@@ -1,13 +1,13 @@
 # M7：官方 GUI 与 Portable Extension UI
 
-状态：**M7 IN_PROGRESS / H5 IN_PROGRESS / H4 STAGE_ACCEPTED_WITH_FOLLOWUPS / H3 STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
+状态：**M7 IN_PROGRESS / H6 IN_PROGRESS / H5 STAGE_ACCEPTED_WITH_FOLLOWUPS / H4 STAGE_ACCEPTED_WITH_FOLLOWUPS / H3 STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
 活动分支为 `main`；当前阶段与验证结果统一见 `docs/status.md`。已通过的 M6、Portable UI B0-D、
 Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据，不替代本轮 GUI 人工验收。
 
 ## 当前有效合同
 
 - GUI 继承 A-033 的 v3 用户模型，使用真实 Material Web 控件和共享组件。Projects、包管理及
-  已获准的其他既有页面基础可用性修正已在 H2-A 验收；不做窄窗口适配、不自行进入后续里程碑。
+  已获准的其他既有页面基础可用性修正已在 H2-A 验收；现按获批 H6 补窄窗口与无障碍缺口，不自行进入 H7。
   Open Unity 保留单个 leading play 图标和 Material 按钮的 18px 图标尺寸。Projects 的视图入口
   显示当前模式并保留视图偏好；内容包装透明，卡片和表格使用自己的表面。
 - `packages.queryProjectCandidates` / `packages.candidates.v1` 按已批准的
@@ -54,7 +54,7 @@ Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据�
   No shell 指应用不构造、调用或通过 shell 执行命令，不拼接/解释 shell 参数；保留标准库与
   OS 的 ENOEXEC/解释器回退语义。spawn 成功仅为 OS 接受，不代表 Hub 已正常运行、厂商
   身份、退出成功或窗口就绪；同步拒绝、后续退出与资源回收分别验证。
-- 正式合同与证据分别见 `specs/config/settings-v3.*`、
+- 正式合同与证据分别见 `specs/config/settings-v4.*`（Config1–3 仅为迁移历史）、
   `specs/config/theme-controls.proposal.contract.json`、
   `specs/config/unity-hub-location.proposal.contract.json`、
   `specs/storage/state-v15-project-last-modified.contract.json`、
@@ -563,12 +563,12 @@ fixes and defer uncertain contract-dependent work without blocking unrelated cor
    Plan/Apply/Operation；完成 Visual Gate 3 的第一部分。项目所有者于 2026-11-02 明确签收本轮，并确认 Unity 自动检测、同记录刷新和路径显示；不表示体验完善或整个 Visual Gate 3/M7 完成。项目上下文、共享提醒和任务机制保持，不重复验收已检查页面。
 5. **H4 Extensions/Portable UI（阶段性人工验收通过，保留非阻塞体验问题）**：保留Extensions既有用户概念和utility归属；permission/quarantine/Portable UI位于detail，host
    chrome与renderer全部使用共同Material components；不改 Portable UI protocol。所有者于 2026-11-02 认可安装/启停/卸载、权限管理、同窗口功能页与共享错误可读性；保留表单、超时、外部断线和 M8/M9 正式业务未覆盖项，不表示整个 Visual Gate 4/M7 完成。
-6. **H5 utilities/observability（已批准，实施中）**：审计已有 grouped Settings、Log内Activity/Diagnostics与footer About/version，
+6. **H5 utilities/observability（阶段性人工验收通过，保留非阻塞体验问题）**：保留 grouped Settings、Log内Activity/Diagnostics与footer About/version，
    只补真实缺失功能及必要整改，保留 A-026 权限分离，复用共享 Material、错误显示与只读 `displayPath`；当前 Config4 窄变更见下方批准记录。
-   不新建无意义导航/技术卡片，不把既有非阻塞体验待办批量转为阻塞；候选完成后交由所有者检查。H6/H7 与推送仍未授权。
-7. **H6 responsive/a11y/Playwright regression（未批准）**：覆盖已批准 minimum-change user model 的 structural continuity、grouping/workspace/
+   所有者于 2026-11-02 明确签收，认可删除紧凑模式；保留一般文案、布局与过度设计待办，不表示体验完善或 M7 完成。
+7. **H6 responsive/a11y/Playwright regression（已批准，实施中）**：覆盖已批准 minimum-change user model 的 structural continuity、grouping/workspace/
    action placement、Material element presence和observable interaction、theme propagation、wide/narrow/200%/reduced motion；
-   不测试Material shadow DOM私有细节。
+   不测试Material shadow DOM私有细节。先审计已有实现，只修实际缺口，默认间距保持，不恢复 density，不建立第二套组件；不进入 H7、不推送。
 8. **H7 manual visual signoff（未批准）**：执行更新后的真实GUI checklist和最终screenshots；再进入候选Hosted CI/push审批。
 
 H0-H7 只重组 shell、composition、component rendering 和 visual hierarchy；不得重新设计 RPC、Plan/Apply、Operation、Settings、
@@ -612,6 +612,15 @@ GUI/UI check、保存队列 15 场景、浏览器 76/0 及补充 1/0 已通过�
 H5 仍 MANUAL_PENDING，旧轮测试不冒充本轮全套，新增代码无远端验证；不进入 H6/H7、不推送。
 
 ## 技术收尾与 H2-B 顺序授权（2026-10-31）
+
+### 当前 H6 授权（2026-11-02）
+
+H5 已阶段性人工签收，紧凑模式移除与 Config4 方向获认可；H2–H4 原签收保持，不重验已检查流程。
+直接推进既定 H6：先核对已有实现/测试，只修桌面宽度变化、较窄窗口、200% 可用性、键盘焦点与弹窗、
+明暗主题和减少动画的实际缺口，复用共享 Material/ScrollArea/Reminder，不重做 GUI 或新增适配体系。
+旧测试若只因可读错误/已删除密度/既有名称变化失配，应保留安全与交互断言并改为当前可观察合同，不能删断言掩盖产品缺陷。
+定向诊断与修复后集中必要浏览器回归，准确区分等效缩放与真实平台/辅助技术结果；未覆盖项留待明确验收。
+只读核对 Config4 现状复用迁移证据，不重跑 Rust/迁移/三平台 CI。H6 候选交付精简结果与人工入口，不进入 H7、不推送、不宣布 M7 完成。
 
 项目所有者批准先处理当前跨平台测试/启动缺陷与依赖安全问题，再实施既有 H2-B，最后形成
 真实桌面候选并停止人工验收；不重开 H2-A/Visual Gate 2，不重规划 M7 或重做 Projects/Packages。
