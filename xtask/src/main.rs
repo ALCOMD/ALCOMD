@@ -386,10 +386,12 @@ fn check_unsafe_boundary(
     root: &Path,
     errors: &mut Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    const APPROVED: [&str; 3] = [
+    const APPROVED: [&str; 4] = [
         "crates/alcomd-platform/src/windows_security.rs",
         "crates/alcomd-platform/src/windows_known_folder.rs",
         "crates/alcomd-platform/src/windows_file_identity.rs",
+        // H3: bounded read-only version.dll adapter; every unsafe block is documented.
+        "crates/alcomd-platform/src/windows_unity_version.rs",
     ];
     let unsafe_word = ["un", "safe"].concat();
     let allowance = format!("allow({unsafe_word}_code)");

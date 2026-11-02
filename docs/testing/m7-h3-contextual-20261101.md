@@ -221,3 +221,8 @@ Visual Gate 3 全部或 M7 完成；不再次询问签收或重验已检查页�
 证据为 `target/m7-h4-extensions-20261102/h3-handoff-runtime.json` 与 `original-state-before-summary.json`。
 本次仅整理签收与交接文档，运行 metadata/diff 检查，不重复测试或构建；后续直接实施获批 H4。
 H2-B 新增代码与 H3 的远端验证缺口继续保留；不触发 workflow、不推送、不进入 H5-H7。
+
+后续 H4 的适用 `xtask check` 首轮发现 H3 收尾遗漏：该检查仍只列三个 Win32 FFI 文件，未同步本页已说明、
+已签收的 `windows_unity_version.rs`。仅在精确文件清单加入此有界只读适配器；模块、Win32 调用、依赖和行为未改，
+`deny unsafe`、`deny undocumented_unsafe_blocks` 与其他文件的拒绝规则均保持。首轮失败在 H4 证据目录 `xtask.log`，
+校正后 `xtask-final.log` 通过；只补此检查与适用 fmt/metadata/diff，没有重跑 H3 业务测试或构建。
