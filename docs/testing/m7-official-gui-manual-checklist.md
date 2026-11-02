@@ -1,7 +1,8 @@
 # M7 官方 GUI 最终人工验收清单
 
 状态：**M7 IN_PROGRESS / H7 MANUAL_PENDING / H2–H6 已阶段签收**，2026-11-03。
-当前范围以 `docs/status.md` 和既有 M7 ExecPlan 为准。最终技术候选 `c273c76` 已获批推送，同 SHA 三平台 CI 与四语言 CodeQL 全部成功；人工签收和剩余事项处理仍待所有者。
+当前范围以 `docs/status.md` 和既有 M7 ExecPlan 为准。此前完整远端基线 `c273c76` 的三平台 CI 与四语言 CodeQL 保留；
+当前 `1a31e2a` 补齐获批的默认保存目录核心功能，已完成本地定向验证和构建，未推送。人工签收和剩余事项处理仍待所有者。
 本清单合并历史重复项目，不要求逐页重验已签收功能，不把普通文案、美化或非阻塞体验细节重新升为阻塞。
 
 ## 沿用的签收
@@ -37,24 +38,24 @@ H6 原完整 Chromium **383/12**、后续 **53/1** 和最后新增日语用例 *
 - Portable UI 原生表单、超时及外部断线的旧未覆盖项单独保留。H4 签收不把正式 MCP/Discord 业务标为通过，也不要求 H7 开发其产品功能。
 - 真实 Narrator/VoiceOver/Linux 读屏、跨平台辅助技术、Windows 10/11 客户端发行、安装/更新/卸载属于 M12。
 - 非阻塞项沿用 `docs/status.md` 的简短待办，优先删除、合并和改写；错误成功、危险误导、数据损坏等实际缺陷不在暂缓范围。
-- 最终 `c273c76` 已取得同 SHA 三平台 CI/CodeQL 成功，三平台独立完整 Chromium 各 397/0；原 CI Ubuntu 395/1 与本地 13/0 分别保留。
+- 本轮增量前的 `c273c76` 已取得同 SHA 三平台 CI/CodeQL 成功，三平台独立完整 Chromium 各 397/0；原 CI Ubuntu 395/1 与本地 13/0 分别保留。当前目录设置增量没有新远端结果。
   H7 最终人工确认、非阻塞/未覆盖事项处理仍须实际明确，当前 M7 继续进行中。
 
 ## 当前查看入口
 
-H7 验证/构建 SHA **`a6c9bd5568f8bffb26fe531a58fe4286c7779f6f`**，产品代码与已签收 H6 的 `a4f12a1` 相同。
-完整 Rust **526/0，8 个既有 helper ignored**、独立完整 Chromium **396/0** 及构建均已收齐，详见 [完整本地记录](m7-h7-final-20261102.md)。
-原 GUI 随后已关闭，沿用既有入口复开为原数据目录的 GUI **157348**，匹配持续运行的 Core **131912**；最终进程仍保留、可响应，五组公开状态一致。
-Computer Use 仍停用，未新增原生交互/截图；进程和公开状态核对不替代人工确认。
-Core/GUI SHA-256 分别为 `1faff44e33d5d9749fd26004b5d1269b035b9a527ddfb87dd9555da8a708f1ff` /
-`6ec81c4956b7c4e052e23bb513074123935a18f81866ae94662a8f7316b8bc83`；此前各轮图集仍绑定原构建，不改成此次桌面证据。
+当前功能代码 **`1a31e2a82459eb57a7263f454fdad6e8bf07f585`**，本轮目录设置增量已完成定向验证及一次匹配 Core/CLI/GUI 构建；
+逐项结果见 [保存位置补齐](m7-storage-locations-20261103.md)。此前完整本地/远端结果继续绑定 [H7 原技术基线](m7-h7-final-20261102.md)，不冒称在新代码上执行。
+原数据目录和原 WebView profile 已实际恢复为 Core **130768** / GUI **132996**（窗口 **101191372**，可响应）。
+项目、Editor 登记、Operation、Status 及旧设置与切换前一致；Config5 迁移只改变 TOML schema，revision **166** 和其余字段保持。
+Computer Use 仍停用，无新增原生自动交互/截图；原生目录选择和观感仍需所有者实际查看。
 
-直接使用已打开窗口，只按上方两项查看。若窗口关闭，可在 PowerShell 使用本轮已真实执行过的复开入口：
+直接使用已打开窗口；新增功能在“设置 → 保存位置”。仍按上方两项查看，不重验 H2–H6。
+若窗口关闭，可从当前已核对的产物和原 profile 复开 GUI：
 
 ```powershell
-& "C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m7-h7-final-20261102\H7-Window.ps1" -Action Open
+& "C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m7-storage-locations\runtime.ps1" -Action OpenGui
 ```
 
-该入口核对既有 Core/候选摘要、保留原 WebView2 profile；已有 GUI 或 Core 身份变化时拒绝，不自动切换 Core。
-`46eb6df` 只修浏览器测试，不改变此窗口产物；随后随 `c273c76` 获批推送，最终 CI 41477415678 与 CodeQL 41477413640 全绿。
+该入口只复开 GUI，核对现有 Core 与候选摘要、保留原 WebView2 profile；匹配窗口已打开时保持原样，身份变化时拒绝，不自动切换 Core。
+本轮实际新窗口启动和状态恢复已执行；`OpenGui` 的已打开分支已核对，不把它写成新的原生交互验收。
 最终人工确认尚未取得；技术结果和窗口存在均不能替代所有者签收。只按上方两项查看，并确认保留事项安排，不重验 H2–H6，也不自动进入 M8。
