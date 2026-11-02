@@ -19,7 +19,7 @@ test("ordinary settings save immediately as narrow updates without a save bar", 
     await expect(page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true })).toBeChecked();
     await expect(page.locator("#settings-motion")).toHaveJSProperty("value", "full");
     await page.getByRole("region", { name: "System information", exact: true }).scrollIntoViewIfNeeded();
-    await page.screenshot({ path: "../../target/m7-settings-autosave-20261030/settings-without-save-bar.png", animations: "disabled" });
+    await page.screenshot({ path: test.info().outputPath("settings-without-save-bar.png"), animations: "disabled" });
 });
 
 test("Settings keeps one desktop density without a compact mode control or density updates", async ({ page }) => {

@@ -126,7 +126,7 @@ test("painted scrollbars retain wheel, horizontal scrolling and thumb dragging",
     await page.mouse.up();
     await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBeGreaterThan(300);
     await page.mouse.move(1439, 899);
-    await page.screenshot({ path: "../../target/m7-v3-recheck-20260919/browser/custom-scrollbars.png" });
+    await page.screenshot({ path: test.info().outputPath("custom-scrollbars.png") });
     await viewport.locator("tbody").evaluate((element) => {
         while (element.children.length > 1) element.lastElementChild!.remove();
     });

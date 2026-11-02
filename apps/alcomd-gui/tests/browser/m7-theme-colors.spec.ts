@@ -161,7 +161,7 @@ test("HEX, color picker, and HCT controls stay linked and invalid HEX cannot wri
     await hue.press("ArrowRight");
     await expect(valueIndicator).toBeVisible();
     await expect(valueIndicator.locator(".labelContent")).toHaveText(await hue.inputValue());
-    await page.screenshot({ path: "../../target/m7-theme-copy-20261031/hct-active-window.png", animations: "disabled" });
+    await page.screenshot({ path: test.info().outputPath("hct-active-window.png"), animations: "disabled" });
     await hex.focus();
     await page.mouse.move(0, 0);
     await expect(valueIndicator).toBeHidden();

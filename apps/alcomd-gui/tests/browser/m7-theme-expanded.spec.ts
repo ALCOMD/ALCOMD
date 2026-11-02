@@ -39,8 +39,8 @@ for (const mode of ["light", "dark"] as const) {
         expect(footer.y + footer.height).toBeLessThanOrEqual(dialogBounds.y + dialogBounds.height - 16);
         expect(footer.y + footer.height).toBeLessThanOrEqual(800);
         // Pin geometry after finite Material opening animations finish.
-        await page.screenshot({ path: `../../target/m7-theme-md3-20261030/theme-${mode}-window.png`, animations: "disabled" });
-        await dialog.screenshot({ path: `../../target/m7-theme-md3-20261030/theme-${mode}-dialog.png`, animations: "disabled" });
+        await page.screenshot({ path: testInfo.outputPath(`theme-${mode}-window.png`), animations: "disabled" });
+        await dialog.screenshot({ path: testInfo.outputPath(`theme-${mode}-dialog.png`), animations: "disabled" });
         expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
     });
 }
@@ -113,7 +113,7 @@ for (const locale of ["en-US", "zh-CN", "ja-JP"]) {
         expect(before.x + before.width).toBeLessThanOrEqual(section.x + section.width + 1);
         if (locale === "zh-CN") {
             await group.locator("md-outlined-segmented-button").nth(1).click();
-            await page.screenshot({ path: "../../target/m7-segment-sizing-20261030/chinese-system-selected.png", animations: "disabled" });
+            await page.screenshot({ path: test.info().outputPath("chinese-system-selected.png"), animations: "disabled" });
         }
     });
 }

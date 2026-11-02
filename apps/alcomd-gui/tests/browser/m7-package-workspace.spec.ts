@@ -32,7 +32,7 @@ test("Package toolbar uses the shared search preset and keeps maintenance in ove
     await expect(packages.getByRole("button", { name: "More actions for Remote tools", exact: true })).toBeVisible();
     await expect(toolbar.getByRole("combobox")).toHaveCount(0);
     await expect(toolbar.getByRole("button", { name: "Resolve", exact: true })).toHaveCount(0);
-    await page.screenshot({ path: "../../target/m7-list-rebuild/browser/package-workspace.png", fullPage: false, animations: "disabled" });
+    await page.screenshot({ path: test.info().outputPath("package-workspace.png"), fullPage: false, animations: "disabled" });
     await toolbar.getByRole("button", { name: "More package actions" }).click();
     await page.getByRole("menuitem", { name: "Resolve Dependencies…" }).click();
     await expect(page.getByRole("dialog", { name: "Apply package changes?" })).toBeVisible();

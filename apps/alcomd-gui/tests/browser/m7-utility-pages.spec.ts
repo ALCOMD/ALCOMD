@@ -232,7 +232,7 @@ test("Resources sections and detail return controls work through ordinary clicks
     expect(closeBounds).not.toBeNull();
     expect(firstColumn!.x).toBeGreaterThanOrEqual(modalBounds!.x);
     expect(closeBounds!.x + closeBounds!.width).toBeLessThanOrEqual(modalBounds!.x + modalBounds!.width);
-    await page.screenshot({ path: "../../target/m7-v3-recheck-20260919/browser/repository-packages-dialog.png", fullPage: false, animations: "disabled" });
+    await page.screenshot({ path: test.info().outputPath("repository-packages-dialog.png"), fullPage: false, animations: "disabled" });
     await repositoryHost.getByRole("button", { name: "Close", exact: true }).click();
     await expect(repositoryDialog).not.toBeVisible();
     await expectHeading(page, "Resources");
@@ -309,7 +309,7 @@ test("utility actions use modal dialogs and cancel clears drafts and returns foc
         await expect(dialogHost(page, title).getByLabel(field, { exact: true })).toBeVisible();
         await expect(dialog).toHaveCSS("border-radius", "28px");
         await control.fill(value);
-        await page.screenshot({ path: `../../target/m7-v3-recheck-20260919/browser/${route.slice(1)}-action-dialog.png`, fullPage: false, animations: "disabled" });
+        await page.screenshot({ path: test.info().outputPath(`${route.slice(1)}-action-dialog.png`), fullPage: false, animations: "disabled" });
         await dialogHost(page, title).getByRole("button", { name: "Cancel", exact: true }).click();
         await expect(dialog).not.toBeVisible();
         await expect(control).toHaveCount(0);
