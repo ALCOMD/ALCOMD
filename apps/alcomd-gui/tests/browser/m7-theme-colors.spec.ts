@@ -414,7 +414,7 @@ for (const language of [
         await expect(editor.locator("md-slider")).toHaveCount(0);
         await expect(page.getByRole("combobox", { name: language.mode, exact: true })).toBeVisible();
         await expect(page.locator("#theme-mode md-select-option")).toHaveCount(3);
-        await expect(page.locator("#theme-mode md-select-option").nth(0)).toHaveText(language.light);
+        await expect(page.locator("#theme-mode md-select-option").nth(1)).toHaveText(language.light);
         await expect(page.locator("#theme-mode md-select-option").nth(2)).toHaveText(language.dark);
         await expect(page.getByRole("button", { name: language.defaults, exact: true })).toBeVisible();
         await expect(page.locator("#theme-scheme md-select-option")).toHaveCount(9);

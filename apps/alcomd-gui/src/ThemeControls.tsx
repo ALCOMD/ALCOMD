@@ -159,7 +159,7 @@ export function ThemeControls({ value, disabled, onSave, onReload, onPreview, on
         <div className="settings-row">
             <label htmlFor="theme-mode">{t("Color mode")}</label>
             <Select disabled={disabled || saving} id="theme-mode" label={t("Color mode")} value={draft.mode}
-                options={[{ label: t("Light"), value: "light" }, { label: t("System"), value: "system" }, { label: t("Dark"), value: "dark" }]}
+                options={[{ label: t("System"), value: "system" }, { label: t("Light"), value: "light" }, { label: t("Dark"), value: "dark" }]}
                 onChange={(mode) => change({ ...desired.current, mode: mode as ThemePreferences["mode"] })} />
         </div>
         <div className="settings-row">

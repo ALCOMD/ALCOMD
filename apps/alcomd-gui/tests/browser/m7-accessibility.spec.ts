@@ -23,7 +23,7 @@ test("keyboard navigation moves routes and focuses the destination heading", asy
     await expect(mode).toBeFocused();
     await page.keyboard.press("ArrowDown");
     await expect(page.getByRole("option", { name: "System", exact: true })).toBeFocused();
-    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("ArrowDown");
     await expect(page.getByRole("option", { name: "Light", exact: true })).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(page.locator("#theme-mode")).toHaveJSProperty("value", "light");

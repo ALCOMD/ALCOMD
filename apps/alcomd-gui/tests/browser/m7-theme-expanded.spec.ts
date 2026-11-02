@@ -66,8 +66,10 @@ test("mode and scheme dropdowns support keyboard selection and return focus with
     await page.keyboard.press("ArrowDown");
     await expect(page.locator("#theme-mode")).toHaveJSProperty("open", true);
     await expect(page.getByRole("option", { name: "Light", exact: true })).toBeFocused();
-    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowUp");
     await expect(page.getByRole("option", { name: "System", exact: true })).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByRole("option", { name: "Light", exact: true })).toBeFocused();
     await page.keyboard.press("ArrowDown");
     await expect(page.getByRole("option", { name: "Dark", exact: true })).toBeFocused();
     await page.keyboard.press("Enter");
@@ -93,9 +95,9 @@ test("mode and scheme dropdowns support keyboard selection and return focus with
 });
 
 for (const { locale, label, options } of [
-    { locale: "en-US", label: "Color mode", options: ["Light", "System", "Dark"] },
-    { locale: "zh-CN", label: "颜色模式", options: ["浅色", "跟随系统", "深色"] },
-    { locale: "ja-JP", label: "カラーモード", options: ["ライト", "システム設定", "ダーク"] }
+    { locale: "en-US", label: "Color mode", options: ["System", "Light", "Dark"] },
+    { locale: "zh-CN", label: "颜色模式", options: ["跟随系统", "浅色", "深色"] },
+    { locale: "ja-JP", label: "カラーモード", options: ["システム設定", "ライト", "ダーク"] }
 ]) {
     test(`theme mode dropdown exposes three translated choices and previews without writing in ${locale}`, async ({ page }, testInfo) => {
         await page.setViewportSize({ width: 1400, height: 800 });
@@ -115,7 +117,7 @@ for (const { locale, label, options } of [
         await expect(control.locator("md-select-option")).toHaveText(options);
         await expect(page.locator(".theme-editor .alcomd-segmented-control, .alcomd-segmented-sizer")).toHaveCount(0);
         const writes = await page.evaluate(() => window.settingsRequests.length);
-        for (const [index, value] of ["light", "system", "dark"].entries()) {
+        for (const [index, value] of ["system", "light", "dark"].entries()) {
             const lifecycle = await control.evaluateHandle(element => ({
                 opened: new Promise<void>(resolve => element.addEventListener("opened", () => resolve(), { once: true })),
                 closed: new Promise<void>(resolve => element.addEventListener("closed", () => resolve(), { once: true }))
