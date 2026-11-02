@@ -869,7 +869,7 @@ GUI check（918 条翻译）与更新后的 release GUI。备份/任务等 16 �
 原生截图仍绑定实际 `ef47c25` 构建；Esc 后新增启动状态弹窗未做原生操作/截图。原环境已实际恢复，
 五组完整公开状态一致、revision 155。详见 [H3 候选与桌面证据](../testing/m7-h3-contextual-20261101.md)。H2-B 新增代码及 H3
 仍没有对应远端 CI/CodeQL，旧 `0ef5b08` 的通过只对应旧输入。H3 的停止点是本地候选、证据、真实窗口
-和简短清单交由项目所有者验收；H4-H7、推送与 M7 整体完成均未授权。
+和简短清单交由项目所有者验收；当时 H4-H7、推送与 M7 整体完成均未授权。当前 H4 的后续批准见下节，H5-H7 与推送仍未授权。
 
 2026-11-02 所有者暂不签收 H3，要求优先修复当前 Windows Editor 检测。现场原开发数据的登记为空，
 但默认 Hub 安装根存在 `2022.3.22f1`；真实 Package Manager 清单不含 Editor 顶层版本，旧验证却依赖人造
@@ -902,7 +902,7 @@ Core 继续使用 `efdb133` 的 `ef371…1b5ca`，不重复 Rust/浏览器全套
 
 ### H4 已批准切片：复用审计与实施边界
 
-所有者在上述 H3 签收后明确批准 H4 直接实施，不另设纯规划停止点。原开发 Core/验收 GUI 仍在原数据环境，
+所有者在上述 H3 签收后明确批准 H4 直接实施，不另设纯规划停止点。交接时原开发 Core/验收 GUI 在原数据环境，
 五组公开状态已完整核对，任务全终态，无隔离占用需要恢复。现有扩展卡片、安装/卸载 Plan、启停、权限变更与
 17-node Portable UI renderer 均已有接线，继续保留；只补管理流程、分页、反馈/进度和异步 session 生命周期。
 安装输入的手填 registry revision 说明与 Core 不符：现有安装只接受新 ExtensionId，`expectedRevision=0` 表示
@@ -915,7 +915,7 @@ Portable UI 的文档、草稿、action 与 session authority 保持原合同；
 
 现有 `extensions.get` 只有 grantRevision，不返回权限声明或已授权 scope；公开接口只有 set/revoke，GUI 无法
 如实展示“已授予哪些项目”。安装 Plan 内已有冻结的 required/optional permissions，但 RPC 投影未返回，无法审阅。
-推荐只增加以下只读信息，复用既有 Core 表与权限权威，不改 State Schema、Portable UI 协议或运行时：
+已按人工批准增加以下只读信息，复用既有 Core 表与权限权威，不改 State Schema、Portable UI 协议或运行时：
 
 - `ExtensionPlan` 兼容增加 `requiredPermissions` / `optionalPermissions` 数组，直接投影冻结 Plan evidence；每组沿用
   Manifest 的最多 64 项、每项 128 字符约束，不以 GUI 表单/猜测代替。新 GUI 缺少这些证据时明确提示审阅不可用。
@@ -933,6 +933,31 @@ Portable UI 的文档、草稿、action 与 session authority 保持原合同；
 “已允许什么”，不堆原始 JSON/revision/权限字符串，不增加持久查询会话或缓存；失效读取不能覆盖新状态。
 定向覆盖无/部分授权、项目 scope、未授权访问、分页中撤销或包变化、Plan 声明不漂移，以及 GUI 读取失败/刷新/变更后展示。
 新增代码没有 Hosted CI/CodeQL 结果，不复用旧 SHA 作为本轮通过；不推送、不进入 H5-H7。
+
+#### H4 本地候选与实际证据
+
+Core/公开合同提交 `0f8c9f4`、GUI 提交 `88c3f69` 已完成范围内接线，最终代码候选为 `e2b7ddd`。安装只审阅冻结权限申请，权限管理读取
+当前 grants 并展示具体项目，撤销/包变化使分页快照失效；写入仍用既有接口及调用时校验。列表分页保留已加载项，
+安装/卸载跟踪同一 Operation；隔离恢复显式执行，不误报成功。共享 Material Switch 修复受控状态恢复时原生勾选不同步，
+关联焦点和 H3 路径回归通过；Portable UI 保留原协议，按 client/session 隔离异步结果与草稿，不重放未知写入。
+
+GUI 独立浏览器 36/0，155 项输入不变；相关 dispatcher/协议/契约、七 crate Clippy、SDK/GUI check、
+xtask、初次 Core release 与一次 Tauri release no-bundle 通过。旧失败与修复定向运行独立保留。
+真实隔离 Core/Host 验证了签名安装、授权/撤销、UI 同连接操作、崩溃隔离及 retain-data 卸载，样例四文件未变。
+初次跨连接 UI 操作的 session_not_found、证据 helper 误写旧授权方法名的 method_not_found 均保留，修正测试入口后
+单独验证；生产 GUI/client 原有方法名没有该错误。故意 trap 的恢复仍为 extension_crashed，保持隔离，未宣称健康。
+
+真实 Core 反例暴露 required 未授权仍成功写 enabled；另一定向反例证明 setGrant 能借用历史包已不再有效的声明。
+两者均属功能正确性缺陷，`e2b7ddd` 在原 Store 事务复用当前安装包的冻结证据，required 缺失在写入前拒绝，
+授权也只认当前声明，不改 Runtime/公共合同。修前 1/2、0/1 和中间 12/0 独立保留，最终 M6 Store **13/0**、
+Store/应用 Clippy、静态 xtask 通过；因实际生产输入变化仅再构建 Core。新隔离 Core 验证 permission_denied、
+完整公开记录不变、拒绝不消耗 key、未声明授权拒绝、UI-only 无自动授权及同连接 UI 正常。
+GUI/客户端/协议输入不变，复用原 GUI 构建和 36/0，不重复 Tauri/浏览器或完整 Workspace。
+
+原环境已恢复到当前 Core/GUI，五组完整公开状态一致、revision 155；隔离进程均已收束，无用户 Unity/不明进程被处理。
+Esc 中断后未完成新增原生 GUI 交互及整改后截图，不将浏览器/Core 结果冒充 native PASS。当前状态为本地候选待人工验收，
+H2-A/H2-B/H3 签收保持，M7 继续进行中。完整构建摘要、历史失败、实际窗口及四项清单见
+[H4 本地验证记录](../testing/m7-h4-extensions-20261102.md)。最终文档整理只运行 metadata/diff，不重新构建或全量测试。
 
 ## Progress log
 
@@ -1155,8 +1180,10 @@ confirmed CLI remove 已在新明确授权后通过正式 CLI 补齐，Core 拒�
 随后路径显示反馈已由 `fec8117` 共享格式化窄修，10/0 与当前原生安装页/刷新、前后截图和 RPC 不变均已记录。
 所有者已确认本次路径显示正常，Unity 检测、显示和重复刷新确认保持，不重复要求查看已通过项。
 所有者已进一步确认 H3 阶段性人工验收通过，保留非阻塞体验问题；原环境/验收窗口核对完成，直接推进获批 H4。
-下一停止点为 H4 本地候选与真实窗口简短清单，不重验 H2/H3，不宣布 M7 完成。
-不重规划 M7，不重做已完成内容。H2-A、H2-B 阶段签收保持；H2-B 新增代码和 H3 仍无对应远端验证。
+H4 已形成本地代码候选 `e2b7ddd`，两处权限权威缺陷已窄修；最终 Store 13/0 和隔离 Core 复验通过。
+GUI 的 155 项输入仍与 `88c3f69` 一致，复用该构建和 36/0；原环境已实际恢复。
+新增原生交互/整改后截图因 Esc 尚未覆盖，下一停止点为窗口、清单与 H4 人工确认，不重验 H2/H3，不宣布 M7 完成。
+不重规划 M7，不重做已完成内容。H2-A、H2-B、H3 阶段签收保持；H2-B 新增代码、H3 与 H4 仍无对应远端验证。
 未经新的推送授权不推送，H5-H7、M8、M9、M11 未由本次授权开放。详细结果与待办见现有 status/testing 文档。
 已有候选读取、exact Unity、Config3、Hub 和 State16 的合同继续有效。完整 GUI/Rust/三平台
 技术门禁与人工视觉结果分别记录，不把旧 SHA 或定向通过冒充当前候选全绿。

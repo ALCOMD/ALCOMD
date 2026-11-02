@@ -8,6 +8,30 @@
 M0-M6 已正式通过人工验收，M7 尚未完成。
 本文件是唯一当前阶段入口；ExecPlan 定义实施合同，testing 文档保存各自 SHA/场景的证据。
 
+H4 已形成本地代码候选 `e2b7dddf824bc4fb064b7cc682e3a25a40ab4ffa`，**等待人工验收**。补齐扩展列表分页、
+安装/卸载审阅与同一 Operation 跟踪、启停和隔离恢复反馈、真实权限/项目范围，以及同窗口 Portable UI 的
+会话与迟到请求处理。获批的权限只读合同在 `0f8c9f4` 实现；不改 State Schema、Portable UI 协议或 Runtime，
+不新增导航、权限、依赖或自动授权。路径标签继续复用 `displayPath`，RPC/文件参数保留原值。
+GUI 接线提交为 `88c3f69`；真实 Core 复验暴露的必需权限启用误报成功、旧包声明误授权，已由 `e2b7ddd` 在现有
+Store 事务内修复，启用/恢复、授权和读取统一使用当前包的冻结声明，不改变公共合同。
+
+GUI 独立定向浏览器 **36/0**（1 worker、0 retries），155 项输入不变，沿用 `88c3f69` 的 GUI 构建；最终 Store **13/0**
+包含权限读取及新增拒绝/幂等回归。dispatcher **2/0**、协议 **1/0**、M6 契约 **5/0**、SDK/GUI check 绑定各自未变输入；
+初次七 crate Clippy 保留，Store 修复后再次通过 Store/应用 Clippy、静态 xtask 与必要 Core release 构建。
+早期浏览器 **20/15**、**26/10** 和修复定向 **11/0** 分别保留，不拼接。未重跑完整 Workspace、浏览器全套或三平台 CI。
+真实隔离 Core/Host 已完成签名包 Plan/Apply、默认停用且无授权、项目授权/撤销、Portable UI 同连接打开/操作/刷新/关闭、
+崩溃隔离与保留数据卸载。故意 trap 的扩展显式恢复仍返回 `extension_crashed`，不能描述为恢复健康。
+
+原开发环境已**实际恢复**：最终 Core PID **135272**（SHA-256 `7d62a6…da7a18`）使用原 `target/m7-icon-acceptance-20260906/data`；
+Projects/Editors/Operations/Settings/Status 五组完整公开结果与暂停前一致，settings revision **155**。
+复用 release GUI PID **128448**（窗口 **727218**，SHA-256 `123381…2c76e`）有窗口且可响应，保持打开；
+隔离 GUI/Core 已停止，无残留 Host，没有处理用户 Unity 或归属不明的进程。桌面控制收到 Esc 后保持中断，
+本轮新增 GUI 原生交互及整改后原生截图**未完成**，不以 Core RPC 或浏览器结果替代。H2-B/H3/H4 新增代码均无
+对应远端 CI/CodeQL；旧 `0ef5b08` 的成功仍只对应旧输入。未推送，H5-H7 不开放。详见
+[H4 候选、隔离证据与查看清单](testing/m7-h4-extensions-20261102.md)。
+
+### H3 已签收记录（各轮历史证据）
+
 项目所有者于 2026-11-02 确认 **H3 阶段性人工验收通过，保留已记录的非阻塞体验问题**，并明确批准直接进入
 既有 H4 Extensions / Portable UI；不重复验收已检查页面，不进入 H5-H7，不自动推送。H3 代码候选为
 `fec8117b289fb696cd193c3a52d8afad99e10d50`；已确认 Unity 正常自动检测并显示、刷新仍为同一条、路径正常。
@@ -21,9 +45,9 @@ M0-M6 已正式通过人工验收，M7 尚未完成。
 真实窗口已核对 **设置 → 已安装的 Unity → 刷新**：`2022.3.22f1` 仍为一条，路径显示
 `C:\Program Files\Unity\Hub\Editor\2022.3.22f1\Editor\Unity.exe`；完整窗口整改前后截图已保存。
 前后完整 `unity.installations.list` 结果相同，Core 内部路径与 installationId/revision 未变。
-当前 release GUI PID **132564**（窗口 **7868742**，SHA-256 `cc4f…9808a`）保持打开且可响应；
-Core 仍为 `efdb133` 的原进程 **96504**、产物 `ef371…1b5ca`，连接原
-`target/m7-icon-acceptance-20260906/data`，本次未暂停/重启 Core，没有处理用户 Unity 或不明进程。
+该路径整改轮的 release GUI PID **132564**（窗口 **7868742**，SHA-256 `cc4f…9808a`）当时打开且可响应；
+Core 为 `efdb133` 的原进程 **96504**、产物 `ef371…1b5ca`，连接原
+`target/m7-icon-acceptance-20260906/data`，该轮未暂停/重启 Core，没有处理用户 Unity 或不明进程。
 
 此前 Windows 检测修复 `efdb133a82f6ead7b0436919dddd7cab939e94c4` 的 platform **8/0**、daemon **3/0**、
 exact version **1/0**、RPC **1/0**、浏览器 **6/0**、Clippy 与 Core/GUI 构建继续绑定该轮输入。
@@ -37,9 +61,9 @@ canonical/exact 校验。真实自动发现及重复刷新、两个样例只读 
 上轮 `ab5d183` 的 **34/0** 与主体 `ef47c25` 的备份、恢复、结果 ProjectId 和反馈原生证据保持各自原提交/构建范围，
 不替代本轮代码的验证。范围、逐轮失败、产物摘要和当前窗口见 [H3 候选与桌面证据](testing/m7-h3-contextual-20261101.md)。
 H3 新增代码仍没有对应远端 CI/CodeQL，旧 `0ef5b08` 的通过结果不替代；M7 进行中，未推送。
-H4 交接只读核对已完成：原 Core **96504** 使用原数据目录，验收 GUI **132564** 有窗口且可响应；
+H4 开始时的交接只读核对已完成：当时原 Core **96504** 使用原数据目录，验收 GUI **132564** 有窗口且可响应；
 Projects/Editors/Operations/Settings/Status 完整公开读取为 2/1/2/1/1，任务全部终态、settings revision **155**。
-未发现隔离 Core 占用，无需暂停或恢复，也未处理用户 Unity/不明进程；证据在 `target/m7-h4-extensions-20261102/`。
+交接时未发现隔离 Core 占用，无需暂停或恢复，也未处理用户 Unity/不明进程；后续 H4 构建与隔离切换、实际恢复见本页当前记录。
 H4 先复核既有安装/启停/卸载、权限/隔离及同窗口 Portable UI，只补缺失接线和生命周期，复用 Material、Reminder、
 Plan/Apply/Operation 与 `displayPath`。不重写 Runtime/Portable UI 协议、不提前实现 M8/M9。
 
@@ -275,9 +299,10 @@ Visual Gate 2，没有 M7 或 Hosted CI 通过结论，原未跟踪 `output/` �
   技术收尾已达成同一 SHA 的完整远端检查点；H2-B 远端候选 `0ef5b08` 的三平台 CI/CodeQL
   已全部成功；本地后续代码 `2a163b0` 已获 H2-B 阶段性人工签收，仍保留体验改进项及新增代码
   远端验证缺口。下载、native Portable UI 等旧未覆盖范围保持，不由本次签收批量关闭。
-- 已继续执行获批 G3 中的本轮完成度核对，补齐三个列表 RPC 的现有覆盖矩阵；公开 method
-  常量与矩阵 **92/92** 对齐、列表 typed 接线一致，不重新实施已完成页面，也不代表 G3 整体完成。
-  项目所有者已签收 H3 阶段体验并批准 H4；Unity 自动检测、显示、重复刷新及路径显示均确认通过，非阻塞待办保持。下一停止点为 H4 本地候选及简短真实窗口清单；不重复已验收内容、不进入 H5-H7、不自动推送。
+- 已执行获批 G3 的完成度核对，三个仓库列表 RPC 的矩阵 **92/92** 是当时结果；H4 新增获批权限读取后，
+  当前公开 method 与矩阵 **93/93** 对齐。方法归属和 typed 接线不代表全部动作已独立人工验收。
+  H3 签收及 Unity 检测、刷新、路径确认保持。H4 本地候选已就绪，新增原生交互/截图仍未覆盖，
+  下一停止点为交付窗口与简短清单并等待 H4 人工确认；不重验 H2/H3、不进入 H5-H7、不自动推送。
 - 窗口记忆、仓库 credential enrollment/revocation、完整用户入口缺口保持真实状态；聚合
   projects.management/packages.vpm/repositories.management 等继续 in_progress，不批量提升。
 - projects/templates/backups 的 v3 parity 和 unity.v3-vrc-parity 仍等待 M11 真实脱敏 Fixture；
