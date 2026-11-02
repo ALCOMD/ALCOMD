@@ -662,10 +662,15 @@ GUI/UI check、metadata/diff 通过；不重跑 Rust 全量、Core release 或�
 本次发布前扩展会增加严格 settings 消费者必读的 paths/directories，须同步协议、Schema、当前消费者与快照；RPC v1、权限、State16不变。
 平台通过既有 Known Folder 查询 Documents，产品目录由 `alcomd.product.toml` 派生；不覆盖发布使用 Windows MoveFileExW(flags=0) 与 Unix 既有 rustix NOREPLACE。
 Windows 的窄 FFI 保留说明与安全注释，不增加生产依赖；定向回归验证目标冲突不覆盖与旧/新目录恢复。
-本地实现、相关定向检查及一次匹配 Core/CLI/GUI 构建已完成；原数据目录/profile 已实际恢复为 Core130768/GUI132996。
+本地实现、相关定向检查及一次匹配 Core/CLI/GUI 构建已完成；该批原数据目录/profile 已实际恢复为 Core130768/GUI132996。
 Config4→5 只改变 schema，revision166 和其余设置不变；四组业务状态完全一致。独立结果与原失败见
 [目录设置补齐](../testing/m7-storage-locations-20261103.md)，不以旧 CI 或浏览器证据替代当前原生/跨平台验收。
 本轮本地提交，不推送；H7 最终签收仍待所有者，M7 进行中。
+
+后续按所有者截图修复共享分段控件伪溢出。`a4f12a1` 新增滚动容器后，Material 的点击区超出按钮 4px，
+被当成内容溢出并出现遮挡；共享布局预留点击区/描边/焦点空间，保留窄窗实际横向滚动，不改动选择语义。
+新增回归覆盖初次打开、选择、键盘和缩放，修前 0/1；最终 Chromium/同版 Edge 各 6/0，既有关联 8/0，GUI/UI check 通过。
+仅替换 GUI，沿用原 Core、数据/profile；原生观感由所有者查看。本批不改公共合同、持久数据或依赖，不重复完整门禁。
 
 ### 当前 H7 授权与收束（2026-11-02）
 

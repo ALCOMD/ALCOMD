@@ -22,10 +22,14 @@ H2–H6 原签收保持；H7 只处理实际影响使用的问题，整理精简
 真实隔离设置及备份 RPC/kill-restart，八个受影响 crate Clippy、fmt、xtask、metadata；GUI 保存队列 20 场景，
 最终集中浏览器 26/0、关联流程 12/0、320/640px 2/0分别保留。失败与后续窄修分别记录，不拼为全套通过。
 一次 Core/CLI release 与 GUI release no-bundle 构建通过。已恢复原数据目录和原 WebView profile，
-当前 Core **130768** / GUI **132996**（窗口 **101191372**，可响应）；项目、Editor 登记、Operation、Status 与切换前完全一致，
+目录设置交付时 Core **130768** / GUI **132996**（窗口 **101191372**，可响应）；项目、Editor 登记、Operation、Status 与切换前完全一致，
 Settings 仅增加 Config5 的目录字段；实际 TOML 只有 schema 4→5，revision **166** 及其他全部字段保持。
 本轮没有操作用户 Unity 或真实工程，没有新增原生自动交互/截图；桌面控制继续停用，原生观感/目录选择由所有者查看。
 没有执行完整 Workspace、完整 Chromium 或新远端 CI。详见 [目录设置补齐](testing/m7-storage-locations-20261103.md)。本地提交，不推送，不进入 M8。
+
+随后修复分段控件的伪溢出：H6 提交 `a4f12a1` 给资源/设置分组/日志/主题加入滚动容器时，未容纳 Material 40px 按钮外侧的 48px 点击区，导致多余滚动条覆盖按钮。
+共享布局保留点击区、描边及焦点空间，不隐藏真实溢出；320px 下必要的横向滚动保留。确定性修前 0/1；最终 Chromium 与本机同版本 Edge 各 6/0，相关既有检查 8/0，GUI/UI check 通过。
+GUI release no-bundle 构建通过，已用原 profile 打开 GUI **111452**，原 Core **130768** 持续运行，五组公开状态和配置摘要不变；见 [人工查看入口](testing/m7-official-gui-manual-checklist.md#当前查看入口)。原生观感仍待所有者查看，不增加全量测试或远端运行。
 
 ### H7 已有远端技术基线与验收状态
 

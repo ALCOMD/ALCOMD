@@ -176,7 +176,13 @@ samp {
     --md-filled-text-field-top-space: 8px;
 }
 
-.alcomd-segmented-control { display: grid; min-inline-size: max-content; }
+.alcomd-segmented-control {
+    display: grid;
+    min-inline-size: max-content;
+    /* Material's 48px touch target extends beyond its 40px button. Keep that
+       target, the outline and keyboard focus inside the surrounding viewport. */
+    padding: 6px;
+}
 .alcomd-segmented-control > * { grid-area: 1 / 1; }
 .alcomd-segmented-control > md-outlined-segmented-button-set { white-space: nowrap; }
 .alcomd-segmented-sizer {
