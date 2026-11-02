@@ -139,6 +139,41 @@ test("H5 About keeps local GUI version and licenses available with slow Operatio
     await expect(page.locator("body")).not.toContainText(H5_SECRET);
 });
 
+for (const width of [800, 1280]) {
+    test(`About refresh keeps its touch target inside the content at ${width}px`, async ({ page }, testInfo) => {
+        await page.setViewportSize({ width, height: 800 });
+        await open(page, "/about");
+        const body = page.locator(".utility-workspace-body");
+        const bar = body.locator(".refresh-bar");
+        const refresh = bar.getByRole("button", { name: "Refresh", exact: true });
+        await expect(detail(body, "Daemon")).toHaveText(H5_CORE_VERSION);
+        await expect(body).toHaveAttribute("data-overlayscrollbars-viewport", /./);
+        await expect.poll(() => body.evaluate(element => element.scrollWidth - element.clientWidth)).toBe(0);
+        await expect(body.locator(":scope > .os-scrollbar-horizontal.os-scrollbar-visible")).toHaveCount(0);
+        const bounds = (await bar.boundingBox())!;
+        const touch = await bar.locator("md-icon-button").evaluate(element => element.shadowRoot!.querySelector(".touch")!.getBoundingClientRect().toJSON());
+        expect(touch.width).toBe(48);
+        expect(touch.height).toBe(48);
+        expect(touch.left).toBeGreaterThanOrEqual(bounds.x);
+        expect(touch.right).toBeLessThanOrEqual(bounds.x + bounds.width);
+        expect(touch.top).toBeGreaterThanOrEqual(bounds.y);
+        expect(touch.bottom).toBeLessThanOrEqual(bounds.y + bounds.height);
+        const before = (await requests(page, "system.status")).length;
+        await refresh.focus();
+        await page.keyboard.press("Enter");
+        await expect.poll(async () => (await requests(page, "system.status")).length).toBe(before + 1);
+        await expect(refresh).toBeEnabled();
+        await expect(page.getByRole("heading", { name: "Licenses", exact: true })).toBeVisible();
+        await expect.poll(() => body.evaluate(element => element.scrollWidth - element.clientWidth)).toBe(0);
+        await page.evaluate(() => window.h5Utilities.failNext("system.status", "store_unavailable"));
+        await refresh.click();
+        await expect(bar.locator(".inline-error")).toContainText(requestErrorMessage("store_unavailable"));
+        await expect(detail(body, "Daemon")).toHaveText(H5_CORE_VERSION);
+        await expect.poll(() => body.evaluate(element => element.scrollWidth - element.clientWidth)).toBe(0);
+        await page.screenshot({ path: testInfo.outputPath(`about-${width}.png`), animations: "disabled" });
+    });
+}
+
 test("H5 state check accepts one operation and follows its actual terminal state", async ({ page }) => {
     await open(page, "/diagnostics");
     const start = page.getByRole("button", { name: "Run state check", exact: true });

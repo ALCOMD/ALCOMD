@@ -776,14 +776,7 @@ md-linear-progress {
 
 
 .page-surface--utility .refresh-bar {
-    min-height: 40px;
     margin-bottom: 12px;
-}
-
-.page-surface--utility .refresh-bar > .resource-navigation {
-    margin: 0 auto 0 0;
-    padding: 0;
-    border: 0;
 }
 
 .page-surface--utility .utility-toolbar > .refresh-bar {
@@ -989,10 +982,14 @@ md-linear-progress {
     justify-content: flex-end;
     gap: 12px;
     min-height: 48px;
+    /* Keep the icon button's 48px touch target inside the content viewport. */
+    padding-inline: 8px;
     margin-bottom: 18px;
     color: var(--on-surface-variant);
     font-size: 0.875rem;
 }
+
+.refresh-bar > md-icon-button { flex: none; }
 
 .inline-error {
     color: var(--error);

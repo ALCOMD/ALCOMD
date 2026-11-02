@@ -65,7 +65,7 @@ import {
 import { DesktopList, type DesktopListColumn } from "./DesktopList";
 import { displayPath } from "./display-path";
 import { useProjectDirectory } from "./use-project-directory";
-import { ScrollArea, useScrollArea } from "./ScrollArea";
+import { ScrollArea } from "./ScrollArea";
 import { PageHeader } from "./PageHeader";
 import { LoadingState, useDelayedPending } from "./LoadingState";
 import { LocalPageReadContext, useInitialPageRead, usePageReadPromise } from "./PageRead";
