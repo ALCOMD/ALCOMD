@@ -1,3 +1,4 @@
+import { selectSettingsSection } from "./settings-sections";
 import { expect, test, type Page } from "@playwright/test";
 
 for (const preference of ["system", "full", "reduced"] as const) {
@@ -82,6 +83,7 @@ test("Chinese animation choices use the requested labels", async ({ page }) => {
 async function openSettings(page: Page, suffix = "") {
     await page.goto(`/browser-harness.html?route=/settings${suffix}`);
     await expect(page.getByRole("heading", { level: 1, name: "Settings", exact: true })).toBeVisible();
+    await selectSettingsSection(page, "appearance");
     await expect(page.locator("#settings-motion")).toBeVisible();
 }
 

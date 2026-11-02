@@ -1,3 +1,4 @@
+import { selectSettingsSection } from "./settings-sections";
 import { expect, test, type Page } from "@playwright/test";
 
 test.use({ viewport: { width: 1440, height: 900 } });
@@ -26,6 +27,7 @@ for (const width of [1280, 1440]) {
             await test.step(`${label} ${route}`, async () => {
                 await page.goto(`/browser-harness.html?route=${encodeURIComponent(route)}&state=${state}`);
                 await page.mouse.move(0, 0);
+                if (route === "/settings") await selectSettingsSection(page, "unity");
                 const table = page.getByRole("table", { name: label, exact: true });
                 await expect(table.locator("tbody tr").first()).toBeVisible();
                 const viewport = table.locator("..");
@@ -255,13 +257,18 @@ test("Resources sections and detail return controls work through ordinary clicks
     await expectHeading(page, "Resources");
 });
 
-test("Settings follows supported v3 group order while Logs retains its two real read surfaces", async ({ page }) => {
+test("Settings uses shared sections while Logs retains its two real read surfaces", async ({ page }) => {
     await openHarness(page, "/projects");
     await navigationItem(page, "Settings").click();
     await expectHeading(page, "Settings");
-    await expect(page.getByRole("navigation", { name: "Settings sections" })).toHaveCount(0);
-    await expect(page.locator(".settings-section-heading h2")).toHaveText(["Unity Hub Path", "Unity installations", "Packages", "Appearance", "System information"]);
+    const sections = page.getByRole("navigation", { name: "Settings sections", exact: true });
+    await expect(sections.getByRole("button")).toHaveText(["General", "Unity", "Appearance"]);
+    await expect(page.locator(".settings-section-heading h2:visible")).toHaveText(["Save locations", "Packages"]);
+    await expect(page.getByRole("region", { name: "System information", exact: true })).toHaveCount(0);
+    await selectSettingsSection(page, "appearance");
     await expect(page.getByRole("region", { name: "Appearance", exact: true }).getByRole("button", { name: "Theme", exact: true })).toBeVisible();
+    await selectSettingsSection(page, "unity");
+    await expect(page.locator(".settings-section-heading h2:visible")).toHaveText(["Unity Hub Path", "Unity installations"]);
     await expect(page.getByRole("table", { name: "Unity installations" }).getByRole("columnheader")).toHaveText(["Version", "Path", "Source"]);
     await page.getByRole("button", { name: "Manage installations", exact: true }).click();
     const unityDialog = page.getByRole("dialog", { name: "Manage Unity installations" });
@@ -324,6 +331,7 @@ test("utility actions use modal dialogs and cancel clears drafts and returns foc
 
 test("desktop Settings uses labeled language and animation rows with Theme in its header and no density mode", async ({ page }) => {
     await openHarness(page, "/settings");
+    await selectSettingsSection(page, "appearance");
     await expectHeading(page, "Settings");
     const fields = page.locator(".settings-editor md-filled-select");
     await expect(fields).toHaveCount(2);
@@ -357,6 +365,7 @@ test("desktop Settings uses labeled language and animation rows with Theme in it
 
 test("ordinary Settings save before refresh and remain accepted across navigation", async ({ page }) => {
     await openHarness(page, "/settings");
+    await selectSettingsSection(page, "general");
     const prerelease = page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true });
     await expect(prerelease).not.toBeChecked();
     await prerelease.check();
@@ -370,6 +379,7 @@ test("ordinary Settings save before refresh and remain accepted across navigatio
     await expectHeading(page, "Projects");
     await expect(page.getByRole("dialog", { name: "Discard unsaved changes?", exact: true })).toHaveCount(0);
     await navigationItem(page, "Settings").click();
+    await selectSettingsSection(page, "general");
     await expect(prerelease).toBeChecked();
     expect(await page.evaluate(() => window.settingsWrites)).toEqual([{ expectedRevision: 7, revision: 8 }]);
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([{ expectedRevision: 7, update: { packages: { showPrerelease: true } } }]);

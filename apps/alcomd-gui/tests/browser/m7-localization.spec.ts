@@ -1,3 +1,4 @@
+import { selectSettingsSection } from "./settings-sections";
 import { expect, test, type Page } from "@playwright/test";
 
 const locales = [
@@ -107,6 +108,7 @@ function navigationItem(page: Page, label: string) {
 }
 
 async function chooseLanguage(page: Page, name: string) {
+    await selectSettingsSection(page, "appearance");
     const select = page.locator("#settings-locale");
     const lifecycle = await select.evaluateHandle((element) => ({
         opened: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })),

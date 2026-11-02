@@ -10,7 +10,7 @@ import { useTranslation } from "./i18n";
 import { UnityRegistryActions } from "./CoreActions";
 import { capabilities, useCapability } from "./capabilities";
 import { DesktopList } from "./DesktopList";
-import { Button, Checkbox, RefreshButton, Select, TextField } from "./Material";
+import { Button, Checkbox, RefreshButton, SegmentedButtons, Select, TextField } from "./Material";
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { UtilityWorkspace } from "./UtilityWorkspace";
 import { LoadingState } from "./LoadingState";
@@ -23,14 +23,15 @@ import { displayPath } from "./display-path";
 interface SettingsWorkspaceProps {
     client: GuiRpcClient;
     settingsWriter: SettingsAutosave;
-    navigate(path: string): void;
     onApplied(value: SettingsGetResult): void;
     onThemePreview(theme: ThemePreferences | undefined): void;
     onThemeSession(cancel: (() => void) | undefined): void;
     onDirtyChange(dirty: boolean): void;
 }
 
-export function SettingsWorkspace({ client, settingsWriter, navigate, onApplied, onThemePreview, onThemeSession, onDirtyChange }: SettingsWorkspaceProps) {
+type SettingsCategory = "general" | "unity" | "appearance";
+
+export function SettingsWorkspace({ client, settingsWriter, onApplied, onThemePreview, onThemeSession, onDirtyChange }: SettingsWorkspaceProps) {
     const { t } = useTranslation();
     const load = useCallback(() => client.settingsGet(), [client]);
     const canReadUnity = useCapability(capabilities.unityRead);
@@ -38,38 +39,44 @@ export function SettingsWorkspace({ client, settingsWriter, navigate, onApplied,
     const initialUnity = usePageReadPromise("settings.unity", () => canReadUnity ? client.unityInstallationsList() : Promise.resolve(undefined));
     const initialRepositories = usePageReadPromise("settings.repositories", () => canReadRepositories ? client.repositoriesList() : Promise.resolve(undefined));
     const [dirty, setDirty] = useState(false);
+    const [category, setCategory] = useState<SettingsCategory>("general");
     const [unityGeneration, setUnityGeneration] = useState(0);
     const saving = useSyncExternalStore(settingsWriter.subscribe, settingsWriter.getSnapshot);
     const dirtyChanged = useCallback((value: boolean) => { setDirty(value); onDirtyChange(value); }, [onDirtyChange]);
     return (
-        <UtilityWorkspace title={t(navigationLabels.settings)} load={load} refreshDisabled={dirty || saving.saving}>
+        <UtilityWorkspace title={t(navigationLabels.settings)} load={load} refreshDisabled={dirty || saving.saving} navigation={
+            <nav className="resource-navigation" aria-label={t("Settings sections")}>
+                <SegmentedButtons label={t("Settings sections")} value={category} onChange={(value) => setCategory(value as SettingsCategory)}
+                    options={[
+                        { value: "general", label: t("General") },
+                        { value: "unity", label: "Unity" },
+                        { value: "appearance", label: t("Appearance") }
+                    ]} />
+            </nav>
+        }>
             {(snapshot) => (
                 <div className="settings-workspace">
-                    <SettingsSection title={t("Save locations")}>
+                    <SettingsSection title={t("Save locations")} hidden={category !== "general"}>
                         <StorageDirectoryRow client={client} settingsWriter={settingsWriter} snapshot={snapshot} directoryKey="projectDirectory" label={t("Default project location")} />
                         <StorageDirectoryRow client={client} settingsWriter={settingsWriter} snapshot={snapshot} directoryKey="backupDirectory" label={t("Default backup location")} />
                     </SettingsSection>
-                    <UnityHubSettingsSection client={client} settingsWriter={settingsWriter} snapshot={snapshot} onInstallationsChanged={() => setUnityGeneration((value) => value + 1)} />
-                    <UnitySettingsSection client={client} initialRead={initialUnity} externalGeneration={unityGeneration} />
-                    <SettingsEditor client={client} settingsWriter={settingsWriter} snapshot={snapshot} onThemePreview={onThemePreview} onThemeSession={onThemeSession}
+                    <div className="settings-unity-group" hidden={category !== "unity"}>
+                        <UnityHubSettingsSection client={client} settingsWriter={settingsWriter} snapshot={snapshot} onInstallationsChanged={() => setUnityGeneration((value) => value + 1)} />
+                        <UnitySettingsSection client={client} initialRead={initialUnity} externalGeneration={unityGeneration} />
+                    </div>
+                    <SettingsEditor category={category} client={client} settingsWriter={settingsWriter} snapshot={snapshot} onThemePreview={onThemePreview} onThemeSession={onThemeSession}
                         initialRepositories={initialRepositories} onApplied={onApplied} onDirtyChange={dirtyChanged} />
-                    <SettingsSection title={t("System information")}>
-                        <div className="action-row">
-                            <Button onClick={() => navigate("/about")} type="button" variant="tonal">{t("About ALCOMD")}</Button>
-                            <Button onClick={() => navigate("/diagnostics")} type="button" variant="text">{t("Diagnostics")}</Button>
-                        </div>
-                    </SettingsSection>
                 </div>
             )}
         </UtilityWorkspace>
     );
 }
 
-function SettingsSection({ title, children, actions, sectionRef, onBlur }: {
-    title: string; children: ReactNode; actions?: ReactNode; sectionRef?: Ref<HTMLElement>; onBlur?: FocusEventHandler<HTMLElement>;
+function SettingsSection({ title, children, actions, sectionRef, onBlur, hidden }: {
+    title: string; children: ReactNode; actions?: ReactNode; sectionRef?: Ref<HTMLElement>; onBlur?: FocusEventHandler<HTMLElement>; hidden?: boolean;
 }) {
     return (
-        <section className="settings-section" aria-label={title} ref={sectionRef} onBlur={onBlur}>
+        <section className="settings-section" aria-label={title} ref={sectionRef} onBlur={onBlur} hidden={hidden}>
             <header className="settings-section-heading"><h2>{title}</h2>{actions}</header>
             <div className="settings-section-content">{children}</div>
         </section>
@@ -475,7 +482,7 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
     );
 }
 
-function SettingsEditor({ client, settingsWriter, snapshot, initialRepositories, onApplied, onThemePreview, onThemeSession, onDirtyChange }: Omit<SettingsWorkspaceProps, "navigate"> & { snapshot: SettingsGetResult; initialRepositories: Promise<PageReadResult<Awaited<ReturnType<GuiRpcClient["repositoriesList"]>> | undefined>> }) {
+function SettingsEditor({ category, client, settingsWriter, snapshot, initialRepositories, onApplied, onThemePreview, onThemeSession, onDirtyChange }: SettingsWorkspaceProps & { category: SettingsCategory; snapshot: SettingsGetResult; initialRepositories: Promise<PageReadResult<Awaited<ReturnType<GuiRpcClient["repositoriesList"]>> | undefined>> }) {
     const { t } = useTranslation();
     const initial = use(initialRepositories);
     const saving = useSyncExternalStore(settingsWriter.subscribe, settingsWriter.getSnapshot);
@@ -524,8 +531,8 @@ function SettingsEditor({ client, settingsWriter, snapshot, initialRepositories,
         settingsWriter.change({ packages: { [key]: value } });
     };
     return (
-        <div className="settings-editor">
-            <SettingsSection title={t("Packages")}>
+        <div className="settings-editor" hidden={category !== "general" && category !== "appearance"}>
+            <SettingsSection title={t("Packages")} hidden={category !== "general"}>
                 <div className="settings-toggle-row">
                     <Checkbox checked={settings.packages.showPrerelease} label={t("Show prerelease package versions")} onChange={(checked) => packages("showPrerelease", checked)} />
                     <p className="field-hint">{t("Include prerelease versions in package lists.")}</p>
@@ -553,7 +560,7 @@ function SettingsEditor({ client, settingsWriter, snapshot, initialRepositories,
                     {repositoryCursor === undefined ? null : <Button disabled={repositoryBusy} onClick={() => void readRepositories(repositoryCursor)} type="button" variant="text">{t("Load more repository options")}</Button>}
                 </div>
             </SettingsSection>
-            <SettingsSection title={t("Appearance")} actions={
+            <SettingsSection title={t("Appearance")} hidden={category !== "appearance"} actions={
                 <ThemeControls value={themePreferences(baseline)} disabled={saving.saving || saving.failed} onPreview={onThemePreview} onSession={onThemeSession} onDirtyChange={setThemeDirty}
                     onSave={(theme) => settingsWriter.saveTheme(theme)} onReload={() => settingsWriter.reload()} />
             }>

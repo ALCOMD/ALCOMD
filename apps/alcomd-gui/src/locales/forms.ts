@@ -182,10 +182,6 @@ export const formMessages: TranslationTable = {
         "zh-CN": "保存",
         "ja-JP": "保存"
     },
-    "About ALCOMD": {
-        "zh-CN": "关于 ALCOMD",
-        "ja-JP": "ALCOMD について"
-    },
     "ALCOMD Core will validate the frozen template, create the project transactionally, and register the completed project.": {
         "zh-CN": "ALCOMD Core 将验证已冻结的模板，以事务方式创建项目，并登记创建完成的项目。",
         "ja-JP": "ALCOMD Core は固定されたテンプレートを検証し、トランザクションでプロジェクトを作成して、完了したプロジェクトを登録します。"
@@ -405,10 +401,6 @@ export const formMessages: TranslationTable = {
     "System": {
         "zh-CN": "跟随系统",
         "ja-JP": "システム設定"
-    },
-    "System information": {
-        "zh-CN": "系统信息",
-        "ja-JP": "システム情報"
     },
     "Teal": {
         "zh-CN": "蓝绿色",

@@ -741,6 +741,8 @@ md-linear-progress {
 .utility-action-dialog .detail-grid { grid-template-columns: 1fr; }
 
 .settings-workspace, .settings-editor { display: flex; flex-direction: column; gap: 8px; }
+.settings-editor[hidden] { display: none; }
+.settings-unity-group:not([hidden]) { display: flex; flex-direction: column; gap: 8px; }
 .settings-section { padding: 16px 20px; border-radius: var(--alcomd-shape-container); background: var(--md-sys-color-surface-container-low); }
 .settings-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
 .settings-section-heading h2 { margin: 0; font-size: 18px; line-height: 28px; font-weight: 600; }

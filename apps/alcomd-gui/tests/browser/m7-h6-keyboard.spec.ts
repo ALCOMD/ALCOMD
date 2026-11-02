@@ -1,3 +1,4 @@
+import { selectSettingsSection } from "./settings-sections";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 test.use({ viewport: { width: 720, height: 450 }, deviceScaleFactor: 2 });
@@ -22,6 +23,7 @@ test("H6 skip navigation reaches the canvas and keyboard focus reveals the table
 
 test("H6 keyboard alone opens, edits and leaves a scrolled Theme dialog at 200 percent equivalent layout", async ({ page }) => {
     await open(page, "/settings");
+    await selectSettingsSection(page, "appearance");
     await page.getByRole("link", { name: "Skip to content", exact: true }).focus();
     await page.keyboard.press("Enter");
     const theme = page.getByRole("region", { name: "Appearance", exact: true }).getByRole("button", { name: "Theme", exact: true });

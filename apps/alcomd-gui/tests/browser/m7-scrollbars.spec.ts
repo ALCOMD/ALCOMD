@@ -1,3 +1,4 @@
+import { selectSettingsSection } from "./settings-sections";
 import { expect, test, type Locator } from "@playwright/test";
 import { chromiumLaunchOptions } from "./chromium-launch-options";
 
@@ -44,6 +45,7 @@ test("all shared lists and page scrollers use the application scrollbar theme", 
     ];
     for (const [route, state] of routes) {
         await page.goto(`/browser-harness.html?route=${encodeURIComponent(route!)}&state=${state}`);
+        if (route === "/settings") await selectSettingsSection(page, "unity");
         const list = page.locator(".desktop-list-viewport").first();
         await expect(list.locator("tbody tr").first()).toBeVisible();
         await page.mouse.move(1439, 899);

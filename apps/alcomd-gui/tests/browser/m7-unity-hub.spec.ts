@@ -1,3 +1,4 @@
+import { selectSettingsSection } from "./settings-sections";
 import { expect, test, type Page } from "@playwright/test";
 
 const path = "C:\\Tools\\Unity Hub\\Unity Hub.exe";
@@ -6,8 +7,10 @@ const requests = (page: Page, method: string) => page.evaluate((name) => window.
 async function open(page: Page, query = "") {
     await page.setViewportSize({ width: 1400, height: 800 });
     await page.goto(`/browser-harness.html?route=/settings&${query}`);
+    await selectSettingsSection(page, "unity");
     await expect(section(page).getByRole("button", { name: "Select", exact: true })).toBeVisible();
 }
+const settingsNavigationTarget = (page: Page) => page.locator(".utility-workspace-toolbar nav.resource-navigation").getByRole("button").first();
 const input = (page: Page) => section(page).locator("md-outlined-text-field input");
 const value = (page: Page) => section(page).locator("md-outlined-text-field").evaluate((element) => (element as HTMLElement & { value: string }).value);
 
@@ -29,6 +32,7 @@ test("Hub selection saves one narrow update, refreshes once and survives navigat
     await expect.poll(() => requests(page, "unityInstallationsRefresh")).toBe(1);
     await page.locator("#primary-navigation md-list-item").filter({ has: page.locator(".navigation-item-label", { hasText: /^Projects$/ }) }).click();
     await page.locator("#primary-navigation md-list-item").filter({ has: page.locator(".navigation-item-label", { hasText: /^Settings$/ }) }).click();
+    await selectSettingsSection(page, "unity");
     await expect.poll(() => value(page)).toBe(path);
     expect(await section(page).locator("md-outlined-text-field").evaluate((element) => (element as HTMLElement & { readOnly: boolean }).readOnly)).toBe(false);
 });
@@ -67,6 +71,7 @@ test("an old picker result cannot save after leaving and reopening Settings", as
     await navigation("Projects").click();
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
     await navigation("Settings").click();
+    await selectSettingsSection(page, "unity");
     await expect(section(page).getByRole("button", { name: "Select", exact: true })).toBeEnabled();
     await page.evaluate(() => window.dispatchEvent(new Event("test-hub-picker-ready")));
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(0);
@@ -183,7 +188,7 @@ test("direct typing stays local, Enter saves once and preserves focus across Ent
     await page.evaluate(() => window.dispatchEvent(new Event("test-theme-save-ready")));
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
     await expect(input(page)).toBeFocused();
-    const outside = page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true });
+    const outside = settingsNavigationTarget(page);
     await outside.focus();
     await expect(outside).toBeFocused();
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([{ expectedRevision: 7, update: { unity: { hubPath: path } } }]);
@@ -192,7 +197,7 @@ test("direct typing stays local, Enter saves once and preserves focus across Ent
 test("leaving a changed path commits once without stealing the next control focus", async ({ page }) => {
     await open(page);
     await input(page).fill(path);
-    const outside = page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true });
+    const outside = settingsNavigationTarget(page);
     await outside.focus();
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
     await expect(outside).toBeFocused();
@@ -203,7 +208,7 @@ test("unchanged automatic path focus and blur does not create a manual override"
     await open(page, "hub-default=1");
     expect(await value(page)).toBe("C:\\Program Files\\Unity Hub\\Unity Hub.exe");
     await input(page).focus();
-    await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true }).focus();
+    await settingsNavigationTarget(page).focus();
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
     expect(await requests(page, "unityInstallationsRefresh")).toBe(0);
 });
@@ -215,7 +220,7 @@ test("Escape cancels the draft and composing Enter cannot submit", async ({ page
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(0);
     await input(page).press("Escape");
     expect(await value(page)).toBe(path);
-    await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true }).focus();
+    await settingsNavigationTarget(page).focus();
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(0);
 });
 
@@ -226,7 +231,7 @@ test("invalid draft remains visible, unchanged blur does not retry, and correcte
     await input(page).press("Enter");
     await expect(section(page).getByRole("alert")).toContainText("Unity Hub path could not be saved. Check the path and try again.");
     expect(await value(page)).toBe(invalid);
-    await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true }).focus();
+    await settingsNavigationTarget(page).focus();
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
     await input(page).fill("");
     await expect(section(page).getByRole("alert")).toHaveCount(0);
@@ -284,7 +289,7 @@ test("no-path statuses are placeholders and an explicitly empty edit never sends
         expect(await value(page)).toBe("");
         await expect(section(page).locator("md-outlined-text-field")).toHaveJSProperty("placeholder", query === "" ? "Unity Hub was not found." : "Unity Hub location is unavailable.");
         await input(page).focus();
-        await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true }).focus();
+        await settingsNavigationTarget(page).focus();
         expect(await page.evaluate(() => window.settingsRequests.length)).toBe(0);
     }
     await open(page, `hub-path=${encodeURIComponent(path)}`);
@@ -317,7 +322,8 @@ test("a broken saved path stays editable and correction uses Core validation", a
 test("accepted ordinary updates do not overwrite an in-progress Hub draft", async ({ page }) => {
     await open(page);
     await input(page).fill(path);
-    await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true }).evaluate((element) => {
+    // Model an already-arriving ordinary update without moving focus off the Hub draft.
+    await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true, includeHidden: true }).evaluate((element) => {
         (element as HTMLElement).click();
     });
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
@@ -330,10 +336,12 @@ test("accepted ordinary updates do not overwrite an in-progress Hub draft", asyn
 
 test("a blur commit queues once behind an unrelated ordinary settings write", async ({ page }) => {
     await open(page, "theme-save=hold");
-    await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true }).evaluate((element) => (element as HTMLElement).click());
+    await selectSettingsSection(page, "general");
+    await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.settingsRequests.length)).toBe(1);
+    await selectSettingsSection(page, "unity");
     await input(page).fill(path);
-    await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true }).focus();
+    await settingsNavigationTarget(page).focus();
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
     await page.evaluate(() => window.dispatchEvent(new Event("test-theme-save-ready")));
     await expect.poll(() => page.evaluate(() => window.settingsRequests.length)).toBe(2);
@@ -478,6 +486,7 @@ test("an old download decision cannot open a browser after the Settings visit en
     await navigation("Projects").click();
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
     await navigation("Settings").click();
+    await selectSettingsSection(page, "unity");
     await expect(section(page).getByRole("button", { name: "Download Unity Hub", exact: true })).toBeEnabled();
     await page.evaluate(() => window.dispatchEvent(new Event("test-hub-open-ready")));
     expect(await requests(page, "openUnityHubDownload")).toBe(0);

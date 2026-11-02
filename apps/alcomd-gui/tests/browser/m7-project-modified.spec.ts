@@ -1,3 +1,4 @@
+import { selectSettingsSection } from "./settings-sections";
 import { expect, test, type Page } from "@playwright/test";
 import { expectRequestError } from "./request-error-assertions";
 
@@ -52,6 +53,7 @@ for (const language of [
 ] as const) {
     test(`${language.locale} uses v3 last-modified terminology and an explicit unknown date`, async ({ page }) => {
         await page.goto("/browser-harness.html?route=%2Fsettings&state=ready&projectModified=1");
+        await selectSettingsSection(page, "appearance");
         await page.locator("#settings-locale").getByRole("combobox").click();
         await page.getByRole("option", { name: language.name, exact: true }).click();
         await expect(page.locator("html")).toHaveAttribute("lang", language.locale);

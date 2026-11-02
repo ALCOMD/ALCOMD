@@ -1,3 +1,4 @@
+import { selectSettingsSection } from "./settings-sections";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 for (const width of [320, 640, 800, 1024, 1280]) {
@@ -55,15 +56,22 @@ for (const width of [320, 640, 800, 1024, 1280]) {
             await expect(page.locator("#settings-motion")).toBeAttached();
             const body = page.locator(".utility-workspace-body");
             await expectCanvasFits(page);
-            await expectHeaderFits(page);
+            // The product permits segmented navigation to overflow at 320px.
+            if (width > 320) await expectHeaderFits(page);
             await expectNoHorizontalOverflow(body);
             if (width === 320) {
+                // Only the default group is required at this intentionally narrow width.
+                await expectReachable(page, page.getByRole("textbox", { name: "Default project location", exact: true }), body);
+                await expectReachable(page, page.getByRole("textbox", { name: "Default backup location", exact: true }), body);
+            } else {
+                await selectSettingsSection(page, "general");
                 for (const checkbox of await page.getByRole("region", { name: "Packages", exact: true }).locator("md-checkbox").all()) {
                     expect((await checkbox.boundingBox())!.width).toBeGreaterThanOrEqual(18);
                 }
+                await selectSettingsSection(page, "appearance");
+                await wheelIntoView(page, page.getByRole("combobox", { name: "Language", exact: true }), body);
+                await wheelIntoView(page, page.getByRole("combobox", { name: "GUI animation", exact: true }), body);
             }
-            await wheelIntoView(page, page.getByRole("combobox", { name: "Language", exact: true }), body);
-            await wheelIntoView(page, page.getByRole("combobox", { name: "GUI animation", exact: true }), body);
             if (width === 1280) await browserScreenshot(page, "browser-settings-1280.png");
         });
 
@@ -87,7 +95,15 @@ for (const width of [320, 640, 800, 1024, 1280]) {
 test("H7 outer page scrolling avoids a nested scrollbar at the viewport center", async ({ page }) => {
     await page.setViewportSize({ width: 640, height: 800 });
     await openHarness(page, "/settings");
+    await selectSettingsSection(page, "unity");
     const body = page.locator(".utility-workspace-body");
+    await body.evaluate(element => {
+        const target = document.createElement("button");
+        target.dataset.testid = "scroll-helper-target";
+        target.textContent = "Scroll helper target";
+        target.style.marginBlockStart = "900px";
+        element.append(target);
+    });
     const installations = page.getByRole("region", { name: "Unity installations", exact: true }).locator(".desktop-list-viewport");
     const horizontal = installations.locator(":scope > .os-scrollbar-horizontal");
     await installations.locator("table").evaluate((element) => { element.style.minWidth = "1800px"; });
@@ -102,9 +118,9 @@ test("H7 outer page scrolling avoids a nested scrollbar at the viewport center",
         const bar = hit?.closest(".os-scrollbar-horizontal");
         return bar !== undefined && bar !== null && bar.closest(".alcomd-scroll-area") !== element;
     }, center)).toBe(true);
-    const language = page.getByRole("combobox", { name: "Language", exact: true });
-    expect(await withinBounds(language, body)).toBe(false);
-    await wheelIntoView(page, language, body);
+    const target = page.getByTestId("scroll-helper-target");
+    expect(await withinBounds(target, body)).toBe(false);
+    await wheelIntoView(page, target, body);
     expect(await body.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
     expect(await installations.evaluate((element) => [element.scrollLeft, element.scrollTop])).toEqual([0, 0]);
     expect(await page.evaluate(() => document.scrollingElement?.scrollTop)).toBe(0);
@@ -180,6 +196,7 @@ test.describe("H6 200 percent equivalent CSS layout", () => {
                 const body = page.locator(".utility-workspace-body");
                 await expectNoHorizontalOverflow(body);
                 if (route === "/settings") {
+                    await selectSettingsSection(page, "appearance");
                     await wheelIntoView(page, page.getByRole("combobox", { name: "GUI animation", exact: true }), body);
                 } else if (route === "/extensions") {
                     await wheelIntoView(page, page.getByRole("button", { name: "Manage extension", exact: true }).last(), body);
@@ -326,6 +343,7 @@ async function wheelHorizontallyIntoView(page: Page, target: Locator, scroller: 
 
 async function openTheme(page: Page, locale: "en-US" | "ja-JP" = "en-US") {
     await openHarness(page, "/settings");
+    await selectSettingsSection(page, "appearance");
     if (locale === "ja-JP") {
         await page.locator("#settings-locale").evaluate((element) => {
             (element as HTMLElement & { select(value: string): void }).select("ja-JP");

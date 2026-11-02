@@ -1,3 +1,4 @@
+import { selectSettingsSection } from "./settings-sections";
 import { expect, test, type Page } from "@playwright/test";
 
 // Fixed values verified against the upstream Material Color Utilities Vibrant scheme.
@@ -332,6 +333,7 @@ test("a revision conflict rereads settings and retries only local theme fields o
     expect(await page.evaluate(() => window.settingsRequests.map((request) => request.expectedRevision))).toEqual([7, 8]);
     expect(await page.evaluate(() => window.settingsRequests.at(-1)!.update)).toEqual({ appearance: { sourceColor: "#E040A0", mode: "dark", scheme: "neutral" } });
     await expect(page.locator("#settings-motion")).toHaveJSProperty("value", "reduced");
+    await selectSettingsSection(page, "general");
     await expect(page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true })).toBeChecked();
     await expect(page.locator("html")).toHaveAttribute("data-source-color", "#E040A0");
     await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
@@ -344,12 +346,14 @@ test("saving a Theme draft preserves ordinary settings that were already saved",
     await openSettings(page, { "theme-mode": "light" });
     await selectThemeOption(page, "settings-motion", "full");
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
+    await selectSettingsSection(page, "general");
     await page.getByRole("checkbox", { name: "Hide local User Packages", exact: true }).check();
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(2);
     await openThemeDialog(page);
     await enterHex(page, "#E040A0");
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(2);
     await saveTheme(page);
+    await selectSettingsSection(page, "general");
     await expect(page.getByRole("checkbox", { name: "Hide local User Packages", exact: true })).toBeChecked();
     await expect(page.locator("#settings-motion")).toHaveJSProperty("value", "full");
     await expect(page.locator("html")).toHaveAttribute("data-motion", "full");
@@ -430,6 +434,7 @@ async function openSettings(page: Page, settings: Record<string, string>) {
     const query = new URLSearchParams({ route: "/settings", ...settings });
     await page.goto(`/browser-harness.html?${query.toString()}`);
     await expect(page.getByRole("heading", { level: 1, name: "Settings", exact: true })).toBeVisible();
+    await selectSettingsSection(page, "appearance");
     await expect(page.locator("#settings-locale")).toBeVisible();
     await expect(page.locator("html")).toHaveAttribute("data-source-color", (settings["theme-source"] ?? "#6CB6FF").toUpperCase());
 }
@@ -440,6 +445,7 @@ async function openTheme(page: Page, settings: Record<string, string>) {
 }
 
 async function openThemeDialog(page: Page) {
+    await selectSettingsSection(page, "appearance");
     await page.locator("#settings-theme-button").click();
     await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeVisible();
 }
@@ -459,6 +465,7 @@ async function enterHex(page: Page, value: string) {
 }
 
 async function selectThemeOption(page: Page, id: string, value: string) {
+    if (id.startsWith("settings-")) await selectSettingsSection(page, "appearance");
     if (id === "theme-scheme") {
         await page.locator(`#theme-scheme-${value}`).click();
         return;

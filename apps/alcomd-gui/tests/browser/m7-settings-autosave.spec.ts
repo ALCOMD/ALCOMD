@@ -1,3 +1,4 @@
+import { selectSettingsSection } from "./settings-sections";
 import { expect, test, type Page } from "@playwright/test";
 
 test("ordinary settings save immediately as narrow updates without a save bar", async ({ page }) => {
@@ -6,6 +7,7 @@ test("ordinary settings save immediately as narrow updates without a save bar", 
     await expect(page.getByRole("button", { name: "Save settings", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Discard changes", exact: true })).toHaveCount(0);
     await expect(page.getByText("All changes saved", { exact: true })).toHaveCount(0);
+    await selectSettingsSection(page, "general");
     await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true }).check();
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([{ expectedRevision: 7, update: { packages: { showPrerelease: true } } }]);
@@ -16,9 +18,10 @@ test("ordinary settings save immediately as narrow updates without a save bar", 
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
     await expect(page.getByRole("dialog", { name: "Discard unsaved changes?", exact: true })).toHaveCount(0);
     await navigation(page, "Settings").click();
+    await selectSettingsSection(page, "general");
     await expect(page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true })).toBeChecked();
     await expect(page.locator("#settings-motion")).toHaveJSProperty("value", "full");
-    await page.getByRole("region", { name: "System information", exact: true }).scrollIntoViewIfNeeded();
+    await selectSettingsSection(page, "appearance");
     await page.screenshot({ path: test.info().outputPath("settings-without-save-bar.png"), animations: "disabled" });
 });
 
@@ -43,6 +46,7 @@ test("rapid changes survive navigation while writes stay serialized", async ({ p
     await openSettings(page, "hold");
     await selectMotion(page, "full");
     await expect.poll(() => page.evaluate(() => window.settingsRequests.length)).toBe(1);
+    await selectSettingsSection(page, "general");
     await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true }).check();
     await page.getByRole("checkbox", { name: "Hide local User Packages", exact: true }).check();
     await navigation(page, "Projects").click();
@@ -55,6 +59,7 @@ test("rapid changes survive navigation while writes stay serialized", async ({ p
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(2);
     await navigation(page, "Settings").click();
     await expect(page.locator("#settings-motion")).toHaveJSProperty("value", "full");
+    await selectSettingsSection(page, "general");
     for (const name of ["Show prerelease package versions", "Hide local User Packages"]) await expect(page.getByRole("checkbox", { name, exact: true })).toBeChecked();
 });
 
@@ -120,9 +125,11 @@ test("theme retains its own preview, Cancel and Save while ordinary settings per
 async function openSettings(page: Page, outcome?: string) {
     await page.goto(`/browser-harness.html?route=/settings${outcome === undefined ? "" : `&theme-save=${outcome}`}`);
     await expect(page.getByRole("heading", { level: 1, name: "Settings", exact: true })).toBeVisible();
+    await selectSettingsSection(page, "appearance");
     await expect(page.locator("#settings-motion")).toBeVisible();
 }
 async function selectMotion(page: Page, value: string) {
+    await selectSettingsSection(page, "appearance");
     await page.locator("#settings-motion").evaluate((element, next) => {
         (element as HTMLElement & { select(value: string): void }).select(next);
         element.dispatchEvent(new Event("change", { bubbles: true }));

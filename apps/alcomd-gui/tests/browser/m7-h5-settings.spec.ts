@@ -1,3 +1,4 @@
+import { selectSettingsSection } from "./settings-sections";
 import { expect, test, type Page } from "@playwright/test";
 import { H5_HIDDEN_ID, H5_HUB_PATH, H5_REPOSITORY_CURSOR, H5_SETTINGS_DIAGNOSTIC, H5_SETTINGS_SECRET, H5_VISIBLE_ID } from "./h5-settings-client";
 
@@ -9,6 +10,7 @@ async function openSettings(page: Page, extra = "") {
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.goto(`/browser-harness.html?route=/settings&h5-settings=1&${extra}`);
     await expect(page.getByRole("heading", { level: 1, name: "Settings", exact: true })).toBeVisible();
+    await selectSettingsSection(page, "appearance");
     await expect(page.locator("#settings-motion")).toBeVisible();
 }
 async function fail(page: Page, method: string, code: string, afterCommit = false) {
@@ -19,6 +21,7 @@ function navigation(page: Page, name: string) {
 }
 
 async function selectMotion(page: Page, value: "full") {
+    await selectSettingsSection(page, "appearance");
     await page.locator("#settings-motion").evaluate((element, next) => {
         (element as HTMLElement & { select(value: string): void }).select(next);
         element.dispatchEvent(new Event("change", { bubbles: true }));
@@ -92,6 +95,7 @@ test("H5 Theme unknown reply preserves preview and reconciles to one write with 
 test("H5 Hub unknown reply preserves original picker input and reconciles before any further write", async ({ page }) => {
     await openSettings(page);
     await fail(page, "settings.update", "internal_error", true);
+    await selectSettingsSection(page, "unity");
     await hub(page).getByRole("button", { name: "Select", exact: true }).click();
     const feedback = hub(page).getByRole("alert");
     await expect(feedback).toContainText("Unity Hub save result is unknown");
@@ -111,6 +115,7 @@ test("H5 Hub unknown reply preserves original picker input and reconciles before
 test("H5 confirmed Hub save remains accepted when Editor discovery reports a separate failure", async ({ page }) => {
     await openSettings(page);
     await fail(page, "unity.installations.refresh", "internal_error");
+    await selectSettingsSection(page, "unity");
     await hub(page).getByRole("button", { name: "Select", exact: true }).click();
     const feedback = hub(page).getByRole("alert");
     await expect(feedback).toContainText("Unity Hub path was saved, but Unity installations could not be refreshed.");
@@ -129,6 +134,7 @@ test("H5 confirmed Hub save remains accepted when Editor discovery reports a sep
 test("H5 Auto detect read failure does not claim an unknown save or submit a settings write", async ({ page }) => {
     await openSettings(page);
     await fail(page, "settings.get", "daemon_unavailable");
+    await selectSettingsSection(page, "unity");
     await hub(page).getByRole("button", { name: "Auto detect", exact: true }).click();
     const feedback = hub(page).getByRole("alert");
     await expect(feedback).toContainText("Unity Hub location could not be detected. Retry the operation.");
@@ -144,6 +150,7 @@ test("H5 Auto detect read failure does not claim an unknown save or submit a set
 test("H5 repository options preserve loaded rows and retry the same failed cursor with a readable cause", async ({ page }) => {
     await openSettings(page);
     await fail(page, "repositories.list", "permission_denied");
+    await selectSettingsSection(page, "general");
     await packages(page).getByRole("button", { name: "Load more repository options", exact: true }).click();
     const feedback = packages(page).getByRole("alert");
     await expect(feedback).toContainText("Repository visibility options could not be loaded.");
@@ -159,6 +166,7 @@ test("H5 repository options preserve loaded rows and retry the same failed curso
 
 test("H5 repository visibility enforces the complete 256-ID bound while allowing existing entries to be unhidden", async ({ page }) => {
     await openSettings(page, "h5-hidden-limit=1");
+    await selectSettingsSection(page, "general");
     await packages(page).getByRole("button", { name: "Load more repository options", exact: true }).click();
     const hidden = packages(page).getByRole("checkbox", { name: "Hide H5 hidden source", exact: true });
     const visible = packages(page).getByRole("checkbox", { name: "Hide H5 visible source", exact: true });

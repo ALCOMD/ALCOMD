@@ -1,9 +1,11 @@
+import { selectSettingsSection } from "./settings-sections";
 import { expect, test } from "@playwright/test";
 
 for (const mode of ["light", "dark"] as const) {
     test(`expanded ${mode} theme editor keeps all choices visible in two columns`, async ({ page }, testInfo) => {
         await page.setViewportSize({ width: 1400, height: 800 });
         await page.goto(`/browser-harness.html?route=/settings&theme-mode=${mode}`);
+        await selectSettingsSection(page, "appearance");
         await expect(page.getByRole("button", { name: "Theme", exact: true })).toBeVisible();
         await page.screenshot({ path: testInfo.outputPath(`theme-entry-${mode}.png`), animations: "disabled" });
         await page.getByRole("button", { name: "Theme", exact: true }).click();
@@ -47,6 +49,7 @@ for (const mode of ["light", "dark"] as const) {
 
 test("expanded scheme choices support keyboard selection and mode remains single-select", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/settings&theme-mode=light");
+    await selectSettingsSection(page, "appearance");
     await page.getByRole("button", { name: "Theme", exact: true }).click();
     const vibrant = page.locator("#theme-scheme-vibrant");
     await vibrant.focus();
@@ -77,6 +80,7 @@ for (const locale of ["en-US", "zh-CN", "ja-JP"]) {
     test(`theme segments reserve the longest ${locale} label and checkmark before selection`, async ({ page }) => {
         await page.setViewportSize({ width: 1400, height: 800 });
         await page.goto("/browser-harness.html?route=/settings&theme-mode=light");
+        await selectSettingsSection(page, "appearance");
         const language = page.locator("#settings-locale");
         if (await language.evaluate((element) => (element as HTMLElement & { value: string }).value) !== locale) {
             await language.evaluate((element, value) => {

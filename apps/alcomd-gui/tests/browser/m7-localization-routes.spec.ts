@@ -1,3 +1,4 @@
+import { selectSettingsSection } from "./settings-sections";
 import { expect, test, type Page } from "@playwright/test";
 import { createTranslator } from "../../src/i18n";
 import { requestErrorMessage } from "../../src/request-errors";
@@ -61,6 +62,7 @@ const englishRoutes: RouteExpectation[] = [
 
 test("Shared Select refreshes translated selected text without changing value, focus or settings", async ({ page }) => {
     await page.goto("/browser-harness.html?route=%2Fsettings&theme-save=hold");
+    await selectSettingsSection(page, "appearance");
     const motion = page.locator("#settings-motion");
     await expect(motion).toHaveJSProperty("value", "system");
     await expect(motion.getByRole("combobox")).toContainText("System");
@@ -146,6 +148,7 @@ for (const language of languages) {
 }
 
 async function saveLanguage(page: Page, name: string, locale: string) {
+    await selectSettingsSection(page, "appearance");
     const select = page.locator("#settings-locale");
     const lifecycle = await select.evaluateHandle((element) => ({
         opened: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })),

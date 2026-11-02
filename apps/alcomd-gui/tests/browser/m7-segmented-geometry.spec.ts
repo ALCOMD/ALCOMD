@@ -1,3 +1,4 @@
+import { selectSettingsSection } from "./settings-sections";
 import { expect, test, type Locator } from "@playwright/test";
 
 async function expectSegmentsVisible(group: Locator, boundary: Locator) {
@@ -40,6 +41,7 @@ for (const route of ["/repositories", "/unity", "/activity"]) {
 
 test("Chinese theme segments stay visible without a scroll container before and after selection", async ({ page }, testInfo) => {
     await page.goto("/browser-harness.html?route=/settings&theme-mode=dark");
+    await selectSettingsSection(page, "appearance");
     await page.locator("#settings-locale").evaluate(element => {
         (element as HTMLElement & { select(value: string): void }).select("zh-CN");
         element.dispatchEvent(new Event("change", { bubbles: true }));
@@ -64,6 +66,7 @@ test("Chinese theme segments stay visible without a scroll container before and 
 test("Chinese Resources segments stay clear after selecting each section", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1600, height: 900 });
     await page.goto("/browser-harness.html?route=/settings&theme-mode=dark");
+    await selectSettingsSection(page, "appearance");
     await page.locator("#settings-locale").evaluate(element => {
         (element as HTMLElement & { select(value: string): void }).select("zh-CN");
         element.dispatchEvent(new Event("change", { bubbles: true }));

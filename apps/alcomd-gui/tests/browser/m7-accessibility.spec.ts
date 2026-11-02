@@ -1,3 +1,4 @@
+import { selectSettingsSection } from "./settings-sections";
 import { expect, test, type Page } from "@playwright/test";
 import { expectRequestError } from "./request-error-assertions";
 
@@ -15,6 +16,7 @@ test("keyboard navigation moves routes and focuses the destination heading", asy
     await settings.focus();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeFocused();
+    await selectSettingsSection(page, "appearance");
     await page.locator("#settings-theme-button").focus();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeVisible();
@@ -134,6 +136,7 @@ test("Settings retry reconnects shared capabilities before restoring utility and
 
     await page.evaluate(() => window.dispatchEvent(new Event("test-daemon-online")));
     await page.getByRole("button", { name: "Retry", exact: true }).click();
+    await selectSettingsSection(page, "unity");
     await expect(page.getByRole("button", { name: "Manage installations", exact: true })).toBeEnabled();
     await expect(page.getByRole("button", { name: "Download Unity Hub", exact: true })).toBeEnabled();
     await expect(page.getByText("Unity installations are unavailable on this connection.", { exact: true })).toHaveCount(0);
@@ -336,6 +339,7 @@ test("project workspace keeps package discovery and user actions in project cont
 
 test("settings are labeled, revisioned, and ordinary preferences save through the typed client", async ({ page }) => {
     await openHarness(page, "/settings");
+    await selectSettingsSection(page, "appearance");
     await page.locator("#settings-theme-button").click();
     await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeVisible();
     const color = page.locator("#theme-source").getByRole("textbox");
@@ -347,18 +351,21 @@ test("settings are labeled, revisioned, and ordinary preferences save through th
     await page.locator("md-dialog[open]").filter({ has: page.getByRole("heading", { name: "Theme", exact: true }) }).getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeHidden();
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
+    await selectSettingsSection(page, "general");
     await page.getByRole("checkbox", { name: "Show prerelease package versions" }).check();
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(2);
     await page.getByRole("checkbox", { name: "Hide local User Packages" }).check();
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(3);
     await page.getByRole("checkbox", { name: "Hide Example packages" }).check();
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(4);
+    await selectSettingsSection(page, "appearance");
     await selectMaterialOption(page.locator("md-filled-select#settings-locale"), "zh-CN");
     await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
     await navigationItem(page, "项目").click();
     await expect(page.getByRole("heading", { level: 1, name: "项目" })).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await navigationItem(page, "设置").click();
+    await selectSettingsSection(page, "general");
     await expect(page.getByRole("checkbox", { name: "显示预发布软件包" })).toBeChecked();
     await expect(page.getByRole("checkbox", { name: "隐藏本地用户软件包" })).toBeChecked();
     await expect(page.getByRole("checkbox", { name: "隐藏 Example packages" })).toBeChecked();
@@ -514,6 +521,7 @@ test("narrow navigation, dialogs, reduced motion, and light/dark contrast remain
 
     await page.setViewportSize({ width: 640, height: 800 });
     expect(await hasHorizontalOverflow(page)).toBe(false);
+    await selectSettingsSection(page, "appearance");
     await expect(page.getByRole("combobox", { name: "Language" })).toBeVisible();
     await navigationItem(page, "Projects").click();
     await page.getByRole("button", { name: "More project creation options" }).click();

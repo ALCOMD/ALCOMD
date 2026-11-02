@@ -1,3 +1,4 @@
+import { selectSettingsSection } from "./settings-sections";
 import { expect, test, type Page } from "@playwright/test";
 
 declare global {
@@ -63,7 +64,7 @@ for (const origin of ["Projects", "Resources", "Logs"]) {
         await expect(page.locator(".page-navigation-progress .loading-state-indicator")).toBeVisible();
         await page.evaluate(() => window.dispatchEvent(new Event("test-settings-ready")));
         await expect(page.getByRole("heading", { level: 1, name: "Settings", exact: true })).toBeFocused();
-        await expect(page.getByRole("table", { name: "Unity installations", exact: true }).locator("tbody tr")).toHaveCount(1);
+        await expect(page.locator('table[aria-label="Unity installations"] tbody tr')).toHaveCount(1);
         await expect(page.locator("#main-content")).toHaveAttribute("aria-busy", "false");
         const samples = await page.evaluate(() => window.pageFrames);
         expect(samples.every((frame) => frame.populated && frame.opaque && (!frame.settings || frame.unityRows === 1))).toBe(true);
@@ -122,7 +123,10 @@ test("Settings keeps healthy sections and an explicit auxiliary read error", asy
     await expect(page.locator("#main-content")).toHaveAttribute("aria-busy", "true");
     await page.evaluate(() => window.dispatchEvent(new CustomEvent("test-repositories-ready", { detail: "error" })));
     await expect(page.getByRole("heading", { level: 1, name: "Settings", exact: true })).toBeFocused();
+    await expect(page.locator('table[aria-label="Unity installations"] tbody tr')).toHaveCount(1);
+    await selectSettingsSection(page, "unity");
     await expect(page.getByRole("table", { name: "Unity installations", exact: true }).locator("tbody tr")).toHaveCount(1);
+    await selectSettingsSection(page, "general");
     await expect(page.getByRole("alert")).toContainText("Repository visibility options could not be loaded.");
     await expect(page.getByRole("button", { name: "Retry repository options", exact: true })).toBeEnabled();
 });

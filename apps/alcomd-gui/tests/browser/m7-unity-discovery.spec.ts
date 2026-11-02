@@ -1,8 +1,10 @@
+import { selectSettingsSection } from "./settings-sections";
 import { expect, test, type Page } from "@playwright/test";
 import { expectRequestError } from "./request-error-assertions";
 
 async function open(page: Page, error = false) {
     await page.goto(`/browser-harness.html?route=/settings&h3-unity-discovery=1${error ? "&h3-unity-discovery-error=1" : ""}`);
+    await selectSettingsSection(page, "unity");
     await expect(page.getByText("No Unity installations registered", { exact: true })).toBeVisible();
     await expect(page.getByText("No Unity installations found.", { exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "Manage installations", exact: true }).click();

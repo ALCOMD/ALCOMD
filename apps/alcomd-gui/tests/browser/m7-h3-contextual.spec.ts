@@ -1,3 +1,4 @@
+import { selectSettingsSection } from "./settings-sections";
 import { expect, test, type Page } from "@playwright/test";
 import { expectRequestError } from "./request-error-assertions";
 
@@ -153,6 +154,7 @@ test("an unknown backup creation does not start a second task or label closing a
 
 test("Settings Unity errors stay with the action and a corrected registration uses a layout-free success reminder", async ({ page }) => {
     await open(page, "/settings", "h3-unity-register-error=1");
+    await selectSettingsSection(page, "unity");
     await page.getByRole("button", { name: "Manage installations", exact: true }).click();
     const dialog = page.locator("md-dialog[open]");
     await dialog.getByLabel("Unity executable", { exact: true }).fill("C:/invalid-editor.exe");

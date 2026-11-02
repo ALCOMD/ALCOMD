@@ -1,3 +1,4 @@
+import { selectSettingsSection } from "./settings-sections";
 import { expect, test } from "@playwright/test";
 import { displayPath } from "../../src/display-path";
 
@@ -30,6 +31,7 @@ test("path display formats drive and UNC labels while preserving other namespace
 
 test("Unity installation rows and full-path tooltips show drive and network labels", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/settings&state=unity-multiple&windows-paths=1");
+    await selectSettingsSection(page, "unity");
     const table = page.getByRole("table", { name: "Unity installations", exact: true });
     await expect(table.getByTitle(editorPath, { exact: true })).toHaveText(editorPath);
     await expect(table.getByTitle(networkEditor, { exact: true })).toHaveText(networkEditor);
