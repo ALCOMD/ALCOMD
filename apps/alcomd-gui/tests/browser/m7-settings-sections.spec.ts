@@ -2,11 +2,11 @@ import { expect, test } from "@playwright/test";
 import { createTranslator } from "../../src/i18n";
 
 for (const locale of ["en-US", "zh-CN", "ja-JP"] as const) {
-    test(`Settings uses three shared segments and one visible group in ${locale}`, async ({ page }, testInfo) => {
+    test(`Settings keeps Notifications blank and switches shared segments in ${locale}`, async ({ page }, testInfo) => {
         await page.setViewportSize({ width: 1280, height: 800 });
         await page.goto("/browser-harness.html?route=/settings&state=ready");
         let navigation = page.locator(".resource-navigation");
-        await expect(navigation.getByRole("button")).toHaveCount(3);
+        await expect(navigation.getByRole("button")).toHaveCount(4);
         if (locale !== "en-US") {
             await navigation.getByRole("button").nth(2).click();
             await page.locator("#settings-locale").evaluate((element, value) => {
@@ -18,19 +18,20 @@ for (const locale of ["en-US", "zh-CN", "ja-JP"] as const) {
         }
         const t = createTranslator(locale);
         navigation = page.getByRole("navigation", { name: t("Settings sections"), exact: true });
-        const labels = [t("General"), "Unity", t("Appearance")];
+        const labels = [t("General"), "Unity", t("Appearance"), t("Notifications")];
         await expect(navigation.getByRole("button")).toHaveText(labels);
         await expect(navigation.locator(".os-scrollbar")).toHaveCount(0);
         await expect(navigation).toHaveCSS("overflow", "visible");
         const writes = await page.evaluate(() => window.settingsRequests.length);
         const path = page.locator("#settings-projectDirectory");
         const original = await path.elementHandle();
-        const regions = [[t("Save locations"), t("Packages")], [t("Unity Hub Path"), t("Unity installations")], [t("Appearance")]];
+        const regions = [[t("Save locations"), t("Packages")], [t("Unity Hub Path"), t("Unity installations")], [t("Appearance")], []];
         for (let index = 0; index < labels.length; index++) {
             await navigation.getByRole("button").nth(index).click();
             await expect(navigation.getByRole("button", { pressed: true })).toHaveCount(1);
             await expect(navigation.getByRole("button").nth(index)).toHaveAttribute("aria-pressed", "true");
             expect(await page.locator(".settings-section:visible").evaluateAll(elements => elements.map(element => element.getAttribute("aria-label")))).toEqual(regions[index]);
+            if (index === 3) await expect(page.locator(".settings-workspace")).toHaveText("", { useInnerText: true });
             for (const name of regions.flat()) {
                 const region = page.getByRole("region", { name, exact: true });
                 if (regions[index]!.includes(name)) await expect(region).toBeVisible();
@@ -73,7 +74,7 @@ test("Settings groups remain keyboard reachable in an 800px desktop window", asy
     await page.goto("/browser-harness.html?route=/settings&state=ready");
     const navigation = page.getByRole("navigation", { name: "Settings sections", exact: true });
     await navigation.getByRole("button", { name: "General", exact: true }).focus();
-    for (const name of ["Unity", "Appearance"]) {
+    for (const name of ["Unity", "Appearance", "Notifications"]) {
         await page.keyboard.press("Tab");
         const button = navigation.getByRole("button", { name, exact: true });
         await expect(button).toBeFocused();
@@ -82,5 +83,8 @@ test("Settings groups remain keyboard reachable in an 800px desktop window", asy
         const box = (await button.boundingBox())!;
         expect(box.x + box.width).toBeLessThanOrEqual(800);
     }
+    await expect(page.locator(".settings-workspace")).toHaveText("", { useInnerText: true });
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Space");
     await expect(page.getByRole("button", { name: "Theme", exact: true })).toBeVisible();
 });

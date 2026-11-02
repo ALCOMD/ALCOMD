@@ -29,7 +29,7 @@ interface SettingsWorkspaceProps {
     onDirtyChange(dirty: boolean): void;
 }
 
-type SettingsCategory = "general" | "unity" | "appearance";
+type SettingsCategory = "general" | "unity" | "appearance" | "notifications";
 
 export function SettingsWorkspace({ client, settingsWriter, onApplied, onThemePreview, onThemeSession, onDirtyChange }: SettingsWorkspaceProps) {
     const { t } = useTranslation();
@@ -50,7 +50,8 @@ export function SettingsWorkspace({ client, settingsWriter, onApplied, onThemePr
                     options={[
                         { value: "general", label: t("General") },
                         { value: "unity", label: "Unity" },
-                        { value: "appearance", label: t("Appearance") }
+                        { value: "appearance", label: t("Appearance") },
+                        { value: "notifications", label: t("Notifications") }
                     ]} />
             </nav>
         }>

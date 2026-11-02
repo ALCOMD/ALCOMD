@@ -262,7 +262,7 @@ test("Settings uses shared sections while Logs retains its two real read surface
     await navigationItem(page, "Settings").click();
     await expectHeading(page, "Settings");
     const sections = page.getByRole("navigation", { name: "Settings sections", exact: true });
-    await expect(sections.getByRole("button")).toHaveText(["General", "Unity", "Appearance"]);
+    await expect(sections.getByRole("button")).toHaveText(["General", "Unity", "Appearance", "Notifications"]);
     await expect(page.locator(".settings-section-heading h2:visible")).toHaveText(["Save locations", "Packages"]);
     await expect(page.getByRole("region", { name: "System information", exact: true })).toHaveCount(0);
     await selectSettingsSection(page, "appearance");

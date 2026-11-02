@@ -2,6 +2,7 @@ import type { TranslationTable } from "../i18n-types";
 
 export const settingsH5Messages: TranslationTable = {
     "General": { "zh-CN": "常规", "ja-JP": "一般" },
+    "Notifications": { "zh-CN": "通知", "ja-JP": "通知" },
     "Save locations": { "zh-CN": "保存位置", "ja-JP": "保存先" },
     "Default project location": { "zh-CN": "默认项目保存位置", "ja-JP": "既定のプロジェクト保存先" },
     "Default backup location": { "zh-CN": "默认备份保存位置", "ja-JP": "既定のバックアップ保存先" },
