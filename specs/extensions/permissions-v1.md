@@ -199,7 +199,7 @@ M6 第一条生产 slice 冻结并仅使用以下权限：
 
 ## M7 Official GUI settings/activity/diagnostics
 
-- `settings.read` 只允许读取 当前 Config Schema 3 的规范化公开设置；不允许直接读取文件、extension-owned
+- `settings.read` 只允许读取 当前 Config Schema 4 的规范化公开设置；不允许直接读取文件、extension-owned
   data 或未来 updater/MCP/Discord/migration setting。
 - `settings.manage` 只允许以 `expectedRevision` 更新同一 closed partial settings DTO，包括 Core
   校验后的 `unity.hubPath` 程序位置偏好；它不授权通用 key/value config、向所选路径写文件、执行

@@ -1,0 +1,169 @@
+{
+    "schema": 1,
+    "currentConfigSchema": 4,
+    "current": {
+        "toml": "schema = 4\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"vibrant\"\nsource_color = \"#112233\"\nmotion = \"reduced\"\n\n[packages]\nshow_prerelease = false\nhidden_repository_ids = []\nhide_local_user_packages = false\n",
+        "getResult": {
+            "configSchema": 4,
+            "revision": 41,
+            "settings": {
+                "appearance": {
+                    "mode": "dark",
+                    "scheme": "vibrant",
+                    "sourceColor": "#112233",
+                    "motion": "reduced"
+                },
+                "packages": {
+                    "showPrerelease": false,
+                    "hiddenRepositoryIds": [],
+                    "hideLocalUserPackages": false
+                },
+                "locale": "ja-JP",
+                "unity": {
+                    "hubPath": null
+                }
+            },
+            "unityHub": {
+                "status": "not_found",
+                "source": "none",
+                "path": null,
+                "configuredPathStatus": "unset"
+            }
+        }
+    },
+    "rejectedUpdates": [
+        {
+            "id": "density-default",
+            "update": {
+                "appearance": {
+                    "density": "default"
+                },
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "density-compact",
+            "update": {
+                "appearance": {
+                    "density": "compact"
+                },
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "density-null",
+            "update": {
+                "appearance": {
+                    "density": null
+                },
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        }
+    ],
+    "rejectedCurrentFiles": [
+        {
+            "id": "config4-density-default",
+            "toml": "schema = 4\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"vibrant\"\nsource_color = \"#112233\"\nmotion = \"reduced\"\ndensity = \"default\"\n\n[packages]\nshow_prerelease = false\nhidden_repository_ids = []\nhide_local_user_packages = false\n",
+            "error": "unknown-field"
+        },
+        {
+            "id": "config4-density-compact",
+            "toml": "schema = 4\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"vibrant\"\nsource_color = \"#112233\"\nmotion = \"reduced\"\ndensity = \"compact\"\n\n[packages]\nshow_prerelease = false\nhidden_repository_ids = []\nhide_local_user_packages = false\n",
+            "error": "unknown-field"
+        }
+    ],
+    "legacyInputs": [
+        {
+            "id": "config1-compact",
+            "schema": 1,
+            "toml": "schema = 1\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nsource_color = \"#112233\"\ndensity = \"compact\"\nmotion = \"reduced\"\n",
+            "expectedRevision": 41,
+            "expectedSettings": {
+                "appearance": {
+                    "mode": "dark",
+                    "scheme": "vibrant",
+                    "sourceColor": "#112233",
+                    "motion": "reduced"
+                },
+                "packages": {
+                    "showPrerelease": false,
+                    "hiddenRepositoryIds": [],
+                    "hideLocalUserPackages": false
+                },
+                "locale": "ja-JP",
+                "unity": {
+                    "hubPath": null
+                }
+            }
+        },
+        {
+            "id": "config2-default",
+            "schema": 2,
+            "toml": "schema = 2\nrevision = 42\nlocale = \"zh-CN\"\n\n[appearance]\nmode = \"light\"\nsource_color = \"#445566\"\ndensity = \"default\"\nmotion = \"system\"\n\n[packages]\nshow_prerelease = true\nhidden_repository_ids = [\"00000000-0000-0000-0000-000000000001\"]\nhide_local_user_packages = true\n",
+            "expectedRevision": 42,
+            "expectedSettings": {
+                "appearance": {
+                    "mode": "light",
+                    "scheme": "vibrant",
+                    "sourceColor": "#445566",
+                    "motion": "system"
+                },
+                "packages": {
+                    "showPrerelease": true,
+                    "hiddenRepositoryIds": [
+                        "00000000-0000-0000-0000-000000000001"
+                    ],
+                    "hideLocalUserPackages": true
+                },
+                "locale": "zh-CN",
+                "unity": {
+                    "hubPath": null
+                }
+            }
+        },
+        {
+            "id": "config3-compact-with-hub",
+            "schema": 3,
+            "toml": "schema = 3\nrevision = 43\nlocale = \"en-US\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"fruit-salad\"\nsource_color = \"#778899\"\ndensity = \"compact\"\nmotion = \"full\"\n\n[packages]\nshow_prerelease = true\nhidden_repository_ids = [\"00000000-0000-0000-0000-000000000001\"]\nhide_local_user_packages = true\n\n[unity]\nhub_path = \"C:\\\\Fixture\\\\Unity Hub\\\\Unity Hub.exe\"\n",
+            "expectedRevision": 43,
+            "expectedSettings": {
+                "appearance": {
+                    "mode": "dark",
+                    "scheme": "fruit-salad",
+                    "sourceColor": "#778899",
+                    "motion": "full"
+                },
+                "packages": {
+                    "showPrerelease": true,
+                    "hiddenRepositoryIds": [
+                        "00000000-0000-0000-0000-000000000001"
+                    ],
+                    "hideLocalUserPackages": true
+                },
+                "locale": "en-US",
+                "unity": {
+                    "hubPath": "C:\\Fixture\\Unity Hub\\Unity Hub.exe"
+                }
+            }
+        }
+    ],
+    "migration": {
+        "preserveRevision": true,
+        "removeOnly": [
+            "appearance.density"
+        ],
+        "v1AdditionalDefaults": [
+            "packages",
+            "appearance.scheme",
+            "unity.hubPath"
+        ],
+        "v2AdditionalDefaults": [
+            "appearance.scheme",
+            "unity.hubPath"
+        ],
+        "v3AbsentUnityDefault": null
+    }
+}

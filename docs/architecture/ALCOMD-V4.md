@@ -259,7 +259,7 @@ ExternalConfig(provider_id)
 ```
 
 核心在 state store 成功初始化并完成恢复后，兼容返回可选 `dataSchema`；当前开发基线为
-State v16，实际版本由 daemon 提供。Config3 已实现并返回可选 `configSchema: 3`；
+State v16，实际版本由 daemon 提供。当前配置格式为 Config4，返回可选 `configSchema: 4`；
 `extensionApi` 返回已实现的 ABI v1 major 与版本化 WIT world。
 这些可选字段按 RPC v1 的兼容增加规则提供，不是 capability，也不属于 M1 客户端必读字段。
 

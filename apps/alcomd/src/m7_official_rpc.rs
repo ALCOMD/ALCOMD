@@ -84,7 +84,6 @@ pub(super) async fn dispatch(
                                 app::ConfigNullableUpdate::Set(value)
                             }
                         },
-                        density: value.density.map(appearance_density_from_rpc),
                         motion: value.motion.map(appearance_motion_from_rpc),
                     }),
                 locale: params.update.locale.map(locale_from_rpc),
@@ -257,10 +256,6 @@ fn settings_result(
                     app::ConfigAppearanceScheme::FruitSalad => rpc::AppearanceScheme::FruitSalad,
                 },
                 source_color: value.settings.appearance.source_color,
-                density: match value.settings.appearance.density {
-                    app::ConfigAppearanceDensity::Default => rpc::AppearanceDensity::Default,
-                    app::ConfigAppearanceDensity::Compact => rpc::AppearanceDensity::Compact,
-                },
                 motion: match value.settings.appearance.motion {
                     app::ConfigAppearanceMotion::System => rpc::AppearanceMotion::System,
                     app::ConfigAppearanceMotion::Full => rpc::AppearanceMotion::Full,
@@ -301,13 +296,6 @@ fn appearance_scheme_from_rpc(value: rpc::AppearanceScheme) -> app::ConfigAppear
         rpc::AppearanceScheme::Content => app::ConfigAppearanceScheme::Content,
         rpc::AppearanceScheme::Rainbow => app::ConfigAppearanceScheme::Rainbow,
         rpc::AppearanceScheme::FruitSalad => app::ConfigAppearanceScheme::FruitSalad,
-    }
-}
-
-fn appearance_density_from_rpc(value: rpc::AppearanceDensity) -> app::ConfigAppearanceDensity {
-    match value {
-        rpc::AppearanceDensity::Default => app::ConfigAppearanceDensity::Default,
-        rpc::AppearanceDensity::Compact => app::ConfigAppearanceDensity::Compact,
     }
 }
 
@@ -361,4 +349,38 @@ fn hub_open_error(id: String, error: app::UnityHubOpenError) -> DispatchAction {
         app::UnityHubOpenError::Internal => rpc::RpcError::internal(OperationId::new().to_string()),
     };
     error_action(Some(id), error, false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn settings_result_exposes_config4_without_the_removed_appearance_field() {
+        let mut snapshot = app::ConfigSnapshot {
+            revision: 91,
+            ..app::ConfigSnapshot::default()
+        };
+        snapshot.settings.appearance.mode = app::ConfigAppearanceMode::Dark;
+        snapshot.settings.appearance.scheme = app::ConfigAppearanceScheme::FruitSalad;
+        snapshot.settings.appearance.source_color = Some("#AABBCC".to_owned());
+        snapshot.settings.appearance.motion = app::ConfigAppearanceMotion::Full;
+        snapshot.settings.unity.hub_path = Some(r"C:\用户\Unity Hub.exe".to_owned());
+        let result = settings_result(snapshot.clone(), app::UnityHubLocation::unavailable(true));
+        assert_eq!(result.config_schema, 4);
+        assert_eq!(
+            result.config_schema,
+            alcomd_store::FileConfigStore::SCHEMA_VERSION
+        );
+        assert_eq!(result.revision, snapshot.revision);
+        assert_eq!(
+            result.settings.unity.hub_path,
+            snapshot.settings.unity.hub_path
+        );
+        assert_eq!(
+            serde_json::to_value(result.settings.appearance).expect("public appearance"),
+            json!({"mode":"dark", "scheme":"fruit-salad", "sourceColor":"#AABBCC", "motion":"full"})
+        );
+    }
 }

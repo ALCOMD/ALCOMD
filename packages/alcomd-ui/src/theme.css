@@ -121,11 +121,6 @@ samp {
     vertical-align: middle;
 }
 
-:root[data-density="compact"] {
-    --alcomd-control-height: 40px;
-    --alcomd-space: 14px;
-}
-
 .alcomd-filter-bar {
     display: flex;
     align-items: center;

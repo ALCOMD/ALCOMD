@@ -89,7 +89,6 @@ export {
     sourceColorFromHct,
     type AppearanceMode,
     type AppearanceSettings,
-    type InterfaceDensity,
     type SourceColor,
     type ThemePreferences,
     type ThemeScheme

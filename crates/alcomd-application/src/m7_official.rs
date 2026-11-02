@@ -29,12 +29,6 @@ pub enum ConfigAppearanceScheme {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ConfigAppearanceDensity {
-    Default,
-    Compact,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConfigAppearanceMotion {
     System,
     Full,
@@ -54,7 +48,6 @@ pub struct ConfigAppearance {
     pub mode: ConfigAppearanceMode,
     pub source_color: Option<String>,
     pub scheme: ConfigAppearanceScheme,
-    pub density: ConfigAppearanceDensity,
     pub motion: ConfigAppearanceMotion,
 }
 
@@ -233,7 +226,6 @@ pub struct ConfigAppearanceUpdate {
     pub mode: Option<ConfigAppearanceMode>,
     pub source_color: ConfigNullableUpdate<String>,
     pub scheme: Option<ConfigAppearanceScheme>,
-    pub density: Option<ConfigAppearanceDensity>,
     pub motion: Option<ConfigAppearanceMotion>,
 }
 
@@ -571,7 +563,6 @@ fn default_snapshot() -> ConfigSnapshot {
                 mode: ConfigAppearanceMode::System,
                 source_color: None,
                 scheme: ConfigAppearanceScheme::Vibrant,
-                density: ConfigAppearanceDensity::Default,
                 motion: ConfigAppearanceMotion::System,
             },
             locale: ConfigLocale::System,
@@ -605,9 +596,6 @@ fn apply_update(
         }
         if let Some(scheme) = appearance.scheme {
             settings.appearance.scheme = scheme;
-        }
-        if let Some(density) = appearance.density {
-            settings.appearance.density = density;
         }
         if let Some(motion) = appearance.motion {
             settings.appearance.motion = motion;
@@ -647,7 +635,6 @@ fn update_is_empty(update: &ConfigUpdate) -> bool {
         && update.appearance.as_ref().is_none_or(|value| {
             value.mode.is_none()
                 && value.scheme.is_none()
-                && value.density.is_none()
                 && value.motion.is_none()
                 && matches!(value.source_color, ConfigNullableUpdate::Unchanged)
         })
@@ -1460,7 +1447,6 @@ mod tests {
                 mode: Some(ConfigAppearanceMode::Dark),
                 source_color: ConfigNullableUpdate::Set("#bad".into()),
                 scheme: None,
-                density: None,
                 motion: None,
             }),
             locale: None,

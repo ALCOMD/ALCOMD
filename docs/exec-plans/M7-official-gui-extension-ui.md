@@ -22,8 +22,9 @@ Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据�
   发布前初始 Schema 整理是独立审计任务，不自动清空数据库、Plan、Operation 或恢复证据。
   本轮 hello 修复只纠正已有 `dataSchema` 事实值与内部构造参数，不改 wire DTO/Schema 形状、
   RPC major 或 capability，属于非破坏性修正；由 dispatcher、兼容形状和实际 SQLite 回归验证。
-- 当前设置合同为 **Config3**。application 持有权限、CAS、字段校验、候选缓存和取消一致性；
-  `ConfigStore` 窄 port 的文件适配器位于 store，负责 strict 16 KiB TOML、Config1/2→3 和
+- 当前设置合同为 **Config4**，按 2026-11-02 明确批准彻底删除 GUI 紧凑模式及 `appearance.density`。
+  application 持有权限、CAS、字段校验、候选缓存和取消一致性；
+  `ConfigStore` 窄 port 的文件适配器位于 store，负责 strict 16 KiB TOML、Config1–3→4 和
   原子替换/恢复。普通设置修改即保存，以当前连接内的串行窄 PATCH 协调；失败保留意图、
   显式 Retry 先重读，未知已提交不重复写，换连接停止旧队列，不保留全局 Save/Discard 栏。
 - 主题编辑器保持独立 Save/Cancel、实时预览和冲突三方合并；仅明确保存 sourceColor/mode/scheme。
@@ -42,7 +43,7 @@ Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据�
   业务控件恢复可用及 Material updateComplete，不因修复焦点而放宽 disabled/eligibility。
   MenuItem 统一消费公开 click/Enter/Space 选择并只在 closed 后派发一次；Escape 不派发。
   Select 由真实 busy 状态控制禁用，选中标签按公开生命周期同步，不增加输入/设置写入。
-- Unity Hub 位置复用 settings.get/update、settings.read/manage 与 Config3 `unity.hubPath`；
+- Unity Hub 位置复用 settings.get/update、settings.read/manage 与 Config4 `unity.hubPath`；
   有界只读发现和路径规范化由 platform 提供，不加注册表/PATH/Hub CLI 扫描。路径草稿 Enter
   或离开操作组保存，Esc 撤销，IME/同组焦点切换/无修改不写；选择和自动查找共享串行 CAS。
 - `unity.hub.open` / `unity.hub.open.v1` 要求 settings.read 和独立 unity.hub.open，
@@ -398,22 +399,23 @@ route 另实现 `confirmation-required`、`operation-running`、`success`、`fai
 高影响写入保持 `Plan -> review daemon ChangeSet/safe risk summary -> explicit Apply -> OperationId -> progress -> terminal
 result`。stale/revision conflict 回到明确 review，不静默重新 Plan；route/window close 不等于取消 Operation。
 
-### Settings Config3 与存储权威
+### Settings Config4 与存储权威
 
-当前活动格式为 `specs/config/settings-v3.md` / `.schema.json`。closed 字段为：
-appearance mode/sourceColor/scheme/density/motion、locale、packages 三项偏好及可清除的 unity.hubPath；
+当前活动格式为 `specs/config/settings-v4.md` / `.schema.json`。closed 字段为：
+appearance mode/sourceColor/scheme/motion、locale、packages 三项偏好及可清除的 unity.hubPath；
 精确枚举、边界和 null 语义以现有机器合同为准。所有非 nullable PATCH 字段显式 null 整次拒绝，
 sourceColor:null 和 hubPath:null 分别表示清除颜色和恢复 Hub 默认发现。
 
-settings.get/update 要求原 settings.read/manage，返回 Config3、revision、完整归一化设置及
+settings.get/update 要求原 settings.read/manage，返回 Config4、revision、完整归一化设置及
 派生 unityHub 证据；revision checked monotonic u64，文件 strict UTF-8/unknown-field fail closed，
 最多 16 KiB，确定性序列化、可恢复原子替换。派生文件状态不推进 revision，保存后状态读取
 失败不把已提交设置伪报为失败。application 只经 ConfigStore port 保存归一化快照，Store
 负责文件格式和恢复，不增加配置数据库表、通用 key/value、GUI 直写或第二套权威。
 
 主题确认、普通即时设置和 Hub 配置共用 UI 串行 CAS；状态读取、能力协商和故障恢复仍通过
-typed client/RPC。当前 hello.configSchema=3。Config1/2 只作为已有迁移输入，不是当前写入或
-返回格式；开发兼容策略按 A-034，发布前另行审计这些历史输入的保留需求。
+typed client/RPC。当前 hello.configSchema=4。Config1–3 只作为保留原数据的迁移输入，不是当前写入或
+返回格式；旧 density 校验后丢弃，保留原 revision 与其他设置，Config4 不接受该字段。
+开发兼容策略按 A-034，发布前另行审计这些历史输入的保留需求。
 
 ### Activity and Diagnostics
 
@@ -562,7 +564,7 @@ fixes and defer uncertain contract-dependent work without blocking unrelated cor
 5. **H4 Extensions/Portable UI（阶段性人工验收通过，保留非阻塞体验问题）**：保留Extensions既有用户概念和utility归属；permission/quarantine/Portable UI位于detail，host
    chrome与renderer全部使用共同Material components；不改 Portable UI protocol。所有者于 2026-11-02 认可安装/启停/卸载、权限管理、同窗口功能页与共享错误可读性；保留表单、超时、外部断线和 M8/M9 正式业务未覆盖项，不表示整个 Visual Gate 4/M7 完成。
 6. **H5 utilities/observability（已批准，实施中）**：审计已有 grouped Settings、Log内Activity/Diagnostics与footer About/version，
-   只补真实缺失功能及必要整改，保留当前 Config3/A-026权限分离，复用共享 Material、错误显示与只读 `displayPath`。
+   只补真实缺失功能及必要整改，保留 A-026 权限分离，复用共享 Material、错误显示与只读 `displayPath`；当前 Config4 窄变更见下方批准记录。
    不新建无意义导航/技术卡片，不把既有非阻塞体验待办批量转为阻塞；候选完成后交由所有者检查。H6/H7 与推送仍未授权。
 7. **H6 responsive/a11y/Playwright regression（未批准）**：覆盖已批准 minimum-change user model 的 structural continuity、grouping/workspace/
    action placement、Material element presence和observable interaction、theme propagation、wide/narrow/200%/reduced motion；
@@ -591,6 +593,18 @@ H5 本地候选 `c768289` 已完成 GUI check（1030 条消息）与一次 relea
 原 Core 持续运行，新 GUI 已实际打开；构建前后五组公开状态一致，期间更早的 Unity 记录变化单独保留。
 交付 Settings、Log、About 三项真实窗口清单并等待 H5 人工确认；未执行完整 Rust/浏览器套件或远端验证，不进入 H6/H7、不推送。
 证据与未覆盖项见 [H5 候选记录](../testing/m7-h5-utilities-20261102.md)。
+
+#### H5 已批准差异：移除紧凑模式与 Config4（2026-11-02）
+
+项目所有者已批准完整删除 GUI 紧凑模式及公开 `settings.get/update` 的 `appearance.density`，
+当前设置合同升级为 Config Schema 4；不保留隐藏开关、旧字段别名或两套当前模型。Config4 文件、完整响应及
+partial update 均不含 density，显式提供该字段作为未知字段拒绝；现有 settings.read/manage、串行 CAS、
+16 KiB 文件上限、原子发布及恢复纪律保持。无需新 RPC、capability、权限、State Schema 或生产依赖。
+
+Config1–3 仅作为既有启动迁移输入：按各自历史合同校验后丢弃旧 density，保留其余有效设置和原 revision；
+v1/v2 仍仅补各自原先缺少的 packages/scheme 默认值。迁移在 ready 前完成，不算用户更新，不推进 revision；
+Config4 当前写入与公开响应只使用新的唯一模型。当前规范及 Schema 原位转向 settings-v4，旧版本明确标为迁移历史。
+验证只覆盖字段拒绝、旧格式迁移/其余设置及 revision 保留、GUI 紧凑入口与样式移除及相关回归；不重复无关全量或远端检查。
 
 ## 技术收尾与 H2-B 顺序授权（2026-10-31）
 

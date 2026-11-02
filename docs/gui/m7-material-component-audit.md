@@ -127,7 +127,6 @@ A-033 的 v3 user-model continuity、真实 v4 用户任务和项目所有者批
 `applyAppearance()` 继续只设置：
 
 - `data-appearance`；
-- `data-density`；
 - `data-source-color`。
 
 H0 的 `theme.css` 已让 Material components 与 semantic layout 同时消费正式 `--md-sys-color-*`、type和shape token；旧变量

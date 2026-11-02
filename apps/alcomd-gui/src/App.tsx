@@ -164,8 +164,7 @@ export function App({ client = guiRpcClient }: AppProps) {
         setAppearance({
             mode: visibleTheme.mode,
             sourceColor,
-            scheme: visibleTheme.scheme,
-            density: value.settings.appearance.density === "compact" ? "compact" : "comfortable"
+            scheme: visibleTheme.scheme
         });
         const nextLocale = value.settings.locale === "system"
             ? preferredLocale(navigator.language)

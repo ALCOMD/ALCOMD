@@ -4,6 +4,8 @@
     "title": "ALCOMD Config Schema 2 proposal",
     "x-alcomd-publication": "approved-contract-first",
     "x-alcomd-production-wiring-created": true,
+    "deprecated": true,
+    "x-alcomd-status": "historical-config2-proposal-not-current-model",
     "type": "object",
     "additionalProperties": false,
     "required": ["schema", "revision", "appearance", "packages", "locale"],

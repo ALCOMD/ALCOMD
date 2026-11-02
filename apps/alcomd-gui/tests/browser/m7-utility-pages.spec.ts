@@ -322,15 +322,16 @@ test("utility actions use modal dialogs and cancel clears drafts and returns foc
     }
 });
 
-test("desktop Settings uses labeled language and animation rows with Theme in its header and a compact control", async ({ page }) => {
+test("desktop Settings uses labeled language and animation rows with Theme in its header and no density mode", async ({ page }) => {
     await openHarness(page, "/settings");
     await expectHeading(page, "Settings");
     const fields = page.locator(".settings-editor md-filled-select");
     await expect(fields).toHaveCount(2);
     await expect(page.getByRole("region", { name: "Appearance", exact: true }).getByRole("button", { name: "Theme", exact: true })).toBeVisible();
     await expect(page.getByRole("combobox", { name: "GUI animation", exact: true })).toBeVisible();
-    await expect(page.getByRole("checkbox", { name: "Compact GUI", exact: true })).toBeVisible();
+    await expect(page.getByRole("checkbox", { name: "Compact GUI", exact: true })).toHaveCount(0);
     await expect(page.locator("#settings-density")).toHaveCount(0);
+    await expect(page.locator("html")).not.toHaveAttribute("data-density");
     const bounds = await fields.evaluateAll((elements) => elements.map((element) => {
         const rect = element.getBoundingClientRect();
         return { id: element.id, left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom };
@@ -346,32 +347,32 @@ test("desktop Settings uses labeled language and animation rows with Theme in it
         }
     }
     const appearanceRows = page.getByRole("region", { name: "Appearance", exact: true }).locator(".settings-section-content > div");
-    await expect(appearanceRows).toHaveCount(3);
+    await expect(appearanceRows).toHaveCount(2);
     const rows = await appearanceRows.evaluateAll((elements) => elements.map((element) => {
         const rect = element.getBoundingClientRect();
         return { top: rect.top, bottom: rect.bottom };
     }));
     expect(rows[0]!.bottom).toBeLessThanOrEqual(rows[1]!.top);
-    expect(rows[1]!.bottom).toBeLessThanOrEqual(rows[2]!.top);
 });
 
 test("ordinary Settings save before refresh and remain accepted across navigation", async ({ page }) => {
     await openHarness(page, "/settings");
-    const compact = page.getByRole("checkbox", { name: "Compact GUI", exact: true });
-    await expect(compact).not.toBeChecked();
-    await compact.check();
+    const prerelease = page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true });
+    await expect(prerelease).not.toBeChecked();
+    await prerelease.check();
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
-    await expect(page.locator("html")).toHaveAttribute("data-density", "compact");
+    await expect(page.locator("html")).not.toHaveAttribute("data-density");
     const refresh = page.locator(".utility-workspace-toolbar").getByRole("button", { name: "Refresh", exact: true });
     await expect(refresh).toBeEnabled();
     await refresh.click();
-    await expect(compact).toBeChecked();
+    await expect(prerelease).toBeChecked();
     await navigationItem(page, "Projects").click();
     await expectHeading(page, "Projects");
     await expect(page.getByRole("dialog", { name: "Discard unsaved changes?", exact: true })).toHaveCount(0);
     await navigationItem(page, "Settings").click();
-    await expect(compact).toBeChecked();
+    await expect(prerelease).toBeChecked();
     expect(await page.evaluate(() => window.settingsWrites)).toEqual([{ expectedRevision: 7, revision: 8 }]);
+    expect(await page.evaluate(() => window.settingsRequests)).toEqual([{ expectedRevision: 7, update: { packages: { showPrerelease: true } } }]);
 });
 
 test("utility desktop evidence includes the full application window", async ({ page }) => {

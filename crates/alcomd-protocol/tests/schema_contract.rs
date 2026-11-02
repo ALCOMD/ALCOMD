@@ -237,9 +237,9 @@ fn m7_official_gui_contract_freezes_only_the_approved_additions() {
     assert_eq!(contract["x-alcomd-redaction"]["rawDiagnosticExport"], false);
 
     let settings: Value = serde_json::from_str(include_str!(
-        "../../../specs/config/settings-v3.schema.json"
+        "../../../specs/config/settings-v4.schema.json"
     ))
-    .expect("Config Schema 3 must be valid JSON");
+    .expect("Config Schema 4 must be valid JSON");
     assert_eq!(
         settings["$schema"],
         "https://json-schema.org/draft/2020-12/schema"
@@ -249,14 +249,14 @@ fn m7_official_gui_contract_freezes_only_the_approved_additions() {
         settings["$defs"]["partialUpdate"]["additionalProperties"],
         false
     );
-    assert_eq!(settings["properties"]["schema"]["const"], 3);
+    assert_eq!(settings["properties"]["schema"]["const"], 4);
     assert_eq!(
         contract["$defs"]["settingsGetResult"]["properties"]["configSchema"]["const"],
-        3
+        4
     );
     assert_eq!(
         contract["$defs"]["settingsGetResult"]["properties"]["settings"]["$ref"],
-        "https://alcomd.cqmhv.com/schema/config/settings-v3.json#/$defs/settings"
+        "https://alcomd.cqmhv.com/schema/config/settings-v4.json#/$defs/settings"
     );
     for historical in [
         include_str!("../../../specs/config/settings-v1.schema.json"),
@@ -379,7 +379,7 @@ fn theme_scheme_contract_matches_typed_rpc_and_rejects_unknown_or_null_values() 
     use alcomd_protocol::{AppearanceScheme, AppearanceSettingsUpdate};
 
     let settings: Value = serde_json::from_str(include_str!(
-        "../../../specs/config/settings-v3.schema.json"
+        "../../../specs/config/settings-v4.schema.json"
     ))
     .expect("current Config schema");
     let schemes = settings["$defs"]["scheme"]["enum"]
@@ -431,7 +431,7 @@ fn motion_contract_and_typed_updates_roundtrip_three_values_and_reject_unknown_i
             .is_none()
     );
     let settings: Value = serde_json::from_str(include_str!(
-        "../../../specs/config/settings-v3.schema.json"
+        "../../../specs/config/settings-v4.schema.json"
     ))
     .expect("current Config schema");
     assert_eq!(
@@ -479,6 +479,58 @@ fn motion_contract_and_typed_updates_roundtrip_three_values_and_reject_unknown_i
         assert_eq!(
             historical["$defs"]["motion"]["enum"],
             json!(["system", "reduced"])
+        );
+    }
+}
+
+#[test]
+fn config_v4_public_settings_and_updates_omit_and_reject_removed_density() {
+    use alcomd_protocol::{AppearanceSettings, AppearanceSettingsUpdate, SettingsUpdateParams};
+
+    assert_eq!(alcomd_protocol::CONFIG_SCHEMA_VERSION, 4);
+    let appearance =
+        json!({"mode":"dark", "scheme":"fidelity", "sourceColor":"#AABBCC", "motion":"reduced"});
+    let typed: AppearanceSettings =
+        serde_json::from_value(appearance.clone()).expect("current appearance");
+    assert_eq!(
+        serde_json::to_value(typed).expect("current serialized appearance"),
+        appearance
+    );
+    let schema: Value = serde_json::from_str(include_str!(
+        "../../../specs/config/settings-v4.schema.json"
+    ))
+    .expect("Config4 schema");
+    for properties in [
+        &schema["$defs"]["appearance"]["properties"],
+        &schema["$defs"]["partialUpdate"]["properties"]["appearance"]["properties"],
+    ] {
+        assert!(properties.get("density").is_none());
+    }
+    assert!(schema["$defs"].get("density").is_none());
+    for density in [json!("default"), json!("compact"), Value::Null, json!(true)] {
+        let mut with_removed_field = appearance.clone();
+        with_removed_field["density"] = density.clone();
+        assert!(serde_json::from_value::<AppearanceSettings>(with_removed_field).is_err());
+        assert!(
+            serde_json::from_value::<AppearanceSettingsUpdate>(json!({"density":density})).is_err()
+        );
+        assert!(serde_json::from_value::<SettingsUpdateParams>(json!({"expectedRevision":1,"update":{"appearance":{"density":density},"locale":"ja-JP"}})).is_err());
+    }
+    for historical in [
+        include_str!("../../../specs/config/settings-v1.schema.json"),
+        include_str!("../../../specs/config/settings-v2.schema.json"),
+        include_str!("../../../specs/config/settings-v3.schema.json"),
+    ] {
+        let historical: Value = serde_json::from_str(historical).expect("frozen migration shape");
+        assert_eq!(
+            historical["$defs"]["density"]["enum"],
+            json!(["default", "compact"])
+        );
+        assert!(
+            historical["$defs"]["appearance"]["required"]
+                .as_array()
+                .expect("legacy required fields")
+                .contains(&json!("density"))
         );
     }
 }
@@ -563,9 +615,9 @@ fn unity_hub_contract_preserves_nullable_preference_and_separate_evidence() {
 
     let contract = schema("m7-official-gui");
     let settings: Value = serde_json::from_str(include_str!(
-        "../../../specs/config/settings-v3.schema.json"
+        "../../../specs/config/settings-v4.schema.json"
     ))
-    .expect("Config3");
+    .expect("Config4");
     assert_eq!(
         contract["$defs"]["settingsGetResult"]["required"],
         json!(["configSchema", "revision", "settings", "unityHub"])
@@ -586,7 +638,7 @@ fn unity_hub_contract_preserves_nullable_preference_and_separate_evidence() {
     .expect("approved proposal");
     let mut expected = proposal["schemaFragments"]["$defs"]["hubLocation"].clone();
     expected["properties"]["path"] =
-        json!({"$ref":"https://alcomd.cqmhv.com/schema/config/settings-v3.json#/$defs/hubPath"});
+        json!({"$ref":"https://alcomd.cqmhv.com/schema/config/settings-v4.json#/$defs/hubPath"});
     assert_eq!(contract["$defs"]["unityHubLocation"], expected);
 }
 
@@ -1142,7 +1194,7 @@ fn hello_schema_adds_extension_api_and_config_schema_as_optional() {
     );
     assert_eq!(
         response["properties"]["result"]["properties"]["configSchema"]["const"],
-        3
+        4
     );
     assert_eq!(
         response["properties"]["result"]["additionalProperties"],

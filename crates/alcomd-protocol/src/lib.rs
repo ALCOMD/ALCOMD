@@ -2450,7 +2450,7 @@ pub struct ProjectsApplyUnityMigrationResult {
     pub replayed: bool,
 }
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 3;
+pub const CONFIG_SCHEMA_VERSION: u32 = 4;
 pub const MAX_OFFICIAL_GUI_PAGE_LIMIT: u32 = 200;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2473,13 +2473,6 @@ pub enum AppearanceScheme {
     Content,
     Rainbow,
     FruitSalad,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AppearanceDensity {
-    Default,
-    Compact,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2508,7 +2501,6 @@ pub struct AppearanceSettings {
     pub mode: AppearanceMode,
     pub scheme: AppearanceScheme,
     pub source_color: Option<String>,
-    pub density: AppearanceDensity,
     pub motion: AppearanceMotion,
 }
 
@@ -2675,12 +2667,6 @@ pub struct AppearanceSettingsUpdate {
     pub mode: Option<AppearanceMode>,
     #[serde(default, skip_serializing_if = "NullableUpdate::is_unchanged")]
     pub source_color: NullableUpdate<String>,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_optional_non_null",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub density: Option<AppearanceDensity>,
     #[serde(
         default,
         deserialize_with = "deserialize_optional_non_null",

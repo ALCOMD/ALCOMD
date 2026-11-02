@@ -331,7 +331,7 @@ test("a revision conflict rereads settings and retries only local theme fields o
     expect(await page.evaluate(() => window.settingsReads)).toBeGreaterThan(reads);
     expect(await page.evaluate(() => window.settingsRequests.map((request) => request.expectedRevision))).toEqual([7, 8]);
     expect(await page.evaluate(() => window.settingsRequests.at(-1)!.update)).toEqual({ appearance: { sourceColor: "#E040A0", mode: "dark", scheme: "neutral" } });
-    await expect(page.getByRole("checkbox", { name: "Compact GUI", exact: true })).toBeChecked();
+    await expect(page.locator("#settings-motion")).toHaveJSProperty("value", "reduced");
     await expect(page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true })).toBeChecked();
     await expect(page.locator("html")).toHaveAttribute("data-source-color", "#E040A0");
     await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
@@ -342,7 +342,7 @@ test("a revision conflict rereads settings and retries only local theme fields o
 
 test("saving a Theme draft preserves ordinary settings that were already saved", async ({ page }) => {
     await openSettings(page, { "theme-mode": "light" });
-    await page.getByRole("checkbox", { name: "Compact GUI", exact: true }).check();
+    await selectThemeOption(page, "settings-motion", "full");
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
     await page.getByRole("checkbox", { name: "Hide local User Packages", exact: true }).check();
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(2);
@@ -351,8 +351,8 @@ test("saving a Theme draft preserves ordinary settings that were already saved",
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(2);
     await saveTheme(page);
     await expect(page.getByRole("checkbox", { name: "Hide local User Packages", exact: true })).toBeChecked();
-    await expect(page.getByRole("checkbox", { name: "Compact GUI", exact: true })).toBeChecked();
-    await expect(page.locator("html")).toHaveAttribute("data-density", "compact");
+    await expect(page.locator("#settings-motion")).toHaveJSProperty("value", "full");
+    await expect(page.locator("html")).toHaveAttribute("data-motion", "full");
     expect(await page.evaluate(() => window.settingsRequests.at(-1)!.expectedRevision)).toBe(9);
     expect(await page.evaluate(() => window.settingsRequests.at(-1)!.update)).toEqual({ appearance: { sourceColor: "#E040A0", mode: "light", scheme: "vibrant" } });
     await expect(page.locator("html")).toHaveAttribute("data-source-color", "#E040A0");

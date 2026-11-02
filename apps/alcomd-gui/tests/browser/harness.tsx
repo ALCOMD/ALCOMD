@@ -162,12 +162,12 @@ class DeterministicGuiClient implements GuiRpcClient {
     private unityReady: Promise<void> | undefined;
     private unityDiscoveryComplete = false;
     private settings: SettingsGetResult = {
-        configSchema: 3,
+        configSchema: 4,
         unityHub: { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" },
         revision: 7,
         settings: {
             unity: { hubPath: null },
-            appearance: { mode: "system", sourceColor: null, scheme: "vibrant", density: "default", motion: "system" },
+            appearance: { mode: "system", sourceColor: null, scheme: "vibrant", motion: "system" },
             locale: "en-US",
             packages: {
                 showPrerelease: false,
@@ -374,7 +374,7 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (query.get("theme-save") === "conflict-once" && !this.themeSaveRejected) {
             this.themeSaveRejected = true;
             this.settings.revision += 1;
-            this.settings.settings.appearance.density = "compact";
+            this.settings.settings.appearance.motion = "reduced";
             this.settings.settings.appearance.mode = "dark";
             this.settings.settings.appearance.scheme = "neutral";
             this.settings.settings.packages.showPrerelease = true;
@@ -388,7 +388,7 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (expectedRevision !== this.settings.revision) return Promise.reject({ code: "revision_conflict" });
         if (update.unity?.hubPath && query.has("hub-normalize")) update = { ...update, unity: { hubPath: "C:\\Normalized\\Unity Hub.exe" } };
         this.settings = {
-            configSchema: 3,
+            configSchema: 4,
             unityHub: this.hubLocation(update.unity?.hubPath === undefined ? this.settings.settings.unity.hubPath : update.unity.hubPath),
             revision: expectedRevision + 1,
             settings: {

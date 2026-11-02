@@ -5,9 +5,9 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use alcomd_application::{
-    ConfigAppearance, ConfigAppearanceDensity, ConfigAppearanceMode, ConfigAppearanceMotion,
-    ConfigAppearanceScheme, ConfigLocale, ConfigPackageSettings, ConfigSettings, ConfigSnapshot,
-    ConfigStore, ConfigStoreError, ConfigUnitySettings,
+    ConfigAppearance, ConfigAppearanceMode, ConfigAppearanceMotion, ConfigAppearanceScheme,
+    ConfigLocale, ConfigPackageSettings, ConfigSettings, ConfigSnapshot, ConfigStore,
+    ConfigStoreError, ConfigUnitySettings,
 };
 
 const MAX_SETTINGS_BYTES: u64 = 16 * 1024;
@@ -19,6 +19,8 @@ pub struct FileConfigStore {
 }
 
 impl FileConfigStore {
+    pub const SCHEMA_VERSION: u32 = 4;
+
     #[must_use]
     pub fn new(path: PathBuf) -> Self {
         Self { path }
@@ -55,7 +57,7 @@ fn initialize_settings_file(path: &Path) -> Result<(), ConfigStoreError> {
         return Ok(());
     }
     let (snapshot, schema) = read_settings_with_schema(path)?;
-    if schema < 3 {
+    if schema < u64::from(FileConfigStore::SCHEMA_VERSION) {
         publish_settings(path, &serialize_settings(&snapshot))?;
     }
     Ok(())
@@ -101,7 +103,7 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
     let mut mode = None;
     let mut source_color = None;
     let mut scheme = None;
-    let mut density = None;
+    let mut legacy_density = false;
     let mut motion = None;
     let mut show_prerelease = None;
     let mut hidden_repository_ids = None;
@@ -143,7 +145,10 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
                 source_color = Some(value);
             }
             ("appearance", "scheme") => scheme = Some(parse_scheme(parse_string(value)?)?),
-            ("appearance", "density") => density = Some(parse_density(parse_string(value)?)?),
+            ("appearance", "density") => {
+                validate_legacy_density(parse_string(value)?)?;
+                legacy_density = true;
+            }
             ("appearance", "motion") => motion = Some(parse_motion(parse_string(value)?)?),
             ("packages", "show_prerelease") => show_prerelease = Some(parse_bool(value)?),
             ("packages", "hidden_repository_ids") => {
@@ -156,7 +161,9 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
         }
     }
     let schema = schema.ok_or(ConfigStoreError::Corrupt)?;
-    if !matches!(schema, 1..=3) {
+    if !(1..=u64::from(FileConfigStore::SCHEMA_VERSION)).contains(&schema)
+        || legacy_density != (schema < 4)
+    {
         return Err(ConfigStoreError::Corrupt);
     }
     if schema < 3 && seen.contains("section:unity") {
@@ -206,7 +213,6 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
                 mode: mode.ok_or(ConfigStoreError::Corrupt)?,
                 source_color,
                 scheme,
-                density: density.ok_or(ConfigStoreError::Corrupt)?,
                 motion: motion.ok_or(ConfigStoreError::Corrupt)?,
             },
             locale: locale.ok_or(ConfigStoreError::Corrupt)?,
@@ -229,13 +235,13 @@ fn serialize_settings(snapshot: &ConfigSnapshot) -> Vec<u8> {
         .as_ref()
         .map_or_else(String::new, |value| format!("source_color = \"{value}\"\n"));
     let mut contents = format!(
-        "schema = 3\nrevision = {}\nlocale = \"{}\"\n\n[appearance]\nmode = \"{}\"\n{}scheme = \"{}\"\ndensity = \"{}\"\nmotion = \"{}\"\n\n[packages]\nshow_prerelease = {}\nhidden_repository_ids = [{}]\nhide_local_user_packages = {}\n",
+        "schema = {}\nrevision = {}\nlocale = \"{}\"\n\n[appearance]\nmode = \"{}\"\n{}scheme = \"{}\"\nmotion = \"{}\"\n\n[packages]\nshow_prerelease = {}\nhidden_repository_ids = [{}]\nhide_local_user_packages = {}\n",
+        FileConfigStore::SCHEMA_VERSION,
         snapshot.revision,
         locale_str(snapshot.settings.locale),
         mode_str(snapshot.settings.appearance.mode),
         source,
         scheme_str(snapshot.settings.appearance.scheme),
-        density_str(snapshot.settings.appearance.density),
         motion_str(snapshot.settings.appearance.motion),
         snapshot.settings.packages.show_prerelease,
         snapshot
@@ -398,10 +404,9 @@ fn parse_scheme(value: &str) -> Result<ConfigAppearanceScheme, ConfigStoreError>
         _ => Err(ConfigStoreError::Corrupt),
     }
 }
-fn parse_density(value: &str) -> Result<ConfigAppearanceDensity, ConfigStoreError> {
+fn validate_legacy_density(value: &str) -> Result<(), ConfigStoreError> {
     match value {
-        "default" => Ok(ConfigAppearanceDensity::Default),
-        "compact" => Ok(ConfigAppearanceDensity::Compact),
+        "default" | "compact" => Ok(()),
         _ => Err(ConfigStoreError::Corrupt),
     }
 }
@@ -440,12 +445,6 @@ fn scheme_str(value: ConfigAppearanceScheme) -> &'static str {
         ConfigAppearanceScheme::Content => "content",
         ConfigAppearanceScheme::Rainbow => "rainbow",
         ConfigAppearanceScheme::FruitSalad => "fruit-salad",
-    }
-}
-fn density_str(value: ConfigAppearanceDensity) -> &'static str {
-    match value {
-        ConfigAppearanceDensity::Default => "default",
-        ConfigAppearanceDensity::Compact => "compact",
     }
 }
 fn motion_str(value: ConfigAppearanceMotion) -> &'static str {
@@ -563,8 +562,8 @@ mod tests {
         assert_eq!(parse_settings(&oversized), Err(ConfigStoreError::Corrupt));
         for schema in [1, 2] {
             let mut legacy = original_text
-                .replace("schema = 3", &format!("schema = {schema}"))
-                .replace("scheme = \"vibrant\"\n", "");
+                .replace("schema = 4", &format!("schema = {schema}"))
+                .replace("scheme = \"vibrant\"\n", "density = \"default\"\n");
             if schema == 1 {
                 legacy = legacy
                     .split("[packages]")
@@ -655,7 +654,7 @@ mod tests {
             let mut snapshot = defaults.clone();
             snapshot.settings.appearance.motion = motion;
             let encoded = String::from_utf8(serialize_settings(&snapshot)).expect("utf8");
-            assert!(encoded.starts_with("schema = 3\n"));
+            assert!(encoded.starts_with("schema = 4\n"));
             assert!(encoded.contains(&format!("motion = \"{text}\"\n")));
             assert_eq!(parse_settings(&encoded), Ok(snapshot));
         }
@@ -675,8 +674,8 @@ mod tests {
         );
         for schema in [1, 2] {
             let legacy = encoded
-                .replace("schema = 3", &format!("schema = {schema}"))
-                .replace("scheme = \"vibrant\"\n", "");
+                .replace("schema = 4", &format!("schema = {schema}"))
+                .replace("scheme = \"vibrant\"\n", "density = \"default\"\n");
             let legacy = if schema == 1 {
                 legacy
                     .split("[packages]")
@@ -725,7 +724,6 @@ mod tests {
                         mode: Some(ConfigAppearanceMode::Dark),
                         source_color: ConfigNullableUpdate::Set("#E040A0".to_owned()),
                         scheme: Some(ConfigAppearanceScheme::Neutral),
-                        density: Some(ConfigAppearanceDensity::Compact),
                         motion: None,
                     }),
                     locale: Some(ConfigLocale::JaJp),
@@ -753,7 +751,6 @@ mod tests {
                             mode: None,
                             source_color: ConfigNullableUpdate::Unchanged,
                             scheme: None,
-                            density: None,
                             motion: Some(motion),
                         }),
                         locale: None,
@@ -800,7 +797,7 @@ mod tests {
             let mut snapshot = default_snapshot();
             snapshot.settings.appearance.scheme = scheme;
             let encoded = String::from_utf8(serialize_settings(&snapshot)).expect("utf8");
-            assert!(encoded.starts_with("schema = 3\n"));
+            assert!(encoded.starts_with("schema = 4\n"));
             assert!(encoded.contains(&format!("scheme = \"{value}\"\n")));
             assert_eq!(parse_settings(&encoded), Ok(snapshot));
         }
@@ -820,7 +817,14 @@ mod tests {
         }
         for schema in [1, 2] {
             assert_eq!(
-                parse_settings(&encoded.replace("schema = 3", &format!("schema = {schema}"))),
+                parse_settings(
+                    &encoded
+                        .replace("schema = 4", &format!("schema = {schema}"))
+                        .replace(
+                            "scheme = \"vibrant\"\n",
+                            "scheme = \"vibrant\"\ndensity = \"default\"\n"
+                        )
+                ),
                 Err(ConfigStoreError::Corrupt),
                 "a newer field is invalid in an older schema"
             );
@@ -849,7 +853,6 @@ mod tests {
                         mode: Some(ConfigAppearanceMode::Dark),
                         source_color: ConfigNullableUpdate::Set("#AABBCC".to_owned()),
                         scheme: Some(ConfigAppearanceScheme::Expressive),
-                        density: Some(ConfigAppearanceDensity::Compact),
                         motion: Some(ConfigAppearanceMotion::Reduced),
                     }),
                     locale: Some(ConfigLocale::ZhCn),
@@ -907,7 +910,7 @@ mod tests {
         let migrated = app
             .get_settings(&AccessContext::local_owner())
             .await
-            .expect("read v3");
+            .expect("read v4");
         assert_eq!(migrated.revision, 7);
         assert!(!migrated.settings.packages.show_prerelease);
         assert!(migrated.settings.packages.hidden_repository_ids.is_empty());
@@ -921,10 +924,6 @@ mod tests {
             ConfigAppearanceMode::Dark
         );
         assert_eq!(
-            migrated.settings.appearance.density,
-            ConfigAppearanceDensity::Compact
-        );
-        assert_eq!(
             migrated.settings.appearance.motion,
             ConfigAppearanceMotion::Reduced
         );
@@ -932,13 +931,13 @@ mod tests {
         assert!(
             fs::read_to_string(&path)
                 .expect("read file")
-                .starts_with("schema = 3\n")
+                .starts_with("schema = 4\n")
         );
         let _ = fs::remove_dir_all(root);
     }
 
     #[tokio::test]
-    async fn startup_migrates_v2_preserving_every_setting_and_revision() {
+    async fn startup_migrates_v2_preserving_retained_settings_and_revision() {
         let root = temporary_path("theme-v2-migration");
         let path = root.join("settings.toml");
         let _ = fs::remove_dir_all(&root);
@@ -959,7 +958,7 @@ mod tests {
         );
         app.initialize_settings()
             .await
-            .expect("publish v3 migration");
+            .expect("publish v4 migration");
         assert_eq!(
             app.get_settings(&AccessContext::local_owner()).await,
             Ok(expected.clone())
@@ -978,10 +977,6 @@ mod tests {
             ConfigAppearanceMode::Light
         );
         assert_eq!(
-            expected.settings.appearance.density,
-            ConfigAppearanceDensity::Compact
-        );
-        assert_eq!(
             expected.settings.appearance.motion,
             ConfigAppearanceMotion::Reduced
         );
@@ -990,7 +985,7 @@ mod tests {
         assert_eq!(expected.settings.packages.hidden_repository_ids.len(), 2);
         assert!(expected.settings.packages.hide_local_user_packages);
         assert_eq!(
-            fs::read(&path).expect("canonical v3"),
+            fs::read(&path).expect("canonical v4"),
             serialize_settings(&expected)
         );
         assert!(!path.with_extension("toml.new").exists());
@@ -1003,6 +998,142 @@ mod tests {
         );
         restarted.initialize_settings().await.expect("restart");
         assert_eq!(restarted.candidate_settings().await, Ok(expected));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn startup_migrates_v3_removing_only_density_and_preserving_revision_and_settings() {
+        let root = temporary_path("density-v3-migration");
+        let path = root.join("settings.toml");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("create fixture");
+        let store = FileConfigStore::new(path.clone());
+        let mut expected = default_snapshot();
+        expected.revision = 91;
+        expected.settings.appearance.mode = ConfigAppearanceMode::Dark;
+        expected.settings.appearance.scheme = ConfigAppearanceScheme::FruitSalad;
+        expected.settings.appearance.source_color = Some("#AABBCC".to_owned());
+        expected.settings.appearance.motion = ConfigAppearanceMotion::Full;
+        expected.settings.locale = ConfigLocale::JaJp;
+        expected.settings.packages.show_prerelease = true;
+        expected.settings.packages.hide_local_user_packages = true;
+        expected.settings.packages.hidden_repository_ids = vec![
+            "00000000-0000-0000-0000-000000000001".to_owned(),
+            "ffffffff-ffff-ffff-ffff-ffffffffffff".to_owned(),
+        ];
+        expected.settings.unity.hub_path = Some(r"C:\用户\Unity Hub\Unity Hub.exe".to_owned());
+        let canonical = String::from_utf8(serialize_settings(&expected)).expect("utf8");
+        assert!(canonical.starts_with("schema = 4\n"));
+        assert!(!canonical.contains("density"));
+        for density in ["default", "compact"] {
+            let legacy = canonical.replace("schema = 4", "schema = 3").replace(
+                "motion = \"full\"\n",
+                &format!("density = \"{density}\"\nmotion = \"full\"\n"),
+            );
+            fs::write(&path, &legacy).expect("write v3");
+            assert_eq!(store.load(), Ok(expected.clone()));
+            assert_eq!(fs::read_to_string(&path).expect("read-only load"), legacy);
+            assert_eq!(store.initialize(), Ok(expected.clone()));
+            assert_eq!(fs::read_to_string(&path).expect("migrated v4"), canonical);
+            assert_eq!(store.initialize(), Ok(expected.clone()));
+            assert_eq!(
+                fs::read_to_string(&path).expect("stable restart"),
+                canonical
+            );
+            assert!(!path.with_extension("toml.new").exists());
+            assert!(!path.with_extension("toml.bak").exists());
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn legacy_density_is_required_and_validated_before_discarding_without_rewriting_bad_inputs() {
+        let root = temporary_path("density-legacy-validation");
+        let path = root.join("settings.toml");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("create fixture");
+        let store = FileConfigStore::new(path.clone());
+        let current = String::from_utf8(serialize_settings(&default_snapshot())).expect("utf8");
+        for schema in 1..=3 {
+            let mut legacy = current.replace("schema = 4", &format!("schema = {schema}"));
+            legacy = if schema < 3 {
+                legacy.replace("scheme = \"vibrant\"\n", "density = \"default\"\n")
+            } else {
+                legacy.replace(
+                    "motion = \"system\"\n",
+                    "density = \"default\"\nmotion = \"system\"\n",
+                )
+            };
+            if schema == 1 {
+                legacy = legacy
+                    .split("[packages]")
+                    .next()
+                    .expect("legacy appearance")
+                    .to_owned();
+            }
+            assert_eq!(parse_settings(&legacy), Ok(default_snapshot()));
+            assert_eq!(
+                parse_settings(&legacy.replace("density = \"default\"", "density = \"compact\"")),
+                Ok(default_snapshot())
+            );
+            let mut invalid = vec![
+                legacy.replace("density = \"default\"\n", ""),
+                legacy.replace("density = \"default\"", "density = \"unknown\""),
+                legacy.replace("density = \"default\"", "density = true"),
+                legacy.replace(
+                    "density = \"default\"",
+                    "density = \"default\"\ndensity = \"compact\"",
+                ),
+                legacy.replace("mode = \"system\"\n", ""),
+                legacy.replace("motion = \"system\"\n", ""),
+                legacy.replace("locale = \"system\"\n", ""),
+                legacy.replace("revision = 1", "revision = 0"),
+            ];
+            if schema > 1 {
+                invalid.push(legacy.replace("show_prerelease = false\n", ""));
+            }
+            if schema == 3 {
+                invalid.push(legacy.replace("scheme = \"vibrant\"\n", ""));
+            }
+            for invalid in invalid {
+                fs::write(&path, &invalid).expect("write malformed legacy input");
+                assert_eq!(
+                    store.initialize(),
+                    Err(ConfigStoreError::Corrupt),
+                    "schema {schema}: {invalid}"
+                );
+                assert_eq!(fs::read_to_string(&path).expect("input retained"), invalid);
+                assert!(!path.with_extension("toml.new").exists());
+                assert!(!path.with_extension("toml.bak").exists());
+            }
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn config_v4_rejects_removed_density_and_future_versions_without_rewriting() {
+        let root = temporary_path("density-current-rejection");
+        let path = root.join("settings.toml");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("create fixture");
+        let store = FileConfigStore::new(path.clone());
+        let current = String::from_utf8(serialize_settings(&default_snapshot())).expect("utf8");
+        let mut invalid = ["\"default\"", "\"compact\"", "null", "true"]
+            .map(|value| {
+                current.replace(
+                    "motion = \"system\"\n",
+                    &format!("density = {value}\nmotion = \"system\"\n"),
+                )
+            })
+            .to_vec();
+        invalid.push(current.replace("schema = 4", "schema = 5"));
+        for invalid in invalid {
+            fs::write(&path, &invalid).expect("write unsupported current input");
+            assert_eq!(store.initialize(), Err(ConfigStoreError::Corrupt));
+            assert_eq!(fs::read_to_string(&path).expect("input retained"), invalid);
+            assert!(!path.with_extension("toml.new").exists());
+            assert!(!path.with_extension("toml.bak").exists());
+        }
         let _ = fs::remove_dir_all(root);
     }
 
@@ -1028,7 +1159,6 @@ mod tests {
                         mode: Some(ConfigAppearanceMode::Dark),
                         source_color: ConfigNullableUpdate::Set("#112233".to_owned()),
                         scheme: Some(ConfigAppearanceScheme::Neutral),
-                        density: Some(ConfigAppearanceDensity::Compact),
                         motion: Some(ConfigAppearanceMotion::Reduced),
                     }),
                     locale: Some(ConfigLocale::ZhCn),
@@ -1053,7 +1183,6 @@ mod tests {
                         mode: None,
                         source_color: ConfigNullableUpdate::Unchanged,
                         scheme: Some(ConfigAppearanceScheme::FruitSalad),
-                        density: None,
                         motion: None,
                     }),
                     locale: None,
@@ -1076,7 +1205,6 @@ mod tests {
                         mode: Some(ConfigAppearanceMode::System),
                         source_color: ConfigNullableUpdate::Clear,
                         scheme: Some(ConfigAppearanceScheme::Vibrant),
-                        density: None,
                         motion: None,
                     }),
                     locale: None,
@@ -1102,7 +1230,6 @@ mod tests {
                         mode: None,
                         source_color: ConfigNullableUpdate::Set("#bad".to_owned()),
                         scheme: Some(ConfigAppearanceScheme::Fidelity),
-                        density: None,
                         motion: None,
                     }),
                     locale: None,
@@ -1225,7 +1352,7 @@ mod tests {
     }
 
     #[test]
-    fn maximum_v3_snapshot_fits_existing_byte_limit() {
+    fn maximum_v4_snapshot_fits_existing_byte_limit() {
         let mut snapshot = default_snapshot();
         snapshot.settings.appearance.source_color = Some("#FFFFFF".to_owned());
         snapshot.settings.packages.hidden_repository_ids = (0..256)

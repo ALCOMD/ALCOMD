@@ -9,7 +9,7 @@ async function openSettings(page: Page, extra = "") {
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.goto(`/browser-harness.html?route=/settings&h5-settings=1&${extra}`);
     await expect(page.getByRole("heading", { level: 1, name: "Settings", exact: true })).toBeVisible();
-    await expect(page.getByRole("checkbox", { name: "Compact GUI", exact: true })).toBeVisible();
+    await expect(page.locator("#settings-motion")).toBeVisible();
 }
 async function fail(page: Page, method: string, code: string, afterCommit = false) {
     await page.evaluate(({ method, code, afterCommit }) => window.h5Settings.failNext(method, code, afterCommit), { method, code, afterCommit });
@@ -18,10 +18,17 @@ function navigation(page: Page, name: string) {
     return page.locator("#primary-navigation md-list-item").filter({ has: page.locator(".navigation-item-label", { hasText: new RegExp(`^${name}$`) }) });
 }
 
+async function selectMotion(page: Page, value: "full") {
+    await page.locator("#settings-motion").evaluate((element, next) => {
+        (element as HTMLElement & { select(value: string): void }).select(next);
+        element.dispatchEvent(new Event("change", { bubbles: true }));
+    }, value);
+}
+
 test("H5 autosave retains a definitive cause and safe details across navigation before explicit Retry", async ({ page }) => {
     await openSettings(page);
     await fail(page, "settings.update", "permission_denied");
-    await page.getByRole("checkbox", { name: "Compact GUI", exact: true }).check();
+    await selectMotion(page, "full");
     const feedback = page.locator(".settings-save-error").getByRole("alert");
     await expect(feedback).toContainText("Settings could not be saved.");
     await expect(feedback).toContainText("You do not have permission for this action.");
@@ -35,28 +42,28 @@ test("H5 autosave retains a definitive cause and safe details across navigation 
     expect(await changes(page)).toHaveLength(1);
     await feedback.getByRole("button", { name: "Retry", exact: true }).click();
     await expect(feedback).toHaveCount(0);
-    await expect(page.locator("html")).toHaveAttribute("data-density", "compact");
+    await expect(page.locator("html")).toHaveAttribute("data-motion", "full");
     expect(await changes(page)).toHaveLength(2);
     expect(await page.evaluate(() => window.h5Settings.requests.slice(-2).map((request) => request.method))).toEqual(["settings.get", "settings.update"]);
     await navigation(page, "Settings").click();
-    await expect(page.getByRole("checkbox", { name: "Compact GUI", exact: true })).toBeChecked();
+    await expect(page.locator("#settings-motion")).toHaveJSProperty("value", "full");
 });
 
 test("H5 unknown autosave reports uncertainty and checks Core before avoiding a duplicate committed write", async ({ page }) => {
     await openSettings(page);
     await fail(page, "settings.update", "daemon_unavailable", true);
-    await page.getByRole("checkbox", { name: "Compact GUI", exact: true }).check();
+    await selectMotion(page, "full");
     const feedback = page.locator(".settings-save-error").getByRole("alert");
     await expect(feedback).toContainText("Settings save result is unknown");
     await expect(feedback).toContainText("Retry checks the current settings before writing again.");
     await expect(feedback).not.toContainText("Check Tasks");
-    await expect(page.locator("html")).toHaveAttribute("data-density", "comfortable");
+    await expect(page.locator("html")).toHaveAttribute("data-motion", "system");
     expect(await changes(page)).toHaveLength(1);
     expect(await page.evaluate(() => window.h5Settings.commits.length)).toBe(1);
     const reads = await page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "settings.get").length);
     await feedback.getByRole("button", { name: "Retry", exact: true }).click();
     await expect(feedback).toHaveCount(0);
-    await expect(page.locator("html")).toHaveAttribute("data-density", "compact");
+    await expect(page.locator("html")).toHaveAttribute("data-motion", "full");
     expect(await page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "settings.get").length)).toBe(reads + 1);
     expect(await changes(page)).toHaveLength(1);
     expect(await page.evaluate(() => window.h5Settings.commits.length)).toBe(1);

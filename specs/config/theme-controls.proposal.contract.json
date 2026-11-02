@@ -18,17 +18,22 @@
         "stateDbSchemaChange": false
     },
     "configMigration": {
-        "from": 2,
-        "to": 3,
-        "newTomlField": "appearance.scheme",
-        "newPublicField": "settings.appearance.scheme",
-        "default": "vibrant",
+        "from": [
+            1,
+            2,
+            3
+        ],
+        "to": 4,
+        "removedTomlField": "appearance.density",
+        "removedPublicField": "settings.appearance.density",
+        "schemeIntroducedIn": 3,
+        "defaultScheme": "vibrant",
         "preserveRevision": true,
-        "preserveExistingSourceColorModeDensityMotionLocalePackages": true,
-        "v1Input": "existing-v1-to-v2-then-v3",
+        "preserveExistingSettingsExceptDensity": true,
+        "legacyDensity": "validate-historical-input-then-discard",
         "unknownEnums": "reject",
         "replacement": "existing-bounded-atomic-config-writer",
-        "publication": "owner-approved-pre-release-breaking-configSchema-3-response-change"
+        "publication": "owner-approved-pre-release-breaking-configSchema-4-density-removal"
     },
     "schemeEnum": [
         "tonal-spot",
@@ -50,14 +55,18 @@
     },
     "motionPreference": {
         "ownerRequest": "跟随系统/启用动画/关闭动画",
-        "enum": ["full", "reduced", "system"],
+        "enum": [
+            "full",
+            "reduced",
+            "system"
+        ],
         "default": "system",
         "full": "enable-existing-motion-independent-of-system-reduced-motion",
         "reduced": "disable-existing-motion-through-shared-UI-adapter",
         "system": "track-prefers-reduced-motion-live-without-config-write",
         "save": "ordinary-setting-change-immediate-existing-CAS-RPC",
         "failure": "keep-accepted-runtime-preference-retain-latest-intent-explicit-Retry-after-reread",
-        "contract": "extend-unreleased-Config3-motion-enum-no-new-method-capability-permission-or-version",
+        "contract": "Config4-retains-approved-motion-enum-no-new-method-capability-or-permission",
         "historicalInput": "Config1-and-Config2-only-accept-original-system-and-reduced",
         "unknownOrNull": "reject",
         "pageTransitions": "remain-removed",
@@ -121,7 +130,13 @@
     "renderer": "official-Material-Color-Utilities-0.4.0-shared-theme-provider-no-v3-or-site-source-copy",
     "ordinarySettings": {
         "trigger": "each-user-change-immediate-no-global-save-discard-or-saved-status-bar",
-        "fields": ["locale", "appearance.density", "appearance.motion", "packages.showPrerelease", "packages.hideLocalUserPackages", "packages.hiddenRepositoryIds"],
+        "fields": [
+            "locale",
+            "appearance.motion",
+            "packages.showPrerelease",
+            "packages.hideLocalUserPackages",
+            "packages.hiddenRepositoryIds"
+        ],
         "transport": "existing-settings.get-update-only-changed-fields-serialized-expectedRevision-CAS",
         "rapidChanges": "bounded-per-field-latest-intent-coalescing-during-inflight-write-no-parallel-writes",
         "navigation": "pending-and-errors-live-in-current-App-connection-scope-not-page-scope-no-ordinary-discard-prompt",
@@ -139,7 +154,7 @@
         "cookie-or-localStorage-authoritative-settings"
     ],
     "validation": [
-        "config2-to3-preserve-user-choice-and-revision",
+        "config1-2-3-to4-discard-only-density-preserve-user-choice-and-revision",
         "missing-default-unknown-invalid-atomic-rollback",
         "typed-RPC-SDK-schema-round-trip",
         "9-schemes-multiple-seeds-light-dark-system",

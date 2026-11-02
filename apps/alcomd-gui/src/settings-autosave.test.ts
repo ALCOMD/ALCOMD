@@ -2,12 +2,12 @@ import type { SettingsGetResult, SettingsUpdate } from "./core-models.ts";
 import { SettingsAutosave, UnityHubConflictError } from "./settings-autosave.ts";
 
 const initial: SettingsGetResult = {
-    configSchema: 3, revision: 7,
+    configSchema: 4, revision: 7,
     unityHub: { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" },
     settings: {
         unity: { hubPath: null },
         locale: "en-US",
-        appearance: { mode: "system", scheme: "vibrant", sourceColor: null, motion: "system", density: "default" },
+        appearance: { mode: "system", scheme: "vibrant", sourceColor: null, motion: "system" },
         packages: { showPrerelease: false, hideLocalUserPackages: false, hiddenRepositoryIds: [] }
     }
 };
@@ -33,7 +33,7 @@ function model() {
             requests.push({ expectedRevision, update: structuredClone(update) });
             assert(expectedRevision === current.revision, "CAS expected current revision");
             current = {
-                configSchema: 3, revision: expectedRevision + 1,
+                configSchema: 4, revision: expectedRevision + 1,
                 unityHub: current.unityHub,
                 settings: {
                     ...current.settings, ...update,
@@ -67,16 +67,17 @@ async function idle(writer: SettingsAutosave) {
         if (first) { first = false; started.resolve(); await release.promise; }
         return original(...arguments_);
     };
-    fixture.writer.change({ appearance: { density: "compact" } });
+    fixture.writer.change({ appearance: { motion: "full" } });
     await started.promise;
-    fixture.writer.change({ appearance: { density: "default", motion: "full" } });
+    fixture.writer.change({ appearance: { motion: "system" }, packages: { hideLocalUserPackages: true } });
     fixture.writer.change({ packages: { showPrerelease: true } });
-    fixture.writer.change({ appearance: { motion: "reduced" } });
+    fixture.writer.change({ packages: { hideLocalUserPackages: false } });
     release.resolve();
     await idle(fixture.writer);
     equal(fixture.requests.map((request) => request.expectedRevision), [7, 8], "serial CAS");
-    equal(fixture.requests[1]!.update, { appearance: { density: "default", motion: "reduced" }, packages: { showPrerelease: true } }, "latest intents and toggle-back survive in-flight save");
-    equal(fixture.current().settings.appearance.density, "default", "toggle-back must not be trimmed against old authority");
+    equal(fixture.requests[1]!.update, { appearance: { motion: "system" }, packages: { showPrerelease: true } }, "latest intents and toggle-back survive in-flight save");
+    equal(fixture.current().settings.appearance.motion, "system", "toggle-back must not be trimmed against old authority");
+    equal(fixture.current().settings.packages.hideLocalUserPackages, false, "latest package toggle wins without losing its sibling intent");
 }
 
 {
@@ -88,7 +89,7 @@ async function idle(writer: SettingsAutosave) {
         if (!failed) { failed = true; throw new Error("Response lost after commit"); }
         return result;
     };
-    fixture.writer.change({ appearance: { density: "compact" } });
+    fixture.writer.change({ appearance: { motion: "full" } });
     await idle(fixture.writer);
     assert(fixture.writer.getSnapshot().failed, "unknown outcome must be explicit");
     equal(fixture.applied, [], "unacknowledged commit must not claim accepted UI state");
@@ -115,12 +116,12 @@ async function idle(writer: SettingsAutosave) {
 
 {
     const fixture = model();
-    fixture.writer.change({ appearance: { density: "compact" } });
+    fixture.writer.change({ appearance: { motion: "full" } });
     await fixture.writer.saveTheme({ mode: "dark", scheme: "neutral", sourceColor: "#6CB6FF" });
     await idle(fixture.writer);
     equal(fixture.requests.map((request) => request.expectedRevision), [7, 8], "theme and ordinary writes share one order");
     equal(Object.keys(fixture.requests[1]!.update.appearance!).sort(), ["mode", "scheme", "sourceColor"], "explicit theme writes only its fields");
-    equal(fixture.current().settings.appearance.density, "compact", "theme preserves ordinary saved values");
+    equal(fixture.current().settings.appearance.motion, "full", "theme preserves ordinary saved values");
     fixture.writer.seed(initial);
     equal(fixture.writer.getSnapshot().accepted!.revision, 9, "late snapshots cannot regress authority");
 }
@@ -131,7 +132,7 @@ async function idle(writer: SettingsAutosave) {
     const release = deferred();
     const original = fixture.client.settingsUpdate;
     fixture.client.settingsUpdate = async (...arguments_) => { started.resolve(); await release.promise; return original(...arguments_); };
-    fixture.writer.change({ appearance: { density: "compact" } });
+    fixture.writer.change({ appearance: { motion: "reduced" } });
     await started.promise;
     fixture.writer.change({ appearance: { motion: "full" } });
     fixture.writer.stop();
@@ -148,7 +149,7 @@ async function idle(writer: SettingsAutosave) {
     const original = fixture.client.settingsUpdate;
     fixture.client.settingsUpdate = async (...arguments_) => { started.resolve(); await release.promise; return original(...arguments_); };
     const theme = fixture.writer.saveTheme({ mode: "dark", sourceColor: null, scheme: "neutral" }).then(() => false, () => true);
-    fixture.writer.change({ appearance: { density: "compact" } });
+    fixture.writer.change({ appearance: { motion: "full" } });
     await started.promise;
     fixture.writer.stop();
     release.resolve();

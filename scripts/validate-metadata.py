@@ -31,7 +31,62 @@ def require(condition: bool, message: str) -> None:
         raise ValueError(message)
 
 
+def validate_current_settings_contract() -> None:
+    current = load_json("specs/config/settings-v4.schema.json")
+    definitions = current["$defs"]
+    fields = {"mode", "scheme", "sourceColor", "motion"}
+    require(current["properties"]["schema"]["const"] == 4, "Current settings Schema must be 4")
+    require("density" not in definitions, "Config4 must not define density")
+    require(set(definitions["appearance"]["properties"]) == fields, "Unexpected Config4 appearance fields")
+    require(set(definitions["appearance"]["required"]) == fields, "Config4 appearance must be complete")
+    partial = definitions["partialUpdate"]["properties"]["appearance"]
+    require(set(partial["properties"]) == fields, "Config4 updates must not accept density")
+    require(definitions["appearance"]["additionalProperties"] is False and partial["additionalProperties"] is False,
+            "Config4 appearance must reject unknown fields")
+    migration = current["x-alcomd-migration"]
+    require(migration["from"] == [1, 2, 3] and migration["to"] == 4, "Unexpected Config4 migration inputs")
+    require(migration["removedFields"] == ["appearance.density"] and migration["preserveRevision"] is True,
+            "Config4 migration must discard only density without changing revision")
+    for version in (1, 2, 3):
+        legacy = load_json(f"specs/config/settings-v{version}.schema.json")
+        require(legacy["properties"]["schema"]["const"] == version, "Historical settings version changed")
+        require(legacy["deprecated"] is True and legacy["x-alcomd-currentSchema"] == 4,
+                "Old settings Schemas must be migration inputs only")
+        require(legacy["$defs"]["density"]["enum"] == ["default", "compact"], "Historical density contract changed")
+    rpc = load_json("specs/rpc/m7-official-gui.schema.json")["$defs"]
+    require(rpc["settingsGetResult"]["properties"]["configSchema"]["const"] == 4, "Settings RPC must report Config4")
+    base = "https://alcomd.cqmhv.com/schema/config/settings-v4.json#/$defs/"
+    require(rpc["settingsGetResult"]["properties"]["settings"]["$ref"] == base + "settings",
+            "Settings RPC must use the current settings model")
+    require(rpc["settingsUpdateParams"]["properties"]["update"]["$ref"] == base + "partialUpdate",
+            "Settings RPC updates must use the current model")
+    hello = load_json("specs/rpc/system-hello.response.schema.json")
+    require(hello["properties"]["result"]["properties"]["configSchema"]["const"] == 4, "Hello must report Config4")
+    theme = load_json("specs/config/theme-controls.proposal.contract.json")
+    require(theme["configMigration"]["to"] == 4 and "appearance.density" not in theme["ordinarySettings"]["fields"],
+            "Theme controls must use Config4 without a density preference")
+    hub = load_json("specs/config/unity-hub-location.proposal.contract.json")
+    require(hub["interfaces"]["configSchema"] == 4, "Hub settings must use Config4")
+    vectors = load_json("specs/config/settings-v4.contract-vectors.json")
+    require(vectors["currentConfigSchema"] == 4 and vectors["current"]["getResult"]["configSchema"] == 4,
+            "Settings vectors must describe Config4")
+    require("density" not in vectors["current"]["getResult"]["settings"]["appearance"],
+            "Current settings fixture must omit density")
+    require(tomllib.loads(vectors["current"]["toml"])["schema"] == 4, "Current TOML fixture must be Config4")
+    require([case["schema"] for case in vectors["legacyInputs"]] == [1, 2, 3], "Missing legacy settings vectors")
+    for case in vectors["legacyInputs"]:
+        source = tomllib.loads(case["toml"])
+        require(source["schema"] == case["schema"] and source["appearance"]["density"] in {"default", "compact"},
+                "Invalid historical settings fixture")
+        require(source["revision"] == case["expectedRevision"] and "density" not in case["expectedSettings"]["appearance"],
+                "Settings migration vectors must preserve revision and omit density")
+    for case in vectors["rejectedCurrentFiles"]:
+        source = tomllib.loads(case["toml"])
+        require(source["schema"] == 4 and "density" in source["appearance"], "Missing Config4 unknown-field counterexample")
+
+
 def main() -> int:
+    validate_current_settings_contract()
     product = load_toml("alcomd.product.toml")
     require(product["product"]["family_name"] == "ALCOMD", "Unexpected product family")
     require(product["product"]["display_name"] == "ALCOMD3", "Unexpected display name")

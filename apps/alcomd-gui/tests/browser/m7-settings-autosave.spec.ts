@@ -22,9 +22,26 @@ test("ordinary settings save immediately as narrow updates without a save bar", 
     await page.screenshot({ path: "../../target/m7-settings-autosave-20261030/settings-without-save-bar.png", animations: "disabled" });
 });
 
+test("Settings keeps one desktop density without a compact mode control or density updates", async ({ page }) => {
+    await openSettings(page);
+    await expect(page.getByRole("checkbox", { name: "Compact GUI", exact: true })).toHaveCount(0);
+    await expect(page.locator("#settings-density")).toHaveCount(0);
+    await expect(page.locator("html")).not.toHaveAttribute("data-density");
+    await selectMotion(page, "full");
+    await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
+    await navigation(page, "Projects").click();
+    await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
+    await expect(page.locator("html")).not.toHaveAttribute("data-density");
+    await navigation(page, "Settings").click();
+    await expect(page.getByRole("checkbox", { name: "Compact GUI", exact: true })).toHaveCount(0);
+    await expect(page.locator("#settings-motion")).toHaveJSProperty("value", "full");
+    expect(await page.evaluate(() => window.settingsRequests)).toEqual([{ expectedRevision: 7, update: { appearance: { motion: "full" } } }]);
+    expect(await page.evaluate(() => window.settingsRequests.every((request) => !Object.hasOwn(request.update.appearance ?? {}, "density")))).toBe(true);
+});
+
 test("rapid changes survive navigation while writes stay serialized", async ({ page }) => {
     await openSettings(page, "hold");
-    await page.getByRole("checkbox", { name: "Compact GUI", exact: true }).check();
+    await selectMotion(page, "full");
     await expect.poll(() => page.evaluate(() => window.settingsRequests.length)).toBe(1);
     await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true }).check();
     await page.getByRole("checkbox", { name: "Hide local User Packages", exact: true }).check();
@@ -37,34 +54,35 @@ test("rapid changes survive navigation while writes stay serialized", async ({ p
     await release(page);
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(2);
     await navigation(page, "Settings").click();
-    for (const name of ["Compact GUI", "Show prerelease package versions", "Hide local User Packages"]) await expect(page.getByRole("checkbox", { name, exact: true })).toBeChecked();
+    await expect(page.locator("#settings-motion")).toHaveJSProperty("value", "full");
+    for (const name of ["Show prerelease package versions", "Hide local User Packages"]) await expect(page.getByRole("checkbox", { name, exact: true })).toBeChecked();
 });
 
 test("failed autosave is visible after navigation and explicit Retry saves retained intent", async ({ page }) => {
     await openSettings(page, "error-once");
-    await page.getByRole("checkbox", { name: "Compact GUI", exact: true }).check();
+    await selectMotion(page, "full");
     await expect(page.getByRole("alert")).toContainText("Settings save result is unknown");
-    await expect(page.locator("html")).toHaveAttribute("data-density", "comfortable");
+    await expect(page.locator("html")).toHaveAttribute("data-motion", "system");
     await navigation(page, "Projects").click();
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
     await expect(page.getByRole("alert")).toBeVisible();
     await page.getByRole("alert").getByRole("button", { name: "Retry", exact: true }).click();
     await expect(page.getByRole("alert")).toHaveCount(0);
-    await expect(page.locator("html")).toHaveAttribute("data-density", "compact");
-    expect(await page.evaluate(() => window.settingsRequests.map((request) => request.update))).toEqual([{ appearance: { density: "compact" } }, { appearance: { density: "compact" } }]);
+    await expect(page.locator("html")).toHaveAttribute("data-motion", "full");
+    expect(await page.evaluate(() => window.settingsRequests.map((request) => request.update))).toEqual([{ appearance: { motion: "full" } }, { appearance: { motion: "full" } }]);
     await navigation(page, "Settings").click();
-    await expect(page.getByRole("checkbox", { name: "Compact GUI", exact: true })).toBeChecked();
+    await expect(page.locator("#settings-motion")).toHaveJSProperty("value", "full");
 });
 
 test("unknown commit outcome reconciles without a duplicate save", async ({ page }) => {
     await openSettings(page, "commit-error-once");
-    await page.getByRole("checkbox", { name: "Compact GUI", exact: true }).check();
+    await selectMotion(page, "full");
     await expect(page.getByRole("alert")).toBeVisible();
-    await expect(page.locator("html")).toHaveAttribute("data-density", "comfortable");
+    await expect(page.locator("html")).toHaveAttribute("data-motion", "system");
     expect(await page.evaluate(() => window.settingsWrites.length)).toBe(1);
     await page.getByRole("alert").getByRole("button", { name: "Retry", exact: true }).click();
     await expect(page.getByRole("alert")).toHaveCount(0);
-    await expect(page.locator("html")).toHaveAttribute("data-density", "compact");
+    await expect(page.locator("html")).toHaveAttribute("data-motion", "full");
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
     expect(await page.evaluate(() => window.settingsWrites.length)).toBe(1);
 });
@@ -83,7 +101,7 @@ test("conflict Retry preserves external theme fields and changes only the reques
 
 test("theme retains its own preview, Cancel and Save while ordinary settings persist independently", async ({ page }) => {
     await openSettings(page);
-    await page.getByRole("checkbox", { name: "Compact GUI", exact: true }).check();
+    await selectMotion(page, "full");
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
     await page.getByRole("button", { name: "Theme", exact: true }).click();
     await page.locator("#theme-source").getByRole("textbox").fill("#E040A0");
@@ -96,7 +114,7 @@ test("theme retains its own preview, Cancel and Save while ordinary settings per
     await page.locator("md-dialog[open]").getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeHidden();
     expect(await page.evaluate(() => window.settingsRequests.at(-1)!.update)).toEqual({ appearance: { mode: "system", scheme: "vibrant", sourceColor: "#E040A0" } });
-    await expect(page.locator("html")).toHaveAttribute("data-density", "compact");
+    await expect(page.locator("html")).toHaveAttribute("data-motion", "full");
 });
 
 async function openSettings(page: Page, outcome?: string) {

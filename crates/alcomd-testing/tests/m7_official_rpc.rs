@@ -7,7 +7,7 @@ use std::time::Duration;
 use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use alcomd_platform::{DataConfig, IpcConfig, IpcStream};
 use alcomd_protocol::{
-    ActivityListParams, AppearanceDensity, AppearanceMode, AppearanceMotion, AppearanceScheme,
+    ActivityListParams, AppearanceMode, AppearanceMotion, AppearanceScheme,
     AppearanceSettingsUpdate, DiagnosticsListParams, NullableUpdate, PackageSettingsUpdate,
     SettingsLocale, SettingsUpdate, SettingsUpdateParams,
 };
@@ -37,7 +37,7 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
     let mut client = connect_with_retry(config).await;
 
     let defaults = client.settings_get().await.expect("read default settings");
-    assert_eq!(defaults.config_schema, 3);
+    assert_eq!(defaults.config_schema, 4);
     assert_eq!(defaults.revision, 1);
     assert_eq!(defaults.settings.appearance.mode, AppearanceMode::System);
     assert_eq!(
@@ -54,7 +54,6 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
                     mode: Some(AppearanceMode::Dark),
                     scheme: Some(AppearanceScheme::Fidelity),
                     source_color: NullableUpdate::Set("#315DA8".to_owned()),
-                    density: Some(AppearanceDensity::Compact),
                     motion: Some(AppearanceMotion::Full),
                 }),
                 locale: Some(SettingsLocale::ZhCn),
@@ -154,6 +153,8 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
         json!({"appearance": {"mode": null, "sourceColor": null}, "locale": "ja-JP"}),
         json!({"appearance": {"scheme": null}, "locale": "ja-JP"}),
         json!({"appearance": {"density": null}, "locale": "ja-JP"}),
+        json!({"appearance": {"density": "default"}, "locale": "ja-JP"}),
+        json!({"appearance": {"density": "compact"}, "locale": "ja-JP"}),
         json!({"appearance": {"motion": null}, "locale": "ja-JP"}),
         json!({"packages": {"showPrerelease": null}, "locale": "ja-JP"}),
         json!({"packages": {"hiddenRepositoryIds": null}, "locale": "ja-JP"}),
@@ -451,7 +452,7 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
         fs::read_to_string(data.join("config/settings.toml")).expect("read durable settings file");
     assert_eq!(
         settings_file,
-        "schema = 3\nrevision = 14\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"fruit-salad\"\ndensity = \"compact\"\nmotion = \"full\"\n\n[packages]\nshow_prerelease = true\nhidden_repository_ids = [\"00000000-0000-0000-0000-000000000000\", \"ffffffff-ffff-ffff-ffff-ffffffffffff\"]\nhide_local_user_packages = true\n"
+        "schema = 4\nrevision = 14\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"fruit-salad\"\nmotion = \"full\"\n\n[packages]\nshow_prerelease = true\nhidden_repository_ids = [\"00000000-0000-0000-0000-000000000000\", \"ffffffff-ffff-ffff-ffff-ffffffffffff\"]\nhide_local_user_packages = true\n"
     );
 }
 

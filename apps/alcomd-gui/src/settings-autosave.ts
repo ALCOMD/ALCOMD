@@ -5,7 +5,7 @@ import type { RpcError } from "@alcomd/sdk";
 import { normalizeRequestError } from "./request-errors";
 
 type OrdinaryUpdate = Omit<SettingsUpdate, "appearance"> & {
-    appearance?: Pick<NonNullable<SettingsUpdate["appearance"]>, "density" | "motion">;
+    appearance?: Pick<NonNullable<SettingsUpdate["appearance"]>, "motion">;
 };
 
 interface SaveState {

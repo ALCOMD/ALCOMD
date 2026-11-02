@@ -415,9 +415,6 @@ function SettingsEditor({ client, settingsWriter, snapshot, initialRepositories,
         return () => { repositoryRequestRef.current += 1; repositoryBusyRef.current = false; };
     }, [client]);
 
-    const appearance = <K extends "density" | "motion",>(key: K, value: OfficialSettings["appearance"][K]) => {
-        settingsWriter.change({ appearance: { [key]: value } });
-    };
     const packages = <K extends keyof OfficialSettings["packages"]>(key: K, value: OfficialSettings["packages"][K]) => {
         settingsWriter.change({ packages: { [key]: value } });
     };
@@ -463,12 +460,8 @@ function SettingsEditor({ client, settingsWriter, snapshot, initialRepositories,
                 <div className="settings-row">
                     <label htmlFor="settings-motion">{t("GUI animation")}</label>
                     <Select id="settings-motion" label={t("GUI animation")} value={settings.appearance.motion}
-                        onChange={(value) => appearance("motion", value as SettingsGetResult["settings"]["appearance"]["motion"])}
+                        onChange={(value) => settingsWriter.change({ appearance: { motion: value as OfficialSettings["appearance"]["motion"] } })}
                         options={[{ label: t("System"), value: "system" }, { label: t("Enable animations"), value: "full" }, { label: t("Disable animations"), value: "reduced" }]} />
-                </div>
-                <div className="settings-toggle-row">
-                    <Checkbox checked={settings.appearance.density === "compact"} label={t("Compact GUI")} onChange={(checked) => appearance("density", checked ? "compact" : "default")} />
-                    <p className="field-hint">{t("Reduce spacing to show more content.")}</p>
                 </div>
             </SettingsSection>
         </div>

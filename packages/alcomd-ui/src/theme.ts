@@ -15,7 +15,6 @@ import {
 } from "@material/material-color-utilities";
 
 export type AppearanceMode = "system" | "light" | "dark";
-export type InterfaceDensity = "comfortable" | "compact";
 export type SourceColor = `#${string}`;
 export type ThemeScheme = "tonal-spot" | "fidelity" | "monochrome" | "neutral" | "vibrant" | "expressive" | "content" | "rainbow" | "fruit-salad";
 export interface ThemePreferences {
@@ -26,7 +25,6 @@ export interface ThemePreferences {
 
 export interface AppearanceSettings {
     mode: AppearanceMode;
-    density: InterfaceDensity;
     sourceColor: SourceColor;
     scheme: ThemeScheme;
 }
@@ -35,7 +33,6 @@ export const defaultThemeSourceColor: SourceColor = "#6CB6FF";
 
 export const defaultAppearance: AppearanceSettings = {
     mode: "system",
-    density: "comfortable",
     sourceColor: defaultThemeSourceColor,
     scheme: "vibrant"
 };
@@ -93,7 +90,6 @@ export function applyAppearance(root: HTMLElement, settings: AppearanceSettings)
         }
     }
     root.dataset.appearance = settings.mode;
-    root.dataset.density = settings.density;
     root.dataset.sourceColor = sourceColor;
     root.dataset.themeScheme = settings.scheme;
 }

@@ -36,7 +36,6 @@ export interface OperationsListResult {
 }
 
 export type AppearanceMode = "system" | "light" | "dark";
-export type AppearanceDensity = "default" | "compact";
 export type AppearanceMotion = "system" | "full" | "reduced";
 export type SettingsLocale = "system" | "en-US" | "zh-CN" | "ja-JP";
 
@@ -53,7 +52,6 @@ export interface OfficialSettings {
         mode: AppearanceMode;
         sourceColor: string | null;
         scheme: import("@alcomd/ui").ThemeScheme;
-        density: AppearanceDensity;
         motion: AppearanceMotion;
     };
     locale: SettingsLocale;
@@ -66,7 +64,7 @@ export interface OfficialSettings {
 
 export interface SettingsGetResult {
     unityHub: UnityHubLocation;
-    configSchema: 3;
+    configSchema: 4;
     revision: number;
     settings: OfficialSettings;
 }
@@ -77,7 +75,6 @@ export interface SettingsUpdate {
         mode?: AppearanceMode;
         sourceColor?: string | null;
         scheme?: import("@alcomd/ui").ThemeScheme;
-        density?: AppearanceDensity;
         motion?: AppearanceMotion;
     };
     locale?: SettingsLocale;

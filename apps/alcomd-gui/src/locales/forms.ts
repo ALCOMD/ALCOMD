@@ -218,10 +218,6 @@ export const formMessages: TranslationTable = {
         "zh-CN": "选择目录",
         "ja-JP": "フォルダを選択"
     },
-    "Compact GUI": {
-        "zh-CN": "GUI 紧凑模式",
-        "ja-JP": "UIをコンパクトにする"
-    },
     "Create a project backup before restoring a project.": {
         "zh-CN": "请先创建项目备份，再恢复项目。",
         "ja-JP": "復元する前にプロジェクトのバックアップを作成してください。"
@@ -353,10 +349,6 @@ export const formMessages: TranslationTable = {
     "Project template": {
         "zh-CN": "项目模板",
         "ja-JP": "プロジェクトのテンプレート"
-    },
-    "Reduce spacing to show more content.": {
-        "zh-CN": "减小间距以显示更多内容。",
-        "ja-JP": "余白を減らして、より多くの内容を表示します。"
     },
     "Refresh Unity installations": {
         "zh-CN": "刷新已安装的 Unity",

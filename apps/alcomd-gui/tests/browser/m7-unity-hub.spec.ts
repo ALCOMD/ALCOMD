@@ -183,7 +183,7 @@ test("direct typing stays local, Enter saves once and preserves focus across Ent
     await page.evaluate(() => window.dispatchEvent(new Event("test-theme-save-ready")));
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
     await expect(input(page)).toBeFocused();
-    const outside = page.getByRole("checkbox", { name: "Compact GUI", exact: true });
+    const outside = page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true });
     await outside.focus();
     await expect(outside).toBeFocused();
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([{ expectedRevision: 7, update: { unity: { hubPath: path } } }]);
@@ -192,7 +192,7 @@ test("direct typing stays local, Enter saves once and preserves focus across Ent
 test("leaving a changed path commits once without stealing the next control focus", async ({ page }) => {
     await open(page);
     await input(page).fill(path);
-    const outside = page.getByRole("checkbox", { name: "Compact GUI", exact: true });
+    const outside = page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true });
     await outside.focus();
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
     await expect(outside).toBeFocused();
@@ -203,7 +203,7 @@ test("unchanged automatic path focus and blur does not create a manual override"
     await open(page, "hub-default=1");
     expect(await value(page)).toBe("C:\\Program Files\\Unity Hub\\Unity Hub.exe");
     await input(page).focus();
-    await page.getByRole("checkbox", { name: "Compact GUI", exact: true }).focus();
+    await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true }).focus();
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
     expect(await requests(page, "unityInstallationsRefresh")).toBe(0);
 });
@@ -215,7 +215,7 @@ test("Escape cancels the draft and composing Enter cannot submit", async ({ page
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(0);
     await input(page).press("Escape");
     expect(await value(page)).toBe(path);
-    await page.getByRole("checkbox", { name: "Compact GUI", exact: true }).focus();
+    await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true }).focus();
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(0);
 });
 
@@ -226,7 +226,7 @@ test("invalid draft remains visible, unchanged blur does not retry, and correcte
     await input(page).press("Enter");
     await expect(section(page).getByRole("alert")).toContainText("Unity Hub path could not be saved. Check the path and try again.");
     expect(await value(page)).toBe(invalid);
-    await page.getByRole("checkbox", { name: "Compact GUI", exact: true }).focus();
+    await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true }).focus();
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
     await input(page).fill("");
     await expect(section(page).getByRole("alert")).toHaveCount(0);
@@ -284,7 +284,7 @@ test("no-path statuses are placeholders and an explicitly empty edit never sends
         expect(await value(page)).toBe("");
         await expect(section(page).locator("md-outlined-text-field")).toHaveJSProperty("placeholder", query === "" ? "Unity Hub was not found." : "Unity Hub location is unavailable.");
         await input(page).focus();
-        await page.getByRole("checkbox", { name: "Compact GUI", exact: true }).focus();
+        await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true }).focus();
         expect(await page.evaluate(() => window.settingsRequests.length)).toBe(0);
     }
     await open(page, `hub-path=${encodeURIComponent(path)}`);
@@ -333,7 +333,7 @@ test("a blur commit queues once behind an unrelated ordinary settings write", as
     await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true }).evaluate((element) => (element as HTMLElement).click());
     await expect.poll(() => page.evaluate(() => window.settingsRequests.length)).toBe(1);
     await input(page).fill(path);
-    await page.getByRole("checkbox", { name: "Compact GUI", exact: true }).focus();
+    await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true }).focus();
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
     await page.evaluate(() => window.dispatchEvent(new Event("test-theme-save-ready")));
     await expect.poll(() => page.evaluate(() => window.settingsRequests.length)).toBe(2);
