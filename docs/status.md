@@ -4,12 +4,14 @@
 
 ## 当前阶段
 
-**M7 IN_PROGRESS / H3 OWNER_REVIEW_PENDING / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。项目所有者于 2026-10-31 签收本轮 H2-A；
+**M7 IN_PROGRESS / H4 IN_PROGRESS / H3 STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。项目所有者于 2026-10-31 签收本轮 H2-A；
 M0-M6 已正式通过人工验收，M7 尚未完成。
 本文件是唯一当前阶段入口；ExecPlan 定义实施合同，testing 文档保存各自 SHA/场景的证据。
 
-当前 H3 本地代码候选为 `fec8117b289fb696cd193c3a52d8afad99e10d50`。项目所有者已确认 Unity 正常
-检测并显示、刷新后仍是同一条，检测功能项通过；**H3 整体仍未签收**，其余体验问题保留非阻塞待办。
+项目所有者于 2026-11-02 确认 **H3 阶段性人工验收通过，保留已记录的非阻塞体验问题**，并明确批准直接进入
+既有 H4 Extensions / Portable UI；不重复验收已检查页面，不进入 H5-H7，不自动推送。H3 代码候选为
+`fec8117b289fb696cd193c3a52d8afad99e10d50`；已确认 Unity 正常自动检测并显示、刷新仍为同一条、路径正常。
+该签收不表示体验完善、整个 Visual Gate 3 或 M7 完成；原有 H2-A/H2-B 签收保持。
 本次新反馈是安装路径直接显示 Windows 内部 `\\?\` 前缀。现将项目列表已有的路径显示规则收束为共享
 `displayPath`，覆盖安装列表/完整路径 tooltip、启动选择及相关项目、来源和目标审阅；只格式化盘符与 UNC
 标签，特殊命名空间保持原样，RPC、编辑状态、文件操作与安装身份继续使用原值，URL 不参与路径格式化。
@@ -30,11 +32,16 @@ canonical/exact 校验。真实自动发现及重复刷新、两个样例只读 
 五组公开状态一致，登记后仅 Editor 从 0 到 1，其他四组保持、settings revision **155**。
 当时 Esc 后未取得安装页原生证据的历史记录保留；本次所有者反馈及上述真实窗口核对分别补齐当前检测与显示证据。
 没有手动登记或启动/迁移实际工程。所有者随后明确确认“路径显示正常了”，`fec8117` 的路径显示整改项
-人工确认通过；Unity 检测、显示与重复刷新不再待确认。该反馈不扩展为 H3 整体签收，其他 H3 页面不重验。
+人工确认通过；Unity 检测、显示与重复刷新不再待确认。随后 H3 阶段性签收以本页开头记录为准，其他 H3 页面不重验。
 
 上轮 `ab5d183` 的 **34/0** 与主体 `ef47c25` 的备份、恢复、结果 ProjectId 和反馈原生证据保持各自原提交/构建范围，
 不替代本轮代码的验证。范围、逐轮失败、产物摘要和当前窗口见 [H3 候选与桌面证据](testing/m7-h3-contextual-20261101.md)。
-H3 仍待签收，M7 进行中；未进入 H4-H7、未推送，本轮代码没有对应远端 CI/CodeQL。
+H3 新增代码仍没有对应远端 CI/CodeQL，旧 `0ef5b08` 的通过结果不替代；M7 进行中，未推送。
+H4 交接只读核对已完成：原 Core **96504** 使用原数据目录，验收 GUI **132564** 有窗口且可响应；
+Projects/Editors/Operations/Settings/Status 完整公开读取为 2/1/2/1/1，任务全部终态、settings revision **155**。
+未发现隔离 Core 占用，无需暂停或恢复，也未处理用户 Unity/不明进程；证据在 `target/m7-h4-extensions-20261102/`。
+H4 先复核既有安装/启停/卸载、权限/隔离及同窗口 Portable UI，只补缺失接线和生命周期，复用 Material、Reminder、
+Plan/Apply/Operation 与 `displayPath`。不重写 Runtime/Portable UI 协议、不提前实现 M8/M9。
 
 此前 Resources 体验整改与仓库列表交换已在标准目录/main 本地实现，提交为 `348dbef`、
 `ceef00f`；`2a163b0` 仅修正测试类型检查，生产输入与 `ceef00f` 一致。尚未推送。
@@ -270,7 +277,7 @@ Visual Gate 2，没有 M7 或 Hosted CI 通过结论，原未跟踪 `output/` �
   远端验证缺口。下载、native Portable UI 等旧未覆盖范围保持，不由本次签收批量关闭。
 - 已继续执行获批 G3 中的本轮完成度核对，补齐三个列表 RPC 的现有覆盖矩阵；公开 method
   常量与矩阵 **92/92** 对齐、列表 typed 接线一致，不重新实施已完成页面，也不代表 G3 整体完成。
-  项目所有者随后明确批准现有 H3；`efdb133` 的 Windows 检测/显示/重复刷新及 `fec8117` 的路径显示整改均已获所有者确认。H3 整体仍待签收，不重复要求确认已通过的 Unity 项；不重验其他页面，不重开 M7 规划，不进入 H4-H7 或自动推送。
+  项目所有者已签收 H3 阶段体验并批准 H4；Unity 自动检测、显示、重复刷新及路径显示均确认通过，非阻塞待办保持。下一停止点为 H4 本地候选及简短真实窗口清单；不重复已验收内容、不进入 H5-H7、不自动推送。
 - 窗口记忆、仓库 credential enrollment/revocation、完整用户入口缺口保持真实状态；聚合
   projects.management/packages.vpm/repositories.management 等继续 in_progress，不批量提升。
 - projects/templates/backups 的 v3 parity 和 unity.v3-vrc-parity 仍等待 M11 真实脱敏 Fixture；

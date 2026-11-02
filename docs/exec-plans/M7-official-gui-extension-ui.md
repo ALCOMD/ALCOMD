@@ -1,6 +1,6 @@
 # M7：官方 GUI 与 Portable Extension UI
 
-状态：**M7 IN_PROGRESS / H3 OWNER_REVIEW_PENDING / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
+状态：**M7 IN_PROGRESS / H4 IN_PROGRESS / H3 STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
 活动分支为 `main`；当前阶段与验证结果统一见 `docs/status.md`。已通过的 M6、Portable UI B0-D、
 Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据，不替代本轮 GUI 人工验收。
 
@@ -557,10 +557,10 @@ fixes and defer uncertain contract-dependent work without blocking unrelated cor
 3. **H2 Projects/Packages & Templates（H2-A 与上述既有页面修正已验收）**：完成 package-centric workspace、
    候选读取/行内版本/批量、统一公共组件及已批准的资源/模板/设置/日志/扩展/备份基础交互。
    只实现本文件列明的窄公开合同。项目所有者于 2026-10-31 签收 Visual Gate 2；H2-B 已获下述技术收尾通过后的条件批准，其他产品范围仍未批准。
-4. **H3 contextual v4 enhancements（已批准，本地候选待人工验收）**：把 global/project Unity、Backups 与 Operations 增强嵌入既有 Settings/Project/progress workflow，不改
-   Plan/Apply/Operation；完成 Visual Gate 3 的第一部分。项目所有者于 H2-B 阶段签收后明确批准本切片直接实施：先核对已有接线，只补缺失流程，复用共享提醒框与现有任务跟踪；项目操作留在项目上下文，全局设置留在 Settings，不新增无必要导航、常驻卡片或另一套启动/备份/恢复机制。H4-H7 与推送仍未授权。
-5. **H4 Extensions/Portable UI（未批准）**：保留Extensions既有用户概念和utility归属；permission/quarantine/Portable UI位于detail，host
-   chrome与renderer全部使用共同Material components；不改 Portable UI protocol；完成 Visual Gate 4 的第一部分。
+4. **H3 contextual v4 enhancements（阶段性人工验收通过，保留非阻塞体验问题）**：把 global/project Unity、Backups 与 Operations 增强嵌入既有 Settings/Project/progress workflow，不改
+   Plan/Apply/Operation；完成 Visual Gate 3 的第一部分。项目所有者于 2026-11-02 明确签收本轮，并确认 Unity 自动检测、同记录刷新和路径显示；不表示体验完善或整个 Visual Gate 3/M7 完成。项目上下文、共享提醒和任务机制保持，不重复验收已检查页面。
+5. **H4 Extensions/Portable UI（已批准，实施中）**：保留Extensions既有用户概念和utility归属；permission/quarantine/Portable UI位于detail，host
+   chrome与renderer全部使用共同Material components；不改 Portable UI protocol；完成 Visual Gate 4 的第一部分。先核对已有安装/启停/卸载与同窗口功能页，只补既有范围内缺口；复用共享 Reminder/进度和只读 `displayPath`，不重写 Runtime、不提前实现 M8/M9。H5-H7 与推送仍未授权。
 6. **H5 utilities/observability（未批准）**：实现 grouped Settings、Log内Activity/Diagnostics与footer About/version，保留
    当前 Config3/A-026权限分离；
    完成 Visual Gate 3/4。
@@ -898,7 +898,18 @@ physical Escape 后未再进行桌面输入/原生截图，新 GUI 已启动可�
 历史 8/2、9/1 保留。真实窗口已保存前后完整截图，刷新后仍为同一条 `2022.3.22f1`，显示普通盘符路径；
 前后完整安装 RPC 结果一致，Core 原进程/数据未变，没有操作用户 Unity。GUI 新产物为 `cc4f…9808a`，
 Core 继续使用 `efdb133` 的 `ef371…1b5ca`，不重复 Rust/浏览器全套/三平台 CI。
-所有者随后明确确认“路径显示正常了”，本次路径整改项人工确认通过；H3 整体仍未签收。
+所有者随后明确确认“路径显示正常了”，并进一步给出 H3 阶段性人工签收，保留现有非阻塞体验问题；不重复验收。
+
+### H4 已批准切片：复用审计与实施边界
+
+所有者在上述 H3 签收后明确批准 H4 直接实施，不另设纯规划停止点。原开发 Core/验收 GUI 仍在原数据环境，
+五组公开状态已完整核对，任务全终态，无隔离占用需要恢复。现有扩展卡片、安装/卸载 Plan、启停、权限变更与
+17-node Portable UI renderer 均已有接线，继续保留；只补管理流程、分页、反馈/进度和异步 session 生命周期。
+安装输入的手填 registry revision 说明与 Core 不符：现有安装只接受新 ExtensionId，`expectedRevision=0` 表示
+预期缺席，已有安装由 Core 拒绝；按该既有语义修正 GUI，不新增 registry 读接口或绕过版本校验。
+权限/作用范围与安装审阅如发现公开只读信息不足，提交具体最小合同审批，仅暂停该部分；其余流程继续。
+Portable UI 的文档、草稿、action 与 session authority 保持原合同；不增加页面发现、额外窗口或第二套任务机制。
+稳定候选集中做受影响浏览器/GUI 检查与必要构建，真实窗口交付实际范围、未覆盖项与简短清单；H4 人工签收由所有者确认。
 
 ## Progress log
 
@@ -1120,8 +1131,9 @@ confirmed CLI remove 已在新明确授权后通过正式 CLI 补齐，Core 拒�
 项目所有者已确认检测、显示及重复刷新；该轮 Esc 后未取得原生查看的历史记录保留。
 随后路径显示反馈已由 `fec8117` 共享格式化窄修，10/0 与当前原生安装页/刷新、前后截图和 RPC 不变均已记录。
 所有者已确认本次路径显示正常，Unity 检测、显示和重复刷新确认保持，不重复要求查看已通过项。
-H3 整体仍待所有者签收，其他 H3 页面不重验；本次确认只做现有文档更新及适用检查。
+所有者已进一步确认 H3 阶段性人工验收通过，保留非阻塞体验问题；原环境/验收窗口核对完成，直接推进获批 H4。
+下一停止点为 H4 本地候选与真实窗口简短清单，不重验 H2/H3，不宣布 M7 完成。
 不重规划 M7，不重做已完成内容。H2-A、H2-B 阶段签收保持；H2-B 新增代码和 H3 仍无对应远端验证。
-未经新的推送授权不推送，H4-H7、M8、M9、M11 未由本次授权开放。详细结果与待办见现有 status/testing 文档。
+未经新的推送授权不推送，H5-H7、M8、M9、M11 未由本次授权开放。详细结果与待办见现有 status/testing 文档。
 已有候选读取、exact Unity、Config3、Hub 和 State16 的合同继续有效。完整 GUI/Rust/三平台
 技术门禁与人工视觉结果分别记录，不把旧 SHA 或定向通过冒充当前候选全绿。
