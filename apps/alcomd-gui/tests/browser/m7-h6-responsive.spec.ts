@@ -1,7 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
-const screenshotDirectory = "../../target/m7-h6-accessibility-20261102/browser-after";
-
 for (const width of [320, 640, 800, 1024, 1280]) {
     test(`H6 ${width}px keeps the existing navigation and common page controls reachable`, async ({ page }) => {
         await page.setViewportSize({ width, height: 800 });
@@ -83,6 +81,32 @@ for (const width of [320, 640, 800, 1024, 1280]) {
         });
     });
 }
+
+test("H7 outer page scrolling avoids a nested scrollbar at the viewport center", async ({ page }) => {
+    await page.setViewportSize({ width: 640, height: 800 });
+    await openHarness(page, "/settings");
+    const body = page.locator(".utility-workspace-body");
+    const installations = page.getByRole("region", { name: "Unity installations", exact: true }).locator(".desktop-list-viewport");
+    const horizontal = installations.locator(":scope > .os-scrollbar-horizontal");
+    await installations.locator("table").evaluate((element) => { element.style.minWidth = "1800px"; });
+    await expect(horizontal).toHaveClass(/os-scrollbar-visible/);
+    const outerBox = (await body.boundingBox())!, barBox = (await horizontal.boundingBox())!;
+    // Keep the nested scrollbar under the old pointer point regardless of font metrics.
+    await installations.evaluate((element, offset) => { element.style.transform = `translateY(${offset}px)`; },
+        outerBox.y + outerBox.height / 2 - barBox.y - barBox.height / 2);
+    const center = { x: outerBox.x + outerBox.width / 2, y: outerBox.y + outerBox.height / 2 };
+    expect(await body.evaluate((element, point) => {
+        const hit = document.elementFromPoint(point.x, point.y);
+        const bar = hit?.closest(".os-scrollbar-horizontal");
+        return bar !== undefined && bar !== null && bar.closest(".alcomd-scroll-area") !== element;
+    }, center)).toBe(true);
+    const language = page.getByRole("combobox", { name: "Language", exact: true });
+    expect(await withinBounds(language, body)).toBe(false);
+    await wheelIntoView(page, language, body);
+    expect(await body.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    expect(await installations.evaluate((element) => [element.scrollLeft, element.scrollTop])).toEqual([0, 0]);
+    expect(await page.evaluate(() => document.scrollingElement?.scrollTop)).toBe(0);
+});
 
 test("H6 narrow Resources segments remain keyboard reachable with visible contextual actions", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 800 });
@@ -267,9 +291,21 @@ async function wheelIntoView(page: Page, target: Locator, scroller: Locator) {
     await expectHorizontalBounds(target, scroller);
     for (let attempt = 0; attempt < 6 && !await withinBounds(target, scroller); attempt++) {
         const box = (await scroller.boundingBox())!, control = (await target.boundingBox())!;
+        // The center can hit a nested list's faded scrollbar, which consumes wheel events.
+        const point = await scroller.evaluate((element) => {
+            const bounds = element.getBoundingClientRect();
+            const candidates = [8, bounds.width / 2, bounds.width - 8].map((offset) => ({
+                x: bounds.x + offset, y: bounds.y + bounds.height / 2
+            }));
+            return candidates.find((candidate) => {
+                const hit = document.elementFromPoint(candidate.x, candidate.y);
+                return hit?.closest(".alcomd-scroll-area") === element && hit.closest(".os-scrollbar") === null;
+            }) ?? null;
+        });
+        expect(point, "Wheel must target the intended scroll viewport's content").not.toBeNull();
         const previous = await scroller.evaluate((element) => element.scrollTop);
         const delta = control.y < box.y ? control.y - box.y - 24 : Math.max(120, control.y + control.height - box.y - box.height + 24);
-        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.move(point!.x, point!.y);
         await page.mouse.wheel(0, delta);
         await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).not.toBe(previous);
     }
@@ -348,7 +384,7 @@ async function expectThemeFits(page: Page) {
 }
 
 async function browserScreenshot(page: Page, name: string) {
-    await page.screenshot({ path: `${screenshotDirectory}/${name}`, fullPage: false, animations: "disabled" });
+    await page.screenshot({ path: test.info().outputPath(name), fullPage: false, animations: "disabled" });
 }
 
 async function expectPrimaryEdgeOpensDialog(page: Page, title: string) {
