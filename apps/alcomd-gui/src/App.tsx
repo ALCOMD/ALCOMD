@@ -27,6 +27,7 @@ import {
 import type { ReactNode } from "react";
 import { Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { SettingsAutosave } from "./settings-autosave";
+import { guiVersion } from "./build-info";
 import { ReminderProvider, RequestReminder } from "./Reminder";
 
 import {
@@ -270,9 +271,11 @@ export function App({ client = guiRpcClient }: AppProps) {
                         navigate={navigate}
                     />
                     <main className="main-content" id="main-content" aria-busy={navigating}>
-                        {settingsSave.failed ? <div className="settings-save-error" role="alert">
-                            <p>{t("Settings could not be saved. Retry to save your changes.")}</p>
-                            <Button disabled={settingsSave.saving} type="button" variant="text" onClick={() => void settingsWriter.retry()}>{t("Retry")}</Button>
+                        {settingsSave.failed ? <div className="settings-save-error">
+                            <RequestReminder error={settingsSave.error ?? { code: "internal_error", message: "" }} title={t(["daemon_unavailable", "internal_error"].includes(settingsSave.error?.code ?? "internal_error") ? "Settings save result is unknown" : "Settings could not be saved.")}
+                                message={["daemon_unavailable", "internal_error"].includes(settingsSave.error?.code ?? "internal_error") ? "Retry checks the current settings before writing again." : undefined}>
+                                <Button disabled={settingsSave.saving} type="button" variant="text" onClick={() => void settingsWriter.retry()}>{t("Retry")}</Button>
+                            </RequestReminder>
                         </div> : null}
                         {navigating ? <div className="page-navigation-progress"><LoadingState title={t("Opening page…")} /></div> : null}
                         <div className="route-content" inert={navigating}>
@@ -353,21 +356,17 @@ interface NavigationItem {
 function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient; current: Route; navigate(path: string): void }) {
     const { t } = useTranslation();
     const operationsCapability = useCapabilityState(capabilities.operations);
-    const [summary, setSummary] = useState<{ activeTasks: number; daemonVersion?: string }>({ activeTasks: 0 });
+    const [activeTasks, setActiveTasks] = useState(0);
     useEffect(() => {
         let active = true;
         const operationsRequest = operationsCapability === "available"
             ? client.operationsList()
             : Promise.resolve({ operations: [] });
-        void Promise.allSettled([operationsRequest, client.systemStatus()]).then(([operations, status]) => {
+        setActiveTasks(0);
+        void operationsRequest.then((operations) => {
             if (!active) return;
-            setSummary({
-                activeTasks: operations.status === "fulfilled"
-                    ? operations.value.operations.filter((operation) => !["succeeded", "failed", "cancelled"].includes(operation.state)).length
-                    : 0,
-                ...(status.status === "fulfilled" ? { daemonVersion: status.value.daemonVersion } : {})
-            });
-        });
+            setActiveTasks(operations.operations.filter((operation) => !["succeeded", "failed", "cancelled"].includes(operation.state)).length);
+        }).catch(() => { if (active) setActiveTasks(0); });
         return () => { active = false; };
     }, [client, current.kind, operationsCapability]);
     return (
@@ -384,7 +383,7 @@ function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient;
                         <span className="navigation-item-label" slot="headline">{t(navigationLabels.extensions)}</span>
                     </NavigationListItem>
                     <NavigationListItem
-                        aria-label={summary.activeTasks === 0 ? t(navigationLabels.taskCenter) : t("Tasks {count} active", { count: summary.activeTasks })}
+                        aria-label={activeTasks === 0 ? t(navigationLabels.taskCenter) : t("Tasks {count} active", { count: activeTasks })}
                         aria-current={routeSection(current) === "tasks" ? "page" : undefined}
                         className="navigation-item"
                         disabled={operationsCapability !== "available"}
@@ -394,10 +393,10 @@ function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient;
                     >
                         <Icon asset={taskCenterIcon} size={24} slot="start" />
                         <span className="navigation-item-label" slot="headline">{t(navigationLabels.taskCenter)}</span>
-                        {summary.activeTasks === 0 ? null : <span aria-hidden="true" className="navigation-item-meta" slot="end">{summary.activeTasks}</span>}
+                        {activeTasks === 0 ? null : <span aria-hidden="true" className="navigation-item-meta" slot="end">{activeTasks}</span>}
                     </NavigationListItem>
                     <NavigationListItem
-                        aria-label={summary.daemonVersion === undefined ? t(navigationLabels.about) : `${t(navigationLabels.about)} ${summary.daemonVersion}`}
+                        aria-label={`${t(navigationLabels.about)} ${guiVersion}`}
                         aria-current={routeSection(current) === "about" ? "page" : undefined}
                         className="navigation-item"
                         onClick={() => navigate("/about")}
@@ -405,7 +404,7 @@ function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient;
                     >
                         <Icon asset={infoIcon} size={24} slot="start" />
                     <span className="navigation-item-label" slot="headline">{t(navigationLabels.about)}</span>
-                    {summary.daemonVersion === undefined ? null : <span aria-hidden="true" className="navigation-item-meta" slot="end">{summary.daemonVersion}</span>}
+                    <span aria-hidden="true" className="navigation-item-meta" slot="end">{guiVersion}</span>
                     </NavigationListItem>
                 </NavigationList>
             </nav>

@@ -4,7 +4,8 @@ import { use, useCallback, useEffect, useRef, useState, useSyncExternalStore, ty
 import { UnityHubConflictError, type SettingsAutosave } from "./settings-autosave";
 
 import type { OfficialSettings, RepositorySnapshot, SettingsGetResult, SettingsLocale, UnityInstallation } from "./core-models";
-import { normalizeRpcError, type GuiRpcClient } from "./rpc";
+import type { GuiRpcClient } from "./rpc";
+import { normalizeRequestError } from "./request-errors";
 import { useTranslation } from "./i18n";
 import { UnityRegistryActions } from "./CoreActions";
 import { capabilities, useCapability } from "./capabilities";
@@ -16,7 +17,7 @@ import { LoadingState } from "./LoadingState";
 import { usePageReadPromise, type PageReadResult } from "./PageRead";
 import { navigationLabels } from "./navigation-labels";
 import { ThemeControls, themePreferences } from "./ThemeControls";
-import { RequestReminder } from "./Reminder";
+import { Reminder, RequestReminder } from "./Reminder";
 import { displayPath } from "./display-path";
 
 interface SettingsWorkspaceProps {
@@ -73,6 +74,7 @@ function SettingsSection({ title, children, actions, sectionRef, onBlur }: {
 
 type UnityHubIntent = { path: string | null; previousPath: string | null; origin: "select" | "auto" | "edit" };
 type UnityHubAction = { kind: "select" | "auto" | "retry" } | { kind: "edit"; trigger: "enter" | "blur" };
+type SettingsFeedback = { message: string; cause?: RpcError };
 
 function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallationsChanged }: {
     client: GuiRpcClient; settingsWriter: SettingsAutosave; snapshot: SettingsGetResult; onInstallationsChanged(): void;
@@ -85,8 +87,12 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
     const manageUnity = useCapability(capabilities.unityManage);
     const canOpenHub = useCapability(capabilities.unityHubOpen);
     const [busy, setBusy] = useState(false);
-    const [error, setError] = useState<string>();
-    const [openError, setOpenError] = useState<string>();
+    const [error, setErrorState] = useState<SettingsFeedback>();
+    const [openError, setOpenErrorState] = useState<SettingsFeedback>();
+    const setError = useCallback((message?: string, cause?: unknown) => setErrorState(message === undefined ? undefined
+        : { message, cause: cause === undefined ? undefined : normalizeRequestError(cause) }), []);
+    const setOpenError = useCallback((message?: string, cause?: unknown) => setOpenErrorState(message === undefined ? undefined
+        : { message, cause: cause === undefined ? undefined : normalizeRequestError(cause) }), []);
     const [pending, setPending] = useState<UnityHubIntent>();
     const [draft, setDraft] = useState(accepted.unityHub.path ?? accepted.settings.unity.hubPath ?? "");
     const edit = useRef({ value: draft, display: draft, previousPath: accepted.settings.unity.hubPath, dirty: false });
@@ -111,7 +117,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
         errorOrigin.current = undefined;
         resetDraft(acceptedRef.current);
         return () => { active.current = false; generation.current += 1; guard.current = false; };
-    }, [client, settingsWriter]);
+    }, [client, settingsWriter, setError, setOpenError]);
     useEffect(() => {
         if (!edit.current.dirty) resetDraft(accepted);
     }, [accepted]);
@@ -135,6 +141,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
         const request = generation.current;
         let restoreDraftFocus = false;
         setBusy(true);
+        setOpenError(undefined);
         try {
             if (action.kind === "auto" || action.kind === "select") {
                 const path = action.kind === "auto" ? null : await client.selectUnityHub(acceptedRef.current.unityHub.path);
@@ -155,10 +162,10 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
                 try {
                     await client.unityInstallationsRefresh();
                     if (request === generation.current) onInstallationsChanged();
-                } catch {
+                } catch (cause: unknown) {
                     refreshFailed = true;
                     errorOrigin.current = "refresh";
-                    if (request === generation.current) setError("Unity Hub path was saved, but Unity installations could not be refreshed.");
+                    if (request === generation.current) setError("Unity Hub path was saved, but Unity installations could not be refreshed.", cause);
                 }
             }
             if (!refreshFailed && request === generation.current) { errorOrigin.current = undefined; setError(undefined); }
@@ -172,10 +179,13 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
                     : intent?.origin === "edit" ? "Unity Hub path changed. Press Escape to load the current path before editing again."
                         : "Unity Hub path changed. Select the file again to replace it.");
             } else {
-                setError(intent === undefined ? "The file picker could not be opened." : intent.origin === "edit"
+                const safe = normalizeRequestError(cause);
+                setError(intent === undefined ? "The file picker could not be opened."
+                    : (safe.code === "daemon_unavailable" || safe.code === "internal_error") && !(intent.path === null && intent.previousPath === null) ? "Unity Hub save result is unknown"
+                    : intent.origin === "edit"
                     ? "Unity Hub path could not be saved. Check the path and try again."
                     : intent.path === null ? "Unity Hub location could not be detected. Retry the operation."
-                        : "Unity Hub path could not be saved. Select a usable executable or retry.");
+                        : "Unity Hub path could not be saved. Select a usable executable or retry.", safe);
             }
         } finally {
             if (request === generation.current) {
@@ -202,41 +212,46 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
         guard.current = true;
         const request = generation.current;
         setBusy(true);
+        setOpenError(undefined);
         try {
             const current = acceptedRef.current;
             const result = await client.unityHubOpen(current.revision, current.unityHub.path);
             if (request !== generation.current) return;
             if (result.outcome === "download_required") {
                 try { await client.openUnityHubDownload(); }
-                catch {
-                    if (request === generation.current) setOpenError("The Unity Hub download page could not be opened.");
+                catch (cause: unknown) {
+                    if (request === generation.current) setOpenError("The Unity Hub download page could not be opened.", cause);
                     return;
                 }
             }
             if (request === generation.current) setOpenError(undefined);
         } catch (cause) {
             if (request !== generation.current) return;
-            const code = normalizeRpcError(cause).code;
+            const error = normalizeRequestError(cause);
+            const code = error.code;
             if (["revision_conflict", "hub_path_changed", "hub_path_invalid", "hub_unavailable"].includes(code)) {
                 try { await settingsWriter.reload(); }
-                catch {
-                    if (request === generation.current) setOpenError("Unity Hub settings could not be refreshed. Refresh Settings before trying again.");
+                catch (caught: unknown) {
+                    if (request === generation.current) setOpenError("Unity Hub settings could not be refreshed. Refresh Settings before trying again.", caught);
                     return;
                 }
-                if (request === generation.current) setOpenError("Unity Hub location changed. Review the current path and click again.");
+                if (request === generation.current) setOpenError("Unity Hub location changed. Review the current path and click again.", error);
             } else if (code === "hub_open_failed") {
-                setOpenError("Unity Hub could not be opened.");
+                setOpenError("Unity Hub could not be opened.", error);
             } else if (code === "hub_open_busy") {
-                setOpenError("Unity Hub is already being opened. Check its window before trying again.");
+                setOpenError("Unity Hub is already being opened. Check its window before trying again.", error);
             } else if (code === "permission_denied") {
-                setOpenError("Opening Unity Hub is not permitted on this connection.");
+                setOpenError("Opening Unity Hub is not permitted on this connection.", error);
             } else {
-                setOpenError("The result of opening Unity Hub is unknown. Check Unity Hub before trying again.");
+                setOpenError("The result of opening Unity Hub is unknown. Check Unity Hub before trying again.", error);
             }
         } finally {
             if (request === generation.current) { guard.current = false; setBusy(false); }
         }
     };
+    const readUnknown = (error?.message === "Unity Hub path was saved, but Unity installations could not be refreshed."
+        || error?.message === "Unity Hub location could not be detected. Retry the operation." && pending?.path === null && pending.previousPath === null)
+        && (error.cause?.code === "internal_error" || error.cause?.code === "daemon_unavailable");
     return (
         <SettingsSection title={t("Unity Hub Path")} sectionRef={group}
             actions={<div className="action-row">
@@ -283,12 +298,15 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
                     }} />
                 <Button disabled={state.failed} softDisabled={busy || state.saving} onClick={() => void run({ kind: "select" })} type="button">{t("Select")}</Button>
             </div>
-            {location.configuredPathStatus === "invalid" ? <p className="form-error">{t("The saved Unity Hub path is no longer usable.")}</p> : null}
-            {error === undefined ? null : <div role="alert"><p className="form-error">{t(error)}</p>
-                {pending === undefined ? null : <Button disabled={state.failed} softDisabled={busy || state.saving} onClick={() => void run({ kind: "retry" })} type="button" variant="text">{t("Retry")}</Button>}
-            </div>}
+            {location.configuredPathStatus === "invalid" ? <Reminder tone="warning">{t("The saved Unity Hub path is no longer usable.")}</Reminder> : null}
+            {error === undefined ? null : error.cause === undefined ? <Reminder tone="error">{t(error.message)}</Reminder>
+                : <RequestReminder error={error.cause} title={readUnknown ? null : t(error.message)}
+                    message={readUnknown ? error.message : error.message === "Unity Hub save result is unknown" ? "Retry checks the current path before writing again." : undefined}>
+                    {pending === undefined ? null : <Button disabled={state.failed} softDisabled={busy || state.saving} onClick={() => void run({ kind: "retry" })} type="button" variant="text">{t("Retry")}</Button>}
+                </RequestReminder>}
             {openDisabledReason === undefined ? null : <span className="visually-hidden" id="settings-unity-hub-open-reason">{openDisabledReason}</span>}
-            {openError === undefined ? null : <p className="form-error" role="alert">{t(openError)}</p>}
+            {openError === undefined ? null : openError.cause === undefined ? <Reminder tone="error">{t(openError.message)}</Reminder>
+                : <RequestReminder error={openError.cause} title={null} message={openError.message} />}
         </SettingsSection>
     );
 }
@@ -301,7 +319,7 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
     const [items, setItems] = useState<UnityInstallation[]>(initial.kind === "ready" ? initial.value?.installations ?? [] : []);
     const [cursor, setCursor] = useState<string | undefined>(initial.kind === "ready" ? initial.value?.nextCursor : undefined);
     const [busy, setBusy] = useState(false);
-    const [error, setError] = useState<RpcError | undefined>(initial.kind === "error" ? normalizeRpcError(initial.error) : undefined);
+    const [error, setError] = useState<RpcError | undefined>(initial.kind === "error" ? normalizeRequestError(initial.error) : undefined);
     const [open, setOpen] = useState(false);
     const [generation, setGeneration] = useState(0);
     const requestRef = useRef(0);
@@ -319,7 +337,7 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
             setItems((current) => next === undefined ? page.installations : [...current, ...page.installations]);
             setCursor(page.nextCursor);
         } catch (caught: unknown) {
-            if (request === requestRef.current) setError(normalizeRpcError(caught));
+            if (request === requestRef.current) setError(normalizeRequestError(caught));
         } finally {
             if (request === requestRef.current) { busyRef.current = false; setBusy(false); }
         }
@@ -365,7 +383,7 @@ function SettingsEditor({ client, settingsWriter, snapshot, initialRepositories,
     }, [settingsWriter, snapshot, onApplied]);
     const [repositories, setRepositories] = useState<RepositorySnapshot[]>(initial.kind === "ready" ? initial.value?.repositories ?? [] : []);
     const [repositoryCursor, setRepositoryCursor] = useState<Parameters<GuiRpcClient["repositoriesList"]>[0]>(initial.kind === "ready" ? initial.value?.nextCursor : undefined);
-    const [repositoryError, setRepositoryError] = useState(initial.kind === "error");
+    const [repositoryError, setRepositoryError] = useState<RpcError | undefined>(initial.kind === "error" ? normalizeRequestError(initial.error) : undefined);
     const [repositoryBusy, setRepositoryBusy] = useState(false);
     const repositoryBusyRef = useRef(false);
     const repositoryRequestRef = useRef(0);
@@ -380,14 +398,14 @@ function SettingsEditor({ client, settingsWriter, snapshot, initialRepositories,
         const request = ++repositoryRequestRef.current;
         repositoryBusyRef.current = true;
         setRepositoryBusy(true);
-        setRepositoryError(false);
+        setRepositoryError(undefined);
         try {
             const page = await client.repositoriesList(cursor);
             if (request !== repositoryRequestRef.current) return;
             setRepositories((current) => cursor === undefined ? page.repositories : [...current, ...page.repositories]);
             setRepositoryCursor(page.nextCursor);
-        } catch {
-            if (request === repositoryRequestRef.current) setRepositoryError(true);
+        } catch (caught: unknown) {
+            if (request === repositoryRequestRef.current) setRepositoryError(normalizeRequestError(caught));
         } finally {
             if (request === repositoryRequestRef.current) { repositoryBusyRef.current = false; setRepositoryBusy(false); }
         }
@@ -414,17 +432,22 @@ function SettingsEditor({ client, settingsWriter, snapshot, initialRepositories,
                     <Checkbox checked={settings.packages.hideLocalUserPackages} label={t("Hide local User Packages")} onChange={(checked) => packages("hideLocalUserPackages", checked)} />
                 </div>
                 <div className="settings-source-options">
+                    {settings.packages.hiddenRepositoryIds.length < 256 ? null : <Reminder tone="warning">{t("Up to 256 repositories can be hidden. Unhide one before hiding another.")}</Reminder>}
                     {repositories.map((repository) => repository.repositoryId === undefined ? null : (
                         <Checkbox key={repository.repositoryId} checked={settings.packages.hiddenRepositoryIds.includes(repository.repositoryId)}
+                            disabled={settings.packages.hiddenRepositoryIds.length >= 256 && !settings.packages.hiddenRepositoryIds.includes(repository.repositoryId)}
                             label={t("Hide {name}", { name: repository.name ?? repository.declaredId ?? repository.repositoryId })}
                             onChange={(checked) => {
                                 const hidden = new Set((settingsWriter.getSnapshot().settings ?? settings).packages.hiddenRepositoryIds);
-                                if (checked) hidden.add(repository.repositoryId as string);
+                                if (checked) {
+                                    if (!hidden.has(repository.repositoryId as string) && hidden.size >= 256) return;
+                                    hidden.add(repository.repositoryId as string);
+                                }
                                 else hidden.delete(repository.repositoryId as string);
                                 packages("hiddenRepositoryIds", [...hidden].sort());
                             }} />
                     ))}
-                    {repositoryError ? <div role="alert"><p>{t("Repository visibility options could not be loaded.")}</p><Button disabled={repositoryBusy} onClick={() => void readRepositories(repositoryCursor)} type="button" variant="text">{t("Retry repository options")}</Button></div> : null}
+                    {repositoryError === undefined ? null : <RequestReminder error={repositoryError} title={t("Repository visibility options could not be loaded.")}><Button disabled={repositoryBusy} onClick={() => void readRepositories(repositoryCursor)} type="button" variant="text">{t("Retry repository options")}</Button></RequestReminder>}
                     {repositoryCursor === undefined ? null : <Button disabled={repositoryBusy} onClick={() => void readRepositories(repositoryCursor)} type="button" variant="text">{t("Load more repository options")}</Button>}
                 </div>
             </SettingsSection>

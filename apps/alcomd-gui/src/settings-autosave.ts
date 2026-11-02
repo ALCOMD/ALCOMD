@@ -1,6 +1,8 @@
 import type { OfficialSettings, SettingsGetResult, SettingsUpdate } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
 import type { ThemePreferences } from "@alcomd/ui";
+import type { RpcError } from "@alcomd/sdk";
+import { normalizeRequestError } from "./request-errors";
 
 type OrdinaryUpdate = Omit<SettingsUpdate, "appearance"> & {
     appearance?: Pick<NonNullable<SettingsUpdate["appearance"]>, "density" | "motion">;
@@ -11,6 +13,7 @@ interface SaveState {
     settings?: OfficialSettings;
     saving: boolean;
     failed: boolean;
+    error?: RpcError;
 }
 
 export class UnityHubConflictError extends Error {}
@@ -21,6 +24,7 @@ export class SettingsAutosave {
     private pending: OrdinaryUpdate = {};
     private inFlight: OrdinaryUpdate = {};
     private failed = false;
+    private error?: RpcError;
     private stopped = false;
     private scheduled = false;
     private jobs = 0;
@@ -60,9 +64,11 @@ export class SettingsAutosave {
             try {
                 this.apply(await this.client.settingsGet());
                 this.failed = false;
+                this.error = undefined;
                 await this.drain();
-            } catch {
+            } catch (caught: unknown) {
                 this.failed = true;
+                this.error = normalizeRequestError(caught);
                 this.publish();
             }
         });
@@ -70,10 +76,10 @@ export class SettingsAutosave {
 
     saveTheme(theme: ThemePreferences): Promise<SettingsGetResult> {
         return this.enqueue(async () => {
-            if (this.failed) throw new Error("Settings save must be retried first.");
+            if (this.failed) throw this.error ?? { code: "internal_error", message: "" };
             await this.drain();
             this.requireActive();
-            if (this.failed) throw new Error("Settings save must be retried first.");
+            if (this.failed) throw this.error ?? { code: "internal_error", message: "" };
             if (this.accepted === undefined) this.apply(await this.client.settingsGet());
             this.requireActive();
             const next = await this.client.settingsUpdate(this.accepted!.revision, { appearance: theme });
@@ -84,10 +90,10 @@ export class SettingsAutosave {
 
     saveUnityHub(path: string | null, retry?: { previousPath: string | null }): Promise<SettingsGetResult> {
         return this.enqueue(async () => {
-            if (this.failed) throw new Error("Settings save must be retried first.");
+            if (this.failed) throw this.error ?? { code: "internal_error", message: "" };
             await this.drain();
             this.requireActive();
-            if (this.failed) throw new Error("Settings save must be retried first.");
+            if (this.failed) throw this.error ?? { code: "internal_error", message: "" };
             const redetect = path === null && this.accepted?.settings.unity.hubPath === null;
             if (retry !== undefined || this.accepted === undefined || redetect) this.apply(await this.client.settingsGet());
             this.requireActive();
@@ -143,7 +149,8 @@ export class SettingsAutosave {
                 unity: { ...this.accepted.settings.unity, ...desired.unity }
             },
             saving: this.jobs > 0,
-            failed: this.failed
+            failed: this.failed,
+            error: this.error
         };
         for (const listener of this.listeners) listener();
     }
@@ -181,10 +188,11 @@ export class SettingsAutosave {
                 if (Object.keys(update).length > 0) this.apply(await this.client.settingsUpdate(this.accepted!.revision, update));
                 this.inFlight = {};
                 this.publish();
-            } catch {
+            } catch (caught: unknown) {
                 this.pending = merge(intent, this.pending);
                 this.inFlight = {};
                 this.failed = true;
+                this.error = normalizeRequestError(caught);
                 this.publish();
             }
         }

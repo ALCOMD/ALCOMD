@@ -108,7 +108,10 @@ test("a failed pending read commits a real error with a retry action", async ({ 
     await navigation(page, "Resources").click();
     await expect(page.locator("#main-content")).toHaveAttribute("aria-busy", "true");
     await page.evaluate(() => window.dispatchEvent(new CustomEvent("test-repositories-ready", { detail: "error" })));
-    await expect(page.getByRole("alert")).toContainText("daemon_unavailable");
+    const alert = page.getByRole("alert");
+    await expect(alert).toContainText("Core is unavailable. Reconnect and check any submitted task before repeating a change.");
+    await alert.getByRole("button", { name: "Show details", exact: true }).click();
+    await expect(alert).toContainText("daemon_unavailable");
     await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeEnabled();
     await expect(page.locator("#main-content")).toHaveAttribute("aria-busy", "false");
 });

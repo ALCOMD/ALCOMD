@@ -292,7 +292,7 @@ test("failed Save retains editable preview and explicit Retry saves the retained
     await enterHex(page, "#E040A0");
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
     await themeDialogHost(page).getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("Theme could not be saved");
+    await expect(page.getByRole("alert")).toContainText("Theme save result is unknown");
     await expect(page.locator("html")).toHaveAttribute("data-source-color", "#E040A0");
     await expect(page.locator("#theme-source").getByRole("textbox")).toBeEditable();
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
@@ -308,7 +308,7 @@ test("Cancel after a failed Save restores the accepted palette and makes no furt
     const accepted = await palette(page);
     await enterHex(page, "#E040A0");
     await themeDialogHost(page).getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("Theme could not be saved");
+    await expect(page.getByRole("alert")).toContainText("Theme save result is unknown");
     await themeDialogHost(page).getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeHidden();
     await settleFrames(page);

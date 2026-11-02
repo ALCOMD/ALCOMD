@@ -74,7 +74,7 @@ export function Reminder({ actions, children, details, onDismiss, title, tone = 
     </section>;
 }
 
-export function RequestReminder({ children, error, title }: { children?: ReactNode; error: RpcError; title?: string | null }) {
+export function RequestReminder({ children, error, message, title }: { children?: ReactNode; error: RpcError; message?: string; title?: string | null }) {
     const { t } = useTranslation();
     const safe = normalizeRequestError(error);
     const confirmation = safe.code === "extension_publisher_confirmation_required";
@@ -82,7 +82,7 @@ export function RequestReminder({ children, error, title }: { children?: ReactNo
         <strong>{t("Error code")}</strong><code>{safe.code}</code>
         {safe.diagnosticId === undefined ? null : <><strong>{t("Diagnostic ID")}</strong><code>{safe.diagnosticId}</code></>}
     </>}>
-        <p>{t(requestErrorMessage(safe.code))}</p>
+        <p>{t(message ?? requestErrorMessage(safe.code))}</p>
         {children === undefined ? null : <div className="reminder-context">{children}</div>}
     </Reminder>;
 }

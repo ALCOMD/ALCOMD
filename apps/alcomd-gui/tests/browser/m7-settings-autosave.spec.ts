@@ -43,7 +43,7 @@ test("rapid changes survive navigation while writes stay serialized", async ({ p
 test("failed autosave is visible after navigation and explicit Retry saves retained intent", async ({ page }) => {
     await openSettings(page, "error-once");
     await page.getByRole("checkbox", { name: "Compact GUI", exact: true }).check();
-    await expect(page.getByRole("alert")).toContainText("Settings could not be saved.");
+    await expect(page.getByRole("alert")).toContainText("Settings save result is unknown");
     await expect(page.locator("html")).toHaveAttribute("data-density", "comfortable");
     await navigation(page, "Projects").click();
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();

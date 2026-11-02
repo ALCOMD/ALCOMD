@@ -1,4 +1,6 @@
 import { Translated, useTranslation } from "./i18n";
+import { productFamily } from "@alcomd/ui";
+import { guiVersion } from "./build-info";
 import type { SupportedLocale, Translate } from "./i18n-types";
 import type { CandidateCursor, PackageCandidateEvidence, PackageCandidateSummary, RpcError } from "@alcomd/sdk";
 import "./LogsWorkspace.css";
@@ -65,7 +67,7 @@ import { displayPath } from "./display-path";
 import { ScrollArea } from "./ScrollArea";
 import { PageHeader } from "./PageHeader";
 import { LoadingState, useDelayedPending } from "./LoadingState";
-import { useInitialPageRead, usePageReadPromise } from "./PageRead";
+import { LocalPageReadContext, useInitialPageRead, usePageReadPromise } from "./PageRead";
 import { navigationLabels } from "./navigation-labels";
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { UtilityWorkspace } from "./UtilityWorkspace";
@@ -2011,9 +2013,18 @@ export function ExtensionDetailPage({ client, navigate, extensionId }: PageProps
 }
 
 export function AboutPage({ client }: PageProps) {
-    const { t, locale } = useTranslation();
+    const { t } = useTranslation();
     const load = useCallback(() => client.systemStatus(), [client]);
-    return <UtilityWorkspace title={t(navigationLabels.about)} load={load}>{(status) => <><dl className="detail-grid"><Detail label={t("Product")} value={status.product} /><Detail label={t("Daemon")} value={status.daemonVersion} /><Detail label="RPC" value={`v${status.rpcVersion}`} /><Detail label={t("State")} value={humanize(t, status.state)} /></dl><section className="notice-card"><h2>{t("Licenses")}</h2><p>{t("ALCOMD source is licensed under AGPL-3.0-only.")}</p><p><Translated message="The canonical third-party dependency notice source is {file} in the product distribution." values={{ file: <code>THIRD_PARTY_NOTICES.md</code> }} /></p></section></>}</UtilityWorkspace>;
+    return <section className="utility-workspace page-surface--utility" aria-labelledby="route-title">
+        <PageHeader title={t(navigationLabels.about)} />
+        <ScrollArea className="utility-workspace-body">
+            <dl className="detail-grid"><Detail label={t("Product")} value={productFamily} /><Detail label={t("GUI version")} value={guiVersion} /></dl>
+            <LocalPageReadContext.Provider value={true}>
+                <ResourcePage load={load}>{(status) => <dl className="detail-grid"><Detail label={t("Daemon")} value={status.daemonVersion} /><Detail label="RPC" value={`v${status.rpcVersion}`} /><Detail label={t("State")} value={humanize(t, status.state)} /></dl>}</ResourcePage>
+            </LocalPageReadContext.Provider>
+            <section className="notice-card"><h2>{t("Licenses")}</h2><p>{t("ALCOMD source is licensed under AGPL-3.0-only.")}</p><p><Translated message="The canonical third-party dependency notice source is {file} in the product distribution." values={{ file: <code>THIRD_PARTY_NOTICES.md</code> }} /></p></section>
+        </ScrollArea>
+    </section>;
 }
 
 export function ActivityPage({ client, navigate }: PageProps) {
@@ -2041,6 +2052,7 @@ function LogFilter({ label, value, values, onChange }: { label: string; value: s
 
 function ActivityLogRows({ client, items, search }: { client: GuiRpcClient; items: LoadedActivityItem[]; search: string }) {
     const { t, locale } = useTranslation();
+    const canReadOperations = useCapability(capabilities.operations);
     const [status, setStatus] = useState("");
     const [kind, setKind] = useState("");
     const [details, setDetails] = useState(false);
@@ -2061,7 +2073,7 @@ function ActivityLogRows({ client, items, search }: { client: GuiRpcClient; item
             <span className={`state-chip state-chip--${item.state ?? "unknown"}`}>{item.state === undefined ? t("Unknown") : humanize(t, item.state)}</span>,
             <span className="logs-summary"><span title={item.summaryCode}>{humanize(t, item.summaryCode)}</span><small>{humanize(t, item.type)}</small>{details ? <dl className="logs-details"><Detail label={t("Summary code")} value={item.summaryCode} />{item.operationId === undefined ? null : <Detail label={t("Operation")} value={item.operationId} />}{item.eventSequence === undefined ? null : <Detail label={t("Event sequence")} value={String(item.eventSequence)} />}</dl> : null}</span>,
             <>{item.resourceKind === undefined ? "—" : humanize(t, item.resourceKind)}{item.resourceId === undefined ? null : <small>{item.resourceId}</small>}</>,
-            item.operationId === undefined ? null : <Button onClick={() => setSelected(item.operationId)} type="button" variant="text">{t("View operation")}</Button>
+            item.operationId === undefined ? null : <Button disabled={!canReadOperations} title={capabilityUnavailableTitle(canReadOperations, capabilities.operations, t)} onClick={() => setSelected(item.operationId)} type="button" variant="text">{t("View operation")}</Button>
         ] }))} sizing="fixed" />
         {selected === undefined ? null : <LogOperationDialog client={client} operationId={selected} onClose={() => setSelected(undefined)} />}
     </div>;
@@ -2069,27 +2081,30 @@ function ActivityLogRows({ client, items, search }: { client: GuiRpcClient; item
 
 function LogOperationDialog({ client, operationId, onClose }: { client: GuiRpcClient; operationId: string; onClose(): void }) {
     const { t, locale } = useTranslation();
-    const load = useCallback(() => client.operationGet(operationId), [client, operationId]);
     return <Dialog wide open title={t("Operation detail")} onClose={onClose}>
-        <ResourcePage load={load} showRefreshBar={false}>{(operation) => <dl className="logs-operation-details">
-            <Detail label={t("Operation")} value={operation.operationId} /><Detail label={t("Kind")} value={humanize(t, operation.kind)} />
-            <Detail label={t("State")} value={humanize(t, operation.state)} /><Detail label={t("Phase")} value={operation.progress?.phase ?? "—"} />
-            <Detail label={t("Updated")} value={formatTime(t, locale, operation.updatedAtMs)} /><Detail label={t("Error")} value={operation.errorCode === undefined ? t("None") : t(requestErrorMessage(operation.errorCode))} />
-            {operation.diagnosticId === undefined ? null : <Detail label={t("Diagnostic ID")} value={operation.diagnosticId} />}
-        </dl>}</ResourcePage>
+        <OperationFollow client={client} operationId={operationId}>{(operation, error) => <>
+            {error === undefined ? null : <RequestReminder error={error}><p>{t("Progress is temporarily unavailable. ALCOMD will keep following the same task.")}</p></RequestReminder>}
+            {operation === undefined ? error === undefined ? <LoadingState title={t("Reading progress…")} /> : null : <dl className="logs-operation-details">
+                <Detail label={t("Operation")} value={operation.operationId} /><Detail label={t("Kind")} value={humanize(t, operation.kind)} />
+                <Detail label={t("State")} value={humanize(t, operation.state)} /><Detail label={t("Phase")} value={operation.progress?.phase ?? "—"} />
+                <Detail label={t("Updated")} value={formatTime(t, locale, operation.updatedAtMs)} /><Detail label={t("Error")} value={operation.errorCode === undefined ? t("None") : t(requestErrorMessage(operation.errorCode))} />
+                {operation.diagnosticId === undefined ? null : <Detail label={t("Diagnostic ID")} value={operation.diagnosticId} />}
+            </dl>}
+        </>}</OperationFollow>
         <div className="dialog-actions"><Button onClick={onClose} type="button" variant="text">{t("Close")}</Button></div>
     </Dialog>;
 }
 
 function DiagnosticLogRows({ client, items, search }: { client: GuiRpcClient; items: LoadedDiagnosticItem[]; search: string }) {
     const { t, locale } = useTranslation();
+    const canReadOperations = useCapability(capabilities.operations);
     const [severity, setSeverity] = useState("");
     const [subsystem, setSubsystem] = useState("");
     const [selected, setSelected] = useState<string>();
     const query = search.trim().toLowerCase();
     const shown = items.filter((item) => (severity === "" || item.severity === severity)
         && (subsystem === "" || item.subsystem === subsystem)
-        && [item.code, item.summary, item.subsystem, item.diagnosticId, item.operationId].some((value) => value?.toLowerCase().includes(query)));
+        && [item.code, item.summary, t(requestErrorMessage(item.code)), item.subsystem, item.diagnosticId, item.operationId].some((value) => value?.toLowerCase().includes(query)));
     return <div className="logs-workspace">
         <div className="alcomd-filter-bar logs-filter-toolbar" aria-label={t("Diagnostic filters")}>
             <LogFilter label={t("Severity")} value={severity} values={["warning", "error"]} onChange={setSeverity} />
@@ -2100,8 +2115,8 @@ function DiagnosticLogRows({ client, items, search }: { client: GuiRpcClient; it
             formatTime(t, locale, item.occurredAtMs),
             <span className={`logs-severity logs-severity--${item.severity}`}>{humanize(t, item.severity)}</span>,
             item.subsystem,
-            <span className="logs-summary"><strong>{item.code}</strong><p>{item.summary === "The operation failed. Use the diagnostic ID when requesting support." ? t("The operation failed. Use the diagnostic ID when requesting support.") : item.summary}</p>{item.diagnosticId === undefined ? null : <small>{t("Diagnostic ID: ")}{item.diagnosticId}</small>}</span>,
-            item.operationId === undefined ? null : <Button onClick={() => setSelected(item.operationId)} type="button" variant="text">{t("View operation")}</Button>
+            <span className="logs-summary"><strong>{t(requestErrorMessage(item.code))}</strong><small>{item.code}</small>{item.diagnosticId === undefined ? null : <small>{t("Diagnostic ID: ")}{item.diagnosticId}</small>}</span>,
+            item.operationId === undefined ? null : <Button disabled={!canReadOperations} title={capabilityUnavailableTitle(canReadOperations, capabilities.operations, t)} onClick={() => setSelected(item.operationId)} type="button" variant="text">{t("View operation")}</Button>
         ] }))} sizing="fixed" />
         {selected === undefined ? null : <LogOperationDialog client={client} operationId={selected} onClose={() => setSelected(undefined)} />}
     </div>;
@@ -2110,6 +2125,8 @@ function DiagnosticLogRows({ client, items, search }: { client: GuiRpcClient; it
 export function DiagnosticsPage({ client, navigate }: PageProps) {
     const { t, locale } = useTranslation();
     const canCheckState = useCapability(capabilities.stateCheck);
+    const canReadOperations = useCapability(capabilities.operations);
+    const current = useActionScope(client);
     const load = useCallback(() => client.diagnosticsList(), [client]);
     const [operationId, setOperationId] = useState<string>();
     const [checkError, setCheckError] = useState<RpcError>();
@@ -2117,23 +2134,29 @@ export function DiagnosticsPage({ client, navigate }: PageProps) {
     const checkingRef = useRef(false);
     const [search, setSearch] = useState("");
     const runStateCheck = async () => {
-        if (!canCheckState || checkingRef.current) return;
+        if (!canCheckState || !canReadOperations || checkingRef.current) return;
         checkingRef.current = true;
         setChecking(true);
         setCheckError(undefined);
+        let accepted = false;
         try {
             const result = await client.stateCheck();
+            if (!current()) return;
+            accepted = true;
             setOperationId(result.operationId);
         } catch (caught: unknown) {
+            if (!current()) return;
             setCheckError(safeError(t, locale, caught));
         } finally {
-            checkingRef.current = false;
-            setChecking(false);
+            if (!accepted) {
+                checkingRef.current = false;
+                if (current()) setChecking(false);
+            }
         }
     };
     return <UtilityWorkspace title={t(navigationLabels.logs)} load={load} navigation={<UtilityNavigation current="/diagnostics" kind="logs" navigate={navigate} />}
-        tools={() => <><SearchField className="logs-search" label={t("Search diagnostics")} value={search} onInput={setSearch} /><Button disabled={!canCheckState || checking} onClick={() => void runStateCheck()} title={capabilityUnavailableTitle(canCheckState, capabilities.stateCheck, t)} type="button" variant="tonal">{t("Run state check")}</Button></>}>
-        {(value) => <>{checkError === undefined ? null : <p className="inline-error" role="alert">{t("State check failed: ")}{t(requestErrorMessage(checkError.code))}</p>}{operationId === undefined ? null : <OperationFollow client={client} operationId={operationId} />}
+        tools={() => <><SearchField className="logs-search" label={t("Search diagnostics")} value={search} onInput={setSearch} /><Button disabled={!canCheckState || !canReadOperations || checking} onClick={() => void runStateCheck()} title={capabilityUnavailableTitle(canCheckState && canReadOperations, !canCheckState ? capabilities.stateCheck : capabilities.operations, t)} type="button" variant="tonal">{t("Run state check")}</Button></>}>
+        {(value, refresh) => <>{checkError === undefined ? null : <RequestReminder error={checkError} title={t("State check failed")} />}{operationId === undefined ? null : <OperationFollow client={client} operationId={operationId} onTerminal={() => { checkingRef.current = false; setChecking(false); refresh(); }} />}
             <PagedItems initialItems={value.items} initialCursor={value.nextCursor} loadMore={(cursor) => client.diagnosticsList(cursor)}>{(items) => <DiagnosticLogRows client={client} items={items} search={search} />}</PagedItems>
         </>}
     </UtilityWorkspace>;
@@ -2209,7 +2232,10 @@ function humanize(t: Translate, value: string): string {
         "projects.create": "projects create",
         "projects.unity-migration": "projects unity-migration",
         "backups.create": "backups create",
-        "backups.restore": "backups restore"
+        "backups.restore": "backups restore",
+        "state.check": "Check state",
+        "extensions.install": "Install extension",
+        "extensions.uninstall": "Uninstall extension"
     };
     const label = labels[value];
     const english = value.replaceAll("_", " ").replaceAll(".", " ");

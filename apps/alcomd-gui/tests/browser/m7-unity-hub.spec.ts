@@ -49,7 +49,7 @@ test("rapid repeated selection opens one picker and keeps accepted path while pe
 test("failed Hub save retains accepted evidence and Retry reconciles before saving", async ({ page }) => {
     await open(page, "theme-save=error-once");
     await section(page).getByRole("button", { name: "Select", exact: true }).click();
-    await expect(section(page).getByRole("alert")).toContainText("Unity Hub path could not be saved.");
+    await expect(section(page).getByRole("alert")).toContainText("Unity Hub save result is unknown");
     expect(await value(page)).toBe("");
     await expect(section(page).locator("md-outlined-text-field")).toHaveJSProperty("placeholder", "Unity Hub was not found.");
     expect(await requests(page, "unityInstallationsRefresh")).toBe(0);

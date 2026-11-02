@@ -6,6 +6,9 @@ import type { SettingsGetResult } from "./core-models";
 import { useTranslation } from "./i18n";
 import { Button, ColorPicker, Icon, RadioGroup, SegmentedButtons, Slider, TextField } from "./Material";
 import { UtilityActionDialog, UtilityDialogCancel, useUtilityDialogBusy, useUtilityDialogClose } from "./UtilityActionDialog";
+import type { RpcError } from "@alcomd/sdk";
+import { normalizeRequestError } from "./request-errors";
+import { RequestReminder, useReminder } from "./Reminder";
 
 export const themeSchemeLabels = {
     "tonal-spot": "Tonal spot", fidelity: "Fidelity", monochrome: "Monochrome", neutral: "Neutral",
@@ -34,17 +37,16 @@ interface ThemeControlsProps {
 export function ThemeControls(props: ThemeControlsProps) {
     const { t } = useTranslation();
     const [open, setOpen] = useState(false);
-    const [confirmed, setConfirmed] = useState(false);
+    const reminder = useReminder();
     const opener = useRef<HTMLElement>(null);
     return <div className="action-row">
-        {confirmed ? <span role="status">{t("Theme saved")}</span> : null}
         <Button id="settings-theme-button" ref={opener} disabled={props.disabled} type="button" variant="filled"
-            onClick={() => { setConfirmed(false); setOpen(true); }}><Icon asset={paletteIcon} slot="icon" />{t("Theme")}</Button>
+            onClick={() => { reminder.clear(); setOpen(true); }}><Icon asset={paletteIcon} slot="icon" />{t("Theme")}</Button>
         {open ? <UtilityActionDialog title={t("Theme")} wide onClose={() => {
             setOpen(false);
             window.requestAnimationFrame(() => opener.current?.focus());
         }}>
-            <ThemeEditor {...props} onSaved={() => setConfirmed(true)} />
+            <ThemeEditor {...props} onSaved={() => reminder.success(t("Theme saved"))} />
         </UtilityActionDialog> : null}
     </div>;
 }
@@ -57,7 +59,7 @@ function ThemeEditor({ value, disabled, onSave, onReload, onPreview, onSession, 
     const [hct, setHct] = useState(() => themeHct(resolveThemeSourceColor(value.sourceColor)));
     const [saving, setSaving] = useState(false);
     const [finished, setFinished] = useState(false);
-    const [error, setError] = useState<"save" | "conflict">();
+    const [error, setError] = useState<RpcError>();
     const desired = useRef(value);
     const saved = useRef(value);
     const working = useRef(false);
@@ -128,7 +130,7 @@ function ThemeEditor({ value, disabled, onSave, onReload, onPreview, onSession, 
             callbacks.current.onSaved();
             setFinished(true);
         } catch (caught: unknown) {
-            if (active.current) setError(typeof caught === "object" && caught !== null && "code" in caught && caught.code === "revision_conflict" ? "conflict" : "save");
+            if (active.current) setError(normalizeRequestError(caught));
         } finally {
             working.current = false;
             if (active.current) setSaving(false);
@@ -172,7 +174,7 @@ function ThemeEditor({ value, disabled, onSave, onReload, onPreview, onSession, 
                 setFinished(true);
             }
         } catch (caught: unknown) {
-            if (active.current) setError(typeof caught === "object" && caught !== null && "code" in caught && caught.code === "revision_conflict" ? "conflict" : "save");
+            if (active.current) setError(normalizeRequestError(caught));
         } finally {
             working.current = false;
             if (active.current) setSaving(false);
@@ -214,10 +216,11 @@ function ThemeEditor({ value, disabled, onSave, onReload, onPreview, onSession, 
             </div>
         </div>
         <div className="theme-feedback">
-            {error === undefined ? null : <div role="alert">
-                <p>{t(error === "conflict" ? "Theme changed elsewhere." : "Theme could not be saved.")}</p>
+            {error === undefined ? null : <RequestReminder error={error} title={t(error.code === "revision_conflict" ? "Theme changed elsewhere."
+                : error.code === "daemon_unavailable" || error.code === "internal_error" ? "Theme save result is unknown" : "Theme could not be saved.")}
+                message={error.code === "daemon_unavailable" || error.code === "internal_error" ? "Retry checks the current settings before writing again." : undefined}>
                 <Button disabled={disabled || saving} type="button" variant="tonal" onClick={() => void retry()}>{t("Retry theme save")}</Button>
-            </div>}
+            </RequestReminder>}
         </div>
         <div className="theme-editor-footer">
             <Button disabled={disabled || saving} type="button" variant="text" onClick={() => {
