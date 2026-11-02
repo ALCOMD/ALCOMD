@@ -2450,7 +2450,7 @@ pub struct ProjectsApplyUnityMigrationResult {
     pub replayed: bool,
 }
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 4;
+pub const CONFIG_SCHEMA_VERSION: u32 = 5;
 pub const MAX_OFFICIAL_GUI_PAGE_LIMIT: u32 = 200;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2511,6 +2511,23 @@ pub struct Settings {
     pub locale: SettingsLocale,
     pub packages: PackageSettings,
     pub unity: UnitySettings,
+    pub paths: PathSettings,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PathSettings {
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub project_directory: Option<String>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub backup_directory: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StorageDirectories {
+    pub project_directory: String,
+    pub backup_directory: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2710,6 +2727,47 @@ pub struct SettingsUpdate {
         skip_serializing_if = "Option::is_none"
     )]
     pub unity: Option<UnitySettingsUpdate>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub paths: Option<PathSettingsUpdate>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PathSettingsUpdate {
+    #[serde(default, skip_serializing_if = "NullableUpdate::is_unchanged")]
+    pub project_directory: NullableUpdate<String>,
+    #[serde(default, skip_serializing_if = "NullableUpdate::is_unchanged")]
+    pub backup_directory: NullableUpdate<String>,
+}
+
+impl<'de> Deserialize<'de> for PathSettingsUpdate {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct Fields {
+            #[serde(default)]
+            project_directory: NullableUpdate<String>,
+            #[serde(default)]
+            backup_directory: NullableUpdate<String>,
+        }
+        let value = Fields::deserialize(deserializer)?;
+        if value.project_directory.is_unchanged() && value.backup_directory.is_unchanged() {
+            return Err(serde::de::Error::custom(
+                "paths update must contain a directory",
+            ));
+        }
+        Ok(Self {
+            project_directory: value.project_directory,
+            backup_directory: value.backup_directory,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
@@ -2772,6 +2830,7 @@ pub struct SettingsGetResult {
     pub revision: u64,
     pub settings: Settings,
     pub unity_hub: UnityHubLocation,
+    pub directories: StorageDirectories,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

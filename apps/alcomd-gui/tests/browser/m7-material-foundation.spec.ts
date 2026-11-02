@@ -525,7 +525,7 @@ test("Project workspace Copy completes through Plan Apply and navigates to the c
     await expect(page).toHaveURL(/\/projects\/00000000-0000-4000-8000-000000000061$/);
 });
 
-test("Project Copy opens the in-app form with the source parent and copy name as defaults", async ({ page }) => {
+test("Project Copy opens the in-app form with the configured location and copy name as defaults", async ({ page }) => {
     await openHarness(page, "/projects/00000000-0000-4000-8000-000000000110");
     const projectActions = page.getByRole("main").getByRole("navigation", { name: "Project actions" });
     await projectActions.getByRole("button", { name: /More actions for/ }).click();
@@ -544,7 +544,7 @@ test("Project Copy opens the in-app form with the source parent and copy name as
     const dialogBox = await dialog.boundingBox();
     expect(dialogBox).not.toBeNull();
     for (const element of [
-        page.getByText(/Choose the new project name/),
+        page.getByText(/Choose a name and location for the copied project/),
         nameField,
         locationField,
         choose,

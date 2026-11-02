@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use tokio::sync::Mutex;
 
@@ -57,6 +57,31 @@ pub struct ConfigSettings {
     pub locale: ConfigLocale,
     pub packages: ConfigPackageSettings,
     pub unity: ConfigUnitySettings,
+    pub paths: ConfigPathSettings,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ConfigPathSettings {
+    pub project_directory: Option<String>,
+    pub backup_directory: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConfigPathUpdate {
+    pub project_directory: ConfigNullableUpdate<String>,
+    pub backup_directory: ConfigNullableUpdate<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StorageDirectories {
+    pub project_directory: String,
+    pub backup_directory: String,
+}
+
+/// Read-only OS defaults and explicit directory validation. Never creates directories.
+pub trait StorageDirectoryPlatform: Send + Sync + 'static {
+    fn default_directories(&self) -> Result<StorageDirectories, OfficialGuiError>;
+    fn normalize_directory(&self, path: &str) -> Result<String, OfficialGuiError>;
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -175,6 +200,7 @@ pub trait ConfigStore: Send + Sync + 'static {
 pub enum ConfigStoreError {
     Unavailable,
     Corrupt,
+    TooLarge,
 }
 
 impl From<ConfigStoreError> for OfficialGuiError {
@@ -182,6 +208,7 @@ impl From<ConfigStoreError> for OfficialGuiError {
         match error {
             ConfigStoreError::Unavailable => Self::Unavailable,
             ConfigStoreError::Corrupt => Self::Corrupt,
+            ConfigStoreError::TooLarge => Self::InvalidInput,
         }
     }
 }
@@ -207,6 +234,10 @@ impl ConfigSettings {
                 .hub_path
                 .as_ref()
                 .is_some_and(|path| !valid_hub_path_text(path))
+            || [&self.paths.project_directory, &self.paths.backup_directory]
+                .into_iter()
+                .flatten()
+                .any(|path| !valid_hub_path_text(path))
         {
             return Err(OfficialGuiError::InvalidInput);
         }
@@ -235,6 +266,7 @@ pub struct ConfigUpdate {
     pub locale: Option<ConfigLocale>,
     pub packages: Option<ConfigPackageSettingsUpdate>,
     pub unity: Option<ConfigUnityUpdate>,
+    pub paths: Option<ConfigPathUpdate>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -318,6 +350,8 @@ pub struct M7OfficialApplication<S> {
     config: Arc<dyn ConfigStore>,
     hub_platform: Arc<dyn UnityHubPlatform>,
     hub_launcher: Arc<dyn UnityHubLauncher>,
+    directory_platform: Arc<dyn StorageDirectoryPlatform>,
+    directory_defaults: Arc<OnceLock<StorageDirectories>>,
     settings_lock: Arc<Mutex<Option<ConfigSnapshot>>>,
 }
 
@@ -328,12 +362,15 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
         config: Arc<dyn ConfigStore>,
         hub_platform: Arc<dyn UnityHubPlatform>,
         hub_launcher: Arc<dyn UnityHubLauncher>,
+        directory_platform: Arc<dyn StorageDirectoryPlatform>,
     ) -> Self {
         Self {
             store,
             config,
             hub_platform,
             hub_launcher,
+            directory_platform,
+            directory_defaults: Arc::new(OnceLock::new()),
             settings_lock: Arc::new(Mutex::new(None)),
         }
     }
@@ -347,9 +384,12 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
             .map_err(|_| OfficialGuiError::PermissionDenied)?;
         let mut guard = Arc::clone(&self.settings_lock).lock_owned().await;
         let config = Arc::clone(&self.config);
+        let platform = Arc::clone(&self.directory_platform);
+        let defaults = Arc::clone(&self.directory_defaults);
         tokio::task::spawn_blocking(move || {
             *guard = None;
             let snapshot = config.load().map_err(OfficialGuiError::from)?;
+            resolve_storage_directories(&snapshot.settings.paths, platform.as_ref(), &defaults)?;
             *guard = Some(snapshot.clone());
             Ok(snapshot)
         })
@@ -360,9 +400,13 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
     pub async fn initialize_settings(&self) -> Result<(), OfficialGuiError> {
         let mut guard = Arc::clone(&self.settings_lock).lock_owned().await;
         let config = Arc::clone(&self.config);
+        let platform = Arc::clone(&self.directory_platform);
+        let defaults = Arc::clone(&self.directory_defaults);
         tokio::task::spawn_blocking(move || {
             *guard = None;
-            *guard = Some(config.initialize().map_err(OfficialGuiError::from)?);
+            let snapshot = config.initialize().map_err(OfficialGuiError::from)?;
+            resolve_storage_directories(&snapshot.settings.paths, platform.as_ref(), &defaults)?;
+            *guard = Some(snapshot);
             Ok(())
         })
         .await
@@ -376,6 +420,35 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
             .await
             .clone()
             .ok_or(OfficialGuiError::Unavailable)
+    }
+
+    /// Effective paths for one accepted snapshot. Defaults are resolved before publication.
+    pub async fn observe_storage_directories(
+        &self,
+        snapshot: &ConfigSnapshot,
+    ) -> Result<StorageDirectories, OfficialGuiError> {
+        if let (Some(project_directory), Some(backup_directory)) = (
+            &snapshot.settings.paths.project_directory,
+            &snapshot.settings.paths.backup_directory,
+        ) {
+            return Ok(StorageDirectories {
+                project_directory: project_directory.clone(),
+                backup_directory: backup_directory.clone(),
+            });
+        }
+        let paths = snapshot.settings.paths.clone();
+        let platform = Arc::clone(&self.directory_platform);
+        let defaults = Arc::clone(&self.directory_defaults);
+        tokio::task::spawn_blocking(move || {
+            resolve_storage_directories(&paths, platform.as_ref(), &defaults)
+        })
+        .await
+        .map_err(|_| OfficialGuiError::Unavailable)?
+    }
+
+    pub async fn effective_directories(&self) -> Result<StorageDirectories, OfficialGuiError> {
+        self.observe_storage_directories(&self.candidate_settings().await?)
+            .await
     }
 
     /// Observes the exact snapshot already returned by an authorized settings get/update.
@@ -462,6 +535,7 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
                 .unity
                 .as_ref()
                 .is_some_and(|value| matches!(value.hub_path, ConfigNullableUpdate::Unchanged))
+            || update.paths.as_ref().is_some_and(path_update_is_empty)
         {
             return Err(OfficialGuiError::InvalidInput);
         }
@@ -470,6 +544,8 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
         let mut guard = Arc::clone(&self.settings_lock).lock_owned().await;
         let config = Arc::clone(&self.config);
         let hub_platform = Arc::clone(&self.hub_platform);
+        let directory_platform = Arc::clone(&self.directory_platform);
+        let directory_defaults = Arc::clone(&self.directory_defaults);
         tokio::task::spawn_blocking(move || {
             // A publication failure can occur after rename. Never retain an older
             // confirmed snapshot when the resulting disk revision is uncertain.
@@ -491,8 +567,23 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
                 }
                 *path = hub_platform.normalize_path(path)?;
             }
+            if let Some(paths) = &mut update.paths {
+                for value in [&mut paths.project_directory, &mut paths.backup_directory] {
+                    if let ConfigNullableUpdate::Set(path) = value {
+                        if !valid_hub_path_text(path) {
+                            return Err(OfficialGuiError::InvalidInput);
+                        }
+                        *path = directory_platform.normalize_directory(path)?;
+                    }
+                }
+            }
             let settings = apply_update(current.settings, update)?;
             let snapshot = ConfigSnapshot { revision, settings };
+            resolve_storage_directories(
+                &snapshot.settings.paths,
+                directory_platform.as_ref(),
+                &directory_defaults,
+            )?;
             config.publish(&snapshot).map_err(OfficialGuiError::from)?;
             *guard = Some(snapshot.clone());
             Ok(snapshot)
@@ -572,8 +663,44 @@ fn default_snapshot() -> ConfigSnapshot {
                 hide_local_user_packages: false,
             },
             unity: ConfigUnitySettings::default(),
+            paths: ConfigPathSettings::default(),
         },
     }
+}
+
+fn resolve_storage_directories(
+    paths: &ConfigPathSettings,
+    platform: &dyn StorageDirectoryPlatform,
+    cached_defaults: &OnceLock<StorageDirectories>,
+) -> Result<StorageDirectories, OfficialGuiError> {
+    if let (Some(project_directory), Some(backup_directory)) =
+        (&paths.project_directory, &paths.backup_directory)
+    {
+        return Ok(StorageDirectories {
+            project_directory: project_directory.clone(),
+            backup_directory: backup_directory.clone(),
+        });
+    }
+    if cached_defaults.get().is_none() {
+        let defaults = platform.default_directories()?;
+        if !valid_hub_path_text(&defaults.project_directory)
+            || !valid_hub_path_text(&defaults.backup_directory)
+        {
+            return Err(OfficialGuiError::Unavailable);
+        }
+        let _ = cached_defaults.set(defaults);
+    }
+    let defaults = cached_defaults.get().ok_or(OfficialGuiError::Unavailable)?;
+    Ok(StorageDirectories {
+        project_directory: paths
+            .project_directory
+            .clone()
+            .unwrap_or_else(|| defaults.project_directory.clone()),
+        backup_directory: paths
+            .backup_directory
+            .clone()
+            .unwrap_or_else(|| defaults.backup_directory.clone()),
+    })
 }
 
 fn apply_update(
@@ -622,12 +749,28 @@ fn apply_update(
             ConfigNullableUpdate::Set(path) => settings.unity.hub_path = Some(path),
         }
     }
+    if let Some(paths) = update.paths {
+        for (target, value) in [
+            (
+                &mut settings.paths.project_directory,
+                paths.project_directory,
+            ),
+            (&mut settings.paths.backup_directory, paths.backup_directory),
+        ] {
+            match value {
+                ConfigNullableUpdate::Unchanged => {}
+                ConfigNullableUpdate::Clear => *target = None,
+                ConfigNullableUpdate::Set(path) => *target = Some(path),
+            }
+        }
+    }
     settings.validate()?;
     Ok(settings)
 }
 
 fn update_is_empty(update: &ConfigUpdate) -> bool {
     update.locale.is_none()
+        && update.paths.as_ref().is_none_or(path_update_is_empty)
         && update
             .unity
             .as_ref()
@@ -643,6 +786,11 @@ fn update_is_empty(update: &ConfigUpdate) -> bool {
                 && value.hidden_repository_ids.is_none()
                 && value.hide_local_user_packages.is_none()
         })
+}
+
+fn path_update_is_empty(paths: &ConfigPathUpdate) -> bool {
+    matches!(paths.project_directory, ConfigNullableUpdate::Unchanged)
+        && matches!(paths.backup_directory, ConfigNullableUpdate::Unchanged)
 }
 
 fn validate_limit(limit: Option<u32>) -> Result<u32, OfficialGuiError> {
@@ -707,6 +855,23 @@ fn valid_hub_path_text(value: &str) -> bool {
 }
 #[cfg(test)]
 mod tests {
+    struct TestDirectories;
+    impl StorageDirectoryPlatform for TestDirectories {
+        fn default_directories(&self) -> Result<StorageDirectories, OfficialGuiError> {
+            Ok(StorageDirectories {
+                project_directory: "/fixtures/projects".into(),
+                backup_directory: "/fixtures/backups".into(),
+            })
+        }
+        fn normalize_directory(&self, path: &str) -> Result<String, OfficialGuiError> {
+            if path.starts_with('/') || path.as_bytes().get(1) == Some(&b':') {
+                Ok(path.to_owned())
+            } else {
+                Err(OfficialGuiError::InvalidInput)
+            }
+        }
+    }
+
     use super::*;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::{Condvar, Mutex as StdMutex};
@@ -774,8 +939,13 @@ mod tests {
             inspections: AtomicUsize::new(0),
         });
         let launcher = Arc::new(RecordingHubLauncher::default());
-        let app =
-            M7OfficialApplication::new(NoStore, config.clone(), platform.clone(), launcher.clone());
+        let app = M7OfficialApplication::new(
+            NoStore,
+            config.clone(),
+            platform.clone(),
+            launcher.clone(),
+            Arc::new(TestDirectories),
+        );
         (app, config, platform, launcher)
     }
 
@@ -1146,6 +1316,7 @@ mod tests {
 
     fn locale_update(locale: ConfigLocale) -> ConfigUpdate {
         ConfigUpdate {
+            paths: None,
             appearance: None,
             locale: Some(locale),
             packages: None,
@@ -1153,8 +1324,306 @@ mod tests {
         }
     }
 
+    fn path_update(
+        project_directory: ConfigNullableUpdate<String>,
+        backup_directory: ConfigNullableUpdate<String>,
+    ) -> ConfigUpdate {
+        ConfigUpdate {
+            paths: Some(ConfigPathUpdate {
+                project_directory,
+                backup_directory,
+            }),
+            appearance: None,
+            locale: None,
+            packages: None,
+            unity: None,
+        }
+    }
+
+    #[derive(Default)]
+    struct RefusingDefaultDirectories {
+        reads: AtomicUsize,
+    }
+
+    impl StorageDirectoryPlatform for RefusingDefaultDirectories {
+        fn default_directories(&self) -> Result<StorageDirectories, OfficialGuiError> {
+            self.reads.fetch_add(1, Ordering::SeqCst);
+            Err(OfficialGuiError::Unavailable)
+        }
+
+        fn normalize_directory(&self, path: &str) -> Result<String, OfficialGuiError> {
+            TestDirectories.normalize_directory(path)
+        }
+    }
+
+    #[tokio::test]
+    async fn persisted_explicit_directories_bypass_unavailable_documents_and_clear_fails_before_commit()
+     {
+        let config = Arc::new(MemoryConfig::default());
+        {
+            let mut persisted = config.snapshot.lock().expect("persisted settings");
+            persisted.settings.paths = ConfigPathSettings {
+                project_directory: Some("/selected/projects".into()),
+                backup_directory: Some("/selected/backups".into()),
+            };
+        }
+        let directories = Arc::new(RefusingDefaultDirectories::default());
+        let app = M7OfficialApplication::new(
+            NoStore,
+            config.clone(),
+            Arc::new(FakeHub::default()),
+            Arc::new(RecordingHubLauncher::default()),
+            directories.clone(),
+        );
+        app.initialize_settings()
+            .await
+            .expect("explicit paths initialize without Documents");
+        let initial = app
+            .get_settings(&AccessContext::local_owner())
+            .await
+            .expect("read explicit paths");
+        assert_eq!(
+            app.observe_storage_directories(&initial)
+                .await
+                .expect("direct projection"),
+            StorageDirectories {
+                project_directory: "/selected/projects".into(),
+                backup_directory: "/selected/backups".into(),
+            }
+        );
+        let saved = app
+            .update_settings(
+                &AccessContext::local_owner(),
+                1,
+                locale_update(ConfigLocale::JaJp),
+            )
+            .await
+            .expect("unrelated update without Documents");
+        assert_eq!(saved.settings.paths, initial.settings.paths);
+        assert_eq!(
+            app.effective_directories()
+                .await
+                .expect("effective explicit paths")
+                .backup_directory,
+            "/selected/backups"
+        );
+        assert_eq!(directories.reads.load(Ordering::SeqCst), 0);
+        let mut clear = path_update(ConfigNullableUpdate::Clear, ConfigNullableUpdate::Unchanged);
+        clear.locale = Some(ConfigLocale::ZhCn);
+        assert_eq!(
+            app.update_settings(&AccessContext::local_owner(), 2, clear)
+                .await,
+            Err(OfficialGuiError::Unavailable)
+        );
+        assert_eq!(directories.reads.load(Ordering::SeqCst), 1);
+        assert_eq!(config.publishes.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            *config.snapshot.lock().expect("accepted file unchanged"),
+            saved
+        );
+        assert_eq!(
+            app.get_settings(&AccessContext::local_owner()).await,
+            Ok(saved.clone())
+        );
+        assert_eq!(app.candidate_settings().await, Ok(saved));
+        assert_eq!(directories.reads.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn setting_both_explicit_directories_repairs_unavailable_defaults_without_resolving_them()
+    {
+        let config = Arc::new(MemoryConfig::default());
+        let directories = Arc::new(RefusingDefaultDirectories::default());
+        let app = M7OfficialApplication::new(
+            NoStore,
+            config.clone(),
+            Arc::new(FakeHub::default()),
+            Arc::new(RecordingHubLauncher::default()),
+            directories.clone(),
+        );
+        assert_eq!(
+            app.initialize_settings().await,
+            Err(OfficialGuiError::Unavailable)
+        );
+        assert_eq!(directories.reads.load(Ordering::SeqCst), 1);
+        let original = config.snapshot.lock().expect("stored baseline").clone();
+        assert_eq!(
+            app.update_settings(
+                &AccessContext::local_owner(),
+                1,
+                path_update(
+                    ConfigNullableUpdate::Set("/selected/projects".into()),
+                    ConfigNullableUpdate::Unchanged
+                )
+            )
+            .await,
+            Err(OfficialGuiError::Unavailable)
+        );
+        assert_eq!(
+            *config.snapshot.lock().expect("no partial commit"),
+            original
+        );
+        assert_eq!(config.publishes.load(Ordering::SeqCst), 0);
+        assert_eq!(directories.reads.load(Ordering::SeqCst), 2);
+        let saved = app
+            .update_settings(
+                &AccessContext::local_owner(),
+                1,
+                path_update(
+                    ConfigNullableUpdate::Set("/selected/projects".into()),
+                    ConfigNullableUpdate::Set("/selected/backups".into()),
+                ),
+            )
+            .await
+            .expect("two explicit paths repair missing defaults");
+        assert_eq!(saved.revision, 2);
+        assert_eq!(config.publishes.load(Ordering::SeqCst), 1);
+        app.initialize_settings()
+            .await
+            .expect("reopen repaired settings");
+        assert_eq!(
+            app.get_settings(&AccessContext::local_owner()).await,
+            Ok(saved)
+        );
+        assert_eq!(directories.reads.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn storage_directories_preserve_partial_updates_and_clear_to_resolved_defaults() {
+        let config = Arc::new(MemoryConfig::default());
+        let app = M7OfficialApplication::new(
+            NoStore,
+            config.clone(),
+            Arc::new(FakeHub::default()),
+            Arc::new(RecordingHubLauncher::default()),
+            Arc::new(TestDirectories),
+        );
+        app.initialize_settings().await.expect("initialize");
+        assert_eq!(
+            app.effective_directories()
+                .await
+                .expect("default locations"),
+            StorageDirectories {
+                project_directory: "/fixtures/projects".into(),
+                backup_directory: "/fixtures/backups".into()
+            }
+        );
+        let saved = app
+            .update_settings(
+                &AccessContext::local_owner(),
+                1,
+                path_update(
+                    ConfigNullableUpdate::Set("/selected/projects".into()),
+                    ConfigNullableUpdate::Set("/selected/backups".into()),
+                ),
+            )
+            .await
+            .expect("save directories");
+        assert_eq!(saved.revision, 2);
+        let changed = app
+            .update_settings(
+                &AccessContext::local_owner(),
+                2,
+                path_update(
+                    ConfigNullableUpdate::Set("/other/projects".into()),
+                    ConfigNullableUpdate::Unchanged,
+                ),
+            )
+            .await
+            .expect("change one location");
+        assert_eq!(
+            changed.settings.paths.backup_directory.as_deref(),
+            Some("/selected/backups")
+        );
+        assert_eq!(
+            app.observe_storage_directories(&saved)
+                .await
+                .expect("accepted snapshot remains exact")
+                .project_directory,
+            "/selected/projects"
+        );
+        let cleared = app
+            .update_settings(
+                &AccessContext::local_owner(),
+                3,
+                path_update(ConfigNullableUpdate::Clear, ConfigNullableUpdate::Clear),
+            )
+            .await
+            .expect("restore system defaults");
+        assert_eq!(cleared.settings.paths, ConfigPathSettings::default());
+        assert_eq!(
+            app.effective_directories()
+                .await
+                .expect("effective defaults")
+                .backup_directory,
+            "/fixtures/backups"
+        );
+    }
+
+    #[tokio::test]
+    async fn invalid_directory_or_empty_paths_rejects_the_entire_update() {
+        let config = Arc::new(MemoryConfig::default());
+        let app = M7OfficialApplication::new(
+            NoStore,
+            config.clone(),
+            Arc::new(FakeHub::default()),
+            Arc::new(RecordingHubLauncher::default()),
+            Arc::new(TestDirectories),
+        );
+        app.initialize_settings().await.expect("initialize");
+        let original = config.snapshot.lock().expect("config").clone();
+        for invalid in [
+            String::new(),
+            "relative/path".into(),
+            "/bad\0path".into(),
+            format!("/{}", "界".repeat(1366)),
+        ] {
+            let mut update = path_update(
+                ConfigNullableUpdate::Set("/valid/projects".into()),
+                ConfigNullableUpdate::Set(invalid),
+            );
+            update.locale = Some(ConfigLocale::JaJp);
+            assert_eq!(
+                app.update_settings(&AccessContext::local_owner(), 1, update)
+                    .await,
+                Err(OfficialGuiError::InvalidInput)
+            );
+            assert_eq!(*config.snapshot.lock().expect("unchanged"), original);
+        }
+        let mut empty = path_update(
+            ConfigNullableUpdate::Unchanged,
+            ConfigNullableUpdate::Unchanged,
+        );
+        empty.locale = Some(ConfigLocale::EnUs);
+        assert_eq!(
+            app.update_settings(&AccessContext::local_owner(), 1, empty)
+                .await,
+            Err(OfficialGuiError::InvalidInput)
+        );
+        assert_eq!(config.publishes.load(Ordering::SeqCst), 0);
+        let valid = path_update(
+            ConfigNullableUpdate::Set("/selected/projects".into()),
+            ConfigNullableUpdate::Unchanged,
+        );
+        assert_eq!(
+            app.update_settings(
+                &AccessContext::new(PrincipalId::local_owner(), []),
+                1,
+                valid.clone()
+            )
+            .await,
+            Err(OfficialGuiError::PermissionDenied)
+        );
+        assert_eq!(
+            app.update_settings(&AccessContext::local_owner(), 2, valid)
+                .await,
+            Err(OfficialGuiError::RevisionConflict)
+        );
+    }
+
     fn hub_update(hub_path: ConfigNullableUpdate<String>) -> ConfigUpdate {
         ConfigUpdate {
+            paths: None,
             appearance: None,
             locale: None,
             packages: None,
@@ -1171,6 +1640,7 @@ mod tests {
             config.clone(),
             hub.clone(),
             Arc::new(RecordingHubLauncher::default()),
+            Arc::new(TestDirectories),
         );
         let update = hub_update(ConfigNullableUpdate::Set("/fixture/hub".into()));
         assert_eq!(
@@ -1212,6 +1682,7 @@ mod tests {
             config.clone(),
             hub.clone(),
             Arc::new(RecordingHubLauncher::default()),
+            Arc::new(TestDirectories),
         );
         let mut update = hub_update(ConfigNullableUpdate::Set("/fixture/missing".into()));
         update.locale = Some(ConfigLocale::JaJp);
@@ -1250,6 +1721,7 @@ mod tests {
             config.clone(),
             hub.clone(),
             Arc::new(RecordingHubLauncher::default()),
+            Arc::new(TestDirectories),
         );
         let first = app
             .update_settings(
@@ -1296,6 +1768,7 @@ mod tests {
             config.clone(),
             hub.clone(),
             Arc::new(RecordingHubLauncher::default()),
+            Arc::new(TestDirectories),
         );
         let accepted = app
             .update_settings(
@@ -1335,6 +1808,7 @@ mod tests {
             config.clone(),
             hub.clone(),
             Arc::new(RecordingHubLauncher::default()),
+            Arc::new(TestDirectories),
         );
         let accepted = app
             .update_settings(
@@ -1361,6 +1835,7 @@ mod tests {
             config.clone(),
             Arc::new(FakeHub::default()),
             Arc::new(RecordingHubLauncher::default()),
+            Arc::new(TestDirectories),
         );
         let denied = AccessContext::new(PrincipalId::local_owner(), []);
         assert_eq!(
@@ -1386,6 +1861,7 @@ mod tests {
                 &AccessContext::local_owner(),
                 1,
                 ConfigUpdate {
+                    paths: None,
                     appearance: None,
                     locale: None,
                     packages: None,
@@ -1408,6 +1884,7 @@ mod tests {
             config.clone(),
             Arc::new(FakeHub::default()),
             Arc::new(RecordingHubLauncher::default()),
+            Arc::new(TestDirectories),
         );
         let access = AccessContext::local_owner();
         let (first, second) = tokio::join!(
@@ -1441,8 +1918,10 @@ mod tests {
             config.clone(),
             Arc::new(FakeHub::default()),
             Arc::new(RecordingHubLauncher::default()),
+            Arc::new(TestDirectories),
         );
         let bad = ConfigUpdate {
+            paths: None,
             appearance: Some(ConfigAppearanceUpdate {
                 mode: Some(ConfigAppearanceMode::Dark),
                 source_color: ConfigNullableUpdate::Set("#bad".into()),
@@ -1480,6 +1959,7 @@ mod tests {
             config.clone(),
             Arc::new(FakeHub::default()),
             Arc::new(RecordingHubLauncher::default()),
+            Arc::new(TestDirectories),
         );
         app.initialize_settings()
             .await
@@ -1522,6 +2002,7 @@ mod tests {
             config.clone(),
             Arc::new(FakeHub::default()),
             Arc::new(RecordingHubLauncher::default()),
+            Arc::new(TestDirectories),
         );
         app.initialize_settings()
             .await

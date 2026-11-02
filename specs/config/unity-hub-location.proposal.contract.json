@@ -10,11 +10,11 @@
         "newCapability": "unity.hub.open.v1",
         "newPermission": "unity.hub.open",
         "newConfigVersion": null,
-        "configSchema": 4,
+        "configSchema": 5,
         "newStateMigration": null,
         "configField": "settings.unity.hubPath",
         "responseEvidence": "settingsGetResult.unityHub; also returned by settings.update",
-        "compatibility": "Current Config4 has no density. Valid Config1/2/3 inputs migrate before ready, discard legacy density, retain existing default additions, and preserve revision and other settings. Existing Config3 without [unity] keeps hubPath=null. No aliases or parallel current response model."
+        "compatibility": "Current Config5 has no density and adds separate default-directory preferences. Valid Config1/2/3/4 inputs migrate before ready, discard legacy density, retain existing default additions, and preserve revision and other settings. Existing Config3 without [unity] keeps hubPath=null. No aliases or parallel current response model."
     },
     "storage": {
         "file": "config/settings.toml",
@@ -120,7 +120,7 @@
     ],
     "implementationTestPlan": [
         "platform: valid file, missing file, directory, relative path, permissions, macOS bundle, Windows exe, Linux executable, Unicode, normalized symlink, candidate ordering and bounds",
-        "store: current Config4; legacy Config3 with no unity section; v1/v2/v3 migration discards density and preserves other settings/revision; quoted/backslash/Unicode roundtrip; invalid control and oversized path; 16KiB limit; recovery preserves path and revision",
+        "store: current Config5; legacy Config3 with no unity section; v1/v2/v3/v4 migration discards density and preserves other settings/revision; quoted/backslash/Unicode roundtrip; invalid control and oversized path; 16KiB limit; recovery preserves path and revision",
         "application: permission before inspection; CAS conflict before inspection; explicit path validation before any publish; mixed invalid update atomic rejection; clear; unrelated update does not revalidate missing Hub",
         "application: observation never writes or executes; response evidence uses accepted revision; observation failure after publish returns successful commit with unavailable evidence; cancellation/cache discipline unchanged",
         "RPC: all schema shape vectors, settings read/manage permission separation, omission/null semantics, strict unknown fields and response snapshots",

@@ -22,9 +22,9 @@ Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据�
   发布前初始 Schema 整理是独立审计任务，不自动清空数据库、Plan、Operation 或恢复证据。
   本轮 hello 修复只纠正已有 `dataSchema` 事实值与内部构造参数，不改 wire DTO/Schema 形状、
   RPC major 或 capability，属于非破坏性修正；由 dispatcher、兼容形状和实际 SQLite 回归验证。
-- 当前设置合同为 **Config4**，按 2026-11-02 明确批准彻底删除 GUI 紧凑模式及 `appearance.density`。
+- 当前设置合同为 **Config5**，按 2026-11-03 批准补齐默认项目/备份目录；保留已批准的紧凑模式及 `appearance.density` 删除。
   application 持有权限、CAS、字段校验、候选缓存和取消一致性；
-  `ConfigStore` 窄 port 的文件适配器位于 store，负责 strict 16 KiB TOML、Config1–3→4 和
+  `ConfigStore` 窄 port 的文件适配器位于 store，负责 strict 16 KiB TOML、Config1–4→5 和
   原子替换/恢复。普通设置修改即保存，以当前连接内的串行窄 PATCH 协调；失败保留意图、
   显式 Retry 先重读，未知已提交不重复写，换连接停止旧队列，不保留全局 Save/Discard 栏。
 - 主题编辑器保持独立 Save/Cancel、实时预览和冲突三方合并；仅明确保存 sourceColor/mode/scheme。
@@ -43,7 +43,7 @@ Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据�
   业务控件恢复可用及 Material updateComplete，不因修复焦点而放宽 disabled/eligibility。
   MenuItem 统一消费公开 click/Enter/Space 选择并只在 closed 后派发一次；Escape 不派发。
   Select 由真实 busy 状态控制禁用，选中标签按公开生命周期同步，不增加输入/设置写入。
-- Unity Hub 位置复用 settings.get/update、settings.read/manage 与 Config4 `unity.hubPath`；
+- Unity Hub 位置复用 settings.get/update、settings.read/manage 与 Config5 `unity.hubPath`；
   有界只读发现和路径规范化由 platform 提供，不加注册表/PATH/Hub CLI 扫描。路径草稿 Enter
   或离开操作组保存，Esc 撤销，IME/同组焦点切换/无修改不写；选择和自动查找共享串行 CAS。
 - `unity.hub.open` / `unity.hub.open.v1` 要求 settings.read 和独立 unity.hub.open，
@@ -54,7 +54,7 @@ Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据�
   No shell 指应用不构造、调用或通过 shell 执行命令，不拼接/解释 shell 参数；保留标准库与
   OS 的 ENOEXEC/解释器回退语义。spawn 成功仅为 OS 接受，不代表 Hub 已正常运行、厂商
   身份、退出成功或窗口就绪；同步拒绝、后续退出与资源回收分别验证。
-- 正式合同与证据分别见 `specs/config/settings-v4.*`（Config1–3 仅为迁移历史）、
+- 正式合同与证据分别见 `specs/config/settings-v5.*`（Config1–4 仅为迁移历史）、
   `specs/config/theme-controls.proposal.contract.json`、
   `specs/config/unity-hub-location.proposal.contract.json`、
   `specs/storage/state-v15-project-last-modified.contract.json`、
@@ -399,22 +399,22 @@ route 另实现 `confirmation-required`、`operation-running`、`success`、`fai
 高影响写入保持 `Plan -> review daemon ChangeSet/safe risk summary -> explicit Apply -> OperationId -> progress -> terminal
 result`。stale/revision conflict 回到明确 review，不静默重新 Plan；route/window close 不等于取消 Operation。
 
-### Settings Config4 与存储权威
+### Settings Config5 与存储权威
 
-当前活动格式为 `specs/config/settings-v4.md` / `.schema.json`。closed 字段为：
-appearance mode/sourceColor/scheme/motion、locale、packages 三项偏好及可清除的 unity.hubPath；
+当前活动格式为 `specs/config/settings-v5.md` / `.schema.json`。closed 字段为：
+appearance mode/sourceColor/scheme/motion、locale、packages 三项偏好、可清除的 unity.hubPath 及 paths 两目录覆盖；
 精确枚举、边界和 null 语义以现有机器合同为准。所有非 nullable PATCH 字段显式 null 整次拒绝，
-sourceColor:null 和 hubPath:null 分别表示清除颜色和恢复 Hub 默认发现。
+sourceColor:null、hubPath:null 和两个目录的 null 分别清除显式覆盖；有效目录由 Core 只读解析后投影。
 
-settings.get/update 要求原 settings.read/manage，返回 Config4、revision、完整归一化设置及
-派生 unityHub 证据；revision checked monotonic u64，文件 strict UTF-8/unknown-field fail closed，
+settings.get/update 要求原 settings.read/manage，返回 Config5、revision、完整归一化设置及
+派生 unityHub/有效目录；revision checked monotonic u64，文件 strict UTF-8/unknown-field fail closed，
 最多 16 KiB，确定性序列化、可恢复原子替换。派生文件状态不推进 revision，保存后状态读取
 失败不把已提交设置伪报为失败。application 只经 ConfigStore port 保存归一化快照，Store
 负责文件格式和恢复，不增加配置数据库表、通用 key/value、GUI 直写或第二套权威。
 
 主题确认、普通即时设置和 Hub 配置共用 UI 串行 CAS；状态读取、能力协商和故障恢复仍通过
-typed client/RPC。当前 hello.configSchema=4。Config1–3 只作为保留原数据的迁移输入，不是当前写入或
-返回格式；旧 density 校验后丢弃，保留原 revision 与其他设置，Config4 不接受该字段。
+typed client/RPC。当前 hello.configSchema=5。Config1–4 只作为保留原数据的迁移输入，不是当前写入或
+返回格式；旧 density 校验后丢弃，保留原 revision 与其他设置，Config5 不接受该字段。
 开发兼容策略按 A-034，发布前另行审计这些历史输入的保留需求。
 
 ### Activity and Diagnostics
@@ -643,6 +643,29 @@ GUI/UI check、metadata/diff 通过；不重跑 Rust 全量、Core release 或�
 没有恢复桌面控制或伪造原生截图，原生缩放/实际读屏和跨平台辅助技术仍未覆盖。
 以上为 H6 候选交付时的历史状态，所有者随后已阶段性签收 H6 并批准 H7；
 各轮结果及 12 项对应关系见 [H6 验收记录](../testing/m7-h6-accessibility-20261102.md)。H2–H6 原签收保持，推送仍未授权，M7 进行中。
+
+### H7 最终体验细调与默认保存目录缺口（2026-11-03）
+
+本轮在既有成果上按所有者反馈逐项修正，保留 H2–H6 签收及既有 H7 技术证据，不进入 M8，不重验所有历史功能。
+日常定向验证；相关整改形成稳定候选后集中必要回归，不因每条反馈重复完整门禁或发布构建。允许本地提交，不自动推送。
+
+已确认 v3 `gui.settings` 基线包含项目/备份路径，当前 Config4、Settings DTO 和设置页均未实现。
+新建及恢复项目的父目录从空值开始；Core 的 `BackupEngine` 固定绑定 `data_root/backups`，
+既有 `backup-v1:<id>` 定位和任务恢复也依赖该根。因此只加 GUI 输入框不能补齐实际行为。
+
+所有者已于本轮明确批准以下核心功能补齐范围：在设置中增加默认项目目录、默认备份目录，经既有 `settings.get/update`、
+`settings.read/manage` 和串行 CAS 保存，扩展为 Config5；默认值遵循架构中的用户 Documents/ALCOMD/Projects、Backups。
+项目目录用于新建、复制、恢复表单的初始目标，保留当次覆盖；备份目录实际控制后续新备份的保存位置。
+每个已接受备份任务须固定其目的地，历史备份继续可读取/恢复；不自动搬迁旧项目、旧备份或重定向已有任务。
+现有备份定位缺少独立目录，必须同步补足持久定位与恢复证据；真实既有数据需要的旧定位读取支持有保留价值，成本为两类定位的验证及回归。
+不新增业务权限、生产依赖或第二套设置存储；若实施需要额外数据库结构或其他合同变更，先说明具体差异。
+本次发布前扩展会增加严格 settings 消费者必读的 paths/directories，须同步协议、Schema、当前消费者与快照；RPC v1、权限、State16不变。
+平台通过既有 Known Folder 查询 Documents，产品目录由 `alcomd.product.toml` 派生；不覆盖发布使用 Windows MoveFileExW(flags=0) 与 Unix 既有 rustix NOREPLACE。
+Windows 的窄 FFI 保留说明与安全注释，不增加生产依赖；定向回归验证目标冲突不覆盖与旧/新目录恢复。
+本地实现、相关定向检查及一次匹配 Core/CLI/GUI 构建已完成；原数据目录/profile 已实际恢复为 Core130768/GUI132996。
+Config4→5 只改变 schema，revision166 和其余设置不变；四组业务状态完全一致。独立结果与原失败见
+[目录设置补齐](../testing/m7-storage-locations-20261103.md)，不以旧 CI 或浏览器证据替代当前原生/跨平台验收。
+本轮本地提交，不推送；H7 最终签收仍待所有者，M7 进行中。
 
 ### 当前 H7 授权与收束（2026-11-02）
 

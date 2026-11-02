@@ -29,6 +29,7 @@ import { capabilities, capabilityUnavailableTitle, useCapability } from "./capab
 import { reviewTemplateCreation, reviewTemplateDerive, reviewTemplateImport, TemplatePlanReview, type TemplateReview } from "./TemplatePlanReview";
 import { Reminder, RequestReminder, useReminder } from "./Reminder";
 import { displayPath } from "./display-path";
+import { useProjectDirectory } from "./use-project-directory";
 import { ExtensionPermissions, ExtensionPermissionRequests, hasPermissionRequests } from "./ExtensionPermissions";
 
 interface ActionProps {
@@ -864,7 +865,8 @@ function TemplateObjectDialog({ client, onChanged, onClose, operations, selectio
     const [review, setReview] = useState<TemplateReview>();
     const [submitted, setSubmitted] = useState(false);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
-    const [fields, setFields] = useState({ parent: "", leaf: "", exportPath: "" });
+    const [fields, setFields] = useState({ leaf: "", exportPath: "" });
+    const projectDirectory = useProjectDirectory(client, action === "create" && open && !selection.closed);
     const pending = useRef(false);
     const current = useActionScope(client, open && !selection.closed);
     const update = (key: keyof typeof fields, value: string) => { setFields((current) => ({ ...current, [key]: value })); setFeedback(INITIAL_FEEDBACK); };
@@ -874,9 +876,9 @@ function TemplateObjectDialog({ client, onChanged, onClose, operations, selectio
         if (pending.current || !canCreateProject) return;
         pending.current = true; setFeedback({ busy: true });
         try {
-            const plan = await client.templatePlanCreateProject(template.templateId, template.revision, fields.parent, fields.leaf);
+            const plan = await client.templatePlanCreateProject(template.templateId, template.revision, projectDirectory.directory, fields.leaf);
             if (!current()) return;
-            setReview(reviewTemplateCreation(plan, template, fields.parent, fields.leaf)); setSubmitted(false); setFeedback({ busy: false });
+            setReview(reviewTemplateCreation(plan, template, projectDirectory.directory, fields.leaf)); setSubmitted(false); setFeedback({ busy: false });
         } catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
         finally { if (current()) pending.current = false; }
     };
@@ -907,7 +909,7 @@ function TemplateObjectDialog({ client, onChanged, onClose, operations, selectio
     const pickParent = async () => {
         if (pending.current) return;
         pending.current = true; setFeedback({ busy: true });
-        try { const path = await client.selectDirectory(); if (current() && path !== undefined) update("parent", path); }
+        try { const path = await client.selectDirectory(); if (current() && path !== undefined) projectDirectory.setDirectory(path); }
         catch (caught: unknown) { if (current()) setFeedback({ busy: false, error: safeError(caught) }); }
         finally { if (current()) { pending.current = false; setFeedback((value) => ({ ...value, busy: false })); } }
     };
@@ -919,10 +921,11 @@ function TemplateObjectDialog({ client, onChanged, onClose, operations, selectio
             <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Discard plan")}</Button><Button disabled={feedback.busy || submitted || !canCreateProject} onClick={() => void apply()} type="button">{t("Apply reviewed plan")}</Button></div>
         </> : action === "create" ? <form onSubmit={(event) => void createPlan(event)}>
             <p>{t("Template:")}<strong>{template.displayName}</strong></p>
-            <TextField disabled={feedback.busy} id="create-parent" label={t("Target parent")} onInput={(next) => update("parent", next)} required value={fields.parent} />
+            <TextField disabled={feedback.busy} id="create-parent" label={t("Target parent")} onInput={projectDirectory.setDirectory} required value={projectDirectory.directory} />
             <Button disabled={feedback.busy} onClick={() => void pickParent()} type="button" variant="text">{t("Browse…")}</Button>
             <TextField disabled={feedback.busy} id="create-leaf" label={t("Project folder name")} onInput={(next) => update("leaf", next)} required value={fields.leaf} />
-            <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button><Button disabled={feedback.busy || !canCreateProject} type="submit">{t("Review")}</Button></div>
+            {projectDirectory.error === undefined ? null : <RequestReminder error={projectDirectory.error} title={t("Default project location could not be loaded.")} />}
+            <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button><Button disabled={feedback.busy || !canCreateProject || projectDirectory.directory.length === 0} type="submit">{t("Review")}</Button></div>
         </form> : action === "export" ? <form onSubmit={(event) => { event.preventDefault(); void simple(); }}>
             <p><Translated message="Export {name} as a template bundle." values={{ name: <strong>{template.displayName}</strong> }} /></p>
             <TextField disabled={feedback.busy} id="template-export" label={t("Export target")} onInput={(next) => update("exportPath", next)} required value={fields.exportPath} />

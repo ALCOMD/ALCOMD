@@ -245,8 +245,8 @@ implementation = "apps/alcomd-gui"
 release_class = "release_blocker"
 status = "verified"
 implementation_status = "in_progress"
-evidence = ["docs/exec-plans/M7-official-gui-extension-ui.md::Restored Official GUI Completion", "docs/exec-plans/M7-gui-rpc-coverage.md", "docs/gui/m7-current-layout-gap.md", "docs/gui/m7-material-component-audit.md", "apps/alcomd-gui/src/App.tsx", "apps/alcomd-gui/src/CorePages.tsx", "apps/alcomd-gui/src/CoreActions.tsx", "apps/alcomd-gui/tests/browser/m7-accessibility.spec.ts"]
-coverage = ["functional routes/pages", "typed adapter", "read states", "mutation/Plan/Operation", "settings/activity/diagnostics", "browser accessibility", "pending v3 layout/Material component/visual acceptance"]
+evidence = ["docs/exec-plans/M7-official-gui-extension-ui.md::Restored Official GUI Completion", "docs/exec-plans/M7-gui-rpc-coverage.md", "docs/gui/m7-current-layout-gap.md", "docs/gui/m7-material-component-audit.md", "apps/alcomd-gui/src/App.tsx", "apps/alcomd-gui/src/CorePages.tsx", "apps/alcomd-gui/src/CoreActions.tsx", "apps/alcomd-gui/tests/browser/m7-accessibility.spec.ts", "specs/config/settings-v5.md", "crates/alcomd-testing/tests/m7_storage_directories.rs", "apps/alcomd-gui/tests/browser/m7-storage-directories.spec.ts"]
+coverage = ["functional routes/pages", "typed adapter", "read states", "mutation/Plan/Operation", "settings/activity/diagnostics", "default project/backup directories and retained backup recovery", "browser accessibility", "pending v3 layout/Material component/visual acceptance"]
 tests = ["gui.m7-core-surfaces", "gui.m7-v3-layout-translation", "gui.m7-material-component-foundation", "gui.m7-visual-gates", "gui.m7-operation-flows", "gui.m7-accessibility-automation", "gui.m7-visual-flow-evidence", "settings.authoritative-storage", "activity.log-redaction", "diagnostics.redacted-list", "gui.m7-portable-ui-production"]
 
 [[feature]]

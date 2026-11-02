@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use alcomd_application::{
     ConfigAppearance, ConfigAppearanceMode, ConfigAppearanceMotion, ConfigAppearanceScheme,
-    ConfigLocale, ConfigPackageSettings, ConfigSettings, ConfigSnapshot, ConfigStore,
-    ConfigStoreError, ConfigUnitySettings,
+    ConfigLocale, ConfigPackageSettings, ConfigPathSettings, ConfigSettings, ConfigSnapshot,
+    ConfigStore, ConfigStoreError, ConfigUnitySettings,
 };
 
 const MAX_SETTINGS_BYTES: u64 = 16 * 1024;
@@ -19,7 +19,7 @@ pub struct FileConfigStore {
 }
 
 impl FileConfigStore {
-    pub const SCHEMA_VERSION: u32 = 4;
+    pub const SCHEMA_VERSION: u32 = 5;
 
     #[must_use]
     pub fn new(path: PathBuf) -> Self {
@@ -43,8 +43,11 @@ impl ConfigStore for FileConfigStore {
             .validate()
             .map_err(|_| ConfigStoreError::Corrupt)?;
         let contents = serialize_settings(snapshot);
-        if snapshot.revision == 0 || contents.len() as u64 > MAX_SETTINGS_BYTES {
+        if snapshot.revision == 0 {
             return Err(ConfigStoreError::Corrupt);
+        }
+        if contents.len() as u64 > MAX_SETTINGS_BYTES {
+            return Err(ConfigStoreError::TooLarge);
         }
         publish_settings(&self.path, &contents)
     }
@@ -109,6 +112,8 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
     let mut hidden_repository_ids = None;
     let mut hide_local_user_packages = None;
     let mut hub_path = None;
+    let mut project_directory = None;
+    let mut backup_directory = None;
     for raw in text.lines() {
         let line = raw.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -119,6 +124,7 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
                 "[appearance]" => "appearance",
                 "[packages]" => "packages",
                 "[unity]" => "unity",
+                "[paths]" => "paths",
                 _ => return Err(ConfigStoreError::Corrupt),
             };
             if !seen.insert(format!("section:{next}")) {
@@ -139,6 +145,8 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
             ("root", "revision") => revision = Some(parse_u64(value)?),
             ("root", "locale") => locale = Some(parse_locale(parse_string(value)?)?),
             ("unity", "hub_path") => hub_path = Some(parse_path_string(value)?),
+            ("paths", "project_directory") => project_directory = Some(parse_path_string(value)?),
+            ("paths", "backup_directory") => backup_directory = Some(parse_path_string(value)?),
             ("appearance", "mode") => mode = Some(parse_mode(parse_string(value)?)?),
             ("appearance", "source_color") => {
                 let value = parse_string(value)?.to_owned();
@@ -167,6 +175,9 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
         return Err(ConfigStoreError::Corrupt);
     }
     if schema < 3 && seen.contains("section:unity") {
+        return Err(ConfigStoreError::Corrupt);
+    }
+    if schema < 5 && seen.contains("section:paths") {
         return Err(ConfigStoreError::Corrupt);
     }
     if schema < 3 && motion == Some(ConfigAppearanceMotion::Full) {
@@ -218,6 +229,10 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
             locale: locale.ok_or(ConfigStoreError::Corrupt)?,
             packages,
             unity: ConfigUnitySettings { hub_path },
+            paths: ConfigPathSettings {
+                project_directory,
+                backup_directory,
+            },
         },
     };
     snapshot
@@ -263,6 +278,26 @@ fn serialize_settings(snapshot: &ConfigSnapshot) -> Vec<u8> {
             contents.push(character);
         }
         contents.push_str("\"\n");
+    }
+    let paths = &snapshot.settings.paths;
+    if paths.project_directory.is_some() || paths.backup_directory.is_some() {
+        contents.push_str("\n[paths]\n");
+        for (key, path) in [
+            ("project_directory", &paths.project_directory),
+            ("backup_directory", &paths.backup_directory),
+        ] {
+            if let Some(path) = path {
+                contents.push_str(key);
+                contents.push_str(" = \"");
+                for character in path.chars() {
+                    if matches!(character, '\\' | '"') {
+                        contents.push('\\');
+                    }
+                    contents.push(character);
+                }
+                contents.push_str("\"\n");
+            }
+        }
     }
     contents.into_bytes()
 }
@@ -477,6 +512,29 @@ mod tests {
     };
     use std::sync::Arc;
 
+    struct TestDirectories;
+    impl alcomd_application::StorageDirectoryPlatform for TestDirectories {
+        fn default_directories(
+            &self,
+        ) -> Result<alcomd_application::StorageDirectories, alcomd_application::OfficialGuiError>
+        {
+            Ok(alcomd_application::StorageDirectories {
+                project_directory: "/fixtures/projects".into(),
+                backup_directory: "/fixtures/backups".into(),
+            })
+        }
+        fn normalize_directory(
+            &self,
+            path: &str,
+        ) -> Result<String, alcomd_application::OfficialGuiError> {
+            if path.starts_with('/') || path.as_bytes().get(1) == Some(&b':') {
+                Ok(path.to_owned())
+            } else {
+                Err(alcomd_application::OfficialGuiError::InvalidInput)
+            }
+        }
+    }
+
     struct TestHub;
 
     struct TestHubLauncher;
@@ -529,6 +587,160 @@ mod tests {
     }
 
     #[test]
+    fn config5_paths_roundtrip_and_config4_migration_preserves_all_preferences() {
+        let root = temporary_path("config5-paths");
+        let path = root.join("settings.toml");
+        fs::create_dir_all(&root).expect("fixture");
+        let store = FileConfigStore::new(path.clone());
+        let mut original = default_snapshot();
+        original.revision = 153;
+        original.settings.locale = ConfigLocale::JaJp;
+        original.settings.appearance.motion = ConfigAppearanceMotion::Full;
+        original.settings.unity.hub_path = Some("/fixtures/Hub".into());
+        let legacy = String::from_utf8(serialize_settings(&original))
+            .expect("utf8")
+            .replace("schema = 5", "schema = 4");
+        fs::write(&path, &legacy).expect("legacy Config4");
+        assert_eq!(store.initialize(), Ok(original.clone()));
+        let migrated = fs::read_to_string(&path).expect("migrated Config5");
+        assert!(migrated.starts_with("schema = 5\n"));
+        assert!(!migrated.contains("[paths]"));
+        for candidate in [r"C:\用户\项目", "/home/测试/备份 \"local\""] {
+            let mut saved = original.clone();
+            saved.settings.paths.project_directory = Some(candidate.into());
+            saved.settings.paths.backup_directory = Some(candidate.into());
+            store.publish(&saved).expect("publish");
+            assert_eq!(store.load(), Ok(saved.clone()));
+            assert_eq!(FileConfigStore::new(path.clone()).initialize(), Ok(saved));
+        }
+        for schema in 1..=4 {
+            let invalid = format!(
+                "{}\n[paths]\nproject_directory = \"/unexpected\"\n",
+                legacy.replace("schema = 4", &format!("schema = {schema}"))
+            );
+            assert_eq!(parse_settings(&invalid), Err(ConfigStoreError::Corrupt));
+        }
+        for suffix in [
+            "\n[paths]\nproject_directory = \"\"\n",
+            "\n[paths]\nbackup_directory = \"/bad\\q\"\n",
+            "\n[paths]\nunknown = \"/path\"\n",
+        ] {
+            assert_eq!(
+                parse_settings(&(migrated.clone() + suffix)),
+                Err(ConfigStoreError::Corrupt)
+            );
+        }
+        fs::remove_dir_all(&root).expect("remove fixture");
+    }
+
+    #[tokio::test]
+    async fn config5_directory_changes_are_durable_and_combined_byte_overflow_keeps_accepted_file()
+    {
+        use alcomd_application::ConfigPathUpdate;
+        let root = temporary_path("config5-durable-directory-update");
+        let path = root.join("settings.toml");
+        let store = Arc::new(FileConfigStore::new(path.clone()));
+        let make_app = || {
+            M7OfficialApplication::new(
+                NoStore,
+                store.clone(),
+                Arc::new(TestHub),
+                Arc::new(TestHubLauncher),
+                Arc::new(TestDirectories),
+            )
+        };
+        let app = make_app();
+        app.initialize_settings().await.expect("initialize");
+        let mut update = ConfigUpdate {
+            paths: Some(ConfigPathUpdate {
+                project_directory: ConfigNullableUpdate::Set("/selected/projects".into()),
+                backup_directory: ConfigNullableUpdate::Set("/selected/backups".into()),
+            }),
+            unity: None,
+            appearance: None,
+            locale: None,
+            packages: None,
+        };
+        let accepted = app
+            .update_settings(&AccessContext::local_owner(), 1, update.clone())
+            .await
+            .expect("save selected directories");
+        let reopened = make_app();
+        reopened.initialize_settings().await.expect("reopen");
+        assert_eq!(
+            reopened.get_settings(&AccessContext::local_owner()).await,
+            Ok(accepted.clone())
+        );
+        assert_eq!(
+            reopened
+                .effective_directories()
+                .await
+                .expect("effective selected path")
+                .backup_directory,
+            "/selected/backups"
+        );
+        let before = fs::read(&path).expect("accepted bytes");
+        update.paths = Some(ConfigPathUpdate {
+            project_directory: ConfigNullableUpdate::Set(format!("/{}", "\\".repeat(4000))),
+            backup_directory: ConfigNullableUpdate::Set(format!("/{}", "\\".repeat(4000))),
+        });
+        update.packages = Some(ConfigPackageSettingsUpdate {
+            show_prerelease: None,
+            hide_local_user_packages: None,
+            hidden_repository_ids: Some(
+                (0..256)
+                    .map(|index| format!("00000000-0000-0000-0000-{index:012x}"))
+                    .collect(),
+            ),
+        });
+        assert_eq!(
+            reopened
+                .update_settings(&AccessContext::local_owner(), 2, update)
+                .await,
+            Err(OfficialGuiError::InvalidInput)
+        );
+        assert_eq!(fs::read(&path).expect("unchanged durable bytes"), before);
+        assert!(!path.with_extension("toml.new").exists());
+        assert!(!path.with_extension("toml.bak").exists());
+        assert_eq!(
+            reopened.get_settings(&AccessContext::local_owner()).await,
+            Ok(accepted)
+        );
+        let clear = ConfigUpdate {
+            paths: Some(ConfigPathUpdate {
+                project_directory: ConfigNullableUpdate::Clear,
+                backup_directory: ConfigNullableUpdate::Clear,
+            }),
+            unity: None,
+            appearance: None,
+            locale: None,
+            packages: None,
+        };
+        reopened
+            .update_settings(&AccessContext::local_owner(), 2, clear)
+            .await
+            .expect("clear overrides");
+        let cleared = make_app();
+        cleared
+            .initialize_settings()
+            .await
+            .expect("restart cleared state");
+        assert_eq!(
+            cleared
+                .effective_directories()
+                .await
+                .expect("system defaults")
+                .project_directory,
+            "/fixtures/projects"
+        );
+        assert_eq!(
+            store.load().expect("saved defaults").settings.paths,
+            ConfigPathSettings::default()
+        );
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
     fn hub_path_roundtrip_escapes_and_preserves_legacy_defaults() {
         let original = default_snapshot();
         let original_text = String::from_utf8(serialize_settings(&original)).expect("utf8");
@@ -562,7 +774,7 @@ mod tests {
         assert_eq!(parse_settings(&oversized), Err(ConfigStoreError::Corrupt));
         for schema in [1, 2] {
             let mut legacy = original_text
-                .replace("schema = 4", &format!("schema = {schema}"))
+                .replace("schema = 5", &format!("schema = {schema}"))
                 .replace("scheme = \"vibrant\"\n", "density = \"default\"\n");
             if schema == 1 {
                 legacy = legacy
@@ -593,6 +805,7 @@ mod tests {
             store.clone(),
             Arc::new(TestHub),
             Arc::new(TestHubLauncher),
+            Arc::new(TestDirectories),
         );
         app.initialize_settings().await.expect("initialize");
         let baseline = store.load().expect("baseline");
@@ -602,6 +815,7 @@ mod tests {
                 &AccessContext::local_owner(),
                 baseline.revision,
                 ConfigUpdate {
+                    paths: None,
                     appearance: None,
                     locale: None,
                     packages: None,
@@ -623,6 +837,7 @@ mod tests {
                 &AccessContext::local_owner(),
                 saved.revision,
                 ConfigUpdate {
+                    paths: None,
                     appearance: None,
                     locale: None,
                     packages: None,
@@ -654,7 +869,7 @@ mod tests {
             let mut snapshot = defaults.clone();
             snapshot.settings.appearance.motion = motion;
             let encoded = String::from_utf8(serialize_settings(&snapshot)).expect("utf8");
-            assert!(encoded.starts_with("schema = 4\n"));
+            assert!(encoded.starts_with("schema = 5\n"));
             assert!(encoded.contains(&format!("motion = \"{text}\"\n")));
             assert_eq!(parse_settings(&encoded), Ok(snapshot));
         }
@@ -674,7 +889,7 @@ mod tests {
         );
         for schema in [1, 2] {
             let legacy = encoded
-                .replace("schema = 4", &format!("schema = {schema}"))
+                .replace("schema = 5", &format!("schema = {schema}"))
                 .replace("scheme = \"vibrant\"\n", "density = \"default\"\n");
             let legacy = if schema == 1 {
                 legacy
@@ -712,6 +927,7 @@ mod tests {
             Arc::new(FileConfigStore::new(path.clone())),
             Arc::new(TestHub),
             Arc::new(TestHubLauncher),
+            Arc::new(TestDirectories),
         );
         let access = AccessContext::local_owner();
         let mut previous = app
@@ -719,6 +935,7 @@ mod tests {
                 &access,
                 1,
                 ConfigUpdate {
+                    paths: None,
                     unity: None,
                     appearance: Some(ConfigAppearanceUpdate {
                         mode: Some(ConfigAppearanceMode::Dark),
@@ -746,6 +963,7 @@ mod tests {
                     &access,
                     previous.revision,
                     ConfigUpdate {
+                        paths: None,
                         unity: None,
                         appearance: Some(ConfigAppearanceUpdate {
                             mode: None,
@@ -768,6 +986,7 @@ mod tests {
                 Arc::new(FileConfigStore::new(path.clone())),
                 Arc::new(TestHub),
                 Arc::new(TestHubLauncher),
+                Arc::new(TestDirectories),
             );
             assert_eq!(
                 reopened
@@ -797,7 +1016,7 @@ mod tests {
             let mut snapshot = default_snapshot();
             snapshot.settings.appearance.scheme = scheme;
             let encoded = String::from_utf8(serialize_settings(&snapshot)).expect("utf8");
-            assert!(encoded.starts_with("schema = 4\n"));
+            assert!(encoded.starts_with("schema = 5\n"));
             assert!(encoded.contains(&format!("scheme = \"{value}\"\n")));
             assert_eq!(parse_settings(&encoded), Ok(snapshot));
         }
@@ -819,7 +1038,7 @@ mod tests {
             assert_eq!(
                 parse_settings(
                     &encoded
-                        .replace("schema = 4", &format!("schema = {schema}"))
+                        .replace("schema = 5", &format!("schema = {schema}"))
                         .replace(
                             "scheme = \"vibrant\"\n",
                             "scheme = \"vibrant\"\ndensity = \"default\"\n"
@@ -841,6 +1060,7 @@ mod tests {
             Arc::new(FileConfigStore::new(path.clone())),
             Arc::new(TestHub),
             Arc::new(TestHubLauncher),
+            Arc::new(TestDirectories),
         );
         let access = AccessContext::local_owner();
         let updated = app
@@ -848,6 +1068,7 @@ mod tests {
                 &access,
                 1,
                 ConfigUpdate {
+                    paths: None,
                     unity: None,
                     appearance: Some(ConfigAppearanceUpdate {
                         mode: Some(ConfigAppearanceMode::Dark),
@@ -875,6 +1096,7 @@ mod tests {
                 &access,
                 1,
                 ConfigUpdate {
+                    paths: None,
                     unity: None,
                     appearance: None,
                     locale: Some(ConfigLocale::EnUs),
@@ -905,12 +1127,13 @@ mod tests {
             Arc::new(FileConfigStore::new(path.clone())),
             Arc::new(TestHub),
             Arc::new(TestHubLauncher),
+            Arc::new(TestDirectories),
         );
         app.initialize_settings().await.expect("migrate v1");
         let migrated = app
             .get_settings(&AccessContext::local_owner())
             .await
-            .expect("read v4");
+            .expect("read current settings");
         assert_eq!(migrated.revision, 7);
         assert!(!migrated.settings.packages.show_prerelease);
         assert!(migrated.settings.packages.hidden_repository_ids.is_empty());
@@ -931,7 +1154,7 @@ mod tests {
         assert!(
             fs::read_to_string(&path)
                 .expect("read file")
-                .starts_with("schema = 4\n")
+                .starts_with("schema = 5\n")
         );
         let _ = fs::remove_dir_all(root);
     }
@@ -950,6 +1173,7 @@ mod tests {
             Arc::new(FileConfigStore::new(path.clone())),
             Arc::new(TestHub),
             Arc::new(TestHubLauncher),
+            Arc::new(TestDirectories),
         );
         // Reading old configuration is supported before the startup publication boundary.
         assert_eq!(
@@ -995,6 +1219,7 @@ mod tests {
             Arc::new(FileConfigStore::new(path.clone())),
             Arc::new(TestHub),
             Arc::new(TestHubLauncher),
+            Arc::new(TestDirectories),
         );
         restarted.initialize_settings().await.expect("restart");
         assert_eq!(restarted.candidate_settings().await, Ok(expected));
@@ -1023,10 +1248,10 @@ mod tests {
         ];
         expected.settings.unity.hub_path = Some(r"C:\用户\Unity Hub\Unity Hub.exe".to_owned());
         let canonical = String::from_utf8(serialize_settings(&expected)).expect("utf8");
-        assert!(canonical.starts_with("schema = 4\n"));
+        assert!(canonical.starts_with("schema = 5\n"));
         assert!(!canonical.contains("density"));
         for density in ["default", "compact"] {
-            let legacy = canonical.replace("schema = 4", "schema = 3").replace(
+            let legacy = canonical.replace("schema = 5", "schema = 3").replace(
                 "motion = \"full\"\n",
                 &format!("density = \"{density}\"\nmotion = \"full\"\n"),
             );
@@ -1034,7 +1259,10 @@ mod tests {
             assert_eq!(store.load(), Ok(expected.clone()));
             assert_eq!(fs::read_to_string(&path).expect("read-only load"), legacy);
             assert_eq!(store.initialize(), Ok(expected.clone()));
-            assert_eq!(fs::read_to_string(&path).expect("migrated v4"), canonical);
+            assert_eq!(
+                fs::read_to_string(&path).expect("migrated current settings"),
+                canonical
+            );
             assert_eq!(store.initialize(), Ok(expected.clone()));
             assert_eq!(
                 fs::read_to_string(&path).expect("stable restart"),
@@ -1055,7 +1283,7 @@ mod tests {
         let store = FileConfigStore::new(path.clone());
         let current = String::from_utf8(serialize_settings(&default_snapshot())).expect("utf8");
         for schema in 1..=3 {
-            let mut legacy = current.replace("schema = 4", &format!("schema = {schema}"));
+            let mut legacy = current.replace("schema = 5", &format!("schema = {schema}"));
             legacy = if schema < 3 {
                 legacy.replace("scheme = \"vibrant\"\n", "density = \"default\"\n")
             } else {
@@ -1111,7 +1339,7 @@ mod tests {
     }
 
     #[test]
-    fn config_v4_rejects_removed_density_and_future_versions_without_rewriting() {
+    fn config5_rejects_removed_density_and_future_versions_without_rewriting() {
         let root = temporary_path("density-current-rejection");
         let path = root.join("settings.toml");
         let _ = fs::remove_dir_all(&root);
@@ -1126,7 +1354,7 @@ mod tests {
                 )
             })
             .to_vec();
-        invalid.push(current.replace("schema = 4", "schema = 5"));
+        invalid.push(current.replace("schema = 5", "schema = 6"));
         for invalid in invalid {
             fs::write(&path, &invalid).expect("write unsupported current input");
             assert_eq!(store.initialize(), Err(ConfigStoreError::Corrupt));
@@ -1147,6 +1375,7 @@ mod tests {
             Arc::new(FileConfigStore::new(path.clone())),
             Arc::new(TestHub),
             Arc::new(TestHubLauncher),
+            Arc::new(TestDirectories),
         );
         let access = AccessContext::local_owner();
         let initial = app
@@ -1154,6 +1383,7 @@ mod tests {
                 &access,
                 1,
                 ConfigUpdate {
+                    paths: None,
                     unity: None,
                     appearance: Some(ConfigAppearanceUpdate {
                         mode: Some(ConfigAppearanceMode::Dark),
@@ -1178,6 +1408,7 @@ mod tests {
                 &access,
                 initial.revision,
                 ConfigUpdate {
+                    paths: None,
                     unity: None,
                     appearance: Some(ConfigAppearanceUpdate {
                         mode: None,
@@ -1200,6 +1431,7 @@ mod tests {
                 &access,
                 changed.revision,
                 ConfigUpdate {
+                    paths: None,
                     unity: None,
                     appearance: Some(ConfigAppearanceUpdate {
                         mode: Some(ConfigAppearanceMode::System),
@@ -1225,6 +1457,7 @@ mod tests {
                 &access,
                 expected.revision,
                 ConfigUpdate {
+                    paths: None,
                     unity: None,
                     appearance: Some(ConfigAppearanceUpdate {
                         mode: None,
@@ -1259,6 +1492,7 @@ mod tests {
             Arc::new(FileConfigStore::new(path.clone())),
             Arc::new(TestHub),
             Arc::new(TestHubLauncher),
+            Arc::new(TestDirectories),
         );
         app.initialize_settings()
             .await
@@ -1299,6 +1533,7 @@ mod tests {
             Arc::new(FileConfigStore::new(path.clone())),
             Arc::new(TestHub),
             Arc::new(TestHubLauncher),
+            Arc::new(TestDirectories),
         );
         let access = AccessContext::local_owner();
         app.initialize_settings().await.expect("initialize");
@@ -1325,6 +1560,7 @@ mod tests {
                 &access,
                 confirmed.revision,
                 ConfigUpdate {
+                    paths: None,
                     unity: None,
                     appearance: None,
                     locale: Some(ConfigLocale::EnUs),
@@ -1352,7 +1588,7 @@ mod tests {
     }
 
     #[test]
-    fn maximum_v4_snapshot_fits_existing_byte_limit() {
+    fn maximum_legacy_preferences_fit_existing_byte_limit() {
         let mut snapshot = default_snapshot();
         snapshot.settings.appearance.source_color = Some("#FFFFFF".to_owned());
         snapshot.settings.packages.hidden_repository_ids = (0..256)
@@ -1381,7 +1617,7 @@ mod tests {
             .collect();
         oversized.settings.unity.hub_path = Some(format!("/{}", "\\".repeat(4095)));
         assert!(serialize_settings(&oversized).len() as u64 > MAX_SETTINGS_BYTES);
-        assert_eq!(store.publish(&oversized), Err(ConfigStoreError::Corrupt));
+        assert_eq!(store.publish(&oversized), Err(ConfigStoreError::TooLarge));
         assert_eq!(fs::read(&path).expect("accepted bytes"), original_bytes);
         assert_eq!(store.load().expect("accepted revision"), original);
         assert!(!path.with_extension("toml.new").exists());

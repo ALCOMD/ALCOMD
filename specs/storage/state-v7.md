@@ -71,3 +71,15 @@ fingerprint、Plan evidence 与 ProjectId 一致时 forward-finalize。外部修
   Backup Create Operations、backups rows、Project/Repository/Unity state、revision 与 Event sequence。
 - `PRAGMA foreign_key_check` 必须为空；future schema 继续 fail closed。
 - recovery dispatcher 必须按 exact Operation kind 隔离；v7 Schema 不实现或发布 Restore handler。
+
+## M7 自定义备份目录的冻结定位
+
+Config5 引入的 `backup-file-v1:<canonical absolute archive path>` 由既有 backup metadata 的
+`archive_locator` 持有；新 Restore Plan 的严格内部 `plan_json` 在原 version 1 authority 中增加
+可选 `archiveLocator`，并将其纳入原 Plan fingerprint。只接受 canonical parent、与 BackupId 匹配的
+ZIP 文件名和普通非 symlink/reparse 文件。locator 不替代原记录/Plan 中的 file identity、SHA-256、
+byte size、manifest fingerprint 与 project fingerprint；Apply 和重启恢复继续逐项重验。
+
+已有 `backup-v1:<BackupId>` 记录及旧 Restore Plan 的 `plan_json` 不重写、不重签 fingerprint。
+缺少 `archiveLocator` 的旧 authority 继续读取原 `data_root/backups/objects/<BackupId>.zip`；
+新 authority 只使用其冻结定位，不查询当时的备份目录偏好。此扩展不新增表、列或迁移，当前 State16 保持。

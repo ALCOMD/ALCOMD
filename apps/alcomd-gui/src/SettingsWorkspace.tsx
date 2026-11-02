@@ -1,7 +1,7 @@
 import type { ThemePreferences } from "@alcomd/ui";
 import type { RpcError } from "@alcomd/sdk";
 import { use, useCallback, useEffect, useRef, useState, useSyncExternalStore, type FocusEventHandler, type ReactNode, type Ref } from "react";
-import { UnityHubConflictError, type SettingsAutosave } from "./settings-autosave";
+import { StorageDirectoryConflictError, UnityHubConflictError, type SettingsAutosave } from "./settings-autosave";
 
 import type { OfficialSettings, RepositorySnapshot, SettingsGetResult, SettingsLocale, UnityInstallation } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
@@ -45,6 +45,10 @@ export function SettingsWorkspace({ client, settingsWriter, navigate, onApplied,
         <UtilityWorkspace title={t(navigationLabels.settings)} load={load} refreshDisabled={dirty || saving.saving}>
             {(snapshot) => (
                 <div className="settings-workspace">
+                    <SettingsSection title={t("Save locations")}>
+                        <StorageDirectoryRow client={client} settingsWriter={settingsWriter} snapshot={snapshot} directoryKey="projectDirectory" label={t("Default project location")} />
+                        <StorageDirectoryRow client={client} settingsWriter={settingsWriter} snapshot={snapshot} directoryKey="backupDirectory" label={t("Default backup location")} />
+                    </SettingsSection>
                     <UnityHubSettingsSection client={client} settingsWriter={settingsWriter} snapshot={snapshot} onInstallationsChanged={() => setUnityGeneration((value) => value + 1)} />
                     <UnitySettingsSection client={client} initialRead={initialUnity} externalGeneration={unityGeneration} />
                     <SettingsEditor client={client} settingsWriter={settingsWriter} snapshot={snapshot} onThemePreview={onThemePreview} onThemeSession={onThemeSession}
@@ -75,6 +79,107 @@ function SettingsSection({ title, children, actions, sectionRef, onBlur }: {
 type UnityHubIntent = { path: string | null; previousPath: string | null; origin: "select" | "auto" | "edit" };
 type UnityHubAction = { kind: "select" | "auto" | "retry" } | { kind: "edit"; trigger: "enter" | "blur" };
 type SettingsFeedback = { message: string; cause?: RpcError };
+
+function StorageDirectoryRow({ client, settingsWriter, snapshot, directoryKey, label }: {
+    client: GuiRpcClient; settingsWriter: SettingsAutosave; snapshot: SettingsGetResult;
+    directoryKey: keyof OfficialSettings["paths"]; label: string;
+}) {
+    const { t } = useTranslation();
+    const state = useSyncExternalStore(settingsWriter.subscribe, settingsWriter.getSnapshot);
+    const accepted = state.accepted ?? snapshot;
+    const acceptedRef = useRef(accepted);
+    acceptedRef.current = accepted;
+    const [draft, setDraft] = useState(accepted.directories[directoryKey]);
+    const edit = useRef({ dirty: false, previousPath: accepted.settings.paths[directoryKey], value: draft });
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState<SettingsFeedback>();
+    const [pending, setPending] = useState<{ path: string; previousPath: string | null }>();
+    const generation = useRef(0);
+    const guard = useRef(false);
+    const failedEdit = useRef<string | undefined>(undefined);
+    const reset = (value: SettingsGetResult, preserveFailed = false) => {
+        const desired = preserveFailed ? state.settings?.paths[directoryKey] : undefined;
+        const path = desired ?? value.directories[directoryKey];
+        edit.current = { dirty: desired !== undefined && desired !== value.settings.paths[directoryKey], value: path, previousPath: value.settings.paths[directoryKey] };
+        setDraft(path);
+    };
+    useEffect(() => {
+        reset(acceptedRef.current, state.failed);
+        setBusy(false); setError(undefined); setPending(undefined); failedEdit.current = undefined;
+        return () => { generation.current += 1; guard.current = false; };
+    }, [client, settingsWriter, directoryKey]);
+    useEffect(() => {
+        if (pending !== undefined && accepted.settings.paths[directoryKey] !== pending.previousPath) {
+            reset(accepted); setPending(undefined); setError(undefined); failedEdit.current = undefined;
+        } else if (!edit.current.dirty) reset(accepted, state.failed);
+    }, [accepted, state.failed, state.settings]);
+    const save = async (action: "select" | "edit" | "retry", blur = false) => {
+        if (guard.current || (state.saving && action !== "edit")) return;
+        if (action === "edit" && (!edit.current.dirty || blur && edit.current.value === failedEdit.current)) return;
+        let intent = action === "retry" ? pending : action === "edit" ? { path: edit.current.value, previousPath: edit.current.previousPath } : undefined;
+        if (intent?.path.length === 0) { setError({ message: "Choose a folder or enter an absolute directory path." }); return; }
+        guard.current = true;
+        const request = generation.current;
+        setBusy(true);
+        try {
+            if (action === "select") {
+                const path = await client.selectDirectory();
+                if (request !== generation.current || path === undefined) return;
+                intent = { path, previousPath: acceptedRef.current.settings.paths[directoryKey] };
+            }
+            if (intent === undefined) return;
+            setPending(intent);
+            const result = await settingsWriter.saveDirectory(directoryKey, intent.path, intent.previousPath);
+            if (request !== generation.current) return;
+            reset(result); setError(undefined); setPending(undefined); failedEdit.current = undefined;
+        } catch (caught: unknown) {
+            if (request !== generation.current) return;
+            if (action === "edit") failedEdit.current = intent?.path;
+            if (caught instanceof StorageDirectoryConflictError) {
+                setPending(undefined);
+                setError({ message: "This location changed. Press Escape to load the current path before editing again." });
+            } else {
+                const cause = normalizeRequestError(caught);
+                setError({ message: intent === undefined ? "The folder picker could not be opened."
+                    : "The current save location could not be checked.", cause });
+            }
+        } finally {
+            if (request === generation.current) { guard.current = false; setBusy(false); }
+        }
+    };
+    return <div className="settings-directory" onBlur={(event) => {
+        let target: EventTarget | null = event.relatedTarget;
+        while (target instanceof Node) {
+            if (event.currentTarget.contains(target)) return;
+            const root = target.getRootNode();
+            target = root instanceof ShadowRoot ? root.host : null;
+        }
+        void save("edit", true);
+    }}>
+        <div className="settings-path-row">
+            <TextField id={`settings-${directoryKey}`} label={label} readOnly={busy} value={draft}
+                onInput={(value) => {
+                    if (!edit.current.dirty) edit.current.previousPath = acceptedRef.current.settings.paths[directoryKey];
+                    edit.current.value = value;
+                    edit.current.dirty = value !== acceptedRef.current.directories[directoryKey];
+                    setDraft(value); setError(undefined); failedEdit.current = undefined;
+                }} onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                        if (state.failed) settingsWriter.change({ paths: { [directoryKey]: acceptedRef.current.settings.paths[directoryKey] } });
+                        event.preventDefault(); event.stopPropagation(); reset(acceptedRef.current);
+                        setError(undefined); setPending(undefined); failedEdit.current = undefined;
+                    } else if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+                        event.preventDefault(); void save("edit");
+                    }
+                }} />
+            <Button softDisabled={busy || state.saving} onClick={() => void save("select")} type="button">{t("Select")}</Button>
+        </div>
+        {error === undefined || state.failed ? null : error.cause === undefined ? <Reminder tone="error">{t(error.message)}</Reminder>
+            : <RequestReminder error={error.cause} title={t(error.message)} message={error.message === "The current save location could not be checked." && ["internal_error", "daemon_unavailable"].includes(error.cause.code) ? "Retry checks the current path before writing again." : undefined}>
+                {pending === undefined ? null : <Button disabled={state.failed} softDisabled={busy || state.saving} onClick={() => void save("retry")} type="button" variant="text">{t("Retry")}</Button>}
+            </RequestReminder>}
+    </div>;
+}
 
 function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallationsChanged }: {
     client: GuiRpcClient; settingsWriter: SettingsAutosave; snapshot: SettingsGetResult; onInstallationsChanged(): void;

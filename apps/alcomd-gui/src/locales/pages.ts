@@ -218,10 +218,6 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "正在检查功能",
         "ja-JP": "機能を確認中"
     },
-    "Choose the new project name. By default, ALCOMD creates the copy beside the original project without overwriting an existing target.": {
-        "zh-CN": "请输入新项目的名称。默认情况下，ALCOMD 会在原项目旁创建副本，不会覆盖已有目标。",
-        "ja-JP": "新しいプロジェクト名を入力してください。既定では元のプロジェクトと同じ場所にコピーを作成し、既存のコピー先は上書きしません。"
-    },
     "Choose whether to remove only the ALCOMD registration or permanently delete the local Unity project directory.": {
         "zh-CN": "请选择仅从 ALCOMD 列表中移除，还是永久删除本地 Unity 项目目录。",
         "ja-JP": "ALCOMD の一覧からのみ削除するか、ローカルの Unity プロジェクトフォルダーを完全に削除するか選んでください。"

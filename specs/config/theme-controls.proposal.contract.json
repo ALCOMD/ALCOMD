@@ -21,9 +21,10 @@
         "from": [
             1,
             2,
-            3
+            3,
+            4
         ],
-        "to": 4,
+        "to": 5,
         "removedTomlField": "appearance.density",
         "removedPublicField": "settings.appearance.density",
         "schemeIntroducedIn": 3,
@@ -66,7 +67,7 @@
         "system": "track-prefers-reduced-motion-live-without-config-write",
         "save": "ordinary-setting-change-immediate-existing-CAS-RPC",
         "failure": "keep-accepted-runtime-preference-retain-latest-intent-explicit-Retry-after-reread",
-        "contract": "Config4-retains-approved-motion-enum-no-new-method-capability-or-permission",
+        "contract": "Config5-retains-approved-motion-enum-no-new-method-capability-or-permission",
         "historicalInput": "Config1-and-Config2-only-accept-original-system-and-reduced",
         "unknownOrNull": "reject",
         "pageTransitions": "remain-removed",

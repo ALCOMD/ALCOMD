@@ -4,7 +4,7 @@
     "title": "ALCOMD Config Schema 2 settings",
     "deprecated": true,
     "x-alcomd-status": "legacy-startup-migration-input-only",
-    "x-alcomd-currentSchema": 4,
+    "x-alcomd-currentSchema": 5,
     "type": "object",
     "additionalProperties": false,
     "required": ["schema", "revision", "appearance", "packages", "locale"],

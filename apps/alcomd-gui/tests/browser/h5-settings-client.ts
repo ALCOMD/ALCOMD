@@ -68,10 +68,15 @@ export function withH5SettingsClient(base: GuiRpcClient, query: URLSearchParams)
                 const hubPath = update.unity?.hubPath === undefined ? previous.settings.unity.hubPath : update.unity.hubPath;
                 current = {
                     ...previous, revision: previous.revision + 1,
+                    directories: {
+                        projectDirectory: update.paths?.projectDirectory === undefined ? previous.directories.projectDirectory : update.paths.projectDirectory ?? "C:\\Fixture",
+                        backupDirectory: update.paths?.backupDirectory === undefined ? previous.directories.backupDirectory : update.paths.backupDirectory ?? "C:\\Fixture\\Backups"
+                    },
                     unityHub: update.unity?.hubPath === undefined ? previous.unityHub : hubPath === null
                         ? { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" }
                         : { status: "available", source: "configured", path: hubPath, configuredPathStatus: "available" },
                     settings: {
+                        paths: { ...previous.settings.paths, ...update.paths },
                         appearance: { ...previous.settings.appearance, ...update.appearance },
                         packages: { ...previous.settings.packages, ...update.packages },
                         unity: { ...previous.settings.unity, ...update.unity },

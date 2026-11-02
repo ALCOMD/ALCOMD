@@ -17,11 +17,13 @@ interface SaveState {
 }
 
 export class UnityHubConflictError extends Error {}
+export class StorageDirectoryConflictError extends Error {}
 
 /** UI intent and RPC ordering only; the daemon remains the settings authority. */
 export class SettingsAutosave {
     private accepted?: SettingsGetResult;
     private pending: OrdinaryUpdate = {};
+    private directoryBaselines: Partial<OfficialSettings["paths"]> = {};
     private inFlight: OrdinaryUpdate = {};
     private failed = false;
     private error?: RpcError;
@@ -112,6 +114,27 @@ export class SettingsAutosave {
         });
     }
 
+    saveDirectory(key: keyof OfficialSettings["paths"], path: string | null, previousPath: string | null): Promise<SettingsGetResult> {
+        return this.enqueue(async () => {
+            await this.drain();
+            this.requireActive();
+            if (!this.failed) {
+                this.apply(await this.client.settingsGet());
+                this.requireActive();
+                const current = this.accepted!;
+                if (current.settings.paths[key] === path) return current;
+                if (current.settings.paths[key] !== previousPath) throw new StorageDirectoryConflictError("Save location changed.");
+            }
+            this.directoryBaselines[key] = previousPath;
+            this.pending = merge(this.pending, { paths: { [key]: path } });
+            this.publish();
+            await this.drain();
+            this.requireActive();
+            if (this.failed) throw this.error ?? { code: "internal_error", message: "" };
+            return this.accepted!;
+        });
+    }
+
     reload(): Promise<SettingsGetResult> {
         return this.enqueue(async () => {
             const snapshot = await this.client.settingsGet();
@@ -123,6 +146,7 @@ export class SettingsAutosave {
     stop(): void {
         this.stopped = true;
         this.pending = {};
+        this.directoryBaselines = {};
         this.listeners.clear();
     }
 
@@ -146,6 +170,7 @@ export class SettingsAutosave {
                 ...desired,
                 appearance: { ...this.accepted.settings.appearance, ...desired.appearance },
                 packages: { ...this.accepted.settings.packages, ...desired.packages },
+                paths: { ...this.accepted.settings.paths, ...desired.paths },
                 unity: { ...this.accepted.settings.unity, ...desired.unity }
             },
             saving: this.jobs > 0,
@@ -184,8 +209,21 @@ export class SettingsAutosave {
             try {
                 if (this.accepted === undefined) this.apply(await this.client.settingsGet());
                 this.requireActive();
+                let directoryConflict = false;
+                for (const key of Object.keys(this.directoryBaselines) as Array<keyof OfficialSettings["paths"]>) {
+                    const desired = intent.paths?.[key];
+                    const current = this.accepted!.settings.paths[key];
+                    if (desired !== undefined && current !== desired && current !== this.directoryBaselines[key]) {
+                        delete intent.paths![key];
+                        delete this.directoryBaselines[key];
+                        directoryConflict = true;
+                    }
+                }
+                if (intent.paths !== undefined && Object.keys(intent.paths).length === 0) delete intent.paths;
+                if (directoryConflict) throw { code: "revision_conflict", message: "" };
                 const update = difference(intent, this.accepted!.settings);
                 if (Object.keys(update).length > 0) this.apply(await this.client.settingsUpdate(this.accepted!.revision, update));
+                if (intent.paths !== undefined) for (const key of Object.keys(intent.paths) as Array<keyof OfficialSettings["paths"]>) delete this.directoryBaselines[key];
                 this.inFlight = {};
                 this.publish();
             } catch (caught: unknown) {
@@ -204,6 +242,7 @@ function merge(first: OrdinaryUpdate, second: OrdinaryUpdate): OrdinaryUpdate {
         ...first, ...second,
         ...(first.appearance === undefined && second.appearance === undefined ? {} : { appearance: { ...first.appearance, ...second.appearance } }),
         ...(first.unity === undefined && second.unity === undefined ? {} : { unity: { ...first.unity, ...second.unity } }),
+        ...(first.paths === undefined && second.paths === undefined ? {} : { paths: { ...first.paths, ...second.paths } }),
         ...(first.packages === undefined && second.packages === undefined ? {} : { packages: { ...first.packages, ...second.packages } })
     };
 }
@@ -220,5 +259,9 @@ function difference(intent: OrdinaryUpdate, accepted: OfficialSettings): Ordinar
         if (Object.keys(packages).length > 0) result.packages = packages;
     }
     if (intent.unity?.hubPath !== undefined && intent.unity.hubPath !== accepted.unity.hubPath) result.unity = { hubPath: intent.unity.hubPath };
+    if (intent.paths !== undefined) {
+        const paths = Object.fromEntries(Object.entries(intent.paths).filter(([key, value]) => value !== accepted.paths[key as keyof typeof intent.paths]));
+        if (Object.keys(paths).length > 0) result.paths = paths;
+    }
     return result;
 }

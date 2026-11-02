@@ -10,7 +10,7 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 
 | RPC method | capability | page / route | user action | R/W | confirmation | Operation | state handling | test owner |
 |---|---|---|---|---|---|---|---|---|
-| `system.hello` | RPC v1 handshake | app shell | connect/reconnect; ready Store dataSchema, Config4 | R | no | no | disconnected/reconnecting/capability refresh | `gui.m7-core-surfaces` |
+| `system.hello` | RPC v1 handshake | app shell | connect/reconnect; ready Store dataSchema, Config5 | R | no | no | disconnected/reconnecting/capability refresh | `gui.m7-core-surfaces` |
 | `system.status` | base | Home, About, shell | read Core version/status; local GUI build version remains independent | R | no | no | data/error/reconnect | `gui.m7-core-surfaces` |
 | `state.check` | `state.check.v1` + `operations.v1` for GUI progress | Diagnostics | start integrity check and follow the accepted ID | W | explicit action | yes | mutation/error/terminal refresh | `gui.m7-operation-flows` |
 | `operations.get` | `operations.v1` | Project backup progress / Restore / Operation detail / Log detail | follow the same accepted ID and open Core results | R | no | existing Operation | polling/read retry/terminal/client cleanup | `gui.m7-operation-flows` |
@@ -99,7 +99,7 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `extensions.ui.refresh` | `extensions.ui.portable.v1` | Extension Portable UI | explicit refresh | W/session | discard if dirty | no | refreshing/stale | `gui.m7-portable-ui-renderer` |
 | `extensions.ui.dispatch` | `extensions.ui.portable.v1` | Extension Portable UI | activate/submit action | W/session | host-owned where required | no | progress/error/replay | `gui.m7-portable-ui-security` |
 | `extensions.ui.close` | `extensions.ui.portable.v1` | Extension Portable UI | close route/session | W/session | discard if dirty | no | best-effort | `gui.m7-portable-ui-production` |
-| `settings.get` | base RPC v1; no new capability approved | Settings, shell | load Config4 without density and Hub location evidence | R | no | no | data/revision | `settings.authoritative-storage` |
+| `settings.get` | base RPC v1; no new capability approved | Settings, shell and project target forms | load Config5 without density, Hub evidence and effective project/backup directories | R | no | no | data/revision | `settings.authoritative-storage` |
 | `settings.update` | base RPC v1; no new capability approved | Settings | serial CAS narrow PATCH; theme Save/Cancel | W | immediate ordinary changes; explicit theme save | no | mutation/stale/intent retained/unknown commit | `settings.authoritative-storage` |
 | `activity.list` | base RPC v1; no new capability approved | Activity | page safe Event/Operation projection | R | no | no | data/keyset | `activity.log-redaction` |
 | `diagnostics.list` | base RPC v1; no new capability approved | Diagnostics | page redacted diagnostics | R | no | no | data/keyset | `diagnostics.redacted-list` |

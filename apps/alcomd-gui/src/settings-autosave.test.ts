@@ -1,10 +1,12 @@
 import type { SettingsGetResult, SettingsUpdate } from "./core-models.ts";
-import { SettingsAutosave, UnityHubConflictError } from "./settings-autosave.ts";
+import { SettingsAutosave, StorageDirectoryConflictError, UnityHubConflictError } from "./settings-autosave.ts";
 
 const initial: SettingsGetResult = {
-    configSchema: 4, revision: 7,
+    configSchema: 5, revision: 7,
+    directories: { projectDirectory: "C:\\Projects", backupDirectory: "C:\\Backups" },
     unityHub: { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" },
     settings: {
+        paths: { projectDirectory: null, backupDirectory: null },
         unity: { hubPath: null },
         locale: "en-US",
         appearance: { mode: "system", scheme: "vibrant", sourceColor: null, motion: "system" },
@@ -33,12 +35,17 @@ function model() {
             requests.push({ expectedRevision, update: structuredClone(update) });
             assert(expectedRevision === current.revision, "CAS expected current revision");
             current = {
-                configSchema: 4, revision: expectedRevision + 1,
+                configSchema: 5, revision: expectedRevision + 1,
+                directories: {
+                    projectDirectory: update.paths?.projectDirectory ?? current.directories.projectDirectory,
+                    backupDirectory: update.paths?.backupDirectory ?? current.directories.backupDirectory
+                },
                 unityHub: current.unityHub,
                 settings: {
                     ...current.settings, ...update,
                     appearance: { ...current.settings.appearance, ...update.appearance },
                     packages: { ...current.settings.packages, ...update.packages },
+                    paths: { ...current.settings.paths, ...update.paths },
                     unity: { ...current.settings.unity, ...update.unity }
                 }
             };
@@ -260,4 +267,70 @@ async function idle(writer: SettingsAutosave) {
     equal(fixture.writer.getSnapshot().accepted!.settings.unity.hubPath, "C:\\Other client\\Unity Hub.exe", "conflict exposes current Core authority");
 }
 
-console.log("Settings autosave coordination passed (15 scenarios).");
+{
+    const fixture = model();
+    fixture.writer.change({ paths: { projectDirectory: "D:\\Projects" } });
+    fixture.writer.change({ paths: { backupDirectory: "E:\\Backups" } });
+    await idle(fixture.writer);
+    equal(fixture.current().settings.paths, { projectDirectory: "D:\\Projects", backupDirectory: "E:\\Backups" }, "directory siblings survive the shared queue");
+    equal(fixture.current().settings.appearance, initial.settings.appearance, "directory update preserves appearance");
+}
+
+{
+    const fixture = model();
+    const original = fixture.client.settingsUpdate;
+    let failed = false;
+    fixture.client.settingsUpdate = async (...arguments_) => {
+        const result = await original(...arguments_);
+        if (!failed) { failed = true; throw new Error("Directory reply lost after commit"); }
+        return result;
+    };
+    const rejected = await fixture.writer.saveDirectory("projectDirectory", "D:\\Projects", null).then(() => false, () => true);
+    assert(rejected, "unknown directory save stays explicit");
+    await fixture.writer.retry();
+    equal(fixture.requests.length, 1, "directory Retry reconciles an already committed save");
+    equal(fixture.writer.getSnapshot().accepted!.directories.projectDirectory, "D:\\Projects", "effective directory follows acknowledged Core result");
+}
+
+{
+    const fixture = model();
+    await fixture.client.settingsUpdate(7, { paths: { backupDirectory: "E:\\Other backup" } });
+    const conflict = await fixture.writer.saveDirectory("backupDirectory", "F:\\Backup", null).then(() => false, (error) => error instanceof StorageDirectoryConflictError);
+    assert(conflict, "directory edit cannot overwrite an unseen external change");
+    equal(fixture.requests.length, 1, "directory conflict does not write");
+}
+
+{
+    const fixture = model();
+    const original = fixture.client.settingsUpdate;
+    fixture.client.settingsUpdate = async (revision, update) => {
+        await original(revision, { paths: { ...update.paths, projectDirectory: "\\\\?\\D:\\Projects" } });
+        throw new Error("Normalized directory committed before reply loss");
+    };
+    await fixture.writer.saveDirectory("projectDirectory", "D:\\Projects", null).catch(() => undefined);
+    await fixture.writer.retry();
+    equal(fixture.requests.length, 1, "unknown normalized path is never submitted twice");
+    equal(fixture.writer.getSnapshot().error?.code, "revision_conflict", "different path text is exposed as changed authority");
+    await fixture.writer.retry();
+    assert(!fixture.writer.getSnapshot().failed, "acknowledged changed authority can clear the conflict without another write");
+    equal(fixture.requests.length, 1, "clearing the directory conflict does not rewrite the current location");
+}
+
+{
+    const fixture = model();
+    const original = fixture.client.settingsUpdate;
+    let rejected = false;
+    fixture.client.settingsUpdate = async (...arguments_) => {
+        if (!rejected) { rejected = true; throw { code: "invalid_request" }; }
+        return original(...arguments_);
+    };
+    await fixture.writer.saveDirectory("backupDirectory", "relative", null).catch(() => undefined);
+    assert(fixture.writer.getSnapshot().failed, "invalid directory preserves a global settings failure");
+    await fixture.writer.saveDirectory("backupDirectory", "E:\\Corrected", null).catch(() => undefined);
+    equal(fixture.requests.length, 0, "editing a failed intent waits for explicit Retry");
+    await fixture.writer.retry();
+    equal(fixture.current().settings.paths.backupDirectory, "E:\\Corrected", "Retry saves the corrected directory intent");
+    equal(fixture.requests.length, 1, "only corrected directory is written");
+}
+
+console.log("Settings autosave coordination passed (20 scenarios).");

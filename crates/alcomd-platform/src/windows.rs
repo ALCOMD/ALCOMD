@@ -11,12 +11,15 @@ use crate::{BindError, DataConfig, IpcConfig};
 
 #[path = "windows_file_identity.rs"]
 mod file_identity;
+#[path = "windows_file_publish.rs"]
+mod file_publish;
 #[path = "windows_known_folder.rs"]
 mod known_folder;
 #[path = "windows_security.rs"]
 mod security;
 
 pub use file_identity::{WindowsFileIdentity, file_identity, file_link_count};
+pub(crate) use file_publish::publish_file_no_replace;
 
 /// A connected Windows Named Pipe endpoint.
 pub enum IpcStream {
@@ -140,6 +143,10 @@ pub fn endpoint_display(config: &IpcConfig) -> io::Result<String> {
 /// Returns the current user's formal Windows Local AppData known folder.
 pub fn local_app_data_directory() -> io::Result<std::path::PathBuf> {
     known_folder::local_app_data_directory()
+}
+
+pub(crate) fn documents_directory() -> io::Result<std::path::PathBuf> {
+    known_folder::documents_directory()
 }
 
 /// Creates the product data directory and returns its state database path.

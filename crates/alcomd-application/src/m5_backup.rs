@@ -2,6 +2,7 @@
 
 use std::future::Future;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 
@@ -73,6 +74,22 @@ pub struct BackupCreateRequest {
     pub compression_mode: BackupCompression,
     pub exclude_vpm_packages: bool,
     pub created_at_ms: u64,
+    /// Frozen when accepted. Missing only on retained pre-Config5 operations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub destination: Option<BackupDestination>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BackupDestination {
+    pub directory: String,
+    pub identity: Vec<u8>,
+}
+
+/// Reads the current backup preference from the shared application settings authority.
+pub trait BackupDirectoryProvider: Send + Sync + 'static {
+    fn directory(&self)
+    -> Pin<Box<dyn Future<Output = Result<String, M5BackupError>> + Send + '_>>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -293,6 +310,12 @@ impl std::fmt::Display for M5BackupError {
 impl std::error::Error for M5BackupError {}
 
 pub trait M5BackupStore: Clone + Send + Sync + 'static {
+    fn replay_backup_create(
+        &self,
+        owner: PrincipalId,
+        request: BackupCreateRequest,
+        key: IdempotencyKey,
+    ) -> impl Future<Output = Result<Option<BackupCreateOutcome>, M5BackupError>> + Send;
     fn list_backups(
         &self,
         owner: PrincipalId,
@@ -423,6 +446,11 @@ impl BackupCancellation {
 pub trait M5BackupAdapter: Clone + Send + Sync + 'static {
     type Inventory: Send + 'static;
 
+    fn prepare_destination(
+        &self,
+        directory: String,
+    ) -> impl Future<Output = Result<BackupDestination, M5BackupError>> + Send;
+
     fn inventory(
         &self,
         project: ProjectRecord,
@@ -444,6 +472,7 @@ pub trait M5BackupAdapter: Clone + Send + Sync + 'static {
     fn discard_partial(
         &self,
         operation_id: OperationId,
+        request: BackupCreateRequest,
     ) -> impl Future<Output = Result<(), M5BackupError>> + Send;
     fn plan_restore(
         &self,
@@ -514,6 +543,7 @@ pub struct M5BackupApplication<S: M5BackupStore, A: M5BackupAdapter, W: M5Backup
     adapter: A,
     writer: W,
     locks: Arc<ResourceLockCoordinator>,
+    directories: Option<Arc<dyn BackupDirectoryProvider>>,
 }
 
 impl<S, A, W> M5BackupApplication<S, A, W>
@@ -534,7 +564,17 @@ where
             adapter,
             writer,
             locks,
+            directories: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_directory_provider(
+        mut self,
+        directories: Arc<dyn BackupDirectoryProvider>,
+    ) -> Self {
+        self.directories = Some(directories);
+        self
     }
 
     pub async fn recover(&self) -> Result<(), M5BackupError> {
@@ -614,14 +654,29 @@ where
     ) -> Result<BackupCreateOutcome, M5BackupError> {
         require(access, Permission::BackupsManage)?;
         require(access, Permission::ProjectsRead)?;
-        let request = BackupCreateRequest {
+        let mut request = BackupCreateRequest {
             backup_id: BackupId::new(),
             project_id,
             expected_revision,
             compression_mode,
             exclude_vpm_packages,
             created_at_ms: now_ms()?,
+            destination: None,
         };
+        if let Some(outcome) = self
+            .store
+            .replay_backup_create(access.principal().clone(), request.clone(), key.clone())
+            .await?
+        {
+            return Ok(outcome);
+        }
+        if let Some(directories) = &self.directories {
+            request.destination = Some(
+                self.adapter
+                    .prepare_destination(directories.directory().await?)
+                    .await?,
+            );
+        }
         let outcome = self
             .store
             .accept_backup_create(access.principal().clone(), request, key)
@@ -870,14 +925,30 @@ where
     }
 
     async fn run_inner(&self, operation_id: OperationId) -> Result<(), M5BackupError> {
-        if cancelled(&self.store, operation_id).await? {
-            finish_cancelled(&self.store, operation_id).await?;
-            return Ok(());
-        }
         let mut operation = self
             .store
             .begin_backup_create(operation_id, now_ms()?)
             .await?;
+        if cancelled(&self.store, operation_id).await?
+            && matches!(
+                operation.phase,
+                BackupPhase::Accepted
+                    | BackupPhase::InventoryReady
+                    | BackupPhase::Archiving
+                    | BackupPhase::ArchiveReady
+            )
+        {
+            if matches!(
+                operation.phase,
+                BackupPhase::Archiving | BackupPhase::ArchiveReady
+            ) {
+                self.adapter
+                    .discard_partial(operation_id, operation.request.clone())
+                    .await?;
+            }
+            finish_cancelled(&self.store, operation_id).await?;
+            return Ok(());
+        }
         let access = AccessContext::new(operation.owner.clone(), []);
         let _guard = self
             .locks
@@ -951,7 +1022,9 @@ where
             cancellation.stop();
             let _ = polling.await;
             if archived.is_err() && cancelled(&self.store, operation_id).await? {
-                self.adapter.discard_partial(operation_id).await?;
+                self.adapter
+                    .discard_partial(operation_id, operation.request.clone())
+                    .await?;
                 finish_cancelled(&self.store, operation_id).await?;
                 return Ok(());
             }
@@ -974,7 +1047,9 @@ where
             .ok_or_else(|| error(M5BackupErrorCode::RecoveryRequired))?;
         if operation.phase == BackupPhase::ArchiveReady {
             if cancelled(&self.store, operation_id).await? {
-                self.adapter.discard_partial(operation_id).await?;
+                self.adapter
+                    .discard_partial(operation_id, operation.request.clone())
+                    .await?;
                 finish_cancelled(&self.store, operation_id).await?;
                 return Ok(());
             }

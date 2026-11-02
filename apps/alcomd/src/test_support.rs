@@ -83,7 +83,16 @@ async fn start<F>(
 where
     F: Future<Output = ()> + Send + 'static,
 {
-    let (listener, applications) = super::initialize_daemon(ipc, data).await?;
+    let storage_root = data
+        .data_directory()
+        .ok_or_else(|| BindError::Io(std::io::Error::other("test daemon requires isolated data")))?
+        .join("test-user-directories");
+    let (listener, applications) = super::initialize_daemon_with_directories(
+        ipc,
+        data,
+        Arc::new(TestStorageDirectories(storage_root)),
+    )
+    .await?;
     let listener = Arc::new(Mutex::new(listener));
     let task_listener = Arc::clone(&listener);
     let task = tokio::spawn(async move {
@@ -102,6 +111,27 @@ where
 }
 
 struct TemporaryDataDirectory(PathBuf);
+
+struct TestStorageDirectories(PathBuf);
+
+impl alcomd_application::StorageDirectoryPlatform for TestStorageDirectories {
+    fn default_directories(
+        &self,
+    ) -> Result<alcomd_application::StorageDirectories, alcomd_application::OfficialGuiError> {
+        Ok(alcomd_application::StorageDirectories {
+            project_directory: self.0.join("Projects").to_string_lossy().into_owned(),
+            backup_directory: self.0.join("Backups").to_string_lossy().into_owned(),
+        })
+    }
+
+    fn normalize_directory(
+        &self,
+        path: &str,
+    ) -> Result<String, alcomd_application::OfficialGuiError> {
+        alcomd_platform::normalize_storage_directory(path)
+            .map_err(|_| alcomd_application::OfficialGuiError::InvalidInput)
+    }
+}
 
 impl TemporaryDataDirectory {
     fn new() -> Self {

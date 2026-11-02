@@ -71,30 +71,8 @@ pub(super) fn accept_backup_create(
     key: &alcomd_application::IdempotencyKey,
 ) -> Result<BackupCreateOutcome, M5BackupError> {
     let transaction = transaction(connection)?;
-    let fingerprint = format!(
-        "{{\"compressionMode\":\"{}\",\"excludeVpmPackages\":{},\"expectedRevision\":{},\"projectId\":\"{}\"}}",
-        request.compression_mode.as_str(),
-        request.exclude_vpm_packages,
-        request.expected_revision.get(),
-        request.project_id
-    );
-    if let Some((existing_fingerprint, response)) = transaction
-        .query_row(
-            "SELECT request_fingerprint,response_json FROM idempotency_records
-         WHERE principal_id=?1 AND method='backups.create' AND idempotency_key=?2",
-            params![owner.as_str(), key.as_str()],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-        )
-        .optional()
-        .map_err(failure)?
-    {
-        if existing_fingerprint != fingerprint {
-            return Err(error(M5BackupErrorCode::IdempotencyConflict));
-        }
-        let mut outcome: BackupCreateOutcome =
-            serde_json::from_str(&response).map_err(|_| internal())?;
-        outcome.replayed = true;
-        outcome.schedule = false;
+    let fingerprint = create_fingerprint(&request);
+    if let Some(outcome) = replay_backup_create(&transaction, owner, &request, key)? {
         transaction.commit().map_err(failure)?;
         return Ok(outcome);
     }
@@ -146,6 +124,45 @@ pub(super) fn accept_backup_create(
     Ok(outcome)
 }
 
+fn create_fingerprint(request: &BackupCreateRequest) -> String {
+    format!(
+        "{{\"compressionMode\":\"{}\",\"excludeVpmPackages\":{},\"expectedRevision\":{},\"projectId\":\"{}\"}}",
+        request.compression_mode.as_str(),
+        request.exclude_vpm_packages,
+        request.expected_revision.get(),
+        request.project_id
+    )
+}
+
+pub(super) fn replay_backup_create(
+    connection: &Connection,
+    owner: &PrincipalId,
+    request: &BackupCreateRequest,
+    key: &alcomd_application::IdempotencyKey,
+) -> Result<Option<BackupCreateOutcome>, M5BackupError> {
+    let fingerprint = create_fingerprint(request);
+    if let Some((existing_fingerprint, response)) = connection
+        .query_row(
+            "SELECT request_fingerprint,response_json FROM idempotency_records
+         WHERE principal_id=?1 AND method='backups.create' AND idempotency_key=?2",
+            params![owner.as_str(), key.as_str()],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()
+        .map_err(failure)?
+    {
+        if existing_fingerprint != fingerprint {
+            return Err(error(M5BackupErrorCode::IdempotencyConflict));
+        }
+        let mut outcome: BackupCreateOutcome =
+            serde_json::from_str(&response).map_err(|_| internal())?;
+        outcome.replayed = true;
+        outcome.schedule = false;
+        return Ok(Some(outcome));
+    }
+    Ok(None)
+}
+
 pub(super) fn begin_backup_create(
     connection: &mut Connection,
     operation_id: OperationId,
@@ -156,26 +173,38 @@ pub(super) fn begin_backup_create(
         "SELECT owner_principal_id,request_json,state,revision FROM operations WHERE operation_id=?1 AND kind='backups.create'",
         [operation_id.to_string()], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, i64>(3)?)),
     ).optional().map_err(failure)?.ok_or_else(internal)?;
-    if !matches!(state.as_str(), "queued" | "recovering") {
+    if !matches!(
+        state.as_str(),
+        "queued" | "recovering" | "cancelling" | "cancelled"
+    ) {
         return Err(internal());
     }
-    let next = revision.checked_add(1).ok_or_else(internal)?;
-    transaction.execute(
-        "UPDATE operations SET state='running',revision=?1,updated_at_ms=?2,started_at_ms=coalesce(started_at_ms,?2) WHERE operation_id=?3",
-        params![next, integer(now_ms)?, operation_id.to_string()],
-    ).map_err(failure)?;
+    let start = matches!(state.as_str(), "queued" | "recovering");
+    let next = if start {
+        revision.checked_add(1).ok_or_else(internal)?
+    } else {
+        revision
+    };
+    if start {
+        transaction.execute(
+            "UPDATE operations SET state='running',revision=?1,updated_at_ms=?2,started_at_ms=coalesce(started_at_ms,?2) WHERE operation_id=?3",
+            params![next, integer(now_ms)?, operation_id.to_string()],
+        ).map_err(failure)?;
+    }
     let latest = latest_checkpoint(&transaction, operation_id)?;
     let request: BackupCreateRequest =
         serde_json::from_str(&request_json).map_err(|_| internal())?;
     let owner = PrincipalId::parse(owner).map_err(|_| internal())?;
-    insert_event(
-        &transaction,
-        &owner,
-        operation_id,
-        revision_value(next)?,
-        "operation.state_changed",
-        now_ms,
-    )?;
+    if start {
+        insert_event(
+            &transaction,
+            &owner,
+            operation_id,
+            revision_value(next)?,
+            "operation.state_changed",
+            now_ms,
+        )?;
+    }
     transaction.commit().map_err(failure)?;
     Ok(BackupOperationRecord {
         owner,

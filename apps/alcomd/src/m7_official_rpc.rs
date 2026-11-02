@@ -53,7 +53,14 @@ pub(super) async fn dispatch(
             match application.get_settings(access).await {
                 Ok(value) => {
                     let hub = application.observe_unity_hub(&value).await;
-                    success_action(request.id, settings_result(value, hub), None)
+                    match application.observe_storage_directories(&value).await {
+                        Ok(directories) => success_action(
+                            request.id,
+                            settings_result(value, hub, directories),
+                            None,
+                        ),
+                        Err(error) => official_error(request.id, error),
+                    }
                 }
                 Err(error) => official_error(request.id, error),
             }
@@ -64,6 +71,10 @@ pub(super) async fn dispatch(
                 Err(_) => return invalid(request.id),
             };
             let update = app::ConfigUpdate {
+                paths: params.update.paths.map(|value| app::ConfigPathUpdate {
+                    project_directory: directory_update_from_rpc(value.project_directory),
+                    backup_directory: directory_update_from_rpc(value.backup_directory),
+                }),
                 unity: params.update.unity.map(|value| app::ConfigUnityUpdate {
                     hub_path: match value.hub_path {
                         rpc::NullableUpdate::Unchanged => app::ConfigNullableUpdate::Unchanged,
@@ -102,7 +113,14 @@ pub(super) async fn dispatch(
             {
                 Ok(value) => {
                     let hub = application.observe_unity_hub(&value).await;
-                    success_action(request.id, settings_result(value, hub), None)
+                    match application.observe_storage_directories(&value).await {
+                        Ok(directories) => success_action(
+                            request.id,
+                            settings_result(value, hub, directories),
+                            None,
+                        ),
+                        Err(error) => official_error(request.id, error),
+                    }
                 }
                 Err(error) => official_error(request.id, error),
             }
@@ -203,10 +221,15 @@ pub(super) async fn dispatch(
 fn settings_result(
     value: app::ConfigSnapshot,
     hub: app::UnityHubLocation,
+    directories: app::StorageDirectories,
 ) -> rpc::SettingsGetResult {
     rpc::SettingsGetResult {
         config_schema: rpc::CONFIG_SCHEMA_VERSION,
         revision: value.revision,
+        directories: rpc::StorageDirectories {
+            project_directory: directories.project_directory,
+            backup_directory: directories.backup_directory,
+        },
         unity_hub: rpc::UnityHubLocation {
             status: match hub.status {
                 app::UnityHubStatus::Available => rpc::UnityHubStatus::Available,
@@ -235,6 +258,10 @@ fn settings_result(
             },
         },
         settings: rpc::Settings {
+            paths: rpc::PathSettings {
+                project_directory: value.settings.paths.project_directory,
+                backup_directory: value.settings.paths.backup_directory,
+            },
             unity: rpc::UnitySettings {
                 hub_path: value.settings.unity.hub_path,
             },
@@ -274,6 +301,16 @@ fn settings_result(
                 hide_local_user_packages: value.settings.packages.hide_local_user_packages,
             },
         },
+    }
+}
+
+fn directory_update_from_rpc(
+    value: rpc::NullableUpdate<String>,
+) -> app::ConfigNullableUpdate<String> {
+    match value {
+        rpc::NullableUpdate::Unchanged => app::ConfigNullableUpdate::Unchanged,
+        rpc::NullableUpdate::Clear => app::ConfigNullableUpdate::Clear,
+        rpc::NullableUpdate::Set(value) => app::ConfigNullableUpdate::Set(value),
     }
 }
 
@@ -367,8 +404,15 @@ mod tests {
         snapshot.settings.appearance.source_color = Some("#AABBCC".to_owned());
         snapshot.settings.appearance.motion = app::ConfigAppearanceMotion::Full;
         snapshot.settings.unity.hub_path = Some(r"C:\用户\Unity Hub.exe".to_owned());
-        let result = settings_result(snapshot.clone(), app::UnityHubLocation::unavailable(true));
-        assert_eq!(result.config_schema, 4);
+        let result = settings_result(
+            snapshot.clone(),
+            app::UnityHubLocation::unavailable(true),
+            app::StorageDirectories {
+                project_directory: "/fixtures/projects".into(),
+                backup_directory: "/fixtures/backups".into(),
+            },
+        );
+        assert_eq!(result.config_schema, 5);
         assert_eq!(
             result.config_schema,
             alcomd_store::FileConfigStore::SCHEMA_VERSION

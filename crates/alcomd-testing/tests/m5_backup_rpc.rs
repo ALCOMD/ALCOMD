@@ -97,11 +97,21 @@ async fn backup_create_round_trips_with_exact_exclusions_and_idempotency() {
         .await
         .expect("get");
     assert_eq!(record.backup_id, accepted.backup_id);
-    let archive = fixture
-        .path()
-        .join("data/backups/objects")
-        .join(format!("{}.zip", record.backup_id));
+    let directory = PathBuf::from(
+        client
+            .settings_get()
+            .await
+            .expect("backup location")
+            .directories
+            .backup_directory,
+    );
+    let archive = directory.join(format!("{}.zip", record.backup_id));
     assert_archive_profile(&archive);
+    assert_eq!(
+        fs::read_dir(&directory).expect("backup directory").count(),
+        1,
+        "only the completed archive remains"
+    );
     assert_eq!(
         fs::read_dir(fixture.path().join("data/backups/partial"))
             .expect("partials")
@@ -353,10 +363,15 @@ async fn backup_restore_fails_closed_for_artifact_and_target_races() {
             })
             .await
             .expect("artifact plan");
-        let archive = fixture
-            .path()
-            .join("data/backups/objects")
-            .join(format!("{}.zip", artifact.backup_id));
+        let archive = PathBuf::from(
+            client
+                .settings_get()
+                .await
+                .expect("backup location")
+                .directories
+                .backup_directory,
+        )
+        .join(format!("{}.zip", artifact.backup_id));
         let original = fs::read(&archive).expect("read original archive");
         match mutation {
             "replace" => {
@@ -993,7 +1008,14 @@ async fn run_kill_restart_case(checkpoint: &str) {
         .expect("backups");
     assert_eq!(backups.backups.len(), 1, "{checkpoint}");
     assert_eq!(backups.backups[0].backup_id, accepted.backup_id);
-    let objects = fixture.path().join("data/backups/objects");
+    let objects = PathBuf::from(
+        client
+            .settings_get()
+            .await
+            .expect("backup location")
+            .directories
+            .backup_directory,
+    );
     assert_eq!(
         fs::read_dir(&objects).expect("objects").count(),
         1,

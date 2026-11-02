@@ -11,11 +11,25 @@ M0-M6 已正式通过人工验收，M7 尚未完成。
 项目所有者于 2026-11-02 确认 **H6 阶段性人工验收通过，保留非阻塞体验问题**，认可窄窗、键盘、主题及主要辅助功能，并批准既定 H7 最终整体验收。
 H2–H6 原签收保持；H7 只处理实际影响使用的问题，整理精简最终清单并在稳定代码上集中完整本地验证，不逐页重验或重新开发。
 统一默认间距，不恢复紧凑模式及 density 公共字段。真实读屏器、跨平台辅助技术仍属 M12。
-所有者随后批准推送两笔窄修/记录提交，最终技术候选 `c273c76` 已取得同 SHA 三平台 CI 与四语言 CodeQL 全部成功；H7 人工确认及剩余事项处理仍待完成，M7 进行中。
+所有者随后批准推送两笔窄修/记录提交，既有远端技术基线 `c273c76` 已取得同 SHA 三平台 CI 与四语言 CodeQL 全部成功；后续目录设置增量见下，不借用旧 CI 作为新代码通过。H7 人工确认及剩余事项处理仍待完成，M7 进行中。
 
-### H7 当前技术结论与验收状态
+### H7 最终体验细调（2026-11-03）
 
-最终技术候选 **`c273c76976c711590f6ce0f131bab572019caa50`**：
+所有者要求在现有成果上逐项细调，保留 H2–H6 签收及下方 H7 技术基线，不进入 M8，不重新验收历史功能。
+所有者明确确认默认项目保存目录、默认备份保存目录是严重影响使用的核心功能遗漏，并批准 Config5 及相应公开设置/持久定位扩展。
+实现补齐设置页、项目表单默认目录及备份实际保存位置；已有备份与已接受任务保留各自定位，不自动搬迁。
+本轮本地定向通过：协议/Schema、设置权限/CAS/迁移与重开、平台不覆盖发布、实际配置到旧/新备份恢复、
+真实隔离设置及备份 RPC/kill-restart，八个受影响 crate Clippy、fmt、xtask、metadata；GUI 保存队列 20 场景，
+最终集中浏览器 26/0、关联流程 12/0、320/640px 2/0分别保留。失败与后续窄修分别记录，不拼为全套通过。
+一次 Core/CLI release 与 GUI release no-bundle 构建通过。已恢复原数据目录和原 WebView profile，
+当前 Core **130768** / GUI **132996**（窗口 **101191372**，可响应）；项目、Editor 登记、Operation、Status 与切换前完全一致，
+Settings 仅增加 Config5 的目录字段；实际 TOML 只有 schema 4→5，revision **166** 及其他全部字段保持。
+本轮没有操作用户 Unity 或真实工程，没有新增原生自动交互/截图；桌面控制继续停用，原生观感/目录选择由所有者查看。
+没有执行完整 Workspace、完整 Chromium 或新远端 CI。详见 [目录设置补齐](testing/m7-storage-locations-20261103.md)。本地提交，不推送，不进入 M8。
+
+### H7 已有远端技术基线与验收状态
+
+本轮增量前的最终技术候选 **`c273c76976c711590f6ce0f131bab572019caa50`**：
 [CI 41477415678](https://github.com/ALCOMD/ALCOMD/actions/runs/41477415678) **attempt 1 / success**，Windows Server 2025、Ubuntu 22.04、macOS 15 arm64 完整 required jobs 全部成功；
 三平台各自完整 Chromium **397/0**（Windows 11.2m、Ubuntu 8.9m、macOS 15.2m）。
 [CodeQL 41477413640](https://github.com/ALCOMD/ALCOMD/actions/runs/41477413640) **attempt 1 / success**，四语言全部成功。
@@ -23,13 +37,14 @@ H2–H6 原签收保持；H7 只处理实际影响使用的问题，整理精简
 原滚轮测试技术阻塞已由修复候选的同 SHA 完整结果收束；既有完整本地验证继续绑定 `a6c9bd5` 和准确输入，
 受影响模块 13/0 绑定 `46eb6df`，两者不冒称重新执行在后续文档提交上；没有重复完整本地 Rust、Chromium 或 release 构建。
 
-**本轮必须处理的剩余条件**：没有已知未解决的本轮技术阻塞；仍需所有者 H7 两项最终确认，并明确下述非阻塞/未覆盖事项的保留安排，才能记录 M7 完成。
+**剩余条件**：上述技术候选的测试阻塞已收束；新确认的默认保存目录缺口按本轮细调范围单独处理。
+仍需所有者 H7 两项最终确认，并明确下述非阻塞/未覆盖事项的保留安排，才能记录 M7 完成。
 一般提示、布局和过度设计继续作为既有非阻塞体验待办；真实误报成功、危险误导或数据缺陷不属暂缓范围。
 Portable UI 原生表单/超时/外部断线未覆盖，具体补验阶段未另定；正式 MCP/Discord 业务属 M8/M9，真实 v3 对照属 M11，
 发行客户端及真实读屏/辅助技术属 M12；窗口尺寸/位置记忆未实现、归属未定，不擅自划入 M12。
-Core **131912** 与 GUI **157348** 持续保留，产物摘要未变，进程可响应；最终五组公开状态与切换前/前次快照一致，Config4/revision166 保持。
+该基线收尾时 Core **131912** 与 GUI **157348** 保留，产物摘要未变，进程可响应；当时五组公开状态与切换前/前次快照一致，Config4/revision166 保持。当前运行环境见上方目录设置增量，不改写历史采样。
 没有关闭用户 Unity、改动真实工程或恢复 Computer Use；没有新增原生自动交互/截图。
-详见 [最终技术结论与剩余事项](testing/m7-h7-final-20261102.md#当前候选技术结论2026-11-03)；下一停止点只等待 H7 人工确认和剩余事项处理，不进入 M8、不自动推送文档收尾提交。
+既有技术基线详见 [最终技术结论与剩余事项](testing/m7-h7-final-20261102.md#当前候选技术结论2026-11-03)；当前按本轮反馈逐项细调，H7 最终人工确认仍待所有者，不进入 M8、不自动推送。
 
 ### H7 原远端失败与本地修复（历史证据）
 
@@ -313,7 +328,7 @@ Projects/Editors/Operations/Settings/Status 五组公开结果与暂停前完全
   H2-B 按本消息记阶段性人工验收通过并保留体验待办，不扩大为 Visual Gate 3 或 M7 整体验收。
 - 已验收范围：Project/Packages 和已获准的其他既有页面基础交互修正、统一公共组件及验收。
   H2-B 本轮体验整改已结束；项目所有者已明确批准现有 H3 范围直接实施，H4-H7 与推送仍未授权，M8、M9、M11 不在本次范围。
-- 当前格式：State v16、Config4、RPC v1、Extension ABI v1。按 A-034 保留 Schema 识别，
+- 当前源码格式：State v16、Config5、RPC v1、Extension ABI v1；各旧验证/运行产物仍按其实际 Config4 记录。按 A-034 保留 Schema 识别，
   未发布开发库不承诺长期兼容；不自动清空现有数据库、Plan、Operation 或恢复证据，
   首次发布前的初始 Schema 整理是独立审计任务，当前版本与迁移保持。
 - 目录整合及旧修改恢复方式见 [工作目录整合记录](testing/workspace-consolidation-20260917.md)；
@@ -343,7 +358,7 @@ Projects/Editors/Operations/Settings/Status 五组公开结果与暂停前完全
 
 当前合同见 [M7 ExecPlan](exec-plans/M7-official-gui-extension-ui.md)、
 [候选合同](exec-plans/M7-package-candidate-evidence-stop-a.md)、
-[Config4](../specs/config/settings-v4.md) 和 [Hub 合同](../specs/config/unity-hub-location.proposal.contract.json)。
+[Config5](../specs/config/settings-v5.md) 和 [Hub 合同](../specs/config/unity-hub-location.proposal.contract.json)。
 
 ## 架构审查修复与验证
 

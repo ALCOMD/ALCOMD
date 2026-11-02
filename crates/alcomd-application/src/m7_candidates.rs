@@ -556,6 +556,16 @@ mod tests {
             panic!("candidate reads must not launch Hub")
         }
     }
+    impl crate::StorageDirectoryPlatform for NeverRead {
+        fn default_directories(
+            &self,
+        ) -> Result<crate::StorageDirectories, crate::OfficialGuiError> {
+            panic!("candidate reads must not resolve directory defaults")
+        }
+        fn normalize_directory(&self, _: &str) -> Result<String, crate::OfficialGuiError> {
+            panic!("candidate reads must not validate directories")
+        }
+    }
     impl crate::UnityHubPlatform for NeverRead {
         fn normalize_path(&self, _: &str) -> Result<String, crate::OfficialGuiError> {
             panic!("candidate reads must not validate Hub")
@@ -582,6 +592,7 @@ mod tests {
             NeverRead,
             M7OfficialApplication::new(
                 NeverRead,
+                Arc::new(NeverRead),
                 Arc::new(NeverRead),
                 Arc::new(NeverRead),
                 Arc::new(NeverRead),
@@ -666,6 +677,7 @@ mod tests {
             engine,
             M7OfficialApplication::new(
                 NeverRead,
+                Arc::new(NeverRead),
                 Arc::new(NeverRead),
                 Arc::new(NeverRead),
                 Arc::new(NeverRead),

@@ -53,6 +53,8 @@ declare global {
         settingsWrites: Array<{ expectedRevision: number; revision: number }>;
         settingsRequests: Array<{ expectedRevision: number; update: Parameters<GuiRpcClient["settingsUpdate"]>[1] }>;
         settingsReads: number;
+        heldSettingsReads: number;
+        releasedSettingsReads: number;
         heldInitialSettingsReads: number;
         releasedInitialSettingsReads: number;
         capabilityLoadingScreens: string[];
@@ -74,6 +76,8 @@ window.heldTemplateReads = 0;
 window.settingsWrites = [];
 window.settingsRequests = [];
 window.settingsReads = 0;
+window.heldSettingsReads = 0;
+window.releasedSettingsReads = 0;
 window.heldInitialSettingsReads = 0;
 window.releasedInitialSettingsReads = 0;
 
@@ -162,10 +166,12 @@ class DeterministicGuiClient implements GuiRpcClient {
     private unityReady: Promise<void> | undefined;
     private unityDiscoveryComplete = false;
     private settings: SettingsGetResult = {
-        configSchema: 4,
+        configSchema: 5,
+        directories: { projectDirectory: query.get("project-directory") ?? (query.has("windows-paths") ? "\\\\?\\C:\\Projects" : "C:\\Fixture"), backupDirectory: "C:\\Fixture\\Backups" },
         unityHub: { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" },
         revision: 7,
         settings: {
+            paths: { projectDirectory: query.get("project-directory"), backupDirectory: null },
             unity: { hubPath: null },
             appearance: { mode: "system", sourceColor: null, scheme: "vibrant", motion: "system" },
             locale: "en-US",
@@ -358,7 +364,9 @@ class DeterministicGuiClient implements GuiRpcClient {
         }
         if (query.has("holdSettings")) {
             this.settingsReady ??= new Promise<void>((resolve) => window.addEventListener("test-settings-ready", () => resolve(), { once: true }));
+            window.heldSettingsReads += 1;
             await this.settingsReady;
+            window.releasedSettingsReads += 1;
         }
         return this.value(this.settings);
     }
@@ -388,10 +396,15 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (expectedRevision !== this.settings.revision) return Promise.reject({ code: "revision_conflict" });
         if (update.unity?.hubPath && query.has("hub-normalize")) update = { ...update, unity: { hubPath: "C:\\Normalized\\Unity Hub.exe" } };
         this.settings = {
-            configSchema: 4,
+            configSchema: 5,
+            directories: {
+                projectDirectory: update.paths?.projectDirectory === undefined ? this.settings.directories.projectDirectory : update.paths.projectDirectory ?? "C:\\Fixture",
+                backupDirectory: update.paths?.backupDirectory === undefined ? this.settings.directories.backupDirectory : update.paths.backupDirectory ?? "C:\\Fixture\\Backups"
+            },
             unityHub: this.hubLocation(update.unity?.hubPath === undefined ? this.settings.settings.unity.hubPath : update.unity.hubPath),
             revision: expectedRevision + 1,
             settings: {
+                paths: { ...this.settings.settings.paths, ...update.paths },
                 unity: { ...this.settings.settings.unity, ...update.unity },
                 appearance: { ...this.settings.settings.appearance, ...update.appearance },
                 locale: update.locale ?? this.settings.settings.locale,

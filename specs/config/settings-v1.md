@@ -1,6 +1,6 @@
 # settings.toml Config Schema 1
 
-状态：保留的 Config Schema 1 历史合同，仅作为启动迁移输入；当前 production contract 见 [Config Schema 4](settings-v4.md)。
+状态：保留的 Config Schema 1 历史合同，仅作为启动迁移输入；当前 production contract 见 [Config Schema 5](settings-v5.md)。
 
 `config/settings.toml` 是官方用户设置的可读持久化文件。daemon 是唯一 writer；GUI、CLI、扩展和
 其他客户端只能通过 `settings.get` / `settings.update` 访问。该文件不属于 `state.db` State Schema，

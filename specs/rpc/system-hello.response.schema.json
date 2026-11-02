@@ -49,7 +49,7 @@
                 },
                 "configSchema": {
                     "type": "integer",
-                    "const": 4
+                    "const": 5
                 },
                 "extensionApi": {
                     "type": "object",

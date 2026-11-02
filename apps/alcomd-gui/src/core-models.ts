@@ -47,6 +47,7 @@ export interface UnityHubLocation {
 }
 
 export interface OfficialSettings {
+    paths: { projectDirectory: string | null; backupDirectory: string | null };
     unity: { hubPath: string | null };
     appearance: {
         mode: AppearanceMode;
@@ -63,13 +64,15 @@ export interface OfficialSettings {
 }
 
 export interface SettingsGetResult {
+    directories: { projectDirectory: string; backupDirectory: string };
     unityHub: UnityHubLocation;
-    configSchema: 4;
+    configSchema: 5;
     revision: number;
     settings: OfficialSettings;
 }
 
 export interface SettingsUpdate {
+    paths?: { projectDirectory?: string | null; backupDirectory?: string | null };
     unity?: { hubPath?: string | null };
     appearance?: {
         mode?: AppearanceMode;

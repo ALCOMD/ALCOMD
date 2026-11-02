@@ -26,3 +26,12 @@ read-only filesystem inspection and is not persisted. Evidence failure after pub
 must not turn a committed preference update into a reported write failure. Raw paths remain
 forbidden in Activity, Events, ordinary errors and diagnostics projections. Native selection
 only returns a path to the GUI; no Tauri command owns authoritative configuration.
+
+The owner-approved Config5 default-directory increment extends only that settings-payload
+exception to `settings.paths.projectDirectory`, `settings.paths.backupDirectory` and the
+same two effective `directories` fields. Explicit directory changes are bounded, absolute,
+existing-directory selections validated by Core; defaults are resolved read-only before a
+settings write can commit. Reading settings never creates directories or changes project
+files. A directory preference authorizes no file read/write by a caller; existing project
+and backup use cases retain their own permission, path identity, transaction and recovery
+checks. Changing a preference does not relocate existing backups or redirect accepted tasks.

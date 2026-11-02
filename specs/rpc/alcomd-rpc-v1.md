@@ -1,6 +1,6 @@
 # ALCOMD RPC v1
 
-状态：M1-M6 已完成人工验收；当前活动合同含 M7 Portable UI、候选读取、Config4 设置和 Unity Hub 打开。M7 仍在进行中，当前人工签收范围以 `docs/status.md` 为准。
+状态：M1-M6 已完成人工验收；当前活动合同含 M7 Portable UI、候选读取、Config5 设置和 Unity Hub 打开。M7 仍在进行中，当前人工签收范围以 `docs/status.md` 为准。
 
 ## 1. M1 合同范围
 
@@ -264,7 +264,7 @@ store 成功初始化且 daemon ready 后，hello result 兼容增加可选 `dat
 ```
 
 `dataSchema` 表示 daemon 成功初始化后的实际数据库结构版本；当前 State v16 由 daemon 的存储
-组合处提供，protocol 只序列化该事实，不能独立硬编码旧版本。当前 `configSchema` 为 4，
+组合处提供，protocol 只序列化该事实，不能独立硬编码旧版本。当前 `configSchema` 为 5，
 `extensionApi.major` 为 1。这些内部格式版本不等于产品发布版本。
 按 A-034，未发布开发库不承诺长期兼容；当前保留 v16 及既有迁移，发布前 Schema 整理另行审计，
 不因此自动清空数据。首次正式发布后维护正式升级与恢复链。
@@ -705,10 +705,17 @@ M7 在 RPC major 1 上提供四个 utility base method，无独立 capability；
 
 `settings.update` 不接受 idempotency key、generic key/value、任意文件路径写入或 extension setting；revision conflict 使用现有
 `revision_conflict`。hello 只在 `config/settings.toml` production storage 成功初始化后，以兼容
-optional field 广告当前 production `configSchema: 4`；Hub 打开能力按其独立就绪和协商条件广告。Config4 从文件、完整响应及 partial update 删除 `appearance.density`；显式旧值或 null 均以未知字段拒绝，
-不保留别名或第二套当前模型。原 scheme 九值枚举、默认 `vibrant` 及其余设置保持。Config Schema 1／2／3
+optional field 广告当前 production `configSchema: 5`；Hub 打开能力按其独立就绪和协商条件广告。Config5 保持 Config4 对 `appearance.density` 的删除；显式旧值或 null 均以未知字段拒绝，
+不保留别名或第二套当前模型。原 scheme 九值枚举、默认 `vibrant` 及其余设置保持。Config Schema 1／2／3／4
 仅作为有效启动迁移输入：移除 density，保留原 revision 和其余有效设置，v1/v2 仅补既有默认值。
 这是已批准的发布前破坏性字段删除；严格客户端须同步，不改变 RPC major、methods、capabilities、permissions 或 State Schema。
+
+2026-11-03 已批准的 Config5 补齐默认保存目录：`settings.paths` 必含 `projectDirectory`、`backupDirectory`，
+各为 `string | null`；null 采用平台 Documents 下由产品身份派生的默认目录。`directories` 必含同名的两个有效绝对路径 string。
+paths PATCH 字段省略不变、null 清除覆盖；容器 null/空对象、未知字段整次拒绝。显式目录由 Core 校验绝对、已存在、安全及
+4096 UTF-8 bytes 界限，系统默认目录在写入前完成只读解析；读取无关设置不重新校验已保存目录的即时可用性。
+修改目录仅影响后续操作；旧备份/已接受任务的定位及恢复证据不随设置重定向。此发布前必需字段扩展须同步严格消费者，
+不新增 method、capability、permission 或 State Schema。目录路径仅由授权 settings 响应返回，不进入 Activity 或诊断摘要。
 
 已批准的 Unity Hub 位置合同增加 `settings.unity.hubPath: string | null`；它只保存 Hub 可执行文件
 偏好，不修改该可执行文件或项目。省略保持原值，null 清除显式路径，unity 容器 null／空对象及
@@ -717,7 +724,7 @@ optional field 广告当前 production `configSchema: 4`；Hub 打开能力按�
 configuredPathStatus；读取使用该响应的准确 ConfigSnapshot，派生状态不持久化、不推进 revision。
 已成功提交后的证据检测失败返回 unavailable 证据，不将提交改报失败。具体枚举、4096 UTF-8
 字节路径界限、三平台发现顺序、16 KiB 配置上限及尚未覆盖的 Hub 行为见
-`../config/unity-hub-location.proposal.contract.json` 和 `../config/settings-v4.md`。
+`../config/unity-hub-location.proposal.contract.json` 和 `../config/settings-v5.md`。
 
 settings.read/manage 明确授权的设置响应可返回所请求的 Hub 绝对路径，这是通用 redaction
 denylist 的窄例外；Activity、Event、普通错误和诊断投影不得因此泄露路径。位置偏好本身不新增
@@ -752,7 +759,7 @@ Hub、expectedPath 也为 null 时返回 `download_required`，不启动进程�
 Activity/Diagnostics page size 默认 100、最大 200，使用确定性 tuple keyset cursor。Activity 不返回 Event payload
 或 Operation request/result；Diagnostics v1 只投影已有 Operation failure 与 safe Event evidence，不新建 durable log
 table，也不提供 raw export。完整 DTO、redaction denylist 与 bounds 由 `m7-official-gui.schema.json`、
-`../config/settings-v4.schema.json` 和 `../security/official-gui-read-model-threat-model.md` 冻结。
+`../config/settings-v5.schema.json` 和 `../security/official-gui-read-model-threat-model.md` 冻结。
 
 ## 25. M7 兼容增加：Project Copy
 

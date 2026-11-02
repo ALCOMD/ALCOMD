@@ -5,10 +5,10 @@ use std::path::{Path, PathBuf};
 
 use alcomd_application::{
     BackupArchiveEvidence, BackupCancellation, BackupCompression, BackupCreateRequest,
-    BackupRestorePlanDraft, BackupRestorePlanRecord, BackupRestoreTarget, M5BackupAdapter,
-    M5BackupError, M5BackupErrorCode, OperationId, PlanId, PreparedBackupRestore, ProjectId,
-    ProjectRecord, PublishedBackup, ResourceKey, RestoreExcludedPackage, RestoredProject,
-    StagedBackupRestore, StoredBackupRecord,
+    BackupDestination, BackupRestorePlanDraft, BackupRestorePlanRecord, BackupRestoreTarget,
+    M5BackupAdapter, M5BackupError, M5BackupErrorCode, OperationId, PlanId, PreparedBackupRestore,
+    ProjectId, ProjectRecord, PublishedBackup, ResourceKey, RestoreExcludedPackage,
+    RestoredProject, StagedBackupRestore, StoredBackupRecord,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -95,8 +95,119 @@ impl BackupEngine {
     }
 }
 
+fn validate_directory_text(directory: &str) -> Result<(), M5BackupError> {
+    if directory.is_empty()
+        || directory.len() > 4_096
+        || directory.chars().any(char::is_control)
+        || !Path::new(directory).is_absolute()
+    {
+        return Err(unsafe_source());
+    }
+    Ok(())
+}
+
+fn validate_destination(destination: &BackupDestination) -> Result<PathBuf, M5BackupError> {
+    validate_directory_text(&destination.directory)?;
+    let (directory, identity) =
+        alcomd_platform::resolve_directory_identity(Path::new(&destination.directory))
+            .map_err(|_| error(M5BackupErrorCode::RecoveryRequired))?;
+    if identity != destination.identity || path_text(&directory)? != destination.directory {
+        return Err(error(M5BackupErrorCode::RecoveryRequired));
+    }
+    Ok(directory)
+}
+
+fn backup_paths(
+    engine: &BackupEngine,
+    operation_id: OperationId,
+    request: &BackupCreateRequest,
+) -> Result<(PathBuf, PathBuf, PathBuf), M5BackupError> {
+    if let Some(destination) = &request.destination {
+        let directory = validate_destination(destination)?;
+        Ok((
+            directory.join(format!(".alcomd-{operation_id}.zip.part")),
+            directory.join(format!("{}.zip", request.backup_id)),
+            directory,
+        ))
+    } else {
+        Ok((
+            engine.partial.join(format!("{operation_id}.zip.part")),
+            engine.objects.join(format!("{}.zip", request.backup_id)),
+            engine.objects.clone(),
+        ))
+    }
+}
+
+fn discard_backup_partial(path: &Path) -> Result<(), M5BackupError> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.is_file() && !is_link_or_reparse(&metadata) => {
+            std::fs::remove_file(path).map_err(|_| internal())
+        }
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        _ => Err(error(M5BackupErrorCode::RecoveryRequired)),
+    }
+}
+
+fn archive_from_locator(
+    engine: &BackupEngine,
+    backup_id: alcomd_application::BackupId,
+    locator: &str,
+) -> Result<PathBuf, M5BackupError> {
+    if locator == format!("backup-v1:{backup_id}") {
+        let path = engine.objects.join(format!("{backup_id}.zip"));
+        validate_archive_file(&path)?;
+        return Ok(path);
+    }
+    let value = locator
+        .strip_prefix("backup-file-v1:")
+        .ok_or_else(integrity)?;
+    let path = Path::new(value);
+    let expected_name = format!("{backup_id}.zip");
+    if value.len() > 4_160
+        || value.chars().any(char::is_control)
+        || !path.is_absolute()
+        || path.file_name().and_then(|name| name.to_str()) != Some(expected_name.as_str())
+    {
+        return Err(integrity());
+    }
+    let parent = path.parent().ok_or_else(integrity)?;
+    let (canonical_parent, _) =
+        alcomd_platform::resolve_directory_identity(parent).map_err(|_| integrity())?;
+    if canonical_parent != parent {
+        return Err(integrity());
+    }
+    validate_archive_file(path)?;
+    Ok(path.to_owned())
+}
+
+fn validate_archive_file(path: &Path) -> Result<(), M5BackupError> {
+    let metadata = std::fs::symlink_metadata(path).map_err(|_| integrity())?;
+    if !metadata.is_file() || is_link_or_reparse(&metadata) {
+        return Err(integrity());
+    }
+    Ok(())
+}
+
 impl M5BackupAdapter for BackupEngine {
     type Inventory = BackupInventory;
+
+    async fn prepare_destination(
+        &self,
+        directory: String,
+    ) -> Result<BackupDestination, M5BackupError> {
+        tokio::task::spawn_blocking(move || {
+            validate_directory_text(&directory)?;
+            let (path, identity) =
+                alcomd_platform::resolve_directory_identity(Path::new(&directory))
+                    .map_err(|_| unsafe_source())?;
+            Ok(BackupDestination {
+                directory: path_text(&path)?,
+                identity,
+            })
+        })
+        .await
+        .map_err(|_| internal())?
+    }
 
     async fn inventory(
         &self,
@@ -104,9 +215,21 @@ impl M5BackupAdapter for BackupEngine {
         request: BackupCreateRequest,
     ) -> Result<Self::Inventory, M5BackupError> {
         let limits = self.limits;
-        tokio::task::spawn_blocking(move || build_inventory(project, &request, limits))
-            .await
-            .map_err(|_| internal())?
+        tokio::task::spawn_blocking(move || {
+            if let Some(destination) = &request.destination {
+                let directory = validate_destination(destination)?;
+                let (source, _) = alcomd_platform::resolve_directory_identity(Path::new(
+                    &project.observation.root_path,
+                ))
+                .map_err(|_| unsafe_source())?;
+                if directory.starts_with(source) {
+                    return Err(unsafe_source());
+                }
+            }
+            build_inventory(project, &request, limits)
+        })
+        .await
+        .map_err(|_| internal())?
     }
 
     async fn archive(
@@ -116,9 +239,10 @@ impl M5BackupAdapter for BackupEngine {
         inventory: Self::Inventory,
         cancellation: BackupCancellation,
     ) -> Result<BackupArchiveEvidence, M5BackupError> {
-        let path = self.partial.join(format!("{operation_id}.zip.part"));
+        let engine = self.clone();
         let limits = self.limits;
         tokio::task::spawn_blocking(move || {
+            let (path, _, _) = backup_paths(&engine, operation_id, &request)?;
             if path.exists() {
                 let metadata = std::fs::symlink_metadata(&path).map_err(|_| internal())?;
                 if !metadata.is_file() || is_link_or_reparse(&metadata) {
@@ -142,17 +266,18 @@ impl M5BackupAdapter for BackupEngine {
         request: BackupCreateRequest,
         evidence: BackupArchiveEvidence,
     ) -> Result<PublishedBackup, M5BackupError> {
-        let partial = self.partial.join(format!("{operation_id}.zip.part"));
-        let final_path = self.objects.join(format!("{}.zip", request.backup_id));
-        let objects = self.objects.clone();
+        let engine = self.clone();
         let limits = self.limits;
         tokio::task::spawn_blocking(move || {
+            let (partial, final_path, objects) = backup_paths(&engine, operation_id, &request)?;
             if final_path.exists() {
                 verify_archive(&final_path, &evidence, limits)?;
-                return published(&final_path, request.backup_id);
+                discard_backup_partial(&partial)?;
+                alcomd_platform::sync_directory(&objects).map_err(|_| internal())?;
+                return published(&final_path, &request);
             }
             verify_archive(&partial, &evidence, limits)?;
-            match std::fs::rename(&partial, &final_path) {
+            match alcomd_platform::publish_file_no_replace(&partial, &final_path) {
                 Ok(()) => {}
                 Err(_) if final_path.exists() => {
                     verify_archive(&final_path, &evidence, limits)?;
@@ -162,20 +287,21 @@ impl M5BackupAdapter for BackupEngine {
             }
             alcomd_platform::sync_directory(&objects).map_err(|_| internal())?;
             verify_archive(&final_path, &evidence, limits)?;
-            published(&final_path, request.backup_id)
+            published(&final_path, &request)
         })
         .await
         .map_err(|_| internal())?
     }
 
-    async fn discard_partial(&self, operation_id: OperationId) -> Result<(), M5BackupError> {
-        let path = self.partial.join(format!("{operation_id}.zip.part"));
-        tokio::task::spawn_blocking(move || match std::fs::symlink_metadata(&path) {
-            Ok(metadata) if metadata.is_file() && !is_link_or_reparse(&metadata) => {
-                std::fs::remove_file(path).map_err(|_| internal())
-            }
-            Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            _ => Err(error(M5BackupErrorCode::RecoveryRequired)),
+    async fn discard_partial(
+        &self,
+        operation_id: OperationId,
+        request: BackupCreateRequest,
+    ) -> Result<(), M5BackupError> {
+        let engine = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let (partial, _, _) = backup_paths(&engine, operation_id, &request)?;
+            discard_backup_partial(&partial)
         })
         .await
         .map_err(|_| internal())?
@@ -274,6 +400,8 @@ struct RestoreAuthority {
     archive_sha256: String,
     archive_file_identity: String,
     archive_bytes: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    archive_locator: Option<String>,
     backup_manifest_fingerprint: String,
     exclude_vpm_packages: bool,
     excluded_packages: Vec<RestoreExcludedPackage>,
@@ -321,12 +449,8 @@ fn plan_restore(
         return Err(restore_unsafe());
     }
     ensure_restore_absent(&parent.join(&target_leaf))?;
-    let archive_path = engine
-        .objects
-        .join(format!("{}.zip", backup.record.backup_id));
-    if backup.archive_locator != format!("backup-v1:{}", backup.record.backup_id) {
-        return Err(error(M5BackupErrorCode::BackupIntegrityMismatch));
-    }
+    let archive_path =
+        archive_from_locator(engine, backup.record.backup_id, &backup.archive_locator)?;
     let inspection = inspect_restore_archive(&archive_path, engine.limits)?;
     let identity = alcomd_platform::file_identity_key(&archive_path)
         .map_err(|_| error(M5BackupErrorCode::BackupIntegrityMismatch))?;
@@ -350,6 +474,10 @@ fn plan_restore(
         archive_sha256: hex(&backup.record.archive_sha256),
         archive_file_identity: hex_slice(&identity),
         archive_bytes: bytes,
+        archive_locator: backup
+            .archive_locator
+            .starts_with("backup-file-v1:")
+            .then_some(backup.archive_locator),
         backup_manifest_fingerprint: hex(&inspection.manifest_fingerprint),
         exclude_vpm_packages: inspection.manifest.exclude_vpm_packages,
         excluded_packages: inspection.manifest.excluded_packages.clone(),
@@ -484,7 +612,11 @@ fn prepare_restore(
 ) -> Result<PreparedBackupRestore, M5BackupError> {
     let authority = restore_authority(&plan)?;
     verify_restore_parent(&plan)?;
-    let archive_path = engine.objects.join(format!("{}.zip", plan.draft.backup_id));
+    let locator = authority
+        .archive_locator
+        .clone()
+        .unwrap_or_else(|| format!("backup-v1:{}", plan.draft.backup_id));
+    let archive_path = archive_from_locator(engine, plan.draft.backup_id, &locator)?;
     let inspection = inspect_restore_archive(&archive_path, engine.limits)?;
     let identity = alcomd_platform::file_identity_key(&archive_path).map_err(|_| stale())?;
     let bytes = std::fs::metadata(&archive_path).map_err(|_| stale())?.len();
@@ -1241,12 +1373,13 @@ fn verify_archive(
     validate_v1(path, limits)
 }
 
-fn published(
-    path: &Path,
-    backup_id: alcomd_application::BackupId,
-) -> Result<PublishedBackup, M5BackupError> {
+fn published(path: &Path, request: &BackupCreateRequest) -> Result<PublishedBackup, M5BackupError> {
     Ok(PublishedBackup {
-        archive_locator: format!("backup-v1:{backup_id}"),
+        archive_locator: if request.destination.is_some() {
+            format!("backup-file-v1:{}", path_text(path)?)
+        } else {
+            format!("backup-v1:{}", request.backup_id)
+        },
         file_identity_key: alcomd_platform::file_identity_key(path).map_err(|_| internal())?,
     })
 }
@@ -1581,6 +1714,7 @@ mod tests {
             compression_mode: BackupCompression::Fast,
             exclude_vpm_packages: true,
             created_at_ms: 1,
+            destination: None,
         };
         let first =
             build_inventory(project.clone(), &request, ArchiveLimits::backup()).expect("inventory");
@@ -1631,6 +1765,7 @@ mod tests {
                 compression_mode: mode,
                 exclude_vpm_packages: true,
                 created_at_ms: 1,
+                destination: None,
             };
             let inventory = engine
                 .inventory(project.clone(), request.clone())
@@ -1708,6 +1843,7 @@ mod tests {
             compression_mode: BackupCompression::Fast,
             exclude_vpm_packages: true,
             created_at_ms: 1,
+            destination: None,
         };
         let mut limits = ArchiveLimits::backup();
         limits.entry_bytes = 1;
@@ -1725,5 +1861,337 @@ mod tests {
             M5BackupErrorCode::ProjectChangedDuringBackup
         );
         std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    fn create_request(project: &ProjectRecord) -> BackupCreateRequest {
+        BackupCreateRequest {
+            backup_id: Default::default(),
+            project_id: project.project_id,
+            expected_revision: project.revision,
+            compression_mode: BackupCompression::Fast,
+            exclude_vpm_packages: true,
+            created_at_ms: 1,
+            destination: None,
+        }
+    }
+
+    async fn archive_request(
+        engine: &BackupEngine,
+        project: &ProjectRecord,
+        request: &BackupCreateRequest,
+    ) -> (OperationId, BackupArchiveEvidence) {
+        let inventory = engine
+            .inventory(project.clone(), request.clone())
+            .await
+            .expect("inventory");
+        let operation_id = OperationId::new();
+        let evidence = engine
+            .archive(
+                operation_id,
+                request.clone(),
+                inventory,
+                BackupCancellation::default(),
+            )
+            .await
+            .expect("archive");
+        (operation_id, evidence)
+    }
+
+    async fn publish_request(
+        engine: &BackupEngine,
+        operation_id: OperationId,
+        request: &BackupCreateRequest,
+        evidence: &BackupArchiveEvidence,
+    ) -> StoredBackupRecord {
+        let published = engine
+            .publish_or_recover(operation_id, request.clone(), evidence.clone())
+            .await
+            .expect("publish");
+        StoredBackupRecord {
+            record: alcomd_application::BackupRecord {
+                backup_id: request.backup_id,
+                source_project_id: request.project_id,
+                archive_sha256: evidence.archive_sha256,
+                archive_bytes: evidence.archive_bytes,
+                format_version: 1,
+                created_at_ms: request.created_at_ms,
+                compression_mode: request.compression_mode,
+                exclude_vpm_packages: request.exclude_vpm_packages,
+            },
+            archive_locator: published.archive_locator,
+            file_identity_key: published.file_identity_key,
+        }
+    }
+
+    #[tokio::test]
+    async fn configured_destinations_and_legacy_archives_keep_their_own_restore_location() {
+        let (source, project) = fixture();
+        let base = source.with_extension("directories");
+        let first = base.join("first");
+        let second = base.join("second");
+        let restore_parent = base.join("restored");
+        for directory in [&first, &second, &restore_parent] {
+            std::fs::create_dir_all(directory).expect("directory");
+        }
+        let engine = BackupEngine::new(base.join("data/backups")).expect("engine");
+        let legacy = create_request(&project);
+        let (legacy_operation, legacy_evidence) = archive_request(&engine, &project, &legacy).await;
+        let legacy_record =
+            publish_request(&engine, legacy_operation, &legacy, &legacy_evidence).await;
+
+        let mut accepted = create_request(&project);
+        accepted.destination = Some(
+            engine
+                .prepare_destination(path_text(&first).expect("path"))
+                .await
+                .expect("first destination"),
+        );
+        let (accepted_operation, accepted_evidence) =
+            archive_request(&engine, &project, &accepted).await;
+        let mut later = create_request(&project);
+        later.destination = Some(
+            engine
+                .prepare_destination(path_text(&second).expect("path"))
+                .await
+                .expect("second destination"),
+        );
+        let (later_operation, later_evidence) = archive_request(&engine, &project, &later).await;
+        let later_record = publish_request(&engine, later_operation, &later, &later_evidence).await;
+        // Simulate recovery of an older accepted operation after the preference changed.
+        let recovered_engine =
+            BackupEngine::new(base.join("data/backups")).expect("recovered engine");
+        let accepted_record = publish_request(
+            &recovered_engine,
+            accepted_operation,
+            &accepted,
+            &accepted_evidence,
+        )
+        .await;
+        let replayed = publish_request(
+            &recovered_engine,
+            accepted_operation,
+            &accepted,
+            &accepted_evidence,
+        )
+        .await;
+        assert_eq!(accepted_record, replayed);
+        assert!(first.join(format!("{}.zip", accepted.backup_id)).is_file());
+        assert!(!second.join(format!("{}.zip", accepted.backup_id)).exists());
+        assert!(
+            !first
+                .join(format!(".alcomd-{accepted_operation}.zip.part"))
+                .exists()
+        );
+        assert!(legacy_record.archive_locator.starts_with("backup-v1:"));
+
+        for (index, (record, expected)) in [
+            (
+                legacy_record,
+                engine.objects.join(format!("{}.zip", legacy.backup_id)),
+            ),
+            (
+                accepted_record,
+                first.join(format!("{}.zip", accepted.backup_id)),
+            ),
+            (
+                later_record,
+                second.join(format!("{}.zip", later.backup_id)),
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let draft = recovered_engine
+                .plan_restore(record, restore_parent.clone(), format!("restored-{index}"))
+                .await
+                .expect("restore plan");
+            assert_eq!(draft.plan_json.contains("archiveLocator"), index != 0);
+            let prepared = recovered_engine
+                .prepare_restore(BackupRestorePlanRecord {
+                    draft,
+                    owner: alcomd_application::PrincipalId::local_owner(),
+                    created_at_ms: 1,
+                })
+                .await
+                .expect("prepare stored plan");
+            assert_eq!(
+                std::fs::canonicalize(prepared.archive_path).expect("prepared archive"),
+                std::fs::canonicalize(expected).expect("archive")
+            );
+        }
+        std::fs::remove_dir_all(source).expect("source cleanup");
+        std::fs::remove_dir_all(base).expect("backup cleanup");
+    }
+
+    #[tokio::test]
+    async fn configured_backup_rejects_source_directories_replacement_and_existing_files() {
+        let (source, project) = fixture();
+        let base = source.with_extension("safe-destination");
+        let directory = base.join("target");
+        std::fs::create_dir_all(&directory).expect("directory");
+        let engine = BackupEngine::new(base.join("data/backups")).expect("engine");
+        let mut request = create_request(&project);
+        request.destination = Some(
+            engine
+                .prepare_destination(path_text(&source).expect("path"))
+                .await
+                .expect("source identity"),
+        );
+        assert_eq!(
+            engine
+                .inventory(project.clone(), request.clone())
+                .await
+                .expect_err("source target rejected")
+                .code(),
+            M5BackupErrorCode::BackupSourceUnsafe,
+        );
+        request.destination = Some(
+            engine
+                .prepare_destination(path_text(&directory).expect("path"))
+                .await
+                .expect("destination"),
+        );
+        let (operation_id, evidence) = archive_request(&engine, &project, &request).await;
+        let conflict = directory.join(format!("{}.zip", request.backup_id));
+        std::fs::write(&conflict, b"user-owned archive").expect("conflict");
+        assert!(
+            engine
+                .publish_or_recover(operation_id, request.clone(), evidence.clone())
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            std::fs::read(&conflict).expect("preserved"),
+            b"user-owned archive"
+        );
+        engine
+            .discard_partial(operation_id, request.clone())
+            .await
+            .expect("discard own partial");
+        assert!(
+            !directory
+                .join(format!(".alcomd-{operation_id}.zip.part"))
+                .exists()
+        );
+
+        let mut replaced_request = create_request(&project);
+        replaced_request.destination = request.destination;
+        let (operation_id, evidence) = archive_request(&engine, &project, &replaced_request).await;
+        let displaced = base.join("displaced");
+        std::fs::rename(&directory, &displaced).expect("replace directory");
+        std::fs::create_dir(&directory).expect("replacement directory");
+        assert_eq!(
+            engine
+                .publish_or_recover(operation_id, replaced_request.clone(), evidence)
+                .await
+                .expect_err("identity mismatch")
+                .code(),
+            M5BackupErrorCode::RecoveryRequired,
+        );
+        assert!(
+            displaced
+                .join(format!(".alcomd-{operation_id}.zip.part"))
+                .is_file()
+        );
+        assert!(
+            !directory
+                .join(format!("{}.zip", replaced_request.backup_id))
+                .exists()
+        );
+        std::fs::remove_dir_all(source).expect("source cleanup");
+        std::fs::remove_dir_all(base).expect("backup cleanup");
+    }
+
+    #[test]
+    fn retained_restore_authority_keeps_its_exact_serialized_bytes() {
+        let legacy = concat!(
+            "{\"version\":1,\"backupId\":\"backup\",\"preallocatedProjectId\":\"project\",",
+            "\"archiveSha256\":\"sha256\",\"archiveFileIdentity\":\"identity\",\"archiveBytes\":42,",
+            "\"backupManifestFingerprint\":\"manifest\",\"excludeVpmPackages\":true,",
+            "\"excludedPackages\":[],\"targetParentPath\":\"parent\",\"targetParentIdentity\":\"parent-id\",",
+            "\"targetLeaf\":\"restored\",\"targetMustBeAbsent\":true,\"expectedProjectFingerprint\":\"project-sha\"}"
+        );
+        let authority: RestoreAuthority = serde_json::from_str(legacy).expect("retained authority");
+        assert!(authority.archive_locator.is_none());
+        assert_eq!(
+            serde_json::to_string(&authority).expect("authority bytes"),
+            legacy
+        );
+    }
+
+    #[tokio::test]
+    async fn archive_locator_does_not_replace_stored_file_identity_or_plan_authority() {
+        let (source, project) = fixture();
+        let base = source.with_extension("locator-identity");
+        let directory = base.join("archives");
+        let copied_directory = base.join("copies");
+        let restore_parent = base.join("restored");
+        for path in [&directory, &copied_directory, &restore_parent] {
+            std::fs::create_dir_all(path).expect("directory");
+        }
+        let engine = BackupEngine::new(base.join("data/backups")).expect("engine");
+        let mut request = create_request(&project);
+        request.destination = Some(
+            engine
+                .prepare_destination(path_text(&directory).expect("path"))
+                .await
+                .expect("destination"),
+        );
+        let (operation_id, evidence) = archive_request(&engine, &project, &request).await;
+        let record = publish_request(&engine, operation_id, &request, &evidence).await;
+        let copied = copied_directory.join(format!("{}.zip", request.backup_id));
+        std::fs::copy(
+            directory.join(format!("{}.zip", request.backup_id)),
+            &copied,
+        )
+        .expect("copy identical bytes");
+        let copied = std::fs::canonicalize(copied).expect("copied path");
+        let copied_locator = format!("backup-file-v1:{}", path_text(&copied).expect("path"));
+        let mut redirected = record.clone();
+        redirected.archive_locator = copied_locator.clone();
+        assert_eq!(
+            engine
+                .plan_restore(redirected, restore_parent.clone(), "rejected".to_owned())
+                .await
+                .expect_err("same bytes with different identity rejected")
+                .code(),
+            M5BackupErrorCode::BackupIntegrityMismatch,
+        );
+        let draft = engine
+            .plan_restore(record, restore_parent, "restored".to_owned())
+            .await
+            .expect("original plan");
+        let original_json = draft.plan_json.clone();
+        let original_fingerprint = draft.plan_fingerprint;
+        let prepared = engine
+            .prepare_restore(BackupRestorePlanRecord {
+                draft: draft.clone(),
+                owner: alcomd_application::PrincipalId::local_owner(),
+                created_at_ms: 1,
+            })
+            .await
+            .expect("original authority remains usable");
+        assert_eq!(prepared.plan.draft.plan_json, original_json);
+        assert_eq!(prepared.plan.draft.plan_fingerprint, original_fingerprint);
+
+        let mut redirected_plan = draft;
+        let mut authority: RestoreAuthority =
+            serde_json::from_str(&redirected_plan.plan_json).expect("authority");
+        authority.archive_locator = Some(copied_locator);
+        redirected_plan.plan_json =
+            serde_json::to_string(&authority).expect("redirected authority");
+        // Even a matching hash over a changed locator cannot replace the frozen file identity.
+        redirected_plan.plan_fingerprint = digest(redirected_plan.plan_json.as_bytes());
+        let rejected = engine
+            .prepare_restore(BackupRestorePlanRecord {
+                draft: redirected_plan,
+                owner: alcomd_application::PrincipalId::local_owner(),
+                created_at_ms: 1,
+            })
+            .await
+            .expect_err("redirected plan rejected");
+        assert_eq!(rejected.code(), M5BackupErrorCode::BackupRestorePlanStale);
+        std::fs::remove_dir_all(source).expect("source cleanup");
+        std::fs::remove_dir_all(base).expect("backup cleanup");
     }
 }

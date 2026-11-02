@@ -37,7 +37,7 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
     let mut client = connect_with_retry(config).await;
 
     let defaults = client.settings_get().await.expect("read default settings");
-    assert_eq!(defaults.config_schema, 4);
+    assert_eq!(defaults.config_schema, 5);
     assert_eq!(defaults.revision, 1);
     assert_eq!(defaults.settings.appearance.mode, AppearanceMode::System);
     assert_eq!(
@@ -49,6 +49,7 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
         .settings_update(SettingsUpdateParams {
             expected_revision: 1,
             update: SettingsUpdate {
+                paths: None,
                 unity: None,
                 appearance: Some(AppearanceSettingsUpdate {
                     mode: Some(AppearanceMode::Dark),
@@ -452,7 +453,7 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
         fs::read_to_string(data.join("config/settings.toml")).expect("read durable settings file");
     assert_eq!(
         settings_file,
-        "schema = 4\nrevision = 14\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"fruit-salad\"\nmotion = \"full\"\n\n[packages]\nshow_prerelease = true\nhidden_repository_ids = [\"00000000-0000-0000-0000-000000000000\", \"ffffffff-ffff-ffff-ffff-ffffffffffff\"]\nhide_local_user_packages = true\n"
+        "schema = 5\nrevision = 14\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"fruit-salad\"\nmotion = \"full\"\n\n[packages]\nshow_prerelease = true\nhidden_repository_ids = [\"00000000-0000-0000-0000-000000000000\", \"ffffffff-ffff-ffff-ffff-ffffffffffff\"]\nhide_local_user_packages = true\n"
     );
 }
 

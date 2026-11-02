@@ -64,6 +64,7 @@ import {
 } from "./CoreActions";
 import { DesktopList, type DesktopListColumn } from "./DesktopList";
 import { displayPath } from "./display-path";
+import { useProjectDirectory } from "./use-project-directory";
 import { ScrollArea, useScrollArea } from "./ScrollArea";
 import { PageHeader } from "./PageHeader";
 import { LoadingState, useDelayedPending } from "./LoadingState";
@@ -694,12 +695,13 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
 
 function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { client: GuiRpcClient; onCompleted(targetProjectId: string): void; onClose(): void; open: boolean; project: ProjectSnapshot }) {
     const { t, locale } = useTranslation();
-    const [targetParent, setTargetParent] = useState("");
+    const { directory: targetParent, setDirectory: setTargetParent, error: directoryError } = useProjectDirectory(client, open);
     const [targetLeaf, setTargetLeaf] = useState("");
     const [plan, setPlan] = useState<ProjectCopyPlan>();
     const [operation, setOperation] = useState<Operation>();
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<RpcError>();
+    const current = useActionScope(client, open);
 
     useEffect(() => {
         if (!open) {
@@ -709,7 +711,6 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
             setError(undefined);
             return;
         }
-        setTargetParent(projectParentPath(project.rootPath));
         setTargetLeaf(t("{value0} Copy", { value0: projectName(t, locale, project) }));
     }, [open, project]);
 
@@ -736,11 +737,11 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
         setError(undefined);
         try {
             const selected = await client.selectDirectory();
-            if (selected !== undefined) setTargetParent(selected);
+            if (current() && selected !== undefined) setTargetParent(selected);
         } catch (caught: unknown) {
-            setError(safeError(t, locale, caught));
+            if (current()) setError(safeError(t, locale, caught));
         } finally {
-            setBusy(false);
+            if (current()) setBusy(false);
         }
     };
 
@@ -791,7 +792,7 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
             <div className="project-copy-review">
                 {plan === undefined ? (
                     <>
-                        <p>{t("Choose the new project name. By default, ALCOMD creates the copy beside the original project without overwriting an existing target.")}</p>
+                        <p>{t("Choose a name and location for the copied project. Existing folders are never overwritten.")}</p>
                         <TextField aria-label={t("Copied project name")} label={t("Project name")} onInput={setTargetLeaf} value={targetLeaf} />
                         <div className="project-copy-location">
                             <TextField aria-label={t("Copy project location")} label={t("Project location")} readOnly value={displayPath(targetParent)} />
@@ -822,6 +823,7 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
                         </div>
                     </>
                 )}
+                {directoryError === undefined ? null : <RequestReminder error={directoryError} title={t("Default project location could not be loaded.")} />}
                 {error === undefined ? null : <p className="inline-error" role="alert">{t("Copy failed: ")}{t(requestErrorMessage(error.code))}</p>}
             </div>
         </Dialog>
@@ -938,15 +940,6 @@ function RegisterProjectDialog({ client, onChanged, onClose, open, path }: { cli
 
 function projectName(t: Translate, locale: SupportedLocale, project: ProjectSnapshot): string {
     return displayPath(project.rootPath).split(/[\\/]/).at(-1) ?? t("Unity project");
-}
-
-function projectParentPath(rootPath: string): string {
-    const normalized = rootPath.replace(/[\\/]+$/, "");
-    const separatorIndex = Math.max(normalized.lastIndexOf("\\"), normalized.lastIndexOf("/"));
-    if (separatorIndex < 0) return "";
-    if (separatorIndex === 0) return normalized.slice(0, 1);
-    if (separatorIndex === 2 && /^[A-Za-z]:[\\/]/.test(normalized)) return normalized.slice(0, 3);
-    return normalized.slice(0, separatorIndex);
 }
 
 function formatModified(t: Translate, locale: SupportedLocale, value: number | undefined): string {

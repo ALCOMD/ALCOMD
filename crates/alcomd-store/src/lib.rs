@@ -1292,6 +1292,19 @@ impl M5UnityStore for StateStoreHandle {
 }
 
 impl M5BackupStore for StateStoreHandle {
+    async fn replay_backup_create(
+        &self,
+        owner: PrincipalId,
+        request: BackupCreateRequest,
+        key: IdempotencyKey,
+    ) -> Result<Option<BackupCreateOutcome>, M5BackupError> {
+        self.request_worker(
+            move |connection| m5_backup::replay_backup_create(connection, &owner, &request, &key),
+            m5_backup::unavailable,
+        )
+        .await
+    }
+
     async fn list_backups(
         &self,
         owner: PrincipalId,

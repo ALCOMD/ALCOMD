@@ -1,4 +1,4 @@
-//! Private Windows Known Folder FFI for the single approved Local AppData query.
+//! Private Windows Known Folder FFI for Local AppData and user Documents.
 
 #![allow(unsafe_code)]
 
@@ -15,8 +15,10 @@ use windows_sys::Win32::System::Com::COINIT_APARTMENTTHREADED;
 use windows_sys::Win32::System::Com::{
     COINIT_MULTITHREADED, CoInitializeEx, CoTaskMemFree, CoUninitialize,
 };
-use windows_sys::Win32::UI::Shell::{FOLDERID_LocalAppData, SHGetKnownFolderPath};
-use windows_sys::core::{HRESULT, PWSTR};
+use windows_sys::Win32::UI::Shell::{
+    FOLDERID_Documents, FOLDERID_LocalAppData, KF_FLAG_DONT_VERIFY, SHGetKnownFolderPath,
+};
+use windows_sys::core::{GUID, HRESULT, PWSTR};
 
 struct ComInitializationGuard {
     must_uninitialize: bool,
@@ -63,7 +65,7 @@ impl KnownFolderPath {
         if self.0.is_null() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                "Local AppData Known Folder returned a null path",
+                "Known Folder returned a null path",
             ));
         }
         let mut length = 0_usize;
@@ -97,19 +99,26 @@ impl Drop for KnownFolderPath {
 }
 
 pub(super) fn local_app_data_directory() -> io::Result<PathBuf> {
+    known_folder_path(&FOLDERID_LocalAppData, 0)
+}
+
+pub(super) fn documents_directory() -> io::Result<PathBuf> {
+    // Discover the configured location even when Documents is absent or offline.
+    // Existence and write access are checked at the Core operation boundary.
+    known_folder_path(&FOLDERID_Documents, KF_FLAG_DONT_VERIFY as u32)
+}
+
+fn known_folder_path(folder: &GUID, flags: u32) -> io::Result<PathBuf> {
     let _com = ComInitializationGuard::initialize()?;
     let mut path: PWSTR = null_mut();
     // SAFETY: `path` is initialized to null and passed as a valid output slot.
-    // The Known Folder GUID is static, flags are default (0), and null token
+    // The Known Folder GUID and flags come only from the two fixed callers; null token
     // selects the current user. Any non-null output is immediately owned by the
     // RAII guard below, including on an HRESULT failure.
-    let result = unsafe { SHGetKnownFolderPath(&FOLDERID_LocalAppData, 0, null_mut(), &mut path) };
+    let result = unsafe { SHGetKnownFolderPath(folder, flags, null_mut(), &mut path) };
     let path = KnownFolderPath(path);
     if result < 0 {
-        return Err(hresult_error(
-            "failed to resolve the Local AppData Known Folder",
-            result,
-        ));
+        return Err(hresult_error("failed to resolve the Known Folder", result));
     }
     path.to_path_buf()
 }

@@ -8,10 +8,15 @@ use std::path::PathBuf;
 
 mod process;
 mod project_delete;
+mod storage_directories;
 mod unity;
 mod unity_hub;
 mod unity_hub_open;
 
+pub use storage_directories::{
+    default_storage_directories, normalize_storage_directory, prepare_storage_directory,
+    publish_file_no_replace,
+};
 pub use unity_hub_open::{UnityHubLaunchError, UnityHubProcessLauncher};
 
 pub use unity_hub::{
@@ -148,7 +153,8 @@ impl DataConfig {
         }
     }
 
-    pub(crate) fn data_directory(&self) -> Option<&std::path::Path> {
+    /// Returns the explicit isolated override without creating or reading any path.
+    pub fn data_directory(&self) -> Option<&std::path::Path> {
         self.data_directory.as_deref()
     }
 }

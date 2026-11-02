@@ -19,7 +19,7 @@
             "raw-request-json", "raw-result-json"
         ],
         "rawDiagnosticExport": false,
-        "authorizedSettingsPathException": ["settings.unity.hubPath", "unityHub.path"]
+        "authorizedSettingsPathException": ["settings.unity.hubPath", "unityHub.path", "settings.paths.projectDirectory", "settings.paths.backupDirectory", "directories.projectDirectory", "directories.backupDirectory"]
     },
     "$defs": {
         "methodName": {"enum": ["settings.get", "settings.update", "unity.hub.open", "activity.list", "diagnostics.list"]},
@@ -93,7 +93,7 @@
                     ]
                 },
                 "path": {
-                    "$ref": "https://alcomd.cqmhv.com/schema/config/settings-v4.json#/$defs/hubPath"
+                    "$ref": "https://alcomd.cqmhv.com/schema/config/settings-v5.json#/$defs/hubPath"
                 },
                 "configuredPathStatus": {
                     "enum": [
@@ -192,12 +192,13 @@
         },
         "settingsGetResult": {
             "type": "object", "additionalProperties": false,
-            "required": ["configSchema", "revision", "settings", "unityHub"],
+            "required": ["configSchema", "revision", "settings", "unityHub", "directories"],
             "properties": {
-                "configSchema": {"const": 4},
+                "configSchema": {"const": 5},
                 "revision": {"$ref": "#/$defs/revision"},
-                "settings": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v4.json#/$defs/settings"},
-                "unityHub": {"$ref": "#/$defs/unityHubLocation"}
+                "settings": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v5.json#/$defs/settings"},
+                "unityHub": {"$ref": "#/$defs/unityHubLocation"},
+                "directories": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v5.json#/$defs/storageDirectories"}
             }
         },
         "settingsUpdateParams": {
@@ -205,7 +206,7 @@
             "required": ["expectedRevision", "update"],
             "properties": {
                 "expectedRevision": {"$ref": "#/$defs/revision"},
-                "update": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v4.json#/$defs/partialUpdate"}
+                "update": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v5.json#/$defs/partialUpdate"}
             }
         },
         "settingsUpdateResult": {"$ref": "#/$defs/settingsGetResult"},

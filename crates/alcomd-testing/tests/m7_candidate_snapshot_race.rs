@@ -9,6 +9,24 @@ use alcomd_vpm::ProjectCandidateEngine;
 use tokio::sync::Notify;
 
 struct NoHubInspection;
+impl StorageDirectoryPlatform for NoHubInspection {
+    fn default_directories(&self) -> Result<StorageDirectories, OfficialGuiError> {
+        Ok(StorageDirectories {
+            project_directory: std::env::temp_dir()
+                .join("alcomd-project-default")
+                .to_string_lossy()
+                .into_owned(),
+            backup_directory: std::env::temp_dir()
+                .join("alcomd-backup-default")
+                .to_string_lossy()
+                .into_owned(),
+        })
+    }
+
+    fn normalize_directory(&self, _: &str) -> Result<String, OfficialGuiError> {
+        panic!("candidate query must not validate storage directories")
+    }
+}
 impl UnityHubLauncher for NoHubInspection {
     fn launch(&self, _: &str) -> Result<(), UnityHubOpenError> {
         panic!("candidate query must not launch Hub")
@@ -128,6 +146,7 @@ async fn config_change_during_candidate_store_read_fails_stale_without_query_wri
         Arc::new(alcomd_store::FileConfigStore::new(settings_path.clone())),
         Arc::new(NoHubInspection),
         Arc::new(NoHubInspection),
+        Arc::new(NoHubInspection),
     );
     config
         .initialize_settings()
@@ -161,6 +180,7 @@ async fn config_change_during_candidate_store_read_fails_stale_without_query_wri
             &AccessContext::local_owner(),
             initial.revision,
             ConfigUpdate {
+                paths: None,
                 unity: None,
                 appearance: None,
                 locale: None,
@@ -255,6 +275,7 @@ async fn wider_legacy_project_observations_fail_query_dto_bounds_without_changin
             )),
             Arc::new(NoHubInspection),
             Arc::new(NoHubInspection),
+            Arc::new(NoHubInspection),
         );
         config
             .initialize_settings()
@@ -323,6 +344,7 @@ async fn cancelled_candidate_read_creates_no_files_or_business_writes() {
     let config = M7OfficialApplication::new(
         store.clone(),
         Arc::new(alcomd_store::FileConfigStore::new(path.clone())),
+        Arc::new(NoHubInspection),
         Arc::new(NoHubInspection),
         Arc::new(NoHubInspection),
     );

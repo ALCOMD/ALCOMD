@@ -12,6 +12,7 @@ import type { GuiRpcClient } from "./rpc";
 import { useTranslation } from "./i18n";
 import type { SupportedLocale } from "./i18n-types";
 import { displayPath } from "./display-path";
+import { useProjectDirectory } from "./use-project-directory";
 
 interface ProjectDialogProps {
     client: GuiRpcClient;
@@ -41,7 +42,7 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
     const templateSession = useRef(0);
     const templatePageRequest = useRef<object | undefined>(undefined);
     const [templateId, setTemplateId] = useState("");
-    const [targetParent, setTargetParent] = useState("");
+    const { directory: targetParent, setDirectory: setTargetParent, error: directoryError } = useProjectDirectory(client, open);
     const [targetLeaf, setTargetLeaf] = useState("");
     const [reviewed, setReviewed] = useState<TemplateReview>();
     const [submitted, setSubmitted] = useState(false);
@@ -70,7 +71,6 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
         setSubmitted(false);
         setOperationId(undefined);
         setBusy(false);
-        setTargetParent("");
         setTargetLeaf("");
         templatePageRequest.current = undefined;
         setTemplateCursor(undefined);
@@ -251,6 +251,7 @@ export function CreateProjectDialog({ client, onChanged, onClose, onCompleted, o
                         </div>
                     </>
                 )}
+                {directoryError === undefined ? null : <RequestReminder error={directoryError} title={t("Default project location could not be loaded.")} />}
                 {error === undefined ? null : <RequestReminder error={error}>{submitted && templateApplyResultUnknown(error) ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</RequestReminder>}
             </div>
         </Dialog>{operations.follow()}</>
@@ -261,7 +262,7 @@ export function RestoreProjectDialog({ backup, client, onClose, onCompleted, onV
     const { t, locale } = useTranslation();
     const [backups, setBackups] = useState<BackupRecord[]>([]);
     const [backupId, setBackupId] = useState("");
-    const [targetParent, setTargetParent] = useState("");
+    const { directory: targetParent, setDirectory: setTargetParent, error: directoryError } = useProjectDirectory(client, open);
     const [targetLeaf, setTargetLeaf] = useState("");
     const [plan, setPlan] = useState<BackupRestorePlan>();
     const [operation, setOperation] = useState<Operation>();
@@ -289,7 +290,6 @@ export function RestoreProjectDialog({ backup, client, onClose, onCompleted, onV
         if (!open) {
             setBackups([]);
             setBackupId("");
-            setTargetParent("");
             setTargetLeaf("");
             setPlan(undefined);
             setOperation(undefined);
@@ -442,6 +442,7 @@ export function RestoreProjectDialog({ backup, client, onClose, onCompleted, onV
                         </div>
                     </>
                 )}
+                {directoryError === undefined ? null : <RequestReminder error={directoryError} title={t("Default project location could not be loaded.")} />}
                 {error === undefined ? null : <RequestReminder error={error} title={t("Restore project")}>{submitted && templateApplyResultUnknown(error) ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</RequestReminder>}
             </div>
         </Dialog>

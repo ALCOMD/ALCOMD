@@ -47,6 +47,7 @@ mod m7_rpc;
 mod m7_unity_migration_rpc;
 mod m7_user_packages_rpc;
 mod repository_list_rpc;
+mod storage_platform;
 
 #[cfg(feature = "test-kill-gates")]
 pub mod test_support;
@@ -128,6 +129,19 @@ async fn initialize_daemon(
     ipc: IpcConfig,
     data: DataConfig,
 ) -> Result<(IpcListener, Arc<Applications>), BindError> {
+    initialize_daemon_with_directories(
+        ipc,
+        data,
+        Arc::new(storage_platform::PlatformStorageDirectories),
+    )
+    .await
+}
+
+async fn initialize_daemon_with_directories(
+    ipc: IpcConfig,
+    data: DataConfig,
+    directory_platform: Arc<dyn alcomd_application::StorageDirectoryPlatform>,
+) -> Result<(IpcListener, Arc<Applications>), BindError> {
     let instance = DaemonInstance::acquire(&ipc)?;
     let database = alcomd_platform::state_database_path(&data)?;
     let data_root = database
@@ -193,17 +207,6 @@ async fn initialize_daemon(
         .recover()
         .await
         .map_err(|_| BindError::Io(io::Error::other("Template recovery failed")))?;
-    let backups = BackupService::with_locks(
-        store.clone(),
-        alcomd_vpm::BackupEngine::new(data_root.join("backups"))
-            .map_err(|_| BindError::Io(io::Error::other("Backup engine initialization failed")))?,
-        unity.clone(),
-        Arc::clone(&locks),
-    );
-    backups
-        .recover()
-        .await
-        .map_err(|_| BindError::Io(io::Error::other("Backup recovery failed")))?;
     let project_copy = ProjectCopyService::with_locks(
         store.clone(),
         alcomd_vpm::ProjectCopyEngine,
@@ -256,11 +259,49 @@ async fn initialize_daemon(
         )),
         Arc::new(hub_platform::PlatformUnityHubAdapter),
         Arc::new(hub_platform::PlatformUnityHubLauncher::default()),
+        directory_platform,
     );
     official_gui
         .initialize_settings()
         .await
         .map_err(|_| BindError::Io(io::Error::other("Config initialization failed")))?;
+    if let Ok(defaults) = official_gui
+        .observe_storage_directories(&alcomd_application::ConfigSnapshot::default())
+        .await
+    {
+        let project_directory = defaults.project_directory;
+        let prepared = tokio::task::spawn_blocking(move || {
+            alcomd_platform::prepare_storage_directory(std::path::Path::new(&project_directory))
+        })
+        .await;
+        match prepared {
+            Ok(Ok(_)) => {}
+            Ok(Err(error)) => {
+                tracing::warn!(%error, "Default project directory could not be prepared")
+            }
+            Err(error) => {
+                tracing::warn!(%error, "Default project directory preparation did not finish")
+            }
+        }
+    } else {
+        tracing::warn!(
+            "System default project directory is unavailable; configured locations remain authoritative"
+        );
+    }
+    let backups = BackupService::with_locks(
+        store.clone(),
+        alcomd_vpm::BackupEngine::new(data_root.join("backups"))
+            .map_err(|_| BindError::Io(io::Error::other("Backup engine initialization failed")))?,
+        unity.clone(),
+        Arc::clone(&locks),
+    )
+    .with_directory_provider(Arc::new(storage_platform::ConfiguredBackupDirectory(
+        official_gui.clone(),
+    )));
+    backups
+        .recover()
+        .await
+        .map_err(|_| BindError::Io(io::Error::other("Backup recovery failed")))?;
     let candidates = ProjectCandidateApplication::new(
         store.clone(),
         alcomd_vpm::ProjectCandidateEngine,
