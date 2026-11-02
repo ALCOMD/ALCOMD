@@ -688,6 +688,30 @@ About 确定性修前 0/1；最终 Chromium/同版 Edge 各 3/0，相关分段 6
 所有者随后确认改为逐行布局：复用共享设置行，模式/主题色/方案纵向排列，九方案使用现有 Select，删除两列布局和专用样式；操作紧接最后一行，保存和预览逻辑不变。GUI check、metadata/diff 与定向 **35/0** 通过，覆盖真实下拉键盘、九方案预览及保存/取消/失败/冲突、三语和布局。匹配 GUI 构建通过，原 profile 复开 GUI147632，原 Core130768、五组公开状态及配置保持。不改公共合同、权限、持久数据或依赖，不重复完整门禁；最终人工确认仍待所有者。
 所有者进一步要求无图标分段内部左右各 24px，主题模式改为现有 Select；删除 showCheckmark 选项和隐藏宽度测量层，使用 Material 自身等宽布局。所有者确认窄窗允许放不下，包括本次 640px 英文设置导航；仅调整该完整显示断言，正文/路径/按钮可达性及其他窄窗覆盖保留。GUI/UI check、metadata/diff 通过；分批相关结果为 53/1（3 项未执行）及补查 5/0，连续下拉用例改等公开关闭生命周期，产品代码未再改动，原失败保留；详见当前 status，不冒称完整门禁。匹配 GUI 构建及原 profile 复开完成，GUI149844/Core130768，五组公开状态及配置不变，原生观感仍待所有者。
 
+#### Unity 设置截图对照与待批准补齐（2026-11-03）
+
+只读对照 v3 设置、启动流程及当前 v4 后确认：全局默认 Unity 启动参数尚缺；已有项目参数不能替代它。
+原 `m7-v3-settings-audit-20260919.md` 已记录此缺口，未找到将其正式取消或划入后续里程碑的决定。
+当前安装列表的刷新仅重读 registry，真正 discovery/register 位于管理弹窗；这些能力已有，并非尚未实现。
+v3 旧 Hub 开关切换读取 Hub 配置与调用 Hub CLI 两种 Editor 发现策略；v4 当前只扫描平台默认安装根，
+尚未覆盖 Hub 自定义安装根及已定位 Editor。此发现缺口单独补齐，不直接复制旧开关或旧实现。
+
+**待所有者批准的全局参数最小合同；尚未修改生产实现：**
+
+- Config5→6，`settings.unity.defaultLaunchArguments: string[] | null`；TOML `unity.default_launch_arguments` 可省略。
+  null 使用产品内置默认（当前为空数组），`[]` 是显式空参数；settings PATCH 省略该字段表示不变。
+- 沿用 settings.get/update、settings.read/manage；修改此字段同时要求已有 unity.manage，不新增权限名或 RPC method。
+  `unity.projectLaunchConfig.get` 在现有 config 外增加 `defaultArguments: string[]`、`effectiveArguments: string[]`，
+  由 application 投影；config.arguments 仍表示项目覆盖，既有项目读取/设置/清除/启动权限不扩大。
+- 实际启动优先级：存在项目覆盖（含空数组）→全局覆盖→内置默认，整组替换而非拼接；清除项目覆盖恢复继承。
+  GUI 的默认参数组与项目参数编辑器应准确区分继承、显式空数组、取消和恢复默认，不沿用 v3 的 null/取消混淆。
+- 复用现有参数数量/长度/项目路径选择器禁用规则，拒绝 NUL，保留 ConfigStore 16 KiB 文件总上限和串行 CAS。
+  参数通过 argv 数组传递；不使用 shell，不把完整参数写入 Activity、普通错误或诊断摘要。
+- Config5 及既有迁移输入增加 null 默认，保留 revision、目录、Hub、主题及其他设置；不改 State16 或项目数据结构。
+  接受启动时固定有效参数快照；全局变更不得改变已接受启动，同幂等键受影响的设置变更沿用明确冲突而非静默改参重启。
+- 新增全局参数设置 UI、Core 用例/读取投影、协议/Schema/消费者/快照及定向回归按一个独立功能提交；不新增依赖，
+  不执行真实用户项目启动、迁移或 Hub CLI。Editor 发现完整性与现有入口简化作为另一项整改，不捆绑审批。
+
 ### 当前 H7 授权与收束（2026-11-02）
 
 直接执行既有 H7，不另设规划审批。先核对现有实现与证据，仅修真实使用缺陷；普通文案、一般视觉和过度设计待办继续非阻塞。
