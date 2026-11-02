@@ -29,7 +29,8 @@ exact version **1/0**、RPC **1/0**、浏览器 **6/0**、Clippy 与 Core/GUI �
 canonical/exact 校验。真实自动发现及重复刷新、两个样例只读 exact candidates 已验证；当时 Core 更新前后
 五组公开状态一致，登记后仅 Editor 从 0 到 1，其他四组保持、settings revision **155**。
 当时 Esc 后未取得安装页原生证据的历史记录保留；本次所有者反馈及上述真实窗口核对分别补齐当前检测与显示证据。
-没有手动登记或启动/迁移实际工程。本轮仅请所有者查看路径显示，不重验其他 H3 页面。
+没有手动登记或启动/迁移实际工程。所有者随后明确确认“路径显示正常了”，`fec8117` 的路径显示整改项
+人工确认通过；Unity 检测、显示与重复刷新不再待确认。该反馈不扩展为 H3 整体签收，其他 H3 页面不重验。
 
 上轮 `ab5d183` 的 **34/0** 与主体 `ef47c25` 的备份、恢复、结果 ProjectId 和反馈原生证据保持各自原提交/构建范围，
 不替代本轮代码的验证。范围、逐轮失败、产物摘要和当前窗口见 [H3 候选与桌面证据](testing/m7-h3-contextual-20261101.md)。
@@ -269,7 +270,7 @@ Visual Gate 2，没有 M7 或 Hosted CI 通过结论，原未跟踪 `output/` �
   远端验证缺口。下载、native Portable UI 等旧未覆盖范围保持，不由本次签收批量关闭。
 - 已继续执行获批 G3 中的本轮完成度核对，补齐三个列表 RPC 的现有覆盖矩阵；公开 method
   常量与矩阵 **92/92** 对齐、列表 typed 接线一致，不重新实施已完成页面，也不代表 G3 整体完成。
-  项目所有者随后明确批准现有 H3；`efdb133` 的 Windows 检测/显示/重复刷新已获所有者确认，当前 `fec8117` 只补共享路径显示及相关定向回归。下一停止点仅请查看这次路径显示整改，H3 整体仍待签收；不重验其他页面，不重开 M7 规划，不进入 H4-H7 或自动推送。
+  项目所有者随后明确批准现有 H3；`efdb133` 的 Windows 检测/显示/重复刷新及 `fec8117` 的路径显示整改均已获所有者确认。H3 整体仍待签收，不重复要求确认已通过的 Unity 项；不重验其他页面，不重开 M7 规划，不进入 H4-H7 或自动推送。
 - 窗口记忆、仓库 credential enrollment/revocation、完整用户入口缺口保持真实状态；聚合
   projects.management/packages.vpm/repositories.management 等继续 in_progress，不批量提升。
 - projects/templates/backups 的 v3 parity 和 unity.v3-vrc-parity 仍等待 M11 真实脱敏 Fixture；
