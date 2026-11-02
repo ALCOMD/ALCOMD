@@ -3,7 +3,33 @@
 状态：**LOCAL_CANDIDATE / MANUAL_PENDING**，2026-11-02。H2-A/H2-B/H3/H4 原签收保持，M7 仍进行中。
 H5 已由所有者批准；H6/H7、推送及 M7 整体完成未授权。
 
-## 复用与实际改动
+## 当前候选：彻底移除紧凑模式（6739705）
+
+所有者临时插入删除 GUI 紧凑模式，并明确批准公开字段删除及 Config4。源码候选为
+`6739705de9711b18e9e398270e0254e6b8719c6b`：删除开关、词条、专用 CSS、渲染与保存分支及公开 density 类型/字段，
+统一原默认间距。局部行操作的 compact 排布与普通间距 token 不属于模式，保持已认可布局。
+Config1–3 按历史合同校验后迁移，仅丢弃 density，保留其他偏好与 revision；Config4 文件/完整响应/更新拒绝旧字段，
+没有旧 RPC 别名或第二套当前模型。当前规范为 settings-v4；State16、权限和依赖不变。
+
+本轮证据目录 `target/m7-h5-no-compact-20261102/`：Store 19/0、application 17/0、协议合同 7/0、hello 1/0、映射 1/0；
+真实隔离 Core RPC 1/0（先核对全终态并暂停自己记录的原 Core，使用一次可丢弃 daemon 测试，不连接原数据）。
+GUI/UI check 1028 条三语言通过，保存队列 15 场景、关联浏览器 76/0（2.5m）及保存刷新补充 1/0（8.6s）通过，
+184 项 GUI 输入前后不变。原保存/CAS/未知结果/主题冲突/焦点断言改用仍存在的 motion/packages 偏好，不删除保护。
+四 crate Clippy 首轮仅新 daemon 测试的字段后赋值写法失败（`config4-clippy-before.log`）；改成直接初始化，
+仅重验 daemon all-targets Clippy、映射 1/0 和 IPC test target Clippy，均通过；fmt 通过，无 allow 或断言删除。
+536 项完整输入清单中的该测试初始化差异单独保留；最终构建前后 536 项完全一致。
+Core release 与 GUI release no-bundle 各一次通过（各 Rust release 1m41s），GUI 构建包含 check/Vite；未跑完整 Workspace/浏览器/远端 CI。
+
+原开发目录 `target/m7-icon-acceptance-20260906/data` 已恢复新 Core **143516** 和 GUI **141068**（窗口 **41227382**，可响应）。
+实际 `config/settings.toml` 迁移前后逐值比较，仅 schema 3→4 和删除 density，revision **166**、主题及其他偏好全部保留。
+五组公开状态按该获批差异核对一致，其余四组原样不变；hello 报告 Config4/State16。
+Core SHA-256 `b90ec8b93d043ca8ef6077d9f0bfdec40a5db642a5c91f820cf17a0d665d4687`；
+GUI SHA-256 `23d6d77170b071d7060e77cacd0de5b47cd607049f0875eeef1b0e4abbe9b1bc`。
+完整状态、文件前后摘要及实际进程见 `migration-verification.json`、`verification.json`、`core-runtime.json`、`gui-runtime.json`。
+当前窗口已打开；复开使用本轮 `target/m7-h5-no-compact-20261102/H5-Window.ps1 -Action Open`，已真实执行，核对匹配 Core/GUI 摘要。
+没有操作用户 Unity/未知进程或恢复桌面控制；H5 人工验收仍待所有者确认，不自行提升状态。新增代码无对应远端验证，不推送。
+
+## 首个 H5 候选复用与改动（c768289，保留历史）
 
 已有 grouped Settings/全部 Config3 字段、普通设置串行 CAS、主题预览与三方合并、Log 分段/搜索/已加载项筛选/
 keyset 分页、About/许可证/footer 入口继续复用，不重建页面或新增管理入口。
@@ -19,7 +45,7 @@ keyset 分页、About/许可证/footer 入口继续复用，不重建页面或�
 不新增公共 RPC、State Schema、权限、依赖、保存队列或任务/通知框架。不改 Core、Portable UI 协议或 Runtime。
 没有新增路径格式化实现；只读文件路径继续统一 `displayPath`，实际路径、可编辑值及 RPC 参数保持原值。
 
-## 本地证据与边界
+## 首个 H5 候选证据与边界（c768289）
 
 GUI 源码候选：`c7682899a27c938e588720e1dce7ef4113882a17`，标准目录/main 的真实 Windows 用户环境本地提交。
 Core 源码/二进制保持 `e2b7ddd` / `7d62a6c8aed0eb6bba3ebc6b33f037d7fd18aebaf1186c109487c310d5da7a18`。

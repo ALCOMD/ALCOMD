@@ -588,7 +588,7 @@ keyset 分页及关于/许可证入口已有实现。只修设置丢失安全错
 复用现有 OperationFollow 与 Reminder；GUI 构建版本取已由 metadata 检查对齐产品/Tauri 的 package 元数据。
 不新增公共 RPC、State Schema、权限、依赖或通知/保存/任务机制。真实窗口只经已有自身进程启动方式准备，桌面控制保持停用。
 
-H5 本地候选 `c768289` 已完成 GUI check（1030 条消息）与一次 release no-bundle 构建；Core 仍为 `e2b7ddd`。
+移除紧凑模式前的 H5 候选 `c768289` 已完成 GUI check（1030 条消息）与一次 release no-bundle 构建；该轮 Core 为 `e2b7ddd`。
 关联浏览器首轮 101/2、定位修复后的三个模块 56/0 分别保留，184 项输入逐轮未变，不拼成全套通过。
 原 Core 持续运行，新 GUI 已实际打开；构建前后五组公开状态一致，期间更早的 Unity 记录变化单独保留。
 交付 Settings、Log、About 三项真实窗口清单并等待 H5 人工确认；未执行完整 Rust/浏览器套件或远端验证，不进入 H6/H7、不推送。
@@ -605,6 +605,11 @@ Config1–3 仅作为既有启动迁移输入：按各自历史合同校验后�
 v1/v2 仍仅补各自原先缺少的 packages/scheme 默认值。迁移在 ready 前完成，不算用户更新，不推进 revision；
 Config4 当前写入与公开响应只使用新的唯一模型。当前规范及 Schema 原位转向 settings-v4，旧版本明确标为迁移历史。
 验证只覆盖字段拒绝、旧格式迁移/其余设置及 revision 保留、GUI 紧凑入口与样式移除及相关回归；不重复无关全量或远端检查。
+
+当前候选为 `6739705`：Store 19/0、application 17/0、协议合同 7/0、hello/映射/真实隔离 RPC 各 1/0，
+GUI/UI check、保存队列 15 场景、浏览器 76/0 及补充 1/0 已通过；Clippy 初轮测试初始化失败与窄修复验分别保留。
+一次 Core/GUI 必要构建后已实际恢复原环境，Config4 迁移只删除 density，revision 166 和其他偏好不变；新窗口保持打开。
+H5 仍 MANUAL_PENDING，旧轮测试不冒充本轮全套，新增代码无远端验证；不进入 H6/H7、不推送。
 
 ## 技术收尾与 H2-B 顺序授权（2026-10-31）
 
