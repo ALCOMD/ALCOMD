@@ -22,13 +22,17 @@ GUI 独立定向浏览器 **36/0**（1 worker、0 retries），155 项输入不�
 真实隔离 Core/Host 已完成签名包 Plan/Apply、默认停用且无授权、项目授权/撤销、Portable UI 同连接打开/操作/刷新/关闭、
 崩溃隔离与保留数据卸载。故意 trap 的扩展显式恢复仍返回 `extension_crashed`，不能描述为恢复健康。
 
-原开发环境已**实际恢复**：最终 Core PID **135272**（SHA-256 `7d62a6…da7a18`）使用原 `target/m7-icon-acceptance-20260906/data`；
-Projects/Editors/Operations/Settings/Status 五组完整公开结果与暂停前一致，settings revision **155**。
-复用 release GUI PID **128448**（窗口 **727218**，SHA-256 `123381…2c76e`）有窗口且可响应，保持打开；
-隔离 GUI/Core 已停止，无残留 Host，没有处理用户 Unity 或归属不明的进程。桌面控制收到 Esc 后保持中断，
-本轮新增 GUI 原生交互及整改后原生截图**未完成**，不以 Core RPC 或浏览器结果替代。H2-B/H3/H4 新增代码均无
+前轮原环境实际恢复及五组一致证据保留。本轮已实际验证 `H4-Review.ps1 Start/Restore` 往返，恢复时五组公开结果
+与本次暂停前完整快照一致（Projects 2、Editors 1、Operations 2 全终态、settings revision **155**、Status ready）。
+随后按所有者要求重新打开**可操作的隔离验收环境**：Core **138156**、GUI **136888**（窗口 **1841230**），
+复用同一 Core `7d62a6…da7a18` / GUI `123381…2c76e`，隔离数据为 `target/m7-h4-extensions-20261102/data-native`。
+正常签名样例 `com.example.h4.portable` 已验证保留数据卸载/重装/启停，当前留作待安装；一个可丢弃项目已登记。
+原环境当前为本次人工验收**暂时暂停**，未安装测试扩展；验收结束须执行已验证 Restore 并实际核对五组状态。
+桌面控制保持停用，本轮只经已有进程启动方式打开 GUI，没有点击、键盘输入或新截图，未处理用户 Unity/未知进程。
+本轮新增 GUI 原生交互及整改后原生截图**未完成**，交由所有者实际查看，不以 Core RPC 或浏览器结果替代。H2-B/H3/H4 新增代码均无
 对应远端 CI/CodeQL；旧 `0ef5b08` 的成功仍只对应旧输入。未推送，H5-H7 不开放。详见
 [H4 候选、隔离证据与查看清单](testing/m7-h4-extensions-20261102.md)。
+启动/恢复入口与四项可执行清单见该记录的“本轮可操作隔离候选”；入口已实际运行，不只是语法检查。
 
 ### H3 已签收记录（各轮历史证据）
 

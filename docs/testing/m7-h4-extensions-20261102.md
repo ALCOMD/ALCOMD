@@ -92,7 +92,7 @@ Host 本轮未重建；以下先记录初次 Core 的真实运行结果及反例
   随后观察 quarantined/stopped；不是 idempotency 冲突或误报健康。两个样例均已显式停用，Host 已收束。
 - 历史包声明不再授权的卸载/重装链由最终 13/0 Store 回归覆盖；没有冒称这条链已在原生 GUI 操作。
 
-## 原环境恢复、真实窗口与缺口
+## 前轮原环境恢复、窗口与缺口（历史证据）
 
 暂停前五组完整公开状态已核对且任务全终态。为释放构建中的旧 exe，先把原 Core 安全切到原摘要的保留副本 PID 131660；
 首次隔离结束曾恢复到 Core 130424；发现功能缺陷后用保留副本 116656 维持原数据运行并仅重建 Core。
@@ -100,10 +100,10 @@ Host 本轮未重建；以下先记录初次 Core 的真实运行结果及反例
 Projects 2、Editors 1、Operations 2（全终态）、Settings revision 155、Status ready 与暂停前完整结果一致。
 `original-restored-runtime.json`、`required-fix-native-restore-*/five-group-comparison.json` 及初次独立恢复目录保存实际过程与结果，不是守候进程承诺。
 
-当前 release GUI PID **128448**、窗口 **727218**、标题 ALCOMD3，保持打开且可响应，使用本轮独立 WebView profile。
+前轮 release GUI PID **128448**、窗口 **727218**、标题 ALCOMD3，当时打开且可响应，使用独立 WebView profile。
 隔离 GUI 108656、两轮 Core 137392/127568 已停止，无残留 Host；此前本轮验收 GUI 135172 已在 Core 构建前按身份核对关闭。
 没有处理用户 Unity 或未知进程。
-原数据在本轮前没有扩展，不把测试包安装到原数据中。完整测试样例保留在隔离目录，当前原窗口的空扩展列表不代表功能丢失。
+原数据在本轮前没有扩展，没有把测试包安装到原数据中。前轮只打开原窗口，尚未具备完整 H4 人工验收条件；本轮准备见下节。
 
 桌面工具收到物理 Esc 后保持中断，**本轮新增 GUI 原生交互及整改后原生截图未完成**；未切换桌面入口或重置工具绕过。
 构建成功、进程可响应、真实 Core/Host smoke 和浏览器通过分别记录，均不替代 native GUI 验收。
@@ -111,15 +111,79 @@ Projects 2、Editors 1、Operations 2（全终态）、Settings revision 155、S
 `C:/Users/M2922/.codex/visualizations/2026/08/17/01a00f12-6751-7d50-9346-7b58e94f2eea/h4-extensions/`，
 文件为 `before-extensions.jpg`、`before-install-dialog.jpg`；没有冒称当前整改后图。
 
-人工只核对 H4 四项，不重验 H2/H3：
+本轮用下面的隔离样例、实际入口与四项清单交付，不要求所有者往日常数据安装测试包。
 
-1. Extensions → Install extension：路径输入、发布者明确批准、申请权限审阅与一次 Apply 后进度；错误留在对应上下文。
-2. 扩展详情：启用/停用、隔离失败与显式恢复、卸载默认保留数据，取消不沿用旧反馈。
-3. Manage permissions：申请与实际允许分开，项目范围清楚，授权/撤销/刷新后结果一致。
-4. Open extension UI：同窗口 Material 控件、加载/失败/重连、修改后取消或刷新，旧请求不覆盖新页面。
+## 本轮可操作隔离候选（待人工验收）
 
-当前原窗口可查看列表与安装输入；完整权限/功能页仍需隔离样例窗口，不要求所有者把测试扩展写入日常数据。
-H4 人工签收保持待定，不把以上清单或自动化结果写成 ACCEPTED。
+产品代码 `e2b7ddd`、GUI 输入与既有构建保持；本轮不构建、不重跑测试套件、不调用 Computer Use 或其他桌面输入接口。
+复用原签名包和 `data-native`，只补正常样例的实际准备：正式 Core retain-data 卸载→重装→启用→停用→卸载全部成功。
+任务 `15ae6e46-7023-46c3-ad0c-39fb80de0207`、`f250b565-c83f-46cd-bb28-cdce8bd9a07a`、
+`e7f2208e-97ca-4bc5-8e91-cd10d3d11576` 为该准备轮，原始结果在 `native-rpc-review/`；不加到旧 13/0 或 36/0 计数。
+
+正常样例统一为 `com.example.h4.portable` / `1.0.0`：required 无、optional `projects.read`，不申请后台运行，UI 为现有 Fixture UI。
+包 SHA、签名、发布者及 Core 接受证据沿用前文，并再次核对文件摘要。正式发布者批准与包校验没有跳过。
+当前扩展列表为空是**有意留出安装起点**，不是只有一个空窗口：下列可安装包及一个已登记的隔离项目均已就绪。
+
+样例包（复制整行到 Extension package）：
+
+```text
+C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m7-h4-extensions-20261102\native-fixture\com.example.h4.portable.alcomdext
+```
+
+项目选择使用 `H3-Restored-20261101`（路径位于 `target/m7-h3-contextual-20261101/native/restores/`），
+ProjectId 为 `f2bb8e2a-2a8a-4dea-ab59-7670e89b8454`。仅该可丢弃项目登记在本隔离环境；四个文件 SHA 未变，不访问用户实际工程。
+
+### 已验证入口和当前窗口
+
+以下固定本地入口复用已有 Core/GUI 启动方法、独立 WebView profile、完整公开分页读取和身份围栏。
+命令显式使用已验证的 PowerShell **7.6.5** 宿主；不依赖系统 Windows PowerShell 5.1。
+已实际执行 Start→Restore，恢复时 Projects/Editors/Operations/Settings/Status 五组与暂停前一致，随后再 Start 交付；
+不是把新脚本的语法检查描述成启动验证。入口与依赖 SHA、往返结果见 `manual-review-preparation.json`、`review-entry-verified-cycle.json`。
+
+```powershell
+# 当前已经启动；只有关闭并恢复后需要再次打开时才运行 Start。
+& 'C:\Users\M2922\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\powershell\pwsh.exe' -File 'C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m7-h4-extensions-20261102\H4-Review.ps1' -Action Start
+
+# 人工查看结束、等待安装/卸载任务终态后恢复原环境。
+& 'C:\Users\M2922\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\powershell\pwsh.exe' -File 'C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m7-h4-extensions-20261102\H4-Review.ps1' -Action Restore
+```
+
+交付时隔离 Core PID **138156**、GUI PID **136888**、窗口 **1841230**，标题 ALCOMD3、可响应，使用同一已验证 release 摘要。
+从左侧 Extensions 进入；没有自动导航、点击、键盘输入或截图。**原环境当前暂停等待本次人工查看结束**，不是已经恢复；
+Restore 会确认隔离任务全终态、仅关闭记录的本轮 GUI/Core、保留未知进程，实际启动原数据 Core/GUI 并核对五组状态。
+最近一次完整往返已恢复到原 Core 123196 / GUI 133036，五组全同；本次再次暂停前也已保存新完整快照。
+不停止用户 Unity。若还有活动任务或归属不明的进程，入口拒绝继续，不能只把“等待”写成恢复成功。
+
+### 四项人工清单
+
+按钮以下用英文标签定位；其他语言对应同一操作。只查看 H4，不重验已签收页面。
+
+| 从哪里点击 | 预期看到什么 |
+| --- | --- |
+| **1. Extensions → Install extension**，粘贴上述包路径，明确勾选 Approve this publisher for this extension → Create install plan | 审阅为 `com.example.h4.portable`、`1.0.0`、本地测试发布者；必需权限无，可选 Read projects，申请不等于已授权。点 Apply reviewed plan 一次，任务成功后出现扩展。可先给路径追加 `.missing` 检查真实失败，再改回正确路径继续：错误留在弹窗，不报成功，重试不沿用旧提示。 |
+| **2. 样例卡片 → Manage extension**，Enable → Disable，再 Enable | 状态与操作结果一致，Open Portable UI 随启用可用。完成第 3、4 项后，Uninstall extension → Create uninstall plan，先 Cancel/Discard 检查未移除，再重新审阅并 Apply。默认不勾选删除扩展数据，成功后回列表；无需删除项目。 |
+| **3. Manage extension → Manage permissions** | 先看到 optional Read projects 与 No permissions granted；选择隔离项目 → Grant，已允许区出现该项目路径。Refresh/关闭再打开仍一致；Revoke 后条目消失，再授予可恢复。无需手工证明整个权限系统或检查 revision/JSON。 |
+| **4. Enable 后 → Open Portable UI**（列表也可点 Open） | 同一应用窗口显示 Fixture UI 和 Refresh 按钮；点击按钮/页头刷新能工作。切换到 Resources 再回 Extensions → Open，应重新打开，旧状态不残留。关闭扩展页用侧栏切换；最后按第 2 项卸载。 |
+
+暂未覆盖的真实桌面状态：这个既有正常 fixture 只有 page/button，不含可编辑表单，不能据此验收 dirty-form；
+会话超时、外部断线/撤销的迟到反馈未在当前桌面强制造出，也没有新截图。相关浏览器/Store/真实 Core 证据保持各自范围。
+故意 trap 的隔离/恢复失败已有前文 Core 证据，不要求为了本次四项清单再安装第二个异常扩展，未宣称恢复健康或人工通过。
+
+### 两项权限缺陷与范围限制的复用证据
+
+最终独立 **13/0** 绑定 `e2b7dddf824bc4fb064b7cc682e3a25a40ab4ffa`。实现/测试 SHA 分别为
+`968532113e6be6dd6f637f78b463ff34be32400a8fe3c3e7778ec703cf304ab5`、
+`eaa4109d9fe2be024fcbf2a64dba66af3bcb0979e03f62ee25d6eea637b50fa8`，本轮未变、未重跑。
+下表行号均位于 `crates/alcomd-store/tests/m6_runtime.rs`，方法名称与逐项结果见 `core-required-candidate.log`。
+
+| 要证明的结果 | 已有真实证据 |
+| --- | --- |
+| required 缺权不能误报启用成功 | `m6_runtime.rs:204` 的 required background/恢复回归：PermissionDenied、四表完整不变、不耗 key、授权后同 key 可用。真实新 Core `native-rpc-required-fix/required-enable-refused.json` 及前后记录证明结果和权威状态一致、grants 空、grantRevision 1。 |
+| 历史声明不能给当前包授权 | `m6_runtime.rs:411` 的旧包→retain 卸载→新包重装回归：旧 background 权限拒绝、四表不变，同 key 可授当前声明的项目权限。真实新 Core `undeclared-grant-refused.json` 另证当前未声明权限拒绝；没有把它冒充真实历史重装链。 |
+| 授权、撤销与项目限制持续生效 | `m6_runtime.rs:559` 证明 grant/revoke 与准确 ProjectId；`:1127` 证明获授项目可读、范围外 ScopeDenied、撤销后旧 lease InstanceStale；`:352` 证明项目 required 必须有明确范围。旧真实项目 grant→revoke 的 1→2→3 仍绑定旧 F6B0… Core，不写为本轮新跑。 |
+| 撤销/包变化不能混读分页 | `m6_runtime.rs:618` 的完整有序分页与旧 cursor RevisionConflict，包含在最终 13/0。不是 GUI 假客户端错误。 |
+
+H3 阶段签收保持，H4 继续等待项目所有者实际查看确认，M7 进行中。
 
 ## 远端验证
 
