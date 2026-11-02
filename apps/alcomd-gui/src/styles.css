@@ -1737,8 +1737,6 @@ md-dialog:has(.theme-editor) {
 .theme-editor-footer .dialog-actions { margin: 0; }
 .theme-feedback:empty { display: none; }
 
-.theme-mode-scroll { min-width: min-content; max-width: 100%; overflow: auto; }
-
 /* Preserve the desktop canvas; the same navigation becomes an icon rail when it no longer fits. */
 @media (max-width: 1100px) {
     .app-body { grid-template-columns: 80px minmax(0, 1fr); }
@@ -1753,7 +1751,6 @@ md-dialog:has(.theme-editor) {
     .page-header { flex-wrap: wrap; padding-block: 8px; }
     .page-header .page-title { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
     .page-header-actions, .utility-workspace-actions { flex-wrap: wrap; max-width: 100%; }
-    .page-surface--utility .resource-navigation { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: auto; }
     .projects-search { flex-basis: 100%; min-width: 0; }
     .settings-section-heading { flex-wrap: wrap; }
     .settings-row { flex-wrap: wrap; }
@@ -1764,7 +1761,6 @@ md-dialog:has(.theme-editor) {
 
 @media (max-width: 860px) {
     .theme-editor-columns { grid-template-columns: minmax(0, 1fr); }
-    .theme-mode-scroll { min-width: 0; }
 }
 
 @media (max-width: 620px) {

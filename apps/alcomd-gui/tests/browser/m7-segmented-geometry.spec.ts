@@ -1,47 +1,44 @@
 import { expect, test, type Locator } from "@playwright/test";
 
-async function expectSegmentsFit(viewport: Locator) {
-    await expect(viewport).toHaveAttribute("data-overlayscrollbars-viewport", /./);
-    const size = await viewport.evaluate(element => ({
-        width: element.clientWidth, contentWidth: element.scrollWidth,
-        height: element.clientHeight, contentHeight: element.scrollHeight
-    }));
-    expect(size.contentWidth).toBeLessThanOrEqual(size.width);
-    expect(size.contentHeight).toBeLessThanOrEqual(size.height);
-    await expect(viewport.locator(".os-scrollbar-visible")).toHaveCount(0);
-    // Read a single frame: the theme dialog can still be opening at this point.
-    const geometry = await viewport.evaluate(element => ({
-        bounds: element.getBoundingClientRect().toJSON(),
-        targets: Array.from(element.querySelectorAll("md-outlined-segmented-button"), segment =>
-            segment.shadowRoot!.querySelector(".md3-segmented-button__touch")!.getBoundingClientRect().toJSON())
-    }));
-    for (const touch of geometry.targets) {
-        expect(touch.top).toBeGreaterThanOrEqual(geometry.bounds.top);
-        expect(touch.bottom).toBeLessThanOrEqual(geometry.bounds.bottom);
+async function expectSegmentsVisible(group: Locator, boundary: Locator) {
+    await expect(group).toBeVisible();
+    const wrapper = group.locator("..");
+    await expect(wrapper).toHaveCSS("overflow", "visible");
+    await expect(wrapper.locator(".os-scrollbar")).toHaveCount(0);
+    const bounds = (await boundary.boundingBox())!;
+    for (const segment of await group.locator("md-outlined-segmented-button").all()) {
+        const box = (await segment.boundingBox())!;
+        expect(box.x).toBeGreaterThanOrEqual(bounds.x);
+        expect(box.x + box.width).toBeLessThanOrEqual(bounds.x + bounds.width);
+        await segment.click({ trial: true });
     }
 }
 
 for (const route of ["/repositories", "/unity", "/activity"]) {
-    test(`${route} segments keep touch targets and focus inside the scroll viewport`, async ({ page }, testInfo) => {
+    test(`${route} desktop segments stay visible without a scroll container`, async ({ page }, testInfo) => {
         await page.setViewportSize({ width: 1920, height: 1000 });
         await page.goto(`/browser-harness.html?route=${encodeURIComponent(route)}&state=ready&theme-mode=dark`);
-        const viewport = page.locator(".resource-navigation");
-        await expect(viewport.getByRole("button").first()).toBeVisible();
+        const navigation = page.locator(".resource-navigation");
+        const group = navigation.locator("md-outlined-segmented-button-set");
+        await expect(group.getByRole("button").first()).toBeVisible();
         await page.evaluate(async () => { await document.fonts.ready; });
-        await expectSegmentsFit(viewport);
+        await expect(navigation).not.toHaveAttribute("data-overlayscrollbars-viewport");
+        await expect(navigation).toHaveCSS("overflow", "visible");
+        await expect(navigation.locator(".os-scrollbar")).toHaveCount(0);
+        await expectSegmentsVisible(group, page.locator("#main-content"));
         for (const zoom of [1, 0.8, 1.25]) {
             await page.evaluate(value => { document.documentElement.style.zoom = String(value); }, zoom);
-            await viewport.getByRole("button").first().focus();
-            await expectSegmentsFit(viewport);
+            await group.getByRole("button").first().focus();
+            await expectSegmentsVisible(group, page.locator("#main-content"));
             await page.keyboard.press("Tab");
-            await expect(viewport.getByRole("button").nth(1)).toBeFocused();
-            await expectSegmentsFit(viewport);
-            await viewport.screenshot({ path: testInfo.outputPath(`segments-${zoom}.png`), animations: "disabled" });
+            await expect(group.getByRole("button").nth(1)).toBeFocused();
+            await expectSegmentsVisible(group, page.locator("#main-content"));
+            await group.screenshot({ path: testInfo.outputPath(`segments-${zoom}.png`), animations: "disabled" });
         }
     });
 }
 
-test("Chinese theme segments fit their scroll viewport before and after selection", async ({ page }, testInfo) => {
+test("Chinese theme segments stay visible without a scroll container before and after selection", async ({ page }, testInfo) => {
     await page.goto("/browser-harness.html?route=/settings&theme-mode=dark");
     await page.locator("#settings-locale").evaluate(element => {
         (element as HTMLElement & { select(value: string): void }).select("zh-CN");
@@ -49,16 +46,18 @@ test("Chinese theme segments fit their scroll viewport before and after selectio
     });
     await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
     await page.locator("#settings-theme-button").click();
-    const viewport = page.locator(".theme-mode-scroll");
-    await expectSegmentsFit(viewport);
+    const group = page.locator("#theme-mode");
+    const dialog = page.getByRole("dialog");
+    await expect(group.locator("../..")).toHaveClass("theme-options-column");
+    await expectSegmentsVisible(group, dialog);
     for (const zoom of [1, 0.8, 1.25]) {
         await page.evaluate(value => { document.documentElement.style.zoom = String(value); }, zoom);
-        for (const segment of await viewport.getByRole("button").all()) {
+        for (const segment of await group.getByRole("button").all()) {
             await segment.click();
             await expect(segment).toHaveAttribute("aria-pressed", "true");
-            await expectSegmentsFit(viewport);
+            await expectSegmentsVisible(group, dialog);
         }
-        await viewport.screenshot({ path: testInfo.outputPath(`theme-segments-${zoom}.png`), animations: "disabled" });
+        await group.screenshot({ path: testInfo.outputPath(`theme-segments-${zoom}.png`), animations: "disabled" });
     }
 });
 
@@ -73,36 +72,29 @@ test("Chinese Resources segments stay clear after selecting each section", async
     await page.locator("#primary-navigation md-list-item").filter({
         has: page.locator(".navigation-item-label", { hasText: /^资源$/ })
     }).click();
-    const viewport = page.locator(".resource-navigation");
-    await expectSegmentsFit(viewport);
+    const group = page.locator(".resource-navigation md-outlined-segmented-button-set");
+    await expectSegmentsVisible(group, page.locator("#main-content"));
     for (const zoom of [1, 0.8, 1.25]) {
         await page.evaluate(value => { document.documentElement.style.zoom = String(value); }, zoom);
         for (const name of ["存储库", "用户软件包", "模板"]) {
-            const segment = viewport.getByRole("button", { name, exact: true });
+            const segment = group.getByRole("button", { name, exact: true });
             await segment.click();
             await expect(segment).toHaveAttribute("aria-pressed", "true");
-            await expectSegmentsFit(viewport);
+            await expectSegmentsVisible(group, page.locator("#main-content"));
         }
-        await viewport.screenshot({ path: testInfo.outputPath(`resources-zh-${zoom}.png`), animations: "disabled" });
+        await group.screenshot({ path: testInfo.outputPath(`resources-zh-${zoom}.png`), animations: "disabled" });
     }
 });
 
-test("narrow Resources scroll horizontally for real content without vertical overflow", async ({ page }) => {
-    await page.setViewportSize({ width: 320, height: 800 });
+test("Resources segments remain fully usable in an 800px desktop window", async ({ page }) => {
+    await page.setViewportSize({ width: 800, height: 800 });
     await page.goto("/browser-harness.html?route=/repositories&state=ready");
-    const viewport = page.locator(".resource-navigation");
-    await expect(viewport).toHaveAttribute("data-overlayscrollbars-viewport", /./);
-    const size = await viewport.evaluate(element => [element.clientWidth, element.scrollWidth, element.clientHeight, element.scrollHeight]);
-    expect(size[1]!).toBeGreaterThan(size[0]!);
-    expect(size[3]!).toBeLessThanOrEqual(size[2]!);
-    await expect(viewport.locator(".os-scrollbar-vertical.os-scrollbar-visible")).toHaveCount(0);
-    const last = viewport.getByRole("button").last();
+    const group = page.locator(".resource-navigation md-outlined-segmented-button-set");
+    await expectSegmentsVisible(group, page.locator("#main-content"));
+    const last = group.getByRole("button").last();
     await last.focus();
     await expect(last).toBeFocused();
-    expect(await viewport.evaluate(element => element.scrollLeft)).toBeGreaterThan(0);
-    const bounds = (await viewport.boundingBox())!, button = (await last.boundingBox())!;
-    expect(button.x).toBeGreaterThanOrEqual(bounds.x);
-    expect(button.x + button.width).toBeLessThanOrEqual(bounds.x + bounds.width);
+    await expectSegmentsVisible(group, page.locator("#main-content"));
     await page.keyboard.press("Enter");
     await expect(page.getByRole("table", { name: "Templates", exact: true })).toBeVisible();
 });

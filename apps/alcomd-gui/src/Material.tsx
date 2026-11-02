@@ -115,17 +115,8 @@ export function SegmentedButtons({ id, label, options, showCheckmark = false, va
                 });
             });
         };
-        const revealFocusedSegment = (event: FocusEvent) => {
-            const button = event.composedPath().find((target): target is HTMLElement =>
-                target instanceof HTMLElement && target.parentElement === element);
-            button?.scrollIntoView({ block: "nearest", inline: "nearest" });
-        };
         element.addEventListener("segmented-button-set-selection", select);
-        element.addEventListener("focusin", revealFocusedSegment);
-        return () => {
-            element.removeEventListener("segmented-button-set-selection", select);
-            element.removeEventListener("focusin", revealFocusedSegment);
-        };
+        return () => element.removeEventListener("segmented-button-set-selection", select);
     }, [onChange, options]);
     return <div className="alcomd-segmented-control">
         <div aria-hidden="true" className="alcomd-segmented-sizer" data-checkmark={showCheckmark} inert>

@@ -1634,16 +1634,14 @@ function RepositoryPackageList({ client, repositoryId }: { client: GuiRpcClient;
 function ResourceNavigation({ current, navigate }: { current: string; navigate(path: string): void }) {
     const { t, locale } = useTranslation();
     const canUseUserPackages = useCapability(capabilities.packagesUserPackages);
-    const scrollRef = useScrollArea<HTMLElement>();
-    return <nav aria-label={t("Resources")} className="resource-navigation" ref={scrollRef}><SegmentedButtons label={t("Resource sections")} value={current} onChange={navigate} options={[{ value: "/repositories", label: t("Repositories") }, { value: "/user-packages", label: t("User Packages"), disabled: !canUseUserPackages, title: capabilityUnavailableTitle(canUseUserPackages, capabilities.packagesUserPackages, t) }, { value: "/templates", label: t("Templates") }]} /></nav>;
+    return <nav aria-label={t("Resources")} className="resource-navigation"><SegmentedButtons label={t("Resource sections")} value={current} onChange={navigate} options={[{ value: "/repositories", label: t("Repositories") }, { value: "/user-packages", label: t("User Packages"), disabled: !canUseUserPackages, title: capabilityUnavailableTitle(canUseUserPackages, capabilities.packagesUserPackages, t) }, { value: "/templates", label: t("Templates") }]} /></nav>;
 }
 
 function UtilityNavigation({ current, kind, navigate }: { current: string; kind: "settings" | "logs"; navigate(path: string): void }) {
     const { t, locale } = useTranslation();
     const unity = useCapability(capabilities.unityRead);
-    const scrollRef = useScrollArea<HTMLElement>();
     const items = kind === "settings" ? [{ path: "/settings", label: t("Preferences") }, { path: "/unity", label: t("Unity installations") }] : [{ path: "/activity", label: t("Activity") }, { path: "/diagnostics", label: t("Diagnostics") }];
-    return <nav aria-label={kind === "settings" ? t("Settings sections") : t("Logs")} className="resource-navigation" ref={scrollRef}><SegmentedButtons label={kind === "settings" ? t("Settings sections") : t("Log sections")} value={current} onChange={navigate} options={items.map(({ path, label }) => ({ value: path, label, disabled: path === "/unity" && !unity }))} /></nav>;
+    return <nav aria-label={kind === "settings" ? t("Settings sections") : t("Logs")} className="resource-navigation"><SegmentedButtons label={kind === "settings" ? t("Settings sections") : t("Log sections")} value={current} onChange={navigate} options={items.map(({ path, label }) => ({ value: path, label, disabled: path === "/unity" && !unity }))} /></nav>;
 }
 
 function ActionDisclosure({ children, title }: { children: ReactNode; title: string }) {
