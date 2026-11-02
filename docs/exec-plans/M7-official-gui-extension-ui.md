@@ -566,7 +566,7 @@ fixes and defer uncertain contract-dependent work without blocking unrelated cor
 6. **H5 utilities/observability（阶段性人工验收通过，保留非阻塞体验问题）**：保留 grouped Settings、Log内Activity/Diagnostics与footer About/version，
    只补真实缺失功能及必要整改，保留 A-026 权限分离，复用共享 Material、错误显示与只读 `displayPath`；当前 Config4 窄变更见下方批准记录。
    所有者于 2026-11-02 明确签收，认可删除紧凑模式；保留一般文案、布局与过度设计待办，不表示体验完善或 M7 完成。
-7. **H6 responsive/a11y/Playwright regression（已批准，实施中）**：覆盖已批准 minimum-change user model 的 structural continuity、grouping/workspace/
+7. **H6 responsive/a11y/Playwright regression（本地候选已交付，待人工验收）**：覆盖已批准 minimum-change user model 的 structural continuity、grouping/workspace/
    action placement、Material element presence和observable interaction、theme propagation、wide/narrow/200%/reduced motion；
    不测试Material shadow DOM私有细节。先审计已有实现，只修实际缺口，默认间距保持，不恢复 density，不建立第二套组件；不进入 H7、不推送。
 8. **H7 manual visual signoff（未批准）**：执行更新后的真实GUI checklist和最终screenshots；再进入候选Hosted CI/push审批。
@@ -609,7 +609,8 @@ Config4 当前写入与公开响应只使用新的唯一模型。当前规范及
 当前候选为 `6739705`：Store 19/0、application 17/0、协议合同 7/0、hello/映射/真实隔离 RPC 各 1/0，
 GUI/UI check、保存队列 15 场景、浏览器 76/0 及补充 1/0 已通过；Clippy 初轮测试初始化失败与窄修复验分别保留。
 一次 Core/GUI 必要构建后已实际恢复原环境，Config4 迁移只删除 density，revision 166 和其他偏好不变；新窗口保持打开。
-H5 仍 MANUAL_PENDING，旧轮测试不冒充本轮全套，新增代码无远端验证；不进入 H6/H7、不推送。
+以上为 `6739705` 交付时的历史状态；所有者随后已阶段性签收 H5 并批准 H6，当前授权见下节。
+旧轮测试不冒充本轮全套，新增代码无远端验证；H7 与推送仍未授权。
 
 ## 技术收尾与 H2-B 顺序授权（2026-10-31）
 
@@ -621,6 +622,27 @@ H5 已阶段性人工签收，紧凑模式移除与 Config4 方向获认可；H2
 旧测试若只因可读错误/已删除密度/既有名称变化失配，应保留安全与交互断言并改为当前可观察合同，不能删断言掩盖产品缺陷。
 定向诊断与修复后集中必要浏览器回归，准确区分等效缩放与真实平台/辅助技术结果；未覆盖项留待明确验收。
 只读核对 Config4 现状复用迁移证据，不重跑 Rust/迁移/三平台 CI。H6 候选交付精简结果与人工入口，不进入 H7、不推送、不宣布 M7 完成。
+
+本地安装的 Tauri 2.12.5 配置/类型确认缩放快捷键默认关闭。H6 复用其 `zoomHotkeysEnabled`，
+仅为本地主窗口增加 Tauri 已有的 `core:webview:allow-set-webview-zoom` UI 权限以支持 macOS/Linux 的既有缩放适配；
+Windows 使用 WebView2 原生缩放。不新增 ALCOMD RPC/权限或产品设置。自动化以 720×450 CSS + DPR2 核对
+1440×900 物理窗口的 200% 等效布局，不把改根字号或浏览器结果冒充真实平台快捷键/读屏验收。
+
+#### H6 本地候选与实际交付（2026-11-02）
+
+代码候选 `a4f12a19d5fca0692053bb281fefab472fd60b65` 修正窄窗工具/表单/扩展卡片、Portable 正文滚动、
+主题分段聚焦、Skip 锚点和 SplitButton 真实点击区域。宽屏保持原布局，日语主题保留 intrinsic 宽度，
+沿用 860px 断点在窄窗单列；默认间距和 Config4 保持，不改 Core/RPC/State/扩展合同。
+独立定向 27/11、8/4、13/1、1/0；一次集中 Chromium **383/12**（395 项，16.3m）。
+旧断言、模板公开闭合时序与真实日语列宽分别修正后，失败及受影响路径 **53/1**，剩余新测试定位窄修后仅该项 **1/0**。
+不拼成全套零失败；各轮 186 项输入及失败证据保留，最终输入与一次 GUI release no-bundle 构建一致。
+GUI/UI check、metadata/diff 通过；不重跑 Rust 全量、Core release 或三平台 CI，新增代码仍无远端验证。
+
+原 Core **143516** 持续使用原目录；仅关闭已记录旧 GUI，新 GUI **139052**（窗口 **8393506**，可响应）已打开。
+构建前后项目、Editor、Operation、settings、status 五组完整公开状态全部一致，Config4/revision166 及文件摘要不变。
+没有恢复桌面控制或伪造原生截图，原生缩放/实际读屏和跨平台辅助技术仍未覆盖。
+H6 为 **MANUAL_PENDING**，三项真实窗口清单及复开入口见 [H6 验收记录](../testing/m7-h6-accessibility-20261102.md)。
+H2–H5 原签收保持，H7 与推送仍未授权，M7 进行中。
 
 项目所有者批准先处理当前跨平台测试/启动缺陷与依赖安全问题，再实施既有 H2-B，最后形成
 真实桌面候选并停止人工验收；不重开 H2-A/Visual Gate 2，不重规划 M7 或重做 Projects/Packages。

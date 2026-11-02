@@ -4,13 +4,29 @@
 
 ## 当前阶段
 
-**M7 IN_PROGRESS / H6 IN_PROGRESS / H5 STAGE_ACCEPTED_WITH_FOLLOWUPS / H4 STAGE_ACCEPTED_WITH_FOLLOWUPS / H3 STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。项目所有者于 2026-10-31 签收本轮 H2-A；
+**M7 IN_PROGRESS / H6 MANUAL_PENDING / H5 STAGE_ACCEPTED_WITH_FOLLOWUPS / H4 STAGE_ACCEPTED_WITH_FOLLOWUPS / H3 STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。项目所有者于 2026-10-31 签收本轮 H2-A；
 M0-M6 已正式通过人工验收，M7 尚未完成。
 本文件是唯一当前阶段入口；ExecPlan 定义实施合同，testing 文档保存各自 SHA/场景的证据。
 
 项目所有者于 2026-11-02 确认 **H5 阶段性人工验收通过，保留非阻塞体验问题**，并批准既定 H6 Responsive / Accessibility / Playwright Regression。
-先审计已有桌面/较窄窗口、200% 缩放、键盘/焦点/弹窗、明暗主题和减少动画覆盖，只补真实缺口，复用共享 Material 层。
+已审计已有桌面/较窄窗口、200% 缩放、键盘/焦点/弹窗、明暗主题和减少动画覆盖，只补真实缺口，复用共享 Material 层。
 统一默认间距，不恢复紧凑开关/样式或 density 公共字段；不重做 GUI、不重验 H2–H4。H7 和推送仍未授权，M7 进行中。
+
+### H6 本轮整改与证据
+
+修正窄窗侧栏/工具栏和设置/扩展局部重排、Portable UI 正文滚动、主题分段键盘聚焦可见性与 Skip 锚点焦点被抢回。
+共享 SplitButton 下拉按钮的真实点击区域曾越出外观并抢占主按钮右缘，已删除冗余 spacing 覆盖，保持原尺寸及布局。
+复用 Tauri 原生缩放设置，不新增 Core 合同、Schema 或业务权限。路径继续统一 `displayPath`，默认间距和 Config4 保持。
+定向检查独立 **27/11**、**8/4**、**13/1**，最后只补 320px 受影响用例 **1/0**；各轮失败 trace、截图、日志及 186 项输入摘要保留。
+一次集中浏览器回归 **383/12**（395 项，16.3m），10 项旧断言、1 项模板测试菜单闭合时序、1 项真实日语主题列宽缺陷；
+修正后只补失败及受影响路径 **53/1**（2.4m），原 12 项均通过；新增日语窄窗测试的 host 焦点定位改用公开按钮后，仅该项 **1/0**。
+不将这些结果拼成一次全套通过。原生缩放/读屏不以等效浏览器布局冒充通过。
+本地代码候选 **`a4f12a19d5fca0692053bb281fefab472fd60b65`**；GUI/UI check、metadata/diff 和一次 Tauri release no-bundle 构建通过。
+最终 186 项输入与构建前后相同（清单摘要 `94d8c3…6316e4`）；GUI 摘要 `1d6ae9…839b47`，Core 保持 `6739705` / `b90ec8…5d4687`。
+新 GUI **139052**（窗口 **8393506**，可响应）已使用原 profile 打开，原 Core **143516** 和原数据目录持续运行。
+五组完整公开状态在构建前后全部一致，Config4/revision166 及配置文件摘要不变；没有暂停原 Core 或遗留隔离环境。
+桌面控制仍停用，原生交互等待所有者查看；新增代码仍无对应远端 CI/CodeQL，未推送。
+详情、已验证复开入口和三项人工清单见 [H6 验收记录](testing/m7-h6-accessibility-20261102.md)。
 
 ### H5 已签收记录（各轮独立证据）
 
@@ -367,6 +383,7 @@ Visual Gate 2，没有 M7 或 Hosted CI 通过结论，原未跟踪 `output/` �
 | Extensions / 安装与权限 | 审阅安装、修改授权及操作结果 | 一般提示文案、说明层次和信息位置仍可删减合并，部分操作偏重；共享可读错误整改已获认可。 |
 | Extensions / Portable UI | 打开、切换及关闭扩展页面 | 普通状态与会话说明仍可简化；表单、超时、外部断线及正式 MCP/Discord 业务另列未覆盖，不视为已通过。 |
 | Settings / Log / About | 保存、查看详情和辅助状态 | 一般文案、提示位置及说明层次仍可合并简化；H5 阶段签收保留，不因 H6 全部转为阻塞。 |
+| Logs / Diagnostics | 收到 `package_archive_invalid` 诊断 | 保留真实失败码，但可读原因仍为泛化的“暂时无法识别”；后续补准确简短原因，不代表归档校验失效。 |
 
 后续集中优先删除、合并、改写冗余提示，减少无必要步骤与机制，不增加提示解释过度设计。
 真实错误、操作结果与必要的破坏性确认保持准确；误导危险操作、误报成功、数据损坏或其他实际
