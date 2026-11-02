@@ -140,6 +140,7 @@ pub const METHOD_PROJECTS_PLAN_UNITY_MIGRATION: &str = "projects.planUnityMigrat
 pub const METHOD_PROJECTS_APPLY_UNITY_MIGRATION: &str = "projects.applyUnityMigration";
 pub const METHOD_EXTENSIONS_LIST: &str = "extensions.list";
 pub const METHOD_EXTENSIONS_GET: &str = "extensions.get";
+pub const METHOD_EXTENSIONS_PERMISSIONS_LIST: &str = "extensions.permissions.list";
 pub const METHOD_EXTENSIONS_PLAN_INSTALL: &str = "extensions.planInstall";
 pub const METHOD_EXTENSIONS_APPLY_INSTALL: &str = "extensions.applyInstall";
 pub const METHOD_EXTENSIONS_ENABLE: &str = "extensions.enable";
@@ -189,6 +190,7 @@ pub const CAPABILITY_BACKUPS_CREATE_V1: &str = "backups.create.v1";
 pub const CAPABILITY_BACKUPS_RESTORE_V1: &str = "backups.restore.v1";
 pub const CAPABILITY_EXTENSIONS_LIFECYCLE_V1: &str = "extensions.lifecycle.v1";
 pub const CAPABILITY_EXTENSIONS_PERMISSIONS_V1: &str = "extensions.permissions.v1";
+pub const CAPABILITY_EXTENSIONS_PERMISSIONS_READ_V1: &str = "extensions.permissions.read.v1";
 pub const CAPABILITY_EXTENSIONS_UI_PORTABLE_V1: &str = "extensions.ui.portable.v1";
 
 /// Stable RPC v1 error codes implemented through M2.
@@ -3074,6 +3076,36 @@ pub struct ExtensionIdParams {
     pub extension_id: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionPermissionsListParams {
+    pub extension_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionPermissionGrant {
+    pub permission: String,
+    pub resource_kind: String,
+    pub resource_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionPermissionsListResult {
+    pub extension_id: String,
+    pub grant_revision: u64,
+    pub required_permissions: Vec<String>,
+    pub optional_permissions: Vec<String>,
+    pub grants: Vec<ExtensionPermissionGrant>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExtensionSourceKind {
@@ -3205,6 +3237,8 @@ pub struct ExtensionPlan {
     pub trust_decision: ExtensionTrustDecision,
     pub data_disposition: String,
     pub plan_fingerprint: String,
+    pub required_permissions: Vec<String>,
+    pub optional_permissions: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ui_protocol: Option<ExtensionUiProtocol>,
 }

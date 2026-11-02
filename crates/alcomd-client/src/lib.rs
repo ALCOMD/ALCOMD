@@ -140,6 +140,7 @@ impl AlcomdClient {
                 alcomd_protocol::CAPABILITY_BACKUPS_RESTORE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_EXTENSIONS_LIFECYCLE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_EXTENSIONS_PERMISSIONS_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_EXTENSIONS_PERMISSIONS_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_EXTENSIONS_UI_PORTABLE_V1.to_owned(),
             ],
         };
@@ -274,6 +275,14 @@ impl AlcomdClient {
             alcomd_protocol::ExtensionIdParams { extension_id },
         )
         .await
+    }
+
+    pub async fn extension_permissions_list(
+        &mut self,
+        params: alcomd_protocol::ExtensionPermissionsListParams,
+    ) -> Result<alcomd_protocol::ExtensionPermissionsListResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_EXTENSIONS_PERMISSIONS_LIST, params)
+            .await
     }
 
     pub async fn extension_plan_install(

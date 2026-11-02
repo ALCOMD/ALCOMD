@@ -1419,6 +1419,20 @@ async fn gui_extension_get(
 }
 
 #[tauri::command]
+async fn gui_extension_permissions_list(
+    state: State<'_, GuiClientState>,
+    params: alcomd_protocol::ExtensionPermissionsListParams,
+) -> Result<alcomd_protocol::ExtensionPermissionsListResult, RpcError> {
+    let mut client = state.client.lock().await;
+    connect_if_needed(&mut client).await?;
+    let result = match client.as_mut() {
+        Some(client) => client.extension_permissions_list(params).await,
+        None => return Err(daemon_unavailable()),
+    };
+    finish_call(&mut client, result)
+}
+
+#[tauri::command]
 async fn gui_extension_plan_install(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::ExtensionPlanInstallParams,
@@ -1718,6 +1732,7 @@ pub fn run() {
             gui_backup_apply_restore,
             gui_extensions_list,
             gui_extension_get,
+            gui_extension_permissions_list,
             gui_extension_plan_install,
             gui_extension_apply_install,
             gui_extension_enable,

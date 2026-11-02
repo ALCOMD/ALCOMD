@@ -12,7 +12,9 @@ pub(super) async fn dispatch(
     application: &M6ExtensionApplication,
     access: &AccessContext,
 ) -> DispatchAction {
-    let capability = if matches!(
+    let capability = if request.method == rpc::METHOD_EXTENSIONS_PERMISSIONS_LIST {
+        rpc::CAPABILITY_EXTENSIONS_PERMISSIONS_READ_V1
+    } else if matches!(
         request.method.as_str(),
         rpc::METHOD_EXTENSIONS_SET_GRANT | rpc::METHOD_EXTENSIONS_REVOKE_GRANT
     ) {
@@ -58,6 +60,48 @@ pub(super) async fn dispatch(
                     request.id,
                     rpc::ExtensionResult {
                         extension: record(value),
+                    },
+                    None,
+                ),
+                Err(error) => extension_error(request.id, error),
+            }
+        }
+        rpc::METHOD_EXTENSIONS_PERMISSIONS_LIST => {
+            let params: rpc::ExtensionPermissionsListParams =
+                match serde_json::from_value(request.params) {
+                    Ok(value) => value,
+                    Err(_) => return invalid(request.id),
+                };
+            let cursor = match params.cursor.map(parse_permissions_cursor).transpose() {
+                Ok(value) => value,
+                Err(()) => return invalid(request.id),
+            };
+            match application
+                .list_permissions(
+                    access,
+                    params.extension_id,
+                    cursor,
+                    params.limit.unwrap_or(100),
+                )
+                .await
+            {
+                Ok(page) => success_action(
+                    request.id,
+                    rpc::ExtensionPermissionsListResult {
+                        extension_id: page.extension_id,
+                        grant_revision: page.grant_revision.get(),
+                        required_permissions: page.required_permissions,
+                        optional_permissions: page.optional_permissions,
+                        grants: page
+                            .grants
+                            .into_iter()
+                            .map(|grant| rpc::ExtensionPermissionGrant {
+                                permission: grant.permission,
+                                resource_kind: grant.resource_kind,
+                                resource_id: grant.resource_id,
+                            })
+                            .collect(),
+                        next_cursor: page.next_cursor.map(format_permissions_cursor),
                     },
                     None,
                 ),
@@ -286,6 +330,31 @@ fn format_cursor(value: app::ExtensionCursor) -> String {
     format!("m6e1:{}", hex(value.last_extension_id().as_bytes()))
 }
 
+fn parse_permissions_cursor(value: String) -> Result<app::ExtensionPermissionsCursor, ()> {
+    if value.len() > 4_096 {
+        return Err(());
+    }
+    let encoded = value.strip_prefix("m6p1:").ok_or(())?;
+    if encoded.is_empty() || !encoded.len().is_multiple_of(2) {
+        return Err(());
+    }
+    let bytes = encoded
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| {
+            u8::from_str_radix(std::str::from_utf8(pair).map_err(|_| ())?, 16).map_err(|_| ())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let cursor: app::ExtensionPermissionsCursor = serde_json::from_slice(&bytes).map_err(|_| ())?;
+    cursor.validate().map_err(|_| ())?;
+    Ok(cursor)
+}
+
+fn format_permissions_cursor(value: app::ExtensionPermissionsCursor) -> String {
+    let encoded = serde_json::to_vec(&value).expect("bounded extension permissions cursor");
+    format!("m6p1:{}", hex(&encoded))
+}
+
 fn record(value: app::ExtensionRecord) -> rpc::ExtensionRecord {
     rpc::ExtensionRecord {
         extension_id: value.extension_id,
@@ -362,6 +431,8 @@ fn plan(value: app::ExtensionPlanRecord) -> rpc::ExtensionPlan {
         }
         .to_owned(),
         plan_fingerprint: hex(&value.plan_fingerprint),
+        required_permissions: value.evidence.required_permissions,
+        optional_permissions: value.evidence.optional_permissions,
         ui_protocol: value.evidence.ui_protocol.map(|protocol| match protocol {
             app::ExtensionUiProtocol::PortableV1 => rpc::ExtensionUiProtocol::PortableV1,
         }),
@@ -425,6 +496,7 @@ fn hex(value: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use app::M6Store;
 
     #[test]
     fn extension_cursor_is_versioned_opaque_and_fail_closed() {
@@ -449,5 +521,203 @@ mod tests {
         ] {
             assert!(parse_cursor(invalid.to_owned()).is_err(), "{invalid}");
         }
+    }
+
+    #[test]
+    fn permissions_cursor_binds_package_record_and_exact_keyset_without_exposing_paths() {
+        let extension_id = format!("dev.{}", "x".repeat(251));
+        let cursor = app::ExtensionPermissionsCursor {
+            extension_id: extension_id.clone(),
+            grant_revision: Revision::INITIAL,
+            record_revision: Revision::INITIAL,
+            package_digest: [255; 32],
+            manifest_digest: [254; 32],
+            component_digest: [253; 32],
+            installed_at_ms: i64::MAX as u64,
+            install_plan_id: app::PlanId::new(),
+            after: app::ExtensionPermissionGrant {
+                permission: "background.run".to_owned(),
+                resource_kind: "Extension".to_owned(),
+                resource_id: extension_id,
+            },
+        };
+        let encoded = format_permissions_cursor(cursor.clone());
+        assert!(encoded.len() <= 4_096);
+        assert!(encoded.starts_with("m6p1:"));
+        assert!(!encoded.contains("dev."));
+        assert_eq!(
+            parse_permissions_cursor(encoded).expect("cursor round trip"),
+            cursor
+        );
+        for invalid in ["", "m6p2:00", "m6p1:", "m6p1:0", "m6p1:zz"] {
+            assert!(parse_permissions_cursor(invalid.to_owned()).is_err());
+        }
+        let mut malformed = serde_json::to_value(cursor).expect("cursor JSON");
+        malformed["grantRevision"] = serde_json::json!(0);
+        assert!(
+            parse_permissions_cursor(format!(
+                "m6p1:{}",
+                hex(&serde_json::to_vec(&malformed).expect("malformed cursor"))
+            ))
+            .is_err()
+        );
+    }
+
+    fn permissions_evidence() -> app::ExtensionPackageEvidence {
+        app::ExtensionPackageEvidence {
+            source_kind: app::ExtensionSourceKind::LocalOwnerSelected,
+            source_locator: "C:/fixture/permissions.alcomdext".to_owned(),
+            source_identity: vec![1; 16],
+            extension_id: "dev.example.permissions".to_owned(),
+            version: "1.0.0".to_owned(),
+            api_major: 1,
+            profile_version: 1,
+            package_digest: [1; 32],
+            manifest_digest: [2; 32],
+            component_digest: [3; 32],
+            publisher_fingerprint: format!("ed25519-sha256:{}", "a".repeat(64)),
+            required_permissions: vec!["background.run".to_owned()],
+            optional_permissions: vec!["projects.read".to_owned()],
+            required_interfaces: vec![],
+            optional_interfaces: vec![],
+            ui_protocol: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn permissions_read_rpc_requires_capability_permission_owner_and_preserves_frozen_plan_fields()
+     {
+        let root =
+            std::env::temp_dir().join(format!("alcomd-h4-permissions-rpc-{}", OperationId::new()));
+        std::fs::create_dir(&root).expect("own permissions test root");
+        let store = alcomd_store::StateStoreHandle::open(root.join("state.db"))
+            .expect("own permissions store");
+        let evidence = permissions_evidence();
+        let install = store
+            .create_install_plan(
+                app::PrincipalId::local_owner(),
+                app::ExtensionInstallPlanDraft {
+                    evidence: evidence.clone(),
+                    trust_decision: app::ExtensionTrustDecision::UserApprovedForExtension,
+                    expected_revision: None,
+                    plan_fingerprint: [4; 32],
+                },
+                1,
+            )
+            .await
+            .expect("frozen plan");
+        let projected = plan(install.clone());
+        assert_eq!(
+            projected.required_permissions,
+            evidence.required_permissions
+        );
+        assert_eq!(
+            projected.optional_permissions,
+            evidence.optional_permissions
+        );
+        let accepted = store
+            .accept_plan(
+                app::PrincipalId::local_owner(),
+                install.plan_id,
+                IdempotencyKey::parse("permissions-read-install").expect("key"),
+                2,
+            )
+            .await
+            .expect("accept");
+        store
+            .begin_apply(accepted.operation_id, 3)
+            .await
+            .expect("begin");
+        store
+            .finish_install(accepted.operation_id, "<PERMISSIONS_PACKAGE>".to_owned(), 4)
+            .await
+            .expect("install state");
+        store
+            .complete_operation(accepted.operation_id, 5)
+            .await
+            .expect("complete");
+        let runtime = super::super::m6_runtime::PlatformExtensionRuntime::new(store.clone())
+            .expect("runtime adapter without starting a host");
+        let engine =
+            alcomd_extensions::ExtensionEngine::new(store.clone(), root.join("extensions"))
+                .expect("package adapter");
+        let application = app::M6Application::new(
+            store.clone(),
+            engine,
+            runtime,
+            std::sync::Arc::new(app::ResourceLockCoordinator::default()),
+        );
+        let state = ConnectionState {
+            connection_id: "permissions-read-test".to_owned(),
+            client_instance_id: Some("permissions-test".to_owned()),
+            handshake_complete: true,
+            capabilities: std::collections::HashSet::from([
+                rpc::CAPABILITY_EXTENSIONS_PERMISSIONS_READ_V1.to_owned(),
+            ]),
+        };
+        let request = |params| rpc::RequestEnvelope {
+            id: "permissions-read".to_owned(),
+            method: rpc::METHOD_EXTENSIONS_PERMISSIONS_LIST.to_owned(),
+            params,
+        };
+        let params = serde_json::json!({"extensionId":evidence.extension_id});
+        let result = dispatch(
+            request(params.clone()),
+            &state,
+            &application,
+            &AccessContext::local_owner(),
+        )
+        .await;
+        let typed: rpc::SuccessResponse<rpc::ExtensionPermissionsListResult> =
+            serde_json::from_value(result.response).expect("typed current permission read");
+        assert!(
+            typed.result.grants.is_empty(),
+            "declarations do not auto-grant"
+        );
+        assert_eq!(
+            typed.result.required_permissions,
+            evidence.required_permissions
+        );
+        assert_eq!(
+            typed.result.optional_permissions,
+            evidence.optional_permissions
+        );
+        let denied = AccessContext::new(app::PrincipalId::local_owner(), []);
+        let result = dispatch(request(params.clone()), &state, &application, &denied).await;
+        assert_eq!(result.response["error"]["code"], "permission_denied");
+        let other = AccessContext::new(
+            app::PrincipalId::parse("fixture:other-owner").expect("other owner"),
+            [app::Permission::ExtensionsRead],
+        );
+        let result = dispatch(request(params.clone()), &state, &application, &other).await;
+        assert_eq!(result.response["error"]["code"], "extension_not_installed");
+        for limit in [0, 1_001] {
+            let result = dispatch(
+                request(serde_json::json!({"extensionId":evidence.extension_id,"limit":limit})),
+                &state,
+                &application,
+                &AccessContext::local_owner(),
+            )
+            .await;
+            assert_eq!(result.response["error"]["code"], "invalid_request");
+        }
+        let no_capability = ConnectionState {
+            capabilities: std::collections::HashSet::new(),
+            ..state
+        };
+        let result = dispatch(
+            request(params),
+            &no_capability,
+            &application,
+            &AccessContext::local_owner(),
+        )
+        .await;
+        assert!(
+            result.response.get("error").is_some(),
+            "no read capability means no query"
+        );
+        drop(application);
+        drop(store);
+        std::fs::remove_dir_all(&root).expect("remove owned isolated permissions fixture");
     }
 }

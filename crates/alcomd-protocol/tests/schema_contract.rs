@@ -9,7 +9,7 @@ use alcomd_protocol::{
     RequestEnvelope, StateCheckParams, SuccessResponse, SystemStatusResult,
 };
 
-const SCHEMAS: [(&str, &str); 27] = [
+const SCHEMAS: [(&str, &str); 28] = [
     (
         "request-envelope",
         include_str!("../../../specs/rpc/request-envelope.schema.json"),
@@ -115,6 +115,10 @@ const SCHEMAS: [(&str, &str); 27] = [
         include_str!("../../../specs/rpc/m7-official-gui.schema.json"),
     ),
     (
+        "m6-extension-runtime",
+        include_str!("../../../specs/rpc/m6-extension-runtime.schema.json"),
+    ),
+    (
         "m7-repository-list",
         include_str!("../../../specs/rpc/m7-repository-list.schema.json"),
     ),
@@ -136,6 +140,73 @@ fn all_rpc_v1_schemas_are_valid_json_schema_documents() {
                 .is_some_and(|id| id.contains("/rpc/v1/"))
         );
     }
+}
+
+#[test]
+fn m6_permissions_read_contract_is_bounded_owner_scoped_and_snapshot_bound() {
+    let contract = schema("m6-extension-runtime");
+    assert_eq!(
+        contract["x-alcomd-method-permissions"]["extensions.permissions.list"],
+        json!(["extensions.read"])
+    );
+    assert_eq!(
+        contract["x-alcomd-method-results"]["extensions.permissions.list"],
+        "#/$defs/permissionsListResult"
+    );
+    assert_eq!(
+        contract["x-alcomd-permissions-pagination"]["order"],
+        json!(["permission", "resourceKind", "resourceId"])
+    );
+    assert_eq!(
+        contract["x-alcomd-permissions-pagination"]["changedSnapshotError"],
+        "revision_conflict"
+    );
+    assert_eq!(contract["$defs"]["permissionDeclarations"]["maxItems"], 64);
+    assert_eq!(
+        contract["$defs"]["permissionDeclarations"]["items"]["maxLength"],
+        128
+    );
+    assert_eq!(
+        contract["$defs"]["permissionsListParams"]["additionalProperties"],
+        false
+    );
+    assert_eq!(
+        contract["$defs"]["permissionsListParams"]["properties"]["limit"]["maximum"],
+        1_000
+    );
+    let params: alcomd_protocol::ExtensionPermissionsListParams =
+        serde_json::from_value(json!({"extensionId":"dev.example.fixture"}))
+            .expect("optional paging");
+    assert!(params.cursor.is_none());
+    assert!(params.limit.is_none());
+    assert!(
+        serde_json::from_value::<alcomd_protocol::ExtensionPermissionsListParams>(
+            json!({"extensionId":"dev.example.fixture", "owner":"other"})
+        )
+        .is_err()
+    );
+    let result = alcomd_protocol::ExtensionPermissionsListResult {
+        extension_id: "dev.example.fixture".to_owned(),
+        grant_revision: 3,
+        required_permissions: vec!["background.run".to_owned()],
+        optional_permissions: vec!["projects.read".to_owned()],
+        grants: vec![alcomd_protocol::ExtensionPermissionGrant {
+            permission: "projects.read".to_owned(),
+            resource_kind: "Project".to_owned(),
+            resource_id: "00000000-0000-4000-8000-000000000001".to_owned(),
+        }],
+        next_cursor: None,
+    };
+    let value = serde_json::to_value(result).expect("typed permissions result");
+    assert_eq!(
+        value,
+        json!({"extensionId":"dev.example.fixture","grantRevision":3,"requiredPermissions":["background.run"],"optionalPermissions":["projects.read"],"grants":[{"permission":"projects.read","resourceKind":"Project","resourceId":"00000000-0000-4000-8000-000000000001"}]})
+    );
+    let required = contract["$defs"]["planRecord"]["required"]
+        .as_array()
+        .expect("plan required fields");
+    assert!(required.contains(&json!("requiredPermissions")));
+    assert!(required.contains(&json!("optionalPermissions")));
 }
 
 #[test]

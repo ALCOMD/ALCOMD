@@ -2,10 +2,11 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m6-extension-runtime.json",
     "title": "ALCOMD RPC v1 M6 Extension Runtime contract",
-    "x-alcomd-publication": "contract-only-until-production-capability-exists",
+    "x-alcomd-publication": "active-production-contract",
     "x-alcomd-method-permissions": {
         "extensions.list": ["extensions.read"],
         "extensions.get": ["extensions.read"],
+        "extensions.permissions.list": ["extensions.read"],
         "extensions.planInstall": ["extensions.manage"],
         "extensions.applyInstall": ["extensions.manage"],
         "extensions.enable": ["extensions.manage"],
@@ -18,6 +19,7 @@
     "x-alcomd-method-results": {
         "extensions.list": "#/$defs/listResult",
         "extensions.get": "#/$defs/extensionResult",
+        "extensions.permissions.list": "#/$defs/permissionsListResult",
         "extensions.planInstall": "#/$defs/planResult",
         "extensions.applyInstall": "#/$defs/operationResult",
         "extensions.enable": "#/$defs/extensionResult",
@@ -33,16 +35,27 @@
         "cursor": "versioned opaque encoding of format version and last ExtensionId",
         "invalidCursorError": "invalid_request"
     },
+    "x-alcomd-permissions-pagination": {
+        "kind": "deterministic-keyset",
+        "order": ["permission", "resourceKind", "resourceId"],
+        "defaultLimit": 100,
+        "maximumLimit": 1000,
+        "cursor": "versioned opaque encoding bound to ExtensionId, grantRevision and the installed package/record snapshot",
+        "snapshot": "one read transaction; declarations come from the corresponding applied immutable install Plan",
+        "changedSnapshotError": "revision_conflict",
+        "invalidCursorError": "invalid_request",
+        "scope": "current extension owner; active grants only; no implicit authorization or persistent query session"
+    },
     "$defs": {
         "methodName": {
             "enum": [
-                "extensions.list", "extensions.get", "extensions.planInstall",
+                "extensions.list", "extensions.get", "extensions.permissions.list", "extensions.planInstall",
                 "extensions.applyInstall", "extensions.enable", "extensions.disable",
                 "extensions.planUninstall", "extensions.applyUninstall",
                 "extensions.setGrant", "extensions.revokeGrant"
             ]
         },
-        "capability": {"enum": ["extensions.lifecycle.v1", "extensions.permissions.v1"]},
+        "capability": {"enum": ["extensions.lifecycle.v1", "extensions.permissions.v1", "extensions.permissions.read.v1"]},
         "extensionId": {
             "type": "string", "minLength": 3, "maxLength": 255,
             "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"
@@ -94,6 +107,18 @@
             "type": "object", "additionalProperties": false, "required": ["extensionId"],
             "properties": {"extensionId": {"$ref": "#/$defs/extensionId"}}
         },
+        "permissionsListParams": {
+            "type": "object", "additionalProperties": false, "required": ["extensionId"],
+            "properties": {
+                "extensionId": {"$ref": "#/$defs/extensionId"},
+                "cursor": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 1000}
+            }
+        },
+        "permissionDeclarations": {
+            "type": "array", "maxItems": 64,
+            "items": {"type": "string", "minLength": 1, "maxLength": 128}
+        },
         "planInstallParams": {
             "type": "object", "additionalProperties": false,
             "required": ["sourceKind", "packagePath", "expectedRevision", "publisherApproval"],
@@ -118,7 +143,7 @@
             "required": [
                 "planId", "action", "state", "sourceKind", "extensionId", "packageDigest",
                 "version", "apiMajor", "profileVersion", "publisherFingerprint",
-                "trustDecision", "dataDisposition", "planFingerprint"
+                "trustDecision", "dataDisposition", "planFingerprint", "requiredPermissions", "optionalPermissions"
             ],
             "properties": {
                 "planId": {"$ref": "#/$defs/uuid"},
@@ -134,6 +159,8 @@
                 "trustDecision": {"enum": ["official", "user_approved_for_extension"]},
                 "dataDisposition": {"enum": ["not_applicable", "retain_data", "delete_data"]},
                 "planFingerprint": {"$ref": "#/$defs/sha256"},
+                "requiredPermissions": {"$ref": "#/$defs/permissionDeclarations"},
+                "optionalPermissions": {"$ref": "#/$defs/permissionDeclarations"},
                 "uiProtocol": {"enum": ["portable-v1"]}
             }
         },
@@ -205,6 +232,27 @@
                 "grantRevision": {"$ref": "#/$defs/revision"},
                 "state": {"enum": ["granted", "revoked"]},
                 "replayed": {"type": "boolean"}
+            }
+        },
+        "permissionGrant": {
+            "type": "object", "additionalProperties": false,
+            "required": ["permission", "resourceKind", "resourceId"],
+            "properties": {
+                "permission": {"enum": ["background.run", "projects.read"]},
+                "resourceKind": {"enum": ["Extension", "Project"]},
+                "resourceId": {"type": "string", "minLength": 3, "maxLength": 255}
+            }
+        },
+        "permissionsListResult": {
+            "type": "object", "additionalProperties": true,
+            "required": ["extensionId", "grantRevision", "requiredPermissions", "optionalPermissions", "grants"],
+            "properties": {
+                "extensionId": {"$ref": "#/$defs/extensionId"},
+                "grantRevision": {"$ref": "#/$defs/revision"},
+                "requiredPermissions": {"$ref": "#/$defs/permissionDeclarations"},
+                "optionalPermissions": {"$ref": "#/$defs/permissionDeclarations"},
+                "grants": {"type": "array", "maxItems": 1000, "items": {"$ref": "#/$defs/permissionGrant"}},
+                "nextCursor": {"type": "string", "minLength": 1, "maxLength": 4096}
             }
         }
     }

@@ -911,6 +911,29 @@ Core 继续使用 `efdb133` 的 `ef371…1b5ca`，不重复 Rust/浏览器全套
 Portable UI 的文档、草稿、action 与 session authority 保持原合同；不增加页面发现、额外窗口或第二套任务机制。
 稳定候选集中做受影响浏览器/GUI 检查与必要构建，真实窗口交付实际范围、未覆盖项与简短清单；H4 人工签收由所有者确认。
 
+#### H4 权限只读缺口：已批准的最小公共合同
+
+现有 `extensions.get` 只有 grantRevision，不返回权限声明或已授权 scope；公开接口只有 set/revoke，GUI 无法
+如实展示“已授予哪些项目”。安装 Plan 内已有冻结的 required/optional permissions，但 RPC 投影未返回，无法审阅。
+推荐只增加以下只读信息，复用既有 Core 表与权限权威，不改 State Schema、Portable UI 协议或运行时：
+
+- `ExtensionPlan` 兼容增加 `requiredPermissions` / `optionalPermissions` 数组，直接投影冻结 Plan evidence；每组沿用
+  Manifest 的最多 64 项、每项 128 字符约束，不以 GUI 表单/猜测代替。新 GUI 缺少这些证据时明确提示审阅不可用。
+- 新增 `extensions.permissions.list({extensionId,cursor?,limit?})` 与 capability `extensions.permissions.read.v1`，
+  需要现有 `extensions.read`、当前 Principal 对该 ExtensionId 的所有权；不新增 permission 或扩大 grant 能力。
+  返回 `{extensionId,grantRevision,requiredPermissions,optionalPermissions,grants,nextCursor?}`；grants 只列当前有效的
+  `{permission,resourceKind,resourceId}`，不返回历史撤销、凭据、Host 身份或数据。默认 100、最大 1000 项，按三字段
+  keyset 分页；游标绑定 ExtensionId、grantRevision 及已安装包快照，读取同一事务内的声明和有效 grants，授权或包变化用既有
+  `revision_conflict` 拒绝后续页，要求重读，不能拼接不同 revision 的授权集合。
+- GUI 在既有详情/权限弹窗显示声明、实际权限和具体项目范围；set/revoke 继续使用返回的 grantRevision 显式提交，
+  不自动授权、不伪造空集合、不提供通配范围。本提案不增加 marketplace、升级、外部服务权限或 M8/M9 产品功能。
+
+所有者已明确批准直接实施本合同，先同步 Schema/测试，不再停一轮纯文档审批。声明来自已冻结 Plan evidence，
+不在审阅时从可变来源重读；实际 grants 只来自 Core 当前权威记录。GUI 用清楚名称和实际范围区分“申请什么”与
+“已允许什么”，不堆原始 JSON/revision/权限字符串，不增加持久查询会话或缓存；失效读取不能覆盖新状态。
+定向覆盖无/部分授权、项目 scope、未授权访问、分页中撤销或包变化、Plan 声明不漂移，以及 GUI 读取失败/刷新/变更后展示。
+新增代码没有 Hosted CI/CodeQL 结果，不复用旧 SHA 作为本轮通过；不推送、不进入 H5-H7。
+
 ## Progress log
 
 - 2026-08-24：M6完成；M7最初研究WebView-based UI。

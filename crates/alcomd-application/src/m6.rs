@@ -136,6 +136,62 @@ pub struct ExtensionPage {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionPermissionGrant {
+    pub permission: String,
+    pub resource_kind: String,
+    pub resource_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ExtensionPermissionsCursor {
+    pub extension_id: String,
+    pub grant_revision: Revision,
+    pub record_revision: Revision,
+    pub package_digest: [u8; 32],
+    pub manifest_digest: [u8; 32],
+    pub component_digest: [u8; 32],
+    pub installed_at_ms: u64,
+    pub install_plan_id: PlanId,
+    pub after: ExtensionPermissionGrant,
+}
+
+impl ExtensionPermissionsCursor {
+    pub fn validate(&self) -> Result<(), M6Error> {
+        let scope_valid = match (
+            self.after.permission.as_str(),
+            self.after.resource_kind.as_str(),
+        ) {
+            ("background.run", "Extension") => self.after.resource_id == self.extension_id,
+            ("projects.read", "Project") => {
+                crate::ProjectId::parse(&self.after.resource_id).is_ok()
+            }
+            _ => false,
+        };
+        if !valid_extension_id(&self.extension_id)
+            || Revision::new(self.grant_revision.get()).is_none()
+            || Revision::new(self.record_revision.get()).is_none()
+            || self.installed_at_ms > i64::MAX as u64
+            || !scope_valid
+        {
+            return Err(M6Error::new(M6ErrorCode::InvalidInput));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExtensionPermissionsPage {
+    pub extension_id: String,
+    pub grant_revision: Revision,
+    pub required_permissions: Vec<String>,
+    pub optional_permissions: Vec<String>,
+    pub grants: Vec<ExtensionPermissionGrant>,
+    pub next_cursor: Option<ExtensionPermissionsCursor>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionPlanRecord {
     pub plan_id: PlanId,
@@ -457,6 +513,13 @@ pub trait M6Store: Clone + Send + Sync + 'static {
         owner: PrincipalId,
         extension_id: String,
     ) -> impl Future<Output = Result<ExtensionRecord, M6Error>> + Send;
+    fn list_permissions(
+        &self,
+        owner: PrincipalId,
+        extension_id: String,
+        cursor: Option<ExtensionPermissionsCursor>,
+        limit: u32,
+    ) -> impl Future<Output = Result<ExtensionPermissionsPage, M6Error>> + Send;
     fn live_package_locator(
         &self,
         owner: PrincipalId,
@@ -740,6 +803,32 @@ impl<S: M6Store, P: M6PackageAdapter, R: M6RuntimeAdapter> M6Application<S, P, R
             .map_err(map_access)?;
         self.store
             .get_extension(access.principal().clone(), extension_id)
+            .await
+    }
+
+    pub async fn list_permissions(
+        &self,
+        access: &AccessContext,
+        extension_id: String,
+        cursor: Option<ExtensionPermissionsCursor>,
+        limit: u32,
+    ) -> Result<ExtensionPermissionsPage, M6Error> {
+        access
+            .require(Permission::ExtensionsRead)
+            .map_err(map_access)?;
+        if !valid_extension_id(&extension_id)
+            || !(1..=1_000).contains(&limit)
+            || cursor
+                .as_ref()
+                .is_some_and(|value| value.extension_id != extension_id)
+        {
+            return Err(M6Error::new(M6ErrorCode::InvalidInput));
+        }
+        if let Some(value) = &cursor {
+            value.validate()?;
+        }
+        self.store
+            .list_permissions(access.principal().clone(), extension_id, cursor, limit)
             .await
     }
 

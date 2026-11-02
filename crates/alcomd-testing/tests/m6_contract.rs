@@ -303,18 +303,26 @@ fn state_rpc_errors_and_publication_boundary_are_frozen() {
     );
     assert_eq!(
         rpc["$defs"]["capability"]["enum"],
-        json!(["extensions.lifecycle.v1", "extensions.permissions.v1"])
+        json!([
+            "extensions.lifecycle.v1",
+            "extensions.permissions.v1",
+            "extensions.permissions.read.v1"
+        ])
     );
     assert_eq!(
         rpc["$defs"]["methodName"]["enum"]
             .as_array()
             .expect("methods")
             .len(),
-        10
+        11
     );
     for (method, result) in [
         ("extensions.list", "#/$defs/listResult"),
         ("extensions.get", "#/$defs/extensionResult"),
+        (
+            "extensions.permissions.list",
+            "#/$defs/permissionsListResult",
+        ),
         ("extensions.planInstall", "#/$defs/planResult"),
         ("extensions.applyInstall", "#/$defs/operationResult"),
         ("extensions.enable", "#/$defs/extensionResult"),
@@ -337,6 +345,27 @@ fn state_rpc_errors_and_publication_boundary_are_frozen() {
     assert_eq!(
         rpc["$defs"]["planRecord"]["properties"]["profileVersion"]["const"],
         1
+    );
+    assert_eq!(
+        rpc["x-alcomd-method-permissions"]["extensions.permissions.list"],
+        json!(["extensions.read"])
+    );
+    assert_eq!(rpc["$defs"]["permissionDeclarations"]["maxItems"], 64);
+    assert_eq!(
+        rpc["$defs"]["permissionDeclarations"]["items"]["maxLength"],
+        128
+    );
+    assert_eq!(
+        rpc["x-alcomd-permissions-pagination"]["order"],
+        json!(["permission", "resourceKind", "resourceId"])
+    );
+    assert_eq!(
+        rpc["x-alcomd-permissions-pagination"]["changedSnapshotError"],
+        "revision_conflict"
+    );
+    assert_eq!(
+        rpc["$defs"]["permissionsListResult"]["properties"]["grants"]["maxItems"],
+        1_000
     );
     assert_eq!(
         rpc["$defs"]["listResult"]["properties"]["extensions"]["maxItems"],
@@ -439,7 +468,9 @@ fn scan_forbidden_m6_publication(path: &Path) {
                 .file_name()
                 .and_then(|name| name.to_str())
                 .unwrap_or("");
-            if !matches!(name, "target" | "node_modules" | "dist") {
+            // Browser and integration fixtures record public RPC names; this
+            // boundary check applies to production sources, not their tests.
+            if !matches!(name, "target" | "node_modules" | "dist" | "tests") {
                 scan_forbidden_m6_publication(&child);
             }
         }

@@ -52,6 +52,355 @@ fn cleanup(path: &Path) {
     }
 }
 
+async fn permissions_fixture(name: &str) -> (StateStoreHandle, PathBuf, ExtensionPackageEvidence) {
+    let path = database_path(name);
+    let store = StateStoreHandle::open(path.clone()).expect("permissions store");
+    let owner = PrincipalId::local_owner();
+    let package = evidence();
+    let draft = |package| ExtensionInstallPlanDraft {
+        evidence: package,
+        trust_decision: ExtensionTrustDecision::UserApprovedForExtension,
+        expected_revision: None,
+        plan_fingerprint: [8; 32],
+    };
+    let plan = store
+        .create_install_plan(owner.clone(), draft(package.clone()), 1_000)
+        .await
+        .expect("frozen install plan");
+    let mut uninstalled = package.clone();
+    uninstalled.required_permissions.clear();
+    uninstalled.optional_permissions.clear();
+    store
+        .create_install_plan(owner.clone(), draft(uninstalled), 1_001)
+        .await
+        .expect("unapplied plan must not replace declarations");
+    let accepted = store
+        .accept_plan(
+            owner,
+            plan.plan_id,
+            IdempotencyKey::parse("permissions-install").expect("key"),
+            1_002,
+        )
+        .await
+        .expect("accept install");
+    store
+        .begin_apply(accepted.operation_id, 1_003)
+        .await
+        .expect("begin install");
+    store
+        .finish_install(
+            accepted.operation_id,
+            "<EXTENSION_ROOT>/permissions".to_owned(),
+            1_004,
+        )
+        .await
+        .expect("finish install");
+    store
+        .complete_operation(accepted.operation_id, 1_005)
+        .await
+        .expect("complete install");
+    (store, path, package)
+}
+
+async fn permission_project(store: &StateStoreHandle, index: u8) -> ProjectId {
+    store
+        .register_project(
+            PrincipalId::local_owner(),
+            ProjectObservation {
+                root_path: format!("<PROJECT_ROOT>/permissions-{index}"),
+                path_identity_key: vec![index],
+                project_type: ProjectType::Avatars,
+                unity_version: "2022.3.22f1".to_owned(),
+                unity_revision: None,
+                vpm_manifest: ManifestState::Valid,
+                upm_manifest: ManifestState::Valid,
+                direct_dependencies: vec![],
+                locked_dependencies: vec![],
+                issues: vec![],
+            },
+            IdempotencyKey::parse(format!("permissions-project-{index}")).expect("project key"),
+            1_010 + u64::from(index),
+        )
+        .await
+        .expect("scope project")
+        .value
+        .project_id
+}
+
+async fn permission_mutation(
+    store: &StateStoreHandle,
+    extension_id: &str,
+    project: Option<ProjectId>,
+    grant: bool,
+    key: &str,
+) {
+    let owner = PrincipalId::local_owner();
+    let record = store
+        .get_extension(owner.clone(), extension_id.to_owned())
+        .await
+        .expect("current grant revision");
+    store
+        .set_grant(
+            owner,
+            ExtensionGrantMutation {
+                extension_id: extension_id.to_owned(),
+                permission: if project.is_some() {
+                    "projects.read"
+                } else {
+                    "background.run"
+                }
+                .to_owned(),
+                resource_kind: if project.is_some() {
+                    "Project"
+                } else {
+                    "Extension"
+                }
+                .to_owned(),
+                resource_id: project.map_or_else(|| extension_id.to_owned(), |id| id.to_string()),
+                expected_revision: record.grant_revision,
+                grant,
+            },
+            IdempotencyKey::parse(key).expect("grant key"),
+            1_020,
+        )
+        .await
+        .expect("explicit grant mutation");
+}
+
+#[tokio::test]
+async fn permissions_read_frozen_declarations_and_only_active_exact_project_scopes() {
+    let (store, path, package) = permissions_fixture("permissions-evidence").await;
+    let owner = PrincipalId::local_owner();
+    let initial = store
+        .list_permissions(owner.clone(), package.extension_id.clone(), None, 100)
+        .await
+        .expect("no implicit grants");
+    assert_eq!(initial.required_permissions, package.required_permissions);
+    assert_eq!(initial.optional_permissions, package.optional_permissions);
+    assert!(initial.grants.is_empty());
+    assert!(initial.next_cursor.is_none());
+    let project = permission_project(&store, 1).await;
+    permission_mutation(
+        &store,
+        &package.extension_id,
+        Some(project),
+        true,
+        "permissions-add",
+    )
+    .await;
+    let partial = store
+        .list_permissions(owner.clone(), package.extension_id.clone(), None, 100)
+        .await
+        .expect("partial permissions");
+    assert_eq!(partial.grants.len(), 1);
+    assert_eq!(partial.grants[0].permission, "projects.read");
+    assert_eq!(partial.grants[0].resource_kind, "Project");
+    assert_eq!(partial.grants[0].resource_id, project.to_string());
+    assert_eq!(partial.required_permissions, package.required_permissions);
+    permission_mutation(
+        &store,
+        &package.extension_id,
+        Some(project),
+        false,
+        "permissions-revoke",
+    )
+    .await;
+    let revoked = store
+        .list_permissions(owner, package.extension_id.clone(), None, 100)
+        .await
+        .expect("revoked grant not public");
+    assert!(revoked.grants.is_empty());
+    assert!(revoked.grant_revision > partial.grant_revision);
+    let connection = Connection::open(&path).expect("own test store");
+    assert!(
+        connection
+            .execute(
+                "UPDATE extension_plans SET requested_permissions_json='{}'",
+                []
+            )
+            .is_err(),
+        "frozen evidence stays immutable"
+    );
+    drop(connection);
+    drop(store);
+    cleanup(&path);
+}
+
+#[tokio::test]
+async fn permissions_keyset_pages_reject_revocation_and_package_snapshot_changes() {
+    let (store, path, package) = permissions_fixture("permissions-pages").await;
+    let owner = PrincipalId::local_owner();
+    permission_mutation(
+        &store,
+        &package.extension_id,
+        None,
+        true,
+        "permissions-background",
+    )
+    .await;
+    let mut projects = Vec::new();
+    for index in 2..5 {
+        let project = permission_project(&store, index).await;
+        permission_mutation(
+            &store,
+            &package.extension_id,
+            Some(project),
+            true,
+            &format!("permissions-grant-{index}"),
+        )
+        .await;
+        projects.push(project);
+    }
+    let first = store
+        .list_permissions(owner.clone(), package.extension_id.clone(), None, 1)
+        .await
+        .expect("first page");
+    assert_eq!(first.grants[0].permission, "background.run");
+    let second = store
+        .list_permissions(
+            owner.clone(),
+            package.extension_id.clone(),
+            first.next_cursor.clone(),
+            2,
+        )
+        .await
+        .expect("second page");
+    let third = store
+        .list_permissions(
+            owner.clone(),
+            package.extension_id.clone(),
+            second.next_cursor,
+            2,
+        )
+        .await
+        .expect("last page");
+    let all = first
+        .grants
+        .iter()
+        .chain(second.grants.iter())
+        .chain(third.grants.iter())
+        .map(|grant| (&grant.permission, &grant.resource_kind, &grant.resource_id))
+        .collect::<Vec<_>>();
+    assert_eq!(all.len(), 4);
+    assert!(all.windows(2).all(|pair| pair[0] < pair[1]));
+    assert!(third.next_cursor.is_none());
+    permission_mutation(
+        &store,
+        &package.extension_id,
+        Some(projects[0]),
+        false,
+        "permissions-page-revoke",
+    )
+    .await;
+    assert_eq!(
+        store
+            .list_permissions(
+                owner.clone(),
+                package.extension_id.clone(),
+                first.next_cursor,
+                100
+            )
+            .await
+            .expect_err("cannot combine grant revisions")
+            .code(),
+        M6ErrorCode::RevisionConflict
+    );
+    let fresh = store
+        .list_permissions(owner.clone(), package.extension_id.clone(), None, 1)
+        .await
+        .expect("fresh snapshot");
+    let connection = Connection::open(&path).expect("own test store");
+    connection
+        .execute(
+            "UPDATE extensions SET package_digest=?1 WHERE extension_id=?2",
+            rusqlite::params![[9_u8; 32].as_slice(), package.extension_id],
+        )
+        .expect("simulate changed package identity without grant change");
+    drop(connection);
+    assert_eq!(
+        store
+            .list_permissions(owner, package.extension_id, fresh.next_cursor, 100)
+            .await
+            .expect_err("package change invalidates cursor")
+            .code(),
+        M6ErrorCode::RevisionConflict
+    );
+    drop(store);
+    cleanup(&path);
+}
+
+#[tokio::test]
+async fn permissions_read_is_owner_bound_and_rejects_foreign_or_invalid_pages() {
+    let (store, path, package) = permissions_fixture("permissions-owner").await;
+    let foreign = PrincipalId::parse("fixture:other-owner").expect("other principal");
+    assert_eq!(
+        store
+            .list_permissions(foreign, package.extension_id.clone(), None, 100)
+            .await
+            .expect_err("other owner cannot inspect")
+            .code(),
+        M6ErrorCode::NotInstalled
+    );
+    for limit in [0, 1_001] {
+        assert_eq!(
+            store
+                .list_permissions(
+                    PrincipalId::local_owner(),
+                    package.extension_id.clone(),
+                    None,
+                    limit
+                )
+                .await
+                .expect_err("invalid limit")
+                .code(),
+            M6ErrorCode::InvalidInput
+        );
+    }
+    permission_mutation(
+        &store,
+        &package.extension_id,
+        None,
+        true,
+        "permissions-owner-background",
+    )
+    .await;
+    let project = permission_project(&store, 7).await;
+    permission_mutation(
+        &store,
+        &package.extension_id,
+        Some(project),
+        true,
+        "permissions-owner-project",
+    )
+    .await;
+    let first = store
+        .list_permissions(
+            PrincipalId::local_owner(),
+            package.extension_id.clone(),
+            None,
+            1,
+        )
+        .await
+        .expect("cursor");
+    let mut cursor = first.next_cursor.expect("next cursor");
+    cursor.extension_id = "dev.example.other".to_owned();
+    assert_eq!(
+        store
+            .list_permissions(
+                PrincipalId::local_owner(),
+                package.extension_id,
+                Some(cursor),
+                100
+            )
+            .await
+            .expect_err("foreign query cursor")
+            .code(),
+        M6ErrorCode::InvalidInput
+    );
+    drop(store);
+    cleanup(&path);
+}
+
 #[tokio::test]
 async fn plan_authority_round_trips_and_install_recovery_is_idempotent() {
     let path = database_path("plan");

@@ -691,6 +691,22 @@ impl M6Store for StateStoreHandle {
         .await
     }
 
+    async fn list_permissions(
+        &self,
+        owner: PrincipalId,
+        extension_id: String,
+        cursor: Option<alcomd_application::ExtensionPermissionsCursor>,
+        limit: u32,
+    ) -> Result<alcomd_application::ExtensionPermissionsPage, M6Error> {
+        self.request_worker(
+            move |connection| {
+                m6::list_permissions(connection, &owner, &extension_id, cursor.as_ref(), limit)
+            },
+            m6::unavailable,
+        )
+        .await
+    }
+
     async fn live_package_locator(
         &self,
         owner: PrincipalId,

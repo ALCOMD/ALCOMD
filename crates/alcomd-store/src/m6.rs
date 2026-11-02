@@ -2,7 +2,8 @@ use alcomd_application::{
     ExtensionApplyOutcome, ExtensionCrashDecision, ExtensionCursor, ExtensionDataDisposition,
     ExtensionDataValue, ExtensionDataWriteResult, ExtensionDesiredState,
     ExtensionFilesystemJournalEntry, ExtensionGrantRecord, ExtensionInstallPlanDraft,
-    ExtensionInstanceLease, ExtensionPackageEvidence, ExtensionPage, ExtensionPlanRecord,
+    ExtensionInstanceLease, ExtensionPackageEvidence, ExtensionPage, ExtensionPermissionGrant,
+    ExtensionPermissionsCursor, ExtensionPermissionsPage, ExtensionPlanRecord,
     ExtensionProjectSummary, ExtensionQuarantineState, ExtensionRecord, ExtensionRuntimeState,
     ExtensionSourceKind, ExtensionStartContext, ExtensionTrustDecision, ExtensionUiProtocol,
     ExtensionUninstallPlanDraft, IdempotencyKey, M6Error, M6ErrorCode, OperationId, PlanId,
@@ -88,6 +89,175 @@ pub(super) fn get_extension(
         .optional()
         .map_err(store_error)?
         .ok_or_else(|| error(M6ErrorCode::NotInstalled))
+}
+
+pub(super) fn list_permissions(
+    connection: &mut Connection,
+    owner: &PrincipalId,
+    extension_id: &str,
+    cursor: Option<&ExtensionPermissionsCursor>,
+    limit: u32,
+) -> Result<ExtensionPermissionsPage, M6Error> {
+    if let Some(value) = cursor {
+        value.validate()?;
+    }
+    if !(1..=1_000).contains(&limit)
+        || cursor.is_some_and(|value| {
+            value.extension_id != extension_id
+                || !valid_scope(
+                    extension_id,
+                    &value.after.permission,
+                    &value.after.resource_kind,
+                    &value.after.resource_id,
+                )
+        })
+    {
+        return Err(error(M6ErrorCode::InvalidInput));
+    }
+    // A deferred read transaction pins the record, frozen install evidence and
+    // active grants to one SQLite snapshot without creating query state.
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Deferred)
+        .map_err(store_error)?;
+    let record = get_extension(&transaction, owner, extension_id)?;
+    let (manifest_digest, component_digest, installed_at_ms) = transaction
+        .query_row(
+            "SELECT manifest_digest, component_digest, installed_at_ms FROM extensions
+         WHERE principal_id=?1 AND extension_id=?2",
+            params![owner.as_str(), extension_id],
+            |row| {
+                Ok((
+                    digest(row.get(0)?)?,
+                    digest(row.get(1)?)?,
+                    nonnegative(row.get(2)?)?,
+                ))
+            },
+        )
+        .map_err(store_error)?;
+    if cursor.is_some_and(|value| {
+        value.grant_revision != record.grant_revision
+            || value.record_revision != record.revision
+            || value.package_digest != record.package_digest
+            || value.manifest_digest != manifest_digest
+            || value.component_digest != component_digest
+            || value.installed_at_ms != installed_at_ms
+    }) {
+        return Err(error(M6ErrorCode::RevisionConflict));
+    }
+    let frozen = transaction
+        .query_row(
+            "SELECT p.plan_id, p.requested_permissions_json
+         FROM extensions e JOIN extension_plans p
+           ON p.extension_id=e.extension_id AND p.owner_principal_id=e.principal_id
+          AND p.action='install' AND p.state='applied'
+          AND p.package_digest=e.package_digest AND p.manifest_digest=e.manifest_digest
+          AND p.component_digest=e.component_digest AND p.version=e.version
+          AND p.api_major=e.api_major AND p.publisher_fingerprint=e.publisher_fingerprint
+          AND p.trust_decision=e.trust_decision AND p.ui_protocol IS e.ui_protocol
+         JOIN extension_filesystem_journal j ON j.operation_id=p.apply_operation_id
+          AND j.phase='state_committed' AND j.state='completed'
+         WHERE e.principal_id=?1 AND e.extension_id=?2 AND j.updated_at_ms>=e.installed_at_ms
+         ORDER BY j.updated_at_ms DESC, j.step DESC, p.plan_id DESC LIMIT 1",
+            params![owner.as_str(), extension_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    json_row::<PermissionEvidence>(row, 1)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(store_error)?
+        .ok_or_else(|| error(M6ErrorCode::RecoveryRequired))?;
+    let install_plan_id = PlanId::parse(&frozen.0).map_err(|_| internal())?;
+    if cursor.is_some_and(|value| value.install_plan_id != install_plan_id) {
+        return Err(error(M6ErrorCode::RevisionConflict));
+    }
+    let declarations = frozen.1;
+    if !valid_permission_declarations(&declarations.required)
+        || !valid_permission_declarations(&declarations.optional)
+    {
+        return Err(internal());
+    }
+    let mut grants = {
+        let mut statement = transaction
+            .prepare(
+                "SELECT permission_name, resource_kind, resource_id FROM extension_grants
+             WHERE extension_id=?1 AND state='granted'
+               AND (permission_name, resource_kind, resource_id)>(?2, ?3, ?4)
+             ORDER BY permission_name, resource_kind, resource_id LIMIT ?5",
+            )
+            .map_err(store_error)?;
+        let rows = statement
+            .query_map(
+                params![
+                    extension_id,
+                    cursor.map_or("", |value| value.after.permission.as_str()),
+                    cursor.map_or("", |value| value.after.resource_kind.as_str()),
+                    cursor.map_or("", |value| value.after.resource_id.as_str()),
+                    i64::from(limit) + 1,
+                ],
+                |row| {
+                    Ok(ExtensionPermissionGrant {
+                        permission: row.get(0)?,
+                        resource_kind: row.get(1)?,
+                        resource_id: row.get(2)?,
+                    })
+                },
+            )
+            .map_err(store_error)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(store_error)?
+    };
+    if grants.iter().any(|grant| {
+        !valid_scope(
+            extension_id,
+            &grant.permission,
+            &grant.resource_kind,
+            &grant.resource_id,
+        )
+    }) {
+        return Err(internal());
+    }
+    let next_cursor = if grants.len() > limit as usize {
+        grants.truncate(limit as usize);
+        grants
+            .last()
+            .cloned()
+            .map(|after| ExtensionPermissionsCursor {
+                extension_id: extension_id.to_owned(),
+                grant_revision: record.grant_revision,
+                record_revision: record.revision,
+                package_digest: record.package_digest,
+                manifest_digest,
+                component_digest,
+                installed_at_ms,
+                install_plan_id,
+                after,
+            })
+    } else {
+        None
+    };
+    let page = ExtensionPermissionsPage {
+        extension_id: extension_id.to_owned(),
+        grant_revision: record.grant_revision,
+        required_permissions: declarations.required,
+        optional_permissions: declarations.optional,
+        grants,
+        next_cursor,
+    };
+    transaction.commit().map_err(store_error)?;
+    Ok(page)
+}
+
+fn valid_permission_declarations(permissions: &[String]) -> bool {
+    permissions.len() <= 64
+        && permissions.iter().all(|permission| {
+            !permission.is_empty()
+                && permission.len() <= 128
+                && permission.bytes().all(|byte| {
+                    byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._-".contains(&byte)
+                })
+        })
 }
 
 pub(super) fn live_package_locator(

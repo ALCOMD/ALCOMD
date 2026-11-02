@@ -625,16 +625,28 @@ detail。Restore dispatcher/worker/client/CLI 尚未实现，daemon 不广告 ca
 
 ## 22. M6 兼容增加：Extension Runtime
 
-M6 在 RPC major 1 上实现并广告两项 capability：
+M6 在 RPC major 1 上实现生命周期与授权变更；M7 H4 兼容增加只读授权 capability：
 
 | capability | method | permission |
 |---|---|---|
 | `extensions.lifecycle.v1` | `extensions.list/get/planInstall/applyInstall/enable/disable/planUninstall/applyUninstall` | read 使用 `extensions.read`；mutation 使用 `extensions.manage` |
 | `extensions.permissions.v1` | `extensions.setGrant/revokeGrant` | `extensions.permissions.manage` |
+| `extensions.permissions.read.v1` | `extensions.permissions.list` | `extensions.read`，且当前 Principal 拥有目标 ExtensionId |
 
 完整 DTO 与 bounds 由 `m6-extension-runtime.schema.json` 冻结。install/uninstall 先创建永久 immutable Plan；Apply
 复验 package/source/signature/publisher/trust/revision/digest 并返回 OperationId，不重新 Plan。uninstall 默认
 `retain_data`；`delete_data` 必须在 immutable Plan 中显式选择。
+Plan 的 `requiredPermissions` / `optionalPermissions` 直接投影冻结 evidence，每组最多 64 项、每项最多 128 字符；
+不从当前源文件、GUI 输入或已授权 scope 推断声明，不自动授权。
+
+`extensions.permissions.list({extensionId,cursor?,limit?})` 返回
+`{extensionId,grantRevision,requiredPermissions,optionalPermissions,grants,nextCursor?}`，其中 active `grants` 只含
+`{permission,resourceKind,resourceId}`。默认 limit 100、允许 1–1000；三字段按二进制顺序 keyset 分页。
+声明来自与当前安装身份匹配且已有 `state_committed` 证据的已应用 install Plan；一个只读事务同时取得当前记录、
+冻结声明及有效授权，不读取撤销历史、凭据、Host 身份或扩展数据，也不创建持久查询会话。
+`nextCursor` 是最多 4096 字符的版本化 opaque 字符串，绑定 ExtensionId、grantRevision、record revision、
+package/manifest/component 摘要、安装时间与对应 install Plan。授权或包/记录快照改变时后续页返回
+`revision_conflict`，要求重读；无效或跨 ExtensionId 游标返回 `invalid_request`。调用方不得拼接不同快照的页。
 
 enable/disable 是 revisioned、永久幂等的窄 lifecycle command，不创建 Operation kind。enable 在
 package/API/grant 重验后创建 daemon-owned `ExtensionInstanceLease`；disable/revoke 的 durable grant revision commit

@@ -494,6 +494,7 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         alcomd_protocol::CAPABILITY_BACKUPS_RESTORE_V1,
         alcomd_protocol::CAPABILITY_EXTENSIONS_LIFECYCLE_V1,
         alcomd_protocol::CAPABILITY_EXTENSIONS_PERMISSIONS_V1,
+        alcomd_protocol::CAPABILITY_EXTENSIONS_PERMISSIONS_READ_V1,
         alcomd_protocol::CAPABILITY_EXTENSIONS_UI_PORTABLE_V1,
     ];
     let client_instance_id = hello.client.instance_id;

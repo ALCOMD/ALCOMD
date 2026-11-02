@@ -1,8 +1,8 @@
 # M7 Official GUI RPC coverage matrix
 
-状态：2026-11-02 当前已批准 RPC 覆盖矩阵，包含本轮仓库列表文件交换与 H3 接线。来源是 `crates/alcomd-protocol` 的 public method
+状态：2026-11-02 当前已批准 RPC 覆盖矩阵，包含仓库列表文件交换、H3 与 H4 权限只读接线。来源是 `crates/alcomd-protocol` 的 public method
 constants 与 `crates/alcomd-client` 的 typed methods；实现过程中必须保持两者与本矩阵可机械核对。
-本矩阵记录方法归属，不表示 M7、Visual Gate 2 或聚合功能已验收通过；92/92 是方法清单一致性，不代表所有方法已有独立 GUI 动作。当前阶段见 `../status.md`；H3 定向证据见 `../testing/m7-h3-contextual-20261101.md`。
+本矩阵记录方法归属，不表示 M7 或聚合功能已验收通过；方法清单一致性不代表所有方法已有独立 GUI 动作。当前阶段见 `../status.md`；H3 定向证据见 `../testing/m7-h3-contextual-20261101.md`。
 
 统一状态 `data` 表示 initial-loading、refreshing/last-known-good、empty、error、disconnected；`mutation` 另含
 confirmation-required、operation-running、success、failed、cancelled。`Plan review` 必须展示 daemon 返回的 typed
@@ -85,8 +85,9 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `backups.planRestore` | `backups.restore.v1` | Projects / Backup detail shared restore dialog | select managed backup or use current backup, review target | R/Plan | review follows | no | loading/list retry/keyset/invalid target/stale | `gui.m7-operation-flows` |
 | `backups.applyRestore` | `backups.restore.v1` | Projects / Backup detail shared restore dialog | apply once and open Core-registered result | W | required | yes | same-ID follow/unknown result/no automatic retry/failed/cancelled | `gui.m7-operation-flows` |
 | `extensions.list` | `extensions.lifecycle.v1` | Extensions | page extensions | R | no | no | data/keyset | `gui.m7-core-surfaces` |
-| `extensions.get` | `extensions.lifecycle.v1` | Extension detail | load trust/runtime/permissions/UI | R | no | no | data | `gui.m7-core-surfaces` |
-| `extensions.planInstall` | `extensions.lifecycle.v1` | Extensions install dialog | plan install | R/Plan | review follows | no | data/stale | `gui.m7-operation-flows` |
+| `extensions.get` | `extensions.lifecycle.v1` | Extension detail | load trust/runtime/quarantine/UI | R | no | no | data | `gui.m7-core-surfaces` |
+| `extensions.permissions.list` | `extensions.permissions.read.v1` | Extension detail / permissions dialog | read declarations and page actual granted scopes | R | no | no | loading/empty/read retry/revision-bound keyset/package or grant change/stale read cleanup | `gui.m7-h4-management` |
+| `extensions.planInstall` | `extensions.lifecycle.v1` | Extensions install dialog | plan new install with expected absence; review frozen requested permissions | R/Plan | review follows | no | data/stale/explicit publisher approval | `gui.m7-operation-flows` |
 | `extensions.applyInstall` | `extensions.lifecycle.v1` | Extensions install dialog | apply reviewed install | W | required | yes | mutation/recovery | `gui.m7-operation-flows` |
 | `extensions.enable` | `extensions.lifecycle.v1` | Extension detail | enable | W | yes | no | mutation/stale | `gui.m7-operation-flows` |
 | `extensions.disable` | `extensions.lifecycle.v1` | Extension detail | disable | W | yes | no | mutation/stale/session close | `gui.m7-operation-flows` |
@@ -116,3 +117,7 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 2026-11-01 完成度复核：枚举 protocol 各源码模块的公开 method 常量（排除 error_code 下的
 `METHOD_NOT_FOUND` 错误码）共 92 个，与矩阵逐项匹配；Rust typed client 和 Tauri/GUI 列表接线
 保持已验证输入。这里只补方法归属记录，不把矩阵完整性提升为 M7 或新代码远端验收通过。
+
+H4 经批准增加上述权限只读方法，声明与有效授权分开显示；Grant/Revoke 继续走原写接口，以当前 grantRevision 提交。
+扩展列表现在接通后续 cursor；启停/恢复复用原生命周期，安装/卸载只跟踪已接受的同一 Operation。
+Portable UI 继续使用原四个 session RPC，不因 GUI 生命周期修正新增协议或方法。H2-B/H3/H4 新代码的远端验证分别保持未取得状态。
