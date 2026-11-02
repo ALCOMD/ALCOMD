@@ -66,6 +66,32 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
     assert_eq!(implicit.config.revision, 0);
     assert_eq!(implicit.config.updated_at_ms, 0);
     assert!(implicit.config.arguments.is_empty());
+    assert!(implicit.default_arguments.is_empty());
+    assert!(implicit.effective_arguments.is_empty());
+    let settings = client.settings_get().await.expect("global settings");
+    let default_arguments = vec!["-logFile".to_owned(), "Log files/Editor.log".to_owned()];
+    client
+        .settings_update(alcomd_protocol::SettingsUpdateParams {
+            expected_revision: settings.revision,
+            update: alcomd_protocol::SettingsUpdate {
+                unity: Some(alcomd_protocol::UnitySettingsUpdate {
+                    default_launch_arguments: alcomd_protocol::NullableUpdate::Set(
+                        default_arguments.clone(),
+                    ),
+                    ..alcomd_protocol::UnitySettingsUpdate::default()
+                }),
+                ..alcomd_protocol::SettingsUpdate::default()
+            },
+        })
+        .await
+        .expect("save global defaults");
+    let inherited = client
+        .unity_project_launch_config_get(project_id.clone())
+        .await
+        .expect("global inheritance");
+    assert_eq!(inherited.config.revision, 0);
+    assert_eq!(inherited.default_arguments, default_arguments);
+    assert_eq!(inherited.effective_arguments, default_arguments);
     let no_candidate = client
         .unity_launch_options(UnityLaunchOptionsParams {
             project_id: project_id.clone(),
@@ -116,6 +142,8 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
         .await
         .expect("read stored launch config");
     assert_eq!(stored.config.arguments, vec!["-logFile", "-"]);
+    assert_eq!(stored.default_arguments, default_arguments);
+    assert_eq!(stored.effective_arguments, stored.config.arguments);
     let cleared = client
         .unity_project_launch_config_clear(ProjectUnityLaunchConfigClearParams {
             project_id: project_id.clone(),
@@ -126,6 +154,12 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
         .expect("clear launch config");
     assert_eq!(cleared.config.revision, 2);
     assert!(cleared.config.arguments.is_empty());
+    let inherited = client
+        .unity_project_launch_config_get(project_id.clone())
+        .await
+        .expect("clear restores inheritance");
+    assert_eq!(inherited.config.revision, 0);
+    assert_eq!(inherited.effective_arguments, default_arguments);
     let writer = client
         .unity_writer_state(project_id.clone())
         .await

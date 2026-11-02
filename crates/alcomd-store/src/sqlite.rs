@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::{CURRENT_DATA_SCHEMA, StoreOpenError};
 
-const DATA_SCHEMA_VERSION: i64 = 16;
+const DATA_SCHEMA_VERSION: i64 = 17;
 const BUSY_TIMEOUT: Duration = Duration::from_millis(5_000);
 const CHECK_ROW_LIMIT: usize = 100;
 const CHECK_BYTE_LIMIT: usize = 65_536;
@@ -32,6 +32,7 @@ const MIGRATION_V13: &str = include_str!("../migrations/0013_project_directory_d
 const MIGRATION_V14: &str = include_str!("../migrations/0014_unity_project_version.sql");
 const MIGRATION_V15: &str = include_str!("../migrations/0015_project_last_modified.sql");
 const MIGRATION_V16: &str = include_str!("../migrations/0016_remove_project_observed.sql");
+const MIGRATION_V17: &str = include_str!("../migrations/0017_empty_unity_launch_override.sql");
 
 pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpenError> {
     let connection = Connection::open(path).map_err(|_| StoreOpenError::Unavailable)?;
@@ -149,6 +150,11 @@ pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpen
     if version <= 15 {
         connection
             .execute_batch(MIGRATION_V16)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+    }
+    if version <= 16 {
+        connection
+            .execute_batch(MIGRATION_V17)
             .map_err(|_| StoreOpenError::Unavailable)?;
     }
     let final_version: i64 = connection

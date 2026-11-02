@@ -163,16 +163,18 @@ class DeterministicGuiClient implements GuiRpcClient {
     private repositoriesReady: Promise<void> | undefined;
     private settingsReady: Promise<void> | undefined;
     private themeSaveRejected = false;
+    private argumentsSaveRejected = false;
+    private argumentsReadFailurePending = false;
     private unityReady: Promise<void> | undefined;
     private unityDiscoveryComplete = false;
     private settings: SettingsGetResult = {
-        configSchema: 5,
+        configSchema: 6,
         directories: { projectDirectory: query.get("project-directory") ?? (query.has("windows-paths") ? "\\\\?\\C:\\Projects" : "C:\\Fixture"), backupDirectory: "C:\\Fixture\\Backups" },
         unityHub: { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" },
         revision: 7,
         settings: {
             paths: { projectDirectory: query.get("project-directory"), backupDirectory: null },
-            unity: { hubPath: null },
+            unity: { hubPath: null, defaultLaunchArguments: query.has("default-arguments") ? JSON.parse(query.get("default-arguments")!) as string[] : null },
             appearance: { mode: "system", sourceColor: null, scheme: "vibrant", motion: "system" },
             locale: "en-US",
             packages: {
@@ -192,8 +194,8 @@ class DeterministicGuiClient implements GuiRpcClient {
     private favoriteConflictPending = true;
     private currentProjectRevision = 2;
     private currentUnityVersion = "2022.3.22f1";
-    private launchArguments = ["-logFile"];
-    private launchConfigRevision = 2;
+    private launchArguments = query.has("project-arguments") ? JSON.parse(query.get("project-arguments")!) as string[] : ["-logFile"];
+    private launchConfigRevision = query.has("launch-inherit") ? 0 : 2;
     private snapshotRevision = 1;
     private repositoryRefreshCompleted = false;
     private repositoryRefreshAttempts = new Map<string, number>();
@@ -351,6 +353,7 @@ class DeterministicGuiClient implements GuiRpcClient {
 
     async settingsGet(): ReturnType<GuiRpcClient["settingsGet"]> {
         window.settingsReads += 1;
+        if (this.argumentsReadFailurePending) { this.argumentsReadFailurePending = false; throw { code: "internal_error" }; }
         if (this.hubReadFailurePending) { this.hubReadFailurePending = false; throw { code: "internal_error" }; }
         this.settings.unityHub = this.hubLocation(this.settings.settings.unity.hubPath);
         // Projects has no settings.get page consumer, so these are the shell's initial reads.
@@ -373,6 +376,16 @@ class DeterministicGuiClient implements GuiRpcClient {
 
     async settingsUpdate(expectedRevision: number, update: Parameters<GuiRpcClient["settingsUpdate"]>[1]): ReturnType<GuiRpcClient["settingsUpdate"]> {
         window.settingsRequests.push({ expectedRevision, update: structuredClone(update) });
+        const argumentsChange = update.unity?.defaultLaunchArguments !== undefined;
+        const argumentsFailure = query.get("arguments-save");
+        if (argumentsChange && argumentsFailure === "denied") throw { code: "permission_denied" };
+        if (argumentsChange && !this.argumentsSaveRejected && argumentsFailure === "error-once") { this.argumentsSaveRejected = true; throw { code: "internal_error" }; }
+        if (argumentsChange && !this.argumentsSaveRejected && argumentsFailure === "conflict-once") {
+            this.argumentsSaveRejected = true;
+            this.settings.revision += 1;
+            this.settings.settings.unity.defaultLaunchArguments = ["-batchmode"];
+            throw { code: "revision_conflict" };
+        }
         if (query.has("hub-reject-invalid") && update.unity?.hubPath?.includes("Invalid")) throw { code: "invalid_request" };
         if (query.get("theme-save") === "error") throw { code: "internal_error" };
         if (query.get("theme-save") === "error-once" && !this.themeSaveRejected) {
@@ -396,7 +409,7 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (expectedRevision !== this.settings.revision) return Promise.reject({ code: "revision_conflict" });
         if (update.unity?.hubPath && query.has("hub-normalize")) update = { ...update, unity: { hubPath: "C:\\Normalized\\Unity Hub.exe" } };
         this.settings = {
-            configSchema: 5,
+            configSchema: 6,
             directories: {
                 projectDirectory: update.paths?.projectDirectory === undefined ? this.settings.directories.projectDirectory : update.paths.projectDirectory ?? "C:\\Fixture",
                 backupDirectory: update.paths?.backupDirectory === undefined ? this.settings.directories.backupDirectory : update.paths.backupDirectory ?? "C:\\Fixture\\Backups"
@@ -412,6 +425,11 @@ class DeterministicGuiClient implements GuiRpcClient {
             }
         };
         window.settingsWrites.push({ expectedRevision, revision: this.settings.revision });
+        if (argumentsChange && !this.argumentsSaveRejected && ["commit-error-once", "commit-read-error-once"].includes(argumentsFailure ?? "")) {
+            this.argumentsSaveRejected = true;
+            this.argumentsReadFailurePending = argumentsFailure === "commit-read-error-once";
+            throw { code: "internal_error" };
+        }
         if (query.get("theme-save") === "commit-error-once" && !this.themeSaveRejected) {
             this.themeSaveRejected = true;
             throw { code: "internal_error" };
@@ -857,17 +875,23 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ installations: [installation()], replayed: false });
     }
     unityProjectLaunchConfigGet(): ReturnType<GuiRpcClient["unityProjectLaunchConfigGet"]> {
-        return this.value({ config: launchConfig(this.launchArguments, this.launchConfigRevision) });
+        const defaultArguments = this.settings.settings.unity.defaultLaunchArguments ?? [];
+        return this.value({ config: launchConfig(this.launchConfigRevision === 0 ? [] : this.launchArguments, this.launchConfigRevision), defaultArguments, effectiveArguments: this.launchConfigRevision === 0 ? defaultArguments : this.launchArguments });
     }
-    unityProjectLaunchConfigSet(_projectId: string, arguments_: string[]): ReturnType<GuiRpcClient["unityProjectLaunchConfigSet"]> {
+    unityProjectLaunchConfigSet(projectId: string, arguments_: string[], expectedRevision: number): ReturnType<GuiRpcClient["unityProjectLaunchConfigSet"]> {
+        window.unityRequests.push({ method: "unity.projectLaunchConfig.set", params: { projectId, arguments: structuredClone(arguments_), expectedRevision } });
+        if (expectedRevision !== this.launchConfigRevision) return Promise.reject({ code: "revision_conflict" });
         this.launchArguments = arguments_;
         this.launchConfigRevision += 1;
         return this.value({ config: launchConfig(this.launchArguments, this.launchConfigRevision), changed: true, replayed: false });
     }
-    unityProjectLaunchConfigClear(): ReturnType<GuiRpcClient["unityProjectLaunchConfigClear"]> {
+    unityProjectLaunchConfigClear(projectId: string, expectedRevision: number): ReturnType<GuiRpcClient["unityProjectLaunchConfigClear"]> {
+        window.unityRequests.push({ method: "unity.projectLaunchConfig.clear", params: { projectId, expectedRevision } });
+        if (expectedRevision !== this.launchConfigRevision) return Promise.reject({ code: "revision_conflict" });
         this.launchArguments = [];
-        this.launchConfigRevision += 1;
-        return this.value({ config: launchConfig(this.launchArguments, this.launchConfigRevision), changed: true, replayed: false });
+        const nextRevision = this.launchConfigRevision + 1;
+        this.launchConfigRevision = 0;
+        return this.value({ config: launchConfig(this.launchArguments, nextRevision), changed: true, replayed: false });
     }
     unityWriterState(): ReturnType<GuiRpcClient["unityWriterState"]> { return this.value({ projectId: PROJECT_ID, state: "not_observed", evidence: [], checkedAtMs: 1_700_000_000_000 }); }
     unityLaunchOptions(projectId: string, expectedProjectRevision: number): ReturnType<GuiRpcClient["unityLaunchOptions"]> {

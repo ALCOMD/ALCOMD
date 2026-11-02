@@ -497,6 +497,220 @@ fn key(value: &str) -> IdempotencyKey {
     IdempotencyKey::parse(value).expect("valid key")
 }
 
+#[tokio::test]
+async fn default_arguments_are_inherited_overridden_and_bound_to_launch_retries() {
+    use alcomd_application::{AccessContext, M5UnityApplication, Permission};
+    use std::sync::{Arc, Mutex};
+
+    let directory = TestDirectory::new();
+    let store = StateStoreHandle::open(directory.0.join("defaults.db")).expect("store");
+    let owner = PrincipalId::local_owner();
+    let access = AccessContext::new(
+        owner.clone(),
+        [
+            Permission::ProjectsRead,
+            Permission::UnityRead,
+            Permission::UnityManage,
+            Permission::UnityLaunch,
+        ],
+    );
+    let project = store
+        .register_project(owner.clone(), project(), key("defaults-project"), 1)
+        .await
+        .expect("project")
+        .value;
+    let mut editor = installation_observation();
+    editor.unity_version = project.observation.unity_version.clone();
+    let (editor, _) = store
+        .register_installation(owner.clone(), editor, key("defaults-editor"), 2)
+        .await
+        .expect("editor");
+    let literal = vec![
+        "-logFile".to_owned(),
+        r#" C:\logs with spaces\"quoted"\ "#.to_owned(),
+        String::new(),
+        "尾部空格 ".to_owned(),
+        "x".repeat(4_096),
+    ];
+    let defaults = Arc::new(TestLaunchDefaults(Mutex::new(Some(literal.clone()))));
+    let platform = CapturingUnityPlatform::default();
+    let app = M5UnityApplication::new(store.clone(), platform.clone(), defaults.clone());
+    let view = app
+        .get_project_launch_config(&access, project.project_id)
+        .await
+        .expect("inherited view");
+    assert!(view.config.revision.is_none());
+    assert!(view.config.arguments.is_empty());
+    assert_eq!(view.default_arguments, literal);
+    assert_eq!(view.effective_arguments, literal);
+    let (launch, replayed) = app
+        .launch(
+            &access,
+            project.project_id,
+            editor.installation_id,
+            project.revision,
+            key("defaults-launch"),
+        )
+        .await
+        .expect("launch inherited argv");
+    assert!(!replayed);
+    assert_eq!(*platform.0.lock().expect("captures"), vec![literal.clone()]);
+    let (replay, replayed) = app
+        .launch(
+            &access,
+            project.project_id,
+            editor.installation_id,
+            project.revision,
+            key("defaults-launch"),
+        )
+        .await
+        .expect("same effective argv replay");
+    assert!(replayed);
+    assert_eq!(launch.launch_id, replay.launch_id);
+    *defaults.0.lock().expect("defaults") = Some(vec!["-batchmode".to_owned()]);
+    assert_eq!(
+        app.launch(
+            &access,
+            project.project_id,
+            editor.installation_id,
+            project.revision,
+            key("defaults-launch")
+        )
+        .await
+        .expect_err("changed defaults cannot respawn same key")
+        .code(),
+        M5UnityErrorCode::IdempotencyConflict
+    );
+    assert_eq!(platform.0.lock().expect("captures").len(), 1);
+
+    let (empty, changed, _) = app
+        .set_project_launch_config(
+            &access,
+            project.project_id,
+            Vec::new(),
+            None,
+            key("defaults-empty"),
+        )
+        .await
+        .expect("explicit empty override");
+    assert!(changed);
+    assert_eq!(empty.revision, Some(Revision::INITIAL));
+    let view = app
+        .get_project_launch_config(&access, project.project_id)
+        .await
+        .expect("override view");
+    assert_eq!(view.default_arguments, ["-batchmode"]);
+    assert!(view.effective_arguments.is_empty());
+    *defaults.0.lock().expect("defaults") = None;
+    app.launch(
+        &access,
+        project.project_id,
+        editor.installation_id,
+        project.revision,
+        key("defaults-empty-launch"),
+    )
+    .await
+    .expect("explicit override does not need global settings");
+    assert_eq!(
+        platform.0.lock().expect("captures").last(),
+        Some(&Vec::<String>::new())
+    );
+    app.clear_project_launch_config(
+        &access,
+        project.project_id,
+        empty.revision,
+        key("defaults-clear"),
+    )
+    .await
+    .expect("clear override");
+    assert_eq!(
+        app.launch(
+            &access,
+            project.project_id,
+            editor.installation_id,
+            project.revision,
+            key("defaults-unavailable")
+        )
+        .await
+        .expect_err("unavailable inherited defaults fail closed")
+        .code(),
+        M5UnityErrorCode::Internal
+    );
+    *defaults.0.lock().expect("defaults") = Some(literal.clone());
+    let view = app
+        .get_project_launch_config(&access, project.project_id)
+        .await
+        .expect("inherit after clear");
+    assert!(view.config.revision.is_none());
+    assert_eq!(view.effective_arguments, literal);
+    let denied = AccessContext::new(owner, [Permission::ProjectsRead]);
+    assert_eq!(
+        app.get_project_launch_config(&denied, project.project_id)
+            .await
+            .expect_err("UnityRead required")
+            .code(),
+        M5UnityErrorCode::PermissionDenied
+    );
+}
+
+struct TestLaunchDefaults(std::sync::Mutex<Option<Vec<String>>>);
+
+impl alcomd_application::UnityLaunchDefaultsSource for TestLaunchDefaults {
+    fn arguments(
+        &self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<Vec<String>, alcomd_application::M5UnityError>>
+                + Send
+                + '_,
+        >,
+    > {
+        Box::pin(async {
+            self.0
+                .lock()
+                .expect("defaults")
+                .clone()
+                .ok_or_else(|| alcomd_application::M5UnityError::new(M5UnityErrorCode::Internal))
+        })
+    }
+}
+
+#[derive(Clone, Default)]
+struct CapturingUnityPlatform(std::sync::Arc<std::sync::Mutex<Vec<Vec<String>>>>);
+
+impl alcomd_application::M5UnityPlatform for CapturingUnityPlatform {
+    async fn validate_installation(
+        &self,
+        _: String,
+        _: UnitySourceKind,
+    ) -> Result<UnityInstallationObservation, alcomd_application::M5UnityError> {
+        unreachable!("not used")
+    }
+    async fn discover_installations(
+        &self,
+    ) -> Result<Vec<UnityInstallationObservation>, alcomd_application::M5UnityError> {
+        Ok(Vec::new())
+    }
+    async fn observe_processes(
+        &self,
+    ) -> Result<Vec<alcomd_application::UnityProcessObservation>, alcomd_application::M5UnityError>
+    {
+        Ok(Vec::new())
+    }
+    async fn path_identity(&self, _: String) -> Result<Vec<u8>, alcomd_application::M5UnityError> {
+        Ok(vec![1; 24])
+    }
+    async fn launch(
+        &self,
+        _: String,
+        _: String,
+        arguments: Vec<String>,
+    ) -> Result<(), alcomd_application::M5UnityError> {
+        self.0.lock().expect("captures").push(arguments);
+        Ok(())
+    }
+}
+
 fn project() -> ProjectObservation {
     ProjectObservation {
         root_path: "C:/fixture/project".to_owned(),

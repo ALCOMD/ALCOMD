@@ -19,7 +19,7 @@ pub struct FileConfigStore {
 }
 
 impl FileConfigStore {
-    pub const SCHEMA_VERSION: u32 = 5;
+    pub const SCHEMA_VERSION: u32 = 6;
 
     #[must_use]
     pub fn new(path: PathBuf) -> Self {
@@ -112,6 +112,7 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
     let mut hidden_repository_ids = None;
     let mut hide_local_user_packages = None;
     let mut hub_path = None;
+    let mut default_launch_arguments = None;
     let mut project_directory = None;
     let mut backup_directory = None;
     for raw in text.lines() {
@@ -145,6 +146,9 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
             ("root", "revision") => revision = Some(parse_u64(value)?),
             ("root", "locale") => locale = Some(parse_locale(parse_string(value)?)?),
             ("unity", "hub_path") => hub_path = Some(parse_path_string(value)?),
+            ("unity", "default_launch_arguments") => {
+                default_launch_arguments = Some(parse_argument_array(value)?);
+            }
             ("paths", "project_directory") => project_directory = Some(parse_path_string(value)?),
             ("paths", "backup_directory") => backup_directory = Some(parse_path_string(value)?),
             ("appearance", "mode") => mode = Some(parse_mode(parse_string(value)?)?),
@@ -178,6 +182,9 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
         return Err(ConfigStoreError::Corrupt);
     }
     if schema < 5 && seen.contains("section:paths") {
+        return Err(ConfigStoreError::Corrupt);
+    }
+    if schema < 6 && default_launch_arguments.is_some() {
         return Err(ConfigStoreError::Corrupt);
     }
     if schema < 3 && motion == Some(ConfigAppearanceMotion::Full) {
@@ -228,7 +235,10 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
             },
             locale: locale.ok_or(ConfigStoreError::Corrupt)?,
             packages,
-            unity: ConfigUnitySettings { hub_path },
+            unity: ConfigUnitySettings {
+                hub_path,
+                default_launch_arguments,
+            },
             paths: ConfigPathSettings {
                 project_directory,
                 backup_directory,
@@ -269,8 +279,12 @@ fn serialize_settings(snapshot: &ConfigSnapshot) -> Vec<u8> {
             .join(", "),
         snapshot.settings.packages.hide_local_user_packages,
     );
-    if let Some(path) = &snapshot.settings.unity.hub_path {
-        contents.push_str("\n[unity]\nhub_path = \"");
+    let unity = &snapshot.settings.unity;
+    if unity.hub_path.is_some() || unity.default_launch_arguments.is_some() {
+        contents.push_str("\n[unity]\n");
+    }
+    if let Some(path) = &unity.hub_path {
+        contents.push_str("hub_path = \"");
         for character in path.chars() {
             if matches!(character, '\\' | '"') {
                 contents.push('\\');
@@ -278,6 +292,21 @@ fn serialize_settings(snapshot: &ConfigSnapshot) -> Vec<u8> {
             contents.push(character);
         }
         contents.push_str("\"\n");
+    }
+    if let Some(arguments) = &unity.default_launch_arguments {
+        contents.push_str("default_launch_arguments = [");
+        for (index, argument) in arguments.iter().enumerate() {
+            if index > 0 {
+                contents.push_str(", ");
+            }
+            // JSON's canonical string escapes are valid TOML basic-string escapes.
+            contents.push_str(
+                &serde_json::to_string(argument)
+                    .expect("string serialization")
+                    .replace('\u{007f}', "\\u007F"),
+            );
+        }
+        contents.push_str("]\n");
     }
     let paths = &snapshot.settings.paths;
     if paths.project_directory.is_some() || paths.backup_directory.is_some() {
@@ -393,6 +422,61 @@ fn parse_path_string(value: &str) -> Result<String, ConfigStoreError> {
 }
 fn parse_u64(value: &str) -> Result<u64, ConfigStoreError> {
     value.parse().map_err(|_| ConfigStoreError::Corrupt)
+}
+fn parse_argument_array(value: &str) -> Result<Vec<String>, ConfigStoreError> {
+    let mut inner = value
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+        .ok_or(ConfigStoreError::Corrupt)?
+        .trim();
+    let mut arguments = Vec::new();
+    while !inner.is_empty() {
+        inner = inner.strip_prefix('"').ok_or(ConfigStoreError::Corrupt)?;
+        let mut characters = inner.char_indices();
+        let mut argument = String::new();
+        let remainder = loop {
+            let (_, character) = characters.next().ok_or(ConfigStoreError::Corrupt)?;
+            match character {
+                '"' => break characters.offset(),
+                '\\' => match characters.next().ok_or(ConfigStoreError::Corrupt)?.1 {
+                    '\\' => argument.push('\\'),
+                    '"' => argument.push('"'),
+                    'b' => argument.push('\u{0008}'),
+                    't' => argument.push('\t'),
+                    'n' => argument.push('\n'),
+                    'f' => argument.push('\u{000c}'),
+                    'r' => argument.push('\r'),
+                    escape @ ('u' | 'U') => {
+                        let count = if escape == 'u' { 4 } else { 8 };
+                        let mut codepoint = 0_u32;
+                        for _ in 0..count {
+                            let digit = characters
+                                .next()
+                                .and_then(|(_, character)| character.to_digit(16))
+                                .ok_or(ConfigStoreError::Corrupt)?;
+                            codepoint = (codepoint << 4) | digit;
+                        }
+                        argument.push(char::from_u32(codepoint).ok_or(ConfigStoreError::Corrupt)?);
+                    }
+                    _ => return Err(ConfigStoreError::Corrupt),
+                },
+                character if (character < ' ' && character != '\t') || character == '\u{007f}' => {
+                    return Err(ConfigStoreError::Corrupt);
+                }
+                character => argument.push(character),
+            }
+        };
+        arguments.push(argument);
+        inner = inner[remainder..].trim();
+        if inner.is_empty() {
+            break;
+        }
+        inner = inner
+            .strip_prefix(',')
+            .ok_or(ConfigStoreError::Corrupt)?
+            .trim();
+    }
+    Ok(arguments)
 }
 fn parse_bool(value: &str) -> Result<bool, ConfigStoreError> {
     match value {
@@ -587,6 +671,144 @@ mod tests {
     }
 
     #[test]
+    fn config6_migrates_config5_without_changing_revision_or_existing_preferences() {
+        let root = temporary_path("config6-default-arguments-migration");
+        let path = root.join("settings.toml");
+        fs::create_dir_all(&root).expect("fixture");
+        let mut expected = default_snapshot();
+        expected.revision = 166;
+        expected.settings.locale = ConfigLocale::JaJp;
+        expected.settings.appearance.mode = ConfigAppearanceMode::Dark;
+        expected.settings.appearance.source_color = Some("#112233".into());
+        expected.settings.appearance.scheme = ConfigAppearanceScheme::FruitSalad;
+        expected.settings.appearance.motion = ConfigAppearanceMotion::Full;
+        expected.settings.packages.show_prerelease = true;
+        expected.settings.packages.hide_local_user_packages = true;
+        expected.settings.packages.hidden_repository_ids =
+            vec!["00000000-0000-0000-0000-000000000001".into()];
+        expected.settings.unity.hub_path = Some(r"C:\用户\Unity Hub\Unity Hub.exe".into());
+        expected.settings.paths.project_directory = Some("/fixture/projects".into());
+        expected.settings.paths.backup_directory = Some("/fixture/backups".into());
+        let current = String::from_utf8(serialize_settings(&expected)).expect("utf8");
+        let legacy = current.replace("schema = 6", "schema = 5");
+        fs::write(&path, &legacy).expect("Config5");
+        let store = FileConfigStore::new(path.clone());
+        assert_eq!(store.load(), Ok(expected.clone()));
+        assert_eq!(fs::read_to_string(&path).expect("read-only load"), legacy);
+        assert_eq!(store.initialize(), Ok(expected.clone()));
+        assert_eq!(fs::read_to_string(&path).expect("migrated"), current);
+        assert_eq!(
+            FileConfigStore::new(path.clone()).initialize(),
+            Ok(expected)
+        );
+        for schema in 3..=5 {
+            let mut invalid = current.replace("schema = 6", &format!("schema = {schema}"));
+            if schema < 5 {
+                invalid = invalid
+                    .split("[paths]")
+                    .next()
+                    .expect("before paths")
+                    .into();
+            }
+            if schema == 3 {
+                invalid = invalid.replace(
+                    "motion = \"full\"",
+                    "density = \"default\"\nmotion = \"full\"",
+                );
+            }
+            invalid = invalid.replace("[unity]\n", "[unity]\ndefault_launch_arguments = []\n");
+            fs::write(&path, &invalid).expect("unsupported historical field");
+            assert_eq!(store.initialize(), Err(ConfigStoreError::Corrupt));
+            assert_eq!(fs::read_to_string(&path).expect("retained input"), invalid);
+        }
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[tokio::test]
+    async fn config6_arguments_reopen_empty_clear_and_atomic_failure() {
+        use alcomd_application::ConfigUnityUpdate;
+        let root = temporary_path("config6-default-arguments");
+        let path = root.join("settings.toml");
+        let store = Arc::new(FileConfigStore::new(path.clone()));
+        let app = M7OfficialApplication::new(
+            NoStore,
+            store.clone(),
+            Arc::new(TestHub),
+            Arc::new(TestHubLauncher),
+            Arc::new(TestDirectories),
+        );
+        app.initialize_settings().await.expect("initialize");
+        let mut expected = store.load().expect("initialized snapshot");
+        let update = |arguments| ConfigUpdate {
+            paths: None,
+            appearance: None,
+            locale: None,
+            packages: None,
+            unity: Some(ConfigUnityUpdate {
+                hub_path: ConfigNullableUpdate::Unchanged,
+                default_launch_arguments: arguments,
+            }),
+        };
+        let literal = vec![
+            "-logFile".into(),
+            r#"C:\用户 Data\Unity\a "quoted", [file].log"#.into(),
+            "one\ntwo\tthree\r\u{0008}\u{000c}\u{007f}\u{0085}😀".into(),
+        ];
+        for arguments in [
+            ConfigNullableUpdate::Set(literal),
+            ConfigNullableUpdate::Set(Vec::new()),
+            ConfigNullableUpdate::Clear,
+        ] {
+            expected = app
+                .update_settings(
+                    &AccessContext::local_owner(),
+                    expected.revision,
+                    update(arguments.clone()),
+                )
+                .await
+                .expect("save arguments");
+            assert_eq!(
+                FileConfigStore::new(path.clone()).initialize(),
+                Ok(expected.clone())
+            );
+            let text = fs::read_to_string(&path).expect("saved file");
+            assert_eq!(
+                text.contains("default_launch_arguments ="),
+                !matches!(arguments, ConfigNullableUpdate::Clear)
+            );
+            assert_eq!(parse_settings(&text), Ok(expected.clone()));
+        }
+        let before = fs::read(&path).expect("before rejected writes");
+        for arguments in [vec!["bad\0argument".into()], vec!["a".repeat(4096); 5]] {
+            let mut mixed = update(ConfigNullableUpdate::Set(arguments));
+            mixed.locale = Some(ConfigLocale::JaJp);
+            assert_eq!(
+                app.update_settings(&AccessContext::local_owner(), expected.revision, mixed)
+                    .await,
+                Err(OfficialGuiError::InvalidInput)
+            );
+            assert_eq!(fs::read(&path).expect("accepted file retained"), before);
+            assert_eq!(store.load(), Ok(expected.clone()));
+        }
+        for invalid in [
+            "null",
+            "\"-batchmode\"",
+            "[1]",
+            "[true]",
+            "[\"bad\\q\"]",
+            "[\"bad\\/\"]",
+            "[\"\\uD800\"]",
+            "[\"bad\\u0000arg\"]",
+            "[\"a\" \"b\"]",
+        ] {
+            let invalid = String::from_utf8(before.clone()).expect("utf8")
+                + &format!("\n[unity]\ndefault_launch_arguments = {invalid}\n");
+            assert_eq!(parse_settings(&invalid), Err(ConfigStoreError::Corrupt));
+        }
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
     fn config5_paths_roundtrip_and_config4_migration_preserves_all_preferences() {
         let root = temporary_path("config5-paths");
         let path = root.join("settings.toml");
@@ -599,11 +821,11 @@ mod tests {
         original.settings.unity.hub_path = Some("/fixtures/Hub".into());
         let legacy = String::from_utf8(serialize_settings(&original))
             .expect("utf8")
-            .replace("schema = 5", "schema = 4");
+            .replace("schema = 6", "schema = 4");
         fs::write(&path, &legacy).expect("legacy Config4");
         assert_eq!(store.initialize(), Ok(original.clone()));
-        let migrated = fs::read_to_string(&path).expect("migrated Config5");
-        assert!(migrated.starts_with("schema = 5\n"));
+        let migrated = fs::read_to_string(&path).expect("migrated current config");
+        assert!(migrated.starts_with("schema = 6\n"));
         assert!(!migrated.contains("[paths]"));
         for candidate in [r"C:\用户\项目", "/home/测试/备份 \"local\""] {
             let mut saved = original.clone();
@@ -774,7 +996,7 @@ mod tests {
         assert_eq!(parse_settings(&oversized), Err(ConfigStoreError::Corrupt));
         for schema in [1, 2] {
             let mut legacy = original_text
-                .replace("schema = 5", &format!("schema = {schema}"))
+                .replace("schema = 6", &format!("schema = {schema}"))
                 .replace("scheme = \"vibrant\"\n", "density = \"default\"\n");
             if schema == 1 {
                 legacy = legacy
@@ -821,6 +1043,7 @@ mod tests {
                     packages: None,
                     unity: Some(ConfigUnityUpdate {
                         hub_path: ConfigNullableUpdate::Set(selected.to_owned()),
+                        default_launch_arguments: ConfigNullableUpdate::Unchanged,
                     }),
                 },
             )
@@ -843,6 +1066,7 @@ mod tests {
                     packages: None,
                     unity: Some(ConfigUnityUpdate {
                         hub_path: ConfigNullableUpdate::Clear,
+                        default_launch_arguments: ConfigNullableUpdate::Unchanged,
                     }),
                 },
             )
@@ -869,7 +1093,7 @@ mod tests {
             let mut snapshot = defaults.clone();
             snapshot.settings.appearance.motion = motion;
             let encoded = String::from_utf8(serialize_settings(&snapshot)).expect("utf8");
-            assert!(encoded.starts_with("schema = 5\n"));
+            assert!(encoded.starts_with("schema = 6\n"));
             assert!(encoded.contains(&format!("motion = \"{text}\"\n")));
             assert_eq!(parse_settings(&encoded), Ok(snapshot));
         }
@@ -889,7 +1113,7 @@ mod tests {
         );
         for schema in [1, 2] {
             let legacy = encoded
-                .replace("schema = 5", &format!("schema = {schema}"))
+                .replace("schema = 6", &format!("schema = {schema}"))
                 .replace("scheme = \"vibrant\"\n", "density = \"default\"\n");
             let legacy = if schema == 1 {
                 legacy
@@ -1016,7 +1240,7 @@ mod tests {
             let mut snapshot = default_snapshot();
             snapshot.settings.appearance.scheme = scheme;
             let encoded = String::from_utf8(serialize_settings(&snapshot)).expect("utf8");
-            assert!(encoded.starts_with("schema = 5\n"));
+            assert!(encoded.starts_with("schema = 6\n"));
             assert!(encoded.contains(&format!("scheme = \"{value}\"\n")));
             assert_eq!(parse_settings(&encoded), Ok(snapshot));
         }
@@ -1038,7 +1262,7 @@ mod tests {
             assert_eq!(
                 parse_settings(
                     &encoded
-                        .replace("schema = 5", &format!("schema = {schema}"))
+                        .replace("schema = 6", &format!("schema = {schema}"))
                         .replace(
                             "scheme = \"vibrant\"\n",
                             "scheme = \"vibrant\"\ndensity = \"default\"\n"
@@ -1154,7 +1378,7 @@ mod tests {
         assert!(
             fs::read_to_string(&path)
                 .expect("read file")
-                .starts_with("schema = 5\n")
+                .starts_with("schema = 6\n")
         );
         let _ = fs::remove_dir_all(root);
     }
@@ -1248,10 +1472,10 @@ mod tests {
         ];
         expected.settings.unity.hub_path = Some(r"C:\用户\Unity Hub\Unity Hub.exe".to_owned());
         let canonical = String::from_utf8(serialize_settings(&expected)).expect("utf8");
-        assert!(canonical.starts_with("schema = 5\n"));
+        assert!(canonical.starts_with("schema = 6\n"));
         assert!(!canonical.contains("density"));
         for density in ["default", "compact"] {
-            let legacy = canonical.replace("schema = 5", "schema = 3").replace(
+            let legacy = canonical.replace("schema = 6", "schema = 3").replace(
                 "motion = \"full\"\n",
                 &format!("density = \"{density}\"\nmotion = \"full\"\n"),
             );
@@ -1283,7 +1507,7 @@ mod tests {
         let store = FileConfigStore::new(path.clone());
         let current = String::from_utf8(serialize_settings(&default_snapshot())).expect("utf8");
         for schema in 1..=3 {
-            let mut legacy = current.replace("schema = 5", &format!("schema = {schema}"));
+            let mut legacy = current.replace("schema = 6", &format!("schema = {schema}"));
             legacy = if schema < 3 {
                 legacy.replace("scheme = \"vibrant\"\n", "density = \"default\"\n")
             } else {
@@ -1339,7 +1563,7 @@ mod tests {
     }
 
     #[test]
-    fn config5_rejects_removed_density_and_future_versions_without_rewriting() {
+    fn current_config_rejects_removed_density_and_future_versions_without_rewriting() {
         let root = temporary_path("density-current-rejection");
         let path = root.join("settings.toml");
         let _ = fs::remove_dir_all(&root);
@@ -1354,7 +1578,7 @@ mod tests {
                 )
             })
             .to_vec();
-        invalid.push(current.replace("schema = 5", "schema = 6"));
+        invalid.push(current.replace("schema = 6", "schema = 7"));
         for invalid in invalid {
             fs::write(&path, &invalid).expect("write unsupported current input");
             assert_eq!(store.initialize(), Err(ConfigStoreError::Corrupt));

@@ -34,11 +34,12 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
     )
     .await
     .expect("start owned test daemon");
-    let mut client = connect_with_retry(config).await;
+    let mut client = connect_with_retry(config.clone()).await;
 
     let defaults = client.settings_get().await.expect("read default settings");
-    assert_eq!(defaults.config_schema, 5);
+    assert_eq!(defaults.config_schema, 6);
     assert_eq!(defaults.revision, 1);
+    assert_eq!(defaults.settings.unity.default_launch_arguments, None);
     assert_eq!(defaults.settings.appearance.mode, AppearanceMode::System);
     assert_eq!(
         defaults.settings.appearance.scheme,
@@ -50,7 +51,14 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
             expected_revision: 1,
             update: SettingsUpdate {
                 paths: None,
-                unity: None,
+                unity: Some(alcomd_protocol::UnitySettingsUpdate {
+                    default_launch_arguments: NullableUpdate::Set(vec![
+                        "-logFile".to_owned(),
+                        " C:\\logs with spaces\\Editor.log ".to_owned(),
+                        String::new(),
+                    ]),
+                    ..alcomd_protocol::UnitySettingsUpdate::default()
+                }),
                 appearance: Some(AppearanceSettingsUpdate {
                     mode: Some(AppearanceMode::Dark),
                     scheme: Some(AppearanceScheme::Fidelity),
@@ -71,6 +79,14 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
         .await
         .expect("update settings");
     assert_eq!(updated.revision, 2);
+    assert_eq!(
+        updated.settings.unity.default_launch_arguments,
+        Some(vec![
+            "-logFile".to_owned(),
+            " C:\\logs with spaces\\Editor.log ".to_owned(),
+            String::new()
+        ])
+    );
     assert_eq!(updated.settings.appearance.motion, AppearanceMotion::Full);
     assert_eq!(
         updated.settings.appearance.scheme,
@@ -250,6 +266,7 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
             expected_revision: expected_clear.revision,
             update: SettingsUpdate {
                 unity: Some(alcomd_protocol::UnitySettingsUpdate {
+                    default_launch_arguments: NullableUpdate::Unchanged,
                     hub_path: NullableUpdate::Set(
                         hub_file.to_str().expect("UTF-8 selection").to_owned(),
                     ),
@@ -366,6 +383,7 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
             expected_revision: unrelated.revision,
             update: SettingsUpdate {
                 unity: Some(alcomd_protocol::UnitySettingsUpdate {
+                    default_launch_arguments: NullableUpdate::Unchanged,
                     hub_path: NullableUpdate::Clear,
                 }),
                 ..SettingsUpdate::default()
@@ -453,8 +471,41 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
         fs::read_to_string(data.join("config/settings.toml")).expect("read durable settings file");
     assert_eq!(
         settings_file,
-        "schema = 5\nrevision = 14\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"fruit-salad\"\nmotion = \"full\"\n\n[packages]\nshow_prerelease = true\nhidden_repository_ids = [\"00000000-0000-0000-0000-000000000000\", \"ffffffff-ffff-ffff-ffff-ffffffffffff\"]\nhide_local_user_packages = true\n"
+        r#"schema = 6
+revision = 14
+locale = "ja-JP"
+
+[appearance]
+mode = "dark"
+scheme = "fruit-salad"
+motion = "full"
+
+[packages]
+show_prerelease = true
+hidden_repository_ids = ["00000000-0000-0000-0000-000000000000", "ffffffff-ffff-ffff-ffff-ffffffffffff"]
+hide_local_user_packages = true
+
+[unity]
+default_launch_arguments = ["-logFile", " C:\\logs with spaces\\Editor.log ", ""]
+"#
     );
+    let restarted_shutdown = Arc::new(AtomicBool::new(false));
+    let restarted = alcomd_daemon::test_support::start_with_data_until(
+        raw_ipc,
+        DataConfig::isolated(data),
+        wait_for_shutdown(Arc::clone(&restarted_shutdown)),
+    )
+    .await
+    .expect("restart owned daemon with Config6");
+    let mut reopened = connect_with_retry(config).await;
+    let persisted = reopened.settings_get().await.expect("reopened settings");
+    assert_eq!(persisted.revision, 14);
+    assert_eq!(persisted.settings, hub_cleared.settings);
+    restarted_shutdown.store(true, Ordering::Relaxed);
+    restarted
+        .await
+        .expect("join restarted daemon")
+        .expect("restarted daemon shutdown");
 }
 
 async fn raw_request(

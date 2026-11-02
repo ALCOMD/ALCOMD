@@ -1,6 +1,6 @@
 # settings.toml Config Schema 2 proposal
 
-状态：已实施的 Config2 历史提案，仅保存迁移输入的原始合同；当前唯一写入和公开响应见 [Config Schema 5](settings-v5.md)。
+状态：已实施的 Config2 历史提案，仅保存迁移输入的原始合同；当前唯一写入和公开响应见 [Config Schema 6](settings-v6.md)。
 
 Config Schema 2 保持 daemon 唯一 writer、strict UTF-8、16 KiB 上限、checked revision CAS 与既有
 same-directory `.new`/`.bak` 原子替换和恢复纪律。它只在 Config Schema 1 上增加 package presentation设置：

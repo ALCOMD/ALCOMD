@@ -18,6 +18,7 @@ interface SaveState {
 
 export class UnityHubConflictError extends Error {}
 export class StorageDirectoryConflictError extends Error {}
+export class UnityArgumentsConflictError extends Error {}
 
 /** UI intent and RPC ordering only; the daemon remains the settings authority. */
 export class SettingsAutosave {
@@ -132,6 +133,27 @@ export class SettingsAutosave {
             this.requireActive();
             if (this.failed) throw this.error ?? { code: "internal_error", message: "" };
             return this.accepted!;
+        });
+    }
+
+    saveUnityArguments(arguments_: string[] | null, previousArguments: string[] | null): Promise<SettingsGetResult> {
+        return this.enqueue(async () => {
+            if (this.failed) throw this.error ?? { code: "internal_error", message: "" };
+            await this.drain();
+            this.requireActive();
+            if (this.failed) throw this.error ?? { code: "internal_error", message: "" };
+            this.apply(await this.client.settingsGet());
+            this.requireActive();
+            const current = this.accepted!;
+            const actual = current.settings.unity.defaultLaunchArguments;
+            if (JSON.stringify(actual) === JSON.stringify(arguments_)) return current;
+            if (JSON.stringify(actual) !== JSON.stringify(previousArguments)) {
+                throw new UnityArgumentsConflictError("Unity launch defaults changed.");
+            }
+            const next = await this.client.settingsUpdate(current.revision, { unity: { defaultLaunchArguments: arguments_ } });
+            this.requireActive();
+            this.apply(next);
+            return next;
         });
     }
 

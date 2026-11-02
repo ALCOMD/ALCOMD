@@ -1,6 +1,6 @@
 # ALCOMD RPC v1
 
-状态：M1-M6 已完成人工验收；当前活动合同含 M7 Portable UI、候选读取、Config5 设置和 Unity Hub 打开。M7 仍在进行中，当前人工签收范围以 `docs/status.md` 为准。
+状态：M1-M6 已完成人工验收；当前活动合同含 M7 Portable UI、候选读取、Config6 设置和 Unity Hub 打开。M7 仍在进行中，当前人工签收范围以 `docs/status.md` 为准。
 
 ## 1. M1 合同范围
 
@@ -263,8 +263,8 @@ store 成功初始化且 daemon ready 后，hello result 兼容增加可选 `dat
 }
 ```
 
-`dataSchema` 表示 daemon 成功初始化后的实际数据库结构版本；当前 State v16 由 daemon 的存储
-组合处提供，protocol 只序列化该事实，不能独立硬编码旧版本。当前 `configSchema` 为 5，
+`dataSchema` 表示 daemon 成功初始化后的实际数据库结构版本；当前 State v17 由 daemon 的存储
+组合处提供，protocol 只序列化该事实，不能独立硬编码旧版本。当前 `configSchema` 为 6，
 `extensionApi.major` 为 1。这些内部格式版本不等于产品发布版本。
 按 A-034，未发布开发库不承诺长期兼容；当前保留 v16 及既有迁移，发布前 Schema 整理另行审计，
 不因此自动清空数据。首次正式发布后维护正式升级与恢复链。
@@ -544,6 +544,12 @@ package/template/backup mutation 对 confirmed 返回 `unity_project_running`，
 并继续 live fingerprint gate。Unity launch 对 confirmed 拒绝第二实例，对 suspected/unknown 返回
 `unity_launch_state_uncertain`，只有 not_observed 允许 spawn。
 
+`unity.projectLaunchConfig.get` 返回必需 `config`、`defaultArguments`、`effectiveArguments`；
+`config.arguments` 保留项目覆盖语义。优先使用已保存项目覆盖（含空数组），其次全局覆盖，最后内置空数组；
+整组替换，不拼接。项目 revision 0 表示继承，clear 恢复继承。get 沿用 `projects.read + unity.read`，
+set/clear 的结果形状及权限保持。已接受 launch 固定有效参数，后续设置变更不改已接受启动；相同幂等键的有效参数变化返回冲突。
+flag 和 value 各占一项，通过无 shell 的 argv 数组传递；带空格路径保持为一个字符串，不要求额外 shell 引号。
+
 `unity.launchOptions` 由 Core 按 canonical exact Unity version 返回确定排序的匹配 installation。`unity.launch`
 要求调用方提供 one-shot InstallationId；该选择不持久化，并在启动前复验 project/installation identity、
 project revision、canonical exact version、permission 与永久 idempotency。成功
@@ -558,7 +564,7 @@ supervisor。foreground/activation 不在本合同中。
 `unity_launch_not_found`。普通 error 不包含完整进程命令行、私密路径、PID 列表或 OS debug。
 
 完整 DTO、enum 与上限由 `m5-unity.schema.json` 冻结。State v14 删除旧 editor preference 并保留独立 launch config；daemon
-在 store 成功初始化后通过 hello 广告当前 `dataSchema: 16` 和客户端实际协商的已实现 capability。此兼容增加不
+在 store 成功初始化后通过 hello 广告当前 `dataSchema: 17` 和客户端实际协商的已实现 capability。此兼容增加不
 改变 M1-M4 方法语义，也不表示 Template、Backup 或完整 CLI 已实现。
 
 ## 20. M5 contract-only 兼容增加：Template Bundle v1
@@ -664,7 +670,7 @@ catalog 或任意网络 fetch。retained data namespace 绑定 ExtensionId + pub
 
 `system.hello.result.extensionApi` 是兼容 optional field；daemon 在 data Schema v8 migration、Host/WIT/runtime 与
 对应 capability 全部生产可用后返回 `{major:1,world:"alcomd:extension/extension-v1@1.0.0"}`。
-State v8 是该功能的引入版本；当前 hello 报告 ready Store 的实际 State v16。旧 client 必须忽略未知 optional field。
+State v8 是该功能的引入版本；当前 hello 报告 ready Store 的实际 State v17。旧 client 必须忽略未知 optional field。
 
 M6 stable errors 由 `rpc-error.schema.json` 冻结。普通 error 只返回安全 code、opaque ID/revision 与必要 subreason，
 不返回 package/source/data 完整路径、public key material 以外的 credential、Host protocol、trap、WIT parser debug、
@@ -688,7 +694,7 @@ lease secret、InvocationContextId、private Principal metadata 或 raw Wasmtime
 
 State v9 只为 `extensions` 与 immutable `extension_plans` 增加 nullable checked `ui_protocol`；UI Session、Snapshot、
 action、replay 与 renderer state 都不持久化。State v9 是该功能的引入版本；当前 hello 报告 ready Store 的实际
-State v16，并只在 client 请求时回显已实现的 `extensions.ui.portable.v1` capability。
+State v17，并只在 client 请求时回显已实现的 `extensions.ui.portable.v1` capability。
 
 ## 24. M7 兼容增加：Official GUI settings/activity/diagnostics
 
@@ -705,10 +711,17 @@ M7 在 RPC major 1 上提供四个 utility base method，无独立 capability；
 
 `settings.update` 不接受 idempotency key、generic key/value、任意文件路径写入或 extension setting；revision conflict 使用现有
 `revision_conflict`。hello 只在 `config/settings.toml` production storage 成功初始化后，以兼容
-optional field 广告当前 production `configSchema: 5`；Hub 打开能力按其独立就绪和协商条件广告。Config5 保持 Config4 对 `appearance.density` 的删除；显式旧值或 null 均以未知字段拒绝，
-不保留别名或第二套当前模型。原 scheme 九值枚举、默认 `vibrant` 及其余设置保持。Config Schema 1／2／3／4
+optional field 广告当前 production `configSchema: 6`；Hub 打开能力按其独立就绪和协商条件广告。Config6 保持 Config4 对 `appearance.density` 的删除；显式旧值或 null 均以未知字段拒绝，
+不保留别名或第二套当前模型。原 scheme 九值枚举、默认 `vibrant` 及其余设置保持。Config Schema 1／2／3／4／5
 仅作为有效启动迁移输入：移除 density，保留原 revision 和其余有效设置，v1/v2 仅补既有默认值。
 这是已批准的发布前破坏性字段删除；严格客户端须同步，不改变 RPC major、methods、capabilities、permissions 或 State Schema。
+
+2026-11-03 已批准的 Config6 增加 `settings.unity.defaultLaunchArguments: string[] | null`。
+null 使用内置默认（当前 `[]`），`[]` 为显式空覆盖；PATCH 缺省不变，null 清除。更改该字段同时要求
+`settings.manage` 与既有 `unity.manage`，Hub-only 更新的权限保持。最多 64 项、每项 4096 UTF-8 bytes、
+JSON 数组 65536 bytes，并保持 16 KiB 配置总限；NUL 和 Core 项目选择器（含 `-createProject`、`-openfile`）拒绝。
+Config5→6 保留 revision 及全部现有设置，为新字段补 null。项目显式空覆盖由另行批准的
+[State17 最小迁移](../storage/state-v17-empty-unity-override.md) 保存；没有项目记录继续继承，不补造覆盖。完整 argv 仅由授权配置/项目读取返回，不进入 Activity 或诊断摘要。
 
 2026-11-03 已批准的 Config5 补齐默认保存目录：`settings.paths` 必含 `projectDirectory`、`backupDirectory`，
 各为 `string | null`；null 采用平台 Documents 下由产品身份派生的默认目录。`directories` 必含同名的两个有效绝对路径 string。
@@ -724,7 +737,7 @@ paths PATCH 字段省略不变、null 清除覆盖；容器 null/空对象、未
 configuredPathStatus；读取使用该响应的准确 ConfigSnapshot，派生状态不持久化、不推进 revision。
 已成功提交后的证据检测失败返回 unavailable 证据，不将提交改报失败。具体枚举、4096 UTF-8
 字节路径界限、三平台发现顺序、16 KiB 配置上限及尚未覆盖的 Hub 行为见
-`../config/unity-hub-location.proposal.contract.json` 和 `../config/settings-v5.md`。
+`../config/unity-hub-location.proposal.contract.json` 和 `../config/settings-v6.md`。
 
 settings.read/manage 明确授权的设置响应可返回所请求的 Hub 绝对路径，这是通用 redaction
 denylist 的窄例外；Activity、Event、普通错误和诊断投影不得因此泄露路径。位置偏好本身不新增
@@ -759,7 +772,7 @@ Hub、expectedPath 也为 null 时返回 `download_required`，不启动进程�
 Activity/Diagnostics page size 默认 100、最大 200，使用确定性 tuple keyset cursor。Activity 不返回 Event payload
 或 Operation request/result；Diagnostics v1 只投影已有 Operation failure 与 safe Event evidence，不新建 durable log
 table，也不提供 raw export。完整 DTO、redaction denylist 与 bounds 由 `m7-official-gui.schema.json`、
-`../config/settings-v5.schema.json` 和 `../security/official-gui-read-model-threat-model.md` 冻结。
+`../config/settings-v6.schema.json` 和 `../security/official-gui-read-model-threat-model.md` 冻结。
 
 ## 25. M7 兼容增加：Project Copy
 
@@ -778,7 +791,7 @@ SQLite inventory table。
 Operation phase、Copy Profile v1、quota、source 两遍 SHA-256 一致性、sibling staging、forward recovery、取消边界、
 Resource Lock 与稳定错误由 `m7-project-copy.proposal.schema.json` 和 `../storage/state-v10.md` 冻结。State v10 只增加
 `project_copy_plans`、`project_copy_filesystem_journal` 与 `operations.kind='projects.copy'`；State v10 是该功能的
-引入版本，当前 hello 报告 ready Store 的实际 State v16。新增 method/capability/字段是 RPC v1 兼容增加，既有 Project/Package 方法语义不变。
+引入版本，当前 hello 报告 ready Store 的实际 State v17。新增 method/capability/字段是 RPC v1 兼容增加，既有 Project/Package 方法语义不变。
 
 ## 26. M7 兼容增加：Project Favorite 与 Unity product-model replacement
 
@@ -823,7 +836,7 @@ Operation phase 固定为 `accepted`、`preflight_complete`、`quarantine_intent
 `unity_project_running`、`idempotency_conflict`、`permission_denied` 与 `internal_error` 继续复用。
 完整 DTO、phases、path/link/mount 与 recovery vectors 由 `m7-project-delete.proposal.schema.json`、
 `../security/m7-project-delete-path-vectors.json` 与 `../storage/state-v13.md` 冻结。删除事务始于 State v13；
-当前 Store 初始化至 State v16 后，hello 广告 `dataSchema: 16`。新增 method/capability/字段是 RPC v1
+当前 Store 初始化至 State v17 后，hello 广告 `dataSchema: 17`。新增 method/capability/字段是 RPC v1
 兼容增加，不改变 unregister 的 registry-only 语义。
 
 ## 28. M7 兼容增加：Project Unity Version migration
@@ -847,7 +860,7 @@ journal。`preparation_intent` 或 `launch_intent` 后禁止普通取消；daemo
 公开 Plan/Event/error 不包含 project/executable 完整路径、argv、PID、stdout/stderr 或 private recovery locator。受控本地技术
 日志可以保留诊断所需的准确绝对路径，但不得改变 RPC、Activity、Event 或普通 diagnostics 的脱敏合同。完整 DTO、phase、
 permission 与稳定错误由 `m7-unity-project-version.proposal.schema.json`、`state-v14-unity-project-version.proposal.contract.json`
-和 M7 Unity ExecPlan 冻结。当前 Store 初始化至 State v16 后，hello 广告 `dataSchema: 16`。
+和 M7 Unity ExecPlan 冻结。当前 Store 初始化至 State v17 后，hello 广告 `dataSchema: 17`。
 
 
 ## 29. M7 H2-A 兼容增加：Project package candidate evidence

@@ -58,7 +58,8 @@
         "boundedArguments": {
             "type": "array",
             "maxItems": 64,
-            "items": {"type": "string", "maxLength": 4096}
+            "items": {"type": "string", "maxLength": 4096, "pattern": "^[^\\u0000]*$", "x-alcomd-maxUtf8Bytes": 4096},
+            "x-alcomd-maxSerializedJsonBytes": 65536
         },
         "unityInstallation": {
             "type": "object",
@@ -93,9 +94,11 @@
         "projectUnityLaunchConfigResult": {
             "type": "object",
             "additionalProperties": true,
-            "required": ["config"],
+            "required": ["config", "defaultArguments", "effectiveArguments"],
             "properties": {
-                "config": {"$ref": "#/$defs/projectUnityLaunchConfig"}
+                "config": {"$ref": "#/$defs/projectUnityLaunchConfig"},
+                "defaultArguments": {"$ref": "#/$defs/boundedArguments"},
+                "effectiveArguments": {"$ref": "#/$defs/boundedArguments"}
             }
         },
         "projectUnityLaunchConfigMutationResult": {

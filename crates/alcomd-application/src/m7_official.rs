@@ -87,11 +87,13 @@ pub trait StorageDirectoryPlatform: Send + Sync + 'static {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ConfigUnitySettings {
     pub hub_path: Option<String>,
+    pub default_launch_arguments: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfigUnityUpdate {
     pub hub_path: ConfigNullableUpdate<String>,
+    pub default_launch_arguments: ConfigNullableUpdate<Vec<String>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -222,6 +224,9 @@ impl Default for ConfigSnapshot {
 impl ConfigSettings {
     /// Validates normalized settings independently of their transport or storage representation.
     pub fn validate(&self) -> Result<(), OfficialGuiError> {
+        if let Some(arguments) = &self.unity.default_launch_arguments {
+            crate::m5::validate_arguments(arguments).map_err(|_| OfficialGuiError::InvalidInput)?;
+        }
         if self
             .appearance
             .source_color
@@ -529,12 +534,19 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
         access
             .require(Permission::SettingsManage)
             .map_err(|_| OfficialGuiError::PermissionDenied)?;
+        if update.unity.as_ref().is_some_and(|value| {
+            !matches!(
+                value.default_launch_arguments,
+                ConfigNullableUpdate::Unchanged
+            )
+        }) {
+            access
+                .require(Permission::UnityManage)
+                .map_err(|_| OfficialGuiError::PermissionDenied)?;
+        }
         if expected_revision == 0
             || update_is_empty(&update)
-            || update
-                .unity
-                .as_ref()
-                .is_some_and(|value| matches!(value.hub_path, ConfigNullableUpdate::Unchanged))
+            || update.unity.as_ref().is_some_and(unity_update_is_empty)
             || update.paths.as_ref().is_some_and(path_update_is_empty)
         {
             return Err(OfficialGuiError::InvalidInput);
@@ -560,6 +572,7 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
                 .ok_or(OfficialGuiError::Corrupt)?;
             if let Some(ConfigUnityUpdate {
                 hub_path: ConfigNullableUpdate::Set(path),
+                ..
             }) = &mut update.unity
             {
                 if !valid_hub_path_text(path) {
@@ -748,6 +761,13 @@ fn apply_update(
             ConfigNullableUpdate::Clear => settings.unity.hub_path = None,
             ConfigNullableUpdate::Set(path) => settings.unity.hub_path = Some(path),
         }
+        match unity.default_launch_arguments {
+            ConfigNullableUpdate::Unchanged => {}
+            ConfigNullableUpdate::Clear => settings.unity.default_launch_arguments = None,
+            ConfigNullableUpdate::Set(arguments) => {
+                settings.unity.default_launch_arguments = Some(arguments);
+            }
+        }
     }
     if let Some(paths) = update.paths {
         for (target, value) in [
@@ -771,10 +791,7 @@ fn apply_update(
 fn update_is_empty(update: &ConfigUpdate) -> bool {
     update.locale.is_none()
         && update.paths.as_ref().is_none_or(path_update_is_empty)
-        && update
-            .unity
-            .as_ref()
-            .is_none_or(|value| matches!(value.hub_path, ConfigNullableUpdate::Unchanged))
+        && update.unity.as_ref().is_none_or(unity_update_is_empty)
         && update.appearance.as_ref().is_none_or(|value| {
             value.mode.is_none()
                 && value.scheme.is_none()
@@ -786,6 +803,14 @@ fn update_is_empty(update: &ConfigUpdate) -> bool {
                 && value.hidden_repository_ids.is_none()
                 && value.hide_local_user_packages.is_none()
         })
+}
+
+fn unity_update_is_empty(unity: &ConfigUnityUpdate) -> bool {
+    matches!(unity.hub_path, ConfigNullableUpdate::Unchanged)
+        && matches!(
+            unity.default_launch_arguments,
+            ConfigNullableUpdate::Unchanged
+        )
 }
 
 fn path_update_is_empty(paths: &ConfigPathUpdate) -> bool {
@@ -1627,8 +1652,157 @@ mod tests {
             appearance: None,
             locale: None,
             packages: None,
-            unity: Some(ConfigUnityUpdate { hub_path }),
+            unity: Some(ConfigUnityUpdate {
+                hub_path,
+                default_launch_arguments: ConfigNullableUpdate::Unchanged,
+            }),
         }
+    }
+
+    fn arguments_update(arguments: ConfigNullableUpdate<Vec<String>>) -> ConfigUpdate {
+        let mut update = hub_update(ConfigNullableUpdate::Unchanged);
+        update
+            .unity
+            .as_mut()
+            .expect("unity")
+            .default_launch_arguments = arguments;
+        update
+    }
+
+    #[tokio::test]
+    async fn default_arguments_require_unity_manage_without_changing_hub_authority() {
+        let config = Arc::new(MemoryConfig::default());
+        let app = M7OfficialApplication::new(
+            NoStore,
+            config.clone(),
+            Arc::new(FakeHub::default()),
+            Arc::new(RecordingHubLauncher::default()),
+            Arc::new(TestDirectories),
+        );
+        let settings_only =
+            AccessContext::new(PrincipalId::local_owner(), [Permission::SettingsManage]);
+        for arguments in [
+            ConfigNullableUpdate::Set(Vec::new()),
+            ConfigNullableUpdate::Clear,
+        ] {
+            let mut update = arguments_update(arguments);
+            update.locale = Some(ConfigLocale::JaJp);
+            assert_eq!(
+                app.update_settings(&settings_only, 1, update).await,
+                Err(OfficialGuiError::PermissionDenied)
+            );
+        }
+        assert_eq!(config.loads.load(Ordering::SeqCst), 0);
+        assert_eq!(config.publishes.load(Ordering::SeqCst), 0);
+        let hub = app
+            .update_settings(
+                &settings_only,
+                1,
+                hub_update(ConfigNullableUpdate::Set("/fixture/hub".into())),
+            )
+            .await
+            .expect("Hub selection keeps settings.manage authority");
+        assert_eq!(hub.settings.unity.default_launch_arguments, None);
+        let unity_only = AccessContext::new(PrincipalId::local_owner(), [Permission::UnityManage]);
+        assert_eq!(
+            app.update_settings(
+                &unity_only,
+                hub.revision,
+                arguments_update(ConfigNullableUpdate::Set(Vec::new())),
+            )
+            .await,
+            Err(OfficialGuiError::PermissionDenied)
+        );
+    }
+
+    #[tokio::test]
+    async fn default_arguments_preserve_literal_values_empty_clear_and_unrelated_updates() {
+        let config = Arc::new(MemoryConfig::default());
+        let app = M7OfficialApplication::new(
+            NoStore,
+            config.clone(),
+            Arc::new(FakeHub::default()),
+            Arc::new(RecordingHubLauncher::default()),
+            Arc::new(TestDirectories),
+        );
+        let arguments = vec![
+            "-logFile".into(),
+            r#"C:\用户 Data\Unity\a "quoted".log"#.into(),
+        ];
+        let saved = app
+            .update_settings(
+                &AccessContext::local_owner(),
+                1,
+                arguments_update(ConfigNullableUpdate::Set(arguments.clone())),
+            )
+            .await
+            .expect("literal argv");
+        assert_eq!(
+            saved.settings.unity.default_launch_arguments,
+            Some(arguments)
+        );
+        let unrelated = app
+            .update_settings(
+                &AccessContext::local_owner(),
+                saved.revision,
+                locale_update(ConfigLocale::JaJp),
+            )
+            .await
+            .expect("missing field stays unchanged");
+        assert_eq!(unrelated.settings.unity, saved.settings.unity);
+        let empty = app
+            .update_settings(
+                &AccessContext::local_owner(),
+                unrelated.revision,
+                arguments_update(ConfigNullableUpdate::Set(Vec::new())),
+            )
+            .await
+            .expect("explicit empty override");
+        assert_eq!(
+            empty.settings.unity.default_launch_arguments,
+            Some(Vec::new())
+        );
+        let cleared = app
+            .update_settings(
+                &AccessContext::local_owner(),
+                empty.revision,
+                arguments_update(ConfigNullableUpdate::Clear),
+            )
+            .await
+            .expect("clear to built-in defaults");
+        assert_eq!(cleared.settings.unity.default_launch_arguments, None);
+        assert_eq!(app.candidate_settings().await, Ok(cleared));
+    }
+
+    #[tokio::test]
+    async fn invalid_default_arguments_reject_mixed_updates_atomically() {
+        let config = Arc::new(MemoryConfig::default());
+        let original = config.snapshot.lock().expect("config").clone();
+        let app = M7OfficialApplication::new(
+            NoStore,
+            config.clone(),
+            Arc::new(FakeHub::default()),
+            Arc::new(RecordingHubLauncher::default()),
+            Arc::new(TestDirectories),
+        );
+        for arguments in [
+            vec!["a\0b".into()],
+            vec!["a".repeat(4097)],
+            vec!["arg".into(); 65],
+            vec!["-projectPath".into(), "/other/project".into()],
+            vec!["-createProject=/other/project".into()],
+            vec!["-OPENFILE".into(), "/other/project/file.unity".into()],
+        ] {
+            let mut update = arguments_update(ConfigNullableUpdate::Set(arguments));
+            update.locale = Some(ConfigLocale::JaJp);
+            assert_eq!(
+                app.update_settings(&AccessContext::local_owner(), 1, update)
+                    .await,
+                Err(OfficialGuiError::InvalidInput)
+            );
+            assert_eq!(*config.snapshot.lock().expect("config"), original);
+        }
+        assert_eq!(config.publishes.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]

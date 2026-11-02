@@ -1,6 +1,8 @@
 //! M5 Unity installation, writer observation and launch use cases.
 
 use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -71,6 +73,40 @@ pub struct ProjectUnityLaunchConfig {
     pub arguments: Vec<String>,
     pub revision: Option<Revision>,
     pub updated_at_ms: u64,
+}
+
+/// Stored project override and the currently resolved launch arguments.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProjectUnityLaunchConfigView {
+    pub config: ProjectUnityLaunchConfig,
+    pub default_arguments: Vec<String>,
+    pub effective_arguments: Vec<String>,
+}
+
+/// Core-owned, coherent snapshot of global launch defaults.
+pub trait UnityLaunchDefaultsSource: Send + Sync {
+    fn arguments(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, M5UnityError>> + Send + '_>>;
+}
+
+impl<S: crate::OfficialGuiStore> UnityLaunchDefaultsSource for crate::M7OfficialApplication<S> {
+    fn arguments(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>, M5UnityError>> + Send + '_>> {
+        Box::pin(async {
+            self.candidate_settings()
+                .await
+                .map(|snapshot| {
+                    snapshot
+                        .settings
+                        .unity
+                        .default_launch_arguments
+                        .unwrap_or_default()
+                })
+                .map_err(|_| M5UnityError::new(M5UnityErrorCode::Internal))
+        })
+    }
 }
 
 /// Exact one-shot launch candidates for the project's observed Unity version.
@@ -307,12 +343,17 @@ pub trait M5UnityPlatform: Clone + Send + Sync + 'static {
 pub struct M5UnityApplication<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> {
     store: S,
     platform: P,
+    defaults: Arc<dyn UnityLaunchDefaultsSource>,
 }
 
 impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S, P> {
     #[must_use]
-    pub const fn new(store: S, platform: P) -> Self {
-        Self { store, platform }
+    pub fn new(store: S, platform: P, defaults: Arc<dyn UnityLaunchDefaultsSource>) -> Self {
+        Self {
+            store,
+            platform,
+            defaults,
+        }
     }
 
     pub async fn list_installations(
@@ -386,12 +427,24 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
         &self,
         access: &AccessContext,
         project_id: ProjectId,
-    ) -> Result<ProjectUnityLaunchConfig, M5UnityError> {
+    ) -> Result<ProjectUnityLaunchConfigView, M5UnityError> {
         require(access, Permission::ProjectsRead)?;
         require(access, Permission::UnityRead)?;
-        self.store
+        let config = self
+            .store
             .get_project_launch_config(access.principal().clone(), project_id)
-            .await
+            .await?;
+        let default_arguments = self.defaults.arguments().await?;
+        let effective_arguments = if config.revision.is_some() {
+            config.arguments.clone()
+        } else {
+            default_arguments.clone()
+        };
+        Ok(ProjectUnityLaunchConfigView {
+            config,
+            default_arguments,
+            effective_arguments,
+        })
     }
 
     pub async fn set_project_launch_config(
@@ -548,10 +601,16 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
         if project.revision != expected_project_revision {
             return Err(M5UnityError::new(M5UnityErrorCode::RevisionConflict));
         }
-        let config = self
+        let mut config = self
             .store
             .get_project_launch_config(access.principal().clone(), project_id)
             .await?;
+        if config.revision.is_none() {
+            // This transient copy binds the accepted launch to its effective argv;
+            // the stored project override remains absent.
+            config.arguments = self.defaults.arguments().await?;
+        }
+        validate_arguments(&config.arguments)?;
         if let Some(record) = self
             .store
             .replay_launch(
@@ -751,12 +810,16 @@ fn project_selector(arguments: &[String]) -> Option<&str> {
     })
 }
 
-fn validate_arguments(arguments: &[String]) -> Result<(), M5UnityError> {
+pub(crate) fn validate_arguments(arguments: &[String]) -> Result<(), M5UnityError> {
     let encoded_size = json_arguments_size(arguments)
         .ok_or_else(|| M5UnityError::new(M5UnityErrorCode::InvalidInput))?;
     if arguments.iter().any(|argument| {
-        argument.eq_ignore_ascii_case("-projectPath")
-            || argument.to_ascii_lowercase().starts_with("-projectpath=")
+        let name = argument
+            .split_once('=')
+            .map_or(argument.as_str(), |(name, _)| name);
+        ["-projectPath", "-openfile", "-createProject"]
+            .iter()
+            .any(|selector| name.eq_ignore_ascii_case(selector))
     }) {
         return Err(M5UnityError::new(
             M5UnityErrorCode::ProjectSelectorForbidden,
@@ -764,7 +827,9 @@ fn validate_arguments(arguments: &[String]) -> Result<(), M5UnityError> {
     }
     if arguments.len() > 64
         || encoded_size > 65_536
-        || arguments.iter().any(|argument| argument.len() > 4_096)
+        || arguments
+            .iter()
+            .any(|argument| argument.len() > 4_096 || argument.contains('\0'))
     {
         return Err(M5UnityError::new(M5UnityErrorCode::InvalidInput));
     }
@@ -933,6 +998,29 @@ mod tests {
             M5UnityErrorCode::ProjectSelectorForbidden
         );
         assert!(validate_arguments(&vec!["x".repeat(4_096); 17]).is_err());
+        for selector in [
+            "-openfile",
+            "-OPENFILE=Scene.unity",
+            "-createProject",
+            "-CREATEPROJECT=X:/other",
+        ] {
+            assert_eq!(
+                validate_arguments(&[selector.to_owned()])
+                    .expect_err("alternate project selector")
+                    .code(),
+                M5UnityErrorCode::ProjectSelectorForbidden
+            );
+        }
+        assert_eq!(
+            validate_arguments(&["embedded\0nul".to_owned()])
+                .expect_err("NUL cannot be passed to an OS process")
+                .code(),
+            M5UnityErrorCode::InvalidInput
+        );
+        assert!(
+            validate_arguments(&[String::new(), "literal \"quotes\" \\ spaces ".to_owned()])
+                .is_ok()
+        );
     }
 
     #[test]

@@ -55,11 +55,12 @@ Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据�
   No shell 指应用不构造、调用或通过 shell 执行命令，不拼接/解释 shell 参数；保留标准库与
   OS 的 ENOEXEC/解释器回退语义。spawn 成功仅为 OS 接受，不代表 Hub 已正常运行、厂商
   身份、退出成功或窗口就绪；同步拒绝、后续退出与资源回收分别验证。
-- 正式合同与证据分别见 `specs/config/settings-v5.*`（Config1–4 仅为迁移历史）、
+- 正式合同与证据分别见 `specs/config/settings-v6.*`（Config1–5 仅为迁移历史）、
   `specs/config/theme-controls.proposal.contract.json`、
   `specs/config/unity-hub-location.proposal.contract.json`、
   `specs/storage/state-v15-project-last-modified.contract.json`、
-  `specs/storage/state-v16-remove-project-observed.contract.json` 和对应 testing 文档。
+  `specs/storage/state-v16-remove-project-observed.contract.json`、
+  `specs/storage/state-v17-empty-unity-override.md` / `.contract.json` 和对应 testing 文档。
   名为 proposal 的已批准合同仍由这些既有文件直接维护，不建立第二份有效合同。
 
 本轮 Schema 策略与架构审查修复的逐轮证据见
@@ -688,7 +689,7 @@ About 确定性修前 0/1；最终 Chromium/同版 Edge 各 3/0，相关分段 6
 所有者随后确认改为逐行布局：复用共享设置行，模式/主题色/方案纵向排列，九方案使用现有 Select，删除两列布局和专用样式；操作紧接最后一行，保存和预览逻辑不变。GUI check、metadata/diff 与定向 **35/0** 通过，覆盖真实下拉键盘、九方案预览及保存/取消/失败/冲突、三语和布局。匹配 GUI 构建通过，原 profile 复开 GUI147632，原 Core130768、五组公开状态及配置保持。不改公共合同、权限、持久数据或依赖，不重复完整门禁；最终人工确认仍待所有者。
 所有者进一步要求无图标分段内部左右各 24px，主题模式改为现有 Select；删除 showCheckmark 选项和隐藏宽度测量层，使用 Material 自身等宽布局。所有者确认窄窗允许放不下，包括本次 640px 英文设置导航；仅调整该完整显示断言，正文/路径/按钮可达性及其他窄窗覆盖保留。GUI/UI check、metadata/diff 通过；分批相关结果为 53/1（3 项未执行）及补查 5/0，连续下拉用例改等公开关闭生命周期，产品代码未再改动，原失败保留；详见当前 status，不冒称完整门禁。匹配 GUI 构建及原 profile 复开完成，GUI149844/Core130768，五组公开状态及配置不变，原生观感仍待所有者。
 
-#### Unity 设置截图对照与待批准补齐（2026-11-03）
+#### Unity 设置截图对照与补齐（2026-11-03）
 
 只读对照 v3 设置、启动流程及当前 v4 后确认：全局默认 Unity 启动参数尚缺；已有项目参数不能替代它。
 原 `m7-v3-settings-audit-20260919.md` 已记录此缺口，未找到将其正式取消或划入后续里程碑的决定。
@@ -696,7 +697,7 @@ About 确定性修前 0/1；最终 Chromium/同版 Edge 各 3/0，相关分段 6
 v3 旧 Hub 开关切换读取 Hub 配置与调用 Hub CLI 两种 Editor 发现策略；v4 当前只扫描平台默认安装根，
 尚未覆盖 Hub 自定义安装根及已定位 Editor。此发现缺口单独补齐，不直接复制旧开关或旧实现。
 
-**待所有者批准的全局参数最小合同；尚未修改生产实现：**
+**所有者已批准全局参数最小合同，并要求依据 Unity 官方规则实现：**
 
 - Config5→6，`settings.unity.defaultLaunchArguments: string[] | null`；TOML `unity.default_launch_arguments` 可省略。
   null 使用产品内置默认（当前为空数组），`[]` 是显式空参数；settings PATCH 省略该字段表示不变。
@@ -707,10 +708,25 @@ v3 旧 Hub 开关切换读取 Hub 配置与调用 Hub CLI 两种 Editor 发现�
   GUI 的默认参数组与项目参数编辑器应准确区分继承、显式空数组、取消和恢复默认，不沿用 v3 的 null/取消混淆。
 - 复用现有参数数量/长度/项目路径选择器禁用规则，拒绝 NUL，保留 ConfigStore 16 KiB 文件总上限和串行 CAS。
   参数通过 argv 数组传递；不使用 shell，不把完整参数写入 Activity、普通错误或诊断摘要。
-- Config5 及既有迁移输入增加 null 默认，保留 revision、目录、Hub、主题及其他设置；不改 State16 或项目数据结构。
+- Config5 及既有迁移输入增加 null 默认，保留 revision、目录、Hub、主题及其他设置。
+  定向测试发现 State16 只允许非空数组；所有者另行批准 State17 最小迁移，仅允许该表保存 0–64 项，原样复制旧记录，
+  其他列、外键、STRICT、大小/修订约束保持，不改项目文件。此前不需 State 变更的实现假设据实际约束纠正。
   接受启动时固定有效参数快照；全局变更不得改变已接受启动，同幂等键受影响的设置变更沿用明确冲突而非静默改参重启。
 - 新增全局参数设置 UI、Core 用例/读取投影、协议/Schema/消费者/快照及定向回归按一个独立功能提交；不新增依赖，
   不执行真实用户项目启动、迁移或 Hub CLI。Editor 发现完整性与现有入口简化作为另一项整改，不捆绑审批。
+
+Unity 官方 2022.3 [参数说明](https://docs.unity3d.com/2022.3/Documentation/Manual/EditorCommandLineArguments.html)
+及 Rust 官方 [Command::args](https://doc.rust-lang.org/std/process/struct.Command.html#method.args)
+确认 flag/value 分别传入、含空格路径保持单个 argv，不做 shell 引号解析。`-openfile` 另选项目入口、
+`-createProject` 创建项目，故和 `-projectPath` 一并拒绝，保持打开所选项目的语义；不增加跨版本 flag allowlist。
+Core 共享已初始化的设置快照，启动时固定有效数组；继承非空参数使用有界私有幂等标识及响应快照绑定准确 argv，
+既有无附加参数及项目覆盖请求保留旧指纹，不改写历史记录。完整参数不进入 Activity/普通错误。
+GUI 逐项编辑参数，保留空值、空格、引号与反斜线，使用共享 Material/提醒/错误组件；保存失败、未知结果和竞争写入不冒充成功。
+
+本批定向结果：Application52/0、Protocol52/0、Store123/0，私有快照长度修正后 M5 模块4/0；隔离RPC/合同25/0、端点所有权4/0；
+GUI check/build、保存队列24场景、浏览器65/6与完整受影响两模块补查14/0，测试预期/插槽定位修正没有改产品实现或删除断言。
+六crate Clippy、fmt/xtask/metadata及一次匹配Core/CLI/GUI构建通过；原数据/profile已恢复，Core125676/GUI144536，
+公开状态保持，Config6迁移仅改TOML版本，保留实际切换前revision168。各轮准确范围见status，不冒称完整门禁或M7签收。
 
 ### 当前 H7 授权与收束（2026-11-02）
 

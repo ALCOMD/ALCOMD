@@ -12,7 +12,7 @@ import type {
     PackagePlan,
     PackageSourceSelector,
     ProjectSnapshot,
-    ProjectUnityLaunchConfig,
+    ProjectUnityLaunchConfigResult,
     ProjectUnityMigrationPlan,
     RepositorySnapshot,
     TemplateRecord,
@@ -30,6 +30,7 @@ import { reviewTemplateCreation, reviewTemplateDerive, reviewTemplateImport, Tem
 import { Reminder, RequestReminder, useReminder } from "./Reminder";
 import { displayPath } from "./display-path";
 import { useProjectDirectory } from "./use-project-directory";
+import { UnityArgumentsEditor } from "./UnityArgumentsEditor";
 import { ExtensionPermissions, ExtensionPermissionRequests, hasPermissionRequests } from "./ExtensionPermissions";
 
 interface ActionProps {
@@ -347,52 +348,74 @@ export function UnityRegistryActions({ client, installations, onChanged }: Actio
     </ActionSection>;
 }
 
-export function ProjectLaunchArgumentsDialog({ client, launchConfig, onChanged, onClose, onSaved, projectId }: ActionProps & { launchConfig?: ProjectUnityLaunchConfig; onClose(): void; onSaved?(message: string): void; projectId: string }) {
+export function ProjectLaunchArgumentsDialog({ client, launchConfig, onChanged, onClose, onSaved, projectId }: ActionProps & { launchConfig?: ProjectUnityLaunchConfigResult; onClose(): void; onSaved?(message: string): void; projectId: string }) {
     const { t } = useTranslation();
     const canManage = useCapability(capabilities.unityManage);
     const [open, setOpen] = useState(true);
     const initialConfig = useRef(launchConfig).current;
-    const [config, setConfig] = useState<ProjectUnityLaunchConfig>();
-    const [argumentsText, setArgumentsText] = useState("");
+    const [snapshot, setSnapshot] = useState<ProjectUnityLaunchConfigResult>();
+    const [arguments_, setArguments] = useState<string[]>([]);
+    const [inherit, setInherit] = useState(true);
+    const [conflict, setConflict] = useState(false);
+    const [unknown, setUnknown] = useState(false);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
     const pending = useRef(false);
     useEffect(() => {
         let active = true;
-        setConfig(undefined);
+        setSnapshot(undefined);
         setFeedback(INITIAL_FEEDBACK);
-        const read = initialConfig === undefined ? client.unityProjectLaunchConfigGet(projectId).then((result) => result.config) : Promise.resolve(initialConfig);
+        const read = initialConfig === undefined ? client.unityProjectLaunchConfigGet(projectId) : Promise.resolve(initialConfig);
         void read.then((value) => {
             if (!active) return;
-            setConfig(value); setArgumentsText(value.arguments.join("\n"));
+            setSnapshot(value); setArguments([...value.effectiveArguments]); setInherit(value.config.revision === 0);
         }).catch((caught: unknown) => { if (active) setFeedback({ busy: false, error: safeError(caught) }); });
         return () => { active = false; };
     }, [client, initialConfig, projectId]);
     const close = () => { if (!pending.current) setOpen(false); };
-    const save = async (clear: boolean) => {
-        if (!canManage || config === undefined || pending.current) return;
-        pending.current = true; setFeedback({ busy: true });
+    const finish = () => {
+        setFeedback(INITIAL_FEEDBACK); setOpen(false);
+        onSaved?.(inherit ? t("Using global Unity launch arguments.") : t("Unity launch arguments updated.")); onChanged?.();
+    };
+    const save = async () => {
+        if (!canManage || snapshot === undefined || pending.current || conflict) return;
+        pending.current = true; setFeedback({ busy: true }); setUnknown(false);
         try {
-            if (clear) await client.unityProjectLaunchConfigClear(projectId, config.revision);
-            else await client.unityProjectLaunchConfigSet(projectId, argumentsText.split(/\r?\n/).map((value) => value.trim()).filter(Boolean), config.revision);
-            setFeedback(INITIAL_FEEDBACK); setOpen(false); onSaved?.(clear ? t("Unity launch arguments cleared.") : t("Unity launch arguments updated.")); onChanged?.();
-        } catch (caught: unknown) { setFeedback({ busy: false, error: safeError(caught) }); }
+            // Reconcile an earlier lost response before repeating a write.
+            const current = await client.unityProjectLaunchConfigGet(projectId);
+            if (inherit ? current.config.revision === 0 : current.config.revision > 0 && JSON.stringify(current.config.arguments) === JSON.stringify(arguments_)) { finish(); return; }
+            if (current.config.revision !== snapshot.config.revision) { setConflict(true); setFeedback(INITIAL_FEEDBACK); return; }
+            if (inherit) await client.unityProjectLaunchConfigClear(projectId, current.config.revision);
+            else await client.unityProjectLaunchConfigSet(projectId, arguments_, current.config.revision);
+            finish();
+        } catch (caught: unknown) {
+            try {
+                const current = await client.unityProjectLaunchConfigGet(projectId);
+                if (inherit ? current.config.revision === 0 : current.config.revision > 0 && JSON.stringify(current.config.arguments) === JSON.stringify(arguments_)) { finish(); return; }
+                if (current.config.revision !== snapshot.config.revision) { setConflict(true); setFeedback(INITIAL_FEEDBACK); return; }
+            } catch { setUnknown(true); }
+            setFeedback({ busy: false, error: safeError(caught) });
+        }
         finally { pending.current = false; }
     };
     return <MaterialDialog dismissible={!feedback.busy} open={open} onClose={onClose} title={t("Unity launch arguments")}>
-        {config === undefined ? feedback.error === undefined ? <LoadingState title={t("Loading launch arguments…")} /> : null : <form onSubmit={(event) => { event.preventDefault(); void save(false); }}>
-            <TextField disabled={feedback.busy} id="unity-arguments" label={t("Additional arguments")} maxLength={4096} onInput={setArgumentsText} rows={4} supportingText={t("One argument per line. The daemon validates forbidden arguments.")} type="textarea" value={argumentsText} />
+        {snapshot === undefined ? feedback.error === undefined ? <LoadingState title={t("Loading launch arguments…")} /> : null : <form onSubmit={(event) => { event.preventDefault(); void save(); }}>
+            <Select label={t("Launch arguments")} value={inherit ? "default" : "custom"} disabled={!canManage || feedback.busy || conflict}
+                onChange={(value) => { setInherit(value === "default"); setFeedback(INITIAL_FEEDBACK); }}
+                options={[{ value: "default", label: t("Use global defaults") }, { value: "custom", label: t("Custom arguments") }]} />
+            <UnityArgumentsEditor id="project-unity-argument" value={inherit ? snapshot.defaultArguments : arguments_}
+                onChange={(next) => { setArguments(next); setFeedback(INITIAL_FEEDBACK); }} disabled={!canManage || feedback.busy || conflict} readOnly={inherit} />
+            {conflict ? <Reminder tone="error">{t("These arguments changed elsewhere. Close and reopen this editor to load the current values.")}</Reminder> : null}
             <div className="dialog-actions">
                 <Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button>
-                <Button disabled={!canManage || feedback.busy || config.revision === 0} onClick={() => void save(true)} type="button" variant="text">{t("Clear launch arguments")}</Button>
-                <Button disabled={!canManage || feedback.busy} type="submit">{t("Save launch arguments")}</Button>
+                <Button disabled={!canManage || feedback.busy || conflict || (inherit && snapshot.config.revision === 0)} type="submit">{t(feedback.error === undefined ? "Save launch arguments" : "Retry")}</Button>
             </div>
         </form>}
-        {config === undefined ? <div className="dialog-actions"><Button onClick={close} type="button" variant="text">{t("Cancel")}</Button></div> : null}
-        <MutationFeedback client={client} feedback={feedback} />
+        {snapshot === undefined ? <div className="dialog-actions"><Button onClick={close} type="button" variant="text">{t("Cancel")}</Button></div> : null}
+        <MutationFeedback client={client} errorTitle={unknown ? t("Launch argument save result is unknown") : undefined} feedback={feedback} />
     </MaterialDialog>;
 }
 
-export function ProjectUnityActions({ afterMigrationOpen = false, client, installations, launchConfig, launchOptions, project, onChanged }: ActionProps & { afterMigrationOpen?: boolean; installations: UnityInstallation[]; launchConfig: ProjectUnityLaunchConfig; launchOptions: UnityLaunchOptionsResult; project: ProjectSnapshot }) {
+export function ProjectUnityActions({ afterMigrationOpen = false, client, installations, launchConfig, launchOptions, project, onChanged }: ActionProps & { afterMigrationOpen?: boolean; installations: UnityInstallation[]; launchConfig: ProjectUnityLaunchConfigResult; launchOptions: UnityLaunchOptionsResult; project: ProjectSnapshot }) {
     const { t } = useTranslation();
     const canLaunch = useCapability(capabilities.unityLaunch);
     const canManage = useCapability(capabilities.unityManage);

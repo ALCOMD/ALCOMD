@@ -48,7 +48,7 @@ export interface UnityHubLocation {
 
 export interface OfficialSettings {
     paths: { projectDirectory: string | null; backupDirectory: string | null };
-    unity: { hubPath: string | null };
+    unity: { hubPath: string | null; defaultLaunchArguments: string[] | null };
     appearance: {
         mode: AppearanceMode;
         sourceColor: string | null;
@@ -66,14 +66,14 @@ export interface OfficialSettings {
 export interface SettingsGetResult {
     directories: { projectDirectory: string; backupDirectory: string };
     unityHub: UnityHubLocation;
-    configSchema: 5;
+    configSchema: 6;
     revision: number;
     settings: OfficialSettings;
 }
 
 export interface SettingsUpdate {
     paths?: { projectDirectory?: string | null; backupDirectory?: string | null };
-    unity?: { hubPath?: string | null };
+    unity?: { hubPath?: string | null; defaultLaunchArguments?: string[] | null };
     appearance?: {
         mode?: AppearanceMode;
         sourceColor?: string | null;
@@ -377,7 +377,7 @@ export interface ProjectUnityLaunchConfig {
     updatedAtMs: number;
 }
 
-export interface ProjectUnityLaunchConfigResult { config: ProjectUnityLaunchConfig }
+export interface ProjectUnityLaunchConfigResult { config: ProjectUnityLaunchConfig; defaultArguments: string[]; effectiveArguments: string[] }
 export interface ProjectUnityLaunchConfigMutationResult { config: ProjectUnityLaunchConfig; changed: boolean; replayed: boolean }
 
 export interface UnityWriterState {

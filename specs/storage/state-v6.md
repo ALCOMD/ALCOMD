@@ -28,7 +28,8 @@ worker 或 CLI 已发布。
 
 ## M7 默认备份目录与保留数据
 
-Config5 补齐默认保存目录后，当前数据库仍为 State16；本节只补充已存在 JSON/locator 字段的内部语义，
+Config5 默认保存目录增量不要求 State 迁移；当前数据库为 State17（独立的 Unity 显式空参数覆盖迁移）。
+本节只补充已存在 JSON/locator 字段的内部语义，
 不修改 0006、表、列或 public `backups.create` 参数。新接受的备份请求在 `request_json` 和 accepted checkpoint 中
 固定可选 `destination = { directory, identity }`：有界绝对 canonical Unicode 目录及 opaque filesystem identity。
 新任务读取同一 application 设置权威一次；执行、取消清理和重启恢复只使用其冻结目录并重新验证 identity。

@@ -757,6 +757,11 @@ md-linear-progress {
 .settings-path { overflow-wrap: anywhere; }
 .settings-save-error { position: absolute; z-index: 8; top: 12px; right: 24px; width: min(520px, calc(100% - 48px)); max-height: calc(100% - 24px); overflow: auto; box-shadow: 0 2px 6px #0003; border-radius: var(--alcomd-shape-container); }
 .settings-section .action-row { margin: 0; }
+.unity-arguments-editor { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.unity-arguments-editor .settings-supporting-text { margin: 0; color: var(--md-sys-color-on-surface-variant); }
+.unity-argument-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.unity-argument-row md-outlined-text-field { flex: 1; min-width: 0; }
+.unity-argument-row > :last-child:not(md-outlined-text-field) { flex: none; }
 .repository-row-actions { display: flex; align-items: center; gap: 4px; flex: none; }
 
 .page-surface.page-surface--utility {

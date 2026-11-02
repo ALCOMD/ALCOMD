@@ -19,6 +19,7 @@ import { navigationLabels } from "./navigation-labels";
 import { ThemeControls, themePreferences } from "./ThemeControls";
 import { Reminder, RequestReminder } from "./Reminder";
 import { displayPath } from "./display-path";
+import { UnityDefaultArgumentsSettings } from "./UnityDefaultArgumentsSettings";
 
 interface SettingsWorkspaceProps {
     client: GuiRpcClient;
@@ -64,6 +65,7 @@ export function SettingsWorkspace({ client, settingsWriter, onApplied, onThemePr
                     <div className="settings-unity-group" hidden={category !== "unity"}>
                         <UnityHubSettingsSection client={client} settingsWriter={settingsWriter} snapshot={snapshot} onInstallationsChanged={() => setUnityGeneration((value) => value + 1)} />
                         <UnitySettingsSection client={client} initialRead={initialUnity} externalGeneration={unityGeneration} />
+                        <UnityDefaultArgumentsSettings settingsWriter={settingsWriter} snapshot={snapshot} />
                     </div>
                     <SettingsEditor category={category} client={client} settingsWriter={settingsWriter} snapshot={snapshot} onThemePreview={onThemePreview} onThemeSession={onThemeSession}
                         initialRepositories={initialRepositories} onApplied={onApplied} onDirtyChange={dirtyChanged} />

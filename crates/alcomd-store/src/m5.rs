@@ -14,6 +14,15 @@ struct LaunchConfigMutationRecord {
     changed: bool,
 }
 
+/// Private accepted argv; launch/status return only the flattened public record.
+#[derive(serde::Deserialize, Serialize)]
+struct StoredLaunch {
+    #[serde(flatten)]
+    record: UnityLaunchRecord,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    inherited_arguments: Option<Vec<String>>,
+}
+
 pub(super) fn register_installation(
     connection: &mut Connection,
     owner: &PrincipalId,
@@ -351,7 +360,7 @@ pub(super) fn set_project_launch_config(
         (Some(current), Some(expected)) if current == expected => {}
         _ => return Err(error(M5UnityErrorCode::RevisionConflict)),
     }
-    if current.arguments == arguments {
+    if current.revision.is_some() && current.arguments == arguments {
         let response = LaunchConfigMutationRecord {
             config: current,
             changed: false,
@@ -505,7 +514,7 @@ pub(super) fn accept_launch(
     let transaction = transaction(connection)?;
     let fingerprint = launch_fingerprint(&project, &config, installation_id);
     if let Some(record) =
-        replay::<UnityLaunchRecord>(&transaction, owner, "unity.launch", key, &fingerprint)?
+        replay_launch(&transaction, owner, &project, &config, installation_id, key)?
     {
         transaction.commit().map_err(failure)?;
         return Ok((record, true));
@@ -541,7 +550,11 @@ pub(super) fn accept_launch(
         "unity.launch",
         key,
         &fingerprint,
-        &record,
+        &StoredLaunch {
+            record: record.clone(),
+            inherited_arguments: (config.revision.is_none() && !config.arguments.is_empty())
+                .then_some(config.arguments),
+        },
         now_ms,
     )?;
     transaction.commit().map_err(failure)?;
@@ -570,9 +583,16 @@ pub(super) fn replay_launch(
         Some((stored, _)) if stored != fingerprint => {
             Err(error(M5UnityErrorCode::IdempotencyConflict))
         }
-        Some((_, response)) => serde_json::from_str(&response)
-            .map(Some)
-            .map_err(|_| corrupt()),
+        Some((_, response)) => {
+            let stored: StoredLaunch = serde_json::from_str(&response).map_err(|_| corrupt())?;
+            if config.revision.is_none()
+                && !config.arguments.is_empty()
+                && stored.inherited_arguments.as_ref() != Some(&config.arguments)
+            {
+                return Err(error(M5UnityErrorCode::IdempotencyConflict));
+            }
+            Ok(Some(stored.record))
+        }
         None => Ok(None),
     }
 }
@@ -582,6 +602,16 @@ fn launch_fingerprint(
     config: &ProjectUnityLaunchConfig,
     installation_id: UnityInstallationId,
 ) -> String {
+    if config.revision.is_none() && !config.arguments.is_empty() {
+        // argv belongs in the private response snapshot: request fingerprints
+        // have a 4096-character bound, smaller than valid global settings.
+        return format!(
+            r#"{{"installationId":"{installation_id}","launchConfigRevision":0,"projectId":"{}","projectRevision":{},"version":4}}"#,
+            project.project_id,
+            project.revision.get()
+        );
+    }
+    // Preserve durable keys already accepted before global defaults existed.
     format!(
         r#"{{"installationId":"{}","launchConfigRevision":{},"projectId":"{}","projectRevision":{},"version":3}}"#,
         installation_id,
@@ -596,6 +626,14 @@ pub(super) fn get_launch(
     owner: &PrincipalId,
     launch_id: UnityLaunchId,
 ) -> Result<UnityLaunchRecord, M5UnityError> {
+    load_launch(connection, owner, launch_id).map(|stored| stored.record)
+}
+
+fn load_launch(
+    connection: &Connection,
+    owner: &PrincipalId,
+    launch_id: UnityLaunchId,
+) -> Result<StoredLaunch, M5UnityError> {
     connection
         .query_row(
             "SELECT response_json FROM idempotency_records
@@ -618,10 +656,10 @@ pub(super) fn set_launch_state(
     spawn_accepted: bool,
 ) -> Result<UnityLaunchRecord, M5UnityError> {
     let transaction = transaction(connection)?;
-    let mut record = get_launch(&transaction, owner, launch_id)?;
-    record.state = state;
-    record.spawn_accepted = spawn_accepted;
-    let response = serde_json::to_string(&record).map_err(|_| corrupt())?;
+    let mut stored = load_launch(&transaction, owner, launch_id)?;
+    stored.record.state = state;
+    stored.record.spawn_accepted = spawn_accepted;
+    let response = serde_json::to_string(&stored).map_err(|_| corrupt())?;
     transaction
         .execute(
             "UPDATE idempotency_records SET response_json=?1
@@ -631,7 +669,7 @@ pub(super) fn set_launch_state(
         )
         .map_err(failure)?;
     transaction.commit().map_err(failure)?;
-    Ok(record)
+    Ok(stored.record)
 }
 
 fn load_installation(

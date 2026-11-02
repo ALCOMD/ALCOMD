@@ -76,6 +76,11 @@ pub(super) async fn dispatch(
                     backup_directory: directory_update_from_rpc(value.backup_directory),
                 }),
                 unity: params.update.unity.map(|value| app::ConfigUnityUpdate {
+                    default_launch_arguments: match value.default_launch_arguments {
+                        rpc::NullableUpdate::Unchanged => app::ConfigNullableUpdate::Unchanged,
+                        rpc::NullableUpdate::Clear => app::ConfigNullableUpdate::Clear,
+                        rpc::NullableUpdate::Set(value) => app::ConfigNullableUpdate::Set(value),
+                    },
                     hub_path: match value.hub_path {
                         rpc::NullableUpdate::Unchanged => app::ConfigNullableUpdate::Unchanged,
                         rpc::NullableUpdate::Clear => app::ConfigNullableUpdate::Clear,
@@ -264,6 +269,7 @@ fn settings_result(
             },
             unity: rpc::UnitySettings {
                 hub_path: value.settings.unity.hub_path,
+                default_launch_arguments: value.settings.unity.default_launch_arguments,
             },
             appearance: rpc::AppearanceSettings {
                 mode: match value.settings.appearance.mode {
@@ -412,7 +418,7 @@ mod tests {
                 backup_directory: "/fixtures/backups".into(),
             },
         );
-        assert_eq!(result.config_schema, 5);
+        assert_eq!(result.config_schema, 6);
         assert_eq!(
             result.config_schema,
             alcomd_store::FileConfigStore::SCHEMA_VERSION

@@ -32,21 +32,21 @@ def require(condition: bool, message: str) -> None:
 
 
 def validate_current_settings_contract() -> None:
-    current = load_json("specs/config/settings-v5.schema.json")
+    current = load_json("specs/config/settings-v6.schema.json")
     definitions = current["$defs"]
     fields = {"mode", "scheme", "sourceColor", "motion"}
-    require(current["properties"]["schema"]["const"] == 5, "Current settings Schema must be 5")
-    require("density" not in definitions, "Config5 must not define density")
-    require(set(definitions["appearance"]["properties"]) == fields, "Unexpected Config5 appearance fields")
-    require(set(definitions["appearance"]["required"]) == fields, "Config5 appearance must be complete")
+    require(current["properties"]["schema"]["const"] == 6, "Current settings Schema must be 6")
+    require("density" not in definitions, "Config6 must not define density")
+    require(set(definitions["appearance"]["properties"]) == fields, "Unexpected Config6 appearance fields")
+    require(set(definitions["appearance"]["required"]) == fields, "Config6 appearance must be complete")
     partial = definitions["partialUpdate"]["properties"]["appearance"]
-    require(set(partial["properties"]) == fields, "Config5 updates must not accept density")
+    require(set(partial["properties"]) == fields, "Config6 updates must not accept density")
     require(definitions["appearance"]["additionalProperties"] is False and partial["additionalProperties"] is False,
-            "Config5 appearance must reject unknown fields")
+            "Config6 appearance must reject unknown fields")
     migration = current["x-alcomd-migration"]
-    require(migration["from"] == [1, 2, 3, 4] and migration["to"] == 5, "Unexpected Config5 migration inputs")
+    require(migration["from"] == [1, 2, 3, 4, 5] and migration["to"] == 6, "Unexpected Config6 migration inputs")
     require(migration["removedFields"] == ["appearance.density"] and migration["preserveRevision"] is True,
-            "Config5 migration must discard only density without changing revision")
+            "Config6 migration preserves revision and discards only legacy density")
     for version in (1, 2, 3, 4):
         legacy = load_json(f"specs/config/settings-v{version}.schema.json")
         require(legacy["properties"]["schema"]["const"] == version, "Historical settings version changed")
@@ -57,26 +57,26 @@ def validate_current_settings_contract() -> None:
         else:
             require("density" not in legacy["$defs"], "Config4 migration input must not regain density")
     rpc = load_json("specs/rpc/m7-official-gui.schema.json")["$defs"]
-    require(rpc["settingsGetResult"]["properties"]["configSchema"]["const"] == 5, "Settings RPC must report Config5")
-    base = "https://alcomd.cqmhv.com/schema/config/settings-v5.json#/$defs/"
+    require(rpc["settingsGetResult"]["properties"]["configSchema"]["const"] == 6, "Settings RPC must report Config6")
+    base = "https://alcomd.cqmhv.com/schema/config/settings-v6.json#/$defs/"
     require(rpc["settingsGetResult"]["properties"]["settings"]["$ref"] == base + "settings",
             "Settings RPC must use the current settings model")
     require(rpc["settingsUpdateParams"]["properties"]["update"]["$ref"] == base + "partialUpdate",
             "Settings RPC updates must use the current model")
     hello = load_json("specs/rpc/system-hello.response.schema.json")
-    require(hello["properties"]["result"]["properties"]["configSchema"]["const"] == 5, "Hello must report Config5")
+    require(hello["properties"]["result"]["properties"]["configSchema"]["const"] == 6, "Hello must report Config6")
     theme = load_json("specs/config/theme-controls.proposal.contract.json")
     require(theme["configMigration"]["to"] == 5 and "appearance.density" not in theme["ordinarySettings"]["fields"],
-            "Theme controls must use Config5 without a density preference")
+            "Historical theme migration remains Config5 without a density preference")
     hub = load_json("specs/config/unity-hub-location.proposal.contract.json")
-    require(hub["interfaces"]["configSchema"] == 5, "Hub settings must use Config5")
-    vectors = load_json("specs/config/settings-v5.contract-vectors.json")
-    require(vectors["currentConfigSchema"] == 5 and vectors["current"]["getResult"]["configSchema"] == 5,
-            "Settings vectors must describe Config5")
+    require(hub["interfaces"]["configSchema"] == 6, "Hub settings must use Config6")
+    vectors = load_json("specs/config/settings-v6.contract-vectors.json")
+    require(vectors["currentConfigSchema"] == 6 and vectors["current"]["getResult"]["configSchema"] == 6,
+            "Settings vectors must describe Config6")
     require("density" not in vectors["current"]["getResult"]["settings"]["appearance"],
             "Current settings fixture must omit density")
-    require(tomllib.loads(vectors["current"]["toml"])["schema"] == 5, "Current TOML fixture must be Config5")
-    require([case["schema"] for case in vectors["legacyInputs"]] == [1, 2, 3, 4], "Missing legacy settings vectors")
+    require(tomllib.loads(vectors["current"]["toml"])["schema"] == 6, "Current TOML fixture must be Config6")
+    require([case["schema"] for case in vectors["legacyInputs"]] == [1, 2, 3, 4, 5], "Missing legacy settings vectors")
     for case in vectors["legacyInputs"]:
         source = tomllib.loads(case["toml"])
         require(source["schema"] == case["schema"] and (source["appearance"].get("density") in {"default", "compact"} if source["schema"] < 4 else "density" not in source["appearance"]),
@@ -85,22 +85,39 @@ def validate_current_settings_contract() -> None:
                 "Settings migration vectors must preserve revision and omit density")
     for case in vectors["rejectedCurrentFiles"]:
         source = tomllib.loads(case["toml"])
-        require(source["schema"] == 5 and "density" in source["appearance"], "Missing Config5 unknown-field counterexample")
+        require(source["schema"] == 6 and "density" in source["appearance"], "Missing Config6 unknown-field counterexample")
 
     directory_fields = {"projectDirectory", "backupDirectory"}
     require(set(definitions["pathSettings"]["properties"]) == directory_fields and
             set(definitions["pathSettings"]["required"]) == directory_fields,
-            "Config5 directory preferences must be complete and closed")
+            "Config6 directory preferences must be complete and closed")
     require(definitions["pathSettings"]["additionalProperties"] is False and
             definitions["partialPathUpdate"]["additionalProperties"] is False and
             definitions["partialPathUpdate"]["minProperties"] == 1,
-            "Config5 path updates must reject empty/unknown containers")
+            "Config6 path updates must reject empty/unknown containers")
     require(rpc["settingsGetResult"]["properties"]["directories"]["$ref"] == base + "storageDirectories",
             "Settings RPC must publish effective directories")
     require(migration["pathsDefaults"] == {"projectDirectory": None, "backupDirectory": None},
             "Legacy migration must use system directory defaults")
     require(vectors["current"]["getResult"]["settings"]["paths"] == migration["pathsDefaults"],
             "Current settings fixture must include nullable directory preferences")
+
+    legacy5 = load_json("specs/config/settings-v5.schema.json")
+    require(legacy5["properties"]["schema"]["const"] == 5 and
+            set(legacy5["$defs"]["unitySettings"]["properties"]) == {"hubPath"},
+            "Historical Config5 shape must remain unchanged")
+    unity_fields = {"hubPath", "defaultLaunchArguments"}
+    require(set(definitions["unitySettings"]["properties"]) == unity_fields and
+            set(definitions["unitySettings"]["required"]) == unity_fields and
+            definitions["unitySettings"]["additionalProperties"] is False,
+            "Config6 Unity settings must be complete and closed")
+    require(definitions["partialUnityUpdate"]["minProperties"] == 1 and
+            definitions["partialUnityUpdate"]["additionalProperties"] is False and
+            definitions["partialUnityUpdate"]["x-alcomd-field-permissions"]["defaultLaunchArguments"] == ["settings.manage", "unity.manage"],
+            "Global launch arguments must retain field-level permission checks")
+    require(migration["unityDefaults"] == {"defaultLaunchArguments": None} and
+            vectors["current"]["getResult"]["settings"]["unity"]["defaultLaunchArguments"] is None,
+            "Config6 migration must default to inherited built-in arguments")
 
 
 def main() -> int:

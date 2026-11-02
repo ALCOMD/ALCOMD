@@ -1,13 +1,13 @@
 import type { SettingsGetResult, SettingsUpdate } from "./core-models.ts";
-import { SettingsAutosave, StorageDirectoryConflictError, UnityHubConflictError } from "./settings-autosave.ts";
+import { SettingsAutosave, StorageDirectoryConflictError, UnityArgumentsConflictError, UnityHubConflictError } from "./settings-autosave.ts";
 
 const initial: SettingsGetResult = {
-    configSchema: 5, revision: 7,
+    configSchema: 6, revision: 7,
     directories: { projectDirectory: "C:\\Projects", backupDirectory: "C:\\Backups" },
     unityHub: { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" },
     settings: {
         paths: { projectDirectory: null, backupDirectory: null },
-        unity: { hubPath: null },
+        unity: { hubPath: null, defaultLaunchArguments: null },
         locale: "en-US",
         appearance: { mode: "system", scheme: "vibrant", sourceColor: null, motion: "system" },
         packages: { showPrerelease: false, hideLocalUserPackages: false, hiddenRepositoryIds: [] }
@@ -35,7 +35,7 @@ function model() {
             requests.push({ expectedRevision, update: structuredClone(update) });
             assert(expectedRevision === current.revision, "CAS expected current revision");
             current = {
-                configSchema: 5, revision: expectedRevision + 1,
+                configSchema: 6, revision: expectedRevision + 1,
                 directories: {
                     projectDirectory: update.paths?.projectDirectory ?? current.directories.projectDirectory,
                     backupDirectory: update.paths?.backupDirectory ?? current.directories.backupDirectory
@@ -333,4 +333,41 @@ async function idle(writer: SettingsAutosave) {
     equal(fixture.requests.length, 1, "only corrected directory is written");
 }
 
-console.log("Settings autosave coordination passed (20 scenarios).");
+{
+    const fixture = model();
+    const arguments_ = ["-logFile", "C:\\Logs with spaces\\Editor.log", "", "  spaced  ", '"literal" \\value'];
+    fixture.writer.change({ packages: { showPrerelease: true } });
+    await fixture.writer.saveUnityArguments(arguments_, null);
+    await fixture.writer.saveTheme({ mode: "dark", sourceColor: null, scheme: "neutral" });
+    equal(fixture.requests.map((request) => request.expectedRevision), [7, 8, 9], "global argv serializes with ordinary and theme writes");
+    equal(fixture.requests[1]!.update, { unity: { defaultLaunchArguments: arguments_ } }, "argv values are forwarded intact in a narrow patch");
+    equal(fixture.current().settings.unity.hubPath, null, "argv save preserves Hub preference");
+}
+
+{
+    const fixture = model();
+    await fixture.writer.saveUnityArguments([], null);
+    await fixture.writer.saveUnityArguments(null, []);
+    equal(fixture.requests.map((request) => request.update), [{ unity: { defaultLaunchArguments: [] } }, { unity: { defaultLaunchArguments: null } }], "empty override and built-in defaults are distinct");
+}
+
+{
+    const fixture = model();
+    const original = fixture.client.settingsUpdate;
+    fixture.client.settingsUpdate = async (...args) => { await original(...args); throw new Error("Lost response"); };
+    await fixture.writer.saveUnityArguments(["-batchmode"], null).catch(() => undefined);
+    equal(fixture.writer.getSnapshot().accepted!.settings.unity.defaultLaunchArguments, null, "unconfirmed argv is not shown as saved");
+    await fixture.writer.saveUnityArguments(["-batchmode"], null);
+    equal(fixture.requests.length, 1, "argv retry reconciles committed values without duplicating the write");
+}
+
+{
+    const fixture = model();
+    await fixture.client.settingsUpdate(7, { unity: { defaultLaunchArguments: ["-batchmode"] } });
+    const conflict = await fixture.writer.saveUnityArguments(["-nographics"], null).then(() => false, (error) => error instanceof UnityArgumentsConflictError);
+    assert(conflict, "competing global argv edits require a new editor snapshot");
+    equal(fixture.requests.length, 1, "argv save does not overwrite a concurrent default edit");
+    equal(fixture.writer.getSnapshot().accepted!.settings.unity.defaultLaunchArguments, ["-batchmode"], "conflict reloads Core authority");
+}
+
+console.log("Settings autosave coordination passed (24 scenarios).");

@@ -259,7 +259,7 @@ ExternalConfig(provider_id)
 ```
 
 核心在 state store 成功初始化并完成恢复后，兼容返回可选 `dataSchema`；当前开发基线为
-State v16，实际版本由 daemon 提供。当前配置格式为 Config5，返回可选 `configSchema: 5`；
+State v17，实际版本由 daemon 提供。当前配置格式为 Config6，返回可选 `configSchema: 6`；
 `extensionApi` 返回已实现的 ABI v1 major 与版本化 WIT world。
 这些可选字段按 RPC v1 的兼容增加规则提供，不是 capability，也不属于 M1 客户端必读字段。
 
@@ -519,7 +519,7 @@ macOS 与 Linux 分别遵循 Application Support 和 XDG 规范，但稳定目�
 
 `settings.toml` 保存可理解的公开设置。`state.db` 是内部权威状态，不是第三方 API。凭据进入 OS Credential Store / Keychain / Secret Service。
 
-数据库结构版本按 A-034 管理。当前开发基线为 State v16；daemon 在 store 成功初始化后，将实际
+数据库结构版本按 A-034/A-035 管理。当前开发基线为 State v17；daemon 在 store 成功初始化后，将实际
 存储版本传给 hello DTO，protocol 不依赖 store，也不独立维护一份“当前数据版本”常量。
 `dataSchema` 只说明存储结构，不替代应用版本、RPC major 或 capability 协商。
 
@@ -527,7 +527,8 @@ macOS 与 Linux 分别遵循 Application Support 和 XDG 规范，但稳定目�
 通过重建 fixture 适配；布局有变化时仍须如实识别版本，不能把不兼容布局冒充同一版本。
 不得因“不保证开发兼容”自动删除现有数据库、Plan、Operation 或恢复证据。首次正式发布前
 单独审计并收敛当时有效的初始 Schema，清除无保留需要的开发迁移和旧格式支持；此后严格维护
-正式用户的数据升级和恢复。当前 v16 及已有迁移保持，清理不随本轮修复执行。
+正式用户的数据升级和恢复。State17 仅按所有者明确批准，将项目 Unity 参数数组下限从1改为0；
+逐行原样保留旧数据，已有迁移保持，清理不随本轮修复执行。
 
 版本独立：
 

@@ -1,0 +1,414 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/config/settings-v6.json",
+    "title": "ALCOMD Config Schema 6 settings",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+        "schema",
+        "revision",
+        "appearance",
+        "packages",
+        "locale"
+    ],
+    "properties": {
+        "schema": {
+            "const": 6
+        },
+        "revision": {
+            "$ref": "#/$defs/revision"
+        },
+        "appearance": {
+            "$ref": "#/$defs/appearance"
+        },
+        "packages": {
+            "$ref": "#/$defs/packages"
+        },
+        "locale": {
+            "$ref": "#/$defs/locale"
+        },
+        "unity": {
+            "$ref": "#/$defs/unitySettings"
+        },
+        "paths": {
+            "$ref": "#/$defs/pathSettings"
+        }
+    },
+    "$defs": {
+        "revision": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 18446744073709551615
+        },
+        "uuid": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        },
+        "mode": {
+            "enum": [
+                "system",
+                "light",
+                "dark"
+            ]
+        },
+        "scheme": {
+            "enum": [
+                "tonal-spot",
+                "fidelity",
+                "monochrome",
+                "neutral",
+                "vibrant",
+                "expressive",
+                "content",
+                "rainbow",
+                "fruit-salad"
+            ]
+        },
+        "sourceColor": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "pattern": "^#[0-9A-F]{6}$"
+        },
+        "motion": {
+            "enum": [
+                "system",
+                "full",
+                "reduced"
+            ]
+        },
+        "locale": {
+            "enum": [
+                "system",
+                "en-US",
+                "zh-CN",
+                "ja-JP"
+            ]
+        },
+        "appearance": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "mode",
+                "scheme",
+                "sourceColor",
+                "motion"
+            ],
+            "properties": {
+                "mode": {
+                    "$ref": "#/$defs/mode"
+                },
+                "scheme": {
+                    "$ref": "#/$defs/scheme"
+                },
+                "sourceColor": {
+                    "$ref": "#/$defs/sourceColor"
+                },
+                "motion": {
+                    "$ref": "#/$defs/motion"
+                }
+            }
+        },
+        "hiddenRepositoryIds": {
+            "type": "array",
+            "maxItems": 256,
+            "uniqueItems": true,
+            "items": {
+                "$ref": "#/$defs/uuid"
+            },
+            "x-alcomd-order": "canonical-lexical-ascending",
+            "x-alcomd-duplicates": "invalid_request"
+        },
+        "packages": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "showPrerelease",
+                "hiddenRepositoryIds",
+                "hideLocalUserPackages"
+            ],
+            "properties": {
+                "showPrerelease": {
+                    "type": "boolean"
+                },
+                "hiddenRepositoryIds": {
+                    "$ref": "#/$defs/hiddenRepositoryIds"
+                },
+                "hideLocalUserPackages": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "hubPath": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "x-alcomd-maxUtf8Bytes": 4096,
+            "x-alcomd-validation": "Core-normalized absolute usable executable on explicit update"
+        },
+        "unitySettings": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "hubPath",
+                "defaultLaunchArguments"
+            ],
+            "properties": {
+                "hubPath": {
+                    "$ref": "#/$defs/hubPath"
+                },
+                "defaultLaunchArguments": {
+                    "$ref": "#/$defs/defaultLaunchArguments"
+                }
+            }
+        },
+        "partialUnityUpdate": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+                "hubPath": {
+                    "$ref": "#/$defs/hubPath"
+                },
+                "defaultLaunchArguments": {
+                    "$ref": "#/$defs/defaultLaunchArguments"
+                }
+            },
+            "x-alcomd-field-permissions": {
+                "defaultLaunchArguments": [
+                    "settings.manage",
+                    "unity.manage"
+                ]
+            }
+        },
+        "settings": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "appearance",
+                "packages",
+                "locale",
+                "unity",
+                "paths"
+            ],
+            "properties": {
+                "appearance": {
+                    "$ref": "#/$defs/appearance"
+                },
+                "packages": {
+                    "$ref": "#/$defs/packages"
+                },
+                "locale": {
+                    "$ref": "#/$defs/locale"
+                },
+                "unity": {
+                    "$ref": "#/$defs/unitySettings"
+                },
+                "paths": {
+                    "$ref": "#/$defs/pathSettings"
+                }
+            }
+        },
+        "partialPackagesUpdate": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+                "showPrerelease": {
+                    "type": "boolean"
+                },
+                "hiddenRepositoryIds": {
+                    "$ref": "#/$defs/hiddenRepositoryIds"
+                },
+                "hideLocalUserPackages": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "partialUpdate": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+                "appearance": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "minProperties": 1,
+                    "properties": {
+                        "mode": {
+                            "$ref": "#/$defs/mode"
+                        },
+                        "scheme": {
+                            "$ref": "#/$defs/scheme"
+                        },
+                        "sourceColor": {
+                            "$ref": "#/$defs/sourceColor"
+                        },
+                        "motion": {
+                            "$ref": "#/$defs/motion"
+                        }
+                    }
+                },
+                "packages": {
+                    "$ref": "#/$defs/partialPackagesUpdate"
+                },
+                "locale": {
+                    "$ref": "#/$defs/locale"
+                },
+                "unity": {
+                    "$ref": "#/$defs/partialUnityUpdate"
+                },
+                "paths": {
+                    "$ref": "#/$defs/partialPathUpdate"
+                }
+            }
+        },
+        "directoryPath": {
+            "type": [
+                "string",
+                "null"
+            ],
+            "minLength": 1,
+            "maxLength": 4096,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+            "x-alcomd-maxUtf8Bytes": 4096,
+            "x-alcomd-validation": "Core-normalized absolute existing safe directory on explicit update; null uses OS Documents defaults"
+        },
+        "pathSettings": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "projectDirectory",
+                "backupDirectory"
+            ],
+            "properties": {
+                "projectDirectory": {
+                    "$ref": "#/$defs/directoryPath"
+                },
+                "backupDirectory": {
+                    "$ref": "#/$defs/directoryPath"
+                }
+            }
+        },
+        "partialPathUpdate": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+                "projectDirectory": {
+                    "$ref": "#/$defs/directoryPath"
+                },
+                "backupDirectory": {
+                    "$ref": "#/$defs/directoryPath"
+                }
+            }
+        },
+        "storageDirectories": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+                "projectDirectory",
+                "backupDirectory"
+            ],
+            "properties": {
+                "projectDirectory": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "x-alcomd-maxUtf8Bytes": 4096
+                },
+                "backupDirectory": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096,
+                    "pattern": "^[^\\u0000-\\u001F\\u007F]+$",
+                    "x-alcomd-maxUtf8Bytes": 4096
+                }
+            }
+        },
+        "launchArguments": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+                "type": "string",
+                "maxLength": 4096,
+                "pattern": "^[^\\u0000]*$",
+                "x-alcomd-maxUtf8Bytes": 4096
+            },
+            "x-alcomd-maxSerializedJsonBytes": 65536,
+            "x-alcomd-forbiddenSelectors": [
+                "-projectPath",
+                "-createProject",
+                "-openfile"
+            ],
+            "x-alcomd-selectorComparison": "case-insensitive-exact-or-equals-prefix",
+            "x-alcomd-passing": "literal-argv-no-shell-no-splitting"
+        },
+        "defaultLaunchArguments": {
+            "anyOf": [
+                {
+                    "$ref": "#/$defs/launchArguments"
+                },
+                {
+                    "type": "null"
+                }
+            ],
+            "description": "null uses built-in defaults (currently []); [] is an explicit empty override."
+        }
+    },
+    "x-alcomd-migration": {
+        "from": [
+            1,
+            2,
+            3,
+            4,
+            5
+        ],
+        "to": 6,
+        "legacyInputs": "validate-each-historical-schema-before-discarding-density",
+        "removedFields": [
+            "appearance.density"
+        ],
+        "v1Defaults": "packages-and-scheme",
+        "v2Defaults": "scheme",
+        "defaultScheme": "vibrant",
+        "preserveRevision": true,
+        "preserveExistingSettingsExceptDensity": true,
+        "runBeforeReady": true,
+        "failure": "restore-valid-input-authority-and-fail-closed",
+        "pathsDefaults": {
+            "projectDirectory": null,
+            "backupDirectory": null
+        },
+        "unityDefaults": {
+            "defaultLaunchArguments": null
+        }
+    },
+    "x-alcomd-storage": {
+        "path": "config/settings.toml",
+        "writer": "alcomd",
+        "maxUtf8Bytes": 16384,
+        "maxHiddenRepositoryIds": 256,
+        "unknownFields": "fail-closed",
+        "replacement": "same-directory-synced-temp-then-recoverable-rename"
+    },
+    "x-alcomd-launch-inheritance": {
+        "precedence": [
+            "project-override-including-empty",
+            "global-override-including-empty",
+            "built-in-empty"
+        ],
+        "merge": false,
+        "projectGetProjection": [
+            "defaultArguments",
+            "effectiveArguments"
+        ],
+        "acceptedLaunch": "snapshot-effective-arguments-at-acceptance"
+    }
+}

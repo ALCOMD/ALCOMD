@@ -1,0 +1,64 @@
+{
+    "status": "owner-approved-production-migration",
+    "from": 16,
+    "to": 17,
+    "transaction": "BEGIN IMMEDIATE",
+    "migration": "crates/alcomd-store/migrations/0017_empty_unity_launch_override.sql",
+    "tableRebuilt": "project_unity_launch_config",
+    "onlyConstraintChange": {
+        "jsonArrayLength": {
+            "before": {
+                "minimum": 1,
+                "maximum": 64
+            },
+            "after": {
+                "minimum": 0,
+                "maximum": 64
+            }
+        }
+    },
+    "preserved": [
+        "project_id-primary-key",
+        "projects-foreign-key-on-delete-cascade",
+        "STRICT",
+        "json-valid-array-type",
+        "json-text-65536-character-limit",
+        "revision-1-to-i64-max",
+        "updated-at-ms-0-to-i64-max",
+        "all-existing-row-values-and-JSON-bytes",
+        "all-other-tables",
+        "events-and-sequence",
+        "permanent-idempotency-records",
+        "historical-migrations"
+    ],
+    "rowsSynthesized": false,
+    "semantics": {
+        "missingRecord": "inherit-global-or-built-in-defaults",
+        "storedEmptyArray": "explicit-empty-override",
+        "existingNonemptyArray": "project-override",
+        "clear": "delete-override-and-resume-inheritance"
+    },
+    "applicationValidationUnchanged": {
+        "elementType": "string",
+        "maxItems": 64,
+        "maxItemUtf8Bytes": 4096,
+        "maxSerializedJsonBytes": 65536,
+        "nul": "reject",
+        "managedProjectSelectors": "reject-case-insensitive-exact-and-equals-form"
+    },
+    "startup": "migrate-before-ready-and-advertise-successful-actual-version",
+    "failure": "rollback-retain-State16-authority-and-fail-closed",
+    "newMethodCapabilityPermissionOrDependency": false,
+    "projectFileChanges": false,
+    "validation": [
+        "state16-production-upgrade",
+        "all-existing-table-rows-preserved",
+        "event-sequence-preserved",
+        "missing-override-not-synthesized",
+        "empty-array-reopen",
+        "foreign-key-check-and-cascade",
+        "STRICT-and-existing-bound-rejection",
+        "failed-copy-rollback",
+        "future-schema-fail-closed"
+    ]
+}

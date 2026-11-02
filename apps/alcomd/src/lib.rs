@@ -167,7 +167,24 @@ async fn initialize_daemon_with_directories(
     m4.recover()
         .await
         .map_err(|_| BindError::Io(io::Error::other("package transaction recovery failed")))?;
-    let unity = M5Application::new(store.clone(), m5_platform::PlatformUnityAdapter);
+    let official_gui = M7OfficialApplication::new(
+        store.clone(),
+        Arc::new(alcomd_store::FileConfigStore::new(
+            data_root.join("config").join("settings.toml"),
+        )),
+        Arc::new(hub_platform::PlatformUnityHubAdapter),
+        Arc::new(hub_platform::PlatformUnityHubLauncher::default()),
+        directory_platform,
+    );
+    official_gui
+        .initialize_settings()
+        .await
+        .map_err(|_| BindError::Io(io::Error::other("Config initialization failed")))?;
+    let unity = M5Application::new(
+        store.clone(),
+        m5_platform::PlatformUnityAdapter,
+        Arc::new(official_gui.clone()),
+    );
     let unity_migration_engine = alcomd_vpm::UnityMigrationEngine::new(
         store.clone(),
         reader.clone(),
@@ -252,19 +269,6 @@ async fn initialize_daemon_with_directories(
         .await
         .map_err(|_| BindError::Io(io::Error::other("Extension recovery failed")))?;
     let m7 = M7Application::new(m6.clone(), m7_rpc::ProtocolUiValidator);
-    let official_gui = M7OfficialApplication::new(
-        store.clone(),
-        Arc::new(alcomd_store::FileConfigStore::new(
-            data_root.join("config").join("settings.toml"),
-        )),
-        Arc::new(hub_platform::PlatformUnityHubAdapter),
-        Arc::new(hub_platform::PlatformUnityHubLauncher::default()),
-        directory_platform,
-    );
-    official_gui
-        .initialize_settings()
-        .await
-        .map_err(|_| BindError::Io(io::Error::other("Config initialization failed")))?;
     if let Ok(defaults) = official_gui
         .observe_storage_directories(&alcomd_application::ConfigSnapshot::default())
         .await

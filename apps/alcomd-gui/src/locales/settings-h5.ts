@@ -1,6 +1,23 @@
 import type { TranslationTable } from "../i18n-types";
 
 export const settingsH5Messages: TranslationTable = {
+    "Edit": { "zh-CN": "编辑", "ja-JP": "編集" },
+    "Default Unity launch arguments": { "zh-CN": "默认 Unity 启动参数", "ja-JP": "既定のUnity起動引数" },
+    "Used by projects without custom launch arguments.": { "zh-CN": "用于未单独设置启动参数的项目。", "ja-JP": "独自の起動引数を設定していないプロジェクトで使います。" },
+    "Enter each option and its value separately. Paths with spaces stay in one field; no extra quotes are needed.": { "zh-CN": "选项和它的值分别填写。含空格的路径放在一个输入框中，无需额外加引号。", "ja-JP": "オプションと値を別々に入力します。空白を含むパスは1つの欄に入力し、引用符は追加しないでください。" },
+    "No additional arguments.": { "zh-CN": "无额外启动参数。", "ja-JP": "追加の起動引数はありません。" },
+    "{count} arguments": { "zh-CN": "{count} 个参数", "ja-JP": "{count}個の引数" },
+    "Argument {number}": { "zh-CN": "参数 {number}", "ja-JP": "引数 {number}" },
+    "Remove argument {number}": { "zh-CN": "移除参数 {number}", "ja-JP": "引数 {number} を削除" },
+    "Add argument": { "zh-CN": "添加参数", "ja-JP": "引数を追加" },
+    "Use global defaults": { "zh-CN": "使用全局默认", "ja-JP": "グローバル設定を使用" },
+    "Custom arguments": { "zh-CN": "自定义参数", "ja-JP": "独自の引数" },
+    "Using global Unity launch arguments.": { "zh-CN": "已改用全局默认 Unity 启动参数。", "ja-JP": "グローバルのUnity起動引数を使用します。" },
+    "Launch arguments": { "zh-CN": "启动参数", "ja-JP": "起動引数" },
+    "Default Unity launch arguments saved.": { "zh-CN": "默认 Unity 启动参数已保存。", "ja-JP": "既定のUnity起動引数を保存しました。" },
+    "These arguments changed elsewhere. Close and reopen this editor to load the current values.": { "zh-CN": "参数已在其他位置更改，请关闭后重新打开，载入当前值。", "ja-JP": "引数が別の場所で変更されました。閉じてから開き直すと現在の値を読み込めます。" },
+    "Launch arguments could not be saved.": { "zh-CN": "无法保存启动参数。", "ja-JP": "起動引数を保存できませんでした。" },
+    "Launch argument save result is unknown": { "zh-CN": "启动参数保存结果待确认", "ja-JP": "起動引数の保存結果を確認できません" },
     "General": { "zh-CN": "常规", "ja-JP": "一般" },
     "Notifications": { "zh-CN": "通知", "ja-JP": "通知" },
     "Save locations": { "zh-CN": "保存位置", "ja-JP": "保存先" },

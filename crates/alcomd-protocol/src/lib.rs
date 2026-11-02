@@ -1830,6 +1830,8 @@ pub struct ProjectUnityLaunchConfigSetParams {
 #[serde(rename_all = "camelCase")]
 pub struct ProjectUnityLaunchConfigResult {
     pub config: ProjectUnityLaunchConfig,
+    pub default_arguments: Vec<String>,
+    pub effective_arguments: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2450,7 +2452,7 @@ pub struct ProjectsApplyUnityMigrationResult {
     pub replayed: bool,
 }
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 5;
+pub const CONFIG_SCHEMA_VERSION: u32 = 6;
 pub const MAX_OFFICIAL_GUI_PAGE_LIMIT: u32 = 200;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2535,6 +2537,8 @@ pub struct StorageDirectories {
 pub struct UnitySettings {
     #[serde(deserialize_with = "Option::deserialize")]
     pub hub_path: Option<String>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub default_launch_arguments: Option<Vec<String>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2775,6 +2779,8 @@ impl<'de> Deserialize<'de> for PathSettingsUpdate {
 pub struct UnitySettingsUpdate {
     #[serde(default, skip_serializing_if = "NullableUpdate::is_unchanged")]
     pub hub_path: NullableUpdate<String>,
+    #[serde(default, skip_serializing_if = "NullableUpdate::is_unchanged")]
+    pub default_launch_arguments: NullableUpdate<Vec<String>>,
 }
 
 impl<'de> Deserialize<'de> for UnitySettingsUpdate {
@@ -2787,15 +2793,18 @@ impl<'de> Deserialize<'de> for UnitySettingsUpdate {
         struct Fields {
             #[serde(default)]
             hub_path: NullableUpdate<String>,
+            #[serde(default)]
+            default_launch_arguments: NullableUpdate<Vec<String>>,
         }
         let value = Fields::deserialize(deserializer)?;
-        if value.hub_path.is_unchanged() {
+        if value.hub_path.is_unchanged() && value.default_launch_arguments.is_unchanged() {
             return Err(serde::de::Error::custom(
-                "unity update must contain hubPath",
+                "unity update must contain hubPath or defaultLaunchArguments",
             ));
         }
         Ok(Self {
             hub_path: value.hub_path,
+            default_launch_arguments: value.default_launch_arguments,
         })
     }
 }
@@ -3398,7 +3407,7 @@ mod tests {
 
     #[test]
     fn m7_official_gui_hello_preserves_the_daemons_ready_data_schema() {
-        for data_schema in [15, 16] {
+        for data_schema in [15, 16, 17] {
             let hello = HelloResult::m7_official_gui(Vec::new(), data_schema);
             assert_eq!(hello.data_schema, Some(data_schema));
             assert_eq!(hello.config_schema, Some(CONFIG_SCHEMA_VERSION));

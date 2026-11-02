@@ -1,6 +1,6 @@
 # settings.toml Config Schema 5
 
-状态：M7 当前设置合同。项目所有者于 2026-11-03 批准补齐默认项目目录、默认备份目录及相应持久配置/公开设置合同。
+状态：保留的 Config5 启动迁移输入；当前设置合同见 [Config6](settings-v6.md)。以下保留 Config5 的原始字段与验证形状。
 
 Config5 在 Config4 上增加 `paths`，仍由 `alcomd` 经 application 用例层持有唯一设置权威。
 Config1–4 只作为经过各自严格校验的启动迁移输入；保留 revision、主题、语言、包偏好及 Hub 路径，

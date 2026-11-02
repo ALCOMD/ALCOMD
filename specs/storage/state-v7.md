@@ -82,4 +82,4 @@ byte size、manifest fingerprint 与 project fingerprint；Apply 和重启恢复
 
 已有 `backup-v1:<BackupId>` 记录及旧 Restore Plan 的 `plan_json` 不重写、不重签 fingerprint。
 缺少 `archiveLocator` 的旧 authority 继续读取原 `data_root/backups/objects/<BackupId>.zip`；
-新 authority 只使用其冻结定位，不查询当时的备份目录偏好。此扩展不新增表、列或迁移，当前 State16 保持。
+新 authority 只使用其冻结定位，不查询当时的备份目录偏好。此目录扩展不新增表、列或迁移；当前 State17 的独立增量仅用于 Unity 显式空参数覆盖。

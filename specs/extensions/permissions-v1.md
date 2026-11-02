@@ -127,7 +127,8 @@ mcp.configuration.manage
 - `unity.read`：查询 installation registry、project launch config、exact launch options、writer state 与 launch status；
   不允许修改 registry、启动 Editor 或读取任意进程技术信息。
 - `unity.manage`：manual installation add/remove、受限 discovery refresh 与 project launch arguments
-  修改；不包含 `unity.launch`、Installation preference、package mutation 或任意 settings 写入。
+  修改；全局 `settings.unity.defaultLaunchArguments` 更新另需同时具备 `settings.manage`，包括 null/空数组操作。
+  不包含 `unity.launch`、Installation preference、package mutation 或任意 settings 写入。
 - `unity.launch`：只允许通过 application 启动/观察与 Project canonical exact version 匹配的已验证 Editor，
   且 InstallationId 只作为 one-shot request authority；不允许 registry
   修改、shell command、任意 executable 或绕过 writer gate。
@@ -199,12 +200,13 @@ M6 第一条生产 slice 冻结并仅使用以下权限：
 
 ## M7 Official GUI settings/activity/diagnostics
 
-- `settings.read` 只允许读取 当前 Config Schema 4 的规范化公开设置；不允许直接读取文件、extension-owned
+- `settings.read` 只允许读取 当前 Config Schema 6 的规范化公开设置；不允许直接读取文件、extension-owned
   data 或未来 updater/MCP/Discord/migration setting。
 - `settings.manage` 只允许以 `expectedRevision` 更新同一 closed partial settings DTO，包括 Core
   校验后的 `unity.hubPath` 程序位置偏好；它不授权通用 key/value config、向所选路径写文件、执行
   该程序或 State DB 修改。`settings.read` 的公开配置与派生 `unityHub` 结果可以返回该授权路径，
-  但不授权读取该程序内容或任意文件。Editor 发现仍单独要求 `unity.manage`。
+  但不授权读取该程序内容或任意文件。Editor 发现仍单独要求 `unity.manage`。全局默认启动参数更新（含清除和空数组）同时要求 `unity.manage`；
+  Hub-only 更新不受该额外要求影响。
 - `activity.read` 只允许读取现有 durable Event/Operation 的 closed user-facing projection；不返回 payload、
   request/result JSON、技术日志、路径、credential 或 extension value。
 - `diagnostics.read` 只允许读取 Operation failure 与 safe Event evidence 的 bounded redacted projection；不

@@ -137,7 +137,9 @@ pub(super) async fn dispatch(
                 Ok(value) => success_action(
                     request.id,
                     rpc::ProjectUnityLaunchConfigResult {
-                        config: launch_config(value),
+                        config: launch_config(value.config),
+                        default_arguments: value.default_arguments,
+                        effective_arguments: value.effective_arguments,
                     },
                     None,
                 ),
