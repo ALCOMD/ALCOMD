@@ -1,7 +1,8 @@
 # M7 H4 Extensions / Portable UI 本地候选
 
-状态：**LOCAL_CANDIDATE / MANUAL_PENDING**，2026-11-02。H3 已由项目所有者阶段性签收，保留既有非阻塞体验待办；
-H2-A/H2-B 签收保持。H4 尚未人工签收，M7 进行中，不进入 H5-H7、不推送。
+状态：**STAGE_ACCEPTED_WITH_FOLLOWUPS**，2026-11-02。所有者已实际查看并阶段性签收 H4，认可共享错误可读性整改，
+保留一般文案、布局及过度设计的非阻塞体验待办。H2-A/H2-B/H3 签收保持，M7 进行中；H5 已批准，H6/H7 与推送未授权。
+下文各轮运行保留其当时状态，当前签收、环境恢复与未覆盖范围见末节，不把历史待验收状态当作当前状态。
 
 ## 范围与候选
 
@@ -193,7 +194,7 @@ H2-B 新增代码、H3 与本 H4 均**尚无对应远端 CI/CodeQL**，本轮未
 `0ef5b088dfdb7a8eb2b7a88ebef94ae436c90f50` 的三平台 CI `41287607183` 与 CodeQL `41287607108`
 成功继续作为该旧 SHA 的历史证据，不代表本轮新增代码远端通过。
 
-## 共享错误提示整改（52ed23b，原生待确认）
+## 共享错误提示整改（52ed23b，签收前历史记录）
 
 所有者截图中发布者确认框未勾选，Core 正确返回 `extension_publisher_confirmation_required`；界面却恒定显示
 “请求失败/未能完成请求”加原始 code，未说明原因。源码确认这不是单点：共享 RequestReminder、页面初读/刷新、
@@ -222,3 +223,25 @@ H2-B 新增代码、H3 与本 H4 均**尚无对应远端 CI/CodeQL**，本轮未
 原环境仍暂时暂停，验收结束继续由既有 Restore 实际恢复并核对五组状态；H3 原签收保持，H4/M7 未签收完成。
 当前并非所有业务码已逐项人工覆盖：未知码仍给通用失败与可展开标识，包链接失败的既有隐藏反馈承载未重设计。
 正式 MCP/Discord 业务仍留给 M8/M9，本次没有新增产品功能、RPC、Schema、权限、依赖或推送。
+
+## 阶段性人工签收与实际恢复（2026-11-02）
+
+项目所有者已检查扩展功能并明确 **H4 阶段性人工验收通过，保留非阻塞体验问题**。
+保留安装、启停、卸载、权限管理与同窗口 Portable UI 成果；共享错误可读性整改获认可，后续复用该组件。
+一般文案、布局及过度设计只在现有 status 待办短记，后续优先删减、合并、改写，不继续扩大本轮整改。
+样例未覆盖的表单、会话超时、外部断线和正式 MCP/Discord 业务仍未验证；不要求所有者证明整个权限系统安全。
+首轮浏览器 **78/1** 和定向复验 **6/0** 原样独立保留，没有完整套件通过结论。
+
+验收后于本地 14:39 实际执行既有 `H4-Review.ps1 -Action Restore`：先取得隔离完整公开快照，确认 Operations 全终态，
+只关闭记录的本轮隔离 GUI/Core。实际恢复原目录 `target/m7-icon-acceptance-20260906/data` 的 Core **136212** 和 GUI **132312**；
+通过进程可执行文件、命令行、创建时间及摘要核对身份。Core 仍为 `7d62a6…da7a18`，GUI 为 `985e11…222b11`。
+Projects、Unity 安装、Operations、Settings、Status 五组完整结果均与本次暂停前一致：Projects 2、Editors 1、Operations 2 全终态、
+Settings revision 155、Status ready。隔离数据保留作证据，不继续占用端点；没有安装测试扩展到原环境，未处理 Unity 或未知进程。
+
+恢复证据：`target/m7-h4-extensions-20261102/manual-review-restore-20261102T0639271018499Z/` 的原/隔离快照与
+`five-group-comparison.json`（五项均 true），以及 `review-session.json` 的 `phase=restored`、实际 Core/GUI 身份。
+调用日志为 `target/m7-h4-readable-errors-20261102/h4-accepted-restoration.log`。
+没有恢复桌面控制或伪造整改后原生截图；所有者签收与自动化覆盖分开记录。
+
+本次收尾只做文档适用的 metadata/diff 检查，不重复构建、完整测试或 CI。H2-B/H3/H4 新代码仍无对应远端结果。
+H5 已获准直接实施；H6/H7、推送及 M7 整体完成均未授权。

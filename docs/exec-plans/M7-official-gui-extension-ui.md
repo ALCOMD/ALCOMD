@@ -1,6 +1,6 @@
 # M7：官方 GUI 与 Portable Extension UI
 
-状态：**M7 IN_PROGRESS / H4 IN_PROGRESS / H3 STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
+状态：**M7 IN_PROGRESS / H5 IN_PROGRESS / H4 STAGE_ACCEPTED_WITH_FOLLOWUPS / H3 STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
 活动分支为 `main`；当前阶段与验证结果统一见 `docs/status.md`。已通过的 M6、Portable UI B0-D、
 Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据，不替代本轮 GUI 人工验收。
 
@@ -559,11 +559,11 @@ fixes and defer uncertain contract-dependent work without blocking unrelated cor
    只实现本文件列明的窄公开合同。项目所有者于 2026-10-31 签收 Visual Gate 2；H2-B 已获下述技术收尾通过后的条件批准，其他产品范围仍未批准。
 4. **H3 contextual v4 enhancements（阶段性人工验收通过，保留非阻塞体验问题）**：把 global/project Unity、Backups 与 Operations 增强嵌入既有 Settings/Project/progress workflow，不改
    Plan/Apply/Operation；完成 Visual Gate 3 的第一部分。项目所有者于 2026-11-02 明确签收本轮，并确认 Unity 自动检测、同记录刷新和路径显示；不表示体验完善或整个 Visual Gate 3/M7 完成。项目上下文、共享提醒和任务机制保持，不重复验收已检查页面。
-5. **H4 Extensions/Portable UI（已批准，实施中）**：保留Extensions既有用户概念和utility归属；permission/quarantine/Portable UI位于detail，host
-   chrome与renderer全部使用共同Material components；不改 Portable UI protocol；完成 Visual Gate 4 的第一部分。先核对已有安装/启停/卸载与同窗口功能页，只补既有范围内缺口；复用共享 Reminder/进度和只读 `displayPath`，不重写 Runtime、不提前实现 M8/M9。H5-H7 与推送仍未授权。
-6. **H5 utilities/observability（未批准）**：实现 grouped Settings、Log内Activity/Diagnostics与footer About/version，保留
-   当前 Config3/A-026权限分离；
-   完成 Visual Gate 3/4。
+5. **H4 Extensions/Portable UI（阶段性人工验收通过，保留非阻塞体验问题）**：保留Extensions既有用户概念和utility归属；permission/quarantine/Portable UI位于detail，host
+   chrome与renderer全部使用共同Material components；不改 Portable UI protocol。所有者于 2026-11-02 认可安装/启停/卸载、权限管理、同窗口功能页与共享错误可读性；保留表单、超时、外部断线和 M8/M9 正式业务未覆盖项，不表示整个 Visual Gate 4/M7 完成。
+6. **H5 utilities/observability（已批准，实施中）**：审计已有 grouped Settings、Log内Activity/Diagnostics与footer About/version，
+   只补真实缺失功能及必要整改，保留当前 Config3/A-026权限分离，复用共享 Material、错误显示与只读 `displayPath`。
+   不新建无意义导航/技术卡片，不把既有非阻塞体验待办批量转为阻塞；候选完成后交由所有者检查。H6/H7 与推送仍未授权。
 7. **H6 responsive/a11y/Playwright regression（未批准）**：覆盖已批准 minimum-change user model 的 structural continuity、grouping/workspace/
    action placement、Material element presence和observable interaction、theme propagation、wide/narrow/200%/reduced motion；
    不测试Material shadow DOM私有细节。
@@ -571,6 +571,14 @@ fixes and defer uncertain contract-dependent work without blocking unrelated cor
 
 H0-H7 只重组 shell、composition、component rendering 和 visual hierarchy；不得重新设计 RPC、Plan/Apply、Operation、Settings、
 Activity、Diagnostics 或 Portable UI authority。
+
+### H5 已批准切片（2026-11-02）
+
+H4 阶段签收及实际环境恢复后直接推进 H5，不另设规划停止点。先核对 Settings/Config3、Activity/Diagnostics、
+About/version 已有接线、反馈、分页与权限，只补真实缺口；正常状态简洁，错误/风险准确保留，短暂反馈不撑开布局。
+只读路径统一 `displayPath`，不修改实际路径或 RPC/文件参数；公共合同确有缺口才提交最小方案并只暂停相关部分。
+日常定向检查，稳定候选集中必要验证与真实界面入口；不重复全量 Rust/Chromium/release/三平台 CI，不以旧结果替代新代码。
+已有 H2-B/H3/H4 非阻塞待办保留，不批量升为 H5 阻塞。不进入 H6/H7，不推送，不宣布 M7 完成。
 
 ## 技术收尾与 H2-B 顺序授权（2026-10-31）
 
@@ -1194,7 +1202,9 @@ confirmed CLI remove 已在新明确授权后通过正式 CLI 补齐，Core 拒�
 H4 已形成本地代码候选 `e2b7ddd`，两处权限权威缺陷已窄修；最终 Store 13/0 和隔离 Core 复验通过。
 GUI 的 155 项输入仍与 `88c3f69` 一致，复用该构建和 36/0；原环境已实际恢复。
 新增原生交互/整改后截图因 Esc 尚未覆盖，下一停止点为窗口、清单与 H4 人工确认，不重验 H2/H3，不宣布 M7 完成。
-不重规划 M7，不重做已完成内容。H2-A、H2-B、H3 阶段签收保持；H2-B 新增代码、H3 与 H4 仍无对应远端验证。
-未经新的推送授权不推送，H5-H7、M8、M9、M11 未由本次授权开放。详细结果与待办见现有 status/testing 文档。
+以上为 H4 候选交付时的历史状态。所有者随后已于 2026-11-02 阶段性签收 H4，并批准直接实施 H5。
+隔离任务已全终态，原 Core/GUI 已实际恢复；五组公开状态与切换前完整快照一致，详见现有 status/testing 文档。
+H2-A、H2-B、H3 签收保持；H2-B 新增代码、H3 与 H4 仍无对应远端验证，不用旧 CI 替代。
+不重规划 M7，不重做已有页面；只推进已批准 H5，不进入 H6/H7、M8/M9/M11，不推送或宣布 M7 完成。
 已有候选读取、exact Unity、Config3、Hub 和 State16 的合同继续有效。完整 GUI/Rust/三平台
 技术门禁与人工视觉结果分别记录，不把旧 SHA 或定向通过冒充当前候选全绿。

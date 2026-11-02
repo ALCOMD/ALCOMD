@@ -4,11 +4,17 @@
 
 ## 当前阶段
 
-**M7 IN_PROGRESS / H4 IN_PROGRESS / H3 STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。项目所有者于 2026-10-31 签收本轮 H2-A；
+**M7 IN_PROGRESS / H5 IN_PROGRESS / H4 STAGE_ACCEPTED_WITH_FOLLOWUPS / H3 STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。项目所有者于 2026-10-31 签收本轮 H2-A；
 M0-M6 已正式通过人工验收，M7 尚未完成。
 本文件是唯一当前阶段入口；ExecPlan 定义实施合同，testing 文档保存各自 SHA/场景的证据。
 
-H4 当前 GUI 候选为 `52ed23bc41f01bfcfa0a7a3fc18cb5db56aaa766`，Core 保持 `e2b7ddd`，**等待人工验收**。补齐扩展列表分页、
+项目所有者于 2026-11-02 确认 **H4 阶段性人工验收通过，保留非阻塞体验问题**，并批准直接实施现有 H5 Utilities / Observability。
+H5 先审计现有 Settings、Activity/Diagnostics、About/version，只补缺失接线及必要整改；复用 Config3、RPC、权限、Material、
+共享错误显示与 `displayPath`。H6/H7 和推送仍未授权，M7 不宣布完成。
+
+### H4 已签收记录（各轮历史证据）
+
+H4 签收 GUI 候选为 `52ed23bc41f01bfcfa0a7a3fc18cb5db56aaa766`，Core 保持 `e2b7ddd`。保留扩展列表分页、
 安装/卸载审阅与同一 Operation 跟踪、启停和隔离恢复反馈、真实权限/项目范围，以及同窗口 Portable UI 的
 会话与迟到请求处理。获批的权限只读合同在 `0f8c9f4` 实现；不改 State Schema、Portable UI 协议或 Runtime，
 不新增导航、权限、依赖或自动授权。路径标签继续复用 `displayPath`，RPC/文件参数保留原值。
@@ -29,16 +35,17 @@ GUI 独立定向浏览器 **36/0**（1 worker、0 retries），155 项输入不�
 
 前轮原环境实际恢复及五组一致证据保留。本轮已实际验证 `H4-Review.ps1 Start/Restore` 往返，恢复时五组公开结果
 与本次暂停前完整快照一致（Projects 2、Editors 1、Operations 2 全终态、settings revision **155**、Status ready）。
-随后按所有者要求重新打开**可操作的隔离验收环境**：Core **138156**、更新后 GUI **128624**（窗口 **4068254**），
+随后按所有者要求打开过可操作的隔离验收环境：Core **138156**、更新后 GUI **128624**（窗口 **4068254**），
 复用 Core `7d62a6…da7a18` / 新 GUI `985e11…222b11`，隔离数据为 `target/m7-h4-extensions-20261102/data-native`。
-正常签名样例 `com.example.h4.portable` 已验证保留数据卸载/重装/启停，当前留作待安装；一个可丢弃项目已登记。
-原环境当前为本次人工验收**暂时暂停**，未安装测试扩展；验收结束须执行已验证 Restore 并实际核对五组状态。
-桌面控制保持停用，本轮只经已有进程启动方式打开 GUI，没有点击、键盘输入或新截图，未处理用户 Unity/未知进程。
-本轮新增 GUI 原生交互及整改后原生截图**未完成**，交由所有者实际查看，不以 Core RPC 或浏览器结果替代。H2-B/H3/H4 新增代码均无
-对应远端 CI/CodeQL；旧 `0ef5b08` 的成功仍只对应旧输入。未推送，H5-H7 不开放。详见
+正常签名样例 `com.example.h4.portable` 已验证保留数据卸载/重装/启停，交付时留作待安装；一个可丢弃项目已登记。
+验收后已执行 Restore：隔离任务全终态，关闭记录的隔离 GUI/Core，实际恢复原数据目录的 Core **136212**、GUI **132312**。
+五组完整公开状态与本次切换前一致（Projects 2、Editors 1、Operations 2 全终态、Settings revision 155、Status ready），
+证据为 `target/m7-h4-extensions-20261102/manual-review-restore-20261102T0639271018499Z/five-group-comparison.json`。
+原环境未安装测试扩展；没有处理用户 Unity/未知进程。桌面控制保持停用，没有新增自动化原生截图。
+所有者实际查看并认可 H4 功能与错误可读性；测试样例未覆盖的表单、会话超时、外部断线及正式 MCP/Discord 业务仍未验证。
+H2-B/H3/H4 新增代码均无对应远端 CI/CodeQL；旧 `0ef5b08` 的成功仍只对应旧输入。未推送。详见
 [H4 候选、隔离证据与查看清单](testing/m7-h4-extensions-20261102.md)。
-启动/恢复入口与四项可执行清单见该记录的“本轮可操作隔离候选”；此前已实际运行，当前只同步 GUI 摘要/源码标识，
-已启动新 GUI、核对语法与身份，没有为文案更新重复整个暂停/恢复往返。原环境继续等待人工验收结束后实际恢复。
+启动/恢复入口及历史清单见该记录；本次验收收尾已实际执行更新后 GUI 的恢复入口并核对原进程身份，不再停在守候状态。
 
 ### H3 已签收记录（各轮历史证据）
 
@@ -311,8 +318,8 @@ Visual Gate 2，没有 M7 或 Hosted CI 通过结论，原未跟踪 `output/` �
   远端验证缺口。下载、native Portable UI 等旧未覆盖范围保持，不由本次签收批量关闭。
 - 已执行获批 G3 的完成度核对，三个仓库列表 RPC 的矩阵 **92/92** 是当时结果；H4 新增获批权限读取后，
   当前公开 method 与矩阵 **93/93** 对齐。方法归属和 typed 接线不代表全部动作已独立人工验收。
-  H3 签收及 Unity 检测、刷新、路径确认保持。H4 本地候选已就绪，新增原生交互/截图仍未覆盖，
-  下一停止点为交付窗口与简短清单并等待 H4 人工确认；不重验 H2/H3、不进入 H5-H7、不自动推送。
+  H3 签收及 Unity 检测、刷新、路径确认保持。H4 已由所有者阶段性签收，保留样例未覆盖项与一般体验待办；
+  原环境已实际恢复并核对五组一致。直接实施获批 H5，候选完成后交由所有者验收；不进入 H6/H7、不自动推送。
 - 窗口记忆、仓库 credential enrollment/revocation、完整用户入口缺口保持真实状态；聚合
   projects.management/packages.vpm/repositories.management 等继续 in_progress，不批量提升。
 - projects/templates/backups 的 v3 parity 和 unity.v3-vrc-parity 仍等待 M11 真实脱敏 Fixture；
@@ -321,7 +328,7 @@ Visual Gate 2，没有 M7 或 Hosted CI 通过结论，原未跟踪 `output/` �
 - MCP、Discord 产品逻辑、Local API、v3 migration、bootstrap/updater/installer/dist 属于后续范围。
   已有开放依赖告警仍需独立适用性评估，不因这轮 GUI/握手修复关闭。
 
-### 非阻塞体验待办（H2-B 阶段签收保留）
+### 非阻塞体验待办（H2-B/H3/H4 阶段签收保留）
 
 | 页面 | 触发条件 | 实际问题 |
 | --- | --- | --- |
@@ -332,6 +339,8 @@ Visual Gate 2，没有 M7 或 Hosted CI 通过结论，原未跟踪 `output/` �
 | 任务详情 | 任务已终态 | 仍显示技术阶段字符串及禁用的任务控制容器，信息可继续合并、删减。 |
 | 备份详情 / 恢复审阅 | 显示目标与 VPM 依赖风险 | 目标可换行，但摘要、Core 说明和风险文字仍有重复，后续优先改写与合并。 |
 | 设置 / Unity 安装管理 | 尚未选择移除目标时 | 添加、发现与禁用的确认移除同框，操作层次偏重；后续集中精简，不在检测修复中重做。 |
+| Extensions / 安装与权限 | 审阅安装、修改授权及操作结果 | 一般提示文案、说明层次和信息位置仍可删减合并，部分操作偏重；共享可读错误整改已获认可。 |
+| Extensions / Portable UI | 打开、切换及关闭扩展页面 | 普通状态与会话说明仍可简化；表单、超时、外部断线及正式 MCP/Discord 业务另列未覆盖，不视为已通过。 |
 
 后续集中优先删除、合并、改写冗余提示，减少无必要步骤与机制，不增加提示解释过度设计。
 真实错误、操作结果与必要的破坏性确认保持准确；误导危险操作、误报成功、数据损坏或其他实际
