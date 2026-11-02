@@ -144,40 +144,10 @@ pub(super) fn list_permissions(
     }) {
         return Err(error(M6ErrorCode::RevisionConflict));
     }
-    let frozen = transaction
-        .query_row(
-            "SELECT p.plan_id, p.requested_permissions_json
-         FROM extensions e JOIN extension_plans p
-           ON p.extension_id=e.extension_id AND p.owner_principal_id=e.principal_id
-          AND p.action='install' AND p.state='applied'
-          AND p.package_digest=e.package_digest AND p.manifest_digest=e.manifest_digest
-          AND p.component_digest=e.component_digest AND p.version=e.version
-          AND p.api_major=e.api_major AND p.publisher_fingerprint=e.publisher_fingerprint
-          AND p.trust_decision=e.trust_decision AND p.ui_protocol IS e.ui_protocol
-         JOIN extension_filesystem_journal j ON j.operation_id=p.apply_operation_id
-          AND j.phase='state_committed' AND j.state='completed'
-         WHERE e.principal_id=?1 AND e.extension_id=?2 AND j.updated_at_ms>=e.installed_at_ms
-         ORDER BY j.updated_at_ms DESC, j.step DESC, p.plan_id DESC LIMIT 1",
-            params![owner.as_str(), extension_id],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    json_row::<PermissionEvidence>(row, 1)?,
-                ))
-            },
-        )
-        .optional()
-        .map_err(store_error)?
-        .ok_or_else(|| error(M6ErrorCode::RecoveryRequired))?;
-    let install_plan_id = PlanId::parse(&frozen.0).map_err(|_| internal())?;
+    let (install_plan_id, declarations) =
+        installed_permission_evidence(&transaction, owner, extension_id)?;
     if cursor.is_some_and(|value| value.install_plan_id != install_plan_id) {
         return Err(error(M6ErrorCode::RevisionConflict));
-    }
-    let declarations = frozen.1;
-    if !valid_permission_declarations(&declarations.required)
-        || !valid_permission_declarations(&declarations.optional)
-    {
-        return Err(internal());
     }
     let mut grants = {
         let mut statement = transaction
@@ -247,6 +217,72 @@ pub(super) fn list_permissions(
     };
     transaction.commit().map_err(store_error)?;
     Ok(page)
+}
+
+fn installed_permission_evidence(
+    connection: &Connection,
+    owner: &PrincipalId,
+    extension_id: &str,
+) -> Result<(PlanId, PermissionEvidence), M6Error> {
+    let frozen = connection
+        .query_row(
+            "SELECT p.plan_id, p.requested_permissions_json
+         FROM extensions e JOIN extension_plans p
+           ON p.extension_id=e.extension_id AND p.owner_principal_id=e.principal_id
+          AND p.action='install' AND p.state='applied'
+          AND p.package_digest=e.package_digest AND p.manifest_digest=e.manifest_digest
+          AND p.component_digest=e.component_digest AND p.version=e.version
+          AND p.api_major=e.api_major AND p.publisher_fingerprint=e.publisher_fingerprint
+          AND p.trust_decision=e.trust_decision AND p.ui_protocol IS e.ui_protocol
+         JOIN extension_filesystem_journal j ON j.operation_id=p.apply_operation_id
+          AND j.phase='state_committed' AND j.state='completed'
+         WHERE e.principal_id=?1 AND e.extension_id=?2 AND j.updated_at_ms>=e.installed_at_ms
+         ORDER BY j.updated_at_ms DESC, j.step DESC, p.plan_id DESC LIMIT 1",
+            params![owner.as_str(), extension_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    json_row::<PermissionEvidence>(row, 1)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(store_error)?
+        .ok_or_else(|| error(M6ErrorCode::RecoveryRequired))?;
+    let install_plan_id = PlanId::parse(&frozen.0).map_err(|_| internal())?;
+    let declarations = frozen.1;
+    if !valid_permission_declarations(&declarations.required)
+        || !valid_permission_declarations(&declarations.optional)
+    {
+        return Err(internal());
+    }
+    Ok((install_plan_id, declarations))
+}
+
+fn require_extension_grants(
+    connection: &Connection,
+    owner: &PrincipalId,
+    extension_id: &str,
+) -> Result<(), M6Error> {
+    let (_, declarations) = installed_permission_evidence(connection, owner, extension_id)?;
+    for permission in declarations.required {
+        let granted: bool = connection
+            .query_row(
+                "SELECT EXISTS(
+                SELECT 1 FROM extension_grants g
+                WHERE g.extension_id=?1 AND g.permission_name=?2 AND g.state='granted'
+                  AND ((?2='background.run' AND g.resource_kind='Extension' AND g.resource_id=?1)
+                    OR (?2='projects.read' AND g.resource_kind='Project'))
+             )",
+                params![extension_id, permission],
+                |row| row.get(0),
+            )
+            .map_err(store_error)?;
+        if !granted {
+            return Err(error(M6ErrorCode::PermissionDenied));
+        }
+    }
+    Ok(())
 }
 
 fn valid_permission_declarations(permissions: &[String]) -> bool {
@@ -949,21 +985,12 @@ pub(super) fn set_grant(
         return Ok(result);
     }
     let extension = get_extension(&transaction, owner, extension_id)?;
-    let requested: bool = transaction
-        .query_row(
-            "SELECT EXISTS(
-                SELECT 1 FROM extension_plans p, json_each(p.requested_permissions_json, '$.required') r
-                WHERE p.extension_id=?1 AND p.action='install' AND p.state='applied'
-                  AND r.value=?2
-                UNION ALL
-                SELECT 1 FROM extension_plans p, json_each(p.requested_permissions_json, '$.optional') o
-                WHERE p.extension_id=?1 AND p.action='install' AND p.state='applied'
-                  AND o.value=?2
-             )",
-            params![extension_id, permission],
-            |row| row.get(0),
-        )
-        .map_err(store_error)?;
+    let (_, declarations) = installed_permission_evidence(&transaction, owner, extension_id)?;
+    let requested = declarations
+        .required
+        .iter()
+        .chain(&declarations.optional)
+        .any(|declared| declared == permission);
     if !requested {
         return Err(error(M6ErrorCode::PermissionDenied));
     }
@@ -1048,6 +1075,9 @@ pub(super) fn set_desired(
     let current = get_extension(&transaction, owner, extension_id)?;
     if current.revision != expected {
         return Err(error(M6ErrorCode::RevisionConflict));
+    }
+    if enable {
+        require_extension_grants(&transaction, owner, extension_id)?;
     }
     let now = sqlite_integer(now_ms)?;
     transaction
@@ -1291,28 +1321,7 @@ pub(super) fn prepare_instance(
             .optional()
             .map_err(store_error)?
             .ok_or_else(|| error(M6ErrorCode::Quarantined))?;
-    let required_grants_present: bool = transaction
-        .query_row(
-            "SELECT NOT EXISTS(
-                SELECT 1
-                FROM extension_plans p, json_each(p.requested_permissions_json, '$.required') r
-                WHERE p.extension_id=?1 AND p.action='install' AND p.state='applied'
-                  AND p.package_digest=(SELECT package_digest FROM extensions WHERE extension_id=?1)
-                  AND NOT EXISTS (
-                    SELECT 1 FROM extension_grants g
-                    WHERE g.extension_id=?1 AND g.permission_name=r.value AND g.state='granted'
-                      AND ((r.value='background.run' AND g.resource_kind='Extension'
-                            AND g.resource_id=?1)
-                           OR (r.value='projects.read' AND g.resource_kind='Project'))
-                  )
-             )",
-            [extension_id],
-            |row| row.get(0),
-        )
-        .map_err(store_error)?;
-    if !required_grants_present {
-        return Err(error(M6ErrorCode::PermissionDenied));
-    }
+    require_extension_grants(&transaction, owner, extension_id)?;
     let instance_id = OperationId::new().to_string();
     let lease_id = OperationId::new().to_string();
     let principal_id =

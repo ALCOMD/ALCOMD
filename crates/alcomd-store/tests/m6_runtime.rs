@@ -53,10 +53,16 @@ fn cleanup(path: &Path) {
 }
 
 async fn permissions_fixture(name: &str) -> (StateStoreHandle, PathBuf, ExtensionPackageEvidence) {
+    permissions_fixture_with_package(name, evidence()).await
+}
+
+async fn permissions_fixture_with_package(
+    name: &str,
+    package: ExtensionPackageEvidence,
+) -> (StateStoreHandle, PathBuf, ExtensionPackageEvidence) {
     let path = database_path(name);
     let store = StateStoreHandle::open(path.clone()).expect("permissions store");
     let owner = PrincipalId::local_owner();
-    let package = evidence();
     let draft = |package| ExtensionInstallPlanDraft {
         evidence: package,
         trust_decision: ExtensionTrustDecision::UserApprovedForExtension,
@@ -165,6 +171,388 @@ async fn permission_mutation(
         )
         .await
         .expect("explicit grant mutation");
+}
+
+fn enable_state(path: &Path) -> Vec<Vec<Vec<rusqlite::types::Value>>> {
+    let connection = Connection::open(path).expect("own enable verification database");
+    [
+        "extensions",
+        "extension_instances",
+        "extension_grants",
+        "idempotency_records",
+    ]
+    .into_iter()
+    .map(|table| {
+        let mut statement = connection
+            .prepare(&format!("SELECT * FROM {table} ORDER BY rowid"))
+            .expect("own fixed test table");
+        let columns = statement.column_count();
+        statement
+            .query_map([], |row| {
+                (0..columns)
+                    .map(|column| row.get(column))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .expect("read verification rows")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("verification rows")
+    })
+    .collect()
+}
+
+#[tokio::test]
+async fn required_background_enable_and_recovery_refuse_without_side_effects_or_consuming_key() {
+    let (store, path, package) = permissions_fixture("required-enable").await;
+    let owner = PrincipalId::local_owner();
+    let initial = store
+        .get_extension(owner.clone(), package.extension_id.clone())
+        .await
+        .expect("initial record");
+    let before = enable_state(&path);
+    let key = IdempotencyKey::parse("required-gate-key").expect("key");
+    let denied = store
+        .enable(
+            owner.clone(),
+            package.extension_id.clone(),
+            initial.revision,
+            key.clone(),
+            1_030,
+        )
+        .await
+        .expect_err("required background without a grant must refuse enable");
+    assert_eq!(denied.code(), M6ErrorCode::PermissionDenied);
+    assert_eq!(
+        enable_state(&path),
+        before,
+        "denial must not change registry, instances, grants or idempotency"
+    );
+    permission_mutation(
+        &store,
+        &package.extension_id,
+        None,
+        true,
+        "required-background-first-grant",
+    )
+    .await;
+    permission_mutation(
+        &store,
+        &package.extension_id,
+        None,
+        false,
+        "required-background-revoke",
+    )
+    .await;
+    let connection = Connection::open(&path).expect("own quarantine fixture");
+    connection.execute("UPDATE extensions SET desired_state='enabled', quarantine_state='quarantined', revision=revision+1 WHERE extension_id=?1", [&package.extension_id]).expect("represent a quarantined fixture");
+    drop(connection);
+    let quarantined = store
+        .get_extension(owner.clone(), package.extension_id.clone())
+        .await
+        .expect("quarantined record");
+    let before_recovery = enable_state(&path);
+    let denied = store
+        .enable(
+            owner.clone(),
+            package.extension_id.clone(),
+            quarantined.revision,
+            IdempotencyKey::parse("required-recovery-key").expect("recovery key"),
+            1_031,
+        )
+        .await
+        .expect_err("revoked required grant must not clear quarantine");
+    assert_eq!(denied.code(), M6ErrorCode::PermissionDenied);
+    assert_eq!(
+        enable_state(&path),
+        before_recovery,
+        "refusal must preserve quarantine, revisions, timestamps and idempotency"
+    );
+    permission_mutation(
+        &store,
+        &package.extension_id,
+        None,
+        true,
+        "required-background-final-grant",
+    )
+    .await;
+    let granted = store
+        .get_extension(owner.clone(), package.extension_id.clone())
+        .await
+        .expect("explicitly granted record");
+    let enabled = store
+        .enable(
+            owner.clone(),
+            package.extension_id.clone(),
+            granted.revision,
+            key.clone(),
+            1_032,
+        )
+        .await
+        .expect("denied request did not consume its key");
+    assert_eq!(
+        enabled.desired_state,
+        alcomd_application::ExtensionDesiredState::Enabled
+    );
+    assert_eq!(
+        enabled.quarantine_state,
+        alcomd_application::ExtensionQuarantineState::Clear
+    );
+    let replay = store
+        .enable(owner, package.extension_id, granted.revision, key, 1_033)
+        .await
+        .expect("existing successful exact replay remains valid");
+    assert_eq!(replay, enabled);
+    drop(store);
+    cleanup(&path);
+}
+
+#[tokio::test]
+async fn required_empty_ui_only_and_optional_permissions_enable_without_implicit_grants() {
+    for optional in [
+        vec![],
+        vec!["background.run".to_owned(), "projects.read".to_owned()],
+    ] {
+        let mut package = evidence();
+        package.required_permissions.clear();
+        package.optional_permissions = optional;
+        let (store, path, package) =
+            permissions_fixture_with_package("required-empty-ui", package).await;
+        let owner = PrincipalId::local_owner();
+        let before = store
+            .get_extension(owner.clone(), package.extension_id.clone())
+            .await
+            .expect("UI-only record");
+        let enabled = store
+            .enable(
+                owner.clone(),
+                package.extension_id.clone(),
+                before.revision,
+                IdempotencyKey::parse("required-empty-enable").expect("key"),
+                1_030,
+            )
+            .await
+            .expect("optional permissions do not block UI-only enable");
+        assert_eq!(
+            enabled.desired_state,
+            alcomd_application::ExtensionDesiredState::Enabled
+        );
+        let permissions = store
+            .list_permissions(owner, package.extension_id, None, 100)
+            .await
+            .expect("current grants");
+        assert!(
+            permissions.grants.is_empty(),
+            "enable cannot grant optional permissions"
+        );
+        drop(store);
+        cleanup(&path);
+    }
+}
+
+#[tokio::test]
+async fn required_project_permission_needs_an_active_explicit_project_scope() {
+    let mut package = evidence();
+    package.required_permissions = vec!["projects.read".to_owned()];
+    package.optional_permissions = vec!["background.run".to_owned()];
+    let (store, path, package) =
+        permissions_fixture_with_package("required-project", package).await;
+    let owner = PrincipalId::local_owner();
+    let before = store
+        .get_extension(owner.clone(), package.extension_id.clone())
+        .await
+        .expect("project reader record");
+    let snapshot = enable_state(&path);
+    let denied = store
+        .enable(
+            owner.clone(),
+            package.extension_id.clone(),
+            before.revision,
+            IdempotencyKey::parse("required-project-enable").expect("key"),
+            1_030,
+        )
+        .await
+        .expect_err("required project permission cannot be bypassed by lack of background lease");
+    assert_eq!(denied.code(), M6ErrorCode::PermissionDenied);
+    assert_eq!(enable_state(&path), snapshot);
+    let project = permission_project(&store, 11).await;
+    permission_mutation(
+        &store,
+        &package.extension_id,
+        Some(project),
+        true,
+        "required-project-grant",
+    )
+    .await;
+    let granted = store
+        .get_extension(owner.clone(), package.extension_id.clone())
+        .await
+        .expect("granted project record");
+    store
+        .enable(
+            owner.clone(),
+            package.extension_id.clone(),
+            granted.revision,
+            IdempotencyKey::parse("required-project-enable").expect("reused denied key"),
+            1_031,
+        )
+        .await
+        .expect("explicit project grant satisfies required permission");
+    let permissions = store
+        .list_permissions(owner, package.extension_id, None, 100)
+        .await
+        .expect("exact current scope");
+    assert_eq!(permissions.grants.len(), 1);
+    assert_eq!(permissions.grants[0].resource_id, project.to_string());
+    assert_eq!(permissions.grants[0].permission, "projects.read");
+    drop(store);
+    cleanup(&path);
+}
+
+#[tokio::test]
+async fn required_current_package_permission_grant_rejects_historical_declarations() {
+    let (store, path, old_package) = permissions_fixture("required-current-package").await;
+    let owner = PrincipalId::local_owner();
+    permission_mutation(
+        &store,
+        &old_package.extension_id,
+        None,
+        true,
+        "historical-background-grant",
+    )
+    .await;
+    let old_record = store
+        .get_extension(owner.clone(), old_package.extension_id.clone())
+        .await
+        .expect("old package record");
+    let uninstall = store
+        .create_uninstall_plan(
+            owner.clone(),
+            ExtensionUninstallPlanDraft {
+                extension: old_record,
+                data_disposition: ExtensionDataDisposition::RetainData,
+                plan_fingerprint: [18; 32],
+            },
+            2_000,
+        )
+        .await
+        .expect("old package uninstall plan");
+    let accepted = store
+        .accept_plan(
+            owner.clone(),
+            uninstall.plan_id,
+            IdempotencyKey::parse("historical-uninstall").expect("key"),
+            2_001,
+        )
+        .await
+        .expect("accept uninstall");
+    store
+        .begin_apply(accepted.operation_id, 2_002)
+        .await
+        .expect("begin uninstall");
+    store
+        .finish_uninstall(accepted.operation_id, 2_003)
+        .await
+        .expect("uninstall registry");
+    store
+        .complete_operation(accepted.operation_id, 2_004)
+        .await
+        .expect("complete uninstall");
+    let mut package = old_package;
+    package.version = "2.0.0".to_owned();
+    package.package_digest = [21; 32];
+    package.manifest_digest = [22; 32];
+    package.required_permissions.clear();
+    package.optional_permissions = vec!["projects.read".to_owned()];
+    let install = store
+        .create_install_plan(
+            owner.clone(),
+            ExtensionInstallPlanDraft {
+                evidence: package.clone(),
+                trust_decision: ExtensionTrustDecision::UserApprovedForExtension,
+                expected_revision: None,
+                plan_fingerprint: [23; 32],
+            },
+            2_005,
+        )
+        .await
+        .expect("new package install plan");
+    let accepted = store
+        .accept_plan(
+            owner.clone(),
+            install.plan_id,
+            IdempotencyKey::parse("current-package-install").expect("key"),
+            2_006,
+        )
+        .await
+        .expect("accept new package");
+    store
+        .begin_apply(accepted.operation_id, 2_007)
+        .await
+        .expect("begin new package");
+    store
+        .finish_install(
+            accepted.operation_id,
+            "<EXTENSION_ROOT>/current-package".to_owned(),
+            2_008,
+        )
+        .await
+        .expect("new package state");
+    store
+        .complete_operation(accepted.operation_id, 2_009)
+        .await
+        .expect("complete new package");
+    let current = store
+        .get_extension(owner.clone(), package.extension_id.clone())
+        .await
+        .expect("new installed record");
+    let snapshot = enable_state(&path);
+    let key = IdempotencyKey::parse("current-package-grant-key").expect("grant key");
+    let refused = store
+        .set_grant(
+            owner.clone(),
+            ExtensionGrantMutation {
+                extension_id: package.extension_id.clone(),
+                permission: "background.run".to_owned(),
+                resource_kind: "Extension".to_owned(),
+                resource_id: package.extension_id.clone(),
+                expected_revision: current.grant_revision,
+                grant: true,
+            },
+            key.clone(),
+            2_010,
+        )
+        .await
+        .expect_err(
+            "old applied Plan must not authorize an undeclared permission on the current package",
+        );
+    assert_eq!(refused.code(), M6ErrorCode::PermissionDenied);
+    assert_eq!(
+        enable_state(&path),
+        snapshot,
+        "refusal must preserve grants, revisions, instances and idempotency"
+    );
+    let project = permission_project(&store, 12).await;
+    let granted = store.set_grant(owner.clone(), ExtensionGrantMutation {
+        extension_id: package.extension_id.clone(), permission: "projects.read".to_owned(), resource_kind: "Project".to_owned(),
+        resource_id: project.to_string(), expected_revision: current.grant_revision, grant: true,
+    }, key, 2_011).await.expect("rejected permission did not consume key; current declared project scope can be explicitly granted");
+    assert_eq!(granted.permission, "projects.read");
+    let permissions = store
+        .list_permissions(owner, package.extension_id, None, 100)
+        .await
+        .expect("current permission evidence");
+    assert!(permissions.required_permissions.is_empty());
+    assert_eq!(
+        permissions.optional_permissions,
+        vec!["projects.read".to_owned()]
+    );
+    assert_eq!(
+        permissions.grants.len(),
+        1,
+        "old background grant must not survive reinstall or be recreated"
+    );
+    assert_eq!(permissions.grants[0].resource_id, project.to_string());
+    drop(store);
+    cleanup(&path);
 }
 
 #[tokio::test]
