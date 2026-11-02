@@ -1,119 +1,45 @@
-# M7 official GUI manual visual and flow checklist
+# M7 官方 GUI 最终人工验收清单
 
-Status: **M7 IN_PROGRESS / H2-A ACCEPTED / Visual Gate 2 PASS**. The current scope and approved contracts are defined by
-`docs/status.md` and `docs/exec-plans/M7-official-gui-extension-ui.md`. This checklist records the accepted H2-A desktop candidate;
-it does not authorize H2-B, H3-H7 or a later milestone.
+状态：**M7 IN_PROGRESS / H7 IN_PROGRESS / H2–H6 已阶段签收**，2026-11-02。
+当前范围以 `docs/status.md` 和既有 M7 ExecPlan 为准。H7 已获批准；推送、Hosted CI/CodeQL 安排等待准确候选后的单独确认。
+本清单合并历史重复项目，不要求逐页重验已签收功能，不把普通文案、美化或非阻塞体验细节重新升为阻塞。
 
-This checklist is the owner-visible evidence gate for M7 and does not replace the Playwright Chromium suite or M12
-platform-client accessibility testing.
+## 沿用的签收
 
-## Visual gates and current scope
+| 范围 | 已有人工确认 | 原始记录 |
+| --- | --- | --- |
+| H2-A / Visual Gate 2 | Projects、Packages、Plan/Apply/Operation、失效 Plan、偏好与基本布局 | `m7-visual-gate-2-20261031.md` |
+| H2-B | Resources 仓库及列表交换、用户包、模板与相关键盘弹窗 | `m7-h2-b-20261101.md` |
+| H3 | 项目上下文、Unity 自动发现、同一记录刷新与路径显示 | `m7-h3-contextual-20261101.md` |
+| H4 | 扩展安装/启停/卸载、权限与项目范围、同窗口 Portable UI、可读错误 | `m7-h4-extensions-20261102.md` |
+| H5 | Settings、Activity/Diagnostics、About，移除紧凑模式与 Config4 保留设置 | `m7-h5-utilities-20261102.md` |
+| H6 | 窄窗、键盘焦点、主题与主要辅助功能 | `m7-h6-accessibility-20261102.md` |
 
-Each gate uses the real Tauri GUI and daemon/client path, stores bounded screenshots outside the repository, records the
-exact SHA and any uncommitted input hashes, and receives project-owner approval before the next large slice starts.
-Record whether the GUI uses a development server or an embedded frontend and whether its native build is debug or release.
+阶段性签收均保留一般体验改进项，不表示所有业务、所有错误状态或平台客户端已验证。
+H6 原完整 Chromium **383/12**、后续 **53/1** 和最后新增日语用例 **1/0** 独立保留；12 项逐一对应表见 H6 记录，不合并为完整通过。
+历史 H2-A 的 11 项逐页步骤和原生图集留在其已签收记录中，不再作为 H7 重验任务。
 
-1. Visual Gate 1: the approved v3-recognizable wide main shell/navigation; its historical owner approval remains valid.
-2. Visual Gate 2: current H2-A Projects/package work and the other existing-page usability fixes explicitly approved in
-   the current ExecPlan, including shared controls, offline recovery, Config3 and Unity Hub location actions.
-3. Visual Gates 3/4 and later slices retain their separate approval boundaries. Existing routes may be regression-checked;
-   visiting them does not start or accept those slices.
+## 最终只看两项
 
-The current desktop baseline is 1400×800. Narrow-window adaptation, a collapsed navigation drawer and 320 CSS px desktop
-acceptance are outside this H2-A scope; existing browser accessibility checks remain intact.
+1. **当前候选整体可用**：在提供的真实窗口中查看自己常用的工作上下文，确认既有布局、路径和状态展示符合此前签收方向，
+   没有新出现的裁切、错误操作或阻止使用的问题。无需重跑项目写入、Unity 启动、安装/卸载和全部历史流程。
+2. **整体交互与收束意见**：任选当前页面的菜单或弹窗，查看主要操作、必要风险/失败反馈和关闭/返回是否准确顺手。
+   鼠标及键盘的代表性交互沿用 H6 结果；仅报告本次新发现的实际阻塞。普通体验细节继续写入现有非阻塞待办。
 
-The reviewer checks structure and action placement, not pixel identity. Every intentional deviation from
-`docs/gui/m7-layout-mapping.md` must already be approved. A gate failure stops the next production slice.
+若 H7 发现并修复新的功能缺陷，只在交付记录增加该触发条件和受影响步骤，不展开为所有页面重新签收。
+不在用户实际工程中制造失败或执行破坏性写入；需要写验证时只用既有获批、可丢弃样例和正式 Core 流程。
 
-## Evidence boundary
+## 证据与完成边界
 
-- Run one real interactive ALCOMD desktop session using the current Tauri GUI and daemon/client path.
-- Store screenshots outside the repository. Do not capture private project paths, command lines, credentials,
-  extension form values, tokens, or raw diagnostics.
-- Record the exact candidate SHA and uncommitted input hashes, operating system, display scale, effective
-  viewport/window size, appearance mode and whether keyboard-only navigation was used.
-- A screenshot is visual evidence only. The reviewer must also exercise the listed focus, confirmation, reconnect,
-  progress, and terminal-state transitions.
-- This gate does not certify Narrator, VoiceOver, Linux screen readers, WebView2/WebKitGTK/WKWebView compatibility,
-  installers, updates, or uninstall. Those remain M12 responsibilities.
+- 记录代码 SHA、完整输入摘要、各项完整本地门禁的独立结果、实际 GUI/Core 构建摘要和启动入口。
+- 真实窗口和五组公开状态核对不能代替原生交互；浏览器 fixture 图片不能充作真实桌面截图。
+  桌面控制继续遵守此前停止边界；未新增的原生截图如实留缺，不绕过停止或审批。
+- Portable UI 原生表单、超时及外部断线的旧未覆盖项单独保留。H4 签收不把正式 MCP/Discord 业务标为通过，也不要求 H7 开发其产品功能。
+- 真实 Narrator/VoiceOver/Linux 读屏、跨平台辅助技术、Windows 10/11 客户端发行、安装/更新/卸载属于 M12。
+- 非阻塞项沿用 `docs/status.md` 的简短待办，优先删除、合并和改写；错误成功、危险误导、数据损坏等实际缺陷不在暂缓范围。
+- H7 最终人工确认和最终候选 Hosted CI/CodeQL 均须实际取得，不能用旧 SHA 或本地技术通过替代；当前 M7 继续进行中。
 
-## Required flow
+## 当前查看入口
 
-1. Launch the production GUI and confirm the shell reaches the approved default work entry (normally Projects) through
-   `alcomd-client`/RPC. Capture the wide shell in light appearance and record the daemon connection state. If Home/status is
-   retained as an approved deviation, visit it separately. Confirm the shell remains recognizable from the v3-to-v4 mapping.
-2. Navigate the current H2-A and approved utility routes using only the keyboard. Confirm destination headings receive
-   focus and focus indicators remain visible; do not flatten grouped destinations merely to satisfy this checklist.
-3. On a safe owner-selected fixture, open Projects in list/grid modes, Project detail and Packages. Confirm loading,
-   refreshing/last-known-good, empty, error, and disconnected presentations are distinguishable and do not expose a
-   private path.
-4. Review one high-impact frozen Plan. Confirm the dialog shows the daemon-provided change/risk summary, focus remains
-   trapped, Escape closes it, and focus returns to the invoking control. Apply only if the selected fixture is safe;
-   then follow the same OperationId through progress to a terminal state. A stale Plan must fail explicitly and must
-   not be silently replaced.
-5. Exercise package search, source/prerelease filters, version selection and bulk/update controls using complete Core
-   candidate evidence. Review the resulting Plan and retain the single explicit Apply/Operation contract. Record any
-   action that cannot be safely exercised with the selected fixture.
-6. Open Settings and change an ordinary preference such as language. Confirm it saves immediately through Config3 and
-   persists after relaunch. Open the separate theme editor, test preview/Cancel and explicit Save, and verify persistence.
-   Do not expect a global Save/Discard bar. Restore the original preferences after the check.
-7. Use the Unity Hub path chooser and confirm cancellation/selection and same-group focus behavior. Exercise revalidated
-   Open with the already installed Hub. The download action is reachable only when Core returns `download_required`;
-   record it as untested if the real environment cannot produce that result without changing the installation.
-8. Disconnect and reconnect the test daemon while an approved utility page is open. Retry must restore both page data
-   and current connection capabilities; navigate back to Projects and verify its actions recover.
-9. Inspect Activity and Diagnostics. Confirm only bounded redacted summaries and opaque identifiers are visible; no
-   token, Authorization header, raw argument, environment, SQL, stack trace, extension value, Portable UI payload, or
-   complete private path may appear. Start a state integrity check and follow its Operation.
-10. Repeat representative shell/detail/dialog views in dark appearance and capture a wide dark screenshot. Check the
-    approved reduced-motion preference without introducing a new narrow-window adaptation requirement.
-11. Exercise representative filled/tonal/icon buttons, text field, select, switch/checkbox, tabs, dialog and progress in both
-    the current Core pages and any already available Portable UI regression fixture. Confirm observable Material
-    hover/pressed/focus/ripple/disabled behavior where Material Web provides it and the shared `@alcomd/ui` foundation;
-    do not install an extension merely to expand this H2-A desktop check or inspect private shadow DOM internals.
-
-## Required record
-
-Current record (2026-10-31). Detailed evidence and build boundaries are in
-`docs/testing/m7-visual-gate-2-20261031.md`; the project owner accepted this H2-A Visual Gate 2 record on 2026-10-31:
-
-```text
-Candidate SHA: 4eae1d4619b4534cf6bd4916e9c282b87be0eec4 + uncommitted main changes
-Final GUI SHA-256: 0AA8ADA4BABA8192D6953FBEA6E93CE106942B4030B02F132E9776EBF435BCD2
-Uncommitted inputs: target/m7-visual-gate-2-20261031/final-candidate-inputs-before.json
-Evidence directory: target/m7-visual-gate-2-20261031/
-Native build: release; embedded production frontend; no development server
-Operating system: Windows 11 Pro 10.0.26300 x64
-Display scale: device reports 96 DPI; no cross-platform/client certification
-Wide window: 1400x800 content baseline; main captures 1402x832 including title bar
-Outside-repository screenshot root:
-  C:/Users/M2922/.codex/visualizations/2026/08/17/01a00f12-6751-7d50-9346-7b58e94f2eea/m7-visual-gate-2-20261031/
-Light screenshot: 68-final-release-projects-light.jpg
-Dark screenshots: 59-final-release-projects-dark.jpg; 62-final-package-workspace-dark.jpg
-Dark dialog: 65-final-dark-bulk-review.jpg
-Keyboard-only route/focus flow: PASS for listed grouped navigation and heading paths
-Dialog focus/Escape/restore: PASS; primary/version origins and final bulk toolbar return
-Plan/Apply/Operation: PASS; same GUI install Operation through Running/Succeeded and Activity
-Stale Plan: PASS; explicit rejection, no added Operation or changed project/files
-Package controls / candidate evidence: PASS for recorded fixture; final source filtering works
-Ordinary Config3 persistence: PASS; locale and reduced motion survive Core/GUI restart
-Theme preview/Cancel/Save persistence: PASS; preview/Cancel do not write; Save persists
-Unity Hub chooser: PASS for selection, prior Escape cancellation and same-group draft handling
-Unity Hub Open: actual final GUI click observed; existing Hub window returned, readiness unproven
-Unity Hub download: NOT EXERCISED; already installed, installation was not altered
-Offline Retry/page data/capability recovery: PASS; initial P6 release build, separately tagged
-Activity redaction: PASS for recorded summaries and exact opaque Operation detail
-Diagnostics: empty native projection; state.check Running/Succeeded and Core integrity ok
-Reduced motion: PASS preference/action observation; native frame timings not measured
-V3 macro layout and approved deviations: ACCEPTED by project owner, 2026-10-31
-Material presence/interaction: PASS for available representative Core controls
-Portable UI native regression: NOT EXERCISED; no installed fixture; independent tests retained
-Runtime restoration: original Projects/Editors/Operations/settings + revision 155 unchanged
-Complete Chromium: final independent 247/0 (9.4 minutes); one worker; zero retries
-Prior complete run: 246/1 network bootstrap failure, independently archived
-Blocking issue: no observed functional blocker in recorded scope; listed unexercised items remain
-Owner acceptance: ACCEPTED for H2-A / Visual Gate 2, 2026-10-31
-```
-
-M7 remains in progress until the remaining approved slices and gates are complete, the candidate's three hosted CI
-jobs pass, and the project owner explicitly accepts the milestone. This H2-A acceptance does not approve the next slice.
+已签收的 H6 GUI 来源 `a4f12a19d5fca0692053bb281fefab472fd60b65`；其 Tauri release 与匹配原环境入口见 H6 记录。
+H7 完整门禁和环境恢复收齐后，本节更新为最终实际候选；此前各轮及图集保持原构建身份，不改写为最终候选证据。

@@ -1,7 +1,7 @@
 # M7 H6 Responsive / Accessibility / Playwright Regression
 
-状态：**MANUAL_PENDING**，2026-11-02。H5 已阶段性人工签收，紧凑模式删除方向获认可；H2–H4 原签收保持。
-本轮只推进获批 H6，保留既有非阻塞文案、布局及过度设计待办，不进入 H7、不推送、不宣布 M7 完成。
+状态：**STAGE_ACCEPTED_WITH_FOLLOWUPS**，2026-11-02。项目所有者已阶段性人工签收 H6，保留已记录的非阻塞体验问题；H2–H5 原签收保持。
+本记录保存 H6 的实际证据与边界，不表示体验完善或 M7 整体完成。所有者已批准既有 H7，当前范围见 `docs/status.md`；不新增推送授权。
 
 ## 实际缺口与修正
 
@@ -55,6 +55,32 @@ revision 166 及其他设置逐值保留，五组预期比较均 true。H6 交�
 旧断言仅按当前可观察合同修正，保留修改时间权威、排序/Unknown、权限、一次/零请求和副作用检查。
 随后只复验失败用例及受影响主题/响应式/键盘路径，未重复 395 项。
 
+### 集中轮 12 项失败的逐项对应
+
+下表以 `browser-regression.log` 的原用例序号及完整标题匹配 `browser-affected.log`，修正同时核对提交
+`a4f12a1` 的实际差异。R 表示集中轮，A 表示后续 **53/1** 轮；两轮各自 before/after 清单的 186 项
+路径与文件 SHA-256 逐项相同。R→A 只变更 Theme 的 `styles.css` 和七个测试文件，详见
+`consolidated-to-affected-inputs.json`；表内所有通过结果仅对应 A 的输入范围，不回填 R 或宣称 395/0。
+
+| R 原用例 | 根因与实际修正 | A 日志结果／输入范围 |
+| --- | --- | --- |
+| #92 `m7-localization-routes`：zh-CN utility routes | H5 已改为错误码对应的可读说明；旧固定诊断句失配。改查当前中文映射，保留原码、外部数据和语言切换断言。 | #16 通过，5.2s；A |
+| #93 `m7-localization-routes`：ja-JP utility routes | 同一诊断正文更新；改查当前日文映射，保留原码、外部数据和语言切换断言。 | #17 通过，5.1s；A |
+| #145 `m7-package-candidates`：Candidate quota failure | 状态区已显示可读限额原因，旧 raw code locator 失配；保留 Reload 入口与零 Plan/写入请求。 | #18 通过，667ms；A |
+| #165 `m7-package-workspace`：Failed filter persistence | denied 分支改查可读权限原因；conflict 专用说明、已确认勾选、包可见性及恢复入口不变。 | #19 通过，1.5s；A |
+| #195 `m7-project-modified`：grid/list last-modified sorting | 全页反向 locator 命中关闭的启动状态弹窗；仅将 Last observed 禁止项限定在日期区，保留排序、Unknown 与权威时间检查。 | #20 通过，1.6s；A |
+| #199 `m7-project-modified`：list launch failure | H3 错误已在当前弹窗；改查可读原因和展开后的 `unity_launch_failed`，保留时间重读、排序、快照及一次启动断言。 | #21 通过，1.6s；A |
+| #200 `m7-project-modified`：list launch-options failure | 改查当前弹窗原因及展开后的 `revision_conflict`；保留未重读修改时间、原日期和零启动断言。 | #22 通过，1.5s；A |
+| #202 `m7-project-modified`：grid launch failure | 与 list 相同的旧 status/raw code 断言失配；保留 grid 时间、排序、快照与一次启动保护。 | #23 通过，2.0s；A |
+| #203 `m7-project-modified`：grid launch-options failure | 改查弹窗原因及精确冲突码；保留 grid 原日期、快照计数不变和零启动保护。 | #24 通过，1.8s；A |
+| #210 `m7-project-preferences`：Favorite mutation | 两个错误分支均保留原前缀，分别改查 internal_error／revision_conflict 的可读原因；列表/grid 更新与显式重试保护不变。 | #25 通过，1.8s；A |
+| #276 `m7-template-dialogs`：built-in removal / derive | 强制点击禁用项后菜单已关闭；以公开 opened/closed 同步再重开，验证 End 跳过 Remove、Export/Derive 正常及无 Plan/Apply 请求。 | #27 通过，4.4s；A |
+| #331 `m7-theme-expanded`：longest ja-JP label | 是实际宽屏布局缺陷；恢复主题模式组 intrinsic 最小宽度，并在 860px 以下单列，保留最长标签、边界和勾选尺寸断言。 | #54 通过，2.5s；A |
+
+A 唯一新增失败是 `m7-h6-responsive` 的日语 621px 用例 #11：检查了外层 host 焦点。最后只将定位改为
+公开 button 角色，在 `browser-japanese.log` 的同名 #1 独立 **1/0**（7.7s）；A→该轮的 186 项清单仅此测试文件不同，
+运行时代码未变。`package_archive_invalid` 尚无专用可读原因，仍列为非阻塞文案待办；上述本地化通过不表示该体验项已完善。
+
 最终源码候选为 **`a4f12a19d5fca0692053bb281fefab472fd60b65`**，真实 Windows 用户 `CQMHV-DT\M2922` 在唯一标准目录/main 本地提交。
 集中轮至 53/1 轮只变更 `styles.css` 的 Theme 宽度/860px 单列规则和七个测试文件；其余运行时与构建输入完全相同。
 53/1 至最后 1/0 只改新测试的公开角色定位，运行时代码未变。差异见 `consolidated-to-affected-inputs.json`。
@@ -78,7 +104,7 @@ Core 来源保持 `6739705`，摘要 `b90ec8b93d043ca8ef6077d9f0bfdec40a5db642a5
 仍为 `4fd8b2504e4f1102df33ce0fe1613bf339e2e463bd75d4683bbce1bab9a64dd1`。
 进程、构建和文件证据见 `candidate-artifact.json`、`core-runtime.json`、`gui-runtime.json`、`window.json`。
 
-当前窗口保持打开。实际程序：
+H6 交付时窗口保持打开；以上进程与窗口事实绑定本轮采样，后续候选以 `docs/status.md` 为准。实际程序：
 `C:\Users\M2922\MyProjects\Rust\ALCOMD\target\release\alcomd-gui.exe`。
 窗口关闭后可在 PowerShell 复开：
 
@@ -104,10 +130,10 @@ H4 首轮 **78/1** 与定向 **6/0**、首个 H5 **101/2** 与定向 **56/0**、
 Windows 原生缩放/实际读屏器、macOS/Linux 辅助技术不写成通过；正式 MCP/Discord 业务及 H4 样例未覆盖的状态保持原边界。
 原环境没有测试扩展，扩展卡片/Portable UI 窄窗仅有浏览器 fixture 证据，本轮不往原环境安装样例。
 
-H6 只需查看以下变化，不重验 H2–H5 已签收流程：
+H6 交付人工查看的范围如下；项目所有者已阶段性签收，不重验 H2–H5 已签收流程：
 
 1. 调窄窗口，查看 Projects / Resources / Settings 的主要操作；窄窗图标栏有名称，工具不裁切，表格只在自身滚动。
 2. Settings → Theme，在 200% 缩放下查看并用 Tab、Shift+Tab 操作；最后的取消/保存可到达，Esc 关闭后焦点返回，结束后复位缩放。
 3. 用 Tab 到“跳到内容”并 Enter；再开关一个弹窗，确认焦点清晰、关闭后回到原操作；切换明暗和减少动画偏好，确认普通页与弹窗一致。
 
-阶段人工确认仍由项目所有者作出，不将窗口存在或浏览器回归等同于 H6 ACCEPTED。
+H6 按所有者消息记录为阶段性人工验收通过并保留改进项；未覆盖的平台/原生辅助技术不因签收自动补成通过，M7 仍为进行中。

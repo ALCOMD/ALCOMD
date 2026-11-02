@@ -4,15 +4,15 @@
 
 ## 当前阶段
 
-**M7 IN_PROGRESS / H6 MANUAL_PENDING / H5 STAGE_ACCEPTED_WITH_FOLLOWUPS / H4 STAGE_ACCEPTED_WITH_FOLLOWUPS / H3 STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。项目所有者于 2026-10-31 签收本轮 H2-A；
+**M7 IN_PROGRESS / H7 IN_PROGRESS / H6 STAGE_ACCEPTED_WITH_FOLLOWUPS / H5 STAGE_ACCEPTED_WITH_FOLLOWUPS / H4 STAGE_ACCEPTED_WITH_FOLLOWUPS / H3 STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。项目所有者于 2026-10-31 签收本轮 H2-A；
 M0-M6 已正式通过人工验收，M7 尚未完成。
 本文件是唯一当前阶段入口；ExecPlan 定义实施合同，testing 文档保存各自 SHA/场景的证据。
 
-项目所有者于 2026-11-02 确认 **H5 阶段性人工验收通过，保留非阻塞体验问题**，并批准既定 H6 Responsive / Accessibility / Playwright Regression。
-已审计已有桌面/较窄窗口、200% 缩放、键盘/焦点/弹窗、明暗主题和减少动画覆盖，只补真实缺口，复用共享 Material 层。
-统一默认间距，不恢复紧凑开关/样式或 density 公共字段；不重做 GUI、不重验 H2–H4。H7 和推送仍未授权，M7 进行中。
+项目所有者于 2026-11-02 确认 **H6 阶段性人工验收通过，保留非阻塞体验问题**，认可窄窗、键盘、主题及主要辅助功能，并批准既定 H7 最终整体验收。
+H2–H6 原签收保持；H7 只处理实际影响使用的问题，整理精简最终清单并在稳定代码上集中完整本地验证，不逐页重验或重新开发。
+统一默认间距，不恢复紧凑模式及 density 公共字段。真实读屏器、跨平台辅助技术仍属 M12；最终 Hosted CI/CodeQL 等候准确候选后的独立推送授权，M7 进行中。
 
-### H6 本轮整改与证据
+### H6 已签收记录（各轮独立证据）
 
 修正窄窗侧栏/工具栏和设置/扩展局部重排、Portable UI 正文滚动、主题分段键盘聚焦可见性与 Skip 锚点焦点被抢回。
 共享 SplitButton 下拉按钮的真实点击区域曾越出外观并抢占主按钮右缘，已删除冗余 spacing 覆盖，保持原尺寸及布局。
@@ -25,8 +25,8 @@ M0-M6 已正式通过人工验收，M7 尚未完成。
 最终 186 项输入与构建前后相同（清单摘要 `94d8c3…6316e4`）；GUI 摘要 `1d6ae9…839b47`，Core 保持 `6739705` / `b90ec8…5d4687`。
 新 GUI **139052**（窗口 **8393506**，可响应）已使用原 profile 打开，原 Core **143516** 和原数据目录持续运行。
 五组完整公开状态在构建前后全部一致，Config4/revision166 及配置文件摘要不变；没有暂停原 Core 或遗留隔离环境。
-桌面控制仍停用，原生交互等待所有者查看；新增代码仍无对应远端 CI/CodeQL，未推送。
-详情、已验证复开入口和三项人工清单见 [H6 验收记录](testing/m7-h6-accessibility-20261102.md)。
+桌面控制仍停用；所有者随后已实际查看并阶段签收 H6，新增代码仍无对应远端 CI/CodeQL，未推送。
+原集中轮 12 项与后续同名通过逐项核对见 [H6 验收记录](testing/m7-h6-accessibility-20261102.md)，不改写原失败轮。
 
 ### H5 已签收记录（各轮独立证据）
 
@@ -360,7 +360,7 @@ Visual Gate 2，没有 M7 或 Hosted CI 通过结论，原未跟踪 `output/` �
 - 已执行获批 G3 的完成度核对，三个仓库列表 RPC 的矩阵 **92/92** 是当时结果；H4 新增获批权限读取后，
   当前公开 method 与矩阵 **93/93** 对齐。方法归属和 typed 接线不代表全部动作已独立人工验收。
   H3 签收及 Unity 检测、刷新、路径确认保持。H4 已由所有者阶段性签收，保留样例未覆盖项与一般体验待办；
-  原环境已实际恢复并核对五组预期一致。H5 已阶段性签收并进入获批 H6，交付 H6 候选后等待所有者检查；不进入 H7、不自动推送。
+  原环境已实际恢复并核对五组预期一致。H5/H6 已阶段性签收，当前进入获批 H7；完成本地候选后等待最终人工确认与独立远端安排，不自动推送。
 - 窗口记忆、仓库 credential enrollment/revocation、完整用户入口缺口保持真实状态；聚合
   projects.management/packages.vpm/repositories.management 等继续 in_progress，不批量提升。
 - projects/templates/backups 的 v3 parity 和 unity.v3-vrc-parity 仍等待 M11 真实脱敏 Fixture；
@@ -369,7 +369,7 @@ Visual Gate 2，没有 M7 或 Hosted CI 通过结论，原未跟踪 `output/` �
 - MCP、Discord 产品逻辑、Local API、v3 migration、bootstrap/updater/installer/dist 属于后续范围。
   已有开放依赖告警仍需独立适用性评估，不因这轮 GUI/握手修复关闭。
 
-### 非阻塞体验待办（H2-B/H3/H4/H5 阶段签收保留）
+### 非阻塞体验待办（H2-B/H3/H4/H5/H6 阶段签收保留）
 
 | 页面 | 触发条件 | 实际问题 |
 | --- | --- | --- |
