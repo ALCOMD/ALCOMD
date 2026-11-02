@@ -10,11 +10,32 @@ M0-M6 已正式通过人工验收，M7 尚未完成。
 
 项目所有者于 2026-11-02 确认 **H6 阶段性人工验收通过，保留非阻塞体验问题**，认可窄窗、键盘、主题及主要辅助功能，并批准既定 H7 最终整体验收。
 H2–H6 原签收保持；H7 只处理实际影响使用的问题，整理精简最终清单并在稳定代码上集中完整本地验证，不逐页重验或重新开发。
-统一默认间距，不恢复紧凑模式及 density 公共字段。真实读屏器、跨平台辅助技术仍属 M12；最终 Hosted CI/CodeQL 等候准确候选后的独立推送授权，M7 进行中。
+统一默认间距，不恢复紧凑模式及 density 公共字段。真实读屏器、跨平台辅助技术仍属 M12。
+所有者随后批准推送候选 `9e9fe22`，其 CI/CodeQL 已收齐；Ubuntu Chromium 尚有真实失败记录，当前窄测试修复未推送，M7 进行中。
 
-### H7 最终本地候选（等待人工确认与独立远端安排）
+### H7 当前技术阻塞与验收状态
 
-冻结验证 SHA **`a6c9bd5568f8bffb26fe531a58fe4286c7779f6f`**，产品代码与 H6 的 `a4f12a1` 相同；本轮审计没有新增需修复的功能阻塞。
+远端候选 **`9e9fe2215abe0c9db6ea33df492af5fe158442b2`** 已推送，CI **41460223799 / attempt 1 / failure**：
+Windows Server 2025 与 macOS 15 arm64 全部通过（各 Chromium **396/0**）；Ubuntu 22.04 的 Rust、合同、构建及平台检查均通过，
+仅 Chromium **395/1**，失败在 `m7-h6-responsive` 的 640px Settings 滚轮断言。CodeQL **41460221628 / attempt 1 / success**，四语言全部通过。
+没有重跑或另外触发 workflow，不把部分平台通过合为三平台通过。
+
+本地窄修 **`46eb6dfa8ad1f8514cd5056dac1f22faa436bc7d`** 只改一个测试文件：外层视口中心可能命中嵌套水平滚动条，
+改为先验证指针属于预期视口内容再发真实滚轮；位移、几何和 trial-click 断言完整保留，新增子视口/document 不滚动保护。
+确定性新回归修前 **0/1**、修后 **1/0**，最终整个受影响响应式模块 **13/0（1.3m，1 worker、0 retries）**；
+GUI check 通过，589 项输入在模块前后不变（`fc282b…42236`），相对原完整验证只有该测试文件变化，生产代码、构建输入及二进制均未变。
+远端未上传 artifacts，因此精确命中点无法取回；本地复现证明测试缺陷，与远端表现一致，不冒称已在 Ubuntu 复验通过。
+
+**本轮必须解决的阻塞**：修复候选尚无远端验证，原 CI 失败保持；还需所有者 H7 两项最终确认，并明确剩余事项的处理后才能记录 M7 完成。
+本地修复及文档提交获准，额外推送尚未执行，需新增推送授权。一般文案/布局/过度设计仍列为下方非阻塞体验待办；
+Portable UI 原生未覆盖状态、M11/M12 及窗口记忆未定归属等继续见“剩余边界”，不擅自关闭或重新分配。
+原 Core **131912** 持续运行；旧验收 GUI 已关闭，本次按既有入口复开为 GUI **157348**（窗口 **9966488**、可响应），
+同一产物/原 profile，五组公开状态与上次完整验证结束时一致，Config4/revision166 保持。未操作用户 Unity，也未恢复 Computer Use。
+详见 [远端结果与窄修证据](testing/m7-h7-final-20261102.md#远端结果与窄测试修复)。
+
+### H7 首轮完整本地验证（保留准确输入）
+
+冻结验证 SHA **`a6c9bd5568f8bffb26fe531a58fe4286c7779f6f`**，产品代码与 H6 的 `a4f12a1` 相同；当时本地审计没有新增需修复的产品功能阻塞。
 完整 Workspace **526/0，8 个既有 subprocess helper ignored**；独立完整 Chromium **396/0（14.9m，1 worker、0 retries）**。
 xtask/fmt/Workspace Clippy、GUI Cargo check、独立 Discord backend 检查（0 项测试）、全部前端 check/build、metadata/lockfile、
 并发自动启动、全 Workspace release bins 与 Tauri release no-bundle 均通过。589 项代码/合同/测试/构建输入全程不变，
@@ -28,7 +49,7 @@ xtask/fmt/Workspace Clippy、GUI Cargo check、独立 Discord backend 检查（0
 当前 Core 摘要 `1faff4…8f1ff`，GUI `6ec81c…8bc83`，均来自本次冻结源码；窗口保持打开。
 没有恢复 Computer Use，没有新增原生自动交互/截图，不操作用户 Unity 或实际工程。最终人工清单已合并为两项，不重验 H2–H6。
 完整结果、实际启动入口及未覆盖项见 [H7 本地候选](testing/m7-h7-final-20261102.md) 与
-[最终人工清单](testing/m7-official-gui-manual-checklist.md)。最终 Hosted CI/CodeQL 未执行、未推送；H7 尚未人工签收，M7 不标记完成。
+[最终人工清单](testing/m7-official-gui-manual-checklist.md)。以上为推送前记录；后续 `9e9fe22` 的真实远端结果和当前窗口见上，不回写初轮证据。H7 尚未人工签收，M7 不标记完成。
 
 ### H6 已签收记录（各轮独立证据）
 
@@ -378,7 +399,7 @@ Visual Gate 2，没有 M7 或 Hosted CI 通过结论，原未跟踪 `output/` �
 - 已执行获批 G3 的完成度核对，三个仓库列表 RPC 的矩阵 **92/92** 是当时结果；H4 新增获批权限读取后，
   当前公开 method 与矩阵 **93/93** 对齐。方法归属和 typed 接线不代表全部动作已独立人工验收。
   H3 签收及 Unity 检测、刷新、路径确认保持。H4 已由所有者阶段性签收，保留样例未覆盖项与一般体验待办；
-  原环境已实际恢复并核对五组预期一致。H5/H6 已阶段性签收，H7 完整本地候选已形成，等待最终人工确认与独立远端安排，不自动推送。
+  原环境已实际恢复并核对五组预期一致。H5/H6 已阶段性签收；H7 原 CI Ubuntu 395/1 保留，窄测试修复本地 13/0，等待新增推送授权和修复后远端证据、最终人工确认，不自动推送。
 - 窗口尺寸/位置记忆未实现，是已知 v3 差异；未找到本轮已批准实施要求或明确后续阶段归属，不写成完成或擅自划入 M12。
   仓库 credential enrollment/revocation 属 ADR 0016/H2-B 已排除的后续 Core/公共合同能力，当前无相应 RPC。
   初次设置、导入/迁移、更新及完整 v3 入口对齐仍按既有后续范围处理；聚合 projects.management/packages.vpm/repositories.management 等保持 in_progress，不批量提升。

@@ -569,7 +569,7 @@ fixes and defer uncertain contract-dependent work without blocking unrelated cor
 7. **H6 responsive/a11y/Playwright regression（阶段性人工验收通过，保留非阻塞体验问题）**：覆盖已批准 minimum-change user model 的 structural continuity、grouping/workspace/
    action placement、Material element presence和observable interaction、theme propagation、wide/narrow/200%/reduced motion；
    不测试Material shadow DOM私有细节。所有者于 2026-11-02 确认窄窗、键盘、主题与主要辅助功能符合预期；默认间距保持，不恢复 density，不建立第二套组件。
-8. **H7 manual visual signoff（本地候选已就绪，等待人工验收）**：整理精简最终清单，核对历史失败的后续修复并集中稳定候选完整本地验证；只修实际功能、操作、重要布局与回归，不重验已签收页面。最终 Hosted CI/CodeQL 的推送授权另行确认。
+8. **H7 manual visual signoff（等待人工验收及窄测试修复的远端验证）**：整理精简最终清单，核对历史失败的后续修复并集中稳定候选完整本地验证；只修实际功能、操作、重要布局与回归，不重验已签收页面。额外推送授权另行确认。
 
 H0-H7 只重组 shell、composition、component rendering 和 visual hierarchy；不得重新设计 RPC、Plan/Apply、Operation、Settings、
 Activity、Diagnostics 或 Portable UI authority。
@@ -661,6 +661,15 @@ fmt/Clippy/xtask、GUI/独立 backend 检查、全部前端 check/build、metada
 589 项非文档输入及验证期间 108 项文档均未变，之后只做文档收尾。原环境真实恢复为 Core131912/GUI153004，最终五组公开状态一致，Config4/revision166 保留。
 实际窗口保持打开；Computer Use 未恢复、无新增原生截图。窗口记忆、仓库凭据及 Portable UI/平台未覆盖边界均在
 [H7 候选记录](../testing/m7-h7-final-20261102.md) 列明；两项人工清单等待所有者，远端 CI/CodeQL 等待独立推送安排，M7 进行中。
+
+所有者随后批准推送 `9e9fe2215abe0c9db6ea33df492af5fe158442b2`。CI **41460223799 / attempt 1** 已完成：Windows、macOS 全部通过、Chromium 各 396/0，
+Ubuntu 仅 Chromium 395/1，其他 Rust/合同/构建/平台检查通过；CodeQL **41460221628 / attempt 1** 四语言成功。没有另触发或重跑 workflow。
+唯一失败为 640px Settings 的外层滚轮测试：固定中心可命中嵌套水平条。本地确定性回归修前 0/1、修后 1/0，窄修提交 **`46eb6dfa8ad1f8514cd5056dac1f22faa436bc7d`**
+只改测试命中点与单轮截图输出，保留全部原断言；最终受影响模块 13/0，生产及构建输入/产物未变，不重复全量本地门禁。
+远端未上传 artifacts，精确命中仍为推断，不称已在 Ubuntu 复验通过。原 CI 失败与各轮证据分别保留，修复未推送、无新远端结果。
+当前技术停止点是取得新增推送授权及修复候选的有效远端结果；H7 仍待所有者两项最终确认和剩余事项处理，不能宣布 M7 完成或开始 M8。
+原 Core 131912 持续运行，现有产物复开 GUI 157348（窗口 9966488、可响应）；五组公开状态与上次验证结束一致，Config4/revision166 保持。
+一般体验待办不升级为阻塞，窗口记忆未定归属、Portable UI 原生状态与 M11/M12 未覆盖边界继续原样保留。
 
 项目所有者批准先处理当前跨平台测试/启动缺陷与依赖安全问题，再实施既有 H2-B，最后形成
 真实桌面候选并停止人工验收；不重开 H2-A/Visual Gate 2，不重规划 M7 或重做 Projects/Packages。
@@ -1286,6 +1295,6 @@ GUI 的 155 项输入仍与 `88c3f69` 一致，复用该构建和 36/0；原环�
 隔离任务已全终态，原 Core/GUI 已实际恢复；五组公开状态与切换前完整快照一致，详见现有 status/testing 文档。
 H2-A、H2-B、H3 签收保持；H2-B 新增代码、H3 与 H4 仍无对应远端验证，不用旧 CI 替代。
 上述“只推进 H5、不进入 H6/H7”为当时交接边界；此后 H5、H6 已阶段性签收，H7 已获批准并形成本地候选。
-当前停止点为 H7 最终人工确认及独立远端安排，详见本计划“当前 H7 授权与收束”；不进入 M8/M9/M11，不推送或宣布 M7 完成。
+当前停止点为 H7 最终人工确认、剩余事项处理及窄测试修复的新增推送授权/远端验证，详见本计划“当前 H7 授权与收束”；不进入 M8/M9/M11，不擅自推送或宣布 M7 完成。
 候选读取、exact Unity、Hub 和 State16 的既有合同保持；Config3 已由获批 Config4 迁移替代，删除 density、保留其他偏好及 revision。
 完整 GUI/Rust/三平台技术门禁与人工视觉结果分别记录，不把旧 SHA 或定向通过冒充当前候选全绿。
