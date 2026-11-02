@@ -5,8 +5,9 @@ H2-A/H2-B 签收保持。H4 尚未人工签收，M7 进行中，不进入 H5-H7�
 
 ## 范围与候选
 
-标准目录/main，最终代码为 `e2b7dddf824bc4fb064b7cc682e3a25a40ab4ffa`；公开只读合同提交为 `0f8c9f4`，GUI 为
-`88c3f69304cc3afe77b45d474010c81ebd0152f0`。最终 Store 修复不改变 155 项 GUI 输入，复用其构建与浏览器证据。
+标准目录/main，当前 GUI 为 `52ed23bc41f01bfcfa0a7a3fc18cb5db56aaa766`，Core 保持 `e2b7dddf824bc4fb064b7cc682e3a25a40ab4ffa`。
+公开只读合同为 `0f8c9f4`；前轮 GUI `88c3f69304cc3afe77b45d474010c81ebd0152f0` 的 155 项输入/36 项证据仅对应前轮，
+不替代本次共享错误显示整改。各轮 Core 与 GUI 的独立输入/构建摘要保留。
 `9d8fc3d` 记录 H3 签收，`a913201` 补齐 H3 已审阅的
 Windows version.dll 私有模块精确 unsafe allowlist；原 deny/安全注释门禁保持，没有新增 unsafe 或校验放宽。
 
@@ -115,7 +116,8 @@ Projects 2、Editors 1、Operations 2（全终态）、Settings revision 155、S
 
 ## 本轮可操作隔离候选（待人工验收）
 
-产品代码 `e2b7ddd`、GUI 输入与既有构建保持；本轮不构建、不重跑测试套件、不调用 Computer Use 或其他桌面输入接口。
+该样例准备轮保持 `e2b7ddd` 与当时 GUI 输入/构建，不构建、不重跑测试套件、不调用 Computer Use 或其他桌面输入接口；
+随后发生的共享错误显示整改及新 GUI 见末节，不能继续把旧构建称作最新。
 复用原签名包和 `data-native`，只补正常样例的实际准备：正式 Core retain-data 卸载→重装→启用→停用→卸载全部成功。
 任务 `15ae6e46-7023-46c3-ad0c-39fb80de0207`、`f250b565-c83f-46cd-bb28-cdce8bd9a07a`、
 `e7f2208e-97ca-4bc5-8e91-cd10d3d11576` 为该准备轮，原始结果在 `native-rpc-review/`；不加到旧 13/0 或 36/0 计数。
@@ -148,7 +150,7 @@ ProjectId 为 `f2bb8e2a-2a8a-4dea-ab59-7670e89b8454`。仅该可丢弃项目登�
 & 'C:\Users\M2922\.cache\codex-runtimes\codex-primary-runtime\dependencies\native\powershell\pwsh.exe' -File 'C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m7-h4-extensions-20261102\H4-Review.ps1' -Action Restore
 ```
 
-交付时隔离 Core PID **138156**、GUI PID **136888**、窗口 **1841230**，标题 ALCOMD3、可响应，使用同一已验证 release 摘要。
+该次交付时隔离 Core PID **138156**、GUI PID **136888**、窗口 **1841230**，标题 ALCOMD3、可响应；后续新 GUI 窗口见末节。
 从左侧 Extensions 进入；没有自动导航、点击、键盘输入或截图。**原环境当前暂停等待本次人工查看结束**，不是已经恢复；
 Restore 会确认隔离任务全终态、仅关闭记录的本轮 GUI/Core、保留未知进程，实际启动原数据 Core/GUI 并核对五组状态。
 最近一次完整往返已恢复到原 Core 123196 / GUI 133036，五组全同；本次再次暂停前也已保存新完整快照。
@@ -190,3 +192,33 @@ H3 阶段签收保持，H4 继续等待项目所有者实际查看确认，M7 �
 H2-B 新增代码、H3 与本 H4 均**尚无对应远端 CI/CodeQL**，本轮未推送或触发 workflow。
 `0ef5b088dfdb7a8eb2b7a88ebef94ae436c90f50` 的三平台 CI `41287607183` 与 CodeQL `41287607108`
 成功继续作为该旧 SHA 的历史证据，不代表本轮新增代码远端通过。
+
+## 共享错误提示整改（52ed23b，原生待确认）
+
+所有者截图中发布者确认框未勾选，Core 正确返回 `extension_publisher_confirmation_required`；界面却恒定显示
+“请求失败/未能完成请求”加原始 code，未说明原因。源码确认这不是单点：共享 RequestReminder、页面初读/刷新、
+分页、模板任务/创建以及资源逐项错误都有同类显示或丢失原因。
+
+- 共享有限映射覆盖当前扩展码及常用通用/资源/项目错误，按稳定码给出中英日可读说明；不猜未知原因，不显示原始 RPC message/data。
+- 当前这项显示“请确认扩展发布者”，明确说明只有信任此扩展时才勾选“为此扩展批准该发布者”，再创建计划。
+  不自动勾选、不把未确认等同签名无效，不绕过 Core，不取消后续安装审阅。
+- code 与 diagnosticId 默认在“详情”，保持可排障；错误切换重置展开状态，原因与当前上下文/未知写入说明同时保留。
+  公共加载/分页保留诊断信息、已有数据及原重试规则；行内提示只换文字，不重设计页面。诊断页面的 code 仍是明确的诊断元数据。
+
+证据目录为 `target/m7-h4-readable-errors-20261102/`：GUI check **1021** 条消息、Material/类型检查通过。
+七个受影响 browser 模块首轮 **78/1（3.2 分钟）**，前后 **173** 项输入不变。唯一失败是新详情按钮被测试点击后，
+旧断言仍要求开关保有焦点；把 checked/focus 断言放在展开详情前，全部断言保留。生产文件未改，仅复验该项与五项新增
+错误说明/三语言/未知错误不泄露原文/发布者确认回归，独立 **6/0（13 秒）**，173 项输入不变。不相加、不称作独立 79/0。
+`verification.json`、两轮日志/输入摘要及旧失败 trace 保留。
+
+一次更新后的 Tauri release no-bundle 构建通过（2m02s），Core 未重建；新 GUI SHA 为
+`985e11edb32b867c10afeda0d697ff9b5c564ddb9ebbe862684a166a88222b11`，原 GUI 已保留为 `previous-gui.exe`。
+当前隔离 Core 仍 **138156**，GUI 已替换为 **128624** / 窗口 **4068254**，标题 ALCOMD3、可响应；
+更新前任务全终态，只有记录的本轮 GUI 被关闭，没有操作用户 Unity、原 Core 或未知进程。新 GUI 仍使用同一隔离数据。
+`H4-Review.ps1` 仅同步新 GUI 摘要和源码标识，恢复逻辑不变；新入口语法/进程身份已核对，未为文案更新再跑完整往返。
+早前 `manual-review-preparation.json` 的入口摘要/窗口属于前轮，新摘要与当前记录见 `candidate-runtime.json` / `review-session.json`。
+
+没有恢复 Computer Use、没有新增原生截图或声称完成原生体验验收。当前扩展仍未安装，所有者可用同一签名包从安装审阅继续。
+原环境仍暂时暂停，验收结束继续由既有 Restore 实际恢复并核对五组状态；H3 原签收保持，H4/M7 未签收完成。
+当前并非所有业务码已逐项人工覆盖：未知码仍给通用失败与可展开标识，包链接失败的既有隐藏反馈承载未重设计。
+正式 MCP/Discord 业务仍留给 M8/M9，本次没有新增产品功能、RPC、Schema、权限、依赖或推送。
