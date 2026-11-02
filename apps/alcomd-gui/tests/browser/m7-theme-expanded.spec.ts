@@ -10,9 +10,11 @@ for (const mode of ["light", "dark"] as const) {
         await expect(host).toBeVisible();
         await expect(page.getByRole("button", { name: "Theme", exact: true })).toHaveCount(0);
         await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toHaveCount(0);
+        await expect(host.getByRole("combobox", { name: "Color mode", exact: true })).toBeVisible();
         await expect(host.getByRole("combobox", { name: "Color scheme", exact: true })).toBeVisible();
         await expect(host.locator("md-outlined-text-field#theme-source")).toHaveCount(1);
-        await expect(host.locator("md-slider, md-radio, .theme-editor-columns, .theme-color-column, .theme-options-column, .theme-hct-controls")).toHaveCount(0);
+        await expect(host.locator("md-slider, md-radio, md-outlined-segmented-button-set, .theme-editor-columns, .theme-color-column, .theme-options-column, .theme-hct-controls")).toHaveCount(0);
+        await expect(host.locator("#theme-mode md-select-option")).toHaveCount(3);
         await expect(host.locator("#theme-scheme md-select-option")).toHaveCount(9);
         const rows = host.locator(".settings-row");
         await expect(rows).toHaveCount(3);
@@ -34,7 +36,10 @@ for (const mode of ["light", "dark"] as const) {
             const { x, width } = element.getBoundingClientRect();
             return { x, width };
         }));
-        for (const field of fields) expect(Math.abs(field.x + field.width - fields[0]!.x - fields[0]!.width)).toBeLessThanOrEqual(1);
+        for (const field of fields) {
+            expect(Math.abs(field.x + field.width - fields[0]!.x - fields[0]!.width)).toBeLessThanOrEqual(1);
+            expect(Math.abs(field.width - fields[0]!.width)).toBeLessThanOrEqual(1);
+        }
         const source = (await host.locator(".theme-source-row").boundingBox())!;
         const scheme = (await host.locator("#theme-scheme").boundingBox())!;
         expect(Math.abs(source.width - scheme.width)).toBeLessThanOrEqual(1);
@@ -52,10 +57,25 @@ for (const mode of ["light", "dark"] as const) {
     });
 }
 
-test("scheme dropdown supports keyboard selection and mode remains single-select", async ({ page }) => {
+test("mode and scheme dropdowns support keyboard selection and return focus without writing", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/settings&theme-mode=light");
     await selectSettingsSection(page, "appearance");
     await expect(page.getByRole("form", { name: "Theme", exact: true })).toBeVisible();
+    const mode = page.getByRole("combobox", { name: "Color mode", exact: true });
+    await mode.focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#theme-mode")).toHaveJSProperty("open", true);
+    await expect(page.getByRole("option", { name: "Light", exact: true })).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByRole("option", { name: "System", exact: true })).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByRole("option", { name: "Dark", exact: true })).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#theme-mode")).toHaveJSProperty("value", "dark");
+    await expect(page.locator("#theme-mode")).toHaveJSProperty("open", false);
+    await expect(mode).toBeFocused();
+    expect(await page.locator("#theme-mode md-select-option").evaluateAll(elements => elements.filter(element => (element as HTMLElement & { selected: boolean }).selected).length)).toBe(1);
+    await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
     const scheme = page.getByRole("combobox", { name: "Color scheme", exact: true });
     await scheme.focus();
     await page.keyboard.press("ArrowDown");
@@ -66,29 +86,18 @@ test("scheme dropdown supports keyboard selection and mode remains single-select
     await page.keyboard.press("Enter");
     await expect(page.locator("#theme-scheme")).toHaveJSProperty("value", "expressive");
     await expect(page.locator("#theme-scheme")).toHaveJSProperty("open", false);
+    await expect(scheme).toBeFocused();
     expect(await page.locator("#theme-scheme md-select-option").evaluateAll((elements) => elements.filter((element) => (element as HTMLElement & { selected: boolean }).selected).length)).toBe(1);
     await expect(page.locator("html")).toHaveAttribute("data-theme-scheme", "expressive");
-    const modes = page.locator("#theme-mode");
-    expect(await modes.locator("md-outlined-segmented-button").evaluateAll((elements) => elements.map((element) => {
-        const button = element as HTMLElement & { label: string; noCheckmark: boolean };
-        return { label: button.label, noCheckmark: button.noCheckmark };
-    }))).toEqual([
-        { label: "Light", noCheckmark: false },
-        { label: "System", noCheckmark: false },
-        { label: "Dark", noCheckmark: false }
-    ]);
-    await expect(modes.locator("md-icon")).toHaveCount(0);
-    await modes.getByRole("button", { name: "Dark", exact: true }).click();
-    await expect(modes.getByRole("button", { name: "Dark", exact: true })).toHaveAttribute("aria-pressed", "true");
-    await expect(modes.getByRole("button", { pressed: true })).toHaveCount(1);
-    await modes.getByRole("button", { name: "Dark", exact: true }).click();
-    await expect(modes.getByRole("button", { name: "Dark", exact: true })).toHaveAttribute("aria-pressed", "true");
-    await expect(modes.getByRole("button", { pressed: true })).toHaveCount(1);
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
 });
 
-for (const locale of ["en-US", "zh-CN", "ja-JP"]) {
-    test(`theme segments reserve the longest ${locale} label and checkmark before selection`, async ({ page }) => {
+for (const { locale, label, options } of [
+    { locale: "en-US", label: "Color mode", options: ["Light", "System", "Dark"] },
+    { locale: "zh-CN", label: "颜色模式", options: ["浅色", "跟随系统", "深色"] },
+    { locale: "ja-JP", label: "カラーモード", options: ["ライト", "システム設定", "ダーク"] }
+]) {
+    test(`theme mode dropdown exposes three translated choices and previews without writing in ${locale}`, async ({ page }, testInfo) => {
         await page.setViewportSize({ width: 1400, height: 800 });
         await page.goto("/browser-harness.html?route=/settings&theme-mode=light");
         await selectSettingsSection(page, "appearance");
@@ -100,34 +109,31 @@ for (const locale of ["en-US", "zh-CN", "ja-JP"]) {
             }, locale);
         }
         await expect(page.locator("html")).toHaveAttribute("lang", locale);
-        const group = page.locator("#theme-mode");
-        await expect(group.locator("md-outlined-segmented-button")).toHaveCount(3);
-        const before = (await group.boundingBox())!;
-        for (const segment of await group.locator("md-outlined-segmented-button").all()) {
-            await segment.click();
-            await page.screenshot({ animations: "disabled" });
-            const after = (await group.boundingBox())!;
-            expect(Math.abs(after.width - before.width)).toBeLessThanOrEqual(1);
-            expect(Math.abs(after.height - before.height)).toBeLessThanOrEqual(1);
-            for (const button of await group.locator("md-outlined-segmented-button").all()) {
-                const geometry = await button.evaluate((element) => {
-                    const label = element.shadowRoot!.querySelector<HTMLElement>(".md3-segmented-button__label-text")!;
-                    const range = document.createRange();
-                    range.selectNodeContents(label);
-                    const labelRect = label.getBoundingClientRect();
-                    const controlRect = element.getBoundingClientRect();
-                    return { lines: range.getClientRects().length, labelLeft: labelRect.left, labelRight: labelRect.right, left: controlRect.left, right: controlRect.right };
-                });
-                expect(geometry.lines).toBe(1);
-                expect(geometry.labelLeft).toBeGreaterThanOrEqual(geometry.left);
-                expect(geometry.labelRight).toBeLessThanOrEqual(geometry.right);
+        const control = page.locator("#theme-mode");
+        const dropdown = page.getByRole("combobox", { name: label, exact: true });
+        await expect(dropdown).toBeVisible();
+        await expect(control.locator("md-select-option")).toHaveText(options);
+        await expect(page.locator(".theme-editor .alcomd-segmented-control, .alcomd-segmented-sizer")).toHaveCount(0);
+        const writes = await page.evaluate(() => window.settingsRequests.length);
+        for (const [index, value] of ["light", "system", "dark"].entries()) {
+            const lifecycle = await control.evaluateHandle(element => ({
+                opened: new Promise<void>(resolve => element.addEventListener("opened", () => resolve(), { once: true })),
+                closed: new Promise<void>(resolve => element.addEventListener("closed", () => resolve(), { once: true }))
+            }));
+            await dropdown.click();
+            await lifecycle.evaluate(events => events.opened);
+            await expect(control).toHaveJSProperty("open", true);
+            await page.getByRole("option", { name: options[index]!, exact: true }).click();
+            await lifecycle.evaluate(events => events.closed);
+            await lifecycle.dispose();
+            await expect(control).toHaveJSProperty("value", value);
+            await expect(control).toHaveJSProperty("displayText", options[index]!);
+            await expect(control).toHaveJSProperty("open", false);
+            expect(await control.locator("md-select-option").evaluateAll(elements => elements.filter(element => (element as HTMLElement & { selected: boolean }).selected).length)).toBe(1);
+            expect(await page.evaluate(() => window.settingsRequests.length)).toBe(writes);
+            if (locale === "zh-CN" && value === "system") {
+                await page.screenshot({ path: testInfo.outputPath("chinese-system-selected.png"), animations: "disabled", fullPage: true });
             }
-        }
-        const section = (await group.locator("..").boundingBox())!;
-        expect(before.x + before.width).toBeLessThanOrEqual(section.x + section.width + 1);
-        if (locale === "zh-CN") {
-            await group.locator("md-outlined-segmented-button").nth(1).click();
-            await page.screenshot({ path: test.info().outputPath("chinese-system-selected.png"), animations: "disabled", fullPage: true });
         }
     });
 }

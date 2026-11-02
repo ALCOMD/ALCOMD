@@ -90,11 +90,10 @@ export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonEle
     label: string;
 }
 
-export function SegmentedButtons({ id, label, options, showCheckmark = false, value, onChange }: {
+export function SegmentedButtons({ id, label, options, value, onChange }: {
     id?: string;
     label: string;
     options: readonly { value: string; label: string; disabled?: boolean; title?: string }[];
-    showCheckmark?: boolean;
     value: string;
     onChange(value: string): void;
 }) {
@@ -119,15 +118,12 @@ export function SegmentedButtons({ id, label, options, showCheckmark = false, va
         return () => element.removeEventListener("segmented-button-set-selection", select);
     }, [onChange, options]);
     return <div className="alcomd-segmented-control">
-        <div aria-hidden="true" className="alcomd-segmented-sizer" data-checkmark={showCheckmark} inert>
-            {options.map((option) => <span key={option.value}>{option.label}</span>)}
-        </div>
         {createElement(materialElements.segmentedButtonSet, { ariaLabel: label, id, ref } as MaterialProps,
             options.map((option) => createElement(materialElements.segmentedButton, {
                 key: option.value,
                 disabled: option.disabled ?? false,
                 label: option.label,
-                noCheckmark: !showCheckmark,
+                noCheckmark: true,
                 selected: option.value === value,
                 title: option.title
             } as MaterialProps)))}

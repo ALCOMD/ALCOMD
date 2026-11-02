@@ -8,6 +8,10 @@ async function expectSegmentsVisible(group: Locator, boundary: Locator) {
     await expect(wrapper.locator(".os-scrollbar")).toHaveCount(0);
     const bounds = (await boundary.boundingBox())!;
     for (const segment of await group.locator("md-outlined-segmented-button").all()) {
+        expect(await segment.evaluate(element => {
+            const style = getComputedStyle(element.shadowRoot!.querySelector("button")!);
+            return { leading: style.paddingInlineStart, trailing: style.paddingInlineEnd };
+        })).toEqual({ leading: "24px", trailing: "24px" });
         const box = (await segment.boundingBox())!;
         expect(box.x).toBeGreaterThanOrEqual(bounds.x);
         expect(box.x + box.width).toBeLessThanOrEqual(bounds.x + bounds.width);
@@ -39,7 +43,7 @@ for (const route of ["/repositories", "/unity", "/activity"]) {
     });
 }
 
-test("Chinese theme segments stay visible without a scroll container before and after selection", async ({ page }, testInfo) => {
+test("Chinese Settings segments keep 24px inner spacing before and after selection", async ({ page }, testInfo) => {
     await page.goto("/browser-harness.html?route=/settings&theme-mode=dark");
     await selectSettingsSection(page, "appearance");
     await page.locator("#settings-locale").evaluate(element => {
@@ -47,19 +51,19 @@ test("Chinese theme segments stay visible without a scroll container before and 
         element.dispatchEvent(new Event("change", { bubbles: true }));
     });
     await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
-    const group = page.locator("#theme-mode");
-    const theme = page.getByRole("form", { name: "主题", exact: true });
-    await expect(group.locator("../..")).toHaveClass("settings-row");
-    await expect(group.getByRole("button")).toHaveText(["浅色", "跟随系统", "深色"]);
-    await expectSegmentsVisible(group, theme);
+    const group = page.locator(".resource-navigation md-outlined-segmented-button-set");
+    const main = page.locator("#main-content");
+    await expect(group.getByRole("button")).toHaveText(["常规", "Unity", "外观", "通知"]);
+    await expect(page.locator(".alcomd-segmented-sizer")).toHaveCount(0);
+    await expectSegmentsVisible(group, main);
     for (const zoom of [1, 0.8, 1.25]) {
         await page.evaluate(value => { document.documentElement.style.zoom = String(value); }, zoom);
         for (const segment of await group.getByRole("button").all()) {
             await segment.click();
             await expect(segment).toHaveAttribute("aria-pressed", "true");
-            await expectSegmentsVisible(group, theme);
+            await expectSegmentsVisible(group, main);
         }
-        await group.screenshot({ path: testInfo.outputPath(`theme-segments-${zoom}.png`), animations: "disabled" });
+        await group.screenshot({ path: testInfo.outputPath(`settings-segments-${zoom}.png`), animations: "disabled" });
     }
 });
 

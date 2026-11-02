@@ -56,8 +56,9 @@ for (const width of [320, 640, 800, 1024, 1280]) {
             await expect(page.locator("#settings-motion")).toBeAttached();
             const body = page.locator(".utility-workspace-body");
             await expectCanvasFits(page);
-            // The product permits segmented navigation to overflow at 320px.
-            if (width > 320) await expectHeaderFits(page);
+            // The owner permits the wider Settings segments to overflow at 640px
+            // and below; keep all independent body and action checks at those sizes.
+            if (width > 640) await expectHeaderFits(page);
             await expectNoHorizontalOverflow(body);
             if (width === 320) {
                 // Only the default group is required at this intentionally narrow width.
@@ -170,13 +171,15 @@ test("H6 Japanese Theme keeps its setting rows and color field usable at 621px",
     const scheme = (await rows.nth(2).boundingBox())!;
     expect(scheme.y).toBeGreaterThanOrEqual(color.y + color.height);
     expect((await page.locator("#theme-source").boundingBox())!.width).toBeGreaterThan(100);
-    const modes = page.locator("#theme-mode").getByRole("button");
-    await modes.nth(0).focus();
+    await page.getByRole("combobox", { name: "カラーモード", exact: true }).focus();
     await page.keyboard.press("Tab");
-    await expect(modes.nth(1)).toBeFocused();
+    await expect(page.locator("#theme-picker")).toBeFocused();
     await page.keyboard.press("Tab");
-    await expect(modes.nth(2)).toBeFocused();
-    await expectReachable(page, modes.nth(2), page.locator("#theme-mode"));
+    await expect(page.locator("#theme-source").getByRole("textbox")).toBeFocused();
+    await page.keyboard.press("Tab");
+    const schemeField = page.getByRole("combobox", { name: "配色スキーム", exact: true });
+    await expect(schemeField).toBeFocused();
+    await expectReachable(page, schemeField, page.locator(".utility-workspace-body"));
 });
 
 test.describe("H6 200 percent equivalent CSS layout", () => {
@@ -374,15 +377,15 @@ async function expectThemeFits(page: Page) {
     await expectHorizontalBounds(page.getByRole("textbox", { name: "Source color", exact: true }), theme);
     const modes = page.locator("#theme-mode");
     await expectHorizontalBounds(modes, theme);
-    const light = page.locator("#theme-mode").getByRole("button", { name: "Light", exact: true });
-    const system = page.locator("#theme-mode").getByRole("button", { name: "System", exact: true });
-    const dark = page.locator("#theme-mode").getByRole("button", { name: "Dark", exact: true });
-    await light.focus();
+    await theme.getByRole("combobox", { name: "Color mode", exact: true }).focus();
     await page.keyboard.press("Tab");
-    await expect(system).toBeFocused();
+    await expect(page.locator("#theme-picker")).toBeFocused();
     await page.keyboard.press("Tab");
-    await expect(dark).toBeFocused();
-    await expectReachable(page, dark, modes);
+    await expect(theme.getByRole("textbox", { name: "Source color", exact: true })).toBeFocused();
+    await page.keyboard.press("Tab");
+    const scheme = theme.getByRole("combobox", { name: "Color scheme", exact: true });
+    await expect(scheme).toBeFocused();
+    await expectReachable(page, scheme, body);
     await expectCanvasFits(page);
     await expectNoHorizontalOverflow(body);
     const restore = theme.getByRole("button", { name: "Restore defaults", exact: true });

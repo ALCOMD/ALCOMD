@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { SettingsGetResult } from "./core-models";
 import { useTranslation } from "./i18n";
-import { Button, ColorPicker, SegmentedButtons, Select, TextField } from "./Material";
+import { Button, ColorPicker, Select, TextField } from "./Material";
 import type { RpcError } from "@alcomd/sdk";
 import { normalizeRequestError } from "./request-errors";
 import { RequestReminder, useReminder } from "./Reminder";
@@ -157,9 +157,9 @@ export function ThemeControls({ value, disabled, onSave, onReload, onPreview, on
 
     return <form aria-label={t("Theme")} aria-busy={saving} className="theme-editor" onSubmit={(event) => { event.preventDefault(); event.stopPropagation(); void save(); }}>
         <div className="settings-row">
-            <span>{t("Color mode")}</span>
-            <SegmentedButtons id="theme-mode" label={t("Color mode")} showCheckmark value={draft.mode}
-                options={[{ label: t("Light"), value: "light" }, { label: t("System"), value: "system" }, { label: t("Dark"), value: "dark" }].map((option) => ({ ...option, disabled: disabled || saving }))}
+            <label htmlFor="theme-mode">{t("Color mode")}</label>
+            <Select disabled={disabled || saving} id="theme-mode" label={t("Color mode")} value={draft.mode}
+                options={[{ label: t("Light"), value: "light" }, { label: t("System"), value: "system" }, { label: t("Dark"), value: "dark" }]}
                 onChange={(mode) => change({ ...desired.current, mode: mode as ThemePreferences["mode"] })} />
         </div>
         <div className="settings-row">

@@ -167,7 +167,7 @@ test("Save sends one theme-only request and busy state blocks duplicate saves an
     await themeEditor(page).dispatchEvent("submit");
     await expect(page.locator("#theme-source").getByRole("textbox")).toBeDisabled();
     await expect(page.locator("#theme-picker")).toBeDisabled();
-    for (const control of await page.locator("#theme-mode md-outlined-segmented-button, #theme-scheme").all()) await expect(control).toHaveJSProperty("disabled", true);
+    for (const control of await page.locator("#theme-mode, #theme-scheme").all()) await expect(control).toHaveJSProperty("disabled", true);
     await expect(themeEditor(page).getByRole("button", { name: "Restore defaults", exact: true })).toBeDisabled();
     await expect(themeEditor(page).getByRole("button", { name: "Cancel", exact: true })).toBeDisabled();
     await settleFrames(page);
@@ -229,7 +229,7 @@ test("Cancel restores the latest accepted theme and the inline editor supports a
     }
     await showThemeEditor(page);
     await expect(page.locator("#theme-source").getByRole("textbox")).toHaveValue("#E040A0");
-    await expect(page.locator("#theme-mode").getByRole("button", { name: "Light", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#theme-mode")).toHaveJSProperty("value", "light");
     await expect(page.locator("#theme-scheme")).toHaveJSProperty("value", "vibrant");
     await enterHex(page, "#006A60");
     await saveTheme(page);
@@ -309,7 +309,7 @@ test("a revision conflict rereads settings and retries only local theme fields o
     await expect(page.locator("html")).toHaveAttribute("data-source-color", "#E040A0");
     await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
     await showThemeEditor(page);
-    await expect(page.locator("#theme-mode").getByRole("button", { name: "Dark", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#theme-mode")).toHaveJSProperty("value", "dark");
     await expect(page.locator("#theme-scheme")).toHaveJSProperty("value", "neutral");
 });
 
@@ -349,7 +349,7 @@ test("changing settings sections retains the inline theme draft without writing"
     await showThemeEditor(page);
     expect(await themeEditor(page).evaluate((element, previous) => element === previous, original)).toBe(true);
     await expect(page.locator("#theme-source").getByRole("textbox")).toHaveValue("#E040A0");
-    await expect(page.locator("#theme-mode").getByRole("button", { name: "Dark", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#theme-mode")).toHaveJSProperty("value", "dark");
     await expect(page.locator("#theme-scheme")).toHaveJSProperty("value", "neutral");
     await saveTheme(page);
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([
@@ -412,8 +412,10 @@ for (const language of [
         await expect(page.getByRole("combobox", { name: language.scheme, exact: true })).toBeVisible();
         await expect(page.locator("#theme-mode")).toHaveJSProperty("ariaLabel", language.mode);
         await expect(editor.locator("md-slider")).toHaveCount(0);
-        await expect(page.locator("#theme-mode").getByRole("button", { name: language.light, exact: true })).toBeVisible();
-        await expect(page.locator("#theme-mode").getByRole("button", { name: language.dark, exact: true })).toBeVisible();
+        await expect(page.getByRole("combobox", { name: language.mode, exact: true })).toBeVisible();
+        await expect(page.locator("#theme-mode md-select-option")).toHaveCount(3);
+        await expect(page.locator("#theme-mode md-select-option").nth(0)).toHaveText(language.light);
+        await expect(page.locator("#theme-mode md-select-option").nth(2)).toHaveText(language.dark);
         await expect(page.getByRole("button", { name: language.defaults, exact: true })).toBeVisible();
         await expect(page.locator("#theme-scheme md-select-option")).toHaveCount(9);
         await expect(page.locator("#theme-scheme")).toContainText(language.vibrant);
@@ -464,10 +466,6 @@ async function enterHex(page: Page, value: string) {
 
 async function selectThemeOption(page: Page, id: string, value: string) {
     if (id.startsWith("settings-")) await selectSettingsSection(page, "appearance");
-    if (id === "theme-mode") {
-        await page.locator("#theme-mode").getByRole("button", { name: { light: "Light", dark: "Dark", system: "System" }[value]!, exact: true }).click();
-        return;
-    }
     await page.locator(`#${id}`).evaluate((element, next) => {
         (element as HTMLElement & { select(value: string): void }).select(next);
         element.dispatchEvent(new Event("change", { bubbles: true }));

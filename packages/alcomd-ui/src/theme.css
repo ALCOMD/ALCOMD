@@ -176,25 +176,14 @@ samp {
     --md-filled-text-field-top-space: 8px;
 }
 
-.alcomd-segmented-control { display: grid; min-inline-size: max-content; }
-.alcomd-segmented-control > * { grid-area: 1 / 1; }
+.alcomd-segmented-control { display: inline-flex; min-inline-size: max-content; }
 .alcomd-segmented-control > md-outlined-segmented-button-set { white-space: nowrap; }
-.alcomd-segmented-sizer {
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: 1fr;
-    visibility: hidden;
-    pointer-events: none;
-    white-space: nowrap;
-    font-family: var(--md-outlined-segmented-button-label-text-font, var(--md-sys-typescale-label-large-font, var(--md-ref-typeface-plain)));
-    font-size: var(--md-outlined-segmented-button-label-text-size, var(--md-sys-typescale-label-large-size, 0.875rem));
-    font-weight: var(--md-outlined-segmented-button-label-text-weight, var(--md-sys-typescale-label-large-weight, 500));
-    line-height: var(--md-outlined-segmented-button-label-text-line-height, var(--md-sys-typescale-label-large-line-height, 1.25rem));
+/* Material Web's labs component has no public spacing tokens. Set its actual
+   button padding here; host padding would leave gaps in the joined segments. */
+.alcomd-segmented-control md-outlined-segmented-button:not(:has([slot="icon"])) {
+    --_spacing-leading: 24px;
+    --_spacing-trailing: 24px;
 }
-/* Material Web 2.5.0 uses 12px ends and an 8px label/graphic gap. Reserve each
-   option's selected size from the start, including labels with no word breaks. */
-.alcomd-segmented-sizer > span { padding-inline: 12px; }
-.alcomd-segmented-sizer[data-checkmark="true"] > span { padding-inline-end: calc(12px + var(--md-outlined-segmented-button-icon-size, 18px) + 8px); }
 
 .alcomd-radio-group { min-width: 0; margin: 0; padding: 0; border: 0; }
 .alcomd-radio-group > legend { padding: 0; margin-bottom: 8px; font-weight: 500; }

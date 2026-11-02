@@ -18,14 +18,17 @@ test("keyboard navigation moves routes and focuses the destination heading", asy
     await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeFocused();
     await selectSettingsSection(page, "appearance");
     await expect(page.getByRole("form", { name: "Theme", exact: true })).toBeVisible();
-    const light = page.locator("#theme-mode").getByRole("button", { name: "Light", exact: true });
-    await light.focus();
-    await expect(light).toBeFocused();
+    const mode = page.getByRole("combobox", { name: "Color mode", exact: true });
+    await mode.focus();
+    await expect(mode).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByRole("option", { name: "System", exact: true })).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await expect(page.getByRole("option", { name: "Light", exact: true })).toBeFocused();
     await page.keyboard.press("Enter");
-    await expect(light).toHaveAttribute("aria-pressed", "true");
-    await page.keyboard.press("Space");
-    await expect(light).toHaveAttribute("aria-pressed", "true");
-    await expect(page.locator("#theme-mode").getByRole("button", { pressed: true })).toHaveCount(1);
+    await expect(page.locator("#theme-mode")).toHaveJSProperty("value", "light");
+    await expect(page.locator("#theme-mode")).toHaveJSProperty("open", false);
+    await expect(mode).toBeFocused();
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
 });
 
