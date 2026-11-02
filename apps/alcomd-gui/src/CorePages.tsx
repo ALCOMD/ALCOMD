@@ -61,6 +61,7 @@ import {
     UnityRegistryActions
 } from "./CoreActions";
 import { DesktopList, type DesktopListColumn } from "./DesktopList";
+import { displayPath } from "./display-path";
 import { ScrollArea } from "./ScrollArea";
 import { PageHeader } from "./PageHeader";
 import { LoadingState, useDelayedPending } from "./LoadingState";
@@ -462,7 +463,7 @@ function ProjectsTable({
     return <DesktopList className="projects-list" columns={columns} label={t("Projects")} minWidth={720} rows={projects.map((project) => {
         const id = project.projectId;
         return { key: id ?? project.rootPath, cells: [
-            <><strong>{projectName(t, locale, project)}</strong><small title={displayProjectPath(project.rootPath)}>{displayProjectPath(project.rootPath)}</small></>,
+            <><strong>{projectName(t, locale, project)}</strong><small title={displayPath(project.rootPath)}>{displayPath(project.rootPath)}</small></>,
             <span className="project-type project-type--table"><Icon asset={projectTypeIcon(project.projectType)} /><span>{projectTypeLabel(t, locale, project.projectType)}</span></span>,
             project.unityVersion || t("Unknown"),
             formatRegistered(t, locale, project.registeredAtMs),
@@ -660,7 +661,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
                 </> : <>
                     <p><strong>{t("This permanently deletes local files and does not use the Recycle Bin or Trash.")}</strong></p>
                     <p>{t("No automatic backup will be created. This is different from removing the project from the list.")}</p>
-                    <p className="project-delete-path"><code>{deletePlan.canonicalRootPath}</code></p>
+                    <p className="project-delete-path"><code>{displayPath(deletePlan.canonicalRootPath)}</code></p>
                     <p>{t("Unity writer observation: ")}<strong>{humanize(t, deletePlan.writerEvidence.state)}</strong>.</p>
                     <TextField aria-label={t("Confirm project directory name")} label={t("Type {value0} to confirm", { value0: deletePlan.normalizedLeaf })} onInput={setDeleteConfirmation} required value={deleteConfirmation} />
                     {deleteOperation === undefined ? null : <p>{t("Operation: ")}<code>{deleteOperation.operationId}</code> · {humanize(t, deleteOperation.state)}</p>}
@@ -791,7 +792,7 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
                         <p>{t("Choose the new project name. By default, ALCOMD creates the copy beside the original project without overwriting an existing target.")}</p>
                         <TextField aria-label={t("Copied project name")} label={t("Project name")} onInput={setTargetLeaf} value={targetLeaf} />
                         <div className="project-copy-location">
-                            <TextField aria-label={t("Copy project location")} label={t("Project location")} readOnly value={targetParent} />
+                            <TextField aria-label={t("Copy project location")} label={t("Project location")} readOnly value={displayPath(targetParent)} />
                             <Button disabled={busy} onClick={() => void chooseTargetParent()} type="button" variant="tonal">{t("Choose…")}</Button>
                         </div>
                         <div className="dialog-actions">
@@ -802,7 +803,7 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
                 ) : operation === undefined ? (
                     <>
                         <p><strong>{t("Source:")}</strong> {projectName(t, locale, project)}</p>
-                        <p><strong>{t("Destination:")}</strong> {plan.targetParentCanonicalPath}\{plan.normalizedTargetLeaf}</p>
+                        <p><strong>{t("Destination:")}</strong> {displayPath(plan.targetParentCanonicalPath)}\{plan.normalizedTargetLeaf}</p>
                         <p><strong>{t("Unity writer:")}</strong> {humanize(t, plan.writerEvidence.state)}</p>
                         <p><strong>{t("Copy profile:")}</strong> {t("v{version}; excludes Logs, Obj, Temp and .git.", { version: plan.profile.version })}</p>
                         <div className="dialog-actions">
@@ -838,7 +839,7 @@ function ProjectCard({ client, onChanged, onFeedback, onRefresh, project, naviga
     const { t, locale } = useTranslation();
     const id = project.projectId;
     const name = projectName(t, locale, project);
-    const path = displayProjectPath(project.rootPath);
+    const path = displayPath(project.rootPath);
     const type = projectTypeLabel(t, locale, project.projectType);
     const unity = t("Unity {value0}", { value0: project.unityVersion || "unknown" });
     const dates = t("Added {value0} / Last modified {value1}", { value0: formatRegistered(t, locale, project.registeredAtMs), value1: formatModified(t, locale, project.lastModifiedAtMs) });
@@ -934,7 +935,7 @@ function RegisterProjectDialog({ client, onChanged, onClose, open, path }: { cli
 }
 
 function projectName(t: Translate, locale: SupportedLocale, project: ProjectSnapshot): string {
-    return displayProjectPath(project.rootPath).split(/[\\/]/).at(-1) ?? t("Unity project");
+    return displayPath(project.rootPath).split(/[\\/]/).at(-1) ?? t("Unity project");
 }
 
 function projectParentPath(rootPath: string): string {
@@ -974,12 +975,6 @@ function formatRegistered(t: Translate, locale: SupportedLocale, value: number |
     const month = (date.getMonth() + 1).toString().padStart(2, "0");
     const day = date.getDate().toString().padStart(2, "0");
     return `${year}-${month}-${day}`;
-}
-
-function displayProjectPath(path: string): string {
-    if (path.startsWith("\\\\?\\UNC\\")) return `\\\\${path.slice(8)}`;
-    if (path.startsWith("\\\\?\\")) return path.slice(4);
-    return path;
 }
 
 function projectTypeIcon(projectType: string) {
@@ -1480,7 +1475,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                     <PageHeader
                         className="project-workspace-header"
                         leading={<Button className="project-back-action" onClick={() => navigate("/projects")} type="button" variant="text"><Icon asset={arrowBackIcon} slot="icon" />{t("Back")}</Button>}
-                        subtitle={<span title={displayProjectPath(project.rootPath)}>{displayProjectPath(project.rootPath)}</span>}
+                        subtitle={<span title={displayPath(project.rootPath)}>{displayPath(project.rootPath)}</span>}
                         title={projectName(t, locale, project)}
                     >
                         <nav aria-label={t("Project actions")} className="project-workspace-action-cluster">
@@ -1792,7 +1787,7 @@ function UserPackageDetails({ client, userPackageId }: { client: GuiRpcClient; u
         <Detail label={t("Name")} value={userPackage.displayName ?? userPackage.packageId} />
         <Detail label={t("Package")} value={userPackage.packageId} />
         <Detail label={t("Version")} value={userPackage.version} />
-        <Detail label={t("Source folder")} value={userPackage.sourceRootPath} />
+        <Detail label={t("Source folder")} value={displayPath(userPackage.sourceRootPath)} />
         <Detail label={t("Revision")} value={String(userPackage.revision)} />
         <Detail label={t("Archive SHA-256")} value={shortHash(userPackage.archiveSha256)} />
     </dl>}</ResourcePage>;

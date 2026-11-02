@@ -7,6 +7,7 @@ import { capabilities, capabilityUnavailableTitle, useCapability } from "./capab
 import type { ProjectSnapshot, UnityLaunchOptionsResult, UnityLaunchRecord } from "./core-models";
 import { normalizeRpcError, type GuiRpcClient } from "./rpc";
 import { Reminder, RequestReminder, useReminder } from "./Reminder";
+import { displayPath } from "./display-path";
 
 export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaunchSettled, project }: {
     client: GuiRpcClient;
@@ -121,7 +122,7 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
                 </div>
             </Dialog>
             <Dialog dismissible={!busy} onClose={() => closed("choose")} open={dialog === "choose"} title={t("Choose Unity for this launch")}>
-                <Select disabled={busy} label={t("Unity installation for this launch")} onChange={(value) => { setInstallationId(value); setError(undefined); }} options={[{ label: t("Choose an installation"), value: "" }, ...(options?.exactMatchingInstallations ?? []).map((item) => ({ label: `Unity ${item.unityVersion} · ${item.architecture} · ${item.executablePath}`, value: item.installationId }))]} value={installationId} />
+                <Select disabled={busy} label={t("Unity installation for this launch")} onChange={(value) => { setInstallationId(value); setError(undefined); }} options={[{ label: t("Choose an installation"), value: "" }, ...(options?.exactMatchingInstallations ?? []).map((item) => ({ label: `Unity ${item.unityVersion} · ${item.architecture} · ${displayPath(item.executablePath)}`, value: item.installationId }))]} value={installationId} />
                 {error === undefined ? null : <RequestReminder error={error} />}
                 <div className="dialog-actions">
                     <Button disabled={busy} onClick={close} type="button" variant="tonal">{t("Cancel")}</Button>

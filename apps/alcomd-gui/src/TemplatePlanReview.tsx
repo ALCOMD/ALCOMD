@@ -1,5 +1,6 @@
 import type { TemplateBundleInspection, TemplatePlan, TemplateRecord } from "./core-models";
 import { useTranslation } from "./i18n";
+import { displayPath } from "./display-path";
 
 type ReviewContext = {
     plan: TemplatePlan;
@@ -87,7 +88,7 @@ export function TemplatePlanReview({ review }: { review: TemplateReview }) {
                 <div><dt>{t("Source project revision")}</dt><dd>{review.sourceProjectRevision}</dd></div>
             </> : review.action === "create_project" ? <>
                 <div><dt>{t("Template revision")}</dt><dd>{review.templateRevision}</dd></div>
-                <div><dt>{t("Destination")}</dt><dd><code>{review.targetParent}</code><br /><code>{review.targetLeaf}</code></dd></div>
+                <div><dt>{t("Destination")}</dt><dd><code>{displayPath(review.targetParent)}</code><br /><code>{review.targetLeaf}</code></dd></div>
                 <div><dt>{t("Destination must be absent")}</dt><dd>{t("Yes")}</dd></div>
             </> : null}
         </dl>

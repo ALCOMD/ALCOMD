@@ -28,6 +28,7 @@ import { useProjectUnityLaunch } from "./ProjectUnityLaunch";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 import { reviewTemplateCreation, reviewTemplateDerive, reviewTemplateImport, TemplatePlanReview, type TemplateReview } from "./TemplatePlanReview";
 import { Reminder, RequestReminder, useReminder } from "./Reminder";
+import { displayPath } from "./display-path";
 
 interface ActionProps {
     client: GuiRpcClient;
@@ -145,7 +146,7 @@ export function RegisterRepositoryPanel({ client, onChanged }: ActionProps) {
             {error}
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={!available || feedback.busy || value.trim().length === 0} title={capabilityUnavailableTitle(available, capabilities.repositoriesRegistry, t)} type="submit">{t("Review repository")}</Button></div>
         </form> : <>
-            <dl className="dialog-summary"><div><dt>{t("Name")}</dt><dd>{preview.name ?? t("Unnamed repository")}</dd></div><div><dt>{t("Source")}</dt><dd>{preview.source.kind === "remote" ? preview.source.url : preview.source.path}</dd></div></dl>
+            <dl className="dialog-summary"><div><dt>{t("Name")}</dt><dd>{preview.name ?? t("Unnamed repository")}</dd></div><div><dt>{t("Source")}</dt><dd>{preview.source.kind === "remote" ? preview.source.url : displayPath(preview.source.path)}</dd></div></dl>
             {preview.issues.length === 0 ? null : <Reminder tone="warning">{t("This repository has {count} reported issues. Registration will validate the source again.", { count: preview.issues.length })}</Reminder>}
             {error}
             <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} /><Button disabled={feedback.busy} onClick={() => { setPreview(undefined); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Back")}</Button><Button disabled={!available || feedback.busy} onClick={() => void register()} type="button">{t("Add repository")}</Button></div>
@@ -773,7 +774,7 @@ function TemplateDeriveDialog({ client, operations, onClose, origin, closed = fa
             <p className="risk-summary">{t("The daemon will revalidate this frozen plan before applying it.")}</p>
             <div className="dialog-actions"><Button disabled={feedback.busy} onClick={close} type="button" variant="text">{t("Discard plan")}</Button><Button disabled={feedback.busy || submitted || !canManage} onClick={() => void apply()} type="button">{t("Apply reviewed plan")}</Button></div>
         </> : <form onSubmit={(event) => void createPlan(event)}>
-            <Select id="derive-project" label={t("Source project")} disabled={feedback.busy || projectsLoading} onChange={(next) => update("projectId", next)} options={[{ label: t("Choose a project"), value: "" }, ...projects.filter((project) => project.projectId !== undefined).map((project) => ({ label: project.rootPath, value: project.projectId! }))]} value={fields.projectId} />
+            <Select id="derive-project" label={t("Source project")} disabled={feedback.busy || projectsLoading} onChange={(next) => update("projectId", next)} options={[{ label: t("Choose a project"), value: "" }, ...projects.filter((project) => project.projectId !== undefined).map((project) => ({ label: displayPath(project.rootPath), value: project.projectId! }))]} value={fields.projectId} />
             {showProjectsLoading ? <p role="status">{t("Loading projects…")}</p> : !projectsLoading && projects.length === 0 ? <p>{t("No registered projects available.")}</p> : null}
             {projectPage?.nextCursor === undefined ? null : <Button disabled={projectsLoading || feedback.busy} onClick={() => void loadMore()} type="button" variant="text">{t("Load more projects")}</Button>}
             <TextField disabled={feedback.busy} id="derive-name" label={t("Display name")} onInput={(next) => update("displayName", next)} required value={fields.displayName} />

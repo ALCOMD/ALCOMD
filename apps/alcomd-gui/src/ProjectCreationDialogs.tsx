@@ -11,6 +11,7 @@ import { LoadingState, useDelayedPending } from "./LoadingState";
 import type { GuiRpcClient } from "./rpc";
 import { useTranslation } from "./i18n";
 import type { SupportedLocale } from "./i18n-types";
+import { displayPath } from "./display-path";
 
 interface ProjectDialogProps {
     client: GuiRpcClient;
@@ -428,7 +429,7 @@ export function RestoreProjectDialog({ backup, client, onClose, onCompleted, onV
                     <>
                         <div className="dialog-summary">
                             <div><span>{t("Backup")}</span><strong>{selectedBackup === undefined ? backupId : backupLabel(selectedBackup, locale)}</strong></div>
-                            <div><span>{t("Destination")}</span><code>{plan.target.parent}\{plan.target.leaf}</code></div>
+                            <div><span>{t("Destination")}</span><code>{displayPath(plan.target.parent)}\{plan.target.leaf}</code></div>
                             <div><span>{t("Package resolution")}</span><strong>{plan.packagesRequireResolve ? t("Required") : t("Not required")}</strong></div>
                             <div><span>{t("Plan")}</span><code>{plan.planFingerprint.slice(0, 12)}</code></div>
                         </div>

@@ -7,3 +7,4 @@
 - Use Material Design 3 and reusable `@alcomd/ui` primitives.
 - Persist authoritative settings through ALCOMD RPC, not localStorage.
 - localStorage may only contain disposable view state.
+- Use `displayPath` for read-only filesystem path labels and full-path tooltips. Keep the original Core/picker path for RPC, editable state, identities, and filesystem actions; do not format URLs as file paths.

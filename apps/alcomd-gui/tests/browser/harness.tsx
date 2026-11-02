@@ -188,7 +188,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     private userPackageRemoved = false;
     private userPackageRevision = 1;
     private userPackageEnrolled = false;
-    private userPackagePath = "<private-user-package>";
+    private userPackagePath = query.has("windows-paths") ? "\\\\?\\UNC\\nas\\Packages\\Avatar" : "<private-user-package>";
     private userDetailsUnavailable = query.has("user-details-error");
     private lifecycleRepositories = new Map<string, RepositorySnapshot>();
     private templatePageReads = 0;
@@ -509,6 +509,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
     projectUnregister(): ReturnType<GuiRpcClient["projectUnregister"]> { return this.value({ projectId: PROJECT_ID, revision: 3, unregistered: true, replayed: false }); }
     projectPlanCopy(_sourceProjectId: string, expectedRevision: number, targetParentPath: string, targetLeaf: string): ReturnType<GuiRpcClient["projectPlanCopy"]> {
+        if (query.has("windows-paths")) window.h3Requests.push({ method: "projects.planCopy", params: { sourceProjectId: _sourceProjectId, expectedRevision, targetParentPath, targetLeaf } });
         return this.value({
             plan: {
                 planId: "00000000-0000-4000-8000-000000000060",
@@ -816,7 +817,7 @@ class DeterministicGuiClient implements GuiRpcClient {
         const installations = (query.has("h3-unity-discovery") && !this.unityDiscoveryComplete) || this.mode === "empty" || this.mode === "unity-zero"
             ? []
             : this.mode === "unity-multiple"
-                ? [installation(), { ...installation(), installationId: "00000000-0000-4000-8000-000000000111", filesystemIdentity: "opaque-two", executablePath: "<private-editor-two>" }]
+                ? [installation(), { ...installation(), installationId: "00000000-0000-4000-8000-000000000111", filesystemIdentity: "opaque-two", executablePath: query.has("windows-paths") ? "\\\\?\\UNC\\builds\\Editors\\Unity.exe" : "<private-editor-two>" }]
                 : this.mode === "unity-migration"
                     ? [installation(), migrationInstallation()]
                 : [installation()];
@@ -856,7 +857,7 @@ class DeterministicGuiClient implements GuiRpcClient {
         const exactMatchingInstallations = this.mode === "unity-zero"
             ? []
             : this.mode === "unity-multiple"
-                ? [installation(), { ...installation(), installationId: "00000000-0000-4000-8000-000000000111", filesystemIdentity: "opaque-two", executablePath: "<private-editor-two>" }]
+                ? [installation(), { ...installation(), installationId: "00000000-0000-4000-8000-000000000111", filesystemIdentity: "opaque-two", executablePath: query.has("windows-paths") ? "\\\\?\\UNC\\builds\\Editors\\Unity.exe" : "<private-editor-two>" }]
                 : this.currentUnityVersion === migrationInstallation().unityVersion
                     ? [migrationInstallation()]
                     : [installation()];
@@ -1070,13 +1071,13 @@ const MCP_ID = "com.cqmhv.mcp-management";
 const HASH = "a".repeat(64);
 
 function project(projectId = PROJECT_ID, name = "Sample", favorite = false) {
-    const rootPath = projectId === PROJECT_ID && name === "Sample" ? "<private-project>" : `C:\\Fixture\\${name}`;
+    const rootPath = query.has("windows-paths") ? `\\\\?\\C:\\Projects\\${name}` : projectId === PROJECT_ID && name === "Sample" ? "<private-project>" : `C:\\Fixture\\${name}`;
     return { projectId, registeredAtMs: 1_690_000_000_000, lastModifiedAtMs: 1_700_000_000_000, favorite, rootPath, projectType: "avatars", unityVersion: "2022.3.22f1", vpmManifest: "valid", upmManifest: "valid", directDependencies: [{ packageId: "com.example.avatar", value: "^1.2.0" }], lockedDependencies: [{ packageId: "com.example.avatar", value: "1.2.3" }], issues: [], revision: 2 };
 }
 function repository() { return { repositoryId: REPOSITORY_ID, source: { kind: "remote" as const, url: "https://packages.example.invalid/index.json" }, declaredId: "example", name: "Example packages", declaredUrl: "https://packages.example.invalid/index.json", issues: [], revision: 2, refreshedAtMs: 1_700_000_000_000 }; }
 function localRepository() { return { repositoryId: LOCAL_REPOSITORY_ID, source: { kind: "local" as const, path: "<private-local-repository>" }, declaredId: "local-example", name: "Local packages", issues: [], revision: 2, refreshedAtMs: 1_700_000_000_000 }; }
 function userPackage(revision = 1) { return { userPackageId: USER_PACKAGE_ID, sourceRootPath: "<private-user-package>", packageId: "com.example.avatar", version: "1.2.3", displayName: "Local avatar tools", revision, archiveSha256: HASH, createdAtMs: 1_700_000_000_000, updatedAtMs: revision === 1 ? 1_700_000_000_000 : 1_700_000_001_000 }; }
-function installation() { return { installationId: INSTALLATION_ID, executablePath: "<private-editor>", filesystemIdentity: "opaque", unityVersion: "2022.3.22f1", architecture: "x86_64", sourceKind: "manual", revision: 2, observedAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_000_000 }; }
+function installation() { return { installationId: INSTALLATION_ID, executablePath: query.has("windows-paths") ? "\\\\?\\C:\\Program Files\\Unity\\Hub\\Editor\\2022.3.22f1\\Editor\\Unity.exe" : "<private-editor>", filesystemIdentity: "opaque", unityVersion: "2022.3.22f1", architecture: "x86_64", sourceKind: "manual", revision: 2, observedAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_000_000 }; }
 function migrationInstallation() { return { ...installation(), installationId: MIGRATION_INSTALLATION_ID, executablePath: "<private-editor-migration>", filesystemIdentity: "opaque-migration", unityVersion: "2022.3.23f1" }; }
 function launchConfig(arguments_: string[], revision: number) { return { projectId: PROJECT_ID, arguments: arguments_, revision, updatedAtMs: 1_700_000_000_000 }; }
 function launch() { return { launchId: "00000000-0000-4000-8000-000000000107", projectId: PROJECT_ID, installationId: INSTALLATION_ID, state: "opening", spawnAccepted: true, createdAtMs: 1_700_000_000_000 }; }
