@@ -23,14 +23,17 @@ for (const preference of ["system", "full", "reduced"] as const) {
                 const sheet = element.shadowRoot!.querySelector<HTMLStyleElement>("style[data-alcomd-motion]")!;
                 return sheet.media;
             })).toBe(reduced ? "all" : "not all");
-            await page.getByRole("button", { name: "Theme", exact: true }).click();
+            const theme = page.getByRole("form", { name: "Theme", exact: true });
+            await theme.getByRole("textbox", { name: "Source color", exact: true }).fill("#315DA8");
+            await page.locator("#primary-navigation md-list-item").filter({ has: page.locator(".navigation-item-label", { hasText: /^Projects$/ }) }).click();
             await expect(page.locator("md-dialog[open]")).toHaveJSProperty("quick", reduced);
-            await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeVisible();
+            await expect(page.getByRole("dialog", { name: "Discard unsaved changes?", exact: true })).toBeVisible();
             const menu = page.locator("#settings-motion").locator("md-menu");
             await expect(menu).toHaveJSProperty("quick", reduced);
             await page.keyboard.press("Escape");
-            await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeHidden();
-            await expect(page.getByRole("button", { name: "Theme", exact: true })).toBeFocused();
+            await expect(page.getByRole("dialog", { name: "Discard unsaved changes?", exact: true })).toBeHidden();
+            await expect(theme.getByRole("textbox", { name: "Source color", exact: true })).toHaveValue("#315DA8");
+            await theme.getByRole("button", { name: "Cancel", exact: true }).click();
             expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
         });
     }

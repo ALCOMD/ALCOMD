@@ -85,8 +85,6 @@ export {
     defaultAppearance,
     defaultThemeSourceColor,
     resolveThemeSourceColor,
-    themeHct,
-    sourceColorFromHct,
     type AppearanceMode,
     type AppearanceSettings,
     type SourceColor,

@@ -151,7 +151,7 @@ test("Resources segments remain keyboard reachable with visible contextual actio
     await expectCanvasFits(page);
 });
 
-test("Theme keeps its columns and fields separate inside the desktop dialog at 800px", async ({ page }) => {
+test("Theme keeps its inline columns and fields separate at 800px", async ({ page }) => {
     await page.setViewportSize({ width: 800, height: 800 });
     await openTheme(page);
     await browserScreenshot(page, "browser-theme-800-top.png");
@@ -351,24 +351,14 @@ async function openTheme(page: Page, locale: "en-US" | "ja-JP" = "en-US") {
         });
         await expect(page.locator("html")).toHaveAttribute("lang", locale);
     }
-    const theme = page.locator("#settings-theme-button");
-    await wheelIntoView(page, theme, page.locator(".utility-workspace-body"));
-    const lifecycle = await page.evaluateHandle(() => ({ opened: new Promise<void>((resolve) => {
-        const opened = (event: Event) => {
-            if (!(event.target instanceof HTMLElement) || !event.target.matches("md-dialog")) return;
-            document.removeEventListener("opened", opened, true);
-            resolve();
-        };
-        document.addEventListener("opened", opened, true);
-    }) }));
-    await theme.click();
-    await lifecycle.evaluate((events) => events.opened);
-    await lifecycle.dispose();
-    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(page.locator(".theme-editor")).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await wheelIntoView(page, page.locator("#theme-source").getByRole("textbox"), page.locator(".utility-workspace-body"));
 }
 
 async function expectThemeFits(page: Page) {
-    const dialog = page.getByRole("dialog", { name: "Theme", exact: true });
+    const theme = page.getByRole("form", { name: "Theme", exact: true });
+    const body = page.locator(".utility-workspace-body");
     const columns = page.locator(".theme-editor-columns");
     await expectNoHorizontalOverflow(columns);
     const left = (await page.locator(".theme-color-column").boundingBox())!;
@@ -377,10 +367,10 @@ async function expectThemeFits(page: Page) {
     expect(right.width).toBeGreaterThan(0);
     expect(left.x + left.width <= right.x + 1 || right.x + right.width <= left.x + 1
         || left.y + left.height <= right.y + 1 || right.y + right.height <= left.y + 1).toBe(true);
-    await expectHorizontalBounds(columns, dialog);
-    await expectHorizontalBounds(page.getByRole("textbox", { name: "Source color", exact: true }), dialog);
+    await expectHorizontalBounds(columns, theme);
+    await expectHorizontalBounds(page.getByRole("textbox", { name: "Source color", exact: true }), theme);
     const modes = page.locator("#theme-mode");
-    await expectHorizontalBounds(modes, dialog);
+    await expectHorizontalBounds(modes, theme);
     const light = page.locator("#theme-mode").getByRole("button", { name: "Light", exact: true });
     const system = page.locator("#theme-mode").getByRole("button", { name: "System", exact: true });
     const dark = page.locator("#theme-mode").getByRole("button", { name: "Dark", exact: true });
@@ -390,17 +380,10 @@ async function expectThemeFits(page: Page) {
     await page.keyboard.press("Tab");
     await expect(dark).toBeFocused();
     await expectReachable(page, dark, modes);
-    const bounds = (await dialog.boundingBox())!, viewport = page.viewportSize()!;
-    expect(bounds.x).toBeGreaterThanOrEqual(0);
-    expect(bounds.y).toBeGreaterThanOrEqual(0);
-    expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width + 1);
-    expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height + 1);
-    const cancel = page.getByRole("button", { name: "Cancel", exact: true });
-    if (!await withinBounds(cancel, dialog)) {
-        await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
-        await page.mouse.wheel(0, 5000);
-    }
-    await expectReachable(page, cancel, dialog);
+    await expectCanvasFits(page);
+    await expectNoHorizontalOverflow(body);
+    const restore = theme.getByRole("button", { name: "Restore defaults", exact: true });
+    await wheelIntoView(page, restore, body);
 }
 
 async function browserScreenshot(page: Page, name: string) {

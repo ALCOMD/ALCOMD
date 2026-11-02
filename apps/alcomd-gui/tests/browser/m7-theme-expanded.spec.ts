@@ -2,19 +2,17 @@ import { selectSettingsSection } from "./settings-sections";
 import { expect, test } from "@playwright/test";
 
 for (const mode of ["light", "dark"] as const) {
-    test(`expanded ${mode} theme editor keeps all choices visible in two columns`, async ({ page }, testInfo) => {
+    test(`inline ${mode} theme editor keeps all choices reachable in two columns without sliders`, async ({ page }, testInfo) => {
         await page.setViewportSize({ width: 1400, height: 800 });
         await page.goto(`/browser-harness.html?route=/settings&theme-mode=${mode}`);
         await selectSettingsSection(page, "appearance");
-        await expect(page.getByRole("button", { name: "Theme", exact: true })).toBeVisible();
-        await page.screenshot({ path: testInfo.outputPath(`theme-entry-${mode}.png`), animations: "disabled" });
-        await page.getByRole("button", { name: "Theme", exact: true }).click();
-        const dialog = page.getByRole("dialog", { name: "Theme", exact: true });
-        const host = page.locator("md-dialog[open]");
-        await expect(dialog).toBeVisible();
+        const host = page.getByRole("form", { name: "Theme", exact: true });
+        await expect(host).toBeVisible();
+        await expect(page.getByRole("button", { name: "Theme", exact: true })).toHaveCount(0);
+        await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toHaveCount(0);
         await expect(host.getByRole("combobox")).toHaveCount(0);
         await expect(host.locator("md-outlined-text-field#theme-source")).toHaveCount(1);
-        await expect(host.locator(".theme-hct-spectrum, .alcomd-segmented-tonal, .alcomd-pill-field")).toHaveCount(0);
+        await expect(host.locator("md-slider, .theme-hct-controls, .theme-hct-spectrum, .alcomd-segmented-tonal, .alcomd-pill-field")).toHaveCount(0);
         // Material radios expose their role/state through ElementInternals, which
         // Playwright's DOM-based role/checked helpers do not read in this version.
         await expect(host.locator("md-radio")).toHaveCount(9);
@@ -24,25 +22,13 @@ for (const mode of ["light", "dark"] as const) {
         const right = (await page.locator(".theme-options-column").boundingBox())!;
         expect(Math.abs(left.y - right.y)).toBeLessThanOrEqual(1);
         expect(right.x - left.x - left.width).toBeGreaterThanOrEqual(11);
-        expect(left.width).toBeGreaterThan(right.width);
-        const sliders = await page.locator(".theme-hct-controls md-slider").evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().y));
-        expect(sliders[1]! - sliders[0]!).toBeGreaterThan(60);
-        expect(sliders[2]! - sliders[1]!).toBeGreaterThan(60);
-        const panel = page.locator(".theme-color-column .theme-panel").first();
-        await expect(panel).toHaveCSS("border-top-left-radius", "28px");
-        const panelColor = await panel.evaluate((element) => getComputedStyle(element).backgroundColor);
-        const dialogColor = await page.locator("md-dialog[open]").evaluate((element) => getComputedStyle(element.shadowRoot!.querySelector("dialog")!).backgroundColor);
-        expect(panelColor).not.toBe(dialogColor);
-        const footer = (await page.locator(".theme-editor-footer").boundingBox())!;
-        const dialogBounds = (await dialog.boundingBox())!;
-        const leftInset = left.x - dialogBounds.x;
-        const rightInset = dialogBounds.x + dialogBounds.width - right.x - right.width;
-        expect(Math.abs(leftInset - rightInset)).toBeLessThanOrEqual(1);
-        expect(footer.y + footer.height).toBeLessThanOrEqual(dialogBounds.y + dialogBounds.height - 16);
-        expect(footer.y + footer.height).toBeLessThanOrEqual(800);
-        // Pin geometry after finite Material opening animations finish.
+        const hostBounds = (await host.boundingBox())!;
+        expect(left.x).toBeGreaterThanOrEqual(hostBounds.x);
+        expect(right.x + right.width).toBeLessThanOrEqual(hostBounds.x + hostBounds.width + 1);
+        const save = host.getByRole("button", { name: "Save", exact: true });
+        await save.scrollIntoViewIfNeeded();
+        await expect(save).toBeInViewport();
         await page.screenshot({ path: testInfo.outputPath(`theme-${mode}-window.png`), animations: "disabled" });
-        await dialog.screenshot({ path: testInfo.outputPath(`theme-${mode}-dialog.png`), animations: "disabled" });
         expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
     });
 }
@@ -50,7 +36,7 @@ for (const mode of ["light", "dark"] as const) {
 test("expanded scheme choices support keyboard selection and mode remains single-select", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/settings&theme-mode=light");
     await selectSettingsSection(page, "appearance");
-    await page.getByRole("button", { name: "Theme", exact: true }).click();
+    await expect(page.getByRole("form", { name: "Theme", exact: true })).toBeVisible();
     const vibrant = page.locator("#theme-scheme-vibrant");
     await vibrant.focus();
     await page.keyboard.press("ArrowRight");
@@ -89,7 +75,6 @@ for (const locale of ["en-US", "zh-CN", "ja-JP"]) {
             }, locale);
         }
         await expect(page.locator("html")).toHaveAttribute("lang", locale);
-        await page.locator("#settings-theme-button").click();
         const group = page.locator("#theme-mode");
         await expect(group.locator("md-outlined-segmented-button")).toHaveCount(3);
         const before = (await group.boundingBox())!;
@@ -113,7 +98,7 @@ for (const locale of ["en-US", "zh-CN", "ja-JP"]) {
                 expect(geometry.labelRight).toBeLessThanOrEqual(geometry.right);
             }
         }
-        const section = (await page.locator(".theme-options-column").boundingBox())!;
+        const section = (await group.locator("..").boundingBox())!;
         expect(before.x + before.width).toBeLessThanOrEqual(section.x + section.width + 1);
         if (locale === "zh-CN") {
             await group.locator("md-outlined-segmented-button").nth(1).click();

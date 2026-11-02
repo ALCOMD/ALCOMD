@@ -74,22 +74,22 @@ test("H5 unknown autosave reports uncertainty and checks Core before avoiding a 
 
 test("H5 Theme unknown reply preserves preview and reconciles to one write with layout-free success feedback", async ({ page }) => {
     await openSettings(page);
-    await page.getByRole("button", { name: "Theme", exact: true }).click();
     await page.locator("#theme-source").getByRole("textbox").fill("#E040A0");
     await fail(page, "settings.update", "internal_error", true);
-    const dialog = page.locator("md-dialog[open]");
-    await dialog.getByRole("button", { name: "Save", exact: true }).click();
-    const feedback = dialog.getByRole("alert");
+    const theme = page.getByRole("form", { name: "Theme", exact: true });
+    await theme.getByRole("button", { name: "Save", exact: true }).click();
+    const feedback = theme.getByRole("alert");
     await expect(feedback).toContainText("Theme save result is unknown");
     await expect(feedback).toContainText("Retry checks the current settings before writing again.");
     await expect(feedback).not.toContainText("Check Tasks");
     await expect(page.locator("html")).toHaveAttribute("data-source-color", "#E040A0");
     await expect(page.locator("body")).not.toContainText(H5_SETTINGS_SECRET);
-    await dialog.getByRole("button", { name: "Retry theme save", exact: true }).click();
-    await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeHidden();
+    await theme.getByRole("button", { name: "Retry theme save", exact: true }).click();
+    await expect(feedback).toHaveCount(0);
+    await expect(theme.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
     expect(await changes(page)).toHaveLength(1);
     await expect(page.locator(".reminder-floating")).toContainText("Theme saved");
-    await expect(page.getByRole("region", { name: "Appearance", exact: true })).not.toContainText("Theme saved");
+    await expect(theme).not.toContainText("Theme saved");
 });
 
 test("H5 Hub unknown reply preserves original picker input and reconciles before any further write", async ({ page }) => {

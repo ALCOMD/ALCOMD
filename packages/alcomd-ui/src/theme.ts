@@ -72,15 +72,6 @@ export function themeColorRoles(sourceColor: SourceColor, dark: boolean, name: T
     ]));
 }
 
-export function themeHct(sourceColor: SourceColor): { hue: number; chroma: number; tone: number } {
-    const hct = Hct.fromInt(argbFromHex(sourceColor));
-    return { hue: Math.round(hct.hue), chroma: Math.round(hct.chroma), tone: Math.round(hct.tone) };
-}
-
-export function sourceColorFromHct(value: ReturnType<typeof themeHct>): SourceColor {
-    return hexFromArgb(Hct.from(value.hue, value.chroma, value.tone).toInt()).toUpperCase() as SourceColor;
-}
-
 export function applyAppearance(root: HTMLElement, settings: AppearanceSettings): void {
     const sourceColor = resolveThemeSourceColor(settings.sourceColor);
     for (const dark of [false, true]) {

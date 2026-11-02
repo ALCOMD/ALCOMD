@@ -25,7 +25,7 @@ for (const locale of ["en-US", "zh-CN", "ja-JP"] as const) {
         const writes = await page.evaluate(() => window.settingsRequests.length);
         const path = page.locator("#settings-projectDirectory");
         const original = await path.elementHandle();
-        const regions = [[t("Save locations"), t("Packages")], [t("Unity Hub Path"), t("Unity installations")], [t("Appearance")], []];
+        const regions = [[t("Save locations"), t("Packages")], [t("Unity Hub Path"), t("Unity installations")], [t("Appearance"), t("Theme")], []];
         for (let index = 0; index < labels.length; index++) {
             await navigation.getByRole("button").nth(index).click();
             await expect(navigation.getByRole("button", { pressed: true })).toHaveCount(1);
@@ -86,5 +86,5 @@ test("Settings groups remain keyboard reachable in an 800px desktop window", asy
     await expect(page.locator(".settings-workspace")).toHaveText("", { useInnerText: true });
     await page.keyboard.press("Shift+Tab");
     await page.keyboard.press("Space");
-    await expect(page.getByRole("button", { name: "Theme", exact: true })).toBeVisible();
+    await expect(page.getByRole("form", { name: "Theme", exact: true })).toBeVisible();
 });

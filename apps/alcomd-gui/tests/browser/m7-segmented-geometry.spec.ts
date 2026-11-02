@@ -47,17 +47,17 @@ test("Chinese theme segments stay visible without a scroll container before and 
         element.dispatchEvent(new Event("change", { bubbles: true }));
     });
     await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
-    await page.locator("#settings-theme-button").click();
     const group = page.locator("#theme-mode");
-    const dialog = page.getByRole("dialog");
-    await expect(group.locator("../..")).toHaveClass("theme-options-column");
-    await expectSegmentsVisible(group, dialog);
+    const theme = page.getByRole("form", { name: "主题", exact: true });
+    await expect(group.locator("../..")).toHaveClass("theme-color-column");
+    await expect(group.getByRole("button")).toHaveText(["浅色", "跟随系统", "深色"]);
+    await expectSegmentsVisible(group, theme);
     for (const zoom of [1, 0.8, 1.25]) {
         await page.evaluate(value => { document.documentElement.style.zoom = String(value); }, zoom);
         for (const segment of await group.getByRole("button").all()) {
             await segment.click();
             await expect(segment).toHaveAttribute("aria-pressed", "true");
-            await expectSegmentsVisible(group, dialog);
+            await expectSegmentsVisible(group, theme);
         }
         await group.screenshot({ path: testInfo.outputPath(`theme-segments-${zoom}.png`), animations: "disabled" });
     }

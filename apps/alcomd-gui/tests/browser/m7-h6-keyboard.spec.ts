@@ -21,27 +21,13 @@ test("H6 skip navigation reaches the canvas and keyboard focus reveals the table
     expect(await page.evaluate(() => document.scrollingElement?.scrollTop)).toBe(0);
 });
 
-test("H6 keyboard alone opens, edits and leaves a scrolled Theme dialog at 200 percent equivalent layout", async ({ page }) => {
+test("H6 keyboard alone edits and cancels inline Theme at 200 percent equivalent layout", async ({ page }) => {
     await open(page, "/settings");
     await selectSettingsSection(page, "appearance");
     await page.getByRole("link", { name: "Skip to content", exact: true }).focus();
     await page.keyboard.press("Enter");
-    const theme = page.getByRole("region", { name: "Appearance", exact: true }).getByRole("button", { name: "Theme", exact: true });
-    await tabTo(page, theme);
-    await expectFocusVisible(page, theme);
-    const opening = await page.evaluateHandle(() => ({ opened: new Promise<void>((resolve) => {
-        const listener = (event: Event) => {
-            if (!(event.target instanceof HTMLElement) || event.target.localName !== "md-dialog") return;
-            document.removeEventListener("opened", listener, true);
-            resolve();
-        };
-        document.addEventListener("opened", listener, true);
-    }) }));
-    await page.keyboard.press("Enter");
-    const dialog = page.getByRole("dialog", { name: "Theme", exact: true });
-    await expect(dialog).toBeVisible();
-    await opening.evaluate((state) => state.opened);
-    await opening.dispose();
+    const theme = page.getByRole("form", { name: "Theme", exact: true });
+    await expect(theme).toBeVisible();
     const source = page.getByRole("textbox", { name: "Source color", exact: true });
     await tabTo(page, source);
     await page.keyboard.press("ControlOrMeta+A");
@@ -50,13 +36,15 @@ test("H6 keyboard alone opens, edits and leaves a scrolled Theme dialog at 200 p
     await expect(save).toBeEnabled();
     await tabTo(page, save);
     await expectFocusVisible(page, save);
-    await page.keyboard.press("Tab");
-    await expect(page.locator("md-dialog[open]")).toHaveJSProperty("open", true);
-    await expect.poll(() => page.evaluate(() => document.activeElement?.closest("md-dialog[open]") !== null)).toBe(true);
-    await page.keyboard.press("Escape");
-    await expect(dialog).toBeHidden();
-    await expect(theme).toBeFocused();
-    await expectFocusVisible(page, theme);
+    await page.keyboard.press("Shift+Tab");
+    const cancel = theme.getByRole("button", { name: "Cancel", exact: true });
+    await expect(cancel).toBeFocused();
+    await expectFocusVisible(page, cancel);
+    await page.keyboard.press("Enter");
+    await expect(theme).toBeVisible();
+    await expect(source).toHaveValue("#6CB6FF");
+    await expect(save).toBeDisabled();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
     await expect(page.locator("html")).toHaveAttribute("data-source-color", "#6CB6FF");
 });

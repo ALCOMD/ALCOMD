@@ -89,15 +89,11 @@ for (const source of [undefined, "#E040A0"]) {
     });
 }
 
-test("Appearance contains one Theme entry and all nine schemes preview without writing until Save", async ({ page }) => {
+test("Appearance contains the inline Theme editor and all nine schemes preview without writing until Save", async ({ page }) => {
     await openSettings(page, { "theme-mode": "light" });
     const appearance = page.getByRole("region", { name: "Appearance", exact: true });
-    const entry = appearance.getByRole("button", { name: "Theme", exact: true });
-    await expect(entry).toBeVisible();
-    const headingBox = (await appearance.getByRole("heading", { name: "Appearance", exact: true }).boundingBox())!;
-    const entryBox = (await entry.boundingBox())!;
-    expect(entryBox.x).toBeGreaterThan(headingBox.x + headingBox.width);
-    expect(Math.min(headingBox.y + headingBox.height, entryBox.y + entryBox.height) - Math.max(headingBox.y, entryBox.y)).toBeGreaterThan(0);
+    await expect(page.getByRole("button", { name: "Theme", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toHaveCount(0);
     const languageLabel = appearance.locator('label[for="settings-locale"]');
     await expect(languageLabel).toHaveText("Language");
     await expect(languageLabel).toBeVisible();
@@ -105,8 +101,8 @@ test("Appearance contains one Theme entry and all nine schemes preview without w
     const languageBox = (await appearance.getByRole("combobox", { name: "Language", exact: true }).boundingBox())!;
     expect(languageBox.x).toBeGreaterThan(labelBox.x + labelBox.width);
     expect(Math.min(labelBox.y + labelBox.height, languageBox.y + languageBox.height) - Math.max(labelBox.y, languageBox.y)).toBeGreaterThan(0);
-    await expect(page.getByRole("region", { name: "Theme", exact: true })).toHaveCount(0);
-    await openThemeDialog(page);
+    await expect(page.getByRole("region", { name: "Theme", exact: true })).toBeVisible();
+    await expect(themeEditor(page)).toBeVisible();
     const schemes = ["tonal-spot", "fidelity", "monochrome", "neutral", "vibrant", "expressive", "content", "rainbow", "fruit-salad"];
     const combinations = new Set<string>();
     for (const mode of ["light", "dark"]) {
@@ -123,13 +119,13 @@ test("Appearance contains one Theme entry and all nine schemes preview without w
     }
     expect(combinations.size).toBeGreaterThan(9);
     await saveTheme(page);
-    expect(Math.abs((await entry.boundingBox())!.x - entryBox.x)).toBeLessThanOrEqual(1);
+    await expect(themeEditor(page)).toBeVisible();
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([
         { expectedRevision: 7, update: { appearance: { sourceColor: null, mode: "dark", scheme: "fruit-salad" } } }
     ]);
 });
 
-test("HEX, color picker, and HCT controls stay linked and invalid HEX cannot write", async ({ page }) => {
+test("HEX and color picker stay linked without sliders and invalid HEX cannot write", async ({ page }) => {
     await openTheme(page, { "theme-mode": "light" });
     const hex = page.locator("#theme-source").getByRole("textbox");
     await hex.fill("  #ff0000  ");
@@ -137,16 +133,7 @@ test("HEX, color picker, and HCT controls stay linked and invalid HEX cannot wri
     await expect(page.locator("html")).toHaveAttribute("data-source-color", "#FF0000");
     await expect(hex).toHaveValue("#FF0000");
     await expect(page.locator("#theme-picker")).toHaveValue("#ff0000");
-    // Known upstream HCT coordinates of sRGB red, independent of the theme generator.
-    for (const [id, expected] of [["theme-hue", 27.408], ["theme-chroma", 113.358], ["theme-tone", 53.233]] as const) {
-        const value = await page.locator(`#${id}`).evaluate((element) => Number((element as HTMLElement & { value: number }).value));
-        expect(Math.abs(value - expected)).toBeLessThan(1);
-    }
-    for (const [name, id, maximum] of [["Hue", "theme-hue", 360], ["Chroma", "theme-chroma", 150], ["Tone", "theme-tone", 100]] as const) {
-        await expect(page.getByRole("slider", { name, exact: true })).toBeVisible();
-        await expect(page.locator(`#${id}`)).toHaveJSProperty("min", 0);
-        await expect(page.locator(`#${id}`)).toHaveJSProperty("max", maximum);
-    }
+    await expect(themeEditor(page).locator("md-slider, #theme-hue, #theme-chroma, #theme-tone")).toHaveCount(0);
     const writes = await page.evaluate(() => window.settingsRequests.length);
     const red = await palette(page);
     await hex.fill("#nothex");
@@ -155,67 +142,40 @@ test("HEX, color picker, and HCT controls stay linked and invalid HEX cannot wri
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(writes);
     expect(await palette(page)).toEqual(red);
 
-    const hue = page.getByRole("slider", { name: "Hue", exact: true });
-    const valueIndicator = page.locator("#theme-hue .label");
-    await expect(valueIndicator).toBeHidden();
-    await hue.focus();
-    await hue.press("ArrowRight");
-    await expect(valueIndicator).toBeVisible();
-    await expect(valueIndicator.locator(".labelContent")).toHaveText(await hue.inputValue());
-    await page.screenshot({ path: test.info().outputPath("hct-active-window.png"), animations: "disabled" });
-    await hex.focus();
-    await page.mouse.move(0, 0);
-    await expect(valueIndicator).toBeHidden();
-
     await setNativeControl(page, "theme-picker", "#00ff00");
     await expect(page.locator("html")).toHaveAttribute("data-source-color", "#00FF00");
     await expect(hex).toHaveValue("#00FF00");
-    const oldColor = await hex.inputValue();
-    await setNativeControl(page, "theme-hue", "200");
-    await expect.poll(() => hex.inputValue()).not.toBe(oldColor);
-    const hctColor = await hex.inputValue();
-    expect(hctColor).toMatch(/^#[0-9A-F]{6}$/);
-    await expect(page.locator("#theme-picker")).toHaveValue(hctColor.toLowerCase());
-    await expect(page.locator("html")).toHaveAttribute("data-source-color", hctColor);
-    await setNativeControl(page, "theme-chroma", "150");
-    await setNativeControl(page, "theme-tone", "60");
-    const finalColor = await hex.inputValue();
-    expect(finalColor).toMatch(/^#[0-9A-F]{6}$/);
-    await expect(page.locator("#theme-picker")).toHaveValue(finalColor.toLowerCase());
     assertReadableRoles(await palette(page));
-    await setNativeControl(page, "theme-tone", "100");
+    await setNativeControl(page, "theme-picker", "#ffffff");
     await expect(hex).toHaveValue("#FFFFFF");
     await expect(page.locator("#theme-picker")).toHaveValue("#ffffff");
-    await setNativeControl(page, "theme-tone", "0");
+    await setNativeControl(page, "theme-picker", "#000000");
     await expect(hex).toHaveValue("#000000");
     await expect(page.locator("#theme-picker")).toHaveValue("#000000");
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
 });
 
-test("Save sends one theme-only request and busy state blocks duplicate saves and dismissal", async ({ page }) => {
+test("Save sends one theme-only request and busy state blocks duplicate saves and draft changes", async ({ page }) => {
     await openTheme(page, { "theme-mode": "light", "theme-save": "hold" });
     await enterHex(page, "#E040A0");
     await selectThemeOption(page, "theme-scheme", "neutral");
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
-    await themeDialogHost(page).getByRole("button", { name: "Save", exact: true }).dblclick();
+    await themeEditor(page).getByRole("button", { name: "Save", exact: true }).dblclick();
     await expect.poll(() => page.evaluate(() => window.settingsRequests.length)).toBe(1);
     // A second form submission must also be rejected by the synchronous busy guard.
-    await themeDialogHost(page).locator("form").dispatchEvent("submit");
+    await themeEditor(page).dispatchEvent("submit");
     await expect(page.locator("#theme-source").getByRole("textbox")).toBeDisabled();
     await expect(page.locator("#theme-picker")).toBeDisabled();
-    for (const id of ["theme-hue", "theme-chroma", "theme-tone"]) {
-        await expect(page.locator(`#${id}`)).toHaveJSProperty("disabled", true);
-    }
     for (const control of await page.locator("#theme-mode md-outlined-segmented-button, #theme-scheme md-radio").all()) await expect(control).toHaveJSProperty("disabled", true);
-    await expect(themeDialogHost(page).getByRole("button", { name: "Restore defaults", exact: true })).toBeDisabled();
-    await expect(themeDialogHost(page).getByRole("button", { name: "Cancel", exact: true })).toBeDisabled();
-    await page.keyboard.press("Escape");
-    await page.mouse.click(1, 1);
+    await expect(themeEditor(page).getByRole("button", { name: "Restore defaults", exact: true })).toBeDisabled();
+    await expect(themeEditor(page).getByRole("button", { name: "Cancel", exact: true })).toBeDisabled();
     await settleFrames(page);
-    await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeVisible();
+    await expect(themeEditor(page)).toBeVisible();
     expect(await page.evaluate(() => window.settingsWrites)).toEqual([]);
     await releaseSave(page);
-    await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeHidden();
+    await expect(themeEditor(page)).toBeVisible();
+    await expect(themeEditor(page)).toHaveAttribute("aria-busy", "false");
+    await expect(themeEditor(page).getByRole("button", { name: "Save", exact: true })).toBeDisabled();
     await expect(page.getByText("Theme saved", { exact: true })).toBeVisible();
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([
         { expectedRevision: 7, update: { appearance: { sourceColor: "#E040A0", mode: "light", scheme: "neutral" } } }
@@ -223,59 +183,64 @@ test("Save sends one theme-only request and busy state blocks duplicate saves an
     expect(await page.evaluate(() => window.settingsWrites)).toEqual([{ expectedRevision: 7, revision: 8 }]);
 });
 
-test("saving keeps the theme dialog and footer geometry stable", async ({ page }) => {
+test("saving keeps the inline theme editor and footer geometry stable", async ({ page }) => {
     await openTheme(page, { "theme-mode": "light", "theme-save": "hold" });
     await enterHex(page, "#E040A0");
-    // Finish finite opening animations without waiting on the scrollbar's infinite observers.
     await page.screenshot({ animations: "disabled" });
-    const dialog = page.getByRole("dialog", { name: "Theme", exact: true });
-    const before = (await dialog.boundingBox())!;
+    const editor = themeEditor(page);
+    const save = editor.getByRole("button", { name: "Save", exact: true });
+    await save.scrollIntoViewIfNeeded();
+    const before = (await editor.boundingBox())!;
     const footerBefore = (await page.locator(".theme-editor-footer").boundingBox())!;
-    await themeDialogHost(page).getByRole("button", { name: "Save", exact: true }).click();
+    await themeEditor(page).getByRole("button", { name: "Save", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.settingsRequests.length)).toBe(1);
     await settleFrames(page);
-    await expect(themeDialogHost(page).getByRole("button", { name: "Save", exact: true })).toBeDisabled();
-    await expect(themeDialogHost(page).getByText("Saving…", { exact: true })).toHaveCount(0);
-    await expect(themeDialogHost(page).locator("form")).toHaveAttribute("aria-busy", "true");
-    const during = (await dialog.boundingBox())!;
+    await expect(themeEditor(page).getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+    await expect(themeEditor(page).getByText("Saving…", { exact: true })).toHaveCount(0);
+    await expect(themeEditor(page)).toHaveAttribute("aria-busy", "true");
+    const during = (await editor.boundingBox())!;
     const footerDuring = (await page.locator(".theme-editor-footer").boundingBox())!;
     for (const coordinate of ["x", "y", "width", "height"] as const) {
-        expect(Math.abs(during[coordinate] - before[coordinate]), `dialog ${coordinate}`).toBeLessThanOrEqual(1);
+        expect(Math.abs(during[coordinate] - before[coordinate]), `editor ${coordinate}`).toBeLessThanOrEqual(1);
         expect(Math.abs(footerDuring[coordinate] - footerBefore[coordinate]), `footer ${coordinate}`).toBeLessThanOrEqual(1);
     }
     await releaseSave(page);
-    await expect(dialog).toBeHidden();
+    await expect(editor).toBeVisible();
+    await expect(editor).toHaveAttribute("aria-busy", "false");
     expect(await page.evaluate(() => window.settingsWrites.length)).toBe(1);
 });
 
-test("Cancel and Escape restore the latest accepted theme and return focus to its entry", async ({ page }) => {
+test("Cancel restores the latest accepted theme and the inline editor supports another save", async ({ page }) => {
     await openTheme(page, { "theme-mode": "light" });
     await enterHex(page, "#E040A0");
     await saveTheme(page);
     const accepted = await palette(page);
-    for (const dismiss of ["Cancel", "Escape"]) {
-        await openThemeDialog(page);
+    for (let attempt = 0; attempt < 2; attempt++) {
         await expect(page.locator("#theme-source").getByRole("textbox")).toHaveValue("#E040A0");
         await enterHex(page, "#006A60");
         await selectThemeOption(page, "theme-mode", "dark");
         await selectThemeOption(page, "theme-scheme", "neutral");
-        if (dismiss === "Cancel") await themeDialogHost(page).getByRole("button", { name: "Cancel", exact: true }).click();
-        else await page.keyboard.press("Escape");
-        await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeHidden();
-        await expect(page.locator("#settings-theme-button")).toBeFocused();
+        await themeEditor(page).getByRole("button", { name: "Cancel", exact: true }).click();
+        await expect(themeEditor(page)).toBeVisible();
+        await expect(themeEditor(page).getByRole("button", { name: "Save", exact: true })).toBeDisabled();
         expect(await palette(page)).toEqual(accepted);
         expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
     }
-    await openThemeDialog(page);
+    await showThemeEditor(page);
     await expect(page.locator("#theme-source").getByRole("textbox")).toHaveValue("#E040A0");
     await expect(page.locator("#theme-mode").getByRole("button", { name: "Light", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator('#theme-scheme-vibrant')).toHaveJSProperty("checked", true);
+    await enterHex(page, "#006A60");
+    await saveTheme(page);
+    await expect(page.locator("#theme-source").getByRole("textbox")).toHaveValue("#006A60");
+    expect(await page.evaluate(() => window.settingsRequests.map((request) => request.expectedRevision))).toEqual([7, 8]);
+    expect(await page.evaluate(() => window.settingsWrites)).toEqual([{ expectedRevision: 7, revision: 8 }, { expectedRevision: 8, revision: 9 }]);
 });
 
 test("Restore defaults changes the draft and only Save persists all three default fields", async ({ page }) => {
     await page.emulateMedia({ colorScheme: "light" });
     await openTheme(page, { "theme-mode": "dark", "theme-source": "#E040A0", "theme-scheme": "expressive" });
-    await themeDialogHost(page).getByRole("button", { name: "Restore defaults", exact: true }).click();
+    await themeEditor(page).getByRole("button", { name: "Restore defaults", exact: true }).click();
     await expect(page.locator("html")).toHaveAttribute("data-source-color", "#6CB6FF");
     await expect(page.locator("html")).toHaveCSS("color-scheme", "light");
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
@@ -292,14 +257,16 @@ test("failed Save retains editable preview and explicit Retry saves the retained
     await openTheme(page, { "theme-mode": "light", "theme-save": "error-once" });
     await enterHex(page, "#E040A0");
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
-    await themeDialogHost(page).getByRole("button", { name: "Save", exact: true }).click();
+    await themeEditor(page).getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByRole("alert")).toContainText("Theme save result is unknown");
     await expect(page.locator("html")).toHaveAttribute("data-source-color", "#E040A0");
     await expect(page.locator("#theme-source").getByRole("textbox")).toBeEditable();
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
     expect(await page.evaluate(() => window.settingsWrites)).toEqual([]);
-    await themeDialogHost(page).getByRole("button", { name: "Retry theme save", exact: true }).click();
-    await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeHidden();
+    await themeEditor(page).getByRole("button", { name: "Retry theme save", exact: true }).click();
+    await expect(themeEditor(page)).toHaveAttribute("aria-busy", "false");
+    await expect(themeEditor(page).getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+    await expect(page.getByRole("alert")).toHaveCount(0);
     expect(await page.evaluate(() => window.settingsRequests.map((request) => request.expectedRevision))).toEqual([7, 7]);
     await expect(page.getByText("Theme saved", { exact: true })).toBeVisible();
 });
@@ -308,15 +275,16 @@ test("Cancel after a failed Save restores the accepted palette and makes no furt
     await openTheme(page, { "theme-mode": "light", "theme-save": "error" });
     const accepted = await palette(page);
     await enterHex(page, "#E040A0");
-    await themeDialogHost(page).getByRole("button", { name: "Save", exact: true }).click();
+    await themeEditor(page).getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByRole("alert")).toContainText("Theme save result is unknown");
-    await themeDialogHost(page).getByRole("button", { name: "Cancel", exact: true }).click();
-    await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeHidden();
+    await themeEditor(page).getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(themeEditor(page)).toBeVisible();
+    await expect(page.getByRole("alert")).toHaveCount(0);
     await settleFrames(page);
     expect(await palette(page)).toEqual(accepted);
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
     expect(await page.evaluate(() => window.settingsWrites)).toEqual([]);
-    await openThemeDialog(page);
+    await showThemeEditor(page);
     await expect(page.locator("#theme-source").getByRole("textbox")).toHaveValue("#6CB6FF");
 });
 
@@ -324,11 +292,13 @@ test("a revision conflict rereads settings and retries only local theme fields o
     await openTheme(page, { "theme-mode": "light", "theme-save": "conflict-once" });
     const reads = await page.evaluate(() => window.settingsReads);
     await enterHex(page, "#E040A0");
-    await themeDialogHost(page).getByRole("button", { name: "Save", exact: true }).click();
+    await themeEditor(page).getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByRole("alert")).toContainText("Theme changed elsewhere");
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
-    await themeDialogHost(page).getByRole("button", { name: "Retry theme save", exact: true }).click();
-    await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeHidden();
+    await themeEditor(page).getByRole("button", { name: "Retry theme save", exact: true }).click();
+    await expect(themeEditor(page)).toHaveAttribute("aria-busy", "false");
+    await expect(themeEditor(page).getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+    await expect(page.getByRole("alert")).toHaveCount(0);
     expect(await page.evaluate(() => window.settingsReads)).toBeGreaterThan(reads);
     expect(await page.evaluate(() => window.settingsRequests.map((request) => request.expectedRevision))).toEqual([7, 8]);
     expect(await page.evaluate(() => window.settingsRequests.at(-1)!.update)).toEqual({ appearance: { sourceColor: "#E040A0", mode: "dark", scheme: "neutral" } });
@@ -337,7 +307,7 @@ test("a revision conflict rereads settings and retries only local theme fields o
     await expect(page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true })).toBeChecked();
     await expect(page.locator("html")).toHaveAttribute("data-source-color", "#E040A0");
     await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
-    await openThemeDialog(page);
+    await showThemeEditor(page);
     await expect(page.locator("#theme-mode").getByRole("button", { name: "Dark", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("#theme-scheme-neutral")).toHaveJSProperty("checked", true);
 });
@@ -349,7 +319,7 @@ test("saving a Theme draft preserves ordinary settings that were already saved",
     await selectSettingsSection(page, "general");
     await page.getByRole("checkbox", { name: "Hide local User Packages", exact: true }).check();
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(2);
-    await openThemeDialog(page);
+    await showThemeEditor(page);
     await enterHex(page, "#E040A0");
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(2);
     await saveTheme(page);
@@ -360,6 +330,30 @@ test("saving a Theme draft preserves ordinary settings that were already saved",
     expect(await page.evaluate(() => window.settingsRequests.at(-1)!.expectedRevision)).toBe(9);
     expect(await page.evaluate(() => window.settingsRequests.at(-1)!.update)).toEqual({ appearance: { sourceColor: "#E040A0", mode: "light", scheme: "vibrant" } });
     await expect(page.locator("html")).toHaveAttribute("data-source-color", "#E040A0");
+});
+
+test("changing settings sections retains the inline theme draft without writing", async ({ page }) => {
+    await openTheme(page, { "theme-mode": "light" });
+    const original = await themeEditor(page).elementHandle();
+    await enterHex(page, "#E040A0");
+    await selectThemeOption(page, "theme-mode", "dark");
+    await selectThemeOption(page, "theme-scheme", "neutral");
+    const preview = await palette(page);
+    for (const section of ["general", "unity", "notifications"] as const) {
+        await selectSettingsSection(page, section);
+        await expect(themeEditor(page)).toHaveCount(0);
+        expect(await palette(page)).toEqual(preview);
+        expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
+    }
+    await showThemeEditor(page);
+    expect(await themeEditor(page).evaluate((element, previous) => element === previous, original)).toBe(true);
+    await expect(page.locator("#theme-source").getByRole("textbox")).toHaveValue("#E040A0");
+    await expect(page.locator("#theme-mode").getByRole("button", { name: "Dark", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#theme-scheme-neutral")).toHaveJSProperty("checked", true);
+    await saveTheme(page);
+    expect(await page.evaluate(() => window.settingsRequests)).toEqual([
+        { expectedRevision: 7, update: { appearance: { sourceColor: "#E040A0", mode: "dark", scheme: "neutral" } } }
+    ]);
 });
 
 test("confirming external navigation discards an unsaved Theme preview without writing", async ({ page }) => {
@@ -373,7 +367,7 @@ test("confirming external navigation discards an unsaved Theme preview without w
     await expect(page.getByRole("dialog", { name: "Discard unsaved changes?", exact: true })).toBeVisible();
     await page.locator("md-dialog[open]").filter({ has: page.getByRole("heading", { name: "Discard unsaved changes?", exact: true }) }).getByRole("button", { name: "Discard changes", exact: true }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
-    await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeHidden();
+    await expect(themeEditor(page)).toHaveCount(0);
     expect(await palette(page)).toEqual(accepted);
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
 });
@@ -387,7 +381,7 @@ for (const acceptedBeforeOldRead of [false, true]) {
         const held = await page.evaluate(() => window.heldInitialSettingsReads);
         await navigationItem(page, "Settings").click();
         await expect(page.getByRole("heading", { level: 1, name: "Settings", exact: true })).toBeVisible();
-        await openThemeDialog(page);
+        await showThemeEditor(page);
         await enterHex(page, "#E040A0");
         await expect(page.locator("html")).toHaveAttribute("data-source-color", "#E040A0");
         if (acceptedBeforeOldRead) await saveTheme(page);
@@ -402,30 +396,32 @@ for (const acceptedBeforeOldRead of [false, true]) {
 }
 
 for (const language of [
-    { locale: "zh-CN", source: "源色", picker: "选择主题颜色", scheme: "配色方案", theme: "主题", hue: "色相", chroma: "色度", tone: "明度", defaults: "恢复默认", save: "保存", cancel: "取消", vibrant: "活力" },
-    { locale: "ja-JP", source: "ソースカラー", picker: "テーマカラーを選択", scheme: "配色スキーム", theme: "テーマ", hue: "色相", chroma: "彩度", tone: "明度", defaults: "既定値に戻す", save: "保存", cancel: "キャンセル", vibrant: "ビブラント" }
+    { locale: "zh-CN", source: "源色", picker: "选择主题颜色", scheme: "配色方案", theme: "主题", light: "浅色", dark: "深色", defaults: "恢复默认", save: "保存", cancel: "取消", vibrant: "活力" },
+    { locale: "ja-JP", source: "ソースカラー", picker: "テーマカラーを選択", scheme: "配色スキーム", theme: "テーマ", light: "ライト", dark: "ダーク", defaults: "既定値に戻す", save: "保存", cancel: "キャンセル", vibrant: "ビブラント" }
 ]) {
     test(`theme controls expose translated labels and schemes in ${language.locale}`, async ({ page }) => {
         await openSettings(page, { "theme-mode": "light" });
         await selectThemeOption(page, "settings-locale", language.locale);
         await expect(page.locator("html")).toHaveAttribute("lang", language.locale);
-        await page.locator("#settings-theme-button").click();
-        await expect(page.getByRole("dialog", { name: language.theme, exact: true })).toBeVisible();
+        const editor = page.getByRole("form", { name: language.theme, exact: true });
+        await expect(editor).toBeVisible();
+        await expect(page.getByRole("dialog", { name: language.theme, exact: true })).toHaveCount(0);
         await expect(page.locator("#theme-source").getByRole("textbox")).toHaveAccessibleName(language.source);
         await expect(page.locator("#theme-picker")).toHaveAccessibleName(language.picker);
         await expect(page.getByRole("group", { name: language.scheme, exact: true })).toBeVisible();
         await expect(page.locator("#theme-mode")).toHaveJSProperty("ariaLabel", language.theme);
-        for (const name of [language.hue, language.chroma, language.tone]) {
-            await expect(page.getByRole("slider", { name, exact: true })).toBeVisible();
-        }
+        await expect(editor.locator("md-slider")).toHaveCount(0);
+        await expect(page.locator("#theme-mode").getByRole("button", { name: language.light, exact: true })).toBeVisible();
+        await expect(page.locator("#theme-mode").getByRole("button", { name: language.dark, exact: true })).toBeVisible();
         await expect(page.getByRole("button", { name: language.defaults, exact: true })).toBeVisible();
         await expect(page.locator("#theme-scheme md-radio")).toHaveCount(9);
         await expect(page.locator("#theme-scheme")).toContainText(language.vibrant);
         await expect(page.locator("html")).toHaveAttribute("data-source-color", "#6CB6FF");
-        const dialogHost = page.locator("md-dialog[open]").filter({ has: page.getByRole("heading", { name: language.theme, exact: true }) });
-        await expect(dialogHost.getByRole("button", { name: language.save, exact: true })).toBeDisabled();
-        await dialogHost.getByRole("button", { name: language.cancel, exact: true }).click();
-        await expect(page.getByRole("dialog", { name: language.theme, exact: true })).toBeHidden();
+        await expect(editor.getByRole("button", { name: language.save, exact: true })).toBeDisabled();
+        await page.locator("#theme-source").getByRole("textbox").fill("#E040A0");
+        await editor.getByRole("button", { name: language.cancel, exact: true }).click();
+        await expect(editor).toBeVisible();
+        await expect(page.locator("#theme-source").getByRole("textbox")).toHaveValue("#6CB6FF");
         expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
     });
 }
@@ -441,22 +437,23 @@ async function openSettings(page: Page, settings: Record<string, string>) {
 
 async function openTheme(page: Page, settings: Record<string, string>) {
     await openSettings(page, settings);
-    await openThemeDialog(page);
+    await showThemeEditor(page);
 }
 
-async function openThemeDialog(page: Page) {
+async function showThemeEditor(page: Page) {
     await selectSettingsSection(page, "appearance");
-    await page.locator("#settings-theme-button").click();
-    await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeVisible();
+    await expect(themeEditor(page)).toBeVisible();
 }
 
-function themeDialogHost(page: Page) {
-    return page.locator("md-dialog[open]").filter({ has: page.getByRole("heading", { name: "Theme", exact: true }) });
+function themeEditor(page: Page) {
+    return page.getByRole("form", { name: "Theme", exact: true });
 }
 
 async function saveTheme(page: Page) {
-    await themeDialogHost(page).getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeHidden();
+    await themeEditor(page).getByRole("button", { name: "Save", exact: true }).click();
+    await expect(themeEditor(page)).toBeVisible();
+    await expect(themeEditor(page)).toHaveAttribute("aria-busy", "false");
+    await expect(themeEditor(page).getByRole("button", { name: "Save", exact: true })).toBeDisabled();
     await expect(page.getByText("Theme saved", { exact: true })).toBeVisible();
 }
 

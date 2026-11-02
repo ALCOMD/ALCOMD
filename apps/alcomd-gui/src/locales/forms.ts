@@ -227,7 +227,7 @@ export const formMessages: TranslationTable = {
         "ja-JP": "作成先の親フォルダ"
     },
     "Dark": {
-        "zh-CN": "暗黑",
+        "zh-CN": "深色",
         "ja-JP": "ダーク"
     },
     "Destination": {
@@ -267,7 +267,7 @@ export const formMessages: TranslationTable = {
         "ja-JP": "言語設定(Language)"
     },
     "Light": {
-        "zh-CN": "明亮",
+        "zh-CN": "浅色",
         "ja-JP": "ライト"
     },
     "Load more installations": {
@@ -441,18 +441,6 @@ export const formMessages: TranslationTable = {
     "Color scheme": {
         "zh-CN": "配色方案",
         "ja-JP": "配色スキーム"
-    },
-    "Hue": {
-        "zh-CN": "色相",
-        "ja-JP": "色相"
-    },
-    "Chroma": {
-        "zh-CN": "色度",
-        "ja-JP": "彩度"
-    },
-    "Tone": {
-        "zh-CN": "明度",
-        "ja-JP": "明度"
     },
     "Vibrant": {
         "zh-CN": "活力",

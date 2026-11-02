@@ -17,9 +17,7 @@ test("keyboard navigation moves routes and focuses the destination heading", asy
     await page.keyboard.press("Enter");
     await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeFocused();
     await selectSettingsSection(page, "appearance");
-    await page.locator("#settings-theme-button").focus();
-    await page.keyboard.press("Enter");
-    await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeVisible();
+    await expect(page.getByRole("form", { name: "Theme", exact: true })).toBeVisible();
     const light = page.locator("#theme-mode").getByRole("button", { name: "Light", exact: true });
     await light.focus();
     await expect(light).toBeFocused();
@@ -340,16 +338,16 @@ test("project workspace keeps package discovery and user actions in project cont
 test("settings are labeled, revisioned, and ordinary preferences save through the typed client", async ({ page }) => {
     await openHarness(page, "/settings");
     await selectSettingsSection(page, "appearance");
-    await page.locator("#settings-theme-button").click();
-    await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeVisible();
+    const theme = page.getByRole("form", { name: "Theme", exact: true });
+    await expect(theme).toBeVisible();
     const color = page.locator("#theme-source").getByRole("textbox");
     await expect(color).toHaveAccessibleName("Source color");
     await expect(color).toHaveAccessibleDescription("");
     await color.fill("#315DA8");
     await expect(page.locator("html")).toHaveAttribute("data-source-color", "#315DA8");
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
-    await page.locator("md-dialog[open]").filter({ has: page.getByRole("heading", { name: "Theme", exact: true }) }).getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByRole("dialog", { name: "Theme", exact: true })).toBeHidden();
+    await theme.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(theme.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
     await selectSettingsSection(page, "general");
     await page.getByRole("checkbox", { name: "Show prerelease package versions" }).check();

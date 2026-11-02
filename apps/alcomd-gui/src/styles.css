@@ -1718,20 +1718,12 @@ code {
 }
 
 
-md-dialog:has(.theme-editor) {
-    max-height: calc(100vh - 48px);
-}
 .theme-editor { width: 100%; }
-.theme-editor-columns { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(min-content, 1fr); align-items: start; gap: 12px; }
+.theme-editor-columns { display: grid; grid-template-columns: minmax(min-content, 1fr) minmax(0, 1.35fr); align-items: start; gap: 12px; }
 .theme-color-column, .theme-options-column { display: grid; min-width: 0; gap: 12px; }
-.theme-panel { padding: 24px; border-radius: var(--alcomd-shape-container); background: var(--md-sys-color-surface-container-low); }
 .theme-source-row { display: flex; align-items: center; gap: 12px; }
 .theme-source-row .alcomd-color-picker { flex: none; }
 .theme-source-row md-outlined-text-field { flex: 1; min-width: 0; }
-.theme-hct-controls { display: grid; gap: 20px; }
-.theme-hct-controls > div { display: grid; min-width: 0; }
-.theme-hct-controls label { font-size: 0.875rem; }
-.theme-hct-controls md-slider { width: 100%; min-width: 0; }
 .theme-editor-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; }
 .theme-editor-footer .dialog-actions { margin: 0; }
 .theme-feedback:empty { display: none; }

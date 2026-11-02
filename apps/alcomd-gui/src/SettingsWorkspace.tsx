@@ -561,10 +561,7 @@ function SettingsEditor({ category, client, settingsWriter, snapshot, initialRep
                     {repositoryCursor === undefined ? null : <Button disabled={repositoryBusy} onClick={() => void readRepositories(repositoryCursor)} type="button" variant="text">{t("Load more repository options")}</Button>}
                 </div>
             </SettingsSection>
-            <SettingsSection title={t("Appearance")} hidden={category !== "appearance"} actions={
-                <ThemeControls value={themePreferences(baseline)} disabled={saving.saving || saving.failed} onPreview={onThemePreview} onSession={onThemeSession} onDirtyChange={setThemeDirty}
-                    onSave={(theme) => settingsWriter.saveTheme(theme)} onReload={() => settingsWriter.reload()} />
-            }>
+            <SettingsSection title={t("Appearance")} hidden={category !== "appearance"}>
                 <div className="settings-row">
                     <label htmlFor="settings-locale">{t("Language")}</label>
                     <Select id="settings-locale" label={t("Language")} onChange={(value) => settingsWriter.change({ locale: value as SettingsLocale })}
@@ -576,6 +573,10 @@ function SettingsEditor({ category, client, settingsWriter, snapshot, initialRep
                         onChange={(value) => settingsWriter.change({ appearance: { motion: value as OfficialSettings["appearance"]["motion"] } })}
                         options={[{ label: t("System"), value: "system" }, { label: t("Enable animations"), value: "full" }, { label: t("Disable animations"), value: "reduced" }]} />
                 </div>
+            </SettingsSection>
+            <SettingsSection title={t("Theme")} hidden={category !== "appearance"}>
+                <ThemeControls value={themePreferences(baseline)} disabled={saving.saving || saving.failed} onPreview={onThemePreview} onSession={onThemeSession} onDirtyChange={setThemeDirty}
+                    onSave={(theme) => settingsWriter.saveTheme(theme)} onReload={() => settingsWriter.reload()} />
             </SettingsSection>
         </div>
     );

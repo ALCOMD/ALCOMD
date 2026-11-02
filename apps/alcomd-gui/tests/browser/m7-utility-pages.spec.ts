@@ -266,7 +266,7 @@ test("Settings uses shared sections while Logs retains its two real read surface
     await expect(page.locator(".settings-section-heading h2:visible")).toHaveText(["Save locations", "Packages"]);
     await expect(page.getByRole("region", { name: "System information", exact: true })).toHaveCount(0);
     await selectSettingsSection(page, "appearance");
-    await expect(page.getByRole("region", { name: "Appearance", exact: true }).getByRole("button", { name: "Theme", exact: true })).toBeVisible();
+    await expect(page.getByRole("form", { name: "Theme", exact: true })).toBeVisible();
     await selectSettingsSection(page, "unity");
     await expect(page.locator(".settings-section-heading h2:visible")).toHaveText(["Unity Hub Path", "Unity installations"]);
     await expect(page.getByRole("table", { name: "Unity installations" }).getByRole("columnheader")).toHaveText(["Version", "Path", "Source"]);
@@ -329,13 +329,13 @@ test("utility actions use modal dialogs and cancel clears drafts and returns foc
     }
 });
 
-test("desktop Settings uses labeled language and animation rows with Theme in its header and no density mode", async ({ page }) => {
+test("desktop Settings uses labeled language and animation rows with inline Theme and no density mode", async ({ page }) => {
     await openHarness(page, "/settings");
     await selectSettingsSection(page, "appearance");
     await expectHeading(page, "Settings");
     const fields = page.locator(".settings-editor md-filled-select");
     await expect(fields).toHaveCount(2);
-    await expect(page.getByRole("region", { name: "Appearance", exact: true }).getByRole("button", { name: "Theme", exact: true })).toBeVisible();
+    await expect(page.getByRole("form", { name: "Theme", exact: true })).toBeVisible();
     await expect(page.getByRole("combobox", { name: "GUI animation", exact: true })).toBeVisible();
     await expect(page.getByRole("checkbox", { name: "Compact GUI", exact: true })).toHaveCount(0);
     await expect(page.locator("#settings-density")).toHaveCount(0);
