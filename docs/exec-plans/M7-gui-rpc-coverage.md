@@ -11,9 +11,9 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | RPC method | capability | page / route | user action | R/W | confirmation | Operation | state handling | test owner |
 |---|---|---|---|---|---|---|---|---|
 | `system.hello` | RPC v1 handshake | app shell | connect/reconnect; ready Store dataSchema, Config3 | R | no | no | disconnected/reconnecting/capability refresh | `gui.m7-core-surfaces` |
-| `system.status` | base | Home, About | load daemon/product status | R | no | no | data | `gui.m7-core-surfaces` |
-| `state.check` | `state.check.v1` | Diagnostics | start integrity check | W | explicit action | yes | mutation | `gui.m7-operation-flows` |
-| `operations.get` | `operations.v1` | Project backup progress / Restore / Operation detail | follow the same accepted ID and open Core results | R | no | existing Operation | polling/read retry/terminal/client cleanup | `gui.m7-operation-flows` |
+| `system.status` | base | Home, About, shell | read Core version/status; local GUI build version remains independent | R | no | no | data/error/reconnect | `gui.m7-core-surfaces` |
+| `state.check` | `state.check.v1` + `operations.v1` for GUI progress | Diagnostics | start integrity check and follow the accepted ID | W | explicit action | yes | mutation/error/terminal refresh | `gui.m7-operation-flows` |
+| `operations.get` | `operations.v1` | Project backup progress / Restore / Operation detail / Log detail | follow the same accepted ID and open Core results | R | no | existing Operation | polling/read retry/terminal/client cleanup | `gui.m7-operation-flows` |
 | `operations.list` | `operations.v1` | Operations | page Operations | R | no | no | data/keyset | `gui.m7-core-surfaces` |
 | `operations.cancel` | `operations.v1` | Operation detail | cooperative cancel | W | yes | existing Operation | mutation/stale | `gui.m7-operation-flows` |
 | `events.list` | `events.replay.v1` | N/A direct | daemon-side Activity source/cursor recovery only | R | no | no | N/A | `activity.log-redaction` |
