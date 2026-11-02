@@ -1,6 +1,6 @@
 # M7 官方 GUI 最终人工验收清单
 
-状态：**M7 IN_PROGRESS / H7 IN_PROGRESS / H2–H6 已阶段签收**，2026-11-02。
+状态：**M7 IN_PROGRESS / H7 MANUAL_PENDING / H2–H6 已阶段签收**，2026-11-02。
 当前范围以 `docs/status.md` 和既有 M7 ExecPlan 为准。H7 已获批准；推送、Hosted CI/CodeQL 安排等待准确候选后的单独确认。
 本清单合并历史重复项目，不要求逐页重验已签收功能，不把普通文案、美化或非阻塞体验细节重新升为阻塞。
 
@@ -41,5 +41,17 @@ H6 原完整 Chromium **383/12**、后续 **53/1** 和最后新增日语用例 *
 
 ## 当前查看入口
 
-已签收的 H6 GUI 来源 `a4f12a19d5fca0692053bb281fefab472fd60b65`；其 Tauri release 与匹配原环境入口见 H6 记录。
-H7 完整门禁和环境恢复收齐后，本节更新为最终实际候选；此前各轮及图集保持原构建身份，不改写为最终候选证据。
+H7 验证/构建 SHA **`a6c9bd5568f8bffb26fe531a58fe4286c7779f6f`**，产品代码与已签收 H6 的 `a4f12a1` 相同。
+完整 Rust **526/0，8 个既有 helper ignored**、独立完整 Chromium **396/0** 及构建均已收齐，详见 [完整本地记录](m7-h7-final-20261102.md)。
+当前真实窗口为原数据目录的 GUI **153004**（窗口 **4132060**、ALCOMD3、可响应），匹配 Core **131912**，五组公开状态一致。
+Core/GUI SHA-256 分别为 `1faff44e33d5d9749fd26004b5d1269b035b9a527ddfb87dd9555da8a708f1ff` /
+`6ec81c4956b7c4e052e23bb513074123935a18f81866ae94662a8f7316b8bc83`；此前各轮图集仍绑定原构建，不改成此次桌面证据。
+
+直接使用已打开窗口，只按上方两项查看。若窗口关闭，可在 PowerShell 使用本轮已真实执行过的复开入口：
+
+```powershell
+& "C:\Users\M2922\MyProjects\Rust\ALCOMD\target\m7-h7-final-20261102\H7-Window.ps1" -Action Open
+```
+
+该入口核对既有 Core/候选摘要、保留原 WebView2 profile；已有 GUI 或 Core 身份变化时拒绝，不自动切换 Core。
+最终人工确认尚未取得；本地技术结果和窗口存在均不能替代所有者签收，远端安排仍单独待确认。

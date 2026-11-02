@@ -1,6 +1,6 @@
 # M7：官方 GUI 与 Portable Extension UI
 
-状态：**M7 IN_PROGRESS / H7 IN_PROGRESS / H6 STAGE_ACCEPTED_WITH_FOLLOWUPS / H5 STAGE_ACCEPTED_WITH_FOLLOWUPS / H4 STAGE_ACCEPTED_WITH_FOLLOWUPS / H3 STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
+状态：**M7 IN_PROGRESS / H7 MANUAL_PENDING / H6 STAGE_ACCEPTED_WITH_FOLLOWUPS / H5 STAGE_ACCEPTED_WITH_FOLLOWUPS / H4 STAGE_ACCEPTED_WITH_FOLLOWUPS / H3 STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。唯一工作目录为标准 `ALCOMD`，
 活动分支为 `main`；当前阶段与验证结果统一见 `docs/status.md`。已通过的 M6、Portable UI B0-D、
 Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据，不替代本轮 GUI 人工验收。
 
@@ -569,7 +569,7 @@ fixes and defer uncertain contract-dependent work without blocking unrelated cor
 7. **H6 responsive/a11y/Playwright regression（阶段性人工验收通过，保留非阻塞体验问题）**：覆盖已批准 minimum-change user model 的 structural continuity、grouping/workspace/
    action placement、Material element presence和observable interaction、theme propagation、wide/narrow/200%/reduced motion；
    不测试Material shadow DOM私有细节。所有者于 2026-11-02 确认窄窗、键盘、主题与主要辅助功能符合预期；默认间距保持，不恢复 density，不建立第二套组件。
-8. **H7 manual visual signoff（已批准，实施中）**：整理精简最终清单，核对历史失败的后续修复并集中稳定候选完整本地验证；只修实际功能、操作、重要布局与回归，不重验已签收页面。最终 Hosted CI/CodeQL 的推送授权另行确认。
+8. **H7 manual visual signoff（本地候选已就绪，等待人工验收）**：整理精简最终清单，核对历史失败的后续修复并集中稳定候选完整本地验证；只修实际功能、操作、重要布局与回归，不重验已签收页面。最终 Hosted CI/CodeQL 的推送授权另行确认。
 
 H0-H7 只重组 shell、composition、component rendering 和 visual hierarchy；不得重新设计 RPC、Plan/Apply、Operation、Settings、
 Activity、Diagnostics 或 Portable UI authority。
@@ -653,6 +653,14 @@ Windows 完整 IPC 测试必须使用隔离数据；沿用已批准流程，在�
 真实读屏器、跨平台辅助技术和客户端发行环境验证保持 M12 归属，Portable UI 未覆盖原生状态单独记录，不虚报或扩大至 M8/M9 业务。
 最终人工清单原位整理在 `docs/testing/m7-official-gui-manual-checklist.md`，合并历史重复项，保留 H2–H6 签收引用；
 桌面控制仍遵守此前停止边界，没有新增原生交互或截图时如实标记。形成准确本地候选后交所有者检查，再单独确认远端安排；不自动推送、不自行宣布 M7 完成。
+
+H7 本地候选已形成，冻结执行 SHA `a6c9bd5568f8bffb26fe531a58fe4286c7779f6f`，产品代码与 `a4f12a1` 相同，无额外产品修复。
+完整 Workspace **526/0，8 个既有 helper ignored**，独立完整 Chromium **396/0（14.9m，1 worker、0 retries）**，
+fmt/Clippy/xtask、GUI/独立 backend 检查、全部前端 check/build、metadata/lockfile、并发启动、release bins 与 Tauri release 均通过。
+首次磁盘不足链接失败和 Chromium 354 项后会话中断分别保留；前者定位容量后续跑未完成门禁，后者另取一轮完整结果，不拼接。
+589 项非文档输入及验证期间 108 项文档均未变，之后只做文档收尾。原环境真实恢复为 Core131912/GUI153004，最终五组公开状态一致，Config4/revision166 保留。
+实际窗口保持打开；Computer Use 未恢复、无新增原生截图。窗口记忆、仓库凭据及 Portable UI/平台未覆盖边界均在
+[H7 候选记录](../testing/m7-h7-final-20261102.md) 列明；两项人工清单等待所有者，远端 CI/CodeQL 等待独立推送安排，M7 进行中。
 
 项目所有者批准先处理当前跨平台测试/启动缺陷与依赖安全问题，再实施既有 H2-B，最后形成
 真实桌面候选并停止人工验收；不重开 H2-A/Visual Gate 2，不重规划 M7 或重做 Projects/Packages。
@@ -1277,6 +1285,7 @@ GUI 的 155 项输入仍与 `88c3f69` 一致，复用该构建和 36/0；原环�
 以上为 H4 候选交付时的历史状态。所有者随后已于 2026-11-02 阶段性签收 H4，并批准直接实施 H5。
 隔离任务已全终态，原 Core/GUI 已实际恢复；五组公开状态与切换前完整快照一致，详见现有 status/testing 文档。
 H2-A、H2-B、H3 签收保持；H2-B 新增代码、H3 与 H4 仍无对应远端验证，不用旧 CI 替代。
-不重规划 M7，不重做已有页面；只推进已批准 H5，不进入 H6/H7、M8/M9/M11，不推送或宣布 M7 完成。
-已有候选读取、exact Unity、Config3、Hub 和 State16 的合同继续有效。完整 GUI/Rust/三平台
-技术门禁与人工视觉结果分别记录，不把旧 SHA 或定向通过冒充当前候选全绿。
+上述“只推进 H5、不进入 H6/H7”为当时交接边界；此后 H5、H6 已阶段性签收，H7 已获批准并形成本地候选。
+当前停止点为 H7 最终人工确认及独立远端安排，详见本计划“当前 H7 授权与收束”；不进入 M8/M9/M11，不推送或宣布 M7 完成。
+候选读取、exact Unity、Hub 和 State16 的既有合同保持；Config3 已由获批 Config4 迁移替代，删除 density、保留其他偏好及 revision。
+完整 GUI/Rust/三平台技术门禁与人工视觉结果分别记录，不把旧 SHA 或定向通过冒充当前候选全绿。

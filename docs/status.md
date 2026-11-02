@@ -4,13 +4,31 @@
 
 ## 当前阶段
 
-**M7 IN_PROGRESS / H7 IN_PROGRESS / H6 STAGE_ACCEPTED_WITH_FOLLOWUPS / H5 STAGE_ACCEPTED_WITH_FOLLOWUPS / H4 STAGE_ACCEPTED_WITH_FOLLOWUPS / H3 STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。项目所有者于 2026-10-31 签收本轮 H2-A；
+**M7 IN_PROGRESS / H7 MANUAL_PENDING / H6 STAGE_ACCEPTED_WITH_FOLLOWUPS / H5 STAGE_ACCEPTED_WITH_FOLLOWUPS / H4 STAGE_ACCEPTED_WITH_FOLLOWUPS / H3 STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。项目所有者于 2026-10-31 签收本轮 H2-A；
 M0-M6 已正式通过人工验收，M7 尚未完成。
 本文件是唯一当前阶段入口；ExecPlan 定义实施合同，testing 文档保存各自 SHA/场景的证据。
 
 项目所有者于 2026-11-02 确认 **H6 阶段性人工验收通过，保留非阻塞体验问题**，认可窄窗、键盘、主题及主要辅助功能，并批准既定 H7 最终整体验收。
 H2–H6 原签收保持；H7 只处理实际影响使用的问题，整理精简最终清单并在稳定代码上集中完整本地验证，不逐页重验或重新开发。
 统一默认间距，不恢复紧凑模式及 density 公共字段。真实读屏器、跨平台辅助技术仍属 M12；最终 Hosted CI/CodeQL 等候准确候选后的独立推送授权，M7 进行中。
+
+### H7 最终本地候选（等待人工确认与独立远端安排）
+
+冻结验证 SHA **`a6c9bd5568f8bffb26fe531a58fe4286c7779f6f`**，产品代码与 H6 的 `a4f12a1` 相同；本轮审计没有新增需修复的功能阻塞。
+完整 Workspace **526/0，8 个既有 subprocess helper ignored**；独立完整 Chromium **396/0（14.9m，1 worker、0 retries）**。
+xtask/fmt/Workspace Clippy、GUI Cargo check、独立 Discord backend 检查（0 项测试）、全部前端 check/build、metadata/lockfile、
+并发自动启动、全 Workspace release bins 与 Tauri release no-bundle 均通过。589 项代码/合同/测试/构建输入全程不变，
+清单 SHA-256 `1fa264…01037`；108 项已跟踪文档在验证期间未变，之后仅更新状态/验收文档，不重跑完整门禁。
+
+首次全量测试因磁盘不足在链接阶段失败（未取得测试通过），定位后只清理可重建 incremental 缓存，并保留测试断言/溢出检查，
+继续未完成门禁；首次 Chromium 在记录 354 项通过后执行会话消失，没有最终结果，记中断、不记全套通过。
+上述失败/中断及 H6 **383/12 → 53/1 → 1/0** 均原样保留，不用本轮独立通过回填历史。
+原环境已实际恢复，最新 Core **131912** / GUI **153004**（窗口 **4132060**、可响应）；
+构建/恢复及最终浏览器结束后的 projects/editors/operations/settings/status 五组完整结果均与暂停前一致，Config4/revision166 保持。
+当前 Core 摘要 `1faff4…8f1ff`，GUI `6ec81c…8bc83`，均来自本次冻结源码；窗口保持打开。
+没有恢复 Computer Use，没有新增原生自动交互/截图，不操作用户 Unity 或实际工程。最终人工清单已合并为两项，不重验 H2–H6。
+完整结果、实际启动入口及未覆盖项见 [H7 本地候选](testing/m7-h7-final-20261102.md) 与
+[最终人工清单](testing/m7-official-gui-manual-checklist.md)。最终 Hosted CI/CodeQL 未执行、未推送；H7 尚未人工签收，M7 不标记完成。
 
 ### H6 已签收记录（各轮独立证据）
 
@@ -360,9 +378,10 @@ Visual Gate 2，没有 M7 或 Hosted CI 通过结论，原未跟踪 `output/` �
 - 已执行获批 G3 的完成度核对，三个仓库列表 RPC 的矩阵 **92/92** 是当时结果；H4 新增获批权限读取后，
   当前公开 method 与矩阵 **93/93** 对齐。方法归属和 typed 接线不代表全部动作已独立人工验收。
   H3 签收及 Unity 检测、刷新、路径确认保持。H4 已由所有者阶段性签收，保留样例未覆盖项与一般体验待办；
-  原环境已实际恢复并核对五组预期一致。H5/H6 已阶段性签收，当前进入获批 H7；完成本地候选后等待最终人工确认与独立远端安排，不自动推送。
-- 窗口记忆、仓库 credential enrollment/revocation、完整用户入口缺口保持真实状态；聚合
-  projects.management/packages.vpm/repositories.management 等继续 in_progress，不批量提升。
+  原环境已实际恢复并核对五组预期一致。H5/H6 已阶段性签收，H7 完整本地候选已形成，等待最终人工确认与独立远端安排，不自动推送。
+- 窗口尺寸/位置记忆未实现，是已知 v3 差异；未找到本轮已批准实施要求或明确后续阶段归属，不写成完成或擅自划入 M12。
+  仓库 credential enrollment/revocation 属 ADR 0016/H2-B 已排除的后续 Core/公共合同能力，当前无相应 RPC。
+  初次设置、导入/迁移、更新及完整 v3 入口对齐仍按既有后续范围处理；聚合 projects.management/packages.vpm/repositories.management 等保持 in_progress，不批量提升。
 - projects/templates/backups 的 v3 parity 和 unity.v3-vrc-parity 仍等待 M11 真实脱敏 Fixture；
   synthetic/public 工程测试不能冒充真实 differential parity。
 - M12 继续承担 Windows 10/11 安装、运行、WebView2、更新/卸载、三平台真实辅助技术与完整发行验收。
