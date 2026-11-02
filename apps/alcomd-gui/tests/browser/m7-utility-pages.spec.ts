@@ -334,7 +334,7 @@ test("desktop Settings uses labeled language and animation rows with inline Them
     await selectSettingsSection(page, "appearance");
     await expectHeading(page, "Settings");
     const fields = page.locator(".settings-editor md-filled-select");
-    await expect(fields).toHaveCount(2);
+    await expect(fields).toHaveCount(3);
     await expect(page.getByRole("form", { name: "Theme", exact: true })).toBeVisible();
     await expect(page.getByRole("combobox", { name: "GUI animation", exact: true })).toBeVisible();
     await expect(page.getByRole("checkbox", { name: "Compact GUI", exact: true })).toHaveCount(0);

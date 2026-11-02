@@ -49,7 +49,7 @@ test("Chinese theme segments stay visible without a scroll container before and 
     await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
     const group = page.locator("#theme-mode");
     const theme = page.getByRole("form", { name: "主题", exact: true });
-    await expect(group.locator("../..")).toHaveClass("theme-color-column");
+    await expect(group.locator("../..")).toHaveClass("settings-row");
     await expect(group.getByRole("button")).toHaveText(["浅色", "跟随系统", "深色"]);
     await expectSegmentsVisible(group, theme);
     for (const zoom of [1, 0.8, 1.25]) {

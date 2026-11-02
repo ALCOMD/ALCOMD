@@ -442,6 +442,10 @@ export const formMessages: TranslationTable = {
         "zh-CN": "配色方案",
         "ja-JP": "配色スキーム"
     },
+    "Color mode": {
+        "zh-CN": "颜色模式",
+        "ja-JP": "カラーモード"
+    },
     "Vibrant": {
         "zh-CN": "活力",
         "ja-JP": "ビブラント"

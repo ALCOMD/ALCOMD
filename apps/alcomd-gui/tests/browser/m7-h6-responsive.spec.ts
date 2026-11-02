@@ -151,7 +151,7 @@ test("Resources segments remain keyboard reachable with visible contextual actio
     await expectCanvasFits(page);
 });
 
-test("Theme keeps its inline columns and fields separate at 800px", async ({ page }) => {
+test("Theme keeps its settings rows and fields separate at 800px", async ({ page }) => {
     await page.setViewportSize({ width: 800, height: 800 });
     await openTheme(page);
     await browserScreenshot(page, "browser-theme-800-top.png");
@@ -159,15 +159,16 @@ test("Theme keeps its inline columns and fields separate at 800px", async ({ pag
     await browserScreenshot(page, "browser-theme-800.png");
 });
 
-test("H6 Japanese Theme keeps its color field usable at the two-column transition", async ({ page }) => {
+test("H6 Japanese Theme keeps its setting rows and color field usable at 621px", async ({ page }) => {
     await page.setViewportSize({ width: 621, height: 800 });
     await openTheme(page, "ja-JP");
-    const columns = page.locator(".theme-editor-columns");
-    await expectNoHorizontalOverflow(columns);
+    await expectNoHorizontalOverflow(page.locator(".theme-editor"));
     await expectNoHorizontalOverflow(page.locator(".theme-source-row"));
-    const color = (await page.locator(".theme-color-column").boundingBox())!;
-    const options = (await page.locator(".theme-options-column").boundingBox())!;
-    expect(options.y).toBeGreaterThanOrEqual(color.y + color.height);
+    const rows = page.locator(".theme-editor > .settings-row");
+    await expect(rows).toHaveCount(3);
+    const color = (await rows.nth(1).boundingBox())!;
+    const scheme = (await rows.nth(2).boundingBox())!;
+    expect(scheme.y).toBeGreaterThanOrEqual(color.y + color.height);
     expect((await page.locator("#theme-source").boundingBox())!.width).toBeGreaterThan(100);
     const modes = page.locator("#theme-mode").getByRole("button");
     await modes.nth(0).focus();
@@ -359,15 +360,17 @@ async function openTheme(page: Page, locale: "en-US" | "ja-JP" = "en-US") {
 async function expectThemeFits(page: Page) {
     const theme = page.getByRole("form", { name: "Theme", exact: true });
     const body = page.locator(".utility-workspace-body");
-    const columns = page.locator(".theme-editor-columns");
-    await expectNoHorizontalOverflow(columns);
-    const left = (await page.locator(".theme-color-column").boundingBox())!;
-    const right = (await page.locator(".theme-options-column").boundingBox())!;
-    expect(left.width).toBeGreaterThan(0);
-    expect(right.width).toBeGreaterThan(0);
-    expect(left.x + left.width <= right.x + 1 || right.x + right.width <= left.x + 1
-        || left.y + left.height <= right.y + 1 || right.y + right.height <= left.y + 1).toBe(true);
-    await expectHorizontalBounds(columns, theme);
+    await expectNoHorizontalOverflow(theme);
+    const rows = theme.locator(":scope > .settings-row");
+    await expect(rows).toHaveCount(3);
+    for (let index = 0; index < 3; index++) {
+        await expectHorizontalBounds(rows.nth(index), theme);
+        if (index > 0) {
+            const previous = (await rows.nth(index - 1).boundingBox())!;
+            expect((await rows.nth(index).boundingBox())!.y).toBeGreaterThanOrEqual(previous.y + previous.height);
+        }
+    }
+    await expectHorizontalBounds(theme.getByRole("combobox", { name: "Color scheme", exact: true }), theme);
     await expectHorizontalBounds(page.getByRole("textbox", { name: "Source color", exact: true }), theme);
     const modes = page.locator("#theme-mode");
     await expectHorizontalBounds(modes, theme);
