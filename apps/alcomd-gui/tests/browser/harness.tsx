@@ -133,12 +133,12 @@ const materialEvidence = query.get("material") === "1";
 if (!materialEvidence) window.history.replaceState(null, "", initialRoute);
 
 class DeterministicGuiClient implements GuiRpcClient {
+    private readonly diagnosticLog = new BrowserDiagnosticLog(query.has("diagnostic-log"), query.has("log-initial-failure"));
     private listExportAttempts = 0;
     private listPreviewReads = 0;
     selectRepositoryListFile(mode: "open" | "save", fileName?: string): ReturnType<GuiRpcClient["selectRepositoryListFile"]> {
         window.resourceRequests.push({ method: "selectRepositoryListFile", params: { mode, fileName } });
         return this.value(query.get("list-picker") === "cancel" ? undefined : mode === "open" ? "C:/fixture/repositories.txt" : `C:/fixture/${fileName}`);
-    private readonly diagnosticLog = new BrowserDiagnosticLog(query.has("diagnostic-log"), query.has("log-initial-failure"));
     }
     repositoryListInspectFile(path: string): ReturnType<GuiRpcClient["repositoryListInspectFile"]> {
         window.resourceRequests.push({ method: "repositories.inspectListFile", params: { path } });
@@ -450,6 +450,9 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ items: this.mode === "empty" ? [] : [{ occurredAtMs: 1_700_000_000_000, severity: "error", subsystem: "packages", code: "package_archive_invalid", diagnosticId: "00000000-0000-4000-8000-000000000998", operationId: OPERATION_ID, summary: "The operation failed. Use the diagnostic ID when requesting support." }] });
     }
 
+    diagnosticLogRead(params: Parameters<GuiRpcClient["diagnosticLogRead"]>[0]): ReturnType<GuiRpcClient["diagnosticLogRead"]> { return this.diagnosticLog.read(params); }
+    diagnosticLogCancel(): Promise<void> { return this.diagnosticLog.cancel(); }
+
     projectsInspect(): ReturnType<GuiRpcClient["projectsInspect"]> { return this.value({ project: project() }); }
     projectsList(cursor?: { registeredAtMs: number; id: string }): ReturnType<GuiRpcClient["projectsList"]> {
         if (query.has("template-tasks")) window.templateRequests.push({ method: "projects.list", params: cursor ?? {} });
@@ -459,9 +462,6 @@ class DeterministicGuiClient implements GuiRpcClient {
                 ? this.value({ projects: Array.from({ length: 100 }, (_, index) => source(index + 1)), nextCursor: { registeredAtMs: 1_690_000_000_000, id: source(100).projectId } })
                 : this.value({ projects: [source(101)] });
         }
-    diagnosticLogRead(params: Parameters<GuiRpcClient["diagnosticLogRead"]>[0]): ReturnType<GuiRpcClient["diagnosticLogRead"]> { return this.diagnosticLog.read(params); }
-    diagnosticLogCancel(): Promise<void> { return this.diagnosticLog.cancel(); }
-
         if (query.has("projectModified")) {
             const { lastModifiedAtMs: _unknown, ...unknown } = project("00000000-0000-4000-8000-000000000104", "Unknown history");
             const projects = [
