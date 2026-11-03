@@ -277,6 +277,7 @@ async fn actual_configured_directory_controls_new_backups_without_redirecting_ac
             &access,
             baseline.revision,
             ConfigUpdate {
+                window: None,
                 appearance: None,
                 locale: None,
                 packages: None,

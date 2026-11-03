@@ -1,6 +1,6 @@
 # settings.toml Config Schema 2
 
-状态：保留的 Config Schema 2 历史合同，仅作为启动迁移输入；当前 production contract 见 [Config Schema 6](settings-v6.md)。
+状态：保留的 Config Schema 2 历史合同，仅作为启动迁移输入；当前 production contract 见 [Config Schema 7](settings-v7.md)。
 
 Config Schema 2 保持 daemon 唯一 writer、strict UTF-8、16 KiB 上限、checked revision CAS 与既有
 same-directory `.new`/`.bak` 原子替换和恢复纪律，并增加 package presentation 设置：

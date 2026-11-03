@@ -58,6 +58,17 @@ pub struct ConfigSettings {
     pub packages: ConfigPackageSettings,
     pub unity: ConfigUnitySettings,
     pub paths: ConfigPathSettings,
+    pub window: ConfigWindowSettings,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ConfigWindowSettings {
+    pub remember_state: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ConfigWindowUpdate {
+    pub remember_state: bool,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -272,6 +283,7 @@ pub struct ConfigUpdate {
     pub packages: Option<ConfigPackageSettingsUpdate>,
     pub unity: Option<ConfigUnityUpdate>,
     pub paths: Option<ConfigPathUpdate>,
+    pub window: Option<ConfigWindowUpdate>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -676,6 +688,7 @@ fn default_snapshot() -> ConfigSnapshot {
                 hide_local_user_packages: false,
             },
             unity: ConfigUnitySettings::default(),
+            window: ConfigWindowSettings::default(),
             paths: ConfigPathSettings::default(),
         },
     }
@@ -720,6 +733,9 @@ fn apply_update(
     mut settings: ConfigSettings,
     update: ConfigUpdate,
 ) -> Result<ConfigSettings, OfficialGuiError> {
+    if let Some(window) = update.window {
+        settings.window.remember_state = window.remember_state;
+    }
     if let Some(appearance) = update.appearance {
         if let Some(mode) = appearance.mode {
             settings.appearance.mode = mode;
@@ -790,6 +806,7 @@ fn apply_update(
 
 fn update_is_empty(update: &ConfigUpdate) -> bool {
     update.locale.is_none()
+        && update.window.is_none()
         && update.paths.as_ref().is_none_or(path_update_is_empty)
         && update.unity.as_ref().is_none_or(unity_update_is_empty)
         && update.appearance.as_ref().is_none_or(|value| {
@@ -1341,6 +1358,7 @@ mod tests {
 
     fn locale_update(locale: ConfigLocale) -> ConfigUpdate {
         ConfigUpdate {
+            window: None,
             paths: None,
             appearance: None,
             locale: Some(locale),
@@ -1349,11 +1367,75 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn window_preference_uses_settings_authority_cas_and_preserves_other_values() {
+        let config = Arc::new(MemoryConfig::default());
+        let original = config.snapshot.lock().expect("config").clone();
+        assert!(!original.settings.window.remember_state);
+        let app = M7OfficialApplication::new(
+            NoStore,
+            config.clone(),
+            Arc::new(FakeHub::default()),
+            Arc::new(RecordingHubLauncher::default()),
+            Arc::new(TestDirectories),
+        );
+        let window_update = |remember_state| ConfigUpdate {
+            window: Some(ConfigWindowUpdate { remember_state }),
+            paths: None,
+            unity: None,
+            appearance: None,
+            locale: None,
+            packages: None,
+        };
+        assert_eq!(
+            app.update_settings(
+                &AccessContext::new(PrincipalId::local_owner(), [Permission::SettingsRead]),
+                1,
+                window_update(true),
+            )
+            .await,
+            Err(OfficialGuiError::PermissionDenied)
+        );
+        assert_eq!(config.loads.load(Ordering::SeqCst), 0);
+        let settings_only =
+            AccessContext::new(PrincipalId::local_owner(), [Permission::SettingsManage]);
+        let saved = app
+            .update_settings(&settings_only, 1, window_update(true))
+            .await
+            .expect("settings.manage is sufficient");
+        let mut expected = original;
+        expected.revision += 1;
+        expected.settings.window.remember_state = true;
+        assert_eq!(saved, expected);
+        assert_eq!(
+            app.update_settings(&settings_only, 1, window_update(false))
+                .await,
+            Err(OfficialGuiError::RevisionConflict)
+        );
+        let unrelated = app
+            .update_settings(
+                &settings_only,
+                saved.revision,
+                locale_update(ConfigLocale::JaJp),
+            )
+            .await
+            .expect("unrelated update");
+        assert!(unrelated.settings.window.remember_state);
+        let disabled = app
+            .update_settings(&settings_only, unrelated.revision, window_update(false))
+            .await
+            .expect("false is a nonempty update");
+        assert!(!disabled.settings.window.remember_state);
+        assert_eq!(disabled.settings.locale, ConfigLocale::JaJp);
+        assert_eq!(app.candidate_settings().await, Ok(disabled));
+    }
+
     fn path_update(
         project_directory: ConfigNullableUpdate<String>,
         backup_directory: ConfigNullableUpdate<String>,
     ) -> ConfigUpdate {
         ConfigUpdate {
+            window: None,
             paths: Some(ConfigPathUpdate {
                 project_directory,
                 backup_directory,
@@ -1648,6 +1730,7 @@ mod tests {
 
     fn hub_update(hub_path: ConfigNullableUpdate<String>) -> ConfigUpdate {
         ConfigUpdate {
+            window: None,
             paths: None,
             appearance: None,
             locale: None,
@@ -2035,6 +2118,7 @@ mod tests {
                 &AccessContext::local_owner(),
                 1,
                 ConfigUpdate {
+                    window: None,
                     paths: None,
                     appearance: None,
                     locale: None,
@@ -2095,6 +2179,7 @@ mod tests {
             Arc::new(TestDirectories),
         );
         let bad = ConfigUpdate {
+            window: None,
             paths: None,
             appearance: Some(ConfigAppearanceUpdate {
                 mode: Some(ConfigAppearanceMode::Dark),

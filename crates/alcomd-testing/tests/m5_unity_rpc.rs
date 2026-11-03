@@ -74,6 +74,7 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
         .settings_update(alcomd_protocol::SettingsUpdateParams {
             expected_revision: settings.revision,
             update: alcomd_protocol::SettingsUpdate {
+                window: None,
                 unity: Some(alcomd_protocol::UnitySettingsUpdate {
                     default_launch_arguments: alcomd_protocol::NullableUpdate::Set(
                         default_arguments.clone(),

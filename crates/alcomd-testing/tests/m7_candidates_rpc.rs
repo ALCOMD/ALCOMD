@@ -287,6 +287,7 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
         .settings_update(alcomd_protocol::SettingsUpdateParams {
             expected_revision: settings.revision,
             update: alcomd_protocol::SettingsUpdate {
+                window: None,
                 packages: Some(alcomd_protocol::PackageSettingsUpdate {
                     show_prerelease: Some(true),
                     ..Default::default()

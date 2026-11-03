@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use alcomd_application::{
     ConfigAppearance, ConfigAppearanceMode, ConfigAppearanceMotion, ConfigAppearanceScheme,
     ConfigLocale, ConfigPackageSettings, ConfigPathSettings, ConfigSettings, ConfigSnapshot,
-    ConfigStore, ConfigStoreError, ConfigUnitySettings,
+    ConfigStore, ConfigStoreError, ConfigUnitySettings, ConfigWindowSettings,
 };
 
 const MAX_SETTINGS_BYTES: u64 = 16 * 1024;
@@ -19,7 +19,7 @@ pub struct FileConfigStore {
 }
 
 impl FileConfigStore {
-    pub const SCHEMA_VERSION: u32 = 6;
+    pub const SCHEMA_VERSION: u32 = 7;
 
     #[must_use]
     pub fn new(path: PathBuf) -> Self {
@@ -115,6 +115,7 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
     let mut default_launch_arguments = None;
     let mut project_directory = None;
     let mut backup_directory = None;
+    let mut remember_state = None;
     for raw in text.lines() {
         let line = raw.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -126,6 +127,7 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
                 "[packages]" => "packages",
                 "[unity]" => "unity",
                 "[paths]" => "paths",
+                "[window]" => "window",
                 _ => return Err(ConfigStoreError::Corrupt),
             };
             if !seen.insert(format!("section:{next}")) {
@@ -145,6 +147,7 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
             ("root", "schema") => schema = Some(parse_u64(value)?),
             ("root", "revision") => revision = Some(parse_u64(value)?),
             ("root", "locale") => locale = Some(parse_locale(parse_string(value)?)?),
+            ("window", "remember_state") => remember_state = Some(parse_bool(value)?),
             ("unity", "hub_path") => hub_path = Some(parse_path_string(value)?),
             ("unity", "default_launch_arguments") => {
                 default_launch_arguments = Some(parse_argument_array(value)?);
@@ -187,6 +190,9 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
     if schema < 6 && default_launch_arguments.is_some() {
         return Err(ConfigStoreError::Corrupt);
     }
+    if schema < 7 && seen.contains("section:window") {
+        return Err(ConfigStoreError::Corrupt);
+    }
     if schema < 3 && motion == Some(ConfigAppearanceMotion::Full) {
         return Err(ConfigStoreError::Corrupt);
     }
@@ -227,6 +233,13 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
     let snapshot = ConfigSnapshot {
         revision,
         settings: ConfigSettings {
+            window: ConfigWindowSettings {
+                remember_state: if schema < 7 {
+                    false
+                } else {
+                    remember_state.ok_or(ConfigStoreError::Corrupt)?
+                },
+            },
             appearance: ConfigAppearance {
                 mode: mode.ok_or(ConfigStoreError::Corrupt)?,
                 source_color,
@@ -328,6 +341,10 @@ fn serialize_settings(snapshot: &ConfigSnapshot) -> Vec<u8> {
             }
         }
     }
+    contents.push_str(&format!(
+        "\n[window]\nremember_state = {}\n",
+        snapshot.settings.window.remember_state
+    ));
     contents.into_bytes()
 }
 
@@ -671,6 +688,159 @@ mod tests {
     }
 
     #[test]
+    fn config7_migrates_all_historical_vectors_with_window_disabled_and_retained_settings() {
+        let root = temporary_path("config7-window-migration");
+        let path = root.join("settings.toml");
+        fs::create_dir_all(&root).expect("fixture");
+        let vectors: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../specs/config/settings-v7.contract-vectors.json"
+        ))
+        .expect("Config7 vectors");
+        for vector in vectors["legacyInputs"]
+            .as_array()
+            .expect("historical vectors")
+        {
+            let source = vector["toml"].as_str().expect("TOML source");
+            let expected = parse_settings(source).expect("valid historical input");
+            assert_eq!(
+                expected.revision,
+                vector["expectedRevision"].as_u64().expect("revision")
+            );
+            assert!(!expected.settings.window.remember_state);
+            fs::write(&path, source).expect("historical input");
+            let store = FileConfigStore::new(path.clone());
+            assert_eq!(store.initialize(), Ok(expected.clone()));
+            let accepted = fs::read_to_string(&path).expect("migrated file");
+            assert!(accepted.starts_with("schema = 7\n"));
+            assert!(accepted.contains("\n[window]\nremember_state = false\n"));
+            assert_eq!(
+                FileConfigStore::new(path.clone()).initialize(),
+                Ok(expected)
+            );
+            assert_eq!(fs::read_to_string(&path).expect("stable reopen"), accepted);
+        }
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[tokio::test]
+    async fn config7_window_preference_is_durable_and_invalid_mixed_updates_leave_accepted_file() {
+        use alcomd_application::{ConfigUnityUpdate, ConfigWindowUpdate};
+        let root = temporary_path("config7-window-save");
+        let path = root.join("settings.toml");
+        fs::create_dir_all(&root).expect("fixture");
+        let mut expected = default_snapshot();
+        expected.revision = 168;
+        expected.settings.locale = ConfigLocale::JaJp;
+        expected.settings.appearance.mode = ConfigAppearanceMode::Dark;
+        expected.settings.appearance.source_color = Some("#112233".into());
+        expected.settings.appearance.scheme = ConfigAppearanceScheme::FruitSalad;
+        expected.settings.appearance.motion = ConfigAppearanceMotion::Full;
+        expected.settings.packages.show_prerelease = true;
+        expected.settings.packages.hide_local_user_packages = true;
+        expected.settings.packages.hidden_repository_ids =
+            vec!["00000000-0000-0000-0000-000000000001".into()];
+        expected.settings.unity.hub_path = Some("/fixture/Hub".into());
+        expected.settings.unity.default_launch_arguments = Some(vec![
+            "-logFile".into(),
+            r#"C:\用户 Data\a "quoted".log"#.into(),
+        ]);
+        expected.settings.paths.project_directory = Some("/fixture/projects".into());
+        expected.settings.paths.backup_directory = Some("/fixture/backups".into());
+        let legacy = String::from_utf8(serialize_settings(&expected))
+            .expect("utf8")
+            .replace("\n[window]\nremember_state = false\n", "")
+            .replace("schema = 7", "schema = 6");
+        fs::write(&path, &legacy).expect("Config6 with retained preferences");
+        let store = Arc::new(FileConfigStore::new(path.clone()));
+        let app = M7OfficialApplication::new(
+            NoStore,
+            store.clone(),
+            Arc::new(TestHub),
+            Arc::new(TestHubLauncher),
+            Arc::new(TestDirectories),
+        );
+        app.initialize_settings().await.expect("migrate Config6");
+        assert_eq!(store.load(), Ok(expected.clone()));
+        for remember_state in [true, false] {
+            let saved = app
+                .update_settings(
+                    &AccessContext::local_owner(),
+                    expected.revision,
+                    ConfigUpdate {
+                        window: Some(ConfigWindowUpdate { remember_state }),
+                        paths: None,
+                        unity: None,
+                        appearance: None,
+                        locale: None,
+                        packages: None,
+                    },
+                )
+                .await
+                .expect("save preference");
+            expected.revision += 1;
+            expected.settings.window.remember_state = remember_state;
+            assert_eq!(saved, expected);
+            assert_eq!(
+                FileConfigStore::new(path.clone()).initialize(),
+                Ok(expected.clone())
+            );
+        }
+        let before = fs::read(&path).expect("accepted file");
+        assert_eq!(
+            app.update_settings(
+                &AccessContext::local_owner(),
+                expected.revision,
+                ConfigUpdate {
+                    window: Some(ConfigWindowUpdate {
+                        remember_state: true
+                    }),
+                    unity: Some(ConfigUnityUpdate {
+                        hub_path: ConfigNullableUpdate::Unchanged,
+                        default_launch_arguments: ConfigNullableUpdate::Set(vec![
+                            "a".repeat(4096);
+                            5
+                        ]),
+                    }),
+                    paths: None,
+                    appearance: None,
+                    locale: None,
+                    packages: None,
+                }
+            )
+            .await,
+            Err(OfficialGuiError::InvalidInput)
+        );
+        assert_eq!(fs::read(&path).expect("retained accepted file"), before);
+        assert_eq!(store.load(), Ok(expected));
+        let valid = String::from_utf8(before).expect("utf8");
+        let mut invalid_files = ["null", "\"true\"", "1", "[]"]
+            .map(|value| {
+                valid.replace(
+                    "remember_state = false",
+                    &format!("remember_state = {value}"),
+                )
+            })
+            .to_vec();
+        invalid_files.push(valid.replace("\n[window]\nremember_state = false\n", ""));
+        invalid_files.push(valid.replace("remember_state = false", ""));
+        invalid_files.push(valid.replace(
+            "remember_state = false",
+            "remember_state = false\nwidth = 1000",
+        ));
+        invalid_files.push(valid.replace(
+            "remember_state = false",
+            "remember_state = false\nremember_state = true",
+        ));
+        invalid_files.push(valid.replace("schema = 7", "schema = 6"));
+        for invalid in invalid_files {
+            fs::write(&path, &invalid).expect("invalid file");
+            assert_eq!(store.initialize(), Err(ConfigStoreError::Corrupt));
+            assert_eq!(fs::read_to_string(&path).expect("input retained"), invalid);
+        }
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
     fn config6_migrates_config5_without_changing_revision_or_existing_preferences() {
         let root = temporary_path("config6-default-arguments-migration");
         let path = root.join("settings.toml");
@@ -690,7 +860,9 @@ mod tests {
         expected.settings.paths.project_directory = Some("/fixture/projects".into());
         expected.settings.paths.backup_directory = Some("/fixture/backups".into());
         let current = String::from_utf8(serialize_settings(&expected)).expect("utf8");
-        let legacy = current.replace("schema = 6", "schema = 5");
+        let legacy = current
+            .replace("\n[window]\nremember_state = false\n", "")
+            .replace("schema = 7", "schema = 5");
         fs::write(&path, &legacy).expect("Config5");
         let store = FileConfigStore::new(path.clone());
         assert_eq!(store.load(), Ok(expected.clone()));
@@ -702,7 +874,9 @@ mod tests {
             Ok(expected)
         );
         for schema in 3..=5 {
-            let mut invalid = current.replace("schema = 6", &format!("schema = {schema}"));
+            let mut invalid = current
+                .replace("\n[window]\nremember_state = false\n", "")
+                .replace("schema = 7", &format!("schema = {schema}"));
             if schema < 5 {
                 invalid = invalid
                     .split("[paths]")
@@ -740,6 +914,7 @@ mod tests {
         app.initialize_settings().await.expect("initialize");
         let mut expected = store.load().expect("initialized snapshot");
         let update = |arguments| ConfigUpdate {
+            window: None,
             paths: None,
             appearance: None,
             locale: None,
@@ -821,11 +996,12 @@ mod tests {
         original.settings.unity.hub_path = Some("/fixtures/Hub".into());
         let legacy = String::from_utf8(serialize_settings(&original))
             .expect("utf8")
-            .replace("schema = 6", "schema = 4");
+            .replace("\n[window]\nremember_state = false\n", "")
+            .replace("schema = 7", "schema = 4");
         fs::write(&path, &legacy).expect("legacy Config4");
         assert_eq!(store.initialize(), Ok(original.clone()));
         let migrated = fs::read_to_string(&path).expect("migrated current config");
-        assert!(migrated.starts_with("schema = 6\n"));
+        assert!(migrated.starts_with("schema = 7\n"));
         assert!(!migrated.contains("[paths]"));
         for candidate in [r"C:\用户\项目", "/home/测试/备份 \"local\""] {
             let mut saved = original.clone();
@@ -874,6 +1050,7 @@ mod tests {
         let app = make_app();
         app.initialize_settings().await.expect("initialize");
         let mut update = ConfigUpdate {
+            window: None,
             paths: Some(ConfigPathUpdate {
                 project_directory: ConfigNullableUpdate::Set("/selected/projects".into()),
                 backup_directory: ConfigNullableUpdate::Set("/selected/backups".into()),
@@ -929,6 +1106,7 @@ mod tests {
             Ok(accepted)
         );
         let clear = ConfigUpdate {
+            window: None,
             paths: Some(ConfigPathUpdate {
                 project_directory: ConfigNullableUpdate::Clear,
                 backup_directory: ConfigNullableUpdate::Clear,
@@ -996,7 +1174,8 @@ mod tests {
         assert_eq!(parse_settings(&oversized), Err(ConfigStoreError::Corrupt));
         for schema in [1, 2] {
             let mut legacy = original_text
-                .replace("schema = 6", &format!("schema = {schema}"))
+                .replace("\n[window]\nremember_state = false\n", "")
+                .replace("schema = 7", &format!("schema = {schema}"))
                 .replace("scheme = \"vibrant\"\n", "density = \"default\"\n");
             if schema == 1 {
                 legacy = legacy
@@ -1037,6 +1216,7 @@ mod tests {
                 &AccessContext::local_owner(),
                 baseline.revision,
                 ConfigUpdate {
+                    window: None,
                     paths: None,
                     appearance: None,
                     locale: None,
@@ -1060,6 +1240,7 @@ mod tests {
                 &AccessContext::local_owner(),
                 saved.revision,
                 ConfigUpdate {
+                    window: None,
                     paths: None,
                     appearance: None,
                     locale: None,
@@ -1093,7 +1274,7 @@ mod tests {
             let mut snapshot = defaults.clone();
             snapshot.settings.appearance.motion = motion;
             let encoded = String::from_utf8(serialize_settings(&snapshot)).expect("utf8");
-            assert!(encoded.starts_with("schema = 6\n"));
+            assert!(encoded.starts_with("schema = 7\n"));
             assert!(encoded.contains(&format!("motion = \"{text}\"\n")));
             assert_eq!(parse_settings(&encoded), Ok(snapshot));
         }
@@ -1113,7 +1294,8 @@ mod tests {
         );
         for schema in [1, 2] {
             let legacy = encoded
-                .replace("schema = 6", &format!("schema = {schema}"))
+                .replace("\n[window]\nremember_state = false\n", "")
+                .replace("schema = 7", &format!("schema = {schema}"))
                 .replace("scheme = \"vibrant\"\n", "density = \"default\"\n");
             let legacy = if schema == 1 {
                 legacy
@@ -1159,6 +1341,7 @@ mod tests {
                 &access,
                 1,
                 ConfigUpdate {
+                    window: None,
                     paths: None,
                     unity: None,
                     appearance: Some(ConfigAppearanceUpdate {
@@ -1187,6 +1370,7 @@ mod tests {
                     &access,
                     previous.revision,
                     ConfigUpdate {
+                        window: None,
                         paths: None,
                         unity: None,
                         appearance: Some(ConfigAppearanceUpdate {
@@ -1240,7 +1424,7 @@ mod tests {
             let mut snapshot = default_snapshot();
             snapshot.settings.appearance.scheme = scheme;
             let encoded = String::from_utf8(serialize_settings(&snapshot)).expect("utf8");
-            assert!(encoded.starts_with("schema = 6\n"));
+            assert!(encoded.starts_with("schema = 7\n"));
             assert!(encoded.contains(&format!("scheme = \"{value}\"\n")));
             assert_eq!(parse_settings(&encoded), Ok(snapshot));
         }
@@ -1262,7 +1446,8 @@ mod tests {
             assert_eq!(
                 parse_settings(
                     &encoded
-                        .replace("schema = 6", &format!("schema = {schema}"))
+                        .replace("\n[window]\nremember_state = false\n", "")
+                        .replace("schema = 7", &format!("schema = {schema}"))
                         .replace(
                             "scheme = \"vibrant\"\n",
                             "scheme = \"vibrant\"\ndensity = \"default\"\n"
@@ -1292,6 +1477,7 @@ mod tests {
                 &access,
                 1,
                 ConfigUpdate {
+                    window: None,
                     paths: None,
                     unity: None,
                     appearance: Some(ConfigAppearanceUpdate {
@@ -1320,6 +1506,7 @@ mod tests {
                 &access,
                 1,
                 ConfigUpdate {
+                    window: None,
                     paths: None,
                     unity: None,
                     appearance: None,
@@ -1378,7 +1565,7 @@ mod tests {
         assert!(
             fs::read_to_string(&path)
                 .expect("read file")
-                .starts_with("schema = 6\n")
+                .starts_with("schema = 7\n")
         );
         let _ = fs::remove_dir_all(root);
     }
@@ -1472,13 +1659,16 @@ mod tests {
         ];
         expected.settings.unity.hub_path = Some(r"C:\用户\Unity Hub\Unity Hub.exe".to_owned());
         let canonical = String::from_utf8(serialize_settings(&expected)).expect("utf8");
-        assert!(canonical.starts_with("schema = 6\n"));
+        assert!(canonical.starts_with("schema = 7\n"));
         assert!(!canonical.contains("density"));
         for density in ["default", "compact"] {
-            let legacy = canonical.replace("schema = 6", "schema = 3").replace(
-                "motion = \"full\"\n",
-                &format!("density = \"{density}\"\nmotion = \"full\"\n"),
-            );
+            let legacy = canonical
+                .replace("\n[window]\nremember_state = false\n", "")
+                .replace("schema = 7", "schema = 3")
+                .replace(
+                    "motion = \"full\"\n",
+                    &format!("density = \"{density}\"\nmotion = \"full\"\n"),
+                );
             fs::write(&path, &legacy).expect("write v3");
             assert_eq!(store.load(), Ok(expected.clone()));
             assert_eq!(fs::read_to_string(&path).expect("read-only load"), legacy);
@@ -1507,7 +1697,9 @@ mod tests {
         let store = FileConfigStore::new(path.clone());
         let current = String::from_utf8(serialize_settings(&default_snapshot())).expect("utf8");
         for schema in 1..=3 {
-            let mut legacy = current.replace("schema = 6", &format!("schema = {schema}"));
+            let mut legacy = current
+                .replace("\n[window]\nremember_state = false\n", "")
+                .replace("schema = 7", &format!("schema = {schema}"));
             legacy = if schema < 3 {
                 legacy.replace("scheme = \"vibrant\"\n", "density = \"default\"\n")
             } else {
@@ -1578,7 +1770,7 @@ mod tests {
                 )
             })
             .to_vec();
-        invalid.push(current.replace("schema = 6", "schema = 7"));
+        invalid.push(current.replace("schema = 7", "schema = 8"));
         for invalid in invalid {
             fs::write(&path, &invalid).expect("write unsupported current input");
             assert_eq!(store.initialize(), Err(ConfigStoreError::Corrupt));
@@ -1607,6 +1799,7 @@ mod tests {
                 &access,
                 1,
                 ConfigUpdate {
+                    window: None,
                     paths: None,
                     unity: None,
                     appearance: Some(ConfigAppearanceUpdate {
@@ -1632,6 +1825,7 @@ mod tests {
                 &access,
                 initial.revision,
                 ConfigUpdate {
+                    window: None,
                     paths: None,
                     unity: None,
                     appearance: Some(ConfigAppearanceUpdate {
@@ -1655,6 +1849,7 @@ mod tests {
                 &access,
                 changed.revision,
                 ConfigUpdate {
+                    window: None,
                     paths: None,
                     unity: None,
                     appearance: Some(ConfigAppearanceUpdate {
@@ -1681,6 +1876,7 @@ mod tests {
                 &access,
                 expected.revision,
                 ConfigUpdate {
+                    window: None,
                     paths: None,
                     unity: None,
                     appearance: Some(ConfigAppearanceUpdate {
@@ -1784,6 +1980,7 @@ mod tests {
                 &access,
                 confirmed.revision,
                 ConfigUpdate {
+                    window: None,
                     paths: None,
                     unity: None,
                     appearance: None,

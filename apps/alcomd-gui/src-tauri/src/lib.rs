@@ -8,6 +8,8 @@ use tauri::State;
 use tauri::async_runtime::Mutex;
 use tauri_plugin_dialog::DialogExt;
 
+mod window_state;
+
 #[derive(Default)]
 struct GuiClientState {
     client: Mutex<Option<AlcomdClient>>,
@@ -1647,7 +1649,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(GuiClientState::default())
+        .manage(window_state::WindowStateController::default())
+        .on_window_event(window_state::on_window_event)
         .invoke_handler(tauri::generate_handler![
+            window_state::gui_window_state_configure,
             gui_system_status,
             gui_state_check,
             gui_operations_list,

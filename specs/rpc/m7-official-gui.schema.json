@@ -96,7 +96,7 @@
                     ]
                 },
                 "path": {
-                    "$ref": "https://alcomd.cqmhv.com/schema/config/settings-v6.json#/$defs/hubPath"
+                    "$ref": "https://alcomd.cqmhv.com/schema/config/settings-v7.json#/$defs/hubPath"
                 },
                 "configuredPathStatus": {
                     "enum": [
@@ -197,11 +197,11 @@
             "type": "object", "additionalProperties": false,
             "required": ["configSchema", "revision", "settings", "unityHub", "directories"],
             "properties": {
-                "configSchema": {"const": 6},
+                "configSchema": {"const": 7},
                 "revision": {"$ref": "#/$defs/revision"},
-                "settings": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v6.json#/$defs/settings"},
+                "settings": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v7.json#/$defs/settings"},
                 "unityHub": {"$ref": "#/$defs/unityHubLocation"},
-                "directories": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v6.json#/$defs/storageDirectories"}
+                "directories": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v7.json#/$defs/storageDirectories"}
             }
         },
         "settingsUpdateParams": {
@@ -209,7 +209,7 @@
             "required": ["expectedRevision", "update"],
             "properties": {
                 "expectedRevision": {"$ref": "#/$defs/revision"},
-                "update": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v6.json#/$defs/partialUpdate"}
+                "update": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v7.json#/$defs/partialUpdate"}
             }
         },
         "settingsUpdateResult": {"$ref": "#/$defs/settingsGetResult"},

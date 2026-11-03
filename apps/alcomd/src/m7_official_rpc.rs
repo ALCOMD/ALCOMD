@@ -71,6 +71,9 @@ pub(super) async fn dispatch(
                 Err(_) => return invalid(request.id),
             };
             let update = app::ConfigUpdate {
+                window: params.update.window.map(|value| app::ConfigWindowUpdate {
+                    remember_state: value.remember_state,
+                }),
                 paths: params.update.paths.map(|value| app::ConfigPathUpdate {
                     project_directory: directory_update_from_rpc(value.project_directory),
                     backup_directory: directory_update_from_rpc(value.backup_directory),
@@ -263,6 +266,9 @@ fn settings_result(
             },
         },
         settings: rpc::Settings {
+            window: rpc::WindowSettings {
+                remember_state: value.settings.window.remember_state,
+            },
             paths: rpc::PathSettings {
                 project_directory: value.settings.paths.project_directory,
                 backup_directory: value.settings.paths.backup_directory,
@@ -418,7 +424,7 @@ mod tests {
                 backup_directory: "/fixtures/backups".into(),
             },
         );
-        assert_eq!(result.config_schema, 6);
+        assert_eq!(result.config_schema, 7);
         assert_eq!(
             result.config_schema,
             alcomd_store::FileConfigStore::SCHEMA_VERSION

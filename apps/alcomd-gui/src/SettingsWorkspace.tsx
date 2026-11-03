@@ -535,6 +535,10 @@ function SettingsEditor({ category, client, settingsWriter, snapshot, initialRep
     };
     return (
         <div className="settings-editor" hidden={category !== "general" && category !== "appearance"}>
+            <SettingsSection title={t("Window")} hidden={category !== "general"}>
+                <Checkbox checked={settings.window.rememberState} label={t("Remember window size and maximized state")}
+                    onChange={(rememberState) => settingsWriter.change({ window: { rememberState } })} />
+            </SettingsSection>
             <SettingsSection title={t("Packages")} hidden={category !== "general"}>
                 <div className="settings-toggle-row">
                     <Checkbox checked={settings.packages.showPrerelease} label={t("Show prerelease package versions")} onChange={(checked) => packages("showPrerelease", checked)} />

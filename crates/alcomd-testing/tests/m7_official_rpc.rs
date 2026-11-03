@@ -37,8 +37,10 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
     let mut client = connect_with_retry(config.clone()).await;
 
     let defaults = client.settings_get().await.expect("read default settings");
-    assert_eq!(defaults.config_schema, 6);
+    assert_eq!(defaults.config_schema, 7);
     assert_eq!(defaults.revision, 1);
+    assert!(!defaults.settings.window.remember_state);
+    assert!(!defaults.settings.window.remember_state);
     assert_eq!(defaults.settings.unity.default_launch_arguments, None);
     assert_eq!(defaults.settings.appearance.mode, AppearanceMode::System);
     assert_eq!(
@@ -50,6 +52,9 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
         .settings_update(SettingsUpdateParams {
             expected_revision: 1,
             update: SettingsUpdate {
+                window: Some(alcomd_protocol::WindowSettingsUpdate {
+                    remember_state: true,
+                }),
                 paths: None,
                 unity: Some(alcomd_protocol::UnitySettingsUpdate {
                     default_launch_arguments: NullableUpdate::Set(vec![
@@ -79,6 +84,7 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
         .await
         .expect("update settings");
     assert_eq!(updated.revision, 2);
+    assert!(updated.settings.window.remember_state);
     assert_eq!(
         updated.settings.unity.default_launch_arguments,
         Some(vec![
@@ -121,6 +127,7 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
             .settings_update(SettingsUpdateParams {
                 expected_revision: previous.revision,
                 update: SettingsUpdate {
+                    window: None,
                     appearance: Some(AppearanceSettingsUpdate {
                         scheme: Some(scheme),
                         ..AppearanceSettingsUpdate::default()
@@ -265,6 +272,7 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
         .settings_update(SettingsUpdateParams {
             expected_revision: expected_clear.revision,
             update: SettingsUpdate {
+                window: None,
                 unity: Some(alcomd_protocol::UnitySettingsUpdate {
                     default_launch_arguments: NullableUpdate::Unchanged,
                     hub_path: NullableUpdate::Set(
@@ -369,6 +377,7 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
         .settings_update(SettingsUpdateParams {
             expected_revision: missing.revision,
             update: SettingsUpdate {
+                window: None,
                 locale: Some(SettingsLocale::JaJp),
                 ..SettingsUpdate::default()
             },
@@ -382,6 +391,7 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
         .settings_update(SettingsUpdateParams {
             expected_revision: unrelated.revision,
             update: SettingsUpdate {
+                window: None,
                 unity: Some(alcomd_protocol::UnitySettingsUpdate {
                     default_launch_arguments: NullableUpdate::Unchanged,
                     hub_path: NullableUpdate::Clear,
@@ -415,6 +425,7 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
         .settings_update(SettingsUpdateParams {
             expected_revision: 1,
             update: SettingsUpdate {
+                window: None,
                 locale: Some(SettingsLocale::JaJp),
                 ..SettingsUpdate::default()
             },
@@ -471,7 +482,7 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
         fs::read_to_string(data.join("config/settings.toml")).expect("read durable settings file");
     assert_eq!(
         settings_file,
-        r#"schema = 6
+        r#"schema = 7
 revision = 14
 locale = "ja-JP"
 
@@ -487,6 +498,9 @@ hide_local_user_packages = true
 
 [unity]
 default_launch_arguments = ["-logFile", " C:\\logs with spaces\\Editor.log ", ""]
+
+[window]
+remember_state = true
 "#
     );
     let restarted_shutdown = Arc::new(AtomicBool::new(false));
@@ -496,7 +510,7 @@ default_launch_arguments = ["-logFile", " C:\\logs with spaces\\Editor.log ", ""
         wait_for_shutdown(Arc::clone(&restarted_shutdown)),
     )
     .await
-    .expect("restart owned daemon with Config6");
+    .expect("restart owned daemon with Config7");
     let mut reopened = connect_with_retry(config).await;
     let persisted = reopened.settings_get().await.expect("reopened settings");
     assert_eq!(persisted.revision, 14);

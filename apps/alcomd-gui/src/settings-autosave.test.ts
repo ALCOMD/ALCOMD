@@ -2,12 +2,13 @@ import type { SettingsGetResult, SettingsUpdate } from "./core-models.ts";
 import { SettingsAutosave, StorageDirectoryConflictError, UnityArgumentsConflictError, UnityHubConflictError } from "./settings-autosave.ts";
 
 const initial: SettingsGetResult = {
-    configSchema: 6, revision: 7,
+    configSchema: 7, revision: 7,
     directories: { projectDirectory: "C:\\Projects", backupDirectory: "C:\\Backups" },
     unityHub: { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" },
     settings: {
         paths: { projectDirectory: null, backupDirectory: null },
         unity: { hubPath: null, defaultLaunchArguments: null },
+        window: { rememberState: false },
         locale: "en-US",
         appearance: { mode: "system", scheme: "vibrant", sourceColor: null, motion: "system" },
         packages: { showPrerelease: false, hideLocalUserPackages: false, hiddenRepositoryIds: [] }
@@ -35,7 +36,7 @@ function model() {
             requests.push({ expectedRevision, update: structuredClone(update) });
             assert(expectedRevision === current.revision, "CAS expected current revision");
             current = {
-                configSchema: 6, revision: expectedRevision + 1,
+                configSchema: 7, revision: expectedRevision + 1,
                 directories: {
                     projectDirectory: update.paths?.projectDirectory ?? current.directories.projectDirectory,
                     backupDirectory: update.paths?.backupDirectory ?? current.directories.backupDirectory
@@ -46,7 +47,8 @@ function model() {
                     appearance: { ...current.settings.appearance, ...update.appearance },
                     packages: { ...current.settings.packages, ...update.packages },
                     paths: { ...current.settings.paths, ...update.paths },
-                    unity: { ...current.settings.unity, ...update.unity }
+                    unity: { ...current.settings.unity, ...update.unity },
+                    window: { ...current.settings.window, ...update.window }
                 }
             };
             return structuredClone(current);
@@ -370,4 +372,43 @@ async function idle(writer: SettingsAutosave) {
     equal(fixture.writer.getSnapshot().accepted!.settings.unity.defaultLaunchArguments, ["-batchmode"], "conflict reloads Core authority");
 }
 
-console.log("Settings autosave coordination passed (24 scenarios).");
+{
+    const fixture = model();
+    equal(fixture.writer.getSnapshot().accepted!.settings.window.rememberState, false, "window state remembering starts disabled");
+    fixture.writer.change({ window: { rememberState: true } });
+    await idle(fixture.writer);
+    fixture.writer.change({ window: { rememberState: false } });
+    await idle(fixture.writer);
+    equal(fixture.requests, [
+        { expectedRevision: 7, update: { window: { rememberState: true } } },
+        { expectedRevision: 8, update: { window: { rememberState: false } } }
+    ], "window preference toggles use narrow serialized patches");
+    equal(fixture.current().settings.unity, initial.settings.unity, "window preference does not alter Unity settings");
+}
+
+{
+    const fixture = model();
+    fixture.writer.change({ window: { rememberState: true } });
+    fixture.writer.change({ window: { rememberState: false } });
+    await idle(fixture.writer);
+    equal(fixture.requests, [], "a rapid reverted window toggle has no effective update");
+    equal(fixture.writer.getSnapshot().accepted!.settings.window.rememberState, false, "reverted intent never becomes accepted");
+}
+
+{
+    const fixture = model();
+    const original = fixture.client.settingsUpdate;
+    fixture.client.settingsUpdate = async (...args) => { await original(...args); throw new Error("Lost response"); };
+    fixture.writer.change({ window: { rememberState: true } });
+    await idle(fixture.writer);
+    assert(fixture.writer.getSnapshot().failed, "unknown window save remains failed until checked");
+    equal(fixture.writer.getSnapshot().accepted!.settings.window.rememberState, false, "unknown window save cannot enable the native behavior");
+    equal(fixture.writer.getSnapshot().settings!.window.rememberState, true, "window edit intent is retained for explicit retry");
+    equal(fixture.applied.length, 0, "unknown window setting is never published as applied");
+    await fixture.writer.retry();
+    equal(fixture.requests.length, 1, "window retry checks the committed value without a duplicate write");
+    equal(fixture.writer.getSnapshot().accepted!.settings.window.rememberState, true, "only reconciled Core authority enables remembering");
+    equal(fixture.applied.length, 1, "accepted window setting is applied after reconciliation");
+}
+
+console.log("Settings autosave coordination passed (27 scenarios).");

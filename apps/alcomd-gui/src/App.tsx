@@ -66,6 +66,8 @@ import {
 import { Button, Dialog as MaterialDialog, Icon, NavigationList, NavigationListItem, RefreshButton } from "./Material";
 import { guiRpcClient, type GuiRpcClient } from "./rpc";
 import type { SettingsGetResult } from "./core-models";
+import { nativeWindowStateMemory } from "./native-window-state";
+import type { WindowStateMemory } from "./window-state";
 import {
     capabilities,
     CapabilityProvider,
@@ -110,6 +112,8 @@ export function App({ client = guiRpcClient }: AppProps) {
     const settingsConnection = useRef({ client, generation: connectionGeneration });
     const settingsAuthority = useRef<SettingsGetResult | undefined>(undefined);
     const settingsWriterRef = useRef<SettingsAutosave | undefined>(undefined);
+    const windowMemory = useRef<WindowStateMemory | undefined>(undefined);
+    const [windowStateError, setWindowStateError] = useState<RpcError>();
     const themePreview = useRef<ThemePreferences | undefined>(undefined);
     const themeExit = useRef<(() => void) | undefined>(undefined);
     if (settingsConnection.current.client !== client || settingsConnection.current.generation !== connectionGeneration) {
@@ -171,6 +175,7 @@ export function App({ client = guiRpcClient }: AppProps) {
             : value.settings.locale;
         setLocale(nextLocale);
         applyMotion(value.settings.appearance.motion);
+        void windowMemory.current?.apply(value.settings.window.rememberState);
     }, [client, connectionGeneration]);
 
     const settingsWriter = useMemo(() => new SettingsAutosave(client, applySettings), [client, applySettings]);
@@ -191,11 +196,19 @@ export function App({ client = guiRpcClient }: AppProps) {
     useEffect(() => { document.documentElement.lang = locale; }, [locale]);
 
     useEffect(() => {
+        const memory = nativeWindowStateMemory(setWindowStateError);
+        windowMemory.current = memory;
+        if (settingsAuthority.current !== undefined) void memory?.apply(settingsAuthority.current.settings.window.rememberState);
+        return () => { memory?.dispose(); if (windowMemory.current === memory) windowMemory.current = undefined; };
+    }, []);
+
+    useEffect(() => {
         let active = true;
         void client.settingsGet().then((value) => {
             if (active) applySettings(value);
         }).catch(() => {
             // The durable Settings page exposes reconnect/error state; shell defaults remain safe.
+            if (active) void windowMemory.current?.startupReadFailed();
         });
         return () => { active = false; };
     }, [applySettings, client, connectionGeneration]);
@@ -278,6 +291,11 @@ export function App({ client = guiRpcClient }: AppProps) {
                                 <Button disabled={settingsSave.saving} type="button" variant="text" onClick={() => void settingsWriter.retry()}>{t("Retry")}</Button>
                             </RequestReminder>
                         </div> : null}
+                        {windowStateError === undefined ? null : <div className="shell-feedback">
+                            <RequestReminder error={windowStateError} title={null} message="Window size and maximized state could not be remembered.">
+                                <Button type="button" variant="text" onClick={() => setWindowStateError(undefined)}>{t("Dismiss notification")}</Button>
+                            </RequestReminder>
+                        </div>}
                         {navigating ? <div className="page-navigation-progress"><LoadingState title={t("Opening page…")} /></div> : null}
                         <div className="route-content" inert={navigating}>
                             <Suspense fallback={<LoadingState title={t("Loading page…")} />}>

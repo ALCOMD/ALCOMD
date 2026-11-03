@@ -192,6 +192,7 @@ export class SettingsAutosave {
                 ...desired,
                 appearance: { ...this.accepted.settings.appearance, ...desired.appearance },
                 packages: { ...this.accepted.settings.packages, ...desired.packages },
+                window: { ...this.accepted.settings.window, ...desired.window },
                 paths: { ...this.accepted.settings.paths, ...desired.paths },
                 unity: { ...this.accepted.settings.unity, ...desired.unity }
             },
@@ -264,6 +265,7 @@ function merge(first: OrdinaryUpdate, second: OrdinaryUpdate): OrdinaryUpdate {
         ...first, ...second,
         ...(first.appearance === undefined && second.appearance === undefined ? {} : { appearance: { ...first.appearance, ...second.appearance } }),
         ...(first.unity === undefined && second.unity === undefined ? {} : { unity: { ...first.unity, ...second.unity } }),
+        ...(first.window === undefined && second.window === undefined ? {} : { window: { ...first.window, ...second.window } }),
         ...(first.paths === undefined && second.paths === undefined ? {} : { paths: { ...first.paths, ...second.paths } }),
         ...(first.packages === undefined && second.packages === undefined ? {} : { packages: { ...first.packages, ...second.packages } })
     };
@@ -272,6 +274,9 @@ function merge(first: OrdinaryUpdate, second: OrdinaryUpdate): OrdinaryUpdate {
 function difference(intent: OrdinaryUpdate, accepted: OfficialSettings): OrdinaryUpdate {
     const result: OrdinaryUpdate = {};
     if (intent.locale !== undefined && intent.locale !== accepted.locale) result.locale = intent.locale;
+    if (intent.window?.rememberState !== undefined && intent.window.rememberState !== accepted.window.rememberState) {
+        result.window = { rememberState: intent.window.rememberState };
+    }
     if (intent.appearance !== undefined) {
         const appearance = Object.fromEntries(Object.entries(intent.appearance).filter(([key, value]) => value !== accepted.appearance[key as keyof typeof intent.appearance]));
         if (Object.keys(appearance).length > 0) result.appearance = appearance;

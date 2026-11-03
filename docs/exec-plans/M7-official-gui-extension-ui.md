@@ -14,17 +14,17 @@ Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据�
   `M7-package-candidate-evidence-stop-a.md` 提供完整、来源保真的候选证据。GUI 不解析
   SemVer/Unity，不以可选元数据首页推断来源缺失或可操作性；行内版本、条件更新与批量操作仍
   复用原有单次 Plan、显式 Apply 和一个 Operation，不更改普通 resolver/来源/恢复策略。
-- 当前数据基线为 **State v16**。v15 引入独立的 `lastModifiedAtMs`；v16 移除项目观察时间，
+- 当前数据基线为 **State v17**，按 A-035 允许项目显式空参数覆盖。v15 引入独立的 `lastModifiedAtMs`；v16 移除项目观察时间，
   保留安装扫描、writer 检查及迁移专有恢复证据。候选/迁移的权威投影显式白名单排除展示时间，
   保持原冻结字节与 hash；旧未 Apply 的 Unity 迁移计划按合同过期，不重签原审批。
 - 按 A-034 保留 Schema 识别机制，hello 报告成功初始化后的真实存储版本。未发布开发库不
-  承诺长期兼容，仅为明确需要保留的数据维护迁移；当前不降回 v1、不新增版本、不删除现有迁移。
+  承诺长期兼容，仅为明确需要保留的数据维护迁移；当前不降回 v1、不删除现有迁移；已批准的 State17 窄增量见 A-035。
   发布前初始 Schema 整理是独立审计任务，不自动清空数据库、Plan、Operation 或恢复证据。
   本轮 hello 修复只纠正已有 `dataSchema` 事实值与内部构造参数，不改 wire DTO/Schema 形状、
   RPC major 或 capability，属于非破坏性修正；由 dispatcher、兼容形状和实际 SQLite 回归验证。
-- 当前设置合同为 **Config5**，按 2026-11-03 批准补齐默认项目/备份目录；保留已批准的紧凑模式及 `appearance.density` 删除。
+- 当前设置合同为 **Config7**，含已批准默认目录、Unity 全局参数及默认关闭的窗口记忆开关；保留已批准的紧凑模式及 `appearance.density` 删除。
   application 持有权限、CAS、字段校验、候选缓存和取消一致性；
-  `ConfigStore` 窄 port 的文件适配器位于 store，负责 strict 16 KiB TOML、Config1–4→5 和
+  `ConfigStore` 窄 port 的文件适配器位于 store，负责 strict 16 KiB TOML、Config1–6→7 和
   原子替换/恢复。普通设置修改即保存，以当前连接内的串行窄 PATCH 协调；失败保留意图、
   显式 Retry 先重读，未知已提交不重复写，换连接停止旧队列，不保留全局 Save/Discard 栏。
 - 主题编辑器直接展开于外观页，保持独立 Save/Cancel、实时预览和冲突三方合并；仅明确保存 sourceColor/mode/scheme。
@@ -55,7 +55,7 @@ Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据�
   No shell 指应用不构造、调用或通过 shell 执行命令，不拼接/解释 shell 参数；保留标准库与
   OS 的 ENOEXEC/解释器回退语义。spawn 成功仅为 OS 接受，不代表 Hub 已正常运行、厂商
   身份、退出成功或窗口就绪；同步拒绝、后续退出与资源回收分别验证。
-- 正式合同与证据分别见 `specs/config/settings-v6.*`（Config1–5 仅为迁移历史）、
+- 正式合同与证据分别见 `specs/config/settings-v7.*`（Config1–6 仅为迁移历史）、
   `specs/config/theme-controls.proposal.contract.json`、
   `specs/config/unity-hub-location.proposal.contract.json`、
   `specs/storage/state-v15-project-last-modified.contract.json`、
@@ -727,6 +727,30 @@ GUI 逐项编辑参数，保留空值、空格、引号与反斜线，使用共�
 GUI check/build、保存队列24场景、浏览器65/6与完整受影响两模块补查14/0，测试预期/插槽定位修正没有改产品实现或删除断言。
 六crate Clippy、fmt/xtask/metadata及一次匹配Core/CLI/GUI构建通过；原数据/profile已恢复，Core125676/GUI144536，
 公开状态保持，Config6迁移仅改TOML版本，保留实际切换前revision168。各轮准确范围见status，不冒称完整门禁或M7签收。
+
+#### 窗口状态记忆：最小设置合同（2026-11-03，所有者已批准）
+
+所有者要求实现窗口状态记忆，在设置中提供默认关闭的开关。范围为普通窗口大小与最大化状态，
+不增加窗口位置、最小化启动、全屏偏好或通用窗口管理器。常规页使用现有设置行与 Checkbox。
+
+- Config6→7：新增 `settings.window.rememberState: boolean`，默认 false；TOML `[window] remember_state = false`。
+  `settings.get/update` 沿用 settings.read/manage；PATCH window 为闭合非空对象，只接受该 bool。
+  Config1–6 迁移补 false，保留原 revision 和其他设置，不改 State17、权限名称或 RPC method。
+- 开关是 Core 权威设置，继续经现有串行 CAS/错误反馈。窗口几何仅是可丢弃 GUI 视图缓存，
+  与现有项目视图一样可使用 localStorage；不把业务数据或权威开关放在缓存中，不新增 GUI 文件写入。
+- 默认关闭时不恢复、不记录几何并清除旧缓存；启用后记住普通窗口逻辑宽高和最大化状态。
+  下次启动恢复一次，关闭/重新打开设置或切换页面不重新套用旧窗口大小。
+  缓存丢失/损坏/不可用时使用现有默认窗口；恢复尺寸按当前显示器可用区域限制，忽略最小化临时尺寸。
+- 使用已安装 Tauri 2.11.5 的窗口/显示器 API 和闭合的本地主窗口薄适配器；不新增依赖、任意路径或任意窗口操作接口。
+  native 只处理自身窗口 UI，不访问 Core 数据库或项目。必要恢复错误沿用共享提醒，不能因读写视图缓存失败阻止应用启动/关闭。
+- 定向验证覆盖默认关闭、开关保存/失败、缓存与恢复一次、普通/最大化/最小化尺寸及显示器/DPI边界；
+  桌面控制保持停用，浏览器或纯逻辑检查不冒称原生调整窗口已验收。本批单独本地提交，不推送。
+
+窗口设置已接入现有保存队列；几何缓存只受已接受的 Core 值驱动。新主窗口适配器使用 Tauri 已有 API，
+事件目标匹配 JS Window 监听，恢复 API 请求后读取实际状态解除中间事件保护，避免依赖精确尺寸事件而长期冻结。
+本批浏览器25/0、保存队列27场景、缓存11场景、原生纯模型6/0；Application53/0、Protocol53/0、Store配置25/0、
+隔离RPC/合同8/0，六crate Clippy与原生最终补查、fmt/xtask/metadata通过。实际原生调整/关闭重开仍待所有者查看。
+匹配Core/CLI/GUI构建及所有权4/0完成，原环境恢复Core130792/GUI149024，公开状态保持，Config7仅补false且revision168不变。
 
 ### 当前 H7 授权与收束（2026-11-02）
 

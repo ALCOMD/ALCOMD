@@ -2452,7 +2452,7 @@ pub struct ProjectsApplyUnityMigrationResult {
     pub replayed: bool,
 }
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 6;
+pub const CONFIG_SCHEMA_VERSION: u32 = 7;
 pub const MAX_OFFICIAL_GUI_PAGE_LIMIT: u32 = 200;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2514,6 +2514,19 @@ pub struct Settings {
     pub packages: PackageSettings,
     pub unity: UnitySettings,
     pub paths: PathSettings,
+    pub window: WindowSettings,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WindowSettings {
+    pub remember_state: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WindowSettingsUpdate {
+    pub remember_state: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2707,6 +2720,12 @@ where
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SettingsUpdate {
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub window: Option<WindowSettingsUpdate>,
     #[serde(
         default,
         deserialize_with = "deserialize_optional_non_null",

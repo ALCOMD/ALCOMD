@@ -1,6 +1,9 @@
 import type { TranslationTable } from "../i18n-types";
 
 export const settingsH5Messages: TranslationTable = {
+    "Window size and maximized state could not be remembered.": { "zh-CN": "无法记住窗口大小和最大化状态。", "ja-JP": "ウィンドウのサイズと最大化状態を記憶できませんでした。" },
+    "Window": { "zh-CN": "窗口", "ja-JP": "ウィンドウ" },
+    "Remember window size and maximized state": { "zh-CN": "记住窗口大小和最大化状态", "ja-JP": "ウィンドウのサイズと最大化状態を記憶する" },
     "Edit": { "zh-CN": "编辑", "ja-JP": "編集" },
     "Default Unity launch arguments": { "zh-CN": "默认 Unity 启动参数", "ja-JP": "既定のUnity起動引数" },
     "Used by projects without custom launch arguments.": { "zh-CN": "用于未单独设置启动参数的项目。", "ja-JP": "独自の起動引数を設定していないプロジェクトで使います。" },

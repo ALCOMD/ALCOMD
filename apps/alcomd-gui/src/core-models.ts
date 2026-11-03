@@ -49,6 +49,7 @@ export interface UnityHubLocation {
 export interface OfficialSettings {
     paths: { projectDirectory: string | null; backupDirectory: string | null };
     unity: { hubPath: string | null; defaultLaunchArguments: string[] | null };
+    window: { rememberState: boolean };
     appearance: {
         mode: AppearanceMode;
         sourceColor: string | null;
@@ -66,7 +67,7 @@ export interface OfficialSettings {
 export interface SettingsGetResult {
     directories: { projectDirectory: string; backupDirectory: string };
     unityHub: UnityHubLocation;
-    configSchema: 6;
+    configSchema: 7;
     revision: number;
     settings: OfficialSettings;
 }
@@ -74,6 +75,7 @@ export interface SettingsGetResult {
 export interface SettingsUpdate {
     paths?: { projectDirectory?: string | null; backupDirectory?: string | null };
     unity?: { hubPath?: string | null; defaultLaunchArguments?: string[] | null };
+    window?: { rememberState?: boolean };
     appearance?: {
         mode?: AppearanceMode;
         sourceColor?: string | null;

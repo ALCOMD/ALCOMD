@@ -80,6 +80,7 @@ export function withH5SettingsClient(base: GuiRpcClient, query: URLSearchParams)
                         appearance: { ...previous.settings.appearance, ...update.appearance },
                         packages: { ...previous.settings.packages, ...update.packages },
                         unity: { ...previous.settings.unity, ...update.unity },
+                        window: { ...previous.settings.window, ...update.window },
                         locale: update.locale ?? previous.settings.locale
                     }
                 };
