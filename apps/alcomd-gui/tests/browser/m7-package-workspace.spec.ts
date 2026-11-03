@@ -234,6 +234,12 @@ test("Package rows keep one primary action and move secondary actions into Mater
     await expect(availableRow.getByRole("button", { name: "More actions for Remote tools", exact: true })).toBeVisible();
 
     await installedRow.getByRole("button", { name: "More actions for Avatar tools" }).click();
+    const menu = installedRow.locator(".package-actions-menu");
+    await expect(menu.locator(".menu")).toHaveCSS("border-radius", "12px");
+    for (const item of await menu.locator("md-menu-item:not(.package-actions-menu-item--danger)").all()) {
+        expect((await item.boundingBox())!.height).toBe(40);
+        await expect(item.locator('[slot="headline"]')).toHaveCSS("font-size", "14px");
+    }
     await expect(page.getByRole("menuitem", { name: "Reinstall", exact: true })).toBeVisible();
     await expect(installedRow.getByRole("button", { name: "Version for Avatar tools: 1.2.3" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "Remove", exact: true })).toBeVisible();
