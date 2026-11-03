@@ -731,7 +731,7 @@ GUI check/build、保存队列24场景、浏览器65/6与完整受影响两模�
 #### 窗口状态记忆：最小设置合同（2026-11-03，所有者已批准）
 
 所有者要求实现窗口状态记忆，在设置中提供默认关闭的开关。范围为普通窗口大小与最大化状态，
-不增加窗口位置、最小化启动、全屏偏好或通用窗口管理器。常规页使用现有设置行与 Checkbox。
+不增加窗口位置、最小化启动、全屏偏好或通用窗口管理器。按所有者后续纠正，窗口开关放在外观页，使用现有设置行与 Checkbox。
 
 - Config6→7：新增 `settings.window.rememberState: boolean`，默认 false；TOML `[window] remember_state = false`。
   `settings.get/update` 沿用 settings.read/manage；PATCH window 为闭合非空对象，只接受该 bool。
@@ -751,6 +751,8 @@ GUI check/build、保存队列24场景、浏览器65/6与完整受影响两模�
 本批浏览器25/0、保存队列27场景、缓存11场景、原生纯模型6/0；Application53/0、Protocol53/0、Store配置25/0、
 隔离RPC/合同8/0，六crate Clippy与原生最终补查、fmt/xtask/metadata通过。实际原生调整/关闭重开仍待所有者查看。
 匹配Core/CLI/GUI构建及所有权4/0完成，原环境恢复Core130792/GUI149024，公开状态保持，Config7仅补false且revision168不变。
+后续按所有者要求，窗口开关移至外观页（`249e6d7`）；全局成功、设置保存失败和窗口失败共用 ReminderProvider 右下出口（`76e404b`），删除独立右上定位，保留持久错误、详情、重试及迟到成功隔离。
+GUI check、受影响定向浏览器20/0及一次GUI release no-bundle构建通过。当前GUI127300（`C8D8B6AE…F9424825`）使用原profile，Core130792持续运行；五组公开状态和配置摘要均保持，不增加Rust/完整浏览器/远端CI重复验证。
 
 ### 当前 H7 授权与收束（2026-11-02）
 
