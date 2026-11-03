@@ -32,6 +32,7 @@ export interface OperationWriteResult { operation: Operation; replayed: boolean 
 
 export interface OperationsListResult {
     operations: Operation[];
+    activeCount: number;
     nextCursor?: { createdAtMs: number; operationId: string };
 }
 

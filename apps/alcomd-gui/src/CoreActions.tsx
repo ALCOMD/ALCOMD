@@ -1,3 +1,4 @@
+import { useCoreEvents } from "./core-events-ui";
 import { Translated, useTranslation } from "./i18n";
 import type { Translate } from "./i18n-types";
 import type { ExtensionRecord, RpcError } from "@alcomd/sdk";
@@ -1296,45 +1297,61 @@ export function OperationFollow({ children, client, initialOperation, onReadErro
     operationId: string;
     title?: string;
 }) {
+    const { t } = useTranslation();
     const owner = useRef({ client, operationId, initialOperation });
     if (owner.current.client !== client || owner.current.operationId !== operationId || owner.current.initialOperation !== initialOperation) owner.current = { client, operationId, initialOperation };
     const scope = owner.current;
+    const terminalNotice = useRef({ scope, consumed: false });
+    if (terminalNotice.current.scope !== scope) terminalNotice.current = { scope, consumed: false };
     const [snapshot, setSnapshot] = useState<{ scope: typeof scope; operation: Operation }>();
     const [error, setError] = useState<{ scope: typeof scope; error: RpcError }>();
     const callbacks = useRef({ onReadError, onSnapshot, onTerminal });
     callbacks.current = { onReadError, onSnapshot, onTerminal };
+    const events = useCoreEvents();
+    const [retryGeneration, setRetryGeneration] = useState(0);
     useEffect(() => {
         let active = true;
-        let timer: number | undefined;
         const initial = initialOperation?.operationId === operationId ? initialOperation : undefined;
         setSnapshot(initial === undefined ? undefined : { scope, operation: initial });
         setError(undefined);
-        const load = async () => {
-            let terminal = false;
-            try {
-                const next = await client.operationGet(operationId);
-                if (!active || owner.current !== scope) return;
-                if (next.operationId !== operationId) throw { code: "internal_error" };
-                setSnapshot({ scope, operation: next }); setError(undefined);
-                callbacks.current.onReadError?.(undefined);
-                callbacks.current.onSnapshot?.(next);
-                terminal = isTerminal(next.state);
-                if (terminal) callbacks.current.onTerminal?.(next);
-            } catch (caught: unknown) {
-                if (active && owner.current === scope) {
-                    const nextError = safeError(caught);
-                    setError({ scope, error: nextError }); callbacks.current.onReadError?.(nextError);
-                }
+        const accept = (next: Operation | undefined, failure?: RpcError) => {
+            if (!active || owner.current !== scope) return;
+            if (failure) {
+                setError({ scope, error: failure }); callbacks.current.onReadError?.(failure);
+                return;
             }
-            if (active && owner.current === scope && !terminal) timer = window.setTimeout(() => void load(), 750);
+            if (!next) return;
+            setSnapshot((previous) => previous?.scope === scope && previous.operation.revision > next.revision ? previous : { scope, operation: next });
+            setError(undefined); callbacks.current.onReadError?.(undefined); callbacks.current.onSnapshot?.(next);
+            if (isTerminal(next.state) && callbacks.current.onTerminal && !terminalNotice.current.consumed && !(initial && isTerminal(initial.state))) {
+                terminalNotice.current.consumed = true;
+                if (events?.consumeTerminal(operationId) ?? true) callbacks.current.onTerminal(next);
+            }
         };
-        if (initial === undefined) void load();
-        else if (!isTerminal(initial.state)) timer = window.setTimeout(() => void load(), 750);
-        return () => { active = false; window.clearTimeout(timer); };
-    }, [client, initialOperation, operationId, scope]);
+        if (events) {
+            const update = () => {
+                const entry = events.operationSnapshot(operationId);
+                accept(entry.value, entry.error);
+            };
+            const stop = events.observeOperation(operationId, update, initial);
+            update();
+            return () => { active = false; stop(); };
+        }
+        // A locally rendered observer has one initial read; applications supply the shared event entrance.
+        if (initial === undefined) void client.operationGet(operationId).then((next) => {
+            if (next.operationId !== operationId) throw { code: "internal_error" };
+            accept(next);
+        }).catch((caught: unknown) => accept(undefined, safeError(caught)));
+        return () => { active = false; };
+    }, [client, events, initialOperation, operationId, scope, retryGeneration]);
     const visible = snapshot?.scope === scope ? snapshot.operation : initialOperation?.operationId === operationId ? initialOperation : undefined;
     const readError = error?.scope === scope ? error.error : undefined;
-    return children === undefined ? <OperationProgress error={readError} operation={visible} title={title} /> : children(visible, readError);
+    return <>
+        {children === undefined ? <OperationProgress error={readError} operation={visible} title={title} /> : children(visible, readError)}
+        {readError === undefined ? null : <Button type="button" variant="text" onClick={() => {
+            if (events) events.invalidate(`operation:${operationId}`, true); else setRetryGeneration((value) => value + 1);
+        }}>{t("Retry")}</Button>}
+    </>;
 }
 
 export function OperationProgress({ error, operation, title = "Operation" }: { error?: RpcError; operation?: Operation; title?: string }) {

@@ -21,7 +21,11 @@ test("H5 operation detail follows one ID through a read failure and the actual f
     await open(page, "/activity");
     await page.getByRole("table", { name: "Activity", exact: true }).getByRole("button", { name: "View operation", exact: true }).first().click();
     await expect(detail(modal(page), "State")).toHaveText("running");
-    await page.evaluate(() => window.h5Utilities.deny("operations.get", "daemon_unavailable"));
+    await page.evaluate((operationId) => {
+        window.h5Utilities.deny("operations.get", "daemon_unavailable");
+        window.h5Utilities.recordOperation({ operationId, kind: "extensions.install", state: "running", revision: 2,
+            createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_003_000, progress: { phase: "prepared" } });
+    }, H5_INSTALL_ID);
     await expect(modal(page).getByRole("alert")).toContainText(requestErrorMessage("daemon_unavailable"));
     await expect(detail(modal(page), "Operation")).toHaveText(H5_INSTALL_ID);
     await expect(detail(modal(page), "State")).toHaveText("running");

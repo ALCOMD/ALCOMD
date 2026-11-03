@@ -128,7 +128,7 @@ test("visible project lists follow Core discoveries without an explicit refresh"
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
 });
 
-test("turning off discovery retains automatic project-list updates", async ({ page }) => {
+test("turning off discovery leaves idle lists quiet while committed project changes still update them", async ({ page }) => {
     await page.clock.install();
     await page.goto("/browser-harness.html?route=/settings&auto-projects=1");
     await projectOptions(page).getByRole("checkbox").uncheck();
@@ -137,14 +137,21 @@ test("turning off discovery retains automatic project-list updates", async ({ pa
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
     const before = await page.evaluate(() => window.projectListReads);
     await page.clock.fastForward(10_000);
-    expect(await page.evaluate(() => window.projectListReads)).toBeGreaterThan(before);
+    expect(await page.evaluate(() => window.projectListReads)).toBe(before);
+    await page.evaluate(() => {
+        const original = window.projectSnapshots.at(-1)![0]!;
+        window.autoDiscoveryProjects.push({ ...original, projectId: "00000000-0000-4000-8000-000000000993", rootPath: "C:\\Fixture\\Registered elsewhere" });
+    });
+    await page.clock.runFor(500);
+    await expect(page.getByText("Registered elsewhere", { exact: true })).toBeVisible();
 });
 
 test("a late automatic read cannot overwrite an accepted project change", async ({ page }) => {
     await page.clock.install();
     await page.goto("/browser-harness.html?route=/projects&auto-projects=1&hold-project-poll=1");
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
-    await page.clock.fastForward(3_100);
+    await page.evaluate(() => window.coreEvents.emit("project", "00000000-0000-4000-8000-000000000101", "project.favorite_changed", 2));
+    await page.clock.runFor(500);
     await expect.poll(() => page.evaluate(() => window.resumeProjectPoll !== undefined)).toBe(true);
     await page.evaluate(() => {
         const original = window.projectSnapshots.at(-1)![0]!;
@@ -158,6 +165,32 @@ test("a late automatic read cannot overwrite an accepted project change", async 
     await page.clock.fastForward(3_100);
     await expect(page.getByText("Newer project", { exact: true })).toBeVisible();
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
+});
+
+test("a held pre-delete project snapshot cannot reinsert a project removed by another client", async ({ page }) => {
+    await page.clock.install();
+    await page.goto("/browser-harness.html?route=/projects&auto-projects=1&hold-project-poll=1");
+    await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
+    await page.evaluate(() => {
+        const original = window.projectSnapshots.at(-1)![0]!;
+        window.autoDiscoveryProjects.push({ ...original, projectId: "00000000-0000-4000-8000-000000000994", rootPath: "C:\\Fixture\\Deleted before reply" });
+    });
+    await page.clock.runFor(500);
+    await expect.poll(() => page.evaluate(() => window.resumeProjectPoll !== undefined)).toBe(true);
+    await page.evaluate(() => {
+        window.autoDiscoveryProjects.splice(0);
+        window.coreEvents.emit("project", "00000000-0000-4000-8000-000000000994", "project.unregistered", 3);
+        const appeared: string[] = [];
+        (window as Window & { deletedProjectAppearances?: string[] }).deletedProjectAppearances = appeared;
+        new MutationObserver(() => {
+            if (document.querySelector("main")?.textContent?.includes("Deleted before reply")) appeared.push("reinserted");
+        }).observe(document.querySelector("main")!, { childList: true, subtree: true });
+        window.resumeProjectPoll!();
+    });
+    await page.clock.runFor(1_000);
+    await expect(page.getByText("Deleted before reply", { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => (window as Window & { deletedProjectAppearances?: string[] }).deletedProjectAppearances)).toEqual([]);
+    expect(await page.evaluate(() => window.projectListReads)).toBeGreaterThanOrEqual(3);
 });
 
 async function select(control: Locator, value: string) {

@@ -44,15 +44,18 @@ test("project backup history and Tasks preserve their Core pagination cursors", 
     await page.getByRole("button", { name: "Load more", exact: true }).click();
     await expect(page.getByRole("table", { name: "Tasks", exact: true }).getByRole("row")).toHaveCount(3);
     expect((await requests(page, "operations.list")).filter((request) => request.params.cursor !== undefined)).toEqual([
-        { method: "operations.list", params: { cursor: { createdAtMs: 1_700_000_000_000, operationId } } }
+        { method: "operations.list", params: { cursor: { createdAtMs: 1_700_000_000_000, operationId }, activeOnly: false } }
     ]);
     await expect(page.getByRole("button", { name: "Load more", exact: true })).toHaveCount(0);
 });
 
 test("operation detail retries a failed progress read on the same ID and keeps terminal failures visible", async ({ page }) => {
-    await open(page, `/operations/${operationId}`, "h3-read-error-at=2");
+    await open(page, `/operations/${operationId}`);
     await expect(page.locator(".operation-follow")).toContainText("running");
+    await page.evaluate(() => { window.h3ReadError = "daemon_unavailable"; window.h3Operation = { ...window.h3Operation, revision: window.h3Operation.revision + 1 }; });
     await expect(page.locator(".operation-follow")).toContainText("temporarily unavailable");
+    await page.evaluate(() => { window.h3ReadError = undefined; });
+    await page.getByRole("button", { name: "Retry", exact: true }).click();
     await expect.poll(async () => (await requests(page, "operations.get")).length).toBeGreaterThanOrEqual(3);
     await expect(page.locator(".operation-follow")).not.toContainText("temporarily unavailable");
     await page.evaluate(() => { window.h3Operation = { ...window.h3Operation, state: "failed", errorCode: "backup_archive_invalid", diagnosticId: "d".repeat(500) }; });
@@ -73,8 +76,8 @@ test("cancellation failure stays in its dialog and a retry uses the latest revis
     await expect(dialog.getByRole("heading", { name: "Request cancellation?", exact: true })).toBeVisible();
     await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
     await expectRequestError(dialog.getByRole("alert"), "resource_revision_conflict");
-    await page.evaluate(() => { window.h3Operation.revision = 10; });
     const prior = (await requests(page, "operations.get")).length;
+    await page.evaluate(() => { window.h3Operation = { ...window.h3Operation, revision: 10 }; });
     await expect.poll(async () => (await requests(page, "operations.get")).length).toBeGreaterThan(prior);
     await dialog.getByRole("button", { name: "Confirm", exact: true }).click();
     await expect(dialog).toHaveCount(0);
@@ -99,6 +102,9 @@ test("backup detail reuses managed restore, survives its first progress failure,
     await expect(dialog.getByRole("alert")).toContainText("separate resolve");
     await dialog.getByRole("button", { name: "Restore project", exact: true }).click();
     await expect(dialog.locator(".operation-follow")).toContainText("temporarily unavailable");
+    await dialog.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect.poll(async () => (await requests(page, "operations.get")).length).toBe(2);
+    await dialog.getByRole("button", { name: "Retry", exact: true }).click();
     await expect(dialog.locator(".operation-follow")).toContainText("running");
     expect(await requests(page, "backups.planRestore")).toEqual([{ method: "backups.planRestore", params: { backupId: selected, targetParent: "C:\\Fixture\\Avatar", targetLeaf: "H3 Restored" } }]);
     await state(page, "succeeded");
@@ -165,7 +171,8 @@ test("Settings Unity errors stay with the action and a corrected registration us
     const before = await dialog.getByRole("button", { name: "Register", exact: true }).boundingBox();
     await dialog.getByRole("button", { name: "Register", exact: true }).click();
     await expect(page.locator(".reminder-floating")).toContainText("Unity installation registered.");
-    await expect(dialog.locator(".reminder")).toHaveCount(0);
+    await expect.poll(() => dialog.locator(".reminder").evaluateAll((items) => items.filter((item) => !item.closest(".reminder-floating")).length)).toBe(0);
+    await expect(page.locator(".reminder-floating .reminder")).toHaveCount(1);
     const after = await dialog.getByRole("button", { name: "Register", exact: true }).boundingBox();
     expect(after!.y).toBeCloseTo(before!.y, 0);
     expect(await requests(page, "unity.installations.register")).toHaveLength(2);

@@ -1,6 +1,7 @@
 import type { ExtensionPermissionGrant, ExtensionRecord } from "@alcomd/sdk";
 import type { ExtensionPlan, Operation } from "../../src/core-models";
 import type { GuiRpcClient } from "../../src/rpc";
+import { browserCoreEvents } from "./core-events-client";
 
 export const H4_ALPHA = "com.example.alpha";
 export const H4_BETA = "com.example.beta";
@@ -19,6 +20,7 @@ interface ManagementFixture {
     release(method: string, code?: string): boolean;
     complete(state: "succeeded" | "failed" | "cancelled", errorCode?: string): void;
     setGrants(extensionId: string, values: ManagementGrant[]): void;
+    setDesired(extensionId: string, desiredState: "enabled" | "installed_disabled"): void;
 }
 
 declare global { interface Window { h4Management: ManagementFixture } }
@@ -59,6 +61,14 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
             const extension = installed(extensionId);
             grants.set(extensionId, structuredClone(values));
             extension.grantRevision += 1;
+            browserCoreEvents.invalidateExtensions();
+        },
+        setDesired(extensionId, desiredState) {
+            const extension = installed(extensionId);
+            extension.desiredState = desiredState;
+            extension.runtimeState = desiredState === "enabled" ? "running" : "stopped";
+            extension.revision += 1;
+            browserCoreEvents.invalidateExtensions();
         },
         complete(state, errorCode) {
             const task = fixture.lastOperationId === undefined ? undefined : tasks.get(fixture.lastOperationId);
@@ -69,6 +79,8 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
                 if (task.plan.action === "install") extensions.set(task.plan.extensionId, { ...record(task.plan.extensionId), desiredState: "installed_disabled", runtimeState: "stopped" });
                 else extensions.delete(task.plan.extensionId);
             }
+            browserCoreEvents.invalidateExtensions();
+            browserCoreEvents.emit("operation", task.operation.operationId, `operation.${state}`, task.operation.revision);
         }
     };
     window.h4Management = fixture;
@@ -109,6 +121,7 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
         tasks.set(operationId, { plan: reviewed, operation: { operationId, kind: `extensions.${action}`, state: "running", revision: 1,
             createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_001_000, progress: { phase: action === "install" ? "source_verified" : "grants_revoked" } } });
         fixture.lastOperationId = operationId;
+        browserCoreEvents.emit("operation", operationId, "operation.created", 1);
         if (action === "uninstall") {
             const current = installed(reviewed.extensionId);
             grants.set(reviewed.extensionId, []);
@@ -118,6 +131,12 @@ export function withH4ManagementClient(base: GuiRpcClient, query: URLSearchParam
     }
 
     const methods: Partial<GuiRpcClient> = {
+        operationsList(cursor, activeOnly = false) {
+            log("operations.list", { cursor, activeOnly });
+            const all = [...tasks.values()].map((task) => task.operation);
+            const activeCount = all.filter((item) => !["succeeded", "failed", "cancelled"].includes(item.state)).length;
+            return response("operations.list", { operations: all.filter((item) => !activeOnly || !["succeeded", "failed", "cancelled"].includes(item.state)), activeCount });
+        },
         async systemStatus() {
             const status = await base.systemStatus();
             return { ...status, capabilities: [...new Set([...status.capabilities, "extensions.permissions.read.v1"])] };

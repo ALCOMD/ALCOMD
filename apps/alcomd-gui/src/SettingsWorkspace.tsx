@@ -21,6 +21,7 @@ import { displayPath } from "./display-path";
 import { UnityDefaultArgumentsSettings } from "./UnityDefaultArgumentsSettings";
 import { backupCompressionOptions } from "./backup-compression";
 import { SettingsResetBoundary, SettingsResetButton, isSettingsResetTrigger, useSettingsResetPending } from "./SettingsResetButton";
+import { useCoreInvalidation } from "./core-events-ui";
 
 interface SettingsWorkspaceProps {
     client: GuiRpcClient;
@@ -471,24 +472,32 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
     const [generation, setGeneration] = useState(0);
     const requestRef = useRef(0);
     const busyRef = useRef(false);
+    const readAgain = useRef(false);
+    const readFailure = useRef<unknown>(undefined);
 
     const read = useCallback(async (next?: string) => {
-        if (busyRef.current) return;
+        if (busyRef.current) { readAgain.current = true; return; }
         const request = ++requestRef.current;
         busyRef.current = true;
         setBusy(true);
         setError(undefined);
+        readFailure.current = undefined;
         try {
             const page = await client.unityInstallationsList(next);
             if (request !== requestRef.current) return;
             setItems((current) => next === undefined ? page.installations : [...current, ...page.installations]);
             setCursor(page.nextCursor);
         } catch (caught: unknown) {
+            readFailure.current = caught;
             if (request === requestRef.current) setError(normalizeRequestError(caught));
         } finally {
-            if (request === requestRef.current) { busyRef.current = false; setBusy(false); }
+            if (request === requestRef.current) { busyRef.current = false; setBusy(false);
+                if (readAgain.current) { readAgain.current = false; void read(); }
+            }
         }
     }, [client]);
+
+    const retryRead = useCoreInvalidation("settings:unity", ["unity"], async () => { await read(); if (readFailure.current !== undefined) throw readFailure.current; });
 
     useEffect(() => {
         if (available && (generation > 0 || externalGeneration > 0)) void read();
@@ -504,7 +513,7 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
             {!available ? <p className="field-hint">{t("Unity installations are unavailable on this connection.")}</p> : (
                 <>
                     {error === undefined ? null : <RequestReminder error={error} title={t("Unity installations could not be loaded.")}>
-                        <Button disabled={busy} onClick={() => void read()} type="button" variant="text">{t("Retry")}</Button>
+                        <Button disabled={busy} onClick={retryRead} type="button" variant="text">{t("Retry")}</Button>
                     </RequestReminder>}
                     <DesktopList columns={[{ key: "version", header: t("Version"), width: "20%" }, { key: "path", header: t("Path"), className: "settings-path" }, { key: "source", header: t("Source"), width: 160 }]} label={t("Unity installations")} minWidth={600} rows={items.map((item) => ({ key: item.installationId, cells: [item.unityVersion, <span title={displayPath(item.executablePath)}>{displayPath(item.executablePath)}</span>, item.sourceKind === "manual" ? t("Manual") : item.sourceKind === "unity_hub" ? t("Unity Hub") : item.sourceKind.replaceAll("_", " ")] }))} />
                     {items.length === 0 && error === undefined ? busy ? <LoadingState title={t("Loading Unity installations…")} /> : <p role="status">{t("No Unity installations registered")}</p> : null}

@@ -76,6 +76,8 @@ test("H4 extension toggle errors use the shared outlet and successful retry does
     await expect(card.getByRole("alert")).toHaveCount(0);
     await expect(page.locator(".reminder-floating")).toContainText("Extension disabled.");
     await expect(card.locator(".reminder-floating")).toHaveCount(0);
+    await page.clock.runFor(500);
+    await expect(card).toBeVisible();
     const after = await card.boundingBox();
     expect(after!.y).toBe(before!.y);
     expect(after!.height).toBe(before!.height);
@@ -269,12 +271,13 @@ test("H4 grant pagination rejects a changed revision without mixing old scopes a
     await expect(allowed(page)).toContainText("Run in background");
     await expect(allowed(page).locator("li")).toHaveCount(1);
     // Another management client revokes the project scope between these pages.
+    await page.evaluate(() => window.coreEvents.hold(true));
     await page.evaluate((extensionId) => window.h4Management.setGrants(extensionId, [{ permission: "background.run", resourceKind: "Extension", resourceId: extensionId }]), H4_ALPHA);
     await allowed(page).getByRole("button", { name: "Load more", exact: true }).click();
     await expectRequestError(modal(page).getByRole("alert"), "revision_conflict");
     await expect(allowed(page)).toHaveCount(0);
     await expect(modal(page).locator(".extension-grants li")).toHaveCount(0);
-    await modal(page).getByRole("button", { name: "Refresh", exact: true }).click();
+    await page.evaluate(() => window.coreEvents.hold(false));
     await expect(allowed(page).locator("li")).toHaveCount(1);
     await expect(allowed(page)).not.toContainText("Read projects");
     await allowed(page).getByRole("button", { name: "Revoke", exact: true }).click();
@@ -296,6 +299,9 @@ test("H4 late permission reads cannot overwrite a reopened dialog or its newer e
         window.h4Management.hold("extensions.permissions.list", false);
     }, H4_ALPHA);
     await openPermissions(page);
+    await expect(allowed(page)).toHaveCount(0);
+    expect(await page.evaluate(() => window.h4Management.pending.filter((request) => request.method === "extensions.permissions.list").length)).toBe(1);
+    await page.evaluate(() => window.h4Management.release("extensions.permissions.list"));
     await expect(allowed(page)).toContainText("Read projects");
     await expect(allowed(page)).not.toContainText("Run in background");
     await page.evaluate((extensionId) => window.h4Management.setGrants(extensionId, []), H4_ALPHA);

@@ -29,6 +29,8 @@ import { SettingsAutosave } from "./settings-autosave";
 import { guiVersion } from "./build-info";
 import { ReminderProvider, RequestReminder } from "./Reminder";
 import { DiagnosticLogProvider } from "./diagnostic-log-ui";
+import { CoreEvents } from "./core-events";
+import { CoreEventsProvider, CoreEventsStatus, useCoreEvents, useCoreInvalidation } from "./core-events-ui";
 
 import {
     AboutPage,
@@ -107,8 +109,10 @@ interface AppProps {
     client?: GuiRpcClient;
 }
 
-export function App({ client = guiRpcClient }: AppProps) {
+export function App({ client: sourceClient = guiRpcClient }: AppProps) {
     const [connectionGeneration, setConnectionGeneration] = useState(0);
+    const events = useMemo(() => new CoreEvents(sourceClient), [sourceClient]);
+    const client = events.client;
     const settingsConnection = useRef({ client, generation: connectionGeneration });
     const settingsAuthority = useRef<SettingsGetResult | undefined>(undefined);
     const settingsWriterRef = useRef<SettingsAutosave | undefined>(undefined);
@@ -286,6 +290,7 @@ export function App({ client = guiRpcClient }: AppProps) {
                         </div>}
             </> : undefined}>
             <DiagnosticLogProvider client={client} enabled={negotiatedCapabilities?.kind === "ready" && negotiatedCapabilities.values.has("diagnostics.log.v1")}>
+            <CoreEventsProvider events={events} enabled={negotiatedCapabilities?.kind === "ready"}>
             <div className="app-shell">
                 <div className="app-body">
                     <PrimaryNavigation
@@ -294,6 +299,7 @@ export function App({ client = guiRpcClient }: AppProps) {
                         navigate={navigate}
                     />
                     <main className="main-content" id="main-content" aria-busy={navigating} tabIndex={-1}>
+                        <CoreEventsStatus />
                         {navigating ? <div className="page-navigation-progress"><LoadingState title={t("Opening page…")} /></div> : null}
                         <div className="route-content" inert={navigating}>
                             <Suspense fallback={<LoadingState title={t("Loading page…")} />}>
@@ -320,7 +326,7 @@ export function App({ client = guiRpcClient }: AppProps) {
                     </div>
                 </MaterialDialog>
             </div>
-            </DiagnosticLogProvider></ReminderProvider>
+            </CoreEventsProvider></DiagnosticLogProvider></ReminderProvider>
         </CapabilityProvider></LocaleProvider>
     );
 }
@@ -374,19 +380,27 @@ interface NavigationItem {
 function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient; current: Route; navigate(path: string): void }) {
     const { t } = useTranslation();
     const operationsCapability = useCapabilityState(capabilities.operations);
+    const events = useCoreEvents();
     const [activeTasks, setActiveTasks] = useState(0);
+    const readCount = useCallback(async () => {
+        if (operationsCapability !== "available") { setActiveTasks(0); return; }
+        const operations = await client.operationsList();
+        setActiveTasks(operations.activeCount);
+    }, [client, operationsCapability]);
+    useCoreInvalidation("operations:count", ["operations"], readCount, operationsCapability === "available");
     useEffect(() => {
+        if (events) return;
         let active = true;
         const operationsRequest = operationsCapability === "available"
             ? client.operationsList()
-            : Promise.resolve({ operations: [] });
+            : Promise.resolve({ operations: [], activeCount: 0 });
         setActiveTasks(0);
         void operationsRequest.then((operations) => {
             if (!active) return;
-            setActiveTasks(operations.operations.filter((operation) => !["succeeded", "failed", "cancelled"].includes(operation.state)).length);
+            setActiveTasks(operations.activeCount);
         }).catch(() => { if (active) setActiveTasks(0); });
         return () => { active = false; };
-    }, [client, current.kind, operationsCapability]);
+    }, [client, events, operationsCapability]);
     return (
         <footer className="navigation-footer">
             <nav aria-label={t("Utilities")}>

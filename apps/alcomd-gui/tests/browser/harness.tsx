@@ -1,3 +1,4 @@
+import { browserCoreEvents, withBrowserCoreEvents } from "./core-events-client";
 import type {
     CandidateChoice,
     PackageCandidateEvidence,
@@ -32,11 +33,14 @@ import { withH5UtilitiesClient } from "./h5-utilities-client";
 import { withH5SettingsClient } from "./h5-settings-client";
 import { ReminderPresentationEvidence, RequestReminderEvidence } from "./RequestReminderEvidence";
 import { BrowserDiagnosticLog } from "./diagnostic-log-client";
+import { enableViewCachePressure } from "./view-cache-pressure";
 
 type CandidateQuery = (client: Pick<GuiRpcClient, "packageQueryProjectCandidates">, request: Parameters<typeof queryCandidates>[1]) => ReturnType<typeof queryCandidates>;
 
 declare global {
     interface Window {
+        fixtureCore: GuiRpcClient;
+        h3ReadError?: string;
         queryCandidates: CandidateQuery;
         packageRequests: Array<{ method: string; params: unknown }>;
         projectSnapshots: ProjectSnapshot[][];
@@ -70,6 +74,16 @@ window.queryCandidates = queryCandidates as CandidateQuery;
 window.packageRequests = [];
 window.projectSnapshots = [];
 window.autoDiscoveryProjects = [];
+const discovered = window.autoDiscoveryProjects;
+window.autoDiscoveryProjects = new Proxy(discovered, {
+    set(target, property, value) {
+        const changed = Reflect.set(target, property, value);
+        if (property !== "length" && value && typeof value.projectId === "string") {
+            queueMicrotask(() => browserCoreEvents.emit("project", value.projectId, "project.registered", value.revision));
+        }
+        return changed;
+    }
+});
 window.projectListReads = 0;
 window.unityRequests = [];
 window.candidateRequests = [];
@@ -78,6 +92,26 @@ window.templateRequests = [];
 window.resourceRequests = [];
 window.h3Requests = [];
 window.h3Operation = { operationId: "00000000-0000-4000-8000-000000000105", kind: "backups.create", state: "running", revision: 3, createdAtMs: 1_700_000_000_000, updatedAtMs: 1_700_000_001_000, progress: { phase: "archiving" } };
+let h3Value = window.h3Operation;
+let h3PublishedRevision = h3Value.revision;
+let h3PublishedState = h3Value.state;
+let h3Queued = false;
+const publishH3 = () => {
+    if (h3Queued) return;
+    h3Queued = true;
+    queueMicrotask(() => {
+        h3Queued = false;
+        if (h3Value.revision <= h3PublishedRevision) h3Value.revision = h3PublishedRevision + 1;
+        const kind = h3Value.state === h3PublishedState ? "operation.progress" : `operation.${h3Value.state}`;
+        h3PublishedRevision = h3Value.revision; h3PublishedState = h3Value.state;
+        browserCoreEvents.emit("operation", h3Value.operationId, kind, h3Value.revision);
+    });
+};
+Object.defineProperty(window, "h3Operation", {
+    configurable: true,
+    get: () => h3Value,
+    set: (value: Operation) => { h3Value = value; publishH3(); }
+});
 window.templatePageCompletions = 0;
 window.heldTemplateReads = 0;
 window.settingsWrites = [];
@@ -99,6 +133,7 @@ const SUPPORTED_CAPABILITIES = [
     RPC_CAPABILITIES.extensionsPermissionsRead,
     "extensions.ui.portable.v1",
     "operations.v1",
+    "events.live.v1",
     "packages.apply.v1",
     "packages.candidates.v1",
     "packages.plan.v1",
@@ -123,6 +158,7 @@ const SUPPORTED_CAPABILITIES = [
 ] as const;
 
 const CAPABILITIES_WITH_OPTIONAL_ACTIONS_MISSING = [
+    "events.live.v1",
     "backups.read.v1",
     RPC_CAPABILITIES.extensionsLifecycle,
     "projects.read.v1",
@@ -138,6 +174,9 @@ const materialEvidence = query.get("material") === "1";
 if (!materialEvidence) window.history.replaceState(null, "", initialRoute);
 
 class DeterministicGuiClient implements GuiRpcClient {
+    subscribeEvents = browserCoreEvents.subscribe;
+    private genericTasks = new Map<string, Operation>();
+    private operationSequence = 0;
     private readonly diagnosticLog = new BrowserDiagnosticLog(query.has("diagnostic-log"), query.has("log-initial-failure"));
     private listExportAttempts = 0;
     private listPreviewReads = 0;
@@ -228,6 +267,7 @@ class DeterministicGuiClient implements GuiRpcClient {
 
     constructor(private readonly mode: HarnessMode) {
         this.userPackageEnrolled = mode === "package-user-source";
+        if (initialRoute.startsWith("/operations") && mode !== "empty" && !query.has("h5-utilities") && !query.has("h4-management")) this.beginOperation();
         window.addEventListener("test-user-details-readable", () => { this.userDetailsUnavailable = false; });
         window.addEventListener("test-user-package-advance", () => { this.userPackageRevision += 1; });
         window.addEventListener("test-resource-repository-advance", () => {
@@ -238,6 +278,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             if (task === undefined) return;
             const state = event.detail.state ?? "succeeded";
             task.operation = { ...task.operation, state, revision: 4, ...(state === "succeeded" ? { result: task.result } : {}) };
+            browserCoreEvents.emit("operation", task.operation.operationId, `operation.${state}`, task.operation.revision);
             if (task.operation.state !== "succeeded") return;
             if (task.template !== undefined) this.importedTemplates = [...this.importedTemplates.filter((item) => item.templateId !== task.template!.templateId), task.template];
             if (task.project !== undefined) this.createdProjects.push(task.project);
@@ -290,58 +331,63 @@ class DeterministicGuiClient implements GuiRpcClient {
         });
     }
 
+    private beginOperation(kind = "packages.apply", knownId?: string) {
+        const operationId = knownId ?? (this.operationSequence++ === 0 ? OPERATION_ID : crypto.randomUUID());
+        const operation: Operation = { ...runningOperation(), operationId, kind, revision: 1 };
+        this.genericTasks.set(operationId, operation);
+        const project = this.pendingProject;
+        const deleting = this.pendingDeleteProjectId;
+        const migration = this.pendingMigrationTarget;
+        browserCoreEvents.emit("operation", operationId, "operation.created", 1);
+        if (!query.has("hold-core-operation")) setTimeout(() => {
+            const state = this.mode === "failed" ? "failed" : this.mode === "cancelled" ? "cancelled" : "succeeded";
+            if (state === "succeeded" && project && !this.createdProjects.some((candidate) => candidate.projectId === project.projectId)) this.createdProjects.push(project);
+            if (state === "succeeded" && deleting) this.deletedProjectIds.add(deleting);
+            if (state === "succeeded" && migration) { this.currentUnityVersion = migration; this.currentProjectRevision++; }
+            const next: Operation = { ...operation, state, revision: 2, updatedAtMs: operation.updatedAtMs + 1000,
+                completedAtMs: operation.updatedAtMs + 1000, progress: { phase: "state_committed" },
+                ...(state === "succeeded" && project ? { result: { projectId: project.projectId, revision: 1 } } : {}),
+                ...(state === "failed" ? { errorCode: "package_archive_invalid" } : {}) };
+            this.genericTasks.set(operationId, next);
+            if (project) browserCoreEvents.emit("project", project.projectId, "project.registered", project.revision);
+            if (deleting) browserCoreEvents.emit("project", deleting, "project.directory_deleted", 3);
+            if (migration) browserCoreEvents.emit("project", PROJECT_ID, "project.unity_changed", this.currentProjectRevision);
+            browserCoreEvents.emit("operation", operationId, `operation.${state}`, next.revision);
+        }, 250);
+        return operationId;
+    }
     stateCheck(): ReturnType<GuiRpcClient["stateCheck"]> {
-        this.operationReads = 0;
-        return this.value({ operationId: OPERATION_ID, replayed: false });
+        return this.value({ operationId: this.beginOperation("state.check"), replayed: false });
     }
 
-    operationsList(cursor?: Parameters<GuiRpcClient["operationsList"]>[0]): ReturnType<GuiRpcClient["operationsList"]> {
+    operationsList(cursor?: Parameters<GuiRpcClient["operationsList"]>[0], activeOnly = false): ReturnType<GuiRpcClient["operationsList"]> {
+        let operations = query.has("h3") ? [window.h3Operation] : query.has("template-tasks")
+            ? [...this.templateTasks.values()].map((task) => task.operation) : [...this.genericTasks.values()];
+        const activeCount = operations.filter((item) => !["succeeded", "failed", "cancelled"].includes(item.state)).length;
+        if (activeOnly) operations = operations.filter((item) => !["succeeded", "failed", "cancelled"].includes(item.state));
         if (query.has("h3")) {
-            window.h3Requests.push({ method: "operations.list", params: { cursor } });
-            return this.value({ operations: [{ ...window.h3Operation, operationId: cursor === undefined ? OPERATION_ID : "00000000-0000-4000-8000-000000000612" }], ...(cursor === undefined && query.has("h3-pages") ? { nextCursor: { createdAtMs: 1_700_000_000_000, operationId: OPERATION_ID } } : {}) });
+            window.h3Requests.push({ method: "operations.list", params: { cursor, activeOnly } });
+            return this.value({ activeCount, operations: [{ ...window.h3Operation, operationId: cursor === undefined ? OPERATION_ID : "00000000-0000-4000-8000-000000000612" }].filter((item) => !activeOnly || !["succeeded", "failed", "cancelled"].includes(item.state)), ...(cursor === undefined && query.has("h3-pages") && !activeOnly ? { nextCursor: { createdAtMs: 1_700_000_000_000, operationId: OPERATION_ID } } : {}) });
         }
-        if (query.has("template-tasks")) return this.value({ operations: [...this.templateTasks.values()].map((task) => task.operation) });
-        return this.value({ operations: this.mode === "empty" ? [] : [runningOperation()] });
+        return this.value({ operations: this.mode === "empty" ? [] : operations, activeCount });
     }
 
     operationGet(operationId: string): ReturnType<GuiRpcClient["operationGet"]> {
         if (query.has("h3")) {
             window.h3Requests.push({ method: "operations.get", params: { operationId } });
+            if (window.h3ReadError !== undefined) return Promise.reject({ code: window.h3ReadError });
             const reads = window.h3Requests.filter((request) => request.method === "operations.get").length;
             if (String(reads) === query.get("h3-read-error-at") || reads <= Number(query.get("h3-read-error-until") ?? "0")) return Promise.reject({ code: "daemon_unavailable" });
-            if (window.h3Operation.state === "succeeded" && this.pendingProject !== undefined && !this.createdProjects.some((item) => item.projectId === this.pendingProject?.projectId)) this.createdProjects.push(this.pendingProject);
             return this.value({ ...window.h3Operation, operationId, ...(window.h3Operation.state === "succeeded" ? { result: this.pendingProject === undefined ? { backupId: BACKUP_ID } : { projectId: this.pendingProject.projectId } } : {}) });
         }
         const task = this.templateTasks.get(operationId);
         if (task !== undefined) {
             window.templateRequests.push({ method: "operations.get", params: { operationId } });
-            this.templateOperationReads += 1;
+            this.templateOperationReads++;
             if (query.has("template-first-read-error") && this.templateOperationReads <= 2) return Promise.reject({ code: "daemon_unavailable" });
             return this.value(task.operation);
         }
-        this.operationReads += 1;
-        const terminal = this.operationReads > 2;
-        const state = this.mode === "failed" ? "failed" : this.mode === "cancelled" ? "cancelled" : terminal ? "succeeded" : "running";
-        if (state === "succeeded" && this.pendingProject !== undefined && !this.createdProjects.some((candidate) => candidate.projectId === this.pendingProject?.projectId)) {
-            this.createdProjects.push(this.pendingProject);
-        }
-        if (state === "succeeded" && this.pendingDeleteProjectId !== undefined) {
-            this.deletedProjectIds.add(this.pendingDeleteProjectId);
-            this.pendingDeleteProjectId = undefined;
-        }
-        if (state === "succeeded" && this.pendingMigrationTarget !== undefined) {
-            this.currentUnityVersion = this.pendingMigrationTarget;
-            this.currentProjectRevision += 1;
-            this.pendingMigrationTarget = undefined;
-        }
-        return this.value({
-            ...runningOperation(),
-            operationId,
-            state,
-            progress: { phase: state === "running" ? "extracting" : "state_committed" },
-            ...(state === "succeeded" && this.pendingProject !== undefined ? { result: { projectId: this.pendingProject.projectId, revision: 1 } } : {}),
-            ...(state === "failed" ? { errorCode: "package_archive_invalid" } : {})
-        });
+        return this.value(this.genericTasks.get(operationId) ?? runningOperation());
     }
 
     operationCancel(operationId: string, expectedRevision: number): ReturnType<GuiRpcClient["operationCancel"]> {
@@ -596,7 +642,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             replayed: false
         });
     }
-    projectApplyCopy(): ReturnType<GuiRpcClient["projectApplyCopy"]> { return this.value({ operationId: "00000000-0000-4000-8000-000000000062", targetProjectId: "00000000-0000-4000-8000-000000000061", replayed: false }); }
+    projectApplyCopy(): ReturnType<GuiRpcClient["projectApplyCopy"]> { return this.value({ operationId: this.beginOperation("projects.copy", "00000000-0000-4000-8000-000000000062"), targetProjectId: "00000000-0000-4000-8000-000000000061", replayed: false }); }
     projectPlanDeleteDirectory(_projectId: string, expectedRevision: number): ReturnType<GuiRpcClient["projectPlanDeleteDirectory"]> {
         return this.value({
             plan: {
@@ -615,7 +661,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
     projectApplyDeleteDirectory(): ReturnType<GuiRpcClient["projectApplyDeleteDirectory"]> {
         this.pendingDeleteProjectId = PROJECT_ID;
-        return this.value({ operationId: "00000000-0000-4000-8000-000000000064", projectId: PROJECT_ID, replayed: false });
+        return this.value({ operationId: this.beginOperation("projects.deleteDirectory", "00000000-0000-4000-8000-000000000064"), projectId: PROJECT_ID, replayed: false });
     }
 
     async repositoriesInspect(source: Parameters<GuiRpcClient["repositoriesInspect"]>[0]): ReturnType<GuiRpcClient["repositoriesInspect"]> {
@@ -840,8 +886,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     packageApplyPlan(): ReturnType<GuiRpcClient["packageApplyPlan"]> {
         window.packageRequests.push({ method: "apply", params: {} });
         if (this.mode === "stale") return Promise.reject({ code: "plan_stale" });
-        this.operationReads = 0;
-        return this.value({ operationId: OPERATION_ID, replayed: false });
+        return this.value({ operationId: this.beginOperation(), replayed: false });
     }
 
     userPackagesList(): ReturnType<GuiRpcClient["userPackagesList"]> {
@@ -963,8 +1008,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
     projectApplyUnityMigration(): ReturnType<GuiRpcClient["projectApplyUnityMigration"]> {
         this.pendingMigrationTarget = "2022.3.23f1";
-        this.operationReads = 0;
-        return this.value({ operationId: OPERATION_ID, replayed: false });
+        return this.value({ operationId: this.beginOperation(), replayed: false });
     }
 
     async templatesList(cursor?: string): ReturnType<GuiRpcClient["templatesList"]> {
@@ -1051,11 +1095,12 @@ class DeterministicGuiClient implements GuiRpcClient {
     private async acceptTemplatePlan(planId: string, action: string) {
         window.templateRequests.push({ method: `templates.apply${action === "create_project" ? "CreateProject" : action === "derive" ? "Derive" : "Import"}`, params: { planId } });
         if (query.has("template-apply-error")) throw { code: "template_plan_stale" };
-        if (!query.has("template-tasks")) { this.operationReads = 0; return this.value({ operationId: OPERATION_ID, replayed: false }); }
+        if (!query.has("template-tasks")) return this.value({ operationId: this.beginOperation("templates." + action), replayed: false });
         const plan = this.templatePlans.get(planId)!;
         const operationId = `00000000-0000-4000-8000-${String(5000 + this.templateTasks.size).padStart(12, "0")}`;
         const resultTemplate = { ...template(), templateId: String(plan.templateId), sourceKind: "user", displayName: action === "derive" ? "Derived fixture" : "Imported fixture", provenance: action === "derive" ? "derived" : "authored", templateVersion: "1.1.0", bundleSha256: NEW_HASH, manifestFingerprint: NEW_HASH, revision: typeof plan.expectedRevision === "number" ? plan.expectedRevision + 1 : 1 };
         this.templateTasks.set(operationId, { operation: { ...runningOperation(), operationId, kind: `templates.${action === "create_project" ? "create-project" : action}` }, result: action === "create_project" ? query.has("template-result-missing") ? {} : { projectId: this.pendingProject!.projectId, revision: 1 } : { templateId: resultTemplate.templateId, revision: resultTemplate.revision }, ...(action === "create_project" ? { project: this.pendingProject } : { template: resultTemplate }) });
+        browserCoreEvents.emit("operation", operationId, "operation.created", 3);
         if (query.has("template-apply-unknown")) throw { code: "daemon_unavailable" };
         if (query.has("hold-template-apply")) await new Promise<void>((resolve) => window.addEventListener("test-template-apply-ready", () => resolve(), { once: true }));
         return this.value({ operationId, replayed: false });
@@ -1064,7 +1109,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     async backupsList(projectId?: string, cursor?: string): ReturnType<GuiRpcClient["backupsList"]> {
         if (query.has("h3")) {
             window.h3Requests.push({ method: "backups.list", params: { projectId, cursor } });
-            if (query.has("h3-list-error") && window.h3Requests.filter((request) => request.method === "backups.list").length <= 2) throw { code: "daemon_unavailable" };
+            if (query.has("h3-list-error") && window.h3Requests.filter((request) => request.method === "backups.list").length === 1) throw { code: "daemon_unavailable" };
             return this.value({ backups: query.has("h3-create") && window.h3Operation.state !== "succeeded" ? [] : [{ ...backup(), backupId: cursor === undefined ? BACKUP_ID : "00000000-0000-4000-8000-000000000611" }], ...(cursor === undefined && query.has("h3-pages") ? { nextCursor: "older-backups" } : {}) });
         }
         if (query.has("holdBackups")) await new Promise<void>((resolve) => window.addEventListener("test-backups-ready", () => resolve(), { once: true }));
@@ -1074,7 +1119,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     backupCreate(projectId: string, expectedRevision: number, compressionMode?: "store" | "fast" | "maximum", excludeVpmPackages?: boolean, includeLibrary?: boolean): ReturnType<GuiRpcClient["backupCreate"]> {
         window.h3Requests.push({ method: "backups.create", params: { projectId, expectedRevision, compressionMode, excludeVpmPackages, includeLibrary } });
         if (query.has("h3-backup-create-error")) return Promise.reject({ code: query.get("h3-backup-create-error") });
-        return this.value({ operationId: OPERATION_ID, backupId: BACKUP_ID, replayed: false });
+        return this.value({ operationId: query.has("h3") ? OPERATION_ID : this.beginOperation("backups.create"), backupId: BACKUP_ID, replayed: false });
     }
     backupPlanRestore(backupId: string, targetParent: string, targetLeaf: string): ReturnType<GuiRpcClient["backupPlanRestore"]> {
         window.h3Requests.push({ method: "backups.planRestore", params: { backupId, targetParent, targetLeaf } });
@@ -1085,18 +1130,18 @@ class DeterministicGuiClient implements GuiRpcClient {
     backupApplyRestore(planId: string): ReturnType<GuiRpcClient["backupApplyRestore"]> {
         window.h3Requests.push({ method: "backups.applyRestore", params: { planId } });
         if (query.has("h3-restore-unknown")) return Promise.reject({ code: "daemon_unavailable" });
-        this.operationReads = 0; return this.value({ operationId: OPERATION_ID, projectId: RESTORED_PROJECT_ID, replayed: false });
+        return this.value({ operationId: query.has("h3") ? OPERATION_ID : this.beginOperation("backups.restore"), projectId: RESTORED_PROJECT_ID, replayed: false });
     }
 
     extensionsList(): ReturnType<GuiRpcClient["extensionsList"]> { return this.value({ extensions: this.mode === "empty" ? [] : [extension(DISCORD_ID), extension(MCP_ID)] }); }
     extensionPermissionsList(extensionId: string): ReturnType<GuiRpcClient["extensionPermissionsList"]> { return this.value({ extensionId, grantRevision: 3, requiredPermissions: ["projects.read"], optionalPermissions: ["background.run"], grants: [] }); }
     extensionGet(extensionId: string): ReturnType<GuiRpcClient["extensionGet"]> { return this.value({ extension: extension(extensionId) }); }
     extensionPlanInstall(): ReturnType<GuiRpcClient["extensionPlanInstall"]> { return this.value({ plan: extensionPlan("install") }); }
-    extensionApplyInstall(): ReturnType<GuiRpcClient["extensionApplyInstall"]> { return this.value({ operationId: OPERATION_ID, replayed: false }); }
+    extensionApplyInstall(): ReturnType<GuiRpcClient["extensionApplyInstall"]> { return this.value({ operationId: this.beginOperation("extensions.install"), replayed: false }); }
     extensionEnable(extensionId: string): ReturnType<GuiRpcClient["extensionEnable"]> { return this.value({ extension: { ...extension(extensionId), desiredState: "enabled" } }); }
     extensionDisable(extensionId: string): ReturnType<GuiRpcClient["extensionDisable"]> { return this.value({ extension: { ...extension(extensionId), desiredState: "installed_disabled" } }); }
     extensionPlanUninstall(): ReturnType<GuiRpcClient["extensionPlanUninstall"]> { return this.value({ plan: extensionPlan("uninstall") }); }
-    extensionApplyUninstall(): ReturnType<GuiRpcClient["extensionApplyUninstall"]> { return this.value({ operationId: OPERATION_ID, replayed: false }); }
+    extensionApplyUninstall(): ReturnType<GuiRpcClient["extensionApplyUninstall"]> { return this.value({ operationId: this.beginOperation("extensions.uninstall"), replayed: false }); }
     extensionSetGrant(): ReturnType<GuiRpcClient["extensionSetGrant"]> { return this.value({ extensionId: DISCORD_ID, grantRevision: 4, state: "granted", replayed: false }); }
     extensionRevokeGrant(): ReturnType<GuiRpcClient["extensionRevokeGrant"]> { return this.value({ extensionId: DISCORD_ID, grantRevision: 4, state: "revoked", replayed: false }); }
 
@@ -1175,10 +1220,12 @@ const managementClient = query.has("h4-management") ? withH4ManagementClient(bas
 const browserClient = query.has("h4-portable") ? withH4PortableClient(managementClient, query) : managementClient;
 const utilitiesClient = query.has("h5-utilities") ? withH5UtilitiesClient(browserClient, query) : browserClient;
 const settingsClient = query.has("h5-settings") ? withH5SettingsClient(utilitiesClient, query) : utilitiesClient;
+window.fixtureCore = withBrowserCoreEvents(settingsClient);
+if (query.has("view-cache-pressure")) enableViewCachePressure();
 ReactDOM.createRoot(root).render(
     <React.StrictMode>
         {query.has("reminder-presentation") ? <ReminderPresentationEvidence mode={query.get("appearance") === "dark" ? "dark" : "light"} /> : query.has("request-reminder") ? <RequestReminderEvidence locale={query.get("locale") === "zh-CN" ? "zh-CN" : query.get("locale") === "ja-JP" ? "ja-JP" : "en-US"} /> : materialEvidence
             ? <MaterialFoundationEvidence />
-            : <App client={settingsClient} />}
+            : <App client={window.fixtureCore} />}
     </React.StrictMode>
 );

@@ -17,7 +17,8 @@ import type {
 } from "@alcomd/sdk";
 import type { UnityHubOpenResult } from "@alcomd/sdk";
 import type { RepositoryListInspection, RepositoryListPreview, RepositoryListExportResult } from "@alcomd/sdk";
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
+import type { GuiEventsRequest, GuiEventMessage, GuiEventSubscription } from "./event-types";
 
 import type {
     ActivityCursor,
@@ -89,10 +90,11 @@ import type {
 } from "./core-models";
 
 export interface GuiRpcClient {
+    subscribeEvents(request: GuiEventsRequest, receive: (message: GuiEventMessage) => void): Promise<GuiEventSubscription>;
     packageQueryProjectCandidates(params: ProjectCandidateRequest): Promise<ProjectCandidatePage>;
     systemStatus(): Promise<SystemStatus>;
     stateCheck(): Promise<OperationAccepted>;
-    operationsList(cursor?: OperationsListResult["nextCursor"]): Promise<OperationsListResult>;
+    operationsList(cursor?: OperationsListResult["nextCursor"], activeOnly?: boolean): Promise<OperationsListResult>;
     operationGet(operationId: string): Promise<Operation>;
     operationCancel(operationId: string, expectedRevision: number): Promise<OperationWriteResult>;
     settingsGet(): Promise<SettingsGetResult>;
@@ -191,6 +193,16 @@ export interface GuiRpcClient {
 }
 
 class TauriGuiRpcClient implements GuiRpcClient {
+    async subscribeEvents(request: GuiEventsRequest, receive: (message: GuiEventMessage) => void): Promise<GuiEventSubscription> {
+        const channel = new Channel<GuiEventMessage>();
+        channel.onmessage = receive;
+        await invokeTyped<void>("gui_events_start", { ...request, channel });
+        return {
+            acknowledge: (batch) => invokeTyped("gui_events_ack", { consumerId: request.consumerId, generation: request.generation,
+                subscriptionId: batch.subscriptionId, batchId: batch.batchId }),
+            close: () => invokeTyped("gui_events_cancel", { consumerId: request.consumerId, generation: request.generation })
+        };
+    }
     selectRepositoryListFile(mode: "open" | "save", fileName?: string): Promise<string | undefined> {
         return invokeTyped<string | null>("gui_select_repository_list_file", { mode, fileName }).then((path) => path ?? undefined);
     }
@@ -214,8 +226,8 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_state_check", { idempotencyKey: crypto.randomUUID() });
     }
 
-    operationsList(cursor?: OperationsListResult["nextCursor"]): Promise<OperationsListResult> {
-        return invokeTyped("gui_operations_list", { params: { cursor, limit: 100 } });
+    operationsList(cursor?: OperationsListResult["nextCursor"], activeOnly = false): Promise<OperationsListResult> {
+        return invokeTyped("gui_operations_list", { params: { cursor, limit: 100, activeOnly } });
     }
 
     operationGet(operationId: string): Promise<Operation> {

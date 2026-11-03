@@ -8,6 +8,7 @@ import { LoadingState } from "./LoadingState";
 import { capabilities, useCapability } from "./capabilities";
 import { displayPath } from "./display-path";
 import { useTranslation, type Translate } from "./i18n";
+import { useCoreEvents, useCoreInvalidation } from "./core-events-ui";
 
 export function hasPermissionRequests(value: { requiredPermissions?: unknown; optionalPermissions?: unknown }): boolean {
     return [value.requiredPermissions, value.optionalPermissions].every((items) => Array.isArray(items)
@@ -43,6 +44,9 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
     const canWrite = useCapability(capabilities.extensionsPermissions);
     const canReadProjects = useCapability(capabilities.projectsRead);
     const reminder = useReminder();
+    const events = useCoreEvents();
+    const readVersion = useRef(0);
+    const projectReadVersion = useRef(0);
     const [generation, setGeneration] = useState(0);
     const [value, setValue] = useState<ExtensionPermissionsListResult>();
     const [projects, setProjects] = useState<ProjectSnapshot[]>([]);
@@ -63,48 +67,71 @@ export function ExtensionPermissions({ client, extensionId, onBusyChange, onChan
     const scope = owner.current;
     const current = () => scope.active && owner.current === scope;
     const reload = () => { scope.active = false; setGeneration((version) => version + 1); };
+    const readPermissions = async () => {
+        if (!canRead || !current()) return;
+        const version = ++readVersion.current;
+        try {
+            const load = async () => {
+                let result = await client.extensionPermissionsList(extensionId);
+                if (result.extensionId !== extensionId || !hasPermissionRequests(result)) throw { code: "internal_error" };
+                const target = value?.grants.length ?? 0;
+                while (result.nextCursor !== undefined && result.grants.length < target) {
+                    const page = await client.extensionPermissionsList(extensionId, result.nextCursor);
+                    if (page.extensionId !== extensionId || page.grantRevision !== result.grantRevision) throw { code: "revision_conflict" };
+                    result = { ...page, grants: [...result.grants, ...page.grants] };
+                }
+                return result;
+            };
+            const result = events ? await events.consistentRead(["extensions"], load) : await load();
+            if (current() && version === readVersion.current) { setValue(result); setError(undefined); }
+        } catch (caught: unknown) {
+            if (current() && version === readVersion.current) setError(requestError(caught));
+            throw caught;
+        } finally { if (current() && version === readVersion.current) setLoading(false); }
+    };
+    useCoreInvalidation("extension-permissions:" + extensionId, ["extensions"], readPermissions);
 
     useEffect(() => {
-        let active = true;
         scope.active = true;
         setValue(undefined); setError(undefined); setLoading(true); setMoreLoading(false); setWriting(false); setWriteUnknown(false);
-        const read = async () => {
-            try {
-                const result = await client.extensionPermissionsList(extensionId);
-                if (result.extensionId !== extensionId || !hasPermissionRequests(result)) throw { code: "internal_error" };
-                if (active && scope.active && owner.current === scope) setValue(result);
-            } catch (caught: unknown) {
-                if (active && scope.active && owner.current === scope) setError(requestError(caught));
-            } finally { if (active && scope.active && owner.current === scope) setLoading(false); }
-        };
-        if (canRead) void read(); else setLoading(false);
-        return () => { active = false; scope.active = false; };
+        if (canRead) void readPermissions().catch(() => {}); else setLoading(false);
+        return () => { scope.active = false; readVersion.current += 1; };
     }, [canRead, client, extensionId, scope]);
 
-    useEffect(() => {
-        let active = true;
-        setProjects([]);
-        setProjectsError(undefined); setProjectsLoading(canReadProjects);
-        if (canReadProjects) void (async () => {
+    const readProjects = async () => {
+        if (!canReadProjects || !current()) return;
+        const version = ++projectReadVersion.current;
+        try {
+            const load = async () => {
             const all: ProjectSnapshot[] = [];
             let cursor: Parameters<GuiRpcClient["projectsList"]>[0];
             do {
                 const page = await client.projectsList(cursor);
-                if (!active) return;
                 all.push(...page.projects); cursor = page.nextCursor;
             } while (cursor !== undefined);
-            if (active) setProjects(all);
-        })().catch((caught: unknown) => { if (active) setProjectsError(requestError(caught)); })
-            .finally(() => { if (active) setProjectsLoading(false); });
-        return () => { active = false; };
+                return all;
+            };
+            const all = events ? await events.consistentRead(["projects"], load) : await load();
+            if (current() && version === projectReadVersion.current) { setProjects(all); setProjectsError(undefined); }
+        } catch (caught: unknown) {
+            if (current() && version === projectReadVersion.current) setProjectsError(requestError(caught));
+            throw caught;
+        } finally { if (current() && version === projectReadVersion.current) setProjectsLoading(false); }
+    };
+    useCoreInvalidation("extension-permission-projects:" + extensionId, ["projects"], readProjects);
+    useEffect(() => {
+        setProjects([]); setProjectsError(undefined); setProjectsLoading(canReadProjects);
+        if (canReadProjects) void readProjects().catch(() => {});
+        return () => { projectReadVersion.current += 1; };
     }, [canReadProjects, client, extensionId, generation]);
 
     const more = async () => {
         if (value?.nextCursor === undefined || scope.pending || !current()) return;
+        const version = readVersion.current;
         scope.pending = true; setMoreLoading(true); setError(undefined);
         try {
             const page = await client.extensionPermissionsList(extensionId, value.nextCursor);
-            if (!current()) return;
+            if (!current() || version !== readVersion.current) return;
             if (page.extensionId !== extensionId || page.grantRevision !== value.grantRevision) throw { code: "revision_conflict" };
             setValue({ ...page, grants: [...value.grants, ...page.grants] });
         } catch (caught: unknown) {

@@ -11,6 +11,8 @@ import { useReconnect } from "./capabilities";
 import type { RpcError } from "@alcomd/sdk";
 import { GlobalReminder, RequestReminder } from "./Reminder";
 import { normalizeRequestError } from "./request-errors";
+import { useCoreEvents, useWorkspaceInvalidation } from "./core-events-ui";
+import type { ChangeScope } from "./core-events";
 
 interface UtilityWorkspaceProps<T> {
     title: string;
@@ -24,6 +26,7 @@ interface UtilityWorkspaceProps<T> {
         render(value: T, refresh: () => void): ReactNode;
     };
     tools?(value: T, refresh: () => void): ReactNode;
+    changes?: readonly ChangeScope[];
 }
 
 interface WorkspaceState<T> {
@@ -37,13 +40,17 @@ export function UtilityWorkspace<T>({
     title,
     navigation,
     back,
-    load,
+    load: sourceLoad,
     children,
     action,
-    tools
+    tools,
+    changes = []
 }: UtilityWorkspaceProps<T>) {
     const { t } = useTranslation();
     const reconnect = useReconnect();
+    const events = useCoreEvents();
+    const scopeKey = changes.join("|");
+    const load = useCallback(() => events && scopeKey ? events.consistentRead(scopeKey.split("|"), sourceLoad) : sourceLoad(), [events, scopeKey, sourceLoad]);
     const initial = useInitialPageRead(load);
     const initialLoader = useRef(load).current;
     const [state, setState] = useState<WorkspaceState<T>>(() => ({
@@ -54,11 +61,14 @@ export function UtilityWorkspace<T>({
     const [actionOpen, setActionOpen] = useState(false);
     const pendingRef = useRef(initial === undefined);
     const queuedRefreshRef = useRef(false);
+    const waiters = useRef<Array<{ resolve(): void; reject(error: unknown): void }>>([]);
+    const readError = useRef<unknown>(undefined);
 
     useEffect(() => {
         if (initial !== undefined && generation === 0 && load === initialLoader) return;
         let active = true;
         pendingRef.current = true;
+        readError.current = undefined;
         queuedRefreshRef.current = false;
         setState((current) => ({
             loader: load,
@@ -71,6 +81,7 @@ export function UtilityWorkspace<T>({
             setState({ loader: load, value, pending: queuedRefreshRef.current });
         }).catch((caught: unknown) => {
             if (!active) return;
+            readError.current = caught;
             setState((current) => ({ ...current, pending: queuedRefreshRef.current, error: normalizeRequestError(caught) }));
         }).finally(() => {
             if (!active) return;
@@ -79,6 +90,7 @@ export function UtilityWorkspace<T>({
                 setGeneration((current) => current + 1);
             } else {
                 pendingRef.current = false;
+                waiters.current.splice(0).forEach((waiter) => readError.current === undefined ? waiter.resolve() : waiter.reject(readError.current));
             }
         });
 
@@ -96,14 +108,21 @@ export function UtilityWorkspace<T>({
         setState((current) => ({ ...current, pending: true, error: undefined }));
         setGeneration((current) => current + 1);
     }, []);
+    const refreshAndWait = useCallback(() => new Promise<void>((resolve, reject) => {
+        waiters.current.push({ resolve, reject });
+        refresh();
+    }), [refresh]);
+    const retryRead = useWorkspaceInvalidation(changes, refreshAndWait);
+    useEffect(() => () => { waiters.current.splice(0).forEach((waiter) => waiter.resolve()); }, []);
 
     // A new route's loader must never display the previous route's data.
     const value = state.loader === load ? state.value : undefined;
     const error = state.loader === load ? state.error : undefined;
     const pending = state.loader !== load || state.pending;
+    useEffect(() => { if (value !== undefined) events?.noteDisplayedData(); }, [events, value]);
     const retry = () => {
         if (error?.code === "daemon_unavailable") reconnect?.();
-        refresh();
+        if (events) retryRead(); else refresh();
     };
 
     const failure = error === undefined ? null : <RequestReminder inline={value === undefined} error={error}>

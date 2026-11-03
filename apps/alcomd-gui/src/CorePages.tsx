@@ -4,6 +4,8 @@ import { productFamily } from "@alcomd/ui";
 import { guiVersion } from "./build-info";
 import { ActivityLogItems, activityItemKey } from "./ActivityLogItems";
 import { OperationItems } from "./OperationItems";
+import { useCoreEvents, useCoreInvalidation, useViewState, useViewReadingPosition, useWorkspaceInvalidation } from "./core-events-ui";
+import type { ChangeScope } from "./core-events";
 import type { SupportedLocale, Translate } from "./i18n-types";
 import type { CandidateCursor, PackageCandidateEvidence, PackageCandidateSummary, RpcError } from "@alcomd/sdk";
 import "./LogsWorkspace.css";
@@ -101,12 +103,17 @@ interface ResourcePageProps<T> {
     children(value: T, refresh: () => void, refreshing: boolean, error?: RpcError): ReactNode;
     empty?(value: T): boolean;
     emptyTitle?: string;
+    changes?: readonly ChangeScope[];
 }
 
-function ResourcePage<T>({ load, children, empty, emptyTitle = "Nothing here yet" }: ResourcePageProps<T>) {
+function ResourcePage<T>({ load: sourceLoad, children, empty, emptyTitle = "Nothing here yet", changes = [] }: ResourcePageProps<T>) {
     const { t, locale } = useTranslation();
+    const events = useCoreEvents();
+    const scopeKey = changes.join("|");
+    const load = useCallback(() => events && scopeKey ? events.consistentRead(scopeKey.split("|"), sourceLoad) : sourceLoad(), [events, scopeKey, sourceLoad]);
     const initial = useInitialPageRead(load);
     const initialLoader = useRef(load).current;
+    const waiters = useRef<Array<{ resolve(): void; reject(error: unknown): void }>>([]);
     const [state, setState] = useState<{
         value?: T;
         error?: RpcError;
@@ -128,9 +135,11 @@ function ResourcePage<T>({ load, children, empty, emptyTitle = "Nothing here yet
         void load().then((value) => {
             if (active) {
                 setState((current) => ({ ...current, value, error: undefined, loading: false, refreshing: false }));
+                waiters.current.splice(0).forEach((waiter) => waiter.resolve());
             }
         }).catch((caught: unknown) => {
             if (active) {
+                waiters.current.splice(0).forEach((waiter) => waiter.reject(caught));
                 setState((current) => ({
                     ...current,
                     error: safeError(t, locale, caught),
@@ -142,7 +151,11 @@ function ResourcePage<T>({ load, children, empty, emptyTitle = "Nothing here yet
         return () => { active = false; };
     }, [load, state.generation, initialLoader, initial]);
 
-    const refresh = () => setState((current) => ({ ...current, generation: current.generation + 1 }));
+    const readAgain = () => setState((current) => ({ ...current, generation: current.generation + 1 }));
+    const retryRead = useWorkspaceInvalidation(changes, () => new Promise<void>((resolve, reject) => { waiters.current.push({ resolve, reject }); readAgain(); }));
+    const refresh = () => { if (events) retryRead(); else readAgain(); };
+    useEffect(() => { if (state.value !== undefined) events?.noteDisplayedData(); }, [events, state.value]);
+    useEffect(() => () => { waiters.current.splice(0).forEach((waiter) => waiter.resolve()); }, []);
     if (state.loading) {
         return <RouteState kind="loading" title={t("Loading")} detail={t("Reading the current ALCOMD state…")} />;
     }
@@ -198,11 +211,14 @@ export function HomePage({ client, navigate }: PageProps) {
 const projectsViewStorageKey = "alcomd.gui.projects.view";
 
 export function ProjectsPage({ client, navigate }: PageProps) {
+    const coreEvents = useCoreEvents();
+    const root = useRef<HTMLElement>(null);
     const { t, locale } = useTranslation();
     const canRegister = useCapability(capabilities.projectsRegistry);
     const canCreate = useCapability(capabilities.templatesCreateProject);
     const canRestore = useCapability(capabilities.backupsRestore);
     const load = useCallback(async () => {
+        const read = async () => {
         const projects: ProjectSnapshot[] = [];
         let cursor: RegistryCursor | undefined;
         do {
@@ -211,7 +227,9 @@ export function ProjectsPage({ client, navigate }: PageProps) {
             cursor = value.nextCursor;
         } while (cursor !== undefined);
         return projects;
-    }, [client]);
+        };
+        return coreEvents ? coreEvents.consistentRead(["projects"], read) : read();
+    }, [client, coreEvents]);
     const initial = use(usePageReadPromise("primary", load));
     const [state, setState] = useState<{
         error?: RpcError;
@@ -219,9 +237,9 @@ export function ProjectsPage({ client, navigate }: PageProps) {
         projects: ProjectSnapshot[];
     }>(() => ({ loading: false, projects: initial.kind === "ready" ? initial.value : [],
         error: initial.kind === "error" ? safeError(t, locale, initial.error) : undefined }));
-    const [search, setSearch] = useState("");
-    const [sort, setSort] = useState("modified");
-    const [descending, setDescending] = useState(true);
+    const [search, setSearch] = useViewState("projects", "search", "");
+    const [sort, setSort] = useViewState("projects", "sort", "modified");
+    const [descending, setDescending] = useViewState("projects", "descending", true);
     const [view, setView] = useState<"list" | "grid">(() => {
         try {
             return window.localStorage.getItem(projectsViewStorageKey) === "grid" ? "grid" : "list";
@@ -240,6 +258,8 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     const createButtonRef = useRef<HTMLElement>(null);
     const listReadGeneration = useRef(0);
     const refreshingList = useRef(false);
+    const queuedList = useRef(false);
+    const listError = useRef<unknown>(undefined);
     useEffect(() => () => { listReadGeneration.current += 1; }, [client]);
 
     const toggleView = () => {
@@ -253,28 +273,28 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     };
 
     const refresh = useCallback(async () => {
-        if (refreshingList.current) return;
+        if (refreshingList.current) { queuedList.current = true; listReadGeneration.current++; return; }
         refreshingList.current = true;
+        listError.current = undefined;
         const request = ++listReadGeneration.current;
         try {
             const projects = await load();
             if (request === listReadGeneration.current) setState({ loading: false, projects });
         } catch (caught: unknown) {
             if (request === listReadGeneration.current) {
+                listError.current = caught;
                 const failure = safeError(t, locale, caught);
                 setState((current) => ({ ...current, error: current.error?.code === failure.code ? current.error : failure, loading: false }));
             }
         } finally {
             refreshingList.current = false;
+            if (queuedList.current) { queuedList.current = false; void refresh(); }
         }
     }, [load]);
 
-    useEffect(() => {
-        const update = () => { if (document.visibilityState === "visible") void refresh(); };
-        const timer = window.setInterval(update, 3_000);
-        document.addEventListener("visibilitychange", update);
-        return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", update); };
-    }, [refresh]);
+    const retryProjects = useCoreInvalidation("projects:list", ["projects"], async () => { await refresh(); if (listError.current !== undefined) throw listError.current; });
+    useViewReadingPosition("projects", root, state.projects);
+    useEffect(() => { coreEvents?.noteDisplayedData(); coreEvents?.writeView("projects", state.projects, state.projects.length); }, [coreEvents, state.projects]);
 
     const projects = [...state.projects]
         .filter((project) => projectName(t, locale, project).toLocaleLowerCase().includes(search.toLocaleLowerCase()))
@@ -336,7 +356,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     };
 
     return (
-        <section className="projects-page" aria-busy={state.loading}>
+        <section className="projects-page" aria-busy={state.loading} ref={root}>
             <PageHeader className="projects-toolbar" title={t(navigationLabels.projects)}>
                 <SearchField className="projects-search" label={t("Search projects")} onInput={setSearch} placeholder={t("Search...")} value={search} />
                 <Button onClick={toggleView} type="button" variant="text">
@@ -375,8 +395,8 @@ export function ProjectsPage({ client, navigate }: PageProps) {
             ) : null}
             <div className="projects-content">
                 {state.loading ? <RouteState kind="loading" title={t("Loading projects")} /> : null}
-                {state.error === undefined ? null : state.projects.length === 0 ? <ErrorState error={state.error} retry={() => void refresh()} />
-                    : <GlobalReminder><RequestReminder error={state.error} title={t("Refresh failed: ")}><Button onClick={() => void refresh()} type="button" variant="text">{t("Retry")}</Button></RequestReminder></GlobalReminder>}
+                {state.error === undefined ? null : state.projects.length === 0 ? <ErrorState error={state.error} retry={retryProjects} />
+                    : <GlobalReminder><RequestReminder error={state.error} title={t("Refresh failed: ")}><Button onClick={retryProjects} type="button" variant="text">{t("Retry")}</Button></RequestReminder></GlobalReminder>}
                 {!state.loading && state.error === undefined && projects.length === 0 ? (
                     <section className="projects-empty" role="status">
                         <h2>{search.length === 0 ? t("No registered projects") : t("No matching projects")}</h2>
@@ -526,18 +546,6 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
             setRemovalFailure({ message: t("Unable to delete project directory: {value0}", { value0: next.errorCode === undefined ? humanize(t, next.state) : t(requestErrorMessage(next.errorCode)) }), error: next.errorCode === undefined ? undefined : { code: next.errorCode, message: "", diagnosticId: next.diagnosticId } });
         }
     }, [onChanged, onRemoved, reminder.success, t]);
-    useEffect(() => {
-        if (deleteOperation === undefined || !["queued", "running", "recovering", "cancelling", "interrupted"].includes(deleteOperation.state)) return;
-        let active = true;
-        const timer = window.setTimeout(() => {
-            void client.operationGet(deleteOperation.operationId).then((next) => {
-                if (active) observeDeletion(next);
-            }).catch((caught: unknown) => {
-                if (active) setRemovalFailure({ error: safeError(t, locale, caught), message: t("Unable to follow project deletion: {value0}", { value0: t(requestErrorMessage(safeError(t, locale, caught).code)) }) });
-            });
-        }, 250);
-        return () => { active = false; window.clearTimeout(timer); };
-    }, [client, deleteOperation, observeDeletion]);
     if (projectId === undefined) return null;
 
     const unregister = async () => {
@@ -679,7 +687,12 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
                     <p className="project-delete-path"><code>{displayPath(deletePlan.canonicalRootPath)}</code></p>
                     <p>{t("Unity writer observation: ")}<strong>{humanize(t, deletePlan.writerEvidence.state)}</strong>.</p>
                     <TextField aria-label={t("Confirm project directory name")} label={t("Type {value0} to confirm", { value0: deletePlan.normalizedLeaf })} onInput={setDeleteConfirmation} required value={deleteConfirmation} />
-                    {deleteOperation === undefined ? null : <p>{t("Operation: ")}<code>{deleteOperation.operationId}</code> · {humanize(t, deleteOperation.state)}</p>}
+                    {deleteOperation === undefined ? null : <>
+                        <p>{t("Operation: ")}<code>{deleteOperation.operationId}</code> · {humanize(t, deleteOperation.state)}</p>
+                        <OperationFollow client={client} operationId={deleteOperation.operationId} onSnapshot={setDeleteOperation} onTerminal={observeDeletion} onReadError={(error) => {
+                            if (error) setRemovalFailure({ error, message: t("Unable to follow project deletion: {value0}", { value0: t(requestErrorMessage(error.code)) }) });
+                        }}>{() => null}</OperationFollow>
+                    </>}
                     <div className="dialog-actions">
                         <Button disabled={deleting} onClick={() => { setDeletePlan(undefined); setDeleteConfirmation(""); }} type="button" variant="text">{t("Back")}</Button>
                         <Button className="material-button--danger" disabled={deleting || deleteConfirmation !== deletePlan.normalizedLeaf} onClick={() => void applyDelete()} type="button" variant="text">
@@ -726,23 +739,6 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
         setTargetLeaf(t("{value0} Copy", { value0: projectName(t, locale, project) }));
     }, [open, project]);
 
-    useEffect(() => {
-        if (operation === undefined || !["queued", "running", "recovering", "cancelling", "interrupted"].includes(operation.state)) return;
-        let active = true;
-        const timer = window.setTimeout(() => {
-            void client.operationGet(operation.operationId).then((next) => {
-                if (!active) return;
-                setOperation(next);
-                if (next.state === "succeeded" && plan !== undefined) onCompleted(plan.targetProjectId);
-            }).catch((caught: unknown) => {
-                if (active) setError(safeError(t, locale, caught));
-            });
-        }, 300);
-        return () => {
-            active = false;
-            window.clearTimeout(timer);
-        };
-    }, [client, onCompleted, operation, plan]);
 
     const chooseTargetParent = async () => {
         setBusy(true);
@@ -828,6 +824,9 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
                     </>
                 ) : (
                     <>
+                        <OperationFollow client={client} operationId={operation.operationId} onSnapshot={setOperation} onReadError={setError} onTerminal={(next) => {
+                            if (next.state === "succeeded" && plan !== undefined) onCompleted(plan.targetProjectId);
+                        }}>{() => null}</OperationFollow>
                         <p role="status">{operation.progress?.phase === undefined ? t("Copy {state}.", { state: humanize(t, operation.state) }) : t("Copy {state}: {phase}.", { state: humanize(t, operation.state), phase: humanize(t, operation.progress.phase) })}</p>
                         <div className="dialog-actions">
                             {!terminal ? <Button disabled={busy} onClick={() => void cancel()} type="button" variant="text">{t("Cancel copy")}</Button> : null}
@@ -1457,7 +1456,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
         reload();
     };
     return (
-        <ResourcePage load={load}>{({ project, catalog, installations, launchOptions, repositories, settings, candidates, candidateError, sourceRegistry, sourceSelectionKey }, refresh, refreshing, refreshError) => {
+        <ResourcePage load={load} changes={["projects", "repositories", "user-packages", "unity"]}>{({ project, catalog, installations, launchOptions, repositories, settings, candidates, candidateError, sourceRegistry, sourceSelectionKey }, refresh, refreshing, refreshError) => {
             const workspaceRows = packageWorkspaceRows(project, catalog, candidates?.items, sourceRegistry);
             const currentEvidence = candidates !== undefined && sourceSelectionKey === JSON.stringify(sourceSelections) && !evidenceInvalid && !refreshing && refreshError === undefined;
             const catalogReady = currentEvidence && candidates.catalogComplete && !packageMutationBusy;
@@ -1528,7 +1527,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                         </nav>
                     </PageHeader>
                     <section aria-labelledby="packages-heading" className="package-workspace-surface">
-                        <header className="package-workspace-toolbar">
+                        <header className="alcomd-filter-bar package-workspace-toolbar">
                             <h2 id="packages-heading">{t("Manage packages")}</h2>
                              <RefreshButton className="package-refresh-action" disabled={!canManageRepositories || refreshing || repositoryRefresh?.running === true} onClick={() => void refreshRepositories(refresh)} refreshing={repositoryRefresh?.running === true} refreshingLabel={t("Refreshing packages")} title={capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry, t) ?? t("Refresh packages")} />
                              <SearchField className="package-workspace-search" label={t("Search packages")} onInput={setSearch} placeholder={t("Search...")} value={search} />
@@ -1648,7 +1647,7 @@ export function RepositoriesPage({ client, navigate }: PageProps) {
     const { t, locale } = useTranslation();
     const load = useCallback(() => listAllRepositories(client), [client]);
     const [selected, setSelected] = useState<RepositorySnapshot>();
-    return <UtilityWorkspace title={t(navigationLabels.resources)} load={load} navigation={<ResourceNavigation current="/repositories" navigate={navigate} />} tools={(_, refresh) => <RepositoryToolbar client={client} onChanged={refresh} />}>
+    return <UtilityWorkspace changes={["repositories"]} title={t(navigationLabels.resources)} load={load} navigation={<ResourceNavigation current="/repositories" navigate={navigate} />} tools={(_, refresh) => <RepositoryToolbar client={client} onChanged={refresh} />}>
         {(repositories, refresh) => <>
             {repositories.length === 0 ? <RouteState kind="empty" title={t("No repositories registered")} /> : <DesktopList columns={[{ key: "repository", header: t("Repository"), width: "34%" }, { key: "source", header: t("Source") }, { key: "actions", header: t("Actions"), width: 280 }]} label={t("Repositories")} minWidth={640} rows={repositories.map((repository) => ({ key: repository.repositoryId ?? sourceText(t, locale, repository), cells: [<strong>{repository.name ?? repository.declaredId ?? t("Repository")}</strong>, <span title={sourceText(t, locale, repository)}>{sourceText(t, locale, repository)}</span>, <div className="card-actions"><IconButton disabled={repository.repositoryId === undefined} label={t("Browse packages")} onClick={() => setSelected(repository)} title={t("Browse packages")} type="button"><Icon asset={packagesIcon} /></IconButton><RepositoryActions client={client} onChanged={refresh} repository={repository} /></div>] }))} />}
             {selected?.repositoryId === undefined ? null : <Dialog wide open title={selected.name ?? t("Repository packages")} onClose={() => setSelected(undefined)}>
@@ -1706,7 +1705,7 @@ export function UserPackagesPage({ client, navigate }: PageProps) {
     const load = useCallback(() => listAllUserPackages(client), [client]);
     if (capabilityState === "checking") return <Page title={t(navigationLabels.resources)}><ResourceNavigation current="/user-packages" navigate={navigate} /><RouteState kind="loading" title={t("Checking capability")} /></Page>;
     if (capabilityState === "unavailable") return <Page title={t(navigationLabels.resources)}><ResourceNavigation current="/user-packages" navigate={navigate} /><RouteState kind="error" title={t("Feature unavailable")} detail={t("{capability} was not negotiated by the connected daemon.", { capability: capabilities.packagesUserPackages })} /></Page>;
-    return <UtilityWorkspace title={t(navigationLabels.resources)} load={load} navigation={<ResourceNavigation current="/user-packages" navigate={navigate} />} tools={(_, refresh) => <UserPackageEnroll client={client} onChanged={refresh} />}>{(packages, refresh) => <UserPackageManager client={client} onChanged={refresh} packages={packages} />}</UtilityWorkspace>;
+    return <UtilityWorkspace changes={["user-packages"]} title={t(navigationLabels.resources)} load={load} navigation={<ResourceNavigation current="/user-packages" navigate={navigate} />} tools={(_, refresh) => <UserPackageEnroll client={client} onChanged={refresh} />}>{(packages, refresh) => <UserPackageManager client={client} onChanged={refresh} packages={packages} />}</UtilityWorkspace>;
 }
 
 function UserPackageEnroll({ client, onChanged }: { client: GuiRpcClient; onChanged(): void }) {
@@ -1826,7 +1825,7 @@ function UserPackageDetails({ client, userPackageId }: { client: GuiRpcClient; u
 export function RepositoryDetailPage({ client, navigate, repositoryId }: PageProps & { repositoryId: string }) {
     const { t, locale } = useTranslation();
     const load = useCallback(async () => Promise.all([client.repositoryGet(repositoryId), client.repositoryPackages(repositoryId)]), [client, repositoryId]);
-    return <UtilityWorkspace title={t("Repository")} back={<BackTo label={t("Repositories")} navigate={navigate} path="/repositories" />} load={load}>{([detail, catalog], refresh) => <><dl className="detail-grid"><Detail label={t("Name")} value={detail.repository.name ?? t("Unnamed")} /><Detail label={t("Source")} value={sourceText(t, locale, detail.repository)} /><Detail label={t("Revision")} value={String(detail.repository.revision ?? "—")} /><Detail label={t("Issues")} value={String(detail.repository.issues.length)} /></dl><h2>{t("Packages")}</h2><PagedItems initialItems={catalog.packages} initialCursor={catalog.nextCursor} loadMore={async (cursor) => { const next = await client.repositoryPackages(repositoryId, cursor); return { items: next.packages, nextCursor: next.nextCursor }; }}>{(items) => <DataTable headers={[t("Package"), t("Version"), t("Status")]} rows={items.map((item) => [item.displayName ?? item.packageId, item.version, item.yanked ? t("Yanked") : t("Available")])} />}</PagedItems><ActionDisclosure title={t("Manage repository")}><RepositoryActions client={client} onChanged={refresh} repository={detail.repository} /></ActionDisclosure></>}</UtilityWorkspace>;
+    return <UtilityWorkspace changes={["repositories"]} title={t("Repository")} back={<BackTo label={t("Repositories")} navigate={navigate} path="/repositories" />} load={load}>{([detail, catalog], refresh) => <><dl className="detail-grid"><Detail label={t("Name")} value={detail.repository.name ?? t("Unnamed")} /><Detail label={t("Source")} value={sourceText(t, locale, detail.repository)} /><Detail label={t("Revision")} value={String(detail.repository.revision ?? "—")} /><Detail label={t("Issues")} value={String(detail.repository.issues.length)} /></dl><h2>{t("Packages")}</h2><PagedItems initialItems={catalog.packages} initialCursor={catalog.nextCursor} loadMore={async (cursor) => { const next = await client.repositoryPackages(repositoryId, cursor); return { items: next.packages, nextCursor: next.nextCursor }; }}>{(items) => <DataTable headers={[t("Package"), t("Version"), t("Status")]} rows={items.map((item) => [item.displayName ?? item.packageId, item.version, item.yanked ? t("Yanked") : t("Available")])} />}</PagedItems><ActionDisclosure title={t("Manage repository")}><RepositoryActions client={client} onChanged={refresh} repository={detail.repository} /></ActionDisclosure></>}</UtilityWorkspace>;
 }
 
 export function TemplatesPage({ client, navigate }: PageProps) {
@@ -1841,7 +1840,7 @@ export function TemplatesPage({ client, navigate }: PageProps) {
         setSelection({ action, key: ++session.current, template, origin: fallbackOrigin });
     };
     const load = useCallback(() => client.templatesList(), [client]);
-    return <UtilityWorkspace title={t(navigationLabels.resources)} load={load} navigation={<ResourceNavigation current="/templates" navigate={navigate} />} tools={() => <TemplateCreateActions client={client} operations={operations} primaryRef={createButtonRef} />}>
+    return <UtilityWorkspace changes={["templates"]} title={t(navigationLabels.resources)} load={load} navigation={<ResourceNavigation current="/templates" navigate={navigate} />} tools={() => <TemplateCreateActions client={client} operations={operations} primaryRef={createButtonRef} />}>
         {(value, refresh) => <><PagedItems initialItems={value.templates} initialCursor={value.nextCursor} loadMore={async (cursor) => {
             const next = await client.templatesList(cursor);
             return { items: next.templates, nextCursor: next.nextCursor };
@@ -1872,13 +1871,13 @@ export function TemplateDetailPage({ client, navigate, templateId }: PageProps &
     const session = useRef(0);
     useEffect(() => { setSelection(undefined); }, [client]);
     const load = useCallback(() => client.templateGet(templateId), [client, templateId]);
-    return <UtilityWorkspace title={t("Template detail")} back={<BackTo label={t("Templates")} navigate={navigate} path="/templates" />} load={load}>{({ template }, refresh) => <><dl className="detail-grid"><Detail label={t("Name")} value={template.displayName} /><Detail label={t("Version")} value={template.templateVersion} /><Detail label={t("Source")} value={humanize(t, template.sourceKind)} /><Detail label={t("Revision")} value={String(template.revision)} /><Detail label={t("Provenance")} value={template.provenance} /><Detail label={t("Favorite")} value={template.favorite ? t("Yes") : t("No")} /></dl><TemplateActions client={client} onAction={(action, origin) => setSelection({ action, key: ++session.current, template, origin })} onChanged={refresh} template={template} />{selection === undefined ? null : <TemplateActionDialog client={client} key={selection.key} onChanged={refresh} onClose={() => setSelection((current) => current?.key === selection.key ? { ...current, closed: true } : current)} operations={operations} selection={selection} />}{operations.follow(refresh, (projectId) => navigate(`/projects/${projectId}`))}</>}</UtilityWorkspace>;
+    return <UtilityWorkspace changes={["templates"]} title={t("Template detail")} back={<BackTo label={t("Templates")} navigate={navigate} path="/templates" />} load={load}>{({ template }, refresh) => <><dl className="detail-grid"><Detail label={t("Name")} value={template.displayName} /><Detail label={t("Version")} value={template.templateVersion} /><Detail label={t("Source")} value={humanize(t, template.sourceKind)} /><Detail label={t("Revision")} value={String(template.revision)} /><Detail label={t("Provenance")} value={template.provenance} /><Detail label={t("Favorite")} value={template.favorite ? t("Yes") : t("No")} /></dl><TemplateActions client={client} onAction={(action, origin) => setSelection({ action, key: ++session.current, template, origin })} onChanged={refresh} template={template} />{selection === undefined ? null : <TemplateActionDialog client={client} key={selection.key} onChanged={refresh} onClose={() => setSelection((current) => current?.key === selection.key ? { ...current, closed: true } : current)} operations={operations} selection={selection} />}{operations.follow(refresh, (projectId) => navigate(`/projects/${projectId}`))}</>}</UtilityWorkspace>;
 }
 
 export function UnityPage({ client, navigate }: PageProps) {
     const { t, locale } = useTranslation();
     const load = useCallback(() => loadAllUnityInstallations(client), [client]);
-    return <UtilityWorkspace title={t(navigationLabels.settings)} load={load} navigation={<UtilityNavigation current="/unity" kind="settings" navigate={navigate} />} action={{ label: t("Manage installations"), render: (installations, refresh) => <UnityRegistryActions client={client} installations={installations} onChanged={refresh} /> }}>{(installations) => <>{installations.length === 0 ? <RouteState kind="empty" title={t("No Unity installations registered")} /> : <UtilityTable label={t("Unity installations")} headers={[t("Version"), t("Architecture"), t("Source"), t("Installation")]} rows={installations.map((item) => ({ key: item.installationId, cells: [item.unityVersion, item.architecture, humanize(t, item.sourceKind), item.installationId] }))} />}</>}</UtilityWorkspace>;
+    return <UtilityWorkspace changes={["unity"]} title={t(navigationLabels.settings)} load={load} navigation={<UtilityNavigation current="/unity" kind="settings" navigate={navigate} />} action={{ label: t("Manage installations"), render: (installations, refresh) => <UnityRegistryActions client={client} installations={installations} onChanged={refresh} /> }}>{(installations) => <>{installations.length === 0 ? <RouteState kind="empty" title={t("No Unity installations registered")} /> : <UtilityTable label={t("Unity installations")} headers={[t("Version"), t("Architecture"), t("Source"), t("Installation")]} rows={installations.map((item) => ({ key: item.installationId, cells: [item.unityVersion, item.architecture, humanize(t, item.sourceKind), item.installationId] }))} />}</>}</UtilityWorkspace>;
 }
 
 export function ProjectUnityPage({ afterMigrationOpen = false, client, navigate, projectId }: PageProps & { afterMigrationOpen?: boolean; projectId: string }) {
@@ -1894,7 +1893,7 @@ export function ProjectUnityPage({ afterMigrationOpen = false, client, navigate,
         ]);
         return { project, installations, launchConfig, launchOptions, writer };
     }, [client, projectId]);
-    return <UtilityWorkspace title={t("Project Unity")} back={<BackTo label={t("Project packages")} navigate={navigate} path={`/projects/${projectId}/packages`} />} load={load}>{({ project, installations, launchConfig, launchOptions, writer }, refresh) => <><dl className="detail-grid"><Detail label={t("Project Unity version")} value={project.unityVersion} /><Detail label={t("Exact installations")} value={String(launchOptions.exactMatchingInstallations.length)} /><Detail label={t("Writer observation")} value={writer?.state ?? t("Unknown")} /><Detail label={t("Arguments")} value={launchConfig.config.revision === 0 ? t("Use global defaults") : t("{count} arguments", { count: launchConfig.effectiveArguments.length })} /><Detail label={t("Observed")} value={writer === undefined ? "—" : formatTime(t, locale, writer.checkedAtMs)} /></dl><ProjectUnityActions afterMigrationOpen={afterMigrationOpen} client={client} installations={installations} launchConfig={launchConfig} launchOptions={launchOptions} onChanged={refresh} project={project} /></>}</UtilityWorkspace>;
+    return <UtilityWorkspace changes={["projects", "unity"]} title={t("Project Unity")} back={<BackTo label={t("Project packages")} navigate={navigate} path={`/projects/${projectId}/packages`} />} load={load}>{({ project, installations, launchConfig, launchOptions, writer }, refresh) => <><dl className="detail-grid"><Detail label={t("Project Unity version")} value={project.unityVersion} /><Detail label={t("Exact installations")} value={String(launchOptions.exactMatchingInstallations.length)} /><Detail label={t("Writer observation")} value={writer?.state ?? t("Unknown")} /><Detail label={t("Arguments")} value={launchConfig.config.revision === 0 ? t("Use global defaults") : t("{count} arguments", { count: launchConfig.effectiveArguments.length })} /><Detail label={t("Observed")} value={writer === undefined ? "—" : formatTime(t, locale, writer.checkedAtMs)} /></dl><ProjectUnityActions afterMigrationOpen={afterMigrationOpen} client={client} installations={installations} launchConfig={launchConfig} launchOptions={launchOptions} onChanged={refresh} project={project} /></>}</UtilityWorkspace>;
 }
 
 async function loadAllUnityInstallations(client: GuiRpcClient): Promise<UnityInstallation[]> {
@@ -1912,7 +1911,7 @@ export function ProjectBackupsPage({ client, navigate, projectId }: PageProps & 
     const { t, locale } = useTranslation();
     const [accepted, setAccepted] = useState<BackupCreateResult>();
     const load = useCallback(async () => ({ backups: await client.backupsList(projectId), project: (await client.projectGet(projectId)).project }), [client, projectId]);
-    return <UtilityWorkspace title={t("Backups")} back={<BackTo label={t("Project packages")} navigate={navigate} path={"/projects/" + projectId + "/packages"} />} load={load}
+    return <UtilityWorkspace changes={["backups"]} title={t("Backups")} back={<BackTo label={t("Project packages")} navigate={navigate} path={"/projects/" + projectId + "/packages"} />} load={load}
         action={{ label: t("Create backup"), render: (value) => <BackupCreatePanel client={client} onAccepted={setAccepted} project={value.project} /> }}>
         {(value, refresh) => <>
             <p>{projectName(t, locale, value.project)}</p>
@@ -1934,7 +1933,7 @@ export function BackupDetailPage({ client, navigate, backupId }: PageProps & { b
     const canRestore = useCapability(capabilities.backupsRestore);
     const [restoreOpen, setRestoreOpen] = useState(false);
     const load = useCallback(() => client.backupGet(backupId), [client, backupId]);
-    return <UtilityWorkspace title={t("Backup detail")} load={load} tools={() => <Button disabled={!canRestore} onClick={() => setRestoreOpen(true)} title={capabilityUnavailableTitle(canRestore, capabilities.backupsRestore, t)} type="button">{t("Restore backup")}</Button>}>
+    return <UtilityWorkspace changes={["backups"]} title={t("Backup detail")} load={load} tools={() => <Button disabled={!canRestore} onClick={() => setRestoreOpen(true)} title={capabilityUnavailableTitle(canRestore, capabilities.backupsRestore, t)} type="button">{t("Restore backup")}</Button>}>
         {(backup) => <><BackTo label={t("Project backups")} navigate={navigate} path={`/projects/${backup.sourceProjectId}/backups`} /><dl className="detail-grid"><Detail label={t("Source project")} value={backup.sourceProjectId} /><Detail label={t("Created")} value={formatTime(t, locale, backup.createdAtMs)} /><Detail label={t("Archive size")} value={formatBytes(t, locale, backup.archiveBytes)} /><Detail label={t("Format")} value={`v${backup.formatVersion}`} /><Detail label={t("Compression")} value={backupCompressionLabel(t, backup.compressionMode)} /><Detail label={t("Integrity")} value={shortHash(backup.archiveSha256)} /></dl>
             {restoreOpen ? <RestoreProjectDialog backup={backup} client={client} onClose={() => setRestoreOpen(false)} onCompleted={(projectId) => navigate(`/projects/${projectId}`)} onViewOperation={(operationId) => navigate(`/operations/${operationId}`)} open /> : null}
         </>}
@@ -2001,7 +2000,7 @@ export function ExtensionsPage({ client, navigate }: PageProps) {
             if (current()) setBusy(false);
         }
     };
-    return <UtilityWorkspace title={t(navigationLabels.extensions)} load={load} action={{ label: t("Install extension"), disabled: operationId !== undefined && !operationTerminal, render: () => <ExtensionInstallPanel client={client} onAccepted={(id) => { setOperationId(id); setOperationTerminal(false); }} /> }}>{(value, refresh) => <>
+    return <UtilityWorkspace changes={["extensions"]} title={t(navigationLabels.extensions)} load={load} action={{ label: t("Install extension"), disabled: operationId !== undefined && !operationTerminal, render: () => <ExtensionInstallPanel client={client} onAccepted={(id) => { setOperationId(id); setOperationTerminal(false); }} /> }}>{(value, refresh) => <>
         {operationId === undefined ? null : <OperationFollow client={client} key={operationId} onTerminal={() => { setOperationTerminal(true); refresh(); }} operationId={operationId} />}
         <PagedItems initialItems={value.extensions} initialCursor={value.nextCursor} loadMore={async (cursor) => { const page = await client.extensionsList(cursor); return { items: page.extensions, nextCursor: page.nextCursor }; }}>{(extensions) => (
         <section className="extension-management" aria-labelledby="extension-management-title">
@@ -2028,7 +2027,7 @@ export function ExtensionDetailPage({ client, navigate, extensionId }: PageProps
     const [operationId, setOperationId] = useState<string>();
     const [operationTerminal, setOperationTerminal] = useState(false);
     const load = useCallback(() => client.extensionGet(extensionId), [client, extensionId]);
-    return <UtilityWorkspace title={t("Extension detail")} back={<BackTo label={t("Extensions")} navigate={navigate} path="/extensions" />} load={load}>{({ extension }, refresh) => <>
+    return <UtilityWorkspace changes={["extensions"]} title={t("Extension detail")} back={<BackTo label={t("Extensions")} navigate={navigate} path="/extensions" />} load={load}>{({ extension }, refresh) => <>
         <h2 className="extension-detail-identity">{extension.extensionId}</h2>
         <dl className="detail-grid"><Detail label={t("Version")} value={extension.version} /><Detail label={t("Publisher")} value={shortHash(extension.publisherFingerprint)} /><Detail label={t("Trust")} value={humanize(t, extension.trustDecision)} /><Detail label={t("Desired state")} value={humanize(t, extension.desiredState)} /><Detail label={t("Runtime")} value={humanize(t, extension.runtimeState)} /><Detail label={t("Quarantine")} value={humanize(t, extension.quarantineState)} /></dl>
         {extension.ui?.protocol === "portable-v1" ? <Button disabled={!canUsePortableUi || extension.desiredState !== "enabled" || extension.quarantineState === "quarantined" || (operationId !== undefined && !operationTerminal)} onClick={() => navigate(`/extensions/${encodeURIComponent(extensionId)}/ui`)} title={capabilityUnavailableTitle(canUsePortableUi, capabilities.extensionsPortableUi, t)} type="button">{t("Open Portable UI")}</Button> : null}
@@ -2055,7 +2054,7 @@ export function AboutPage({ client }: PageProps) {
 export function ActivityPage({ client, navigate }: PageProps) {
     const { t, locale } = useTranslation();
     const load = useCallback(() => client.activityList(), [client]);
-    const [search, setSearch] = useState("");
+    const [search, setSearch] = useViewState("activity", "search", "");
     return <UtilityWorkspace title={t(navigationLabels.logs)} navigation={<UtilityNavigation current="/activity" kind="logs" navigate={navigate} />} load={load}
         tools={() => <SearchField className="logs-search" label={t("Search activity")} value={search} onInput={setSearch} />}>
         {(value) => <ActivityLogItems client={client} initial={value}>
@@ -2077,9 +2076,9 @@ function LogFilter({ label, value, values, onChange }: { label: string; value: s
 function ActivityLogRows({ client, items, search }: { client: GuiRpcClient; items: LoadedActivityItem[]; search: string }) {
     const { t, locale } = useTranslation();
     const canReadOperations = useCapability(capabilities.operations);
-    const [status, setStatus] = useState("");
-    const [kind, setKind] = useState("");
-    const [details, setDetails] = useState(false);
+    const [status, setStatus] = useViewState("activity", "status", "");
+    const [kind, setKind] = useViewState("activity", "kind", "");
+    const [details, setDetails] = useViewState("activity", "details", false);
     const [selected, setSelected] = useState<string>();
     const query = search.trim().toLowerCase();
     const shown = items.filter((item) => (status === "" || (item.state ?? "unknown") === status)
@@ -2188,7 +2187,7 @@ export function DiagnosticsPage({ client, navigate }: PageProps) {
             }
         }
     };
-    return <UtilityWorkspace title={t(navigationLabels.logs)} load={load} navigation={<UtilityNavigation current="/diagnostics" kind="logs" navigate={navigate} />}
+    return <UtilityWorkspace changes={["diagnostics"]} title={t(navigationLabels.logs)} load={load} navigation={<UtilityNavigation current="/diagnostics" kind="logs" navigate={navigate} />}
         tools={() => <><SearchField className="logs-search" label={t("Search technical logs")} value={search} onInput={setSearch} /><Button disabled={!canCheckState || !canReadOperations || checking} onClick={() => void runStateCheck()} title={capabilityUnavailableTitle(canCheckState && canReadOperations, !canCheckState ? capabilities.stateCheck : capabilities.operations, t)} type="button" variant="tonal">{t("Run state check")}</Button></>}>
         {(value, refresh) => <>{operationId === undefined ? null : <OperationFollow client={client} operationId={operationId} onTerminal={() => { checkingRef.current = false; setChecking(false); refresh(); }} />}
             <PagedItems initialItems={value.items} initialCursor={value.nextCursor} loadMore={(cursor) => client.diagnosticsList(cursor)}>{(items) => <DiagnosticLogRows client={client} items={items} search={search} />}</PagedItems>

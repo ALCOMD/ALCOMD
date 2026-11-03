@@ -6,6 +6,10 @@ import { UtilityWorkspace } from "../../src/UtilityWorkspace";
 import { OperationFollow } from "../../src/CoreActions";
 import { ReminderProvider, RequestReminder } from "../../src/Reminder";
 import type { Operation } from "../../src/core-models";
+import type { GuiRpcClient } from "../../src/rpc";
+import { CoreEvents } from "../../src/core-events";
+import { CoreEventsProvider } from "../../src/core-events-ui";
+import { browserCoreEvents } from "./core-events-client";
 import "../../src/styles.css";
 
 declare global {
@@ -52,15 +56,21 @@ function FollowEvidence() {
     const [clientIndex, setClientIndex] = useState(0);
     const [operationId, setOperationId] = useState("00000000-0000-4000-8000-000000000501");
     const [visible, setVisible] = useState(true);
-    const client = useMemo(() => ({ operationGet: (id: string) => new Promise<Operation>((resolve, reject) => {
+    const events = useMemo(() => new CoreEvents({ subscribeEvents: browserCoreEvents.subscribe, operationGet: (id: string) => new Promise<Operation>((resolve, reject) => {
         window.followReads.push({ client: clientIndex, operationId: id, resolve, reject });
-    }) }), [clientIndex]);
-    return <main>
+    }) } as GuiRpcClient), [clientIndex]);
+    return <CoreEventsProvider events={events} enabled><main>
         <Button onClick={() => setClientIndex((current) => current + 1)}>Switch client</Button>
         <Button onClick={() => setOperationId("00000000-0000-4000-8000-000000000502")}>Switch task</Button>
         <Button onClick={() => setVisible(false)}>Leave page</Button>
-        {visible ? <OperationFollow client={client} onTerminal={(operation) => window.followTerminals.push(operation)} operationId={operationId} /> : null}
-    </main>;
+        {visible ? <OperationFollow client={events.client} onTerminal={(operation) => window.followTerminals.push(operation)} operationId={operationId} /> : null}
+    </main></CoreEventsProvider>;
 }
 
-createRoot(document.getElementById("root")!).render(<ReminderProvider visit={0}>{new URLSearchParams(window.location.search).has("operationFollow") ? <FollowEvidence /> : <Evidence />}</ReminderProvider>);
+const evidenceQuery = new URLSearchParams(window.location.search);
+if (evidenceQuery.has("eventLimits")) {
+    createRoot(document.getElementById("root")!).render(<h1>Event coordinator limits evidence</h1>);
+    void import("./event-limits-evidence");
+} else {
+    createRoot(document.getElementById("root")!).render(<ReminderProvider visit={0}>{evidenceQuery.has("operationFollow") ? <FollowEvidence /> : <Evidence />}</ReminderProvider>);
+}
