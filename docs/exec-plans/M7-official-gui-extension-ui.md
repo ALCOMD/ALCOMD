@@ -36,7 +36,7 @@ Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据�
   en-US/zh-CN/ja-JP，使用静态词条和 React 文本插值；外部内容不翻译、不解释 HTML。
   动画三态为 system/full/reduced，默认 system；共享适配器处理 CSS/Shadow DOM/弹层及滚动条，
   不恢复已撤除的切页动画。
-- 普通文字、数字及多行输入框统一使用 Material medium 的12px圆角；现有搜索框、下拉框胶囊覆盖保持，不改变控件尺寸和间距。
+- 普通文字、数字及多行输入框，以及展开的下拉选择菜单和操作菜单统一使用 Material medium 的12px圆角；由共享主题持有，不保留页面专用圆角覆盖。搜索框和收起的选择框保持胶囊形状，不改变控件尺寸和间距。
 - 公共 DesktopList 统一列、排序、截断和稳定正文行盒；PageHeader、SplitButton、Dialog、
   ScrollArea 和 SegmentedButtons 统一持有布局/生命周期。无图标分段按钮内部左右各 24px，采用 Material 自身等宽布局，
   移除勾号选项及隐藏宽度测量层，不写死文案宽度；所有者允许过窄窗口放不下，包括本次 640px 英文设置导航，不增加滚动兜底。滚动条只在实际滚动或轨道悬停时唤出，沿用库计时和销毁语义；textarea
