@@ -620,7 +620,8 @@ md-linear-progress {
 .package-row-actions > * { flex: 0 0 auto; }
 .package-primary-action { grid-column: 1; color: var(--md-sys-color-primary); }
 .package-row-actions > .package-more-actions { grid-column: 2; }
-.package-row-source-menu { max-width: 100%; }
+.package-version-picker,
+.package-source-picker { width: 100%; min-width: 0; }
 .package-source-missing { color: var(--error); font-size: 0.8rem; }
 .package-actions-menu-item--danger,
 .project-actions-menu-item--danger { color: var(--error); }

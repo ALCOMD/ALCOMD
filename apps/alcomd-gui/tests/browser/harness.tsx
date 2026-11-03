@@ -49,6 +49,7 @@ declare global {
         templatePageCompletions: number;
         heldTemplateReads: number;
         resumeCandidateSource?: () => void;
+        resumeCandidateVersions?: () => void;
         resumePackagePlan?: () => void;
         settingsWrites: Array<{ expectedRevision: number; revision: number }>;
         settingsRequests: Array<{ expectedRevision: number; update: Parameters<GuiRpcClient["settingsUpdate"]>[1] }>;
@@ -715,6 +716,9 @@ class DeterministicGuiClient implements GuiRpcClient {
 
     async packageQueryProjectCandidates(params: Parameters<GuiRpcClient["packageQueryProjectCandidates"]>[0]): ReturnType<GuiRpcClient["packageQueryProjectCandidates"]> {
         window.candidateRequests.push(params);
+        if (query.get("delayVersions") && params.view.kind === "versions" && !params.cursor) {
+            await new Promise<void>((resolve) => { window.resumeCandidateVersions = resolve; });
+        }
         if (query.get("delaySource") && !this.candidateSourceWasDelayed && params.view.kind === "summary" && params.view.sources?.length) {
             this.candidateSourceWasDelayed = true;
             await new Promise<void>((resolve) => { window.resumeCandidateSource = resolve; });

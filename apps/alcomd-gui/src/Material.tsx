@@ -212,7 +212,7 @@ export const NavigationListItem = forwardRef(function NavigationListItem(
     } as MaterialProps, children);
 });
 
-export function Menu({ anchorRef, children, className, kind, onClose, open }: { anchorRef: { current: HTMLElement | null }; children: ReactNode; className?: string; kind: "actions" | "selection"; onClose(): void; open: boolean }) {
+export function Menu({ anchorRef, children, className, onClose, open }: { anchorRef: { current: HTMLElement | null }; children: ReactNode; className?: string; onClose(): void; open: boolean }) {
     const quick = useSyncExternalStore(subscribeMotion, reducedMotion);
     const ref = useRef<MaterialElement>(null);
     useEffect(() => {
@@ -231,8 +231,8 @@ export function Menu({ anchorRef, children, className, kind, onClose, open }: { 
     }, [onClose]);
     return createElement(materialElements.menu, {
         anchorCorner: "end-end",
-        "data-menu-kind": kind,
-        className: [kind === "actions" ? "alcomd-action-menu" : undefined, className].filter(Boolean).join(" "),
+        "data-menu-kind": "actions",
+        className: ["alcomd-action-menu", className].filter(Boolean).join(" "),
         menuCorner: "start-end",
         positioning: "popover",
         quick,
@@ -464,6 +464,7 @@ export function SearchField({ className, label, ...props }: Omit<TextFieldProps,
 }
 
 export interface SelectOption {
+    disabled?: boolean;
     label: string;
     value: string;
 }
@@ -477,6 +478,10 @@ export interface SelectProps {
     id?: string;
     label: string;
     onChange?(value: string): void;
+    onOpen?(): void;
+    onClose?(): void;
+    /** Review a choice after closing, while retaining the authoritative value. */
+    onSelect?(value: string, origin: DialogOrigin): void;
     options: readonly SelectOption[];
     quick?: boolean;
     required?: boolean;
@@ -493,6 +498,9 @@ export function Select({
     id,
     label,
     onChange,
+    onOpen,
+    onClose,
+    onSelect,
     options,
     quick = false,
     required,
@@ -501,6 +509,39 @@ export function Select({
 }: SelectProps) {
     const reduce = useSyncExternalStore(subscribeMotion, reducedMotion);
     const ref = useRef<MaterialElement>(null);
+    const open = useRef(false);
+    const pendingSelection = useRef<string | undefined>(undefined);
+    const commitSelection = () => {
+        const element = ref.current;
+        const selected = pendingSelection.current;
+        pendingSelection.current = undefined;
+        if (element === null || selected === undefined) return;
+        element.select?.(value);
+        if (!disabled && options.some((option) => option.value === selected && !option.disabled)) onSelect?.(selected, ref);
+    };
+    useEffect(() => {
+        const element = ref.current;
+        if (element === null) return;
+        const opening = (event: Event) => {
+            if (event.target !== element) return;
+            open.current = true;
+            const bounds = element.getBoundingClientRect();
+            const below = window.innerHeight - bounds.bottom - 8;
+            // Reserve one standard 56px option and the menu's two 8px insets.
+            const available = below >= 72 ? below : bounds.top - 8;
+            element.style.setProperty("--alcomd-select-menu-max-height", `${Math.max(72, available)}px`);
+            onOpen?.();
+        };
+        const closed = (event: Event) => {
+            if (event.target !== element) return;
+            open.current = false;
+            onClose?.();
+            commitSelection();
+        };
+        element.addEventListener("opening", opening);
+        element.addEventListener("closed", closed);
+        return () => { element.removeEventListener("opening", opening); element.removeEventListener("closed", closed); };
+    });
     const selectedLabel = options.find((option) => option.value === value)?.label;
     useEffect(() => {
         const element = ref.current;
@@ -508,7 +549,17 @@ export function Select({
         let active = true;
         // Option text changes do not invalidate Material's selected-text cache.
         void Promise.resolve(element.updateComplete).then(() => {
-            if (active) element.select?.(value);
+            if (!active) return;
+            // Material 2.5 exposes no text-layout token/part for this label.
+            // Give its slotted text a shrinkable width so long values keep the arrow visible.
+            const root = element.shadowRoot;
+            if (root && !root.querySelector("style[data-alcomd-select-label]")) {
+                const style = element.ownerDocument.createElement("style");
+                style.dataset.alcomdSelectLabel = "";
+                style.textContent = ":host(.alcomd-select--constrained) #label { width: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }";
+                root.append(style);
+            }
+            element.select?.(value);
         });
         return () => { active = false; };
     }, [selectedLabel, value]);
@@ -522,7 +573,14 @@ export function Select({
             disabled,
             id,
             label: "",
-            onChange: (event: FormEvent<MaterialElement>) => onChange?.(event.currentTarget.value as string),
+            onChange: (event: FormEvent<MaterialElement>) => {
+                const selected = event.currentTarget.value as string;
+                if (disabled || !options.some((option) => option.value === selected && !option.disabled)) return;
+                if (onSelect) {
+                    pendingSelection.current = selected;
+                    if (!open.current) commitSelection();
+                } else onChange?.(selected);
+            },
             quick: quick || reduce,
             ref,
             required,
@@ -530,6 +588,7 @@ export function Select({
             value
         } as MaterialProps,
         options.map((option) => createElement(materialElements.selectOption, {
+            disabled: option.disabled,
             key: option.value,
             selected: option.value === value,
             value: option.value

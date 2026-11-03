@@ -849,7 +849,7 @@ export function TemplateActions({ client, compact = false, onAction, onChanged, 
         {compact ? <div className="card-actions">
             <IconButton aria-pressed={template.favorite} className="project-favorite-action" disabled={!canManage || feedback.busy} label={template.favorite ? t("Remove {name} from favorites", { name: template.displayName }) : t("Favorite {name}", { name: template.displayName })} onClick={() => void favorite()} type="button"><Icon asset={starIcon} /></IconButton>
             <IconButton aria-expanded={menuOpen} disabled={feedback.busy} label={t("More actions for {name}", { name: template.displayName })} onClick={() => setMenuOpen(true)} ref={menuAnchorRef} type="button"><Icon asset={moreVertIcon} size={24} /></IconButton>
-            <Menu kind="actions" anchorRef={menuAnchorRef} onClose={() => setMenuOpen(false)} open={menuOpen}>
+            <Menu anchorRef={menuAnchorRef} onClose={() => setMenuOpen(false)} open={menuOpen}>
                 <MenuItem disabled={!canCreateProject} label={t("Create project")} onClick={() => open("create")} />
                 {onView === undefined ? null : <MenuItem label={t("View template")} onClick={() => { setMenuOpen(false); onView(); }} />}
                 <MenuItem disabled={!canManage} label={t("Derive from project")} onClick={() => open("derive")} />

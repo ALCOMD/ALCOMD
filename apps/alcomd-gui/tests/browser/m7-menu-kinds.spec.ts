@@ -48,26 +48,41 @@ test("package maintenance and row actions share compact menus without dispatchin
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
 });
 
-test("source and version pickers keep selection spacing and never inherit action menu styling", async ({ page }) => {
+test("source and version use the shared standard Select with selection spacing and capsule fields", async ({ page }) => {
     await page.goto(`/browser-harness.html?route=/projects/${projectId}&state=package-multiple&versions=1`);
-    await page.getByRole("button", { name: "Source for Avatar tools", exact: true }).click();
-    const sources = page.locator('md-menu[data-menu-kind="selection"][open]');
+    const sources = page.locator("md-filled-select.package-source-picker").filter({ has: page.getByRole("combobox", { name: "Source for Avatar tools", exact: true }) });
+    await sources.getByRole("combobox").click();
     await expect(sources).not.toHaveClass(/alcomd-action-menu/);
-    const automatic = sources.locator("md-menu-item").filter({ hasText: "Automatic source selection" });
+    const automatic = sources.locator("md-select-option").filter({ hasText: "Automatic source selection" });
+    await expect(automatic).toBeVisible();
     expect((await automatic.boundingBox())!.height).toBe(56);
-    await expect(automatic.locator('[slot="headline"]')).toHaveCSS("font-size", "16px");
+    await expect(automatic.locator("md-item .default-slot")).toHaveCSS("font-size", "16px");
+    await expect(sources.locator("md-filled-field .container-overflow")).toHaveCSS("border-radius", "9999px");
+    await expect(sources.locator("md-menu .menu")).toHaveCSS("border-radius", "12px");
     await page.keyboard.press("Escape");
 
-    await page.getByRole("button", { name: "Version for Avatar tools: 1.2.3", exact: true }).click();
-    const versions = page.locator(".package-version-menu");
-    await expect(versions).toHaveAttribute("data-menu-kind", "selection");
+    const versions = page.locator("md-filled-select.package-version-picker").filter({ has: page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3", exact: true }) });
+    const opened = await versions.evaluateHandle((element) => ({ event: new Promise<void>((resolve) => element.addEventListener("opened", () => resolve(), { once: true })) }));
+    await versions.getByRole("combobox").click();
+    await opened.evaluate(({ event }) => event);
+    await opened.dispose();
     await expect(versions).not.toHaveClass(/alcomd-action-menu/);
-    const version = versions.locator("md-menu-item").filter({ hasText: "1.1.0 · Local packages" });
+    const version = versions.locator("md-select-option").filter({ hasText: "1.1.0 · Local packages" });
     await expect(version).toBeVisible();
     expect((await version.boundingBox())!.height).toBe(56);
-    await expect(version.locator('[slot="headline"]')).toHaveCSS("font-size", "16px");
+    await expect(version.locator("md-item .default-slot")).toHaveCSS("font-size", "16px");
+    await expect(versions.locator("md-filled-field .container-overflow")).toHaveCSS("border-radius", "9999px");
+    await expect(versions.locator("md-menu .menu")).toHaveCSS("border-radius", "12px");
+    const menuBounds = (await versions.locator("md-menu .menu").boundingBox())!;
+    expect(menuBounds.height).toBeGreaterThan(112);
+    expect(menuBounds.y + menuBounds.height).toBeLessThanOrEqual(892);
+    const sourceBounds = (await sources.boundingBox())!;
+    const sourceArrow = (await sources.locator(".icon.trailing").boundingBox())!;
+    expect(sourceArrow.x + sourceArrow.width).toBeLessThanOrEqual(sourceBounds.x + sourceBounds.width);
+    await page.screenshot({ path: test.info().outputPath("standard-package-selectors.png") });
     await page.keyboard.press("Escape");
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
+    await expect(versions).toHaveJSProperty("displayText", "1.2.3");
 });
 
 test("the ordinary Select retains its value selection and full-size options", async ({ page }) => {

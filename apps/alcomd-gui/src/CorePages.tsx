@@ -652,7 +652,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
                 {launchAction === undefined ? <><IconButton className="project-more-actions" label={t("More actions for {value0}", { value0: projectName(t, locale, project) })} onClick={() => setMenuOpen(true)} ref={menuAnchorRef} type="button">
                     <Icon asset={moreVertIcon} size={24} />
                 </IconButton>
-                <Menu kind="actions" anchorRef={menuAnchorRef} className="project-actions-menu" onClose={() => setMenuOpen(false)} open={menuOpen}>
+                <Menu anchorRef={menuAnchorRef} className="project-actions-menu" onClose={() => setMenuOpen(false)} open={menuOpen}>
                     {menuItems}
                 </Menu>
                 </> : <SplitButton {...launchAction} icon={<Icon asset={playArrowIcon} slot="icon" />} label={t("Open Unity")} menuButtonRef={menuAnchorRef} menuLabel={t("More actions for {value0}", { value0: projectName(t, locale, project) })}>{menuItems}</SplitButton>}
@@ -1041,54 +1041,74 @@ interface PackageWorkspaceRow {
 function PackageVersionPicker({ client, project, snapshot, disabled, canPlan, onSelect, onStale, row }: { client: GuiRpcClient; project: ProjectSnapshot; snapshot?: string; disabled: boolean; canPlan: boolean; onSelect(version: PackageCandidateEvidence, origin: DialogOrigin): void; onStale(): void; row: PackageWorkspaceRow }) {
     const { t, locale } = useTranslation();
     const [open, setOpen] = useState(false);
-    const [menuMounted, setMenuMounted] = useState(false);
     const [items, setItems] = useState<PackageCandidateEvidence[]>([]);
-    const [cursor, setCursor] = useState<CandidateCursor | null>();
     const [error, setError] = useState<string>();
     const [busy, setBusy] = useState(false);
     const showLoading = useDelayedPending(open && busy && items.length === 0);
-    const pending = useRef(false);
+    const pending = useRef<number | undefined>(undefined);
+    const opened = useRef(false);
     const generation = useRef(0);
-    const traversal = useRef({ pages: 0, count: 0 });
+    const traversal = useRef<{ pages: number; count: number; cursor?: CandidateCursor; complete: boolean }>({ pages: 0, count: 0, complete: false });
     const anchorRef = useRef<HTMLElement>(null);
-    useEffect(() => { generation.current += 1; traversal.current = { pages: 0, count: 0 }; setOpen(false); setItems([]); setCursor(undefined); setError(undefined); }, [snapshot]);
-    const load = async (next?: CandidateCursor) => {
-        if (pending.current || !snapshot || project.revision === undefined || project.projectId === undefined) return;
-        pending.current = true;
+    useEffect(() => {
+        generation.current += 1;
+        traversal.current = { pages: 0, count: 0, complete: false };
+        setItems([]); setError(undefined); setBusy(false);
+        return () => { generation.current += 1; opened.current = false; };
+    }, [snapshot]);
+    const load = async () => {
+        const current = generation.current;
+        if (pending.current === current || traversal.current.complete || !snapshot || project.revision === undefined || project.projectId === undefined) return;
+        pending.current = current;
         setBusy(true);
         setError(undefined);
-        const current = generation.current;
         try {
-            const page = await queryCandidates(client, { projectId: project.projectId, expectedRevision: project.revision, expectedSnapshot: snapshot, view: { kind: "versions", packageId: row.packageId }, limit: 64, ...(next ? { cursor: next } : {}) });
-            if (current !== generation.current) return;
-            validateVersionPage(page, { projectId: project.projectId, projectRevision: project.revision, packageId: row.packageId, fingerprint: snapshot, ...traversal.current, offset: next?.offset ?? 0 });
-            traversal.current = { pages: traversal.current.pages + 1, count: traversal.current.count + page.items.length };
-            setItems((existing) => next ? [...existing, ...page.items] : page.items);
-            setCursor(page.nextCursor);
+            do {
+                const next = traversal.current.cursor;
+                const page = await queryCandidates(client, { projectId: project.projectId, expectedRevision: project.revision, expectedSnapshot: snapshot, view: { kind: "versions", packageId: row.packageId }, limit: 64, ...(next ? { cursor: next } : {}) });
+                if (current !== generation.current) return;
+                validateVersionPage(page, { projectId: project.projectId, projectRevision: project.revision, packageId: row.packageId, fingerprint: snapshot, ...traversal.current, offset: next?.offset ?? 0 });
+                traversal.current = { pages: traversal.current.pages + 1, count: traversal.current.count + page.items.length, cursor: page.nextCursor ?? undefined, complete: page.nextCursor === null };
+                setItems((existing) => next ? [...existing, ...page.items] : page.items);
+            } while (opened.current && !traversal.current.complete);
         } catch (caught) {
             if (current !== generation.current) return;
             const code = safeError(t, locale, caught).code;
-            setItems([]); setCursor(undefined); setError(code);
+            traversal.current = { pages: 0, count: 0, complete: false };
+            setItems([]); setError(code);
             if (code === "package_candidate_evidence_stale") onStale();
-        } finally { pending.current = false; setBusy(false); }
+        } finally {
+            if (pending.current === current) pending.current = undefined;
+            if (current === generation.current) setBusy(false);
+        }
     };
-    return <>
-        <Button aria-expanded={open} aria-haspopup="menu" aria-label={t("Version for {value0}: {value1}", { value0: row.displayName, value1: row.installedVersion ?? t("Not installed") })} disabled={disabled || !snapshot} onClick={() => { setMenuMounted(true); setOpen(true); if (cursor === undefined) void load(); }} ref={anchorRef} type="button" variant="text">
-            {row.installedVersion ?? t("Not installed")}
-        </Button>
-        {menuMounted ? <Menu kind="selection" anchorRef={anchorRef} className="package-version-menu" onClose={() => setOpen(false)} open={open}>
-            {items.map((option) => <MenuItem
-                disabled={disabled || !canPlan || busy || !actionableVersion(option)}
-                key={`${candidateSourceKey(option.source)}:${option.version}`}
-                label={`${option.version} · ${row.sourceOptions.find((source) => source.key === candidateSourceKey(option.source))?.label ?? candidateSourceKey(option.source)}${option.classification === "prerelease" ? t(" · Prerelease") : ""}${option.relation === "same_precedence" ? t(" · Installed precedence") : ""}${option.reasons.length ? ` · ${option.reasons.map((reason) => reasonText(reason, t)).join(t(", "))}` : ""}${canPlan ? "" : t(" · Planning unavailable")}`}
-                onClick={() => { setOpen(false); onSelect(option, anchorRef); }}
-            />)}
-            {showLoading ? <MenuItem disabled label={t("Loading versions…")} /> : null}
-            {error ? <MenuItem disabled label={t("Versions unavailable: {value0}", { value0: t(requestErrorMessage(error)) })} /> : null}
-            {!busy && !error && cursor === null && items.length === 0 ? <MenuItem disabled label={t("No recorded versions")} /> : null}
-            {cursor ? <MenuItem disabled={busy} label={t("Load more versions")} onClick={() => void load(cursor)} /> : null}
-        </Menu> : null}
-    </>;
+    const key = (option: PackageCandidateEvidence) => `${candidateSourceKey(option.source)}:${option.version}`;
+    return <Select
+        className="package-version-picker alcomd-select--constrained"
+        label={t("Version for {value0}: {value1}", { value0: row.displayName, value1: row.installedVersion ?? t("Not installed") })}
+        disabled={disabled || !snapshot}
+        onOpen={() => { opened.current = true; setOpen(true); void load(); }}
+        onClose={() => { opened.current = false; setOpen(false); }}
+        onSelect={(value, origin) => {
+            const option = items.find((item) => key(item) === value);
+            if (!disabled && canPlan && !busy && option && actionableVersion(option)) {
+                anchorRef.current = origin.current;
+                onSelect(option, anchorRef);
+            }
+        }}
+        options={[
+            { value: "", label: row.installedVersion ?? t("Not installed"), disabled: true },
+            ...items.map((option) => ({
+                value: key(option),
+                label: `${option.version} · ${row.sourceOptions.find((source) => source.key === candidateSourceKey(option.source))?.label ?? candidateSourceKey(option.source)}${option.classification === "prerelease" ? t(" · Prerelease") : ""}${option.relation === "same_precedence" ? t(" · Installed precedence") : ""}${option.reasons.length ? ` · ${option.reasons.map((reason) => reasonText(reason, t)).join(t(", "))}` : ""}${canPlan ? "" : t(" · Planning unavailable")}`,
+                disabled: disabled || !canPlan || busy || !actionableVersion(option)
+            })),
+            ...(showLoading ? [{ value: "loading", label: t("Loading versions…"), disabled: true }] : []),
+            ...(error ? [{ value: "error", label: t("Versions unavailable: {value0}", { value0: t(requestErrorMessage(error)) }), disabled: true }] : []),
+            ...(!busy && !error && traversal.current.complete && items.length === 0 ? [{ value: "empty", label: t("No recorded versions"), disabled: true }] : [])
+        ]}
+        value=""
+    />;
 }
 
 function PackagePrimaryAction({ canPlanV1, canPlanV2, catalogReady, evidence, onSelect, row }: { canPlanV1: boolean; canPlanV2: boolean; catalogReady: boolean; evidence?: PackageCandidateSummary; onSelect(version: PackageCandidateEvidence, origin: DialogOrigin): void; row: PackageWorkspaceRow }) {
@@ -1102,21 +1122,12 @@ function PackagePrimaryAction({ canPlanV1, canPlanV2, catalogReady, evidence, on
 }
 
 function PackageSourcePicker({ label, onChange, options, value, disabled }: { label: string; onChange(value: string): void; options: PackageWorkspaceRow["sourceOptions"]; value: string; disabled: boolean }) {
-    const { t, locale } = useTranslation();
-    const [open, setOpen] = useState(false);
-    const anchorRef = useRef<HTMLElement>(null);
-    const selected = options.find((option) => option.key === value);
-    return (
-        <>
-            <Button aria-expanded={open} aria-label={label} className="package-row-source-menu" disabled={disabled} onClick={() => setOpen(true)} ref={anchorRef} type="button" variant="outlined">
-                {selected?.label ?? (value ? t("Selected source unavailable") : t("Automatic source selection"))}
-            </Button>
-            <Menu kind="selection" anchorRef={anchorRef} onClose={() => setOpen(false)} open={open}>
-                <MenuItem label={t("Automatic source selection")} onClick={() => { onChange(""); setOpen(false); }} />
-                {options.map((option) => <MenuItem key={option.key} label={option.label} onClick={() => { onChange(option.key); setOpen(false); }} />)}
-            </Menu>
-        </>
-    );
+    const { t } = useTranslation();
+    return <Select className="package-source-picker alcomd-select--constrained" disabled={disabled} label={label} onChange={onChange} options={[
+        { value: "", label: t("Automatic source selection") },
+        ...options.map((option) => ({ value: option.key, label: option.label })),
+        ...(value && !options.some((option) => option.key === value) ? [{ value, label: t("Selected source unavailable"), disabled: true }] : [])
+    ]} value={value} />;
 }
 
 function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
@@ -1148,7 +1159,7 @@ function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
             <IconButton className="package-more-actions" label={t("More actions for {value0}", { value0: row.displayName })} onClick={() => { setContentMounted(true); setOpen(true); }} ref={anchorRef} type="button">
                 <Icon asset={moreVertIcon} size={24} />
             </IconButton>
-            {contentMounted ? <Menu kind="actions" anchorRef={anchorRef} className="package-actions-menu" onClose={() => setOpen(false)} open={open}>
+            {contentMounted ? <Menu anchorRef={anchorRef} className="package-actions-menu" onClose={() => setOpen(false)} open={open}>
                 <MenuItem disabled={row.installedVersion === undefined || !canPlanV2} label={t("Reinstall")} onClick={() => { setOpen(false); onAction("reinstall", anchorRef); }} title={capabilityUnavailableTitle(canPlanV2, capabilities.packagesPlanV2, t)} />
                 <MenuItem disabled={row.linkTarget?.documentation !== true} label={t("Documentation")} onClick={() => void openLink("documentation")} />
                 <MenuItem disabled={row.linkTarget?.changelog !== true} label={t("Changelog")} onClick={() => void openLink("changelog")} />
@@ -1167,7 +1178,7 @@ function PackageWorkspaceMoreMenu({ canPlanV1, canPlanV2, onResolve, onReinstall
             <IconButton label={t("More package actions")} onClick={() => setOpen(true)} ref={anchorRef} type="button">
                 <Icon asset={moreVertIcon} size={24} />
             </IconButton>
-            <Menu kind="actions" anchorRef={anchorRef} onClose={() => setOpen(false)} open={open}>
+            <Menu anchorRef={anchorRef} onClose={() => setOpen(false)} open={open}>
                 <MenuItem disabled={!canPlanV1} label={t("Resolve Dependencies…")} onClick={() => { setOpen(false); onResolve(anchorRef); }} title={capabilityUnavailableTitle(canPlanV1, capabilities.packagesPlanV1, t)} />
                 <MenuItem disabled={!canPlanV2} label={t("Reinstall All Installed Packages…")} onClick={() => { setOpen(false); onReinstallAll(anchorRef); }} title={capabilityUnavailableTitle(canPlanV2, capabilities.packagesPlanV2, t)} />
             </Menu>
@@ -1574,7 +1585,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                              <><strong>{row.displayName}</strong><small>{row.packageId}</small></>,
                                              <><PackageVersionPicker client={client} project={project} snapshot={currentEvidence ? candidates.snapshot.fingerprint : undefined} disabled={!canQueryCandidates} canPlan={catalogReady && canPlanPackagesV1 && canPlanPackagesV2} onStale={() => setEvidenceInvalid(true)} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} />{row.requestedRange === undefined ? null : <small>{t("Requested ")}{row.requestedRange}</small>}</>,
                                              <>{evidence ? choiceText(evidence.latest, t) : t("Evidence unavailable")}{evidence && update?.kind !== "target" ? <small>{update ? updateReason(update, t) : ""}</small> : null}</>,
-                                             row.sourceOptions.length === 1 && !sourceSelections[row.packageId] ? row.sourceOptions[0]?.label : <PackageSourcePicker disabled={!currentEvidence} label={t("Source for {value0}", { value0: row.displayName })} onChange={(key) => setSourceSelections((current) => ({ ...current, [row.packageId]: key }))} options={row.sourceOptions} value={sourceSelections[row.packageId] ?? ""} />,
+                                             <PackageSourcePicker disabled={!currentEvidence} label={t("Source for {value0}", { value0: row.displayName })} onChange={(key) => setSourceSelections((current) => ({ ...current, [row.packageId]: key }))} options={row.sourceOptions} value={sourceSelections[row.packageId] ?? ""} />,
                                              <div className="package-row-actions"><PackagePrimaryAction canPlanV1={canPlanPackagesV1} canPlanV2={canPlanPackagesV2} catalogReady={catalogReady} evidence={evidence} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} /><PackageRowMoreMenu canPlanV1={canPlanPackagesV1 && !packageMutationBusy && !refreshing && !evidenceInvalid} canPlanV2={canPlanPackagesV2 && catalogReady} client={client} onAction={(action, origin) => selectAction(action, origin, row)} row={row} /></div>
                                          ] };
                                      })}

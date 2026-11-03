@@ -474,10 +474,6 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "列表视图",
         "ja-JP": "リスト表示"
     },
-    "Load more versions": {
-        "zh-CN": "加载更多版本",
-        "ja-JP": "さらにバージョンを読み込む"
-    },
     "Loading candidate evidence…": {
         "zh-CN": "正在加载候选版本信息…",
         "ja-JP": "候補バージョンの情報を読み込み中…"

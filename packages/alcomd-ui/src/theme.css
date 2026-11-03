@@ -167,6 +167,7 @@ samp {
     --md-filled-select-text-field-focus-active-indicator-height: 0px;
     --md-filled-select-text-field-hover-active-indicator-height: 0px;
 }
+.alcomd-select::part(menu) { max-height: var(--alcomd-select-menu-max-height, calc(100vh - 16px)); }
 
 .alcomd-search-field {
     --md-filled-text-field-active-indicator-height: 0px;
