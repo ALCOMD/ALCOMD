@@ -36,6 +36,9 @@
 .reminder > .alcomd-icon-button--standard { margin: -8px -8px -8px 0; }
 
 .reminder-floating {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     position: fixed;
     z-index: 30;
     right: 24px;
@@ -47,11 +50,11 @@
     box-shadow: 0 4px 16px #0003;
 }
 
-.reminder-floating .reminder {
+.reminder-floating .reminder--success {
     color: var(--md-sys-color-inverse-on-surface);
     background: var(--md-sys-color-inverse-surface);
 }
 
-.reminder-floating .alcomd-icon-button--standard {
+.reminder-floating .reminder--success .alcomd-icon-button--standard {
     --md-icon-button-icon-color: var(--md-sys-color-inverse-on-surface);
 }

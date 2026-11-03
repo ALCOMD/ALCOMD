@@ -15,17 +15,21 @@ interface ReminderActions {
 
 const ReminderContext = createContext<ReminderActions | undefined>(undefined);
 
-/** One short success message per page visit; actionable results remain in their own context. */
-export function ReminderProvider({ children }: { children: ReactNode }) {
-    const [notice, setNotice] = useState<{ id: number; message: string }>();
+/** One outlet; success keeps its visit scope while actionable feedback follows its source. */
+export function ReminderProvider({ children, feedback, visit }: { children: ReactNode; feedback?: ReactNode; visit: number }) {
+    const [notice, setNotice] = useState<{ id: number; message: string; visit: number }>();
     const [paused, setPaused] = useState(false);
     const sequence = useRef(0);
+    const activeVisit = useRef(visit);
+    activeVisit.current = visit;
     const success = useCallback((message: string) => {
+        if (activeVisit.current !== visit) return;
         setPaused(false);
-        setNotice({ id: ++sequence.current, message });
-    }, []);
-    const clear = useCallback(() => setNotice(undefined), []);
+        setNotice({ id: ++sequence.current, message, visit });
+    }, [visit]);
+    const clear = useCallback(() => { if (activeVisit.current === visit) setNotice(undefined); }, [visit]);
     const actions = useMemo(() => ({ success, clear }), [success, clear]);
+    useEffect(() => { setNotice(undefined); setPaused(false); }, [visit]);
     useEffect(() => {
         if (notice === undefined || paused) return;
         const timer = window.setTimeout(() => {
@@ -33,11 +37,13 @@ export function ReminderProvider({ children }: { children: ReactNode }) {
         }, 5000);
         return () => window.clearTimeout(timer);
     }, [notice, paused]);
-    return <ReminderContext.Provider value={actions}>{children}{notice === undefined ? null : createPortal(
+    const visibleNotice = notice?.visit === visit ? notice : undefined;
+    return <ReminderContext.Provider value={actions}>{children}{visibleNotice === undefined && feedback === undefined ? null : createPortal(
         <div className="reminder-floating" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocusCapture={() => setPaused(true)} onBlurCapture={(event) => {
             if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false);
         }}>
-            <Reminder key={notice.id} onDismiss={clear} tone="success">{notice.message}</Reminder>
+            {feedback}
+            {visibleNotice === undefined ? null : <Reminder key={visibleNotice.id} onDismiss={clear} tone="success">{visibleNotice.message}</Reminder>}
         </div>, document.body
     )}</ReminderContext.Provider>;
 }

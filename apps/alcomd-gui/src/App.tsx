@@ -277,14 +277,7 @@ export function App({ client = guiRpcClient }: AppProps) {
 
     return (
         <LocaleProvider locale={locale}><CapabilityProvider reconnect={reconnect} value={negotiatedCapabilities}>
-            <div className="app-shell">
-                <div className="app-body">
-                    <PrimaryNavigation
-                        client={client}
-                        current={route}
-                        navigate={navigate}
-                    />
-                    <main className="main-content" id="main-content" aria-busy={navigating} tabIndex={-1}>
+            <ReminderProvider visit={visibleNavigation.read.visit} feedback={settingsSave.failed || windowStateError !== undefined ? <>
                         {settingsSave.failed ? <div className="settings-save-error">
                             <RequestReminder error={settingsSave.error ?? { code: "internal_error", message: "" }} title={t(["daemon_unavailable", "internal_error"].includes(settingsSave.error?.code ?? "internal_error") ? "Settings save result is unknown" : "Settings could not be saved.")}
                                 message={["daemon_unavailable", "internal_error"].includes(settingsSave.error?.code ?? "internal_error") ? "Retry checks the current settings before writing again." : undefined}>
@@ -296,11 +289,20 @@ export function App({ client = guiRpcClient }: AppProps) {
                                 <Button type="button" variant="text" onClick={() => setWindowStateError(undefined)}>{t("Dismiss notification")}</Button>
                             </RequestReminder>
                         </div>}
+            </> : undefined}>
+            <div className="app-shell">
+                <div className="app-body">
+                    <PrimaryNavigation
+                        client={client}
+                        current={route}
+                        navigate={navigate}
+                    />
+                    <main className="main-content" id="main-content" aria-busy={navigating} tabIndex={-1}>
                         {navigating ? <div className="page-navigation-progress"><LoadingState title={t("Opening page…")} /></div> : null}
                         <div className="route-content" inert={navigating}>
                             <Suspense fallback={<LoadingState title={t("Loading page…")} />}>
                                 <PageReadContext.Provider value={visibleNavigation.read}>
-                                    <ReminderProvider key={visibleNavigation.read.visit}><RouteContent
+                                    <RouteContent
                                         client={client}
                                         locale={locale}
                                         navigate={navigate}
@@ -310,7 +312,7 @@ export function App({ client = guiRpcClient }: AppProps) {
                                         onThemePreview={previewTheme}
                                         onThemeSession={registerThemeExit}
                                         route={visibleNavigation.route}
-                                    /></ReminderProvider>
+                                    />
                                 </PageReadContext.Provider>
                             </Suspense>
                         </div>
@@ -324,6 +326,7 @@ export function App({ client = guiRpcClient }: AppProps) {
                     </div>
                 </MaterialDialog>
             </div>
+            </ReminderProvider>
         </CapabilityProvider></LocaleProvider>
     );
 }

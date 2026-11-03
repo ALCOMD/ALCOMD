@@ -30,6 +30,8 @@ async function selectMotion(page: Page, value: "full") {
 
 test("H5 autosave retains a definitive cause and safe details across navigation before explicit Retry", async ({ page }) => {
     await openSettings(page);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const headerTop = (await page.locator(".utility-workspace-toolbar").boundingBox())!.y;
     await fail(page, "settings.update", "permission_denied");
     await selectMotion(page, "full");
     const feedback = page.locator(".settings-save-error").getByRole("alert");
@@ -37,6 +39,18 @@ test("H5 autosave retains a definitive cause and safe details across navigation 
     await expect(feedback).toContainText("You do not have permission for this action.");
     await expect(feedback.locator("code")).toHaveCount(0);
     await expect(page.locator("body")).not.toContainText(H5_SETTINGS_SECRET);
+    const outlet = page.locator(".reminder-floating");
+    await expect(outlet).toHaveCount(1);
+    await expect(outlet.locator(".settings-save-error")).toHaveCount(1);
+    const errorBounds = (await outlet.boundingBox())!;
+    expect(errorBounds.x + errorBounds.width).toBe(1280 - 24);
+    expect(errorBounds.y + errorBounds.height).toBe(800 - 24);
+    await page.clock.install();
+    await page.clock.fastForward(6000);
+    await expect(feedback).toBeVisible();
+    await selectSettingsSection(page, "unity");
+    await selectSettingsSection(page, "appearance");
+    expect((await page.locator(".utility-workspace-toolbar").boundingBox())!.y).toBe(headerTop);
     await navigation(page, "Projects").click();
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
     await expect(feedback).toBeVisible();
@@ -90,6 +104,13 @@ test("H5 Theme unknown reply preserves preview and reconciles to one write with 
     expect(await changes(page)).toHaveLength(1);
     await expect(page.locator(".reminder-floating")).toContainText("Theme saved");
     await expect(theme).not.toContainText("Theme saved");
+    await expect(page.locator(".reminder-floating")).toHaveCount(1);
+    const successBounds = (await page.locator(".reminder-floating").boundingBox())!;
+    expect(successBounds.x + successBounds.width).toBe(1400 - 24);
+    expect(successBounds.y + successBounds.height).toBe(900 - 24);
+    await page.clock.install();
+    await page.clock.fastForward(6000);
+    await expect(page.locator(".reminder-floating")).toHaveCount(0);
 });
 
 test("H5 Hub unknown reply preserves original picker input and reconciles before any further write", async ({ page }) => {
