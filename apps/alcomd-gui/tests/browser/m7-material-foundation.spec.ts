@@ -265,6 +265,32 @@ test("DesktopList sorting and button themes do not change header typography", as
     }
 });
 
+test("Projects table aligns with grid tools and retains row spacing and its sticky header", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 600 });
+    await page.goto("/browser-harness.html?route=/projects&projectGrid=1");
+    const table = page.locator(".projects-list");
+    const viewport = page.locator(".projects-content .desktop-list-viewport");
+    await expect(table.locator("tbody > tr")).toHaveCount(7);
+    const head = table.locator("thead");
+    const headBox = (await head.boundingBox())!;
+    const viewportBox = (await viewport.boundingBox())!;
+    const firstRow = (await table.locator("tbody > tr").first().boundingBox())!;
+    expect(headBox.y).toBeCloseTo(viewportBox.y, 1);
+    expect(firstRow.y - headBox.y - headBox.height).toBe(2);
+    await viewport.evaluate((element) => { element.scrollTop = 40; });
+    await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    expect((await head.boundingBox())!.y).toBeCloseTo(viewportBox.y, 1);
+
+    await page.getByRole("button", { name: "List view", exact: true }).click();
+    const gridTools = page.locator(".projects-secondary-toolbar");
+    await expect(gridTools).toBeVisible();
+    const gridTop = (await gridTools.boundingBox())!.y;
+    expect(headBox.y).toBeCloseTo(gridTop, 1);
+    await page.getByRole("button", { name: "Grid view", exact: true }).click();
+    await expect(table).toBeVisible();
+    expect((await head.boundingBox())!.y).toBeCloseTo(gridTop, 1);
+});
+
 test("Projects toolbar uses semantic Material icons without replacing clear action labels", async ({ page }) => {
     await page.addInitScript(() => {
         Date.now = () => 1_700_000_120_000;

@@ -278,6 +278,8 @@ md-linear-progress {
     min-width: var(--desktop-list-min-width, 100%);
     border-collapse: separate;
     border-spacing: 0 var(--alcomd-list-row-gap);
+    /* Keep border-spacing between rows, without its extra outer block gaps. */
+    margin-block: calc(-1 * var(--alcomd-list-row-gap));
     table-layout: auto;
 }
 .desktop-list[data-sizing="fixed"] { table-layout: fixed; }
