@@ -48,7 +48,7 @@ Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据�
   Select 由真实 busy 状态控制禁用，选中标签按公开生命周期同步，不增加输入/设置写入。
 - 全局操作成功/失败统一由 ReminderProvider 接收并走唯一右下出口；页面和弹窗持有的操作反馈经同一发布/清除通道展示，不再插入页头、表格或卡片，不为普通操作失败打开独立弹窗。
   宿主随当前原生模态弹窗切换，保持视口位置及详情/重试可操作；关闭来源或离开页面清除对应反馈。成功短暂显示，失败保留原因/详情/重试及原诊断编号，不另写一份诊断记录。
-  收起主题错误不清除未知结果，后续保存仍先核对。字段校验、持续任务状态和首次加载失败显式就地显示；既有确认/Plan 中的操作失败默认进入统一通道。当前诊断查询仍沿用既有合同，不增加实时日志流、持久通知历史或公共接口。
+  收起主题错误不清除未知结果，后续保存仍先核对。字段校验、持续任务状态和首次加载失败显式就地显示；既有确认/Plan 中的操作失败默认进入统一通道。新增日志读取与按源提醒仅按下方已批准的“日志触发提醒”窄合同实施，不增加持久通知历史。
 - Unity Hub 位置复用 settings.get/update、settings.read/manage 与 Config5 `unity.hubPath`；
   有界只读发现和路径规范化由 platform 提供，不加注册表/PATH/Hub CLI 扫描。路径草稿 Enter
   或离开操作组保存，Esc 撤销，IME/同组焦点切换/无修改不写；选择和自动查找共享串行 CAS。
@@ -426,7 +426,7 @@ typed client/RPC。当前 hello.configSchema=5。Config1–4 只作为保留原�
 
 ### Activity and Diagnostics
 
-公开 permission 限定 `activity.read`、`diagnostics.read`，公开 RPC 限定 `activity.list`、`diagnostics.list`。Activity 是现有
+公开 permission 限定 `activity.read`、`diagnostics.read`，公开 RPC 为 `activity.list`、`diagnostics.list` 及另行批准、只限local-owner的 `diagnostics.log.read`。Activity 是现有
 durable Event/Operation 的 bounded、deterministic、keyset-paginated safe projection，不创建第二份 history；不得返回 raw
 request/result/error、完整路径、token、extension payload 或 UI form value。前端不自行 join `events.list`/`operations.list`。
 
@@ -773,6 +773,20 @@ H7 本地候选已形成，冻结执行 SHA `a6c9bd5568f8bffb26fe531a58fe4286c77
 完整 Workspace **526/0，8 个既有 helper ignored**，独立完整 Chromium **396/0（14.9m，1 worker、0 retries）**，
 fmt/Clippy/xtask、GUI/独立 backend 检查、全部前端 check/build、metadata/lockfile、并发启动、release bins 与 Tauri release 均通过。
 首次磁盘不足链接失败和 Chromium 354 项后会话中断分别保留；前者定位容量后续跑未完成门禁，后者另取一轮完整结果，不拼接。
+#### 日志触发提醒（2026-11-03，最小公共合同已批准）
+
+所有者要求本轮先做实际日志中的弹出，不要求所有页面提示写入诊断日志。v3只作行为审计：后台Error默认提醒，Warn默认静默，可显式覆盖；页面自身提示是另一来源，不能把所有提示来自日志当作v3合同。
+本切片前Core只有tracing进程输出；`diagnostics.list`是失败任务投影，`events.list`不提供技术日志订阅。本切片以同一Core日志源补齐安全读取，不靠查询失败任务或GUI读取Core输出文件替代。
+
+- 新增单一RPC `diagnostics.log.read`及capability `diagnostics.log.v1`，沿用`diagnostics.read`且本切片只允许认证local-owner；无新增权限名、数据库/Config迁移或生产依赖。所有读取经application用例层，Tauri只作传输适配。
+- Core复用现有tracing依赖收集日志到固定1024条内存缓冲，不建立第二个持久日志表或新的持久技术日志系统。公开记录只有`instanceId/sequence/occurredAtMs/level/code/diagnosticId?/notify`；级别为trace/debug/info/warning/error，code为有界稳定安全代码，未标注事件使用通用安全摘要代码。原始message、路径、argv、env、secret和结构化tracing字段不出Core；原技术输出保持。
+- 请求为闭合对象`{cursor?: {instanceId, sequence}, limit?: 1..200, waitMs?: 0..20000}`，默认limit100、waitMs0。响应为`{items, nextCursor, reset, gap}`；记录按sequence递增，明确标记Core重启、过期游标和缓冲截断，不伪造连续。首次返回当前有限历史及尾部游标，GUI只建立基线、不补弹既有记录。
+- GUI通过专用只读RPC连接执行有界长读，不占用普通操作连接；断开后同实例从已消费游标续读，退出/换连接时取消旧任务。日志页与提醒消费同一安全记录源；既有失败任务历史保留，不冒称已补齐完整技术日志检索、导出或持久历史。
+- 日志Error默认`notify=true`，Warn默认false，允许源显式`gui_toast`覆盖；info/debug/trace保持静默。仅新增且notify=true的记录进入现有唯一右下出口；以实例/序号避免重复消费。同步RPC上下文默认`gui_toast=false`，事件显式标记优先，后台任务不继承请求静默；已由页面处理的错误保留其详情/重试。
+- 不扩展通知设置、系统通知、所有页面提示落日志或后续里程碑。验证限定缓存/游标/脱敏/权限、长读取消与连接隔离、首次不补弹/新增只弹一次/级别覆盖，以及现有模态提醒交互；不重复全量门禁，真实环境切换沿用既有授权边界并集中准备稳定候选。
+
+所有者已明确批准上述最小日志合同，允许实施及对应定向验证；不扩展为所有页面提示落日志、持久技术日志系统或后续里程碑。权威公开Schema为`specs/rpc/m7-diagnostic-log.schema.json`。
+
 589 项非文档输入及验证期间 108 项文档均未变，之后只做文档收尾。原环境真实恢复为 Core131912/GUI153004，最终五组公开状态一致，Config4/revision166 保留。
 实际窗口保持打开；Computer Use 未恢复、无新增原生截图。窗口记忆、仓库凭据及 Portable UI/平台未覆盖边界均在
 [H7 候选记录](../testing/m7-h7-final-20261102.md) 列明；两项人工清单等待所有者，远端 CI/CodeQL 等待独立推送安排，M7 进行中。

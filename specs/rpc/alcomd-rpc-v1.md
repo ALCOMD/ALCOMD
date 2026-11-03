@@ -713,6 +713,24 @@ M7 在 RPC major 1 上提供四个 utility base method，无独立 capability；
 `revision_conflict`。hello 只在 `config/settings.toml` production storage 成功初始化后，以兼容
 optional field 广告当前 production `configSchema: 7`；Hub 打开能力按其独立就绪和协商条件广告。Config7 保持 Config4 对 `appearance.density` 的删除；显式旧值或 null 均以未知字段拒绝，
 不保留别名或第二套当前模型。原 scheme 九值枚举、默认 `vibrant` 及其余设置保持。Config Schema 1／2／3／4／5／6
+| `diagnostics.log.read` | optional instance/sequence `cursor`, `limit` 1–200, `waitMs` 0–20000 | bounded safe Core log records, `nextCursor`, `reset`, `gap` | `diagnostics.read`, authenticated local-owner only |
+
+The owner-approved `diagnostics.log.read` addition negotiates `diagnostics.log.v1` separately.
+Its complete closed wire contract is [m7-diagnostic-log.schema.json](m7-diagnostic-log.schema.json).
+Core retains at most 1024 ephemeral records; fields are instance/sequence, time, level, safe code,
+optional diagnostic ID and `notify`. Original tracing messages, paths, environment, parameters and
+arbitrary fields are never transported. Untagged events receive a fixed safe code; this is not raw
+log export or a new durable history. Existing `diagnostics.list` remains the failed-task projection.
+
+An initial read, changed Core instance or lost cursor window returns recent records and a tail
+cursor; `reset` and `gap` distinguish these conditions. The GUI displays the retained records but
+does not replay them as notifications. Normal incremental reads advance by sequence. Error records
+notify by default, warnings remain silent by default, and explicit source `gui_toast` overrides
+apply to those two levels. Lower levels remain silent. Foreground RPC spans default to silent
+because the calling page already handles their errors; an explicit event override takes precedence.
+The GUI uses one dedicated cancellable read connection, so a bounded wait cannot block ordinary RPC.
+The log read is serial: disconnect cancels its wait, and sending another request before its response
+closes that connection. This cancellation rule does not abandon mutations on other connections.
 仅作为有效启动迁移输入：移除 density，保留原 revision 和其余有效设置，v1/v2 仅补既有默认值。
 这是已批准的发布前破坏性字段删除；严格客户端须同步，不改变 RPC major、methods、capabilities、permissions 或 State Schema。
 

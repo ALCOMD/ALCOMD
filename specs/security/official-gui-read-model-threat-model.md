@@ -9,6 +9,10 @@
 | crash during settings replace | daemon filesystem writer | same-directory synced temporary file, recoverable target/backup protocol, deterministic restart recovery |
 | raw durable payload leaks into Activity | Event/Operation -> `activity.list` | construct closed safe projection; never parse or return request/result/payload JSON |
 | technical details leak into Diagnostics | Operation failure -> `diagnostics.list` | stable code/diagnostic ID/bounded fixed summary only; no raw log source or durable log table |
+| technical tracing fields leak through log reminders | Core capture -> `diagnostics.log.read` | retain only bounded stable machine fields; never copy message, path, environment, arguments or arbitrary tracing fields |
+| another principal reads process-wide logs | `diagnostics.log.read` | require authenticated local-owner and `diagnostics.read` in application, plus negotiated `diagnostics.log.v1` at transport |
+| reconnect replays old alerts or silently loses continuity | log cursor -> GUI source | stable instance/sequence cursor; initial/reset/gap establish a non-alerting baseline; expose reset/gap rather than claiming continuity |
+| a long read blocks user actions or survives the window | GUI log connection | dedicated client; bounded server wait; abort and discard connection on cancellation; ignore late responses after disposal |
 | permission bypass | all four RPC methods | revalidate exact public permission at application boundary; local-owner grant is not client metadata |
 | pagination amplification | list methods | deterministic keyset cursor, maximum 200 items, no unbounded offset scan |
 | frontend becomes authority | Tauri/React adapter | typed closed commands only; no direct config file, SQLite, Event join, log file, or daemon socket access |
