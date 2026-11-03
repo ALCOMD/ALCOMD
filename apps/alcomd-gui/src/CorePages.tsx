@@ -2123,6 +2123,7 @@ function LogOperationDialog({ client, operationId, onClose }: { client: GuiRpcCl
 
 function DiagnosticLogRows({ client, items, search }: { client: GuiRpcClient; items: LoadedDiagnosticItem[]; search: string }) {
     const { t, locale } = useTranslation();
+    const { snapshot, retry } = useDiagnosticLog();
     const canReadOperations = useCapability(capabilities.operations);
     const [severity, setSeverity] = useState("");
     const [subsystem, setSubsystem] = useState("");
@@ -2137,6 +2138,10 @@ function DiagnosticLogRows({ client, items, search }: { client: GuiRpcClient; it
         && (subsystem === "" || item.subsystem === subsystem)
         && [item.code, item.summary, t(item.message), item.subsystem, item.diagnosticId, item.operationId].some((value) => value?.toLowerCase().includes(query)));
     return <div className="logs-workspace">
+        {snapshot.gap ? <p role="status">{t("Some earlier log entries are no longer available.")}</p> : null}
+        {snapshot.error === undefined ? null : <RequestReminder inline error={snapshot.error} message="New logs could not be loaded. The last loaded entries are still shown.">
+            <Button onClick={retry} type="button" variant="text">{t("Retry")}</Button>
+        </RequestReminder>}
         <div className="alcomd-filter-bar logs-filter-toolbar" aria-label={t("Diagnostic filters")}>
             <LogFilter label={t("Severity")} value={severity} values={["warning", "error", ...snapshot.items.map((item) => item.level)]} onChange={setSeverity} />
             <LogFilter label={t("Subsystem")} value={subsystem} values={records.map((item) => item.subsystem)} onChange={setSubsystem} />
@@ -2163,7 +2168,6 @@ export function DiagnosticsPage({ client, navigate }: PageProps) {
     const reminder = useReminder();
     const [checking, setChecking] = useState(false);
     const checkingRef = useRef(false);
-    const { snapshot, retry } = useDiagnosticLog();
     const [search, setSearch] = useState("");
     const runStateCheck = async () => {
         if (!canCheckState || !canReadOperations || checkingRef.current) return;
@@ -2173,10 +2177,6 @@ export function DiagnosticsPage({ client, navigate }: PageProps) {
         let accepted = false;
         try {
             const result = await client.stateCheck();
-        {snapshot.gap ? <p role="status">{t("Some earlier log entries are no longer available.")}</p> : null}
-        {snapshot.error === undefined ? null : <RequestReminder inline error={snapshot.error} message="New logs could not be loaded. The last loaded entries are still shown.">
-            <Button onClick={retry} type="button" variant="text">{t("Retry")}</Button>
-        </RequestReminder>}
             if (!current()) return;
             accepted = true;
             setOperationId(result.operationId);
@@ -2253,6 +2253,9 @@ function humanize(t: Translate, value: string): string {
         "ready": "ready",
         "warning": "warning",
         "error": "error",
+        "trace": "trace",
+        "debug": "debug",
+        "info": "info",
         "operation": "operation",
         "event": "event",
         "project": "project",
@@ -2288,9 +2291,6 @@ function humanize(t: Translate, value: string): string {
 function safeError(t: Translate, locale: SupportedLocale, caught: unknown): RpcError {
     if (typeof caught === "object" && caught !== null && "code" in caught && typeof caught.code === "string") {
         return { code: caught.code, message: t("The request could not be completed."), ...("diagnosticId" in caught && typeof caught.diagnosticId === "string" ? { diagnosticId: caught.diagnosticId } : {}) };
-        "trace": "trace",
-        "debug": "debug",
-        "info": "info",
     }
     return { code: "internal_error", message: t("The request could not be completed.") };
 }
