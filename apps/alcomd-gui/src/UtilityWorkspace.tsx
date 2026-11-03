@@ -115,11 +115,11 @@ export function UtilityWorkspace<T>({
 
     return (
         <section className="utility-workspace page-surface--utility" aria-busy={value === undefined && pending} aria-labelledby="route-title">
-            <PageHeader className="utility-workspace-toolbar" leading={back} title={title}>
+            <PageHeader className="utility-workspace-toolbar" leading={back} title={title}
+                refresh={<RefreshButton disabled={refreshDisabled} onClick={retry} refreshing={pending} />}>
                 {navigation}
                 <div className="utility-workspace-actions">
                     {value === undefined ? null : tools?.(value, refresh)}
-                    <RefreshButton disabled={refreshDisabled} onClick={retry} refreshing={pending} />
                     {action === undefined ? null : (
                         <Button
                             aria-haspopup="dialog"

@@ -298,10 +298,6 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "创建时间",
         "ja-JP": "作成日時"
     },
-    "Current daemon state": {
-        "zh-CN": "当前核心状态",
-        "ja-JP": "現在のコアの状態"
-    },
     "Daemon": {
         "zh-CN": "核心服务",
         "ja-JP": "コアサービス"

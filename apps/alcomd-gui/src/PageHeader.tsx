@@ -2,12 +2,13 @@ import type { ReactNode, Ref } from "react";
 
 import { PageTitle } from "./PageTitle";
 
-export function PageHeader({ title, titleId, titleRef, leading, subtitle, children, className = "" }: {
+export function PageHeader({ title, titleId, titleRef, leading, subtitle, refresh, children, className = "" }: {
     title: ReactNode;
     titleId?: string;
     titleRef?: Ref<HTMLHeadingElement>;
     leading?: ReactNode;
     subtitle?: ReactNode;
+    refresh?: ReactNode;
     children?: ReactNode;
     className?: string;
 }) {
@@ -21,6 +22,7 @@ export function PageHeader({ title, titleId, titleRef, leading, subtitle, childr
                     <div className="page-header-subtitle">{subtitle}</div>
                 </div>
             )}
+            {refresh === undefined ? null : <div className="page-header-refresh">{refresh}</div>}
             {children}
         </header>
     );

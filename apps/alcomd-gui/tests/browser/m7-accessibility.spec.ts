@@ -208,13 +208,22 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         const main = page.getByRole("main");
         const heading = main.getByRole("heading", { level: 1, name: title, exact: true });
         await expect(heading).toBeVisible();
-        const refresh = main.locator(route === "/about"
-            ? ".utility-workspace-body .refresh-bar md-icon-button"
-            : ".projects-toolbar md-icon-button, .package-workspace-toolbar md-icon-button, .utility-workspace-toolbar md-icon-button, .extension-chrome md-icon-button")
+        const refresh = main.locator(".page-header-refresh md-icon-button, .package-workspace-toolbar .package-refresh-action")
             .filter({ has: page.locator('[data-icon-name="refresh"]') });
-        await expect(refresh).toHaveCount(1);
-        await expect(refresh.getByRole("button")).toHaveAccessibleName(/^(Refresh|Working)/);
-        await expect(refresh).toHaveText("");
+        const hasRefresh = route !== "/about";
+        await expect(refresh).toHaveCount(hasRefresh ? 1 : 0);
+        if (hasRefresh) {
+            await expect(refresh.getByRole("button")).toHaveAccessibleName(/^(Refresh|Working)/);
+            await expect(refresh).toHaveText("");
+            const position = await refresh.evaluate((element) => {
+                const title = element.closest("header")!.querySelector(".page-title, h2")!.getBoundingClientRect();
+                const button = element.getBoundingClientRect();
+                return { gap: button.left - title.right, center: Math.abs(button.top + button.height / 2 - title.top - title.height / 2) };
+            });
+            expect(position.gap, route).toBeGreaterThanOrEqual(0);
+            expect(position.gap, route).toBeLessThanOrEqual(20);
+            expect(position.center, route).toBeLessThanOrEqual(1);
+        }
         if (sidebarRoutes.has(route)) {
             const sidebarLabel = page.locator('#primary-navigation .navigation-item[selected] .navigation-item-label');
             await expect(sidebarLabel).toHaveCount(1);
@@ -244,6 +253,9 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
             const atCenter = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
             return bounds.width > 20 && bounds.height > 20 && atCenter !== null && element.contains(atCenter);
         })).toBe(true);
+        if (["/projects", "/repositories", "/settings", "/activity", "/diagnostics"].includes(route)) {
+            await main.locator(".page-header").screenshot({ path: test.info().outputPath(`header-${route.slice(1)}.png`) });
+        }
         await expect(main.locator('.route-state[role="alert"]')).toHaveCount(0);
     }
 });

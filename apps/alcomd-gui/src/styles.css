@@ -256,6 +256,7 @@ md-linear-progress {
 .page-title { min-width: 0; margin: 0; color: var(--primary); font-size: 1.5rem; font-weight: 500; line-height: 1.2; }
 .page-header .page-title { flex: 0 0 auto; margin: 0 4px; white-space: nowrap; }
 .page-header > md-icon-button { flex: 0 0 40px; }
+.page-header-refresh { display: flex; align-items: center; flex: 0 0 auto; }
 .page-header-heading { flex: 1 1 auto; min-width: 0; }
 .page-header-heading .page-title { overflow: hidden; text-overflow: ellipsis; }
 .page-header-subtitle { margin: 0 4px; overflow: hidden; color: var(--on-surface-variant); font-size: 0.78rem; text-overflow: ellipsis; white-space: nowrap; }
@@ -760,15 +761,6 @@ md-linear-progress {
 }
 
 
-.page-surface--utility .refresh-bar {
-    margin-bottom: 12px;
-}
-
-.page-surface--utility .utility-toolbar > .refresh-bar {
-    flex: 1;
-    margin: 0;
-}
-
 .page-surface--utility td small {
     display: block;
     margin-top: 4px;
@@ -960,21 +952,6 @@ md-linear-progress {
 .page-surface--utility .utility-disclosure .action-section {
     margin-top: 0;
 }
-
-.refresh-bar {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 12px;
-    min-height: 48px;
-    /* Keep the icon button's 48px touch target inside the content viewport. */
-    padding-inline: 8px;
-    margin-bottom: 18px;
-    color: var(--on-surface-variant);
-    font-size: 0.875rem;
-}
-
-.refresh-bar > md-icon-button { flex: none; }
 
 .inline-error {
     color: var(--error);
@@ -1650,15 +1627,6 @@ code {
     .portable-key-value {
         grid-template-columns: 1fr;
         gap: 4px;
-    }
-
-    .refresh-bar {
-        align-items: stretch;
-        flex-direction: column;
-    }
-
-    .refresh-bar :is(md-filled-button, md-filled-tonal-button, md-outlined-button, md-text-button) {
-        width: 100%;
     }
 
     .two-column {

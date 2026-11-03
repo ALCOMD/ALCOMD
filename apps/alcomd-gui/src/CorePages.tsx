@@ -98,10 +98,9 @@ interface ResourcePageProps<T> {
     children(value: T, refresh: () => void, refreshing: boolean, error?: RpcError): ReactNode;
     empty?(value: T): boolean;
     emptyTitle?: string;
-    showRefreshBar?: boolean;
 }
 
-function ResourcePage<T>({ load, children, empty, emptyTitle = "Nothing here yet", showRefreshBar = true }: ResourcePageProps<T>) {
+function ResourcePage<T>({ load, children, empty, emptyTitle = "Nothing here yet" }: ResourcePageProps<T>) {
     const { t, locale } = useTranslation();
     const initial = useInitialPageRead(load);
     const initialLoader = useRef(load).current;
@@ -151,30 +150,9 @@ function ResourcePage<T>({ load, children, empty, emptyTitle = "Nothing here yet
         return <RouteState kind="error" title={t("No response")} />;
     }
     if (empty?.(state.value) === true) {
-        return (
-            <>
-                {showRefreshBar ? <RefreshBar error={state.error} refresh={refresh} refreshing={state.refreshing} /> : null}
-                <RouteState kind="empty" title={t(emptyTitle)} />
-            </>
-        );
+        return <RouteState kind="empty" title={t(emptyTitle)} />;
     }
-    return (
-        <>
-            {showRefreshBar ? <RefreshBar error={state.error} refresh={refresh} refreshing={state.refreshing} /> : null}
-            {children(state.value, refresh, state.refreshing, state.error)}
-        </>
-    );
-}
-
-function RefreshBar({ error, refresh, refreshing }: { error?: RpcError; refresh(): void; refreshing: boolean }) {
-    const { t, locale } = useTranslation();
-    return (
-        <div className="refresh-bar" role="status" aria-live="polite" aria-busy={refreshing}>
-            <span>{t("Current daemon state")}</span>
-            {error === undefined ? null : <GlobalReminder><RequestReminder error={error} title={t("Refresh failed: ")}><Button onClick={refresh} type="button" variant="text">{t("Retry")}</Button></RequestReminder></GlobalReminder>}
-            <RefreshButton onClick={refresh} refreshing={refreshing} />
-        </div>
-    );
+    return children(state.value, refresh, state.refreshing, state.error);
 }
 
 export function RouteState({ kind, title, detail }: { kind: "loading" | "empty" | "error" | "disconnected"; title: string; detail?: string }) {
@@ -204,15 +182,13 @@ export function HomePage({ client, navigate }: PageProps) {
     const { t, locale } = useTranslation();
     const load = useCallback(() => client.systemStatus(), [client]);
     return (
-        <Page title={t("Home")}>
-            <ResourcePage load={load}>{(status) => (
+        <UtilityWorkspace title={t("Home")} load={load}>{(status) => (
                 <div className="dashboard-grid">
                     <article className="summary-card"><h2>{t("ALCOMD core")}</h2><p className="status-value">{humanize(t, status.state)}</p><p>{t("Daemon ")}{status.daemonVersion}</p></article>
                     <article className="summary-card"><h2>{t("Protocol")}</h2><p className="status-value">{t("RPC v")}{status.rpcVersion}</p><p>{status.capabilities.length} {t(" capabilities negotiated")}</p></article>
                     <article className="summary-card"><h2>{t("Get started")}</h2><Button onClick={() => navigate("/projects")} type="button" variant="text">{t("Open projects")}</Button></article>
                 </div>
-            )}</ResourcePage>
-        </Page>
+            )}</UtilityWorkspace>
     );
 }
 
@@ -341,8 +317,8 @@ export function ProjectsPage({ client, navigate }: PageProps) {
 
     return (
         <section className="projects-page" aria-busy={state.loading}>
-            <PageHeader className="projects-toolbar" title={t(navigationLabels.projects)}>
-                <RefreshButton label={t("Refresh projects")} onClick={() => void refresh()} refreshing={state.refreshing} refreshingLabel={t("Refreshing projects")} />
+            <PageHeader className="projects-toolbar" title={t(navigationLabels.projects)}
+                refresh={<RefreshButton label={t("Refresh projects")} onClick={() => void refresh()} refreshing={state.refreshing} refreshingLabel={t("Refreshing projects")} />}>
                 <SearchField className="projects-search" label={t("Search projects")} onInput={setSearch} placeholder={t("Search...")} value={search} />
                 <Button onClick={toggleView} type="button" variant="text">
                     <Icon asset={view === "list" ? viewListIcon : viewGridIcon} slot="icon" />
@@ -1458,7 +1434,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
         reload();
     };
     return (
-        <ResourcePage load={load} showRefreshBar={false}>{({ project, catalog, installations, launchOptions, repositories, settings, candidates, candidateError, sourceRegistry, sourceSelectionKey }, refresh, refreshing, refreshError) => {
+        <ResourcePage load={load}>{({ project, catalog, installations, launchOptions, repositories, settings, candidates, candidateError, sourceRegistry, sourceSelectionKey }, refresh, refreshing, refreshError) => {
             const workspaceRows = packageWorkspaceRows(project, catalog, candidates?.items, sourceRegistry);
             const currentEvidence = candidates !== undefined && sourceSelectionKey === JSON.stringify(sourceSelections) && !evidenceInvalid && !refreshing && refreshError === undefined;
             const catalogReady = currentEvidence && candidates.catalogComplete && !packageMutationBusy;
@@ -1663,7 +1639,7 @@ export function RepositoriesPage({ client, navigate }: PageProps) {
 function RepositoryPackageList({ client, repositoryId }: { client: GuiRpcClient; repositoryId: string }) {
     const { t, locale } = useTranslation();
     const load = useCallback(() => client.repositoryPackages(repositoryId), [client, repositoryId]);
-    return <ResourcePage load={load} showRefreshBar={false}>{(catalog) => <PagedItems initialItems={catalog.packages} initialCursor={catalog.nextCursor} loadMore={async (cursor) => { const next = await client.repositoryPackages(repositoryId, cursor); return { items: next.packages, nextCursor: next.nextCursor }; }}>
+    return <ResourcePage load={load}>{(catalog) => <PagedItems initialItems={catalog.packages} initialCursor={catalog.nextCursor} loadMore={async (cursor) => { const next = await client.repositoryPackages(repositoryId, cursor); return { items: next.packages, nextCursor: next.nextCursor }; }}>
         {(items) => <DataTable headers={[t("Package"), t("Version"), t("Status")]} rows={items.map((item) => [item.displayName ?? item.packageId, item.version, item.yanked ? t("Yanked") : t("Available")])} />}
     </PagedItems>}</ResourcePage>;
 }
@@ -1814,7 +1790,7 @@ function UserPackageManager({ client, onChanged, packages }: { client: GuiRpcCli
 function UserPackageDetails({ client, userPackageId }: { client: GuiRpcClient; userPackageId: string }) {
     const { t } = useTranslation();
     const load = useCallback(() => client.userPackageGet(userPackageId), [client, userPackageId]);
-    return <ResourcePage load={load} showRefreshBar={false}>{({ userPackage }) => <dl className="dialog-summary">
+    return <ResourcePage load={load}>{({ userPackage }) => <dl className="dialog-summary">
         <Detail label={t("Name")} value={userPackage.displayName ?? userPackage.packageId} />
         <Detail label={t("Package")} value={userPackage.packageId} />
         <Detail label={t("Version")} value={userPackage.version} />

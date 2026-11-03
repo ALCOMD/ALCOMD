@@ -733,11 +733,8 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
 
     return (
         <section className="extension-surface" aria-labelledby="extension-ui-title">
-            <PageHeader className="extension-chrome" title={t("Extension UI")} titleId="extension-ui-title" titleRef={headingRef}>
-                <div className="page-header-actions">
-                    <RefreshButton disabled={busy || snapshot === undefined} onClick={() => void refresh()} refreshing={busy && snapshot !== undefined} refreshingLabel={t("Working…")} />
-                </div>
-            </PageHeader>
+            <PageHeader className="extension-chrome" title={t("Extension UI")} titleId="extension-ui-title" titleRef={headingRef}
+                refresh={<RefreshButton disabled={busy || snapshot === undefined} onClick={() => void refresh()} refreshing={busy && snapshot !== undefined} refreshingLabel={t("Working…")} />} />
             <ScrollArea className="extension-body">
                 <div className="extension-context">
                     <p className="eyebrow">{t("Extension-provided content")}</p>
