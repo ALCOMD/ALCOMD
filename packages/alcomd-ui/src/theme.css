@@ -13,6 +13,8 @@
     --md-sys-shape-corner-large: 16px;
     --md-sys-shape-corner-extra-large: 28px;
     --md-sys-shape-corner-full: 9999px;
+    --md-outlined-text-field-container-shape: var(--md-sys-shape-corner-medium);
+    --md-filled-text-field-container-shape: var(--md-sys-shape-corner-medium);
     --alcomd-shape-container: var(--md-sys-shape-corner-extra-large);
     --alcomd-shape-list-item: var(--md-sys-shape-corner-small);
     --alcomd-list-row-gap: 2px;
