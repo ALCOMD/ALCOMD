@@ -14,6 +14,7 @@ interface H5SettingsFixture {
     requests: SettingsRequest[];
     commits: Array<{ expectedRevision: number; update: SettingsUpdate; revision: number }>;
     failNext(method: string, code: string, afterCommit?: boolean): void;
+    setFailure(method: string, code?: string): void;
 }
 
 declare global { interface Window { h5Settings: H5SettingsFixture } }
@@ -23,10 +24,15 @@ export function withH5SettingsClient(base: GuiRpcClient, query: URLSearchParams)
     let current: SettingsGetResult | undefined;
     let initialization: Promise<void> | undefined;
     const failures = new Map<string, SettingsFailure[]>();
+    const persistentFailures = new Map<string, string>();
     const fixture: H5SettingsFixture = {
         requests: [], commits: [],
         failNext(method, code, afterCommit = false) {
             failures.set(method, [...failures.get(method) ?? [], { code, afterCommit }]);
+        },
+        setFailure(method, code) {
+            if (code === undefined) persistentFailures.delete(method);
+            else persistentFailures.set(method, code);
         }
     };
     window.h5Settings = fixture;
@@ -45,6 +51,8 @@ export function withH5SettingsClient(base: GuiRpcClient, query: URLSearchParams)
     }
     async function response<T>(method: string, params: Record<string, unknown>, produce: () => T | Promise<T>): Promise<T> {
         fixture.requests.push({ method, params: structuredClone(params) });
+        const persistentFailure = persistentFailures.get(method);
+        if (persistentFailure !== undefined) throw error(persistentFailure);
         const failure = failures.get(method)?.shift();
         if (failure !== undefined && !failure.afterCommit) throw error(failure.code);
         const value = await produce();
@@ -76,6 +84,8 @@ export function withH5SettingsClient(base: GuiRpcClient, query: URLSearchParams)
                         ? { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" }
                         : { status: "available", source: "configured", path: hubPath, configuredPathStatus: "available" },
                     settings: {
+                        projects: { ...previous.settings.projects, ...update.projects },
+                        backups: { ...previous.settings.backups, ...update.backups },
                         paths: { ...previous.settings.paths, ...update.paths },
                         appearance: { ...previous.settings.appearance, ...update.appearance },
                         packages: { ...previous.settings.packages, ...update.packages },

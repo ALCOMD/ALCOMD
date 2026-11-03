@@ -37,10 +37,17 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
     let mut client = connect_with_retry(config.clone()).await;
 
     let defaults = client.settings_get().await.expect("read default settings");
-    assert_eq!(defaults.config_schema, 7);
+    assert_eq!(defaults.config_schema, 10);
     assert_eq!(defaults.revision, 1);
+    assert!(defaults.settings.projects.auto_discover);
+    assert_eq!(
+        defaults.settings.backups.compression_mode,
+        alcomd_protocol::BackupCompression::Fast
+    );
+    assert!(defaults.settings.backups.include_vpm_packages);
+    assert!(!defaults.settings.backups.include_library);
     assert!(!defaults.settings.window.remember_state);
-    assert!(!defaults.settings.window.remember_state);
+    assert!(!defaults.settings.window.fullscreen);
     assert_eq!(defaults.settings.unity.default_launch_arguments, None);
     assert_eq!(defaults.settings.appearance.mode, AppearanceMode::System);
     assert_eq!(
@@ -52,8 +59,17 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
         .settings_update(SettingsUpdateParams {
             expected_revision: 1,
             update: SettingsUpdate {
+                projects: Some(alcomd_protocol::ProjectSettingsUpdate {
+                    auto_discover: false,
+                }),
+                backups: Some(alcomd_protocol::BackupSettingsUpdate {
+                    compression_mode: Some(alcomd_protocol::BackupCompression::Maximum),
+                    include_vpm_packages: Some(false),
+                    include_library: Some(true),
+                }),
                 window: Some(alcomd_protocol::WindowSettingsUpdate {
-                    remember_state: true,
+                    remember_state: Some(true),
+                    fullscreen: None,
                 }),
                 paths: None,
                 unity: Some(alcomd_protocol::UnitySettingsUpdate {
@@ -85,6 +101,13 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
         .expect("update settings");
     assert_eq!(updated.revision, 2);
     assert!(updated.settings.window.remember_state);
+    assert!(!updated.settings.projects.auto_discover);
+    assert_eq!(
+        updated.settings.backups.compression_mode,
+        alcomd_protocol::BackupCompression::Maximum
+    );
+    assert!(!updated.settings.backups.include_vpm_packages);
+    assert!(updated.settings.backups.include_library);
     assert_eq!(
         updated.settings.unity.default_launch_arguments,
         Some(vec![
@@ -482,7 +505,7 @@ async fn official_settings_activity_and_diagnostics_round_trip_without_new_state
         fs::read_to_string(data.join("config/settings.toml")).expect("read durable settings file");
     assert_eq!(
         settings_file,
-        r#"schema = 7
+        r#"schema = 10
 revision = 14
 locale = "ja-JP"
 
@@ -501,8 +524,23 @@ default_launch_arguments = ["-logFile", " C:\\logs with spaces\\Editor.log ", ""
 
 [window]
 remember_state = true
+fullscreen = false
+
+[projects]
+auto_discover = false
+
+[backups]
+compression_mode = "maximum"
+include_vpm_packages = false
+include_library = true
 "#
     );
+    // A valid pre-fullscreen Config9 must retain all accepted preferences and revision.
+    let config9 = settings_file
+        .replacen("schema = 10\n", "schema = 9\n", 1)
+        .replacen("fullscreen = false\n", "", 1);
+    let settings_path = data.join("config/settings.toml");
+    fs::write(&settings_path, config9).expect("isolated Config9 migration input");
     let restarted_shutdown = Arc::new(AtomicBool::new(false));
     let restarted = alcomd_daemon::test_support::start_with_data_until(
         raw_ipc,
@@ -510,16 +548,142 @@ remember_state = true
         wait_for_shutdown(Arc::clone(&restarted_shutdown)),
     )
     .await
-    .expect("restart owned daemon with Config7");
+    .expect("migrate owned Config9 daemon to Config10");
     let mut reopened = connect_with_retry(config).await;
     let persisted = reopened.settings_get().await.expect("reopened settings");
+    assert_eq!(persisted.config_schema, 10);
     assert_eq!(persisted.revision, 14);
     assert_eq!(persisted.settings, hub_cleared.settings);
+    assert!(!persisted.settings.window.fullscreen);
+    assert_eq!(
+        fs::read_to_string(&settings_path).expect("migrated canonical settings"),
+        settings_file,
+        "migration changes only schema and the new default, without a user revision increment"
+    );
     restarted_shutdown.store(true, Ordering::Relaxed);
     restarted
         .await
         .expect("join restarted daemon")
         .expect("restarted daemon shutdown");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn fullscreen_settings_survive_daemon_restart_and_narrow_changes_preserve_remember_state() {
+    let fixture = TestDirectory::new();
+    let runtime = fixture.path().join("runtime-fullscreen");
+    let data = fixture.path().join("data-fullscreen");
+    fs::create_dir(&runtime).expect("runtime");
+    fs::create_dir(&data).expect("data");
+    let (ipc, config) = isolated_ipc(runtime);
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc.clone(),
+        DataConfig::isolated(data.clone()),
+        wait_for_shutdown(Arc::clone(&shutdown)),
+    )
+    .await
+    .expect("owned daemon");
+    let mut client = connect_with_retry(config.clone()).await;
+    let defaults = client.settings_get().await.expect("defaults");
+    assert_eq!(defaults.config_schema, 10);
+    assert!(!defaults.settings.window.fullscreen);
+    let enabled = client
+        .settings_update(SettingsUpdateParams {
+            expected_revision: defaults.revision,
+            update: SettingsUpdate {
+                window: Some(alcomd_protocol::WindowSettingsUpdate {
+                    fullscreen: Some(true),
+                    remember_state: None,
+                }),
+                ..SettingsUpdate::default()
+            },
+        })
+        .await
+        .expect("enable fullscreen");
+    assert!(enabled.settings.window.fullscreen);
+    assert!(!enabled.settings.window.remember_state);
+    let remembered = client
+        .settings_update(SettingsUpdateParams {
+            expected_revision: enabled.revision,
+            update: SettingsUpdate {
+                window: Some(alcomd_protocol::WindowSettingsUpdate {
+                    fullscreen: None,
+                    remember_state: Some(true),
+                }),
+                ..SettingsUpdate::default()
+            },
+        })
+        .await
+        .expect("remember only");
+    assert!(remembered.settings.window.fullscreen);
+    assert!(remembered.settings.window.remember_state);
+    drop(client);
+    shutdown.store(true, Ordering::Relaxed);
+    daemon.await.expect("join daemon").expect("shutdown");
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc.clone(),
+        DataConfig::isolated(data),
+        wait_for_shutdown(Arc::clone(&shutdown)),
+    )
+    .await
+    .expect("reopened daemon");
+    let mut client = connect_with_retry(config).await;
+    assert_eq!(
+        client.settings_get().await.expect("reopened preferences"),
+        remembered
+    );
+    let disabled = client
+        .settings_update(SettingsUpdateParams {
+            expected_revision: remembered.revision,
+            update: SettingsUpdate {
+                window: Some(alcomd_protocol::WindowSettingsUpdate {
+                    fullscreen: Some(false),
+                    remember_state: None,
+                }),
+                ..SettingsUpdate::default()
+            },
+        })
+        .await
+        .expect("disable fullscreen only");
+    assert!(!disabled.settings.window.fullscreen);
+    assert!(disabled.settings.window.remember_state);
+    assert_eq!(disabled.revision, remembered.revision + 1);
+    let mut stream = alcomd_platform::connect(&ipc).await.expect("raw stream");
+    raw_request(
+        &mut stream,
+        "hello-fullscreen",
+        "system.hello",
+        json!({"rpcVersion":alcomd_protocol::RPC_VERSION,"client":{"name":"alcomd-testing","version":env!("CARGO_PKG_VERSION"),"instanceId":Uuid::new_v4().to_string()},"capabilities":[]}),
+    )
+    .await
+    .expect("raw hello");
+    for (index, value) in [
+        json!({}),
+        json!({"fullscreen":null}),
+        json!({"fullscreen":"true"}),
+        json!({"fullscreen":true,"width":1000}),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let result = raw_request(&mut stream, &format!("invalid-fullscreen-{index}"), "settings.update", json!({"expectedRevision":disabled.revision,"update":{"window":value,"locale":"ja-JP"}})).await;
+        assert!(matches!(result, Err(error) if error.code == "invalid_request"));
+        assert_eq!(
+            client
+                .settings_get()
+                .await
+                .expect("unchanged after rejection"),
+            disabled
+        );
+    }
+    drop(stream);
+    drop(client);
+    shutdown.store(true, Ordering::Relaxed);
+    daemon
+        .await
+        .expect("join reopened daemon")
+        .expect("reopened shutdown");
 }
 
 async fn raw_request(

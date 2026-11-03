@@ -5,9 +5,10 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use alcomd_application::{
-    ConfigAppearance, ConfigAppearanceMode, ConfigAppearanceMotion, ConfigAppearanceScheme,
-    ConfigLocale, ConfigPackageSettings, ConfigPathSettings, ConfigSettings, ConfigSnapshot,
-    ConfigStore, ConfigStoreError, ConfigUnitySettings, ConfigWindowSettings,
+    BackupCompression, ConfigAppearance, ConfigAppearanceMode, ConfigAppearanceMotion,
+    ConfigAppearanceScheme, ConfigBackupSettings, ConfigLocale, ConfigPackageSettings,
+    ConfigPathSettings, ConfigProjectSettings, ConfigSettings, ConfigSnapshot, ConfigStore,
+    ConfigStoreError, ConfigUnitySettings, ConfigWindowSettings,
 };
 
 const MAX_SETTINGS_BYTES: u64 = 16 * 1024;
@@ -19,7 +20,7 @@ pub struct FileConfigStore {
 }
 
 impl FileConfigStore {
-    pub const SCHEMA_VERSION: u32 = 7;
+    pub const SCHEMA_VERSION: u32 = 10;
 
     #[must_use]
     pub fn new(path: PathBuf) -> Self {
@@ -116,6 +117,11 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
     let mut project_directory = None;
     let mut backup_directory = None;
     let mut remember_state = None;
+    let mut fullscreen = None;
+    let mut auto_discover = None;
+    let mut compression_mode = None;
+    let mut include_vpm_packages = None;
+    let mut include_library = None;
     for raw in text.lines() {
         let line = raw.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -128,6 +134,8 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
                 "[unity]" => "unity",
                 "[paths]" => "paths",
                 "[window]" => "window",
+                "[projects]" => "projects",
+                "[backups]" => "backups",
                 _ => return Err(ConfigStoreError::Corrupt),
             };
             if !seen.insert(format!("section:{next}")) {
@@ -148,6 +156,21 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
             ("root", "revision") => revision = Some(parse_u64(value)?),
             ("root", "locale") => locale = Some(parse_locale(parse_string(value)?)?),
             ("window", "remember_state") => remember_state = Some(parse_bool(value)?),
+            ("window", "fullscreen") => fullscreen = Some(parse_bool(value)?),
+            ("projects", "auto_discover") => auto_discover = Some(parse_bool(value)?),
+            ("backups", "compression_mode") => {
+                compression_mode = Some(match parse_string(value)? {
+                    "store" => BackupCompression::Store,
+                    "fast" => BackupCompression::Fast,
+                    "level3" => BackupCompression::Level3,
+                    "level5" => BackupCompression::Level5,
+                    "level7" => BackupCompression::Level7,
+                    "maximum" => BackupCompression::Maximum,
+                    _ => return Err(ConfigStoreError::Corrupt),
+                });
+            }
+            ("backups", "include_vpm_packages") => include_vpm_packages = Some(parse_bool(value)?),
+            ("backups", "include_library") => include_library = Some(parse_bool(value)?),
             ("unity", "hub_path") => hub_path = Some(parse_path_string(value)?),
             ("unity", "default_launch_arguments") => {
                 default_launch_arguments = Some(parse_argument_array(value)?);
@@ -193,6 +216,20 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
     if schema < 7 && seen.contains("section:window") {
         return Err(ConfigStoreError::Corrupt);
     }
+    if schema < 10 && fullscreen.is_some() {
+        return Err(ConfigStoreError::Corrupt);
+    }
+    if schema < 8 && (seen.contains("section:projects") || seen.contains("section:backups")) {
+        return Err(ConfigStoreError::Corrupt);
+    }
+    if schema < 9
+        && matches!(
+            compression_mode,
+            Some(BackupCompression::Level3 | BackupCompression::Level5 | BackupCompression::Level7)
+        )
+    {
+        return Err(ConfigStoreError::Corrupt);
+    }
     if schema < 3 && motion == Some(ConfigAppearanceMotion::Full) {
         return Err(ConfigStoreError::Corrupt);
     }
@@ -233,7 +270,28 @@ fn parse_settings_with_schema(text: &str) -> Result<(ConfigSnapshot, u64), Confi
     let snapshot = ConfigSnapshot {
         revision,
         settings: ConfigSettings {
+            projects: if schema < 8 {
+                ConfigProjectSettings::default()
+            } else {
+                ConfigProjectSettings {
+                    auto_discover: auto_discover.ok_or(ConfigStoreError::Corrupt)?,
+                }
+            },
+            backups: if schema < 8 {
+                ConfigBackupSettings::default()
+            } else {
+                ConfigBackupSettings {
+                    compression_mode: compression_mode.ok_or(ConfigStoreError::Corrupt)?,
+                    include_vpm_packages: include_vpm_packages.ok_or(ConfigStoreError::Corrupt)?,
+                    include_library: include_library.ok_or(ConfigStoreError::Corrupt)?,
+                }
+            },
             window: ConfigWindowSettings {
+                fullscreen: if schema < 10 {
+                    false
+                } else {
+                    fullscreen.ok_or(ConfigStoreError::Corrupt)?
+                },
                 remember_state: if schema < 7 {
                     false
                 } else {
@@ -342,13 +400,23 @@ fn serialize_settings(snapshot: &ConfigSnapshot) -> Vec<u8> {
         }
     }
     contents.push_str(&format!(
-        "\n[window]\nremember_state = {}\n",
-        snapshot.settings.window.remember_state
+        "\n[window]\nremember_state = {}\nfullscreen = {}\n",
+        snapshot.settings.window.remember_state, snapshot.settings.window.fullscreen
+    ));
+    contents.push_str(&format!(
+        "\n[projects]\nauto_discover = {}\n\n[backups]\ncompression_mode = \"{}\"\ninclude_vpm_packages = {}\ninclude_library = {}\n",
+        snapshot.settings.projects.auto_discover,
+        snapshot.settings.backups.compression_mode.as_str(),
+        snapshot.settings.backups.include_vpm_packages,
+        snapshot.settings.backups.include_library,
     ));
     contents.into_bytes()
 }
 
 fn publish_settings(path: &Path, contents: &[u8]) -> Result<(), ConfigStoreError> {
+    if contents.len() as u64 > MAX_SETTINGS_BYTES {
+        return Err(ConfigStoreError::TooLarge);
+    }
     let parent = path.parent().ok_or(ConfigStoreError::Unavailable)?;
     fs::create_dir_all(parent).map_err(map_io)?;
     recover_settings_replace(path)?;
@@ -656,6 +724,8 @@ mod tests {
         }
     }
 
+    const CONFIG8_DEFAULTS_TOML: &str = "\n[projects]\nauto_discover = true\n\n[backups]\ncompression_mode = \"fast\"\ninclude_vpm_packages = true\ninclude_library = false\n";
+
     fn default_snapshot() -> ConfigSnapshot {
         ConfigSnapshot::default()
     }
@@ -688,14 +758,128 @@ mod tests {
     }
 
     #[test]
-    fn config7_migrates_all_historical_vectors_with_window_disabled_and_retained_settings() {
+    fn config9_backup_defaults_and_discovery_roundtrip_reopen_and_reject_invalid_files() {
+        let root = temporary_path("config8-project-backup-defaults");
+        let path = root.join("settings.toml");
+        let store = FileConfigStore::new(path.clone());
+        let original = store.initialize().expect("default Config8");
+        assert!(original.settings.projects.auto_discover);
+        assert_eq!(original.settings.backups, ConfigBackupSettings::default());
+        let mut expected = original;
+        expected.settings.window.remember_state = true;
+        expected.settings.unity.default_launch_arguments = Some(Vec::new());
+        expected.settings.paths.project_directory = Some("/fixture/retained/projects".into());
+        for compression in [
+            BackupCompression::Store,
+            BackupCompression::Fast,
+            BackupCompression::Level3,
+            BackupCompression::Level5,
+            BackupCompression::Level7,
+            BackupCompression::Maximum,
+        ] {
+            for include_packages in [false, true] {
+                for include_library in [false, true] {
+                    expected.revision += 1;
+                    expected.settings.projects.auto_discover = !include_library;
+                    expected.settings.backups = ConfigBackupSettings {
+                        compression_mode: compression,
+                        include_vpm_packages: include_packages,
+                        include_library,
+                    };
+                    store.publish(&expected).expect("publish settings");
+                    assert_eq!(
+                        FileConfigStore::new(path.clone()).initialize(),
+                        Ok(expected.clone())
+                    );
+                }
+            }
+        }
+        let current = fs::read_to_string(&path).expect("Config8 file");
+        for invalid in [
+            current.replace("auto_discover = false", "auto_discover = null"),
+            current.replace("auto_discover = false", "auto_discover = \"false\""),
+            current.replace("auto_discover = false\n", ""),
+            current.replace(
+                "compression_mode = \"maximum\"",
+                "compression_mode = \"normal\"",
+            ),
+            current.replace("compression_mode = \"maximum\"\n", ""),
+            current.replace("include_vpm_packages = true", "include_vpm_packages = 1"),
+            current.replace("include_library = true", "include_library = null"),
+            current.replace("include_library = true\n", ""),
+            current.replace(
+                "include_library = true",
+                "include_library = true\nunknown = true",
+            ),
+            current
+                .replace("fullscreen = false\n", "")
+                .replace("fullscreen = true\n", "")
+                .replace("schema = 10", "schema = 7"),
+        ] {
+            fs::write(&path, &invalid).expect("invalid fixture");
+            assert_eq!(store.initialize(), Err(ConfigStoreError::Corrupt));
+            assert_eq!(
+                fs::read_to_string(&path).expect("invalid input preserved"),
+                invalid
+            );
+        }
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn config9_migration_respects_file_limit_and_retains_valid_historical_input_on_overflow() {
+        let root = temporary_path("config8-migration-size-bound");
+        let path = root.join("settings.toml");
+        fs::create_dir_all(&root).expect("fixture");
+        let mut expected = default_snapshot();
+        expected.settings.unity.default_launch_arguments = Some(vec!["x".repeat(2500); 5]);
+        let legacy_file = |snapshot: &ConfigSnapshot| {
+            String::from_utf8(serialize_settings(snapshot))
+                .expect("UTF-8")
+                .replace(CONFIG8_DEFAULTS_TOML, "")
+                .replace("fullscreen = false\n", "")
+                .replace("fullscreen = true\n", "")
+                .replace("schema = 10", "schema = 7")
+        };
+        let mut remaining =
+            usize::try_from(MAX_SETTINGS_BYTES).expect("file limit") - legacy_file(&expected).len();
+        for argument in expected
+            .settings
+            .unity
+            .default_launch_arguments
+            .as_mut()
+            .expect("arguments")
+        {
+            let count = remaining.min(4096 - argument.len());
+            argument.push_str(&"x".repeat(count));
+            remaining -= count;
+        }
+        assert_eq!(remaining, 0);
+        let legacy = legacy_file(&expected);
+        assert_eq!(legacy.len() as u64, MAX_SETTINGS_BYTES);
+        assert_eq!(parse_settings(&legacy), Ok(expected));
+        fs::write(&path, &legacy).expect("valid Config7 at byte bound");
+        assert_eq!(
+            FileConfigStore::new(path.clone()).initialize(),
+            Err(ConfigStoreError::TooLarge)
+        );
+        assert_eq!(
+            fs::read_to_string(&path).expect("original authority"),
+            legacy
+        );
+        assert!(!path.with_extension("toml.new").exists());
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn config9_migrates_all_historical_vectors_with_retained_settings() {
         let root = temporary_path("config7-window-migration");
         let path = root.join("settings.toml");
         fs::create_dir_all(&root).expect("fixture");
         let vectors: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../specs/config/settings-v7.contract-vectors.json"
+            "../../../specs/config/settings-v10.contract-vectors.json"
         ))
-        .expect("Config7 vectors");
+        .expect("Config10 vectors");
         for vector in vectors["legacyInputs"]
             .as_array()
             .expect("historical vectors")
@@ -706,18 +890,92 @@ mod tests {
                 expected.revision,
                 vector["expectedRevision"].as_u64().expect("revision")
             );
-            assert!(!expected.settings.window.remember_state);
+            assert_eq!(
+                expected.settings.window.remember_state,
+                vector["expectedSettings"]["window"]["rememberState"]
+                    .as_bool()
+                    .expect("window preference")
+            );
+            assert_eq!(
+                expected.settings.projects.auto_discover,
+                vector["expectedSettings"]["projects"]["autoDiscover"]
+                    .as_bool()
+                    .expect("project preference")
+            );
+            let expected_backups = &vector["expectedSettings"]["backups"];
+            assert_eq!(
+                expected.settings.backups.compression_mode.as_str(),
+                expected_backups["compressionMode"]
+                    .as_str()
+                    .expect("compression")
+            );
+            assert_eq!(
+                expected.settings.backups.include_vpm_packages,
+                expected_backups["includeVpmPackages"]
+                    .as_bool()
+                    .expect("package preference")
+            );
+            assert_eq!(
+                expected.settings.backups.include_library,
+                expected_backups["includeLibrary"]
+                    .as_bool()
+                    .expect("Library preference")
+            );
             fs::write(&path, source).expect("historical input");
             let store = FileConfigStore::new(path.clone());
             assert_eq!(store.initialize(), Ok(expected.clone()));
             let accepted = fs::read_to_string(&path).expect("migrated file");
-            assert!(accepted.starts_with("schema = 7\n"));
-            assert!(accepted.contains("\n[window]\nremember_state = false\n"));
+            assert!(accepted.starts_with("schema = 10\n"));
+            assert!(accepted.contains(&format!(
+                "\n[window]\nremember_state = {}\n",
+                expected.settings.window.remember_state
+            )));
+            if vector["schema"].as_u64().expect("historical schema") < 8 {
+                assert!(accepted.contains(CONFIG8_DEFAULTS_TOML));
+            }
             assert_eq!(
                 FileConfigStore::new(path.clone()).initialize(),
                 Ok(expected)
             );
             assert_eq!(fs::read_to_string(&path).expect("stable reopen"), accepted);
+        }
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[test]
+    fn config9_rejects_new_levels_in_historical_schemas_without_rewriting_the_input() {
+        let root = temporary_path("config9-historical-levels");
+        let path = root.join("settings.toml");
+        fs::create_dir_all(&root).expect("fixture");
+        let mut snapshot = default_snapshot();
+        snapshot.revision = 168;
+        snapshot.settings.projects.auto_discover = false;
+        snapshot.settings.window.remember_state = true;
+        snapshot.settings.backups.include_vpm_packages = false;
+        snapshot.settings.backups.include_library = true;
+        for compression in [
+            BackupCompression::Level3,
+            BackupCompression::Level5,
+            BackupCompression::Level7,
+        ] {
+            snapshot.settings.backups.compression_mode = compression;
+            let current = String::from_utf8(serialize_settings(&snapshot)).expect("Config9 UTF-8");
+            assert_eq!(parse_settings(&current), Ok(snapshot.clone()));
+            for schema in 1..=8 {
+                let historical = current
+                    .replace("fullscreen = false\n", "")
+                    .replace("fullscreen = true\n", "")
+                    .replace("schema = 10", &format!("schema = {schema}"));
+                fs::write(&path, &historical).expect("historical schema with unapproved level");
+                assert_eq!(
+                    FileConfigStore::new(path.clone()).initialize(),
+                    Err(ConfigStoreError::Corrupt)
+                );
+                assert_eq!(
+                    fs::read_to_string(&path).expect("input unchanged"),
+                    historical
+                );
+            }
         }
         fs::remove_dir_all(root).expect("remove fixture");
     }
@@ -749,7 +1007,10 @@ mod tests {
         let legacy = String::from_utf8(serialize_settings(&expected))
             .expect("utf8")
             .replace("\n[window]\nremember_state = false\n", "")
-            .replace("schema = 7", "schema = 6");
+            .replace(CONFIG8_DEFAULTS_TOML, "")
+            .replace("fullscreen = false\n", "")
+            .replace("fullscreen = true\n", "")
+            .replace("schema = 10", "schema = 6");
         fs::write(&path, &legacy).expect("Config6 with retained preferences");
         let store = Arc::new(FileConfigStore::new(path.clone()));
         let app = M7OfficialApplication::new(
@@ -767,7 +1028,12 @@ mod tests {
                     &AccessContext::local_owner(),
                     expected.revision,
                     ConfigUpdate {
-                        window: Some(ConfigWindowUpdate { remember_state }),
+                        projects: None,
+                        backups: None,
+                        window: Some(ConfigWindowUpdate {
+                            remember_state: Some(remember_state),
+                            fullscreen: None,
+                        }),
                         paths: None,
                         unity: None,
                         appearance: None,
@@ -791,8 +1057,11 @@ mod tests {
                 &AccessContext::local_owner(),
                 expected.revision,
                 ConfigUpdate {
+                    projects: None,
+                    backups: None,
                     window: Some(ConfigWindowUpdate {
-                        remember_state: true
+                        remember_state: Some(true),
+                        fullscreen: None
                     }),
                     unity: Some(ConfigUnityUpdate {
                         hub_path: ConfigNullableUpdate::Unchanged,
@@ -831,7 +1100,13 @@ mod tests {
             "remember_state = false",
             "remember_state = false\nremember_state = true",
         ));
-        invalid_files.push(valid.replace("schema = 7", "schema = 6"));
+        invalid_files.push(
+            valid
+                .replace(CONFIG8_DEFAULTS_TOML, "")
+                .replace("fullscreen = false\n", "")
+                .replace("fullscreen = true\n", "")
+                .replace("schema = 10", "schema = 6"),
+        );
         for invalid in invalid_files {
             fs::write(&path, &invalid).expect("invalid file");
             assert_eq!(store.initialize(), Err(ConfigStoreError::Corrupt));
@@ -862,7 +1137,10 @@ mod tests {
         let current = String::from_utf8(serialize_settings(&expected)).expect("utf8");
         let legacy = current
             .replace("\n[window]\nremember_state = false\n", "")
-            .replace("schema = 7", "schema = 5");
+            .replace(CONFIG8_DEFAULTS_TOML, "")
+            .replace("fullscreen = false\n", "")
+            .replace("fullscreen = true\n", "")
+            .replace("schema = 10", "schema = 5");
         fs::write(&path, &legacy).expect("Config5");
         let store = FileConfigStore::new(path.clone());
         assert_eq!(store.load(), Ok(expected.clone()));
@@ -876,7 +1154,10 @@ mod tests {
         for schema in 3..=5 {
             let mut invalid = current
                 .replace("\n[window]\nremember_state = false\n", "")
-                .replace("schema = 7", &format!("schema = {schema}"));
+                .replace(CONFIG8_DEFAULTS_TOML, "")
+                .replace("fullscreen = false\n", "")
+                .replace("fullscreen = true\n", "")
+                .replace("schema = 10", &format!("schema = {schema}"));
             if schema < 5 {
                 invalid = invalid
                     .split("[paths]")
@@ -914,6 +1195,8 @@ mod tests {
         app.initialize_settings().await.expect("initialize");
         let mut expected = store.load().expect("initialized snapshot");
         let update = |arguments| ConfigUpdate {
+            projects: None,
+            backups: None,
             window: None,
             paths: None,
             appearance: None,
@@ -997,11 +1280,14 @@ mod tests {
         let legacy = String::from_utf8(serialize_settings(&original))
             .expect("utf8")
             .replace("\n[window]\nremember_state = false\n", "")
-            .replace("schema = 7", "schema = 4");
+            .replace(CONFIG8_DEFAULTS_TOML, "")
+            .replace("fullscreen = false\n", "")
+            .replace("fullscreen = true\n", "")
+            .replace("schema = 10", "schema = 4");
         fs::write(&path, &legacy).expect("legacy Config4");
         assert_eq!(store.initialize(), Ok(original.clone()));
         let migrated = fs::read_to_string(&path).expect("migrated current config");
-        assert!(migrated.starts_with("schema = 7\n"));
+        assert!(migrated.starts_with("schema = 10\n"));
         assert!(!migrated.contains("[paths]"));
         for candidate in [r"C:\用户\项目", "/home/测试/备份 \"local\""] {
             let mut saved = original.clone();
@@ -1050,6 +1336,8 @@ mod tests {
         let app = make_app();
         app.initialize_settings().await.expect("initialize");
         let mut update = ConfigUpdate {
+            projects: None,
+            backups: None,
             window: None,
             paths: Some(ConfigPathUpdate {
                 project_directory: ConfigNullableUpdate::Set("/selected/projects".into()),
@@ -1106,6 +1394,8 @@ mod tests {
             Ok(accepted)
         );
         let clear = ConfigUpdate {
+            projects: None,
+            backups: None,
             window: None,
             paths: Some(ConfigPathUpdate {
                 project_directory: ConfigNullableUpdate::Clear,
@@ -1175,7 +1465,10 @@ mod tests {
         for schema in [1, 2] {
             let mut legacy = original_text
                 .replace("\n[window]\nremember_state = false\n", "")
-                .replace("schema = 7", &format!("schema = {schema}"))
+                .replace(CONFIG8_DEFAULTS_TOML, "")
+                .replace("fullscreen = false\n", "")
+                .replace("fullscreen = true\n", "")
+                .replace("schema = 10", &format!("schema = {schema}"))
                 .replace("scheme = \"vibrant\"\n", "density = \"default\"\n");
             if schema == 1 {
                 legacy = legacy
@@ -1216,6 +1509,8 @@ mod tests {
                 &AccessContext::local_owner(),
                 baseline.revision,
                 ConfigUpdate {
+                    projects: None,
+                    backups: None,
                     window: None,
                     paths: None,
                     appearance: None,
@@ -1240,6 +1535,8 @@ mod tests {
                 &AccessContext::local_owner(),
                 saved.revision,
                 ConfigUpdate {
+                    projects: None,
+                    backups: None,
                     window: None,
                     paths: None,
                     appearance: None,
@@ -1274,7 +1571,7 @@ mod tests {
             let mut snapshot = defaults.clone();
             snapshot.settings.appearance.motion = motion;
             let encoded = String::from_utf8(serialize_settings(&snapshot)).expect("utf8");
-            assert!(encoded.starts_with("schema = 7\n"));
+            assert!(encoded.starts_with("schema = 10\n"));
             assert!(encoded.contains(&format!("motion = \"{text}\"\n")));
             assert_eq!(parse_settings(&encoded), Ok(snapshot));
         }
@@ -1295,7 +1592,10 @@ mod tests {
         for schema in [1, 2] {
             let legacy = encoded
                 .replace("\n[window]\nremember_state = false\n", "")
-                .replace("schema = 7", &format!("schema = {schema}"))
+                .replace(CONFIG8_DEFAULTS_TOML, "")
+                .replace("fullscreen = false\n", "")
+                .replace("fullscreen = true\n", "")
+                .replace("schema = 10", &format!("schema = {schema}"))
                 .replace("scheme = \"vibrant\"\n", "density = \"default\"\n");
             let legacy = if schema == 1 {
                 legacy
@@ -1341,6 +1641,8 @@ mod tests {
                 &access,
                 1,
                 ConfigUpdate {
+                    projects: None,
+                    backups: None,
                     window: None,
                     paths: None,
                     unity: None,
@@ -1370,6 +1672,8 @@ mod tests {
                     &access,
                     previous.revision,
                     ConfigUpdate {
+                        projects: None,
+                        backups: None,
                         window: None,
                         paths: None,
                         unity: None,
@@ -1424,7 +1728,7 @@ mod tests {
             let mut snapshot = default_snapshot();
             snapshot.settings.appearance.scheme = scheme;
             let encoded = String::from_utf8(serialize_settings(&snapshot)).expect("utf8");
-            assert!(encoded.starts_with("schema = 7\n"));
+            assert!(encoded.starts_with("schema = 10\n"));
             assert!(encoded.contains(&format!("scheme = \"{value}\"\n")));
             assert_eq!(parse_settings(&encoded), Ok(snapshot));
         }
@@ -1447,7 +1751,10 @@ mod tests {
                 parse_settings(
                     &encoded
                         .replace("\n[window]\nremember_state = false\n", "")
-                        .replace("schema = 7", &format!("schema = {schema}"))
+                        .replace(CONFIG8_DEFAULTS_TOML, "")
+                        .replace("fullscreen = false\n", "")
+                        .replace("fullscreen = true\n", "")
+                        .replace("schema = 10", &format!("schema = {schema}"))
                         .replace(
                             "scheme = \"vibrant\"\n",
                             "scheme = \"vibrant\"\ndensity = \"default\"\n"
@@ -1477,6 +1784,8 @@ mod tests {
                 &access,
                 1,
                 ConfigUpdate {
+                    projects: None,
+                    backups: None,
                     window: None,
                     paths: None,
                     unity: None,
@@ -1506,6 +1815,8 @@ mod tests {
                 &access,
                 1,
                 ConfigUpdate {
+                    projects: None,
+                    backups: None,
                     window: None,
                     paths: None,
                     unity: None,
@@ -1565,7 +1876,7 @@ mod tests {
         assert!(
             fs::read_to_string(&path)
                 .expect("read file")
-                .starts_with("schema = 7\n")
+                .starts_with("schema = 10\n")
         );
         let _ = fs::remove_dir_all(root);
     }
@@ -1659,12 +1970,15 @@ mod tests {
         ];
         expected.settings.unity.hub_path = Some(r"C:\用户\Unity Hub\Unity Hub.exe".to_owned());
         let canonical = String::from_utf8(serialize_settings(&expected)).expect("utf8");
-        assert!(canonical.starts_with("schema = 7\n"));
+        assert!(canonical.starts_with("schema = 10\n"));
         assert!(!canonical.contains("density"));
         for density in ["default", "compact"] {
             let legacy = canonical
                 .replace("\n[window]\nremember_state = false\n", "")
-                .replace("schema = 7", "schema = 3")
+                .replace(CONFIG8_DEFAULTS_TOML, "")
+                .replace("fullscreen = false\n", "")
+                .replace("fullscreen = true\n", "")
+                .replace("schema = 10", "schema = 3")
                 .replace(
                     "motion = \"full\"\n",
                     &format!("density = \"{density}\"\nmotion = \"full\"\n"),
@@ -1699,7 +2013,10 @@ mod tests {
         for schema in 1..=3 {
             let mut legacy = current
                 .replace("\n[window]\nremember_state = false\n", "")
-                .replace("schema = 7", &format!("schema = {schema}"));
+                .replace(CONFIG8_DEFAULTS_TOML, "")
+                .replace("fullscreen = false\n", "")
+                .replace("fullscreen = true\n", "")
+                .replace("schema = 10", &format!("schema = {schema}"));
             legacy = if schema < 3 {
                 legacy.replace("scheme = \"vibrant\"\n", "density = \"default\"\n")
             } else {
@@ -1770,7 +2087,7 @@ mod tests {
                 )
             })
             .to_vec();
-        invalid.push(current.replace("schema = 7", "schema = 8"));
+        invalid.push(current.replace("schema = 10", "schema = 11"));
         for invalid in invalid {
             fs::write(&path, &invalid).expect("write unsupported current input");
             assert_eq!(store.initialize(), Err(ConfigStoreError::Corrupt));
@@ -1799,6 +2116,8 @@ mod tests {
                 &access,
                 1,
                 ConfigUpdate {
+                    projects: None,
+                    backups: None,
                     window: None,
                     paths: None,
                     unity: None,
@@ -1825,6 +2144,8 @@ mod tests {
                 &access,
                 initial.revision,
                 ConfigUpdate {
+                    projects: None,
+                    backups: None,
                     window: None,
                     paths: None,
                     unity: None,
@@ -1849,6 +2170,8 @@ mod tests {
                 &access,
                 changed.revision,
                 ConfigUpdate {
+                    projects: None,
+                    backups: None,
                     window: None,
                     paths: None,
                     unity: None,
@@ -1876,6 +2199,8 @@ mod tests {
                 &access,
                 expected.revision,
                 ConfigUpdate {
+                    projects: None,
+                    backups: None,
                     window: None,
                     paths: None,
                     unity: None,
@@ -1980,6 +2305,8 @@ mod tests {
                 &access,
                 confirmed.revision,
                 ConfigUpdate {
+                    projects: None,
+                    backups: None,
                     window: None,
                     paths: None,
                     unity: None,
@@ -2088,5 +2415,49 @@ mod tests {
         ) -> Result<OfficialDiagnosticPage, StoreError> {
             unreachable!()
         }
+    }
+
+    #[test]
+    fn config10_fullscreen_roundtrips_and_legacy_inputs_cannot_carry_the_new_field() {
+        let root = temporary_path("config10-fullscreen");
+        let path = root.join("settings.toml");
+        fs::create_dir_all(&root).expect("fixture");
+        let store = FileConfigStore::new(path.clone());
+        let mut saved = default_snapshot();
+        saved.revision = 41;
+        saved.settings.window.remember_state = true;
+        saved.settings.window.fullscreen = true;
+        store.publish(&saved).expect("publish fullscreen");
+        assert_eq!(store.initialize(), Ok(saved.clone()));
+        let canonical = fs::read_to_string(&path).expect("canonical");
+        assert!(canonical.contains("fullscreen = true\n"));
+        for value in ["null", "\"true\"", "1"] {
+            let invalid = canonical.replace("fullscreen = true", &format!("fullscreen = {value}"));
+            fs::write(&path, &invalid).expect("invalid current");
+            assert_eq!(store.initialize(), Err(ConfigStoreError::Corrupt));
+            assert_eq!(fs::read_to_string(&path).expect("retained input"), invalid);
+        }
+        let missing = canonical.replace("fullscreen = true\n", "");
+        fs::write(&path, &missing).expect("missing current field");
+        assert_eq!(store.initialize(), Err(ConfigStoreError::Corrupt));
+        for schema in 7..=9 {
+            let invalid = canonical.replace("schema = 10", &format!("schema = {schema}"));
+            fs::write(&path, &invalid).expect("unapproved historical field");
+            assert_eq!(store.initialize(), Err(ConfigStoreError::Corrupt));
+            assert_eq!(
+                fs::read_to_string(&path).expect("historical authority"),
+                invalid
+            );
+        }
+        let legacy9 = missing.replace("schema = 10", "schema = 9");
+        fs::write(&path, legacy9).expect("valid Config9");
+        saved.settings.window.fullscreen = false;
+        assert_eq!(store.initialize(), Ok(saved));
+        assert!(
+            fs::read_to_string(&path)
+                .expect("migrated")
+                .starts_with("schema = 10\n")
+        );
+        fs::remove_dir_all(root).expect("cleanup fixture");
     }
 }

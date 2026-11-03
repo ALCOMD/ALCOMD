@@ -40,6 +40,9 @@ declare global {
         queryCandidates: CandidateQuery;
         packageRequests: Array<{ method: string; params: unknown }>;
         projectSnapshots: ProjectSnapshot[][];
+        autoDiscoveryProjects: ProjectSnapshot[];
+        projectListReads: number;
+        resumeProjectPoll?: () => void;
         unityRequests: Array<{ method: string; params: unknown }>;
         candidateRequests: Array<Parameters<GuiRpcClient["packageQueryProjectCandidates"]>[0]>;
         repositoryPackageRequests: Array<{ repositoryId: string; cursor?: Parameters<GuiRpcClient["repositoryPackages"]>[1] }>;
@@ -66,6 +69,8 @@ declare global {
 window.queryCandidates = queryCandidates as CandidateQuery;
 window.packageRequests = [];
 window.projectSnapshots = [];
+window.autoDiscoveryProjects = [];
+window.projectListReads = 0;
 window.unityRequests = [];
 window.candidateRequests = [];
 window.repositoryPackageRequests = [];
@@ -171,14 +176,16 @@ class DeterministicGuiClient implements GuiRpcClient {
     private unityReady: Promise<void> | undefined;
     private unityDiscoveryComplete = false;
     private settings: SettingsGetResult = {
-        configSchema: 7,
+        configSchema: 10,
         directories: { projectDirectory: query.get("project-directory") ?? (query.has("windows-paths") ? "\\\\?\\C:\\Projects" : "C:\\Fixture"), backupDirectory: "C:\\Fixture\\Backups" },
         unityHub: { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" },
         revision: 7,
         settings: {
+            projects: { autoDiscover: true },
+            backups: { compressionMode: "fast", includeVpmPackages: true, includeLibrary: false },
             paths: { projectDirectory: query.get("project-directory"), backupDirectory: null },
             unity: { hubPath: null, defaultLaunchArguments: query.has("default-arguments") ? JSON.parse(query.get("default-arguments")!) as string[] : null },
-            window: { rememberState: false },
+            window: { rememberState: false, fullscreen: query.has("window-fullscreen") },
             appearance: { mode: "system", sourceColor: null, scheme: "vibrant", motion: "system" },
             locale: "en-US",
             packages: {
@@ -413,7 +420,7 @@ class DeterministicGuiClient implements GuiRpcClient {
         if (expectedRevision !== this.settings.revision) return Promise.reject({ code: "revision_conflict" });
         if (update.unity?.hubPath && query.has("hub-normalize")) update = { ...update, unity: { hubPath: "C:\\Normalized\\Unity Hub.exe" } };
         this.settings = {
-            configSchema: 7,
+            configSchema: 10,
             directories: {
                 projectDirectory: update.paths?.projectDirectory === undefined ? this.settings.directories.projectDirectory : update.paths.projectDirectory ?? "C:\\Fixture",
                 backupDirectory: update.paths?.backupDirectory === undefined ? this.settings.directories.backupDirectory : update.paths.backupDirectory ?? "C:\\Fixture\\Backups"
@@ -421,6 +428,8 @@ class DeterministicGuiClient implements GuiRpcClient {
             unityHub: this.hubLocation(update.unity?.hubPath === undefined ? this.settings.settings.unity.hubPath : update.unity.hubPath),
             revision: expectedRevision + 1,
             settings: {
+                projects: { ...this.settings.settings.projects, ...update.projects },
+                backups: { ...this.settings.settings.backups, ...update.backups },
                 paths: { ...this.settings.settings.paths, ...update.paths },
                 unity: { ...this.settings.settings.unity, ...update.unity },
                 window: { ...this.settings.settings.window, ...update.window },
@@ -455,6 +464,16 @@ class DeterministicGuiClient implements GuiRpcClient {
 
     projectsInspect(): ReturnType<GuiRpcClient["projectsInspect"]> { return this.value({ project: project() }); }
     projectsList(cursor?: { registeredAtMs: number; id: string }): ReturnType<GuiRpcClient["projectsList"]> {
+        window.projectListReads += 1;
+        if (query.has("auto-projects")) {
+            const projects = [project(), ...window.autoDiscoveryProjects];
+            window.projectSnapshots.push(structuredClone(projects));
+            if (query.has("hold-project-poll") && window.projectListReads === 2) {
+                const snapshot = structuredClone({ projects });
+                return new Promise((resolve) => { window.resumeProjectPoll = () => resolve(snapshot); });
+            }
+            return this.value({ projects });
+        }
         if (query.has("template-tasks")) window.templateRequests.push({ method: "projects.list", params: cursor ?? {} });
         if (query.has("template-project-pages")) {
             const source = (index: number) => ({ ...project(`00000000-0000-4000-8000-${String(2000 + index).padStart(12, "0")}`, `Source ${String(index).padStart(3, "0")}`), revision: 7 });
@@ -1052,8 +1071,8 @@ class DeterministicGuiClient implements GuiRpcClient {
         return this.value({ backups: this.mode === "empty" ? [] : [backup()] });
     }
     backupGet(backupId: string): ReturnType<GuiRpcClient["backupGet"]> { return this.value({ ...backup(), backupId }); }
-    backupCreate(projectId: string, expectedRevision: number, compressionMode: string, excludeVpmPackages: boolean): ReturnType<GuiRpcClient["backupCreate"]> {
-        window.h3Requests.push({ method: "backups.create", params: { projectId, expectedRevision, compressionMode, excludeVpmPackages } });
+    backupCreate(projectId: string, expectedRevision: number, compressionMode?: "store" | "fast" | "maximum", excludeVpmPackages?: boolean, includeLibrary?: boolean): ReturnType<GuiRpcClient["backupCreate"]> {
+        window.h3Requests.push({ method: "backups.create", params: { projectId, expectedRevision, compressionMode, excludeVpmPackages, includeLibrary } });
         if (query.has("h3-backup-create-error")) return Promise.reject({ code: query.get("h3-backup-create-error") });
         return this.value({ operationId: OPERATION_ID, backupId: BACKUP_ID, replayed: false });
     }

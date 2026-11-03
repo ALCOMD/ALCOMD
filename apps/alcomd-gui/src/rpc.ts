@@ -170,7 +170,7 @@ export interface GuiRpcClient {
     templateApplyCreateProject(planId: string): Promise<TemplateApplyResult>;
     backupsList(projectId?: string, cursor?: string): Promise<BackupsListResult>;
     backupGet(backupId: string): Promise<BackupRecord>;
-    backupCreate(projectId: string, expectedRevision: number, compressionMode: "store" | "fast" | "maximum", excludeVpmPackages: boolean): Promise<BackupCreateResult>;
+    backupCreate(projectId: string, expectedRevision: number, compressionMode?: "store" | "fast" | "level3" | "level5" | "level7" | "maximum", excludeVpmPackages?: boolean, includeLibrary?: boolean): Promise<BackupCreateResult>;
     backupPlanRestore(backupId: string, targetParent: string, targetLeaf: string): Promise<BackupRestorePlan>;
     backupApplyRestore(planId: string): Promise<BackupApplyRestoreResult>;
     extensionsList(cursor?: string): Promise<ExtensionsListResult>;
@@ -510,8 +510,12 @@ class TauriGuiRpcClient implements GuiRpcClient {
         return invokeTyped("gui_backup_get", { backupId });
     }
 
-    backupCreate(projectId: string, expectedRevision: number, compressionMode: "store" | "fast" | "maximum", excludeVpmPackages: boolean): Promise<BackupCreateResult> {
-        return invokeTyped("gui_backup_create", { params: { projectId, expectedRevision, compressionMode, excludeVpmPackages, idempotencyKey: crypto.randomUUID() } });
+    backupCreate(projectId: string, expectedRevision: number, compressionMode?: "store" | "fast" | "level3" | "level5" | "level7" | "maximum", excludeVpmPackages?: boolean, includeLibrary?: boolean): Promise<BackupCreateResult> {
+        return invokeTyped("gui_backup_create", { params: { projectId, expectedRevision,
+            ...(compressionMode === undefined ? {} : { compressionMode }),
+            ...(excludeVpmPackages === undefined ? {} : { excludeVpmPackages }),
+            ...(includeLibrary === undefined ? {} : { includeLibrary }),
+            idempotencyKey: crypto.randomUUID() } });
     }
 
     backupPlanRestore(backupId: string, targetParent: string, targetLeaf: string): Promise<BackupRestorePlan> {

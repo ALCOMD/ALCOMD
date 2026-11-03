@@ -1,0 +1,787 @@
+{
+    "schema": 1,
+    "currentConfigSchema": 10,
+    "current": {
+        "toml": "schema = 10\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"vibrant\"\nsource_color = \"#112233\"\nmotion = \"reduced\"\n\n[packages]\nshow_prerelease = false\nhidden_repository_ids = []\nhide_local_user_packages = false\n\n[window]\nremember_state = false\nfullscreen = false\n\n[projects]\nauto_discover = true\n\n[backups]\ncompression_mode = \"fast\"\ninclude_vpm_packages = true\ninclude_library = false\n",
+        "getResult": {
+            "configSchema": 10,
+            "revision": 41,
+            "settings": {
+                "appearance": {
+                    "mode": "dark",
+                    "scheme": "vibrant",
+                    "sourceColor": "#112233",
+                    "motion": "reduced"
+                },
+                "packages": {
+                    "showPrerelease": false,
+                    "hiddenRepositoryIds": [],
+                    "hideLocalUserPackages": false
+                },
+                "locale": "ja-JP",
+                "unity": {
+                    "hubPath": null,
+                    "defaultLaunchArguments": null
+                },
+                "paths": {
+                    "projectDirectory": null,
+                    "backupDirectory": null
+                },
+                "window": {
+                    "rememberState": false,
+                    "fullscreen": false
+                },
+                "projects": {
+                    "autoDiscover": true
+                },
+                "backups": {
+                    "compressionMode": "fast",
+                    "includeVpmPackages": true,
+                    "includeLibrary": false
+                }
+            },
+            "unityHub": {
+                "status": "not_found",
+                "source": "none",
+                "path": null,
+                "configuredPathStatus": "unset"
+            },
+            "directories": {
+                "projectDirectory": "/fixture/Documents/ALCOMD/Projects",
+                "backupDirectory": "/fixture/Documents/ALCOMD/Backups"
+            }
+        }
+    },
+    "rejectedUpdates": [
+        {
+            "id": "density-default",
+            "update": {
+                "appearance": {
+                    "density": "default"
+                },
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "density-compact",
+            "update": {
+                "appearance": {
+                    "density": "compact"
+                },
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "density-null",
+            "update": {
+                "appearance": {
+                    "density": null
+                },
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "empty-paths",
+            "update": {
+                "paths": {}
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "null-paths-container",
+            "update": {
+                "paths": null
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "unknown-path",
+            "update": {
+                "paths": {
+                    "directory": "/arbitrary"
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "arguments-must-be-array",
+            "update": {
+                "unity": {
+                    "defaultLaunchArguments": "-batchmode"
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "arguments-elements-must-be-strings",
+            "update": {
+                "unity": {
+                    "defaultLaunchArguments": [
+                        1
+                    ]
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "window-null",
+            "update": {
+                "window": null,
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "window-empty",
+            "update": {
+                "window": {},
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "window-null-value",
+            "update": {
+                "window": {
+                    "rememberState": null
+                },
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "window-string-value",
+            "update": {
+                "window": {
+                    "rememberState": "true"
+                },
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "window-unknown-field",
+            "update": {
+                "window": {
+                    "rememberState": true,
+                    "width": 1000
+                },
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "empty-projects",
+            "update": {
+                "projects": {}
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "null-projects",
+            "update": {
+                "projects": null
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "null-auto-discover",
+            "update": {
+                "projects": {
+                    "autoDiscover": null
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "number-auto-discover",
+            "update": {
+                "projects": {
+                    "autoDiscover": 1
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "unknown-projects",
+            "update": {
+                "projects": {
+                    "autoDiscover": true,
+                    "scan": true
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "empty-backups",
+            "update": {
+                "backups": {}
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "null-backups",
+            "update": {
+                "backups": null
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "null-compression-mode",
+            "update": {
+                "backups": {
+                    "compressionMode": null
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "invalid-compression-mode",
+            "update": {
+                "backups": {
+                    "compressionMode": "normal"
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "null-include-packages",
+            "update": {
+                "backups": {
+                    "includeVpmPackages": null
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "string-include-library",
+            "update": {
+                "backups": {
+                    "includeLibrary": "false"
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "null-include-library",
+            "update": {
+                "backups": {
+                    "includeLibrary": null
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "unknown-backups",
+            "update": {
+                "backups": {
+                    "includeLibrary": true,
+                    "destination": "/tmp"
+                }
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "fullscreen-null",
+            "update": {
+                "window": {
+                    "fullscreen": null
+                },
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "fullscreen-string",
+            "update": {
+                "window": {
+                    "fullscreen": "true"
+                },
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        },
+        {
+            "id": "fullscreen-number",
+            "update": {
+                "window": {
+                    "fullscreen": 1
+                },
+                "locale": "zh-CN"
+            },
+            "errorCode": "invalid_request"
+        }
+    ],
+    "rejectedCurrentFiles": [
+        {
+            "id": "config9-density-default",
+            "toml": "schema = 10\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\ndensity = \"default\"\nmode = \"dark\"\nscheme = \"vibrant\"\nsource_color = \"#112233\"\nmotion = \"reduced\"\n\n[packages]\nshow_prerelease = false\nhidden_repository_ids = []\nhide_local_user_packages = false\n\n[window]\nremember_state = false\nfullscreen = false\n\n[projects]\nauto_discover = true\n\n[backups]\ncompression_mode = \"fast\"\ninclude_vpm_packages = true\ninclude_library = false\n",
+            "error": "unknown-field"
+        },
+        {
+            "id": "config9-density-compact",
+            "toml": "schema = 10\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\ndensity = \"compact\"\nmode = \"dark\"\nscheme = \"vibrant\"\nsource_color = \"#112233\"\nmotion = \"reduced\"\n\n[packages]\nshow_prerelease = false\nhidden_repository_ids = []\nhide_local_user_packages = false\n\n[window]\nremember_state = false\nfullscreen = false\n\n[projects]\nauto_discover = true\n\n[backups]\ncompression_mode = \"fast\"\ninclude_vpm_packages = true\ninclude_library = false\n",
+            "error": "unknown-field"
+        }
+    ],
+    "legacyInputs": [
+        {
+            "id": "config1-compact",
+            "schema": 1,
+            "toml": "schema = 1\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nsource_color = \"#112233\"\ndensity = \"compact\"\nmotion = \"reduced\"\n",
+            "expectedRevision": 41,
+            "expectedSettings": {
+                "appearance": {
+                    "mode": "dark",
+                    "scheme": "vibrant",
+                    "sourceColor": "#112233",
+                    "motion": "reduced"
+                },
+                "packages": {
+                    "showPrerelease": false,
+                    "hiddenRepositoryIds": [],
+                    "hideLocalUserPackages": false
+                },
+                "locale": "ja-JP",
+                "unity": {
+                    "hubPath": null,
+                    "defaultLaunchArguments": null
+                },
+                "paths": {
+                    "projectDirectory": null,
+                    "backupDirectory": null
+                },
+                "window": {
+                    "rememberState": false,
+                    "fullscreen": false
+                },
+                "projects": {
+                    "autoDiscover": true
+                },
+                "backups": {
+                    "compressionMode": "fast",
+                    "includeVpmPackages": true,
+                    "includeLibrary": false
+                }
+            }
+        },
+        {
+            "id": "config2-default",
+            "schema": 2,
+            "toml": "schema = 2\nrevision = 42\nlocale = \"zh-CN\"\n\n[appearance]\nmode = \"light\"\nsource_color = \"#445566\"\ndensity = \"default\"\nmotion = \"system\"\n\n[packages]\nshow_prerelease = true\nhidden_repository_ids = [\"00000000-0000-0000-0000-000000000001\"]\nhide_local_user_packages = true\n",
+            "expectedRevision": 42,
+            "expectedSettings": {
+                "appearance": {
+                    "mode": "light",
+                    "scheme": "vibrant",
+                    "sourceColor": "#445566",
+                    "motion": "system"
+                },
+                "packages": {
+                    "showPrerelease": true,
+                    "hiddenRepositoryIds": [
+                        "00000000-0000-0000-0000-000000000001"
+                    ],
+                    "hideLocalUserPackages": true
+                },
+                "locale": "zh-CN",
+                "unity": {
+                    "hubPath": null,
+                    "defaultLaunchArguments": null
+                },
+                "paths": {
+                    "projectDirectory": null,
+                    "backupDirectory": null
+                },
+                "window": {
+                    "rememberState": false,
+                    "fullscreen": false
+                },
+                "projects": {
+                    "autoDiscover": true
+                },
+                "backups": {
+                    "compressionMode": "fast",
+                    "includeVpmPackages": true,
+                    "includeLibrary": false
+                }
+            }
+        },
+        {
+            "id": "config3-compact-with-hub",
+            "schema": 3,
+            "toml": "schema = 3\nrevision = 43\nlocale = \"en-US\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"fruit-salad\"\nsource_color = \"#778899\"\ndensity = \"compact\"\nmotion = \"full\"\n\n[packages]\nshow_prerelease = true\nhidden_repository_ids = [\"00000000-0000-0000-0000-000000000001\"]\nhide_local_user_packages = true\n\n[unity]\nhub_path = \"C:\\\\Fixture\\\\Unity Hub\\\\Unity Hub.exe\"\n",
+            "expectedRevision": 43,
+            "expectedSettings": {
+                "appearance": {
+                    "mode": "dark",
+                    "scheme": "fruit-salad",
+                    "sourceColor": "#778899",
+                    "motion": "full"
+                },
+                "packages": {
+                    "showPrerelease": true,
+                    "hiddenRepositoryIds": [
+                        "00000000-0000-0000-0000-000000000001"
+                    ],
+                    "hideLocalUserPackages": true
+                },
+                "locale": "en-US",
+                "unity": {
+                    "hubPath": "C:\\Fixture\\Unity Hub\\Unity Hub.exe",
+                    "defaultLaunchArguments": null
+                },
+                "paths": {
+                    "projectDirectory": null,
+                    "backupDirectory": null
+                },
+                "window": {
+                    "rememberState": false,
+                    "fullscreen": false
+                },
+                "projects": {
+                    "autoDiscover": true
+                },
+                "backups": {
+                    "compressionMode": "fast",
+                    "includeVpmPackages": true,
+                    "includeLibrary": false
+                }
+            }
+        },
+        {
+            "id": "config4-directory-defaults",
+            "schema": 4,
+            "toml": "schema = 4\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"vibrant\"\nsource_color = \"#112233\"\nmotion = \"reduced\"\n\n[packages]\nshow_prerelease = false\nhidden_repository_ids = []\nhide_local_user_packages = false\n",
+            "expectedRevision": 41,
+            "expectedSettings": {
+                "appearance": {
+                    "mode": "dark",
+                    "scheme": "vibrant",
+                    "sourceColor": "#112233",
+                    "motion": "reduced"
+                },
+                "packages": {
+                    "showPrerelease": false,
+                    "hiddenRepositoryIds": [],
+                    "hideLocalUserPackages": false
+                },
+                "locale": "ja-JP",
+                "unity": {
+                    "hubPath": null,
+                    "defaultLaunchArguments": null
+                },
+                "paths": {
+                    "projectDirectory": null,
+                    "backupDirectory": null
+                },
+                "window": {
+                    "rememberState": false,
+                    "fullscreen": false
+                },
+                "projects": {
+                    "autoDiscover": true
+                },
+                "backups": {
+                    "compressionMode": "fast",
+                    "includeVpmPackages": true,
+                    "includeLibrary": false
+                }
+            }
+        },
+        {
+            "id": "config5-preserves-paths-hub-and-preferences",
+            "schema": 5,
+            "toml": "schema = 5\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"vibrant\"\nsource_color = \"#112233\"\nmotion = \"reduced\"\n\n[packages]\nshow_prerelease = false\nhidden_repository_ids = []\nhide_local_user_packages = false\n\n[unity]\nhub_path = \"/fixture/Unity Hub\"\n\n[paths]\nproject_directory = \"/fixture/projects\"\nbackup_directory = \"/fixture/backups\"\n",
+            "expectedRevision": 41,
+            "expectedSettings": {
+                "appearance": {
+                    "mode": "dark",
+                    "scheme": "vibrant",
+                    "sourceColor": "#112233",
+                    "motion": "reduced"
+                },
+                "packages": {
+                    "showPrerelease": false,
+                    "hiddenRepositoryIds": [],
+                    "hideLocalUserPackages": false
+                },
+                "locale": "ja-JP",
+                "unity": {
+                    "hubPath": "/fixture/Unity Hub",
+                    "defaultLaunchArguments": null
+                },
+                "paths": {
+                    "projectDirectory": "/fixture/projects",
+                    "backupDirectory": "/fixture/backups"
+                },
+                "window": {
+                    "rememberState": false,
+                    "fullscreen": false
+                },
+                "projects": {
+                    "autoDiscover": true
+                },
+                "backups": {
+                    "compressionMode": "fast",
+                    "includeVpmPackages": true,
+                    "includeLibrary": false
+                }
+            }
+        },
+        {
+            "id": "config6-preserves-unity-empty-override",
+            "schema": 6,
+            "toml": "schema = 6\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"vibrant\"\nsource_color = \"#112233\"\nmotion = \"reduced\"\n\n[packages]\nshow_prerelease = false\nhidden_repository_ids = []\nhide_local_user_packages = false\n\n[unity]\ndefault_launch_arguments = []\n",
+            "expectedRevision": 41,
+            "expectedSettings": {
+                "appearance": {
+                    "mode": "dark",
+                    "scheme": "vibrant",
+                    "sourceColor": "#112233",
+                    "motion": "reduced"
+                },
+                "packages": {
+                    "showPrerelease": false,
+                    "hiddenRepositoryIds": [],
+                    "hideLocalUserPackages": false
+                },
+                "locale": "ja-JP",
+                "unity": {
+                    "hubPath": null,
+                    "defaultLaunchArguments": []
+                },
+                "paths": {
+                    "projectDirectory": null,
+                    "backupDirectory": null
+                },
+                "window": {
+                    "rememberState": false,
+                    "fullscreen": false
+                },
+                "projects": {
+                    "autoDiscover": true
+                },
+                "backups": {
+                    "compressionMode": "fast",
+                    "includeVpmPackages": true,
+                    "includeLibrary": false
+                }
+            }
+        },
+        {
+            "id": "config7-preserves-window-and-all-settings",
+            "schema": 7,
+            "toml": "schema = 7\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"vibrant\"\nsource_color = \"#112233\"\nmotion = \"reduced\"\n\n[packages]\nshow_prerelease = false\nhidden_repository_ids = []\nhide_local_user_packages = false\n\n[window]\nremember_state = true\n",
+            "expectedRevision": 41,
+            "expectedSettings": {
+                "appearance": {
+                    "mode": "dark",
+                    "scheme": "vibrant",
+                    "sourceColor": "#112233",
+                    "motion": "reduced"
+                },
+                "packages": {
+                    "showPrerelease": false,
+                    "hiddenRepositoryIds": [],
+                    "hideLocalUserPackages": false
+                },
+                "locale": "ja-JP",
+                "unity": {
+                    "hubPath": null,
+                    "defaultLaunchArguments": null
+                },
+                "paths": {
+                    "projectDirectory": null,
+                    "backupDirectory": null
+                },
+                "window": {
+                    "rememberState": true,
+                    "fullscreen": false
+                },
+                "projects": {
+                    "autoDiscover": true
+                },
+                "backups": {
+                    "compressionMode": "fast",
+                    "includeVpmPackages": true,
+                    "includeLibrary": false
+                }
+            }
+        },
+        {
+            "id": "config8-preserves-nondefault-project-backup-and-window-values",
+            "schema": 8,
+            "toml": "schema = 8\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"vibrant\"\nsource_color = \"#112233\"\nmotion = \"reduced\"\n\n[packages]\nshow_prerelease = false\nhidden_repository_ids = []\nhide_local_user_packages = false\n\n[window]\nremember_state = true\n\n[projects]\nauto_discover = false\n\n[backups]\ncompression_mode = \"maximum\"\ninclude_vpm_packages = false\ninclude_library = true\n",
+            "expectedRevision": 41,
+            "expectedSettings": {
+                "appearance": {
+                    "mode": "dark",
+                    "scheme": "vibrant",
+                    "sourceColor": "#112233",
+                    "motion": "reduced"
+                },
+                "packages": {
+                    "showPrerelease": false,
+                    "hiddenRepositoryIds": [],
+                    "hideLocalUserPackages": false
+                },
+                "locale": "ja-JP",
+                "unity": {
+                    "hubPath": null,
+                    "defaultLaunchArguments": null
+                },
+                "paths": {
+                    "projectDirectory": null,
+                    "backupDirectory": null
+                },
+                "window": {
+                    "rememberState": true,
+                    "fullscreen": false
+                },
+                "projects": {
+                    "autoDiscover": false
+                },
+                "backups": {
+                    "compressionMode": "maximum",
+                    "includeVpmPackages": false,
+                    "includeLibrary": true
+                }
+            }
+        },
+        {
+            "id": "config9-fullscreen-default-migration",
+            "schema": 9,
+            "toml": "schema = 9\nrevision = 41\nlocale = \"ja-JP\"\n\n[appearance]\nmode = \"dark\"\nscheme = \"vibrant\"\nsource_color = \"#112233\"\nmotion = \"reduced\"\n\n[packages]\nshow_prerelease = false\nhidden_repository_ids = []\nhide_local_user_packages = false\n\n[window]\nremember_state = true\n\n[projects]\nauto_discover = true\n\n[backups]\ncompression_mode = \"level7\"\ninclude_vpm_packages = true\ninclude_library = false\n",
+            "expectedRevision": 41,
+            "expectedSettings": {
+                "appearance": {
+                    "mode": "dark",
+                    "scheme": "vibrant",
+                    "sourceColor": "#112233",
+                    "motion": "reduced"
+                },
+                "packages": {
+                    "showPrerelease": false,
+                    "hiddenRepositoryIds": [],
+                    "hideLocalUserPackages": false
+                },
+                "locale": "ja-JP",
+                "unity": {
+                    "hubPath": null,
+                    "defaultLaunchArguments": null
+                },
+                "paths": {
+                    "projectDirectory": null,
+                    "backupDirectory": null
+                },
+                "window": {
+                    "rememberState": true,
+                    "fullscreen": false
+                },
+                "projects": {
+                    "autoDiscover": true
+                },
+                "backups": {
+                    "compressionMode": "level7",
+                    "includeVpmPackages": true,
+                    "includeLibrary": false
+                }
+            }
+        }
+    ],
+    "migration": {
+        "preserveRevision": true,
+        "removeOnly": [
+            "appearance.density"
+        ],
+        "v1AdditionalDefaults": [
+            "packages",
+            "appearance.scheme",
+            "unity.hubPath"
+        ],
+        "v2AdditionalDefaults": [
+            "appearance.scheme",
+            "unity.hubPath"
+        ],
+        "v3AbsentUnityDefault": null,
+        "directoryDefaults": {
+            "projectDirectory": null,
+            "backupDirectory": null
+        },
+        "defaultLaunchArguments": null,
+        "windowDefaults": {
+            "rememberState": false,
+            "fullscreen": false
+        }
+    },
+    "acceptedPathUpdates": [
+        {
+            "paths": {
+                "projectDirectory": "/fixture/projects"
+            }
+        },
+        {
+            "paths": {
+                "backupDirectory": "/fixture/backups"
+            }
+        },
+        {
+            "paths": {
+                "projectDirectory": null,
+                "backupDirectory": null
+            }
+        }
+    ],
+    "acceptedUnityUpdates": [
+        {
+            "unity": {
+                "defaultLaunchArguments": null
+            }
+        },
+        {
+            "unity": {
+                "defaultLaunchArguments": []
+            }
+        },
+        {
+            "unity": {
+                "defaultLaunchArguments": [
+                    "-logFile",
+                    "C:\\User Data\\Unity\\editor \"debug\".log"
+                ]
+            }
+        }
+    ],
+    "acceptedWindowUpdates": [
+        {
+            "window": {
+                "rememberState": false
+            }
+        },
+        {
+            "window": {
+                "rememberState": true
+            }
+        },
+        {
+            "window": {
+                "fullscreen": false
+            }
+        },
+        {
+            "window": {
+                "fullscreen": true
+            }
+        },
+        {
+            "window": {
+                "fullscreen": true,
+                "rememberState": false
+            }
+        }
+    ]
+}

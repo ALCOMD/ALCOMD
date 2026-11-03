@@ -10,7 +10,7 @@
         "newCapability": "unity.hub.open.v1",
         "newPermission": "unity.hub.open",
         "newConfigVersion": null,
-        "configSchema": 7,
+        "configSchema": 10,
         "newStateMigration": null,
         "configField": "settings.unity.hubPath",
         "responseEvidence": "settingsGetResult.unityHub; also returned by settings.update",

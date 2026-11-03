@@ -324,7 +324,12 @@ where
             .recover_project_copy_operations(now_ms()?)
             .await?
         {
-            self.schedule(operation_id);
+            let recovery = self.locks.project_recovery_guard();
+            let application = self.clone();
+            tokio::spawn(async move {
+                let _recovery = recovery;
+                let _ = application.run(operation_id).await;
+            });
         }
         Ok(())
     }

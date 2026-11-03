@@ -101,6 +101,19 @@ pub fn classify_prerelease(version: &str) -> Option<bool> {
         .map(|version| !version.pre.is_empty())
 }
 
+/// Creates the same target lock used by project create, restore and copy publication.
+#[must_use]
+pub fn project_creation_resource(
+    parent_identity: &[u8],
+    target_leaf: String,
+) -> alcomd_application::ResourceKey {
+    use sha2::{Digest, Sha256};
+    alcomd_application::ResourceKey::ProjectCreate {
+        parent_identity_sha256: Sha256::digest(parent_identity).into(),
+        target_leaf,
+    }
+}
+
 /// Bounded M3 reader. It owns one anonymous no-proxy HTTP client.
 #[derive(Clone)]
 pub struct VpmReader {

@@ -39,3 +39,21 @@ settings write can commit. Reading settings never creates directories or changes
 files. A directory preference authorizes no file read/write by a caller; existing project
 and backup use cases retain their own permission, path identity, transaction and recovery
 checks. Changing a preference does not relocate existing backups or redirect accepted tasks.
+
+Config8 adds a default-directory discovery worker owned by Core/application. Changing
+`projects.autoDiscover`, or changing the project directory while the effective switch is on,
+requires `projects.manage` in addition to `settings.manage`; a settings-only principal cannot
+use the local-owner worker to obtain registry write authority. Scanning is single-in-flight,
+bounded to 4096 immediate directory entries and rejects links/reparse points. Each candidate
+rechecks root/child identity and the current settings revision before registry acceptance.
+It shares the ProjectCreate lock with Template/Restore/Copy publication to preserve their
+preallocated project identities. Disabling or changing the root orders before later old-scan
+registrations. Failed scans never delete existing projects or write project files.
+
+Backup defaults are resolved with the destination from one authoritative snapshot, then
+frozen in the accepted request. Replaying omitted options uses the accepted values, whereas
+explicitly different values conflict. The optional Library inclusion affects only the
+standard project-root Library directory; archive path, link, byte/entry and consistency
+limits remain mandatory. Existing requests without the flag retain false and their original
+fingerprint. GUI default editing and project-list follow-up remain typed RPC clients:
+they do not enumerate directories, read caches or perform registry writes themselves.

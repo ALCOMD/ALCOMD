@@ -1029,7 +1029,14 @@ fn build_inventory(
         .map(|value| value.package_id.as_str())
         .collect::<BTreeSet<_>>();
     let mut entries = Vec::new();
-    walk(&root, &root, &excluded_ids, &mut entries, limits)?;
+    walk(
+        &root,
+        &root,
+        &excluded_ids,
+        request.include_library,
+        &mut entries,
+        limits,
+    )?;
     entries.sort_by(|left, right| left.relative.cmp(&right.relative));
     if entries.len().saturating_add(2) > limits.entries {
         return Err(limit());
@@ -1077,6 +1084,7 @@ fn walk(
     root: &Path,
     path: &Path,
     excluded_packages: &BTreeSet<&str>,
+    include_library: bool,
     entries: &mut Vec<InventoryEntry>,
     limits: ArchiveLimits,
 ) -> Result<(), M5BackupError> {
@@ -1093,7 +1101,7 @@ fn walk(
             return Err(unsafe_source());
         }
         if metadata.is_dir() {
-            if excluded_by_profile(&relative, excluded_packages) {
+            if excluded_by_profile(&relative, excluded_packages, include_library) {
                 if preserve_library_scene(&relative) {
                     let mut direct = std::fs::read_dir(&child_path)
                         .map_err(|_| unsafe_source())?
@@ -1119,7 +1127,14 @@ fn walk(
             if entries.len() > limits.entries {
                 return Err(limit());
             }
-            walk(root, &child_path, excluded_packages, entries, limits)?;
+            walk(
+                root,
+                &child_path,
+                excluded_packages,
+                include_library,
+                entries,
+                limits,
+            )?;
         } else if metadata.is_file() {
             verify_single_link(&child_path, &metadata)?;
             entries.push(inventory_entry(
@@ -1194,11 +1209,18 @@ fn write_archive(
         .map_err(|_| internal())?;
     let method = match request.compression_mode {
         BackupCompression::Store => CompressionMethod::Stored,
-        BackupCompression::Fast | BackupCompression::Maximum => CompressionMethod::Deflated,
+        BackupCompression::Fast
+        | BackupCompression::Level3
+        | BackupCompression::Level5
+        | BackupCompression::Level7
+        | BackupCompression::Maximum => CompressionMethod::Deflated,
     };
     let level = match request.compression_mode {
         BackupCompression::Store => None,
         BackupCompression::Fast => Some(1),
+        BackupCompression::Level3 => Some(3),
+        BackupCompression::Level5 => Some(5),
+        BackupCompression::Level7 => Some(7),
         BackupCompression::Maximum => Some(9),
     };
     let file_options = SimpleFileOptions::default()
@@ -1438,7 +1460,7 @@ fn validated_exclusions(
     Ok(result)
 }
 
-fn excluded_by_profile(relative: &str, packages: &BTreeSet<&str>) -> bool {
+fn excluded_by_profile(relative: &str, packages: &BTreeSet<&str>, include_library: bool) -> bool {
     let parts = relative.split('/').collect::<Vec<_>>();
     if parts.iter().any(|part| part.eq_ignore_ascii_case(".git")) {
         return true;
@@ -1451,6 +1473,7 @@ fn excluded_by_profile(relative: &str, packages: &BTreeSet<&str>) -> bool {
             || root
                 .get(..7)
                 .is_some_and(|prefix| prefix.eq_ignore_ascii_case("Library"))
+                && !(include_library && root.eq_ignore_ascii_case("Library"))
         {
             return true;
         }
@@ -1649,7 +1672,9 @@ mod tests {
             "ProjectSettings",
             "Packages/com.example.locked",
             "Packages/com.example.embedded",
+            "Library/Artifacts",
             "LibraryCache",
+            "Temp",
             "UserSettings",
             ".idea",
         ] {
@@ -1679,6 +1704,10 @@ mod tests {
             b"scene",
         )
         .expect("scene");
+        std::fs::write(root.join("Library/Artifacts/cache.bin"), b"unity cache").expect("cache");
+        std::fs::write(root.join("LibraryCache/cache.bin"), b"nonstandard cache")
+            .expect("prefix cache");
+        std::fs::write(root.join("Temp/temporary.bin"), b"temporary").expect("temporary");
         let record = ProjectRecord {
             project_id: ProjectId::new(),
             observation: ProjectObservation {
@@ -1713,6 +1742,7 @@ mod tests {
             expected_revision: Revision::INITIAL,
             compression_mode: BackupCompression::Fast,
             exclude_vpm_packages: true,
+            include_library: false,
             created_at_ms: 1,
             destination: None,
         };
@@ -1728,6 +1758,7 @@ mod tests {
             .collect::<BTreeSet<_>>();
         assert!(names.contains("Assets/Empty"));
         assert!(names.contains("LibraryCache/LastSceneManagerSetup.txt"));
+        assert!(!names.contains("Library/Artifacts/cache.bin"));
         assert!(names.contains("Packages/com.example.embedded/package.json"));
         assert!(
             !names
@@ -1746,10 +1777,158 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn actual_archive_preserves_only_requested_packages_and_standard_library_cache() {
+        for compression in [
+            BackupCompression::Store,
+            BackupCompression::Fast,
+            BackupCompression::Level3,
+            BackupCompression::Level5,
+            BackupCompression::Level7,
+            BackupCompression::Maximum,
+        ] {
+            for exclude_packages in [false, true] {
+                for include_library in [false, true] {
+                    let (root, project) = fixture();
+                    let request = BackupCreateRequest {
+                        backup_id: Default::default(),
+                        project_id: project.project_id,
+                        expected_revision: Revision::INITIAL,
+                        compression_mode: compression,
+                        exclude_vpm_packages: exclude_packages,
+                        include_library,
+                        created_at_ms: 1,
+                        destination: None,
+                    };
+                    let base = root.with_extension("matrix");
+                    let engine = BackupEngine::new(base.join("data/backups")).expect("engine");
+                    let (operation_id, evidence) =
+                        archive_request(&engine, &project, &request).await;
+                    let record = publish_request(&engine, operation_id, &request, &evidence).await;
+                    let archive_path = engine.objects.join(format!("{}.zip", request.backup_id));
+                    verify_archive(&archive_path, &evidence, ArchiveLimits::backup())
+                        .expect("valid archive");
+                    let mut zip = ZipArchive::new(File::open(&archive_path).expect("archive file"))
+                        .expect("zip");
+                    assert_eq!(
+                        zip.by_name("project/Packages/com.example.locked/package.json")
+                            .is_ok(),
+                        !exclude_packages
+                    );
+                    assert!(
+                        zip.by_name("project/Packages/com.example.embedded/package.json")
+                            .is_ok()
+                    );
+                    assert_eq!(
+                        zip.by_name("project/Library/Artifacts/cache.bin").is_ok(),
+                        include_library
+                    );
+                    assert!(
+                        zip.by_name("project/LibraryCache/LastSceneManagerSetup.txt")
+                            .is_ok()
+                    );
+                    assert!(zip.by_name("project/LibraryCache/cache.bin").is_err());
+                    assert!(zip.by_name("project/Temp/temporary.bin").is_err());
+                    let mut source = zip
+                        .by_name("project/Assets/source.txt")
+                        .expect("source file");
+                    assert_eq!(
+                        source.compression(),
+                        if compression == BackupCompression::Store {
+                            CompressionMethod::Stored
+                        } else {
+                            CompressionMethod::Deflated
+                        }
+                    );
+                    let mut contents = Vec::new();
+                    source
+                        .read_to_end(&mut contents)
+                        .expect("decode selected compression level");
+                    assert_eq!(contents, b"source");
+                    drop(source);
+                    let mut manifest = String::new();
+                    zip.by_name("backup.json")
+                        .expect("manifest")
+                        .read_to_string(&mut manifest)
+                        .expect("manifest contents");
+                    let manifest: RestoreManifest =
+                        serde_json::from_str(&manifest).expect("manifest format");
+                    assert_eq!(manifest.compression_mode, compression);
+                    drop(zip);
+                    let draft = engine
+                        .plan_restore(record, base.clone(), "restored".to_owned())
+                        .await
+                        .expect("plan actual restore");
+                    let plan = BackupRestorePlanRecord {
+                        draft,
+                        owner: alcomd_application::PrincipalId::local_owner(),
+                        created_at_ms: 1,
+                    };
+                    let prepared = engine
+                        .prepare_restore(plan.clone())
+                        .await
+                        .expect("verify actual restore plan");
+                    let restore_operation = OperationId::new();
+                    let staged = engine
+                        .stage_restore(restore_operation, prepared)
+                        .await
+                        .expect("extract actual archive");
+                    let restored = engine
+                        .publish_restore(staged)
+                        .await
+                        .expect("publish restored project");
+                    let target = PathBuf::from(restored.observation.root_path);
+                    assert_eq!(
+                        std::fs::read(target.join("Assets/source.txt")).expect("restored source"),
+                        b"source"
+                    );
+                    assert_eq!(
+                        target
+                            .join("Packages/com.example.locked/package.json")
+                            .exists(),
+                        !exclude_packages
+                    );
+                    assert!(
+                        target
+                            .join("Packages/com.example.embedded/package.json")
+                            .is_file()
+                    );
+                    assert_eq!(
+                        target.join("Library/Artifacts/cache.bin").exists(),
+                        include_library
+                    );
+                    if include_library {
+                        assert_eq!(
+                            std::fs::read(target.join("Library/Artifacts/cache.bin"))
+                                .expect("restored cache"),
+                            b"unity cache"
+                        );
+                    }
+                    assert!(
+                        target
+                            .join("LibraryCache/LastSceneManagerSetup.txt")
+                            .is_file()
+                    );
+                    assert!(!target.join("LibraryCache/cache.bin").exists());
+                    assert!(!target.join("Temp/temporary.bin").exists());
+                    engine
+                        .finalize_restore(restore_operation, plan)
+                        .await
+                        .expect("finalize actual restore");
+                    std::fs::remove_dir_all(base).expect("remove backup and restored fixtures");
+                    std::fs::remove_dir_all(root).expect("remove project fixture");
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn all_compression_modes_publish_valid_v1_and_cancellation_cleans_partial() {
         for mode in [
             BackupCompression::Store,
             BackupCompression::Fast,
+            BackupCompression::Level3,
+            BackupCompression::Level5,
+            BackupCompression::Level7,
             BackupCompression::Maximum,
         ] {
             let (root, project) = fixture();
@@ -1764,6 +1943,7 @@ mod tests {
                 expected_revision: Revision::INITIAL,
                 compression_mode: mode,
                 exclude_vpm_packages: true,
+                include_library: false,
                 created_at_ms: 1,
                 destination: None,
             };
@@ -1842,6 +2022,7 @@ mod tests {
             expected_revision: Revision::INITIAL,
             compression_mode: BackupCompression::Fast,
             exclude_vpm_packages: true,
+            include_library: false,
             created_at_ms: 1,
             destination: None,
         };
@@ -1870,6 +2051,7 @@ mod tests {
             expected_revision: project.revision,
             compression_mode: BackupCompression::Fast,
             exclude_vpm_packages: true,
+            include_library: false,
             created_at_ms: 1,
             destination: None,
         }

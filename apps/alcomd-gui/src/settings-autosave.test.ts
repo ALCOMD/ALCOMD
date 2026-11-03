@@ -2,13 +2,15 @@ import type { SettingsGetResult, SettingsUpdate } from "./core-models.ts";
 import { SettingsAutosave, StorageDirectoryConflictError, UnityArgumentsConflictError, UnityHubConflictError } from "./settings-autosave.ts";
 
 const initial: SettingsGetResult = {
-    configSchema: 7, revision: 7,
+    configSchema: 10, revision: 7,
     directories: { projectDirectory: "C:\\Projects", backupDirectory: "C:\\Backups" },
     unityHub: { status: "not_found", source: "none", path: null, configuredPathStatus: "unset" },
     settings: {
+        projects: { autoDiscover: true },
+        backups: { compressionMode: "fast", includeVpmPackages: true, includeLibrary: false },
         paths: { projectDirectory: null, backupDirectory: null },
         unity: { hubPath: null, defaultLaunchArguments: null },
-        window: { rememberState: false },
+        window: { rememberState: false, fullscreen: false },
         locale: "en-US",
         appearance: { mode: "system", scheme: "vibrant", sourceColor: null, motion: "system" },
         packages: { showPrerelease: false, hideLocalUserPackages: false, hiddenRepositoryIds: [] }
@@ -36,7 +38,7 @@ function model() {
             requests.push({ expectedRevision, update: structuredClone(update) });
             assert(expectedRevision === current.revision, "CAS expected current revision");
             current = {
-                configSchema: 7, revision: expectedRevision + 1,
+                configSchema: 10, revision: expectedRevision + 1,
                 directories: {
                     projectDirectory: update.paths?.projectDirectory ?? current.directories.projectDirectory,
                     backupDirectory: update.paths?.backupDirectory ?? current.directories.backupDirectory
@@ -44,6 +46,8 @@ function model() {
                 unityHub: current.unityHub,
                 settings: {
                     ...current.settings, ...update,
+                    projects: { ...current.settings.projects, ...update.projects },
+                    backups: { ...current.settings.backups, ...update.backups },
                     appearance: { ...current.settings.appearance, ...update.appearance },
                     packages: { ...current.settings.packages, ...update.packages },
                     paths: { ...current.settings.paths, ...update.paths },

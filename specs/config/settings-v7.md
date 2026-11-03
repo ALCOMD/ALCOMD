@@ -1,6 +1,6 @@
 # settings.toml Config Schema 7
 
-状态：M7 当前设置合同。项目所有者于 2026-11-03 批准默认关闭的窗口状态记忆开关及相应公开设置/持久配置合同。
+状态：历史迁移输入。项目所有者于2026-11-03批准本版窗口状态记忆合同；当前有效设置见[Config10](settings-v10.md)。
 
 Config7 在 Config6 上增加 `window.rememberState`，仍由 `alcomd` 经 application 用例层持有唯一设置权威。
 Config1–6 只作为经过各自严格校验的启动迁移输入；保留 revision、主题、语言、包偏好及 Hub 路径，

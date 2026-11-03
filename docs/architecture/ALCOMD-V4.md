@@ -259,7 +259,7 @@ ExternalConfig(provider_id)
 ```
 
 核心在 state store 成功初始化并完成恢复后，兼容返回可选 `dataSchema`；当前开发基线为
-State v17，实际版本由 daemon 提供。当前配置格式为 Config7，返回可选 `configSchema: 7`；
+State v18，实际版本由 daemon 提供。当前配置格式为 Config10，返回可选 `configSchema: 10`；
 `extensionApi` 返回已实现的 ABI v1 major 与版本化 WIT world。
 这些可选字段按 RPC v1 的兼容增加规则提供，不是 capability，也不属于 M1 客户端必读字段。
 
@@ -519,7 +519,7 @@ macOS 与 Linux 分别遵循 Application Support 和 XDG 规范，但稳定目�
 
 `settings.toml` 保存可理解的公开设置。`state.db` 是内部权威状态，不是第三方 API。凭据进入 OS Credential Store / Keychain / Secret Service。
 
-数据库结构版本按 A-034/A-035 管理。当前开发基线为 State v17；daemon 在 store 成功初始化后，将实际
+数据库结构版本按 A-034/A-035 管理。当前开发基线为 State v18；daemon 在 store 成功初始化后，将实际
 存储版本传给 hello DTO，protocol 不依赖 store，也不独立维护一份“当前数据版本”常量。
 `dataSchema` 只说明存储结构，不替代应用版本、RPC major 或 capability 协商。
 

@@ -3,7 +3,7 @@
     "archiveFormat": "zip",
     "zip64": true,
     "compressionMethods": ["stored", "deflate"],
-    "compressionModes": ["store", "fast", "maximum"],
+    "compressionModes": ["store", "fast", "level3", "level5", "level7", "maximum"],
     "limits": {
         "archiveBytes": 68719476736,
         "entries": 500000,
@@ -19,6 +19,12 @@
         "rootDirectoriesExcluded": ["Logs", "Obj", "Temp"],
         "directoriesExcludedAtAnyDepth": [".git"],
         "rootDirectoryPrefixesExcludedAsciiCaseInsensitive": ["Library"],
+        "libraryCacheOverride": {
+            "requestField": "includeLibrary",
+            "default": false,
+            "includedRootDirectoryAsciiCaseInsensitive": "Library",
+            "otherPrefixesStillExcluded": true
+        },
         "directFileExceptions": [
             {
                 "underRootPrefix": "Library",

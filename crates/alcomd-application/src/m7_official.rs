@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::{Arc, OnceLock};
 
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
 
 use crate::{AccessContext, Permission, PrincipalId, StoreError};
 
@@ -59,16 +59,62 @@ pub struct ConfigSettings {
     pub unity: ConfigUnitySettings,
     pub paths: ConfigPathSettings,
     pub window: ConfigWindowSettings,
+    pub projects: ConfigProjectSettings,
+    pub backups: ConfigBackupSettings,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ConfigProjectSettings {
+    pub auto_discover: bool,
+}
+
+impl Default for ConfigProjectSettings {
+    fn default() -> Self {
+        Self {
+            auto_discover: true,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ConfigProjectUpdate {
+    pub auto_discover: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ConfigBackupSettings {
+    pub compression_mode: crate::BackupCompression,
+    pub include_vpm_packages: bool,
+    pub include_library: bool,
+}
+
+impl Default for ConfigBackupSettings {
+    fn default() -> Self {
+        Self {
+            compression_mode: crate::BackupCompression::Fast,
+            include_vpm_packages: true,
+            include_library: false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ConfigBackupUpdate {
+    pub compression_mode: Option<crate::BackupCompression>,
+    pub include_vpm_packages: Option<bool>,
+    pub include_library: Option<bool>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ConfigWindowSettings {
     pub remember_state: bool,
+    pub fullscreen: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ConfigWindowUpdate {
-    pub remember_state: bool,
+    pub remember_state: Option<bool>,
+    pub fullscreen: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -284,6 +330,8 @@ pub struct ConfigUpdate {
     pub unity: Option<ConfigUnityUpdate>,
     pub paths: Option<ConfigPathUpdate>,
     pub window: Option<ConfigWindowUpdate>,
+    pub projects: Option<ConfigProjectUpdate>,
+    pub backups: Option<ConfigBackupUpdate>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -370,6 +418,20 @@ pub struct M7OfficialApplication<S> {
     directory_platform: Arc<dyn StorageDirectoryPlatform>,
     directory_defaults: Arc<OnceLock<StorageDirectories>>,
     settings_lock: Arc<Mutex<Option<ConfigSnapshot>>>,
+    project_discovery_notify: Arc<Notify>,
+}
+
+/// Retained only through a single registry acceptance, never through filesystem reads.
+pub struct ProjectDiscoveryFence {
+    _guard: OwnedMutexGuard<Option<ConfigSnapshot>>,
+}
+
+struct ProjectDiscoveryNotify(Arc<Notify>);
+
+impl Drop for ProjectDiscoveryNotify {
+    fn drop(&mut self) {
+        self.0.notify_one();
+    }
 }
 
 impl<S: OfficialGuiStore> M7OfficialApplication<S> {
@@ -389,6 +451,7 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
             directory_platform,
             directory_defaults: Arc::new(OnceLock::new()),
             settings_lock: Arc::new(Mutex::new(None)),
+            project_discovery_notify: Arc::new(Notify::new()),
         }
     }
 
@@ -437,6 +500,24 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
             .await
             .clone()
             .ok_or(OfficialGuiError::Unavailable)
+    }
+
+    #[must_use]
+    pub fn project_discovery_notify(&self) -> Arc<Notify> {
+        Arc::clone(&self.project_discovery_notify)
+    }
+
+    /// Fences one acceptance against disabling discovery or changing its configured root.
+    pub async fn project_discovery_fence(
+        &self,
+        expected_revision: u64,
+    ) -> Result<Option<ProjectDiscoveryFence>, OfficialGuiError> {
+        let guard = Arc::clone(&self.settings_lock).lock_owned().await;
+        let current = guard.as_ref().ok_or(OfficialGuiError::Unavailable)?;
+        if current.revision != expected_revision || !current.settings.projects.auto_discover {
+            return Ok(None);
+        }
+        Ok(Some(ProjectDiscoveryFence { _guard: guard }))
     }
 
     /// Effective paths for one accepted snapshot. Defaults are resolved before publication.
@@ -556,10 +637,17 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
                 .require(Permission::UnityManage)
                 .map_err(|_| OfficialGuiError::PermissionDenied)?;
         }
+        if update.projects.is_some() {
+            access
+                .require(Permission::ProjectsManage)
+                .map_err(|_| OfficialGuiError::PermissionDenied)?;
+        }
         if expected_revision == 0
             || update_is_empty(&update)
             || update.unity.as_ref().is_some_and(unity_update_is_empty)
             || update.paths.as_ref().is_some_and(path_update_is_empty)
+            || update.backups.as_ref().is_some_and(backup_update_is_empty)
+            || update.window.as_ref().is_some_and(window_update_is_empty)
         {
             return Err(OfficialGuiError::InvalidInput);
         }
@@ -570,13 +658,29 @@ impl<S: OfficialGuiStore> M7OfficialApplication<S> {
         let hub_platform = Arc::clone(&self.hub_platform);
         let directory_platform = Arc::clone(&self.directory_platform);
         let directory_defaults = Arc::clone(&self.directory_defaults);
+        let can_manage_projects = access.require(Permission::ProjectsManage).is_ok();
+        let discovery_notify = Arc::clone(&self.project_discovery_notify);
         tokio::task::spawn_blocking(move || {
+            let _discovery_notify = ProjectDiscoveryNotify(discovery_notify);
             // A publication failure can occur after rename. Never retain an older
             // confirmed snapshot when the resulting disk revision is uncertain.
             *guard = None;
             let current = config.load().map_err(OfficialGuiError::from)?;
             if current.revision != expected_revision {
                 return Err(OfficialGuiError::RevisionConflict);
+            }
+            if !can_manage_projects
+                && update.paths.as_ref().is_some_and(|paths| {
+                    !matches!(paths.project_directory, ConfigNullableUpdate::Unchanged)
+                })
+                && update
+                    .projects
+                    .as_ref()
+                    .map_or(current.settings.projects.auto_discover, |projects| {
+                        projects.auto_discover
+                    })
+            {
+                return Err(OfficialGuiError::PermissionDenied);
             }
             let revision = current
                 .revision
@@ -690,6 +794,8 @@ fn default_snapshot() -> ConfigSnapshot {
             unity: ConfigUnitySettings::default(),
             window: ConfigWindowSettings::default(),
             paths: ConfigPathSettings::default(),
+            projects: ConfigProjectSettings::default(),
+            backups: ConfigBackupSettings::default(),
         },
     }
 }
@@ -733,8 +839,27 @@ fn apply_update(
     mut settings: ConfigSettings,
     update: ConfigUpdate,
 ) -> Result<ConfigSettings, OfficialGuiError> {
+    if let Some(projects) = update.projects {
+        settings.projects.auto_discover = projects.auto_discover;
+    }
+    if let Some(backups) = update.backups {
+        if let Some(value) = backups.compression_mode {
+            settings.backups.compression_mode = value;
+        }
+        if let Some(value) = backups.include_vpm_packages {
+            settings.backups.include_vpm_packages = value;
+        }
+        if let Some(value) = backups.include_library {
+            settings.backups.include_library = value;
+        }
+    }
     if let Some(window) = update.window {
-        settings.window.remember_state = window.remember_state;
+        if let Some(value) = window.remember_state {
+            settings.window.remember_state = value;
+        }
+        if let Some(value) = window.fullscreen {
+            settings.window.fullscreen = value;
+        }
     }
     if let Some(appearance) = update.appearance {
         if let Some(mode) = appearance.mode {
@@ -806,7 +931,9 @@ fn apply_update(
 
 fn update_is_empty(update: &ConfigUpdate) -> bool {
     update.locale.is_none()
-        && update.window.is_none()
+        && update.window.as_ref().is_none_or(window_update_is_empty)
+        && update.projects.is_none()
+        && update.backups.as_ref().is_none_or(backup_update_is_empty)
         && update.paths.as_ref().is_none_or(path_update_is_empty)
         && update.unity.as_ref().is_none_or(unity_update_is_empty)
         && update.appearance.as_ref().is_none_or(|value| {
@@ -820,6 +947,16 @@ fn update_is_empty(update: &ConfigUpdate) -> bool {
                 && value.hidden_repository_ids.is_none()
                 && value.hide_local_user_packages.is_none()
         })
+}
+
+fn window_update_is_empty(value: &ConfigWindowUpdate) -> bool {
+    value.remember_state.is_none() && value.fullscreen.is_none()
+}
+
+fn backup_update_is_empty(value: &ConfigBackupUpdate) -> bool {
+    value.compression_mode.is_none()
+        && value.include_vpm_packages.is_none()
+        && value.include_library.is_none()
 }
 
 fn unity_update_is_empty(unity: &ConfigUnityUpdate) -> bool {
@@ -1358,6 +1495,8 @@ mod tests {
 
     fn locale_update(locale: ConfigLocale) -> ConfigUpdate {
         ConfigUpdate {
+            projects: None,
+            backups: None,
             window: None,
             paths: None,
             appearance: None,
@@ -1380,7 +1519,12 @@ mod tests {
             Arc::new(TestDirectories),
         );
         let window_update = |remember_state| ConfigUpdate {
-            window: Some(ConfigWindowUpdate { remember_state }),
+            projects: None,
+            backups: None,
+            window: Some(ConfigWindowUpdate {
+                remember_state: Some(remember_state),
+                fullscreen: None,
+            }),
             paths: None,
             unity: None,
             appearance: None,
@@ -1435,6 +1579,8 @@ mod tests {
         backup_directory: ConfigNullableUpdate<String>,
     ) -> ConfigUpdate {
         ConfigUpdate {
+            projects: None,
+            backups: None,
             window: None,
             paths: Some(ConfigPathUpdate {
                 project_directory,
@@ -1445,6 +1591,205 @@ mod tests {
             packages: None,
             unity: None,
         }
+    }
+
+    #[tokio::test]
+    async fn config8_project_discovery_permissions_and_backup_partial_updates_preserve_authority() {
+        let config = Arc::new(MemoryConfig::default());
+        let app = M7OfficialApplication::new(
+            NoStore,
+            config.clone(),
+            Arc::new(FakeHub::default()),
+            Arc::new(RecordingHubLauncher::default()),
+            Arc::new(TestDirectories),
+        );
+        app.initialize_settings()
+            .await
+            .expect("initialized settings");
+        let original = app.candidate_settings().await.expect("defaults");
+        assert!(original.settings.projects.auto_discover);
+        assert_eq!(original.settings.backups, ConfigBackupSettings::default());
+        let settings_only =
+            AccessContext::new(PrincipalId::local_owner(), [Permission::SettingsManage]);
+        let project_update = |auto_discover| {
+            let mut update = locale_update(ConfigLocale::System);
+            update.locale = None;
+            update.projects = Some(ConfigProjectUpdate { auto_discover });
+            update
+        };
+        assert_eq!(
+            app.update_settings(&settings_only, 1, project_update(false))
+                .await,
+            Err(OfficialGuiError::PermissionDenied)
+        );
+        assert_eq!(
+            app.update_settings(
+                &settings_only,
+                1,
+                path_update(
+                    ConfigNullableUpdate::Set("/changed/projects".into()),
+                    ConfigNullableUpdate::Unchanged
+                )
+            )
+            .await,
+            Err(OfficialGuiError::PermissionDenied)
+        );
+        assert_eq!(config.publishes.load(Ordering::SeqCst), 0);
+        assert_eq!(*config.snapshot.lock().expect("unchanged"), original);
+        let disabled = app
+            .update_settings(&AccessContext::local_owner(), 1, project_update(false))
+            .await
+            .expect("owner disables discovery");
+        let moved = app
+            .update_settings(
+                &settings_only,
+                disabled.revision,
+                path_update(
+                    ConfigNullableUpdate::Set("/changed/projects".into()),
+                    ConfigNullableUpdate::Unchanged,
+                ),
+            )
+            .await
+            .expect("disabled discovery needs no project permission for path");
+        let mut update = locale_update(ConfigLocale::System);
+        update.locale = None;
+        update.backups = Some(ConfigBackupUpdate {
+            compression_mode: Some(crate::BackupCompression::Maximum),
+            include_vpm_packages: None,
+            include_library: Some(true),
+        });
+        let backups = app
+            .update_settings(&settings_only, moved.revision, update)
+            .await
+            .expect("backup defaults use settings permission");
+        assert_eq!(backups.settings.paths, moved.settings.paths);
+        assert!(!backups.settings.projects.auto_discover);
+        assert_eq!(
+            backups.settings.backups,
+            ConfigBackupSettings {
+                compression_mode: crate::BackupCompression::Maximum,
+                include_vpm_packages: true,
+                include_library: true,
+            }
+        );
+        let mut empty = locale_update(ConfigLocale::JaJp);
+        empty.backups = Some(ConfigBackupUpdate::default());
+        assert_eq!(
+            app.update_settings(&settings_only, backups.revision, empty)
+                .await,
+            Err(OfficialGuiError::InvalidInput)
+        );
+        assert_eq!(
+            *config.snapshot.lock().expect("unchanged on mixed invalid"),
+            backups
+        );
+        let mut enable_and_move = path_update(
+            ConfigNullableUpdate::Set("/new/projects".into()),
+            ConfigNullableUpdate::Unchanged,
+        );
+        enable_and_move.projects = Some(ConfigProjectUpdate {
+            auto_discover: true,
+        });
+        assert_eq!(
+            app.update_settings(&settings_only, backups.revision, enable_and_move.clone())
+                .await,
+            Err(OfficialGuiError::PermissionDenied)
+        );
+        let enabled = app
+            .update_settings(
+                &AccessContext::local_owner(),
+                backups.revision,
+                enable_and_move,
+            )
+            .await
+            .expect("owner enables and moves atomically");
+        assert!(enabled.settings.projects.auto_discover);
+        assert_eq!(
+            enabled.settings.paths.project_directory.as_deref(),
+            Some("/new/projects")
+        );
+        assert_eq!(enabled.settings.backups, backups.settings.backups);
+        let backup_path = app
+            .update_settings(
+                &settings_only,
+                enabled.revision,
+                path_update(
+                    ConfigNullableUpdate::Unchanged,
+                    ConfigNullableUpdate::Set("/changed/backups".into()),
+                ),
+            )
+            .await
+            .expect("backup path does not require projects.manage");
+        assert_eq!(
+            backup_path.settings.paths.project_directory,
+            enabled.settings.paths.project_directory
+        );
+    }
+
+    #[tokio::test]
+    async fn project_discovery_fence_serializes_acceptance_with_disabling_and_rejects_old_revision()
+    {
+        let app = M7OfficialApplication::new(
+            NoStore,
+            Arc::new(MemoryConfig::default()),
+            Arc::new(FakeHub::default()),
+            Arc::new(RecordingHubLauncher::default()),
+            Arc::new(TestDirectories),
+        );
+        app.initialize_settings()
+            .await
+            .expect("initialized settings");
+        assert!(
+            app.project_discovery_fence(0)
+                .await
+                .expect("check stale")
+                .is_none()
+        );
+        let fence = app
+            .project_discovery_fence(1)
+            .await
+            .expect("current enabled")
+            .expect("fence");
+        let notify = app.project_discovery_notify();
+        let mut update = locale_update(ConfigLocale::System);
+        update.locale = None;
+        update.projects = Some(ConfigProjectUpdate {
+            auto_discover: false,
+        });
+        let application = app.clone();
+        let disabled = tokio::spawn(async move {
+            application
+                .update_settings(&AccessContext::local_owner(), 1, update)
+                .await
+        });
+        tokio::task::yield_now().await;
+        assert!(
+            !disabled.is_finished(),
+            "settings publication waits for the accepted registry write"
+        );
+        drop(fence);
+        assert!(
+            !disabled
+                .await
+                .expect("settings task")
+                .expect("disable")
+                .settings
+                .projects
+                .auto_discover
+        );
+        notify.notified().await;
+        assert!(
+            app.project_discovery_fence(1)
+                .await
+                .expect("old revision")
+                .is_none()
+        );
+        assert!(
+            app.project_discovery_fence(2)
+                .await
+                .expect("disabled")
+                .is_none()
+        );
     }
 
     #[derive(Default)]
@@ -1730,6 +2075,8 @@ mod tests {
 
     fn hub_update(hub_path: ConfigNullableUpdate<String>) -> ConfigUpdate {
         ConfigUpdate {
+            projects: None,
+            backups: None,
             window: None,
             paths: None,
             appearance: None,
@@ -2118,6 +2465,8 @@ mod tests {
                 &AccessContext::local_owner(),
                 1,
                 ConfigUpdate {
+                    projects: None,
+                    backups: None,
                     window: None,
                     paths: None,
                     appearance: None,
@@ -2179,6 +2528,8 @@ mod tests {
             Arc::new(TestDirectories),
         );
         let bad = ConfigUpdate {
+            projects: None,
+            backups: None,
             window: None,
             paths: None,
             appearance: Some(ConfigAppearanceUpdate {
@@ -2301,5 +2652,91 @@ mod tests {
             "candidate read does not reload storage"
         );
         assert_eq!(*config.snapshot.lock().expect("memory config"), confirmed);
+    }
+
+    #[tokio::test]
+    async fn fullscreen_preference_uses_the_same_cas_and_preserves_omitted_window_fields() {
+        let config = Arc::new(MemoryConfig::default());
+        let app = M7OfficialApplication::new(
+            NoStore,
+            config.clone(),
+            Arc::new(FakeHub::default()),
+            Arc::new(RecordingHubLauncher::default()),
+            Arc::new(TestDirectories),
+        );
+        let access = AccessContext::new(PrincipalId::local_owner(), [Permission::SettingsManage]);
+        let update = |window| ConfigUpdate {
+            projects: None,
+            backups: None,
+            window: Some(window),
+            paths: None,
+            unity: None,
+            appearance: None,
+            locale: None,
+            packages: None,
+        };
+        let saved = app
+            .update_settings(
+                &access,
+                1,
+                update(ConfigWindowUpdate {
+                    fullscreen: Some(true),
+                    remember_state: None,
+                }),
+            )
+            .await
+            .expect("fullscreen setting");
+        assert!(saved.settings.window.fullscreen);
+        assert!(!saved.settings.window.remember_state);
+        assert_eq!(saved.revision, 2);
+        let remembered = app
+            .update_settings(
+                &access,
+                saved.revision,
+                update(ConfigWindowUpdate {
+                    fullscreen: None,
+                    remember_state: Some(true),
+                }),
+            )
+            .await
+            .expect("remember only");
+        assert!(remembered.settings.window.fullscreen);
+        assert!(remembered.settings.window.remember_state);
+        assert_eq!(
+            app.update_settings(
+                &access,
+                1,
+                update(ConfigWindowUpdate {
+                    fullscreen: Some(false),
+                    remember_state: None
+                })
+            )
+            .await,
+            Err(OfficialGuiError::RevisionConflict)
+        );
+        let mut empty = update(ConfigWindowUpdate::default());
+        empty.locale = Some(ConfigLocale::JaJp);
+        assert_eq!(
+            app.update_settings(&access, remembered.revision, empty)
+                .await,
+            Err(OfficialGuiError::InvalidInput)
+        );
+        assert_eq!(
+            config.snapshot.lock().expect("accepted config").clone(),
+            remembered
+        );
+        let disabled = app
+            .update_settings(
+                &access,
+                remembered.revision,
+                update(ConfigWindowUpdate {
+                    fullscreen: Some(false),
+                    remember_state: None,
+                }),
+            )
+            .await
+            .expect("fullscreen off");
+        assert!(!disabled.settings.window.fullscreen);
+        assert!(disabled.settings.window.remember_state);
     }
 }

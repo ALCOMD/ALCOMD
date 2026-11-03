@@ -28,7 +28,7 @@ fn native_backup_manifest_and_quota_are_frozen() {
     assert_eq!(profile["compressionMethods"], json!(["stored", "deflate"]));
     assert_eq!(
         profile["compressionModes"],
-        json!(["store", "fast", "maximum"])
+        json!(["store", "fast", "level3", "level5", "level7", "maximum"])
     );
     assert_eq!(profile["limits"]["archiveBytes"], 68_719_476_736_u64);
     assert_eq!(profile["limits"]["entries"], 500_000);
@@ -60,6 +60,15 @@ fn exclusion_table_and_vpm_semantics_are_exact() {
     assert_eq!(
         profile["pathPolicy"]["rootDirectoryPrefixesExcludedAsciiCaseInsensitive"],
         json!(["Library"])
+    );
+    assert_eq!(
+        profile["pathPolicy"]["libraryCacheOverride"],
+        json!({
+            "requestField": "includeLibrary",
+            "default": false,
+            "includedRootDirectoryAsciiCaseInsensitive": "Library",
+            "otherPrefixesStillExcluded": true
+        })
     );
     assert_eq!(
         profile["pathPolicy"]["directFileExceptions"][0],

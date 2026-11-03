@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     AccessContext, BackupId, IdempotencyKey, M3RegistryStore, OperationId, Permission, PlanId,
-    PrincipalId, ProjectId, ProjectObservation, ProjectRecord, ResourceKey,
+    PrincipalId, ProjectId, ProjectObservation, ProjectRecord, ProjectRecoveryGuard, ResourceKey,
     ResourceLockCoordinator, Revision, StateStore, UnityWriterState, UnityWriterStateKind,
 };
 
@@ -19,6 +19,9 @@ use crate::{
 pub enum BackupCompression {
     Store,
     Fast,
+    Level3,
+    Level5,
+    Level7,
     Maximum,
 }
 
@@ -28,6 +31,9 @@ impl BackupCompression {
         match self {
             Self::Store => "store",
             Self::Fast => "fast",
+            Self::Level3 => "level3",
+            Self::Level5 => "level5",
+            Self::Level7 => "level7",
             Self::Maximum => "maximum",
         }
     }
@@ -73,6 +79,9 @@ pub struct BackupCreateRequest {
     pub expected_revision: Revision,
     pub compression_mode: BackupCompression,
     pub exclude_vpm_packages: bool,
+    /// Retained accepted requests omitted this field and always excluded caches.
+    #[serde(default)]
+    pub include_library: bool,
     pub created_at_ms: u64,
     /// Frozen when accepted. Missing only on retained pre-Config5 operations.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -86,10 +95,47 @@ pub struct BackupDestination {
     pub identity: Vec<u8>,
 }
 
-/// Reads the current backup preference from the shared application settings authority.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct BackupCreateOptions {
+    pub compression_mode: Option<BackupCompression>,
+    pub exclude_vpm_packages: Option<bool>,
+    pub include_library: Option<bool>,
+}
+
+impl From<&BackupCreateRequest> for BackupCreateOptions {
+    fn from(value: &BackupCreateRequest) -> Self {
+        Self {
+            compression_mode: Some(value.compression_mode),
+            exclude_vpm_packages: Some(value.exclude_vpm_packages),
+            include_library: Some(value.include_library),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BackupDefaults {
+    pub directory: Option<String>,
+    pub compression_mode: BackupCompression,
+    pub include_vpm_packages: bool,
+    pub include_library: bool,
+}
+
+impl Default for BackupDefaults {
+    fn default() -> Self {
+        Self {
+            directory: None,
+            compression_mode: BackupCompression::Fast,
+            include_vpm_packages: true,
+            include_library: false,
+        }
+    }
+}
+
+/// Reads backup defaults and the destination from one authoritative settings snapshot.
 pub trait BackupDirectoryProvider: Send + Sync + 'static {
-    fn directory(&self)
-    -> Pin<Box<dyn Future<Output = Result<String, M5BackupError>> + Send + '_>>;
+    fn defaults(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<BackupDefaults, M5BackupError>> + Send + '_>>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -313,7 +359,9 @@ pub trait M5BackupStore: Clone + Send + Sync + 'static {
     fn replay_backup_create(
         &self,
         owner: PrincipalId,
-        request: BackupCreateRequest,
+        project_id: ProjectId,
+        expected_revision: Revision,
+        options: BackupCreateOptions,
         key: IdempotencyKey,
     ) -> impl Future<Output = Result<Option<BackupCreateOutcome>, M5BackupError>> + Send;
     fn list_backups(
@@ -332,6 +380,7 @@ pub trait M5BackupStore: Clone + Send + Sync + 'static {
         &self,
         owner: PrincipalId,
         request: BackupCreateRequest,
+        options: BackupCreateOptions,
         key: IdempotencyKey,
     ) -> impl Future<Output = Result<BackupCreateOutcome, M5BackupError>> + Send;
     fn begin_backup_create(
@@ -586,7 +635,7 @@ where
             .recover_backup_restore_operations(now_ms()?)
             .await?
         {
-            self.schedule_restore(operation_id);
+            self.schedule_restore(operation_id, Some(self.locks.project_recovery_guard()));
         }
         for (operation_id, plan) in self.store.completed_backup_restores().await? {
             self.adapter.finalize_restore(operation_id, plan).await?;
@@ -648,38 +697,48 @@ where
         access: &AccessContext,
         project_id: ProjectId,
         expected_revision: Revision,
-        compression_mode: BackupCompression,
-        exclude_vpm_packages: bool,
+        options: BackupCreateOptions,
         key: IdempotencyKey,
     ) -> Result<BackupCreateOutcome, M5BackupError> {
         require(access, Permission::BackupsManage)?;
         require(access, Permission::ProjectsRead)?;
-        let mut request = BackupCreateRequest {
-            backup_id: BackupId::new(),
-            project_id,
-            expected_revision,
-            compression_mode,
-            exclude_vpm_packages,
-            created_at_ms: now_ms()?,
-            destination: None,
-        };
         if let Some(outcome) = self
             .store
-            .replay_backup_create(access.principal().clone(), request.clone(), key.clone())
+            .replay_backup_create(
+                access.principal().clone(),
+                project_id,
+                expected_revision,
+                options,
+                key.clone(),
+            )
             .await?
         {
             return Ok(outcome);
         }
-        if let Some(directories) = &self.directories {
-            request.destination = Some(
-                self.adapter
-                    .prepare_destination(directories.directory().await?)
-                    .await?,
-            );
+        let defaults = match &self.directories {
+            Some(provider) => provider.defaults().await?,
+            None => BackupDefaults::default(),
+        };
+        let mut request = BackupCreateRequest {
+            backup_id: BackupId::new(),
+            project_id,
+            expected_revision,
+            compression_mode: options
+                .compression_mode
+                .unwrap_or(defaults.compression_mode),
+            exclude_vpm_packages: options
+                .exclude_vpm_packages
+                .unwrap_or(!defaults.include_vpm_packages),
+            include_library: options.include_library.unwrap_or(defaults.include_library),
+            created_at_ms: now_ms()?,
+            destination: None,
+        };
+        if let Some(directory) = defaults.directory {
+            request.destination = Some(self.adapter.prepare_destination(directory).await?);
         }
         let outcome = self
             .store
-            .accept_backup_create(access.principal().clone(), request, key)
+            .accept_backup_create(access.principal().clone(), request, options, key)
             .await?;
         operation_signal(&outcome);
         if outcome.schedule {
@@ -741,7 +800,7 @@ where
             .accept_backup_restore(access.principal().clone(), plan_id, key, now_ms()?)
             .await?;
         if outcome.schedule {
-            self.schedule_restore(outcome.operation_id);
+            self.schedule_restore(outcome.operation_id, None);
         }
         Ok(outcome)
     }
@@ -753,9 +812,10 @@ where
         });
     }
 
-    fn schedule_restore(&self, operation_id: OperationId) {
+    fn schedule_restore(&self, operation_id: OperationId, recovery: Option<ProjectRecoveryGuard>) {
         let application = self.clone();
         tokio::spawn(async move {
+            let _recovery = recovery;
             let _ = application.run_restore(operation_id).await;
         });
     }

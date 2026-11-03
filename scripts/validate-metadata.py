@@ -32,21 +32,21 @@ def require(condition: bool, message: str) -> None:
 
 
 def validate_current_settings_contract() -> None:
-    current = load_json("specs/config/settings-v7.schema.json")
+    current = load_json("specs/config/settings-v10.schema.json")
     definitions = current["$defs"]
     fields = {"mode", "scheme", "sourceColor", "motion"}
-    require(current["properties"]["schema"]["const"] == 7, "Current settings Schema must be 7")
-    require("density" not in definitions, "Config7 must not define density")
-    require(set(definitions["appearance"]["properties"]) == fields, "Unexpected Config7 appearance fields")
-    require(set(definitions["appearance"]["required"]) == fields, "Config7 appearance must be complete")
+    require(current["properties"]["schema"]["const"] == 10, "Current settings Schema must be 10")
+    require("density" not in definitions, "Config10 must not define density")
+    require(set(definitions["appearance"]["properties"]) == fields, "Unexpected Config10 appearance fields")
+    require(set(definitions["appearance"]["required"]) == fields, "Config10 appearance must be complete")
     partial = definitions["partialUpdate"]["properties"]["appearance"]
-    require(set(partial["properties"]) == fields, "Config7 updates must not accept density")
+    require(set(partial["properties"]) == fields, "Config10 updates must not accept density")
     require(definitions["appearance"]["additionalProperties"] is False and partial["additionalProperties"] is False,
-            "Config7 appearance must reject unknown fields")
+            "Config10 appearance must reject unknown fields")
     migration = current["x-alcomd-migration"]
-    require(migration["from"] == [1, 2, 3, 4, 5, 6] and migration["to"] == 7, "Unexpected Config7 migration inputs")
+    require(migration["from"] == [1, 2, 3, 4, 5, 6, 7, 8, 9] and migration["to"] == 10, "Unexpected Config10 migration inputs")
     require(migration["removedFields"] == ["appearance.density"] and migration["preserveRevision"] is True,
-            "Config7 migration preserves revision and discards only legacy density")
+            "Config10 migration preserves revision and discards only legacy density")
     for version in (1, 2, 3, 4):
         legacy = load_json(f"specs/config/settings-v{version}.schema.json")
         require(legacy["properties"]["schema"]["const"] == version, "Historical settings version changed")
@@ -57,26 +57,26 @@ def validate_current_settings_contract() -> None:
         else:
             require("density" not in legacy["$defs"], "Config4 migration input must not regain density")
     rpc = load_json("specs/rpc/m7-official-gui.schema.json")["$defs"]
-    require(rpc["settingsGetResult"]["properties"]["configSchema"]["const"] == 7, "Settings RPC must report Config7")
-    base = "https://alcomd.cqmhv.com/schema/config/settings-v7.json#/$defs/"
+    require(rpc["settingsGetResult"]["properties"]["configSchema"]["const"] == 10, "Settings RPC must report Config10")
+    base = "https://alcomd.cqmhv.com/schema/config/settings-v10.json#/$defs/"
     require(rpc["settingsGetResult"]["properties"]["settings"]["$ref"] == base + "settings",
             "Settings RPC must use the current settings model")
     require(rpc["settingsUpdateParams"]["properties"]["update"]["$ref"] == base + "partialUpdate",
             "Settings RPC updates must use the current model")
     hello = load_json("specs/rpc/system-hello.response.schema.json")
-    require(hello["properties"]["result"]["properties"]["configSchema"]["const"] == 7, "Hello must report Config7")
+    require(hello["properties"]["result"]["properties"]["configSchema"]["const"] == 10, "Hello must report Config10")
     theme = load_json("specs/config/theme-controls.proposal.contract.json")
     require(theme["configMigration"]["to"] == 5 and "appearance.density" not in theme["ordinarySettings"]["fields"],
             "Historical theme migration remains Config5 without a density preference")
     hub = load_json("specs/config/unity-hub-location.proposal.contract.json")
-    require(hub["interfaces"]["configSchema"] == 7, "Hub settings must use Config7")
-    vectors = load_json("specs/config/settings-v7.contract-vectors.json")
-    require(vectors["currentConfigSchema"] == 7 and vectors["current"]["getResult"]["configSchema"] == 7,
-            "Settings vectors must describe Config7")
+    require(hub["interfaces"]["configSchema"] == 10, "Hub settings must use Config10")
+    vectors = load_json("specs/config/settings-v10.contract-vectors.json")
+    require(vectors["currentConfigSchema"] == 10 and vectors["current"]["getResult"]["configSchema"] == 10,
+            "Settings vectors must describe Config10")
     require("density" not in vectors["current"]["getResult"]["settings"]["appearance"],
             "Current settings fixture must omit density")
-    require(tomllib.loads(vectors["current"]["toml"])["schema"] == 7, "Current TOML fixture must be Config7")
-    require([case["schema"] for case in vectors["legacyInputs"]] == [1, 2, 3, 4, 5, 6], "Missing legacy settings vectors")
+    require(tomllib.loads(vectors["current"]["toml"])["schema"] == 10, "Current TOML fixture must be Config10")
+    require([case["schema"] for case in vectors["legacyInputs"]] == [1, 2, 3, 4, 5, 6, 7, 8, 9], "Missing legacy settings vectors")
     for case in vectors["legacyInputs"]:
         source = tomllib.loads(case["toml"])
         require(source["schema"] == case["schema"] and (source["appearance"].get("density") in {"default", "compact"} if source["schema"] < 4 else "density" not in source["appearance"]),
@@ -85,16 +85,16 @@ def validate_current_settings_contract() -> None:
                 "Settings migration vectors must preserve revision and omit density")
     for case in vectors["rejectedCurrentFiles"]:
         source = tomllib.loads(case["toml"])
-        require(source["schema"] == 7 and "density" in source["appearance"], "Missing Config7 unknown-field counterexample")
+        require(source["schema"] == 10 and "density" in source["appearance"], "Missing Config10 unknown-field counterexample")
 
     directory_fields = {"projectDirectory", "backupDirectory"}
     require(set(definitions["pathSettings"]["properties"]) == directory_fields and
             set(definitions["pathSettings"]["required"]) == directory_fields,
-            "Config7 directory preferences must be complete and closed")
+            "Config10 directory preferences must be complete and closed")
     require(definitions["pathSettings"]["additionalProperties"] is False and
             definitions["partialPathUpdate"]["additionalProperties"] is False and
             definitions["partialPathUpdate"]["minProperties"] == 1,
-            "Config7 path updates must reject empty/unknown containers")
+            "Config10 path updates must reject empty/unknown containers")
     require(rpc["settingsGetResult"]["properties"]["directories"]["$ref"] == base + "storageDirectories",
             "Settings RPC must publish effective directories")
     require(migration["pathsDefaults"] == {"projectDirectory": None, "backupDirectory": None},
@@ -110,35 +110,63 @@ def validate_current_settings_contract() -> None:
     require(set(definitions["unitySettings"]["properties"]) == unity_fields and
             set(definitions["unitySettings"]["required"]) == unity_fields and
             definitions["unitySettings"]["additionalProperties"] is False,
-            "Config7 Unity settings must be complete and closed")
+            "Config10 Unity settings must be complete and closed")
     require(definitions["partialUnityUpdate"]["minProperties"] == 1 and
             definitions["partialUnityUpdate"]["additionalProperties"] is False and
             definitions["partialUnityUpdate"]["x-alcomd-field-permissions"]["defaultLaunchArguments"] == ["settings.manage", "unity.manage"],
             "Global launch arguments must retain field-level permission checks")
     require(migration["unityDefaults"] == {"defaultLaunchArguments": None} and
             vectors["current"]["getResult"]["settings"]["unity"]["defaultLaunchArguments"] is None,
-            "Config7 migration must default to inherited built-in arguments")
+            "Config10 migration must default to inherited built-in arguments")
 
     legacy6 = load_json("specs/config/settings-v6.schema.json")
     require(legacy6["properties"]["schema"]["const"] == 6 and "window" not in legacy6["$defs"]["settings"]["properties"],
             "Historical Config6 shape must remain unchanged")
-    window_fields = {"rememberState"}
+    window_fields = {"rememberState", "fullscreen"}
     require(set(definitions["windowSettings"]["properties"]) == window_fields and
             set(definitions["windowSettings"]["required"]) == window_fields and
-            definitions["windowSettings"]["properties"]["rememberState"] == {"type": "boolean", "default": False},
-            "Window settings must contain only a default-false bool")
+            all(definitions["windowSettings"]["properties"][field] == {"type": "boolean", "default": False} for field in window_fields),
+            "Window settings must contain exactly the approved default-false bools")
     require(definitions["windowSettings"]["additionalProperties"] is False and
             definitions["partialWindowUpdate"]["additionalProperties"] is False and
             definitions["partialWindowUpdate"]["minProperties"] == 1 and
-            definitions["partialWindowUpdate"]["required"] == ["rememberState"] and
-            definitions["partialWindowUpdate"]["properties"]["rememberState"] == {"type": "boolean"},
+            "required" not in definitions["partialWindowUpdate"] and
+            set(definitions["partialWindowUpdate"]["properties"]) == window_fields and
+            all(definitions["partialWindowUpdate"]["properties"][field] == {"type": "boolean"} for field in window_fields),
             "Window updates must be closed nonempty bool objects")
-    require(migration["windowDefaults"] == {"rememberState": False} and
+    require(migration["windowDefaults"] == {"rememberState": False, "fullscreen": False} and
             vectors["current"]["getResult"]["settings"]["window"] == migration["windowDefaults"] and
-            all(case["expectedSettings"]["window"] == migration["windowDefaults"] for case in vectors["legacyInputs"]),
-            "Config1-6 migration must preserve settings with rememberState false")
-    require(tomllib.loads(vectors["current"]["toml"])["window"] == {"remember_state": False},
-            "Canonical Config7 TOML must explicitly store the default-false preference")
+            all(case["expectedSettings"]["window"] == (
+                migration["windowDefaults"] if case["schema"] < 7 else
+                {"rememberState": tomllib.loads(case["toml"])["window"]["remember_state"], "fullscreen": False}
+            ) for case in vectors["legacyInputs"]),
+            "Config1-6 migration supplies false and Config7 preserves its saved window preference")
+    require(tomllib.loads(vectors["current"]["toml"])["window"] == {"remember_state": False, "fullscreen": False},
+            "Canonical Config10 TOML must explicitly store the default-false preference")
+    project_defaults = {"autoDiscover": True}
+    backup_defaults = {"compressionMode": "fast", "includeVpmPackages": True, "includeLibrary": False}
+    require(vectors["current"]["getResult"]["settings"]["projects"] == project_defaults and
+            vectors["current"]["getResult"]["settings"]["backups"] == backup_defaults,
+            "Config10 project and backup defaults must match the approved values")
+    for case in vectors["legacyInputs"]:
+        source = tomllib.loads(case["toml"])
+        expected_projects = project_defaults if case["schema"] < 8 else {"autoDiscover": source["projects"]["auto_discover"]}
+        expected_backups = backup_defaults if case["schema"] < 8 else {
+            "compressionMode": source["backups"]["compression_mode"],
+            "includeVpmPackages": source["backups"]["include_vpm_packages"],
+            "includeLibrary": source["backups"]["include_library"]
+        }
+        require(case["expectedSettings"]["projects"] == expected_projects and
+                case["expectedSettings"]["backups"] == expected_backups,
+                "Config1-7 migration supplies defaults and Config8 preserves saved preferences")
+    compression_values = ["store", "fast", "level3", "level5", "level7", "maximum"]
+    for definition in definitions.values():
+        if "compressionMode" in definition.get("properties", {}):
+            require(definition["properties"]["compressionMode"]["enum"] == compression_values,
+                    "Config10 must expose exactly the approved six compression levels")
+    require(rpc.get("settingsGetResult") is not None and
+            current["x-alcomd-field-permissions"]["settings.update.projects.autoDiscover"] == ["settings.manage", "projects.manage"],
+            "Auto discovery settings must require project management permission")
 
 
 def main() -> int:

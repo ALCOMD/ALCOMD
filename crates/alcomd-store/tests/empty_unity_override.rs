@@ -41,10 +41,10 @@ fn state16_upgrade_preserves_every_existing_row_and_empty_override_survives_reop
     );
     drop(connection);
 
-    let store = StateStoreHandle::open(path.clone()).expect("registered State16 to17 upgrade");
+    let store = StateStoreHandle::open(path.clone()).expect("registered State16 to latest upgrade");
     let connection = Connection::open(&path).expect("inspect upgraded fixture");
-    assert_eq!(integer(&connection, "PRAGMA user_version"), 17);
-    assert_eq!(CURRENT_DATA_SCHEMA, 17);
+    assert_eq!(integer(&connection, "PRAGMA user_version"), 18);
+    assert_eq!(CURRENT_DATA_SCHEMA, 18);
     assert_eq!(row_snapshot(&connection), before);
     assert_eq!(
         integer(
@@ -74,10 +74,10 @@ fn state16_upgrade_preserves_every_existing_row_and_empty_override_survives_reop
     drop(connection);
     drop(store);
 
-    let reopened = StateStoreHandle::open(path.clone()).expect("reopen State17");
+    let reopened = StateStoreHandle::open(path.clone()).expect("reopen latest state");
     let connection = Connection::open(&path).expect("inspect reopened fixture");
     assert_eq!(row_snapshot(&connection), accepted);
-    assert_eq!(integer(&connection, "PRAGMA user_version"), 17);
+    assert_eq!(integer(&connection, "PRAGMA user_version"), 18);
     assert_eq!(
         integer(&connection, "SELECT count(*) FROM pragma_foreign_key_check"),
         0

@@ -22,7 +22,14 @@
         "authorizedSettingsPathException": ["settings.unity.hubPath", "unityHub.path", "settings.paths.projectDirectory", "settings.paths.backupDirectory", "directories.projectDirectory", "directories.backupDirectory"]
     },
     "x-alcomd-field-permissions": {
-        "settings.update.unity.defaultLaunchArguments": ["settings.manage", "unity.manage"]
+        "settings.update.unity.defaultLaunchArguments": ["settings.manage", "unity.manage"],
+        "settings.update.projects.autoDiscover": ["settings.manage", "projects.manage"]
+    },
+    "x-alcomd-conditional-field-permissions": {
+        "settings.update.paths.projectDirectory": {
+            "when": {"field": "projects.autoDiscover", "equals": true, "source": "effective-update"},
+            "permissions": ["settings.manage", "projects.manage"]
+        }
     },
     "$defs": {
         "methodName": {"enum": ["settings.get", "settings.update", "unity.hub.open", "activity.list", "diagnostics.list"]},
@@ -96,7 +103,7 @@
                     ]
                 },
                 "path": {
-                    "$ref": "https://alcomd.cqmhv.com/schema/config/settings-v7.json#/$defs/hubPath"
+                    "$ref": "https://alcomd.cqmhv.com/schema/config/settings-v10.json#/$defs/hubPath"
                 },
                 "configuredPathStatus": {
                     "enum": [
@@ -197,11 +204,11 @@
             "type": "object", "additionalProperties": false,
             "required": ["configSchema", "revision", "settings", "unityHub", "directories"],
             "properties": {
-                "configSchema": {"const": 7},
+                "configSchema": {"const": 10},
                 "revision": {"$ref": "#/$defs/revision"},
-                "settings": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v7.json#/$defs/settings"},
+                "settings": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v10.json#/$defs/settings"},
                 "unityHub": {"$ref": "#/$defs/unityHubLocation"},
-                "directories": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v7.json#/$defs/storageDirectories"}
+                "directories": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v10.json#/$defs/storageDirectories"}
             }
         },
         "settingsUpdateParams": {
@@ -209,7 +216,7 @@
             "required": ["expectedRevision", "update"],
             "properties": {
                 "expectedRevision": {"$ref": "#/$defs/revision"},
-                "update": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v7.json#/$defs/partialUpdate"}
+                "update": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v10.json#/$defs/partialUpdate"}
             }
         },
         "settingsUpdateResult": {"$ref": "#/$defs/settingsGetResult"},

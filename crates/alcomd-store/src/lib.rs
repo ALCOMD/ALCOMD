@@ -9,34 +9,34 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use alcomd_application::{
-    ApplyPlanOutcome, BackupArchiveEvidence, BackupCreateOutcome, BackupCreateRequest,
-    BackupCursor, BackupId, BackupOperationRecord, BackupPhase, BackupRestoreApplyOutcome,
-    BackupRestoreOperationRecord, BackupRestorePhase, BackupRestorePlanDraft,
-    BackupRestorePlanRecord, CheckClassification, CreateOperationOutcome, CreatedTemplateProject,
-    EventPage, ExtensionApplyOutcome, ExtensionDataValue, ExtensionDataWriteResult,
-    ExtensionFilesystemJournalEntry, ExtensionGrantMutation, ExtensionGrantRecord,
-    ExtensionInstallPlanDraft, ExtensionInstanceLease, ExtensionPlanRecord, ExtensionRecord,
-    ExtensionUninstallPlanDraft, FilesystemJournalEntry, IdempotencyKey, M3Error, M3RegistryStore,
-    M4Error, M4Store, M5BackupError, M5BackupStore, M5TemplateError, M5TemplateStore, M5UnityError,
-    M5UnityStore, M6Error, M6Store, M7CopyError, M7CopyStore, M7DeleteError, M7DeleteStore,
-    M7UnityMigrationError, M7UnityMigrationStore, OperationCursor, OperationId, OperationPage,
-    OperationRecord, PackageApplyCompletion, PackageCursor, PackagePage, PackagePlanDraft,
-    PackagePlanRecord, PlanId, PrincipalId, ProjectCopyApplyOutcome, ProjectCopyInventoryEvidence,
-    ProjectCopyOperationRecord, ProjectCopyPhase, ProjectCopyPlanDraft, ProjectCopyPlanOutcome,
-    ProjectCopyPlanRecord, ProjectDeleteApplyOutcome, ProjectDeleteFilesystemEvidence,
-    ProjectDeleteOperationRecord, ProjectDeletePhase, ProjectDeletePlanDraft,
-    ProjectDeletePlanOutcome, ProjectDeletePlanRecord, ProjectId, ProjectObservation, ProjectPage,
-    ProjectRecord, ProjectUnityLaunchConfig, PublishedProjectCopy, PublishedTemplate,
-    RegistryCursor, RepositoryId, RepositoryObservation, RepositoryPage, RepositoryRecord,
-    RepositoryValidators, ResolverCatalog, RestoredProject, Revision, StateCheckResult, StateStore,
-    StoreError, StoredBackupRecord, StoredTemplateRecord, SyncWrite, TemplateApplyOutcome,
-    TemplateCursor, TemplateId, TemplatePlanDraft, TemplatePlanRecord, UnityInstallationCursor,
-    UnityInstallationId, UnityInstallationObservation, UnityInstallationPage,
-    UnityInstallationRecord, UnityLaunchId, UnityLaunchRecord, UnityLaunchState,
-    UnityMigrationApplyOutcome, UnityMigrationEvidence, UnityMigrationOperationRecord,
-    UnityMigrationPhase, UnityMigrationPlanDraft, UnityMigrationPlanOutcome,
-    UnityMigrationPlanRecord, UnregisterResult, UserPackageCursor, UserPackageError,
-    UserPackageErrorCode, UserPackageId, UserPackagePage, UserPackageRecord,
+    ApplyPlanOutcome, BackupArchiveEvidence, BackupCreateOptions, BackupCreateOutcome,
+    BackupCreateRequest, BackupCursor, BackupId, BackupOperationRecord, BackupPhase,
+    BackupRestoreApplyOutcome, BackupRestoreOperationRecord, BackupRestorePhase,
+    BackupRestorePlanDraft, BackupRestorePlanRecord, CheckClassification, CreateOperationOutcome,
+    CreatedTemplateProject, EventPage, ExtensionApplyOutcome, ExtensionDataValue,
+    ExtensionDataWriteResult, ExtensionFilesystemJournalEntry, ExtensionGrantMutation,
+    ExtensionGrantRecord, ExtensionInstallPlanDraft, ExtensionInstanceLease, ExtensionPlanRecord,
+    ExtensionRecord, ExtensionUninstallPlanDraft, FilesystemJournalEntry, IdempotencyKey, M3Error,
+    M3RegistryStore, M4Error, M4Store, M5BackupError, M5BackupStore, M5TemplateError,
+    M5TemplateStore, M5UnityError, M5UnityStore, M6Error, M6Store, M7CopyError, M7CopyStore,
+    M7DeleteError, M7DeleteStore, M7UnityMigrationError, M7UnityMigrationStore, OperationCursor,
+    OperationId, OperationPage, OperationRecord, PackageApplyCompletion, PackageCursor,
+    PackagePage, PackagePlanDraft, PackagePlanRecord, PlanId, PrincipalId, ProjectCopyApplyOutcome,
+    ProjectCopyInventoryEvidence, ProjectCopyOperationRecord, ProjectCopyPhase,
+    ProjectCopyPlanDraft, ProjectCopyPlanOutcome, ProjectCopyPlanRecord, ProjectDeleteApplyOutcome,
+    ProjectDeleteFilesystemEvidence, ProjectDeleteOperationRecord, ProjectDeletePhase,
+    ProjectDeletePlanDraft, ProjectDeletePlanOutcome, ProjectDeletePlanRecord, ProjectId,
+    ProjectObservation, ProjectPage, ProjectRecord, ProjectUnityLaunchConfig, PublishedProjectCopy,
+    PublishedTemplate, RegistryCursor, RepositoryId, RepositoryObservation, RepositoryPage,
+    RepositoryRecord, RepositoryValidators, ResolverCatalog, RestoredProject, Revision,
+    StateCheckResult, StateStore, StoreError, StoredBackupRecord, StoredTemplateRecord, SyncWrite,
+    TemplateApplyOutcome, TemplateCursor, TemplateId, TemplatePlanDraft, TemplatePlanRecord,
+    UnityInstallationCursor, UnityInstallationId, UnityInstallationObservation,
+    UnityInstallationPage, UnityInstallationRecord, UnityLaunchId, UnityLaunchRecord,
+    UnityLaunchState, UnityMigrationApplyOutcome, UnityMigrationEvidence,
+    UnityMigrationOperationRecord, UnityMigrationPhase, UnityMigrationPlanDraft,
+    UnityMigrationPlanOutcome, UnityMigrationPlanRecord, UnregisterResult, UserPackageCursor,
+    UserPackageError, UserPackageErrorCode, UserPackageId, UserPackagePage, UserPackageRecord,
     UserPackageRemoveResult, UserPackageSnapshot, UserPackageStore, UserPackageWriteResult,
 };
 use tokio::sync::{mpsc, oneshot};
@@ -63,7 +63,7 @@ pub use config::FileConfigStore;
 pub const CRATE_NAME: &str = "alcomd-store";
 
 /// Current supported SQLite data schema.
-pub const CURRENT_DATA_SCHEMA: u32 = 17;
+pub const CURRENT_DATA_SCHEMA: u32 = 18;
 
 /// Safe state-store initialization failure.
 #[derive(Debug)]
@@ -1295,11 +1295,22 @@ impl M5BackupStore for StateStoreHandle {
     async fn replay_backup_create(
         &self,
         owner: PrincipalId,
-        request: BackupCreateRequest,
+        project_id: ProjectId,
+        expected_revision: Revision,
+        options: BackupCreateOptions,
         key: IdempotencyKey,
     ) -> Result<Option<BackupCreateOutcome>, M5BackupError> {
         self.request_worker(
-            move |connection| m5_backup::replay_backup_create(connection, &owner, &request, &key),
+            move |connection| {
+                m5_backup::replay_backup_create(
+                    connection,
+                    &owner,
+                    project_id,
+                    expected_revision,
+                    options,
+                    &key,
+                )
+            },
             m5_backup::unavailable,
         )
         .await
@@ -1337,10 +1348,13 @@ impl M5BackupStore for StateStoreHandle {
         &self,
         owner: PrincipalId,
         request: BackupCreateRequest,
+        options: BackupCreateOptions,
         key: IdempotencyKey,
     ) -> Result<BackupCreateOutcome, M5BackupError> {
         self.request_worker(
-            move |connection| m5_backup::accept_backup_create(connection, &owner, request, &key),
+            move |connection| {
+                m5_backup::accept_backup_create(connection, &owner, request, options, &key)
+            },
             m5_backup::unavailable,
         )
         .await

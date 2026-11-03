@@ -1,7 +1,8 @@
 use alcomd_application::{
-    BackupArchiveEvidence, BackupCompression, BackupCreateOutcome, BackupCreateRequest,
-    BackupCursor, BackupId, BackupOperationRecord, BackupPhase, BackupRecord, M5BackupError,
-    M5BackupErrorCode, OperationId, PrincipalId, ProjectId, Revision, StoredBackupRecord,
+    BackupArchiveEvidence, BackupCompression, BackupCreateOptions, BackupCreateOutcome,
+    BackupCreateRequest, BackupCursor, BackupId, BackupOperationRecord, BackupPhase, BackupRecord,
+    M5BackupError, M5BackupErrorCode, OperationId, PrincipalId, ProjectId, Revision,
+    StoredBackupRecord,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
 use uuid::Uuid;
@@ -68,11 +69,19 @@ pub(super) fn accept_backup_create(
     connection: &mut Connection,
     owner: &PrincipalId,
     request: BackupCreateRequest,
+    options: BackupCreateOptions,
     key: &alcomd_application::IdempotencyKey,
 ) -> Result<BackupCreateOutcome, M5BackupError> {
     let transaction = transaction(connection)?;
     let fingerprint = create_fingerprint(&request);
-    if let Some(outcome) = replay_backup_create(&transaction, owner, &request, key)? {
+    if let Some(outcome) = replay_backup_create(
+        &transaction,
+        owner,
+        request.project_id,
+        request.expected_revision,
+        options,
+        key,
+    )? {
         transaction.commit().map_err(failure)?;
         return Ok(outcome);
     }
@@ -125,8 +134,13 @@ pub(super) fn accept_backup_create(
 }
 
 fn create_fingerprint(request: &BackupCreateRequest) -> String {
+    let library = if request.include_library {
+        ",\"includeLibrary\":true"
+    } else {
+        ""
+    };
     format!(
-        "{{\"compressionMode\":\"{}\",\"excludeVpmPackages\":{},\"expectedRevision\":{},\"projectId\":\"{}\"}}",
+        "{{\"compressionMode\":\"{}\",\"excludeVpmPackages\":{},\"expectedRevision\":{}{library},\"projectId\":\"{}\"}}",
         request.compression_mode.as_str(),
         request.exclude_vpm_packages,
         request.expected_revision.get(),
@@ -137,10 +151,11 @@ fn create_fingerprint(request: &BackupCreateRequest) -> String {
 pub(super) fn replay_backup_create(
     connection: &Connection,
     owner: &PrincipalId,
-    request: &BackupCreateRequest,
+    project_id: ProjectId,
+    expected_revision: Revision,
+    options: BackupCreateOptions,
     key: &alcomd_application::IdempotencyKey,
 ) -> Result<Option<BackupCreateOutcome>, M5BackupError> {
-    let fingerprint = create_fingerprint(request);
     if let Some((existing_fingerprint, response)) = connection
         .query_row(
             "SELECT request_fingerprint,response_json FROM idempotency_records
@@ -151,7 +166,30 @@ pub(super) fn replay_backup_create(
         .optional()
         .map_err(failure)?
     {
-        if existing_fingerprint != fingerprint {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct AcceptedSelection {
+            compression_mode: BackupCompression,
+            exclude_vpm_packages: bool,
+            expected_revision: Revision,
+            project_id: ProjectId,
+            #[serde(default)]
+            include_library: bool,
+        }
+        let accepted: AcceptedSelection =
+            serde_json::from_str(&existing_fingerprint).map_err(|_| internal())?;
+        if accepted.project_id != project_id
+            || accepted.expected_revision != expected_revision
+            || options
+                .compression_mode
+                .is_some_and(|value| value != accepted.compression_mode)
+            || options
+                .exclude_vpm_packages
+                .is_some_and(|value| value != accepted.exclude_vpm_packages)
+            || options
+                .include_library
+                .is_some_and(|value| value != accepted.include_library)
+        {
             return Err(error(M5BackupErrorCode::IdempotencyConflict));
         }
         let mut outcome: BackupCreateOutcome =
@@ -473,6 +511,9 @@ fn backup_from_row(row: &Row<'_>) -> rusqlite::Result<StoredBackupRecord> {
     let compression = match row.get::<_, String>(8)?.as_str() {
         "store" => BackupCompression::Store,
         "fast" => BackupCompression::Fast,
+        "level3" => BackupCompression::Level3,
+        "level5" => BackupCompression::Level5,
+        "level7" => BackupCompression::Level7,
         "maximum" => BackupCompression::Maximum,
         _ => return Err(rusqlite::Error::InvalidQuery),
     };

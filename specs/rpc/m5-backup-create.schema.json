@@ -20,7 +20,7 @@
         "idempotencyKey": {
             "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[!-~]+$"
         },
-        "compressionMode": {"enum": ["store", "fast", "maximum"]},
+        "compressionMode": {"enum": ["store", "fast", "level3", "level5", "level7", "maximum"]},
         "backupRecord": {
             "type": "object",
             "additionalProperties": true,
@@ -54,14 +54,14 @@
         "createParams": {
             "type": "object", "additionalProperties": false,
             "required": [
-                "projectId", "expectedRevision", "compressionMode",
-                "excludeVpmPackages", "idempotencyKey"
+                "projectId", "expectedRevision", "idempotencyKey"
             ],
             "properties": {
                 "projectId": {"$ref": "#/$defs/uuid"},
                 "expectedRevision": {"$ref": "#/$defs/revision"},
                 "compressionMode": {"$ref": "#/$defs/compressionMode"},
                 "excludeVpmPackages": {"type": "boolean"},
+                "includeLibrary": {"type": "boolean"},
                 "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
             }
         },

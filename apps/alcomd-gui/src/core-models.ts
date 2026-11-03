@@ -38,6 +38,7 @@ export interface OperationsListResult {
 export type AppearanceMode = "system" | "light" | "dark";
 export type AppearanceMotion = "system" | "full" | "reduced";
 export type SettingsLocale = "system" | "en-US" | "zh-CN" | "ja-JP";
+export type BackupCompressionMode = "store" | "fast" | "level3" | "level5" | "level7" | "maximum";
 
 export interface UnityHubLocation {
     status: "available" | "not_found" | "unavailable";
@@ -47,9 +48,11 @@ export interface UnityHubLocation {
 }
 
 export interface OfficialSettings {
+    projects: { autoDiscover: boolean };
+    backups: { compressionMode: BackupCompressionMode; includeVpmPackages: boolean; includeLibrary: boolean };
     paths: { projectDirectory: string | null; backupDirectory: string | null };
     unity: { hubPath: string | null; defaultLaunchArguments: string[] | null };
-    window: { rememberState: boolean };
+    window: { rememberState: boolean; fullscreen: boolean };
     appearance: {
         mode: AppearanceMode;
         sourceColor: string | null;
@@ -67,15 +70,17 @@ export interface OfficialSettings {
 export interface SettingsGetResult {
     directories: { projectDirectory: string; backupDirectory: string };
     unityHub: UnityHubLocation;
-    configSchema: 7;
+    configSchema: 10;
     revision: number;
     settings: OfficialSettings;
 }
 
 export interface SettingsUpdate {
+    projects?: { autoDiscover?: boolean };
+    backups?: { compressionMode?: BackupCompressionMode; includeVpmPackages?: boolean; includeLibrary?: boolean };
     paths?: { projectDirectory?: string | null; backupDirectory?: string | null };
     unity?: { hubPath?: string | null; defaultLaunchArguments?: string[] | null };
-    window?: { rememberState?: boolean };
+    window?: { rememberState?: boolean; fullscreen?: boolean };
     appearance?: {
         mode?: AppearanceMode;
         sourceColor?: string | null;

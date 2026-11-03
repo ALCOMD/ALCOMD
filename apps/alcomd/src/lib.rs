@@ -48,6 +48,7 @@ mod m7_official_rpc;
 mod m7_rpc;
 mod m7_unity_migration_rpc;
 mod m7_user_packages_rpc;
+mod project_discovery_platform;
 mod repository_list_rpc;
 mod storage_platform;
 
@@ -56,6 +57,11 @@ pub mod test_support;
 
 type M2Application = Application<StateStoreHandle>;
 type M3ReadApplication = M3Application<StateStoreHandle, alcomd_vpm::VpmReader>;
+type ProjectDiscoveryApplication = alcomd_application::ProjectDiscoveryApplication<
+    StateStoreHandle,
+    alcomd_vpm::VpmReader,
+    project_discovery_platform::PlatformProjectDiscovery,
+>;
 type RepositoryListApplication = alcomd_application::RepositoryListApplication<
     StateStoreHandle,
     alcomd_vpm::RepositoryListFileAdapter,
@@ -95,13 +101,14 @@ type UnityMigrationApplication = UnityMigrationService<
 >;
 
 struct Applications {
+    diagnostic_log: alcomd_application::DiagnosticLog,
     m2: M2Application,
     m3: M3ReadApplication,
+    project_discovery: ProjectDiscoveryApplication,
     repository_lists: RepositoryListApplication,
     m4: M4PackageApplication,
     m5: M5UnityApplication,
     templates: TemplateApplication,
-    diagnostic_log: alcomd_application::DiagnosticLog,
     backups: BackupApplication,
     m6: M6ExtensionApplication,
     m7: M7ExtensionApplication,
@@ -352,14 +359,21 @@ async fn initialize_daemon_with_diagnostics(
         official_gui.clone(),
     );
     let applications = Arc::new(Applications {
+        diagnostic_log,
         m2,
-        m3: M3ReadApplication::new(store.clone(), reader),
+        m3: M3ReadApplication::new(store.clone(), reader.clone()),
+        project_discovery: ProjectDiscoveryApplication::with_locks(
+            store.clone(),
+            reader,
+            project_discovery_platform::PlatformProjectDiscovery,
+            official_gui.clone(),
+            Arc::clone(&locks),
+        ),
         repository_lists: RepositoryListApplication::new(
             store.clone(),
             alcomd_vpm::RepositoryListFileAdapter::new(data_root.clone()),
         ),
         m4,
-        diagnostic_log,
         m5: unity,
         templates,
         backups,
@@ -395,6 +409,17 @@ where
     let mut connections = tokio::task::JoinSet::new();
     let mut runtime_tick = tokio::time::interval(std::time::Duration::from_millis(250));
     runtime_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut discovery_tick = tokio::time::interval(std::time::Duration::from_secs(30));
+    discovery_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let discovery_notify = applications.official_gui.project_discovery_notify();
+    let project_recovery_notify = applications.project_discovery.project_recovery_notify();
+    let mut discovery_tasks: tokio::task::JoinSet<
+        Result<
+            alcomd_application::ProjectDiscoveryReport,
+            alcomd_application::ProjectDiscoveryError,
+        >,
+    > = tokio::task::JoinSet::new();
+    let mut discovery_requested = false;
     tokio::pin!(shutdown);
     loop {
         tokio::select! {
@@ -408,6 +433,23 @@ where
             result = connections.join_next(), if !connections.is_empty() => {
                 let _ = result;
             }
+            _ = discovery_tick.tick() => discovery_requested = true,
+            () = discovery_notify.notified() => discovery_requested = true,
+            () = project_recovery_notify.notified() => discovery_requested = true,
+            result = discovery_tasks.join_next(), if !discovery_tasks.is_empty() => {
+                match result {
+                    Some(Ok(Ok(report))) => {
+                        if report.registered > 0 || report.reached_limit {
+                            tracing::info!(registered = report.registered, already_registered = report.already_registered,
+                                rejected = report.rejected, reached_limit = report.reached_limit,
+                                "Default project discovery completed");
+                        }
+                    }
+                    Some(Ok(Err(error))) => tracing::warn!(?error, "Default project discovery did not complete"),
+                    Some(Err(error)) => tracing::warn!(%error, "Default project discovery task did not finish"),
+                    None => {}
+                }
+            }
             _ = runtime_tick.tick() => {
                 applications
                     .m6
@@ -418,8 +460,15 @@ where
             }
             () = &mut shutdown => break,
         }
+        if discovery_requested && discovery_tasks.is_empty() {
+            discovery_requested = false;
+            let discovery = applications.project_discovery.clone();
+            discovery_tasks.spawn(async move { discovery.scan().await });
+        }
     }
 
+    discovery_tasks.abort_all();
+    while discovery_tasks.join_next().await.is_some() {}
     connections.abort_all();
     while connections.join_next().await.is_some() {}
     applications
@@ -460,8 +509,12 @@ async fn serve_connection(
                 Some(payload) => payload,
                 None => return Ok(()),
             };
-            let dispatch = dispatch_payload(&payload, &state, &applications)
-                .instrument(tracing::info_span!("rpc_request", gui_toast = false));
+            // Keep the large RPC dispatch future on the heap when it is moved into
+            // either the normal request path or the disconnect-aware log read.
+            let dispatch = Box::pin(
+                dispatch_payload(&payload, &state, &applications)
+                    .instrument(tracing::info_span!("rpc_request", gui_toast = false)),
+            );
             let action = if diagnostic_log_rpc::is_log_read(&payload) {
                 match diagnostic_log_rpc::until_disconnect(&mut stream, dispatch).await? {
                     Some(action) => action,

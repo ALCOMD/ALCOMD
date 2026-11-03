@@ -7,14 +7,14 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use alcomd_application::{
-    AccessContext, BackupCompression, BackupDirectoryProvider, ConfigNullableUpdate,
-    ConfigPathUpdate, ConfigStore, ConfigUpdate, IdempotencyKey, M3RegistryStore,
-    M5BackupApplication, M5BackupError, M5BackupErrorCode, M5BackupStore, M5BackupWriterGate,
-    M7OfficialApplication, ManifestState, OfficialGuiError, OperationId, OperationState,
-    Permission, PrincipalId, ProjectId, ProjectObservation, ProjectType, ResourceKey,
-    ResourceLockCoordinator, StateStore, StorageDirectories, StorageDirectoryPlatform,
-    UnityHubLauncher, UnityHubLocation, UnityHubOpenError, UnityHubPlatform, UnityWriterState,
-    UnityWriterStateKind,
+    AccessContext, BackupCompression, BackupCreateOptions, BackupDefaults, BackupDirectoryProvider,
+    ConfigBackupUpdate, ConfigNullableUpdate, ConfigPathUpdate, ConfigStore, ConfigUpdate,
+    IdempotencyKey, M3RegistryStore, M5BackupApplication, M5BackupError, M5BackupErrorCode,
+    M5BackupStore, M5BackupWriterGate, M7OfficialApplication, ManifestState, OfficialGuiError,
+    OperationId, OperationState, Permission, PrincipalId, ProjectId, ProjectObservation,
+    ProjectType, ResourceKey, ResourceLockCoordinator, StateStore, StorageDirectories,
+    StorageDirectoryPlatform, UnityHubLauncher, UnityHubLocation, UnityHubOpenError,
+    UnityHubPlatform, UnityWriterState, UnityWriterStateKind,
 };
 use alcomd_store::{FileConfigStore, StateStoreHandle};
 use alcomd_vpm::BackupEngine;
@@ -29,6 +29,7 @@ impl Fixture {
             "Source/Assets",
             "Source/ProjectSettings",
             "Source/Packages",
+            "Source/Library/Cache",
             "Projects",
             "Backups",
             "OtherBackups",
@@ -110,19 +111,30 @@ struct ConfiguredDirectory {
 }
 
 impl BackupDirectoryProvider for ConfiguredDirectory {
-    fn directory(
+    fn defaults(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<String, M5BackupError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<BackupDefaults, M5BackupError>> + Send + '_>> {
         Box::pin(async move {
             self.reads.fetch_add(1, Ordering::SeqCst);
             if self.unavailable.load(Ordering::SeqCst) {
                 return Err(M5BackupError::new(M5BackupErrorCode::StoreUnavailable));
             }
-            self.settings
-                .effective_directories()
+            let snapshot = self
+                .settings
+                .candidate_settings()
                 .await
-                .map(|value| value.backup_directory)
-                .map_err(|_| M5BackupError::new(M5BackupErrorCode::StoreUnavailable))
+                .map_err(|_| M5BackupError::new(M5BackupErrorCode::StoreUnavailable))?;
+            let directories = self
+                .settings
+                .observe_storage_directories(&snapshot)
+                .await
+                .map_err(|_| M5BackupError::new(M5BackupErrorCode::StoreUnavailable))?;
+            Ok(BackupDefaults {
+                directory: Some(directories.backup_directory),
+                compression_mode: snapshot.settings.backups.compression_mode,
+                include_vpm_packages: snapshot.settings.backups.include_vpm_packages,
+                include_library: snapshot.settings.backups.include_library,
+            })
         })
     }
 }
@@ -210,6 +222,7 @@ async fn actual_configured_directory_controls_new_backups_without_redirecting_ac
         ],
     );
     let source = fs::canonicalize(fixture.0.join("Source")).expect("source");
+    fs::write(source.join("Library/Cache/artifact.bin"), b"retained cache").expect("cache fixture");
     let project = store
         .register_project(
             PrincipalId::local_owner(),
@@ -240,8 +253,11 @@ async fn actual_configured_directory_controls_new_backups_without_redirecting_ac
             &access,
             project.project_id,
             project.revision,
-            BackupCompression::Fast,
-            true,
+            BackupCreateOptions {
+                compression_mode: Some(BackupCompression::Fast),
+                exclude_vpm_packages: Some(true),
+                include_library: Some(false),
+            },
             key("legacy"),
         )
         .await
@@ -265,8 +281,7 @@ async fn actual_configured_directory_controls_new_backups_without_redirecting_ac
             &access,
             project.project_id,
             project.revision,
-            BackupCompression::Fast,
-            true,
+            BackupCreateOptions::default(),
             key("first"),
         )
         .await
@@ -282,6 +297,12 @@ async fn actual_configured_directory_controls_new_backups_without_redirecting_ac
                 locale: None,
                 packages: None,
                 unity: None,
+                projects: None,
+                backups: Some(ConfigBackupUpdate {
+                    compression_mode: Some(BackupCompression::Maximum),
+                    include_vpm_packages: Some(false),
+                    include_library: Some(true),
+                }),
                 paths: Some(ConfigPathUpdate {
                     project_directory: ConfigNullableUpdate::Unchanged,
                     backup_directory: ConfigNullableUpdate::Set(text(
@@ -315,8 +336,7 @@ async fn actual_configured_directory_controls_new_backups_without_redirecting_ac
             &access,
             project.project_id,
             project.revision,
-            BackupCompression::Fast,
-            true,
+            BackupCreateOptions::default(),
             key("second"),
         )
         .await
@@ -336,8 +356,7 @@ async fn actual_configured_directory_controls_new_backups_without_redirecting_ac
             &access,
             project.project_id,
             project.revision,
-            BackupCompression::Fast,
-            true,
+            BackupCreateOptions::default(),
             key("first"),
         )
         .await
@@ -355,6 +374,15 @@ async fn actual_configured_directory_controls_new_backups_without_redirecting_ac
             .await
             .expect("backup metadata");
         assert_eq!(record.archive_locator.starts_with("backup-v1:"), index == 0);
+        assert_eq!(
+            record.record.compression_mode,
+            if index == 2 {
+                BackupCompression::Maximum
+            } else {
+                BackupCompression::Fast
+            }
+        );
+        assert_eq!(record.record.exclude_vpm_packages, index != 1);
         let leaf = format!("Restored-{index}");
         let plan = service
             .plan_restore(&access, backup_id, fixture.0.join("Projects"), leaf.clone())
@@ -376,6 +404,18 @@ async fn actual_configured_directory_controls_new_backups_without_redirecting_ac
             .expect("restored contents"),
             b"preserved project content"
         );
+        let restored_cache = fixture
+            .0
+            .join("Projects")
+            .join(format!("Restored-{index}"))
+            .join("Library/Cache/artifact.bin");
+        assert_eq!(restored_cache.exists(), index == 2);
+        if index == 2 {
+            assert_eq!(
+                fs::read(restored_cache).expect("restored cache"),
+                b"retained cache"
+            );
+        }
     }
     drop(service);
     drop(legacy_service);

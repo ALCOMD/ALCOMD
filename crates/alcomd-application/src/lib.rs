@@ -6,6 +6,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::future::Future;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 
 pub use alcomd_domain::{
@@ -14,10 +15,10 @@ pub use alcomd_domain::{
     UserPackageId,
 };
 use serde::{Deserialize, Serialize};
-use tokio::sync::{Mutex, OwnedMutexGuard};
+use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
 
-mod m4;
 mod diagnostic_log;
+mod m4;
 mod m5;
 mod m5_backup;
 mod m5_template;
@@ -31,11 +32,12 @@ mod m7_official;
 mod m7_unity_migration;
 mod m7_user_packages;
 mod project_authority;
+mod project_discovery;
 mod repository_list;
 
+pub use diagnostic_log::*;
 pub use m4::*;
 pub use m5::*;
-pub use diagnostic_log::*;
 pub use m5_backup::*;
 pub use m5_template::*;
 pub use m6::*;
@@ -48,6 +50,7 @@ pub use m7_official::*;
 pub use m7_unity_migration::*;
 pub use m7_user_packages::*;
 pub use project_authority::*;
+pub use project_discovery::*;
 pub use repository_list::*;
 
 /// Minimal truthful daemon status for the M1 read-only vertical slice.
@@ -902,9 +905,32 @@ impl From<StoreError> for ApplicationError {
 #[derive(Default)]
 pub struct ResourceLockCoordinator {
     entries: Mutex<HashMap<ResourceKey, Weak<Mutex<()>>>>,
+    project_recoveries: Arc<AtomicUsize>,
+    project_recovery_notify: Arc<Notify>,
 }
 
 impl ResourceLockCoordinator {
+    /// Reserves startup project recovery before its asynchronous task can be scheduled.
+    /// Ordinary Apply operations use their existing per-target resource locks instead.
+    #[must_use = "retain the guard until startup project recovery finishes"]
+    pub fn project_recovery_guard(&self) -> ProjectRecoveryGuard {
+        self.project_recoveries.fetch_add(1, Ordering::AcqRel);
+        ProjectRecoveryGuard {
+            pending: Arc::clone(&self.project_recoveries),
+            notify: Arc::clone(&self.project_recovery_notify),
+        }
+    }
+
+    #[must_use]
+    pub fn project_recovery_pending(&self) -> bool {
+        self.project_recoveries.load(Ordering::Acquire) != 0
+    }
+
+    #[must_use]
+    pub fn project_recovery_notify(&self) -> Arc<Notify> {
+        Arc::clone(&self.project_recovery_notify)
+    }
+
     /// Acquires unique keys in canonical byte order and returns lifetime-bound guards.
     pub async fn acquire(&self, mut keys: Vec<ResourceKey>) -> ResourceLockGuards {
         keys.sort_by_key(ResourceKey::canonical_bytes);
@@ -929,6 +955,21 @@ impl ResourceLockCoordinator {
             guards.push(lock.lock_owned().await);
         }
         ResourceLockGuards { guards }
+    }
+}
+
+/// Startup-only barrier for default-directory registration; it neither blocks ready nor persists.
+#[must_use = "retain the guard until the scheduled startup recovery finishes"]
+pub struct ProjectRecoveryGuard {
+    pending: Arc<AtomicUsize>,
+    notify: Arc<Notify>,
+}
+
+impl Drop for ProjectRecoveryGuard {
+    fn drop(&mut self) {
+        if self.pending.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.notify.notify_one();
+        }
     }
 }
 
@@ -1499,6 +1540,36 @@ mod tests {
             access.require(Permission::OperationsCancel),
             Err(ApplicationError::PermissionDenied)
         );
+    }
+
+    #[tokio::test]
+    async fn project_recovery_barrier_is_reserved_before_poll_and_released_on_task_cancellation() {
+        let locks = ResourceLockCoordinator::default();
+        let first = locks.project_recovery_guard();
+        let scheduled = locks.project_recovery_guard();
+        let notify = locks.project_recovery_notify();
+        assert!(locks.project_recovery_pending());
+        drop(first);
+        assert!(locks.project_recovery_pending());
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(10), notify.notified())
+                .await
+                .is_err()
+        );
+        let task = tokio::spawn(async move {
+            let _recovery = scheduled;
+            std::future::pending::<()>().await;
+        });
+        task.abort();
+        assert!(
+            task.await
+                .expect_err("cancelled recovery task")
+                .is_cancelled()
+        );
+        assert!(!locks.project_recovery_pending());
+        tokio::time::timeout(std::time::Duration::from_secs(1), notify.notified())
+            .await
+            .expect("last recovery release wakes discovery");
     }
 
     #[tokio::test]

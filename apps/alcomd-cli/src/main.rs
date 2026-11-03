@@ -484,10 +484,16 @@ enum TemplateCommand {
     },
 }
 
-#[derive(Clone, Copy, Debug, ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 enum BackupCompression {
     Store,
     Fast,
+    #[value(name = "level3")]
+    Level3,
+    #[value(name = "level5")]
+    Level5,
+    #[value(name = "level7")]
+    Level7,
     Maximum,
 }
 
@@ -507,10 +513,12 @@ enum BackupCommand {
         project_id: String,
         #[arg(long)]
         expected_revision: u64,
-        #[arg(long, value_enum, default_value = "fast")]
-        compression: BackupCompression,
-        #[arg(long)]
-        exclude_vpm_packages: bool,
+        #[arg(long, value_enum)]
+        compression: Option<BackupCompression>,
+        #[arg(long, num_args = 0..=1, default_missing_value = "true", require_equals = true)]
+        exclude_vpm_packages: Option<bool>,
+        #[arg(long, num_args = 0..=1, default_missing_value = "true", require_equals = true)]
+        include_library: Option<bool>,
         #[arg(long)]
         idempotency_key: String,
     },
@@ -1355,20 +1363,25 @@ async fn execute(
                 expected_revision,
                 compression,
                 exclude_vpm_packages,
+                include_library,
                 idempotency_key,
             } => {
                 let accepted = client
                     .backup_create(alcomd_protocol::BackupCreateParams {
                         project_id,
                         expected_revision,
-                        compression_mode: match compression {
+                        compression_mode: compression.map(|value| match value {
                             BackupCompression::Store => alcomd_protocol::BackupCompression::Store,
                             BackupCompression::Fast => alcomd_protocol::BackupCompression::Fast,
+                            BackupCompression::Level3 => alcomd_protocol::BackupCompression::Level3,
+                            BackupCompression::Level5 => alcomd_protocol::BackupCompression::Level5,
+                            BackupCompression::Level7 => alcomd_protocol::BackupCompression::Level7,
                             BackupCompression::Maximum => {
                                 alcomd_protocol::BackupCompression::Maximum
                             }
-                        },
+                        }),
                         exclude_vpm_packages,
+                        include_library,
                         idempotency_key,
                     })
                     .await?;
@@ -1798,6 +1811,59 @@ mod tests {
     use super::*;
 
     #[test]
+    fn backup_compression_cli_publishes_only_the_six_approved_choices() {
+        for (name, expected) in [
+            ("store", BackupCompression::Store),
+            ("fast", BackupCompression::Fast),
+            ("level3", BackupCompression::Level3),
+            ("level5", BackupCompression::Level5),
+            ("level7", BackupCompression::Level7),
+            ("maximum", BackupCompression::Maximum),
+        ] {
+            let parsed = Arguments::try_parse_from([
+                "alcomd-cli",
+                "backup",
+                "create",
+                "00000000-0000-4000-8000-000000000001",
+                "--expected-revision",
+                "1",
+                "--compression",
+                name,
+                "--idempotency-key",
+                "six-choices",
+            ])
+            .expect(name);
+            let Command::Backup {
+                command: BackupCommand::Create { compression, .. },
+            } = parsed.command
+            else {
+                panic!("backup create command");
+            };
+            assert_eq!(compression, Some(expected));
+        }
+        for invalid in [
+            "level2", "level4", "level6", "level8", "level9", "level-3", "3", "balanced",
+        ] {
+            assert!(
+                Arguments::try_parse_from([
+                    "alcomd-cli",
+                    "backup",
+                    "create",
+                    "00000000-0000-4000-8000-000000000001",
+                    "--expected-revision",
+                    "1",
+                    "--compression",
+                    invalid,
+                    "--idempotency-key",
+                    "invalid-choice",
+                ])
+                .is_err(),
+                "{invalid}"
+            );
+        }
+    }
+
+    #[test]
     fn backup_commands_publish_exact_surface_and_info_alias() {
         let list = Arguments::try_parse_from([
             "alcomd-cli",
@@ -1850,13 +1916,58 @@ mod tests {
             create.command,
             Command::Backup {
                 command: BackupCommand::Create {
-                    compression: BackupCompression::Maximum,
-                    exclude_vpm_packages: true,
+                    compression: Some(BackupCompression::Maximum),
+                    exclude_vpm_packages: Some(true),
                     ..
                 }
             }
         ));
         assert!(create.no_wait);
+        let inherited = Arguments::try_parse_from([
+            "alcomd-cli",
+            "backup",
+            "create",
+            "00000000-0000-4000-8000-000000000001",
+            "--expected-revision",
+            "1",
+            "--idempotency-key",
+            "inherit",
+        ])
+        .expect("backup defaults");
+        assert!(matches!(
+            inherited.command,
+            Command::Backup {
+                command: BackupCommand::Create {
+                    compression: None,
+                    exclude_vpm_packages: None,
+                    include_library: None,
+                    ..
+                }
+            }
+        ));
+        let explicit = Arguments::try_parse_from([
+            "alcomd-cli",
+            "backup",
+            "create",
+            "00000000-0000-4000-8000-000000000001",
+            "--expected-revision",
+            "1",
+            "--idempotency-key",
+            "explicit",
+            "--exclude-vpm-packages=false",
+            "--include-library",
+        ])
+        .expect("explicit boolean overrides");
+        assert!(matches!(
+            explicit.command,
+            Command::Backup {
+                command: BackupCommand::Create {
+                    exclude_vpm_packages: Some(false),
+                    include_library: Some(true),
+                    ..
+                }
+            }
+        ));
         let restore = Arguments::try_parse_from([
             "alcomd-cli",
             "backup",

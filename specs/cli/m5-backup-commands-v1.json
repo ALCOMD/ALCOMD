@@ -11,7 +11,7 @@
             "mutation": true,
             "planApply": false,
             "options": [
-                "--expected-revision", "--compression", "--exclude-vpm-packages",
+                "--expected-revision", "--compression", "--exclude-vpm-packages", "--include-library",
                 "--idempotency-key", "--no-wait"
             ],
             "forbiddenOptions": ["--yes", "--dry-run", "--output"]
@@ -32,7 +32,9 @@
     ],
     "createContract": {
         "requiredArgument": "project-id",
-        "compressionValues": ["store", "fast", "maximum"],
+        "compressionValues": ["store", "fast", "level3", "level5", "level7", "maximum"],
+        "omittedOptionsUseAuthoritativeDefaults": ["compression", "exclude-vpm-packages", "include-library"],
+        "booleanOptions": { "bareFlag": true, "explicitFalse": "--option=false" },
         "defaultWaitsForTerminalOperation": true,
         "noWaitReturns": ["operationId", "backupId"],
         "outputModes": ["human", "json", "ndjson"],

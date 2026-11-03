@@ -71,8 +71,20 @@ pub(super) async fn dispatch(
                 Err(_) => return invalid(request.id),
             };
             let update = app::ConfigUpdate {
+                projects: params
+                    .update
+                    .projects
+                    .map(|value| app::ConfigProjectUpdate {
+                        auto_discover: value.auto_discover,
+                    }),
+                backups: params.update.backups.map(|value| app::ConfigBackupUpdate {
+                    compression_mode: value.compression_mode.map(backup_compression_from_rpc),
+                    include_vpm_packages: value.include_vpm_packages,
+                    include_library: value.include_library,
+                }),
                 window: params.update.window.map(|value| app::ConfigWindowUpdate {
                     remember_state: value.remember_state,
+                    fullscreen: value.fullscreen,
                 }),
                 paths: params.update.paths.map(|value| app::ConfigPathUpdate {
                     project_directory: directory_update_from_rpc(value.project_directory),
@@ -226,6 +238,17 @@ pub(super) async fn dispatch(
     }
 }
 
+fn backup_compression_from_rpc(value: rpc::BackupCompression) -> app::BackupCompression {
+    match value {
+        rpc::BackupCompression::Store => app::BackupCompression::Store,
+        rpc::BackupCompression::Fast => app::BackupCompression::Fast,
+        rpc::BackupCompression::Level3 => app::BackupCompression::Level3,
+        rpc::BackupCompression::Level5 => app::BackupCompression::Level5,
+        rpc::BackupCompression::Level7 => app::BackupCompression::Level7,
+        rpc::BackupCompression::Maximum => app::BackupCompression::Maximum,
+    }
+}
+
 fn settings_result(
     value: app::ConfigSnapshot,
     hub: app::UnityHubLocation,
@@ -266,8 +289,24 @@ fn settings_result(
             },
         },
         settings: rpc::Settings {
+            projects: rpc::ProjectSettings {
+                auto_discover: value.settings.projects.auto_discover,
+            },
+            backups: rpc::BackupSettings {
+                compression_mode: match value.settings.backups.compression_mode {
+                    app::BackupCompression::Store => rpc::BackupCompression::Store,
+                    app::BackupCompression::Fast => rpc::BackupCompression::Fast,
+                    app::BackupCompression::Level3 => rpc::BackupCompression::Level3,
+                    app::BackupCompression::Level5 => rpc::BackupCompression::Level5,
+                    app::BackupCompression::Level7 => rpc::BackupCompression::Level7,
+                    app::BackupCompression::Maximum => rpc::BackupCompression::Maximum,
+                },
+                include_vpm_packages: value.settings.backups.include_vpm_packages,
+                include_library: value.settings.backups.include_library,
+            },
             window: rpc::WindowSettings {
                 remember_state: value.settings.window.remember_state,
+                fullscreen: value.settings.window.fullscreen,
             },
             paths: rpc::PathSettings {
                 project_directory: value.settings.paths.project_directory,
@@ -406,7 +445,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn settings_result_exposes_config4_without_the_removed_appearance_field() {
+    fn settings_result_exposes_current_config_without_the_removed_appearance_field() {
         let mut snapshot = app::ConfigSnapshot {
             revision: 91,
             ..app::ConfigSnapshot::default()
@@ -424,7 +463,7 @@ mod tests {
                 backup_directory: "/fixtures/backups".into(),
             },
         );
-        assert_eq!(result.config_schema, 7);
+        assert_eq!(result.config_schema, 10);
         assert_eq!(
             result.config_schema,
             alcomd_store::FileConfigStore::SCHEMA_VERSION
@@ -438,5 +477,42 @@ mod tests {
             serde_json::to_value(result.settings.appearance).expect("public appearance"),
             json!({"mode":"dark", "scheme":"fruit-salad", "sourceColor":"#AABBCC", "motion":"full"})
         );
+    }
+
+    #[test]
+    fn backup_compression_choices_keep_the_same_meaning_in_settings_both_directions() {
+        for (wire, internal) in [
+            (rpc::BackupCompression::Store, app::BackupCompression::Store),
+            (rpc::BackupCompression::Fast, app::BackupCompression::Fast),
+            (
+                rpc::BackupCompression::Level3,
+                app::BackupCompression::Level3,
+            ),
+            (
+                rpc::BackupCompression::Level5,
+                app::BackupCompression::Level5,
+            ),
+            (
+                rpc::BackupCompression::Level7,
+                app::BackupCompression::Level7,
+            ),
+            (
+                rpc::BackupCompression::Maximum,
+                app::BackupCompression::Maximum,
+            ),
+        ] {
+            assert_eq!(backup_compression_from_rpc(wire), internal);
+            let mut snapshot = app::ConfigSnapshot::default();
+            snapshot.settings.backups.compression_mode = internal;
+            let result = settings_result(
+                snapshot,
+                app::UnityHubLocation::unavailable(false),
+                app::StorageDirectories {
+                    project_directory: "/fixtures/projects".into(),
+                    backup_directory: "/fixtures/backups".into(),
+                },
+            );
+            assert_eq!(result.settings.backups.compression_mode, wire);
+        }
     }
 }

@@ -68,8 +68,9 @@ async fn backup_create_round_trips_with_exact_exclusions_and_idempotency() {
     let request = BackupCreateParams {
         project_id: project_id.clone(),
         expected_revision: 1,
-        compression_mode: BackupCompression::Fast,
-        exclude_vpm_packages: true,
+        compression_mode: Some(BackupCompression::Fast),
+        exclude_vpm_packages: Some(true),
+        include_library: Some(false),
         idempotency_key: "backup-create".to_owned(),
     };
     let accepted = client.backup_create(request.clone()).await.expect("create");
@@ -106,7 +107,7 @@ async fn backup_create_round_trips_with_exact_exclusions_and_idempotency() {
             .backup_directory,
     );
     let archive = directory.join(format!("{}.zip", record.backup_id));
-    assert_archive_profile(&archive);
+    assert_archive_profile(&archive, false);
     assert_eq!(
         fs::read_dir(&directory).expect("backup directory").count(),
         1,
@@ -117,6 +118,182 @@ async fn backup_create_round_trips_with_exact_exclusions_and_idempotency() {
             .expect("partials")
             .count(),
         0
+    );
+    shutdown.store(true, Ordering::Release);
+    daemon.await.expect("join").expect("daemon");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn backup_rpc_defaults_explicit_overrides_and_replay_preserve_frozen_contents() {
+    let _serial = RPC_TEST_LOCK.lock().await;
+    let fixture = TestDirectory::new();
+    let source = fixture.path().join("Source");
+    create_project(&source);
+    let runtime = fixture.path().join("runtime");
+    let data = fixture.path().join("data");
+    fs::create_dir(&runtime).expect("runtime");
+    fs::create_dir(&data).expect("data");
+    let (ipc, config) = isolated_ipc(runtime);
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let server_shutdown = Arc::clone(&shutdown);
+    let daemon = alcomd_daemon::test_support::start_with_data_until(
+        ipc,
+        DataConfig::isolated(data),
+        wait_for_shutdown(server_shutdown),
+    )
+    .await
+    .expect("owned test daemon");
+    let mut client = connect_with_retry(config).await;
+    let registered = client
+        .project_register(
+            source.to_string_lossy().into_owned(),
+            "defaults-source".to_owned(),
+        )
+        .await
+        .expect("register fixture");
+    let project_id = registered.project.project_id.expect("project id");
+    let request = |key: &str| BackupCreateParams {
+        project_id: project_id.clone(),
+        expected_revision: 1,
+        compression_mode: None,
+        exclude_vpm_packages: None,
+        include_library: None,
+        idempotency_key: key.to_owned(),
+    };
+    let first = client
+        .backup_create(request("inherited-first"))
+        .await
+        .expect("default backup");
+    assert_eq!(
+        wait_for_operation(&mut client, &first.operation_id)
+            .await
+            .state,
+        OperationState::Succeeded
+    );
+    let settings = client.settings_get().await.expect("settings");
+    client.settings_update(serde_json::from_value(serde_json::json!({ "expectedRevision": settings.revision, "update": { "backups": { "compressionMode": "level5", "includeVpmPackages": false, "includeLibrary": true } } })).expect("settings update shape")).await.expect("save defaults");
+    let replay = client
+        .backup_create(request("inherited-first"))
+        .await
+        .expect("replay inherits accepted choices");
+    assert!(replay.replayed);
+    assert_eq!(replay.operation_id, first.operation_id);
+    assert_eq!(replay.backup_id, first.backup_id);
+    let mut conflicting = request("inherited-first");
+    conflicting.include_library = Some(true);
+    assert!(
+        matches!(client.backup_create(conflicting).await, Err(ClientError::Remote(error)) if error.code == "idempotency_conflict")
+    );
+    let second = client
+        .backup_create(request("inherited-second"))
+        .await
+        .expect("new defaults");
+    assert_eq!(
+        wait_for_operation(&mut client, &second.operation_id)
+            .await
+            .state,
+        OperationState::Succeeded
+    );
+    let changed = client
+        .settings_get()
+        .await
+        .expect("defaults after level5 backup");
+    client
+        .settings_update(
+            serde_json::from_value(serde_json::json!({
+                "expectedRevision": changed.revision,
+                "update": { "backups": { "compressionMode": "maximum" } }
+            }))
+            .expect("later compression default update"),
+        )
+        .await
+        .expect("change compression default");
+    let replay_level5 = client
+        .backup_create(request("inherited-second"))
+        .await
+        .expect("replay level5 after defaults change");
+    assert!(replay_level5.replayed);
+    assert_eq!(replay_level5.operation_id, second.operation_id);
+    assert_eq!(replay_level5.backup_id, second.backup_id);
+    let mut different_level = request("inherited-second");
+    different_level.compression_mode = Some(BackupCompression::Level7);
+    assert!(matches!(client.backup_create(different_level).await,
+        Err(ClientError::Remote(error)) if error.code == "idempotency_conflict"));
+    let mut explicit = request("explicit-override");
+    explicit.compression_mode = Some(BackupCompression::Store);
+    explicit.exclude_vpm_packages = Some(false);
+    explicit.include_library = Some(false);
+    let overridden = client
+        .backup_create(explicit)
+        .await
+        .expect("single backup overrides");
+    assert_eq!(
+        wait_for_operation(&mut client, &overridden.operation_id)
+            .await
+            .state,
+        OperationState::Succeeded
+    );
+    let directory = PathBuf::from(settings.directories.backup_directory);
+    for (accepted, compression, exclude, library) in [
+        (&first, BackupCompression::Fast, false, false),
+        (&second, BackupCompression::Level5, true, true),
+        (&overridden, BackupCompression::Store, false, false),
+    ] {
+        let metadata = client
+            .backup_get(accepted.backup_id.clone())
+            .await
+            .expect("backup metadata");
+        assert_eq!(metadata.compression_mode, compression);
+        assert_eq!(metadata.exclude_vpm_packages, exclude);
+        let mut zip = zip::ZipArchive::new(
+            fs::File::open(directory.join(format!("{}.zip", accepted.backup_id)))
+                .expect("archive file"),
+        )
+        .expect("archive");
+        assert_eq!(
+            zip.by_name("project/Packages/com.example.locked/package.json")
+                .is_ok(),
+            !exclude
+        );
+        assert_eq!(
+            zip.by_name("project/Library/Artifacts/cache.bin").is_ok(),
+            library
+        );
+        assert!(
+            zip.by_name("project/LibraryCache/Sub/LastSceneManagerSetup.txt")
+                .is_err()
+        );
+        assert!(zip.by_name("project/Logs/log.txt").is_err());
+    }
+    let plan = client
+        .backup_plan_restore(BackupPlanRestoreParams {
+            backup_id: second.backup_id,
+            target_parent: fixture.path().to_string_lossy().into_owned(),
+            target_leaf: "RestoredCache".to_owned(),
+        })
+        .await
+        .expect("plan cache restore");
+    let restored = client
+        .backup_apply_restore(BackupApplyRestoreParams {
+            plan_id: plan.plan_id,
+            idempotency_key: "restore-caches".to_owned(),
+        })
+        .await
+        .expect("apply restore");
+    assert_eq!(
+        wait_for_operation(&mut client, &restored.operation_id)
+            .await
+            .state,
+        OperationState::Succeeded
+    );
+    assert_eq!(
+        fs::read(
+            fixture
+                .path()
+                .join("RestoredCache/Library/Artifacts/cache.bin")
+        )
+        .expect("restored cache"),
+        b"library cache"
     );
     shutdown.store(true, Ordering::Release);
     daemon.await.expect("join").expect("daemon");
@@ -158,8 +335,9 @@ async fn backup_restore_plans_applies_and_registers_one_new_project() {
         .backup_create(BackupCreateParams {
             project_id: source_id.clone(),
             expected_revision: 1,
-            compression_mode: BackupCompression::Fast,
-            exclude_vpm_packages: true,
+            compression_mode: Some(BackupCompression::Fast),
+            exclude_vpm_packages: Some(true),
+            include_library: Some(false),
             idempotency_key: "restore-backup".to_owned(),
         })
         .await
@@ -293,8 +471,9 @@ async fn backup_restore_fails_closed_for_artifact_and_target_races() {
         .backup_create(BackupCreateParams {
             project_id: source_id.clone(),
             expected_revision: 1,
-            compression_mode: BackupCompression::Fast,
-            exclude_vpm_packages: false,
+            compression_mode: Some(BackupCompression::Fast),
+            exclude_vpm_packages: Some(false),
+            include_library: Some(false),
             idempotency_key: "race-backup".to_owned(),
         })
         .await
@@ -342,8 +521,9 @@ async fn backup_restore_fails_closed_for_artifact_and_target_races() {
             .backup_create(BackupCreateParams {
                 project_id: source_id.clone(),
                 expected_revision: 1,
-                compression_mode: BackupCompression::Fast,
-                exclude_vpm_packages: false,
+                compression_mode: Some(BackupCompression::Fast),
+                exclude_vpm_packages: Some(false),
+                include_library: Some(false),
                 idempotency_key: format!("artifact-backup-{mutation}"),
             })
             .await
@@ -452,8 +632,9 @@ async fn backup_restore_same_target_is_serialized_by_project_create_lock() {
         .backup_create(BackupCreateParams {
             project_id: registered.project.project_id.expect("source id"),
             expected_revision: 1,
-            compression_mode: BackupCompression::Fast,
-            exclude_vpm_packages: false,
+            compression_mode: Some(BackupCompression::Fast),
+            exclude_vpm_packages: Some(false),
+            include_library: Some(false),
             idempotency_key: "concurrent-backup".to_owned(),
         })
         .await
@@ -728,12 +909,30 @@ fn subprocess_runs_backup_restore_until_parent_kills_it() {
             )
             .await
             .expect("register source");
+        if matches!(
+            std::env::var(RESTORE_KILL_GATE_ENV).as_deref(),
+            Ok("target_published" | "project_registry_commit_intent")
+        ) {
+            let settings = client.settings_get().await.expect("settings");
+            assert!(settings.settings.projects.auto_discover);
+            client
+                .settings_update(
+                    serde_json::from_value(serde_json::json!({
+                        "expectedRevision": settings.revision,
+                        "update": { "paths": { "projectDirectory": root.to_string_lossy() } }
+                    }))
+                    .expect("discovery root update"),
+                )
+                .await
+                .expect("use isolated restore parent as default root");
+        }
         let created = client
             .backup_create(BackupCreateParams {
                 project_id: registered.project.project_id.expect("source id"),
                 expected_revision: 1,
-                compression_mode: BackupCompression::Fast,
-                exclude_vpm_packages: true,
+                compression_mode: Some(BackupCompression::Fast),
+                exclude_vpm_packages: Some(true),
+                include_library: Some(false),
                 idempotency_key: "restore-kill-backup".to_owned(),
             })
             .await
@@ -817,6 +1016,20 @@ async fn run_restore_kill_restart_case(checkpoint: &str) {
     .await
     .expect("start owned test daemon");
     let mut client = connect_with_retry(config).await;
+    if matches!(
+        checkpoint,
+        "target_published" | "project_registry_commit_intent"
+    ) {
+        let settings = client
+            .settings_get()
+            .await
+            .expect("recovery remains ready for settings reads");
+        assert!(settings.settings.projects.auto_discover);
+        assert_eq!(
+            fs::canonicalize(settings.directories.project_directory).expect("configured root"),
+            fs::canonicalize(fixture.path()).expect("fixture root")
+        );
+    }
     let replay = client
         .backup_apply_restore(BackupApplyRestoreParams {
             plan_id: signal.plan_id.clone(),
@@ -873,6 +1086,50 @@ async fn run_restore_kill_restart_case(checkpoint: &str) {
         "{checkpoint}"
     );
     assert!(!target.join("project").exists(), "{checkpoint}");
+    if matches!(
+        checkpoint,
+        "target_published" | "project_registry_commit_intent"
+    ) {
+        let projects = client
+            .projects_list(None, Some(100))
+            .await
+            .expect("registry after startup recovery");
+        assert_eq!(
+            projects.projects.len(),
+            2,
+            "only source and the reserved restore target"
+        );
+        let targets = projects
+            .projects
+            .iter()
+            .filter(|project| {
+                fs::canonicalize(&project.root_path).expect("registered path")
+                    == fs::canonicalize(&target).expect("restored target")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(targets.len(), 1);
+        assert_eq!(
+            targets[0].project_id.as_deref(),
+            Some(signal.project_id.as_str())
+        );
+        let events = client
+            .events_list(0, Some(100))
+            .await
+            .expect("restore registration events");
+        assert_eq!(
+            events
+                .events
+                .iter()
+                .filter(|event| event.kind == "project.registered"
+                    && event.aggregate_id == signal.project_id)
+                .count(),
+            1
+        );
+        assert_eq!(
+            fs::read(target.join("Assets/source.bin")).expect("restored source content"),
+            vec![0x5a; 256 * 1024]
+        );
+    }
     assert!(
         !fixture
             .path()
@@ -919,8 +1176,9 @@ fn subprocess_runs_backup_until_parent_kills_it() {
             .backup_create(BackupCreateParams {
                 project_id,
                 expected_revision: 1,
-                compression_mode: BackupCompression::Fast,
-                exclude_vpm_packages: true,
+                compression_mode: Some(BackupCompression::Fast),
+                exclude_vpm_packages: Some(true),
+                include_library: Some(true),
                 idempotency_key: "backup-kill-create".to_owned(),
             })
             .await;
@@ -983,8 +1241,9 @@ async fn run_kill_restart_case(checkpoint: &str) {
         .backup_create(BackupCreateParams {
             project_id: project_id.clone(),
             expected_revision: 1,
-            compression_mode: BackupCompression::Fast,
-            exclude_vpm_packages: true,
+            compression_mode: Some(BackupCompression::Fast),
+            exclude_vpm_packages: Some(true),
+            include_library: Some(true),
             idempotency_key: "backup-kill-create".to_owned(),
         })
         .await
@@ -1021,7 +1280,7 @@ async fn run_kill_restart_case(checkpoint: &str) {
         1,
         "{checkpoint}"
     );
-    assert_archive_profile(&objects.join(format!("{}.zip", accepted.backup_id)));
+    assert_archive_profile(&objects.join(format!("{}.zip", accepted.backup_id)), true);
     assert_eq!(
         fs::read_dir(fixture.path().join("data/backups/partial"))
             .expect("partials")
@@ -1040,6 +1299,7 @@ fn create_project(root: &Path) {
         "Packages/com.example.locked",
         "Packages/com.example.embedded",
         "LibraryCache/Sub",
+        "Library/Artifacts",
         "Logs",
         "UserSettings",
         ".idea",
@@ -1048,6 +1308,7 @@ fn create_project(root: &Path) {
         fs::create_dir_all(root.join(directory)).expect("directory");
     }
     fs::write(root.join("Assets/source.bin"), vec![0x5a; 256 * 1024]).expect("source");
+    fs::write(root.join("Library/Artifacts/cache.bin"), b"library cache").expect("library cache");
     fs::write(
         root.join("ProjectSettings/ProjectVersion.txt"),
         "m_EditorVersion: 2022.3.22f1\n",
@@ -1079,7 +1340,7 @@ fn create_project(root: &Path) {
     fs::write(root.join("Assets/.git/config"), b"git").expect("git");
 }
 
-fn assert_archive_profile(path: &Path) {
+fn assert_archive_profile(path: &Path, include_library: bool) {
     let file = fs::File::open(path).expect("archive");
     let mut archive = zip::ZipArchive::new(file).expect("zip");
     let names = (0..archive.len())
@@ -1106,6 +1367,10 @@ fn assert_archive_profile(path: &Path) {
     assert!(!names.iter().any(|name| name.starts_with("project/Logs/")));
     assert!(!names.iter().any(|name| name.contains("/.git/")));
     assert!(!names.contains(&"project/LibraryCache/Sub/LastSceneManagerSetup.txt".to_owned()));
+    assert_eq!(
+        names.contains(&"project/Library/Artifacts/cache.bin".to_owned()),
+        include_library
+    );
 }
 
 async fn wait_for_operation(

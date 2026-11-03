@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 mod process;
 mod project_delete;
+mod project_discovery;
 mod storage_directories;
 mod unity;
 mod unity_hub;
@@ -28,6 +29,9 @@ pub use process::{ProcessEvidence, ProcessSnapshot, observe_processes};
 pub use project_delete::{
     ProjectDeleteFilesystemError, ProjectDeleteFilesystemErrorKind, project_delete_cleanup,
     project_delete_preflight,
+};
+pub use project_discovery::{
+    DirectoryDiscovery, DiscoveredDirectory, discover_directories, discovered_directory_is_current,
 };
 pub use unity::{
     UnityArchitecture, UnityMigrationExit, UnityMigrationProcess, ValidatedUnityExecutable,

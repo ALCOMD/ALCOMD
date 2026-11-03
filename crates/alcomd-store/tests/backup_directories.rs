@@ -4,8 +4,8 @@ use std::thread;
 use std::time::Duration;
 
 use alcomd_application::{
-    BackupCompression, BackupCreateRequest, BackupDestination, IdempotencyKey, M3RegistryStore,
-    M5BackupErrorCode, M5BackupStore, ManifestState, OperationState, PrincipalId,
+    BackupCompression, BackupCreateOptions, BackupCreateRequest, BackupDestination, IdempotencyKey,
+    M3RegistryStore, M5BackupErrorCode, M5BackupStore, ManifestState, OperationState, PrincipalId,
     ProjectObservation, ProjectType, Revision, StateStore,
 };
 use alcomd_store::StateStoreHandle;
@@ -74,6 +74,7 @@ async fn backup_destination_is_frozen_across_preference_change_replay_and_restar
         expected_revision: project.revision,
         compression_mode: BackupCompression::Fast,
         exclude_vpm_packages: true,
+        include_library: false,
         created_at_ms: 2,
         destination: Some(BackupDestination {
             directory: directory.0.join("first").to_string_lossy().into_owned(),
@@ -82,13 +83,24 @@ async fn backup_destination_is_frozen_across_preference_change_replay_and_restar
     };
     assert!(
         store
-            .replay_backup_create(owner.clone(), request.clone(), key("create"))
+            .replay_backup_create(
+                owner.clone(),
+                request.project_id,
+                request.expected_revision,
+                BackupCreateOptions::from(&request),
+                key("create")
+            )
             .await
             .expect("no replay yet")
             .is_none()
     );
     let accepted = store
-        .accept_backup_create(owner.clone(), request.clone(), key("create"))
+        .accept_backup_create(
+            owner.clone(),
+            request.clone(),
+            BackupCreateOptions::from(&request),
+            key("create"),
+        )
         .await
         .expect("accept");
     let mut replay_request = request.clone();
@@ -99,7 +111,13 @@ async fn backup_destination_is_frozen_across_preference_change_replay_and_restar
         identity: vec![3; 24],
     });
     let replayed = store
-        .replay_backup_create(owner.clone(), replay_request.clone(), key("create"))
+        .replay_backup_create(
+            owner.clone(),
+            replay_request.project_id,
+            replay_request.expected_revision,
+            BackupCreateOptions::from(&replay_request),
+            key("create"),
+        )
         .await
         .expect("replay query")
         .expect("existing outcome");
@@ -108,19 +126,75 @@ async fn backup_destination_is_frozen_across_preference_change_replay_and_restar
     assert_eq!(replayed.operation_id, accepted.operation_id);
     assert_eq!(replayed.backup_id, accepted.backup_id);
     let accepted_replay = store
-        .accept_backup_create(owner.clone(), replay_request.clone(), key("create"))
+        .accept_backup_create(
+            owner.clone(),
+            replay_request.clone(),
+            BackupCreateOptions::from(&replay_request),
+            key("create"),
+        )
         .await
         .expect("transactional replay");
     assert_eq!(accepted_replay, replayed);
     replay_request.compression_mode = BackupCompression::Maximum;
+    replay_request.exclude_vpm_packages = false;
+    replay_request.include_library = true;
+    let inherited_replay = store
+        .replay_backup_create(
+            owner.clone(),
+            replay_request.project_id,
+            replay_request.expected_revision,
+            BackupCreateOptions::default(),
+            key("create"),
+        )
+        .await
+        .expect("omitted defaults reuse accepted selection")
+        .expect("existing operation");
+    assert_eq!(inherited_replay, replayed);
     assert_eq!(
         store
-            .replay_backup_create(owner, replay_request, key("create"))
+            .replay_backup_create(
+                owner.clone(),
+                replay_request.project_id,
+                replay_request.expected_revision,
+                BackupCreateOptions {
+                    include_library: Some(true),
+                    ..BackupCreateOptions::default()
+                },
+                key("create")
+            )
+            .await
+            .expect_err("explicit cache selection changed")
+            .code(),
+        M5BackupErrorCode::IdempotencyConflict
+    );
+    replay_request.exclude_vpm_packages = true;
+    replay_request.include_library = false;
+    replay_request.compression_mode = BackupCompression::Maximum;
+    assert_eq!(
+        store
+            .replay_backup_create(
+                owner,
+                replay_request.project_id,
+                replay_request.expected_revision,
+                BackupCreateOptions::from(&replay_request),
+                key("create")
+            )
             .await
             .expect_err("different user intent")
             .code(),
         M5BackupErrorCode::IdempotencyConflict,
     );
+    let connection =
+        rusqlite::Connection::open(directory.database()).expect("read fingerprint evidence");
+    let fingerprint: String = connection.query_row("SELECT request_fingerprint FROM idempotency_records WHERE method='backups.create' AND idempotency_key='create'", [], |row| row.get(0)).expect("stored fingerprint");
+    assert_eq!(
+        fingerprint,
+        format!(
+            "{{\"compressionMode\":\"fast\",\"excludeVpmPackages\":true,\"expectedRevision\":1,\"projectId\":\"{}\"}}",
+            project.project_id
+        )
+    );
+    drop(connection);
     drop(store);
     let reopened = StateStoreHandle::open(directory.database()).expect("reopened store");
     let recovered = reopened
@@ -132,6 +206,7 @@ async fn backup_destination_is_frozen_across_preference_change_replay_and_restar
         .accept_backup_create(
             PrincipalId::local_owner(),
             request.clone(),
+            BackupCreateOptions::from(&request),
             key("cancel-create"),
         )
         .await
@@ -175,6 +250,7 @@ async fn backup_destination_is_frozen_across_preference_change_replay_and_restar
         .accept_backup_create(
             PrincipalId::local_owner(),
             request.clone(),
+            BackupCreateOptions::from(&request),
             key("running-cancel-create"),
         )
         .await
@@ -244,6 +320,7 @@ fn retained_backup_request_without_destination_still_decodes_as_legacy() {
     }))
     .expect("retained request");
     assert!(request.destination.is_none());
+    assert!(!request.include_library);
     assert!(
         serde_json::to_value(request)
             .expect("request")

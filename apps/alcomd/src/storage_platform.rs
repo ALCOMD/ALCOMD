@@ -39,9 +39,10 @@ impl app::StorageDirectoryPlatform for PlatformStorageDirectories {
 pub(super) struct ConfiguredBackupDirectory(pub M7OfficialGuiApplication);
 
 impl app::BackupDirectoryProvider for ConfiguredBackupDirectory {
-    fn directory(
+    fn defaults(
         &self,
-    ) -> Pin<Box<dyn Future<Output = Result<String, app::M5BackupError>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<app::BackupDefaults, app::M5BackupError>> + Send + '_>>
+    {
         Box::pin(async move {
             let snapshot =
                 self.0.candidate_settings().await.map_err(|_| {
@@ -60,8 +61,14 @@ impl app::BackupDirectoryProvider for ConfiguredBackupDirectory {
                         .map(std::path::PathBuf::from)
                 }
                 .map_err(|_| app::M5BackupError::new(app::M5BackupErrorCode::BackupSourceUnsafe))?;
-                path.into_os_string().into_string().map_err(|_| {
+                let directory = path.into_os_string().into_string().map_err(|_| {
                     app::M5BackupError::new(app::M5BackupErrorCode::BackupSourceUnsafe)
+                })?;
+                Ok(app::BackupDefaults {
+                    directory: Some(directory),
+                    compression_mode: snapshot.settings.backups.compression_mode,
+                    include_vpm_packages: snapshot.settings.backups.include_vpm_packages,
+                    include_library: snapshot.settings.backups.include_library,
                 })
             })
             .await

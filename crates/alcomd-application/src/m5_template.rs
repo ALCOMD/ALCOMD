@@ -440,7 +440,12 @@ where
     pub async fn recover(&self) -> Result<(), M5TemplateError> {
         let operations = self.store.recover_template_operations(now_ms()?).await?;
         for operation_id in operations {
-            self.schedule(operation_id);
+            let recovery = self.locks.project_recovery_guard();
+            let application = self.clone();
+            tokio::spawn(async move {
+                let _recovery = recovery;
+                let _ = application.run_operation(operation_id).await;
+            });
         }
         Ok(())
     }

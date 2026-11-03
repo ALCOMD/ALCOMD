@@ -2118,6 +2118,12 @@ pub struct TemplatePlanCreateProjectParams {
 pub enum BackupCompression {
     Store,
     Fast,
+    #[serde(rename = "level3")]
+    Level3,
+    #[serde(rename = "level5")]
+    Level5,
+    #[serde(rename = "level7")]
+    Level7,
     Maximum,
 }
 
@@ -2164,8 +2170,24 @@ pub struct BackupGetParams {
 pub struct BackupCreateParams {
     pub project_id: String,
     pub expected_revision: u64,
-    pub compression_mode: BackupCompression,
-    pub exclude_vpm_packages: bool,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub compression_mode: Option<BackupCompression>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub exclude_vpm_packages: Option<bool>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub include_library: Option<bool>,
     pub idempotency_key: String,
 }
 
@@ -2454,7 +2476,7 @@ pub struct ProjectsApplyUnityMigrationResult {
     pub replayed: bool,
 }
 
-pub const CONFIG_SCHEMA_VERSION: u32 = 7;
+pub const CONFIG_SCHEMA_VERSION: u32 = 10;
 pub const MAX_OFFICIAL_GUI_PAGE_LIMIT: u32 = 200;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2517,18 +2539,113 @@ pub struct Settings {
     pub unity: UnitySettings,
     pub paths: PathSettings,
     pub window: WindowSettings,
+    pub projects: ProjectSettings,
+    pub backups: BackupSettings,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectSettings {
+    pub auto_discover: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectSettingsUpdate {
+    pub auto_discover: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BackupSettings {
+    pub compression_mode: BackupCompression,
+    pub include_vpm_packages: bool,
+    pub include_library: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BackupSettingsUpdate {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compression_mode: Option<BackupCompression>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_vpm_packages: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_library: Option<bool>,
+}
+
+impl<'de> Deserialize<'de> for BackupSettingsUpdate {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct Fields {
+            #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+            compression_mode: Option<BackupCompression>,
+            #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+            include_vpm_packages: Option<bool>,
+            #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+            include_library: Option<bool>,
+        }
+        let value = Fields::deserialize(deserializer)?;
+        if value.compression_mode.is_none()
+            && value.include_vpm_packages.is_none()
+            && value.include_library.is_none()
+        {
+            return Err(serde::de::Error::custom(
+                "backups update must contain an option",
+            ));
+        }
+        Ok(Self {
+            compression_mode: value.compression_mode,
+            include_vpm_packages: value.include_vpm_packages,
+            include_library: value.include_library,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WindowSettings {
     pub remember_state: bool,
+    pub fullscreen: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WindowSettingsUpdate {
-    pub remember_state: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remember_state: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fullscreen: Option<bool>,
+}
+
+impl<'de> Deserialize<'de> for WindowSettingsUpdate {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct Fields {
+            #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+            remember_state: Option<bool>,
+            #[serde(default, deserialize_with = "deserialize_optional_non_null")]
+            fullscreen: Option<bool>,
+        }
+        let value = Fields::deserialize(deserializer)?;
+        if value.remember_state.is_none() && value.fullscreen.is_none() {
+            return Err(serde::de::Error::custom(
+                "window update must contain an option",
+            ));
+        }
+        Ok(Self {
+            remember_state: value.remember_state,
+            fullscreen: value.fullscreen,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -2722,6 +2839,18 @@ where
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SettingsUpdate {
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub projects: Option<ProjectSettingsUpdate>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub backups: Option<BackupSettingsUpdate>,
     #[serde(
         default,
         deserialize_with = "deserialize_optional_non_null",
@@ -3428,7 +3557,7 @@ mod tests {
 
     #[test]
     fn m7_official_gui_hello_preserves_the_daemons_ready_data_schema() {
-        for data_schema in [15, 16, 17] {
+        for data_schema in [15, 16, 17, 18] {
             let hello = HelloResult::m7_official_gui(Vec::new(), data_schema);
             assert_eq!(hello.data_schema, Some(data_schema));
             assert_eq!(hello.config_schema, Some(CONFIG_SCHEMA_VERSION));

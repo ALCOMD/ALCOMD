@@ -545,18 +545,22 @@ async fn one_hundred_concurrent_commands_commit_without_duplicates() {
 fn newer_schema_is_rejected_before_migration_or_pragma_changes() {
     let directory = TestDirectory::new();
     let database = directory.database();
+    let future_schema = alcomd_store::CURRENT_DATA_SCHEMA + 1;
     let connection = Connection::open(&database).expect("create newer database");
     connection
-        .execute_batch("PRAGMA user_version=18; CREATE TABLE sentinel(value TEXT);")
+        .execute_batch("CREATE TABLE sentinel(value TEXT);")
         .expect("create future schema");
+    connection
+        .pragma_update(None, "user_version", future_schema)
+        .expect("set future schema version");
     drop(connection);
     let error = StateStoreHandle::open(database.clone()).expect_err("reject future schema");
     assert!(matches!(
         error,
         StoreOpenError::UnsupportedDataSchema {
-            found: 18,
-            supported: 17
-        }
+            found,
+            supported
+        } if found == future_schema && supported == alcomd_store::CURRENT_DATA_SCHEMA
     ));
     let connection = Connection::open(database).expect("reopen future database");
     let version: i64 = connection
@@ -569,7 +573,7 @@ fn newer_schema_is_rejected_before_migration_or_pragma_changes() {
             |row| row.get(0),
         )
         .expect("read sentinel");
-    assert_eq!(version, 18);
+    assert_eq!(version, i64::from(future_schema));
     assert_eq!(sentinel, 1);
 }
 

@@ -86,18 +86,24 @@ pub(super) async fn dispatch(
             let Some(((project_id, revision), key)) = parsed else {
                 return invalid(request.id);
             };
-            let compression = match params.compression_mode {
+            let compression = params.compression_mode.map(|value| match value {
                 rpc::BackupCompression::Store => app::BackupCompression::Store,
                 rpc::BackupCompression::Fast => app::BackupCompression::Fast,
+                rpc::BackupCompression::Level3 => app::BackupCompression::Level3,
+                rpc::BackupCompression::Level5 => app::BackupCompression::Level5,
+                rpc::BackupCompression::Level7 => app::BackupCompression::Level7,
                 rpc::BackupCompression::Maximum => app::BackupCompression::Maximum,
-            };
+            });
             match application
                 .create(
                     access,
                     project_id,
                     revision,
-                    compression,
-                    params.exclude_vpm_packages,
+                    app::BackupCreateOptions {
+                        compression_mode: compression,
+                        exclude_vpm_packages: params.exclude_vpm_packages,
+                        include_library: params.include_library,
+                    },
                     key,
                 )
                 .await
@@ -211,6 +217,9 @@ fn record(value: app::BackupRecord) -> rpc::BackupRecord {
         compression_mode: match value.compression_mode {
             app::BackupCompression::Store => rpc::BackupCompression::Store,
             app::BackupCompression::Fast => rpc::BackupCompression::Fast,
+            app::BackupCompression::Level3 => rpc::BackupCompression::Level3,
+            app::BackupCompression::Level5 => rpc::BackupCompression::Level5,
+            app::BackupCompression::Level7 => rpc::BackupCompression::Level7,
             app::BackupCompression::Maximum => rpc::BackupCompression::Maximum,
         },
         exclude_vpm_packages: value.exclude_vpm_packages,

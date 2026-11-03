@@ -180,6 +180,8 @@ async fn config_change_during_candidate_store_read_fails_stale_without_query_wri
             &AccessContext::local_owner(),
             initial.revision,
             ConfigUpdate {
+                projects: None,
+                backups: None,
                 window: None,
                 paths: None,
                 unity: None,

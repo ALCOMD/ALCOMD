@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use crate::{CURRENT_DATA_SCHEMA, StoreOpenError};
 
-const DATA_SCHEMA_VERSION: i64 = 17;
+const DATA_SCHEMA_VERSION: i64 = 18;
 const BUSY_TIMEOUT: Duration = Duration::from_millis(5_000);
 const CHECK_ROW_LIMIT: usize = 100;
 const CHECK_BYTE_LIMIT: usize = 65_536;
@@ -33,9 +33,10 @@ const MIGRATION_V14: &str = include_str!("../migrations/0014_unity_project_versi
 const MIGRATION_V15: &str = include_str!("../migrations/0015_project_last_modified.sql");
 const MIGRATION_V16: &str = include_str!("../migrations/0016_remove_project_observed.sql");
 const MIGRATION_V17: &str = include_str!("../migrations/0017_empty_unity_launch_override.sql");
+const MIGRATION_V18: &str = include_str!("../migrations/0018_backup_compression_levels.sql");
 
 pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpenError> {
-    let connection = Connection::open(path).map_err(|_| StoreOpenError::Unavailable)?;
+    let mut connection = Connection::open(path).map_err(|_| StoreOpenError::Unavailable)?;
     let version: i64 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .map_err(|_| StoreOpenError::Unavailable)?;
@@ -157,6 +158,9 @@ pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpen
             .execute_batch(MIGRATION_V17)
             .map_err(|_| StoreOpenError::Unavailable)?;
     }
+    if version <= 17 {
+        migrate_backup_compression(&mut connection, MIGRATION_V18)?;
+    }
     let final_version: i64 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .map_err(|_| StoreOpenError::Unavailable)?;
@@ -174,6 +178,85 @@ pub(super) fn initialize_connection(path: &Path) -> Result<Connection, StoreOpen
     }
     Ok(connection)
 }
+
+fn migrate_backup_compression(
+    connection: &mut Connection,
+    migration: &str,
+) -> Result<(), StoreOpenError> {
+    let foreign_keys: i64 = connection
+        .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+        .map_err(|_| StoreOpenError::Unavailable)?;
+    if !connection.is_autocommit() || foreign_keys != 1 {
+        return Err(StoreOpenError::Unavailable);
+    }
+    // SQLite cannot switch foreign_keys while a transaction is active. Keep
+    // every table change/version write atomic and always restore enforcement.
+    let result = (|| {
+        connection
+            .execute_batch("PRAGMA foreign_keys=OFF;")
+            .map_err(|_| StoreOpenError::Unavailable)?;
+        let disabled: i64 = connection
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .map_err(|_| StoreOpenError::Unavailable)?;
+        if disabled != 0 {
+            return Err(StoreOpenError::Unavailable);
+        }
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+        let objects = {
+            let mut statement = transaction
+                .prepare(
+                    "SELECT sql FROM sqlite_schema
+                     WHERE tbl_name='backups' AND type IN ('index', 'trigger') AND sql IS NOT NULL
+                     ORDER BY type, name",
+                )
+                .map_err(|_| StoreOpenError::Unavailable)?;
+            statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(|_| StoreOpenError::Unavailable)?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| StoreOpenError::Unavailable)?
+        };
+        transaction
+            .execute_batch(migration)
+            .map_err(|_| StoreOpenError::Unavailable)?;
+        for sql in objects {
+            transaction
+                .execute_batch(&sql)
+                .map_err(|_| StoreOpenError::Unavailable)?;
+        }
+        let invalid_foreign_keys: bool = transaction
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM pragma_foreign_key_check)",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|_| StoreOpenError::Unavailable)?;
+        if invalid_foreign_keys {
+            return Err(StoreOpenError::Unavailable);
+        }
+        transaction
+            .commit()
+            .map_err(|_| StoreOpenError::Unavailable)
+    })();
+    let restored = connection
+        .execute_batch("PRAGMA foreign_keys=ON;")
+        .and_then(|()| connection.query_row("PRAGMA foreign_keys", [], |row| row.get::<_, i64>(0)))
+        .map_err(|_| StoreOpenError::Unavailable)
+        .and_then(|enabled| {
+            if enabled == 1 {
+                Ok(())
+            } else {
+                Err(StoreOpenError::Unavailable)
+            }
+        });
+    result.and(restored)
+}
+
+#[cfg(test)]
+#[path = "sqlite_backup_compression_tests.rs"]
+mod backup_compression_migration_tests;
 
 pub(super) fn create_state_check(
     connection: &mut Connection,
