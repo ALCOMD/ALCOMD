@@ -268,7 +268,7 @@ md-linear-progress {
 .projects-empty h2, .projects-empty p { margin: 0; }
 .projects-empty h2 { font-size: 1.1rem; font-weight: 600; }
 .projects-empty p { color: var(--on-surface-variant); }
-.desktop-list-viewport { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: auto; border-radius: var(--alcomd-shape-table); background: var(--md-sys-color-surface-container-lowest); isolation: isolate; }
+.desktop-list-viewport { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: auto; border-radius: var(--md-sys-shape-corner-large); background: var(--md-sys-color-surface-container-lowest); isolation: isolate; }
 .desktop-list {
     --desktop-list-header-font: var(--md-sys-typescale-label-large-font, var(--md-ref-typeface-plain));
     --desktop-list-header-font-size: var(--md-sys-typescale-label-large-size, 0.875rem);
@@ -286,10 +286,10 @@ md-linear-progress {
 .desktop-list :is(th, td) { background: var(--desktop-list-row-background); }
 .desktop-list tr > :first-child { border-start-start-radius: var(--alcomd-shape-list-item); border-end-start-radius: var(--alcomd-shape-list-item); }
 .desktop-list tr > :last-child { border-start-end-radius: var(--alcomd-shape-list-item); border-end-end-radius: var(--alcomd-shape-list-item); }
-.desktop-list thead > tr:first-child > :first-child { border-start-start-radius: var(--alcomd-shape-table); }
-.desktop-list thead > tr:first-child > :last-child { border-start-end-radius: var(--alcomd-shape-table); }
-.desktop-list tbody > tr:last-child > :first-child { border-end-start-radius: var(--alcomd-shape-table); }
-.desktop-list tbody > tr:last-child > :last-child { border-end-end-radius: var(--alcomd-shape-table); }
+.desktop-list thead > tr:first-child > :first-child { border-start-start-radius: var(--md-sys-shape-corner-large); }
+.desktop-list thead > tr:first-child > :last-child { border-start-end-radius: var(--md-sys-shape-corner-large); }
+.desktop-list tbody > tr:last-child > :first-child { border-end-start-radius: var(--md-sys-shape-corner-large); }
+.desktop-list tbody > tr:last-child > :last-child { border-end-end-radius: var(--md-sys-shape-corner-large); }
 .desktop-list th {
     height: 40px;
     padding: 0 12px;
