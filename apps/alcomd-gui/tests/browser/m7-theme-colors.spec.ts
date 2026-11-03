@@ -259,12 +259,12 @@ test("failed Save retains editable preview and explicit Retry saves the retained
     await enterHex(page, "#E040A0");
     expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
     await themeEditor(page).getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("Theme save result is unknown");
+    await expect(page.locator(".reminder-floating").getByRole("alert")).toContainText("Theme save result is unknown");
     await expect(page.locator("html")).toHaveAttribute("data-source-color", "#E040A0");
     await expect(page.locator("#theme-source").getByRole("textbox")).toBeEditable();
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
     expect(await page.evaluate(() => window.settingsWrites)).toEqual([]);
-    await themeEditor(page).getByRole("button", { name: "Retry theme save", exact: true }).click();
+    await page.locator(".reminder-floating").getByRole("button", { name: "Retry theme save", exact: true }).click();
     await expect(themeEditor(page)).toHaveAttribute("aria-busy", "false");
     await expect(themeEditor(page).getByRole("button", { name: "Save", exact: true })).toBeDisabled();
     await expect(page.getByRole("alert")).toHaveCount(0);
@@ -277,7 +277,9 @@ test("Cancel after a failed Save restores the accepted palette and makes no furt
     const accepted = await palette(page);
     await enterHex(page, "#E040A0");
     await themeEditor(page).getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("Theme save result is unknown");
+    await expect(page.locator(".reminder-floating").getByRole("alert")).toContainText("Theme save result is unknown");
+    await page.locator(".reminder-floating").getByRole("button", { name: "Dismiss notification", exact: true }).click();
+    await expect(page.locator(".reminder-floating")).toBeHidden();
     await themeEditor(page).getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(themeEditor(page)).toBeVisible();
     await expect(page.getByRole("alert")).toHaveCount(0);
@@ -294,9 +296,9 @@ test("a revision conflict rereads settings and retries only local theme fields o
     const reads = await page.evaluate(() => window.settingsReads);
     await enterHex(page, "#E040A0");
     await themeEditor(page).getByRole("button", { name: "Save", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("Theme changed elsewhere");
+    await expect(page.locator(".reminder-floating").getByRole("alert")).toContainText("Theme changed elsewhere");
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
-    await themeEditor(page).getByRole("button", { name: "Retry theme save", exact: true }).click();
+    await page.locator(".reminder-floating").getByRole("button", { name: "Retry theme save", exact: true }).click();
     await expect(themeEditor(page)).toHaveAttribute("aria-busy", "false");
     await expect(themeEditor(page).getByRole("button", { name: "Save", exact: true })).toBeDisabled();
     await expect(page.getByRole("alert")).toHaveCount(0);

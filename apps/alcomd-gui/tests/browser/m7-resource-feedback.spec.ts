@@ -19,21 +19,21 @@ test("repository success feedback never changes table or toolbar geometry", asyn
     }
 });
 
-test("repository failure stays in its dialog and closing clears the previous operation", async ({ page }) => {
+test("repository failure stays in the shared outlet and dismissing clears the previous operation", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/repositories&state=package-partial-failure");
     const table = page.getByRole("table", { name: "Repositories", exact: true });
     const row = table.getByRole("row").filter({ hasText: "Local packages" });
     await row.getByRole("button", { name: "Refresh repository", exact: true }).click();
-    const dialog = page.getByRole("dialog", { name: "Repository refresh failed", exact: true });
-    const host = page.locator("md-dialog[open]");
-    await expect(dialog).toBeVisible();
+    const host = page.locator(".reminder-floating");
+    await expect(host).toContainText("Repository refresh failed");
+    await expect(page.locator("md-dialog[open]")).toHaveCount(0);
     await expect(row.getByRole("alert")).toHaveCount(0);
     await expectRequestError(host.getByRole("alert"), "repository_unavailable");
     await page.clock.install();
     await page.clock.fastForward(10_000);
     await expect(host.getByRole("alert")).toBeVisible();
-    await host.getByRole("button", { name: "Close", exact: true }).click();
-    await expect(dialog).toBeHidden();
+    await host.getByRole("button", { name: "Dismiss notification", exact: true }).click();
+    await expect(host).toBeHidden();
     await row.getByRole("button", { name: "Remove", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "Remove this repository?", exact: true })).toBeVisible();
     await expect(page.locator("md-dialog[open]").getByRole("alert")).toHaveCount(0);

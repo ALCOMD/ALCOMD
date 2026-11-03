@@ -17,7 +17,7 @@ import { LoadingState } from "./LoadingState";
 import { usePageReadPromise, type PageReadResult } from "./PageRead";
 import { navigationLabels } from "./navigation-labels";
 import { ThemeControls, themePreferences } from "./ThemeControls";
-import { Reminder, RequestReminder } from "./Reminder";
+import { GlobalReminder, Reminder, RequestReminder } from "./Reminder";
 import { displayPath } from "./display-path";
 import { UnityDefaultArgumentsSettings } from "./UnityDefaultArgumentsSettings";
 
@@ -107,6 +107,7 @@ function StorageDirectoryRow({ client, settingsWriter, snapshot, directoryKey, l
     const generation = useRef(0);
     const guard = useRef(false);
     const failedEdit = useRef<string | undefined>(undefined);
+    const feedbackRef = useRef<HTMLDivElement>(null);
     const reset = (value: SettingsGetResult, preserveFailed = false) => {
         const desired = preserveFailed ? state.settings?.paths[directoryKey] : undefined;
         const path = desired ?? value.directories[directoryKey];
@@ -160,7 +161,7 @@ function StorageDirectoryRow({ client, settingsWriter, snapshot, directoryKey, l
     return <div className="settings-directory" onBlur={(event) => {
         let target: EventTarget | null = event.relatedTarget;
         while (target instanceof Node) {
-            if (event.currentTarget.contains(target)) return;
+            if (event.currentTarget.contains(target) || feedbackRef.current?.contains(target)) return;
             const root = target.getRootNode();
             target = root instanceof ShadowRoot ? root.host : null;
         }
@@ -185,9 +186,9 @@ function StorageDirectoryRow({ client, settingsWriter, snapshot, directoryKey, l
             <Button softDisabled={busy || state.saving} onClick={() => void save("select")} type="button">{t("Select")}</Button>
         </div>
         {error === undefined || state.failed ? null : error.cause === undefined ? <Reminder tone="error">{t(error.message)}</Reminder>
-            : <RequestReminder error={error.cause} title={t(error.message)} message={error.message === "The current save location could not be checked." && ["internal_error", "daemon_unavailable"].includes(error.cause.code) ? "Retry checks the current path before writing again." : undefined}>
+            : <GlobalReminder ref={feedbackRef}><RequestReminder error={error.cause} title={t(error.message)} message={error.message === "The current save location could not be checked." && ["internal_error", "daemon_unavailable"].includes(error.cause.code) ? "Retry checks the current path before writing again." : undefined}>
                 {pending === undefined ? null : <Button disabled={state.failed} softDisabled={busy || state.saving} onClick={() => void save("retry")} type="button" variant="text">{t("Retry")}</Button>}
-            </RequestReminder>}
+            </RequestReminder></GlobalReminder>}
     </div>;
 }
 
@@ -212,6 +213,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
     const [draft, setDraft] = useState(accepted.unityHub.path ?? accepted.settings.unity.hubPath ?? "");
     const edit = useRef({ value: draft, display: draft, previousPath: accepted.settings.unity.hubPath, dirty: false });
     const failedEdit = useRef<string | undefined>(undefined);
+    const feedbackRef = useRef<HTMLDivElement>(null);
     const errorOrigin = useRef<UnityHubIntent["origin"] | "refresh" | undefined>(undefined);
     const group = useRef<HTMLElement>(null);
     const guard = useRef(false);
@@ -378,7 +380,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
             onBlur={(event) => {
                 let target: EventTarget | null = event.relatedTarget;
                 while (target instanceof Node) {
-                    if (event.currentTarget.contains(target)) return;
+                    if (event.currentTarget.contains(target) || feedbackRef.current?.contains(target)) return;
                     const root = target.getRootNode();
                     target = root instanceof ShadowRoot ? root.host : null;
                 }
@@ -415,13 +417,13 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
             </div>
             {location.configuredPathStatus === "invalid" ? <Reminder tone="warning">{t("The saved Unity Hub path is no longer usable.")}</Reminder> : null}
             {error === undefined ? null : error.cause === undefined ? <Reminder tone="error">{t(error.message)}</Reminder>
-                : <RequestReminder error={error.cause} title={readUnknown ? null : t(error.message)}
+                : <GlobalReminder ref={feedbackRef}><RequestReminder error={error.cause} title={readUnknown ? null : t(error.message)}
                     message={readUnknown ? error.message : error.message === "Unity Hub save result is unknown" ? "Retry checks the current path before writing again." : undefined}>
                     {pending === undefined ? null : <Button disabled={state.failed} softDisabled={busy || state.saving} onClick={() => void run({ kind: "retry" })} type="button" variant="text">{t("Retry")}</Button>}
-                </RequestReminder>}
+                </RequestReminder></GlobalReminder>}
             {openDisabledReason === undefined ? null : <span className="visually-hidden" id="settings-unity-hub-open-reason">{openDisabledReason}</span>}
-            {openError === undefined ? null : openError.cause === undefined ? <Reminder tone="error">{t(openError.message)}</Reminder>
-                : <RequestReminder error={openError.cause} title={null} message={openError.message} />}
+            {openError === undefined ? null : <GlobalReminder>{openError.cause === undefined ? <Reminder tone="error">{t(openError.message)}</Reminder>
+                : <RequestReminder error={openError.cause} title={null} message={openError.message} />}</GlobalReminder>}
         </SettingsSection>
     );
 }

@@ -67,10 +67,10 @@ test("Failed filter persistence keeps the last confirmed visibility and exposes 
         const panel = page.getByRole("dialog", { name: "Package filters", exact: true });
         const repository = panel.getByRole("checkbox").first();
         await repository.click();
-        await expect(panel.getByRole("alert")).toContainText(state.endsWith("conflict") ? "Settings changed elsewhere" : requestErrorMessage("permission_denied"));
+        await expect(page.locator(".reminder-floating").getByRole("alert")).toContainText(state.endsWith("conflict") ? "Settings changed elsewhere" : requestErrorMessage("permission_denied"));
         await expect(repository).toBeChecked();
         await expect(packageName(page, "Remote tools")).toBeVisible();
-        await expect(panel.getByRole("button", { name: "Reload filters" })).toBeVisible();
+        await expect(page.locator(".reminder-floating").getByRole("button", { name: "Reload filters" })).toBeVisible();
     }
 });
 

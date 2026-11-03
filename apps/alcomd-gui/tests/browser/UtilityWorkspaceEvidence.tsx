@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { Button, TextField } from "../../src/Material";
 import { UtilityWorkspace } from "../../src/UtilityWorkspace";
 import { OperationFollow } from "../../src/CoreActions";
+import { ReminderProvider } from "../../src/Reminder";
 import type { Operation } from "../../src/core-models";
 import "../../src/styles.css";
 
@@ -52,4 +53,4 @@ function FollowEvidence() {
     </main>;
 }
 
-createRoot(document.getElementById("root")!).render(new URLSearchParams(window.location.search).has("operationFollow") ? <FollowEvidence /> : <Evidence />);
+createRoot(document.getElementById("root")!).render(<ReminderProvider visit={0}>{new URLSearchParams(window.location.search).has("operationFollow") ? <FollowEvidence /> : <Evidence />}</ReminderProvider>);

@@ -40,3 +40,28 @@ test("route changes discard late responses and queued invalidations from the old
     await expect(page.getByRole("alert")).toHaveCount(0);
     expect(await page.evaluate(() => window.workspaceReads.length)).toBe(3);
 });
+
+test("refresh failures use the shared outlet without moving loaded content and keep an explicit retry", async ({ page }) => {
+    const snapshot = page.getByLabel("Snapshot");
+    const before = await snapshot.boundingBox();
+    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.workspaceReads.length)).toBe(2);
+    await page.evaluate(() => window.workspaceReads[1]!.reject({ code: "permission_denied" }));
+    const outlet = page.locator(".reminder-floating");
+    await expect(outlet).toHaveCount(1);
+    await expect(outlet.getByRole("alert")).toContainText("Refresh failed. The last loaded result is still shown.");
+    await expect(snapshot).toHaveText("Initial snapshot");
+    expect(await snapshot.boundingBox()).toEqual(before);
+    await expect(page.locator(".utility-workspace-body").getByRole("alert")).toHaveCount(0);
+    await page.clock.install();
+    await page.clock.fastForward(6000);
+    await expect(outlet.getByRole("alert")).toBeVisible();
+    await outlet.getByRole("button", { name: "Show details", exact: true }).click();
+    await expect(outlet.getByText("permission_denied", { exact: true })).toBeVisible();
+    await outlet.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.workspaceReads.length)).toBe(3);
+    await page.evaluate(() => window.workspaceReads[2]!.resolve("Recovered snapshot"));
+    await expect(snapshot).toHaveText("Recovered snapshot");
+    await expect(outlet.locator(".reminder")).toHaveCount(0);
+    await expect(outlet).toBeHidden();
+});

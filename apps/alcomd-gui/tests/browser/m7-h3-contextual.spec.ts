@@ -251,7 +251,8 @@ test("a late Unity status response cannot reopen its dialog after leaving the pr
     await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
     await page.evaluate(() => dispatchEvent(new Event("test-unity-status-ready")));
     await expect(page.locator("md-dialog[open]")).toHaveCount(0);
-    await expect(page.locator(".reminder-floating")).toHaveCount(0);
+    await expect(page.locator(".reminder-floating .reminder")).toHaveCount(0);
+    await expect(page.locator(".reminder-floating")).toBeHidden();
     expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.launch"))).toHaveLength(1);
 });
 

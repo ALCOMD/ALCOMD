@@ -27,7 +27,7 @@ import { LoadingState, useDelayedPending } from "./LoadingState";
 import { useProjectUnityLaunch } from "./ProjectUnityLaunch";
 import { capabilities, capabilityUnavailableTitle, useCapability } from "./capabilities";
 import { reviewTemplateCreation, reviewTemplateDerive, reviewTemplateImport, TemplatePlanReview, type TemplateReview } from "./TemplatePlanReview";
-import { Reminder, RequestReminder, useReminder } from "./Reminder";
+import { GlobalReminder, Reminder, RequestReminder, useReminder } from "./Reminder";
 import { displayPath } from "./display-path";
 import { useProjectDirectory } from "./use-project-directory";
 import { UnityArgumentsEditor } from "./UnityArgumentsEditor";
@@ -181,17 +181,18 @@ export function RepositoryActions({ client, onChanged, repository }: ActionProps
     };
     return <div className="repository-row-actions">
         <RefreshButton disabled={!available || !ready || feedback.busy} label={t("Refresh repository")} onClick={() => void run(false)} refreshing={feedback.busy && !confirmRemove} refreshingLabel={t("Refreshing repository")} />
-        <IconButton disabled={!available || !ready || feedback.busy} label={t("Remove")} onClick={() => { reminder.clear(); setFeedback(INITIAL_FEEDBACK); setConfirmRemove(true); }} title={t("Remove repository")} type="button"><Icon asset={closeIcon} /></IconButton>
+        <IconButton disabled={!available || !ready || feedback.busy} label={t("Remove")} onClick={() => { reminder.clear(); setRefreshFailed(false); setFeedback(INITIAL_FEEDBACK); setConfirmRemove(true); }} title={t("Remove repository")} type="button"><Icon asset={closeIcon} /></IconButton>
         <MaterialDialog open={confirmRemove} title={t("Remove this repository?")} dismissible={!feedback.busy} onClose={() => { setConfirmRemove(false); setFeedback(INITIAL_FEEDBACK); }}>
             <p><Translated message="Remove {name} from your sources?" values={{ name: <strong>{repository.name ?? repository.declaredId ?? t("this repository")}</strong> }} /></p><p>{t("Packages already installed in projects stay installed.")}</p>
             <MutationFeedback client={client} feedback={feedback} />
             <div className="dialog-actions"><Button disabled={feedback.busy} onClick={() => { setConfirmRemove(false); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Cancel")}</Button><Button disabled={feedback.busy || !available} onClick={() => void run(true)} type="button">{t("Remove repository")}</Button></div>
         </MaterialDialog>
-        <MaterialDialog open={refreshFailed} title={t("Repository refresh failed")} dismissible={!feedback.busy} onClose={() => { setRefreshFailed(false); setFeedback(INITIAL_FEEDBACK); }}>
+        {refreshFailed && feedback.error !== undefined ? <GlobalReminder><RequestReminder error={feedback.error} title={t("Repository refresh failed")} onDismiss={() => { setRefreshFailed(false); setFeedback(INITIAL_FEEDBACK); }}>
             <p>{repository.name ?? repository.declaredId ?? t("Repository")}</p>
-            {feedback.error === undefined ? feedback.busy ? <LoadingState title={t("Refreshing repository")} /> : null : <RequestReminder error={feedback.error}>{t("The last available packages are still shown. Check the source and retry.")}</RequestReminder>}
-            <div className="dialog-actions"><Button disabled={feedback.busy} onClick={() => { setRefreshFailed(false); setFeedback(INITIAL_FEEDBACK); }} type="button" variant="text">{t("Close")}</Button>{feedback.error?.code === "revision_conflict" ? <Button disabled={feedback.busy} onClick={() => { setRefreshFailed(false); setFeedback(INITIAL_FEEDBACK); onChanged?.(); }} type="button">{t("Refresh list")}</Button> : <Button disabled={feedback.busy} onClick={() => void run(false)} type="button">{t("Retry")}</Button>}</div>
-        </MaterialDialog>
+            <p>{t("The last available packages are still shown. Check the source and retry.")}</p>
+            {feedback.error?.code === "revision_conflict" ? <Button disabled={feedback.busy} onClick={() => { setRefreshFailed(false); setFeedback(INITIAL_FEEDBACK); onChanged?.(); }} type="button">{t("Refresh list")}</Button>
+                : <Button disabled={feedback.busy} onClick={() => void run(false)} type="button">{t("Retry")}</Button>}
+        </RequestReminder></GlobalReminder> : null}
     </div>;
 }
 
@@ -530,8 +531,9 @@ export function ProjectUnityActions({ afterMigrationOpen = false, client, instal
             <Button disabled={!canMigrate || feedback.busy || targetInstallationId.length === 0 || projectRevision === undefined} onClick={() => void planMigration()} title={capabilityUnavailableTitle(canMigrate, capabilities.projectsUnityMigration, t)} type="button" variant="tonal">{t("Review migration")}</Button>
             <PlanDialog applyDisabled={migrationPlan?.classification.supportedForApply === false} busy={feedback.busy} onApply={applyMigration} onClose={() => setMigrationPlan(undefined)} open={migrationPlan !== undefined} title={t("Review Unity migration")}>
                 {migrationPlan === undefined ? null : <dl className="dialog-summary"><div><dt>{t("From")}</dt><dd>{migrationPlan.sourceUnityVersion}</dd></div><div><dt>{t("To")}</dt><dd>{migrationPlan.targetUnityVersion}</dd></div><div><dt>{t("Classification")}</dt><dd>{t(humanize(migrationPlan.classification.kind))}</dd></div><div><dt>{t("Supported")}</dt><dd>{migrationPlan.classification.supportedForApply ? t("Yes") : t("No")}</dd></div></dl>}
+                {feedback.error === undefined ? null : <RequestReminder error={feedback.error} />}
             </PlanDialog>
-            <MutationFeedback client={client} feedback={feedback} onOperationTerminal={migrationFinished} />
+            <MutationFeedback globalFeedback client={client} feedback={migrationPlan === undefined ? feedback : { ...feedback, error: undefined }} onOperationTerminal={migrationFinished} />
         </ActionSection>
     );
 }
@@ -639,10 +641,7 @@ export function ProjectUnityWorkspaceActions({ client, installations, launchOpti
                 {migrationPlan === undefined ? null : <dl className="dialog-summary"><div><dt>{t("From")}</dt><dd>{migrationPlan.sourceUnityVersion}</dd></div><div><dt>{t("To")}</dt><dd>{migrationPlan.targetUnityVersion}</dd></div><div><dt>{t("Classification")}</dt><dd>{t(humanize(migrationPlan.classification.kind))}</dd></div><div><dt>{t("Supported")}</dt><dd>{migrationPlan.classification.supportedForApply ? t("Yes") : t("No")}</dd></div></dl>}
                 {feedback.error === undefined ? null : <RequestReminder error={feedback.error}>{submitted && templateApplyResultUnknown(feedback.error) ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</RequestReminder>}
             </PlanDialog>
-            <MaterialDialog onClose={() => setFeedback(INITIAL_FEEDBACK)} open={feedback.error !== undefined && !migrationChooserOpen && migrationPlan === undefined} title={t("Project Unity")}>
-                {feedback.error === undefined ? null : <RequestReminder error={feedback.error} />}
-                <div className="dialog-actions"><Button onClick={() => setFeedback(INITIAL_FEEDBACK)} type="button" variant="text">{t("Close")}</Button></div>
-            </MaterialDialog>
+            {feedback.error === undefined || migrationChooserOpen || migrationPlan !== undefined ? null : <GlobalReminder><RequestReminder error={feedback.error} title={t("Project Unity")} onDismiss={() => setFeedback(INITIAL_FEEDBACK)} /></GlobalReminder>}
             <MutationFeedback client={client} feedback={{ ...feedback, error: undefined, messageTone: "success" }} />
         </>
     );
@@ -864,11 +863,7 @@ export function TemplateActions({ client, compact = false, onAction, onChanged, 
             <Button disabled={!canManage || feedback.busy} onClick={() => open("export")} title={capabilityUnavailableTitle(canManage, capabilities.templatesManage, t)} type="button" variant="text">{t("Export template")}</Button>
             {template.sourceKind === "builtin" ? null : <Button className="material-button--danger" disabled={!canManage || feedback.busy} onClick={() => open("remove")} type="button" variant="text">{t("Remove template")}</Button>}
         </div></>}
-        <MaterialDialog dismissible={!feedback.busy} open={feedback.error !== undefined} onClose={() => setFeedback(INITIAL_FEEDBACK)} title={t("Favorite could not be updated")}>
-            <p>{template.displayName}</p>
-            {feedback.error === undefined ? null : <RequestReminder error={feedback.error} />}
-            <div className="dialog-actions"><Button onClick={() => setFeedback(INITIAL_FEEDBACK)} type="button" variant="text">{t("Close")}</Button></div>
-        </MaterialDialog>
+        {feedback.error === undefined ? null : <GlobalReminder><RequestReminder error={feedback.error} title={t("Favorite could not be updated")} onDismiss={() => setFeedback(INITIAL_FEEDBACK)}><p>{template.displayName}</p></RequestReminder></GlobalReminder>}
     </section>;
 }
 
@@ -1133,7 +1128,7 @@ export function ExtensionActions({ client, extension, onChanged, onAccepted, ope
             </>}
             {mode === "none" ? null : submitted && templateApplyResultUnknown(feedback.error) ? <><RequestReminder error={feedback.error!}>{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</RequestReminder><div className="dialog-actions"><Button onClick={close} type="button" variant="text">{t("Close")}</Button></div></> : <MutationFeedback client={client} feedback={feedback} />}
         </MaterialDialog>
-        {mode === "none" ? <MutationFeedback client={client} feedback={onAccepted === undefined ? feedback : { ...feedback, operationId: undefined }} onOperationTerminal={() => onChanged?.()} /> : null}
+        {mode === "none" ? <MutationFeedback globalFeedback client={client} feedback={onAccepted === undefined ? feedback : { ...feedback, operationId: undefined }} onOperationTerminal={() => onChanged?.()} /> : null}
     </ActionSection>;
 }
 
@@ -1155,15 +1150,21 @@ function ModalDialog({ children, dismissible = true, onClose, open, title }: { c
     return <MaterialDialog dismissible={dismissible} onClose={onClose} open={open} title={title}>{children}</MaterialDialog>;
 }
 
-function MutationFeedback({ client, errorTitle, feedback, onOperationTerminal }: { client: GuiRpcClient; errorTitle?: string; feedback: FeedbackState; onOperationTerminal?(operation: Operation): void }) {
+function MutationFeedback({ client, errorTitle, feedback, globalFeedback = false, onOperationTerminal }: { client: GuiRpcClient; errorTitle?: string; feedback: FeedbackState; globalFeedback?: boolean; onOperationTerminal?(operation: Operation): void }) {
     const { success, clear } = useReminder();
     useEffect(() => {
         if (feedback.busy) clear();
         else if (feedback.messageTone === "success" && feedback.error === undefined && feedback.operationId === undefined && feedback.message !== undefined) success(feedback.message);
     }, [feedback.busy, feedback.error, feedback.operationId, feedback.message, feedback.messageTone, success, clear]);
-    if (feedback.error !== undefined) return <RequestReminder error={feedback.error} title={errorTitle} />;
+    if (feedback.error !== undefined) {
+        const failure = <RequestReminder error={feedback.error} title={errorTitle} />;
+        return globalFeedback ? <GlobalReminder>{failure}</GlobalReminder> : failure;
+    }
     if (feedback.operationId !== undefined) return <OperationFollow client={client} onTerminal={onOperationTerminal} operationId={feedback.operationId} />;
-    if (feedback.message !== undefined && feedback.messageTone !== "success") return <Reminder tone={feedback.messageTone ?? "info"}>{feedback.message}</Reminder>;
+    if (feedback.message !== undefined && feedback.messageTone !== "success") {
+        const message = <Reminder tone={feedback.messageTone ?? "info"}>{feedback.message}</Reminder>;
+        return globalFeedback ? <GlobalReminder>{message}</GlobalReminder> : message;
+    }
     return null;
 }
 

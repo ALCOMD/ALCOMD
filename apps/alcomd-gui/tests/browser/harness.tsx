@@ -657,10 +657,11 @@ class DeterministicGuiClient implements GuiRpcClient {
                 ...(cursor === undefined ? { nextCursor: { packageId: "com.example.avatar", version: "1.3.0" } } : {})
             });
         }
-        return this.value({ packages: packages.map((item) => ({ ...item, prerelease: false })) });
+        return this.value({ packages: packages.map((item) => ({ ...item, prerelease: false, ...(query.has("package-link-error") && item.packageId === "com.example.avatar" && item.version === "1.2.3" ? { links: { documentation: { url: "https://fixture.example/docs" } } } : {}) })) });
     }
 
     openPackageLink(): ReturnType<GuiRpcClient["openPackageLink"]> {
+        if (query.has("package-link-error")) return Promise.reject({ code: "permission_denied" });
         return this.value(undefined);
     }
     async repositoryRegister(source: Parameters<GuiRpcClient["repositoryRegister"]>[0]): ReturnType<GuiRpcClient["repositoryRegister"]> {
@@ -700,6 +701,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
     repositoryUnregister(repositoryId: string, expectedRevision: number): ReturnType<GuiRpcClient["repositoryUnregister"]> {
         window.resourceRequests.push({ method: "repositories.unregister", params: { repositoryId, expectedRevision } });
+        if (query.has("resource-remove-error")) return Promise.reject({ code: "permission_denied" });
         if (query.has("resource-lifecycle")) {
             if (this.lifecycleRepositories.get(repositoryId)?.revision !== expectedRevision) return Promise.reject({ code: "revision_conflict" });
             this.lifecycleRepositories.delete(repositoryId);
@@ -834,12 +836,14 @@ class DeterministicGuiClient implements GuiRpcClient {
     }
     userPackageRefresh(userPackageId: string, expectedRevision: number): ReturnType<GuiRpcClient["userPackageRefresh"]> {
         window.resourceRequests.push({ method: "packages.userPackages.refresh", params: { userPackageId, expectedRevision } });
+        if (query.has("user-refresh-error") && window.resourceRequests.filter((entry) => entry.method === "packages.userPackages.refresh").length === 1) return Promise.reject({ code: "store_unavailable" });
         if (expectedRevision !== this.userPackageRevision) return Promise.reject({ code: "revision_conflict" });
         this.userPackageRevision += 1;
         return this.value({ userPackage: this.currentUserPackage(), replayed: false });
     }
     userPackageRemove(userPackageId: string, expectedRevision: number): ReturnType<GuiRpcClient["userPackageRemove"]> {
         window.resourceRequests.push({ method: "packages.userPackages.remove", params: { userPackageId, expectedRevision } });
+        if (query.has("resource-remove-error")) return Promise.reject({ code: "permission_denied" });
         if (expectedRevision !== this.userPackageRevision) return Promise.reject({ code: "revision_conflict" });
         this.userPackageRemoved = true;
         return this.value({ userPackageId, revision: expectedRevision + 1, removed: true, replayed: false });

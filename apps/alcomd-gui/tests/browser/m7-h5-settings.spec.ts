@@ -91,14 +91,20 @@ test("H5 Theme unknown reply preserves preview and reconciles to one write with 
     await page.locator("#theme-source").getByRole("textbox").fill("#E040A0");
     await fail(page, "settings.update", "internal_error", true);
     const theme = page.getByRole("form", { name: "Theme", exact: true });
+    const rowsBefore = await theme.locator(".settings-row").evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().toJSON()));
     await theme.getByRole("button", { name: "Save", exact: true }).click();
-    const feedback = theme.getByRole("alert");
+    const feedback = page.locator(".reminder-floating").getByRole("alert");
     await expect(feedback).toContainText("Theme save result is unknown");
+    expect(await theme.locator(".settings-row").evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().toJSON()))).toEqual(rowsBefore);
+    await expect(theme.getByRole("alert")).toHaveCount(0);
+    const failureBounds = (await page.locator(".reminder-floating").boundingBox())!;
+    expect(failureBounds.x + failureBounds.width).toBe(1400 - 24);
+    expect(failureBounds.y + failureBounds.height).toBe(900 - 24);
     await expect(feedback).toContainText("Retry checks the current settings before writing again.");
     await expect(feedback).not.toContainText("Check Tasks");
     await expect(page.locator("html")).toHaveAttribute("data-source-color", "#E040A0");
     await expect(page.locator("body")).not.toContainText(H5_SETTINGS_SECRET);
-    await theme.getByRole("button", { name: "Retry theme save", exact: true }).click();
+    await feedback.getByRole("button", { name: "Retry theme save", exact: true }).click();
     await expect(feedback).toHaveCount(0);
     await expect(theme.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
     expect(await changes(page)).toHaveLength(1);
@@ -110,7 +116,24 @@ test("H5 Theme unknown reply preserves preview and reconciles to one write with 
     expect(successBounds.y + successBounds.height).toBe(900 - 24);
     await page.clock.install();
     await page.clock.fastForward(6000);
-    await expect(page.locator(".reminder-floating")).toHaveCount(0);
+    await expect(page.locator(".reminder-floating .reminder")).toHaveCount(0);
+    await expect(page.locator(".reminder-floating")).toBeHidden();
+});
+
+test("dismissing an unknown theme result still reconciles before another Save", async ({ page }) => {
+    await openSettings(page);
+    await page.locator("#theme-source").getByRole("textbox").fill("#E040A0");
+    await fail(page, "settings.update", "internal_error", true);
+    const theme = page.getByRole("form", { name: "Theme", exact: true });
+    await theme.getByRole("button", { name: "Save", exact: true }).click();
+    const outlet = page.locator(".reminder-floating");
+    await expect(outlet.getByRole("alert")).toContainText("Theme save result is unknown");
+    await outlet.getByRole("button", { name: "Dismiss notification", exact: true }).click();
+    await expect(outlet).toBeHidden();
+    await theme.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(outlet).toContainText("Theme saved");
+    expect(await changes(page)).toHaveLength(1);
+    await expect(theme.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
 });
 
 test("H5 Hub unknown reply preserves original picker input and reconciles before any further write", async ({ page }) => {
@@ -118,7 +141,7 @@ test("H5 Hub unknown reply preserves original picker input and reconciles before
     await fail(page, "settings.update", "internal_error", true);
     await selectSettingsSection(page, "unity");
     await hub(page).getByRole("button", { name: "Select", exact: true }).click();
-    const feedback = hub(page).getByRole("alert");
+    const feedback = page.locator(".reminder-floating").getByRole("alert");
     await expect(feedback).toContainText("Unity Hub save result is unknown");
     await expect(feedback).toContainText("Retry checks the current path before writing again.");
     await expect(feedback).not.toContainText("Check Tasks");
@@ -127,7 +150,7 @@ test("H5 Hub unknown reply preserves original picker input and reconciles before
     await expect(feedback.locator("code")).toHaveText(["internal_error", H5_SETTINGS_DIAGNOSTIC]);
     await expect(page.locator("body")).not.toContainText(H5_SETTINGS_SECRET);
     await feedback.getByRole("button", { name: "Retry", exact: true }).click();
-    await expect(hub(page).getByRole("alert")).toHaveCount(0);
+    await expect(page.locator(".reminder-floating").getByRole("alert")).toHaveCount(0);
     await expect(hub(page).locator("md-outlined-text-field")).toHaveJSProperty("value", H5_HUB_PATH);
     expect(await changes(page)).toHaveLength(1);
     expect(await page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "unity.installations.refresh").length)).toBe(1);
@@ -138,7 +161,7 @@ test("H5 confirmed Hub save remains accepted when Editor discovery reports a sep
     await fail(page, "unity.installations.refresh", "internal_error");
     await selectSettingsSection(page, "unity");
     await hub(page).getByRole("button", { name: "Select", exact: true }).click();
-    const feedback = hub(page).getByRole("alert");
+    const feedback = page.locator(".reminder-floating").getByRole("alert");
     await expect(feedback).toContainText("Unity Hub path was saved, but Unity installations could not be refreshed.");
     await expect(feedback).not.toContainText("Check Tasks");
     await feedback.getByRole("button", { name: "Show details", exact: true }).click();
@@ -157,13 +180,13 @@ test("H5 Auto detect read failure does not claim an unknown save or submit a set
     await fail(page, "settings.get", "daemon_unavailable");
     await selectSettingsSection(page, "unity");
     await hub(page).getByRole("button", { name: "Auto detect", exact: true }).click();
-    const feedback = hub(page).getByRole("alert");
+    const feedback = page.locator(".reminder-floating").getByRole("alert");
     await expect(feedback).toContainText("Unity Hub location could not be detected. Retry the operation.");
     await expect(feedback).not.toContainText("save result is unknown");
     await expect(feedback).not.toContainText("Check Tasks");
     expect(await changes(page)).toEqual([]);
     await feedback.getByRole("button", { name: "Retry", exact: true }).click();
-    await expect(hub(page).getByRole("alert")).toHaveCount(0);
+    await expect(page.locator(".reminder-floating").getByRole("alert")).toHaveCount(0);
     expect(await changes(page)).toEqual([]);
     expect(await page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "unity.installations.refresh"))).toEqual([]);
 });

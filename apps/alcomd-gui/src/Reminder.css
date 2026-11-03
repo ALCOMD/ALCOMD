@@ -50,6 +50,8 @@
     box-shadow: 0 4px 16px #0003;
 }
 
+.reminder-floating:empty { display: none; }
+
 .reminder-floating .reminder--success {
     color: var(--md-sys-color-inverse-on-surface);
     background: var(--md-sys-color-inverse-surface);

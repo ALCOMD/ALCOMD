@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { createPortal } from "react-dom";
 import type { RpcError } from "@alcomd/sdk";
 import { closeIcon, infoIcon } from "@alcomd/ui/icons";
@@ -10,14 +10,17 @@ import "./Reminder.css";
 
 interface ReminderActions {
     success(message: string): void;
+    error(error: RpcError, message?: string): void;
     clear(): void;
 }
 
 const ReminderContext = createContext<ReminderActions | undefined>(undefined);
+const ReminderOutletContext = createContext<HTMLDivElement | null | undefined>(undefined);
 
 /** One outlet; success keeps its visit scope while actionable feedback follows its source. */
 export function ReminderProvider({ children, feedback, visit }: { children: ReactNode; feedback?: ReactNode; visit: number }) {
-    const [notice, setNotice] = useState<{ id: number; message: string; visit: number }>();
+    const [notice, setNotice] = useState<{ id: number; message?: string; error?: RpcError; visit: number }>();
+    const [outlet, setOutlet] = useState<HTMLDivElement | null>(null);
     const [paused, setPaused] = useState(false);
     const sequence = useRef(0);
     const activeVisit = useRef(visit);
@@ -28,24 +31,37 @@ export function ReminderProvider({ children, feedback, visit }: { children: Reac
         setNotice({ id: ++sequence.current, message, visit });
     }, [visit]);
     const clear = useCallback(() => { if (activeVisit.current === visit) setNotice(undefined); }, [visit]);
-    const actions = useMemo(() => ({ success, clear }), [success, clear]);
+    const error = useCallback((failure: RpcError, message?: string) => {
+        if (activeVisit.current !== visit) return;
+        setNotice({ id: ++sequence.current, error: failure, message, visit });
+    }, [visit]);
+    const actions = useMemo(() => ({ success, error, clear }), [success, error, clear]);
     useEffect(() => { setNotice(undefined); setPaused(false); }, [visit]);
     useEffect(() => {
-        if (notice === undefined || paused) return;
+        if (notice === undefined || notice.error !== undefined || paused) return;
         const timer = window.setTimeout(() => {
             setNotice((current) => current?.id === notice.id ? undefined : current);
         }, 5000);
         return () => window.clearTimeout(timer);
     }, [notice, paused]);
     const visibleNotice = notice?.visit === visit ? notice : undefined;
-    return <ReminderContext.Provider value={actions}>{children}{visibleNotice === undefined && feedback === undefined ? null : createPortal(
-        <div className="reminder-floating" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocusCapture={() => setPaused(true)} onBlurCapture={(event) => {
+    return <ReminderContext.Provider value={actions}><ReminderOutletContext.Provider value={outlet}>{children}{createPortal(
+        <div className="reminder-floating" ref={setOutlet} onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocusCapture={() => setPaused(true)} onBlurCapture={(event) => {
             if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false);
         }}>
             {feedback}
-            {visibleNotice === undefined ? null : <Reminder key={visibleNotice.id} onDismiss={clear} tone="success">{visibleNotice.message}</Reminder>}
+            {visibleNotice === undefined ? null : visibleNotice.error === undefined
+                ? <Reminder key={visibleNotice.id} onDismiss={clear} tone="success">{visibleNotice.message}</Reminder>
+                : <RequestReminder key={visibleNotice.id} error={visibleNotice.error} message={visibleNotice.message} onDismiss={clear} />}
         </div>, document.body
-    )}</ReminderContext.Provider>;
+    )}</ReminderOutletContext.Provider></ReminderContext.Provider>;
+}
+
+/** Keep actionable page feedback mounted in the shared outlet, owned by its page. */
+export function GlobalReminder({ children, ref }: { children: ReactNode; ref?: Ref<HTMLDivElement> }) {
+    const outlet = useContext(ReminderOutletContext);
+    if (outlet === undefined) throw new Error("Missing ReminderProvider");
+    return outlet === null || children === null || children === undefined ? null : createPortal(ref === undefined ? children : <div ref={ref}>{children}</div>, outlet);
 }
 
 export function useReminder(): ReminderActions {
@@ -80,11 +96,11 @@ export function Reminder({ actions, children, details, onDismiss, title, tone = 
     </section>;
 }
 
-export function RequestReminder({ children, error, message, title }: { children?: ReactNode; error: RpcError; message?: string; title?: string | null }) {
+export function RequestReminder({ children, error, message, onDismiss, title }: { children?: ReactNode; error: RpcError; message?: string; onDismiss?(): void; title?: string | null }) {
     const { t } = useTranslation();
     const safe = normalizeRequestError(error);
     const confirmation = safe.code === "extension_publisher_confirmation_required";
-    return <Reminder key={`${safe.code}:${safe.diagnosticId ?? ""}`} tone={confirmation ? "warning" : "error"} title={title === null ? undefined : title ?? t(confirmation ? "Publisher confirmation required" : "Request failed")} details={<>
+    return <Reminder key={`${safe.code}:${safe.diagnosticId ?? ""}`} onDismiss={onDismiss} tone={confirmation ? "warning" : "error"} title={title === null ? undefined : title ?? t(confirmation ? "Publisher confirmation required" : "Request failed")} details={<>
         <strong>{t("Error code")}</strong><code>{safe.code}</code>
         {safe.diagnosticId === undefined ? null : <><strong>{t("Diagnostic ID")}</strong><code>{safe.diagnosticId}</code></>}
     </>}>

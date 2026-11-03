@@ -33,7 +33,8 @@ test("Unity version verification refusal stays in its dialog and an explicit dis
     await dialog.getByRole("button", { name: "Discover and refresh", exact: true }).click();
     await expect(dialog.getByRole("alert")).toContainText("Unity Editor version could not be verified.");
     await expectRequestError(dialog.getByRole("alert"), "unity_version_unverified");
-    await expect(page.locator(".reminder-floating")).toHaveCount(0);
+    await expect(page.locator(".reminder-floating .reminder")).toHaveCount(0);
+    await expect(page.locator(".reminder-floating")).toBeHidden();
     expect(await discoveryRequests(page)).toBe(1);
     await dialog.getByRole("button", { name: "Discover and refresh", exact: true }).click();
     await expect(dialog.getByRole("alert")).toHaveCount(0);

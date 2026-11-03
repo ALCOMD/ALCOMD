@@ -54,7 +54,7 @@ test("H4 extension pagination keeps loaded cards on failure and retries the same
     expect(paged.map((request) => request.params.cursor)).toEqual([`h4-after:${H4_ALPHA}`, `h4-after:${H4_ALPHA}`, `h4-after:${H4_BETA}`]);
 });
 
-test("H4 extension toggle errors stay with the card and successful retry does not insert a layout row", async ({ page }) => {
+test("H4 extension toggle errors use the shared outlet and successful retry does not insert a layout row", async ({ page }) => {
     await open(page);
     const card = page.getByRole("article", { name: H4_ALPHA, exact: true });
     const toggle = card.getByRole("switch", { name: "Enabled", exact: true });
@@ -64,7 +64,13 @@ test("H4 extension toggle errors stay with the card and successful retry does no
     await toggle.click();
     await expect(toggle).toBeChecked();
     await expect(toggle).toBeFocused();
-    await expectRequestError(card.getByRole("alert"), "permission_denied");
+    await expectRequestError(page.locator(".reminder-floating").getByRole("alert"), "permission_denied");
+    await expect(card.getByRole("alert")).toHaveCount(0);
+    const failed = await card.boundingBox();
+    expect(failed).toEqual(before);
+    await page.clock.install();
+    await page.clock.fastForward(6000);
+    await expect(page.locator(".reminder-floating").getByRole("alert")).toBeVisible();
     await toggle.click();
     await expect(toggle).not.toBeChecked();
     await expect(card.getByRole("alert")).toHaveCount(0);
@@ -174,7 +180,8 @@ test("H4 late lifecycle completion does not leave a success notification on the 
     await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
     await page.evaluate(() => window.h4Management.release("extensions.disable"));
     await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
-    await expect(page.locator(".reminder-floating")).toHaveCount(0);
+    await expect(page.locator(".reminder-floating .reminder")).toHaveCount(0);
+    await expect(page.locator(".reminder-floating")).toBeHidden();
     expect(await requests(page, "extensions.disable")).toHaveLength(1);
 });
 

@@ -560,17 +560,6 @@ md-linear-progress {
     flex: 0 0 auto;
 }
 
-.project-workspace-feedback {
-    flex: 0 0 auto;
-    overflow: hidden;
-    padding: 6px 12px;
-    border-radius: var(--alcomd-shape-container);
-    color: var(--md-sys-color-on-secondary-container);
-    background: var(--md-sys-color-secondary-container);
-    font-size: 0.78rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
 
 .package-workspace-surface {
     display: flex;
@@ -664,8 +653,7 @@ md-linear-progress {
 .package-action-version { width: 100%; }
 .package-plan-review { display: grid; width: 100%; max-width: 100%; min-width: 0; gap: 12px; }
 .package-plan-review p { margin: 0; }
-.project-workspace > .operation-follow,
-.project-workspace > .mutation-feedback {
+.project-workspace > .operation-follow {
     position: absolute;
     z-index: 8;
     right: 12px;
@@ -1239,7 +1227,6 @@ md-linear-progress {
     color: var(--on-surface-variant);
 }
 
-.mutation-feedback,
 .operation-follow {
     display: grid;
     gap: 8px;
@@ -1248,10 +1235,6 @@ md-linear-progress {
     background: var(--primary-container);
 }
 
-.mutation-feedback--error {
-    color: var(--error);
-    background: var(--error-container);
-}
 
 .operation-follow h3,
 .operation-follow p {
@@ -1728,7 +1711,6 @@ code {
 .theme-source-row md-outlined-text-field { flex: 1; min-width: 0; }
 .theme-editor-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 8px; }
 .theme-editor-footer .dialog-actions { margin: 0; }
-.theme-feedback:empty { display: none; }
 
 /* Preserve the desktop canvas; the same navigation becomes an icon rail when it no longer fits. */
 @media (max-width: 1100px) {

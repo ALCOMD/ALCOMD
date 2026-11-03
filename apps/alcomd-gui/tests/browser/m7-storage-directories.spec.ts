@@ -66,7 +66,7 @@ test("unknown directory save is reconciled before Retry can write again", async 
     await page.evaluate(() => window.h5Settings.failNext("settings.update", "internal_error", true));
     await projectField(page).fill(chosenDirectory);
     await projectField(page).press("Enter");
-    const error = page.locator(".settings-save-error").getByRole("alert");
+    const error = page.locator(".reminder-floating .settings-save-error").getByRole("alert");
     await expect(error).toContainText("Settings save result is unknown");
     await expect(locations(page).getByRole("alert")).toHaveCount(0);
     await navigation(page, "Projects").click();
@@ -85,7 +85,7 @@ test("a rejected save location can be corrected before the shared Retry", async 
     await page.evaluate(() => window.h5Settings.failNext("settings.update", "invalid_request"));
     await projectField(page).fill("relative-directory");
     await projectField(page).press("Enter");
-    const error = page.locator(".settings-save-error").getByRole("alert");
+    const error = page.locator(".reminder-floating .settings-save-error").getByRole("alert");
     await expect(error).toContainText("Settings could not be saved.");
     await expect(projectField(page)).toBeEditable();
     await projectField(page).fill(chosenDirectory);

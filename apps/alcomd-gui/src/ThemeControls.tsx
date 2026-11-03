@@ -6,7 +6,7 @@ import { useTranslation } from "./i18n";
 import { Button, ColorPicker, Select, TextField } from "./Material";
 import type { RpcError } from "@alcomd/sdk";
 import { normalizeRequestError } from "./request-errors";
-import { RequestReminder, useReminder } from "./Reminder";
+import { GlobalReminder, RequestReminder, useReminder } from "./Reminder";
 
 export const themeSchemeLabels = {
     "tonal-spot": "Tonal spot", fidelity: "Fidelity", monochrome: "Monochrome", neutral: "Neutral",
@@ -39,6 +39,7 @@ export function ThemeControls({ value, disabled, onSave, onReload, onPreview, on
     const [hex, setHex] = useState<string>(resolveThemeSourceColor(value.sourceColor));
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<RpcError>();
+    const [dismissedError, setDismissedError] = useState<RpcError>();
     const desired = useRef(value);
     const saved = useRef(value);
     const working = useRef(false);
@@ -176,13 +177,13 @@ export function ThemeControls({ value, disabled, onSave, onReload, onPreview, on
                 options={Object.entries(themeSchemeLabels).map(([key, label]) => ({ value: key, label: t(label) }))}
                 onChange={(scheme) => change({ ...desired.current, scheme: scheme as ThemeScheme })} />
         </div>
-        <div className="theme-feedback">
-            {error === undefined ? null : <RequestReminder error={error} title={t(error.code === "revision_conflict" ? "Theme changed elsewhere."
+        <GlobalReminder>
+            {error === undefined || error === dismissedError ? null : <RequestReminder error={error} onDismiss={() => setDismissedError(error)} title={t(error.code === "revision_conflict" ? "Theme changed elsewhere."
                 : error.code === "daemon_unavailable" || error.code === "internal_error" ? "Theme save result is unknown" : "Theme could not be saved.")}
                 message={error.code === "daemon_unavailable" || error.code === "internal_error" ? "Retry checks the current settings before writing again." : undefined}>
                 <Button disabled={disabled || saving} type="button" variant="tonal" onClick={() => void retry()}>{t("Retry theme save")}</Button>
             </RequestReminder>}
-        </div>
+        </GlobalReminder>
         <div className="theme-editor-footer">
             <Button disabled={disabled || saving} type="button" variant="text" onClick={() => {
                 const next: ThemePreferences = { mode: "system", sourceColor: null, scheme: "vibrant" };
