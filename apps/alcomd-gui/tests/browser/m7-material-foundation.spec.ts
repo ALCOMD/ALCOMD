@@ -265,7 +265,7 @@ test("DesktopList sorting and button themes do not change header typography", as
     }
 });
 
-test("Projects table aligns with grid tools and retains row spacing and its sticky header", async ({ page }) => {
+test("Projects table aligns all edges with its viewport and grid tools while retaining row spacing", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 600 });
     await page.goto("/browser-harness.html?route=/projects&projectGrid=1");
     const table = page.locator(".projects-list");
@@ -276,10 +276,19 @@ test("Projects table aligns with grid tools and retains row spacing and its stic
     const viewportBox = (await viewport.boundingBox())!;
     const firstRow = (await table.locator("tbody > tr").first().boundingBox())!;
     expect(headBox.y).toBeCloseTo(viewportBox.y, 1);
+    expect((await head.locator("tr > :first-child").boundingBox())!.x).toBeCloseTo(viewportBox.x, 1);
     expect(firstRow.y - headBox.y - headBox.height).toBe(2);
-    await viewport.evaluate((element) => { element.scrollTop = 40; });
+    await viewport.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+        element.scrollLeft = element.scrollWidth;
+    });
     await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+    await expect.poll(() => viewport.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
     expect((await head.boundingBox())!.y).toBeCloseTo(viewportBox.y, 1);
+    const last = (await table.locator("tbody > tr:last-child > :last-child").boundingBox())!;
+    expect(last.y + last.height).toBeCloseTo(viewportBox.y + viewportBox.height, 1);
+    // Scroll extents are integer pixels, while column widths may be fractional.
+    expect(Math.abs(last.x + last.width - viewportBox.x - viewportBox.width)).toBeLessThanOrEqual(1);
 
     await page.getByRole("button", { name: "List view", exact: true }).click();
     const gridTools = page.locator(".projects-secondary-toolbar");

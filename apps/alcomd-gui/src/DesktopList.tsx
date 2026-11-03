@@ -46,22 +46,24 @@ export function DesktopList({
     const style = minWidth === undefined ? undefined : { "--desktop-list-min-width": `${minWidth}px` } as CSSProperties;
     return (
         <ScrollArea className="desktop-list-viewport">
-            <table
-                aria-label={label}
-                className={["desktop-list", className].filter(Boolean).join(" ")}
-                data-sizing={sizing}
-                style={style}
-            >
-                <colgroup>{columns.map((column) => <col key={column.key} style={column.width === undefined ? undefined : { width: column.width }} />)}</colgroup>
-                <thead><tr>{columns.map((column) => <DesktopListHeader column={column} key={column.key} />)}</tr></thead>
-                <tbody>
-                    {rows.map((row) => <tr key={row.key}>{row.cells.map((cell, index) => {
-                        const column = columns[index];
-                        return <td className={column?.className} data-cell-flow={column?.cellFlow ?? "truncate"} key={column?.key}>{cell}</td>;
-                    })}</tr>)}
-                    {rows.length === 0 && emptyMessage !== undefined ? <tr><td className="desktop-list-empty" colSpan={columns.length}>{emptyMessage}</td></tr> : null}
-                </tbody>
-            </table>
+            <div className="desktop-list-content">
+                <table
+                    aria-label={label}
+                    className={["desktop-list", className].filter(Boolean).join(" ")}
+                    data-sizing={sizing}
+                    style={style}
+                >
+                    <colgroup>{columns.map((column) => <col key={column.key} style={column.width === undefined ? undefined : { width: column.width }} />)}</colgroup>
+                    <thead><tr>{columns.map((column) => <DesktopListHeader column={column} key={column.key} />)}</tr></thead>
+                    <tbody>
+                        {rows.map((row) => <tr key={row.key}>{row.cells.map((cell, index) => {
+                            const column = columns[index];
+                            return <td className={column?.className} data-cell-flow={column?.cellFlow ?? "truncate"} key={column?.key}>{cell}</td>;
+                        })}</tr>)}
+                        {rows.length === 0 && emptyMessage !== undefined ? <tr><td className="desktop-list-empty" colSpan={columns.length}>{emptyMessage}</td></tr> : null}
+                    </tbody>
+                </table>
+            </div>
         </ScrollArea>
     );
 }
