@@ -37,6 +37,7 @@ Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据�
   动画三态为 system/full/reduced，默认 system；共享适配器处理 CSS/Shadow DOM/弹层及滚动条，
   不恢复已撤除的切页动画。
 - 普通文字、数字及多行输入框，以及展开的下拉选择菜单和操作菜单统一使用 Material medium 的12px圆角；由共享主题持有，不保留页面专用圆角覆盖。搜索框和收起的选择框保持胶囊形状，不改变控件尺寸和间距。
+- 共享 Menu 必须显式区分操作菜单与选择用途。项目、模板、软件包维护/行操作及 SplitButton 统一继承40px项高、14px字号的小型操作菜单；来源、版本及普通 Select 保留选择列表的56px项高/16px字号，不继承操作菜单密度。选择值、分页、禁用/权限、确认及键盘关闭/焦点语义保持。
 - 公共 DesktopList 统一列、排序、截断和稳定正文行盒；PageHeader、SplitButton、Dialog、
   ScrollArea 和 SegmentedButtons 统一持有布局/生命周期。无图标分段按钮内部左右各 24px，采用 Material 自身等宽布局，
   移除勾号选项及隐藏宽度测量层，不写死文案宽度；所有者允许过窄窗口放不下，包括本次 640px 英文设置导航，不增加滚动兜底。滚动条只在实际滚动或轨道悬停时唤出，沿用库计时和销毁语义；textarea
