@@ -443,7 +443,6 @@ md-linear-progress {
 .project-favorite-action[aria-pressed="true"] { color: var(--md-sys-color-primary); }
 .project-row-actions > md-menu {
     text-align: left;
-    --md-menu-container-shape: 12px;
     --md-menu-top-space: 4px;
     --md-menu-bottom-space: 4px;
 }

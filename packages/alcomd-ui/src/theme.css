@@ -15,6 +15,8 @@
     --md-sys-shape-corner-full: 9999px;
     --md-outlined-text-field-container-shape: var(--md-sys-shape-corner-medium);
     --md-filled-text-field-container-shape: var(--md-sys-shape-corner-medium);
+    --md-menu-container-shape: var(--md-sys-shape-corner-medium);
+    --md-filled-select-menu-container-shape: var(--md-sys-shape-corner-medium);
     --alcomd-shape-container: var(--md-sys-shape-corner-extra-large);
     --alcomd-shape-list-item: var(--md-sys-shape-corner-small);
     --alcomd-list-row-gap: 2px;
@@ -86,7 +88,6 @@ samp {
     --md-filled-button-container-shape-end-start: var(--alcomd-shape-list-item);
 }
 .alcomd-split-button-options {
-    --md-menu-container-shape: var(--md-sys-shape-corner-medium);
     --md-menu-top-space: 4px;
     --md-menu-bottom-space: 4px;
     --md-menu-item-one-line-container-height: 40px;

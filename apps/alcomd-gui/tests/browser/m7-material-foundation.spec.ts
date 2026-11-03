@@ -76,6 +76,12 @@ test("shared Material foundation renders real controls with React 19 interaction
     await expect(selectField.locator(".container-overflow")).toHaveCSS("border-radius", "9999px");
     await expect(selectField.locator(".background")).toHaveCSS("border-radius", "9999px");
     await expect(selectField.locator(".label.floating")).toBeHidden();
+    await page.getByRole("combobox", { name: "Project type", exact: true }).click();
+    const selectMenu = page.locator("md-filled-select md-menu .menu");
+    await expect(selectMenu).toBeVisible();
+    await expect(selectMenu).toHaveCSS("border-radius", "12px");
+    await page.keyboard.press("Escape");
+    await expect(selectMenu).toBeHidden();
     await expect(page.locator("md-switch")).toHaveJSProperty("selected", true);
     await expect(page.locator("md-checkbox")).toHaveJSProperty("checked", false);
     await page.locator("md-checkbox").click();
@@ -220,6 +226,7 @@ test("Projects creation split button groups add and restore with distinct action
     await expect(page.getByRole("menuitem").nth(0)).toHaveAccessibleName("Add existing project");
     await expect(page.getByRole("menuitem").nth(1)).toHaveAccessibleName("Restore from backup");
     await expect(page.locator(".alcomd-split-button-options .menu.open")).not.toHaveClass(/animating/);
+    await expect(page.locator(".alcomd-split-button-options .menu")).toHaveCSS("border-radius", "12px");
     for (const item of await page.locator(".alcomd-split-button-options > md-menu-item").all()) {
         expect((await item.boundingBox())!.height).toBe(40);
     }
@@ -395,6 +402,7 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     await moreActions.click();
     const projectMenu = rowActions.locator("md-menu");
     await expect(projectMenu).toHaveJSProperty("open", true);
+    await expect(projectMenu.locator(".menu")).toHaveCSS("border-radius", "12px");
     const openDirectory = projectMenu.locator("md-menu-item").filter({ hasText: "Open Project Directory" });
     const copyProject = projectMenu.locator("md-menu-item").filter({ hasText: "Copy Project" });
     await expect(openDirectory).toHaveJSProperty("disabled", false);
