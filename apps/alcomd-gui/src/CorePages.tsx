@@ -2072,8 +2072,7 @@ function LogFilter({ label, value, values, onChange }: { label: string; value: s
     const { t, locale } = useTranslation();
     const options = [...new Set(values)].sort().map((item) => ({ label: item === "unknown" ? t("Unknown") : humanize(t, item), value: item }));
     if (value !== "" && !options.some((item) => item.value === value)) options.push({ label: humanize(t, value), value });
-    // Rapid filter changes must not be overwritten by the previous menu's closing animation.
-    return <Select quick label={label} value={value} onChange={onChange} options={[{ label: t("All {value0}", { value0: label }), value: "" }, ...options]} />;
+    return <Select label={label} value={value} onSelect={onChange} options={[{ label: t("All {value0}", { value0: label }), value: "" }, ...options]} />;
 }
 
 function ActivityLogRows({ client, items, search }: { client: GuiRpcClient; items: LoadedActivityItem[]; search: string }) {

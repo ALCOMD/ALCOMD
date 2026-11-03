@@ -2,6 +2,34 @@ import { expect, test } from "@playwright/test";
 
 test.use({ viewport: { width: 1440, height: 900 } });
 
+for (const [route, labels] of [["activity", ["Status", "Record type"]], ["diagnostics", ["Severity", "Subsystem"]]] as const) {
+    test(`${route} filters use animated Material Selects and follow reduced motion`, async ({ page }) => {
+        await page.emulateMedia({ reducedMotion: "no-preference" });
+        await page.goto(`/browser-harness.html?route=/${route}&state=ready`);
+        for (const label of labels) {
+            const select = page.locator(".logs-filter-toolbar md-filled-select").filter({ has: page.getByRole("combobox", { name: label, exact: true }) });
+            await expect(select).toHaveJSProperty("quick", false);
+            const opening = await select.evaluateHandle((element) => ({ event: new Promise<number>((resolve) => {
+                element.addEventListener("opening", () => requestAnimationFrame(() => {
+                    const surface = element.shadowRoot?.querySelector("md-menu")?.shadowRoot?.querySelector(".menu");
+                    resolve(surface?.getAnimations().filter((animation) => Number(animation.effect?.getTiming().duration) > 0).length ?? 0);
+                }), { once: true });
+            }) }));
+            await select.getByRole("combobox").click();
+            expect(await opening.evaluate(({ event }) => event)).toBeGreaterThan(0);
+            await opening.dispose();
+            await page.keyboard.press("Escape");
+            await expect(select.locator("md-menu .menu")).toBeHidden();
+            await expect(select.getByRole("combobox")).toBeFocused();
+        }
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        for (const label of labels) {
+            const select = page.locator(".logs-filter-toolbar md-filled-select").filter({ has: page.getByRole("combobox", { name: label, exact: true }) });
+            await expect(select).toHaveJSProperty("quick", true);
+        }
+    });
+}
+
 test("activity search and record filters preserve the loaded snapshot and open real operation detail in a dialog", async ({ page }) => {
     await page.goto("/browser-harness.html?route=%2Factivity&state=ready");
     const table = page.getByRole("table", { name: "Activity", exact: true });

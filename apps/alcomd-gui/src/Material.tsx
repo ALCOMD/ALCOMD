@@ -483,7 +483,6 @@ export interface SelectProps {
     /** Review a choice after closing, while retaining the authoritative value. */
     onSelect?(value: string, origin: DialogOrigin): void;
     options: readonly SelectOption[];
-    quick?: boolean;
     required?: boolean;
     supportingText?: string;
     value: string;
@@ -502,7 +501,6 @@ export function Select({
     onClose,
     onSelect,
     options,
-    quick = false,
     required,
     supportingText,
     value
@@ -581,7 +579,7 @@ export function Select({
                     if (!open.current) commitSelection();
                 } else onChange?.(selected);
             },
-            quick: quick || reduce,
+            quick: reduce,
             ref,
             required,
             supportingText,
