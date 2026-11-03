@@ -44,6 +44,8 @@ Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据�
   业务控件恢复可用及 Material updateComplete，不因修复焦点而放宽 disabled/eligibility。
   MenuItem 统一消费公开 click/Enter/Space 选择并只在 closed 后派发一次；Escape 不派发。
   Select 由真实 busy 状态控制禁用，选中标签按公开生命周期同步，不增加输入/设置写入。
+- 全局操作成功/失败统一走 ReminderProvider 右下出口；页面持有的重试反馈经 GlobalReminder 复用同一宿主，不再插入页头、表格或卡片，不为普通操作失败打开独立弹窗。
+  成功短暂显示，失败保留原因/详情/重试；收起主题错误不清除未知结果，后续保存仍先核对。字段校验、正在进行的任务、首次加载失败及既有确认/Plan 弹窗内错误保持各自上下文。
 - Unity Hub 位置复用 settings.get/update、settings.read/manage 与 Config5 `unity.hubPath`；
   有界只读发现和路径规范化由 platform 提供，不加注册表/PATH/Hub CLI 扫描。路径草稿 Enter
   或离开操作组保存，Esc 撤销，IME/同组焦点切换/无修改不写；选择和自动查找共享串行 CAS。
@@ -752,7 +754,7 @@ GUI check/build、保存队列24场景、浏览器65/6与完整受影响两模�
 隔离RPC/合同8/0，六crate Clippy与原生最终补查、fmt/xtask/metadata通过。实际原生调整/关闭重开仍待所有者查看。
 匹配Core/CLI/GUI构建及所有权4/0完成，原环境恢复Core130792/GUI149024，公开状态保持，Config7仅补false且revision168不变。
 后续按所有者要求，窗口开关移至外观页（`249e6d7`）；全局成功、设置保存失败和窗口失败共用 ReminderProvider 右下出口（`76e404b`），删除独立右上定位，保留持久错误、详情、重试及迟到成功隔离。
-GUI check、受影响定向浏览器20/0及一次GUI release no-bundle构建通过。当前GUI127300（`C8D8B6AE…F9424825`）使用原profile，Core130792持续运行；五组公开状态和配置摘要均保持，不增加Rust/完整浏览器/远端CI重复验证。
+GUI check、受影响定向浏览器20/0及一次GUI release no-bundle构建通过。该批GUI127300（`C8D8B6AE…F9424825`）使用原profile，Core130792持续运行；五组公开状态和配置摘要均保持，不增加Rust/完整浏览器/远端CI重复验证。
 
 ### 当前 H7 授权与收束（2026-11-02）
 
