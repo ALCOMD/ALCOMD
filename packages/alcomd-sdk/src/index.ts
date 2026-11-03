@@ -2,6 +2,7 @@ export const RPC_VERSION = 1 as const;
 
 export const RPC_CAPABILITIES = {
     diagnosticsLog: "diagnostics.log.v1",
+    eventsLive: "events.live.v1",
     repositoriesListFiles: "repositories.list-files.v1",
     unityHubOpen: "unity.hub.open.v1",
     packagesCandidates: "packages.candidates.v1",
@@ -12,6 +13,7 @@ export const RPC_CAPABILITIES = {
 
 export * from "./portable-ui";
 export * from "./diagnostic-log";
+export * from "./events";
 export * from "./package-candidates";
 export * from "./unity-hub";
 export * from "./repository-list";

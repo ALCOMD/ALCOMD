@@ -629,7 +629,7 @@ async fn execute(
                     }
                     _ => None,
                 };
-                serde_json::to_value(client.operations_list(cursor, limit).await?)
+                serde_json::to_value(client.operations_list(cursor, limit, false).await?)
             }
             OperationCommand::Get { operation_id } => {
                 serde_json::to_value(client.operation_get(operation_id).await?)
@@ -1757,6 +1757,10 @@ fn print_error(output_mode: OutputMode, error: &CliError) -> io::Result<()> {
             CliError::Client(alcomd_client::ClientError::StartTimeout) => (
                 "daemon_start_timeout",
                 "the daemon did not become ready within five seconds",
+            ),
+            CliError::Client(alcomd_client::ClientError::ReadTimeout) => (
+                "daemon_unavailable",
+                "the daemon read did not finish within its deadline",
             ),
             CliError::Client(
                 alcomd_client::ClientError::Transport(_)

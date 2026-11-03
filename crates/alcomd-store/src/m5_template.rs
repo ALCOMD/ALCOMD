@@ -710,8 +710,9 @@ pub(super) fn recover_template_operations(
     connection: &mut Connection,
     recovered_at_ms: u64,
 ) -> Result<Vec<OperationId>, M5TemplateError> {
+    let transaction = transaction(connection)?;
     let candidates = {
-        let mut statement = connection
+        let mut statement = transaction
             .prepare(
                 "SELECT operation_id,state,revision,owner_principal_id FROM operations
                  WHERE kind IN ('templates.import','templates.derive','templates.create-project')
@@ -736,7 +737,7 @@ pub(super) fn recover_template_operations(
     for (id, state, revision, owner) in candidates {
         let id = OperationId::parse(&id).map_err(|_| internal())?;
         let owner = PrincipalId::parse(owner).map_err(|_| internal())?;
-        if state == "queued" {
+        if state == "queued" || state == "recovering" {
             result.push(id);
             continue;
         }
@@ -747,7 +748,7 @@ pub(super) fn recover_template_operations(
             return Err(internal());
         }
         let next = revision.checked_add(1).ok_or_else(internal)?;
-        connection
+        transaction
             .execute(
                 "UPDATE operations SET state='recovering',revision=?1,updated_at_ms=?2
                  WHERE operation_id=?3",
@@ -755,7 +756,7 @@ pub(super) fn recover_template_operations(
             )
             .map_err(failure)?;
         insert_operation_event(
-            connection,
+            &transaction,
             &owner,
             id,
             revision_value(next)?,
@@ -764,6 +765,7 @@ pub(super) fn recover_template_operations(
         )?;
         result.push(id);
     }
+    transaction.commit().map_err(failure)?;
     Ok(result)
 }
 

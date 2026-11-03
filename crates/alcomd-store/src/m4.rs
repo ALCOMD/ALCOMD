@@ -346,12 +346,21 @@ pub(super) fn append_filesystem_journal(
     {
         return Err(M4Error::new(M4ErrorCode::InvalidInput));
     }
-    connection
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(store_error)?;
+    let context = load_apply_context(&transaction, entry.operation_id)?;
+    let previous: Option<String> = transaction.query_row(
+        "SELECT phase FROM package_filesystem_journal WHERE operation_id=?1 ORDER BY step DESC LIMIT 1",
+        [entry.operation_id.to_string()], |row| row.get(0),
+    ).optional().map_err(store_error)?;
+    let inserted = transaction
         .execute(
             "INSERT INTO package_filesystem_journal (
                 operation_id, step, plan_id, project_id, phase, state,
                 project_identity_key, change_set_fingerprint, evidence_json, updated_at_ms
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             ON CONFLICT(operation_id,step) DO NOTHING",
             params![
                 entry.operation_id.to_string(),
                 sqlite_integer(entry.step)?,
@@ -366,7 +375,55 @@ pub(super) fn append_filesystem_journal(
             ],
         )
         .map_err(store_error)?;
-    Ok(())
+    if inserted == 0 {
+        let same: bool = transaction
+            .query_row(
+                "SELECT plan_id=?3 AND project_id=?4 AND phase=?5 AND state=?6
+             AND project_identity_key=?7 AND change_set_fingerprint=?8 AND evidence_json=?9
+             FROM package_filesystem_journal WHERE operation_id=?1 AND step=?2",
+                params![
+                    entry.operation_id.to_string(),
+                    sqlite_integer(entry.step)?,
+                    entry.plan_id.to_string(),
+                    entry.project_id.to_string(),
+                    entry.phase.as_str(),
+                    entry.state.as_str(),
+                    entry.project_identity_key,
+                    entry.change_set_fingerprint.as_slice(),
+                    entry.evidence_json
+                ],
+                |row| row.get(0),
+            )
+            .map_err(store_error)?;
+        if !same {
+            return Err(M4Error::new(M4ErrorCode::RecoveryRequired));
+        }
+    } else if previous.as_deref() != Some(entry.phase.as_str()) {
+        if matches!(context.state.as_str(), "succeeded" | "failed" | "cancelled") {
+            return Err(M4Error::new(M4ErrorCode::RecoveryRequired));
+        }
+        let next = context.revision.checked_add(1).ok_or_else(internal)?;
+        transaction
+            .execute(
+                "UPDATE operations SET revision=?1,updated_at_ms=?2 WHERE operation_id=?3",
+                params![
+                    next,
+                    sqlite_integer(entry.updated_at_ms)?,
+                    entry.operation_id.to_string()
+                ],
+            )
+            .map_err(store_error)?;
+        insert_operation_event_revision(
+            &transaction,
+            &context.owner,
+            entry.operation_id,
+            Revision::new(u64::try_from(next).map_err(|_| internal())?).ok_or_else(internal)?,
+            "operation.progress",
+            &format!("{{\"phase\":\"{}\"}}", entry.phase.as_str()),
+            sqlite_integer(entry.updated_at_ms)?,
+        )?;
+    }
+    transaction.commit().map_err(store_error)
 }
 
 pub(super) fn next_filesystem_journal_step(
@@ -650,8 +707,8 @@ pub(super) fn recover_package_operations(
     for (operation_id, state) in candidates {
         let operation_id = OperationId::parse(&operation_id).map_err(|_| internal())?;
         match state.as_str() {
-            "queued" => schedule.push(operation_id),
-            "running" | "cancelling" | "recovering" => {
+            "queued" | "recovering" => schedule.push(operation_id),
+            "running" | "cancelling" => {
                 transition_recovery(connection, operation_id, "interrupted", recovered_at_ms)?;
                 transition_recovery(connection, operation_id, "recovering", recovered_at_ms)?;
                 schedule.push(operation_id);

@@ -1,0 +1,50 @@
+{
+    "request": {"id":"subscribe-1","method":"events.subscribe","params":{"limit":100}},
+    "ready": {
+        "id":"subscribe-1",
+        "result": {
+            "subscriptionId":"00000000-0000-4000-8000-000000000001",
+            "instanceId":"00000000-0000-4000-8000-000000000002",
+            "baselineCursor":{"instanceId":"00000000-0000-4000-8000-000000000002","sequence":40,"resourcesRevision":0},
+            "resyncRequired":true
+        }
+    },
+    "batch": {
+        "method":"events.batch",
+        "params": {
+            "subscriptionId":"00000000-0000-4000-8000-000000000001",
+            "instanceId":"00000000-0000-4000-8000-000000000002",
+            "batchId":1,
+            "events":[{
+                "sequence":43,"eventId":"00000000-0000-4000-8000-000000000003",
+                "kind":"operation.progress","aggregateKind":"operation",
+                "aggregateId":"00000000-0000-4000-8000-000000000004",
+                "aggregateRevision":2,"occurredAtMs":1700000000000,"payload":{}
+            }],
+            "invalidatedScopes":[],
+            "nextCursor":{"instanceId":"00000000-0000-4000-8000-000000000002","sequence":43,"resourcesRevision":0}
+        }
+    },
+    "resourceBatch": {
+        "method":"events.batch",
+        "params": {
+            "subscriptionId":"00000000-0000-4000-8000-000000000001",
+            "instanceId":"00000000-0000-4000-8000-000000000002",
+            "batchId":1,
+            "events":[],
+            "invalidatedScopes":["extensions"],
+            "nextCursor":{"instanceId":"00000000-0000-4000-8000-000000000002","sequence":40,"resourcesRevision":1}
+        }
+    },
+    "closed": {
+        "method":"events.closed",
+        "params": {
+            "subscriptionId":"00000000-0000-4000-8000-000000000001",
+            "instanceId":"00000000-0000-4000-8000-000000000002",
+            "error":{"code":"permission_denied","message":"Permission denied."},
+            "retryable":false
+        }
+    },
+    "activePage":{"operations":[],"activeCount":5},
+    "activeRequest":{"activeOnly":true,"limit":100}
+}

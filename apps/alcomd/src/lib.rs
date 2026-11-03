@@ -32,6 +32,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::Instrument;
 
 mod diagnostic_log_rpc;
+mod events_rpc;
 mod hub_platform;
 mod m3_rpc;
 mod m4_rpc;
@@ -523,11 +524,25 @@ async fn serve_connection(
             } else {
                 dispatch.await
             };
-            write_json_frame(&mut stream, &action.response).await?;
+            if action.event_subscription.is_some() {
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    write_json_frame(&mut stream, &action.response),
+                )
+                .await
+                .map_err(|_| {
+                    io::Error::new(io::ErrorKind::TimedOut, "subscription ready timed out")
+                })??;
+            } else {
+                write_json_frame(&mut stream, &action.response).await?;
+            }
             if let Some(capabilities) = action.complete_handshake {
                 state.handshake_complete = true;
                 state.capabilities = capabilities;
                 state.client_instance_id = action.client_instance_id;
+            }
+            if let Some(subscription) = action.event_subscription {
+                return events_rpc::serve(&mut stream, subscription).await;
             }
             if action.close_after_response {
                 return Ok(());
@@ -547,6 +562,7 @@ struct DispatchAction {
     complete_handshake: Option<HashSet<String>>,
     client_instance_id: Option<String>,
     close_after_response: bool,
+    event_subscription: Option<alcomd_application::EventSubscription<StateStoreHandle>>,
 }
 
 async fn dispatch_payload(
@@ -618,6 +634,7 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         CAPABILITY_STATE_CHECK_V1,
         CAPABILITY_OPERATIONS_V1,
         CAPABILITY_EVENTS_REPLAY_V1,
+        alcomd_protocol::CAPABILITY_EVENTS_LIVE_V1,
         alcomd_protocol::CAPABILITY_PROJECTS_READ_V1,
         alcomd_protocol::CAPABILITY_PROJECTS_REGISTRY_V1,
         alcomd_protocol::CAPABILITY_PROJECTS_COPY_V1,
@@ -695,6 +712,9 @@ async fn dispatch_m2(
 ) -> DispatchAction {
     let application = &applications.m2;
     match request.method.as_str() {
+        alcomd_protocol::METHOD_EVENTS_SUBSCRIBE => {
+            events_rpc::dispatch(request, state, application, access)
+        }
         METHOD_STATE_CHECK => {
             if let Some(action) = require_capability(&request.id, state, CAPABILITY_STATE_CHECK_V1)
             {
@@ -753,7 +773,12 @@ async fn dispatch_m2(
                 Err(()) => return invalid(request.id),
             };
             match application
-                .list_operations(access, cursor, params.limit.unwrap_or(100))
+                .list_operations(
+                    access,
+                    cursor,
+                    params.limit.unwrap_or(100),
+                    params.active_only,
+                )
                 .await
             {
                 Ok(page) => {
@@ -768,6 +793,7 @@ async fn dispatch_m2(
                             OperationsListResult {
                                 operations,
                                 next_cursor: page.next_cursor.map(cursor_to_rpc),
+                                active_count: page.active_count,
                             },
                             None,
                         ),
@@ -1083,8 +1109,8 @@ fn cursor_to_rpc(cursor: OperationCursor) -> OperationsListCursor {
     }
 }
 
-fn application_error(id: String, error: ApplicationError) -> DispatchAction {
-    let error = match error {
+fn application_rpc_error(error: ApplicationError) -> RpcError {
+    match error {
         ApplicationError::PermissionDenied => RpcError::permission_denied(),
         ApplicationError::InvalidInput => RpcError::invalid_request(),
         ApplicationError::Store(StoreErrorKind::OperationNotFound) => {
@@ -1101,8 +1127,11 @@ fn application_error(id: String, error: ApplicationError) -> DispatchAction {
         ApplicationError::Store(StoreErrorKind::CorruptState) => {
             RpcError::internal(OperationId::new().to_string())
         }
-    };
-    error_action(Some(id), error, false)
+    }
+}
+
+fn application_error(id: String, error: ApplicationError) -> DispatchAction {
+    error_action(Some(id), application_rpc_error(error), false)
 }
 
 fn invalid(id: String) -> DispatchAction {
@@ -1121,6 +1150,7 @@ fn success_action<T: serde::Serialize>(
         complete_handshake: handshake,
         client_instance_id: None,
         close_after_response: false,
+        event_subscription: None,
     }
 }
 
@@ -1132,6 +1162,7 @@ fn error_action(id: Option<String>, error: RpcError, close: bool) -> DispatchAct
         complete_handshake: None,
         client_instance_id: None,
         close_after_response: close,
+        event_subscription: None,
     }
 }
 

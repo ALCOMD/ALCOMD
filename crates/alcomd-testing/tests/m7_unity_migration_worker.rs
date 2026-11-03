@@ -330,7 +330,7 @@ async fn observed_exit_with_conclusively_unchanged_project_is_an_ordinary_failur
     .await;
 
     let operation = store
-        .list_operations(owner.clone(), None, 100)
+        .list_operations(owner.clone(), None, 100, false)
         .await
         .expect("list Operations")
         .operations
@@ -695,7 +695,7 @@ async fn wait_until(timeout: Duration, predicate: impl Fn() -> bool) {
 
 async fn operation_state(store: &StateStoreHandle, operation_id: OperationId) -> OperationState {
     store
-        .list_operations(PrincipalId::local_owner(), None, 100)
+        .list_operations(PrincipalId::local_owner(), None, 100, false)
         .await
         .expect("list Operations")
         .operations

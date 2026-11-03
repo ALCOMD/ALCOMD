@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
 
 mod diagnostic_log;
+mod events;
 mod m4;
 mod m5;
 mod m5_backup;
@@ -36,6 +37,7 @@ mod project_discovery;
 mod repository_list;
 
 pub use diagnostic_log::*;
+pub use events::*;
 pub use m4::*;
 pub use m5::*;
 pub use m5_backup::*;
@@ -568,6 +570,8 @@ pub struct OperationCursor {
 /// One page of visible Operations.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct OperationPage {
+    /// Total visible non-terminal Operations, independently of this page.
+    pub active_count: u64,
     /// Records in stable descending tuple order.
     pub operations: Vec<OperationRecord>,
     /// Final record cursor, absent for an empty page.
@@ -662,6 +666,9 @@ impl std::error::Error for StoreError {}
 
 /// Narrow asynchronous persistence port required by the M2 vertical slice.
 pub trait StateStore: Clone + Send + Sync + 'static {
+    /// Subscribes to actual committed event watermarks.
+    fn event_commits(&self) -> tokio::sync::watch::Receiver<EventCommitWatermark>;
+
     /// Creates or replays the sole M2 Operation kind atomically.
     fn create_state_check(
         &self,
@@ -683,6 +690,7 @@ pub trait StateStore: Clone + Send + Sync + 'static {
         owner: PrincipalId,
         cursor: Option<OperationCursor>,
         limit: u32,
+        active_only: bool,
     ) -> impl Future<Output = Result<OperationPage, StoreError>> + Send;
 
     /// Persists an idempotent cooperative cancellation request.
@@ -1049,6 +1057,7 @@ impl<S: StateStore> Application<S> {
         access: &AccessContext,
         cursor: Option<OperationCursor>,
         limit: u32,
+        active_only: bool,
     ) -> Result<OperationPage, ApplicationError> {
         access.require(Permission::OperationsRead)?;
         validate_limit(limit)?;
@@ -1059,7 +1068,7 @@ impl<S: StateStore> Application<S> {
             return Err(ApplicationError::InvalidInput);
         }
         self.store
-            .list_operations(access.principal().clone(), cursor, limit)
+            .list_operations(access.principal().clone(), cursor, limit, active_only)
             .await
             .map_err(Into::into)
     }

@@ -13,33 +13,39 @@ use alcomd_application::{
     BackupCreateRequest, BackupCursor, BackupId, BackupOperationRecord, BackupPhase,
     BackupRestoreApplyOutcome, BackupRestoreOperationRecord, BackupRestorePhase,
     BackupRestorePlanDraft, BackupRestorePlanRecord, CheckClassification, CreateOperationOutcome,
-    CreatedTemplateProject, EventPage, ExtensionApplyOutcome, ExtensionDataValue,
-    ExtensionDataWriteResult, ExtensionFilesystemJournalEntry, ExtensionGrantMutation,
-    ExtensionGrantRecord, ExtensionInstallPlanDraft, ExtensionInstanceLease, ExtensionPlanRecord,
-    ExtensionRecord, ExtensionUninstallPlanDraft, FilesystemJournalEntry, IdempotencyKey, M3Error,
-    M3RegistryStore, M4Error, M4Store, M5BackupError, M5BackupStore, M5TemplateError,
-    M5TemplateStore, M5UnityError, M5UnityStore, M6Error, M6Store, M7CopyError, M7CopyStore,
-    M7DeleteError, M7DeleteStore, M7UnityMigrationError, M7UnityMigrationStore, OperationCursor,
-    OperationId, OperationPage, OperationRecord, PackageApplyCompletion, PackageCursor,
-    PackagePage, PackagePlanDraft, PackagePlanRecord, PlanId, PrincipalId, ProjectCopyApplyOutcome,
-    ProjectCopyInventoryEvidence, ProjectCopyOperationRecord, ProjectCopyPhase,
-    ProjectCopyPlanDraft, ProjectCopyPlanOutcome, ProjectCopyPlanRecord, ProjectDeleteApplyOutcome,
-    ProjectDeleteFilesystemEvidence, ProjectDeleteOperationRecord, ProjectDeletePhase,
-    ProjectDeletePlanDraft, ProjectDeletePlanOutcome, ProjectDeletePlanRecord, ProjectId,
-    ProjectObservation, ProjectPage, ProjectRecord, ProjectUnityLaunchConfig, PublishedProjectCopy,
-    PublishedTemplate, RegistryCursor, RepositoryId, RepositoryObservation, RepositoryPage,
-    RepositoryRecord, RepositoryValidators, ResolverCatalog, RestoredProject, Revision,
-    StateCheckResult, StateStore, StoreError, StoredBackupRecord, StoredTemplateRecord, SyncWrite,
-    TemplateApplyOutcome, TemplateCursor, TemplateId, TemplatePlanDraft, TemplatePlanRecord,
-    UnityInstallationCursor, UnityInstallationId, UnityInstallationObservation,
-    UnityInstallationPage, UnityInstallationRecord, UnityLaunchId, UnityLaunchRecord,
-    UnityLaunchState, UnityMigrationApplyOutcome, UnityMigrationEvidence,
-    UnityMigrationOperationRecord, UnityMigrationPhase, UnityMigrationPlanDraft,
-    UnityMigrationPlanOutcome, UnityMigrationPlanRecord, UnregisterResult, UserPackageCursor,
-    UserPackageError, UserPackageErrorCode, UserPackageId, UserPackagePage, UserPackageRecord,
+    CreatedTemplateProject, EventCommitWatermark, EventPage, ExtensionApplyOutcome,
+    ExtensionDataValue, ExtensionDataWriteResult, ExtensionFilesystemJournalEntry,
+    ExtensionGrantMutation, ExtensionGrantRecord, ExtensionInstallPlanDraft,
+    ExtensionInstanceLease, ExtensionPlanRecord, ExtensionRecord, ExtensionUninstallPlanDraft,
+    FilesystemJournalEntry, IdempotencyKey, M3Error, M3RegistryStore, M4Error, M4Store,
+    M5BackupError, M5BackupStore, M5TemplateError, M5TemplateStore, M5UnityError, M5UnityStore,
+    M6Error, M6Store, M7CopyError, M7CopyStore, M7DeleteError, M7DeleteStore,
+    M7UnityMigrationError, M7UnityMigrationStore, OperationCursor, OperationId, OperationPage,
+    OperationRecord, PackageApplyCompletion, PackageCursor, PackagePage, PackagePlanDraft,
+    PackagePlanRecord, PlanId, PrincipalId, ProjectCopyApplyOutcome, ProjectCopyInventoryEvidence,
+    ProjectCopyOperationRecord, ProjectCopyPhase, ProjectCopyPlanDraft, ProjectCopyPlanOutcome,
+    ProjectCopyPlanRecord, ProjectDeleteApplyOutcome, ProjectDeleteFilesystemEvidence,
+    ProjectDeleteOperationRecord, ProjectDeletePhase, ProjectDeletePlanDraft,
+    ProjectDeletePlanOutcome, ProjectDeletePlanRecord, ProjectId, ProjectObservation, ProjectPage,
+    ProjectRecord, ProjectUnityLaunchConfig, PublishedProjectCopy, PublishedTemplate,
+    RegistryCursor, RepositoryId, RepositoryObservation, RepositoryPage, RepositoryRecord,
+    RepositoryValidators, ResolverCatalog, RestoredProject, Revision, StateCheckResult, StateStore,
+    StoreError, StoredBackupRecord, StoredTemplateRecord, SyncWrite, TemplateApplyOutcome,
+    TemplateCursor, TemplateId, TemplatePlanDraft, TemplatePlanRecord, UnityInstallationCursor,
+    UnityInstallationId, UnityInstallationObservation, UnityInstallationPage,
+    UnityInstallationRecord, UnityLaunchId, UnityLaunchRecord, UnityLaunchState,
+    UnityMigrationApplyOutcome, UnityMigrationEvidence, UnityMigrationOperationRecord,
+    UnityMigrationPhase, UnityMigrationPlanDraft, UnityMigrationPlanOutcome,
+    UnityMigrationPlanRecord, UnregisterResult, UserPackageCursor, UserPackageError,
+    UserPackageErrorCode, UserPackageId, UserPackagePage, UserPackageRecord,
     UserPackageRemoveResult, UserPackageSnapshot, UserPackageStore, UserPackageWriteResult,
 };
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
+
+#[cfg(test)]
+mod events_sources_tests;
+#[cfg(test)]
+mod events_tests;
 
 mod config;
 mod m3;
@@ -103,6 +109,7 @@ pub struct StateStoreHandle {
 struct StoreInner {
     commands: Mutex<Option<mpsc::Sender<Command>>>,
     worker: Option<thread::JoinHandle<()>>,
+    event_commits: watch::Receiver<EventCommitWatermark>,
 }
 
 impl Drop for StoreInner {
@@ -122,13 +129,23 @@ impl StateStoreHandle {
     /// Opens, migrates, verifies, and starts the single SQLite worker.
     pub fn open(path: PathBuf) -> Result<Self, StoreOpenError> {
         let (commands, receiver) = mpsc::channel(128);
+        let (commits, event_commits) = watch::channel(EventCommitWatermark {
+            instance_id: uuid::Uuid::new_v4().to_string(),
+            sequence: 0,
+            resources_revision: 0,
+            available: false,
+        });
         let (ready_sender, ready_receiver) = std::sync::mpsc::sync_channel(1);
         let worker = thread::Builder::new()
             .name("alcomd-state-store".to_owned())
             .spawn(move || match sqlite::initialize_connection(&path) {
                 Ok(connection) => {
+                    if publish_event_watermark(&connection, &commits, false).is_err() {
+                        let _ = ready_sender.send(Err(StoreOpenError::Unavailable));
+                        return;
+                    }
                     let _ = ready_sender.send(Ok(()));
-                    run_worker(connection, receiver);
+                    run_worker(connection, receiver, commits);
                 }
                 Err(error) => {
                     let _ = ready_sender.send(Err(error));
@@ -142,6 +159,7 @@ impl StateStoreHandle {
             inner: Arc::new(StoreInner {
                 commands: Mutex::new(Some(commands)),
                 worker: Some(worker),
+                event_commits,
             }),
         })
     }
@@ -190,10 +208,39 @@ impl StateStoreHandle {
         commands
             .send(Command::M3(Box::new(move |connection| {
                 let _ = reply.send(work(connection));
+                false
             })))
             .await
             .map_err(|_| unavailable())?;
         response.await.map_err(|_| unavailable())?
+    }
+
+    /// Reports committed extension changes even when the command caller left.
+    async fn request_extension_write<T: Send + 'static>(
+        &self,
+        work: impl FnOnce(&mut rusqlite::Connection) -> Result<(T, bool), M6Error> + Send + 'static,
+    ) -> Result<T, M6Error> {
+        let (reply, response) = oneshot::channel();
+        let commands = self
+            .inner
+            .commands
+            .lock()
+            .map_err(|_| m6::unavailable())?
+            .as_ref()
+            .cloned()
+            .ok_or_else(m6::unavailable)?;
+        commands
+            .send(Command::M3(Box::new(move |connection| {
+                let (result, changed) = match work(connection) {
+                    Ok((value, changed)) => (Ok(value), changed),
+                    Err(error) => (Err(error), false),
+                };
+                let _ = reply.send(result);
+                changed
+            })))
+            .await
+            .map_err(|_| m6::unavailable())?;
+        response.await.map_err(|_| m6::unavailable())?
     }
 }
 
@@ -784,10 +831,9 @@ impl M6Store for StateStoreHandle {
         operation_id: OperationId,
         now_ms: u64,
     ) -> Result<ExtensionPlanRecord, M6Error> {
-        self.request_worker(
-            move |connection| m6::begin_apply(connection, operation_id, now_ms),
-            m6::unavailable,
-        )
+        self.request_extension_write(move |connection| {
+            m6::begin_apply(connection, operation_id, now_ms)
+        })
         .await
     }
 
@@ -891,20 +937,17 @@ impl M6Store for StateStoreHandle {
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<ExtensionRecord, M6Error> {
-        self.request_worker(
-            move |connection| {
-                m6::set_desired(
-                    connection,
-                    &owner,
-                    &extension_id,
-                    expected,
-                    &key,
-                    true,
-                    now_ms,
-                )
-            },
-            m6::unavailable,
-        )
+        self.request_extension_write(move |connection| {
+            m6::set_desired(
+                connection,
+                &owner,
+                &extension_id,
+                expected,
+                &key,
+                true,
+                now_ms,
+            )
+        })
         .await
     }
 
@@ -916,20 +959,17 @@ impl M6Store for StateStoreHandle {
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<ExtensionRecord, M6Error> {
-        self.request_worker(
-            move |connection| {
-                m6::set_desired(
-                    connection,
-                    &owner,
-                    &extension_id,
-                    expected,
-                    &key,
-                    false,
-                    now_ms,
-                )
-            },
-            m6::unavailable,
-        )
+        self.request_extension_write(move |connection| {
+            m6::set_desired(
+                connection,
+                &owner,
+                &extension_id,
+                expected,
+                &key,
+                false,
+                now_ms,
+            )
+        })
         .await
     }
 
@@ -940,23 +980,20 @@ impl M6Store for StateStoreHandle {
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<ExtensionGrantRecord, M6Error> {
-        self.request_worker(
-            move |connection| {
-                m6::set_grant(
-                    connection,
-                    &owner,
-                    &mutation.extension_id,
-                    &mutation.permission,
-                    &mutation.resource_kind,
-                    &mutation.resource_id,
-                    mutation.expected_revision,
-                    &key,
-                    mutation.grant,
-                    now_ms,
-                )
-            },
-            m6::unavailable,
-        )
+        self.request_extension_write(move |connection| {
+            m6::set_grant(
+                connection,
+                &owner,
+                &mutation.extension_id,
+                &mutation.permission,
+                &mutation.resource_kind,
+                &mutation.resource_id,
+                mutation.expected_revision,
+                &key,
+                mutation.grant,
+                now_ms,
+            )
+        })
         .await
     }
 
@@ -1009,12 +1046,9 @@ impl M6Store for StateStoreHandle {
         daemon_epoch: String,
         now_ms: u64,
     ) -> Result<alcomd_application::ExtensionStartContext, M6Error> {
-        self.request_worker(
-            move |connection| {
-                m6::prepare_instance(connection, &owner, &extension_id, &daemon_epoch, now_ms)
-            },
-            m6::unavailable,
-        )
+        self.request_extension_write(move |connection| {
+            m6::prepare_instance(connection, &owner, &extension_id, &daemon_epoch, now_ms)
+        })
         .await
     }
 
@@ -1023,10 +1057,9 @@ impl M6Store for StateStoreHandle {
         lease: ExtensionInstanceLease,
         now_ms: u64,
     ) -> Result<(), M6Error> {
-        self.request_worker(
-            move |connection| m6::mark_instance_running(connection, &lease, now_ms),
-            m6::unavailable,
-        )
+        self.request_extension_write(move |connection| {
+            m6::mark_instance_running(connection, &lease, now_ms)
+        })
         .await
     }
 
@@ -1035,10 +1068,9 @@ impl M6Store for StateStoreHandle {
         extension_id: String,
         _now_ms: u64,
     ) -> Result<(), M6Error> {
-        self.request_worker(
-            move |connection| m6::mark_instance_stopped(connection, &extension_id),
-            m6::unavailable,
-        )
+        self.request_extension_write(move |connection| {
+            m6::mark_instance_stopped(connection, &extension_id)
+        })
         .await
     }
 
@@ -1060,10 +1092,9 @@ impl M6Store for StateStoreHandle {
         reason: String,
         now_ms: u64,
     ) -> Result<alcomd_application::ExtensionCrashDecision, M6Error> {
-        self.request_worker(
-            move |connection| m6::record_instance_crash(connection, &lease, &reason, now_ms),
-            m6::unavailable,
-        )
+        self.request_extension_write(move |connection| {
+            m6::record_instance_crash(connection, &lease, &reason, now_ms)
+        })
         .await
     }
 
@@ -1072,10 +1103,9 @@ impl M6Store for StateStoreHandle {
         daemon_epoch: String,
         now_ms: u64,
     ) -> Result<Vec<String>, M6Error> {
-        self.request_worker(
-            move |connection| m6::recover_instances(connection, &daemon_epoch, now_ms),
-            m6::unavailable,
-        )
+        self.request_extension_write(move |connection| {
+            m6::recover_instances(connection, &daemon_epoch, now_ms)
+        })
         .await
     }
 
@@ -2338,6 +2368,10 @@ impl M5TemplateStore for StateStoreHandle {
 }
 
 impl StateStore for StateStoreHandle {
+    fn event_commits(&self) -> watch::Receiver<EventCommitWatermark> {
+        self.inner.event_commits.clone()
+    }
+
     async fn create_state_check(
         &self,
         owner: PrincipalId,
@@ -2371,11 +2405,13 @@ impl StateStore for StateStoreHandle {
         owner: PrincipalId,
         cursor: Option<OperationCursor>,
         limit: u32,
+        active_only: bool,
     ) -> Result<OperationPage, StoreError> {
         self.request(|reply| Command::ListOperations {
             owner,
             cursor,
             limit,
+            active_only,
             reply,
         })
         .await
@@ -2501,7 +2537,7 @@ impl StateStore for StateStoreHandle {
 }
 
 enum Command {
-    M3(Box<dyn FnOnce(&mut rusqlite::Connection) + Send>),
+    M3(Box<dyn FnOnce(&mut rusqlite::Connection) -> bool + Send>),
     CreateStateCheck {
         owner: PrincipalId,
         idempotency_key: IdempotencyKey,
@@ -2517,6 +2553,7 @@ enum Command {
         owner: PrincipalId,
         cursor: Option<OperationCursor>,
         limit: u32,
+        active_only: bool,
         reply: oneshot::Sender<Result<OperationPage, StoreError>>,
     },
     CancelOperation {
@@ -2572,10 +2609,51 @@ enum Command {
     },
 }
 
-fn run_worker(mut connection: rusqlite::Connection, mut receiver: mpsc::Receiver<Command>) {
+fn publish_event_watermark(
+    connection: &rusqlite::Connection,
+    commits: &watch::Sender<EventCommitWatermark>,
+    extensions_changed: bool,
+) -> Result<(), rusqlite::Error> {
+    if !connection.is_autocommit() {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    let sequence: i64 =
+        connection.query_row("SELECT coalesce(MAX(sequence), 0) FROM events", [], |row| {
+            row.get(0)
+        })?;
+    let sequence = u64::try_from(sequence).map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let resources_revision = commits
+        .borrow()
+        .resources_revision
+        .checked_add(u64::from(extensions_changed))
+        .filter(|value| *value <= i64::MAX as u64)
+        .ok_or(rusqlite::Error::InvalidQuery)?;
+    commits.send_if_modified(|current| {
+        if current.sequence == sequence
+            && current.resources_revision == resources_revision
+            && current.available
+        {
+            return false;
+        }
+        current.sequence = sequence;
+        current.resources_revision = resources_revision;
+        current.available = true;
+        true
+    });
+    Ok(())
+}
+
+fn run_worker(
+    mut connection: rusqlite::Connection,
+    mut receiver: mpsc::Receiver<Command>,
+    commits: watch::Sender<EventCommitWatermark>,
+) {
     while let Some(command) = receiver.blocking_recv() {
+        let changes = connection.total_changes();
+        let was_autocommit = connection.is_autocommit();
+        let mut extensions_changed = false;
         match command {
-            Command::M3(work) => work(&mut connection),
+            Command::M3(work) => extensions_changed = work(&mut connection),
             Command::CreateStateCheck {
                 owner,
                 idempotency_key,
@@ -2604,9 +2682,16 @@ fn run_worker(mut connection: rusqlite::Connection, mut receiver: mpsc::Receiver
                 owner,
                 cursor,
                 limit,
+                active_only,
                 reply,
             } => {
-                let _ = reply.send(sqlite::list_operations(&connection, &owner, cursor, limit));
+                let _ = reply.send(sqlite::list_operations(
+                    &connection,
+                    &owner,
+                    cursor,
+                    limit,
+                    active_only,
+                ));
             }
             Command::CancelOperation {
                 owner,
@@ -2706,6 +2791,14 @@ fn run_worker(mut connection: rusqlite::Connection, mut receiver: mpsc::Receiver
             } => {
                 let _ = reply.send(sqlite::recover(&mut connection, recovered_at_ms));
             }
+        }
+        // Notification is independent of the reply receiver still existing.
+        // Rolled-back changes may affect total_changes, but cannot advance the
+        // committed event tail. Pure reads never inspect the event tail.
+        if (connection.total_changes() != changes || !was_autocommit && connection.is_autocommit())
+            && publish_event_watermark(&connection, &commits, extensions_changed).is_err()
+        {
+            commits.send_modify(|value| value.available = false);
         }
     }
 }

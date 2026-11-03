@@ -195,24 +195,45 @@ pub(super) fn checkpoint(
     restored: Option<RestoredProject>,
     updated_at_ms: u64,
 ) -> Result<(), M5BackupError> {
-    let (owner, state, _, plan_id) = operation_context(connection, operation_id)?;
+    let transaction = transaction(connection)?;
+    let (owner, state, revision, plan_id) = operation_context(&transaction, operation_id)?;
     if !matches!(state.as_str(), "running" | "recovering" | "cancelling") {
         return Err(internal());
     }
-    let plan = load_plan(connection, &owner, plan_id)?;
+    let plan = load_plan(&transaction, &owner, plan_id)?;
     let step = phase_step(phase);
-    if latest_step(connection, operation_id)? >= step {
+    if latest_step(&transaction, operation_id)? >= step {
         return Ok(());
     }
     insert_journal(
-        connection,
+        &transaction,
         operation_id,
         step,
         &plan,
         phase,
         restored.as_ref(),
         updated_at_ms,
-    )
+    )?;
+    let next = revision.checked_add(1).ok_or_else(internal)?;
+    transaction
+        .execute(
+            "UPDATE operations SET revision=?1,updated_at_ms=?2 WHERE operation_id=?3",
+            params![
+                integer(next)?,
+                integer(updated_at_ms)?,
+                operation_id.to_string()
+            ],
+        )
+        .map_err(failure)?;
+    insert_event(
+        &transaction,
+        &owner,
+        operation_id,
+        revision_value(next)?,
+        "operation.progress",
+        updated_at_ms,
+    )?;
+    transaction.commit().map_err(failure)
 }
 
 pub(super) fn complete(
@@ -222,7 +243,7 @@ pub(super) fn complete(
     completed_at_ms: u64,
 ) -> Result<(), M5BackupError> {
     let transaction = transaction(connection)?;
-    let (owner, state, _revision, plan_id) = operation_context(&transaction, operation_id)?;
+    let (owner, state, revision, plan_id) = operation_context(&transaction, operation_id)?;
     if !matches!(state.as_str(), "running" | "recovering" | "cancelling") {
         return Err(internal());
     }
@@ -291,6 +312,9 @@ pub(super) fn complete(
                 .map_err(failure)?;
         }
     }
+    if latest_step(&transaction, operation_id)? >= phase_step(BackupRestorePhase::StateCommitted) {
+        return transaction.commit().map_err(failure);
+    }
     insert_journal(
         &transaction,
         operation_id,
@@ -298,6 +322,25 @@ pub(super) fn complete(
         &plan,
         BackupRestorePhase::StateCommitted,
         Some(&restored),
+        completed_at_ms,
+    )?;
+    let next = revision.checked_add(1).ok_or_else(internal)?;
+    transaction
+        .execute(
+            "UPDATE operations SET revision=?1,updated_at_ms=?2 WHERE operation_id=?3",
+            params![
+                integer(next)?,
+                integer(completed_at_ms)?,
+                operation_id.to_string()
+            ],
+        )
+        .map_err(failure)?;
+    insert_event(
+        &transaction,
+        &owner,
+        operation_id,
+        revision_value(next)?,
+        "operation.progress",
         completed_at_ms,
     )?;
     transaction.commit().map_err(failure)
@@ -414,8 +457,9 @@ pub(super) fn recover(
     connection: &mut Connection,
     recovered_at_ms: u64,
 ) -> Result<Vec<OperationId>, M5BackupError> {
+    let transaction = transaction(connection)?;
     let candidates = {
-        let mut statement = connection
+        let mut statement = transaction
             .prepare(
                 "SELECT operation_id,state,revision,owner_principal_id FROM operations
              WHERE kind='backups.restore' AND state NOT IN ('succeeded','failed','cancelled')
@@ -443,12 +487,12 @@ pub(super) fn recover(
             continue;
         }
         let next = revision.checked_add(1).ok_or_else(internal)?;
-        connection.execute(
+        transaction.execute(
             "UPDATE operations SET state='recovering',revision=?1,updated_at_ms=?2 WHERE operation_id=?3",
             params![next, integer(recovered_at_ms)?, id.to_string()],
         ).map_err(failure)?;
         insert_event(
-            connection,
+            &transaction,
             &PrincipalId::parse(owner).map_err(|_| internal())?,
             id,
             revision_value(u64::try_from(next).map_err(|_| internal())?)?,
@@ -457,6 +501,7 @@ pub(super) fn recover(
         )?;
         result.push(id);
     }
+    transaction.commit().map_err(failure)?;
     Ok(result)
 }
 

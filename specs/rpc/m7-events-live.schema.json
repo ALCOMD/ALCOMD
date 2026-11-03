@@ -1,0 +1,81 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m7-events-live.json",
+    "title": "ALCOMD dedicated committed Event subscriptions",
+    "x-alcomd-method-permissions": {"events.subscribe": ["events.read"]},
+    "x-alcomd-method-capabilities": {"events.subscribe": "events.live.v1"},
+    "x-alcomd-method-params": {"events.subscribe": "#/$defs/subscribeParams"},
+    "x-alcomd-method-results": {"events.subscribe": "#/$defs/subscribeResult"},
+    "x-alcomd-local-owner-only": true,
+    "x-alcomd-max-encoded-frame-bytes": 4194304,
+    "x-alcomd-default-batch-limit": 100,
+    "x-alcomd-ready-timeout-ms": 5000,
+    "x-alcomd-send-ack-timeout-ms": 10000,
+    "$defs": {
+        "sequence": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+        "identity": {"type": "string", "format": "uuid"},
+        "cursor": {
+            "type": "object", "additionalProperties": false, "required": ["instanceId", "sequence", "resourcesRevision"],
+            "properties": {
+                "instanceId": {"$ref": "#/$defs/identity"},
+                "sequence": {"$ref": "#/$defs/sequence"},
+                "resourcesRevision": {"$ref": "#/$defs/sequence"}
+            }
+        },
+        "subscribeParams": {
+            "type": "object", "additionalProperties": false,
+            "properties": {
+                "cursor": {"$ref": "#/$defs/cursor"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 100}
+            }
+        },
+        "subscribeResult": {
+            "type": "object", "additionalProperties": false,
+            "required": ["subscriptionId", "instanceId", "baselineCursor", "resyncRequired"],
+            "properties": {
+                "subscriptionId": {"$ref": "#/$defs/identity"},
+                "instanceId": {"$ref": "#/$defs/identity"},
+                "baselineCursor": {"$ref": "#/$defs/cursor"},
+                "resyncRequired": {"type": "boolean"}
+            }
+        },
+        "batch": {
+            "type": "object", "additionalProperties": false,
+            "required": ["subscriptionId", "instanceId", "batchId", "events", "invalidatedScopes", "nextCursor"],
+            "properties": {
+                "subscriptionId": {"$ref": "#/$defs/identity"},
+                "instanceId": {"$ref": "#/$defs/identity"},
+                "batchId": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+                "events": {"type": "array", "maxItems": 1000, "items": {"$ref": "event.schema.json"}},
+                "invalidatedScopes": {"type": "array", "maxItems": 1, "uniqueItems": true, "items": {"enum": ["extensions"]}},
+                "nextCursor": {"$ref": "#/$defs/cursor"}
+            },
+            "anyOf": [
+                {"properties": {"events": {"minItems": 1}}},
+                {"properties": {"invalidatedScopes": {"minItems": 1}}}
+            ]
+        },
+        "closed": {
+            "type": "object", "additionalProperties": false,
+            "required": ["subscriptionId", "instanceId", "error", "retryable"],
+            "properties": {
+                "subscriptionId": {"$ref": "#/$defs/identity"},
+                "instanceId": {"$ref": "#/$defs/identity"},
+                "error": {"$ref": "rpc-error.schema.json"},
+                "retryable": {"type": "boolean"}
+            }
+        },
+        "notification": {
+            "oneOf": [
+                {
+                    "type": "object", "additionalProperties": false, "required": ["method", "params"],
+                    "properties": {"method": {"const": "events.batch"}, "params": {"$ref": "#/$defs/batch"}}
+                },
+                {
+                    "type": "object", "additionalProperties": false, "required": ["method", "params"],
+                    "properties": {"method": {"const": "events.closed"}, "params": {"$ref": "#/$defs/closed"}}
+                }
+            ]
+        }
+    }
+}

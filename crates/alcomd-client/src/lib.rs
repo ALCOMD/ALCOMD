@@ -22,6 +22,9 @@ use serde_json::json;
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+mod events;
+pub use events::EventSubscription;
+
 const START_TIMEOUT: Duration = Duration::from_secs(5);
 const RETRY_INTERVAL: Duration = Duration::from_millis(50);
 static INSTANCE_SEQUENCE: AtomicU64 = AtomicU64::new(1);
@@ -87,6 +90,7 @@ impl ClientConfig {
 pub struct AlcomdClient {
     stream: IpcStream,
     next_request_id: u64,
+    usable: bool,
 }
 
 impl AlcomdClient {
@@ -96,6 +100,7 @@ impl AlcomdClient {
         let mut client = Self {
             stream,
             next_request_id: 1,
+            usable: true,
         };
         let _ = client.hello().await?;
         Ok(client)
@@ -116,6 +121,7 @@ impl AlcomdClient {
                 CAPABILITY_STATE_CHECK_V1.to_owned(),
                 CAPABILITY_OPERATIONS_V1.to_owned(),
                 CAPABILITY_EVENTS_REPLAY_V1.to_owned(),
+                alcomd_protocol::CAPABILITY_EVENTS_LIVE_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_READ_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_REGISTRY_V1.to_owned(),
                 alcomd_protocol::CAPABILITY_PROJECTS_COPY_V1.to_owned(),
@@ -173,10 +179,15 @@ impl AlcomdClient {
         &mut self,
         cursor: Option<OperationsListCursor>,
         limit: Option<u32>,
+        active_only: bool,
     ) -> Result<OperationsListResult, ClientError> {
         self.call(
             METHOD_OPERATIONS_LIST,
-            OperationsListParams { cursor, limit },
+            OperationsListParams {
+                cursor,
+                limit,
+                active_only,
+            },
         )
         .await
     }
@@ -1079,6 +1090,28 @@ impl AlcomdClient {
         P: Serialize,
         T: DeserializeOwned,
     {
+        if !self.usable {
+            return Err(ClientError::InvalidResponse);
+        }
+        // If a caller cancels while a frame is in flight, this connection must
+        // not be reused with an unread response or a partially consumed frame.
+        self.usable = false;
+        let deadline = read_deadline(method);
+        let result = match deadline {
+            Some(duration) => tokio::time::timeout(duration, self.exchange(method, params))
+                .await
+                .unwrap_or(Err(ClientError::ReadTimeout)),
+            None => self.exchange(method, params).await,
+        };
+        self.usable = result.is_ok() || matches!(&result, Err(ClientError::Remote(_)));
+        result
+    }
+
+    async fn exchange<P, T>(&mut self, method: &str, params: P) -> Result<T, ClientError>
+    where
+        P: Serialize,
+        T: DeserializeOwned,
+    {
         let id = self.next_request_id.to_string();
         self.next_request_id = self.next_request_id.saturating_add(1);
         let request = RequestEnvelope {
@@ -1095,14 +1128,62 @@ impl AlcomdClient {
         self.stream.flush().await.map_err(ClientError::Transport)?;
 
         let payload = read_frame(&mut self.stream).await?;
-        let response: Response<T> =
-            serde_json::from_slice(&payload).map_err(|_| ClientError::InvalidResponse)?;
-        match response {
-            Response::Success(success) if success.id == request.id => Ok(success.result),
-            Response::Success(_) => Err(ClientError::InvalidResponse),
-            Response::Error(error) => Err(ClientError::Remote(error.error)),
-        }
+        decode_response(&payload, &request.id)
     }
+}
+
+fn decode_response<T: DeserializeOwned>(
+    payload: &[u8],
+    request_id: &str,
+) -> Result<T, ClientError> {
+    let response: Response<T> =
+        serde_json::from_slice(payload).map_err(|_| ClientError::InvalidResponse)?;
+    match response {
+        Response::Success(success) if success.id == request_id => Ok(success.result),
+        Response::Error(error) if error.id.as_deref() == Some(request_id) => {
+            Err(ClientError::Remote(error.error))
+        }
+        Response::Success(_) | Response::Error(_) => Err(ClientError::InvalidResponse),
+    }
+}
+
+fn read_deadline(method: &str) -> Option<Duration> {
+    use alcomd_protocol::*;
+    if matches!(method, METHOD_SYSTEM_HELLO | METHOD_EVENTS_SUBSCRIBE) {
+        return Some(Duration::from_secs(5));
+    }
+    matches!(
+        method,
+        METHOD_SYSTEM_STATUS
+            | METHOD_OPERATIONS_GET
+            | METHOD_OPERATIONS_LIST
+            | METHOD_EVENTS_LIST
+            | METHOD_PROJECTS_LIST
+            | METHOD_PROJECTS_GET
+            | METHOD_REPOSITORIES_LIST
+            | METHOD_REPOSITORIES_GET
+            | METHOD_REPOSITORIES_PACKAGES
+            | METHOD_PACKAGES_QUERY_PROJECT_CANDIDATES
+            | METHOD_PACKAGES_USER_PACKAGES_LIST
+            | METHOD_PACKAGES_USER_PACKAGES_GET
+            | METHOD_UNITY_INSTALLATIONS_LIST
+            | METHOD_UNITY_INSTALLATIONS_GET
+            | METHOD_UNITY_PROJECT_LAUNCH_CONFIG_GET
+            | METHOD_UNITY_WRITER_STATE
+            | METHOD_UNITY_LAUNCH_OPTIONS
+            | METHOD_UNITY_LAUNCH_STATUS
+            | METHOD_TEMPLATES_LIST
+            | METHOD_TEMPLATES_GET
+            | METHOD_BACKUPS_LIST
+            | METHOD_BACKUPS_GET
+            | METHOD_EXTENSIONS_LIST
+            | METHOD_EXTENSIONS_GET
+            | METHOD_EXTENSIONS_PERMISSIONS_LIST
+            | METHOD_SETTINGS_GET
+            | METHOD_ACTIVITY_LIST
+            | METHOD_DIAGNOSTICS_LIST
+    )
+    .then_some(Duration::from_secs(10))
 }
 
 async fn connect_with_policy(config: &ClientConfig) -> Result<IpcStream, ClientError> {
@@ -1203,10 +1284,35 @@ pub enum ClientError {
     /// The daemon did not become reachable within the approved five-second bound.
     #[error("the ALCOMD daemon did not become ready within five seconds")]
     StartTimeout,
+    /// A bounded read/handshake did not finish; discard the interrupted connection.
+    #[error("the ALCOMD read did not finish within its deadline")]
+    ReadTimeout,
     /// The daemon returned a stable public RPC error.
     #[error("daemon request failed")]
     Remote(RpcError),
     /// The daemon response violated the frozen M1 contract.
     #[error("the ALCOMD daemon returned an invalid RPC response")]
     InvalidResponse,
+}
+
+impl ClientError {
+    /// Only transient transport/start failures may restart a live subscription.
+    #[must_use]
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::Transport(error) => !matches!(
+                error.kind(),
+                io::ErrorKind::PermissionDenied
+                    | io::ErrorKind::InvalidInput
+                    | io::ErrorKind::InvalidData
+                    | io::ErrorKind::Unsupported
+            ),
+            Self::StartTimeout | Self::ReadTimeout => true,
+            Self::Remote(error) => matches!(
+                error.code.as_str(),
+                "daemon_unavailable" | "store_unavailable" | "runtime_unavailable"
+            ),
+            Self::StartDaemon(_) | Self::DaemonPathUnavailable | Self::InvalidResponse => false,
+        }
+    }
 }

@@ -258,7 +258,7 @@ async fn project_copy_apply_rechecks_confirmed_writer_without_publishing_or_acce
     .expect("plan before writer starts")
     .plan;
     let before = store
-        .list_operations(PrincipalId::local_owner(), None, 100)
+        .list_operations(PrincipalId::local_owner(), None, 100, false)
         .await
         .expect("operations before Apply");
     assert!(before.operations.is_empty());
@@ -279,7 +279,7 @@ async fn project_copy_apply_rechecks_confirmed_writer_without_publishing_or_acce
     assert_eq!(rejected.code(), M7CopyErrorCode::UnityProjectRunning);
     assert!(
         store
-            .list_operations(PrincipalId::local_owner(), None, 100)
+            .list_operations(PrincipalId::local_owner(), None, 100, false)
             .await
             .expect("operations after rejection")
             .operations

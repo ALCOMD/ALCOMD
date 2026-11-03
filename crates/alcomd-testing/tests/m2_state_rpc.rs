@@ -122,7 +122,7 @@ async fn m2_state_check_round_trips_through_real_ipc_and_durable_store() {
     assert!(replay.replayed);
 
     let operations = client
-        .operations_list(None, None)
+        .operations_list(None, None, false)
         .await
         .expect("list operations");
     assert_eq!(operations.operations.len(), 3);

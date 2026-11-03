@@ -1107,7 +1107,7 @@ async fn connect_with_retry(config: ClientConfig) -> AlcomdClient {
         match AlcomdClient::connect(config.clone()).await {
             Ok(client) => return client,
             Err(ClientError::StartTimeout) if tokio::time::Instant::now() < deadline => {}
-            Err(error) => panic!("daemon did not become ready: {error}"),
+            Err(error) => panic!("daemon did not become ready: {error:?}"),
         }
     }
 }

@@ -21,7 +21,8 @@
                         "operationId": {"type": "string", "format": "uuid"}
                     }
                 },
-                "limit": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 100}
+                "limit": {"type": "integer", "minimum": 1, "maximum": 1000, "default": 100},
+                "activeOnly": {"type": "boolean", "default": false}
             }
         }
     }

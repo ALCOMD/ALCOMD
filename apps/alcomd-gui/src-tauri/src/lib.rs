@@ -9,6 +9,7 @@ use tauri::async_runtime::Mutex;
 use tauri_plugin_dialog::DialogExt;
 
 mod diagnostic_log;
+mod events;
 mod window_state;
 
 #[derive(Default)]
@@ -51,7 +52,11 @@ async fn gui_operations_list(
     let mut client = state.client.lock().await;
     connect_if_needed(&mut client).await?;
     let result = match client.as_mut() {
-        Some(client) => client.operations_list(params.cursor, params.limit).await,
+        Some(client) => {
+            client
+                .operations_list(params.cursor, params.limit, params.active_only)
+                .await
+        }
         None => return Err(daemon_unavailable()),
     };
     finish_call(&mut client, result)
@@ -1634,6 +1639,7 @@ fn client_error(error: ClientError) -> RpcError {
         ClientError::Transport(_)
         | ClientError::StartDaemon(_)
         | ClientError::DaemonPathUnavailable
+        | ClientError::ReadTimeout
         | ClientError::StartTimeout
         | ClientError::InvalidResponse => daemon_unavailable(),
     }
@@ -1651,8 +1657,13 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(GuiClientState::default())
         .manage(diagnostic_log::DiagnosticLogClient::default())
+        .manage(events::EventsClient::default())
+        .on_page_load(events::on_page_load)
         .manage(window_state::WindowStateController::default())
-        .on_window_event(window_state::on_window_event)
+        .on_window_event(|window, event| {
+            window_state::on_window_event(window, event);
+            events::on_window_event(window, event);
+        })
         .invoke_handler(tauri::generate_handler![
             window_state::gui_window_state_configure,
             gui_system_status,
@@ -1666,6 +1677,9 @@ pub fn run() {
             gui_diagnostics_list,
             diagnostic_log::gui_diagnostic_log_read,
             diagnostic_log::gui_diagnostic_log_cancel,
+            events::gui_events_start,
+            events::gui_events_ack,
+            events::gui_events_cancel,
             gui_projects_inspect,
             gui_projects_list,
             gui_project_get,

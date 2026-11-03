@@ -328,6 +328,11 @@ bootstrap Principal，不代表任意同用户进程已经完成可信认证，�
 的 createdAtMs/operationId；下一页使用严格 tuple comparison。客户端不得构造或解释 cursor，
 只应原样回传。新 Operation 插入不改变已继续向后的分页边界。
 
+M7 已批准的 `activeOnly` 默认为 false；true 只返回非终态任务，仍使用同一排序与独立分页。
+`activeCount` 是当前 Principal 可见的全部非终态任务数量，不受分页或 activeOnly 过滤影响，
+与本次列表来自一致读取依据。首次/重新同步分别读取近期历史和全部活跃任务，不能用 count
+代替活跃任务内容，也不能把活跃分页游标作为历史继续位置。
+
 ### operations.cancel
 
 需要 capability `operations.v1` 与 permission `operations.cancel`。params 固定包含 operationId、
@@ -339,8 +344,58 @@ expectedRevision 与 idempotencyKey。接受取消意图不承诺最终 cancelle
 需要 capability `events.replay.v1` 与 permission `events.read`。`afterSequence` 是 exclusive
 cursor，limit 默认 100、最大 1000，结果严格 sequence ASC。非空页 nextSequence 是本页最后
 Event sequence；空页等于输入。下一页直接把 nextSequence 作为 afterSequence，不做 `+1`。
+事件读取同时受4MiB字节预算限制，可在数量上限之前返回有界前缀；nextSequence仍只推进到
+已返回事件。单条事件无法容纳时明确失败，不静默跳过。订阅发送另检查完整编码帧大小。
 
 M2 不删除 Event，因此不会产生 `event_cursor_expired`；该错误名只为未来 retention 保留。
+
+### events.subscribe（M7 已批准增量）
+
+完整合同见 [m7-events-live.schema.json](m7-events-live.schema.json) 与独立的
+[notification-envelope.schema.json](notification-envelope.schema.json)。需要 `events.live.v1` 和
+`events.read`，初期仅允许现有已认证 local-owner；事件不授予任何后续资源查询权限。
+
+订阅独占一条已认证/协商的连接：普通带 id 的 events.subscribe 请求、带相同 id 的就绪响应，
+随后是无 id 的 events.batch/events.closed Notification Envelope。普通请求/响应 id 合同不变，
+不以 id:null 代替通知。订阅期间不接受其他请求，关闭连接取消订阅，不影响命令连接。
+
+就绪结果含 subscriptionId、instanceId、baselineCursor 与 resyncRequired。首次订阅取得基线 B，
+接收 B 之后的事件，再读取所需快照。有效同实例游标从已接纳位置补发；实例变化或合法游标
+不可恢复时明确 resyncRequired=true 并给新基线，同时继续传递其后的事件。
+
+events.batch 包含订阅/实例关联、递增 batchId、sequence 升序事件和 nextCursor。owner 过滤
+导致的 sequence 间隔合法。默认每批100、最多1000条，完整编码帧不得超过现有4MiB；达到
+字节界限时分为较小批次，游标只推进到已包含记录，不丢弃剩余事件。单条超限明确失败。
+
+游标另含必填 `resourcesRevision`，批次必含 `invalidatedScopes`。本轮唯一失效类别为
+`extensions`：M6 已提交的 desired/grant 修订变化没有对应持久 Event，故由实际写入边界
+推进此独立内存水位，不伪造 Event、不改变数据库聚合约束、不新增活动记录。无变化、回滚
+和幂等重放不推进。资源水位非递减，推进时必须带相应失效类别；类别数组最多一项。
+
+仅资源失效时 events 可以为空，但 invalidatedScopes 必须非空、resourcesRevision 必须
+严格前进，而持久 sequence 保持上次位置。有真实事件时 sequence 仍严格上升且 nextCursor
+指向最后返回事件。没有事件也没有新失效的普通空批次仍禁止。未知失效类别为协议错误。
+同实例旧资源水位不保留内存历史；不能连续恢复时返回 resyncRequired=true 与新基线，
+由当前权威查询恢复状态，不能假装仅补发持久事件便已同步。
+
+服务端最多持有一份待发送批次，完整内容来自持久 Events；Store 在实际提交边界更新保存
+最新水位的信号。先登记监听再检查/等待，避免提交恰好落在检查与等待之间。写线程不等待
+传输、前端 ACK 或页面查询；回滚/无变化/重放不产生新事件。
+
+订阅就绪等待上限5秒，发送和前端 ACK 等待各10秒；健康空闲没有周期性读超时、空批次或
+业务心跳。服务端发送位置、原生接收位置和前端接纳位置分别维护。断线可重复补发，依据
+已安全接纳游标恢复，不承诺传输恰好一次。前端状态丢失必须重新取得快照基线。
+
+events.closed 携带明确错误和 retryable。非法帧、未知通知、协议/权限错误永久停止自动重连；
+暂时传输错误使用250ms起、最高30秒的故障退避。原生最多一个待确认批次，ACK绑定订阅、
+连接代际及批次；仅表示共享入口已登记失效信息，不等待页面读取/渲染。旧 ACK/取消不影响
+新订阅，消费者停滞或窗口重载可取消并重新同步。客户端不得静默退回业务轮询。
+
+项目最近活动时间推进使用 `project.activity-recorded`，仓库内容未变而公开检查时间推进使用
+`repository.observed`；沿用当前资源 revision，不改变项目内容或 Plan 的 revision 语义。
+这些事件只用于失效通知，与 `operation.progress` 一样不投影为独立活动条目；时间未变、
+回滚和幂等重放不产生新事件。公开任务恢复状态的变化仍须递增 revision，并同事务发布
+对应状态事件；已经处于相同恢复状态的重复恢复不产生变化。
 
 ## 12. Operation、revision 与 recovery
 

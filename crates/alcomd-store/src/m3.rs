@@ -1115,6 +1115,7 @@ pub(super) fn refresh_repository(
     }
     let changed = semantic_repository(current.observation.clone())
         != semantic_repository(observation.clone());
+    let observed = current.observation.refreshed_at_ms != observation.refreshed_at_ms;
     let next = if changed {
         current.revision.checked_next().ok_or_else(internal)?
     } else {
@@ -1154,6 +1155,16 @@ pub(super) fn refresh_repository(
             &id.to_string(),
             next,
             "repository.refreshed",
+            now_ms,
+        )?;
+    } else if observed {
+        insert_event(
+            &transaction,
+            owner,
+            "repository",
+            &id.to_string(),
+            next,
+            "repository.observed",
             now_ms,
         )?;
     }
@@ -1206,10 +1217,22 @@ pub(super) fn update_repository_validators(
     if current.revision != expected {
         return Err(M3Error::new(M3ErrorCode::RevisionConflict));
     }
+    let observed = current.observation.refreshed_at_ms != now_ms;
     current.observation.validators = validators.clone();
     current.observation.refreshed_at_ms = now_ms;
     transaction.execute("UPDATE repositories SET etag=?1, last_modified=?2, refreshed_at_ms=?3, updated_at_ms=?3 WHERE owner_principal_id=?4 AND repository_id=?5",
         params![validators.etag, validators.last_modified, integer(now_ms)?, owner.as_str(), id.to_string()]).map_err(|_| unavailable())?;
+    if observed {
+        insert_event(
+            &transaction,
+            owner,
+            "repository",
+            &id.to_string(),
+            current.revision,
+            "repository.observed",
+            now_ms,
+        )?;
+    }
     let response = SyncWrite {
         value: current,
         replayed: false,

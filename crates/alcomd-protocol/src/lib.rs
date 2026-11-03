@@ -10,11 +10,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 mod diagnostic_log;
+mod events;
 mod m7;
 mod m7_candidates;
 mod repository_list;
 
 pub use diagnostic_log::*;
+pub use events::*;
 pub use m7::*;
 pub use m7_candidates::*;
 pub use repository_list::*;
@@ -1010,6 +1012,9 @@ pub struct OperationsListParams {
     /// Page size; defaults to 100 and cannot exceed 1000.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
+    /// Restricts returned rows to nonterminal tasks; total active count is unchanged.
+    #[serde(default)]
+    pub active_only: bool,
 }
 
 /// Result for `operations.list`.
@@ -1018,6 +1023,8 @@ pub struct OperationsListParams {
 pub struct OperationsListResult {
     /// Operations ordered by `(createdAtMs DESC, operationId DESC)`.
     pub operations: Vec<Operation>,
+    /// All visible nonterminal tasks, independently of pagination and filtering.
+    pub active_count: u64,
     /// Cursor for the final returned item, or absent when no item was returned.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_cursor: Option<OperationsListCursor>,

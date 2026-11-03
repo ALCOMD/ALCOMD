@@ -45,7 +45,7 @@ async fn killed_process_recovers_running_operation_without_duplicate() {
     assert_eq!(operation.state, OperationState::Recovering);
     assert_eq!(operation.revision.get(), 4);
     let page = store
-        .list_operations(PrincipalId::local_owner(), None, 100)
+        .list_operations(PrincipalId::local_owner(), None, 100, false)
         .await
         .expect("list recovered operations");
     assert_eq!(page.operations.len(), 1);

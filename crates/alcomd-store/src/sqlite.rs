@@ -694,7 +694,10 @@ pub(super) fn recover(
             || kind.starts_with("templates.")
             || matches!(kind.as_str(), "backups.create" | "backups.restore")
             || matches!(kind.as_str(), "extensions.install" | "extensions.uninstall")
-            || matches!(kind.as_str(), "projects.copy" | "projects.delete-directory")
+            || matches!(
+                kind.as_str(),
+                "projects.copy" | "projects.delete-directory" | "projects.unity-migration"
+            )
         {
             continue;
         }
@@ -703,8 +706,8 @@ pub(super) fn recover(
             continue;
         }
         match parse_state(&state)? {
-            OperationState::Queued => schedule.push(operation_id),
-            OperationState::Running | OperationState::Cancelling | OperationState::Recovering => {
+            OperationState::Queued | OperationState::Recovering => schedule.push(operation_id),
+            OperationState::Running | OperationState::Cancelling => {
                 transition_recovery(
                     connection,
                     operation_id,
@@ -933,6 +936,7 @@ pub(super) fn list_operations(
     owner: &PrincipalId,
     cursor: Option<OperationCursor>,
     limit: u32,
+    active_only: bool,
 ) -> Result<OperationPage, StoreError> {
     if limit == 0 || limit > 1_000 {
         return Err(corrupt_state());
@@ -962,13 +966,20 @@ pub(super) fn list_operations(
                   ORDER BY step DESC LIMIT 1))
              FROM operations
              WHERE owner_principal_id=?1
+               AND (?5=0 OR state NOT IN ('succeeded','failed','cancelled'))
                AND (created_at_ms < ?2 OR (created_at_ms = ?2 AND operation_id < ?3))
              ORDER BY created_at_ms DESC, operation_id DESC LIMIT ?4",
         )
         .map_err(store_failure)?;
     let operations = statement
         .query_map(
-            params![owner.as_str(), cursor_time, cursor_id, i64::from(limit)],
+            params![
+                owner.as_str(),
+                cursor_time,
+                cursor_id,
+                i64::from(limit),
+                active_only
+            ],
             map_operation_row,
         )
         .map_err(store_failure)?
@@ -978,7 +989,15 @@ pub(super) fn list_operations(
         created_at_ms: operation.created_at_ms,
         operation_id: operation.operation_id,
     });
+    // The single worker owns the only writer; both SELECTs execute in the same
+    // uninterrupted command and cannot observe different committed states.
+    let active_count: i64 = connection.query_row(
+        "SELECT count(*) FROM operations WHERE owner_principal_id=?1 AND state NOT IN ('succeeded','failed','cancelled')",
+        [owner.as_str()], |row| row.get(0),
+    ).map_err(store_failure)?;
+    let active_count = u64::try_from(active_count).map_err(|_| corrupt_state())?;
     Ok(OperationPage {
+        active_count,
         operations,
         next_cursor,
     })
@@ -1036,7 +1055,7 @@ pub(super) fn list_events(
              ORDER BY sequence ASC LIMIT ?3",
         )
         .map_err(store_failure)?;
-    let events = statement
+    let rows = statement
         .query_map(
             params![owner.as_str(), after_sequence_sql, i64::from(limit)],
             |row| {
@@ -1056,9 +1075,33 @@ pub(super) fn list_events(
                 })
             },
         )
-        .map_err(store_failure)?
-        .collect::<Result<Vec<_>, _>>()
         .map_err(store_failure)?;
+    let mut events = Vec::new();
+    let mut bytes = 0usize;
+    const PAGE_BYTES: usize = 4 * 1024 * 1024;
+    for row in rows {
+        let event = row.map_err(store_failure)?;
+        // Include a conservative allowance for metadata JSON escaping. The
+        // transport independently checks its complete encoded envelope.
+        let size = event
+            .payload_json
+            .len()
+            .saturating_add(1024)
+            .saturating_add(
+                6 * (event.event_id.len()
+                    + event.kind.len()
+                    + event.aggregate_kind.len()
+                    + event.aggregate_id.len()),
+            );
+        if size > PAGE_BYTES {
+            return Err(corrupt_state());
+        }
+        if bytes.saturating_add(size) > PAGE_BYTES {
+            break;
+        }
+        bytes += size;
+        events.push(event);
+    }
     let next_sequence = events.last().map_or(after_sequence, |event| event.sequence);
     Ok(EventPage {
         events,

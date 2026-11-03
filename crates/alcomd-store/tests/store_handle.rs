@@ -105,7 +105,7 @@ async fn state_check_is_persistent_idempotent_and_evented() {
     assert_eq!(empty.next_sequence, events.next_sequence);
 
     let operations = store
-        .list_operations(owner, None, 100)
+        .list_operations(owner, None, 100, false)
         .await
         .expect("list operations");
     assert_eq!(operations.operations, [completed]);
@@ -342,7 +342,17 @@ async fn running_operation_recovers_through_interrupted_and_recovering() {
         .await
         .expect("twice recovered operation");
     assert_eq!(recovered_again.state, OperationState::Recovering);
-    assert_eq!(recovered_again.revision.get(), 6);
+    assert_eq!(recovered_again.revision, recovered.revision);
+    assert_eq!(recovered_again.updated_at_ms, recovered.updated_at_ms);
+    let events = store
+        .list_events(PrincipalId::local_owner(), 0, 100)
+        .await
+        .expect("recovery events");
+    assert_eq!(
+        events.events.len(),
+        4,
+        "reopening an already-recovering task does not invent changes"
+    );
 }
 
 #[tokio::test]
@@ -535,7 +545,7 @@ async fn one_hundred_concurrent_commands_commit_without_duplicates() {
     }
     assert_eq!(identifiers.len(), 100);
     let page = store
-        .list_operations(PrincipalId::local_owner(), None, 100)
+        .list_operations(PrincipalId::local_owner(), None, 100, false)
         .await
         .expect("list concurrent operations");
     assert_eq!(page.operations.len(), 100);

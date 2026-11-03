@@ -9,7 +9,15 @@ use alcomd_protocol::{
     RequestEnvelope, StateCheckParams, SuccessResponse, SystemStatusResult,
 };
 
-const SCHEMAS: [(&str, &str); 29] = [
+const SCHEMAS: [(&str, &str); 31] = [
+    (
+        "m7-events-live",
+        include_str!("../../../specs/rpc/m7-events-live.schema.json"),
+    ),
+    (
+        "notification-envelope",
+        include_str!("../../../specs/rpc/notification-envelope.schema.json"),
+    ),
     (
         "request-envelope",
         include_str!("../../../specs/rpc/request-envelope.schema.json"),
@@ -177,6 +185,113 @@ fn diagnostic_log_contract_is_owner_scoped_closed_and_bounded() {
         20000
     );
     assert_eq!(contract["$defs"]["item"]["additionalProperties"], false);
+}
+
+#[test]
+fn live_events_contract_separates_ready_responses_and_closed_bounded_notifications() {
+    use alcomd_protocol::{
+        EventNotification, EventsSubscribeParams, EventsSubscribeResult, OperationsListResult,
+        Response,
+    };
+    let contract = schema("m7-events-live");
+    assert_eq!(
+        contract["x-alcomd-method-permissions"],
+        json!({"events.subscribe":["events.read"]})
+    );
+    assert_eq!(contract["x-alcomd-local-owner-only"], true);
+    assert_eq!(contract["x-alcomd-default-batch-limit"], 100);
+    assert_eq!(
+        contract["x-alcomd-max-encoded-frame-bytes"],
+        4 * 1024 * 1024
+    );
+    assert_eq!(
+        contract["$defs"]["batch"]["properties"]["events"]["maxItems"],
+        1000
+    );
+    let envelope = schema("notification-envelope");
+    assert_eq!(envelope["additionalProperties"], false);
+    assert_eq!(envelope["required"], json!(["method", "params"]));
+    assert!(envelope["properties"].get("id").is_none());
+    let vectors: Value = serde_json::from_str(include_str!(
+        "../../../specs/rpc/m7-events-live.contract-vectors.json"
+    ))
+    .expect("vectors");
+    let _: Response<EventsSubscribeResult> =
+        serde_json::from_value(vectors["ready"].clone()).expect("ready response");
+    let _: EventsSubscribeParams =
+        serde_json::from_value(vectors["request"]["params"].clone()).expect("params");
+    for name in ["batch", "resourceBatch", "closed"] {
+        let notification: EventNotification =
+            serde_json::from_value(vectors[name].clone()).expect("notification");
+        assert_eq!(
+            serde_json::to_value(notification).expect("roundtrip"),
+            vectors[name]
+        );
+        assert!(serde_json::from_value::<Response<Value>>(vectors[name].clone()).is_err());
+        let mut invalid = vectors[name].clone();
+        invalid["id"] = Value::Null;
+        assert!(serde_json::from_value::<EventNotification>(invalid).is_err());
+    }
+    assert_eq!(
+        contract["$defs"]["cursor"]["required"],
+        json!(["instanceId", "sequence", "resourcesRevision"])
+    );
+    assert_eq!(
+        contract["$defs"]["batch"]["properties"]["invalidatedScopes"]["items"]["enum"],
+        json!(["extensions"])
+    );
+    assert!(contract["$defs"]["batch"]["anyOf"].is_array());
+    let durable_kinds = schema("event")["properties"]["aggregateKind"]["enum"].clone();
+    assert_eq!(
+        durable_kinds,
+        json!([
+            "operation",
+            "project",
+            "repository",
+            "unity-installation",
+            "project-editor-preference",
+            "project-unity-launch-config",
+            "template",
+            "user-package"
+        ]),
+        "all aggregate kinds allowed by current State18 must remain readable"
+    );
+    assert!(
+        !durable_kinds
+            .as_array()
+            .expect("durable kinds")
+            .contains(&json!("extension"))
+    );
+    assert!(
+        !durable_kinds
+            .as_array()
+            .expect("durable kinds")
+            .contains(&json!("extensions"))
+    );
+    let resource_only: EventNotification =
+        serde_json::from_value(vectors["resourceBatch"].clone()).expect("resource-only batch");
+    let EventNotification::Batch(resource_only) = resource_only else {
+        panic!("resource batch")
+    };
+    assert!(resource_only.events.is_empty());
+    assert_eq!(
+        resource_only.invalidated_scopes,
+        vec![alcomd_protocol::EventInvalidation::Extensions]
+    );
+    let page: OperationsListResult = serde_json::from_value(vectors["activePage"].clone())
+        .expect("active total without loaded rows");
+    assert_eq!(page.active_count, 5);
+    assert!(page.operations.is_empty());
+    assert!(serde_json::from_value::<OperationsListResult>(json!({"operations":[]})).is_err());
+    let request: OperationsListParams =
+        serde_json::from_value(vectors["activeRequest"].clone()).expect("active filter");
+    assert!(request.active_only);
+    assert!(
+        !serde_json::from_value::<OperationsListParams>(json!({}))
+            .expect("default filter")
+            .active_only
+    );
+    assert!(serde_json::from_value::<OperationsListParams>(json!({"activeOnly":null})).is_err());
 }
 
 #[test]
@@ -1709,6 +1824,7 @@ fn pagination_contracts_are_exclusive_and_bounded() {
             operation_id: "00000000-0000-4000-8000-000000000001".to_owned(),
         }),
         limit: Some(MAX_PAGE_LIMIT),
+        active_only: false,
     };
     let operation_value = serde_json::to_value(operations).expect("operations.list params");
     assert_eq!(operation_value["cursor"]["createdAtMs"], 123);

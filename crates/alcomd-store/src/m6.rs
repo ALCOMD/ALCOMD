@@ -462,7 +462,7 @@ pub(super) fn begin_apply(
     connection: &mut Connection,
     operation_id: OperationId,
     now_ms: u64,
-) -> Result<ExtensionPlanRecord, M6Error> {
+) -> Result<(ExtensionPlanRecord, bool), M6Error> {
     let transaction = transaction(connection)?;
     let plan = plan_for_operation(&transaction, operation_id)?;
     let now = sqlite_integer(now_ms)?;
@@ -499,6 +499,7 @@ pub(super) fn begin_apply(
             now,
         )?;
     }
+    let mut extension_changed = false;
     if plan.action == "uninstall"
         && !journal_has_phase(&transaction, operation_id, "grants_revoked")?
         && extension_revision(&transaction, &plan.owner, &plan.evidence.extension_id)?.is_some()
@@ -520,6 +521,7 @@ pub(super) fn begin_apply(
         if changed != 1 {
             return Err(error(M6ErrorCode::RecoveryRequired));
         }
+        extension_changed = plan.owner == PrincipalId::local_owner();
         transaction
             .execute(
                 "DELETE FROM extension_grants WHERE extension_id=?1",
@@ -537,7 +539,7 @@ pub(super) fn begin_apply(
         append_journal(&transaction, &plan, operation_id, "lease_revoked", now)?;
     }
     transaction.commit().map_err(store_error)?;
-    Ok(plan)
+    Ok((plan, extension_changed))
 }
 
 pub(super) fn append_filesystem_journal(
@@ -600,40 +602,50 @@ pub(super) fn recover_operations(
 ) -> Result<Vec<OperationId>, M6Error> {
     let transaction = transaction(connection)?;
     let now = sqlite_integer(now_ms)?;
-    transaction
-        .execute(
-            "UPDATE operations SET state='interrupted', revision=revision+1, updated_at_ms=?1
-             WHERE kind IN ('extensions.install', 'extensions.uninstall')
-             AND state IN ('running', 'cancelling')",
-            [now],
-        )
-        .map_err(store_error)?;
-    transaction
-        .execute(
-            "UPDATE operations SET state='recovering', revision=revision+1, updated_at_ms=?1
-             WHERE kind IN ('extensions.install', 'extensions.uninstall')
-             AND state='interrupted'",
-            [now],
-        )
-        .map_err(store_error)?;
     let mut statement = transaction
         .prepare(
-            "SELECT operation_id FROM operations
+            "SELECT operation_id,state,revision,owner_principal_id FROM operations
              WHERE kind IN ('extensions.install', 'extensions.uninstall')
-             AND state IN ('queued', 'recovering')
+             AND state IN ('queued','running','cancelling','interrupted','recovering')
              ORDER BY created_at_ms, operation_id",
         )
         .map_err(store_error)?;
     let operations = statement
         .query_map([], |row| {
-            OperationId::parse(&row.get::<_, String>(0)?).map_err(|_| invalid_query())
+            Ok((
+                OperationId::parse(&row.get::<_, String>(0)?).map_err(|_| invalid_query())?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, String>(3)?,
+            ))
         })
         .map_err(store_error)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(store_error)?;
     drop(statement);
+    let mut recovered = Vec::with_capacity(operations.len());
+    for (id, state, current_revision, owner) in operations {
+        if state != "queued" && state != "recovering" {
+            let next = current_revision.checked_add(1).ok_or_else(internal)?;
+            let revision =
+                Revision::new(u64::try_from(next).map_err(|_| internal())?).ok_or_else(internal)?;
+            transaction.execute(
+                "UPDATE operations SET state='recovering',revision=?1,updated_at_ms=?2 WHERE operation_id=?3",
+                params![next, now, id.to_string()],
+            ).map_err(store_error)?;
+            insert_operation_event(
+                &transaction,
+                &PrincipalId::parse(owner).map_err(|_| internal())?,
+                id,
+                revision,
+                "operation.recovered",
+                now,
+            )?;
+        }
+        recovered.push(id);
+    }
     transaction.commit().map_err(store_error)?;
-    Ok(operations)
+    Ok(recovered)
 }
 
 pub(super) fn accept_plan(
@@ -961,7 +973,7 @@ pub(super) fn set_grant(
     key: &IdempotencyKey,
     grant: bool,
     now_ms: u64,
-) -> Result<ExtensionGrantRecord, M6Error> {
+) -> Result<(ExtensionGrantRecord, bool), M6Error> {
     if !valid_scope(extension_id, permission, resource_kind, resource_id) {
         return Err(error(M6ErrorCode::ScopeDenied));
     }
@@ -982,7 +994,7 @@ pub(super) fn set_grant(
             serde_json::from_str(&response).map_err(|_| internal())?;
         result.replayed = true;
         transaction.commit().map_err(store_error)?;
-        return Ok(result);
+        return Ok((result, false));
     }
     let extension = get_extension(&transaction, owner, extension_id)?;
     let (_, declarations) = installed_permission_evidence(&transaction, owner, extension_id)?;
@@ -1042,7 +1054,7 @@ pub(super) fn set_grant(
     };
     save_idempotent(&transaction, owner, method, key, &fingerprint, &result, now)?;
     transaction.commit().map_err(store_error)?;
-    Ok(result)
+    Ok((result, owner == &PrincipalId::local_owner()))
 }
 
 pub(super) fn set_desired(
@@ -1053,7 +1065,7 @@ pub(super) fn set_desired(
     key: &IdempotencyKey,
     enable: bool,
     now_ms: u64,
-) -> Result<ExtensionRecord, M6Error> {
+) -> Result<(ExtensionRecord, bool), M6Error> {
     let transaction = transaction(connection)?;
     let method = if enable {
         "extensions.enable"
@@ -1070,7 +1082,7 @@ pub(super) fn set_desired(
         }
         let result = serde_json::from_str(&response).map_err(|_| internal())?;
         transaction.commit().map_err(store_error)?;
-        return Ok(result);
+        return Ok((result, false));
     }
     let current = get_extension(&transaction, owner, extension_id)?;
     if current.revision != expected {
@@ -1108,7 +1120,7 @@ pub(super) fn set_desired(
     let result = get_extension(&transaction, owner, extension_id)?;
     save_idempotent(&transaction, owner, method, key, &fingerprint, &result, now)?;
     transaction.commit().map_err(store_error)?;
-    Ok(result)
+    Ok((result, owner == &PrincipalId::local_owner()))
 }
 
 pub(super) fn data_get(
@@ -1301,7 +1313,7 @@ pub(super) fn prepare_instance(
     extension_id: &str,
     daemon_epoch: &str,
     now_ms: u64,
-) -> Result<ExtensionStartContext, M6Error> {
+) -> Result<(ExtensionStartContext, bool), M6Error> {
     let transaction = transaction(connection)?;
     let (publisher, grant_revision, lifecycle_generation, locator): (String, i64, i64, String) =
         transaction
@@ -1354,14 +1366,13 @@ pub(super) fn prepare_instance(
             ],
         )
         .map_err(store_error)?;
-    transaction.commit().map_err(store_error)?;
     let component_path = std::path::PathBuf::from(locator)
         .join("component")
         .join("extension.wasm")
         .to_str()
         .map(ToOwned::to_owned)
         .ok_or_else(|| error(M6ErrorCode::RecoveryRequired))?;
-    Ok(ExtensionStartContext {
+    let context = ExtensionStartContext {
         lease: ExtensionInstanceLease {
             lease_id,
             extension_id: extension_id.to_owned(),
@@ -1379,14 +1390,17 @@ pub(super) fn prepare_instance(
         },
         component_path,
         activation_kind: alcomd_application::ExtensionActivationKind::Background,
-    })
+    };
+    transaction.commit().map_err(store_error)?;
+    Ok((context, owner == &PrincipalId::local_owner()))
 }
 
 pub(super) fn mark_instance_running(
     connection: &mut Connection,
     lease: &ExtensionInstanceLease,
     now_ms: u64,
-) -> Result<(), M6Error> {
+) -> Result<((), bool), M6Error> {
+    let local = is_local_extension(connection, &lease.extension_id)?;
     let now = sqlite_integer(now_ms)?;
     let changed = connection
         .execute(
@@ -1408,7 +1422,7 @@ pub(super) fn mark_instance_running(
         )
         .map_err(store_error)?;
     if changed == 1 {
-        Ok(())
+        Ok(((), local))
     } else {
         Err(error(M6ErrorCode::InstanceStale))
     }
@@ -1417,14 +1431,25 @@ pub(super) fn mark_instance_running(
 pub(super) fn mark_instance_stopped(
     connection: &mut Connection,
     extension_id: &str,
-) -> Result<(), M6Error> {
-    connection
+) -> Result<((), bool), M6Error> {
+    let local = is_local_extension(connection, extension_id)?;
+    let deleted = connection
         .execute(
             "DELETE FROM extension_instances WHERE extension_id=?1",
             [extension_id],
         )
         .map_err(store_error)?;
-    Ok(())
+    Ok(((), local && deleted != 0))
+}
+
+fn is_local_extension(connection: &Connection, extension_id: &str) -> Result<bool, M6Error> {
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM extensions WHERE extension_id=?1 AND principal_id=?2)",
+            params![extension_id, PrincipalId::LOCAL_OWNER],
+            |row| row.get(0),
+        )
+        .map_err(store_error)
 }
 
 pub(super) fn renew_instance(
@@ -1465,7 +1490,7 @@ pub(super) fn record_instance_crash(
     lease: &ExtensionInstanceLease,
     reason: &str,
     now_ms: u64,
-) -> Result<ExtensionCrashDecision, M6Error> {
+) -> Result<(ExtensionCrashDecision, bool), M6Error> {
     if reason.is_empty()
         || reason.len() > 64
         || !reason
@@ -1474,6 +1499,7 @@ pub(super) fn record_instance_crash(
     {
         return Err(error(M6ErrorCode::InvalidInput));
     }
+    let local = is_local_extension(connection, &lease.extension_id)?;
     let transaction = transaction(connection)?;
     let current: bool = transaction
         .query_row(
@@ -1585,19 +1611,31 @@ pub(super) fn record_instance_crash(
         } else {
             Some(5_000)
         };
-    Ok(ExtensionCrashDecision {
-        extension_id: lease.extension_id.clone(),
-        restart_delay_ms,
-        quarantined: should_quarantine || quarantine_state == "quarantined",
-    })
+    Ok((
+        ExtensionCrashDecision {
+            extension_id: lease.extension_id.clone(),
+            restart_delay_ms,
+            quarantined: should_quarantine || quarantine_state == "quarantined",
+        },
+        local,
+    ))
 }
 
 pub(super) fn recover_instances(
     connection: &mut Connection,
     daemon_epoch: &str,
     now_ms: u64,
-) -> Result<Vec<String>, M6Error> {
+) -> Result<(Vec<String>, bool), M6Error> {
     let transaction = transaction(connection)?;
+    let local_changed = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM extension_instances i JOIN extensions e
+         ON e.extension_id=i.extension_id WHERE e.principal_id=?1 AND i.daemon_epoch<>?2
+         AND i.runtime_state IN ('starting', 'running', 'stopping'))",
+            params![PrincipalId::LOCAL_OWNER, daemon_epoch],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(store_error)?;
     transaction
         .execute(
             "UPDATE extension_instances SET runtime_state='crashed', lease_cancelled=1,
@@ -1624,7 +1662,7 @@ pub(super) fn recover_instances(
         .map_err(store_error)?;
     drop(statement);
     transaction.commit().map_err(store_error)?;
-    Ok(extensions)
+    Ok((extensions, local_changed))
 }
 
 pub(super) fn project_summary(

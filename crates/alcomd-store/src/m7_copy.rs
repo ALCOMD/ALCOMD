@@ -248,22 +248,24 @@ pub(super) fn begin_operation(
     if !matches!(state.as_str(), "queued" | "recovering" | "running") {
         return Err(internal());
     }
-    let next = operation_revision.checked_add(1).ok_or_else(internal)?;
-    transaction
-        .execute(
-            "UPDATE operations SET state='running',revision=?1,updated_at_ms=?2,
+    if state != "running" {
+        let next = operation_revision.checked_add(1).ok_or_else(internal)?;
+        transaction
+            .execute(
+                "UPDATE operations SET state='running',revision=?1,updated_at_ms=?2,
                     started_at_ms=coalesce(started_at_ms,?2) WHERE operation_id=?3",
-            params![integer(next)?, integer(now_ms)?, operation_id.to_string()],
-        )
-        .map_err(failure)?;
-    insert_event(
-        &transaction,
-        &owner,
-        operation_id,
-        revision(next)?,
-        "operation.progress",
-        now_ms,
-    )?;
+                params![integer(next)?, integer(now_ms)?, operation_id.to_string()],
+            )
+            .map_err(failure)?;
+        insert_event(
+            &transaction,
+            &owner,
+            operation_id,
+            revision(next)?,
+            "operation.progress",
+            now_ms,
+        )?;
+    }
     let plan = load_plan(&transaction, &owner, plan_id)?;
     let (phase, inventory, published) = latest_evidence(&transaction, operation_id)?;
     transaction.commit().map_err(failure)?;
@@ -290,6 +292,7 @@ pub(super) fn checkpoint(
         return Err(internal());
     }
     let plan = load_plan(&transaction, &owner, plan_id)?;
+    let public_phase_changed = latest_evidence(&transaction, operation_id)?.0 != phase;
     let step = latest_step(&transaction, operation_id)? + 1;
     insert_journal(
         &transaction,
@@ -300,6 +303,9 @@ pub(super) fn checkpoint(
         (inventory, published),
         now_ms,
     )?;
+    if !public_phase_changed {
+        return transaction.commit().map_err(failure);
+    }
     let next = operation_revision.checked_add(1).ok_or_else(internal)?;
     transaction
         .execute(
@@ -519,27 +525,44 @@ pub(super) fn recover(
     let transaction = begin(connection)?;
     let mut statement = transaction
         .prepare(
-            "SELECT operation_id FROM operations
+            "SELECT operation_id,state,revision,owner_principal_id FROM operations
              WHERE kind='projects.copy' AND state IN ('queued','running','recovering','interrupted')
              ORDER BY created_at_ms,operation_id",
         )
         .map_err(failure)?;
     let values = statement
-        .query_map([], |row| row.get::<_, String>(0))
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
         .map_err(failure)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(failure)?;
     drop(statement);
     let mut result = Vec::new();
-    for value in values {
+    for (value, state, current_revision, owner) in values {
         let operation_id = OperationId::parse(&value).map_err(|_| internal())?;
-        transaction
-            .execute(
-                "UPDATE operations SET state='recovering',updated_at_ms=?1
-                 WHERE operation_id=?2 AND state!='queued'",
-                params![integer(now_ms)?, value],
-            )
-            .map_err(failure)?;
+        if state != "queued" && state != "recovering" {
+            let next = unsigned(current_revision)?
+                .checked_add(1)
+                .ok_or_else(internal)?;
+            transaction.execute(
+                "UPDATE operations SET state='recovering',revision=?1,updated_at_ms=?2 WHERE operation_id=?3",
+                params![integer(next)?, integer(now_ms)?, value],
+            ).map_err(failure)?;
+            insert_event(
+                &transaction,
+                &PrincipalId::parse(owner).map_err(|_| internal())?,
+                operation_id,
+                revision(next)?,
+                "operation.recovered",
+                now_ms,
+            )?;
+        }
         result.push(operation_id);
     }
     transaction.commit().map_err(failure)?;

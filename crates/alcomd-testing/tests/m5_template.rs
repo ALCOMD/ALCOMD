@@ -364,7 +364,7 @@ async fn template_registry_drift_rejects_unapplied_plans_without_acceptance_side
         .await
         .expect("advance source revision");
     let operations_before = store
-        .list_operations(owner.clone(), None, 100)
+        .list_operations(owner.clone(), None, 100, false)
         .await
         .expect("operations before rejection");
     let events_before = store
@@ -402,7 +402,7 @@ async fn template_registry_drift_rejects_unapplied_plans_without_acceptance_side
     }
     assert_eq!(
         store
-            .list_operations(owner.clone(), None, 100)
+            .list_operations(owner.clone(), None, 100, false)
             .await
             .expect("operations after rejection")
             .operations,

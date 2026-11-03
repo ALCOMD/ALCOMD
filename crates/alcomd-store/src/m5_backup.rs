@@ -434,23 +434,39 @@ pub(super) fn recover_backup_operations(
 ) -> Result<Vec<OperationId>, M5BackupError> {
     let transaction = transaction(connection)?;
     let mut statement = transaction.prepare(
-        "SELECT operation_id FROM operations WHERE kind='backups.create' AND state IN ('queued','running','cancelling','interrupted','recovering') ORDER BY created_at_ms,operation_id"
+        "SELECT operation_id,state,revision,owner_principal_id FROM operations WHERE kind='backups.create' AND state IN ('queued','running','cancelling','interrupted','recovering') ORDER BY created_at_ms,operation_id"
     ).map_err(failure)?;
     let values = statement
-        .query_map([], |row| row.get::<_, String>(0))
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })
         .map_err(failure)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(failure)?;
     drop(statement);
     let mut operations = Vec::new();
-    for value in values {
+    for (value, state, current_revision, owner) in values {
         let operation_id = OperationId::parse(&value).map_err(|_| internal())?;
-        transaction
-            .execute(
-                "UPDATE operations SET state='recovering',updated_at_ms=?1 WHERE operation_id=?2",
-                params![integer(now_ms)?, value],
-            )
-            .map_err(failure)?;
+        if state != "recovering" {
+            let next = current_revision.checked_add(1).ok_or_else(internal)?;
+            transaction.execute(
+                "UPDATE operations SET state='recovering',revision=?1,updated_at_ms=?2 WHERE operation_id=?3",
+                params![next, integer(now_ms)?, value],
+            ).map_err(failure)?;
+            insert_event(
+                &transaction,
+                &PrincipalId::parse(owner).map_err(|_| internal())?,
+                operation_id,
+                revision_value(next)?,
+                "operation.recovered",
+                now_ms,
+            )?;
+        }
         operations.push(operation_id);
     }
     transaction.commit().map_err(failure)?;

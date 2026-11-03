@@ -186,7 +186,7 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
     let before_events = wire(client.events_list(0, Some(200)).await.expect("events"));
     let before_operations = wire(
         client
-            .operations_list(None, Some(200))
+            .operations_list(None, Some(200), false)
             .await
             .expect("operations"),
     );
@@ -252,7 +252,7 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
     assert_eq!(
         wire(
             client
-                .operations_list(None, Some(200))
+                .operations_list(None, Some(200), false)
                 .await
                 .expect("operations")
         ),
@@ -445,7 +445,7 @@ async fn candidate_rpc_registered_snapshots_zero_effects_paging_and_plan_authori
     assert_eq!(
         wire(
             client
-                .operations_list(None, Some(200))
+                .operations_list(None, Some(200), false)
                 .await
                 .expect("operations")
         ),
