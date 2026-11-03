@@ -5,6 +5,8 @@ import { selectSettingsSection } from "./settings-sections";
 async function openSettings(page: Page) {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto("/browser-harness.html?route=/settings&h5-settings=1");
+    await expect(page.getByRole("checkbox", { name: "Remember window size and maximized state", exact: true })).toHaveCount(0);
+    await selectSettingsSection(page, "appearance");
     await expect(page.getByRole("checkbox", { name: "Remember window size and maximized state", exact: true })).toBeVisible();
 }
 const changes = (page: Page) => page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "settings.update"));
@@ -19,7 +21,7 @@ for (const locale of ["en-US", "zh-CN", "ja-JP"] as const) {
                 element.dispatchEvent(new Event("change", { bubbles: true }));
             }, locale);
             await expect(page.locator("html")).toHaveAttribute("lang", locale);
-            await selectSettingsSection(page, "general");
+            await selectSettingsSection(page, "appearance");
         }
         const t = createTranslator(locale);
         const region = page.getByRole("region", { name: t("Window"), exact: true });
@@ -31,7 +33,7 @@ for (const locale of ["en-US", "zh-CN", "ja-JP"] as const) {
         await expect.poll(() => page.evaluate(() => window.h5Settings.commits.filter((request) => request.update.window !== undefined).length)).toBe(1);
         await selectSettingsSection(page, "unity");
         await expect(region).toHaveCount(0);
-        await selectSettingsSection(page, "general");
+        await selectSettingsSection(page, "appearance");
         await expect(checkbox).toBeChecked();
         expect(await checkbox.evaluate((element, first) => element === first, original)).toBe(true);
         await checkbox.uncheck();
@@ -55,7 +57,7 @@ test("failed window preference keeps the intent and uses explicit Retry after ch
     await expect(feedback).toContainText("You do not have permission for this action.");
     expect(await page.evaluate(() => window.h5Settings.commits)).toEqual([]);
     await selectSettingsSection(page, "unity");
-    await selectSettingsSection(page, "general");
+    await selectSettingsSection(page, "appearance");
     await expect(checkbox).toBeChecked();
     await feedback.getByRole("button", { name: "Retry", exact: true }).click();
     await expect(feedback).toHaveCount(0);

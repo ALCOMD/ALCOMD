@@ -535,10 +535,6 @@ function SettingsEditor({ category, client, settingsWriter, snapshot, initialRep
     };
     return (
         <div className="settings-editor" hidden={category !== "general" && category !== "appearance"}>
-            <SettingsSection title={t("Window")} hidden={category !== "general"}>
-                <Checkbox checked={settings.window.rememberState} label={t("Remember window size and maximized state")}
-                    onChange={(rememberState) => settingsWriter.change({ window: { rememberState } })} />
-            </SettingsSection>
             <SettingsSection title={t("Packages")} hidden={category !== "general"}>
                 <div className="settings-toggle-row">
                     <Checkbox checked={settings.packages.showPrerelease} label={t("Show prerelease package versions")} onChange={(checked) => packages("showPrerelease", checked)} />
@@ -579,6 +575,10 @@ function SettingsEditor({ category, client, settingsWriter, snapshot, initialRep
                         onChange={(value) => settingsWriter.change({ appearance: { motion: value as OfficialSettings["appearance"]["motion"] } })}
                         options={[{ label: t("System"), value: "system" }, { label: t("Enable animations"), value: "full" }, { label: t("Disable animations"), value: "reduced" }]} />
                 </div>
+            </SettingsSection>
+            <SettingsSection title={t("Window")} hidden={category !== "appearance"}>
+                <Checkbox checked={settings.window.rememberState} label={t("Remember window size and maximized state")}
+                    onChange={(rememberState) => settingsWriter.change({ window: { rememberState } })} />
             </SettingsSection>
             <SettingsSection title={t("Theme")} hidden={category !== "appearance"}>
                 <ThemeControls value={themePreferences(baseline)} disabled={saving.saving || saving.failed} onPreview={onThemePreview} onSession={onThemeSession} onDirtyChange={setThemeDirty}
