@@ -152,13 +152,15 @@ State16、Config3、权限和依赖保持。不添加旧字段别名、双格式
 
 - 代码候选`89ec908`，其中Core/协议/SDK/原生桥接为`27f8fef`；文档提交不改变产品代码。无数据库、配置、权限或生产依赖增量；RPC Event Schema补齐既有State18实际允许的八类聚合，不将extensions伪装成持久聚合。
 - 已删除项目/任务/活动3秒周期读取、OperationFollow的750ms，以及项目复制300ms/删除250ms追踪循环；改用提交通知、按需权威读取与已接受命令结果。保留业务扫描/获取、日志专用通道、显式重试和必要的事件合并/故障退避/超时，不设稳态轮询兜底。
-- 稳定Rust检查：workspace fmt/Clippy、全部测试目标`--no-run`编译、xtask通过；排除占用真实端点的daemon测试后库组345/0，Store隔离集成95/0，daemon通知内存流6/0，协议Schema42/0，相关静态业务契约18/0。日志为`target/m7-live-stable-*.log`；这是分层验证，不是完整`cargo test --workspace`通过。
+- 稳定Rust检查：workspace fmt/Clippy、xtask通过；2026-11-04在真实Windows用户下以隔离临时目录运行`cargo test --locked --workspace -- --test-threads=1`，**646/0、8个既有helper ignored**，82组结果、进程exit 0，包含全部既有RPC和新`m7_events_live`。串行测试函数避免每用户端点争用，Tokio用例内部并发保持，不删除或放宽断言。日志见`target/m7-live-ipc-desktop-20261104/attempt-20261103T213813Z/workspace-tests.log`；原分层日志`target/m7-live-stable-*.log`保留。
 - 可控证据覆盖检查/等待间提交、调用方已断开、回滚/重复阶段/恢复静默、owner隔离、完整4MiB分批和超限拒绝、实际填满内存传输的慢订阅者不阻塞其他命令；原生ACK绑定、超时与取消由库测试覆盖。浏览器以同GuiRpcClient抽象的权威内存流验证接纳/恢复，不冒充真实Tauri IPC。
 - 最终通知/限额/生命周期及H3补验20/0（进程exit 0）；5秒1000条进度含受控迟到读取时查询≤22且进度期间不读count，终态不等普通窗口。证明总并发4/普通3、512键提升、5000条/8MiB淘汰、60秒空闲零业务读取；三份延时列表同时提升优先级先复现7次而非6次，回调身份修复后每键仅一次补读。结果见`target/m7-events-gui-final-reentry.json`，原红轮保留。
 - 相关业务合集79/81；两项旧H3夹具时序/浮层选择器修正后已在最终20项内2/2补过，不合称同轮81/0。其余覆盖包/备份/扩展完成失败、跨夹具客户端修改、旧活跃任务/分页、删除迟到，以及缓存淘汰后活动35条历史、筛选与行锚点恢复（Y误差≤1px）。原结果为`target/m7-events-gui-final-related.json`；最终57项打包GUI源码映射与工作文件一致，TypeScript通过。
-- 全workspace前端check与最终GUI生产build（含GUI check）通过，输出隔离在`target/m7-live-production`；包含保留的并行样式修改，未将其混入本批代码提交。没有重建或重启配套桌面程序。Windows每用户端点仍由原Core131496占用，新`m7_events_live`真实IPC及既有RPC回归未运行；早期沙箱端点/联接夹具失败日志保留，后者已在真实用户的隔离库组补验。新三平台CI/CodeQL、真实原生交互与M7/H7签收仍待后续，未借用旧结果。
+- 全workspace前端check及既有隔离GUI生产build通过；本轮最终GUI release no-bundle再次包含GUI check及生产build，Core/CLI release配套成功。共享release缓存含旧构建快照的workspace产物，最终改用标准工作目录源码及项目内独立Cargo缓存重编workspace，未改产品API迎合旧缓存；首轮缓存失配及中间前端类型检查失败日志均保留。最终685项构建输入前后一致；与完整Rust回归相比只有保留的四项GUI/浏览器文件改变，Rust/合同输入无变化。构建见`target/m7-live-ipc-desktop-20261104/build-20261103T222038Z`及`test-final-build-input-comparison.json`。上述浏览器结果保留其原候选范围，本轮并行GUI增量只补GUI check/build，不冒称已重跑浏览器。
+- 真实命名管道用例证明独立命令/订阅连接、任务创建至终态的有序revision、按已接纳游标重复补发、Core重启重新同步及协议拒绝；未读取的订阅保持时另一订阅及命令可继续。此处不将有限事件量宣称为实际填满Windows管道，也不将同用户参数拒绝宣称为跨Windows用户验证。更新后的真实release另以只读`events.subscribe`取得带ID就绪响应，保持订阅时独立连接`system.status`成功，随后释放订阅。
+- 已用配套新版原位打开Core **142980** / GUI **107944**；Core SHA-256 `48C30E64…67652E69`、GUI `3CD5AD48…64CC3D0`，窗口可响应，实际WebView profile路径保持。部署后仍有并行GUI源码继续变化，未计入本次运行产物，见`target/m7-live-ipc-desktop-20261104/post-update-source-comparison.json`。原程序、数据和profile已离线备份；六组完整公开读取与配置文件摘要一致，Config10/State18及revision **189**保持；仅允许并验证本轮批准的capability和activeCount增量。证据见`target/m7-live-ipc-desktop-20261104/update-20261103T222621Z/{desktop-verification,restoration-verification,release-subscription-probe}.json`。未触发真实业务写入、Unity或项目操作，不将窗口响应/IPC冒充原生交互验收。
 
-隔离4175服务已关闭并验证不可连接；Core、Unity和真实项目未操作，桌面控制保持停用，已有H2–H6签收和验收材料保持。
+隔离4175服务已关闭并验证不可连接；本轮仅按所有者授权暂停/更新/重启ALCOMD，Unity及真实项目未操作，桌面控制保持停用。原生交互、新三平台CI/CodeQL与M7/H7人工签收未执行，不借用旧技术基线；已有H2–H6签收和验收材料保持。
 
 ## 目标与完成定义
 
