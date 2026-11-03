@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-test("shared Material foundation renders real controls with React 19 interaction semantics", async ({ page }) => {
+test("shared Material foundation renders real controls with React 19 interaction semantics", async ({ page }, testInfo) => {
     await page.goto("/browser-harness.html?material=1");
     const open = page.locator("md-filled-button").filter({ hasText: "Open dialog" });
     const disabled = page.locator("md-filled-tonal-button").filter({ hasText: "Disabled action" });
@@ -66,6 +66,9 @@ test("shared Material foundation renders real controls with React 19 interaction
     expect(darkColors.fill).toBe(darkColors.foreground);
     expect(darkColors.fill).not.toBe(lightColors.fill);
     await expect(page.locator("md-outlined-text-field")).toHaveJSProperty("label", "Project name");
+    const textField = page.locator("md-outlined-text-field md-outlined-field");
+    await expect(textField.locator(".container-overflow")).toHaveCSS("border-radius", "12px");
+    await page.locator("md-outlined-text-field").screenshot({ path: testInfo.outputPath("rounded-input.png") });
     await expect(page.locator("md-filled-select")).toHaveJSProperty("label", "");
     await expect(page.getByRole("combobox", { name: "Project type", exact: true })).toBeVisible();
     await expect(page.locator("md-filled-select")).toHaveCSS("height", "40px");
