@@ -15,7 +15,7 @@ for (const width of [320, 640, 800, 1024, 1280]) {
         }
         await expectCanvasFits(page);
         await expectHeaderFits(page);
-        await expectReachable(page, page.getByRole("button", { name: "Refresh projects", exact: true }));
+        await expect(page.locator('.page-header [data-icon-name="refresh"]')).toHaveCount(0);
         await expectReachable(page, page.getByLabel("Search projects", { exact: true }));
         await expectReachable(page, page.getByRole("button", { name: "Create project", exact: true }));
         await expectReachable(page, page.getByRole("button", { name: "More project creation options", exact: true }));
@@ -28,7 +28,7 @@ for (const width of [320, 640, 800, 1024, 1280]) {
             // Product decision: segmented navigation may overflow at 320px.
             // Keep the independent action and table checks below at that width.
             if (width > 320) await expectHeaderFits(page);
-            for (const name of ["Add repository", "Repository list actions", "Refresh"]) {
+            for (const name of ["Add repository", "Repository list actions"]) {
                 await expectReachable(page, page.getByRole("button", { name, exact: true }));
             }
             if (width === 320) await expectPrimaryEdgeOpensDialog(page, "Add repository");
@@ -147,7 +147,7 @@ test("Resources segments remain keyboard reachable with visible contextual actio
     await expect(page.getByRole("heading", { name: "Resources", level: 1, exact: true })).toBeFocused();
     await expectReachable(page, page.getByRole("button", { name: "Create template", exact: true }));
     await expectReachable(page, page.getByRole("button", { name: "More template creation options", exact: true }));
-    await expectReachable(page, page.getByRole("button", { name: "Refresh", exact: true }));
+    await expect(page.locator('.page-header [data-icon-name="refresh"]')).toHaveCount(0);
     await expectHeaderFits(page);
     await expectCanvasFits(page);
 });

@@ -15,7 +15,7 @@ async function open(page: Page) {
 
 test("activity automatically merges multi-page bursts and task changes while retaining history, filters and scroll position", async ({ page }) => {
     const table = await open(page);
-    await expect(page.locator(".page-header-refresh")).toHaveCount(0);
+    await expect(page.locator('.page-header [data-icon-name="refresh"]')).toHaveCount(0);
     const search = page.getByRole("searchbox", { name: "Search activity", exact: true });
     await search.fill("operation");
     await page.getByRole("checkbox", { name: "Show details", exact: true }).check();

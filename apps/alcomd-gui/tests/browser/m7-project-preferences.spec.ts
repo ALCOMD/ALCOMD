@@ -230,7 +230,7 @@ test("Unity launch arguments are independent from the one-shot installation choi
     await expect(dialog).toBeHidden();
     // Clearing closes the editor and refreshes the authoritative page. Wait for
     // that refresh before opening a new draft, which belongs to the new snapshot.
-    await expect(page.getByRole("button", { name: "Refresh", exact: true })).toBeEnabled();
+    await expect(page.locator('.page-header [data-icon-name="refresh"]')).toHaveCount(0);
     await expect(page.getByText("Arguments", { exact: true }).locator("..")).toContainText("Use global defaults");
     await open.click();
     await expect(dialog).toBeVisible();

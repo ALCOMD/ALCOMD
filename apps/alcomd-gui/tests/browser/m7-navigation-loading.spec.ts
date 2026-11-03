@@ -130,14 +130,15 @@ test("Settings never requests repository visibility data across its sections", a
     expect(await page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "repositories.list"))).toEqual([]);
 });
 
-test("quick reads and snapshot refresh never start page animations or replace current rows with loading", async ({ page }) => {
+test("business updates never start page animations or replace current rows with loading", async ({ page }) => {
     await open(page);
     await navigation(page, "Resources").click();
     const rows = page.getByRole("table", { name: "Repositories", exact: true });
     await expect(rows).toBeVisible();
     const table = await rows.elementHandle();
-    await page.getByRole("button", { name: "Refresh", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Refresh", exact: true })).toBeEnabled();
+    await expect(page.locator('.page-header [data-icon-name="refresh"]')).toHaveCount(0);
+    await rows.getByRole("button", { name: "Refresh repository", exact: true }).first().click();
+    await expect(rows.getByRole("button", { name: "Refresh repository", exact: true }).first()).toBeEnabled();
     expect(await table!.evaluate((element) => element.isConnected)).toBe(true);
     expect(await page.evaluate(() => window.pageAnimationCalls)).toBe(0);
     await expect(page.locator(".loading-state")).toHaveCount(0);

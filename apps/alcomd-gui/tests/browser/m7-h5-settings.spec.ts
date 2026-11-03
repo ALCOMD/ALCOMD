@@ -187,7 +187,7 @@ test("H5 confirmed Hub save remains accepted when Editor discovery reports a sep
     await expect(feedback.getByRole("button", { name: "Retry", exact: true })).toHaveCount(0);
     expect(await changes(page)).toHaveLength(1);
     expect(await page.evaluate(() => window.h5Settings.commits.length)).toBe(1);
-    await page.getByRole("button", { name: "Refresh Unity installations", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Refresh Unity installations", exact: true })).toHaveCount(0);
     await expect(page.getByRole("region", { name: "Unity installations", exact: true }).getByRole("alert")).toHaveCount(0);
     expect(await changes(page)).toHaveLength(1);
 });

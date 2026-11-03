@@ -91,7 +91,7 @@ test("shared Material foundation renders real controls with React 19 interaction
 
 test("Core and Portable UI share Material controls and the same MD3 theme source", async ({ page }) => {
     await openHarness(page, "/projects");
-    await expect(page.getByRole("main").getByRole("button", { name: "Refresh projects" })).toBeVisible();
+    await expect(page.locator('.page-header [data-icon-name="refresh"]')).toHaveCount(0);
     const corePrimary = await page.locator("html").evaluate((element) => getComputedStyle(element).getPropertyValue("--md-sys-color-primary").trim());
 
     await openHarness(page, "/extensions/com.cqmhv.mcp-management/ui");
@@ -306,18 +306,14 @@ test("Projects toolbar uses semantic Material icons without replacing clear acti
     });
     await openHarness(page, "/projects");
     const main = page.getByRole("main");
-    await expect(main.locator(".projects-toolbar md-icon-button > .alcomd-icon")).toHaveAttribute("aria-hidden", "true");
-    await expect(main.locator(".projects-toolbar md-icon-button > .alcomd-icon")).toHaveAttribute("data-icon-name", "refresh");
-    await expect(main.locator(".projects-toolbar md-icon-button > .alcomd-icon")).toHaveAttribute("data-optical-size", "24");
-    const refreshProjects = main.locator(".projects-toolbar md-icon-button");
+    await expect(main.locator('.page-header [data-icon-name="refresh"]')).toHaveCount(0);
     const viewToggle = main.locator(".projects-toolbar md-text-button").filter({ hasText: "List view" });
     await expect(main.getByRole("button", { name: "List view", exact: true })).toBeVisible();
     await expect(viewToggle.locator('.alcomd-icon[slot="icon"]')).toHaveAttribute("data-icon-name", "view_list");
     const createProject = main.locator(".projects-toolbar .alcomd-split-button-primary");
-    for (const action of [refreshProjects, viewToggle, createProject]) {
+    for (const action of [viewToggle, createProject]) {
         await expect(action).toHaveCSS("height", "40px");
     }
-    await expect(refreshProjects).toHaveCSS("width", "40px");
     await expect(viewToggle.locator('.alcomd-icon[slot="icon"]')).toBeVisible();
     await expect(main.locator('.projects-search > .alcomd-icon[slot="leading-icon"]')).toBeVisible();
     const search = main.locator("md-filled-text-field.projects-search");

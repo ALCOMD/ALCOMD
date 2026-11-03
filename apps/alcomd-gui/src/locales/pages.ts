@@ -834,17 +834,9 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "刷新软件包",
         "ja-JP": "パッケージリストを再読み込み"
     },
-    "Refresh projects": {
-        "zh-CN": "刷新项目",
-        "ja-JP": "プロジェクトリストを再読み込み"
-    },
     "Refreshing packages": {
         "zh-CN": "正在刷新软件包",
         "ja-JP": "パッケージを更新中"
-    },
-    "Refreshing projects": {
-        "zh-CN": "正在刷新项目",
-        "ja-JP": "プロジェクトを更新中"
     },
     "Refreshing repositories: {value0} of {value1}.": {
         "zh-CN": "正在刷新仓库：{value0} / {value1}。",

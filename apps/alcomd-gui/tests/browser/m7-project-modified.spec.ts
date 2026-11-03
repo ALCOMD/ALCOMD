@@ -21,7 +21,7 @@ test("Projects last-modified order uses authoritative timestamps, stable ties an
     await expect(listNames(page)).toHaveText(descending);
 
     const before = await page.evaluate(() => ({ count: window.projectSnapshots.length, snapshot: window.projectSnapshots.at(-1)! }));
-    await page.getByRole("button", { name: "Refresh projects", exact: true }).click();
+    await expect(page.locator('.page-header [data-icon-name="refresh"]')).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => window.projectSnapshots.length)).toBeGreaterThan(before.count);
     const after = await page.evaluate(() => window.projectSnapshots.at(-1)!);
     expect([...before.snapshot, ...after].every((item) => !Object.hasOwn(item, "observedAtMs"))).toBe(true);

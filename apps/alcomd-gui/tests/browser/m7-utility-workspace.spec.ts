@@ -12,23 +12,23 @@ test("mutation invalidations coalesce after a modal draft has been explicitly ca
     await page.getByRole("textbox", { name: "Draft" }).fill("Keep this draft");
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(page.getByRole("dialog")).toBeHidden();
-    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await page.getByRole("button", { name: "Update source", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.workspaceReads.length)).toBe(2);
     await page.getByRole("button", { name: "Mutation completed" }).click();
-    await expect(page.getByRole("button", { name: "Refreshing…" })).toBeDisabled();
+    await expect(page.getByLabel("Snapshot")).toHaveText("Initial snapshot");
     expect(await page.evaluate(() => window.workspaceReads.length)).toBe(2);
     await page.evaluate(() => window.workspaceReads[1]!.resolve("Before mutation"));
     await expect.poll(() => page.evaluate(() => window.workspaceReads.length)).toBe(3);
     await page.evaluate(() => window.workspaceReads[2]!.resolve("After mutation"));
     await expect(page.getByLabel("Snapshot")).toHaveText("After mutation");
-    await expect(page.getByRole("button", { name: "Refresh", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Update source", exact: true })).toBeEnabled();
     expect(await page.evaluate(() => window.workspaceReads.length)).toBe(3);
     await page.getByRole("button", { name: "Edit", exact: true }).click();
     await expect(page.getByRole("textbox", { name: "Draft" })).toHaveValue("");
 });
 
 test("route changes discard late responses and queued invalidations from the old loader", async ({ page }) => {
-    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await page.getByRole("button", { name: "Update source", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.workspaceReads.length)).toBe(2);
     await page.getByRole("button", { name: "Mutation completed" }).click();
     await page.getByRole("button", { name: "Change route" }).click();
@@ -44,7 +44,7 @@ test("route changes discard late responses and queued invalidations from the old
 test("refresh failures use the shared outlet without moving loaded content and keep an explicit retry", async ({ page }) => {
     const snapshot = page.getByLabel("Snapshot");
     const before = await snapshot.boundingBox();
-    await page.getByRole("button", { name: "Refresh", exact: true }).click();
+    await page.getByRole("button", { name: "Update source", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.workspaceReads.length)).toBe(2);
     await page.evaluate(() => window.workspaceReads[1]!.reject({ code: "permission_denied" }));
     const outlet = page.locator(".reminder-floating");

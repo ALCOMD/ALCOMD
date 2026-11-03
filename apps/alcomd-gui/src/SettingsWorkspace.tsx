@@ -9,7 +9,7 @@ import { useTranslation } from "./i18n";
 import { UnityRegistryActions } from "./CoreActions";
 import { capabilities, useCapability } from "./capabilities";
 import { DesktopList } from "./DesktopList";
-import { Button, Checkbox, RefreshButton, SegmentedButtons, Select, TextField } from "./Material";
+import { Button, Checkbox, SegmentedButtons, Select, TextField } from "./Material";
 import { UtilityActionDialog } from "./UtilityActionDialog";
 import { UtilityWorkspace } from "./UtilityWorkspace";
 import { LoadingState } from "./LoadingState";
@@ -44,7 +44,7 @@ export function SettingsWorkspace({ client, settingsWriter, onApplied }: Setting
     const [backupDirty, setBackupDirty] = useState(false);
     const saving = useSyncExternalStore(settingsWriter.subscribe, settingsWriter.getSnapshot);
     return (
-        <SettingsResetBoundary><UtilityWorkspace title={t(navigationLabels.settings)} load={load} refreshDisabled={saving.saving}
+        <SettingsResetBoundary><UtilityWorkspace title={t(navigationLabels.settings)} load={load}
             tools={() => saving.failed ? <Button disabled={saving.saving} onClick={() => void settingsWriter.retry()} type="button" variant="text">{t("Retry saving settings")}</Button> : null} navigation={
             <nav className="resource-navigation" aria-label={t("Settings sections")}>
                 <SegmentedButtons label={t("Settings sections")} value={category} onChange={(value) => setCategory(value as SettingsCategory)}
@@ -498,13 +498,14 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
     return (
         <SettingsSection title={t("Unity installations")} actions={
             <div className="action-row">
-                <RefreshButton disabled={!available} label={t("Refresh Unity installations")} onClick={() => setGeneration((current) => current + 1)} refreshing={busy} refreshingLabel={t("Refreshing Unity installations")} />
                 <Button disabled={!manage} onClick={() => setOpen(true)} type="button">{t("Manage installations")}</Button>
             </div>
         }>
             {!available ? <p className="field-hint">{t("Unity installations are unavailable on this connection.")}</p> : (
                 <>
-                    {error === undefined ? null : <RequestReminder error={error} title={t("Unity installations could not be loaded.")} />}
+                    {error === undefined ? null : <RequestReminder error={error} title={t("Unity installations could not be loaded.")}>
+                        <Button disabled={busy} onClick={() => void read()} type="button" variant="text">{t("Retry")}</Button>
+                    </RequestReminder>}
                     <DesktopList columns={[{ key: "version", header: t("Version"), width: "20%" }, { key: "path", header: t("Path"), className: "settings-path" }, { key: "source", header: t("Source"), width: 160 }]} label={t("Unity installations")} minWidth={600} rows={items.map((item) => ({ key: item.installationId, cells: [item.unityVersion, <span title={displayPath(item.executablePath)}>{displayPath(item.executablePath)}</span>, item.sourceKind === "manual" ? t("Manual") : item.sourceKind === "unity_hub" ? t("Unity Hub") : item.sourceKind.replaceAll("_", " ")] }))} />
                     {items.length === 0 && error === undefined ? busy ? <LoadingState title={t("Loading Unity installations…")} /> : <p role="status">{t("No Unity installations registered")}</p> : null}
                     {cursor === undefined ? null : <Button disabled={busy} onClick={() => void read(cursor)} type="button" variant="text">{t("Load more installations")}</Button>}

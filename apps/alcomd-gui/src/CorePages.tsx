@@ -196,7 +196,7 @@ export function HomePage({ client, navigate }: PageProps) {
 
 const projectsViewStorageKey = "alcomd.gui.projects.view";
 
-export function ProjectsPage({ client, navigate, autoDiscover = false }: PageProps & { autoDiscover?: boolean }) {
+export function ProjectsPage({ client, navigate }: PageProps) {
     const { t, locale } = useTranslation();
     const canRegister = useCapability(capabilities.projectsRegistry);
     const canCreate = useCapability(capabilities.templatesCreateProject);
@@ -216,8 +216,7 @@ export function ProjectsPage({ client, navigate, autoDiscover = false }: PagePro
         error?: RpcError;
         loading: boolean;
         projects: ProjectSnapshot[];
-        refreshing: boolean;
-    }>(() => ({ loading: false, projects: initial.kind === "ready" ? initial.value : [], refreshing: false,
+    }>(() => ({ loading: false, projects: initial.kind === "ready" ? initial.value : [],
         error: initial.kind === "error" ? safeError(t, locale, initial.error) : undefined }));
     const [search, setSearch] = useState("");
     const [sort, setSort] = useState("modified");
@@ -256,38 +255,25 @@ export function ProjectsPage({ client, navigate, autoDiscover = false }: PagePro
         if (refreshingList.current) return;
         refreshingList.current = true;
         const request = ++listReadGeneration.current;
-        setState((current) => ({ ...current, error: undefined, refreshing: current.projects.length > 0 }));
         try {
             const projects = await load();
-            if (request === listReadGeneration.current) setState({ loading: false, projects, refreshing: false });
+            if (request === listReadGeneration.current) setState({ loading: false, projects });
         } catch (caught: unknown) {
-            if (request === listReadGeneration.current) setState((current) => ({ ...current, error: safeError(t, locale, caught), loading: false, refreshing: false }));
+            if (request === listReadGeneration.current) {
+                const failure = safeError(t, locale, caught);
+                setState((current) => ({ ...current, error: current.error?.code === failure.code ? current.error : failure, loading: false }));
+            }
         } finally {
             refreshingList.current = false;
-            setState((current) => ({ ...current, refreshing: false }));
         }
     }, [load]);
 
     useEffect(() => {
-        if (!autoDiscover) return;
-        let active = true;
-        let timer: number;
-        const synchronize = async () => {
-            try {
-                if (document.visibilityState === "visible" && !refreshingList.current) {
-                    const request = ++listReadGeneration.current;
-                    const projects = await load();
-                    if (active && request === listReadGeneration.current) setState((current) => ({ ...current, projects, error: undefined }));
-                }
-            } catch {
-                // Keep the current list; an explicit refresh retains the normal error/reconnect path.
-            } finally {
-                if (active) timer = window.setTimeout(() => void synchronize(), 3_000);
-            }
-        };
-        timer = window.setTimeout(() => void synchronize(), 3_000);
-        return () => { active = false; window.clearTimeout(timer); };
-    }, [autoDiscover, load]);
+        const update = () => { if (document.visibilityState === "visible") void refresh(); };
+        const timer = window.setInterval(update, 3_000);
+        document.addEventListener("visibilitychange", update);
+        return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", update); };
+    }, [refresh]);
 
     const projects = [...state.projects]
         .filter((project) => projectName(t, locale, project).toLocaleLowerCase().includes(search.toLocaleLowerCase()))
@@ -350,8 +336,7 @@ export function ProjectsPage({ client, navigate, autoDiscover = false }: PagePro
 
     return (
         <section className="projects-page" aria-busy={state.loading}>
-            <PageHeader className="projects-toolbar" title={t(navigationLabels.projects)}
-                refresh={<RefreshButton label={t("Refresh projects")} onClick={() => void refresh()} refreshing={state.refreshing} refreshingLabel={t("Refreshing projects")} />}>
+            <PageHeader className="projects-toolbar" title={t(navigationLabels.projects)}>
                 <SearchField className="projects-search" label={t("Search projects")} onInput={setSearch} placeholder={t("Search...")} value={search} />
                 <Button onClick={toggleView} type="button" variant="text">
                     <Icon asset={view === "list" ? viewListIcon : viewGridIcon} slot="icon" />
@@ -2070,7 +2055,7 @@ export function ActivityPage({ client, navigate }: PageProps) {
     const { t, locale } = useTranslation();
     const load = useCallback(() => client.activityList(), [client]);
     const [search, setSearch] = useState("");
-    return <UtilityWorkspace title={t(navigationLabels.logs)} navigation={<UtilityNavigation current="/activity" kind="logs" navigate={navigate} />} load={load} showRefresh={false}
+    return <UtilityWorkspace title={t(navigationLabels.logs)} navigation={<UtilityNavigation current="/activity" kind="logs" navigate={navigate} />} load={load}
         tools={() => <SearchField className="logs-search" label={t("Search activity")} value={search} onInput={setSearch} />}>
         {(value) => <ActivityLogItems client={client} initial={value}>
             {(items) => <ActivityLogRows client={client} items={items} search={search} />}

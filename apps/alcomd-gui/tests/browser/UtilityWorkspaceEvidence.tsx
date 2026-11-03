@@ -43,7 +43,7 @@ function Evidence() {
     return <main>
         <Button onClick={() => setRoute("second")}>Change route</Button>
         <UtilityWorkspace title="Evidence" load={load} action={{ label: "Edit", render: () => <Draft /> }}>
-            {(value, refresh) => <><p aria-label="Snapshot">{value}</p><Button onClick={() => { refresh(); refresh(); }}>Mutation completed</Button></>}
+            {(value, refresh) => <><p aria-label="Snapshot">{value}</p><Button onClick={refresh}>Update source</Button><Button onClick={() => { refresh(); refresh(); }}>Mutation completed</Button></>}
         </UtilityWorkspace>
     </main>;
 }

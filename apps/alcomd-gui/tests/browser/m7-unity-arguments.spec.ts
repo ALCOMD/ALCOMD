@@ -138,7 +138,8 @@ test("project inheritance uses Core defaults and explicit empty custom arguments
     await page.getByRole("button", { name: "Save launch arguments", exact: true }).click();
     await expect(projectDialog(page)).toBeHidden();
     expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.projectLaunchConfig.set"))).toEqual([{ method: "unity.projectLaunchConfig.set", params: { projectId: PROJECT_ID, arguments: [], expectedRevision: 0 } }]);
-    await expect(page.getByRole("button", { name: "Refresh", exact: true })).toBeEnabled();
+    await expect(page.locator('.page-header [data-icon-name="refresh"]')).toHaveCount(0);
+    await expect(page.getByText("Arguments", { exact: true }).locator("..")).toContainText("0 arguments");
     await page.getByRole("button", { name: "Edit launch arguments", exact: true }).click();
     await expect(page.getByRole("combobox", { name: "Launch arguments", exact: true })).toContainText("Custom arguments");
     await expect(page.getByText("No additional arguments.", { exact: true })).toBeVisible();

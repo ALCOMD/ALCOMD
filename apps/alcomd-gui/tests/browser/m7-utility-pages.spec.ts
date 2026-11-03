@@ -364,7 +364,7 @@ test("desktop Settings uses labeled language and animation rows with inline Them
     expect(rows[0]!.bottom).toBeLessThanOrEqual(rows[1]!.top);
 });
 
-test("ordinary Settings save before refresh and remain accepted across navigation", async ({ page }) => {
+test("ordinary Settings save without page refresh and remain accepted across navigation", async ({ page }) => {
     await openHarness(page, "/settings");
     await selectSettingsSection(page, "appearance");
     const rememberWindow = page.getByRole("checkbox", { name: "Remember window size and maximized state", exact: true });
@@ -372,9 +372,7 @@ test("ordinary Settings save before refresh and remain accepted across navigatio
     await rememberWindow.check();
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
     await expect(page.locator("html")).not.toHaveAttribute("data-density");
-    const refresh = page.locator(".utility-workspace-toolbar").getByRole("button", { name: "Refresh", exact: true });
-    await expect(refresh).toBeEnabled();
-    await refresh.click();
+    await expect(page.locator('.utility-workspace-toolbar [data-icon-name="refresh"]')).toHaveCount(0);
     await expect(rememberWindow).toBeChecked();
     await navigationItem(page, "Projects").click();
     await expectHeading(page, "Projects");

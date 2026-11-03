@@ -67,13 +67,12 @@ test("H4 Portable UI ignores a late identity read from the prior locale session"
     expect(opens.map((request) => (request.params as { locale: string }).locale)).toEqual(["en-US", "ja-JP"]);
 });
 
-for (const method of ["refresh", "dispatch"] as const) {
+for (const method of ["dispatch"] as const) {
     test(`H4 Portable UI ignores late ${method} completion without clearing the next page's dirty form`, async ({ page }) => {
         await openUi(page, mcp);
         await expect(page.getByRole("heading", { name: "Fixture h4-session-1", exact: true })).toBeVisible();
         await page.evaluate((kind) => window.h4Portable.hold(kind, true), method);
-        if (method === "refresh") await page.locator(".extension-chrome").getByRole("button", { name: "Refresh", exact: true }).click();
-        else await page.locator(".portable-document").getByRole("button", { name: "Refresh", exact: true }).click();
+        await page.locator(".portable-document").getByRole("button", { name: "Refresh", exact: true }).click();
         await pending(page, method);
         await navigate(page, uiRoute(discord));
         await expect(page.getByRole("heading", { name: "Fixture h4-session-2", exact: true })).toBeVisible();
@@ -90,23 +89,34 @@ for (const method of ["refresh", "dispatch"] as const) {
     });
 }
 
-test("H4 Portable UI asks before dirty refresh and only dispatches the current session revision", async ({ page }) => {
+test("H4 Portable UI has no host refresh and dispatches the current session revision", async ({ page }) => {
     await openUi(page);
     await expect(page.getByRole("heading", { name: "Fixture h4-session-1", exact: true })).toBeVisible();
+    await expect(page.locator('.extension-chrome [data-icon-name="refresh"]')).toHaveCount(0);
     await page.getByLabel("Enable presence", { exact: true }).uncheck();
-    await page.locator(".extension-chrome").getByRole("button", { name: "Refresh", exact: true }).click();
-    await expect(page.getByRole("dialog", { name: "Discard unsaved changes?", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Keep editing", exact: true }).click();
-    expect(await requests(page, "extensions.ui.refresh")).toHaveLength(0);
-    await expect(page.getByLabel("Enable presence", { exact: true })).not.toBeChecked();
-    await page.locator(".extension-chrome").getByRole("button", { name: "Refresh", exact: true }).click();
-    await page.getByRole("button", { name: "Discard changes", exact: true }).click();
-    await expect(page.getByLabel("Enable presence", { exact: true })).toBeChecked();
-    expect(await requests(page, "extensions.ui.refresh")).toEqual([{ method: "extensions.ui.refresh", params: { sessionId: "h4-session-1", expectedSnapshotRevision: 1 } }]);
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect.poll(async () => (await requests(page, "extensions.ui.dispatch")).length).toBe(1);
     const dispatch = (await requests(page, "extensions.ui.dispatch"))[0]!.params as ExtensionUiDispatchParams;
-    expect(dispatch).toMatchObject({ sessionId: "h4-session-1", sequence: 1, expectedSnapshotRevision: 2 });
+    expect(dispatch).toMatchObject({ sessionId: "h4-session-1", sequence: 1, expectedSnapshotRevision: 1 });
+    expect(await requests(page, "extensions.ui.refresh")).toHaveLength(0);
+});
+
+test("H4 Portable UI retains dirty reconnect confirmation after removing host refresh", async ({ page }) => {
+    await openUi(page);
+    await expect(page.getByRole("heading", { name: "Fixture h4-session-1", exact: true })).toBeVisible();
+    await page.getByLabel("Enable presence", { exact: true }).uncheck();
+    await page.evaluate(() => window.h4Portable.failNext("dispatch", "revision_conflict"));
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Reconnect", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Reconnect", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Discard unsaved changes?", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Keep editing", exact: true }).click();
+    await expect(page.getByLabel("Enable presence", { exact: true })).not.toBeChecked();
+    await page.getByRole("button", { name: "Reconnect", exact: true }).click();
+    await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Fixture h4-session-2", exact: true })).toBeVisible();
+    await expect(page.getByLabel("Enable presence", { exact: true })).toBeChecked();
+    expect(await requests(page, "extensions.ui.refresh")).toHaveLength(0);
 });
 
 for (const code of ["extension_permission_denied", "extension_quarantined", "extension_ui_document_invalid", "extension_crashed"]) {

@@ -164,7 +164,7 @@ test("repository CAS conflicts do not auto-retry or replace a stale revision", a
     await expectRequestError(page.getByRole("alert"), "revision_conflict");
     expect(await requests(page, "repositories.refresh")).toHaveLength(1);
     await page.locator("md-dialog[open]").getByRole("button", { name: "Refresh list", exact: true }).click();
-    await expect(page.locator(".utility-workspace-actions").getByRole("button", { name: "Refresh", exact: true })).toBeEnabled();
+    await expect(page.locator('.page-header [data-icon-name="refresh"]')).toHaveCount(0);
     await row.getByRole("button", { name: "Refresh repository", exact: true }).click();
     await expect(page.getByRole("status").filter({ hasText: "Repository refreshed." })).toBeVisible();
     await expect(row.getByRole("status")).toHaveCount(0);

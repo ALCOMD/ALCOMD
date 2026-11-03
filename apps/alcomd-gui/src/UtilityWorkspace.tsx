@@ -2,7 +2,7 @@ import { useTranslation } from "./i18n";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { UtilityActionDialog } from "./UtilityActionDialog";
-import { Button, RefreshButton } from "./Material";
+import { Button } from "./Material";
 import { PageHeader } from "./PageHeader";
 import { LoadingState } from "./LoadingState";
 import { useInitialPageRead } from "./PageRead";
@@ -16,8 +16,6 @@ interface UtilityWorkspaceProps<T> {
     title: string;
     navigation?: ReactNode;
     back?: ReactNode;
-    refreshDisabled?: boolean;
-    showRefresh?: boolean;
     load(): Promise<T>;
     children(value: T, refresh: () => void): ReactNode;
     action?: {
@@ -39,8 +37,6 @@ export function UtilityWorkspace<T>({
     title,
     navigation,
     back,
-    refreshDisabled = false,
-    showRefresh = true,
     load,
     children,
     action,
@@ -117,8 +113,7 @@ export function UtilityWorkspace<T>({
 
     return (
         <section className="utility-workspace page-surface--utility" aria-busy={value === undefined && pending} aria-labelledby="route-title">
-            <PageHeader className="utility-workspace-toolbar" leading={back} title={title}
-                refresh={showRefresh ? <RefreshButton disabled={refreshDisabled} onClick={retry} refreshing={pending} /> : undefined}>
+            <PageHeader className="utility-workspace-toolbar" leading={back} title={title}>
                 {navigation}
                 <div className="utility-workspace-actions">
                     {value === undefined ? null : tools?.(value, refresh)}

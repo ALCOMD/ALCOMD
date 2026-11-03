@@ -63,7 +63,7 @@ import {
     PortableUiConsumerError,
     acceptSnapshot
 } from "./portable-ui";
-import { Button, Dialog as MaterialDialog, Icon, NavigationList, NavigationListItem, RefreshButton } from "./Material";
+import { Button, Dialog as MaterialDialog, Icon, NavigationList, NavigationListItem } from "./Material";
 import { guiRpcClient, type GuiRpcClient } from "./rpc";
 import type { SettingsGetResult } from "./core-models";
 import { nativeWindowStateMemory } from "./native-window-state";
@@ -299,7 +299,6 @@ export function App({ client = guiRpcClient }: AppProps) {
                             <Suspense fallback={<LoadingState title={t("Loading page…")} />}>
                                 <PageReadContext.Provider value={visibleNavigation.read}>
                                     <RouteContent
-                                        autoDiscoverProjects={settingsAuthority.current?.settings.projects.autoDiscover ?? false}
                                         client={client}
                                         locale={locale}
                                         navigate={navigate}
@@ -435,7 +434,6 @@ function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient;
 }
 
 function RouteContent({
-    autoDiscoverProjects,
     client,
     locale,
     navigate,
@@ -444,7 +442,6 @@ function RouteContent({
     settingsWriter,
     route
 }: {
-    autoDiscoverProjects: boolean;
     client: GuiRpcClient;
     locale: string;
     navigate(path: string): void;
@@ -461,7 +458,7 @@ function RouteContent({
     }, [route]);
     const props = { client, navigate };
     switch (route.kind) {
-        case "projects": return <CapabilityRoute required={[capabilities.projectsRead]}><ProjectsPage {...props} autoDiscover={autoDiscoverProjects} /></CapabilityRoute>;
+        case "projects": return <CapabilityRoute required={[capabilities.projectsRead]}><ProjectsPage {...props} /></CapabilityRoute>;
         case "project-detail": return <CapabilityRoute required={[capabilities.projectsRead, capabilities.repositoriesRead]}><ProjectDetailPage {...props} projectId={route.projectId} /></CapabilityRoute>;
         case "project-packages": return <CapabilityRoute required={[capabilities.projectsRead, capabilities.repositoriesRead]}><ProjectPackagesPage {...props} projectId={route.projectId} /></CapabilityRoute>;
         case "project-unity": return <CapabilityRoute required={[capabilities.projectsRead, capabilities.unityRead]}><ProjectUnityPage {...props} afterMigrationOpen={route.afterMigrationOpen} projectId={route.projectId} /></CapabilityRoute>;
@@ -529,7 +526,7 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
     const [extension, setExtension] = useState<ExtensionRecord>();
     const [snapshot, setSnapshot] = useState<UiSnapshot>();
     const [error, setError] = useState<RpcError>();
-    const [pendingDiscardAction, setPendingDiscardAction] = useState<"reconnect" | "refresh">();
+    const [pendingReconnect, setPendingReconnect] = useState(false);
     const [busy, setBusy] = useState(false);
     const [dirty, setDirty] = useState(false);
     const [generation, setGeneration] = useState(0);
@@ -550,7 +547,7 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
         setExtension(undefined);
         setSnapshot(undefined);
         setError(undefined);
-        setPendingDiscardAction(undefined);
+        setPendingReconnect(false);
         setBusy(true);
         updateDirty(false);
 
@@ -629,41 +626,6 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
         }
     };
 
-    const performRefresh = async () => {
-        const scope = scopeRef.current;
-        if (scope === undefined || !isCurrent(scope) || scope.busy
-            || snapshot === undefined || scope.sessionId !== snapshot.sessionId) {
-            return;
-        }
-        scope.busy = true;
-        setBusy(true);
-        setError(undefined);
-        try {
-            const result = await scope.client.extensionUiRefresh({
-                sessionId: snapshot.sessionId,
-                expectedSnapshotRevision: snapshot.snapshotRevision
-            });
-            if (!isCurrent(scope)) return;
-            setSnapshot(acceptSnapshot(snapshot, result.snapshot, false));
-            updateDirty(false);
-        } catch (caught: unknown) {
-            handleSessionError(scope, caught);
-        } finally {
-            if (isCurrent(scope)) {
-                scope.busy = false;
-                setBusy(false);
-            }
-        }
-    };
-
-    const refresh = async () => {
-        if (dirty) {
-            setPendingDiscardAction("refresh");
-            return;
-        }
-        await performRefresh();
-    };
-
     const dispatch = async (action: UiAction) => {
         const scope = scopeRef.current;
         if (scope === undefined || !isCurrent(scope) || scope.busy
@@ -707,27 +669,21 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
 
     const reconnect = () => {
         if (dirty) {
-            setPendingDiscardAction("reconnect");
+            setPendingReconnect(true);
             return;
         }
         performReconnect();
     };
 
-    const discardAndContinue = async () => {
-        const action = pendingDiscardAction;
-        setPendingDiscardAction(undefined);
+    const discardAndContinue = () => {
+        setPendingReconnect(false);
         updateDirty(false);
-        if (action === "refresh") {
-            await performRefresh();
-        } else if (action === "reconnect") {
-            performReconnect();
-        }
+        performReconnect();
     };
 
     return (
         <section className="extension-surface" aria-labelledby="extension-ui-title">
-            <PageHeader className="extension-chrome" title={t("Extension UI")} titleId="extension-ui-title" titleRef={headingRef}
-                refresh={<RefreshButton disabled={busy || snapshot === undefined} onClick={() => void refresh()} refreshing={busy && snapshot !== undefined} refreshingLabel={t("Working…")} />} />
+            <PageHeader className="extension-chrome" title={t("Extension UI")} titleId="extension-ui-title" titleRef={headingRef} />
             <ScrollArea className="extension-body">
                 <div className="extension-context">
                     <p className="eyebrow">{t("Extension-provided content")}</p>
@@ -742,10 +698,10 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
                         <Button disabled={busy} onClick={reconnect} type="button" variant="text">{t("Reconnect")}</Button>
                     </RequestReminder>
                 )}
-                <MaterialDialog onClose={() => setPendingDiscardAction(undefined)} open={pendingDiscardAction !== undefined} title={t("Discard unsaved changes?")}>
+                <MaterialDialog onClose={() => setPendingReconnect(false)} open={pendingReconnect} title={t("Discard unsaved changes?")}>
                     <p>{t(DISCARD_MESSAGE)}</p>
                     <div className="dialog-actions">
-                        <Button onClick={() => setPendingDiscardAction(undefined)} type="button" variant="text">{t("Keep editing")}</Button>
+                        <Button onClick={() => setPendingReconnect(false)} type="button" variant="text">{t("Keep editing")}</Button>
                         <Button onClick={() => void discardAndContinue()} type="button">{t("Discard changes")}</Button>
                     </div>
                 </MaterialDialog>

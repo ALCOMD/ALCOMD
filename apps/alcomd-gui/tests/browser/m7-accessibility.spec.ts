@@ -208,9 +208,10 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         const main = page.getByRole("main");
         const heading = main.getByRole("heading", { level: 1, name: title, exact: true });
         await expect(heading).toBeVisible();
-        const refresh = main.locator(".page-header-refresh md-icon-button, .package-workspace-toolbar .package-refresh-action")
+        await expect(main.locator('.page-header [data-icon-name="refresh"]')).toHaveCount(0);
+        const refresh = main.locator(".package-workspace-toolbar .package-refresh-action")
             .filter({ has: page.locator('[data-icon-name="refresh"]') });
-        const hasRefresh = route !== "/about" && route !== "/activity";
+        const hasRefresh = route === "/projects/00000000-0000-4000-8000-000000000101" || route === "/projects/00000000-0000-4000-8000-000000000101/packages";
         await expect(refresh).toHaveCount(hasRefresh ? 1 : 0);
         if (hasRefresh) {
             await expect(refresh.getByRole("button")).toHaveAccessibleName(/^(Refresh|Working)/);

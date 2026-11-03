@@ -256,7 +256,6 @@ md-linear-progress {
 .page-title { min-width: 0; margin: 0; color: var(--primary); font-size: 1.5rem; font-weight: 500; line-height: 1.2; }
 .page-header .page-title { flex: 0 0 auto; margin: 0 4px; white-space: nowrap; }
 .page-header > md-icon-button { flex: 0 0 40px; }
-.page-header-refresh { display: flex; align-items: center; flex: 0 0 auto; }
 .page-header-heading { flex: 1 1 auto; min-width: 0; }
 .page-header-heading .page-title { overflow: hidden; text-overflow: ellipsis; }
 .page-header-subtitle { margin: 0 4px; overflow: hidden; color: var(--on-surface-variant); font-size: 0.78rem; text-overflow: ellipsis; white-space: nowrap; }
