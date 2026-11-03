@@ -21,12 +21,21 @@ const ReminderChannelContext = createContext<{
     remove(source: string): void;
 } | undefined>(undefined);
 const InReminderOutlet = createContext(false);
+const ReminderSourceContext = createContext("shell");
+type ReminderIdentity = object | string;
+const ReminderDismissContext = createContext<{
+    has(source: string, identity: ReminderIdentity): boolean;
+    dismiss(source: string, identity: ReminderIdentity): void;
+} | undefined>(undefined);
 
 /** One outlet; success keeps its visit scope while actionable feedback follows its source. */
 export function ReminderProvider({ children, feedback, visit }: { children: ReactNode; feedback?: ReactNode; visit: number }) {
     const dialogSurface = useSyncExternalStore(subscribeDialogSurface, currentDialogSurface);
     const [notice, setNotice] = useState<{ id: number; message?: string; error?: RpcError; visit: number; origin?: HTMLElement }>();
     const [feedbackBySource, setFeedbackBySource] = useState<ReadonlyMap<string, ReactNode>>(() => new Map());
+    const dismissedObjects = useRef(new WeakSet<object>());
+    const [dismissedVersion, setDismissedVersion] = useState(0);
+    const [dismissedMessages, setDismissedMessages] = useState<ReadonlyMap<string, ReadonlySet<string>>>(() => new Map());
     const [paused, setPaused] = useState(false);
     const sequence = useRef(0);
     const activeVisit = useRef(visit);
@@ -41,8 +50,26 @@ export function ReminderProvider({ children, feedback, visit }: { children: Reac
             next.delete(source);
             return next;
         });
+        setDismissedMessages((current) => {
+            if (!current.has(source)) return current;
+            const next = new Map(current);
+            next.delete(source);
+            return next;
+        });
     }, []);
     const channel = useMemo(() => ({ publish, remove }), [publish, remove]);
+    const dismissals = useMemo(() => ({
+        has: (source: string, identity: ReminderIdentity) => typeof identity === "string"
+            ? dismissedMessages.get(source)?.has(identity) === true : dismissedObjects.current.has(identity),
+        dismiss: (source: string, identity: ReminderIdentity) => {
+            if (typeof identity === "string") {
+                setDismissedMessages((current) => new Map(current).set(source, new Set([...(current.get(source) ?? []), identity])));
+            } else if (!dismissedObjects.current.has(identity)) {
+                dismissedObjects.current.add(identity);
+                setDismissedVersion((version) => version + 1);
+            }
+        }
+    }), [dismissedMessages, dismissedVersion]);
     const success = useCallback((message: string) => {
         if (activeVisit.current !== visit) return;
         setPaused(false);
@@ -74,11 +101,11 @@ export function ReminderProvider({ children, feedback, visit }: { children: Reac
         <div className="reminder-floating" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocusCapture={() => setPaused(true)} onBlurCapture={(event) => {
             if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false);
         }}>
-            <InReminderOutlet.Provider value={true}>{feedback}
-            {Array.from(feedbackBySource, ([source, content]) => <div key={source} className="reminder-source">{content}</div>)}
+            <InReminderOutlet.Provider value={true}><ReminderDismissContext.Provider value={dismissals}>{feedback}
+            {Array.from(feedbackBySource, ([source, content]) => <ReminderSourceContext.Provider key={source} value={source}><div className="reminder-source">{content}</div></ReminderSourceContext.Provider>)}
             {visibleNotice === undefined ? null : visibleNotice.error === undefined
                 ? <Reminder key={visibleNotice.id} onDismiss={clear} tone="success">{visibleNotice.message}</Reminder>
-                : <RequestReminder key={visibleNotice.id} error={visibleNotice.error} message={visibleNotice.message} onDismiss={dismissError} />}</InReminderOutlet.Provider>
+                : <RequestReminder key={visibleNotice.id} error={visibleNotice.error} message={visibleNotice.message} onDismiss={dismissError} />}</ReminderDismissContext.Provider></InReminderOutlet.Provider>
         </div>, dialogSurface ?? document.body
     )}</ReminderChannelContext.Provider></ReminderContext.Provider>;
 }
@@ -90,10 +117,10 @@ export function GlobalReminder({ children, ref }: { children: ReactNode; ref?: R
     const source = useId();
     if (channel === undefined) throw new Error("Missing ReminderProvider");
     useLayoutEffect(() => {
-        if (dialogOpen === false || children === null || children === undefined) return;
+        if (dialogOpen === false || children === null || children === undefined) { channel.remove(source); return; }
         channel.publish(source, ref === undefined ? children : <div ref={ref}>{children}</div>);
-        return () => channel.remove(source);
     }, [channel, children, dialogOpen, ref, source]);
+    useLayoutEffect(() => () => channel.remove(source), [channel, source]);
     return null;
 }
 
@@ -104,16 +131,23 @@ export function useReminder(): ReminderActions {
 }
 
 /** Persistent contextual feedback. Only ReminderProvider's short success message expires. */
-export function Reminder({ actions, children, details, onDismiss, title, tone = "info" }: {
+export function Reminder({ actions, children, details, identity, onDismiss, title, tone = "info" }: {
     actions?: ReactNode;
     children: ReactNode;
     details?: ReactNode;
+    identity?: object;
     onDismiss?(): void;
     title?: string;
     tone?: "success" | "info" | "warning" | "error";
 }) {
     const { t } = useTranslation();
     const [expanded, setExpanded] = useState(false);
+    const floating = useContext(InReminderOutlet);
+    const source = useContext(ReminderSourceContext);
+    const dismissals = useContext(ReminderDismissContext);
+    const notification = identity ?? JSON.stringify([tone, title, typeof children === "string" ? children : undefined]);
+    if (floating && onDismiss === undefined && dismissals?.has(source, notification)) return null;
+    const dismiss = onDismiss ?? (floating ? () => dismissals?.dismiss(source, notification) : undefined);
     return <section className={`reminder reminder--${tone}`} role={tone === "error" || tone === "warning" ? "alert" : "status"} aria-live={tone === "error" || tone === "warning" ? "assertive" : "polite"}>
         <Icon asset={infoIcon} />
         <div className="reminder-body">
@@ -125,7 +159,7 @@ export function Reminder({ actions, children, details, onDismiss, title, tone = 
             </>}
             {actions === undefined ? null : <div className="reminder-actions">{actions}</div>}
         </div>
-        {onDismiss === undefined ? null : <IconButton label={t("Dismiss notification")} onClick={onDismiss} type="button"><Icon asset={closeIcon} /></IconButton>}
+        {dismiss === undefined ? null : <IconButton label={t("Dismiss notification")} onClick={dismiss} type="button"><Icon asset={closeIcon} /></IconButton>}
     </section>;
 }
 
@@ -134,7 +168,7 @@ export function RequestReminder({ children, error, inline = false, message, onDi
     const inOutlet = useContext(InReminderOutlet);
     const safe = normalizeRequestError(error);
     const confirmation = safe.code === "extension_publisher_confirmation_required";
-    const notice = <Reminder key={`${safe.code}:${safe.diagnosticId ?? ""}`} onDismiss={onDismiss} tone={confirmation ? "warning" : "error"} title={title === null ? undefined : title ?? t(confirmation ? "Publisher confirmation required" : "Request failed")} details={<DiagnosticDetails code={safe.code} diagnosticId={safe.diagnosticId} />}>
+    const notice = <Reminder key={`${safe.code}:${safe.diagnosticId ?? ""}`} identity={error} onDismiss={onDismiss} tone={confirmation ? "warning" : "error"} title={title === null ? undefined : title ?? t(confirmation ? "Publisher confirmation required" : "Request failed")} details={<DiagnosticDetails code={safe.code} diagnosticId={safe.diagnosticId} />}>
         <p>{t(message ?? requestErrorMessage(safe.code))}</p>
         {children === undefined ? null : <div className="reminder-context">{children}</div>}
     </Reminder>;

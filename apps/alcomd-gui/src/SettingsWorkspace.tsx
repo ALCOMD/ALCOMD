@@ -45,7 +45,8 @@ export function SettingsWorkspace({ client, settingsWriter, onApplied, onThemePr
     const saving = useSyncExternalStore(settingsWriter.subscribe, settingsWriter.getSnapshot);
     const dirtyChanged = useCallback((value: boolean) => { setDirty(value); onDirtyChange(value); }, [onDirtyChange]);
     return (
-        <UtilityWorkspace title={t(navigationLabels.settings)} load={load} refreshDisabled={dirty || saving.saving} navigation={
+        <UtilityWorkspace title={t(navigationLabels.settings)} load={load} refreshDisabled={dirty || saving.saving}
+            tools={() => saving.failed ? <Button disabled={saving.saving} onClick={() => void settingsWriter.retry()} type="button" variant="text">{t("Retry saving settings")}</Button> : null} navigation={
             <nav className="resource-navigation" aria-label={t("Settings sections")}>
                 <SegmentedButtons label={t("Settings sections")} value={category} onChange={(value) => setCategory(value as SettingsCategory)}
                     options={[

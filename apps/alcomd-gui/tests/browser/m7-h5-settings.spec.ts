@@ -66,6 +66,27 @@ test("H5 autosave retains a definitive cause and safe details across navigation 
     await expect(page.locator("#settings-motion")).toHaveJSProperty("value", "full");
 });
 
+test("closing a save notification retains the failure and an explicit Settings retry reconciles the unknown write", async ({ page }) => {
+    await openSettings(page);
+    await fail(page, "settings.update", "daemon_unavailable", true);
+    await selectMotion(page, "full");
+    const outlet = page.locator(".reminder-floating");
+    await expect(outlet).toContainText("Settings save result is unknown");
+    await outlet.getByRole("button", { name: "Dismiss notification", exact: true }).click();
+    await expect(outlet).toBeHidden();
+    expect(await changes(page)).toHaveLength(1);
+    expect(await page.evaluate(() => window.h5Settings.commits.length)).toBe(1);
+    const theme = page.getByRole("form", { name: "Theme", exact: true });
+    await expect(theme.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+    const reads = await page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "settings.get").length);
+    await page.getByRole("button", { name: "Retry saving settings", exact: true }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-motion", "full");
+    await expect(page.getByRole("button", { name: "Retry saving settings", exact: true })).toHaveCount(0);
+    expect(await changes(page)).toHaveLength(1);
+    expect(await page.evaluate(() => window.h5Settings.commits.length)).toBe(1);
+    expect(await page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "settings.get").length)).toBe(reads + 1);
+});
+
 test("H5 unknown autosave reports uncertainty and checks Core before avoiding a duplicate committed write", async ({ page }) => {
     await openSettings(page);
     await fail(page, "settings.update", "daemon_unavailable", true);

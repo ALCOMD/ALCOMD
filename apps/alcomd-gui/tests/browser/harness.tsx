@@ -30,7 +30,7 @@ import { withH4PortableClient } from "./h4-portable-client";
 import { withH4ManagementClient } from "./h4-management-client";
 import { withH5UtilitiesClient } from "./h5-utilities-client";
 import { withH5SettingsClient } from "./h5-settings-client";
-import { RequestReminderEvidence } from "./RequestReminderEvidence";
+import { ReminderPresentationEvidence, RequestReminderEvidence } from "./RequestReminderEvidence";
 import { BrowserDiagnosticLog } from "./diagnostic-log-client";
 
 type CandidateQuery = (client: Pick<GuiRpcClient, "packageQueryProjectCandidates">, request: Parameters<typeof queryCandidates>[1]) => ReturnType<typeof queryCandidates>;
@@ -1158,7 +1158,7 @@ const utilitiesClient = query.has("h5-utilities") ? withH5UtilitiesClient(browse
 const settingsClient = query.has("h5-settings") ? withH5SettingsClient(utilitiesClient, query) : utilitiesClient;
 ReactDOM.createRoot(root).render(
     <React.StrictMode>
-        {query.has("request-reminder") ? <RequestReminderEvidence locale={query.get("locale") === "zh-CN" ? "zh-CN" : query.get("locale") === "ja-JP" ? "ja-JP" : "en-US"} /> : materialEvidence
+        {query.has("reminder-presentation") ? <ReminderPresentationEvidence mode={query.get("appearance") === "dark" ? "dark" : "light"} /> : query.has("request-reminder") ? <RequestReminderEvidence locale={query.get("locale") === "zh-CN" ? "zh-CN" : query.get("locale") === "ja-JP" ? "ja-JP" : "en-US"} /> : materialEvidence
             ? <MaterialFoundationEvidence />
             : <App client={settingsClient} />}
     </React.StrictMode>

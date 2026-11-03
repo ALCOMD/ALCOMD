@@ -286,9 +286,7 @@ export function App({ client = guiRpcClient }: AppProps) {
                             </RequestReminder>
                         </div> : null}
                         {windowStateError === undefined ? null : <div className="shell-feedback">
-                            <RequestReminder error={windowStateError} title={null} message="Window size and maximized state could not be remembered.">
-                                <Button type="button" variant="text" onClick={() => setWindowStateError(undefined)}>{t("Dismiss notification")}</Button>
-                            </RequestReminder>
+                            <RequestReminder error={windowStateError} title={null} message="Window size and maximized state could not be remembered." onDismiss={() => setWindowStateError(undefined)} />
                         </div>}
             </> : undefined}>
             <DiagnosticLogProvider client={client} enabled={negotiatedCapabilities?.kind === "ready" && negotiatedCapabilities.values.has("diagnostics.log.v1")}>
