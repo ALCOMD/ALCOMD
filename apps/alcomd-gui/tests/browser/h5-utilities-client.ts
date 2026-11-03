@@ -22,6 +22,7 @@ interface H5UtilitiesFixture {
     release(method: string, code?: string): number;
     complete(operationId: string, state: "succeeded" | "failed" | "cancelled", errorCode?: string): void;
     recordActivity(item: ActivityItem): void;
+    recordOperation(item: Operation): void;
 }
 
 declare global { interface Window { h5Utilities: H5UtilitiesFixture } }
@@ -44,6 +45,7 @@ export function withH5UtilitiesClient(base: GuiRpcClient, query: URLSearchParams
     const fixture: H5UtilitiesFixture = {
         requests: [],
         recordActivity(item) { activityEntries.push(structuredClone(item)); },
+        recordOperation(item) { tasks.set(item.operationId, structuredClone(item)); },
         failNext(method, code) { failures.set(method, [...(failures.get(method) ?? []), code]); },
         deny(method, code) { if (code === undefined) denied.delete(method); else denied.set(method, code); },
         hold(method, value) { if (value) held.add(method); else held.delete(method); },
@@ -129,6 +131,14 @@ export function withH5UtilitiesClient(base: GuiRpcClient, query: URLSearchParams
                 : { items: [diagnostic(H5_UNINSTALL_ID)] });
         },
         operationsList(cursor) {
+            if (query.has("h5-tasks-live")) return response("operations.list", cursor === undefined ? {} : { cursor }, () => {
+                const all = [...tasks.values()].filter((item) => cursor === undefined || item.createdAtMs < cursor.createdAtMs
+                    || item.createdAtMs === cursor.createdAtMs && item.operationId < cursor.operationId)
+                    .sort((left, right) => right.createdAtMs - left.createdAtMs || right.operationId.localeCompare(left.operationId));
+                const operations = all.slice(0, 2);
+                const last = operations.at(-1);
+                return { operations, ...(all.length <= 2 || last === undefined ? {} : { nextCursor: { createdAtMs: last.createdAtMs, operationId: last.operationId } }) };
+            });
             return response("operations.list", cursor === undefined ? {} : { cursor }, () => ({ operations: [...tasks.values()] }));
         },
         operationGet(operationId) {

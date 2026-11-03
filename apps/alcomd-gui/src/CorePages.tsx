@@ -3,6 +3,7 @@ import { backupCompressionLabel } from "./backup-compression";
 import { productFamily } from "@alcomd/ui";
 import { guiVersion } from "./build-info";
 import { ActivityLogItems, activityItemKey } from "./ActivityLogItems";
+import { OperationItems } from "./OperationItems";
 import type { SupportedLocale, Translate } from "./i18n-types";
 import type { CandidateCursor, PackageCandidateEvidence, PackageCandidateSummary, RpcError } from "@alcomd/sdk";
 import "./LogsWorkspace.css";
@@ -1943,9 +1944,9 @@ export function BackupDetailPage({ client, navigate, backupId }: PageProps & { b
 export function OperationsPage({ client, navigate }: PageProps) {
     const { t, locale } = useTranslation();
     const load = useCallback(() => client.operationsList(), [client]);
-    return <UtilityWorkspace title={t(navigationLabels.taskCenter)} load={load}>{(value) => <PagedItems initialItems={value.operations} initialCursor={value.nextCursor} loadMore={async (cursor) => { const page = await client.operationsList(cursor); return { items: page.operations, nextCursor: page.nextCursor }; }}>
+    return <UtilityWorkspace title={t(navigationLabels.taskCenter)} load={load}>{(value) => <OperationItems client={client} initial={value}>
         {(operations) => operations.length === 0 ? <RouteState kind="empty" title={t("No operations yet")} /> : <UtilityTable label={t("Tasks")} headers={[t("Task"), t("Status"), t("Updated"), t("Actions")]} rows={operations.map((operation) => ({ key: operation.operationId, cells: [humanize(t, operation.kind), <span className={"state-chip state-chip--" + operation.state}>{humanize(t, operation.state)}</span>, formatTime(t, locale, operation.updatedAtMs), <Button onClick={() => navigate("/operations/" + operation.operationId)} type="button" variant="text">{t("View operation")}</Button>] }))} />}
-    </PagedItems>}</UtilityWorkspace>;
+    </OperationItems>}</UtilityWorkspace>;
 }
 
 export function OperationDetailPage({ client, navigate, operationId }: PageProps & { operationId: string }) {
