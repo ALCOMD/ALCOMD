@@ -14,7 +14,7 @@ Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据�
   `M7-package-candidate-evidence-stop-a.md` 提供完整、来源保真的候选证据。GUI 不解析
   SemVer/Unity，不以可选元数据首页推断来源缺失或可操作性；行内版本、条件更新与批量操作仍
   复用原有单次 Plan、显式 Apply 和一个 Operation，不更改普通 resolver/来源/恢复策略。
-- 当前数据基线为 **State v17**，按 A-035 允许项目显式空参数覆盖。v15 引入独立的 `lastModifiedAtMs`；v16 移除项目观察时间，
+- 当前数据基线为 **State v18**，按 A-035 允许项目显式空参数覆盖。v15 引入独立的 `lastModifiedAtMs`；v16 移除项目观察时间，
   保留安装扫描、writer 检查及迁移专有恢复证据。候选/迁移的权威投影显式白名单排除展示时间，
   保持原冻结字节与 hash；旧未 Apply 的 Unity 迁移计划按合同过期，不重签原审批。
 - 按 A-034 保留 Schema 识别机制，hello 报告成功初始化后的真实存储版本。未发布开发库不
@@ -22,15 +22,15 @@ Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据�
   发布前初始 Schema 整理是独立审计任务，不自动清空数据库、Plan、Operation 或恢复证据。
   本轮 hello 修复只纠正已有 `dataSchema` 事实值与内部构造参数，不改 wire DTO/Schema 形状、
   RPC major 或 capability，属于非破坏性修正；由 dispatcher、兼容形状和实际 SQLite 回归验证。
-- 当前设置合同为 **Config7**，含已批准默认目录、Unity 全局参数及默认关闭的窗口记忆开关；保留已批准的紧凑模式及 `appearance.density` 删除。
+- 当前设置合同为 **Config10**，含默认目录、项目自动发现、备份默认选项、Unity 全局参数及默认关闭的窗口记忆开关；保留已批准的紧凑模式及 `appearance.density` 删除。
   application 持有权限、CAS、字段校验、候选缓存和取消一致性；
-  `ConfigStore` 窄 port 的文件适配器位于 store，负责 strict 16 KiB TOML、Config1–6→7 和
+  `ConfigStore` 窄 port 的文件适配器位于 store，负责 strict 16 KiB TOML、Config1–9→10 和
   原子替换/恢复。普通设置修改即保存，以当前连接内的串行窄 PATCH 协调；失败保留意图、
   显式 Retry 先重读，未知已提交不重复写，换连接停止旧队列，不保留全局 Save/Discard 栏。
-- 主题编辑器直接展开于外观页，保持独立 Save/Cancel、实时预览和冲突三方合并；仅明确保存 sourceColor/mode/scheme。
+- 主题编辑器直接展开于外观页，与其他偏好共用串行自动保存队列；sourceColor/mode/scheme 只提交实际改动字段，保持实时显示、未知结果重读去重和显式失败重试。
   默认种子 `#6CB6FF`、Vibrant、跟随系统及九方案不变，模式下拉顺序为“跟随系统 / 浅色 / 深色”。共享 Material HEX/拾色器/
   Select 使用标准控件及现有设置区块间距；模式、主题色、配色方案按共享设置行纵向排列，模式与九方案均用下拉框，不保留主题专用分段和两列布局。
-  删除主题弹窗和 HCT 三个调节条。Save 后仍可继续编辑，Cancel 还原未保存草稿。
+  删除主题弹窗、HCT 三个调节条及独立 Save/Cancel 和草稿离开确认。HEX 仅接受完整有效颜色，未完成输入失焦回到当前有效值；保存中可继续编辑，后续改动合并排队。
   短请求保持动作名称，不插入瞬时状态行。
 - 字体只引用本机 Noto Sans/Mono 及中日 CJK fallback，不打包或联网加载字体。三语言为
   en-US/zh-CN/ja-JP，使用静态词条和 React 文本插值；外部内容不翻译、不解释 HTML。
@@ -64,7 +64,7 @@ Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据�
   No shell 指应用不构造、调用或通过 shell 执行命令，不拼接/解释 shell 参数；保留标准库与
   OS 的 ENOEXEC/解释器回退语义。spawn 成功仅为 OS 接受，不代表 Hub 已正常运行、厂商
   身份、退出成功或窗口就绪；同步拒绝、后续退出与资源回收分别验证。
-- 正式合同与证据分别见 `specs/config/settings-v7.*`（Config1–6 仅为迁移历史）、
+- 正式合同与证据分别见 `specs/config/settings-v8.*`（Config1–7 仅为迁移历史）、
   `specs/config/theme-controls.proposal.contract.json`、
   `specs/config/unity-hub-location.proposal.contract.json`、
   `specs/storage/state-v15-project-last-modified.contract.json`、
@@ -410,22 +410,22 @@ route 另实现 `confirmation-required`、`operation-running`、`success`、`fai
 高影响写入保持 `Plan -> review daemon ChangeSet/safe risk summary -> explicit Apply -> OperationId -> progress -> terminal
 result`。stale/revision conflict 回到明确 review，不静默重新 Plan；route/window close 不等于取消 Operation。
 
-### Settings Config5 与存储权威
+### Settings Config9 与存储权威
 
-当前活动格式为 `specs/config/settings-v5.md` / `.schema.json`。closed 字段为：
-appearance mode/sourceColor/scheme/motion、locale、packages 三项偏好、可清除的 unity.hubPath 及 paths 两目录覆盖；
+当前活动格式为 `specs/config/settings-v8.md` / `.schema.json`。closed 字段为：
+appearance mode/sourceColor/scheme/motion、locale、packages 三项偏好、unity.hubPath/defaultLaunchArguments、paths 两目录覆盖、window.rememberState、projects.autoDiscover 及 backups 三项默认；
 精确枚举、边界和 null 语义以现有机器合同为准。所有非 nullable PATCH 字段显式 null 整次拒绝，
 sourceColor:null、hubPath:null 和两个目录的 null 分别清除显式覆盖；有效目录由 Core 只读解析后投影。
 
-settings.get/update 要求原 settings.read/manage，返回 Config5、revision、完整归一化设置及
+settings.get/update 要求原 settings.read/manage，返回 Config9、revision、完整归一化设置及
 派生 unityHub/有效目录；revision checked monotonic u64，文件 strict UTF-8/unknown-field fail closed，
 最多 16 KiB，确定性序列化、可恢复原子替换。派生文件状态不推进 revision，保存后状态读取
 失败不把已提交设置伪报为失败。application 只经 ConfigStore port 保存归一化快照，Store
 负责文件格式和恢复，不增加配置数据库表、通用 key/value、GUI 直写或第二套权威。
 
 主题确认、普通即时设置和 Hub 配置共用 UI 串行 CAS；状态读取、能力协商和故障恢复仍通过
-typed client/RPC。当前 hello.configSchema=5。Config1–4 只作为保留原数据的迁移输入，不是当前写入或
-返回格式；旧 density 校验后丢弃，保留原 revision 与其他设置，Config5 不接受该字段。
+typed client/RPC。当前 hello.configSchema=9。Config1–8 只作为保留原数据的迁移输入，不是当前写入或
+返回格式；旧 density 校验后丢弃，保留原 revision 与其他设置，Config9 不接受该字段。自动发现字段及生效时的项目目录修改附加现有 projects.manage；Unity全局参数修改附加unity.manage。
 开发兼容策略按 A-034，发布前另行审计这些历史输入的保留需求。
 
 ### Activity and Diagnostics
@@ -688,8 +688,8 @@ About 确定性修前 0/1；最终 Chromium/同版 Edge 各 3/0，相关分段 6
 两批 GUI 调整已集中完成匹配 release no-bundle 构建，用原 profile 打开 GUI136124；原 Core130768 持续运行，五组公开状态和配置摘要不变。
 原生交互/观感仍待所有者查看，桌面控制继续停用。不改公共合同、持久数据或依赖，不重复完整门禁。
 
-设置页按所有者截图改用同一共享分段组件，当前源码分为“常规 / Unity / 外观 / 通知”，默认常规包含保存位置和软件包选项；“系统信息”区块及其重复入口、专用文案按所有者要求删除，关于/诊断保留既有侧栏入口。
-分组只控制显示，原设置组件保持挂载，保留路径草稿、失焦提交、串行自动保存和主题会话；选择不写入设置，不增加滚动适配、公共合同或持久字段。
+设置页按所有者截图改用同一共享分段组件，当前源码分为“常规 / Unity / 外观 / 通知”，默认常规以“项目”和“备份”两个独立区块分别呈现默认项目保存位置和默认备份保存位置，复用原目录编辑及串行自动保存；重复的软件包区块及其仓库读取、专用文案与样式已按所有者要求移除，包筛选统一由项目软件包管理页提供，既有权威偏好继续保留。“系统信息”区块及其重复入口、专用文案按所有者要求删除，关于/诊断保留既有侧栏入口。
+分组只控制显示，原设置组件保持挂载，保留路径草稿、失焦提交、串行自动保存；主题现与普通偏好共用队列，分组选择不写入设置，不增加滚动适配、公共合同或持久字段。
 最终三组合并定向 21/0（1 worker、0 retries），覆盖分组、三语、键盘、自动保存、目录/软件包及正常桌面布局；未变路径按范围复用本轮此前定向结果。GUI check、metadata/diff 通过。旧用例只改为真实分组入口，保留原数据、权限和失败断言；不重跑完整 Rust/浏览器或远端门禁。
 三组版本的匹配 GUI 构建及原 profile 启动完成，GUI143680/Core130768，五组公开状态和配置摘要保持；测试固定截图路径改用各自运行输出目录，误落外部目录的本批七张夹具图已核对摘要后收回工作区，历史图保留。
 随后按所有者要求追加“通知”分段，内容区留空，不添加说明、开关或后台功能。已有应用内提醒保留，系统通知及其偏好尚未接入；GUI check 和该增量定向 6/0 通过。
@@ -697,6 +697,44 @@ About 确定性修前 0/1；最终 Chromium/同版 Edge 各 3/0，相关分段 6
 内嵌首版 GUI/UI check、metadata/diff 及定向 **60/0**（1 worker、0 retries）通过，并用匹配 GUI132412/Core130768 核对五组公开状态和配置不变；该证据绑定首版，不替代所有者体验确认。
 所有者随后确认改为逐行布局：复用共享设置行，模式/主题色/方案纵向排列，九方案使用现有 Select，删除两列布局和专用样式；操作紧接最后一行，保存和预览逻辑不变。GUI check、metadata/diff 与定向 **35/0** 通过，覆盖真实下拉键盘、九方案预览及保存/取消/失败/冲突、三语和布局。匹配 GUI 构建通过，原 profile 复开 GUI147632，原 Core130768、五组公开状态及配置保持。不改公共合同、权限、持久数据或依赖，不重复完整门禁；最终人工确认仍待所有者。
 所有者进一步要求无图标分段内部左右各 24px，主题模式改为现有 Select；删除 showCheckmark 选项和隐藏宽度测量层，使用 Material 自身等宽布局。所有者确认窄窗允许放不下，包括本次 640px 英文设置导航；仅调整该完整显示断言，正文/路径/按钮可达性及其他窄窗覆盖保留。GUI/UI check、metadata/diff 通过；分批相关结果为 53/1（3 项未执行）及补查 5/0，连续下拉用例改等公开关闭生命周期，产品代码未再改动，原失败保留；详见当前 status，不冒称完整门禁。匹配 GUI 构建及原 profile 复开完成，GUI149844/Core130768，五组公开状态及配置不变，原生观感仍待所有者。
+
+#### 设置卡片恢复默认（2026-11-03）
+
+所有者要求设置卡片标题同行提供“恢复默认”，且每次都先确认，确认后只恢复本卡片。所有者最新明确Unity Hub路径和Unity安装列表两处作为特例，不提供恢复默认，保留原操作。其余六卡片：项目/备份路径恢复nullable系统默认，项目自动添加true；备份fast/保留软件包true/Library false；外观locale与motion恢复system；窗口rememberState/fullscreen均false；主题mode=system/sourceColor=null/scheme=vibrant；全局启动参数恢复null。不新增设置字段/权限/Schema。复用串行CAS，确认期间同字段被外部修改须拒绝，未知结果先重读，不重复写；取消不提交，目录本地草稿仅在确认成功后丢弃，主题按下述统一自动保存。旧主题footer及参数编辑弹窗内重复的恢复入口移至卡片标题，不保留两套入口。
+
+按最新例外取消安装列表重置的提案，不新增RPC或Core登记写入逻辑。只在隔离夹具中验证偏好恢复，不对真实设置执行重置；配套桌面仅构建并打开以供所有者查看。
+
+所有者补充：当前卡片已是默认值时禁用恢复按钮；未保存的目录草稿也参与判断，仍可确认丢弃；主题使用通用队列的当前意图判断。启动参数null与显式空数组保持区别；目录按nullable覆盖判断，不能将显示路径相同误作默认。确认成功并禁用按钮后，焦点返回本卡片标题；取消时仍返回启用的恢复按钮。
+
+#### 主题统一自动保存（2026-11-03）
+
+所有者要求移除主题底部取消/保存特例。主题mode/sourceColor/scheme接入现有SettingsAutosave.change，仅发送实际变更字段；复用普通偏好的串行CAS、连续改动合并、失败保留意图、显式Retry先重读及未知已提交去重。输入完整合法HEX或选择颜色/模式/方案即即时显示并自动保存，非法/部分HEX不写入，失焦还原当前有效颜色。保存中允许继续编辑、切页后队列继续；没有独立草稿会话、主题成功通知或离开确认。失败采用统一设置错误与Retry，不新增主题特例。标题恢复默认仍需确认，仅恢复主题三字段，默认时禁用，成功后返回标题焦点。不改RPC、Config9、State18、权限、默认值或依赖。
+
+#### 项目与备份板块及默认行为（2026-11-03，已批准）
+
+所有者要求“项目”包含默认路径及默认开启的自动发现/添加项目；“备份”包含默认位置、默认压缩等级、默认开启的保留软件包和默认关闭的保留 Library 缓存。板块标题及既有目录项可直接调整；新增行为不得用占位控件冒充完成。
+
+只读审计确认原 Config7 无上述四项偏好；项目没有默认目录扫描，`projects.list` 是纯读取；备份已有 store/fast/maximum 三档压缩，但原 GUI 默认排除 VPM 包，Library 内容选择固定在已冻结 profile。项目所有者已明确选择“批准，按该合同实施”，以下为本轮有效实施合同（A-037）：
+
+- **Config8**：沿用 `paths.projectDirectory` / `paths.backupDirectory`，增加 `projects.autoDiscover: boolean = true`，以及 `backups.compressionMode: store|fast|maximum = fast`、`backups.includeVpmPackages: boolean = true`、`backups.includeLibrary: boolean = false`。四项均为严格非 nullable 字段，PATCH 可独立省略，闭合空容器/非法类型/未知字段整次拒绝。Config1–7 有效迁移保留 revision 及全部既有设置，只补四项默认值；不重置路径、主题或窗口偏好。继续原串行 CAS、16 KiB 文件上限和原子替换。
+- **权限及自动发现**：设置仍需 `settings.manage`；修改自动发现字段，或在开启自动发现时更改项目默认路径，额外要求现有 `projects.manage`。Core/application 内部任务在启动、开启或路径变更后调度，并在 Core 运行期间每30秒合并重扫；不阻塞 ready，不改 `projects.list` 的只读语义，不新增公开方法或权限名。只枚举默认根目录的直接子目录，不递归、不跟随链接/reparse；复用 `ExactRoot` 检查和 Store 文件身份查重。单轮最多4096个目录项、单个扫描任务在途，重复项目不新增记录/事件；无效项目、不可达根目录或扫描上限不删除已登记项目，也不写用户工程。关闭或切换配置后不再接受旧一轮的后续登记。默认目录中的项目若只从列表移除、文件仍在，之后扫描会重新加入；本轮不新增持久排除清单或数据库迁移。
+- **备份默认值与单次覆盖**：压缩继续现有不压缩/快速/最大三档，未另指定的默认等级沿用快速。新备份表单读取权威默认值，允许当次修改；软件包选项使用正向“保留”，映射原 `excludeVpmPackages` 的反值。CLI/其他入口未显式指定时，也由同一 application 用例解析当前默认值；已经显式指定的值优先。接受任务时固定有效目的地及各选项，后续设置更新不得改变已接受操作或同幂等键重放。
+- **兼容性与视图跟进**：本轮是已批准的发布前设置模型增加与备份可选参数增加；RPC major保持1，严格设置消费者须同步完整Config8模型，既有显式备份请求和旧已接受任务继续有效。GUI只在自动发现开启且项目页可见时，每3秒单在途重读既有projects.list，静默保留列表及焦点、切页取消跟进；不扫盘、不登记项目、不把读取变成写操作。
+- **`backups.create` 与内容选择**：新增可省略的 `includeLibrary` 布尔选项；压缩及排除包字段允许省略以使用权威默认值。显式值仍严格校验，null/非法值拒绝。Library=true 包含标准项目根目录 `Library` 的缓存内容，其他临时目录、链接、路径穿越、配额、哈希、取消及一致性门禁继续保持；false 沿用原 Library 缓存排除策略及既有 `LastSceneManagerSetup.txt` 保留规则。同步修订现有 Backup Archive v1 内容选择 profile，保持归档 manifest、已存 BackupRecord 和恢复格式形状，不新增数据库列或另立归档格式。
+- **必要的原任务保留**：原已接受任务没有 Library 字段时按原 false 语义解码；false 选择保留既有幂等 fingerprint，true 必须进入 fingerprint，防止不同内容选择错误重放。该保留用于保护当前数据库中已有任务/恢复证据，不新增旧字段别名、平行解析器或常态旧产品依赖。新增设置、可省略请求字段及此最小兼容处理均已获本次批准。
+- **验证**：Config8 默认、严格形状/迁移、字段级权限与串行保存；临时目录下自动发现开关、路径变更、身份去重、上限及链接拒绝；备份三档压缩、包/Library组合、实际归档/恢复内容、同幂等键冲突及接受后设置变化；定向真实隔离 RPC/重启与 GUI 三语/单次覆盖。只用可丢弃合成 fixture，不为测试运行自动发现或备份用户真实工程。不新增生产依赖，不进入 M8/M11，不提交、推送或启动真实数据环境。
+
+本增量已实施，最终本地完整Workspace598/0（8既有helper ignored）、严格Clippy/fmt/xtask/metadata及前端check/build通过，最终定向Chromium8/0。自动扫描复用发布锁并增加启动恢复调度前的RAII屏障；GUI读取代际保护显式刷新。回归发现的RPC派发栈溢出通过将大型future放到堆上修正，全部原测试保留。所有者另行明确批准为IPC验证临时关闭并原样恢复既有GUI/Core；只用隔离夹具，最终原程序/数据/profile及五组状态、配置hash均已核对恢复，不将本增量指向真实数据。完整证据及未覆盖范围见[验证记录](../testing/m7-project-backup-defaults-20261103.md)，不提升M7/H7人工状态。
+
+#### 备份压缩等级细化（2026-11-03，所有者已选择六档）
+
+所有者反馈现有三档过少。审计确认当前仅覆盖ZIP Stored、Deflate level1和level9；数据库backups表也将compression_mode闭合限制为store/fast/maximum，且有恢复计划外键引用，因此不能只增加GUI选项。
+
+所有者明确以NanaZip截图选择六档：0-仅存储、1-极速压缩、3-快速压缩、5-标准压缩、7-最大压缩、9-极限压缩；以此替换此前未批准的0–9逐级提案。GUI设置默认值及单次备份统一使用上述六档，默认保持1。RPC/CLI/持久枚举保留store/fast/maximum分别表示0/1/9，新增level3、level5、level7三个有效值，不增加同义别名。显式非法值和null仍拒绝，已接受任务固定等级且各等级进入幂等指纹。
+
+Config9仅扩展该枚举；有效Config1–8迁移保留revision及全部偏好，现有fast默认含义不变。State18仅在原子迁移中扩展backups表该CHECK，保留所有行、列、索引、约束、备份ID及恢复计划外键，其他状态不动。同步扩展Archive v1压缩枚举及Schema/profile；保留旧归档和旧已接受任务原有含义、指纹及恢复行为。旧版本程序不承诺读取新增等级的归档，所有严格消费者同步更新，不增加依赖、权限或公开方法。
+
+验证覆盖全部六档的真实归档/恢复、24组等级×包/Library内容组合、非法值、旧配置/数据库/归档保留、接受后设置变化及重放；设置和备份弹窗一致、单次覆盖不回写默认值。所有者在已说明Schema迁移及保留成本后，以截图确定最终档位，按该合同实现并按本轮桌面查看流程集中构建更新，不执行真实工程备份或清理已有数据，不提交或推送。
 
 #### Unity 设置截图对照与补齐（2026-11-03）
 
@@ -736,6 +774,14 @@ GUI 逐项编辑参数，保留空值、空格、引号与反斜线，使用共�
 GUI check/build、保存队列24场景、浏览器65/6与完整受影响两模块补查14/0，测试预期/插槽定位修正没有改产品实现或删除断言。
 六crate Clippy、fmt/xtask/metadata及一次匹配Core/CLI/GUI构建通过；原数据/profile已恢复，Core125676/GUI144536，
 公开状态保持，Config6迁移仅改TOML版本，保留实际切换前revision168。各轮准确范围见status，不冒称完整门禁或M7签收。
+
+#### 持久全屏模式（2026-11-03，所有者已批准，A-039）
+
+所有者要求在“外观→窗口”增加全屏，并明确批准跨启动保留：Config10增加window.fullscreen非nullable bool，默认false；有效Config1–9严格校验后只补false，保留revision及原设置/数据。window PATCH可独立设置rememberState/fullscreen，空容器、null/非法类型/未知字段整次拒绝；沿用settings.read/manage及串行CAS，无新RPC method、State18迁移、权限、依赖或任务变更。
+
+GUI Checkbox和F11共用同一设置意图队列；已接受偏好经现有主窗口私有薄适配器应用，不以可丢弃缓存存储全屏偏好。首次普通尺寸恢复后再应用全屏；全屏切换不再次恢复旧几何，过渡尺寸和全屏尺寸不写入普通窗口缓存。窗口卡片恢复默认先确认，将两项同时置false并退出全屏；默认时禁用。原生应用失败沿用安全提醒并提供不重复写设置的原生Retry。默认关闭不会主动更改其他窗口设置。
+
+本批必要验证包含Config9迁移保留、严格读写/窄PATCH、串行/丢响应/冲突、GUI默认/持久/F11/恢复/三语、原生几何模型与桥接协调；测试真实IPC时暂时关闭原Core/GUI，结束后以配套新版、原数据/profile打开。真实原生全屏交互和三平台表现不以浏览器/模型测试冒充人工验收。
 
 #### 窗口状态记忆：最小设置合同（2026-11-03，所有者已批准）
 
