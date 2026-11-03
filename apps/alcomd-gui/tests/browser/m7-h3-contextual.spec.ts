@@ -18,7 +18,7 @@ test("backup creation leaves one contextual task and refreshes its project histo
     await dialog.getByRole("button", { name: "Create backup", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(page.locator(".operation-follow")).toContainText("running");
-    expect(await requests(page, "backups.create")).toEqual([{ method: "backups.create", params: { projectId, expectedRevision: 2, compressionMode: "fast", excludeVpmPackages: true } }]);
+    expect(await requests(page, "backups.create")).toEqual([{ method: "backups.create", params: { projectId, expectedRevision: 2, compressionMode: "fast", excludeVpmPackages: false, includeLibrary: false } }]);
     expect(await requests(page, "backups.list")).toHaveLength(1);
     await state(page, "succeeded");
     await expect(page.getByRole("table", { name: "Backups", exact: true }).getByRole("row")).toHaveCount(2);

@@ -72,7 +72,7 @@ for (const origin of ["Projects", "Resources", "Logs"]) {
     });
 }
 
-test("Settings waits for Unity and repository options without exposing a partial page", async ({ page }) => {
+test("Settings waits for Unity without loading or waiting for repository options", async ({ page }) => {
     await open(page, "holdSettings=1&holdUnity=1&holdRepositories=1");
     await frames(page);
     await navigation(page, "Settings").click();
@@ -81,11 +81,9 @@ test("Settings waits for Unity and repository options without exposing a partial
     await page.waitForTimeout(100);
     await expect(page.locator(".route-content .projects-page")).toBeVisible();
     await page.evaluate(() => window.dispatchEvent(new Event("test-unity-ready")));
-    await page.waitForTimeout(100);
-    await expect(page.locator(".route-content .settings-workspace")).toHaveCount(0);
-    await page.evaluate(() => window.dispatchEvent(new Event("test-repositories-ready")));
     await expect(page.getByRole("heading", { level: 1, name: "Settings", exact: true })).toBeFocused();
-    await expect(page.locator(".settings-source-options")).toContainText("Example packages");
+    await expect(page.locator("#main-content")).toHaveAttribute("aria-busy", "false");
+    await expect(page.getByRole("region", { name: "Packages", exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => window.pageFrames.every((frame) => frame.populated && frame.opaque && (!frame.settings || frame.unityRows === 1)))).toBe(true);
 });
 
@@ -117,18 +115,19 @@ test("a failed pending read commits a real error with a retry action", async ({ 
     await expect(page.locator("#main-content")).toHaveAttribute("aria-busy", "false");
 });
 
-test("Settings keeps healthy sections and an explicit auxiliary read error", async ({ page }) => {
-    await open(page, "holdRepositories=1");
+test("Settings never requests repository visibility data across its sections", async ({ page }) => {
+    await open(page, "h5-settings=1");
+    await page.evaluate(() => window.h5Settings.failNext("repositories.list", "permission_denied"));
     await navigation(page, "Settings").click();
-    await expect(page.locator("#main-content")).toHaveAttribute("aria-busy", "true");
-    await page.evaluate(() => window.dispatchEvent(new CustomEvent("test-repositories-ready", { detail: "error" })));
     await expect(page.getByRole("heading", { level: 1, name: "Settings", exact: true })).toBeFocused();
     await expect(page.locator('table[aria-label="Unity installations"] tbody tr')).toHaveCount(1);
     await selectSettingsSection(page, "unity");
     await expect(page.getByRole("table", { name: "Unity installations", exact: true }).locator("tbody tr")).toHaveCount(1);
-    await selectSettingsSection(page, "general");
-    await expect(page.getByRole("alert")).toContainText("Repository visibility options could not be loaded.");
-    await expect(page.getByRole("button", { name: "Retry repository options", exact: true })).toBeEnabled();
+    for (const section of ["appearance", "notifications", "general"] as const) await selectSettingsSection(page, section);
+    await expect(page.getByRole("region", { name: "Projects", exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Backups", exact: true })).toBeVisible();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    expect(await page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "repositories.list"))).toEqual([]);
 });
 
 test("quick reads and snapshot refresh never start page animations or replace current rows with loading", async ({ page }) => {

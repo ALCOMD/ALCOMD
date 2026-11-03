@@ -1,8 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const chosenDirectory = "D:\\项目保存位置\\Projects";
-const locations = (page: Page) => page.getByRole("region", { name: "Save locations", exact: true });
-const projectField = (page: Page) => locations(page).getByRole("textbox", { name: "Default project location", exact: true });
+const projectLocation = (page: Page) => page.getByRole("region", { name: "Projects", exact: true });
+const backupLocation = (page: Page) => page.getByRole("region", { name: "Backups", exact: true });
+const projectField = (page: Page) => projectLocation(page).getByRole("textbox", { name: "Default project location", exact: true });
 const writes = (page: Page) => page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "settings.update"));
 const navigation = (page: Page, name: string) => page.locator("#primary-navigation md-list-item").filter({ has: page.locator(".navigation-item-label", { hasText: new RegExp(`^${name}$`) }) });
 
@@ -18,7 +19,7 @@ test("save locations edit only their own setting and Escape discards a draft", a
     await expect.poll(() => writes(page)).toHaveLength(1);
     expect((await writes(page))[0]!.params).toEqual({ expectedRevision: 7, update: { paths: { projectDirectory: chosenDirectory } } });
     await expect(projectField(page)).toBeEditable();
-    await expect(locations(page).getByRole("textbox", { name: "Default backup location", exact: true })).toHaveValue("C:\\Fixture\\Backups");
+    await expect(backupLocation(page).getByRole("textbox", { name: "Default backup location", exact: true })).toHaveValue("C:\\Fixture\\Backups");
     await projectField(page).fill("E:\\Uncommitted");
     await projectField(page).press("Escape");
     await expect(projectField(page)).toHaveValue(chosenDirectory);
@@ -29,7 +30,7 @@ test("save locations edit only their own setting and Escape discards a draft", a
 test("directory selection cancellation preserves the draft without saving", async ({ page }) => {
     await openSettings(page, "cancel-directory=1");
     await projectField(page).fill("D:\\Draft path");
-    await locations(page).getByRole("button", { name: "Select", exact: true }).first().click();
+    await projectLocation(page).getByRole("button", { name: "Select", exact: true }).click();
     await expect(projectField(page)).toBeEditable();
     await expect(projectField(page)).toHaveValue("D:\\Draft path");
     expect(await writes(page)).toHaveLength(0);
@@ -42,10 +43,10 @@ test("long directory drafts stay within the window and composing Enter does not 
     await projectField(page).fill(longPath);
     await projectField(page).evaluate((element) => element.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", isComposing: true, keyCode: 229, bubbles: true, composed: true })));
     expect(await writes(page)).toHaveLength(0);
-    await locations(page).getByRole("button", { name: "Select", exact: true }).first().click();
+    await projectLocation(page).getByRole("button", { name: "Select", exact: true }).click();
     await expect(projectField(page)).toBeEditable();
     expect(await writes(page)).toHaveLength(0);
-    expect(await locations(page).evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    expect(await projectLocation(page).evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.getByRole("heading", { level: 1, name: "Settings", exact: true }).click();
     await expect.poll(() => writes(page)).toHaveLength(1);
@@ -54,8 +55,8 @@ test("long directory drafts stay within the window and composing Enter does not 
 
 test("selected backup folder saves through Core without changing the project location", async ({ page }) => {
     await openSettings(page);
-    await locations(page).getByRole("button", { name: "Select", exact: true }).nth(1).click();
-    await expect(locations(page).getByRole("textbox", { name: "Default backup location", exact: true })).toHaveValue("C:\\Fixture\\Avatar");
+    await backupLocation(page).getByRole("button", { name: "Select", exact: true }).click();
+    await expect(backupLocation(page).getByRole("textbox", { name: "Default backup location", exact: true })).toHaveValue("C:\\Fixture\\Avatar");
     await expect.poll(() => writes(page)).toHaveLength(1);
     expect((await writes(page))[0]!.params).toEqual({ expectedRevision: 7, update: { paths: { backupDirectory: "C:\\Fixture\\Avatar" } } });
     await expect(projectField(page)).toHaveValue("C:\\Fixture");
@@ -68,7 +69,7 @@ test("unknown directory save is reconciled before Retry can write again", async 
     await projectField(page).press("Enter");
     const error = page.locator(".reminder-floating .settings-save-error").getByRole("alert");
     await expect(error).toContainText("Settings save result is unknown");
-    await expect(locations(page).getByRole("alert")).toHaveCount(0);
+    await expect(projectLocation(page).getByRole("alert")).toHaveCount(0);
     await navigation(page, "Projects").click();
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
     await expect(error).toContainText("Settings save result is unknown");

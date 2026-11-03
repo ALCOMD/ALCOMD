@@ -9,6 +9,7 @@ import type {
     BackupCreateResult,
     ExtensionPlan,
     Operation,
+    OfficialSettings,
     PackagePlan,
     PackageSourceSelector,
     ProjectSnapshot,
@@ -30,6 +31,7 @@ import { reviewTemplateCreation, reviewTemplateDerive, reviewTemplateImport, Tem
 import { GlobalReminder, Reminder, RequestReminder, useReminder } from "./Reminder";
 import { displayPath } from "./display-path";
 import { useProjectDirectory } from "./use-project-directory";
+import { backupCompressionOptions } from "./backup-compression";
 import { UnityArgumentsEditor } from "./UnityArgumentsEditor";
 import { ExtensionPermissions, ExtensionPermissionRequests, hasPermissionRequests } from "./ExtensionPermissions";
 
@@ -959,19 +961,29 @@ function TemplateObjectDialog({ client, onChanged, onClose, operations, selectio
 export function BackupCreatePanel({ client, onAccepted, project }: { client: GuiRpcClient; onAccepted(result: BackupCreateResult): void; project: ProjectSnapshot }) {
     const { t } = useTranslation();
     const available = useCapability(capabilities.backupsCreate);
-    const [compression, setCompression] = useState<"store" | "fast" | "maximum">("fast");
-    const [exclude, setExclude] = useState(true);
+    const [options, setOptions] = useState<OfficialSettings["backups"]>();
+    const [readGeneration, setReadGeneration] = useState(0);
     const [feedback, setFeedback] = useState(INITIAL_FEEDBACK);
+    const showLoading = useDelayedPending(options === undefined && feedback.error === undefined);
     const unknown = templateApplyResultUnknown(feedback.error);
     const pending = useRef(false);
     const close = useUtilityDialogClose();
     const isCurrent = useActionScope(client);
     useUtilityDialogBusy(feedback.busy);
+    useEffect(() => {
+        let active = true;
+        setOptions(undefined);
+        setFeedback(INITIAL_FEEDBACK);
+        void client.settingsGet().then((snapshot) => {
+            if (active) setOptions(snapshot.settings.backups);
+        }).catch((caught: unknown) => { if (active) setFeedback({ busy: false, error: safeError(caught) }); });
+        return () => { active = false; };
+    }, [client, readGeneration]);
     const create = async () => {
-        if (!available || pending.current || unknown || project.projectId === undefined || project.revision === undefined) return;
+        if (!available || pending.current || unknown || options === undefined || project.projectId === undefined || project.revision === undefined) return;
         pending.current = true; setFeedback({ busy: true });
         try {
-            const result = await client.backupCreate(project.projectId, project.revision, compression, exclude);
+            const result = await client.backupCreate(project.projectId, project.revision, options.compressionMode, !options.includeVpmPackages, options.includeLibrary);
             if (!isCurrent()) return;
             setFeedback(INITIAL_FEEDBACK); onAccepted(result); close();
         }
@@ -980,8 +992,19 @@ export function BackupCreatePanel({ client, onAccepted, project }: { client: Gui
     };
     return <ActionSection title={t("Create backup")}>
         <p><Translated message="Back up {name}." values={{ name: <strong>{project.rootPath.split(/[\\/]/).filter(Boolean).at(-1) ?? project.projectId}</strong> }} /></p>
-        <Select disabled={feedback.busy || unknown} id="backup-compression" label={t("Compression")} onChange={(next) => setCompression(next as typeof compression)} options={[{ label: t("Store"), value: "store" }, { label: t("Fast"), value: "fast" }, { label: t("Maximum"), value: "maximum" }]} value={compression} /><Checkbox disabled={feedback.busy || unknown} checked={exclude} label={t("Exclude VPM packages")} onChange={setExclude} /><div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} label={unknown ? t("Close") : undefined} /><Button disabled={!available || feedback.busy || unknown || project.revision === undefined} onClick={() => void create()} type="button">{t("Create backup")}</Button></div>
-        {feedback.error === undefined ? null : <RequestReminder error={feedback.error}>{unknown ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</RequestReminder>}
+        {options === undefined ? showLoading ? <LoadingState title={t("Loading backup defaults…")} /> : null : <>
+            <Select disabled={feedback.busy || unknown} id="backup-compression" label={t("Compression")}
+                onChange={(compressionMode) => setOptions({ ...options, compressionMode: compressionMode as typeof options.compressionMode })}
+                options={backupCompressionOptions(t)} value={options.compressionMode} />
+            <Checkbox disabled={feedback.busy || unknown} checked={options.includeVpmPackages} label={t("Keep packages in backups")} onChange={(includeVpmPackages) => setOptions({ ...options, includeVpmPackages })} />
+            <Checkbox disabled={feedback.busy || unknown} checked={options.includeLibrary} label={t("Keep Library cache in backups")} onChange={(includeLibrary) => setOptions({ ...options, includeLibrary })} />
+        </>}
+        <div className="dialog-actions"><UtilityDialogCancel disabled={feedback.busy} label={options !== undefined && unknown ? t("Close") : undefined} />
+            <Button disabled={!available || feedback.busy || unknown || options === undefined || project.revision === undefined} onClick={() => void create()} type="button">{t("Create backup")}</Button>
+        </div>
+        {feedback.error === undefined ? null : options === undefined ? <RequestReminder error={feedback.error} title={t("Backup defaults could not be loaded.")}>
+            <Button onClick={() => setReadGeneration((value) => value + 1)} type="button" variant="text">{t("Retry")}</Button>
+        </RequestReminder> : <RequestReminder error={feedback.error}>{unknown ? t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.") : undefined}</RequestReminder>}
     </ActionSection>;
 }
 

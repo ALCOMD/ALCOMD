@@ -1,4 +1,5 @@
 import { Translated, useTranslation } from "./i18n";
+import { backupCompressionLabel } from "./backup-compression";
 import { productFamily } from "@alcomd/ui";
 import { guiVersion } from "./build-info";
 import { ActivityLogItems, activityItemKey } from "./ActivityLogItems";
@@ -195,7 +196,7 @@ export function HomePage({ client, navigate }: PageProps) {
 
 const projectsViewStorageKey = "alcomd.gui.projects.view";
 
-export function ProjectsPage({ client, navigate }: PageProps) {
+export function ProjectsPage({ client, navigate, autoDiscover = false }: PageProps & { autoDiscover?: boolean }) {
     const { t, locale } = useTranslation();
     const canRegister = useCapability(capabilities.projectsRegistry);
     const canCreate = useCapability(capabilities.templatesCreateProject);
@@ -237,6 +238,9 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     const current = useActionScope(client);
     const addProjectMenuRef = useRef<HTMLElement>(null);
     const createButtonRef = useRef<HTMLElement>(null);
+    const listReadGeneration = useRef(0);
+    const refreshingList = useRef(false);
+    useEffect(() => () => { listReadGeneration.current += 1; }, [client]);
 
     const toggleView = () => {
         const next = view === "list" ? "grid" : "list";
@@ -249,14 +253,41 @@ export function ProjectsPage({ client, navigate }: PageProps) {
     };
 
     const refresh = useCallback(async () => {
+        if (refreshingList.current) return;
+        refreshingList.current = true;
+        const request = ++listReadGeneration.current;
         setState((current) => ({ ...current, error: undefined, refreshing: current.projects.length > 0 }));
         try {
             const projects = await load();
-            setState({ loading: false, projects, refreshing: false });
+            if (request === listReadGeneration.current) setState({ loading: false, projects, refreshing: false });
         } catch (caught: unknown) {
-            setState((current) => ({ ...current, error: safeError(t, locale, caught), loading: false, refreshing: false }));
+            if (request === listReadGeneration.current) setState((current) => ({ ...current, error: safeError(t, locale, caught), loading: false, refreshing: false }));
+        } finally {
+            refreshingList.current = false;
+            setState((current) => ({ ...current, refreshing: false }));
         }
     }, [load]);
+
+    useEffect(() => {
+        if (!autoDiscover) return;
+        let active = true;
+        let timer: number;
+        const synchronize = async () => {
+            try {
+                if (document.visibilityState === "visible" && !refreshingList.current) {
+                    const request = ++listReadGeneration.current;
+                    const projects = await load();
+                    if (active && request === listReadGeneration.current) setState((current) => ({ ...current, projects, error: undefined }));
+                }
+            } catch {
+                // Keep the current list; an explicit refresh retains the normal error/reconnect path.
+            } finally {
+                if (active) timer = window.setTimeout(() => void synchronize(), 3_000);
+            }
+        };
+        timer = window.setTimeout(() => void synchronize(), 3_000);
+        return () => { active = false; window.clearTimeout(timer); };
+    }, [autoDiscover, load]);
 
     const projects = [...state.projects]
         .filter((project) => projectName(t, locale, project).toLocaleLowerCase().includes(search.toLocaleLowerCase()))
@@ -281,6 +312,7 @@ export function ProjectsPage({ client, navigate }: PageProps) {
         });
 
     const updateProject = (project: ProjectSnapshot) => {
+        listReadGeneration.current += 1;
         setState((current) => ({
             ...current,
             projects: current.projects.map((existing) => existing.projectId === project.projectId ? project : existing)
@@ -1220,15 +1252,19 @@ function PackageFilters({ client, settings, repositories, onChanged, filter, set
         <FilterPopover anchorRef={anchorRef} label={t("Package filters")} onClose={() => setOpen(false)} open={open}>
             <fieldset disabled={busy} aria-busy={busy}>
                 <legend>{t("Repositories")}</legend>
+                {snapshot.settings.packages.hiddenRepositoryIds.length < 256 ? null : <Reminder tone="warning">{t("Up to 256 repositories can be hidden. Unhide one before hiding another.")}</Reminder>}
                 {repositories.map((repository) => repository.repositoryId === undefined ? null : <Checkbox
                     checked={!snapshot.settings.packages.hiddenRepositoryIds.includes(repository.repositoryId)}
-                    disabled={busy}
+                    disabled={busy || snapshot.settings.packages.hiddenRepositoryIds.length >= 256 && !snapshot.settings.packages.hiddenRepositoryIds.includes(repository.repositoryId)}
                     key={repository.repositoryId}
                     label={repository.name ?? repository.declaredId ?? sourceText(t, locale, repository)}
                     onChange={(checked) => {
                         const hidden = new Set(snapshot.settings.packages.hiddenRepositoryIds);
                         if (checked) hidden.delete(repository.repositoryId as string);
-                        else hidden.add(repository.repositoryId as string);
+                        else {
+                            if (!hidden.has(repository.repositoryId as string) && hidden.size >= 256) return;
+                            hidden.add(repository.repositoryId as string);
+                        }
                         void save({ hiddenRepositoryIds: [...hidden].sort() });
                     }}
                 />)}
@@ -1913,7 +1949,7 @@ export function BackupDetailPage({ client, navigate, backupId }: PageProps & { b
     const [restoreOpen, setRestoreOpen] = useState(false);
     const load = useCallback(() => client.backupGet(backupId), [client, backupId]);
     return <UtilityWorkspace title={t("Backup detail")} load={load} tools={() => <Button disabled={!canRestore} onClick={() => setRestoreOpen(true)} title={capabilityUnavailableTitle(canRestore, capabilities.backupsRestore, t)} type="button">{t("Restore backup")}</Button>}>
-        {(backup) => <><BackTo label={t("Project backups")} navigate={navigate} path={`/projects/${backup.sourceProjectId}/backups`} /><dl className="detail-grid"><Detail label={t("Source project")} value={backup.sourceProjectId} /><Detail label={t("Created")} value={formatTime(t, locale, backup.createdAtMs)} /><Detail label={t("Archive size")} value={formatBytes(t, locale, backup.archiveBytes)} /><Detail label={t("Format")} value={`v${backup.formatVersion}`} /><Detail label={t("Compression")} value={backup.compressionMode} /><Detail label={t("Integrity")} value={shortHash(backup.archiveSha256)} /></dl>
+        {(backup) => <><BackTo label={t("Project backups")} navigate={navigate} path={`/projects/${backup.sourceProjectId}/backups`} /><dl className="detail-grid"><Detail label={t("Source project")} value={backup.sourceProjectId} /><Detail label={t("Created")} value={formatTime(t, locale, backup.createdAtMs)} /><Detail label={t("Archive size")} value={formatBytes(t, locale, backup.archiveBytes)} /><Detail label={t("Format")} value={`v${backup.formatVersion}`} /><Detail label={t("Compression")} value={backupCompressionLabel(t, backup.compressionMode)} /><Detail label={t("Integrity")} value={shortHash(backup.archiveSha256)} /></dl>
             {restoreOpen ? <RestoreProjectDialog backup={backup} client={client} onClose={() => setRestoreOpen(false)} onCompleted={(projectId) => navigate(`/projects/${projectId}`)} onViewOperation={(operationId) => navigate(`/operations/${operationId}`)} open /> : null}
         </>}
     </UtilityWorkspace>;
@@ -2174,7 +2210,7 @@ export function DiagnosticsPage({ client, navigate }: PageProps) {
     </UtilityWorkspace>;
 }
 
-export function SettingsPage(props: PageProps & { settingsWriter: import("./settings-autosave").SettingsAutosave; onApplied(value: SettingsGetResult): void; onThemePreview(value: import("@alcomd/ui").ThemePreferences | undefined): void; onThemeSession(cancel: (() => void) | undefined): void; onDirtyChange(dirty: boolean): void }) {
+export function SettingsPage(props: PageProps & { settingsWriter: import("./settings-autosave").SettingsAutosave; onApplied(value: SettingsGetResult): void; }) {
     return <SettingsWorkspace {...props} />;
 }
 

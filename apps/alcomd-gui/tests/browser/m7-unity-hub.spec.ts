@@ -324,12 +324,12 @@ test("accepted ordinary updates do not overwrite an in-progress Hub draft", asyn
     await open(page);
     await input(page).fill(path);
     // Model an already-arriving ordinary update without moving focus off the Hub draft.
-    await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true, includeHidden: true }).evaluate((element) => {
+    await page.getByRole("checkbox", { name: "Remember window size and maximized state", exact: true, includeHidden: true }).evaluate((element) => {
         (element as HTMLElement).click();
     });
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
     expect(await value(page)).toBe(path);
-    expect(await page.evaluate(() => window.settingsRequests[0]!.update)).toEqual({ packages: { showPrerelease: true } });
+    expect(await page.evaluate(() => window.settingsRequests[0]!.update)).toEqual({ window: { rememberState: true } });
     await input(page).press("Enter");
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(2);
     expect(await page.evaluate(() => window.settingsRequests[1])).toEqual({ expectedRevision: 8, update: { unity: { hubPath: path } } });
@@ -337,8 +337,8 @@ test("accepted ordinary updates do not overwrite an in-progress Hub draft", asyn
 
 test("a blur commit queues once behind an unrelated ordinary settings write", async ({ page }) => {
     await open(page, "theme-save=hold");
-    await selectSettingsSection(page, "general");
-    await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true }).click();
+    await selectSettingsSection(page, "appearance");
+    await page.getByRole("checkbox", { name: "Remember window size and maximized state", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.settingsRequests.length)).toBe(1);
     await selectSettingsSection(page, "unity");
     await input(page).fill(path);

@@ -731,8 +731,6 @@ md-linear-progress {
 .settings-section-content { display: flex; flex-direction: column; gap: 8px; }
 .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 56px; }
 .settings-row md-filled-select { width: 280px; flex: none; }
-.settings-toggle-row .field-hint { margin: 0 0 0 40px; }
-.settings-source-options { display: flex; flex-direction: column; gap: 4px; }
 .settings-path-row { display: flex; align-items: center; gap: 16px; }
 .settings-path-row md-outlined-text-field { flex: 1; min-width: 0; }
 .settings-path-row > :last-child { flex: none; }
@@ -893,7 +891,7 @@ md-linear-progress {
     width: 100%;
 }
 
-.page-surface--utility :is(.settings-group, .settings-package-options) {
+.page-surface--utility .settings-group {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
@@ -905,7 +903,7 @@ md-linear-progress {
     background: var(--surface);
 }
 
-.page-surface--utility :is(.settings-group, .settings-package-options) legend {
+.page-surface--utility .settings-group legend {
     padding: 0 6px;
     font-size: 1rem;
     font-weight: 600;
@@ -1670,8 +1668,6 @@ code {
 .theme-source-row { display: flex; align-items: center; width: min(280px, 100%); gap: 12px; }
 .theme-source-row .alcomd-color-picker { flex: none; }
 .theme-source-row md-outlined-text-field { flex: 1; min-width: 0; }
-.theme-editor-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 8px; }
-.theme-editor-footer .dialog-actions { margin: 0; }
 
 /* Preserve the desktop canvas; the same navigation becomes an icon rail when it no longer fits. */
 @media (max-width: 1100px) {
@@ -1704,8 +1700,5 @@ code {
     .settings-path-row { flex-wrap: wrap; }
     .settings-path-row md-outlined-text-field { flex-basis: 100%; }
     .settings-row md-filled-select { width: 100%; }
-    .theme-editor-footer { flex-wrap: wrap; }
-    .theme-editor-footer .dialog-actions { width: 100%; flex-direction: row; }
-    .theme-editor-footer .dialog-actions > .alcomd-button--standard { width: auto; flex: 1; }
     .dialog-summary div { grid-template-columns: minmax(0, 1fr); }
 }

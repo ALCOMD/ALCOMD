@@ -25,7 +25,8 @@ for (const locale of ["en-US", "zh-CN", "ja-JP"] as const) {
         const writes = await page.evaluate(() => window.settingsRequests.length);
         const path = page.locator("#settings-projectDirectory");
         const original = await path.elementHandle();
-        const regions = [[t("Save locations"), t("Packages")], [t("Unity Hub Path"), t("Unity installations"), t("Default Unity launch arguments")], [t("Appearance"), t("Window"), t("Theme")], []];
+        const regions = [[t("Projects"), t("Backups")], [t("Unity Hub Path"), t("Unity installations"), t("Default Unity launch arguments")], [t("Appearance"), t("Window"), t("Theme")], []];
+        await expect(page.getByRole("region", { name: t("Packages"), exact: true, includeHidden: true })).toHaveCount(0);
         for (let index = 0; index < labels.length; index++) {
             await navigation.getByRole("button").nth(index).click();
             await expect(navigation.getByRole("button", { pressed: true })).toHaveCount(1);
@@ -59,10 +60,10 @@ test("changing settings groups keeps field instances and serializes edits made b
     await path.fill(value);
     await navigation.getByRole("button", { name: "Unity", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.h5Settings.commits.length)).toBe(1);
-    await navigation.getByRole("button", { name: "General", exact: true }).click();
-    await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true }).click();
+    await navigation.getByRole("button", { name: "Appearance", exact: true }).click();
+    await page.getByRole("checkbox", { name: "Remember window size and maximized state", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.h5Settings.commits.length)).toBe(2);
-    expect(await page.evaluate(() => window.h5Settings.commits.map(item => Object.keys(item.update)))).toEqual([["paths"], ["packages"]]);
+    expect(await page.evaluate(() => window.h5Settings.commits.map(item => Object.keys(item.update)))).toEqual([["paths"], ["window"]]);
     await navigation.getByRole("button", { name: "General", exact: true }).click();
     await expect(path).toHaveValue(value);
     expect(await page.locator("#settings-projectDirectory").evaluate((element, first) => element === first, original)).toBe(true);

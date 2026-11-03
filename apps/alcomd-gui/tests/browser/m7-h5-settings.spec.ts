@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { H5_HIDDEN_ID, H5_HUB_PATH, H5_REPOSITORY_CURSOR, H5_SETTINGS_DIAGNOSTIC, H5_SETTINGS_SECRET, H5_VISIBLE_ID } from "./h5-settings-client";
 
 const hub = (page: Page) => page.getByRole("region", { name: "Unity Hub Path", exact: true });
-const packages = (page: Page) => page.getByRole("region", { name: "Packages", exact: true });
+const filters = (page: Page) => page.getByRole("dialog", { name: "Package filters", exact: true });
 const changes = (page: Page) => page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "settings.update"));
 
 async function openSettings(page: Page, extra = "") {
@@ -18,6 +18,12 @@ async function fail(page: Page, method: string, code: string, afterCommit = fals
 }
 function navigation(page: Page, name: string) {
     return page.locator("#primary-navigation md-list-item").filter({ has: page.locator(".navigation-item-label", { hasText: new RegExp(`^${name}$`) }) });
+}
+
+async function openProject(page: Page) {
+    await navigation(page, "Projects").click();
+    await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Manage", exact: true }).click();
 }
 
 async function selectMotion(page: Page, value: "full") {
@@ -77,7 +83,7 @@ test("closing a save notification retains the failure and an explicit Settings r
     expect(await changes(page)).toHaveLength(1);
     expect(await page.evaluate(() => window.h5Settings.commits.length)).toBe(1);
     const theme = page.getByRole("form", { name: "Theme", exact: true });
-    await expect(theme.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+    await expect(theme.getByRole("button", { name: /^(Save|Cancel)$/ })).toHaveCount(0);
     const reads = await page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "settings.get").length);
     await page.getByRole("button", { name: "Retry saving settings", exact: true }).click();
     await expect(page.locator("html")).toHaveAttribute("data-motion", "full");
@@ -107,15 +113,14 @@ test("H5 unknown autosave reports uncertainty and checks Core before avoiding a 
     expect(await page.evaluate(() => window.h5Settings.commits.length)).toBe(1);
 });
 
-test("H5 Theme unknown reply preserves preview and reconciles to one write with layout-free success feedback", async ({ page }) => {
+test("H5 theme autosave uses shared unknown feedback and reconciles to one write without shifting rows", async ({ page }) => {
     await openSettings(page);
-    await page.locator("#theme-source").getByRole("textbox").fill("#E040A0");
     await fail(page, "settings.update", "internal_error", true);
     const theme = page.getByRole("form", { name: "Theme", exact: true });
     const rowsBefore = await theme.locator(".settings-row").evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().toJSON()));
-    await theme.getByRole("button", { name: "Save", exact: true }).click();
+    await page.locator("#theme-source").getByRole("textbox").fill("#E040A0");
     const feedback = page.locator(".reminder-floating").getByRole("alert");
-    await expect(feedback).toContainText("Theme save result is unknown");
+    await expect(feedback).toContainText("Settings save result is unknown");
     expect(await theme.locator(".settings-row").evaluateAll((rows) => rows.map((row) => row.getBoundingClientRect().toJSON()))).toEqual(rowsBefore);
     await expect(theme.getByRole("alert")).toHaveCount(0);
     const failureBounds = (await page.locator(".reminder-floating").boundingBox())!;
@@ -125,36 +130,27 @@ test("H5 Theme unknown reply preserves preview and reconciles to one write with 
     await expect(feedback).not.toContainText("Check Tasks");
     await expect(page.locator("html")).toHaveAttribute("data-source-color", "#E040A0");
     await expect(page.locator("body")).not.toContainText(H5_SETTINGS_SECRET);
-    await feedback.getByRole("button", { name: "Retry theme save", exact: true }).click();
+    await feedback.getByRole("button", { name: "Retry", exact: true }).click();
     await expect(feedback).toHaveCount(0);
-    await expect(theme.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+    await expect(theme.getByRole("button", { name: /^(Save|Cancel)$/ })).toHaveCount(0);
     expect(await changes(page)).toHaveLength(1);
-    await expect(page.locator(".reminder-floating")).toContainText("Theme saved");
-    await expect(theme).not.toContainText("Theme saved");
-    await expect(page.locator(".reminder-floating")).toHaveCount(1);
-    const successBounds = (await page.locator(".reminder-floating").boundingBox())!;
-    expect(successBounds.x + successBounds.width).toBe(1400 - 24);
-    expect(successBounds.y + successBounds.height).toBe(900 - 24);
-    await page.clock.install();
-    await page.clock.fastForward(6000);
-    await expect(page.locator(".reminder-floating .reminder")).toHaveCount(0);
     await expect(page.locator(".reminder-floating")).toBeHidden();
+    await expect(page.locator("#theme-source").getByRole("textbox")).toHaveValue("#E040A0");
 });
 
-test("dismissing an unknown theme result still reconciles before another Save", async ({ page }) => {
+test("dismissing an unknown theme result still permits shared settings Retry", async ({ page }) => {
     await openSettings(page);
-    await page.locator("#theme-source").getByRole("textbox").fill("#E040A0");
     await fail(page, "settings.update", "internal_error", true);
     const theme = page.getByRole("form", { name: "Theme", exact: true });
-    await theme.getByRole("button", { name: "Save", exact: true }).click();
+    await page.locator("#theme-source").getByRole("textbox").fill("#E040A0");
     const outlet = page.locator(".reminder-floating");
-    await expect(outlet.getByRole("alert")).toContainText("Theme save result is unknown");
+    await expect(outlet.getByRole("alert")).toContainText("Settings save result is unknown");
     await outlet.getByRole("button", { name: "Dismiss notification", exact: true }).click();
     await expect(outlet).toBeHidden();
-    await theme.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(outlet).toContainText("Theme saved");
+    await page.getByRole("button", { name: "Retry saving settings", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Retry saving settings", exact: true })).toHaveCount(0);
     expect(await changes(page)).toHaveLength(1);
-    await expect(theme.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+    await expect(theme.getByRole("button", { name: /^(Save|Cancel)$/ })).toHaveCount(0);
 });
 
 test("H5 Hub unknown reply preserves original picker input and reconciles before any further write", async ({ page }) => {
@@ -212,38 +208,39 @@ test("H5 Auto detect read failure does not claim an unknown save or submit a set
     expect(await page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "unity.installations.refresh"))).toEqual([]);
 });
 
-test("H5 repository options preserve loaded rows and retry the same failed cursor with a readable cause", async ({ page }) => {
+test("Project package sources report a safe read failure and Retry loads every repository page", async ({ page }) => {
     await openSettings(page);
     await fail(page, "repositories.list", "permission_denied");
-    await selectSettingsSection(page, "general");
-    await packages(page).getByRole("button", { name: "Load more repository options", exact: true }).click();
-    const feedback = packages(page).getByRole("alert");
-    await expect(feedback).toContainText("Repository visibility options could not be loaded.");
+    await openProject(page);
+    const feedback = page.getByRole("alert");
     await expect(feedback).toContainText("You do not have permission for this action.");
-    await expect(packages(page).getByRole("checkbox", { name: "Hide H5 hidden source", exact: true })).toBeVisible();
-    await expect(packages(page).getByRole("checkbox", { name: "Hide H5 visible source", exact: true })).toHaveCount(0);
-    await feedback.getByRole("button", { name: "Retry repository options", exact: true }).click();
+    expect(await changes(page)).toEqual([]);
+    await expect(page.getByRole("button", { name: "Filter packages", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Reconnect and retry", exact: true }).click();
     await expect(feedback).toHaveCount(0);
-    await expect(packages(page).getByRole("checkbox", { name: "Hide H5 visible source", exact: true })).toBeVisible();
-    expect(await page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "repositories.list" && "cursor" in request.params).map((request) => request.params))).toEqual([{ cursor: H5_REPOSITORY_CURSOR }, { cursor: H5_REPOSITORY_CURSOR }]);
+    await page.getByRole("button", { name: "Filter packages", exact: true }).click();
+    await expect(filters(page).getByRole("checkbox", { name: "H5 hidden source", exact: true })).toBeVisible();
+    await expect(filters(page).getByRole("checkbox", { name: "H5 visible source", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => window.h5Settings.requests.filter((request) => request.method === "repositories.list").slice(-2).map((request) => request.params))).toEqual([{}, { cursor: H5_REPOSITORY_CURSOR }]);
+    expect(await changes(page)).toEqual([]);
     await expect(page.locator("body")).not.toContainText(H5_SETTINGS_SECRET);
 });
 
-test("H5 repository visibility enforces the complete 256-ID bound while allowing existing entries to be unhidden", async ({ page }) => {
+test("Project package filters enforce the complete 256-ID bound while allowing existing entries to be unhidden", async ({ page }) => {
     await openSettings(page, "h5-hidden-limit=1");
-    await selectSettingsSection(page, "general");
-    await packages(page).getByRole("button", { name: "Load more repository options", exact: true }).click();
-    const hidden = packages(page).getByRole("checkbox", { name: "Hide H5 hidden source", exact: true });
-    const visible = packages(page).getByRole("checkbox", { name: "Hide H5 visible source", exact: true });
-    await expect(hidden).toBeChecked();
+    await openProject(page);
+    await page.getByRole("button", { name: "Filter packages", exact: true }).click();
+    const hidden = filters(page).getByRole("checkbox", { name: "H5 hidden source", exact: true });
+    const visible = filters(page).getByRole("checkbox", { name: "H5 visible source", exact: true });
+    await expect(hidden).not.toBeChecked();
     await expect(hidden).toBeEnabled();
-    await expect(visible).not.toBeChecked();
+    await expect(visible).toBeChecked();
     await expect(visible).toBeDisabled();
-    await expect(packages(page).getByRole("alert")).toContainText("Up to 256 repositories can be hidden.");
-    await hidden.uncheck();
+    await expect(filters(page).getByRole("alert")).toContainText("Up to 256 repositories can be hidden.");
+    await hidden.check();
     await expect.poll(() => changes(page).then((requests) => requests.length)).toBe(1);
     await expect(visible).toBeEnabled();
-    await visible.check();
+    await visible.uncheck();
     await expect.poll(() => changes(page).then((requests) => requests.length)).toBe(2);
     await expect.poll(() => page.evaluate(() => window.h5Settings.commits.length)).toBe(2);
     const lists = await page.evaluate(() => window.h5Settings.commits.map((commit) => commit.update.packages!.hiddenRepositoryIds!));
@@ -253,5 +250,5 @@ test("H5 repository visibility enforces the complete 256-ID bound while allowing
     expect(lists[1]).toEqual([...lists[1]!].sort());
     await expect(hidden).toBeDisabled();
     await expect(visible).toBeEnabled();
-    await expect(visible).toBeChecked();
+    await expect(visible).not.toBeChecked();
 });

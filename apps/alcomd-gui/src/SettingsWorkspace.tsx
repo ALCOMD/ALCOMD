@@ -1,9 +1,8 @@
-import type { ThemePreferences } from "@alcomd/ui";
 import type { RpcError } from "@alcomd/sdk";
 import { use, useCallback, useEffect, useRef, useState, useSyncExternalStore, type FocusEventHandler, type ReactNode, type Ref } from "react";
 import { StorageDirectoryConflictError, UnityHubConflictError, type SettingsAutosave } from "./settings-autosave";
 
-import type { OfficialSettings, RepositorySnapshot, SettingsGetResult, SettingsLocale, UnityInstallation } from "./core-models";
+import type { OfficialSettings, SettingsGetResult, SettingsLocale, UnityInstallation } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
 import { normalizeRequestError } from "./request-errors";
 import { useTranslation } from "./i18n";
@@ -20,32 +19,32 @@ import { ThemeControls, themePreferences } from "./ThemeControls";
 import { GlobalReminder, Reminder, RequestReminder } from "./Reminder";
 import { displayPath } from "./display-path";
 import { UnityDefaultArgumentsSettings } from "./UnityDefaultArgumentsSettings";
+import { backupCompressionOptions } from "./backup-compression";
+import { SettingsResetBoundary, SettingsResetButton, isSettingsResetTrigger, useSettingsResetPending } from "./SettingsResetButton";
 
 interface SettingsWorkspaceProps {
     client: GuiRpcClient;
     settingsWriter: SettingsAutosave;
     onApplied(value: SettingsGetResult): void;
-    onThemePreview(theme: ThemePreferences | undefined): void;
-    onThemeSession(cancel: (() => void) | undefined): void;
-    onDirtyChange(dirty: boolean): void;
 }
 
 type SettingsCategory = "general" | "unity" | "appearance" | "notifications";
 
-export function SettingsWorkspace({ client, settingsWriter, onApplied, onThemePreview, onThemeSession, onDirtyChange }: SettingsWorkspaceProps) {
+export function SettingsWorkspace({ client, settingsWriter, onApplied }: SettingsWorkspaceProps) {
     const { t } = useTranslation();
     const load = useCallback(() => client.settingsGet(), [client]);
     const canReadUnity = useCapability(capabilities.unityRead);
-    const canReadRepositories = useCapability(capabilities.repositoriesRead);
+    const canManageProjects = useCapability(capabilities.projectsRegistry);
     const initialUnity = usePageReadPromise("settings.unity", () => canReadUnity ? client.unityInstallationsList() : Promise.resolve(undefined));
-    const initialRepositories = usePageReadPromise("settings.repositories", () => canReadRepositories ? client.repositoriesList() : Promise.resolve(undefined));
-    const [dirty, setDirty] = useState(false);
     const [category, setCategory] = useState<SettingsCategory>("general");
     const [unityGeneration, setUnityGeneration] = useState(0);
+    const [projectReset, setProjectReset] = useState(0);
+    const [backupReset, setBackupReset] = useState(0);
+    const [projectDirty, setProjectDirty] = useState(false);
+    const [backupDirty, setBackupDirty] = useState(false);
     const saving = useSyncExternalStore(settingsWriter.subscribe, settingsWriter.getSnapshot);
-    const dirtyChanged = useCallback((value: boolean) => { setDirty(value); onDirtyChange(value); }, [onDirtyChange]);
     return (
-        <UtilityWorkspace title={t(navigationLabels.settings)} load={load} refreshDisabled={dirty || saving.saving}
+        <SettingsResetBoundary><UtilityWorkspace title={t(navigationLabels.settings)} load={load} refreshDisabled={saving.saving}
             tools={() => saving.failed ? <Button disabled={saving.saving} onClick={() => void settingsWriter.retry()} type="button" variant="text">{t("Retry saving settings")}</Button> : null} navigation={
             <nav className="resource-navigation" aria-label={t("Settings sections")}>
                 <SegmentedButtons label={t("Settings sections")} value={category} onChange={(value) => setCategory(value as SettingsCategory)}
@@ -57,22 +56,47 @@ export function SettingsWorkspace({ client, settingsWriter, onApplied, onThemePr
                     ]} />
             </nav>
         }>
-            {(snapshot) => (
+            {(snapshot) => {
+                const settings = saving.settings ?? snapshot.settings;
+                const accepted = saving.accepted ?? snapshot;
+                return (
                 <div className="settings-workspace">
-                    <SettingsSection title={t("Save locations")} hidden={category !== "general"}>
-                        <StorageDirectoryRow client={client} settingsWriter={settingsWriter} snapshot={snapshot} directoryKey="projectDirectory" label={t("Default project location")} />
-                        <StorageDirectoryRow client={client} settingsWriter={settingsWriter} snapshot={snapshot} directoryKey="backupDirectory" label={t("Default backup location")} />
+                    <SettingsSection title={t("Projects")} hidden={category !== "general"} actions={<SettingsResetButton title={t("Projects")} disabled={!canManageProjects || saving.saving || saving.failed || (!projectDirty && settings.paths.projectDirectory === null && settings.projects.autoDiscover)} onRestore={async () => {
+                        await settingsWriter.restoreDefaults({ paths: { projectDirectory: null }, projects: { autoDiscover: true } },
+                            { paths: { projectDirectory: accepted.settings.paths.projectDirectory }, projects: { autoDiscover: accepted.settings.projects.autoDiscover } });
+                        setProjectReset((value) => value + 1);
+                    }} />}>
+                        <StorageDirectoryRow key={projectReset} client={client} settingsWriter={settingsWriter} snapshot={snapshot} directoryKey="projectDirectory" label={t("Default project location")} onDirtyChange={setProjectDirty} />
+                        <Checkbox checked={settings.projects.autoDiscover} disabled={!canManageProjects} label={t("Automatically add projects from the default location")}
+                            onChange={(autoDiscover) => settingsWriter.change({ projects: { autoDiscover } })} />
+                    </SettingsSection>
+                    <SettingsSection title={t("Backups")} hidden={category !== "general"} actions={<SettingsResetButton title={t("Backups")} disabled={saving.saving || saving.failed || (!backupDirty && settings.paths.backupDirectory === null && settings.backups.compressionMode === "fast" && settings.backups.includeVpmPackages && !settings.backups.includeLibrary)} onRestore={async () => {
+                        await settingsWriter.restoreDefaults({ paths: { backupDirectory: null }, backups: { compressionMode: "fast", includeVpmPackages: true, includeLibrary: false } },
+                            { paths: { backupDirectory: accepted.settings.paths.backupDirectory }, backups: { ...accepted.settings.backups } });
+                        setBackupReset((value) => value + 1);
+                    }} />}>
+                        <StorageDirectoryRow key={backupReset} client={client} settingsWriter={settingsWriter} snapshot={snapshot} directoryKey="backupDirectory" label={t("Default backup location")} onDirtyChange={setBackupDirty} />
+                        <div className="settings-row">
+                            <label htmlFor="settings-backup-compression">{t("Default compression")}</label>
+                            <Select id="settings-backup-compression" label={t("Default compression")} value={settings.backups.compressionMode}
+                                onChange={(compressionMode) => settingsWriter.change({ backups: { compressionMode: compressionMode as OfficialSettings["backups"]["compressionMode"] } })}
+                                options={backupCompressionOptions(t)} />
+                        </div>
+                        <Checkbox checked={settings.backups.includeVpmPackages} label={t("Keep packages by default")}
+                            onChange={(includeVpmPackages) => settingsWriter.change({ backups: { includeVpmPackages } })} />
+                        <Checkbox checked={settings.backups.includeLibrary} label={t("Keep Library cache by default")}
+                            onChange={(includeLibrary) => settingsWriter.change({ backups: { includeLibrary } })} />
                     </SettingsSection>
                     <div className="settings-unity-group" hidden={category !== "unity"}>
                         <UnityHubSettingsSection client={client} settingsWriter={settingsWriter} snapshot={snapshot} onInstallationsChanged={() => setUnityGeneration((value) => value + 1)} />
                         <UnitySettingsSection client={client} initialRead={initialUnity} externalGeneration={unityGeneration} />
                         <UnityDefaultArgumentsSettings settingsWriter={settingsWriter} snapshot={snapshot} />
                     </div>
-                    <SettingsEditor category={category} client={client} settingsWriter={settingsWriter} snapshot={snapshot} onThemePreview={onThemePreview} onThemeSession={onThemeSession}
-                        initialRepositories={initialRepositories} onApplied={onApplied} onDirtyChange={dirtyChanged} />
+                    <SettingsEditor category={category} settingsWriter={settingsWriter} snapshot={snapshot} onApplied={onApplied} />
                 </div>
-            )}
-        </UtilityWorkspace>
+                );
+            }}
+        </UtilityWorkspace></SettingsResetBoundary>
     );
 }
 
@@ -81,7 +105,7 @@ function SettingsSection({ title, children, actions, sectionRef, onBlur, hidden 
 }) {
     return (
         <section className="settings-section" aria-label={title} ref={sectionRef} onBlur={onBlur} hidden={hidden}>
-            <header className="settings-section-heading"><h2>{title}</h2>{actions}</header>
+            <header className="settings-section-heading"><h2 tabIndex={-1}>{title}</h2>{actions}</header>
             <div className="settings-section-content">{children}</div>
         </section>
     );
@@ -91,11 +115,12 @@ type UnityHubIntent = { path: string | null; previousPath: string | null; origin
 type UnityHubAction = { kind: "select" | "auto" | "retry" } | { kind: "edit"; trigger: "enter" | "blur" };
 type SettingsFeedback = { message: string; cause?: RpcError };
 
-function StorageDirectoryRow({ client, settingsWriter, snapshot, directoryKey, label }: {
+function StorageDirectoryRow({ client, settingsWriter, snapshot, directoryKey, label, onDirtyChange }: {
     client: GuiRpcClient; settingsWriter: SettingsAutosave; snapshot: SettingsGetResult;
-    directoryKey: keyof OfficialSettings["paths"]; label: string;
+    directoryKey: keyof OfficialSettings["paths"]; label: string; onDirtyChange(dirty: boolean): void;
 }) {
     const { t } = useTranslation();
+    const resetting = useSettingsResetPending();
     const state = useSyncExternalStore(settingsWriter.subscribe, settingsWriter.getSnapshot);
     const accepted = state.accepted ?? snapshot;
     const acceptedRef = useRef(accepted);
@@ -125,6 +150,7 @@ function StorageDirectoryRow({ client, settingsWriter, snapshot, directoryKey, l
             reset(accepted); setPending(undefined); setError(undefined); failedEdit.current = undefined;
         } else if (!edit.current.dirty) reset(accepted, state.failed);
     }, [accepted, state.failed, state.settings]);
+    useEffect(() => { onDirtyChange(edit.current.dirty); }, [draft, accepted, state.failed, state.settings, onDirtyChange]);
     const save = async (action: "select" | "edit" | "retry", blur = false) => {
         if (guard.current || (state.saving && action !== "edit")) return;
         if (action === "edit" && (!edit.current.dirty || blur && edit.current.value === failedEdit.current)) return;
@@ -160,6 +186,7 @@ function StorageDirectoryRow({ client, settingsWriter, snapshot, directoryKey, l
         }
     };
     return <div className="settings-directory" onBlur={(event) => {
+        if (resetting?.current || isSettingsResetTrigger(event.relatedTarget)) return;
         let target: EventTarget | null = event.relatedTarget;
         while (target instanceof Node) {
             if (event.currentTarget.contains(target) || feedbackRef.current?.contains(target)) return;
@@ -197,6 +224,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
     client: GuiRpcClient; settingsWriter: SettingsAutosave; snapshot: SettingsGetResult; onInstallationsChanged(): void;
 }) {
     const { t } = useTranslation();
+    const resetting = useSettingsResetPending();
     const state = useSyncExternalStore(settingsWriter.subscribe, settingsWriter.getSnapshot);
     const accepted = state.accepted ?? snapshot;
     const acceptedRef = useRef(accepted);
@@ -379,6 +407,7 @@ function UnityHubSettingsSection({ client, settingsWriter, snapshot, onInstallat
                     widthLabels={[t("Open Unity Hub"), t("Download Unity Hub")]} onClick={() => void openHub()} type="button">{openLabel}</Button>
             </div>}
             onBlur={(event) => {
+                if (resetting?.current || isSettingsResetTrigger(event.relatedTarget)) return;
                 let target: EventTarget | null = event.relatedTarget;
                 while (target instanceof Node) {
                     if (event.currentTarget.contains(target) || feedbackRef.current?.contains(target)) return;
@@ -488,85 +517,21 @@ function UnitySettingsSection({ client, initialRead, externalGeneration }: { cli
     );
 }
 
-function SettingsEditor({ category, client, settingsWriter, snapshot, initialRepositories, onApplied, onThemePreview, onThemeSession, onDirtyChange }: SettingsWorkspaceProps & { category: SettingsCategory; snapshot: SettingsGetResult; initialRepositories: Promise<PageReadResult<Awaited<ReturnType<GuiRpcClient["repositoriesList"]>> | undefined>> }) {
+function SettingsEditor({ category, settingsWriter, snapshot, onApplied }: Omit<SettingsWorkspaceProps, "client"> & { category: SettingsCategory; snapshot: SettingsGetResult }) {
     const { t } = useTranslation();
-    const initial = use(initialRepositories);
     const saving = useSyncExternalStore(settingsWriter.subscribe, settingsWriter.getSnapshot);
     const baseline = saving.accepted ?? snapshot;
     const settings = saving.settings ?? snapshot.settings;
-    const [themeDirty, setThemeDirty] = useState(false);
     useEffect(() => {
         settingsWriter.seed(snapshot);
         onApplied(snapshot);
     }, [settingsWriter, snapshot, onApplied]);
-    const [repositories, setRepositories] = useState<RepositorySnapshot[]>(initial.kind === "ready" ? initial.value?.repositories ?? [] : []);
-    const [repositoryCursor, setRepositoryCursor] = useState<Parameters<GuiRpcClient["repositoriesList"]>[0]>(initial.kind === "ready" ? initial.value?.nextCursor : undefined);
-    const [repositoryError, setRepositoryError] = useState<RpcError | undefined>(initial.kind === "error" ? normalizeRequestError(initial.error) : undefined);
-    const [repositoryBusy, setRepositoryBusy] = useState(false);
-    const repositoryBusyRef = useRef(false);
-    const repositoryRequestRef = useRef(0);
-    const canReadRepositories = useCapability(capabilities.repositoriesRead);
-    useEffect(() => {
-        onDirtyChange(themeDirty);
-        return () => onDirtyChange(false);
-    }, [themeDirty, onDirtyChange]);
 
-    const readRepositories = useCallback(async (cursor?: Parameters<GuiRpcClient["repositoriesList"]>[0]) => {
-        if (repositoryBusyRef.current) return;
-        const request = ++repositoryRequestRef.current;
-        repositoryBusyRef.current = true;
-        setRepositoryBusy(true);
-        setRepositoryError(undefined);
-        try {
-            const page = await client.repositoriesList(cursor);
-            if (request !== repositoryRequestRef.current) return;
-            setRepositories((current) => cursor === undefined ? page.repositories : [...current, ...page.repositories]);
-            setRepositoryCursor(page.nextCursor);
-        } catch (caught: unknown) {
-            if (request === repositoryRequestRef.current) setRepositoryError(normalizeRequestError(caught));
-        } finally {
-            if (request === repositoryRequestRef.current) { repositoryBusyRef.current = false; setRepositoryBusy(false); }
-        }
-    }, [client]);
 
-    useEffect(() => {
-        return () => { repositoryRequestRef.current += 1; repositoryBusyRef.current = false; };
-    }, [client]);
-
-    const packages = <K extends keyof OfficialSettings["packages"]>(key: K, value: OfficialSettings["packages"][K]) => {
-        settingsWriter.change({ packages: { [key]: value } });
-    };
     return (
-        <div className="settings-editor" hidden={category !== "general" && category !== "appearance"}>
-            <SettingsSection title={t("Packages")} hidden={category !== "general"}>
-                <div className="settings-toggle-row">
-                    <Checkbox checked={settings.packages.showPrerelease} label={t("Show prerelease package versions")} onChange={(checked) => packages("showPrerelease", checked)} />
-                    <p className="field-hint">{t("Include prerelease versions in package lists.")}</p>
-                </div>
-                <div className="settings-toggle-row">
-                    <Checkbox checked={settings.packages.hideLocalUserPackages} label={t("Hide local User Packages")} onChange={(checked) => packages("hideLocalUserPackages", checked)} />
-                </div>
-                <div className="settings-source-options">
-                    {settings.packages.hiddenRepositoryIds.length < 256 ? null : <Reminder tone="warning">{t("Up to 256 repositories can be hidden. Unhide one before hiding another.")}</Reminder>}
-                    {repositories.map((repository) => repository.repositoryId === undefined ? null : (
-                        <Checkbox key={repository.repositoryId} checked={settings.packages.hiddenRepositoryIds.includes(repository.repositoryId)}
-                            disabled={settings.packages.hiddenRepositoryIds.length >= 256 && !settings.packages.hiddenRepositoryIds.includes(repository.repositoryId)}
-                            label={t("Hide {name}", { name: repository.name ?? repository.declaredId ?? repository.repositoryId })}
-                            onChange={(checked) => {
-                                const hidden = new Set((settingsWriter.getSnapshot().settings ?? settings).packages.hiddenRepositoryIds);
-                                if (checked) {
-                                    if (!hidden.has(repository.repositoryId as string) && hidden.size >= 256) return;
-                                    hidden.add(repository.repositoryId as string);
-                                }
-                                else hidden.delete(repository.repositoryId as string);
-                                packages("hiddenRepositoryIds", [...hidden].sort());
-                            }} />
-                    ))}
-                    {repositoryError === undefined ? null : <RequestReminder error={repositoryError} title={t("Repository visibility options could not be loaded.")}><Button disabled={repositoryBusy} onClick={() => void readRepositories(repositoryCursor)} type="button" variant="text">{t("Retry repository options")}</Button></RequestReminder>}
-                    {repositoryCursor === undefined ? null : <Button disabled={repositoryBusy} onClick={() => void readRepositories(repositoryCursor)} type="button" variant="text">{t("Load more repository options")}</Button>}
-                </div>
-            </SettingsSection>
-            <SettingsSection title={t("Appearance")} hidden={category !== "appearance"}>
+        <div className="settings-editor" hidden={category !== "appearance"}>
+            <SettingsSection title={t("Appearance")} hidden={category !== "appearance"} actions={<SettingsResetButton title={t("Appearance")} disabled={saving.saving || saving.failed || (settings.locale === "system" && settings.appearance.motion === "system")} onRestore={() => settingsWriter.restoreDefaults(
+                { locale: "system", appearance: { motion: "system" } }, { locale: baseline.settings.locale, appearance: { motion: baseline.settings.appearance.motion } })} />}>
                 <div className="settings-row">
                     <label htmlFor="settings-locale">{t("Language")}</label>
                     <Select id="settings-locale" label={t("Language")} onChange={(value) => settingsWriter.change({ locale: value as SettingsLocale })}
@@ -579,13 +544,15 @@ function SettingsEditor({ category, client, settingsWriter, snapshot, initialRep
                         options={[{ label: t("System"), value: "system" }, { label: t("Enable animations"), value: "full" }, { label: t("Disable animations"), value: "reduced" }]} />
                 </div>
             </SettingsSection>
-            <SettingsSection title={t("Window")} hidden={category !== "appearance"}>
+            <SettingsSection title={t("Window")} hidden={category !== "appearance"} actions={<SettingsResetButton title={t("Window")} disabled={saving.saving || saving.failed || (!settings.window.rememberState && !settings.window.fullscreen)} onRestore={() => settingsWriter.restoreDefaults(
+                { window: { rememberState: false, fullscreen: false } }, { window: { ...baseline.settings.window } })} />}>
+                <Checkbox checked={settings.window.fullscreen} label={t("Full screen mode (F11)")}
+                    onChange={(fullscreen) => settingsWriter.change({ window: { fullscreen } })} />
                 <Checkbox checked={settings.window.rememberState} label={t("Remember window size and maximized state")}
                     onChange={(rememberState) => settingsWriter.change({ window: { rememberState } })} />
             </SettingsSection>
-            <SettingsSection title={t("Theme")} hidden={category !== "appearance"}>
-                <ThemeControls value={themePreferences(baseline)} disabled={saving.saving || saving.failed} onPreview={onThemePreview} onSession={onThemeSession} onDirtyChange={setThemeDirty}
-                    onSave={(theme) => settingsWriter.saveTheme(theme)} onReload={() => settingsWriter.reload()} />
+            <SettingsSection title={t("Theme")} hidden={category !== "appearance"} actions={<SettingsResetButton title={t("Theme")} disabled={saving.saving || saving.failed || (settings.appearance.mode === "system" && settings.appearance.sourceColor === null && settings.appearance.scheme === "vibrant")} onRestore={() => settingsWriter.restoreDefaults({ appearance: { mode: "system", sourceColor: null, scheme: "vibrant" } }, { appearance: themePreferences(baseline) })} />}>
+                <ThemeControls value={settings.appearance} onChange={(appearance) => settingsWriter.change({ appearance })} />
             </SettingsSection>
         </div>
     );

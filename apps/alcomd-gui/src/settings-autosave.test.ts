@@ -130,10 +130,11 @@ async function idle(writer: SettingsAutosave) {
 {
     const fixture = model();
     fixture.writer.change({ appearance: { motion: "full" } });
-    await fixture.writer.saveTheme({ mode: "dark", scheme: "neutral", sourceColor: "#6CB6FF" });
+    await idle(fixture.writer);
+    fixture.writer.change({ appearance: { mode: "dark", scheme: "neutral", sourceColor: "#6CB6FF" } });
     await idle(fixture.writer);
     equal(fixture.requests.map((request) => request.expectedRevision), [7, 8], "theme and ordinary writes share one order");
-    equal(Object.keys(fixture.requests[1]!.update.appearance!).sort(), ["mode", "scheme", "sourceColor"], "explicit theme writes only its fields");
+    equal(Object.keys(fixture.requests[1]!.update.appearance!).sort(), ["mode", "scheme", "sourceColor"], "theme autosave writes only its changed fields");
     equal(fixture.current().settings.appearance.motion, "full", "theme preserves ordinary saved values");
     fixture.writer.seed(initial);
     equal(fixture.writer.getSnapshot().accepted!.revision, 9, "late snapshots cannot regress authority");
@@ -161,21 +162,22 @@ async function idle(writer: SettingsAutosave) {
     const release = deferred();
     const original = fixture.client.settingsUpdate;
     fixture.client.settingsUpdate = async (...arguments_) => { started.resolve(); await release.promise; return original(...arguments_); };
-    const theme = fixture.writer.saveTheme({ mode: "dark", sourceColor: null, scheme: "neutral" }).then(() => false, () => true);
-    fixture.writer.change({ appearance: { motion: "full" } });
+    fixture.writer.change({ appearance: { mode: "dark", scheme: "neutral" } });
     await started.promise;
+    fixture.writer.change({ appearance: { motion: "full", sourceColor: "#112233" } });
     fixture.writer.stop();
     release.resolve();
-    assert(await theme, "stopped theme task must reject after draining an in-flight ordinary save");
-    equal(fixture.requests.length, 1, "stop must prevent the new theme RPC across the await boundary");
-    equal(fixture.applied.length, 0, "stopped theme task must not apply old UI state");
+    for (let step = 0; step < 30; step += 1) await Promise.resolve();
+    equal(fixture.requests.length, 1, "stop prevents queued theme and ordinary RPC after an in-flight save");
+    equal(fixture.applied.length, 0, "stopped theme writes must not apply old UI state");
 }
 
 {
     const fixture = model();
     fixture.writer.change({ packages: { showPrerelease: true } });
     await fixture.writer.saveUnityHub("C:\\Tools\\Unity Hub.exe");
-    await fixture.writer.saveTheme({ mode: "dark", sourceColor: null, scheme: "neutral" });
+    fixture.writer.change({ appearance: { mode: "dark", sourceColor: null, scheme: "neutral" } });
+    await idle(fixture.writer);
     equal(fixture.requests.map((request) => request.expectedRevision), [7, 8, 9], "Hub, ordinary and theme changes serialize together");
     equal(fixture.requests[1]!.update, { unity: { hubPath: "C:\\Tools\\Unity Hub.exe" } }, "Hub save patches only its field");
     equal(fixture.current().settings.packages.showPrerelease, true, "Hub save preserves ordinary settings");
@@ -344,7 +346,8 @@ async function idle(writer: SettingsAutosave) {
     const arguments_ = ["-logFile", "C:\\Logs with spaces\\Editor.log", "", "  spaced  ", '"literal" \\value'];
     fixture.writer.change({ packages: { showPrerelease: true } });
     await fixture.writer.saveUnityArguments(arguments_, null);
-    await fixture.writer.saveTheme({ mode: "dark", sourceColor: null, scheme: "neutral" });
+    fixture.writer.change({ appearance: { mode: "dark", sourceColor: null, scheme: "neutral" } });
+    await idle(fixture.writer);
     equal(fixture.requests.map((request) => request.expectedRevision), [7, 8, 9], "global argv serializes with ordinary and theme writes");
     equal(fixture.requests[1]!.update, { unity: { defaultLaunchArguments: arguments_ } }, "argv values are forwarded intact in a narrow patch");
     equal(fixture.current().settings.unity.hubPath, null, "argv save preserves Hub preference");
@@ -415,4 +418,245 @@ async function idle(writer: SettingsAutosave) {
     equal(fixture.applied.length, 1, "accepted window setting is applied after reconciliation");
 }
 
-console.log("Settings autosave coordination passed (27 scenarios).");
+{
+    const fixture = model();
+    const waiting = deferred();
+    const original = fixture.client.settingsUpdate;
+    fixture.client.settingsUpdate = async (...args) => { await waiting.promise; return original(...args); };
+    fixture.writer.change({ appearance: { motion: "full" } });
+    await Promise.resolve();
+    fixture.writer.change({ backups: { includeVpmPackages: false } });
+    fixture.writer.change({ backups: { includeLibrary: true, compressionMode: "maximum" } });
+    fixture.writer.change({ projects: { autoDiscover: false } });
+    equal(fixture.writer.getSnapshot().settings!.backups, { compressionMode: "maximum", includeVpmPackages: false, includeLibrary: true }, "backup drafts retain sibling options during another write");
+    waiting.resolve();
+    await idle(fixture.writer);
+    equal(fixture.requests.map((request) => request.expectedRevision), [7, 8], "project and backup edits share the existing serialized CAS queue");
+    equal(fixture.current().settings.backups, { compressionMode: "maximum", includeVpmPackages: false, includeLibrary: true }, "all edited backup defaults survive the in-flight update");
+    equal(fixture.current().settings.projects.autoDiscover, false, "false auto-discovery intent is saved");
+    equal(fixture.current().settings.paths, initial.settings.paths, "default edits do not overwrite directory settings");
+}
+
+{
+    const fixture = model();
+    const original = fixture.client.settingsUpdate;
+    fixture.client.settingsUpdate = async (...args) => { await original(...args); throw new Error("Lost response"); };
+    fixture.writer.change({ projects: { autoDiscover: false }, backups: { includeLibrary: true } });
+    await idle(fixture.writer);
+    assert(fixture.writer.getSnapshot().failed, "unknown project and backup save keeps an explicit retry");
+    equal(fixture.writer.getSnapshot().accepted!.settings.projects.autoDiscover, true, "unknown outcome does not claim the discovery preference was accepted");
+    await fixture.writer.retry();
+    equal(fixture.requests.length, 1, "lost project and backup reply reconciles without repeating a committed write");
+    equal(fixture.writer.getSnapshot().accepted!.settings.backups, { compressionMode: "fast", includeVpmPackages: true, includeLibrary: true }, "reconciliation preserves untouched backup defaults");
+}
+
+function customizedModel() {
+    const fixture = model();
+    const current = fixture.current();
+    current.settings = {
+        projects: { autoDiscover: false },
+        backups: { compressionMode: "maximum", includeVpmPackages: false, includeLibrary: true },
+        paths: { projectDirectory: "D:\\Projects", backupDirectory: "E:\\Backups" },
+        unity: { hubPath: "C:\\Tools\\Unity Hub.exe", defaultLaunchArguments: ["-logFile", " C:\\Logs\\Editor.log ", ""] },
+        window: { rememberState: true, fullscreen: true },
+        locale: "zh-CN",
+        appearance: { mode: "dark", sourceColor: "#112233", scheme: "expressive", motion: "full" },
+        packages: { showPrerelease: true, hideLocalUserPackages: true, hiddenRepositoryIds: ["00000000-0000-4000-8000-000000000101"] }
+    };
+    current.directories = { projectDirectory: "D:\\Projects", backupDirectory: "E:\\Backups" };
+    fixture.writer.seed(structuredClone(current));
+    return fixture;
+}
+
+{
+    const settings = customizedModel().current().settings;
+    const cases: Array<{ name: string; update: SettingsUpdate; previous: SettingsUpdate; expected: SettingsGetResult["settings"] }> = [
+        {
+            name: "Projects",
+            update: { projects: { autoDiscover: true }, paths: { projectDirectory: null } },
+            previous: { projects: settings.projects, paths: { projectDirectory: settings.paths.projectDirectory } },
+            expected: { ...settings, projects: { autoDiscover: true }, paths: { ...settings.paths, projectDirectory: null } }
+        },
+        {
+            name: "Backups",
+            update: { backups: { compressionMode: "fast", includeVpmPackages: true, includeLibrary: false }, paths: { backupDirectory: null } },
+            previous: { backups: settings.backups, paths: { backupDirectory: settings.paths.backupDirectory } },
+            expected: { ...settings, backups: { compressionMode: "fast", includeVpmPackages: true, includeLibrary: false }, paths: { ...settings.paths, backupDirectory: null } }
+        },
+        {
+            name: "Default Unity launch arguments",
+            update: { unity: { defaultLaunchArguments: null } },
+            previous: { unity: { defaultLaunchArguments: settings.unity.defaultLaunchArguments } },
+            expected: { ...settings, unity: { ...settings.unity, defaultLaunchArguments: null } }
+        },
+        {
+            name: "Appearance",
+            update: { locale: "system", appearance: { motion: "system" } },
+            previous: { locale: settings.locale, appearance: { motion: settings.appearance.motion } },
+            expected: { ...settings, locale: "system", appearance: { ...settings.appearance, motion: "system" } }
+        },
+        {
+            name: "Window",
+            update: { window: { rememberState: false, fullscreen: false } },
+            previous: { window: settings.window },
+            expected: { ...settings, window: { rememberState: false, fullscreen: false } }
+        },
+        {
+            name: "Theme",
+            update: { appearance: { mode: "system", sourceColor: null, scheme: "vibrant" } },
+            previous: { appearance: { mode: settings.appearance.mode, sourceColor: settings.appearance.sourceColor, scheme: settings.appearance.scheme } },
+            expected: { ...settings, appearance: { ...settings.appearance, mode: "system", sourceColor: null, scheme: "vibrant" } }
+        }
+    ];
+    for (const scenario of cases) {
+        const fixture = customizedModel();
+        const restored = await fixture.writer.restoreDefaults(scenario.update, scenario.previous);
+        equal(fixture.requests, [{ expectedRevision: 7, update: scenario.update }], `${scenario.name} restore writes only its card fields`);
+        equal(restored.settings, scenario.expected, `${scenario.name} restore preserves every unrelated setting`);
+        equal(restored.revision, 8, `${scenario.name} restore uses the current revision once`);
+        equal(fixture.writer.getSnapshot().accepted, restored, `${scenario.name} restore accepts the actual Core result`);
+    }
+}
+
+{
+    const fixture = customizedModel();
+    const started = deferred();
+    const release = deferred();
+    const original = fixture.client.settingsUpdate;
+    let active = 0;
+    let maximumActive = 0;
+    let first = true;
+    fixture.client.settingsUpdate = async (...arguments_) => {
+        active += 1;
+        maximumActive = Math.max(maximumActive, active);
+        try {
+            if (first) { first = false; started.resolve(); await release.promise; }
+            return await original(...arguments_);
+        } finally { active -= 1; }
+    };
+    fixture.writer.change({ backups: { compressionMode: "level3" } });
+    await started.promise;
+    const restored = fixture.writer.restoreDefaults(
+        { locale: "system", appearance: { motion: "system" } },
+        { locale: "zh-CN", appearance: { motion: "full" } }
+    );
+    fixture.writer.change({ projects: { autoDiscover: true } });
+    equal(fixture.requests, [], "queued restore cannot start a write while another request is held");
+    release.resolve();
+    await restored;
+    await idle(fixture.writer);
+    equal(maximumActive, 1, "card restore shares the single settings write queue");
+    equal(fixture.requests, [
+        { expectedRevision: 7, update: { backups: { compressionMode: "level3" } } },
+        { expectedRevision: 8, update: { projects: { autoDiscover: true } } },
+        { expectedRevision: 9, update: { locale: "system", appearance: { motion: "system" } } }
+    ], "card restore drains ordinary intents and uses their accepted CAS revision");
+    equal(fixture.current().settings.backups.compressionMode, "level3", "card restore preserves the preceding backup edit");
+    equal(fixture.current().settings.projects.autoDiscover, true, "card restore preserves an ordinary intent queued while waiting");
+}
+
+{
+    const fixture = customizedModel();
+    const update: SettingsUpdate = { backups: { compressionMode: "fast", includeVpmPackages: true, includeLibrary: false }, paths: { backupDirectory: null } };
+    const previous: SettingsUpdate = { backups: structuredClone(fixture.current().settings.backups), paths: { backupDirectory: "E:\\Backups" } };
+    const originalRead = fixture.client.settingsGet;
+    const originalWrite = fixture.client.settingsUpdate;
+    let reads = 0;
+    fixture.client.settingsGet = async () => { reads += 1; return originalRead(); };
+    fixture.client.settingsUpdate = async (...arguments_) => { await originalWrite(...arguments_); throw new Error("Restore reply lost after commit"); };
+    const failed = await fixture.writer.restoreDefaults(update, previous).then(() => false, () => true);
+    assert(failed, "lost restore response remains an explicit failed confirmation");
+    equal(fixture.writer.getSnapshot().accepted!.revision, 7, "lost restore response cannot claim the new revision was accepted");
+    equal(fixture.writer.getSnapshot().accepted!.settings.backups.compressionMode, "maximum", "unknown restore keeps the last acknowledged preference");
+    const accepted = await fixture.writer.restoreDefaults(update, previous);
+    equal(reads, 2, "explicit restore retry rereads Core before deciding whether to write");
+    equal(fixture.requests.length, 1, "already committed restore is reconciled without another write");
+    equal(accepted.revision, 8, "restore retry returns the actual committed revision");
+    equal(accepted.settings.backups, { compressionMode: "fast", includeVpmPackages: true, includeLibrary: false }, "restore retry accepts all committed card defaults");
+}
+
+for (const target of ["backup-compression", "unity-arguments"] as const) {
+    const fixture = customizedModel();
+    const previous: SettingsUpdate = target === "backup-compression"
+        ? { backups: structuredClone(fixture.current().settings.backups) }
+        : { unity: { defaultLaunchArguments: structuredClone(fixture.current().settings.unity.defaultLaunchArguments) } };
+    const update: SettingsUpdate = target === "backup-compression"
+        ? { backups: { compressionMode: "fast", includeVpmPackages: true, includeLibrary: false } }
+        : { unity: { defaultLaunchArguments: null } };
+    await fixture.client.settingsUpdate(7, target === "backup-compression"
+        ? { backups: { compressionMode: "level5" } }
+        : { unity: { defaultLaunchArguments: ["-batchmode", "-nographics"] } });
+    const external = structuredClone(fixture.current());
+    const conflict = await fixture.writer.restoreDefaults(update, previous).then(() => false, (error: unknown) => typeof error === "object" && error !== null && "code" in error && error.code === "revision_conflict");
+    assert(conflict, `${target} changed during confirmation requires a new review`);
+    equal(fixture.requests.length, 1, `${target} conflict never sends the restore patch`);
+    equal(fixture.current(), external, `${target} conflict preserves external authority`);
+    equal(fixture.writer.getSnapshot().accepted, external, `${target} conflict shows the freshly read authority`);
+}
+
+{
+    const fixture = customizedModel();
+    const previous: SettingsUpdate = { appearance: { mode: "dark", sourceColor: "#112233", scheme: "expressive" } };
+    await fixture.client.settingsUpdate(7, { appearance: { motion: "reduced" }, backups: { compressionMode: "level7" } });
+    const restored = await fixture.writer.restoreDefaults({ appearance: { mode: "system", sourceColor: null, scheme: "vibrant" } }, previous);
+    equal(fixture.requests[1], { expectedRevision: 8, update: { appearance: { mode: "system", sourceColor: null, scheme: "vibrant" } } }, "unrelated concurrent edits permit a narrow theme restore at the latest revision");
+    equal(restored.settings.appearance, { mode: "system", sourceColor: null, scheme: "vibrant", motion: "reduced" }, "theme restore preserves an externally changed sibling field");
+    equal(restored.settings.backups.compressionMode, "level7", "theme restore preserves another card's external change");
+    equal(restored.settings.unity.hubPath, "C:\\Tools\\Unity Hub.exe", "card restore never changes Unity Hub");
+}
+
+{
+    const fixture = model();
+    equal(fixture.writer.getSnapshot().accepted!.settings.window.fullscreen, false, "fullscreen starts disabled");
+    fixture.writer.change({ window: { fullscreen: false } });
+    await idle(fixture.writer);
+    equal(fixture.requests, [], "the default fullscreen state needs no write");
+    const started = deferred();
+    const release = deferred();
+    const original = fixture.client.settingsUpdate;
+    let first = true;
+    fixture.client.settingsUpdate = async (...arguments_) => {
+        if (first) { first = false; started.resolve(); await release.promise; }
+        return original(...arguments_);
+    };
+    fixture.writer.change({ window: { fullscreen: true } });
+    await started.promise;
+    fixture.writer.change({ window: { fullscreen: false, rememberState: true } });
+    release.resolve();
+    await idle(fixture.writer);
+    equal(fixture.requests, [
+        { expectedRevision: 7, update: { window: { fullscreen: true } } },
+        { expectedRevision: 8, update: { window: { fullscreen: false, rememberState: true } } }
+    ], "fullscreen toggle-back and remembering share the serialized window intent");
+    equal(fixture.current().settings.window, { rememberState: true, fullscreen: false }, "latest fullscreen and sibling preference both survive");
+}
+
+{
+    const fixture = model();
+    const original = fixture.client.settingsUpdate;
+    fixture.client.settingsUpdate = async (...arguments_) => {
+        await original(...arguments_);
+        throw new Error("Fullscreen response lost after commit");
+    };
+    fixture.writer.change({ window: { fullscreen: true } });
+    await idle(fixture.writer);
+    assert(fixture.writer.getSnapshot().failed, "an unknown fullscreen result remains explicit");
+    equal(fixture.writer.getSnapshot().accepted!.settings.window.fullscreen, false, "unacknowledged fullscreen intent is not accepted authority");
+    equal(fixture.writer.getSnapshot().settings!.window.fullscreen, true, "fullscreen intent remains available for Retry");
+    await fixture.writer.retry();
+    equal(fixture.requests.length, 1, "fullscreen Retry checks Core before avoiding a duplicate committed write");
+    equal(fixture.writer.getSnapshot().accepted!.settings.window, { rememberState: false, fullscreen: true }, "reconciled fullscreen keeps remembering unchanged");
+}
+
+{
+    const fixture = model();
+    await fixture.client.settingsUpdate(7, { window: { rememberState: true } });
+    fixture.writer.change({ window: { fullscreen: true } });
+    await idle(fixture.writer);
+    assert(fixture.writer.getSnapshot().failed, "a competing window preference must surface its CAS conflict");
+    await fixture.writer.retry();
+    equal(fixture.requests.at(-1), { expectedRevision: 8, update: { window: { fullscreen: true } } }, "fullscreen Retry patches only the requested field at the current revision");
+    equal(fixture.current().settings.window, { rememberState: true, fullscreen: true }, "fullscreen cannot overwrite an externally enabled size memory preference");
+}
+
+console.log("Settings autosave coordination passed (43 scenarios).");

@@ -7,10 +7,9 @@ test("ordinary settings save immediately as narrow updates without a save bar", 
     await expect(page.getByRole("button", { name: "Save settings", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Discard changes", exact: true })).toHaveCount(0);
     await expect(page.getByText("All changes saved", { exact: true })).toHaveCount(0);
-    await selectSettingsSection(page, "general");
-    await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true }).check();
+    await page.getByRole("checkbox", { name: "Remember window size and maximized state", exact: true }).check();
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
-    expect(await page.evaluate(() => window.settingsRequests)).toEqual([{ expectedRevision: 7, update: { packages: { showPrerelease: true } } }]);
+    expect(await page.evaluate(() => window.settingsRequests)).toEqual([{ expectedRevision: 7, update: { window: { rememberState: true } } }]);
     await selectMotion(page, "full");
     await expect(page.locator("html")).toHaveAttribute("data-motion", "full");
     expect(await page.evaluate(() => window.settingsRequests.at(-1))).toEqual({ expectedRevision: 8, update: { appearance: { motion: "full" } } });
@@ -18,8 +17,8 @@ test("ordinary settings save immediately as narrow updates without a save bar", 
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
     await expect(page.getByRole("dialog", { name: "Discard unsaved changes?", exact: true })).toHaveCount(0);
     await navigation(page, "Settings").click();
-    await selectSettingsSection(page, "general");
-    await expect(page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true })).toBeChecked();
+    await selectSettingsSection(page, "appearance");
+    await expect(page.getByRole("checkbox", { name: "Remember window size and maximized state", exact: true })).toBeChecked();
     await expect(page.locator("#settings-motion")).toHaveJSProperty("value", "full");
     await selectSettingsSection(page, "appearance");
     await page.screenshot({ path: test.info().outputPath("settings-without-save-bar.png"), animations: "disabled" });
@@ -46,21 +45,20 @@ test("rapid changes survive navigation while writes stay serialized", async ({ p
     await openSettings(page, "hold");
     await selectMotion(page, "full");
     await expect.poll(() => page.evaluate(() => window.settingsRequests.length)).toBe(1);
-    await selectSettingsSection(page, "general");
-    await page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true }).check();
-    await page.getByRole("checkbox", { name: "Hide local User Packages", exact: true }).check();
+    await page.getByRole("checkbox", { name: "Remember window size and maximized state", exact: true }).check();
+    await selectMotion(page, "reduced");
     await navigation(page, "Projects").click();
     await expect(page.getByRole("heading", { level: 1, name: "Projects", exact: true })).toBeVisible();
     expect(await page.evaluate(() => window.settingsRequests.length)).toBe(1);
     await release(page);
     await expect.poll(() => page.evaluate(() => window.settingsRequests.length)).toBe(2);
-    expect(await page.evaluate(() => window.settingsRequests[1])).toEqual({ expectedRevision: 8, update: { packages: { showPrerelease: true, hideLocalUserPackages: true } } });
+    expect(await page.evaluate(() => window.settingsRequests[1])).toEqual({ expectedRevision: 8, update: { appearance: { motion: "reduced" }, window: { rememberState: true } } });
     await release(page);
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(2);
     await navigation(page, "Settings").click();
-    await expect(page.locator("#settings-motion")).toHaveJSProperty("value", "full");
-    await selectSettingsSection(page, "general");
-    for (const name of ["Show prerelease package versions", "Hide local User Packages"]) await expect(page.getByRole("checkbox", { name, exact: true })).toBeChecked();
+    await selectSettingsSection(page, "appearance");
+    await expect(page.locator("#settings-motion")).toHaveJSProperty("value", "reduced");
+    await expect(page.getByRole("checkbox", { name: "Remember window size and maximized state", exact: true })).toBeChecked();
 });
 
 test("failed autosave is visible after navigation and explicit Retry saves retained intent", async ({ page }) => {
@@ -104,21 +102,16 @@ test("conflict Retry preserves external theme fields and changes only the reques
     expect(await page.evaluate(() => window.settingsRequests.at(-1))).toEqual({ expectedRevision: 8, update: { appearance: { motion: "full" } } });
 });
 
-test("theme retains its own preview, Cancel and Save while ordinary settings persist independently", async ({ page }) => {
+test("theme shares automatic saving with ordinary settings and has no separate Save or Cancel", async ({ page }) => {
     await openSettings(page);
     await selectMotion(page, "full");
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
     const theme = page.getByRole("form", { name: "Theme", exact: true });
     await expect(theme).toBeVisible();
+    await expect(theme.getByRole("button", { name: /^(Save|Cancel)$/ })).toHaveCount(0);
     await page.locator("#theme-source").getByRole("textbox").fill("#E040A0");
-    expect(await page.evaluate(() => window.settingsWrites.length)).toBe(1);
-    await theme.getByRole("button", { name: "Cancel", exact: true }).click();
-    await expect(theme).toBeVisible();
-    await expect(page.locator("html")).toHaveAttribute("data-source-color", "#6CB6FF");
-    await page.locator("#theme-source").getByRole("textbox").fill("#E040A0");
-    await theme.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(theme.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
-    expect(await page.evaluate(() => window.settingsRequests.at(-1)!.update)).toEqual({ appearance: { mode: "system", scheme: "vibrant", sourceColor: "#E040A0" } });
+    await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(2);
+    expect(await page.evaluate(() => window.settingsRequests.at(-1)!.update)).toEqual({ appearance: { sourceColor: "#E040A0" } });
     await expect(page.locator("html")).toHaveAttribute("data-motion", "full");
 });
 

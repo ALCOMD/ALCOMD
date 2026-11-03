@@ -3,7 +3,7 @@ import type { RpcError } from "@alcomd/sdk";
 export type WindowGeometry = readonly [width: number, height: number, maximized: boolean];
 type Unlisten = () => void;
 export interface WindowStateHost {
-    configure(enabled: boolean, geometry?: WindowGeometry): Promise<WindowGeometry | undefined>;
+    configure(enabled: boolean, geometry: WindowGeometry | undefined, fullscreen: boolean): Promise<WindowGeometry | undefined>;
     listen(changed: (geometry: unknown) => void, failed: (error: RpcError) => void): Promise<Unlisten>;
 }
 
@@ -18,7 +18,7 @@ export function windowGeometry(value: unknown): WindowGeometry | undefined {
 /** The switch remains Core-owned. Only disposable window geometry is cached here. */
 export class WindowStateMemory {
     private enabled = false;
-    private setting?: boolean;
+    private setting?: readonly [rememberState: boolean, fullscreen: boolean];
     private initialized = false;
     private disposed = false;
     private generation = 0;
@@ -35,9 +35,9 @@ export class WindowStateMemory {
         this.host = host; this.storage = storage; this.key = key; this.feedback = feedback;
     }
 
-    apply(enabled: boolean): Promise<void> {
-        if (this.disposed || this.setting === enabled) return this.queue;
-        this.setting = enabled;
+    apply(enabled: boolean, fullscreen: boolean): Promise<void> {
+        if (this.disposed || this.setting?.[0] === enabled && this.setting[1] === fullscreen) return this.queue;
+        this.setting = [enabled, fullscreen];
         this.enabled = enabled;
         const generation = ++this.generation;
         const restore = !this.initialized && enabled ? this.read() : undefined;
@@ -50,7 +50,7 @@ export class WindowStateMemory {
         this.queue = this.queue.then(async () => {
             if (this.disposed || generation !== this.generation) return;
             if (enabled) await this.listen();
-            const current = await this.host.configure(enabled, restore);
+            const current = await this.host.configure(enabled, restore, fullscreen);
             if (enabled && !this.disposed && generation === this.generation && current !== undefined) this.write(current);
         }).catch((error: unknown) => {
             if (!this.disposed && generation === this.generation) this.report(error);
@@ -58,11 +58,20 @@ export class WindowStateMemory {
         return this.queue;
     }
 
+    retry(): Promise<void> {
+        const setting = this.setting;
+        if (setting === undefined || this.disposed) return this.queue;
+        this.setting = undefined;
+        this.reported = undefined;
+        this.feedback(undefined);
+        return this.apply(...setting);
+    }
+
     startupReadFailed(): Promise<void> {
         if (this.initialized || this.disposed) return this.queue;
         this.initialized = true;
         // Keep an unread cache, but never resize a window on a later reconnect.
-        this.queue = this.queue.then(async () => { if (!this.disposed) await this.host.configure(false); }).catch(() => {});
+        this.queue = this.queue.then(async () => { if (!this.disposed) await this.host.configure(false, undefined, false); }).catch(() => {});
         return this.queue;
     }
 

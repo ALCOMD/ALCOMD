@@ -51,15 +51,21 @@ test("default Unity arguments preserve argv values and Cancel discards edits", a
 
 test("null defaults and an explicit empty array remain distinct and can be restored", async ({ page }) => {
     await openSettings(page);
+    await expect(defaultsSection(page).getByRole("button", { name: "Restore defaults", exact: true })).toBeDisabled();
     await editDefaults(page);
-    await expect(page.getByRole("button", { name: "Restore defaults", exact: true })).toBeDisabled();
+    await expect(defaultsHost(page).getByRole("button", { name: "Restore defaults", exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "Add argument", exact: true }).click();
     await page.getByRole("button", { name: "Remove argument 1", exact: true }).click();
     await page.getByRole("button", { name: "Save launch arguments", exact: true }).click();
     await expect(defaultsDialog(page)).toBeHidden();
-    await editDefaults(page);
-    await page.getByRole("button", { name: "Restore defaults", exact: true }).click();
-    await expect(defaultsDialog(page)).toBeHidden();
+    await defaultsSection(page).getByRole("button", { name: "Restore defaults", exact: true }).click();
+    const confirmation = page.locator("md-dialog[open]");
+    await expect(confirmation).toBeVisible();
+    await expect(confirmation).toContainText("Default Unity launch arguments");
+    expect(await writes(page)).toHaveLength(1);
+    await confirmation.getByRole("button", { name: "Restore defaults", exact: true }).click();
+    await expect(confirmation).toBeHidden();
+    await expect(defaultsSection(page).getByRole("button", { name: "Restore defaults", exact: true })).toBeDisabled();
     expect((await writes(page)).map((request) => request.update)).toEqual([{ unity: { defaultLaunchArguments: [] } }, { unity: { defaultLaunchArguments: null } }]);
 });
 
@@ -105,6 +111,7 @@ test("failed defaults keep the draft and permission denial is visible", async ({
     expect(await page.evaluate(() => window.settingsWrites)).toEqual([]);
     await openSettings(page, { noUnityManage: "1" });
     await expect(defaultsSection(page).getByRole("button", { name: "Edit", exact: true })).toBeDisabled();
+    await expect(defaultsSection(page).getByRole("button", { name: "Restore defaults", exact: true })).toBeDisabled();
 });
 
 test("a competing default edit is shown without overwriting it", async ({ page }) => {

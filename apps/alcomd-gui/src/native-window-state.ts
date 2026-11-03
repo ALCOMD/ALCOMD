@@ -8,8 +8,8 @@ export function nativeWindowStateMemory(feedback: (error: RpcError | undefined) 
     if (!isTauri()) return undefined;
     const host = getCurrentWindow();
     return new WindowStateMemory({
-        configure: async (enabled, geometry) => windowGeometry(await invoke("gui_window_state_configure", {
-            enabled, width: geometry?.[0] ?? null, height: geometry?.[1] ?? null, maximized: geometry?.[2] ?? null
+        configure: async (enabled, geometry, fullscreen) => windowGeometry(await invoke("gui_window_state_configure", {
+            enabled, fullscreen, width: geometry?.[0] ?? null, height: geometry?.[1] ?? null, maximized: geometry?.[2] ?? null
         })),
         listen: async (changed, failed) => {
             const stopGeometry = await host.listen("alcomd-window-state", ({ payload }) => changed(payload));

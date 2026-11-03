@@ -1,12 +1,7 @@
 import type { OfficialSettings, SettingsGetResult, SettingsUpdate } from "./core-models";
 import type { GuiRpcClient } from "./rpc";
-import type { ThemePreferences } from "@alcomd/ui";
 import type { RpcError } from "@alcomd/sdk";
 import { normalizeRequestError } from "./request-errors";
-
-type OrdinaryUpdate = Omit<SettingsUpdate, "appearance"> & {
-    appearance?: Pick<NonNullable<SettingsUpdate["appearance"]>, "motion">;
-};
 
 interface SaveState {
     accepted?: SettingsGetResult;
@@ -23,9 +18,9 @@ export class UnityArgumentsConflictError extends Error {}
 /** UI intent and RPC ordering only; the daemon remains the settings authority. */
 export class SettingsAutosave {
     private accepted?: SettingsGetResult;
-    private pending: OrdinaryUpdate = {};
+    private pending: SettingsUpdate = {};
     private directoryBaselines: Partial<OfficialSettings["paths"]> = {};
-    private inFlight: OrdinaryUpdate = {};
+    private inFlight: SettingsUpdate = {};
     private failed = false;
     private error?: RpcError;
     private stopped = false;
@@ -54,7 +49,7 @@ export class SettingsAutosave {
         this.publish();
     }
 
-    change(update: OrdinaryUpdate): void {
+    change(update: SettingsUpdate): void {
         if (this.stopped) return;
         this.pending = merge(this.pending, structuredClone(update));
         this.publish();
@@ -77,15 +72,33 @@ export class SettingsAutosave {
         });
     }
 
-    saveTheme(theme: ThemePreferences): Promise<SettingsGetResult> {
+    restoreDefaults(update: SettingsUpdate, previous: SettingsUpdate): Promise<SettingsGetResult> {
         return this.enqueue(async () => {
             if (this.failed) throw this.error ?? { code: "internal_error", message: "" };
             await this.drain();
             this.requireActive();
             if (this.failed) throw this.error ?? { code: "internal_error", message: "" };
-            if (this.accepted === undefined) this.apply(await this.client.settingsGet());
+            const current = await this.client.settingsGet();
             this.requireActive();
-            const next = await this.client.settingsUpdate(this.accepted!.revision, { appearance: theme });
+            this.apply(current);
+            for (const key of Object.keys(update) as Array<keyof SettingsUpdate>) {
+                const desired = update[key];
+                const baseline = previous[key];
+                const actual = current.settings[key];
+                if (typeof desired === "object" && desired !== null && !Array.isArray(desired)) {
+                    for (const [field, value] of Object.entries(desired)) {
+                        const old = (baseline as Record<string, unknown> | undefined)?.[field];
+                        const fresh = (actual as unknown as Record<string, unknown>)[field];
+                        if (!sameValue(fresh, value) && !sameValue(fresh, old)) throw { code: "revision_conflict", message: "" };
+                    }
+                } else if (!sameValue(actual, desired) && !sameValue(actual, baseline)) {
+                    throw { code: "revision_conflict", message: "" };
+                }
+            }
+            const patch = difference(update, current.settings);
+            if (Object.keys(patch).length === 0) return current;
+            const next = await this.client.settingsUpdate(current.revision, patch);
+            this.requireActive();
             this.apply(next);
             return next;
         });
@@ -190,6 +203,8 @@ export class SettingsAutosave {
             settings: this.accepted === undefined ? undefined : {
                 ...this.accepted.settings,
                 ...desired,
+                projects: { ...this.accepted.settings.projects, ...desired.projects },
+                backups: { ...this.accepted.settings.backups, ...desired.backups },
                 appearance: { ...this.accepted.settings.appearance, ...desired.appearance },
                 packages: { ...this.accepted.settings.packages, ...desired.packages },
                 window: { ...this.accepted.settings.window, ...desired.window },
@@ -260,22 +275,27 @@ export class SettingsAutosave {
     }
 }
 
-function merge(first: OrdinaryUpdate, second: OrdinaryUpdate): OrdinaryUpdate {
+function merge(first: SettingsUpdate, second: SettingsUpdate): SettingsUpdate {
     return {
         ...first, ...second,
         ...(first.appearance === undefined && second.appearance === undefined ? {} : { appearance: { ...first.appearance, ...second.appearance } }),
         ...(first.unity === undefined && second.unity === undefined ? {} : { unity: { ...first.unity, ...second.unity } }),
         ...(first.window === undefined && second.window === undefined ? {} : { window: { ...first.window, ...second.window } }),
         ...(first.paths === undefined && second.paths === undefined ? {} : { paths: { ...first.paths, ...second.paths } }),
+        ...(first.projects === undefined && second.projects === undefined ? {} : { projects: { ...first.projects, ...second.projects } }),
+        ...(first.backups === undefined && second.backups === undefined ? {} : { backups: { ...first.backups, ...second.backups } }),
         ...(first.packages === undefined && second.packages === undefined ? {} : { packages: { ...first.packages, ...second.packages } })
     };
 }
 
-function difference(intent: OrdinaryUpdate, accepted: OfficialSettings): OrdinaryUpdate {
-    const result: OrdinaryUpdate = {};
+function sameValue(first: unknown, second: unknown): boolean { return JSON.stringify(first) === JSON.stringify(second); }
+
+function difference(intent: SettingsUpdate, accepted: OfficialSettings): SettingsUpdate {
+    const result: SettingsUpdate = {};
     if (intent.locale !== undefined && intent.locale !== accepted.locale) result.locale = intent.locale;
-    if (intent.window?.rememberState !== undefined && intent.window.rememberState !== accepted.window.rememberState) {
-        result.window = { rememberState: intent.window.rememberState };
+    if (intent.window !== undefined) {
+        const window = Object.fromEntries(Object.entries(intent.window).filter(([key, value]) => value !== accepted.window[key as keyof typeof intent.window]));
+        if (Object.keys(window).length > 0) result.window = window;
     }
     if (intent.appearance !== undefined) {
         const appearance = Object.fromEntries(Object.entries(intent.appearance).filter(([key, value]) => value !== accepted.appearance[key as keyof typeof intent.appearance]));
@@ -285,7 +305,17 @@ function difference(intent: OrdinaryUpdate, accepted: OfficialSettings): Ordinar
         const packages = Object.fromEntries(Object.entries(intent.packages).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(accepted.packages[key as keyof typeof intent.packages])));
         if (Object.keys(packages).length > 0) result.packages = packages;
     }
+    if (intent.projects?.autoDiscover !== undefined && intent.projects.autoDiscover !== accepted.projects.autoDiscover) {
+        result.projects = { autoDiscover: intent.projects.autoDiscover };
+    }
+    if (intent.backups !== undefined) {
+        const backups = Object.fromEntries(Object.entries(intent.backups).filter(([key, value]) => value !== accepted.backups[key as keyof typeof intent.backups]));
+        if (Object.keys(backups).length > 0) result.backups = backups;
+    }
     if (intent.unity?.hubPath !== undefined && intent.unity.hubPath !== accepted.unity.hubPath) result.unity = { hubPath: intent.unity.hubPath };
+    if (intent.unity?.defaultLaunchArguments !== undefined && !sameValue(intent.unity.defaultLaunchArguments, accepted.unity.defaultLaunchArguments)) {
+        result.unity = { ...result.unity, defaultLaunchArguments: intent.unity.defaultLaunchArguments };
+    }
     if (intent.paths !== undefined) {
         const paths = Object.fromEntries(Object.entries(intent.paths).filter(([key, value]) => value !== accepted.paths[key as keyof typeof intent.paths]));
         if (Object.keys(paths).length > 0) result.paths = paths;

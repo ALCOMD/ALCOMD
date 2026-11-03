@@ -246,21 +246,9 @@ export const formMessages: TranslationTable = {
         "zh-CN": "界面动画",
         "ja-JP": "UI のアニメーション"
     },
-    "Hide {name}": {
-        "zh-CN": "隐藏 {name}",
-        "ja-JP": "{name} を非表示"
-    },
-    "Hide local User Packages": {
-        "zh-CN": "隐藏本地用户软件包",
-        "ja-JP": "ローカルのユーザーパッケージを非表示"
-    },
     "Import or create a template before creating a project.": {
         "zh-CN": "请先导入或创建模板，再创建项目。",
         "ja-JP": "プロジェクトを作成する前に、テンプレートをインポートまたは作成してください。"
-    },
-    "Include prerelease versions in package lists.": {
-        "zh-CN": "在软件包列表中显示预发布版本。",
-        "ja-JP": "パッケージ一覧にプレリリース版を表示します。"
     },
     "Language": {
         "zh-CN": "界面语言(Language)",
@@ -273,10 +261,6 @@ export const formMessages: TranslationTable = {
     "Load more installations": {
         "zh-CN": "加载更多 Unity 安装",
         "ja-JP": "インストール済みの Unity をさらに読み込む"
-    },
-    "Load more repository options": {
-        "zh-CN": "加载更多仓库选项",
-        "ja-JP": "リポジトリの設定をさらに読み込む"
     },
     "Loading backups…": {
         "zh-CN": "正在加载备份…",
@@ -354,10 +338,6 @@ export const formMessages: TranslationTable = {
         "zh-CN": "正在刷新已安装的 Unity",
         "ja-JP": "インストール済みの Unity を再読み込み中"
     },
-    "Repository visibility options could not be loaded.": {
-        "zh-CN": "无法加载仓库显示选项。",
-        "ja-JP": "リポジトリの表示設定を読み込めませんでした。"
-    },
     "Required": {
         "zh-CN": "需要",
         "ja-JP": "必要"
@@ -374,10 +354,6 @@ export const formMessages: TranslationTable = {
         "zh-CN": "恢复项目的父目录",
         "ja-JP": "復元先の親フォルダ"
     },
-    "Retry repository options": {
-        "zh-CN": "重试加载仓库选项",
-        "ja-JP": "リポジトリの設定を再読み込み"
-    },
     "Review creation": {
         "zh-CN": "审阅创建计划",
         "ja-JP": "作成内容を確認"
@@ -389,10 +365,6 @@ export const formMessages: TranslationTable = {
     "Settings could not be saved. Retry to save your changes.": {
         "zh-CN": "设置未能保存，请重试以保存你的更改。",
         "ja-JP": "設定を保存できませんでした。再試行して変更を保存してください。"
-    },
-    "Show prerelease package versions": {
-        "zh-CN": "显示预发布软件包",
-        "ja-JP": "プレリリース版のパッケージを表示する"
     },
     "Source color": {
         "zh-CN": "源色",
@@ -481,22 +453,6 @@ export const formMessages: TranslationTable = {
     "Fruit salad": {
         "zh-CN": "果缤纷",
         "ja-JP": "フルーツサラダ"
-    },
-    "Theme saved": {
-        "zh-CN": "主题已保存",
-        "ja-JP": "テーマを保存しました"
-    },
-    "Theme could not be saved.": {
-        "zh-CN": "无法保存主题。",
-        "ja-JP": "テーマを保存できませんでした。"
-    },
-    "Theme changed elsewhere.": {
-        "zh-CN": "主题已在其他位置更改。",
-        "ja-JP": "別の場所でテーマが変更されました。"
-    },
-    "Retry theme save": {
-        "zh-CN": "重试保存主题",
-        "ja-JP": "テーマの保存を再試行"
     },
     "Choose theme color": {
         "zh-CN": "选择主题颜色",

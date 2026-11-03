@@ -8,6 +8,7 @@ import { Reminder, RequestReminder, useReminder } from "./Reminder";
 import { normalizeRequestError } from "./request-errors";
 import { SettingsAutosave, UnityArgumentsConflictError } from "./settings-autosave";
 import { UnityArgumentsEditor } from "./UnityArgumentsEditor";
+import { SettingsResetButton } from "./SettingsResetButton";
 
 export function UnityDefaultArgumentsSettings({ settingsWriter, snapshot }: { settingsWriter: SettingsAutosave; snapshot: SettingsGetResult }) {
     const { t } = useTranslation();
@@ -17,8 +18,12 @@ export function UnityDefaultArgumentsSettings({ settingsWriter, snapshot }: { se
     const [editing, setEditing] = useState(false);
     const arguments_ = accepted.settings.unity.defaultLaunchArguments;
     return <section className="settings-section" aria-label={t("Default Unity launch arguments")}>
-        <header className="settings-section-heading"><h2>{t("Default Unity launch arguments")}</h2>
-            <Button disabled={!canManage || saving.saving} onClick={() => setEditing(true)} type="button" variant="text">{t("Edit")}</Button>
+        <header className="settings-section-heading"><h2 tabIndex={-1}>{t("Default Unity launch arguments")}</h2>
+            <div className="action-row">
+                <Button disabled={!canManage || saving.saving} onClick={() => setEditing(true)} type="button" variant="text">{t("Edit")}</Button>
+                <SettingsResetButton title={t("Default Unity launch arguments")} disabled={!canManage || saving.saving || saving.failed || editing || arguments_ === null}
+                    onRestore={() => settingsWriter.restoreDefaults({ unity: { defaultLaunchArguments: null } }, { unity: { defaultLaunchArguments: accepted.settings.unity.defaultLaunchArguments } })} />
+            </div>
         </header>
         <div className="settings-section-content">
             <p className="field-hint">{t("Used by projects without custom launch arguments.")}</p>
@@ -70,7 +75,6 @@ function DefaultArgumentsDialog({ settingsWriter, initial, onClose }: { settings
                     message={unknown ? "Retry checks the current settings before writing again." : undefined} />}
             <div className="dialog-actions">
                 <Button disabled={busy} onClick={close} type="button" variant="text">{t("Cancel")}</Button>
-                <Button disabled={busy || !canManage || conflict || baseline === null && draft === null} onClick={() => { setDraft(null); void save(null); }} type="button" variant="text">{t("Restore defaults")}</Button>
                 <Button disabled={busy || !canManage || conflict || JSON.stringify(draft) === JSON.stringify(baseline)} type="submit">{t(error === undefined ? "Save launch arguments" : "Retry")}</Button>
             </div>
         </form>

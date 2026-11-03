@@ -388,8 +388,7 @@ async function expectThemeFits(page: Page) {
     await expectReachable(page, scheme, body);
     await expectCanvasFits(page);
     await expectNoHorizontalOverflow(body);
-    const restore = theme.getByRole("button", { name: "Restore defaults", exact: true });
-    await wheelIntoView(page, restore, body);
+    await wheelIntoView(page, scheme, body);
 }
 
 async function browserScreenshot(page: Page, name: string) {

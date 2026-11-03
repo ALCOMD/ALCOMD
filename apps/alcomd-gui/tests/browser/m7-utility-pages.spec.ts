@@ -263,12 +263,13 @@ test("Settings uses shared sections while Logs retains its two real read surface
     await expectHeading(page, "Settings");
     const sections = page.getByRole("navigation", { name: "Settings sections", exact: true });
     await expect(sections.getByRole("button")).toHaveText(["General", "Unity", "Appearance", "Notifications"]);
-    await expect(page.locator(".settings-section-heading h2:visible")).toHaveText(["Save locations", "Packages"]);
+    await expect(page.locator(".settings-section-heading h2:visible")).toHaveText(["Projects", "Backups"]);
+    await expect(page.getByRole("region", { name: "Packages", exact: true, includeHidden: true })).toHaveCount(0);
     await expect(page.getByRole("region", { name: "System information", exact: true })).toHaveCount(0);
     await selectSettingsSection(page, "appearance");
     await expect(page.getByRole("form", { name: "Theme", exact: true })).toBeVisible();
     await selectSettingsSection(page, "unity");
-    await expect(page.locator(".settings-section-heading h2:visible")).toHaveText(["Unity Hub Path", "Unity installations"]);
+    await expect(page.locator(".settings-section-heading h2:visible")).toHaveText(["Unity Hub Path", "Unity installations", "Default Unity launch arguments"]);
     await expect(page.getByRole("table", { name: "Unity installations" }).getByRole("columnheader")).toHaveText(["Version", "Path", "Source"]);
     await page.getByRole("button", { name: "Manage installations", exact: true }).click();
     const unityDialog = page.getByRole("dialog", { name: "Manage Unity installations" });
@@ -365,24 +366,24 @@ test("desktop Settings uses labeled language and animation rows with inline Them
 
 test("ordinary Settings save before refresh and remain accepted across navigation", async ({ page }) => {
     await openHarness(page, "/settings");
-    await selectSettingsSection(page, "general");
-    const prerelease = page.getByRole("checkbox", { name: "Show prerelease package versions", exact: true });
-    await expect(prerelease).not.toBeChecked();
-    await prerelease.check();
+    await selectSettingsSection(page, "appearance");
+    const rememberWindow = page.getByRole("checkbox", { name: "Remember window size and maximized state", exact: true });
+    await expect(rememberWindow).not.toBeChecked();
+    await rememberWindow.check();
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
     await expect(page.locator("html")).not.toHaveAttribute("data-density");
     const refresh = page.locator(".utility-workspace-toolbar").getByRole("button", { name: "Refresh", exact: true });
     await expect(refresh).toBeEnabled();
     await refresh.click();
-    await expect(prerelease).toBeChecked();
+    await expect(rememberWindow).toBeChecked();
     await navigationItem(page, "Projects").click();
     await expectHeading(page, "Projects");
     await expect(page.getByRole("dialog", { name: "Discard unsaved changes?", exact: true })).toHaveCount(0);
     await navigationItem(page, "Settings").click();
-    await selectSettingsSection(page, "general");
-    await expect(prerelease).toBeChecked();
+    await selectSettingsSection(page, "appearance");
+    await expect(rememberWindow).toBeChecked();
     expect(await page.evaluate(() => window.settingsWrites)).toEqual([{ expectedRevision: 7, revision: 8 }]);
-    expect(await page.evaluate(() => window.settingsRequests)).toEqual([{ expectedRevision: 7, update: { packages: { showPrerelease: true } } }]);
+    expect(await page.evaluate(() => window.settingsRequests)).toEqual([{ expectedRevision: 7, update: { window: { rememberState: true } } }]);
 });
 
 test("utility desktop evidence includes the full application window", async ({ page }) => {

@@ -44,20 +44,16 @@ for (const mode of ["light", "dark"] as const) {
         const scheme = (await host.locator("#theme-scheme").boundingBox())!;
         expect(Math.abs(source.width - scheme.width)).toBeLessThanOrEqual(1);
         const hostBounds = (await host.boundingBox())!;
-        const footer = (await host.locator(".theme-editor-footer").boundingBox())!;
         const last = rowBounds.at(-1)!;
-        expect(footer.y).toBeGreaterThanOrEqual(last.y + last.height - 1);
-        expect(footer.y - last.y - last.height).toBeLessThanOrEqual(32);
-        expect(hostBounds.height - footer.y - footer.height + hostBounds.y).toBeLessThanOrEqual(1);
-        const save = host.getByRole("button", { name: "Save", exact: true });
-        await save.scrollIntoViewIfNeeded();
-        await expect(save).toBeInViewport();
+        expect(hostBounds.height - last.y - last.height + hostBounds.y).toBeLessThanOrEqual(1);
+        await expect(host.locator(".theme-editor-footer")).toHaveCount(0);
+        await expect(host.getByRole("button", { name: /^(Save|Cancel)$/ })).toHaveCount(0);
         await page.screenshot({ path: testInfo.outputPath(`theme-${mode}-window.png`), animations: "disabled", fullPage: true });
         expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
     });
 }
 
-test("mode and scheme dropdowns support keyboard selection and return focus without writing", async ({ page }) => {
+test("mode and scheme dropdowns support keyboard selection and return focus while saving automatically", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/settings&theme-mode=light");
     await selectSettingsSection(page, "appearance");
     await expect(page.getByRole("form", { name: "Theme", exact: true })).toBeVisible();
@@ -91,7 +87,8 @@ test("mode and scheme dropdowns support keyboard selection and return focus with
     await expect(scheme).toBeFocused();
     expect(await page.locator("#theme-scheme md-select-option").evaluateAll((elements) => elements.filter((element) => (element as HTMLElement & { selected: boolean }).selected).length)).toBe(1);
     await expect(page.locator("html")).toHaveAttribute("data-theme-scheme", "expressive");
-    expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
+    await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(2);
+    expect(await page.evaluate(() => window.settingsRequests.map(request => request.update))).toEqual([{ appearance: { mode: "dark" } }, { appearance: { scheme: "expressive" } }]);
 });
 
 for (const { locale, label, options } of [
@@ -99,7 +96,7 @@ for (const { locale, label, options } of [
     { locale: "zh-CN", label: "颜色模式", options: ["跟随系统", "浅色", "深色"] },
     { locale: "ja-JP", label: "カラーモード", options: ["システム設定", "ライト", "ダーク"] }
 ]) {
-    test(`theme mode dropdown exposes three translated choices and previews without writing in ${locale}`, async ({ page }, testInfo) => {
+    test(`theme mode dropdown exposes three translated choices and saves automatically in ${locale}`, async ({ page }, testInfo) => {
         await page.setViewportSize({ width: 1400, height: 800 });
         await page.goto("/browser-harness.html?route=/settings&theme-mode=light");
         await selectSettingsSection(page, "appearance");
@@ -132,7 +129,7 @@ for (const { locale, label, options } of [
             await expect(control).toHaveJSProperty("displayText", options[index]!);
             await expect(control).toHaveJSProperty("open", false);
             expect(await control.locator("md-select-option").evaluateAll(elements => elements.filter(element => (element as HTMLElement & { selected: boolean }).selected).length)).toBe(1);
-            expect(await page.evaluate(() => window.settingsRequests.length)).toBe(writes);
+            await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(writes + index + 1);
             if (locale === "zh-CN" && value === "system") {
                 await page.screenshot({ path: testInfo.outputPath("chinese-system-selected.png"), animations: "disabled", fullPage: true });
             }

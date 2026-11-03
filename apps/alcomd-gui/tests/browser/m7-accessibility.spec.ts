@@ -360,16 +360,13 @@ test("settings are labeled, revisioned, and ordinary preferences save through th
     await expect(color).toHaveAccessibleDescription("");
     await color.fill("#315DA8");
     await expect(page.locator("html")).toHaveAttribute("data-source-color", "#315DA8");
-    expect(await page.evaluate(() => window.settingsRequests)).toEqual([]);
-    await theme.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(theme.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+    await expect(theme.getByRole("button", { name: /^(Save|Cancel)$/ })).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(1);
-    await selectSettingsSection(page, "general");
-    await page.getByRole("checkbox", { name: "Show prerelease package versions" }).check();
+    await page.getByRole("checkbox", { name: "Remember window size and maximized state", exact: true }).check();
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(2);
-    await page.getByRole("checkbox", { name: "Hide local User Packages" }).check();
+    await selectMaterialOption(page.locator("md-filled-select#settings-motion"), "full");
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(3);
-    await page.getByRole("checkbox", { name: "Hide Example packages" }).check();
+    await selectMaterialOption(page.locator("md-filled-select#settings-motion"), "reduced");
     await expect.poll(() => page.evaluate(() => window.settingsWrites.length)).toBe(4);
     await selectSettingsSection(page, "appearance");
     await selectMaterialOption(page.locator("md-filled-select#settings-locale"), "zh-CN");
@@ -378,10 +375,9 @@ test("settings are labeled, revisioned, and ordinary preferences save through th
     await expect(page.getByRole("heading", { level: 1, name: "项目" })).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await navigationItem(page, "设置").click();
-    await selectSettingsSection(page, "general");
-    await expect(page.getByRole("checkbox", { name: "显示预发布软件包" })).toBeChecked();
-    await expect(page.getByRole("checkbox", { name: "隐藏本地用户软件包" })).toBeChecked();
-    await expect(page.getByRole("checkbox", { name: "隐藏 Example packages" })).toBeChecked();
+    await selectSettingsSection(page, "appearance");
+    await expect(page.getByRole("checkbox", { name: "记住窗口大小和最大化状态", exact: true })).toBeChecked();
+    await expect(page.locator("#settings-motion")).toHaveJSProperty("value", "reduced");
     expect(await page.evaluate(() => window.settingsWrites)).toEqual([
         { expectedRevision: 7, revision: 8 }, { expectedRevision: 8, revision: 9 },
         { expectedRevision: 9, revision: 10 }, { expectedRevision: 10, revision: 11 }, { expectedRevision: 11, revision: 12 }

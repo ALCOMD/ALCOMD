@@ -228,6 +228,7 @@ pub(crate) fn gui_window_state_configure(
     window: Window,
     state: State<'_, WindowStateController>,
     enabled: bool,
+    fullscreen: bool,
     width: Option<f64>,
     height: Option<f64>,
     maximized: Option<bool>,
@@ -241,16 +242,49 @@ pub(crate) fn gui_window_state_configure(
         .lock()
         .map_err(|_| unavailable())?
         .configure(enabled);
-    if !enabled {
-        return Ok(None);
-    }
-    let result = configure_enabled(&window, &state, first_enable, cached);
+    let result = (|| {
+        if enabled {
+            configure_enabled(&window, &state, first_enable, cached)?;
+        }
+        configure_fullscreen(&window, &state, fullscreen)?;
+        Ok(if enabled {
+            state.memory.lock().map_err(|_| unavailable())?.geometry()
+        } else {
+            None
+        })
+    })();
     if result.is_err()
         && let Ok(mut memory) = state.memory.lock()
     {
         memory.configure(false);
     }
     result
+}
+
+fn configure_fullscreen(
+    window: &Window,
+    state: &WindowStateController,
+    fullscreen: bool,
+) -> Result<(), RpcError> {
+    let snapshot = read_snapshot(window)?;
+    if snapshot.fullscreen == fullscreen {
+        return Ok(());
+    }
+    {
+        let mut memory = state.memory.lock().map_err(|_| unavailable())?;
+        let _ = memory.observe(snapshot);
+        // Ignore transition sizes; fullscreen must never replace normal geometry.
+        memory.restoring = true;
+    }
+    let result = window.set_fullscreen(fullscreen).map_err(|_| unavailable());
+    let observed = read_snapshot(window);
+    let mut memory = state.memory.lock().map_err(|_| unavailable())?;
+    memory.restoring = false;
+    if let Ok(snapshot) = observed.as_ref() {
+        let _ = memory.observe(*snapshot);
+    }
+    result?;
+    observed.map(|_| ())
 }
 
 fn configure_enabled(

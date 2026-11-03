@@ -11,8 +11,7 @@ import {
     defaultAppearance,
     productFamily,
     resolveThemeSourceColor,
-    type AppearanceSettings,
-    type ThemePreferences
+    type AppearanceSettings
 } from "@alcomd/ui";
 import {
     extensionIcon,
@@ -115,12 +114,9 @@ export function App({ client = guiRpcClient }: AppProps) {
     const settingsWriterRef = useRef<SettingsAutosave | undefined>(undefined);
     const windowMemory = useRef<WindowStateMemory | undefined>(undefined);
     const [windowStateError, setWindowStateError] = useState<RpcError>();
-    const themePreview = useRef<ThemePreferences | undefined>(undefined);
-    const themeExit = useRef<(() => void) | undefined>(undefined);
     if (settingsConnection.current.client !== client || settingsConnection.current.generation !== connectionGeneration) {
         settingsConnection.current = { client, generation: connectionGeneration };
         settingsAuthority.current = undefined;
-        themePreview.current = undefined;
     }
     const [navigation, setNavigation] = useState(() => ({
         route: readRoute(window.location.pathname, window.location.search),
@@ -138,7 +134,6 @@ export function App({ client = guiRpcClient }: AppProps) {
             if (!navigating) window.requestAnimationFrame(focusRouteTitle);
             return;
         }
-        themeExit.current?.();
         setNavigation({ route: next, client, connectionGeneration, read: createPageRead() });
     };
     const [pendingRoute, setPendingRoute] = useState<Route>();
@@ -147,7 +142,6 @@ export function App({ client = guiRpcClient }: AppProps) {
     const t = createTranslator(locale);
     const [negotiatedCapabilities, setNegotiatedCapabilities] = useState<CapabilitySnapshot>();
     const reconnect = useCallback(() => {
-        themeExit.current?.();
         setConnectionGeneration((generation) => generation + 1);
     }, []);
     const dirtyRef = useRef(false);
@@ -164,19 +158,12 @@ export function App({ client = guiRpcClient }: AppProps) {
         if (settingsAuthority.current !== undefined && value.revision < settingsAuthority.current.revision) return;
         settingsAuthority.current = value;
         settingsWriterRef.current?.seed(value);
-        const visibleTheme = themePreview.current ?? value.settings.appearance;
-        const sourceColor = resolveThemeSourceColor(visibleTheme.sourceColor);
-        setAppearance({
-            mode: visibleTheme.mode,
-            sourceColor,
-            scheme: visibleTheme.scheme
-        });
         const nextLocale = value.settings.locale === "system"
             ? preferredLocale(navigator.language)
             : value.settings.locale;
         setLocale(nextLocale);
         applyMotion(value.settings.appearance.motion);
-        void windowMemory.current?.apply(value.settings.window.rememberState);
+        void windowMemory.current?.apply(value.settings.window.rememberState, value.settings.window.fullscreen);
     }, [client, connectionGeneration]);
 
     const settingsWriter = useMemo(() => new SettingsAutosave(client, applySettings), [client, applySettings]);
@@ -186,20 +173,29 @@ export function App({ client = guiRpcClient }: AppProps) {
     }
     const settingsSave = useSyncExternalStore(settingsWriter.subscribe, settingsWriter.getSnapshot);
 
-    const previewTheme = useCallback((theme: ThemePreferences | undefined) => {
-        if (settingsConnection.current.client !== client || settingsConnection.current.generation !== connectionGeneration) return;
-        themePreview.current = theme;
-        const visible = theme ?? settingsAuthority.current?.settings.appearance;
-        if (visible !== undefined) setAppearance((current) => ({ ...current, mode: visible.mode, scheme: visible.scheme, sourceColor: resolveThemeSourceColor(visible.sourceColor) }));
-    }, [client, connectionGeneration]);
-    const registerThemeExit = useCallback((cancel: (() => void) | undefined) => { themeExit.current = cancel; }, []);
+    useEffect(() => {
+        const fullscreen = (event: KeyboardEvent) => {
+            if (event.key !== "F11" || event.repeat || event.altKey || event.ctrlKey || event.shiftKey || event.metaKey || event.defaultPrevented) return;
+            event.preventDefault();
+            const current = settingsWriter.getSnapshot().settings;
+            if (current === undefined) return;
+            settingsWriter.change({ window: { fullscreen: !current.window.fullscreen } });
+        };
+        window.addEventListener("keydown", fullscreen);
+        return () => window.removeEventListener("keydown", fullscreen);
+    }, [settingsWriter]);
+
+    const visibleTheme = settingsSave.settings?.appearance;
+    useEffect(() => {
+        if (visibleTheme !== undefined) setAppearance({ mode: visibleTheme.mode, sourceColor: resolveThemeSourceColor(visibleTheme.sourceColor), scheme: visibleTheme.scheme });
+    }, [visibleTheme?.mode, visibleTheme?.sourceColor, visibleTheme?.scheme]);
 
     useEffect(() => { document.documentElement.lang = locale; }, [locale]);
 
     useEffect(() => {
         const memory = nativeWindowStateMemory(setWindowStateError);
         windowMemory.current = memory;
-        if (settingsAuthority.current !== undefined) void memory?.apply(settingsAuthority.current.settings.window.rememberState);
+        if (settingsAuthority.current !== undefined) void memory?.apply(settingsAuthority.current.settings.window.rememberState, settingsAuthority.current.settings.window.fullscreen);
         return () => { memory?.dispose(); if (windowMemory.current === memory) windowMemory.current = undefined; };
     }, []);
 
@@ -286,7 +282,7 @@ export function App({ client = guiRpcClient }: AppProps) {
                             </RequestReminder>
                         </div> : null}
                         {windowStateError === undefined ? null : <div className="shell-feedback">
-                            <RequestReminder error={windowStateError} title={null} message="Window size and maximized state could not be remembered." onDismiss={() => setWindowStateError(undefined)} />
+                            <RequestReminder error={windowStateError} title={null} message="Window mode and saved size could not be applied." onDismiss={() => setWindowStateError(undefined)}><Button type="button" variant="text" onClick={() => void windowMemory.current?.retry()}>{t("Retry")}</Button></RequestReminder>
                         </div>}
             </> : undefined}>
             <DiagnosticLogProvider client={client} enabled={negotiatedCapabilities?.kind === "ready" && negotiatedCapabilities.values.has("diagnostics.log.v1")}>
@@ -303,14 +299,13 @@ export function App({ client = guiRpcClient }: AppProps) {
                             <Suspense fallback={<LoadingState title={t("Loading page…")} />}>
                                 <PageReadContext.Provider value={visibleNavigation.read}>
                                     <RouteContent
+                                        autoDiscoverProjects={settingsAuthority.current?.settings.projects.autoDiscover ?? false}
                                         client={client}
                                         locale={locale}
                                         navigate={navigate}
                                         onDirtyChange={handleDirtyChange}
                                         onSettingsApplied={applySettings}
                                         settingsWriter={settingsWriter}
-                                        onThemePreview={previewTheme}
-                                        onThemeSession={registerThemeExit}
                                         route={visibleNavigation.route}
                                     />
                                 </PageReadContext.Provider>
@@ -440,24 +435,22 @@ function NavigationFooter({ client, current, navigate }: { client: GuiRpcClient;
 }
 
 function RouteContent({
+    autoDiscoverProjects,
     client,
     locale,
     navigate,
     onDirtyChange,
     onSettingsApplied,
     settingsWriter,
-    onThemePreview,
-    onThemeSession,
     route
 }: {
+    autoDiscoverProjects: boolean;
     client: GuiRpcClient;
     locale: string;
     navigate(path: string): void;
     onDirtyChange(dirty: boolean): void;
     onSettingsApplied(value: SettingsGetResult): void;
     settingsWriter: SettingsAutosave;
-    onThemePreview(value: ThemePreferences | undefined): void;
-    onThemeSession(cancel: (() => void) | undefined): void;
     route: Route;
 }) {
     const { t } = useTranslation();
@@ -468,7 +461,7 @@ function RouteContent({
     }, [route]);
     const props = { client, navigate };
     switch (route.kind) {
-        case "projects": return <CapabilityRoute required={[capabilities.projectsRead]}><ProjectsPage {...props} /></CapabilityRoute>;
+        case "projects": return <CapabilityRoute required={[capabilities.projectsRead]}><ProjectsPage {...props} autoDiscover={autoDiscoverProjects} /></CapabilityRoute>;
         case "project-detail": return <CapabilityRoute required={[capabilities.projectsRead, capabilities.repositoriesRead]}><ProjectDetailPage {...props} projectId={route.projectId} /></CapabilityRoute>;
         case "project-packages": return <CapabilityRoute required={[capabilities.projectsRead, capabilities.repositoriesRead]}><ProjectPackagesPage {...props} projectId={route.projectId} /></CapabilityRoute>;
         case "project-unity": return <CapabilityRoute required={[capabilities.projectsRead, capabilities.unityRead]}><ProjectUnityPage {...props} afterMigrationOpen={route.afterMigrationOpen} projectId={route.projectId} /></CapabilityRoute>;
@@ -487,7 +480,7 @@ function RouteContent({
         case "extension-ui": return <CapabilityRoute required={[capabilities.extensionsLifecycle, capabilities.extensionsPortableUi]}><ExtensionUiPage client={client} extensionId={route.extensionId} locale={locale} onDirtyChange={onDirtyChange} /></CapabilityRoute>;
         case "activity": return <ActivityPage {...props} />;
         case "diagnostics": return <DiagnosticsPage {...props} />;
-        case "settings": return <CapabilityRoute required={[]}><SettingsPage {...props} settingsWriter={settingsWriter} onApplied={onSettingsApplied} onThemePreview={onThemePreview} onThemeSession={onThemeSession} onDirtyChange={onDirtyChange} /></CapabilityRoute>;
+        case "settings": return <CapabilityRoute required={[]}><SettingsPage {...props} settingsWriter={settingsWriter} onApplied={onSettingsApplied} /></CapabilityRoute>;
         case "about": return <AboutPage {...props} />;
         case "not-found": return <RouteState kind="error" title={t("Page not found")} detail={t("Use the primary navigation to continue.")} />;
     }
