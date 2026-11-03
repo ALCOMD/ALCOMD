@@ -31,6 +31,7 @@ import { withH4ManagementClient } from "./h4-management-client";
 import { withH5UtilitiesClient } from "./h5-utilities-client";
 import { withH5SettingsClient } from "./h5-settings-client";
 import { RequestReminderEvidence } from "./RequestReminderEvidence";
+import { BrowserDiagnosticLog } from "./diagnostic-log-client";
 
 type CandidateQuery = (client: Pick<GuiRpcClient, "packageQueryProjectCandidates">, request: Parameters<typeof queryCandidates>[1]) => ReturnType<typeof queryCandidates>;
 
@@ -137,6 +138,7 @@ class DeterministicGuiClient implements GuiRpcClient {
     selectRepositoryListFile(mode: "open" | "save", fileName?: string): ReturnType<GuiRpcClient["selectRepositoryListFile"]> {
         window.resourceRequests.push({ method: "selectRepositoryListFile", params: { mode, fileName } });
         return this.value(query.get("list-picker") === "cancel" ? undefined : mode === "open" ? "C:/fixture/repositories.txt" : `C:/fixture/${fileName}`);
+    private readonly diagnosticLog = new BrowserDiagnosticLog(query.has("diagnostic-log"), query.has("log-initial-failure"));
     }
     repositoryListInspectFile(path: string): ReturnType<GuiRpcClient["repositoryListInspectFile"]> {
         window.resourceRequests.push({ method: "repositories.inspectListFile", params: { path } });
@@ -277,7 +279,7 @@ class DeterministicGuiClient implements GuiRpcClient {
             state: "ready",
             capabilities: this.mode === "capabilities-missing"
                 ? [...CAPABILITIES_WITH_OPTIONAL_ACTIONS_MISSING]
-                : [...SUPPORTED_CAPABILITIES].filter((capability) => !(query.get("noPlanV2") && capability === "packages.plan.v2") && !(query.has("noUnityManage") && capability === "unity.manage.v1") && !(query.has("noHubOpen") && capability === "unity.hub.open.v1"))
+                : [...SUPPORTED_CAPABILITIES, ...(query.has("diagnostic-log") ? ["diagnostics.log.v1"] : [])].filter((capability) => !(query.get("noPlanV2") && capability === "packages.plan.v2") && !(query.has("noUnityManage") && capability === "unity.manage.v1") && !(query.has("noHubOpen") && capability === "unity.hub.open.v1"))
         });
     }
 
@@ -457,6 +459,9 @@ class DeterministicGuiClient implements GuiRpcClient {
                 ? this.value({ projects: Array.from({ length: 100 }, (_, index) => source(index + 1)), nextCursor: { registeredAtMs: 1_690_000_000_000, id: source(100).projectId } })
                 : this.value({ projects: [source(101)] });
         }
+    diagnosticLogRead(params: Parameters<GuiRpcClient["diagnosticLogRead"]>[0]): ReturnType<GuiRpcClient["diagnosticLogRead"]> { return this.diagnosticLog.read(params); }
+    diagnosticLogCancel(): Promise<void> { return this.diagnosticLog.cancel(); }
+
         if (query.has("projectModified")) {
             const { lastModifiedAtMs: _unknown, ...unknown } = project("00000000-0000-4000-8000-000000000104", "Unknown history");
             const projects = [

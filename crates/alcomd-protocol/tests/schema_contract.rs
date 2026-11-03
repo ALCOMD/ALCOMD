@@ -9,7 +9,7 @@ use alcomd_protocol::{
     RequestEnvelope, StateCheckParams, SuccessResponse, SystemStatusResult,
 };
 
-const SCHEMAS: [(&str, &str); 28] = [
+const SCHEMAS: [(&str, &str); 29] = [
     (
         "request-envelope",
         include_str!("../../../specs/rpc/request-envelope.schema.json"),
@@ -122,7 +122,62 @@ const SCHEMAS: [(&str, &str); 28] = [
         "m7-repository-list",
         include_str!("../../../specs/rpc/m7-repository-list.schema.json"),
     ),
+    (
+        "m7-diagnostic-log",
+        include_str!("../../../specs/rpc/m7-diagnostic-log.schema.json"),
+    ),
 ];
+
+#[test]
+fn diagnostic_log_contract_is_owner_scoped_closed_and_bounded() {
+    use alcomd_protocol::{DiagnosticLogReadParams, DiagnosticLogReadResult};
+    let contract = schema("m7-diagnostic-log");
+    assert_eq!(
+        alcomd_protocol::METHOD_DIAGNOSTICS_LOG_READ,
+        "diagnostics.log.read"
+    );
+    assert_eq!(
+        alcomd_protocol::CAPABILITY_DIAGNOSTICS_LOG_V1,
+        "diagnostics.log.v1"
+    );
+    assert_eq!(
+        contract["x-alcomd-method-permissions"],
+        json!({"diagnostics.log.read": ["diagnostics.read"]})
+    );
+    assert_eq!(contract["x-alcomd-local-owner-only"], true);
+    assert_eq!(contract["x-alcomd-buffer-capacity"], 1024);
+    assert!(serde_json::from_value::<DiagnosticLogReadParams>(json!({"owner":"other"})).is_err());
+    assert!(
+        serde_json::from_value::<DiagnosticLogReadParams>(
+            json!({"cursor":{"instanceId":"a","sequence":1,"path":"private"}})
+        )
+        .is_err()
+    );
+    let params: DiagnosticLogReadParams =
+        serde_json::from_value(json!({"limit":200,"waitMs":20000}))
+            .expect("valid diagnostic log test fixture");
+    assert_eq!(params.limit, Some(200));
+    assert_eq!(params.wait_ms, Some(20000));
+    let fixture = json!({"items":[{"instanceId":"00000000-0000-4000-8000-000000000001","sequence":1,"occurredAtMs":1,"level":"error","code":"diagnostic.error","diagnosticId":"00000000-0000-4000-8000-000000000002","notify":true}],"nextCursor":{"instanceId":"00000000-0000-4000-8000-000000000001","sequence":1},"reset":false,"gap":false});
+    let mut leaked = fixture.clone();
+    leaked["items"][0]["message"] = json!("private raw message");
+    assert!(serde_json::from_value::<DiagnosticLogReadResult>(leaked).is_err());
+    let result: DiagnosticLogReadResult =
+        serde_json::from_value(fixture.clone()).expect("valid diagnostic log test fixture");
+    assert_eq!(
+        serde_json::to_value(result).expect("valid diagnostic log test fixture"),
+        fixture
+    );
+    assert_eq!(
+        contract["$defs"]["readParams"]["properties"]["limit"]["maximum"],
+        200
+    );
+    assert_eq!(
+        contract["$defs"]["readParams"]["properties"]["waitMs"]["maximum"],
+        20000
+    );
+    assert_eq!(contract["$defs"]["item"]["additionalProperties"], false);
+}
 
 #[test]
 fn all_rpc_v1_schemas_are_valid_json_schema_documents() {

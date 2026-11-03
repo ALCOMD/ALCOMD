@@ -8,6 +8,7 @@ use tauri::State;
 use tauri::async_runtime::Mutex;
 use tauri_plugin_dialog::DialogExt;
 
+mod diagnostic_log;
 mod window_state;
 
 #[derive(Default)]
@@ -1649,6 +1650,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(GuiClientState::default())
+        .manage(diagnostic_log::DiagnosticLogClient::default())
         .manage(window_state::WindowStateController::default())
         .on_window_event(window_state::on_window_event)
         .invoke_handler(tauri::generate_handler![
@@ -1662,6 +1664,8 @@ pub fn run() {
             gui_settings_update,
             gui_activity_list,
             gui_diagnostics_list,
+            diagnostic_log::gui_diagnostic_log_read,
+            diagnostic_log::gui_diagnostic_log_cancel,
             gui_projects_inspect,
             gui_projects_list,
             gui_project_get,

@@ -83,11 +83,11 @@ for (const surface of [
         await expect(table.locator("tbody tr")).toHaveCount(surface.initial);
         await page.evaluate((method) => window.h5Utilities.failNext(method, "store_unavailable"), surface.method);
         await page.getByRole("button", { name: "Load more", exact: true }).click();
-        await expect(page.locator(".pagination-controls").getByRole("alert")).toContainText(requestErrorMessage("store_unavailable"));
+        await expect(page.locator(".reminder-floating").getByRole("alert")).toContainText(requestErrorMessage("store_unavailable"));
         await expect(table.locator("tbody tr")).toHaveCount(surface.initial);
         await page.getByRole("button", { name: "Retry loading more", exact: true }).click();
         await expect(table.locator("tbody tr")).toHaveCount(surface.initial + 1);
-        await expect(page.locator(".pagination-controls").getByRole("alert")).toHaveCount(0);
+        await expect(page.locator(".reminder-floating").getByRole("alert")).toHaveCount(0);
         const pages = (await requests(page, surface.method)).filter((request) => request.params.cursor !== undefined);
         expect(pages.map((request) => request.params.cursor)).toEqual([surface.cursor, surface.cursor]);
     });

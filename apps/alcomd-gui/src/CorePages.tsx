@@ -84,6 +84,9 @@ import { useProjectUnityLaunch } from "./ProjectUnityLaunch";
 import { CreateProjectDialog, RestoreProjectDialog } from "./ProjectCreationDialogs";
 import { capabilities, capabilityUnavailableTitle, useCapability, useCapabilityState, useReconnect } from "./capabilities";
 import { requestErrorMessage } from "./request-errors";
+import { useDiagnosticLog } from "./diagnostic-log-ui";
+import { diagnosticLogKey, diagnosticLogMessage } from "./diagnostic-log";
+import type { DiagnosticLogLevel } from "@alcomd/sdk";
 
 interface PageProps {
     client: GuiRpcClient;
@@ -2125,20 +2128,25 @@ function DiagnosticLogRows({ client, items, search }: { client: GuiRpcClient; it
     const [subsystem, setSubsystem] = useState("");
     const [selected, setSelected] = useState<string>();
     const query = search.trim().toLowerCase();
-    const shown = items.filter((item) => (severity === "" || item.severity === severity)
+    const records: Array<Omit<LoadedDiagnosticItem, "severity"> & { severity: DiagnosticLogLevel; key: string; message: string }> = [
+        ...items.map((item, index) => ({ ...item, key: `operation:${item.operationId}:${index}`, message: requestErrorMessage(item.code) })),
+        ...snapshot.items.map((item) => ({ occurredAtMs: item.occurredAtMs, severity: item.level, subsystem: productFamily, code: item.code,
+            diagnosticId: item.diagnosticId, summary: "", key: diagnosticLogKey(item), message: diagnosticLogMessage(item.code) }))
+    ].sort((left, right) => right.occurredAtMs - left.occurredAtMs);
+    const shown = records.filter((item) => (severity === "" || item.severity === severity)
         && (subsystem === "" || item.subsystem === subsystem)
-        && [item.code, item.summary, t(requestErrorMessage(item.code)), item.subsystem, item.diagnosticId, item.operationId].some((value) => value?.toLowerCase().includes(query)));
+        && [item.code, item.summary, t(item.message), item.subsystem, item.diagnosticId, item.operationId].some((value) => value?.toLowerCase().includes(query)));
     return <div className="logs-workspace">
         <div className="alcomd-filter-bar logs-filter-toolbar" aria-label={t("Diagnostic filters")}>
-            <LogFilter label={t("Severity")} value={severity} values={["warning", "error"]} onChange={setSeverity} />
-            <LogFilter label={t("Subsystem")} value={subsystem} values={items.map((item) => item.subsystem)} onChange={setSubsystem} />
-            <p className="alcomd-filter-bar-status" role="status">{t("{shown} of {total} loaded entries · Search and filters apply to loaded entries only.", { shown: shown.length, total: items.length })}</p>
+            <LogFilter label={t("Severity")} value={severity} values={["warning", "error", ...snapshot.items.map((item) => item.level)]} onChange={setSeverity} />
+            <LogFilter label={t("Subsystem")} value={subsystem} values={records.map((item) => item.subsystem)} onChange={setSubsystem} />
+            <p className="alcomd-filter-bar-status" role="status">{t("{shown} of {total} loaded entries · Search and filters apply to loaded entries only.", { shown: shown.length, total: records.length })}</p>
         </div>
-        <DesktopList columns={[{ key: "time", header: t("Time"), width: 250, className: "logs-time" }, { key: "severity", header: t("Severity"), width: 110 }, { key: "subsystem", header: t("Subsystem"), width: 150 }, { key: "diagnostic", header: t("Diagnostic") }, { key: "actions", header: t("Actions"), width: 140 }]} emptyMessage={items.length === 0 ? t("No diagnostics reported") : t("No matching loaded diagnostics. Change the filters or load more entries.")} label={t("Diagnostics")} minWidth={760} rows={shown.map((item, index) => ({ key: `${item.operationId}-${item.occurredAtMs}-${index}`, cells: [
+        <DesktopList columns={[{ key: "time", header: t("Time"), width: 250, className: "logs-time" }, { key: "severity", header: t("Severity"), width: 110 }, { key: "subsystem", header: t("Subsystem"), width: 150 }, { key: "diagnostic", header: t("Diagnostic") }, { key: "actions", header: t("Actions"), width: 140 }]} emptyMessage={records.length === 0 ? t(snapshot.error === undefined ? "No diagnostics reported" : "No diagnostic records loaded.") : t("No matching loaded diagnostics. Change the filters or load more entries.")} label={t("Diagnostics")} minWidth={760} rows={shown.map((item) => ({ key: item.key, cells: [
             formatTime(t, locale, item.occurredAtMs),
             <span className={`logs-severity logs-severity--${item.severity}`}>{humanize(t, item.severity)}</span>,
             item.subsystem,
-            <span className="logs-summary"><strong>{t(requestErrorMessage(item.code))}</strong><small>{item.code}</small>{item.diagnosticId === undefined ? null : <small>{t("Diagnostic ID: ")}{item.diagnosticId}</small>}</span>,
+            <span className="logs-summary"><strong>{t(item.message)}</strong><small>{item.code}</small>{item.diagnosticId === undefined ? null : <small>{t("Diagnostic ID: ")}{item.diagnosticId}</small>}</span>,
             item.operationId === undefined ? null : <Button disabled={!canReadOperations} title={capabilityUnavailableTitle(canReadOperations, capabilities.operations, t)} onClick={() => setSelected(item.operationId)} type="button" variant="text">{t("View operation")}</Button>
         ] }))} sizing="fixed" />
         {selected === undefined ? null : <LogOperationDialog client={client} operationId={selected} onClose={() => setSelected(undefined)} />}
@@ -2155,6 +2163,7 @@ export function DiagnosticsPage({ client, navigate }: PageProps) {
     const reminder = useReminder();
     const [checking, setChecking] = useState(false);
     const checkingRef = useRef(false);
+    const { snapshot, retry } = useDiagnosticLog();
     const [search, setSearch] = useState("");
     const runStateCheck = async () => {
         if (!canCheckState || !canReadOperations || checkingRef.current) return;
@@ -2164,6 +2173,10 @@ export function DiagnosticsPage({ client, navigate }: PageProps) {
         let accepted = false;
         try {
             const result = await client.stateCheck();
+        {snapshot.gap ? <p role="status">{t("Some earlier log entries are no longer available.")}</p> : null}
+        {snapshot.error === undefined ? null : <RequestReminder inline error={snapshot.error} message="New logs could not be loaded. The last loaded entries are still shown.">
+            <Button onClick={retry} type="button" variant="text">{t("Retry")}</Button>
+        </RequestReminder>}
             if (!current()) return;
             accepted = true;
             setOperationId(result.operationId);
@@ -2275,6 +2288,9 @@ function humanize(t: Translate, value: string): string {
 function safeError(t: Translate, locale: SupportedLocale, caught: unknown): RpcError {
     if (typeof caught === "object" && caught !== null && "code" in caught && typeof caught.code === "string") {
         return { code: caught.code, message: t("The request could not be completed."), ...("diagnosticId" in caught && typeof caught.diagnosticId === "string" ? { diagnosticId: caught.diagnosticId } : {}) };
+        "trace": "trace",
+        "debug": "debug",
+        "info": "info",
     }
     return { code: "internal_error", message: t("The request could not be completed.") };
 }

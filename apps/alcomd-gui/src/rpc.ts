@@ -11,7 +11,9 @@ import type {
     ExtensionUiOpenResult,
     ExtensionUiRefreshParams,
     ExtensionUiSnapshotResult,
-    RpcError
+    RpcError,
+    DiagnosticLogReadParams,
+    DiagnosticLogReadResult
 } from "@alcomd/sdk";
 import type { UnityHubOpenResult } from "@alcomd/sdk";
 import type { RepositoryListInspection, RepositoryListPreview, RepositoryListExportResult } from "@alcomd/sdk";
@@ -97,6 +99,8 @@ export interface GuiRpcClient {
     settingsUpdate(expectedRevision: number, update: SettingsUpdate): Promise<SettingsGetResult>;
     activityList(cursor?: ActivityCursor): Promise<ActivityListResult>;
     diagnosticsList(cursor?: DiagnosticCursor): Promise<DiagnosticsListResult>;
+    diagnosticLogRead(params: DiagnosticLogReadParams): Promise<DiagnosticLogReadResult>;
+    diagnosticLogCancel(): Promise<void>;
     projectsInspect(path: string, discoveryMode: "exact-root" | "search-parents"): Promise<ProjectResult>;
     projectsList(cursor?: RegistryCursor): Promise<ProjectsListResult>;
     projectGet(projectId: string): Promise<ProjectResult>;
@@ -236,6 +240,14 @@ class TauriGuiRpcClient implements GuiRpcClient {
 
     diagnosticsList(cursor?: DiagnosticCursor): Promise<DiagnosticsListResult> {
         return invokeTyped("gui_diagnostics_list", { params: { cursor, limit: 100 } });
+    }
+
+    diagnosticLogRead(params: DiagnosticLogReadParams): Promise<DiagnosticLogReadResult> {
+        return invokeTyped("gui_diagnostic_log_read", { params });
+    }
+
+    diagnosticLogCancel(): Promise<void> {
+        return invokeTyped("gui_diagnostic_log_cancel", {});
     }
 
     projectsInspect(path: string, discoveryMode: "exact-root" | "search-parents"): Promise<ProjectResult> {

@@ -134,12 +134,16 @@ export function RequestReminder({ children, error, inline = false, message, onDi
     const inOutlet = useContext(InReminderOutlet);
     const safe = normalizeRequestError(error);
     const confirmation = safe.code === "extension_publisher_confirmation_required";
-    const notice = <Reminder key={`${safe.code}:${safe.diagnosticId ?? ""}`} onDismiss={onDismiss} tone={confirmation ? "warning" : "error"} title={title === null ? undefined : title ?? t(confirmation ? "Publisher confirmation required" : "Request failed")} details={<>
-        <strong>{t("Error code")}</strong><code>{safe.code}</code>
-        {safe.diagnosticId === undefined ? null : <><strong>{t("Diagnostic ID")}</strong><code>{safe.diagnosticId}</code></>}
-    </>}>
+    const notice = <Reminder key={`${safe.code}:${safe.diagnosticId ?? ""}`} onDismiss={onDismiss} tone={confirmation ? "warning" : "error"} title={title === null ? undefined : title ?? t(confirmation ? "Publisher confirmation required" : "Request failed")} details={<DiagnosticDetails code={safe.code} diagnosticId={safe.diagnosticId} />}>
         <p>{t(message ?? requestErrorMessage(safe.code))}</p>
         {children === undefined ? null : <div className="reminder-context">{children}</div>}
     </Reminder>;
     return inline || inOutlet ? notice : <GlobalReminder>{notice}</GlobalReminder>;
+}
+
+export function DiagnosticDetails({ code, diagnosticId }: { code: string; diagnosticId?: string }) {
+    const { t } = useTranslation();
+    return <><strong>{t("Error code")}</strong><code>{code}</code>
+        {diagnosticId === undefined ? null : <><strong>{t("Diagnostic ID")}</strong><code>{diagnosticId}</code></>}
+    </>;
 }

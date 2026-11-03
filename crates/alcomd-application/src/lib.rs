@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 mod m4;
+mod diagnostic_log;
 mod m5;
 mod m5_backup;
 mod m5_template;
@@ -34,6 +35,7 @@ mod repository_list;
 
 pub use m4::*;
 pub use m5::*;
+pub use diagnostic_log::*;
 pub use m5_backup::*;
 pub use m5_template::*;
 pub use m6::*;

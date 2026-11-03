@@ -3,6 +3,9 @@ use clap::Parser;
 use std::path::PathBuf;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::prelude::*;
+
+mod log_capture;
 
 /// ALCOMD per-user core daemon.
 #[derive(Debug, Parser)]
@@ -18,7 +21,8 @@ struct Arguments {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    init_tracing();
+    let diagnostic_log = alcomd_application::DiagnosticLog::new();
+    init_tracing(diagnostic_log.clone());
     let arguments = Arguments::parse();
     let config = arguments
         .runtime_dir
@@ -36,7 +40,7 @@ async fn main() -> anyhow::Result<()> {
         endpoint,
         "starting per-user daemon"
     );
-    alcomd::serve_with_data_until(config, data, async {
+    alcomd::serve_with_data_and_diagnostics_until(config, data, diagnostic_log, async {
         tokio::signal::ctrl_c()
             .await
             .expect("failed to wait for Ctrl+C");
@@ -47,8 +51,17 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn init_tracing() {
+fn init_tracing(diagnostic_log: alcomd_application::DiagnosticLog) {
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("alcomd=info"));
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().with_filter(filter))
+        .with(
+            log_capture::DiagnosticLogLayer::new(diagnostic_log).with_filter(
+                tracing_subscriber::filter::filter_fn(|metadata| {
+                    log_capture::is_core_target(metadata.target())
+                }),
+            ),
+        )
+        .init();
 }

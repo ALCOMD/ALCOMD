@@ -112,6 +112,7 @@ impl AlcomdClient {
                 instance_id: format!("{}-{sequence}", std::process::id()),
             },
             capabilities: vec![
+                alcomd_protocol::CAPABILITY_DIAGNOSTICS_LOG_V1.to_owned(),
                 CAPABILITY_STATE_CHECK_V1.to_owned(),
                 CAPABILITY_OPERATIONS_V1.to_owned(),
                 CAPABILITY_EVENTS_REPLAY_V1.to_owned(),
@@ -196,6 +197,15 @@ impl AlcomdClient {
             },
         )
         .await
+    }
+
+    /// Reads bounded safe Core log records on a dedicated client connection.
+    pub async fn diagnostic_log_read(
+        &mut self,
+        params: alcomd_protocol::DiagnosticLogReadParams,
+    ) -> Result<alcomd_protocol::DiagnosticLogReadResult, ClientError> {
+        self.call(alcomd_protocol::METHOD_DIAGNOSTICS_LOG_READ, params)
+            .await
     }
 
     /// Replays visible durable Events after an exclusive sequence.

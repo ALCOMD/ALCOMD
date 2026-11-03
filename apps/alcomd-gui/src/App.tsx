@@ -29,6 +29,7 @@ import { Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, us
 import { SettingsAutosave } from "./settings-autosave";
 import { guiVersion } from "./build-info";
 import { ReminderProvider, RequestReminder } from "./Reminder";
+import { DiagnosticLogProvider } from "./diagnostic-log-ui";
 
 import {
     AboutPage,
@@ -290,6 +291,7 @@ export function App({ client = guiRpcClient }: AppProps) {
                             </RequestReminder>
                         </div>}
             </> : undefined}>
+            <DiagnosticLogProvider client={client} enabled={negotiatedCapabilities?.kind === "ready" && negotiatedCapabilities.values.has("diagnostics.log.v1")}>
             <div className="app-shell">
                 <div className="app-body">
                     <PrimaryNavigation
@@ -326,7 +328,7 @@ export function App({ client = guiRpcClient }: AppProps) {
                     </div>
                 </MaterialDialog>
             </div>
-            </ReminderProvider>
+            </DiagnosticLogProvider></ReminderProvider>
         </CapabilityProvider></LocaleProvider>
     );
 }

@@ -29,7 +29,9 @@ use alcomd_protocol::{
 use alcomd_store::StateStoreHandle;
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tracing::Instrument;
 
+mod diagnostic_log_rpc;
 mod hub_platform;
 mod m3_rpc;
 mod m4_rpc;
@@ -99,6 +101,7 @@ struct Applications {
     m4: M4PackageApplication,
     m5: M5UnityApplication,
     templates: TemplateApplication,
+    diagnostic_log: alcomd_application::DiagnosticLog,
     backups: BackupApplication,
     m6: M6ExtensionApplication,
     m7: M7ExtensionApplication,
@@ -132,6 +135,28 @@ async fn initialize_daemon(
     initialize_daemon_with_directories(
         ipc,
         data,
+/// Starts Core with the same safe log source used by its tracing subscriber.
+pub async fn serve_with_data_and_diagnostics_until<F>(
+    ipc: IpcConfig,
+    data: DataConfig,
+    diagnostic_log: alcomd_application::DiagnosticLog,
+    shutdown: F,
+) -> Result<(), BindError>
+where
+    F: Future<Output = ()>,
+{
+    let (mut listener, applications) = initialize_daemon_with_diagnostics(
+        ipc,
+        data,
+        Arc::new(storage_platform::PlatformStorageDirectories),
+        diagnostic_log,
+    )
+    .await?;
+    run_listener(&mut listener, applications, shutdown)
+        .await
+        .map_err(BindError::Io)
+}
+
         Arc::new(storage_platform::PlatformStorageDirectories),
     )
     .await
@@ -148,6 +173,21 @@ async fn initialize_daemon_with_directories(
         .parent()
         .ok_or_else(|| BindError::Io(io::Error::other("state path has no parent")))?
         .to_path_buf();
+) -> Result<(IpcListener, Arc<Applications>), BindError> {
+    initialize_daemon_with_diagnostics(
+        ipc,
+        data,
+        directory_platform,
+        alcomd_application::DiagnosticLog::new(),
+    )
+    .await
+}
+
+async fn initialize_daemon_with_diagnostics(
+    ipc: IpcConfig,
+    data: DataConfig,
+    directory_platform: Arc<dyn alcomd_application::StorageDirectoryPlatform>,
+    diagnostic_log: alcomd_application::DiagnosticLog,
     let cache_root = data_root.join("package-cache");
     let store = StateStoreHandle::open(database).map_err(|error| {
         BindError::Io(io::Error::other(format!(
@@ -319,6 +359,7 @@ async fn initialize_daemon_with_directories(
             alcomd_vpm::RepositoryListFileAdapter::new(data_root.clone()),
         ),
         m4,
+        diagnostic_log,
         m5: unity,
         templates,
         backups,
@@ -419,7 +460,16 @@ async fn serve_connection(
                 Some(payload) => payload,
                 None => return Ok(()),
             };
-            let action = dispatch_payload(&payload, &state, &applications).await;
+            let dispatch = dispatch_payload(&payload, &state, &applications)
+                .instrument(tracing::info_span!("rpc_request", gui_toast = false));
+            let action = if diagnostic_log_rpc::is_log_read(&payload) {
+                match diagnostic_log_rpc::until_disconnect(&mut stream, dispatch).await? {
+                    Some(action) => action,
+                    None => return Ok(()),
+                }
+            } else {
+                dispatch.await
+            };
             write_json_frame(&mut stream, &action.response).await?;
             if let Some(capabilities) = action.complete_handshake {
                 state.handshake_complete = true;
@@ -560,6 +610,7 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
 }
 
 fn dispatch_status(request: RequestEnvelope, state: &ConnectionState) -> DispatchAction {
+        alcomd_protocol::CAPABILITY_DIAGNOSTICS_LOG_V1,
     if request
         .params
         .as_object()
@@ -794,6 +845,9 @@ async fn dispatch_m2(
         }
         _ if request.method.starts_with("unity.") => {
             m5_rpc::dispatch(request, state, &applications.m5, access).await
+        }
+        alcomd_protocol::METHOD_DIAGNOSTICS_LOG_READ => {
+            diagnostic_log_rpc::dispatch(request, state, &applications.diagnostic_log, access).await
         }
         _ if request.method.starts_with("templates.") => {
             m5_template_rpc::dispatch(request, state, &applications.templates, access).await

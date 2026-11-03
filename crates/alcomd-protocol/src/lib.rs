@@ -9,10 +9,12 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+mod diagnostic_log;
 mod m7;
 mod m7_candidates;
 mod repository_list;
 
+pub use diagnostic_log::*;
 pub use m7::*;
 pub use m7_candidates::*;
 pub use repository_list::*;
