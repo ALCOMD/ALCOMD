@@ -8,14 +8,21 @@
     --alcomd-font-mono: "Noto Sans Mono", "Noto Sans Mono CJK SC", ui-monospace, monospace;
     --md-ref-typeface-brand: var(--alcomd-font-sans);
     --md-ref-typeface-plain: var(--alcomd-font-sans);
+    --md-sys-shape-corner-extra-small: 4px;
     --md-sys-shape-corner-small: 8px;
     --md-sys-shape-corner-medium: 12px;
     --md-sys-shape-corner-large: 16px;
     --md-sys-shape-corner-extra-large: 28px;
     --md-sys-shape-corner-full: 9999px;
+    /* Component defaults choose medium; the Material shape scale stays intact. */
+    --md-outlined-field-container-shape: var(--md-sys-shape-corner-medium);
+    --md-filled-field-container-shape: var(--md-sys-shape-corner-medium);
     --md-outlined-text-field-container-shape: var(--md-sys-shape-corner-medium);
     --md-filled-text-field-container-shape: var(--md-sys-shape-corner-medium);
     --md-menu-container-shape: var(--md-sys-shape-corner-medium);
+    --md-outlined-select-text-field-container-shape: var(--md-sys-shape-corner-medium);
+    --md-filled-select-text-field-container-shape: var(--md-sys-shape-corner-medium);
+    --md-outlined-select-menu-container-shape: var(--md-sys-shape-corner-medium);
     --md-filled-select-menu-container-shape: var(--md-sys-shape-corner-medium);
     --alcomd-shape-container: var(--md-sys-shape-corner-extra-large);
     --alcomd-shape-list-item: var(--md-sys-shape-corner-small);
