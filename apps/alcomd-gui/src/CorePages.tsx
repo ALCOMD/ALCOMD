@@ -631,13 +631,13 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
     const menuItems = <>
         {workspace ? <MenuItem disabled={!canManageUnity} label={t("Edit launch arguments")} onClick={() => setArgumentsOpen(true)} title={capabilityUnavailableTitle(canManageUnity, capabilities.unityManage, t)} /> : null}
         {viewLaunchStatus === undefined ? null : <MenuItem disabled={unityLaunch.busy || launchAction?.disabled === true} label={t("Unity launch status")} onClick={() => { setMenuOpen(false); viewLaunchStatus(menuAnchorRef.current); }} />}
-        <MenuItem className="project-actions-menu-item" disabled={!canReadProjects || openingDirectory} label={t("Open Project Directory")} onClick={() => void openDirectory()} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead, t)} />
-        <MenuItem className="project-actions-menu-item" disabled={!canCopyProjects || revision === undefined} label={t("Copy Project")} onClick={beginCopy} title={capabilityUnavailableTitle(canCopyProjects, capabilities.projectsCopy, t)} />
+        <MenuItem disabled={!canReadProjects || openingDirectory} label={t("Open Project Directory")} onClick={() => void openDirectory()} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead, t)} />
+        <MenuItem disabled={!canCopyProjects || revision === undefined} label={t("Copy Project")} onClick={beginCopy} title={capabilityUnavailableTitle(canCopyProjects, capabilities.projectsCopy, t)} />
         {workspace ? <>
             <MenuItem disabled={!canReadBackups} label={t("Backups")} onClick={() => navigate(`/projects/${projectId}/backups`)} title={capabilityUnavailableTitle(canReadBackups, capabilities.backupsRead, t)} />
-            <MenuItem className="project-actions-menu-item project-actions-menu-item--danger project-actions-menu-item--danger-group" disabled={!canManageProjects || revision === undefined} label={t("Remove from list")} onClick={beginUnregister} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry, t)} />
-            <MenuItem className="project-actions-menu-item project-actions-menu-item--danger" disabled={!canDeleteProjects || revision === undefined} label={t("Delete Project Directory…")} onClick={beginDeleteDirectory} title={capabilityUnavailableTitle(canDeleteProjects, capabilities.projectsDelete, t)} />
-        </> : <MenuItem className="project-actions-menu-item project-actions-menu-item--danger" disabled={!canManageProjects || revision === undefined} label={t("Remove Project")} onClick={beginUnregister} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry, t)} />}
+            <MenuItem className="project-actions-menu-item--danger project-actions-menu-item--danger-group" disabled={!canManageProjects || revision === undefined} label={t("Remove from list")} onClick={beginUnregister} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry, t)} />
+            <MenuItem className="project-actions-menu-item--danger" disabled={!canDeleteProjects || revision === undefined} label={t("Delete Project Directory…")} onClick={beginDeleteDirectory} title={capabilityUnavailableTitle(canDeleteProjects, capabilities.projectsDelete, t)} />
+        </> : <MenuItem className="project-actions-menu-item--danger" disabled={!canManageProjects || revision === undefined} label={t("Remove Project")} onClick={beginUnregister} title={capabilityUnavailableTitle(canManageProjects, capabilities.projectsRegistry, t)} />}
     </>;
     return (
         <>
@@ -652,7 +652,7 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
                 {launchAction === undefined ? <><IconButton className="project-more-actions" label={t("More actions for {value0}", { value0: projectName(t, locale, project) })} onClick={() => setMenuOpen(true)} ref={menuAnchorRef} type="button">
                     <Icon asset={moreVertIcon} size={24} />
                 </IconButton>
-                <Menu anchorRef={menuAnchorRef} className="project-actions-menu" onClose={() => setMenuOpen(false)} open={menuOpen}>
+                <Menu kind="actions" anchorRef={menuAnchorRef} className="project-actions-menu" onClose={() => setMenuOpen(false)} open={menuOpen}>
                     {menuItems}
                 </Menu>
                 </> : <SplitButton {...launchAction} icon={<Icon asset={playArrowIcon} slot="icon" />} label={t("Open Unity")} menuButtonRef={menuAnchorRef} menuLabel={t("More actions for {value0}", { value0: projectName(t, locale, project) })}>{menuItems}</SplitButton>}
@@ -1038,7 +1038,7 @@ interface PackageWorkspaceRow {
     sources: string[];
 }
 
-function PackageVersionMenu({ client, project, snapshot, disabled, canPlan, onSelect, onStale, row }: { client: GuiRpcClient; project: ProjectSnapshot; snapshot?: string; disabled: boolean; canPlan: boolean; onSelect(version: PackageCandidateEvidence, origin: DialogOrigin): void; onStale(): void; row: PackageWorkspaceRow }) {
+function PackageVersionPicker({ client, project, snapshot, disabled, canPlan, onSelect, onStale, row }: { client: GuiRpcClient; project: ProjectSnapshot; snapshot?: string; disabled: boolean; canPlan: boolean; onSelect(version: PackageCandidateEvidence, origin: DialogOrigin): void; onStale(): void; row: PackageWorkspaceRow }) {
     const { t, locale } = useTranslation();
     const [open, setOpen] = useState(false);
     const [menuMounted, setMenuMounted] = useState(false);
@@ -1076,7 +1076,7 @@ function PackageVersionMenu({ client, project, snapshot, disabled, canPlan, onSe
         <Button aria-expanded={open} aria-haspopup="menu" aria-label={t("Version for {value0}: {value1}", { value0: row.displayName, value1: row.installedVersion ?? t("Not installed") })} disabled={disabled || !snapshot} onClick={() => { setMenuMounted(true); setOpen(true); if (cursor === undefined) void load(); }} ref={anchorRef} type="button" variant="text">
             {row.installedVersion ?? t("Not installed")}
         </Button>
-        {menuMounted ? <Menu anchorRef={anchorRef} className="package-version-menu" onClose={() => setOpen(false)} open={open}>
+        {menuMounted ? <Menu kind="selection" anchorRef={anchorRef} className="package-version-menu" onClose={() => setOpen(false)} open={open}>
             {items.map((option) => <MenuItem
                 disabled={disabled || !canPlan || busy || !actionableVersion(option)}
                 key={`${candidateSourceKey(option.source)}:${option.version}`}
@@ -1101,7 +1101,7 @@ function PackagePrimaryAction({ canPlanV1, canPlanV2, catalogReady, evidence, on
     return update?.kind === "target" ? <IconButton className="package-primary-action" disabled={!canPlanV1 || !canPlanV2 || !catalogReady} label={t("Update")} onClick={() => onSelect(update.candidate, origin)} ref={origin} title={capabilityUnavailableTitle(canPlanV1 && canPlanV2, capabilities.packagesPlanV2, t) ?? t("Update {value0}", { value0: row.displayName })} type="button"><Icon asset={upgradeIcon} /></IconButton> : null;
 }
 
-function PackageSourceMenu({ label, onChange, options, value, disabled }: { label: string; onChange(value: string): void; options: PackageWorkspaceRow["sourceOptions"]; value: string; disabled: boolean }) {
+function PackageSourcePicker({ label, onChange, options, value, disabled }: { label: string; onChange(value: string): void; options: PackageWorkspaceRow["sourceOptions"]; value: string; disabled: boolean }) {
     const { t, locale } = useTranslation();
     const [open, setOpen] = useState(false);
     const anchorRef = useRef<HTMLElement>(null);
@@ -1111,7 +1111,7 @@ function PackageSourceMenu({ label, onChange, options, value, disabled }: { labe
             <Button aria-expanded={open} aria-label={label} className="package-row-source-menu" disabled={disabled} onClick={() => setOpen(true)} ref={anchorRef} type="button" variant="outlined">
                 {selected?.label ?? (value ? t("Selected source unavailable") : t("Automatic source selection"))}
             </Button>
-            <Menu anchorRef={anchorRef} onClose={() => setOpen(false)} open={open}>
+            <Menu kind="selection" anchorRef={anchorRef} onClose={() => setOpen(false)} open={open}>
                 <MenuItem label={t("Automatic source selection")} onClick={() => { onChange(""); setOpen(false); }} />
                 {options.map((option) => <MenuItem key={option.key} label={option.label} onClick={() => { onChange(option.key); setOpen(false); }} />)}
             </Menu>
@@ -1148,7 +1148,7 @@ function PackageRowMoreMenu({ canPlanV1, canPlanV2, client, onAction, row }: {
             <IconButton className="package-more-actions" label={t("More actions for {value0}", { value0: row.displayName })} onClick={() => { setContentMounted(true); setOpen(true); }} ref={anchorRef} type="button">
                 <Icon asset={moreVertIcon} size={24} />
             </IconButton>
-            {contentMounted ? <Menu anchorRef={anchorRef} className="package-actions-menu alcomd-compact-menu" onClose={() => setOpen(false)} open={open}>
+            {contentMounted ? <Menu kind="actions" anchorRef={anchorRef} className="package-actions-menu" onClose={() => setOpen(false)} open={open}>
                 <MenuItem disabled={row.installedVersion === undefined || !canPlanV2} label={t("Reinstall")} onClick={() => { setOpen(false); onAction("reinstall", anchorRef); }} title={capabilityUnavailableTitle(canPlanV2, capabilities.packagesPlanV2, t)} />
                 <MenuItem disabled={row.linkTarget?.documentation !== true} label={t("Documentation")} onClick={() => void openLink("documentation")} />
                 <MenuItem disabled={row.linkTarget?.changelog !== true} label={t("Changelog")} onClick={() => void openLink("changelog")} />
@@ -1167,7 +1167,7 @@ function PackageWorkspaceMoreMenu({ canPlanV1, canPlanV2, onResolve, onReinstall
             <IconButton label={t("More package actions")} onClick={() => setOpen(true)} ref={anchorRef} type="button">
                 <Icon asset={moreVertIcon} size={24} />
             </IconButton>
-            <Menu anchorRef={anchorRef} onClose={() => setOpen(false)} open={open}>
+            <Menu kind="actions" anchorRef={anchorRef} onClose={() => setOpen(false)} open={open}>
                 <MenuItem disabled={!canPlanV1} label={t("Resolve Dependencies…")} onClick={() => { setOpen(false); onResolve(anchorRef); }} title={capabilityUnavailableTitle(canPlanV1, capabilities.packagesPlanV1, t)} />
                 <MenuItem disabled={!canPlanV2} label={t("Reinstall All Installed Packages…")} onClick={() => { setOpen(false); onReinstallAll(anchorRef); }} title={capabilityUnavailableTitle(canPlanV2, capabilities.packagesPlanV2, t)} />
             </Menu>
@@ -1572,9 +1572,9 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                          return { key: row.packageId, cells: [
                                              <Checkbox checked={bulkSelection.includes(row.packageId)} label={t("Select {value0}", { value0: row.displayName })} onChange={(checked) => setBulkSelection((current) => checked ? [...new Set([...current, row.packageId])] : current.filter((packageId) => packageId !== row.packageId))} />,
                                              <><strong>{row.displayName}</strong><small>{row.packageId}</small></>,
-                                             <><PackageVersionMenu client={client} project={project} snapshot={currentEvidence ? candidates.snapshot.fingerprint : undefined} disabled={!canQueryCandidates} canPlan={catalogReady && canPlanPackagesV1 && canPlanPackagesV2} onStale={() => setEvidenceInvalid(true)} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} />{row.requestedRange === undefined ? null : <small>{t("Requested ")}{row.requestedRange}</small>}</>,
+                                             <><PackageVersionPicker client={client} project={project} snapshot={currentEvidence ? candidates.snapshot.fingerprint : undefined} disabled={!canQueryCandidates} canPlan={catalogReady && canPlanPackagesV1 && canPlanPackagesV2} onStale={() => setEvidenceInvalid(true)} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} />{row.requestedRange === undefined ? null : <small>{t("Requested ")}{row.requestedRange}</small>}</>,
                                              <>{evidence ? choiceText(evidence.latest, t) : t("Evidence unavailable")}{evidence && update?.kind !== "target" ? <small>{update ? updateReason(update, t) : ""}</small> : null}</>,
-                                             row.sourceOptions.length === 1 && !sourceSelections[row.packageId] ? row.sourceOptions[0]?.label : <PackageSourceMenu disabled={!currentEvidence} label={t("Source for {value0}", { value0: row.displayName })} onChange={(key) => setSourceSelections((current) => ({ ...current, [row.packageId]: key }))} options={row.sourceOptions} value={sourceSelections[row.packageId] ?? ""} />,
+                                             row.sourceOptions.length === 1 && !sourceSelections[row.packageId] ? row.sourceOptions[0]?.label : <PackageSourcePicker disabled={!currentEvidence} label={t("Source for {value0}", { value0: row.displayName })} onChange={(key) => setSourceSelections((current) => ({ ...current, [row.packageId]: key }))} options={row.sourceOptions} value={sourceSelections[row.packageId] ?? ""} />,
                                              <div className="package-row-actions"><PackagePrimaryAction canPlanV1={canPlanPackagesV1} canPlanV2={canPlanPackagesV2} catalogReady={catalogReady} evidence={evidence} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} /><PackageRowMoreMenu canPlanV1={canPlanPackagesV1 && !packageMutationBusy && !refreshing && !evidenceInvalid} canPlanV2={canPlanPackagesV2 && catalogReady} client={client} onAction={(action, origin) => selectAction(action, origin, row)} row={row} /></div>
                                          ] };
                                      })}

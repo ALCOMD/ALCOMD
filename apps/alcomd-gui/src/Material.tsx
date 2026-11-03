@@ -212,7 +212,7 @@ export const NavigationListItem = forwardRef(function NavigationListItem(
     } as MaterialProps, children);
 });
 
-export function Menu({ anchorRef, children, className, onClose, open }: { anchorRef: { current: HTMLElement | null }; children: ReactNode; className?: string; onClose(): void; open: boolean }) {
+export function Menu({ anchorRef, children, className, kind, onClose, open }: { anchorRef: { current: HTMLElement | null }; children: ReactNode; className?: string; kind: "actions" | "selection"; onClose(): void; open: boolean }) {
     const quick = useSyncExternalStore(subscribeMotion, reducedMotion);
     const ref = useRef<MaterialElement>(null);
     useEffect(() => {
@@ -231,7 +231,8 @@ export function Menu({ anchorRef, children, className, onClose, open }: { anchor
     }, [onClose]);
     return createElement(materialElements.menu, {
         anchorCorner: "end-end",
-        className,
+        "data-menu-kind": kind,
+        className: [kind === "actions" ? "alcomd-action-menu" : undefined, className].filter(Boolean).join(" "),
         menuCorner: "start-end",
         positioning: "popover",
         quick,

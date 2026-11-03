@@ -441,18 +441,7 @@ md-linear-progress {
 }
 .project-row-actions > :is(md-filled-button, md-filled-tonal-button, md-text-button, md-icon-button) { flex: 0 0 auto; }
 .project-favorite-action[aria-pressed="true"] { color: var(--md-sys-color-primary); }
-.project-row-actions > md-menu {
-    text-align: left;
-    --md-menu-top-space: 4px;
-    --md-menu-bottom-space: 4px;
-}
-.project-actions-menu-item {
-    --md-menu-item-one-line-container-height: 40px;
-    --md-menu-item-top-space: 0px;
-    --md-menu-item-bottom-space: 0px;
-    --md-menu-item-label-text-size: 0.875rem;
-    --md-menu-item-label-text-line-height: 20px;
-}
+.project-row-actions > md-menu { text-align: left; }
 .project-actions-menu-item--danger {
     --md-menu-item-label-text-color: var(--md-sys-color-error);
     --md-menu-item-hover-state-layer-color: var(--md-sys-color-error);

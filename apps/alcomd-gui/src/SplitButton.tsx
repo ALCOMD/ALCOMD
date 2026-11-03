@@ -25,6 +25,6 @@ export function SplitButton({ children, disabled, icon, label, menuButtonRef, me
         }} ref={menuButtonRef} type="button">
             <Icon asset={keyboardArrowDownIcon} size={20} />
         </Button>
-        <Menu anchorRef={menuButtonRef} className="alcomd-split-button-options alcomd-compact-menu" onClose={() => setOpen(false)} open={open}>{children}</Menu>
+        <Menu kind="actions" anchorRef={menuButtonRef} className="alcomd-split-button-options" onClose={() => setOpen(false)} open={open}>{children}</Menu>
     </div>;
 }

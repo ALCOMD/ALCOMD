@@ -87,7 +87,7 @@ samp {
     --md-filled-button-container-shape-start-start: var(--alcomd-shape-list-item);
     --md-filled-button-container-shape-end-start: var(--alcomd-shape-list-item);
 }
-.alcomd-compact-menu {
+.alcomd-action-menu {
     --md-menu-top-space: 4px;
     --md-menu-bottom-space: 4px;
     --md-menu-item-one-line-container-height: 40px;
