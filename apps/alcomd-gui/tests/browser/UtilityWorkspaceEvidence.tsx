@@ -1,10 +1,10 @@
 import { useCallback, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 
-import { Button, TextField } from "../../src/Material";
+import { Button, Dialog, TextField } from "../../src/Material";
 import { UtilityWorkspace } from "../../src/UtilityWorkspace";
 import { OperationFollow } from "../../src/CoreActions";
-import { ReminderProvider } from "../../src/Reminder";
+import { ReminderProvider, RequestReminder } from "../../src/Reminder";
 import type { Operation } from "../../src/core-models";
 import "../../src/styles.css";
 
@@ -22,7 +22,17 @@ window.followTerminals = [];
 
 function Draft() {
     const [value, setValue] = useState("");
-    return <TextField label="Draft" value={value} onInput={setValue} />;
+    const [failed, setFailed] = useState(false);
+    const [nested, setNested] = useState(false);
+    return <>
+        <TextField label="Draft" value={value} onInput={setValue} />
+        <Button onClick={() => setFailed(true)}>Report operation failure</Button>
+        <Button onClick={() => setNested(true)}>Open nested dialog</Button>
+        {failed ? <RequestReminder error={{ code: "permission_denied", message: "" }}><Button onClick={() => setFailed(false)}>Recover operation</Button></RequestReminder> : null}
+        <Dialog open={nested} onClose={() => setNested(false)} title="Nested evidence">
+            <Button onClick={() => setNested(false)}>Close nested dialog</Button>
+        </Dialog>
+    </>;
 }
 
 function Evidence() {

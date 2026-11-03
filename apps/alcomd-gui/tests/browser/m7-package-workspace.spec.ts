@@ -348,7 +348,9 @@ test("Inline prerelease selection uses daemon classification and surfaces plan f
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Version for Avatar tools: 1.2.3" }).click();
     await page.getByRole("menuitem", { name: "2.0.0-beta.1 · Example packages · Prerelease", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("Package changes were not applied");
+    await expect(page.locator(".reminder-floating")).toHaveCount(1);
+    await expect(page.locator(".reminder-floating").getByRole("alert")).toContainText("Package changes were not applied");
+    await expect(page.locator(".mutation-feedback")).toHaveCount(0);
     expect(await page.evaluate(() => window.packageRequests)).toMatchObject([{ method: "upgrade", params: { versionRange: "=2.0.0-beta.1", includePrerelease: true } }]);
     await expect(page.getByRole("button", { name: "Version for Avatar tools: 1.2.3" })).toBeVisible();
 });

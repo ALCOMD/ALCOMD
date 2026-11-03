@@ -184,10 +184,10 @@ test("a successful Unity launch keeps the project row unchanged and closing an e
     await page.goto("/browser-harness.html?route=/projects&unityOptionsError=1");
     const launch = page.locator(".project-row-actions").first().getByRole("button", { name: "Open Unity", exact: true });
     await launch.click();
-    const dialog = page.locator("md-dialog[open]");
-    await expectRequestError(dialog.getByRole("alert"), "revision_conflict");
-    await dialog.getByRole("button", { name: "Close", exact: true }).click();
-    await expect(dialog).toHaveCount(0);
+    const outlet = page.locator(".reminder-floating");
+    await expectRequestError(outlet.getByRole("alert"), "revision_conflict");
+    await expect(page.locator("md-dialog[open]")).toHaveCount(0);
+    await outlet.getByRole("button", { name: "Dismiss notification", exact: true }).click();
     await expect(launch).toBeFocused();
     await expect(page.getByRole("alert")).toHaveCount(0);
     expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method !== "unity.launchOptions"))).toEqual([]);

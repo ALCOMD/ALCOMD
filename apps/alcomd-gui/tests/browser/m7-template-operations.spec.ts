@@ -69,6 +69,19 @@ test("a create plan missing its destination safety evidence cannot be applied", 
     expect(await applies(page)).toEqual([]);
 });
 
+test("an invalid project task result reaches the shared channel once while its dialog is open", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/projects&template-tasks=1&template-result-missing=1");
+    const dialog = await projectReview(page, "Invalid task result");
+    await dialog.getByRole("button", { name: "Create project", exact: true }).click();
+    await expect.poll(() => reads(page, operationId)).toBeGreaterThan(0);
+    await finish(page, operationId);
+    await expectRequestError(page.locator(".reminder-floating .reminder--error"), "internal_error");
+    await expect(page.locator(".reminder-floating .reminder--error")).toHaveCount(1);
+    await expect(dialog).toHaveAttribute("open", "");
+    expect(await applies(page)).toHaveLength(1);
+    await expect(page).toHaveURL(/\/projects$/);
+});
+
 test("a known template operation keeps reading after its initial progress request fails", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/templates&template-tasks=1&template-first-read-error=1");
     await importReview(page);

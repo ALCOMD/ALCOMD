@@ -748,7 +748,7 @@ function ExtensionUiPage({ client, extensionId, locale, onDirtyChange }: Extensi
                     <LoadingState title={t("Opening extension UI")} />
                 ) : null}
                 {error === undefined ? null : (
-                    <RequestReminder error={error} title={t(errorTitle(error.code))}>
+                    <RequestReminder inline error={error} title={t(errorTitle(error.code))}>
                         <Button disabled={busy} onClick={reconnect} type="button" variant="text">{t("Reconnect")}</Button>
                     </RequestReminder>
                 )}

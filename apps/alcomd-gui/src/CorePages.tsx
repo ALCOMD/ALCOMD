@@ -191,7 +191,7 @@ function ErrorState({ error, retry }: { error: RpcError; retry(): void }) {
     return (
         <section className={`route-state route-state--${disconnected ? "disconnected" : "error"}`}>
             <h2>{disconnected ? t("ALCOMD core disconnected") : t("Request failed")}</h2>
-            <RequestReminder error={error} title={null} />
+            <RequestReminder inline error={error} title={null} />
             <Button onClick={() => { if (disconnected) reconnect?.(); retry(); }} type="button">{t("Reconnect and retry")}</Button>
         </section>
     );
@@ -838,7 +838,7 @@ function CopyProjectDialog({ client, onCompleted, onClose, open, project }: { cl
                     </>
                 )}
                 {directoryError === undefined ? null : <RequestReminder error={directoryError} title={t("Default project location could not be loaded.")} />}
-                {error === undefined ? null : <p className="inline-error" role="alert">{t("Copy failed: ")}{t(requestErrorMessage(error.code))}</p>}
+                {error === undefined ? null : <RequestReminder error={error} message={t("Copy failed: ") + t(requestErrorMessage(error.code))} />}
             </div>
         </Dialog>
     );
@@ -952,7 +952,7 @@ function RegisterProjectDialog({ client, onChanged, onClose, open, path }: { cli
                     <Button disabled={busy || path.length === 0} onClick={() => void register()} ref={confirmRef} type="button">{t("Confirm")}</Button>
                 </div>
             </div>
-            {error === undefined ? null : <p className="inline-error" role="alert">{t("Registration failed: ")}{t(requestErrorMessage(error.code))}</p>}
+            {error === undefined ? null : <RequestReminder error={error} message={t("Registration failed: ") + t(requestErrorMessage(error.code))} />}
         </Dialog>
     );
 }

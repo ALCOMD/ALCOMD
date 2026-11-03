@@ -108,7 +108,7 @@ export function UtilityWorkspace<T>({
         refresh();
     };
 
-    const failure = error === undefined ? null : <RequestReminder error={error}>
+    const failure = error === undefined ? null : <RequestReminder inline={value === undefined} error={error}>
         <p>{value === undefined ? t("This page could not be loaded.") : t("Refresh failed. The last loaded result is still shown.")}</p>
         <Button disabled={pending} onClick={retry} type="button" variant="text">{t("Retry")}</Button>
     </RequestReminder>;

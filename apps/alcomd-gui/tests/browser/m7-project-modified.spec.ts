@@ -75,8 +75,11 @@ for (const view of ["list", "grid"] as const) {
             await expect(date).toContainText("2 days ago");
             await target.getByRole("button", { name: "Open Unity", exact: true }).click();
             await expect(date).toContainText("12 hours ago");
-            if (failed) await expectRequestError(page.locator("md-dialog[open]").getByRole("alert"), "unity_launch_failed");
-            else await expect(page.getByRole("status").filter({ hasText: "Unity launch opening." })).toBeVisible();
+            if (failed) {
+                await expect(page.locator(".reminder-floating")).toHaveCount(1);
+                await expectRequestError(page.locator(".reminder-floating").getByRole("alert"), "unity_launch_failed");
+                await expect(page.locator("md-dialog[open]")).toHaveCount(0);
+            } else await expect(page.getByRole("status").filter({ hasText: "Unity launch opening." })).toBeVisible();
             const names = view === "grid" ? page.locator(".project-card h2") : listNames(page);
             await expect(names).toHaveText(["Favorite", "Equal B", "Newest", "Equal A", "Unknown history"]);
             expect(await page.evaluate(() => window.unityRequests.filter((request) => request.method === "unity.launch"))).toHaveLength(1);
@@ -91,7 +94,9 @@ for (const view of ["list", "grid"] as const) {
         const count = await page.evaluate(() => window.projectSnapshots.length);
         const target = view === "grid" ? page.getByRole("article", { name: "Equal B", exact: true }) : page.locator(".projects-list tbody tr").filter({ hasText: "Equal B" });
         await target.getByRole("button", { name: "Open Unity", exact: true }).click();
-        await expectRequestError(page.locator("md-dialog[open]").getByRole("alert"), "revision_conflict");
+        await expect(page.locator(".reminder-floating")).toHaveCount(1);
+        await expectRequestError(page.locator(".reminder-floating").getByRole("alert"), "revision_conflict");
+        await expect(page.locator("md-dialog[open]")).toHaveCount(0);
         const date = view === "grid" ? target.locator(".project-card-dates") : target.locator("td").nth(4);
         await expect(date).toContainText("2 days ago");
         expect(await page.evaluate(() => window.projectSnapshots.length)).toBe(count);

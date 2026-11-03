@@ -17,11 +17,11 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
     project: ProjectSnapshot;
 }) {
     const { t } = useTranslation();
-    const { success, clear } = useReminder();
+    const { success, error: showError, clear } = useReminder();
     const canLaunch = useCapability(capabilities.unityLaunch);
     const canMigrate = useCapability(capabilities.projectsUnityMigration);
     const [busy, setBusy] = useState(false);
-    const [dialog, setDialog] = useState<"missing" | "choose" | "error" | "status">();
+    const [dialog, setDialog] = useState<"missing" | "choose" | "status">();
     const [lastLaunch, setLastLaunch] = useState<UnityLaunchRecord>();
     const [options, setOptions] = useState(initialOptions);
     const [installationId, setInstallationId] = useState("");
@@ -38,7 +38,7 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
     }, [client, projectId, revision]);
     useEffect(() => { setLastLaunch(undefined); }, [client, projectId]);
 
-    const run = async (task: (current: number) => Promise<void>) => {
+    const run = async (task: (current: number) => Promise<void>, errorContext?: "choose" | "status") => {
         if (!canLaunch || projectId === undefined || revision === undefined || pending.current) return;
         const current = generation.current;
         pending.current = true; setBusy(true); setError(undefined);
@@ -47,7 +47,8 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
         catch (caught: unknown) {
             if (current !== generation.current) return;
             const failure = normalizeRpcError(caught);
-            setError(failure); setDialog((current) => current === "choose" || current === "status" ? current : "error");
+            if (errorContext === undefined) showError(failure, undefined, trigger.current ?? undefined);
+            else setError(failure);
         } finally {
             if (current === generation.current) { pending.current = false; setBusy(false); }
         }
@@ -84,7 +85,7 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
     };
     const confirm = () => {
         if (options === undefined || !options.exactMatchingInstallations.some((item) => item.installationId === installationId)) return;
-        void run((current) => launch(options, installationId, current));
+        void run((current) => launch(options, installationId, current), "choose");
     };
     const readStatus = (origin?: HTMLElement | null) => {
         if (lastLaunch === undefined) return;
@@ -96,7 +97,7 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
             if (current !== generation.current) return;
             if (result.launch.launchId !== known.launchId || result.launch.projectId !== known.projectId || result.launch.installationId !== known.installationId) throw { code: "internal_error" };
             setLastLaunch(result.launch);
-        });
+        }, "status");
     };
     const close = () => { if (!pending.current) { setDialog(undefined); setInstallationId(""); setError(undefined); if (dialog !== undefined) clear(); } };
     const closed = (kind: NonNullable<typeof dialog>) => {
@@ -128,10 +129,6 @@ export function useProjectUnityLaunch({ client, initialOptions, navigate, onLaun
                     <Button disabled={busy} onClick={close} type="button" variant="tonal">{t("Cancel")}</Button>
                     <Button disabled={!canLaunch || installationId.length === 0 || busy} onClick={confirm} type="button">{t("Open Unity")}</Button>
                 </div>
-            </Dialog>
-            <Dialog onClose={() => closed("error")} open={dialog === "error"} title={t("Open Unity")}>
-                {error === undefined ? null : <RequestReminder error={error} />}
-                <div className="dialog-actions"><Button onClick={close} type="button" variant="text">{t("Close")}</Button></div>
             </Dialog>
             <Dialog dismissible={!busy} onClose={() => closed("status")} open={dialog === "status"} title={t("Unity launch status")}>
                 {error === undefined ? <Reminder tone={lastLaunch?.state === "failed" ? "error" : "info"}>{t("Last observed launch state: {state}", { state: t(lastLaunch?.state ?? "Unknown") })}</Reminder> : <RequestReminder error={error} />}

@@ -65,3 +65,32 @@ test("refresh failures use the shared outlet without moving loaded content and k
     await expect(outlet.locator(".reminder")).toHaveCount(0);
     await expect(outlet).toBeHidden();
 });
+
+test("one reminder outlet follows nested native dialogs and remains interactive without moving their content", async ({ page }) => {
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    const draft = page.getByRole("textbox", { name: "Draft", exact: true });
+    await draft.click();
+    const before = await draft.boundingBox();
+    await page.getByRole("button", { name: "Report operation failure", exact: true }).click();
+    const outlet = page.locator(".reminder-floating");
+    await expect(outlet).toHaveCount(1);
+    await expect(outlet.getByRole("alert")).toBeVisible();
+    expect(await draft.boundingBox()).toEqual(before);
+    await page.getByRole("button", { name: "Open nested dialog", exact: true }).click();
+    const nested = page.locator("md-dialog[open]").filter({ has: page.getByRole("button", { name: "Close nested dialog", exact: true }) });
+    await expect(nested.locator(".reminder-floating")).toHaveCount(1);
+    await expect(outlet).toHaveCount(1);
+    await outlet.getByRole("button", { name: "Show details", exact: true }).click();
+    await expect(outlet.getByText("permission_denied", { exact: true })).toBeVisible();
+    const bounds = (await outlet.boundingBox())!;
+    expect(bounds.x + bounds.width).toBe(page.viewportSize()!.width - 24);
+    expect(bounds.y + bounds.height).toBe(page.viewportSize()!.height - 24);
+    await nested.getByRole("button", { name: "Close nested dialog", exact: true }).click();
+    await expect(page.locator("md-dialog[open]")).toHaveCount(1);
+    await expect(page.locator("md-dialog[open] .reminder-floating")).toHaveCount(1);
+    await outlet.getByRole("button", { name: "Recover operation", exact: true }).click();
+    await expect(outlet.getByRole("alert")).toHaveCount(0);
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(page.locator("body > .reminder-floating")).toHaveCount(1);
+    await expect(outlet).toBeHidden();
+});

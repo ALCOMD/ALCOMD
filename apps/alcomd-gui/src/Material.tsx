@@ -2,10 +2,12 @@ import { createScrollArea, materialElements, reducedMotion, subscribeMotion } fr
 import { refreshIcon, resolveIconGeometry, searchIcon, type IconAsset, type IconSize } from "@alcomd/ui/icons";
 import {
     Children,
+    createContext,
     createElement,
     forwardRef,
     isValidElement,
     useEffect,
+    useLayoutEffect,
     useRef,
     useState,
     useSyncExternalStore,
@@ -22,6 +24,7 @@ import {
 import { createPortal } from "react-dom";
 import { useTranslation } from "./i18n";
 import { LocalPageReadContext } from "./PageRead";
+import { registerDialogSurface } from "./dialog-surface";
 
 type MaterialElement = HTMLElement & {
     anchorElement?: HTMLElement | null;
@@ -38,6 +41,7 @@ type MaterialElement = HTMLElement & {
 };
 
 type MaterialProps = HTMLAttributes<HTMLElement> & Record<string, unknown>;
+export const DialogOpenContext = createContext<boolean | undefined>(undefined);
 
 export interface DialogOrigin {
     readonly current: HTMLElement | null;
@@ -617,6 +621,19 @@ export function Checkbox({ checked, disabled, label, onChange }: { checked: bool
 export function Dialog({ actions, children, onClose, open, title, wide = false, dismissible = true, returnFocus, returnFocusReady = true }: { actions?: ReactNode; children: ReactNode; onClose(): void; open: boolean; title: string; wide?: boolean; dismissible?: boolean; returnFocus?: DialogOrigin; returnFocusReady?: boolean }) {
     const quick = useSyncExternalStore(subscribeMotion, reducedMotion);
     const ref = useRef<MaterialElement>(null);
+    const contentRef = useRef<HTMLDivElement>(null);
+    useLayoutEffect(() => {
+        const element = ref.current;
+        if (element === null) return;
+        let release: (() => void) | undefined;
+        const opened = () => {
+            if (release === undefined && contentRef.current !== null) release = registerDialogSurface(contentRef.current);
+        };
+        const closed = () => { release?.(); release = undefined; };
+        element.addEventListener("opened", opened);
+        element.addEventListener("closed", closed);
+        return () => { closed(); element.removeEventListener("opened", opened); element.removeEventListener("closed", closed); };
+    }, []);
     const [restoreFocus, setRestoreFocus] = useState(false);
     useEffect(() => {
         const element = ref.current;
@@ -655,7 +672,7 @@ export function Dialog({ actions, children, onClose, open, title, wide = false, 
             materialElements.dialog,
             { ariaLabel: title, open, quick, ref, style: wide ? { maxWidth: "min(848px, calc(100vw - 48px))" } : undefined } as MaterialProps,
             createElement("div", { slot: "headline" }, title),
-            createElement("div", { className: wide ? "material-dialog-content material-dialog-content--wide" : "material-dialog-content", slot: "content" }, <LocalPageReadContext.Provider value={true}>{children}</LocalPageReadContext.Provider>),
+            createElement("div", { ref: contentRef, className: wide ? "material-dialog-content material-dialog-content--wide" : "material-dialog-content", slot: "content" }, <DialogOpenContext.Provider value={open}><LocalPageReadContext.Provider value={true}>{children}</LocalPageReadContext.Provider></DialogOpenContext.Provider>),
             actions === undefined ? null : createElement("div", { className: "material-dialog-actions", slot: "actions" }, actions)
         ),
         document.body

@@ -72,7 +72,8 @@ test("a repository removal error cannot reuse an earlier refresh failure notific
     const dialog = page.locator("md-dialog[open]");
     await dialog.getByRole("button", { name: "Remove repository", exact: true }).click();
     await expectRequestError(dialog.getByRole("alert"), "permission_denied");
-    await expect(page.locator(".reminder-floating .reminder")).toHaveCount(0);
+    await expect(page.locator(".reminder-floating .reminder")).toHaveCount(1);
+    await expect(page.locator(".reminder-floating")).not.toContainText("Repository refresh failed");
     await expect(dialog).toContainText("Packages already installed in projects stay installed.");
 });
 
@@ -85,7 +86,8 @@ test("a user package removal error cannot reuse an earlier refresh failure notif
     const dialog = page.locator("md-dialog[open]");
     await dialog.getByRole("button", { name: "Remove enrollment", exact: true }).click();
     await expectRequestError(dialog.getByRole("alert"), "permission_denied");
-    await expect(page.locator(".reminder-floating .reminder")).toHaveCount(0);
+    await expect(page.locator(".reminder-floating .reminder")).toHaveCount(1);
+    await expect(page.locator(".reminder-floating")).not.toContainText("User Package refresh failed");
     await expect(dialog).toContainText("The source folder will stay on disk.");
 });
 

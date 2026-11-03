@@ -303,7 +303,7 @@ export function PackageActions({ client, project, onChanged, selection, onEviden
                     <div className="package-plan-review"><p>{t("No package changes are required for this project.")}</p><div className="dialog-actions"><Button onClick={closeChanges} type="button">{t("Close")}</Button></div></div>
                 )}
             </MaterialDialog>
-            {feedback.error === undefined ? null : <div className="mutation-feedback mutation-feedback--error" role="alert"><strong>{t("Package changes were not applied")}</strong><span>{t(packageErrorMessage(feedback.error))}</span></div>}
+            {feedback.error === undefined ? null : <RequestReminder error={feedback.error} title={t("Package changes were not applied")} message={packageErrorMessage(feedback.error)} onDismiss={() => setFeedback((current) => ({ ...current, error: undefined }))} />}
             {feedback.operationId === undefined ? null : <OperationFollow client={client} operationId={feedback.operationId} onTerminal={() => { setOperationFinished(true); onChanged?.(); }} title={t("Package changes")} />}
         </>
     );
@@ -533,7 +533,7 @@ export function ProjectUnityActions({ afterMigrationOpen = false, client, instal
                 {migrationPlan === undefined ? null : <dl className="dialog-summary"><div><dt>{t("From")}</dt><dd>{migrationPlan.sourceUnityVersion}</dd></div><div><dt>{t("To")}</dt><dd>{migrationPlan.targetUnityVersion}</dd></div><div><dt>{t("Classification")}</dt><dd>{t(humanize(migrationPlan.classification.kind))}</dd></div><div><dt>{t("Supported")}</dt><dd>{migrationPlan.classification.supportedForApply ? t("Yes") : t("No")}</dd></div></dl>}
                 {feedback.error === undefined ? null : <RequestReminder error={feedback.error} />}
             </PlanDialog>
-            <MutationFeedback globalFeedback client={client} feedback={migrationPlan === undefined ? feedback : { ...feedback, error: undefined }} onOperationTerminal={migrationFinished} />
+            <MutationFeedback client={client} feedback={migrationPlan === undefined ? feedback : { ...feedback, error: undefined }} onOperationTerminal={migrationFinished} />
         </ActionSection>
     );
 }
@@ -1128,7 +1128,7 @@ export function ExtensionActions({ client, extension, onChanged, onAccepted, ope
             </>}
             {mode === "none" ? null : submitted && templateApplyResultUnknown(feedback.error) ? <><RequestReminder error={feedback.error!}>{t("The result of this request is unknown. Check Tasks and refresh before reviewing it again.")}</RequestReminder><div className="dialog-actions"><Button onClick={close} type="button" variant="text">{t("Close")}</Button></div></> : <MutationFeedback client={client} feedback={feedback} />}
         </MaterialDialog>
-        {mode === "none" ? <MutationFeedback globalFeedback client={client} feedback={onAccepted === undefined ? feedback : { ...feedback, operationId: undefined }} onOperationTerminal={() => onChanged?.()} /> : null}
+        {mode === "none" ? <MutationFeedback client={client} feedback={onAccepted === undefined ? feedback : { ...feedback, operationId: undefined }} onOperationTerminal={() => onChanged?.()} /> : null}
     </ActionSection>;
 }
 
@@ -1150,21 +1150,15 @@ function ModalDialog({ children, dismissible = true, onClose, open, title }: { c
     return <MaterialDialog dismissible={dismissible} onClose={onClose} open={open} title={title}>{children}</MaterialDialog>;
 }
 
-function MutationFeedback({ client, errorTitle, feedback, globalFeedback = false, onOperationTerminal }: { client: GuiRpcClient; errorTitle?: string; feedback: FeedbackState; globalFeedback?: boolean; onOperationTerminal?(operation: Operation): void }) {
+function MutationFeedback({ client, errorTitle, feedback, onOperationTerminal }: { client: GuiRpcClient; errorTitle?: string; feedback: FeedbackState; onOperationTerminal?(operation: Operation): void }) {
     const { success, clear } = useReminder();
     useEffect(() => {
         if (feedback.busy) clear();
         else if (feedback.messageTone === "success" && feedback.error === undefined && feedback.operationId === undefined && feedback.message !== undefined) success(feedback.message);
     }, [feedback.busy, feedback.error, feedback.operationId, feedback.message, feedback.messageTone, success, clear]);
-    if (feedback.error !== undefined) {
-        const failure = <RequestReminder error={feedback.error} title={errorTitle} />;
-        return globalFeedback ? <GlobalReminder>{failure}</GlobalReminder> : failure;
-    }
+    if (feedback.error !== undefined) return <RequestReminder error={feedback.error} title={errorTitle} />;
     if (feedback.operationId !== undefined) return <OperationFollow client={client} onTerminal={onOperationTerminal} operationId={feedback.operationId} />;
-    if (feedback.message !== undefined && feedback.messageTone !== "success") {
-        const message = <Reminder tone={feedback.messageTone ?? "info"}>{feedback.message}</Reminder>;
-        return globalFeedback ? <GlobalReminder>{message}</GlobalReminder> : message;
-    }
+    if (feedback.message !== undefined && feedback.messageTone !== "success") return <GlobalReminder><Reminder tone={feedback.messageTone ?? "info"}>{feedback.message}</Reminder></GlobalReminder>;
     return null;
 }
 
@@ -1229,7 +1223,7 @@ export function useTemplateOperations(client: GuiRpcClient) {
                 if (owner.current !== scope || !scope.active) return;
                 setAccepted((current) => current.map((entry) => entry.operationId === item.operationId && entry.progressError?.code !== progressError?.code ? { ...entry, progressError } : entry));
             }} onSnapshot={update} onTerminal={finish} operationId={item.operationId} />
-            {item.error === undefined ? null : <RequestReminder error={item.error} />}
+            {item.error === undefined || item.shownInDialog ? null : <RequestReminder error={item.error} />}
             {projectId === undefined || onOpenProject === undefined ? null : <TemplateProjectLink onOpen={() => onOpenProject(projectId)} />}
         </div>;
     });
@@ -1324,7 +1318,7 @@ export function OperationProgress({ error, operation, title = "Operation" }: { e
     const { t } = useTranslation();
     return <>
         <section className="operation-follow" aria-live="polite" aria-atomic="true" role="status"><h3>{t(title)}</h3>{operation === undefined ? <p>{t("Reading progress…")}</p> : <><p><strong>{t(humanize(operation.state))}</strong>{operation.progress?.phase === undefined ? "" : ` · ${t(humanize(operation.progress.phase))}`}</p><Progress label={t("{title} progress", { title: t(title) })} value={isTerminal(operation.state) ? 1 : undefined} /></>}{error === undefined ? null : <p>{t("Progress is temporarily unavailable. ALCOMD will keep following the same task.")}</p>}</section>
-        {operation?.state !== "failed" ? null : <RequestReminder error={{ code: operation.errorCode ?? "internal_error", message: "", diagnosticId: operation.diagnosticId }} title={t("Operation failed")} />}
+        {operation?.state !== "failed" ? null : <RequestReminder inline error={{ code: operation.errorCode ?? "internal_error", message: "", diagnosticId: operation.diagnosticId }} title={t("Operation failed")} />}
     </>;
 }
 
