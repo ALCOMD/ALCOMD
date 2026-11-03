@@ -190,7 +190,7 @@ export function requestErrorMessage(code: string): string {
         case "project_copy_recovery_required":
         case "project_delete_recovery_required":
         case "project_unity_migration_recovery_required":
-            return "The previous operation needs recovery. Check its task and diagnostics before starting another change.";
+            return "The previous operation needs recovery. Check its task and technical logs before starting another change.";
         case "project_not_found":
         case "project_not_registered":
             return "This project is not available in the registry. Refresh the project list.";

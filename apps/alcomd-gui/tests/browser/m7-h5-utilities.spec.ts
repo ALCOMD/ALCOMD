@@ -44,8 +44,8 @@ test("H5 closing a pending operation dialog isolates its late failure from the n
     await modal(page).getByRole("button", { name: "Close", exact: true }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await page.evaluate(() => window.h5Utilities.hold("operations.get", false));
-    await logs(page).getByRole("button", { name: "Diagnostics", exact: true }).click();
-    await page.getByRole("table", { name: "Diagnostics", exact: true }).getByRole("button", { name: "View operation", exact: true }).click();
+    await logs(page).getByRole("button", { name: "Technical Logs", exact: true }).click();
+    await page.getByRole("table", { name: "Technical Logs", exact: true }).getByRole("button", { name: "View operation", exact: true }).click();
     await expect(detail(modal(page), "Operation")).toHaveText(H5_FAILED_ID);
     expect(await page.evaluate(() => window.h5Utilities.release("operations.get", "permission_denied"))).toBeGreaterThan(0);
     await expect(detail(modal(page), "Operation")).toHaveText(H5_FAILED_ID);
@@ -57,17 +57,17 @@ test("H5 missing Operations disables dependent actions while Core diagnostic per
     await open(page, "/activity", "h5-no-operations=1");
     const activity = page.getByRole("table", { name: "Activity", exact: true });
     await expect(activity.getByRole("button", { name: "View operation", exact: true }).first()).toBeDisabled();
-    await logs(page).getByRole("button", { name: "Diagnostics", exact: true }).click();
-    await expect(page.getByRole("table", { name: "Diagnostics", exact: true }).getByRole("button", { name: "View operation", exact: true })).toBeDisabled();
+    await logs(page).getByRole("button", { name: "Technical Logs", exact: true }).click();
+    await expect(page.getByRole("table", { name: "Technical Logs", exact: true }).getByRole("button", { name: "View operation", exact: true })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Run state check", exact: true })).toBeDisabled();
     expect(await requests(page, "operations.get")).toHaveLength(0);
     expect(await requests(page, "state.check")).toHaveLength(0);
 
     await open(page, "/activity");
     await page.evaluate(() => window.h5Utilities.deny("diagnostics.list", "permission_denied"));
-    await logs(page).getByRole("button", { name: "Diagnostics", exact: true }).click();
+    await logs(page).getByRole("button", { name: "Technical Logs", exact: true }).click();
     await expect(page.locator("main").getByRole("alert")).toContainText(requestErrorMessage("permission_denied"));
-    await expect(page.locator("main")).not.toContainText("No diagnostics reported");
+    await expect(page.locator("main")).not.toContainText("No technical logs yet");
     await expect(page.locator("body")).not.toContainText(H5_SECRET);
     await logs(page).getByRole("button", { name: "Activity", exact: true }).click();
     await expect(page.getByRole("table", { name: "Activity", exact: true }).locator("tbody tr")).toHaveCount(2);
@@ -75,7 +75,7 @@ test("H5 missing Operations disables dependent actions while Core diagnostic per
 
 for (const surface of [
     { route: "/activity", label: "Activity", method: "activity.list", initial: 2, cursor: H5_ACTIVITY_CURSOR },
-    { route: "/diagnostics", label: "Diagnostics", method: "diagnostics.list", initial: 1, cursor: H5_DIAGNOSTIC_CURSOR }
+    { route: "/diagnostics", label: "Technical Logs", method: "diagnostics.list", initial: 1, cursor: H5_DIAGNOSTIC_CURSOR }
 ]) {
     test(`H5 ${surface.label} pagination retains loaded rows after failure and retries its same cursor`, async ({ page }) => {
         await open(page, surface.route);
@@ -106,8 +106,8 @@ for (const locale of ["zh-CN", "ja-JP"] as const) {
         }
         await page.getByRole("button", { name: t("Load more"), exact: true }).click();
         await expect(table.getByText(t("operation {kind} {state}", { kind: t("Uninstall extension"), state: t("failed") }), { exact: true })).toBeVisible();
-        await page.getByRole("navigation", { name: t("Logs"), exact: true }).getByRole("button", { name: t("Diagnostics"), exact: true }).click();
-        const diagnostics = page.getByRole("table", { name: t("Diagnostics"), exact: true });
+        await page.getByRole("navigation", { name: t("Logs"), exact: true }).getByRole("button", { name: t("Technical Logs"), exact: true }).click();
+        const diagnostics = page.getByRole("table", { name: t("Technical Logs"), exact: true });
         const readable = t(requestErrorMessage("extension_signature_invalid"));
         expect(readable).not.toBe(requestErrorMessage("extension_signature_invalid"));
         await expect(diagnostics.locator(".logs-summary strong").first()).toHaveText(readable);

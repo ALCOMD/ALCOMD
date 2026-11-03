@@ -58,15 +58,15 @@ test("activity search and record filters preserve the loaded snapshot and open r
 
 test("diagnostics filters real severity fields and retains complete diagnostic identity", async ({ page }) => {
     await page.goto("/browser-harness.html?route=%2Fdiagnostics&state=ready");
-    const table = page.getByRole("table", { name: "Diagnostics", exact: true });
-    await expect(table.getByRole("columnheader")).toHaveText(["Time", "Severity", "Subsystem", "Diagnostic", "Actions"]);
+    const table = page.getByRole("table", { name: "Technical Logs", exact: true });
+    await expect(table.getByRole("columnheader")).toHaveText(["Time", "Severity", "Subsystem", "Log entry", "Actions"]);
     await page.getByRole("combobox", { name: "Severity", exact: true }).click();
     await page.getByRole("option", { name: "warning", exact: true }).click();
-    await expect(table.getByText("No matching loaded diagnostics. Change the filters or load more entries.")).toBeVisible();
+    await expect(table.getByText("No matching loaded technical logs. Change the filters or load more entries.")).toBeVisible();
     await page.getByRole("combobox", { name: "Severity", exact: true }).click();
     await page.getByRole("option", { name: "error", exact: true }).click();
     await expect(table.getByText("package_archive_invalid", { exact: true })).toBeVisible();
-    await page.getByRole("searchbox", { name: "Search diagnostics" }).fill("00000000-0000-4000-8000-000000000998");
+    await page.getByRole("searchbox", { name: "Search technical logs" }).fill("00000000-0000-4000-8000-000000000998");
     await expect(table.getByText("package_archive_invalid", { exact: true })).toBeVisible();
     await table.getByRole("button", { name: "View operation" }).click();
     await expect(page.getByRole("dialog", { name: "Operation detail" })).toBeVisible();
@@ -80,6 +80,6 @@ test("empty logs retain usable search and filters without creating records", asy
     await expect(page.getByRole("searchbox", { name: "Search activity" })).toBeVisible();
     await expect(page.getByRole("table", { name: "Activity", exact: true }).getByText("No activity yet")).toBeVisible();
     await expect(page.getByRole("button", { name: "View operation" })).toHaveCount(0);
-    await page.getByRole("navigation", { name: "Logs", exact: true }).getByRole("button", { name: "Diagnostics" }).click();
-    await expect(page.getByRole("table", { name: "Diagnostics", exact: true }).getByText("No diagnostics reported")).toBeVisible();
+    await page.getByRole("navigation", { name: "Logs", exact: true }).getByRole("button", { name: "Technical Logs" }).click();
+    await expect(page.getByRole("table", { name: "Technical Logs", exact: true }).getByText("No technical logs yet")).toBeVisible();
 });

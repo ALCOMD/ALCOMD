@@ -205,7 +205,7 @@ test.describe("H6 200 percent equivalent CSS layout", () => {
                 } else if (route === "/extensions") {
                     await wheelIntoView(page, page.getByRole("button", { name: "Manage extension", exact: true }).last(), body);
                 } else {
-                    await expectReachable(page, page.getByRole("searchbox", { name: route === "/activity" ? "Search activity" : "Search diagnostics", exact: true }));
+                    await expectReachable(page, page.getByRole("searchbox", { name: route === "/activity" ? "Search activity" : "Search technical logs", exact: true }));
                 }
             }
         }

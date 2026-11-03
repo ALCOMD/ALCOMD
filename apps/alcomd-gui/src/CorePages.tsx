@@ -1677,7 +1677,7 @@ function ResourceNavigation({ current, navigate }: { current: string; navigate(p
 function UtilityNavigation({ current, kind, navigate }: { current: string; kind: "settings" | "logs"; navigate(path: string): void }) {
     const { t, locale } = useTranslation();
     const unity = useCapability(capabilities.unityRead);
-    const items = kind === "settings" ? [{ path: "/settings", label: t("Preferences") }, { path: "/unity", label: t("Unity installations") }] : [{ path: "/activity", label: t("Activity") }, { path: "/diagnostics", label: t("Diagnostics") }];
+    const items = kind === "settings" ? [{ path: "/settings", label: t("Preferences") }, { path: "/unity", label: t("Unity installations") }] : [{ path: "/activity", label: t("Activity") }, { path: "/diagnostics", label: t("Technical Logs") }];
     return <nav aria-label={kind === "settings" ? t("Settings sections") : t("Logs")} className="resource-navigation"><SegmentedButtons label={kind === "settings" ? t("Settings sections") : t("Log sections")} value={current} onChange={navigate} options={items.map(({ path, label }) => ({ value: path, label, disabled: path === "/unity" && !unity }))} /></nav>;
 }
 
@@ -2141,12 +2141,12 @@ function DiagnosticLogRows({ client, items, search }: { client: GuiRpcClient; it
         {snapshot.error === undefined ? null : <RequestReminder inline error={snapshot.error} message="New logs could not be loaded. The last loaded entries are still shown.">
             <Button onClick={retry} type="button" variant="text">{t("Retry")}</Button>
         </RequestReminder>}
-        <div className="alcomd-filter-bar logs-filter-toolbar" aria-label={t("Diagnostic filters")}>
+        <div className="alcomd-filter-bar logs-filter-toolbar" aria-label={t("Technical log filters")}>
             <LogFilter label={t("Severity")} value={severity} values={["warning", "error", ...snapshot.items.map((item) => item.level)]} onChange={setSeverity} />
             <LogFilter label={t("Subsystem")} value={subsystem} values={records.map((item) => item.subsystem)} onChange={setSubsystem} />
             <p className="alcomd-filter-bar-status" role="status">{t("{shown} of {total} loaded entries · Search and filters apply to loaded entries only.", { shown: shown.length, total: records.length })}</p>
         </div>
-        <DesktopList columns={[{ key: "time", header: t("Time"), width: 250, className: "logs-time" }, { key: "severity", header: t("Severity"), width: 110 }, { key: "subsystem", header: t("Subsystem"), width: 150 }, { key: "diagnostic", header: t("Diagnostic") }, { key: "actions", header: t("Actions"), width: 140 }]} emptyMessage={records.length === 0 ? t(snapshot.error === undefined ? "No diagnostics reported" : "No diagnostic records loaded.") : t("No matching loaded diagnostics. Change the filters or load more entries.")} label={t("Diagnostics")} minWidth={760} rows={shown.map((item) => ({ key: item.key, cells: [
+        <DesktopList columns={[{ key: "time", header: t("Time"), width: 250, className: "logs-time" }, { key: "severity", header: t("Severity"), width: 110 }, { key: "subsystem", header: t("Subsystem"), width: 150 }, { key: "diagnostic", header: t("Log entry") }, { key: "actions", header: t("Actions"), width: 140 }]} emptyMessage={records.length === 0 ? t(snapshot.error === undefined ? "No technical logs yet" : "No technical logs loaded.") : t("No matching loaded technical logs. Change the filters or load more entries.")} label={t("Technical Logs")} minWidth={760} rows={shown.map((item) => ({ key: item.key, cells: [
             formatTime(t, locale, item.occurredAtMs),
             <span className={`logs-severity logs-severity--${item.severity}`}>{humanize(t, item.severity)}</span>,
             item.subsystem,
@@ -2190,7 +2190,7 @@ export function DiagnosticsPage({ client, navigate }: PageProps) {
         }
     };
     return <UtilityWorkspace title={t(navigationLabels.logs)} load={load} navigation={<UtilityNavigation current="/diagnostics" kind="logs" navigate={navigate} />}
-        tools={() => <><SearchField className="logs-search" label={t("Search diagnostics")} value={search} onInput={setSearch} /><Button disabled={!canCheckState || !canReadOperations || checking} onClick={() => void runStateCheck()} title={capabilityUnavailableTitle(canCheckState && canReadOperations, !canCheckState ? capabilities.stateCheck : capabilities.operations, t)} type="button" variant="tonal">{t("Run state check")}</Button></>}>
+        tools={() => <><SearchField className="logs-search" label={t("Search technical logs")} value={search} onInput={setSearch} /><Button disabled={!canCheckState || !canReadOperations || checking} onClick={() => void runStateCheck()} title={capabilityUnavailableTitle(canCheckState && canReadOperations, !canCheckState ? capabilities.stateCheck : capabilities.operations, t)} type="button" variant="tonal">{t("Run state check")}</Button></>}>
         {(value, refresh) => <>{operationId === undefined ? null : <OperationFollow client={client} operationId={operationId} onTerminal={() => { checkingRef.current = false; setChecking(false); refresh(); }} />}
             <PagedItems initialItems={value.items} initialCursor={value.nextCursor} loadMore={(cursor) => client.diagnosticsList(cursor)}>{(items) => <DiagnosticLogRows client={client} items={items} search={search} />}</PagedItems>
         </>}

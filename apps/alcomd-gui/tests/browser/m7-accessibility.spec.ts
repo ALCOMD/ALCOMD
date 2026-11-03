@@ -38,7 +38,7 @@ test("H1 shell exposes the approved user areas without promoting internal routes
         await expect(navigationItem(page, name)).toBeVisible();
     }
     await expect(navigationItem(page, "Extensions")).toBeVisible();
-    for (const hiddenRoute of ["Home", "Repositories", "Templates", "Unity", "Operations", "Activity", "Diagnostics"]) {
+    for (const hiddenRoute of ["Home", "Repositories", "Templates", "Unity", "Operations", "Activity", "Technical Logs"]) {
         await expect(navigationItem(page, hiddenRoute)).toHaveCount(0);
     }
     await expect(navigationItem(page, "Tasks")).toBeVisible();

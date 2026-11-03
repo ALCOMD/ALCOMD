@@ -126,9 +126,9 @@ export const shellMessages: TranslationTable = {
         "zh-CN": "诊断 ID：{id}",
         "ja-JP": "診断 ID: {id}"
     },
-    "Diagnostics": {
-        "zh-CN": "诊断",
-        "ja-JP": "診断"
+    "Technical Logs": {
+        "zh-CN": "技术日志",
+        "ja-JP": "技術ログ"
     },
     "disabled": {
         "zh-CN": "已停用",

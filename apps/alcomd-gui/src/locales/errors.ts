@@ -64,7 +64,7 @@ export const errorMessages: TranslationTable = {
     "The content failed its integrity check. Use a verified source before continuing.": { "zh-CN": "内容完整性校验未通过，请使用已验证的来源后再继续。", "ja-JP": "内容の整合性検証に失敗しました。検証済みの取得元を使用してください。" },
     "The template contents are unavailable. Refresh the list and check the template source.": { "zh-CN": "模板内容不可用，请刷新列表并核对模板来源。", "ja-JP": "テンプレートの内容を利用できません。一覧を更新し、取得元を確認してください。" },
     "This plan is unavailable or out of date. Discard it and review a new plan before applying.": { "zh-CN": "此计划不可用或已过期，请放弃该计划，重新审阅后再应用。", "ja-JP": "このプランは利用できないか古くなっています。破棄して新しいプランを確認してから適用してください。" },
-    "The previous operation needs recovery. Check its task and diagnostics before starting another change.": { "zh-CN": "先前操作需要恢复。开始新的变更前，请检查对应任务和诊断。", "ja-JP": "前の操作には復旧が必要です。新たな変更を開始する前に、対象タスクと診断を確認してください。" },
+    "The previous operation needs recovery. Check its task and technical logs before starting another change.": { "zh-CN": "先前操作需要恢复。开始新的变更前，请检查对应任务和技术日志。", "ja-JP": "前の操作には復旧が必要です。新たな変更を開始する前に、対象タスクと技術ログを確認してください。" },
     "This project is not available in the registry. Refresh the project list.": { "zh-CN": "此项目不在可用的登记列表中，请刷新项目列表。", "ja-JP": "このプロジェクトは登録一覧で利用できません。プロジェクト一覧を更新してください。" },
     "This project is already registered. Use its existing entry.": { "zh-CN": "此项目已登记，请使用现有记录。", "ja-JP": "このプロジェクトは登録済みです。既存の項目を使用してください。" },
     "The project folder is unavailable. Check its location and access permissions.": { "zh-CN": "项目目录不可用，请核对位置和访问权限。", "ja-JP": "プロジェクトのフォルダーを利用できません。場所とアクセス権を確認してください。" },

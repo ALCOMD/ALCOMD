@@ -322,13 +322,13 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "目标位置：",
         "ja-JP": "コピー先："
     },
-    "Diagnostic": {
-        "zh-CN": "诊断",
-        "ja-JP": "診断"
+    "Log entry": {
+        "zh-CN": "日志内容",
+        "ja-JP": "ログ内容"
     },
-    "Diagnostic filters": {
-        "zh-CN": "诊断筛选",
-        "ja-JP": "診断のフィルター"
+    "Technical log filters": {
+        "zh-CN": "技术日志筛选",
+        "ja-JP": "技術ログのフィルター"
     },
     "Diagnostic ID": {
         "zh-CN": "诊断 ID",
@@ -574,9 +574,9 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "此项目暂无备份",
         "ja-JP": "このプロジェクトのバックアップはありません"
     },
-    "No diagnostics reported": {
-        "zh-CN": "暂无诊断记录",
-        "ja-JP": "診断は報告されていません"
+    "No technical logs yet": {
+        "zh-CN": "暂无技术日志",
+        "ja-JP": "技術ログはまだありません"
     },
     "No extensions installed": {
         "zh-CN": "尚未安装扩展",
@@ -590,9 +590,9 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "已加载的活动中没有匹配项。请更改筛选条件或加载更多记录。",
         "ja-JP": "読み込み済みのアクティビティに一致する項目がありません。フィルターを変更するか、さらに読み込んでください。"
     },
-    "No matching loaded diagnostics. Change the filters or load more entries.": {
-        "zh-CN": "已加载的诊断中没有匹配项。请更改筛选条件或加载更多记录。",
-        "ja-JP": "読み込み済みの診断に一致する項目がありません。フィルターを変更するか、さらに読み込んでください。"
+    "No matching loaded technical logs. Change the filters or load more entries.": {
+        "zh-CN": "已加载的技术日志中没有匹配项。请更改筛选条件或加载更多记录。",
+        "ja-JP": "読み込み済みの技術ログに一致する項目がありません。フィルターを変更するか、さらに読み込んでください。"
     },
     "No matching packages": {
         "zh-CN": "没有匹配的软件包",
@@ -998,9 +998,9 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "搜索活动",
         "ja-JP": "アクティビティを検索"
     },
-    "Search diagnostics": {
-        "zh-CN": "搜索诊断",
-        "ja-JP": "診断を検索"
+    "Search technical logs": {
+        "zh-CN": "搜索技术日志",
+        "ja-JP": "技術ログを検索"
     },
     "Search packages": {
         "zh-CN": "搜索软件包",

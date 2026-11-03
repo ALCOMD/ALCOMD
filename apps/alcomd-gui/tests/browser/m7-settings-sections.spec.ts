@@ -41,7 +41,7 @@ for (const locale of ["en-US", "zh-CN", "ja-JP"] as const) {
         await navigation.getByRole("button").first().click();
         expect(await path.evaluate((element, first) => element === first, original)).toBe(true);
         expect(await page.evaluate(() => window.settingsRequests.length)).toBe(writes);
-        await expect(page.locator(".settings-workspace").getByRole("button", { name: t("Diagnostics"), exact: true })).toHaveCount(0);
+        await expect(page.locator(".settings-workspace").getByRole("button", { name: t("Technical Logs"), exact: true })).toHaveCount(0);
         const bounds = (await page.locator("#main-content").boundingBox())!;
         const group = (await navigation.boundingBox())!;
         expect(group.x + group.width).toBeLessThanOrEqual(bounds.x + bounds.width);

@@ -16,7 +16,7 @@ async function emit(page: Page, value: Partial<DiagnosticLogItem>) {
 
 test("historical logs stay silent and a new error appears once in the shared outlet and log table", async ({ page }) => {
     await open(page);
-    const table = page.getByRole("table", { name: "Diagnostics", exact: true });
+    const table = page.getByRole("table", { name: "Technical Logs", exact: true });
     await expect(table).toContainText(IDS.historic);
     const outlet = page.locator(".reminder-floating");
     await expect(outlet).toBeHidden();
@@ -38,7 +38,7 @@ test("historical logs stay silent and a new error appears once in the shared out
 
 test("warning opt-in and error opt-out control popup delivery while every record stays in the log", async ({ page }) => {
     await open(page);
-    const table = page.getByRole("table", { name: "Diagnostics", exact: true });
+    const table = page.getByRole("table", { name: "Technical Logs", exact: true });
     await emit(page, { level: "warning", diagnosticId: IDS.quietWarning });
     await expect(table).toContainText(IDS.quietWarning);
     await emit(page, { level: "error", notify: false, diagnosticId: IDS.quietError });
@@ -81,7 +81,7 @@ test("a failed log read retains entries and reconnects from its cursor without a
     await page.clock.install();
     await page.evaluate(() => window.dispatchEvent(new Event("test-diagnostic-log-failure")));
     await expect(page.getByText("New logs could not be loaded. The last loaded entries are still shown.", { exact: true })).toBeVisible();
-    await expect(page.getByRole("table", { name: "Diagnostics", exact: true })).toContainText(IDS.historic);
+    await expect(page.getByRole("table", { name: "Technical Logs", exact: true })).toContainText(IDS.historic);
     await expect(page.locator(".reminder-floating")).toBeHidden();
     await page.clock.fastForward(1000);
     await expect.poll(() => page.evaluate(() => window.diagnosticLogRequests.length)).toBe(3);
@@ -97,8 +97,8 @@ test("a restarted Core replaces its log baseline without replaying old or startu
     await emit(page, { diagnosticId: IDS.oldInstance });
     await expect(page.locator(".reminder-floating").getByRole("alert")).toHaveCount(1);
     await page.evaluate(() => window.dispatchEvent(new Event("test-diagnostic-log-reset")));
-    await expect(page.getByRole("table", { name: "Diagnostics", exact: true })).toContainText(IDS.restarted);
-    await expect(page.getByRole("table", { name: "Diagnostics", exact: true })).not.toContainText(IDS.oldInstance);
+    await expect(page.getByRole("table", { name: "Technical Logs", exact: true })).toContainText(IDS.restarted);
+    await expect(page.getByRole("table", { name: "Technical Logs", exact: true })).not.toContainText(IDS.oldInstance);
     await expect(page.locator(".reminder-floating")).toBeHidden();
     await emit(page, { diagnosticId: IDS.newInstance });
     await expect(page.locator(".reminder-floating").getByRole("alert")).toHaveCount(1);
@@ -106,7 +106,7 @@ test("a restarted Core replaces its log baseline without replaying old or startu
 
 test("a Core without the log capability starts no log read or cancellation", async ({ page }) => {
     await page.goto("/browser-harness.html?route=/diagnostics");
-    await expect(page.getByRole("table", { name: "Diagnostics", exact: true })).toBeVisible();
+    await expect(page.getByRole("table", { name: "Technical Logs", exact: true })).toBeVisible();
     expect(await page.evaluate(() => window.diagnosticLogRequests)).toEqual([]);
     expect(await page.evaluate(() => window.diagnosticLogCancels)).toBe(0);
 });
@@ -115,8 +115,8 @@ test("an initial log read failure cannot be presented as an empty diagnostic his
     await page.clock.install();
     await page.goto("/browser-harness.html?route=/diagnostics&state=empty&diagnostic-log=1&log-initial-failure=1");
     await expect(page.getByText("New logs could not be loaded. The last loaded entries are still shown.", { exact: true })).toBeVisible();
-    const table = page.getByRole("table", { name: "Diagnostics", exact: true });
-    await expect(table).toContainText("No diagnostic records loaded.");
-    await expect(table).not.toContainText("No diagnostics reported");
+    const table = page.getByRole("table", { name: "Technical Logs", exact: true });
+    await expect(table).toContainText("No technical logs loaded.");
+    await expect(table).not.toContainText("No technical logs yet");
     await expect(page.locator(".reminder-floating")).toBeHidden();
 });

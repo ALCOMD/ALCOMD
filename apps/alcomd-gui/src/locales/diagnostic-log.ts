@@ -12,6 +12,6 @@ export const diagnosticLogMessages: TranslationTable = {
     "Debug information recorded.": { "zh-CN": "已记录调试信息。", "ja-JP": "デバッグ情報が記録されました。" },
     "Trace information recorded.": { "zh-CN": "已记录跟踪信息。", "ja-JP": "トレース情報が記録されました。" },
     "Some earlier log entries are no longer available.": { "zh-CN": "部分较早的日志已不在当前记录中。", "ja-JP": "以前のログの一部は現在の記録に残っていません。" },
-    "No diagnostic records loaded.": { "zh-CN": "尚未加载诊断记录。", "ja-JP": "診断記録はまだ読み込まれていません。" },
+    "No technical logs loaded.": { "zh-CN": "尚未加载技术日志。", "ja-JP": "技術ログはまだ読み込まれていません。" },
     "New logs could not be loaded. The last loaded entries are still shown.": { "zh-CN": "暂时无法读取新日志，仍显示已加载的记录。", "ja-JP": "新しいログを読み込めません。読み込み済みの記録を表示しています。" }
 };

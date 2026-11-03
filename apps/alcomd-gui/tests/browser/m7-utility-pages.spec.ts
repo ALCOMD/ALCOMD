@@ -16,7 +16,7 @@ const listRoutes = [
     ["Backups", "/projects/00000000-0000-4000-8000-000000000101/backups", "ready"],
     ["Tasks", "/operations", "ready"],
     ["Activity", "/activity", "ready"],
-    ["Diagnostics", "/diagnostics", "ready"]
+    ["Technical Logs", "/diagnostics", "ready"]
 ] as const;
 
 for (const width of [1280, 1440]) {
@@ -283,11 +283,11 @@ test("Settings uses shared sections while Logs retains its two real read surface
     await expect(activity).toHaveCSS("table-layout", "fixed");
     await expect(activity.locator("tbody td[data-cell-flow=\"truncate\"]").first()).toHaveCSS("white-space", "nowrap");
     await expect(activity.locator(".logs-summary small")).toHaveCSS("white-space", "nowrap");
-    await logs.getByRole("button", { name: "Diagnostics" }).click();
+    await logs.getByRole("button", { name: "Technical Logs" }).click();
     await expectHeading(page, "Logs");
-    await expect(logs.getByRole("button", { name: "Diagnostics", exact: true })).toHaveAttribute("aria-pressed", "true");
-    const diagnostics = page.getByRole("table", { name: "Diagnostics", exact: true });
-    await expect(diagnostics.getByRole("columnheader")).toHaveText(["Time", "Severity", "Subsystem", "Diagnostic", "Actions"]);
+    await expect(logs.getByRole("button", { name: "Technical Logs", exact: true })).toHaveAttribute("aria-pressed", "true");
+    const diagnostics = page.getByRole("table", { name: "Technical Logs", exact: true });
+    await expect(diagnostics.getByRole("columnheader")).toHaveText(["Time", "Severity", "Subsystem", "Log entry", "Actions"]);
     await expect(diagnostics).toHaveCSS("table-layout", "fixed");
     await expect(diagnostics.locator(".logs-summary strong")).toHaveCSS("white-space", "nowrap");
     await logs.getByRole("button", { name: "Activity", exact: true }).click();
