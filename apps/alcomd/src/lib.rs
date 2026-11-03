@@ -128,13 +128,6 @@ where
         .map_err(BindError::Io)
 }
 
-async fn initialize_daemon(
-    ipc: IpcConfig,
-    data: DataConfig,
-) -> Result<(IpcListener, Arc<Applications>), BindError> {
-    initialize_daemon_with_directories(
-        ipc,
-        data,
 /// Starts Core with the same safe log source used by its tracing subscriber.
 pub async fn serve_with_data_and_diagnostics_until<F>(
     ipc: IpcConfig,
@@ -157,6 +150,13 @@ where
         .map_err(BindError::Io)
 }
 
+async fn initialize_daemon(
+    ipc: IpcConfig,
+    data: DataConfig,
+) -> Result<(IpcListener, Arc<Applications>), BindError> {
+    initialize_daemon_with_directories(
+        ipc,
+        data,
         Arc::new(storage_platform::PlatformStorageDirectories),
     )
     .await
@@ -166,13 +166,6 @@ async fn initialize_daemon_with_directories(
     ipc: IpcConfig,
     data: DataConfig,
     directory_platform: Arc<dyn alcomd_application::StorageDirectoryPlatform>,
-) -> Result<(IpcListener, Arc<Applications>), BindError> {
-    let instance = DaemonInstance::acquire(&ipc)?;
-    let database = alcomd_platform::state_database_path(&data)?;
-    let data_root = database
-        .parent()
-        .ok_or_else(|| BindError::Io(io::Error::other("state path has no parent")))?
-        .to_path_buf();
 ) -> Result<(IpcListener, Arc<Applications>), BindError> {
     initialize_daemon_with_diagnostics(
         ipc,
@@ -188,6 +181,13 @@ async fn initialize_daemon_with_diagnostics(
     data: DataConfig,
     directory_platform: Arc<dyn alcomd_application::StorageDirectoryPlatform>,
     diagnostic_log: alcomd_application::DiagnosticLog,
+) -> Result<(IpcListener, Arc<Applications>), BindError> {
+    let instance = DaemonInstance::acquire(&ipc)?;
+    let database = alcomd_platform::state_database_path(&data)?;
+    let data_root = database
+        .parent()
+        .ok_or_else(|| BindError::Io(io::Error::other("state path has no parent")))?
+        .to_path_buf();
     let cache_root = data_root.join("package-cache");
     let store = StateStoreHandle::open(database).map_err(|error| {
         BindError::Io(io::Error::other(format!(
@@ -561,6 +561,7 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
         );
     }
     let supported = [
+        alcomd_protocol::CAPABILITY_DIAGNOSTICS_LOG_V1,
         CAPABILITY_STATE_CHECK_V1,
         CAPABILITY_OPERATIONS_V1,
         CAPABILITY_EVENTS_REPLAY_V1,
@@ -610,7 +611,6 @@ fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> Dispatch
 }
 
 fn dispatch_status(request: RequestEnvelope, state: &ConnectionState) -> DispatchAction {
-        alcomd_protocol::CAPABILITY_DIAGNOSTICS_LOG_V1,
     if request
         .params
         .as_object()
@@ -797,6 +797,9 @@ async fn dispatch_m2(
                 Err(error) => application_error(request.id, error),
             }
         }
+        alcomd_protocol::METHOD_DIAGNOSTICS_LOG_READ => {
+            diagnostic_log_rpc::dispatch(request, state, &applications.diagnostic_log, access).await
+        }
         _ if matches!(
             request.method.as_str(),
             alcomd_protocol::METHOD_SETTINGS_GET
@@ -845,9 +848,6 @@ async fn dispatch_m2(
         }
         _ if request.method.starts_with("unity.") => {
             m5_rpc::dispatch(request, state, &applications.m5, access).await
-        }
-        alcomd_protocol::METHOD_DIAGNOSTICS_LOG_READ => {
-            diagnostic_log_rpc::dispatch(request, state, &applications.diagnostic_log, access).await
         }
         _ if request.method.starts_with("templates.") => {
             m5_template_rpc::dispatch(request, state, &applications.templates, access).await
