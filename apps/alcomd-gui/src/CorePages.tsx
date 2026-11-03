@@ -1,6 +1,7 @@
 import { Translated, useTranslation } from "./i18n";
 import { productFamily } from "@alcomd/ui";
 import { guiVersion } from "./build-info";
+import { ActivityLogItems, activityItemKey } from "./ActivityLogItems";
 import type { SupportedLocale, Translate } from "./i18n-types";
 import type { CandidateCursor, PackageCandidateEvidence, PackageCandidateSummary, RpcError } from "@alcomd/sdk";
 import "./LogsWorkspace.css";
@@ -2033,11 +2034,11 @@ export function ActivityPage({ client, navigate }: PageProps) {
     const { t, locale } = useTranslation();
     const load = useCallback(() => client.activityList(), [client]);
     const [search, setSearch] = useState("");
-    return <UtilityWorkspace title={t(navigationLabels.logs)} navigation={<UtilityNavigation current="/activity" kind="logs" navigate={navigate} />} load={load}
+    return <UtilityWorkspace title={t(navigationLabels.logs)} navigation={<UtilityNavigation current="/activity" kind="logs" navigate={navigate} />} load={load} showRefresh={false}
         tools={() => <SearchField className="logs-search" label={t("Search activity")} value={search} onInput={setSearch} />}>
-        {(value) => <PagedItems initialItems={value.items} initialCursor={value.nextCursor} loadMore={(cursor) => client.activityList(cursor)}>
+        {(value) => <ActivityLogItems client={client} initial={value}>
             {(items) => <ActivityLogRows client={client} items={items} search={search} />}
-        </PagedItems>}
+        </ActivityLogItems>}
     </UtilityWorkspace>;
 }
 
@@ -2069,7 +2070,7 @@ function ActivityLogRows({ client, items, search }: { client: GuiRpcClient; item
             <Checkbox checked={details} label={t("Show details")} onChange={setDetails} />
             <p className="alcomd-filter-bar-status" role="status">{t("{shown} of {total} loaded entries · Search and filters apply to loaded entries only.", { shown: shown.length, total: items.length })}</p>
         </div>
-        <DesktopList columns={[{ key: "time", header: t("Time"), width: 250, className: "logs-time" }, { key: "status", header: t("Status"), width: 110 }, { key: "activity", header: t("Activity") }, { key: "target", header: t("Target"), width: 150 }, { key: "actions", header: t("Actions"), width: 140 }]} emptyMessage={items.length === 0 ? t("No activity yet") : t("No matching loaded activity. Change the filters or load more entries.")} label={t("Activity")} minWidth={760} rows={shown.map((item, index) => ({ key: `${item.type}-${item.eventSequence ?? item.operationId}-${item.occurredAtMs}-${index}`, cells: [
+        <DesktopList columns={[{ key: "time", header: t("Time"), width: 250, className: "logs-time" }, { key: "status", header: t("Status"), width: 110 }, { key: "activity", header: t("Activity") }, { key: "target", header: t("Target"), width: 150 }, { key: "actions", header: t("Actions"), width: 140 }]} emptyMessage={items.length === 0 ? t("No activity yet") : t("No matching loaded activity. Change the filters or load more entries.")} label={t("Activity")} minWidth={760} rows={shown.map((item) => ({ key: activityItemKey(item), cells: [
             formatTime(t, locale, item.occurredAtMs),
             <span className={`state-chip state-chip--${item.state ?? "unknown"}`}>{item.state === undefined ? t("Unknown") : humanize(t, item.state)}</span>,
             <span className="logs-summary"><span title={item.summaryCode}>{humanize(t, item.summaryCode)}</span><small>{humanize(t, item.type)}</small>{details ? <dl className="logs-details"><Detail label={t("Summary code")} value={item.summaryCode} />{item.operationId === undefined ? null : <Detail label={t("Operation")} value={item.operationId} />}{item.eventSequence === undefined ? null : <Detail label={t("Event sequence")} value={String(item.eventSequence)} />}</dl> : null}</span>,

@@ -17,6 +17,7 @@ interface UtilityWorkspaceProps<T> {
     navigation?: ReactNode;
     back?: ReactNode;
     refreshDisabled?: boolean;
+    showRefresh?: boolean;
     load(): Promise<T>;
     children(value: T, refresh: () => void): ReactNode;
     action?: {
@@ -39,6 +40,7 @@ export function UtilityWorkspace<T>({
     navigation,
     back,
     refreshDisabled = false,
+    showRefresh = true,
     load,
     children,
     action,
@@ -116,7 +118,7 @@ export function UtilityWorkspace<T>({
     return (
         <section className="utility-workspace page-surface--utility" aria-busy={value === undefined && pending} aria-labelledby="route-title">
             <PageHeader className="utility-workspace-toolbar" leading={back} title={title}
-                refresh={<RefreshButton disabled={refreshDisabled} onClick={retry} refreshing={pending} />}>
+                refresh={showRefresh ? <RefreshButton disabled={refreshDisabled} onClick={retry} refreshing={pending} /> : undefined}>
                 {navigation}
                 <div className="utility-workspace-actions">
                     {value === undefined ? null : tools?.(value, refresh)}

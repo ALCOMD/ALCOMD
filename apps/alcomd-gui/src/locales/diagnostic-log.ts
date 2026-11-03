@@ -1,6 +1,7 @@
 import type { TranslationTable } from "../i18n-types";
 
 export const diagnosticLogMessages: TranslationTable = {
+    "New activity could not be loaded. The last loaded entries are still shown.": { "zh-CN": "暂时无法读取新活动记录，仍显示已加载的记录。", "ja-JP": "新しいアクティビティを読み込めません。読み込み済みの記録を表示しています。" },
     "trace": { "zh-CN": "跟踪", "ja-JP": "トレース" },
     "debug": { "zh-CN": "调试", "ja-JP": "デバッグ" },
     "info": { "zh-CN": "信息", "ja-JP": "情報" },

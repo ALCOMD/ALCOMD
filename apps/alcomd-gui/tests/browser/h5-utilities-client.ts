@@ -21,6 +21,7 @@ interface H5UtilitiesFixture {
     pending(method: string): number;
     release(method: string, code?: string): number;
     complete(operationId: string, state: "succeeded" | "failed" | "cancelled", errorCode?: string): void;
+    recordActivity(item: ActivityItem): void;
 }
 
 declare global { interface Window { h5Utilities: H5UtilitiesFixture } }
@@ -37,10 +38,12 @@ export function withH5UtilitiesClient(base: GuiRpcClient, query: URLSearchParams
     const denied = new Map<string, string>();
     const failures = new Map<string, string[]>();
     const pending: PendingUtilityRequest[] = [];
+    const activityEntries: ActivityItem[] = [];
     if (query.has("h5-operations-slow")) held.add("operations.list");
     if (query.has("h5-status-offline")) denied.set("system.status", "daemon_unavailable");
     const fixture: H5UtilitiesFixture = {
         requests: [],
+        recordActivity(item) { activityEntries.push(structuredClone(item)); },
         failNext(method, code) { failures.set(method, [...(failures.get(method) ?? []), code]); },
         deny(method, code) { if (code === undefined) denied.delete(method); else denied.set(method, code); },
         hold(method, value) { if (value) held.add(method); else held.delete(method); },
@@ -105,6 +108,17 @@ export function withH5UtilitiesClient(base: GuiRpcClient, query: URLSearchParams
             });
         },
         activityList(cursor) {
+            if (query.has("h5-activity-live")) return response("activity.list", cursor === undefined ? {} : { cursor }, () => {
+                const position = (item: ActivityItem): ActivityCursor => ({ occurredAtMs: item.occurredAtMs, sourceRank: item.type === "event" ? 1 : 0,
+                    stableId: item.type === "event" ? String(item.eventSequence).padStart(20, "0") : item.operationId! });
+                const compare = (left: ActivityCursor, right: ActivityCursor) => left.occurredAtMs - right.occurredAtMs
+                    || left.sourceRank - right.sourceRank || left.stableId.localeCompare(right.stableId);
+                const all = [activity(H5_INSTALL_ID), activity(H5_CHECK_ID), activity(H5_UNINSTALL_ID), ...activityEntries]
+                    .filter((item) => cursor === undefined || compare(position(item), cursor) < 0)
+                    .sort((left, right) => compare(position(right), position(left)));
+                const items = all.slice(0, 2);
+                return { items, ...(all.length <= 2 ? {} : { nextCursor: position(items.at(-1)!) }) };
+            });
             return response("activity.list", cursor === undefined ? {} : { cursor }, () => cursor === undefined
                 ? { items: [activity(H5_INSTALL_ID), activity(H5_CHECK_ID)], nextCursor: H5_ACTIVITY_CURSOR }
                 : { items: [activity(H5_UNINSTALL_ID)] });

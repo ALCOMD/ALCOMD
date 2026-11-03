@@ -210,7 +210,7 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         await expect(heading).toBeVisible();
         const refresh = main.locator(".page-header-refresh md-icon-button, .package-workspace-toolbar .package-refresh-action")
             .filter({ has: page.locator('[data-icon-name="refresh"]') });
-        const hasRefresh = route !== "/about";
+        const hasRefresh = route !== "/about" && route !== "/activity";
         await expect(refresh).toHaveCount(hasRefresh ? 1 : 0);
         if (hasRefresh) {
             await expect(refresh.getByRole("button")).toHaveAccessibleName(/^(Refresh|Working)/);
