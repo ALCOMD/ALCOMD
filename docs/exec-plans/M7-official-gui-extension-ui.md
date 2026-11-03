@@ -45,8 +45,9 @@ Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据�
   业务控件恢复可用及 Material updateComplete，不因修复焦点而放宽 disabled/eligibility。
   MenuItem 统一消费公开 click/Enter/Space 选择并只在 closed 后派发一次；Escape 不派发。
   Select 由真实 busy 状态控制禁用，选中标签按公开生命周期同步，不增加输入/设置写入。
-- 全局操作成功/失败统一走 ReminderProvider 右下出口；页面持有的重试反馈经 GlobalReminder 复用同一宿主，不再插入页头、表格或卡片，不为普通操作失败打开独立弹窗。
-  成功短暂显示，失败保留原因/详情/重试；收起主题错误不清除未知结果，后续保存仍先核对。字段校验、正在进行的任务、首次加载失败及既有确认/Plan 弹窗内错误保持各自上下文。
+- 全局操作成功/失败统一由 ReminderProvider 接收并走唯一右下出口；页面和弹窗持有的操作反馈经同一发布/清除通道展示，不再插入页头、表格或卡片，不为普通操作失败打开独立弹窗。
+  宿主随当前原生模态弹窗切换，保持视口位置及详情/重试可操作；关闭来源或离开页面清除对应反馈。成功短暂显示，失败保留原因/详情/重试及原诊断编号，不另写一份诊断记录。
+  收起主题错误不清除未知结果，后续保存仍先核对。字段校验、持续任务状态和首次加载失败显式就地显示；既有确认/Plan 中的操作失败默认进入统一通道。当前诊断查询仍沿用既有合同，不增加实时日志流、持久通知历史或公共接口。
 - Unity Hub 位置复用 settings.get/update、settings.read/manage 与 Config5 `unity.hubPath`；
   有界只读发现和路径规范化由 platform 提供，不加注册表/PATH/Hub CLI 扫描。路径草稿 Enter
   或离开操作组保存，Esc 撤销，IME/同组焦点切换/无修改不写；选择和自动查找共享串行 CAS。
