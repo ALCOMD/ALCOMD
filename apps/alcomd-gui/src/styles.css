@@ -584,8 +584,6 @@ md-linear-progress {
     margin-left: auto;
 }
 .package-workspace-count { flex: 0 0 auto; color: var(--on-surface-variant); font-size: 0.8rem; }
-.package-refresh-status { margin: 0; padding: 6px 14px; color: var(--on-surface-variant); font-size: 0.78rem; }
-.package-refresh-status--failed { color: var(--error); }
 .package-bulk-bar {
     display: flex;
     align-items: center;

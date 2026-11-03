@@ -1273,12 +1273,10 @@ function PackageFilters({ client, settings, repositories, onChanged, filter, set
 }
 
 interface RepositoryRefreshProgress {
-    completed: number;
     failures: Array<{ code: string; repositoryId: string }>;
     results: Array<{ code?: string; repositoryId: string; status: "failure" | "success" }>;
     running: boolean;
     successes: number;
-    total: number;
 }
 
 async function listAllRepositories(client: GuiRpcClient): Promise<RepositorySnapshot[]> {
@@ -1355,13 +1353,6 @@ async function loadPackageWorkspace(t: Translate, locale: SupportedLocale, clien
     return { project, catalog, installations, launchOptions, repositories, settings, sourceRegistry, sourceSelectionKey: JSON.stringify(sourceSelections), ...(candidates ? { candidates } : {}), ...(candidateError ? { candidateError } : {}) };
 }
 
-function CandidateEvidenceStatus({ error, invalid, current, reload }: { error?: string; invalid: boolean; current: boolean; reload(): void }) {
-    const { t } = useTranslation();
-    const showLoading = useDelayedPending(!error && !invalid && !current);
-    if (!error && !invalid && !showLoading) return null;
-    return <div role="status">{error === undefined ? invalid ? t("Candidate evidence is stale.") : t("Loading candidate evidence…") : t(requestErrorMessage(error))} <Button onClick={reload} type="button" variant="text">{t("Reload package evidence")}</Button></div>;
-}
-
 function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { projectId: string }) {
     const { t, locale } = useTranslation();
     const reminder = useReminder();
@@ -1403,16 +1394,15 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
     };
     const refreshRepositories = async (reload: () => void) => {
         reminder.clear();
-        setRepositoryRefresh({ completed: 0, failures: [], results: [], running: true, successes: 0, total: 0 });
+        setRepositoryRefresh({ failures: [], results: [], running: true, successes: 0 });
         let repositories: RepositorySnapshot[];
         try {
             repositories = await listAllRepositories(client);
         } catch (caught: unknown) {
             const error = safeError(t, locale, caught);
-            setRepositoryRefresh({ completed: 1, failures: [{ code: error.code, repositoryId: "catalog" }], results: [{ code: error.code, repositoryId: "catalog", status: "failure" }], running: false, successes: 0, total: 1 });
+            setRepositoryRefresh({ failures: [{ code: error.code, repositoryId: "catalog" }], results: [{ code: error.code, repositoryId: "catalog", status: "failure" }], running: false, successes: 0 });
             return;
         }
-        setRepositoryRefresh({ completed: 0, failures: [], results: [], running: true, successes: 0, total: repositories.length });
         let successes = 0;
         const failures: RepositoryRefreshProgress["failures"] = [];
         const results: RepositoryRefreshProgress["results"] = [];
@@ -1447,12 +1437,11 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                     }
                 }
             }
-            setRepositoryRefresh({ completed: results.length, failures: [...failures], results: [...results], running: true, successes, total: repositories.length });
         }
         if (failures.length === 0) {
             setRepositoryRefresh(undefined);
             reminder.success(`${successes} refreshed, 0 failed.`);
-        } else setRepositoryRefresh({ completed: repositories.length, failures, results, running: false, successes, total: repositories.length });
+        } else setRepositoryRefresh({ failures, results, running: false, successes });
         reload();
     };
     return (
@@ -1461,6 +1450,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
             const currentEvidence = candidates !== undefined && sourceSelectionKey === JSON.stringify(sourceSelections) && !evidenceInvalid && !refreshing && refreshError === undefined;
             const catalogReady = currentEvidence && candidates.catalogComplete && !packageMutationBusy;
             const reloadEvidence = () => { setEvidenceInvalid(false); refresh(); };
+            const evidenceFailure = candidateError ? t(requestErrorMessage(candidateError)) : evidenceInvalid ? t("Candidate evidence is stale.") : undefined;
             const chooseCandidate = (row: PackageWorkspaceRow, option: PackageCandidateEvidence, origin: DialogOrigin) => {
                 if (!catalogReady || !canPlanPackagesV1 || !canPlanPackagesV2 || !actionableVersion(option)) return;
                 setSourceSelections((current) => ({ ...current, [row.packageId]: candidateSourceKey(option.source) }));
@@ -1529,7 +1519,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                     <section aria-labelledby="packages-heading" className="package-workspace-surface">
                         <header className="alcomd-filter-bar package-workspace-toolbar">
                             <h2 id="packages-heading">{t("Manage packages")}</h2>
-                             <RefreshButton className="package-refresh-action" disabled={!canManageRepositories || refreshing || repositoryRefresh?.running === true} onClick={() => void refreshRepositories(refresh)} refreshing={repositoryRefresh?.running === true} refreshingLabel={t("Refreshing packages")} title={capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry, t) ?? t("Refresh packages")} />
+                             <RefreshButton className="package-refresh-action" disabled={(evidenceFailure ? !canQueryCandidates : !canManageRepositories) || refreshing || repositoryRefresh?.running === true} label={evidenceFailure ? t("Retry") : undefined} onClick={() => evidenceFailure ? reloadEvidence() : void refreshRepositories(refresh)} refreshing={repositoryRefresh?.running === true} refreshingLabel={t("Refreshing packages")} title={evidenceFailure ?? capabilityUnavailableTitle(canManageRepositories, capabilities.repositoriesRegistry, t) ?? t("Refresh packages")} />
                              <SearchField className="package-workspace-search" label={t("Search packages")} onInput={setSearch} placeholder={t("Search...")} value={search} />
                              {currentEvidence ? <>
                                  <Button disabled={!canPlanPackagesV2 || !allLatest.enabled} onClick={(event) => submitBulk(allLatest.intents, { current: event.currentTarget }, allLatest.exclusions)} type="button" variant="tonal">{t("Update All ({count})", { count: allLatest.intents.length })}</Button>
@@ -1541,13 +1531,8 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                 <PackageFilters canUseUserPackages={canUseUserPackages} client={client} filter={filter} onChanged={refresh} repositories={repositories} setFilter={setFilter} setSourceFilter={setSourceFilter} settings={settings} sourceFilter={sourceFilter} />
                             </div>
                          </header>
-                         <CandidateEvidenceStatus error={candidateError} invalid={evidenceInvalid} current={currentEvidence} reload={reloadEvidence} />
-                         {currentEvidence && !candidates.catalogComplete ? <p role="status">{t("Package catalog is incomplete. Refresh the affected sources before planning changes.")}</p> : null}
-                         {currentEvidence && !allLatest.enabled ? <p className="package-update-status" role="status">{allLatest.intents.length > 256 ? t("More than 256 updates; explicitly select a smaller batch.") : lockedRows.some((row) => !row.evidence || uncertainUpdate(row.evidence, false)) ? t("Resolve unknown or ambiguous package evidence before Update All.") : t("No actionable updates.")}</p> : null}
-                        {repositoryRefresh === undefined ? null : repositoryRefresh.running ? <div className="package-refresh-status" role="status" aria-live="polite">
-                            {t("Refreshing repositories: {value0} of {value1}.", { value0: repositoryRefresh.completed, value1: repositoryRefresh.total })}
-                        </div> : <GlobalReminder><Reminder tone={repositoryRefresh.failures.length > 0 ? "warning" : "success"} onDismiss={() => setRepositoryRefresh(undefined)}>
-                            <div className={repositoryRefresh.failures.length > 0 ? "package-refresh-status package-refresh-status--failed" : "package-refresh-status"}>
+                        {repositoryRefresh === undefined || repositoryRefresh.running ? null : <GlobalReminder><Reminder tone={repositoryRefresh.failures.length > 0 ? "warning" : "success"} onDismiss={() => setRepositoryRefresh(undefined)}>
+                            <div>
                                 <span>{`${repositoryRefresh.successes} refreshed, ${repositoryRefresh.failures.length} failed.`}</span>
                                 {repositoryRefresh.failures.length === 0 ? null : <details><summary>{t("Show details")}</summary><ul>{repositoryRefresh.results.map((result) => result.code === undefined ? null : <li key={result.repositoryId}>{result.repositoryId}: {t(requestErrorMessage(result.code))}</li>)}</ul></details>}
                             </div>
@@ -1585,7 +1570,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                              <Checkbox checked={bulkSelection.includes(row.packageId)} label={t("Select {value0}", { value0: row.displayName })} onChange={(checked) => setBulkSelection((current) => checked ? [...new Set([...current, row.packageId])] : current.filter((packageId) => packageId !== row.packageId))} />,
                                              <><strong>{row.displayName}</strong><small>{row.packageId}</small></>,
                                              <><PackageVersionPicker client={client} project={project} snapshot={currentEvidence ? candidates.snapshot.fingerprint : undefined} disabled={!canQueryCandidates} canPlan={catalogReady && canPlanPackagesV1 && canPlanPackagesV2} onStale={() => setEvidenceInvalid(true)} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} />{row.requestedRange === undefined ? null : <small>{t("Requested ")}{row.requestedRange}</small>}</>,
-                                             <>{evidence ? choiceText(evidence.latest, t) : t("Evidence unavailable")}{evidence && update?.kind !== "target" ? <small>{update ? updateReason(update, t) : ""}</small> : null}</>,
+                                             <>{evidenceFailure ? <span title={evidenceFailure}>{evidenceFailure}</span> : evidence ? choiceText(evidence.latest, t) : t("Evidence unavailable")}{evidence && update?.kind !== "target" ? <small>{update ? updateReason(update, t) : ""}</small> : null}</>,
                                              <PackageSourcePicker disabled={!currentEvidence} label={t("Source for {value0}", { value0: row.displayName })} onChange={(key) => setSourceSelections((current) => ({ ...current, [row.packageId]: key }))} options={row.sourceOptions} value={sourceSelections[row.packageId] ?? ""} />,
                                              <div className="package-row-actions"><PackagePrimaryAction canPlanV1={canPlanPackagesV1} canPlanV2={canPlanPackagesV2} catalogReady={catalogReady} evidence={evidence} onSelect={(option, origin) => chooseCandidate(row, option, origin)} row={row} /><PackageRowMoreMenu canPlanV1={canPlanPackagesV1 && !packageMutationBusy && !refreshing && !evidenceInvalid} canPlanV2={canPlanPackagesV2 && catalogReady} client={client} onAction={(action, origin) => selectAction(action, origin, row)} row={row} /></div>
                                          ] };

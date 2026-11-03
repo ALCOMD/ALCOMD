@@ -470,10 +470,6 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "列表视图",
         "ja-JP": "リスト表示"
     },
-    "Loading candidate evidence…": {
-        "zh-CN": "正在加载候选版本信息…",
-        "ja-JP": "候補バージョンの情報を読み込み中…"
-    },
     "Loading projects": {
         "zh-CN": "正在加载项目",
         "ja-JP": "プロジェクトを読み込み中"
@@ -549,14 +545,6 @@ export const pageMessages: TranslationTable = {
     "More project creation options": {
         "zh-CN": "更多创建项目选项",
         "ja-JP": "プロジェクト作成のその他のオプション"
-    },
-    "More than 256 updates; explicitly select a smaller batch.": {
-        "zh-CN": "更新超过 256 项，请手动选择更小的批次。",
-        "ja-JP": "更新が 256 件を超えています。対象を減らして選択してください。"
-    },
-    "No actionable updates.": {
-        "zh-CN": "没有可执行的更新。",
-        "ja-JP": "実行できる更新はありません。"
     },
     "No activity yet": {
         "zh-CN": "暂无活动记录",
@@ -693,10 +681,6 @@ export const pageMessages: TranslationTable = {
     "Package": {
         "zh-CN": "软件包",
         "ja-JP": "パッケージ"
-    },
-    "Package catalog is incomplete. Refresh the affected sources before planning changes.": {
-        "zh-CN": "软件包目录不完整。请先刷新受影响的来源，再创建变更计划。",
-        "ja-JP": "パッケージ一覧が不完全です。対象の取得元を更新してから変更プランを作成してください。"
     },
     "Package filters": {
         "zh-CN": "筛选软件包",
@@ -838,10 +822,6 @@ export const pageMessages: TranslationTable = {
         "zh-CN": "正在刷新软件包",
         "ja-JP": "パッケージを更新中"
     },
-    "Refreshing repositories: {value0} of {value1}.": {
-        "zh-CN": "正在刷新仓库：{value0} / {value1}。",
-        "ja-JP": "リポジトリを更新中：{value0} / {value1}。"
-    },
     "Register an existing Unity project from the toolbar.": {
         "zh-CN": "从工具栏添加已有的 Unity 项目。",
         "ja-JP": "ツールバーから既存の Unity プロジェクトを登録してください。"
@@ -865,10 +845,6 @@ export const pageMessages: TranslationTable = {
     "Reload filters": {
         "zh-CN": "重新加载筛选条件",
         "ja-JP": "フィルターを再読み込み"
-    },
-    "Reload package evidence": {
-        "zh-CN": "重新加载软件包版本信息",
-        "ja-JP": "パッケージのバージョン情報を再読み込み"
     },
     "Remote": {
         "zh-CN": "远程",
@@ -949,10 +925,6 @@ export const pageMessages: TranslationTable = {
     "Resolve Dependencies…": {
         "zh-CN": "解析依赖…",
         "ja-JP": "依存関係を解決…"
-    },
-    "Resolve unknown or ambiguous package evidence before Update All.": {
-        "zh-CN": "请先解决软件包版本信息未知或来源歧义的问题，再更新全部。",
-        "ja-JP": "すべて更新する前に、パッケージ情報が不明または取得元が曖昧な項目を解消してください。"
     },
     "Resource sections": {
         "zh-CN": "资源分类",

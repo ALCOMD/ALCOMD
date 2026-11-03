@@ -210,7 +210,7 @@ test("Mixed selected install and upgrade keeps search-hidden selected IDs in one
 test("Unknown or ambiguous evidence blocks updates without probing Plans; explicit source resolves ambiguity", async ({ page }) => {
     await open(page, "unknown=1");
     await expect(page.getByRole("button", { name: "Update All (0)", exact: true })).toBeDisabled();
-    await expect(page.getByText("Resolve unknown or ambiguous package evidence before Update All.")).toBeVisible();
+    await expect(page.locator(".reminder-floating .reminder")).toHaveCount(0);
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
     await open(page, "ambiguous=1");
     await page.getByRole("combobox", { name: "Source for Avatar tools" }).click();
@@ -223,6 +223,7 @@ test("Incomplete catalog keeps versions readable and disables Plan actions inclu
     await open(page, "catalogIncomplete=1");
     await page.getByRole("checkbox", { name: "Select Avatar tools", exact: true }).check();
     await expect(page.getByRole("button", { name: "Remove selected", exact: true })).toBeDisabled();
+    await expect(page.locator(".reminder-floating .reminder")).toHaveCount(0);
     await page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" }).click();
     const option = page.locator("md-select-option").filter({ hasText: "1.10.0 · Example packages" });
     await expect(option).toHaveJSProperty("disabled", true);
@@ -242,19 +243,25 @@ test("Transitive selection cannot be silently removed but can be reinstalled", a
 test("Stale versions and stale pre-Plan evidence discard eligibility without automatic mutation retry", async ({ page }) => {
     await open(page, "versionsStale=1");
     await page.getByRole("combobox", { name: "Version for Avatar tools: 1.2.3" }).click();
-    await expect(page.getByText("Candidate evidence is stale.")).toBeVisible();
+    await expect(page.getByRole("table", { name: "Packages", exact: true }).getByText("Candidate evidence is stale.", { exact: true }).first()).toBeVisible();
+    await expect(page.locator(".reminder-floating .reminder")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
     await open(page, "intentStale=1");
     await page.getByRole("button", { name: "Update All (1)", exact: true }).click();
-    await expect(page.getByText("Candidate evidence is stale.")).toBeVisible();
+    await expect(page.getByRole("table", { name: "Packages", exact: true }).getByText("Candidate evidence is stale.", { exact: true }).first()).toBeVisible();
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
     expect(await page.evaluate(() => window.candidateRequests.filter((request) => request.limit === 1).length)).toBe(1);
 });
 
 test("Candidate quota failure is unavailable evidence, never empty/latest or a Plan probe", async ({ page }) => {
     await open(page, "candidateError=package_candidate_limit_exceeded");
-    await expect(page.getByRole("status").filter({ hasText: requestErrorMessage("package_candidate_limit_exceeded") })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Reload package evidence", exact: true })).toBeVisible();
+    await expect(page.getByRole("table", { name: "Packages", exact: true }).getByText(requestErrorMessage("package_candidate_limit_exceeded"), { exact: true }).first()).toBeVisible();
+    await expect(page.locator(".package-refresh-action")).toHaveAttribute("title", requestErrorMessage("package_candidate_limit_exceeded"));
+    await expect(page.locator(".reminder-floating .reminder")).toHaveCount(0);
+    await page.getByRole("button", { name: "Retry", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.candidateRequests.length)).toBeGreaterThan(1);
+    expect(await page.evaluate(() => window.resourceRequests.filter((request) => request.method === "repositories.refresh"))).toEqual([]);
     expect(await page.evaluate(() => window.packageRequests)).toEqual([]);
 });
 
