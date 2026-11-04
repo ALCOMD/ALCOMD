@@ -433,7 +433,7 @@ fn public_stage_replay_is_quiet_while_internal_journals_and_rollback_remain_corr
 }
 
 #[tokio::test]
-async fn metadata_notifications_are_owned_replay_safe_and_do_not_add_activity_noise() {
+async fn accepted_launch_activity_is_owned_and_replay_safe_while_observation_noise_is_excluded() {
     // Isolated SQLite and Store worker requests: no network, Unity or project IO.
     let directory = Directory::new();
     let store = StateStoreHandle::open(directory.database()).expect("isolated store");
@@ -574,8 +574,31 @@ async fn metadata_notifications_are_owned_replay_safe_and_do_not_add_activity_no
         .expect("activity");
     assert_eq!(
         before_activity.items.len(),
-        2,
-        "only original registration activity remains"
+        3,
+        "accepted launch and original registrations remain visible"
+    );
+    let launch_activity = before_activity
+        .items
+        .iter()
+        .filter(|item| item.summary_code == "project.activity-recorded")
+        .collect::<Vec<_>>();
+    assert_eq!(
+        launch_activity.len(),
+        1,
+        "replay and unchanged metadata add no duplicate"
+    );
+    assert_eq!(
+        launch_activity[0].resource_id.as_deref(),
+        Some(project.project_id.to_string().as_str())
+    );
+    assert_eq!(launch_activity[0].occurred_at_ms, 10);
+    assert!(
+        store
+            .list_official_activity(PrincipalId::parse("test:other").expect("owner"), None, 100)
+            .await
+            .expect("owner-filtered activity")
+            .items
+            .is_empty()
     );
     let mut content = repository.observation.clone();
     content.name = Some("Changed".to_owned());
@@ -620,7 +643,7 @@ async fn metadata_notifications_are_owned_replay_safe_and_do_not_add_activity_no
     );
     assert!(activity.items.iter().all(|item| !matches!(
         item.summary_code.as_str(),
-        "operation.progress" | "repository.observed" | "project.activity-recorded"
+        "operation.progress" | "repository.observed"
     )));
 }
 

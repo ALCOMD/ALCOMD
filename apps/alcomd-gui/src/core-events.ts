@@ -269,7 +269,7 @@ export class CoreEvents {
             "user-package": "user-packages", "unity-installation": "unity", "project-editor-preference": "projects", "project-unity-launch-config": "projects" };
         const scope = scopes[event.aggregateKind];
         if (scope !== undefined) this.invalidate(scope, /registered|removed|unregistered|deleted/.test(event.kind));
-        if (!["project.activity-recorded", "repository.observed"].includes(event.kind)) this.invalidate("activity");
+        if (event.kind !== "repository.observed") this.invalidate("activity");
     }
     private lookupResourceImpact(id: string) {
         if (this.jobs.has(`operation:${id}`) || this.lookups.has(id)) return;

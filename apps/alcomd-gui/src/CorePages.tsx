@@ -2206,6 +2206,7 @@ function formatBytes(t: Translate, locale: SupportedLocale, value: number): stri
 function shortHash(value: string): string { return value.length <= 24 ? value : `${value.slice(0, 16)}…${value.slice(-8)}`; }
 function humanize(t: Translate, value: string): string {
     const labels: Readonly<Record<string, string>> = {
+        "project.activity-recorded": "Requested opening in Unity",
         "queued": "queued",
         "running": "running",
         "recovering": "recovering",

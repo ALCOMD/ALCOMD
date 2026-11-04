@@ -26,6 +26,19 @@ async function addActivity(page: Page, sequence: number, summaryCode: string) {
     }), { sequence, summaryCode });
 }
 
+test("accepted Unity launch activity arrives through the event stream without periodic reads", async ({ page }) => {
+    const table = await open(page);
+    const before = await activityReads(page);
+    await addActivity(page, 1, "project.activity-recorded");
+    await page.clock.runFor(500);
+    await expect(table).toContainText("Requested opening in Unity");
+    await expect(table.locator("tbody tr")).toHaveCount(4);
+    expect(await activityReads(page)).toBeGreaterThan(before);
+    const settled = await activityReads(page);
+    await page.clock.fastForward(60_000);
+    expect(await activityReads(page)).toBe(settled);
+});
+
 test("activity merges notified multi-page bursts and task changes while retaining history, filters and scroll position", async ({ page }) => {
     const table = await open(page);
     await expect(page.locator('.page-header [data-icon-name="refresh"]')).toHaveCount(0);

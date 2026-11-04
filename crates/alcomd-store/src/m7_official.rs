@@ -59,7 +59,7 @@ fn list_activity(
                           e.aggregate_kind AS resource_kind, e.aggregate_id AS resource_id,
                           NULL AS state
                    FROM events e WHERE e.principal_id = ?1
-                       AND e.kind NOT IN ('operation.progress','repository.observed','project.activity-recorded')
+                       AND e.kind NOT IN ('operation.progress','repository.observed')
                    UNION ALL
                    SELECT o.updated_at_ms, 0 AS source_rank, o.operation_id AS stable_id,
                           'operation' AS item_kind,
