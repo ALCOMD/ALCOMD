@@ -80,14 +80,16 @@ test("a failed log read retains entries and reconnects from its cursor without a
     await open(page);
     await page.clock.install();
     await page.evaluate(() => window.dispatchEvent(new Event("test-diagnostic-log-failure")));
-    await expect(page.getByText("New logs could not be loaded. The last loaded entries are still shown.", { exact: true })).toBeVisible();
+    await expect(page.locator(".logs-workspace > .reminder").getByText("New logs could not be loaded. The last loaded entries are still shown.", { exact: true })).toBeVisible();
+    await expect(page.getByRole("table", { name: "Technical Logs", exact: true })).toContainText("New logs could not be loaded.");
     await expect(page.getByRole("table", { name: "Technical Logs", exact: true })).toContainText(IDS.historic);
     await expect(page.locator(".reminder-floating")).toBeHidden();
     await page.clock.fastForward(1000);
     await expect.poll(() => page.evaluate(() => window.diagnosticLogRequests.length)).toBe(3);
     await emit(page, { diagnosticId: IDS.resumed });
     await expect(page.locator(".reminder-floating").getByRole("alert")).toHaveCount(1);
-    await expect(page.getByText("New logs could not be loaded. The last loaded entries are still shown.", { exact: true })).toHaveCount(0);
+    await expect(page.locator(".logs-workspace > .reminder")).toHaveCount(0);
+    await expect(page.getByRole("table", { name: "Technical Logs", exact: true })).toContainText("New logs could not be loaded.");
     expect(await page.evaluate(() => window.diagnosticLogRequests[2]?.cursor)).toEqual({ instanceId: IDS.coreA, sequence: 1 });
     await expect(page.locator("body")).not.toContainText("never render raw failure detail");
 });
@@ -114,9 +116,28 @@ test("a Core without the log capability starts no log read or cancellation", asy
 test("an initial log read failure cannot be presented as an empty diagnostic history", async ({ page }) => {
     await page.clock.install();
     await page.goto("/browser-harness.html?route=/diagnostics&state=empty&diagnostic-log=1&log-initial-failure=1");
-    await expect(page.getByText("New logs could not be loaded. The last loaded entries are still shown.", { exact: true })).toBeVisible();
+    await expect(page.locator(".logs-workspace > .reminder").getByText("New logs could not be loaded. The last loaded entries are still shown.", { exact: true })).toBeVisible();
     const table = page.getByRole("table", { name: "Technical Logs", exact: true });
-    await expect(table).toContainText("No technical logs loaded.");
+    await expect(table).toContainText("New logs could not be loaded.");
     await expect(table).not.toContainText("No technical logs yet");
     await expect(page.locator(".reminder-floating")).toBeHidden();
+});
+
+test("an ordinary request popup is backed by a session log and dismissal keeps that record", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/repositories&state=package-partial-failure&diagnostic-log=1");
+    const repository = page.getByRole("table", { name: "Repositories", exact: true }).getByRole("row").filter({ hasText: "Local packages" });
+    await repository.getByRole("button", { name: "Refresh repository", exact: true }).click();
+    const popup = page.locator(".reminder-floating .reminder").filter({ hasText: "Repository refresh failed" });
+    await expect(popup).toBeVisible();
+    const logId = await popup.getAttribute("data-log-id");
+    expect(logId).toBeTruthy();
+    await popup.getByRole("button", { name: "Dismiss notification", exact: true }).click();
+    await expect(popup).toHaveCount(0);
+    await page.getByRole("navigation", { name: "Primary", exact: true }).locator("md-list-item")
+        .filter({ has: page.locator(".navigation-item-label", { hasText: /^Logs$/ }) }).click();
+    await page.getByRole("button", { name: "Technical Logs", exact: true }).click();
+    const table = page.getByRole("table", { name: "Technical Logs", exact: true });
+    await expect(table.locator(`[data-log-id="${logId}"]`)).toContainText("repository_unavailable");
+    await expect(table).toContainText("ALCOMD GUI");
+    await expect(table.locator(`[data-log-id="${logId}"]`)).toHaveCount(1);
 });

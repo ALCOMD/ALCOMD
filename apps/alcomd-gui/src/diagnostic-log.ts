@@ -7,10 +7,27 @@ export interface DiagnosticLogSource {
 }
 
 export interface DiagnosticLogSnapshot {
-    readonly items: readonly DiagnosticLogItem[];
+    readonly items: readonly SessionLogEntry[];
     readonly notifications: readonly DiagnosticLogItem[];
     readonly gap: boolean;
     readonly error?: RpcError;
+}
+
+/** GUI records are ephemeral session logs, never Core business state or RPC DTOs. */
+export interface SessionLogEntry extends DiagnosticLogItem {
+    readonly source?: "gui";
+    readonly message?: string;
+    readonly title?: string;
+    readonly tone?: "success" | "info" | "warning" | "error";
+}
+
+export interface GuiLogInput {
+    message: string;
+    title?: string;
+    tone: "success" | "info" | "warning" | "error";
+    code?: string;
+    diagnosticId?: string;
+    notify?: boolean;
 }
 
 const EMPTY: DiagnosticLogSnapshot = { items: [], notifications: [], gap: false };
@@ -21,7 +38,12 @@ export function diagnosticLogKey(item: Pick<DiagnosticLogItem, "instanceId" | "s
 }
 
 export function diagnosticLogMessage(code: string): string {
+    if (code.startsWith("rpc.") && code.endsWith(".succeeded")) return "Request completed.";
+    if (code.startsWith("operation.") && code.endsWith(".succeeded")) return "Task completed.";
+    if (code.startsWith("operation.") && code.endsWith(".cancelled")) return "Task cancelled.";
     switch (code) {
+        case "core.started": return "The Core started.";
+        case "diagnostic.operation_stream_failed": return "Task results could not be added to the technical log.";
         case "diagnostic.trace": return "Trace information recorded.";
         case "diagnostic.debug": return "Debug information recorded.";
         case "diagnostic.info": return "Information recorded.";
@@ -50,6 +72,9 @@ export class DiagnosticLogFeed {
     private generation = 0;
     private running = false;
     private retry?: AbortController;
+    private readonly guiInstance = crypto.randomUUID();
+    private guiSequence = 0;
+    private readonly guiIdentities = new WeakMap<object, DiagnosticLogItem>();
 
     constructor(source: DiagnosticLogSource, wait = retryWait) {
         this.source = source;
@@ -82,6 +107,37 @@ export class DiagnosticLogFeed {
         if (notifications.length !== this.snapshot.notifications.length) this.update({ ...this.snapshot, notifications });
     };
 
+    /** Commit a GUI feedback record before a floating view is allowed to exist. */
+    recordGui(input: GuiLogInput, identity?: object): SessionLogEntry {
+        const prior = identity === undefined ? undefined : this.guiIdentities.get(identity);
+        const existing = this.find(prior) ?? (input.diagnosticId === undefined ? undefined
+            : this.snapshot.items.find((item) => item.diagnosticId === input.diagnosticId));
+        if (prior !== undefined && existing !== undefined) return existing;
+        const level = input.tone === "success" ? "info" : input.tone;
+        const metadata = { message: input.message.slice(0, 4096), title: input.title?.slice(0, 512), tone: input.tone };
+        const entry: SessionLogEntry = existing === undefined ? {
+            instanceId: this.guiInstance, sequence: ++this.guiSequence, occurredAtMs: Date.now(),
+            level, code: input.code?.slice(0, 96) ?? `gui.${level}`, diagnosticId: input.diagnosticId,
+            notify: input.notify ?? true, source: "gui", ...metadata,
+        } : { ...existing, ...metadata };
+        if (identity !== undefined) this.guiIdentities.set(identity, entry);
+        const items = existing === undefined ? [...this.snapshot.items, entry].slice(-MAX_RETAINED)
+            : this.snapshot.items.map((item) => item === existing ? entry : item);
+        // A request may already have arrived on the Core log connection. Its
+        // contextual view replaces the generic popup, rather than duplicating it.
+        const notifications = existing === undefined ? this.snapshot.notifications
+            : this.snapshot.notifications.filter((item) => diagnosticLogKey(item) !== diagnosticLogKey(existing));
+        this.update({ ...this.snapshot, items, notifications });
+        return entry;
+    }
+
+    find(reference?: DiagnosticLogItem): SessionLogEntry | undefined {
+        if (reference === undefined) return undefined;
+        return this.snapshot.items.find((item) => diagnosticLogKey(item) === diagnosticLogKey(reference))
+            ?? (reference.diagnosticId === undefined ? undefined
+                : this.snapshot.items.find((item) => item.diagnosticId === reference.diagnosticId));
+    }
+
     private update(snapshot: DiagnosticLogSnapshot): void {
         this.snapshot = snapshot;
         this.listeners.forEach((listener) => listener());
@@ -97,7 +153,12 @@ export class DiagnosticLogFeed {
                 this.accept(result);
             } catch (caught: unknown) {
                 if (!this.current(generation)) return;
-                this.update({ ...this.snapshot, error: normalizeRequestError(caught) });
+                const error = normalizeRequestError(caught);
+                if (this.snapshot.error?.code !== error.code) this.recordGui({
+                    tone: "warning", code: error.code, notify: false,
+                    message: "New logs could not be loaded. The last loaded entries are still shown.",
+                });
+                this.update({ ...this.snapshot, error });
                 this.retry = new AbortController();
                 await this.wait(this.retry.signal);
                 this.retry = undefined;
@@ -118,13 +179,24 @@ export class DiagnosticLogFeed {
             seen.add(item.sequence);
             return true;
         });
-        const retained = baseline ? [] : this.snapshot.items;
-        const items = [...retained, ...fresh].slice(-MAX_RETAINED);
+        const retained = baseline ? this.snapshot.items.filter((item) => item.source === "gui" || item.tone !== undefined) : this.snapshot.items;
+        const items: SessionLogEntry[] = [...retained];
+        const handled = new Set<string>();
+        for (const item of fresh) {
+            const index = items.findIndex((entry) => diagnosticLogKey(entry) === diagnosticLogKey(item)
+                || item.diagnosticId !== undefined && entry.source === "gui" && entry.diagnosticId === item.diagnosticId);
+            const gui = index < 0 ? undefined : items[index];
+            if (gui === undefined) items.push(item);
+            else {
+                items[index] = { ...item, message: gui.message, title: gui.title, tone: gui.tone };
+                handled.add(diagnosticLogKey(item));
+            }
+        }
         const notifications = newInstance ? [] : result.gap ? this.snapshot.notifications
-            : [...this.snapshot.notifications, ...fresh.filter((item) => item.notify && (item.level === "error" || item.level === "warning"))].slice(-MAX_RETAINED);
+            : [...this.snapshot.notifications, ...fresh.filter((item) => !handled.has(diagnosticLogKey(item)) && item.notify && (item.level === "error" || item.level === "warning"))].slice(-MAX_RETAINED);
         this.cursor = result.nextCursor;
         if (baseline || fresh.length !== 0 || this.snapshot.error !== undefined || result.gap && !this.snapshot.gap) {
-            this.update({ items, notifications, gap: baseline ? result.gap : this.snapshot.gap || result.gap });
+            this.update({ items: items.slice(-MAX_RETAINED), notifications, gap: baseline ? result.gap : this.snapshot.gap || result.gap });
         }
     }
 }

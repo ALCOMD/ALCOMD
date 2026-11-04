@@ -1,6 +1,11 @@
 import type { TranslationTable } from "../i18n-types";
 
 export const errorMessages: TranslationTable = {
+    "The Core started.": { "zh-CN": "Core 已启动。", "ja-JP": "Coreが起動しました。" },
+    "Request completed.": { "zh-CN": "请求已完成。", "ja-JP": "リクエストが完了しました。" },
+    "Task completed.": { "zh-CN": "任务已完成。", "ja-JP": "タスクが完了しました。" },
+    "Task cancelled.": { "zh-CN": "任务已取消。", "ja-JP": "タスクがキャンセルされました。" },
+    "Task results could not be added to the technical log.": { "zh-CN": "任务结果无法写入技术日志。", "ja-JP": "タスクの結果を技術ログに追加できませんでした。" },
     "Some information is missing or invalid. Check the inputs before submitting again.": { "zh-CN": "信息缺失或无效，请检查输入后再提交。", "ja-JP": "情報が不足しているか無効です。入力内容を確認してから送信してください。" },
     "Core is unavailable. Reconnect and check any submitted task before repeating a change.": { "zh-CN": "无法连接核心服务。请重连并核对已提交的任务，再决定是否重新操作。", "ja-JP": "コアに接続できません。再接続し、送信済みのタスクを確認してから変更を再実行してください。" },
     "The result could not be confirmed because of an internal error. Check Tasks before repeating a change.": { "zh-CN": "内部错误导致结果无法确认。重新操作前请先检查任务。", "ja-JP": "内部エラーにより結果を確認できません。変更を再実行する前にタスクを確認してください。" },

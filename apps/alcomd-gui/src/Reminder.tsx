@@ -1,12 +1,14 @@
-import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type Ref } from "react";
+import { createContext, isValidElement, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type Ref } from "react";
 import { createPortal } from "react-dom";
-import type { RpcError } from "@alcomd/sdk";
+import type { DiagnosticLogItem, RpcError } from "@alcomd/sdk";
 import { closeIcon, infoIcon } from "@alcomd/ui/icons";
 import { Button, DialogOpenContext, Icon, IconButton } from "./Material";
 import { ScrollArea } from "./ScrollArea";
 import { useTranslation } from "./i18n";
 import { normalizeRequestError, requestErrorMessage } from "./request-errors";
 import { currentDialogSurface, subscribeDialogSurface } from "./dialog-surface";
+import { DiagnosticLogContext } from "./diagnostic-log-context";
+import { DiagnosticLogFeed, diagnosticLogKey, diagnosticLogMessage, type GuiLogInput, type DiagnosticLogSnapshot } from "./diagnostic-log";
 import "./Reminder.css";
 
 interface ReminderActions {
@@ -22,6 +24,25 @@ const ReminderChannelContext = createContext<{
 } | undefined>(undefined);
 const InReminderOutlet = createContext(false);
 const ReminderSourceContext = createContext("shell");
+const noLogChanges = () => () => {};
+const emptyLog: DiagnosticLogSnapshot = { items: [], notifications: [], gap: false };
+const emptyLogSnapshot = () => emptyLog;
+const localLogSource = { diagnosticLogRead: async (): Promise<never> => { throw new Error("No Core log reader"); }, diagnosticLogCancel: async () => {} };
+
+/** Existing rich feedback keeps its controls; only textual content enters the log. */
+function feedbackText(content: ReactNode): string {
+    const parts: string[] = [];
+    let remaining = 128;
+    const read = (node: ReactNode, depth: number) => {
+        if (--remaining < 0 || depth > 16) return;
+        if (typeof node === "string" || typeof node === "number") parts.push(String(node));
+        else if (Array.isArray(node)) node.forEach((child) => read(child, depth + 1));
+        else if (isValidElement<{ children?: ReactNode }>(node) && node.type !== Button && node.type !== IconButton
+            && node.type !== "button" && node.type !== "details") read(node.props.children, depth + 1);
+    };
+    read(content, 0);
+    return parts.join(" ").slice(0, 4096);
+}
 type ReminderIdentity = object | string;
 const ReminderDismissContext = createContext<{
     has(source: string, identity: ReminderIdentity): boolean;
@@ -30,6 +51,8 @@ const ReminderDismissContext = createContext<{
 
 /** One outlet; success keeps its visit scope while actionable feedback follows its source. */
 export function ReminderProvider({ children, feedback, visit }: { children: ReactNode; feedback?: ReactNode; visit: number }) {
+    const inheritedLog = useContext(DiagnosticLogContext);
+    const log = useMemo(() => inheritedLog ?? new DiagnosticLogFeed(localLogSource), [inheritedLog]);
     const dialogSurface = useSyncExternalStore(subscribeDialogSurface, currentDialogSurface);
     const [notice, setNotice] = useState<{ id: number; message?: string; error?: RpcError; visit: number; origin?: HTMLElement }>();
     const [feedbackBySource, setFeedbackBySource] = useState<ReadonlyMap<string, ReactNode>>(() => new Map());
@@ -97,7 +120,7 @@ export function ReminderProvider({ children, feedback, visit }: { children: Reac
         const target = notice?.origin;
         if (target?.isConnected && !target.hasAttribute("disabled")) target.focus();
     };
-    return <ReminderContext.Provider value={actions}><ReminderChannelContext.Provider value={channel}>{children}{createPortal(
+    return <DiagnosticLogContext.Provider value={log}><ReminderContext.Provider value={actions}><ReminderChannelContext.Provider value={channel}>{children}{createPortal(
         <div className="reminder-floating" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)} onFocusCapture={() => setPaused(true)} onBlurCapture={(event) => {
             if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false);
         }}>
@@ -107,7 +130,7 @@ export function ReminderProvider({ children, feedback, visit }: { children: Reac
                 ? <Reminder key={visibleNotice.id} onDismiss={clear} tone="success">{visibleNotice.message}</Reminder>
                 : <RequestReminder key={visibleNotice.id} error={visibleNotice.error} message={visibleNotice.message} onDismiss={dismissError} />}</ReminderDismissContext.Provider></InReminderOutlet.Provider>
         </div>, dialogSurface ?? document.body
-    )}</ReminderChannelContext.Provider></ReminderContext.Provider>;
+    )}</ReminderChannelContext.Provider></ReminderContext.Provider></DiagnosticLogContext.Provider>;
 }
 
 /** Publish page-owned feedback; its source clears it when resolved, hidden or unmounted. */
@@ -131,11 +154,15 @@ export function useReminder(): ReminderActions {
 }
 
 /** Persistent contextual feedback. Only ReminderProvider's short success message expires. */
-export function Reminder({ actions, children, details, identity, onDismiss, title, tone = "info" }: {
+export function Reminder({ actions, children, details, identity, message, logCode, diagnosticId, logEntry, onDismiss, title, tone = "info" }: {
     actions?: ReactNode;
-    children: ReactNode;
+    children?: ReactNode;
     details?: ReactNode;
     identity?: object;
+    message?: string;
+    logCode?: string;
+    diagnosticId?: string;
+    logEntry?: DiagnosticLogItem;
     onDismiss?(): void;
     title?: string;
     tone?: "success" | "info" | "warning" | "error";
@@ -145,14 +172,35 @@ export function Reminder({ actions, children, details, identity, onDismiss, titl
     const floating = useContext(InReminderOutlet);
     const source = useContext(ReminderSourceContext);
     const dismissals = useContext(ReminderDismissContext);
-    const notification = identity ?? JSON.stringify([tone, title, typeof children === "string" ? children : undefined]);
-    if (floating && onDismiss === undefined && dismissals?.has(source, notification)) return null;
+    const log = useContext(DiagnosticLogContext);
+    const snapshot = useSyncExternalStore(floating ? log?.subscribe ?? noLogChanges : noLogChanges,
+        floating ? log?.getSnapshot ?? emptyLogSnapshot : emptyLogSnapshot);
+    const [record, setRecord] = useState<DiagnosticLogItem>();
+    const text = message ?? feedbackText(children);
+    const notification = identity ?? JSON.stringify([tone, title, text]);
+    const logIdentity = useMemo(() => typeof notification === "object" ? notification : {}, [notification]);
+    const dismissed = floating && onDismiss === undefined && dismissals?.has(source, notification) === true;
+    const pending = useRef<GuiLogInput>({ message: text, title, tone, code: logCode, diagnosticId });
+    pending.current = { message: text, title, tone, code: logCode, diagnosticId };
+    useLayoutEffect(() => {
+        if (!floating || dismissed || logEntry !== undefined) return;
+        if (log === undefined) throw new Error("Floating notifications require a session log");
+        setRecord(log.recordGui(pending.current, logIdentity));
+    }, [floating, dismissed, log, logEntry, logIdentity]);
+    const reference = logEntry ?? record;
+    const entry = reference === undefined ? undefined : snapshot.items.find((item) => diagnosticLogKey(item) === diagnosticLogKey(reference))
+        ?? (reference.diagnosticId === undefined ? undefined : snapshot.items.find((item) => item.diagnosticId === reference.diagnosticId));
+    // No floating content is mounted until its actual log record is accepted.
+    if (floating && (dismissed || entry === undefined)) return null;
+    const shownTitle = floating ? entry?.title ?? title : title;
+    const shownMessage = floating ? entry?.message ?? (entry === undefined ? undefined : diagnosticLogMessage(entry.code)) : message;
     const dismiss = onDismiss ?? (floating ? () => dismissals?.dismiss(source, notification) : undefined);
-    return <section className={`reminder reminder--${tone}`} role={tone === "error" || tone === "warning" ? "alert" : "status"} aria-live={tone === "error" || tone === "warning" ? "assertive" : "polite"}>
+    return <section data-log-id={floating && entry ? diagnosticLogKey(entry) : undefined} className={`reminder reminder--${tone}`} role={tone === "error" || tone === "warning" ? "alert" : "status"} aria-live={tone === "error" || tone === "warning" ? "assertive" : "polite"}>
         <Icon asset={infoIcon} />
         <div className="reminder-body">
-            {title === undefined ? null : <strong className="reminder-title">{title}</strong>}
-            <div>{children}</div>
+            {shownTitle === undefined ? null : <strong className="reminder-title">{shownTitle}</strong>}
+            <div>{message !== undefined ? <><p>{t(shownMessage ?? message)}</p>{children}</>
+                : floating && typeof children === "string" ? t(shownMessage ?? text) : children}</div>
             {details === undefined ? null : <>
                 <Button aria-expanded={expanded} onClick={() => setExpanded((value) => !value)} type="button" variant="text">{expanded ? t("Hide details") : t("Show details")}</Button>
                 {expanded ? <ScrollArea className="reminder-details">{details}</ScrollArea> : null}
@@ -168,8 +216,7 @@ export function RequestReminder({ children, error, inline = false, message, onDi
     const inOutlet = useContext(InReminderOutlet);
     const safe = normalizeRequestError(error);
     const confirmation = safe.code === "extension_publisher_confirmation_required";
-    const notice = <Reminder key={`${safe.code}:${safe.diagnosticId ?? ""}`} identity={error} onDismiss={onDismiss} tone={confirmation ? "warning" : "error"} title={title === null ? undefined : title ?? t(confirmation ? "Publisher confirmation required" : "Request failed")} details={<DiagnosticDetails code={safe.code} diagnosticId={safe.diagnosticId} />}>
-        <p>{t(message ?? requestErrorMessage(safe.code))}</p>
+    const notice = <Reminder key={`${safe.code}:${safe.diagnosticId ?? ""}`} identity={error} message={message ?? requestErrorMessage(safe.code)} logCode={safe.code} diagnosticId={safe.diagnosticId} onDismiss={onDismiss} tone={confirmation ? "warning" : "error"} title={title === null ? undefined : title ?? t(confirmation ? "Publisher confirmation required" : "Request failed")} details={<DiagnosticDetails code={safe.code} diagnosticId={safe.diagnosticId} />}>
         {children === undefined ? null : <div className="reminder-context">{children}</div>}
     </Reminder>;
     return inline || inOutlet ? notice : <GlobalReminder>{notice}</GlobalReminder>;

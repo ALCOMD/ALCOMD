@@ -2113,8 +2113,8 @@ function DiagnosticLogRows({ client, items, search }: { client: GuiRpcClient; it
     const query = search.trim().toLowerCase();
     const records: Array<Omit<LoadedDiagnosticItem, "severity"> & { severity: DiagnosticLogLevel; key: string; message: string }> = [
         ...items.map((item, index) => ({ ...item, key: `operation:${item.operationId}:${index}`, message: requestErrorMessage(item.code) })),
-        ...snapshot.items.map((item) => ({ occurredAtMs: item.occurredAtMs, severity: item.level, subsystem: productFamily, code: item.code,
-            diagnosticId: item.diagnosticId, summary: "", key: diagnosticLogKey(item), message: diagnosticLogMessage(item.code) }))
+        ...snapshot.items.map((item) => ({ occurredAtMs: item.occurredAtMs, severity: item.level, subsystem: item.source === "gui" ? `${productFamily} GUI` : productFamily, code: item.code,
+            diagnosticId: item.diagnosticId, summary: "", key: diagnosticLogKey(item), message: item.message ?? diagnosticLogMessage(item.code) }))
     ].sort((left, right) => right.occurredAtMs - left.occurredAtMs);
     const shown = records.filter((item) => (severity === "" || item.severity === severity)
         && (subsystem === "" || item.subsystem === subsystem)
@@ -2133,7 +2133,7 @@ function DiagnosticLogRows({ client, items, search }: { client: GuiRpcClient; it
             formatTime(t, locale, item.occurredAtMs),
             <span className={`logs-severity logs-severity--${item.severity}`}>{humanize(t, item.severity)}</span>,
             item.subsystem,
-            <span className="logs-summary"><strong>{t(item.message)}</strong><small>{item.code}</small>{item.diagnosticId === undefined ? null : <small>{t("Diagnostic ID: ")}{item.diagnosticId}</small>}</span>,
+            <span className="logs-summary" data-log-id={item.key}><strong>{t(item.message)}</strong><small>{item.code}</small>{item.diagnosticId === undefined ? null : <small>{t("Diagnostic ID: ")}{item.diagnosticId}</small>}</span>,
             item.operationId === undefined ? null : <Button disabled={!canReadOperations} title={capabilityUnavailableTitle(canReadOperations, capabilities.operations, t)} onClick={() => setSelected(item.operationId)} type="button" variant="text">{t("View operation")}</Button>
         ] }))} sizing="fixed" />
         {selected === undefined ? null : <LogOperationDialog client={client} operationId={selected} onClose={() => setSelected(undefined)} />}

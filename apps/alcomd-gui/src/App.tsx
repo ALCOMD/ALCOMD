@@ -28,7 +28,7 @@ import { Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, us
 import { SettingsAutosave } from "./settings-autosave";
 import { guiVersion } from "./build-info";
 import { ReminderProvider, RequestReminder } from "./Reminder";
-import { DiagnosticLogProvider } from "./diagnostic-log-ui";
+import { DiagnosticLogNotifications, DiagnosticLogProvider } from "./diagnostic-log-ui";
 import { CoreEvents } from "./core-events";
 import { CoreEventsProvider, CoreEventsStatus, useCoreEvents, useCoreInvalidation } from "./core-events-ui";
 
@@ -278,6 +278,7 @@ export function App({ client: sourceClient = guiRpcClient }: AppProps) {
 
     return (
         <LocaleProvider locale={locale}><CapabilityProvider reconnect={reconnect} value={negotiatedCapabilities}>
+            <DiagnosticLogProvider client={client} enabled={negotiatedCapabilities?.kind === "ready" && negotiatedCapabilities.values.has("diagnostics.log.v1")}>
             <ReminderProvider visit={visibleNavigation.read.visit} feedback={settingsSave.failed || windowStateError !== undefined ? <>
                         {settingsSave.failed ? <div className="settings-save-error">
                             <RequestReminder error={settingsSave.error ?? { code: "internal_error", message: "" }} title={t(["daemon_unavailable", "internal_error"].includes(settingsSave.error?.code ?? "internal_error") ? "Settings save result is unknown" : "Settings could not be saved.")}
@@ -289,7 +290,7 @@ export function App({ client: sourceClient = guiRpcClient }: AppProps) {
                             <RequestReminder error={windowStateError} title={null} message="Window mode and saved size could not be applied." onDismiss={() => setWindowStateError(undefined)}><Button type="button" variant="text" onClick={() => void windowMemory.current?.retry()}>{t("Retry")}</Button></RequestReminder>
                         </div>}
             </> : undefined}>
-            <DiagnosticLogProvider client={client} enabled={negotiatedCapabilities?.kind === "ready" && negotiatedCapabilities.values.has("diagnostics.log.v1")}>
+            <DiagnosticLogNotifications />
             <CoreEventsProvider events={events} enabled={negotiatedCapabilities?.kind === "ready"}>
             <div className="app-shell">
                 <div className="app-body">
@@ -326,7 +327,7 @@ export function App({ client: sourceClient = guiRpcClient }: AppProps) {
                     </div>
                 </MaterialDialog>
             </div>
-            </CoreEventsProvider></DiagnosticLogProvider></ReminderProvider>
+            </CoreEventsProvider></ReminderProvider></DiagnosticLogProvider>
         </CapabilityProvider></LocaleProvider>
     );
 }

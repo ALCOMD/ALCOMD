@@ -60,7 +60,10 @@ function fixture() {
     await f.respond(result(2, [log(1), log(2)]));
     await f.fail();
     equal(f.feed.getSnapshot().error, { code: "daemon_unavailable", message: "" }, "read failure keeps only safe metadata");
-    equal(f.feed.getSnapshot().items.length, 2, "read failure retains loaded records");
+    equal(f.feed.getSnapshot().items.filter((item) => item.source !== "gui").map(diagnosticLogKey),
+        [`${CORE_A}:1`, `${CORE_A}:2`], "read failure retains every loaded Core record");
+    equal(f.feed.getSnapshot().items.filter((item) => item.source === "gui").map((item) => [item.code, item.notify]),
+        [["daemon_unavailable", false]], "log delivery failure is recorded once without a recursive popup");
     equal(f.feed.getSnapshot().notifications.length, 2, "read failure does not create a recursive notification");
     await f.retry();
     equal(f.requests.at(-1)?.cursor, { instanceId: CORE_A, sequence: 2 }, "reconnect resumes the previous cursor");
@@ -111,5 +114,51 @@ function fixture() {
     equal(f.feed.getSnapshot().notifications.length, 1024, "unacknowledged popup storage is bounded");
     equal(f.feed.getSnapshot().items[0]?.sequence, 177, "bounded views retain the newest records");
     await f.feed.stop();
+}
+{
+    const f = fixture();
+    const identity = {};
+    const entry = f.feed.recordGui({ tone: "error", code: "unity_launch_state_uncertain", message: "project warning" }, identity);
+    equal(f.feed.recordGui({ tone: "error", message: "project warning" }, identity), entry, "StrictMode repeats keep one record");
+    equal(f.feed.getSnapshot().items.length, 1, "GUI feedback is recorded before any Core connection");
+    f.feed.start();
+    await f.respond(result(1, [log(1, "info", false)]));
+    equal(f.feed.getSnapshot().items.length, 2, "first Core baseline keeps GUI session records");
+    equal(f.feed.find(entry)?.message, "project warning", "the popup resolves its real log record");
+    await f.feed.stop();
+}
+{
+    const f = fixture();
+    f.feed.start();
+    await f.respond(result(0));
+    const error = log(1);
+    const identity = {};
+    const entry = f.feed.recordGui({ tone: "error", code: error.code, diagnosticId: error.diagnosticId, message: "request rejected" }, identity);
+    await f.respond(result(1, [error]));
+    equal(f.feed.getSnapshot().items.length, 1, "late Core error merges with the GUI record by diagnostic ID");
+    equal(f.feed.getSnapshot().notifications, [], "a contextual request error cannot also trigger a background popup");
+    equal(f.feed.find(entry)?.sequence, 1, "the original view reference resolves after Core acceptance");
+    await f.respond(result(1, [error], false, true));
+    equal(f.feed.getSnapshot().items.length, 1, "a new baseline cannot duplicate a retained contextual Core record");
+    equal(f.feed.find(entry)?.message, "request rejected", "baseline deduplication keeps the contextual message");
+    await f.respond(result(0, [], true, false, CORE_B));
+    equal(f.feed.find(entry)?.message, "request rejected", "Core restart preserves contextual session history");
+    await f.feed.stop();
+}
+{
+    const f = fixture();
+    f.feed.start();
+    await f.respond(result(0));
+    const error = log(1);
+    await f.respond(result(1, [error]));
+    f.feed.recordGui({ tone: "error", diagnosticId: error.diagnosticId, message: "request rejected" }, {});
+    equal(f.feed.getSnapshot().items.length, 1, "a Core error received first does not become a duplicate log");
+    equal(f.feed.getSnapshot().notifications, [], "the contextual view claims the existing generic notification");
+    await f.feed.stop();
+}
+{
+    const f = fixture();
+    for (let index = 0; index < 1200; index++) f.feed.recordGui({ tone: "success", message: String(index) });
+    equal(f.feed.getSnapshot().items.length, 1024, "GUI feedback shares the same bounded session history");
 }
 console.log("Diagnostic log feed checks passed.");
