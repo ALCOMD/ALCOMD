@@ -554,7 +554,10 @@ async fn default_arguments_are_inherited_overridden_and_bound_to_launch_retries(
         .await
         .expect("launch inherited argv");
     assert!(!replayed);
-    assert_eq!(*platform.0.lock().expect("captures"), vec![literal.clone()]);
+    assert_eq!(
+        *platform.launches.lock().expect("captures"),
+        vec![literal.clone()]
+    );
     let (replay, replayed) = app
         .launch(
             &access,
@@ -581,7 +584,7 @@ async fn default_arguments_are_inherited_overridden_and_bound_to_launch_retries(
         .code(),
         M5UnityErrorCode::IdempotencyConflict
     );
-    assert_eq!(platform.0.lock().expect("captures").len(), 1);
+    assert_eq!(platform.launches.lock().expect("captures").len(), 1);
 
     let (empty, changed, _) = app
         .set_project_launch_config(
@@ -612,7 +615,7 @@ async fn default_arguments_are_inherited_overridden_and_bound_to_launch_retries(
     .await
     .expect("explicit override does not need global settings");
     assert_eq!(
-        platform.0.lock().expect("captures").last(),
+        platform.launches.lock().expect("captures").last(),
         Some(&Vec::<String>::new())
     );
     app.clear_project_launch_config(
@@ -653,6 +656,149 @@ async fn default_arguments_are_inherited_overridden_and_bound_to_launch_retries(
     );
 }
 
+#[tokio::test]
+async fn launch_blocks_only_a_writer_linked_to_the_requested_project() {
+    use alcomd_application::{
+        AccessContext, M5UnityApplication, Permission, UnityProcessObservation,
+        UnityWriterStateKind,
+    };
+    use std::sync::{Arc, Mutex};
+
+    let candidate = |identity, arguments| UnityProcessObservation {
+        pid: 7,
+        start_time: 8,
+        name: "Unity.exe".to_owned(),
+        executable_identity: identity,
+        verified_non_editor: false,
+        arguments,
+    };
+    let argv = |path: &str| {
+        Some(vec![
+            "Unity.exe".to_owned(),
+            "-projectPath".to_owned(),
+            path.to_owned(),
+        ])
+    };
+    let cases = [
+        (
+            "other-registered",
+            Some(candidate(Some(vec![2; 24]), argv("other-project"))),
+            false,
+            UnityWriterStateKind::NotObserved,
+            None,
+        ),
+        (
+            "other-unregistered",
+            Some(candidate(Some(vec![3; 24]), argv("other-project"))),
+            false,
+            UnityWriterStateKind::NotObserved,
+            None,
+        ),
+        (
+            "unattributed",
+            Some(candidate(None, None)),
+            false,
+            UnityWriterStateKind::Unknown,
+            None,
+        ),
+        (
+            "inspection-failed",
+            None,
+            true,
+            UnityWriterStateKind::Unknown,
+            None,
+        ),
+        (
+            "unreadable-path",
+            Some(candidate(Some(vec![2; 24]), argv("unreadable-project"))),
+            false,
+            UnityWriterStateKind::Unknown,
+            None,
+        ),
+        (
+            "same-registered",
+            Some(candidate(Some(vec![2; 24]), argv("fixture-project"))),
+            false,
+            UnityWriterStateKind::RunningConfirmed,
+            Some(M5UnityErrorCode::ProjectRunning),
+        ),
+        (
+            "same-unregistered",
+            Some(candidate(Some(vec![3; 24]), argv("fixture-project"))),
+            false,
+            UnityWriterStateKind::RunningSuspected,
+            Some(M5UnityErrorCode::LaunchStateUncertain),
+        ),
+    ];
+    for (name, process, inspection_failed, expected_state, expected_error) in cases {
+        let directory = TestDirectory::new();
+        let store = StateStoreHandle::open(directory.0.join("writer.db")).expect("store");
+        let owner = PrincipalId::local_owner();
+        let access = AccessContext::new(
+            owner.clone(),
+            [
+                Permission::ProjectsRead,
+                Permission::UnityRead,
+                Permission::UnityLaunch,
+            ],
+        );
+        let project = store
+            .register_project(owner.clone(), project(), key("writer-project"), 1)
+            .await
+            .expect("project")
+            .value;
+        let mut editor = installation_observation();
+        editor.unity_version = project.observation.unity_version.clone();
+        let (editor, _) = store
+            .register_installation(owner, editor, key("writer-editor"), 2)
+            .await
+            .expect("editor");
+        let platform = CapturingUnityPlatform::default();
+        *platform.processes.lock().expect("process fixture") = process.into_iter().collect();
+        platform
+            .inspection_fails
+            .store(inspection_failed, std::sync::atomic::Ordering::Relaxed);
+        let app = M5UnityApplication::new(
+            store,
+            platform.clone(),
+            Arc::new(TestLaunchDefaults(Mutex::new(Some(Vec::new())))),
+        );
+        assert_eq!(
+            app.writer_state(&access, project.project_id)
+                .await
+                .expect(name)
+                .state,
+            expected_state,
+            "{name}"
+        );
+        let result = app
+            .launch(
+                &access,
+                project.project_id,
+                editor.installation_id,
+                project.revision,
+                key("writer-launch"),
+            )
+            .await;
+        if let Some(code) = expected_error {
+            assert_eq!(result.expect_err(name).code(), code, "{name}");
+            assert!(
+                platform.launches.lock().expect("captures").is_empty(),
+                "{name}: no duplicate spawn"
+            );
+        } else {
+            let (launch, replayed) = result.expect(name);
+            assert!(!replayed);
+            assert!(launch.spawn_accepted, "{name}");
+            assert_eq!(
+                platform.launches.lock().expect("captures").len(),
+                1,
+                "{name}"
+            );
+        }
+    }
+}
+
 struct TestLaunchDefaults(std::sync::Mutex<Option<Vec<String>>>);
 
 impl alcomd_application::UnityLaunchDefaultsSource for TestLaunchDefaults {
@@ -676,7 +822,11 @@ impl alcomd_application::UnityLaunchDefaultsSource for TestLaunchDefaults {
 }
 
 #[derive(Clone, Default)]
-struct CapturingUnityPlatform(std::sync::Arc<std::sync::Mutex<Vec<Vec<String>>>>);
+struct CapturingUnityPlatform {
+    launches: std::sync::Arc<std::sync::Mutex<Vec<Vec<String>>>>,
+    processes: std::sync::Arc<std::sync::Mutex<Vec<alcomd_application::UnityProcessObservation>>>,
+    inspection_fails: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
 
 impl alcomd_application::M5UnityPlatform for CapturingUnityPlatform {
     async fn validate_installation(
@@ -695,10 +845,28 @@ impl alcomd_application::M5UnityPlatform for CapturingUnityPlatform {
         &self,
     ) -> Result<Vec<alcomd_application::UnityProcessObservation>, alcomd_application::M5UnityError>
     {
-        Ok(Vec::new())
+        if self
+            .inspection_fails
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            Err(alcomd_application::M5UnityError::new(
+                M5UnityErrorCode::Internal,
+            ))
+        } else {
+            Ok(self.processes.lock().expect("process fixture").clone())
+        }
     }
-    async fn path_identity(&self, _: String) -> Result<Vec<u8>, alcomd_application::M5UnityError> {
-        Ok(vec![1; 24])
+    async fn path_identity(
+        &self,
+        path: String,
+    ) -> Result<Vec<u8>, alcomd_application::M5UnityError> {
+        match path.as_str() {
+            "other-project" => Ok(vec![9; 24]),
+            "unreadable-project" => Err(alcomd_application::M5UnityError::new(
+                M5UnityErrorCode::Internal,
+            )),
+            _ => Ok(vec![1; 24]),
+        }
     }
     async fn launch(
         &self,
@@ -706,7 +874,7 @@ impl alcomd_application::M5UnityPlatform for CapturingUnityPlatform {
         _: String,
         arguments: Vec<String>,
     ) -> Result<(), alcomd_application::M5UnityError> {
-        self.0.lock().expect("captures").push(arguments);
+        self.launches.lock().expect("captures").push(arguments);
         Ok(())
     }
 }

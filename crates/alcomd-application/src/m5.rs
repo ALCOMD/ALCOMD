@@ -125,6 +125,8 @@ pub struct UnityProcessObservation {
     pub start_time: u64,
     pub name: String,
     pub executable_identity: Option<Vec<u8>>,
+    /// Stable executable metadata proved a different product, not a failed read.
+    pub verified_non_editor: bool,
     pub arguments: Option<Vec<String>>,
 }
 
@@ -641,10 +643,11 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
             UnityWriterStateKind::RunningConfirmed => {
                 return Err(M5UnityError::new(M5UnityErrorCode::ProjectRunning));
             }
-            UnityWriterStateKind::RunningSuspected | UnityWriterStateKind::Unknown => {
+            UnityWriterStateKind::RunningSuspected => {
                 return Err(M5UnityError::new(M5UnityErrorCode::LaunchStateUncertain));
             }
-            UnityWriterStateKind::NotObserved => {}
+            // An unattributed observation cannot prohibit opening every project.
+            UnityWriterStateKind::NotObserved | UnityWriterStateKind::Unknown => {}
         }
         let (record, replayed) = self
             .store
@@ -745,6 +748,7 @@ async fn classify_writer<P: M5UnityPlatform>(
     processes: Vec<UnityProcessObservation>,
 ) -> Result<UnityWriterState, M5UnityError> {
     let mut suspected = false;
+    let mut unresolved = false;
     for process in processes {
         if process.pid == 0 || process.start_time == 0 {
             continue;
@@ -762,19 +766,24 @@ async fn classify_writer<P: M5UnityPlatform>(
         if !unity_by_name && !known_executable {
             continue;
         }
-        if !known_executable {
-            suspected = true;
+        if !known_executable && process.verified_non_editor && process.executable_identity.is_some()
+        {
             continue;
         }
         let Some(arguments) = process.arguments else {
-            suspected = true;
+            unresolved = true;
             continue;
         };
         let Some(selector) = project_selector(&arguments) else {
-            suspected = true;
+            unresolved = true;
             continue;
         };
         match platform.path_identity(selector.to_owned()).await {
+            Ok(identity)
+                if identity == project.observation.path_identity_key && !known_executable =>
+            {
+                suspected = true;
+            }
             Ok(identity) if identity == project.observation.path_identity_key => {
                 return Ok(UnityWriterState {
                     project_id: project.project_id,
@@ -784,20 +793,25 @@ async fn classify_writer<P: M5UnityPlatform>(
                 });
             }
             Ok(_) => {}
-            Err(_) => suspected = true,
+            Err(_) => unresolved = true,
         }
     }
     Ok(UnityWriterState {
         project_id: project.project_id,
         state: if suspected {
             UnityWriterStateKind::RunningSuspected
+        } else if unresolved {
+            UnityWriterStateKind::Unknown
         } else {
             UnityWriterStateKind::NotObserved
         },
-        evidence: suspected
-            .then_some(UnityWriterEvidenceKind::ProcessUnreadable)
-            .into_iter()
-            .collect(),
+        evidence: if suspected {
+            vec![UnityWriterEvidenceKind::ProcessProjectArgument]
+        } else if unresolved {
+            vec![UnityWriterEvidenceKind::ProcessUnreadable]
+        } else {
+            Vec::new()
+        },
         checked_at_ms: now_ms()?,
     })
 }
@@ -1065,13 +1079,19 @@ mod tests {
         .expect("confirmed state");
         assert_eq!(confirmed.state, UnityWriterStateKind::RunningConfirmed);
 
+        let mut unregistered = process(Some(vec![
+            "Unity".to_owned(),
+            "-projectPath".to_owned(),
+            "fixture-project".to_owned(),
+        ]));
+        unregistered.executable_identity = Some(vec![10]);
         let suspected = classify_writer(
             &FakePlatform {
                 fail_identity: false,
             },
             project.clone(),
             std::slice::from_ref(&installation),
-            vec![process(None)],
+            vec![unregistered],
         )
         .await
         .expect("partial state");
@@ -1091,7 +1111,7 @@ mod tests {
         )
         .await
         .expect("permission denied state");
-        assert_eq!(denied.state, UnityWriterStateKind::RunningSuspected);
+        assert_eq!(denied.state, UnityWriterStateKind::Unknown);
 
         let absent = classify_writer(
             &FakePlatform {
@@ -1110,6 +1130,103 @@ mod tests {
                 .state,
             UnityWriterStateKind::Unknown
         );
+    }
+
+    #[tokio::test]
+    async fn verified_non_editor_does_not_block_another_project() {
+        let platform = FakePlatform {
+            fail_identity: false,
+        };
+        let mut project = project();
+        project.observation.path_identity_key = vec![8];
+        let mut helper = process(Some(vec!["unity.exe".to_owned(), "serve".to_owned()]));
+        helper.executable_identity = Some(vec![10]);
+        helper.verified_non_editor = true;
+        let other_editor = process(Some(vec![
+            "Unity.exe".to_owned(),
+            "-projectPath".to_owned(),
+            "other-project".to_owned(),
+        ]));
+        for processes in [vec![helper.clone()], vec![other_editor, helper]] {
+            let state = classify_writer(&platform, project.clone(), &[installation()], processes)
+                .await
+                .expect("read-only writer observation");
+            assert_eq!(state.state, UnityWriterStateKind::NotObserved);
+            assert!(state.evidence.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn unattributed_same_name_remains_unknown_without_claiming_project_usage() {
+        let mut helper = process(Some(vec!["unity.exe".to_owned(), "serve".to_owned()]));
+        helper.executable_identity = Some(vec![10]);
+        let mut unreadable_identity = helper.clone();
+        unreadable_identity.executable_identity = None;
+        unreadable_identity.verified_non_editor = true;
+        for process in [helper, unreadable_identity] {
+            let state = classify_writer(
+                &FakePlatform {
+                    fail_identity: false,
+                },
+                project(),
+                &[installation()],
+                vec![process],
+            )
+            .await
+            .expect("uncertain writer observation");
+            assert_eq!(state.state, UnityWriterStateKind::Unknown);
+        }
+    }
+
+    #[tokio::test]
+    async fn unregistered_editor_for_another_project_does_not_claim_this_project() {
+        let mut project = project();
+        project.observation.path_identity_key = vec![8];
+        let mut editor = process(Some(vec![
+            "Unity.exe".to_owned(),
+            "-projectPath".to_owned(),
+            "other-project".to_owned(),
+        ]));
+        editor.executable_identity = None;
+        let state = classify_writer(
+            &FakePlatform {
+                fail_identity: false,
+            },
+            project,
+            &[],
+            vec![editor],
+        )
+        .await
+        .expect("other project observation");
+        assert_eq!(state.state, UnityWriterStateKind::NotObserved);
+    }
+
+    #[tokio::test]
+    async fn matching_registered_editor_is_confirmed_despite_non_editor_helper() {
+        let mut helper = process(None);
+        helper.executable_identity = Some(vec![10]);
+        helper.verified_non_editor = true;
+        let mut editor = process(Some(vec![
+            "Unity.exe".to_owned(),
+            "-projectPath".to_owned(),
+            "fixture-project".to_owned(),
+        ]));
+        // A registered executable match remains authoritative even if metadata
+        // evidence supplied by an adapter were contradictory.
+        editor.verified_non_editor = true;
+        for processes in [vec![helper.clone(), editor.clone()], vec![editor, helper]] {
+            let state = classify_writer(
+                &FakePlatform {
+                    fail_identity: false,
+                },
+                project(),
+                &[installation()],
+                processes,
+            )
+            .await
+            .expect("confirmed Editor observation");
+            assert_eq!(state.state, UnityWriterStateKind::RunningConfirmed);
+        }
     }
 
     fn project() -> ProjectRecord {
@@ -1156,6 +1273,7 @@ mod tests {
             start_time: 8,
             name: "Unity".to_owned(),
             executable_identity: Some(vec![9]),
+            verified_non_editor: false,
             arguments,
         }
     }

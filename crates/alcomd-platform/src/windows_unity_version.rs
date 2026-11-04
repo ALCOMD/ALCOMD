@@ -24,6 +24,21 @@ const MAX_TRANSLATIONS: usize = 64;
 /// Reads the Editor's declared ProductVersion without executing the Editor.
 /// Filesystem identity and canonical Unity-version validation belong to callers.
 pub(super) fn read_unity_product_version(path: &Path) -> io::Result<String> {
+    let product = read_product_version(path)?;
+    require_unity_product(&product.name)?;
+    Ok(product.version)
+}
+
+pub(super) fn is_unity_editor_product(path: &Path) -> io::Result<bool> {
+    Ok(read_product_version(path)?.name == "Unity")
+}
+
+struct ProductVersion {
+    name: String,
+    version: String,
+}
+
+fn read_product_version(path: &Path) -> io::Result<ProductVersion> {
     if !path.is_absolute() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -83,13 +98,19 @@ pub(super) fn read_unity_product_version(path: &Path) -> io::Result<String> {
     {
         return Err(invalid_data("Unity version translations are invalid"));
     }
+    let mut product = None;
     let mut version = None;
     for translation in translations.chunks_exact(4) {
         let language = u16::from_le_bytes([translation[0], translation[1]]);
         let code_page = u16::from_le_bytes([translation[2], translation[3]]);
         let prefix = format!("\\StringFileInfo\\{language:04x}{code_page:04x}");
         let product_name = resource.query_string(&format!("{prefix}\\ProductName"))?;
-        require_unity_product(&product_name)?;
+        if product.as_ref().is_some_and(|name| name != &product_name) {
+            return Err(invalid_data(
+                "Executable ProductName differs between declared translations",
+            ));
+        }
+        product = Some(product_name);
         let observed = resource.query_string(&format!("{prefix}\\ProductVersion"))?;
         if version.as_ref().is_some_and(|version| version != &observed) {
             return Err(invalid_data(
@@ -98,7 +119,10 @@ pub(super) fn read_unity_product_version(path: &Path) -> io::Result<String> {
         }
         version = Some(observed);
     }
-    version.ok_or_else(|| invalid_data("Unity ProductVersion is missing"))
+    Ok(ProductVersion {
+        name: product.ok_or_else(|| invalid_data("Executable ProductName is missing"))?,
+        version: version.ok_or_else(|| invalid_data("Unity ProductVersion is missing"))?,
+    })
 }
 
 struct VersionResource {

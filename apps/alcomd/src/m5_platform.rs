@@ -53,19 +53,29 @@ impl app::M5UnityPlatform for PlatformUnityAdapter {
         Ok(snapshot
             .processes()
             .iter()
-            .map(|process| app::UnityProcessObservation {
-                pid: process.pid(),
-                start_time: process.start_time(),
-                name: process.name().to_string_lossy().into_owned(),
-                executable_identity: process
+            .map(|process| {
+                let name = process.name().to_string_lossy().into_owned();
+                let executable_identity = process
                     .executable()
-                    .and_then(|path| alcomd_platform::file_identity_key(path).ok()),
-                arguments: process.arguments().and_then(|arguments| {
-                    arguments
-                        .iter()
-                        .map(|argument| argument.to_str().map(str::to_owned))
-                        .collect()
-                }),
+                    .and_then(|path| alcomd_platform::file_identity_key(path).ok());
+                let verified_non_editor = verified_non_editor_process(
+                    &name,
+                    process.executable(),
+                    executable_identity.as_deref(),
+                );
+                app::UnityProcessObservation {
+                    pid: process.pid(),
+                    start_time: process.start_time(),
+                    name,
+                    executable_identity,
+                    verified_non_editor,
+                    arguments: process.arguments().and_then(|arguments| {
+                        arguments
+                            .iter()
+                            .map(|argument| argument.to_str().map(str::to_owned))
+                            .collect()
+                    }),
+                }
             })
             .collect())
     }
@@ -92,6 +102,30 @@ impl app::M5UnityPlatform for PlatformUnityAdapter {
             &arguments,
         )
         .map_err(|_| app::M5UnityError::new(app::M5UnityErrorCode::LaunchFailed))
+    }
+}
+
+fn verified_non_editor_process(
+    name: &str,
+    executable: Option<&std::path::Path>,
+    identity: Option<&[u8]>,
+) -> bool {
+    if !name.eq_ignore_ascii_case("unity") && !name.eq_ignore_ascii_case("unity.exe") {
+        return false;
+    }
+    #[cfg(windows)]
+    {
+        match (executable, identity) {
+            (Some(path), Some(identity)) => {
+                alcomd_platform::is_verified_non_editor_executable(path, identity).unwrap_or(false)
+            }
+            _ => false,
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (executable, identity);
+        false
     }
 }
 
@@ -221,6 +255,35 @@ mod tests {
     impl Drop for EditorFixture {
         fn drop(&mut self) {
             std::fs::remove_dir_all(&self.0).expect("remove owned Editor fixture");
+        }
+    }
+
+    #[tokio::test]
+    async fn non_editor_process_proof_never_uses_a_failed_inspection() {
+        for (product, expected) in [("Unity", false), ("unity", true), ("Unity Hub", true)] {
+            let fixture = EditorFixture::new(product, "1.0.0", "{}");
+            let executable = fixture.executable().join("2019.4.31f1/Editor/Unity.exe");
+            let identity =
+                alcomd_platform::file_identity_key(&executable).expect("fixture identity");
+            assert_eq!(
+                super::verified_non_editor_process("Unity.exe", Some(&executable), Some(&identity)),
+                expected
+            );
+            assert!(!super::verified_non_editor_process(
+                "Unity.exe",
+                Some(&executable),
+                Some(&[0])
+            ));
+            assert!(!super::verified_non_editor_process(
+                "Unity.exe",
+                None,
+                Some(&identity)
+            ));
+            assert!(!super::verified_non_editor_process(
+                "Unity.exe",
+                Some(&executable),
+                None
+            ));
         }
     }
 

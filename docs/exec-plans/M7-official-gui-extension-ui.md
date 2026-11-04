@@ -149,6 +149,16 @@ State16、Config3、权限和依赖保持。不添加旧字段别名、双格式
 
 日常定向检查，稳定候选集中完整Rust门禁和适用前端/浏览器回归，不按提交重复。只在标准main开发，保留全部既有修改/证据；不操作真实Unity/项目、不恢复桌面控制、不推送，不自行签收M7/H7。交付绑定实际候选及真实竞态/背压/查询计数和未覆盖范围。
 
+### Unity 启动只判断目标项目（2026-11-05）
+
+所有者明确：目的是防止重复打开同一项目，其他 Unity 或无法关联项目的进程不得形成全局启动禁令。本轮据此纠正 M5 行为，不增加再次确认或绕过开关。
+
+- 明确匹配其他项目目录身份的进程不污染目标项目状态；同目标项目且已登记 Editor 为 confirmed，同目标但 executable 未核实为 suspected；无法读取/归属的观察保留 unknown。启动只拦目标项目 confirmed/suspected，unknown 不作为全局启动禁令。
+- Windows 用有界版本资源和前后文件身份核对排除同名非 Editor（实际复现为 Hub 的 unity.exe serve）；缺失/损坏/变化的身份不伪装为已确认非 Editor。没有新增 unsafe、依赖、持久数据、配置、权限或 RPC 字段，四态 Schema 保持，协议语义原位更新。
+- 审计确认：项目删除、Unity 版本迁移仍拒绝 unknown；复制项目、创建备份和从项目派生模板只对 confirmed 硬拦；软件包变更不经过这条进程观察守卫。本轮不放宽删除/迁移写入保护。
+- 定向 Application 7/0、Store 启动集成 5/0（含七类进程关联/探测失败场景、假启动器次数）、Platform 9/0、Core adapter 4/0，以及受影响四 crate Clippy、fmt、GUI check 通过。最初同名辅助程序回归先红后绿。未重复完整 Rust/浏览器或远端门禁。
+- 构建包含保留的并行产品身份修改，不将定向结果冒称独立提交的完整门禁。修复已加载为 dev Core122652 / GUI144432，原数据/profile 及六组公开状态、配置摘要、revision189 保持；真实只读 RPC 中三个未打开项目由 suspected 变为 not_observed，现有 Unity/Hub 同名工具保持运行。没有实际触发 Unity 启动、项目删除或迁移。证据位于 target/m7-unity-writer-20261105/runtime-20261104T204334Z，M7/H7 人工状态保持。
+
 ### 本轮实现与实际验证
 
 - 代码候选`89ec908`，其中Core/协议/SDK/原生桥接为`27f8fef`；文档提交不改变产品代码。无数据库、配置、权限或生产依赖增量；RPC Event Schema补齐既有State18实际允许的八类聚合，不将extensions伪装成持久聚合。

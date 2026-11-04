@@ -33,6 +33,8 @@ pub use project_delete::{
 pub use project_discovery::{
     DirectoryDiscovery, DiscoveredDirectory, discover_directories, discovered_directory_is_current,
 };
+#[cfg(windows)]
+pub use unity::is_verified_non_editor_executable;
 pub use unity::{
     UnityArchitecture, UnityMigrationExit, UnityMigrationProcess, ValidatedUnityExecutable,
     discover_unity_executables, launch_unity_editor, spawn_unity_editor_migration,

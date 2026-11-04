@@ -82,7 +82,7 @@ export const errorMessages: TranslationTable = {
     "More than one matching Editor is available. Choose the installation for this launch.": { "zh-CN": "存在多个匹配的编辑器，请选择本次启动使用的安装。", "ja-JP": "一致するEditorが複数あります。今回起動するものを選んでください。" },
     "This Unity Editor architecture is not supported. Choose a supported installation.": { "zh-CN": "不支持此 Unity 编辑器架构，请选择支持的安装。", "ja-JP": "このUnity Editorのアーキテクチャは未対応です。対応するものを選んでください。" },
     "Unity is using this installation or project. Finish the active work before changing it.": { "zh-CN": "Unity 正在使用此安装或项目，请完成当前工作后再修改。", "ja-JP": "Unityがこのインストールまたはプロジェクトを使用中です。現在の作業を終えてから変更してください。" },
-    "Unity's running state could not be confirmed. Check the Editor and project before launching or changing them.": { "zh-CN": "无法确认 Unity 运行状态，请核对编辑器和项目后再启动或修改。", "ja-JP": "Unityの実行状態を確認できません。Editorとプロジェクトを確認してから起動・変更してください。" },
+    "This project may already be open in Unity. Check its Editor before launching again.": { "zh-CN": "该项目可能已在 Unity 中打开，请检查对应编辑器后重试。", "ja-JP": "このプロジェクトはUnityで既に開かれている可能性があります。再起動の前に対応するEditorを確認してください。" },
     "The Unity launch could not be completed or found. Check the Editor's current state before launching again.": { "zh-CN": "Unity 启动未完成或找不到启动记录，再次启动前请核对编辑器当前状态。", "ja-JP": "Unityの起動を完了できないか、起動記録がありません。再起動の前にEditorの現在の状態を確認してください。" },
     "Unity Hub could not be opened at the selected location. Check its path in Settings.": { "zh-CN": "无法从所选位置打开 Unity Hub，请在设置中核对路径。", "ja-JP": "選択した場所からUnity Hubを開けません。設定でパスを確認してください。" },
     "A Unity Hub launch is already being processed. Check its current state before launching again.": { "zh-CN": "已有 Unity Hub 启动请求正在处理，请核对状态，避免重复启动。", "ja-JP": "Unity Hubの起動リクエストを処理中です。状態を確認し、重複起動を避けてください。" },

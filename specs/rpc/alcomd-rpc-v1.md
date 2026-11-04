@@ -595,9 +595,12 @@ project selector；daemon 固定把已验证 absolute project root 作为独立 
 
 `unity.writerState` 返回 `running_confirmed`、`running_suspected`、`not_observed` 或 `unknown` 及有界、
 脱敏 evidence。process/path/argv 检查失败必须为 unknown；not_observed 不表示 definitely not running。
+`running_suspected` 需要正向项目关联证据：进程的项目目录身份匹配目标，但 executable 身份尚未核实。
+已明确属于其他项目的进程不影响目标项目；无法关联的同名进程或进程观察失败保留为 `unknown`，不谎称未运行。
 package/template/backup mutation 对 confirmed 返回 `unity_project_running`，suspected/unknown 仅 advisory
-并继续 live fingerprint gate。Unity launch 对 confirmed 拒绝第二实例，对 suspected/unknown 返回
-`unity_launch_state_uncertain`，只有 not_observed 允许 spawn。
+并继续 live fingerprint gate。Unity launch 仅对目标项目 confirmed 拒绝第二实例，对目标项目 suspected 返回
+`unity_launch_state_uncertain`；not_observed 与无法关联的 unknown 允许 spawn，不因其他或身份不明进程形成全局启动禁令。
+此启动规则不放宽项目删除和 Unity 版本迁移的写入安全检查。
 
 `unity.projectLaunchConfig.get` 返回必需 `config`、`defaultArguments`、`effectiveArguments`；
 `config.arguments` 保留项目覆盖语义。优先使用已保存项目覆盖（含空数组），其次全局覆盖，最后内置空数组；

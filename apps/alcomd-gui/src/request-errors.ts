@@ -245,7 +245,7 @@ export function requestErrorMessage(code: string): string {
         case "unity_project_running":
             return "Unity is using this installation or project. Finish the active work before changing it.";
         case "unity_launch_state_uncertain":
-            return "Unity's running state could not be confirmed. Check the Editor and project before launching or changing them.";
+            return "This project may already be open in Unity. Check its Editor before launching again.";
         case "unity_launch_failed":
         case "unity_launch_not_found":
             return "The Unity launch could not be completed or found. Check the Editor's current state before launching again.";

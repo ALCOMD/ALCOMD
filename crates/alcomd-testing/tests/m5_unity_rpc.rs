@@ -167,10 +167,14 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
         .expect("observe writer state");
     match writer.state {
         UnityWriterStateKind::NotObserved => assert!(writer.evidence.is_empty()),
+        UnityWriterStateKind::Unknown => assert!(
+            !writer.evidence.is_empty(),
+            "unattributed process uncertainty remains visible without prohibiting launch"
+        ),
         UnityWriterStateKind::RunningSuspected => {
             assert!(
                 !writer.evidence.is_empty(),
-                "an unrelated or unreadable Unity process must retain conservative evidence"
+                "an unverified Editor associated with this project retains evidence"
             );
             let error = client
                 .unity_launch(UnityLaunchParams {
@@ -180,7 +184,7 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
                     idempotency_key: "m5-unity-launch-suspected".to_owned(),
                 })
                 .await
-                .expect_err("suspected external Unity must conservatively block launch");
+                .expect_err("suspected same-project Unity must block duplicate launch");
             assert!(matches!(
                 error,
                 alcomd_client::ClientError::Remote(ref remote)

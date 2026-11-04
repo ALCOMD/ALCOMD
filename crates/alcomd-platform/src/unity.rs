@@ -171,6 +171,30 @@ pub fn validate_unity_executable(path: &Path) -> io::Result<ValidatedUnityExecut
     })
 }
 
+/// Proves that a Windows process executable belongs to a different product.
+/// Missing or malformed metadata is an error, never proof that an Editor is absent.
+/// The metadata must remain bound to the caller's observed filesystem identity.
+#[cfg(windows)]
+pub fn is_verified_non_editor_executable(
+    path: &Path,
+    expected_identity: &[u8],
+) -> io::Result<bool> {
+    if crate::file_identity_key(path)?.as_slice() != expected_identity {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Process executable identity changed",
+        ));
+    }
+    let is_editor = windows_version::is_unity_editor_product(path)?;
+    if crate::file_identity_key(path)?.as_slice() != expected_identity {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Process executable identity changed",
+        ));
+    }
+    Ok(!is_editor)
+}
+
 /// Returns validated candidates from bounded, conventional Unity Hub install roots.
 /// An existing candidate that cannot be verified is an error, never an empty success.
 pub fn discover_unity_executables() -> io::Result<Vec<ValidatedUnityExecutable>> {
@@ -370,6 +394,29 @@ mod tests {
         fn drop(&mut self) {
             std::fs::remove_dir_all(&self.0).expect("remove owned discovery fixture");
         }
+    }
+
+    #[test]
+    fn process_product_proof_requires_stable_identity_and_readable_metadata() {
+        let fixture = DiscoveryFixture::new();
+        for (directory, product, non_editor) in [
+            ("editor", "Unity", false),
+            ("same-name-cli", "unity", true),
+            ("hub", "Unity Hub", true),
+        ] {
+            let executable = fixture.editor(directory, product);
+            let identity = crate::file_identity_key(&executable).expect("fixture identity");
+            assert_eq!(
+                super::is_verified_non_editor_executable(&executable, &identity)
+                    .expect("product proof"),
+                non_editor
+            );
+            assert!(super::is_verified_non_editor_executable(&executable, &[0]).is_err());
+        }
+        let unreadable = fixture.root().join("missing-version.exe");
+        std::fs::write(&unreadable, b"not a version resource").expect("owned invalid executable");
+        let identity = crate::file_identity_key(&unreadable).expect("invalid executable identity");
+        assert!(super::is_verified_non_editor_executable(&unreadable, &identity).is_err());
     }
 
     #[test]
