@@ -20,8 +20,6 @@ export const actionMessages: TranslationTable = {
     "The permission change may have completed. Refresh permissions before trying again.": { "zh-CN": "权限变更可能已完成。请先刷新权限，再决定是否重试。", "ja-JP": "権限の変更は完了している可能性があります。再試行の前に権限を更新してください。" },
     "Recover extension": { "zh-CN": "恢复扩展", "ja-JP": "拡張機能を復旧" },
     "This extension is quarantined. Recovery rechecks its package and permissions before enabling it.": { "zh-CN": "此扩展已被隔离。恢复时会重新验证扩展包与权限，然后启用。", "ja-JP": "この拡張機能は隔離されています。復旧時にパッケージと権限を再検証してから有効にします。" },
-    "Unity launch status": { "zh-CN": "Unity 启动状态", "ja-JP": "Unity の起動状態" },
-    "Last observed launch state: {state}": { "zh-CN": "最近观察到的启动状态：{state}", "ja-JP": "最後に確認した起動状態：{state}" },
     "Operation failed": { "zh-CN": "任务失败", "ja-JP": "操作に失敗しました" },
     "Open project": { "zh-CN": "打开项目", "ja-JP": "プロジェクトを開く" },
     "New list file name": { "zh-CN": "新列表文件名", "ja-JP": "新しい一覧ファイル名" },

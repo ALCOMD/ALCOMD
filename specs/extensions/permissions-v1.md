@@ -124,7 +124,7 @@ mcp.configuration.manage
 
 ## M5 CLI、Unity、Template 与 Backup 权限
 
-- `unity.read`：查询 installation registry、project launch config、exact launch options、writer state 与 launch status；
+- `unity.read`：查询 installation registry、project launch config、exact launch options 与 writer state；
   不允许修改 registry、启动 Editor 或读取任意进程技术信息。
 - `unity.manage`：manual installation add/remove、受限 discovery refresh 与 project launch arguments
   修改；全局 `settings.unity.defaultLaunchArguments` 更新另需同时具备 `settings.manage`，包括 null/空数组操作。

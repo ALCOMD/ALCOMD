@@ -421,9 +421,6 @@ enum UnityCommand {
         #[arg(long)]
         expected_project_revision: u64,
     },
-    LaunchStatus {
-        launch_id: String,
-    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -1178,9 +1175,6 @@ async fn execute(
                     })
                     .await?,
             ),
-            UnityCommand::LaunchStatus { launch_id } => {
-                serde_json::to_value(client.unity_launch_status(launch_id).await?)
-            }
             UnityCommand::LaunchOptions {
                 project_id,
                 expected_project_revision,
@@ -1491,7 +1485,6 @@ impl Command {
                 UnityCommand::WriterState { .. } => "unity writer-state",
                 UnityCommand::Launch { .. } => "unity launch",
                 UnityCommand::LaunchOptions { .. } => "unity launch-options",
-                UnityCommand::LaunchStatus { .. } => "unity launch-status",
             },
             Self::Template { command } => match command {
                 TemplateCommand::List { .. } => "template list",
@@ -2019,6 +2012,14 @@ mod tests {
             .is_ok()
         );
         assert!(Arguments::try_parse_from(["alcomd-cli", "unity", "list"]).is_ok());
+        let removed = Arguments::try_parse_from([
+            "alcomd-cli",
+            "unity",
+            "launch-status",
+            "00000000-0000-4000-8000-000000000001",
+        ])
+        .expect_err("removed manual launch query is not a CLI command");
+        assert_eq!(removed.kind(), clap::error::ErrorKind::InvalidSubcommand);
         assert!(Arguments::try_parse_from(["alcomd-cli", "completion", "powershell"]).is_ok());
     }
 

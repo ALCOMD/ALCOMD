@@ -155,7 +155,6 @@ export interface GuiRpcClient {
     unityWriterState(projectId: string): Promise<UnityWriterState>;
     unityLaunchOptions(projectId: string, expectedProjectRevision: number): Promise<UnityLaunchOptionsResult>;
     unityLaunch(projectId: string, installationId: string, expectedProjectRevision: number): Promise<UnityLaunchResult>;
-    unityLaunchStatus(launchId: string): Promise<UnityLaunchResult>;
     projectPlanUnityMigration(projectId: string, targetInstallationId: string, expectedProjectRevision: number): Promise<ProjectsPlanUnityMigrationResult>;
     projectApplyUnityMigration(planId: string): Promise<ProjectsApplyUnityMigrationResult>;
     templatesList(cursor?: string): Promise<TemplatesListResult>;
@@ -452,10 +451,6 @@ class TauriGuiRpcClient implements GuiRpcClient {
 
     unityLaunch(projectId: string, installationId: string, expectedProjectRevision: number): Promise<UnityLaunchResult> {
         return invokeTyped("gui_unity_launch", { params: { projectId, installationId, expectedProjectRevision, idempotencyKey: crypto.randomUUID() } });
-    }
-
-    unityLaunchStatus(launchId: string): Promise<UnityLaunchResult> {
-        return invokeTyped("gui_unity_launch_status", { launchId });
     }
 
     projectPlanUnityMigration(projectId: string, targetInstallationId: string, expectedProjectRevision: number): Promise<ProjectsPlanUnityMigrationResult> {

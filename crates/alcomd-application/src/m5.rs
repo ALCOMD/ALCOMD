@@ -158,7 +158,7 @@ pub struct UnityWriterState {
     pub checked_at_ms: u64,
 }
 
-/// Public launch observation state.
+/// State carried by a durable launch result and idempotent replay.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UnityLaunchState {
@@ -301,11 +301,6 @@ pub trait M5UnityStore: Clone + Send + Sync + 'static {
         installation_id: UnityInstallationId,
         key: IdempotencyKey,
     ) -> impl Future<Output = Result<Option<UnityLaunchRecord>, M5UnityError>> + Send;
-    fn get_launch(
-        &self,
-        owner: PrincipalId,
-        launch_id: UnityLaunchId,
-    ) -> impl Future<Output = Result<UnityLaunchRecord, M5UnityError>> + Send;
     fn set_launch_state(
         &self,
         owner: PrincipalId,
@@ -696,39 +691,6 @@ impl<S: M5UnityStore + M3RegistryStore, P: M5UnityPlatform> M5UnityApplication<S
             )
             .await?;
         Ok((accepted, replayed))
-    }
-
-    pub async fn launch_status(
-        &self,
-        access: &AccessContext,
-        launch_id: UnityLaunchId,
-    ) -> Result<UnityLaunchRecord, M5UnityError> {
-        require(access, Permission::UnityLaunch)?;
-        let record = self
-            .store
-            .get_launch(access.principal().clone(), launch_id)
-            .await?;
-        if record.state == UnityLaunchState::Failed {
-            return Ok(record);
-        }
-        let writer = self
-            .writer_state_unchecked(access, record.project_id)
-            .await?;
-        let next = match writer.state {
-            UnityWriterStateKind::RunningConfirmed => UnityLaunchState::Open,
-            UnityWriterStateKind::NotObserved => UnityLaunchState::Failed,
-            UnityWriterStateKind::RunningSuspected | UnityWriterStateKind::Unknown => {
-                UnityLaunchState::Opening
-            }
-        };
-        self.store
-            .set_launch_state(
-                access.principal().clone(),
-                launch_id,
-                next,
-                record.spawn_accepted,
-            )
-            .await
     }
 }
 

@@ -118,7 +118,6 @@ pub const METHOD_UNITY_PROJECT_LAUNCH_CONFIG_CLEAR: &str = "unity.projectLaunchC
 pub const METHOD_UNITY_WRITER_STATE: &str = "unity.writerState";
 pub const METHOD_UNITY_LAUNCH_OPTIONS: &str = "unity.launchOptions";
 pub const METHOD_UNITY_LAUNCH: &str = "unity.launch";
-pub const METHOD_UNITY_LAUNCH_STATUS: &str = "unity.launchStatus";
 pub const METHOD_TEMPLATES_LIST: &str = "templates.list";
 pub const METHOD_TEMPLATES_GET: &str = "templates.get";
 pub const METHOD_TEMPLATES_INSPECT_BUNDLE: &str = "templates.inspectBundle";
@@ -1933,12 +1932,6 @@ pub struct UnityLaunchOptionsResult {
     pub project_revision: u64,
     pub project_unity_version: String,
     pub exact_matching_installations: Vec<UnityInstallation>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct UnityLaunchStatusParams {
-    pub launch_id: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

@@ -1147,20 +1147,6 @@ async fn gui_unity_launch(
 }
 
 #[tauri::command]
-async fn gui_unity_launch_status(
-    state: State<'_, GuiClientState>,
-    launch_id: String,
-) -> Result<alcomd_protocol::UnityLaunchResult, RpcError> {
-    let mut client = state.client.lock().await;
-    connect_if_needed(&mut client).await?;
-    let result = match client.as_mut() {
-        Some(client) => client.unity_launch_status(launch_id).await,
-        None => return Err(daemon_unavailable()),
-    };
-    finish_call(&mut client, result)
-}
-
-#[tauri::command]
 async fn gui_templates_list(
     state: State<'_, GuiClientState>,
     params: alcomd_protocol::TemplatesListParams,
@@ -1739,7 +1725,6 @@ pub fn run() {
             gui_unity_writer_state,
             gui_unity_launch_options,
             gui_unity_launch,
-            gui_unity_launch_status,
             gui_templates_list,
             gui_template_get,
             gui_template_inspect_bundle,

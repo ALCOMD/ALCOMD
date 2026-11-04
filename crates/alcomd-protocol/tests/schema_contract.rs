@@ -1394,10 +1394,10 @@ fn m5_unity_schema_freezes_methods_capabilities_and_honest_writer_states() {
             "unity.projectLaunchConfig.clear",
             "unity.writerState",
             "unity.launchOptions",
-            "unity.launch",
-            "unity.launchStatus"
+            "unity.launch"
         ])
     );
+    assert!(!definitions.contains_key("launchStatusParams"));
     assert_eq!(
         definitions["capability"]["enum"],
         json!(["unity.read.v1", "unity.manage.v1", "unity.launch.v1"])

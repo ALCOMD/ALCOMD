@@ -70,8 +70,7 @@
                 {"name": "project-set-editor", "aliases": []},
                 {"name": "project-set-args", "aliases": []},
                 {"name": "writer-state", "aliases": []},
-                {"name": "launch", "aliases": []},
-                {"name": "launch-status", "aliases": []}
+                {"name": "launch", "aliases": []}
             ]
         },
         {

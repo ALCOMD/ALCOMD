@@ -985,21 +985,12 @@ class DeterministicGuiClient implements GuiRpcClient {
                     : [installation()];
         return this.value({ projectId, projectRevision: this.currentProjectRevision, projectUnityVersion: this.currentUnityVersion, exactMatchingInstallations });
     }
-    private lastUnityLaunch = launch();
-    private unityStatusReads = 0;
     unityLaunch(projectId: string, installationId: string, expectedProjectRevision: number): ReturnType<GuiRpcClient["unityLaunch"]> {
         window.unityRequests.push({ method: "unity.launch", params: { projectId, installationId, expectedProjectRevision } });
         if (query.has("projectModified")) this.projectLaunchTimes.set(projectId, 1_700_216_000_000);
         if (query.has("unityLaunchError")) return Promise.reject({ code: "unity_launch_failed" });
-        this.lastUnityLaunch = { ...launch(), projectId, installationId };
-        return new Promise((resolve) => window.setTimeout(() => resolve({ launch: this.lastUnityLaunch, replayed: false }), 100));
-    }
-    async unityLaunchStatus(launchId: string): ReturnType<GuiRpcClient["unityLaunchStatus"]> {
-        window.unityRequests.push({ method: "unity.launchStatus", params: { launchId } });
-        this.unityStatusReads += 1;
-        if (query.has("unityStatusError") && this.unityStatusReads === 1) throw { code: "daemon_unavailable" };
-        if (query.has("hold-unity-status")) await new Promise<void>((resolve) => window.addEventListener("test-unity-status-ready", () => resolve(), { once: true }));
-        return this.value({ launch: { ...this.lastUnityLaunch, launchId: query.has("unityStatusMismatch") ? "00000000-0000-4000-8000-000000000999" : launchId, state: query.get("unityStatusState") ?? "open" }, replayed: false });
+        const acceptedLaunch = { ...launch(), projectId, installationId };
+        return new Promise((resolve) => window.setTimeout(() => resolve({ launch: acceptedLaunch, replayed: false }), 100));
     }
     projectPlanUnityMigration(_projectId: string, targetInstallationId: string): ReturnType<GuiRpcClient["projectPlanUnityMigration"]> {
         window.unityRequests.push({ method: "projects.planUnityMigration", params: { projectId: _projectId, targetInstallationId } });

@@ -18,7 +18,7 @@ const uuid = (value: unknown) => typeof value === "string" && /^[0-9a-f]{8}-[0-9
 const aggregateKinds = new Set(["operation", "project", "repository", "unity-installation", "project-editor-preference", "project-unity-launch-config", "template", "user-package"]);
 const READS = new Set(["operationsList", "operationGet", "activityList", "diagnosticsList", "projectsList", "projectGet", "repositoriesList",
     "repositoryGet", "repositoryPackages", "userPackagesList", "userPackageGet", "unityInstallationsList", "unityInstallationGet", "unityProjectLaunchConfigGet",
-    "unityWriterState", "unityLaunchOptions", "unityLaunchStatus", "templatesList", "templateGet", "backupsList", "backupGet", "extensionsList", "extensionGet", "extensionPermissionsList", "packageQueryProjectCandidates", "systemStatus", "settingsGet"]);
+    "unityWriterState", "unityLaunchOptions", "templatesList", "templateGet", "backupsList", "backupGet", "extensionsList", "extensionGet", "extensionPermissionsList", "packageQueryProjectCandidates", "systemStatus", "settingsGet"]);
 
 /** One disposable notification/read coordinator per GUI connection. It owns no business state. */
 export class CoreEvents {

@@ -581,7 +581,7 @@ M5 在 RPC major 1 上兼容增加并实现三项 capability：
 |---|---|---|
 | `unity.read.v1` | `unity.installations.list/get`、`unity.projectLaunchConfig.get`、`unity.writerState` | `unity.read` |
 | `unity.manage.v1` | `unity.installations.register/remove/refresh`、`unity.projectLaunchConfig.set/clear` | `unity.manage` |
-| `unity.launch.v1` | `unity.launchOptions`、`unity.launch`、`unity.launchStatus` | `unity.launch` |
+| `unity.launch.v1` | `unity.launchOptions`、`unity.launch` | `unity.launch` |
 
 manual register 与 discovery candidate 必须经同一 executable validator。`unity.installations.register`
 只接受绝对 executable path 与 idempotencyKey；path、Hub/CLI 声明或显示版本本身不能证明 identity。
@@ -615,8 +615,8 @@ flag 和 value 各占一项，通过无 shell 的 argv 数组传递；带空格�
 要求调用方提供 one-shot InstallationId；该选择不持久化，并在启动前复验 project/installation identity、
 project revision、canonical exact version、permission 与永久 idempotency。成功
 只返回 opaque launch record 且 `state=opening`/`spawnAccepted=true`，不宣称 Unity 已完全打开。
-`unity.launchStatus` 后续只能观察为 opening/open/failed。客户端断开不终止 Unity；M5 不建立通用
-supervisor。foreground/activation 不在本合同中。
+启动请求接受与失败继续写入正常启动幂等记录；客户端断开不终止 Unity。不提供按启动记录手动复查进程状态的 RPC、SDK 或 CLI 接口，
+也不建立替代轮询或通用 supervisor。foreground/activation 不在本合同中。
 
 新增稳定错误为 `confirmation_required`、`unity_installation_not_found`、
 `unity_installation_invalid`、`unity_installation_in_use`、`unity_version_unverified`、

@@ -280,25 +280,6 @@ pub(super) async fn dispatch(
                 Err(error) => m5_error(request.id, error),
             }
         }
-        rpc::METHOD_UNITY_LAUNCH_STATUS => {
-            require!(request, state, rpc::CAPABILITY_UNITY_LAUNCH_V1);
-            let params = parse!(request, rpc::UnityLaunchStatusParams);
-            let id = match app::UnityLaunchId::parse(&params.launch_id) {
-                Ok(value) => value,
-                Err(_) => return invalid(request.id),
-            };
-            match application.launch_status(access, id).await {
-                Ok(value) => success_action(
-                    request.id,
-                    rpc::UnityLaunchResult {
-                        launch: launch(value),
-                        replayed: false,
-                    },
-                    None,
-                ),
-                Err(error) => m5_error(request.id, error),
-            }
-        }
         _ => error_action(Some(request.id), rpc::RpcError::method_not_found(), false),
     }
 }

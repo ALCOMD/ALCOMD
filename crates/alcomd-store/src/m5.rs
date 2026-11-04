@@ -647,14 +647,6 @@ fn launch_fingerprint(
     )
 }
 
-pub(super) fn get_launch(
-    connection: &Connection,
-    owner: &PrincipalId,
-    launch_id: UnityLaunchId,
-) -> Result<UnityLaunchRecord, M5UnityError> {
-    load_launch(connection, owner, launch_id).map(|stored| stored.record)
-}
-
 fn load_launch(
     connection: &Connection,
     owner: &PrincipalId,

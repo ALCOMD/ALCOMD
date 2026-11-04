@@ -97,11 +97,6 @@ async fn unity_registry_launch_config_and_launch_are_revisioned_evented_and_idem
         .expect("replay one-shot launch")
         .expect("stored launch");
     assert_eq!(idempotent_launch, launch);
-    let replay = store
-        .get_launch(owner.clone(), launch.launch_id)
-        .await
-        .expect("read launch");
-    assert_eq!(replay, launch);
 
     let events = store.list_events(owner, 0, 100).await.expect("events");
     assert!(
@@ -218,18 +213,6 @@ async fn project_modified_time_tracks_first_launch_acceptance_without_changing_c
             .expect("read after replay"),
         accepted
     );
-    store
-        .get_launch(owner.clone(), launch.launch_id)
-        .await
-        .expect("poll failed launch");
-    assert_eq!(
-        store
-            .get_project(owner.clone(), registered.project_id)
-            .await
-            .expect("read after poll"),
-        accepted
-    );
-
     store
         .accept_launch(
             owner.clone(),

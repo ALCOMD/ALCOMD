@@ -548,7 +548,7 @@ export function ProjectUnityWorkspaceActions({ client, installations, launchOpti
     navigate(path: string): void;
     onChanged(): void;
     project: ProjectSnapshot;
-    renderLaunch(action: { disabled: boolean; onClick(): void; title?: string }, onViewLaunchStatus?: (origin?: HTMLElement | null) => void): ReactNode;
+    renderLaunch(action: { disabled: boolean; onClick(): void; title?: string }): ReactNode;
 }) {
     const { t } = useTranslation();
     const canMigrate = useCapability(capabilities.projectsUnityMigration);
@@ -630,7 +630,7 @@ export function ProjectUnityWorkspaceActions({ client, installations, launchOpti
                 ]}
                 value={migrationVersion}
             />
-            {renderLaunch({ ...unityLaunch.action, disabled: unityLaunch.action.disabled || feedback.busy }, unityLaunch.viewStatus)}
+            {renderLaunch({ ...unityLaunch.action, disabled: unityLaunch.action.disabled || feedback.busy })}
             {unityLaunch.dialogs}
             <ModalDialog dismissible={!feedback.busy} onClose={() => { setMigrationChooserOpen(false); setMigrationVersion(project.unityVersion); setFeedback(INITIAL_FEEDBACK); }} open={migrationChooserOpen} title={t("Choose Unity {version} installation", { version: migrationVersion })}>
                 <Select label={t("Target Unity installation")} onChange={setMigrationInstallationId} options={[{ label: t("Choose an installation"), value: "" }, ...migrationInstallations.map((item) => ({ label: `${item.unityVersion} · ${item.architecture}`, value: item.installationId }))]} value={migrationInstallationId} />

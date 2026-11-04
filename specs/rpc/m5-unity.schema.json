@@ -15,8 +15,7 @@
                 "unity.projectLaunchConfig.clear",
                 "unity.writerState",
                 "unity.launchOptions",
-                "unity.launch",
-                "unity.launchStatus"
+                "unity.launch"
             ]
         },
         "capability": {
@@ -253,12 +252,6 @@
                 "expectedProjectRevision": {"$ref": "#/$defs/revision"},
                 "idempotencyKey": {"$ref": "#/$defs/idempotencyKey"}
             }
-        },
-        "launchStatusParams": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["launchId"],
-            "properties": {"launchId": {"$ref": "#/$defs/uuid"}}
         }
     },
     "type": "object",

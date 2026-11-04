@@ -1292,18 +1292,6 @@ impl M5UnityStore for StateStoreHandle {
         .await
     }
 
-    async fn get_launch(
-        &self,
-        owner: PrincipalId,
-        launch_id: UnityLaunchId,
-    ) -> Result<UnityLaunchRecord, M5UnityError> {
-        self.request_worker(
-            move |connection| m5::get_launch(connection, &owner, launch_id),
-            m5::unavailable,
-        )
-        .await
-    }
-
     async fn set_launch_state(
         &self,
         owner: PrincipalId,

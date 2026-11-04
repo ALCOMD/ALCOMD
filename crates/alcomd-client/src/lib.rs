@@ -632,17 +632,6 @@ impl AlcomdClient {
             .await
     }
 
-    pub async fn unity_launch_status(
-        &mut self,
-        launch_id: String,
-    ) -> Result<alcomd_protocol::UnityLaunchResult, ClientError> {
-        self.call(
-            alcomd_protocol::METHOD_UNITY_LAUNCH_STATUS,
-            alcomd_protocol::UnityLaunchStatusParams { launch_id },
-        )
-        .await
-    }
-
     pub async fn templates_list(
         &mut self,
         params: alcomd_protocol::TemplatesListParams,
@@ -1171,7 +1160,6 @@ fn read_deadline(method: &str) -> Option<Duration> {
             | METHOD_UNITY_PROJECT_LAUNCH_CONFIG_GET
             | METHOD_UNITY_WRITER_STATE
             | METHOD_UNITY_LAUNCH_OPTIONS
-            | METHOD_UNITY_LAUNCH_STATUS
             | METHOD_TEMPLATES_LIST
             | METHOD_TEMPLATES_GET
             | METHOD_BACKUPS_LIST

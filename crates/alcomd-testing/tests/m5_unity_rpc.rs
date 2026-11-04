@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use alcomd_client::{AlcomdClient, ClientConfig, ClientError};
 use alcomd_platform::{DataConfig, IpcConfig};
@@ -28,6 +29,7 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
     let editor = create_fake_editor(fixture.path(), "Editor");
 
     let (ipc, config) = isolated_ipc(runtime);
+    let query_ipc = ipc.clone();
     let shutdown = Arc::new(AtomicBool::new(false));
     let server_shutdown = Arc::clone(&shutdown);
     let daemon = alcomd_daemon::test_support::start_with_data_until(
@@ -37,6 +39,12 @@ async fn unity_registry_writer_gate_launch_config_and_exact_launch_round_trip_ov
     )
     .await
     .expect("start owned test daemon");
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        assert_removed_manual_query(&query_ipc),
+    )
+    .await
+    .expect("withdrawn method check must finish");
     let mut client = connect_with_retry(config).await;
     let capabilities = client
         .system_status()
@@ -285,6 +293,66 @@ fn create_project(root: &Path) {
         r#"{"dependencies":{},"locked":{}}"#,
     )
     .expect("write vpm manifest");
+}
+
+async fn assert_removed_manual_query(ipc: &IpcConfig) {
+    let mut stream = alcomd_platform::connect(ipc)
+        .await
+        .expect("owned test connection");
+    let hello = raw_request(&mut stream, serde_json::json!({
+        "id": "withdrawn-hello", "method": "system.hello",
+        "params": { "rpcVersion": 1, "client": { "name": "withdrawn-launch-query-test", "version": "1", "instanceId": uuid::Uuid::new_v4().to_string() }, "capabilities": ["unity.launch.v1"] }
+    })).await;
+    assert!(
+        hello.get("error").is_none(),
+        "authenticated negotiation must succeed"
+    );
+    let removed = raw_request(
+        &mut stream,
+        serde_json::json!({
+            "id": "withdrawn-query", "method": "unity.launchStatus",
+            "params": { "launchId": uuid::Uuid::new_v4().to_string() }
+        }),
+    )
+    .await;
+    assert_eq!(removed["id"], "withdrawn-query");
+    assert_eq!(removed["error"]["code"], "method_not_found");
+    let next = raw_request(
+        &mut stream,
+        serde_json::json!({
+            "id": "after-withdrawn-query", "method": "system.status", "params": {}
+        }),
+    )
+    .await;
+    assert_eq!(
+        next["result"]["state"], "ready",
+        "an unknown method must not break the command connection"
+    );
+}
+
+async fn raw_request(
+    stream: &mut alcomd_platform::IpcStream,
+    request: serde_json::Value,
+) -> serde_json::Value {
+    let payload = serde_json::to_vec(&request).expect("request JSON");
+    stream
+        .write_all(&(payload.len() as u32).to_le_bytes())
+        .await
+        .expect("frame prefix");
+    stream.write_all(&payload).await.expect("frame body");
+    let mut prefix = [0; 4];
+    stream
+        .read_exact(&mut prefix)
+        .await
+        .expect("response prefix");
+    let length = u32::from_le_bytes(prefix) as usize;
+    assert!((1..=4 * 1024 * 1024).contains(&length));
+    let mut payload = vec![0; length];
+    stream
+        .read_exact(&mut payload)
+        .await
+        .expect("response body");
+    serde_json::from_slice(&payload).expect("response JSON")
 }
 
 async fn connect_with_retry(config: ClientConfig) -> AlcomdClient {

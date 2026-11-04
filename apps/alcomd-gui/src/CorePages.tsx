@@ -493,7 +493,7 @@ function ProjectsTable({
     })} />;
 }
 
-function ProjectRowActions({ client, context = "row", launchAction, navigate, onChanged, onCopyCompleted, onProjectChanged, onRemoved, onViewLaunchStatus, project }: {
+function ProjectRowActions({ client, context = "row", launchAction, navigate, onChanged, onCopyCompleted, onProjectChanged, onRemoved, project }: {
     client: GuiRpcClient;
     context?: "row" | "workspace" | "card";
     launchAction?: { disabled: boolean; onClick(): void; title?: string };
@@ -502,7 +502,6 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
     onCopyCompleted?(projectId: string): void;
     onProjectChanged(project: ProjectSnapshot): void;
     onRemoved?(): void;
-    onViewLaunchStatus?(origin?: HTMLElement | null): void;
     project: ProjectSnapshot;
 }) {
     const { t, locale } = useTranslation();
@@ -531,7 +530,6 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
     const revision = project.revision;
     const workspace = context === "workspace";
     const unityLaunch = useProjectUnityLaunch({ client, navigate, onLaunchSettled: onChanged, project });
-    const viewLaunchStatus = onViewLaunchStatus ?? unityLaunch.viewStatus;
 
     const observeDeletion = useCallback((next: Operation) => {
         setDeleteOperation(next);
@@ -636,7 +634,6 @@ function ProjectRowActions({ client, context = "row", launchAction, navigate, on
 
     const menuItems = <>
         {workspace ? <MenuItem disabled={!canManageUnity} label={t("Edit launch arguments")} onClick={() => setArgumentsOpen(true)} title={capabilityUnavailableTitle(canManageUnity, capabilities.unityManage, t)} /> : null}
-        {viewLaunchStatus === undefined ? null : <MenuItem disabled={unityLaunch.busy || launchAction?.disabled === true} label={t("Unity launch status")} onClick={() => { setMenuOpen(false); viewLaunchStatus(menuAnchorRef.current); }} />}
         <MenuItem disabled={!canReadProjects || openingDirectory} label={t("Open Project Directory")} onClick={() => void openDirectory()} title={capabilityUnavailableTitle(canReadProjects, capabilities.projectsRead, t)} />
         <MenuItem disabled={!canCopyProjects || revision === undefined} label={t("Copy Project")} onClick={beginCopy} title={capabilityUnavailableTitle(canCopyProjects, capabilities.projectsCopy, t)} />
         {workspace ? <>
@@ -1502,7 +1499,7 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                     >
                         <nav aria-label={t("Project actions")} className="project-workspace-action-cluster">
                             {refreshError === undefined ? null : <GlobalReminder><RequestReminder error={refreshError} title={t("Refresh failed: ")}><Button onClick={refresh} type="button" variant="text">{t("Retry")}</Button></RequestReminder></GlobalReminder>}
-                            <ProjectUnityWorkspaceActions client={client} installations={installations} launchOptions={launchOptions} navigate={navigate} onChanged={refresh} project={project} renderLaunch={(launchAction, onViewLaunchStatus) => <ProjectRowActions
+                            <ProjectUnityWorkspaceActions client={client} installations={installations} launchOptions={launchOptions} navigate={navigate} onChanged={refresh} project={project} renderLaunch={(launchAction) => <ProjectRowActions
                                 client={client}
                                 context="workspace"
                                 launchAction={launchAction}
@@ -1511,7 +1508,6 @@ function ProjectPackageWorkspace({ client, navigate, projectId }: PageProps & { 
                                 onCopyCompleted={(targetProjectId) => navigate(`/projects/${targetProjectId}`)}
                                 onProjectChanged={() => refresh()}
                                 onRemoved={() => navigate("/projects")}
-                                onViewLaunchStatus={onViewLaunchStatus}
                                 project={project}
                             />} />
                         </nav>
