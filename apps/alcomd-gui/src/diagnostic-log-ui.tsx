@@ -1,7 +1,7 @@
 import { useContext, useEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
 import type { DiagnosticLogItem } from "@alcomd/sdk";
 import { DiagnosticDetails, GlobalReminder, Reminder } from "./Reminder";
-import { DiagnosticLogFeed, diagnosticLogKey, diagnosticLogMessage, type DiagnosticLogSnapshot, type DiagnosticLogSource } from "./diagnostic-log";
+import { DiagnosticLogFeed, diagnosticLogKey, type DiagnosticLogSnapshot, type DiagnosticLogSource } from "./diagnostic-log";
 import { useTranslation } from "./i18n";
 
 import { DiagnosticLogContext } from "./diagnostic-log-context";
@@ -40,7 +40,7 @@ export function DiagnosticLogNotifications() {
 
 function DiagnosticLogNotification({ dismiss, item }: { dismiss(): void; item: DiagnosticLogItem }) {
     const { t } = useTranslation();
-    return <Reminder logEntry={item} message={diagnosticLogMessage(item.code)} details={<DiagnosticDetails code={item.code} diagnosticId={item.diagnosticId} />} onDismiss={dismiss}
+    return <Reminder logEntry={item} message={item.message} details={<DiagnosticDetails code={item.code} diagnosticId={item.diagnosticId} />} onDismiss={dismiss}
         title={t(item.level === "warning" ? "Background warning" : "Background error")} tone={item.level === "warning" ? "warning" : "error"}>
     </Reminder>;
 }

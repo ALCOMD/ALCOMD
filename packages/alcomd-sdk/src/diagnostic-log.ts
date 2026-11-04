@@ -17,6 +17,8 @@ export interface DiagnosticLogItem {
     occurredAtMs: number;
     level: DiagnosticLogLevel;
     code: string;
+    message: string;
+    target: string;
     diagnosticId?: string;
     notify: boolean;
 }

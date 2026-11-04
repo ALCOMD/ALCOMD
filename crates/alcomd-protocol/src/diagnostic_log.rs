@@ -39,6 +39,8 @@ pub struct DiagnosticLogItem {
     pub occurred_at_ms: u64,
     pub level: DiagnosticLogLevel,
     pub code: String,
+    pub message: String,
+    pub target: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diagnostic_id: Option<String>,
     pub notify: bool,

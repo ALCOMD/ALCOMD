@@ -90,7 +90,7 @@ import { CreateProjectDialog, RestoreProjectDialog } from "./ProjectCreationDial
 import { capabilities, capabilityUnavailableTitle, useCapability, useCapabilityState, useReconnect } from "./capabilities";
 import { requestErrorMessage } from "./request-errors";
 import { useDiagnosticLog } from "./diagnostic-log-ui";
-import { diagnosticLogKey, diagnosticLogMessage } from "./diagnostic-log";
+import { diagnosticLogKey } from "./diagnostic-log";
 import type { DiagnosticLogLevel } from "@alcomd/sdk";
 
 interface PageProps {
@@ -2109,12 +2109,14 @@ function DiagnosticLogRows({ client, items, search }: { client: GuiRpcClient; it
     const canReadOperations = useCapability(capabilities.operations);
     const [severity, setSeverity] = useState("");
     const [subsystem, setSubsystem] = useState("");
+    const [details, setDetails] = useState(false);
     const [selected, setSelected] = useState<string>();
     const query = search.trim().toLowerCase();
-    const records: Array<Omit<LoadedDiagnosticItem, "severity"> & { severity: DiagnosticLogLevel; key: string; message: string }> = [
-        ...items.map((item, index) => ({ ...item, key: `operation:${item.operationId}:${index}`, message: requestErrorMessage(item.code) })),
+    const records: Array<Omit<LoadedDiagnosticItem, "severity"> & { severity: DiagnosticLogLevel; key: string; message: string; target?: string }> = [
+        ...items.filter((item) => item.diagnosticId === undefined || !snapshot.items.some((entry) => entry.diagnosticId === item.diagnosticId))
+            .map((item, index) => ({ ...item, key: `operation:${item.operationId}:${index}`, message: requestErrorMessage(item.code) })),
         ...snapshot.items.map((item) => ({ occurredAtMs: item.occurredAtMs, severity: item.level, subsystem: item.source === "gui" ? `${productFamily} GUI` : productFamily, code: item.code,
-            diagnosticId: item.diagnosticId, summary: "", key: diagnosticLogKey(item), message: item.message ?? diagnosticLogMessage(item.code) }))
+            diagnosticId: item.diagnosticId, summary: "", key: diagnosticLogKey(item), message: item.message, target: item.target }))
     ].sort((left, right) => right.occurredAtMs - left.occurredAtMs);
     const shown = records.filter((item) => (severity === "" || item.severity === severity)
         && (subsystem === "" || item.subsystem === subsystem)
@@ -2127,13 +2129,14 @@ function DiagnosticLogRows({ client, items, search }: { client: GuiRpcClient; it
         <div className="alcomd-filter-bar logs-filter-toolbar" aria-label={t("Technical log filters")}>
             <LogFilter label={t("Severity")} value={severity} values={["warning", "error", ...snapshot.items.map((item) => item.level)]} onChange={setSeverity} />
             <LogFilter label={t("Subsystem")} value={subsystem} values={records.map((item) => item.subsystem)} onChange={setSubsystem} />
+            <Checkbox checked={details} label={t("Show details")} onChange={setDetails} />
             <p className="alcomd-filter-bar-status" role="status">{t("{shown} of {total} loaded entries · Search and filters apply to loaded entries only.", { shown: shown.length, total: records.length })}</p>
         </div>
         <DesktopList columns={[{ key: "time", header: t("Time"), width: 250, className: "logs-time" }, { key: "severity", header: t("Severity"), width: 110 }, { key: "subsystem", header: t("Subsystem"), width: 150 }, { key: "diagnostic", header: t("Log entry") }, { key: "actions", header: t("Actions"), width: 140 }]} emptyMessage={records.length === 0 ? t(snapshot.error === undefined ? "No technical logs yet" : "No technical logs loaded.") : t("No matching loaded technical logs. Change the filters or load more entries.")} label={t("Technical Logs")} minWidth={760} rows={shown.map((item) => ({ key: item.key, cells: [
             formatTime(t, locale, item.occurredAtMs),
             <span className={`logs-severity logs-severity--${item.severity}`}>{humanize(t, item.severity)}</span>,
             item.subsystem,
-            <span className="logs-summary" data-log-id={item.key}><strong>{t(item.message)}</strong><small>{item.code}</small>{item.diagnosticId === undefined ? null : <small>{t("Diagnostic ID: ")}{item.diagnosticId}</small>}</span>,
+            <span className="logs-summary" data-log-id={item.key}><span className="logs-message">{t(item.message.split("\n")[0] ?? item.message)}</span>{details ? <><span className="logs-message">{item.message.includes("\n") ? item.message.slice(item.message.indexOf("\n") + 1) : null}</span><dl className="logs-details"><Detail label={t("Error code")} value={item.code} />{item.target === undefined ? null : <Detail label={t("Subsystem")} value={item.target} />}{item.diagnosticId === undefined ? null : <Detail label={t("Diagnostic ID")} value={item.diagnosticId} />}</dl></> : null}</span>,
             item.operationId === undefined ? null : <Button disabled={!canReadOperations} title={capabilityUnavailableTitle(canReadOperations, capabilities.operations, t)} onClick={() => setSelected(item.operationId)} type="button" variant="text">{t("View operation")}</Button>
         ] }))} sizing="fixed" />
         {selected === undefined ? null : <LogOperationDialog client={client} operationId={selected} onClose={() => setSelected(undefined)} />}

@@ -166,10 +166,18 @@ fn diagnostic_log_contract_is_owner_scoped_closed_and_bounded() {
             .expect("valid diagnostic log test fixture");
     assert_eq!(params.limit, Some(200));
     assert_eq!(params.wait_ms, Some(20000));
-    let fixture = json!({"items":[{"instanceId":"00000000-0000-4000-8000-000000000001","sequence":1,"occurredAtMs":1,"level":"error","code":"diagnostic.error","diagnosticId":"00000000-0000-4000-8000-000000000002","notify":true}],"nextCursor":{"instanceId":"00000000-0000-4000-8000-000000000001","sequence":1},"reset":false,"gap":false});
+    let fixture = json!({"items":[{"instanceId":"00000000-0000-4000-8000-000000000001","sequence":1,"occurredAtMs":1,"level":"error","message":"无法读取 Unity 安装。\npath=C:\\Unity","target":"alcomd::unity","code":"diagnostic.error","diagnosticId":"00000000-0000-4000-8000-000000000002","notify":true}],"nextCursor":{"instanceId":"00000000-0000-4000-8000-000000000001","sequence":1},"reset":false,"gap":false});
     let mut leaked = fixture.clone();
-    leaked["items"][0]["message"] = json!("private raw message");
+    leaked["items"][0]["secret"] = json!("secret must not be accepted");
     assert!(serde_json::from_value::<DiagnosticLogReadResult>(leaked).is_err());
+    for required in ["message", "target"] {
+        let mut missing = fixture.clone();
+        missing["items"][0]
+            .as_object_mut()
+            .expect("entry")
+            .remove(required);
+        assert!(serde_json::from_value::<DiagnosticLogReadResult>(missing).is_err());
+    }
     let result: DiagnosticLogReadResult =
         serde_json::from_value(fixture.clone()).expect("valid diagnostic log test fixture");
     assert_eq!(

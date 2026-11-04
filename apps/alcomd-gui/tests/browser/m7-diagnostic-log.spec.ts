@@ -8,11 +8,32 @@ test.use({ viewport: { width: 1280, height: 800 } });
 async function open(page: Page, route = "/diagnostics") {
     await page.goto(`/browser-harness.html?route=${encodeURIComponent(route)}&diagnostic-log=1&h3-unity-discovery=1`);
     await expect.poll(() => page.evaluate(() => window.diagnosticLogRequests.length)).toBe(2);
+    if (route === "/diagnostics") await page.getByRole("checkbox", { name: "Show details", exact: true }).check();
 }
 
 async function emit(page: Page, value: Partial<DiagnosticLogItem>) {
     await page.evaluate((detail) => window.dispatchEvent(new CustomEvent("test-diagnostic-log", { detail })), value);
 }
+
+test("real Unicode log text is primary and the same record backs its popup and technical details", async ({ page }) => {
+    await page.goto("/browser-harness.html?route=/diagnostics&diagnostic-log=1");
+    await expect.poll(() => page.evaluate(() => window.diagnosticLogRequests.length)).toBe(2);
+    await emit(page, { message: "无法读取 Unity 安装。\npath=C:\\Unity 项目\\测试 🦀", target: "alcomd::unity", code: "unity_unavailable", diagnosticId: IDS.newLog });
+    const popup = page.locator(".reminder-floating .reminder");
+    await expect(popup).toContainText("无法读取 Unity 安装。");
+    const key = await popup.getAttribute("data-log-id");
+    const row = page.getByRole("table", { name: "Technical Logs", exact: true }).locator(`[data-log-id="${key}"]`);
+    await expect(row).toContainText("无法读取 Unity 安装。");
+    await expect(row).not.toContainText("unity_unavailable");
+    await expect(row).not.toContainText(IDS.newLog);
+    await page.getByRole("checkbox", { name: "Show details", exact: true }).check();
+    await expect(row).toContainText("path=C:\\Unity 项目\\测试 🦀");
+    await expect(row).toContainText("alcomd::unity");
+    await expect(row).toContainText("unity_unavailable");
+    await popup.getByRole("button", { name: "Dismiss notification", exact: true }).click();
+    await expect(popup).toHaveCount(0);
+    await expect(row).toBeVisible();
+});
 
 test("historical logs stay silent and a new error appears once in the shared outlet and log table", async ({ page }) => {
     await open(page);
@@ -136,6 +157,7 @@ test("an ordinary request popup is backed by a session log and dismissal keeps t
     await page.getByRole("navigation", { name: "Primary", exact: true }).locator("md-list-item")
         .filter({ has: page.locator(".navigation-item-label", { hasText: /^Logs$/ }) }).click();
     await page.getByRole("button", { name: "Technical Logs", exact: true }).click();
+    await page.getByRole("checkbox", { name: "Show details", exact: true }).check();
     const table = page.getByRole("table", { name: "Technical Logs", exact: true });
     await expect(table.locator(`[data-log-id="${logId}"]`)).toContainText("repository_unavailable");
     await expect(table).toContainText("ALCOMD GUI");

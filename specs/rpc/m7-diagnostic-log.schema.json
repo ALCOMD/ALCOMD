@@ -27,13 +27,15 @@
         },
         "item": {
             "type": "object", "additionalProperties": false,
-            "required": ["instanceId", "sequence", "occurredAtMs", "level", "code", "notify"],
+            "required": ["instanceId", "sequence", "occurredAtMs", "level", "code", "message", "target", "notify"],
             "properties": {
                 "instanceId": {"$ref": "#/$defs/identity"},
                 "sequence": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
                 "occurredAtMs": {"$ref": "#/$defs/safeInteger"},
                 "level": {"enum": ["trace", "debug", "info", "warning", "error"]},
                 "code": {"$ref": "#/$defs/code"},
+                "message": {"type":"string", "minLength":1, "maxLength":4096, "x-alcomd-max-utf8-bytes":4096},
+                "target": {"type":"string", "minLength":1, "maxLength":128, "pattern":"^[A-Za-z0-9_:.-]+$"},
                 "diagnosticId": {"$ref": "#/$defs/identity"},
                 "notify": {"type": "boolean"}
             }

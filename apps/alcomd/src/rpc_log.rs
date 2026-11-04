@@ -18,13 +18,22 @@ pub(super) fn record(log: &DiagnosticLog, method: &str, response: &mut Value) {
         let diagnostic_id = error.get("diagnosticId").and_then(Value::as_str);
         // A request's caller decides whether its feedback needs a popup. The
         // record still exists for every rejected request, including CLI calls.
-        let entry = log.record(DiagnosticLogLevel::Error, code, diagnostic_id, Some(false));
+        let message = error
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("The request failed without an error message.");
+        let text = format!("{message}\nrequest_method={method}");
+        let entry = log.record(
+            DiagnosticLogLevel::Error,
+            code,
+            diagnostic_id,
+            Some(false),
+            &text,
+            "alcomd::rpc",
+        );
         if let Some(id) = entry.diagnostic_id {
             error.insert("diagnosticId".to_owned(), Value::String(id));
         }
-    } else if response.get("result").is_some() {
-        let code = format!("rpc.{}.succeeded", method.to_ascii_lowercase());
-        log.record(DiagnosticLogLevel::Trace, Some(&code), None, Some(false));
     }
 }
 
@@ -53,7 +62,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn results_are_safe_and_log_observation_never_logs_itself() {
+    async fn successful_requests_and_log_observation_do_not_manufacture_log_traffic() {
         let log = DiagnosticLog::new();
         let mut response = json!({"id":"request", "result":{"privatePath":"not a log field"}});
         record(&log, "unity.projectLaunchConfig.get", &mut response);
@@ -70,12 +79,6 @@ mod tests {
             .read(&AccessContext::local_owner(), None, None, None)
             .await
             .expect("log");
-        assert_eq!(page.items.len(), 1);
-        assert_eq!(
-            page.items[0].code,
-            "rpc.unity.projectlaunchconfig.get.succeeded"
-        );
-        assert_eq!(page.items[0].level, DiagnosticLogLevel::Trace);
-        assert!(!page.items[0].notify);
+        assert!(page.items.is_empty());
     }
 }

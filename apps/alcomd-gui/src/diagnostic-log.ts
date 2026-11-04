@@ -1,5 +1,5 @@
 import type { DiagnosticLogCursor, DiagnosticLogItem, DiagnosticLogReadParams, DiagnosticLogReadResult, RpcError } from "@alcomd/sdk";
-import { normalizeRequestError, requestErrorMessage } from "./request-errors.ts";
+import { normalizeRequestError } from "./request-errors.ts";
 
 export interface DiagnosticLogSource {
     diagnosticLogRead(params: DiagnosticLogReadParams): Promise<DiagnosticLogReadResult>;
@@ -16,7 +16,7 @@ export interface DiagnosticLogSnapshot {
 /** GUI records are ephemeral session logs, never Core business state or RPC DTOs. */
 export interface SessionLogEntry extends DiagnosticLogItem {
     readonly source?: "gui";
-    readonly message?: string;
+    readonly displayMessage?: string;
     readonly title?: string;
     readonly tone?: "success" | "info" | "warning" | "error";
 }
@@ -33,24 +33,25 @@ export interface GuiLogInput {
 const EMPTY: DiagnosticLogSnapshot = { items: [], notifications: [], gap: false };
 const MAX_RETAINED = 1024;
 
-export function diagnosticLogKey(item: Pick<DiagnosticLogItem, "instanceId" | "sequence">): string {
-    return `${item.instanceId}:${item.sequence}`;
+function boundedMessage(value: string): string {
+    const result: string[] = [];
+    let bytes = 0;
+    const encoder = new TextEncoder();
+    for (const character of value) {
+        const length = encoder.encode(character).length;
+        if (bytes + length > 4096) {
+            while (bytes > 4093) bytes -= encoder.encode(result.pop()!).length;
+            result.push("…");
+            break;
+        }
+        result.push(character);
+        bytes += length;
+    }
+    return result.join("");
 }
 
-export function diagnosticLogMessage(code: string): string {
-    if (code.startsWith("rpc.") && code.endsWith(".succeeded")) return "Request completed.";
-    if (code.startsWith("operation.") && code.endsWith(".succeeded")) return "Task completed.";
-    if (code.startsWith("operation.") && code.endsWith(".cancelled")) return "Task cancelled.";
-    switch (code) {
-        case "core.started": return "The Core started.";
-        case "diagnostic.operation_stream_failed": return "Task results could not be added to the technical log.";
-        case "diagnostic.trace": return "Trace information recorded.";
-        case "diagnostic.debug": return "Debug information recorded.";
-        case "diagnostic.info": return "Information recorded.";
-        case "diagnostic.warning": return "A warning was reported in the background.";
-        case "diagnostic.error": return "An error occurred in the background.";
-        default: return requestErrorMessage(code);
-    }
+export function diagnosticLogKey(item: Pick<DiagnosticLogItem, "instanceId" | "sequence">): string {
+    return `${item.instanceId}:${item.sequence}`;
 }
 
 function retryWait(signal: AbortSignal): Promise<void> {
@@ -114,11 +115,12 @@ export class DiagnosticLogFeed {
             : this.snapshot.items.find((item) => item.diagnosticId === input.diagnosticId));
         if (prior !== undefined && existing !== undefined) return existing;
         const level = input.tone === "success" ? "info" : input.tone;
-        const metadata = { message: input.message.slice(0, 4096), title: input.title?.slice(0, 512), tone: input.tone };
+        const message = boundedMessage(input.message);
+        const metadata = { displayMessage: message, title: input.title?.slice(0, 512), tone: input.tone };
         const entry: SessionLogEntry = existing === undefined ? {
             instanceId: this.guiInstance, sequence: ++this.guiSequence, occurredAtMs: Date.now(),
             level, code: input.code?.slice(0, 96) ?? `gui.${level}`, diagnosticId: input.diagnosticId,
-            notify: input.notify ?? true, source: "gui", ...metadata,
+            notify: input.notify ?? true, source: "gui", message, target: "alcomd_gui", ...metadata,
         } : { ...existing, ...metadata };
         if (identity !== undefined) this.guiIdentities.set(identity, entry);
         const items = existing === undefined ? [...this.snapshot.items, entry].slice(-MAX_RETAINED)
@@ -188,7 +190,7 @@ export class DiagnosticLogFeed {
             const gui = index < 0 ? undefined : items[index];
             if (gui === undefined) items.push(item);
             else {
-                items[index] = { ...item, message: gui.message, title: gui.title, tone: gui.tone };
+                items[index] = { ...item, displayMessage: gui.displayMessage, title: gui.title, tone: gui.tone };
                 handled.add(diagnosticLogKey(item));
             }
         }

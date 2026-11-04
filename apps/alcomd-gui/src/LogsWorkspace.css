@@ -26,6 +26,11 @@
     margin: 4px 0;
 }
 
+.logs-message {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .logs-workspace small {
     display: block;
     margin-top: 4px;

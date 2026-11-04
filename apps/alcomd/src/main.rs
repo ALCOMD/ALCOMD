@@ -45,10 +45,10 @@ async fn main() -> anyhow::Result<()> {
         tokio::signal::ctrl_c()
             .await
             .expect("failed to wait for Ctrl+C");
+        info!("shutdown requested");
     })
     .await
     .context("daemon stopped")?;
-    info!("shutdown requested");
     Ok(())
 }
 
@@ -60,7 +60,7 @@ fn init_tracing(diagnostic_log: alcomd_application::DiagnosticLog) {
         .with(
             log_capture::DiagnosticLogLayer::new(diagnostic_log).with_filter(
                 tracing_subscriber::filter::filter_fn(|metadata| {
-                    log_capture::is_core_target(metadata.target())
+                    log_capture::capture_metadata(metadata)
                 }),
             ),
         )

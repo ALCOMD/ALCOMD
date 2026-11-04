@@ -36,6 +36,7 @@ fn is_terminal_event(event: &EventRecord) -> bool {
 }
 
 fn record(log: &DiagnosticLog, operation: &OperationRecord) {
+    let kind = operation.kind.replace('.', " ");
     match operation.state {
         OperationState::Failed => {
             log.record(
@@ -43,6 +44,15 @@ fn record(log: &DiagnosticLog, operation: &OperationRecord) {
                 operation.error_code.as_deref().or(Some("operation.failed")),
                 operation.diagnostic_id.as_deref(),
                 None,
+                &format!(
+                    "The {kind} task failed.\noperation_id={}\nerror_code={}",
+                    operation.operation_id,
+                    operation
+                        .error_code
+                        .as_deref()
+                        .unwrap_or("no error code was supplied")
+                ),
+                "alcomd::operations",
             );
         }
         OperationState::Succeeded | OperationState::Cancelled => {
@@ -52,7 +62,17 @@ fn record(log: &DiagnosticLog, operation: &OperationRecord) {
                 "cancelled"
             };
             let code = format!("operation.{}.{suffix}", operation.kind);
-            log.record(DiagnosticLogLevel::Info, Some(&code), None, Some(false));
+            log.record(
+                DiagnosticLogLevel::Info,
+                Some(&code),
+                None,
+                Some(false),
+                &format!(
+                    "The {kind} task {suffix}.\noperation_id={}",
+                    operation.operation_id
+                ),
+                "alcomd::operations",
+            );
         }
         _ => {}
     }

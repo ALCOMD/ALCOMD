@@ -72,6 +72,8 @@ pub(super) async fn dispatch(
                             app::DiagnosticLogLevel::Error => rpc::DiagnosticLogLevel::Error,
                         },
                         code: item.code,
+                        message: item.message,
+                        target: item.target,
                         diagnostic_id: item.diagnostic_id,
                         notify: item.notify,
                     })
@@ -235,6 +237,8 @@ mod tests {
             Some("core.failure"),
             None,
             None,
+            "Test log entry.",
+            "alcomd::test",
         );
         let response = waiting.await.response;
         let result: rpc::DiagnosticLogReadResult =
@@ -243,6 +247,8 @@ mod tests {
         assert_eq!(result.items.len(), 1);
         assert_eq!(result.items[0].sequence, item.sequence);
         assert_eq!(result.items[0].code, "core.failure");
+        assert_eq!(result.items[0].message, item.message);
+        assert_eq!(result.items[0].target, item.target);
         assert_eq!(result.items[0].diagnostic_id, item.diagnostic_id);
         assert!(result.items[0].notify);
         assert_eq!(result.next_cursor.sequence, item.sequence);

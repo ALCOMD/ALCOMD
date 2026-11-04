@@ -8,7 +8,7 @@ import { useTranslation } from "./i18n";
 import { normalizeRequestError, requestErrorMessage } from "./request-errors";
 import { currentDialogSurface, subscribeDialogSurface } from "./dialog-surface";
 import { DiagnosticLogContext } from "./diagnostic-log-context";
-import { DiagnosticLogFeed, diagnosticLogKey, diagnosticLogMessage, type GuiLogInput, type DiagnosticLogSnapshot } from "./diagnostic-log";
+import { DiagnosticLogFeed, diagnosticLogKey, type GuiLogInput, type DiagnosticLogSnapshot } from "./diagnostic-log";
 import "./Reminder.css";
 
 interface ReminderActions {
@@ -193,7 +193,7 @@ export function Reminder({ actions, children, details, identity, message, logCod
     // No floating content is mounted until its actual log record is accepted.
     if (floating && (dismissed || entry === undefined)) return null;
     const shownTitle = floating ? entry?.title ?? title : title;
-    const shownMessage = floating ? entry?.message ?? (entry === undefined ? undefined : diagnosticLogMessage(entry.code)) : message;
+    const shownMessage = floating ? entry?.displayMessage ?? entry?.message : message;
     const dismiss = onDismiss ?? (floating ? () => dismissals?.dismiss(source, notification) : undefined);
     return <section data-log-id={floating && entry ? diagnosticLogKey(entry) : undefined} className={`reminder reminder--${tone}`} role={tone === "error" || tone === "warning" ? "alert" : "status"} aria-live={tone === "error" || tone === "warning" ? "assertive" : "polite"}>
         <Icon asset={infoIcon} />

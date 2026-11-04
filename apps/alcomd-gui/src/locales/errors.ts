@@ -2,7 +2,6 @@ import type { TranslationTable } from "../i18n-types";
 
 export const errorMessages: TranslationTable = {
     "The Core started.": { "zh-CN": "Core 已启动。", "ja-JP": "Coreが起動しました。" },
-    "Request completed.": { "zh-CN": "请求已完成。", "ja-JP": "リクエストが完了しました。" },
     "Task completed.": { "zh-CN": "任务已完成。", "ja-JP": "タスクが完了しました。" },
     "Task cancelled.": { "zh-CN": "任务已取消。", "ja-JP": "タスクがキャンセルされました。" },
     "Task results could not be added to the technical log.": { "zh-CN": "任务结果无法写入技术日志。", "ja-JP": "タスクの結果を技術ログに追加できませんでした。" },

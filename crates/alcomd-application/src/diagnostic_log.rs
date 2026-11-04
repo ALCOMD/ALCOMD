@@ -1,4 +1,4 @@
-//! Bounded, ephemeral and redacted Core technical-log projection.
+//! Bounded Core technical-log records and their cancellable read cursor.
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -57,6 +57,8 @@ pub struct DiagnosticLogItem {
     pub occurred_at_ms: u64,
     pub level: DiagnosticLogLevel,
     pub code: String,
+    pub message: String,
+    pub target: String,
     pub diagnostic_id: Option<String>,
     pub notify: bool,
 }
@@ -79,6 +81,12 @@ struct LogState {
     instance_id: String,
     sequence: u64,
     items: VecDeque<DiagnosticLogItem>,
+    sink: Option<Arc<dyn DiagnosticLogSink>>,
+}
+
+/// A process-owned nonblocking file queue. It must never call back into the log.
+pub trait DiagnosticLogSink: Send + Sync {
+    fn accept(&self, item: &DiagnosticLogItem);
 }
 
 struct LogInner {
@@ -104,18 +112,33 @@ impl DiagnosticLog {
                 instance_id: new_identity(),
                 sequence: 0,
                 items: VecDeque::with_capacity(DIAGNOSTIC_LOG_CAPACITY),
+                sink: None,
             }),
             changed: Notify::new(),
         }))
     }
 
-    /// Accept only bounded machine fields. Raw technical text has no input slot.
+    pub fn attach_sink(&self, sink: Arc<dyn DiagnosticLogSink>) {
+        let mut state = self
+            .0
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        for item in &state.items {
+            sink.accept(item);
+        }
+        state.sink = Some(sink);
+    }
+
+    /// Producers must provide reviewed technical text, never secrets or request payloads.
     pub fn record(
         &self,
         level: DiagnosticLogLevel,
         code: Option<&str>,
         diagnostic_id: Option<&str>,
         notify: Option<bool>,
+        message: &str,
+        target: &str,
     ) -> DiagnosticLogItem {
         let code = code
             .filter(|value| safe_code(value))
@@ -153,6 +176,17 @@ impl DiagnosticLog {
                 .min(u128::from(MAX_SAFE_SEQUENCE)) as u64,
             level,
             code: code.to_owned(),
+            message: bounded_log_message(message),
+            target: if !target.is_empty()
+                && target.len() <= 128
+                && target
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"_:.-".contains(&byte))
+            {
+                target.to_owned()
+            } else {
+                "alcomd".to_owned()
+            },
             diagnostic_id,
             notify,
         };
@@ -160,6 +194,9 @@ impl DiagnosticLog {
             state.items.pop_front();
         }
         state.items.push_back(item.clone());
+        if let Some(sink) = &state.sink {
+            sink.accept(&item);
+        }
         drop(state);
         self.0.changed.notify_waiters();
         item
@@ -270,6 +307,28 @@ fn new_identity() -> String {
     OperationId::new().to_string()
 }
 
+fn bounded_log_message(value: &str) -> String {
+    let mut text = String::with_capacity(value.len().min(4096));
+    for character in value
+        .chars()
+        .filter(|character| !character.is_control() || matches!(character, '\n' | '\t'))
+    {
+        if text.len() + character.len_utf8() > 4096 {
+            while text.len() > 4093 {
+                text.pop();
+            }
+            text.push('…');
+            break;
+        }
+        text.push(character);
+    }
+    if text.trim().is_empty() {
+        "The log producer supplied an empty message.".to_owned()
+    } else {
+        text
+    }
+}
+
 fn safe_code(value: &str) -> bool {
     let bytes = value.as_bytes();
     !bytes.is_empty()
@@ -297,11 +356,46 @@ mod tests {
     use std::future::Future;
     use std::task::Poll;
 
+    #[test]
+    fn real_unicode_text_is_bounded_without_splitting_utf8_or_retaining_terminal_controls() {
+        let log = DiagnosticLog::new();
+        let text = format!("已找到编辑器。\n{}\u{1b}\u{0}", "🦀路径".repeat(1000));
+        let item = log.record(
+            DiagnosticLogLevel::Info,
+            None,
+            None,
+            None,
+            &text,
+            "alcomd::unity",
+        );
+        assert!(item.message.starts_with("已找到编辑器。\n"));
+        assert!(item.message.ends_with('…'));
+        assert!(item.message.len() <= 4096);
+        assert_eq!(item.target, "alcomd::unity");
+        let item = log.record(
+            DiagnosticLogLevel::Info,
+            None,
+            None,
+            None,
+            "正文\u{1b}\u{0}\n详情",
+            "C:\\private",
+        );
+        assert_eq!(item.message, "正文\n详情");
+        assert_eq!(item.target, "alcomd");
+    }
+
     #[tokio::test]
     async fn history_is_bounded_and_incremental_reads_do_not_skip_pages() {
         let log = DiagnosticLog::new();
         for _ in 0..250 {
-            log.record(DiagnosticLogLevel::Info, Some("core.ready"), None, None);
+            log.record(
+                DiagnosticLogLevel::Info,
+                Some("core.ready"),
+                None,
+                None,
+                "Test log entry.",
+                "alcomd::test",
+            );
         }
         let initial = log
             .read(&AccessContext::local_owner(), None, Some(2), None)
@@ -318,7 +412,14 @@ mod tests {
         assert_eq!(initial.next_cursor.sequence, 250);
         assert!(!initial.reset && !initial.gap);
         for _ in 0..5 {
-            log.record(DiagnosticLogLevel::Info, None, None, None);
+            log.record(
+                DiagnosticLogLevel::Info,
+                None,
+                None,
+                None,
+                "Test log entry.",
+                "alcomd::test",
+            );
         }
         let first = log
             .read(
@@ -366,7 +467,14 @@ mod tests {
             .expect("local owner can read the bounded diagnostic log")
             .next_cursor;
         for _ in 0..1027 {
-            log.record(DiagnosticLogLevel::Info, None, None, None);
+            log.record(
+                DiagnosticLogLevel::Info,
+                None,
+                None,
+                None,
+                "Test log entry.",
+                "alcomd::test",
+            );
         }
         assert_eq!(
             log.0
@@ -402,7 +510,14 @@ mod tests {
         assert!(!next.gap && !next.reset);
         assert!(next.items.is_empty());
         let restarted = DiagnosticLog::new();
-        restarted.record(DiagnosticLogLevel::Warning, None, None, None);
+        restarted.record(
+            DiagnosticLogLevel::Warning,
+            None,
+            None,
+            None,
+            "Test log entry.",
+            "alcomd::test",
+        );
         let reset = restarted
             .read(
                 &AccessContext::local_owner(),
@@ -462,7 +577,14 @@ mod tests {
             "",
             &"x".repeat(97),
         ] {
-            let item = log.record(DiagnosticLogLevel::Error, Some(code), Some("secret"), None);
+            let item = log.record(
+                DiagnosticLogLevel::Error,
+                Some(code),
+                Some("secret"),
+                None,
+                "Test log entry.",
+                "alcomd::test",
+            );
             assert_eq!(item.code, "diagnostic.error");
             assert!(safe_identity(
                 item.diagnostic_id
@@ -477,6 +599,8 @@ mod tests {
             Some("unity_version_unverified"),
             Some(&id),
             Some(true),
+            "Test log entry.",
+            "alcomd::test",
         );
         assert_eq!(item.code, "unity_version_unverified");
         assert_eq!(item.diagnostic_id.as_deref(), Some(id.as_str()));
@@ -491,19 +615,50 @@ mod tests {
             DiagnosticLogLevel::Debug,
             DiagnosticLogLevel::Info,
         ] {
-            assert!(!log.record(level, None, None, Some(true)).notify);
+            assert!(
+                !log.record(
+                    level,
+                    None,
+                    None,
+                    Some(true),
+                    "Test log entry.",
+                    "alcomd::test"
+                )
+                .notify
+            );
         }
         assert!(
-            !log.record(DiagnosticLogLevel::Warning, None, None, None)
-                .notify
+            !log.record(
+                DiagnosticLogLevel::Warning,
+                None,
+                None,
+                None,
+                "Test log entry.",
+                "alcomd::test"
+            )
+            .notify
         );
         assert!(
-            log.record(DiagnosticLogLevel::Error, None, None, None)
-                .notify
+            log.record(
+                DiagnosticLogLevel::Error,
+                None,
+                None,
+                None,
+                "Test log entry.",
+                "alcomd::test"
+            )
+            .notify
         );
         assert!(
-            !log.record(DiagnosticLogLevel::Error, None, None, Some(false))
-                .notify
+            !log.record(
+                DiagnosticLogLevel::Error,
+                None,
+                None,
+                Some(false),
+                "Test log entry.",
+                "alcomd::test"
+            )
+            .notify
         );
     }
 
@@ -524,7 +679,14 @@ mod tests {
             Poll::Ready(())
         })
         .await;
-        log.record(DiagnosticLogLevel::Error, None, None, None);
+        log.record(
+            DiagnosticLogLevel::Error,
+            None,
+            None,
+            None,
+            "Test log entry.",
+            "alcomd::test",
+        );
         let a = tokio::time::timeout(Duration::from_secs(1), first)
             .await
             .expect("first waiting reader wakes after a record")
@@ -542,7 +704,14 @@ mod tests {
         })
         .await;
         drop(cancelled);
-        let item = log.record(DiagnosticLogLevel::Warning, None, None, None);
+        let item = log.record(
+            DiagnosticLogLevel::Warning,
+            None,
+            None,
+            None,
+            "Test log entry.",
+            "alcomd::test",
+        );
         let after = log
             .read(&access, Some(a.next_cursor), None, None)
             .await

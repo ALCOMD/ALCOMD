@@ -8,7 +8,7 @@ const tick = async () => { for (let index = 0; index < 5; index += 1) await Prom
 const CORE_A = "10000000-0000-4000-8000-000000000001";
 const CORE_B = "10000000-0000-4000-8000-000000000002";
 const log = (sequence: number, level: DiagnosticLogItem["level"] = "error", notify = true, instanceId: string = CORE_A): DiagnosticLogItem =>
-    ({ instanceId, sequence, occurredAtMs: sequence, level, code: `diagnostic.${level}`, diagnosticId: `20000000-0000-4000-8000-${String(sequence).padStart(12, "0")}`, notify });
+    ({ instanceId, sequence, occurredAtMs: sequence, level, code: `diagnostic.${level}`, message: "Actual Core log text", target: "alcomd::test", diagnosticId: `20000000-0000-4000-8000-${String(sequence).padStart(12, "0")}`, notify });
 const result = (sequence: number, items: DiagnosticLogItem[] = [], reset = false, gap = false, instanceId: string = CORE_A): DiagnosticLogReadResult =>
     ({ items, nextCursor: { instanceId, sequence }, reset, gap });
 
@@ -136,13 +136,14 @@ function fixture() {
     const entry = f.feed.recordGui({ tone: "error", code: error.code, diagnosticId: error.diagnosticId, message: "request rejected" }, identity);
     await f.respond(result(1, [error]));
     equal(f.feed.getSnapshot().items.length, 1, "late Core error merges with the GUI record by diagnostic ID");
+    equal(f.feed.find(entry)?.message, "Actual Core log text", "Core technical text is not replaced by a GUI summary");
     equal(f.feed.getSnapshot().notifications, [], "a contextual request error cannot also trigger a background popup");
     equal(f.feed.find(entry)?.sequence, 1, "the original view reference resolves after Core acceptance");
     await f.respond(result(1, [error], false, true));
     equal(f.feed.getSnapshot().items.length, 1, "a new baseline cannot duplicate a retained contextual Core record");
-    equal(f.feed.find(entry)?.message, "request rejected", "baseline deduplication keeps the contextual message");
+    equal(f.feed.find(entry)?.displayMessage, "request rejected", "baseline deduplication keeps the contextual message");
     await f.respond(result(0, [], true, false, CORE_B));
-    equal(f.feed.find(entry)?.message, "request rejected", "Core restart preserves contextual session history");
+    equal(f.feed.find(entry)?.displayMessage, "request rejected", "Core restart preserves contextual session history");
     await f.feed.stop();
 }
 {
@@ -162,3 +163,9 @@ function fixture() {
     equal(f.feed.getSnapshot().items.length, 1024, "GUI feedback shares the same bounded session history");
 }
 console.log("Diagnostic log feed checks passed.");
+{
+    const f = fixture();
+    const entry = f.feed.recordGui({ tone: "error", message: "中文🦀".repeat(2000) });
+    equal(new TextEncoder().encode(entry.message).length <= 4096, true, "GUI text respects the same UTF-8 bound");
+    equal(entry.message.endsWith("…"), true, "a bounded record explicitly marks omitted text");
+}

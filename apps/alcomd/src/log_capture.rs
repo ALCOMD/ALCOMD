@@ -1,4 +1,4 @@
-//! Safe projection of technical tracing events, never their raw field payloads.
+//! Capture actual tracing text and reviewed technical fields, never arbitrary payloads.
 
 use alcomd_application::{DiagnosticLog, DiagnosticLogLevel};
 use tracing::{
@@ -23,6 +23,11 @@ pub(crate) fn is_core_target(target: &str) -> bool {
     target == "alcomd" || target.starts_with("alcomd::") || target.starts_with("alcomd_")
 }
 
+pub(crate) fn capture_metadata(metadata: &tracing::Metadata<'_>) -> bool {
+    is_core_target(metadata.target())
+        && (metadata.is_span() || *metadata.level() <= tracing::Level::DEBUG)
+}
+
 #[derive(Clone, Copy)]
 struct ToastOverride(bool);
 
@@ -32,6 +37,37 @@ struct SafeFields {
     notification_code: Option<String>,
     diagnostic_id: Option<String>,
     gui_toast: Option<bool>,
+    message: String,
+    details: Vec<String>,
+}
+
+#[derive(Default)]
+struct BoundedText(String);
+impl std::fmt::Write for BoundedText {
+    fn write_str(&mut self, value: &str) -> std::fmt::Result {
+        let mut end = value.len().min(4096usize.saturating_sub(self.0.len()));
+        while !value.is_char_boundary(end) {
+            end -= 1;
+        }
+        self.0.push_str(&value[..end]);
+        Ok(())
+    }
+}
+
+fn technical_field(name: &str) -> bool {
+    matches!(
+        name,
+        "path"
+            | "reason"
+            | "error"
+            | "endpoint"
+            | "product"
+            | "rpc_version"
+            | "operation_id"
+            | "project_id"
+            | "kind"
+            | "phase"
+    )
 }
 
 impl Visit for SafeFields {
@@ -43,6 +79,15 @@ impl Visit for SafeFields {
                 self.notification_code = Some(value.to_owned())
             }
             "diagnostic_id" if value.len() <= 36 => self.diagnostic_id = Some(value.to_owned()),
+            "message" => {
+                self.message = value.chars().take(4096).collect();
+            }
+            name if technical_field(name) => {
+                self.details.push(format!(
+                    "{name}={}",
+                    value.chars().take(4096).collect::<String>()
+                ));
+            }
             _ => {}
         }
     }
@@ -53,8 +98,17 @@ impl Visit for SafeFields {
         }
     }
 
-    fn record_debug(&mut self, _: &tracing::field::Field, _: &dyn std::fmt::Debug) {
-        // In particular, never format `message`, paths, argv, env or errors.
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        if field.name() != "message" && !technical_field(field.name()) {
+            return;
+        }
+        let mut text = BoundedText::default();
+        let _ = std::fmt::write(&mut text, format_args!("{value:?}"));
+        if field.name() == "message" {
+            self.message = text.0;
+        } else {
+            self.details.push(format!("{}={}", field.name(), text.0));
+        }
     }
 }
 
@@ -100,6 +154,11 @@ where
             tracing::Level::WARN => DiagnosticLogLevel::Warning,
             tracing::Level::ERROR => DiagnosticLogLevel::Error,
         };
+        let mut message = fields.message;
+        for detail in fields.details {
+            message.push('\n');
+            message.push_str(&detail);
+        }
         self.log.record(
             level,
             fields
@@ -108,6 +167,8 @@ where
                 .or(fields.code.as_deref()),
             fields.diagnostic_id.as_deref(),
             fields.gui_toast.or(inherited),
+            &message,
+            event.metadata().target(),
         );
     }
 }
@@ -119,7 +180,7 @@ mod tests {
     use tracing_subscriber::prelude::*;
 
     #[tokio::test]
-    async fn captures_levels_and_only_safe_machine_fields() {
+    async fn captures_real_text_and_reviewed_details_without_secret_fields() {
         let log = DiagnosticLog::new();
         let subscriber = tracing_subscriber::registry().with(DiagnosticLogLayer::new(log.clone()));
         tracing::subscriber::with_default(subscriber, || {
@@ -128,7 +189,7 @@ mod tests {
             tracing::info!("info raw text");
             tracing::warn!(
                 code = "unity_version_unverified",
-                path = "C:\\secret",
+                path = "C:\\Unity 项目",
                 argv = "secret",
                 "warning raw text"
             );
@@ -168,8 +229,18 @@ mod tests {
             Some("00000000-0000-4000-8000-000000000123")
         );
         let debug = format!("{:?}", page.items);
+        assert!(!debug.contains("secret"));
+        assert_eq!(page.items[0].message, "trace raw text");
         assert!(
-            !debug.contains("secret") && !debug.contains("raw text") && !debug.contains("C:\\")
+            page.items[3]
+                .message
+                .contains("warning raw text\npath=C:\\Unity 项目")
+        );
+        assert_eq!(page.items[4].message, "error raw text");
+        assert!(
+            page.items
+                .iter()
+                .all(|item| item.target.starts_with("alcomd"))
         );
     }
 
@@ -239,15 +310,17 @@ mod tests {
                     .with_writer(std::io::sink)
                     .with_filter(tracing_subscriber::EnvFilter::new("alcomd=error")),
             )
-            .with(DiagnosticLogLayer::new(log.clone()).with_filter(
-                tracing_subscriber::filter::filter_fn(|metadata| is_core_target(metadata.target())),
-            ));
+            .with(
+                DiagnosticLogLayer::new(log.clone())
+                    .with_filter(tracing_subscriber::filter::filter_fn(capture_metadata)),
+            );
         tracing::subscriber::with_default(subscriber, || {
             let request = tracing::info_span!("rpc_request", gui_toast = false);
             let _entered = request.enter();
             tracing::error!("already handled by RPC");
             tracing::error!(target: "third_party", gui_toast = true, "never enters the Core buffer");
             tracing::debug!("debug projection remains available but silent");
+            tracing::trace!("trace is not retained by default");
         });
         let page = log
             .read(&AccessContext::local_owner(), None, None, None)

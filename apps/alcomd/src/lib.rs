@@ -33,6 +33,7 @@ use tracing::Instrument;
 
 mod diagnostic_log_rpc;
 mod events_rpc;
+mod file_log;
 mod hub_platform;
 mod m3_rpc;
 mod m4_rpc;
@@ -105,6 +106,7 @@ type UnityMigrationApplication = UnityMigrationService<
 
 struct Applications {
     diagnostic_log: alcomd_application::DiagnosticLog,
+    _file_log: Option<file_log::FileLog>,
     m2: M2Application,
     m3: M3ReadApplication,
     project_discovery: ProjectDiscoveryApplication,
@@ -199,6 +201,16 @@ async fn initialize_daemon_with_diagnostics(
         .ok_or_else(|| BindError::Io(io::Error::other("state path has no parent")))?
         .to_path_buf();
     let cache_root = data_root.join("package-cache");
+    let file_log = match file_log::FileLog::start(diagnostic_log.clone(), &data_root.join("logs")) {
+        Ok(writer) => Some(writer),
+        Err(error) => {
+            diagnostic_log.record(alcomd_application::DiagnosticLogLevel::Error,
+                Some("diagnostic.log_file_failed"), None, None,
+                &format!("Could not open the technical log directory: {error}. Logs remain available in memory."),
+                "alcomd::logging");
+            None
+        }
+    };
     let store = StateStoreHandle::open(database).map_err(|error| {
         BindError::Io(io::Error::other(format!(
             "state store failed closed: {error}"
@@ -363,6 +375,7 @@ async fn initialize_daemon_with_diagnostics(
     );
     let applications = Arc::new(Applications {
         diagnostic_log,
+        _file_log: file_log,
         m2,
         m3: M3ReadApplication::new(store.clone(), reader.clone()),
         project_discovery: ProjectDiscoveryApplication::with_locks(
@@ -449,7 +462,8 @@ where
             result = log_tasks.join_next(), if !log_tasks.is_empty() => {
                 if !matches!(result, Some(Ok(Ok(())))) {
                     applications.diagnostic_log.record(alcomd_application::DiagnosticLogLevel::Error,
-                        Some("diagnostic.operation_stream_failed"), None, None);
+                        Some("diagnostic.operation_stream_failed"), None, None,
+                        "The committed task event stream stopped. New task results cannot be added to the technical log.", "alcomd::operations");
                 }
             }
             _ = discovery_tick.tick() => discovery_requested = true,

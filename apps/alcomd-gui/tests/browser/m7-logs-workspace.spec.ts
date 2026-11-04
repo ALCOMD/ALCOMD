@@ -58,6 +58,7 @@ test("activity search and record filters preserve the loaded snapshot and open r
 
 test("diagnostics filters real severity fields and retains complete diagnostic identity", async ({ page }) => {
     await page.goto("/browser-harness.html?route=%2Fdiagnostics&state=ready");
+    await page.getByRole("checkbox", { name: "Show details", exact: true }).check();
     const table = page.getByRole("table", { name: "Technical Logs", exact: true });
     await expect(table.getByRole("columnheader")).toHaveText(["Time", "Severity", "Subsystem", "Log entry", "Actions"]);
     await page.getByRole("combobox", { name: "Severity", exact: true }).click();

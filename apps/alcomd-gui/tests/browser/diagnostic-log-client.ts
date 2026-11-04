@@ -28,7 +28,7 @@ export class BrowserDiagnosticLog {
     private readonly enabled: boolean;
     private initialFailure: boolean;
     private instance: string = DIAGNOSTIC_LOG_FIXTURE_IDS.coreA;
-    private items: DiagnosticLogItem[] = [{ instanceId: this.instance, sequence: 1, occurredAtMs: 1_700_000_001_000, level: "error", code: "diagnostic.error", diagnosticId: DIAGNOSTIC_LOG_FIXTURE_IDS.historic, notify: true }];
+    private items: DiagnosticLogItem[] = [{ instanceId: this.instance, sequence: 1, occurredAtMs: 1_700_000_001_000, level: "error", message: "An error occurred in the background.", target: "alcomd::fixture", code: "diagnostic.error", diagnosticId: DIAGNOSTIC_LOG_FIXTURE_IDS.historic, notify: true }];
     private pending?: { params: DiagnosticLogReadParams; resolve(result: DiagnosticLogReadResult): void; reject(error: unknown): void };
 
     constructor(enabled: boolean, initialFailure = false) {
@@ -39,14 +39,14 @@ export class BrowserDiagnosticLog {
         window.addEventListener("test-diagnostic-log", ((event: CustomEvent<Partial<DiagnosticLogItem>>) => {
             const level = event.detail.level ?? "error";
             this.items.push({ instanceId: this.instance, sequence: this.items.length + 1, occurredAtMs: 1_700_000_001_000 + this.items.length,
-                level, code: event.detail.code ?? `diagnostic.${level}`, diagnosticId: event.detail.diagnosticId ?? `00000000-0000-4000-8000-${String(9300 + this.items.length + 1).padStart(12, "0")}`,
+                level, message: event.detail.message ?? (level === "warning" ? "A warning was reported in the background." : "An error occurred in the background."), target: event.detail.target ?? "alcomd::fixture", code: event.detail.code ?? `diagnostic.${level}`, diagnosticId: event.detail.diagnosticId ?? `00000000-0000-4000-8000-${String(9300 + this.items.length + 1).padStart(12, "0")}`,
                 notify: event.detail.notify ?? level === "error" });
             this.flush();
         }) as EventListener);
         window.addEventListener("test-diagnostic-log-failure", () => { this.pending?.reject({ code: "daemon_unavailable", message: "never render raw failure detail" }); this.pending = undefined; });
         window.addEventListener("test-diagnostic-log-reset", () => {
             this.instance = DIAGNOSTIC_LOG_FIXTURE_IDS.coreB;
-            this.items = [{ instanceId: this.instance, sequence: 1, occurredAtMs: 1_700_000_002_000, level: "error", code: "diagnostic.error", diagnosticId: DIAGNOSTIC_LOG_FIXTURE_IDS.restarted, notify: true }];
+            this.items = [{ instanceId: this.instance, sequence: 1, occurredAtMs: 1_700_000_002_000, level: "error", message: "An error occurred in the background.", target: "alcomd::fixture", code: "diagnostic.error", diagnosticId: DIAGNOSTIC_LOG_FIXTURE_IDS.restarted, notify: true }];
             this.flush();
         });
     }
