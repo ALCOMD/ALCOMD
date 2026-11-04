@@ -393,7 +393,8 @@ events.closed 携带明确错误和 retryable。非法帧、未知通知、协�
 
 项目最近活动时间推进使用 `project.activity-recorded`，仓库内容未变而公开检查时间推进使用
 `repository.observed`；沿用当前资源 revision，不改变项目内容或 Plan 的 revision 语义。
-这些事件只用于失效通知，与 `operation.progress` 一样不投影为独立活动条目；时间未变、
+`project.activity-recorded` 同时投影为“请求在Unity中打开”的活动，不代表编辑器已成功打开。
+`repository.observed` 与 `operation.progress` 不投影为独立活动条目；时间未变、
 回滚和幂等重放不产生新事件。公开任务恢复状态的变化仍须递增 revision，并同事务发布
 对应状态事件；已经处于相同恢复状态的重复恢复不产生变化。
 
@@ -789,6 +790,14 @@ because the calling page already handles their errors; an explicit event overrid
 The GUI uses one dedicated cancellable read connection, so a bounded wait cannot block ordinary RPC.
 The log read is serial: disconnect cancels its wait, and sending another request before its response
 closes that connection. This cancellation rule does not abandon mutations on other connections.
+
+Authenticated business request failures are recorded before delivery and share the response's
+existing optional diagnostic ID. Successful requests are quiet trace records; log reads, event
+transport and negotiation do not create recursive records. Committed task terminal events feed
+the same Core log independently of a waiting command caller; progress does not create log traffic.
+The GUI also retains bounded, explicitly GUI-sourced session feedback. Floating feedback is
+rendered only after its record exists, and matching Core/GUI errors merge by diagnostic ID.
+These GUI presentation fields are local view metadata, not additional wire fields or durable state.
 
 `settings.update` 不接受 idempotency key、generic key/value、任意文件路径写入或 extension setting；revision conflict 使用现有
 `revision_conflict`。hello 只在 `config/settings.toml` production storage 成功初始化后，以兼容

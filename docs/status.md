@@ -4,6 +4,9 @@
 
 ## 当前阶段
 
+2026-11-05修复“提示有、技术日志空”和Unity打开请求无活动：Core补齐业务RPC结果与提交后任务终态日志，GUI浮动反馈先登记会话日志再展示，按diagnosticId合并错误，关闭不删除记录。活动查询及GUI失效通知不再排除project.activity-recorded，展示“请求在Unity中打开”，仓库观察/任务进度仍不制造活动噪声。代码分批提交为`1b14336`（活动）、`959a86c`（Core日志）、`3571e39`（GUI日志来源），未推送。
+Core单元32/0、Store单元51/0、受影响严格Clippy、fmt、GUI check/build和日志模型通过；定向浏览器首轮21/0，随后日志基线去重增量的最终日志/筛选专项13/0，分别保留，不合称完整GUI回归。真实IPC只读错误与日志使用同一diagnosticId，日志读取不递归写日志；原活动67条恢复为70条，新增显示3条已有打开请求。新版dev Core **106648** / GUI **133500**已运行，窗口可响应、HTTP200、原profile及六组完整公开状态/配置摘要保持，Unity进程不变。构建输入前后一致；证据在`target/m7-log-origin-20261105/`。未启动Unity、操作真实项目或恢复桌面控制；仍为有界会话日志，未实现跨重启文件历史，不冒称v3完整日志能力或M7/H7人工通过。
+
 2026-11-05 所有者批准的组织身份修订已实施源码候选：发布者/自有作者及版权声明为 `VRCLearn`，
 Bundle/Linux desktop ID 为 `com.vrclearn.alcomd`，Windows AUMID 为 `vrclearn.ALCOMD`，
 当前网站/服务基址和 v4 自有 Schema 引用为 `https://alcomd.vrclearn.com/`。Tauri、第一方扩展、
