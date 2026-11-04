@@ -148,11 +148,10 @@ async fn project_delete_plan_apply_removes_registry_and_exact_directory_once() {
 }
 
 #[tokio::test]
-async fn project_delete_writer_uncertainty_fails_closed() {
+async fn project_delete_rejects_target_linked_writers() {
     for (index, state) in [
         UnityWriterStateKind::RunningConfirmed,
         UnityWriterStateKind::RunningSuspected,
-        UnityWriterStateKind::Unknown,
     ]
     .into_iter()
     .enumerate()
@@ -189,6 +188,110 @@ async fn project_delete_writer_uncertainty_fails_closed() {
                 .is_err()
         );
         assert!(project_root.exists());
+    }
+}
+
+#[tokio::test]
+async fn project_delete_allows_unattributed_unknown_but_rechecks_target_before_quarantine() {
+    use std::sync::atomic::AtomicUsize;
+    #[derive(Clone)]
+    struct Writer {
+        calls: Arc<AtomicUsize>,
+        becomes_running: bool,
+    }
+    impl M5BackupWriterGate for Writer {
+        async fn observe_backup_source(
+            &self,
+            _: &AccessContext,
+            project_id: ProjectId,
+        ) -> Result<UnityWriterState, M5BackupError> {
+            let call = self.calls.fetch_add(1, Ordering::SeqCst);
+            Ok(UnityWriterState {
+                project_id,
+                state: if self.becomes_running && call >= 2 {
+                    UnityWriterStateKind::RunningConfirmed
+                } else {
+                    UnityWriterStateKind::Unknown
+                },
+                evidence: Vec::new(),
+                checked_at_ms: 1,
+            })
+        }
+    }
+    for becomes_running in [false, true] {
+        let fixture = TestDirectory::new();
+        let root = fixture.path().join("Project");
+        create_project(&root);
+        let store = StateStoreHandle::open(fixture.path().join("state.db")).expect("store");
+        let record = store
+            .register_project(
+                PrincipalId::local_owner(),
+                observation(&root),
+                key("unknown-register"),
+                1,
+            )
+            .await
+            .expect("register")
+            .value;
+        let writer = Writer {
+            calls: Arc::new(AtomicUsize::new(0)),
+            becomes_running,
+        };
+        let calls = writer.calls.clone();
+        let app = M7DeleteApplication::with_locks(
+            store.clone(),
+            ProjectDeleteEngine,
+            writer,
+            Arc::new(ResourceLockCoordinator::default()),
+        );
+        let plan = app
+            .plan_delete(
+                &AccessContext::local_owner(),
+                record.project_id,
+                record.revision,
+                key("unknown-plan"),
+            )
+            .await
+            .expect("unknown is not target occupancy");
+        let accepted = app
+            .apply_delete(
+                &AccessContext::local_owner(),
+                plan.plan.draft.plan_id,
+                record.revision,
+                key("unknown-apply"),
+            )
+            .await
+            .expect("apply");
+        let operation = wait_terminal(&store, accepted.operation_id).await;
+        assert!(calls.load(Ordering::SeqCst) >= 3);
+        if becomes_running {
+            assert_eq!(operation.state, OperationState::Failed);
+            assert!(root.exists());
+            assert!(
+                fs::read_dir(fixture.path())
+                    .expect("fixture entries")
+                    .all(|entry| !entry
+                        .expect("entry")
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with(".alcomd-delete-"))
+            );
+            assert!(
+                store
+                    .get_project(PrincipalId::local_owner(), record.project_id)
+                    .await
+                    .is_ok()
+            );
+        } else {
+            assert_eq!(operation.state, OperationState::Succeeded);
+            assert!(!root.exists());
+            assert!(
+                store
+                    .get_project(PrincipalId::local_owner(), record.project_id)
+                    .await
+                    .is_err()
+            );
+        }
     }
 }
 

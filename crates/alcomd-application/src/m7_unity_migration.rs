@@ -416,7 +416,7 @@ where
             .observe_backup_source(access, project_id)
             .await
             .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
-        require_safe_writer(writer.state)?;
+        require_no_target_writer(writer.state)?;
         let source_unity_version =
             crate::m5::canonical_unity_version(&project.observation.unity_version)
                 .map_err(|_| error(M7UnityMigrationErrorCode::SourceChanged))?;
@@ -489,7 +489,7 @@ where
             .observe_backup_source(access, plan.draft.project.project_id)
             .await
             .map_err(|_| error(M7UnityMigrationErrorCode::Internal))?;
-        require_safe_writer(writer.state)?;
+        require_no_target_writer(writer.state)?;
         self.adapter.revalidate(plan, project, target).await?;
         let outcome = self
             .store
@@ -586,7 +586,7 @@ where
                     return Ok(());
                 }
             };
-            if let Err(failure) = require_safe_writer(writer.state) {
+            if let Err(failure) = require_no_target_writer(writer.state) {
                 self.fail_before_intent(operation_id, failure).await?;
                 return Ok(());
             }
@@ -928,8 +928,11 @@ where
     }
 }
 
-fn require_safe_writer(state: UnityWriterStateKind) -> Result<(), M7UnityMigrationError> {
-    if state == UnityWriterStateKind::NotObserved {
+fn require_no_target_writer(state: UnityWriterStateKind) -> Result<(), M7UnityMigrationError> {
+    if matches!(
+        state,
+        UnityWriterStateKind::NotObserved | UnityWriterStateKind::Unknown
+    ) {
         Ok(())
     } else {
         Err(error(M7UnityMigrationErrorCode::ProjectRunning))

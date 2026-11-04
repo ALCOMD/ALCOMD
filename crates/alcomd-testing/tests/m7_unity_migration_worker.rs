@@ -22,6 +22,15 @@ use uuid::Uuid;
 
 #[tokio::test]
 async fn worker_persists_unity_started_before_wait_and_commits_after_cleanup() {
+    exercise_successful_worker(UnityWriterStateKind::NotObserved).await;
+}
+
+#[tokio::test]
+async fn unattributed_unknown_does_not_prevent_migration_apply_or_worker() {
+    exercise_successful_worker(UnityWriterStateKind::Unknown).await;
+}
+
+async fn exercise_successful_worker(state: UnityWriterStateKind) {
     let fixture = TestDirectory::new();
     let database_path = fixture.0.join("state.db");
     let store = StateStoreHandle::open(database_path.clone()).expect("open state store");
@@ -38,7 +47,7 @@ async fn worker_persists_unity_started_before_wait_and_commits_after_cleanup() {
     let application = M7UnityMigrationApplication::with_locks(
         store.clone(),
         adapter,
-        FixedWriter,
+        ObservedWriter(state),
         Arc::new(ResourceLockCoordinator::default()),
     );
     let outcome = application
@@ -355,6 +364,136 @@ async fn observed_exit_with_conclusively_unchanged_project_is_an_ordinary_failur
 
 #[derive(Clone)]
 struct FixedWriter;
+
+#[tokio::test]
+async fn real_engine_unknown_does_not_override_owned_child_exit_or_target_identity() {
+    let fixture = TestDirectory::new();
+    let store = StateStoreHandle::open(fixture.0.join("state.db")).expect("store");
+    let (owner, mut draft) = registered_draft(&store).await;
+    let root = fixture.0.join("Project");
+    fs::create_dir_all(root.join("ProjectSettings")).expect("project settings");
+    fs::write(
+        root.join("ProjectSettings/ProjectVersion.txt"),
+        b"m_EditorVersion: 2022.3.22f1\n",
+    )
+    .expect("target version");
+    let (canonical, identity) =
+        alcomd_platform::resolve_directory_identity(&root).expect("project identity");
+    draft.project.observation.root_path = canonical.to_string_lossy().into_owned();
+    draft.project.observation.path_identity_key = identity.clone();
+    draft.project_root_identity = identity;
+    store
+        .create_unity_migration_plan(owner.clone(), draft.clone())
+        .await
+        .expect("plan");
+    let plan = store
+        .get_unity_migration_plan(owner, draft.plan_id)
+        .await
+        .expect("stored plan");
+    let engine = alcomd_vpm::UnityMigrationEngine::new(
+        store,
+        alcomd_vpm::VpmReader::new().expect("reader"),
+        fixture.0.join("cache"),
+        fixture.0.join("recovery"),
+    )
+    .expect("engine");
+    let writer = UnityWriterState {
+        project_id: draft.project.project_id,
+        state: UnityWriterStateKind::Unknown,
+        evidence: Vec::new(),
+        checked_at_ms: 200,
+    };
+    for exit in [None, Some("success"), Some("non_zero")] {
+        let mut evidence = recovery_evidence(&draft, OperationId::new());
+        evidence.exit_observation = exit.map(str::to_owned);
+        let result = engine
+            .recover_after_launch_intent(plan.clone(), writer.clone(), evidence)
+            .await
+            .expect("reobserve");
+        if exit.is_some() {
+            let UnityMigrationRecoveryDisposition::ProjectReady(observed) = result else {
+                panic!("observed child exit must permit target reinspection")
+            };
+            assert_eq!(
+                observed.observation.path_identity_key,
+                draft.project_root_identity
+            );
+            assert_eq!(
+                observed.observation.unity_version,
+                draft.target_unity_version
+            );
+        } else {
+            assert!(matches!(
+                result,
+                UnityMigrationRecoveryDisposition::RecoveryRequired(_)
+            ));
+        }
+    }
+    let mut replaced = plan;
+    replaced.draft.project_root_identity = vec![99];
+    assert!(
+        engine
+            .recover_after_launch_intent(
+                replaced,
+                writer,
+                recovery_evidence(&draft, OperationId::new())
+            )
+            .await
+            .is_err()
+    );
+}
+
+#[derive(Clone)]
+struct ObservedWriter(UnityWriterStateKind);
+
+impl M5BackupWriterGate for ObservedWriter {
+    async fn observe_backup_source(
+        &self,
+        _: &AccessContext,
+        project_id: alcomd_application::ProjectId,
+    ) -> Result<UnityWriterState, M5BackupError> {
+        Ok(UnityWriterState {
+            project_id,
+            state: self.0,
+            evidence: Vec::new(),
+            checked_at_ms: 100,
+        })
+    }
+}
+
+#[tokio::test]
+async fn migration_rejects_target_linked_writers_before_any_adapter_mutation() {
+    for state in [
+        UnityWriterStateKind::RunningConfirmed,
+        UnityWriterStateKind::RunningSuspected,
+    ] {
+        let fixture = TestDirectory::new();
+        let store = StateStoreHandle::open(fixture.0.join("state.db")).expect("store");
+        let (owner, draft) = registered_draft(&store).await;
+        store
+            .create_unity_migration_plan(owner, draft.clone())
+            .await
+            .expect("plan");
+        let adapter = RecordingAdapter::new(store.clone());
+        let calls = adapter.call_order.clone();
+        let app = M7UnityMigrationApplication::with_locks(
+            store,
+            adapter,
+            ObservedWriter(state),
+            Arc::new(ResourceLockCoordinator::default()),
+        );
+        assert!(
+            app.apply(
+                &AccessContext::local_owner(),
+                draft.plan_id,
+                key("occupied-apply")
+            )
+            .await
+            .is_err()
+        );
+        assert!(calls.lock().expect("calls").is_empty());
+    }
+}
 
 impl M5BackupWriterGate for FixedWriter {
     async fn observe_backup_source(

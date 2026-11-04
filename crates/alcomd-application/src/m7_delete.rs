@@ -327,7 +327,7 @@ where
                 .await
                 .map_err(|_| error(M7DeleteErrorCode::Internal))?,
         };
-        require_safe_writer(writer.state)?;
+        require_no_target_writer(writer.state)?;
         let draft = self.adapter.plan(project, writer, key, now_ms()?).await?;
         self.store
             .create_project_delete_plan(access.principal().clone(), draft)
@@ -377,7 +377,7 @@ where
                 .await
                 .map_err(|_| error(M7DeleteErrorCode::Internal))?,
         };
-        require_safe_writer(writer.state)?;
+        require_no_target_writer(writer.state)?;
         self.adapter.revalidate_plan(&plan).await?;
         let outcome = self
             .store
@@ -471,6 +471,26 @@ where
             operation.phase,
             ProjectDeletePhase::Accepted | ProjectDeletePhase::PreflightComplete
         ) {
+            let writer = match project_delete_test_writer(operation.plan.draft.project.project_id) {
+                Some(writer) => writer,
+                None => self
+                    .writer
+                    .observe_backup_source(
+                        &AccessContext::new(
+                            operation.plan.owner.clone(),
+                            [crate::Permission::ProjectsRead],
+                        ),
+                        operation.plan.draft.project.project_id,
+                    )
+                    .await
+                    .map_err(|_| error(M7DeleteErrorCode::Internal))?,
+            };
+            if let Err(failure) = require_no_target_writer(writer.state) {
+                self.adapter
+                    .discard(operation_id, operation.plan, evidence)
+                    .await?;
+                return Err(failure);
+            }
             self.adapter.revalidate_plan(&operation.plan).await?;
             if self
                 .store
@@ -563,13 +583,13 @@ where
     }
 }
 
-fn require_safe_writer(state: UnityWriterStateKind) -> Result<(), M7DeleteError> {
+fn require_no_target_writer(state: UnityWriterStateKind) -> Result<(), M7DeleteError> {
     match state {
-        UnityWriterStateKind::NotObserved => Ok(()),
+        UnityWriterStateKind::NotObserved | UnityWriterStateKind::Unknown => Ok(()),
         UnityWriterStateKind::RunningConfirmed => {
             Err(error(M7DeleteErrorCode::UnityProjectRunning))
         }
-        UnityWriterStateKind::RunningSuspected | UnityWriterStateKind::Unknown => {
+        UnityWriterStateKind::RunningSuspected => {
             Err(error(M7DeleteErrorCode::ProjectDeleteSourceUnsafe))
         }
     }

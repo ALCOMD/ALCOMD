@@ -100,7 +100,7 @@ where
         key: IdempotencyKey,
         now_ms: u64,
     ) -> Result<Option<UnityMigrationPlanDraft>, M7UnityMigrationError> {
-        require_writer_inactive(&writer)?;
+        require_no_target_writer(&writer)?;
         if project.observation.unity_version != authority.source_unity_version
             || target.observation.unity_version != authority.target_unity_version
         {
@@ -349,12 +349,17 @@ where
                 }
                 return Ok(UnityMigrationRecoveryDisposition::Pending(evidence));
             }
-            UnityWriterStateKind::Unknown => {
+            UnityWriterStateKind::Unknown
+                if !matches!(
+                    evidence.exit_observation.as_deref(),
+                    Some("success" | "non_zero")
+                ) =>
+            {
                 return Ok(UnityMigrationRecoveryDisposition::RecoveryRequired(
                     evidence,
                 ));
             }
-            UnityWriterStateKind::NotObserved => {}
+            UnityWriterStateKind::NotObserved | UnityWriterStateKind::Unknown => {}
         }
         let observation = self.inspect_planned_project(&plan).await?;
         if observation.unity_version == plan.draft.target_unity_version {
@@ -385,7 +390,7 @@ where
         writer: UnityWriterState,
         evidence: UnityMigrationEvidence,
     ) -> Result<UnityMigrationReobservation, M7UnityMigrationError> {
-        require_writer_inactive(&writer)?;
+        require_no_target_writer(&writer)?;
         if evidence.reobserved_version.as_deref() != Some(plan.draft.target_unity_version.as_str())
             || evidence.reobserved_root_identity.as_deref()
                 != Some(plan.draft.project_root_identity.as_slice())
@@ -1718,8 +1723,11 @@ fn write_new_synced_file(path: &Path, bytes: &[u8]) -> Result<(), M7UnityMigrati
         .map_err(|_| error(M7UnityMigrationErrorCode::Internal))
 }
 
-fn require_writer_inactive(writer: &UnityWriterState) -> Result<(), M7UnityMigrationError> {
-    if writer.state == UnityWriterStateKind::NotObserved {
+fn require_no_target_writer(writer: &UnityWriterState) -> Result<(), M7UnityMigrationError> {
+    if matches!(
+        writer.state,
+        UnityWriterStateKind::NotObserved | UnityWriterStateKind::Unknown
+    ) {
         Ok(())
     } else {
         Err(error(M7UnityMigrationErrorCode::ProjectRunning))
