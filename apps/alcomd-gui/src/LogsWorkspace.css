@@ -1,6 +1,5 @@
 .logs-search {
     width: clamp(220px, 24vw, 380px);
-    --md-outlined-text-field-container-shape: 24px;
 }
 
 .logs-workspace {

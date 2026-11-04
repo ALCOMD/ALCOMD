@@ -213,7 +213,7 @@ md-linear-progress {
     top: 8px;
     left: 8px;
     padding: 10px 14px;
-    border-radius: 8px;
+    border-radius: var(--md-sys-shape-corner-small);
     color: var(--on-primary);
     background: var(--primary);
     transform: translateY(-180%);
@@ -1067,7 +1067,7 @@ md-linear-progress {
 .state-chip {
     width: fit-content;
     padding: 6px 10px;
-    border-radius: 999px;
+    border-radius: var(--md-sys-shape-corner-full);
     background: var(--surface-container-high);
     font-weight: 700;
 }
@@ -1264,7 +1264,7 @@ md-linear-progress {
 
 .appearance-menu > summary {
     padding: 10px 14px;
-    border-radius: 999px;
+    border-radius: var(--md-sys-shape-corner-full);
     color: var(--on-primary-container);
     background: var(--primary-container);
     font-weight: 650;
@@ -1325,7 +1325,7 @@ md-linear-progress {
 
 code {
     padding: 0.12em 0.4em;
-    border-radius: 6px;
+    border-radius: var(--md-sys-shape-corner-small);
     background: color-mix(in srgb, var(--primary) 14%, transparent);
     font-family: var(--alcomd-font-mono);
     font-size: 0.92em;
@@ -1478,7 +1478,7 @@ code {
     width: fit-content;
     margin: 0;
     padding: 7px 12px;
-    border-radius: 999px;
+    border-radius: var(--md-sys-shape-corner-full);
     background: var(--surface-container-high);
     font-weight: 700;
 }

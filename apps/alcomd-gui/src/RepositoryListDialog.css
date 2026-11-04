@@ -1,6 +1,6 @@
 .repository-list-entries { max-block-size: min(36vh, 320px); min-inline-size: 0; margin-block: 12px; }
 .repository-list-entries ul { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
-.repository-list-entries li { display: grid; gap: 4px; min-inline-size: 0; padding: 12px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: 12px; }
+.repository-list-entries li { display: grid; gap: 4px; min-inline-size: 0; padding: 12px; border: 1px solid var(--md-sys-color-outline-variant); border-radius: var(--alcomd-shape-container); }
 .repository-list-entries li > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .repository-list-entries code { white-space: pre-wrap; overflow-wrap: anywhere; }
 .repository-list-error { color: var(--md-sys-color-error); }

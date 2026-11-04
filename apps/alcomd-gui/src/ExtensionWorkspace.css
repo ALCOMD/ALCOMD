@@ -26,7 +26,7 @@
 }
 
 .extension-section-heading span {
-    border-radius: 20px;
+    border-radius: var(--md-sys-shape-corner-full);
     padding: 2px 9px;
     background: var(--md-sys-color-secondary-container);
     font-size: 12px;
