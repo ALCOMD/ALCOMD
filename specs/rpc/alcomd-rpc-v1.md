@@ -776,10 +776,16 @@ M7 在 RPC major 1 上提供四个 utility base method，无独立 capability；
 
 The owner-approved `diagnostics.log.read` addition negotiates `diagnostics.log.v1` separately.
 Its complete closed wire contract is [m7-diagnostic-log.schema.json](m7-diagnostic-log.schema.json).
-Core retains at most 1024 ephemeral records; fields are instance/sequence, time, level, safe code,
-optional diagnostic ID and `notify`. Original tracing messages, paths, environment, parameters and
-arbitrary fields are never transported. Untagged events receive a fixed safe code; this is not raw
-log export or a new durable history. Existing `diagnostics.list` remains the failed-task projection.
+Core retains at most 1024 live records. Fields are instance/sequence, time, level, safe code,
+required `message` (reviewed technical text, at most 4096 UTF-8 bytes), required `target` (source,
+at most 128 ASCII characters), optional diagnostic ID and `notify`. Actual tracing text and
+reviewed filesystem path/error details are retained. Secrets, credentials, argv, environment,
+request parameters, arbitrary result values and Portable UI payloads are excluded. Core writes
+the same accepted records as UTF-8 JSON lines under its data directory's `logs`, bounded to five
+5MiB files. The nonblocking file queue holds at most 1024 records; file failure/overflow is reported
+in memory without recursively writing the failure. The read RPC covers the live buffer, not old
+files. Existing `diagnostics.list` remains the failed-task projection. This owner-approved,
+pre-release required-field change replaces the code-only contract; clients are updated together.
 
 An initial read, changed Core instance or lost cursor window returns recent records and a tail
 cursor; `reset` and `gap` distinguish these conditions. The GUI displays the retained records but
@@ -792,12 +798,14 @@ The log read is serial: disconnect cancels its wait, and sending another request
 closes that connection. This cancellation rule does not abandon mutations on other connections.
 
 Authenticated business request failures are recorded before delivery and share the response's
-existing optional diagnostic ID. Successful requests are quiet trace records; log reads, event
+existing optional diagnostic ID. Successful requests do not manufacture log entries; log reads, event
 transport and negotiation do not create recursive records. Committed task terminal events feed
 the same Core log independently of a waiting command caller; progress does not create log traffic.
 The GUI also retains bounded, explicitly GUI-sourced session feedback. Floating feedback is
 rendered only after its record exists, and matching Core/GUI errors merge by diagnostic ID.
-These GUI presentation fields are local view metadata, not additional wire fields or durable state.
+GUI-specific contextual presentation is local view metadata. It does not replace Core technical
+text or claim that GUI-only session records were saved to the Core file. The page shows the actual
+message first; auxiliary code, source and diagnostic ID remain available through Show details.
 
 `settings.update` 不接受 idempotency key、generic key/value、任意文件路径写入或 extension setting；revision conflict 使用现有
 `revision_conflict`。hello 只在 `config/settings.toml` production storage 成功初始化后，以兼容
