@@ -5,5 +5,5 @@
 /// Returns the stable extension identifier.
 #[must_use]
 pub const fn extension_id() -> &'static str {
-    "com.cqmhv.alcomd.extension.discord"
+    "com.vrclearn.alcomd.extension.discord"
 }

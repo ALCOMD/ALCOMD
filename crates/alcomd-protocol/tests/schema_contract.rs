@@ -426,7 +426,7 @@ fn m7_official_gui_contract_freezes_only_the_approved_additions() {
     );
     assert_eq!(
         contract["$defs"]["settingsGetResult"]["properties"]["settings"]["$ref"],
-        "https://alcomd.cqmhv.com/schema/config/settings-v10.json#/$defs/settings"
+        "https://alcomd.vrclearn.com/schema/config/settings-v10.json#/$defs/settings"
     );
     for historical in [
         include_str!("../../../specs/config/settings-v1.schema.json"),
@@ -1119,8 +1119,7 @@ fn unity_hub_contract_preserves_nullable_preference_and_separate_evidence() {
     ))
     .expect("approved proposal");
     let mut expected = proposal["schemaFragments"]["$defs"]["hubLocation"].clone();
-    expected["properties"]["path"] =
-        json!({"$ref":"https://alcomd.cqmhv.com/schema/config/settings-v10.json#/$defs/hubPath"});
+    expected["properties"]["path"] = json!({"$ref":"https://alcomd.vrclearn.com/schema/config/settings-v10.json#/$defs/hubPath"});
     assert_eq!(contract["$defs"]["unityHubLocation"], expected);
 }
 

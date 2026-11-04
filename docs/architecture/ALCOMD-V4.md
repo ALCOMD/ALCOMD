@@ -52,10 +52,12 @@ alcomd
 | 层级 | 值 | 是否允许随品牌变化 |
 |---|---|---:|
 | 当前用户品牌 | `ALCOMD3` | 是 |
+| 发布者 | `VRCLearn` | 由组织身份决策确定 |
+| 当前网站 | `https://alcomd.vrclearn.com/` | 是 |
 | 产品家族 | `ALCOMD` | 否 |
 | 技术名称根 | `alcomd` | 否 |
-| Bundle / Tauri identifier | `com.cqmhv.alcomd` | 否 |
-| Windows AUMID | `CQMHV.ALCOMD` | 否 |
+| Bundle / Tauri identifier | `com.vrclearn.alcomd` | 否 |
+| Windows AUMID | `vrclearn.ALCOMD` | 否 |
 | URI Scheme | `alcomd://` | 否 |
 | 数据目录 | `ALCOMD` | 否 |
 
@@ -434,7 +436,7 @@ query、input、approve、reject、resume 与 cancel。未来只能以兼容增�
 MCP 管理扩展 ID：
 
 ```text
-com.cqmhv.alcomd.extension.mcp
+com.vrclearn.alcomd.extension.mcp
 ```
 
 它负责客户端、请求、连接、订阅流、权限、审批、配置计划、操作进度与诊断可视化。禁用它
@@ -449,7 +451,7 @@ MCP 管理扩展默认安装并启用。
 Discord 功能全部作为第一方扩展：
 
 ```text
-com.cqmhv.alcomd.extension.discord
+com.vrclearn.alcomd.extension.discord
 ```
 
 扩展包含设置/预览 UI 与 WASM 后台。它通过公开权限 `integrations.discord.presence` 调用 Extension Host 的窄 Discord Presence 能力。
@@ -578,7 +580,9 @@ v4 正常运行时不读写 VCC `settings.json`，不与 VCC 双向同步，不�
 - ALCOMD v4 bridge installer 安装完整 v4 产品，包含或调用 `alcomd-bootstrap`；bootstrap 再
   协调临时 `alcomd-migrate-v3`、健康检查、回滚、v3 清理与 Commit。
 
-上述已上线路径和频道映射作为 M-1 基线；v4 迁移桥接安装器的 JSON Schema、版本推进、签名验证和错误行为在 M-1 冻结。
+上述地址记录冻结 v3 配置的请求源，当前组织站点/服务基址为 `https://alcomd.vrclearn.com/`；
+旧请求源与新部署入口的衔接由 M11 验证。原频道映射、v4 迁移桥接安装器的 JSON Schema、
+版本推进、签名验证和错误行为仍按 M-1 基线冻结。
 
 Windows Inno Setup 脚本只负责产品部署、系统集成和调用 bootstrap，不解析 v3 数据库、不修改
 Unity 项目，也不实现业务迁移。
@@ -762,7 +766,7 @@ Post-v4 可选 Loopback API、Python SDK 与 .NET SDK
 ## 25. 最终规则
 
 1. `ALCOMD3` 是当前用户品牌，`ALCOMD` 是永久产品家族，`alcomd` 是永久技术根。
-2. 系统身份永久使用 `com.cqmhv.alcomd`。
+2. 系统身份永久使用 `com.vrclearn.alcomd`。
 3. 持久目录使用 `ALCOMD`，不使用 `ALCOMD3`。
 4. 只有 `alcomd` 可以写数据库和项目。
 5. 所有入口使用同一应用用例层。

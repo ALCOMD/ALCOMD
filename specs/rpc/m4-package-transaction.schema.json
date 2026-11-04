@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m4-package-transaction.json",
+    "$id": "https://alcomd.vrclearn.com/schema/rpc/v1/m4-package-transaction.json",
     "title": "ALCOMD RPC v1 M4 package transaction contract",
     "$defs": {
         "methodName": {

@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://alcomd.cqmhv.com/schema/config/settings-v2.json",
+    "$id": "https://alcomd.vrclearn.com/schema/config/settings-v2.json",
     "title": "ALCOMD Config Schema 2 settings",
     "deprecated": true,
     "x-alcomd-status": "legacy-startup-migration-input-only",

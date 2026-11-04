@@ -1,9 +1,9 @@
 schema = 1
-id = "com.cqmhv.alcomd.extension.mcp"
+id = "com.vrclearn.alcomd.extension.mcp"
 name = "MCP 管理"
 version = "0.1.0"
 api = 1
-publisher_name = "CQMHV"
+publisher_name = "VRCLearn"
 publisher_key_fingerprint = "ed25519-sha256:0000000000000000000000000000000000000000000000000000000000000000"
 license = "AGPL-3.0-only"
 

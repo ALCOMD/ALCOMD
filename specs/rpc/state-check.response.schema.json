@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/state-check.response.json",
+    "$id": "https://alcomd.vrclearn.com/schema/rpc/v1/state-check.response.json",
     "title": "ALCOMD RPC v1 state.check response",
     "type": "object",
     "additionalProperties": true,

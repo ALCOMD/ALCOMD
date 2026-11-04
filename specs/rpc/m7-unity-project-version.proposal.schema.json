@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://alcomd.cqmhv.com/schema/proposals/m7-unity-project-version.json",
+    "$id": "https://alcomd.vrclearn.com/schema/proposals/m7-unity-project-version.json",
     "title": "ALCOMD M7 Unity project version and exact launch proposal",
     "x-alcomd-publication": "owner-sealed-contract-not-yet-active",
     "x-alcomd-owner-review": "PASS WITH IMPLEMENTATION AMENDMENTS",

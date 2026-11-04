@@ -5,7 +5,7 @@
 ## 核心不变量
 
 - v4 迁移链只接受 ALCOMD3 3.4.0 v3 迁移入口版本；更早的 v3.x 必须先升级到 3.4.0。
-- 3.4.0 必须从 `https://alcomd.cqmhv.com/api/v1/updates/stable.json` 或 `https://alcomd.cqmhv.com/api/v1/updates/beta.json` 获取并验证 v4 迁移桥接安装器（v4 bridge installer）元数据。
+- 冻结 3.4.0 配置按原请求源 `https://alcomd.cqmhv.com/api/v1/updates/stable.json` 或 `https://alcomd.cqmhv.com/api/v1/updates/beta.json` 获取并验证 v4 迁移桥接安装器（v4 bridge installer）元数据。当前组织站点/服务基址为 `https://alcomd.vrclearn.com/`；M11 必须验证旧请求源与新部署入口的完整衔接，不通过改写冻结输入冒充已验证。
 - Commit 前不得破坏 v3。
 - Health Check 前不得删除旧资源。
 - Cleanup 只能删除已确认由 ALCOMD3 拥有的资源。

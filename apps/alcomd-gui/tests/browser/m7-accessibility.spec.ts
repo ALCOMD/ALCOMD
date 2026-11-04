@@ -196,8 +196,8 @@ test("every M1-M7 official GUI route resolves through the typed client", async (
         ["/operations", "Tasks"],
         ["/operations/00000000-0000-4000-8000-000000000105", "Operation detail"],
         ["/extensions", "Extensions"],
-        ["/extensions/com.cqmhv.discord", "Extension detail"],
-        ["/extensions/com.cqmhv.discord/ui", "Extension UI"],
+        ["/extensions/com.vrclearn.discord", "Extension detail"],
+        ["/extensions/com.vrclearn.discord/ui", "Extension UI"],
         ["/activity", "Logs"],
         ["/diagnostics", "Logs"],
         ["/settings", "Settings"],
@@ -475,7 +475,7 @@ test("failed and cancelled Operations expose stable terminal states", async ({ p
 });
 
 test("Portable UI renders all 17 node kinds with host-owned chrome and safe form semantics", async ({ page }) => {
-    await openHarness(page, "/extensions/com.cqmhv.discord/ui");
+    await openHarness(page, "/extensions/com.vrclearn.discord/ui");
     await expect(page.getByRole("heading", { level: 1, name: "Extension UI" })).toBeVisible();
     await expect(page.getByRole("definition").first()).toBeVisible();
     await expect(page.getByRole("heading", { level: 2, name: "Discord Presence" })).toBeVisible();
@@ -494,7 +494,7 @@ test("Portable UI renders all 17 node kinds with host-owned chrome and safe form
     await expect(page.locator(".portable-group")).toBeVisible();
     await expect(page.locator(".portable-key-value")).toContainText("Editing project");
 
-    await openHarness(page, "/extensions/com.cqmhv.mcp-management/ui");
+    await openHarness(page, "/extensions/com.vrclearn.mcp-management/ui");
     const mcp = page.getByRole("region", { name: "MCP Management" });
     await expect(page.getByRole("heading", { level: 2, name: "MCP Management" })).toBeVisible();
     await expect(mcp.getByRole("list")).toBeVisible();
@@ -504,7 +504,7 @@ test("Portable UI renders all 17 node kinds with host-owned chrome and safe form
 });
 
 test("dirty Portable UI form requires host-owned discard confirmation", async ({ page }) => {
-    await openHarness(page, "/extensions/com.cqmhv.discord/ui");
+    await openHarness(page, "/extensions/com.vrclearn.discord/ui");
     await page.getByLabel("Enable presence").uncheck();
     await navigationItem(page, "Settings").click();
     const dialog = page.getByRole("dialog", { name: "Discard unsaved changes?" });

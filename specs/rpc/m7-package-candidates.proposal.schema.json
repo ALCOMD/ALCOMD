@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://alcomd.cqmhv.com/schema/proposals/m7-package-candidates.json",
+    "$id": "https://alcomd.vrclearn.com/schema/proposals/m7-package-candidates.json",
     "title": "M7 H2-A Project package candidate evidence",
     "x-alcomd-publication": "implemented-local-candidate",
     "x-alcomd-approval": "owner-approved",

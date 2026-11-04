@@ -24,7 +24,7 @@ envelope、握手、status 或错误行为。
 官方客户端使用当前用户范围的本地 IPC，不通过 TCP：
 
 ```text
-Windows: \\.\pipe\CQMHV.ALCOMD.<current-user-SID>.rpc-v1
+Windows: \\.\pipe\vrclearn.ALCOMD.<current-user-SID>.rpc-v1
 Linux:  $XDG_RUNTIME_DIR/alcomd/rpc-v1.sock
 macOS:  经过所有权检查的短 per-user runtime/temp 目录中的 rpc-v1.sock
 ```

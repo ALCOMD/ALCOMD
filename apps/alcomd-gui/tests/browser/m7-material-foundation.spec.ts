@@ -94,7 +94,7 @@ test("Core and Portable UI share Material controls and the same MD3 theme source
     await expect(page.locator('.page-header [data-icon-name="refresh"]')).toHaveCount(0);
     const corePrimary = await page.locator("html").evaluate((element) => getComputedStyle(element).getPropertyValue("--md-sys-color-primary").trim());
 
-    await openHarness(page, "/extensions/com.cqmhv.mcp-management/ui");
+    await openHarness(page, "/extensions/com.vrclearn.mcp-management/ui");
     await expect(page.getByRole("region", { name: "MCP Management" }).locator("md-filled-tonal-button").filter({ hasText: "Refresh" })).toBeVisible();
     const portablePrimary = await page.locator("html").evaluate((element) => getComputedStyle(element).getPropertyValue("--md-sys-color-primary").trim());
     expect(portablePrimary).toBe(corePrimary);
@@ -670,7 +670,7 @@ test("missing negotiated capabilities remain visibly unavailable without dispatc
     await expect(page.getByRole("heading", { name: "Feature unavailable" })).toBeVisible();
     await expect(page.getByText(/packages\.user-packages\.v1 was not negotiated/)).toBeVisible();
 
-    await openHarness(page, "/extensions/com.cqmhv.discord/ui", "capabilities-missing");
+    await openHarness(page, "/extensions/com.vrclearn.discord/ui", "capabilities-missing");
     await expect(page.getByRole("heading", { name: "Feature unavailable" })).toBeVisible();
     await expect(page.getByText(/extensions\.ui\.portable\.v1 was not negotiated/)).toBeVisible();
 });

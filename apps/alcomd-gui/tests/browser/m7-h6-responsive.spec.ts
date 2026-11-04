@@ -225,7 +225,7 @@ test.describe("H6 200 percent equivalent CSS layout", () => {
 for (const viewport of [{ width: 1440, height: 900 }, { width: 640, height: 400 }]) {
     test(`H6 Portable UI really wheels to its last action at ${viewport.width}x${viewport.height}`, async ({ page }) => {
         await page.setViewportSize(viewport);
-        await openHarness(page, "/extensions/com.cqmhv.discord/ui");
+        await openHarness(page, "/extensions/com.vrclearn.discord/ui");
         await expect(page.locator(".portable-document")).toBeVisible();
         const body = page.locator(".extension-surface .alcomd-scroll-area").filter({ has: page.locator(".portable-document") });
         await expect(body).toHaveCount(1);

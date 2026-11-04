@@ -3,8 +3,8 @@ import { expect, test, type Page } from "@playwright/test";
 import type { ExtensionUiDispatchParams } from "@alcomd/sdk";
 import "./h4-portable-client";
 
-const discord = "com.cqmhv.discord";
-const mcp = "com.cqmhv.mcp-management";
+const discord = "com.vrclearn.discord";
+const mcp = "com.vrclearn.mcp-management";
 const uiRoute = (extensionId: string) => `/extensions/${extensionId}/ui`;
 
 test.use({ viewport: { width: 1440, height: 900 } });

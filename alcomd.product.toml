@@ -4,14 +4,15 @@ schema = 1
 family_name = "ALCOMD"
 technical_name = "alcomd"
 display_name = "ALCOMD3"
-publisher_name = "CQMHV"
+publisher_name = "VRCLearn"
+homepage_url = "https://alcomd.vrclearn.com/"
 version = "4.0.0-alpha.0"
 
 [identity]
-bundle_identifier = "com.cqmhv.alcomd"
-windows_aumid = "CQMHV.ALCOMD"
+bundle_identifier = "com.vrclearn.alcomd"
+windows_aumid = "vrclearn.ALCOMD"
 uri_scheme = "alcomd"
-linux_desktop_id = "com.cqmhv.alcomd"
+linux_desktop_id = "com.vrclearn.alcomd"
 data_directory = "ALCOMD"
 install_directory = "ALCOMD"
 

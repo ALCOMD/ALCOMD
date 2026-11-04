@@ -169,8 +169,8 @@ test("card surfaces share one 28px shape across workspaces", async ({ page }) =>
         ["/about", ".notice-card"],
         ["/activity", ".logs-filter-toolbar"],
         ["/diagnostics", ".logs-filter-toolbar"],
-        ["/extensions/com.cqmhv.discord/ui", ".extension-identity > div, .portable-section, .portable-group"],
-        ["/extensions/com.cqmhv.mcp-management/ui", ".portable-list-item"],
+        ["/extensions/com.vrclearn.discord/ui", ".extension-identity > div, .portable-section, .portable-group"],
+        ["/extensions/com.vrclearn.mcp-management/ui", ".portable-list-item"],
         ["/projects/00000000-0000-4000-8000-000000000101/packages", ".package-workspace-surface"]
     ] as const;
     for (const mode of ["light", "dark"]) {
@@ -401,8 +401,8 @@ test("utility desktop evidence includes the full application window", async ({ p
         ["tasks", "/operations", "Tasks"],
         ["task", "/operations/00000000-0000-4000-8000-000000000105", "Operation detail"],
         ["extensions", "/extensions", "Extensions"],
-        ["extension", "/extensions/com.cqmhv.discord", "Extension detail"],
-        ["extension-ui", "/extensions/com.cqmhv.discord/ui", "Extension UI"],
+        ["extension", "/extensions/com.vrclearn.discord", "Extension detail"],
+        ["extension-ui", "/extensions/com.vrclearn.discord/ui", "Extension UI"],
         ["activity", "/activity", "Logs"],
         ["diagnostics", "/diagnostics", "Logs"],
         ["about", "/about", "About"]

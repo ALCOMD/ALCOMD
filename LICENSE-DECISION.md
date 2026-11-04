@@ -7,7 +7,7 @@
 ALCOMD v4 全面采用 GNU Affero General Public License v3.0 only，SPDX 标识为
 `AGPL-3.0-only`。仓库根目录的 `LICENSE` 是完整许可证正文。
 
-ALCOMD v4 自有内容的版权声明为：`Copyright (C) 2026 CQMHV`。
+ALCOMD v4 自有内容的版权声明为：`Copyright (C) 2026 VRCLearn`。
 
 该许可统一适用于 ALCOMD v4 自有的：
 

@@ -19,7 +19,7 @@ Resource Lock。
 本地端点固定为：
 
 ```text
-Windows: \\.\pipe\CQMHV.ALCOMD.<current-user-SID>.rpc-v1
+Windows: \\.\pipe\vrclearn.ALCOMD.<current-user-SID>.rpc-v1
 Linux:  $XDG_RUNTIME_DIR/alcomd/rpc-v1.sock
 macOS:  经过所有权检查且满足 sockaddr_un 长度限制的短 per-user runtime/temp 路径
 ```

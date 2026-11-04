@@ -38,8 +38,8 @@ impl DaemonInstance {
     pub fn acquire(config: &IpcConfig) -> Result<Self, BindError> {
         reject_runtime_override(config)?;
         let sid = security::current_user_sid_string()?;
-        let endpoint = format!(r"\\.\pipe\CQMHV.ALCOMD.{sid}.rpc-v1");
-        let mutex_name = format!(r"Local\CQMHV.ALCOMD.{sid}.daemon-v1");
+        let endpoint = format!(r"\\.\pipe\vrclearn.ALCOMD.{sid}.rpc-v1");
+        let mutex_name = format!(r"Local\vrclearn.ALCOMD.{sid}.daemon-v1");
         let instance = security::acquire_instance_mutex(&mutex_name)?;
         Ok(Self { endpoint, instance })
     }
@@ -137,7 +137,7 @@ pub async fn connect(config: &IpcConfig) -> io::Result<IpcStream> {
 pub fn endpoint_display(config: &IpcConfig) -> io::Result<String> {
     reject_runtime_override(config)?;
     let sid = security::current_user_sid_string()?;
-    Ok(format!(r"\\.\pipe\CQMHV.ALCOMD.{sid}.rpc-v1"))
+    Ok(format!(r"\\.\pipe\vrclearn.ALCOMD.{sid}.rpc-v1"))
 }
 
 /// Returns the current user's formal Windows Local AppData known folder.

@@ -191,7 +191,7 @@ async function assertExternalFixtureText(page: Page, path: string) {
         await expect(page.getByRole("table")).toContainText("2022.3.22f1");
         await expect(page.getByRole("table")).toContainText("x86_64");
     } else if (path === "/extensions") {
-        await expect(page.locator(".extension-card h4").filter({ hasText: /^com\.cqmhv\.discord$/ })).toBeVisible();
+        await expect(page.locator(".extension-card h4").filter({ hasText: /^com\.vrclearn\.discord$/ })).toBeVisible();
     } else if (path === "/diagnostics") {
         await expect(page.getByRole("table")).toContainText("package_archive_invalid");
         const locale = await page.locator("html").getAttribute("lang");

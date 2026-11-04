@@ -58,7 +58,7 @@ def validate_current_settings_contract() -> None:
             require("density" not in legacy["$defs"], "Config4 migration input must not regain density")
     rpc = load_json("specs/rpc/m7-official-gui.schema.json")["$defs"]
     require(rpc["settingsGetResult"]["properties"]["configSchema"]["const"] == 10, "Settings RPC must report Config10")
-    base = "https://alcomd.cqmhv.com/schema/config/settings-v10.json#/$defs/"
+    base = "https://alcomd.vrclearn.com/schema/config/settings-v10.json#/$defs/"
     require(rpc["settingsGetResult"]["properties"]["settings"]["$ref"] == base + "settings",
             "Settings RPC must use the current settings model")
     require(rpc["settingsUpdateParams"]["properties"]["update"]["$ref"] == base + "partialUpdate",
@@ -175,14 +175,23 @@ def main() -> int:
     require(product["product"]["family_name"] == "ALCOMD", "Unexpected product family")
     require(product["product"]["display_name"] == "ALCOMD3", "Unexpected display name")
     require(product["product"]["technical_name"] == "alcomd", "Unexpected technical name")
-    require(product["product"]["publisher_name"] == "CQMHV", "Unexpected publisher")
+    require(product["product"]["publisher_name"] == "VRCLearn", "Unexpected publisher")
+    require(product["product"]["homepage_url"] == "https://alcomd.vrclearn.com/", "Unexpected homepage")
+    workspace = load_toml("Cargo.toml")["workspace"]["package"]
+    require(workspace["authors"] == [product["product"]["publisher_name"]],
+            "Workspace authors do not match the publisher")
+    require(workspace["homepage"] == product["product"]["homepage_url"],
+            "Workspace homepage does not match the product")
+    backend = load_toml("extensions/first-party/alcomd-extension-discord/backend/Cargo.toml")["package"]
+    require(backend["authors"] == workspace["authors"] and backend["homepage"] == workspace["homepage"],
+            "Discord backend author/homepage do not match the product")
     require(product["product"]["version"] == "4.0.0-alpha.0", "Unexpected product version")
     require(
-        product["identity"]["bundle_identifier"] == "com.cqmhv.alcomd",
+        product["identity"]["bundle_identifier"] == "com.vrclearn.alcomd",
         "Unexpected bundle identifier",
     )
     require(
-        product["identity"]["windows_aumid"] == "CQMHV.ALCOMD",
+        product["identity"]["windows_aumid"] == "vrclearn.ALCOMD",
         "Unexpected Windows AUMID",
     )
     require(product["identity"]["uri_scheme"] == "alcomd", "Unexpected URI scheme")
@@ -240,6 +249,8 @@ def main() -> int:
         tauri["bundle"]["publisher"] == product["product"]["publisher_name"],
         "Tauri publisher does not match the product identity",
     )
+    require(tauri["bundle"]["homepage"] == product["product"]["homepage_url"],
+            "Tauri homepage does not match the product")
 
     parity = load_toml("feature-parity.toml")
     require(parity["schema"] == 2, "Unsupported feature parity schema")
@@ -466,12 +477,12 @@ def main() -> int:
     require(
         migration_entry["stable_update_api"]
         == "https://alcomd.cqmhv.com/api/v1/updates/stable.json",
-        "Unexpected stable update API",
+        "Unexpected frozen v3 stable update API",
     )
     require(
         migration_entry["beta_update_api"]
         == "https://alcomd.cqmhv.com/api/v1/updates/beta.json",
-        "Unexpected beta update API",
+        "Unexpected frozen v3 beta update API",
     )
 
     migration_assets = source_lock["alcomd3_v3_migration_assets"]

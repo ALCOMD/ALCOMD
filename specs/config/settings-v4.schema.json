@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://alcomd.cqmhv.com/schema/config/settings-v4.json",
+    "$id": "https://alcomd.vrclearn.com/schema/config/settings-v4.json",
     "title": "ALCOMD Config Schema 4 settings",
     "deprecated": true,
     "x-alcomd-currentSchema": 5,

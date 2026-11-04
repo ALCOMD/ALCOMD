@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://alcomd.cqmhv.com/schema/config/settings-v7.json",
+    "$id": "https://alcomd.vrclearn.com/schema/config/settings-v7.json",
     "title": "ALCOMD Config Schema 7 settings",
     "type": "object",
     "additionalProperties": false,

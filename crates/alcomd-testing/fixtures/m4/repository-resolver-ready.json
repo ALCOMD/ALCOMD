@@ -1,6 +1,6 @@
 {
     "name": "ALCOMD M4 Public Fixture",
-    "id": "com.cqmhv.alcomd.fixture",
+    "id": "com.vrclearn.alcomd.fixture",
     "url": "https://fixtures.invalid/repository.json",
     "packages": {
         "com.example.base": {

@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m7-official-gui.json",
+    "$id": "https://alcomd.vrclearn.com/schema/rpc/v1/m7-official-gui.json",
     "title": "ALCOMD RPC v1 M7 official GUI support contract",
     "x-alcomd-publication": "active-additive-rpc-v1",
     "x-alcomd-method-permissions": {
@@ -103,7 +103,7 @@
                     ]
                 },
                 "path": {
-                    "$ref": "https://alcomd.cqmhv.com/schema/config/settings-v10.json#/$defs/hubPath"
+                    "$ref": "https://alcomd.vrclearn.com/schema/config/settings-v10.json#/$defs/hubPath"
                 },
                 "configuredPathStatus": {
                     "enum": [
@@ -206,9 +206,9 @@
             "properties": {
                 "configSchema": {"const": 10},
                 "revision": {"$ref": "#/$defs/revision"},
-                "settings": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v10.json#/$defs/settings"},
+                "settings": {"$ref": "https://alcomd.vrclearn.com/schema/config/settings-v10.json#/$defs/settings"},
                 "unityHub": {"$ref": "#/$defs/unityHubLocation"},
-                "directories": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v10.json#/$defs/storageDirectories"}
+                "directories": {"$ref": "https://alcomd.vrclearn.com/schema/config/settings-v10.json#/$defs/storageDirectories"}
             }
         },
         "settingsUpdateParams": {
@@ -216,7 +216,7 @@
             "required": ["expectedRevision", "update"],
             "properties": {
                 "expectedRevision": {"$ref": "#/$defs/revision"},
-                "update": {"$ref": "https://alcomd.cqmhv.com/schema/config/settings-v10.json#/$defs/partialUpdate"}
+                "update": {"$ref": "https://alcomd.vrclearn.com/schema/config/settings-v10.json#/$defs/partialUpdate"}
             }
         },
         "settingsUpdateResult": {"$ref": "#/$defs/settingsGetResult"},

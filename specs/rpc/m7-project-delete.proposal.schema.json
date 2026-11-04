@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m7-project-delete.json",
+    "$id": "https://alcomd.vrclearn.com/schema/rpc/v1/m7-project-delete.json",
     "title": "ALCOMD M7 P7 Project Directory Delete",
     "x-alcomd-publication": "implemented",
     "x-alcomd-approval": "owner-approved",

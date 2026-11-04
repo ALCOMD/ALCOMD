@@ -1,6 +1,6 @@
 # MCP 管理第一方扩展
 
-扩展 ID：`com.cqmhv.alcomd.extension.mcp`
+扩展 ID：`com.vrclearn.alcomd.extension.mcp`
 
 职责：
 

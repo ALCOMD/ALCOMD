@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m7-repository-list.json",
+    "$id": "https://alcomd.vrclearn.com/schema/rpc/v1/m7-repository-list.json",
     "title": "ALCOMD RPC v1 repository list file exchange",
     "$defs": {
         "fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},

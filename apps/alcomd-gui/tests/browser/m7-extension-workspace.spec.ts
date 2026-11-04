@@ -5,8 +5,8 @@ test.use({ viewport: { width: 1440, height: 900 } });
 test("Extensions expose installed cards and their lifecycle and Open actions", async ({ page }) => {
     await page.goto("/browser-harness.html?route=%2Fextensions&state=ready");
     await expect(page.getByRole("heading", { name: "Installed", exact: true })).toBeVisible();
-    const card = page.getByRole("article", { name: "com.cqmhv.discord", exact: true });
-    await expect(card.getByRole("heading", { name: "com.cqmhv.discord", exact: true })).toBeVisible();
+    const card = page.getByRole("article", { name: "com.vrclearn.discord", exact: true });
+    await expect(card.getByRole("heading", { name: "com.vrclearn.discord", exact: true })).toBeVisible();
     await expect(page.getByRole("table", { name: "Extensions", exact: true })).toHaveCount(0);
     await card.getByRole("switch", { name: "Enabled", exact: true }).click();
     await expect(page.getByRole("status").filter({ hasText: "Extension disabled." })).toBeVisible();
@@ -18,7 +18,7 @@ test("Extensions expose installed cards and their lifecycle and Open actions", a
 
 test("Extensions open only their declared Portable UI through the card", async ({ page }) => {
     await page.goto("/browser-harness.html?route=%2Fextensions&state=ready");
-    await page.getByRole("article", { name: "com.cqmhv.discord", exact: true }).getByRole("button", { name: "Open", exact: true }).click();
+    await page.getByRole("article", { name: "com.vrclearn.discord", exact: true }).getByRole("button", { name: "Open", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Extension UI", exact: true })).toBeVisible();
 });
 
@@ -42,7 +42,7 @@ test("Extension install input and real Plan review share one modal and can be di
 });
 
 test("Extension permission and uninstall workflows open named modals with cancel", async ({ page }) => {
-    await page.goto("/browser-harness.html?route=%2Fextensions%2Fcom.cqmhv.discord&state=ready");
+    await page.goto("/browser-harness.html?route=%2Fextensions%2Fcom.vrclearn.discord&state=ready");
     await page.getByRole("button", { name: "Manage permissions", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "Extension permissions", exact: true })).toBeVisible();
     await page.locator("md-dialog[open]").filter({ has: page.getByRole("heading", { name: "Extension permissions", exact: true }) }).getByRole("button", { name: "Close", exact: true }).click();

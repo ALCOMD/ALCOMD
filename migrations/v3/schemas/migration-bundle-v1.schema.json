@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://alcomd.cqmhv.com/schema/migration/v3/bundle-v1.json",
+    "$id": "https://alcomd.vrclearn.com/schema/migration/v3/bundle-v1.json",
     "title": "ALCOMD v3 migration bundle manifest",
     "type": "object",
     "additionalProperties": false,

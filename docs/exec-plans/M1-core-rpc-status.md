@@ -185,11 +185,14 @@ alcomd-application -> alcomd-protocol / IPC / Tokio transport
 
 项目所有者已于 2026-08-18 批准以下 M1 技术合同；严格符合这些决定的实现无需再次审批：
 
+2026-11-05 所有者按 A-040 批准组织身份替换，下方 Windows 端点展示当前有效命名空间；
+原 M1 的 SID/ACL、单实例、启动和访问控制合同保持。
+
 1. **RPC v1 线合同**：4 MiB 上限、JSON-RPC-inspired 偏差、字符串 request ID、稳定错误、
    capability 协商及最小 `system.hello`/`system.status` Schema；framing error 关闭连接，完整
    payload 的 RPC error 返回结构化响应。
 2. **IPC 端点与访问控制**：Windows 使用
-   `\\.\pipe\CQMHV.ALCOMD.<current-user-SID>.rpc-v1` 和当前用户 ACL；Linux 使用
+   `\\.\pipe\vrclearn.ALCOMD.<current-user-SID>.rpc-v1` 和当前用户 ACL；Linux 使用
    `$XDG_RUNTIME_DIR/alcomd/rpc-v1.sock`；macOS/安全 fallback 使用经过所有权检查的短 per-user
    路径；Unix 父目录 `0700`、socket `0600` 且不跟随 symlink。
 3. **单实例与按需启动策略**：使用生命周期绑定的 OS 锁；Unix stale socket 只有在取得锁并

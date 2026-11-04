@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://alcomd.cqmhv.com/schema/extensions/portable-ui-v1.json",
+    "$id": "https://alcomd.vrclearn.com/schema/extensions/portable-ui-v1.json",
     "title": "ALCOMD Portable UI v1 UiDocument contract",
     "$ref": "#/$defs/uiDocument",
     "x-alcomd-parent-child-matrix": {

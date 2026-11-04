@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://alcomd.cqmhv.com/schema/proposals/config/settings-v2.json",
+    "$id": "https://alcomd.vrclearn.com/schema/proposals/config/settings-v2.json",
     "title": "ALCOMD Config Schema 2 proposal",
     "x-alcomd-publication": "approved-contract-first",
     "x-alcomd-production-wiring-created": true,

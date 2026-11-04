@@ -33,8 +33,8 @@ vrc-get / vrc-get-vpm 不是代码上游，不得复制、Fork、包装、移植
 - 第一方扩展必须使用与第三方扩展相同的公开 API、权限、宿主和沙箱。
 - 正常运行时代码不得依赖 v3、VCC 或旧 ALCOM 数据解析器。
 - 旧解析器只能存在于 `migrations/v3/`，且不得进入正常安装产物。
-- 内部技术身份永久使用 `ALCOMD`、`alcomd` 与 `com.cqmhv.alcomd`。
-- 不得在生产代码中重新引入 `com.cqmhv.alcomd3`、`CQMHV.ALCOMD3`、`alcomd3-mcp` 或 `ALCOMD3.exe`。
+- 内部技术身份永久使用 `ALCOMD`、`alcomd` 与 `com.vrclearn.alcomd`，发布者为 `VRCLearn`，Windows AUMID 为 `vrclearn.ALCOMD`。
+- 不得在生产代码中重新引入个人命名空间 `com.cqmhv.*`、发布者 `CQMHV`、`CQMHV.ALCOMD*`、`alcomd3-mcp` 或 `ALCOMD3.exe`；v3 迁移输入和历史证据保留真实旧值。
 
 ## 工作范围
 

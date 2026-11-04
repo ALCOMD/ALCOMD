@@ -11,6 +11,9 @@
 
 ## v4 迁移入口
 
+本节旧域名来自冻结 v3.4.0 配置；2026-11-05 所有者确认当前组织站点/服务基址为
+`https://alcomd.vrclearn.com/`，入口衔接待 M11 验证，不回写冻结来源。
+
 - 已于 2026-08-15 发布的 ALCOMD3 3.4.0 是 v3 迁移入口版本（v3 migration entry release），也是进入 v4 的唯一直接迁移来源。
 - 更早的公开 v3.x 版本必须先通过原有更新链升级到 3.4.0，不由 v4 迁移器直接解析。
 - 3.4.0 已将更新 JSON 源切换到 `https://alcomd.cqmhv.com/api/v1/updates/stable.json` 与 `https://alcomd.cqmhv.com/api/v1/updates/beta.json`，并从该 API 获取、验签和启动 v4 迁移桥接安装器（v4 bridge installer）；3.4.0 本身不执行完整 v4 替换迁移。

@@ -8,12 +8,7 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 const LICENSE: &str = "AGPL-3.0-only";
-const FORBIDDEN_PRODUCTION_TOKENS: &[&str] = &[
-    "com.cqmhv.alcomd3",
-    "CQMHV.ALCOMD3",
-    "alcomd3-mcp",
-    "ALCOMD3.exe",
-];
+const FORBIDDEN_PRODUCTION_TOKENS: &[&str] = &["com.cqmhv.", "CQMHV", "alcomd3-mcp", "ALCOMD3.exe"];
 const PRODUCTION_ROOTS: &[&str] = &["apps", "crates", "extensions", "packages", "sdk"];
 const REQUIRED_PATHS: &[&str] = &[
     "AGENTS.md",
@@ -122,6 +117,7 @@ struct Product {
     technical_name: String,
     display_name: String,
     publisher_name: String,
+    homepage_url: String,
     version: String,
 }
 
@@ -484,17 +480,17 @@ fn check_product(product: &ProductConfig, errors: &mut Vec<String>) {
         (
             "publisher_name",
             product.product.publisher_name.as_str(),
-            "CQMHV",
+            "VRCLearn",
         ),
         (
             "bundle_identifier",
             product.identity.bundle_identifier.as_str(),
-            "com.cqmhv.alcomd",
+            "com.vrclearn.alcomd",
         ),
         (
             "windows_aumid",
             product.identity.windows_aumid.as_str(),
-            "CQMHV.ALCOMD",
+            "vrclearn.ALCOMD",
         ),
         ("uri_scheme", product.identity.uri_scheme.as_str(), "alcomd"),
         (
@@ -621,6 +617,7 @@ fn check_derived_identity(
         ("/identifier", product.identity.bundle_identifier.as_str()),
         ("/mainBinaryName", product.binaries.gui.as_str()),
         ("/bundle/publisher", product.product.publisher_name.as_str()),
+        ("/bundle/homepage", product.product.homepage_url.as_str()),
     ];
     for (pointer, expected) in tauri_values {
         if tauri.pointer(pointer).and_then(serde_json::Value::as_str) != Some(expected) {
@@ -686,6 +683,14 @@ fn check_derived_identity(
     }
 
     let identity_tokens = [
+        (
+            "crates/alcomd-platform/src/windows.rs",
+            format!(r"\\.\pipe\{}.", product.identity.windows_aumid),
+        ),
+        (
+            "crates/alcomd-platform/src/windows.rs",
+            format!(r"Local\{}.", product.identity.windows_aumid),
+        ),
         (
             "packages/alcomd-ui/src/index.ts",
             format!("productFamily = \"{}\"", product.product.family_name),

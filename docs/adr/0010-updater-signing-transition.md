@@ -17,6 +17,9 @@
 installer 元数据。3.4.0 只负责作为受支持入口发现、验证并启动该安装包，不执行完整 v4
 替换迁移。
 
+以上地址描述冻结 v3.4.0 配置的实际请求源。2026-11-05 所有者确认当前组织站点/服务基址为
+`https://alcomd.vrclearn.com/`；旧请求源与新部署入口的衔接由 M11 验证，不重写冻结配置或签名证据。
+
 bridge installer 是签名的完整 v4 产品安装包，包含或调用 `alcomd-bootstrap`。
 `alcomd-bootstrap` 负责 v3→v4 数据迁移、组件协调、健康检查、回滚与提交后清理。安装器脚本
 不得解析 v3 数据库或实现业务迁移。正常 v4 更新由 `alcomd-updater`、`alcomd-bootstrap` 与

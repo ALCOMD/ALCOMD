@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m7-events-live.json",
+    "$id": "https://alcomd.vrclearn.com/schema/rpc/v1/m7-events-live.json",
     "title": "ALCOMD dedicated committed Event subscriptions",
     "x-alcomd-method-permissions": {"events.subscribe": ["events.read"]},
     "x-alcomd-method-capabilities": {"events.subscribe": "events.live.v1"},

@@ -1189,8 +1189,8 @@ const TEMPLATE_PAGE_CURSOR = "opaque template cursor:100/+=";
 const BACKUP_ID = "00000000-0000-4000-8000-000000000104";
 const OPERATION_ID = "00000000-0000-4000-8000-000000000105";
 const PLAN_ID = "00000000-0000-4000-8000-000000000106";
-const DISCORD_ID = "com.cqmhv.discord";
-const MCP_ID = "com.cqmhv.mcp-management";
+const DISCORD_ID = "com.vrclearn.discord";
+const MCP_ID = "com.vrclearn.mcp-management";
 const HASH = "a".repeat(64);
 
 function project(projectId = PROJECT_ID, name = "Sample", favorite = false) {

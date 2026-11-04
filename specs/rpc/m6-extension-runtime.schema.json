@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m6-extension-runtime.json",
+    "$id": "https://alcomd.vrclearn.com/schema/rpc/v1/m6-extension-runtime.json",
     "title": "ALCOMD RPC v1 M6 Extension Runtime contract",
     "x-alcomd-publication": "active-production-contract",
     "x-alcomd-method-permissions": {

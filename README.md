@@ -11,10 +11,12 @@ vrc-get 的源码。
 | 用途 | 值 |
 |---|---|
 | 当前用户品牌 | `ALCOMD3` |
+| 发布者 | `VRCLearn` |
+| 网站 | [alcomd.vrclearn.com](https://alcomd.vrclearn.com/) |
 | 产品家族 | `ALCOMD` |
 | 技术名称根 | `alcomd` |
-| Bundle / Tauri identifier | `com.cqmhv.alcomd` |
-| Windows AUMID | `CQMHV.ALCOMD` |
+| Bundle / Tauri identifier | `com.vrclearn.alcomd` |
+| Windows AUMID | `vrclearn.ALCOMD` |
 | URI Scheme | `alcomd://` |
 | 数据目录 | `ALCOMD` |
 

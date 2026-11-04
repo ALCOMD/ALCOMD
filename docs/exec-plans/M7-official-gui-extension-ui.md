@@ -97,6 +97,28 @@ source DTO，保持已冻结的 snake_case Schema/vectors 不变。该修复会�
 P6 snake_case 字段，属于实际 wire 的破坏性纠正；按此次未发布合同审批直接修复，RPC v1、
 State16、Config3、权限和依赖保持。不添加旧字段别名、双格式支持或 GUI 回退。
 
+## 组织身份统一（2026-11-05，所有者已批准）
+
+所有者明确要求将个人发布身份统一为组织：发布者及自有作者/版权声明为`VRCLearn`，
+Bundle/Tauri/Linux desktop ID为`com.vrclearn.alcomd`，声明的Windows AUMID为`vrclearn.ALCOMD`。
+本次批准直接修订尚未发布的v4永久身份，原A-001/A-003及ADR0001原位同步。
+
+- 产品身份仍以`alcomd.product.toml`为唯一来源，同步Tauri、第一方扩展派生ID/发布者、
+  Discord占位backend、GUI夹具/路由、当前规范、校验和禁止旧身份回退规则。
+- Windows pipe/mutex命名空间同步为`vrclearn.ALCOMD`；这是未发布端点及第一方扩展身份的
+  破坏性替换，不增加旧值别名/双身份支持，不改RPC形状、权限、State18或Config10。
+  更新运行环境时必须成套停止旧Core/客户端后替换；数据目录仍为`ALCOMD`，禁止新旧Core
+  对同一数据目录并行运行。本轮只修改及验证源码，不部署或停止当前桌面程序。
+- 产品名/二进制/URI及数据目录保持；所有者进一步明确当前网站/服务基址为
+  `https://alcomd.vrclearn.com/`，v4自有Schema的`$id`/`$ref`及引用同步新域名。
+  v3迁移识别值、冻结请求源、历史证据和真实Windows用户名保持，旧入口的实际衔接在M11验证。
+- AUMID本轮按用户要求修改声明；现有GUI尚未将该声明接入显式Windows进程AUMID，
+  不把元数据替换记为原生接入完成。Inno AppId仍按M12独立确定，本轮不创建安装器身份。
+- 验证覆盖metadata/xtask/fmt、受影响Rust检查和扩展/GUI定向回归，不新增依赖，不执行真实项目写入。
+
+已执行的各项结果、浏览器旧夹具失败及并行修改边界见
+[组织身份验证](../testing/organization-identity-20261105.md)，不据此提升 M7/H7 人工签收状态。
+
 ## 任务与页面变化通知整改（2026-11-04，已实现本地候选，人工确认待定）
 
 所有者已批准M7变化通知计划及完整补充，并授权直接实现、定向验证和分批本地提交；本节替换此前研究提案，不再增加纯文档审批。目标固定为Core提交变化→发布通知→GUI按需更新，不重新设计应用，不进入M8–M12。

@@ -2,7 +2,7 @@
     "$schema": "https://schema.tauri.app/config/2",
     "productName": "ALCOMD3",
     "version": "4.0.0-alpha.0",
-    "identifier": "com.cqmhv.alcomd",
+    "identifier": "com.vrclearn.alcomd",
     "mainBinaryName": "alcomd-gui",
     "build": {
         "beforeDevCommand": "npm run dev",
@@ -32,7 +32,8 @@
     "bundle": {
         "active": false,
         "targets": "all",
-        "publisher": "CQMHV",
+        "publisher": "VRCLearn",
+        "homepage": "https://alcomd.vrclearn.com/",
         "shortDescription": "ALCOMD3",
         "longDescription": "ALCOMD3 project and VPM package management platform.",
         "icon": [

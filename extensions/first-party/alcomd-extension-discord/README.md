@@ -1,6 +1,6 @@
 # Discord 状态第一方扩展
 
-扩展 ID：`com.cqmhv.alcomd.extension.discord`
+扩展 ID：`com.vrclearn.alcomd.extension.discord`
 
 职责：
 

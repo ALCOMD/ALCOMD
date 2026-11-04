@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://alcomd.cqmhv.com/schema/cli/v1/alcomd-cli.json",
+    "$id": "https://alcomd.vrclearn.com/schema/cli/v1/alcomd-cli.json",
     "title": "ALCOMD CLI contract v1",
     "$defs": {
         "outputMode": {"enum": ["human", "json", "ndjson"]},

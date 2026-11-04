@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://alcomd.cqmhv.com/schema/rpc/v1/m5-template.json",
+    "$id": "https://alcomd.vrclearn.com/schema/rpc/v1/m5-template.json",
     "title": "ALCOMD RPC v1 M5 Template contract",
     "x-alcomd-publication": "contract-only-until-production-capability-exists",
     "x-alcomd-method-permissions": {

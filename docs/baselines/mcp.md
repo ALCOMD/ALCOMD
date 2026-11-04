@@ -47,7 +47,7 @@ Operation。当前应用仍是 scaffold，本页描述验收基线，不代表�
 
 - 列表在同一数据 revision 下使用稳定排序。MCP 只要求缓存提示，且官方明确分页不保证跨页
   快照一致；稳定顺序是 ALCOMD 自己的确定性要求，不冒充协议 MUST。
-- 自定义 metadata 使用 `com.cqmhv.alcomd/...` 命名空间；W3C trace 字段校验后才转发，
+- 自定义 metadata 使用 `com.vrclearn.alcomd/...` 命名空间；W3C trace 字段校验后才转发，
   baggage 不进入日志。
 - 每个 MCP 请求只映射公开 ALCOMD RPC Query/Command，再进入 application use case；适配器
   不直连 SQLite、项目、VPM、GUI 私有命令，也不成为业务状态持有者。

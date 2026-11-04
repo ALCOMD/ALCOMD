@@ -1,6 +1,6 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://alcomd.cqmhv.com/schema/extensions/manifest-v1.json",
+    "$id": "https://alcomd.vrclearn.com/schema/extensions/manifest-v1.json",
     "title": "ALCOMD Extension Manifest v1 parsed TOML object",
     "type": "object",
     "additionalProperties": false,

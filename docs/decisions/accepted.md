@@ -2,9 +2,9 @@
 
 | ID | 决策 |
 |---|---|
-| A-001 | 当前用户品牌为 ALCOMD3，产品家族为 ALCOMD，技术名称为 `alcomd`，系统标识为 `com.cqmhv.alcomd`，Windows AUMID 为 `CQMHV.ALCOMD` |
+| A-001 | 当前用户品牌为 ALCOMD3，产品家族为 ALCOMD，技术名称为 `alcomd`，发布者为 `VRCLearn`，系统标识为 `com.vrclearn.alcomd`，Windows AUMID 为 `vrclearn.ALCOMD`；组织身份修订见 A-040 |
 | A-002 | 技术名称根固定为 `alcomd` |
-| A-003 | Bundle / Tauri identifier 固定为 `com.cqmhv.alcomd` |
+| A-003 | Bundle / Tauri identifier 固定为 `com.vrclearn.alcomd` |
 | A-004 | `alcomd` 是每用户唯一核心与唯一写入者 |
 | A-005 | GUI、CLI、MCP、API 和扩展共用同一应用用例层 |
 | A-006 | MCP 协议适配器 `alcomd-mcp` 独立于 GUI |
@@ -41,3 +41,4 @@
 | A-037 | 2026-11-03 所有者明确批准“项目 / 备份”最小合同：Config8 增加默认 true 的 projects.autoDiscover、fast/true/false 的 backups.compressionMode/includeVpmPackages/includeLibrary；旧有效配置保留 revision/全部原值并补默认。自动发现由 Core/application 启动/设置变更及30秒周期调度，只查默认项目根的直属安全子目录，每轮最多4096项且单在途，关闭/切换后停止旧轮登记；字段及触发扫描的路径修改附加现有 projects.manage。backups.create 支持省略选项使用权威默认并增加 includeLibrary；接受后固定全部选项，旧 Library=false 任务与指纹保留。State17、Archive v1 manifest/BackupRecord 形状、权限名及依赖保持，内容选择 profile 按合同修订。默认根内仅从列表移除的项目可再次发现，不增加排除清单。 |
 | A-038 | 2026-11-03 所有者在已说明最小公开合同与数据库迁移成本后，以NanaZip截图明确选择压缩六档0/1/3/5/7/9：仅存储、极速、快速、标准、最大、极限。默认保持1；旧store/fast/maximum含义0/1/9保持，新增level3/level5/level7。Config9保留有效旧配置全部值和revision；State18仅扩展backups等级约束，保留原行、索引、约束及恢复计划外键；Archive v1同步扩展枚举，旧归档和已接受任务/指纹保留。设置及单次备份一致，不新增依赖、权限或公开方法，未执行真实工程备份、不清理已有数据、不提交或推送。 |
 | A-039 | 2026-11-03 所有者批准跨启动保留全屏模式最小合同：Config10新增window.fullscreen布尔值，默认false，沿用settings.read/manage和串行CAS；有效Config1–9保留revision及全部已有设置，仅补false。窗口PATCH可独立更新rememberState/fullscreen，显式null、空对象、未知字段及非法类型整次拒绝；GUI主窗口薄适配器应用已接受偏好，窗口卡片恢复默认将两项置false并退出全屏。不新增RPC方法、State18迁移、权限或依赖，不修改已接受任务。 |
+| A-040 | 2026-11-05 所有者明确批准首次公开发布前将个人身份统一为组织：发布者/自有作者及版权声明为VRCLearn，Bundle/Tauri/Linux desktop ID为com.vrclearn.alcomd，声明Windows AUMID为vrclearn.ALCOMD，当前网站/服务基址为https://alcomd.vrclearn.com/。同步第一方派生扩展ID、Windows IPC命名空间及v4 Schema引用；原A-001/A-003及ADR0001原位修订，不增加旧v4别名。v3冻结请求源/迁移输入、历史证据及真实机器身份保留；更新时必须成套停旧换新，禁止新旧Core对同一数据目录并行。Inno AppId及原生AUMID显式接入不由声明变更冒充完成，不新增RPC形状、权限、Schema版本或依赖。 |
