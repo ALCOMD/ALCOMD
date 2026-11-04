@@ -6,6 +6,7 @@ Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据�
 
 ## 当前有效合同
 
+- 所有者于2026-11-05明确批准完整移除手动启动状态查询：删除菜单/弹窗、GUI桥接、Core RPC/application用例和专用Store读取port、Rust SDK方法、CLI命令及专用DTO/Schema。正常打开Unity、安装选择、启动幂等记录及接受/失败反馈保持，不删除共享记录或迁移既有数据。本次为首次公开发布前已批准的接口破坏性删除，RPC major仍为1；原方法按标准未知方法处理，不提供兼容别名、替代入口或轮询，权限名称、数据库、配置与依赖不变。
 - GUI 继承 A-033 的 v3 用户模型，使用真实 Material Web 控件和共享组件。Projects、包管理及
   已获准的其他既有页面基础可用性修正已在 H2-A 验收；H2–H6 原签收保持，当前只推进已批准 H7 最终整体验收。
   Open Unity 保留单个 leading play 图标和 Material 按钮的 18px 图标尺寸。Projects 的视图入口

@@ -2,7 +2,7 @@
 
 状态：2026-11-02 当前已批准 RPC 覆盖矩阵，包含仓库列表文件交换、H3 与 H4 权限只读接线。来源是 `crates/alcomd-protocol` 的 public method
 constants 与 `crates/alcomd-client` 的 typed methods；实现过程中必须保持两者与本矩阵可机械核对。
-本矩阵记录方法归属，不表示 M7 或聚合功能已验收通过；方法清单一致性不代表所有方法已有独立 GUI 动作。当前清单增加所有者批准的日志读取方法，公开常量与矩阵按94项核对；此前93/93及92/92保持原候选绑定。当前阶段见 `../status.md`；H3 定向证据见 `../testing/m7-h3-contextual-20261101.md`，H4 见 `../testing/m7-h4-extensions-20261102.md`。
+本矩阵记录方法归属，不表示 M7 或聚合功能已验收通过；方法清单一致性不代表所有方法已有独立 GUI 动作。当前清单包含已批准的日志读取与事件订阅方法，并按2026-11-05授权删除手动启动状态查询，公开常量与矩阵按94项核对；此前94项（未列事件订阅）、93/93及92/92保持原候选绑定。当前阶段见 `../status.md`；H3 定向证据见 `../testing/m7-h3-contextual-20261101.md`，H4 见 `../testing/m7-h4-extensions-20261102.md`。
 
 统一状态 `data` 表示 initial-loading、refreshing/last-known-good、empty、error、disconnected；`mutation` 另含
 confirmation-required、operation-running、success、failed、cancelled。`Plan review` 必须展示 daemon 返回的 typed
@@ -17,6 +17,7 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `operations.list` | `operations.v1` | Operations | page Operations | R | no | no | data/keyset | `gui.m7-core-surfaces` |
 | `operations.cancel` | `operations.v1` | Operation detail | cooperative cancel | W | yes | existing Operation | mutation/stale | `gui.m7-operation-flows` |
 | `events.list` | `events.replay.v1` | N/A direct | daemon-side Activity source/cursor recovery only | R | no | no | N/A | `activity.log-redaction` |
+| `events.subscribe` | `events.live.v1` | shared app notification entry | receive committed changes and invalidate affected reads | R/stream | no | no | generation/ACK/replay/resync/backpressure; no periodic business reads | `gui.m7-operation-flows` |
 | `projects.inspect` | `projects.read.v1` | Projects add dialog | validate candidate path | R | no | no | dialog data | `gui.m7-core-surfaces` |
 | `projects.list` | `projects.read.v1` | Projects | page projects | R | no | no | data/keyset | `gui.m7-core-surfaces` |
 | `projects.get` | `projects.read.v1` | Project detail | load project | R | no | no | data | `gui.m7-core-surfaces` |
@@ -65,7 +66,6 @@ ChangeSet/risk summary，Apply 不重新规划。`N/A` 表示 transport/internal
 | `unity.writerState` | `unity.read.v1` | Project Unity | observe writer evidence | R | no | no | refreshing/unknown | `gui.m7-core-surfaces` |
 | `unity.launchOptions` | `unity.launch.v1` | Projects / Open Unity | resolve exact-version 0/1/many installations | R | no | no | data/unknown | `gui.m7-project-action-contract` |
 | `unity.launch` | `unity.launch.v1` | Projects / Open Unity | launch explicit one-shot installation | W | explicit action/selection | launch record | mutation/writer gate | `gui.m7-operation-flows` |
-| `unity.launchStatus` | `unity.launch.v1` | Projects / Project workspace more actions after a launch accepted on this page | inspect/refresh the same launch record, without another launch | R | explicit inspect/refresh | launch record | known-ID retry/identity validation/late response cleanup/focus return; no automatic polling or cross-page launch history | `gui.m7-operation-flows` |
 | `unity.hub.open` | `unity.hub.open.v1` | Settings / Unity | open revalidated Hub or return download_required | W | explicit action | no | revision/path/local-owner/unknown result | `gui.m7-core-surfaces` |
 | `templates.list` | `templates.read.v1` | Templates | page templates | R | no | no | data/keyset | `gui.m7-core-surfaces` |
 | `templates.get` | `templates.read.v1` | Template detail | load template | R | no | no | data | `gui.m7-core-surfaces` |
