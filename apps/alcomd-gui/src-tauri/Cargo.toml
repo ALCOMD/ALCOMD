@@ -16,9 +16,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build.workspace = true
+toml.workspace = true
 
 [dependencies]
 alcomd-client.workspace = true
+alcomd-platform.workspace = true
 alcomd-protocol.workspace = true
 open.workspace = true
 tauri.workspace = true

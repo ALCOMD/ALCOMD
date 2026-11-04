@@ -45,6 +45,11 @@ pub use unity::{
 mod unix;
 #[cfg(windows)]
 mod windows;
+#[cfg(windows)]
+mod windows_app_identity;
+
+#[cfg(windows)]
+pub use windows_app_identity::set_current_process_app_user_model_id;
 
 #[cfg(unix)]
 pub use unix::{

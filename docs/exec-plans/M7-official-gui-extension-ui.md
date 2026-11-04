@@ -112,12 +112,27 @@ Bundle/Tauri/Linux desktop ID为`com.vrclearn.alcomd`，声明的Windows AUMID�
 - 产品名/二进制/URI及数据目录保持；所有者进一步明确当前网站/服务基址为
   `https://alcomd.vrclearn.com/`，v4自有Schema的`$id`/`$ref`及引用同步新域名。
   v3迁移识别值、冻结请求源、历史证据和真实Windows用户名保持，旧入口的实际衔接在M11验证。
-- AUMID本轮按用户要求修改声明；现有GUI尚未将该声明接入显式Windows进程AUMID，
-  不把元数据替换记为原生接入完成。Inno AppId仍按M12独立确定，本轮不创建安装器身份。
+- Windows AUMID按下方原生接入合同应用于GUI启动，值从产品配置派生；
+  Inno AppId仍按M12独立确定，本轮不创建安装器身份或安装快捷方式。
 - 验证覆盖metadata/xtask/fmt、受影响Rust检查和扩展/GUI定向回归，不新增依赖，不执行真实项目写入。
 
 已执行的各项结果、浏览器旧夹具失败及并行修改边界见
 [组织身份验证](../testing/organization-identity-20261105.md)，不据此提升 M7/H7 人工签收状态。
+
+### Windows AUMID 原生接入（2026-11-05，所有者要求补齐并分次本地提交）
+
+- GUI 在创建 Tauri Builder/窗口之前调用 Windows Shell 的进程级 AUMID 设置，设置失败即停止启动，
+  不带着未知身份继续显示窗口。值由构建脚本从`alcomd.product.toml`派生，文件变化触发重新生成。
+- FFI 放在`alcomd-platform`独立的 Windows 私有模块，使用现有已锁定的`windows-sys 0.61.2`
+  和已启用的Shell/COM feature。仅此模块允许有文档的unsafe，不放宽GUI或其他模块的门禁。
+  输入先验证空串/内嵌NUL/空白/UTF-16长度，指针由在途UTF-16缓冲区持有，HRESULT显式检查。
+- GUI 直接复用内部`alcomd-platform`薄系统适配器；构建脚本增加既有workspace `toml`作为构建依赖。
+  替代方案为GUI内重复引入FFI或手写TOML解析，均不采用。没有新增第三方包或版本升级；维护成本
+  限于两条既有依赖边及一个受控Windows FFI模块，非Windows启动保持原路径。
+- Windows测试在独立测试进程中设置并通过`GetCurrentProcessExplicitAppUserModelID`读回确认；
+  同时验证非法输入不改变当前身份。系统返回缓冲区用`CoTaskMemFree`释放，不启动GUI/Core或访问用户数据。
+- 第一笔提交组织身份与域名统一，第二笔提交原生接入、依赖边、边界校验及最终验证记录；只本地提交，
+  不推送、不替换当前桌面程序。安装器快捷方式使用同AUMID仍属于尚未实现的M12，不虚报完成。
 
 ## 任务与页面变化通知整改（2026-11-04，已实现本地候选，人工确认待定）
 

@@ -64,7 +64,7 @@ const MEMBERS: &[Member] = &[
     (
         "apps/alcomd-gui/src-tauri",
         "alcomd-gui",
-        &["alcomd-client", "alcomd-protocol"],
+        &["alcomd-client", "alcomd-platform", "alcomd-protocol"],
     ),
     ("crates/alcomd-domain", "alcomd-domain", &[]),
     (
@@ -382,7 +382,9 @@ fn check_unsafe_boundary(
     root: &Path,
     errors: &mut Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    const APPROVED: [&str; 5] = [
+    const APPROVED: [&str; 6] = [
+        // AUMID: process identity only, documented input/output ownership.
+        "crates/alcomd-platform/src/windows_app_identity.rs",
         "crates/alcomd-platform/src/windows_security.rs",
         "crates/alcomd-platform/src/windows_known_folder.rs",
         "crates/alcomd-platform/src/windows_file_identity.rs",

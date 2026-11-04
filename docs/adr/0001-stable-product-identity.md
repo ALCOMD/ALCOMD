@@ -25,7 +25,8 @@
 用户品牌可以随产品决策变化，但不得修改产品家族或技术身份。
 
 此次组织身份替换同步派生的第一方扩展 ID 和 Windows IPC 命名空间，不保留旧 v4 身份别名。
-Inno Setup AppId 仍待 M12 单独确定；Windows AUMID 当前仅为声明，GUI 显式应用仍待接入。
+GUI 在创建窗口前从产品配置派生并显式设置 Windows 进程 AUMID，失败即停止启动。
+Inno Setup AppId 仍待 M12 单独确定；安装器创建的快捷方式须使用同一 AUMID。
 
 ## 结果
 

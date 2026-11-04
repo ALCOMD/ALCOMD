@@ -27,6 +27,9 @@ windows-sys = { version = "=0.61.2", features = [
     "Win32_UI_Shell",
 ] }
 
+[dev-dependencies]
+toml.workspace = true
+
 [lints]
 [lints.rust]
 unsafe_code = "deny"

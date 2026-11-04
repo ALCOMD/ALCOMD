@@ -5,13 +5,17 @@
 ## 当前阶段
 
 2026-11-05 所有者批准的组织身份修订已实施源码候选：发布者/自有作者及版权声明为 `VRCLearn`，
-Bundle/Linux desktop ID 为 `com.vrclearn.alcomd`，声明 Windows AUMID 为 `vrclearn.ALCOMD`，
+Bundle/Linux desktop ID 为 `com.vrclearn.alcomd`，Windows AUMID 为 `vrclearn.ALCOMD`，
 当前网站/服务基址和 v4 自有 Schema 引用为 `https://alcomd.vrclearn.com/`。Tauri、第一方扩展、
 Windows IPC、校验及有效规范同步；v3 冻结请求源和迁移识别值保留，无旧 v4 身份别名。
 这是首次公开发布前经明确批准的身份替换，不改 State18/Config10/RPC 形状、权限或依赖。
 元数据/xtask、Schema42/0、平台50/0、隔离IPC4/0、受影响严格Clippy、前端check/build通过；浏览器15/3，
 失败及并行修改边界见[组织身份验证](testing/organization-identity-20261105.md)。本轮未主动更新桌面程序或推送，
-AUMID显式原生接入、Inno AppId及M7人工签收仍未完成；后续部署须成套停旧换新，禁止同目录双Core。
+AUMID显式原生接入已补齐源码，GUI创建窗口前从产品配置派生并设置进程身份，失败停止启动；
+独立Windows原生设置/读回及非法输入不改变身份的回归1/0通过。Inno AppId、安装快捷方式及M7人工签收仍待完成；
+后续部署须成套停旧换新，禁止同目录双Core。
+原生接入的GUI单元测试13/0、platform/gui/xtask严格Clippy、受影响fmt及xtask通过；
+没有部署release程序或宣称当前桌面GUI原生读回已验证。组织身份与原生接入按目的分次本地提交。
 
 **M7 IN_PROGRESS / H7 MANUAL_PENDING / H6 STAGE_ACCEPTED_WITH_FOLLOWUPS / H5 STAGE_ACCEPTED_WITH_FOLLOWUPS / H4 STAGE_ACCEPTED_WITH_FOLLOWUPS / H3 STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-B STAGE_ACCEPTED_WITH_FOLLOWUPS / H2-A ACCEPTED / Visual Gate 2 PASS**。项目所有者于 2026-10-31 签收本轮 H2-A；
 M0-M6 已正式通过人工验收，M7 尚未完成。

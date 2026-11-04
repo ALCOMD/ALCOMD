@@ -12,7 +12,7 @@
   v3 source-lock、迁移 artifacts 和 Windows collection fixture 与 HEAD 内容一致。
 - Windows IPC/第一方扩展 ID 是未发布身份的破坏性替换，不增加兼容别名。数据目录、
   RPC 形状、State18、Config10、权限和依赖不变。更新时须成套停旧换新，禁止同一数据目录双 Core。
-- Windows AUMID 本轮仅修改声明，GUI 显式应用仍待接入；Inno AppId 仍待 M12。
+- Windows AUMID 已按下方原生接入补齐；Inno AppId 和安装器快捷方式仍待 M12。
   新站首页只读访问返回 ALCOMD3 页面，不据此宣称 Schema 托管或旧更新地址衔接已验证。
 
 ## 实际验证
@@ -39,6 +39,28 @@
   运行 0 项并过滤 28 项，未将其计为回归通过。
 - 独立 Discord backend 编译及 doc-test 入口成功；该占位 crate 无测试，实际 0 项，未称作功能测试。
 - 最终差异检查通过，所有 Schema 文件相对 HEAD 仅有已批准域名替换；三份依赖锁文件无变更。
+
+## Windows AUMID 原生接入
+
+组织身份及域名统一已独立本地提交为 `a9d1ea1995d8b00d46d3496c724a5b83f70bbb7c`。
+
+所有者随后要求补齐原生接入并分次本地提交。GUI 构建脚本读取产品 TOML 并生成
+`ALCOMD_WINDOWS_AUMID`，产品文件变化触发重建；GUI 在创建 Tauri Builder/窗口前通过
+`alcomd-platform` 调用 `SetCurrentProcessExplicitAppUserModelID`，失败停止启动。
+非 Windows 编译时排除此调用。FFI 独立限定在 `windows_app_identity.rs`，每处指针和系统
+返回分配的所有权均有说明，unsafe门禁仅增加此文件；GUI继续禁止unsafe。
+
+复用现有 `windows-sys 0.61.2` 与 Shell/COM feature，没有新增第三方包或升级版本。
+Cargo.lock 仅增加GUI→platform、GUI构建→toml、platform测试→toml三条依赖边。
+组织身份提交时的三锁无变更记录保持，本节准确记录后续接入的锁图变化。
+
+Windows原生专项 **1 passed / 0 failed**：用产品中的值设置后，通过系统 getter 读回一致；
+空串、内嵌NUL、空白和超长输入均拒绝，逐次确认系统身份保持原值；系统分配的缓冲区用
+`CoTaskMemFree`释放。该回归运行在独立测试进程，不启动GUI/Core或访问用户数据。
+GUI单元测试 **13 passed / 0 failed**；platform/gui/xtask all-targets严格Clippy、
+受影响fmt和`cargo xtask check`通过，确认新增依赖边和唯一FFI边界。原组织身份的前端及浏览器
+结果保持其实际轮次，本轮只有Rust启动接入，不为提交重复前端门禁；3项旧夹具失败记录保留。
+本轮未执行release构建、原生桌面交互或跨平台CI；不将测试进程读回描述为当前桌面GUI已部署验证。
 
 ## 交付边界
 

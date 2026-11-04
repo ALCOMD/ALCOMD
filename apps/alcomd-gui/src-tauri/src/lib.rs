@@ -1653,6 +1653,10 @@ fn daemon_unavailable() -> RpcError {
 ///
 /// Business logic must remain in `alcomd`; this process is only a client and UI host.
 pub fn run() {
+    #[cfg(windows)]
+    alcomd_platform::set_current_process_app_user_model_id(env!("ALCOMD_WINDOWS_AUMID"))
+        .expect("failed to initialize Windows application identity");
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(GuiClientState::default())

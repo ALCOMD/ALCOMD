@@ -159,11 +159,13 @@ name = "alcomd-gui"
 version = "4.0.0-alpha.0"
 dependencies = [
  "alcomd-client",
+ "alcomd-platform",
  "alcomd-protocol",
  "open",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
+ "toml 1.1.4+spec-1.1.0",
 ]
 
 [[package]]
@@ -197,6 +199,7 @@ dependencies = [
  "rustix",
  "sysinfo",
  "tokio",
+ "toml 1.1.4+spec-1.1.0",
  "windows-sys 0.61.2",
 ]
 
