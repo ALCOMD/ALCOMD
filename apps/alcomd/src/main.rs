@@ -35,6 +35,7 @@ async fn main() -> anyhow::Result<()> {
     let endpoint = alcomd_platform::endpoint_display(&config)
         .context("failed to resolve the per-user RPC endpoint")?;
     info!(
+        code = "core.started",
         product = alcomd_protocol::PRODUCT_FAMILY,
         rpc_version = alcomd_protocol::RPC_VERSION,
         endpoint,

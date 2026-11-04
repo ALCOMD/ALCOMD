@@ -49,8 +49,10 @@ mod m7_official_rpc;
 mod m7_rpc;
 mod m7_unity_migration_rpc;
 mod m7_user_packages_rpc;
+mod operation_log;
 mod project_discovery_platform;
 mod repository_list_rpc;
+mod rpc_log;
 mod storage_platform;
 
 #[cfg(feature = "test-kill-gates")]
@@ -408,6 +410,16 @@ where
     F: Future<Output = ()>,
 {
     let mut connections = tokio::task::JoinSet::new();
+    let mut log_tasks = tokio::task::JoinSet::new();
+    let log_subscription = applications
+        .m2
+        .subscribe_events(&AccessContext::local_owner(), None, 100)
+        .map_err(|_| io::Error::other("Task log subscription could not be established"))?;
+    log_tasks.spawn(operation_log::follow(
+        applications.m2.clone(),
+        applications.diagnostic_log.clone(),
+        log_subscription,
+    ));
     let mut runtime_tick = tokio::time::interval(std::time::Duration::from_millis(250));
     runtime_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut discovery_tick = tokio::time::interval(std::time::Duration::from_secs(30));
@@ -433,6 +445,12 @@ where
             }
             result = connections.join_next(), if !connections.is_empty() => {
                 let _ = result;
+            }
+            result = log_tasks.join_next(), if !log_tasks.is_empty() => {
+                if !matches!(result, Some(Ok(Ok(())))) {
+                    applications.diagnostic_log.record(alcomd_application::DiagnosticLogLevel::Error,
+                        Some("diagnostic.operation_stream_failed"), None, None);
+                }
             }
             _ = discovery_tick.tick() => discovery_requested = true,
             () = discovery_notify.notified() => discovery_requested = true,
@@ -469,6 +487,8 @@ where
     }
 
     discovery_tasks.abort_all();
+    log_tasks.abort_all();
+    while log_tasks.join_next().await.is_some() {}
     while discovery_tasks.join_next().await.is_some() {}
     connections.abort_all();
     while connections.join_next().await.is_some() {}
@@ -593,18 +613,20 @@ async fn dispatch_payload(
     if !state.handshake_complete {
         return error_action(Some(request.id), RpcError::handshake_required(), false);
     }
-    if m7_candidates_rpc::oversized_candidate_frame(&request.method, payload) {
-        return m7_candidates_rpc::failure(
+    let method = request.method.clone();
+    let mut action = if m7_candidates_rpc::oversized_candidate_frame(&request.method, payload) {
+        m7_candidates_rpc::failure(
             request.id,
             alcomd_application::CandidateQueryError::LimitExceeded,
-        );
-    }
-    if request.method == METHOD_SYSTEM_STATUS {
-        return dispatch_status(request, state);
-    }
-
-    let access = AccessContext::local_owner();
-    dispatch_m2(request, state, applications, &access).await
+        )
+    } else if request.method == METHOD_SYSTEM_STATUS {
+        dispatch_status(request, state)
+    } else {
+        let access = AccessContext::local_owner();
+        dispatch_m2(request, state, applications, &access).await
+    };
+    rpc_log::record(&applications.diagnostic_log, &method, &mut action.response);
+    action
 }
 
 fn dispatch_hello(request: RequestEnvelope, state: &ConnectionState) -> DispatchAction {
