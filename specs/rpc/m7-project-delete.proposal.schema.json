@@ -11,6 +11,7 @@
         "projects.applyDeleteDirectory": ["projects.delete"]
     },
     "x-alcomd-filesystem-writer": "builtin:local-owner",
+    "$comment": "Owner-approved project-scoped writer gate: confirmed/suspected target occupancy rejects; unattributed unknown alone does not. Target filesystem/identity checks and pre-quarantine writer recheck remain required.",
     "x-alcomd-extension-grantable": false,
     "x-alcomd-operation-kind": "projects.delete-directory",
     "x-alcomd-plan-expiry-ms": 900000,

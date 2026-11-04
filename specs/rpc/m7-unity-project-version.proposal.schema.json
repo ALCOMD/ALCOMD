@@ -7,6 +7,7 @@
     "x-alcomd-active-rpc-modified": false,
     "x-alcomd-state-schema-proposed": 14,
     "x-alcomd-filesystem-writer": "builtin:local-owner",
+    "$comment": "Owner-approved project-scoped writer gate: confirmed/suspected target occupancy rejects; unattributed unknown alone does not. Unknown does not override an observed owned-child exit; recovery without exit evidence remains unresolved and must not respawn or report success.",
     "$defs": {
         "uuid": {
             "type": "string",

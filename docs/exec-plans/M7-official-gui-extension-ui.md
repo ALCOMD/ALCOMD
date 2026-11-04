@@ -192,7 +192,8 @@ Bundle/Tauri/Linux desktop ID为`com.vrclearn.alcomd`，声明的Windows AUMID�
 
 - 明确匹配其他项目目录身份的进程不污染目标项目状态；同目标项目且已登记 Editor 为 confirmed，同目标但 executable 未核实为 suspected；无法读取/归属的观察保留 unknown。启动只拦目标项目 confirmed/suspected，unknown 不作为全局启动禁令。
 - Windows 用有界版本资源和前后文件身份核对排除同名非 Editor（实际复现为 Hub 的 unity.exe serve）；缺失/损坏/变化的身份不伪装为已确认非 Editor。没有新增 unsafe、依赖、持久数据、配置、权限或 RPC 字段，四态 Schema 保持，协议语义原位更新。
-- 审计确认：项目删除、Unity 版本迁移仍拒绝 unknown；复制项目、创建备份和从项目派生模板只对 confirmed 硬拦；软件包变更不经过这条进程观察守卫。本轮不放宽删除/迁移写入保护。
+- 所有者后续明确批准将项目范围规则用于删除及 Unity 版本迁移：confirmed/suspected 仍拒绝，无法归属的 unknown 不再全局阻断。目标目录身份、内容变化、权限及文件系统边界检查保留；删除在隔离前再次观察占用，若出现目标项目写者则保留目录/登记并清理自有预备目录。迁移已观察到自身子进程退出时继续目标复验；中断且缺少退出证据仍需恢复核实，不伪报成功或重启 Unity。复制、创建备份、派生模板的既有规则保持。
+- 代码`4423bd5`最终定向删除4/0、迁移7/0，包含隔离目录真实删除、执行前目标占用、真实迁移引擎的退出证据/目标身份复验；全部使用临时目录、假启动器，不操作真实项目或 Unity。未新增锁文件存在性拦截、RPC字段、依赖、数据库或配置。四态协议兼容2/0、受影响Clippy及fmt通过。本轮只修改源码，未重建或重启当前 dev Core；受影响检查见本轮交付，M7/H7人工状态保持。
 - 定向 Application 7/0、Store 启动集成 5/0（含七类进程关联/探测失败场景、假启动器次数）、Platform 9/0、Core adapter 4/0，以及受影响四 crate Clippy、fmt、GUI check 通过。最初同名辅助程序回归先红后绿。未重复完整 Rust/浏览器或远端门禁。
 - 构建包含保留的并行产品身份修改，不将定向结果冒称独立提交的完整门禁。修复已加载为 dev Core122652 / GUI144432，原数据/profile 及六组公开状态、配置摘要、revision189 保持；真实只读 RPC 中三个未打开项目由 suspected 变为 not_observed，现有 Unity/Hub 同名工具保持运行。没有实际触发 Unity 启动、项目删除或迁移。证据位于 target/m7-unity-writer-20261105/runtime-20261104T204334Z，M7/H7 人工状态保持。
 

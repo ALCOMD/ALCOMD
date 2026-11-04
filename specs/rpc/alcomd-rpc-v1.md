@@ -601,7 +601,9 @@ project selector；daemon 固定把已验证 absolute project root 作为独立 
 package/template/backup mutation 对 confirmed 返回 `unity_project_running`，suspected/unknown 仅 advisory
 并继续 live fingerprint gate。Unity launch 仅对目标项目 confirmed 拒绝第二实例，对目标项目 suspected 返回
 `unity_launch_state_uncertain`；not_observed 与无法关联的 unknown 允许 spawn，不因其他或身份不明进程形成全局启动禁令。
-此启动规则不放宽项目删除和 Unity 版本迁移的写入安全检查。
+项目删除和 Unity 版本迁移同样只对目标项目 confirmed/suspected 拦截，无法归属的 unknown 不作全局阻断。
+保留目标目录身份、内容、权限及文件系统边界复验；删除在隔离目录前再次观察目标占用。
+迁移已观察到自有 Unity 子进程退出时，unknown 不妨碍目标目录/版本复验；中断后没有退出证据时仍要求恢复核实，禁止仅凭 unknown 自动报成功或重启 Unity。
 
 `unity.projectLaunchConfig.get` 返回必需 `config`、`defaultArguments`、`effectiveArguments`；
 `config.arguments` 保留项目覆盖语义。优先使用已保存项目覆盖（含空数组），其次全局覆盖，最后内置空数组；
