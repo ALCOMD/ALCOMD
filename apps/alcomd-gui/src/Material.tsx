@@ -225,9 +225,12 @@ export function Menu({ anchorRef, children, className, onClose, open }: { anchor
     useEffect(() => {
         const element = ref.current;
         if (element === null) return;
-        const close = () => onClose();
+        // A previous closing animation can finish after a new show().
+        const close = () => { if (!element.open) onClose(); };
+        const closing = () => onClose();
+        element.addEventListener("closing", closing);
         element.addEventListener("closed", close);
-        return () => element.removeEventListener("closed", close);
+        return () => { element.removeEventListener("closing", closing); element.removeEventListener("closed", close); };
     }, [onClose]);
     return createElement(materialElements.menu, {
         anchorCorner: "end-end",
