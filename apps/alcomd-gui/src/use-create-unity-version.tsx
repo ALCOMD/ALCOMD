@@ -10,6 +10,7 @@ import { normalizeRequestError } from "./request-errors";
 
 export function useCreateUnityVersion(client: GuiRpcClient, template: TemplateRecord | undefined, open: boolean) {
     const [version, setVersion] = useState("");
+    const [custom, setCustom] = useState(false);
     const [installations, setInstallations] = useState<UnityInstallation[]>([]);
     const [error, setError] = useState<RpcError>();
     const [retry, setRetry] = useState(0);
@@ -17,6 +18,7 @@ export function useCreateUnityVersion(client: GuiRpcClient, template: TemplateRe
     useEffect(() => {
         edited.current = false;
         setVersion("");
+        setCustom(false);
     }, [client, open, template?.templateId]);
     useEffect(() => {
         if (!open) return;
@@ -46,10 +48,19 @@ export function useCreateUnityVersion(client: GuiRpcClient, template: TemplateRe
     });
     const compatibleVersion = compatible.length === 1 ? compatible[0]!.unityVersion : "";
     useEffect(() => {
-        if (!edited.current) setVersion(compatibleVersion);
-    }, [compatibleVersion, template?.templateId]);
+        if (!edited.current) {
+            setVersion(compatibleVersion);
+            setCustom(compatible.length === 0);
+        }
+    }, [compatibleVersion, compatible.length, template?.templateId]);
     return {
         version,
+        custom,
+        chooseVersion: (value: string) => {
+            edited.current = true;
+            setCustom(value === "custom");
+            setVersion(value === "custom" ? "" : value);
+        },
         setVersion: (value: string) => { edited.current = true; setVersion(value); },
         versions: Array.from(new Set(compatible.map((installation) => installation.unityVersion))),
         error,
@@ -60,10 +71,10 @@ export function useCreateUnityVersion(client: GuiRpcClient, template: TemplateRe
 export function CreateUnityVersionField({ disabled, selection }: { disabled: boolean; selection: ReturnType<typeof useCreateUnityVersion> }) {
     const { t } = useTranslation();
     return <>
-        {selection.versions.length === 0 ? null : <Select disabled={disabled} label={t("Installed Unity version")} onChange={selection.setVersion}
-            options={[{ label: t("Choose an installed version"), value: "" }, ...selection.versions.map((version) => ({ label: version, value: version }))]}
-            value={selection.versions.includes(selection.version) ? selection.version : ""} />}
-        <TextField disabled={disabled} label={t("Unity version")} onInput={selection.setVersion} required value={selection.version} />
+        <Select disabled={disabled} label={t("Installed Unity version")} onChange={selection.chooseVersion}
+            options={[{ label: t("Choose an installed version"), value: "" }, ...selection.versions.map((version) => ({ label: version, value: version })), { label: t("Custom"), value: "custom" }]}
+            value={selection.custom ? "custom" : selection.version} />
+        {selection.custom ? <TextField disabled={disabled} label={t("Unity version")} onInput={selection.setVersion} required value={selection.version} /> : null}
         {selection.error !== undefined ? <RequestReminder error={selection.error} title={t("Installed Unity versions could not be loaded.")}>
             <Button disabled={disabled} onClick={selection.retry} type="button" variant="text">{t("Retry")}</Button>
         </RequestReminder> : null}

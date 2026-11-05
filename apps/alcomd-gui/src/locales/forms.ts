@@ -4,6 +4,7 @@ import type { TranslationTable } from "../i18n-types";
 export const formMessages: TranslationTable = {
     "Installed Unity version": { "zh-CN": "已安装的 Unity 版本", "ja-JP": "インストール済み Unity バージョン" },
     "Choose an installed version": { "zh-CN": "选择已安装的版本", "ja-JP": "インストール済みバージョンを選択" },
+    "Custom": { "zh-CN": "自定义", "ja-JP": "カスタム" },
     "Installed Unity versions could not be loaded.": { "zh-CN": "无法读取已安装的 Unity 版本。", "ja-JP": "インストール済み Unity バージョンを読み込めません。" },
     "Details": {
         "zh-CN": "详情",
