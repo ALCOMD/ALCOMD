@@ -7,7 +7,7 @@ Project/Package P0-P8 和 exact Unity 技术检查点保持其原始 SHA/证据�
 ## 实现依据与跨模块整改计划（2026-11-05，已批准实施）
 
 所有者要求先继续检查其他模块，使用官方证据与vrc-get辅助判断，完整梳理后提出统一计划。
-所有者随后明确批准完整实施本计划；下列公开合同修订和生产依赖边属于本次授权。修复与验证尚在实施，不代表M7签收。
+所有者随后明确批准完整实施本计划；下列公开合同修订和生产依赖边属于本次授权。已按下方实际候选完成本轮实现和定向验证，不代表M7签收。
 问题/来源/隔离复现和未覆盖范围统一见
 [跨模块依据复核](../testing/m7-implementation-basis-audit-20261105.md)，不另立阶段入口。
 
@@ -123,23 +123,25 @@ Editor身份变化、旧Plan、版本格式边界都有明确结果。平台验�
 
 ### 本轮实现与实际验证（A01–A10）
 
-实现已覆盖本节批准范围；当前工作树同时包含另一获批日志/活动重建，尚在拆分提交，不将临时工作树结果绑定到只有配置与探测改动的HEAD。已独立提交`b89dc89`（类型化TOML/配置持久化）和`073d87b`（显式有界Editor探测），其余包/创建链路待按目的收束。所有原始输出保存在`target/m7-basis-implementation-20261105/`。
+A01–A10已按批准范围实现并分目的本地提交。最终代码候选为`3a3b22e771e2419c1d7c018b77931251bd770085`；包/兼容核心为`e9cb24a`，完整创建版本为`17f0fea`，配置为`b89dc89`及测试桩收束`9691f74`，Editor探测为`073d87b`，范围为`2029aba`。`8a84371`补齐备份VPM对象夹具；`74ed2ff`纠正旧事件测试预期，`3a3b22e`补齐对话框内显式重试。无新SQL迁移、配置字段、权限或外部版本库。
 
-| 问题 | 已实现与本轮证据 | 保留限制 |
+并行日志/活动重建工作树保留且未混入本批；最终验证使用标准目录`target`内由提交生成的源码归档，不是额外Git worktree，不在快照修改代码。所有输入逐Git对象核验（包括既有PowerShell CRLF属性），SDK/UI业务包解析限定到快照自身。Rust、Schema、依赖及SDK输入与已验证`8a84371c891bc94527eed2157db01e8318e4e90e`完全相同，后续仅两个GUI文件改变，因此复用其适用Rust证据；最终GUI重新check/build与浏览器。输入证明及原始输出位于`target/m7-basis-implementation-20261105/`，关键映射为`final-candidate-input.json`和`final-reference-scope.json`，不以共享工作树的旧计数替代纯候选结果。
+
+| 问题 | 已实现和对应证据 | 保留限制 |
 | --- | --- | --- |
-| A01–A03 清单、范围与来源 | legacy路径/GUID对象及packages数组；逐版本解析并记录问题；区分普通范围与项目直接依赖。固定官方索引303/303版本读取并进入resolver-ready，0问题；固定SemanticVersioning.NET对照4180输入及canonical回读均0差异。 | 未复制参考实现；catalog完整性门槛保持，不能据读到元数据执行删除。 |
-| A04 锁与冻结输出 | 共享写出保留未改条目和元数据，改变条目依赖来自冻结结果；删除直接依赖仍保留必要传递依赖，重装不生成自依赖。Plan/Apply摘要、重放与旧已接受Plan输出测试通过。真实包用例5/0，包含index权威、GUID/已存在文件、Plan后新增遗留目标和同Plan选择legacyPackages的拒绝。 | 新语义使旧未接受Plan过期；已接受任务按原冻结证据恢复，无证据不能重新签字。未新增遗留删除范围。 |
-| A05 Editor探测 | macOS/Linux登记与扫描执行受限-version，普通列表不执行；Windows平台Unity/Hub单元24/0，Core版本解码5/0。平台crate Linux/macOS all-targets编译、Linux严格Clippy及Unix夹具编译通过。 | Windows未改为执行Editor；无macOS/Linux真实安装运行证据，平台编译不能替代实际探测。 |
-| A06 完整创建版本 | RPC/CLI/SDK/GUI/桥接必需unityVersion；GUI可填未安装版本或选择安装，完整版本/ProjectVersion字节及摘要冻结。隔离模板集成4/0包含创建→发布→登记→启动选项查询、版本门槛与旧Plan；CLI必需参数及浏览器输入/分页回归通过。 | 创建成功不代表Editor已经安装；启动仍exact。当前候选未执行真实Unity。 |
-| A07–A08 配置与恢复 | 复用锁定toml，保持Config1–10 closed字段、u64 revision/CAS和16KiB；合法TOML变体、迁移及文件/rename/目录同步恢复定向33/0。独立终止测试1/0覆盖9个自有写入子进程的终止边界。 | 进程终止不是物理掉电；真实断电、非Windows文件系统持久性未实证。不重置或删除原数据。 |
-| A09 unityRelease | Store到候选/求解使用同一数值最低版本判断；覆盖相等、低于、渠道、数值revision、缺unity及非法release，候选与Plan判断一致。VPM最终单元148/0。 | experimental、区域/自定义后缀保持unknown，不借minimum放宽启动exact。 |
-| A10 文档/能力 | 原位修正Config1–9指向当前Config10的链接，撤回旧普通范围bare-minimum依据，区分官方规则与ALCOMD模板版本线、摘要/权限策略。 | 历史证据保留真实版本，不把旧验收写成新代码通过。 |
+| A01–A03 清单、范围与来源 | 区分UPM/VPM；legacy路径→GUID对象与packages数组；逐版本保留合法元数据和问题反馈；普通范围与直接依赖独立。纯候选读取固定官方索引303/303 resolver-ready、303展示行、0问题；固定SemanticVersioning.NET对照4180输入及canonical回读均0差异，最终parser字节一致。 | catalog完整性门槛保持。读取legacy不授予删除资格；实际或无法排除的清理义务继续明确unsupported。 |
+| A04 锁及冻结输出 | 未改条目保留依赖和元数据，改变条目来自冻结边；删除直接依赖保留必要传递依赖，重装不生成自依赖。真实包链5/0包含Plan/Apply/hash/重放、index权威、路径/GUID、Plan后新增目标及同Plan选中legacyPackages的拒绝。 | format3使旧未接受计划stale；已接受1/2保持原冻结摘要恢复，不能重签或删除证据。本轮未扩展遗留删除。 |
+| A05 Editor探测 | Windows PE保持；macOS/Linux显式登记/扫描才执行受限-version，列表不执行。Windows平台Unity/Hub24/0，Core输出/身份4/0；Linux/macOS平台all-targets编译和Linux严格Clippy通过。 | 未执行macOS/Linux真实Editor安装探测，编译不替代实证；Windows测试仅用自有假进程。 |
+| A06 完整创建版本 | RPC/CLI/SDK/GUI/桥接必需unityVersion；可选择安装或填写未安装版本。模板版本线、完整ProjectVersion字节/hash冻结，发布后观察核对。模板集成4/0，包含创建→发布→登记→启动选项、版本门槛、旧计划；私有Windows真实帧1/0及CLI5/0通过。 | 创建不冒充Editor已安装或已启动；启动保持exact。私有帧用生产dispatcher和独立Store，不等于完整daemon认证/生产端点验收。 |
+| A07–A08 配置与恢复 | toml 1.1.4类型化解析、各Config closed校验、16KiB、u64 revision/CAS、Config1–10迁移保持；配置单元33/0。文件/rename/目录同步和恢复覆盖，终止测试1/0覆盖9个自有写进程边界。 | 进程终止不是物理掉电；真实断电、非Windows文件系统持久性未实证。不重置或删除原数据。 |
+| A09 unityRelease | Store到候选/求解共享数值最低版本判断；覆盖相等、低于、渠道、数值revision、缺unity与非法release的一致结果。VPM纯候选146/0。 | experimental、区域/自定义后缀保持unknown，不放宽启动exact。 |
+| A10 文档与能力 | 原位修正历史Config当前链接，撤回普通范围bare-minimum错误依据，区分官方格式和ALCOMD模板版本线、摘要/权限策略。 | 历史记录保留其真实版本及适用范围，不作为本轮通过。 |
 
-集中验证：`cargo fmt --all -- --check`、workspace all-targets严格Clippy、`cargo xtask check`均通过；协议单元16/0、兼容2/0、Schema43/0。受影响四库较早一轮App68/0、Domain6/0、Store65/0、VPM147/0，后续VPM148/0；分别列明，不拼接成完整workspace测试。七个定向集成目标：m4_contract5/0、m5_contract7/0、m5_template4/0、m7_legacy_packages5/0、backup/restore合同各4/0、迁移worker7/0。
+集中验证：workspace格式检查、all-targets严格Clippy和`xtask check`通过。纯候选App72/0、Domain6/0、Store56/0、VPM146/0、协议单元16/0、Schema43/0、协议默认值2/0；七个集成目标为m4_contract5/0、m5_contract7/0、m5_template4/0、m7_legacy_packages5/0、backup/restore合同各4/0、迁移worker7/0。配置终止特性单独验证，不称作掉电证据。
 
-前端`npm run check`、`npm run build`通过（现有Vite chunk大小警告保留）。七个相关浏览器模块首轮60/1，唯一失败为既有任务标签已人性化而断言仍使用RPC名；改为实际标签后完整模板操作模块17/0补验，失败trace保留，不合称一次全绿61。覆盖创建/模板分页、默认目录、事件入口/ACK/重连、进度合并/队列界限、稳态无周期读取与反馈去重；未运行完整浏览器套件或原生GUI人工验收。
+最终前端`npm run check`、`npm run build`通过，保留现有Vite chunk大小警告；七个相关浏览器模块一次完整61/0。覆盖完整版本输入/未安装/多Editor、模板分页与草稿、终态回调、ACK/断线/重同步、旧响应/删除后迟到、进度合并界限和健康稳态无周期读取。纯候选此前56/5→60/1的失败原始证据保留：旧预期错误要求自动重试、禁止终态失效读取或已接受未知响应任务的全局发现；修订为显式重试/单次失效/不重复Apply。剩余实际缺陷是对话框内没有可操作的重试按钮，已复用共享事件入口修正，并保持对话框打开验证，未靠恢复轮询或删除断言消除失败。备份旧字符串夹具和误含并行活动测试桩也已在独立提交中纠正。
 
-未执行完整`cargo test --workspace`及固定Windows用户端点的IPC回归：原Core168708占用该端点，本轮明确不部署/重启用户环境，未为测试停止它。新合同已由Schema/SDK及同抽象浏览器验证，真实Core IPC与配套原生构建/运行未冒称通过。包/扩展等全部既有流程、所有旧任务在并行State19变化后的恢复、跨平台真实Editor及物理掉电仍未覆盖。最终同SHA候选与完整适用门禁待共享改动分批收束；H2–H6签收保留，M7 IN_PROGRESS / H7 MANUAL_PENDING。
+未执行完整`cargo test --workspace`、固定Windows用户端点IPC、整套浏览器、三平台CI/CodeQL或原生GUI人工验收。用户Core168708持续占用该端点，本轮不停止/替换它，不为门禁绕过授权；窄私有管道IPC不冒称这些路径已通过。包/扩展等所有历史端到端流程、并行State19与旧profile结合后的恢复、macOS/Linux真实Editor及物理掉电仍未覆盖。已有H2–H6签收保留，M7 IN_PROGRESS / H7 MANUAL_PENDING。原数据/profile/截图/材料、Core和Unity保持，未部署、重启或推送。
 
 ## 当前有效合同
 

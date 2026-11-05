@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-2026-11-05获批A01–A10跨模块依据整改已实现，配置`b89dc89`、Editor探测`073d87b`已分别本地提交，其余包/创建与并行日志共用文件待拆分收束。清单/范围/锁写出、完整创建Unity版本、unityRelease与TOML/持久化均有对应依据和定向结果：官方索引303/303、范围对照4180无差异、VPM148/0、隔离创建/登记/启动选项4/0、真实包链5/0；workspace fmt/严格Clippy/xtask及前端check/build通过。浏览器首轮60/1，修正实际标签断言后模板操作17/0；不冒称完整Rust/浏览器或已提交SHA门禁。详细来源、旧Plan规则、实际范围见[M7整改记录](exec-plans/M7-official-gui-extension-ui.md#本轮实现与实际验证a01a10)，[核查报告](testing/m7-implementation-basis-audit-20261105.md)保留修复前事实。真实IPC/原生GUI、非Windows真实Editor、物理掉电及新候选完整门禁尚未覆盖；原Core168708及数据/profile/Unity保持，未部署、重启、推送，M7/H7人工状态不变。
+2026-11-05获批A01–A10依据整改已实现并分目的本地提交，代码候选`3a3b22e`。修正UPM/VPM及legacy形状、范围上下文、锁信息写出、完整创建unityVersion、unityRelease、显式Editor探测、TOML和配置持久化；不新增数据库/权限。并行日志/活动工作树独立保留，以提交归档验证避免混入：官方索引303/303、范围对照4180无差异，纯候选App72/0、Store56/0、VPM146/0、模板集成4/0、包链5/0、私有真实创建帧1/0，workspace fmt/严格Clippy/xtask及前端check/build通过。浏览器旧预期及框内缺失重试修正后，最终相关七模块61/0；失败轮次保留，不冒称全套门禁。Rust/契约等与已验证`8a84371`输入完全一致，最终GUI重新验证，来源/精确范围见[M7整改记录](exec-plans/M7-official-gui-extension-ui.md#本轮实现与实际验证a01a10)。完整workspace测试/生产端点IPC、原生GUI、非Windows真实Editor及物理掉电仍未覆盖；原Core168708、数据/profile、Unity和材料保持，未部署、重启、推送。H2–H6保留，M7 IN_PROGRESS / H7 MANUAL_PENDING。
 
 2026-11-05按所有者要求补齐GUI圆角遗漏：提醒及仓库列表导入/导出预览框共用28px容器；代码底色/跳转正文链接及徽标/状态标签/拾色器改用既有small/full，清理日志搜索框旧覆盖。GUI check与独立端口浏览器实测通过，核对导入预览、菜单、设置字段/拾色器、扩展徽标、日志提醒/搜索及表格行；表格16px、行8px、字段/菜单12px和胶囊保持。未重启或操作原Core/Unity，未重复完整构建/回归；M7/H7人工状态保持。
 
